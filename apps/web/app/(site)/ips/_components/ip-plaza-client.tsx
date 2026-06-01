@@ -139,18 +139,28 @@ export function IpPlazaClient() {
   });
   const { data: taxonomyData } = useIpCommerceTaxonomyTerms({ type: "genre", locale });
   const { data: heroData } = useIpCommerceDiscovery({ placementKey: "ip_plaza_hero", locale });
+  const { data: forYouData } = useIpCommerceDiscovery({
+    placementKey: "ip_plaza_for_you",
+    locale,
+  });
 
   const rawProjects = useMemo<PlazaProject[]>(
     () => (listData?.pages.flatMap((page) => page.items) ?? []).map((ip) => toPlazaProject(ip, t)),
     [listData, t]
   );
 
-  // Hero is operator-curated via the discovery `ip_plaza_hero` placement; fall
-  // back to the first listings when nothing is configured so it's never empty.
-  const heroProjects = useMemo<PlazaProject[]>(() => {
-    const curated = (heroData?.items ?? []).map((item) => discoveryToPlazaProject(item, t));
-    return curated.length > 0 ? curated : rawProjects.slice(0, 5);
-  }, [heroData?.items, rawProjects, t]);
+  // Hero and "for you" are each operator-curated via their own discovery
+  // placement (`ip_plaza_hero` / `ip_plaza_for_you`) — independent of each other
+  // and of the category filter, with no fallback to listings. They stay empty
+  // until operations configure them.
+  const heroProjects = useMemo<PlazaProject[]>(
+    () => (heroData?.items ?? []).map((item) => discoveryToPlazaProject(item, t)),
+    [heroData?.items, t]
+  );
+  const forYouProjects = useMemo<PlazaProject[]>(
+    () => (forYouData?.items ?? []).map((item) => discoveryToPlazaProject(item, t)),
+    [forYouData?.items, t]
+  );
 
   const projects = useMemo(() => {
     const needle = debouncedSearch.trim().toLowerCase();
@@ -205,7 +215,7 @@ export function IpPlazaClient() {
         <IPCinematicHero
           loading={loading}
           slides={heroProjects.slice(0, 5)}
-          rail={heroProjects.slice(0, 10)}
+          rail={forYouProjects}
         />
       </div>
 
@@ -365,19 +375,23 @@ function discoveryToPlazaProject(
   item: IpCommerceDiscoveryItem,
   t: ReturnType<typeof useTranslations>
 ): PlazaProject {
+  // Native IP card is the base (cover, episode count, genres); curated placement
+  // copy/media overlay it where present. Hero placements carry their own media +
+  // localized copy; for-you placements carry none, so they render as plain cards.
+  const base = item.ipCard ? toPlazaProject(item.ipCard, t) : null;
   return {
     id: item.ipId,
-    name: item.title || item.ip?.title || t("detailUntitled"),
-    subtitle: "",
-    description: item.description || "",
-    cover: getAssetUrl(item.image),
-    trailer: getAssetUrl(item.trailer),
-    ownerName: "",
+    name: item.title || base?.name || item.ip?.title || t("detailUntitled"),
+    subtitle: base?.subtitle ?? "",
+    description: item.description || base?.description || "",
+    cover: getAssetUrl(item.image) || base?.cover || "",
+    trailer: getAssetUrl(item.trailer) || base?.trailer || "",
+    ownerName: base?.ownerName ?? "",
     ownerAvatar: "",
-    genres: [],
-    tags: [],
-    episodes: 0,
-    eyebrow: item.eyebrow || t("featured"),
+    genres: base?.genres ?? [],
+    tags: base?.tags ?? [],
+    episodes: base?.episodes ?? 0,
+    eyebrow: item.eyebrow || base?.eyebrow || t("featured"),
   };
 }
 

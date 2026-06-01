@@ -537,6 +537,9 @@ export interface IpCommerceDiscoveryItem {
   image: IpCommerceAsset | null;
   mobileImage: IpCommerceAsset | null;
   trailer: IpCommerceAsset | null;
+  // Native IP card (cover, episode count, taxonomy). Drives non-hero placements
+  // like the for-you rail, which carry no curated media of their own.
+  ipCard: IpCommerceIp | null;
 }
 
 export function listIpCommerceDiscovery(params: {
