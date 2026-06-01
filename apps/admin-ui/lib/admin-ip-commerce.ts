@@ -7,6 +7,7 @@ import {
 } from "@/lib/admin-api";
 import { currentAdminSite } from "@/lib/admin-sites";
 import type {
+  AdminIpDiscoveryData,
   AdminIpEntitlementsData,
   AdminIpOrdersData,
   AdminIpOverviewData,
@@ -53,6 +54,15 @@ export async function fetchAdminIpTaxonomy(
   return fetchAdminIpResource(
     `/ip-commerce/taxonomy${toSearch(searchParams)}`,
     "IP 词库数据加载失败。"
+  );
+}
+
+export async function fetchAdminIpDiscovery(
+  searchParams?: Record<string, string | undefined>
+): Promise<AdminIpLoadResult<AdminIpDiscoveryData>> {
+  return fetchAdminIpResource(
+    `/ip-commerce/discovery${toSearch(searchParams)}`,
+    "IP 运营位数据加载失败。"
   );
 }
 

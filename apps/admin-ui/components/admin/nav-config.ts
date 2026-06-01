@@ -7,6 +7,7 @@ import {
   IconDashboard,
   IconFileAnalytics,
   IconFlag,
+  IconLayoutCards,
   IconPackage,
   IconPlugConnected,
   IconReceipt2,
@@ -188,7 +189,12 @@ export const MODULE_NAV: Record<string, ModuleNavGroup[]> = {
       label: "配置",
       items: [
         { href: "/ip/taxonomy", label: "题材词库", icon: IconTags, permission: "ip.read" },
-        // 广场运营位 (/ip/discovery) is hidden from nav until built — still a placeholder.
+        {
+          href: "/ip/discovery",
+          label: "广场运营位",
+          icon: IconLayoutCards,
+          permission: "ip.read",
+        },
       ],
     },
     {

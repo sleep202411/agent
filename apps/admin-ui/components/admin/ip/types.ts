@@ -362,3 +362,59 @@ export const emptyIps: AdminIpsData = { items: [], nextCursor: null };
 export const emptyIpOrders: AdminIpOrdersData = { items: [], nextCursor: null };
 export const emptyIpEntitlements: AdminIpEntitlementsData = { items: [], nextCursor: null };
 export const emptyIpTaxonomy: AdminIpTaxonomyData = { items: [] };
+
+// --- IP discovery placements (IP Plaza hero / for-you / pinned) ---
+
+export type IpDiscoveryPlacementKey = "ip_plaza_hero" | "ip_plaza_for_you" | "ip_plaza_list_pinned";
+
+export type IpDiscoveryRecommendationStatus = "draft" | "enabled" | "paused" | "archived";
+
+export type IpDiscoveryAsset = {
+  id: string;
+  kind: string;
+  url: string | null;
+  contentType: string;
+  width: number | null;
+  height: number | null;
+  durationSeconds: number | null;
+} | null;
+
+export type IpDiscoveryRecommendationLocalization = {
+  locale: string;
+  eyebrow: string | null;
+  title: string | null;
+  description: string | null;
+  ctaLabel: string | null;
+};
+
+export type IpDiscoveryRecommendationRow = {
+  id: string;
+  placementKey: IpDiscoveryPlacementKey;
+  status: IpDiscoveryRecommendationStatus;
+  ipId: string;
+  ip: {
+    id: string;
+    title: string;
+    status: string;
+    listingVisibility: string;
+  } | null;
+  sortOrder: number;
+  startsAt: string | null;
+  endsAt: string | null;
+  imageAsset: IpDiscoveryAsset;
+  mobileImageAsset: IpDiscoveryAsset;
+  trailerAsset: IpDiscoveryAsset;
+  version: number;
+  createdById: string;
+  updatedById: string | null;
+  createdAt: string;
+  updatedAt: string;
+  archivedAt: string | null;
+  localizations: IpDiscoveryRecommendationLocalization[];
+};
+
+export type AdminIpDiscoveryData = {
+  items: IpDiscoveryRecommendationRow[];
+};
+
+export const emptyIpDiscovery: AdminIpDiscoveryData = { items: [] };

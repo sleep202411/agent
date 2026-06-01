@@ -1,7 +1,7 @@
 "use client";
 
-import { useState } from "react";
-import { IconRefresh, IconTags } from "@tabler/icons-react";
+import { useMemo, useState } from "react";
+import { IconLanguage, IconPlus, IconRefresh, IconSearch } from "@tabler/icons-react";
 import { Button } from "@/components/ui/button";
 import { DataTable, type ColumnDef } from "@/components/ui/data-table";
 import { Input } from "@/components/ui/input";
@@ -12,10 +12,19 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetFooter,
+  SheetHeader,
+  SheetTitle,
+} from "@/components/ui/sheet";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 import {
   ErrorBanner,
+  Metric,
   PageHeader,
   requestEnvelope,
   StatusPill,
@@ -34,6 +43,22 @@ import { emptyIpTaxonomy } from "./types";
 // shadcn SelectItem value cannot be an empty string, so the "默认语言" option uses
 // this sentinel and maps back to "" in the onValueChange handler.
 const LOCALE_ALL = "__all__";
+
+// The standard locales a term should carry; drives the completeness chips/metric.
+const LOCALES = [
+  { code: "zh-CN", short: "简", label: "简体中文" },
+  { code: "en-US", short: "EN", label: "English" },
+  { code: "zh-HK", short: "繁", label: "繁體中文" },
+] as const;
+
+const TYPE_TABS = [
+  { value: "all", label: "全部" },
+  { value: "genre", label: "题材" },
+  { value: "tag", label: "标签" },
+] as const;
+
+type TypeFilter = (typeof TYPE_TABS)[number]["value"];
+type StatusFilter = "all" | "active" | "hidden" | "archived";
 
 type TaxonomyFormState = {
   id: string | null;
@@ -62,11 +87,38 @@ export function IpTaxonomyPanel({
   const [locale, setLocale] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(initialError);
+
+  const [query, setQuery] = useState("");
+  const [typeFilter, setTypeFilter] = useState<TypeFilter>("all");
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
+
+  const [sheetOpen, setSheetOpen] = useState(false);
   const [form, setForm] = useState<TaxonomyFormState>(() => emptyTaxonomyForm());
-  const genres = taxonomy.items.filter((term) => term.type === "genre");
-  const tags = taxonomy.items.filter((term) => term.type === "tag");
   const editing = Boolean(form.id);
   const canSubmit = Boolean(form.zhCN.trim() || form.enUS.trim() || form.zhHK.trim()) && !loading;
+
+  const metrics = useMemo(() => {
+    const items = taxonomy.items;
+    return {
+      genre: items.filter((t) => t.type === "genre").length,
+      tag: items.filter((t) => t.type === "tag").length,
+      active: items.filter((t) => t.status === "active").length,
+      incomplete: items.filter((t) => !isComplete(t)).length,
+    };
+  }, [taxonomy.items]);
+
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    return taxonomy.items.filter((term) => {
+      if (typeFilter !== "all" && term.type !== typeFilter) return false;
+      if (statusFilter !== "all" && term.status !== statusFilter) return false;
+      if (!q) return true;
+      const haystack = [term.label, term.code, ...term.localizations.map((l) => l.label)]
+        .join(" ")
+        .toLowerCase();
+      return haystack.includes(q);
+    });
+  }, [taxonomy.items, query, typeFilter, statusFilter]);
 
   function localeQueryString(nextLocale = locale) {
     const params = new URLSearchParams();
@@ -91,7 +143,7 @@ export function IpTaxonomyPanel({
     }
   }
 
-  async function createTaxonomyTerm(input: CreateTaxonomyTermDraft) {
+  async function createTaxonomyTerm(input: CreateTaxonomyTermDraft): Promise<boolean> {
     setLoading(true);
     setError(null);
     try {
@@ -101,14 +153,19 @@ export function IpTaxonomyPanel({
         body: JSON.stringify(input),
       });
       await refreshTaxonomy();
+      return true;
     } catch (err) {
       setError(toErrorMessage(err));
+      return false;
     } finally {
       setLoading(false);
     }
   }
 
-  async function updateTaxonomyTerm(termId: string, input: UpdateTaxonomyTermDraft) {
+  async function updateTaxonomyTerm(
+    termId: string,
+    input: UpdateTaxonomyTermDraft
+  ): Promise<boolean> {
     setLoading(true);
     setError(null);
     try {
@@ -121,14 +178,21 @@ export function IpTaxonomyPanel({
         }
       );
       await refreshTaxonomy();
+      return true;
     } catch (err) {
       setError(toErrorMessage(err));
+      return false;
     } finally {
       setLoading(false);
     }
   }
 
-  function editTerm(term: IpTaxonomyTerm) {
+  function openCreate() {
+    setForm(emptyTaxonomyForm(typeFilter === "tag" ? "tag" : "genre"));
+    setSheetOpen(true);
+  }
+
+  function openEdit(term: IpTaxonomyTerm) {
     setForm({
       id: term.id,
       type: term.type,
@@ -140,31 +204,97 @@ export function IpTaxonomyPanel({
       zhHK: taxonomyLabel(term, "zh-HK"),
       description: term.description ?? "",
     });
+    setSheetOpen(true);
   }
 
-  function submit() {
+  async function submit() {
     if (!canSubmit) return;
     const displayOrder = Number.parseInt(form.displayOrder, 10);
     const localizations = taxonomyLocalizationsFromForm(form);
     if (!localizations.length) return;
 
-    if (form.id) {
-      void updateTaxonomyTerm(form.id, {
-        status: form.status,
-        displayOrder: Number.isFinite(displayOrder) ? displayOrder : 0,
-        localizations,
-      });
-    } else {
-      void createTaxonomyTerm({
-        type: form.type,
-        code: form.code.trim() || undefined,
-        status: form.status,
-        displayOrder: Number.isFinite(displayOrder) ? displayOrder : 0,
-        localizations,
-      });
-      setForm(emptyTaxonomyForm(form.type));
-    }
+    const ok = form.id
+      ? await updateTaxonomyTerm(form.id, {
+          status: form.status,
+          displayOrder: Number.isFinite(displayOrder) ? displayOrder : 0,
+          localizations,
+        })
+      : await createTaxonomyTerm({
+          type: form.type,
+          code: form.code.trim() || undefined,
+          status: form.status,
+          displayOrder: Number.isFinite(displayOrder) ? displayOrder : 0,
+          localizations,
+        });
+
+    if (ok) setSheetOpen(false);
   }
+
+  const columns = useMemo<ColumnDef<IpTaxonomyTerm, unknown>[]>(
+    () => [
+      {
+        accessorKey: "label",
+        header: "词条",
+        cell: ({ row }) => {
+          const term = row.original;
+          return (
+            <div className="min-w-0">
+              <p className="truncate text-sm font-medium text-slate-950">{term.label || "—"}</p>
+              <p className="mt-0.5 truncate font-mono text-[12px] text-slate-500">{term.code}</p>
+            </div>
+          );
+        },
+      },
+      {
+        accessorKey: "type",
+        header: "类型",
+        cell: ({ row }) => (
+          <span className="inline-flex items-center rounded-md bg-slate-100 px-2 py-0.5 text-[12px] font-medium text-slate-600">
+            {row.original.type === "genre" ? "题材" : "标签"}
+          </span>
+        ),
+      },
+      {
+        id: "locales",
+        header: "多语言",
+        enableSorting: false,
+        cell: ({ row }) => <LocaleChips term={row.original} />,
+      },
+      {
+        accessorKey: "assignmentCount",
+        header: "关联 IP",
+        cell: ({ row }) => <span className="tabular-nums">{row.original.assignmentCount}</span>,
+      },
+      {
+        accessorKey: "status",
+        header: "状态",
+        cell: ({ row }) => (
+          <StatusPill tone={row.original.status === "active" ? "success" : "muted"}>
+            {taxonomyStatusLabel(row.original.status)}
+          </StatusPill>
+        ),
+      },
+      {
+        accessorKey: "displayOrder",
+        header: "排序",
+        cell: ({ row }) => (
+          <span className="tabular-nums text-slate-600">{row.original.displayOrder}</span>
+        ),
+      },
+      {
+        id: "actions",
+        header: "操作",
+        enableSorting: false,
+        meta: { pin: "right" },
+        cell: ({ row }) => (
+          <Button type="button" variant="outline" size="sm" onClick={() => openEdit(row.original)}>
+            编辑
+          </Button>
+        ),
+      },
+    ],
+    []
+  );
 
   return (
     <div className="space-y-4">
@@ -182,7 +312,8 @@ export function IpTaxonomyPanel({
               void refreshTaxonomy(nextLocale);
             }}
           >
-            <SelectTrigger className="h-9 w-full" aria-label="词库语言">
+            <SelectTrigger className="h-9 w-[136px]" aria-label="词库语言">
+              <IconLanguage className="size-3.5 text-slate-400" />
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -198,196 +329,253 @@ export function IpTaxonomyPanel({
             size="sm"
             onClick={() => void refreshTaxonomy()}
             disabled={loading}
+            aria-label="刷新词库"
           >
             <IconRefresh className={cn("size-3.5", loading && "animate-spin")} />
+          </Button>
+          <Button type="button" size="sm" onClick={openCreate}>
+            <IconPlus className="size-4" />
+            新增词条
           </Button>
         </div>
       </PageHeader>
 
       {error ? <ErrorBanner message={error} /> : null}
 
-      <section className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_420px]">
-        <div className="rounded-xl border border-slate-200 bg-white shadow-[0_1px_2px_rgba(15,23,42,0.04)]">
-          <div className="flex items-center gap-2 border-b border-slate-200 px-4 py-3">
-            <IconTags className="size-4 text-slate-500" />
-            <h3 className="text-sm font-semibold text-slate-950">词条列表</h3>
-          </div>
-          <div className="grid gap-0 lg:grid-cols-2">
-            <TaxonomyList title="题材" terms={genres} loading={loading} onEdit={editTerm} />
-            <TaxonomyList title="标签" terms={tags} loading={loading} onEdit={editTerm} />
-          </div>
-        </div>
+      <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <Metric label="题材" value={metrics.genre} />
+        <Metric label="标签" value={metrics.tag} />
+        <Metric label="启用" value={metrics.active} />
+        <Metric
+          label="缺翻译"
+          value={metrics.incomplete}
+          tone={metrics.incomplete > 0 ? "risk" : "default"}
+        />
+      </section>
 
-        <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-[0_1px_2px_rgba(15,23,42,0.04)]">
-          <div className="flex items-start justify-between gap-3">
-            <div>
-              <h3 className="text-sm font-semibold text-slate-950">
-                {editing ? "编辑词条" : "新增词条"}
-              </h3>
-              <p className="mt-1 text-[12px] leading-5 text-slate-500">
-                code 留空时后端自动生成；上线后不要随意改动已有 code。
-              </p>
-            </div>
-            {editing ? (
-              <Button
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+        <div className="relative w-full sm:max-w-xs">
+          <IconSearch className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-slate-400" />
+          <Input
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            placeholder="搜索词条名称或 code"
+            className="h-9 pl-8"
+            aria-label="搜索词条"
+          />
+        </div>
+        <div className="flex items-center gap-2">
+          <div className="inline-flex rounded-lg border border-slate-200 bg-white p-0.5">
+            {TYPE_TABS.map((tab) => (
+              <button
+                key={tab.value}
                 type="button"
-                variant="outline"
-                size="sm"
-                onClick={() => setForm(emptyTaxonomyForm(form.type))}
-                disabled={loading}
+                onClick={() => setTypeFilter(tab.value)}
+                className={cn(
+                  "rounded-md px-3 py-1 text-[13px] font-medium transition",
+                  typeFilter === tab.value
+                    ? "bg-slate-900 text-white"
+                    : "text-slate-600 hover:text-slate-900"
+                )}
               >
-                新增
-              </Button>
-            ) : null}
+                {tab.label}
+              </button>
+            ))}
           </div>
-          <div className="mt-3 grid gap-2">
+          <Select
+            value={statusFilter}
+            onValueChange={(value) => setStatusFilter(value as StatusFilter)}
+          >
+            <SelectTrigger className="h-9 w-[116px]" aria-label="状态筛选">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">全部状态</SelectItem>
+              <SelectItem value="active">启用</SelectItem>
+              <SelectItem value="hidden">隐藏</SelectItem>
+              <SelectItem value="archived">归档</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+      </div>
+
+      <DataTable
+        columns={columns}
+        data={filtered}
+        loading={loading}
+        minWidth={760}
+        pageSize={20}
+        emptyLabel={
+          query || typeFilter !== "all" || statusFilter !== "all" ? "没有匹配的词条" : "暂无词条"
+        }
+      />
+
+      <Sheet
+        open={sheetOpen}
+        onOpenChange={(next) => {
+          if (loading) return;
+          setSheetOpen(next);
+        }}
+      >
+        <SheetContent side="right" className="w-full gap-0 p-0 sm:max-w-md">
+          <SheetHeader className="border-b border-slate-200 px-5 py-4">
+            <SheetTitle>{editing ? "编辑词条" : "新增词条"}</SheetTitle>
+            <SheetDescription>
+              code 留空时后端自动生成；上线后不要随意改动已有 code。至少填写一种语言的名称。
+            </SheetDescription>
+          </SheetHeader>
+
+          <div className="min-h-0 flex-1 space-y-3 overflow-y-auto px-5 py-5">
             <div className="grid gap-2 sm:grid-cols-2">
-              <Select
-                value={form.type}
-                onValueChange={(value) =>
-                  setForm((prev) => ({ ...prev, type: value as "genre" | "tag" }))
-                }
-              >
-                <SelectTrigger className="h-9 w-full">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="genre">题材</SelectItem>
-                  <SelectItem value="tag">标签</SelectItem>
-                </SelectContent>
-              </Select>
-              <Select
-                value={form.status}
-                onValueChange={(value) =>
-                  setForm((prev) => ({
-                    ...prev,
-                    status: value as "active" | "hidden" | "archived",
-                  }))
-                }
-              >
-                <SelectTrigger className="h-9 w-full">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="active">启用</SelectItem>
-                  <SelectItem value="hidden">隐藏</SelectItem>
-                  <SelectItem value="archived">归档</SelectItem>
-                </SelectContent>
-              </Select>
+              <Field label="类型">
+                <Select
+                  value={form.type}
+                  onValueChange={(value) =>
+                    setForm((prev) => ({ ...prev, type: value as "genre" | "tag" }))
+                  }
+                  disabled={editing}
+                >
+                  <SelectTrigger className="h-9 w-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="genre">题材</SelectItem>
+                    <SelectItem value="tag">标签</SelectItem>
+                  </SelectContent>
+                </Select>
+              </Field>
+              <Field label="状态">
+                <Select
+                  value={form.status}
+                  onValueChange={(value) =>
+                    setForm((prev) => ({
+                      ...prev,
+                      status: value as "active" | "hidden" | "archived",
+                    }))
+                  }
+                >
+                  <SelectTrigger className="h-9 w-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="active">启用</SelectItem>
+                    <SelectItem value="hidden">隐藏</SelectItem>
+                    <SelectItem value="archived">归档</SelectItem>
+                  </SelectContent>
+                </Select>
+              </Field>
             </div>
             <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_110px]">
-              <Input
-                value={form.code}
-                onChange={(event) => setForm((prev) => ({ ...prev, code: event.target.value }))}
-                placeholder="code，可留空自动生成"
-                disabled={editing}
-                className="h-9"
-              />
-              <Input
-                value={form.displayOrder}
-                onChange={(event) =>
-                  setForm((prev) => ({ ...prev, displayOrder: event.target.value }))
-                }
-                placeholder="排序"
-                className="h-9"
-              />
+              <Field label="code">
+                <Input
+                  value={form.code}
+                  onChange={(event) => setForm((prev) => ({ ...prev, code: event.target.value }))}
+                  placeholder="留空自动生成"
+                  disabled={editing}
+                  className="h-9"
+                />
+              </Field>
+              <Field label="排序">
+                <Input
+                  value={form.displayOrder}
+                  onChange={(event) =>
+                    setForm((prev) => ({ ...prev, displayOrder: event.target.value }))
+                  }
+                  placeholder="排序"
+                  className="h-9"
+                  inputMode="numeric"
+                />
+              </Field>
             </div>
-            <Input
-              value={form.zhCN}
-              onChange={(event) => setForm((prev) => ({ ...prev, zhCN: event.target.value }))}
-              placeholder="简体中文名称"
-              className="h-9"
-            />
-            <Input
-              value={form.enUS}
-              onChange={(event) => setForm((prev) => ({ ...prev, enUS: event.target.value }))}
-              placeholder="English label"
-              className="h-9"
-            />
-            <Input
-              value={form.zhHK}
-              onChange={(event) => setForm((prev) => ({ ...prev, zhHK: event.target.value }))}
-              placeholder="繁體中文名稱"
-              className="h-9"
-            />
-            <Textarea
-              value={form.description}
-              onChange={(event) =>
-                setForm((prev) => ({ ...prev, description: event.target.value }))
-              }
-              className="min-h-20"
-              placeholder="内部说明或运营口径"
-            />
+            <Field label="简体中文名称">
+              <Input
+                value={form.zhCN}
+                onChange={(event) => setForm((prev) => ({ ...prev, zhCN: event.target.value }))}
+                placeholder="简体中文名称"
+                className="h-9"
+              />
+            </Field>
+            <Field label="English label">
+              <Input
+                value={form.enUS}
+                onChange={(event) => setForm((prev) => ({ ...prev, enUS: event.target.value }))}
+                placeholder="English label"
+                className="h-9"
+              />
+            </Field>
+            <Field label="繁體中文名稱">
+              <Input
+                value={form.zhHK}
+                onChange={(event) => setForm((prev) => ({ ...prev, zhHK: event.target.value }))}
+                placeholder="繁體中文名稱"
+                className="h-9"
+              />
+            </Field>
+            <Field label="内部说明">
+              <Textarea
+                value={form.description}
+                onChange={(event) =>
+                  setForm((prev) => ({ ...prev, description: event.target.value }))
+                }
+                className="min-h-20"
+                placeholder="内部说明或运营口径（可选）"
+              />
+            </Field>
           </div>
-          <div className="mt-3 flex justify-end">
-            <Button type="button" size="sm" onClick={submit} disabled={!canSubmit}>
+
+          <SheetFooter className="flex-row justify-end gap-2 border-t border-slate-200 px-5 py-4">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setSheetOpen(false)}
+              disabled={loading}
+            >
+              取消
+            </Button>
+            <Button type="button" onClick={() => void submit()} disabled={!canSubmit}>
               {loading ? (editing ? "保存中" : "创建中") : editing ? "保存词条" : "创建词条"}
             </Button>
-          </div>
-        </div>
-      </section>
+          </SheetFooter>
+        </SheetContent>
+      </Sheet>
     </div>
   );
 }
 
-function TaxonomyList({
-  title,
-  terms,
-  loading,
-  onEdit,
-}: {
-  title: string;
-  terms: IpTaxonomyTerm[];
-  loading: boolean;
-  onEdit: (term: IpTaxonomyTerm) => void;
-}) {
-  const columns: ColumnDef<IpTaxonomyTerm, unknown>[] = [
-    {
-      accessorKey: "label",
-      header: "词条",
-      cell: ({ row }) => {
-        const term = row.original;
-        return (
-          <div className="min-w-0">
-            <div className="flex flex-wrap items-center gap-2">
-              <p className="truncate text-sm font-medium text-slate-950">{term.label}</p>
-              <StatusPill tone={term.status === "active" ? "success" : "muted"}>
-                {taxonomyStatusLabel(term.status)}
-              </StatusPill>
-            </div>
-            <p className="mt-0.5 truncate text-[12px] text-slate-500">
-              {term.code} · {term.assignmentCount} IP · 排序 {term.displayOrder}
-            </p>
-          </div>
-        );
-      },
-    },
-    {
-      id: "actions",
-      header: "操作",
-      enableSorting: false,
-      meta: { pin: "right" },
-      cell: ({ row }) => (
-        <Button type="button" variant="outline" size="sm" onClick={() => onEdit(row.original)}>
-          编辑
-        </Button>
-      ),
-    },
-  ];
-
+function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <div className="border-b border-slate-200 p-4 lg:border-b-0 lg:border-r last:lg:border-r-0">
-      <h4 className="text-[12px] font-semibold uppercase tracking-[0.08em] text-slate-500">
-        {title}
-      </h4>
-      <DataTable
-        columns={columns}
-        data={terms}
-        loading={loading}
-        emptyLabel="暂无词条"
-        className="mt-2"
-      />
+    <label className="block space-y-1.5">
+      <span className="text-[12px] font-medium text-slate-600">{label}</span>
+      {children}
+    </label>
+  );
+}
+
+function LocaleChips({ term }: { term: IpTaxonomyTerm }) {
+  return (
+    <div className="flex gap-1">
+      {LOCALES.map((l) => {
+        const has = term.localizations.some((item) => item.locale === l.code && item.label.trim());
+        return (
+          <span
+            key={l.code}
+            title={has ? l.label : `${l.label} · 缺翻译`}
+            className={cn(
+              "inline-flex h-5 min-w-[26px] items-center justify-center rounded px-1 text-[11px] font-medium",
+              has ? "bg-slate-100 text-slate-700" : "bg-slate-50 text-slate-300 line-through"
+            )}
+          >
+            {l.short}
+          </span>
+        );
+      })}
     </div>
+  );
+}
+
+function isComplete(term: IpTaxonomyTerm): boolean {
+  return LOCALES.every((l) =>
+    term.localizations.some((item) => item.locale === l.code && item.label.trim())
   );
 }
 
