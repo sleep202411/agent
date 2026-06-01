@@ -30,6 +30,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { adminUiApiPath } from "@/lib/admin-api";
 import { cn } from "@/lib/utils";
 import { PageHeader } from "../page-header";
 import type {
@@ -586,7 +587,7 @@ export function RefundQuotePanel({ quote }: { quote: BillingRefundQuoteData | nu
 // ---------------------------------------------------------------------------
 
 export async function requestEnvelope<T>(url: string): Promise<T> {
-  const response = await fetch(url, { cache: "no-store" });
+  const response = await fetch(adminUiApiPath(url), { cache: "no-store" });
   const payload = (await response.json().catch(() => null)) as {
     code?: number;
     msg?: string;
@@ -604,7 +605,7 @@ export async function mutateEnvelope<T = unknown>(
   body: Record<string, unknown>,
   method = "POST"
 ): Promise<T> {
-  const response = await fetch(url, {
+  const response = await fetch(adminUiApiPath(url), {
     method,
     headers: { "content-type": "application/json" },
     body: JSON.stringify(body),

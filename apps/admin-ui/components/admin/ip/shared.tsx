@@ -1,6 +1,7 @@
 "use client";
 
 import { IconAlertTriangle } from "@tabler/icons-react";
+import { adminUiApiPath } from "@/lib/admin-api";
 import { cn } from "@/lib/utils";
 import type { AdminIpDetail, IpStatus } from "./types";
 
@@ -93,7 +94,7 @@ export function ErrorBanner({ message }: { message: string }) {
 }
 
 export async function requestEnvelope<T>(url: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(url, { cache: "no-store", ...init });
+  const response = await fetch(adminUiApiPath(url), { cache: "no-store", ...init });
   const payload = (await response.json().catch(() => null)) as {
     code?: number;
     msg?: string;

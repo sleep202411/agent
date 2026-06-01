@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { IconAlertTriangle, IconCircleCheck, IconRefresh, IconSearch } from "@tabler/icons-react";
 import { PageHeader } from "@/components/admin/page-header";
+import { adminUiApiPath } from "@/lib/admin-api";
 import { Button } from "@/components/ui/button";
 import { DataTable, type ColumnDef } from "@/components/ui/data-table";
 import { Input } from "@/components/ui/input";
@@ -275,7 +276,7 @@ function Metric({ label, value }: { label: string; value: number }) {
 }
 
 async function requestEnvelope<T>(url: string): Promise<T> {
-  const response = await fetch(url, { cache: "no-store" });
+  const response = await fetch(adminUiApiPath(url), { cache: "no-store" });
   const payload = (await response.json().catch(() => null)) as {
     code?: number;
     msg?: string;

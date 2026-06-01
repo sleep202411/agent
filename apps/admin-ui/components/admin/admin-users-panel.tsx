@@ -32,6 +32,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { adminUiApiPath } from "@/lib/admin-api";
 import { cn } from "@/lib/utils";
 
 // Sentinel for the shadcn Select "全部" option, since SelectItem value cannot be
@@ -1087,7 +1088,7 @@ const inputClassName =
   "h-9 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-slate-950 focus:ring-2 focus:ring-slate-950/10";
 
 async function requestEnvelope<T>(url: string, init: RequestInit = {}): Promise<T> {
-  const response = await fetch(url, {
+  const response = await fetch(adminUiApiPath(url), {
     ...init,
     headers: {
       ...(init.body ? { "content-type": "application/json" } : {}),
