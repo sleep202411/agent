@@ -1,16 +1,20 @@
 "use client";
 
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import Link from "next/link";
-import { IconClipboardCheck, IconExternalLink, IconFlag } from "@tabler/icons-react";
+import { IconClipboardCheck, IconExternalLink, IconFlag, IconRefresh } from "@tabler/icons-react";
+import { Button } from "@/components/ui/button";
 import { DataTable, type ColumnDef } from "@/components/ui/data-table";
+import { cn } from "@/lib/utils";
 import {
   ErrorBanner,
   formatDate,
   PageHeader,
   reasonLabel,
+  requestEnvelope,
   statusLabel,
   StatusPill,
+  toErrorMessage,
   visibilityLabel,
 } from "./shared";
 import type { AdminIpOverviewData, ReportRow, ReviewQueueRow } from "./types";
@@ -20,14 +24,29 @@ export function IpReviewsPanel({
   siteLabel,
   databaseLabel,
   overview,
-  error,
+  error: initialError,
 }: {
   siteLabel: string;
   databaseLabel: string;
   overview: AdminIpOverviewData | null;
   error: string | null;
 }) {
-  const rows = (overview ?? emptyIpOverview).reviewQueue;
+  const [data, setData] = useState(overview ?? emptyIpOverview);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(initialError);
+
+  async function refresh() {
+    setLoading(true);
+    setError(null);
+    try {
+      setData(await requestEnvelope<AdminIpOverviewData>("/api/admin/ip-commerce/overview"));
+    } catch (err) {
+      setError(toErrorMessage(err));
+    } finally {
+      setLoading(false);
+    }
+  }
+
   return (
     <GovernanceTable
       siteLabel={siteLabel}
@@ -36,8 +55,10 @@ export function IpReviewsPanel({
       description="所有 IP 档案发布审批集中在这里扫描，具体审核动作在 IP 详情抽屉内完成。"
       icon={<IconClipboardCheck className="size-4 text-slate-500" />}
       error={error}
+      loading={loading}
+      onRefresh={refresh}
       kind="review"
-      rows={rows}
+      rows={data.reviewQueue}
     />
   );
 }
@@ -46,14 +67,29 @@ export function IpReportsPanel({
   siteLabel,
   databaseLabel,
   overview,
-  error,
+  error: initialError,
 }: {
   siteLabel: string;
   databaseLabel: string;
   overview: AdminIpOverviewData | null;
   error: string | null;
 }) {
-  const rows = (overview ?? emptyIpOverview).reports;
+  const [data, setData] = useState(overview ?? emptyIpOverview);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(initialError);
+
+  async function refresh() {
+    setLoading(true);
+    setError(null);
+    try {
+      setData(await requestEnvelope<AdminIpOverviewData>("/api/admin/ip-commerce/overview"));
+    } catch (err) {
+      setError(toErrorMessage(err));
+    } finally {
+      setLoading(false);
+    }
+  }
+
   return (
     <GovernanceTable
       siteLabel={siteLabel}
@@ -62,8 +98,10 @@ export function IpReportsPanel({
       description="开放举报按风险和时间排序展示。处置动作依附 IP 详情，确保发布状态、举报和审计同处一条链路。"
       icon={<IconFlag className="size-4 text-slate-500" />}
       error={error}
+      loading={loading}
+      onRefresh={refresh}
       kind="report"
-      rows={rows}
+      rows={data.reports}
     />
   );
 }
@@ -75,6 +113,8 @@ function GovernanceTable({
   description,
   icon,
   error,
+  loading,
+  onRefresh,
   kind,
   rows,
 }: {
@@ -84,6 +124,8 @@ function GovernanceTable({
   description: string;
   icon: React.ReactNode;
   error: string | null;
+  loading: boolean;
+  onRefresh: () => void | Promise<void>;
   kind: "review" | "report";
   rows: ReviewQueueRow[] | ReportRow[];
 }) {
@@ -225,7 +267,18 @@ function GovernanceTable({
         eyebrow={`${siteLabel} · ${databaseLabel}`}
         title={title}
         description={description}
-      />
+      >
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          onClick={() => void onRefresh()}
+          disabled={loading}
+        >
+          <IconRefresh className={cn("size-3.5", loading && "animate-spin")} />
+          刷新
+        </Button>
+      </PageHeader>
       {error ? <ErrorBanner message={error} /> : null}
 
       <section className="rounded-xl border border-slate-200 bg-white shadow-[0_1px_2px_rgba(15,23,42,0.04)]">
@@ -248,6 +301,7 @@ function GovernanceTable({
           <DataTable
             columns={reviewColumns}
             data={rows as ReviewQueueRow[]}
+            loading={loading}
             minWidth={980}
             pageSize={20}
             emptyLabel="暂无待审核内容"
@@ -257,6 +311,7 @@ function GovernanceTable({
           <DataTable
             columns={reportColumns}
             data={rows as ReportRow[]}
+            loading={loading}
             minWidth={980}
             pageSize={20}
             emptyLabel="暂无举报"

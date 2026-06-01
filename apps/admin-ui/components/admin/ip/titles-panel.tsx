@@ -76,6 +76,7 @@ export function IpTitlesPanel({
   const [locale, setLocale] = useState("");
   const [query, setQuery] = useState("");
   const [loading, setLoading] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(initialError);
   const [selectedIp, setSelectedIp] = useState<AdminIpDetail | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
@@ -83,13 +84,16 @@ export function IpTitlesPanel({
   const terms = taxonomy ?? emptyIpTaxonomy;
   const genreTerms = terms.items.filter((term) => term.type === "genre");
 
-  function queryString() {
+  function queryString(extra?: Record<string, string>) {
     const params = new URLSearchParams();
     if (status) params.set("status", status);
     if (visibility) params.set("listingVisibility", visibility);
     if (genreCode) params.set("genreCodes", genreCode);
     if (locale) params.set("locale", locale);
     if (query.trim()) params.set("q", query.trim());
+    if (extra) {
+      for (const [key, value] of Object.entries(extra)) params.set(key, value);
+    }
     const text = params.toString();
     return text ? `?${text}` : "";
   }
@@ -110,6 +114,25 @@ export function IpTitlesPanel({
       setError(toErrorMessage(err));
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function loadMoreIps() {
+    if (!ips.nextCursor || loadingMore) return;
+    setLoadingMore(true);
+    setError(null);
+    try {
+      const next = await requestEnvelope<AdminIpsData>(
+        `/api/admin/ip-commerce/ips${queryString({ cursor: ips.nextCursor })}`
+      );
+      setIps((current) => ({
+        items: [...current.items, ...next.items],
+        nextCursor: next.nextCursor,
+      }));
+    } catch (err) {
+      setError(toErrorMessage(err));
+    } finally {
+      setLoadingMore(false);
     }
   }
 
@@ -432,6 +455,18 @@ export function IpTitlesPanel({
           emptyLabel="暂无 IP 内容"
           className="rounded-none border-0"
         />
+        {ips.nextCursor ? (
+          <div className="flex justify-center border-t border-slate-200 px-4 py-3">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => void loadMoreIps()}
+              disabled={loadingMore}
+            >
+              {loadingMore ? "加载中…" : "加载更多"}
+            </Button>
+          </div>
+        ) : null}
       </section>
 
       <IpDetailDrawer

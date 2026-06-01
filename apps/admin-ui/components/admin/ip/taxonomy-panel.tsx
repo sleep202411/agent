@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { IconRefresh, IconTags } from "@tabler/icons-react";
 import { Button } from "@/components/ui/button";
+import { DataTable, type ColumnDef } from "@/components/ui/data-table";
 import { Input } from "@/components/ui/input";
 import {
   Select,
@@ -67,20 +68,20 @@ export function IpTaxonomyPanel({
   const editing = Boolean(form.id);
   const canSubmit = Boolean(form.zhCN.trim() || form.enUS.trim() || form.zhHK.trim()) && !loading;
 
-  function localeQueryString() {
+  function localeQueryString(nextLocale = locale) {
     const params = new URLSearchParams();
-    if (locale) params.set("locale", locale);
+    if (nextLocale) params.set("locale", nextLocale);
     const text = params.toString();
     return text ? `?${text}` : "";
   }
 
-  async function refreshTaxonomy() {
+  async function refreshTaxonomy(nextLocale = locale) {
     setLoading(true);
     setError(null);
     try {
       setTaxonomy(
         await requestEnvelope<AdminIpTaxonomyData>(
-          `/api/admin/ip-commerce/taxonomy${localeQueryString()}`
+          `/api/admin/ip-commerce/taxonomy${localeQueryString(nextLocale)}`
         )
       );
     } catch (err) {
@@ -175,7 +176,11 @@ export function IpTaxonomyPanel({
         <div className="flex items-center gap-2">
           <Select
             value={locale || LOCALE_ALL}
-            onValueChange={(value) => setLocale(value === LOCALE_ALL ? "" : value)}
+            onValueChange={(value) => {
+              const nextLocale = value === LOCALE_ALL ? "" : value;
+              setLocale(nextLocale);
+              void refreshTaxonomy(nextLocale);
+            }}
           >
             <SelectTrigger className="h-9 w-full" aria-label="词库语言">
               <SelectValue />
@@ -208,8 +213,8 @@ export function IpTaxonomyPanel({
             <h3 className="text-sm font-semibold text-slate-950">词条列表</h3>
           </div>
           <div className="grid gap-0 lg:grid-cols-2">
-            <TaxonomyList title="题材" terms={genres} onEdit={editTerm} />
-            <TaxonomyList title="标签" terms={tags} onEdit={editTerm} />
+            <TaxonomyList title="题材" terms={genres} loading={loading} onEdit={editTerm} />
+            <TaxonomyList title="标签" terms={tags} loading={loading} onEdit={editTerm} />
           </div>
         </div>
 
@@ -316,7 +321,7 @@ export function IpTaxonomyPanel({
           </div>
           <div className="mt-3 flex justify-end">
             <Button type="button" size="sm" onClick={submit} disabled={!canSubmit}>
-              {editing ? "保存词条" : "创建词条"}
+              {loading ? (editing ? "保存中" : "创建中") : editing ? "保存词条" : "创建词条"}
             </Button>
           </div>
         </div>
@@ -328,42 +333,60 @@ export function IpTaxonomyPanel({
 function TaxonomyList({
   title,
   terms,
+  loading,
   onEdit,
 }: {
   title: string;
   terms: IpTaxonomyTerm[];
+  loading: boolean;
   onEdit: (term: IpTaxonomyTerm) => void;
 }) {
+  const columns: ColumnDef<IpTaxonomyTerm, unknown>[] = [
+    {
+      accessorKey: "label",
+      header: "词条",
+      cell: ({ row }) => {
+        const term = row.original;
+        return (
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-2">
+              <p className="truncate text-sm font-medium text-slate-950">{term.label}</p>
+              <StatusPill tone={term.status === "active" ? "success" : "muted"}>
+                {taxonomyStatusLabel(term.status)}
+              </StatusPill>
+            </div>
+            <p className="mt-0.5 truncate text-[12px] text-slate-500">
+              {term.code} · {term.assignmentCount} IP · 排序 {term.displayOrder}
+            </p>
+          </div>
+        );
+      },
+    },
+    {
+      id: "actions",
+      header: "操作",
+      enableSorting: false,
+      meta: { pin: "right" },
+      cell: ({ row }) => (
+        <Button type="button" variant="outline" size="sm" onClick={() => onEdit(row.original)}>
+          编辑
+        </Button>
+      ),
+    },
+  ];
+
   return (
     <div className="border-b border-slate-200 p-4 lg:border-b-0 lg:border-r last:lg:border-r-0">
       <h4 className="text-[12px] font-semibold uppercase tracking-[0.08em] text-slate-500">
         {title}
       </h4>
-      <div className="mt-2 divide-y divide-slate-100">
-        {terms.map((term) => (
-          <div key={term.id} className="flex items-center justify-between gap-3 py-2">
-            <div className="min-w-0">
-              <div className="flex flex-wrap items-center gap-2">
-                <p className="truncate text-sm font-medium text-slate-950">{term.label}</p>
-                <StatusPill tone={term.status === "active" ? "success" : "muted"}>
-                  {taxonomyStatusLabel(term.status)}
-                </StatusPill>
-              </div>
-              <p className="mt-0.5 truncate text-[12px] text-slate-500">
-                {term.code} · {term.assignmentCount} IP · 排序 {term.displayOrder}
-              </p>
-            </div>
-            <button
-              type="button"
-              onClick={() => onEdit(term)}
-              className="shrink-0 rounded-lg border border-slate-200 px-2.5 py-1 text-[12px] font-medium text-slate-700 hover:bg-slate-50"
-            >
-              编辑
-            </button>
-          </div>
-        ))}
-        {!terms.length ? <p className="py-6 text-sm text-slate-500">暂无词条</p> : null}
-      </div>
+      <DataTable
+        columns={columns}
+        data={terms}
+        loading={loading}
+        emptyLabel="暂无词条"
+        className="mt-2"
+      />
     </div>
   );
 }

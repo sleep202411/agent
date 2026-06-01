@@ -3,8 +3,10 @@
 import { useMemo, useState } from "react";
 import { IconKey, IconRefresh, IconShoppingBag, IconUserPlus } from "@tabler/icons-react";
 import { Button } from "@/components/ui/button";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { DataTable, type ColumnDef } from "@/components/ui/data-table";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import {
   Select,
   SelectContent,
@@ -31,6 +33,7 @@ import type {
   AdminIpEntitlementsData,
   AdminIpOrdersData,
   AdminIpsData,
+  IpEntitlementRow,
   IpPurchaseOrderRow,
 } from "./types";
 import { emptyIpEntitlements, emptyIpOrders, emptyIps } from "./types";
@@ -52,24 +55,51 @@ export function IpOrdersPanel({
   const [query, setQuery] = useState("");
   const [locale, setLocale] = useState("");
   const [loading, setLoading] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(initialError);
+
+  function orderParams(extra?: Record<string, string>) {
+    const params = new URLSearchParams({ limit: "30" });
+    if (query.trim()) params.set("q", query.trim());
+    if (locale) params.set("locale", locale);
+    if (extra) {
+      for (const [key, value] of Object.entries(extra)) params.set(key, value);
+    }
+    return params;
+  }
 
   async function refreshOrders() {
     setLoading(true);
     setError(null);
     try {
-      const params = new URLSearchParams({ limit: "30" });
-      if (query.trim()) params.set("q", query.trim());
-      if (locale) params.set("locale", locale);
       setOrders(
         await requestEnvelope<AdminIpOrdersData>(
-          `/api/admin/ip-commerce/orders?${params.toString()}`
+          `/api/admin/ip-commerce/orders?${orderParams().toString()}`
         )
       );
     } catch (err) {
       setError(toErrorMessage(err));
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function loadMoreOrders() {
+    if (!orders.nextCursor || loadingMore) return;
+    setLoadingMore(true);
+    setError(null);
+    try {
+      const next = await requestEnvelope<AdminIpOrdersData>(
+        `/api/admin/ip-commerce/orders?${orderParams({ cursor: orders.nextCursor }).toString()}`
+      );
+      setOrders((current) => ({
+        items: [...current.items, ...next.items],
+        nextCursor: next.nextCursor,
+      }));
+    } catch (err) {
+      setError(toErrorMessage(err));
+    } finally {
+      setLoadingMore(false);
     }
   }
 
@@ -176,6 +206,7 @@ export function IpOrdersPanel({
               value={query}
               onChange={(event) => setQuery(event.target.value)}
               placeholder="订单号、用户、IP"
+              aria-label="搜索订单"
               className="h-9"
             />
             <Select
@@ -213,6 +244,18 @@ export function IpOrdersPanel({
           emptyLabel="暂无订单流水"
           className="rounded-none border-0"
         />
+        {orders.nextCursor ? (
+          <div className="flex justify-center border-t border-slate-200 px-4 py-3">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => void loadMoreOrders()}
+              disabled={loadingMore}
+            >
+              {loadingMore ? "加载中…" : "加载更多"}
+            </Button>
+          </div>
+        ) : null}
       </section>
     </div>
   );
@@ -236,6 +279,7 @@ export function IpEntitlementsPanel({
   const [query, setQuery] = useState("");
   const [locale, setLocale] = useState("");
   const [loading, setLoading] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(initialError);
   const [userId, setUserId] = useState("");
   const [ipId, setIpId] = useState("");
@@ -250,22 +294,48 @@ export function IpEntitlementsPanel({
     !loading
   );
 
+  function entitlementParams(extra?: Record<string, string>) {
+    const params = new URLSearchParams({ limit: "30" });
+    if (query.trim()) params.set("q", query.trim());
+    if (locale) params.set("locale", locale);
+    if (extra) {
+      for (const [key, value] of Object.entries(extra)) params.set(key, value);
+    }
+    return params;
+  }
+
   async function refreshEntitlements() {
     setLoading(true);
     setError(null);
     try {
-      const params = new URLSearchParams({ limit: "30" });
-      if (query.trim()) params.set("q", query.trim());
-      if (locale) params.set("locale", locale);
       setEntitlements(
         await requestEnvelope<AdminIpEntitlementsData>(
-          `/api/admin/ip-commerce/entitlements?${params.toString()}`
+          `/api/admin/ip-commerce/entitlements?${entitlementParams().toString()}`
         )
       );
     } catch (err) {
       setError(toErrorMessage(err));
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function loadMoreEntitlements() {
+    if (!entitlements.nextCursor || loadingMore) return;
+    setLoadingMore(true);
+    setError(null);
+    try {
+      const next = await requestEnvelope<AdminIpEntitlementsData>(
+        `/api/admin/ip-commerce/entitlements?${entitlementParams({ cursor: entitlements.nextCursor }).toString()}`
+      );
+      setEntitlements((current) => ({
+        items: [...current.items, ...next.items],
+        nextCursor: next.nextCursor,
+      }));
+    } catch (err) {
+      setError(toErrorMessage(err));
+    } finally {
+      setLoadingMore(false);
     }
   }
 
@@ -313,6 +383,83 @@ export function IpEntitlementsPanel({
     }
   }
 
+  const columns = useMemo<ColumnDef<IpEntitlementRow, unknown>[]>(
+    () => [
+      {
+        id: "content",
+        header: "内容",
+        enableSorting: false,
+        cell: ({ row }) => {
+          const entitlement = row.original;
+          return (
+            <>
+              <p className="max-w-[260px] truncate text-sm font-medium text-slate-950">
+                {entitlement.episode?.title ?? entitlement.ip?.title ?? entitlement.ipId}
+              </p>
+              <p className="mt-0.5 max-w-[260px] truncate text-[11px] text-slate-500">
+                {entitlement.userId} · {targetTypeLabel(entitlement.targetType)} ·{" "}
+                {entitlement.sourceOrderNo ?? sourceTypeLabel(entitlement.sourceType)}
+              </p>
+            </>
+          );
+        },
+      },
+      {
+        accessorKey: "startsAt",
+        header: "有效期",
+        cell: ({ row }) => {
+          const entitlement = row.original;
+          return (
+            <p className="text-[12px] text-slate-700">
+              {formatDate(entitlement.startsAt)}
+              {entitlement.endsAt ? ` - ${formatDate(entitlement.endsAt)}` : " - 长期"}
+            </p>
+          );
+        },
+      },
+      {
+        accessorKey: "status",
+        header: "状态",
+        cell: ({ row }) => {
+          const entitlement = row.original;
+          return (
+            <StatusPill tone={entitlement.status === "active" ? "success" : "muted"}>
+              {entitlementStatusLabel(entitlement.status)}
+            </StatusPill>
+          );
+        },
+      },
+      {
+        id: "actions",
+        header: "操作",
+        enableSorting: false,
+        meta: { pin: "right" },
+        cell: ({ row }) => {
+          const entitlement = row.original;
+          if (entitlement.status !== "active") return null;
+          return (
+            <ConfirmDialog
+              destructive
+              title="确认吊销该权益？"
+              description="吊销后该用户将失去对应内容的访问权限。"
+              confirmLabel="确认吊销"
+              onConfirm={() => revokeEntitlement(entitlement.id)}
+              trigger={
+                <Button variant="destructive" size="sm">
+                  吊销
+                </Button>
+              }
+            />
+          );
+        },
+      },
+    ],
+    // revokeEntitlement is a render-stable closure used only in an onConfirm; the
+    // column defs never need to rebuild for it (matches the other action tables).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    []
+  );
+
   return (
     <div className="space-y-4">
       <PageHeader
@@ -334,6 +481,7 @@ export function IpEntitlementsPanel({
                 value={query}
                 onChange={(event) => setQuery(event.target.value)}
                 placeholder="用户、IP、订单"
+                aria-label="搜索权益"
                 className="h-9"
               />
               <Select
@@ -362,46 +510,27 @@ export function IpEntitlementsPanel({
               </Button>
             </div>
           </div>
-          <div className="divide-y divide-slate-100">
-            {entitlements.items.map((entitlement) => (
-              <div
-                key={entitlement.id}
-                className="flex items-start justify-between gap-3 px-4 py-3"
+          <DataTable
+            columns={columns}
+            data={entitlements.items}
+            loading={loading}
+            minWidth={640}
+            pageSize={20}
+            emptyLabel="暂无权益记录"
+            className="rounded-none border-0"
+          />
+          {entitlements.nextCursor ? (
+            <div className="flex justify-center border-t border-slate-200 px-4 py-3">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => void loadMoreEntitlements()}
+                disabled={loadingMore}
               >
-                <div className="min-w-0">
-                  <p className="truncate text-sm font-medium text-slate-950">
-                    {entitlement.episode?.title ?? entitlement.ip?.title ?? entitlement.ipId}
-                  </p>
-                  <p className="mt-0.5 truncate text-[12px] text-slate-500">
-                    {entitlement.userId} · {targetTypeLabel(entitlement.targetType)} ·{" "}
-                    {entitlement.sourceOrderNo ?? sourceTypeLabel(entitlement.sourceType)}
-                  </p>
-                  <p className="mt-1 text-[11px] text-slate-400">
-                    {formatDate(entitlement.startsAt)}
-                    {entitlement.endsAt ? ` - ${formatDate(entitlement.endsAt)}` : " - 长期"}
-                  </p>
-                </div>
-                <div className="shrink-0 text-right">
-                  <StatusPill tone={entitlement.status === "active" ? "success" : "muted"}>
-                    {entitlementStatusLabel(entitlement.status)}
-                  </StatusPill>
-                  {entitlement.status === "active" ? (
-                    <button
-                      type="button"
-                      onClick={() => void revokeEntitlement(entitlement.id)}
-                      disabled={loading}
-                      className="mt-2 block rounded-md border border-red-200 px-2 py-1 text-[11px] font-medium text-red-700 hover:bg-red-50 disabled:opacity-50"
-                    >
-                      撤销
-                    </button>
-                  ) : null}
-                </div>
-              </div>
-            ))}
-            {!entitlements.items.length ? (
-              <div className="px-4 py-10 text-center text-sm text-slate-500">暂无权益记录</div>
-            ) : null}
-          </div>
+                {loadingMore ? "加载中…" : "加载更多"}
+              </Button>
+            </div>
+          ) : null}
         </div>
 
         <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-[0_1px_2px_rgba(15,23,42,0.04)]">
@@ -413,51 +542,80 @@ export function IpEntitlementsPanel({
             用于客服补偿、人工恢复和运营白名单。补发原因必须可审计。
           </p>
           <div className="mt-3 grid gap-2">
-            <Input
-              value={userId}
-              onChange={(event) => setUserId(event.target.value)}
-              placeholder="用户 ID"
-              className="h-9"
-            />
-            <Input
-              value={ipId}
-              onChange={(event) => setIpId(event.target.value)}
-              placeholder="IP ID"
-              list="admin-ip-id-list"
-              className="h-9"
-            />
-            <datalist id="admin-ip-id-list">
-              {ipList.items.map((ip) => (
-                <option key={ip.id} value={ip.id}>
-                  {ip.title}
-                </option>
-              ))}
-            </datalist>
-            <Select
-              value={targetType}
-              onValueChange={(value) => setTargetType(value as "ip" | "episode")}
-            >
-              <SelectTrigger className="h-9 w-full">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="ip">整部 IP</SelectItem>
-                <SelectItem value="episode">单集</SelectItem>
-              </SelectContent>
-            </Select>
-            <Input
-              value={episodeId}
-              onChange={(event) => setEpisodeId(event.target.value)}
-              placeholder="Episode ID（单集必填）"
-              disabled={targetType === "ip"}
-              className="h-9"
-            />
-            <Input
-              value={reason}
-              onChange={(event) => setReason(event.target.value)}
-              placeholder="补发原因"
-              className="h-9"
-            />
+            <div className="grid gap-1">
+              <Label htmlFor="grant-user-id" className="text-[12px] text-slate-600">
+                用户 ID
+              </Label>
+              <Input
+                id="grant-user-id"
+                value={userId}
+                onChange={(event) => setUserId(event.target.value)}
+                placeholder="用户 ID"
+                className="h-9"
+              />
+            </div>
+            <div className="grid gap-1">
+              <Label htmlFor="grant-ip-id" className="text-[12px] text-slate-600">
+                IP ID
+              </Label>
+              <Input
+                id="grant-ip-id"
+                value={ipId}
+                onChange={(event) => setIpId(event.target.value)}
+                placeholder="IP ID"
+                list="admin-ip-id-list"
+                className="h-9"
+              />
+              <datalist id="admin-ip-id-list">
+                {ipList.items.map((ip) => (
+                  <option key={ip.id} value={ip.id}>
+                    {ip.title}
+                  </option>
+                ))}
+              </datalist>
+            </div>
+            <div className="grid gap-1">
+              <Label htmlFor="grant-target-type" className="text-[12px] text-slate-600">
+                授权范围
+              </Label>
+              <Select
+                value={targetType}
+                onValueChange={(value) => setTargetType(value as "ip" | "episode")}
+              >
+                <SelectTrigger id="grant-target-type" className="h-9 w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="ip">整部 IP</SelectItem>
+                  <SelectItem value="episode">单集</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="grid gap-1">
+              <Label htmlFor="grant-episode-id" className="text-[12px] text-slate-600">
+                Episode ID
+              </Label>
+              <Input
+                id="grant-episode-id"
+                value={episodeId}
+                onChange={(event) => setEpisodeId(event.target.value)}
+                placeholder="Episode ID（单集必填）"
+                disabled={targetType === "ip"}
+                className="h-9"
+              />
+            </div>
+            <div className="grid gap-1">
+              <Label htmlFor="grant-reason" className="text-[12px] text-slate-600">
+                补发原因
+              </Label>
+              <Input
+                id="grant-reason"
+                value={reason}
+                onChange={(event) => setReason(event.target.value)}
+                placeholder="补发原因"
+                className="h-9"
+              />
+            </div>
           </div>
           <div className="mt-3 flex justify-end">
             <Button
