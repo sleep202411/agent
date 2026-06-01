@@ -36,7 +36,9 @@ const PUBLIC_PATTERNS: RegExp[] = [
   /^\/news(\/|$)/,
   /^\/invite(\/|$)/,
   /^\/ips(\/|$)/,
-  /^\/ip-commerce\/[^/]+(\/|$)/,
+  // Deprecated public URL. Kept public only so the redirect to `/ips`
+  // can run before auth gating.
+  /^\/ip-commerce(\/|$)/,
   // Legal pages.
   /^\/privacy-policy(\/|$)/,
   /^\/terms-of-service(\/|$)/,

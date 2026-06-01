@@ -1,4 +1,6 @@
-import { IpPublicDetail } from "./_components/ip-public-detail";
+import { headers } from "next/headers";
+import { redirect } from "next/navigation";
+import { defaultLocale, isValidLocale } from "@/src/i18n/config";
 
 interface PageProps {
   params: Promise<{ id: string }>;
@@ -6,5 +8,7 @@ interface PageProps {
 
 export default async function Page({ params }: PageProps) {
   const { id } = await params;
-  return <IpPublicDetail ipId={id} />;
+  const localeHeader = (await headers()).get("x-locale") ?? defaultLocale;
+  const locale = isValidLocale(localeHeader) ? localeHeader : defaultLocale;
+  redirect(`/${locale}/ips/${id}`);
 }

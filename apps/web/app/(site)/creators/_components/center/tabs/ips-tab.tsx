@@ -191,7 +191,7 @@ function IpCard({
   const title = String(project.name ?? "").trim() || "—";
   const description = String(project.description ?? "").trim();
   const href = localizePath(`/ips/${project.id}`, locale);
-  const editHref = localizePath(`/ips/${project.id}/edit`, locale);
+  const editHref = localizePath(`/ip-studio/${project.id}`, locale);
   return (
     <div className="group relative overflow-hidden rounded-2xl bg-card ring-1 ring-border/60 transition-all duration-300 hover:-translate-y-1 hover:ring-border hover:shadow-lg hover:shadow-black/20">
       <Link href={href} className="block">

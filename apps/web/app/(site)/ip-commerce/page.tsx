@@ -1,5 +1,9 @@
-import { IpCommercePreview } from "./_components/ip-commerce-preview";
+import { headers } from "next/headers";
+import { redirect } from "next/navigation";
+import { defaultLocale, isValidLocale } from "@/src/i18n/config";
 
-export default function Page() {
-  return <IpCommercePreview />;
+export default async function Page() {
+  const localeHeader = (await headers()).get("x-locale") ?? defaultLocale;
+  const locale = isValidLocale(localeHeader) ? localeHeader : defaultLocale;
+  redirect(`/${locale}/ips`);
 }

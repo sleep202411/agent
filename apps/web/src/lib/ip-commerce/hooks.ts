@@ -1,6 +1,6 @@
 "use client";
 
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   blockIpContent,
   createIpCommerceEpisode,
@@ -56,6 +56,12 @@ export const ipCommerceKeys = {
     cursor?: string;
     limit?: number;
   }) => ["ip-commerce", "ips", params ?? {}] as const,
+  ipsInfinite: (params?: {
+    genreCodes?: string[];
+    tagCodes?: string[];
+    locale?: string;
+    limit?: number;
+  }) => ["ip-commerce", "ips", "infinite", params ?? {}] as const,
   ip: (ipId: string, params?: { locale?: string }) =>
     ["ip-commerce", "ips", ipId, params ?? {}] as const,
   myIpsRoot: ["ip-commerce", "me", "ips"] as const,
@@ -90,6 +96,27 @@ export function useIpCommerceIps(params?: {
   return useQuery({
     queryKey: ipCommerceKeys.ips(params),
     queryFn: () => listIpCommerceIps(params),
+    staleTime: 60_000,
+  });
+}
+
+export function useInfiniteIpCommerceIps(params?: {
+  genreCodes?: string[];
+  tagCodes?: string[];
+  locale?: string;
+  limit?: number;
+}) {
+  const limit = params?.limit ?? 24;
+  return useInfiniteQuery({
+    queryKey: ipCommerceKeys.ipsInfinite({ ...params, limit }),
+    queryFn: ({ pageParam }) =>
+      listIpCommerceIps({
+        ...params,
+        limit,
+        cursor: pageParam || undefined,
+      }),
+    initialPageParam: "",
+    getNextPageParam: (lastPage) => lastPage.nextCursor ?? undefined,
     staleTime: 60_000,
   });
 }

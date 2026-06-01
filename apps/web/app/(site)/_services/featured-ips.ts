@@ -1,51 +1,50 @@
 /**
  * Homepage-local IP fetcher for the "Made with FizzDragon" content wall.
  *
- * Intentionally duplicates a slice of the IP feature's service rather
- * than reaching into `app/(site)/ips/_hooks/use-ip.ts`. The homepage and
- * the IP feature are independent modules — keeping their data layers
- * separate trades a small amount of repetition for proper module
- * isolation. If the homepage's needs grow beyond fetching a few covers,
- * extend this file rather than coupling back to the IP feature.
+ * This reads the same public IP commerce feed as `/ips`, while keeping
+ * the homepage data shape local to the homepage.
  */
 
-import { env } from "@/src/env";
-
 export interface FeaturedIP {
-  id: number;
+  id: string;
   ownerName: string;
   name: string;
   bannerLink: string;
 }
 
+interface FeaturedIpAsset {
+  url: string | null;
+  externalUrl: string | null;
+}
+
+interface FeaturedIpRow {
+  id: string;
+  title: string;
+  copyrightOwner: string | null;
+  coverAsset: FeaturedIpAsset | null;
+}
+
 export async function fetchFeaturedIPs(limit = 8): Promise<FeaturedIP[]> {
-  // `credentials: "include"` and `accept-language` mirror the legacy /
-  // shared backend client. `Authorization: Bearer <satoken or empty>`
-  // is required: legacy fizzdragon-web always sends `Bearer ${token||''}`,
-  // and the backend NPEs without the header even when the token is empty.
   const lang = typeof document !== "undefined" ? document.documentElement.lang || "en-US" : "en-US";
-  let bearer = "Bearer ";
-  if (typeof document !== "undefined") {
-    const m = document.cookie.match(/(?:^|;\s*)satoken=([^;]+)/);
-    bearer = `Bearer ${m?.[1] ?? ""}`;
-  }
-  const res = await fetch("/vedio/project/search", {
-    method: "POST",
+  const qs = new URLSearchParams({ limit: String(limit), locale: lang });
+  const res = await fetch(`/aurora/ip-commerce/ips?${qs.toString()}`, {
     credentials: "include",
-    headers: {
-      "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
-      "accept-language": lang,
-      Authorization: bearer,
-    },
-    body: new URLSearchParams({ page: "1", pageSize: String(limit), key: "" }),
+    headers: { "accept-language": lang },
   });
   if (!res.ok) return [];
-  const json = (await res.json()) as { code: number; data: FeaturedIP[] };
-  return json.data ?? [];
+  const json = (await res.json()) as {
+    code: number;
+    data?: { items?: FeaturedIpRow[] };
+  };
+  const rows = json.data?.items ?? [];
+  return rows.map((row) => ({
+    id: row.id,
+    ownerName: row.copyrightOwner ?? "",
+    name: row.title,
+    bannerLink: row.coverAsset?.url ?? row.coverAsset?.externalUrl ?? "",
+  }));
 }
 
 export function ipBannerUrl(path?: string | null): string {
-  if (!path) return "";
-  if (path.startsWith("http://") || path.startsWith("https://")) return path;
-  return `${env.BANNER_BASE_URL}/${path}`;
+  return path ?? "";
 }

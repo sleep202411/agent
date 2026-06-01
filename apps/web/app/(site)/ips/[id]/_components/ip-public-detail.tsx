@@ -179,7 +179,7 @@ export function IpPublicDetail({ ipId }: IpPublicDetailProps) {
   const storyText = detailIp.description?.trim() || detailIp.summary || t("emptySummary");
   const tagItems = Array.from(new Set(detailIp.genres.map((item) => item.trim()).filter(Boolean)));
   const loginHref = localizePath(
-    `/login?redirect=${encodeURIComponent(localizePath(`/ip-commerce/${detailIp.id}`, locale))}`,
+    `/login?redirect=${encodeURIComponent(localizePath(`/ips/${detailIp.id}`, locale))}`,
     locale
   );
   const collectionTarget = selectedEpisode
@@ -880,7 +880,7 @@ function PurchasePanel({
         ? t("commerce.walletChecking")
         : t("commerce.walletLine", { balance: balanceLabel });
   const loginHref = localizePath(
-    `/login?redirect=${encodeURIComponent(localizePath(`/ip-commerce/${ip.id}`, locale))}`,
+    `/login?redirect=${encodeURIComponent(localizePath(`/ips/${ip.id}`, locale))}`,
     locale
   );
 

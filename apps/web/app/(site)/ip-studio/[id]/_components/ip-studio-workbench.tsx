@@ -267,7 +267,7 @@ function EditStyleHero({
             color="muted"
             className="min-w-[7.5rem] justify-center"
           >
-            <Link href={localizePath(`/ip-commerce/${ip.id}`, locale)}>
+            <Link href={localizePath(`/ips/${ip.id}`, locale)}>
               <IconEye className="size-3.5" />
               {t("preview")}
             </Link>
