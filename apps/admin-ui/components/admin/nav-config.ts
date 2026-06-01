@@ -14,7 +14,6 @@ import {
   IconReceiptRefund,
   IconScale,
   IconShieldLock,
-  IconTag,
   IconTags,
   IconTicket,
   IconUserCog,
@@ -101,7 +100,6 @@ export const MODULE_NAV: Record<string, ModuleNavGroup[]> = {
           icon: IconPackage,
           permission: "billing.read",
         },
-        { href: "/billing/prices", label: "商品价格", icon: IconTag, permission: "billing.read" },
         {
           href: "/billing/promotions",
           label: "促销优惠",
