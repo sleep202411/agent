@@ -22,7 +22,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { Input } from "@/components/ui/input";
 import {
   Select as ShadSelect,
@@ -269,19 +269,22 @@ export function FormLabel({
 
 export function InfoTip({ text }: { text: string }) {
   return (
-    // Radix Tooltip portals its content to <body>, so it is not clipped by the
-    // dialog's overflow; and it carries no native `title`, so there's no
-    // duplicate browser tooltip. Provider is mounted app-wide in admin-shell.
-    <Tooltip>
-      <TooltipTrigger
-        type="button"
-        aria-label={text}
-        className="inline-flex size-4 items-center justify-center rounded-full text-slate-400 outline-none transition hover:bg-slate-100 hover:text-slate-700 focus-visible:bg-slate-100 focus-visible:text-slate-700"
-      >
-        <IconInfoCircle className="size-3.5" />
-      </TooltipTrigger>
-      <TooltipContent className="max-w-64 text-left leading-4">{text}</TooltipContent>
-    </Tooltip>
+    // Self-contained provider: admin-shell's TooltipProvider only wraps the
+    // sidebar, not page content, so InfoTip must bring its own. Radix Tooltip
+    // portals its content to <body> (not clipped by dialog overflow) and carries
+    // no native `title` (no duplicate browser tooltip).
+    <TooltipProvider delayDuration={0}>
+      <Tooltip>
+        <TooltipTrigger
+          type="button"
+          aria-label={text}
+          className="inline-flex size-4 items-center justify-center rounded-full text-slate-400 outline-none transition hover:bg-slate-100 hover:text-slate-700 focus-visible:bg-slate-100 focus-visible:text-slate-700"
+        >
+          <IconInfoCircle className="size-3.5" />
+        </TooltipTrigger>
+        <TooltipContent className="max-w-64 text-left leading-4">{text}</TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
   );
 }
 
