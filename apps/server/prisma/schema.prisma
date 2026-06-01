@@ -550,6 +550,19 @@ enum IpAssetPurpose {
   production_asset
 }
 
+enum IpDiscoveryPlacementKey {
+  ip_plaza_hero
+  ip_plaza_for_you
+  ip_plaza_list_pinned
+}
+
+enum IpDiscoveryRecommendationStatus {
+  draft
+  enabled
+  paused
+  archived
+}
+
 enum IpPriceRuleStatus {
   draft
   active
@@ -1972,16 +1985,17 @@ model SupportedLocale {
   createdAt    DateTime              @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt    DateTime              @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  ipsAsSource                         Ip[]                         @relation("IpSourceLocale")
-  taxonomyTermLocalizations           IpTaxonomyTermLocalization[] @relation("IpTaxonomyTermLocalizationLocale")
-  ipLocalizations                     IpLocalization[]             @relation("IpLocalizationLocale")
-  ipLocalizationsTranslatedFrom       IpLocalization[]             @relation("IpLocalizationTranslatedFromLocale")
-  episodeLocalizations                IpEpisodeLocalization[]      @relation("IpEpisodeLocalizationLocale")
-  episodeLocalizationsTranslatedFrom  IpEpisodeLocalization[]      @relation("IpEpisodeLocalizationTranslatedFromLocale")
-  campaignLocalizations               IpCampaignLocalization[]     @relation("IpCampaignLocalizationLocale")
-  campaignLocalizationsTranslatedFrom IpCampaignLocalization[]     @relation("IpCampaignLocalizationTranslatedFromLocale")
-  translationJobsAsSource             IpTranslationJob[]           @relation("IpTranslationJobSourceLocale")
-  translationJobsAsTarget             IpTranslationJob[]           @relation("IpTranslationJobTargetLocale")
+  ipsAsSource                          Ip[]                                    @relation("IpSourceLocale")
+  taxonomyTermLocalizations            IpTaxonomyTermLocalization[]            @relation("IpTaxonomyTermLocalizationLocale")
+  ipLocalizations                      IpLocalization[]                        @relation("IpLocalizationLocale")
+  ipLocalizationsTranslatedFrom        IpLocalization[]                        @relation("IpLocalizationTranslatedFromLocale")
+  episodeLocalizations                 IpEpisodeLocalization[]                 @relation("IpEpisodeLocalizationLocale")
+  episodeLocalizationsTranslatedFrom   IpEpisodeLocalization[]                 @relation("IpEpisodeLocalizationTranslatedFromLocale")
+  campaignLocalizations                IpCampaignLocalization[]                @relation("IpCampaignLocalizationLocale")
+  campaignLocalizationsTranslatedFrom  IpCampaignLocalization[]                @relation("IpCampaignLocalizationTranslatedFromLocale")
+  discoveryRecommendationLocalizations IpDiscoveryRecommendationLocalization[] @relation("IpDiscoveryRecommendationLocalizationLocale")
+  translationJobsAsSource              IpTranslationJob[]                      @relation("IpTranslationJobSourceLocale")
+  translationJobsAsTarget              IpTranslationJob[]                      @relation("IpTranslationJobTargetLocale")
 
   @@index([status, displayOrder], map: "supported_locales_status_order_idx")
   @@map("supported_locales")
@@ -2013,22 +2027,23 @@ model Ip {
   trailerAsset    MediaAsset?     @relation("IpTrailerAsset", fields: [trailerAssetId], references: [id], onDelete: SetNull)
   sourceLocaleRef SupportedLocale @relation("IpSourceLocale", fields: [sourceLocale], references: [code], onDelete: Restrict)
 
-  localizations        IpLocalization[]
-  taxonomyAssignments  IpTaxonomyAssignment[]
-  episodes             IpEpisode[]
-  assets               IpAsset[]
-  campaigns            IpCampaign[]
-  priceRules           IpPriceRule[]
-  purchaseOrders       IpPurchaseOrder[]
-  entitlements         IpContentEntitlement[]
-  collectionItems      IpCollectionItem[]
-  contributors         IpContributor[]
-  referralLinks        IpReferralLink[]
-  referralAttributions IpReferralAttribution[]
-  reviewSubmissions    IpReviewSubmission[]
-  rightsDeclarations   IpRightsDeclaration[]
-  reports              IpContentReport[]
-  userBlocks           IpUserContentBlock[]
+  localizations            IpLocalization[]
+  taxonomyAssignments      IpTaxonomyAssignment[]
+  episodes                 IpEpisode[]
+  assets                   IpAsset[]
+  discoveryRecommendations IpDiscoveryRecommendation[]
+  campaigns                IpCampaign[]
+  priceRules               IpPriceRule[]
+  purchaseOrders           IpPurchaseOrder[]
+  entitlements             IpContentEntitlement[]
+  collectionItems          IpCollectionItem[]
+  contributors             IpContributor[]
+  referralLinks            IpReferralLink[]
+  referralAttributions     IpReferralAttribution[]
+  reviewSubmissions        IpReviewSubmission[]
+  rightsDeclarations       IpRightsDeclaration[]
+  reports                  IpContentReport[]
+  userBlocks               IpUserContentBlock[]
 
   /// Public slug uniqueness is locale-aware and enforced on
   /// IpLocalization by partial unique SQL.
@@ -2116,6 +2131,57 @@ model IpAsset {
   @@index([ipId, purpose, createdAt(sort: Desc)], map: "ip_assets_ip_purpose_recent_idx")
   @@index([mediaAssetId], map: "ip_assets_media_idx")
   @@map("ip_assets")
+}
+
+model IpDiscoveryRecommendation {
+  id                  String                          @id @default(uuid()) @db.Uuid
+  placementKey        IpDiscoveryPlacementKey         @map("placement_key")
+  ipId                String                          @map("ip_id") @db.Uuid
+  status              IpDiscoveryRecommendationStatus @default(draft)
+  sortOrder           Int                             @default(0) @map("sort_order")
+  startsAt            DateTime?                       @map("starts_at") @db.Timestamptz(6)
+  endsAt              DateTime?                       @map("ends_at") @db.Timestamptz(6)
+  imageAssetId        String?                         @map("image_asset_id") @db.Uuid
+  mobileImageAssetId  String?                         @map("mobile_image_asset_id") @db.Uuid
+  trailerAssetId      String?                         @map("trailer_asset_id") @db.Uuid
+  createdById         String                          @map("created_by_id") @db.VarChar(64)
+  updatedById         String?                         @map("updated_by_id") @db.VarChar(64)
+  version             Int                             @default(0)
+  metadata            Json                            @default("{}") @db.JsonB
+  createdAt           DateTime                        @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt           DateTime                        @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  archivedAt          DateTime?                       @map("archived_at") @db.Timestamptz(6)
+
+  ip                Ip          @relation(fields: [ipId], references: [id], onDelete: Restrict)
+  imageAsset        MediaAsset? @relation("IpDiscoveryImageAsset", fields: [imageAssetId], references: [id], onDelete: SetNull)
+  mobileImageAsset  MediaAsset? @relation("IpDiscoveryMobileImageAsset", fields: [mobileImageAssetId], references: [id], onDelete: SetNull)
+  trailerAsset      MediaAsset? @relation("IpDiscoveryTrailerMediaAsset", fields: [trailerAssetId], references: [id], onDelete: SetNull)
+
+  localizations IpDiscoveryRecommendationLocalization[]
+
+  @@index([placementKey, status, startsAt, sortOrder], map: "ip_discovery_recs_lookup_idx")
+  @@index([ipId], map: "ip_discovery_recs_ip_idx")
+  @@index([status, updatedAt(sort: Desc)], map: "ip_discovery_recs_status_recent_idx")
+  @@map("ip_discovery_recommendations")
+}
+
+model IpDiscoveryRecommendationLocalization {
+  id               String   @id @default(uuid()) @db.Uuid
+  recommendationId String   @map("recommendation_id") @db.Uuid
+  locale           String   @db.VarChar(16)
+  eyebrow          String?  @db.VarChar(80)
+  title            String?  @db.VarChar(160)
+  description      String?  @db.VarChar(500)
+  ctaLabel         String?  @map("cta_label") @db.VarChar(80)
+  createdAt        DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt        DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  recommendation IpDiscoveryRecommendation @relation(fields: [recommendationId], references: [id], onDelete: Cascade)
+  localeRef      SupportedLocale           @relation("IpDiscoveryRecommendationLocalizationLocale", fields: [locale], references: [code], onDelete: Restrict)
+
+  @@unique([recommendationId, locale], map: "ip_discovery_rec_l10n_rec_locale_unique")
+  @@index([locale], map: "ip_discovery_rec_l10n_locale_idx")
+  @@map("ip_discovery_recommendation_localizations")
 }
 
 model IpEpisode {
@@ -3951,14 +4017,17 @@ model MediaAsset {
   updatedAt       DateTime             @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
   deletedAt       DateTime?            @map("deleted_at") @db.Timestamptz(6)
 
-  certificateImages UserCertificate[] @relation("UserCertificateImage")
-  ipCovers          Ip[]              @relation("IpCoverAsset")
-  ipTrailers        Ip[]              @relation("IpTrailerAsset")
-  ipEpisodeCovers   IpEpisode[]       @relation("IpEpisodeCoverAsset")
-  ipEpisodeMedia    IpEpisode[]       @relation("IpEpisodeMediaAsset")
-  ipEpisodeTrailers IpEpisode[]       @relation("IpEpisodeTrailerAsset")
-  ipLibraryAssets   IpAsset[]         @relation("IpLibraryMediaAsset")
-  ipReportEvidence  IpContentReport[] @relation("IpReportEvidenceAsset")
+  certificateImages       UserCertificate[]           @relation("UserCertificateImage")
+  ipCovers                Ip[]                        @relation("IpCoverAsset")
+  ipTrailers              Ip[]                        @relation("IpTrailerAsset")
+  ipEpisodeCovers         IpEpisode[]                 @relation("IpEpisodeCoverAsset")
+  ipEpisodeMedia          IpEpisode[]                 @relation("IpEpisodeMediaAsset")
+  ipEpisodeTrailers       IpEpisode[]                 @relation("IpEpisodeTrailerAsset")
+  ipLibraryAssets         IpAsset[]                   @relation("IpLibraryMediaAsset")
+  ipDiscoveryImages       IpDiscoveryRecommendation[] @relation("IpDiscoveryImageAsset")
+  ipDiscoveryMobileImages IpDiscoveryRecommendation[] @relation("IpDiscoveryMobileImageAsset")
+  ipDiscoveryTrailerMedia IpDiscoveryRecommendation[] @relation("IpDiscoveryTrailerMediaAsset")
+  ipReportEvidence        IpContentReport[]           @relation("IpReportEvidenceAsset")
 
   @@index([storageProvider, bucket, objectKey], map: "media_assets_storage_lookup_idx")
   @@index([kind, status, createdAt(sort: Desc)], map: "media_assets_kind_status_idx")

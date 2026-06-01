@@ -11,6 +11,8 @@ import {
   IpAssetPurpose,
   IpTargetType,
   IpCollectionItemStatus,
+  IpDiscoveryPlacementKey,
+  IpDiscoveryRecommendationStatus,
   IpEntitlementStatus,
   IpLocalizationStatus,
   IpListingVisibility,
@@ -49,6 +51,7 @@ import type {
   CreateIpDraftInput,
   CreateCreatorIpEpisodeInput,
   CreateAdminIpTaxonomyTermInput,
+  CreateAdminIpDiscoveryInput,
   CreateIpContentReportInput,
   CreateIpPurchaseInput,
   GrantAdminIpEntitlementInput,
@@ -59,6 +62,10 @@ import type {
   ListCreatorIpAssetsQuery,
   ListCreatorIpsQuery,
   ListAdminIpsQuery,
+  ListAdminIpDiscoveryQuery,
+  ListPublicIpDiscoveryQuery,
+  ReorderAdminIpDiscoveryInput,
+  UpdateAdminIpDiscoveryInput,
   ListIpsQuery,
   RevokeAdminIpEntitlementInput,
   ResolveAdminIpReportInput,
@@ -473,6 +480,294 @@ export class IpCommerceService {
     return {
       term: adminTaxonomyTermDto(term, input.localizations?.[0]?.locale),
     };
+  }
+
+  // -------------------------------------------------------------------------
+  // IP discovery placements (IP Plaza hero / for-you / pinned recommendations)
+  // -------------------------------------------------------------------------
+
+  async listAdminDiscovery(query: ListAdminIpDiscoveryQuery) {
+    const locale = normalizeLocale(query.locale);
+    const rows = await this.prisma.ipDiscoveryRecommendation.findMany({
+      where: {
+        ...(query.placementKey
+          ? { placementKey: query.placementKey as IpDiscoveryPlacementKey }
+          : {}),
+        ...(query.status
+          ? { status: query.status as IpDiscoveryRecommendationStatus }
+          : {}),
+      },
+      include: adminIpDiscoveryInclude,
+      orderBy: [
+        { placementKey: 'asc' },
+        { sortOrder: 'asc' },
+        { updatedAt: 'desc' },
+      ],
+    });
+    return { items: rows.map((row) => adminIpDiscoveryDto(row, locale)) };
+  }
+
+  async createAdminDiscovery(
+    user: AuthUser,
+    input: CreateAdminIpDiscoveryInput,
+  ) {
+    assertDiscoveryEnablement(input.placementKey, input.status, {
+      imageAssetId: input.imageAssetId ?? null,
+      localizations: input.localizations ?? [],
+    });
+
+    const rec = await this.prisma.ipDiscoveryRecommendation.create({
+      data: {
+        placementKey: input.placementKey as IpDiscoveryPlacementKey,
+        ipId: input.ipId,
+        status: input.status as IpDiscoveryRecommendationStatus,
+        sortOrder: input.sortOrder,
+        startsAt: input.startsAt ?? null,
+        endsAt: input.endsAt ?? null,
+        imageAssetId: input.imageAssetId ?? null,
+        mobileImageAssetId: input.mobileImageAssetId ?? null,
+        trailerAssetId: input.trailerAssetId ?? null,
+        createdById: user.userId,
+        updatedById: user.userId,
+        archivedAt:
+          input.status === IpDiscoveryRecommendationStatus.archived
+            ? new Date()
+            : null,
+        ...(input.localizations?.length
+          ? {
+              localizations: {
+                createMany: {
+                  data: normalizeDiscoveryLocalizations(input.localizations),
+                },
+              },
+            }
+          : {}),
+      },
+      include: adminIpDiscoveryInclude,
+    });
+
+    return {
+      recommendation: adminIpDiscoveryDto(
+        rec,
+        input.localizations?.[0]?.locale,
+      ),
+    };
+  }
+
+  async updateAdminDiscovery(
+    user: AuthUser,
+    recommendationId: string,
+    input: UpdateAdminIpDiscoveryInput,
+  ) {
+    const existing = await this.prisma.ipDiscoveryRecommendation.findUnique({
+      where: { id: recommendationId },
+      select: {
+        id: true,
+        placementKey: true,
+        status: true,
+        imageAssetId: true,
+      },
+    });
+    if (!existing) {
+      throw new NotFoundException({
+        code: 'IP_DISCOVERY_RECOMMENDATION_NOT_FOUND',
+        msg: 'Discovery recommendation not found.',
+      });
+    }
+
+    const nextStatus = (input.status ??
+      existing.status) as IpDiscoveryRecommendationStatus;
+    const nextImageAssetId =
+      input.imageAssetId !== undefined
+        ? input.imageAssetId
+        : existing.imageAssetId;
+
+    const rec = await this.prisma.$transaction(async (tx) => {
+      if (input.localizations?.length) {
+        for (const localization of normalizeDiscoveryLocalizations(
+          input.localizations,
+        )) {
+          await tx.ipDiscoveryRecommendationLocalization.upsert({
+            where: {
+              recommendationId_locale: {
+                recommendationId,
+                locale: localization.locale,
+              },
+            },
+            create: { recommendationId, ...localization },
+            update: {
+              eyebrow: localization.eyebrow,
+              title: localization.title,
+              description: localization.description,
+              ctaLabel: localization.ctaLabel,
+            },
+          });
+        }
+      }
+
+      // Service-layer hero-completeness gate (P1.2 copy) — spans the locale
+      // table, so it lives here rather than in a DB trigger.
+      if (nextStatus === IpDiscoveryRecommendationStatus.enabled) {
+        const localizations =
+          await tx.ipDiscoveryRecommendationLocalization.findMany({
+            where: { recommendationId },
+            select: { title: true },
+          });
+        assertDiscoveryEnablement(existing.placementKey, nextStatus, {
+          imageAssetId: nextImageAssetId,
+          localizations,
+        });
+      }
+
+      return tx.ipDiscoveryRecommendation.update({
+        where: { id: recommendationId },
+        data: {
+          ...(input.status !== undefined
+            ? {
+                status: input.status as IpDiscoveryRecommendationStatus,
+                archivedAt:
+                  input.status === IpDiscoveryRecommendationStatus.archived
+                    ? new Date()
+                    : null,
+              }
+            : {}),
+          ...(input.sortOrder !== undefined
+            ? { sortOrder: input.sortOrder }
+            : {}),
+          ...(input.startsAt !== undefined ? { startsAt: input.startsAt } : {}),
+          ...(input.endsAt !== undefined ? { endsAt: input.endsAt } : {}),
+          ...(input.imageAssetId !== undefined
+            ? { imageAssetId: input.imageAssetId }
+            : {}),
+          ...(input.mobileImageAssetId !== undefined
+            ? { mobileImageAssetId: input.mobileImageAssetId }
+            : {}),
+          ...(input.trailerAssetId !== undefined
+            ? { trailerAssetId: input.trailerAssetId }
+            : {}),
+          updatedById: user.userId,
+          version: { increment: 1 },
+        },
+        include: adminIpDiscoveryInclude,
+      });
+    });
+
+    return {
+      recommendation: adminIpDiscoveryDto(
+        rec,
+        input.localizations?.[0]?.locale,
+      ),
+    };
+  }
+
+  async reorderAdminDiscovery(
+    user: AuthUser,
+    input: ReorderAdminIpDiscoveryInput,
+  ) {
+    await this.prisma.$transaction(async (tx) => {
+      for (let index = 0; index < input.orderedIds.length; index += 1) {
+        await tx.ipDiscoveryRecommendation.updateMany({
+          where: {
+            id: input.orderedIds[index],
+            placementKey: input.placementKey as IpDiscoveryPlacementKey,
+          },
+          data: { sortOrder: index, updatedById: user.userId },
+        });
+      }
+    });
+    return this.listAdminDiscovery({ placementKey: input.placementKey });
+  }
+
+  async listPublicDiscovery(query: ListPublicIpDiscoveryQuery) {
+    const locale = normalizeLocale(query.locale);
+    const now = new Date();
+    const rows = await this.prisma.ipDiscoveryRecommendation.findMany({
+      where: {
+        placementKey: query.placementKey as IpDiscoveryPlacementKey,
+        status: IpDiscoveryRecommendationStatus.enabled,
+        archivedAt: null,
+        AND: [
+          { OR: [{ startsAt: null }, { startsAt: { lte: now } }] },
+          { OR: [{ endsAt: null }, { endsAt: { gt: now } }] },
+        ],
+        // P1.1 drift guard: only render placements whose IP is still displayable.
+        ip: {
+          status: IpPublicationStatus.published,
+          listingVisibility: IpListingVisibility.public,
+          deletedAt: null,
+        },
+      },
+      include: adminIpDiscoveryInclude,
+      orderBy: [{ sortOrder: 'asc' }, { updatedAt: 'desc' }],
+    });
+
+    const items = rows
+      .filter((row) => isPublicDiscoveryRenderable(row))
+      .map((row) => publicIpDiscoveryDto(row, locale));
+    return { items };
+  }
+
+  async uploadAdminDiscoveryMedia(
+    kind: 'image' | 'video',
+    file:
+      | { buffer: Buffer; originalname: string; mimetype: string; size: number }
+      | undefined,
+  ) {
+    if (!file?.buffer?.byteLength) {
+      throw new BadRequestException({
+        code: 'IP_DISCOVERY_MEDIA_FILE_REQUIRED',
+        msg: 'Missing upload file.',
+      });
+    }
+    const assetKind =
+      kind === 'video' ? MediaAssetKind.video : MediaAssetKind.image;
+    this.assertUploadMatchesKind(file, assetKind);
+    const limit = IP_MEDIA_UPLOAD_LIMITS[assetKind];
+    if (file.size > limit) {
+      throw new BadRequestException({
+        code: 'IP_DISCOVERY_MEDIA_FILE_TOO_LARGE',
+        msg: `File is too large for ${assetKind}.`,
+      });
+    }
+
+    const objectKey = `ip-discovery/${assetKind}/${randomUUID()}-${sanitizeFilename(
+      file.originalname,
+    )}`;
+
+    let uploaded: Awaited<ReturnType<OutputStorageService['upload']>>;
+    try {
+      uploaded = await this.outputStorage.upload({
+        body: file.buffer,
+        key: objectKey,
+        contentType: file.mimetype || 'application/octet-stream',
+        filename: sanitizeFilename(file.originalname),
+      });
+    } catch (err) {
+      throw new ServiceUnavailableException({
+        code: 'IP_DISCOVERY_MEDIA_STORAGE_UNAVAILABLE',
+        msg:
+          err instanceof Error && err.message
+            ? err.message
+            : 'Media storage is unavailable.',
+      });
+    }
+
+    const asset = await this.prisma.mediaAsset.create({
+      data: {
+        kind: assetKind,
+        storageProvider: MediaStorageProvider.azure_blob,
+        bucket: azureBlobContainerName(),
+        region: azureBlobRegion(),
+        objectKey: uploaded.storagePath,
+        contentType: file.mimetype || 'application/octet-stream',
+        sizeBytes: BigInt(uploaded.bytes),
+        checksumSha256: createHash('sha256').update(file.buffer).digest('hex'),
+        visibility: MediaAssetVisibility.public,
+        status: MediaAssetStatus.ready,
+      },
+    });
+
+    return { asset: assetDto(asset) };
   }
 
   async listCreatorIps(user: AuthUser, query: ListCreatorIpsQuery) {
@@ -4059,6 +4354,156 @@ function adminTaxonomyTermDto(
       description: localization.description,
       aliases: localization.aliases,
     })),
+  };
+}
+
+const discoveryAssetSelect = {
+  id: true,
+  kind: true,
+  status: true,
+  deletedAt: true,
+  storageProvider: true,
+  bucket: true,
+  region: true,
+  objectKey: true,
+  externalUrl: true,
+  contentType: true,
+  width: true,
+  height: true,
+  durationSeconds: true,
+} satisfies Prisma.MediaAssetSelect;
+
+const adminIpDiscoveryInclude = {
+  ip: { include: { localizations: true } },
+  localizations: { orderBy: { locale: 'asc' } },
+  imageAsset: { select: discoveryAssetSelect },
+  mobileImageAsset: { select: discoveryAssetSelect },
+  trailerAsset: { select: discoveryAssetSelect },
+} satisfies Prisma.IpDiscoveryRecommendationInclude;
+
+type AdminIpDiscoveryRow = Prisma.IpDiscoveryRecommendationGetPayload<{
+  include: typeof adminIpDiscoveryInclude;
+}>;
+
+function normalizeDiscoveryLocalizations(
+  localizations: readonly {
+    locale: string;
+    eyebrow?: string | null;
+    title?: string | null;
+    description?: string | null;
+    ctaLabel?: string | null;
+  }[],
+) {
+  return localizations.map((localization) => ({
+    locale: normalizeLocale(localization.locale),
+    eyebrow: localization.eyebrow?.trim() || null,
+    title: localization.title?.trim() || null,
+    description: localization.description?.trim() || null,
+    ctaLabel: localization.ctaLabel?.trim() || null,
+  }));
+}
+
+function assertDiscoveryEnablement(
+  placementKey: string,
+  status: string,
+  data: {
+    imageAssetId: string | null;
+    localizations: readonly { title?: string | null }[];
+  },
+) {
+  if (status !== IpDiscoveryRecommendationStatus.enabled) return;
+  if (placementKey !== IpDiscoveryPlacementKey.ip_plaza_hero) return;
+  if (!data.imageAssetId) {
+    throw new BadRequestException({
+      code: 'IP_DISCOVERY_HERO_IMAGE_REQUIRED',
+      msg: 'Enabled hero recommendation requires a default image.',
+    });
+  }
+  const hasTitle = data.localizations.some((item) =>
+    Boolean(item.title && item.title.trim()),
+  );
+  if (!hasTitle) {
+    throw new BadRequestException({
+      code: 'IP_DISCOVERY_HERO_TITLE_REQUIRED',
+      msg: 'Enabled hero recommendation requires a localized title.',
+    });
+  }
+}
+
+function selectDiscoveryLocalization(
+  localizations: AdminIpDiscoveryRow['localizations'],
+  requestedLocale?: string | null,
+) {
+  if (!localizations.length) return null;
+  const locale = normalizeLocale(requestedLocale);
+  return (
+    localizations.find((item) => normalizeLocale(item.locale) === locale) ??
+    localizations[0]
+  );
+}
+
+function isPublicDiscoveryRenderable(row: AdminIpDiscoveryRow) {
+  if (row.placementKey !== IpDiscoveryPlacementKey.ip_plaza_hero) return true;
+  const image = row.imageAsset;
+  const imageReady =
+    image && image.status === MediaAssetStatus.ready && !image.deletedAt;
+  const hasTitle = row.localizations.some((item) =>
+    Boolean(item.title && item.title.trim()),
+  );
+  return Boolean(imageReady && hasTitle);
+}
+
+function adminIpDiscoveryDto(
+  rec: AdminIpDiscoveryRow,
+  requestedLocale?: string | null,
+) {
+  return {
+    id: rec.id,
+    placementKey: rec.placementKey,
+    status: rec.status,
+    ipId: rec.ipId,
+    ip: ipReferenceDto(rec.ip, requestedLocale),
+    sortOrder: rec.sortOrder,
+    startsAt: rec.startsAt?.toISOString() ?? null,
+    endsAt: rec.endsAt?.toISOString() ?? null,
+    imageAsset: assetDto(rec.imageAsset),
+    mobileImageAsset: assetDto(rec.mobileImageAsset),
+    trailerAsset: assetDto(rec.trailerAsset),
+    metadata: rec.metadata,
+    version: rec.version,
+    createdById: rec.createdById,
+    updatedById: rec.updatedById,
+    createdAt: rec.createdAt.toISOString(),
+    updatedAt: rec.updatedAt.toISOString(),
+    archivedAt: rec.archivedAt?.toISOString() ?? null,
+    localizations: rec.localizations.map((localization) => ({
+      locale: normalizeLocale(localization.locale),
+      eyebrow: localization.eyebrow,
+      title: localization.title,
+      description: localization.description,
+      ctaLabel: localization.ctaLabel,
+    })),
+  };
+}
+
+function publicIpDiscoveryDto(
+  rec: AdminIpDiscoveryRow,
+  requestedLocale?: string | null,
+) {
+  const copy = selectDiscoveryLocalization(rec.localizations, requestedLocale);
+  return {
+    id: rec.id,
+    placementKey: rec.placementKey,
+    ipId: rec.ipId,
+    ip: ipReferenceDto(rec.ip, requestedLocale),
+    sortOrder: rec.sortOrder,
+    eyebrow: copy?.eyebrow ?? null,
+    title: copy?.title ?? null,
+    description: copy?.description ?? null,
+    ctaLabel: copy?.ctaLabel ?? null,
+    image: assetDto(rec.imageAsset),
+    mobileImage: assetDto(rec.mobileImageAsset),
+    trailer: assetDto(rec.trailerAsset),
   };
 }
 

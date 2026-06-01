@@ -195,6 +195,126 @@ export type UpdateAdminIpTaxonomyTermInput = z.infer<
   typeof UpdateAdminIpTaxonomyTermSchema
 >;
 
+// ---------------------------------------------------------------------------
+// IP discovery placements (IP Plaza hero / for-you / pinned recommendations)
+// ---------------------------------------------------------------------------
+
+export const IpDiscoveryPlacementKeySchema = z.enum([
+  'ip_plaza_hero',
+  'ip_plaza_for_you',
+  'ip_plaza_list_pinned',
+]);
+
+export const IpDiscoveryRecommendationStatusSchema = z.enum([
+  'draft',
+  'enabled',
+  'paused',
+  'archived',
+]);
+
+export const ListAdminIpDiscoveryQuerySchema = z.object({
+  placementKey: IpDiscoveryPlacementKeySchema.optional(),
+  status: IpDiscoveryRecommendationStatusSchema.optional(),
+  locale: LocaleQuerySchema,
+});
+export type ListAdminIpDiscoveryQuery = z.infer<
+  typeof ListAdminIpDiscoveryQuerySchema
+>;
+
+export const AdminIpDiscoveryParamsSchema = z.object({
+  recommendationId: z.string().uuid(),
+});
+export type AdminIpDiscoveryParams = z.infer<
+  typeof AdminIpDiscoveryParamsSchema
+>;
+
+export const AdminIpDiscoveryLocalizationSchema = z
+  .object({
+    locale: SupportedIpLocaleSchema,
+    eyebrow: z.string().trim().max(80).nullable().optional(),
+    title: z.string().trim().max(160).nullable().optional(),
+    description: z.string().trim().max(500).nullable().optional(),
+    ctaLabel: z.string().trim().max(80).nullable().optional(),
+  })
+  .strict()
+  .refine(
+    (value) =>
+      Boolean(
+        value.eyebrow || value.title || value.description || value.ctaLabel,
+      ),
+    { message: 'At least one localized copy field is required per locale.' },
+  );
+
+const DiscoveryAssetIdSchema = z.string().uuid().nullable().optional();
+
+export const CreateAdminIpDiscoverySchema = z
+  .object({
+    placementKey: IpDiscoveryPlacementKeySchema,
+    ipId: z.string().uuid(),
+    status: IpDiscoveryRecommendationStatusSchema.default('draft'),
+    sortOrder: z.number().int().min(0).max(1_000_000).default(0),
+    startsAt: z.coerce.date().nullable().optional(),
+    endsAt: z.coerce.date().nullable().optional(),
+    imageAssetId: DiscoveryAssetIdSchema,
+    mobileImageAssetId: DiscoveryAssetIdSchema,
+    trailerAssetId: DiscoveryAssetIdSchema,
+    localizations: z
+      .array(AdminIpDiscoveryLocalizationSchema)
+      .max(12)
+      .optional(),
+  })
+  .strict();
+export type CreateAdminIpDiscoveryInput = z.infer<
+  typeof CreateAdminIpDiscoverySchema
+>;
+
+export const UpdateAdminIpDiscoverySchema = z
+  .object({
+    status: IpDiscoveryRecommendationStatusSchema.optional(),
+    sortOrder: z.number().int().min(0).max(1_000_000).optional(),
+    startsAt: z.coerce.date().nullable().optional(),
+    endsAt: z.coerce.date().nullable().optional(),
+    imageAssetId: DiscoveryAssetIdSchema,
+    mobileImageAssetId: DiscoveryAssetIdSchema,
+    trailerAssetId: DiscoveryAssetIdSchema,
+    localizations: z
+      .array(AdminIpDiscoveryLocalizationSchema)
+      .max(12)
+      .optional(),
+  })
+  .strict()
+  .refine((value) => Object.keys(value).length > 0, {
+    message: 'At least one field is required.',
+  });
+export type UpdateAdminIpDiscoveryInput = z.infer<
+  typeof UpdateAdminIpDiscoverySchema
+>;
+
+export const ReorderAdminIpDiscoverySchema = z
+  .object({
+    placementKey: IpDiscoveryPlacementKeySchema,
+    orderedIds: z.array(z.string().uuid()).min(1).max(200),
+  })
+  .strict();
+export type ReorderAdminIpDiscoveryInput = z.infer<
+  typeof ReorderAdminIpDiscoverySchema
+>;
+
+export const ListPublicIpDiscoveryQuerySchema = z.object({
+  placementKey: IpDiscoveryPlacementKeySchema,
+  locale: LocaleQuerySchema,
+});
+export type ListPublicIpDiscoveryQuery = z.infer<
+  typeof ListPublicIpDiscoveryQuerySchema
+>;
+
+export const UploadAdminDiscoveryMediaQuerySchema = z.object({
+  kind: z.enum(['image', 'video']),
+});
+export type UploadAdminDiscoveryMediaQuery = z.infer<
+  typeof UploadAdminDiscoveryMediaQuerySchema
+>;
+
 export const ListCreatorIpsQuerySchema = z.object({
   locale: LocaleQuerySchema,
   cursor: z.string().uuid().optional(),

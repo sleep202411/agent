@@ -31,6 +31,7 @@ import {
   ListCreatorIpAssetsQuerySchema,
   ListCreatorIpsQuerySchema,
   ListIpTaxonomyTermsQuerySchema,
+  ListPublicIpDiscoveryQuerySchema,
   ListIpsQuerySchema,
   UpsertCreatorIpPriceRuleSchema,
   UpsertIpCollectionItemSchema,
@@ -52,6 +53,7 @@ import {
   type ListCreatorIpAssetsQuery,
   type ListCreatorIpsQuery,
   type ListIpTaxonomyTermsQuery,
+  type ListPublicIpDiscoveryQuery,
   type ListIpsQuery,
   type UpsertCreatorIpPriceRuleInput,
   type UpsertIpCollectionItemInput,
@@ -81,6 +83,18 @@ export class IpCommerceController {
     return {
       code: 200,
       data: await this.ipCommerce.listTaxonomyTerms(query),
+    };
+  }
+
+  @Public()
+  @Get('discovery')
+  async listDiscovery(
+    @Query(new ZodValidationPipe(ListPublicIpDiscoveryQuerySchema))
+    query: ListPublicIpDiscoveryQuery,
+  ) {
+    return {
+      code: 200,
+      data: await this.ipCommerce.listPublicDiscovery(query),
     };
   }
 

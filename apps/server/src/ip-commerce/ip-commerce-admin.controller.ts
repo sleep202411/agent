@@ -7,8 +7,11 @@ import {
   Post,
   Query,
   Req,
+  UploadedFile,
   UseGuards,
+  UseInterceptors,
 } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
 import type { Request } from 'express';
 import {
   ADMIN_PERMISSION_KEYS,
@@ -23,7 +26,13 @@ import { Public, type AuthUser } from '../auth';
 import { ZodValidationPipe } from '../common/zod.pipe';
 import {
   AdminIpTaxonomyTermParamsSchema,
+  AdminIpDiscoveryParamsSchema,
   CreateAdminIpTaxonomyTermSchema,
+  CreateAdminIpDiscoverySchema,
+  ListAdminIpDiscoveryQuerySchema,
+  ReorderAdminIpDiscoverySchema,
+  UpdateAdminIpDiscoverySchema,
+  UploadAdminDiscoveryMediaQuerySchema,
   GrantAdminIpEntitlementSchema,
   IpEntitlementParamsSchema,
   IpReportParamsSchema,
@@ -38,7 +47,13 @@ import {
   UpdateAdminIpTaxonomyTermSchema,
   UpdateAdminIpPublicationSchema,
   type AdminIpTaxonomyTermParams,
+  type AdminIpDiscoveryParams,
   type CreateAdminIpTaxonomyTermInput,
+  type CreateAdminIpDiscoveryInput,
+  type ListAdminIpDiscoveryQuery,
+  type ReorderAdminIpDiscoveryInput,
+  type UpdateAdminIpDiscoveryInput,
+  type UploadAdminDiscoveryMediaQuery,
   type GrantAdminIpEntitlementInput,
   type IpEntitlementParams,
   type IpLocaleQuery,
@@ -226,6 +241,138 @@ export class IpCommerceAdminController {
     return {
       code: 200,
       data,
+    };
+  }
+
+  @RequireAdminPermissions(ADMIN_PERMISSION_KEYS.IpRead)
+  @Get('discovery')
+  async listDiscovery(
+    @Query(new ZodValidationPipe(ListAdminIpDiscoveryQuerySchema))
+    query: ListAdminIpDiscoveryQuery,
+  ) {
+    return {
+      code: 200,
+      data: await this.ipCommerce.listAdminDiscovery(query),
+    };
+  }
+
+  @RequireAdminPermissions(ADMIN_PERMISSION_KEYS.IpModerate)
+  @Post('discovery')
+  async createDiscovery(
+    @CurrentAdmin() admin: AdminActor,
+    @Body(new ZodValidationPipe(CreateAdminIpDiscoverySchema))
+    body: CreateAdminIpDiscoveryInput,
+    @Req() request: Request,
+  ) {
+    const data = await this.ipCommerce.createAdminDiscovery(
+      adminToAuthUser(admin),
+      body,
+    );
+    await this.adminAuth.writeAudit({
+      actor: admin,
+      action: 'admin.ip.discovery.create',
+      resourceType: 'ip_discovery_recommendation',
+      resourceId: data.recommendation.id,
+      metadata: {
+        placementKey: body.placementKey,
+        ipId: body.ipId,
+        status: data.recommendation.status,
+      },
+      context: {
+        ipAddress: request.ip,
+        userAgent: headerValue(request.headers['user-agent']),
+      },
+    });
+    return {
+      code: 200,
+      data,
+    };
+  }
+
+  @RequireAdminPermissions(ADMIN_PERMISSION_KEYS.IpModerate)
+  @Post('discovery/reorder')
+  async reorderDiscovery(
+    @CurrentAdmin() admin: AdminActor,
+    @Body(new ZodValidationPipe(ReorderAdminIpDiscoverySchema))
+    body: ReorderAdminIpDiscoveryInput,
+    @Req() request: Request,
+  ) {
+    const data = await this.ipCommerce.reorderAdminDiscovery(
+      adminToAuthUser(admin),
+      body,
+    );
+    await this.adminAuth.writeAudit({
+      actor: admin,
+      action: 'admin.ip.discovery.reorder',
+      resourceType: 'ip_discovery_recommendation',
+      resourceId: body.placementKey,
+      metadata: {
+        placementKey: body.placementKey,
+        count: body.orderedIds.length,
+      },
+      context: {
+        ipAddress: request.ip,
+        userAgent: headerValue(request.headers['user-agent']),
+      },
+    });
+    return {
+      code: 200,
+      data,
+    };
+  }
+
+  @RequireAdminPermissions(ADMIN_PERMISSION_KEYS.IpModerate)
+  @Patch('discovery/:recommendationId')
+  async updateDiscovery(
+    @CurrentAdmin() admin: AdminActor,
+    @Param(new ZodValidationPipe(AdminIpDiscoveryParamsSchema))
+    params: AdminIpDiscoveryParams,
+    @Body(new ZodValidationPipe(UpdateAdminIpDiscoverySchema))
+    body: UpdateAdminIpDiscoveryInput,
+    @Req() request: Request,
+  ) {
+    const data = await this.ipCommerce.updateAdminDiscovery(
+      adminToAuthUser(admin),
+      params.recommendationId,
+      body,
+    );
+    await this.adminAuth.writeAudit({
+      actor: admin,
+      action: 'admin.ip.discovery.update',
+      resourceType: 'ip_discovery_recommendation',
+      resourceId: params.recommendationId,
+      metadata: {
+        status: body.status ?? null,
+        sortOrder: body.sortOrder ?? null,
+        localizationCount: body.localizations?.length ?? null,
+      },
+      context: {
+        ipAddress: request.ip,
+        userAgent: headerValue(request.headers['user-agent']),
+      },
+    });
+    return {
+      code: 200,
+      data,
+    };
+  }
+
+  @RequireAdminPermissions(ADMIN_PERMISSION_KEYS.IpModerate)
+  @Post('discovery/media')
+  @UseInterceptors(
+    FileInterceptor('file', { limits: { fileSize: 256 * 1024 * 1024 } }),
+  )
+  async uploadDiscoveryMedia(
+    @Query(new ZodValidationPipe(UploadAdminDiscoveryMediaQuerySchema))
+    query: UploadAdminDiscoveryMediaQuery,
+    @UploadedFile()
+    file:
+      | { buffer: Buffer; originalname: string; mimetype: string; size: number }
+      | undefined,
+  ) {
+    return {
+      code: 200,
+      data: await this.ipCommerce.uploadAdminDiscoveryMedia(query.kind, file),
     };
   }
 
