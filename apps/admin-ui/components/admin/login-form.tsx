@@ -20,7 +20,9 @@ export function LoginForm({ site }: { site: AdminSiteOption }) {
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
   const [mfaCode, setMfaCode] = useState("");
-  const [mfaQrDataUrl, setMfaQrDataUrl] = useState("");
+  // Keyed by the otpauth URI it was generated for, so the displayed QR can be
+  // derived during render without resetting state in the effect body.
+  const [mfaQr, setMfaQr] = useState<{ uri: string; dataUrl: string } | null>(null);
   const [secretCopied, setSecretCopied] = useState(false);
   const [mfaChallenge, setMfaChallenge] = useState<{
     setupRequired: boolean;
@@ -30,13 +32,17 @@ export function LoginForm({ site }: { site: AdminSiteOption }) {
     otpauthUri?: string;
   } | null>(null);
 
-  useEffect(() => {
-    let cancelled = false;
-    setMfaQrDataUrl("");
-    setSecretCopied(false);
-    if (!mfaChallenge?.setupRequired || !mfaChallenge.otpauthUri) return;
+  const otpauthUri = mfaChallenge?.setupRequired ? mfaChallenge.otpauthUri : undefined;
+  // Derived during render: only show the QR once it matches the current URI,
+  // so switching challenges falls back to the loading state with no eager reset.
+  const mfaQrDataUrl = otpauthUri && mfaQr?.uri === otpauthUri ? mfaQr.dataUrl : "";
 
-    QRCode.toDataURL(mfaChallenge.otpauthUri, {
+  // Generate the MFA QR code asynchronously for the current otpauth URI.
+  // setState lives only inside the async callback, never in the effect body.
+  useEffect(() => {
+    if (!otpauthUri) return;
+    let cancelled = false;
+    QRCode.toDataURL(otpauthUri, {
       width: 192,
       margin: 2,
       errorCorrectionLevel: "M",
@@ -46,16 +52,16 @@ export function LoginForm({ site }: { site: AdminSiteOption }) {
       },
     })
       .then((url) => {
-        if (!cancelled) setMfaQrDataUrl(url);
+        if (!cancelled) setMfaQr({ uri: otpauthUri, dataUrl: url });
       })
       .catch(() => {
-        if (!cancelled) setMfaQrDataUrl("");
+        if (!cancelled) setMfaQr(null);
       });
 
     return () => {
       cancelled = true;
     };
-  }, [mfaChallenge]);
+  }, [otpauthUri]);
 
   async function copyMfaSecret() {
     if (!mfaChallenge?.secret) return;
@@ -145,6 +151,7 @@ export function LoginForm({ site }: { site: AdminSiteOption }) {
             <div className="grid gap-3 sm:grid-cols-[164px_1fr]">
               <div className="flex h-[164px] w-[164px] items-center justify-center rounded-lg border border-amber-200 bg-white p-2">
                 {mfaQrDataUrl ? (
+                  // eslint-disable-next-line @next/next/no-img-element -- data: URL QR, next/image cannot optimize it
                   <img
                     src={mfaQrDataUrl}
                     alt="MFA 绑定二维码"

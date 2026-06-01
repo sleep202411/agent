@@ -31,7 +31,7 @@ import {
   getSortedRowModel,
   useReactTable,
 } from "@tanstack/react-table";
-import { IconChevronDown, IconChevronUp, IconSelector } from "@tabler/icons-react";
+import { IconChevronDown, IconChevronUp, IconLoader2, IconSelector } from "@tabler/icons-react";
 import {
   Table,
   TableBody,
@@ -111,9 +111,23 @@ export function DataTable<TData>({
   const colCount = columns.length;
   const rows = table.getRowModel().rows;
 
+  // Non-destructive loading: a full-body "加载中…" row only on the initial load
+  // (no rows yet). On in-place refresh (rows already present) we keep the rows
+  // and dim them under an overlay instead of wiping the table.
+  const initialLoading = loading && rows.length === 0;
+  const refreshing = loading && rows.length > 0;
+
   return (
     <div className={cn("overflow-hidden rounded-xl border border-slate-200 bg-white", className)}>
-      <div className="overflow-x-auto">
+      <div className="relative overflow-x-auto" aria-busy={loading}>
+        {refreshing ? (
+          <div className="pointer-events-none absolute inset-0 z-30 flex items-start justify-center bg-white/40">
+            <span className="mt-3 inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-white px-3 py-1 text-[11px] font-medium text-slate-500 shadow-sm">
+              <IconLoader2 className="size-3.5 animate-spin" />
+              刷新中…
+            </span>
+          </div>
+        ) : null}
         <Table
           className="border-separate border-spacing-0 text-left"
           style={minWidth ? { minWidth } : undefined}
@@ -159,7 +173,7 @@ export function DataTable<TData>({
             ))}
           </TableHeader>
           <TableBody>
-            {loading ? (
+            {initialLoading ? (
               <TableRow className="hover:bg-transparent">
                 <TableCell
                   colSpan={colCount}
@@ -179,7 +193,7 @@ export function DataTable<TData>({
               </TableRow>
             ) : (
               rows.map((row) => (
-                <TableRow key={row.id} className="transition hover:bg-slate-50/60">
+                <TableRow key={row.id} className="group transition hover:bg-slate-50/60">
                   {row.getVisibleCells().map((cell) => {
                     const pinned = cell.column.columnDef.meta?.pin === "right";
                     return (

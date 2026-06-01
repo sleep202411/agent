@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { IconChevronRight, IconDatabase, IconLogout, IconMenu2, IconX } from "@tabler/icons-react";
@@ -13,6 +13,7 @@ import {
   type ModuleNavGroup,
 } from "@/components/admin/nav-config";
 import { Button } from "@/components/ui/button";
+import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { adminUiApiPath } from "@/lib/admin-api";
 import { cn } from "@/lib/utils";
@@ -34,6 +35,20 @@ export function AdminShell({
   const pathname = usePathname();
   const router = useRouter();
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  const [avatarError, setAvatarError] = useState(false);
+
+  // The mobile nav uses a Sheet whose portal overlay is NOT gated by md:hidden.
+  // If the drawer is open and the viewport grows to desktop, that backdrop would
+  // linger over the desktop UI — so force it closed once we cross the md breakpoint.
+  useEffect(() => {
+    const mql = window.matchMedia("(min-width: 768px)");
+    const closeOnDesktop = () => {
+      if (mql.matches) setMobileNavOpen(false);
+    };
+    closeOnDesktop();
+    mql.addEventListener("change", closeOnDesktop);
+    return () => mql.removeEventListener("change", closeOnDesktop);
+  }, []);
 
   const visibleGlobalNav = GLOBAL_NAV.filter((entry) => hasPermission(session, entry.permission));
 
@@ -126,9 +141,14 @@ export function AdminShell({
             className="flex size-8 items-center justify-center overflow-hidden rounded-full bg-slate-950 text-[11px] font-semibold text-white transition hover:opacity-90"
             title={`${session.user.displayName} · ${session.user.email}`}
           >
-            {session.user.avatarUrl ? (
+            {session.user.avatarUrl && !avatarError ? (
               // eslint-disable-next-line @next/next/no-img-element
-              <img src={session.user.avatarUrl} alt="" className="h-full w-full object-cover" />
+              <img
+                src={session.user.avatarUrl}
+                alt=""
+                className="h-full w-full object-cover"
+                onError={() => setAvatarError(true)}
+              />
             ) : (
               session.user.displayName.slice(0, 1).toUpperCase()
             )}
@@ -247,51 +267,48 @@ export function AdminShell({
         </header>
 
         {/* Mobile global nav drawer */}
-        {mobileNavOpen ? (
-          <div className="md:hidden">
-            <button
-              type="button"
-              aria-label="关闭导航"
-              className="fixed inset-0 z-30 bg-slate-950/30"
-              onClick={() => setMobileNavOpen(false)}
-            />
-            <nav className="fixed inset-y-0 left-0 z-40 flex w-[260px] flex-col gap-1 border-r border-slate-200 bg-white px-3 py-4 shadow-xl">
-              <Link href="/" className="mb-3 block px-1" onClick={() => setMobileNavOpen(false)}>
-                <BrandLogo compact className="w-[132px]" />
-                <span className="mt-1 block text-[11px] font-medium text-slate-500">管理后台</span>
-              </Link>
-              {visibleGlobalNav.map((entry) => {
-                const Icon = entry.icon;
-                const active = isGlobalActive(entry);
-                return (
-                  <Link
-                    key={entry.key}
-                    href={entry.href}
-                    onClick={() => setMobileNavOpen(false)}
-                    className={cn(
-                      "flex h-9 items-center gap-2 rounded-md px-2 text-[13px] font-medium transition",
-                      active
-                        ? "bg-slate-950 text-white"
-                        : "text-slate-600 hover:bg-slate-100 hover:text-slate-950"
-                    )}
-                  >
-                    <Icon className="size-4" />
-                    <span className="flex-1">{entry.label}</span>
-                    {active ? <IconChevronRight className="size-3.5" /> : null}
-                  </Link>
-                );
-              })}
-              <div className="mt-auto border-t border-slate-200 pt-2 text-[11px] text-slate-500">
-                <span className="block truncate font-medium text-slate-600">
-                  {session.user.displayName}
-                </span>
-                <span className="block truncate">
-                  {session.site.label} · {session.site.domain}
-                </span>
-              </div>
-            </nav>
-          </div>
-        ) : null}
+        <Sheet open={mobileNavOpen} onOpenChange={setMobileNavOpen}>
+          <SheetContent
+            side="left"
+            className="w-[260px] max-w-[260px] gap-1 border-slate-200 bg-white px-3 py-4 md:hidden"
+            showCloseButton={false}
+          >
+            <SheetTitle className="sr-only">导航</SheetTitle>
+            <Link href="/" className="mb-3 block px-1" onClick={() => setMobileNavOpen(false)}>
+              <BrandLogo compact className="w-[132px]" />
+              <span className="mt-1 block text-[11px] font-medium text-slate-500">管理后台</span>
+            </Link>
+            {visibleGlobalNav.map((entry) => {
+              const Icon = entry.icon;
+              const active = isGlobalActive(entry);
+              return (
+                <Link
+                  key={entry.key}
+                  href={entry.href}
+                  onClick={() => setMobileNavOpen(false)}
+                  className={cn(
+                    "flex h-9 items-center gap-2 rounded-md px-2 text-[13px] font-medium transition",
+                    active
+                      ? "bg-slate-950 text-white"
+                      : "text-slate-600 hover:bg-slate-100 hover:text-slate-950"
+                  )}
+                >
+                  <Icon className="size-4" />
+                  <span className="flex-1">{entry.label}</span>
+                  {active ? <IconChevronRight className="size-3.5" /> : null}
+                </Link>
+              );
+            })}
+            <div className="mt-auto border-t border-slate-200 pt-2 text-[11px] text-slate-500">
+              <span className="block truncate font-medium text-slate-600">
+                {session.user.displayName}
+              </span>
+              <span className="block truncate">
+                {session.site.label} · {session.site.domain}
+              </span>
+            </div>
+          </SheetContent>
+        </Sheet>
 
         <main className="w-full px-4 py-5 lg:px-6">{children}</main>
       </div>

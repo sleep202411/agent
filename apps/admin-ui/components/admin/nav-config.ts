@@ -8,13 +8,11 @@ import {
   IconFileAnalytics,
   IconFlag,
   IconPackage,
-  IconPhoto,
   IconPlugConnected,
   IconReceipt2,
   IconReceiptRefund,
   IconScale,
   IconShieldLock,
-  IconStar,
   IconTag,
   IconTags,
   IconTicket,
@@ -62,7 +60,8 @@ export const GLOBAL_NAV: GlobalNavEntry[] = [
     icon: IconCoins,
     permission: "billing.read",
   },
-  { key: "/media", href: "/media", label: "媒体资产", icon: IconPhoto, permission: "media.read" },
+  // 媒体资产 (/media) is hidden from nav until the module is built — the page is
+  // still a ModulePlaceholder, so we don't surface it as a top-level module yet.
   {
     key: "/users",
     href: "/users",
@@ -189,7 +188,7 @@ export const MODULE_NAV: Record<string, ModuleNavGroup[]> = {
       label: "配置",
       items: [
         { href: "/ip/taxonomy", label: "题材词库", icon: IconTags, permission: "ip.read" },
-        { href: "/ip/discovery", label: "广场运营位", icon: IconStar, permission: "ip.read" },
+        // 广场运营位 (/ip/discovery) is hidden from nav until built — still a placeholder.
       ],
     },
     {
