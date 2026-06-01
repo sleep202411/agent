@@ -2452,6 +2452,31 @@ export class IpCommerceService {
             status: { in: PUBLIC_LOCALIZATION_STATUSES },
           },
         },
+        // Keep IPs whose ONLY category is a hidden/archived genre (e.g. the
+        // SGWander activity) out of public browse — without unpublishing them,
+        // so direct links still resolve. Reverse by un-hiding the genre.
+        // Multi-genre IPs that still carry a visible genre keep showing.
+        NOT: {
+          AND: [
+            {
+              taxonomyAssignments: {
+                some: {
+                  term: { status: { not: IpTaxonomyTermStatus.active } },
+                },
+              },
+            },
+            {
+              taxonomyAssignments: {
+                none: {
+                  term: {
+                    type: IpTaxonomyTermType.genre,
+                    status: IpTaxonomyTermStatus.active,
+                  },
+                },
+              },
+            },
+          ],
+        },
         ...ipTaxonomyFilterWhere(query.genreCodes, query.tagCodes),
         ...viewerBlockWhere,
         ...(cursorDate
