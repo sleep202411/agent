@@ -14,6 +14,7 @@ import {
 } from "@tabler/icons-react";
 import { PageHeader } from "@/components/admin/page-header";
 import { Button } from "@/components/ui/button";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { DataTable, type ColumnDef } from "@/components/ui/data-table";
 import {
   Dialog,
@@ -250,12 +251,6 @@ export function AdminUsersPanel({
   }
 
   async function resetMfa(user: AdminUserRow) {
-    const confirmed = window.confirm(
-      user.id === currentUserId
-        ? "确认重置当前账号的 MFA？当前会话会保留，其他会话会被撤销；下次登录需要重新绑定 MFA。"
-        : `确认重置 ${user.displayName} 的 MFA？该账号的现有 MFA 绑定会清空，并需要下次登录重新绑定。`
-    );
-    if (!confirmed) return;
     setNotice(null);
     setError(null);
     const actionKey = `${user.id}:reset-mfa`;
@@ -488,14 +483,26 @@ export function AdminUsersPanel({
                 <IconKey className="size-3.5" />
                 {isSelf ? "改密码" : "重置密码"}
               </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => void resetMfa(user)}
-                disabled={pendingKey === `${user.id}:reset-mfa`}
-              >
-                MFA
-              </Button>
+              <ConfirmDialog
+                title="确认重置 MFA？"
+                description={
+                  isSelf
+                    ? "当前会话会保留，其他会话会被撤销；下次登录需要重新绑定 MFA。"
+                    : `将清空 ${user.displayName} 的 MFA 绑定，该账号下次登录需要重新绑定。`
+                }
+                confirmLabel="确认重置"
+                destructive
+                onConfirm={() => resetMfa(user)}
+                trigger={
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={pendingKey === `${user.id}:reset-mfa`}
+                  >
+                    MFA
+                  </Button>
+                }
+              />
               <Button
                 variant="outline"
                 size="sm"
@@ -695,16 +702,26 @@ export function AdminUsersPanel({
                 <IconKey className="size-4" />
                 修改我的密码
               </Button>
-              <Button
-                className="h-9 w-full"
-                type="button"
-                variant="outline"
-                onClick={() => currentUser && void resetMfa(currentUser)}
-                disabled={!currentUser || pendingKey === `${currentUser.id}:reset-mfa`}
-              >
-                <IconShieldCheck className="size-4" />
-                重新绑定 MFA
-              </Button>
+              <ConfirmDialog
+                title="确认重新绑定 MFA？"
+                description="当前会话会保留，其他会话会被撤销；下次登录需要重新扫描二维码完成绑定。"
+                confirmLabel="确认重置"
+                destructive
+                onConfirm={() => {
+                  if (currentUser) return resetMfa(currentUser);
+                }}
+                trigger={
+                  <Button
+                    className="h-9 w-full"
+                    type="button"
+                    variant="outline"
+                    disabled={!currentUser || pendingKey === `${currentUser.id}:reset-mfa`}
+                  >
+                    <IconShieldCheck className="size-4" />
+                    重新绑定 MFA
+                  </Button>
+                }
+              />
             </div>
             {currentUser ? (
               <div className="mt-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-[12px] leading-5 text-slate-600">
@@ -1099,10 +1116,12 @@ function toErrorMessage(error: unknown) {
 }
 
 function formatDate(value: string) {
+  const date = new Date(value);
+  if (!value || Number.isNaN(date.getTime())) return "-";
   return new Intl.DateTimeFormat("zh-CN", {
     month: "2-digit",
     day: "2-digit",
     hour: "2-digit",
     minute: "2-digit",
-  }).format(new Date(value));
+  }).format(date);
 }

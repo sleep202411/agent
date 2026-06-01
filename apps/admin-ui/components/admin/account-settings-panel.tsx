@@ -11,6 +11,9 @@ import {
   IconUserCircle,
 } from "@tabler/icons-react";
 import { Button } from "@/components/ui/button";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { PageHeader } from "@/components/admin/page-header";
 import { adminUiApiPath } from "@/lib/admin-api";
 import type { AdminSession } from "@/lib/admin-session";
@@ -87,10 +90,6 @@ export function AccountSettingsPanel({ session }: AccountSettingsPanelProps) {
   }
 
   async function resetMfa() {
-    const confirmed = window.confirm(
-      "确认重新绑定 MFA？当前账号下次登录需要重新扫描二维码完成绑定。"
-    );
-    if (!confirmed) return;
     setError(null);
     setNotice(null);
     setResettingMfa(true);
@@ -160,21 +159,21 @@ export function AccountSettingsPanel({ session }: AccountSettingsPanelProps) {
             </div>
 
             <div className="space-y-4">
-              <label className="block space-y-2">
+              <Label className="block space-y-2">
                 <span className="text-[13px] font-medium text-slate-700">显示名称</span>
-                <input
+                <Input
                   value={profile.displayName}
                   onChange={(event) =>
                     setProfile((current) => ({ ...current, displayName: event.target.value }))
                   }
                   required
                   maxLength={120}
-                  className="h-10 w-full rounded-md border border-slate-200 bg-white px-3 text-sm outline-none transition focus:border-slate-900 focus:ring-3 focus:ring-slate-200"
+                  className="h-10"
                 />
-              </label>
-              <label className="block space-y-2">
+              </Label>
+              <Label className="block space-y-2">
                 <span className="text-[13px] font-medium text-slate-700">头像 URL</span>
-                <input
+                <Input
                   value={profile.avatarUrl}
                   onChange={(event) =>
                     setProfile((current) => ({ ...current, avatarUrl: event.target.value }))
@@ -182,9 +181,9 @@ export function AccountSettingsPanel({ session }: AccountSettingsPanelProps) {
                   type="url"
                   maxLength={512}
                   placeholder="https://..."
-                  className="h-10 w-full rounded-md border border-slate-200 bg-white px-3 text-sm outline-none transition focus:border-slate-900 focus:ring-3 focus:ring-slate-200"
+                  className="h-10"
                 />
-              </label>
+              </Label>
               <Button type="submit" disabled={savingProfile}>
                 <IconDeviceFloppy className="size-4" />
                 {savingProfile ? "正在保存" : "保存资料"}
@@ -206,16 +205,24 @@ export function AccountSettingsPanel({ session }: AccountSettingsPanelProps) {
             </div>
           </div>
           <div className="mt-5 space-y-3">
-            <Button
-              type="button"
-              variant="outline"
-              className="w-full justify-start"
-              onClick={resetMfa}
-              disabled={resettingMfa}
-            >
-              <IconRefresh className="size-4" />
-              {resettingMfa ? "正在重置 MFA" : "重新绑定 MFA"}
-            </Button>
+            <ConfirmDialog
+              title="确认重新绑定 MFA？"
+              description="当前账号下次登录需要重新扫描二维码完成绑定；其他登录会话会被撤销。"
+              confirmLabel="确认重置"
+              destructive
+              onConfirm={resetMfa}
+              trigger={
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="w-full justify-start"
+                  disabled={resettingMfa}
+                >
+                  <IconRefresh className="size-4" />
+                  {resettingMfa ? "正在重置 MFA" : "重新绑定 MFA"}
+                </Button>
+              }
+            />
             <p className="text-[12px] leading-5 text-slate-500">
               重置后当前会话保留，其他会话会被撤销；下次登录必须重新扫描二维码。
             </p>
@@ -236,9 +243,9 @@ export function AccountSettingsPanel({ session }: AccountSettingsPanelProps) {
           </div>
         </div>
         <div className="mt-5 grid gap-4 md:grid-cols-3">
-          <label className="block space-y-2">
+          <Label className="block space-y-2">
             <span className="text-[13px] font-medium text-slate-700">当前密码</span>
-            <input
+            <Input
               value={passwordForm.currentPassword}
               onChange={(event) =>
                 setPasswordForm((current) => ({
@@ -251,12 +258,12 @@ export function AccountSettingsPanel({ session }: AccountSettingsPanelProps) {
               required
               minLength={8}
               maxLength={200}
-              className="h-10 w-full rounded-md border border-slate-200 bg-white px-3 text-sm outline-none transition focus:border-slate-900 focus:ring-3 focus:ring-slate-200"
+              className="h-10"
             />
-          </label>
-          <label className="block space-y-2">
+          </Label>
+          <Label className="block space-y-2">
             <span className="text-[13px] font-medium text-slate-700">新密码</span>
-            <input
+            <Input
               value={passwordForm.newPassword}
               onChange={(event) =>
                 setPasswordForm((current) => ({ ...current, newPassword: event.target.value }))
@@ -266,12 +273,12 @@ export function AccountSettingsPanel({ session }: AccountSettingsPanelProps) {
               required
               minLength={12}
               maxLength={200}
-              className="h-10 w-full rounded-md border border-slate-200 bg-white px-3 text-sm outline-none transition focus:border-slate-900 focus:ring-3 focus:ring-slate-200"
+              className="h-10"
             />
-          </label>
-          <label className="block space-y-2">
+          </Label>
+          <Label className="block space-y-2">
             <span className="text-[13px] font-medium text-slate-700">确认新密码</span>
-            <input
+            <Input
               value={passwordForm.confirmPassword}
               onChange={(event) =>
                 setPasswordForm((current) => ({
@@ -284,9 +291,9 @@ export function AccountSettingsPanel({ session }: AccountSettingsPanelProps) {
               required
               minLength={12}
               maxLength={200}
-              className="h-10 w-full rounded-md border border-slate-200 bg-white px-3 text-sm outline-none transition focus:border-slate-900 focus:ring-3 focus:ring-slate-200"
+              className="h-10"
             />
-          </label>
+          </Label>
         </div>
         <Button type="submit" className="mt-5" disabled={savingPassword}>
           <IconLock className="size-4" />
