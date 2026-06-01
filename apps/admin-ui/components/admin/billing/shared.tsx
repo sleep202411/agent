@@ -22,6 +22,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Input } from "@/components/ui/input";
 import {
   Select as ShadSelect,
@@ -268,21 +269,19 @@ export function FormLabel({
 
 export function InfoTip({ text }: { text: string }) {
   return (
-    <span
-      className="group relative inline-flex size-4 items-center justify-center rounded-full text-slate-400 outline-none transition hover:bg-slate-100 hover:text-slate-700 focus-visible:bg-slate-100 focus-visible:text-slate-700"
-      tabIndex={0}
-      aria-label={text}
-      title={text}
-    >
-      <IconInfoCircle className="size-3.5" />
-      <span
-        role="tooltip"
-        className="pointer-events-none absolute bottom-full left-1/2 z-50 mb-2 hidden w-64 -translate-x-1/2 rounded-lg border border-slate-800 bg-slate-950 px-3 py-2 text-left text-[11px] font-medium leading-4 text-white shadow-xl group-hover:block group-focus-visible:block"
+    // Radix Tooltip portals its content to <body>, so it is not clipped by the
+    // dialog's overflow; and it carries no native `title`, so there's no
+    // duplicate browser tooltip. Provider is mounted app-wide in admin-shell.
+    <Tooltip>
+      <TooltipTrigger
+        type="button"
+        aria-label={text}
+        className="inline-flex size-4 items-center justify-center rounded-full text-slate-400 outline-none transition hover:bg-slate-100 hover:text-slate-700 focus-visible:bg-slate-100 focus-visible:text-slate-700"
       >
-        {text}
-        <span className="absolute left-1/2 top-full size-2 -translate-x-1/2 -translate-y-1/2 rotate-45 border-b border-r border-slate-800 bg-slate-950" />
-      </span>
-    </span>
+        <IconInfoCircle className="size-3.5" />
+      </TooltipTrigger>
+      <TooltipContent className="max-w-64 text-left leading-4">{text}</TooltipContent>
+    </Tooltip>
   );
 }
 
