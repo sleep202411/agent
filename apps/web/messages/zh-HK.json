@@ -1068,6 +1068,10 @@
         "title": "定價",
         "status": "待配置"
       },
+      "orders": {
+        "title": "訂單",
+        "status": "唯讀"
+      },
       "collaboration": {
         "title": "協作與劇組",
         "status": "待補充"
@@ -1516,6 +1520,7 @@
       "approved": "已通過",
       "scheduled": "已排期",
       "published": "已發佈",
+      "hidden": "已隱藏",
       "archived": "已封存",
       "suspended": "已暫停"
     },
@@ -4447,6 +4452,12 @@
     "creditsUnit": "積分",
     "originalPrice": "原價",
     "creditsRechargeDesc": "選擇積分套餐進行充值",
+    "communityRechargeTitle": "社區積分充值",
+    "communityRechargeDesc": "選擇套餐或輸入自訂金額，為社區積分充值",
+    "communityBalanceLabel": "可消費社區積分",
+    "customAmountLabel": "自訂金額",
+    "customAmountHint": "整數美元，最低 ${min}",
+    "customAmountMin": "請輸入不少於 ${min} 的整數美元金額",
     "unlockMore": "解鎖更多 AI 創作能力，提升你的製作效率",
     "billingPeriod": "按 {days} {unit}計費",
     "disclaimer": "訂閱即表示您同意我們的服務條款。所有方案均為一次性購買，有效期內不提供退款。積分獎勵將在付款後立即發放。FizzDragon 保留最終解釋權。",

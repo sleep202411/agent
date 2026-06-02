@@ -1068,6 +1068,10 @@
         "title": "定价",
         "status": "待配置"
       },
+      "orders": {
+        "title": "订单",
+        "status": "只读"
+      },
       "collaboration": {
         "title": "协作与剧组",
         "status": "待补充"
@@ -1516,6 +1520,7 @@
       "approved": "已通过",
       "scheduled": "已排期",
       "published": "已发布",
+      "hidden": "已隐藏",
       "archived": "已归档",
       "suspended": "已暂停"
     },
@@ -4447,6 +4452,12 @@
     "creditsUnit": "积分",
     "originalPrice": "原价",
     "creditsRechargeDesc": "选择积分套餐进行充值",
+    "communityRechargeTitle": "社区积分充值",
+    "communityRechargeDesc": "选择套餐或输入自定义金额，为社区积分充值",
+    "communityBalanceLabel": "可消费社区积分",
+    "customAmountLabel": "自定义金额",
+    "customAmountHint": "整数美元，最低 ${min}",
+    "customAmountMin": "请输入不少于 ${min} 的整数美元金额",
     "unlockMore": "解锁更多 AI 创作能力，提升你的制作效率",
     "billingPeriod": "按 {days} {unit}计费",
     "disclaimer": "订阅即表示您同意我们的服务条款。所有方案均为一次性购买，有效期内不提供退款。积分奖励将在付款后立即发放。FizzDragon 保留最终解释权。",
