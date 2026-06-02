@@ -293,7 +293,7 @@ function GovernanceTable({
             href="/ip/titles"
             className="inline-flex items-center gap-1 text-[12px] font-medium text-slate-600 hover:text-slate-950"
           >
-            去标题库处理
+            去作品库处理
             <IconExternalLink className="size-3.5" />
           </Link>
         </div>

@@ -346,7 +346,7 @@ export function IpTitlesPanel({
     <div className="space-y-4">
       <PageHeader
         eyebrow={`${siteLabel} · ${databaseLabel}`}
-        title="IP 标题库"
+        title="IP 作品库"
         description="面向内容运营的主列表，负责状态扫描、审核进入、发布动作和风险追踪。"
       />
 
