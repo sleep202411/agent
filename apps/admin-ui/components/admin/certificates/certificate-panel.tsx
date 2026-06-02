@@ -56,7 +56,7 @@ type Draft = {
   userId: string;
   title: string;
   issuer: string;
-  code: string;
+  certNo: string; // optional full number; "" → server auto-generates
   issuedAt: string; // datetime-local; "" → server defaults to now (create)
   imageAssetId: string;
   imageUrl: string;
@@ -66,7 +66,7 @@ const EMPTY_DRAFT: Draft = {
   userId: "",
   title: "",
   issuer: "FizzDragon",
-  code: "GEN",
+  certNo: "",
   issuedAt: "",
   imageAssetId: "",
   imageUrl: "",
@@ -148,7 +148,7 @@ export function CertificatesPanel({
       userId: row.userId,
       title: row.title,
       issuer: row.issuer,
-      code: "",
+      certNo: "",
       issuedAt: isoToLocalInput(row.issuedAt),
       imageAssetId: row.imageAssetId,
       imageUrl: row.imageUrl ?? "",
@@ -179,7 +179,7 @@ export function CertificatesPanel({
           userId: draft.userId.trim(),
           title: draft.title.trim(),
           issuer: draft.issuer.trim() || "FizzDragon",
-          code: (draft.code.trim() || "GEN").toUpperCase(),
+          ...(draft.certNo.trim() ? { certNo: draft.certNo.trim().toUpperCase() } : {}),
           imageAssetId: draft.imageAssetId,
           ...(draft.issuedAt ? { issuedAt: localInputToIso(draft.issuedAt) } : {}),
         };
@@ -523,35 +523,53 @@ export function CertificatesPanel({
               )}
             </FormField>
 
-            <div className="grid grid-cols-2 gap-3">
-              <FormField label="颁发方">
+            <FormField label="颁发方">
+              {(id) => (
+                <Input
+                  id={id}
+                  value={draft.issuer}
+                  onChange={(event) => setDraft((d) => ({ ...d, issuer: event.target.value }))}
+                  placeholder="FizzDragon"
+                />
+              )}
+            </FormField>
+
+            {mode === "create" ? (
+              <FormField
+                label="证书编号（可选）"
+                hint="留空自动生成；如填写需符合 FD-代码-年月-6位 格式，例如 FD-OPC-2606-AB12CD。"
+              >
                 {(id) => (
-                  <Input
-                    id={id}
-                    value={draft.issuer}
-                    onChange={(event) => setDraft((d) => ({ ...d, issuer: event.target.value }))}
-                    placeholder="FizzDragon"
-                  />
-                )}
-              </FormField>
-              {mode === "create" ? (
-                <FormField
-                  label="编号代码"
-                  hint="证书编号中段（2-12 位大写字母/数字），如 OPC、AIGC。"
-                >
-                  {(id) => (
+                  <>
                     <Input
                       id={id}
-                      value={draft.code}
+                      value={draft.certNo}
                       onChange={(event) =>
-                        setDraft((d) => ({ ...d, code: event.target.value.toUpperCase() }))
+                        setDraft((d) => ({ ...d, certNo: event.target.value.toUpperCase() }))
                       }
-                      placeholder="GEN"
+                      placeholder="FD-OPC-2606-XXXXXX"
                     />
-                  )}
-                </FormField>
-              ) : null}
-            </div>
+                    <p className="mt-1 text-[11px] text-slate-400">
+                      {draft.certNo.trim() ? (
+                        <>
+                          将使用：
+                          <span className="font-mono text-slate-500">
+                            {draft.certNo.trim().toUpperCase()}
+                          </span>
+                        </>
+                      ) : (
+                        <>
+                          留空将自动生成：
+                          <span className="font-mono text-slate-500">
+                            {autoCertNoPreview(draft.issuedAt)}
+                          </span>
+                        </>
+                      )}
+                    </p>
+                  </>
+                )}
+              </FormField>
+            ) : null}
 
             <FormField label="签发时间" hint="留空则使用当前时间。">
               {(id) => (
@@ -781,6 +799,17 @@ function isoToLocalInput(iso: string): string {
 function localInputToIso(local: string): string {
   const date = new Date(local);
   return Number.isNaN(date.getTime()) ? new Date().toISOString() : date.toISOString();
+}
+
+// Illustrative preview of the auto-generated cert number when 证书编号 is left
+// blank (server uses FD-GEN-{YYMM}-{RANDOM}). The random suffix is bullets
+// since it's allocated server-side; YYMM uses UTC to match the server.
+function autoCertNoPreview(issuedAtLocal: string): string {
+  const parsed = issuedAtLocal ? new Date(issuedAtLocal) : new Date();
+  const when = Number.isNaN(parsed.getTime()) ? new Date() : parsed;
+  const yy = String(when.getUTCFullYear() % 100).padStart(2, "0");
+  const mm = String(when.getUTCMonth() + 1).padStart(2, "0");
+  return `FD-GEN-${yy}${mm}-••••••`;
 }
 
 async function copyText(value: string) {

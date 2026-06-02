@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ConflictException,
   Injectable,
   NotFoundException,
   ServiceUnavailableException,
@@ -203,11 +204,39 @@ export class CertificatesService {
     await this.assertUsableImageAsset(input.imageAssetId);
     const issuedAt = input.issuedAt ?? new Date();
 
-    // Allocate a unique cert number. The random suffix makes collisions
-    // vanishingly unlikely, but we retry on the off chance the unique index
-    // rejects one rather than silently issuing a duplicate.
+    // Operator-pinned number (e.g. the one already printed on the artwork):
+    // store it verbatim. The unique index is the source of truth — a clash
+    // surfaces as a clear conflict instead of silently re-generating.
+    if (input.certNo) {
+      try {
+        const cert = await this.prisma.userCertificate.create({
+          data: {
+            userId: input.userId,
+            certNo: input.certNo,
+            title: input.title,
+            issuer: input.issuer,
+            imageAssetId: input.imageAssetId,
+            issuedAt,
+          },
+          include: { imageAsset: true },
+        });
+        return this.adminCertificateDto(cert);
+      } catch (err) {
+        if (isUniqueCertNoViolation(err)) {
+          throw new ConflictException({
+            code: 'CERT_NO_TAKEN',
+            msg: `Certificate number ${input.certNo} is already in use.`,
+          });
+        }
+        throw err;
+      }
+    }
+
+    // Auto-generate. The random suffix makes collisions vanishingly unlikely,
+    // but we retry on the off chance the unique index rejects one rather than
+    // silently issuing a duplicate.
     for (let attempt = 0; attempt < 6; attempt += 1) {
-      const certNo = generateCertNo(input.code, issuedAt);
+      const certNo = generateCertNo('GEN', issuedAt);
       try {
         const cert = await this.prisma.userCertificate.create({
           data: {

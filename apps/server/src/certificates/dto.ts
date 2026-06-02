@@ -63,10 +63,6 @@ export interface UserCertificateDTO {
 // the userId is shown verbatim. Cert numbers are generated server-side as
 // `FD-{CODE}-{YYMM}-{RANDOM}` (random is opaque, never encodes user/db id).
 
-// Code segment of the cert number — 2-12 uppercase alphanumerics (matches the
-// middle group of CERT_NO_RE). Defaults to GEN when the operator omits it.
-const CERT_CODE_RE = /^[A-Z0-9]{2,12}$/;
-
 export const ListAdminCertificatesQuerySchema = z.object({
   userId: z.string().trim().min(1).max(64).optional(),
   certNo: z
@@ -96,16 +92,18 @@ export const CreateAdminCertificateSchema = z
     userId: z.string().trim().min(1).max(64),
     title: z.string().trim().min(1).max(128),
     issuer: z.string().trim().min(1).max(128).default('FizzDragon'),
-    code: z
+    // Optional full certificate number. Provide it to pin a specific number
+    // (e.g. one already printed on the artwork); leave it out to auto-generate
+    // as FD-GEN-{YYMM}-{RANDOM}. Must match the public verify format.
+    certNo: z
       .string()
       .trim()
-      .min(2)
-      .max(12)
       .transform((value) => value.toUpperCase())
-      .refine((value) => CERT_CODE_RE.test(value), {
-        message: 'Code must be 2-12 uppercase letters/digits.',
+      .refine((value) => CERT_NO_RE.test(value), {
+        message:
+          'Certificate number must look like FD-CODE-YYMM-RANDOM6 (e.g. FD-OPC-2606-AB12CD).',
       })
-      .default('GEN'),
+      .optional(),
     imageAssetId: z.string().uuid(),
     issuedAt: z.coerce.date().optional(),
   })
