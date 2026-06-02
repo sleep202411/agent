@@ -1,5 +1,5 @@
 import { useRouter } from "expo-router";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   KeyboardAvoidingView,
   Platform,
@@ -27,6 +27,12 @@ export default function LoginScreen() {
   const [localError, setLocalError] = useState<string | undefined>();
   const isSubmitting = auth.status === "submitting";
   const canSubmit = identifier.trim().length > 0 && password.length > 0 && !isSubmitting;
+
+  useEffect(() => {
+    if (auth.status === "authenticated") {
+      router.replace("/");
+    }
+  }, [auth.status, router]);
 
   async function handleSubmit() {
     if (!canSubmit) {
@@ -63,8 +69,13 @@ export default function LoginScreen() {
       >
         <View style={styles.page}>
           <View style={styles.header}>
+            <View style={[styles.brandMark, { backgroundColor: theme.brand }]}>
+              <ThemedText type="smallBold" style={styles.brandMarkText}>
+                FD
+              </ThemedText>
+            </View>
             <ThemedText type="smallBold" themeColor="textSecondary">
-              FizzDragon account
+              FizzDragon
             </ThemedText>
             <ThemedText type="title" style={styles.title}>
               Sign in
@@ -147,16 +158,6 @@ export default function LoginScreen() {
               </ThemedText>
             </Pressable>
           </ThemedView>
-
-          <Pressable
-            accessibilityRole="button"
-            onPress={() => router.replace("/")}
-            style={styles.backButton}
-          >
-            <ThemedText type="smallBold" themeColor="textSecondary">
-              Back
-            </ThemedText>
-          </Pressable>
         </View>
       </ScrollView>
     </KeyboardAvoidingView>
@@ -178,14 +179,26 @@ const styles = StyleSheet.create({
     gap: Spacing.four,
   },
   header: {
+    alignItems: "flex-start",
     gap: Spacing.two,
   },
+  brandMark: {
+    width: 44,
+    height: 44,
+    borderRadius: 8,
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: Spacing.two,
+  },
+  brandMarkText: {
+    color: "#FFFFFF",
+  },
   title: {
-    fontSize: 38,
-    lineHeight: 44,
+    fontSize: 30,
+    lineHeight: 36,
   },
   subtitle: {
-    maxWidth: 520,
+    maxWidth: 340,
   },
   formPanel: {
     borderRadius: 8,
@@ -218,11 +231,6 @@ const styles = StyleSheet.create({
   },
   submitText: {
     color: "#FFFFFF",
-  },
-  backButton: {
-    alignSelf: "flex-start",
-    minHeight: 40,
-    justifyContent: "center",
   },
   pressed: {
     opacity: 0.72,

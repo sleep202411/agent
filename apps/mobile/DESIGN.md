@@ -1,22 +1,36 @@
 # FizzDragon Mobile Design
 
 Mobile is a new Expo / React Native surface. The old Vue / uni-app project is
-only a feature and API reference; do not copy its visual system, layout rhythm,
-or page composition.
+the business-flow reference for first-pass mobile information architecture:
+Story Square, project lists, creator center, and mine/profile should map back
+to the old app's product modules. Do not copy its visual system, CSS, or
+desktop page composition.
 
 ## Theme
 
 - Use NativeWind for styling and Tailwind tokens for color, spacing, type, and
   radius.
-- `#E52227` is the brand accent. Use it for primary actions, selected states,
-  focus accents, destructive confirmation, and important status signals. Do not
-  use it as a page background.
-- Default surfaces are neutral and content-first: light mode uses warm white
-  canvas and white panels; dark mode uses near-black canvas and dark neutral
-  panels.
+- Mobile follows the current web product direction: dark-only. Do not expose a
+  theme switch or branch UI off device light mode.
+- `#E52227` is the brand accent, matching web's current primary token. Use it
+  for primary actions, selected states, focus accents, destructive confirmation,
+  and important status signals. Do not use it as a page background.
+- Default surfaces are neutral and content-first: use a near-black root canvas,
+  dark neutral panels, subtle white hairlines, off-white primary text, and muted
+  gray secondary text.
 - Cards and repeated items use radius `8px` or less unless a component has a
   specific interaction reason to be larger.
 - Favor dense, task-oriented mobile screens over marketing-style hero layouts.
+
+## App Structure
+
+- The mobile app starts at authentication. Anonymous users see the login screen;
+  they do not land on a public marketing/dashboard surface.
+- Authenticated users enter a bottom-tab app shell. Tab pages should be compact
+  app screens with native-style headers, lists, quick actions, and feed rows.
+- Do not use desktop web patterns such as top nav bars, wide dashboards,
+  oversized heroes, three-column stat grids, or sign-in CTA panels inside the
+  tab shell.
 
 ## Copy
 

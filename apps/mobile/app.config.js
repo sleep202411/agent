@@ -4,8 +4,7 @@ const themeTokens = require("./src/config/theme-tokens.json");
 
 const THEME_COLORS = {
   brand: themeTokens.colors.brand["500"],
-  brandTint: themeTokens.colors.brand["50"],
-  canvas: themeTokens.colors.neutral["0"],
+  canvas: themeTokens.colors.dark.canvas,
 };
 
 const REGION_DEFAULTS = {
@@ -223,20 +222,23 @@ module.exports = ({ config }) => {
     orientation: "portrait",
     icon: "./assets/images/icon.png",
     scheme: getScheme(appRegion, appVariant),
-    userInterfaceStyle: "automatic",
+    userInterfaceStyle: "dark",
     backgroundColor: THEME_COLORS.canvas,
     primaryColor: THEME_COLORS.brand,
     ios: {
       ...config.ios,
       icon: "./assets/expo.icon",
       bundleIdentifier: readIdentifier(appRegion, appVariant, "ios"),
+      userInterfaceStyle: "dark",
       backgroundColor: THEME_COLORS.canvas,
     },
     android: {
       ...config.android,
       package: readIdentifier(appRegion, appVariant, "android"),
+      userInterfaceStyle: "dark",
+      backgroundColor: THEME_COLORS.canvas,
       adaptiveIcon: {
-        backgroundColor: THEME_COLORS.brandTint,
+        backgroundColor: THEME_COLORS.canvas,
         foregroundImage: "./assets/images/android-icon-foreground.png",
         backgroundImage: "./assets/images/android-icon-background.png",
         monochromeImage: "./assets/images/android-icon-monochrome.png",
@@ -247,9 +249,17 @@ module.exports = ({ config }) => {
       bundler: "metro",
       output: "static",
       favicon: "./assets/images/favicon.png",
+      themeColor: THEME_COLORS.canvas,
+      backgroundColor: THEME_COLORS.canvas,
     },
     plugins: [
       "expo-router",
+      [
+        "expo-status-bar",
+        {
+          style: "light",
+        },
+      ],
       [
         "expo-splash-screen",
         {

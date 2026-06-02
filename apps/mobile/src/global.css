@@ -3,6 +3,7 @@
 @tailwind utilities;
 
 :root {
+  color-scheme: dark;
   --font-display:
     Spline Sans, Inter, ui-sans-serif, system-ui, sans-serif, Apple Color Emoji, Segoe UI Emoji,
     Segoe UI Symbol, Noto Color Emoji;
@@ -12,21 +13,10 @@
   --font-serif: Georgia, "Times New Roman", serif;
 
   --color-brand: #e52227;
-  --color-canvas: #f7f8fa;
-  --color-surface: #ffffff;
-  --color-surface-muted: #eef0f3;
-  --color-line: #dde1e7;
-  --color-ink: #0b0d12;
-  --color-ink-muted: #687080;
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --color-canvas: #0b0d12;
-    --color-surface: #14171d;
-    --color-surface-muted: #20242c;
-    --color-line: #333843;
-    --color-ink: #f7f8fa;
-    --color-ink-muted: #9098a7;
-  }
+  --color-canvas: #0c0e14;
+  --color-surface: #171717;
+  --color-surface-muted: #282828;
+  --color-line: rgba(255, 255, 255, 0.1);
+  --color-ink: #fafafa;
+  --color-ink-muted: #afafaf;
 }

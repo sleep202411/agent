@@ -1,3 +1,5 @@
+import { Platform } from "react-native";
+
 import { appEnv } from "@/config";
 
 export interface ApiResponse<T = unknown> {
@@ -72,12 +74,35 @@ function resolveService(path: string, service: ApiService): Exclude<ApiService, 
   return "content";
 }
 
+function appendQuery(url: string, params: ApiRequestConfig["params"]) {
+  const entries = Object.entries(params ?? {}).filter(([, value]) => value !== undefined);
+  if (!entries.length) return url;
+
+  const separator = url.includes("?") ? "&" : "?";
+  const query = new URLSearchParams(entries.map(([key, value]) => [key, String(value)])).toString();
+  return `${url}${separator}${query}`;
+}
+
+function shouldUseWebProxy(path: string) {
+  return (
+    Platform.OS === "web" &&
+    appEnv.appVariant !== "production" &&
+    !path.startsWith("http") &&
+    !path.startsWith("//")
+  );
+}
+
 function buildApiUrl(path: string, config: Pick<ApiRequestConfig, "params" | "service"> = {}) {
   const service = config.service ?? "auto";
+  const resolvedService = resolveService(path, service);
+
+  if (shouldUseWebProxy(path)) {
+    const proxyPath = `/_mobile-api/${resolvedService}/${path.replace(/^\/+/, "")}`;
+    return appendQuery(proxyPath, config.params);
+  }
+
   const base =
-    path.startsWith("http") || path.startsWith("//")
-      ? ""
-      : appEnv.api[`${resolveService(path, service)}BaseUrl`];
+    path.startsWith("http") || path.startsWith("//") ? "" : appEnv.api[`${resolvedService}BaseUrl`];
   const cleanBase = base.replace(/\/+$/, "");
   const cleanPath = path.startsWith("//")
     ? `https:${path}`
@@ -87,12 +112,7 @@ function buildApiUrl(path: string, config: Pick<ApiRequestConfig, "params" | "se
   const url =
     path.startsWith("http") || path.startsWith("//") ? cleanPath : `${cleanBase}${cleanPath}`;
 
-  const entries = Object.entries(config.params ?? {}).filter(([, value]) => value !== undefined);
-  if (!entries.length) return url;
-
-  const separator = url.includes("?") ? "&" : "?";
-  const query = new URLSearchParams(entries.map(([key, value]) => [key, String(value)])).toString();
-  return `${url}${separator}${query}`;
+  return appendQuery(url, config.params);
 }
 
 function stringifyForm(form: NonNullable<ApiRequestConfig["form"]>) {
