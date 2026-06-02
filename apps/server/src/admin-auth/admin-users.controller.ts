@@ -23,12 +23,14 @@ import {
   AdminUserParamsSchema,
   AdminUserSessionParamsSchema,
   CreateAdminUserSchema,
+  ListAdminSessionsQuerySchema,
   ListAdminUsersQuerySchema,
   ResetAdminPasswordSchema,
   UpdateAdminUserSchema,
   type AdminUserParams,
   type AdminUserSessionParams,
   type CreateAdminUserInput,
+  type ListAdminSessionsQuery,
   type ListAdminUsersQuery,
   type ResetAdminPasswordInput,
   type UpdateAdminUserInput,
@@ -75,6 +77,21 @@ export class AdminUsersController {
       context: requestContext(request),
     });
     return { code: 200, data: user };
+  }
+
+  // Static segments must be declared before the `:userId` param routes below,
+  // otherwise Express matches `/roles` and `/sessions` as `:userId`.
+  @Get('roles')
+  async listRoles() {
+    return { code: 200, data: await this.adminUsers.listRoles() };
+  }
+
+  @Get('sessions')
+  async listAllSessions(
+    @Query(new ZodValidationPipe(ListAdminSessionsQuerySchema))
+    query: ListAdminSessionsQuery,
+  ) {
+    return { code: 200, data: await this.adminUsers.listAllSessions(query) };
   }
 
   @Get(':userId')

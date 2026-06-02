@@ -1,10 +1,12 @@
 import {
   IconActivity,
   IconBook2,
+  IconCertificate,
   IconChecklist,
   IconCoins,
   IconCreditCard,
   IconDashboard,
+  IconDeviceDesktop,
   IconFileAnalytics,
   IconFlag,
   IconLayoutCards,
@@ -62,6 +64,13 @@ export const GLOBAL_NAV: GlobalNavEntry[] = [
   },
   // 媒体资产 (/media) is hidden from nav until the module is built — the page is
   // still a ModulePlaceholder, so we don't surface it as a top-level module yet.
+  {
+    key: "/certificates",
+    href: "/certificates",
+    label: "证书管理",
+    icon: IconCertificate,
+    permission: "certificate.read",
+  },
   {
     key: "/users",
     href: "/users",
@@ -204,6 +213,31 @@ export const MODULE_NAV: Record<string, ModuleNavGroup[]> = {
           label: "IP权益",
           icon: IconCoins,
           permission: "ip.read",
+        },
+      ],
+    },
+  ],
+  "/users": [
+    {
+      label: "账号权限",
+      items: [
+        {
+          href: "/users/accounts",
+          label: "账号",
+          icon: IconUsersGroup,
+          permission: "admin.manage",
+        },
+        {
+          href: "/users/roles",
+          label: "角色权限",
+          icon: IconShieldLock,
+          permission: "admin.manage",
+        },
+        {
+          href: "/users/sessions",
+          label: "会话",
+          icon: IconDeviceDesktop,
+          permission: "admin.manage",
         },
       ],
     },

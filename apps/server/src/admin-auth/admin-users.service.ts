@@ -11,7 +11,12 @@ import {
   Prisma,
 } from '@prisma/client';
 import { assignAdminRole } from './admin-auth.bootstrap';
-import { ADMIN_ROLE_KEYS, type AdminRoleKey } from './admin-auth.constants';
+import {
+  ADMIN_PERMISSION_CATALOG,
+  ADMIN_ROLE_CATALOG,
+  ADMIN_ROLE_KEYS,
+  type AdminRoleKey,
+} from './admin-auth.constants';
 import {
   hashAdminPassword,
   validateAdminPasswordPolicy,
@@ -19,6 +24,7 @@ import {
 import { PrismaService } from '../infra/db/db.module';
 import type {
   CreateAdminUserInput,
+  ListAdminSessionsQuery,
   ListAdminUsersQuery,
   UpdateAdminUserInput,
 } from './admin-users.dto';
@@ -272,6 +278,73 @@ export class AdminUsersService {
     return {
       items: sessions.map((session) => ({
         id: session.id,
+        status: session.status,
+        ipAddress: session.ipAddress,
+        userAgent: session.userAgent,
+        createdAt: session.createdAt.toISOString(),
+        lastSeenAt: session.lastSeenAt.toISOString(),
+        expiresAt: session.expiresAt.toISOString(),
+        revokedAt: session.revokedAt?.toISOString() ?? null,
+      })),
+    };
+  }
+
+  // Role → permission matrix for the 角色权限 page. Roles/permissions are
+  // defined in code (ADMIN_ROLE_CATALOG / ADMIN_PERMISSION_CATALOG, synced to
+  // the DB on boot); we enrich each role with its live assigned-account count.
+  async listRoles() {
+    const [roleCounts, roles] = await Promise.all([
+      this.prisma.adminUserRole.groupBy({
+        by: ['roleId'],
+        _count: { _all: true },
+      }),
+      this.prisma.adminRole.findMany({ select: { id: true, key: true } }),
+    ]);
+    const keyById = new Map(roles.map((role) => [role.id, role.key]));
+    const countByKey = new Map<string, number>();
+    for (const entry of roleCounts) {
+      const key = keyById.get(entry.roleId);
+      if (key) countByKey.set(key, entry._count._all);
+    }
+
+    return {
+      permissions: ADMIN_PERMISSION_CATALOG.map((permission) => ({
+        key: permission.key,
+        description: permission.description,
+      })),
+      roles: ADMIN_ROLE_CATALOG.map((role) => ({
+        key: role.key,
+        name: role.name,
+        description: role.description,
+        permissions: role.permissions,
+        accountCount: countByKey.get(role.key) ?? 0,
+      })),
+    };
+  }
+
+  // Global active-session view for the 会话 page (the per-user list is keyed by
+  // userId; this aggregates across all admins with the owner's identity).
+  async listAllSessions(query: ListAdminSessionsQuery) {
+    const where: Prisma.AdminSessionWhereInput =
+      query.status === 'all'
+        ? {}
+        : { status: AdminSessionStatus.active, expiresAt: { gt: new Date() } };
+
+    const sessions = await this.prisma.adminSession.findMany({
+      where,
+      include: {
+        user: { select: { id: true, email: true, displayName: true } },
+      },
+      orderBy: [{ lastSeenAt: 'desc' }],
+      take: query.limit,
+    });
+
+    return {
+      items: sessions.map((session) => ({
+        id: session.id,
+        userId: session.userId,
+        userEmail: session.user.email,
+        userDisplayName: session.user.displayName,
         status: session.status,
         ipAddress: session.ipAddress,
         userAgent: session.userAgent,

@@ -10,6 +10,8 @@ export const ADMIN_PERMISSION_KEYS = {
   BillingWrite: 'billing.write',
   WorkspaceRead: 'workspace.read',
   MediaRead: 'media.read',
+  CertificateRead: 'certificate.read',
+  CertificateManage: 'certificate.manage',
 } as const;
 
 export const ADMIN_ROLE_KEYS = {
@@ -58,6 +60,14 @@ export const ADMIN_PERMISSION_CATALOG = [
     key: ADMIN_PERMISSION_KEYS.MediaRead,
     description: '查看媒体资产和上传记录',
   },
+  {
+    key: ADMIN_PERMISSION_KEYS.CertificateRead,
+    description: '查看用户证书记录',
+  },
+  {
+    key: ADMIN_PERMISSION_KEYS.CertificateManage,
+    description: '签发、修改、吊销和删除用户证书',
+  },
 ] as const;
 
 export const ADMIN_ROLE_CATALOG: Array<{
@@ -85,6 +95,8 @@ export const ADMIN_ROLE_CATALOG: Array<{
       ADMIN_PERMISSION_KEYS.BillingWrite,
       ADMIN_PERMISSION_KEYS.WorkspaceRead,
       ADMIN_PERMISSION_KEYS.MediaRead,
+      ADMIN_PERMISSION_KEYS.CertificateRead,
+      ADMIN_PERMISSION_KEYS.CertificateManage,
     ],
   },
   {
@@ -97,6 +109,7 @@ export const ADMIN_ROLE_CATALOG: Array<{
       ADMIN_PERMISSION_KEYS.BillingRead,
       ADMIN_PERMISSION_KEYS.WorkspaceRead,
       ADMIN_PERMISSION_KEYS.MediaRead,
+      ADMIN_PERMISSION_KEYS.CertificateRead,
     ],
   },
 ];

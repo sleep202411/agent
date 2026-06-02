@@ -26,6 +26,16 @@ export const ListAdminUsersQuerySchema = z
   .strict();
 export type ListAdminUsersQuery = z.infer<typeof ListAdminUsersQuerySchema>;
 
+export const ListAdminSessionsQuerySchema = z
+  .object({
+    status: z.enum(['active', 'all']).default('active'),
+    limit: z.coerce.number().int().min(1).max(200).default(100),
+  })
+  .strict();
+export type ListAdminSessionsQuery = z.infer<
+  typeof ListAdminSessionsQuerySchema
+>;
+
 export const AdminUserParamsSchema = z
   .object({
     userId: z.string().uuid(),
