@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, type ComponentType, type ReactNode } from "react";
+import { useMemo, useState, type ComponentType, type ReactNode } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
@@ -8,7 +8,6 @@ import {
   IconArrowLeft,
   IconBookmark,
   IconDotsVertical,
-  IconEye,
   IconFlag,
   IconLoader2,
   IconLock,
@@ -22,6 +21,9 @@ import {
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { CommunityRechargeDialog } from "@/components/payment/community-recharge-dialog";
+import { VideoPlayer } from "@/components/media/video-player";
+import { UserAvatar } from "@/components/user-avatar";
+import { useUserDisplays } from "@/app/(site)/crews/_hooks/use-users";
 import {
   Dialog,
   DialogBody,
@@ -86,10 +88,15 @@ interface DetailIp {
   genres: string[];
   tags: string[];
   copyrightOwner: string | null;
+  createdById: string | null;
+  contributors: IpCommerceIp["contributors"];
   previewMode: boolean;
 }
 
 type Translate = ReturnType<typeof useTranslations>;
+
+// Sentinel "episode id" for the IP trailer pseudo-item in the playlist.
+const TRAILER_ID = "__trailer__";
 
 export function IpPublicDetail({ ipId }: IpPublicDetailProps) {
   const locale = useLocale() as Locale;
@@ -138,10 +145,12 @@ export function IpPublicDetail({ ipId }: IpPublicDetailProps) {
     return <NotFoundState locale={locale} t={t} />;
   }
 
-  const selectedEpisode =
-    detailIp.episodes.find((episode) => episode.id === selectedEpisodeId) ??
-    detailIp.episodes[0] ??
-    null;
+  const isTrailerSelected = selectedEpisodeId === TRAILER_ID;
+  const selectedEpisode = isTrailerSelected
+    ? null
+    : (detailIp.episodes.find((episode) => episode.id === selectedEpisodeId) ??
+      detailIp.episodes[0] ??
+      null);
   const statusLabel = statusT(`status.${detailIp.status}`);
   const visibilityLabel = statusT(`visibility.${detailIp.listingVisibility}`);
   const ipCoverUrl = getAssetUrl(detailIp.coverAsset);
@@ -174,7 +183,11 @@ export function IpPublicDetail({ ipId }: IpPublicDetailProps) {
   const mediaTrailerUrl = canWatchSelected
     ? (episodeMediaUrl ?? episodeTrailerUrl ?? ipTrailerUrl)
     : (episodeTrailerUrl ?? ipTrailerUrl);
-  const mediaTitle = selectedEpisode ? selectedEpisode.title : detailIp.title;
+  const mediaTitle = isTrailerSelected
+    ? t("episodes.trailer")
+    : selectedEpisode
+      ? selectedEpisode.title
+      : detailIp.title;
   const mediaSummary = selectedEpisode?.summary || detailIp.summary || t("emptySummary");
   const storyText = detailIp.description?.trim() || detailIp.summary || t("emptySummary");
   const tagItems = Array.from(new Set(detailIp.genres.map((item) => item.trim()).filter(Boolean)));
@@ -399,8 +412,10 @@ export function IpPublicDetail({ ipId }: IpPublicDetailProps) {
             <CreatorTeamCard ip={detailIp} bannerUrl={ipCoverUrl} t={t} />
             <EpisodePlaylist
               episodes={detailIp.episodes}
-              activeEpisodeId={selectedEpisode?.id ?? null}
+              activeEpisodeId={isTrailerSelected ? TRAILER_ID : (selectedEpisode?.id ?? null)}
               accessItems={accessQuery.data?.episodes ?? []}
+              hasTrailer={Boolean(ipTrailerUrl)}
+              trailerPoster={ipCoverUrl}
               locale={locale}
               t={t}
               onSelectEpisode={setSelectedEpisodeId}
@@ -471,6 +486,11 @@ function normalizeCreatorIp(ip: IpCreatorIp): DetailIp {
     genres: ip.genres ?? [],
     tags: [],
     copyrightOwner: ip.copyrightOwner ?? null,
+    createdById: null,
+    contributors: (ip.contributors ?? []).map((contributor) => ({
+      ...contributor,
+      displayName: contributor.displayName ?? "",
+    })),
     previewMode: true,
   };
 }
@@ -525,13 +545,7 @@ function MediaFrame({
   return (
     <div className="relative aspect-video w-full overflow-hidden rounded-xl bg-secondary">
       {videoUrl ? (
-        <video
-          src={videoUrl}
-          className="size-full object-cover"
-          controls
-          playsInline
-          preload="metadata"
-        />
+        <VideoPlayer src={videoUrl} className="size-full" autoplay={false} />
       ) : posterUrl ? (
         <Image
           src={posterUrl}
@@ -562,25 +576,42 @@ function MediaFrame({
           </div>
         </div>
       ) : null}
-      <div className="pointer-events-none absolute inset-x-0 bottom-0 bg-linear-to-t from-black/70 to-transparent p-4">
-        <span className="inline-flex items-center gap-2 rounded-full bg-black/55 px-3 py-1 text-xs font-semibold text-white/80">
-          <IconEye className="size-3.5 text-primary" />
-          {videoUrl
-            ? locked
-              ? t("visual.trailer")
-              : t("visual.video")
-            : posterUrl
-              ? t("visual.cover")
-              : t("visual.placeholder")}
-        </span>
-      </div>
     </div>
   );
 }
 
 function CreatorTeamCard({ ip, bannerUrl, t }: { ip: DetailIp; bannerUrl?: string; t: Translate }) {
+  const [membersOpen, setMembersOpen] = useState(false);
   const teamName = ip.copyrightOwner?.trim() || t("creatorTeam.titleFallback");
   const initial = teamName.trim().charAt(0).toUpperCase() || "F";
+  const members = ip.contributors;
+  // Resolve member + creator user ids → live Java name/avatar (dicebear fallback).
+  const userIds = useMemo(
+    () =>
+      Array.from(
+        new Set(
+          [ip.createdById, ...members.map((member) => member.userId)].filter(Boolean) as string[]
+        )
+      ),
+    [ip.createdById, members]
+  );
+  const displays = useUserDisplays(userIds);
+  const stack: DetailIp["contributors"] =
+    members.length > 0
+      ? members.slice(0, 3)
+      : ip.createdById
+        ? [
+            {
+              id: ip.createdById,
+              userId: ip.createdById,
+              displayName: teamName,
+              role: "",
+              customRole: null,
+              isPublic: true,
+              displayOrder: 0,
+            },
+          ]
+        : [];
 
   return (
     <section className="overflow-hidden rounded-xl bg-secondary/65">
@@ -599,9 +630,23 @@ function CreatorTeamCard({ ip, bannerUrl, t }: { ip: DetailIp; bannerUrl?: strin
       </div>
 
       <div className="flex items-center gap-3 p-3">
-        <div className="flex size-11 shrink-0 items-center justify-center rounded-full bg-primary text-base font-bold text-primary-foreground shadow-lg shadow-primary/20">
-          {initial}
-        </div>
+        {stack.length > 0 ? (
+          <div className="flex shrink-0 -space-x-2">
+            {stack.map((member) => (
+              <UserAvatar
+                key={member.id}
+                src={member.userId ? displays.get(member.userId)?.avatar : undefined}
+                seed={member.userId || member.id}
+                name={member.displayName}
+                className="size-9 ring-2 ring-secondary"
+              />
+            ))}
+          </div>
+        ) : (
+          <div className="flex size-11 shrink-0 items-center justify-center rounded-full bg-primary text-base font-bold text-primary-foreground shadow-lg shadow-primary/20">
+            {initial}
+          </div>
+        )}
 
         <div className="min-w-0 flex-1">
           <h2 className="truncate text-base font-semibold text-foreground">{teamName}</h2>
@@ -610,12 +655,15 @@ function CreatorTeamCard({ ip, bannerUrl, t }: { ip: DetailIp; bannerUrl?: strin
           </p>
         </div>
 
-        <button
-          type="button"
-          className="h-9 shrink-0 rounded-full bg-background px-4 text-sm font-semibold text-foreground transition-colors hover:bg-background/80"
-        >
-          {t("creatorTeam.action")}
-        </button>
+        {members.length > 0 ? (
+          <button
+            type="button"
+            onClick={() => setMembersOpen(true)}
+            className="h-9 shrink-0 rounded-full bg-background px-4 text-sm font-semibold text-foreground transition-colors hover:bg-background/80"
+          >
+            {t("creatorTeam.action")}
+          </button>
+        ) : null}
 
         <button
           type="button"
@@ -625,7 +673,66 @@ function CreatorTeamCard({ ip, bannerUrl, t }: { ip: DetailIp; bannerUrl?: strin
           <IconDotsVertical className="size-5" />
         </button>
       </div>
+
+      <ContributorsDialog
+        open={membersOpen}
+        onOpenChange={setMembersOpen}
+        teamName={teamName}
+        members={members}
+        displays={displays}
+        t={t}
+      />
     </section>
+  );
+}
+
+function ContributorsDialog({
+  open,
+  onOpenChange,
+  teamName,
+  members,
+  displays,
+  t,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  teamName: string;
+  members: DetailIp["contributors"];
+  displays: ReturnType<typeof useUserDisplays>;
+  t: Translate;
+}) {
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>{t("creatorTeam.titleFallback")}</DialogTitle>
+          <DialogDescription className="sr-only">{teamName}</DialogDescription>
+        </DialogHeader>
+        <DialogBody className="space-y-1">
+          {members.map((member) => {
+            const display = member.userId ? displays.get(member.userId) : undefined;
+            const name = display?.nickname?.trim() || member.displayName;
+            const role = member.customRole?.trim() || member.role;
+            return (
+              <div key={member.id} className="flex items-center gap-3 rounded-lg p-1.5">
+                <UserAvatar
+                  src={display?.avatar}
+                  seed={member.userId || member.id}
+                  name={name}
+                  className="size-9 shrink-0"
+                />
+                <div className="min-w-0 flex-1">
+                  <div className="truncate text-sm font-medium text-foreground">{name}</div>
+                  {role ? (
+                    <div className="truncate text-xs text-muted-foreground">{role}</div>
+                  ) : null}
+                </div>
+              </div>
+            );
+          })}
+        </DialogBody>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -633,6 +740,8 @@ function EpisodePlaylist({
   episodes,
   activeEpisodeId,
   accessItems,
+  hasTrailer,
+  trailerPoster,
   locale,
   t,
   onSelectEpisode,
@@ -640,6 +749,8 @@ function EpisodePlaylist({
   episodes: IpCommerceEpisode[];
   activeEpisodeId: string | null;
   accessItems: Array<{ id: string; access: IpCommerceAccess; price: IpCommercePriceRule | null }>;
+  hasTrailer: boolean;
+  trailerPoster?: string;
   locale: Locale;
   t: Translate;
   onSelectEpisode: (episodeId: string) => void;
@@ -652,8 +763,51 @@ function EpisodePlaylist({
           {t("episodes.count", { count: episodes.length })}
         </span>
       </div>
-      {episodes.length > 0 ? (
+      {episodes.length > 0 || hasTrailer ? (
         <div className="space-y-1.5">
+          {hasTrailer ? (
+            <button
+              type="button"
+              onClick={() => onSelectEpisode(TRAILER_ID)}
+              className={cn(
+                "flex w-full gap-2.5 rounded-lg p-1.5 text-left transition-colors",
+                activeEpisodeId === TRAILER_ID ? "bg-primary/12" : "hover:bg-secondary/65"
+              )}
+            >
+              <div className="relative aspect-video w-36 shrink-0 overflow-hidden rounded-md bg-secondary">
+                {trailerPoster ? (
+                  <Image
+                    src={trailerPoster}
+                    alt={t("episodes.trailer")}
+                    fill
+                    unoptimized
+                    sizes="144px"
+                    className="object-cover"
+                  />
+                ) : (
+                  <div className="grid size-full place-items-center">
+                    <IconVideo className="size-5 text-muted-foreground/45" />
+                  </div>
+                )}
+                <span className="absolute inset-0 grid place-items-center bg-black/25">
+                  <IconPlayerPlay className="size-6 text-white drop-shadow" />
+                </span>
+              </div>
+              <div className="min-w-0 flex-1 pt-0.5">
+                <div
+                  className={cn(
+                    "line-clamp-2 text-[13px] font-semibold leading-5",
+                    activeEpisodeId === TRAILER_ID ? "text-primary" : "text-foreground"
+                  )}
+                >
+                  {t("episodes.trailer")}
+                </div>
+                <span className="mt-2 inline-flex rounded bg-primary/10 px-2 py-0.5 text-[10px] font-semibold text-primary">
+                  {t("episodes.freePreview")}
+                </span>
+              </div>
+            </button>
+          ) : null}
           {episodes.map((episode) => (
             <EpisodePlaylistItem
               key={episode.id}

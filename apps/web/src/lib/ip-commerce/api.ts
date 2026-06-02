@@ -118,6 +118,18 @@ export interface IpCommerceIp {
   tagCodes: string[];
   taxonomy: IpTaxonomyBundle;
   copyrightOwner: string | null;
+  /** Creator's user id (Java user). Resolve to live name/avatar via useUserDisplays. */
+  createdById: string | null;
+  /** Public creator-team members (ordered). userId may be null for name-only credits. */
+  contributors: Array<{
+    id: string;
+    userId: string | null;
+    displayName: string;
+    role: string;
+    customRole: string | null;
+    isPublic: boolean;
+    displayOrder: number;
+  }>;
   rightsSummary: Record<string, unknown>;
   aiDisclosure: Record<string, unknown>;
   coverAsset: IpCommerceAsset | null;

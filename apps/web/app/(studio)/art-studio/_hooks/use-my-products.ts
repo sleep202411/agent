@@ -24,7 +24,7 @@ export interface MyProduct {
   updateTime?: string;
 }
 
-const myProductsKeys = {
+export const myProductsKeys = {
   all: ["studio", "my-products"] as const,
   page: (page: number, pageSize: number) => [...myProductsKeys.all, { page, pageSize }] as const,
 };

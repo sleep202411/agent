@@ -52,7 +52,9 @@ function ComboboxContent({
             // `pointer-events-auto` is required when this popup is portaled out
             // of a modal Radix dialog (e.g. Sheet), which sets the body to
             // `pointer-events: none`; without it the options are unclickable.
-            "pointer-events-auto max-h-72 min-w-(--anchor-width) overflow-hidden rounded-lg bg-popover text-popover-foreground shadow-md ring-1 ring-foreground/10",
+            // The Popup is the single scroll container (overscroll-contain so the
+            // scroll doesn't chain to the Sheet body at the edges).
+            "pointer-events-auto max-h-72 min-w-(--anchor-width) overflow-y-auto overscroll-contain rounded-lg bg-popover text-popover-foreground shadow-md ring-1 ring-foreground/10",
             className
           )}
           {...props}
@@ -71,9 +73,8 @@ function ComboboxList({
   return (
     <ComboboxPrimitive.List
       data-slot="combobox-list"
-      // `overscroll-contain` stops the inner scroll from chaining to the parent
-      // (the Sheet body) once the list hits its top/bottom edge.
-      className={cn("max-h-72 overflow-y-auto overscroll-contain p-1", className)}
+      // Natural height — the Popup owns the scroll (see ComboboxContent).
+      className={cn("p-1", className)}
       {...props}
     />
   );
@@ -110,7 +111,9 @@ function ComboboxEmpty({
   return (
     <ComboboxPrimitive.Empty
       data-slot="combobox-empty"
-      className={cn("px-3 py-6 text-center text-sm text-muted-foreground", className)}
+      // base-ui keeps Empty mounted (nulls its children when the list has items);
+      // `empty:hidden` collapses the padded box so it doesn't leave a blank gap.
+      className={cn("px-3 py-6 text-center text-sm text-muted-foreground empty:hidden", className)}
       {...props}
     />
   );

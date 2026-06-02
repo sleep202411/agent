@@ -178,6 +178,13 @@ const ipInclude = {
       },
     },
   },
+  // Public creator team — only listed members, ordered. Drives the IP detail
+  // "creator team" card + the per-member avatars (resolved to live Java
+  // name/avatar by userId on the web).
+  contributors: {
+    where: { isPublic: true, removedAt: null },
+    orderBy: { displayOrder: 'asc' },
+  },
 } satisfies Prisma.IpInclude;
 
 type IpWithCommerce = Prisma.IpGetPayload<{
@@ -5501,6 +5508,16 @@ function ipDto(
     localization: copy.meta,
     ...taxonomy,
     copyrightOwner: title.copyrightOwner,
+    createdById: title.createdById,
+    contributors: title.contributors.map((contributor) => ({
+      id: contributor.id,
+      userId: contributor.userId,
+      displayName: contributor.displayName,
+      role: contributor.role,
+      customRole: contributor.customRole,
+      isPublic: contributor.isPublic,
+      displayOrder: contributor.displayOrder,
+    })),
     rightsSummary: title.rightsSummary,
     aiDisclosure: title.aiDisclosure,
     coverAsset: assetDto(title.coverAsset),

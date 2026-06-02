@@ -16,6 +16,7 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { NewIpCreateDialog } from "@/app/(site)/ip-studio/_components/new-ip-create-form";
+import { useUserDisplays } from "@/app/(site)/crews/_hooks/use-users";
 import type {
   IpCommerceAsset,
   IpCommerceDiscoveryItem,
@@ -173,6 +174,14 @@ export function IpPlazaClient() {
     );
   }, [debouncedSearch, rawProjects]);
 
+  // Resolve creator user ids → live Java name/avatar (dicebear fallback in the
+  // card). Batched once for the whole grid via the shared crew lookup BFF.
+  const ownerIds = useMemo(
+    () => Array.from(new Set(projects.map((project) => project.ownerId).filter(Boolean))),
+    [projects]
+  );
+  const ownerDisplays = useUserDisplays(ownerIds);
+
   const loadMoreRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     const node = loadMoreRef.current;
@@ -286,7 +295,11 @@ export function IpPlazaClient() {
               <>
                 <div className="columns-2 gap-6 sm:columns-3 lg:columns-3 xl:columns-4">
                   {projects.map((project) => (
-                    <IPPlazaCard key={project.id} project={project} />
+                    <IPPlazaCard
+                      key={project.id}
+                      project={project}
+                      ownerDisplay={ownerDisplays.get(project.ownerId)}
+                    />
                   ))}
                 </div>
                 <div ref={loadMoreRef} className="h-px" aria-hidden />
@@ -362,6 +375,7 @@ function toPlazaProject(ip: IpCommerceIp, t: ReturnType<typeof useTranslations>)
     description: ip.summary || ip.description || "",
     cover,
     trailer,
+    ownerId: ip.createdById ?? "",
     ownerName,
     ownerAvatar: "",
     genres: ip.genres,
@@ -386,6 +400,7 @@ function discoveryToPlazaProject(
     description: item.description || base?.description || "",
     cover: getAssetUrl(item.image) || base?.cover || "",
     trailer: getAssetUrl(item.trailer) || base?.trailer || "",
+    ownerId: base?.ownerId ?? "",
     ownerName: base?.ownerName ?? "",
     ownerAvatar: "",
     genres: base?.genres ?? [],

@@ -1,18 +1,27 @@
 "use client";
 
 import Link from "next/link";
-import { IconPlayerPlay, IconSparkles, IconUser } from "@tabler/icons-react";
+import { IconPlayerPlay, IconSparkles } from "@tabler/icons-react";
 import { useLocale, useTranslations } from "@/src/i18n/i18n";
 import { localizePath } from "@/src/i18n/locale-url";
 import type { Locale } from "@/src/i18n/config";
+import { UserAvatar } from "@/components/user-avatar";
+import type { LookupUserDTO } from "@repo/shared/users";
 import type { PlazaProject } from "./plaza-types";
 
-export function IPPlazaCard({ project }: { project: PlazaProject }) {
+export function IPPlazaCard({
+  project,
+  ownerDisplay,
+}: {
+  project: PlazaProject;
+  ownerDisplay?: LookupUserDTO;
+}) {
   const t = useTranslations("ip");
   const locale = useLocale() as Locale;
   const cat = project.genres[0] ?? "";
   const tags = project.tags.slice(0, 3);
-  const ownerName = project.ownerName.trim() || t("anonymousOwner");
+  const ownerName =
+    ownerDisplay?.nickname?.trim() || project.ownerName.trim() || t("anonymousOwner");
 
   return (
     <Link
@@ -72,18 +81,12 @@ export function IPPlazaCard({ project }: { project: PlazaProject }) {
         )}
 
         <div className="flex items-center gap-2 text-xs">
-          {project.ownerAvatar ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
-              src={project.ownerAvatar}
-              alt=""
-              className="size-6 shrink-0 rounded-full object-cover"
-            />
-          ) : (
-            <span className="flex size-6 shrink-0 items-center justify-center rounded-full bg-secondary">
-              <IconUser className="size-3.5 text-muted-foreground" />
-            </span>
-          )}
+          <UserAvatar
+            src={ownerDisplay?.avatar ?? project.ownerAvatar}
+            seed={project.ownerId || project.id}
+            name={ownerName}
+            className="size-6 shrink-0"
+          />
           <span className="truncate font-medium text-foreground">{ownerName}</span>
         </div>
       </div>

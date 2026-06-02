@@ -5,6 +5,8 @@ export interface PlazaProject {
   description: string;
   cover: string;
   trailer: string;
+  /** Creator user id — seeds the dicebear fallback + resolves the live avatar. */
+  ownerId: string;
   ownerName: string;
   ownerAvatar: string;
   genres: string[];

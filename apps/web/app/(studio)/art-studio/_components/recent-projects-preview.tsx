@@ -2,12 +2,32 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { IconArrowRight, IconPlus } from "@tabler/icons-react";
+import { IconArrowRight, IconDots, IconLoader2, IconPlus } from "@tabler/icons-react";
+import { toast } from "sonner";
+import { useQueryClient } from "@tanstack/react-query";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { env } from "@/src/env";
+import { backendApi, type Paginated } from "@/src/lib/api";
 import { useTranslations } from "@/src/i18n/i18n";
 import { localizePath, getCurrentLocale } from "@/src/i18n/locale-url";
 import { localizedProjectWorkspaceHref } from "@/src/lib/studio-routes";
-import { useMyProducts, type MyProduct } from "../_hooks/use-my-products";
+import { worldKeys, type V1WorldProduct } from "@/src/hooks/use-worlds";
+import { useMyProducts, myProductsKeys, type MyProduct } from "../_hooks/use-my-products";
 import { CreateWorldDialog } from "./create-world-dialog";
 
 const OSS_BASE = env.OSS_BASE_URL;
@@ -75,23 +95,151 @@ export function RecentProjectsPreview() {
 
 function ProductCard({ product }: { product: MyProduct }) {
   const tw = useTranslations("workspace");
+  const tc = useTranslations("common");
+  const queryClient = useQueryClient();
   const cover = ossUrl(product.imagePath);
   const description = product.description?.trim() || tw("noDescription");
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [preparing, setPreparing] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [isLastInWorld, setIsLastInWorld] = useState(false);
+
+  // The home strip is a flat product list, so we don't know up front
+  // whether this is the only project in its world. Java rejects a
+  // worldproduct delete for the last one — the contract is "delete the
+  // world itself, which cascades" — so fetch the world's product count
+  // first to pick the right endpoint and warn the user accordingly.
+  const openDeleteConfirm = async () => {
+    if (preparing) return;
+    setPreparing(true);
+    try {
+      const res = await backendApi.post<Paginated<V1WorldProduct>>(
+        "/api/user/world/list/worldproduct",
+        { data: { page: 1, pageSize: 100, worldId: product.worldId } }
+      );
+      setIsLastInWorld((res.list ?? []).length <= 1);
+    } catch {
+      // Best effort — fall back to the non-last path; handleDelete will
+      // surface Java's rejection if it does turn out to be the last one.
+      setIsLastInWorld(false);
+    } finally {
+      setPreparing(false);
+      setConfirmOpen(true);
+    }
+  };
+
+  const handleDelete = async () => {
+    if (deleting) return;
+    setDeleting(true);
+    try {
+      if (isLastInWorld) {
+        await backendApi.post("/api/user/world/delete/world", {
+          data: { id: product.worldId },
+        });
+      } else {
+        // Non-last: delete only the project. Java expects `id` on the
+        // query string (body form returns 未知異常).
+        await backendApi.post(
+          `/api/user/world/delete/worldproduct?id=${encodeURIComponent(product.id)}`
+        );
+      }
+      toast.success(tw("projectDeleteSuccess"));
+      setConfirmOpen(false);
+      // Refresh the home strip + this world's product list; if the world
+      // itself went away, refresh the world list too.
+      void queryClient.invalidateQueries({ queryKey: myProductsKeys.all });
+      void queryClient.invalidateQueries({ queryKey: worldKeys.products(product.worldId) });
+      if (isLastInWorld) {
+        void queryClient.invalidateQueries({ queryKey: worldKeys.all });
+      }
+    } catch (err) {
+      console.error("[RecentProjectsPreview] delete failed", err);
+      toast.error(err instanceof Error ? err.message : tw("projectDeleteFailed"));
+    } finally {
+      setDeleting(false);
+    }
+  };
+
   return (
-    <Link
-      href={localizedProjectWorkspaceHref(product.id, {
-        worldId: product.worldId,
-      })}
-      className="group flex flex-col overflow-hidden rounded-xl border border-border/70 bg-card transition-colors hover:border-border"
-    >
-      <div className="relative aspect-video w-full bg-muted">
-        <img src={cover ?? "/default-cover.jpg"} alt="" className="size-full object-cover" />
-      </div>
-      <div className="p-3">
-        <p className="truncate text-sm font-medium">{product.name}</p>
-        <p className="mt-0.5 truncate text-xs text-muted-foreground">{description}</p>
-      </div>
-    </Link>
+    <div className="group relative flex flex-col overflow-hidden rounded-xl border border-border/70 bg-card transition-colors hover:border-border">
+      <Link
+        href={localizedProjectWorkspaceHref(product.id, {
+          worldId: product.worldId,
+        })}
+        className="flex flex-col"
+      >
+        <div className="relative aspect-video w-full bg-muted">
+          <img src={cover ?? "/default-cover.jpg"} alt="" className="size-full object-cover" />
+        </div>
+        <div className="p-3">
+          <p className="truncate text-sm font-medium">{product.name}</p>
+          <p className="mt-0.5 truncate text-xs text-muted-foreground">{description}</p>
+        </div>
+      </Link>
+
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <button
+            aria-label={tw("projectMenuDelete")}
+            className="absolute right-2 top-2 flex size-7 items-center justify-center rounded-md bg-background/80 opacity-0 backdrop-blur-sm transition-opacity hover:bg-muted group-hover:opacity-100 data-[state=open]:opacity-100"
+          >
+            {preparing ? (
+              <IconLoader2 className="size-4 animate-spin" />
+            ) : (
+              <IconDots className="size-4" />
+            )}
+          </button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end">
+          <DropdownMenuItem asChild>
+            <Link
+              href={localizedProjectWorkspaceHref(product.id, {
+                worldId: product.worldId,
+              })}
+            >
+              {tw("projectMenuOpen")}
+            </Link>
+          </DropdownMenuItem>
+          <DropdownMenuItem
+            variant="destructive"
+            disabled={preparing}
+            onSelect={(e) => {
+              e.preventDefault();
+              void openDeleteConfirm();
+            }}
+          >
+            {tw("projectMenuDelete")}
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
+
+      <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{tw("projectDeleteConfirmTitle")}</AlertDialogTitle>
+            <AlertDialogDescription>
+              {isLastInWorld
+                ? tw("projectDeleteConfirmDescriptionLastInWorldShort", { name: product.name })
+                : tw("projectDeleteConfirmDescription", { name: product.name })}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deleting}>{tc("cancel")}</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={deleting}
+              onClick={(e) => {
+                e.preventDefault();
+                void handleDelete();
+              }}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {deleting && <IconLoader2 className="mr-1.5 size-3.5 animate-spin" />}
+              {tw("projectMenuDelete")}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </div>
   );
 }
 

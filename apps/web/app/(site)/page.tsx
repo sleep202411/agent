@@ -99,6 +99,12 @@ export default function HomePage() {
           full-bleed under the translucent nav. */}
       <div className="-mt-16">
         <Hero />
+
+        {/* Partner / media logo wall — social-proof strip placed
+            immediately under the hero ("trusted by" pattern) so it's the
+            first thing visitors see below the fold. */}
+        <PartnersMarquee />
+
         <MadeWithFizz />
 
         {/* ─── Three Pillars: Make / Connect / Show ─────────────────────── */}
@@ -261,7 +267,6 @@ export default function HomePage() {
         <StyleGallery />
         <UseCases />
         <Testimonials />
-        <PartnersMarquee />
         <FAQ />
 
         {/* ─── Final CTA ────────────────────────────────────────────────── */}
