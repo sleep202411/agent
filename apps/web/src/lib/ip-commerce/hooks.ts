@@ -10,6 +10,7 @@ import {
   getIpCommerceIp,
   getMyIpCommerceIp,
   getMyIpCommerceOverview,
+  getMyCreatorRevenue,
   getIpCommerceWallet,
   getIpAccess,
   listIpCommerceCollection,
@@ -77,6 +78,9 @@ export const ipCommerceKeys = {
     ["ip-commerce", "me", "ips", ipId, "commerce", params ?? {}] as const,
   myIpAssets: (ipId: string, params?: { purpose?: string }) =>
     ["ip-commerce", "me", "ips", ipId, "assets", params ?? {}] as const,
+  creatorRevenueRoot: ["ip-commerce", "me", "revenue"] as const,
+  creatorRevenue: (params?: { locale?: string; cursor?: string; limit?: number }) =>
+    ["ip-commerce", "me", "revenue", params ?? {}] as const,
   ipAccess: (ipId: string, params?: { episodeIds?: readonly string[]; locale?: string }) =>
     [
       "ip-commerce",
@@ -191,6 +195,35 @@ export function useMyIpCommerceOverview(
     enabled: Boolean(ipId),
     staleTime: 30_000,
   });
+}
+
+export function useCreatorRevenue(
+  enabled = true,
+  params?: { locale?: string; cursor?: string; limit?: number }
+) {
+  return useQuery({
+    queryKey: ipCommerceKeys.creatorRevenue(params),
+    queryFn: () => getMyCreatorRevenue(params),
+    enabled,
+    staleTime: 30_000,
+  });
+}
+
+/**
+ * Creator withdrawable balance. There is no wallet endpoint for the
+ * withdrawable balance kind — it is derived from the creator-revenue
+ * summary, which the server owns. Mirrors useCommunityPointBalance's shape.
+ */
+export function useCreatorWithdrawableBalance(
+  enabled = true,
+  params?: { locale?: string; cursor?: string; limit?: number }
+) {
+  const query = useCreatorRevenue(enabled, params);
+  return {
+    ...query,
+    withdrawableBalance: query.data?.withdrawableBalance ?? "0",
+    lifetimeEarned: query.data?.lifetimeEarned ?? "0",
+  };
 }
 
 export function useMyIpCommerceAssets(
@@ -427,6 +460,9 @@ export function usePurchaseIpContent() {
         qc.invalidateQueries({ queryKey: ipCommerceKeys.collectionRoot }),
         qc.invalidateQueries({ queryKey: ["ip-commerce", "ip-access", input.ipId] }),
         qc.invalidateQueries({ queryKey: ["ip-commerce", "me", "ips", input.ipId, "commerce"] }),
+        // A creator who buys their own (or a co-owned) IP earns revenue share —
+        // refresh the withdrawable balance + history so the numbers stay live.
+        qc.invalidateQueries({ queryKey: ipCommerceKeys.creatorRevenueRoot }),
         // Public detail carries the (now entitlement-gated) episode media URLs —
         // refetch so just-unlocked content becomes playable without a reload.
         qc.invalidateQueries({ queryKey: ["ip-commerce", "ips", input.ipId] }),

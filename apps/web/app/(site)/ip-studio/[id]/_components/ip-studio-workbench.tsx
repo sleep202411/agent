@@ -12,6 +12,7 @@ import {
   IconEye,
   IconFileText,
   IconLoader2,
+  IconLock,
   IconPhoto,
   IconPlus,
   IconReceipt,
@@ -23,6 +24,7 @@ import {
   IconUpload,
   IconUsers,
   IconVideo,
+  IconWallet,
   IconX,
 } from "@tabler/icons-react";
 import { Button } from "@/components/ui/button";
@@ -48,7 +50,12 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 import { VideoPlayer } from "@/components/media/video-player";
-import type { IpCommerceAsset, IpCreatorIp, IpTaxonomyTerm } from "@/src/lib/ip-commerce/api";
+import type {
+  IpCommerceAsset,
+  IpCreatorCommerceOverview,
+  IpCreatorIp,
+  IpTaxonomyTerm,
+} from "@/src/lib/ip-commerce/api";
 import {
   useCreateIpCommerceEpisode,
   useDeleteIpCommerceEpisode,
@@ -1370,17 +1377,7 @@ function PricingPanel({ ip, t, locale }: { ip: IpCreatorIp; t: Translate; locale
                   </div>
                 </div>
 
-                <div className="rounded-xl border border-border bg-background p-4">
-                  <h5 className="text-sm font-semibold">
-                    {t("pricingPanel.commerce.settlementTitle")}
-                  </h5>
-                  <p className="mt-2 text-xs leading-5 text-muted-foreground">
-                    {t("pricingPanel.commerce.settlementNotConfigured")}
-                  </p>
-                  <p className="mt-3 text-xs leading-5 text-muted-foreground">
-                    {t("pricingPanel.commerce.settlementBody")}
-                  </p>
-                </div>
+                <SettlementCard settlement={commerce.data.settlement} t={t} locale={locale} />
               </div>
 
               <div className="rounded-xl border border-border bg-background p-4">
@@ -1466,6 +1463,56 @@ function PricingPanel({ ip, t, locale }: { ip: IpCreatorIp; t: Translate; locale
         </div>
       </Section>
     </>
+  );
+}
+
+function SettlementCard({
+  settlement,
+  t,
+  locale,
+}: {
+  settlement: IpCreatorCommerceOverview["settlement"];
+  t: Translate;
+  locale: Locale;
+}) {
+  const sharePct = settlement.saleShareBps / 100;
+  return (
+    <div className="rounded-xl border border-border bg-background p-4">
+      <div className="flex items-center justify-between gap-3">
+        <h5 className="flex items-center gap-1.5 text-sm font-semibold">
+          <IconWallet className="size-4" />
+          {t("pricingPanel.commerce.settlementTitle")}
+        </h5>
+        <StatusPill>{t("pricingPanel.commerce.cashOutComingSoon")}</StatusPill>
+      </div>
+
+      <div className="mt-3 grid gap-3 sm:grid-cols-2">
+        <div className="rounded-lg border border-border bg-card px-3 py-2.5">
+          <p className="text-[11px] text-muted-foreground">
+            {t("pricingPanel.commerce.withdrawableRevenue")}
+          </p>
+          <p className="mt-1 text-lg font-semibold tabular-nums tracking-tight">
+            {formatPoints(settlement.withdrawableBalance, locale)}
+          </p>
+        </div>
+        <div className="rounded-lg border border-border bg-card px-3 py-2.5">
+          <p className="text-[11px] text-muted-foreground">
+            {t("pricingPanel.commerce.ipLifetimeEarnings")}
+          </p>
+          <p className="mt-1 text-lg font-semibold tabular-nums tracking-tight">
+            {formatPoints(settlement.ipLifetimeEarnings, locale)}
+          </p>
+        </div>
+      </div>
+
+      <p className="mt-3 text-xs leading-5 text-muted-foreground">
+        {t("pricingPanel.commerce.youEarnPercentOfSale", { pct: sharePct })}
+      </p>
+      <p className="mt-2 flex items-center gap-1.5 text-xs leading-5 text-muted-foreground">
+        <IconLock className="size-3.5 shrink-0" />
+        {t("pricingPanel.commerce.settlementCashOutNote")}
+      </p>
+    </div>
   );
 }
 

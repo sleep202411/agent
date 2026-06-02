@@ -1252,8 +1252,11 @@
           "unknown": "有一條商業化提醒需要檢查。"
         },
         "settlementTitle": "創作者結算",
-        "settlementNotConfigured": "創作者結算暫未配置。",
-        "settlementBody": "上方數據是用戶支付和權益履約的營運口徑。提現收入需要等分帳、結算和付款審計完整落地後再展示。",
+        "withdrawableRevenue": "可提現收入",
+        "ipLifetimeEarnings": "累計收入",
+        "youEarnPercentOfSale": "此 IP 每筆銷售創作者方共獲得 {pct}%。",
+        "settlementCashOutNote": "可提現收入已開始累計，但暫不開放提現。",
+        "cashOutComingSoon": "提現即將開放",
         "recentOrders": "最近訂單",
         "noOrders": "暫無訂單",
         "orderTarget": {
@@ -1979,6 +1982,24 @@
       "program": "項目",
       "issuedAt": "簽發時間",
       "certNo": "證書編號"
+    },
+    "earnings": {
+      "title": "可提現收入",
+      "withdrawableRevenue": "可提現餘額",
+      "lifetimeEarned": "累計收入",
+      "percentOfSale": "佔銷售 {pct}%",
+      "shareNote": "你的 IP 每筆銷售都會為你帶來收入分成。",
+      "revenueHistory": "最近收入",
+      "cashOutComingSoon": "提現即將開放",
+      "noRevenueYet": "暫無收入。IP 開始銷售後，收入將在此顯示。",
+      "loading": "正在載入收入",
+      "loadFailed": "收入載入失敗。",
+      "unknownIp": "未知 IP",
+      "entryStatus": {
+        "pending": "待入帳",
+        "posted": "已入帳",
+        "voided": "已作廢"
+      }
     },
     "ips": {
       "emptyOwnerTitle": "建立你的 IP",
@@ -4290,7 +4311,11 @@
     "records": "交易記錄",
     "earn": "如何獲得",
     "openWallet": "開啟錢包",
-    "comingSoonToast": "社群積分錢包即將上線，敬請期待。"
+    "comingSoonToast": "社群積分錢包即將上線，敬請期待。",
+    "title": "錢包",
+    "studioLabel": "算力積分",
+    "studioBlurb": "用於工作室的 AI 圖片 / 影片生成。",
+    "walletAria": "錢包 — 算力積分 {studio}，社群積分 {community}"
   },
   "paywall": {
     "play": "播放",
@@ -4341,6 +4366,8 @@
     "noPackages": "No top-up packages available yet.",
     "scanToPay": "請使用微信掃描二維碼完成支付",
     "paymentSuccess": "支付成功",
+    "paymentProcessing": "支付處理中，正在更新餘額…",
+    "paymentBalanceRefreshFailed": "支付已到賬 —— 餘額未刷新，請刷新頁面。",
     "paymentSuccessDesc": "你的套餐已啟用，享受更多功能吧！",
     "close": "關閉",
     "alreadyPaid": "我已支付",

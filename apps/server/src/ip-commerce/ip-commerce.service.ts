@@ -26,6 +26,8 @@ import {
   IpReviewEventType,
   IpReviewStatus,
   IpReviewTargetType,
+  IpRevenueLedgerEntryType,
+  IpRevenueLedgerStatus,
   IpTaxonomyAssignmentSource,
   IpTaxonomyTermStatus,
   IpTaxonomyTermType,
@@ -44,12 +46,16 @@ import {
 } from '@prisma/client';
 import { createHash, randomUUID } from 'crypto';
 import type { AuthUser } from '../auth';
+import { computeRevenueSplit } from './revenue-split';
 import { PrismaService } from '../infra/db/db.module';
 import { OutputStorageService } from '../infra/storage/storage.types';
 import { WalletLedgerService } from '../workspaces';
 import type {
   CreateIpDraftInput,
   CreateCreatorIpEpisodeInput,
+  CreatorRevenueQuery,
+  ListAdminIpRevenueQuery,
+  UpdateAdminIpRevenueConfigInput,
   CreateAdminIpTaxonomyTermInput,
   CreateAdminIpDiscoveryInput,
   CreateIpContentReportInput,
@@ -102,6 +108,14 @@ const IP_MEDIA_UPLOAD_LIMITS: Record<MediaAssetKind, number> = {
   [MediaAssetKind.other]: 20 * 1024 * 1024,
 };
 const DEFAULT_AZURE_BLOB_CONTAINER = 'foundry-outputs';
+
+/// Admin-editable platform default for the creator revenue share (basis points
+/// of each sale routed to the creator pool). Seeded at 5000 (50%) by migration.
+const IP_CREATOR_REVENUE_SHARE_SETTING_KEY = 'ip.creator_revenue_share_bps';
+/// Hard fallback if the settings row is ever missing.
+const IP_CREATOR_REVENUE_SHARE_DEFAULT_BPS = 5000;
+/// In-process TTL (ms) for the cached default share — busted on admin write.
+const IP_CREATOR_REVENUE_SHARE_CACHE_TTL_MS = 30_000;
 
 const taxonomyAssignmentInclude = {
   term: {
@@ -327,11 +341,39 @@ type CommerceEntitlementWithRefs = Prisma.IpContentEntitlementGetPayload<{
 
 @Injectable()
 export class IpCommerceService {
+  /// Cached platform-default creator revenue share (see TTL above).
+  private revenueShareDefaultCache: { bps: number; at: number } | null = null;
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly walletLedger: WalletLedgerService,
     private readonly outputStorage: OutputStorageService,
   ) {}
+
+  /**
+   * Platform-default creator revenue share (bps), read from ip_commerce_settings
+   * with a short in-process TTL so the hot purchase path doesn't query per sale.
+   * Falls back to the seeded default if the row is missing.
+   */
+  private async getCreatorRevenueShareDefaultBps(): Promise<number> {
+    const cached = this.revenueShareDefaultCache;
+    if (
+      cached &&
+      Date.now() - cached.at < IP_CREATOR_REVENUE_SHARE_CACHE_TTL_MS
+    ) {
+      return cached.bps;
+    }
+    const row = await this.prisma.ipCommerceSetting.findUnique({
+      where: { key: IP_CREATOR_REVENUE_SHARE_SETTING_KEY },
+    });
+    const raw = row?.valueInt != null ? Number(row.valueInt) : NaN;
+    const bps =
+      Number.isFinite(raw) && raw >= 0 && raw <= 10000
+        ? Math.trunc(raw)
+        : IP_CREATOR_REVENUE_SHARE_DEFAULT_BPS;
+    this.revenueShareDefaultCache = { bps, at: Date.now() };
+    return bps;
+  }
 
   async listTaxonomyTerms(query: ListIpTaxonomyTermsQuery) {
     const locale = normalizeLocale(query.locale);
@@ -882,6 +924,7 @@ export class IpCommerceService {
 
     const now = new Date();
     const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+    const defaultShareBps = await this.getCreatorRevenueShareDefaultBps();
     const recognizedOrderStatuses: IpPurchaseOrderStatus[] = [
       IpPurchaseOrderStatus.paid,
       IpPurchaseOrderStatus.fulfilled,
@@ -899,6 +942,8 @@ export class IpCommerceService {
       pendingUnlocks,
       recentOrders,
       recentEntitlements,
+      ipOwnerRevenue,
+      ownerWithdrawableAccount,
     ] = await Promise.all([
       this.prisma.ipPurchaseOrder.count({ where: { ipId: ip.id } }),
       this.prisma.ipPurchaseOrder.count({
@@ -956,6 +1001,27 @@ export class IpCommerceService {
         orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
         take: 12,
       }),
+      // This IP's lifetime earnings credited to the owner (withdrawable).
+      this.prisma.ipRevenueLedgerEntry.aggregate({
+        where: {
+          ipId: ip.id,
+          userId: ip.createdById,
+          status: IpRevenueLedgerStatus.posted,
+        },
+        _sum: { amount: true },
+      }),
+      // The owner's account-wide withdrawable community-point balance.
+      this.prisma.walletAccount.findUnique({
+        where: {
+          ownerType_ownerId_currency_balanceKind: {
+            ownerType: WalletOwnerType.user,
+            ownerId: ip.createdById,
+            currency: WalletCurrencyType.community_point,
+            balanceKind: WalletBalanceKind.withdrawable,
+          },
+        },
+        select: { availableBalance: true },
+      }),
     ]);
 
     return {
@@ -974,10 +1040,17 @@ export class IpCommerceService {
       },
       pricingHealth: ipCommerceHealthDto(ip),
       settlement: {
-        status: 'not_configured',
+        status: 'active' as const,
         currency: WalletCurrencyType.community_point,
-        withdrawableBalance: '0',
-        note: 'Creator settlement is not configured yet. These figures are operational gross sales, not withdrawable revenue.',
+        // Effective creator-pool share applied to this IP's sales.
+        saleShareBps: ip.creatorRevenueShareBps ?? defaultShareBps,
+        // Lifetime withdrawable revenue this IP credited to its owner.
+        ipLifetimeEarnings: (ipOwnerRevenue._sum.amount ?? 0n).toString(),
+        // The owner's account-wide withdrawable balance (across all their IPs).
+        withdrawableBalance: (
+          ownerWithdrawableAccount?.availableBalance ?? 0n
+        ).toString(),
+        note: 'Withdrawable revenue accrues from sales. Cash-out is coming soon.',
       },
       recentOrders: recentOrders.map((order) =>
         commercePurchaseOrderDto(order, query.locale),
@@ -985,6 +1058,344 @@ export class IpCommerceService {
       recentEntitlements: recentEntitlements.map((entitlement) =>
         commerceEntitlementDto(entitlement, query.locale),
       ),
+    };
+  }
+
+  /**
+   * The signed-in creator's withdrawable revenue: account-wide balance, lifetime
+   * earned, and a paginated revenue-ledger history across all their IPs.
+   * Earning-only — no cash-out path yet (the web surfaces label it accordingly).
+   */
+  async getCreatorRevenueSummary(
+    user: AuthUser,
+    query: Partial<CreatorRevenueQuery> = {},
+  ) {
+    const limit = Math.min(Math.max(query.limit ?? 20, 1), 50);
+
+    const [account, totals, rows] = await Promise.all([
+      this.prisma.walletAccount.findUnique({
+        where: {
+          ownerType_ownerId_currency_balanceKind: {
+            ownerType: WalletOwnerType.user,
+            ownerId: user.userId,
+            currency: WalletCurrencyType.community_point,
+            balanceKind: WalletBalanceKind.withdrawable,
+          },
+        },
+        select: { availableBalance: true },
+      }),
+      this.prisma.ipRevenueLedgerEntry.aggregate({
+        where: { userId: user.userId, status: IpRevenueLedgerStatus.posted },
+        _sum: { amount: true },
+      }),
+      this.prisma.ipRevenueLedgerEntry.findMany({
+        where: { userId: user.userId },
+        include: {
+          ip: {
+            include: {
+              localizations: {
+                where: { archivedAt: null },
+                orderBy: [{ locale: 'asc' }, { updatedAt: 'desc' }],
+              },
+            },
+          },
+          order: { select: { orderNo: true } },
+        },
+        cursor: query.cursor ? { id: query.cursor } : undefined,
+        skip: query.cursor ? 1 : 0,
+        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+        take: limit + 1,
+      }),
+    ]);
+
+    const items = rows.slice(0, limit);
+    return {
+      currency: WalletCurrencyType.community_point,
+      withdrawableBalance: (account?.availableBalance ?? 0n).toString(),
+      lifetimeEarned: (totals._sum.amount ?? 0n).toString(),
+      note: 'Withdrawable revenue. Cash-out is coming soon.',
+      entries: items.map((entry) => ({
+        id: entry.id,
+        ip: ipReferenceDto(entry.ip, query.locale),
+        orderNo: entry.order?.orderNo ?? null,
+        entryType: entry.entryType,
+        status: entry.status,
+        amount: entry.amount.toString(),
+        // The sale total this credit was computed from. `shareBps` is the
+        // beneficiary's share of the CREATOR POOL, not of the whole sale — the
+        // true sale fraction is amount / sourceAmount.
+        sourceAmount: entry.sourceAmount?.toString() ?? null,
+        poolShareBps: entry.shareBps,
+        createdAt: entry.createdAt.toISOString(),
+      })),
+      nextCursor: rows.length > limit ? (items.at(-1)?.id ?? null) : null,
+    };
+  }
+
+  // --- Admin: revenue config + observability --------------------------------
+
+  async getAdminIpCommerceSettings() {
+    const rows = await this.prisma.ipCommerceSetting.findMany({
+      orderBy: { key: 'asc' },
+    });
+    const creatorShare = rows.find(
+      (r) => r.key === IP_CREATOR_REVENUE_SHARE_SETTING_KEY,
+    );
+    return {
+      creatorRevenueShareBps:
+        creatorShare?.valueInt != null
+          ? Number(creatorShare.valueInt)
+          : IP_CREATOR_REVENUE_SHARE_DEFAULT_BPS,
+      settings: rows.map((r) => ({
+        key: r.key,
+        valueInt: r.valueInt != null ? Number(r.valueInt) : null,
+        updatedById: r.updatedById,
+        updatedAt: r.updatedAt.toISOString(),
+      })),
+    };
+  }
+
+  async updateAdminIpCommerceSetting(
+    actor: AuthUser,
+    key: string,
+    valueInt: number,
+  ) {
+    const row = await this.prisma.ipCommerceSetting.upsert({
+      where: { key },
+      create: { key, valueInt: BigInt(valueInt), updatedById: actor.userId },
+      update: { valueInt: BigInt(valueInt), updatedById: actor.userId },
+    });
+    if (key === IP_CREATOR_REVENUE_SHARE_SETTING_KEY) {
+      this.revenueShareDefaultCache = null;
+    }
+    return {
+      key: row.key,
+      valueInt: row.valueInt != null ? Number(row.valueInt) : null,
+      updatedAt: row.updatedAt.toISOString(),
+    };
+  }
+
+  async getAdminIpRevenueConfig(ipId: string, locale?: string) {
+    const ip = await this.prisma.ip.findFirst({
+      where: { id: ipId, deletedAt: null },
+      include: {
+        localizations: {
+          where: { archivedAt: null },
+          orderBy: [{ locale: 'asc' }, { updatedAt: 'desc' }],
+        },
+        contributors: {
+          where: { removedAt: null },
+          orderBy: [{ displayOrder: 'asc' }, { createdAt: 'asc' }],
+        },
+      },
+    });
+    if (!ip) {
+      throw new NotFoundException({
+        code: 'IP_NOT_FOUND',
+        msg: 'IP not found.',
+      });
+    }
+    const defaultShareBps = await this.getCreatorRevenueShareDefaultBps();
+    return {
+      ip: ipReferenceDto(ip, locale),
+      ownerUserId: ip.createdById,
+      version: ip.version,
+      creatorRevenueShareBps: ip.creatorRevenueShareBps,
+      effectiveShareBps: ip.creatorRevenueShareBps ?? defaultShareBps,
+      defaultShareBps,
+      contributors: ip.contributors.map((c) => ({
+        id: c.id,
+        userId: c.userId,
+        displayName: c.displayName,
+        role: c.role,
+        customRole: c.customRole,
+        revenueEligible: c.revenueEligible,
+        revenueShareBps: c.revenueShareBps,
+      })),
+    };
+  }
+
+  async updateAdminIpRevenueConfig(
+    actor: AuthUser,
+    ipId: string,
+    input: UpdateAdminIpRevenueConfigInput,
+  ) {
+    await this.prisma.$transaction(async (tx) => {
+      // Serialize concurrent revenue-config edits for this IP. Without this, two
+      // admins could each read the same version, both pass the check, and both
+      // commit (lost update) — and the final-sum validation below could miss the
+      // other tx's uncommitted contributor changes. The xact-scoped advisory
+      // lock makes the read-check-update-validate sequence atomic per IP.
+      await tx.$executeRaw`
+        SELECT pg_advisory_xact_lock(hashtext(${`ip:revenue-config:${ipId}`})::bigint)
+      `;
+      const ip = await tx.ip.findFirst({
+        where: { id: ipId, deletedAt: null },
+        select: { id: true, version: true },
+      });
+      if (!ip) {
+        throw new NotFoundException({
+          code: 'IP_NOT_FOUND',
+          msg: 'IP not found.',
+        });
+      }
+      if (
+        input.expectedVersion != null &&
+        input.expectedVersion !== ip.version
+      ) {
+        throw new ConflictException({
+          code: 'IP_VERSION_CONFLICT',
+          msg: 'IP was modified by someone else. Reload and retry.',
+        });
+      }
+
+      const touchesShare = input.creatorRevenueShareBps !== undefined;
+      const touchesContributors = (input.contributors ?? []).length > 0;
+
+      for (const c of input.contributors ?? []) {
+        // Scope by ipId so an id from another IP can't be flipped. A 0-row
+        // result means a stale/removed/wrong-IP contributor id — fail loudly
+        // (rolling back the version bump) instead of silently dropping the edit
+        // and returning success.
+        const res = await tx.ipContributor.updateMany({
+          where: { id: c.id, ipId, removedAt: null },
+          data: {
+            revenueEligible: c.revenueEligible,
+            revenueShareBps: c.revenueShareBps,
+          },
+        });
+        if (res.count !== 1) {
+          throw new ConflictException({
+            code: 'IP_REVENUE_CONTRIBUTOR_NOT_FOUND',
+            msg: 'A contributor in this update no longer exists on this IP. Reload and retry.',
+          });
+        }
+      }
+
+      // Bump the IP version on ANY revenue-config change (incl. contributor-only
+      // edits) so concurrent admins collide on expectedVersion, and stamp the
+      // override when provided — all in one update.
+      if (touchesShare || touchesContributors) {
+        await tx.ip.update({
+          where: { id: ipId },
+          data: {
+            ...(touchesShare
+              ? { creatorRevenueShareBps: input.creatorRevenueShareBps }
+              : {}),
+            updatedById: actor.userId,
+            version: { increment: 1 },
+          },
+        });
+      }
+
+      // Validate the FINAL persisted state, not just this request's array: a
+      // partial PATCH could otherwise push the IP's total eligible share past
+      // 100% by combining with contributors left untouched.
+      const eligible = await tx.ipContributor.findMany({
+        where: { ipId, removedAt: null, revenueEligible: true },
+        select: { userId: true, revenueShareBps: true },
+      });
+      // An account-less contributor cannot receive a withdrawable credit (the
+      // purchase credit loop filters userId != null and the share would silently
+      // fall back to the owner). Reject so admins can't configure a phantom split.
+      if (eligible.some((c) => c.userId == null)) {
+        throw new ConflictException({
+          code: 'IP_REVENUE_CONTRIBUTOR_NO_ACCOUNT',
+          msg: 'A contributor without a linked account cannot earn revenue. Link an account or turn off their revenue share.',
+        });
+      }
+      const totalBps = eligible.reduce(
+        (sum, c) => sum + (c.revenueShareBps ?? 0),
+        0,
+      );
+      if (totalBps > 10000) {
+        throw new ConflictException({
+          code: 'IP_REVENUE_SHARE_OVERALLOCATED',
+          msg: `Eligible contributor shares total ${(totalBps / 100).toFixed(
+            2,
+          )}% which exceeds 100%. Adjust the splits.`,
+        });
+      }
+    });
+    return this.getAdminIpRevenueConfig(ipId);
+  }
+
+  async getAdminOrderRevenueBreakdown(orderId: string) {
+    const order = await this.prisma.ipPurchaseOrder.findUnique({
+      where: { id: orderId },
+      include: {
+        revenueLedgerEntries: { orderBy: { createdAt: 'asc' } },
+      },
+    });
+    if (!order) {
+      throw new NotFoundException({
+        code: 'IP_ORDER_NOT_FOUND',
+        msg: 'Order not found.',
+      });
+    }
+    const credited = order.revenueLedgerEntries.reduce(
+      (sum, e) => sum + e.amount,
+      0n,
+    );
+    return {
+      orderId: order.id,
+      orderNo: order.orderNo,
+      currency: order.currency,
+      totalAmount: order.totalAmount.toString(),
+      creditedAmount: credited.toString(),
+      platformCut: (order.totalAmount - credited).toString(),
+      beneficiaries: order.revenueLedgerEntries.map((e) => ({
+        id: e.id,
+        userId: e.userId,
+        entryType: e.entryType,
+        status: e.status,
+        amount: e.amount.toString(),
+        poolShareBps: e.shareBps,
+        walletTransactionId: e.walletTransactionId,
+        createdAt: e.createdAt.toISOString(),
+      })),
+    };
+  }
+
+  async listAdminRevenueEntries(query: ListAdminIpRevenueQuery) {
+    const rows = await this.prisma.ipRevenueLedgerEntry.findMany({
+      where: {
+        ipId: query.ipId,
+        userId: query.userId,
+        status: query.status as IpRevenueLedgerStatus | undefined,
+      },
+      include: {
+        ip: {
+          include: {
+            localizations: {
+              where: { archivedAt: null },
+              orderBy: [{ locale: 'asc' }, { updatedAt: 'desc' }],
+            },
+          },
+        },
+        order: { select: { orderNo: true, totalAmount: true } },
+      },
+      cursor: query.cursor ? { id: query.cursor } : undefined,
+      skip: query.cursor ? 1 : 0,
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+      take: query.limit + 1,
+    });
+    const items = rows.slice(0, query.limit);
+    return {
+      items: items.map((e) => ({
+        id: e.id,
+        ip: ipReferenceDto(e.ip, query.locale),
+        orderId: e.orderId,
+        orderNo: e.order?.orderNo ?? null,
+        userId: e.userId,
+        entryType: e.entryType,
+        status: e.status,
+        amount: e.amount.toString(),
+        sourceAmount: e.sourceAmount?.toString() ?? null,
+        poolShareBps: e.shareBps,
+        createdAt: e.createdAt.toISOString(),
+      })),
+      nextCursor: rows.length > query.limit ? (items.at(-1)?.id ?? null) : null,
     };
   }
 
@@ -2924,6 +3335,8 @@ export class IpCommerceService {
 
   async purchaseContent(user: AuthUser, input: CreateIpPurchaseInput) {
     const now = new Date();
+    const defaultRevenueShareBps =
+      await this.getCreatorRevenueShareDefaultBps();
 
     return this.prisma.$transaction(async (tx) => {
       await tx.$executeRaw`
@@ -3143,6 +3556,23 @@ export class IpCommerceService {
           orderId: order.id,
           ipId: ip.id,
           episodeId: episode?.id ?? null,
+          now,
+        });
+      }
+
+      // Credit the creator pool to contributors' withdrawable wallets, atomic
+      // with the buyer debit above. Free unlocks (amount 0) earn nothing.
+      if (priceRule.amount > 0n && ip.createdById) {
+        await creditCreatorRevenueTx(tx, {
+          order: {
+            id: order.id,
+            orderNo: order.orderNo,
+            ipId: ip.id,
+            episodeId: episode?.id ?? null,
+            totalAmount: order.totalAmount,
+          },
+          ownerUserId: ip.createdById,
+          shareBps: ip.creatorRevenueShareBps ?? defaultRevenueShareBps,
           now,
         });
       }
@@ -3931,6 +4361,176 @@ async function debitCommunityPointTx(
   });
 
   return transaction;
+}
+
+type RevenueCreditOrder = {
+  id: string;
+  orderNo: string;
+  ipId: string;
+  episodeId: string | null;
+  totalAmount: bigint;
+};
+
+/**
+ * Split a paid IP sale's creator pool across the IP's eligible contributors and
+ * credit each beneficiary's WITHDRAWABLE community-point wallet — all inside the
+ * caller's purchase transaction, so it is atomic with the buyer debit and the
+ * entitlement grant. Earning-only: no fiat moves. Owner-only is the degenerate
+ * case (no eligible contributors → the owner takes the whole pool).
+ */
+async function creditCreatorRevenueTx(
+  tx: Prisma.TransactionClient,
+  input: {
+    order: RevenueCreditOrder;
+    ownerUserId: string;
+    shareBps: number;
+    now: Date;
+  },
+) {
+  if (input.order.totalAmount <= 0n || !input.ownerUserId) return;
+
+  const eligible = await tx.ipContributor.findMany({
+    where: {
+      ipId: input.order.ipId,
+      removedAt: null,
+      revenueEligible: true,
+      userId: { not: null },
+    },
+    select: { userId: true, revenueShareBps: true },
+  });
+
+  const split = computeRevenueSplit({
+    totalAmount: input.order.totalAmount,
+    shareBps: input.shareBps,
+    ownerUserId: input.ownerUserId,
+    contributors: eligible
+      .filter((c): c is { userId: string; revenueShareBps: number | null } =>
+        Boolean(c.userId),
+      )
+      .map((c) => ({ userId: c.userId, shareBps: c.revenueShareBps })),
+  });
+
+  // Deterministic order (computeRevenueSplit already sorts by userId) keeps the
+  // wallet-account advisory-lock acquisition order stable across concurrent
+  // sales, so two purchases crediting overlapping creators can't deadlock.
+  for (const beneficiary of split.beneficiaries) {
+    await creditWithdrawableCommunityPointTx(tx, {
+      userId: beneficiary.userId,
+      amount: beneficiary.amount,
+      shareBps: beneficiary.shareBps,
+      order: input.order,
+      now: input.now,
+    });
+  }
+}
+
+/** Credit one beneficiary's withdrawable wallet + write the revenue ledger row. */
+async function creditWithdrawableCommunityPointTx(
+  tx: Prisma.TransactionClient,
+  input: {
+    userId: string;
+    amount: bigint;
+    shareBps: number;
+    order: RevenueCreditOrder;
+    now: Date;
+  },
+) {
+  if (input.amount <= 0n) return;
+
+  // Withdrawable accounts are only ever created here (always active); nothing
+  // closes them in the earning-only loop, so a status gate that could roll back
+  // the buyer's purchase is intentionally omitted.
+  const account = await tx.walletAccount.upsert({
+    where: {
+      ownerType_ownerId_currency_balanceKind: {
+        ownerType: WalletOwnerType.user,
+        ownerId: input.userId,
+        currency: WalletCurrencyType.community_point,
+        balanceKind: WalletBalanceKind.withdrawable,
+      },
+    },
+    create: {
+      ownerType: WalletOwnerType.user,
+      ownerId: input.userId,
+      currency: WalletCurrencyType.community_point,
+      balanceKind: WalletBalanceKind.withdrawable,
+      status: WalletAccountStatus.active,
+    },
+    update: {},
+  });
+  await tx.$executeRaw`
+    SELECT pg_advisory_xact_lock(hashtext(${`wallet:account:${account.id}`})::bigint)
+  `;
+
+  const idempotencyKey = `ip_purchase_order:${input.order.id}:revenue:${input.userId}`;
+  const existing = await tx.walletTransaction.findUnique({
+    where: { idempotencyKey },
+  });
+  if (existing) return;
+
+  const locked = await tx.walletAccount.findUniqueOrThrow({
+    where: { id: account.id },
+  });
+  const nextAvailable = locked.availableBalance + input.amount;
+
+  const transaction = await tx.walletTransaction.create({
+    data: {
+      status: WalletTransactionStatus.posted,
+      sourceType: 'ip_purchase_order',
+      sourceId: input.order.id,
+      idempotencyKey,
+      actorUserId: input.userId,
+      description: `IP revenue ${input.order.orderNo}`,
+      metadata: {
+        orderNo: input.order.orderNo,
+        ipId: input.order.ipId,
+        shareBps: input.shareBps,
+      },
+    },
+  });
+
+  await tx.walletLedgerEntry.create({
+    data: {
+      transactionId: transaction.id,
+      accountId: locked.id,
+      entryType: WalletLedgerEntryType.credit,
+      currency: WalletCurrencyType.community_point,
+      balanceKind: WalletBalanceKind.withdrawable,
+      amount: input.amount,
+      availableDelta: input.amount,
+      heldDelta: 0n,
+      availableBalanceAfter: nextAvailable,
+      heldBalanceAfter: locked.heldBalance,
+      reason: 'ip_revenue_share',
+    },
+  });
+  await tx.walletAccount.update({
+    where: { id: locked.id },
+    data: {
+      availableBalance: nextAvailable,
+      version: { increment: 1 },
+    },
+  });
+
+  // System-of-record row. The @@unique(orderId, userId, entryType) constraint is
+  // the durable double-pay backstop on top of the per-beneficiary wallet key.
+  await tx.ipRevenueLedgerEntry.create({
+    data: {
+      userId: input.userId,
+      ipId: input.order.ipId,
+      episodeId: input.order.episodeId,
+      orderId: input.order.id,
+      walletTransactionId: transaction.id,
+      entryType: IpRevenueLedgerEntryType.revenue_share,
+      status: IpRevenueLedgerStatus.posted,
+      currency: WalletCurrencyType.community_point,
+      balanceKind: WalletBalanceKind.withdrawable,
+      amount: input.amount,
+      sourceAmount: input.order.totalAmount,
+      shareBps: input.shareBps,
+      postedAt: input.now,
+    },
+  });
 }
 
 function adminIpWhere(query: ListAdminIpsQuery): Prisma.IpWhereInput {

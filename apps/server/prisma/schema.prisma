@@ -1054,9 +1054,10 @@ model WalletTransaction {
   postedAt       DateTime?               @default(now()) @map("posted_at") @db.Timestamptz(6)
   voidedAt       DateTime?               @map("voided_at") @db.Timestamptz(6)
 
-  entries          WalletLedgerEntry[]
-  ipPurchaseOrders IpPurchaseOrder[]
-  billingRefunds   BillingRefund[]
+  entries                WalletLedgerEntry[]
+  ipPurchaseOrders       IpPurchaseOrder[]
+  billingRefunds         BillingRefund[]
+  ipRevenueLedgerEntries IpRevenueLedgerEntry[]
 
   @@unique([idempotencyKey], map: "wallet_transactions_idempotency_key_unique")
   @@index([sourceType, sourceId], map: "wallet_transactions_source_idx")
@@ -2002,26 +2003,30 @@ model SupportedLocale {
 }
 
 model Ip {
-  id                String              @id @default(uuid()) @db.Uuid
-  status            IpPublicationStatus @default(draft)
-  listingVisibility IpListingVisibility @default(private) @map("listing_visibility")
-  ageRating         IpAgeRating         @default(general) @map("age_rating")
-  sourceLocale      String              @default("zh-CN") @map("source_locale") @db.VarChar(16)
-  copyrightOwner    String?             @map("copyright_owner") @db.VarChar(160)
-  rightsSummary     Json                @default("{}") @map("rights_summary") @db.JsonB
-  aiDisclosure      Json                @default("{}") @map("ai_disclosure") @db.JsonB
-  coverAssetId      String?             @map("cover_asset_id") @db.Uuid
-  trailerAssetId    String?             @map("trailer_asset_id") @db.Uuid
-  createdById       String              @map("created_by_id") @db.VarChar(64)
-  updatedById       String?             @map("updated_by_id") @db.VarChar(64)
-  version           Int                 @default(0)
-  scheduledAt       DateTime?           @map("scheduled_at") @db.Timestamptz(6)
-  publishedAt       DateTime?           @map("published_at") @db.Timestamptz(6)
-  suspendedAt       DateTime?           @map("suspended_at") @db.Timestamptz(6)
-  archivedAt        DateTime?           @map("archived_at") @db.Timestamptz(6)
-  createdAt         DateTime            @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt         DateTime            @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
-  deletedAt         DateTime?           @map("deleted_at") @db.Timestamptz(6)
+  id                     String              @id @default(uuid()) @db.Uuid
+  status                 IpPublicationStatus @default(draft)
+  listingVisibility      IpListingVisibility @default(private) @map("listing_visibility")
+  ageRating              IpAgeRating         @default(general) @map("age_rating")
+  sourceLocale           String              @default("zh-CN") @map("source_locale") @db.VarChar(16)
+  copyrightOwner         String?             @map("copyright_owner") @db.VarChar(160)
+  rightsSummary          Json                @default("{}") @map("rights_summary") @db.JsonB
+  aiDisclosure           Json                @default("{}") @map("ai_disclosure") @db.JsonB
+  coverAssetId           String?             @map("cover_asset_id") @db.Uuid
+  trailerAssetId         String?             @map("trailer_asset_id") @db.Uuid
+  createdById            String              @map("created_by_id") @db.VarChar(64)
+  updatedById            String?             @map("updated_by_id") @db.VarChar(64)
+  /// Per-IP override of the platform-vs-creator revenue split, in basis points
+  /// (0..10000) of each sale that goes to the creator pool. NULL inherits the
+  /// global default (ip_commerce_settings key `ip.creator_revenue_share_bps`).
+  creatorRevenueShareBps Int?                @map("creator_revenue_share_bps")
+  version                Int                 @default(0)
+  scheduledAt            DateTime?           @map("scheduled_at") @db.Timestamptz(6)
+  publishedAt            DateTime?           @map("published_at") @db.Timestamptz(6)
+  suspendedAt            DateTime?           @map("suspended_at") @db.Timestamptz(6)
+  archivedAt             DateTime?           @map("archived_at") @db.Timestamptz(6)
+  createdAt              DateTime            @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt              DateTime            @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  deletedAt              DateTime?           @map("deleted_at") @db.Timestamptz(6)
 
   coverAsset      MediaAsset?     @relation("IpCoverAsset", fields: [coverAssetId], references: [id], onDelete: SetNull)
   trailerAsset    MediaAsset?     @relation("IpTrailerAsset", fields: [trailerAssetId], references: [id], onDelete: SetNull)
@@ -2040,6 +2045,7 @@ model Ip {
   contributors             IpContributor[]
   referralLinks            IpReferralLink[]
   referralAttributions     IpReferralAttribution[]
+  revenueLedgerEntries     IpRevenueLedgerEntry[]
   reviewSubmissions        IpReviewSubmission[]
   rightsDeclarations       IpRightsDeclaration[]
   reports                  IpContentReport[]
@@ -2134,28 +2140,28 @@ model IpAsset {
 }
 
 model IpDiscoveryRecommendation {
-  id                  String                          @id @default(uuid()) @db.Uuid
-  placementKey        IpDiscoveryPlacementKey         @map("placement_key")
-  ipId                String                          @map("ip_id") @db.Uuid
-  status              IpDiscoveryRecommendationStatus @default(draft)
-  sortOrder           Int                             @default(0) @map("sort_order")
-  startsAt            DateTime?                       @map("starts_at") @db.Timestamptz(6)
-  endsAt              DateTime?                       @map("ends_at") @db.Timestamptz(6)
-  imageAssetId        String?                         @map("image_asset_id") @db.Uuid
-  mobileImageAssetId  String?                         @map("mobile_image_asset_id") @db.Uuid
-  trailerAssetId      String?                         @map("trailer_asset_id") @db.Uuid
-  createdById         String                          @map("created_by_id") @db.VarChar(64)
-  updatedById         String?                         @map("updated_by_id") @db.VarChar(64)
-  version             Int                             @default(0)
-  metadata            Json                            @default("{}") @db.JsonB
-  createdAt           DateTime                        @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt           DateTime                        @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
-  archivedAt          DateTime?                       @map("archived_at") @db.Timestamptz(6)
+  id                 String                          @id @default(uuid()) @db.Uuid
+  placementKey       IpDiscoveryPlacementKey         @map("placement_key")
+  ipId               String                          @map("ip_id") @db.Uuid
+  status             IpDiscoveryRecommendationStatus @default(draft)
+  sortOrder          Int                             @default(0) @map("sort_order")
+  startsAt           DateTime?                       @map("starts_at") @db.Timestamptz(6)
+  endsAt             DateTime?                       @map("ends_at") @db.Timestamptz(6)
+  imageAssetId       String?                         @map("image_asset_id") @db.Uuid
+  mobileImageAssetId String?                         @map("mobile_image_asset_id") @db.Uuid
+  trailerAssetId     String?                         @map("trailer_asset_id") @db.Uuid
+  createdById        String                          @map("created_by_id") @db.VarChar(64)
+  updatedById        String?                         @map("updated_by_id") @db.VarChar(64)
+  version            Int                             @default(0)
+  metadata           Json                            @default("{}") @db.JsonB
+  createdAt          DateTime                        @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt          DateTime                        @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  archivedAt         DateTime?                       @map("archived_at") @db.Timestamptz(6)
 
-  ip                Ip          @relation(fields: [ipId], references: [id], onDelete: Restrict)
-  imageAsset        MediaAsset? @relation("IpDiscoveryImageAsset", fields: [imageAssetId], references: [id], onDelete: SetNull)
-  mobileImageAsset  MediaAsset? @relation("IpDiscoveryMobileImageAsset", fields: [mobileImageAssetId], references: [id], onDelete: SetNull)
-  trailerAsset      MediaAsset? @relation("IpDiscoveryTrailerMediaAsset", fields: [trailerAssetId], references: [id], onDelete: SetNull)
+  ip               Ip          @relation(fields: [ipId], references: [id], onDelete: Restrict)
+  imageAsset       MediaAsset? @relation("IpDiscoveryImageAsset", fields: [imageAssetId], references: [id], onDelete: SetNull)
+  mobileImageAsset MediaAsset? @relation("IpDiscoveryMobileImageAsset", fields: [mobileImageAssetId], references: [id], onDelete: SetNull)
+  trailerAsset     MediaAsset? @relation("IpDiscoveryTrailerMediaAsset", fields: [trailerAssetId], references: [id], onDelete: SetNull)
 
   localizations IpDiscoveryRecommendationLocalization[]
 
@@ -2449,6 +2455,7 @@ model IpPurchaseOrder {
 
   entitlements         IpContentEntitlement[]
   referralAttributions IpReferralAttribution[]
+  revenueLedgerEntries IpRevenueLedgerEntry[]
 
   @@unique([orderNo], map: "ip_purchase_orders_order_no_unique")
   @@unique([userId, idempotencyKey], map: "ip_purchase_orders_user_idem_unique")
@@ -2515,24 +2522,101 @@ model IpCollectionItem {
 }
 
 model IpContributor {
-  id           String            @id @default(uuid()) @db.Uuid
-  ipId         String            @map("ip_id") @db.Uuid
-  userId       String?           @map("user_id") @db.VarChar(64)
-  displayName  String            @map("display_name") @db.VarChar(120)
-  role         IpContributorRole
-  customRole   String?           @map("custom_role") @db.VarChar(80)
-  isPublic     Boolean           @default(true) @map("is_public")
-  displayOrder Int               @default(0) @map("display_order")
-  metadata     Json              @default("{}") @db.JsonB
-  createdAt    DateTime          @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt    DateTime          @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
-  removedAt    DateTime?         @map("removed_at") @db.Timestamptz(6)
+  id              String            @id @default(uuid()) @db.Uuid
+  ipId            String            @map("ip_id") @db.Uuid
+  userId          String?           @map("user_id") @db.VarChar(64)
+  displayName     String            @map("display_name") @db.VarChar(120)
+  role            IpContributorRole
+  customRole      String?           @map("custom_role") @db.VarChar(80)
+  isPublic        Boolean           @default(true) @map("is_public")
+  /// When true this contributor shares in IP sales revenue. Their cut of the
+  /// creator pool is `revenueShareBps` (basis points of the pool). Only
+  /// contributors linked to a real platform user (userId not null) can earn.
+  revenueEligible Boolean           @default(false) @map("revenue_eligible")
+  revenueShareBps Int?              @map("revenue_share_bps")
+  displayOrder    Int               @default(0) @map("display_order")
+  metadata        Json              @default("{}") @db.JsonB
+  createdAt       DateTime          @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt       DateTime          @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  removedAt       DateTime?         @map("removed_at") @db.Timestamptz(6)
 
   ip Ip @relation(fields: [ipId], references: [id], onDelete: Cascade)
 
   @@index([ipId, displayOrder], map: "ip_contributors_ip_order_idx")
   @@index([userId, removedAt], map: "ip_contributors_user_idx")
   @@map("ip_contributors")
+}
+
+enum IpRevenueLedgerEntryType {
+  /// Creator/contributor earned a share of a sale.
+  revenue_share
+  /// Reserved for a future refund clawback (negative amount). Not written yet.
+  refund_reversal
+  /// Reserved for a future manual ops adjustment. Not written yet.
+  manual_adjustment
+}
+
+enum IpRevenueLedgerStatus {
+  pending
+  posted
+  voided
+}
+
+/// System-of-record for creator-side revenue from IP sales. One row per
+/// beneficiary per order, linked to the wallet credit that minted the
+/// withdrawable community points. Earning-only: no fiat payout. Forward-compat
+/// for refunds (refund_reversal + voided) and multi-contributor splits.
+model IpRevenueLedgerEntry {
+  id                  String                   @id @default(uuid()) @db.Uuid
+  /// Beneficiary platform user id (creator/contributor). VarChar to match the
+  /// Java numeric user id stored as string across the IP schema.
+  userId              String                   @map("user_id") @db.VarChar(64)
+  ipId                String                   @map("ip_id") @db.Uuid
+  episodeId           String?                  @map("episode_id") @db.Uuid
+  orderId             String                   @map("order_id") @db.Uuid
+  walletTransactionId String?                  @map("wallet_transaction_id") @db.Uuid
+  entryType           IpRevenueLedgerEntryType @default(revenue_share) @map("entry_type")
+  status              IpRevenueLedgerStatus    @default(posted)
+  currency            WalletCurrencyType       @default(community_point)
+  balanceKind         WalletBalanceKind        @default(withdrawable) @map("balance_kind")
+  /// Credited amount in community-point minor units. Positive for revenue_share.
+  amount              BigInt
+  /// The order total this share was computed from (context for audit/stats).
+  sourceAmount        BigInt?                  @map("source_amount")
+  /// Effective share this beneficiary received, in basis points of the creator
+  /// pool (0..10000). For display/audit only.
+  shareBps            Int?                     @map("share_bps")
+  metadata            Json                     @default("{}") @db.JsonB
+  createdAt           DateTime                 @default(now()) @map("created_at") @db.Timestamptz(6)
+  postedAt            DateTime?                @default(now()) @map("posted_at") @db.Timestamptz(6)
+  voidedAt            DateTime?                @map("voided_at") @db.Timestamptz(6)
+
+  ip                Ip                 @relation(fields: [ipId], references: [id], onDelete: Cascade)
+  order             IpPurchaseOrder    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  walletTransaction WalletTransaction? @relation(fields: [walletTransactionId], references: [id], onDelete: SetNull)
+
+  /// One credit row per beneficiary per order per entry type — durable
+  /// double-pay backstop on top of the per-beneficiary wallet idempotency key.
+  @@unique([orderId, userId, entryType], map: "ip_revenue_ledger_order_user_type_unique")
+  @@index([userId, status, createdAt(sort: Desc)], map: "ip_revenue_ledger_user_recent_idx")
+  @@index([ipId, status, createdAt(sort: Desc)], map: "ip_revenue_ledger_ip_recent_idx")
+  @@index([orderId], map: "ip_revenue_ledger_order_idx")
+  @@map("ip_revenue_ledger_entries")
+}
+
+/// Small key/value store for admin-editable IP-commerce platform settings
+/// (e.g. the default creator revenue share). Integer-valued for now.
+model IpCommerceSetting {
+  id          String   @id @default(uuid()) @db.Uuid
+  key         String   @db.VarChar(120)
+  valueInt    BigInt?  @map("value_int")
+  metadata    Json     @default("{}") @db.JsonB
+  updatedById String?  @map("updated_by_id") @db.VarChar(64)
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@unique([key], map: "ip_commerce_settings_key_unique")
+  @@map("ip_commerce_settings")
 }
 
 model IpReferralLink {

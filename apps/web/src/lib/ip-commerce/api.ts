@@ -319,13 +319,50 @@ export interface IpCreatorCommerceOverview {
     }>;
   };
   settlement: {
-    status: "not_configured";
+    status: "active" | "not_configured";
     currency: "community_point";
+    /** % of each sale that goes to the creator pool (sale-relative). */
+    saleShareBps: number;
+    ipLifetimeEarnings: string;
     withdrawableBalance: string;
     note: string;
   };
   recentOrders: IpCreatorCommerceOrder[];
   recentEntitlements: IpCreatorCommerceEntitlement[];
+}
+
+export type IpCreatorRevenueEntryType = "revenue_share" | "refund_reversal" | "manual_adjustment";
+
+export type IpCreatorRevenueEntryStatus = "pending" | "posted" | "voided";
+
+export interface IpCreatorRevenueEntry {
+  id: string;
+  ip: {
+    id: string;
+    title: string;
+    status: string;
+    listingVisibility: string;
+    localization?: IpCommerceLocalizationMeta;
+  } | null;
+  orderNo: string | null;
+  entryType: IpCreatorRevenueEntryType;
+  status: IpCreatorRevenueEntryStatus;
+  amount: string;
+  /** Sale total this credit came from. The true sale fraction is
+   *  amount / sourceAmount; `poolShareBps` is only the share of the creator
+   *  pool, NOT of the whole sale. */
+  sourceAmount: string | null;
+  poolShareBps: number | null;
+  createdAt: string;
+}
+
+export interface IpCreatorRevenue {
+  currency: "community_point";
+  withdrawableBalance: string;
+  lifetimeEarned: string;
+  note: string;
+  entries: IpCreatorRevenueEntry[];
+  nextCursor: string | null;
 }
 
 export interface IpCollectionItem {
@@ -584,6 +621,10 @@ export function getMyIpCommerceOverview(ipId: string, params?: { locale?: string
     `/aurora/ip-commerce/me/ips/${encodeURIComponent(ipId)}/commerce`,
     { params }
   );
+}
+
+export function getMyCreatorRevenue(params?: { locale?: string; cursor?: string; limit?: number }) {
+  return api.get<IpCreatorRevenue>("/aurora/ip-commerce/me/revenue", { params });
 }
 
 export function listMyIpCommerceIpAssets(

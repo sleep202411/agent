@@ -41,11 +41,16 @@ import {
   ListAdminIpEntitlementsQuerySchema,
   ListAdminIpsQuerySchema,
   ListAdminIpOrdersQuerySchema,
+  ListAdminIpRevenueQuerySchema,
   ListIpTaxonomyTermsQuerySchema,
   RevokeAdminIpEntitlementSchema,
   ResolveAdminIpReportSchema,
   UpdateAdminIpTaxonomyTermSchema,
   UpdateAdminIpPublicationSchema,
+  UpdateAdminIpRevenueConfigSchema,
+  UpdateIpCommerceSettingSchema,
+  IpCommerceSettingParamsSchema,
+  IpOrderParamsSchema,
   type AdminIpTaxonomyTermParams,
   type AdminIpDiscoveryParams,
   type CreateAdminIpTaxonomyTermInput,
@@ -62,11 +67,16 @@ import {
   type ListAdminIpEntitlementsQuery,
   type ListAdminIpsQuery,
   type ListAdminIpOrdersQuery,
+  type ListAdminIpRevenueQuery,
   type ListIpTaxonomyTermsQuery,
   type RevokeAdminIpEntitlementInput,
   type ResolveAdminIpReportInput,
   type UpdateAdminIpTaxonomyTermInput,
   type UpdateAdminIpPublicationInput,
+  type UpdateAdminIpRevenueConfigInput,
+  type UpdateIpCommerceSettingInput,
+  type IpCommerceSettingParams,
+  type IpOrderParams,
 } from './dto';
 import { IpCommerceService } from './ip-commerce.service';
 
@@ -491,6 +501,119 @@ export class IpCommerceAdminController {
     return {
       code: 200,
       data,
+    };
+  }
+
+  // --- Creator revenue: platform settings + per-IP config + observability ----
+
+  @RequireAdminPermissions(ADMIN_PERMISSION_KEYS.IpRead)
+  @Get('settings')
+  async getSettings() {
+    return {
+      code: 200,
+      data: await this.ipCommerce.getAdminIpCommerceSettings(),
+    };
+  }
+
+  @RequireAdminPermissions(ADMIN_PERMISSION_KEYS.IpModerate)
+  @Patch('settings/:key')
+  async updateSetting(
+    @CurrentAdmin() admin: AdminActor,
+    @Param(new ZodValidationPipe(IpCommerceSettingParamsSchema))
+    params: IpCommerceSettingParams,
+    @Body(new ZodValidationPipe(UpdateIpCommerceSettingSchema))
+    body: UpdateIpCommerceSettingInput,
+    @Req() request: Request,
+  ) {
+    const data = await this.ipCommerce.updateAdminIpCommerceSetting(
+      adminToAuthUser(admin),
+      params.key,
+      body.valueInt,
+    );
+    await this.adminAuth.writeAudit({
+      actor: admin,
+      action: 'admin.ip.revenue.settings',
+      resourceType: 'ip_commerce_setting',
+      resourceId: params.key,
+      metadata: { valueInt: body.valueInt },
+      context: {
+        ipAddress: request.ip,
+        userAgent: headerValue(request.headers['user-agent']),
+      },
+    });
+    return { code: 200, data };
+  }
+
+  @RequireAdminPermissions(ADMIN_PERMISSION_KEYS.IpRead)
+  @Get('ips/:ipId/revenue-config')
+  async getRevenueConfig(
+    @Param(new ZodValidationPipe(IpParamsSchema))
+    params: IpParams,
+    @Query(new ZodValidationPipe(IpLocaleQuerySchema))
+    query: IpLocaleQuery,
+  ) {
+    return {
+      code: 200,
+      data: await this.ipCommerce.getAdminIpRevenueConfig(
+        params.ipId,
+        query.locale,
+      ),
+    };
+  }
+
+  @RequireAdminPermissions(ADMIN_PERMISSION_KEYS.IpModerate)
+  @Patch('ips/:ipId/revenue-config')
+  async updateRevenueConfig(
+    @CurrentAdmin() admin: AdminActor,
+    @Param(new ZodValidationPipe(IpParamsSchema))
+    params: IpParams,
+    @Body(new ZodValidationPipe(UpdateAdminIpRevenueConfigSchema))
+    body: UpdateAdminIpRevenueConfigInput,
+    @Req() request: Request,
+  ) {
+    const data = await this.ipCommerce.updateAdminIpRevenueConfig(
+      adminToAuthUser(admin),
+      params.ipId,
+      body,
+    );
+    await this.adminAuth.writeAudit({
+      actor: admin,
+      action: 'admin.ip.revenue.config',
+      resourceType: 'ip',
+      resourceId: params.ipId,
+      metadata: {
+        creatorRevenueShareBps: body.creatorRevenueShareBps ?? null,
+        contributorCount: body.contributors?.length ?? 0,
+      },
+      context: {
+        ipAddress: request.ip,
+        userAgent: headerValue(request.headers['user-agent']),
+      },
+    });
+    return { code: 200, data };
+  }
+
+  @RequireAdminPermissions(ADMIN_PERMISSION_KEYS.IpRead)
+  @Get('revenue/entries')
+  async listRevenueEntries(
+    @Query(new ZodValidationPipe(ListAdminIpRevenueQuerySchema))
+    query: ListAdminIpRevenueQuery,
+  ) {
+    return {
+      code: 200,
+      data: await this.ipCommerce.listAdminRevenueEntries(query),
+    };
+  }
+
+  @RequireAdminPermissions(ADMIN_PERMISSION_KEYS.IpRead)
+  @Get('orders/:orderId/revenue-breakdown')
+  async getOrderRevenueBreakdown(
+    @Param(new ZodValidationPipe(IpOrderParamsSchema))
+    params: IpOrderParams,
+  ) {
+    return {
+      code: 200,
+      data: await this.ipCommerce.getAdminOrderRevenueBreakdown(params.orderId),
     };
   }
 }

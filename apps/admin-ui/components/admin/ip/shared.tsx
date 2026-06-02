@@ -214,6 +214,31 @@ export function assetPurposeLabel(value: string) {
   return labels[value] ?? value;
 }
 
+export function revenueLedgerEntryTypeLabel(value: string) {
+  const labels: Record<string, string> = {
+    revenue_share: "收入分成",
+    refund_reversal: "退款冲正",
+    manual_adjustment: "人工调整",
+  };
+  return labels[value] ?? value;
+}
+
+export function revenueLedgerStatusLabel(value: string) {
+  const labels: Record<string, string> = {
+    pending: "待结算",
+    posted: "已结算",
+    voided: "已作废",
+  };
+  return labels[value] ?? value;
+}
+
+// shareBps -> percent string (10000 bps = 100%). Trims trailing zeros so 1500 -> "15%".
+export function formatShareBps(bps: number | null | undefined) {
+  if (bps === null || bps === undefined) return "-";
+  const percent = bps / 100;
+  return `${Number(percent.toFixed(2))}%`;
+}
+
 export function formatAmount(value: string) {
   try {
     return new Intl.NumberFormat("zh-CN").format(Number(BigInt(value)));

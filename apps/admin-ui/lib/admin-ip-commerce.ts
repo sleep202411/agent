@@ -13,6 +13,8 @@ import type {
   AdminIpOverviewData,
   AdminIpsData,
   AdminIpTaxonomyData,
+  AdminRevenueEntriesData,
+  IpCommerceSettingsData,
 } from "@/components/admin/ip/types";
 
 export type AdminIpLoadResult<T> = {
@@ -63,6 +65,21 @@ export async function fetchAdminIpDiscovery(
   return fetchAdminIpResource(
     `/ip-commerce/discovery${toSearch(searchParams)}`,
     "IP 运营位数据加载失败。"
+  );
+}
+
+export async function fetchAdminIpCommerceSettings(): Promise<
+  AdminIpLoadResult<IpCommerceSettingsData>
+> {
+  return fetchAdminIpResource("/ip-commerce/settings", "创作者收益配置加载失败。");
+}
+
+export async function fetchAdminRevenueEntries(
+  searchParams?: Record<string, string | undefined>
+): Promise<AdminIpLoadResult<AdminRevenueEntriesData>> {
+  return fetchAdminIpResource(
+    `/ip-commerce/revenue/entries${toSearch({ limit: "30", ...searchParams })}`,
+    "创作者收益流水加载失败。"
   );
 }
 

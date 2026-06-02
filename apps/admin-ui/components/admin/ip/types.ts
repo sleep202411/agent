@@ -418,3 +418,109 @@ export type AdminIpDiscoveryData = {
 };
 
 export const emptyIpDiscovery: AdminIpDiscoveryData = { items: [] };
+
+// --- Creator revenue: settings + per-IP config + ledger observability ---
+
+export const REVENUE_SHARE_SETTING_KEY = "ip.creator_revenue_share_bps";
+
+export type RevenueLedgerEntryType = "revenue_share" | "refund_reversal" | "manual_adjustment";
+
+export type RevenueLedgerEntryStatus = "pending" | "posted" | "voided";
+
+export type IpCommerceSetting = {
+  key: string;
+  valueInt: number | null;
+  updatedById: string | null;
+  updatedAt: string;
+};
+
+export type IpCommerceSettingsData = {
+  creatorRevenueShareBps: number;
+  settings: IpCommerceSetting[];
+};
+
+export type IpRevenueContributor = {
+  id: string;
+  userId: string | null;
+  displayName: string | null;
+  role: string;
+  customRole: string | null;
+  revenueEligible: boolean;
+  revenueShareBps: number | null;
+};
+
+export type IpRevenueConfigData = {
+  ip: {
+    id: string;
+    title: string;
+    status?: string;
+    listingVisibility?: string;
+    localization?: LocalizationMeta;
+  } | null;
+  ownerUserId: string;
+  version: number;
+  creatorRevenueShareBps: number | null;
+  effectiveShareBps: number;
+  defaultShareBps: number;
+  contributors: IpRevenueContributor[];
+};
+
+export type UpdateIpRevenueConfigInput = {
+  creatorRevenueShareBps?: number | null;
+  contributors?: Array<{
+    id: string;
+    revenueEligible: boolean;
+    revenueShareBps?: number | null;
+  }>;
+  expectedVersion?: number;
+};
+
+export type AdminRevenueEntryRow = {
+  id: string;
+  ip: {
+    id: string;
+    title: string;
+    status?: string;
+    listingVisibility?: string;
+    localization?: LocalizationMeta;
+  } | null;
+  orderId: string;
+  orderNo: string | null;
+  userId: string;
+  entryType: RevenueLedgerEntryType;
+  status: RevenueLedgerEntryStatus;
+  amount: string;
+  sourceAmount: string | null;
+  // Share of the creator POOL (not the whole sale). Sale fraction = amount / sourceAmount.
+  poolShareBps: number | null;
+  createdAt: string;
+};
+
+export type AdminRevenueEntriesData = {
+  items: AdminRevenueEntryRow[];
+  nextCursor: string | null;
+};
+
+export type AdminOrderRevenueBeneficiary = {
+  id: string;
+  userId: string;
+  entryType: RevenueLedgerEntryType;
+  status: RevenueLedgerEntryStatus;
+  amount: string;
+  // Share of the creator pool (not the whole sale).
+  poolShareBps: number | null;
+  walletTransactionId: string | null;
+  createdAt: string;
+};
+
+export type AdminOrderRevenueBreakdownData = {
+  orderId: string;
+  orderNo: string | null;
+  currency: string;
+  totalAmount: string;
+  creditedAmount: string;
+  platformCut: string;
+  beneficiaries: AdminOrderRevenueBeneficiary[];
+};
+
+export const emptyRevenueEntries: AdminRevenueEntriesData = { items: [], nextCursor: null };

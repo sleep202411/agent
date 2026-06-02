@@ -18,6 +18,7 @@ import {
   CreateCreatorIpEpisodeSchema,
   CreateIpContentReportSchema,
   CreateIpPurchaseSchema,
+  CreatorRevenueQuerySchema,
   UpdateCreatorIpProfileSchema,
   UpdateCreatorIpAssetsSchema,
   UpdateCreatorIpEpisodeSchema,
@@ -40,6 +41,7 @@ import {
   type CreateCreatorIpEpisodeInput,
   type CreateIpContentReportInput,
   type CreateIpPurchaseInput,
+  type CreatorRevenueQuery,
   type IpAssetParams,
   type SubmitCreatorIpReviewInput,
   type UploadCreatorIpMediaQuery,
@@ -139,6 +141,18 @@ export class IpCommerceController {
         params.ipId,
         query,
       ),
+    };
+  }
+
+  @Get('me/revenue')
+  async getMyRevenue(
+    @CurrentUser() user: AuthUser,
+    @Query(new ZodValidationPipe(CreatorRevenueQuerySchema))
+    query: CreatorRevenueQuery,
+  ) {
+    return {
+      code: 200,
+      data: await this.ipCommerce.getCreatorRevenueSummary(user, query),
     };
   }
 

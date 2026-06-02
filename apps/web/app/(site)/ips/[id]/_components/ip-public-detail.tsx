@@ -446,10 +446,9 @@ export function IpPublicDetail({ ipId }: IpPublicDetailProps) {
         <CommunityRechargeDialog
           open={rechargeOpen}
           onOpenChange={setRechargeOpen}
-          onSuccess={() => {
-            void walletQuery.refetch();
-            toast.success(t("commerce.rechargeSuccess"));
-          }}
+          // Return the refetch promise so the dialog awaits the balance refresh
+          // and owns the success/processing toast (avoids a duplicate toast).
+          onSuccess={() => walletQuery.refetch().then(() => {})}
         />
       </main>
     </div>

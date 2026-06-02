@@ -714,6 +714,102 @@ export type UpdateAdminIpPublicationInput = z.infer<
   typeof UpdateAdminIpPublicationSchema
 >;
 
+// --- Creator revenue (earning-only) -----------------------------------------
+
+export const CreatorRevenueQuerySchema = z.object({
+  locale: LocaleQuerySchema,
+  cursor: z.string().uuid().optional(),
+  limit: z.coerce.number().int().min(1).max(50).default(20),
+});
+export type CreatorRevenueQuery = z.infer<typeof CreatorRevenueQuerySchema>;
+
+// Locked to the only defined setting for now — `valueInt` semantics (a 0..10000
+// bps share) are specific to this key. Add a key-specific schema before opening
+// the endpoint to a second setting.
+export const IP_COMMERCE_SETTING_KEYS = [
+  'ip.creator_revenue_share_bps',
+] as const;
+export const IpCommerceSettingParamsSchema = z.object({
+  key: z.enum(IP_COMMERCE_SETTING_KEYS),
+});
+export type IpCommerceSettingParams = z.infer<
+  typeof IpCommerceSettingParamsSchema
+>;
+
+export const UpdateIpCommerceSettingSchema = z
+  .object({
+    valueInt: z.number().int().min(0).max(10000),
+  })
+  .strict();
+export type UpdateIpCommerceSettingInput = z.infer<
+  typeof UpdateIpCommerceSettingSchema
+>;
+
+export const UpdateAdminIpRevenueConfigSchema = z
+  .object({
+    creatorRevenueShareBps: z
+      .number()
+      .int()
+      .min(0)
+      .max(10000)
+      .nullable()
+      .optional(),
+    contributors: z
+      .array(
+        z
+          .object({
+            id: z.string().uuid(),
+            revenueEligible: z.boolean(),
+            revenueShareBps: z
+              .number()
+              .int()
+              .min(0)
+              .max(10000)
+              .nullable()
+              .optional(),
+          })
+          .strict(),
+      )
+      .max(100)
+      .optional(),
+    expectedVersion: z.number().int().min(0).optional(),
+  })
+  .strict()
+  .superRefine((value, ctx) => {
+    // Eligible contributors' pool shares must not exceed 100% of the pool.
+    const sum = (value.contributors ?? [])
+      .filter((c) => c.revenueEligible)
+      .reduce((acc, c) => acc + (c.revenueShareBps ?? 0), 0);
+    if (sum > 10000) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['contributors'],
+        message:
+          'Eligible contributor shares must not exceed 100% (10000 bps).',
+      });
+    }
+  });
+export type UpdateAdminIpRevenueConfigInput = z.infer<
+  typeof UpdateAdminIpRevenueConfigSchema
+>;
+
+export const IpOrderParamsSchema = z.object({
+  orderId: z.string().uuid(),
+});
+export type IpOrderParams = z.infer<typeof IpOrderParamsSchema>;
+
+export const ListAdminIpRevenueQuerySchema = z.object({
+  ipId: z.string().uuid().optional(),
+  userId: z.string().trim().min(1).max(64).optional(),
+  status: z.enum(['pending', 'posted', 'voided']).optional(),
+  locale: LocaleQuerySchema,
+  cursor: z.string().uuid().optional(),
+  limit: z.coerce.number().int().min(1).max(100).default(30),
+});
+export type ListAdminIpRevenueQuery = z.infer<
+  typeof ListAdminIpRevenueQuerySchema
+>;
+
 export const ResolveAdminIpReportSchema = z
   .object({
     status: z.enum(['triaged', 'actioned', 'dismissed']),

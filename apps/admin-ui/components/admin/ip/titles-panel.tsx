@@ -51,6 +51,7 @@ import type {
   ReportRow,
 } from "./types";
 import { emptyIps, emptyIpTaxonomy } from "./types";
+import { IpRevenueSection } from "./ip-revenue-section";
 
 // shadcn SelectItem value cannot be an empty string, so the "全部/默认" filter
 // options use this sentinel and map back to "" in the onValueChange handler.
@@ -471,6 +472,7 @@ export function IpTitlesPanel({
 
       <IpDetailDrawer
         ip={selectedIp}
+        locale={locale}
         loading={detailLoading}
         error={detailError}
         onClose={() => {
@@ -487,6 +489,7 @@ export function IpTitlesPanel({
 
 function IpDetailDrawer({
   ip,
+  locale,
   loading,
   error,
   onClose,
@@ -495,6 +498,7 @@ function IpDetailDrawer({
   onResolveReport,
 }: {
   ip: AdminIpDetail | null;
+  locale: string;
   loading: boolean;
   error: string | null;
   onClose: () => void;
@@ -753,6 +757,8 @@ function IpDetailDrawer({
                   ) : null}
                 </div>
               </section>
+
+              <IpRevenueSection key={ip.id} ipId={ip.id} locale={locale || undefined} />
 
               <section className="rounded-xl border border-slate-200 p-4">
                 <h4 className="text-sm font-semibold text-slate-950">素材与源材料</h4>

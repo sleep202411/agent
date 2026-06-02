@@ -31,12 +31,15 @@ import {
 } from "./shared";
 import type {
   AdminIpEntitlementsData,
+  AdminOrderRevenueBreakdownData,
   AdminIpOrdersData,
   AdminIpsData,
   IpEntitlementRow,
   IpPurchaseOrderRow,
 } from "./types";
 import { emptyIpEntitlements, emptyIpOrders, emptyIps } from "./types";
+import { fetchAdminOrderRevenueBreakdown } from "@/lib/admin-ip-commerce-client";
+import { OrderRevenueBreakdownDialog } from "./order-revenue-breakdown";
 
 const LOCALE_ALL = "__all__";
 
@@ -57,6 +60,22 @@ export function IpOrdersPanel({
   const [loading, setLoading] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(initialError);
+  const [breakdown, setBreakdown] = useState<AdminOrderRevenueBreakdownData | null>(null);
+  const [breakdownLoading, setBreakdownLoading] = useState(false);
+  const [breakdownError, setBreakdownError] = useState<string | null>(null);
+
+  async function openBreakdown(orderId: string) {
+    setBreakdownLoading(true);
+    setBreakdownError(null);
+    setBreakdown(null);
+    try {
+      setBreakdown(await fetchAdminOrderRevenueBreakdown(orderId));
+    } catch (err) {
+      setBreakdownError(toErrorMessage(err));
+    } finally {
+      setBreakdownLoading(false);
+    }
+  }
 
   function orderParams(extra?: Record<string, string>) {
     const params = new URLSearchParams({ limit: "30" });
@@ -183,8 +202,27 @@ export function IpOrdersPanel({
           );
         },
       },
+      {
+        id: "actions",
+        header: "操作",
+        enableSorting: false,
+        meta: { pin: "right" },
+        cell: ({ row }) => (
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => void openBreakdown(row.original.id)}
+            disabled={breakdownLoading}
+          >
+            查看分账
+          </Button>
+        ),
+      },
     ],
-    []
+    // openBreakdown is a render-stable closure used only in an onClick; rebuild
+    // only when the disabled state flips (matches the other action tables).
+    [breakdownLoading]
   );
 
   return (
@@ -239,7 +277,7 @@ export function IpOrdersPanel({
           columns={columns}
           data={orders.items}
           loading={loading}
-          minWidth={900}
+          minWidth={1020}
           pageSize={20}
           emptyLabel="暂无订单流水"
           className="rounded-none border-0"
@@ -257,6 +295,16 @@ export function IpOrdersPanel({
           </div>
         ) : null}
       </section>
+
+      <OrderRevenueBreakdownDialog
+        breakdown={breakdown}
+        loading={breakdownLoading}
+        error={breakdownError}
+        onClose={() => {
+          setBreakdown(null);
+          setBreakdownError(null);
+        }}
+      />
     </div>
   );
 }

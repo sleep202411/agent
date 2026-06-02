@@ -1252,8 +1252,11 @@
           "unknown": "A commerce warning needs review."
         },
         "settlementTitle": "Settlement",
-        "settlementNotConfigured": "Creator settlement is not configured yet.",
-        "settlementBody": "The values above are buyer payments and entitlement activity. Withdrawable revenue will stay empty until settlement, revenue split, and payout audit are implemented.",
+        "withdrawableRevenue": "Withdrawable revenue",
+        "ipLifetimeEarnings": "Lifetime earned",
+        "youEarnPercentOfSale": "Creators earn {pct}% of each sale of this IP.",
+        "settlementCashOutNote": "Withdrawable revenue accrues now, but cash-out is not open yet.",
+        "cashOutComingSoon": "Cash-out coming soon",
         "recentOrders": "Recent orders",
         "noOrders": "No orders yet",
         "orderTarget": {
@@ -1979,6 +1982,24 @@
       "program": "Program",
       "issuedAt": "Issued",
       "certNo": "Certificate No."
+    },
+    "earnings": {
+      "title": "Withdrawable revenue",
+      "withdrawableRevenue": "Withdrawable balance",
+      "lifetimeEarned": "Lifetime earned",
+      "percentOfSale": "{pct}% of sale",
+      "shareNote": "You earn a revenue share on every sale of your IPs.",
+      "revenueHistory": "Recent revenue",
+      "cashOutComingSoon": "Cash-out coming soon",
+      "noRevenueYet": "No revenue yet. Earnings appear here once your IPs start selling.",
+      "loading": "Loading revenue",
+      "loadFailed": "Failed to load revenue.",
+      "unknownIp": "Unknown IP",
+      "entryStatus": {
+        "pending": "Pending",
+        "posted": "Posted",
+        "voided": "Voided"
+      }
     },
     "ips": {
       "emptyOwnerTitle": "Start an IP",
@@ -4290,7 +4311,11 @@
     "records": "Transactions",
     "earn": "How to earn",
     "openWallet": "Open wallet",
-    "comingSoonToast": "Community credits wallet is coming soon — stay tuned."
+    "comingSoonToast": "Community credits wallet is coming soon — stay tuned.",
+    "title": "Wallet",
+    "studioLabel": "Compute credits",
+    "studioBlurb": "Spend on AI image / video generation in the studio.",
+    "walletAria": "Wallet — compute {studio}, community {community}"
   },
   "paywall": {
     "play": "Play",
@@ -4341,6 +4366,8 @@
     "noPackages": "No top-up packages available yet.",
     "scanToPay": "Scan the QR code with WeChat to complete payment",
     "paymentSuccess": "Payment Successful",
+    "paymentProcessing": "Processing payment, updating balance…",
+    "paymentBalanceRefreshFailed": "Payment received — balance didn't refresh, please reload.",
     "paymentSuccessDesc": "Your plan is now active. Enjoy the extra features!",
     "close": "Close",
     "alreadyPaid": "I've Already Paid",
