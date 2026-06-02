@@ -5,12 +5,18 @@ import type { DragEvent, ReactNode } from "react";
 import Link from "next/link";
 import { toast } from "sonner";
 import {
+  IconAlertTriangle,
   IconArrowLeft,
+  IconCalendarTime,
+  IconChevronDown,
   IconCoin,
   IconDeviceFloppy,
   IconEdit,
   IconEye,
   IconFileText,
+  IconGift,
+  IconLayoutList,
+  IconLink,
   IconLoader2,
   IconLock,
   IconPhoto,
@@ -19,9 +25,11 @@ import {
   IconRefresh,
   IconRocket,
   IconShieldCheck,
+  IconShoppingCart,
   IconTags,
   IconTrash,
   IconUpload,
+  IconUserPlus,
   IconUsers,
   IconVideo,
   IconWallet,
@@ -52,17 +60,24 @@ import { cn } from "@/lib/utils";
 import { VideoPlayer } from "@/components/media/video-player";
 import type {
   IpCommerceAsset,
+  IpContributorRole,
   IpCreatorCommerceOverview,
+  IpCreatorContributor,
   IpCreatorIp,
   IpTaxonomyTerm,
 } from "@/src/lib/ip-commerce/api";
 import {
+  useCreateIpCommerceContributor,
   useCreateIpCommerceEpisode,
+  useDeleteIpCommerceContributor,
   useDeleteIpCommerceEpisode,
   useIpCommerceTaxonomyTerms,
+  useLookupIpCommerceUser,
+  useMyIpContributors,
   useMyIpCommerceOverview,
   useMyIpCommerceIp,
   useSubmitIpCommerceIpForReview,
+  useUpdateIpCommerceContributor,
   useUpdateIpCommerceEpisode,
   useUpdateIpCommerceIpAssets,
   useUpdateIpCommerceIpProfile,
@@ -83,8 +98,10 @@ type Translate = ReturnType<typeof useTranslations>;
 const STUDIO_TABS = [
   { key: "overview", icon: IconFileText },
   { key: "episodes", icon: IconVideo },
+  { key: "members", icon: IconUsers },
   { key: "rights", icon: IconFileText },
   { key: "pricing", icon: IconCoin },
+  { key: "orders", icon: IconReceipt },
 ] as const;
 
 type StudioTabKey = (typeof STUDIO_TABS)[number]["key"];
@@ -98,6 +115,17 @@ type EditableVisibility = (typeof VISIBILITY_OPTIONS)[number];
 const AGE_RATING_OPTIONS = ["general", "teen", "mature", "restricted"] as const;
 type EditableAgeRating = (typeof AGE_RATING_OPTIONS)[number];
 const IP_CONTENT_CURRENCY = "community_point" as const;
+const CONTRIBUTOR_ROLE_OPTIONS: IpContributorRole[] = [
+  "owner",
+  "producer",
+  "director",
+  "writer",
+  "artist",
+  "editor",
+  "performer",
+  "other",
+];
+const BPS_FULL = 10000;
 const EPISODE_HERO_URL = encodeURI(
   "https://static.fizzspace.cn/static/pc/ChatGPT Image 2026年4月28日 21_22_58.png"
 );
@@ -207,8 +235,10 @@ export function IpStudioWorkbench({ ipId }: IpStudioWorkbenchProps) {
         {activeTab === "episodes" ? (
           <EpisodesPanel ip={ip} t={t} onOpenPricing={() => selectTab("pricing")} />
         ) : null}
+        {activeTab === "members" ? <MembersPanel ip={ip} t={t} locale={locale} /> : null}
         {activeTab === "rights" ? <RightsPanel ip={ip} t={t} /> : null}
-        {activeTab === "pricing" ? <PricingPanel ip={ip} t={t} locale={locale} /> : null}
+        {activeTab === "pricing" ? <PricingPanel ip={ip} t={t} /> : null}
+        {activeTab === "orders" ? <OrdersPanel ip={ip} t={t} locale={locale} /> : null}
       </div>
 
       <IpProfileEditDialog
@@ -267,6 +297,7 @@ function EditStyleHero({
         </div>
 
         <div className="flex shrink-0 flex-row flex-wrap items-center gap-2">
+          <ReadinessRing ip={ip} t={t} />
           <Button
             asChild
             size="sm"
@@ -312,9 +343,7 @@ function BackToProfile({ locale, label }: { locale: Locale; label: string }) {
 }
 
 function OverviewPanel({ ip, t, onEdit }: { ip: IpCreatorIp; t: Translate; onEdit: () => void }) {
-  const hasAsset = hasPublicationAsset(ip);
-  const hasProfile = Boolean(ip.title.trim() && ip.summary.trim() && ip.genreCodes.length);
-  const hasRights = hasRightsDeclaration(ip) && hasRequiredAiDisclosure(ip);
+  // Readiness/next-steps moved into the header completion ring (ReadinessRing).
   const taxonomy = ip.genres;
   const updateAssets = useUpdateIpCommerceIpAssets();
   const uploadMedia = useUploadIpCommerceMedia();
@@ -431,36 +460,6 @@ function OverviewPanel({ ip, t, onEdit }: { ip: IpCreatorIp; t: Translate; onEdi
             uploadDisabled={uploadMedia.isPending || updateAssets.isPending}
             isUploading={uploadMedia.isPending}
             onUpload={(file) => void handleTrailerUpload(file)}
-          />
-        </div>
-      </Section>
-
-      <Section title={t("overview.next.eyebrow")} description={t("flowBody")}>
-        <div className="space-y-2">
-          <ReadinessItem
-            title={t("progress.profile.title")}
-            body={t("progress.profile.body")}
-            done={hasProfile}
-          />
-          <ReadinessItem
-            title={t("progress.episodes.title")}
-            body={t("progress.episodes.body")}
-            done={ip.counts.episodes > 0}
-          />
-          <ReadinessItem
-            title={t("progress.assets.title")}
-            body={t("progress.assets.body")}
-            done={hasAsset}
-          />
-          <ReadinessItem
-            title={t("progress.rights.title")}
-            body={t("progress.rights.body")}
-            done={hasRights}
-          />
-          <ReadinessItem
-            title={t("progress.publish.title")}
-            body={t("overview.next.publish.body")}
-            done={ip.status === "published"}
           />
         </div>
       </Section>
@@ -1266,203 +1265,312 @@ function FormTextField({
   );
 }
 
-function PricingPanel({ ip, t, locale }: { ip: IpCreatorIp; t: Translate; locale: Locale }) {
-  const episodes = ip.episodes ?? [];
+// ---------------------------------------------------------------------------
+// Orders tab — read-only sales & settlement surface (moved out of Pricing).
+// Owns the commerce overview query, metric cards, pricing-health block, the
+// settlement card, and the recent-orders list.
+// ---------------------------------------------------------------------------
+function OrdersPanel({ ip, t, locale }: { ip: IpCreatorIp; t: Translate; locale: Locale }) {
   const commerce = useMyIpCommerceOverview(ip.id, { locale });
 
   return (
-    <>
-      <Section title={t("pricingPanel.commerceTitle")} description={t("pricingPanel.commerceBody")}>
-        <div className="rounded-xl bg-card p-4 ring-1 ring-border/65">
-          <div className="flex flex-wrap items-start justify-between gap-4">
-            <div>
-              <h4 className="text-sm font-semibold">{t("pricingPanel.commerce.statusTitle")}</h4>
-              <p className="mt-1 text-xs leading-5 text-muted-foreground">
-                {t("pricingPanel.commerce.statusBody")}
-              </p>
-            </div>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={() => void commerce.refetch()}
-              disabled={commerce.isFetching}
-            >
-              <IconRefresh className={cn("size-4", commerce.isFetching && "animate-spin")} />
-              {t("pricingPanel.commerce.refresh")}
-            </Button>
+    <Section title={t("ordersPanel.title")} description={t("ordersPanel.body")}>
+      <div className="rounded-xl bg-card p-4 ring-1 ring-border/65">
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div>
+            <h4 className="text-sm font-semibold">{t("ordersPanel.statusTitle")}</h4>
+            <p className="mt-1 text-xs leading-5 text-muted-foreground">
+              {t("ordersPanel.statusBody")}
+            </p>
           </div>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => void commerce.refetch()}
+            disabled={commerce.isFetching}
+          >
+            <IconRefresh className={cn("size-4", commerce.isFetching && "animate-spin")} />
+            {t("ordersPanel.refresh")}
+          </Button>
+        </div>
 
-          {commerce.isLoading ? (
-            <div className="mt-4 flex items-center gap-2 rounded-xl border border-border bg-background px-3 py-4 text-sm text-muted-foreground">
-              <IconLoader2 className="size-4 animate-spin" />
-              {t("pricingPanel.commerce.loading")}
+        {commerce.isLoading ? (
+          <div className="mt-4 flex items-center gap-2 rounded-xl border border-border bg-background px-3 py-4 text-sm text-muted-foreground">
+            <IconLoader2 className="size-4 animate-spin" />
+            {t("ordersPanel.loading")}
+          </div>
+        ) : commerce.error ? (
+          <div className="mt-4 rounded-xl border border-destructive/25 bg-destructive/5 px-3 py-3 text-sm text-destructive">
+            {errorMessage(commerce.error) || t("ordersPanel.loadFailed")}
+          </div>
+        ) : commerce.data ? (
+          <div className="mt-4 space-y-4">
+            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+              <CommerceMetricCard
+                icon={IconReceipt}
+                label={t("ordersPanel.orders")}
+                value={String(commerce.data.metrics.recognizedOrders)}
+                hint={t("ordersPanel.last7Days", {
+                  count: commerce.data.metrics.ordersLast7Days,
+                })}
+              />
+              <CommerceMetricCard
+                icon={IconCoin}
+                label={t("ordersPanel.points")}
+                value={formatPoints(commerce.data.metrics.grossCommunityPoints, locale)}
+                hint={t("ordersPanel.pointsLast7Days", {
+                  amount: formatPoints(commerce.data.metrics.grossCommunityPointsLast7Days, locale),
+                })}
+              />
+              <CommerceMetricCard
+                icon={IconUsers}
+                label={t("ordersPanel.buyers")}
+                value={String(commerce.data.metrics.uniqueBuyers)}
+                hint={t("ordersPanel.totalOrders", {
+                  count: commerce.data.metrics.totalOrders,
+                })}
+              />
+              <CommerceMetricCard
+                icon={IconShieldCheck}
+                label={t("ordersPanel.entitlements")}
+                value={String(commerce.data.metrics.activeEntitlements)}
+                hint={t("ordersPanel.pendingUnlocks", {
+                  count: commerce.data.metrics.pendingUnlocks,
+                })}
+              />
             </div>
-          ) : commerce.error ? (
-            <div className="mt-4 rounded-xl border border-destructive/25 bg-destructive/5 px-3 py-3 text-sm text-destructive">
-              {errorMessage(commerce.error) || t("pricingPanel.commerce.loadFailed")}
-            </div>
-          ) : commerce.data ? (
-            <div className="mt-4 space-y-4">
-              <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-                <CommerceMetricCard
-                  icon={IconReceipt}
-                  label={t("pricingPanel.commerce.orders")}
-                  value={String(commerce.data.metrics.recognizedOrders)}
-                  hint={t("pricingPanel.commerce.last7Days", {
-                    count: commerce.data.metrics.ordersLast7Days,
-                  })}
-                />
-                <CommerceMetricCard
-                  icon={IconCoin}
-                  label={t("pricingPanel.commerce.points")}
-                  value={formatPoints(commerce.data.metrics.grossCommunityPoints, locale)}
-                  hint={t("pricingPanel.commerce.pointsLast7Days", {
-                    amount: formatPoints(
-                      commerce.data.metrics.grossCommunityPointsLast7Days,
-                      locale
-                    ),
-                  })}
-                />
-                <CommerceMetricCard
-                  icon={IconUsers}
-                  label={t("pricingPanel.commerce.buyers")}
-                  value={String(commerce.data.metrics.uniqueBuyers)}
-                  hint={t("pricingPanel.commerce.totalOrders", {
-                    count: commerce.data.metrics.totalOrders,
-                  })}
-                />
-                <CommerceMetricCard
-                  icon={IconShieldCheck}
-                  label={t("pricingPanel.commerce.entitlements")}
-                  value={String(commerce.data.metrics.activeEntitlements)}
-                  hint={t("pricingPanel.commerce.pendingUnlocks", {
-                    count: commerce.data.metrics.pendingUnlocks,
-                  })}
-                />
-              </div>
 
-              <div className="grid gap-4 xl:grid-cols-[minmax(0,1.25fr)_minmax(280px,0.75fr)]">
-                <div className="rounded-xl border border-border bg-background p-4">
-                  <div className="flex flex-wrap items-center justify-between gap-3">
-                    <div>
-                      <h5 className="text-sm font-semibold">
-                        {t("pricingPanel.commerce.healthTitle")}
-                      </h5>
-                      <p className="mt-1 text-xs text-muted-foreground">
-                        {t("pricingPanel.commerce.healthSummary", {
-                          prices: commerce.data.pricingHealth.activeEpisodePriceCount,
-                          episodes: commerce.data.pricingHealth.publishedEpisodeCount,
-                        })}
-                      </p>
-                    </div>
-                    <StatusPill>
-                      {t(`pricingPanel.commerce.health.${commerce.data.pricingHealth.status}`)}
-                    </StatusPill>
-                  </div>
-                  <div className="mt-3 space-y-2">
-                    {commerce.data.pricingHealth.warnings.map((warning) => (
-                      <div
-                        key={warning.code}
-                        className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-900"
-                      >
-                        {commerceWarningLabel(warning.code, t)}
-                      </div>
-                    ))}
-                    {!commerce.data.pricingHealth.warnings.length ? (
-                      <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs leading-5 text-emerald-800">
-                        {t("pricingPanel.commerce.healthReadyBody")}
-                      </div>
-                    ) : null}
-                  </div>
-                </div>
-
-                <SettlementCard settlement={commerce.data.settlement} t={t} locale={locale} />
-              </div>
-
+            <div className="grid gap-4 xl:grid-cols-[minmax(0,1.25fr)_minmax(280px,0.75fr)]">
               <div className="rounded-xl border border-border bg-background p-4">
-                <h5 className="text-sm font-semibold">{t("pricingPanel.commerce.recentOrders")}</h5>
-                <div className="mt-3 divide-y divide-border/70">
-                  {commerce.data.recentOrders.slice(0, 6).map((order) => (
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <h5 className="text-sm font-semibold">{t("ordersPanel.healthTitle")}</h5>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      {t("ordersPanel.healthSummary", {
+                        prices: commerce.data.pricingHealth.activeEpisodePriceCount,
+                        episodes: commerce.data.pricingHealth.publishedEpisodeCount,
+                      })}
+                    </p>
+                  </div>
+                  <StatusPill>
+                    {t(`ordersPanel.health.${commerce.data.pricingHealth.status}`)}
+                  </StatusPill>
+                </div>
+                <div className="mt-3 space-y-2">
+                  {commerce.data.pricingHealth.warnings.map((warning) => (
                     <div
-                      key={order.id}
-                      className="grid gap-2 py-3 text-sm sm:grid-cols-[minmax(0,1fr)_120px_120px]"
+                      key={warning.code}
+                      className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-900"
                     >
-                      <div className="min-w-0">
-                        <p className="truncate font-medium">
-                          {order.episode?.title ??
-                            t(`pricingPanel.commerce.orderTarget.${order.targetType}`)}
-                        </p>
-                        <p className="mt-0.5 text-xs text-muted-foreground">
-                          {order.orderNo} · {formatDateTime(order.createdAt, locale)}
-                        </p>
-                      </div>
-                      <p className="text-xs text-muted-foreground sm:text-sm">
-                        {orderStatusLabel(order.status, t)}
-                      </p>
-                      <p className="font-medium sm:text-right">
-                        {formatPoints(order.totalAmount, locale)}
-                      </p>
+                      {commerceWarningLabel(warning.code, t)}
                     </div>
                   ))}
-                  {!commerce.data.recentOrders.length ? (
-                    <div className="py-8 text-center text-sm text-muted-foreground">
-                      {t("pricingPanel.commerce.noOrders")}
+                  {!commerce.data.pricingHealth.warnings.length ? (
+                    <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs leading-5 text-emerald-800">
+                      {t("ordersPanel.healthReadyBody")}
                     </div>
                   ) : null}
                 </div>
               </div>
-            </div>
-          ) : null}
-        </div>
-      </Section>
 
-      <Section title={t("pricingPanel.accessTitle")} description={t("pricingPanel.accessBody")}>
-        <DefaultIpPriceEditor ip={ip} t={t} />
-      </Section>
-
-      <Section title={t("pricingPanel.episodeTitle")} description={t("pricingPanel.episodeBody")}>
-        <div className="rounded-xl bg-card p-4 ring-1 ring-border/65">
-          <div className="flex flex-wrap items-center justify-between gap-4">
-            <div>
-              <h4 className="text-sm font-semibold">{t("pricingPanel.episodeListTitle")}</h4>
-              <p className="mt-1 text-xs leading-5 text-muted-foreground">
-                {ip.counts.episodes > 0
-                  ? t("pricingPanel.episodeListReady", { count: ip.counts.episodes })
-                  : t("pricingPanel.episodeListEmpty")}
-              </p>
+              <SettlementCard settlement={commerce.data.settlement} t={t} locale={locale} />
             </div>
-            <StatusPill>
-              {ip.counts.episodes > 0
-                ? t("pricingPanel.ruleStatus.available")
-                : t("pricingPanel.ruleStatus.needsEpisodes")}
-            </StatusPill>
-          </div>
 
-          {episodes.length ? (
-            <div className="mt-4 space-y-3">
-              {episodes.map((episode) => (
-                <EpisodePriceEditor key={episode.id} ip={ip} episode={episode} t={t} />
-              ))}
-            </div>
-          ) : (
-            <div className="mt-4 rounded-xl border border-dashed border-border bg-background p-4">
-              <div className="flex gap-3">
-                <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-muted text-muted-foreground">
-                  <IconVideo className="size-5" />
-                </span>
-                <div>
-                  <h5 className="text-sm font-semibold">{t("pricingPanel.episodeEmptyTitle")}</h5>
-                  <p className="mt-1 text-xs leading-5 text-muted-foreground">
-                    {t("pricingPanel.episodeEmptyBody")}
-                  </p>
-                </div>
+            <div className="rounded-xl border border-border bg-background p-4">
+              <h5 className="text-sm font-semibold">{t("ordersPanel.recentOrders")}</h5>
+              <div className="mt-3 divide-y divide-border/70">
+                {commerce.data.recentOrders.slice(0, 6).map((order) => (
+                  <div
+                    key={order.id}
+                    className="grid gap-2 py-3 text-sm sm:grid-cols-[minmax(0,1fr)_120px_120px]"
+                  >
+                    <div className="min-w-0">
+                      <p className="truncate font-medium">
+                        {order.episode?.title ?? t(`ordersPanel.orderTarget.${order.targetType}`)}
+                      </p>
+                      <p className="mt-0.5 text-xs text-muted-foreground">
+                        {order.orderNo} · {formatDateTime(order.createdAt, locale)}
+                      </p>
+                    </div>
+                    <p className="text-xs text-muted-foreground sm:text-sm">
+                      {orderStatusLabel(order.status, t)}
+                    </p>
+                    <p className="font-medium sm:text-right">
+                      {formatPoints(order.totalAmount, locale)}
+                    </p>
+                  </div>
+                ))}
+                {!commerce.data.recentOrders.length ? (
+                  <div className="py-8 text-center text-sm text-muted-foreground">
+                    {t("ordersPanel.noOrders")}
+                  </div>
+                ) : null}
               </div>
             </div>
-          )}
+          </div>
+        ) : null}
+      </div>
+    </Section>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Pricing tab — mutually-exclusive access mode (free / paid bundle / per-episode).
+// The mode is inferred from existing price rules: an IP-level rule means bundle
+// mode, episode-level rules mean per-episode mode. There is no schema field.
+// ---------------------------------------------------------------------------
+type AccessMode = "free" | "bundle" | "episode";
+
+// Only published/scheduled episodes are sellable — the per-episode pricing list
+// is a view over that sellable subset (a contextual filter, not list dedupe).
+function isSellableEpisode(episode: StudioEpisode): boolean {
+  return episode.status === "published" || episode.status === "scheduled";
+}
+
+function inferAccessMode(ip: IpCreatorIp): AccessMode {
+  if (ip.price) return "bundle";
+  const episodes = ip.episodes ?? [];
+  if (episodes.some((episode) => Boolean(episode.price))) return "episode";
+  return "free";
+}
+
+function PricingPanel({ ip, t }: { ip: IpCreatorIp; t: Translate }) {
+  const sellableEpisodes = (ip.episodes ?? []).filter(isSellableEpisode);
+  const [mode, setMode] = useState<AccessMode>(() => inferAccessMode(ip));
+  const detectedMode = inferAccessMode(ip);
+  // If a save round-trips and changes which rules exist, follow the server's
+  // inferred mode (adjust-state-during-render pattern, no effect).
+  const [syncedDetected, setSyncedDetected] = useState(detectedMode);
+  if (syncedDetected !== detectedMode) {
+    setSyncedDetected(detectedMode);
+    setMode(detectedMode);
+  }
+
+  const hasBundlePrice = Boolean(ip.price);
+  const hasEpisodePrices = sellableEpisodes.some((episode) => Boolean(episode.price));
+
+  const modeOptions: { key: AccessMode; icon: IconComponent }[] = [
+    { key: "free", icon: IconGift },
+    { key: "bundle", icon: IconShoppingCart },
+    { key: "episode", icon: IconLayoutList },
+  ];
+
+  return (
+    <Section title={t("pricingPanel.title")} description={t("pricingPanel.body")}>
+      <div className="rounded-xl bg-card p-4 ring-1 ring-border/65">
+        <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+          {t("pricingPanel.mode.eyebrow")}
+        </p>
+        <div className="mt-3 grid gap-2 sm:grid-cols-3" role="tablist">
+          {modeOptions.map((option) => {
+            const Icon = option.icon;
+            const active = mode === option.key;
+            return (
+              <button
+                key={option.key}
+                type="button"
+                role="tab"
+                aria-selected={active}
+                onClick={() => setMode(option.key)}
+                className={cn(
+                  "flex flex-col items-start gap-1 rounded-xl border p-3 text-left transition-colors",
+                  active
+                    ? "border-primary bg-primary/5 ring-1 ring-primary/40"
+                    : "border-border bg-background hover:border-foreground/30"
+                )}
+              >
+                <span
+                  className={cn(
+                    "flex items-center gap-1.5 text-sm font-semibold",
+                    active ? "text-primary" : "text-foreground"
+                  )}
+                >
+                  <Icon className="size-4" />
+                  {t(`pricingPanel.mode.${option.key}.label`)}
+                </span>
+                <span className="text-xs leading-5 text-muted-foreground">
+                  {t(`pricingPanel.mode.${option.key}.body`)}
+                </span>
+              </button>
+            );
+          })}
         </div>
-      </Section>
-    </>
+
+        {mode === "bundle" && hasEpisodePrices ? (
+          <ModeSwitchNotice text={t("pricingPanel.switch.toBundle")} />
+        ) : null}
+        {mode === "episode" && hasBundlePrice ? (
+          <ModeSwitchNotice text={t("pricingPanel.switch.toEpisode")} />
+        ) : null}
+        {mode === "free" && (hasBundlePrice || hasEpisodePrices) ? (
+          <ModeSwitchNotice text={t("pricingPanel.switch.toFree")} />
+        ) : null}
+      </div>
+
+      {mode === "free" ? <FreeModeCard t={t} /> : null}
+      {mode === "bundle" ? <BundlePriceEditor ip={ip} t={t} /> : null}
+      {mode === "episode" ? <EpisodePricingList ip={ip} episodes={sellableEpisodes} t={t} /> : null}
+    </Section>
+  );
+}
+
+function ModeSwitchNotice({ text }: { text: string }) {
+  return (
+    <div className="mt-3 flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-900">
+      <IconAlertTriangle className="mt-0.5 size-3.5 shrink-0" />
+      <span>{text}</span>
+    </div>
+  );
+}
+
+function FreeModeCard({ t }: { t: Translate }) {
+  return (
+    <div className="rounded-xl bg-card p-6 text-center ring-1 ring-border/65">
+      <span className="mx-auto flex size-10 items-center justify-center rounded-full bg-muted text-muted-foreground">
+        <IconGift className="size-5" />
+      </span>
+      <p className="mt-3 text-sm font-semibold">{t("pricingPanel.free.title")}</p>
+      <p className="mx-auto mt-1 max-w-md text-xs leading-5 text-muted-foreground">
+        {t("pricingPanel.free.body")}
+      </p>
+    </div>
+  );
+}
+
+function EpisodePricingList({
+  ip,
+  episodes,
+  t,
+}: {
+  ip: IpCreatorIp;
+  episodes: StudioEpisode[];
+  t: Translate;
+}) {
+  if (!episodes.length) {
+    return (
+      <div className="rounded-xl bg-card p-4 ring-1 ring-border/65">
+        <div className="flex gap-3 rounded-xl border border-dashed border-border bg-background p-4">
+          <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-muted text-muted-foreground">
+            <IconVideo className="size-5" />
+          </span>
+          <div>
+            <h5 className="text-sm font-semibold">{t("pricingPanel.episode.emptyTitle")}</h5>
+            <p className="mt-1 text-xs leading-5 text-muted-foreground">
+              {t("pricingPanel.episode.emptyBody")}
+            </p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-2">
+      {episodes.map((episode) => (
+        <EpisodePriceEditor key={episode.id} ip={ip} episode={episode} t={t} />
+      ))}
+    </div>
   );
 }
 
@@ -1481,24 +1589,22 @@ function SettlementCard({
       <div className="flex items-center justify-between gap-3">
         <h5 className="flex items-center gap-1.5 text-sm font-semibold">
           <IconWallet className="size-4" />
-          {t("pricingPanel.commerce.settlementTitle")}
+          {t("ordersPanel.settlementTitle")}
         </h5>
-        <StatusPill>{t("pricingPanel.commerce.cashOutComingSoon")}</StatusPill>
+        <StatusPill>{t("ordersPanel.cashOutComingSoon")}</StatusPill>
       </div>
 
       <div className="mt-3 grid gap-3 sm:grid-cols-2">
         <div className="rounded-lg border border-border bg-card px-3 py-2.5">
           <p className="text-[11px] text-muted-foreground">
-            {t("pricingPanel.commerce.withdrawableRevenue")}
+            {t("ordersPanel.withdrawableRevenue")}
           </p>
           <p className="mt-1 text-lg font-semibold tabular-nums tracking-tight">
             {formatPoints(settlement.withdrawableBalance, locale)}
           </p>
         </div>
         <div className="rounded-lg border border-border bg-card px-3 py-2.5">
-          <p className="text-[11px] text-muted-foreground">
-            {t("pricingPanel.commerce.ipLifetimeEarnings")}
-          </p>
+          <p className="text-[11px] text-muted-foreground">{t("ordersPanel.ipLifetimeEarnings")}</p>
           <p className="mt-1 text-lg font-semibold tabular-nums tracking-tight">
             {formatPoints(settlement.ipLifetimeEarnings, locale)}
           </p>
@@ -1506,11 +1612,11 @@ function SettlementCard({
       </div>
 
       <p className="mt-3 text-xs leading-5 text-muted-foreground">
-        {t("pricingPanel.commerce.youEarnPercentOfSale", { pct: sharePct })}
+        {t("ordersPanel.youEarnPercentOfSale", { pct: sharePct })}
       </p>
       <p className="mt-2 flex items-center gap-1.5 text-xs leading-5 text-muted-foreground">
         <IconLock className="size-3.5 shrink-0" />
-        {t("pricingPanel.commerce.settlementCashOutNote")}
+        {t("ordersPanel.settlementCashOutNote")}
       </p>
     </div>
   );
@@ -1539,25 +1645,18 @@ function CommerceMetricCard({
   );
 }
 
-function DefaultIpPriceEditor({ ip, t }: { ip: IpCreatorIp; t: Translate }) {
+const BUNDLE_QUICK_PICKS = ["30", "50", "99"] as const;
+
+// Prominent whole-IP bundle card. One price unlocks every episode (incl. future
+// ones) via an IP-level entitlement. No per-episode prices exist in this mode.
+function BundlePriceEditor({ ip, t }: { ip: IpCreatorIp; t: Translate }) {
   const upsertPrice = useUpsertIpCommercePriceRule();
-  const [enabled, setEnabled] = useState(Boolean(ip.price));
   const [amount, setAmount] = useState(ip.price?.amount ?? "");
   const [originalAmount, setOriginalAmount] = useState(ip.price?.originalAmount ?? "");
   const [startsAt, setStartsAt] = useState(toDateTimeLocal(ip.price?.startsAt));
   const [endsAt, setEndsAt] = useState(toDateTimeLocal(ip.price?.endsAt));
-  const [maxPerUser, setMaxPerUser] = useState(
-    ip.price?.maxPerUser ? String(ip.price.maxPerUser) : ""
-  );
-  const priceRuleValid = validatePriceRuleInput({
-    enabled,
-    amount,
-    originalAmount,
-    startsAt,
-    endsAt,
-    maxPerUser,
-  });
-  const canSave = !upsertPrice.isPending && priceRuleValid;
+  const valid = validatePriceRuleInput({ amount, originalAmount, startsAt, endsAt });
+  const canSave = !upsertPrice.isPending && valid;
 
   const handleSave = async () => {
     if (!canSave) return;
@@ -1565,13 +1664,13 @@ function DefaultIpPriceEditor({ ip, t }: { ip: IpCreatorIp; t: Translate }) {
       await upsertPrice.mutateAsync({
         ipId: ip.id,
         targetType: "ip",
-        status: enabled ? "active" : "disabled",
+        status: "active",
         currency: IP_CONTENT_CURRENCY,
-        amount: enabled ? amount.trim() : undefined,
-        originalAmount: enabled && originalAmount.trim() ? originalAmount.trim() : null,
-        startsAt: enabled ? dateTimeLocalToIso(startsAt) : null,
-        endsAt: enabled ? dateTimeLocalToIso(endsAt) : null,
-        maxPerUser: enabled && maxPerUser.trim() ? Number(maxPerUser.trim()) : null,
+        amount: amount.trim(),
+        originalAmount: originalAmount.trim() ? originalAmount.trim() : null,
+        startsAt: dateTimeLocalToIso(startsAt),
+        endsAt: dateTimeLocalToIso(endsAt),
+        maxPerUser: null,
         expectedVersion: ip.version,
       });
       toast.success(t("pricingPanel.toasts.saved"));
@@ -1581,51 +1680,59 @@ function DefaultIpPriceEditor({ ip, t }: { ip: IpCreatorIp; t: Translate }) {
   };
 
   return (
-    <div className="rounded-xl bg-card p-4 ring-1 ring-border/65">
+    <div className="rounded-xl bg-card p-5 ring-1 ring-border/65">
       <div className="flex flex-wrap items-start justify-between gap-4">
-        <div>
-          <h4 className="text-sm font-semibold">{t("pricingPanel.rules.ipDefault.title")}</h4>
-          <p className="mt-1 max-w-2xl text-xs leading-5 text-muted-foreground">
-            {t("pricingPanel.rules.ipDefault.body")}
-          </p>
+        <div className="flex gap-3">
+          <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
+            <IconShoppingCart className="size-5" />
+          </span>
+          <div>
+            <h4 className="text-sm font-semibold">{t("pricingPanel.bundle.title")}</h4>
+            <p className="mt-1 max-w-xl text-xs leading-5 text-muted-foreground">
+              {t("pricingPanel.bundle.body")}
+            </p>
+          </div>
         </div>
         <StatusPill>
-          {enabled ? t("pricingPanel.ruleStatus.available") : t("pricingPanel.ruleStatus.free")}
+          {ip.price ? t("pricingPanel.status.priced") : t("pricingPanel.status.unpriced")}
         </StatusPill>
       </div>
 
-      <div className="mt-4 grid gap-3">
+      <div className="mt-4 max-w-xs">
         <FormTextField
           label={t("pricingPanel.form.amount")}
           value={amount}
           onChange={(value) => setAmount(value.replace(/[^\d]/g, ""))}
           placeholder={t("pricingPanel.form.amountPlaceholder")}
         />
+        <div className="mt-2 flex flex-wrap gap-2">
+          {BUNDLE_QUICK_PICKS.map((pick) => (
+            <QuickPickChip
+              key={pick}
+              label={t("pricingPanel.form.quickPick", { amount: pick })}
+              active={amount === pick}
+              onClick={() => setAmount(pick)}
+            />
+          ))}
+        </div>
       </div>
 
-      <PriceRuleAdvancedFields
-        enabled={enabled}
+      <PriceScheduleFields
         originalAmount={originalAmount}
         startsAt={startsAt}
         endsAt={endsAt}
-        maxPerUser={maxPerUser}
         onOriginalAmountChange={(value) => setOriginalAmount(value.replace(/[^\d]/g, ""))}
         onStartsAtChange={setStartsAt}
         onEndsAtChange={setEndsAt}
-        onMaxPerUserChange={(value) => setMaxPerUser(value.replace(/[^\d]/g, ""))}
         t={t}
       />
 
-      <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
-        <label className="inline-flex items-center gap-2 text-sm text-muted-foreground">
-          <input
-            type="checkbox"
-            checked={enabled}
-            onChange={(event) => setEnabled(event.target.checked)}
-            className="size-4 accent-primary"
-          />
-          {t("pricingPanel.form.enablePaid")}
-        </label>
+      <p className="mt-4 flex items-start gap-1.5 text-xs leading-5 text-muted-foreground">
+        <IconShieldCheck className="mt-0.5 size-3.5 shrink-0 text-primary" />
+        {t("pricingPanel.bundle.unlockNote")}
+      </p>
+
+      <div className="mt-4 flex justify-end">
         <Button type="button" onClick={handleSave} disabled={!canSave}>
           <IconDeviceFloppy className="size-4" />
           {upsertPrice.isPending ? t("pricingPanel.form.saving") : t("pricingPanel.form.save")}
@@ -1635,174 +1742,801 @@ function DefaultIpPriceEditor({ ip, t }: { ip: IpCreatorIp; t: Translate }) {
   );
 }
 
+type EpisodePriceState = "unpriced" | "free_preview" | "priced";
+
+function deriveEpisodePriceState(episode: StudioEpisode): EpisodePriceState {
+  if (episode.isFreePreview) return "free_preview";
+  if (episode.price) return "priced";
+  return "unpriced";
+}
+
+// One row in the per-episode pricing list. Hides the amount input behind an
+// explicit "Set price" affordance; supports clearing back to unpriced and a
+// "Free preview" state. Compare-at + schedule live behind a per-row disclosure.
 function EpisodePriceEditor({
   ip,
   episode,
   t,
 }: {
   ip: IpCreatorIp;
-  episode: NonNullable<IpCreatorIp["episodes"]>[number];
+  episode: StudioEpisode;
   t: Translate;
 }) {
+  // Price (amount/compare-at/schedule) round-trips through the price-rule
+  // endpoint. The free-preview flag is an episode field, so it goes through the
+  // episode-update endpoint — the two are coordinated here.
   const upsertPrice = useUpsertIpCommercePriceRule();
-  const [enabled, setEnabled] = useState(Boolean(episode.price));
+  const updateEpisode = useUpdateIpCommerceEpisode();
+  const serverState = deriveEpisodePriceState(episode);
+  const [editing, setEditing] = useState(false);
   const [amount, setAmount] = useState(episode.price?.amount ?? "");
   const [originalAmount, setOriginalAmount] = useState(episode.price?.originalAmount ?? "");
   const [startsAt, setStartsAt] = useState(toDateTimeLocal(episode.price?.startsAt));
   const [endsAt, setEndsAt] = useState(toDateTimeLocal(episode.price?.endsAt));
-  const [maxPerUser, setMaxPerUser] = useState(
-    episode.price?.maxPerUser ? String(episode.price.maxPerUser) : ""
-  );
-  const priceRuleValid = validatePriceRuleInput({
-    enabled,
-    amount,
-    originalAmount,
-    startsAt,
-    endsAt,
-    maxPerUser,
-  });
-  const canSave = !upsertPrice.isPending && priceRuleValid;
+  const valid = validatePriceRuleInput({ amount, originalAmount, startsAt, endsAt });
+  const busy = upsertPrice.isPending || updateEpisode.isPending;
 
-  const handleSave = async () => {
-    if (!canSave) return;
+  // Clear the free-preview flag (if set) before/while pricing, since a priced
+  // episode is not a free preview.
+  const clearFreePreview = async () => {
+    if (!episode.isFreePreview) return;
+    await updateEpisode.mutateAsync({
+      ipId: ip.id,
+      episodeId: episode.id,
+      isFreePreview: false,
+      expectedVersion: ip.version,
+    });
+  };
+
+  const handleSavePrice = async () => {
+    if (!valid || busy) return;
     try {
+      await clearFreePreview();
       await upsertPrice.mutateAsync({
         ipId: ip.id,
         targetType: "episode",
         episodeId: episode.id,
-        status: enabled ? "active" : "disabled",
+        status: "active",
         currency: IP_CONTENT_CURRENCY,
-        amount: enabled ? amount.trim() : undefined,
-        originalAmount: enabled && originalAmount.trim() ? originalAmount.trim() : null,
-        startsAt: enabled ? dateTimeLocalToIso(startsAt) : null,
-        endsAt: enabled ? dateTimeLocalToIso(endsAt) : null,
-        maxPerUser: enabled && maxPerUser.trim() ? Number(maxPerUser.trim()) : null,
+        amount: amount.trim(),
+        originalAmount: originalAmount.trim() ? originalAmount.trim() : null,
+        startsAt: dateTimeLocalToIso(startsAt),
+        endsAt: dateTimeLocalToIso(endsAt),
+        maxPerUser: null,
         expectedVersion: ip.version,
       });
       toast.success(t("pricingPanel.toasts.saved"));
+      setEditing(false);
+    } catch (err) {
+      toast.error(errorMessage(err) || t("pricingPanel.toasts.saveFailed"));
+    }
+  };
+
+  // Disable any active episode price rule, returning the episode to unpriced.
+  const disablePrice = async () => {
+    if (!episode.price) return;
+    await upsertPrice.mutateAsync({
+      ipId: ip.id,
+      targetType: "episode",
+      episodeId: episode.id,
+      status: "disabled",
+      currency: IP_CONTENT_CURRENCY,
+      maxPerUser: null,
+      expectedVersion: ip.version,
+    });
+  };
+
+  const handleClear = async () => {
+    if (busy) return;
+    try {
+      await disablePrice();
+      if (episode.isFreePreview) {
+        await updateEpisode.mutateAsync({
+          ipId: ip.id,
+          episodeId: episode.id,
+          isFreePreview: false,
+          expectedVersion: ip.version,
+        });
+      }
+      toast.success(t("pricingPanel.toasts.saved"));
+      setEditing(false);
+    } catch (err) {
+      toast.error(errorMessage(err) || t("pricingPanel.toasts.saveFailed"));
+    }
+  };
+
+  const handleFreePreview = async () => {
+    if (busy || episode.isFreePreview) return;
+    try {
+      // A free preview is free — drop any active price first.
+      await disablePrice();
+      await updateEpisode.mutateAsync({
+        ipId: ip.id,
+        episodeId: episode.id,
+        isFreePreview: true,
+        expectedVersion: ip.version,
+      });
+      toast.success(t("pricingPanel.toasts.saved"));
+      setEditing(false);
     } catch (err) {
       toast.error(errorMessage(err) || t("pricingPanel.toasts.saveFailed"));
     }
   };
 
   return (
-    <div className="rounded-xl bg-background p-3 ring-1 ring-border/55">
+    <div className="rounded-xl bg-card p-3 ring-1 ring-border/65">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="min-w-0">
-          <p className="text-xs font-semibold text-primary">
-            {t("episodesPanel.form.episodeNumber", { number: episode.episodeNo })}
-          </p>
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-2">
+            <span className="font-mono text-[11px] font-semibold tabular-nums tracking-wider text-muted-foreground">
+              EP {String(episode.episodeNo).padStart(2, "0")}
+            </span>
+            <EpisodeStatePill state={serverState} t={t} />
+          </div>
           <h5 className="mt-1 truncate text-sm font-medium">{episode.title}</h5>
         </div>
-        <StatusPill>
-          {episode.isFreePreview
-            ? t("pricingPanel.ruleStatus.preview")
-            : enabled
-              ? t("pricingPanel.ruleStatus.episodePaid")
-              : ip.price
-                ? t("pricingPanel.ruleStatus.inherit")
-                : t("pricingPanel.ruleStatus.free")}
-        </StatusPill>
+        {serverState === "priced" && episode.price ? (
+          <p className="text-sm font-semibold tabular-nums text-foreground">
+            {t("pricingPanel.form.pointsValue", { amount: episode.price.amount })}
+          </p>
+        ) : null}
       </div>
 
-      <div className="mt-3 grid gap-3">
-        <FormTextField
-          label={t("pricingPanel.form.amount")}
-          value={amount}
-          onChange={(value) => setAmount(value.replace(/[^\d]/g, ""))}
-          placeholder={t("pricingPanel.form.amountPlaceholder")}
-        />
-      </div>
-
-      <PriceRuleAdvancedFields
-        enabled={enabled}
-        originalAmount={originalAmount}
-        startsAt={startsAt}
-        endsAt={endsAt}
-        maxPerUser={maxPerUser}
-        onOriginalAmountChange={(value) => setOriginalAmount(value.replace(/[^\d]/g, ""))}
-        onStartsAtChange={setStartsAt}
-        onEndsAtChange={setEndsAt}
-        onMaxPerUserChange={(value) => setMaxPerUser(value.replace(/[^\d]/g, ""))}
-        t={t}
-      />
-
-      <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
-        <label className="inline-flex items-center gap-2 text-sm text-muted-foreground">
-          <input
-            type="checkbox"
-            checked={enabled}
-            onChange={(event) => setEnabled(event.target.checked)}
-            className="size-4 accent-primary"
+      {editing ? (
+        <div className="mt-3 border-t border-border/60 pt-3">
+          <div className="max-w-xs">
+            <FormTextField
+              label={t("pricingPanel.form.amount")}
+              value={amount}
+              onChange={(value) => setAmount(value.replace(/[^\d]/g, ""))}
+              placeholder={t("pricingPanel.form.amountPlaceholder")}
+            />
+          </div>
+          <PriceScheduleFields
+            originalAmount={originalAmount}
+            startsAt={startsAt}
+            endsAt={endsAt}
+            onOriginalAmountChange={(value) => setOriginalAmount(value.replace(/[^\d]/g, ""))}
+            onStartsAtChange={setStartsAt}
+            onEndsAtChange={setEndsAt}
+            t={t}
           />
-          {t("pricingPanel.form.overrideEpisode")}
-        </label>
-        <Button type="button" size="sm" onClick={handleSave} disabled={!canSave}>
-          <IconDeviceFloppy className="size-4" />
-          {upsertPrice.isPending ? t("pricingPanel.form.saving") : t("pricingPanel.form.save")}
-        </Button>
-      </div>
+          <div className="mt-3 flex flex-wrap items-center justify-end gap-2">
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              color="muted"
+              onClick={() => setEditing(false)}
+              disabled={busy}
+            >
+              {t("pricingPanel.form.cancel")}
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              onClick={() => void handleSavePrice()}
+              disabled={!valid || busy}
+            >
+              <IconDeviceFloppy className="size-3.5" />
+              {busy ? t("pricingPanel.form.saving") : t("pricingPanel.form.save")}
+            </Button>
+          </div>
+        </div>
+      ) : (
+        <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-border/60 pt-3">
+          <Button
+            type="button"
+            size="sm"
+            variant={serverState === "priced" ? "outline" : "solid"}
+            color={serverState === "priced" ? "muted" : "primary"}
+            onClick={() => setEditing(true)}
+            disabled={busy}
+          >
+            <IconCoin className="size-3.5" />
+            {serverState === "priced"
+              ? t("pricingPanel.form.editPrice")
+              : t("pricingPanel.form.setPrice")}
+          </Button>
+          <Button
+            type="button"
+            size="sm"
+            variant={serverState === "free_preview" ? "solid" : "outline"}
+            color={serverState === "free_preview" ? "primary" : "muted"}
+            onClick={() => void handleFreePreview()}
+            disabled={busy}
+          >
+            <IconGift className="size-3.5" />
+            {t("pricingPanel.form.freePreview")}
+          </Button>
+          {serverState !== "unpriced" ? (
+            <Button
+              type="button"
+              size="sm"
+              variant="ghost"
+              color="muted"
+              onClick={() => void handleClear()}
+              disabled={busy}
+            >
+              {t("pricingPanel.form.clear")}
+            </Button>
+          ) : null}
+        </div>
+      )}
     </div>
   );
 }
 
-function PriceRuleAdvancedFields({
-  enabled,
+function EpisodeStatePill({ state, t }: { state: EpisodePriceState; t: Translate }) {
+  const label =
+    state === "free_preview"
+      ? t("pricingPanel.status.freePreview")
+      : state === "priced"
+        ? t("pricingPanel.status.priced")
+        : t("pricingPanel.status.unpriced");
+  return <StatusPill>{label}</StatusPill>;
+}
+
+function QuickPickChip({
+  label,
+  active,
+  onClick,
+}: {
+  label: string;
+  active: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={cn(
+        "inline-flex h-8 items-center rounded-full border px-3 text-xs font-medium transition",
+        active
+          ? "border-primary bg-primary text-primary-foreground"
+          : "border-border bg-background text-muted-foreground hover:border-foreground/40 hover:text-foreground"
+      )}
+    >
+      {label}
+    </button>
+  );
+}
+
+// Collapsed "Schedule a sale" disclosure: compare-at (strikethrough) + a
+// start/end window. Closed by default to keep the editor clean.
+function PriceScheduleFields({
   originalAmount,
   startsAt,
   endsAt,
-  maxPerUser,
   onOriginalAmountChange,
   onStartsAtChange,
   onEndsAtChange,
-  onMaxPerUserChange,
   t,
 }: {
-  enabled: boolean;
   originalAmount: string;
   startsAt: string;
   endsAt: string;
-  maxPerUser: string;
   onOriginalAmountChange: (value: string) => void;
   onStartsAtChange: (value: string) => void;
   onEndsAtChange: (value: string) => void;
-  onMaxPerUserChange: (value: string) => void;
   t: Translate;
 }) {
+  const [open, setOpen] = useState(Boolean(originalAmount || startsAt || endsAt));
+  const invalidWindow = Boolean(startsAt && endsAt && new Date(startsAt) >= new Date(endsAt));
+
   return (
-    <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-      <FormTextField
-        label={t("pricingPanel.form.originalAmount")}
-        value={originalAmount}
-        onChange={onOriginalAmountChange}
-        placeholder={t("pricingPanel.form.originalAmountPlaceholder")}
-      />
-      <FormTextField
-        type="datetime-local"
-        label={t("pricingPanel.form.startsAt")}
-        value={startsAt}
-        onChange={onStartsAtChange}
-        placeholder={t("pricingPanel.form.startsAtPlaceholder")}
-      />
-      <FormTextField
-        type="datetime-local"
-        label={t("pricingPanel.form.endsAt")}
-        value={endsAt}
-        onChange={onEndsAtChange}
-        placeholder={t("pricingPanel.form.endsAtPlaceholder")}
-      />
-      <FormTextField
-        label={t("pricingPanel.form.maxPerUser")}
-        value={maxPerUser}
-        onChange={onMaxPerUserChange}
-        placeholder={t("pricingPanel.form.maxPerUserPlaceholder")}
-      />
-      {enabled && startsAt && endsAt && new Date(startsAt) >= new Date(endsAt) ? (
-        <p className="text-xs text-destructive sm:col-span-2 lg:col-span-4">
-          {t("pricingPanel.form.invalidWindow")}
-        </p>
+    <div className="mt-3">
+      <button
+        type="button"
+        onClick={() => setOpen((value) => !value)}
+        className="inline-flex items-center gap-1.5 text-xs font-medium text-muted-foreground transition hover:text-foreground"
+      >
+        <IconCalendarTime className="size-3.5" />
+        {t("pricingPanel.schedule.toggle")}
+        <IconChevronDown className={cn("size-3.5 transition-transform", open && "rotate-180")} />
+      </button>
+      {open ? (
+        <div className="mt-3 grid gap-3 sm:grid-cols-3">
+          <FormTextField
+            label={t("pricingPanel.form.originalAmount")}
+            value={originalAmount}
+            onChange={onOriginalAmountChange}
+            placeholder={t("pricingPanel.form.originalAmountPlaceholder")}
+          />
+          <FormTextField
+            type="datetime-local"
+            label={t("pricingPanel.form.startsAt")}
+            value={startsAt}
+            onChange={onStartsAtChange}
+            placeholder={t("pricingPanel.form.startsAtPlaceholder")}
+          />
+          <FormTextField
+            type="datetime-local"
+            label={t("pricingPanel.form.endsAt")}
+            value={endsAt}
+            onChange={onEndsAtChange}
+            placeholder={t("pricingPanel.form.endsAtPlaceholder")}
+          />
+          {invalidWindow ? (
+            <p className="text-xs text-destructive sm:col-span-3">
+              {t("pricingPanel.form.invalidWindow")}
+            </p>
+          ) : null}
+        </div>
       ) : null}
     </div>
+  );
+}
+
+function MembersPanel({ ip, t, locale }: { ip: IpCreatorIp; t: Translate; locale: Locale }) {
+  const { data, isLoading, error, refetch } = useMyIpContributors(ip.id);
+  const [addOpen, setAddOpen] = useState(false);
+
+  if (isLoading) {
+    return (
+      <Section title={t("membersPanel.sectionTitle")} description={t("membersPanel.sectionBody")}>
+        <div className="flex items-center gap-2 rounded-xl bg-card p-6 text-sm text-muted-foreground ring-1 ring-border/65">
+          <IconLoader2 className="size-4 animate-spin" />
+          {t("membersPanel.loading")}
+        </div>
+      </Section>
+    );
+  }
+
+  if (error || !data) {
+    return (
+      <Section title={t("membersPanel.sectionTitle")} description={t("membersPanel.sectionBody")}>
+        <div className="rounded-xl bg-card p-6 ring-1 ring-border/65">
+          <p className="text-sm text-destructive">
+            {errorMessage(error) || t("membersPanel.loadFailed")}
+          </p>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="mt-3"
+            onClick={() => void refetch()}
+          >
+            <IconRefresh className="size-4" />
+            {t("membersPanel.retry")}
+          </Button>
+        </div>
+      </Section>
+    );
+  }
+
+  const creatorPct = formatBpsPercent(data.creatorShareBps, locale);
+  const allocatedPct = formatBpsPercent(data.poolAllocatedBps, locale);
+  const overAllocated = data.poolAllocatedBps > BPS_FULL;
+
+  return (
+    <Section title={t("membersPanel.sectionTitle")} description={t("membersPanel.sectionBody")}>
+      <div className="rounded-xl bg-card p-4 ring-1 ring-border/65">
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div className="min-w-0 space-y-1">
+            <p className="text-sm font-medium text-foreground">
+              {t("membersPanel.creatorShareLine", { pct: creatorPct })}
+            </p>
+            <p className="text-xs text-muted-foreground">{t("membersPanel.splitPrompt")}</p>
+          </div>
+          <div className="text-right">
+            <p
+              className={cn(
+                "text-sm font-semibold tabular-nums",
+                overAllocated ? "text-destructive" : "text-foreground"
+              )}
+            >
+              {t("membersPanel.allocated", { allocated: allocatedPct })}
+            </p>
+            {overAllocated ? (
+              <p className="mt-1 max-w-[16rem] text-[11px] leading-4 text-destructive">
+                {t("membersPanel.overAllocated")}
+              </p>
+            ) : null}
+          </div>
+        </div>
+
+        <p className="mt-2 text-[11px] leading-4 text-muted-foreground">
+          {t("membersPanel.ownerFallbackNote")}
+        </p>
+
+        <div className="mt-4 divide-y divide-border/70 rounded-lg border border-border">
+          {data.contributors.length ? (
+            data.contributors.map((contributor) => (
+              <MemberRow
+                key={contributor.id}
+                ip={ip}
+                contributor={contributor}
+                contributors={data.contributors}
+                t={t}
+              />
+            ))
+          ) : (
+            <p className="px-4 py-6 text-center text-sm text-muted-foreground">
+              {t("membersPanel.empty")}
+            </p>
+          )}
+        </div>
+
+        <div className="mt-4 flex justify-end">
+          <Button type="button" onClick={() => setAddOpen(true)}>
+            <IconUserPlus className="size-4" />
+            {t("membersPanel.addMember")}
+          </Button>
+        </div>
+      </div>
+
+      <AddMemberDialog
+        key={`add:${addOpen}`}
+        open={addOpen}
+        onOpenChange={setAddOpen}
+        ip={ip}
+        contributors={data.contributors}
+        t={t}
+      />
+    </Section>
+  );
+}
+
+function MemberRow({
+  ip,
+  contributor,
+  contributors,
+  t,
+}: {
+  ip: IpCreatorIp;
+  contributor: IpCreatorContributor;
+  contributors: IpCreatorContributor[];
+  t: Translate;
+}) {
+  const update = useUpdateIpCommerceContributor();
+  const remove = useDeleteIpCommerceContributor();
+  const linked = Boolean(contributor.userId);
+  const [shareText, setShareText] = useState(bpsToPercentText(contributor.revenueShareBps));
+  // Re-sync the local input when the server value changes (e.g. after a refetch
+  // following another row's edit) using React's "adjust state during render"
+  // pattern, which avoids an effect + cascading render.
+  const [syncedBps, setSyncedBps] = useState(contributor.revenueShareBps);
+  if (syncedBps !== contributor.revenueShareBps) {
+    setSyncedBps(contributor.revenueShareBps);
+    setShareText(bpsToPercentText(contributor.revenueShareBps));
+  }
+
+  const roleLabel = contributor.customRole?.trim()
+    ? contributor.customRole
+    : t(`roles.${contributor.role}`);
+
+  const eligibleSumExcludingThis = sumEligibleBps(contributors, contributor.id);
+
+  const commitShare = async () => {
+    const nextBps = percentTextToBps(shareText);
+    if (nextBps === contributor.revenueShareBps) return;
+    // Client guard: eligible totals must stay <= 100%.
+    if (contributor.revenueEligible && eligibleSumExcludingThis + (nextBps ?? 0) > BPS_FULL) {
+      toast.error(t("membersPanel.overAllocated"));
+      setShareText(bpsToPercentText(contributor.revenueShareBps));
+      return;
+    }
+    try {
+      await update.mutateAsync({
+        ipId: ip.id,
+        contributorId: contributor.id,
+        revenueShareBps: nextBps,
+      });
+      toast.success(t("membersPanel.toasts.updated"));
+    } catch (err) {
+      setShareText(bpsToPercentText(contributor.revenueShareBps));
+      toast.error(errorMessage(err) || t("membersPanel.toasts.updateFailed"));
+    }
+  };
+
+  const toggleEligible = async () => {
+    const nextEligible = !contributor.revenueEligible;
+    if (!linked) return; // disabled — an unlinked member cannot earn.
+    if (nextEligible && eligibleSumExcludingThis + (contributor.revenueShareBps ?? 0) > BPS_FULL) {
+      toast.error(t("membersPanel.overAllocated"));
+      return;
+    }
+    try {
+      await update.mutateAsync({
+        ipId: ip.id,
+        contributorId: contributor.id,
+        revenueEligible: nextEligible,
+      });
+      toast.success(t("membersPanel.toasts.updated"));
+    } catch (err) {
+      toast.error(errorMessage(err) || t("membersPanel.toasts.updateFailed"));
+    }
+  };
+
+  const handleRemove = async () => {
+    if (!window.confirm(t("membersPanel.removeConfirm"))) return;
+    try {
+      await remove.mutateAsync({ ipId: ip.id, contributorId: contributor.id });
+      toast.success(t("membersPanel.toasts.removed"));
+    } catch (err) {
+      toast.error(errorMessage(err) || t("membersPanel.toasts.removeFailed"));
+    }
+  };
+
+  return (
+    <div className="flex flex-wrap items-center gap-3 px-3 py-2.5 sm:flex-nowrap">
+      <div className="min-w-0 flex-1">
+        <p className="truncate text-sm font-medium text-foreground">{contributor.displayName}</p>
+        <p className="truncate text-[11px] text-muted-foreground">
+          {roleLabel}
+          {" · "}
+          {linked
+            ? t("membersPanel.linkedAs", { name: contributor.userId ?? "" })
+            : t("membersPanel.notLinked")}
+        </p>
+      </div>
+      <Button
+        type="button"
+        size="sm"
+        variant={contributor.revenueEligible ? "solid" : "outline"}
+        color={contributor.revenueEligible ? "primary" : "muted"}
+        disabled={!linked || update.isPending}
+        title={linked ? undefined : t("membersPanel.cannotEarn")}
+        onClick={() => void toggleEligible()}
+      >
+        {!linked
+          ? t("membersPanel.cannotEarn")
+          : contributor.revenueEligible
+            ? t("membersPanel.eligible")
+            : t("membersPanel.notEligible")}
+      </Button>
+      <Input
+        value={shareText}
+        onChange={(event) => setShareText(event.target.value.replace(/[^\d.]/g, ""))}
+        onBlur={() => void commitShare()}
+        onKeyDown={(event) => {
+          if (event.key === "Enter") event.currentTarget.blur();
+        }}
+        disabled={!linked || !contributor.revenueEligible || update.isPending}
+        placeholder={t("membersPanel.sharePlaceholder")}
+        aria-label={t("membersPanel.shareAriaLabel")}
+        className="h-9 w-20"
+      />
+      <Button
+        type="button"
+        size="icon-xs"
+        variant="ghost"
+        color="muted"
+        className="text-muted-foreground hover:bg-red-500/10 hover:text-red-500"
+        disabled={remove.isPending}
+        title={t("membersPanel.remove")}
+        onClick={() => void handleRemove()}
+      >
+        <IconTrash className="size-3.5" />
+      </Button>
+    </div>
+  );
+}
+
+type LinkedUserDraft = { userId: string; name: string };
+
+function AddMemberDialog({
+  open,
+  onOpenChange,
+  ip,
+  contributors,
+  t,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  ip: IpCreatorIp;
+  contributors: IpCreatorContributor[];
+  t: Translate;
+}) {
+  const create = useCreateIpCommerceContributor();
+  const lookup = useLookupIpCommerceUser();
+  const [displayName, setDisplayName] = useState("");
+  const [role, setRole] = useState<IpContributorRole>("writer");
+  const [customRole, setCustomRole] = useState("");
+  const [account, setAccount] = useState("");
+  const [linkedUser, setLinkedUser] = useState<LinkedUserDraft | null>(null);
+  const [lookupError, setLookupError] = useState<string | null>(null);
+  const [eligible, setEligible] = useState(false);
+  const [shareText, setShareText] = useState("");
+
+  const eligibleSum = sumEligibleBps(contributors, null);
+
+  const handleLookup = async () => {
+    const value = account.trim();
+    if (!value) return;
+    setLookupError(null);
+    try {
+      const result = await lookup.mutateAsync(value);
+      setLinkedUser({ userId: result.userId, name: result.nickname || result.userId });
+      // Default the credit name to the matched account if not set yet.
+      setDisplayName((current) => current.trim() || result.nickname || result.userId);
+    } catch (err) {
+      setLinkedUser(null);
+      const status =
+        err && typeof err === "object" && "status" in err
+          ? (err as { status?: number }).status
+          : undefined;
+      setLookupError(
+        status === 404
+          ? t("membersPanel.lookupNotFound")
+          : errorMessage(err) || t("membersPanel.lookupFailed")
+      );
+    }
+  };
+
+  const unlink = () => {
+    setLinkedUser(null);
+    setEligible(false);
+    setShareText("");
+  };
+
+  const canSubmit =
+    displayName.trim().length > 0 && (!eligible || Boolean(linkedUser)) && !create.isPending;
+
+  const handleSubmit = async () => {
+    if (!canSubmit) return;
+    const shareBps = eligible ? percentTextToBps(shareText) : null;
+    if (eligible && !linkedUser) {
+      toast.error(t("membersPanel.mustLinkToEarn"));
+      return;
+    }
+    if (eligible && eligibleSum + (shareBps ?? 0) > BPS_FULL) {
+      toast.error(t("membersPanel.overAllocated"));
+      return;
+    }
+    try {
+      await create.mutateAsync({
+        ipId: ip.id,
+        displayName: displayName.trim(),
+        userId: linkedUser?.userId ?? null,
+        role,
+        customRole: customRole.trim() || null,
+        revenueEligible: eligible,
+        revenueShareBps: shareBps,
+      });
+      toast.success(t("membersPanel.toasts.added"));
+      onOpenChange(false);
+    } catch (err) {
+      toast.error(errorMessage(err) || t("membersPanel.toasts.addFailed"));
+    }
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>{t("membersPanel.addTitle")}</DialogTitle>
+          <DialogDescription>{t("membersPanel.addBody")}</DialogDescription>
+        </DialogHeader>
+        <DialogBody>
+          <FieldGroup>
+            <Field>
+              <FieldLabel required>{t("membersPanel.displayNameLabel")}</FieldLabel>
+              <Input
+                value={displayName}
+                onChange={(event) => setDisplayName(event.target.value.slice(0, 120))}
+                placeholder={t("membersPanel.displayNamePlaceholder")}
+                maxLength={120}
+              />
+            </Field>
+
+            <div className="grid gap-4 sm:grid-cols-2">
+              <Field>
+                <FieldLabel>{t("membersPanel.roleLabel")}</FieldLabel>
+                <Select value={role} onValueChange={(value) => setRole(value as IpContributorRole)}>
+                  <SelectTrigger className="w-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {CONTRIBUTOR_ROLE_OPTIONS.map((value) => (
+                      <SelectItem key={value} value={value}>
+                        {t(`roles.${value}`)}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </Field>
+              <Field>
+                <FieldLabel>{t("membersPanel.customRoleLabel")}</FieldLabel>
+                <Input
+                  value={customRole}
+                  onChange={(event) => setCustomRole(event.target.value.slice(0, 80))}
+                  placeholder={t("membersPanel.customRolePlaceholder")}
+                  maxLength={80}
+                />
+              </Field>
+            </div>
+
+            <Field>
+              <FieldLabel>{t("membersPanel.linkUserLabel")}</FieldLabel>
+              {linkedUser ? (
+                <div className="flex items-center justify-between gap-2 rounded-md border border-border bg-background px-3 py-2">
+                  <span className="flex min-w-0 items-center gap-1.5 text-sm">
+                    <IconLink className="size-4 shrink-0 text-primary" />
+                    <span className="truncate">
+                      {t("membersPanel.lookupFound", { name: linkedUser.name })}
+                    </span>
+                  </span>
+                  <Button type="button" size="sm" variant="ghost" color="muted" onClick={unlink}>
+                    {t("membersPanel.unlink")}
+                  </Button>
+                </div>
+              ) : (
+                <div className="flex gap-2">
+                  <Input
+                    value={account}
+                    onChange={(event) => setAccount(event.target.value)}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter") {
+                        event.preventDefault();
+                        void handleLookup();
+                      }
+                    }}
+                    placeholder={t("membersPanel.linkUserPlaceholder")}
+                  />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    color="muted"
+                    disabled={!account.trim() || lookup.isPending}
+                    onClick={() => void handleLookup()}
+                  >
+                    {lookup.isPending ? t("membersPanel.looking") : t("membersPanel.lookup")}
+                  </Button>
+                </div>
+              )}
+              {lookupError ? (
+                <FieldDescription className="text-destructive">{lookupError}</FieldDescription>
+              ) : (
+                <FieldDescription>{t("membersPanel.eligibleHint")}</FieldDescription>
+              )}
+            </Field>
+
+            <div className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-border bg-background px-3 py-2.5">
+              <label
+                className={cn(
+                  "inline-flex items-center gap-2 text-sm",
+                  linkedUser ? "text-foreground" : "cursor-not-allowed text-muted-foreground"
+                )}
+                title={linkedUser ? undefined : t("membersPanel.cannotEarn")}
+              >
+                <input
+                  type="checkbox"
+                  checked={eligible}
+                  disabled={!linkedUser}
+                  onChange={(event) => setEligible(event.target.checked)}
+                  className="size-4 accent-primary"
+                />
+                {t("membersPanel.eligible")}
+              </label>
+              <Input
+                value={shareText}
+                onChange={(event) => setShareText(event.target.value.replace(/[^\d.]/g, ""))}
+                disabled={!linkedUser || !eligible}
+                placeholder={t("membersPanel.sharePlaceholder")}
+                aria-label={t("membersPanel.shareAriaLabel")}
+                className="h-9 w-24"
+              />
+            </div>
+          </FieldGroup>
+        </DialogBody>
+        <DialogFooter>
+          <Button
+            type="button"
+            variant="outline"
+            color="muted"
+            onClick={() => onOpenChange(false)}
+            disabled={create.isPending}
+          >
+            {t("membersPanel.cancel")}
+          </Button>
+          <Button type="button" onClick={() => void handleSubmit()} disabled={!canSubmit}>
+            {create.isPending ? t("membersPanel.adding") : t("membersPanel.add")}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -2326,21 +3060,113 @@ function MetaCell({ label, value }: { label: string; value: string }) {
   );
 }
 
-function ReadinessItem({ title, body, done }: { title: string; body: string; done: boolean }) {
+// The five publish-readiness phases, derived from the IP. Drives the header
+// completion ring; the verbose per-phase cards were retired from the overview.
+function ipReadinessSteps(ip: IpCreatorIp): { key: string; done: boolean }[] {
+  return [
+    {
+      key: "profile",
+      done: Boolean(ip.title.trim() && ip.summary.trim() && ip.genreCodes.length),
+    },
+    { key: "episodes", done: ip.counts.episodes > 0 },
+    { key: "assets", done: hasPublicationAsset(ip) },
+    { key: "rights", done: hasRightsDeclaration(ip) && hasRequiredAiDisclosure(ip) },
+    { key: "publish", done: ip.status === "published" },
+  ];
+}
+
+// Compact completion ring in the header; hover/focus reveals the phase checklist.
+function ReadinessRing({ ip, t }: { ip: IpCreatorIp; t: Translate }) {
+  const steps = ipReadinessSteps(ip);
+  const total = steps.length;
+  const done = steps.filter((s) => s.done).length;
+  const pct = Math.round((done / total) * 100);
+  // First not-yet-done phase is the "current" one.
+  const currentIndex = steps.findIndex((s) => !s.done);
+
+  const r = 15;
+  const circ = 2 * Math.PI * r;
+  const filled = (pct / 100) * circ;
+
   return (
-    <div className="flex gap-3 rounded-xl border border-border bg-card p-4">
-      <span
-        className={[
-          "mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-full border",
-          done ? "border-primary bg-primary text-primary-foreground" : "border-border bg-muted",
-        ].join(" ")}
+    <div className="group relative">
+      <button
+        type="button"
+        aria-label={t("overview.next.eyebrow")}
+        className="flex items-center gap-2 rounded-lg px-1.5 py-1 outline-none transition-colors hover:bg-muted/60 focus-visible:ring-2 focus-visible:ring-ring"
       >
-        <span className="size-1.5 rounded-full bg-current" />
-      </span>
-      <span>
-        <span className="block text-sm font-medium">{title}</span>
-        <span className="mt-1 block text-xs leading-5 text-muted-foreground">{body}</span>
-      </span>
+        <span className="relative inline-flex size-9 items-center justify-center">
+          <svg viewBox="0 0 36 36" className="size-9 -rotate-90">
+            <circle
+              cx="18"
+              cy="18"
+              r={r}
+              fill="none"
+              strokeWidth="3.5"
+              stroke="currentColor"
+              className="text-border"
+            />
+            <circle
+              cx="18"
+              cy="18"
+              r={r}
+              fill="none"
+              strokeWidth="3.5"
+              strokeLinecap="round"
+              stroke="currentColor"
+              className="text-primary"
+              strokeDasharray={`${filled} ${circ}`}
+            />
+          </svg>
+          <span className="absolute text-[10px] font-semibold tabular-nums text-foreground">
+            {pct}%
+          </span>
+        </span>
+        <span className="text-xs text-muted-foreground">
+          {t("readiness.ready", { done, total })}
+        </span>
+      </button>
+
+      <div
+        role="status"
+        className="invisible absolute right-0 top-full z-30 mt-2 w-64 rounded-xl border border-border bg-popover p-3 opacity-0 shadow-lg transition group-hover:visible group-hover:opacity-100 group-focus-within:visible group-focus-within:opacity-100"
+      >
+        <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+          {t("overview.next.eyebrow")}
+        </p>
+        <ul className="mt-2 space-y-1.5">
+          {steps.map((step, index) => {
+            const isCurrent = index === currentIndex;
+            return (
+              <li key={step.key} className="flex items-center gap-2 text-sm">
+                <span
+                  className={[
+                    "flex size-4 shrink-0 items-center justify-center rounded-full border text-[10px] leading-none",
+                    step.done
+                      ? "border-primary bg-primary text-primary-foreground"
+                      : isCurrent
+                        ? "border-primary text-primary"
+                        : "border-border text-muted-foreground",
+                  ].join(" ")}
+                >
+                  {step.done ? "✓" : ""}
+                </span>
+                <span
+                  className={
+                    isCurrent
+                      ? "font-medium text-foreground"
+                      : step.done
+                        ? "text-muted-foreground"
+                        : "text-muted-foreground"
+                  }
+                >
+                  {t(`progress.${step.key}.title`)}
+                </span>
+              </li>
+            );
+          })}
+        </ul>
+      </div>
     </div>
   );
 }
@@ -2478,9 +3304,7 @@ function commerceWarningLabel(code: string, t: Translate) {
     "missing_bundle_price",
     "all_free_preview",
   ]);
-  return known.has(code)
-    ? t(`pricingPanel.commerce.warnings.${code}`)
-    : t("pricingPanel.commerce.warnings.unknown");
+  return known.has(code) ? t(`ordersPanel.warnings.${code}`) : t("ordersPanel.warnings.unknown");
 }
 
 function orderStatusLabel(status: string, t: Translate) {
@@ -2493,7 +3317,7 @@ function orderStatusLabel(status: string, t: Translate) {
     "refunded",
     "partially_refunded",
   ]);
-  return known.has(status) ? t(`pricingPanel.commerce.orderStatus.${status}`) : status;
+  return known.has(status) ? t(`ordersPanel.orderStatus.${status}`) : status;
 }
 
 function toDateTimeLocal(value: string | null | undefined) {
@@ -2522,28 +3346,54 @@ function dateTimeLocalToIso(value: string) {
 }
 
 function validatePriceRuleInput({
-  enabled,
   amount,
   originalAmount,
   startsAt,
   endsAt,
-  maxPerUser,
 }: {
-  enabled: boolean;
   amount: string;
   originalAmount: string;
   startsAt: string;
   endsAt: string;
-  maxPerUser: string;
 }) {
-  if (!enabled) return true;
   if (!/^\d+$/.test(amount.trim())) return false;
   if (originalAmount.trim() && !/^\d+$/.test(originalAmount.trim())) return false;
-  if (maxPerUser.trim() && !/^\d+$/.test(maxPerUser.trim())) return false;
   if (startsAt && Number.isNaN(new Date(startsAt).getTime())) return false;
   if (endsAt && Number.isNaN(new Date(endsAt).getTime())) return false;
   if (startsAt && endsAt && new Date(startsAt) >= new Date(endsAt)) return false;
   return true;
+}
+
+function bpsToPercentText(bps: number | null): string {
+  return bps == null ? "" : String(bps / 100);
+}
+
+function percentTextToBps(text: string): number | null {
+  const trimmed = text.trim();
+  if (trimmed === "") return null;
+  const percent = Number(trimmed);
+  if (Number.isNaN(percent)) return null;
+  return Math.round(percent * 100);
+}
+
+// Sum of eligible contributors' pool shares (bps), optionally excluding one id
+// (so a row's own pending edit isn't double-counted in the <=100% guard).
+function sumEligibleBps(contributors: IpCreatorContributor[], excludeId: string | null): number {
+  return contributors.reduce((sum, c) => {
+    if (!c.revenueEligible || c.id === excludeId) return sum;
+    return sum + (c.revenueShareBps ?? 0);
+  }, 0);
+}
+
+function formatBpsPercent(bps: number, locale: Locale): string {
+  try {
+    return new Intl.NumberFormat(locale, {
+      style: "percent",
+      maximumFractionDigits: 2,
+    }).format(bps / BPS_FULL);
+  } catch {
+    return `${bps / 100}%`;
+  }
 }
 
 function getAssetUrl(asset: IpCommerceAsset | null | undefined) {

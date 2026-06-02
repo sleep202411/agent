@@ -793,6 +793,62 @@ export type UpdateAdminIpRevenueConfigInput = z.infer<
   typeof UpdateAdminIpRevenueConfigSchema
 >;
 
+// --- Creator-scoped IP contributors (team + revenue split, no admin approval) -
+
+export const IpContributorRoleSchema = z.enum([
+  'owner',
+  'producer',
+  'director',
+  'writer',
+  'artist',
+  'editor',
+  'performer',
+  'other',
+]);
+export type IpContributorRoleValue = z.infer<typeof IpContributorRoleSchema>;
+
+// A platform user id (Java VarChar64) — the same shape the user-lookup BFF
+// returns. Kept loose (trim 1..64) rather than uuid because Java ids are
+// numeric strings, not UUIDs.
+const IpContributorUserIdSchema = z.string().trim().min(1).max(64);
+
+export const IpContributorParamsSchema = z.object({
+  ipId: z.string().uuid(),
+  contributorId: z.string().uuid(),
+});
+export type IpContributorParams = z.infer<typeof IpContributorParamsSchema>;
+
+export const CreateCreatorIpContributorSchema = z
+  .object({
+    displayName: z.string().trim().min(1).max(120),
+    userId: IpContributorUserIdSchema.nullable().optional(),
+    role: IpContributorRoleSchema,
+    customRole: z.string().trim().max(80).nullable().optional(),
+    revenueEligible: z.boolean(),
+    revenueShareBps: z.number().int().min(0).max(10000).nullable().optional(),
+  })
+  .strict();
+export type CreateCreatorIpContributorInput = z.infer<
+  typeof CreateCreatorIpContributorSchema
+>;
+
+export const UpdateCreatorIpContributorSchema = z
+  .object({
+    displayName: z.string().trim().min(1).max(120).optional(),
+    userId: IpContributorUserIdSchema.nullable().optional(),
+    role: IpContributorRoleSchema.optional(),
+    customRole: z.string().trim().max(80).nullable().optional(),
+    revenueEligible: z.boolean().optional(),
+    revenueShareBps: z.number().int().min(0).max(10000).nullable().optional(),
+  })
+  .strict()
+  .refine((value) => Object.keys(value).length > 0, {
+    message: 'At least one contributor field is required.',
+  });
+export type UpdateCreatorIpContributorInput = z.infer<
+  typeof UpdateCreatorIpContributorSchema
+>;
+
 export const IpOrderParamsSchema = z.object({
   orderId: z.string().uuid(),
 });

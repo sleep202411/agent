@@ -9,6 +9,7 @@ import {
   IpCampaignStatus,
   IpAgeRating,
   IpAssetPurpose,
+  IpContributorRole,
   IpTargetType,
   IpCollectionItemStatus,
   IpDiscoveryPlacementKey,
@@ -52,6 +53,7 @@ import { OutputStorageService } from '../infra/storage/storage.types';
 import { WalletLedgerService } from '../workspaces';
 import type {
   CreateIpDraftInput,
+  CreateCreatorIpContributorInput,
   CreateCreatorIpEpisodeInput,
   CreatorRevenueQuery,
   ListAdminIpRevenueQuery,
@@ -79,6 +81,7 @@ import type {
   UploadCreatorIpMediaQuery,
   UpdateCreatorIpAssetsInput,
   UpdateAdminIpTaxonomyTermInput,
+  UpdateCreatorIpContributorInput,
   UpdateCreatorIpEpisodeInput,
   UpdateAdminIpPublicationInput,
   UpdateCreatorIpProfileInput,
@@ -1318,6 +1321,224 @@ export class IpCommerceService {
       }
     });
     return this.getAdminIpRevenueConfig(ipId);
+  }
+
+  // --- Creator self-service contributors -----------------------------------
+  //
+  // Creators manage their IP's team (contributors) AND how the creator pool is
+  // split among them — no admin approval. Ownership is enforced on every call
+  // (ip.createdById === user.userId). Writes mirror updateAdminIpRevenueConfig:
+  // the same per-IP advisory lock serialises edits, and the same final-state
+  // validations run on the persisted set (eligible-requires-userId; eligible
+  // pool shares must total <= 100%). The platform-vs-creator share stays
+  // read-only to creators (admin-managed default / per-IP override).
+
+  /**
+   * Load an IP the caller owns, or throw IP_NOT_FOUND. Shared by every
+   * creator-scoped contributor op so a foreign / deleted IP is never touched.
+   */
+  private async requireOwnedIp(
+    user: AuthUser,
+    ipId: string,
+    select: Prisma.IpSelect,
+  ) {
+    const ip = await this.prisma.ip.findFirst({
+      where: { id: ipId, createdById: user.userId, deletedAt: null },
+      select,
+    });
+    if (!ip) {
+      throw new NotFoundException({
+        code: 'IP_NOT_FOUND',
+        msg: 'IP not found.',
+      });
+    }
+    return ip;
+  }
+
+  /**
+   * Validate the FINAL persisted contributor set inside the write transaction
+   * (not just the request), exactly like updateAdminIpRevenueConfig — a partial
+   * edit must not push the IP past 100% or leave an account-less earner.
+   */
+  private async assertContributorRevenueStateValidTx(
+    tx: Prisma.TransactionClient,
+    ipId: string,
+  ) {
+    const eligible = await tx.ipContributor.findMany({
+      where: { ipId, removedAt: null, revenueEligible: true },
+      select: { userId: true, revenueShareBps: true },
+    });
+    assertEligibleContributorsHaveAccount(eligible);
+    assertEligibleContributorSharesWithinPool(eligible);
+  }
+
+  async listCreatorIpContributors(user: AuthUser, ipId: string) {
+    const ip = await this.requireOwnedIp(user, ipId, {
+      id: true,
+      sourceLocale: true,
+      creatorRevenueShareBps: true,
+      localizations: {
+        where: { archivedAt: null },
+        orderBy: [{ locale: 'asc' }, { updatedAt: 'desc' }],
+      },
+    });
+    const defaultShareBps = await this.getCreatorRevenueShareDefaultBps();
+    const contributors = await this.prisma.ipContributor.findMany({
+      where: { ipId, removedAt: null },
+      orderBy: [{ displayOrder: 'asc' }, { createdAt: 'asc' }],
+    });
+    return creatorIpContributorListDto({
+      ip,
+      effectiveShareBps: ip.creatorRevenueShareBps ?? defaultShareBps,
+      contributors,
+    });
+  }
+
+  async createCreatorIpContributor(
+    user: AuthUser,
+    ipId: string,
+    input: CreateCreatorIpContributorInput,
+  ) {
+    let createdId = '';
+    await this.prisma.$transaction(async (tx) => {
+      await tx.$executeRaw`
+        SELECT pg_advisory_xact_lock(hashtext(${`ip:revenue-config:${ipId}`})::bigint)
+      `;
+      const ip = await tx.ip.findFirst({
+        where: { id: ipId, createdById: user.userId, deletedAt: null },
+        select: { id: true },
+      });
+      if (!ip) {
+        throw new NotFoundException({
+          code: 'IP_NOT_FOUND',
+          msg: 'IP not found.',
+        });
+      }
+      const maxOrder = await tx.ipContributor.aggregate({
+        where: { ipId, removedAt: null },
+        _max: { displayOrder: true },
+      });
+      const created = await tx.ipContributor.create({
+        data: {
+          ipId,
+          displayName: input.displayName,
+          userId: input.userId ?? null,
+          role: input.role as IpContributorRole,
+          customRole: input.customRole ?? null,
+          revenueEligible: input.revenueEligible,
+          revenueShareBps: input.revenueShareBps ?? null,
+          displayOrder: (maxOrder._max.displayOrder ?? -1) + 1,
+        },
+        select: { id: true },
+      });
+      createdId = created.id;
+      await this.assertContributorRevenueStateValidTx(tx, ipId);
+    });
+    return this.getCreatorIpContributor(ipId, createdId);
+  }
+
+  async updateCreatorIpContributor(
+    user: AuthUser,
+    ipId: string,
+    contributorId: string,
+    input: UpdateCreatorIpContributorInput,
+  ) {
+    await this.prisma.$transaction(async (tx) => {
+      await tx.$executeRaw`
+        SELECT pg_advisory_xact_lock(hashtext(${`ip:revenue-config:${ipId}`})::bigint)
+      `;
+      const ip = await tx.ip.findFirst({
+        where: { id: ipId, createdById: user.userId, deletedAt: null },
+        select: { id: true },
+      });
+      if (!ip) {
+        throw new NotFoundException({
+          code: 'IP_NOT_FOUND',
+          msg: 'IP not found.',
+        });
+      }
+      // Scope by ipId so a contributor id from another IP can't be edited; a
+      // 0-row result fails loudly instead of silently succeeding.
+      const res = await tx.ipContributor.updateMany({
+        where: { id: contributorId, ipId, removedAt: null },
+        data: {
+          ...(input.displayName !== undefined
+            ? { displayName: input.displayName }
+            : {}),
+          ...(input.userId !== undefined ? { userId: input.userId } : {}),
+          ...(input.role !== undefined
+            ? { role: input.role as IpContributorRole }
+            : {}),
+          ...(input.customRole !== undefined
+            ? { customRole: input.customRole }
+            : {}),
+          ...(input.revenueEligible !== undefined
+            ? { revenueEligible: input.revenueEligible }
+            : {}),
+          ...(input.revenueShareBps !== undefined
+            ? { revenueShareBps: input.revenueShareBps }
+            : {}),
+        },
+      });
+      if (res.count !== 1) {
+        throw new NotFoundException({
+          code: 'IP_CONTRIBUTOR_NOT_FOUND',
+          msg: 'Contributor not found on this IP.',
+        });
+      }
+      await this.assertContributorRevenueStateValidTx(tx, ipId);
+    });
+    return this.getCreatorIpContributor(ipId, contributorId);
+  }
+
+  async removeCreatorIpContributor(
+    user: AuthUser,
+    ipId: string,
+    contributorId: string,
+  ) {
+    await this.prisma.$transaction(async (tx) => {
+      await tx.$executeRaw`
+        SELECT pg_advisory_xact_lock(hashtext(${`ip:revenue-config:${ipId}`})::bigint)
+      `;
+      const ip = await tx.ip.findFirst({
+        where: { id: ipId, createdById: user.userId, deletedAt: null },
+        select: { id: true },
+      });
+      if (!ip) {
+        throw new NotFoundException({
+          code: 'IP_NOT_FOUND',
+          msg: 'IP not found.',
+        });
+      }
+      const res = await tx.ipContributor.updateMany({
+        where: { id: contributorId, ipId, removedAt: null },
+        data: { removedAt: new Date() },
+      });
+      if (res.count !== 1) {
+        throw new NotFoundException({
+          code: 'IP_CONTRIBUTOR_NOT_FOUND',
+          msg: 'Contributor not found on this IP.',
+        });
+      }
+      // Removing a contributor only shrinks the eligible set, so the sum can
+      // never breach 100% — but re-validate for symmetry with the other writes.
+      await this.assertContributorRevenueStateValidTx(tx, ipId);
+    });
+    return { removed: true };
+  }
+
+  /** Fetch a single contributor (scoped to its IP) in the contract shape. */
+  private async getCreatorIpContributor(ipId: string, contributorId: string) {
+    const contributor = await this.prisma.ipContributor.findFirst({
+      where: { id: contributorId, ipId, removedAt: null },
+    });
+    if (!contributor) {
+      throw new NotFoundException({
+        code: 'IP_CONTRIBUTOR_NOT_FOUND',
+        msg: 'Contributor not found on this IP.',
+      });
+    }
+    return creatorIpContributorDto(contributor);
   }
 
   async getAdminOrderRevenueBreakdown(orderId: string) {
@@ -4139,6 +4360,46 @@ export function assertIpPurchaserAllowed(input: {
   });
 }
 
+/**
+ * Final-state validation for an IP's revenue-eligible contributors — shared by
+ * the admin and creator revenue-config write paths. Pure (no Prisma) so it can
+ * be unit-tested directly. An account-less contributor cannot receive a
+ * withdrawable credit (the purchase split filters userId != null), so a
+ * phantom split must be rejected rather than silently routed to the owner.
+ */
+export function assertEligibleContributorsHaveAccount(
+  eligible: { userId: string | null }[],
+) {
+  if (eligible.some((c) => c.userId == null)) {
+    throw new ConflictException({
+      code: 'IP_REVENUE_CONTRIBUTOR_NO_ACCOUNT',
+      msg: 'A contributor without a linked account cannot earn revenue. Link an account or turn off their revenue share.',
+    });
+  }
+}
+
+/**
+ * Eligible contributors' pool shares must total <= 100% (10000 bps). Validates
+ * the persisted set so a partial edit can't combine with untouched rows to
+ * over-allocate the creator pool. Pure — unit-testable.
+ */
+export function assertEligibleContributorSharesWithinPool(
+  eligible: { revenueShareBps: number | null }[],
+) {
+  const totalBps = eligible.reduce(
+    (sum, c) => sum + (c.revenueShareBps ?? 0),
+    0,
+  );
+  if (totalBps > 10000) {
+    throw new ConflictException({
+      code: 'IP_REVENUE_SHARE_OVERALLOCATED',
+      msg: `Eligible contributor shares total ${(totalBps / 100).toFixed(
+        2,
+      )}% which exceeds 100%. Adjust the splits.`,
+    });
+  }
+}
+
 export function resolveIpEntitlementWindow(
   priceRule: { unlocksAt: Date | null },
   now: Date,
@@ -5357,6 +5618,45 @@ function selectCampaignLocalization(
     sourceLocale,
     publicOnly,
   );
+}
+
+function creatorIpContributorDto(contributor: {
+  id: string;
+  displayName: string;
+  userId: string | null;
+  role: IpContributorRole;
+  customRole: string | null;
+  revenueEligible: boolean;
+  revenueShareBps: number | null;
+  displayOrder: number;
+}) {
+  return {
+    id: contributor.id,
+    displayName: contributor.displayName,
+    userId: contributor.userId,
+    role: contributor.role,
+    customRole: contributor.customRole,
+    revenueEligible: contributor.revenueEligible,
+    revenueShareBps: contributor.revenueShareBps,
+    displayOrder: contributor.displayOrder,
+  };
+}
+
+function creatorIpContributorListDto(input: {
+  ip: { id: string; sourceLocale: string; localizations: IpLocalizationLike[] };
+  effectiveShareBps: number;
+  contributors: Parameters<typeof creatorIpContributorDto>[0][];
+}) {
+  const copy = selectIpLocalization(input.ip, input.ip.sourceLocale, false);
+  const poolAllocatedBps = input.contributors
+    .filter((c) => c.revenueEligible)
+    .reduce((sum, c) => sum + (c.revenueShareBps ?? 0), 0);
+  return {
+    ip: { id: input.ip.id, title: copy.value?.title ?? input.ip.id },
+    creatorShareBps: input.effectiveShareBps,
+    poolAllocatedBps,
+    contributors: input.contributors.map(creatorIpContributorDto),
+  };
 }
 
 function ipReferenceDto(

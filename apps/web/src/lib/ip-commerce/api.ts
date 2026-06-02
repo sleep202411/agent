@@ -365,6 +365,73 @@ export interface IpCreatorRevenue {
   nextCursor: string | null;
 }
 
+export type IpContributorRole =
+  | "owner"
+  | "producer"
+  | "director"
+  | "writer"
+  | "artist"
+  | "editor"
+  | "performer"
+  | "other";
+
+/** A creator-team member of an IP, as returned by the creator-scoped API. */
+export interface IpCreatorContributor {
+  id: string;
+  displayName: string;
+  userId: string | null;
+  role: IpContributorRole;
+  customRole: string | null;
+  revenueEligible: boolean;
+  /** Share of the CREATOR POOL in basis points (10000 = 100%). null = none. */
+  revenueShareBps: number | null;
+  displayOrder: number;
+}
+
+export interface IpCreatorContributorList {
+  ip: { id: string; title: string };
+  /** Effective platform-vs-creator share (bps). READ-ONLY to creators. */
+  creatorShareBps: number;
+  /** Sum of eligible contributors' revenueShareBps (bps). */
+  poolAllocatedBps: number;
+  contributors: IpCreatorContributor[];
+}
+
+export interface CreateIpContributorInput {
+  ipId: string;
+  displayName: string;
+  userId?: string | null;
+  role: IpContributorRole;
+  customRole?: string | null;
+  revenueEligible: boolean;
+  revenueShareBps?: number | null;
+}
+
+export interface UpdateIpContributorInput {
+  ipId: string;
+  contributorId: string;
+  displayName?: string;
+  userId?: string | null;
+  role?: IpContributorRole;
+  customRole?: string | null;
+  revenueEligible?: boolean;
+  revenueShareBps?: number | null;
+}
+
+export interface DeleteIpContributorInput {
+  ipId: string;
+  contributorId: string;
+}
+
+/** Result of /aurora/users/lookup — resolves a contact to a platform user. */
+export interface IpUserLookupResult {
+  userId: string;
+  nickname: string;
+  avatar: string | null;
+  isCrewMember: boolean | null;
+  isCrewFounder: boolean | null;
+}
+
 export interface IpCollectionItem {
   id: string;
   targetType: IpTargetType;
@@ -717,6 +784,49 @@ export function submitIpCommerceIpForReview(input: SubmitIpReviewInput) {
     `/aurora/ip-commerce/me/ips/${encodeURIComponent(ipId)}/review-submissions`,
     { data }
   );
+}
+
+export function listIpCommerceContributors(ipId: string) {
+  return api.get<IpCreatorContributorList>(
+    `/aurora/ip-commerce/me/ips/${encodeURIComponent(ipId)}/contributors`
+  );
+}
+
+export function createIpCommerceContributor(input: CreateIpContributorInput) {
+  const { ipId, ...data } = input;
+  return api.post<IpCreatorContributor>(
+    `/aurora/ip-commerce/me/ips/${encodeURIComponent(ipId)}/contributors`,
+    { data }
+  );
+}
+
+export function updateIpCommerceContributor(input: UpdateIpContributorInput) {
+  const { ipId, contributorId, ...data } = input;
+  return api.patch<IpCreatorContributor>(
+    `/aurora/ip-commerce/me/ips/${encodeURIComponent(ipId)}/contributors/${encodeURIComponent(
+      contributorId
+    )}`,
+    { data }
+  );
+}
+
+export function deleteIpCommerceContributor(input: DeleteIpContributorInput) {
+  return api.delete<{ removed: boolean }>(
+    `/aurora/ip-commerce/me/ips/${encodeURIComponent(
+      input.ipId
+    )}/contributors/${encodeURIComponent(input.contributorId)}`
+  );
+}
+
+/**
+ * Resolve a contact (account / email / phone) to a platform user so a
+ * creator can bind a contributor to a real account (required for them to
+ * earn). Mirrors the crew "Add member" lookup; throws on no match (404).
+ */
+export function lookupIpCommerceUser(params: { account: string }) {
+  return api.get<IpUserLookupResult>("/aurora/users/lookup", {
+    params: { account: params.account },
+  });
 }
 
 export function getIpCommerceIp(ipId: string, params?: { locale?: string }) {

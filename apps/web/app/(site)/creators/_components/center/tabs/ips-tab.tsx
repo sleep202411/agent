@@ -12,7 +12,6 @@ import {
   IconEdit,
   IconLoader2,
   IconLock,
-  IconSparkles,
   IconWallet,
 } from "@tabler/icons-react";
 import Link from "next/link";
@@ -108,13 +107,7 @@ export function IpsTab({ creator, isOwner }: IpsTabProps) {
       ) : null}
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-3 xl:grid-cols-4">
         {newIps.map((ip) => (
-          <NewIpCard
-            key={ip.id}
-            ip={ip}
-            locale={locale}
-            badge={t("ips.newIpBadge")}
-            enterLabel={t("ips.enterStudio")}
-          />
+          <NewIpCard key={ip.id} ip={ip} locale={locale} enterLabel={t("ips.enterStudio")} />
         ))}
         {projects.map((p) => (
           <IpCard
@@ -134,45 +127,55 @@ export function IpsTab({ creator, isOwner }: IpsTabProps) {
 function NewIpCard({
   ip,
   locale,
-  badge,
   enterLabel,
 }: {
   ip: IpCreatorIp;
   locale: Locale;
-  badge: string;
   enterLabel: string;
 }) {
   const title = ip.title.trim() || "—";
   const summary = ip.summary.trim();
+  const cover = ip.coverAsset?.url ?? ip.coverAsset?.externalUrl ?? "";
   const href = localizePath(`/ip-studio/${ip.id}`, locale);
 
   return (
     <Link
       href={href}
-      className="group relative flex min-h-[228px] flex-col overflow-hidden rounded-2xl bg-card ring-1 ring-border/60 transition-all duration-300 hover:-translate-y-1 hover:ring-border hover:shadow-lg hover:shadow-black/20"
+      className="group relative flex flex-col overflow-hidden rounded-2xl bg-card ring-1 ring-border/60 transition-all duration-300 hover:-translate-y-1 hover:ring-border hover:shadow-lg hover:shadow-black/20"
     >
-      <div className="relative flex flex-1 flex-col justify-between overflow-hidden bg-[radial-gradient(circle_at_18%_12%,rgba(229,34,39,0.28),transparent_36%),linear-gradient(135deg,rgba(255,255,255,0.09),rgba(255,255,255,0.02))] p-4">
-        <div className="pointer-events-none absolute -right-10 -top-10 size-36 rounded-full bg-[#e52227]/20 blur-3xl transition group-hover:bg-[#e52227]/30" />
-        <div className="relative flex items-center justify-between gap-3">
-          <span className="inline-flex h-7 items-center gap-1.5 rounded-full bg-[#e52227] px-2.5 text-[11px] font-semibold text-white">
-            <IconSparkles className="size-3.5" />
-            {badge}
+      {/* 16:9 cover — real artwork when present, otherwise a neutral placeholder. */}
+      <div className="relative aspect-[16/9] w-full overflow-hidden bg-secondary">
+        {cover ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={cover}
+            alt={title}
+            loading="lazy"
+            className="size-full object-cover transition-transform duration-500 ease-out group-hover:scale-[1.04]"
+          />
+        ) : (
+          <div className="flex size-full items-center justify-center bg-gradient-to-br from-secondary to-background text-muted-foreground/60">
+            <IconBook2 className="size-8" />
+          </div>
+        )}
+        {ip.genres[0] ? (
+          <span className="absolute right-2 top-2 rounded-full border border-white/10 bg-black/40 px-2.5 py-1 text-[11px] font-medium text-white/80 backdrop-blur-sm">
+            {ip.genres[0]}
           </span>
-          {ip.genres[0] ? (
-            <span className="rounded-full border border-white/10 bg-black/20 px-2.5 py-1 text-[11px] font-medium text-white/55">
-              {ip.genres[0]}
-            </span>
-          ) : null}
-        </div>
+        ) : null}
+        <div
+          aria-hidden
+          className="pointer-events-none absolute inset-x-0 bottom-0 h-1/3 bg-gradient-to-t from-black/40 to-transparent opacity-0 transition-opacity duration-300 group-hover:opacity-100"
+        />
+      </div>
 
-        <div className="relative mt-8 space-y-2">
-          <h3 className="line-clamp-2 text-lg font-semibold tracking-tight text-foreground">
-            {title}
-          </h3>
-          {summary ? (
-            <p className="line-clamp-2 text-xs leading-5 text-muted-foreground">{summary}</p>
-          ) : null}
-        </div>
+      <div className="flex flex-1 flex-col gap-1 px-4 py-3">
+        <h3 className="line-clamp-1 text-sm font-semibold tracking-tight text-foreground">
+          {title}
+        </h3>
+        {summary ? (
+          <p className="line-clamp-2 text-xs leading-5 text-muted-foreground">{summary}</p>
+        ) : null}
       </div>
 
       <div className="flex items-center justify-between gap-3 border-t border-border/60 px-4 py-3">

@@ -943,6 +943,9 @@
     "navTitle": "Workspace",
     "flowTitle": "Creation flow",
     "flowBody": "Move by stages, but complete each stage independently. The rings show current readiness.",
+    "readiness": {
+      "ready": "{done}/{total} ready"
+    },
     "comingSoon": "Coming soon",
     "editBasics": "Edit basics",
     "profileEdit": {
@@ -980,7 +983,75 @@
       "modules": "Modules",
       "version": "Version"
     },
+    "tabs": {
+      "members": "Members"
+    },
+    "roles": {
+      "owner": "Owner",
+      "producer": "Producer",
+      "director": "Director",
+      "writer": "Writer",
+      "artist": "Artist",
+      "editor": "Editor",
+      "performer": "Performer",
+      "other": "Other"
+    },
+    "membersPanel": {
+      "sectionTitle": "Team & revenue split",
+      "sectionBody": "Add the people behind this IP and decide how the creator pool is shared. No admin approval needed.",
+      "creatorShareLine": "Creators earn {pct} of each sale (set by platform).",
+      "splitPrompt": "Split that pool among your team:",
+      "allocated": "{allocated} / 100%",
+      "ownerFallbackNote": "Anything left unallocated, plus rounding, goes to the IP owner.",
+      "overAllocated": "Eligible shares exceed 100%. Lower a share before saving.",
+      "loading": "Loading members…",
+      "loadFailed": "Could not load members. Try again.",
+      "retry": "Retry",
+      "empty": "No members yet. Add your first collaborator to share revenue.",
+      "addMember": "Add member",
+      "notLinked": "Not linked",
+      "linkedAs": "Linked: {name}",
+      "eligible": "Earns",
+      "notEligible": "No share",
+      "cannotEarn": "Link an account first",
+      "eligibleHint": "Only account-linked members can earn.",
+      "sharePlaceholder": "%",
+      "shareAriaLabel": "Pool share percent",
+      "remove": "Remove",
+      "removeConfirm": "Remove this member from the IP?",
+      "roleLabel": "Role",
+      "customRoleLabel": "Custom role",
+      "customRolePlaceholder": "e.g. Composer",
+      "displayNameLabel": "Display name",
+      "displayNamePlaceholder": "How this member is credited",
+      "linkUserLabel": "Link platform user (optional)",
+      "linkUserPlaceholder": "Account, email, or phone",
+      "lookup": "Find",
+      "looking": "Searching…",
+      "lookupFound": "Matched: {name}",
+      "lookupNotFound": "No user matches that input.",
+      "lookupFailed": "Lookup failed. Try again.",
+      "unlink": "Unlink",
+      "addTitle": "Add member",
+      "addBody": "Credit a collaborator and optionally give them a revenue share.",
+      "add": "Add",
+      "adding": "Adding…",
+      "cancel": "Cancel",
+      "mustLinkToEarn": "Link an account to make this member eligible to earn.",
+      "toasts": {
+        "added": "Member added.",
+        "addFailed": "Could not add member.",
+        "updated": "Member updated.",
+        "updateFailed": "Could not update member.",
+        "removed": "Member removed.",
+        "removeFailed": "Could not remove member."
+      }
+    },
     "sections": {
+      "members": {
+        "title": "Members",
+        "status": "Optional"
+      },
       "overview": {
         "title": "Overview",
         "status": "Editing now"
@@ -1216,134 +1287,127 @@
     },
     "pricingPanel": {
       "action": "Configure pricing",
-      "accessTitle": "Access and pricing rules",
-      "accessBody": "Pricing is a commerce rule, not episode content. Whole-IP access, per-episode overrides, memberships, and promotions share one rule model so orders, refunds, and ledgers can stay consistent later.",
-      "commerceTitle": "Commerce operations",
-      "commerceBody": "Track real purchases, granted access, pending unlocks, and pricing health from the same entitlement system buyers use.",
-      "commerce": {
-        "statusTitle": "Sales health",
-        "statusBody": "These metrics are operational gross sales and access records. Settlement is shown separately so revenue is not overstated.",
-        "refresh": "Refresh",
-        "loading": "Loading commerce data",
-        "loadFailed": "Failed to load commerce data",
-        "orders": "Paid orders",
-        "points": "Gross points",
-        "buyers": "Buyers",
-        "entitlements": "Active access",
-        "last7Days": "{count} in the last 7 days",
-        "pointsLast7Days": "{amount} in the last 7 days",
-        "totalOrders": "{count} total orders",
-        "pendingUnlocks": "{count} pending unlocks",
-        "healthTitle": "Pricing health",
-        "healthSummary": "{prices} active episode prices · {episodes} public episodes",
-        "healthReadyBody": "Pricing is ready for buyers. Historical orders keep their original snapshot after future edits.",
-        "health": {
-          "ready": "Ready",
-          "attention": "Needs attention",
-          "blocked": "Blocked"
+      "title": "Access & pricing",
+      "body": "Pick how audiences pay for this IP. The three modes are mutually exclusive — set everything free, sell one whole-IP bundle, or price each episode individually. Currency is community points.",
+      "mode": {
+        "eyebrow": "Access mode",
+        "free": {
+          "label": "Free",
+          "body": "Every episode is free to watch."
         },
-        "warnings": {
-          "not_public": "The IP is not publicly listed, so buyers cannot discover it yet.",
-          "no_episodes": "No episodes have been created for this IP.",
-          "no_published_episodes": "No episode is published or scheduled for public playback.",
-          "no_active_price": "No active bundle or episode price is available for purchase.",
-          "missing_bundle_price": "Episode prices exist, but there is no whole-IP bundle price.",
-          "all_free_preview": "All public episodes are free previews and no paid path exists.",
-          "unknown": "A commerce warning needs review."
+        "bundle": {
+          "label": "Paid bundle",
+          "body": "One price unlocks the whole IP."
         },
-        "settlementTitle": "Settlement",
-        "withdrawableRevenue": "Withdrawable revenue",
-        "ipLifetimeEarnings": "Lifetime earned",
-        "youEarnPercentOfSale": "Creators earn {pct}% of each sale of this IP.",
-        "settlementCashOutNote": "Withdrawable revenue accrues now, but cash-out is not open yet.",
-        "cashOutComingSoon": "Cash-out coming soon",
-        "recentOrders": "Recent orders",
-        "noOrders": "No orders yet",
-        "orderTarget": {
-          "ip": "Whole IP access",
-          "episode": "Episode access"
-        },
-        "orderStatus": {
-          "pending": "Pending",
-          "paid": "Paid",
-          "fulfilled": "Fulfilled",
-          "canceled": "Canceled",
-          "failed": "Failed",
-          "refunded": "Refunded",
-          "partially_refunded": "Partially refunded"
+        "episode": {
+          "label": "Per-episode",
+          "body": "Price each episode on its own."
         }
       },
-      "ruleStatus": {
-        "notConfigured": "Not configured",
-        "available": "Available",
-        "needsEpisodes": "Needs episodes",
-        "reserved": "Reserved",
-        "free": "Free",
-        "preview": "Preview",
-        "episodePaid": "Paid episode",
-        "inherit": "Inherits IP"
+      "switch": {
+        "toBundle": "This IP has per-episode prices. Setting a bundle price makes the whole IP one purchase; the existing episode prices will no longer apply.",
+        "toEpisode": "This IP has a whole-IP bundle price. Pricing episodes individually means there is no single bundle purchase anymore.",
+        "toFree": "This IP currently has paid pricing. Switching to Free will make everything free once you clear the existing prices."
+      },
+      "free": {
+        "title": "Everything is free",
+        "body": "No bundle price and no episode prices. Audiences can watch every episode without spending community points."
+      },
+      "bundle": {
+        "title": "Whole-IP bundle",
+        "body": "One price unlocks every episode at once.",
+        "unlockNote": "Buying the bundle unlocks all episodes, including ones added later."
+      },
+      "status": {
+        "priced": "Priced",
+        "unpriced": "Not priced",
+        "freePreview": "Free preview"
       },
       "form": {
         "amount": "Price (community points)",
         "amountPlaceholder": "Example: 99",
+        "quickPick": "{amount} pts",
+        "pointsValue": "{amount} pts",
         "originalAmount": "Compare-at price",
         "originalAmountPlaceholder": "Optional, e.g. 199",
         "startsAt": "Starts",
         "startsAtPlaceholder": "Optional",
         "endsAt": "Ends",
         "endsAtPlaceholder": "Optional",
-        "maxPerUser": "Limit per user",
-        "maxPerUserPlaceholder": "Optional",
         "invalidWindow": "The end time must be later than the start time.",
-        "enablePaid": "Paid access for the whole IP",
-        "overrideEpisode": "Set a separate price for this episode",
         "save": "Save price",
-        "saving": "Saving"
+        "saving": "Saving",
+        "cancel": "Cancel",
+        "setPrice": "Set price",
+        "editPrice": "Edit price",
+        "clear": "Clear",
+        "freePreview": "Free preview"
+      },
+      "schedule": {
+        "toggle": "Schedule a sale"
+      },
+      "episode": {
+        "emptyTitle": "No sellable episodes yet",
+        "emptyBody": "Only published or scheduled episodes can be priced. Publish an episode first, then set its price here."
       },
       "toasts": {
-        "saved": "Price rule saved",
-        "saveFailed": "Failed to save price rule"
+        "saved": "Pricing saved",
+        "saveFailed": "Failed to save pricing"
+      }
+    },
+    "ordersPanel": {
+      "title": "Orders & settlement",
+      "body": "Track real purchases, granted access, pending unlocks, and pricing health from the same entitlement system buyers use.",
+      "statusTitle": "Sales health",
+      "statusBody": "These metrics are operational gross sales and access records. Settlement is shown separately so revenue is not overstated.",
+      "refresh": "Refresh",
+      "loading": "Loading commerce data",
+      "loadFailed": "Failed to load commerce data",
+      "orders": "Paid orders",
+      "points": "Gross points",
+      "buyers": "Buyers",
+      "entitlements": "Active access",
+      "last7Days": "{count} in the last 7 days",
+      "pointsLast7Days": "{amount} in the last 7 days",
+      "totalOrders": "{count} total orders",
+      "pendingUnlocks": "{count} pending unlocks",
+      "healthTitle": "Pricing health",
+      "healthSummary": "{prices} active episode prices · {episodes} public episodes",
+      "healthReadyBody": "Pricing is ready for buyers. Historical orders keep their original snapshot after future edits.",
+      "health": {
+        "ready": "Ready",
+        "attention": "Needs attention",
+        "blocked": "Blocked"
       },
-      "rules": {
-        "ipDefault": {
-          "title": "Whole IP default price",
-          "body": "Set the base price for buying or viewing the whole IP. Episodes without override rules inherit this."
-        },
-        "episodeOverride": {
-          "title": "Episode price override",
-          "body": "Use this for free previews, paid individual episodes, limited access, or special campaigns without changing episode content."
-        },
-        "membership": {
-          "title": "Membership access",
-          "body": "Later this can bind to subscriptions, creator memberships, or platform benefits alongside one-time purchases."
-        },
-        "promotion": {
-          "title": "Coupons and redemption",
-          "body": "Coupons, redemption codes, and free grants go through commerce fulfillment instead of directly editing user balances."
-        }
+      "warnings": {
+        "not_public": "The IP is not publicly listed, so buyers cannot discover it yet.",
+        "no_episodes": "No episodes have been created for this IP.",
+        "no_published_episodes": "No episode is published or scheduled for public playback.",
+        "no_active_price": "No active bundle or episode price is available for purchase.",
+        "missing_bundle_price": "Episode prices exist, but there is no whole-IP bundle price.",
+        "all_free_preview": "All public episodes are free previews and no paid path exists.",
+        "unknown": "A commerce warning needs review."
       },
-      "episodeTitle": "Episode price table",
-      "episodeBody": "The episode table only shows commerce state: follows IP, free preview, paid episode, or membership access. Amounts and rules live here.",
-      "episodeListTitle": "Per-episode override state",
-      "episodeListReady": "There are {count} episodes. Later this table will configure override rules per episode.",
-      "episodeListEmpty": "There are no episodes yet. Create episodes in Episodes before configuring episode pricing.",
-      "episodeEmptyTitle": "No episodes to price",
-      "episodeEmptyBody": "After the first episode is created, this area will show each episode's commerce state and quick configuration entry.",
-      "guardrailTitle": "Order impact",
-      "guardrailBody": "Once a price goes live, it must stay consistent with orders, refunds, and audit records. It cannot be a display-only edit.",
-      "guardrails": {
-        "orders": {
-          "title": "Order snapshot",
-          "body": "Orders lock the price, entitlement, and promotion at purchase time. Later price changes do not alter historical orders."
-        },
-        "refunds": {
-          "title": "Refund boundary",
-          "body": "Refunds depend on the order and fulfillment state, not on reverse-calculating from the current price."
-        },
-        "audit": {
-          "title": "Audit trail",
-          "body": "Price, free-access, and membership changes need records so operations can resolve disputes."
-        }
+      "settlementTitle": "Settlement",
+      "withdrawableRevenue": "Withdrawable revenue",
+      "ipLifetimeEarnings": "Lifetime earned",
+      "youEarnPercentOfSale": "Creators earn {pct}% of each sale of this IP.",
+      "settlementCashOutNote": "Withdrawable revenue accrues now, but cash-out is not open yet.",
+      "cashOutComingSoon": "Cash-out coming soon",
+      "recentOrders": "Recent orders",
+      "noOrders": "No orders yet",
+      "orderTarget": {
+        "ip": "Whole IP access",
+        "episode": "Episode access"
+      },
+      "orderStatus": {
+        "pending": "Pending",
+        "paid": "Paid",
+        "fulfilled": "Fulfilled",
+        "canceled": "Canceled",
+        "failed": "Failed",
+        "refunded": "Refunded",
+        "partially_refunded": "Partially refunded"
       }
     },
     "collaborationPanel": {

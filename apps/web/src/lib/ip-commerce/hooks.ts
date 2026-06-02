@@ -3,9 +3,11 @@
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   blockIpContent,
+  createIpCommerceContributor,
   createIpCommerceEpisode,
   createIpCommerceIp,
   deleteIpCommerceAsset,
+  deleteIpCommerceContributor,
   deleteIpCommerceEpisode,
   getIpCommerceIp,
   getMyIpCommerceIp,
@@ -14,28 +16,34 @@ import {
   getIpCommerceWallet,
   getIpAccess,
   listIpCommerceCollection,
+  listIpCommerceContributors,
   listIpCommerceDiscovery,
   listMyIpCommerceIpAssets,
   listMyIpCommerceIps,
   listIpCommerceIps,
   listIpCommerceTaxonomyTerms,
+  lookupIpCommerceUser,
   purchaseIpContent,
   reportIpContent,
   removeIpCommerceCollection,
   saveIpCommerceCollection,
   submitIpCommerceIpForReview,
   unblockIpContent,
+  updateIpCommerceContributor,
   updateIpCommerceEpisode,
   updateIpCommerceIpAssets,
   updateIpCommerceIpProfile,
   uploadIpCommerceMedia,
   upsertIpCommercePriceRule,
+  type CreateIpContributorInput,
   type CreateIpEpisodeInput,
   type CreateIpDraftInput,
   type CreateIpPurchaseInput,
   type CreateIpReportInput,
   type DeleteIpAssetInput,
+  type DeleteIpContributorInput,
   type DeleteIpEpisodeInput,
+  type UpdateIpContributorInput,
   type SubmitIpReviewInput,
   type UpdateIpAssetsInput,
   type UpdateIpEpisodeInput,
@@ -78,6 +86,7 @@ export const ipCommerceKeys = {
     ["ip-commerce", "me", "ips", ipId, "commerce", params ?? {}] as const,
   myIpAssets: (ipId: string, params?: { purpose?: string }) =>
     ["ip-commerce", "me", "ips", ipId, "assets", params ?? {}] as const,
+  myIpContributors: (ipId: string) => ["ip-commerce", "me", "ips", ipId, "contributors"] as const,
   creatorRevenueRoot: ["ip-commerce", "me", "revenue"] as const,
   creatorRevenue: (params?: { locale?: string; cursor?: string; limit?: number }) =>
     ["ip-commerce", "me", "revenue", params ?? {}] as const,
@@ -374,6 +383,56 @@ export function useSubmitIpCommerceIpForReview() {
         qc.invalidateQueries({ queryKey: ["ip-commerce", "me", "ips", input.ipId] }),
       ]);
     },
+  });
+}
+
+export function useMyIpContributors(ipId: string | null | undefined) {
+  return useQuery({
+    queryKey: ipCommerceKeys.myIpContributors(ipId ?? ""),
+    queryFn: () => listIpCommerceContributors(ipId!),
+    enabled: Boolean(ipId),
+    staleTime: 30_000,
+  });
+}
+
+export function useCreateIpCommerceContributor() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: CreateIpContributorInput) => createIpCommerceContributor(input),
+    onSuccess: async (_result, input) => {
+      await qc.invalidateQueries({ queryKey: ipCommerceKeys.myIpContributors(input.ipId) });
+    },
+  });
+}
+
+export function useUpdateIpCommerceContributor() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: UpdateIpContributorInput) => updateIpCommerceContributor(input),
+    onSuccess: async (_result, input) => {
+      await qc.invalidateQueries({ queryKey: ipCommerceKeys.myIpContributors(input.ipId) });
+    },
+  });
+}
+
+export function useDeleteIpCommerceContributor() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: DeleteIpContributorInput) => deleteIpCommerceContributor(input),
+    onSuccess: async (_result, input) => {
+      await qc.invalidateQueries({ queryKey: ipCommerceKeys.myIpContributors(input.ipId) });
+    },
+  });
+}
+
+/**
+ * Resolve a contact to a platform user before binding a contributor. Not a
+ * cached query — it's a one-shot lookup driven by an explicit submit, so it
+ * lives as a mutation (the dialog owns the resulting match in local state).
+ */
+export function useLookupIpCommerceUser() {
+  return useMutation({
+    mutationFn: (account: string) => lookupIpCommerceUser({ account }),
   });
 }
 

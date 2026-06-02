@@ -4,6 +4,7 @@ import {
   Delete,
   Get,
   Param,
+  Patch,
   Post,
   Put,
   Query,
@@ -15,10 +16,12 @@ import { CurrentUser, Public, type AuthUser } from '../auth';
 import { ZodValidationPipe } from '../common/zod.pipe';
 import {
   CreateIpDraftSchema,
+  CreateCreatorIpContributorSchema,
   CreateCreatorIpEpisodeSchema,
   CreateIpContentReportSchema,
   CreateIpPurchaseSchema,
   CreatorRevenueQuerySchema,
+  UpdateCreatorIpContributorSchema,
   UpdateCreatorIpProfileSchema,
   UpdateCreatorIpAssetsSchema,
   UpdateCreatorIpEpisodeSchema,
@@ -26,6 +29,7 @@ import {
   UploadCreatorIpMediaQuerySchema,
   IpAccessQuerySchema,
   IpAssetParamsSchema,
+  IpContributorParamsSchema,
   IpEpisodeParamsSchema,
   IpLocaleQuerySchema,
   IpParamsSchema,
@@ -38,14 +42,17 @@ import {
   UpsertIpCollectionItemSchema,
   UpsertIpUserBlockSchema,
   type CreateIpDraftInput,
+  type CreateCreatorIpContributorInput,
   type CreateCreatorIpEpisodeInput,
   type CreateIpContentReportInput,
   type CreateIpPurchaseInput,
   type CreatorRevenueQuery,
   type IpAssetParams,
+  type IpContributorParams,
   type SubmitCreatorIpReviewInput,
   type UploadCreatorIpMediaQuery,
   type UpdateCreatorIpAssetsInput,
+  type UpdateCreatorIpContributorInput,
   type UpdateCreatorIpEpisodeInput,
   type UpdateCreatorIpProfileInput,
   type IpAccessQuery,
@@ -326,6 +333,71 @@ export class IpCommerceController {
         user,
         params.ipId,
         body,
+      ),
+    };
+  }
+
+  @Get('me/ips/:ipId/contributors')
+  async listMyIpContributors(
+    @CurrentUser() user: AuthUser,
+    @Param(new ZodValidationPipe(IpParamsSchema))
+    params: IpParams,
+  ) {
+    return {
+      code: 200,
+      data: await this.ipCommerce.listCreatorIpContributors(user, params.ipId),
+    };
+  }
+
+  @Post('me/ips/:ipId/contributors')
+  async createMyIpContributor(
+    @CurrentUser() user: AuthUser,
+    @Param(new ZodValidationPipe(IpParamsSchema))
+    params: IpParams,
+    @Body(new ZodValidationPipe(CreateCreatorIpContributorSchema))
+    body: CreateCreatorIpContributorInput,
+  ) {
+    return {
+      code: 200,
+      data: await this.ipCommerce.createCreatorIpContributor(
+        user,
+        params.ipId,
+        body,
+      ),
+    };
+  }
+
+  @Patch('me/ips/:ipId/contributors/:contributorId')
+  async updateMyIpContributor(
+    @CurrentUser() user: AuthUser,
+    @Param(new ZodValidationPipe(IpContributorParamsSchema))
+    params: IpContributorParams,
+    @Body(new ZodValidationPipe(UpdateCreatorIpContributorSchema))
+    body: UpdateCreatorIpContributorInput,
+  ) {
+    return {
+      code: 200,
+      data: await this.ipCommerce.updateCreatorIpContributor(
+        user,
+        params.ipId,
+        params.contributorId,
+        body,
+      ),
+    };
+  }
+
+  @Delete('me/ips/:ipId/contributors/:contributorId')
+  async deleteMyIpContributor(
+    @CurrentUser() user: AuthUser,
+    @Param(new ZodValidationPipe(IpContributorParamsSchema))
+    params: IpContributorParams,
+  ) {
+    return {
+      code: 200,
+      data: await this.ipCommerce.removeCreatorIpContributor(
+        user,
+        params.ipId,
+        params.contributorId,
       ),
     };
   }

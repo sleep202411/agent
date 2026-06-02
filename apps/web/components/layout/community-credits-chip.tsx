@@ -104,7 +104,6 @@ export function CommunityCreditsChip({ layout = "chip", className }: CommunityCr
             icon={<IconCoins className="size-4" />}
             label={t("label")}
             balance={communityBalance}
-            badge={t("betaTag")}
             onClick={openCommunityRecharge}
           />
         </div>
@@ -177,7 +176,6 @@ export function CommunityCreditsChip({ layout = "chip", className }: CommunityCr
                 balance={communityBalance}
                 unit={t("unit")}
                 blurb={t("blurb")}
-                badge={t("betaTag")}
                 rechargeLabel={t("recharge")}
                 onRecharge={openCommunityRecharge}
               />

@@ -943,6 +943,9 @@
     "navTitle": "工作區",
     "flowTitle": "創作流程",
     "flowBody": "按階段推進，但每個階段都可以獨立補齊；圓環顯示目前完成度。",
+    "readiness": {
+      "ready": "{done}/{total} 就緒"
+    },
     "comingSoon": "即將開放",
     "editBasics": "編輯基礎資訊",
     "profileEdit": {
@@ -980,7 +983,75 @@
       "modules": "工作模組",
       "version": "版本"
     },
+    "tabs": {
+      "members": "成員"
+    },
+    "roles": {
+      "owner": "主理人",
+      "producer": "監製",
+      "director": "導演",
+      "writer": "編劇",
+      "artist": "美術",
+      "editor": "剪接",
+      "performer": "演員",
+      "other": "其他"
+    },
+    "membersPanel": {
+      "sectionTitle": "團隊與收益分成",
+      "sectionBody": "新增參與此 IP 的成員，並決定創作者收益池如何分配，毋須管理員審批。",
+      "creatorShareLine": "每筆銷售中創作者可獲得 {pct}（由平台設定）。",
+      "splitPrompt": "將此收益池分配給你的團隊：",
+      "allocated": "{allocated} / 100%",
+      "ownerFallbackNote": "未分配的部分以及取整餘額，歸 IP 主理人所有。",
+      "overAllocated": "參與分成的比例總和超過 100%，請先調低後再儲存。",
+      "loading": "正在載入成員…",
+      "loadFailed": "成員載入失敗，請重試。",
+      "retry": "重試",
+      "empty": "暫無成員。新增第一位協作者以共享收益。",
+      "addMember": "新增成員",
+      "notLinked": "未綁定帳號",
+      "linkedAs": "已綁定：{name}",
+      "eligible": "參與分成",
+      "notEligible": "不參與",
+      "cannotEarn": "請先綁定帳號",
+      "eligibleHint": "只有綁定帳號的成員才能參與分成。",
+      "sharePlaceholder": "%",
+      "shareAriaLabel": "收益池分成比例",
+      "remove": "移除",
+      "removeConfirm": "確定將此成員從此 IP 移除嗎？",
+      "roleLabel": "角色",
+      "customRoleLabel": "自訂角色",
+      "customRolePlaceholder": "例如：作曲",
+      "displayNameLabel": "署名",
+      "displayNamePlaceholder": "此成員在署名中的顯示方式",
+      "linkUserLabel": "綁定平台用戶（可選）",
+      "linkUserPlaceholder": "帳號、電郵或電話號碼",
+      "lookup": "尋找",
+      "looking": "尋找中…",
+      "lookupFound": "已配對：{name}",
+      "lookupNotFound": "找不到符合的用戶。",
+      "lookupFailed": "尋找失敗，請重試。",
+      "unlink": "取消綁定",
+      "addTitle": "新增成員",
+      "addBody": "為協作者署名，並可選擇給予收益分成。",
+      "add": "新增",
+      "adding": "新增中…",
+      "cancel": "取消",
+      "mustLinkToEarn": "綁定帳號後此成員才能參與分成。",
+      "toasts": {
+        "added": "已新增成員。",
+        "addFailed": "新增成員失敗。",
+        "updated": "已更新成員。",
+        "updateFailed": "更新成員失敗。",
+        "removed": "已移除成員。",
+        "removeFailed": "移除成員失敗。"
+      }
+    },
     "sections": {
+      "members": {
+        "title": "成員",
+        "status": "可選"
+      },
       "overview": {
         "title": "概覽",
         "status": "目前編輯"
@@ -1216,134 +1287,127 @@
     },
     "pricingPanel": {
       "action": "配置定價",
-      "accessTitle": "訪問與定價規則",
-      "accessBody": "定價是商業規則，不寫進劇集內容本身。整部 IP、單集覆蓋、會員權益和促銷都從統一規則出發，後續才能接訂單、退款和帳本。",
-      "commerceTitle": "商業化營運",
-      "commerceBody": "從真實購買、已授權權益、待解鎖和定價健康度看閉環，和用戶側購買使用同一套權益系統。",
-      "commerce": {
-        "statusTitle": "銷售健康度",
-        "statusBody": "這裡展示營運口徑的總銷售和權益記錄；結算單獨展示，避免把未配置的收入誤報為可提現。",
-        "refresh": "刷新",
-        "loading": "正在載入商業化數據",
-        "loadFailed": "商業化數據載入失敗",
-        "orders": "有效訂單",
-        "points": "總積分",
-        "buyers": "購買用戶",
-        "entitlements": "有效權益",
-        "last7Days": "近 7 日 {count} 單",
-        "pointsLast7Days": "近 7 日 {amount}",
-        "totalOrders": "累計 {count} 單",
-        "pendingUnlocks": "{count} 個待解鎖",
-        "healthTitle": "定價健康度",
-        "healthSummary": "{prices} 個有效單集價 · {episodes} 個公開劇集",
-        "healthReadyBody": "定價鏈路可對用戶售賣。後續改價不會影響歷史訂單快照。",
-        "health": {
-          "ready": "可售賣",
-          "attention": "需關注",
-          "blocked": "已阻塞"
+      "title": "訪問與定價",
+      "body": "選擇用戶為這個 IP 付費的方式。三種模式互斥——全部免費、按整部打包售賣，或對每一集單獨定價。計價單位為社區積分。",
+      "mode": {
+        "eyebrow": "訪問模式",
+        "free": {
+          "label": "免費",
+          "body": "每一集都可免費觀看。"
         },
-        "warnings": {
-          "not_public": "IP 尚未公開上架，用戶還無法自然發現。",
-          "no_episodes": "這個 IP 還沒有建立劇集。",
-          "no_published_episodes": "暫無已發佈或已排期的公開劇集。",
-          "no_active_price": "沒有可購買的整部或單集有效價格。",
-          "missing_bundle_price": "已有單集價格，但還沒有整部 IP 打包價。",
-          "all_free_preview": "所有公開劇集都是試看，且沒有付費路徑。",
-          "unknown": "有一條商業化提醒需要檢查。"
+        "bundle": {
+          "label": "整部付費",
+          "body": "一個價格解鎖整部 IP。"
         },
-        "settlementTitle": "創作者結算",
-        "withdrawableRevenue": "可提現收入",
-        "ipLifetimeEarnings": "累計收入",
-        "youEarnPercentOfSale": "此 IP 每筆銷售創作者方共獲得 {pct}%。",
-        "settlementCashOutNote": "可提現收入已開始累計，但暫不開放提現。",
-        "cashOutComingSoon": "提現即將開放",
-        "recentOrders": "最近訂單",
-        "noOrders": "暫無訂單",
-        "orderTarget": {
-          "ip": "整部 IP 權益",
-          "episode": "單集權益"
-        },
-        "orderStatus": {
-          "pending": "待支付",
-          "paid": "已支付",
-          "fulfilled": "已履約",
-          "canceled": "已取消",
-          "failed": "失敗",
-          "refunded": "已退款",
-          "partially_refunded": "部分退款"
+        "episode": {
+          "label": "單集付費",
+          "body": "為每一集單獨定價。"
         }
       },
-      "ruleStatus": {
-        "notConfigured": "未配置",
-        "available": "可配置",
-        "needsEpisodes": "需先有劇集",
-        "reserved": "已預留",
-        "free": "免費",
-        "preview": "試看",
-        "episodePaid": "單集付費",
-        "inherit": "繼承整部"
+      "switch": {
+        "toBundle": "這個 IP 已有單集價格。設定整部價後，整部 IP 變成一次購買，原有的單集價格將不再生效。",
+        "toEpisode": "這個 IP 已有整部打包價。改為按單集定價後，將不再有整部一次購買。",
+        "toFree": "這個 IP 目前為付費。切換到免費後，清除現有價格即可讓全部內容免費。"
+      },
+      "free": {
+        "title": "全部免費",
+        "body": "沒有整部價，也沒有單集價。用戶無需消耗社區積分即可觀看每一集。"
+      },
+      "bundle": {
+        "title": "整部套餐",
+        "body": "一個價格一次解鎖全部劇集。",
+        "unlockNote": "購買整部 = 解鎖全部劇集（含後續更新集）。"
+      },
+      "status": {
+        "priced": "已定價",
+        "unpriced": "未定價",
+        "freePreview": "免費試看"
       },
       "form": {
         "amount": "價格（社區積分）",
         "amountPlaceholder": "例如 99",
+        "quickPick": "{amount} 積分",
+        "pointsValue": "{amount} 積分",
         "originalAmount": "劃線價",
         "originalAmountPlaceholder": "可選，例如 199",
         "startsAt": "開始時間",
         "startsAtPlaceholder": "可選",
         "endsAt": "結束時間",
         "endsAtPlaceholder": "可選",
-        "maxPerUser": "單用戶限購",
-        "maxPerUserPlaceholder": "可選",
         "invalidWindow": "結束時間必須晚於開始時間。",
-        "enablePaid": "整部 IP 付費訪問",
-        "overrideEpisode": "為這一集單獨定價",
         "save": "保存價格",
-        "saving": "保存中"
+        "saving": "保存中",
+        "cancel": "取消",
+        "setPrice": "單獨定價",
+        "editPrice": "修改價格",
+        "clear": "清除",
+        "freePreview": "免費試看"
+      },
+      "schedule": {
+        "toggle": "排期促銷"
+      },
+      "episode": {
+        "emptyTitle": "暫無可定價劇集",
+        "emptyBody": "只有已發佈或已排期的劇集可以定價。先發佈劇集，再在這裡設定價格。"
       },
       "toasts": {
-        "saved": "價格規則已保存",
-        "saveFailed": "價格規則保存失敗"
+        "saved": "定價已保存",
+        "saveFailed": "定價保存失敗"
+      }
+    },
+    "ordersPanel": {
+      "title": "訂單與結算",
+      "body": "從真實購買、已授權權益、待解鎖和定價健康度看閉環，和用戶側購買使用同一套權益系統。",
+      "statusTitle": "銷售健康度",
+      "statusBody": "這裡展示營運口徑的總銷售和權益記錄；結算單獨展示，避免把未配置的收入誤報為可提現。",
+      "refresh": "刷新",
+      "loading": "正在載入商業化數據",
+      "loadFailed": "商業化數據載入失敗",
+      "orders": "有效訂單",
+      "points": "總積分",
+      "buyers": "購買用戶",
+      "entitlements": "有效權益",
+      "last7Days": "近 7 日 {count} 單",
+      "pointsLast7Days": "近 7 日 {amount}",
+      "totalOrders": "累計 {count} 單",
+      "pendingUnlocks": "{count} 個待解鎖",
+      "healthTitle": "定價健康度",
+      "healthSummary": "{prices} 個有效單集價 · {episodes} 個公開劇集",
+      "healthReadyBody": "定價鏈路可對用戶售賣。後續改價不會影響歷史訂單快照。",
+      "health": {
+        "ready": "可售賣",
+        "attention": "需關注",
+        "blocked": "已阻塞"
       },
-      "rules": {
-        "ipDefault": {
-          "title": "整部 IP 預設價",
-          "body": "定義用戶購買整部 IP 或預設觀看權益時的基礎價格。單集沒有覆蓋規則時自動繼承這裡。"
-        },
-        "episodeOverride": {
-          "title": "單集定價覆蓋",
-          "body": "用於免費試看、單集獨立售賣、限時開放或特殊活動，不改變劇集內容結構。"
-        },
-        "membership": {
-          "title": "會員可看",
-          "body": "後續可綁定訂閱會員、創作者會員或平台權益，和一次性購買並存。"
-        },
-        "promotion": {
-          "title": "優惠與兌換",
-          "body": "優惠券、兌換碼和免費授權走商業履約，不直接修改用戶積分餘額。"
-        }
+      "warnings": {
+        "not_public": "IP 尚未公開上架，用戶還無法自然發現。",
+        "no_episodes": "這個 IP 還沒有建立劇集。",
+        "no_published_episodes": "暫無已發佈或已排期的公開劇集。",
+        "no_active_price": "沒有可購買的整部或單集有效價格。",
+        "missing_bundle_price": "已有單集價格，但還沒有整部 IP 打包價。",
+        "all_free_preview": "所有公開劇集都是試看，且沒有付費路徑。",
+        "unknown": "有一條商業化提醒需要檢查。"
       },
-      "episodeTitle": "劇集價格表",
-      "episodeBody": "劇集列表只展示商業狀態：跟隨 IP、免費試看、單集付費或會員可看。具體金額和規則在這裡維護。",
-      "episodeListTitle": "單集覆蓋狀態",
-      "episodeListReady": "目前已有 {count} 個劇集，後續會在這裡逐集配置覆蓋規則。",
-      "episodeListEmpty": "目前還沒有劇集。先在劇集管理裡建立劇集，再配置單集價格。",
-      "episodeEmptyTitle": "暫無可定價劇集",
-      "episodeEmptyBody": "建立第一集後，這裡會出現每集的商業狀態和快捷配置入口。",
-      "guardrailTitle": "訂單影響",
-      "guardrailBody": "價格一旦對外生效，就必須和訂單、退款、審計保持一致，不能只改前端顯示。",
-      "guardrails": {
-        "orders": {
-          "title": "訂單快照",
-          "body": "下單時鎖定當時的價格、權益和優惠，後續改價不影響歷史訂單。"
-        },
-        "refunds": {
-          "title": "退款邊界",
-          "body": "退款按訂單與履約狀態判斷，不能只按當前價格反推。"
-        },
-        "audit": {
-          "title": "審計記錄",
-          "body": "價格、免費規則和會員權益變更需要留痕，便於運營排查爭議。"
-        }
+      "settlementTitle": "創作者結算",
+      "withdrawableRevenue": "可提現收入",
+      "ipLifetimeEarnings": "累計收入",
+      "youEarnPercentOfSale": "此 IP 每筆銷售創作者方共獲得 {pct}%。",
+      "settlementCashOutNote": "可提現收入已開始累計，但暫不開放提現。",
+      "cashOutComingSoon": "提現即將開放",
+      "recentOrders": "最近訂單",
+      "noOrders": "暫無訂單",
+      "orderTarget": {
+        "ip": "整部 IP 權益",
+        "episode": "單集權益"
+      },
+      "orderStatus": {
+        "pending": "待支付",
+        "paid": "已支付",
+        "fulfilled": "已履約",
+        "canceled": "已取消",
+        "failed": "失敗",
+        "refunded": "已退款",
+        "partially_refunded": "部分退款"
       }
     },
     "collaborationPanel": {
