@@ -22,7 +22,7 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { CommunityRechargeDialog } from "@/components/payment/community-recharge-dialog";
 import { VideoPlayer } from "@/components/media/video-player";
-import { UserAvatar } from "@/components/user-avatar";
+import { UserAvatar, resolveUserAvatarUrl } from "@/components/user-avatar";
 import { useUserDisplays } from "@/app/(site)/crews/_hooks/use-users";
 import {
   Dialog,
@@ -635,7 +635,11 @@ function CreatorTeamCard({ ip, bannerUrl, t }: { ip: DetailIp; bannerUrl?: strin
             {stack.map((member) => (
               <UserAvatar
                 key={member.id}
-                src={member.userId ? displays.get(member.userId)?.avatar : undefined}
+                src={
+                  member.userId
+                    ? resolveUserAvatarUrl(displays.get(member.userId)?.avatar)
+                    : undefined
+                }
                 seed={member.userId || member.id}
                 name={member.displayName}
                 className="size-9 ring-2 ring-secondary"
@@ -716,7 +720,7 @@ function ContributorsDialog({
             return (
               <div key={member.id} className="flex items-center gap-3 rounded-lg p-1.5">
                 <UserAvatar
-                  src={display?.avatar}
+                  src={resolveUserAvatarUrl(display?.avatar)}
                   seed={member.userId || member.id}
                   name={name}
                   className="size-9 shrink-0"

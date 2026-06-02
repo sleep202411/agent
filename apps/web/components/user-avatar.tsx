@@ -5,7 +5,25 @@ import { createAvatar } from "@dicebear/core";
 import { notionists } from "@dicebear/collection";
 
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { env } from "@/src/env";
 import { cn } from "@/lib/utils";
+
+/**
+ * Resolve a stored avatar value into a browser-loadable URL for
+ * `<UserAvatar src>`. Backend user lookups (e.g. `LookupUserDTO.avatar`)
+ * return a bare OSS object path with **no base prefix**; handed straight to
+ * an `<img>` it resolves against the web origin and 404s. This prefixes the
+ * user/OSS base (mirrors the crews avatar handling). Already-absolute URLs
+ * pass through; empty / missing returns `undefined` so `UserAvatar` falls
+ * through to its DiceBear fallback.
+ */
+export function resolveUserAvatarUrl(path: string | null | undefined): string | undefined {
+  if (!path) return undefined;
+  if (path.startsWith("http")) return path;
+  const base = (env.USER_BASE_URL || env.OSS_BASE_URL || "").replace(/\/+$/, "");
+  if (!base) return undefined;
+  return `${base}/${path.replace(/^\/+/, "")}`;
+}
 
 /**
  * Deterministic DiceBear SVG data URI. Pure function, safe to call in

@@ -5,7 +5,7 @@ import { IconPlayerPlay, IconSparkles } from "@tabler/icons-react";
 import { useLocale, useTranslations } from "@/src/i18n/i18n";
 import { localizePath } from "@/src/i18n/locale-url";
 import type { Locale } from "@/src/i18n/config";
-import { UserAvatar } from "@/components/user-avatar";
+import { UserAvatar, resolveUserAvatarUrl } from "@/components/user-avatar";
 import type { LookupUserDTO } from "@repo/shared/users";
 import type { PlazaProject } from "./plaza-types";
 
@@ -82,7 +82,7 @@ export function IPPlazaCard({
 
         <div className="flex items-center gap-2 text-xs">
           <UserAvatar
-            src={ownerDisplay?.avatar ?? project.ownerAvatar}
+            src={resolveUserAvatarUrl(ownerDisplay?.avatar ?? project.ownerAvatar)}
             seed={project.ownerId || project.id}
             name={ownerName}
             className="size-6 shrink-0"
