@@ -1,0 +1,56 @@
+{
+  "cli": {
+    "version": ">= 16.0.0",
+    "appVersionSource": "remote"
+  },
+  "build": {
+    "development-global": {
+      "developmentClient": true,
+      "distribution": "internal",
+      "env": {
+        "APP_VARIANT": "development",
+        "FD_APP_REGION": "global"
+      }
+    },
+    "development-cn": {
+      "developmentClient": true,
+      "distribution": "internal",
+      "env": {
+        "APP_VARIANT": "development",
+        "FD_APP_REGION": "cn"
+      }
+    },
+    "preview-global": {
+      "distribution": "internal",
+      "env": {
+        "APP_VARIANT": "preview",
+        "FD_APP_REGION": "global"
+      }
+    },
+    "preview-cn": {
+      "distribution": "internal",
+      "env": {
+        "APP_VARIANT": "preview",
+        "FD_APP_REGION": "cn"
+      }
+    },
+    "production-global": {
+      "autoIncrement": true,
+      "env": {
+        "APP_VARIANT": "production",
+        "FD_APP_REGION": "global"
+      }
+    },
+    "production-cn": {
+      "autoIncrement": true,
+      "env": {
+        "APP_VARIANT": "production",
+        "FD_APP_REGION": "cn"
+      }
+    }
+  },
+  "submit": {
+    "production-global": {},
+    "production-cn": {}
+  }
+}

@@ -1,0 +1,273 @@
+const APP_REGIONS = new Set(["global", "cn"]);
+const APP_VARIANTS = new Set(["development", "preview", "production"]);
+const themeTokens = require("./src/config/theme-tokens.json");
+
+const THEME_COLORS = {
+  brand: themeTokens.colors.brand["500"],
+  brandTint: themeTokens.colors.brand["50"],
+  canvas: themeTokens.colors.neutral["0"],
+};
+
+const REGION_DEFAULTS = {
+  global: {
+    displayName: "FizzDragon",
+    siteRegion: "global",
+    defaultLocale: "en-US",
+    scheme: "fizzdragon",
+    api: {
+      contentBaseUrl: "https://fizzdragon.com/content",
+      studioBaseUrl: "https://fizzdragon.com/studio",
+      auroraBaseUrl: "https://fizzdragon.com/aurora",
+    },
+    assets: {
+      ossBaseUrl: "https://fizzstudio-sg.oss-ap-southeast-1.aliyuncs.com",
+      userBaseUrl: "https://user-aratar-sg.oss-ap-southeast-1.aliyuncs.com",
+      bannerBaseUrl: "https://fizzdragon-banner-sg.oss-ap-southeast-1.aliyuncs.com",
+      staticBaseUrl: "https://static.fizzspace.cn",
+    },
+  },
+  cn: {
+    displayName: "FizzDragon",
+    siteRegion: "cn",
+    defaultLocale: "zh-CN",
+    scheme: "fizzdragon-cn",
+    api: {
+      contentBaseUrl: "https://fizzdragon.fizzspace.cn/content",
+      studioBaseUrl: "https://fizzdragon.fizzspace.cn/studio",
+      auroraBaseUrl: "https://fizzdragon.fizzspace.cn/aurora",
+    },
+    assets: {
+      ossBaseUrl: "https://shotive.oss-cn-hangzhou.aliyuncs.com",
+      userBaseUrl: "https://avatar.fizzspace.cn",
+      bannerBaseUrl: "https://banner.fizzspace.cn",
+      staticBaseUrl: "https://static.fizzspace.cn",
+    },
+  },
+};
+
+const IDENTIFIER_ENV = {
+  global: {
+    ios: "FD_GLOBAL_IOS_BUNDLE_IDENTIFIER",
+    android: "FD_GLOBAL_ANDROID_PACKAGE",
+    developmentBase: "com.fizzdragon.mobile",
+  },
+  cn: {
+    ios: "FD_CN_IOS_BUNDLE_IDENTIFIER",
+    android: "FD_CN_ANDROID_PACKAGE",
+    developmentBase: "com.fizzdragon.mobile.cn",
+  },
+};
+
+function readEnum(name, allowed, fallback) {
+  const value = readOptionalEnv(name);
+
+  if (!value) return fallback;
+  if (allowed.has(value)) return value;
+
+  throw new Error(`[mobile config] ${name} must be one of: ${Array.from(allowed).join(", ")}`);
+}
+
+function readOptionalEnv(name) {
+  const value = process.env[name]?.trim();
+
+  return value || undefined;
+}
+
+function trimTrailingSlashes(value) {
+  return value.replace(/\/+$/, "");
+}
+
+function readUrl(name, fallback, variant) {
+  const value = trimTrailingSlashes(readOptionalEnv(name) || fallback);
+
+  let parsed;
+  try {
+    parsed = new URL(value);
+  } catch {
+    throw new Error(`[mobile config] ${name} must be an absolute URL, received: ${value}`);
+  }
+
+  const isHttp = parsed.protocol === "http:" || parsed.protocol === "https:";
+  if (!isHttp) {
+    throw new Error(`[mobile config] ${name} must use http or https, received: ${value}`);
+  }
+
+  const isLocalhost =
+    parsed.hostname === "localhost" ||
+    parsed.hostname === "127.0.0.1" ||
+    parsed.hostname === "[::1]";
+  if (variant === "production" && (parsed.protocol !== "https:" || isLocalhost)) {
+    throw new Error(`[mobile config] ${name} must be a public https URL for production builds`);
+  }
+
+  return value;
+}
+
+function validateIdentifier(name, value, platform) {
+  const pattern =
+    platform === "ios"
+      ? /^[A-Za-z][A-Za-z0-9-]*(\.[A-Za-z][A-Za-z0-9-]*)+$/
+      : /^[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)+$/;
+
+  if (!pattern.test(value)) {
+    throw new Error(`[mobile config] ${name} is not a valid ${platform} identifier: ${value}`);
+  }
+
+  return value;
+}
+
+function readIdentifier(region, variant, platform) {
+  const regionEnvName = IDENTIFIER_ENV[region][platform];
+  const genericEnvName = platform === "ios" ? "FD_IOS_BUNDLE_IDENTIFIER" : "FD_ANDROID_PACKAGE";
+  const regionValue = readOptionalEnv(regionEnvName);
+
+  if (variant === "production") {
+    if (!regionValue) {
+      throw new Error(
+        `[mobile config] Missing ${regionEnvName} for production ${region} ${platform} build`,
+      );
+    }
+
+    return validateIdentifier(regionEnvName, regionValue, platform);
+  }
+
+  const value =
+    regionValue ||
+    readOptionalEnv(genericEnvName) ||
+    `${IDENTIFIER_ENV[region].developmentBase}.${variant === "preview" ? "preview" : "dev"}`;
+
+  return validateIdentifier(regionValue ? regionEnvName : genericEnvName, value, platform);
+}
+
+function getDisplayName(region, variant) {
+  const baseName = readOptionalEnv("FD_APP_DISPLAY_NAME") || REGION_DEFAULTS[region].displayName;
+
+  if (variant === "production") return baseName;
+
+  const regionLabel = region === "cn" ? "CN" : "Global";
+  const variantLabel = variant === "preview" ? "Preview" : "Dev";
+
+  return `${baseName} ${regionLabel} ${variantLabel}`;
+}
+
+function getScheme(region, variant) {
+  const baseScheme = readOptionalEnv("FD_APP_SCHEME") || REGION_DEFAULTS[region].scheme;
+  const suffix = variant === "preview" ? "preview" : "dev";
+  const scheme = variant === "production" ? baseScheme : `${baseScheme}-${suffix}`;
+
+  if (!/^[a-z][a-z0-9+.-]*$/.test(scheme)) {
+    throw new Error(`[mobile config] FD_APP_SCHEME must match Expo URL scheme rules: ${scheme}`);
+  }
+
+  return scheme;
+}
+
+function readSlug() {
+  const slug = readOptionalEnv("FD_EXPO_SLUG") || "fizzdragon-mobile";
+
+  if (!/^[a-z0-9][a-z0-9-]*$/.test(slug)) {
+    throw new Error(`[mobile config] FD_EXPO_SLUG must be URL-safe, received: ${slug}`);
+  }
+
+  return slug;
+}
+
+module.exports = ({ config }) => {
+  const appRegion = readEnum("FD_APP_REGION", APP_REGIONS, "global");
+  const appVariant = readEnum("APP_VARIANT", APP_VARIANTS, "development");
+  const defaults = REGION_DEFAULTS[appRegion];
+
+  const appEnv = {
+    appRegion,
+    appVariant,
+    siteRegion: defaults.siteRegion,
+    defaultLocale: defaults.defaultLocale,
+    api: {
+      contentBaseUrl: readUrl(
+        "EXPO_PUBLIC_API_CONTENT_BASE_URL",
+        defaults.api.contentBaseUrl,
+        appVariant,
+      ),
+      studioBaseUrl: readUrl(
+        "EXPO_PUBLIC_API_STUDIO_BASE_URL",
+        defaults.api.studioBaseUrl,
+        appVariant,
+      ),
+      auroraBaseUrl: readUrl(
+        "EXPO_PUBLIC_API_AURORA_BASE_URL",
+        defaults.api.auroraBaseUrl,
+        appVariant,
+      ),
+    },
+    assets: {
+      ossBaseUrl: readUrl("EXPO_PUBLIC_OSS_BASE_URL", defaults.assets.ossBaseUrl, appVariant),
+      userBaseUrl: readUrl("EXPO_PUBLIC_USER_BASE_URL", defaults.assets.userBaseUrl, appVariant),
+      bannerBaseUrl: readUrl(
+        "EXPO_PUBLIC_BANNER_BASE_URL",
+        defaults.assets.bannerBaseUrl,
+        appVariant,
+      ),
+      staticBaseUrl: readUrl(
+        "EXPO_PUBLIC_STATIC_BASE_URL",
+        defaults.assets.staticBaseUrl,
+        appVariant,
+      ),
+    },
+  };
+
+  return {
+    ...config,
+    name: getDisplayName(appRegion, appVariant),
+    slug: readSlug(),
+    version: "1.0.0",
+    orientation: "portrait",
+    icon: "./assets/images/icon.png",
+    scheme: getScheme(appRegion, appVariant),
+    userInterfaceStyle: "automatic",
+    backgroundColor: THEME_COLORS.canvas,
+    primaryColor: THEME_COLORS.brand,
+    ios: {
+      ...config.ios,
+      icon: "./assets/expo.icon",
+      bundleIdentifier: readIdentifier(appRegion, appVariant, "ios"),
+      backgroundColor: THEME_COLORS.canvas,
+    },
+    android: {
+      ...config.android,
+      package: readIdentifier(appRegion, appVariant, "android"),
+      adaptiveIcon: {
+        backgroundColor: THEME_COLORS.brandTint,
+        foregroundImage: "./assets/images/android-icon-foreground.png",
+        backgroundImage: "./assets/images/android-icon-background.png",
+        monochromeImage: "./assets/images/android-icon-monochrome.png",
+      },
+      predictiveBackGestureEnabled: false,
+    },
+    web: {
+      bundler: "metro",
+      output: "static",
+      favicon: "./assets/images/favicon.png",
+    },
+    plugins: [
+      "expo-router",
+      [
+        "expo-splash-screen",
+        {
+          backgroundColor: THEME_COLORS.canvas,
+          android: {
+            image: "./assets/images/splash-icon.png",
+            imageWidth: 76,
+          },
+        },
+      ],
+    ],
+    experiments: {
+      typedRoutes: true,
+      reactCompiler: true,
+    },
+    extra: {
+      ...config.extra,
+      appEnv,
+    },
+  };
+};

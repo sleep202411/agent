@@ -3,6 +3,7 @@
   "main": "expo-router/entry",
   "version": "1.0.0",
   "dependencies": {
+    "@expo/metro-runtime": "~56.0.13",
     "@expo/ui": "~56.0.15",
     "expo": "~56.0.8",
     "expo-constants": "~56.0.16",
@@ -12,11 +13,13 @@
     "expo-image": "~56.0.9",
     "expo-linking": "~56.0.13",
     "expo-router": "~56.2.8",
+    "expo-secure-store": "~56.0.4",
     "expo-splash-screen": "~56.0.10",
     "expo-status-bar": "~56.0.4",
     "expo-symbols": "~56.0.5",
     "expo-system-ui": "~56.0.5",
     "expo-web-browser": "~56.0.5",
+    "nativewind": "^4.2.4",
     "react": "19.2.3",
     "react-dom": "19.2.3",
     "react-native": "0.85.3",
@@ -29,16 +32,24 @@
   },
   "devDependencies": {
     "@types/react": "~19.2.2",
+    "babel-preset-expo": "^56.0.14",
     "eslint-config-expo": "~56.0.4",
+    "prettier-plugin-tailwindcss": "^0.5.14",
+    "tailwindcss": "^3.4.19",
     "typescript": "~6.0.3"
   },
   "scripts": {
-    "start": "expo start",
+    "expo": "node ./scripts/expo-workspace.js",
+    "start": "node ./scripts/expo-workspace.js start",
+    "start:global": "FD_APP_REGION=global APP_VARIANT=development node ./scripts/expo-workspace.js start",
+    "start:cn": "FD_APP_REGION=cn APP_VARIANT=development node ./scripts/expo-workspace.js start",
+    "config:global": "FD_APP_REGION=global APP_VARIANT=development node ./scripts/expo-workspace.js config --type public",
+    "config:cn": "FD_APP_REGION=cn APP_VARIANT=development node ./scripts/expo-workspace.js config --type public",
     "reset-project": "node ./scripts/reset-project.js",
-    "android": "expo start --android",
-    "ios": "expo start --ios",
-    "web": "expo start --web",
-    "lint": "expo lint"
+    "android": "node ./scripts/expo-workspace.js start --android",
+    "ios": "node ./scripts/expo-workspace.js start --ios",
+    "web": "node ./scripts/expo-workspace.js start --web",
+    "lint": "node ./scripts/expo-workspace.js lint"
   },
   "private": true
 }

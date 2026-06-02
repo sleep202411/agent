@@ -1,0 +1,67 @@
+import Constants from "expo-constants";
+
+export type AppRegion = "global" | "cn";
+export type AppVariant = "development" | "preview" | "production";
+export type AppLocale = "en-US" | "zh-CN" | "zh-HK";
+
+export type MobileAppEnv = {
+  appRegion: AppRegion;
+  appVariant: AppVariant;
+  siteRegion: AppRegion;
+  defaultLocale: AppLocale;
+  api: {
+    contentBaseUrl: string;
+    studioBaseUrl: string;
+    auroraBaseUrl: string;
+  };
+  assets: {
+    ossBaseUrl: string;
+    userBaseUrl: string;
+    bannerBaseUrl: string;
+    staticBaseUrl: string;
+  };
+};
+
+const fallbackEnv: MobileAppEnv = {
+  appRegion: "global",
+  appVariant: "development",
+  siteRegion: "global",
+  defaultLocale: "en-US",
+  api: {
+    contentBaseUrl: "https://fizzdragon.com/content",
+    studioBaseUrl: "https://fizzdragon.com/studio",
+    auroraBaseUrl: "https://fizzdragon.com/aurora",
+  },
+  assets: {
+    ossBaseUrl: "https://fizzstudio-sg.oss-ap-southeast-1.aliyuncs.com",
+    userBaseUrl: "https://user-aratar-sg.oss-ap-southeast-1.aliyuncs.com",
+    bannerBaseUrl: "https://fizzdragon-banner-sg.oss-ap-southeast-1.aliyuncs.com",
+    staticBaseUrl: "https://static.fizzspace.cn",
+  },
+};
+
+const configEnv = (Constants.expoConfig?.extra?.appEnv ?? {}) as Partial<MobileAppEnv>;
+
+export const appEnv: MobileAppEnv = {
+  ...fallbackEnv,
+  ...configEnv,
+  api: {
+    ...fallbackEnv.api,
+    ...configEnv.api,
+  },
+  assets: {
+    ...fallbackEnv.assets,
+    ...configEnv.assets,
+  },
+};
+
+export const isChinaRegion = appEnv.appRegion === "cn";
+export const isProductionApp = appEnv.appVariant === "production";
+
+export function resolveAssetUrl(path: string, baseUrl: string): string {
+  if (!path) return "";
+  if (/^https?:\/\//i.test(path)) return path;
+  if (path.startsWith("//")) return `https:${path}`;
+
+  return `${baseUrl.replace(/\/+$/, "")}/${path.replace(/^\/+/, "")}`;
+}
