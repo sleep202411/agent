@@ -99,6 +99,16 @@ export class AirwallexProvider implements PaymentProviderAdapter {
       success_url: input.successUrl,
       back_url: input.backUrl,
       line_items: lineItems,
+      // PAYMENT (one-off) checkouts must carry invoice_data — Airwallex builds a
+      // one-off invoice on completion and rejects the create call without it
+      // ("invoice_data must be provided for PAYMENT mode in checkout"). The
+      // customer + collection are handled by the hosted checkout itself (mode +
+      // linked_payment_account_id above), so the invoice only needs the order
+      // currency (the fiat charge currency carried on the line items).
+      // SUBSCRIPTION mode derives its invoice from the subscription, so skip it.
+      ...(input.mode === 'PAYMENT'
+        ? { invoice_data: { currency: input.lineItems[0]?.currency } }
+        : {}),
       ...(input.providerCouponId
         ? {
             discounts: [
