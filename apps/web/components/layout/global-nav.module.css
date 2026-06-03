@@ -1,0 +1,793 @@
+/* Secret Level-inspired site navigation glass. */
+.fd-secret-header {
+  position: fixed;
+  inset-inline: 20px;
+  top: 20px;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  color: #fff;
+  pointer-events: none;
+}
+
+.fd-secret-header :where(a, button, [role="button"], .fd-secret-mobile-drawer) {
+  pointer-events: auto;
+}
+
+.fd-secret-wordmark {
+  display: block;
+  width: 118px;
+  flex: none;
+  filter: drop-shadow(0 1px 10px rgb(0 0 0 / 0.28));
+}
+
+.fd-secret-wordmark img {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.fd-secret-glass-wrapper {
+  position: relative;
+  overflow: hidden;
+  border-radius: 9999px;
+  box-shadow:
+    0 0 4px rgb(0 0 0 / 0.07),
+    0 0 16px rgb(0 0 0 / 0.02);
+}
+
+.fd-secret-glass-effect,
+.fd-secret-glass-content::before {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+}
+
+.fd-secret-glass-effect {
+  z-index: 0;
+  filter: url("#fd-secret-glass-distortion");
+  overflow: hidden;
+  -webkit-backdrop-filter: blur(8px) brightness(1.2) saturate(1.2);
+  backdrop-filter: blur(8px) brightness(1.2) saturate(1.2);
+}
+
+.fd-secret-glass-content {
+  position: relative;
+  z-index: 1;
+  overflow: hidden;
+  border-radius: inherit;
+}
+
+.fd-secret-glass-content::before {
+  content: "";
+  pointer-events: none;
+  mix-blend-mode: overlay;
+  background: linear-gradient(
+    12deg,
+    rgb(255 255 255 / 0.1) 10%,
+    rgb(255 255 255 / 0.2) 50%,
+    rgb(255 255 255 / 0.1) 90%
+  );
+  padding: 2px;
+  -webkit-mask-image: linear-gradient(#fff 0 0), linear-gradient(#fff 0 0);
+  mask-image: linear-gradient(#fff 0 0), linear-gradient(#fff 0 0);
+  -webkit-mask-clip: content-box, padding-box;
+  mask-clip: content-box, padding-box;
+  -webkit-mask-origin: content-box, padding-box;
+  mask-origin: content-box, padding-box;
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+}
+
+.fd-secret-nav-shell {
+  box-sizing: border-box;
+  height: 48px;
+  min-height: 48px;
+  max-height: 48px;
+}
+
+.fd-secret-nav-content {
+  box-sizing: border-box;
+  height: 48px;
+  min-height: 48px;
+  max-height: 48px;
+  background: rgb(0 0 0 / 0.1);
+}
+
+.fd-secret-nav-list {
+  position: relative;
+  display: flex;
+  height: 100%;
+  align-items: center;
+  padding: 0 16px;
+}
+
+.fd-secret-nav-item {
+  display: flex;
+  height: 48px;
+  align-items: stretch;
+}
+
+.fd-secret-nav-link,
+.fd-secret-cta,
+.fd-secret-mobile-button-content,
+.fd-secret-mobile-cta,
+.fd-secret-mobile-row,
+.fd-secret-mobile-login {
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.fd-secret-nav-link {
+  position: relative;
+  display: flex;
+  height: 48px;
+  align-items: center;
+  justify-content: center;
+  padding-inline: 16px;
+  color: #fff;
+  opacity: 0.86;
+  transition:
+    opacity 150ms linear,
+    color 150ms linear;
+  white-space: nowrap;
+}
+
+.fd-secret-nav-marker {
+  position: absolute;
+  left: 0;
+  bottom: 8px;
+  width: 6px;
+  height: 6px;
+  border-radius: 9999px;
+  background: #e52227;
+  box-shadow: 0 0 6px rgb(229 34 39 / 0.5);
+  opacity: 0;
+  pointer-events: none;
+  transform: translateX(calc(var(--fd-secret-marker-x, 0px) - 3px)) scale(0.55);
+  transition:
+    opacity 160ms linear,
+    transform 260ms cubic-bezier(0.22, 1, 0.36, 1);
+  will-change: transform, opacity;
+}
+
+.fd-secret-nav-link:hover {
+  opacity: 0.75;
+}
+
+.fd-secret-nav-link.is-active {
+  color: #fff;
+  opacity: 1;
+}
+
+.fd-secret-nav-marker.is-visible {
+  opacity: 1;
+  transform: translateX(calc(var(--fd-secret-marker-x, 0px) - 3px)) scale(1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .fd-secret-nav-marker {
+    transition: opacity 120ms linear;
+  }
+}
+
+.fd-secret-right-cluster {
+  margin-left: 16px;
+  align-items: center;
+  gap: 8px;
+}
+
+.fd-secret-cta-shell {
+  display: inline-flex;
+  height: 48px;
+}
+
+.fd-secret-cta,
+.fd-secret-account-bell-content,
+.fd-secret-account-trigger-content {
+  display: inline-flex;
+  height: 48px;
+  align-items: center;
+  justify-content: center;
+  background: rgb(0 0 0 / 0.1);
+  color: #fff;
+  transition:
+    background-color 150ms linear,
+    color 150ms linear;
+}
+
+.fd-secret-cta {
+  padding: 0 24px;
+  white-space: nowrap;
+}
+
+.fd-secret-cta:hover {
+  background: rgb(255 255 255 / 0.1);
+  color: #fff;
+}
+
+.fd-secret-menu-box,
+.fd-secret-mobile-arrow,
+.fd-secret-mobile-row-icon {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  background: rgb(255 255 255 / 0.1);
+  color: currentColor;
+}
+
+.fd-secret-account-cluster {
+  display: none;
+  align-items: center;
+  gap: 8px;
+}
+
+.fd-secret-account-bell {
+  display: inline-flex;
+  width: 48px;
+  height: 48px;
+  border-radius: 9999px;
+  color: #fff;
+}
+
+.fd-secret-account-bell-content {
+  width: 48px;
+}
+
+.fd-secret-account-bell :where(button) {
+  width: 48px;
+  height: 48px;
+  border: 0;
+  border-radius: inherit;
+  background: transparent;
+  color: #fff;
+  box-shadow: none;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+
+.fd-secret-account-bell:has(button:hover) .fd-secret-account-bell-content,
+.fd-secret-account-bell:has(button[data-state="open"]) .fd-secret-account-bell-content {
+  background: rgb(255 255 255 / 0.1);
+  color: #fff;
+}
+
+.fd-secret-account-trigger {
+  display: inline-flex;
+  height: 48px;
+  width: 48px;
+  border: 0;
+  border-radius: 9999px;
+  background: transparent;
+  padding: 0;
+  color: #fff;
+}
+
+.fd-secret-account-trigger-content {
+  width: 48px;
+  padding: 3px;
+}
+
+.fd-secret-account-trigger:hover .fd-secret-account-trigger-content,
+.fd-secret-account-trigger[data-state="open"] .fd-secret-account-trigger-content {
+  background: rgb(255 255 255 / 0.1);
+  color: #fff;
+}
+
+.fd-secret-account-trigger-avatar {
+  flex: none;
+  border: 1px solid rgb(255 255 255 / 0.22);
+  box-shadow: 0 6px 18px rgb(0 0 0 / 0.22);
+}
+
+.fd-secret-account-trigger-avatar {
+  width: 42px !important;
+  height: 42px !important;
+}
+
+.fd-secret-account-trigger-text {
+  min-width: 0;
+  overflow: hidden;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1;
+  letter-spacing: 0.05em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fd-secret-account-trigger-caret {
+  display: block;
+  flex: none;
+  width: 0;
+  height: 0;
+  border-top: 5px solid currentColor;
+  border-right: 4px solid transparent;
+  border-left: 4px solid transparent;
+  opacity: 0.72;
+}
+
+.fd-secret-account-menu {
+  width: min(380px, calc(100vw - 32px));
+  overflow: hidden;
+  border: 0;
+  border-radius: 24px;
+  background: transparent;
+  padding: 0;
+  color: #fff;
+  box-shadow:
+    0 0 4px rgb(0 0 0 / 0.07),
+    0 0 16px rgb(0 0 0 / 0.02),
+    0 24px 64px rgb(0 0 0 / 0.32);
+}
+
+.fd-secret-account-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  border: 1px solid rgb(255 255 255 / 0.13);
+  background: rgb(0 0 0 / 0.36);
+  padding: 8px;
+}
+
+.fd-secret-account-card {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 12px;
+  min-height: 88px;
+  border-radius: 20px;
+  border: 1px solid rgb(255 255 255 / 0.1);
+  background: rgb(0 0 0 / 0.1);
+  padding: 12px 14px 12px 12px;
+}
+
+.fd-secret-account-avatar {
+  border: 1px solid rgb(255 255 255 / 0.22);
+  box-shadow: 0 10px 28px rgb(0 0 0 / 0.28);
+}
+
+.fd-secret-account-meta {
+  min-width: 0;
+}
+
+.fd-secret-account-name {
+  overflow: hidden;
+  color: #fcfcfc;
+  font-size: 18px;
+  font-weight: 650;
+  line-height: 1.2;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fd-secret-account-id {
+  margin-top: 5px;
+  display: inline-flex;
+  max-width: 100%;
+  align-items: center;
+  gap: 6px;
+  color: rgb(252 252 252 / 0.58);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1;
+  transition: color 150ms linear;
+}
+
+.fd-secret-account-id span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fd-secret-account-id:hover {
+  color: rgb(255 255 255 / 0.9);
+}
+
+.fd-secret-account-toast {
+  align-self: flex-start;
+  margin-top: -4px;
+  border: 1px solid rgb(229 34 39 / 0.34);
+  border-radius: 9999px;
+  background: rgb(229 34 39 / 0.14);
+  padding: 5px 10px;
+  color: #ff6a3d;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1;
+}
+
+.fd-secret-account-wallet {
+  border: 1px solid rgb(255 255 255 / 0.1);
+  border-radius: 20px;
+  background: rgb(0 0 0 / 0.1);
+  padding: 4px;
+}
+
+.fd-secret-account-wallet :where(button) {
+  min-height: 46px;
+  border-radius: 16px;
+  padding: 0 10px;
+  color: rgb(255 255 255 / 0.76);
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.fd-secret-account-wallet :where(button:hover) {
+  background: rgb(255 255 255 / 0.08);
+  color: #fff;
+}
+
+.fd-secret-account-section {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  border-top: 1px solid rgb(255 255 255 / 0.12);
+  padding-top: 8px;
+}
+
+.fd-secret-account-row {
+  display: flex;
+  min-height: 46px;
+  width: 100%;
+  align-items: center;
+  gap: 12px;
+  border-radius: 16px;
+  padding: 0 10px;
+  color: rgb(255 255 255 / 0.86);
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 1.2;
+  text-align: left;
+  transition:
+    background-color 150ms linear,
+    color 150ms linear;
+}
+
+.fd-secret-account-row:not(.is-static):hover {
+  background: rgb(255 255 255 / 0.08);
+  color: #fff;
+}
+
+.fd-secret-account-row.is-static {
+  color: rgb(255 255 255 / 0.5);
+}
+
+.fd-secret-account-row-arrow {
+  color: rgb(255 255 255 / 0.44);
+}
+
+.fd-secret-locale-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  padding: 0 8px 2px;
+}
+
+.fd-secret-locale-pill {
+  display: inline-flex;
+  min-height: 40px;
+  min-width: 0;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  border: 1px solid rgb(255 255 255 / 0.12);
+  border-radius: 16px;
+  background: rgb(0 0 0 / 0.08);
+  padding: 0 10px;
+  color: rgb(255 255 255 / 0.68);
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1;
+  white-space: nowrap;
+  transition:
+    background-color 150ms linear,
+    border-color 150ms linear,
+    color 150ms linear;
+}
+
+.fd-secret-locale-pill:hover,
+.fd-secret-locale-pill.is-active {
+  border-color: rgb(229 34 39 / 0.56);
+  background: rgb(229 34 39 / 0.14);
+  color: #fff;
+}
+
+.fd-secret-account-logout {
+  margin-top: 0;
+}
+
+.fd-secret-mobile-button-wrap {
+  display: flex;
+  flex: none;
+  position: absolute;
+  right: 0;
+  top: 0;
+}
+
+.fd-secret-mobile-button {
+  display: inline-flex;
+  height: 40px;
+  border: 0;
+  color: rgb(255 255 255 / 0.9);
+}
+
+.fd-secret-mobile-button-content {
+  display: inline-flex;
+  height: 40px;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border: 1px solid rgb(255 255 255 / 0.13);
+  background: rgb(255 255 255 / 0.1);
+  padding: 0 8px 0 14px;
+}
+
+.fd-secret-menu-box {
+  width: 24px;
+  height: 24px;
+  border-radius: 9999px;
+}
+
+.fd-secret-menu-glyph {
+  position: relative;
+  width: 10px;
+  height: 8px;
+}
+
+.fd-secret-menu-glyph::before,
+.fd-secret-menu-glyph::after {
+  position: absolute;
+  left: 0;
+  width: 10px;
+  height: 2px;
+  border-radius: 9999px;
+  background: currentColor;
+  content: "";
+}
+
+.fd-secret-menu-glyph::before {
+  top: 1px;
+}
+
+.fd-secret-menu-glyph::after {
+  bottom: 1px;
+}
+
+.fd-secret-mobile-drawer {
+  position: fixed;
+  inset-inline: 20px;
+  top: 72px;
+  z-index: 49;
+  max-height: calc(100dvh - 88px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.fd-secret-mobile-panel {
+  border-radius: 28px;
+}
+
+.fd-secret-mobile-panel-content {
+  border: 1px solid rgb(255 255 255 / 0.13);
+  background: rgb(0 0 0 / 0.36);
+  padding: 8px;
+}
+
+.fd-secret-mobile-cta,
+.fd-secret-mobile-row,
+.fd-secret-mobile-login {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  color: rgb(255 255 255 / 0.86);
+}
+
+.fd-secret-mobile-cta,
+.fd-secret-mobile-login {
+  min-height: 48px;
+  border-radius: 20px;
+  background: rgb(255 255 255 / 0.1);
+  padding: 0 12px 0 18px;
+}
+
+.fd-secret-mobile-list,
+.fd-secret-mobile-section {
+  margin-top: 8px;
+  border-top: 1px solid rgb(255 255 255 / 0.12);
+  padding-top: 8px;
+}
+
+.fd-secret-mobile-row {
+  min-height: 46px;
+  border-radius: 16px;
+  padding: 0 10px;
+  text-align: left;
+  transition:
+    background-color 150ms linear,
+    color 150ms linear;
+}
+
+.fd-secret-mobile-row:hover,
+.fd-secret-mobile-row.is-active {
+  background: rgb(255 255 255 / 0.08);
+  color: #fff;
+}
+
+.fd-secret-mobile-arrow,
+.fd-secret-mobile-row-icon {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+}
+
+.fd-secret-mobile-section-label {
+  display: block;
+  padding: 6px 10px 4px;
+  color: rgb(255 255 255 / 0.44);
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+@media (max-width: 767px) {
+  .fd-secret-wordmark {
+    position: fixed;
+    left: 20px;
+    top: 20px;
+    z-index: 60;
+  }
+
+  .fd-secret-mobile-button-wrap {
+    position: fixed;
+    left: calc(100vw - 104px);
+    right: auto;
+    top: 20px;
+    z-index: 60;
+    display: flex !important;
+    width: 84px;
+  }
+
+  .fd-secret-mobile-button,
+  .fd-secret-mobile-button-content {
+    width: 84px;
+  }
+}
+
+@media (min-width: 768px) {
+  .fd-secret-header {
+    inset-inline: 24px;
+    top: 20px;
+    justify-content: flex-start;
+  }
+
+  .fd-secret-wordmark {
+    position: absolute;
+    left: 0;
+    top: 8px;
+    width: 150px;
+  }
+
+  .fd-secret-nav-shell {
+    margin-left: clamp(252px, 16.3vw, 334px);
+  }
+
+  .fd-secret-right-cluster {
+    position: absolute;
+    right: 24px;
+    margin-left: 0;
+  }
+
+  .fd-secret-mobile-button-wrap {
+    display: none;
+  }
+}
+
+@media (min-width: 1024px) {
+  .fd-secret-header {
+    inset-inline: 24px;
+    top: 24px;
+  }
+
+  .fd-secret-nav-shell {
+    margin-left: clamp(252px, 16.3vw, 334px);
+  }
+
+  .fd-secret-nav-list {
+    padding-inline: 16px;
+  }
+
+  .fd-secret-nav-link {
+    padding-inline: 16px;
+  }
+
+  .fd-secret-right-cluster {
+    gap: 6px;
+  }
+
+  .fd-secret-account-cluster {
+    display: inline-flex;
+  }
+}
+
+@media (min-width: 1280px) {
+  .fd-secret-header {
+    inset-inline: 24px;
+  }
+
+  .fd-secret-nav-shell,
+  .fd-secret-nav-content,
+  .fd-secret-cta-shell,
+  .fd-secret-cta {
+    height: 48px;
+  }
+
+  .fd-secret-nav-shell {
+    margin-left: clamp(252px, 16.3vw, 334px);
+  }
+
+  .fd-secret-nav-list {
+    padding-inline: 16px;
+  }
+
+  .fd-secret-nav-link {
+    height: 48px;
+    padding-inline: 16px;
+  }
+
+  .fd-secret-cta {
+    min-width: 148px;
+    padding: 0 24px;
+  }
+
+  .fd-secret-wordmark {
+    width: 154px;
+  }
+}
+
+@media (min-width: 768px) {
+  .fd-secret-header .fd-secret-nav-shell,
+  .fd-secret-header .fd-secret-nav-content,
+  .fd-secret-header .fd-secret-cta-shell,
+  .fd-secret-header .fd-secret-cta {
+    height: 48px;
+  }
+
+  .fd-secret-header .fd-secret-nav-shell,
+  .fd-secret-header .fd-secret-nav-content {
+    min-height: 48px;
+    max-height: 48px;
+  }
+
+  .fd-secret-header .fd-secret-nav-list {
+    padding-inline: 16px;
+  }
+
+  .fd-secret-header .fd-secret-nav-link {
+    height: 48px;
+    padding-inline: 16px;
+  }
+
+  .fd-secret-header .fd-secret-cta {
+    min-width: 148px;
+    padding: 0 24px;
+  }
+
+  .fd-secret-header .fd-secret-account-bell :where(button),
+  .fd-secret-header .fd-secret-account-trigger {
+    height: 48px;
+  }
+
+  .fd-secret-header .fd-secret-account-bell :where(button) {
+    width: 48px;
+  }
+}

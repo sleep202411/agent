@@ -231,6 +231,11 @@
   },
   "nav": {
     "studio": "Enter FizzStudio",
+    "brand": "Brand",
+    "narrative": "Narrative",
+    "liquidEngine": "Liquid Engine",
+    "about": "About",
+    "getInTouch": "Get in Touch",
     "ipPlaza": "IP Plaza",
     "studioHall": "Crews",
     "creators": "Talent Market",
@@ -241,6 +246,10 @@
     "getStarted": "Get Started",
     "language": "Language",
     "menu": "Menu",
+    "fizzStudio": "FizzStudio",
+    "accountMenu": "Open account menu",
+    "accountId": "UUID",
+    "copyAccountId": "Copy account UUID",
     "recharge": "Top Up",
     "membership": "Membership",
     "theme": "Theme"
@@ -1627,6 +1636,7 @@
     "creatorTeam": {
       "titleFallback": "Creator team",
       "subtitle": "{count} episodes · IP team",
+      "subtitleNoEpisodes": "IP team",
       "action": "See more",
       "menu": "More creator actions",
       "bannerAlt": "{name} team banner"

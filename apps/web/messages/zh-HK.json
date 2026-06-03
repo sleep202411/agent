@@ -231,6 +231,11 @@
   },
   "nav": {
     "studio": "進入 FizzStudio",
+    "brand": "品牌",
+    "narrative": "敘事",
+    "liquidEngine": "流動引擎",
+    "about": "關於",
+    "getInTouch": "聯絡我們",
     "ipPlaza": "IP 廣場",
     "studioHall": "劇組大廳",
     "creators": "人才集市",
@@ -241,6 +246,10 @@
     "getStarted": "免費開始",
     "language": "語言",
     "menu": "選單",
+    "fizzStudio": "FizzStudio",
+    "accountMenu": "打開帳戶選單",
+    "accountId": "UUID",
+    "copyAccountId": "複製帳戶 UUID",
     "recharge": "儲值",
     "membership": "會員",
     "theme": "主題"
@@ -1627,6 +1636,7 @@
     "creatorTeam": {
       "titleFallback": "創作者團隊",
       "subtitle": "{count} 集內容 · IP 團隊",
+      "subtitleNoEpisodes": "IP 團隊",
       "action": "查看更多",
       "menu": "更多創作者操作",
       "bannerAlt": "{name} 的團隊橫幅"

@@ -231,6 +231,11 @@
   },
   "nav": {
     "studio": "进入 FizzStudio",
+    "brand": "品牌",
+    "narrative": "叙事",
+    "liquidEngine": "流动引擎",
+    "about": "关于",
+    "getInTouch": "联系我们",
     "ipPlaza": "IP 广场",
     "studioHall": "剧组大厅",
     "creators": "人才集市",
@@ -241,6 +246,10 @@
     "getStarted": "免费开始",
     "language": "语言",
     "menu": "菜单",
+    "fizzStudio": "FizzStudio",
+    "accountMenu": "打开账户菜单",
+    "accountId": "UUID",
+    "copyAccountId": "复制账户 UUID",
     "recharge": "充值",
     "membership": "会员",
     "theme": "主题"
@@ -1627,6 +1636,7 @@
     "creatorTeam": {
       "titleFallback": "创作者团队",
       "subtitle": "{count} 集内容 · IP 团队",
+      "subtitleNoEpisodes": "IP 团队",
       "action": "查看更多",
       "menu": "更多创作者操作",
       "bannerAlt": "{name} 的团队横幅"

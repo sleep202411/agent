@@ -1,62 +1,82 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState, type CSSProperties } from "react";
+import Image from "next/image";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { SiteUserMenu } from "@/components/layout/site-user-menu";
+import { useGSAP } from "@gsap/react";
+import { gsap } from "gsap";
 import { CommunityCreditsChip } from "@/components/layout/community-credits-chip";
 import { BellButton } from "@/components/notifications/bell-button";
-import { MessagesButton } from "@/components/messages/messages-button";
-import { useCurrentUser } from "@/src/hooks/use-user";
-import { useLogout } from "@/src/hooks/use-logout";
-import { useTranslations, useLocale, setLanguage } from "@/src/i18n/i18n";
-import { setCurrentLocale, localizePath, stripLocalePrefix } from "@/src/i18n/locale-url";
-import { getStudioHref } from "@/src/lib/region/cell";
-import { LOCALE_OPTIONS, type Locale } from "@/src/i18n/config";
-import {
-  IconLanguage,
-  IconCheck,
-  IconWand,
-  IconNews,
-  IconBook,
-  IconBook2,
-  IconX,
-  IconDotsVertical,
-  IconUser,
-  IconLogout,
-  IconMessageCircle,
-} from "@tabler/icons-react";
-import { useInbox } from "@/app/(site)/creators/_hooks/use-conversations";
+import { UserAvatar } from "@/components/user-avatar";
 import {
   DropdownMenu,
   DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { useCurrentUser, type CurrentUser } from "@/src/hooks/use-user";
+import { useLogout } from "@/src/hooks/use-logout";
+import { useTranslations, useLocale, setLanguage } from "@/src/i18n/i18n";
+import { setCurrentLocale, localizePath, stripLocalePrefix } from "@/src/i18n/locale-url";
+import { LOCALE_OPTIONS, type Locale } from "@/src/i18n/config";
+import { getStudioHref } from "@/src/lib/region/cell";
+import {
+  IconCheck,
+  IconChevronRight,
+  IconCopy,
+  IconLanguage,
+  IconLogout,
+  IconMessageCircle,
+  IconUser,
+  IconX,
+} from "@tabler/icons-react";
+import { useInbox } from "@/app/(site)/creators/_hooks/use-conversations";
 import { cn } from "@/lib/utils";
+import styles from "./global-nav.module.css";
 
-// Rendered only under app/(site)/layout.tsx. One exception: the interactive
-// editor inside (site) wants a full-screen canvas, so hide here by pathname.
 const HIDDEN_PATTERNS = ["/editor"];
+
+function navCx(...values: Array<string | false | null | undefined>) {
+  return cn(
+    ...values.map((value) => {
+      if (!value) return value;
+      return value
+        .split(/\s+/)
+        .filter(Boolean)
+        .map((token) => styles[token] ?? token)
+        .join(" ");
+    })
+  );
+}
+
+type NavItem = {
+  href: string;
+  linkHref?: string;
+  label: string;
+  requiresAuth?: boolean;
+  external?: boolean;
+};
 
 export function GlobalNav() {
   const pathname = usePathname() ?? "/";
   const router = useRouter();
   const t = useTranslations("nav");
-  const locale = useLocale();
+  const commonT = useTranslations("common");
+  const locale = useLocale() as Locale;
 
   const { user } = useCurrentUser();
   const logout = useLogout();
 
-  // Background fades in as the user scrolls past the first ~80px so the
-  // hero backdrop sits behind a fully transparent nav at rest.
-  const [scrolled, setScrolled] = useState(false);
+  const headerRef = useRef<HTMLElement | null>(null);
+  const navListRef = useRef<HTMLUListElement | null>(null);
+  const navLinkRefs = useRef<Array<HTMLAnchorElement | null>>([]);
+
   const [mobileDrawer, setMobileDrawer] = useState(() => ({
     pathname,
     open: false,
   }));
+  const [hoveredNavIndex, setHoveredNavIndex] = useState<number | null>(null);
+
   const mobileOpen = mobileDrawer.pathname === pathname && mobileDrawer.open;
   const closeMobile = () => setMobileDrawer({ pathname, open: false });
   const toggleMobile = () =>
@@ -65,466 +85,578 @@ export function GlobalNav() {
       open: !(state.pathname === pathname && state.open),
     }));
 
-  useEffect(() => {
-    const onScroll = () => setScrolled(window.scrollY > 16);
-    onScroll();
-    window.addEventListener("scroll", onScroll, { passive: true });
-    return () => window.removeEventListener("scroll", onScroll);
-  }, []);
-
-  // Hide on studio, project editor, and auth pages
-  const shouldHide = HIDDEN_PATTERNS.some((pattern) => pathname.includes(pattern));
-  if (shouldHide) return null;
-
-  // Browse-style entries (IP / Crews / Creators) read as text-only labels;
-  // tool-style entries (Studio onward) keep their icon glyph as an affordance
-  // hint that they're an action surface, not a directory.
-  // `requiresAuth` items intercept clicks while the user is signed out
-  // and route to /login with `?redirect=` so post-login lands them back
-  // here. Without this, clicking e.g. Academy when logged out lets the
-  // legacy iframe try to load and its own bundle internally bounces
-  // through the studio subdomain (cross-origin auth loss). Native Next
-  // routes have AuthGate / AuthInterceptor as a fallback; the click
-  // gate is a strictly nicer UX.
-  const navItems: {
-    href: string;
-    label: string;
-    Icon?: typeof IconWand;
-    requiresAuth?: boolean;
-  }[] = [
+  const navItems: NavItem[] = [
     { href: "/ips", label: t("ipPlaza") },
     { href: "/crews", label: t("studioHall") },
     { href: "/creators", label: t("creators") },
-    // Legacy uni-app route — flip to "/courses" once the native page in
-    // app/(site)/courses/ ships per its README migration plan.
     {
       href: "/courses",
       label: t("course"),
-      Icon: IconBook,
       requiresAuth: true,
     },
-    { href: "/news", label: t("news"), Icon: IconNews },
+    { href: "/news", label: t("news") },
   ];
 
-  // The Studio entry lives outside the regular nav array so the right
-  // cluster can render it as a liquid-glass CTA — the brand-forward
-  // primary action on the page, distinct from the text-link directory
-  // items above. `requiresAuth: true` keeps logged-out clicks routed
-  // through /login?redirect= like the others.
-  //
-  // Two URLs on purpose:
-  //  - `href` is the local apex path — used for isActive (matches
-  //    the URL pathname) and as the post-login redirect target
-  //    (so the freshly-set session cookie isn't lost to a
-  //    subdomain hop).
-  //  - `linkHref` is what the <a> actually navigates to — usually
-  //    the apex path, but a dedicated subdomain when configured
-  //    via NEXT_PUBLIC_STUDIO_HOST. See `getStudioHref` in
-  //    src/lib/region/cell.ts for the cookie caveat.
-  const studioItem = {
+  const ctaItem: NavItem = {
     href: "/art-studio",
     linkHref: getStudioHref(locale),
-    label: t("studio"),
-    Icon: IconWand,
+    label: t("fizzStudio"),
     requiresAuth: true,
   };
 
-  const onNavClick = (e: React.MouseEvent<HTMLAnchorElement>, item: (typeof navItems)[number]) => {
+  const normalizedPathname = stripLocalePrefix(pathname);
+
+  const isActive = (href: string) =>
+    !href.startsWith("http") && !href.startsWith("mailto:") && normalizedPathname.startsWith(href);
+
+  const activeNavIndex = navItems.findIndex((item) => isActive(item.href));
+  const markerIndex = hoveredNavIndex ?? (activeNavIndex === -1 ? null : activeNavIndex);
+  const [navMarker, setNavMarker] = useState({ x: 0, visible: false });
+
+  const itemHref = (item: NavItem) =>
+    item.linkHref ?? (item.external ? item.href : localizePath(item.href, locale));
+
+  const ctaHref = itemHref(ctaItem);
+  const ctaOpensNewTab = ctaHref.startsWith("http");
+
+  const onNavClick = (e: React.MouseEvent<HTMLAnchorElement>, item: NavItem) => {
     if (!item.requiresAuth) return;
     if (user) return;
     e.preventDefault();
     router.push(`/login?redirect=${encodeURIComponent(item.href)}`);
   };
 
-  const USER_GUIDE_URL = "https://flowus.cn/share/cca82279-3553-47eb-beea-f71bc4cfb5c6?code=81LL9V";
-
-  const isActive = (href: string) => pathname.startsWith(href);
-
   const switchLocale = (next: Locale) => {
     if (next === locale) return;
     setCurrentLocale(next);
     setLanguage(next);
-    // Navigate to the properly locale-prefixed URL so SSR + proxy.ts
-    // see the new locale. Without this, router.replace(pathname) with
-    // the same path is a no-op and i18n never re-initializes on reload.
-    const stripped = stripLocalePrefix(pathname);
-    const target = localizePath(stripped, next);
-    router.replace(target);
+    router.replace(localizePath(stripLocalePrefix(pathname), next));
   };
+
+  useGSAP(
+    () => {
+      if (!headerRef.current) return;
+      gsap.to(headerRef.current, { opacity: 1, duration: 0.2, ease: "linear" });
+    },
+    { scope: headerRef }
+  );
+
+  useEffect(() => {
+    const updateMarker = () => {
+      const list = navListRef.current;
+      const link = markerIndex === null ? null : navLinkRefs.current[markerIndex];
+
+      if (!list || !link) {
+        setNavMarker((current) => (current.visible ? { ...current, visible: false } : current));
+        return;
+      }
+
+      const listRect = list.getBoundingClientRect();
+      const linkRect = link.getBoundingClientRect();
+      const x = linkRect.left - listRect.left + linkRect.width / 2;
+      setNavMarker({ x, visible: true });
+    };
+
+    updateMarker();
+    window.addEventListener("resize", updateMarker);
+
+    let resizeObserver: ResizeObserver | null = null;
+    if (typeof ResizeObserver !== "undefined") {
+      resizeObserver = new ResizeObserver(updateMarker);
+      if (navListRef.current) resizeObserver.observe(navListRef.current);
+      const activeLink = markerIndex === null ? null : navLinkRefs.current[markerIndex];
+      if (activeLink) resizeObserver.observe(activeLink);
+    }
+
+    return () => {
+      window.removeEventListener("resize", updateMarker);
+      resizeObserver?.disconnect();
+    };
+  }, [markerIndex, locale]);
+
+  const shouldHide = HIDDEN_PATTERNS.some((pattern) => pathname.includes(pattern));
+  if (shouldHide) return null;
 
   return (
     <header
-      className={cn(
-        "fixed inset-x-0 top-0 z-50 transition-[background-color,border-color] duration-300 ease-out",
-        scrolled || mobileOpen
-          ? "border-b border-white/5 bg-popover text-popover-foreground"
-          : "border-b border-transparent bg-transparent"
-      )}
+      ref={headerRef}
+      className={navCx("fd-secret-header")}
+      data-mobile-open={mobileOpen ? "true" : "false"}
+      style={{ opacity: 0 }}
     >
-      <div className="mx-auto flex h-16 max-w-450 items-center gap-0 px-6">
-        {/* Logo */}
-        <Link href="/" className="flex shrink-0 items-center">
-          <img src="/logo.png" alt="FizzDragon" className="h-6 w-auto object-contain" />
-        </Link>
+      <SecretGlassFilter />
 
-        {/* Nav links (desktop) */}
-        <nav className="ml-4 hidden flex-1 items-center gap-6 lg:flex">
-          {navItems.map((item) => {
-            const { href, label, Icon } = item;
-            // Localize the click target so navigation doesn't shed the
-            // user's current locale via an unprefixed → proxy → cookie
-            // round-trip. legacy uni-app routes (`/pages/...`) are
-            // served outside the locale prefix and must stay raw.
-            const target = href.startsWith("/pages/") ? href : localizePath(href, locale as Locale);
-            return (
-              <Link
-                key={href}
-                href={target}
-                onClick={(e) => onNavClick(e, item)}
-                className={cn(
-                  "inline-flex items-center gap-1.5 text-sm font-medium transition-colors hover:text-foreground",
-                  isActive(href) ? "text-foreground" : "text-foreground/80"
-                )}
-              >
-                {Icon && <Icon className="size-4" />}
-                {label}
-              </Link>
-            );
-          })}
-        </nav>
+      <Link
+        href={localizePath("/", locale)}
+        className={navCx("fd-secret-wordmark js-header-logotype")}
+        aria-label="FizzDragon"
+      >
+        <Image src="/logo.png" alt="FizzDragon" width={439} height={78} priority />
+      </Link>
 
-        {/* Right cluster — desktop: user guide / language / CTA */}
-        <div className="ml-auto hidden items-center gap-1 lg:flex">
-          <a
-            href={USER_GUIDE_URL}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="inline-flex h-9 items-center gap-1.5 rounded-full px-3 text-sm font-medium text-muted-foreground transition-colors hover:bg-foreground/5 hover:text-foreground"
-          >
-            <IconBook2 className="size-4" />
-            <span>{t("userGuide")}</span>
-          </a>
-
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <button
-                type="button"
-                aria-label={t("language")}
-                className="flex size-9 items-center justify-center rounded-full text-muted-foreground outline-none transition-colors hover:bg-foreground/5 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
-              >
-                <IconLanguage className="size-4" />
-              </button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="min-w-36">
-              <DropdownMenuLabel>{t("language")}</DropdownMenuLabel>
-              <DropdownMenuSeparator />
-              {LOCALE_OPTIONS.map((opt) => {
-                const current = opt.value === locale;
-                return (
-                  <DropdownMenuItem
-                    key={opt.value}
-                    onSelect={() => switchLocale(opt.value)}
-                    className="justify-between"
+      <nav
+        className={navCx(
+          "fd-secret-glass-wrapper fd-secret-nav-shell hidden md:flex js-header-nav"
+        )}
+        aria-label="Primary"
+      >
+        <span className={navCx("fd-secret-glass-effect")} aria-hidden />
+        <div className={navCx("fd-secret-glass-content fd-secret-nav-content")}>
+          <ul className={navCx("fd-secret-nav-list")} ref={navListRef}>
+            {navItems.map((item, index) => {
+              const active = isActive(item.href);
+              const href = itemHref(item);
+              const opensNewTab = href.startsWith("http");
+              return (
+                <li
+                  key={item.href}
+                  className={navCx("fd-secret-nav-item")}
+                  onMouseEnter={() => setHoveredNavIndex(index)}
+                  onMouseLeave={() => setHoveredNavIndex(null)}
+                  onFocus={() => setHoveredNavIndex(index)}
+                  onBlur={() => setHoveredNavIndex(null)}
+                >
+                  <Link
+                    ref={(node) => {
+                      navLinkRefs.current[index] = node;
+                    }}
+                    href={href}
+                    target={opensNewTab ? "_blank" : undefined}
+                    rel={opensNewTab ? "noopener noreferrer" : undefined}
+                    onClick={(e) => onNavClick(e, item)}
+                    className={navCx("fd-secret-nav-link", active && "is-active")}
                   >
-                    <span>{opt.label}</span>
-                    {current ? <IconCheck className="size-4 text-primary" /> : null}
-                  </DropdownMenuItem>
-                );
-              })}
-            </DropdownMenuContent>
-          </DropdownMenu>
+                    {item.label}
+                  </Link>
+                </li>
+              );
+            })}
+            <span
+              className={navCx("fd-secret-nav-marker", navMarker.visible && "is-visible")}
+              style={{ "--fd-secret-marker-x": `${navMarker.x}px` } as CSSProperties}
+              aria-hidden
+            />
+          </ul>
+        </div>
+      </nav>
 
-          {/* Studio liquid-glass CTA — brand-red forward, the visual anchor of
-              the right cluster. Three layers stack to balance "glass" + "red":
-              - layer 0 (Link surface): warm-tinted translucent gradient + red
-                rim border + heavy backdrop-blur. The glass plane.
-              - layer 1 (red orb span): an absolute-positioned blurred red disc
-                glowing through from underneath. This is what makes the red
-                feel like it's *inside* the glass, not painted on top.
-              - layer 2 (sheen sweep): on hover, a diagonal white highlight
-                wipes across, the premium-feel finish.
-              Outer box-shadow stack adds a tight 1px brand ring + a wide
-              soft red glow (the "ember" radiating into the page chrome).
-           */}
+      <div className={navCx("fd-secret-right-cluster hidden md:flex js-header-cta")}>
+        <span className={navCx("fd-secret-glass-wrapper fd-secret-cta-shell")}>
+          <span className={navCx("fd-secret-glass-effect")} aria-hidden />
           <Link
-            href={studioItem.linkHref}
-            onClick={(e) => onNavClick(e, studioItem)}
-            target="_blank"
-            rel="noopener noreferrer"
-            className={cn(
-              "mr-4 group relative ml-2 inline-flex h-9 items-center gap-1.5 overflow-hidden rounded-full px-4 text-sm font-medium",
-              // Glass body — warm-tinted (top-left blush, bottom-right ember)
-              // so red bleeds through the surface instead of just orbiting it.
-              "bg-linear-to-br from-[rgba(255,200,200,0.28)] via-white/8 to-[rgba(229,34,39,0.18)]",
-              "dark:from-[rgba(255,140,140,0.18)] dark:via-white/4 dark:to-[rgba(229,34,39,0.22)]",
-              "backdrop-blur-xl backdrop-saturate-150",
-              // Red-tinted rim (replaces white border) — subtle in light, more
-              // pronounced in dark where contrast against bg-popover demands it.
-              "border border-[rgba(229,34,39,0.45)] dark:border-[rgba(255,90,90,0.45)]",
-              // Outer shadow stack: 1px brand ring + soft red bloom + inset
-              // top-edge gloss for the glass rim. Two-layer red (tight ring
-              // + wide spread) reads as "this thing is glowing", not "this
-              // thing has a drop shadow".
-              "shadow-[inset_0_1px_0_0_rgba(255,255,255,0.55),0_0_0_1px_rgba(229,34,39,0.25),0_6px_24px_-4px_rgba(229,34,39,0.55),0_2px_8px_-2px_rgba(229,34,39,0.4)]",
-              "dark:shadow-[inset_0_1px_0_0_rgba(255,255,255,0.3),0_0_0_1px_rgba(229,34,39,0.3),0_6px_28px_-4px_rgba(229,34,39,0.7),0_2px_10px_-2px_rgba(229,34,39,0.5)]",
-              "text-foreground",
-              "transition-all duration-300 ease-out",
-              // Hover pumps both inner gradient (more red) and outer bloom.
-              "hover:from-[rgba(255,200,200,0.4)] hover:via-white/12 hover:to-[rgba(229,34,39,0.3)]",
-              "hover:shadow-[inset_0_1px_0_0_rgba(255,255,255,0.65),0_0_0_1px_rgba(229,34,39,0.45),0_8px_32px_-4px_rgba(229,34,39,0.75),0_4px_14px_-2px_rgba(229,34,39,0.55)]",
-              "dark:hover:shadow-[inset_0_1px_0_0_rgba(255,255,255,0.4),0_0_0_1px_rgba(229,34,39,0.5),0_8px_36px_-4px_rgba(229,34,39,0.9),0_4px_16px_-2px_rgba(229,34,39,0.65)]",
-              "hover:-translate-y-px active:translate-y-0",
-              isActive(studioItem.href) && "ring-1 ring-primary/60"
-            )}
-            aria-label={studioItem.label}
+            href={ctaHref}
+            target={ctaOpensNewTab ? "_blank" : undefined}
+            rel={ctaOpensNewTab ? "noopener noreferrer" : undefined}
+            onClick={(e) => onNavClick(e, ctaItem)}
+            className={navCx("fd-secret-glass-content fd-secret-cta")}
           >
-            {/* Inner red orb — blurred disc sitting behind the glass surface.
-                Breathes on a 2.6s loop (see `@keyframes studio-breath`) so the
-                button reads as live. On hover, the keyframe is killed
-                (`group-hover:animate-none`) and the transition takes over to
-                pump scale+brightness — a single source of motion at any time. */}
-            <span
-              aria-hidden
-              className="pointer-events-none absolute -right-2 -bottom-2 h-8 w-8 rounded-full bg-primary/50 blur-md animate-[studio-breath_2.6s_ease-in-out_infinite] transition-all duration-500 group-hover:scale-150 group-hover:bg-primary/70 group-hover:animate-none"
-            />
-            {/* Sheen sweep — diagonal white highlight that wipes across on hover. */}
-            <span
-              aria-hidden
-              className="pointer-events-none absolute inset-y-0 -left-1/2 w-1/2 -skew-x-12 bg-linear-to-r from-transparent via-white/45 to-transparent opacity-0 transition-all duration-700 ease-out group-hover:left-[150%] group-hover:opacity-100 dark:via-white/30"
-            />
-            <studioItem.Icon className="relative size-4 text-primary drop-shadow-[0_0_4px_rgba(229,34,39,0.6)] transition-transform duration-300 group-hover:rotate-[-8deg] group-hover:scale-110" />
-            <span className="relative tracking-wide">{studioItem.label}</span>
+            <span>{ctaItem.label}</span>
           </Link>
+        </span>
 
-          {user ? (
-            <>
-              {/* Messages inbox shortcut — placed left of the bell so
-                  the "communicating with people" surface sits adjacent
-                  to the "platform notifications" surface, mirroring
-                  the common nav-cluster grouping (compare LinkedIn,
-                  Behance, Fiverr). Same badge convention. */}
-              <MessagesButton />
-              {/* Notifications bell — badge + dropdown to recent items.
-                  Sits to the left of credits / avatar; opening drawer
-                  is independent of the user menu so they can coexist
-                  without z-index conflict. */}
-              <BellButton />
-              {/* Community credits — entry point only for now. Popover
-                  surfaces balance + actions; the wallet itself is
-                  coming soon. Sits to the left of the avatar so it
-                  reads as "your wallet next to your identity". */}
-              <CommunityCreditsChip className="ml-1" />
-              <SiteUserMenu />
-            </>
-          ) : (
-            <button
-              type="button"
-              onClick={() => router.push(localizePath("/login", locale as Locale))}
-              className="ml-1 flex h-9 items-center rounded-full border border-border/40 bg-foreground/5 px-4 text-sm font-medium text-foreground transition-colors hover:bg-foreground/10"
-            >
-              {t("getStarted")}
-            </button>
-          )}
-        </div>
-
-        {/* Right cluster — below lg, surface the user-identity affordance
-            (avatar dropdown OR Get Started) alongside the hamburger so
-            visitors aren't one extra tap away from signing in / their
-            profile on tablets and phones. Studio CTA, bell, messages
-            and credits live inside the drawer at this breakpoint so
-            the bar stays uncluttered. */}
-        <div className="ml-auto flex items-center gap-1 lg:hidden">
-          {user ? (
-            <SiteUserMenu />
-          ) : (
-            <button
-              type="button"
-              onClick={() => router.push(localizePath("/login", locale as Locale))}
-              className="flex h-9 items-center rounded-full border border-border/40 bg-foreground/5 px-3 text-xs font-medium text-foreground transition-colors hover:bg-foreground/10"
-            >
-              {t("getStarted")}
-            </button>
-          )}
-          <button
-            type="button"
-            onClick={toggleMobile}
-            aria-label={t("menu")}
-            aria-expanded={mobileOpen}
-            className="flex size-9 items-center justify-center rounded-full text-muted-foreground outline-none transition-colors hover:bg-foreground/5 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
-          >
-            {mobileOpen ? <IconX className="size-5" /> : <IconDotsVertical className="size-5" />}
-          </button>
-        </div>
+        {user ? (
+          <div className={navCx("fd-secret-account-cluster")}>
+            <span className={navCx("fd-secret-glass-wrapper fd-secret-account-bell")}>
+              <span className={navCx("fd-secret-glass-effect")} aria-hidden />
+              <span className={navCx("fd-secret-glass-content fd-secret-account-bell-content")}>
+                <BellButton />
+              </span>
+            </span>
+            <SecretAccountMenu
+              user={user}
+              locale={locale}
+              switchLocale={switchLocale}
+              logout={logout}
+            />
+          </div>
+        ) : null}
       </div>
 
-      {/* Mobile drawer — nav links + language / account, all in one place.
-          Cap to viewport height (minus the h-16 nav) and allow internal scroll —
-          on short screens (landscape phone, iPhone SE) the language + account
-          rows otherwise sit below the fold with no way to reach them. Use 100dvh
-          so iOS Safari's collapsing chrome doesn't clip the bottom row, and
-          overscroll-contain so flicking past the end doesn't drag the page. */}
-      {mobileOpen && (
-        <div className="max-h-[calc(100dvh-4rem)] overflow-y-auto overscroll-contain border-t border-white/5 bg-popover text-popover-foreground lg:hidden">
-          <nav className="mx-auto flex max-w-[1800px] flex-col px-6 py-3 pb-[env(safe-area-inset-bottom)]">
-            {/* Studio CTA — hero entry, same red-forward liquid-glass treatment
-                as the desktop right cluster, sized up for thumb reach. */}
-            <Link
-              href={studioItem.linkHref}
-              onClick={(e) => {
-                onNavClick(e, studioItem);
-                closeMobile();
-              }}
-              className={cn(
-                "group relative mb-2 inline-flex h-12 items-center justify-center gap-2 overflow-hidden rounded-2xl px-5 text-base font-semibold",
-                "bg-linear-to-br from-[rgba(255,200,200,0.28)] via-white/8 to-[rgba(229,34,39,0.18)]",
-                "dark:from-[rgba(255,140,140,0.18)] dark:via-white/4 dark:to-[rgba(229,34,39,0.22)]",
-                "backdrop-blur-xl backdrop-saturate-150",
-                "border border-[rgba(229,34,39,0.45)] dark:border-[rgba(255,90,90,0.45)]",
-                "shadow-[inset_0_1px_0_0_rgba(255,255,255,0.55),0_0_0_1px_rgba(229,34,39,0.25),0_8px_28px_-4px_rgba(229,34,39,0.6),0_2px_10px_-2px_rgba(229,34,39,0.45)]",
-                "dark:shadow-[inset_0_1px_0_0_rgba(255,255,255,0.3),0_0_0_1px_rgba(229,34,39,0.3),0_8px_32px_-4px_rgba(229,34,39,0.75),0_2px_12px_-2px_rgba(229,34,39,0.55)]",
-                "text-foreground transition-all duration-300 ease-out active:scale-[0.98]"
+      <div className={navCx("fd-secret-mobile-button-wrap md:hidden")}>
+        <button
+          type="button"
+          onClick={toggleMobile}
+          aria-label={t("menu")}
+          aria-expanded={mobileOpen}
+          className={navCx("fd-secret-glass-wrapper fd-secret-mobile-button")}
+        >
+          <span className={navCx("fd-secret-glass-effect")} aria-hidden />
+          <span className={navCx("fd-secret-glass-content fd-secret-mobile-button-content")}>
+            <span>{t("menu")}</span>
+            <span className={navCx("fd-secret-menu-box")} aria-hidden>
+              {mobileOpen ? (
+                <IconX className="size-3.5" />
+              ) : (
+                <span className={navCx("fd-secret-menu-glyph")} />
               )}
+            </span>
+          </span>
+        </button>
+      </div>
+
+      {mobileOpen ? (
+        <div className={navCx("fd-secret-mobile-drawer md:hidden")}>
+          <div className={navCx("fd-secret-glass-wrapper fd-secret-mobile-panel")}>
+            <span className={navCx("fd-secret-glass-effect")} aria-hidden />
+            <nav
+              className={navCx("fd-secret-glass-content fd-secret-mobile-panel-content")}
+              aria-label="Mobile"
             >
-              <span
-                aria-hidden
-                className="pointer-events-none absolute -right-3 -bottom-3 h-12 w-12 rounded-full bg-primary/50 blur-lg animate-[studio-breath_2.6s_ease-in-out_infinite]"
-              />
-              <span
-                aria-hidden
-                className="pointer-events-none absolute inset-y-0 -left-1/2 w-1/2 -skew-x-12 bg-linear-to-r from-transparent via-white/45 to-transparent opacity-0 transition-all duration-700 ease-out group-hover:left-[150%] group-hover:opacity-100 dark:via-white/30"
-              />
-              <studioItem.Icon className="relative size-5 text-primary drop-shadow-[0_0_4px_rgba(229,34,39,0.6)]" />
-              <span className="relative tracking-wide">{studioItem.label}</span>
-            </Link>
-
-            {navItems.map((item) => {
-              const { href, label, Icon } = item;
-              const target = href.startsWith("/pages/")
-                ? href
-                : localizePath(href, locale as Locale);
-              return (
-                <Link
-                  key={href}
-                  href={target}
-                  onClick={(e) => {
-                    onNavClick(e, item);
-                    closeMobile();
-                  }}
-                  className={cn(
-                    "flex items-center gap-3 rounded-lg px-3 py-3 text-sm font-medium transition-colors",
-                    isActive(href)
-                      ? "bg-foreground/5 text-foreground"
-                      : "text-muted-foreground hover:bg-foreground/5 hover:text-foreground"
-                  )}
-                >
-                  {Icon && <Icon className="size-4" />}
-                  {label}
-                </Link>
-              );
-            })}
-
-            <a
-              href={USER_GUIDE_URL}
-              target="_blank"
-              rel="noopener noreferrer"
-              onClick={closeMobile}
-              className="flex items-center gap-3 rounded-lg px-3 py-3 text-sm font-medium text-muted-foreground transition-colors hover:bg-foreground/5 hover:text-foreground"
-            >
-              <IconBook2 className="size-4" />
-              {t("userGuide")}
-            </a>
-
-            <div className="my-2 h-px bg-border/50" />
-
-            {/* Language */}
-            <div className="px-3 pt-2 text-[11px] font-medium uppercase tracking-wider text-muted-foreground/70">
-              {t("language")}
-            </div>
-            {LOCALE_OPTIONS.map((opt) => {
-              const current = opt.value === locale;
-              return (
-                <button
-                  key={opt.value}
-                  type="button"
-                  onClick={() => {
-                    closeMobile();
-                    switchLocale(opt.value);
-                  }}
-                  className={cn(
-                    "flex items-center justify-between rounded-lg px-3 py-2.5 text-sm transition-colors",
-                    current
-                      ? "text-foreground"
-                      : "text-muted-foreground hover:bg-foreground/5 hover:text-foreground"
-                  )}
-                >
-                  <span className="inline-flex items-center gap-3">
-                    <IconLanguage className="size-4" />
-                    {opt.label}
-                  </span>
-                  {current && <IconCheck className="size-4 text-primary" />}
-                </button>
-              );
-            })}
-
-            <div className="my-2 h-px bg-border/50" />
-
-            {/* Account */}
-            {user ? (
-              <>
-                {/* Community credits — full-width row in the mobile
-                    drawer. Tapping opens the coming-soon toast. */}
-                <CommunityCreditsChip layout="row" />
-                <Link
-                  href={localizePath("/messages", locale as Locale)}
-                  onClick={closeMobile}
-                  className="flex items-center gap-3 rounded-lg px-3 py-3 text-sm text-muted-foreground transition-colors hover:bg-foreground/5 hover:text-foreground"
-                >
-                  <MobileInboxLine />
-                </Link>
-                <Link
-                  href={localizePath("/profile", locale as Locale)}
-                  onClick={closeMobile}
-                  className="flex items-center gap-3 rounded-lg px-3 py-3 text-sm text-muted-foreground transition-colors hover:bg-foreground/5 hover:text-foreground"
-                >
-                  <IconUser className="size-4" />
-                  <span>{user.nickname || "Profile"}</span>
-                </Link>
-                <button
-                  type="button"
-                  onClick={() => {
-                    closeMobile();
-                    void logout();
-                  }}
-                  className="flex items-center gap-3 rounded-lg px-3 py-3 text-sm text-muted-foreground transition-colors hover:bg-foreground/5 hover:text-foreground"
-                >
-                  <IconLogout className="size-4" />
-                  <span>Logout</span>
-                </button>
-              </>
-            ) : (
-              <button
-                type="button"
-                onClick={() => {
+              <Link
+                href={ctaHref}
+                target={ctaOpensNewTab ? "_blank" : undefined}
+                rel={ctaOpensNewTab ? "noopener noreferrer" : undefined}
+                onClick={(e) => {
+                  onNavClick(e, ctaItem);
                   closeMobile();
-                  router.push(localizePath("/login", locale as Locale));
                 }}
-                className="mt-1 flex h-10 items-center justify-center rounded-full border border-border/40 bg-foreground/5 px-4 text-sm font-medium text-foreground transition-colors hover:bg-foreground/10"
+                className={navCx("fd-secret-mobile-cta")}
               >
-                {t("getStarted")}
-              </button>
-            )}
-          </nav>
+                <span>{ctaItem.label}</span>
+                <span className={navCx("fd-secret-mobile-arrow")} aria-hidden>
+                  <IconChevronRight className="size-4" />
+                </span>
+              </Link>
+
+              <div className={navCx("fd-secret-mobile-list")}>
+                {navItems.map((item) => {
+                  const href = itemHref(item);
+                  const opensNewTab = href.startsWith("http");
+                  return (
+                    <Link
+                      key={item.href}
+                      href={href}
+                      target={opensNewTab ? "_blank" : undefined}
+                      rel={opensNewTab ? "noopener noreferrer" : undefined}
+                      onClick={(e) => {
+                        onNavClick(e, item);
+                        closeMobile();
+                      }}
+                      className={navCx("fd-secret-mobile-row")}
+                    >
+                      <span>{item.label}</span>
+                      <span className={navCx("fd-secret-mobile-row-icon")} aria-hidden>
+                        <IconChevronRight className="size-4" />
+                      </span>
+                    </Link>
+                  );
+                })}
+              </div>
+
+              <div className={navCx("fd-secret-mobile-section")}>
+                <span className={navCx("fd-secret-mobile-section-label")}>{t("language")}</span>
+                {LOCALE_OPTIONS.map((opt) => {
+                  const current = opt.value === locale;
+                  return (
+                    <button
+                      key={opt.value}
+                      type="button"
+                      onClick={() => {
+                        closeMobile();
+                        switchLocale(opt.value);
+                      }}
+                      className={navCx("fd-secret-mobile-row", current && "is-active")}
+                    >
+                      <span>{opt.label}</span>
+                      {current ? <IconCheck className="size-4" /> : null}
+                    </button>
+                  );
+                })}
+              </div>
+
+              <div className={navCx("fd-secret-mobile-section")}>
+                {user ? (
+                  <>
+                    <CommunityCreditsChip layout="row" />
+                    <Link
+                      href={localizePath("/messages", locale)}
+                      onClick={closeMobile}
+                      className={navCx("fd-secret-mobile-row")}
+                    >
+                      <MobileInboxLine />
+                    </Link>
+                    <Link
+                      href={localizePath("/profile", locale)}
+                      onClick={closeMobile}
+                      className={navCx("fd-secret-mobile-row")}
+                    >
+                      <IconUser className="size-4" />
+                      <span className="flex-1">{user.nickname || "Profile"}</span>
+                    </Link>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        closeMobile();
+                        void logout();
+                      }}
+                      className={navCx("fd-secret-mobile-row")}
+                    >
+                      <IconLogout className="size-4" />
+                      <span className="flex-1">{commonT("logout")}</span>
+                    </button>
+                  </>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      closeMobile();
+                      router.push(localizePath("/login", locale));
+                    }}
+                    className={navCx("fd-secret-mobile-login")}
+                  >
+                    {t("getStarted")}
+                  </button>
+                )}
+              </div>
+            </nav>
+          </div>
         </div>
-      )}
+      ) : null}
     </header>
   );
 }
 
-/**
- * Mobile-drawer inbox row. Renders icon + label + unread badge.
- * Inline rather than a named component so it stays close to the
- * drawer it's used from and doesn't grow the public surface.
- */
+function SecretAccountMenu({
+  user,
+  locale,
+  switchLocale,
+  logout,
+}: {
+  user: CurrentUser;
+  locale: Locale;
+  switchLocale: (next: Locale) => void;
+  logout: () => void;
+}) {
+  const navT = useTranslations("nav");
+  const commonT = useTranslations("common");
+  const [copied, setCopied] = useState(false);
+
+  const displayName = user.nickname || user.email || commonT("personalAccount");
+  const accountId = user.id;
+  const accountIdLabel =
+    accountId.length > 12 ? `${accountId.slice(0, 6)}...${accountId.slice(-4)}` : accountId;
+
+  const copyAccountId = async () => {
+    try {
+      await navigator.clipboard.writeText(accountId);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1600);
+    } catch {
+      setCopied(false);
+    }
+  };
+
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <button
+          type="button"
+          className={navCx("fd-secret-glass-wrapper fd-secret-account-trigger")}
+          aria-label={navT("accountMenu")}
+        >
+          <span className={navCx("fd-secret-glass-effect")} aria-hidden />
+          <span className={navCx("fd-secret-glass-content fd-secret-account-trigger-content")}>
+            <UserAvatar
+              src={user.avatar}
+              seed={user.id}
+              name={displayName}
+              size={36}
+              className={navCx("fd-secret-account-trigger-avatar")}
+            />
+          </span>
+        </button>
+      </DropdownMenuTrigger>
+
+      <DropdownMenuContent
+        align="end"
+        sideOffset={12}
+        className={navCx("fd-secret-glass-wrapper fd-secret-account-menu")}
+      >
+        <span className={navCx("fd-secret-glass-effect")} aria-hidden />
+        <div className={navCx("fd-secret-glass-content fd-secret-account-panel")}>
+          <div className={navCx("fd-secret-account-card")}>
+            <UserAvatar
+              src={user.avatar}
+              seed={user.id}
+              name={displayName}
+              size={56}
+              className={navCx("fd-secret-account-avatar")}
+            />
+            <div className={navCx("fd-secret-account-meta")}>
+              <div className={navCx("fd-secret-account-name")}>{displayName}</div>
+              <button
+                type="button"
+                onClick={copyAccountId}
+                className={navCx("fd-secret-account-id")}
+                aria-label={navT("copyAccountId")}
+              >
+                <span>
+                  {navT("accountId")} {accountIdLabel}
+                </span>
+                <IconCopy className="size-4" />
+              </button>
+            </div>
+          </div>
+
+          {copied ? (
+            <div className={navCx("fd-secret-account-toast")}>{commonT("copied")}</div>
+          ) : null}
+
+          <CommunityCreditsChip layout="row" className={navCx("fd-secret-account-wallet")} />
+
+          <div className={navCx("fd-secret-account-section")}>
+            <Link
+              href={localizePath("/messages", locale)}
+              className={navCx("fd-secret-account-row")}
+            >
+              <MobileInboxLine />
+              <IconChevronRight className={navCx("fd-secret-account-row-arrow size-4")} />
+            </Link>
+            <Link
+              href={localizePath("/profile", locale)}
+              className={navCx("fd-secret-account-row")}
+            >
+              <IconUser className="size-5" />
+              <span className="flex-1">{commonT("myProfile")}</span>
+              <IconChevronRight className={navCx("fd-secret-account-row-arrow size-4")} />
+            </Link>
+          </div>
+
+          <div className={navCx("fd-secret-account-section")}>
+            <div className={navCx("fd-secret-account-row is-static")}>
+              <IconLanguage className="size-5" />
+              <span className="flex-1">{navT("language")}</span>
+            </div>
+            <div className={navCx("fd-secret-locale-grid")} aria-label={navT("language")}>
+              {LOCALE_OPTIONS.map((opt) => {
+                const current = opt.value === locale;
+                return (
+                  <button
+                    key={opt.value}
+                    type="button"
+                    onClick={() => switchLocale(opt.value)}
+                    className={navCx("fd-secret-locale-pill", current && "is-active")}
+                    aria-current={current ? "true" : undefined}
+                  >
+                    <span>{opt.label}</span>
+                    {current ? <IconCheck className="size-3.5" /> : null}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          <button
+            type="button"
+            onClick={() => {
+              void logout();
+            }}
+            className={navCx("fd-secret-account-row fd-secret-account-logout")}
+          >
+            <IconLogout className="size-5" />
+            <span className="flex-1">{commonT("logout")}</span>
+          </button>
+        </div>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
+function SecretGlassFilter() {
+  return (
+    <svg className="pointer-events-none fixed size-0 opacity-0" aria-hidden>
+      <defs>
+        <filter
+          id="fd-secret-glass-distortion"
+          x="-50%"
+          y="-50%"
+          width="200%"
+          height="200%"
+          filterUnits="objectBoundingBox"
+          colorInterpolationFilters="sRGB"
+        >
+          <feTurbulence
+            type="fractalNoise"
+            baseFrequency="0.01 0.01"
+            numOctaves="1"
+            seed="5"
+            result="turbulence"
+          />
+          <feComponentTransfer in="turbulence" result="mapped">
+            <feFuncR type="gamma" amplitude="1" exponent="10" offset="0.5" />
+            <feFuncG type="gamma" amplitude="0" exponent="1" offset="0" />
+            <feFuncB type="gamma" amplitude="0" exponent="1" offset="0.5" />
+          </feComponentTransfer>
+          <feGaussianBlur in="turbulence" stdDeviation="5" result="softMap" />
+          <feSpecularLighting
+            in="softMap"
+            surfaceScale="5"
+            specularConstant="1"
+            specularExponent="100"
+            lightingColor="white"
+            result="specLight"
+          >
+            <fePointLight x="-200" y="-200" z="300" />
+          </feSpecularLighting>
+          <feComposite
+            in="specLight"
+            operator="arithmetic"
+            k1="0"
+            k2="1"
+            k3="1"
+            k4="0"
+            result="litImage"
+          />
+          <feDisplacementMap
+            in="SourceGraphic"
+            in2="softMap"
+            scale="160"
+            xChannelSelector="R"
+            yChannelSelector="G"
+            result="displaced1"
+          />
+          <feColorMatrix
+            in="displaced1"
+            type="matrix"
+            values="1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0"
+            result="displacedR"
+          />
+          <feDisplacementMap
+            in="SourceGraphic"
+            in2="softMap"
+            scale="150"
+            xChannelSelector="R"
+            yChannelSelector="G"
+            result="displaced2"
+          />
+          <feColorMatrix
+            in="displaced2"
+            type="matrix"
+            values="0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 1 0"
+            result="displacedG"
+          />
+          <feDisplacementMap
+            in="SourceGraphic"
+            in2="softMap"
+            scale="140"
+            xChannelSelector="R"
+            yChannelSelector="G"
+            result="displaced3"
+          />
+          <feColorMatrix
+            in="displaced3"
+            type="matrix"
+            values="0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 1 0"
+            result="displacedB"
+          />
+          <feBlend in="displacedR" in2="displacedG" mode="screen" result="blend1" />
+          <feBlend in="blend1" in2="displacedB" mode="screen" />
+        </filter>
+      </defs>
+    </svg>
+  );
+}
+
 function MobileInboxLine() {
   const t = useTranslations("messages");
   const inbox = useInbox();
