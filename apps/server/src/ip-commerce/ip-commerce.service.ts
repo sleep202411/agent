@@ -3199,6 +3199,92 @@ export class IpCommerceService {
     };
   }
 
+  /**
+   * Public list of IPs carrying a TAG, for a generic tag landing page
+   * (e.g. the SGWander competition: /tags/sgwander_ai_challenge). Unlike the
+   * plaza, this matches the tag REGARDLESS of its active/hidden status and does
+   * NOT apply the hidden-genre browse exclusion — the tag IS the scope, so a
+   * hidden tag's entries appear on their own page. Still enforces base public
+   * visibility (published/scheduled + public listing + a public localization +
+   * viewer blocks), so non-public entries never leak. Returns the localized term
+   * for the page header.
+   */
+  async listPublicTagIps(
+    code: string,
+    query: ListCreatorIpsQuery,
+    user?: AuthUser,
+  ) {
+    const term = await this.prisma.ipTaxonomyTerm.findFirst({
+      where: { type: IpTaxonomyTermType.tag, code },
+      include: { localizations: true },
+    });
+    if (!term) {
+      throw new NotFoundException({
+        code: 'IP_TAXONOMY_TERM_NOT_FOUND',
+        msg: 'Tag not found.',
+      });
+    }
+
+    const viewerBlockWhere = await this.viewerBlockWhere(user);
+    const whereBase: Prisma.IpWhereInput = {
+      deletedAt: null,
+      status: { in: PUBLIC_IP_STATUSES },
+      listingVisibility: 'public',
+      localizations: {
+        some: {
+          archivedAt: null,
+          status: { in: PUBLIC_LOCALIZATION_STATUSES },
+        },
+      },
+      taxonomyAssignments: {
+        some: { term: { is: { type: IpTaxonomyTermType.tag, code } } },
+      },
+      ...viewerBlockWhere,
+    };
+
+    const cursor = query.cursor
+      ? await this.prisma.ip.findUnique({
+          where: { id: query.cursor },
+          select: { publishedAt: true, createdAt: true },
+        })
+      : null;
+    const cursorDate = cursor?.publishedAt ?? cursor?.createdAt ?? null;
+
+    // Total of the whole set (for the header stat) — only on the first page to
+    // avoid re-counting on every infinite-scroll fetch.
+    const total = query.cursor
+      ? null
+      : await this.prisma.ip.count({ where: whereBase });
+
+    const rows = await this.prisma.ip.findMany({
+      where: {
+        ...whereBase,
+        ...(cursorDate
+          ? {
+              OR: [
+                { publishedAt: { lt: cursorDate } },
+                { publishedAt: null, createdAt: { lt: cursorDate } },
+              ],
+            }
+          : {}),
+      },
+      include: ipInclude,
+      orderBy: [
+        { publishedAt: { sort: 'desc', nulls: 'last' } },
+        { createdAt: 'desc' },
+      ],
+      take: query.limit + 1,
+    });
+
+    const items = rows.slice(0, query.limit);
+    return {
+      term: taxonomyTermDto(term, query.locale),
+      total,
+      items: items.map((ip) => ipDto(ip, query.locale)),
+      nextCursor: rows.length > query.limit ? (items.at(-1)?.id ?? null) : null,
+    };
+  }
+
   async getPublicIp(
     ipId: string,
     user?: AuthUser,

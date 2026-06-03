@@ -698,6 +698,39 @@ export function listPublicCreatorIps(
   );
 }
 
+/** Localized taxonomy term (for a tag landing-page header). */
+export interface IpTagTerm {
+  id: string;
+  type: string;
+  code: string;
+  label: string;
+  description: string | null;
+  aliases: string[];
+}
+
+export interface IpTagPageResult {
+  term: IpTagTerm;
+  /** Total entries in the set (only returned on the first page; null after). */
+  total: number | null;
+  items: IpCommerceIp[];
+  nextCursor: string | null;
+}
+
+/**
+ * Public list of IPs carrying a TAG — backs the generic tag landing page
+ * (`/tags/[code]`, e.g. the SGWander competition). Matches the tag regardless of
+ * its hidden status and skips the plaza's hidden-genre exclusion, but only
+ * returns published + public entries.
+ */
+export function listIpsByTag(
+  code: string,
+  params?: { locale?: string; cursor?: string; limit?: number }
+) {
+  return api.get<IpTagPageResult>(`/aurora/ip-commerce/tags/${encodeURIComponent(code)}/ips`, {
+    params,
+  });
+}
+
 export function getMyIpCommerceOverview(ipId: string, params?: { locale?: string }) {
   return api.get<IpCreatorCommerceOverview>(
     `/aurora/ip-commerce/me/ips/${encodeURIComponent(ipId)}/commerce`,

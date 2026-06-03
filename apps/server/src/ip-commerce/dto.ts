@@ -635,6 +635,12 @@ export const CreatorIpsParamsSchema = z.object({
 });
 export type CreatorIpsParams = z.infer<typeof CreatorIpsParamsSchema>;
 
+// Taxonomy term code (e.g. a tag like `sgwander_ai_challenge`).
+export const TagIpsParamsSchema = z.object({
+  code: z.string().trim().min(1).max(80),
+});
+export type TagIpsParams = z.infer<typeof TagIpsParamsSchema>;
+
 export const IpEpisodeParamsSchema = IpParamsSchema.extend({
   episodeId: z.string().uuid(),
 });

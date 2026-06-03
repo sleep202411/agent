@@ -21,6 +21,7 @@ import {
   listMyIpCommerceIpAssets,
   listMyIpCommerceIps,
   listPublicCreatorIps,
+  listIpsByTag,
   listIpCommerceIps,
   listIpCommerceTaxonomyTerms,
   lookupIpCommerceUser,
@@ -136,6 +137,27 @@ export function useInfiniteIpCommerceIps(params?: {
       }),
     initialPageParam: "",
     getNextPageParam: (lastPage) => lastPage.nextCursor ?? undefined,
+    staleTime: 60_000,
+  });
+}
+
+/**
+ * Infinite list of IPs for a tag landing page (`/tags/[code]`). The localized
+ * term for the header rides on each page (`data.pages[0].term`).
+ */
+export function useInfiniteIpsByTag(code: string, params?: { locale?: string; limit?: number }) {
+  const limit = params?.limit ?? 24;
+  return useInfiniteQuery({
+    queryKey: ["ip-commerce", "tag-ips", code, params?.locale ?? "", limit] as const,
+    queryFn: ({ pageParam }) =>
+      listIpsByTag(code, {
+        locale: params?.locale,
+        limit,
+        cursor: (pageParam as string) || undefined,
+      }),
+    initialPageParam: "",
+    getNextPageParam: (lastPage) => lastPage.nextCursor ?? undefined,
+    enabled: !!code,
     staleTime: 60_000,
   });
 }

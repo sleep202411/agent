@@ -36,6 +36,9 @@ const PUBLIC_PATTERNS: RegExp[] = [
   /^\/news(\/|$)/,
   /^\/invite(\/|$)/,
   /^\/ips(\/|$)/,
+  // Generic tag landing pages (e.g. competitions like SGWander) are public +
+  // shareable; entries link to the public IP detail page.
+  /^\/tags\/[^/]+(\/|$)/,
   // Deprecated public URL. Kept public only so the redirect to `/ips`
   // can run before auth gating.
   /^\/ip-commerce(\/|$)/,

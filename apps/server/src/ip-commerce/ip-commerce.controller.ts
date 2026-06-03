@@ -34,6 +34,8 @@ import {
   IpLocaleQuerySchema,
   CreatorIpsParamsSchema,
   type CreatorIpsParams,
+  TagIpsParamsSchema,
+  type TagIpsParams,
   IpParamsSchema,
   ListCreatorIpAssetsQuerySchema,
   ListCreatorIpsQuerySchema,
@@ -451,6 +453,21 @@ export class IpCommerceController {
         query,
         user,
       ),
+    };
+  }
+
+  @Public()
+  @Get('tags/:code/ips')
+  async listTagIps(
+    @CurrentUser() user: AuthUser | undefined,
+    @Param(new ZodValidationPipe(TagIpsParamsSchema))
+    params: TagIpsParams,
+    @Query(new ZodValidationPipe(ListCreatorIpsQuerySchema))
+    query: ListCreatorIpsQuery,
+  ) {
+    return {
+      code: 200,
+      data: await this.ipCommerce.listPublicTagIps(params.code, query, user),
     };
   }
 
