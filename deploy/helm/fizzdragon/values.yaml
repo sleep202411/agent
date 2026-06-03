@@ -143,13 +143,13 @@ web:
   replicaCount: 1
   image:
     repository: fizzdragon-web
-    tag: 82a59a7ce5e529f15b47bf44a1d7583f1087510d
+    tag: 74429f2e1b9617a60b5d926bd77c3d7a8a3c2016
   containerPort: 3000
   env:
     SERVER_URL: http://fizzdragon-server:3001
   resources:
-    requests: { cpu: 100m, memory: 256Mi }
-    limits: { cpu: 1000m, memory: 1Gi }
+    requests: {cpu: 100m, memory: 256Mi}
+    limits: {cpu: 1000m, memory: 1Gi}
   nodeSelector:
     pool: worker
   tolerations:
@@ -167,7 +167,7 @@ adminUi:
   replicaCount: 1
   image:
     repository: fizzdragon-admin-ui
-    tag: 19c799a10cc51d3de45a94747926dfc1a6533635
+    tag: 74429f2e1b9617a60b5d926bd77c3d7a8a3c2016
   containerPort: 3000
   readinessPath: /admin/login
   livenessPath: /admin/login
@@ -186,8 +186,8 @@ adminUi:
     ADMIN_GLOBAL_API_BASE_URL: http://fizzdragon-server:3001/admin
     ADMIN_API_BASE_URL: http://fizzdragon-server:3001/admin
   resources:
-    requests: { cpu: 100m, memory: 256Mi }
-    limits: { cpu: 1000m, memory: 1Gi }
+    requests: {cpu: 100m, memory: 256Mi}
+    limits: {cpu: 1000m, memory: 1Gi}
   nodeSelector:
     pool: worker
   tolerations:
@@ -204,7 +204,7 @@ server:
   migrateOnStart: true
   image:
     repository: fizzdragon-server
-    tag: 0c586adbc345506cedb06e5550788354541f9f9e
+    tag: 74429f2e1b9617a60b5d926bd77c3d7a8a3c2016
   containerPort: 3001
   env:
     PORT: "3001"
@@ -221,8 +221,8 @@ server:
     # against prod — remove once recharge is validated.
     BILLING_ALLOWED_RETURN_ORIGINS: "https://fizzstudio.fizzdragon.com,https://fizzdragon.com,http://localhost:9527"
   resources:
-    requests: { cpu: 100m, memory: 256Mi }
-    limits: { cpu: 1000m, memory: 1Gi }
+    requests: {cpu: 100m, memory: 256Mi}
+    limits: {cpu: 1000m, memory: 1Gi}
   nodeSelector:
     pool: worker
   tolerations:
@@ -238,7 +238,7 @@ agent:
   replicaCount: 1
   image:
     repository: fizzdragon-agent
-    tag: local-fix-20260522-stuck-lock
+    tag: 74429f2e1b9617a60b5d926bd77c3d7a8a3c2016
   containerPort: 4111
   env:
     PORT: "4111"
@@ -252,8 +252,8 @@ agent:
     # after Tier 3 upgrade 2026-05-23. See model-hardening.ts (RateLimiter).
     STORYOS_CLAUDE_MAX_CONCURRENCY: "20"
   resources:
-    requests: { cpu: 250m, memory: 1Gi }
-    limits: { cpu: 2000m, memory: 3Gi }
+    requests: {cpu: 250m, memory: 1Gi}
+    limits: {cpu: 2000m, memory: 3Gi}
   nodeSelector:
     pool: worker
   tolerations:
@@ -275,7 +275,7 @@ agentWorker:
   replicaCount: 1
   image:
     repository: fizzdragon-agent
-    tag: local-fix-20260522-stuck-lock
+    tag: 74429f2e1b9617a60b5d926bd77c3d7a8a3c2016
   command: ["npx", "tsx", "src/worker.ts"]
   env:
     # DATABASE_URL + REDIS_URL come from KV via projected `fizzdragon-secrets`
@@ -292,8 +292,8 @@ agentWorker:
   # ~50MB per in-flight workflow, working set ~750MB + base 500MB ≈ 1.5Gi.
   # 3Gi limit leaves headroom for bulk phases (storyboard 30 shots batched).
   resources:
-    requests: { cpu: 500m, memory: 1Gi }
-    limits: { cpu: 1500m, memory: 3Gi }
+    requests: {cpu: 500m, memory: 1Gi}
+    limits: {cpu: 1500m, memory: 3Gi}
   nodeSelector:
     pool: worker
   tolerations:
