@@ -2101,7 +2101,11 @@
       "emptyOwnerBody": "Crews are the team-based production rooms. Join one to collaborate on someone else's IP, or recruit for yours.",
       "emptyVisitorTitle": "Not in any crews",
       "emptyVisitorBody": "This creator isn't currently a member of any public crew.",
-      "discoverCta": "Discover crews"
+      "discoverCta": "Discover crews",
+      "loadFailedTitle": "Crews failed to load",
+      "loadFailedBody": "The crew service is temporarily unavailable. Please try again.",
+      "retry": "Retry",
+      "memberCount": "{count} members"
     },
     "about": {
       "bioHeading": "Biography",

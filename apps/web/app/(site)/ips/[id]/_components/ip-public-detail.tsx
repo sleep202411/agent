@@ -115,7 +115,11 @@ export function IpPublicDetail({ ipId }: IpPublicDetailProps) {
   const detailIp = publicQuery.data?.ip
     ? normalizePublicIp(publicQuery.data.ip)
     : creatorQuery.data?.ip
-      ? normalizeCreatorIp(creatorQuery.data.ip)
+      ? // The creator preview path only resolves the IP when the viewer IS the
+        // owner (getCreatorIp is scoped to createdById === current user), so the
+        // current user's id is the owner id — thread it through since the
+        // creator DTO doesn't carry createdById.
+        normalizeCreatorIp(creatorQuery.data.ip, user?.id ?? null)
       : null;
   const accessEpisodeIds = detailIp?.episodes.map((episode) => episode.id) ?? [];
   const accessQuery = useIpAccess(
@@ -463,7 +467,7 @@ function normalizePublicIp(ip: IpCommerceIp): DetailIp {
   };
 }
 
-function normalizeCreatorIp(ip: IpCreatorIp): DetailIp {
+function normalizeCreatorIp(ip: IpCreatorIp, ownerId: string | null): DetailIp {
   return {
     id: ip.id,
     title: ip.title,
@@ -485,7 +489,7 @@ function normalizeCreatorIp(ip: IpCreatorIp): DetailIp {
     genres: ip.genres ?? [],
     tags: [],
     copyrightOwner: ip.copyrightOwner ?? null,
-    createdById: null,
+    createdById: ownerId,
     contributors: (ip.contributors ?? []).map((contributor) => ({
       ...contributor,
       displayName: contributor.displayName ?? "",
@@ -581,36 +585,65 @@ function MediaFrame({
 
 function CreatorTeamCard({ ip, bannerUrl, t }: { ip: DetailIp; bannerUrl?: string; t: Translate }) {
   const [membersOpen, setMembersOpen] = useState(false);
-  const teamName = ip.copyrightOwner?.trim() || t("creatorTeam.titleFallback");
-  const initial = teamName.trim().charAt(0).toUpperCase() || "F";
   const members = ip.contributors;
+  const ownerId = ip.createdById;
   // Resolve member + creator user ids → live Java name/avatar (dicebear fallback).
   const userIds = useMemo(
     () =>
       Array.from(
-        new Set(
-          [ip.createdById, ...members.map((member) => member.userId)].filter(Boolean) as string[]
-        )
+        new Set([ownerId, ...members.map((member) => member.userId)].filter(Boolean) as string[])
       ),
-    [ip.createdById, members]
+    [ownerId, members]
   );
   const displays = useUserDisplays(userIds);
-  const stack: DetailIp["contributors"] =
-    members.length > 0
-      ? members.slice(0, 3)
-      : ip.createdById
-        ? [
-            {
-              id: ip.createdById,
-              userId: ip.createdById,
-              displayName: teamName,
-              role: "",
-              customRole: null,
-              isPublic: true,
-              displayOrder: 0,
-            },
-          ]
-        : [];
+  // The owner (ip.createdById) ALWAYS exists (non-nullable) but is NOT always a
+  // contributor row — web-created IPs can be published with an owner and zero
+  // contributors, and some IPs list collaborators without the owner. So anchor
+  // the card on the owner: its real contributor row when present, else one
+  // synthesized from createdById.
+  const ownerContributor = ownerId
+    ? members.find((member) => member.userId === ownerId)
+    : undefined;
+  // Title: copyright owner / studio name → the real creator's name (live Java
+  // nickname first, then the contributor snapshot) → generic fallback. Anchored
+  // on the owner, never on an arbitrary first contributor.
+  const ownerName =
+    (ownerId ? displays.get(ownerId)?.nickname?.trim() : undefined) ||
+    ownerContributor?.displayName?.trim() ||
+    undefined;
+  const teamName = ip.copyrightOwner?.trim() || ownerName || t("creatorTeam.titleFallback");
+  const initial = teamName.trim().charAt(0).toUpperCase() || "F";
+  // One ordered, deduped people list — owner first, then the (already
+  // isPublic-filtered) contributor rows — feeding the avatar stack, the title,
+  // and the "see all" dialog so all three stay consistent and the owner is
+  // never dropped (even past the first 3, or when absent from contributors).
+  const people = useMemo<DetailIp["contributors"]>(() => {
+    const ordered: DetailIp["contributors"] = [];
+    if (ownerId) {
+      ordered.push(
+        ownerContributor ?? {
+          id: ownerId,
+          userId: ownerId,
+          displayName: ownerName ?? teamName,
+          role: "owner",
+          // Match the migrated owner contributor's customRole ("Owner") so the
+          // dialog never shows the raw lowercase enum token for a synthesized owner.
+          customRole: "Owner",
+          isPublic: true,
+          displayOrder: -1,
+        }
+      );
+    }
+    ordered.push(...members);
+    const seen = new Set<string>();
+    return ordered.filter((person) => {
+      const key = person.userId ?? `row:${person.id}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  }, [ownerId, ownerContributor, ownerName, teamName, members]);
+  const stack = people.slice(0, 3);
 
   return (
     <section className="overflow-hidden rounded-xl bg-secondary/65">
@@ -631,16 +664,16 @@ function CreatorTeamCard({ ip, bannerUrl, t }: { ip: DetailIp; bannerUrl?: strin
       <div className="flex items-center gap-3 p-3">
         {stack.length > 0 ? (
           <div className="flex shrink-0 -space-x-2">
-            {stack.map((member) => (
+            {stack.map((person) => (
               <UserAvatar
-                key={member.id}
+                key={person.userId ?? person.id}
                 src={
-                  member.userId
-                    ? resolveUserAvatarUrl(displays.get(member.userId)?.avatar)
+                  person.userId
+                    ? resolveUserAvatarUrl(displays.get(person.userId)?.avatar)
                     : undefined
                 }
-                seed={member.userId || member.id}
-                name={member.displayName}
+                seed={person.userId || person.id}
+                name={person.displayName}
                 className="size-9 ring-2 ring-secondary"
               />
             ))}
@@ -654,11 +687,13 @@ function CreatorTeamCard({ ip, bannerUrl, t }: { ip: DetailIp; bannerUrl?: strin
         <div className="min-w-0 flex-1">
           <h2 className="truncate text-base font-semibold text-foreground">{teamName}</h2>
           <p className="mt-0.5 truncate text-xs text-muted-foreground">
-            {t("creatorTeam.subtitle", { count: ip.episodes.length })}
+            {ip.episodes.length > 0
+              ? t("creatorTeam.subtitle", { count: ip.episodes.length })
+              : t("creatorTeam.subtitleNoEpisodes")}
           </p>
         </div>
 
-        {members.length > 0 ? (
+        {people.length > 1 ? (
           <button
             type="button"
             onClick={() => setMembersOpen(true)}
@@ -681,7 +716,7 @@ function CreatorTeamCard({ ip, bannerUrl, t }: { ip: DetailIp; bannerUrl?: strin
         open={membersOpen}
         onOpenChange={setMembersOpen}
         teamName={teamName}
-        members={members}
+        members={people}
         displays={displays}
         t={t}
       />

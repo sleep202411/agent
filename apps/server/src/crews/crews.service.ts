@@ -291,6 +291,35 @@ export class CrewsService {
     return { founded, joined };
   }
 
+  /**
+   * Public crews a given user founded or belongs to — drives the *visitor*
+   * view of a creator profile's Crews tab. Only `listed` (publicly visible)
+   * crews are returned; the owner's own tab uses myCrews() for the full set
+   * (including unlisted). Newest-membership-first.
+   */
+  async listPublicCreatorCrews(userId: string) {
+    const memberships = await this.prisma.crewMember.findMany({
+      where: {
+        userId,
+        removedAt: null,
+        crew: { deletedAt: null, listingStatus: 'listed' },
+      },
+      orderBy: { joinedAt: 'desc' },
+      include: { crew: true },
+    });
+    const crews = memberships.map((m) => m.crew);
+    const counts = await this.countsFor(crews.map((c) => c.id));
+    return {
+      items: crews.map((c) =>
+        toCrewDTO(c, {
+          memberCount: counts.members.get(c.id) ?? 0,
+          openPositionCount: counts.openPositions.get(c.id) ?? 0,
+          openPositionPreview: counts.openPositionPreview.get(c.id) ?? [],
+        }),
+      ),
+    };
+  }
+
   private async assertOwner(crewId: string, userId: string) {
     const crew = await this.prisma.crew.findFirst({
       where: { id: crewId, deletedAt: null },

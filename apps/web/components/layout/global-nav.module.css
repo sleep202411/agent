@@ -28,6 +28,10 @@
   height: auto;
 }
 
+.fd-secret-nav-wordmark {
+  display: none;
+}
+
 .fd-secret-glass-wrapper {
   position: relative;
   overflow: hidden;
@@ -89,9 +93,11 @@
 
 .fd-secret-nav-content {
   box-sizing: border-box;
+  display: flex;
   height: 48px;
   min-height: 48px;
   max-height: 48px;
+  align-items: center;
   background: rgb(0 0 0 / 0.1);
 }
 
@@ -670,15 +676,26 @@
     justify-content: flex-start;
   }
 
-  .fd-secret-wordmark {
-    position: absolute;
-    left: 0;
-    top: 8px;
-    width: 150px;
+  .fd-secret-standalone-wordmark {
+    display: none;
+  }
+
+  .fd-secret-nav-wordmark {
+    box-sizing: border-box;
+    display: flex;
+    width: 142px;
+    height: 48px;
+    align-items: center;
+    padding: 0 12px 0 18px;
+  }
+
+  .fd-secret-nav-wordmark img {
+    width: 124px;
+    height: auto;
   }
 
   .fd-secret-nav-shell {
-    margin-left: clamp(252px, 16.3vw, 334px);
+    margin-left: 0;
   }
 
   .fd-secret-right-cluster {
@@ -699,7 +716,7 @@
   }
 
   .fd-secret-nav-shell {
-    margin-left: clamp(252px, 16.3vw, 334px);
+    margin-left: 0;
   }
 
   .fd-secret-nav-list {
@@ -732,7 +749,7 @@
   }
 
   .fd-secret-nav-shell {
-    margin-left: clamp(252px, 16.3vw, 334px);
+    margin-left: 0;
   }
 
   .fd-secret-nav-list {
@@ -749,8 +766,12 @@
     padding: 0 24px;
   }
 
-  .fd-secret-wordmark {
+  .fd-secret-nav-wordmark {
     width: 154px;
+  }
+
+  .fd-secret-nav-wordmark img {
+    width: 136px;
   }
 }
 

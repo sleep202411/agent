@@ -21,6 +21,7 @@ import { setCurrentLocale, localizePath, stripLocalePrefix } from "@/src/i18n/lo
 import { LOCALE_OPTIONS, type Locale } from "@/src/i18n/config";
 import { getStudioHref } from "@/src/lib/region/cell";
 import {
+  IconBook2,
   IconCheck,
   IconChevronRight,
   IconCopy,
@@ -35,6 +36,7 @@ import { cn } from "@/lib/utils";
 import styles from "./global-nav.module.css";
 
 const HIDDEN_PATTERNS = ["/editor"];
+const USER_GUIDE_URL = "https://flowus.cn/share/cca82279-3553-47eb-beea-f71bc4cfb5c6?code=81LL9V";
 
 function navCx(...values: Array<string | false | null | undefined>) {
   return cn(
@@ -188,7 +190,7 @@ export function GlobalNav() {
 
       <Link
         href={localizePath("/", locale)}
-        className={navCx("fd-secret-wordmark js-header-logotype")}
+        className={navCx("fd-secret-wordmark fd-secret-standalone-wordmark js-header-logotype")}
         aria-label="FizzDragon"
       >
         <Image src="/logo.png" alt="FizzDragon" width={439} height={78} priority />
@@ -202,6 +204,13 @@ export function GlobalNav() {
       >
         <span className={navCx("fd-secret-glass-effect")} aria-hidden />
         <div className={navCx("fd-secret-glass-content fd-secret-nav-content")}>
+          <Link
+            href={localizePath("/", locale)}
+            className={navCx("fd-secret-nav-wordmark")}
+            aria-label="FizzDragon"
+          >
+            <Image src="/logo.png" alt="FizzDragon" width={439} height={78} priority />
+          </Link>
           <ul className={navCx("fd-secret-nav-list")} ref={navListRef}>
             {navItems.map((item, index) => {
               const active = isActive(item.href);
@@ -341,6 +350,18 @@ export function GlobalNav() {
                     </Link>
                   );
                 })}
+                <a
+                  href={USER_GUIDE_URL}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  onClick={closeMobile}
+                  className={navCx("fd-secret-mobile-row")}
+                >
+                  <span>{t("userGuide")}</span>
+                  <span className={navCx("fd-secret-mobile-row-icon")} aria-hidden>
+                    <IconChevronRight className="size-4" />
+                  </span>
+                </a>
               </div>
 
               <div className={navCx("fd-secret-mobile-section")}>
@@ -520,6 +541,16 @@ function SecretAccountMenu({
               <span className="flex-1">{commonT("myProfile")}</span>
               <IconChevronRight className={navCx("fd-secret-account-row-arrow size-4")} />
             </Link>
+            <a
+              href={USER_GUIDE_URL}
+              target="_blank"
+              rel="noopener noreferrer"
+              className={navCx("fd-secret-account-row")}
+            >
+              <IconBook2 className="size-5" />
+              <span className="flex-1">{navT("userGuide")}</span>
+              <IconChevronRight className={navCx("fd-secret-account-row-arrow size-4")} />
+            </a>
           </div>
 
           <div className={navCx("fd-secret-account-section")}>

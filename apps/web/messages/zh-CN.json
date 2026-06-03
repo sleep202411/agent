@@ -2101,7 +2101,11 @@
       "emptyOwnerBody": "剧组是协同创作的团队空间。可以加入他人的 IP 协作，或为自己的 IP 招募成员。",
       "emptyVisitorTitle": "暂未加入任何剧组",
       "emptyVisitorBody": "该创作者目前不属于任何公开剧组。",
-      "discoverCta": "去看剧组"
+      "discoverCta": "去看剧组",
+      "loadFailedTitle": "剧组加载失败",
+      "loadFailedBody": "剧组服务暂时不可用，请稍后重试。",
+      "retry": "重试",
+      "memberCount": "{count} 名成员"
     },
     "about": {
       "bioHeading": "简介",

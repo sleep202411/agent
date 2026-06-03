@@ -17,6 +17,10 @@ interface MyCrewsResult {
   joined: CrewDTO[];
 }
 
+interface CreatorCrewsResult {
+  items: CrewDTO[];
+}
+
 /**
  * Public crew plaza — cursor-paginated infinite scroll. Each item
  * arrives with `memberCount` + `openPositionCount` pre-joined by the
@@ -35,9 +39,23 @@ export function useCrewList(pageSize = 24) {
 }
 
 /** Profile "My Crews" tab — owner + member breakdown in one call. */
-export function useMyCrews() {
+export function useMyCrews(enabled = true) {
   return useQuery({
     queryKey: crewKeys.mine,
     queryFn: () => crewApi.get<MyCrewsResult>("/crews/my"),
+    enabled,
+  });
+}
+
+/**
+ * Visitor view of a creator's PUBLIC (listed) crews — drives the creator
+ * profile Crews tab when viewing someone else. The owner's own tab uses
+ * useMyCrews() instead (full set incl. unlisted).
+ */
+export function usePublicCreatorCrews(userId: string, enabled = true) {
+  return useQuery({
+    queryKey: crewKeys.byUser(userId),
+    queryFn: () => crewApi.get<CreatorCrewsResult>(`/crews/by-user/${encodeURIComponent(userId)}`),
+    enabled: enabled && !!userId,
   });
 }

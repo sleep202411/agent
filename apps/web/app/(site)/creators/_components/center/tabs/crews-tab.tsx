@@ -1,10 +1,11 @@
 "use client";
 
 /**
- * CrewsTab — crews this creator has joined (member or founder).
- * Reads `useCreatorJoinedProjects` for the by-id list. Renders a
- * compact card list — crew cards have the same visual treatment as
- * the IPs tab for consistency.
+ * CrewsTab — crews this creator founded or belongs to. Fully on the Nest
+ * crew system (`/aurora/crews`): the owner sees all their crews (founded +
+ * joined, incl. unlisted) via `/crews/my`; visitors see the creator's public
+ * (listed) crews via the public per-user endpoint. Cards link to the crew
+ * page. The legacy Java `/project/user/joined` endpoint is no longer used.
  */
 import { IconLoader2, IconUsers } from "@tabler/icons-react";
 import Link from "next/link";
@@ -12,8 +13,9 @@ import { useTranslations, useLocale } from "@/src/i18n/i18n";
 import { localizePath } from "@/src/i18n/locale-url";
 import type { Locale } from "@/src/i18n/config";
 import { env } from "@/src/env";
-import { useCreatorJoinedProjects, type Creator } from "@/app/(site)/creators/_hooks/use-creator";
-import type { Project } from "@/src/services/project";
+import { type Creator } from "@/app/(site)/creators/_hooks/use-creator";
+import { useMyCrews, usePublicCreatorCrews } from "@/app/(site)/crews/_hooks/use-crew-list";
+import type { CrewDTO } from "@/app/(site)/crews/_hooks/types";
 
 interface CrewsTabProps {
   creator: Creator;
@@ -23,10 +25,20 @@ interface CrewsTabProps {
 export function CrewsTab({ creator, isOwner }: CrewsTabProps) {
   const t = useTranslations("creatorCenter");
   const locale = useLocale() as Locale;
-  const { data, isLoading } = useCreatorJoinedProjects(creator.id);
-  const projects = (data ?? []).filter((p): p is Project => !!p);
 
-  if (isLoading) {
+  // Owner: every crew you're in (founded + joined, incl. unlisted) via
+  // /crews/my. Visitor: the creator's public (listed) crews via the public
+  // per-user endpoint. Only the active query runs (the other is disabled).
+  const myCrews = useMyCrews(isOwner);
+  const visitorCrews = usePublicCreatorCrews(creator.id, !isOwner);
+
+  const crews: CrewDTO[] = isOwner
+    ? [...(myCrews.data?.founded ?? []), ...(myCrews.data?.joined ?? [])]
+    : (visitorCrews.data?.items ?? []);
+
+  const active = isOwner ? myCrews : visitorCrews;
+
+  if (active.isLoading) {
     return (
       <div className="flex h-40 items-center justify-center">
         <IconLoader2 className="size-5 animate-spin text-muted-foreground" />
@@ -34,7 +46,27 @@ export function CrewsTab({ creator, isOwner }: CrewsTabProps) {
     );
   }
 
-  if (projects.length === 0) {
+  // Surface failures instead of silently showing the empty state — the old
+  // (legacy-endpoint) path made a dead/erroring API look like "no crews".
+  if (active.isError && crews.length === 0) {
+    return (
+      <EmptyShell
+        title={t("crews.loadFailedTitle")}
+        body={t("crews.loadFailedBody")}
+        cta={
+          <button
+            type="button"
+            onClick={() => void active.refetch()}
+            className="inline-flex h-9 items-center gap-1.5 rounded-md border border-border bg-card px-3 text-sm font-medium text-foreground hover:bg-secondary"
+          >
+            {t("crews.retry")}
+          </button>
+        }
+      />
+    );
+  }
+
+  if (crews.length === 0) {
     return (
       <EmptyShell
         title={isOwner ? t("crews.emptyOwnerTitle") : t("crews.emptyVisitorTitle")}
@@ -55,26 +87,24 @@ export function CrewsTab({ creator, isOwner }: CrewsTabProps) {
 
   return (
     <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-4">
-      {projects.map((p) => (
-        <CrewCard key={p.id} project={p} locale={locale} />
+      {crews.map((crew) => (
+        <CrewCard key={crew.id} crew={crew} locale={locale} />
       ))}
     </div>
   );
 }
 
-function CrewCard({ project, locale }: { project: Project; locale: Locale }) {
-  const cover = resolveAsset(String(project.bannerLink ?? ""), env.BANNER_BASE_URL);
-  const title = String(project.name ?? "").trim() || "—";
-  // Joined projects link to the IP detail page; the crew workspace
-  // requires owner/member workspace context which a public profile
-  // visit isn't authorized for.
-  const href = localizePath(`/ips/${project.id}`, locale);
+function CrewCard({ crew, locale }: { crew: CrewDTO; locale: Locale }) {
+  const t = useTranslations("creatorCenter");
+  const cover = resolveAsset(String(crew.logo ?? ""), env.BANNER_BASE_URL);
+  const title = String(crew.name ?? "").trim() || "—";
+  const href = localizePath(`/crews/${crew.id}`, locale);
   return (
     <Link
       href={href}
       className="group overflow-hidden rounded-xl bg-card transition-transform hover:-translate-y-0.5"
     >
-      <div className="relative aspect-[3/4] w-full overflow-hidden bg-secondary">
+      <div className="relative aspect-square w-full overflow-hidden bg-secondary">
         {cover ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img
@@ -91,6 +121,9 @@ function CrewCard({ project, locale }: { project: Project; locale: Locale }) {
       </div>
       <div className="px-3 py-2.5">
         <h3 className="line-clamp-1 text-sm font-medium text-foreground">{title}</h3>
+        <p className="mt-0.5 text-xs text-muted-foreground">
+          {t("crews.memberCount", { count: crew.memberCount ?? 0 })}
+        </p>
       </div>
     </Link>
   );

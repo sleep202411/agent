@@ -8,7 +8,7 @@
 // tag (active or hidden) — future competitions/themes just need a tag + entries.
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { IconBolt, IconRefresh, IconSearch, IconSparkles } from "@tabler/icons-react";
+import { IconRefresh, IconSearch, IconSparkles, IconWheat } from "@tabler/icons-react";
 import { useLocale, useTranslations } from "@/src/i18n/i18n";
 import type { Locale } from "@/src/i18n/config";
 import { cn } from "@/lib/utils";
@@ -119,42 +119,37 @@ export function TagPageClient({ code }: { code: string }) {
   }
 
   const entryCount = total ?? allProjects.length;
-  const backdrop = allProjects.find((p) => p.cover)?.cover ?? "";
 
   return (
     <div className="min-h-screen bg-background">
-      {/* ── Cinematic hero, built from the entries' own artwork ───────────── */}
-      <section className="relative -mt-16 h-[62svh] min-h-[460px] w-full overflow-hidden bg-black">
-        {backdrop ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
-            src={backdrop}
-            alt=""
-            className="absolute inset-0 size-full scale-105 object-cover opacity-70"
+      {/* ── Centered award title: wheat laurels + hairline-framed count ───── */}
+      <section className="mx-auto max-w-3xl px-6 pb-12 pt-24 text-center sm:pt-32">
+        <h1 className="flex items-center justify-center gap-4 font-heading text-4xl font-bold tracking-tight text-balance text-foreground sm:gap-6 sm:text-6xl">
+          <IconWheat
+            aria-hidden
+            stroke={1.5}
+            className="size-8 shrink-0 text-amber-300/90 sm:size-12"
           />
-        ) : (
-          <div className="absolute inset-0 bg-gradient-to-br from-secondary/50 via-background to-background" />
-        )}
-        {/* Legibility gradients (not decorative orbs — real artwork + ramps). */}
-        <div className="absolute inset-0 bg-gradient-to-r from-background via-background/75 to-transparent to-65%" />
-        <div className="absolute inset-x-0 bottom-0 h-40 bg-gradient-to-t from-background to-transparent" />
-
-        <div className="relative z-10 mx-auto flex h-full max-w-[1800px] flex-col justify-end px-6 pb-14 pt-24 sm:px-10">
-          <div className="max-w-2xl">
-            <div className="mb-4 inline-flex items-center gap-1.5 rounded-full border border-white/15 bg-white/10 px-3 py-1 text-[11px] font-semibold text-white/85 backdrop-blur-md">
-              <IconBolt className="size-3.5 text-primary" />
-              {t("tagEntries", { count: entryCount })}
-            </div>
-            <h1 className="font-heading text-4xl font-bold tracking-tight text-white drop-shadow-lg sm:text-6xl">
-              {term?.label || code}
-            </h1>
-            {term?.description ? (
-              <p className="mt-4 max-w-xl text-sm leading-relaxed text-white/85 sm:text-base">
-                {term.description}
-              </p>
-            ) : null}
-          </div>
+          <span>{term?.label || code}</span>
+          <IconWheat
+            aria-hidden
+            stroke={1.5}
+            className="size-8 shrink-0 -scale-x-100 text-amber-300/90 sm:size-12"
+          />
+        </h1>
+        {/* Count framed by fading hairlines — an engraved/medal look, no hard border. */}
+        <div className="mx-auto mt-6 flex w-full max-w-[18rem] items-center gap-4 text-xs font-medium text-muted-foreground">
+          <span className="h-px flex-1 bg-gradient-to-r from-transparent to-white/15" />
+          <span className="whitespace-nowrap tabular-nums">
+            {t("tagEntries", { count: entryCount })}
+          </span>
+          <span className="h-px flex-1 bg-gradient-to-l from-transparent to-white/15" />
         </div>
+        {term?.description ? (
+          <p className="mx-auto mt-5 max-w-xl text-sm leading-relaxed text-muted-foreground sm:text-base">
+            {term.description}
+          </p>
+        ) : null}
       </section>
 
       {/* ── Entries ──────────────────────────────────────────────────────── */}
@@ -231,12 +226,14 @@ function CenterState({
 function TagSkeleton() {
   return (
     <div className="min-h-screen bg-background">
-      <div className="relative -mt-16 h-[62svh] min-h-[460px] w-full overflow-hidden bg-gradient-to-b from-secondary/30 to-background">
-        <div className="absolute inset-x-0 bottom-0 mx-auto flex max-w-[1800px] flex-col gap-4 px-6 pb-14 sm:px-10">
-          <div className="h-6 w-28 animate-pulse rounded-full bg-white/10" />
-          <div className="h-12 w-2/3 max-w-xl animate-pulse rounded-lg bg-white/10" />
-          <div className="h-4 w-1/2 max-w-md animate-pulse rounded bg-white/10" />
-        </div>
+      {/* Mirrors the centered title layout so there's no hero→title jump on load. */}
+      <div className="mx-auto max-w-3xl px-6 pb-10 pt-24 text-center sm:pt-28">
+        {/* Title bar + count line, heights matched to the real h1 (text-4xl /
+            text-6xl) and meta row so there's no layout shift on load. No
+            description bar: the term's description is unknown pre-load and the
+            live tags have none — a tag that later adds one just grows by a line. */}
+        <div className="mx-auto h-10 w-2/3 max-w-md animate-pulse rounded-lg bg-secondary sm:h-[3.75rem]" />
+        <div className="mx-auto mt-6 h-4 w-44 max-w-[18rem] animate-pulse rounded bg-secondary" />
       </div>
       <div className="mx-auto max-w-[1800px] px-6 py-10 sm:px-10">
         <div className="columns-2 gap-6 sm:columns-3 xl:columns-4">

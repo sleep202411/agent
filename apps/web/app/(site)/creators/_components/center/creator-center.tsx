@@ -234,9 +234,10 @@ export function CreatorCenter({ creatorId }: CreatorCenterProps) {
           onEditProfile={isOwner ? () => setEditProfileOpen(true) : undefined}
         />
         <main className="min-w-0">
-          {/* Sticky tab bar = anchor menu. 56px is the site nav offset; pin
-              right under it so the bar stays visible as the user scrolls. */}
-          <div className="sticky top-14 z-20 -mx-4 bg-background/95 px-4 backdrop-blur md:-mx-8 md:px-8">
+          {/* Anchor menu. Sticky removed 2026-06-03 — the floating glass nav
+              already pins the top, and a second sticky bar collided with it.
+              The bar now scrolls inline with the page. */}
+          <div>
             <CreatorTabBar active={activeTab} onPick={handlePickTab} />
           </div>
           <div className="mt-6 space-y-12">

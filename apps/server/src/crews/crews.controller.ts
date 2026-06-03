@@ -4,6 +4,7 @@
  *   POST   /aurora/crews                Create
  *   GET    /aurora/crews                List (public — visitors see brief cards)
  *   GET    /aurora/crews/my             "My Crews" — founded + joined for /profile tab
+ *   GET    /aurora/crews/by-user/:userId  Public: a user's LISTED crews (visitor profile tab)
  *   GET    /aurora/crews/:id            Detail (public; pending-app count hidden from non-owners)
  *   PATCH  /aurora/crews/:id            Edit (owner only)
  *   PATCH  /aurora/crews/:id/listing    Show / hide in Crew Hall (owner only)
@@ -68,6 +69,15 @@ export class CrewsController {
   @Get('my')
   my(@CurrentUser() user: AuthUser) {
     return this.svc.myCrews(user.userId);
+  }
+
+  // Public per-user list — the creator profile's Crews tab for visitors.
+  // Two-segment path so it never collides with the one-segment `:id` route.
+  @Public()
+  @Get('by-user/:userId')
+  listByUser(@Param('userId') userIdRaw: string) {
+    const userId = parseIdParam(userIdRaw, 'userId');
+    return this.svc.listPublicCreatorCrews(userId);
   }
 
   @Public()

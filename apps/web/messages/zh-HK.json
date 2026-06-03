@@ -2101,7 +2101,11 @@
       "emptyOwnerBody": "劇組是協同創作的團隊空間。可以加入他人的 IP 協作，或為自己的 IP 招募成員。",
       "emptyVisitorTitle": "尚未加入任何劇組",
       "emptyVisitorBody": "該創作者目前不屬於任何公開劇組。",
-      "discoverCta": "去看劇組"
+      "discoverCta": "去看劇組",
+      "loadFailedTitle": "劇組載入失敗",
+      "loadFailedBody": "劇組服務暫時不可用，請稍後重試。",
+      "retry": "重試",
+      "memberCount": "{count} 名成員"
     },
     "about": {
       "bioHeading": "簡介",

@@ -13,6 +13,7 @@ export const crewKeys = {
   members: (crewId: string) => ["crew", "members", crewId] as const,
   applications: (crewId: string) => ["crew", "applications", crewId] as const,
   mine: ["crew", "mine"] as const,
+  byUser: (userId: string) => ["crew", "by-user", userId] as const,
   episodes: (crewId: string) => ["crew", "episodes", crewId] as const,
   episodeAssignments: (crewId: string, episodeId: string | number) =>
     ["crew", "episode", crewId, String(episodeId), "assignments"] as const,
