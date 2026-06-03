@@ -60,7 +60,7 @@ interface NewIpCreateDialogProps {
 export function NewIpCreateDialog({ open, onOpenChange }: NewIpCreateDialogProps) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="overflow-hidden p-0 sm:max-w-lg">
+      <DialogContent className="max-h-[90dvh] overflow-y-auto p-0 sm:max-w-lg">
         <NewIpCreateForm onClose={() => onOpenChange(false)} />
       </DialogContent>
     </Dialog>

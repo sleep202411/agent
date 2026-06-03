@@ -86,17 +86,17 @@
 
 .fd-secret-nav-shell {
   box-sizing: border-box;
-  height: 48px;
-  min-height: 48px;
-  max-height: 48px;
+  height: 56px;
+  min-height: 56px;
+  max-height: 56px;
 }
 
 .fd-secret-nav-content {
   box-sizing: border-box;
   display: flex;
-  height: 48px;
-  min-height: 48px;
-  max-height: 48px;
+  height: 56px;
+  min-height: 56px;
+  max-height: 56px;
   align-items: center;
   background: rgb(0 0 0 / 0.1);
 }
@@ -111,7 +111,7 @@
 
 .fd-secret-nav-item {
   display: flex;
-  height: 48px;
+  height: 56px;
   align-items: stretch;
 }
 
@@ -131,7 +131,7 @@
 .fd-secret-nav-link {
   position: relative;
   display: flex;
-  height: 48px;
+  height: 56px;
   align-items: center;
   justify-content: center;
   padding-inline: 16px;
@@ -684,7 +684,7 @@
     box-sizing: border-box;
     display: flex;
     width: 142px;
-    height: 48px;
+    height: 56px;
     align-items: center;
     padding: 0 12px 0 18px;
   }
@@ -742,7 +742,10 @@
   }
 
   .fd-secret-nav-shell,
-  .fd-secret-nav-content,
+  .fd-secret-nav-content {
+    height: 56px;
+  }
+
   .fd-secret-cta-shell,
   .fd-secret-cta {
     height: 48px;
@@ -757,7 +760,7 @@
   }
 
   .fd-secret-nav-link {
-    height: 48px;
+    height: 56px;
     padding-inline: 16px;
   }
 
@@ -777,7 +780,10 @@
 
 @media (min-width: 768px) {
   .fd-secret-header .fd-secret-nav-shell,
-  .fd-secret-header .fd-secret-nav-content,
+  .fd-secret-header .fd-secret-nav-content {
+    height: 56px;
+  }
+
   .fd-secret-header .fd-secret-cta-shell,
   .fd-secret-header .fd-secret-cta {
     height: 48px;
@@ -785,8 +791,8 @@
 
   .fd-secret-header .fd-secret-nav-shell,
   .fd-secret-header .fd-secret-nav-content {
-    min-height: 48px;
-    max-height: 48px;
+    min-height: 56px;
+    max-height: 56px;
   }
 
   .fd-secret-header .fd-secret-nav-list {
@@ -794,7 +800,7 @@
   }
 
   .fd-secret-header .fd-secret-nav-link {
-    height: 48px;
+    height: 56px;
     padding-inline: 16px;
   }
 

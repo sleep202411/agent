@@ -8,9 +8,12 @@ import { CreatorsTalentCard } from "./creators-talent-card";
 interface CreatorsTalentGridProps {
   creators: Creator[];
   isLoading?: boolean;
+  /** Empty-state copy — overridden by the page when searching so a
+   *  no-match result reads "no creators match" instead of "none yet". */
+  emptyMessage?: string;
 }
 
-export function CreatorsTalentGrid({ creators, isLoading }: CreatorsTalentGridProps) {
+export function CreatorsTalentGrid({ creators, isLoading, emptyMessage }: CreatorsTalentGridProps) {
   const t = useTranslations("creator");
   const safeList = Array.isArray(creators) ? creators.filter((c) => !!c?.id) : [];
 
@@ -35,7 +38,7 @@ export function CreatorsTalentGrid({ creators, isLoading }: CreatorsTalentGridPr
         <div className="mx-auto max-w-screen-2xl px-6 py-10">
           <div className="flex flex-col items-center justify-center gap-3 rounded-2xl border border-white/5 bg-white/[0.02] py-20 text-center text-muted-foreground">
             <IconSparkles className="size-10 opacity-30" />
-            <p className="text-sm">{t("emptyOpen")}</p>
+            <p className="text-sm">{emptyMessage ?? t("emptyOpen")}</p>
           </div>
         </div>
       </section>

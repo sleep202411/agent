@@ -92,6 +92,35 @@ export async function listCreators(params: CreatorListPayload = {}): Promise<Cre
 }
 
 /**
+ * Search users for the talent market by free-text `key` (matches name /
+ * nickname server-side). Backend signature: `POST /user/search/users`
+ * (`queryOtherUserInfo`) with `key` / `page` / `pageSize` as query params
+ * (Spring `@RequestParam`), no body. Same `{ data, sum }` envelope as the
+ * list endpoint, so we drop to raw `fetch` to keep `sum` for pagination —
+ * mirroring `listCreators`. Rows map through the same `toCreator`, which
+ * tolerates both `{ level, info }` and flat-info shapes.
+ */
+export async function searchCreators(params: {
+  key: string;
+  page?: number;
+  pageSize?: number;
+}): Promise<CreatorListResult> {
+  const qs = new URLSearchParams();
+  qs.append("key", params.key);
+  if (params.page !== undefined) qs.append("page", String(params.page));
+  if (params.pageSize !== undefined) qs.append("pageSize", String(params.pageSize));
+  const res = await fetch(`/user/search/users?${qs.toString()}`, {
+    method: "POST",
+    credentials: "include",
+    headers: { "accept-language": getAcceptLanguage() },
+  });
+  if (!res.ok) return { list: [], total: 0 };
+  const body = (await res.json()) as { data?: CreatorRow[]; sum?: number; total?: number };
+  const list = Array.isArray(body.data) ? body.data : [];
+  return { list, total: body.sum ?? body.total ?? list.length };
+}
+
+/**
  * Fetch a single creator's basic info + level set, scoped by `userId`.
  * Used by the detail page so deep links work without depending on the
  * list cache. Returns the same `{ level, info }` row shape as the list

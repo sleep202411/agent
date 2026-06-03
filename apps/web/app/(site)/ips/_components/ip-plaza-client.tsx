@@ -4,17 +4,16 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import {
   IconBolt,
   IconDeviceTv,
-  IconFilter,
   IconRefresh,
   IconSearch,
   IconSparkles,
+  IconX,
 } from "@tabler/icons-react";
 import { useLocale, useTranslations } from "@/src/i18n/i18n";
 import type { Locale } from "@/src/i18n/config";
 import { cn } from "@/lib/utils";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { NewIpCreateDialog } from "@/app/(site)/ip-studio/_components/new-ip-create-form";
 import { useUserDisplays } from "@/app/(site)/crews/_hooks/use-users";
 import type {
@@ -34,65 +33,6 @@ import type { PlazaProject } from "./plaza-types";
 
 const PAGE_SIZE = 20;
 
-interface FilterPanelProps {
-  search: string;
-  onSearchChange: (value: string) => void;
-  categoryOptions: { id: string; name: string }[];
-  selectedTypeId: string;
-  onTypeChange: (id: string) => void;
-}
-
-function FilterPanel({
-  search,
-  onSearchChange,
-  categoryOptions,
-  selectedTypeId,
-  onTypeChange,
-}: FilterPanelProps) {
-  const t = useTranslations("ip");
-
-  return (
-    <div className="space-y-6">
-      <div className="relative">
-        <IconSearch className="absolute left-3.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-        <Input
-          value={search}
-          onChange={(e) => onSearchChange(e.target.value)}
-          placeholder={t("searchPlaceholder")}
-          className="h-10 pl-10"
-        />
-      </div>
-
-      <div>
-        <h3 className="mb-2.5 px-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-          {t("categoriesLabel")}
-        </h3>
-        <ul className="space-y-0.5">
-          {categoryOptions.map((opt) => {
-            const active = selectedTypeId === opt.id;
-            return (
-              <li key={opt.id || "all"}>
-                <button
-                  type="button"
-                  onClick={() => onTypeChange(opt.id)}
-                  className={cn(
-                    "flex w-full items-center justify-between rounded-lg px-3 py-2 text-left text-sm transition-colors",
-                    active
-                      ? "bg-white/10 font-medium text-foreground"
-                      : "text-muted-foreground hover:bg-white/5 hover:text-foreground"
-                  )}
-                >
-                  <span className="truncate">{opt.name}</span>
-                </button>
-              </li>
-            );
-          })}
-        </ul>
-      </div>
-    </div>
-  );
-}
-
 export function IpPlazaClient() {
   const t = useTranslations("ip");
   const commonT = useTranslations("common");
@@ -100,30 +40,14 @@ export function IpPlazaClient() {
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const [selectedGenreCode, setSelectedGenreCode] = useState("");
+  const [selectedTagCode, setSelectedTagCode] = useState("");
   const [createOpen, setCreateOpen] = useState(false);
-  const [filterSheetOpen, setFilterSheetOpen] = useState(false);
   const [tvOpen, setTvOpen] = useState(false);
 
   useEffect(() => {
     const handle = window.setTimeout(() => setDebouncedSearch(search), 300);
     return () => window.clearTimeout(handle);
   }, [search]);
-
-  const inlineCreateRef = useRef<HTMLDivElement>(null);
-  const [showFloatingCreate, setShowFloatingCreate] = useState(false);
-  useEffect(() => {
-    const node = inlineCreateRef.current;
-    if (!node) return;
-    const observer = new IntersectionObserver(
-      ([entry]) => {
-        const scrolledPast = !entry.isIntersecting && entry.boundingClientRect.top < 0;
-        setShowFloatingCreate(scrolledPast);
-      },
-      { rootMargin: "0px", threshold: 0 }
-    );
-    observer.observe(node);
-    return () => observer.disconnect();
-  }, []);
 
   const {
     data: listData,
@@ -135,10 +59,12 @@ export function IpPlazaClient() {
     isFetchingNextPage,
   } = useInfiniteIpCommerceIps({
     genreCodes: selectedGenreCode ? [selectedGenreCode] : undefined,
+    tagCodes: selectedTagCode ? [selectedTagCode] : undefined,
     locale,
     limit: PAGE_SIZE,
   });
   const { data: taxonomyData } = useIpCommerceTaxonomyTerms({ type: "genre", locale });
+  const { data: tagData } = useIpCommerceTaxonomyTerms({ type: "tag", locale });
   const { data: heroData } = useIpCommerceDiscovery({ placementKey: "ip_plaza_hero", locale });
   const { data: forYouData } = useIpCommerceDiscovery({
     placementKey: "ip_plaza_for_you",
@@ -208,14 +134,12 @@ export function IpPlazaClient() {
     [taxonomyData?.items, t]
   );
 
-  const filterPanel = (
-    <FilterPanel
-      search={search}
-      onSearchChange={setSearch}
-      categoryOptions={categoryOptions}
-      selectedTypeId={selectedGenreCode}
-      onTypeChange={setSelectedGenreCode}
-    />
+  const tagOptions = useMemo(
+    () => [
+      { id: "", name: t("allTags") },
+      ...(tagData?.items ?? []).map((item) => ({ id: item.code, name: item.label })),
+    ],
+    [tagData?.items, t]
   );
 
   return (
@@ -228,121 +152,176 @@ export function IpPlazaClient() {
         />
       </div>
 
-      <div id="listings" className="mx-auto max-w-screen-2xl px-6 py-10">
-        <div className="grid grid-cols-1 gap-8 md:grid-cols-[220px_1fr]">
-          <aside className="hidden md:block">
-            <div className="sticky top-20">{filterPanel}</div>
-          </aside>
+      <div id="listings" className="mx-auto max-w-[1800px] px-6 py-10">
+        {/* ── Row 1: bracketed wordmark (left) + capped search (right) ── */}
+        <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between sm:gap-6">
+          <div className="flex shrink-0 items-center gap-2">
+            <span
+              aria-hidden
+              className="select-none text-4xl font-extralight leading-none text-muted-foreground/45"
+            >
+              {"{"}
+            </span>
+            <span className="font-heading text-lg font-bold tracking-tight text-foreground sm:text-xl">
+              {t("exploreAll")}
+            </span>
+            <span
+              aria-hidden
+              className="select-none text-4xl font-extralight leading-none text-muted-foreground/45"
+            >
+              {"}"}
+            </span>
+          </div>
 
-          <div>
-            <div className="mb-4 flex items-center justify-between gap-2">
-              <div className="flex items-baseline gap-2">
-                <h2 className="text-lg font-semibold text-foreground">{t("exploreAll")}</h2>
-                <span className="text-xs text-muted-foreground">
-                  {t("total")}{" "}
-                  <span className="font-semibold text-foreground">{projects.length}</span>{" "}
-                  {t("ips")}
-                </span>
-              </div>
-              <div className="flex items-center gap-2">
-                <Sheet open={filterSheetOpen} onOpenChange={setFilterSheetOpen}>
-                  <SheetTrigger asChild>
-                    <Button variant="outline" size="sm" className="md:hidden">
-                      <IconFilter className="size-4" />
-                      {t("filters")}
-                    </Button>
-                  </SheetTrigger>
-                  <SheetContent side="left" className="w-72 p-6">
-                    <SheetHeader>
-                      <SheetTitle>{t("filters")}</SheetTitle>
-                    </SheetHeader>
-                    <div className="mt-4">{filterPanel}</div>
-                  </SheetContent>
-                </Sheet>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setTvOpen(true)}
-                  disabled={projects.length === 0}
-                >
-                  <IconDeviceTv className="size-4" />
-                  {t("tvMode")}
-                </Button>
-                <div ref={inlineCreateRef}>
-                  <Button size="sm" onClick={() => setCreateOpen(true)}>
-                    <IconBolt className="size-4" />
-                    {t("createIP")}
-                  </Button>
-                </div>
-              </div>
-            </div>
-
-            {loading ? (
-              <div className="py-20 text-center text-sm text-muted-foreground">{t("loading")}</div>
-            ) : isError ? (
-              <div className="py-20 text-center text-muted-foreground">
-                <IconRefresh className="mx-auto mb-3 size-10 opacity-30" />
-                <p className="text-sm">{commonT("loadFailed")}</p>
-                <button
-                  type="button"
-                  onClick={() => void refetch()}
-                  className="mt-3 text-xs text-primary hover:underline"
-                >
-                  {commonT("retry")}
-                </button>
-              </div>
-            ) : projects.length > 0 ? (
-              <>
-                <div className="columns-2 gap-6 sm:columns-3 lg:columns-3 xl:columns-4">
-                  {projects.map((project) => (
-                    <IPPlazaCard
-                      key={project.id}
-                      project={project}
-                      ownerDisplay={ownerDisplays.get(project.ownerId)}
-                    />
-                  ))}
-                </div>
-                <div ref={loadMoreRef} className="h-px" aria-hidden />
-                {hasNextPage ? (
-                  <div className="py-6 text-center text-xs text-muted-foreground">
-                    {isFetchingNextPage ? t("loading") : ""}
-                  </div>
-                ) : null}
-              </>
+          <div className="relative w-full sm:max-w-2xl sm:flex-1">
+            <Input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder={t("searchPlaceholder")}
+              aria-label={t("searchPlaceholder")}
+              className="h-12 rounded-full border-white/10 bg-white/[0.03] pl-5 pr-12 text-base focus-visible:bg-white/[0.05]"
+            />
+            {search ? (
+              <button
+                type="button"
+                onClick={() => setSearch("")}
+                aria-label={commonT("close")}
+                className="absolute right-3 top-1/2 inline-flex size-7 -translate-y-1/2 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-white/10 hover:text-foreground"
+              >
+                <IconX className="size-4" />
+              </button>
             ) : (
-              <div className="py-20 text-center text-muted-foreground">
-                <IconSparkles className="mx-auto mb-3 size-10 opacity-30" />
-                <p className="text-sm">{t("noResults")}</p>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setSelectedGenreCode("");
-                    setSearch("");
-                  }}
-                  className="mt-3 text-xs text-primary hover:underline"
-                >
-                  {t("clearFilters")}
-                </button>
-              </div>
+              <IconSearch className="pointer-events-none absolute right-4 top-1/2 size-5 -translate-y-1/2 text-muted-foreground" />
             )}
           </div>
         </div>
+
+        {/* ── Row 2: genre pills (wrap, like the reference) ── */}
+        <div className="mb-8">
+          <ul className="flex flex-wrap items-center gap-2.5">
+            {categoryOptions.map((opt) => {
+              const active = selectedGenreCode === opt.id;
+              return (
+                <li key={opt.id || "all"}>
+                  <button
+                    type="button"
+                    onClick={() => setSelectedGenreCode(opt.id)}
+                    aria-pressed={active}
+                    className={cn(
+                      "inline-flex h-10 items-center rounded-full border px-5 text-sm font-medium transition-colors duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 focus-visible:ring-offset-2 focus-visible:ring-offset-background",
+                      active
+                        ? "border-transparent bg-foreground text-background"
+                        : "border-white/15 text-muted-foreground hover:border-white/30 hover:text-foreground"
+                    )}
+                  >
+                    {opt.name}
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+
+          {tagOptions.length > 1 && (
+            <ul className="mt-3 flex flex-wrap items-center gap-2">
+              {tagOptions.map((opt) => {
+                const active = selectedTagCode === opt.id;
+                return (
+                  <li key={opt.id || "all"}>
+                    <button
+                      type="button"
+                      onClick={() => setSelectedTagCode(opt.id)}
+                      aria-pressed={active}
+                      className={cn(
+                        "inline-flex h-8 items-center rounded-full border px-4 text-xs font-medium transition-colors duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 focus-visible:ring-offset-2 focus-visible:ring-offset-background",
+                        active
+                          ? "border-transparent bg-foreground text-background"
+                          : "border-white/10 text-muted-foreground hover:border-white/25 hover:text-foreground"
+                      )}
+                    >
+                      {opt.name}
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </div>
+
+        <div>
+          {loading ? (
+            <div className="flex min-h-[100vh] items-center justify-center text-sm text-muted-foreground">
+              {t("loading")}
+            </div>
+          ) : isError ? (
+            <div className="flex min-h-[100vh] flex-col items-center justify-center text-center text-muted-foreground">
+              <IconRefresh className="mb-3 size-10 opacity-30" />
+              <p className="text-sm">{commonT("loadFailed")}</p>
+              <button
+                type="button"
+                onClick={() => void refetch()}
+                className="mt-3 text-xs text-primary hover:underline"
+              >
+                {commonT("retry")}
+              </button>
+            </div>
+          ) : projects.length > 0 ? (
+            <>
+              <div className="columns-2 gap-6 sm:columns-3 xl:columns-4 2xl:columns-5">
+                {projects.map((project) => (
+                  <IPPlazaCard
+                    key={project.id}
+                    project={project}
+                    ownerDisplay={ownerDisplays.get(project.ownerId)}
+                  />
+                ))}
+              </div>
+              <div ref={loadMoreRef} className="h-px" aria-hidden />
+              {hasNextPage ? (
+                <div className="py-6 text-center text-xs text-muted-foreground">
+                  {isFetchingNextPage ? t("loading") : ""}
+                </div>
+              ) : null}
+            </>
+          ) : (
+            <div className="flex min-h-[100vh] flex-col items-center justify-center text-center text-muted-foreground">
+              <IconSparkles className="mb-3 size-10 opacity-30" />
+              <p className="text-sm">{t("noResults")}</p>
+              <button
+                type="button"
+                onClick={() => {
+                  setSelectedGenreCode("");
+                  setSelectedTagCode("");
+                  setSearch("");
+                }}
+                className="mt-3 text-xs text-primary hover:underline"
+              >
+                {t("clearFilters")}
+              </button>
+            </div>
+          )}
+        </div>
       </div>
 
-      <button
-        type="button"
-        onClick={() => setCreateOpen(true)}
-        aria-label={t("createIP")}
-        className={cn(
-          "fixed bottom-6 right-6 z-40 inline-flex h-12 items-center gap-2 rounded-full bg-primary px-5 text-sm font-semibold text-primary-foreground shadow-xl shadow-black/40 transition-all duration-300 hover:bg-primary/90",
-          showFloatingCreate
-            ? "translate-y-0 opacity-100"
-            : "pointer-events-none translate-y-3 opacity-0"
-        )}
-      >
-        <IconBolt className="size-4" />
-        {t("createIP")}
-      </button>
+      {/* Floating action cluster — pinned bottom-right, stacked. The hero frees
+          this corner by moving its thumbnail switcher to the left rail. */}
+      <div className="fixed bottom-6 right-6 z-40 flex flex-col items-stretch gap-2.5">
+        <Button
+          variant="outline"
+          onClick={() => setTvOpen(true)}
+          disabled={projects.length === 0}
+          className="h-11 justify-center gap-2 rounded-2xl border-white/20 bg-black/55 px-5 text-sm font-semibold text-white shadow-lg shadow-black/40 backdrop-blur-md hover:border-white/40 hover:bg-black/70 hover:text-white"
+        >
+          <IconDeviceTv className="size-4" />
+          {t("tvMode")}
+        </Button>
+        <Button
+          onClick={() => setCreateOpen(true)}
+          className="h-11 justify-center gap-2 rounded-2xl px-5 text-sm font-semibold shadow-lg shadow-black/40"
+        >
+          <IconBolt className="size-4" />
+          {t("createIP")}
+        </Button>
+      </div>
 
       <NewIpCreateDialog open={createOpen} onOpenChange={setCreateOpen} />
 

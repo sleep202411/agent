@@ -19,6 +19,7 @@
 import { useQuery, useInfiniteQuery, useQueryClient } from "@tanstack/react-query";
 import {
   listCreators,
+  searchCreators,
   getCreatorBasicInfo,
   type CreatorListResult,
   type CreatorRow,
@@ -148,12 +149,46 @@ const PAGE_SIZE = 60;
 export const creatorKeys = {
   all: ["creator"] as const,
   list: () => ["creator", "list"] as const,
+  search: (key: string) => ["creator", "search", key] as const,
   detail: (id: string) => ["creator", "detail", id] as const,
 };
 
 interface CreatorsView {
   list: Creator[];
   total: number;
+}
+
+/**
+ * Flatten + map + de-dupe the infinite-query pages into the view model.
+ * Shared by the list and search hooks so both dedupe identically (backend
+ * pages can repeat rows across page boundaries). `total` comes from the
+ * first page's authoritative count.
+ */
+function selectCreators(data: { pages: CreatorListResult[] }): CreatorsView {
+  const seen = new Set<string>();
+  const out: Creator[] = [];
+  for (const page of data.pages) {
+    for (const row of page.list) {
+      const c = toCreator(row);
+      if (!c || seen.has(c.id)) continue;
+      seen.add(c.id);
+      out.push(c);
+    }
+  }
+  const total = data.pages[0]?.total ?? out.length;
+  return { list: out, total };
+}
+
+/** Shared stop-condition for the list / search infinite queries. */
+function nextCreatorsPage(
+  lastPage: CreatorListResult,
+  allPages: CreatorListResult[]
+): number | undefined {
+  const loaded = allPages.reduce((acc, p) => acc + p.list.length, 0);
+  if (lastPage.list.length === 0) return undefined;
+  if (lastPage.list.length < PAGE_SIZE) return undefined;
+  if (lastPage.total > 0 && loaded >= lastPage.total) return undefined;
+  return allPages.length + 1;
 }
 
 /**
@@ -172,34 +207,36 @@ export function useCreators() {
     queryKey: creatorKeys.list(),
     initialPageParam: 1,
     queryFn: ({ pageParam }) => listCreators({ page: pageParam, pageSize: PAGE_SIZE }),
-    getNextPageParam: (lastPage, allPages) => {
-      // Stop conditions, in order:
-      //   1. Last page came back empty — definitely no more rows.
-      //   2. Last page came back short (< PAGE_SIZE) — backend's `sum`
-      //      sometimes overstates the real row count (soft-deleted /
-      //      filtered users still counted). A short page is the most
-      //      reliable "we hit the end" signal; trust it over `sum`.
-      //   3. Loaded count has reached the reported `sum` and `sum` > 0.
-      const loaded = allPages.reduce((acc, p) => acc + p.list.length, 0);
-      if (lastPage.list.length === 0) return undefined;
-      if (lastPage.list.length < PAGE_SIZE) return undefined;
-      if (lastPage.total > 0 && loaded >= lastPage.total) return undefined;
-      return allPages.length + 1;
-    },
-    select: (data) => {
-      const seen = new Set<string>();
-      const out: Creator[] = [];
-      for (const page of data.pages) {
-        for (const row of page.list) {
-          const c = toCreator(row);
-          if (!c || seen.has(c.id)) continue;
-          seen.add(c.id);
-          out.push(c);
-        }
-      }
-      const total = data.pages[0]?.total ?? out.length;
-      return { list: out, total };
-    },
+    // Stop conditions (in `nextCreatorsPage`): empty page, short page
+    // (< PAGE_SIZE — most reliable end signal; backend `sum` can overstate
+    // due to soft-deleted/filtered users), or loaded >= reported `sum`.
+    getNextPageParam: nextCreatorsPage,
+    select: selectCreators,
+  });
+}
+
+/**
+ * Infinite-scroll search over the talent market, by free-text `key`
+ * (name / nickname). Disabled until `key` is non-empty so an empty box
+ * never fires a request; the page falls back to the full `useCreators`
+ * list in that case. Same dedupe + pagination as the list.
+ */
+export function useCreatorSearch(key: string, enabled = true) {
+  const trimmed = key.trim();
+  return useInfiniteQuery<
+    CreatorListResult,
+    Error,
+    CreatorsView,
+    ReturnType<typeof creatorKeys.search>,
+    number
+  >({
+    queryKey: creatorKeys.search(trimmed),
+    enabled: enabled && trimmed.length > 0,
+    initialPageParam: 1,
+    queryFn: ({ pageParam }) =>
+      searchCreators({ key: trimmed, page: pageParam, pageSize: PAGE_SIZE }),
+    getNextPageParam: nextCreatorsPage,
+    select: selectCreators,
   });
 }
 

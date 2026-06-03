@@ -1,16 +1,19 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import {
   IconArrowRight,
   IconBrandWechat,
   IconLoader2,
+  IconSearch,
   IconSparkles,
   IconUserCircle,
+  IconX,
 } from "@tabler/icons-react";
-import { useCreators } from "@/app/(site)/creators/_hooks/use-creator";
+import { useCreators, useCreatorSearch } from "@/app/(site)/creators/_hooks/use-creator";
 import { CreatorsTalentGrid } from "@/app/(site)/creators/_components/creators-talent-grid";
+import { Input } from "@/components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { PlazaHero } from "@/components/layout/plaza-hero";
 import { useLocale, useTranslations } from "@/src/i18n/i18n";
@@ -35,7 +38,22 @@ function isQrActive(now: Date = new Date()): boolean {
 export default function CreatorsPage() {
   const t = useTranslations("creator");
   const locale = useLocale() as Locale;
-  const { data, isLoading, fetchNextPage, hasNextPage, isFetchingNextPage } = useCreators();
+
+  const [search, setSearch] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
+  useEffect(() => {
+    const handle = window.setTimeout(() => setDebouncedSearch(search.trim()), 300);
+    return () => window.clearTimeout(handle);
+  }, [search]);
+  const isSearching = debouncedSearch.length > 0;
+
+  // Both queries are declared; only the active one fetches (search is gated
+  // on a non-empty term). The page renders whichever matches the input.
+  const listQuery = useCreators();
+  const searchQuery = useCreatorSearch(debouncedSearch, isSearching);
+  const active = isSearching ? searchQuery : listQuery;
+  const { data, isLoading, fetchNextPage, hasNextPage, isFetchingNextPage } = active;
+
   const creators = data?.list ?? [];
   const total = data?.total ?? creators.length;
   const showQr = isQrActive();
@@ -116,7 +134,33 @@ export default function CreatorsPage() {
           </>
         }
       />
-      <CreatorsTalentGrid creators={creators} isLoading={isLoading} />
+      <div className="mx-auto max-w-screen-2xl px-6 pt-8">
+        <div className="relative w-full sm:max-w-md">
+          <IconSearch className="pointer-events-none absolute left-4 top-1/2 size-5 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder={t("searchPlaceholder")}
+            aria-label={t("searchPlaceholder")}
+            className="h-12 rounded-full border-white/10 bg-white/[0.03] pl-12 pr-12 text-base focus-visible:bg-white/[0.05]"
+          />
+          {search ? (
+            <button
+              type="button"
+              onClick={() => setSearch("")}
+              aria-label={t("clearSearch")}
+              className="absolute right-3 top-1/2 inline-flex size-7 -translate-y-1/2 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-white/10 hover:text-foreground"
+            >
+              <IconX className="size-4" />
+            </button>
+          ) : null}
+        </div>
+      </div>
+      <CreatorsTalentGrid
+        creators={creators}
+        isLoading={isLoading}
+        emptyMessage={isSearching ? t("noResults") : undefined}
+      />
       <div ref={sentinelRef} aria-hidden className="h-px w-full" />
       {isFetchingNextPage && (
         <div className="flex items-center justify-center py-8 text-muted-foreground">

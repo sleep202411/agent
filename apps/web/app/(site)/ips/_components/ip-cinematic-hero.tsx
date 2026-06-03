@@ -4,8 +4,6 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import {
   IconBolt,
-  IconChevronLeft,
-  IconChevronRight,
   IconMovie,
   IconPlayerPlay,
   IconShare3,
@@ -73,8 +71,6 @@ export function IPCinematicHero({
     );
   }
 
-  const prev = () => setIndex((activeIndex - 1 + total) % total);
-  const next = () => setIndex((activeIndex + 1) % total);
   const slide = slides[activeIndex];
 
   return (
@@ -110,7 +106,41 @@ export function IPCinematicHero({
         <div className="absolute inset-0 bg-linear-to-r from-background via-background/70 to-transparent to-60%" />
         <div className="absolute inset-x-0 bottom-0 h-32 bg-linear-to-t from-background to-transparent" />
 
-        <div className="relative z-10 mx-auto flex h-full max-w-[1800px] items-end px-6 pb-16 pt-24 sm:px-10">
+        <div className="relative z-10 mx-auto flex h-full max-w-[1800px] items-center gap-8 px-6 pb-16 pt-24 sm:px-10">
+          {/* Vertical thumbnail switcher — left rail (desktop). Mobile uses the
+              prev/next arrows instead, since the rail is hidden there. */}
+          {total > 1 && (
+            <div className="hidden shrink-0 flex-col gap-2.5 self-center lg:flex">
+              {slides.map((item, i) => (
+                <button
+                  key={item.id}
+                  type="button"
+                  onClick={() => setIndex(i)}
+                  aria-label={`Slide ${i + 1}: ${item.name}`}
+                  aria-current={i === activeIndex}
+                  style={
+                    i === activeIndex
+                      ? {
+                          boxShadow:
+                            "0 0 0 2px var(--color-primary), 0 0 0 6px color-mix(in srgb, var(--color-primary) 30%, transparent)",
+                        }
+                      : undefined
+                  }
+                  className={cn(
+                    "relative h-14 w-24 overflow-hidden rounded-md transition-all",
+                    i === activeIndex ? "opacity-100" : "opacity-50 hover:opacity-90"
+                  )}
+                >
+                  {item.cover ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={item.cover} alt="" className="size-full object-cover" />
+                  ) : (
+                    <div className="size-full bg-muted" />
+                  )}
+                </button>
+              ))}
+            </div>
+          )}
           <div className="max-w-2xl">
             {slide.eyebrow && (
               <div className="mb-3 inline-flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-[0.18em] text-amber-300">
@@ -187,60 +217,6 @@ export function IPCinematicHero({
             <IconVolumeOff className="size-4" />
           </button>
         </div>
-
-        {total > 1 && (
-          <div className="absolute bottom-6 right-6 z-10 hidden gap-2 lg:flex">
-            {slides.map((item, i) => (
-              <button
-                key={item.id}
-                type="button"
-                onClick={() => setIndex(i)}
-                aria-label={`Slide ${i + 1}: ${item.name}`}
-                aria-current={i === activeIndex}
-                style={
-                  i === activeIndex
-                    ? {
-                        boxShadow:
-                          "0 0 0 2px var(--color-primary), 0 0 0 6px color-mix(in srgb, var(--color-primary) 30%, transparent)",
-                      }
-                    : undefined
-                }
-                className={cn(
-                  "relative h-20 w-32 overflow-hidden rounded-lg transition-all",
-                  i === activeIndex ? "opacity-100" : "opacity-50 hover:opacity-90"
-                )}
-              >
-                {item.cover ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img src={item.cover} alt="" className="size-full object-cover" />
-                ) : (
-                  <div className="size-full bg-muted" />
-                )}
-              </button>
-            ))}
-          </div>
-        )}
-
-        {total > 1 && (
-          <>
-            <button
-              type="button"
-              onClick={prev}
-              aria-label="Previous"
-              className="absolute left-4 top-1/2 z-10 inline-flex size-10 -translate-y-1/2 items-center justify-center rounded-full bg-black/50 text-white/85 backdrop-blur-sm transition-colors hover:bg-black/80 hover:text-white"
-            >
-              <IconChevronLeft className="size-5" />
-            </button>
-            <button
-              type="button"
-              onClick={next}
-              aria-label="Next"
-              className="absolute right-4 top-1/2 z-10 inline-flex size-10 -translate-y-1/2 items-center justify-center rounded-full bg-black/50 text-white/85 backdrop-blur-sm transition-colors hover:bg-black/80 hover:text-white"
-            >
-              <IconChevronRight className="size-5" />
-            </button>
-          </>
-        )}
       </div>
 
       {rail.length > 0 && <RailOnly rail={rail} locale={locale} compact />}

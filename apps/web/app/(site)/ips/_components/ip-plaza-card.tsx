@@ -19,14 +19,16 @@ export function IPPlazaCard({
   const t = useTranslations("ip");
   const locale = useLocale() as Locale;
   const cat = project.genres[0] ?? "";
-  const tags = project.tags.slice(0, 3);
+  // The primary genre already shows as the image overlay (`cat`); drop it from
+  // the badge row so single-genre IPs don't render the same label twice.
+  const tags = project.tags.filter((tag) => tag !== cat).slice(0, 3);
   const ownerName =
     ownerDisplay?.nickname?.trim() || project.ownerName.trim() || t("anonymousOwner");
 
   return (
     <Link
       href={localizePath(`/ips/${project.id}`, locale)}
-      className="group mb-6 inline-block w-full break-inside-avoid overflow-hidden rounded-2xl bg-card align-top transition-all hover:shadow-lg hover:shadow-black/20"
+      className="group mb-6 inline-block w-full break-inside-avoid overflow-hidden rounded-2xl hover:bg-muted/90 align-top transition-all hover:shadow-lg hover:shadow-black/20"
     >
       <div className="relative aspect-video w-full overflow-hidden bg-secondary">
         {project.cover ? (
@@ -35,7 +37,7 @@ export function IPPlazaCard({
             src={project.cover}
             alt={project.name}
             loading="lazy"
-            className="absolute inset-0 size-full object-cover transition-transform duration-500 group-hover:scale-105"
+            className="absolute inset-0 size-full object-cover transition-transform duration-500 group-hover:scale-105 rounded-2xl overflow-hidden"
           />
         ) : (
           <div className="flex size-full items-center justify-center">
@@ -60,7 +62,7 @@ export function IPPlazaCard({
         </div>
       </div>
 
-      <div className="space-y-3.5 px-5 py-4">
+      <div className="space-y-3.5 p-4">
         {project.description && (
           <p className="line-clamp-2 text-[13px] leading-relaxed text-muted-foreground">
             {project.description}
