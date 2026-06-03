@@ -50,6 +50,7 @@ import { PrismaService } from '../infra/db/db.module';
 import { WorkspacePermissionService } from '../workspaces/workspace-permission.service';
 import type {
   CreateBillingCheckoutInput,
+  CreateCustomRechargeInput,
   CreateAdminBillingPriceInput,
   CreateAdminBillingPromotionInput,
   CreateAdminBillingRefundInput,
@@ -67,6 +68,7 @@ import type {
 } from './dto';
 import { PaymentProviderRegistry } from './payment-provider-registry.service';
 import type {
+  CreatePaymentIntentResult,
   CreateProviderRefundResult,
   HostedCheckoutResult,
 } from './providers/payment-provider';
@@ -1364,6 +1366,13 @@ export class BillingService {
             discountAmountMinor,
             amountMinor,
             quantity,
+            // Freeze the wallet grant on the order at checkout so fulfillment +
+            // refund are authoritative off this snapshot and never drift if the
+            // price grant is later edited. Null for non-grant prices (the guards
+            // fall back to the price, preserving today's behaviour exactly).
+            grantsWalletAmount: price.grantsWalletAmount,
+            grantsWalletCurrency: price.grantsWalletCurrency,
+            grantsWalletBalanceKind: price.grantsWalletBalanceKind,
             description: price.item.name,
             expiresAt: new Date(Date.now() + 60 * 60 * 1000),
             metadata: {
@@ -1514,6 +1523,183 @@ export class BillingService {
     return {
       order: this.orderDto(order),
       paymentIntent: this.paymentIntentDto(paymentIntent),
+    };
+  }
+
+  // Ad-hoc, arbitrary-amount community-point recharge via Airwallex Payment
+  // Intents (no catalog selection, no provider-price binding). The amount is the
+  // input; the order snapshots its own fiat amount + wallet grant, and the
+  // standard webhook -> markOrderPaidAndFulfill machinery credits the wallet on
+  // payment_intent.succeeded. The client receives the intent id + client_secret +
+  // env and launches the Airwallex hosted page via the browser SDK.
+  async createCustomRecharge(
+    user: AuthUser,
+    input: CreateCustomRechargeInput,
+    shopperCountry: string,
+  ) {
+    this.assertReturnUrlAllowed(input.successUrl);
+    this.assertReturnUrlAllowed(input.backUrl);
+
+    const sdkEnv = airwallexSdkEnv();
+    const country = (shopperCountry || 'US').toUpperCase();
+
+    // Idempotency: a repeated (userId, idempotencyKey) returns the prior order +
+    // intent instead of minting a second payable order — mirrors createCheckout.
+    const existingOrder = await this.prisma.billingOrder.findUnique({
+      where: {
+        userId_idempotencyKey: {
+          userId: user.userId,
+          idempotencyKey: input.idempotencyKey,
+        },
+      },
+      include: {
+        paymentIntents: { orderBy: { createdAt: 'desc' }, take: 1 },
+      },
+    });
+    if (existingOrder) {
+      return {
+        order: this.orderDto(existingOrder),
+        paymentIntent: existingOrder.paymentIntents[0]
+          ? this.paymentIntentDto(existingOrder.paymentIntents[0])
+          : null,
+        shopperCountry: country,
+        env: sdkEnv,
+      };
+    }
+
+    const provider =
+      (input.provider as PaymentProvider | undefined) ??
+      this.providerRegistry.defaultProviderForRuntime();
+    const adapter = this.providerRegistry.get(provider);
+    if (!adapter.createPaymentIntent) {
+      throw new ServiceUnavailableException({
+        code: 'BILLING_PROVIDER_NO_PAYMENT_INTENT',
+        msg: `"${provider}" does not support custom-amount recharge.`,
+      });
+    }
+
+    // The hidden anchor SKU carries only the points-per-$1 ratio + wallet currency
+    // for ledger routing. It has no provider binding, so it never appears in the
+    // public listing and is reached only here.
+    const anchor = await this.prisma.billingPrice.findFirst({
+      where: {
+        isActive: true,
+        archivedAt: null,
+        item: {
+          code: CUSTOM_RECHARGE_ITEM_CODE,
+          isActive: true,
+          archivedAt: null,
+        },
+      },
+      include: { item: true },
+    });
+    if (!anchor || !anchor.grantsWalletCurrency || !anchor.grantsWalletAmount) {
+      throw new ServiceUnavailableException({
+        code: 'BILLING_CUSTOM_RECHARGE_UNAVAILABLE',
+        msg: 'Custom recharge is not configured.',
+      });
+    }
+
+    const dollars = BigInt(input.amountDollars);
+    const amountMinor = dollars * 100n;
+    // Snapshot the per-unit grant on the order; quantity stays 1 so the existing
+    // grant math (grant = snapshot * quantity) yields ratio * dollars points.
+    const grantSnapshot = anchor.grantsWalletAmount * dollars;
+    const requestId = randomUUID();
+    const orderNo = createOrderNo();
+
+    const order = await this.prisma.billingOrder.create({
+      data: {
+        orderNo,
+        idempotencyKey: input.idempotencyKey,
+        userId: user.userId,
+        workspaceId: null,
+        subjectType: BillingSubjectType.user,
+        subjectId: user.userId,
+        orderType: BillingOrderType.community_point_topup,
+        status: BillingOrderStatus.pending_payment,
+        itemId: anchor.itemId,
+        priceId: anchor.id,
+        providerBindingId: null,
+        provider,
+        currency: anchor.currency,
+        subtotalAmountMinor: amountMinor,
+        discountAmountMinor: 0n,
+        amountMinor,
+        quantity: 1,
+        grantsWalletAmount: grantSnapshot,
+        grantsWalletCurrency: anchor.grantsWalletCurrency,
+        grantsWalletBalanceKind:
+          anchor.grantsWalletBalanceKind ?? WalletBalanceKind.consumable,
+        description: anchor.item.name,
+        expiresAt: new Date(Date.now() + 60 * 60 * 1000),
+        metadata: {
+          checkout: {
+            successUrl: input.successUrl,
+            backUrl: input.backUrl,
+          },
+          customRecharge: {
+            amountDollars: input.amountDollars,
+            shopperCountry: country,
+          },
+        },
+      },
+      include: { price: true },
+    });
+
+    let intent: CreatePaymentIntentResult;
+    try {
+      intent = await adapter.createPaymentIntent({
+        requestId,
+        amountMinor,
+        currency: order.currency,
+        merchantOrderId: order.orderNo,
+        returnUrl: input.successUrl,
+        metadata: {
+          fizzdragon_order_id: order.id,
+          fizzdragon_order_no: order.orderNo,
+          fizzdragon_user_id: user.userId,
+        },
+      });
+    } catch (err) {
+      await this.prisma.billingOrder.update({
+        where: { id: order.id },
+        data: {
+          status: BillingOrderStatus.failed,
+          metadata: {
+            ...(order.metadata as Record<string, unknown>),
+            providerError:
+              err instanceof Error
+                ? err.message
+                : 'Provider payment intent failed.',
+          },
+        },
+      });
+      throw err;
+    }
+
+    const paymentIntent = await this.prisma.billingPaymentIntent.create({
+      data: {
+        orderId: order.id,
+        provider,
+        kind: PaymentIntentKind.payment_intent,
+        status: PaymentIntentStatus.requires_action,
+        requestId,
+        providerPaymentIntentId: intent.providerPaymentIntentId,
+        clientSecret: intent.clientSecret,
+        currency: order.currency,
+        amountMinor: order.amountMinor,
+        providerStatus: intent.providerStatus,
+        providerPayload: intent.raw as Prisma.InputJsonValue,
+        expiresAt: order.expiresAt,
+      },
+    });
+
+    return {
+      order: this.orderDto(order),
+      paymentIntent: this.paymentIntentDto(paymentIntent),
+      shopperCountry: country,
+      env: sdkEnv,
     };
   }
 
@@ -1766,10 +1952,14 @@ export class BillingService {
             (eventType.startsWith('payment_intent.')
               ? stringAt(payload, ['data', 'id'])
               : intent.providerPaymentIntentId),
+          // Only treat data.id as an invoice id for invoice.* events. For a
+          // payment_intent.* event data.id is the PI id (handled above), so
+          // falling back to it here would pollute providerInvoiceId.
           providerInvoiceId:
             stringAt(payload, ['data', 'invoice_id']) ??
-            stringAt(payload, ['data', 'id']) ??
-            intent.providerInvoiceId,
+            (eventType.startsWith('invoice.')
+              ? stringAt(payload, ['data', 'id'])
+              : intent.providerInvoiceId),
           providerSubscriptionId:
             stringAt(payload, ['data', 'subscription_id']) ??
             intent.providerSubscriptionId,
@@ -2098,7 +2288,14 @@ export class BillingService {
       return this.membershipRefundPolicyTx(tx, order, input);
     }
 
-    if (order.price.grantsWalletCurrency && order.price.grantsWalletAmount) {
+    // Prefer the order grant snapshot; fall back to the live price for legacy
+    // orders. Routing off the snapshot means a later price edit can't make a
+    // granted order look benefit-less (which would refund fiat without clawing
+    // back the credits).
+    if (
+      (order.grantsWalletCurrency ?? order.price.grantsWalletCurrency) &&
+      (order.grantsWalletAmount ?? order.price.grantsWalletAmount)
+    ) {
       return this.walletRefundPolicyTx(tx, order, input);
     }
 
@@ -2131,8 +2328,12 @@ export class BillingService {
   }> {
     const blockers: RefundPolicyIssue[] = [];
     const warnings: RefundPolicyIssue[] = [];
-    const walletCurrency = order.price.grantsWalletCurrency;
-    const grantAmount = order.price.grantsWalletAmount;
+    // Prefer the per-order grant snapshot (custom recharges carry their grant here;
+    // the price only holds the per-$1 ratio); fall back to the price for legacy orders.
+    const walletCurrency =
+      order.grantsWalletCurrency ?? order.price.grantsWalletCurrency;
+    const grantAmount =
+      order.grantsWalletAmount ?? order.price.grantsWalletAmount;
     if (!walletCurrency || !grantAmount) {
       return {
         maxPolicyRefund: positiveOrZero(
@@ -2470,7 +2671,11 @@ export class BillingService {
       return { entitlementGrant: { connect: { id: grant.id } } };
     }
 
-    if (!order.price.grantsWalletCurrency || !order.price.grantsWalletAmount) {
+    const grantCurrency =
+      order.grantsWalletCurrency ?? order.price.grantsWalletCurrency;
+    const grantAmount =
+      order.grantsWalletAmount ?? order.price.grantsWalletAmount;
+    if (!grantCurrency || !grantAmount) {
       return {};
     }
 
@@ -2488,7 +2693,7 @@ export class BillingService {
       amount: reversalAmount,
     });
     return {
-      walletReversalCurrency: order.price.grantsWalletCurrency,
+      walletReversalCurrency: grantCurrency,
       walletReversalAmount: reversalAmount,
       walletTransaction: { connect: { id: walletTransactionId } },
     };
@@ -2502,7 +2707,16 @@ export class BillingService {
       amount: bigint;
     },
   ): Promise<string> {
-    const walletCurrency = input.order.price.grantsWalletCurrency;
+    // Resolve from the order snapshot (fall back to price) so we reverse from the
+    // exact account that was credited at fulfillment, even if the price's grant
+    // currency/kind was later changed.
+    const walletCurrency =
+      input.order.grantsWalletCurrency ??
+      input.order.price.grantsWalletCurrency;
+    const balanceKind =
+      input.order.grantsWalletBalanceKind ??
+      input.order.price.grantsWalletBalanceKind ??
+      WalletBalanceKind.consumable;
     if (!walletCurrency) {
       throw new ConflictException({
         code: 'BILLING_REFUND_WALLET_CURRENCY_REQUIRED',
@@ -2519,7 +2733,7 @@ export class BillingService {
           ownerType,
           ownerId: input.order.subjectId,
           currency: walletCurrency,
-          balanceKind: WalletBalanceKind.consumable,
+          balanceKind,
         },
       },
     });
@@ -3156,7 +3370,7 @@ export class BillingService {
     }
 
     let walletTransactionId: string | null = null;
-    if (current.price.grantsWalletAmount) {
+    if (current.grantsWalletAmount ?? current.price.grantsWalletAmount) {
       walletTransactionId = await this.creditWalletGrantForOrderTx(tx, current);
     }
     let entitlementGrantId: string | null = null;
@@ -3270,7 +3484,19 @@ export class BillingService {
     tx: Prisma.TransactionClient,
     order: OrderWithPrice,
   ): Promise<string | null> {
-    if (!order.price.grantsWalletCurrency || !order.price.grantsWalletAmount) {
+    // Prefer the per-order snapshot (set at checkout); fall back to the live price
+    // for legacy orders created before the snapshot existed. The snapshot is what
+    // makes the grant immune to price drift and lets custom amounts carry their own
+    // grant. Total credited = per-unit grant * quantity (quantity = 1 for custom).
+    const grantCurrency =
+      order.grantsWalletCurrency ?? order.price.grantsWalletCurrency;
+    const grantPerUnit =
+      order.grantsWalletAmount ?? order.price.grantsWalletAmount;
+    const grantBalanceKind =
+      order.grantsWalletBalanceKind ??
+      order.price.grantsWalletBalanceKind ??
+      WalletBalanceKind.consumable;
+    if (!grantCurrency || !grantPerUnit) {
       return null;
     }
     const ownerType =
@@ -3283,21 +3509,21 @@ export class BillingService {
         ownerType_ownerId_currency_balanceKind: {
           ownerType,
           ownerId: order.subjectId,
-          currency: order.price.grantsWalletCurrency,
-          balanceKind: WalletBalanceKind.consumable,
+          currency: grantCurrency,
+          balanceKind: grantBalanceKind,
         },
       },
       create: {
         ownerType,
         ownerId: order.subjectId,
-        currency: order.price.grantsWalletCurrency,
-        balanceKind: WalletBalanceKind.consumable,
+        currency: grantCurrency,
+        balanceKind: grantBalanceKind,
         status: WalletAccountStatus.active,
       },
       update: {},
     });
 
-    const idempotencyKey = `billing_order:${order.id}:wallet_grant:${order.price.grantsWalletCurrency}`;
+    const idempotencyKey = `billing_order:${order.id}:wallet_grant:${grantCurrency}`;
     const existing = await tx.walletTransaction.findUnique({
       where: { idempotencyKey },
     });
@@ -3317,7 +3543,7 @@ export class BillingService {
       });
     }
 
-    const amount = order.price.grantsWalletAmount * BigInt(order.quantity);
+    const amount = grantPerUnit * BigInt(order.quantity);
     const nextAvailable = lockedAccount.availableBalance + amount;
     const transaction = await tx.walletTransaction.create({
       data: {
@@ -3327,7 +3553,7 @@ export class BillingService {
         idempotencyKey,
         actorUserId: order.userId,
         workspaceId: order.workspaceId,
-        description: `${order.price.grantsWalletCurrency} top-up from order ${order.orderNo}`,
+        description: `${grantCurrency} top-up from order ${order.orderNo}`,
         metadata: {
           orderNo: order.orderNo,
           priceId: order.priceId,
@@ -3347,7 +3573,7 @@ export class BillingService {
         heldDelta: 0n,
         availableBalanceAfter: nextAvailable,
         heldBalanceAfter: lockedAccount.heldBalance,
-        reason: `billing_${order.price.grantsWalletCurrency}_topup`,
+        reason: `billing_${grantCurrency}_topup`,
       },
     });
 
@@ -3671,6 +3897,9 @@ export class BillingService {
         order.amountMinor - order.refundedAmountMinor
       ).toString(),
       quantity: order.quantity,
+      grantsWalletAmount: order.grantsWalletAmount?.toString() ?? null,
+      grantsWalletCurrency: order.grantsWalletCurrency,
+      grantsWalletBalanceKind: order.grantsWalletBalanceKind,
       description: order.description,
       paidAt: order.paidAt?.toISOString() ?? null,
       fulfilledAt: order.fulfilledAt?.toISOString() ?? null,
@@ -3689,6 +3918,7 @@ export class BillingService {
       status: intent.status,
       checkoutUrl: intent.checkoutUrl,
       clientSecret: intent.clientSecret,
+      providerPaymentIntentId: intent.providerPaymentIntentId,
       providerStatus: intent.providerStatus,
       expiresAt: intent.expiresAt?.toISOString() ?? null,
       completedAt: intent.completedAt?.toISOString() ?? null,
@@ -3940,7 +4170,8 @@ function calculateWalletRefundReversalAmount(input: {
   activeRefundAmountAfter: bigint;
   activeRefunds: BillingRefund[];
 }): bigint {
-  const grantAmount = input.order.price.grantsWalletAmount;
+  const grantAmount =
+    input.order.grantsWalletAmount ?? input.order.price.grantsWalletAmount;
   if (!grantAmount || input.order.amountMinor <= 0n) return 0n;
   const totalGrant = grantAmount * BigInt(input.order.quantity);
   const alreadyReversed = input.activeRefunds.reduce(
@@ -4178,6 +4409,19 @@ function sanitizeCodeToken(value: string): string {
     .replace(/[^A-Z0-9]+/g, '_')
     .replace(/^_+|_+$/g, '');
   return token || 'AUTO';
+}
+
+// Catalog code of the hidden anchor SKU backing arbitrary-amount custom recharge.
+// Seeded by the billing_order_grant_snapshot migration; has no provider binding so
+// it never surfaces in the public price listing.
+const CUSTOM_RECHARGE_ITEM_CODE = 'COMMUNITY_POINT_CUSTOM_RECHARGE';
+
+// The browser Airwallex SDK env must match the server's API base (demo <-> demo,
+// prod <-> prod) or the client_secret won't validate at redirect. Derive it from
+// the same env var the provider uses so the two can never diverge.
+function airwallexSdkEnv(): 'demo' | 'prod' {
+  const base = process.env.AIRWALLEX_API_BASE_URL ?? '';
+  return base.includes('//api.airwallex.com') ? 'prod' : 'demo';
 }
 
 function createOrderNo(): string {

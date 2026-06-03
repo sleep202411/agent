@@ -32,6 +32,8 @@ import {
   IpContributorParamsSchema,
   IpEpisodeParamsSchema,
   IpLocaleQuerySchema,
+  CreatorIpsParamsSchema,
+  type CreatorIpsParams,
   IpParamsSchema,
   ListCreatorIpAssetsQuerySchema,
   ListCreatorIpsQuerySchema,
@@ -430,6 +432,25 @@ export class IpCommerceController {
     return {
       code: 200,
       data: await this.ipCommerce.listPublicIps(query, user),
+    };
+  }
+
+  @Public()
+  @Get('creators/:creatorId/ips')
+  async listCreatorPublicIps(
+    @CurrentUser() user: AuthUser | undefined,
+    @Param(new ZodValidationPipe(CreatorIpsParamsSchema))
+    params: CreatorIpsParams,
+    @Query(new ZodValidationPipe(ListCreatorIpsQuerySchema))
+    query: ListCreatorIpsQuery,
+  ) {
+    return {
+      code: 200,
+      data: await this.ipCommerce.listPublicCreatorIps(
+        params.creatorId,
+        query,
+        user,
+      ),
     };
   }
 

@@ -8,6 +8,8 @@ import { PaymentProvider } from '@prisma/client';
 import { createHmac, randomUUID, timingSafeEqual } from 'crypto';
 import type {
   CreateHostedCheckoutInput,
+  CreatePaymentIntentInput,
+  CreatePaymentIntentResult,
   CreateProviderRefundInput,
   CreateProviderRefundResult,
   HostedCheckoutResult,
@@ -54,6 +56,13 @@ interface AirwallexRefundResponse {
   id?: string;
   request_id?: string;
   payment_intent_id?: string;
+  status?: string;
+  [key: string]: unknown;
+}
+
+interface AirwallexPaymentIntentResponse {
+  id?: string;
+  client_secret?: string;
   status?: string;
   [key: string]: unknown;
 }
@@ -148,6 +157,45 @@ export class AirwallexProvider implements PaymentProviderAdapter {
       providerInvoiceId: checkout.invoice_id ?? null,
       expiresAt: parseDate(checkout.expires_at),
       raw: checkout,
+    };
+  }
+
+  async createPaymentIntent(
+    input: CreatePaymentIntentInput,
+  ): Promise<CreatePaymentIntentResult> {
+    const token = await this.getAccessToken();
+    // Payments product (/api/v1/pa), NOT billing_checkouts. Amount is in MAJOR
+    // units (e.g. 10.00), so reuse minorToMajorNumber to avoid a 100x error. No
+    // price_id / invoice_data / linked_payment_account_id here — those are
+    // billing-product concepts and would 400 on the /pa namespace.
+    const intent = await this.request<AirwallexPaymentIntentResponse>(
+      '/api/v1/pa/payment_intents/create',
+      {
+        method: 'POST',
+        token,
+        body: {
+          request_id: input.requestId,
+          amount: minorToMajorNumber(input.amountMinor),
+          currency: input.currency,
+          merchant_order_id: input.merchantOrderId,
+          ...(input.returnUrl ? { return_url: input.returnUrl } : {}),
+          // The webhook matcher keys off metadata.fizzdragon_order_id, so it MUST
+          // be present for payment_intent.succeeded to fulfil the order.
+          metadata: input.metadata,
+        },
+      },
+    );
+    if (!intent.id || !intent.client_secret) {
+      throw new ServiceUnavailableException({
+        code: 'AIRWALLEX_PAYMENT_INTENT_INVALID_RESPONSE',
+        msg: 'Airwallex did not return a valid payment intent.',
+      });
+    }
+    return {
+      providerPaymentIntentId: intent.id,
+      clientSecret: intent.client_secret,
+      providerStatus: intent.status ?? null,
+      raw: intent,
     };
   }
 

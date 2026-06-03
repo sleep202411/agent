@@ -65,6 +65,7 @@ import type {
   IpCreatorContributor,
   IpCreatorIp,
   IpTaxonomyTerm,
+  IpUserSearchHit,
 } from "@/src/lib/ip-commerce/api";
 import {
   useCreateIpCommerceContributor,
@@ -72,7 +73,7 @@ import {
   useDeleteIpCommerceContributor,
   useDeleteIpCommerceEpisode,
   useIpCommerceTaxonomyTerms,
-  useLookupIpCommerceUser,
+  useSearchIpCommerceUsers,
   useMyIpContributors,
   useMyIpCommerceOverview,
   useMyIpCommerceIp,
@@ -2330,11 +2331,12 @@ function AddMemberDialog({
   t: Translate;
 }) {
   const create = useCreateIpCommerceContributor();
-  const lookup = useLookupIpCommerceUser();
+  const search = useSearchIpCommerceUsers();
   const [displayName, setDisplayName] = useState("");
   const [role, setRole] = useState<IpContributorRole>("writer");
   const [customRole, setCustomRole] = useState("");
   const [account, setAccount] = useState("");
+  const [results, setResults] = useState<IpUserSearchHit[]>([]);
   const [linkedUser, setLinkedUser] = useState<LinkedUserDraft | null>(null);
   const [lookupError, setLookupError] = useState<string | null>(null);
   const [eligible, setEligible] = useState(false);
@@ -2342,31 +2344,32 @@ function AddMemberDialog({
 
   const eligibleSum = sumEligibleBps(contributors, null);
 
-  const handleLookup = async () => {
+  const handleSearch = async () => {
     const value = account.trim();
     if (!value) return;
     setLookupError(null);
     try {
-      const result = await lookup.mutateAsync(value);
-      setLinkedUser({ userId: result.userId, name: result.nickname || result.userId });
-      // Default the credit name to the matched account if not set yet.
-      setDisplayName((current) => current.trim() || result.nickname || result.userId);
+      const hits = await search.mutateAsync(value);
+      setResults(hits);
+      if (hits.length === 0) setLookupError(t("membersPanel.lookupNotFound"));
     } catch (err) {
-      setLinkedUser(null);
-      const status =
-        err && typeof err === "object" && "status" in err
-          ? (err as { status?: number }).status
-          : undefined;
-      setLookupError(
-        status === 404
-          ? t("membersPanel.lookupNotFound")
-          : errorMessage(err) || t("membersPanel.lookupFailed")
-      );
+      setResults([]);
+      setLookupError(errorMessage(err) || t("membersPanel.lookupFailed"));
     }
+  };
+
+  const pickUser = (hit: IpUserSearchHit) => {
+    setLinkedUser({ userId: hit.userId, name: hit.nickname || hit.userId });
+    // Default the credit name to the matched user if not set yet.
+    setDisplayName((current) => current.trim() || hit.nickname || hit.userId);
+    setResults([]);
+    setLookupError(null);
   };
 
   const unlink = () => {
     setLinkedUser(null);
+    setResults([]);
+    setLookupError(null);
     setEligible(false);
     setShareText("");
   };
@@ -2463,27 +2466,57 @@ function AddMemberDialog({
                   </Button>
                 </div>
               ) : (
-                <div className="flex gap-2">
-                  <Input
-                    value={account}
-                    onChange={(event) => setAccount(event.target.value)}
-                    onKeyDown={(event) => {
-                      if (event.key === "Enter") {
-                        event.preventDefault();
-                        void handleLookup();
-                      }
-                    }}
-                    placeholder={t("membersPanel.linkUserPlaceholder")}
-                  />
-                  <Button
-                    type="button"
-                    variant="outline"
-                    color="muted"
-                    disabled={!account.trim() || lookup.isPending}
-                    onClick={() => void handleLookup()}
-                  >
-                    {lookup.isPending ? t("membersPanel.looking") : t("membersPanel.lookup")}
-                  </Button>
+                <div className="space-y-2">
+                  <div className="flex gap-2">
+                    <Input
+                      value={account}
+                      onChange={(event) => {
+                        setAccount(event.target.value);
+                        setLookupError(null);
+                      }}
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter") {
+                          event.preventDefault();
+                          void handleSearch();
+                        }
+                      }}
+                      placeholder={t("membersPanel.linkUserPlaceholder")}
+                    />
+                    <Button
+                      type="button"
+                      variant="outline"
+                      color="muted"
+                      disabled={!account.trim() || search.isPending}
+                      onClick={() => void handleSearch()}
+                    >
+                      {search.isPending ? t("membersPanel.looking") : t("membersPanel.lookup")}
+                    </Button>
+                  </div>
+                  {results.length > 0 && (
+                    <ul className="max-h-44 divide-y divide-border overflow-y-auto rounded-md border border-border bg-background">
+                      {results.map((hit) => (
+                        <li key={hit.userId}>
+                          <button
+                            type="button"
+                            onClick={() => pickUser(hit)}
+                            className="flex w-full items-center gap-2.5 px-3 py-2 text-left transition-colors hover:bg-muted/50"
+                          >
+                            <span className="grid size-7 shrink-0 place-items-center rounded-full bg-primary/15 text-xs font-semibold text-primary">
+                              {(hit.nickname || hit.userId).charAt(0).toUpperCase()}
+                            </span>
+                            <span className="min-w-0 flex-1">
+                              <span className="block truncate text-sm text-foreground">
+                                {hit.nickname || hit.userId}
+                              </span>
+                              <span className="block truncate text-xs text-muted-foreground">
+                                ID: {hit.userId}
+                              </span>
+                            </span>
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
                 </div>
               )}
               {lookupError ? (

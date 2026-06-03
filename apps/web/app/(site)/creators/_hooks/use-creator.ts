@@ -256,11 +256,11 @@ export function useCreatorPersonalWorks(creatorId: string, isOwner = false) {
  * Projects (IPs) created by a given creator. Backend endpoint:
  *   POST /project/user/projects  { userId, page, pageSize }
  */
-export function useCreatorProjects(creatorId: string) {
+export function useCreatorProjects(creatorId: string, options?: { enabled?: boolean }) {
   return useQuery<Project[]>({
     queryKey: ["creator", "projects", creatorId],
     queryFn: () => getUserProjects(creatorId, 1, 50),
-    enabled: !!creatorId,
+    enabled: !!creatorId && (options?.enabled ?? true),
   });
 }
 

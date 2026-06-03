@@ -1308,6 +1308,13 @@ model BillingOrder {
   /// in BillingRefund and are not counted here until provider acceptance.
   refundedAmountMinor BigInt             @default(0) @map("refunded_amount_minor")
   quantity            Int                @default(1)
+  /// Per-unit wallet grant frozen at checkout (a snapshot of price.grantsWalletAmount,
+  /// or dollars*ratio for an ad-hoc custom recharge). Fulfillment + refund prefer this
+  /// over the live price so the grant can never drift after the order is placed. NULL on
+  /// legacy orders → falls back to the price grant. Total credited = this * quantity.
+  grantsWalletAmount      BigInt?             @map("grants_wallet_amount")
+  grantsWalletCurrency    WalletCurrencyType? @map("grants_wallet_currency")
+  grantsWalletBalanceKind WalletBalanceKind?  @map("grants_wallet_balance_kind")
   description         String?            @db.VarChar(255)
   metadata            Json               @default("{}") @db.JsonB
   version             Int                @default(0)

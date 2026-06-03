@@ -734,11 +734,19 @@ function allocationEntry(
 }
 
 function inferredAllocationForPrice(order: LedgerOrder, amountMinor: bigint) {
-  if (order.price.grantsWalletCurrency) {
+  // Prefer the order grant snapshot (fall back to the live price) so the wallet
+  // liability account routes to the same currency/kind that fulfillment credits.
+  const grantCurrency =
+    order.grantsWalletCurrency ?? order.price.grantsWalletCurrency;
+  const grantBalanceKind =
+    order.grantsWalletBalanceKind ?? order.price.grantsWalletBalanceKind;
+  const grantAmount =
+    order.grantsWalletAmount ?? order.price.grantsWalletAmount;
+  if (grantCurrency) {
     return {
       account: walletLiabilityAccount(
-        order.price.grantsWalletCurrency,
-        order.price.grantsWalletBalanceKind,
+        grantCurrency,
+        grantBalanceKind,
         order.currency,
       ),
       amountMinor,
@@ -746,10 +754,9 @@ function inferredAllocationForPrice(order: LedgerOrder, amountMinor: bigint) {
       metadata: {
         inferred: true,
         target: BillingLedgerAllocationTarget.wallet_credit_liability,
-        walletCurrency: order.price.grantsWalletCurrency,
-        walletBalanceKind:
-          order.price.grantsWalletBalanceKind ?? WalletBalanceKind.consumable,
-        walletGrantAmount: order.price.grantsWalletAmount?.toString() ?? null,
+        walletCurrency: grantCurrency,
+        walletBalanceKind: grantBalanceKind ?? WalletBalanceKind.consumable,
+        walletGrantAmount: grantAmount?.toString() ?? null,
       },
     };
   }
@@ -787,8 +794,11 @@ function accountForAllocation(
   switch (allocation.target) {
     case BillingLedgerAllocationTarget.wallet_credit_liability:
       return walletLiabilityAccount(
-        allocation.walletCurrency ?? order.price.grantsWalletCurrency,
+        allocation.walletCurrency ??
+          order.grantsWalletCurrency ??
+          order.price.grantsWalletCurrency,
         allocation.walletBalanceKind ??
+          order.grantsWalletBalanceKind ??
           order.price.grantsWalletBalanceKind ??
           WalletBalanceKind.consumable,
         order.currency,

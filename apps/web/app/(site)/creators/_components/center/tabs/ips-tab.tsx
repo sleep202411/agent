@@ -1,9 +1,10 @@
 "use client";
 
 /**
- * IpsTab — IP (project) cards the creator owns. Maps the existing
- * `useCreatorProjects` hook into a grid layout that matches the
- * style of WorksTab and ServicesTab.
+ * IpsTab — a creator's IP cards. Fully on the PG IP schema (no legacy Java
+ * project endpoint): the owner sees all IPs they own (me/ips, all pages) with a
+ * studio entry; visitors see the creator's public IPs (public per-creator
+ * endpoint, all pages) linking to the public IP detail page.
  */
 import { useState } from "react";
 import {
@@ -18,12 +19,14 @@ import Link from "next/link";
 import { useTranslations, useLocale } from "@/src/i18n/i18n";
 import { localizePath } from "@/src/i18n/locale-url";
 import type { Locale } from "@/src/i18n/config";
-import { env } from "@/src/env";
-import { useCreatorProjects, type Creator } from "@/app/(site)/creators/_hooks/use-creator";
-import type { Project } from "@/src/services/project";
+import { type Creator } from "@/app/(site)/creators/_hooks/use-creator";
 import { NewIpCreateDialog } from "@/app/(site)/ip-studio/_components/new-ip-create-form";
-import type { IpCreatorIp, IpCreatorRevenueEntry } from "@/src/lib/ip-commerce/api";
-import { useCreatorRevenue, useMyIpCommerceIps } from "@/src/lib/ip-commerce/hooks";
+import type { IpCommerceIp, IpCreatorIp, IpCreatorRevenueEntry } from "@/src/lib/ip-commerce/api";
+import {
+  useCreatorRevenue,
+  useAllMyIpCommerceIps,
+  usePublicCreatorIps,
+} from "@/src/lib/ip-commerce/hooks";
 
 interface IpsTabProps {
   creator: Creator;
@@ -33,13 +36,17 @@ interface IpsTabProps {
 export function IpsTab({ creator, isOwner }: IpsTabProps) {
   const t = useTranslations("creatorCenter");
   const locale = useLocale() as Locale;
-  const { data, isLoading } = useCreatorProjects(creator.id);
-  const myNewIps = useMyIpCommerceIps(isOwner, { locale, limit: 50 });
-  const projects = (data ?? []).filter((p): p is Project => !!p);
+  // Fully on the PG IP schema — the legacy Java /project/user/projects endpoint
+  // is no longer called. Owner view loads every IP you own (all pages, owner-
+  // scoped me/ips); visitor view loads the creator's public IPs (all pages) from
+  // the public per-creator endpoint.
+  const myNewIps = useAllMyIpCommerceIps(isOwner, { locale });
+  const visitorIps = usePublicCreatorIps(creator.id, !isOwner, { locale });
   const newIps = isOwner ? (myNewIps.data?.items ?? []) : [];
+  const publicIps = isOwner ? [] : (visitorIps.data?.items ?? []);
   const [createOpen, setCreateOpen] = useState(false);
 
-  if (isLoading || myNewIps.isLoading) {
+  if (myNewIps.isLoading || visitorIps.isLoading) {
     return (
       <div className="flex h-40 items-center justify-center">
         <IconLoader2 className="size-5 animate-spin text-muted-foreground" />
@@ -68,7 +75,7 @@ export function IpsTab({ creator, isOwner }: IpsTabProps) {
     );
   }
 
-  if (projects.length === 0 && newIps.length === 0) {
+  if (publicIps.length === 0 && newIps.length === 0) {
     return (
       <>
         <EmptyShell
@@ -109,14 +116,8 @@ export function IpsTab({ creator, isOwner }: IpsTabProps) {
         {newIps.map((ip) => (
           <NewIpCard key={ip.id} ip={ip} locale={locale} enterLabel={t("ips.enterStudio")} />
         ))}
-        {projects.map((p) => (
-          <IpCard
-            key={p.id}
-            project={p}
-            locale={locale}
-            isOwner={isOwner}
-            editLabel={t("ips.editIp")}
-          />
+        {publicIps.map((ip) => (
+          <PublicIpCard key={ip.id} ip={ip} locale={locale} />
         ))}
       </div>
       <NewIpCreateDialog open={createOpen} onOpenChange={setCreateOpen} />
@@ -188,70 +189,51 @@ function NewIpCard({
   );
 }
 
-function IpCard({
-  project,
-  locale,
-  isOwner,
-  editLabel,
-}: {
-  project: Project;
-  locale: Locale;
-  isOwner: boolean;
-  editLabel: string;
-}) {
-  const cover = resolveAsset(String(project.bannerLink ?? ""), env.BANNER_BASE_URL);
-  const title = String(project.name ?? "").trim() || "—";
-  const description = String(project.description ?? "").trim();
-  const href = localizePath(`/ips/${project.id}`, locale);
-  const editHref = localizePath(`/ip-studio/${project.id}`, locale);
+// Visitor-view card for a creator's PUBLIC IP. Links to the public IP detail
+// page (NOT the owner-only studio) and carries no edit affordance.
+function PublicIpCard({ ip, locale }: { ip: IpCommerceIp; locale: Locale }) {
+  const title = ip.title.trim() || "—";
+  const summary = ip.summary.trim();
+  const cover = ip.coverAsset?.url ?? ip.coverAsset?.externalUrl ?? "";
+  const href = localizePath(`/ips/${ip.id}`, locale);
   return (
-    <div className="group relative overflow-hidden rounded-2xl bg-card ring-1 ring-border/60 transition-all duration-300 hover:-translate-y-1 hover:ring-border hover:shadow-lg hover:shadow-black/20">
-      <Link href={href} className="block">
-        {/* 16:9 cover. Gradient overlay at the bottom keeps the title
-            readable even when the artwork bleeds bright into the lower
-            third. `object-cover` lets the artwork breathe past the
-            edges on hover for a subtle parallax-ish lift. */}
-        <div className="relative aspect-[16/9] w-full overflow-hidden bg-secondary">
-          {cover ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
-              src={cover}
-              alt={title}
-              loading="lazy"
-              className="size-full object-cover transition-transform duration-500 ease-out group-hover:scale-[1.04]"
-            />
-          ) : (
-            <div className="flex size-full items-center justify-center bg-gradient-to-br from-secondary to-background text-muted-foreground/60">
-              <IconBook2 className="size-8" />
-            </div>
-          )}
-          {/* Bottom gradient so the title chip below sits on a soft
-              shadow rather than competing with cover brightness. */}
-          <div
-            aria-hidden
-            className="pointer-events-none absolute inset-x-0 bottom-0 h-1/3 bg-gradient-to-t from-black/40 to-transparent opacity-0 transition-opacity duration-300 group-hover:opacity-100"
+    <Link
+      href={href}
+      className="group relative flex flex-col overflow-hidden rounded-2xl bg-card ring-1 ring-border/60 transition-all duration-300 hover:-translate-y-1 hover:ring-border hover:shadow-lg hover:shadow-black/20"
+    >
+      <div className="relative aspect-[16/9] w-full overflow-hidden bg-secondary">
+        {cover ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={cover}
+            alt={title}
+            loading="lazy"
+            className="size-full object-cover transition-transform duration-500 ease-out group-hover:scale-[1.04]"
           />
-        </div>
-        <div className="space-y-1 px-4 py-3">
-          <h3 className="line-clamp-1 text-sm font-semibold tracking-tight text-foreground">
-            {title}
-          </h3>
-          {description ? (
-            <p className="line-clamp-1 text-xs text-muted-foreground">{description}</p>
-          ) : null}
-        </div>
-      </Link>
-      {isOwner && (
-        <Link
-          href={editHref}
-          className="absolute right-2.5 top-2.5 inline-flex size-8 items-center justify-center rounded-lg bg-background/85 text-foreground opacity-0 shadow-sm ring-1 ring-border backdrop-blur-sm transition-all duration-200 group-hover:opacity-100 hover:bg-background hover:scale-105 focus-visible:opacity-100"
-          aria-label={editLabel}
-          onClick={(e) => e.stopPropagation()}
-        >
-          <IconEdit className="size-4" />
-        </Link>
-      )}
-    </div>
+        ) : (
+          <div className="flex size-full items-center justify-center bg-gradient-to-br from-secondary to-background text-muted-foreground/60">
+            <IconBook2 className="size-8" />
+          </div>
+        )}
+        {ip.genres[0] ? (
+          <span className="absolute right-2 top-2 rounded-full border border-white/10 bg-black/40 px-2.5 py-1 text-[11px] font-medium text-white/80 backdrop-blur-sm">
+            {ip.genres[0]}
+          </span>
+        ) : null}
+        <div
+          aria-hidden
+          className="pointer-events-none absolute inset-x-0 bottom-0 h-1/3 bg-gradient-to-t from-black/40 to-transparent opacity-0 transition-opacity duration-300 group-hover:opacity-100"
+        />
+      </div>
+      <div className="flex flex-1 flex-col gap-1 px-4 py-3">
+        <h3 className="line-clamp-1 text-sm font-semibold tracking-tight text-foreground">
+          {title}
+        </h3>
+        {summary ? (
+          <p className="line-clamp-2 text-xs leading-5 text-muted-foreground">{summary}</p>
+        ) : null}
+      </div>
+    </Link>
   );
 }
 
@@ -398,12 +380,4 @@ function formatDateTime(value: string, locale: Locale): string {
   } catch {
     return value;
   }
-}
-
-function resolveAsset(path: string, base: string): string {
-  if (!path) return "";
-  if (/^(https?:|blob:|data:)/i.test(path)) return path;
-  if (!base) return "";
-  const trimmed = path.startsWith("/") ? path.slice(1) : path;
-  return `${base.replace(/\/+$/, "")}/${trimmed}`;
 }

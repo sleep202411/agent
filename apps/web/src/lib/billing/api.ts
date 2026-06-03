@@ -50,3 +50,32 @@ export interface BillingCheckoutResult {
 export function createBillingCheckout(input: CreateBillingCheckoutInput) {
   return api.post<BillingCheckoutResult>("/aurora/billing/checkout", { data: input });
 }
+
+export interface CreateCustomRechargeInput {
+  /** Whole US dollars (server clamps to $10–$5000). */
+  amountDollars: number;
+  idempotencyKey: string;
+  successUrl: string;
+  backUrl: string;
+}
+
+/**
+ * Result of an ad-hoc custom-amount recharge. Unlike the preset hosted checkout,
+ * an Airwallex Payment Intent has no server-issued URL — the browser SDK launches
+ * the hosted page from the intent id + client secret. `env` mirrors the server's
+ * Airwallex environment so the SDK init matches (mismatch invalidates the secret).
+ */
+export interface CustomRechargeResult {
+  order: { id: string; orderNo: string; status: string; currency: string };
+  paymentIntent: {
+    providerPaymentIntentId: string | null;
+    clientSecret: string | null;
+  } | null;
+  shopperCountry: string;
+  env: "demo" | "prod";
+}
+
+/** Create an arbitrary-amount community-point recharge via Airwallex Payment Intents. */
+export function createCustomRecharge(input: CreateCustomRechargeInput) {
+  return api.post<CustomRechargeResult>("/aurora/billing/recharge-custom", { data: input });
+}

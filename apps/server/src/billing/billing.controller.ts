@@ -11,14 +11,18 @@ import {
 import type { Request } from 'express';
 import { CurrentUser, Public } from '../auth';
 import type { AuthUser } from '../auth';
+import { Country } from '../common/region/country.decorator';
+import type { CountryCode } from '../common/region/region.types';
 import { ZodValidationPipe } from '../common/zod.pipe';
 import { BillingService } from './billing.service';
 import {
   BillingOrderParamsSchema,
   CreateBillingCheckoutSchema,
+  CreateCustomRechargeSchema,
   ListBillingPricesQuerySchema,
   type BillingOrderParams,
   type CreateBillingCheckoutInput,
+  type CreateCustomRechargeInput,
   type ListBillingPricesQuery,
 } from './dto';
 
@@ -45,6 +49,19 @@ export class BillingController {
     return {
       code: 200,
       data: await this.billing.createCheckout(user, body),
+    };
+  }
+
+  @Post('recharge-custom')
+  async createCustomRecharge(
+    @CurrentUser() user: AuthUser,
+    @Country() country: CountryCode,
+    @Body(new ZodValidationPipe(CreateCustomRechargeSchema))
+    body: CreateCustomRechargeInput,
+  ) {
+    return {
+      code: 200,
+      data: await this.billing.createCustomRecharge(user, body, country),
     };
   }
 

@@ -112,6 +112,21 @@ export type CreateBillingCheckoutInput = z.infer<
   typeof CreateBillingCheckoutSchema
 >;
 
+// Ad-hoc, arbitrary-amount community-point recharge (Airwallex Payment Intents).
+// Whole US dollars only; the server derives amountMinor = dollars * 100 and the
+// granted points from the hidden custom-recharge anchor SKU's ratio. No priceId:
+// the amount is the input, not a catalog selection.
+export const CreateCustomRechargeSchema = z.object({
+  amountDollars: z.coerce.number().int().min(10).max(5000),
+  provider: CheckoutPaymentProviderSchema.optional(),
+  idempotencyKey: z.string().trim().min(8).max(160),
+  successUrl: z.string().trim().url().max(2048),
+  backUrl: z.string().trim().url().max(2048),
+});
+export type CreateCustomRechargeInput = z.infer<
+  typeof CreateCustomRechargeSchema
+>;
+
 export const ListAdminBillingPricesQuerySchema = z.object({
   productType: BillingProductTypeSchema.optional(),
   provider: AdminPaymentProviderSchema.optional(),

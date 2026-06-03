@@ -629,6 +629,12 @@ export const IpParamsSchema = z.object({
 });
 export type IpParams = z.infer<typeof IpParamsSchema>;
 
+// Creator id is a Java user id (numeric string), NOT a uuid.
+export const CreatorIpsParamsSchema = z.object({
+  creatorId: z.string().trim().min(1).max(64),
+});
+export type CreatorIpsParams = z.infer<typeof CreatorIpsParamsSchema>;
+
 export const IpEpisodeParamsSchema = IpParamsSchema.extend({
   episodeId: z.string().uuid(),
 });

@@ -20,9 +20,11 @@ import {
   listIpCommerceDiscovery,
   listMyIpCommerceIpAssets,
   listMyIpCommerceIps,
+  listPublicCreatorIps,
   listIpCommerceIps,
   listIpCommerceTaxonomyTerms,
   lookupIpCommerceUser,
+  searchIpCommerceUsers,
   purchaseIpContent,
   reportIpContent,
   removeIpCommerceCollection,
@@ -181,6 +183,58 @@ export function useMyIpCommerceIps(
     queryKey: ipCommerceKeys.myIps(params),
     queryFn: () => listMyIpCommerceIps(params),
     enabled,
+    staleTime: 30_000,
+  });
+}
+
+/**
+ * Load the caller's FULL IP set by paging through me/ips until the cursor is
+ * exhausted (the server caps a page at 50). The creator center needs every IP
+ * the user owns, not just the first page. The loop is bounded as a safety net
+ * against a pathological/repeating nextCursor.
+ */
+export function useAllMyIpCommerceIps(enabled = true, params?: { locale?: string }) {
+  return useQuery({
+    queryKey: ["ip-commerce", "me", "ips", "all", params ?? {}] as const,
+    queryFn: async () => {
+      const items: Awaited<ReturnType<typeof listMyIpCommerceIps>>["items"] = [];
+      let cursor: string | undefined;
+      for (let page = 0; page < 200; page++) {
+        const res = await listMyIpCommerceIps({ ...params, cursor, limit: 50 });
+        items.push(...res.items);
+        if (!res.nextCursor) break;
+        cursor = res.nextCursor;
+      }
+      return { items };
+    },
+    enabled,
+    staleTime: 30_000,
+  });
+}
+
+/**
+ * Load a creator's FULL set of public IPs (all pages) for the visitor view of
+ * their profile. PG-native — replaces the legacy Java /project/user/projects.
+ */
+export function usePublicCreatorIps(
+  creatorId: string | null | undefined,
+  enabled = true,
+  params?: { locale?: string }
+) {
+  return useQuery({
+    queryKey: ["ip-commerce", "creators", creatorId ?? "", "ips", "all", params ?? {}] as const,
+    queryFn: async () => {
+      const items: Awaited<ReturnType<typeof listPublicCreatorIps>>["items"] = [];
+      let cursor: string | undefined;
+      for (let page = 0; page < 200; page++) {
+        const res = await listPublicCreatorIps(creatorId!, { ...params, cursor, limit: 50 });
+        items.push(...res.items);
+        if (!res.nextCursor) break;
+        cursor = res.nextCursor;
+      }
+      return { items };
+    },
+    enabled: enabled && !!creatorId,
     staleTime: 30_000,
   });
 }
@@ -433,6 +487,17 @@ export function useDeleteIpCommerceContributor() {
 export function useLookupIpCommerceUser() {
   return useMutation({
     mutationFn: (account: string) => lookupIpCommerceUser({ account }),
+  });
+}
+
+/**
+ * Search platform users (by nickname / id) to bind a contributor. One-shot,
+ * submit-driven search via Java's talent-market list endpoint — a mutation so
+ * the dialog owns the result list in local state, like the lookup above.
+ */
+export function useSearchIpCommerceUsers() {
+  return useMutation({
+    mutationFn: (query: string) => searchIpCommerceUsers(query),
   });
 }
 

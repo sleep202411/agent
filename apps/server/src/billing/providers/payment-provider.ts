@@ -74,6 +74,26 @@ export interface SyncProviderCouponResult {
   raw: Record<string, unknown>;
 }
 
+export interface CreatePaymentIntentInput {
+  requestId: string;
+  /** Charge amount in minor units (cents); the adapter converts to the provider's unit. */
+  amountMinor: bigint;
+  currency: string;
+  /** Our internal order reference, surfaced to the provider for reconciliation. */
+  merchantOrderId: string;
+  /** Fallback URL the provider returns the shopper to if the client omits successUrl. */
+  returnUrl?: string | null;
+  metadata: Record<string, string>;
+}
+
+export interface CreatePaymentIntentResult {
+  providerPaymentIntentId: string;
+  /** Client secret the browser SDK needs to launch the hosted/embedded payment. */
+  clientSecret: string;
+  providerStatus?: string | null;
+  raw: Record<string, unknown>;
+}
+
 export interface CreateProviderRefundInput {
   requestId: string;
   providerPaymentIntentId: string;
@@ -95,6 +115,14 @@ export interface PaymentProviderAdapter {
   createHostedCheckout(
     input: CreateHostedCheckoutInput,
   ): Promise<HostedCheckoutResult>;
+  /**
+   * Create an ad-hoc, arbitrary-amount payment intent (no catalog price /
+   * provider-price binding). Optional: only providers that support one-off
+   * intents (e.g. Airwallex Payments) implement it.
+   */
+  createPaymentIntent?(
+    input: CreatePaymentIntentInput,
+  ): Promise<CreatePaymentIntentResult>;
   syncPrice?(input: SyncProviderPriceInput): Promise<SyncProviderPriceResult>;
   syncCoupon?(
     input: SyncProviderCouponInput,

@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@ai-sdk/react": "^3.0.146",
+    "@airwallex/components-sdk": "^1.32.0",
     "@azure/web-pubsub-client": "^1.0.4",
     "@dicebear/collection": "^9.4.2",
     "@dicebear/core": "^9.4.2",

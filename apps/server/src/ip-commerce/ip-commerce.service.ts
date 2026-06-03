@@ -659,8 +659,7 @@ export class IpCommerceService {
       });
     }
 
-    const nextStatus = (input.status ??
-      existing.status) as IpDiscoveryRecommendationStatus;
+    const nextStatus = input.status ?? existing.status;
     const nextImageAssetId =
       input.imageAssetId !== undefined
         ? input.imageAssetId
@@ -3117,6 +3116,64 @@ export class IpCommerceService {
           ],
         },
         ...ipTaxonomyFilterWhere(query.genreCodes, query.tagCodes),
+        ...viewerBlockWhere,
+        ...(cursorDate
+          ? {
+              OR: [
+                { publishedAt: { lt: cursorDate } },
+                { publishedAt: null, createdAt: { lt: cursorDate } },
+              ],
+            }
+          : {}),
+      },
+      include: ipInclude,
+      orderBy: [
+        { publishedAt: { sort: 'desc', nulls: 'last' } },
+        { createdAt: 'desc' },
+      ],
+      take: query.limit + 1,
+    });
+
+    const items = rows.slice(0, query.limit);
+    return {
+      items: items.map((ip) => ipDto(ip, query.locale)),
+      nextCursor: rows.length > query.limit ? (items.at(-1)?.id ?? null) : null,
+    };
+  }
+
+  /**
+   * Public list of ONE creator's published, publicly-listed IPs — the visitor
+   * view of a creator profile. Same public gating as listPublicIps (published +
+   * public + a public localization + viewer blocks), scoped to createdById, so a
+   * creator's drafts/private IPs never leak. Owners get the full set (incl.
+   * drafts) via the owner-scoped me/ips instead.
+   */
+  async listPublicCreatorIps(
+    creatorId: string,
+    query: ListCreatorIpsQuery,
+    user?: AuthUser,
+  ) {
+    const viewerBlockWhere = await this.viewerBlockWhere(user);
+    const cursor = query.cursor
+      ? await this.prisma.ip.findUnique({
+          where: { id: query.cursor },
+          select: { publishedAt: true, createdAt: true },
+        })
+      : null;
+    const cursorDate = cursor?.publishedAt ?? cursor?.createdAt ?? null;
+
+    const rows = await this.prisma.ip.findMany({
+      where: {
+        createdById: creatorId,
+        deletedAt: null,
+        status: { in: PUBLIC_IP_STATUSES },
+        listingVisibility: 'public',
+        localizations: {
+          some: {
+            archivedAt: null,
+            status: { in: PUBLIC_LOCALIZATION_STATUSES },
+          },
+        },
         ...viewerBlockWhere,
         ...(cursorDate
           ? {

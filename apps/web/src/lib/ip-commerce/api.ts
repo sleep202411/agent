@@ -683,6 +683,21 @@ export function getMyIpCommerceIp(ipId: string, params?: { locale?: string }) {
   });
 }
 
+/**
+ * Public list of a creator's published, publicly-listed IPs — the visitor view
+ * of a creator profile. Mirrors the plaza list shape; drafts/private IPs are
+ * never returned (owners use me/ips for those).
+ */
+export function listPublicCreatorIps(
+  creatorId: string,
+  params?: { locale?: string; cursor?: string; limit?: number }
+) {
+  return api.get<{ items: IpCommerceIp[]; nextCursor: string | null }>(
+    `/aurora/ip-commerce/creators/${encodeURIComponent(creatorId)}/ips`,
+    { params }
+  );
+}
+
 export function getMyIpCommerceOverview(ipId: string, params?: { locale?: string }) {
   return api.get<IpCreatorCommerceOverview>(
     `/aurora/ip-commerce/me/ips/${encodeURIComponent(ipId)}/commerce`,
@@ -827,6 +842,77 @@ export function lookupIpCommerceUser(params: { account: string }) {
   return api.get<IpUserLookupResult>("/aurora/users/lookup", {
     params: { account: params.account },
   });
+}
+
+/** A platform user matched by the contributor search. */
+export interface IpUserSearchHit {
+  userId: string;
+  nickname: string;
+  avatar: string | null;
+}
+
+/**
+ * Search platform users (by nickname / id) to bind as a contributor, using
+ * Java's talent-market endpoint `POST /user/list/user/info` — the same one the
+ * /creators page uses. Form-encoded; responds `{ data: Array<{ info }>, sum }`.
+ * The keyword is passed as `key` (best-effort server filter, mirroring
+ * `/project/list`) and we also filter client-side so it works whether or not the
+ * server honours it. Drops straight to `fetch` like the creators service because
+ * the shared api client only surfaces `body.data`.
+ */
+export async function searchIpCommerceUsers(query: string): Promise<IpUserSearchHit[]> {
+  const q = query.trim();
+  if (!q) return [];
+  const lowered = q.toLowerCase();
+  const PAGE_SIZE = 100;
+  const MAX_PAGES = 25; // scan up to 2500 users per search — a hard safety cap
+  const MAX_MATCHES = 20;
+
+  // The talent-market list endpoint does NOT have a verified keyword filter (the
+  // /creators page paginates it client-side and never passes `key`), so we can't
+  // trust server-side filtering to surface a user beyond the first page. Page
+  // through with body.sum as the bound and filter client-side, so a real user is
+  // discoverable wherever they sort — not silently "not found" past row 100. We
+  // still send `key` as a best-effort narrowing (harmless if the server ignores it).
+  const matches: IpUserSearchHit[] = [];
+  const seen = new Set<string>();
+  let scanned = 0;
+  let total = Infinity;
+  for (let page = 1; page <= MAX_PAGES && scanned < total; page++) {
+    const form = new URLSearchParams();
+    form.append("page", String(page));
+    form.append("pageSize", String(PAGE_SIZE));
+    form.append("key", q);
+    const res = await fetch("/user/list/user/info", {
+      method: "POST",
+      credentials: "include",
+      headers: { "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8" },
+      body: form.toString(),
+    });
+    if (!res.ok) break;
+    const body = (await res.json()) as {
+      data?: Array<{ info?: { id?: number | string; nickName?: string; avatar?: string } }>;
+      sum?: number;
+    };
+    const rows = Array.isArray(body.data) ? body.data : [];
+    if (typeof body.sum === "number") total = body.sum;
+    if (rows.length === 0) break;
+    scanned += rows.length;
+    for (const row of rows) {
+      const info = row.info;
+      if (!info || info.id == null) continue;
+      const userId = String(info.id);
+      if (seen.has(userId)) continue;
+      const nickname = (info.nickName ?? "").trim();
+      if (nickname.toLowerCase().includes(lowered) || userId.includes(lowered)) {
+        seen.add(userId);
+        matches.push({ userId, nickname, avatar: info.avatar ?? null });
+        if (matches.length >= MAX_MATCHES) return matches;
+      }
+    }
+    if (rows.length < PAGE_SIZE) break; // last page reached
+  }
+  return matches;
 }
 
 export function getIpCommerceIp(ipId: string, params?: { locale?: string }) {
