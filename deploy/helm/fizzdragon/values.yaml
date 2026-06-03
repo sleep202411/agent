@@ -174,10 +174,11 @@ adminUi:
   ingress:
     enabled: true
     path: /admin(/|$)(.*)
-    # Fail-closed default. Replace with operator public CIDRs before opening
-    # production access, e.g. ["203.0.113.10/32"].
-    allowedCidrs:
-      - 31.205.217.189/32
+    # No IP allowlist — admin is gated by login + MFA. The operator egress IP
+    # rotates (VPN pool: e.g. 148.197.248.23 / 80.239.216.133 seen seconds apart),
+    # so a single-CIDR lock isn't workable. To re-restrict, set this to a stable
+    # operator CIDR, e.g. ["203.0.113.10/32"]; empty list = open.
+    allowedCidrs: []
   env:
     PORT: "3000"
     HOSTNAME: "0.0.0.0"
