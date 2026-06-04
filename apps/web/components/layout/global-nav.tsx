@@ -278,7 +278,20 @@ export function GlobalNav() {
               logout={logout}
             />
           </div>
-        ) : null}
+        ) : (
+          <button
+            type="button"
+            onClick={() => router.push(localizePath("/login", locale))}
+            className={navCx(
+              "fd-secret-glass-wrapper fd-secret-cta-shell fd-secret-cta fd-secret-get-started"
+            )}
+          >
+            <span className={navCx("fd-secret-glass-effect")} aria-hidden />
+            <span className={navCx("fd-secret-glass-content fd-secret-cta")}>
+              {t("getStarted")}
+            </span>
+          </button>
+        )}
       </div>
 
       <div className={navCx("fd-secret-mobile-button-wrap md:hidden")}>
