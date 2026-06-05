@@ -8,31 +8,32 @@ export default function AppTabs() {
   return (
     <NativeTabs
       backgroundColor={colors.background}
+      tintColor={colors.brand}
       disableTransparentOnScrollEdge
       indicatorColor={colors.backgroundElement}
-      labelStyle={{ selected: { color: colors.text } }}
+      labelStyle={{ selected: { color: colors.brand } }}
     >
       <NativeTabs.Trigger name="index">
-        <NativeTabs.Trigger.Label>Home</NativeTabs.Trigger.Label>
+        <NativeTabs.Trigger.Label>IP</NativeTabs.Trigger.Label>
         <NativeTabs.Trigger.Icon
-          md={{ default: "home", selected: "home_filled" }}
-          sf={{ default: "house", selected: "house.fill" }}
+          md={{ default: "movie", selected: "movie" }}
+          sf={{ default: "film.stack", selected: "film.stack.fill" }}
         />
       </NativeTabs.Trigger>
 
-      <NativeTabs.Trigger name="explore">
-        <NativeTabs.Trigger.Label>Projects</NativeTabs.Trigger.Label>
+      <NativeTabs.Trigger name="crews">
+        <NativeTabs.Trigger.Label>Crews</NativeTabs.Trigger.Label>
         <NativeTabs.Trigger.Icon
-          md={{ default: "folder", selected: "folder" }}
-          sf={{ default: "folder", selected: "folder.fill" }}
+          md={{ default: "group", selected: "group" }}
+          sf={{ default: "person.2", selected: "person.2.fill" }}
         />
       </NativeTabs.Trigger>
 
-      <NativeTabs.Trigger name="create">
-        <NativeTabs.Trigger.Label>Create</NativeTabs.Trigger.Label>
+      <NativeTabs.Trigger name="news">
+        <NativeTabs.Trigger.Label>News</NativeTabs.Trigger.Label>
         <NativeTabs.Trigger.Icon
-          md={{ default: "add_box", selected: "add_box" }}
-          sf={{ default: "plus.square", selected: "plus.square.fill" }}
+          md={{ default: "feed", selected: "feed" }}
+          sf={{ default: "newspaper", selected: "newspaper.fill" }}
         />
       </NativeTabs.Trigger>
 

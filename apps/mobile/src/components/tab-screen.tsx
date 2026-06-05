@@ -13,11 +13,17 @@ type TabScreenProps = {
 export function TabScreen({ children, gap = Spacing.four }: TabScreenProps) {
   const safeAreaInsets = useSafeAreaInsets();
   const theme = useTheme();
-  const topInset = safeAreaInsets.top + (Platform.OS === "web" ? Spacing.four : Spacing.three);
+  // Native tab navigators already inset content below the status bar; adding the
+  // safe-area inset again double-counts it. Only web (custom tab bar, no native
+  // inset) needs the manual top inset.
+  const topInset = Platform.OS === "web" ? safeAreaInsets.top + Spacing.four : Spacing.three;
   const bottomInset = safeAreaInsets.bottom + BottomTabInset + Spacing.four;
 
   return (
     <ScrollView
+      // We apply the top safe-area inset manually via paddingTop; disable the
+      // native auto content-inset so the status-bar inset isn't counted twice.
+      contentInsetAdjustmentBehavior="never"
       style={[styles.scrollView, { backgroundColor: theme.background }]}
       contentContainerStyle={[
         styles.content,

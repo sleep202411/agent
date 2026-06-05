@@ -1,203 +1,261 @@
-import { Image } from "expo-image";
 import { SymbolView } from "expo-symbols";
-import { useEffect, useState } from "react";
-import { Pressable, ScrollView, StyleSheet, View } from "react-native";
+import { router } from "expo-router";
+import { useEffect, useMemo, useState } from "react";
+import { Pressable, ScrollView, StyleSheet, useWindowDimensions, View } from "react-native";
 
 import { TabScreen } from "@/components/tab-screen";
 import { ThemedText } from "@/components/themed-text";
 import { ThemedView } from "@/components/themed-view";
-import { Spacing } from "@/constants/theme";
+import {
+  ChipRail,
+  EmptyState,
+  PosterImage,
+  ScreenHeader,
+  SectionHeader,
+  Skeleton,
+  Tag,
+} from "@/components/ui";
+import { MaxContentWidth, Spacing } from "@/constants/theme";
+import { getIpDiscovery, type IpDiscovery } from "@/data/browse-service";
+import type { IpStatus, IpSummary } from "@/data/types";
 import { useTheme } from "@/hooks/use-theme";
-import { getPublicProjectFeed, getRecommendedFeed, type FeedItem } from "@/services/mobile-content";
+import { toHref } from "@/lib/navigation";
 
-const filters = ["Recommended", "Projects", "Videos", "Crews"] as const;
+function statusTag(status: IpStatus): { label: string; tone: "info" | "neutral" | "warning" } {
+  if (status === "updating") return { label: "Updating", tone: "info" };
+  if (status === "upcoming") return { label: "Upcoming", tone: "warning" };
+  return { label: "Completed", tone: "neutral" };
+}
 
-export default function HomeScreen() {
-  const theme = useTheme();
-  const [feed, setFeed] = useState<FeedItem[]>([]);
-  const [projects, setProjects] = useState<FeedItem[]>([]);
+function openIp(id: string) {
+  router.push(toHref(`/ip/${id}`));
+}
+
+export default function IpDiscoveryScreen() {
+  const { width } = useWindowDimensions();
+  const featuredWidth = Math.min(width, MaxContentWidth) - Spacing.four * 2;
+  const [discovery, setDiscovery] = useState<IpDiscovery>();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string>();
+  const [genreIndex, setGenreIndex] = useState(0);
+  // Genres come from the Nest taxonomy endpoint (not scraped from IP records).
+  const genreList = discovery?.genres ?? [];
+  const genreChips = ["All", ...genreList.map((genre) => genre.label)];
+  const selectedGenreCode = genreIndex > 0 ? genreList[genreIndex - 1]?.code : undefined;
+  const activeGenreLabel =
+    genreIndex > 0 ? (genreList[genreIndex - 1]?.label ?? "this genre") : "All";
 
   useEffect(() => {
     let alive = true;
-
     async function load() {
       setLoading(true);
       setError(undefined);
-
       try {
-        const [recommended, publicProjects] = await Promise.all([
-          getRecommendedFeed(10),
-          getPublicProjectFeed(6),
-        ]);
-        if (!alive) return;
-        setFeed(recommended);
-        setProjects(publicProjects);
+        const data = await getIpDiscovery();
+        if (alive) setDiscovery(data);
       } catch (loadError) {
-        if (!alive) return;
-        setError(loadError instanceof Error ? loadError.message : "Failed to load story square.");
+        if (alive) setError(loadError instanceof Error ? loadError.message : "Failed to load IPs.");
       } finally {
         if (alive) setLoading(false);
       }
     }
-
     void load();
     return () => {
       alive = false;
     };
   }, []);
 
-  function handlePress() {
-    // TODO: connect to detail routes once the mobile detail screens land.
-  }
+  const featured = discovery?.featured ?? [];
+  const trending = discovery?.trending ?? [];
+  const allIps = useMemo(
+    () =>
+      (discovery?.updating ?? []).filter(
+        (ip) => !selectedGenreCode || ip.genreCodes.includes(selectedGenreCode)
+      ),
+    [discovery, selectedGenreCode]
+  );
 
   return (
-    <TabScreen gap={Spacing.four}>
-      <View style={styles.header}>
-        <View style={styles.headerCopy}>
-          <ThemedText type="small" themeColor="textSecondary">
-            FizzDragon
-          </ThemedText>
-          <ThemedText type="title" style={styles.title}>
-            Home
-          </ThemedText>
-        </View>
-        <Pressable
-          accessibilityRole="button"
-          onPress={handlePress}
-          style={({ pressed }) => pressed && styles.pressed}
-        >
-          <ThemedView type="backgroundElement" style={styles.iconButton}>
-            <SymbolView
-              name={{ ios: "magnifyingglass", android: "search", web: "search" }}
-              size={18}
-              tintColor={theme.text}
-            />
-          </ThemedView>
-        </Pressable>
-      </View>
-
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        contentContainerStyle={styles.filterRow}
-      >
-        {filters.map((filter, index) => (
-          <ThemedView
-            key={filter}
-            type={index === 0 ? "backgroundSelected" : "backgroundElement"}
-            style={styles.filterChip}
-          >
-            <ThemedText type="smallBold" themeColor={index === 0 ? "text" : "textSecondary"}>
-              {filter}
-            </ThemedText>
-          </ThemedView>
-        ))}
-      </ScrollView>
-
-      {error ? <StatePanel title="Story Square failed" detail={error} /> : null}
-
-      <View style={styles.sectionHeader}>
-        <ThemedText type="smallBold">Story Square</ThemedText>
-        <ThemedText type="small" themeColor="textSecondary">
-          {loading ? "Loading" : `${feed.length} items`}
-        </ThemedText>
-      </View>
+    <TabScreen gap={Spacing.five}>
+      <ScreenHeader title="Discover" />
 
       {loading ? (
-        <LoadingList />
-      ) : feed.length ? (
-        <View style={styles.feedList}>
-          {feed.map((item) => (
-            <FeedRow key={item.id} item={item} onPress={handlePress} />
-          ))}
-        </View>
+        <DiscoverySkeleton width={featuredWidth} />
+      ) : error ? (
+        <EmptyState
+          title="Couldn't load IPs"
+          detail={error}
+          symbol={{ ios: "exclamationmark.triangle", android: "warning", web: "warning" }}
+        />
       ) : (
-        <StatePanel title="No public videos" detail="The story square has no visible items yet." />
-      )}
+        <>
+          {featured.length ? (
+            <ScrollView
+              horizontal
+              pagingEnabled
+              showsHorizontalScrollIndicator={false}
+              snapToInterval={featuredWidth + Spacing.three}
+              decelerationRate="fast"
+              contentContainerStyle={styles.featuredRow}
+            >
+              {featured.map((ip) => (
+                <FeaturedCard key={ip.id} ip={ip} width={featuredWidth} />
+              ))}
+            </ScrollView>
+          ) : null}
 
-      <View style={styles.sectionHeader}>
-        <ThemedText type="smallBold">Project Center</ThemedText>
-        <ThemedText type="small" themeColor="textSecondary">
-          Public
-        </ThemedText>
-      </View>
+          {trending.length ? (
+            <View style={styles.section}>
+              <SectionHeader title="Trending now" trailing={`${trending.length}`} />
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={styles.rankRow}
+              >
+                {trending.map((ip) => (
+                  <TrendingCard key={ip.id} ip={ip} />
+                ))}
+              </ScrollView>
+            </View>
+          ) : null}
 
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        contentContainerStyle={styles.projectStrip}
-      >
-        {projects.map((item) => (
-          <Pressable
-            key={item.id}
-            accessibilityRole="button"
-            onPress={handlePress}
-            style={({ pressed }) => [styles.projectCardPressable, pressed && styles.pressed]}
-          >
-            <ThemedView type="backgroundElement" style={styles.projectCard}>
-              {item.coverUrl ? (
-                <Image
-                  source={{ uri: item.coverUrl }}
-                  style={styles.projectCover}
-                  contentFit="cover"
-                />
-              ) : (
-                <View style={[styles.projectCover, styles.coverFallback]}>
-                  <SymbolView
-                    name={{ ios: "film.stack", android: "movie", web: "movie" }}
-                    size={22}
-                    tintColor={theme.textSecondary}
-                  />
-                </View>
-              )}
-              <View style={styles.projectCopy}>
-                <ThemedText type="smallBold" numberOfLines={2}>
-                  {item.title}
-                </ThemedText>
-                <ThemedText type="code" themeColor="textSecondary" numberOfLines={1}>
-                  {item.creator ?? "Creator"}
-                </ThemedText>
+          <View style={styles.section}>
+            <SectionHeader title="All IPs" trailing={`${allIps.length}`} />
+            {genreChips.length > 1 ? (
+              <ChipRail items={genreChips} activeIndex={genreIndex} onChange={setGenreIndex} />
+            ) : null}
+            {allIps.length ? (
+              <View style={styles.list}>
+                {allIps.map((ip) => (
+                  <IpRow key={ip.id} ip={ip} />
+                ))}
               </View>
-            </ThemedView>
-          </Pressable>
-        ))}
-      </ScrollView>
+            ) : (
+              <EmptyState title="No IPs" detail={`No ${activeGenreLabel} titles yet.`} />
+            )}
+          </View>
+        </>
+      )}
     </TabScreen>
   );
 }
 
-function FeedRow({ item, onPress }: { item: FeedItem; onPress: () => void }) {
+function RatingRow({ rating }: { rating?: number }) {
   const theme = useTheme();
+  if (rating == null) return null;
+  return (
+    <View style={styles.ratingRow}>
+      <SymbolView
+        name={{ ios: "star.fill", android: "star", web: "star" }}
+        size={11}
+        tintColor={theme.brand}
+      />
+      <ThemedText type="code" style={{ color: theme.brand }}>
+        {rating.toFixed(1)}
+      </ThemedText>
+    </View>
+  );
+}
 
+function FeaturedCard({ ip, width }: { ip: IpSummary; width: number }) {
+  const theme = useTheme();
   return (
     <Pressable
       accessibilityRole="button"
-      onPress={onPress}
+      onPress={() => openIp(ip.id)}
+      style={({ pressed }) => [{ width }, pressed && styles.pressed]}
+    >
+      <View style={styles.featuredCard}>
+        <PosterImage
+          uri={ip.backdropUrl ?? ip.coverUrl}
+          label={ip.title}
+          radius={12}
+          style={StyleSheet.absoluteFill}
+        />
+        <View style={styles.featuredScrim} />
+        <View style={styles.featuredTopRow}>
+          <View style={[styles.featuredBadge, { backgroundColor: theme.brand }]}>
+            <ThemedText type="code" style={styles.featuredBadgeText}>
+              FEATURED
+            </ThemedText>
+          </View>
+          <RatingRow rating={ip.rating} />
+        </View>
+        <View style={styles.featuredCopy}>
+          <ThemedText type="subtitle" style={styles.featuredTitle} numberOfLines={1}>
+            {ip.title}
+          </ThemedText>
+          {ip.tagline ? (
+            <ThemedText type="small" themeColor="textSecondary" numberOfLines={1}>
+              {ip.tagline}
+            </ThemedText>
+          ) : null}
+          <View style={styles.tagRow}>
+            {ip.genres.slice(0, 3).map((genre) => (
+              <Tag key={genre} label={genre} />
+            ))}
+            <View style={[styles.watchPill, { backgroundColor: theme.brand }]}>
+              <SymbolView
+                name={{ ios: "play.fill", android: "play_arrow", web: "play_arrow" }}
+                size={12}
+                tintColor="#FFFFFF"
+              />
+              <ThemedText type="code" style={styles.watchText}>
+                Watch
+              </ThemedText>
+            </View>
+          </View>
+        </View>
+      </View>
+    </Pressable>
+  );
+}
+
+function TrendingCard({ ip }: { ip: IpSummary }) {
+  return (
+    <Pressable
+      accessibilityRole="button"
+      onPress={() => openIp(ip.id)}
+      style={({ pressed }) => [styles.rankCard, pressed && styles.pressed]}
+    >
+      <PosterImage uri={ip.coverUrl} label={ip.title} style={styles.rankPoster} />
+      <ThemedText type="smallBold" numberOfLines={2}>
+        {ip.title}
+      </ThemedText>
+      <RatingRow rating={ip.rating} />
+    </Pressable>
+  );
+}
+
+function IpRow({ ip }: { ip: IpSummary }) {
+  const tag = statusTag(ip.status);
+  return (
+    <Pressable
+      accessibilityRole="button"
+      onPress={() => openIp(ip.id)}
       style={({ pressed }) => pressed && styles.pressed}
     >
-      <ThemedView type="backgroundElement" style={styles.feedRow}>
-        {item.coverUrl ? (
-          <Image source={{ uri: item.coverUrl }} style={styles.feedCover} contentFit="cover" />
-        ) : (
-          <View style={[styles.feedCover, styles.coverFallback]}>
-            <SymbolView
-              name={{ ios: "film.stack", android: "movie", web: "movie" }}
-              size={22}
-              tintColor={theme.textSecondary}
-            />
-          </View>
-        )}
-        <View style={styles.feedCopy}>
+      <ThemedView type="backgroundElement" style={styles.ipRow}>
+        <PosterImage uri={ip.coverUrl} label={ip.title} style={styles.rowPoster} />
+        <View style={styles.rowCopy}>
           <ThemedText type="smallBold" numberOfLines={1}>
-            {item.title}
+            {ip.title}
           </ThemedText>
+          <View style={styles.rowMeta}>
+            {ip.year ? (
+              <ThemedText type="code" themeColor="textSecondary">
+                {ip.year}
+              </ThemedText>
+            ) : null}
+            {ip.episodeCount ? (
+              <ThemedText type="code" themeColor="textSecondary">
+                · {ip.episodeCount} eps
+              </ThemedText>
+            ) : null}
+            <Tag label={tag.label} tone={tag.tone} />
+          </View>
           <ThemedText type="small" themeColor="textSecondary" numberOfLines={2}>
-            {item.description ?? "No introduction"}
-          </ThemedText>
-          <ThemedText type="code" themeColor="textSecondary" numberOfLines={1}>
-            {item.creator ?? "Creator"}
+            {ip.synopsis}
           </ThemedText>
         </View>
       </ThemedView>
@@ -205,152 +263,140 @@ function FeedRow({ item, onPress }: { item: FeedItem; onPress: () => void }) {
   );
 }
 
-function LoadingList() {
+function DiscoverySkeleton({ width }: { width: number }) {
   return (
-    <View style={styles.feedList}>
-      {[0, 1, 2].map((item) => (
-        <ThemedView key={item} type="backgroundElement" style={styles.loadingRow}>
-          <ThemedView type="backgroundSelected" style={styles.loadingCover} />
-          <View style={styles.feedCopy}>
-            <ThemedView type="backgroundSelected" style={styles.loadingTitle} />
-            <ThemedView type="backgroundSelected" style={styles.loadingLine} />
-            <ThemedView type="backgroundSelected" style={styles.loadingMeta} />
+    <>
+      <Skeleton width={width} height={200} radius={12} />
+      <View style={styles.rankRow}>
+        {[0, 1, 2].map((item) => (
+          <View key={item} style={styles.rankCard}>
+            <Skeleton height={168} radius={8} />
+            <Skeleton width="80%" height={14} />
           </View>
-        </ThemedView>
-      ))}
-    </View>
-  );
-}
-
-function StatePanel({ detail, title }: { detail: string; title: string }) {
-  return (
-    <ThemedView type="backgroundElement" style={styles.statePanel}>
-      <ThemedText type="smallBold">{title}</ThemedText>
-      <ThemedText type="small" themeColor="textSecondary">
-        {detail}
-      </ThemedText>
-    </ThemedView>
+        ))}
+      </View>
+      <View style={styles.list}>
+        {[0, 1, 2].map((item) => (
+          <ThemedView key={item} type="backgroundElement" style={styles.ipRow}>
+            <Skeleton width={64} height={92} radius={8} />
+            <View style={styles.rowCopy}>
+              <Skeleton width="70%" height={16} />
+              <Skeleton width="40%" height={12} />
+              <Skeleton width="100%" height={32} />
+            </View>
+          </ThemedView>
+        ))}
+      </View>
+    </>
   );
 }
 
 const styles = StyleSheet.create({
-  header: {
-    minHeight: 44,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
+  featuredRow: {
     gap: Spacing.three,
   },
-  headerCopy: {
-    flex: 1,
-    minWidth: 0,
+  featuredCard: {
+    height: 200,
+    borderRadius: 12,
+    overflow: "hidden",
+    justifyContent: "space-between",
+    padding: Spacing.three,
   },
-  title: {
-    marginTop: Spacing.half,
-    fontSize: 28,
-    lineHeight: 32,
+  featuredScrim: {
+    position: "absolute",
+    top: 0,
+    right: 0,
+    bottom: 0,
+    left: 0,
+    backgroundColor: "rgba(7,8,12,0.34)",
   },
-  iconButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 8,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  filterRow: {
-    gap: Spacing.two,
-    paddingRight: Spacing.four,
-  },
-  filterChip: {
-    minHeight: 34,
-    borderRadius: 8,
-    paddingHorizontal: Spacing.three,
-    justifyContent: "center",
-  },
-  sectionHeader: {
+  featuredTopRow: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
   },
-  feedList: {
-    gap: Spacing.two,
-  },
-  feedRow: {
-    minHeight: 108,
-    borderRadius: 8,
-    padding: Spacing.three,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: Spacing.three,
-  },
-  feedCover: {
-    width: 70,
-    height: 92,
-    borderRadius: 8,
-    overflow: "hidden",
-  },
-  coverFallback: {
+  featuredBadge: {
+    height: 22,
+    paddingHorizontal: 8,
+    borderRadius: 6,
     alignItems: "center",
     justifyContent: "center",
   },
-  feedCopy: {
-    flex: 1,
-    minWidth: 0,
-    gap: Spacing.half,
+  featuredBadgeText: {
+    color: "#FFFFFF",
+    fontSize: 11,
+    letterSpacing: 0.4,
   },
-  projectStrip: {
-    gap: Spacing.two,
-    paddingRight: Spacing.four,
-  },
-  projectCardPressable: {
-    width: 140,
-  },
-  projectCard: {
-    borderRadius: 8,
-    overflow: "hidden",
-  },
-  projectCover: {
-    width: "100%",
-    height: 168,
-  },
-  projectCopy: {
-    minHeight: 74,
-    padding: Spacing.two,
-    gap: Spacing.half,
-  },
-  statePanel: {
-    borderRadius: 8,
-    padding: Spacing.three,
+  featuredCopy: {
     gap: Spacing.one,
   },
-  loadingRow: {
-    minHeight: 108,
+  featuredTitle: {
+    fontSize: 26,
+    lineHeight: 30,
+  },
+  tagRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: Spacing.one,
+    marginTop: Spacing.half,
+  },
+  watchPill: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    height: 22,
+    paddingHorizontal: 10,
+    borderRadius: 6,
+    marginLeft: "auto",
+  },
+  watchText: {
+    color: "#FFFFFF",
+    fontSize: 11,
+  },
+  ratingRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+  },
+  section: {
+    gap: Spacing.three,
+  },
+  rankRow: {
+    gap: Spacing.three,
+    paddingRight: Spacing.four,
+  },
+  rankCard: {
+    width: 116,
+    gap: Spacing.one,
+  },
+  rankPoster: {
+    width: 116,
+    height: 164,
+  },
+  list: {
+    gap: Spacing.two,
+  },
+  ipRow: {
     borderRadius: 8,
     padding: Spacing.three,
     flexDirection: "row",
     gap: Spacing.three,
   },
-  loadingCover: {
-    width: 70,
+  rowPoster: {
+    width: 64,
     height: 92,
-    borderRadius: 8,
   },
-  loadingTitle: {
-    width: "68%",
-    height: 18,
-    borderRadius: 4,
+  rowCopy: {
+    flex: 1,
+    minWidth: 0,
+    gap: Spacing.one,
   },
-  loadingLine: {
-    width: "100%",
-    height: 36,
-    borderRadius: 4,
-  },
-  loadingMeta: {
-    width: "36%",
-    height: 12,
-    borderRadius: 4,
+  rowMeta: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: Spacing.one,
   },
   pressed: {
-    opacity: 0.72,
+    opacity: 0.82,
   },
 });

@@ -12,21 +12,21 @@ import { useTheme } from "@/hooks/use-theme";
 const tabItems = [
   {
     href: "/(tabs)",
-    label: "Home",
+    label: "IP",
     name: "index",
-    symbol: { ios: "house", android: "home", web: "home" },
+    symbol: { ios: "film.stack", android: "movie", web: "movie" },
   },
   {
-    href: "/explore",
-    label: "Projects",
-    name: "explore",
-    symbol: { ios: "folder", android: "folder", web: "folder" },
+    href: "/crews",
+    label: "Crews",
+    name: "crews",
+    symbol: { ios: "person.2", android: "group", web: "group" },
   },
   {
-    href: "/create",
-    label: "Create",
-    name: "create",
-    symbol: { ios: "plus.square", android: "add_box", web: "add_box" },
+    href: "/news",
+    label: "News",
+    name: "news",
+    symbol: { ios: "newspaper", android: "feed", web: "feed" },
   },
   {
     href: "/mine",
@@ -58,6 +58,7 @@ export function TabButton({
   ...props
 }: TabTriggerSlotProps & { symbol: (typeof tabItems)[number]["symbol"] }) {
   const theme = useTheme();
+  const color = isFocused ? theme.brand : theme.textSecondary;
 
   return (
     <Pressable {...props} style={({ pressed }) => [styles.tabPressable, pressed && styles.pressed]}>
@@ -65,12 +66,8 @@ export function TabButton({
         type={isFocused ? "backgroundSelected" : "backgroundElement"}
         style={styles.tabButtonView}
       >
-        <SymbolView
-          name={symbol}
-          size={18}
-          tintColor={isFocused ? theme.text : theme.textSecondary}
-        />
-        <ThemedText type="code" themeColor={isFocused ? "text" : "textSecondary"} numberOfLines={1}>
+        <SymbolView name={symbol} size={18} tintColor={color} />
+        <ThemedText type="code" style={{ color }} numberOfLines={1}>
           {children}
         </ThemedText>
       </ThemedView>
