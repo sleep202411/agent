@@ -1336,14 +1336,56 @@ function ModelsPanel({
         ),
       },
       {
+        id: "reference-price",
+        header: "综合定价",
+        enableSorting: false,
+        cell: ({ row }) => {
+          const sell = row.original.referenceSellPoints;
+          const cost = row.original.referenceCostPoints;
+          if (sell == null) {
+            return <span className="text-[12px] text-slate-400">未绑定</span>;
+          }
+          return (
+            <div className="leading-tight" title="参考价：1 张 @ 1K">
+              <p className="text-[13px] font-semibold tabular-nums text-[#E52227]">
+                {sell} 积分
+                <span className="ml-0.5 text-[11px] font-normal text-slate-400">起</span>
+              </p>
+              {cost != null ? (
+                <p className="text-[11px] tabular-nums text-slate-400">
+                  成本 {Number.isInteger(cost) ? cost : cost.toFixed(1)}
+                </p>
+              ) : null}
+            </div>
+          );
+        },
+      },
+      {
         id: "margin",
-        header: "毛利率",
+        header: "预计毛利率",
         enableSorting: false,
         cell: ({ row }) => (
           <span className="text-[12px] font-medium tabular-nums text-slate-700">
             {marginBpsToPercentDisplay(row.original.marginBps ?? DEFAULT_MARGIN_BPS)}
           </span>
         ),
+      },
+      {
+        id: "realized-margin",
+        header: "实际毛利率",
+        enableSorting: false,
+        cell: ({ row }) => {
+          const realized = row.original.realizedMarginBps;
+          return realized == null ? (
+            <span className="text-[12px] text-slate-400" title="待扣费数据接入后自动计算">
+              —
+            </span>
+          ) : (
+            <span className="text-[12px] font-medium tabular-nums text-slate-700">
+              {marginBpsToPercentDisplay(realized)}
+            </span>
+          );
+        },
       },
       {
         id: "counts",
@@ -1389,11 +1431,6 @@ function ModelsPanel({
   );
   return (
     <section className="space-y-3">
-      <SectionTitle
-        icon={<IconDatabaseSearch className="size-4" />}
-        title="统一模型"
-        description="用户侧展示的模型身份，同名模型可挂多个 provider，由路由策略分配资源。展开行可管理该模型的路由绑定。"
-      />
       <DataTable
         data={models}
         columns={columns}
@@ -2942,6 +2979,9 @@ function defaultModelDraft(): AdminAiCanonicalModel {
     updatedAt: "",
     bindingCount: 0,
     jobCount: 0,
+    referenceSellPoints: null,
+    referenceCostPoints: null,
+    realizedMarginBps: null,
   };
 }
 

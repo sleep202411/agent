@@ -73,6 +73,11 @@ export type AdminAiCanonicalModel = {
   updatedAt: string;
   bindingCount: number;
   jobCount: number;
+  /** Representative 售价 (1 image @ 1K) via primary binding × markup; null if unbound. */
+  referenceSellPoints: number | null;
+  referenceCostPoints: number | null;
+  /** Realized gross margin (bps) from the cost ledger; null until billing produces data. */
+  realizedMarginBps: number | null;
 };
 
 export type AdminAiProviderBinding = {

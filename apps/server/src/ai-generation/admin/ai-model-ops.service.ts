@@ -5,6 +5,7 @@ import {
 } from '@nestjs/common';
 import { AiControlPlaneStatus, Prisma } from '@prisma/client';
 import { PrismaService } from '../../infra/db/db.module';
+import { estimateGenerationPrice } from '@repo/shared';
 import type {
   CreateCanonicalModelInput,
   CreateProviderEndpointInput,
@@ -162,6 +163,16 @@ export class AiModelOpsService {
       include: {
         _count: {
           select: { bindings: true, jobs: true },
+        },
+        bindings: {
+          where: { archivedAt: null },
+          select: {
+            unitPriceNanoUsd: true,
+            unitType: true,
+            priority: true,
+            status: true,
+          },
+          orderBy: { priority: 'asc' },
         },
       },
     });
@@ -785,11 +796,46 @@ function serializeCanonicalModel(model: {
   metadata: unknown;
   updatedAt: Date;
   _count?: { bindings: number; jobs: number };
+  bindings?: Array<{
+    unitPriceNanoUsd: bigint | null;
+    unitType: string;
+    priority: number;
+    status: string;
+  }>;
 }) {
+  // Representative 售价 for the list: 1 image @ 1K (1 MP) through the primary
+  // active binding's provider cost × this model's markup. The real per-request
+  // price is parameterized — this is a reference / 起价 only.
+  const primaryBinding =
+    model.bindings?.find((b) => b.status === 'active') ??
+    model.bindings?.[0] ??
+    null;
+  let referenceSellPoints: number | null = null;
+  let referenceCostPoints: number | null = null;
+  if (primaryBinding && primaryBinding.unitPriceNanoUsd != null) {
+    const estimate = estimateGenerationPrice({
+      unitPriceNanoUsd: primaryBinding.unitPriceNanoUsd,
+      unitType: primaryBinding.unitType as
+        | 'per_image'
+        | 'per_megapixel'
+        | 'per_unit',
+      marginBps: model.marginBps,
+      numImages: 1,
+      megapixels: 1,
+    });
+    referenceSellPoints = estimate.sellPoints;
+    referenceCostPoints = estimate.costPoints;
+  }
   return {
     ...model,
     bindingCount: model._count?.bindings ?? 0,
     jobCount: model._count?.jobs ?? 0,
+    referenceSellPoints,
+    referenceCostPoints,
+    // Realized gross margin is computed from the cost ledger — wired with P0
+    // billing once charge / provider_cost entries exist; null (—) until then.
+    realizedMarginBps: null as number | null,
+    bindings: undefined,
     _count: undefined,
   };
 }
