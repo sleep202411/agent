@@ -381,7 +381,7 @@ export function BillingEventsPanel({
               <Select
                 value={provider}
                 onChange={setProvider}
-                title="支付供应商。国际站当前为 Airwallex，中国站后续接微信支付。"
+                title="支付供应商。国际站当前为 Airwallex，中国站使用微信支付或支付宝。"
               >
                 <option value="">全部渠道</option>
                 <option value="airwallex" title={providerHelp("airwallex")}>
@@ -389,6 +389,9 @@ export function BillingEventsPanel({
                 </option>
                 <option value="wechat_pay" title={providerHelp("wechat_pay")}>
                   微信支付
+                </option>
+                <option value="alipay" title={providerHelp("alipay")}>
+                  支付宝
                 </option>
               </Select>
               <TextInput

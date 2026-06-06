@@ -238,6 +238,8 @@ enum PaymentProvider {
   airwallex
   /// China payment provider used by the .cn deployment.
   wechat_pay
+  /// China payment provider used by the .cn deployment.
+  alipay
   /// Back-office confirmed offline payment, such as bank transfer or enterprise invoicing.
   /// This is not a coupon or redemption-code flow; it still requires an order,
   /// fulfillment, ledger journals, and admin audit trail.

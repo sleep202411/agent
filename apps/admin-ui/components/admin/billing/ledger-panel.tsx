@@ -277,6 +277,9 @@ export function BillingLedgerPanel({
                     <option value="wechat_pay" title={providerHelp("wechat_pay")}>
                       微信支付
                     </option>
+                    <option value="alipay" title={providerHelp("alipay")}>
+                      支付宝
+                    </option>
                     <option value="manual" title={providerHelp("manual")}>
                       线下确认
                     </option>

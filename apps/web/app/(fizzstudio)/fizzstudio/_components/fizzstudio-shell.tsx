@@ -18,6 +18,7 @@ import { useLocale, useTranslations } from "@/src/i18n/i18n";
 import { localizePath } from "@/src/i18n/locale-url";
 import { useEnsurePersonalWorkspace, useWorkspaces } from "../../_hooks/use-workspace";
 import type { FizzWorkspace } from "../../_lib/api";
+import { ComputeTopupButton } from "./compute-topup-dialog";
 import { FizzStudioSidebar } from "./fizzstudio-sidebar";
 import { WorkspaceSwitcher } from "./workspace-switcher";
 
@@ -158,6 +159,8 @@ function StudioHeader({
             </span>
           </button>
 
+          <ComputeTopupButton variant="enterprise" />
+
           <WorkspaceSwitcher activeWorkspaceId={activeWorkspaceId} onSwitch={onSwitchWorkspace} />
 
           <button
@@ -229,6 +232,8 @@ function StudioHeader({
             <IconCrown className="size-4 fill-[#d8b7ff] text-[#d8b7ff]" />
             {t("shell.upgrade")}
           </button>
+
+          <ComputeTopupButton variant="studio" />
 
           <WorkspaceSwitcher activeWorkspaceId={activeWorkspaceId} onSwitch={onSwitchWorkspace} />
 

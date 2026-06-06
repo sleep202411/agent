@@ -3,10 +3,12 @@ import { z } from 'zod';
 export const CheckoutPaymentProviderSchema = z.enum([
   'airwallex',
   'wechat_pay',
+  'alipay',
 ]);
 export const AdminPaymentProviderSchema = z.enum([
   'airwallex',
   'wechat_pay',
+  'alipay',
   'manual',
   'internal',
 ]);
@@ -62,6 +64,7 @@ export const WalletCurrencyTypeSchema = z.enum([
   'compute_point',
   'community_point',
 ]);
+export const WalletBalanceKindSchema = z.enum(['consumable', 'withdrawable']);
 export const BillingProviderBindingStatusSchema = z.enum([
   'active',
   'inactive',
@@ -129,6 +132,25 @@ export const CreateCustomRechargeSchema = z.object({
 export type CreateCustomRechargeInput = z.infer<
   typeof CreateCustomRechargeSchema
 >;
+
+export const CreateComputePointTopupSchema = z.object({
+  priceId: z.string().uuid(),
+  provider: CheckoutPaymentProviderSchema.optional(),
+  promotionCode: z.string().trim().min(3).max(64).optional(),
+  idempotencyKey: z.string().trim().min(8).max(160),
+  successUrl: z.string().trim().url().max(2048),
+  backUrl: z.string().trim().url().max(2048),
+});
+export type CreateComputePointTopupInput = z.infer<
+  typeof CreateComputePointTopupSchema
+>;
+
+export const ListWalletLedgerQuerySchema = z.object({
+  currency: WalletCurrencyTypeSchema.default('compute_point'),
+  balanceKind: WalletBalanceKindSchema.default('consumable'),
+  limit: z.coerce.number().int().min(1).max(100).default(20),
+});
+export type ListWalletLedgerQuery = z.infer<typeof ListWalletLedgerQuerySchema>;
 
 export const ListAdminBillingPricesQuerySchema = z.object({
   productType: BillingProductTypeSchema.optional(),

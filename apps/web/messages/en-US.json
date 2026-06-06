@@ -5966,6 +5966,26 @@
       "upgradeDiscount": "-50%",
       "chat": "Chat"
     },
+    "computeBilling": {
+      "openRecharge": "Open compute point recharge",
+      "balance": "{amount} compute points",
+      "balanceLoading": "Compute points",
+      "dialogTitle": "Compute Point Recharge",
+      "availableBalance": "Available balance",
+      "usdRate": "USD is the source price. Airwallex handles local currency and FX at checkout.",
+      "explicitRate": "This deployment uses explicit local pricing configured by operations.",
+      "emptyTitle": "No active compute point packages",
+      "emptyDescription": "Create a compute point package in Billing Catalog and sync the payment provider price before enabling recharge.",
+      "points": "compute points",
+      "payNow": "Pay now",
+      "payNowWithAmount": "Pay {amount}",
+      "cancel": "Cancel",
+      "paymentFailed": "Payment failed. Please retry.",
+      "providerUnavailable": "This payment provider is not available in the browser yet.",
+      "successToast": "Compute points added.",
+      "completedToast": "Recharge completed. Balance is refreshing.",
+      "cancelledToast": "Recharge cancelled."
+    },
     "workspace": {
       "personal": "Personal workspace",
       "current": "Current production space",

@@ -713,6 +713,7 @@ export function providerLabel(provider: string) {
   const labels: Record<string, string> = {
     airwallex: "Airwallex",
     wechat_pay: "微信支付",
+    alipay: "支付宝",
     manual: "线下确认",
     internal: "内部发放",
   };
@@ -723,6 +724,7 @@ export function providerHelp(provider: string) {
   const labels: Record<string, string> = {
     airwallex: "国际站支付供应商。用于银行卡、本地支付、订阅、优惠券同步和结算对账。",
     wechat_pay: "中国站支付供应商。只在中国站部署中使用，不和国际站数据库共享。",
+    alipay: "中国站支付供应商。只在中国站部署中使用，不和国际站数据库共享。",
     manual: "后台确认的线下收款或企业转账。不是兑换码，仍然必须走订单、履约、ledger 和审计。",
     internal: "平台内部承担成本的发放，例如迁移补偿、运营赠送或 100% 免费兑换码的零元订单。",
   };

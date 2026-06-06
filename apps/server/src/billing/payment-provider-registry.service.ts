@@ -1,5 +1,6 @@
 import { Injectable, ServiceUnavailableException } from '@nestjs/common';
 import { PaymentProvider } from '@prisma/client';
+import { CURRENT_CELL } from '../common/region';
 import { AirwallexProvider } from './providers/airwallex.provider';
 import type { PaymentProviderAdapter } from './providers/payment-provider';
 
@@ -20,7 +21,7 @@ export class PaymentProviderRegistry {
     if (configured && configured in PaymentProvider) {
       return configured as PaymentProvider;
     }
-    return process.env.NEXT_PUBLIC_SITE_REGION === 'cn'
+    return CURRENT_CELL === 'cn'
       ? PaymentProvider.wechat_pay
       : PaymentProvider.airwallex;
   }

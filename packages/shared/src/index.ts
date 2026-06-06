@@ -17,3 +17,4 @@ export * from "./order.js";
 export * from "./conversation.js";
 export * from "./quota.js";
 export * from "./users.js";
+export * from "./billing.js";

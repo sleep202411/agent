@@ -5966,6 +5966,26 @@
       "upgradeDiscount": "-50%",
       "chat": "消息"
     },
+    "computeBilling": {
+      "openRecharge": "打開算力積分充值",
+      "balance": "{amount} 算力積分",
+      "balanceLoading": "算力積分",
+      "dialogTitle": "算力積分充值",
+      "availableBalance": "當前可用餘額",
+      "usdRate": "國際站以 USD 作為源價格，Airwallex 在支付時處理本地幣種和匯率。",
+      "explicitRate": "當前部署使用後台配置的本地幣種價格和到賬積分。",
+      "emptyTitle": "暫無可售算力積分套餐",
+      "emptyDescription": "請先在 Billing Catalog 建立算力積分套餐，並完成支付供應商價格同步。",
+      "points": "算力積分",
+      "payNow": "立即支付",
+      "payNowWithAmount": "支付 {amount}",
+      "cancel": "取消",
+      "paymentFailed": "支付失敗，請重試。",
+      "providerUnavailable": "當前支付渠道尚未接入瀏覽器支付。",
+      "successToast": "算力積分已到賬。",
+      "completedToast": "充值已完成，餘額正在刷新。",
+      "cancelledToast": "充值已取消。"
+    },
     "workspace": {
       "personal": "個人工作區",
       "current": "當前製作空間",
