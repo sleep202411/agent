@@ -186,13 +186,7 @@ export type AdminAiModelListData = { items: AdminAiCanonicalModel[] };
 export type AdminAiBindingListData = { items: AdminAiProviderBinding[] };
 export type AdminAiJobListData = { items: AdminAiJobListItem[] };
 
-export type AdminAiModelOpsView =
-  | "overview"
-  | "providers"
-  | "endpoints"
-  | "models"
-  | "bindings"
-  | "jobs";
+export type AdminAiModelOpsView = "overview" | "providers" | "endpoints" | "models" | "jobs";
 
 export type AdminAiModelOpsInitialData = {
   overview: AdminAiOverviewData | null;
@@ -331,29 +325,26 @@ export async function fetchAdminAiModelOpsView(
   }
 
   if (view === "models") {
-    const models = await fetchAdminAiResource<AdminAiModelListData>(
-      "/ai-model-ops/models?modality=image",
-      "统一模型加载失败。"
-    );
-    return { ...empty, models: models.data, error: models.error };
-  }
-
-  if (view === "bindings") {
-    const [bindings, models] = await Promise.all([
-      fetchAdminAiResource<AdminAiBindingListData>(
-        "/ai-model-ops/bindings?modality=image",
-        "供应商绑定加载失败。"
-      ),
+    const [models, bindings, endpoints] = await Promise.all([
       fetchAdminAiResource<AdminAiModelListData>(
         "/ai-model-ops/models?modality=image",
         "统一模型加载失败。"
       ),
+      fetchAdminAiResource<AdminAiBindingListData>(
+        "/ai-model-ops/bindings?modality=image",
+        "供应商绑定加载失败。"
+      ),
+      fetchAdminAiResource<AdminAiEndpointListData>(
+        "/ai-model-ops/endpoints?modality=image",
+        "供应商端点加载失败。"
+      ),
     ]);
     return {
       ...empty,
-      bindings: bindings.data,
       models: models.data,
-      error: bindings.error ?? models.error,
+      bindings: bindings.data,
+      endpoints: endpoints.data,
+      error: models.error ?? bindings.error ?? endpoints.error,
     };
   }
 

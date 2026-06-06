@@ -11,6 +11,8 @@ import {
 } from "react";
 import {
   IconAlertTriangle,
+  IconChevronDown,
+  IconChevronRight,
   IconCircleCheck,
   IconCircleOff,
   IconDatabaseSearch,
@@ -128,14 +130,10 @@ const VIEW_META: Record<
   },
   models: {
     title: "统一模型",
-    description: "人工维护用户侧展示的模型身份，再显式绑定一个或多个 provider endpoint。",
+    description:
+      "人工维护用户侧展示的模型身份，再在模型详情里显式绑定一个或多个 provider endpoint。",
     icon: <IconDatabaseSearch className="size-5" />,
     primaryAction: "new-model",
-  },
-  bindings: {
-    title: "Provider 绑定",
-    description: "配置真实 endpoint 的参数映射、pricing、权重、fallback、区域和观测策略。",
-    icon: <IconRoute className="size-5" />,
   },
   jobs: {
     title: "请求任务",
@@ -189,6 +187,7 @@ const PROVIDER_ENDPOINT_FIELDS = {
 
 const PROVIDER_BINDING_FIELDS = {
   canonicalModelId: { name: "canonicalModelId", label: "统一模型", required: true },
+  providerEndpointId: { name: "providerEndpointId", label: "供应商端点", required: true },
   status: { name: "status", label: "状态", required: true },
   priority: { name: "priority", label: "Priority" },
   weight: { name: "weight", label: "Weight" },
@@ -235,6 +234,8 @@ export function AiModelOpsPanel({
   const [selectedProvider, setSelectedProvider] = useState<AdminAiProviderAccount | null>(null);
   const [selectedModel, setSelectedModel] = useState<AdminAiCanonicalModel | null>(null);
   const [selectedEndpoint, setSelectedEndpoint] = useState<AdminAiProviderEndpoint | null>(null);
+  // When set, the create-binding drawer is scoped to this fixed canonical model (pick endpoint only).
+  const [bindingModel, setBindingModel] = useState<AdminAiCanonicalModel | null>(null);
   const [selectedBinding, setSelectedBinding] = useState<AdminAiProviderBinding | null>(null);
   const [selectedJob, setSelectedJob] = useState<AdminAiJobListItem | null>(null);
   const [jobDetail, setJobDetail] = useState<unknown>(null);
@@ -299,23 +300,18 @@ export function AiModelOpsPanel({
       }
 
       if (view === "models") {
-        const nextModels = await requestEnvelope<AdminAiModelListData>(
-          "/api/admin/ai-model-ops/models?modality=image"
-        );
-        setModels(nextModels);
-        reconcileSelections(nextModels, bindings);
-        return;
-      }
-
-      if (view === "bindings") {
-        const [nextBindings, nextModels] = await Promise.all([
-          requestEnvelope<AdminAiBindingListData>(
-            `/api/admin/ai-model-ops/bindings?${bindingQuery.toString()}`
-          ),
+        const [nextModels, nextBindings, nextEndpoints] = await Promise.all([
           requestEnvelope<AdminAiModelListData>("/api/admin/ai-model-ops/models?modality=image"),
+          requestEnvelope<AdminAiBindingListData>(
+            "/api/admin/ai-model-ops/bindings?modality=image"
+          ),
+          requestEnvelope<AdminAiEndpointListData>(
+            "/api/admin/ai-model-ops/endpoints?modality=image"
+          ),
         ]);
-        setBindings(nextBindings);
         setModels(nextModels);
+        setBindings(nextBindings);
+        setEndpoints(nextEndpoints);
         reconcileSelections(nextModels, nextBindings);
         return;
       }
@@ -374,7 +370,17 @@ export function AiModelOpsPanel({
 
   function openEndpointBinding(endpoint: AdminAiProviderEndpoint) {
     setDrawerError(null);
+    setBindingModel(null);
     setSelectedEndpoint(endpoint);
+    setDrawerMode("endpointBinding");
+  }
+
+  // Open the create-binding drawer scoped to a canonical model from its inline bindings sub-table (pick endpoint, fixed model).
+  function openModelBinding(model: AdminAiCanonicalModel) {
+    setDrawerError(null);
+    setSelectedEndpoint(null);
+    setSelectedModel(model);
+    setBindingModel(model);
     setDrawerMode("endpointBinding");
   }
 
@@ -409,7 +415,27 @@ export function AiModelOpsPanel({
     setDrawerError(null);
     setSelectedProvider(null);
     setSelectedEndpoint(null);
+    setBindingModel(null);
     setJobDetail(null);
+  }
+
+  // Archive a binding (soft-disable). The server exposes no hard-delete route, so removal = status: archived.
+  async function archiveBinding(binding: AdminAiProviderBinding) {
+    setSaving(true);
+    setError(null);
+    try {
+      await mutateEnvelope(
+        `/api/admin/ai-model-ops/bindings/${binding.id}`,
+        { status: "archived" },
+        "PATCH"
+      );
+      await refresh();
+    } catch (err) {
+      setError(toErrorMessage(err));
+      throw err;
+    } finally {
+      setSaving(false);
+    }
   }
 
   function renderViewContent() {
@@ -507,17 +533,17 @@ export function AiModelOpsPanel({
     }
 
     if (view === "models") {
-      return <ModelsPanel models={models.items} loading={loading} onOpenModel={openModel} />;
-    }
-
-    if (view === "bindings") {
       return (
-        <BindingsPanel
+        <ModelsPanel
+          models={models.items}
           bindings={bindings.items}
+          endpoints={endpoints.items}
           loading={loading}
-          statusFilter={statusFilter}
-          onStatusFilter={handleStatusFilter}
+          saving={saving}
+          onOpenModel={openModel}
+          onAddBinding={openModelBinding}
           onOpenBinding={openBinding}
+          onArchiveBinding={archiveBinding}
         />
       );
     }
@@ -676,23 +702,24 @@ export function AiModelOpsPanel({
 
       <EndpointBindingDrawer
         open={drawerMode === "endpointBinding"}
-        endpoint={selectedEndpoint}
+        endpoint={bindingModel ? null : selectedEndpoint}
+        model={bindingModel}
         models={models.items}
+        endpoints={endpoints.items}
         saving={saving}
         error={drawerError}
         onClose={closeDrawer}
         onSave={async (event) => {
           event.preventDefault();
-          if (!selectedEndpoint) return;
           setSaving(true);
           setDrawerError(null);
           try {
             await mutateEnvelope(
               "/api/admin/ai-model-ops/bindings",
-              buildCreateProviderBindingPayload(new FormData(event.currentTarget), selectedEndpoint)
+              buildCreateProviderBindingPayload(new FormData(event.currentTarget))
             );
             await refresh();
-            setDrawerMode(null);
+            closeDrawer();
           } catch (err) {
             setDrawerError(toErrorMessage(err));
           } finally {
@@ -720,6 +747,7 @@ export function AiModelOpsPanel({
               "PATCH"
             );
             await refresh();
+            closeDrawer();
           } catch (err) {
             setDrawerError(toErrorMessage(err));
           } finally {
@@ -1236,15 +1264,48 @@ function EndpointsPanel({
 
 function ModelsPanel({
   models,
+  bindings,
+  endpoints,
   loading,
+  saving,
   onOpenModel,
+  onAddBinding,
+  onOpenBinding,
+  onArchiveBinding,
 }: {
   models: AdminAiCanonicalModel[];
+  bindings: AdminAiProviderBinding[];
+  endpoints: AdminAiProviderEndpoint[];
   loading: boolean;
+  saving: boolean;
   onOpenModel: (model: AdminAiCanonicalModel) => void;
+  onAddBinding: (model: AdminAiCanonicalModel) => void;
+  onOpenBinding: (binding: AdminAiProviderBinding) => void;
+  onArchiveBinding: (binding: AdminAiProviderBinding) => Promise<void>;
 }) {
   const columns = useMemo<ColumnDef<AdminAiCanonicalModel, unknown>[]>(
     () => [
+      {
+        id: "expander",
+        header: "",
+        enableSorting: false,
+        meta: { cellClassName: "w-[44px]" },
+        cell: ({ row }) => (
+          <button
+            type="button"
+            onClick={() => row.toggleExpanded()}
+            disabled={!row.getCanExpand()}
+            aria-label={row.getIsExpanded() ? "收起路由绑定" : "展开路由绑定"}
+            className="grid size-7 place-items-center rounded-lg border border-slate-200 text-slate-500 transition hover:text-slate-900 disabled:opacity-40"
+          >
+            {row.getIsExpanded() ? (
+              <IconChevronDown className="size-4" />
+            ) : (
+              <IconChevronRight className="size-4" />
+            )}
+          </button>
+        ),
+      },
       {
         accessorKey: "displayName",
         header: "统一模型",
@@ -1298,17 +1359,19 @@ function ModelsPanel({
         id: "actions",
         header: "操作",
         enableSorting: false,
-        meta: { pin: "right" },
+        meta: { pin: "right", cellClassName: "w-[110px]" },
         cell: ({ row }) => (
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            onClick={() => onOpenModel(row.original)}
-            className="h-8 rounded-lg px-3 text-[12px]"
-          >
-            策略
-          </Button>
+          <div className="flex items-center justify-end gap-1.5">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => onOpenModel(row.original)}
+              className="h-8 rounded-lg px-3 text-[12px]"
+            >
+              策略
+            </Button>
+          </div>
         ),
       },
     ],
@@ -1319,7 +1382,7 @@ function ModelsPanel({
       <SectionTitle
         icon={<IconDatabaseSearch className="size-4" />}
         title="统一模型"
-        description="用户侧展示的模型身份，同名模型可挂多个 provider，由路由策略分配资源。"
+        description="用户侧展示的模型身份，同名模型可挂多个 provider，由路由策略分配资源。展开行可管理该模型的路由绑定。"
       />
       <DataTable
         data={models}
@@ -1328,29 +1391,61 @@ function ModelsPanel({
         minWidth={980}
         pageSize={8}
         emptyLabel="暂无统一模型。请先手动创建产品模型，再绑定供应商端点。"
+        renderExpanded={(model) => (
+          <ModelBindingsSubTable
+            model={model}
+            bindings={bindings}
+            endpoints={endpoints}
+            saving={saving}
+            onAddBinding={onAddBinding}
+            onOpenBinding={onOpenBinding}
+            onArchiveBinding={onArchiveBinding}
+          />
+        )}
       />
     </section>
   );
 }
 
-function BindingsPanel({
+/**
+ * Inline, model-scoped Provider 绑定 sub-table, rendered into the expanded row of the 统一模型 list.
+ * It is the runtime truth surface for one canonical model's routing, and lets the operator:
+ * - add a binding (pick an existing endpoint, set priority / weight / status) via the create flow,
+ * - edit a binding's routing via the existing BindingPolicyDrawer,
+ * - archive (soft-remove) a binding via status: archived.
+ * Snapshotted schema / pricing stay read-only/informational; routing is the only editable target.
+ */
+function ModelBindingsSubTable({
+  model,
   bindings,
-  loading,
-  statusFilter,
-  onStatusFilter,
+  endpoints,
+  saving,
+  onAddBinding,
   onOpenBinding,
+  onArchiveBinding,
 }: {
+  model: AdminAiCanonicalModel;
   bindings: AdminAiProviderBinding[];
-  loading: boolean;
-  statusFilter: StatusFilter;
-  onStatusFilter: (status: StatusFilter) => void;
+  endpoints: AdminAiProviderEndpoint[];
+  saving: boolean;
+  onAddBinding: (model: AdminAiCanonicalModel) => void;
   onOpenBinding: (binding: AdminAiProviderBinding) => void;
+  onArchiveBinding: (binding: AdminAiProviderBinding) => Promise<void>;
 }) {
+  const modelBindings = useMemo(
+    () => bindings.filter((item) => item.canonicalModel?.id === model.id),
+    [bindings, model]
+  );
+  const bindableEndpoints = useMemo(
+    () =>
+      endpoints.filter((item) => item.modality === model.modality && item.status !== "archived"),
+    [endpoints, model]
+  );
   const columns = useMemo<ColumnDef<AdminAiProviderBinding, unknown>[]>(
     () => [
       {
         accessorKey: "endpointId",
-        header: "Endpoint",
+        header: "Provider / Endpoint",
         cell: ({ row }) => {
           const item = row.original;
           return (
@@ -1359,6 +1454,7 @@ function BindingsPanel({
                 {item.displayName ?? item.endpointId}
               </p>
               <p className="mt-0.5 font-mono text-[12px] text-slate-500">{item.endpointId}</p>
+              <p className="mt-0.5 text-[12px] text-slate-500">{providerLabel(item.provider)}</p>
             </div>
           );
         },
@@ -1367,22 +1463,6 @@ function BindingsPanel({
         accessorKey: "status",
         header: "状态",
         cell: ({ row }) => <AiStatusPill status={row.original.status} />,
-      },
-      {
-        id: "canonical",
-        header: "统一模型",
-        enableSorting: false,
-        cell: ({ row }) => {
-          const model = row.original.canonicalModel;
-          return model ? (
-            <div>
-              <p className="text-[13px] font-medium text-slate-900">{model.displayName}</p>
-              <p className="text-[12px] text-slate-500">{model.slug}</p>
-            </div>
-          ) : (
-            <StatusPill tone="risk">未绑定</StatusPill>
-          );
-        },
       },
       {
         id: "route",
@@ -1395,10 +1475,10 @@ function BindingsPanel({
       },
       {
         id: "pricing",
-        header: "成本",
+        header: "成本快照",
         enableSorting: false,
         cell: ({ row }) => (
-          <span className="line-clamp-2 max-w-[260px] text-[12px] text-slate-500">
+          <span className="line-clamp-2 max-w-[240px] text-[12px] text-slate-500">
             {pricingPreview(row.original.providerPricing)}
           </span>
         ),
@@ -1421,56 +1501,83 @@ function BindingsPanel({
         id: "actions",
         header: "操作",
         enableSorting: false,
-        meta: { pin: "right" },
-        cell: ({ row }) => (
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            onClick={() => onOpenBinding(row.original)}
-            className="h-8 rounded-lg px-3 text-[12px]"
-          >
-            路由
-          </Button>
-        ),
+        meta: { pin: "right", cellClassName: "w-[200px]" },
+        cell: ({ row }) => {
+          const item = row.original;
+          const archived = item.status === "archived";
+          return (
+            <div className="flex items-center justify-end gap-1.5">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => onOpenBinding(item)}
+                className="h-8 rounded-lg px-3 text-[12px]"
+              >
+                <IconEdit className="size-3.5" />
+                路由
+              </Button>
+              <ConfirmDialog
+                title="归档 Provider 绑定？"
+                description={`归档「${item.displayName ?? item.endpointId}」后，该 provider 路由不再参与这个统一模型的调度。可重新编辑路由恢复状态。`}
+                confirmLabel="归档"
+                destructive
+                onConfirm={() => onArchiveBinding(item)}
+                trigger={
+                  <Button
+                    type="button"
+                    variant="destructive"
+                    size="sm"
+                    className="h-8 rounded-lg px-2.5 text-[12px]"
+                    disabled={archived}
+                  >
+                    <IconTrash className="size-3.5" />
+                    归档
+                  </Button>
+                }
+              />
+            </div>
+          );
+        },
       },
     ],
-    [onOpenBinding]
+    [onArchiveBinding, onOpenBinding]
   );
 
   return (
-    <section className="space-y-3">
+    <div className="px-5 py-4">
       <div className="flex flex-col gap-2 lg:flex-row lg:items-end lg:justify-between">
         <SectionTitle
           icon={<IconRoute className="size-4" />}
-          title="Provider 绑定"
-          description="真实 endpoint 的 schema、pricing、路由权重、fallback 和配置快照。"
+          title="路由绑定"
+          description="为这个统一模型挑选 provider endpoint，并配置 priority / weight / status 路由。schema 和 pricing 快照只读。"
         />
-        <label className="grid gap-1 text-[12px] font-medium text-slate-500">
-          绑定状态
-          <select
-            value={statusFilter}
-            onChange={(event) => onStatusFilter(event.currentTarget.value as StatusFilter)}
-            className="h-9 rounded-lg border border-slate-200 bg-white px-2.5 text-sm text-slate-700 outline-none transition focus:border-slate-950 focus:ring-2 focus:ring-slate-950/10"
-          >
-            <option value="">全部</option>
-            <option value="draft">草稿</option>
-            <option value="active">启用</option>
-            <option value="disabled">停用</option>
-            <option value="degraded">降级</option>
-            <option value="archived">归档</option>
-          </select>
-        </label>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          onClick={() => onAddBinding(model)}
+          disabled={saving || bindableEndpoints.length === 0}
+          className="h-9 rounded-lg px-3 text-[12px]"
+          title={
+            bindableEndpoints.length === 0
+              ? "先在「供应商端点」创建可用 endpoint"
+              : "绑定一个 provider endpoint"
+          }
+        >
+          <IconPlus className="size-3.5" />
+          新建绑定
+        </Button>
       </div>
-      <DataTable
-        data={bindings}
-        columns={columns}
-        loading={loading}
-        minWidth={1120}
-        pageSize={8}
-        emptyLabel="暂无 provider binding。"
-      />
-    </section>
+      <div className="mt-3">
+        <DataTable
+          data={modelBindings}
+          columns={columns}
+          pageSize={8}
+          emptyLabel="该统一模型还没有绑定 provider endpoint。"
+        />
+      </div>
+    </div>
   );
 }
 
@@ -1714,113 +1821,115 @@ function ModelPolicyDrawer({
             {creating ? "人工维护用户侧模型身份，再绑定供应商端点。" : draft.slug}
           </SheetDescription>
         </SheetHeader>
-        <form
-          id="ai-model-form"
-          className="min-h-0 flex-1 overflow-y-auto px-5 py-5"
-          onSubmit={onSave}
-        >
-          {error ? <ErrorBanner message={error} /> : null}
-          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-            <FormField
-              field={MODEL_POLICY_FIELDS.slug}
-              required={creating}
-              hint={creating ? "创建后不可变，必须与前台模型身份一一对应。" : "创建后不可变。"}
-            >
+        <div className="min-h-0 flex-1 overflow-y-auto px-5 py-5">
+          <form id="ai-model-form" onSubmit={onSave}>
+            {error ? <ErrorBanner message={error} /> : null}
+            <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+              <FormField
+                field={MODEL_POLICY_FIELDS.slug}
+                required={creating}
+                hint={creating ? "创建后不可变，必须与前台模型身份一一对应。" : "创建后不可变。"}
+              >
+                {(controlProps) => (
+                  <Input
+                    {...controlProps}
+                    disabled={!creating}
+                    defaultValue={draft.slug}
+                    className="h-9 rounded-lg"
+                    placeholder="gpt-image-2"
+                  />
+                )}
+              </FormField>
+              <FormField field={MODEL_POLICY_FIELDS.modality} required={creating}>
+                {(controlProps) => (
+                  <NativeSelect
+                    {...controlProps}
+                    defaultValue={draft.modality}
+                    disabled={!creating}
+                  >
+                    <option value="image">图片</option>
+                    <option value="video">视频</option>
+                  </NativeSelect>
+                )}
+              </FormField>
+              <FormField field={MODEL_POLICY_FIELDS.displayName}>
+                {(controlProps) => (
+                  <Input
+                    {...controlProps}
+                    defaultValue={draft.displayName}
+                    className="h-9 rounded-lg"
+                  />
+                )}
+              </FormField>
+              <FormField field={MODEL_POLICY_FIELDS.family}>
+                {(controlProps) => (
+                  <Input {...controlProps} defaultValue={draft.family} className="h-9 rounded-lg" />
+                )}
+              </FormField>
+              <FormField field={MODEL_POLICY_FIELDS.status}>
+                {(controlProps) => (
+                  <NativeSelect {...controlProps} defaultValue={draft.status}>
+                    <option value="draft">草稿</option>
+                    <option value="active">启用</option>
+                    <option value="disabled">停用</option>
+                    <option value="degraded">降级</option>
+                  </NativeSelect>
+                )}
+              </FormField>
+              <FormField field={MODEL_POLICY_FIELDS.visibility}>
+                {(controlProps) => (
+                  <NativeSelect {...controlProps} defaultValue={draft.visibility}>
+                    <option value="hidden">隐藏</option>
+                    <option value="direct">可直选</option>
+                  </NativeSelect>
+                )}
+              </FormField>
+            </div>
+            <FormField field={MODEL_POLICY_FIELDS.description} optional className="mt-3">
               {(controlProps) => (
-                <Input
+                <Textarea
                   {...controlProps}
-                  disabled={!creating}
-                  defaultValue={draft.slug}
-                  className="h-9 rounded-lg"
-                  placeholder="gpt-image-2"
+                  defaultValue={draft.description ?? ""}
+                  className="min-h-20 rounded-lg"
                 />
               )}
             </FormField>
-            <FormField field={MODEL_POLICY_FIELDS.modality} required={creating}>
-              {(controlProps) => (
-                <NativeSelect {...controlProps} defaultValue={draft.modality} disabled={!creating}>
-                  <option value="image">图片</option>
-                  <option value="video">视频</option>
-                </NativeSelect>
-              )}
-            </FormField>
-            <FormField field={MODEL_POLICY_FIELDS.displayName}>
-              {(controlProps) => (
-                <Input
-                  {...controlProps}
-                  defaultValue={draft.displayName}
-                  className="h-9 rounded-lg"
-                />
-              )}
-            </FormField>
-            <FormField field={MODEL_POLICY_FIELDS.family}>
-              {(controlProps) => (
-                <Input {...controlProps} defaultValue={draft.family} className="h-9 rounded-lg" />
-              )}
-            </FormField>
-            <FormField field={MODEL_POLICY_FIELDS.status}>
-              {(controlProps) => (
-                <NativeSelect {...controlProps} defaultValue={draft.status}>
-                  <option value="draft">草稿</option>
-                  <option value="active">启用</option>
-                  <option value="disabled">停用</option>
-                  <option value="degraded">降级</option>
-                </NativeSelect>
-              )}
-            </FormField>
-            <FormField field={MODEL_POLICY_FIELDS.visibility}>
-              {(controlProps) => (
-                <NativeSelect {...controlProps} defaultValue={draft.visibility}>
-                  <option value="hidden">隐藏</option>
-                  <option value="direct">可直选</option>
-                </NativeSelect>
-              )}
-            </FormField>
-          </div>
-          <FormField field={MODEL_POLICY_FIELDS.description} optional className="mt-3">
-            {(controlProps) => (
-              <Textarea
-                {...controlProps}
-                defaultValue={draft.description ?? ""}
-                className="min-h-20 rounded-lg"
+            <div className="mt-4 grid gap-3 xl:grid-cols-2">
+              <JsonTextarea
+                field={MODEL_POLICY_FIELDS.generationModes}
+                value={draft.generationModes}
+                rows={10}
               />
-            )}
-          </FormField>
-          <div className="mt-4 grid gap-3 xl:grid-cols-2">
-            <JsonTextarea
-              field={MODEL_POLICY_FIELDS.generationModes}
-              value={draft.generationModes}
-              rows={10}
-            />
-            <JsonTextarea
-              field={MODEL_POLICY_FIELDS.parameterPolicy}
-              value={draft.parameterPolicy}
-              rows={10}
-            />
-            <JsonTextarea
-              field={MODEL_POLICY_FIELDS.billingPolicy}
-              value={draft.billingPolicy}
-              rows={10}
-            />
-            <JsonTextarea
-              field={MODEL_POLICY_FIELDS.queuePolicy}
-              value={draft.queuePolicy}
-              rows={10}
-            />
-            <JsonTextarea
-              field={MODEL_POLICY_FIELDS.entitlementPolicy}
-              value={draft.entitlementPolicy}
-              rows={10}
-            />
-            <JsonTextarea
-              field={MODEL_POLICY_FIELDS.observabilityPolicy}
-              value={draft.observabilityPolicy}
-              rows={10}
-            />
-            <JsonTextarea field={MODEL_POLICY_FIELDS.uiPolicy} value={draft.uiPolicy} rows={10} />
-            <JsonTextarea field={MODEL_POLICY_FIELDS.metadata} value={draft.metadata} rows={10} />
-          </div>
-        </form>
+              <JsonTextarea
+                field={MODEL_POLICY_FIELDS.parameterPolicy}
+                value={draft.parameterPolicy}
+                rows={10}
+              />
+              <JsonTextarea
+                field={MODEL_POLICY_FIELDS.billingPolicy}
+                value={draft.billingPolicy}
+                rows={10}
+              />
+              <JsonTextarea
+                field={MODEL_POLICY_FIELDS.queuePolicy}
+                value={draft.queuePolicy}
+                rows={10}
+              />
+              <JsonTextarea
+                field={MODEL_POLICY_FIELDS.entitlementPolicy}
+                value={draft.entitlementPolicy}
+                rows={10}
+              />
+              <JsonTextarea
+                field={MODEL_POLICY_FIELDS.observabilityPolicy}
+                value={draft.observabilityPolicy}
+                rows={10}
+              />
+              <JsonTextarea field={MODEL_POLICY_FIELDS.uiPolicy} value={draft.uiPolicy} rows={10} />
+              <JsonTextarea field={MODEL_POLICY_FIELDS.metadata} value={draft.metadata} rows={10} />
+            </div>
+          </form>
+        </div>
         <SheetFooter className="border-t border-slate-200 bg-slate-50 px-5 py-4">
           <div className="flex justify-end gap-2">
             <Button type="button" variant="outline" onClick={onClose} disabled={saving}>
@@ -2041,24 +2150,71 @@ function ProviderEndpointDrawer({
   );
 }
 
+/**
+ * Create-binding drawer. Supports two entry points:
+ * - From an endpoint (供应商端点页): a fixed `endpoint`, operator picks the canonical model.
+ * - From a canonical model (统一模型详情): a fixed `model`, operator picks an endpoint.
+ * Either way the create payload carries both `providerEndpointId` + `canonicalModelId`.
+ * Schema / pricing snapshots stay read-only — routing (status/priority/weight) is the only editable target.
+ */
 function EndpointBindingDrawer({
   open,
   endpoint,
+  model,
   models,
+  endpoints,
   saving,
   error,
   onClose,
   onSave,
 }: {
   open: boolean;
+  /** Fixed endpoint (endpoints-page flow). */
   endpoint: AdminAiProviderEndpoint | null;
+  /** Fixed canonical model (model-detail flow). */
+  model: AdminAiCanonicalModel | null;
+  /** Pickable models (endpoints-page flow). */
   models: AdminAiCanonicalModel[];
+  /** Pickable endpoints (model-detail flow). */
+  endpoints: AdminAiProviderEndpoint[];
   saving: boolean;
   error: string | null;
   onClose: () => void;
   onSave: (event: FormEvent<HTMLFormElement>) => void;
 }) {
-  if (!endpoint) return null;
+  const fromModel = Boolean(model);
+
+  const bindableEndpoints = useMemo(
+    () =>
+      model
+        ? endpoints.filter((item) => item.modality === model.modality && item.status !== "archived")
+        : [],
+    [endpoints, model]
+  );
+
+  // Track the picked endpoint to drive the read-only snapshot panel + submit gating.
+  // Reset to the first bindable endpoint whenever the drawer (re)opens for a model —
+  // done via the "adjust state during render" pattern to avoid a setState-in-effect.
+  const [selectedEndpointId, setSelectedEndpointId] = useState("");
+  const [pickerKey, setPickerKey] = useState<string | null>(null);
+  const nextPickerKey = open && fromModel ? `${model?.id ?? ""}` : null;
+  if (nextPickerKey !== pickerKey) {
+    setPickerKey(nextPickerKey);
+    setSelectedEndpointId(nextPickerKey ? (bindableEndpoints[0]?.id ?? "") : "");
+  }
+
+  if (!endpoint && !model) return null;
+
+  const pickedEndpoint = fromModel
+    ? (bindableEndpoints.find((item) => item.id === selectedEndpointId) ?? null)
+    : endpoint;
+  // The provider pricing snapshot to surface read-only follows the bound endpoint.
+  const snapshotEndpoint = pickedEndpoint;
+  const subtitle = fromModel ? `${model?.displayName} · ${model?.slug}` : endpoint?.endpointId;
+  const canSubmit = fromModel
+    ? bindableEndpoints.length > 0 && Boolean(selectedEndpointId)
+    : models.length > 0;
+
   return (
     <Sheet open={open} onOpenChange={(next) => (!next ? onClose() : null)}>
       <SheetContent
@@ -2067,9 +2223,9 @@ function EndpointBindingDrawer({
         showCloseButton
       >
         <SheetHeader className="border-b border-slate-200 px-5 py-4">
-          <SheetTitle>绑定供应商端点</SheetTitle>
+          <SheetTitle>{fromModel ? "新建 Provider 绑定" : "绑定供应商端点"}</SheetTitle>
           <SheetDescription className="font-mono text-[12px] text-slate-500">
-            {endpoint.endpointId}
+            {subtitle}
           </SheetDescription>
         </SheetHeader>
         <form
@@ -2078,40 +2234,80 @@ function EndpointBindingDrawer({
           onSubmit={onSave}
         >
           {error ? <ErrorBanner message={error} /> : null}
-          <div className="mb-4 grid gap-2 rounded-xl border border-slate-200 bg-slate-50 p-3 text-[12px] text-slate-600">
-            <div className="flex items-center justify-between gap-3">
-              <span className="font-medium text-slate-950">
-                {endpoint.displayName ?? endpoint.endpointId}
-              </span>
-              <div className="flex items-center gap-1.5">
-                <AiStatusPill status={endpoint.status} />
-                <HealthPill status={endpoint.healthStatus} />
+          {/* Pre-fill the fixed side of the binding so both flows post providerEndpointId + canonicalModelId. */}
+          {fromModel && model ? (
+            <input
+              type="hidden"
+              name={PROVIDER_BINDING_FIELDS.canonicalModelId.name}
+              value={model.id}
+            />
+          ) : null}
+          {!fromModel && endpoint ? (
+            <input
+              type="hidden"
+              name={PROVIDER_BINDING_FIELDS.providerEndpointId.name}
+              value={endpoint.id}
+            />
+          ) : null}
+          {snapshotEndpoint ? (
+            <div className="mb-4 grid gap-2 rounded-xl border border-slate-200 bg-slate-50 p-3 text-[12px] text-slate-600">
+              <div className="flex items-center justify-between gap-3">
+                <span className="font-medium text-slate-950">
+                  {snapshotEndpoint.displayName ?? snapshotEndpoint.endpointId}
+                </span>
+                <div className="flex items-center gap-1.5">
+                  <AiStatusPill status={snapshotEndpoint.status} />
+                  <HealthPill status={snapshotEndpoint.healthStatus} />
+                </div>
               </div>
+              <p>
+                {providerLabel(snapshotEndpoint.provider)} ·{" "}
+                {providerLabel(
+                  snapshotEndpoint.providerAccount?.provider ?? snapshotEndpoint.provider
+                )}
+              </p>
+              <p className="font-mono">
+                schema {hashPreview(snapshotEndpoint.schemaHash)} · pricing{" "}
+                {hashPreview(snapshotEndpoint.pricingHash)}
+              </p>
             </div>
-            <p>
-              {providerLabel(endpoint.provider)} ·{" "}
-              {providerLabel(endpoint.providerAccount?.provider ?? endpoint.provider)}
-            </p>
-            <p className="font-mono">
-              schema {hashPreview(endpoint.schemaHash)} · pricing{" "}
-              {hashPreview(endpoint.pricingHash)}
-            </p>
-          </div>
+          ) : null}
           <div className="grid gap-3 sm:grid-cols-2">
-            <FormField field={PROVIDER_BINDING_FIELDS.canonicalModelId}>
-              {(controlProps) => (
-                <NativeSelect {...controlProps} defaultValue={models[0]?.id ?? ""}>
-                  <option value="" disabled>
-                    选择模型
-                  </option>
-                  {models.map((item) => (
-                    <option key={item.id} value={item.id}>
-                      {item.displayName} · {item.slug}
+            {fromModel ? (
+              <FormField field={PROVIDER_BINDING_FIELDS.providerEndpointId}>
+                {(controlProps) => (
+                  <NativeSelect
+                    {...controlProps}
+                    value={selectedEndpointId}
+                    onChange={(event) => setSelectedEndpointId(event.currentTarget.value)}
+                  >
+                    <option value="" disabled>
+                      选择供应商端点
                     </option>
-                  ))}
-                </NativeSelect>
-              )}
-            </FormField>
+                    {bindableEndpoints.map((item) => (
+                      <option key={item.id} value={item.id}>
+                        {providerLabel(item.provider)} · {item.displayName ?? item.endpointId}
+                      </option>
+                    ))}
+                  </NativeSelect>
+                )}
+              </FormField>
+            ) : (
+              <FormField field={PROVIDER_BINDING_FIELDS.canonicalModelId}>
+                {(controlProps) => (
+                  <NativeSelect {...controlProps} defaultValue={models[0]?.id ?? ""}>
+                    <option value="" disabled>
+                      选择模型
+                    </option>
+                    {models.map((item) => (
+                      <option key={item.id} value={item.id}>
+                        {item.displayName} · {item.slug}
+                      </option>
+                    ))}
+                  </NativeSelect>
+                )}
+              </FormField>
+            )}
             <FormField field={PROVIDER_BINDING_FIELDS.status}>
               {(controlProps) => (
                 <NativeSelect {...controlProps} defaultValue="draft">
@@ -2171,7 +2367,7 @@ function EndpointBindingDrawer({
             />
             <JsonTextarea
               field={PROVIDER_BINDING_FIELDS.providerPricing}
-              value={endpoint.providerPricing}
+              value={snapshotEndpoint?.providerPricing ?? {}}
               readOnly
             />
           </div>
@@ -2181,11 +2377,7 @@ function EndpointBindingDrawer({
             <Button type="button" variant="outline" onClick={onClose} disabled={saving}>
               取消
             </Button>
-            <Button
-              type="submit"
-              form="ai-endpoint-binding-form"
-              disabled={saving || models.length === 0}
-            >
+            <Button type="submit" form="ai-endpoint-binding-form" disabled={saving || !canSubmit}>
               {saving ? "保存中…" : "创建绑定"}
             </Button>
           </div>
@@ -2705,9 +2897,9 @@ function buildProviderBindingPayload(form: FormData) {
   };
 }
 
-function buildCreateProviderBindingPayload(form: FormData, endpoint: AdminAiProviderEndpoint) {
+function buildCreateProviderBindingPayload(form: FormData) {
   return {
-    providerEndpointId: endpoint.id,
+    providerEndpointId: requiredString(form, PROVIDER_BINDING_FIELDS.providerEndpointId),
     canonicalModelId: requiredString(form, PROVIDER_BINDING_FIELDS.canonicalModelId),
     ...buildProviderBindingPayload(form),
   };
