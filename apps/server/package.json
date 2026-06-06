@@ -13,6 +13,7 @@
     "start:debug": "PORT=4399 nest start --debug --watch",
     "start:prod": "PORT=4399 node dist/main",
     "admin:create-user": "tsx scripts/admin-create-user.ts",
+    "seed:ai-image": "tsx prisma/seed/seed.ts",
     "lint": "eslint \"{src,scripts,apps,libs,test}/**/*.ts\" --fix",
     "test": "jest",
     "test:watch": "jest --watch",
@@ -25,6 +26,9 @@
     "db:migrate": "node scripts/ensure-local-database.mjs prisma migrate dev",
     "db:deploy": "prisma migrate deploy",
     "db:studio": "node scripts/ensure-local-database.mjs prisma studio"
+  },
+  "prisma": {
+    "seed": "tsx prisma/seed/seed.ts"
   },
   "dependencies": {
     "@ai-sdk/alibaba": "^1.0.17",
