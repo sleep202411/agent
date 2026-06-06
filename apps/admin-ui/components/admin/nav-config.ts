@@ -6,6 +6,7 @@ import {
   IconCoins,
   IconCreditCard,
   IconDashboard,
+  IconDatabaseSearch,
   IconDeviceDesktop,
   IconFileAnalytics,
   IconFlag,
@@ -15,6 +16,7 @@ import {
   IconReceipt2,
   IconReceiptRefund,
   IconReportMoney,
+  IconRoute,
   IconScale,
   IconShieldLock,
   IconTags,
@@ -49,7 +51,7 @@ export type ModuleNavGroup = {
 };
 
 /**
- * GLOBAL narrow left rail — exactly 7 flat entries.
+ * GLOBAL narrow left rail — flat top-level modules.
  * `/` (运营总览) and `/account` (我的账户) are ungated; the rest are permission-gated.
  * The `key` doubles as the module prefix used by `activeModule`.
  */
@@ -62,6 +64,13 @@ export const GLOBAL_NAV: GlobalNavEntry[] = [
     label: "计费财务",
     icon: IconCoins,
     permission: "billing.read",
+  },
+  {
+    key: "/ai-model-ops",
+    href: "/ai-model-ops",
+    label: "模型运营",
+    icon: IconPlugConnected,
+    permission: "ai_model_ops.read",
   },
   // 媒体资产 (/media) is hidden from nav until the module is built — the page is
   // still a ModulePlaceholder, so we don't surface it as a top-level module yet.
@@ -220,6 +229,54 @@ export const MODULE_NAV: Record<string, ModuleNavGroup[]> = {
           label: "创作者收益",
           icon: IconReportMoney,
           permission: "ip.read",
+        },
+      ],
+    },
+  ],
+  "/ai-model-ops": [
+    {
+      label: "运行态",
+      items: [
+        {
+          href: "/ai-model-ops/overview",
+          label: "总览",
+          icon: IconDashboard,
+          permission: "ai_model_ops.read",
+        },
+        {
+          href: "/ai-model-ops/jobs",
+          label: "请求任务",
+          icon: IconFileAnalytics,
+          permission: "ai_model_ops.read",
+        },
+      ],
+    },
+    {
+      label: "供应商路由",
+      items: [
+        {
+          href: "/ai-model-ops/providers",
+          label: "供应商账号",
+          icon: IconPlugConnected,
+          permission: "ai_model_ops.read",
+        },
+        {
+          href: "/ai-model-ops/endpoints",
+          label: "供应商端点",
+          icon: IconDatabaseSearch,
+          permission: "ai_model_ops.read",
+        },
+        {
+          href: "/ai-model-ops/models",
+          label: "统一模型",
+          icon: IconDatabaseSearch,
+          permission: "ai_model_ops.read",
+        },
+        {
+          href: "/ai-model-ops/bindings",
+          label: "Provider 绑定",
+          icon: IconRoute,
+          permission: "ai_model_ops.read",
         },
       ],
     },

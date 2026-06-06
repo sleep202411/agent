@@ -450,7 +450,7 @@ function CreatePromotionForm({
         <FormLabel label="适用类型" help="限制兑换码只能用于某类商品；留空表示全部商品可用。">
           <Select name="appliesProductType" defaultValue="">
             <option value="">全部商品</option>
-            <option value="bubble_pack" title={productTypeHelp("bubble_pack")}>
+            <option value="compute_point_pack" title={productTypeHelp("compute_point_pack")}>
               算力积分
             </option>
             <option value="community_point_pack" title={productTypeHelp("community_point_pack")}>

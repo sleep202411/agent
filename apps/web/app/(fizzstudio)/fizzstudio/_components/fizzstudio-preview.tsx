@@ -1,408 +1,312 @@
 "use client";
 
+import { useMemo, useState } from "react";
 import Link from "next/link";
-import type { ReactNode } from "react";
-import {
-  IconArrowRight,
-  IconBell,
-  IconChartBar,
-  IconChevronDown,
-  IconDatabase,
-  IconFolders,
-  IconHome,
-  IconMicrophone,
-  IconPaperclip,
-  IconPlus,
-  IconPhotoSpark,
-  IconSearch,
-  IconSend,
-  IconSettings,
-  IconSparkles,
-  IconVideo,
-} from "@tabler/icons-react";
+import { IconArrowRight, IconChevronRight, IconPlus, IconVideo } from "@tabler/icons-react";
 import { cn } from "@/lib/utils";
 import type { Locale } from "@/src/i18n/config";
-import { useLocale, useTranslations } from "@/src/i18n/i18n";
+import { useTranslations } from "@/src/i18n/i18n";
 import { localizePath } from "@/src/i18n/locale-url";
-import { PROJECT_CARDS, SHOW_CATEGORIES, SHOW_WORKS, type ShowWork } from "../_data/preview-data";
-import { FizzStudioHeroCarousel } from "./fizzstudio-hero-carousel";
+import {
+  ENTERPRISE_GUIDE_CARDS,
+  ENTERPRISE_HERO_ASSETS,
+  ENTERPRISE_NEWS_ITEMS,
+  ENTERPRISE_TEMPLATE_CARDS,
+  ENTERPRISE_TEMPLATE_CATEGORIES,
+  type EnterpriseTemplateCategory,
+} from "../_data/preview-data";
+import { useProjects } from "../../_hooks/use-project";
+import { CreateProjectDialog } from "./create-project-dialog";
+import { FizzStudioShell, useFizzStudioWorkspace } from "./fizzstudio-shell";
+import { RecentProjectsSection } from "./project-sections";
+
+type TemplateFilter = EnterpriseTemplateCategory | "all";
 
 export function FizzStudioPreview() {
-  const t = useTranslations("fizzStudio");
-  const locale = useLocale();
-  const currentLocale = locale as Locale;
+  const [createOpen, setCreateOpen] = useState(false);
+  const [templateFilter, setTemplateFilter] = useState<TemplateFilter>("all");
+  const workspaceState = useFizzStudioWorkspace();
+  const { currentLocale, isWorkspaceLoading, workspaceId } = workspaceState;
+  const { data: projects = [], isLoading: loadingProjects } = useProjects(workspaceId);
+
+  const templateCards = useMemo(() => {
+    if (templateFilter === "all") return ENTERPRISE_TEMPLATE_CARDS;
+    return ENTERPRISE_TEMPLATE_CARDS.filter((item) => item.category === templateFilter);
+  }, [templateFilter]);
 
   return (
-    <div className="min-h-screen bg-[#0f0f10] pb-36 text-white lg:grid lg:grid-cols-[260px_minmax(0,1fr)]">
-      <Sidebar currentLocale={currentLocale} />
+    <FizzStudioShell
+      className="overflow-x-hidden bg-[#0d0d0e] pb-20"
+      headerVariant="enterprise"
+      mainClassName="max-w-none px-0 pt-0"
+      sidebarVariant="enterprise"
+      workspaceState={workspaceState}
+    >
+      <EnterpriseHero onCreateProject={() => setCreateOpen(true)} />
 
-      <div className="min-w-0">
-        <header className="sticky top-0 z-40 border-b border-white/8 bg-[#0f0f10]/88 backdrop-blur-xl">
-          <div className="flex h-16 items-center justify-between gap-3 px-4 sm:px-6 xl:px-8">
-            <Link
-              href={localizePath("/fizzstudio", currentLocale)}
-              className="flex items-center gap-3 lg:hidden"
-            >
-              <span className="flex size-9 items-center justify-center rounded-full bg-white text-[#111]">
-                <IconSparkles className="size-5" />
-              </span>
-              <span className="text-lg font-semibold">{t("brand")}</span>
-            </Link>
+      <section className="px-4 sm:px-6 lg:px-12 xl:px-[60px] 2xl:px-[136px]">
+        <WhatsNewSection />
 
-            <div className="hidden min-w-0 items-center gap-2 lg:flex">
-              <button
-                type="button"
-                className="inline-flex h-10 items-center gap-2 rounded-full border border-white/10 bg-white/7 px-4 text-sm font-semibold text-white/82"
-              >
-                {t("workspace.allCreations")}
-                <IconChevronDown className="size-4 text-white/46" />
-              </button>
-              <div className="inline-flex h-10 items-center rounded-full border border-white/10 bg-white/6 p-1 text-sm text-white/50">
-                {["default", "assist", "apps"].map((key) => (
-                  <button
-                    key={key}
-                    type="button"
-                    className={cn(
-                      "h-8 rounded-full px-4",
-                      key === "default" ? "bg-white/12 text-white" : "hover:text-white"
-                    )}
-                  >
-                    {t(`workspace.tabs.${key}`)}
-                  </button>
-                ))}
-              </div>
-            </div>
+        <RecentProjectsSection
+          currentLocale={currentLocale}
+          isLoading={isWorkspaceLoading || loadingProjects}
+          onCreateProject={() => setCreateOpen(true)}
+          projects={projects}
+          workspaceReady={Boolean(workspaceId)}
+        />
 
-            <div className="flex min-w-0 flex-1 items-center justify-end gap-2">
-              <button
-                type="button"
-                aria-label={t("shell.search")}
-                className="hidden h-10 min-w-72 items-center gap-2 rounded-full border border-white/10 bg-white/5 px-4 text-sm text-white/46 md:flex"
-              >
-                <IconSearch className="size-4" />
-                <span className="truncate">{t("shell.search")}</span>
-              </button>
-              <button
-                type="button"
-                aria-label={t("shell.notifications")}
-                className="flex size-10 items-center justify-center rounded-full border border-white/10 bg-white/5"
-              >
-                <IconBell className="size-4" />
-              </button>
-              <Link
-                href={localizePath("/ai-lab", currentLocale)}
-                className="inline-flex h-10 items-center gap-2 rounded-full bg-[#e52227] px-4 text-sm font-semibold text-white"
-              >
-                <IconPlus className="size-4" />
-                {t("actions.create")}
-              </Link>
-            </div>
-          </div>
-        </header>
+        <TemplateSection
+          activeFilter={templateFilter}
+          cards={templateCards}
+          currentLocale={currentLocale}
+          onFilterChange={setTemplateFilter}
+        />
 
-        <main className="mx-auto max-w-[1480px] px-4 pt-8 sm:px-6 xl:px-8">
-          <FizzStudioHeroCarousel />
+        <GuidesSection />
+      </section>
 
-          <section aria-labelledby="my-projects" className="mt-10">
-            <SectionHeader
-              title={t("projects.title")}
-              subtitle={t("projects.subtitle")}
-              action={t("projects.viewAll")}
-            />
-            <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-              {PROJECT_CARDS.map((project) => (
-                <Link
-                  key={project.key}
-                  href={localizePath("/art-studio/projects", currentLocale)}
-                  className="group overflow-hidden rounded-[14px] border border-white/10 bg-white/[0.04] transition-transform hover:-translate-y-0.5"
-                >
-                  <div className={cn("h-24 bg-linear-to-br", project.tone)}>
-                    <div className="flex h-full items-end bg-linear-to-t from-black/72 via-black/10 to-transparent p-3">
-                      <span className="rounded-full bg-black/44 px-2.5 py-1 text-[11px] font-semibold text-white/80">
-                        {t(`projects.status.${project.status}`)}
-                      </span>
-                    </div>
-                  </div>
-                  <div className="p-3">
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="min-w-0">
-                        <div className="truncate text-sm font-semibold">
-                          {t(`projects.items.${project.key}.title`)}
-                        </div>
-                        <p className="mt-1 line-clamp-1 text-xs text-white/48">
-                          {t(`projects.items.${project.key}.body`)}
-                        </p>
-                      </div>
-                      <span className="shrink-0 text-xs text-white/42">{project.updatedAt}</span>
-                    </div>
-                    <div className="mt-3 flex items-center gap-2">
-                      <div className="h-1 flex-1 overflow-hidden rounded-full bg-white/10">
-                        <div
-                          className="h-full rounded-full bg-[#e52227]"
-                          style={{ width: `${project.progress}%` }}
-                        />
-                      </div>
-                      <span className="text-[11px] font-semibold text-white/62">
-                        {project.progress}%
-                      </span>
-                    </div>
-                  </div>
-                </Link>
-              ))}
-            </div>
-          </section>
-
-          <section aria-labelledby="works-show" className="mt-14">
-            <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-              <div>
-                <h2 id="works-show" className="text-2xl font-semibold">
-                  {t("show.title")}
-                </h2>
-                <p className="mt-2 text-sm text-white/48">{t("show.subtitle")}</p>
-              </div>
-              <div className="flex h-11 min-w-0 items-center gap-2 rounded-full border border-white/10 bg-white/[0.04] px-4 text-sm text-white/42 lg:w-80">
-                <IconSearch className="size-4 shrink-0" />
-                <span className="truncate">{t("show.search")}</span>
-              </div>
-            </div>
-            <div className="mt-5 flex gap-2 overflow-x-auto pb-1">
-              {SHOW_CATEGORIES.map((category) => (
-                <button
-                  key={category}
-                  type="button"
-                  className={cn(
-                    "h-9 shrink-0 rounded-full border px-4 text-sm transition-colors",
-                    category === "all"
-                      ? "border-white/16 bg-white/12 text-white"
-                      : "border-white/10 bg-white/[0.03] text-white/50 hover:text-white"
-                  )}
-                >
-                  {t(`show.categories.${category}`)}
-                </button>
-              ))}
-            </div>
-            <div className="mt-5 grid gap-x-4 gap-y-8 sm:grid-cols-2 lg:grid-cols-4">
-              {SHOW_WORKS.map((work) => (
-                <WorkCard key={work.key} work={work} />
-              ))}
-            </div>
-          </section>
-        </main>
-      </div>
-
-      <Composer currentLocale={currentLocale} />
-    </div>
+      {workspaceId && (
+        <CreateProjectDialog
+          workspaceId={workspaceId}
+          open={createOpen}
+          onOpenChange={setCreateOpen}
+        />
+      )}
+    </FizzStudioShell>
   );
 }
 
-function Sidebar({ currentLocale }: { currentLocale: Locale }) {
+function EnterpriseHero({ onCreateProject }: { onCreateProject: () => void }) {
   const t = useTranslations("fizzStudio");
-  const groups = [
-    {
-      key: "main",
-      items: [
-        { key: "home", href: "/fizzstudio", icon: IconHome, active: true },
-        { key: "projects", href: "/art-studio/projects", icon: IconFolders },
-        { key: "assets", href: "/fizzstudio", icon: IconDatabase },
-        { key: "show", href: "/fizzstudio", icon: IconVideo },
-      ],
-    },
-    {
-      key: "tools",
-      items: [
-        { key: "image", href: "/ai-lab", icon: IconPhotoSpark },
-        { key: "video", href: "/ai-lab", icon: IconVideo },
-        { key: "models", href: "/ai-lab", icon: IconSparkles },
-        { key: "usage", href: "/fizzstudio", icon: IconChartBar },
-      ],
-    },
-  ];
 
   return (
-    <aside className="sticky top-0 hidden h-screen border-r border-white/8 bg-[#101011] px-3 py-4 lg:flex lg:flex-col">
-      <Link
-        href={localizePath("/fizzstudio", currentLocale)}
-        className="flex h-12 items-center gap-3 px-2"
-      >
-        <span className="flex size-9 items-center justify-center rounded-full bg-white text-[#111]">
-          <IconSparkles className="size-5" />
-        </span>
-        <span className="text-lg font-semibold">{t("brand")}</span>
-      </Link>
-
-      <button
-        type="button"
-        className="mt-6 flex h-11 w-full items-center justify-between rounded-[12px] border border-white/10 bg-white/8 px-3 text-left"
-      >
-        <span className="min-w-0">
-          <span className="block truncate text-sm font-semibold">{t("workspace.personal")}</span>
-          <span className="mt-0.5 block truncate text-xs text-white/42">
-            {t("workspace.current")}
-          </span>
-        </span>
-        <IconChevronDown className="size-4 shrink-0 text-white/48" />
-      </button>
-
-      <div className="mt-6 space-y-6">
-        {groups.map((group) => (
-          <div key={group.key}>
-            <div className="mb-2 px-2 text-xs font-semibold text-white/34">
-              {t(`sidebar.groups.${group.key}`)}
-            </div>
-            <div className="space-y-1">
-              {group.items.map((item) => {
-                const Icon = item.icon;
-                return (
-                  <Link
-                    key={item.key}
-                    href={localizePath(item.href, currentLocale)}
-                    className={cn(
-                      "flex h-10 items-center gap-3 rounded-[12px] px-3 text-sm font-semibold text-white/66 transition-colors",
-                      item.active ? "bg-white/12 text-white" : "hover:bg-white/7 hover:text-white"
-                    )}
-                  >
-                    <Icon className="size-4" />
-                    {t(`sidebar.items.${item.key}`)}
-                  </Link>
-                );
-              })}
-            </div>
-          </div>
+    <section className="relative min-h-[640px] overflow-hidden px-4 pt-[72px] sm:px-6 lg:px-12 xl:px-[60px] 2xl:px-[136px]">
+      <div className="pointer-events-none absolute inset-y-0 right-0 hidden w-[56%] lg:block">
+        <div className="absolute inset-y-8 right-8 w-[78%] opacity-35 [background-image:radial-gradient(circle,rgba(255,255,255,.16)_1px,transparent_1px)] [background-size:9px_9px]" />
+        {ENTERPRISE_HERO_ASSETS.map((asset) => (
+          <div
+            key={asset.imageUrl}
+            className={cn(
+              "absolute overflow-hidden rounded-[18px] bg-[#1a1a1c] shadow-[0_24px_70px_rgba(0,0,0,.42)] ring-1 ring-white/[0.08]",
+              asset.className
+            )}
+            style={{
+              backgroundImage: `linear-gradient(180deg,rgba(0,0,0,0.04),rgba(0,0,0,0.28)),url(${asset.imageUrl})`,
+              backgroundPosition: "center",
+              backgroundSize: "cover",
+            }}
+          />
         ))}
       </div>
 
-      <div className="mt-auto space-y-2">
-        <div className="rounded-[14px] border border-white/10 bg-white/[0.04] p-3">
-          <div className="text-xs font-semibold text-white/82">{t("workspace.credits")}</div>
-          <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-white/10">
-            <div className="h-full w-[68%] rounded-full bg-[#e52227]" />
-          </div>
-          <div className="mt-2 text-xs text-white/42">{t("workspace.creditsHint")}</div>
-        </div>
-        <Link
-          href={localizePath("/fizzstudio", currentLocale)}
-          className="flex h-10 items-center gap-3 rounded-[12px] px-3 text-sm font-semibold text-white/56 hover:bg-white/7 hover:text-white"
+      <div className="relative z-10 max-w-[680px]">
+        <h1 className="max-w-[620px] text-[34px] font-semibold leading-tight tracking-[-0.02em] text-white sm:text-[40px] lg:text-[42px]">
+          {t("enterpriseHome.heroTitle")}
+        </h1>
+        <p className="mt-4 max-w-[620px] text-lg leading-8 text-white/58">
+          {t("enterpriseHome.heroSubtitle")}
+        </p>
+        <button
+          type="button"
+          onClick={onCreateProject}
+          className="mt-5 inline-flex h-11 items-center gap-2 rounded-[16px] bg-white px-5 text-base font-semibold text-[#111] shadow-[0_18px_45px_rgba(0,0,0,.25)] transition hover:scale-[1.015]"
         >
-          <IconSettings className="size-4" />
-          {t("sidebar.items.settings")}
-        </Link>
+          <IconPlus className="size-5" stroke={1.8} />
+          {t("enterpriseHome.createNewProject")}
+        </button>
       </div>
-    </aside>
+    </section>
   );
 }
 
-function SectionHeader({
-  title,
-  subtitle,
-  action,
-}: {
-  title: string;
-  subtitle: string;
-  action: string;
-}) {
-  return (
-    <div className="flex items-end justify-between gap-4">
-      <div>
-        <h2 id="my-projects" className="text-2xl font-semibold">
-          {title}
-        </h2>
-        <p className="mt-2 text-sm text-white/48">{subtitle}</p>
-      </div>
-      <button
-        type="button"
-        className="hidden items-center gap-1 text-sm font-semibold text-white/62 sm:flex"
-      >
-        {action}
-        <IconArrowRight className="size-4" />
-      </button>
-    </div>
-  );
-}
-
-function WorkCard({ work }: { work: ShowWork }) {
+function WhatsNewSection() {
   const t = useTranslations("fizzStudio");
 
   return (
-    <article className="group">
-      <div
-        className={cn(
-          "relative aspect-[16/9] overflow-hidden rounded-[14px] bg-linear-to-br",
-          work.tone
-        )}
+    <section className="-mt-[320px]" aria-labelledby="whats-new">
+      <h2 id="whats-new" className="text-xl font-semibold tracking-[-0.01em] text-white">
+        {t("enterpriseHome.whatsNew")}
+      </h2>
+      <div className="-mx-4 mt-4 overflow-x-auto px-4 pb-3 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+        <div className="flex gap-4">
+          {ENTERPRISE_NEWS_ITEMS.map((item) => (
+            <article key={item.key} className="w-[min(400px,78vw)] shrink-0">
+              <div
+                className={cn(
+                  "relative aspect-[1.72] overflow-hidden rounded-2xl bg-[#1b1b1d] shadow-[0_18px_55px_rgba(0,0,0,.35)] ring-1 ring-white/[0.08]",
+                  item.mode === "light" && "bg-white",
+                  item.mode === "panel" && "bg-[#232326]"
+                )}
+              >
+                {item.mode === "light" ? (
+                  <div className="absolute left-7 top-1/2 -translate-y-1/2 whitespace-nowrap text-[88px] font-light italic leading-none tracking-[-0.08em] text-black md:text-[96px]">
+                    {t("enterpriseHome.simpleModeWord")}
+                  </div>
+                ) : item.mode === "panel" ? (
+                  <div className="relative size-full overflow-hidden bg-[#242426] text-white/56">
+                    <div className="absolute inset-x-0 top-0 h-[36%] bg-[#151517]" />
+                    <div className="absolute inset-x-0 bottom-0 h-[22%] border-t border-white/[0.05] bg-[#1b1b1d] px-5 py-3 text-[10px] text-white/44">
+                      <div>{t("enterpriseHome.panelLabels.writePrompt")}</div>
+                      <div className="mt-2 flex items-center gap-2">
+                        <span>{t("enterpriseHome.panelLabels.multiPrompts")}</span>
+                        <span className="size-2 rounded-full border border-white/30" />
+                        <span className="size-2 rounded-full border border-white/18" />
+                      </div>
+                    </div>
+                    <div className="absolute left-5 top-4 space-y-2 text-[10px]">
+                      {(["negativePrompt", "firstFrame", "lastFrame"] as const).map((key) => (
+                        <div key={key} className="flex items-center gap-2">
+                          <span>{t(`enterpriseHome.panelLabels.${key}`)}</span>
+                          <span className="size-2 rounded-full border border-[#f6a43a]" />
+                        </div>
+                      ))}
+                    </div>
+                    <div className="absolute bottom-[39%] left-[44%] flex items-center gap-2 text-xs">
+                      <IconVideo className="size-4" />
+                      {t("enterpriseHome.panelLabels.result")}
+                      <IconChevronRight className="size-4" />
+                    </div>
+                  </div>
+                ) : (
+                  <div
+                    className="absolute inset-0 bg-cover bg-center"
+                    style={{
+                      backgroundImage: `url(${item.imageUrl})`,
+                      backgroundPosition: item.objectPosition ?? "center",
+                    }}
+                  />
+                )}
+              </div>
+              <h3 className="mt-3 text-base font-semibold uppercase leading-tight text-white">
+                {t(`enterpriseHome.news.${item.key}`)}
+              </h3>
+            </article>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function TemplateSection({
+  activeFilter,
+  cards,
+  currentLocale,
+  onFilterChange,
+}: {
+  activeFilter: TemplateFilter;
+  cards: typeof ENTERPRISE_TEMPLATE_CARDS;
+  currentLocale: Locale;
+  onFilterChange: (filter: TemplateFilter) => void;
+}) {
+  const t = useTranslations("fizzStudio");
+
+  return (
+    <section id="templates" className="mt-16 space-y-4" aria-labelledby="template-title">
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+        <h2 id="template-title" className="text-xl font-semibold tracking-[-0.01em] text-white">
+          {t("enterpriseHome.startWithTemplate")}
+        </h2>
+        <div className="flex flex-wrap gap-2">
+          {(["all", ...ENTERPRISE_TEMPLATE_CATEGORIES] as TemplateFilter[]).map((item) => (
+            <button
+              key={item}
+              type="button"
+              aria-pressed={activeFilter === item}
+              onClick={() => onFilterChange(item)}
+              className={cn(
+                "h-8 rounded-full border px-3.5 text-sm transition-colors",
+                activeFilter === item
+                  ? "border-white/20 bg-white/12 text-white"
+                  : "border-white/10 bg-white/[0.025] text-white/64 hover:border-white/18 hover:text-white"
+              )}
+            >
+              {item === "all"
+                ? t("enterpriseHome.showAll")
+                : t(`enterpriseHome.templateCategories.${item}`)}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+        {cards.map((card) => (
+          <TemplateCard key={card.key} card={card} currentLocale={currentLocale} />
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function TemplateCard({
+  card,
+  currentLocale,
+}: {
+  card: (typeof ENTERPRISE_TEMPLATE_CARDS)[number];
+  currentLocale: Locale;
+}) {
+  const t = useTranslations("fizzStudio");
+  const href = localizePath("/fizzstudio/projects", currentLocale);
+
+  return (
+    <article className="group relative flex h-[184px] cursor-pointer items-end justify-between gap-3 overflow-hidden rounded-2xl border border-white/[0.08] bg-[#171719] p-3 shadow-sm shadow-black/25 transition duration-200 hover:border-white/[0.18] hover:bg-[#202023]">
+      <Link
+        href={href}
+        aria-label={t("enterpriseHome.useTemplate", {
+          title: t(`enterpriseHome.templates.${card.key}`),
+        })}
+        className="absolute inset-0 z-10 rounded-2xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/60"
+      />
+      <h3 className="pointer-events-none relative z-20 max-w-[38%] pb-1 text-base font-semibold leading-tight text-white">
+        {t(`enterpriseHome.templates.${card.key}`)}
+      </h3>
+      <div className="pointer-events-none relative z-20 h-full w-[60%] overflow-hidden rounded-xl bg-[#252527] ring-1 ring-white/[0.06]">
+        <div
+          className="absolute inset-0 bg-cover bg-center transition duration-300 group-hover:scale-[1.035] group-hover:brightness-105"
+          style={{
+            backgroundImage: `url(${card.imageUrl})`,
+            backgroundPosition: card.objectPosition ?? "center",
+          }}
+        />
+        <div className="absolute inset-0 bg-gradient-to-br from-black/10 via-transparent to-black/36" />
+      </div>
+      <Link
+        href={href}
+        className="absolute bottom-4 right-4 z-30 inline-flex h-8 translate-y-1 items-center gap-1.5 rounded-full bg-white px-3 text-xs font-semibold text-[#111] opacity-0 shadow-lg shadow-black/35 transition duration-200 hover:scale-[1.03] group-hover:translate-y-0 group-hover:opacity-100 focus-visible:translate-y-0 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/60"
       >
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_22%_18%,rgba(255,255,255,0.34),transparent_24%),linear-gradient(180deg,transparent,rgba(0,0,0,0.72))]" />
-        <div className="absolute bottom-4 left-4 right-4">
-          <div className="text-2xl font-semibold leading-tight drop-shadow-lg">
-            {t(`show.items.${work.key}.title`)}
-          </div>
-        </div>
-      </div>
-      <div className="mt-3 flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <div className="flex items-center gap-2">
-            <span className="size-5 rounded-full bg-white/18" />
-            <span className="truncate text-sm font-semibold text-white/82">{work.author}</span>
-            {work.badge ? (
-              <span className="rounded-full bg-white/10 px-2 py-0.5 text-[11px] font-semibold text-white/58">
-                {t(`show.badges.${work.badge}`)}
-              </span>
-            ) : null}
-          </div>
-          <p className="mt-1 line-clamp-1 text-sm text-white/42">
-            {t(`show.items.${work.key}.body`)}
-          </p>
-        </div>
-      </div>
+        {t("projects.use")}
+        <IconArrowRight className="size-3.5" />
+      </Link>
     </article>
   );
 }
 
-function Composer({ currentLocale }: { currentLocale: Locale }) {
+function GuidesSection() {
   const t = useTranslations("fizzStudio");
 
   return (
-    <div className="fixed inset-x-0 bottom-4 z-50 px-4">
-      <div className="mx-auto max-w-3xl rounded-[28px] border border-white/12 bg-[#19191b]/92 p-2 shadow-2xl shadow-black/50 backdrop-blur-xl">
-        <div className="flex items-center gap-2">
-          <button
-            type="button"
-            aria-label={t("composer.attach")}
-            className="flex size-11 shrink-0 items-center justify-center rounded-full bg-white/6 text-white/62"
-          >
-            <IconPaperclip className="size-5" />
-          </button>
-          <div className="min-w-0 flex-1 px-1 text-sm text-white/42">
-            {t("composer.placeholder")}
-          </div>
-          <div className="hidden items-center gap-2 sm:flex">
-            <ComposerChip icon={<IconSparkles className="size-4" />} label={t("composer.image")} />
-            <ComposerChip icon={<IconVideo className="size-4" />} label={t("composer.video")} />
-            <ComposerChip
-              icon={<IconMicrophone className="size-4" />}
-              label={t("composer.voice")}
-            />
-          </div>
-          <Link
-            href={localizePath("/ai-lab", currentLocale)}
-            aria-label={t("composer.send")}
-            className="flex size-11 shrink-0 items-center justify-center rounded-full bg-[#e52227] text-white"
-          >
-            <IconSend className="size-5" />
-          </Link>
+    <section className="mt-16 pb-16" aria-labelledby="guides-title">
+      <h2 id="guides-title" className="text-xl font-semibold tracking-[-0.01em] text-white">
+        {t("enterpriseHome.guides")}
+      </h2>
+      <div className="-mx-4 mt-4 overflow-x-auto px-4 pb-3 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+        <div className="flex gap-4">
+          {ENTERPRISE_GUIDE_CARDS.map((card) => (
+            <article key={card.key} className="w-[320px] shrink-0 cursor-pointer space-y-2">
+              <div
+                className="h-[180px] rounded-2xl bg-[#202023] bg-cover bg-center shadow-[0_18px_55px_rgba(0,0,0,.35)] ring-1 ring-white/[0.08] transition duration-200 hover:-translate-y-0.5 hover:ring-white/[0.18]"
+                style={{
+                  backgroundImage: `linear-gradient(180deg,rgba(0,0,0,0.04),rgba(0,0,0,0.32)),url(${card.imageUrl})`,
+                  backgroundPosition: card.objectPosition ?? "center",
+                }}
+              />
+              <h3 className="text-sm font-semibold text-white/82">
+                {t(`enterpriseHome.guidesItems.${card.key}`)}
+              </h3>
+            </article>
+          ))}
         </div>
       </div>
-    </div>
-  );
-}
-
-function ComposerChip({ icon, label }: { icon: ReactNode; label: string }) {
-  return (
-    <button
-      type="button"
-      className="inline-flex h-9 items-center gap-1.5 rounded-full bg-white/6 px-3 text-xs font-semibold text-white/58"
-    >
-      {icon}
-      {label}
-    </button>
+    </section>
   );
 }

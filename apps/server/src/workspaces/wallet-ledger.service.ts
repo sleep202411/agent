@@ -15,7 +15,7 @@ import { PrismaService } from '../infra/db/db.module';
 
 const DEFAULT_WALLET_ACCOUNTS = [
   {
-    currency: WalletCurrencyType.bubble,
+    currency: WalletCurrencyType.compute_point,
     balanceKind: WalletBalanceKind.consumable,
   },
   {

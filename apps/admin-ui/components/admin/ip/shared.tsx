@@ -200,7 +200,7 @@ export function sourceTypeLabel(value: string) {
 export function currencyLabel(value: string) {
   const labels: Record<string, string> = {
     community_point: "社区积分",
-    bubble: "算力积分",
+    compute_point: "算力积分",
   };
   return labels[value] ?? value;
 }

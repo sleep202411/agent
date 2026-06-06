@@ -2,7 +2,6 @@ import Link from "next/link";
 import { IconAlertTriangle, IconArrowRight, IconChecks, IconClockHour4 } from "@tabler/icons-react";
 
 import { PageHeader } from "@/components/admin/page-header";
-import { ErrorBanner, Metric, formatDate, statusLabel } from "@/components/admin/ip/shared";
 import { fetchAdminIpOverview } from "@/lib/admin-ip-commerce";
 import { fetchAdminBillingOverview } from "@/lib/admin-billing";
 import { getAdminSession } from "@/lib/admin-session";
@@ -124,4 +123,65 @@ export default async function AdminHomePage() {
       </section>
     </div>
   );
+}
+
+function Metric({
+  label,
+  value,
+  tone = "default",
+}: {
+  label: string;
+  value: number | string;
+  tone?: "default" | "warn" | "risk";
+}) {
+  const toneClass =
+    tone === "risk"
+      ? "border-red-200 bg-red-50 text-red-700"
+      : tone === "warn"
+        ? "border-amber-200 bg-amber-50 text-amber-800"
+        : "border-slate-200 bg-slate-50 text-slate-950";
+  const labelClass =
+    tone === "risk" ? "text-red-600" : tone === "warn" ? "text-amber-700" : "text-slate-500";
+
+  return (
+    <div className={`rounded-lg border px-3 py-2 ${toneClass}`}>
+      <p className={`text-[11px] font-medium ${labelClass}`}>{label}</p>
+      <p className="mt-1 text-xl font-semibold tracking-tight">{value}</p>
+    </div>
+  );
+}
+
+function ErrorBanner({ message }: { message: string }) {
+  return (
+    <div className="flex items-start gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+      <IconAlertTriangle className="mt-0.5 size-4 shrink-0" />
+      <span>{message}</span>
+    </div>
+  );
+}
+
+function statusLabel(value: string) {
+  const labels: Record<string, string> = {
+    draft: "草稿",
+    submitted: "待审核",
+    in_review: "审核中",
+    changes_requested: "需修改",
+    approved: "已批准",
+    scheduled: "已排期",
+    published: "已发布",
+    hidden: "隐藏",
+    suspended: "暂停销售",
+    archived: "归档",
+  };
+  return labels[value] ?? value;
+}
+
+function formatDate(value?: string | null) {
+  if (!value) return "-";
+  return new Intl.DateTimeFormat("zh-CN", {
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(new Date(value));
 }

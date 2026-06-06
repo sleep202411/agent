@@ -11,7 +11,7 @@ export const AdminPaymentProviderSchema = z.enum([
   'internal',
 ]);
 export const BillingProductTypeSchema = z.enum([
-  'bubble_pack',
+  'compute_point_pack',
   'community_point_pack',
   'membership_plan',
   'team_membership_plan',
@@ -58,7 +58,10 @@ export const BillingReconciliationStatusSchema = z.enum([
 ]);
 export const BillingPriceIntervalSchema = z.enum(['one_time', 'month', 'year']);
 export const BillingSubjectTypeSchema = z.enum(['user', 'workspace']);
-export const WalletCurrencyTypeSchema = z.enum(['bubble', 'community_point']);
+export const WalletCurrencyTypeSchema = z.enum([
+  'compute_point',
+  'community_point',
+]);
 export const BillingProviderBindingStatusSchema = z.enum([
   'active',
   'inactive',

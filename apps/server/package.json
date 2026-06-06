@@ -22,9 +22,9 @@
     "db:up": "docker compose -f docker-compose.dev.yml up -d",
     "db:down": "docker compose -f docker-compose.dev.yml down",
     "db:generate": "prisma generate",
-    "db:migrate": "prisma migrate dev",
+    "db:migrate": "node scripts/ensure-local-database.mjs prisma migrate dev",
     "db:deploy": "prisma migrate deploy",
-    "db:studio": "prisma studio"
+    "db:studio": "node scripts/ensure-local-database.mjs prisma studio"
   },
   "dependencies": {
     "@ai-sdk/alibaba": "^1.0.17",

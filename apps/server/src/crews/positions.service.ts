@@ -116,7 +116,7 @@ export class PositionsService {
   async create(crewId: string, ownerId: string, input: CreatePositionInput) {
     await this.assertOwner(crewId, ownerId);
     assertAllowedCurrency(input.salary?.currency, 'salary.currency');
-    const ccy = (input.salary?.currency ?? null) as CurrencyCode | null;
+    const ccy = input.salary?.currency ?? null;
     const row = await this.prisma.crewPosition.create({
       data: {
         id: newCrewDomainId(),

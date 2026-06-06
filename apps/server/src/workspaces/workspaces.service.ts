@@ -19,8 +19,10 @@ import type { AuthUser } from '../auth';
 import { PrismaService } from '../infra/db/db.module';
 import { PlatformAuditLogService } from './audit-log.service';
 import type {
+  ArchiveProjectInput,
   CreateProjectInput,
   CreateTeamWorkspaceInput,
+  DeleteWorkspaceInput,
   UpdateProjectInput,
   UpdateWorkspaceInput,
 } from './dto';
@@ -37,7 +39,6 @@ export class WorkspacesService {
   ) {}
 
   async listForUser(user: AuthUser) {
-    await this.ensurePersonalWorkspace(user);
     const memberships = await this.prisma.workspaceMember.findMany({
       where: {
         userId: user.userId,
@@ -54,6 +55,11 @@ export class WorkspacesService {
         this.workspaceDto(membership.workspace, membership),
       ),
     };
+  }
+
+  async ensureAndReturnPersonalWorkspace(user: AuthUser) {
+    const workspace = await this.ensurePersonalWorkspace(user);
+    return { workspace: this.workspaceDto(workspace) };
   }
 
   async ensurePersonalWorkspace(user: AuthUser) {
@@ -260,6 +266,7 @@ export class WorkspacesService {
       where: {
         workspaceId,
         deletedAt: null,
+        status: PlatformProjectStatus.active,
       },
       orderBy: [{ updatedAt: 'desc' }, { createdAt: 'desc' }],
     });
@@ -381,6 +388,117 @@ export class WorkspacesService {
     });
 
     return { project: this.projectDto(project) };
+  }
+
+  async deleteTeamWorkspace(
+    user: AuthUser,
+    workspaceId: string,
+    input: DeleteWorkspaceInput,
+  ) {
+    const membership = await this.permissions.requireWorkspaceRole(
+      user.userId,
+      workspaceId,
+      WorkspaceMemberRole.owner,
+    );
+    const workspace = await this.prisma.workspace.findFirst({
+      where: { id: workspaceId, deletedAt: null },
+    });
+    if (!workspace) {
+      throw new NotFoundException({
+        code: 'WORKSPACE_NOT_FOUND',
+        msg: 'Workspace not found.',
+      });
+    }
+    if (workspace.type === WorkspaceType.personal) {
+      throw new ConflictException({
+        code: 'PERSONAL_WORKSPACE_CANNOT_BE_DELETED',
+        msg: 'Personal workspace cannot be deleted.',
+      });
+    }
+    const result = await this.prisma.workspace.updateMany({
+      where: {
+        id: workspaceId,
+        deletedAt: null,
+        ...(input.expectedVersion == null
+          ? {}
+          : { version: input.expectedVersion }),
+      },
+      data: { deletedAt: new Date(), version: { increment: 1 } },
+    });
+    if (result.count === 0) {
+      throw new ConflictException({
+        code: 'WORKSPACE_VERSION_CONFLICT',
+        msg: 'Workspace was modified by another request.',
+      });
+    }
+    await this.audit.record({
+      workspaceId,
+      actorUserId: user.userId,
+      action: 'workspace.deleted',
+      entityType: 'workspace',
+      entityId: workspaceId,
+      before: workspace,
+    });
+    return { deleted: true, workspaceId };
+  }
+
+  async archiveProject(
+    user: AuthUser,
+    projectId: string,
+    input: ArchiveProjectInput,
+  ) {
+    const before = await this.permissions.requireProjectRole(
+      user.userId,
+      projectId,
+      ProjectMemberRole.owner,
+    );
+    const result = await this.prisma.$transaction(async (tx) => {
+      const updated = await tx.platformProject.updateMany({
+        where: {
+          id: projectId,
+          deletedAt: null,
+          status: PlatformProjectStatus.active,
+          ...(input.expectedVersion == null
+            ? {}
+            : { version: input.expectedVersion }),
+        },
+        data: {
+          status: PlatformProjectStatus.archived,
+          archivedAt: new Date(),
+          updatedById: user.userId,
+          version: { increment: 1 },
+        },
+      });
+      if (updated.count === 0) return null;
+
+      // If this was the workspace's defaultProjectId, clear it so the
+      // next created project becomes the new default.
+      await tx.workspace.updateMany({
+        where: { defaultProjectId: projectId },
+        data: { defaultProjectId: null },
+      });
+
+      return updated;
+    });
+
+    if (!result || result.count === 0) {
+      throw new ConflictException({
+        code: 'PROJECT_VERSION_CONFLICT',
+        msg: 'Project was modified by another request.',
+      });
+    }
+
+    await this.audit.record({
+      workspaceId: before.workspaceId,
+      projectId,
+      actorUserId: user.userId,
+      action: 'project.archived',
+      entityType: 'project',
+      entityId: projectId,
+      before,
+    });
+
+    return { archived: true, projectId };
   }
 
   private workspaceDto(workspace: Workspace, membership?: WorkspaceMember) {

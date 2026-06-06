@@ -3,7 +3,7 @@ import { AdminUsersPanel, type AdminUsersListData } from "@/components/admin/adm
 import {
   ADMIN_SESSION_COOKIE,
   adminApiUrl,
-  cookieHeader,
+  adminAuthHeaders,
   parseAdminEnvelope,
 } from "@/lib/admin-api";
 import { getAdminSession } from "@/lib/admin-session";
@@ -33,13 +33,14 @@ async function getInitialUsers(): Promise<{
 }> {
   const cookieStore = await cookies();
   const sessionToken = cookieStore.get(ADMIN_SESSION_COOKIE)?.value;
-  if (!sessionToken) {
+  const headers = adminAuthHeaders(sessionToken);
+  if (!headers) {
     return { data: null, error: "后台登录已失效，请重新登录。" };
   }
 
   try {
     const response = await fetch(adminApiUrl("/users"), {
-      headers: cookieHeader(sessionToken),
+      headers,
       cache: "no-store",
     });
     return {

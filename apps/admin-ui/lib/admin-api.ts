@@ -35,6 +35,26 @@ export function adminApiBaseUrl(): string {
   throw new Error("Missing admin API base URL (set ADMIN_API_BASE_URL).");
 }
 
+export function adminAuthHeaders(sessionToken?: string): HeadersInit | null {
+  if (sessionToken) return cookieHeader(sessionToken);
+  return isAdminDevAuthBypassEnabled() ? {} : null;
+}
+
+export function isAdminDevAuthBypassEnabled(): boolean {
+  if (process.env.NODE_ENV === "production") return false;
+  if (process.env.ADMIN_DEV_AUTH_BYPASS === "false") return false;
+  return isLocalAdminApiBase();
+}
+
+function isLocalAdminApiBase(): boolean {
+  try {
+    const parsed = new URL(adminApiBaseUrl());
+    return ["localhost", "127.0.0.1", "::1", "[::1]"].includes(parsed.hostname);
+  } catch {
+    return false;
+  }
+}
+
 export async function parseAdminEnvelope<T>(response: Response): Promise<T> {
   const payload = (await response.json().catch(() => null)) as {
     code?: number;

@@ -323,7 +323,7 @@ function normalizeExpectedCompensation(input: ApplyInput): {
   if (next?.amount != null) {
     return {
       amount: next.amount,
-      currency: (next.currency ?? defaultCurrency()) as CurrencyCode,
+      currency: next.currency ?? defaultCurrency(),
       period: next.period ?? null,
     };
   }

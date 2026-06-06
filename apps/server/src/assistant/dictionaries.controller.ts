@@ -58,7 +58,7 @@ export class DictionariesController {
     }
 
     const url = `${base.replace(/\/$/, '')}${path}`;
-    const cookie = req.headers.cookie as string | undefined;
+    const cookie = req.headers.cookie;
 
     let response: Response;
     try {

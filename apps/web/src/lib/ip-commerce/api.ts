@@ -200,7 +200,7 @@ export interface IpCommerceWalletAccount {
   id: string;
   ownerType: "user";
   ownerId: string;
-  currency: "bubble" | "community_point";
+  currency: "compute_point" | "community_point";
   balanceKind: "consumable" | "withdrawable";
   status: "active" | "frozen" | "closed";
   availableBalance: string;

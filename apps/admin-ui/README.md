@@ -26,6 +26,19 @@ ADMIN_CN_API_BASE_URL=https://fizzdragon.fizzspace.cn/admin
 是该站点 Admin API 返回的 HttpOnly 会话。国际站和中国站各自使用自己的
 Postgres `admin_users / admin_sessions` 表。
 
+本地开发默认启用免登录，前提是：
+
+- `NODE_ENV !== "production"`；
+- Admin API base 指向 `localhost` / `127.0.0.1` / `::1`；
+- 后端 `DATABASE_URL` 也指向本地数据库。
+
+这只用于本机开发和 UI 调试；生产环境不会生效。如果需要在本地完整验证登录、
+MFA、锁定和审计链路，设置：
+
+```bash
+ADMIN_DEV_AUTH_BYPASS=false
+```
+
 本地创建管理员账号：
 
 ```bash

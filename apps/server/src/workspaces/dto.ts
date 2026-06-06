@@ -54,3 +54,13 @@ export const UpdateProjectSchema = z.object({
   expectedVersion: z.number().int().min(0).optional(),
 });
 export type UpdateProjectInput = z.infer<typeof UpdateProjectSchema>;
+
+export const DeleteWorkspaceSchema = z.object({
+  expectedVersion: z.number().int().min(0).optional(),
+});
+export type DeleteWorkspaceInput = z.infer<typeof DeleteWorkspaceSchema>;
+
+export const ArchiveProjectSchema = z.object({
+  expectedVersion: z.number().int().min(0).optional(),
+});
+export type ArchiveProjectInput = z.infer<typeof ArchiveProjectSchema>;

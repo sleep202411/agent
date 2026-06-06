@@ -49,12 +49,11 @@ export class WorkflowProxyController {
   ): Record<string, string> {
     const headers: Record<string, string> = {
       Accept: 'application/json',
-      'accept-language':
-        (req.headers['accept-language'] as string | undefined) ?? 'zh-CN',
+      'accept-language': req.headers['accept-language'] ?? 'zh-CN',
       'x-storyos-context': JSON.stringify(context),
     };
     if (hasBody) headers['Content-Type'] = 'application/json';
-    const cookie = req.headers.cookie as string | undefined;
+    const cookie = req.headers.cookie;
     if (cookie) headers.cookie = cookie;
     return headers;
   }
@@ -210,9 +209,7 @@ export class WorkflowProxyController {
   ) {
     const projectId = String(body?.projectId ?? '');
     const runIds = Array.isArray(body?.runIds)
-      ? (body.runIds.filter(
-          (r): r is string => typeof r === 'string',
-        ) as string[])
+      ? body.runIds.filter((r): r is string => typeof r === 'string')
       : [];
     const context = this.buildContext(
       user,

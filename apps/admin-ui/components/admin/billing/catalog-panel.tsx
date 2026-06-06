@@ -347,7 +347,7 @@ function CatalogView({
                 >
                   社区积分
                 </option>
-                <option value="bubble_pack" title={productTypeHelp("bubble_pack")}>
+                <option value="compute_point_pack" title={productTypeHelp("compute_point_pack")}>
                   算力积分
                 </option>
                 <option value="membership_plan" title={productTypeHelp("membership_plan")}>
@@ -453,8 +453,8 @@ function CreatePriceForm({
     setProductType(value);
     if (value === "community_point_pack") {
       setWalletCurrency("community_point");
-    } else if (value === "bubble_pack") {
-      setWalletCurrency("bubble");
+    } else if (value === "compute_point_pack") {
+      setWalletCurrency("compute_point");
     } else {
       setWalletCurrency("");
     }
@@ -481,7 +481,7 @@ function CreatePriceForm({
           <option value="community_point_pack" title={productTypeHelp("community_point_pack")}>
             社区积分
           </option>
-          <option value="bubble_pack" title={productTypeHelp("bubble_pack")}>
+          <option value="compute_point_pack" title={productTypeHelp("compute_point_pack")}>
             算力积分
           </option>
           <option value="membership_plan" title={productTypeHelp("membership_plan")}>
@@ -547,7 +547,7 @@ function CreatePriceForm({
             onChange={handleWalletCurrencyChange}
           >
             <option value="">不发放积分</option>
-            <option value="bubble">算力积分</option>
+            <option value="compute_point">算力积分</option>
             <option value="community_point">社区积分</option>
           </Select>
           <TextInput

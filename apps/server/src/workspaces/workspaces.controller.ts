@@ -1,16 +1,28 @@
-import { Body, Controller, Get, Param, Patch, Post } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  Param,
+  Patch,
+  Post,
+} from '@nestjs/common';
 import { CurrentUser } from '../auth';
 import type { AuthUser } from '../auth';
 import { ZodValidationPipe } from '../common/zod.pipe';
 import {
+  ArchiveProjectSchema,
   CreateProjectSchema,
   CreateTeamWorkspaceSchema,
+  DeleteWorkspaceSchema,
   ProjectParamsSchema,
   UpdateProjectSchema,
   UpdateWorkspaceSchema,
   WorkspaceParamsSchema,
+  type ArchiveProjectInput,
   type CreateProjectInput,
   type CreateTeamWorkspaceInput,
+  type DeleteWorkspaceInput,
   type ProjectParams,
   type UpdateProjectInput,
   type UpdateWorkspaceInput,
@@ -25,6 +37,20 @@ export class WorkspacesController {
   @Get('workspaces')
   async listWorkspaces(@CurrentUser() user: AuthUser) {
     return { code: 200, data: await this.workspaces.listForUser(user) };
+  }
+
+  /**
+   * Idempotent personal workspace bootstrap — called once when the user
+   * first lands on the FizzStudio page. Safe to call multiple times:
+   * returns the existing workspace if it already exists.
+   * Intentionally a POST (not GET) because it has a write side effect.
+   */
+  @Post('workspaces/personal/ensure')
+  async ensurePersonalWorkspace(@CurrentUser() user: AuthUser) {
+    return {
+      code: 200,
+      data: await this.workspaces.ensureAndReturnPersonalWorkspace(user),
+    };
   }
 
   @Post('workspaces/team')
@@ -48,6 +74,24 @@ export class WorkspacesController {
     return {
       code: 200,
       data: await this.workspaces.getWorkspace(user, params.workspaceId),
+    };
+  }
+
+  @Delete('workspaces/:workspaceId')
+  async deleteWorkspace(
+    @CurrentUser() user: AuthUser,
+    @Param(new ZodValidationPipe(WorkspaceParamsSchema))
+    params: WorkspaceParams,
+    @Body(new ZodValidationPipe(DeleteWorkspaceSchema))
+    body: DeleteWorkspaceInput,
+  ) {
+    return {
+      code: 200,
+      data: await this.workspaces.deleteTeamWorkspace(
+        user,
+        params.workspaceId,
+        body,
+      ),
     };
   }
 
@@ -102,6 +146,19 @@ export class WorkspacesController {
     return {
       code: 200,
       data: await this.workspaces.getProject(user, params.projectId),
+    };
+  }
+
+  @Delete('projects/:projectId')
+  async archiveProject(
+    @CurrentUser() user: AuthUser,
+    @Param(new ZodValidationPipe(ProjectParamsSchema)) params: ProjectParams,
+    @Body(new ZodValidationPipe(ArchiveProjectSchema))
+    body: ArchiveProjectInput,
+  ) {
+    return {
+      code: 200,
+      data: await this.workspaces.archiveProject(user, params.projectId, body),
     };
   }
 

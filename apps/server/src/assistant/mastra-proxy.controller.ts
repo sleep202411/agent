@@ -275,7 +275,7 @@ export class MastraProxyController {
         if (Array.isArray(parts)) {
           const last = parts[parts.length - 1];
           if (last && last.type === 'text' && typeof last.text === 'string') {
-            last.text = `${last.text as string}${markerText}`;
+            last.text = `${last.text}${markerText}`;
           } else {
             parts.push({ type: 'text', text: markerText.trimStart() });
           }
@@ -334,9 +334,8 @@ export class MastraProxyController {
       `POST /assistant/submit-message-to-agent → ${upstream} userId=${user.userId} project=${body.projectId} messages=${sanitizedMessages.length} (raw=${messages.length})`,
     );
 
-    const cookie = (req.headers.cookie as string | undefined) ?? '';
-    const acceptLanguage =
-      (req.headers['accept-language'] as string | undefined) ?? 'zh-CN';
+    const cookie = req.headers.cookie ?? '';
+    const acceptLanguage = req.headers['accept-language'] ?? 'zh-CN';
 
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
@@ -642,9 +641,8 @@ export class MastraProxyController {
     const { body, originalMessages, confirmProjectParams, user, req, res } =
       args;
     const projectId = body.projectId!;
-    const cookie = req.headers.cookie as string | undefined;
-    const acceptLanguage =
-      (req.headers['accept-language'] as string | undefined) ?? 'zh-CN';
+    const cookie = req.headers.cookie;
+    const acceptLanguage = req.headers['accept-language'] ?? 'zh-CN';
 
     // See handleConfirmWorkflowShortCircuit — running→idle guarantees a
     // state transition, without this the final idle gets dedup'd and the

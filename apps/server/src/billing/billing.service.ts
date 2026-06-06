@@ -4244,8 +4244,8 @@ function isRefundEvent(eventType: string): boolean {
 }
 
 function orderTypeForPrice(price: PriceWithItem): BillingOrderType {
-  if (price.item.productType === BillingProductType.bubble_pack) {
-    return BillingOrderType.bubble_topup;
+  if (price.item.productType === BillingProductType.compute_point_pack) {
+    return BillingOrderType.compute_point_topup;
   }
   if (price.item.productType === BillingProductType.community_point_pack) {
     return BillingOrderType.community_point_topup;
@@ -4383,7 +4383,7 @@ function grantEndsAt(now: Date, days: number | null): Date | null {
 function buildBillingItemCode(input: CreateAdminBillingPriceInput): string {
   const prefixes: Record<string, string> = {
     community_point_pack: 'COMMUNITY_POINT',
-    bubble_pack: 'BUBBLE',
+    compute_point_pack: 'COMPUTE_POINT',
     membership_plan: 'MEMBERSHIP',
     team_membership_plan: 'TEAM_MEMBERSHIP',
   };
