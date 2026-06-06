@@ -15,6 +15,7 @@ import {
   IconChevronRight,
   IconCircleCheck,
   IconCircleOff,
+  IconCoin,
   IconDatabaseSearch,
   IconEdit,
   IconFileSearch,
@@ -24,7 +25,14 @@ import {
   IconShieldCheck,
   IconTrash,
 } from "@tabler/icons-react";
-import { AI_PROVIDER_LABELS } from "@repo/shared";
+import {
+  AI_PROVIDER_LABELS,
+  type AiGenUnitType,
+  DEFAULT_MARGIN_BPS,
+  NANO_USD_PER_USD,
+  RESOLUTION_MEGAPIXELS,
+  estimateGenerationPrice,
+} from "@repo/shared";
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { DataTable, type ColumnDef } from "@/components/ui/data-table";
@@ -158,6 +166,7 @@ const MODEL_POLICY_FIELDS = {
   visibility: { name: "visibility", label: "前台可见性", required: true },
   description: { name: "description", label: "描述" },
   generationModes: { name: "generationModes", label: "生成模式 JSON Array" },
+  marginBps: { name: "marginBps", label: "毛利率（%）", required: true },
   parameterPolicy: { name: "parameterPolicy", label: "参数策略 JSON" },
   billingPolicy: { name: "billingPolicy", label: "积分策略 JSON" },
   queuePolicy: { name: "queuePolicy", label: "队列策略 JSON" },
@@ -191,6 +200,8 @@ const PROVIDER_BINDING_FIELDS = {
   status: { name: "status", label: "状态", required: true },
   priority: { name: "priority", label: "Priority" },
   weight: { name: "weight", label: "Weight" },
+  unitPriceUsd: { name: "unitPriceUsd", label: "供应商成本（USD）" },
+  unitType: { name: "unitType", label: "计费单位" },
   disabledReason: { name: "disabledReason", label: "停用原因" },
   parameterMap: { name: "parameterMap", label: "参数映射 JSON" },
   pricingPolicy: { name: "pricingPolicy", label: "积分/利润策略 JSON" },
@@ -1325,6 +1336,16 @@ function ModelsPanel({
         ),
       },
       {
+        id: "margin",
+        header: "毛利率",
+        enableSorting: false,
+        cell: ({ row }) => (
+          <span className="text-[12px] font-medium tabular-nums text-slate-700">
+            {marginBpsToPercentDisplay(row.original.marginBps ?? DEFAULT_MARGIN_BPS)}
+          </span>
+        ),
+      },
+      {
         id: "counts",
         header: "链路",
         enableSorting: false,
@@ -1464,13 +1485,19 @@ function ModelBindingsSubTable({
       },
       {
         id: "pricing",
-        header: "成本快照",
+        header: "成本 / 单位",
         enableSorting: false,
-        cell: ({ row }) => (
-          <span className="line-clamp-2 max-w-[240px] text-[12px] text-slate-500">
-            {pricingPreview(row.original.providerPricing)}
-          </span>
-        ),
+        cell: ({ row }) => {
+          const item = row.original;
+          return (
+            <div className="text-[12px]">
+              <p className="font-medium tabular-nums text-slate-800">
+                {nanoUsdToUsdDisplay(item.unitPriceNanoUsd)}
+              </p>
+              <p className="mt-0.5 text-slate-500">{UNIT_TYPE_LABELS[item.unitType]}</p>
+            </div>
+          );
+        },
       },
       {
         id: "activity",
@@ -1873,6 +1900,28 @@ function ModelPolicyDrawer({
                   </NativeSelect>
                 )}
               </FormField>
+              <FormField
+                field={MODEL_POLICY_FIELDS.marginBps}
+                required={creating}
+                hint="售价基于供应商成本与该毛利率实时计算；范围 0–99.99%。"
+              >
+                {(controlProps) => (
+                  <div className="relative">
+                    <Input
+                      {...controlProps}
+                      type="number"
+                      min={0}
+                      max={99.99}
+                      step={0.1}
+                      defaultValue={draft.marginBps / 100}
+                      className="h-9 rounded-lg pr-8"
+                    />
+                    <span className="pointer-events-none absolute inset-y-0 right-3 grid place-items-center text-[12px] text-slate-400">
+                      %
+                    </span>
+                  </div>
+                )}
+              </FormField>
             </div>
             <FormField field={MODEL_POLICY_FIELDS.description} optional className="mt-3">
               {(controlProps) => (
@@ -2185,11 +2234,17 @@ function EndpointBindingDrawer({
   // Reset to the first bindable endpoint whenever the drawer (re)opens for a model —
   // done via the "adjust state during render" pattern to avoid a setState-in-effect.
   const [selectedEndpointId, setSelectedEndpointId] = useState("");
+  const [selectedModelId, setSelectedModelId] = useState("");
+  const [unitPriceUsd, setUnitPriceUsd] = useState("");
+  const [unitType, setUnitType] = useState<AiGenUnitType>("per_image");
   const [pickerKey, setPickerKey] = useState<string | null>(null);
-  const nextPickerKey = open && fromModel ? `${model?.id ?? ""}` : null;
+  const nextPickerKey = open ? `${fromModel ? "m" : "e"}:${model?.id ?? endpoint?.id ?? ""}` : null;
   if (nextPickerKey !== pickerKey) {
     setPickerKey(nextPickerKey);
-    setSelectedEndpointId(nextPickerKey ? (bindableEndpoints[0]?.id ?? "") : "");
+    setSelectedEndpointId(open && fromModel ? (bindableEndpoints[0]?.id ?? "") : "");
+    setSelectedModelId(open && !fromModel ? (models[0]?.id ?? "") : "");
+    setUnitPriceUsd("");
+    setUnitType("per_image");
   }
 
   if (!endpoint && !model) return null;
@@ -2203,6 +2258,17 @@ function EndpointBindingDrawer({
   const canSubmit = fromModel
     ? bindableEndpoints.length > 0 && Boolean(selectedEndpointId)
     : models.length > 0;
+
+  // Margin comes from the canonical model on either side of the binding.
+  const previewMarginBps = fromModel
+    ? (model?.marginBps ?? DEFAULT_MARGIN_BPS)
+    : (models.find((item) => item.id === selectedModelId)?.marginBps ?? DEFAULT_MARGIN_BPS);
+  let previewNanoUsd = "0";
+  try {
+    previewNanoUsd = usdInputToNanoUsdString(unitPriceUsd);
+  } catch {
+    previewNanoUsd = "0";
+  }
 
   return (
     <Sheet open={open} onOpenChange={(next) => (!next ? onClose() : null)}>
@@ -2280,7 +2346,11 @@ function EndpointBindingDrawer({
             ) : (
               <FormField field={PROVIDER_BINDING_FIELDS.canonicalModelId}>
                 {(controlProps) => (
-                  <NativeSelect {...controlProps} defaultValue={models[0]?.id ?? ""}>
+                  <NativeSelect
+                    {...controlProps}
+                    value={selectedModelId}
+                    onChange={(event) => setSelectedModelId(event.currentTarget.value)}
+                  >
                     <option value="" disabled>
                       选择模型
                     </option>
@@ -2325,7 +2395,58 @@ function EndpointBindingDrawer({
               )}
             </FormField>
           </div>
-          <FormField field={PROVIDER_BINDING_FIELDS.disabledReason} optional>
+          <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50/60 p-3">
+            <div className="mb-3 flex items-center gap-1.5 text-[12px] font-semibold text-slate-600">
+              <IconCoin className="size-4 text-slate-400" />
+              定价（供应商成本 · 该模型毛利率 {marginBpsToPercentDisplay(previewMarginBps)}）
+            </div>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <FormField
+                field={PROVIDER_BINDING_FIELDS.unitPriceUsd}
+                optional
+                hint="供应商每单位成本，单位 USD（如 0.080）。"
+              >
+                {(controlProps) => (
+                  <div className="relative">
+                    <span className="pointer-events-none absolute inset-y-0 left-3 grid place-items-center text-[12px] text-slate-400">
+                      $
+                    </span>
+                    <Input
+                      {...controlProps}
+                      type="number"
+                      min={0}
+                      step="any"
+                      value={unitPriceUsd}
+                      onChange={(event) => setUnitPriceUsd(event.target.value)}
+                      placeholder="0.080"
+                      className="h-9 rounded-lg pl-7"
+                    />
+                  </div>
+                )}
+              </FormField>
+              <FormField field={PROVIDER_BINDING_FIELDS.unitType} optional>
+                {(controlProps) => (
+                  <NativeSelect
+                    {...controlProps}
+                    value={unitType}
+                    onChange={(event) => setUnitType(event.target.value as AiGenUnitType)}
+                  >
+                    <option value="per_image">{UNIT_TYPE_LABELS.per_image}</option>
+                    <option value="per_megapixel">{UNIT_TYPE_LABELS.per_megapixel}</option>
+                    <option value="per_unit">{UNIT_TYPE_LABELS.per_unit}</option>
+                  </NativeSelect>
+                )}
+              </FormField>
+            </div>
+            <div className="mt-3">
+              <EconomicsPreview
+                unitPriceNanoUsd={previewNanoUsd}
+                unitType={unitType}
+                marginBps={previewMarginBps}
+              />
+            </div>
+          </div>
+          <FormField field={PROVIDER_BINDING_FIELDS.disabledReason} optional className="mt-4">
             {(controlProps) => <Textarea {...controlProps} className="min-h-20 rounded-lg" />}
           </FormField>
           <div className="mt-4 grid gap-3 lg:grid-cols-2">
@@ -2387,7 +2508,27 @@ function BindingPolicyDrawer({
   onClose: () => void;
   onSave: (event: FormEvent<HTMLFormElement>) => void;
 }) {
+  const bindingId = binding?.id ?? null;
+  const [unitPriceUsd, setUnitPriceUsd] = useState("");
+  const [unitType, setUnitType] = useState<AiGenUnitType>("per_image");
+
+  // Re-sync local pricing inputs whenever a different binding is opened.
+  useEffect(() => {
+    if (!binding) return;
+    setUnitPriceUsd(nanoUsdToUsdInputValue(binding.unitPriceNanoUsd));
+    setUnitType(binding.unitType);
+  }, [bindingId, binding]);
+
   if (!binding) return null;
+
+  const marginBps = binding.canonicalModel.marginBps ?? DEFAULT_MARGIN_BPS;
+  let previewNanoUsd = "0";
+  try {
+    previewNanoUsd = usdInputToNanoUsdString(unitPriceUsd);
+  } catch {
+    previewNanoUsd = "0";
+  }
+
   return (
     <Sheet open={open} onOpenChange={(next) => (!next ? onClose() : null)}>
       <SheetContent
@@ -2446,7 +2587,58 @@ function BindingPolicyDrawer({
               )}
             </FormField>
           </div>
-          <FormField field={PROVIDER_BINDING_FIELDS.disabledReason} optional>
+          <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50/60 p-3">
+            <div className="mb-3 flex items-center gap-1.5 text-[12px] font-semibold text-slate-600">
+              <IconCoin className="size-4 text-slate-400" />
+              定价（供应商成本 · 该模型毛利率 {marginBpsToPercentDisplay(marginBps)}）
+            </div>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <FormField
+                field={PROVIDER_BINDING_FIELDS.unitPriceUsd}
+                optional
+                hint="供应商每单位成本，单位 USD（如 0.080）。"
+              >
+                {(controlProps) => (
+                  <div className="relative">
+                    <span className="pointer-events-none absolute inset-y-0 left-3 grid place-items-center text-[12px] text-slate-400">
+                      $
+                    </span>
+                    <Input
+                      {...controlProps}
+                      type="number"
+                      min={0}
+                      step="any"
+                      value={unitPriceUsd}
+                      onChange={(event) => setUnitPriceUsd(event.target.value)}
+                      placeholder="0.080"
+                      className="h-9 rounded-lg pl-7"
+                    />
+                  </div>
+                )}
+              </FormField>
+              <FormField field={PROVIDER_BINDING_FIELDS.unitType} optional>
+                {(controlProps) => (
+                  <NativeSelect
+                    {...controlProps}
+                    value={unitType}
+                    onChange={(event) => setUnitType(event.target.value as AiGenUnitType)}
+                  >
+                    <option value="per_image">{UNIT_TYPE_LABELS.per_image}</option>
+                    <option value="per_megapixel">{UNIT_TYPE_LABELS.per_megapixel}</option>
+                    <option value="per_unit">{UNIT_TYPE_LABELS.per_unit}</option>
+                  </NativeSelect>
+                )}
+              </FormField>
+            </div>
+            <div className="mt-3">
+              <EconomicsPreview
+                unitPriceNanoUsd={previewNanoUsd}
+                unitType={unitType}
+                marginBps={marginBps}
+              />
+            </div>
+          </div>
+          <FormField field={PROVIDER_BINDING_FIELDS.disabledReason} optional className="mt-4">
             {(controlProps) => (
               <Textarea
                 {...controlProps}
@@ -2737,6 +2929,7 @@ function defaultModelDraft(): AdminAiCanonicalModel {
     outputPolicy: {},
     entitlementPolicy: {},
     billingPolicy: { pricingMode: "credit_estimated_cost", creditFloor: 2, marginRatio: 0.45 },
+    marginBps: DEFAULT_MARGIN_BPS,
     queuePolicy: { priorityTier: "standard", maxConcurrentPerUser: 2, timeoutMs: 150000 },
     uiPolicy: { frontstageVisible: true },
     observabilityPolicy: {
@@ -2804,6 +2997,205 @@ function defaultProviderEndpointDraft(
   };
 }
 
+// ---------------------------------------------------------------------------
+// Parameterized pricing helpers (financial-grade, mirrors @repo/shared).
+// COST lives per-binding (unitPriceNanoUsd + unitType); MARKUP lives
+// per-canonical (marginBps). The live preview folds them via the shared
+// estimator so admin and runtime never disagree.
+// ---------------------------------------------------------------------------
+
+const UNIT_TYPE_LABELS: Record<AiGenUnitType, string> = {
+  per_image: "按张（per image）",
+  per_megapixel: "按百万像素（per MP）",
+  per_unit: "按次（per unit）",
+};
+
+const RESOLUTION_PRESETS: Array<{ value: string; label: string; megapixels: number }> = [
+  { value: "1K", label: "1K · 1MP", megapixels: RESOLUTION_MEGAPIXELS["1K"] ?? 1 },
+  { value: "2K", label: "2K · 4MP", megapixels: RESOLUTION_MEGAPIXELS["2K"] ?? 4 },
+  { value: "4K", label: "4K · 16MP", megapixels: RESOLUTION_MEGAPIXELS["4K"] ?? 16 },
+];
+
+/** nanoUSD numeric string → "$0.080" display (3 decimals). */
+function nanoUsdToUsdDisplay(nanoUsd: string): string {
+  const value = Number(nanoUsd) / Number(NANO_USD_PER_USD);
+  if (!Number.isFinite(value)) return "$0.000";
+  return `$${value.toFixed(3)}`;
+}
+
+/** nanoUSD numeric string → plain USD number string for an editable input. */
+function nanoUsdToUsdInputValue(nanoUsd: string): string {
+  const value = Number(nanoUsd) / Number(NANO_USD_PER_USD);
+  if (!Number.isFinite(value) || value === 0) return "";
+  // Trim to a stable decimal without trailing-zero noise.
+  return String(Number(value.toFixed(6)));
+}
+
+/** USD input string → integer nanoUSD numeric string (BigInt-safe). */
+function usdInputToNanoUsdString(usd: string): string {
+  const trimmed = usd.trim();
+  if (!trimmed) return "0";
+  const value = Number(trimmed);
+  if (!Number.isFinite(value) || value < 0) {
+    throw new Error("供应商成本（USD）必须是非负数字。");
+  }
+  // Round to the nearest nanoUSD; USD has 9 decimals of nano precision.
+  return String(Math.round(value * Number(NANO_USD_PER_USD)));
+}
+
+/** bps (0..9999) → "70.0%" margin display. */
+function marginBpsToPercentDisplay(bps: number): string {
+  return `${(bps / 100).toFixed(1)}%`;
+}
+
+/** Percent input string → integer bps; validates the [0, 99.99] range. */
+function percentInputToMarginBps(percent: string): number {
+  const value = Number(percent.trim());
+  if (!Number.isFinite(value) || value < 0 || value >= 100) {
+    throw new Error("毛利率（%）必须在 0 到 99.99 之间。");
+  }
+  return Math.round(value * 100);
+}
+
+/**
+ * Live economics preview. Operator picks 张数 + 分辨率; everything else
+ * (cost / sell / margin) is computed client-side via the shared estimator on
+ * every change. Pure display — never persists.
+ */
+function EconomicsPreview({
+  unitPriceNanoUsd,
+  unitType,
+  marginBps,
+}: {
+  unitPriceNanoUsd: string;
+  unitType: AiGenUnitType;
+  marginBps: number;
+}) {
+  const [numImages, setNumImages] = useState(1);
+  const [resolution, setResolution] = useState("2K");
+
+  const estimate = useMemo(() => {
+    let priceNanoUsd: bigint;
+    try {
+      priceNanoUsd = BigInt(unitPriceNanoUsd || "0");
+    } catch {
+      priceNanoUsd = BigInt(0);
+    }
+    const safeMargin =
+      Number.isInteger(marginBps) && marginBps >= 0 && marginBps < 10_000
+        ? marginBps
+        : DEFAULT_MARGIN_BPS;
+    const safeImages = Number.isInteger(numImages) && numImages > 0 ? numImages : 1;
+    const megapixels =
+      RESOLUTION_PRESETS.find((preset) => preset.value === resolution)?.megapixels ?? 4;
+    try {
+      return estimateGenerationPrice({
+        unitPriceNanoUsd: priceNanoUsd,
+        unitType,
+        marginBps: safeMargin,
+        numImages: safeImages,
+        megapixels,
+      });
+    } catch {
+      return null;
+    }
+  }, [unitPriceNanoUsd, unitType, marginBps, numImages, resolution]);
+
+  const showResolution = unitType === "per_megapixel";
+
+  return (
+    <section className="overflow-hidden rounded-xl border border-slate-200 bg-white">
+      <div className="flex items-center justify-between border-b border-slate-200 bg-slate-50 px-3 py-2">
+        <div className="flex items-center gap-1.5 text-[12px] font-semibold text-slate-600">
+          <IconCoin className="size-4 text-slate-400" />
+          实时定价预览
+        </div>
+        <span className="text-[11px] text-slate-400">客户端实时计算 · 不写入</span>
+      </div>
+      <div className="grid gap-3 px-3 py-3 md:grid-cols-2">
+        <label className="grid gap-1.5">
+          <span className="text-[11px] font-medium text-slate-500">张数（numImages）</span>
+          <Input
+            type="number"
+            min={1}
+            max={100}
+            step={1}
+            value={numImages}
+            onChange={(event) => setNumImages(Math.max(1, Number(event.target.value) || 1))}
+            className="h-9 rounded-lg"
+          />
+        </label>
+        <label className="grid gap-1.5">
+          <span className="text-[11px] font-medium text-slate-500">分辨率（megapixels）</span>
+          <NativeSelect
+            value={resolution}
+            onChange={(event) => setResolution(event.target.value)}
+            disabled={!showResolution}
+            title={showResolution ? undefined : "仅 per_megapixel 计费单位使用分辨率"}
+          >
+            {RESOLUTION_PRESETS.map((preset) => (
+              <option key={preset.value} value={preset.value}>
+                {preset.label}
+              </option>
+            ))}
+          </NativeSelect>
+        </label>
+      </div>
+      <div className="grid grid-cols-3 gap-2 border-t border-slate-100 px-3 py-3">
+        <EconomicsStat
+          label="成本"
+          value={estimate ? `${formatPoints(estimate.costPoints)} 积分` : "—"}
+        />
+        <EconomicsStat
+          label="售价"
+          value={estimate ? `${estimate.sellPoints} 积分` : "—"}
+          emphasis
+        />
+        <EconomicsStat
+          label="毛利率"
+          value={estimate ? marginBpsToPercentDisplay(estimate.marginBps) : "—"}
+        />
+      </div>
+    </section>
+  );
+}
+
+function EconomicsStat({
+  label,
+  value,
+  emphasis,
+}: {
+  label: string;
+  value: string;
+  emphasis?: boolean;
+}) {
+  return (
+    <div
+      className={cn(
+        "rounded-lg border px-3 py-2",
+        emphasis ? "border-[#E52227]/30 bg-[#E52227]/5" : "border-slate-200 bg-slate-50"
+      )}
+    >
+      <p className="text-[11px] font-medium text-slate-500">{label}</p>
+      <p
+        className={cn(
+          "mt-1 truncate text-[15px] font-semibold tabular-nums",
+          emphasis ? "text-[#E52227]" : "text-slate-950"
+        )}
+      >
+        {value}
+      </p>
+    </div>
+  );
+}
+
+/** Display compute points; trims fractional noise but keeps sub-point precision. */
+function formatPoints(points: number): string {
+  if (!Number.isFinite(points)) return "0";
+  if (Number.isInteger(points)) return String(points);
+  return String(Number(points.toFixed(4)));
+}
+
 function buildProviderAccountPayload(form: FormData) {
   return {
     status: requiredString(form, PROVIDER_ACCOUNT_FIELDS.status),
@@ -2819,6 +3211,7 @@ function buildModelPayload(form: FormData) {
     status: requiredString(form, MODEL_POLICY_FIELDS.status),
     visibility: requiredString(form, MODEL_POLICY_FIELDS.visibility),
     description: nullableString(form, MODEL_POLICY_FIELDS.description),
+    marginBps: marginBpsField(form, MODEL_POLICY_FIELDS.marginBps),
     generationModes: jsonArrayField(form, MODEL_POLICY_FIELDS.generationModes),
     parameterPolicy: jsonObjectField(form, MODEL_POLICY_FIELDS.parameterPolicy),
     billingPolicy: jsonObjectField(form, MODEL_POLICY_FIELDS.billingPolicy),
@@ -2869,6 +3262,8 @@ function buildProviderBindingPayload(form: FormData) {
     status: requiredString(form, PROVIDER_BINDING_FIELDS.status),
     priority: integerField(form, PROVIDER_BINDING_FIELDS.priority, 100),
     weight: integerField(form, PROVIDER_BINDING_FIELDS.weight, 100),
+    unitPriceNanoUsd: unitPriceNanoUsdField(form, PROVIDER_BINDING_FIELDS.unitPriceUsd),
+    unitType: unitTypeField(form, PROVIDER_BINDING_FIELDS.unitType),
     disabledReason: nullableString(form, PROVIDER_BINDING_FIELDS.disabledReason),
     parameterMap: jsonObjectField(form, PROVIDER_BINDING_FIELDS.parameterMap),
     pricingPolicy: jsonObjectField(form, PROVIDER_BINDING_FIELDS.pricingPolicy),
@@ -2905,6 +3300,26 @@ function stringField(form: FormData, field: AdminFieldDefinition) {
 function integerField(form: FormData, field: AdminFieldDefinition, fallback: number) {
   const value = Number.parseInt(stringField(form, field), 10);
   return Number.isFinite(value) ? value : fallback;
+}
+
+/** 毛利率 % input → integer bps (server stores bps; UI shows %). */
+function marginBpsField(form: FormData, field: AdminFieldDefinition) {
+  const raw = stringField(form, field);
+  if (!raw) return DEFAULT_MARGIN_BPS;
+  return percentInputToMarginBps(raw);
+}
+
+/** 供应商成本（USD）input → integer nanoUSD numeric string (BigInt-safe). */
+function unitPriceNanoUsdField(form: FormData, field: AdminFieldDefinition): string {
+  return usdInputToNanoUsdString(stringField(form, field));
+}
+
+function unitTypeField(form: FormData, field: AdminFieldDefinition): AiGenUnitType {
+  const value = stringField(form, field);
+  if (value === "per_image" || value === "per_megapixel" || value === "per_unit") {
+    return value;
+  }
+  return "per_image";
 }
 
 function jsonObjectField(form: FormData, field: AdminFieldDefinition): JsonObject {

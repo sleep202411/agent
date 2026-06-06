@@ -24,6 +24,21 @@ const ProviderHealthStatusSchema = z.enum([
   'outage',
 ]);
 
+export const AiGenUnitTypeSchema = z.enum([
+  'per_image',
+  'per_megapixel',
+  'per_unit',
+]);
+
+/**
+ * Provider COST per unit in nanoUSD. Accepts a non-negative numeric string
+ * (BigInt is serialized as a string across the JSON boundary) or a JS number,
+ * and transforms to BigInt so the value is precise on the server.
+ */
+const UnitPriceNanoUsdSchema = z
+  .union([z.string().trim().regex(/^\d+$/), z.number().int().min(0)])
+  .transform((value) => BigInt(value));
+
 export const ListAdminAiProvidersQuerySchema = z.object({
   provider: z.string().trim().min(1).optional(),
   status: AiControlPlaneStatusSchema.optional(),
@@ -76,6 +91,8 @@ export const CreateCanonicalModelSchema = z.object({
   outputPolicy: JsonObjectSchema.default({}),
   entitlementPolicy: JsonObjectSchema.default({}),
   billingPolicy: JsonObjectSchema.default({}),
+  // marginBps < 10000 so the sell denominator (10000 - marginBps) never hits 0.
+  marginBps: z.coerce.number().int().min(0).max(9999).default(7000),
   queuePolicy: JsonObjectSchema.default({}),
   uiPolicy: JsonObjectSchema.default({}),
   observabilityPolicy: JsonObjectSchema.default({}),
@@ -101,6 +118,7 @@ export const UpdateCanonicalModelSchema = z.object({
   outputPolicy: JsonObjectSchema.optional(),
   entitlementPolicy: JsonObjectSchema.optional(),
   billingPolicy: JsonObjectSchema.optional(),
+  marginBps: z.coerce.number().int().min(0).max(9999).optional(),
   queuePolicy: JsonObjectSchema.optional(),
   uiPolicy: JsonObjectSchema.optional(),
   observabilityPolicy: JsonObjectSchema.optional(),
@@ -194,6 +212,8 @@ export const CreateProviderBindingSchema = z.object({
   status: AiControlPlaneStatusSchema.default('draft'),
   priority: z.coerce.number().int().min(0).max(10_000).default(100),
   weight: z.coerce.number().int().min(0).max(10_000).default(100),
+  unitPriceNanoUsd: UnitPriceNanoUsdSchema.optional(),
+  unitType: AiGenUnitTypeSchema.optional(),
   parameterMap: JsonObjectSchema.default({}),
   pricingPolicy: JsonObjectSchema.default({}),
   queuePolicy: JsonObjectSchema.default({}),
@@ -210,6 +230,8 @@ export const UpdateProviderBindingSchema = z.object({
   status: AiControlPlaneStatusSchema.optional(),
   priority: z.coerce.number().int().min(0).max(10_000).optional(),
   weight: z.coerce.number().int().min(0).max(10_000).optional(),
+  unitPriceNanoUsd: UnitPriceNanoUsdSchema.optional(),
+  unitType: AiGenUnitTypeSchema.optional(),
   parameterMap: JsonObjectSchema.optional(),
   pricingPolicy: JsonObjectSchema.optional(),
   queuePolicy: JsonObjectSchema.optional(),

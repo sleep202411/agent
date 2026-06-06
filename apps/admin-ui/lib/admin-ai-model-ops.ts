@@ -64,6 +64,8 @@ export type AdminAiCanonicalModel = {
   outputPolicy: unknown;
   entitlementPolicy: unknown;
   billingPolicy: unknown;
+  /** Gross-margin basis points (7000 = 70%). MARKUP lives per-canonical. */
+  marginBps: number;
   queuePolicy: unknown;
   uiPolicy: unknown;
   observabilityPolicy: unknown;
@@ -82,6 +84,10 @@ export type AdminAiProviderBinding = {
   status: "draft" | "active" | "disabled" | "degraded" | "archived";
   priority: number;
   weight: number;
+  /** Provider COST per unit in nanoUSD, serialized as a numeric string (BigInt). */
+  unitPriceNanoUsd: string;
+  /** What `unitPriceNanoUsd` is priced per. COST lives per-binding. */
+  unitType: "per_image" | "per_megapixel" | "per_unit";
   supportedModes: unknown;
   inputSchema: unknown;
   outputSchema: unknown;
@@ -110,6 +116,8 @@ export type AdminAiProviderBinding = {
     id: string;
     slug: string;
     displayName: string;
+    /** Margin basis points from the canonical model; drives the live preview. */
+    marginBps?: number;
   };
   jobCount: number;
 };

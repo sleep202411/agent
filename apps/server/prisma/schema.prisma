@@ -3358,6 +3358,15 @@ enum AiCostLedgerEntryType {
   adjustment
 }
 
+// AiGenUnitType — what a provider binding's unitPriceNanoUsd is priced per.
+// per_image / per_unit bill per generated image; per_megapixel scales with
+// the requested resolution's megapixels.
+enum AiGenUnitType {
+  per_image
+  per_megapixel
+  per_unit
+}
+
 // AiProviderAccount — operational provider account, region cell, SLO policy,
 // and alert routing. Secrets are stored in AiProviderCredential with envelope
 // encryption; this row only owns provider routing and operational policy.
@@ -3436,6 +3445,8 @@ model AiCanonicalModel {
   outputPolicy          Json                 @default("{}") @map("output_policy") @db.JsonB
   entitlementPolicy     Json                 @default("{}") @map("entitlement_policy") @db.JsonB
   billingPolicy         Json                 @default("{}") @map("billing_policy") @db.JsonB
+  /// Gross-margin basis points applied over provider cost to derive 售价 (10000 = 100%). MARKUP lives per-canonical.
+  marginBps             Int                  @default(7000) @map("margin_bps")
   queuePolicy           Json                 @default("{}") @map("queue_policy") @db.JsonB
   uiPolicy              Json                 @default("{}") @map("ui_policy") @db.JsonB
   observabilityPolicy   Json                 @default("{}") @map("observability_policy") @db.JsonB
@@ -3480,6 +3491,10 @@ model AiProviderModelBinding {
   outputMap             Json                 @default("{}") @map("output_map") @db.JsonB
   pricingPolicy         Json                 @default("{}") @map("pricing_policy") @db.JsonB
   providerPricing       Json                 @default("{}") @map("provider_pricing") @db.JsonB
+  /// Provider cost per unit, in nanoUSD (1 USD = 1e9 nanoUSD). COST lives per-binding.
+  unitPriceNanoUsd      BigInt?              @default(0) @map("unit_price_nano_usd")
+  /// What unitPriceNanoUsd is priced per (per_image / per_megapixel / per_unit).
+  unitType              AiGenUnitType        @default(per_image) @map("unit_type")
   queuePolicy           Json                 @default("{}") @map("queue_policy") @db.JsonB
   routingPolicy         Json                 @default("{}") @map("routing_policy") @db.JsonB
   fallbackPolicy        Json                 @default("{}") @map("fallback_policy") @db.JsonB

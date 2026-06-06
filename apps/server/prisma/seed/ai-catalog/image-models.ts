@@ -40,6 +40,10 @@ export interface ProviderEntry {
   priority?: number;
   /** Route weight (higher = preferred within a priority). Defaults to 100. */
   weight?: number;
+  /** Provider COST per unit, in nanoUSD (1 USD = 1e9 nanoUSD). */
+  unitPriceNanoUsd: number;
+  /** What `unitPriceNanoUsd` is priced per. */
+  unitType: 'per_image' | 'per_megapixel' | 'per_unit';
 }
 
 /** One declarative canonical image-model entry. */
@@ -51,8 +55,10 @@ export interface ImageModelSeed {
   modes: AiGenerationMode[];
   /** Entitlement tier; `null` = free. Drives queue caps + priority too. */
   tier: RequiredPlan;
-  /** Preflight cost in compute points. */
+  /** Preflight cost in compute points (flat fallback; superseded by estimator). */
   cost: number;
+  /** Gross-margin basis points applied over provider cost (10000 = 100%). MARKUP lives per-canonical. */
+  marginBps: number;
   /** UI display group. */
   group: string;
   /** UI sort order within the catalog. */
@@ -93,11 +99,19 @@ export const IMAGE_MODELS: ImageModelSeed[] = [
     modes: [T2I, I2I, INPAINT],
     tier: 'vip',
     cost: 4,
+    marginBps: 7000,
     group: 'recommended',
     sortOrder: 10,
     recommended: true,
     // fal exposes GPT Image 2 under the `openai/gpt-image-2` path.
-    providers: [{ provider: 'fal-ai', endpointId: 'openai/gpt-image-2' }],
+    providers: [
+      {
+        provider: 'fal-ai',
+        endpointId: 'openai/gpt-image-2',
+        unitPriceNanoUsd: 1_000_000_000,
+        unitType: 'per_unit',
+      },
+    ],
     providerAliases: ['openai/gpt-image-2', 'fal/gpt-image-2'],
   },
   {
@@ -109,10 +123,18 @@ export const IMAGE_MODELS: ImageModelSeed[] = [
     modes: [T2I, I2I],
     tier: 'vip',
     cost: 3,
+    marginBps: 7000,
     group: 'recommended',
     sortOrder: 20,
     recommended: true,
-    providers: [{ provider: 'fal-ai', endpointId: 'nano-banana-2' }],
+    providers: [
+      {
+        provider: 'fal-ai',
+        endpointId: 'fal-ai/nano-banana-2',
+        unitPriceNanoUsd: 80_000_000,
+        unitType: 'per_image',
+      },
+    ],
     providerAliases: ['google/nano-banana-2', 'fal/nano-banana-2'],
   },
   {
@@ -124,10 +146,18 @@ export const IMAGE_MODELS: ImageModelSeed[] = [
     modes: [T2I, I2I, INPAINT],
     tier: null,
     cost: 2,
+    marginBps: 7000,
     group: 'recommended',
     sortOrder: 30,
     recommended: true,
-    providers: [{ provider: 'fal-ai', endpointId: 'seedream-v5' }],
+    providers: [
+      {
+        provider: 'fal-ai',
+        endpointId: 'fal-ai/bytedance/seedream/v5/lite/text-to-image',
+        unitPriceNanoUsd: 35_000_000,
+        unitType: 'per_image',
+      },
+    ],
     providerAliases: ['bytedance/seedream-v5', 'fal/seedream-v5'],
   },
   {
@@ -139,6 +169,7 @@ export const IMAGE_MODELS: ImageModelSeed[] = [
     modes: [T2I, I2I],
     tier: null,
     cost: 2,
+    marginBps: 7000,
     group: 'recommended',
     sortOrder: 40,
     recommended: true,
@@ -146,7 +177,14 @@ export const IMAGE_MODELS: ImageModelSeed[] = [
     // Only fal-ai has a runtime catalog adapter for bindings today, so the
     // aliyun-bailian endpoint seeds canonical-without-runtime until its
     // adapter reads bindings; the fal route is the live one.
-    providers: [{ provider: 'fal-ai', endpointId: 'qwen-image' }],
+    providers: [
+      {
+        provider: 'fal-ai',
+        endpointId: 'fal-ai/qwen-image-2512',
+        unitPriceNanoUsd: 20_000_000,
+        unitType: 'per_megapixel',
+      },
+    ],
     providerAliases: ['aliyun/qwen-image', 'fal/qwen-image'],
   },
   {
@@ -158,9 +196,17 @@ export const IMAGE_MODELS: ImageModelSeed[] = [
     modes: [T2I, I2I],
     tier: 'vip',
     cost: 3,
+    marginBps: 7000,
     group: 'photoreal',
     sortOrder: 50,
-    providers: [{ provider: 'fal-ai', endpointId: 'flux-2-max' }],
+    providers: [
+      {
+        provider: 'fal-ai',
+        endpointId: 'fal-ai/flux-2-pro',
+        unitPriceNanoUsd: 30_000_000,
+        unitType: 'per_megapixel',
+      },
+    ],
     providerAliases: ['black-forest-labs/flux-2-max', 'fal/flux-2-max'],
   },
   {
@@ -172,6 +218,7 @@ export const IMAGE_MODELS: ImageModelSeed[] = [
     modes: [T2I, I2I],
     tier: 'vip',
     cost: 5,
+    marginBps: 7000,
     group: 'premium',
     sortOrder: 60,
     // No reconciled account backs `midjourney/v7` → canonical-only, no binding.
@@ -187,12 +234,18 @@ export const IMAGE_MODELS: ImageModelSeed[] = [
     modes: [T2I, I2I],
     tier: 'vip',
     cost: 3,
+    marginBps: 7000,
     group: 'design',
     sortOrder: 70,
     // fal exposes Recraft v4.1 under the explicit `recraft/v4.1/text-to-image`
     // endpoint path.
     providers: [
-      { provider: 'fal-ai', endpointId: 'recraft/v4.1/text-to-image' },
+      {
+        provider: 'fal-ai',
+        endpointId: 'fal-ai/recraft/v4.1/text-to-image',
+        unitPriceNanoUsd: 40_000_000,
+        unitType: 'per_image',
+      },
     ],
     providerAliases: ['recraft/v4.1', 'fal/recraft/v4.1/text-to-image'],
   },
@@ -205,9 +258,17 @@ export const IMAGE_MODELS: ImageModelSeed[] = [
     modes: [T2I, I2I],
     tier: 'vip',
     cost: 3,
+    marginBps: 7000,
     group: 'design',
     sortOrder: 80,
-    providers: [{ provider: 'fal-ai', endpointId: 'ideogram/v4' }],
+    providers: [
+      {
+        provider: 'fal-ai',
+        endpointId: 'ideogram/v4',
+        unitPriceNanoUsd: 10_000_000,
+        unitType: 'per_unit',
+      },
+    ],
     providerAliases: ['ideogram/v4', 'fal/ideogram/v4'],
   },
   {
@@ -219,9 +280,17 @@ export const IMAGE_MODELS: ImageModelSeed[] = [
     modes: [T2I, I2I],
     tier: null,
     cost: 2,
+    marginBps: 7000,
     group: 'creative',
     sortOrder: 90,
-    providers: [{ provider: 'fal-ai', endpointId: 'krea-flux-1' }],
+    providers: [
+      {
+        provider: 'fal-ai',
+        endpointId: 'fal-ai/flux/krea',
+        unitPriceNanoUsd: 25_000_000,
+        unitType: 'per_megapixel',
+      },
+    ],
     providerAliases: ['krea/flux-1', 'fal/krea-flux-1'],
   },
   {
@@ -233,6 +302,7 @@ export const IMAGE_MODELS: ImageModelSeed[] = [
     modes: [T2I, I2I],
     tier: null,
     cost: 1,
+    marginBps: 7000,
     group: 'more',
     sortOrder: 100,
     // No reconciled account backs `minimax/image` → canonical-only, no binding.

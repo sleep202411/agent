@@ -218,6 +218,7 @@ export class AiModelOpsService {
       ...(input.billingPolicy !== undefined
         ? { billingPolicy: input.billingPolicy as Prisma.InputJsonValue }
         : {}),
+      ...(input.marginBps !== undefined ? { marginBps: input.marginBps } : {}),
       ...(input.queuePolicy !== undefined
         ? { queuePolicy: input.queuePolicy as Prisma.InputJsonValue }
         : {}),
@@ -500,6 +501,11 @@ export class AiModelOpsService {
         status: input.status,
         priority: input.priority,
         weight: input.weight,
+        unitPriceNanoUsd:
+          input.unitPriceNanoUsd !== undefined
+            ? input.unitPriceNanoUsd
+            : undefined,
+        unitType: input.unitType !== undefined ? input.unitType : undefined,
         parameterMap:
           input.parameterMap !== undefined
             ? (input.parameterMap as Prisma.InputJsonValue)
@@ -631,6 +637,7 @@ function canonicalModelCreateData(
     outputPolicy: input.outputPolicy as Prisma.InputJsonValue,
     entitlementPolicy: input.entitlementPolicy as Prisma.InputJsonValue,
     billingPolicy: input.billingPolicy as Prisma.InputJsonValue,
+    marginBps: input.marginBps,
     queuePolicy: input.queuePolicy as Prisma.InputJsonValue,
     uiPolicy: input.uiPolicy as Prisma.InputJsonValue,
     observabilityPolicy: input.observabilityPolicy as Prisma.InputJsonValue,
@@ -670,6 +677,8 @@ function providerBindingDataFromEndpoint(
     status: input.status,
     priority: input.priority,
     weight: input.weight,
+    unitPriceNanoUsd: input.unitPriceNanoUsd ?? 0n,
+    unitType: input.unitType ?? 'per_image',
     supportedModes: endpoint.supportedModes as Prisma.InputJsonValue,
     inputSchema: endpoint.providerInputSchema as Prisma.InputJsonValue,
     outputSchema: endpoint.providerOutputSchema as Prisma.InputJsonValue,
@@ -769,6 +778,7 @@ function serializeCanonicalModel(model: {
   outputPolicy: unknown;
   entitlementPolicy: unknown;
   billingPolicy: unknown;
+  marginBps: number;
   queuePolicy: unknown;
   uiPolicy: unknown;
   observabilityPolicy: unknown;
@@ -794,6 +804,8 @@ function serializeProviderBinding(binding: {
   status: string;
   priority: number;
   weight: number;
+  unitPriceNanoUsd: bigint | null;
+  unitType: string;
   supportedModes: unknown;
   inputSchema: unknown;
   outputSchema: unknown;
@@ -815,11 +827,18 @@ function serializeProviderBinding(binding: {
     status: string;
     healthStatus: string;
   };
-  canonicalModel: { id: string; slug: string; displayName: string };
+  canonicalModel: {
+    id: string;
+    slug: string;
+    displayName: string;
+    marginBps?: number;
+  };
   _count?: { jobs: number };
 }) {
   return {
     ...binding,
+    // BigInt is not JSON-serializable — emit as a numeric string.
+    unitPriceNanoUsd: binding.unitPriceNanoUsd?.toString() ?? '0',
     jobCount: binding._count?.jobs ?? 0,
     _count: undefined,
   };

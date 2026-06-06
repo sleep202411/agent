@@ -58,6 +58,7 @@ function buildCanonicalPayload(
     outputPolicy: OUTPUT_POLICY,
     entitlementPolicy: buildEntitlementPolicy(model.tier),
     billingPolicy: buildBillingPolicy(model.cost),
+    marginBps: model.marginBps,
     queuePolicy: buildQueuePolicy(model.tier),
     uiPolicy: buildUiPolicy({
       group: model.group,
@@ -132,6 +133,8 @@ function buildBindingPayload(args: {
   weight: number;
   pricingPolicy: Prisma.InputJsonObject;
   queuePolicy: Prisma.InputJsonObject;
+  unitPriceNanoUsd: bigint;
+  unitType: ProviderEntry['unitType'];
 }): Prisma.AiProviderModelBindingUncheckedCreateInput {
   const { endpoint } = args;
   return {
@@ -145,6 +148,8 @@ function buildBindingPayload(args: {
     status: 'active',
     priority: args.priority,
     weight: args.weight,
+    unitPriceNanoUsd: args.unitPriceNanoUsd,
+    unitType: args.unitType,
     supportedModes: endpoint.supportedModes as Prisma.InputJsonValue,
     inputSchema: endpoint.providerInputSchema as Prisma.InputJsonValue,
     outputSchema: endpoint.providerOutputSchema as Prisma.InputJsonValue,
@@ -280,6 +285,9 @@ async function bindProviderEntry(args: {
   const providerPricing: Prisma.InputJsonObject = {
     unit: 'compute_point',
     preflightCost: model.cost,
+    // Read-only snapshot of the authoritative cost columns (new binding fields).
+    unitPriceNanoUsd: String(entry.unitPriceNanoUsd),
+    unitType: entry.unitType,
   };
 
   const endpointPayload = buildEndpointPayload({
@@ -332,6 +340,8 @@ async function bindProviderEntry(args: {
     weight: entry.weight ?? 100,
     pricingPolicy,
     queuePolicy,
+    unitPriceNanoUsd: BigInt(entry.unitPriceNanoUsd),
+    unitType: entry.unitType,
   });
 
   await prisma.aiProviderModelBinding.upsert({
