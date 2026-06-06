@@ -48,4 +48,13 @@ export class ProviderRegistry {
   list(): ProviderAdapter[] {
     return Array.from(this.adapters.values());
   }
+
+  /**
+   * Enumerate the registered provider keys (the `provider` column
+   * values). Used by ProviderAccountReconciler to seed an
+   * AiProviderAccount row per registered adapter on boot.
+   */
+  providers(): string[] {
+    return Array.from(this.adapters.keys());
+  }
 }

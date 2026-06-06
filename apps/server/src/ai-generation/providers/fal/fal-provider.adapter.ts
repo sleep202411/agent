@@ -71,6 +71,15 @@ export class FalProviderAdapter implements ProviderAdapter {
       kind: 'pending',
       providerJobId: this.encodeProviderJobId(runtime.endpointId, requestId),
       initialPollDelayMs: this.configService.config.pollDelayMs,
+      providerRequestId: requestId,
+      providerEndpoint: runtime.endpointId,
+      providerRequest: payload,
+      providerResponse: response,
+      submittedAt: new Date().toISOString(),
+      queuePosition:
+        typeof response.queue_position === 'number'
+          ? response.queue_position
+          : null,
     };
   }
 
@@ -93,6 +102,11 @@ export class FalProviderAdapter implements ProviderAdapter {
       return {
         kind: 'completed',
         outputs: this.collectOutputs(runtime, response),
+        providerRequestId: requestId,
+        providerEndpoint: runtime.endpointId,
+        rawStatus: status,
+        providerResponse: response,
+        providerLogs: status.logs,
       };
     }
 
@@ -100,12 +114,24 @@ export class FalProviderAdapter implements ProviderAdapter {
       return {
         kind: 'failed',
         error: this.errorFromStatus(runtime, status),
+        providerRequestId: requestId,
+        providerEndpoint: runtime.endpointId,
+        rawStatus: status,
+        providerLogs: status.logs,
       };
     }
 
     return {
       kind: 'pending',
       progress: normalized === 'IN_PROGRESS' ? 0.55 : 0.2,
+      providerRequestId: requestId,
+      providerEndpoint: runtime.endpointId,
+      queuePosition:
+        typeof status.queue_position === 'number'
+          ? status.queue_position
+          : null,
+      rawStatus: status,
+      providerLogs: status.logs,
       stageHint:
         status.logs?.at(-1)?.message ??
         (status.queue_position != null

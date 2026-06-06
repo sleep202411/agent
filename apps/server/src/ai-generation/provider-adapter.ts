@@ -67,12 +67,42 @@ export type StartResult =
       providerJobId: string;
       /** Optional first poll delay; defaults to adapter discretion. */
       initialPollDelayMs?: number;
+      providerRequestId?: string;
+      providerEndpoint?: string;
+      providerRequest?: Record<string, unknown>;
+      providerResponse?: unknown;
+      submittedAt?: string;
+      queuePosition?: number | null;
     };
 
 export type PollResult =
-  | { kind: 'pending'; progress?: number; stageHint?: string }
-  | { kind: 'completed'; outputs: RawProviderOutput[] }
-  | { kind: 'failed'; error: AiJobError };
+  | {
+      kind: 'pending';
+      progress?: number;
+      stageHint?: string;
+      providerRequestId?: string;
+      providerEndpoint?: string;
+      queuePosition?: number | null;
+      rawStatus?: unknown;
+      providerLogs?: unknown;
+    }
+  | {
+      kind: 'completed';
+      outputs: RawProviderOutput[];
+      providerRequestId?: string;
+      providerEndpoint?: string;
+      rawStatus?: unknown;
+      providerResponse?: unknown;
+      providerLogs?: unknown;
+    }
+  | {
+      kind: 'failed';
+      error: AiJobError;
+      providerRequestId?: string;
+      providerEndpoint?: string;
+      rawStatus?: unknown;
+      providerLogs?: unknown;
+    };
 
 /**
  * Parsed webhook envelope. Adapter verifies signature against the
@@ -130,7 +160,8 @@ export interface ProviderAdapter {
     ctx: ProviderGenerationContext,
   ): Promise<StartResult>;
 
-  /** Required for async providers; omit for sync. */
+  /** Required for async providers; omit for sync. Adapters
+   *  authenticate the status call with their own env-configured key. */
   pollStatus?(providerJobId: string): Promise<PollResult>;
 
   /** Required for webhook-based providers; omit for poll-only or sync. */
@@ -140,7 +171,8 @@ export interface ProviderAdapter {
    * Best-effort provider-side cancellation for async jobs. The caller
    * must still mark the local DB row cancelled even when this fails;
    * provider cancellation is a cost-control / cleanup optimization,
-   * not the source of truth for user-visible state.
+   * not the source of truth for user-visible state. Adapters
+   * authenticate the cancel call with their own env-configured key.
    */
   cancelGeneration?(providerJobId: string): Promise<void>;
 

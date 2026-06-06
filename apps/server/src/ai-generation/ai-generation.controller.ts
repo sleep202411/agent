@@ -1,6 +1,5 @@
 import { Body, Controller, Get, Param, Post, Query } from '@nestjs/common';
 import { CurrentUser } from '../auth';
-import { GeoContext, type RequestGeoContext } from '../common/region';
 import { AiGenerationService } from './ai-generation.service';
 import type { AiJobListQuery, AiSubmitJobBody } from './types';
 import type { AuthUser } from '../auth';
@@ -10,13 +9,10 @@ export class AiGenerationController {
   constructor(private readonly service: AiGenerationService) {}
 
   @Get('models')
-  async listModels(
-    @CurrentUser() user: AuthUser,
-    @GeoContext() geo: RequestGeoContext,
-  ) {
+  async listModels(@CurrentUser() user: AuthUser) {
     return {
       code: 200,
-      data: await this.service.listCatalog(user, geo),
+      data: await this.service.listCatalog(user),
     };
   }
 
@@ -28,9 +24,8 @@ export class AiGenerationController {
   async submitJob(
     @CurrentUser() user: AuthUser,
     @Body() body: AiSubmitJobBody,
-    @GeoContext() geo: RequestGeoContext,
   ) {
-    const data = await this.service.submitJob(user, body, geo);
+    const data = await this.service.submitJob(user, body);
     return { code: 200, data };
   }
 
@@ -58,11 +53,7 @@ export class AiGenerationController {
   }
 
   @Post('jobs/:id/retry')
-  async retryJob(
-    @CurrentUser() user: AuthUser,
-    @Param('id') id: string,
-    @GeoContext() geo: RequestGeoContext,
-  ) {
-    return { code: 200, data: await this.service.retryJob(user, id, geo) };
+  async retryJob(@CurrentUser() user: AuthUser, @Param('id') id: string) {
+    return { code: 200, data: await this.service.retryJob(user, id) };
   }
 }

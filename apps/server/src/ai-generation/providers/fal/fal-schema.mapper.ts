@@ -369,8 +369,8 @@ export function createFalModelConfig(
     queuePolicy,
     billingPolicy: {
       mode: args.billing?.mode ?? 'charge',
-      unit: args.billing?.unit ?? 'bubble',
-      displayCurrency: args.billing?.displayCurrency ?? 'BUBBLES',
+      unit: args.billing?.unit ?? 'compute_point',
+      displayCurrency: args.billing?.displayCurrency ?? 'COMPUTE_POINTS',
       preflightCost:
         args.billing?.preflightCost ?? (args.type === 'video' ? 20 : 1),
       finalCostSource: args.billing?.finalCostSource ?? 'fixed_table',

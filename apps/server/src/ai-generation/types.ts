@@ -1,6 +1,5 @@
 import type {
   AiAvailability,
-  AiCatalogContext,
   AiCapabilityMatrix,
   AiConditionExpression,
   AiCostEstimate,
@@ -26,7 +25,6 @@ export { AI_MODEL_PROTOCOL_DIALECT } from '@repo/shared';
 export type {
   AiAvailability,
   AiBillingPolicy,
-  AiCatalogContext,
   AiCampaignPolicy,
   AiCapabilityMatrix,
   AiConditionExpression,
@@ -46,7 +44,6 @@ export type {
   AiPreflightEstimator,
   AiProviderBinding,
   AiQueuePolicy,
-  AiRegionPolicy,
   AiSchemaRule,
   AiUiSchema,
 } from '@repo/shared';
@@ -63,6 +60,7 @@ export type FoundryCatalogSource =
   | 'openai-models'
   | 'env-override'
   | 'fal-config'
+  | 'bailian-config'
   | 'seed-fallback';
 
 export type AiJobStatus =
@@ -91,11 +89,11 @@ export type AiEtaConfidence = 'low' | 'medium' | 'high';
 
 /**
  * Provider id — open string because new providers ship as adapter
- * packages without schema migrations. ProviderRegistry validates the
+ * modules without schema migrations. ProviderRegistry validates the
  * value is registered at request time.
  *
- * Known values today: 'microsoft-foundry'. Planned: 'fal-ai',
- * 'replicate', 'stability-self-hosted', 'dashscope'.
+ * Known values today: 'microsoft-foundry', 'fal-ai',
+ * 'aliyun-bailian'. Planned: 'replicate', 'stability-self-hosted'.
  */
 export type AiProvider = string;
 export type AiQueueName = 'ai-image-generation' | 'ai-video-generation';
@@ -152,9 +150,11 @@ export interface AiRoutingSnapshot {
   selectedProvider: AiProvider;
   selectedModelId: string;
   selectedDeployment: string;
+  selectedCanonicalModelId?: string;
+  selectedProviderBindingId?: string;
+  selectedProviderEndpointId?: string;
   fallbackAllowed: boolean;
   inputMapperVersion: string;
-  geo?: AiCatalogContext;
   policy: AiRoutingPolicySnapshot;
   selectedAt: string;
 }
@@ -209,6 +209,16 @@ export interface FoundryDeploymentRecord {
   raw?: unknown;
 }
 
+export interface AiModelOpsMetadata {
+  canonicalModelId: string;
+  canonicalSlug: string;
+  providerAccountId: string;
+  providerBindingId: string;
+  providerEndpointId: string;
+  providerRoutePriority: number;
+  providerRouteWeight: number;
+}
+
 export interface AiModelDefinition extends SharedAiModelDefinition {
   id: string;
   provider: AiProvider;
@@ -254,6 +264,7 @@ export interface AiModelDefinition extends SharedAiModelDefinition {
   provider_output_schema?: FoundryOutputSchema;
   stream_event_schema?: FoundryOutputSchema;
   provider_binding: FoundryProviderBinding;
+  ops?: AiModelOpsMetadata;
 }
 
 export type FoundryModelDefinition = AiModelDefinition;
@@ -319,12 +330,13 @@ export interface AiJob {
   provider: AiProvider;
   modelId: string;
   deployment: string;
+  canonicalModelId: string | null;
+  providerBindingId: string | null;
   schemaVersion: string;
   workspaceId?: string | null;
   projectId?: string | null;
   documentId?: string | null;
   documentBlockId?: string | null;
-  siteRegion?: string | null;
   sourceSurface?: string | null;
   status: AiJobStatus;
   stage: AiJobStage;
@@ -402,7 +414,6 @@ export interface AiStatusResponse {
   project_id: string | null;
   document_id: string | null;
   document_block_id: string | null;
-  site_region: string | null;
   source_surface: string | null;
   status: AiJobStatus;
   stage: AiJobStage;

@@ -12,7 +12,6 @@ import { ProjectMemberRole, WorkspaceMemberRole } from '@prisma/client';
 import { randomUUID } from 'crypto';
 import type { AuthUser } from '../auth';
 import { newShortId } from '../common/id';
-import { GeoPolicyService, type RequestGeoContext } from '../common/region';
 import { EntitlementService, type EntitlementSnapshot } from '../entitlements';
 import { QuotaService } from '../quota/quota.service';
 import type { QuotaDimension } from '../quota/quota.types';
@@ -29,6 +28,7 @@ import { ProviderRegistry } from './provider-registry.service';
 import { AiGenerationQueueService } from './queue.service';
 import { AiGenerationRoutingService } from './routing.service';
 import { AiGenerationValidatorService } from './validator.service';
+import { mergeCanonicalModels } from './model-catalog-routing';
 import { AI_MODEL_PROTOCOL_DIALECT } from './types';
 import type {
   AiModelCatalogResponse,
@@ -62,7 +62,6 @@ interface AiJobContext {
   documentId?: string;
   documentBlockId?: string;
   sourceSurface?: string;
-  siteRegion: string;
 }
 
 @Injectable()
@@ -79,7 +78,6 @@ export class AiGenerationService {
     private readonly queue: AiGenerationQueueService,
     private readonly routing: AiGenerationRoutingService,
     private readonly quota: QuotaService,
-    private readonly geoPolicy: GeoPolicyService,
     private readonly workspaces: WorkspacesService,
     private readonly workspacePermissions: WorkspacePermissionService,
     private readonly entitlements: EntitlementService,
@@ -111,45 +109,32 @@ export class AiGenerationService {
     }
   }
 
-  async listModels(user: AuthUser, geo?: RequestGeoContext) {
+  async listModels(user: AuthUser) {
     // Fan out across every registered provider. Each adapter returns
     // its own model definitions; we concat and stamp per-user access.
     const results = await Promise.all(
       this.providers.list().map((adapter) => adapter.listModels()),
     );
-    const models = results.flat();
+    const models = mergeCanonicalModels(results.flat());
     const entitlement = this.entitlements.resolveForUser(user);
     return models.map((model) => {
       const access = this.authz.decideModelAccess(entitlement, model);
-      const geoDecision = geo
-        ? this.geoPolicy.evaluate(model.region_policy, geo)
-        : { allowed: true };
       return {
         ...model,
-        enabled: model.enabled && geoDecision.allowed,
-        disabledReason:
-          model.disabledReason ??
-          (!geoDecision.allowed ? geoDecision.reason : undefined),
-        access: {
-          ...access,
-          allowed: access.allowed && geoDecision.allowed,
-          reason: access.reason ?? geoDecision.reason,
-        },
+        enabled: model.enabled,
+        disabledReason: model.disabledReason,
+        access,
       };
     });
   }
 
-  async listCatalog(
-    user: AuthUser,
-    geo?: RequestGeoContext,
-  ): Promise<AiModelCatalogResponse> {
-    const models = await this.listModels(user, geo);
-    const presets = this.routing.listPresets(models, geo);
+  async listCatalog(user: AuthUser): Promise<AiModelCatalogResponse> {
+    const models = await this.listModels(user);
+    const presets = this.routing.listPresets(models);
     return {
       dialect: AI_MODEL_PROTOCOL_DIALECT,
       version: '2026-05-26',
       region: process.env.NEXT_PUBLIC_SITE_REGION ?? 'global',
-      context: geo ? this.geoPolicy.snapshot(geo) : undefined,
       presets,
       campaigns: this.routing.listCampaigns(),
       models,
@@ -159,7 +144,6 @@ export class AiGenerationService {
   async submitJob(
     user: AuthUser,
     body: AiSubmitJobBody,
-    geo?: RequestGeoContext,
   ): Promise<AiSubmitResponse> {
     const now = new Date().toISOString();
     const context = await this.resolveJobContext(user, body);
@@ -171,7 +155,6 @@ export class AiGenerationService {
       entitlement,
       body,
       now,
-      geo,
     });
     const { model, provider, snapshot } = decision;
 
@@ -258,12 +241,13 @@ export class AiGenerationService {
             provider,
             modelId: model.id,
             deployment: model.deployment,
+            canonicalModelId: snapshot.selectedCanonicalModelId ?? null,
+            providerBindingId: snapshot.selectedProviderBindingId ?? null,
             schemaVersion: model.schemaVersion,
             workspaceId: context.workspaceId,
             projectId: context.projectId,
             documentId: context.documentId,
             documentBlockId: context.documentBlockId,
-            siteRegion: context.siteRegion,
             sourceSurface: context.sourceSurface,
             status: 'in_queue',
             stage: 'queued',
@@ -390,6 +374,9 @@ export class AiGenerationService {
         presetId: snapshot.presetId,
         selectedProvider: snapshot.selectedProvider,
         selectedModelId: snapshot.selectedModelId,
+        selectedCanonicalModelId: snapshot.selectedCanonicalModelId,
+        selectedProviderBindingId: snapshot.selectedProviderBindingId,
+        selectedProviderEndpointId: snapshot.selectedProviderEndpointId,
         strategy: snapshot.strategy,
         campaignId: policy.campaignId,
       },
@@ -522,29 +509,21 @@ export class AiGenerationService {
     return this.publicJob(updated, { detail: true });
   }
 
-  async retryJob(
-    user: AuthUser,
-    id: string,
-    geo?: RequestGeoContext,
-  ): Promise<AiSubmitResponse> {
+  async retryJob(user: AuthUser, id: string): Promise<AiSubmitResponse> {
     const job = await this.getEditableJob(user, id);
-    return this.submitJob(
-      user,
-      {
-        modelId: job.modelId,
-        presetId: job.routingSnapshot?.presetId,
-        campaignId: job.routingSnapshot?.policy.quota.campaignId,
-        schemaVersion: job.schemaVersion,
-        workspaceId: job.workspaceId ?? undefined,
-        projectId: job.projectId ?? undefined,
-        documentId: job.documentId ?? undefined,
-        documentBlockId: job.documentBlockId ?? undefined,
-        sourceSurface: job.sourceSurface ?? undefined,
-        input: job.normalizedInput,
-        idempotencyKey: randomUUID(),
-      },
-      geo,
-    );
+    return this.submitJob(user, {
+      modelId: job.modelId,
+      presetId: job.routingSnapshot?.presetId,
+      campaignId: job.routingSnapshot?.policy.quota.campaignId,
+      schemaVersion: job.schemaVersion,
+      workspaceId: job.workspaceId ?? undefined,
+      projectId: job.projectId ?? undefined,
+      documentId: job.documentId ?? undefined,
+      documentBlockId: job.documentBlockId ?? undefined,
+      sourceSurface: job.sourceSurface ?? undefined,
+      input: job.normalizedInput,
+      idempotencyKey: randomUUID(),
+    });
   }
 
   private async cancelProviderJobIfNeeded(job: AiJob): Promise<void> {
@@ -623,7 +602,6 @@ export class AiGenerationService {
     const sourceSurface = this.normalizeSourceSurface(
       body.context?.sourceSurface ?? body.sourceSurface,
     );
-    const siteRegion = process.env.NEXT_PUBLIC_SITE_REGION ?? 'global';
 
     if (documentId) {
       const document = await this.workspacePermissions.requireDocumentRole(
@@ -649,7 +627,6 @@ export class AiGenerationService {
         documentId: document.id,
         documentBlockId: this.normalizeDocumentBlockId(documentBlockId),
         sourceSurface,
-        siteRegion,
       };
     }
 
@@ -669,7 +646,6 @@ export class AiGenerationService {
         workspaceId: project.workspaceId,
         projectId: project.id,
         sourceSurface,
-        siteRegion,
       };
     }
 
@@ -679,11 +655,11 @@ export class AiGenerationService {
         workspaceId,
         WorkspaceMemberRole.editor,
       );
-      return { workspaceId, sourceSurface, siteRegion };
+      return { workspaceId, sourceSurface };
     }
 
     const workspace = await this.workspaces.ensurePersonalWorkspace(user);
-    return { workspaceId: workspace.id, sourceSurface, siteRegion };
+    return { workspaceId: workspace.id, sourceSurface };
   }
 
   private async resolveListScope(
@@ -789,7 +765,6 @@ export class AiGenerationService {
       project_id: job.projectId ?? null,
       document_id: job.documentId ?? null,
       document_block_id: job.documentBlockId ?? null,
-      site_region: job.siteRegion ?? null,
       source_surface: job.sourceSurface ?? null,
       status: job.status,
       stage: job.stage,
@@ -813,7 +788,6 @@ export class AiGenerationService {
       projectId: job.projectId ?? null,
       documentId: job.documentId ?? null,
       documentBlockId: job.documentBlockId ?? null,
-      siteRegion: job.siteRegion ?? null,
       sourceSurface: job.sourceSurface ?? null,
       provider: job.provider,
       modelId: job.modelId,

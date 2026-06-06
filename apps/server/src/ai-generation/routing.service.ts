@@ -15,13 +15,18 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { GeoPolicyService, type RequestGeoContext } from '../common/region';
+import { type RequestGeoContext } from '../common/region';
 import { EntitlementService, type EntitlementSnapshot } from '../entitlements';
 import {
   AiModelPresetRegistryService,
   type AiFreeCampaignConfig,
   type AiModelPresetConfig,
 } from './model-preset-registry.service';
+import {
+  mergeCanonicalModels,
+  selectProviderModelCandidate,
+  type ProviderModelCandidate,
+} from './model-catalog-routing';
 import type { ProviderAdapter } from './provider-adapter';
 import { ProviderRegistry } from './provider-registry.service';
 import type {
@@ -46,7 +51,6 @@ export class AiGenerationRoutingService {
   constructor(
     private readonly providers: ProviderRegistry,
     private readonly presets: AiModelPresetRegistryService,
-    private readonly geoPolicy: GeoPolicyService,
     private readonly entitlements: EntitlementService,
   ) {}
 
@@ -54,7 +58,6 @@ export class AiGenerationRoutingService {
     entitlement: EntitlementSnapshot;
     body: AiSubmitJobBody;
     now: string;
-    geo?: RequestGeoContext;
   }): Promise<AiRoutingDecision> {
     const requestedModelId = args.body.modelId?.trim();
     const presetId = this.resolvePresetId(args.body);
@@ -80,23 +83,8 @@ export class AiGenerationRoutingService {
       ? (configuredPreset ??
         this.presets.findPresetRoute(presetId, await this.listProviderModels()))
       : undefined;
-    const presetGeoDecision =
-      configuredRoute && args.geo
-        ? this.geoPolicy.evaluate(configuredRoute.regionPolicy, args.geo)
-        : { allowed: true };
-    if (!presetGeoDecision.allowed) {
-      throw new BadRequestException({
-        code: 'PRESET_REGION_NOT_AVAILABLE',
-        msg: presetGeoDecision.reason ?? 'This preset is not available here.',
-      });
-    }
-
     const resolved = configuredRoute
-      ? await this.resolveConfiguredRoute(
-          configuredRoute,
-          requestedModelId,
-          args.geo,
-        )
+      ? await this.resolveConfiguredRoute(configuredRoute, requestedModelId)
       : requestedModelId
         ? await this.findModel(requestedModelId)
         : null;
@@ -109,15 +97,6 @@ export class AiGenerationRoutingService {
     }
 
     const { adapter, model, provider } = resolved;
-    const modelGeoDecision = args.geo
-      ? this.geoPolicy.evaluate(model.region_policy, args.geo)
-      : { allowed: true };
-    if (!modelGeoDecision.allowed) {
-      throw new BadRequestException({
-        code: 'MODEL_REGION_NOT_AVAILABLE',
-        msg: modelGeoDecision.reason ?? 'This model is not available here.',
-      });
-    }
     const routePresetId = configuredRoute
       ? this.presets.presetId(configuredRoute)
       : (presetId ?? model.id);
@@ -169,9 +148,11 @@ export class AiGenerationRoutingService {
         selectedProvider: provider,
         selectedModelId: model.id,
         selectedDeployment: model.deployment,
+        selectedCanonicalModelId: model.ops?.canonicalModelId,
+        selectedProviderBindingId: model.ops?.providerBindingId,
+        selectedProviderEndpointId: model.ops?.providerEndpointId,
         fallbackAllowed: configuredRoute?.fallbackAllowed === true,
         inputMapperVersion: model.schemaVersion,
-        geo: args.geo ? this.geoPolicy.snapshot(args.geo) : undefined,
         policy: {
           quota:
             freeCampaign || billingPolicy.mode === 'free'
@@ -254,7 +235,6 @@ export class AiGenerationRoutingService {
   private async resolveConfiguredRoute(
     route: AiModelPresetConfig,
     requestedModelId?: string,
-    geo?: RequestGeoContext,
   ): Promise<{
     adapter: ProviderAdapter;
     provider: AiProvider;
@@ -276,12 +256,6 @@ export class AiGenerationRoutingService {
     for (const modelId of candidates) {
       const resolved = await this.findModel(modelId);
       if (!resolved?.model.enabled) continue;
-      if (
-        geo &&
-        !this.geoPolicy.evaluate(resolved.model.region_policy, geo).allowed
-      ) {
-        continue;
-      }
       return resolved;
     }
     return null;
@@ -292,11 +266,14 @@ export class AiGenerationRoutingService {
     provider: AiProvider;
     model: AiModelDefinition;
   } | null> {
+    const candidates: Array<ProviderModelCandidate<ProviderAdapter>> = [];
     for (const adapter of this.providers.list()) {
       const model = await adapter.getModel(modelId);
-      if (model) return { adapter, provider: adapter.provider, model };
+      if (model) {
+        candidates.push({ adapter, provider: adapter.provider, model });
+      }
     }
-    return null;
+    return selectProviderModelCandidate(candidates);
   }
 
   private resolveFreeCampaign(
@@ -347,6 +324,6 @@ export class AiGenerationRoutingService {
     const results = await Promise.all(
       this.providers.list().map((adapter) => adapter.listModels()),
     );
-    return results.flat();
+    return mergeCanonicalModels(results.flat());
   }
 }

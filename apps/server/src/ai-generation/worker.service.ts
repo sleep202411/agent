@@ -39,7 +39,10 @@ import {
   type AiQueueJobData,
 } from './queue';
 import { AiGenerationQueueService } from './queue.service';
-import { AiGenerationRepository } from './repository';
+import {
+  AiGenerationRepository,
+  type RecordAiJobAttemptInput,
+} from './repository';
 import type { AiJob, AiJobError, AiJobOutput } from './types';
 
 // Azure preview pools (gpt-image-2 in particular) return 429
@@ -327,9 +330,28 @@ export class AiGenerationWorkerService
       const result = await adapter.pollStatus(job.providerJobId);
       if (result.kind === 'pending') {
         const now = new Date().toISOString();
+        const executionStartedAt =
+          !job.providerStartedAt && (result.progress ?? 0) >= 0.5
+            ? now
+            : undefined;
+        await this.recordAttemptSafe(job, {
+          status: 'running',
+          providerRequestId: result.providerRequestId,
+          providerEndpoint: result.providerEndpoint ?? job.deployment,
+          queuePosition: result.queuePosition,
+          rawStatus: result.rawStatus,
+          providerLogs: result.providerLogs,
+          executionStartedAt,
+          timing: {
+            submittedAt: job.providerSubmittedAt,
+            lastStatusAt: now,
+            stageHint: result.stageHint,
+          },
+        });
         const updated = await this.store.update(job.id, {
           stage: 'generating',
           progress: result.progress ?? job.progress ?? 0.5,
+          providerStartedAt: executionStartedAt,
           logs: result.stageHint
             ? [
                 ...job.logs,
@@ -355,17 +377,40 @@ export class AiGenerationWorkerService
       }
 
       if (result.kind === 'completed') {
-        await this.completeWithOutputs(
-          (await this.store.findById(job.id)) ?? job,
-          result.outputs,
-        );
+        const latestJob = (await this.store.findById(job.id)) ?? job;
+        const now = new Date().toISOString();
+        await this.recordAttemptSafe(latestJob, {
+          status: 'succeeded',
+          providerRequestId: result.providerRequestId,
+          providerEndpoint: result.providerEndpoint ?? latestJob.deployment,
+          rawStatus: result.rawStatus,
+          providerResponse: result.providerResponse,
+          providerLogs: result.providerLogs,
+          runDurationMs: this.elapsedMs(latestJob.providerSubmittedAt, now),
+          completedAt: now,
+          timing: {
+            submittedAt: latestJob.providerSubmittedAt,
+            executionStartedAt: latestJob.providerStartedAt,
+            completedAt: now,
+          },
+        });
+        await this.completeWithOutputs(latestJob, result.outputs);
         return;
       }
 
-      await this.handleFailure(
-        (await this.store.findById(job.id)) ?? job,
-        result.error,
-      );
+      const latestJob = (await this.store.findById(job.id)) ?? job;
+      const now = new Date().toISOString();
+      await this.recordAttemptSafe(latestJob, {
+        status: 'failed',
+        providerRequestId: result.providerRequestId,
+        providerEndpoint: result.providerEndpoint ?? latestJob.deployment,
+        rawStatus: result.rawStatus,
+        providerLogs: result.providerLogs,
+        error: result.error,
+        runDurationMs: this.elapsedMs(latestJob.providerSubmittedAt, now),
+        completedAt: now,
+      });
+      await this.handleFailure(latestJob, result.error);
     } catch (err) {
       const payload = adapter.mapError(err);
       await this.handlePollTransportFailure(job, payload);
@@ -376,6 +421,12 @@ export class AiGenerationWorkerService
     job: AiJob,
     payload: AiJobError,
   ): Promise<void> {
+    await this.recordAttemptSafe(job, {
+      status: RETRYABLE_CODES.has(payload.code) ? 'running' : 'failed',
+      providerEndpoint: job.deployment,
+      error: payload,
+      timing: { lastStatusAt: new Date().toISOString() },
+    });
     if (!RETRYABLE_CODES.has(payload.code)) {
       await this.handleFailure(job, payload);
       return;
@@ -426,6 +477,29 @@ export class AiGenerationWorkerService
     );
   }
 
+  private async recordAttemptSafe(
+    job: Pick<AiJob, 'id' | 'attempt'>,
+    input: RecordAiJobAttemptInput,
+  ): Promise<void> {
+    try {
+      await this.store.recordAttempt(job, input);
+    } catch (err) {
+      this.logger.warn(
+        `Failed to record attempt for job ${job.id}: ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+      );
+    }
+  }
+
+  private elapsedMs(start: string | undefined, end: string): number | null {
+    if (!start) return null;
+    const startMs = Date.parse(start);
+    const endMs = Date.parse(end);
+    if (!Number.isFinite(startMs) || !Number.isFinite(endMs)) return null;
+    return Math.max(0, endMs - startMs);
+  }
+
   private async runJob(job: AiJob) {
     let adapter: ProviderAdapter;
     const provider = job.routingSnapshot?.selectedProvider ?? job.provider;
@@ -457,6 +531,11 @@ export class AiGenerationWorkerService
       if (result.kind === 'completed') {
         // Sync provider (Azure Foundry image): bytes are here, go
         // straight to upload + complete.
+        await this.recordAttemptSafe(job, {
+          status: 'succeeded',
+          providerEndpoint: job.deployment,
+          completedAt: new Date().toISOString(),
+        });
         await this.completeWithOutputs(job, result.outputs);
         return;
       }
@@ -465,6 +544,19 @@ export class AiGenerationWorkerService
       // re-enqueue a poll marker. Poll completion reuses the same
       // upload / failure / refund paths as sync providers.
       const now = new Date().toISOString();
+      await this.recordAttemptSafe(job, {
+        status: 'submitted',
+        providerRequestId: result.providerRequestId,
+        providerEndpoint: result.providerEndpoint ?? job.deployment,
+        providerRequest: result.providerRequest,
+        providerResponse: result.providerResponse,
+        queuePosition: result.queuePosition,
+        submittedAt: result.submittedAt ?? now,
+        timing: {
+          submittedAt: result.submittedAt ?? now,
+          workerAcceptedAt: job.startedAt,
+        },
+      });
       const queued = await this.store.update(job.id, {
         stage: 'provider_queued',
         providerJobId: result.providerJobId,
@@ -492,6 +584,12 @@ export class AiGenerationWorkerService
       );
     } catch (err) {
       const payload = adapter.mapError(err);
+      await this.recordAttemptSafe(job, {
+        status: 'failed',
+        providerEndpoint: job.deployment,
+        error: payload,
+        completedAt: new Date().toISOString(),
+      });
       await this.handleFailure(job, payload);
     }
   }

@@ -40,7 +40,7 @@ const falModelConfigSchema = z.object({
       mode: z.enum(['charge', 'free', 'estimate_then_finalize']).optional(),
       unit: z
         .enum([
-          'bubble',
+          'compute_point',
           'request',
           'output',
           'second',
@@ -89,8 +89,8 @@ const DEFAULT_MODELS: FalModelConfigInput[] = [
     generationModes: ['text_to_image'],
     billing: {
       mode: 'charge',
-      unit: 'bubble',
-      displayCurrency: 'BUBBLES',
+      unit: 'compute_point',
+      displayCurrency: 'COMPUTE_POINTS',
       preflightCost: 1,
       finalCostSource: 'fixed_table',
       refundPolicy: 'refund_on_final_failure',
@@ -104,8 +104,8 @@ const DEFAULT_MODELS: FalModelConfigInput[] = [
     generationModes: ['text_to_video'],
     billing: {
       mode: 'charge',
-      unit: 'bubble',
-      displayCurrency: 'BUBBLES',
+      unit: 'compute_point',
+      displayCurrency: 'COMPUTE_POINTS',
       preflightCost: 20,
       finalCostSource: 'fixed_table',
       refundPolicy: 'refund_on_final_failure',

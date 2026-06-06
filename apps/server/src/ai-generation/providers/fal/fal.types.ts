@@ -50,6 +50,7 @@ export interface FalProviderFieldBinding {
 export interface FalSubmitResponse {
   request_id?: string;
   requestId?: string;
+  queue_position?: number;
   status_url?: string;
   response_url?: string;
   cancel_url?: string;
@@ -70,4 +71,37 @@ export interface FalMediaObject {
   width?: number;
   height?: number;
   duration?: number;
+}
+
+export interface FalPlatformModelListQuery {
+  page?: number;
+  cursor?: string;
+  limit?: number;
+  search?: string;
+  category?: string;
+  expand?: string | string[];
+}
+
+export interface FalPlatformPricingQuery {
+  endpointIds?: string[];
+  provider?: string;
+}
+
+export interface FalPlatformUsageQuery {
+  endpointId?: string;
+  startDate?: string;
+  endDate?: string;
+  page?: number;
+  limit?: number;
+}
+
+export interface FalPlatformRequestsQuery {
+  endpointId?: string;
+  requestId?: string;
+  status?: string;
+  startDate?: string;
+  endDate?: string;
+  page?: number;
+  limit?: number;
+  expand?: string | string[];
 }

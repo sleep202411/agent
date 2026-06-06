@@ -8,7 +8,7 @@
  * replace only this service, not routing/worker/quota.
  */
 import { Injectable, Logger } from '@nestjs/common';
-import { GeoPolicyService, type RequestGeoContext } from '../common/region';
+import type { RequestGeoContext } from '../common/region';
 import type {
   AiBillingPolicy,
   AiCampaignPolicy,
@@ -19,7 +19,6 @@ import type {
   AiModelPresetDefinition,
   AiQueueName,
   AiQueuePolicy,
-  AiRegionPolicy,
   AiRoutingStrategy,
   AiRequiredPlan,
 } from './types';
@@ -39,7 +38,6 @@ export interface AiModelPresetConfig {
   disabledReason?: string;
   requiredPlan?: AiRequiredPlan | null;
   campaignId?: string;
-  regionPolicy?: AiRegionPolicy;
   billingPolicy?: AiBillingPolicy;
   queuePolicy?: AiQueuePolicy;
   sortOrder?: number;
@@ -61,8 +59,6 @@ export interface AiFreeCampaignConfig {
 @Injectable()
 export class AiModelPresetRegistryService {
   private readonly logger = new Logger(AiModelPresetRegistryService.name);
-
-  constructor(private readonly geoPolicy: GeoPolicyService) {}
 
   findConfiguredPreset(presetId: string): AiModelPresetConfig | undefined {
     return this.configuredPresets().find(
@@ -137,8 +133,8 @@ export class AiModelPresetRegistryService {
     if (campaign) {
       return {
         mode: 'free',
-        unit: 'bubble',
-        displayCurrency: 'BUBBLES',
+        unit: 'compute_point',
+        displayCurrency: 'COMPUTE_POINTS',
         preflightCost: 0,
         finalCostSource: 'campaign',
         refundPolicy: 'no_refund',
@@ -219,9 +215,6 @@ export class AiModelPresetRegistryService {
       ? this.billingPolicyFor(route, primary, null)
       : this.defaultBillingPolicy(routeType);
     const anyEnabled = models.some((model) => model.enabled);
-    const geoDecision = geo
-      ? this.geoPolicy.evaluate(route.regionPolicy, geo)
-      : { allowed: true };
 
     return {
       id,
@@ -233,10 +226,9 @@ export class AiModelPresetRegistryService {
       type: routeType,
       routeMode: route.campaignId ? 'campaign_locked' : 'managed_preset',
       modelIds: route.modelIds,
-      enabled: route.enabled !== false && anyEnabled && geoDecision.allowed,
+      enabled: route.enabled !== false && anyEnabled,
       disabledReason:
         route.disabledReason ??
-        (!geoDecision.allowed ? geoDecision.reason : undefined) ??
         (!models.length
           ? 'No models are configured for this preset.'
           : !anyEnabled
@@ -253,7 +245,6 @@ export class AiModelPresetRegistryService {
       campaignId: route.campaignId,
       fallbackAllowed: route.fallbackAllowed === true,
       sortOrder: route.sortOrder,
-      regionPolicy: route.regionPolicy,
       billingPolicy,
       queuePolicy,
     };
@@ -373,8 +364,8 @@ export class AiModelPresetRegistryService {
   private defaultBillingPolicy(type: AiJobType): AiBillingPolicy {
     return {
       mode: 'charge',
-      unit: 'bubble',
-      displayCurrency: 'BUBBLES',
+      unit: 'compute_point',
+      displayCurrency: 'COMPUTE_POINTS',
       preflightCost: type === 'video' ? 20 : 1,
       finalCostSource: 'fixed_table',
       refundPolicy: 'refund_on_final_failure',

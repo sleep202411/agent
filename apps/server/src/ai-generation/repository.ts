@@ -14,6 +14,7 @@ import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import type {
   AiJobAttempt as AiJobAttemptRow,
+  AiAttemptStatus as AiAttemptStatusRow,
   AiEventOutbox as AiEventOutboxRow,
   AiJob as AiJobRow,
   AiJobOutput as AiJobOutputRow,
@@ -69,6 +70,30 @@ export interface ReserveQueuedJobOptions {
     totalLimit?: number;
   };
   buildJob: (queuePosition: number) => AiJob;
+}
+
+export interface RecordAiJobAttemptInput {
+  status: AiAttemptStatusRow;
+  providerStatus?: number | null;
+  providerRequestId?: string | null;
+  providerEndpoint?: string | null;
+  queuePosition?: number | null;
+  providerRequest?: Record<string, unknown> | null;
+  providerRequestHeaders?: Record<string, unknown> | null;
+  providerResponse?: unknown;
+  providerResponseHeaders?: Record<string, unknown> | null;
+  providerLogs?: unknown;
+  costAccounting?: Record<string, unknown> | null;
+  pricingSnapshot?: Record<string, unknown> | null;
+  profitAccounting?: Record<string, unknown> | null;
+  timing?: Record<string, unknown> | null;
+  rawStatus?: unknown;
+  error?: AiJobError | null;
+  runDurationMs?: number | null;
+  submittedAt?: string | null;
+  executionStartedAt?: string | null;
+  firstByteAt?: string | null;
+  completedAt?: string | null;
 }
 
 /**
@@ -288,6 +313,31 @@ export class AiGenerationRepository {
     return this.findById(id);
   }
 
+  async recordAttempt(
+    job: Pick<AiJob, 'id' | 'attempt'>,
+    input: RecordAiJobAttemptInput,
+  ): Promise<AiJobAttemptRow> {
+    const existing = await this.prisma.aiJobAttempt.findFirst({
+      where: { jobId: job.id, attemptNumber: job.attempt },
+    });
+    const data = this.toAttemptRow(job, input);
+    if (existing) {
+      return this.prisma.aiJobAttempt.update({
+        where: { id: existing.id },
+        data,
+      });
+    }
+    return this.prisma.aiJobAttempt.create({
+      data: {
+        ...data,
+        id: newShortId(),
+        jobId: job.id,
+        attemptNumber: job.attempt,
+        startedAt: new Date(),
+      } as Prisma.AiJobAttemptUncheckedCreateInput,
+    });
+  }
+
   async listForUser(options: AiJobListOptions): Promise<AiJob[]> {
     const limit = Math.min(Math.max(options.limit ?? 50, 1), 100);
     const rows = await this.prisma.aiJob.findMany({
@@ -426,12 +476,13 @@ export class AiGenerationRepository {
       provider: row.provider,
       modelId: row.modelId,
       deployment: row.deployment,
+      canonicalModelId: row.canonicalModelId,
+      providerBindingId: row.providerBindingId,
       schemaVersion: row.schemaVersion,
       workspaceId: row.workspaceId,
       projectId: row.projectId,
       documentId: row.documentId,
       documentBlockId: row.documentBlockId,
-      siteRegion: row.siteRegion,
       sourceSurface: row.sourceSurface,
       status: row.status as AiJobStatus,
       stage: row.stage as AiJobStage,
@@ -494,12 +545,13 @@ export class AiGenerationRepository {
       provider: job.provider,
       modelId: job.modelId,
       deployment: job.deployment,
+      canonicalModelId: job.canonicalModelId ?? null,
+      providerBindingId: job.providerBindingId ?? null,
       schemaVersion: job.schemaVersion,
       workspaceId: job.workspaceId ?? null,
       projectId: job.projectId ?? null,
       documentId: job.documentId ?? null,
       documentBlockId: job.documentBlockId ?? null,
-      siteRegion: job.siteRegion ?? null,
       sourceSurface: job.sourceSurface ?? null,
       status: job.status,
       stage: job.stage,
@@ -589,6 +641,45 @@ export class AiGenerationRepository {
     return out;
   }
 
+  private toAttemptRow(
+    job: Pick<AiJob, 'id' | 'attempt'>,
+    input: RecordAiJobAttemptInput,
+  ): Prisma.AiJobAttemptUncheckedUpdateInput {
+    void job;
+    const out: Prisma.AiJobAttemptUncheckedUpdateInput = {
+      status: input.status,
+    };
+    setIfPresent(out, 'providerStatus', input.providerStatus);
+    setIfPresent(out, 'providerRequestId', input.providerRequestId);
+    setIfPresent(out, 'providerEndpoint', input.providerEndpoint);
+    setIfPresent(out, 'queuePosition', input.queuePosition);
+    setJsonIfPresent(out, 'providerRequest', input.providerRequest);
+    setJsonIfPresent(
+      out,
+      'providerRequestHeaders',
+      input.providerRequestHeaders,
+    );
+    setJsonIfPresent(out, 'providerResponse', input.providerResponse);
+    setJsonIfPresent(
+      out,
+      'providerResponseHeaders',
+      input.providerResponseHeaders,
+    );
+    setJsonIfPresent(out, 'providerLogs', input.providerLogs);
+    setJsonIfPresent(out, 'costAccounting', input.costAccounting);
+    setJsonIfPresent(out, 'pricingSnapshot', input.pricingSnapshot);
+    setJsonIfPresent(out, 'profitAccounting', input.profitAccounting);
+    setJsonIfPresent(out, 'timing', input.timing);
+    setJsonIfPresent(out, 'rawStatus', input.rawStatus);
+    setJsonIfPresent(out, 'error', input.error);
+    setIfPresent(out, 'runDurationMs', input.runDurationMs);
+    setDateIfPresent(out, 'submittedAt', input.submittedAt);
+    setDateIfPresent(out, 'executionStartedAt', input.executionStartedAt);
+    setDateIfPresent(out, 'firstByteAt', input.firstByteAt);
+    setDateIfPresent(out, 'completedAt', input.completedAt);
+    return out;
+  }
+
   private async replaceOutputs(
     jobId: string,
     outputs: AiJobOutput[],
@@ -620,6 +711,33 @@ export class AiGenerationRepository {
         : []),
     ]);
   }
+}
+
+function setIfPresent(
+  out: Record<string, unknown>,
+  key: string,
+  value: unknown,
+): void {
+  if (value === undefined) return;
+  out[key] = value;
+}
+
+function setDateIfPresent(
+  out: Record<string, unknown>,
+  key: string,
+  value: string | null | undefined,
+): void {
+  if (value === undefined) return;
+  out[key] = value ? new Date(value) : null;
+}
+
+function setJsonIfPresent(
+  out: Record<string, unknown>,
+  key: string,
+  value: unknown,
+): void {
+  if (value === undefined) return;
+  out[key] = value === null ? Prisma.DbNull : (value as Prisma.InputJsonValue);
 }
 
 // Re-export Prisma row types so other repo-adjacent code can use them
