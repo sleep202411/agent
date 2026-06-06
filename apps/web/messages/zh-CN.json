@@ -6047,7 +6047,9 @@
         "help": "帮助",
         "profile": "个人主页",
         "notifications": "通知",
-        "trash": "回收站"
+        "trash": "回收站",
+        "history": "生成记录",
+        "oneClickFilm": "一键成片"
       }
     },
     "enterpriseHome": {
@@ -6108,7 +6110,9 @@
       "modeTabs": {
         "default": "默认",
         "assist": "助手",
-        "apps": "应用"
+        "apps": "应用",
+        "history": "历史",
+        "community": "社区"
       },
       "eyebrow": "图片工作室",
       "feedTitle": "欢迎来到 FizzStudio",
@@ -6126,6 +6130,18 @@
       "generateFree": "免费生成",
       "addReferences": "添加参考",
       "create": "创建",
+      "creating": "生成中",
+      "priceEstimate": "{points} 积分",
+      "priceFrom": "起",
+      "queued": "排队中",
+      "generating": "生成中",
+      "noModelSelected": "暂无可用的图片模型",
+      "results": {
+        "title": "你的生成",
+        "failed": "生成失败",
+        "retry": "重试",
+        "alt": "生成的图片"
+      },
       "settings": {
         "title": "设置",
         "description": "配置图片模型、画幅比例、生成数量、分辨率和可见性。",
@@ -6134,6 +6150,10 @@
         "providers": "供应商",
         "resolutions": "分辨率",
         "searchModels": "搜索模型",
+        "modelsError": "模型加载失败。",
+        "retry": "重试",
+        "noModels": "暂无可用的图片模型。",
+        "noModelMatch": "没有匹配的模型。",
         "selectAspectRatio": "选择画幅比例",
         "reset": "重置",
         "moreOptions": "更多选项",

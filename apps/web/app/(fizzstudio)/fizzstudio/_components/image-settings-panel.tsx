@@ -1,157 +1,220 @@
 "use client";
 
-import { useEffect, useId } from "react";
+import { useEffect, useId, useMemo, useState } from "react";
 import type { ComponentType } from "react";
 import {
+  IconAlertTriangle,
+  IconBolt,
+  IconBrain,
   IconBrandGoogle,
   IconBrandOpenai,
-  IconBrain,
   IconLock,
+  IconPhoto,
   IconRectangle,
   IconRectangleVertical,
   IconSailboat,
   IconSearch,
   IconSparkles,
   IconSquare,
-  IconTriangle,
+  IconTypography,
+  IconVector,
   IconWand,
   IconX,
 } from "@tabler/icons-react";
 import { cn } from "@/lib/utils";
 import { useTranslations } from "@/src/i18n/i18n";
+import {
+  enumDefault,
+  enumOptions,
+  isFizzAiModelUsable,
+  maxOutputs,
+  supportsOutputCount,
+  type FizzAiModel,
+} from "../../_lib/generation-api";
 
 type SettingsIcon = ComponentType<{ className?: string; stroke?: number }>;
 
-export type ImageModelKey =
-  | "gptImage2"
-  | "nanoBanana2"
-  | "imagineArt20"
-  | "imagineArt15"
-  | "ideogramV4"
-  | "kreaFlux1"
-  | "midjourneyV7"
-  | "seedreamV5"
-  | "recraftV4"
-  | "fluxKontext"
-  | "gptImage1"
-  | "auroraX1";
+/** Map a catalog model (by id / name) to a brand-or-family tabler icon. */
+const MODEL_ICON_RULES: Array<[RegExp, SettingsIcon]> = [
+  [/gpt/, IconBrandOpenai],
+  [/nano.?banana|gemini/, IconBrandGoogle],
+  [/midjourney/, IconSailboat],
+  [/flux|krea/, IconBolt],
+  [/qwen/, IconBrain],
+  [/seedream/, IconWand],
+  [/ideogram/, IconTypography],
+  [/recraft/, IconVector],
+  [/minimax/, IconSparkles],
+];
 
-export type ImageAspectRatio =
-  | "9:16"
-  | "2:3"
-  | "3:4"
-  | "4:5"
-  | "1:1"
-  | "5:4"
-  | "4:3"
-  | "3:2"
-  | "16:9"
-  | "21:9";
-export type ImageResolution = "1K" | "2K" | "4K";
+function modelIcon(model: FizzAiModel): SettingsIcon {
+  const key = `${model.id ?? ""} ${model.name ?? ""}`.toLowerCase();
+  for (const [pattern, icon] of MODEL_ICON_RULES) {
+    if (pattern.test(key)) return icon;
+  }
+  return IconPhoto;
+}
+
 export type ImageVisibility = "public" | "private";
 
+/**
+ * Panel value object. `model` is now the catalog model id (a free string), and
+ * `aspectRatio` carries the selected model's `imageSize` enum token (e.g.
+ * `landscape_16_9`). `resolution` is reserved for models that expose a discrete
+ * resolution enum; it stays empty for models that don't (the row hides).
+ */
 export interface ImageGenerationSettings {
-  aspectRatio: ImageAspectRatio;
-  model: ImageModelKey;
+  aspectRatio: string;
+  model: string;
   promptEnhancer: boolean;
-  resolution: ImageResolution;
+  resolution: string;
   variations: number;
   visibility: ImageVisibility;
 }
 
 interface ImageSettingsPanelProps {
   open: boolean;
+  models: FizzAiModel[];
+  isLoading: boolean;
+  error: boolean;
   settings: ImageGenerationSettings;
   onOpenChange: (open: boolean) => void;
+  onRetry?: () => void;
   onSettingsChange: (settings: ImageGenerationSettings) => void;
 }
 
-const IMAGE_MODELS: Array<{
-  key: ImageModelKey;
-  icon: SettingsIcon;
-  locked?: boolean;
-}> = [
-  { key: "gptImage2", icon: IconBrandOpenai, locked: true },
-  { key: "nanoBanana2", icon: IconBrandGoogle, locked: true },
-  { key: "imagineArt20", icon: IconSparkles },
-  { key: "imagineArt15", icon: IconSparkles },
-  { key: "ideogramV4", icon: IconBrain },
-  { key: "kreaFlux1", icon: IconTriangle },
-  { key: "midjourneyV7", icon: IconSailboat, locked: true },
-  { key: "seedreamV5", icon: IconWand },
-  { key: "recraftV4", icon: IconBrain, locked: true },
-  { key: "fluxKontext", icon: IconSparkles },
-  { key: "gptImage1", icon: IconBrandOpenai },
-  { key: "auroraX1", icon: IconTriangle, locked: true },
-];
-
-const ASPECT_RATIO_OPTIONS: Array<{ icon: SettingsIcon; value: ImageAspectRatio }> = [
-  { value: "9:16", icon: IconRectangleVertical },
-  { value: "2:3", icon: IconRectangleVertical },
-  { value: "3:4", icon: IconRectangleVertical },
-  { value: "4:5", icon: IconRectangleVertical },
-  { value: "1:1", icon: IconSquare },
-  { value: "5:4", icon: IconRectangle },
-  { value: "4:3", icon: IconRectangle },
-  { value: "3:2", icon: IconRectangle },
-  { value: "16:9", icon: IconRectangle },
-  { value: "21:9", icon: IconRectangle },
-];
-
-const VARIATION_OPTIONS = [1, 2, 3, 4] as const;
-const RESOLUTION_OPTIONS: ImageResolution[] = ["1K", "2K", "4K"];
-const VISIBILITY_OPTIONS: ImageVisibility[] = ["public", "private"];
-
 export const DEFAULT_IMAGE_GENERATION_SETTINGS: ImageGenerationSettings = {
-  aspectRatio: "4:3",
-  model: "nanoBanana2",
+  aspectRatio: "",
+  model: "",
   promptEnhancer: false,
-  resolution: "1K",
-  variations: 4,
+  resolution: "",
+  variations: 1,
   visibility: "public",
 };
 
+const VISIBILITY_OPTIONS: ImageVisibility[] = ["public", "private"];
+
+// fal `imageSize` enum tokens → friendly label + orientation icon. Unknown tokens
+// fall back to the raw token + a generic rectangle so new server enums still render.
+const IMAGE_SIZE_META: Record<string, { icon: SettingsIcon; label: string; mp: number }> = {
+  square_hd: { icon: IconSquare, label: "1:1 HD", mp: 1.05 }, // 1024×1024
+  square: { icon: IconSquare, label: "1:1", mp: 0.26 }, // 512×512
+  portrait_4_3: { icon: IconRectangleVertical, label: "3:4", mp: 0.79 }, // 768×1024
+  portrait_16_9: { icon: IconRectangleVertical, label: "9:16", mp: 0.59 }, // 576×1024
+  landscape_4_3: { icon: IconRectangle, label: "4:3", mp: 0.79 }, // 1024×768
+  landscape_16_9: { icon: IconRectangle, label: "16:9", mp: 0.59 }, // 1024×576
+};
+
+function imageSizeMeta(token: string): {
+  icon: SettingsIcon;
+  label: string;
+  mp: number;
+} {
+  return IMAGE_SIZE_META[token] ?? { icon: IconRectangle, label: token, mp: 1 };
+}
+
+/** Megapixels billed for an imageSize token (drives exact per-megapixel pricing). */
+export function imageSizeMegapixels(token: string): number {
+  return imageSizeMeta(token).mp;
+}
+
+/** The schema field image models use to express aspect ratio / size. */
+const SIZE_FIELD = "imageSize";
+/** Optional discrete resolution field (not emitted by current image models). */
+const RESOLUTION_FIELD = "resolution";
+
+export function modelById(models: FizzAiModel[], id: string): FizzAiModel | undefined {
+  return models.find((model) => model.id === id);
+}
+
+/** Display label for the composer chip; falls back to the id when unresolved. */
+export function getImageModelLabel(models: FizzAiModel[], id: string): string {
+  return modelById(models, id)?.name ?? id;
+}
+
+export function clampVariations(model: FizzAiModel | undefined, value: number): number {
+  if (!model || !supportsOutputCount(model)) return 1;
+  const max = maxOutputs(model);
+  return Math.min(Math.max(1, Math.round(value)), max);
+}
+
+/**
+ * Seeds settings (aspectRatio / resolution / variations) from a model's schema
+ * defaults. Used on first catalog load and whenever the selected model changes.
+ */
+export function settingsForModel(
+  model: FizzAiModel | undefined,
+  base: ImageGenerationSettings
+): ImageGenerationSettings {
+  if (!model) return { ...base, model: "" };
+  const sizes = enumOptions(model, SIZE_FIELD);
+  const resolutions = enumOptions(model, RESOLUTION_FIELD);
+  const defaultSize = enumDefault(model, SIZE_FIELD) ?? sizes?.[0] ?? "";
+  const defaultResolution = enumDefault(model, RESOLUTION_FIELD) ?? resolutions?.[0] ?? "";
+  return {
+    ...base,
+    model: model.id,
+    aspectRatio: defaultSize,
+    resolution: defaultResolution,
+    variations: clampVariations(model, base.variations || 1),
+  };
+}
+
 export function ImageSettingsPanel({
   open,
+  models,
+  isLoading,
+  error,
   settings,
   onOpenChange,
+  onRetry,
   onSettingsChange,
 }: ImageSettingsPanelProps) {
   const t = useTranslations("fizzStudio.imageStudio");
   const titleId = useId();
   const descriptionId = useId();
+  const [query, setQuery] = useState("");
+
+  const selectedModel = useMemo(() => modelById(models, settings.model), [models, settings.model]);
 
   const updateSettings = (patch: Partial<ImageGenerationSettings>) => {
     onSettingsChange({ ...settings, ...patch });
   };
 
+  const selectModel = (id: string) => {
+    const model = modelById(models, id);
+    onSettingsChange(settingsForModel(model, settings));
+  };
+
   useEffect(() => {
     if (!open) return;
-
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        onOpenChange(false);
-      }
+      if (event.key === "Escape") onOpenChange(false);
     };
-
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [onOpenChange, open]);
 
   if (!open) return null;
 
+  const sizeOptions = selectedModel ? enumOptions(selectedModel, SIZE_FIELD) : null;
+  const resolutionOptions = selectedModel ? enumOptions(selectedModel, RESOLUTION_FIELD) : null;
+  const variationMax = selectedModel ? maxOutputs(selectedModel) : 1;
+  const showVariations = selectedModel ? supportsOutputCount(selectedModel) : false;
+  const sizeDefault = selectedModel ? enumDefault(selectedModel, SIZE_FIELD) : undefined;
+
   return (
     <div
       role="region"
       aria-labelledby={titleId}
       aria-describedby={descriptionId}
-      className="mb-4 max-h-[calc(100svh-15rem)] overflow-hidden rounded-[28px] border border-white/[0.09] bg-[#0c0c0d]/98 text-white shadow-[0_28px_90px_rgba(0,0,0,.66)] ring-1 ring-white/[0.035] backdrop-blur-2xl duration-150 animate-in fade-in-0 zoom-in-95 slide-in-from-bottom-3"
+      className="mb-4 max-h-[calc(100svh-15rem)] overflow-hidden rounded-[28px] border border-white/[0.08] bg-[#0e0e10]/55 text-white shadow-[0_24px_70px_rgba(0,0,0,0.45),inset_0_1px_0_rgba(255,255,255,0.08)] backdrop-blur-2xl duration-150 animate-in fade-in-0 zoom-in-95 slide-in-from-bottom-3"
     >
       <div className="flex h-20 items-center justify-between px-7">
         <div>
           <h2
             id={titleId}
-            className="text-[20px] font-semibold leading-tight tracking-[-0.01em] text-white"
+            className="text-[15px] font-semibold leading-tight tracking-[-0.01em] text-white/90"
           >
             {t("settings.title")}
           </h2>
@@ -161,7 +224,7 @@ export function ImageSettingsPanel({
         </div>
         <button
           type="button"
-          className="flex size-9 items-center justify-center rounded-full text-white/70 transition-colors hover:bg-white/8 hover:text-white"
+          className="flex size-9 items-center justify-center rounded-full text-white/70 transition-colors hover:bg-white/[0.08] hover:text-white"
           aria-label={t("settings.close")}
           onClick={() => onOpenChange(false)}
         >
@@ -172,18 +235,30 @@ export function ImageSettingsPanel({
       <div className="max-h-[calc(100svh-20rem)] overflow-y-auto px-5 pb-5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
         <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.06fr)]">
           <ModelPanel
-            selectedModel={settings.model}
-            onSelect={(model) => updateSettings({ model })}
+            models={models}
+            isLoading={isLoading}
+            error={error}
+            query={query}
+            selectedModelId={settings.model}
+            onQueryChange={setQuery}
+            onRetry={onRetry}
+            onSelect={selectModel}
           />
           <div className="grid min-w-0 gap-4">
             <AspectRatioPanel
-              selectedRatio={settings.aspectRatio}
-              onReset={() =>
-                updateSettings({ aspectRatio: DEFAULT_IMAGE_GENERATION_SETTINGS.aspectRatio })
-              }
+              options={sizeOptions}
+              selected={settings.aspectRatio}
+              defaultValue={sizeDefault}
+              onReset={() => updateSettings({ aspectRatio: sizeDefault ?? sizeOptions?.[0] ?? "" })}
               onSelect={(aspectRatio) => updateSettings({ aspectRatio })}
             />
-            <MoreOptionsPanel settings={settings} onChange={updateSettings} />
+            <MoreOptionsPanel
+              settings={settings}
+              variationMax={variationMax}
+              showVariations={showVariations}
+              resolutionOptions={resolutionOptions}
+              onChange={updateSettings}
+            />
           </div>
         </div>
       </div>
@@ -191,148 +266,212 @@ export function ImageSettingsPanel({
   );
 }
 
-export function getImageModelLabel(t: ReturnType<typeof useTranslations>, model: ImageModelKey) {
-  return t(`models.${model}`);
-}
-
 function ModelPanel({
-  selectedModel,
+  models,
+  isLoading,
+  error,
+  query,
+  selectedModelId,
+  onQueryChange,
+  onRetry,
   onSelect,
 }: {
-  selectedModel: ImageModelKey;
-  onSelect: (model: ImageModelKey) => void;
+  models: FizzAiModel[];
+  isLoading: boolean;
+  error: boolean;
+  query: string;
+  selectedModelId: string;
+  onQueryChange: (value: string) => void;
+  onRetry?: () => void;
+  onSelect: (id: string) => void;
 }) {
   const t = useTranslations("fizzStudio.imageStudio");
 
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return models;
+    return models.filter((model) => model.name.toLowerCase().includes(q));
+  }, [models, query]);
+
   return (
-    <section className="min-w-0 rounded-[24px] bg-[#121213] p-5 shadow-[inset_0_1px_0_rgba(255,255,255,.03)]">
-      <h3 className="text-center text-base font-semibold tracking-[0.01em] text-white/74">
+    <section className="min-w-0 rounded-[24px] border border-white/[0.08] bg-white/[0.04] p-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.08)] backdrop-blur-2xl">
+      <h3 className="text-center text-sm font-semibold tracking-[0.01em] text-white/90">
         {t("settings.selectModel")}
       </h3>
-      <div className="mt-5 grid grid-cols-[1fr_1fr] gap-2 sm:grid-cols-[1fr_1fr_1.35fr]">
-        <ControlButton>{t("settings.providers")}</ControlButton>
-        <ControlButton>{t("settings.resolutions")}</ControlButton>
-        <label className="col-span-2 flex h-10 min-w-0 items-center gap-2 rounded-[14px] border border-white/[0.12] bg-[#101011] px-3 text-white/52 sm:col-span-1">
+      <div className="mt-5">
+        <label className="flex h-10 min-w-0 items-center gap-2 rounded-[14px] border border-white/[0.07] bg-white/[0.03] px-3 text-white/52">
           <IconSearch className="size-4 shrink-0" stroke={1.8} />
           <span className="sr-only">{t("settings.searchModels")}</span>
           <input
             type="search"
+            value={query}
+            onChange={(event) => onQueryChange(event.target.value)}
             placeholder={t("settings.searchModels")}
             className="min-w-0 flex-1 bg-transparent text-sm text-white outline-none placeholder:text-white/42"
           />
         </label>
       </div>
 
-      <div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-4">
-        {IMAGE_MODELS.map((model) => (
-          <ModelCard
-            key={model.key}
-            active={selectedModel === model.key}
-            model={model}
-            onSelect={() => onSelect(model.key)}
-          />
-        ))}
-      </div>
+      {isLoading ? (
+        <ModelGridSkeleton />
+      ) : error ? (
+        <div className="mt-5 flex flex-col items-center gap-3 rounded-[16px] border border-white/[0.07] bg-white/[0.02] p-6 text-center">
+          <IconAlertTriangle className="size-6 text-white/60" stroke={1.8} />
+          <p className="text-sm text-white/64">{t("settings.modelsError")}</p>
+          {onRetry ? (
+            <button
+              type="button"
+              onClick={onRetry}
+              className="h-9 rounded-full border border-white/[0.12] bg-white/[0.06] px-4 text-sm font-semibold text-white transition-colors hover:bg-white/[0.1]"
+            >
+              {t("settings.retry")}
+            </button>
+          ) : null}
+        </div>
+      ) : filtered.length === 0 ? (
+        <div className="mt-5 flex flex-col items-center gap-2 rounded-[16px] border border-white/[0.07] bg-white/[0.02] p-6 text-center">
+          <IconPhoto className="size-6 text-white/50" stroke={1.8} />
+          <p className="text-sm text-white/60">
+            {query.trim() ? t("settings.noModelMatch") : t("settings.noModels")}
+          </p>
+        </div>
+      ) : (
+        <div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-4">
+          {filtered.map((model) => (
+            <ModelCard
+              key={model.id}
+              active={selectedModelId === model.id}
+              locked={!isFizzAiModelUsable(model)}
+              model={model}
+              onSelect={() => {
+                if (isFizzAiModelUsable(model)) onSelect(model.id);
+              }}
+            />
+          ))}
+        </div>
+      )}
     </section>
+  );
+}
+
+function ModelGridSkeleton() {
+  return (
+    <div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-4">
+      {Array.from({ length: 8 }).map((_, index) => (
+        <div key={index} className="flex min-h-[116px] flex-col gap-2">
+          <span className="h-[86px] animate-pulse rounded-[12px] border border-white/[0.06] bg-white/[0.04]" />
+          <span className="h-3.5 w-3/4 animate-pulse rounded-full bg-white/[0.06]" />
+        </div>
+      ))}
+    </div>
   );
 }
 
 function ModelCard({
   active,
+  locked,
   model,
   onSelect,
 }: {
   active: boolean;
-  model: (typeof IMAGE_MODELS)[number];
+  locked: boolean;
+  model: FizzAiModel;
   onSelect: () => void;
 }) {
-  const t = useTranslations("fizzStudio.imageStudio");
-  const Icon = model.icon;
+  const lockReason = model.access?.reason || model.disabledReason;
+  const Icon = modelIcon(model);
 
   return (
     <button
       type="button"
       aria-pressed={active}
+      disabled={locked}
+      title={locked ? lockReason : undefined}
       onClick={onSelect}
       className={cn(
         "group relative flex min-h-[116px] flex-col items-stretch gap-2 rounded-[14px] text-left transition duration-200",
-        active ? "text-white" : "text-white/58 hover:text-white"
+        locked
+          ? "cursor-not-allowed text-white/40"
+          : active
+            ? "text-white"
+            : "text-white/58 hover:text-white"
       )}
     >
       <span
         className={cn(
-          "relative flex h-[86px] items-center justify-center rounded-[12px] border bg-[#1b1b1c] transition duration-200",
+          "relative flex h-[86px] items-center justify-center rounded-[12px] border transition duration-200",
           active
-            ? "border-white/80 shadow-[0_0_0_1px_rgba(255,255,255,.64)]"
-            : "border-white/[0.07] group-hover:border-white/18 group-hover:bg-[#202022]"
+            ? "border-white/25 bg-white/[0.12] ring-1 ring-white/15"
+            : "border-white/[0.07] bg-white/[0.03] group-hover:bg-white/[0.06]",
+          locked && "opacity-60"
         )}
       >
-        <Icon className="size-7" stroke={1.9} />
-        {model.locked ? (
+        <Icon className="size-7" stroke={1.7} />
+        {locked ? (
           <span className="absolute right-2 top-2 flex size-5 items-center justify-center rounded-full bg-black/78 text-white">
             <IconLock className="size-3" stroke={2.2} />
           </span>
         ) : null}
       </span>
-      <span className="truncate px-0.5 text-sm font-semibold">{t(`models.${model.key}`)}</span>
-    </button>
-  );
-}
-
-function ControlButton({ children }: { children: React.ReactNode }) {
-  return (
-    <button
-      type="button"
-      className="flex h-10 min-w-0 items-center justify-center rounded-[14px] border border-white/[0.12] bg-[#101011] px-3 text-sm font-medium text-white/76 transition-colors hover:border-white/22 hover:bg-white/[0.06] hover:text-white"
-    >
-      <span className="truncate">{children}</span>
+      <span className="truncate px-0.5 text-[13px] font-medium text-white/80">{model.name}</span>
     </button>
   );
 }
 
 function AspectRatioPanel({
-  selectedRatio,
+  options,
+  selected,
+  defaultValue,
   onReset,
   onSelect,
 }: {
-  selectedRatio: ImageAspectRatio;
+  options: string[] | null;
+  selected: string;
+  defaultValue: string | undefined;
   onReset: () => void;
-  onSelect: (ratio: ImageAspectRatio) => void;
+  onSelect: (value: string) => void;
 }) {
   const t = useTranslations("fizzStudio.imageStudio");
 
+  // Hide the panel entirely when the selected model exposes no size enum.
+  if (!options || options.length === 0) return null;
+
   return (
-    <section className="min-w-0 rounded-[24px] bg-[#101011] p-5 shadow-[inset_0_1px_0_rgba(255,255,255,.025)]">
+    <section className="min-w-0 rounded-[24px] border border-white/[0.08] bg-white/[0.04] p-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.08)] backdrop-blur-2xl">
       <div className="flex items-center justify-between gap-4">
-        <h3 className="flex-1 text-center text-base font-semibold tracking-[0.01em] text-white/74">
+        <h3 className="flex-1 text-center text-sm font-semibold tracking-[0.01em] text-white/90">
           {t("settings.selectAspectRatio")}
         </h3>
         <button
           type="button"
           onClick={onReset}
-          className="text-sm font-semibold text-white/46 transition-colors hover:text-white"
+          disabled={!defaultValue}
+          className="text-sm font-semibold text-white/46 transition-colors hover:text-white disabled:opacity-40"
         >
           {t("settings.reset")}
         </button>
       </div>
       <div className="mt-5 grid grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-4">
-        {ASPECT_RATIO_OPTIONS.map(({ value, icon: Icon }) => (
-          <button
-            key={value}
-            type="button"
-            aria-pressed={selectedRatio === value}
-            onClick={() => onSelect(value)}
-            className={cn(
-              "flex h-10 items-center justify-center gap-2 rounded-[14px] border text-sm font-semibold transition duration-200",
-              selectedRatio === value
-                ? "border-white/12 bg-white/14 text-white"
-                : "border-white/[0.08] bg-transparent text-white/62 hover:border-white/18 hover:bg-white/[0.05] hover:text-white"
-            )}
-          >
-            <Icon className="size-4" stroke={1.9} />
-            {value}
-          </button>
-        ))}
+        {options.map((value) => {
+          const { icon: Icon, label } = imageSizeMeta(value);
+          return (
+            <button
+              key={value}
+              type="button"
+              aria-pressed={selected === value}
+              onClick={() => onSelect(value)}
+              className={cn(
+                "flex h-10 items-center justify-center gap-2 rounded-[14px] border text-sm font-semibold transition duration-200",
+                selected === value
+                  ? "border-white/25 bg-white/[0.12] text-white ring-1 ring-white/15"
+                  : "border-white/[0.07] bg-white/[0.03] text-white/62 hover:bg-white/[0.06] hover:text-white"
+              )}
+            >
+              <Icon className="size-4" stroke={1.9} />
+              {label}
+            </button>
+          );
+        })}
       </div>
     </section>
   );
@@ -340,16 +479,29 @@ function AspectRatioPanel({
 
 function MoreOptionsPanel({
   settings,
+  variationMax,
+  showVariations,
+  resolutionOptions,
   onChange,
 }: {
   settings: ImageGenerationSettings;
+  variationMax: number;
+  showVariations: boolean;
+  resolutionOptions: string[] | null;
   onChange: (settings: Partial<ImageGenerationSettings>) => void;
 }) {
   const t = useTranslations("fizzStudio.imageStudio");
 
+  const variationValues = useMemo(
+    () => Array.from({ length: Math.max(1, variationMax) }, (_, index) => index + 1),
+    [variationMax]
+  );
+
+  const showResolution = Boolean(resolutionOptions && resolutionOptions.length > 0);
+
   return (
-    <section className="min-w-0 rounded-[24px] bg-[#101011] p-5 shadow-[inset_0_1px_0_rgba(255,255,255,.025)]">
-      <h3 className="text-center text-base font-semibold tracking-[0.01em] text-white/74">
+    <section className="min-w-0 rounded-[24px] border border-white/[0.08] bg-white/[0.04] p-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.08)] backdrop-blur-2xl">
+      <h3 className="text-center text-sm font-semibold tracking-[0.01em] text-white/90">
         {t("settings.moreOptions")}
       </h3>
       <div className="mt-5 divide-y divide-white/[0.07]">
@@ -360,54 +512,63 @@ function MoreOptionsPanel({
             onChange={(promptEnhancer) => onChange({ promptEnhancer })}
           />
         </SettingRow>
-        <SettingRow label={t("settings.variations")}>
-          <div className="grid grid-cols-4 gap-2">
-            {VARIATION_OPTIONS.map((value) => (
-              <button
-                key={value}
-                type="button"
-                aria-pressed={settings.variations === value}
-                onClick={() => onChange({ variations: value })}
-                className={cn(
-                  "h-9 min-w-14 rounded-[12px] border text-sm font-semibold transition duration-200",
-                  settings.variations === value
-                    ? "border-white/86 bg-white/[0.06] text-white"
-                    : "border-white/[0.08] bg-transparent text-white/68 hover:border-white/22 hover:text-white"
-                )}
-              >
-                {value}
-              </button>
-            ))}
-          </div>
-        </SettingRow>
-        <SettingRow label={t("settings.resolution")}>
-          <div className="flex flex-wrap items-center justify-end gap-4">
-            {RESOLUTION_OPTIONS.map((resolution) => (
-              <button
-                key={resolution}
-                type="button"
-                aria-pressed={settings.resolution === resolution}
-                onClick={() => onChange({ resolution })}
-                className="flex items-center gap-2 text-sm font-semibold text-white/68 transition-colors hover:text-white"
-              >
-                <span
+        {showVariations ? (
+          <SettingRow label={t("settings.variations")}>
+            <div
+              className="grid gap-2"
+              style={{ gridTemplateColumns: `repeat(${variationValues.length}, minmax(0, 1fr))` }}
+            >
+              {variationValues.map((value) => (
+                <button
+                  key={value}
+                  type="button"
+                  aria-pressed={settings.variations === value}
+                  onClick={() => onChange({ variations: value })}
                   className={cn(
-                    "flex size-5 items-center justify-center rounded-full border",
-                    settings.resolution === resolution ? "border-white bg-white" : "border-white/20"
+                    "h-9 min-w-12 rounded-[12px] border text-sm font-semibold transition duration-200",
+                    settings.variations === value
+                      ? "border-white/25 bg-white/[0.12] text-white ring-1 ring-white/15"
+                      : "border-white/[0.07] bg-white/[0.03] text-white/68 hover:bg-white/[0.06] hover:text-white"
                   )}
                 >
-                  {settings.resolution === resolution ? (
-                    <span className="size-2 rounded-full bg-[#111]" />
-                  ) : null}
-                </span>
-                {resolution}
-              </button>
-            ))}
-          </div>
-        </SettingRow>
+                  {value}
+                </button>
+              ))}
+            </div>
+          </SettingRow>
+        ) : null}
+        {showResolution ? (
+          <SettingRow label={t("settings.resolution")}>
+            <div className="flex flex-wrap items-center justify-end gap-4">
+              {resolutionOptions!.map((resolution) => (
+                <button
+                  key={resolution}
+                  type="button"
+                  aria-pressed={settings.resolution === resolution}
+                  onClick={() => onChange({ resolution })}
+                  className="flex items-center gap-2 text-sm font-semibold text-white/68 transition-colors hover:text-white"
+                >
+                  <span
+                    className={cn(
+                      "flex size-5 items-center justify-center rounded-full border",
+                      settings.resolution === resolution
+                        ? "border-white bg-white"
+                        : "border-white/20"
+                    )}
+                  >
+                    {settings.resolution === resolution ? (
+                      <span className="size-2 rounded-full bg-[#111]" />
+                    ) : null}
+                  </span>
+                  {resolution}
+                </button>
+              ))}
+            </div>
+          </SettingRow>
+        ) : null}
       </div>
-      <div className="mt-5 flex items-center justify-between gap-4 rounded-[18px] bg-[#0d0d0e] p-4">
-        <span className="text-sm font-semibold text-white/76">{t("settings.visibility")}</span>
+      <div className="mt-5 flex items-center justify-between gap-4 rounded-[18px] border border-white/[0.07] bg-white/[0.03] p-4">
+        <span className="text-sm font-medium text-white/80">{t("settings.visibility")}</span>
         <div className="flex rounded-[16px] bg-white/[0.07] p-1">
           {VISIBILITY_OPTIONS.map((visibility) => (
             <button
@@ -418,7 +579,7 @@ function MoreOptionsPanel({
               className={cn(
                 "h-9 rounded-[13px] px-4 text-sm font-semibold transition duration-200",
                 settings.visibility === visibility
-                  ? "bg-white/[0.12] text-white"
+                  ? "bg-white/[0.14] text-white"
                   : "text-white/48 hover:text-white"
               )}
             >
@@ -434,7 +595,7 @@ function MoreOptionsPanel({
 function SettingRow({ label, children }: { children: React.ReactNode; label: string }) {
   return (
     <div className="flex min-h-[72px] flex-col gap-3 py-4 sm:flex-row sm:items-center sm:justify-between">
-      <span className="text-sm font-semibold text-white/48">{label}</span>
+      <span className="text-sm font-medium text-white/80">{label}</span>
       {children}
     </div>
   );
@@ -458,7 +619,7 @@ function ToggleSwitch({
       onClick={() => onChange(!checked)}
       className={cn(
         "flex h-8 w-14 items-center rounded-full p-1 transition duration-200",
-        checked ? "bg-white/30" : "bg-white/[0.08]"
+        checked ? "bg-white/25" : "bg-white/[0.08]"
       )}
     >
       <span

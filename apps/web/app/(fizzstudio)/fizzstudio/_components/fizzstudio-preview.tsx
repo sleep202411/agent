@@ -44,7 +44,7 @@ export function FizzStudioPreview() {
     >
       <EnterpriseHero onCreateProject={() => setCreateOpen(true)} />
 
-      <section className="px-4 sm:px-6 lg:px-12 xl:px-[60px] 2xl:px-[136px]">
+      <section>
         <WhatsNewSection />
 
         <RecentProjectsSection
@@ -80,7 +80,7 @@ function EnterpriseHero({ onCreateProject }: { onCreateProject: () => void }) {
   const t = useTranslations("fizzStudio");
 
   return (
-    <section className="relative min-h-[640px] overflow-hidden px-4 pt-[72px] sm:px-6 lg:px-12 xl:px-[60px] 2xl:px-[136px]">
+    <section className="relative min-h-[640px] overflow-hidden pt-[72px]">
       <div className="pointer-events-none absolute inset-y-0 right-0 hidden w-[56%] lg:block">
         <div className="absolute inset-y-8 right-8 w-[78%] opacity-35 [background-image:radial-gradient(circle,rgba(255,255,255,.16)_1px,transparent_1px)] [background-size:9px_9px]" />
         {ENTERPRISE_HERO_ASSETS.map((asset) => (
@@ -127,7 +127,7 @@ function WhatsNewSection() {
       <h2 id="whats-new" className="text-xl font-semibold tracking-[-0.01em] text-white">
         {t("enterpriseHome.whatsNew")}
       </h2>
-      <div className="-mx-4 mt-4 overflow-x-auto px-4 pb-3 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+      <div className="mt-4 overflow-x-auto pb-3 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
         <div className="flex gap-4">
           {ENTERPRISE_NEWS_ITEMS.map((item) => (
             <article key={item.key} className="w-[min(400px,78vw)] shrink-0">
@@ -289,7 +289,7 @@ function GuidesSection() {
       <h2 id="guides-title" className="text-xl font-semibold tracking-[-0.01em] text-white">
         {t("enterpriseHome.guides")}
       </h2>
-      <div className="-mx-4 mt-4 overflow-x-auto px-4 pb-3 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+      <div className="mt-4 overflow-x-auto pb-3 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
         <div className="flex gap-4">
           {ENTERPRISE_GUIDE_CARDS.map((card) => (
             <article key={card.key} className="w-[320px] shrink-0 cursor-pointer space-y-2">

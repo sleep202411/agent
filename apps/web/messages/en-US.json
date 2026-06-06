@@ -6047,7 +6047,9 @@
         "help": "Help",
         "profile": "Profile",
         "notifications": "Notifications",
-        "trash": "Trash"
+        "trash": "Trash",
+        "history": "Generations",
+        "oneClickFilm": "One-Click Film"
       }
     },
     "enterpriseHome": {
@@ -6108,7 +6110,9 @@
       "modeTabs": {
         "default": "default",
         "assist": "assist",
-        "apps": "apps"
+        "apps": "apps",
+        "history": "History",
+        "community": "Community"
       },
       "eyebrow": "Image studio",
       "feedTitle": "Welcome to FizzStudio",
@@ -6126,6 +6130,18 @@
       "generateFree": "Generate Free",
       "addReferences": "Add references",
       "create": "Create",
+      "creating": "Creating",
+      "priceEstimate": "{points} 积分",
+      "priceFrom": "起",
+      "queued": "Queued",
+      "generating": "Generating",
+      "noModelSelected": "No image models available",
+      "results": {
+        "title": "Your generations",
+        "failed": "Generation failed",
+        "retry": "Retry",
+        "alt": "Generated image"
+      },
       "settings": {
         "title": "Settings",
         "description": "Configure image model, aspect ratio, output count, resolution, and visibility.",
@@ -6134,6 +6150,10 @@
         "providers": "Providers",
         "resolutions": "Resolutions",
         "searchModels": "Search models",
+        "modelsError": "Failed to load models.",
+        "retry": "Retry",
+        "noModels": "No image models available.",
+        "noModelMatch": "No models match your search.",
         "selectAspectRatio": "Select Aspect ratio",
         "reset": "Reset",
         "moreOptions": "More options",

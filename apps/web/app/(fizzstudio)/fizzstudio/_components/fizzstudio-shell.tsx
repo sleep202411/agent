@@ -102,7 +102,7 @@ export function FizzStudioShell({
       <div
         className={cn(
           "min-w-0 transition-[padding] duration-300",
-          sidebarCollapsed ? "lg:pl-16" : "lg:pl-[288px]"
+          sidebarCollapsed ? "lg:pl-16" : "lg:pl-60"
         )}
       >
         <StudioHeader
@@ -114,9 +114,7 @@ export function FizzStudioShell({
 
         <main
           className={cn(
-            isEnterprise
-              ? "w-full max-w-none px-4 pt-8 sm:px-6 xl:px-8"
-              : "mx-auto max-w-[1480px] px-4 pt-8 sm:px-6 xl:px-8",
+            isEnterprise ? "w-full max-w-none" : "mx-auto max-w-[1480px] px-4 pt-8 sm:px-6 xl:px-8",
             mainClassName
           )}
         >
@@ -146,15 +144,15 @@ function StudioHeader({
   if (variant === "enterprise") {
     return (
       <header className="sticky top-0 z-40 bg-transparent">
-        <div className="flex h-16 items-center justify-end gap-5 px-4 sm:px-5">
+        <div className="flex h-16 items-center justify-end gap-4 px-4 sm:px-5">
           <button
             type="button"
             onClick={() => setUpgradeOpen(true)}
-            className="relative hidden h-10 items-center gap-2 rounded-[20px] bg-[#3b1b61] px-5 text-[17px] font-semibold text-[#e8d7ff] shadow-[0_18px_42px_rgba(0,0,0,0.34)] transition-colors hover:bg-[#4a2378] sm:inline-flex"
+            className="relative hidden h-10 items-center gap-2 rounded-[20px] bg-[#3b1b61] px-4 text-sm font-semibold text-[#e8d7ff] shadow-[0_18px_42px_rgba(0,0,0,0.34)] transition-colors hover:bg-[#4a2378] sm:inline-flex"
           >
-            <IconCrown className="size-5 fill-[#d8b8ff] text-[#d8b8ff]" />
+            <IconCrown className="size-4 fill-[#d8b8ff] text-[#d8b8ff]" />
             {t("shell.upgrade")}
-            <span className="absolute left-1/2 top-[calc(100%-6px)] -translate-x-1/2 rounded-full bg-[#ff1493] px-3 py-0.5 text-sm font-black leading-5 text-white shadow-[0_10px_24px_rgba(255,20,147,0.28)]">
+            <span className="absolute left-1/2 top-[calc(100%-6px)] -translate-x-1/2 rounded-full bg-[#ff1493] px-2.5 py-0.5 text-xs font-black leading-5 text-white shadow-[0_10px_24px_rgba(255,20,147,0.28)]">
               {t("shell.upgradeDiscount")}
             </span>
           </button>
@@ -168,7 +166,7 @@ function StudioHeader({
             aria-label={t("shell.chat")}
             className="flex size-9 items-center justify-center text-white transition-colors hover:text-white/72"
           >
-            <IconMessageCircle className="size-6 fill-white" stroke={1.9} />
+            <IconMessageCircle className="size-5 fill-white" stroke={1.9} />
           </button>
 
           <button
@@ -176,7 +174,7 @@ function StudioHeader({
             aria-label={t("shell.notifications")}
             className="flex size-9 items-center justify-center text-white transition-colors hover:text-white/72"
           >
-            <IconBell className="size-6" stroke={1.9} />
+            <IconBell className="size-5" stroke={1.9} />
           </button>
 
           <StudioAccountMenu
