@@ -41,10 +41,7 @@ export type AdminAiProviderEndpoint = {
   providerQuotaPolicy: unknown;
   catalogSnapshot: unknown;
   documentation: unknown;
-  schemaHash: string | null;
-  pricingHash: string | null;
   disabledReason: string | null;
-  lastSyncedAt: string | null;
   updatedAt: string;
   providerAccount?: {
     id: string;
@@ -98,7 +95,6 @@ export type AdminAiProviderBinding = {
   catalogSnapshot: unknown;
   documentation: unknown;
   disabledReason: string | null;
-  lastSyncedAt: string | null;
   updatedAt: string;
   providerAccount?: {
     id: string;
@@ -109,8 +105,6 @@ export type AdminAiProviderBinding = {
     endpointId: string;
     status: string;
     healthStatus: string;
-    schemaHash: string | null;
-    pricingHash: string | null;
   };
   canonicalModel: {
     id: string;

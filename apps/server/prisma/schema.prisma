@@ -3402,10 +3402,7 @@ model AiProviderEndpoint {
   providerQuotaPolicy   Json                   @default("{}") @map("provider_quota_policy") @db.JsonB
   catalogSnapshot       Json                   @default("{}") @map("catalog_snapshot") @db.JsonB
   documentation         Json                   @default("{}") @db.JsonB
-  schemaHash            String?                @map("schema_hash") @db.VarChar(80)
-  pricingHash           String?                @map("pricing_hash") @db.VarChar(80)
   disabledReason        String?                @map("disabled_reason") @db.Text
-  lastSyncedAt          DateTime?              @map("last_synced_at") @db.Timestamptz(6)
   createdByAdminId      String?                @map("created_by_admin_id") @db.Uuid
   updatedByAdminId      String?                @map("updated_by_admin_id") @db.Uuid
   createdAt             DateTime               @default(now()) @map("created_at") @db.Timestamptz(6)
@@ -3418,7 +3415,6 @@ model AiProviderEndpoint {
   @@unique([providerAccountId, endpointId], map: "ai_provider_endpoints_account_endpoint_unique")
   @@index([provider, endpointId], map: "ai_provider_endpoints_provider_endpoint_idx")
   @@index([modality, status, healthStatus], map: "ai_provider_endpoints_catalog_idx")
-  @@index([lastSyncedAt(sort: Desc)], map: "ai_provider_endpoints_last_synced_idx")
   @@map("ai_provider_endpoints")
 }
 
@@ -3489,7 +3485,6 @@ model AiProviderModelBinding {
   catalogSnapshot       Json                 @default("{}") @map("catalog_snapshot") @db.JsonB
   documentation         Json                 @default("{}") @db.JsonB
   disabledReason        String?              @map("disabled_reason") @db.Text
-  lastSyncedAt          DateTime?            @map("last_synced_at") @db.Timestamptz(6)
   createdByAdminId      String?              @map("created_by_admin_id") @db.Uuid
   updatedByAdminId      String?              @map("updated_by_admin_id") @db.Uuid
   createdAt             DateTime             @default(now()) @map("created_at") @db.Timestamptz(6)

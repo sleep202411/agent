@@ -1095,17 +1095,6 @@ function EndpointsPanel({
         ),
       },
       {
-        id: "hashes",
-        header: "Schema / Pricing",
-        enableSorting: false,
-        cell: ({ row }) => (
-          <div className="space-y-1 font-mono text-[11px] text-slate-500">
-            <p>schema {hashPreview(row.original.schemaHash)}</p>
-            <p>pricing {hashPreview(row.original.pricingHash)}</p>
-          </div>
-        ),
-      },
-      {
         id: "pricing",
         header: "成本快照",
         enableSorting: false,
@@ -1491,7 +1480,7 @@ function ModelBindingsSubTable({
         ),
       },
       {
-        id: "sync",
+        id: "updated",
         header: "更新",
         cell: ({ row }) => (
           <span className="text-[12px] text-slate-500">{formatDate(row.original.updatedAt)}</span>
@@ -2266,10 +2255,6 @@ function EndpointBindingDrawer({
                   snapshotEndpoint.providerAccount?.provider ?? snapshotEndpoint.provider
                 )}
               </p>
-              <p className="font-mono">
-                schema {hashPreview(snapshotEndpoint.schemaHash)} · pricing{" "}
-                {hashPreview(snapshotEndpoint.pricingHash)}
-              </p>
             </div>
           ) : null}
           <div className="grid gap-3 sm:grid-cols-2">
@@ -2807,10 +2792,7 @@ function defaultProviderEndpointDraft(
     },
     catalogSnapshot: {},
     documentation: {},
-    schemaHash: null,
-    pricingHash: null,
     disabledReason: null,
-    lastSyncedAt: null,
     updatedAt: "",
     providerAccount: providerAccount
       ? {
@@ -3031,10 +3013,6 @@ function modePreview(supportedModes: unknown, capabilities: unknown) {
       ? capabilities.family
       : null;
   return [family, modes.join(" / ")].filter(Boolean).join(" · ") || "未声明能力";
-}
-
-function hashPreview(value: string | null) {
-  return value ? value.slice(0, 12) : "missing";
 }
 
 function policyPreview(...values: unknown[]) {

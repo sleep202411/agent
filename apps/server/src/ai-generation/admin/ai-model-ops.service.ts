@@ -1,4 +1,3 @@
-import { createHash } from 'node:crypto';
 import {
   BadRequestException,
   Injectable,
@@ -342,11 +341,6 @@ export class AiModelOpsService {
         providerQuotaPolicy: input.providerQuotaPolicy as Prisma.InputJsonValue,
         catalogSnapshot: input.catalogSnapshot as Prisma.InputJsonValue,
         documentation: input.documentation as Prisma.InputJsonValue,
-        schemaHash: hashJson({
-          input: input.providerInputSchema,
-          output: input.providerOutputSchema,
-        }),
-        pricingHash: hashJson(input.providerPricing),
         disabledReason: input.disabledReason ?? null,
         createdByAdminId: adminId,
         updatedByAdminId: adminId,
@@ -363,20 +357,9 @@ export class AiModelOpsService {
   ) {
     const existing = await this.prisma.aiProviderEndpoint.findFirst({
       where: { id: endpointId, archivedAt: null },
-      select: {
-        id: true,
-        providerInputSchema: true,
-        providerOutputSchema: true,
-        providerPricing: true,
-      },
+      select: { id: true },
     });
     if (!existing) throw new NotFoundException('供应商端点不存在或已归档。');
-
-    const nextInputSchema =
-      input.providerInputSchema ?? existing.providerInputSchema;
-    const nextOutputSchema =
-      input.providerOutputSchema ?? existing.providerOutputSchema;
-    const nextPricing = input.providerPricing ?? existing.providerPricing;
 
     const endpoint = await this.prisma.aiProviderEndpoint.update({
       where: { id: endpointId },
@@ -423,18 +406,6 @@ export class AiModelOpsService {
           : {}),
         ...(input.disabledReason !== undefined
           ? { disabledReason: input.disabledReason ?? null }
-          : {}),
-        ...(input.providerInputSchema !== undefined ||
-        input.providerOutputSchema !== undefined
-          ? {
-              schemaHash: hashJson({
-                input: nextInputSchema,
-                output: nextOutputSchema,
-              }),
-            }
-          : {}),
-        ...(input.providerPricing !== undefined
-          ? { pricingHash: hashJson(nextPricing) }
           : {}),
         updatedByAdminId: adminId,
       },
@@ -683,7 +654,6 @@ function providerBindingDataFromEndpoint(
     providerPricing: unknown;
     catalogSnapshot: unknown;
     documentation: unknown;
-    lastSyncedAt: Date | null;
   },
   input: CreateProviderBindingInput,
   adminId: string,
@@ -716,7 +686,6 @@ function providerBindingDataFromEndpoint(
     catalogSnapshot: endpoint.catalogSnapshot as Prisma.InputJsonValue,
     documentation: endpoint.documentation as Prisma.InputJsonValue,
     disabledReason: input.disabledReason ?? null,
-    lastSyncedAt: endpoint.lastSyncedAt,
     updatedByAdminId: adminId,
   };
 }
@@ -774,10 +743,7 @@ function serializeProviderEndpoint(endpoint: {
   providerQuotaPolicy: unknown;
   catalogSnapshot: unknown;
   documentation: unknown;
-  schemaHash: string | null;
-  pricingHash: string | null;
   disabledReason: string | null;
-  lastSyncedAt: Date | null;
   updatedAt: Date;
   providerAccount?: { id: string; provider: string };
   _count?: { bindings: number };
@@ -841,7 +807,6 @@ function serializeProviderBinding(binding: {
   catalogSnapshot: unknown;
   documentation: unknown;
   disabledReason: string | null;
-  lastSyncedAt: Date | null;
   updatedAt: Date;
   providerAccount?: { id: string; provider: string };
   providerEndpoint: {
@@ -849,8 +814,6 @@ function serializeProviderBinding(binding: {
     endpointId: string;
     status: string;
     healthStatus: string;
-    schemaHash: string | null;
-    pricingHash: string | null;
   };
   canonicalModel: { id: string; slug: string; displayName: string };
   _count?: { jobs: number };
@@ -860,24 +823,6 @@ function serializeProviderBinding(binding: {
     jobCount: binding._count?.jobs ?? 0,
     _count: undefined,
   };
-}
-
-function hashJson(value: unknown): string {
-  return createHash('sha256')
-    .update(stableJson(value))
-    .digest('hex')
-    .slice(0, 40);
-}
-
-function stableJson(value: unknown): string {
-  if (Array.isArray(value)) return `[${value.map(stableJson).join(',')}]`;
-  if (value && typeof value === 'object') {
-    return `{${Object.entries(value as Record<string, unknown>)
-      .sort(([left], [right]) => left.localeCompare(right))
-      .map(([key, entry]) => `${JSON.stringify(key)}:${stableJson(entry)}`)
-      .join(',')}}`;
-  }
-  return JSON.stringify(value);
 }
 
 function serializeJobSummary(job: {

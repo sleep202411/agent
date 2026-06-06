@@ -15,8 +15,6 @@
  *
  * Every write is an upsert on a documented unique key — safe to re-run.
  */
-import { createHash } from 'node:crypto';
-
 import type { Prisma, PrismaClient } from '@prisma/client';
 
 import {
@@ -37,27 +35,6 @@ import {
 } from './image-models';
 
 const SEED_ADMIN_ID: string | null = null; // seed-managed rows have no admin author.
-
-/** Mirror of `ai-model-ops.service.ts:hashJson` — sha256 hex sliced to 40. */
-function hashJson(value: unknown): string {
-  return createHash('sha256')
-    .update(stableJson(value))
-    .digest('hex')
-    .slice(0, 40);
-}
-
-/** Mirror of `ai-model-ops.service.ts:stableJson` — order-stable serialization. */
-function stableJson(value: unknown): string {
-  if (Array.isArray(value)) return `[${value.map(stableJson).join(',')}]`;
-  if (value && typeof value === 'object') {
-    const entries = Object.entries(value as Record<string, unknown>)
-      .filter(([, v]) => v !== undefined)
-      .sort(([a], [b]) => a.localeCompare(b))
-      .map(([k, v]) => `${JSON.stringify(k)}:${stableJson(v)}`);
-    return `{${entries.join(',')}}`;
-  }
-  return JSON.stringify(value ?? null);
-}
 
 /**
  * Build the canonical-model payload once. Returned shape is used verbatim for
@@ -124,11 +101,6 @@ function buildEndpointPayload(args: {
     providerInputSchema,
     providerOutputSchema,
     providerPricing: args.providerPricing,
-    schemaHash: hashJson({
-      input: providerInputSchema,
-      output: providerOutputSchema,
-    }),
-    pricingHash: hashJson(args.providerPricing),
     createdByAdminId: SEED_ADMIN_ID,
     updatedByAdminId: SEED_ADMIN_ID,
   };
@@ -154,7 +126,6 @@ function buildBindingPayload(args: {
     providerPricing: Prisma.JsonValue;
     catalogSnapshot: Prisma.JsonValue;
     documentation: Prisma.JsonValue;
-    lastSyncedAt: Date | null;
   };
   canonicalModelId: string;
   priority: number;
@@ -186,7 +157,6 @@ function buildBindingPayload(args: {
     catalogSnapshot: endpoint.catalogSnapshot as Prisma.InputJsonValue,
     documentation: endpoint.documentation as Prisma.InputJsonValue,
     disabledReason: null,
-    lastSyncedAt: endpoint.lastSyncedAt,
     createdByAdminId: SEED_ADMIN_ID,
     updatedByAdminId: SEED_ADMIN_ID,
   };
@@ -342,7 +312,6 @@ async function bindProviderEntry(args: {
       providerPricing: true,
       catalogSnapshot: true,
       documentation: true,
-      lastSyncedAt: true,
     },
   });
 
