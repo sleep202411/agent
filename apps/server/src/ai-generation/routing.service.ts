@@ -23,10 +23,10 @@ import {
   type AiModelPresetConfig,
 } from './model-preset-registry.service';
 import {
-  mergeCanonicalModels,
   selectProviderModelCandidate,
   type ProviderModelCandidate,
 } from './model-catalog-routing';
+import { AiCanonicalCatalogService } from './canonical-catalog.service';
 import type { ProviderAdapter } from './provider-adapter';
 import { ProviderRegistry } from './provider-registry.service';
 import type {
@@ -52,6 +52,7 @@ export class AiGenerationRoutingService {
     private readonly providers: ProviderRegistry,
     private readonly presets: AiModelPresetRegistryService,
     private readonly entitlements: EntitlementService,
+    private readonly catalog: AiCanonicalCatalogService,
   ) {}
 
   async resolve(args: {
@@ -81,7 +82,7 @@ export class AiGenerationRoutingService {
 
     const configuredRoute = presetId
       ? (configuredPreset ??
-        this.presets.findPresetRoute(presetId, await this.listProviderModels()))
+        this.presets.findPresetRoute(presetId, await this.listCatalogModels()))
       : undefined;
     const resolved = configuredRoute
       ? await this.resolveConfiguredRoute(configuredRoute, requestedModelId)
@@ -320,10 +321,14 @@ export class AiGenerationRoutingService {
     return campaign;
   }
 
-  private async listProviderModels(): Promise<AiModelDefinition[]> {
-    const results = await Promise.all(
-      this.providers.list().map((adapter) => adapter.listModels()),
-    );
-    return mergeCanonicalModels(results.flat());
+  /**
+   * Catalog model set used to resolve preset routes. Same canonical-
+   * model-driven source the public catalog uses, so presets resolve
+   * against exactly the models the catalog shows. (Submit-time
+   * multi-provider failover still happens in `findModel` via
+   * `selectProviderModelCandidate`.)
+   */
+  private listCatalogModels(): Promise<AiModelDefinition[]> {
+    return this.catalog.listModels();
   }
 }

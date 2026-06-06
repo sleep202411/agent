@@ -375,6 +375,7 @@ export function createFalModelConfig(
         args.billing?.preflightCost ?? (args.type === 'video' ? 20 : 1),
       finalCostSource: args.billing?.finalCostSource ?? 'fixed_table',
       refundPolicy: args.billing?.refundPolicy ?? 'refund_on_final_failure',
+      pricing: args.billing?.pricing,
     },
     inputSchema,
     outputSchema,

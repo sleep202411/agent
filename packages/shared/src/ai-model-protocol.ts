@@ -21,6 +21,7 @@ import type {
   FoundryUiOption,
   FoundryUiSchema,
 } from "./foundry-schema.js";
+import type { AiGenUnitType } from "./billing.js";
 
 export const AI_MODEL_PROTOCOL_DIALECT = "https://fizzdragon.com/schemas/ai/model/v1";
 
@@ -135,6 +136,19 @@ export interface AiBillingPolicy {
   preflightCost?: number;
   finalCostSource: "fixed_table" | "provider_usage" | "internal_metering" | "campaign" | "unknown";
   refundPolicy: "refund_on_final_failure" | "no_refund" | "manual_review";
+  /**
+   * Parameterized pricing inputs for the shared estimator
+   * (`estimateGenerationPrice`). Absent ⇒ the model is unpriced and callers
+   * should show no number rather than a flat placeholder.
+   */
+  pricing?: {
+    /** nanoUSD per unit, as a string (BigInt does not cross JSON). */
+    unitPriceNanoUsd: string;
+    /** What `unitPriceNanoUsd` is priced per. */
+    unitType: AiGenUnitType;
+    /** Gross-margin basis points (from the canonical model). */
+    marginBps: number;
+  };
 }
 
 export interface AiQueuePolicy {

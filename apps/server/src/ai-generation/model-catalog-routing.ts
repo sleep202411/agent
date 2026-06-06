@@ -1,25 +1,20 @@
 import type { AiModelDefinition } from './types';
 
+/**
+ * Submit-time multi-provider routing helpers.
+ *
+ * The catalog is canonical-model-driven (see AiCanonicalCatalogService),
+ * so it no longer merges N provider definitions into one — there is one
+ * entry per canonical by construction. What remains here is the
+ * submit-time candidate selection: `routing.findModel` asks every
+ * provider for the submitted modelId, and when more than one provider
+ * binds the same canonical, `selectProviderModelCandidate` picks the
+ * primary by route priority/weight (multi-provider failover).
+ */
 export interface ProviderModelCandidate<TAdapter> {
   adapter: TAdapter;
   provider: string;
   model: AiModelDefinition;
-}
-
-export function mergeCanonicalModels(
-  models: AiModelDefinition[],
-): AiModelDefinition[] {
-  const groups = new Map<string, AiModelDefinition[]>();
-  for (const model of models) {
-    const key = model.ops?.canonicalSlug ?? model.id;
-    const list = groups.get(key);
-    if (list) list.push(model);
-    else groups.set(key, [model]);
-  }
-
-  return Array.from(groups.values())
-    .map((group) => mergeModelGroup(group))
-    .sort(compareModelsForCatalog);
 }
 
 export function selectProviderModelCandidate<TAdapter>(
@@ -29,35 +24,6 @@ export function selectProviderModelCandidate<TAdapter>(
   const enabled = candidates.filter((candidate) => candidate.model.enabled);
   const pool = enabled.length > 0 ? enabled : candidates;
   return [...pool].sort((a, b) => compareProviderModels(a.model, b.model))[0];
-}
-
-function mergeModelGroup(group: AiModelDefinition[]): AiModelDefinition {
-  const sorted = [...group].sort(compareProviderModels);
-  const primary = sorted[0];
-  const enabled = sorted.some((model) => model.enabled);
-  return {
-    ...primary,
-    enabled,
-    disabledReason: enabled ? undefined : primary.disabledReason,
-    documentation: dedupeDocumentation(
-      sorted.flatMap((model) => model.documentation),
-    ),
-    availability: {
-      ...primary.availability,
-      regions: sorted.flatMap((model) => model.availability.regions),
-    },
-  };
-}
-
-function compareModelsForCatalog(
-  a: AiModelDefinition,
-  b: AiModelDefinition,
-): number {
-  const family = a.family.localeCompare(b.family);
-  if (family !== 0) return family;
-  const type = a.type.localeCompare(b.type);
-  if (type !== 0) return type;
-  return a.id.localeCompare(b.id);
 }
 
 function compareProviderModels(
@@ -85,14 +51,4 @@ function routeWeight(model: AiModelDefinition): number {
   return ops && Number.isFinite(ops.providerRouteWeight)
     ? ops.providerRouteWeight
     : 0;
-}
-
-function dedupeDocumentation(
-  links: AiModelDefinition['documentation'],
-): AiModelDefinition['documentation'] {
-  const byKey = new Map<string, AiModelDefinition['documentation'][number]>();
-  for (const link of links) {
-    byKey.set(`${link.title}:${link.url}`, link);
-  }
-  return Array.from(byKey.values());
 }

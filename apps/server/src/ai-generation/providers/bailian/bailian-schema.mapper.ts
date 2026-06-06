@@ -474,6 +474,7 @@ export function createBailianModelConfig(
         args.billing?.preflightCost ?? (args.type === 'video' ? 24 : 2),
       finalCostSource: args.billing?.finalCostSource ?? 'fixed_table',
       refundPolicy: args.billing?.refundPolicy ?? 'refund_on_final_failure',
+      pricing: args.billing?.pricing,
     },
     inputSchema,
     outputSchema,

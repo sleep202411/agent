@@ -28,7 +28,7 @@ import { ProviderRegistry } from './provider-registry.service';
 import { AiGenerationQueueService } from './queue.service';
 import { AiGenerationRoutingService } from './routing.service';
 import { AiGenerationValidatorService } from './validator.service';
-import { mergeCanonicalModels } from './model-catalog-routing';
+import { AiCanonicalCatalogService } from './canonical-catalog.service';
 import { AI_MODEL_PROTOCOL_DIALECT } from './types';
 import type {
   AiModelCatalogResponse,
@@ -70,6 +70,7 @@ export class AiGenerationService {
 
   constructor(
     private readonly providers: ProviderRegistry,
+    private readonly catalog: AiCanonicalCatalogService,
     private readonly authz: AiGenerationAuthzService,
     private readonly validator: AiGenerationValidatorService,
     private readonly store: AiGenerationRepository,
@@ -110,12 +111,12 @@ export class AiGenerationService {
   }
 
   async listModels(user: AuthUser) {
-    // Fan out across every registered provider. Each adapter returns
-    // its own model definitions; we concat and stamp per-user access.
-    const results = await Promise.all(
-      this.providers.list().map((adapter) => adapter.listModels()),
-    );
-    const models = mergeCanonicalModels(results.flat());
+    // Canonical-model-driven catalog: the control plane is the single
+    // source of truth. One AiModelDefinition per visible + active
+    // canonical model, assembled from its primary active provider
+    // binding (no provider fan-out, no provider-merge). We only stamp
+    // per-user access on top.
+    const models = await this.catalog.listModels();
     const entitlement = this.entitlements.resolveForUser(user);
     return models.map((model) => {
       const access = this.authz.decideModelAccess(entitlement, model);

@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
+import { DEFAULT_MARGIN_BPS, type AiGenUnitType } from '@repo/shared';
 import { PrismaService } from '../../../infra/db/db.module';
 import { AI_QUEUE_IMAGE, AI_QUEUE_VIDEO } from '../../queue';
 import type { AiBillingPolicy, AiGenerationMode, AiJobType } from '../../types';
@@ -234,7 +235,9 @@ function bailianServiceFromCatalog(
 
 function billingPolicyFromRow(row: {
   pricingPolicy: Prisma.JsonValue;
-  canonicalModel: { billingPolicy: Prisma.JsonValue };
+  canonicalModel: { billingPolicy: Prisma.JsonValue; marginBps: number };
+  unitPriceNanoUsd: bigint | null;
+  unitType: AiGenUnitType;
   modality: string;
 }): Partial<AiBillingPolicy> {
   const binding = recordValue(row.pricingPolicy);
@@ -267,6 +270,13 @@ function billingPolicyFromRow(row: {
       typeof policy.refundPolicy === 'string'
         ? (policy.refundPolicy as AiBillingPolicy['refundPolicy'])
         : 'refund_on_final_failure',
+    // Parameterized pricing for the shared estimator. BigInt → string HERE,
+    // since Nest's JSON.stringify throws on a raw bigint downstream.
+    pricing: {
+      unitPriceNanoUsd: (row.unitPriceNanoUsd ?? 0n).toString(),
+      unitType: row.unitType,
+      marginBps: row.canonicalModel.marginBps ?? DEFAULT_MARGIN_BPS,
+    },
   };
 }
 
