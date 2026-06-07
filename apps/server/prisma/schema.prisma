@@ -4348,6 +4348,13 @@ model MediaAsset {
   checksumSha256  String?              @map("checksum_sha256") @db.VarChar(64)
   visibility      MediaAssetVisibility @default(public)
   status          MediaAssetStatus     @default(ready)
+  /// AUDIT ONLY — external auth user id (Java identity, VarChar(64) like
+  /// UserCertificate.userId) of whoever confirmed the direct-to-storage upload
+  /// this asset records. NULL for legacy / worker-produced assets. This is NOT
+  /// the storage-quota key: quota is per-WORKSPACE, so a `workspaceId` column
+  /// will be added (with IP→workspace scoping decided) WHEN that feature lands;
+  /// this column only answers "who uploaded it" for audit.
+  createdByUserId String?              @map("created_by_user_id") @db.VarChar(64)
   createdAt       DateTime             @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt       DateTime             @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
   deletedAt       DateTime?            @map("deleted_at") @db.Timestamptz(6)
@@ -4366,6 +4373,11 @@ model MediaAsset {
 
   @@index([storageProvider, bucket, objectKey], map: "media_assets_storage_lookup_idx")
   @@index([kind, status, createdAt(sort: Desc)], map: "media_assets_kind_status_idx")
+  /// Lifecycle + quota: scan rows by status across all kinds ordered by
+  /// age (e.g. a future per-user quota tally over active assets, or a
+  /// lifecycle sweep over soft-deleted rows). Kind-agnostic, so the
+  /// kind-led index above can't serve it.
+  @@index([status, createdAt], map: "media_assets_status_created_idx")
   @@map("media_assets")
 }
 

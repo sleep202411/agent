@@ -3,151 +3,269 @@
  *
  * Each public export names *what* the caller is uploading (an episode
  * video, an episode cover, an IP banner …), never *how*. The wire
- * detail (which backend endpoint, which `uploadType` flag, what body
- * shape) is encapsulated inside this file. When the backend ships
- * dedicated episode upload endpoints, only the internal `getXxxUrl`
- * helper bodies move — public signatures and call sites stay put.
+ * detail (which backend endpoint, what body shape) is encapsulated inside
+ * this file.
  *
- * The two-step pipeline (request signed URL → PUT bytes to OSS) is
- * duplicated here on purpose, per the AGENTS.md rule: feature-private
- * wins over reaching into a shared `src/lib/uploads/*`. If a second
- * feature later needs a similar uploader, it should redefine its own
- * — duplication is cheaper than coupling our IP flow to a helper that
- * could evolve out from under us.
+ * The pipeline is DIRECT-TO-STORAGE, stateless + confirm:
+ *   1. request a signed write URL from the Nest server
+ *      (`POST /aurora/media/upload-url`) — STATELESS, no DB row yet;
+ *   2. PUT the bytes straight to the storage provider (Azure Blob intl /
+ *      Alibaba OSS cn) — the bytes never stream through our server;
+ *   3. confirm the landed upload (`POST /aurora/media/confirm`), which is
+ *      when the server verifies the bytes (ownership + HEAD) and mints the
+ *      MediaAsset, returning its id.
+ *
+ * The provider is abstracted server-side and selected by region — this
+ * client is provider-agnostic: it PUTs with whatever `{url, method,
+ * headers}` the server returns.
+ *
+ * The episode save then references `mediaAssetId` (returned by confirm),
+ * never a raw key. An abandoned/cancelled upload (steps 1–2 without 3)
+ * leaves NO server-side row — there is nothing to clean up.
  */
 
 import { acceptLanguage, bearerHeader } from "./shared";
 
+/** Upload kinds the server's closed enum accepts (apps/server media/dto). */
+type UploadKind = "episode_video" | "episode_cover" | "ip_banner";
+
+interface UploadUrlRequest {
+  kind: UploadKind;
+  contentType: string;
+  fileName: string;
+  sizeBytes: number;
+  scope?: {
+    projectId?: string | number;
+    episodeId?: string | number;
+  };
+}
+
 interface SignedUrlResponse {
-  url?: string;
-  headers?: Record<string, string>;
-  method?: string;
+  /** Fully-signed write URL to PUT bytes to. */
+  uploadUrl: string;
+  method: "PUT";
+  /** Headers the browser MUST echo on the PUT (Azure: x-ms-blob-type). */
+  headers: Record<string, string>;
   /**
-   * OSS storage key the backend has decided to write the file under.
-   * Authoritative — when present, prefer this over deriving the key from
-   * the signed URL's pathname (decoding rules / custom prefixes can
-   * differ from what backend persists in DB).
+   * Server-decided PERMANENT object key. We echo this verbatim to
+   * `/confirm` after the PUT — it is NOT a DB id (issuing a URL creates no
+   * row). We derive nothing from `uploadUrl`.
    */
-  path?: string;
+  storageKey: string;
+  provider: "azure_blob" | "aliyun_oss" | "s3_compatible";
+  /** ISO timestamp the URL stops working. */
+  expiresAt: string;
+}
+
+interface ConfirmResponse {
+  /** Active MediaAsset row the server minted — returned to the save call. */
+  mediaAssetId: string;
+  storageKey: string;
+  provider: "azure_blob" | "aliyun_oss" | "s3_compatible";
 }
 
 export interface UploadedAsset {
-  /** OSS storage key, persists in DB. */
+  /**
+   * MediaAsset id — this is what the save call sends to the backend (NOT a
+   * raw storage key). Returned by `/confirm` once the server has verified
+   * the bytes physically landed.
+   */
+  mediaAssetId: string;
+  /** Authoritative storage key (audit / debugging only — save uses the id). */
   path: string;
   name: string;
   size: number;
   mimeType: string;
 }
 
+/** Optional knobs for live progress + cancellation. */
+export interface UploadOptions {
+  /** Called with 0–100 as the PUT streams bytes (only when total is known). */
+  onProgress?: (percent: number) => void;
+  /** Abort the in-flight PUT (and the URL request). */
+  signal?: AbortSignal;
+}
+
 // ─── Internal helpers ──────────────────────────────────
 
+const UPLOAD_URL_ENDPOINT = "/aurora/media/upload-url";
+const CONFIRM_ENDPOINT = "/aurora/media/confirm";
+
 async function requestSignedUrl(
-  endpoint: string,
-  query: Record<string, string | number | undefined>
+  request: UploadUrlRequest,
+  signal?: AbortSignal
 ): Promise<SignedUrlResponse> {
-  const qs = new URLSearchParams();
-  for (const [k, v] of Object.entries(query)) {
-    if (v !== undefined && v !== null && v !== "") qs.set(k, String(v));
-  }
-  const url = qs.toString() ? `${endpoint}?${qs.toString()}` : endpoint;
-  const res = await fetch(url, {
+  const res = await fetch(UPLOAD_URL_ENDPOINT, {
     method: "POST",
     credentials: "include",
     headers: {
+      "Content-Type": "application/json",
       "accept-language": acceptLanguage(),
       Authorization: bearerHeader(),
     },
+    body: JSON.stringify(request),
+    signal,
   });
-  if (!res.ok) throw new Error(`getUploadUrl failed: HTTP ${res.status}`);
-  const json = (await res.json()) as {
+
+  // Parse the body once; the server returns the contract on 200 and a
+  // `{code, message}` envelope on error (matches the catch/toast path).
+  let json: Partial<SignedUrlResponse> & {
     code?: number | string;
-    msg?: string;
     message?: string;
-    success?: boolean;
-    data?: SignedUrlResponse;
-    /**
-     * Some endpoints surface the OSS storage key at envelope-level
-     * alongside `code` / `msg` (instead of nesting inside `data`).
-     * Prefer it when present — it's the value backend will recognize
-     * on subsequent reads (avoids any URL-encoding round-trip risk).
-     */
-    path?: string;
-  };
-  // Envelope varies across endpoints: the IP banner endpoint returns
-  // `{code: 200, msg, data}`; older Java endpoints return
-  // `{success: true, code: "0", message, data}`. Accept either as OK.
-  const codeNum = typeof json.code === "string" ? Number(json.code) : json.code;
-  const ok = json.success === true || codeNum === 0 || codeNum === 200;
-  if (!ok) {
-    throw new Error(json.message || json.msg || "getUploadUrl failed");
-  }
-  const data = json.data ?? {};
-  // Lift envelope-level `path` into the SignedUrlResponse so callers
-  // get a single shape regardless of where the backend put it.
-  return typeof json.path === "string" && json.path && !data.path
-    ? { ...data, path: json.path }
-    : data;
-}
-
-function extractStoragePath(signedUrl: string): string {
-  const url = new URL(signedUrl);
-  // Pathname comes URL-encoded (`%20`, `%E2%80%A6`); decode so the key we
-  // persist matches what the backend sees (`13/My Banner.png` vs.
-  // `13/My%20Banner.png`). Wrap the decode so a malformed input doesn't
-  // crash the upload.
-  const raw = url.pathname.replace(/^\//, "");
+    msg?: string;
+  } = {};
   try {
-    return decodeURIComponent(raw);
+    json = await res.json();
   } catch {
-    return raw;
+    /* non-JSON body — fall through to the HTTP-status error */
   }
-}
 
-async function putBytesToOss(info: SignedUrlResponse, file: File): Promise<string> {
-  if (!info.url) throw new Error("Upload URL missing");
-  const res = await fetch(info.url, {
-    method: info.method ?? "PUT",
-    headers: {
-      "Content-Type": file.type || "application/octet-stream",
-      ...(info.headers ?? {}),
-    },
-    body: file,
-  });
   if (!res.ok) {
-    // Read OSS's XML error body so we can see <Code>/<Message>/
-    // <StringToSign> in the console — DevTools' Network → Response
-    // panel evicts the body once the request scrolls off, and without
-    // the XML there's no way to tell SignatureDoesNotMatch apart from
-    // InvalidArgument apart from RequestTimeTooSkewed.
-    let bodyText = "";
-    try {
-      bodyText = await res.text();
-    } catch {
-      /* response body unreadable — keep the empty string */
-    }
-    // eslint-disable-next-line no-console
-    console.error(
-      `[uploads] OSS PUT ${res.status} ${res.statusText}\nURL: ${info.url}\nBody:\n${bodyText}`
-    );
-    throw new Error(
-      bodyText
-        ? `OSS upload failed: HTTP ${res.status} — ${extractOssErrorMessage(bodyText, res.status)}`
-        : `OSS upload failed: HTTP ${res.status}`
-    );
+    const message = json.message || json.msg;
+    throw new Error(message ? message : `getUploadUrl failed: HTTP ${res.status}`);
   }
-  // Backend's authoritative storage key wins over our URL-derived guess
-  // — that's what the rest of the system (DB persistence, /vedio/play
-  // /getLink resolution) expects to see.
-  return info.path && info.path.length > 0 ? info.path : extractStoragePath(info.url);
+  if (!json.uploadUrl || !json.storageKey) {
+    throw new Error("getUploadUrl succeeded but returned no upload URL");
+  }
+  return json as SignedUrlResponse;
 }
 
 /**
- * Pull the human-meaningful pieces out of OSS's error XML so the toast
- * the user sees says something more useful than "HTTP 400". Falls back
- * to the raw body when the XML doesn't parse — which means the upload
- * helper's caller still gets *something* to display.
+ * Confirm a landed upload. The server verifies the bytes (ownership +
+ * HEAD), mints the active MediaAsset, and returns its id. We send back the
+ * EXACT storageKey the issue step gave us, plus the kind (re-asserts the
+ * ownership scope) and contentType (advisory — server reads the real type
+ * from storage).
  */
-function extractOssErrorMessage(xml: string, status: number): string {
+async function confirmUpload(
+  storageKey: string,
+  kind: UploadKind,
+  contentType: string,
+  signal?: AbortSignal
+): Promise<ConfirmResponse> {
+  const res = await fetch(CONFIRM_ENDPOINT, {
+    method: "POST",
+    credentials: "include",
+    headers: {
+      "Content-Type": "application/json",
+      "accept-language": acceptLanguage(),
+      Authorization: bearerHeader(),
+    },
+    body: JSON.stringify({ storageKey, kind, contentType }),
+    signal,
+  });
+
+  let json: Partial<ConfirmResponse> & {
+    code?: number | string;
+    message?: string;
+    msg?: string;
+  } = {};
+  try {
+    json = await res.json();
+  } catch {
+    /* non-JSON body — fall through to the HTTP-status error */
+  }
+
+  if (!res.ok) {
+    const message = json.message || json.msg;
+    throw new Error(message ? message : `confirmUpload failed: HTTP ${res.status}`);
+  }
+  if (!json.mediaAssetId) {
+    throw new Error("confirmUpload succeeded but returned no mediaAssetId");
+  }
+  return json as ConfirmResponse;
+}
+
+/**
+ * PUT the bytes straight to the storage provider, with real upload
+ * progress and abort support. Uses XMLHttpRequest because fetch has no
+ * upload-progress events.
+ */
+function putBytesToStorage(
+  info: SignedUrlResponse,
+  file: File,
+  options?: UploadOptions
+): Promise<void> {
+  return new Promise<void>((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open(info.method ?? "PUT", info.uploadUrl, true);
+
+    // Echo the signed headers exactly. Content-Type is part of the
+    // signature on both providers, so it MUST match what the server signed
+    // — the server returns it inside `headers`, so default it from the
+    // file only if (defensively) absent.
+    const headers: Record<string, string> = {
+      "Content-Type": file.type || "application/octet-stream",
+      ...(info.headers ?? {}),
+    };
+    for (const [k, v] of Object.entries(headers)) {
+      xhr.setRequestHeader(k, v);
+    }
+
+    if (options?.onProgress) {
+      xhr.upload.onprogress = (e) => {
+        if (e.lengthComputable && e.total > 0) {
+          options.onProgress!(Math.round((e.loaded / e.total) * 100));
+        }
+      };
+    }
+
+    // User-initiated abort resolves cleanly into a rejection the caller
+    // recognizes (cancel != error toast — see episode-dialog).
+    const signal = options?.signal;
+    const onAbort = () => xhr.abort();
+    if (signal) {
+      if (signal.aborted) {
+        reject(new DOMException("Upload aborted", "AbortError"));
+        return;
+      }
+      signal.addEventListener("abort", onAbort);
+    }
+    const cleanup = () => {
+      if (signal) signal.removeEventListener("abort", onAbort);
+    };
+
+    xhr.onload = () => {
+      cleanup();
+      if (xhr.status >= 200 && xhr.status < 300) {
+        resolve();
+      } else {
+        // Read the provider's XML error body so the toast says something
+        // more useful than "HTTP 403" (SignatureDoesNotMatch vs
+        // RequestTimeTooSkewed vs AccessDenied).
+        const bodyText = xhr.responseText || "";
+        console.error(
+          `[uploads] storage PUT ${xhr.status} ${xhr.statusText}\nURL: ${info.uploadUrl}\nBody:\n${bodyText}`
+        );
+        reject(
+          new Error(
+            bodyText
+              ? `Upload failed: HTTP ${xhr.status} — ${extractStorageErrorMessage(bodyText, xhr.status)}`
+              : `Upload failed: HTTP ${xhr.status}`
+          )
+        );
+      }
+    };
+    xhr.onerror = () => {
+      cleanup();
+      // No HTTP status here usually means a blocked CORS preflight/PUT.
+      reject(new Error("Upload blocked — network or CORS error"));
+    };
+    xhr.onabort = () => {
+      cleanup();
+      reject(new DOMException("Upload aborted", "AbortError"));
+    };
+
+    xhr.send(file);
+  });
+}
+
+/**
+ * Pull the human-meaningful pieces out of the provider's error XML (both
+ * Azure Blob and OSS return `<Code>` / `<Message>`). Falls back to the raw
+ * body when the XML doesn't parse.
+ */
+function extractStorageErrorMessage(xml: string, status: number): string {
   const code = /<Code>([^<]+)<\/Code>/i.exec(xml)?.[1];
   const message = /<Message>([^<]+)<\/Message>/i.exec(xml)?.[1];
   if (code && message) return `${code}: ${message}`;
@@ -156,58 +274,57 @@ function extractOssErrorMessage(xml: string, status: number): string {
   return `HTTP ${status}`;
 }
 
-function composeResult(file: File, path: string): UploadedAsset {
-  return { path, name: file.name, size: file.size, mimeType: file.type };
+/**
+ * Whether an error was a user-initiated cancel (vs a real failure). Call
+ * sites use this to suppress the error toast on cancel.
+ */
+export function isUploadAbort(err: unknown): boolean {
+  return (
+    (err instanceof DOMException && err.name === "AbortError") ||
+    (err instanceof Error && err.name === "AbortError")
+  );
+}
+
+function composeResult(file: File, storageKey: string, confirmed: ConfirmResponse): UploadedAsset {
+  return {
+    mediaAssetId: confirmed.mediaAssetId,
+    path: storageKey,
+    name: file.name,
+    size: file.size,
+    mimeType: file.type,
+  };
 }
 
 /**
- * Build a unique, ASCII-only filename to send to backend's presigned-URL
- * endpoint. Replaces whatever the user originally named the file.
- *
- * Why not keep the original name: OSS V4 signing on a custom-domain
- * endpoint percent-encodes the object key under OSS's strict rules
- * (`%20` for space, lowercase hex). Backends frequently encode using
- * a different convention — Java's `URLEncoder.encode` writes `+` for
- * space, default URI encoders may leave Chinese alone, etc. When
- * backend's canonical key doesn't match OSS's canonical key, the V4
- * signature validates against the wrong StringToSign and OSS returns
- * 403 `SignatureDoesNotMatch`. Confirmed in prod: ASCII-only
- * `1777541432954.mp4` succeeded; `ChatGPT Image 2026年4月30日.png`
- * (spaces + Chinese) failed. Stripping the original name out of the
- * picture entirely sidesteps the entire encoding-mismatch family.
- *
- * Prefix + timestamp + uuid keeps keys grep-able when triaging
- * production OSS objects ("which feature wrote this?" / "when?"),
- * without coupling the storage layer to user-supplied strings. The
- * user-visible `file.name` (UI cards, helpers) is unaffected — only
- * the wire value handed to backend / persisted as the OSS key changes.
+ * The shared issue → PUT → confirm sequence behind every public uploader.
+ * The only per-uploader variance is the `kind` + scope, which the caller
+ * bakes into `request`.
  */
-function uniqueUploadName(prefix: string, originalName: string): string {
-  const dot = originalName.lastIndexOf(".");
-  const rawExt = dot > 0 ? originalName.slice(dot + 1).toLowerCase() : "";
-  // Cap + sanitize the extension so a malicious / weird input can't
-  // smuggle non-ASCII back in via the `.foo` portion.
-  const ext = rawExt.replace(/[^a-z0-9]/g, "").slice(0, 8);
-  const uuid = (
-    typeof crypto !== "undefined" && "randomUUID" in crypto
-      ? crypto.randomUUID()
-      : `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 10)}`
-  )
-    .replace(/-/g, "")
-    .slice(0, 12);
-  const stem = `${prefix}_${Date.now()}_${uuid}`;
-  return ext ? `${stem}.${ext}` : stem;
+async function runUpload(
+  file: File,
+  request: UploadUrlRequest,
+  options?: UploadOptions
+): Promise<UploadedAsset> {
+  const info = await requestSignedUrl(request, options?.signal);
+  await putBytesToStorage(info, file, options);
+  const confirmed = await confirmUpload(
+    info.storageKey,
+    request.kind,
+    request.contentType,
+    options?.signal
+  );
+  return composeResult(file, info.storageKey, confirmed);
 }
 
 // ─── Public uploaders ──────────────────────────────────
 //
-// IP banner + episode video each have their own dedicated presigned-URL
-// endpoint (`/vedio/getuploadurl/project/banner` / `…/project/video/`),
-// both scoped to a project (and optionally an existing video) via query
-// params. Episode cover still rides the legacy generic uploader.
+// All three go through the one provider-agnostic Nest endpoint. The only
+// per-uploader difference is the `kind` (which drives the server's
+// content-type allowlist, byte cap, and storage key prefix) and the scope
+// linkage carried for audit.
 
 interface UploadEpisodeVideoInput {
-  /** Project this episode belongs to (required). */
+  /** Project this episode belongs to. */
   projectId: number | string;
   /** Existing episode/video id when re-uploading; omit on first upload. */
   videoId?: number | string;
@@ -216,120 +333,71 @@ interface UploadEpisodeVideoInput {
 /** Episode source video. */
 export async function uploadEpisodeVideo(
   file: File,
-  input: UploadEpisodeVideoInput
+  input: UploadEpisodeVideoInput,
+  options?: UploadOptions
 ): Promise<UploadedAsset> {
-  const info = await requestSignedUrl("/vedio/getuploadurl/project/video", {
-    fileName: uniqueUploadName("ep_video", file.name),
-    projectId: input.projectId,
-    videoId: input.videoId,
-  });
-  const path = await putBytesToOss(info, file);
-  return composeResult(file, path);
+  return runUpload(
+    file,
+    {
+      kind: "episode_video",
+      contentType: file.type || "application/octet-stream",
+      fileName: file.name,
+      sizeBytes: file.size,
+      scope: { projectId: input.projectId, episodeId: input.videoId },
+    },
+    options
+  );
 }
 
 interface UploadEpisodeCoverInput {
-  /** Project this episode belongs to (required by backend). */
+  /** Project this episode belongs to. */
   projectId: number | string;
-  /** Episode/video id when re-uploading the cover of an existing episode;
-   *  omit on the create flow (banner is project-scoped until the episode
-   *  itself gets a serverId on Save). */
+  /** Episode/video id when re-uploading an existing episode's cover. */
   videoId?: number | string;
-}
-
-/**
- * Shared backend-proxied banner uploader. POSTs the file as
- * multipart/form-data to `/vedio/upload/banner`; backend handles the
- * OSS hop and returns the storage key. Sidesteps the OSS V4 +
- * custom-domain SignatureDoesNotMatch issues that the presigned-URL
- * path keeps tripping on; the tradeoff is the file streams through
- * the Java service before landing in OSS. Used for both episode
- * covers and IP-level banners — same backend endpoint, the only
- * difference is the storage key prefix surfaced for telemetry /
- * grep-ability.
- */
-async function uploadBannerImage(file: File, namePrefix: string): Promise<UploadedAsset> {
-  // Rename the File on the wire so the backend's storage key stays
-  // ASCII-safe (mirrors the presigned path's protections — `年`/spaces
-  // in filenames have historically tripped the upload chain).
-  const safeName = uniqueUploadName(namePrefix, file.name);
-  const renamedFile = new File([file], safeName, {
-    type: file.type,
-    lastModified: file.lastModified,
-  });
-  const form = new FormData();
-  form.append("file", renamedFile);
-  const path = await postMultipartUpload("/vedio/upload/banner", form);
-  return composeResult(file, path);
 }
 
 /** Episode cover image. */
 export async function uploadEpisodeCover(
   file: File,
-  _input: UploadEpisodeCoverInput
+  input: UploadEpisodeCoverInput,
+  options?: UploadOptions
 ): Promise<UploadedAsset> {
-  return uploadBannerImage(file, "ep_cover");
-}
-
-/**
- * Backend-proxied multipart upload for endpoints that take the file
- * directly (vs. handing back a presigned OSS URL). Returns the OSS
- * storage key the backend persisted.
- *
- * Response contract: `{ path: "..." }`. Success is signaled by the
- * presence of `path`; there's no `code` / `msg` envelope on this
- * endpoint, so HTTP status + `path` are the only success signals.
- */
-async function postMultipartUpload(endpoint: string, form: FormData): Promise<string> {
-  const res = await fetch(endpoint, {
-    method: "POST",
-    credentials: "include",
-    headers: {
-      "accept-language": acceptLanguage(),
-      Authorization: bearerHeader(),
-      // NOTE: do NOT set Content-Type — fetch needs to compute the
-      // multipart boundary itself, and a hard-coded value here would
-      // break the request body framing.
+  return runUpload(
+    file,
+    {
+      kind: "episode_cover",
+      contentType: file.type || "application/octet-stream",
+      fileName: file.name,
+      sizeBytes: file.size,
+      scope: { projectId: input.projectId, episodeId: input.videoId },
     },
-    body: form,
-  });
-  if (!res.ok) {
-    let bodyText = "";
-    try {
-      bodyText = await res.text();
-    } catch {
-      /* unreadable */
-    }
-    // eslint-disable-next-line no-console
-    console.error(
-      `[uploads] multipart POST ${endpoint} ${res.status} ${res.statusText}\nBody:\n${bodyText}`
-    );
-    throw new Error(`upload failed: HTTP ${res.status}`);
-  }
-  const json = (await res.json()) as { path?: string };
-  if (!json.path) {
-    throw new Error("upload succeeded but backend returned no storage path");
-  }
-  return json.path;
+    options
+  );
 }
 
 interface UploadIPBannerInput {
-  /** Kept for forward-compat; backend's `/vedio/upload/banner` doesn't
-   *  consume it today, but callers that already pass it shouldn't be
-   *  forced to drop the value. The project linkage happens later in
-   *  the project-update call when the page persists `bannerLink`. */
   projectId?: number | string;
-  /** Same forward-compat note as `projectId`. */
   videoId?: number | string;
 }
 
 /**
  * IP-level banner (cover image used on the plaza card and detail hero).
- * Persisted via the project-update endpoint as `bannerLink` after this
- * helper returns the storage path.
+ * Persisted via the project-update endpoint after this helper returns.
  */
 export async function uploadIPBanner(
   file: File,
-  _input?: UploadIPBannerInput
+  input?: UploadIPBannerInput,
+  options?: UploadOptions
 ): Promise<UploadedAsset> {
-  return uploadBannerImage(file, "ip_banner");
+  return runUpload(
+    file,
+    {
+      kind: "ip_banner",
+      contentType: file.type || "application/octet-stream",
+      fileName: file.name,
+      sizeBytes: file.size,
+      scope: { projectId: input?.projectId, episodeId: input?.videoId },
+    },
+    options
+  );
 }

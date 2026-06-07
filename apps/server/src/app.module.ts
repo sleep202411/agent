@@ -17,6 +17,7 @@ import { OrdersModule } from './orders/orders.module';
 import { DbModule } from './infra/db/db.module';
 import { HealthModule } from './infra/health/health.module';
 import { IpCommerceModule } from './ip-commerce';
+import { MediaModule } from './media/media.module';
 import { RealtimeModule } from './infra/realtime/realtime.module';
 import { RedisModule } from './infra/redis/redis.module';
 import { NotificationModule } from './notification';
@@ -48,6 +49,7 @@ import { WorkspacesModule } from './workspaces';
     IpCommerceModule,
     DocumentsModule,
     CertificatesModule,
+    MediaModule,
     CrewsModule,
     EpisodesModule,
     CreatorServicesModule,
