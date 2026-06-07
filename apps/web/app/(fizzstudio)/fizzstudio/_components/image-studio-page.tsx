@@ -1,17 +1,28 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { type ComponentType, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   IconAdjustmentsHorizontal,
   IconAlertTriangle,
+  IconArrowLeft,
+  IconArrowRight,
+  IconArrowsMaximize,
   IconChevronDown,
+  IconCircleCheck,
+  IconClock,
+  IconDownload,
+  IconInfoCircle,
   IconLoader2,
+  IconPhoto,
   IconPlus,
   IconSend,
   IconSparkles,
+  IconX,
 } from "@tabler/icons-react";
+import type { AiJobUpdatePayload, AssetEvent } from "@repo/shared";
 import { cn } from "@/lib/utils";
 import { useTranslations } from "@/src/i18n/i18n";
+import { isUploadAbort, uploadFileViaSignedUrl } from "@/src/lib/media-upload";
 import { useAppDispatch } from "@/src/store";
 import { touchCredits } from "@/src/store/slices/userSlice";
 import { useAiCatalog, usableImageModels } from "../../_hooks/use-ai-catalog";
@@ -24,17 +35,18 @@ import {
   generationStatusFromRaw,
   getFizzAiJob,
   isTerminalGenerationStatus,
+  listFizzAiJobs,
   normalizeFizzAiError,
   submitFizzAiJob,
   type FizzAiGenerationStatus,
   type FizzAiJobView,
   type FizzAiModel,
 } from "../../_lib/generation-api";
+import { openAssetsRealtime } from "../../_lib/assets-realtime";
 import { FizzStudioShell, useFizzStudioWorkspace } from "./fizzstudio-shell";
 import {
   DEFAULT_IMAGE_GENERATION_SETTINGS,
   getImageModelLabel,
-  imageSizeMegapixels,
   ImageSettingsPanel,
   modelById,
   settingsForModel,
@@ -42,22 +54,43 @@ import {
 } from "./image-settings-panel";
 
 type ImageStudioTab = "history" | "community";
-type FeedTab = "inspirations" | "community" | "tutorial";
 
 const IMAGE_STUDIO_TABS: ImageStudioTab[] = ["history", "community"];
-const FEED_TABS: FeedTab[] = ["inspirations", "community", "tutorial"];
 
 const POLL_INTERVAL_MS = 2200;
+const HISTORY_LIMIT = 60;
+
+type ImageStudioT = ReturnType<typeof useTranslations>;
 
 /** Local row tracking one submitted job through its lifecycle. */
 interface ResultJob {
   localId: string;
   jobId: string;
+  modelId?: string;
+  schemaVersion?: string;
   prompt: string;
+  input?: Record<string, unknown>;
   status: FizzAiGenerationStatus;
   stage: string;
   progress: number | null;
-  images: Array<{ id: string; url: string }>;
+  queuePosition: number | null;
+  estimatedWaitSeconds: number | null;
+  estimatedRunSeconds: number | null;
+  estimatedTotalSeconds: number | null;
+  etaConfidence: "high" | "low" | "medium";
+  images: Array<{ height?: number | null; id: string; url: string; width?: number | null }>;
+  createdAt: string;
+  updatedAt: string;
+  completedAt?: string | null;
+  error?: string;
+}
+
+interface ReferenceImage {
+  id: string;
+  name: string;
+  progress: number;
+  uploading: boolean;
+  url?: string;
   error?: string;
 }
 
@@ -169,8 +202,7 @@ function ImageStudioSurface({ workspaceId }: { workspaceId: string }) {
   const dispatch = useAppDispatch();
   const catalogQuery = useAiCatalog();
 
-  const [activeTab, setActiveTab] = useState<ImageStudioTab>("history");
-  const [feedTab, setFeedTab] = useState<FeedTab>("inspirations");
+  const [activeTab, setActiveTab] = useState<ImageStudioTab>("community");
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settings, setSettings] = useState<ImageGenerationSettings>(
     DEFAULT_IMAGE_GENERATION_SETTINGS
@@ -178,7 +210,11 @@ function ImageStudioSurface({ workspaceId }: { workspaceId: string }) {
   const [prompt, setPrompt] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
+  const [referenceUploadError, setReferenceUploadError] = useState<string | null>(null);
+  const [referenceImages, setReferenceImages] = useState<ReferenceImage[]>([]);
   const [jobs, setJobs] = useState<ResultJob[]>([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [selectedDetailId, setSelectedDetailId] = useState<string | null>(null);
 
   const imageModels = useMemo(
     () => (catalogQuery.data?.models ?? []).filter((model) => model.type === "image"),
@@ -190,37 +226,136 @@ function ImageStudioSurface({ workspaceId }: { workspaceId: string }) {
     if (settings.model || !catalogQuery.data) return;
     const usable = usableImageModels(catalogQuery.data);
     const first = usable[0];
-    if (first) setSettings((prev) => settingsForModel(first, prev));
+    if (!first) return;
+    let cancelled = false;
+    queueMicrotask(() => {
+      if (!cancelled) setSettings((prev) => settingsForModel(first, prev));
+    });
+    return () => {
+      cancelled = true;
+    };
   }, [catalogQuery.data, settings.model]);
 
   const selectedModel = useMemo<FizzAiModel | undefined>(
     () => modelById(imageModels, settings.model),
     [imageModels, settings.model]
   );
+  const chargeableReferenceCount = referenceImages.filter((image) => !image.error).length;
 
   // Live 积分 price for the selected model + output count. Recomputes on model
   // switch and count change; null when the model carries no real pricing.
   const priceEstimate = useMemo(
     () =>
-      estimateModelSellPoints(
-        selectedModel,
-        settings.variations,
-        imageSizeMegapixels(settings.aspectRatio)
-      ),
-    [selectedModel, settings.variations, settings.aspectRatio]
+      estimateModelSellPoints(selectedModel, {
+        numOutputs: settings.variations,
+        quality: settings.quality,
+        referenceImageCount: chargeableReferenceCount,
+        resolution: settings.resolution,
+      }),
+    [
+      selectedModel,
+      settings.variations,
+      settings.quality,
+      settings.resolution,
+      chargeableReferenceCount,
+    ]
   );
 
-  const feedItems = useMemo(() => {
-    if (feedTab === "community") return IMAGE_FEED.slice(2).concat(IMAGE_FEED.slice(0, 2));
-    if (feedTab === "tutorial") return IMAGE_FEED.slice(5).concat(IMAGE_FEED.slice(0, 5));
-    return IMAGE_FEED;
-  }, [feedTab]);
-
   const activeJobIds = useMemo(
-    () => jobs.filter((job) => !isTerminalGenerationStatus(job.status)).map((job) => job.jobId),
+    () =>
+      jobs
+        .filter((job) => job.jobId && !isTerminalGenerationStatus(job.status))
+        .map((job) => job.jobId),
     [jobs]
   );
   const activeJobKey = useMemo(() => [...activeJobIds].sort().join("|"), [activeJobIds]);
+  const hasUploadingReferences = referenceImages.some((image) => image.uploading);
+  const detailItems = useMemo(() => flattenResultImageItems(jobs), [jobs]);
+  const selectedDetailIndex = selectedDetailId
+    ? detailItems.findIndex((item) => item.id === selectedDetailId)
+    : -1;
+  const selectedDetail = selectedDetailIndex >= 0 ? detailItems[selectedDetailIndex] : null;
+  const selectedDetailModelLabel =
+    selectedDetail?.job.modelId && imageModels.length > 0
+      ? getImageModelLabel(imageModels, selectedDetail.job.modelId)
+      : (selectedDetail?.job.modelId ?? t("detail.modelFallback"));
+
+  const mergeJob = useCallback((job: ResultJob) => {
+    setJobs((prev) => mergeResultJob(prev, job));
+  }, []);
+
+  const reconcileHistory = useCallback(async () => {
+    if (!workspaceId) return;
+    setHistoryLoading(true);
+    try {
+      const response = await listFizzAiJobs({
+        limit: HISTORY_LIMIT,
+        type: "image",
+        workspaceId,
+      });
+      setJobs((prev) =>
+        mergeResultJobs(
+          response.jobs.map((job) => jobViewToResultJob(job, t)),
+          prev
+        )
+      );
+    } catch (err) {
+      if (process.env.NODE_ENV !== "production") {
+        console.warn("[fizzstudio-images] history reconcile failed", err);
+      }
+    } finally {
+      setHistoryLoading(false);
+    }
+  }, [t, workspaceId]);
+
+  useEffect(() => {
+    let cancelled = false;
+    queueMicrotask(() => {
+      if (!cancelled) void reconcileHistory();
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [reconcileHistory]);
+
+  const handleAssetEvent = useCallback(
+    (event: AssetEvent) => {
+      if (event.kind !== "ai_job_update") return;
+      const job = event.job;
+      if (job.type !== "image") return;
+      if (workspaceId && job.workspaceId && job.workspaceId !== workspaceId) return;
+      mergeJob(jobUpdateToResultJob(job, t));
+      if (isTerminalGenerationStatus(generationStatusFromRaw(job.status))) {
+        dispatch(touchCredits());
+      }
+    },
+    [dispatch, mergeJob, t, workspaceId]
+  );
+
+  useEffect(() => {
+    let hasConnectedBefore = false;
+    const client = openAssetsRealtime({
+      onConnected: () => {
+        if (hasConnectedBefore) void reconcileHistory();
+        hasConnectedBefore = true;
+      },
+      onEvent: handleAssetEvent,
+      onDisconnected: (reason) => {
+        if (process.env.NODE_ENV !== "production") {
+          console.log(`[fizzstudio-assets-realtime] disconnected: ${reason}`);
+        }
+      },
+    });
+    return () => client.close();
+  }, [handleAssetEvent, reconcileHistory]);
+
+  useEffect(() => {
+    const onVisible = () => {
+      if (document.visibilityState === "visible") void reconcileHistory();
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => document.removeEventListener("visibilitychange", onVisible);
+  }, [reconcileHistory]);
 
   // Poll all in-flight jobs on a fixed cadence until each reaches a terminal state.
   const pollInFlightRef = useRef(false);
@@ -252,9 +387,14 @@ function ImageStudioSurface({ workspaceId }: { workspaceId: string }) {
               status,
               stage: job.stage,
               progress: job.progress ?? null,
-              images: job.outputs
-                .filter((output) => Boolean(output.url))
-                .map((output) => ({ id: output.id, url: output.url })),
+              queuePosition: job.queuePosition ?? null,
+              estimatedWaitSeconds: job.estimatedWaitSeconds ?? null,
+              estimatedRunSeconds: job.estimatedRunSeconds ?? null,
+              estimatedTotalSeconds: job.estimatedTotalSeconds ?? null,
+              etaConfidence: job.etaConfidence ?? "low",
+              images: resultImages(job.outputs),
+              updatedAt: job.updatedAt,
+              completedAt: job.completedAt ?? null,
               error:
                 status === "failed" || status === "cancelled"
                   ? errorMessageFromJob(job, t("results.failed"))
@@ -281,37 +421,55 @@ function ImageStudioSurface({ workspaceId }: { workspaceId: string }) {
 
   const submit = useCallback(async () => {
     const trimmedPrompt = prompt.trim();
-    if (!trimmedPrompt || !selectedModel || submitting) return;
+    if (!trimmedPrompt || !selectedModel || submitting || hasUploadingReferences) return;
 
     setSubmitting(true);
     setSubmitError(null);
+    setActiveTab("history");
     const localId = generationIdempotencyKey("local");
+    const now = new Date().toISOString();
+    const estimatedRunSeconds = optimisticRunSeconds(settings);
+    const rawInput = compactFizzAiInput({
+      prompt: trimmedPrompt,
+      imageSize: settings.aspectRatio,
+      size: settings.aspectRatio,
+      aspectRatio: settings.aspectRatio,
+      aspect_ratio: settings.aspectRatio,
+      outputFormat: settings.outputFormat,
+      quality: settings.quality,
+      referenceImages: referenceImages
+        .filter((image) => image.url && !image.error)
+        .map((image) => ({ url: image.url })),
+      resolution: settings.resolution,
+      n: settings.variations,
+      numOutputs: settings.variations,
+    });
+    const input = filterFizzAiInput(selectedModel, rawInput);
 
     setJobs((prev) => [
       {
         localId,
         jobId: "",
+        modelId: selectedModel.id,
+        schemaVersion: selectedModel.schemaVersion,
         prompt: trimmedPrompt,
+        input,
         status: "queued",
         stage: "submitting",
         progress: null,
+        queuePosition: null,
+        estimatedWaitSeconds: null,
+        estimatedRunSeconds,
+        estimatedTotalSeconds: estimatedRunSeconds,
+        etaConfidence: "low",
         images: [],
+        createdAt: now,
+        updatedAt: now,
       },
       ...prev,
     ]);
 
     try {
-      const rawInput = compactFizzAiInput({
-        prompt: trimmedPrompt,
-        imageSize: settings.aspectRatio,
-        size: settings.aspectRatio,
-        aspectRatio: settings.aspectRatio,
-        aspect_ratio: settings.aspectRatio,
-        resolution: settings.resolution,
-        n: settings.variations,
-        numOutputs: settings.variations,
-      });
-      const input = filterFizzAiInput(selectedModel, rawInput);
       const response = await submitFizzAiJob({
         context: {
           workspaceId,
@@ -336,6 +494,12 @@ function ImageStudioSurface({ workspaceId }: { workspaceId: string }) {
                 status: status === "done" ? "generating" : status,
                 stage: response.stage,
                 progress: response.progress,
+                queuePosition: response.queue_position,
+                estimatedWaitSeconds: response.estimated_wait_seconds,
+                estimatedRunSeconds: response.estimated_run_seconds,
+                estimatedTotalSeconds: response.estimated_total_seconds,
+                etaConfidence: response.eta_confidence,
+                updatedAt: new Date().toISOString(),
               }
             : row
         )
@@ -346,65 +510,217 @@ function ImageStudioSurface({ workspaceId }: { workspaceId: string }) {
       setJobs((prev) =>
         prev.map((row) =>
           row.localId === localId
-            ? { ...row, status: "failed", stage: "failed", error: message }
+            ? {
+                ...row,
+                status: "failed",
+                stage: "failed",
+                error: message,
+                completedAt: new Date().toISOString(),
+                updatedAt: new Date().toISOString(),
+              }
             : row
         )
       );
     } finally {
       setSubmitting(false);
     }
-  }, [dispatch, prompt, selectedModel, settings, submitting, t, workspaceId]);
+  }, [
+    dispatch,
+    hasUploadingReferences,
+    prompt,
+    referenceImages,
+    selectedModel,
+    settings,
+    submitting,
+    t,
+    workspaceId,
+  ]);
+
+  const uploadReferenceImages = useCallback(
+    async (files: FileList | null) => {
+      if (!files || files.length === 0) return;
+      setReferenceUploadError(null);
+      const remaining = Math.max(0, 4 - referenceImages.length);
+      const selected = Array.from(files).slice(0, remaining);
+      if (selected.length === 0) return;
+
+      for (const file of selected) {
+        const id = generationIdempotencyKey("ref");
+        setReferenceImages((prev) => [
+          ...prev,
+          { id, name: file.name, progress: 0, uploading: true },
+        ]);
+        try {
+          const uploaded = await uploadFileViaSignedUrl(file, {
+            kind: "ai_reference_image",
+            onProgress: (progress) => {
+              setReferenceImages((prev) =>
+                prev.map((image) => (image.id === id ? { ...image, progress } : image))
+              );
+            },
+          });
+          setReferenceImages((prev) =>
+            prev.map((image) =>
+              image.id === id
+                ? { ...image, progress: 100, uploading: false, url: uploaded.url }
+                : image
+            )
+          );
+        } catch (error) {
+          if (isUploadAbort(error)) {
+            setReferenceImages((prev) => prev.filter((image) => image.id !== id));
+            continue;
+          }
+          const message = normalizeFizzAiError(error, t("referenceUpload.failed"));
+          setReferenceUploadError(message);
+          setReferenceImages((prev) =>
+            prev.map((image) =>
+              image.id === id ? { ...image, uploading: false, error: message } : image
+            )
+          );
+        }
+      }
+    },
+    [referenceImages.length, t]
+  );
+
+  const removeReferenceImage = useCallback((id: string) => {
+    setReferenceImages((prev) => prev.filter((image) => image.id !== id));
+  }, []);
+
+  const moveSelectedDetail = useCallback(
+    (direction: -1 | 1) => {
+      if (detailItems.length === 0 || selectedDetailIndex < 0) return;
+      const nextIndex = (selectedDetailIndex + direction + detailItems.length) % detailItems.length;
+      setSelectedDetailId(detailItems[nextIndex]?.id ?? null);
+    },
+    [detailItems, selectedDetailIndex]
+  );
 
   const retryJob = useCallback(
     (localId: string) => {
-      setJobs((prev) => prev.filter((row) => row.localId !== localId));
-      void submit();
+      if (submitting) return;
+      const failed = jobs.find((row) => row.localId === localId);
+      if (!failed) return;
+      const model =
+        (failed.modelId ? modelById(imageModels, failed.modelId) : undefined) ?? selectedModel;
+      const retryInput = failed.input;
+      if (!model || !retryInput) {
+        setPrompt(failed.prompt);
+        setSubmitError(t("results.retryUnavailable"));
+        return;
+      }
+
+      setSubmitting(true);
+      setSubmitError(null);
+      setActiveTab("history");
+      const retryLocalId = generationIdempotencyKey("retry");
+      const now = new Date().toISOString();
+      const estimatedRunSeconds = failed.estimatedRunSeconds ?? optimisticRunSeconds(settings);
+
+      setJobs((prev) => [
+        {
+          ...failed,
+          localId: retryLocalId,
+          jobId: "",
+          modelId: model.id,
+          schemaVersion: model.schemaVersion,
+          status: "queued",
+          stage: "submitting",
+          progress: null,
+          queuePosition: null,
+          estimatedWaitSeconds: null,
+          estimatedRunSeconds,
+          estimatedTotalSeconds: estimatedRunSeconds,
+          etaConfidence: "low",
+          images: [],
+          error: undefined,
+          createdAt: now,
+          updatedAt: now,
+          completedAt: null,
+        },
+        ...prev.filter((row) => row.localId !== localId),
+      ]);
+
+      void (async () => {
+        try {
+          const response = await submitFizzAiJob({
+            context: {
+              workspaceId,
+              projectId: "",
+              documentId: "",
+              documentBlockId: "",
+              sourceSurface: "fizzstudio-image-studio",
+            },
+            idempotencyKey: generationIdempotencyKey(
+              `fizzstudio:image-studio-retry:${workspaceId}`
+            ),
+            input: retryInput,
+            modelId: model.id,
+            schemaVersion: model.schemaVersion,
+          });
+          dispatch(touchCredits());
+          const status = generationStatusFromRaw(response.status);
+          setJobs((prev) =>
+            prev.map((row) =>
+              row.localId === retryLocalId
+                ? {
+                    ...row,
+                    jobId: response.request_id,
+                    status: status === "done" ? "generating" : status,
+                    stage: response.stage,
+                    progress: response.progress,
+                    queuePosition: response.queue_position,
+                    estimatedWaitSeconds: response.estimated_wait_seconds,
+                    estimatedRunSeconds: response.estimated_run_seconds,
+                    estimatedTotalSeconds: response.estimated_total_seconds,
+                    etaConfidence: response.eta_confidence,
+                    updatedAt: new Date().toISOString(),
+                  }
+                : row
+            )
+          );
+        } catch (error) {
+          const message = normalizeFizzAiError(error, t("results.failed"));
+          setSubmitError(message);
+          setJobs((prev) =>
+            prev.map((row) =>
+              row.localId === retryLocalId
+                ? {
+                    ...row,
+                    status: "failed",
+                    stage: "failed",
+                    error: message,
+                    completedAt: new Date().toISOString(),
+                    updatedAt: new Date().toISOString(),
+                  }
+                : row
+            )
+          );
+        } finally {
+          setSubmitting(false);
+        }
+      })();
     },
-    [submit]
+    [dispatch, imageModels, jobs, selectedModel, settings, submitting, t, workspaceId]
   );
 
-  const hasResults = jobs.length > 0;
-
   return (
-    <div className="relative min-h-[calc(100svh-64px)] pb-56 text-white">
+    <div className="relative min-h-[calc(100svh-64px)] pb-[430px] text-white md:pb-56">
       <ImageStudioTopBar activeTab={activeTab} onTabChange={setActiveTab} />
 
       <section className="px-4 pb-10 pt-5 sm:px-6 xl:px-8">
         <div className="mx-auto max-w-none">
-          {hasResults ? <ResultsStrip jobs={jobs} onRetry={retryJob} /> : null}
-
-          <div className="mb-5 flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
-            <div>
-              <div className="flex items-center gap-2 text-[13px] font-semibold uppercase tracking-[0.08em] text-white/55">
-                <IconSparkles className="size-4" stroke={1.8} />
-                {t("eyebrow")}
-              </div>
-              <h1 className="mt-2 text-[30px] font-semibold leading-tight tracking-[-0.015em] text-white">
-                {t("feedTitle")}
-              </h1>
-              <p className="mt-2 max-w-2xl text-sm leading-6 text-white/48">{t("feedSubtitle")}</p>
-            </div>
-            <div className="flex flex-wrap gap-2">
-              {FEED_TABS.map((tab) => (
-                <button
-                  key={tab}
-                  type="button"
-                  aria-pressed={feedTab === tab}
-                  onClick={() => setFeedTab(tab)}
-                  className={cn(
-                    "h-8 rounded-full border px-3.5 text-sm font-semibold transition-colors",
-                    feedTab === tab
-                      ? "border-white/18 bg-white/12 text-white"
-                      : "border-white/10 bg-white/[0.03] text-white/58 hover:border-white/18 hover:text-white"
-                  )}
-                >
-                  {t(`feedTabs.${tab}`)}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          <ImageMasonry items={feedItems} />
+          {activeTab === "history" ? (
+            <ResultsStrip
+              jobs={jobs}
+              loading={historyLoading}
+              onRetry={retryJob}
+              onOpenImage={setSelectedDetailId}
+            />
+          ) : (
+            <ImageMasonry items={IMAGE_FEED} />
+          )}
         </div>
       </section>
 
@@ -418,97 +734,1010 @@ function ImageStudioSurface({ workspaceId }: { workspaceId: string }) {
         submitting={submitting}
         submitError={submitError}
         priceEstimate={priceEstimate}
-        canSubmit={Boolean(prompt.trim() && selectedModel && !submitting)}
+        referenceImages={referenceImages}
+        referenceUploadError={referenceUploadError}
+        canSubmit={Boolean(
+          prompt.trim() && selectedModel && !submitting && !hasUploadingReferences
+        )}
+        onReferenceFiles={uploadReferenceImages}
+        onRemoveReferenceImage={removeReferenceImage}
         onPromptChange={setPrompt}
         onSubmit={submit}
         onOpenSettingsChange={setSettingsOpen}
         onRetryCatalog={() => void catalogQuery.refetch()}
         onSettingsChange={setSettings}
       />
+
+      {selectedDetail ? (
+        <ImageDetailOverlay
+          item={selectedDetail}
+          modelLabel={selectedDetailModelLabel}
+          showNavigation={detailItems.length > 1}
+          onClose={() => setSelectedDetailId(null)}
+          onNext={() => moveSelectedDetail(1)}
+          onPrevious={() => moveSelectedDetail(-1)}
+        />
+      ) : null}
     </div>
   );
 }
 
 function ResultsStrip({
   jobs,
+  loading,
+  onOpenImage,
   onRetry,
 }: {
   jobs: ResultJob[];
+  loading: boolean;
+  onOpenImage: (detailId: string) => void;
   onRetry: (localId: string) => void;
+}) {
+  const t = useTranslations("fizzStudio.imageStudio");
+  const hasActiveJobs = jobs.some((job) => !isTerminalGenerationStatus(job.status));
+  const [nowMs, setNowMs] = useState(() => Date.now());
+
+  useEffect(() => {
+    if (!hasActiveJobs) return;
+    const timer = window.setInterval(() => setNowMs(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, [hasActiveJobs]);
+
+  return (
+    <div>
+      <div className="mb-4">
+        <div>
+          <h2 className="text-sm font-semibold tracking-[0.01em] text-white/88">
+            {t("results.title")}
+          </h2>
+          <p className="mt-1 text-xs font-medium text-white/42">
+            {hasActiveJobs ? t("results.liveHint") : t("results.historyHint")}
+          </p>
+        </div>
+      </div>
+      {loading && jobs.length === 0 ? <HistoryLoadingState /> : null}
+      {!loading && jobs.length === 0 ? <HistoryEmptyState /> : null}
+      {jobs.length > 0 ? (
+        <ResultsMasonry jobs={jobs} nowMs={nowMs} onOpenImage={onOpenImage} onRetry={onRetry} />
+      ) : null}
+    </div>
+  );
+}
+
+function ResultsMasonry({
+  jobs,
+  nowMs,
+  onOpenImage,
+  onRetry,
+}: {
+  jobs: ResultJob[];
+  nowMs: number;
+  onOpenImage: (detailId: string) => void;
+  onRetry: (localId: string) => void;
+}) {
+  const t = useTranslations("fizzStudio.imageStudio");
+  const items = useMemo(() => flattenResultItems(jobs, t), [jobs, t]);
+
+  return (
+    <div className="columns-2 gap-2 sm:columns-3 lg:columns-4 xl:columns-5 2xl:columns-6 min-[1880px]:columns-7">
+      {items.map((item) => {
+        if (item.kind === "image") {
+          return (
+            <ResultImageTile
+              key={item.id}
+              image={item.image}
+              job={item.job}
+              outputIndex={item.outputIndex}
+              ratio={item.ratio}
+              onOpen={() => onOpenImage(item.id)}
+            />
+          );
+        }
+        if (item.kind === "failed") {
+          return (
+            <FailedTile
+              key={item.id}
+              job={item.job}
+              message={item.message}
+              onRetry={() => onRetry(item.job.localId)}
+              ratio={item.ratio}
+            />
+          );
+        }
+        return <PendingTile key={item.id} job={item.job} nowMs={nowMs} ratio={item.ratio} />;
+      })}
+    </div>
+  );
+}
+
+type ResultMasonryItem =
+  | {
+      id: string;
+      image: ResultJob["images"][number];
+      job: ResultJob;
+      kind: "image";
+      outputIndex: number;
+      ratio: string;
+    }
+  | {
+      id: string;
+      job: ResultJob;
+      kind: "pending";
+      ratio: string;
+    }
+  | {
+      id: string;
+      job: ResultJob;
+      kind: "failed";
+      message: string;
+      ratio: string;
+    };
+
+type ResultImageDetailItem = Extract<ResultMasonryItem, { kind: "image" }>;
+
+function flattenResultItems(jobs: ResultJob[], t: ImageStudioT): ResultMasonryItem[] {
+  return jobs.flatMap((job): ResultMasonryItem[] => {
+    if (job.status === "failed" || job.status === "cancelled") {
+      return [
+        {
+          id: `${job.localId}:failed`,
+          job,
+          kind: "failed",
+          message: job.error ?? t("results.failed"),
+          ratio: aspectRatioForJob(job),
+        },
+      ];
+    }
+
+    if (job.images.length > 0) {
+      return job.images.map((image, outputIndex) => ({
+        id: `${job.localId}:${image.id}`,
+        image,
+        job,
+        kind: "image",
+        outputIndex,
+        ratio: aspectRatioForImage(job, image),
+      }));
+    }
+
+    if (job.status === "done") {
+      return [
+        {
+          id: `${job.localId}:no-output`,
+          job,
+          kind: "failed",
+          message: t("results.noOutput"),
+          ratio: aspectRatioForJob(job),
+        },
+      ];
+    }
+
+    return [
+      {
+        id: `${job.localId}:pending`,
+        job,
+        kind: "pending",
+        ratio: aspectRatioForJob(job),
+      },
+    ];
+  });
+}
+
+function flattenResultImageItems(jobs: ResultJob[]): ResultImageDetailItem[] {
+  return jobs.flatMap((job): ResultImageDetailItem[] =>
+    job.images.map((image, outputIndex) => ({
+      id: `${job.localId}:${image.id}`,
+      image,
+      job,
+      kind: "image",
+      outputIndex,
+      ratio: aspectRatioForImage(job, image),
+    }))
+  );
+}
+
+function ResultImageTile({
+  image,
+  job,
+  onOpen,
+  outputIndex,
+  ratio,
+}: {
+  image: ResultJob["images"][number];
+  job: ResultJob;
+  onOpen: () => void;
+  outputIndex: number;
+  ratio: string;
 }) {
   const t = useTranslations("fizzStudio.imageStudio");
 
   return (
-    <div className="mb-8 rounded-[16px] border border-white/[0.08] bg-white/[0.02] p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.06)] backdrop-blur-xl">
-      <h2 className="mb-4 text-sm font-semibold tracking-[0.01em] text-white/85">
-        {t("results.title")}
-      </h2>
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5">
-        {jobs.flatMap((job) => {
-          if (job.status === "failed" || job.status === "cancelled") {
-            return [
-              <FailedTile
-                key={job.localId}
-                message={job.error ?? t("results.failed")}
-                onRetry={() => onRetry(job.localId)}
-              />,
-            ];
-          }
-          if (job.images.length > 0) {
-            return job.images.map((image) => (
-              <ResultTile key={image.id} url={image.url} alt={t("results.alt")} />
-            ));
-          }
-          return [<PendingTile key={job.localId} job={job} />];
-        })}
+    <figure
+      className="group relative mb-2 break-inside-avoid overflow-hidden rounded-[12px] bg-[#151517] shadow-[0_12px_32px_rgba(0,0,0,.28)]"
+      style={{ aspectRatio: ratio }}
+    >
+      <button
+        type="button"
+        onClick={onOpen}
+        className="block size-full text-left"
+        aria-label={t("detail.open")}
+      >
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src={image.url}
+          alt={t("results.alt")}
+          loading="lazy"
+          className="size-full object-cover transition duration-500 group-hover:scale-[1.025]"
+        />
+      </button>
+      <div className="pointer-events-none absolute inset-0 bg-linear-to-b from-black/0 via-black/0 to-black/72 opacity-0 transition-opacity duration-300 group-hover:opacity-100" />
+      <figcaption className="pointer-events-none absolute inset-x-2.5 bottom-2.5 translate-y-2 opacity-0 transition duration-300 group-hover:translate-y-0 group-hover:opacity-100">
+        <div className="mb-2 flex items-center justify-between gap-2">
+          <span className="inline-flex items-center gap-1.5 rounded-full bg-black/52 px-2 py-0.5 text-[10px] font-semibold text-white/88 backdrop-blur-md">
+            <IconCircleCheck className="size-3 text-emerald-200" stroke={2} />
+            {t("results.done")}
+          </span>
+          {job.images.length > 1 ? (
+            <span className="rounded-full bg-black/52 px-1.5 py-0.5 text-[10px] font-semibold tabular-nums text-white/72 backdrop-blur-md">
+              {outputIndex + 1}/{job.images.length}
+            </span>
+          ) : null}
+        </div>
+        <p className="line-clamp-2 text-[11px] font-medium leading-4 text-white">{job.prompt}</p>
+        <p className="mt-1 text-[10px] font-medium text-white/55">
+          {formatRelativeTime(job.completedAt ?? job.updatedAt, t)}
+        </p>
+      </figcaption>
+      <a
+        href={image.url}
+        download
+        aria-label={t("results.download")}
+        className="absolute right-2 top-2 grid size-7 place-items-center rounded-full bg-black/52 text-white opacity-0 backdrop-blur-md transition hover:bg-black/72 group-hover:opacity-100"
+      >
+        <IconDownload className="size-3.5" stroke={1.9} />
+      </a>
+    </figure>
+  );
+}
+
+function PendingTile({ job, nowMs, ratio }: { job: ResultJob; nowMs: number; ratio: string }) {
+  const t = useTranslations("fizzStudio.imageStudio");
+  const statusMeta = pendingStatusMeta(job, nowMs, t);
+  const progress = pendingProgress(job, nowMs);
+
+  return (
+    <article
+      className="relative mb-2 break-inside-avoid overflow-hidden rounded-[12px] bg-[#151517] p-3 shadow-[0_12px_32px_rgba(0,0,0,.24)]"
+      style={{ aspectRatio: ratio }}
+    >
+      <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(110deg,rgba(255,255,255,0)_0%,rgba(255,255,255,0.055)_48%,rgba(255,255,255,0)_100%)] bg-[length:220%_100%] [animation:gallery-shimmer_2.6s_linear_infinite]" />
+      <div className="relative flex size-full min-h-[150px] flex-col">
+        <div className="flex items-start justify-between gap-3">
+          <div className="inline-flex items-center gap-1.5 rounded-full bg-white/[0.07] px-2 py-0.5 text-[10px] font-semibold text-white/82">
+            <IconLoader2 className="size-3 animate-spin" stroke={1.9} />
+            {statusMeta.title}
+          </div>
+          <span className="shrink-0 rounded-full bg-white/[0.07] px-1.5 py-0.5 text-[10px] font-semibold tabular-nums text-white/58">
+            {Math.round(progress * 100)}%
+          </span>
+        </div>
+        <div className="mt-auto space-y-2.5 pt-6">
+          <p className="line-clamp-3 text-xs font-medium leading-5 text-white/82">{job.prompt}</p>
+          <div className="h-1 overflow-hidden rounded-full bg-white/[0.08]">
+            <div
+              className="h-full rounded-full bg-[#E52227] transition-[width] duration-700 ease-out"
+              style={{ width: `${Math.round(progress * 100)}%` }}
+            />
+          </div>
+          <div className="grid gap-1.5 text-[11px] text-white/52">
+            <div className="flex items-center justify-between gap-3">
+              <span>{statusMeta.detail}</span>
+              <span className="font-semibold tabular-nums text-white/76">{statusMeta.time}</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </article>
+  );
+}
+
+function FailedTile({
+  job,
+  message,
+  onRetry,
+  ratio,
+}: {
+  job: ResultJob;
+  message: string;
+  onRetry: () => void;
+  ratio: string;
+}) {
+  const t = useTranslations("fizzStudio.imageStudio");
+  return (
+    <article
+      className="relative mb-2 flex break-inside-avoid flex-col justify-between overflow-hidden rounded-[12px] bg-[#1a1011] p-3 shadow-[0_12px_32px_rgba(0,0,0,.24)]"
+      style={{ aspectRatio: ratio }}
+    >
+      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_20%_0%,rgba(229,34,39,0.18),transparent_36%)]" />
+      <div className="relative">
+        <IconAlertTriangle className="size-4 text-[#ff8a8d]" stroke={1.9} />
+        <p className="mt-2 line-clamp-4 text-[11px] font-medium leading-4 text-white/72">
+          {message}
+        </p>
+        <p className="mt-2 line-clamp-3 text-[11px] leading-4 text-white/42">{job.prompt}</p>
+      </div>
+      <button
+        type="button"
+        onClick={onRetry}
+        className="relative mt-4 h-7 self-start rounded-full bg-white/[0.08] px-2.5 text-[11px] font-semibold text-white transition-colors hover:bg-white/[0.12]"
+      >
+        {t("results.retry")}
+      </button>
+    </article>
+  );
+}
+
+function ImageDetailOverlay({
+  item,
+  modelLabel,
+  onClose,
+  onNext,
+  onPrevious,
+  showNavigation,
+}: {
+  item: ResultImageDetailItem;
+  modelLabel: string;
+  onClose: () => void;
+  onNext: () => void;
+  onPrevious: () => void;
+  showNavigation: boolean;
+}) {
+  const t = useTranslations("fizzStudio.imageStudio");
+  const [promptCopyState, setPromptCopyState] = useState<"copied" | "failed" | "idle">("idle");
+  const promptCopyResetRef = useRef<number | null>(null);
+  const createdAt = item.job.completedAt ?? item.job.createdAt;
+  const resolution = imageResolutionLabel(item.image, t);
+  const ratio = imageRatioLabel(item.job, item.image);
+  const promptCopyLabel =
+    promptCopyState === "copied"
+      ? t("detail.promptCopied")
+      : promptCopyState === "failed"
+        ? t("detail.promptCopyFailed")
+        : t("detail.copyPrompt");
+
+  useEffect(() => {
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = previousOverflow;
+    };
+  }, []);
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        onClose();
+        return;
+      }
+      if (!showNavigation) return;
+      if (event.key === "ArrowLeft") {
+        event.preventDefault();
+        onPrevious();
+        return;
+      }
+      if (event.key === "ArrowRight") {
+        event.preventDefault();
+        onNext();
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [onClose, onNext, onPrevious, showNavigation]);
+
+  useEffect(() => {
+    return () => {
+      if (promptCopyResetRef.current) window.clearTimeout(promptCopyResetRef.current);
+    };
+  }, []);
+
+  const copyPrompt = useCallback(async () => {
+    const copied = await copyTextToClipboard(item.job.prompt);
+    setPromptCopyState(copied ? "copied" : "failed");
+    if (promptCopyResetRef.current) window.clearTimeout(promptCopyResetRef.current);
+    promptCopyResetRef.current = window.setTimeout(() => setPromptCopyState("idle"), 1600);
+  }, [item.job.prompt]);
+
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-label={t("detail.title")}
+      className="fixed inset-0 z-[999] overflow-hidden bg-black text-white duration-150 animate-in fade-in-0"
+    >
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        src={item.image.url}
+        alt=""
+        aria-hidden="true"
+        className="absolute inset-0 size-full scale-110 object-cover opacity-[0.22] blur-3xl"
+      />
+      <div className="absolute inset-0 bg-black/78 bg-[radial-gradient(circle_at_18%_10%,rgba(45,212,191,0.12),transparent_30%),radial-gradient(circle_at_78%_92%,rgba(124,58,237,0.18),transparent_34%)]" />
+
+      <div className="relative flex h-[100svh] min-h-0 flex-col gap-4 p-4 lg:grid lg:grid-cols-[minmax(0,1fr)_420px] lg:p-7">
+        <section className="relative flex min-h-0 flex-1 flex-col">
+          <div className="relative flex min-h-0 flex-1 items-center justify-center px-3 pb-20 pt-8 sm:px-10 lg:px-16 lg:pb-24 lg:pt-10">
+            {showNavigation ? (
+              <>
+                <button
+                  type="button"
+                  onClick={onPrevious}
+                  aria-label={t("detail.previous")}
+                  className="absolute left-0 top-1/2 hidden size-11 -translate-y-1/2 place-items-center rounded-full text-white/64 transition hover:bg-white/[0.08] hover:text-white md:grid"
+                >
+                  <IconArrowLeft className="size-5" stroke={1.8} />
+                </button>
+                <button
+                  type="button"
+                  onClick={onNext}
+                  aria-label={t("detail.next")}
+                  className="absolute right-0 top-1/2 hidden size-11 -translate-y-1/2 place-items-center rounded-full text-white/64 transition hover:bg-white/[0.08] hover:text-white md:grid"
+                >
+                  <IconArrowRight className="size-5" stroke={1.8} />
+                </button>
+              </>
+            ) : null}
+
+            <div className="relative max-h-full max-w-full">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={item.image.url}
+                alt={t("results.alt")}
+                className="max-h-[calc(100svh-210px)] max-w-full rounded-[10px] object-contain shadow-[0_30px_90px_rgba(0,0,0,.48)] lg:max-h-[calc(100svh-170px)]"
+              />
+              <a
+                href={item.image.url}
+                target="_blank"
+                rel="noreferrer"
+                aria-label={t("detail.expand")}
+                className="absolute right-3 top-3 grid size-10 place-items-center rounded-full bg-black/48 text-white backdrop-blur-md transition hover:bg-black/68"
+              >
+                <IconArrowsMaximize className="size-5" stroke={1.8} />
+              </a>
+            </div>
+          </div>
+
+          <div className="absolute inset-x-0 bottom-2 flex justify-center px-3 lg:bottom-4">
+            <div className="flex max-w-full items-center gap-2 overflow-x-auto rounded-[18px] border border-white/[0.08] bg-black/34 p-2 shadow-[0_18px_55px_rgba(0,0,0,.38)] backdrop-blur-xl">
+              <DetailActionButton
+                icon={IconSparkles}
+                label={promptCopyLabel}
+                onClick={copyPrompt}
+              />
+              <DetailActionButton
+                href={item.image.url}
+                icon={IconDownload}
+                label={t("detail.download")}
+              />
+            </div>
+          </div>
+        </section>
+
+        <aside className="flex min-h-0 flex-col rounded-[24px] border border-white/[0.08] bg-[#0d0d0f]/96 p-5 shadow-[0_24px_80px_rgba(0,0,0,.52)] backdrop-blur-xl lg:h-full">
+          <div className="flex shrink-0 items-center justify-between gap-3">
+            <a
+              href={item.image.url}
+              download
+              className="inline-flex h-10 items-center gap-2 rounded-[14px] border border-white/[0.1] px-3 text-sm font-semibold text-white transition hover:bg-white/[0.07]"
+            >
+              <IconDownload className="size-4" stroke={1.8} />
+              {t("detail.download")}
+            </a>
+            <div className="relative flex items-center gap-1.5">
+              <button
+                type="button"
+                aria-label={t("detail.close")}
+                onClick={onClose}
+                className="grid size-9 place-items-center rounded-full text-white/76 transition hover:bg-white/[0.08] hover:text-white"
+              >
+                <IconX className="size-5" stroke={1.8} />
+              </button>
+            </div>
+          </div>
+
+          <div className="mt-7 flex items-center gap-2.5">
+            <span className="grid size-7 place-items-center rounded-full bg-[#9a6336] text-white">
+              <IconSparkles className="size-3.5" stroke={2} />
+            </span>
+            <p className="text-sm font-semibold text-white/88">{t("detail.byYou")}</p>
+          </div>
+          <p className="mt-3 text-sm font-medium text-white/48">
+            {t("detail.created", { time: formatRelativeTime(createdAt, t) })}
+          </p>
+
+          <div className="mt-6 min-h-0 flex-1 overflow-y-auto pr-1">
+            <section className="rounded-[18px] border border-white/[0.08] p-4">
+              <div className="flex items-center justify-between gap-3">
+                <h3 className="inline-flex items-center gap-2 text-base font-semibold text-white/88">
+                  <IconInfoCircle className="size-4" stroke={1.8} />
+                  {t("detail.prompt")}
+                </h3>
+                <button
+                  type="button"
+                  onClick={copyPrompt}
+                  className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-[11px] bg-white/[0.08] px-3 text-xs font-semibold text-white/86 transition hover:bg-white/[0.13] hover:text-white"
+                >
+                  <IconSparkles className="size-3.5" stroke={1.8} />
+                  {promptCopyLabel}
+                </button>
+              </div>
+              <p className="mt-4 whitespace-pre-wrap text-sm font-medium leading-7 text-white/86">
+                {item.job.prompt}
+              </p>
+            </section>
+
+            <div className="mt-4 flex justify-end">
+              <span className="inline-flex items-center gap-1.5 rounded-full bg-white/[0.08] px-3 py-1 text-xs font-semibold text-white/82">
+                <IconSparkles className="size-3.5" stroke={1.8} />
+                {modelLabel}
+                <IconInfoCircle className="size-3.5 text-white/52" stroke={1.8} />
+              </span>
+            </div>
+
+            <div className="mt-5 rounded-[18px] border border-white/[0.08] p-4">
+              <h3 className="text-base font-semibold text-white/88">{t("detail.metadata")}</h3>
+              <div className="mt-4 space-y-3">
+                <DetailMetadataRow label={t("detail.resolution")} value={resolution} />
+                <DetailMetadataRow label={t("detail.ratio")} value={ratio} />
+                <DetailMetadataRow label={t("detail.model")} value={modelLabel} />
+              </div>
+            </div>
+          </div>
+        </aside>
       </div>
     </div>
   );
 }
 
-function ResultTile({ url, alt }: { url: string; alt: string }) {
+function DetailActionButton({
+  href,
+  icon: Icon,
+  label,
+  onClick,
+}: {
+  href?: string;
+  icon: ComponentType<{ className?: string; stroke?: number }>;
+  label: string;
+  onClick?: () => void;
+}) {
+  const className =
+    "inline-flex h-10 shrink-0 items-center gap-2 rounded-[14px] border border-white/[0.08] bg-white/[0.05] px-3 text-sm font-semibold text-white/86 transition hover:bg-white/[0.1] hover:text-white";
+  const content = (
+    <>
+      <Icon className="size-4" stroke={1.8} />
+      <span>{label}</span>
+    </>
+  );
+  if (href) {
+    return (
+      <a href={href} download className={className}>
+        {content}
+      </a>
+    );
+  }
   return (
-    <div className="relative aspect-square overflow-hidden rounded-[16px] bg-[#171719] ring-1 ring-white/[0.08]">
-      {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img src={url} alt={alt} className="size-full object-cover" />
+    <button type="button" onClick={onClick} className={className}>
+      {content}
+    </button>
+  );
+}
+
+function DetailMetadataRow({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex items-center justify-between gap-4 text-sm">
+      <span className="text-white/42">{label}</span>
+      <span className="min-w-0 truncate font-semibold text-white/82">{value}</span>
     </div>
   );
 }
 
-function PendingTile({ job }: { job: ResultJob }) {
-  const t = useTranslations("fizzStudio.imageStudio");
-  const label = job.status === "generating" ? t("generating") : t("queued");
-  const pct =
-    typeof job.progress === "number"
-      ? Math.round(Math.min(1, Math.max(0, job.progress)) * 100)
-      : null;
-
+function HistoryLoadingState() {
   return (
-    <div className="relative flex aspect-square flex-col items-center justify-center gap-2 overflow-hidden rounded-[16px] border border-white/[0.07] bg-white/[0.03] ring-1 ring-white/[0.08]">
-      <IconLoader2 className="size-6 animate-spin text-white/70" stroke={1.9} />
-      <span className="text-xs font-semibold text-white/70">
-        {label}
-        {pct !== null ? ` ${pct}%` : ""}
-      </span>
+    <div className="grid min-h-[220px] place-items-center sm:min-h-[260px]">
+      <IconLoader2 className="size-6 animate-spin text-white/48" stroke={1.9} />
     </div>
   );
 }
 
-function FailedTile({ message, onRetry }: { message: string; onRetry: () => void }) {
+function HistoryEmptyState() {
   const t = useTranslations("fizzStudio.imageStudio");
   return (
-    <div className="relative flex aspect-square flex-col items-center justify-center gap-2 overflow-hidden rounded-[16px] border border-[#E52227]/40 bg-[#E52227]/[0.08] p-3 text-center ring-1 ring-[#E52227]/20">
-      <IconAlertTriangle className="size-6 text-[#ff8a8d]" stroke={1.9} />
-      <span className="line-clamp-3 text-xs font-medium text-white/72">{message}</span>
-      <button
-        type="button"
-        onClick={onRetry}
-        className="mt-1 h-8 rounded-full border border-white/[0.14] bg-white/[0.06] px-3 text-xs font-semibold text-white transition-colors hover:bg-white/[0.1]"
-      >
-        {t("results.retry")}
-      </button>
+    <div className="grid min-h-[220px] place-items-center px-6 text-center sm:min-h-[260px]">
+      <div>
+        <div className="mx-auto mb-3 grid size-10 place-items-center text-white/50">
+          <IconClock className="size-5" stroke={1.8} />
+        </div>
+        <p className="text-sm font-semibold text-white/82">{t("results.emptyTitle")}</p>
+        <p className="mt-1 max-w-sm text-xs leading-5 text-white/42">{t("results.emptyBody")}</p>
+      </div>
     </div>
   );
+}
+
+function jobViewToResultJob(job: FizzAiJobView, t: ImageStudioT): ResultJob {
+  const status = generationStatusFromRaw(job.status);
+  return {
+    localId: job.id,
+    jobId: job.id,
+    modelId: job.modelId,
+    prompt: job.prompt,
+    input: job.input,
+    status,
+    stage: job.stage || stageFromStatus(status),
+    progress: job.progress ?? null,
+    queuePosition: job.queuePosition ?? null,
+    estimatedWaitSeconds: job.estimatedWaitSeconds ?? null,
+    estimatedRunSeconds: job.estimatedRunSeconds ?? null,
+    estimatedTotalSeconds: job.estimatedTotalSeconds ?? null,
+    etaConfidence: job.etaConfidence ?? "low",
+    images: resultImages(job.outputs),
+    createdAt: job.createdAt,
+    updatedAt: job.updatedAt,
+    completedAt: job.completedAt ?? null,
+    error:
+      status === "failed" || status === "cancelled"
+        ? errorMessageFromJob(job, t("results.failed"))
+        : undefined,
+  };
+}
+
+function jobUpdateToResultJob(job: AiJobUpdatePayload, t: ImageStudioT): ResultJob {
+  const status = generationStatusFromRaw(job.status);
+  return {
+    localId: job.id,
+    jobId: job.id,
+    modelId: job.modelId,
+    prompt: job.prompt,
+    input: job.input,
+    status,
+    stage: job.stage || stageFromStatus(status),
+    progress: job.progress ?? null,
+    queuePosition: job.queuePosition ?? null,
+    estimatedWaitSeconds: job.estimatedWaitSeconds ?? null,
+    estimatedRunSeconds: job.estimatedRunSeconds ?? null,
+    estimatedTotalSeconds: job.estimatedTotalSeconds ?? null,
+    etaConfidence: job.etaConfidence ?? "low",
+    images: resultImages(job.outputs),
+    createdAt: job.createdAt,
+    updatedAt: job.updatedAt,
+    completedAt: job.completedAt ?? null,
+    error:
+      status === "failed" || status === "cancelled"
+        ? (job.error?.userMessage ?? t("results.failed"))
+        : undefined,
+  };
+}
+
+function resultImages(
+  outputs: Array<{
+    height?: number | null;
+    id: string;
+    type: "image" | "video";
+    url: string;
+    width?: number | null;
+  }>
+): ResultJob["images"] {
+  return outputs
+    .filter((output) => output.type === "image" && Boolean(output.url))
+    .map((output) => ({
+      height: output.height ?? null,
+      id: output.id,
+      url: output.url,
+      width: output.width ?? null,
+    }));
+}
+
+function aspectRatioForImage(job: ResultJob, image: ResultJob["images"][number]): string {
+  if (
+    typeof image.width === "number" &&
+    typeof image.height === "number" &&
+    image.width > 0 &&
+    image.height > 0
+  ) {
+    return `${image.width} / ${image.height}`;
+  }
+  return aspectRatioForJob(job);
+}
+
+function aspectRatioForJob(job: ResultJob): string {
+  return (
+    aspectRatioFromInputValue(job.input?.aspectRatio) ??
+    aspectRatioFromInputValue(job.input?.aspect_ratio) ??
+    aspectRatioFromInputValue(job.input?.imageSize) ??
+    aspectRatioFromInputValue(job.input?.size) ??
+    "1 / 1"
+  );
+}
+
+async function copyTextToClipboard(text: string): Promise<boolean> {
+  if (copyTextWithSelection(text)) return true;
+
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(text);
+      return true;
+    }
+  } catch {
+    return false;
+  }
+}
+
+function copyTextWithSelection(text: string): boolean {
+  try {
+    const textarea = document.createElement("textarea");
+    textarea.value = text;
+    textarea.setAttribute("readonly", "true");
+    textarea.style.position = "fixed";
+    textarea.style.left = "-9999px";
+    textarea.style.top = "0";
+    textarea.style.opacity = "0";
+    document.body.appendChild(textarea);
+    textarea.focus({ preventScroll: true });
+    textarea.select();
+    textarea.setSelectionRange(0, textarea.value.length);
+    const copied = document.execCommand("copy");
+    document.body.removeChild(textarea);
+    return copied;
+  } catch {
+    return false;
+  }
+}
+
+function imageResolutionLabel(image: ResultJob["images"][number], t: ImageStudioT): string {
+  if (
+    typeof image.width === "number" &&
+    typeof image.height === "number" &&
+    image.width > 0 &&
+    image.height > 0
+  ) {
+    return `${Math.round(image.width)} x ${Math.round(image.height)}`;
+  }
+  return t("detail.unknownResolution");
+}
+
+function imageRatioLabel(job: ResultJob, image: ResultJob["images"][number]): string {
+  if (
+    typeof image.width === "number" &&
+    typeof image.height === "number" &&
+    image.width > 0 &&
+    image.height > 0
+  ) {
+    const divisor = greatestCommonDivisor(Math.round(image.width), Math.round(image.height));
+    return `${Math.round(image.width) / divisor}:${Math.round(image.height) / divisor}`;
+  }
+  return aspectRatioForImage(job, image).replace(/\s*\/\s*/g, ":");
+}
+
+function greatestCommonDivisor(a: number, b: number): number {
+  let x = Math.abs(a);
+  let y = Math.abs(b);
+  while (y > 0) {
+    const next = x % y;
+    x = y;
+    y = next;
+  }
+  return x || 1;
+}
+
+function aspectRatioFromInputValue(value: unknown): string | null {
+  if (typeof value !== "string" || !value.trim()) return null;
+  const normalized = value.trim().toLowerCase();
+  const numeric = normalized.match(/(\d+(?:\.\d+)?)\s*[:/x]\s*(\d+(?:\.\d+)?)/);
+  if (numeric) {
+    const width = Number(numeric[1]);
+    const height = Number(numeric[2]);
+    if (width > 0 && height > 0) return `${width} / ${height}`;
+  }
+
+  const token = normalized.replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
+  const aliases: Record<string, string> = {
+    square: "1 / 1",
+    square_hd: "1 / 1",
+    landscape: "4 / 3",
+    landscape_4_3: "4 / 3",
+    landscape_hd: "16 / 9",
+    landscape_16_9: "16 / 9",
+    portrait: "3 / 4",
+    portrait_4_3: "3 / 4",
+    portrait_9_16: "9 / 16",
+    portrait_16_9: "9 / 16",
+    widescreen: "16 / 9",
+  };
+  return aliases[token] ?? null;
+}
+
+function mergeResultJobs(incoming: ResultJob[], existing: ResultJob[]): ResultJob[] {
+  return incoming.reduce((acc, job) => mergeResultJob(acc, job), existing);
+}
+
+function mergeResultJob(existing: ResultJob[], incoming: ResultJob): ResultJob[] {
+  const index = existing.findIndex((job) => sameLogicalJob(job, incoming));
+  const next =
+    index >= 0
+      ? existing.map((job, i) => (i === index ? mergeResultJobRow(job, incoming) : job))
+      : [incoming, ...existing];
+  return next.sort((a, b) => timestampMs(b.createdAt) - timestampMs(a.createdAt));
+}
+
+function sameLogicalJob(a: ResultJob, b: ResultJob): boolean {
+  if (a.jobId && b.jobId && a.jobId === b.jobId) return true;
+  if (a.localId && b.localId && a.localId === b.localId) return true;
+  if (a.jobId || !b.jobId || a.prompt !== b.prompt) return false;
+  if (isTerminalGenerationStatus(a.status)) return false;
+  const aCreated = timestampMs(a.createdAt);
+  const bCreated = timestampMs(b.createdAt);
+  return Math.abs(aCreated - bCreated) < 5 * 60 * 1000;
+}
+
+function mergeResultJobRow(current: ResultJob, incoming: ResultJob): ResultJob {
+  const incomingIsNewer =
+    (!current.jobId && Boolean(incoming.jobId)) ||
+    timestampMs(incoming.updatedAt) >= timestampMs(current.updatedAt);
+  const primary = incomingIsNewer ? incoming : current;
+  const fallback = incomingIsNewer ? current : incoming;
+  return {
+    ...fallback,
+    ...primary,
+    localId: current.localId || incoming.localId,
+    jobId: incoming.jobId || current.jobId,
+    prompt: primary.prompt || fallback.prompt,
+    images: incoming.images.length > 0 ? incoming.images : current.images,
+    createdAt: incoming.createdAt || current.createdAt,
+    updatedAt: primary.updatedAt || fallback.updatedAt,
+    completedAt: incoming.completedAt ?? current.completedAt ?? null,
+    error: incoming.error ?? current.error,
+  };
+}
+
+function optimisticRunSeconds(settings: ImageGenerationSettings): number {
+  const count = Math.max(1, settings.variations || 1);
+  const qualityFactor = settings.quality === "high" ? 1.35 : settings.quality === "low" ? 0.8 : 1;
+  const resolution = settings.resolution.toLowerCase();
+  const resolutionFactor = resolution.includes("4k") ? 1.55 : resolution.includes("2k") ? 1.2 : 1;
+  return Math.ceil(72 * count * qualityFactor * resolutionFactor);
+}
+
+function pendingProgress(job: ResultJob, nowMs: number): number {
+  if (typeof job.progress === "number") {
+    return clamp(job.progress, 0.04, 0.97);
+  }
+
+  const elapsed = elapsedSeconds(job.updatedAt, nowMs);
+  if (job.stage === "submitting" || job.stage === "created" || job.stage === "validating") {
+    return clamp(0.04 + elapsed / 45, 0.04, 0.18);
+  }
+  if (job.stage === "queued" || job.stage === "provider_queued") {
+    const wait = waitEstimateSeconds(job);
+    const ratio = wait ? elapsed / wait : 0.35;
+    return clamp(0.12 + ratio * 0.24, 0.12, 0.36);
+  }
+  if (job.stage === "calling_provider") {
+    return clamp(0.22 + elapsed / 90, 0.22, 0.4);
+  }
+  if (job.stage === "fetching_output") return 0.88;
+  if (job.stage === "uploading_to_oss") return 0.94;
+
+  const run = job.estimatedRunSeconds ?? job.estimatedTotalSeconds ?? 90;
+  return clamp(0.38 + (elapsed / run) * 0.48, 0.38, 0.86);
+}
+
+function pendingStatusMeta(job: ResultJob, nowMs: number, t: ImageStudioT) {
+  if (job.stage === "submitting" || job.stage === "created" || job.stage === "validating") {
+    return {
+      title: t("results.preparing"),
+      detail: t("results.submittingDetail"),
+      time: t("results.estimating"),
+    };
+  }
+
+  if (job.stage === "queued" || job.stage === "provider_queued" || job.status === "queued") {
+    const remaining = remainingFromAnchor(waitEstimateSeconds(job), job.updatedAt, nowMs);
+    const position =
+      typeof job.queuePosition === "number"
+        ? t("results.queuePosition", { position: job.queuePosition + 1 })
+        : t("results.queueStartingSoon");
+    return {
+      title: t("results.queued"),
+      detail: position,
+      time:
+        remaining && remaining > 3
+          ? t("results.queueEta", { time: formatDuration(remaining, t) })
+          : t("results.queueStartingSoon"),
+    };
+  }
+
+  if (job.stage === "fetching_output" || job.stage === "uploading_to_oss") {
+    return {
+      title: t("results.uploading"),
+      detail: t("results.finalizingDetail"),
+      time: t("results.almostDone"),
+    };
+  }
+
+  const remaining = remainingFromAnchor(
+    job.estimatedRunSeconds ?? job.estimatedTotalSeconds,
+    job.updatedAt,
+    nowMs
+  );
+  return {
+    title: t("results.generating"),
+    detail: t("results.generatingDetail"),
+    time:
+      remaining && remaining > 3
+        ? t("results.generatingEta", { time: formatDuration(remaining, t) })
+        : t("results.almostDone"),
+  };
+}
+
+function waitEstimateSeconds(job: ResultJob): number | null {
+  if (typeof job.estimatedWaitSeconds === "number") {
+    return Math.max(0, job.estimatedWaitSeconds);
+  }
+  if (typeof job.queuePosition === "number" && typeof job.estimatedRunSeconds === "number") {
+    return Math.max(0, job.queuePosition * job.estimatedRunSeconds);
+  }
+  return null;
+}
+
+function stageFromStatus(status: FizzAiGenerationStatus): string {
+  if (status === "done") return "completed";
+  return status;
+}
+
+function formatDuration(seconds: number, t: ImageStudioT): string {
+  const totalSeconds = Math.max(1, Math.ceil(seconds));
+  if (totalSeconds < 60) return t("results.duration.seconds", { seconds: totalSeconds });
+  const minutes = Math.floor(totalSeconds / 60);
+  const remainingSeconds = totalSeconds % 60;
+  if (remainingSeconds === 0 || minutes >= 3) {
+    return t("results.duration.minutes", { minutes: Math.ceil(totalSeconds / 60) });
+  }
+  return t("results.duration.minuteSeconds", {
+    minutes,
+    seconds: remainingSeconds,
+  });
+}
+
+function formatRelativeTime(value: string, t: ImageStudioT): string {
+  const elapsed = Math.max(0, Date.now() - timestampMs(value));
+  const minutes = Math.floor(elapsed / 60_000);
+  if (minutes < 1) return t("results.relative.justNow");
+  if (minutes < 60) return t("results.relative.minutesAgo", { minutes });
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return t("results.relative.hoursAgo", { hours });
+  return t("results.relative.daysAgo", { days: Math.floor(hours / 24) });
+}
+
+function remainingFromAnchor(
+  seconds: number | null | undefined,
+  anchorIso: string,
+  nowMs: number
+): number | null {
+  if (typeof seconds !== "number" || !Number.isFinite(seconds)) return null;
+  return Math.max(0, seconds - elapsedSeconds(anchorIso, nowMs));
+}
+
+function elapsedSeconds(anchorIso: string, nowMs: number): number {
+  return Math.max(0, (nowMs - timestampMs(anchorIso)) / 1000);
+}
+
+function timestampMs(value: string): number {
+  const ms = Date.parse(value);
+  return Number.isFinite(ms) ? ms : 0;
+}
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.min(max, Math.max(min, value));
 }
 
 function ImageStudioTopBar({
@@ -595,11 +1824,15 @@ function ImagePromptComposer({
   submitting,
   submitError,
   priceEstimate,
+  referenceImages,
+  referenceUploadError,
   canSubmit,
   onPromptChange,
   onSubmit,
   onOpenSettingsChange,
   onRetryCatalog,
+  onReferenceFiles,
+  onRemoveReferenceImage,
   onSettingsChange,
 }: {
   models: FizzAiModel[];
@@ -611,14 +1844,19 @@ function ImagePromptComposer({
   submitting: boolean;
   submitError: string | null;
   priceEstimate: { sellPoints: number } | null;
+  referenceImages: ReferenceImage[];
+  referenceUploadError: string | null;
   canSubmit: boolean;
   onPromptChange: (value: string) => void;
   onSubmit: () => void;
   onOpenSettingsChange: (open: boolean) => void;
   onRetryCatalog: () => void;
+  onReferenceFiles: (files: FileList | null) => void;
+  onRemoveReferenceImage: (id: string) => void;
   onSettingsChange: (settings: ImageGenerationSettings) => void;
 }) {
   const t = useTranslations("fizzStudio.imageStudio");
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
   const modelLabel = settings.model
     ? getImageModelLabel(models, settings.model)
     : t("noModelSelected");
@@ -646,21 +1884,57 @@ function ImagePromptComposer({
         />
         <div className="relative z-10 w-full overflow-hidden rounded-[16px] border border-white/[0.08] bg-[#141416] text-white shadow-[0_24px_70px_rgba(0,0,0,0.55),inset_0_1px_0_rgba(255,255,255,0.08)]">
           <div className="grid gap-0 md:grid-cols-[168px_1fr]">
-            <div className="hidden border-r border-white/[0.07] p-4 md:block">
+            <div className="border-b border-white/[0.07] p-4 md:border-b-0 md:border-r">
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/jpeg,image/png,image/webp"
+                multiple
+                className="sr-only"
+                onChange={(event) => {
+                  onReferenceFiles(event.target.files);
+                  event.currentTarget.value = "";
+                }}
+              />
               <button
                 type="button"
-                className="flex h-[86px] w-full items-center justify-center rounded-[16px] border border-white/[0.07] bg-white/[0.03] text-white/70 transition-colors hover:border-white/[0.12] hover:bg-white/[0.06] hover:text-white"
+                disabled={referenceImages.length >= 4}
+                onClick={() => fileInputRef.current?.click()}
+                className="flex h-[86px] w-full items-center justify-center overflow-hidden rounded-[16px] border border-white/[0.07] bg-white/[0.03] text-white/70 transition-colors hover:border-white/[0.12] hover:bg-white/[0.06] hover:text-white disabled:cursor-not-allowed disabled:opacity-45"
                 aria-label={t("addImage")}
               >
-                <IconPlus className="size-5" stroke={1.9} />
+                {referenceImages[0]?.url ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={referenceImages[0].url} alt="" className="size-full object-cover" />
+                ) : referenceImages[0]?.uploading ? (
+                  <ReferenceUploadProgress progress={referenceImages[0].progress} />
+                ) : (
+                  <IconPlus className="size-5" stroke={1.9} />
+                )}
               </button>
+              {referenceImages.length > 0 ? (
+                <div className="mt-2 grid grid-cols-4 gap-1.5 md:grid-cols-3">
+                  {referenceImages.map((image) => (
+                    <ReferenceThumb
+                      key={image.id}
+                      image={image}
+                      onRemove={() => onRemoveReferenceImage(image.id)}
+                    />
+                  ))}
+                </div>
+              ) : null}
               <button
                 type="button"
-                className="mt-3 inline-flex h-9 w-full items-center justify-center gap-2 rounded-full border border-white/[0.08] bg-white/[0.05] px-3 text-sm font-semibold text-white/86 transition-colors hover:bg-white/[0.08] hover:text-white"
+                disabled={referenceImages.length >= 4}
+                onClick={() => fileInputRef.current?.click()}
+                className="mt-3 inline-flex h-9 w-full items-center justify-center gap-2 rounded-full border border-white/[0.08] bg-white/[0.05] px-3 text-sm font-semibold text-white/86 transition-colors hover:bg-white/[0.08] hover:text-white disabled:cursor-not-allowed disabled:opacity-45"
               >
                 <IconPlus className="size-4" stroke={1.9} />
                 {t("addImage")}
               </button>
+              {referenceUploadError ? (
+                <p className="mt-2 text-xs font-medium text-[#ff8a8d]">{referenceUploadError}</p>
+              ) : null}
             </div>
 
             <div className="min-w-0 p-4">
@@ -695,6 +1969,7 @@ function ImagePromptComposer({
                     <IconAdjustmentsHorizontal className="size-4" stroke={1.8} />
                     {modelLabel}
                     {settings.aspectRatio ? ` / ${settings.aspectRatio}` : ""}
+                    {settings.resolution ? ` / ${settings.resolution}` : ""}
                     <IconChevronDown className="size-4 text-white/48" stroke={1.9} />
                   </button>
                 </div>
@@ -724,5 +1999,38 @@ function ImagePromptComposer({
         </div>
       </div>
     </>
+  );
+}
+
+function ReferenceUploadProgress({ progress }: { progress: number }) {
+  return (
+    <span className="flex size-full flex-col items-center justify-center gap-1 text-white/70">
+      <IconLoader2 className="size-5 animate-spin" stroke={1.9} />
+      <span className="text-xs font-semibold tabular-nums">{Math.round(progress)}%</span>
+    </span>
+  );
+}
+
+function ReferenceThumb({ image, onRemove }: { image: ReferenceImage; onRemove: () => void }) {
+  return (
+    <div className="group relative aspect-square overflow-hidden rounded-[10px] border border-white/[0.08] bg-white/[0.04]">
+      {image.url ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img src={image.url} alt="" className="size-full object-cover" />
+      ) : image.uploading ? (
+        <ReferenceUploadProgress progress={image.progress} />
+      ) : (
+        <span className="flex size-full items-center justify-center text-[#ff8a8d]">
+          <IconPhoto className="size-4" stroke={1.8} />
+        </span>
+      )}
+      <button
+        type="button"
+        onClick={onRemove}
+        className="absolute right-1 top-1 flex size-5 items-center justify-center rounded-full bg-black/62 text-white opacity-0 transition-opacity group-hover:opacity-100"
+      >
+        <IconX className="size-3" stroke={2} />
+      </button>
+    </div>
   );
 }

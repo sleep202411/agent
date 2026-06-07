@@ -1,6 +1,6 @@
 "use client";
 
-import { estimateGenerationPrice, type AiGenUnitType } from "@repo/shared";
+import { estimateProductModelPoints, type AiProductPricingPolicy } from "@repo/shared";
 import { api } from "@/src/lib/api";
 import { ApiRequestError } from "@/src/lib/api/api-client";
 import { emitUpgrade, payloadFromServerError } from "@/src/lib/quota/upgrade-dialog-store";
@@ -18,6 +18,9 @@ type FizzAiSchemaProperty = {
   enum?: unknown[];
   maximum?: number;
   minimum?: number;
+  maxItems?: number;
+  minItems?: number;
+  items?: FizzAiSchemaProperty;
   properties?: Record<string, FizzAiSchemaProperty>;
   required?: string[];
   type?: string;
@@ -50,13 +53,9 @@ export interface FizzAiModel {
     reason?: string;
   };
   input_schema: FizzAiInputSchema;
+  parameter_policy?: Record<string, unknown>;
   billing_policy?: {
-    pricing?: {
-      /** nanoUSD as a string; BigInt() it at compute time. */
-      unitPriceNanoUsd: string;
-      unitType: "per_image" | "per_megapixel" | "per_unit";
-      marginBps: number;
-    };
+    productPricing?: AiProductPricingPolicy;
   };
 }
 
@@ -104,10 +103,18 @@ export interface FizzAiJobView {
   };
   queuePosition?: number | null;
   progress?: number | null;
+  estimatedWaitSeconds?: number | null;
+  estimatedRunSeconds?: number | null;
   estimatedTotalSeconds?: number | null;
+  etaConfidence?: "high" | "low" | "medium";
   createdAt: string;
   updatedAt: string;
   completedAt?: string;
+}
+
+export interface FizzAiJobListResponse {
+  jobs: FizzAiJobView[];
+  nextCursor?: string | null;
 }
 
 export interface FizzAiSubmitResponse {
@@ -290,36 +297,35 @@ export async function listFizzAiCatalog(): Promise<FizzAiCatalog> {
   };
 }
 
-/**
- * Live 积分 sell price for a model + output count, via the shared estimator.
- * Returns null when the model carries no parameterized pricing (no fake
- * placeholder). `approx` is true for per_megapixel models, where the exact
- * megapixels can't be derived from an aspect-token and a 1 MP base is used.
- */
+export interface FizzAiPointEstimateInput {
+  hasMask?: boolean;
+  numOutputs?: number;
+  quality?: string;
+  referenceImageCount?: number;
+  resolution?: string;
+}
+
+/** Live product-price estimate for a model and selected ContainerModel params. */
 export function estimateModelSellPoints(
   model: FizzAiModel | undefined,
-  numImages: number,
-  megapixels: number
-): { sellPoints: number } | null {
-  const pricing = model?.billing_policy?.pricing;
-  if (!pricing) return null;
-  let unitPriceNanoUsd: bigint;
+  input: FizzAiPointEstimateInput = {}
+): { sellPoints: number; pricingVersion: string; pointsPerOutput: number } | null {
+  const productPricing = model?.billing_policy?.productPricing;
+  if (!productPricing) return null;
   try {
-    unitPriceNanoUsd = BigInt(pricing.unitPriceNanoUsd || "0");
-  } catch {
-    return null;
-  }
-  try {
-    const { sellPoints } = estimateGenerationPrice({
-      unitPriceNanoUsd,
-      unitType: pricing.unitType as AiGenUnitType,
-      marginBps: pricing.marginBps,
-      numImages: Math.max(1, Math.round(numImages || 1)),
-      // Exact megapixels for the chosen size → deterministic price (used only
-      // by per_megapixel models; ignored for per_image / per_unit).
-      megapixels: Math.max(0.01, megapixels || 1),
+    const result = estimateProductModelPoints({
+      policy: productPricing,
+      numOutputs: input.numOutputs,
+      quality: input.quality,
+      referenceImageCount: input.referenceImageCount,
+      resolution: input.resolution,
+      hasMask: input.hasMask,
     });
-    return { sellPoints };
+    return {
+      sellPoints: result.sellPoints,
+      pricingVersion: result.pricingVersion,
+      pointsPerOutput: result.pointsPerOutput,
+    };
   } catch {
     return null;
   }
@@ -353,6 +359,21 @@ export async function submitFizzAiJob(input: FizzAiSubmitJobInput): Promise<Fizz
 
 export async function getFizzAiJob(id: string): Promise<FizzAiJobView> {
   return api.get<FizzAiJobView>(`/aurora/ai/jobs/${encodeURIComponent(id)}`, {
+    timeout: 15_000,
+  });
+}
+
+export async function listFizzAiJobs(input: {
+  limit?: number;
+  type?: FizzAiJobType;
+  workspaceId?: string;
+}): Promise<FizzAiJobListResponse> {
+  const params = new URLSearchParams();
+  if (input.limit) params.set("limit", String(input.limit));
+  if (input.type) params.set("type", input.type);
+  if (input.workspaceId) params.set("workspaceId", input.workspaceId);
+  const query = params.toString();
+  return api.get<FizzAiJobListResponse>(`/aurora/ai/jobs${query ? `?${query}` : ""}`, {
     timeout: 15_000,
   });
 }

@@ -85,6 +85,7 @@ interface ConfirmResponse {
   mediaAssetId: string;
   storageKey: string;
   provider: "azure_blob" | "aliyun_oss" | "s3_compatible";
+  url: string;
 }
 
 export interface UploadFileOptions {
@@ -101,6 +102,8 @@ export interface UploadFileResult {
   mediaAssetId: string;
   /** Authoritative storage key (audit / debugging only — save uses the id). */
   storageKey: string;
+  /** Browser/provider-fetchable URL resolved by the server. */
+  url: string;
 }
 
 // ─── Step 1: request a signed write URL (stateless) ──
@@ -260,8 +263,8 @@ async function confirmUpload(
     const message = json.message || json.msg;
     throw new Error(message ? message : `confirmUpload failed: HTTP ${res.status}`);
   }
-  if (!json.mediaAssetId) {
-    throw new Error("confirmUpload succeeded but returned no mediaAssetId");
+  if (!json.mediaAssetId || !json.url) {
+    throw new Error("confirmUpload succeeded but returned no mediaAssetId/url");
   }
   return json as ConfirmResponse;
 }
@@ -299,5 +302,5 @@ export async function uploadFileViaSignedUrl(
   );
   await putBytesToStorage(info, file, { onProgress: opts.onProgress, signal: opts.signal });
   const confirmed = await confirmUpload(info.storageKey, opts.kind, contentType, opts.signal);
-  return { mediaAssetId: confirmed.mediaAssetId, storageKey: info.storageKey };
+  return { mediaAssetId: confirmed.mediaAssetId, storageKey: info.storageKey, url: confirmed.url };
 }

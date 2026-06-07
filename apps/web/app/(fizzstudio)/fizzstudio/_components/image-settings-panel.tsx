@@ -1,24 +1,17 @@
 "use client";
 
-import { useEffect, useId, useMemo, useState } from "react";
+import { createElement, useEffect, useId, useMemo, useState } from "react";
 import type { ComponentType } from "react";
 import {
   IconAlertTriangle,
-  IconBolt,
-  IconBrain,
-  IconBrandGoogle,
   IconBrandOpenai,
   IconLock,
   IconPhoto,
   IconRectangle,
   IconRectangleVertical,
-  IconSailboat,
   IconSearch,
   IconSparkles,
   IconSquare,
-  IconTypography,
-  IconVector,
-  IconWand,
   IconX,
 } from "@tabler/icons-react";
 import { cn } from "@/lib/utils";
@@ -36,17 +29,7 @@ import {
 type SettingsIcon = ComponentType<{ className?: string; stroke?: number }>;
 
 /** Map a catalog model (by id / name) to a brand-or-family tabler icon. */
-const MODEL_ICON_RULES: Array<[RegExp, SettingsIcon]> = [
-  [/gpt/, IconBrandOpenai],
-  [/nano.?banana|gemini/, IconBrandGoogle],
-  [/midjourney/, IconSailboat],
-  [/flux|krea/, IconBolt],
-  [/qwen/, IconBrain],
-  [/seedream/, IconWand],
-  [/ideogram/, IconTypography],
-  [/recraft/, IconVector],
-  [/minimax/, IconSparkles],
-];
+const MODEL_ICON_RULES: Array<[RegExp, SettingsIcon]> = [[/gpt/, IconBrandOpenai]];
 
 function modelIcon(model: FizzAiModel): SettingsIcon {
   const key = `${model.id ?? ""} ${model.name ?? ""}`.toLowerCase();
@@ -65,6 +48,8 @@ function modelIcon(model: FizzAiModel): SettingsIcon {
 export interface ImageGenerationSettings {
   aspectRatio: string;
   model: string;
+  outputFormat: string;
+  quality: string;
   resolution: string;
   variations: number;
 }
@@ -83,6 +68,8 @@ interface ImageSettingsPanelProps {
 export const DEFAULT_IMAGE_GENERATION_SETTINGS: ImageGenerationSettings = {
   aspectRatio: "",
   model: "",
+  outputFormat: "",
+  quality: "",
   resolution: "",
   variations: 1,
 };
@@ -96,6 +83,7 @@ const IMAGE_SIZE_META: Record<string, { icon: SettingsIcon; label: string; mp: n
   portrait_16_9: { icon: IconRectangleVertical, label: "9:16", mp: 0.59 }, // 576×1024
   landscape_4_3: { icon: IconRectangle, label: "4:3", mp: 0.79 }, // 1024×768
   landscape_16_9: { icon: IconRectangle, label: "16:9", mp: 0.59 }, // 1024×576
+  auto: { icon: IconSparkles, label: "Auto", mp: 1 },
 };
 
 function imageSizeMeta(token: string): {
@@ -115,6 +103,8 @@ export function imageSizeMegapixels(token: string): number {
 const SIZE_FIELD = "imageSize";
 /** Optional discrete resolution field (not emitted by current image models). */
 const RESOLUTION_FIELD = "resolution";
+const QUALITY_FIELD = "quality";
+const OUTPUT_FORMAT_FIELD = "outputFormat";
 
 export function modelById(models: FizzAiModel[], id: string): FizzAiModel | undefined {
   return models.find((model) => model.id === id);
@@ -142,12 +132,18 @@ export function settingsForModel(
   if (!model) return { ...base, model: "" };
   const sizes = enumOptions(model, SIZE_FIELD);
   const resolutions = enumOptions(model, RESOLUTION_FIELD);
+  const qualities = enumOptions(model, QUALITY_FIELD);
+  const outputFormats = enumOptions(model, OUTPUT_FORMAT_FIELD);
   const defaultSize = enumDefault(model, SIZE_FIELD) ?? sizes?.[0] ?? "";
   const defaultResolution = enumDefault(model, RESOLUTION_FIELD) ?? resolutions?.[0] ?? "";
+  const defaultQuality = enumDefault(model, QUALITY_FIELD) ?? qualities?.[0] ?? "";
+  const defaultOutputFormat = enumDefault(model, OUTPUT_FORMAT_FIELD) ?? outputFormats?.[0] ?? "";
   return {
     ...base,
     model: model.id,
     aspectRatio: defaultSize,
+    outputFormat: defaultOutputFormat,
+    quality: defaultQuality,
     resolution: defaultResolution,
     variations: clampVariations(model, base.variations || 1),
   };
@@ -192,6 +188,10 @@ export function ImageSettingsPanel({
 
   const sizeOptions = selectedModel ? enumOptions(selectedModel, SIZE_FIELD) : null;
   const resolutionOptions = selectedModel ? enumOptions(selectedModel, RESOLUTION_FIELD) : null;
+  const qualityOptions = selectedModel ? enumOptions(selectedModel, QUALITY_FIELD) : null;
+  const outputFormatOptions = selectedModel
+    ? enumOptions(selectedModel, OUTPUT_FORMAT_FIELD)
+    : null;
   const variationMax = selectedModel ? maxOutputs(selectedModel) : 1;
   const showVariations = selectedModel ? supportsOutputCount(selectedModel) : false;
   const sizeDefault = selectedModel ? enumDefault(selectedModel, SIZE_FIELD) : undefined;
@@ -249,7 +249,9 @@ export function ImageSettingsPanel({
               settings={settings}
               variationMax={variationMax}
               showVariations={showVariations}
+              qualityOptions={qualityOptions}
               resolutionOptions={resolutionOptions}
+              outputFormatOptions={outputFormatOptions}
               onChange={updateSettings}
             />
           </div>
@@ -374,8 +376,7 @@ function ModelRow({
 }) {
   const t = useTranslations("fizzStudio.imageStudio");
   const lockReason = model.access?.reason || model.disabledReason;
-  const Icon = modelIcon(model);
-  const price = estimateModelSellPoints(model, 1, 1);
+  const price = estimateModelSellPoints(model);
 
   return (
     <button
@@ -400,7 +401,7 @@ function ModelRow({
           locked && "opacity-60"
         )}
       >
-        <Icon className="size-4" stroke={1.7} />
+        {createElement(modelIcon(model), { className: "size-4", stroke: 1.7 })}
       </span>
       <span className="flex min-w-0 flex-1 items-center gap-1.5">
         <span className="truncate text-[13px] font-medium">{model.name}</span>
@@ -482,13 +483,17 @@ function MoreOptionsPanel({
   settings,
   variationMax,
   showVariations,
+  qualityOptions,
   resolutionOptions,
+  outputFormatOptions,
   onChange,
 }: {
   settings: ImageGenerationSettings;
   variationMax: number;
   showVariations: boolean;
+  qualityOptions: string[] | null;
   resolutionOptions: string[] | null;
+  outputFormatOptions: string[] | null;
   onChange: (settings: Partial<ImageGenerationSettings>) => void;
 }) {
   const t = useTranslations("fizzStudio.imageStudio");
@@ -499,6 +504,8 @@ function MoreOptionsPanel({
   );
 
   const showResolution = Boolean(resolutionOptions && resolutionOptions.length > 0);
+  const showQuality = Boolean(qualityOptions && qualityOptions.length > 0);
+  const showOutputFormat = Boolean(outputFormatOptions && outputFormatOptions.length > 0);
 
   return (
     <section className="min-w-0">
@@ -555,6 +562,50 @@ function MoreOptionsPanel({
                     ) : null}
                   </span>
                   {resolution}
+                </button>
+              ))}
+            </div>
+          </SettingRow>
+        ) : null}
+        {showQuality ? (
+          <SettingRow label={t("settings.quality")}>
+            <div className="flex flex-wrap items-center justify-end gap-2">
+              {qualityOptions!.map((quality) => (
+                <button
+                  key={quality}
+                  type="button"
+                  aria-pressed={settings.quality === quality}
+                  onClick={() => onChange({ quality })}
+                  className={cn(
+                    "h-9 rounded-[12px] border px-3 text-sm font-semibold capitalize transition duration-200",
+                    settings.quality === quality
+                      ? "border-white/25 bg-white/[0.12] text-white ring-1 ring-white/15"
+                      : "border-white/[0.07] bg-white/[0.03] text-white/68 hover:bg-white/[0.06] hover:text-white"
+                  )}
+                >
+                  {t(`settings.qualityOptions.${quality}`)}
+                </button>
+              ))}
+            </div>
+          </SettingRow>
+        ) : null}
+        {showOutputFormat ? (
+          <SettingRow label={t("settings.outputFormat")}>
+            <div className="flex flex-wrap items-center justify-end gap-2">
+              {outputFormatOptions!.map((outputFormat) => (
+                <button
+                  key={outputFormat}
+                  type="button"
+                  aria-pressed={settings.outputFormat === outputFormat}
+                  onClick={() => onChange({ outputFormat })}
+                  className={cn(
+                    "h-9 rounded-[12px] border px-3 text-sm font-semibold uppercase transition duration-200",
+                    settings.outputFormat === outputFormat
+                      ? "border-white/25 bg-white/[0.12] text-white ring-1 ring-white/15"
+                      : "border-white/[0.07] bg-white/[0.03] text-white/68 hover:bg-white/[0.06] hover:text-white"
+                  )}
+                >
+                  {outputFormat}
                 </button>
               ))}
             </div>

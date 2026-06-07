@@ -6123,14 +6123,6 @@
         "history": "歷史",
         "community": "社區"
       },
-      "eyebrow": "圖片工作室",
-      "feedTitle": "歡迎來到 FizzStudio",
-      "feedSubtitle": "在創作工作區裡瀏覽視覺參考，並直接組織圖片生成提示詞。",
-      "feedTabs": {
-        "inspirations": "靈感",
-        "community": "社區",
-        "tutorial": "教程"
-      },
       "recreate": "復刻",
       "edit": "編輯",
       "addImage": "添加圖片",
@@ -6140,16 +6132,73 @@
       "addReferences": "添加參考",
       "create": "建立",
       "creating": "生成中",
-      "priceEstimate": "{points} 积分",
+      "priceEstimate": "{points} 積分",
       "priceFrom": "起",
       "queued": "排隊中",
       "generating": "生成中",
       "noModelSelected": "暫無可用的圖片模型",
+      "referenceUpload": {
+        "failed": "參考圖上傳失敗",
+        "limit": "最多只能添加 4 張參考圖。"
+      },
+      "detail": {
+        "title": "圖片詳情",
+        "open": "打開圖片詳情",
+        "download": "下載",
+        "close": "關閉圖片詳情",
+        "expand": "打開原圖",
+        "previous": "上一張",
+        "next": "下一張",
+        "byYou": "由你建立",
+        "created": "建立於 {time}",
+        "modelFallback": "圖片模型",
+        "prompt": "提示詞",
+        "copyPrompt": "複製提示詞",
+        "promptCopied": "已複製",
+        "promptCopyFailed": "複製失敗",
+        "metadata": "元資料",
+        "resolution": "解像度",
+        "ratio": "比例",
+        "model": "模型",
+        "unknownResolution": "未知"
+      },
       "results": {
-        "title": "你的生成",
+        "title": "生成歷史",
+        "liveHint": "任務運行期間保持實時更新，斷線時自動補拉。",
+        "historyHint": "目前工作區最近的圖片生成任務。",
+        "done": "已完成",
+        "emptyTitle": "還沒有生成記錄",
+        "emptyBody": "輸入提示詞並建立圖片，排隊、生成和結果都會顯示在這裏。",
+        "preparing": "準備中",
+        "queued": "排隊中",
+        "generating": "生成中",
+        "uploading": "收尾中",
+        "queuePosition": "隊列第 {position} 位",
+        "queueStartingSoon": "即將開始",
+        "queueEta": "約{time}後開始",
+        "generatingEta": "約{time}後完成",
+        "submittingDetail": "正在準備生成",
+        "generatingDetail": "正在生成畫面",
+        "finalizingDetail": "正在保存結果",
+        "estimating": "估算中",
+        "almostDone": "即將完成",
+        "duration": {
+          "seconds": "{seconds}秒",
+          "minutes": "{minutes}分鐘",
+          "minuteSeconds": "{minutes}分{seconds}秒"
+        },
+        "relative": {
+          "justNow": "剛剛",
+          "minutesAgo": "{minutes} 分鐘前",
+          "hoursAgo": "{hours} 小時前",
+          "daysAgo": "{days} 天前"
+        },
         "failed": "生成失敗",
+        "noOutput": "供應商未返回圖片，請重試。",
         "retry": "重試",
-        "alt": "生成的圖片"
+        "retryUnavailable": "目前任務暫時無法重試，請檢查模型是否可用。",
+        "alt": "生成的圖片",
+        "download": "下載圖片"
       },
       "settings": {
         "title": "設置",
@@ -6167,7 +6216,14 @@
         "reset": "重置",
         "moreOptions": "更多選項",
         "variations": "生成數量",
-        "resolution": "解像度"
+        "resolution": "解像度",
+        "quality": "質素",
+        "qualityOptions": {
+          "low": "低",
+          "medium": "標準",
+          "high": "高"
+        },
+        "outputFormat": "格式"
       },
       "models": {
         "gptImage2": "GPT Image 2",

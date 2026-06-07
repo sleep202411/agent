@@ -6123,14 +6123,6 @@
         "history": "History",
         "community": "Community"
       },
-      "eyebrow": "Image studio",
-      "feedTitle": "Welcome to FizzStudio",
-      "feedSubtitle": "Discover visual references and build generation prompts without leaving the creative workspace.",
-      "feedTabs": {
-        "inspirations": "Inspirations",
-        "community": "Community",
-        "tutorial": "Tutorial"
-      },
       "recreate": "Recreate",
       "edit": "Edit",
       "addImage": "Add image",
@@ -6140,16 +6132,73 @@
       "addReferences": "Add references",
       "create": "Create",
       "creating": "Creating",
-      "priceEstimate": "{points} 积分",
-      "priceFrom": "起",
+      "priceEstimate": "{points} points",
+      "priceFrom": "from",
       "queued": "Queued",
       "generating": "Generating",
       "noModelSelected": "No image models available",
+      "referenceUpload": {
+        "failed": "Reference image upload failed",
+        "limit": "You can attach up to 4 reference images."
+      },
+      "detail": {
+        "title": "Image details",
+        "open": "Open image details",
+        "download": "Download",
+        "close": "Close image details",
+        "expand": "Open original image",
+        "previous": "Previous image",
+        "next": "Next image",
+        "byYou": "by you",
+        "created": "Created {time}",
+        "modelFallback": "Image model",
+        "prompt": "Prompt",
+        "copyPrompt": "Copy prompt",
+        "promptCopied": "Copied",
+        "promptCopyFailed": "Copy failed",
+        "metadata": "Metadata",
+        "resolution": "Resolution",
+        "ratio": "Ratio",
+        "model": "Model",
+        "unknownResolution": "Unknown"
+      },
       "results": {
-        "title": "Your generations",
+        "title": "Generation history",
+        "liveHint": "Realtime updates stay active while jobs are running, with automatic catch-up after disconnects.",
+        "historyHint": "Recent image jobs in this workspace.",
+        "done": "Completed",
+        "emptyTitle": "No image jobs yet",
+        "emptyBody": "Write a prompt and create an image. Queue, generation, and results will appear here.",
+        "preparing": "Preparing",
+        "queued": "Queued",
+        "generating": "Generating",
+        "uploading": "Finalizing",
+        "queuePosition": "Queue #{position}",
+        "queueStartingSoon": "Starting soon",
+        "queueEta": "Starts in ~{time}",
+        "generatingEta": "Finishes in ~{time}",
+        "submittingDetail": "Preparing generation",
+        "generatingDetail": "Rendering image",
+        "finalizingDetail": "Saving result",
+        "estimating": "Estimating",
+        "almostDone": "Almost done",
+        "duration": {
+          "seconds": "{seconds}s",
+          "minutes": "{minutes}m",
+          "minuteSeconds": "{minutes}m {seconds}s"
+        },
+        "relative": {
+          "justNow": "Just now",
+          "minutesAgo": "{minutes}m ago",
+          "hoursAgo": "{hours}h ago",
+          "daysAgo": "{days}d ago"
+        },
         "failed": "Generation failed",
+        "noOutput": "The provider did not return an image. Try again.",
         "retry": "Retry",
-        "alt": "Generated image"
+        "retryUnavailable": "This job cannot be retried right now. Check that the model is still available.",
+        "alt": "Generated image",
+        "download": "Download image"
       },
       "settings": {
         "title": "Settings",
@@ -6167,7 +6216,14 @@
         "reset": "Reset",
         "moreOptions": "More options",
         "variations": "Variations",
-        "resolution": "Resolution"
+        "resolution": "Resolution",
+        "quality": "Quality",
+        "qualityOptions": {
+          "low": "Low",
+          "medium": "Standard",
+          "high": "High"
+        },
+        "outputFormat": "Format"
       },
       "models": {
         "gptImage2": "GPT Image 2",

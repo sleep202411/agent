@@ -6123,14 +6123,6 @@
         "history": "历史",
         "community": "社区"
       },
-      "eyebrow": "图片工作室",
-      "feedTitle": "欢迎来到 FizzStudio",
-      "feedSubtitle": "在创作工作区里浏览视觉参考，并直接组织图片生成提示词。",
-      "feedTabs": {
-        "inspirations": "灵感",
-        "community": "社区",
-        "tutorial": "教程"
-      },
       "recreate": "复刻",
       "edit": "编辑",
       "addImage": "添加图片",
@@ -6145,11 +6137,68 @@
       "queued": "排队中",
       "generating": "生成中",
       "noModelSelected": "暂无可用的图片模型",
+      "referenceUpload": {
+        "failed": "参考图上传失败",
+        "limit": "最多只能添加 4 张参考图。"
+      },
+      "detail": {
+        "title": "图片详情",
+        "open": "打开图片详情",
+        "download": "下载",
+        "close": "关闭图片详情",
+        "expand": "打开原图",
+        "previous": "上一张",
+        "next": "下一张",
+        "byYou": "由你创建",
+        "created": "创建于 {time}",
+        "modelFallback": "图片模型",
+        "prompt": "提示词",
+        "copyPrompt": "复制提示词",
+        "promptCopied": "已复制",
+        "promptCopyFailed": "复制失败",
+        "metadata": "元数据",
+        "resolution": "分辨率",
+        "ratio": "比例",
+        "model": "模型",
+        "unknownResolution": "未知"
+      },
       "results": {
-        "title": "你的生成",
+        "title": "生成历史",
+        "liveHint": "任务运行期间保持实时更新，断线时自动补拉。",
+        "historyHint": "当前工作区最近的图片生成任务。",
+        "done": "已完成",
+        "emptyTitle": "还没有生成记录",
+        "emptyBody": "输入提示词并创建图片，排队、生成和结果都会显示在这里。",
+        "preparing": "准备中",
+        "queued": "排队中",
+        "generating": "生成中",
+        "uploading": "收尾中",
+        "queuePosition": "队列第 {position} 位",
+        "queueStartingSoon": "即将开始",
+        "queueEta": "约{time}后开始",
+        "generatingEta": "约{time}后完成",
+        "submittingDetail": "正在准备生成",
+        "generatingDetail": "正在生成画面",
+        "finalizingDetail": "正在保存结果",
+        "estimating": "估算中",
+        "almostDone": "即将完成",
+        "duration": {
+          "seconds": "{seconds}秒",
+          "minutes": "{minutes}分钟",
+          "minuteSeconds": "{minutes}分{seconds}秒"
+        },
+        "relative": {
+          "justNow": "刚刚",
+          "minutesAgo": "{minutes} 分钟前",
+          "hoursAgo": "{hours} 小时前",
+          "daysAgo": "{days} 天前"
+        },
         "failed": "生成失败",
+        "noOutput": "供应商未返回图片，请重试。",
         "retry": "重试",
-        "alt": "生成的图片"
+        "retryUnavailable": "当前任务暂时无法重试，请检查模型是否可用。",
+        "alt": "生成的图片",
+        "download": "下载图片"
       },
       "settings": {
         "title": "设置",
@@ -6167,7 +6216,14 @@
         "reset": "重置",
         "moreOptions": "更多选项",
         "variations": "生成数量",
-        "resolution": "分辨率"
+        "resolution": "分辨率",
+        "quality": "质量",
+        "qualityOptions": {
+          "low": "低",
+          "medium": "标准",
+          "high": "高"
+        },
+        "outputFormat": "格式"
       },
       "models": {
         "gptImage2": "GPT Image 2",
