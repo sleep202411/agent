@@ -27,6 +27,10 @@ import { BailianCatalogService } from './providers/bailian/bailian-catalog.servi
 import { BailianClient } from './providers/bailian/bailian-client';
 import { BailianConfigService } from './providers/bailian/bailian-config.service';
 import { BailianProviderAdapter } from './providers/bailian/bailian-provider.adapter';
+import { ReplicateCatalogService } from './providers/replicate/replicate-catalog.service';
+import { ReplicateClient } from './providers/replicate/replicate-client';
+import { ReplicateConfigService } from './providers/replicate/replicate-config.service';
+import { ReplicateProviderAdapter } from './providers/replicate/replicate-provider.adapter';
 import { AiGenerationQueueService } from './queue.service';
 import { AiGenerationRepository } from './repository';
 import { AiGenerationRoutingService } from './routing.service';
@@ -76,6 +80,12 @@ import { AiGenerationWorkerService } from './worker.service';
     BailianCatalogService,
     BailianClient,
     BailianProviderAdapter,
+
+    // Provider: Replicate
+    ReplicateConfigService,
+    ReplicateCatalogService,
+    ReplicateClient,
+    ReplicateProviderAdapter,
   ],
   exports: [],
 })
@@ -91,13 +101,13 @@ export class AiGenerationModule implements OnModuleInit {
     private readonly foundry: FoundryProviderAdapter,
     private readonly fal: FalProviderAdapter,
     private readonly bailian: BailianProviderAdapter,
+    private readonly replicate: ReplicateProviderAdapter,
   ) {}
 
   onModuleInit(): void {
     this.registry.register(this.foundry);
     this.registry.register(this.fal);
     this.registry.register(this.bailian);
-    // Future:
-    //   this.registry.register(this.replicate);
+    this.registry.register(this.replicate);
   }
 }

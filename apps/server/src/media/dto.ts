@@ -22,6 +22,7 @@ export const UploadKindSchema = z.enum([
   'episode_video',
   'episode_cover',
   'ip_banner',
+  'ai_reference_image',
 ]);
 export type UploadKind = z.infer<typeof UploadKindSchema>;
 
@@ -83,4 +84,6 @@ export interface ConfirmUploadResponseDto {
   /** Echoed back for the client's bookkeeping / debugging. */
   storageKey: string;
   provider: 'azure_blob' | 'aliyun_oss' | 's3_compatible';
+  /** Browser/provider-fetchable URL resolved from the durable MediaAsset row. */
+  url: string;
 }

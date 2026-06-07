@@ -2,7 +2,7 @@
 --
 -- Goals:
 --   - One user-facing canonical model can route to many providers.
---   - Provider endpoints keep their own schemas, cost, queue, and SLO policy.
+--   - Provider endpoints keep their own schemas, queue, and SLO policy.
 --   - Canonical model policy owns membership, pricing, quota, and queue rules.
 --   - Cost and provider request evidence are immutable enough for audit,
 --     support, margin analysis, and future alerting/reconciliation.
@@ -20,11 +20,6 @@ CREATE TYPE "AiProviderHealthStatus" AS ENUM (
   'healthy',
   'degraded',
   'outage'
-);
-
-CREATE TYPE "AiModelVisibility" AS ENUM (
-  'hidden',
-  'direct'
 );
 
 CREATE TYPE "AiCostLedgerEntryType" AS ENUM (
@@ -67,7 +62,6 @@ CREATE TABLE "ai_canonical_models" (
   "modality" "AiJobType" NOT NULL,
   "family" VARCHAR(80) NOT NULL,
   "generation_modes" JSONB NOT NULL DEFAULT '[]'::jsonb,
-  "visibility" "AiModelVisibility" NOT NULL DEFAULT 'direct',
   "status" "AiControlPlaneStatus" NOT NULL DEFAULT 'draft',
   "description" TEXT,
   "parameter_policy" JSONB NOT NULL DEFAULT '{}'::jsonb,
@@ -104,8 +98,6 @@ CREATE TABLE "ai_provider_model_bindings" (
   "provider_output_schema" JSONB NOT NULL DEFAULT '{}'::jsonb,
   "parameter_map" JSONB NOT NULL DEFAULT '{}'::jsonb,
   "output_map" JSONB NOT NULL DEFAULT '{}'::jsonb,
-  "pricing_policy" JSONB NOT NULL DEFAULT '{}'::jsonb,
-  "provider_pricing" JSONB NOT NULL DEFAULT '{}'::jsonb,
   "queue_policy" JSONB NOT NULL DEFAULT '{}'::jsonb,
   "routing_policy" JSONB NOT NULL DEFAULT '{}'::jsonb,
   "region_policy" JSONB NOT NULL DEFAULT '{}'::jsonb,
@@ -171,7 +163,7 @@ CREATE INDEX "ai_provider_accounts_status_health_idx"
 CREATE UNIQUE INDEX "ai_canonical_models_slug_unique"
   ON "ai_canonical_models"("slug");
 CREATE INDEX "ai_canonical_models_catalog_idx"
-  ON "ai_canonical_models"("modality", "status", "visibility");
+  ON "ai_canonical_models"("modality", "status");
 CREATE INDEX "ai_canonical_models_family_idx"
   ON "ai_canonical_models"("family", "status");
 

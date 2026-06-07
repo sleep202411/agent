@@ -21,7 +21,7 @@ import type {
   FoundryUiOption,
   FoundryUiSchema,
 } from "./foundry-schema.js";
-import type { AiGenUnitType } from "./billing.js";
+import type { AiProductPricingPolicy } from "./billing.js";
 
 export const AI_MODEL_PROTOCOL_DIALECT = "https://fizzdragon.com/schemas/ai/model/v1";
 
@@ -80,11 +80,7 @@ export type AiGenerationMode =
   | "multimodal_to_image"
   | "multimodal_to_video";
 
-/**
- * Legacy coarse capability kept for existing clients. New product logic should
- * use `family` for top-level navigation and `generationModes` for concrete
- * interaction modes.
- */
+/** Coarse capability used for catalog grouping alongside concrete generation modes. */
 export type AiModelCapability =
   | "image_generation"
   | "video_generation"
@@ -116,7 +112,6 @@ export const AI_PROVIDER_KEYS = [
   "aliyun-bailian",
   "microsoft-foundry",
   "replicate",
-  "omnirouters",
 ] as const;
 export type AiProviderKey = (typeof AI_PROVIDER_KEYS)[number];
 
@@ -126,7 +121,6 @@ export const AI_PROVIDER_LABELS: Record<AiProviderKey, string> = {
   "aliyun-bailian": "百炼",
   "microsoft-foundry": "Azure Foundry",
   replicate: "Replicate",
-  omnirouters: "OmniRouters",
 };
 
 export interface AiBillingPolicy {
@@ -134,21 +128,19 @@ export interface AiBillingPolicy {
   unit: AiPricingUnit;
   displayCurrency: "COMPUTE_POINTS" | "CREDITS" | "USD" | "CNY" | string;
   preflightCost?: number;
-  finalCostSource: "fixed_table" | "provider_usage" | "internal_metering" | "campaign" | "unknown";
+  finalCostSource:
+    | "product_pricing"
+    | "provider_usage"
+    | "internal_metering"
+    | "campaign"
+    | "unknown";
   refundPolicy: "refund_on_final_failure" | "no_refund" | "manual_review";
   /**
-   * Parameterized pricing inputs for the shared estimator
-   * (`estimateGenerationPrice`). Absent ⇒ the model is unpriced and callers
-   * should show no number rather than a flat placeholder.
+   * User-facing product pricing. This is the source of truth for displayed
+   * compute-point prices. Provider request cost is recorded later per job
+   * only when the provider exposes actual usage/cost.
    */
-  pricing?: {
-    /** nanoUSD per unit, as a string (BigInt does not cross JSON). */
-    unitPriceNanoUsd: string;
-    /** What `unitPriceNanoUsd` is priced per. */
-    unitType: AiGenUnitType;
-    /** Gross-margin basis points (from the canonical model). */
-    marginBps: number;
-  };
+  productPricing?: AiProductPricingPolicy;
 }
 
 export interface AiQueuePolicy {
@@ -203,7 +195,6 @@ export interface AiModelDefinition {
   source: string;
   family: AiModelFamily;
   generationModes: AiGenerationMode[];
-  /** @deprecated Use `family` + `generationModes`. */
   capability?: AiModelCapability;
   type: "image" | "video";
   name: string;
@@ -239,6 +230,7 @@ export interface AiModelDefinition {
   billing_policy?: AiBillingPolicy;
   queue_policy?: AiQueuePolicy;
   entitlement_policy?: AiEntitlementPolicy;
+  parameter_policy?: AiJsonValue;
   ui_policy?: AiModelUiPolicy;
   input_schema: AiInputSchema;
   output_schema: AiOutputSchema;
@@ -253,7 +245,6 @@ export interface AiModelPresetDefinition {
   description?: string;
   family: AiModelFamily;
   generationModes: AiGenerationMode[];
-  /** @deprecated Use `family` + `generationModes`. */
   capability?: AiModelCapability;
   type: "image" | "video";
   routeMode: AiModelRouteMode;

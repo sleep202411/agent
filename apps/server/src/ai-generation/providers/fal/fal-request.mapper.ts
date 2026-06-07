@@ -20,7 +20,26 @@ export function mapFalProviderRequest(
     if (mapped === undefined) continue;
     body[binding.parameter] = mapped;
   }
+  normalizeGptImage2Request(config, input, body);
   return body;
+}
+
+function normalizeGptImage2Request(
+  config: FalModelRuntimeConfig,
+  input: Record<string, unknown>,
+  body: Record<string, unknown>,
+): void {
+  if (!config.endpointId.startsWith('openai/gpt-image-2')) return;
+  const imageSize =
+    typeof input.imageSize === 'string'
+      ? input.imageSize
+      : typeof body.image_size === 'string'
+        ? body.image_size
+        : undefined;
+  const resolution =
+    typeof input.resolution === 'string' ? input.resolution : undefined;
+  const dimensions = dimensionsFromImageSize(imageSize, resolution);
+  if (dimensions) body.image_size = dimensions;
 }
 
 function transformValue(value: unknown, transform = 'identity'): unknown {
@@ -51,6 +70,72 @@ function transformValue(value: unknown, transform = 'identity'): unknown {
     return Number.isFinite(number) ? Math.floor(number) : undefined;
   }
   return value;
+}
+
+function dimensionsFromImageSize(
+  imageSize: string | undefined,
+  resolution: string | undefined,
+): { width: number; height: number } | undefined {
+  if (!imageSize || imageSize === 'auto') return undefined;
+  const aspect = aspectRatioForImageSize(imageSize);
+  if (!aspect) return undefined;
+
+  const maxLongEdge =
+    resolution === '4K' ? 3840 : resolution === '2K' ? 2048 : 1024;
+  const maxPixels =
+    resolution === '4K'
+      ? 8_294_400
+      : resolution === '2K'
+        ? 4_194_304
+        : 1_048_576;
+
+  let width: number;
+  let height: number;
+  if (aspect >= 1) {
+    width = maxLongEdge;
+    height = width / aspect;
+  } else {
+    height = maxLongEdge;
+    width = height * aspect;
+  }
+
+  const pixels = width * height;
+  if (pixels > maxPixels) {
+    const scale = Math.sqrt(maxPixels / pixels);
+    width *= scale;
+    height *= scale;
+  }
+
+  return {
+    width: clampFalDimension(roundToMultiple(width, 16)),
+    height: clampFalDimension(roundToMultiple(height, 16)),
+  };
+}
+
+function aspectRatioForImageSize(imageSize: string): number | undefined {
+  switch (imageSize) {
+    case 'square':
+    case 'square_hd':
+      return 1;
+    case 'landscape_4_3':
+      return 4 / 3;
+    case 'portrait_4_3':
+      return 3 / 4;
+    case 'landscape_16_9':
+      return 16 / 9;
+    case 'portrait_16_9':
+      return 9 / 16;
+    default:
+      return undefined;
+  }
+}
+
+function roundToMultiple(value: number, multiple: number): number {
+  return Math.max(multiple, Math.round(value / multiple) * multiple);
+}
+
+function clampFalDimension(value: number): number {
+  return Math.min(3840, Math.max(16, value));
 }
 
 function isEmpty(value: unknown): boolean {

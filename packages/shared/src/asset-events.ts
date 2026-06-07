@@ -19,6 +19,10 @@
 export interface AiJobUpdatePayload {
   id: string;
   type: "image" | "video";
+  workspaceId?: string | null;
+  projectId?: string | null;
+  documentId?: string | null;
+  sourceSurface?: string | null;
   modelId: string;
   status: string;
   stage: string;
@@ -41,7 +45,10 @@ export interface AiJobUpdatePayload {
   error?: { code: string; userMessage: string; retryable: boolean };
   queuePosition?: number | null;
   progress?: number | null;
+  estimatedWaitSeconds?: number | null;
+  estimatedRunSeconds?: number | null;
   estimatedTotalSeconds?: number | null;
+  etaConfidence?: "high" | "low" | "medium";
   createdAt: string;
   updatedAt: string;
   completedAt?: string;

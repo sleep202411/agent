@@ -4,6 +4,7 @@ import type {
   AiCapabilityMatrix,
   AiGenerationMode,
   AiInputSchema,
+  AiJsonValue,
   AiJobType,
   AiModelDefinition,
   AiModelFamily,
@@ -34,6 +35,7 @@ interface CreateFalModelConfigArgs {
   perUserQueued: number;
   pollDelayMs: number;
   billing?: Partial<AiBillingPolicy>;
+  parameterPolicy?: AiJsonValue;
 }
 
 function humanizeEndpoint(endpointId: string): string {
@@ -87,7 +89,7 @@ function inputSchemaFor(
     properties.imageSize = {
       type: 'string',
       title: 'Image size',
-      default: 'square_hd',
+      default: 'landscape_4_3',
       enum: [
         'square_hd',
         'square',
@@ -102,7 +104,32 @@ function inputSchemaFor(
         order: 20,
         importance: 'secondary',
       },
-      'x-provider': { parameter: 'image_size', omitIfDefault: true },
+      'x-provider': { parameter: 'image_size' },
+    };
+    properties.resolution = {
+      type: 'string',
+      title: 'Resolution',
+      default: '1K',
+      enum: ['1K', '2K', '4K'],
+      'x-ui': {
+        control: 'segmented',
+        group: 'settings',
+        order: 24,
+        importance: 'secondary',
+      },
+    };
+    properties.quality = {
+      type: 'string',
+      title: 'Quality',
+      default: 'medium',
+      enum: ['low', 'medium', 'high'],
+      'x-ui': {
+        control: 'segmented',
+        group: 'settings',
+        order: 26,
+        importance: 'secondary',
+      },
+      'x-provider': { parameter: 'quality' },
     };
     properties.numOutputs = {
       type: 'integer',
@@ -118,12 +145,69 @@ function inputSchemaFor(
       },
       'x-provider': { parameter: 'num_images', omitIfDefault: true },
     };
+    properties.outputFormat = {
+      type: 'string',
+      title: 'Output format',
+      default: 'png',
+      enum: ['png', 'jpeg', 'webp'],
+      'x-ui': {
+        control: 'segmented',
+        group: 'advanced',
+        order: 84,
+        importance: 'advanced',
+      },
+      'x-provider': { parameter: 'output_format', omitIfDefault: true },
+    };
   }
 
-  if (imageToImage || imageToVideo) {
+  if (imageToImage) {
+    properties.referenceImages = {
+      type: 'array',
+      title: 'Reference images',
+      minItems: 0,
+      maxItems: 4,
+      items: {
+        type: 'object',
+        properties: {
+          url: { type: 'string', format: 'uri', title: 'URL' },
+        },
+        required: ['url'],
+        additionalProperties: true,
+      },
+      'x-ui': {
+        control: 'image_upload',
+        group: 'references',
+        order: 40,
+        importance: 'primary',
+      },
+      'x-provider': { parameter: 'image_urls', transform: 'mediaArrayToUrls' },
+    };
+    properties.maskImage = {
+      type: 'object',
+      title: 'Mask image',
+      properties: {
+        url: { type: 'string', format: 'uri', title: 'URL' },
+      },
+      required: ['url'],
+      additionalProperties: true,
+      'x-ui': {
+        control: 'image_upload',
+        group: 'references',
+        order: 45,
+        importance: 'advanced',
+      },
+      'x-provider': {
+        parameter: 'mask_url',
+        transform: 'mediaUrl',
+        omitIfEmpty: true,
+      },
+    };
+  }
+
+  if (imageToVideo) {
     properties.startFrame = {
       type: 'object',
-      title: imageToVideo ? 'Start frame' : 'Reference image',
+      title: 'Start frame',
       properties: {
         url: { type: 'string', format: 'uri', title: 'URL' },
       },
@@ -287,9 +371,14 @@ function capabilityMatrixFor(
     supportedParameters: [
       'prompt',
       'image_size',
+      'resolution',
+      'quality',
       'num_images',
       'image_url',
+      'image_urls',
+      'mask_url',
       'end_image_url',
+      'output_format',
       'duration',
       'aspect_ratio',
       'seed',
@@ -348,6 +437,12 @@ export function createFalModelConfig(
       backoffMs: [2_000, 10_000, 30_000],
     },
   };
+  const productPricing = args.billing?.productPricing;
+  if (!productPricing) {
+    throw new Error(
+      `fal.ai endpoint "${args.endpointId}" is missing canonical product pricing.`,
+    );
+  }
 
   return {
     endpointId: args.endpointId,
@@ -371,12 +466,12 @@ export function createFalModelConfig(
       mode: args.billing?.mode ?? 'charge',
       unit: args.billing?.unit ?? 'compute_point',
       displayCurrency: args.billing?.displayCurrency ?? 'COMPUTE_POINTS',
-      preflightCost:
-        args.billing?.preflightCost ?? (args.type === 'video' ? 20 : 1),
-      finalCostSource: args.billing?.finalCostSource ?? 'fixed_table',
+      preflightCost: args.billing?.preflightCost,
+      finalCostSource: args.billing?.finalCostSource ?? 'product_pricing',
       refundPolicy: args.billing?.refundPolicy ?? 'refund_on_final_failure',
-      pricing: args.billing?.pricing,
+      productPricing,
     },
+    parameterPolicy: args.parameterPolicy,
     inputSchema,
     outputSchema,
     providerInputMap: providerInputMap(inputSchema),
@@ -503,6 +598,7 @@ export function toAiModelDefinition(
     entitlement: { requiredPlan: config.requiredPlan },
     entitlement_policy: { requiredPlan: config.requiredPlan },
     billing_policy: config.billingPolicy,
+    parameter_policy: config.parameterPolicy,
     ui_policy: {
       defaultMode: 'simple',
       advancedVisible: true,

@@ -10,6 +10,7 @@
  * Currency is always `compute_point` / `COMPUTE_POINTS` (never `bubble`).
  */
 import type { Prisma } from '@prisma/client';
+import type { AiProductPricingPolicy } from '@repo/shared';
 
 /** Plan tiers used by `entitlementPolicy.requiredPlan`. `null` = free tier. */
 export type RequiredPlan = 'vip' | null;
@@ -19,7 +20,7 @@ export type RequiredPlan = 'vip' | null;
  * shared aspect-ratio / variation / resolution option sets the UI renders.
  */
 export const PARAMETER_POLICY = {
-  parameterMode: 'provider_intersection',
+  parameterMode: 'provider_union',
   defaultAspectRatio: '4:3',
   supportedAspectRatios: [
     '1:1',
@@ -31,11 +32,44 @@ export const PARAMETER_POLICY = {
     '2:3',
     '21:9',
   ],
-  defaultVariations: 4,
+  defaultVariations: 1,
   variationOptions: [1, 2, 3, 4],
   defaultResolution: '1K',
   resolutionOptions: ['1K', '2K', '4K'],
+  defaultQuality: 'medium',
+  qualityOptions: ['low', 'medium', 'high'],
+  defaultOutputFormat: 'png',
+  outputFormatOptions: ['png', 'jpeg', 'webp'],
+  referenceImages: {
+    enabled: true,
+    min: 0,
+    max: 4,
+    maskSupported: true,
+  },
 } as const satisfies Prisma.InputJsonObject;
+
+export const GPT_IMAGE_2_PRODUCT_PRICING: AiProductPricingPolicy = {
+  mode: 'parameter_matrix',
+  version: 'gpt-image-2-points-v1-2026-06-07',
+  currency: 'COMPUTE_POINTS',
+  defaultOutputCount: 1,
+  minOutputCount: 1,
+  maxOutputCount: 4,
+  defaultResolution: '1K',
+  defaultQuality: 'medium',
+  resolutionOptions: ['1K', '2K', '4K'],
+  qualityOptions: ['low', 'medium', 'high'],
+  matrix: {
+    '1K': { low: 20, medium: 60, high: 120 },
+    '2K': { low: 30, medium: 90, high: 180 },
+    '4K': { low: 45, medium: 140, high: 280 },
+  },
+  referenceImageSurchargePoints: 15,
+  extraReferenceImagePoints: 5,
+  maskSurchargePoints: 0,
+  minimumPoints: 1,
+  roundTo: 1,
+};
 
 /** Canonical `outputPolicy` — identical for every image model. */
 export const OUTPUT_POLICY = {
@@ -73,21 +107,22 @@ export function buildEntitlementPolicy(
 }
 
 /**
- * `billingPolicy` factory — only `preflightCost` varies. `unit` is
- * `compute_point`; final cost is supplied by the provider binding, so
- * `finalCostSource` is `provider_binding` (NOT the fal mapper default
- * `fixed_table`).
+ * `billingPolicy` factory. `productPricing` is the user-facing price source;
+ * provider request cost is recorded separately per job when a provider returns
+ * usage/cost metadata.
  */
 export function buildBillingPolicy(
   preflightCost: number,
+  productPricing: AiProductPricingPolicy,
 ): Prisma.InputJsonObject {
   return {
     mode: 'charge',
     unit: 'compute_point',
     displayCurrency: 'COMPUTE_POINTS',
     preflightCost,
-    finalCostSource: 'provider_binding',
+    finalCostSource: 'product_pricing',
     refundPolicy: 'refund_on_final_failure',
+    productPricing: productPricing as unknown as Prisma.InputJsonValue,
   };
 }
 

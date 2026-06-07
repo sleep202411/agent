@@ -8,7 +8,7 @@
  * replace only this service, not routing/worker/quota.
  */
 import { Injectable, Logger } from '@nestjs/common';
-import type { RequestGeoContext } from '../common/region';
+import { estimateProductModelPoints } from '@repo/shared';
 import type {
   AiBillingPolicy,
   AiCampaignPolicy,
@@ -78,10 +78,7 @@ export class AiModelPresetRegistryService {
     );
   }
 
-  listCatalogPresets(
-    models: AiModelDefinition[],
-    geo?: RequestGeoContext,
-  ): AiModelPresetDefinition[] {
+  listCatalogPresets(models: AiModelDefinition[]): AiModelPresetDefinition[] {
     const byId = new Map(models.map((model) => [model.id, model]));
     const defaults = this.defaultPresetsFromModels(models);
     const configured = this.configuredPresets();
@@ -97,7 +94,7 @@ export class AiModelPresetRegistryService {
     ];
 
     return routes
-      .map((route) => this.toCatalogPreset(route, byId, geo))
+      .map((route) => this.toCatalogPreset(route, byId))
       .filter((preset): preset is AiModelPresetDefinition => Boolean(preset))
       .sort((a, b) => {
         const order = (a.sortOrder ?? 10_000) - (b.sortOrder ?? 10_000);
@@ -141,7 +138,8 @@ export class AiModelPresetRegistryService {
       };
     }
     if (preset?.billingPolicy) return preset.billingPolicy;
-    return model.billing_policy ?? this.defaultBillingPolicy(model.type);
+    if (model.billing_policy) return model.billing_policy;
+    throw new Error(`Model "${model.id}" is missing billing_policy.`);
   }
 
   queuePolicyFor(
@@ -170,29 +168,12 @@ export class AiModelPresetRegistryService {
   }
 
   private configuredPresets(): AiModelPresetConfig[] {
-    const presets = this.parseJsonEnv<AiModelPresetConfig[]>(
-      'AI_MODEL_PRESETS',
-      [],
-    );
-    const legacy = this.parseJsonEnv<AiModelPresetConfig[]>(
-      'AI_MODEL_ROUTES',
-      [],
-    );
-    return [
-      ...presets,
-      ...legacy.filter(
-        (route) =>
-          !presets.some(
-            (preset) => this.presetId(preset) === this.presetId(route),
-          ),
-      ),
-    ];
+    return this.parseJsonEnv<AiModelPresetConfig[]>('AI_MODEL_PRESETS', []);
   }
 
   private toCatalogPreset(
     route: AiModelPresetConfig,
     modelsById: Map<string, AiModelDefinition>,
-    geo?: RequestGeoContext,
   ): AiModelPresetDefinition | null {
     const id = this.presetId(route);
     if (!id) return null;
@@ -201,8 +182,8 @@ export class AiModelPresetRegistryService {
       .map((modelId) => modelsById.get(modelId))
       .filter((model): model is AiModelDefinition => Boolean(model));
     const primary = models.find((model) => model.enabled) ?? models[0];
-    const routeType = route.type ?? primary?.type;
-    if (!routeType) return null;
+    if (!primary) return null;
+    const routeType = route.type ?? primary.type;
 
     const routeFamily = route.family ?? primary?.family ?? routeType;
     const generationModes =
@@ -211,9 +192,7 @@ export class AiModelPresetRegistryService {
     const queuePolicy = primary
       ? this.queuePolicyFor(route, primary)
       : this.defaultQueuePolicy(routeType);
-    const billingPolicy = primary
-      ? this.billingPolicyFor(route, primary, null)
-      : this.defaultBillingPolicy(routeType);
+    const billingPolicy = this.billingPolicyFor(route, primary, null);
     const anyEnabled = models.some((model) => model.enabled);
 
     return {
@@ -334,7 +313,7 @@ export class AiModelPresetRegistryService {
     ]
       .join(' ')
       .toLowerCase();
-    const cost = Number(model.billing_policy?.preflightCost ?? 1);
+    const cost = this.referenceProductCost(model);
     const concurrency = model.queue.globalConcurrency;
     const planBoost = model.entitlement.requiredPlan ? 3 : 0;
 
@@ -361,15 +340,12 @@ export class AiModelPresetRegistryService {
     );
   }
 
-  private defaultBillingPolicy(type: AiJobType): AiBillingPolicy {
-    return {
-      mode: 'charge',
-      unit: 'compute_point',
-      displayCurrency: 'COMPUTE_POINTS',
-      preflightCost: type === 'video' ? 20 : 1,
-      finalCostSource: 'fixed_table',
-      refundPolicy: 'refund_on_final_failure',
-    };
+  private referenceProductCost(model: AiModelDefinition): number {
+    const productPricing = model.billing_policy?.productPricing;
+    if (!productPricing) {
+      throw new Error(`Model "${model.id}" is missing productPricing.`);
+    }
+    return estimateProductModelPoints({ policy: productPricing }).sellPoints;
   }
 
   private defaultQueuePolicy(

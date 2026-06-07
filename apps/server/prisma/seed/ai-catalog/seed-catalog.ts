@@ -28,7 +28,6 @@ import {
   PARAMETER_POLICY,
 } from './defaults';
 import {
-  DEPRECATED_GENERIC_SLUGS,
   IMAGE_MODELS,
   type ImageModelSeed,
   type ProviderEntry,
@@ -51,14 +50,12 @@ function buildCanonicalPayload(
     modality: 'image',
     family: model.family,
     generationModes: model.modes as Prisma.InputJsonValue,
-    visibility: 'direct',
     status: 'active',
     description: model.description,
     parameterPolicy: PARAMETER_POLICY,
     outputPolicy: OUTPUT_POLICY,
     entitlementPolicy: buildEntitlementPolicy(model.tier),
-    billingPolicy: buildBillingPolicy(model.cost),
-    marginBps: model.marginBps,
+    billingPolicy: buildBillingPolicy(model.cost, model.productPricing),
     queuePolicy: buildQueuePolicy(model.tier),
     uiPolicy: buildUiPolicy({
       group: model.group,
@@ -86,7 +83,6 @@ function buildEndpointPayload(args: {
   endpointId: string;
   displayName: string;
   modes: string[];
-  providerPricing: Prisma.InputJsonObject;
 }): Prisma.AiProviderEndpointUncheckedCreateInput {
   const providerInputSchema: Prisma.InputJsonObject = {};
   const providerOutputSchema: Prisma.InputJsonObject = {};
@@ -101,7 +97,6 @@ function buildEndpointPayload(args: {
     supportedModes: args.modes as Prisma.InputJsonValue,
     providerInputSchema,
     providerOutputSchema,
-    providerPricing: args.providerPricing,
     createdByAdminId: SEED_ADMIN_ID,
     updatedByAdminId: SEED_ADMIN_ID,
   };
@@ -109,10 +104,8 @@ function buildEndpointPayload(args: {
 
 /**
  * Build the binding payload once, matching `providerBindingDataFromEndpoint`:
- * provider-facing fields come from the endpoint; pricing/queue policy is the
- * runtime-read input. `pricingPolicy` mirrors the canonical billing (so
- * `billingPolicyFromRow` resolves a valid `compute_point` policy) and
- * `queuePolicy` mirrors the canonical queue caps.
+ * provider-facing fields come from the endpoint; `queuePolicy` mirrors the
+ * canonical queue caps. Product pricing is read from the canonical model.
  */
 function buildBindingPayload(args: {
   endpoint: {
@@ -124,17 +117,13 @@ function buildBindingPayload(args: {
     supportedModes: Prisma.JsonValue;
     providerInputSchema: Prisma.JsonValue;
     providerOutputSchema: Prisma.JsonValue;
-    providerPricing: Prisma.JsonValue;
     catalogSnapshot: Prisma.JsonValue;
     documentation: Prisma.JsonValue;
   };
   canonicalModelId: string;
   priority: number;
   weight: number;
-  pricingPolicy: Prisma.InputJsonObject;
   queuePolicy: Prisma.InputJsonObject;
-  unitPriceNanoUsd: bigint;
-  unitType: ProviderEntry['unitType'];
 }): Prisma.AiProviderModelBindingUncheckedCreateInput {
   const { endpoint } = args;
   return {
@@ -148,16 +137,12 @@ function buildBindingPayload(args: {
     status: 'active',
     priority: args.priority,
     weight: args.weight,
-    unitPriceNanoUsd: args.unitPriceNanoUsd,
-    unitType: args.unitType,
     supportedModes: endpoint.supportedModes as Prisma.InputJsonValue,
     inputSchema: endpoint.providerInputSchema as Prisma.InputJsonValue,
     outputSchema: endpoint.providerOutputSchema as Prisma.InputJsonValue,
     providerInputSchema: endpoint.providerInputSchema as Prisma.InputJsonValue,
     providerOutputSchema:
       endpoint.providerOutputSchema as Prisma.InputJsonValue,
-    providerPricing: endpoint.providerPricing as Prisma.InputJsonValue,
-    pricingPolicy: args.pricingPolicy,
     queuePolicy: args.queuePolicy,
     catalogSnapshot: endpoint.catalogSnapshot as Prisma.InputJsonValue,
     documentation: endpoint.documentation as Prisma.InputJsonValue,
@@ -180,29 +165,66 @@ interface SeedSummaryRow {
 export async function seedAiImageCatalog(prisma: PrismaClient): Promise<void> {
   const seededAt = new Date().toISOString();
 
-  // 1. Archive deprecated generic slugs before promoting explicit versions.
-  const archived = await prisma.aiCanonicalModel.updateMany({
+  const allowedSlugs = IMAGE_MODELS.map((model) => model.slug);
+  const allowedProviderEndpointPairs = IMAGE_MODELS.flatMap((model) =>
+    model.providers.map((provider) => ({
+      provider: provider.provider,
+      endpointId: provider.endpointId,
+    })),
+  );
+
+  // This catalog is deliberately narrow while we validate models one by one.
+  // Remove old image ContainerModels and their endpoint bindings instead of
+  // keeping stale choices around in admin/runtime state.
+  const allowedProviderEndpointWhere =
+    allowedProviderEndpointPairs.length > 0
+      ? {
+          OR: allowedProviderEndpointPairs.map((pair) => ({
+            provider: pair.provider,
+            endpointId: pair.endpointId,
+          })),
+        }
+      : undefined;
+  const staleBindings = await prisma.aiProviderModelBinding.deleteMany({
     where: {
       modality: 'image',
-      slug: { in: DEPRECATED_GENERIC_SLUGS },
-      archivedAt: null,
+      OR: [
+        { canonicalModel: { slug: { notIn: allowedSlugs } } },
+        allowedProviderEndpointWhere
+          ? { NOT: allowedProviderEndpointWhere }
+          : { endpointId: { not: '' } },
+      ],
     },
-    data: { status: 'archived', visibility: 'hidden', archivedAt: new Date() },
+  });
+  const staleEndpoints = await prisma.aiProviderEndpoint.deleteMany({
+    where: {
+      modality: 'image',
+      ...(allowedProviderEndpointWhere
+        ? { NOT: allowedProviderEndpointWhere }
+        : { endpointId: { not: '' } }),
+    },
+  });
+  const staleCanonicalModels = await prisma.aiCanonicalModel.deleteMany({
+    where: {
+      modality: 'image',
+      slug: { notIn: allowedSlugs },
+    },
   });
 
-  // Cache provider-account lookups so a missing-account warning fires once.
-  const accountCache = new Map<
-    string,
-    { id: string; provider: string } | null
-  >();
-  const warnedProviders = new Set<string>();
+  // Cache provider-account upserts. The seed owns the initial GPT Image 2
+  // provider route graph, so it creates/activates the required account rows
+  // instead of depending on application bootstrap to reconcile them first.
+  const accountCache = new Map<string, { id: string; provider: string }>();
 
   const resolveAccount = async (
     provider: string,
-  ): Promise<{ id: string; provider: string } | null> => {
-    if (accountCache.has(provider)) return accountCache.get(provider) ?? null;
-    const account = await prisma.aiProviderAccount.findFirst({
-      where: { provider, archivedAt: null },
+  ): Promise<{ id: string; provider: string }> => {
+    const cached = accountCache.get(provider);
+    if (cached) return cached;
+    const account = await prisma.aiProviderAccount.upsert({
+      where: { provider },
+      create: { provider, status: 'active' },
+      update: { status: 'active', archivedAt: null },
       select: { id: true, provider: true },
     });
     accountCache.set(provider, account);
@@ -225,15 +247,6 @@ export async function seedAiImageCatalog(prisma: PrismaClient): Promise<void> {
 
     for (const entry of model.providers) {
       const account = await resolveAccount(entry.provider);
-      if (!account) {
-        if (!warnedProviders.has(entry.provider)) {
-          warnedProviders.add(entry.provider);
-          console.warn(
-            `[seed] no reconciled AiProviderAccount for provider "${entry.provider}" — skipping endpoint/binding (canonical-only).`,
-          );
-        }
-        continue;
-      }
 
       await bindProviderEntry({
         prisma,
@@ -258,7 +271,7 @@ export async function seedAiImageCatalog(prisma: PrismaClient): Promise<void> {
 
   console.table(summary);
   console.log(
-    `[seed] upserted ${summary.length} canonical image model(s); archived ${archived.count} deprecated generic slug(s).`,
+    `[seed] upserted ${summary.length} canonical image model(s); pruned ${staleCanonicalModels.count} stale ContainerModel(s), ${staleEndpoints.count} stale provider endpoint(s), ${staleBindings.count} stale binding(s).`,
   );
 }
 
@@ -282,21 +295,12 @@ async function bindProviderEntry(args: {
     data: { status: 'active' },
   });
 
-  const providerPricing: Prisma.InputJsonObject = {
-    unit: 'compute_point',
-    preflightCost: model.cost,
-    // Read-only snapshot of the authoritative cost columns (new binding fields).
-    unitPriceNanoUsd: String(entry.unitPriceNanoUsd),
-    unitType: entry.unitType,
-  };
-
   const endpointPayload = buildEndpointPayload({
     providerAccountId: account.id,
     provider: account.provider,
     endpointId: entry.endpointId,
     displayName: model.displayName,
-    modes: model.modes,
-    providerPricing,
+    modes: entry.modes ?? model.modes,
   });
 
   const endpoint = await prisma.aiProviderEndpoint.upsert({
@@ -317,20 +321,11 @@ async function bindProviderEntry(args: {
       supportedModes: true,
       providerInputSchema: true,
       providerOutputSchema: true,
-      providerPricing: true,
       catalogSnapshot: true,
       documentation: true,
     },
   });
 
-  const pricingPolicy: Prisma.InputJsonObject = {
-    mode: 'charge',
-    unit: 'compute_point',
-    displayCurrency: 'COMPUTE_POINTS',
-    preflightCost: model.cost,
-    finalCostSource: 'provider_binding',
-    refundPolicy: 'refund_on_final_failure',
-  };
   const queuePolicy = buildQueuePolicy(model.tier);
 
   const bindingPayload = buildBindingPayload({
@@ -338,10 +333,7 @@ async function bindProviderEntry(args: {
     canonicalModelId,
     priority: entry.priority ?? 100,
     weight: entry.weight ?? 100,
-    pricingPolicy,
     queuePolicy,
-    unitPriceNanoUsd: BigInt(entry.unitPriceNanoUsd),
-    unitType: entry.unitType,
   });
 
   await prisma.aiProviderModelBinding.upsert({

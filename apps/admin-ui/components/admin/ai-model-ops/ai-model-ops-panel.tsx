@@ -15,7 +15,6 @@ import {
   IconChevronRight,
   IconCircleCheck,
   IconCircleOff,
-  IconCoin,
   IconDatabaseSearch,
   IconEdit,
   IconFileSearch,
@@ -25,14 +24,7 @@ import {
   IconShieldCheck,
   IconTrash,
 } from "@tabler/icons-react";
-import {
-  AI_PROVIDER_LABELS,
-  type AiGenUnitType,
-  DEFAULT_MARGIN_BPS,
-  NANO_USD_PER_USD,
-  RESOLUTION_MEGAPIXELS,
-  estimateGenerationPrice,
-} from "@repo/shared";
+import { AI_PROVIDER_LABELS } from "@repo/shared";
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { DataTable, type ColumnDef } from "@/components/ui/data-table";
@@ -55,6 +47,7 @@ import {
   type AdminAiBindingListData,
   type AdminAiCanonicalModel,
   type AdminAiEndpointListData,
+  type AdminAiJobDetail,
   type AdminAiJobListData,
   type AdminAiJobListItem,
   type AdminAiModelListData,
@@ -80,6 +73,8 @@ import { PageHeader } from "@/components/admin/page-header";
 type StatusFilter = "" | "draft" | "active" | "disabled" | "degraded" | "archived";
 type DrawerMode = "provider" | "endpoint" | "model" | "binding" | "endpointBinding" | "job" | null;
 type JsonObject = Record<string, unknown>;
+
+const COMPUTE_POINT_USD = 0.01;
 
 const EMPTY_PROVIDERS: AdminAiProviderListData = { items: [] };
 const EMPTY_ENDPOINTS: AdminAiEndpointListData = { items: [] };
@@ -163,10 +158,8 @@ const MODEL_POLICY_FIELDS = {
   displayName: { name: "displayName", label: "显示名称", required: true },
   family: { name: "family", label: "Family", required: true },
   status: { name: "status", label: "状态", required: true },
-  visibility: { name: "visibility", label: "前台可见性", required: true },
   description: { name: "description", label: "描述" },
   generationModes: { name: "generationModes", label: "生成模式 JSON Array" },
-  marginBps: { name: "marginBps", label: "毛利率（%）", required: true },
   parameterPolicy: { name: "parameterPolicy", label: "参数策略 JSON" },
   billingPolicy: { name: "billingPolicy", label: "积分策略 JSON" },
   queuePolicy: { name: "queuePolicy", label: "队列策略 JSON" },
@@ -188,7 +181,6 @@ const PROVIDER_ENDPOINT_FIELDS = {
   capabilities: { name: "capabilities", label: "能力描述 JSON" },
   providerInputSchema: { name: "providerInputSchema", label: "Provider input schema JSON" },
   providerOutputSchema: { name: "providerOutputSchema", label: "Provider output schema JSON" },
-  providerPricing: { name: "providerPricing", label: "Provider pricing JSON" },
   providerQuotaPolicy: { name: "providerQuotaPolicy", label: "Provider quota JSON" },
   catalogSnapshot: { name: "catalogSnapshot", label: "Catalog snapshot JSON" },
   documentation: { name: "documentation", label: "Documentation JSON" },
@@ -200,16 +192,12 @@ const PROVIDER_BINDING_FIELDS = {
   status: { name: "status", label: "状态", required: true },
   priority: { name: "priority", label: "Priority" },
   weight: { name: "weight", label: "Weight" },
-  unitPriceUsd: { name: "unitPriceUsd", label: "供应商成本（USD）" },
-  unitType: { name: "unitType", label: "计费单位" },
   disabledReason: { name: "disabledReason", label: "停用原因" },
   parameterMap: { name: "parameterMap", label: "参数映射 JSON" },
-  pricingPolicy: { name: "pricingPolicy", label: "积分/利润策略 JSON" },
   queuePolicy: { name: "queuePolicy", label: "队列策略 JSON" },
   routingPolicy: { name: "routingPolicy", label: "路由策略 JSON" },
   fallbackPolicy: { name: "fallbackPolicy", label: "Fallback 策略 JSON" },
   observabilityPolicy: { name: "observabilityPolicy", label: "观测策略 JSON" },
-  providerPricing: { name: "providerPricing", label: "Provider pricing 快照" },
 } satisfies Record<string, AdminFieldDefinition>;
 
 export function AiModelOpsPanel({
@@ -249,7 +237,7 @@ export function AiModelOpsPanel({
   const [bindingModel, setBindingModel] = useState<AdminAiCanonicalModel | null>(null);
   const [selectedBinding, setSelectedBinding] = useState<AdminAiProviderBinding | null>(null);
   const [selectedJob, setSelectedJob] = useState<AdminAiJobListItem | null>(null);
-  const [jobDetail, setJobDetail] = useState<unknown>(null);
+  const [jobDetail, setJobDetail] = useState<AdminAiJobDetail | null>(null);
 
   async function refresh(nextStatus = statusFilter) {
     setLoading(true);
@@ -350,7 +338,9 @@ export function AiModelOpsPanel({
   const loadJobDetail = useCallback(async (jobId: string) => {
     setDrawerError(null);
     try {
-      setJobDetail(await requestEnvelope(`/api/admin/ai-model-ops/jobs/${jobId}`));
+      setJobDetail(
+        await requestEnvelope<AdminAiJobDetail>(`/api/admin/ai-model-ops/jobs/${jobId}`)
+      );
     } catch (err) {
       setDrawerError(toErrorMessage(err));
     }
@@ -840,7 +830,7 @@ function OperationalReadinessPanel({
             <p className="mt-0.5 text-[12px] leading-5 text-slate-500">
               {readiness.risks.length
                 ? "这些问题会影响模型选择、任务路由、定价或生成稳定性。"
-                : "当前站点具备可路由 provider、活跃 binding 和可见统一模型。"}
+                : "当前站点具备可路由 provider、活跃 binding 和启用统一模型。"}
             </p>
           </div>
           <StatusPill tone={readiness.risks.length ? "risk" : "success"}>
@@ -850,7 +840,7 @@ function OperationalReadinessPanel({
         <div className="mt-4 grid grid-cols-2 gap-2 xl:grid-cols-4">
           <PolicyStat label="活跃 Provider" value={readiness.activeProviders} />
           <PolicyStat label="活跃 Binding" value={readiness.activeBindings} />
-          <PolicyStat label="可见模型" value={readiness.visibleModels} />
+          <PolicyStat label="启用模型" value={readiness.activeModels} />
           <PolicyStat
             label="24h Provider 成本"
             value={`$${(overview?.cost24h.providerCostUsd ?? 0).toFixed(4)}`}
@@ -1106,16 +1096,6 @@ function EndpointsPanel({
         ),
       },
       {
-        id: "pricing",
-        header: "成本快照",
-        enableSorting: false,
-        cell: ({ row }) => (
-          <span className="line-clamp-2 max-w-[260px] text-[12px] text-slate-500">
-            {pricingPreview(row.original.providerPricing)}
-          </span>
-        ),
-      },
-      {
         accessorKey: "bindingCount",
         header: "绑定",
         cell: ({ row }) => (
@@ -1327,63 +1307,36 @@ function ModelsPanel({
         cell: ({ row }) => <AiStatusPill status={row.original.status} />,
       },
       {
-        accessorKey: "visibility",
-        header: "可见性",
-        cell: ({ row }) => (
-          <span className="text-[12px] text-slate-600">
-            {visibilityLabel(row.original.visibility)}
-          </span>
-        ),
-      },
-      {
-        id: "reference-price",
-        header: "综合定价",
+        id: "price-band",
+        header: "价格带",
         enableSorting: false,
         cell: ({ row }) => {
-          const sell = row.original.referenceSellPoints;
-          const cost = row.original.referenceCostPoints;
-          if (sell == null) {
-            return <span className="text-[12px] text-slate-400">未绑定</span>;
+          const priceBand = row.original.priceBand;
+          if (!priceBand) {
+            return <span className="text-[12px] text-slate-400">未配置</span>;
           }
+          const range =
+            priceBand.minPoints === priceBand.maxPoints
+              ? `${priceBand.minPoints}`
+              : `${priceBand.minPoints} - ${priceBand.maxPoints}`;
           return (
-            <div className="leading-tight" title="参考价：1 张 @ 1K">
+            <div
+              className="leading-tight"
+              title={[
+                priceBand.minLabel ? `最低 ${priceBand.minLabel}` : null,
+                priceBand.maxLabel ? `最高 ${priceBand.maxLabel}` : null,
+                `版本 ${priceBand.pricingVersion}`,
+              ]
+                .filter(Boolean)
+                .join(" · ")}
+            >
               <p className="text-[13px] font-semibold tabular-nums text-[#E52227]">
-                {sell} 积分
-                <span className="ml-0.5 text-[11px] font-normal text-slate-400">起</span>
+                {range} 积分/张
               </p>
-              {cost != null ? (
-                <p className="text-[11px] tabular-nums text-slate-400">
-                  成本 {Number.isInteger(cost) ? cost : cost.toFixed(1)}
-                </p>
-              ) : null}
+              <p className="mt-0.5 text-[11px] text-slate-500">
+                默认 {priceBand.defaultPoints} · 最高质量 {priceBand.maxLabel ?? "最高档"}
+              </p>
             </div>
-          );
-        },
-      },
-      {
-        id: "margin",
-        header: "预计毛利率",
-        enableSorting: false,
-        cell: ({ row }) => (
-          <span className="text-[12px] font-medium tabular-nums text-slate-700">
-            {marginBpsToPercentDisplay(row.original.marginBps ?? DEFAULT_MARGIN_BPS)}
-          </span>
-        ),
-      },
-      {
-        id: "realized-margin",
-        header: "实际毛利率",
-        enableSorting: false,
-        cell: ({ row }) => {
-          const realized = row.original.realizedMarginBps;
-          return realized == null ? (
-            <span className="text-[12px] text-slate-400" title="待扣费数据接入后自动计算">
-              —
-            </span>
-          ) : (
-            <span className="text-[12px] font-medium tabular-nums text-slate-700">
-              {marginBpsToPercentDisplay(realized)}
-            </span>
           );
         },
       },
@@ -1460,7 +1413,8 @@ function ModelsPanel({
  * - add a binding (pick an existing endpoint, set priority / weight / status) via the create flow,
  * - edit a binding's routing via the existing BindingPolicyDrawer,
  * - archive (soft-remove) a binding via status: archived.
- * Snapshotted schema / pricing stay read-only/informational; routing is the only editable target.
+ * Snapshotted provider schema and parameter maps stay read-only/informational;
+ * product pricing is owned by the canonical model.
  */
 function ModelBindingsSubTable({
   model,
@@ -1519,22 +1473,6 @@ function ModelBindingsSubTable({
             P{row.original.priority} · W{row.original.weight}
           </span>
         ),
-      },
-      {
-        id: "pricing",
-        header: "成本 / 单位",
-        enableSorting: false,
-        cell: ({ row }) => {
-          const item = row.original;
-          return (
-            <div className="text-[12px]">
-              <p className="font-medium tabular-nums text-slate-800">
-                {nanoUsdToUsdDisplay(item.unitPriceNanoUsd)}
-              </p>
-              <p className="mt-0.5 text-slate-500">{UNIT_TYPE_LABELS[item.unitType]}</p>
-            </div>
-          );
-        },
       },
       {
         id: "activity",
@@ -1603,7 +1541,7 @@ function ModelBindingsSubTable({
         <SectionTitle
           icon={<IconRoute className="size-4" />}
           title="路由绑定"
-          description="为这个统一模型挑选 provider endpoint，并配置 priority / weight / status 路由。schema 和 pricing 快照只读。"
+          description="为这个统一模型挑选 provider endpoint，并配置 priority / weight / status 路由。产品积分定价只属于统一模型。"
         />
         <Button
           type="button"
@@ -1647,14 +1585,16 @@ function JobsPanel({
     () => [
       {
         accessorKey: "id",
-        header: "Job",
+        header: "FizzDragon job ID",
         cell: ({ row }) => {
           const item = row.original;
           return (
             <div>
               <p className="font-mono text-[12px] font-medium text-slate-950">{item.id}</p>
               <p className="mt-0.5 font-mono text-[12px] text-slate-500">
-                {item.providerJobId ?? "provider request 未写入"}
+                {item.providerJobId
+                  ? `Provider job ID · ${item.providerJobId}`
+                  : "Provider job ID -"}
               </p>
             </div>
           );
@@ -1704,6 +1644,32 @@ function JobsPanel({
             </div>
           ) : (
             <span className="text-[12px] text-slate-400">-</span>
+          );
+        },
+      },
+      {
+        id: "cost",
+        header: "成本",
+        cell: ({ row }) => {
+          const providerCost = latestProviderCost(row.original);
+          const quotaCost = quotaCostFromRoutingSnapshot(row.original.routingSnapshot);
+          const profit = grossProfitFromCosts(quotaCost, providerCost);
+          return (
+            <div className="text-[12px] leading-5">
+              <p className="font-medium text-slate-900">
+                {quotaCost != null ? `${quotaCost} 积分` : "-"}
+              </p>
+              <p className="font-mono text-slate-500">
+                {providerCost
+                  ? formatMoney(providerCost.amount, providerCost.currency)
+                  : "provider cost -"}
+              </p>
+              <p className="font-mono text-emerald-700">
+                {profit
+                  ? `${formatProfitUsd(profit.grossProfitUsd)} · ${formatPercent(profit.margin)}`
+                  : "margin -"}
+              </p>
+            </div>
           );
         },
       },
@@ -1927,36 +1893,6 @@ function ModelPolicyDrawer({
                     <option value="disabled">停用</option>
                     <option value="degraded">降级</option>
                   </NativeSelect>
-                )}
-              </FormField>
-              <FormField field={MODEL_POLICY_FIELDS.visibility}>
-                {(controlProps) => (
-                  <NativeSelect {...controlProps} defaultValue={draft.visibility}>
-                    <option value="hidden">隐藏</option>
-                    <option value="direct">可直选</option>
-                  </NativeSelect>
-                )}
-              </FormField>
-              <FormField
-                field={MODEL_POLICY_FIELDS.marginBps}
-                required={creating}
-                hint="售价基于供应商成本与该毛利率实时计算；范围 0–99.99%。"
-              >
-                {(controlProps) => (
-                  <div className="relative">
-                    <Input
-                      {...controlProps}
-                      type="number"
-                      min={0}
-                      max={99.99}
-                      step={0.1}
-                      defaultValue={draft.marginBps / 100}
-                      className="h-9 rounded-lg pr-8"
-                    />
-                    <span className="pointer-events-none absolute inset-y-0 right-3 grid place-items-center text-[12px] text-slate-400">
-                      %
-                    </span>
-                  </div>
                 )}
               </FormField>
             </div>
@@ -2185,11 +2121,6 @@ function ProviderEndpointDrawer({
               rows={12}
             />
             <JsonTextarea
-              field={PROVIDER_ENDPOINT_FIELDS.providerPricing}
-              value={draft.providerPricing}
-              rows={10}
-            />
-            <JsonTextarea
               field={PROVIDER_ENDPOINT_FIELDS.providerQuotaPolicy}
               value={draft.providerQuotaPolicy}
               rows={10}
@@ -2230,7 +2161,8 @@ function ProviderEndpointDrawer({
  * - From an endpoint (供应商端点页): a fixed `endpoint`, operator picks the canonical model.
  * - From a canonical model (统一模型详情): a fixed `model`, operator picks an endpoint.
  * Either way the create payload carries both `providerEndpointId` + `canonicalModelId`.
- * Schema / pricing snapshots stay read-only — routing (status/priority/weight) is the only editable target.
+ * Provider schema snapshots stay read-only; routing (status/priority/weight)
+ * is the only editable target.
  */
 function EndpointBindingDrawer({
   open,
@@ -2272,16 +2204,12 @@ function EndpointBindingDrawer({
   // done via the "adjust state during render" pattern to avoid a setState-in-effect.
   const [selectedEndpointId, setSelectedEndpointId] = useState("");
   const [selectedModelId, setSelectedModelId] = useState("");
-  const [unitPriceUsd, setUnitPriceUsd] = useState("");
-  const [unitType, setUnitType] = useState<AiGenUnitType>("per_image");
   const [pickerKey, setPickerKey] = useState<string | null>(null);
   const nextPickerKey = open ? `${fromModel ? "m" : "e"}:${model?.id ?? endpoint?.id ?? ""}` : null;
   if (nextPickerKey !== pickerKey) {
     setPickerKey(nextPickerKey);
     setSelectedEndpointId(open && fromModel ? (bindableEndpoints[0]?.id ?? "") : "");
     setSelectedModelId(open && !fromModel ? (models[0]?.id ?? "") : "");
-    setUnitPriceUsd("");
-    setUnitType("per_image");
   }
 
   if (!endpoint && !model) return null;
@@ -2289,23 +2217,11 @@ function EndpointBindingDrawer({
   const pickedEndpoint = fromModel
     ? (bindableEndpoints.find((item) => item.id === selectedEndpointId) ?? null)
     : endpoint;
-  // The provider pricing snapshot to surface read-only follows the bound endpoint.
   const snapshotEndpoint = pickedEndpoint;
   const subtitle = fromModel ? `${model?.displayName} · ${model?.slug}` : endpoint?.endpointId;
   const canSubmit = fromModel
     ? bindableEndpoints.length > 0 && Boolean(selectedEndpointId)
     : models.length > 0;
-
-  // Margin comes from the canonical model on either side of the binding.
-  const previewMarginBps = fromModel
-    ? (model?.marginBps ?? DEFAULT_MARGIN_BPS)
-    : (models.find((item) => item.id === selectedModelId)?.marginBps ?? DEFAULT_MARGIN_BPS);
-  let previewNanoUsd = "0";
-  try {
-    previewNanoUsd = usdInputToNanoUsdString(unitPriceUsd);
-  } catch {
-    previewNanoUsd = "0";
-  }
 
   return (
     <Sheet open={open} onOpenChange={(next) => (!next ? onClose() : null)}>
@@ -2432,66 +2348,11 @@ function EndpointBindingDrawer({
               )}
             </FormField>
           </div>
-          <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50/60 p-3">
-            <div className="mb-3 flex items-center gap-1.5 text-[12px] font-semibold text-slate-600">
-              <IconCoin className="size-4 text-slate-400" />
-              定价（供应商成本 · 该模型毛利率 {marginBpsToPercentDisplay(previewMarginBps)}）
-            </div>
-            <div className="grid gap-3 sm:grid-cols-2">
-              <FormField
-                field={PROVIDER_BINDING_FIELDS.unitPriceUsd}
-                optional
-                hint="供应商每单位成本，单位 USD（如 0.080）。"
-              >
-                {(controlProps) => (
-                  <div className="relative">
-                    <span className="pointer-events-none absolute inset-y-0 left-3 grid place-items-center text-[12px] text-slate-400">
-                      $
-                    </span>
-                    <Input
-                      {...controlProps}
-                      type="number"
-                      min={0}
-                      step="any"
-                      value={unitPriceUsd}
-                      onChange={(event) => setUnitPriceUsd(event.target.value)}
-                      placeholder="0.080"
-                      className="h-9 rounded-lg pl-7"
-                    />
-                  </div>
-                )}
-              </FormField>
-              <FormField field={PROVIDER_BINDING_FIELDS.unitType} optional>
-                {(controlProps) => (
-                  <NativeSelect
-                    {...controlProps}
-                    value={unitType}
-                    onChange={(event) => setUnitType(event.target.value as AiGenUnitType)}
-                  >
-                    <option value="per_image">{UNIT_TYPE_LABELS.per_image}</option>
-                    <option value="per_megapixel">{UNIT_TYPE_LABELS.per_megapixel}</option>
-                    <option value="per_unit">{UNIT_TYPE_LABELS.per_unit}</option>
-                  </NativeSelect>
-                )}
-              </FormField>
-            </div>
-            <div className="mt-3">
-              <EconomicsPreview
-                unitPriceNanoUsd={previewNanoUsd}
-                unitType={unitType}
-                marginBps={previewMarginBps}
-              />
-            </div>
-          </div>
           <FormField field={PROVIDER_BINDING_FIELDS.disabledReason} optional className="mt-4">
             {(controlProps) => <Textarea {...controlProps} className="min-h-20 rounded-lg" />}
           </FormField>
           <div className="mt-4 grid gap-3 lg:grid-cols-2">
             <JsonTextarea field={PROVIDER_BINDING_FIELDS.parameterMap} value={{}} />
-            <JsonTextarea
-              field={PROVIDER_BINDING_FIELDS.pricingPolicy}
-              value={{ pricingMode: "credit_estimated_cost", marginRatio: 0.45 }}
-            />
             <JsonTextarea
               field={PROVIDER_BINDING_FIELDS.queuePolicy}
               value={{ priorityTier: "standard", timeoutMs: 150000 }}
@@ -2506,12 +2367,7 @@ function EndpointBindingDrawer({
             />
             <JsonTextarea
               field={PROVIDER_BINDING_FIELDS.observabilityPolicy}
-              value={{ requestPayloads: true, providerTrace: true, costLedger: true }}
-            />
-            <JsonTextarea
-              field={PROVIDER_BINDING_FIELDS.providerPricing}
-              value={snapshotEndpoint?.providerPricing ?? {}}
-              readOnly
+              value={{ requestPayloads: true, providerTrace: true }}
             />
           </div>
         </form>
@@ -2545,26 +2401,7 @@ function BindingPolicyDrawer({
   onClose: () => void;
   onSave: (event: FormEvent<HTMLFormElement>) => void;
 }) {
-  const bindingId = binding?.id ?? null;
-  const [unitPriceUsd, setUnitPriceUsd] = useState("");
-  const [unitType, setUnitType] = useState<AiGenUnitType>("per_image");
-
-  // Re-sync local pricing inputs whenever a different binding is opened.
-  useEffect(() => {
-    if (!binding) return;
-    setUnitPriceUsd(nanoUsdToUsdInputValue(binding.unitPriceNanoUsd));
-    setUnitType(binding.unitType);
-  }, [bindingId, binding]);
-
   if (!binding) return null;
-
-  const marginBps = binding.canonicalModel.marginBps ?? DEFAULT_MARGIN_BPS;
-  let previewNanoUsd = "0";
-  try {
-    previewNanoUsd = usdInputToNanoUsdString(unitPriceUsd);
-  } catch {
-    previewNanoUsd = "0";
-  }
 
   return (
     <Sheet open={open} onOpenChange={(next) => (!next ? onClose() : null)}>
@@ -2624,57 +2461,6 @@ function BindingPolicyDrawer({
               )}
             </FormField>
           </div>
-          <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50/60 p-3">
-            <div className="mb-3 flex items-center gap-1.5 text-[12px] font-semibold text-slate-600">
-              <IconCoin className="size-4 text-slate-400" />
-              定价（供应商成本 · 该模型毛利率 {marginBpsToPercentDisplay(marginBps)}）
-            </div>
-            <div className="grid gap-3 sm:grid-cols-2">
-              <FormField
-                field={PROVIDER_BINDING_FIELDS.unitPriceUsd}
-                optional
-                hint="供应商每单位成本，单位 USD（如 0.080）。"
-              >
-                {(controlProps) => (
-                  <div className="relative">
-                    <span className="pointer-events-none absolute inset-y-0 left-3 grid place-items-center text-[12px] text-slate-400">
-                      $
-                    </span>
-                    <Input
-                      {...controlProps}
-                      type="number"
-                      min={0}
-                      step="any"
-                      value={unitPriceUsd}
-                      onChange={(event) => setUnitPriceUsd(event.target.value)}
-                      placeholder="0.080"
-                      className="h-9 rounded-lg pl-7"
-                    />
-                  </div>
-                )}
-              </FormField>
-              <FormField field={PROVIDER_BINDING_FIELDS.unitType} optional>
-                {(controlProps) => (
-                  <NativeSelect
-                    {...controlProps}
-                    value={unitType}
-                    onChange={(event) => setUnitType(event.target.value as AiGenUnitType)}
-                  >
-                    <option value="per_image">{UNIT_TYPE_LABELS.per_image}</option>
-                    <option value="per_megapixel">{UNIT_TYPE_LABELS.per_megapixel}</option>
-                    <option value="per_unit">{UNIT_TYPE_LABELS.per_unit}</option>
-                  </NativeSelect>
-                )}
-              </FormField>
-            </div>
-            <div className="mt-3">
-              <EconomicsPreview
-                unitPriceNanoUsd={previewNanoUsd}
-                unitType={unitType}
-                marginBps={marginBps}
-              />
-            </div>
-          </div>
           <FormField field={PROVIDER_BINDING_FIELDS.disabledReason} optional className="mt-4">
             {(controlProps) => (
               <Textarea
@@ -2689,10 +2475,6 @@ function BindingPolicyDrawer({
               field={PROVIDER_BINDING_FIELDS.parameterMap}
               value={binding.parameterMap}
             />
-            <JsonTextarea
-              field={PROVIDER_BINDING_FIELDS.pricingPolicy}
-              value={binding.pricingPolicy}
-            />
             <JsonTextarea field={PROVIDER_BINDING_FIELDS.queuePolicy} value={binding.queuePolicy} />
             <JsonTextarea
               field={PROVIDER_BINDING_FIELDS.routingPolicy}
@@ -2705,11 +2487,6 @@ function BindingPolicyDrawer({
             <JsonTextarea
               field={PROVIDER_BINDING_FIELDS.observabilityPolicy}
               value={binding.observabilityPolicy}
-            />
-            <JsonTextarea
-              field={PROVIDER_BINDING_FIELDS.providerPricing}
-              value={binding.providerPricing}
-              readOnly
             />
           </div>
         </form>
@@ -2738,7 +2515,7 @@ function JobDetailDrawer({
 }: {
   open: boolean;
   job: AdminAiJobListItem | null;
-  detail: unknown;
+  detail: AdminAiJobDetail | null;
   error: string | null;
   onClose: () => void;
   onLoad: (jobId: string) => void;
@@ -2757,7 +2534,7 @@ function JobDetailDrawer({
         <SheetHeader className="border-b border-slate-200 px-5 py-4">
           <SheetTitle>Request 证据</SheetTitle>
           <SheetDescription className="font-mono text-[12px] text-slate-500">
-            {job?.id ?? "-"}
+            FizzDragon job ID · {job?.id ?? "-"}
           </SheetDescription>
         </SheetHeader>
         <div className="min-h-0 flex-1 overflow-y-auto px-5 py-5">
@@ -2768,12 +2545,291 @@ function JobDetailDrawer({
             </div>
           ) : (
             <div className="space-y-4">
-              <JsonBlock title="Job detail" value={detail} />
+              <JobEvidenceSummary detail={detail} />
+              <JobTimelineEvidence detail={detail} />
+              <JobPayloadEvidence detail={detail} />
+              <JobAttemptsEvidence attempts={detail.attempts} />
+              <JobCostLedgerEvidence entries={detail.costLedger} />
+              <JobOutputsEvidence outputs={detail.outputs} />
+              <JsonBlock title="Raw job detail" value={detail} />
             </div>
           )}
         </div>
       </SheetContent>
     </Sheet>
+  );
+}
+
+function JobEvidenceSummary({ detail }: { detail: AdminAiJobDetail }) {
+  const providerCost = latestProviderCost(detail);
+  const quotaCost = quotaCostFromRoutingSnapshot(detail.routingSnapshot);
+  const profit = grossProfitFromCosts(quotaCost, providerCost);
+  const lastAttempt = detail.attempts.at(-1);
+  const headerUnits = stringFromRecord(
+    asRecord(lastAttempt?.providerResponseHeaders),
+    "x-fal-billable-units"
+  );
+  const runnerId = stringFromRecord(
+    asRecord(lastAttempt?.providerResponseHeaders),
+    "x-fal-served-from"
+  );
+  const duration =
+    lastAttempt?.runDurationMs != null ? formatDurationMs(lastAttempt.runDurationMs) : "-";
+  return (
+    <section className="space-y-3">
+      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-6">
+        <PolicyStat label="FizzDragon job ID" value={detail.id} />
+        <PolicyStat label="Status" value={<JobStatusPill status={detail.status} />} />
+        <PolicyStat label="User price" value={quotaCost != null ? `${quotaCost} 积分` : "-"} />
+        <PolicyStat
+          label="Provider cost"
+          value={providerCost ? formatMoney(providerCost.amount, providerCost.currency) : "-"}
+        />
+        <PolicyStat
+          label="Gross profit"
+          value={profit ? formatProfitUsd(profit.grossProfitUsd) : "-"}
+        />
+        <PolicyStat label="Gross margin" value={profit ? formatPercent(profit.margin) : "-"} />
+      </div>
+      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+        <ReadOnlyValue
+          primary={detail.canonicalModel?.displayName ?? detail.modelId}
+          secondary={detail.modelId}
+        />
+        <ReadOnlyValue
+          primary={detail.providerBinding?.endpointId ?? detail.provider}
+          secondary={detail.providerJobId ?? "provider job id -"}
+        />
+        <ReadOnlyValue
+          primary={headerUnits ? `${headerUnits} billable units` : "billable units -"}
+          secondary={lastAttempt?.providerRequestId ?? null}
+        />
+        <ReadOnlyValue
+          primary={
+            lastAttempt?.providerStatus != null
+              ? `HTTP ${lastAttempt.providerStatus}`
+              : "provider status -"
+          }
+          secondary={duration}
+        />
+        <ReadOnlyValue primary={runnerId ?? "runner -"} secondary="x-fal-served-from" />
+      </div>
+    </section>
+  );
+}
+
+function JobTimelineEvidence({ detail }: { detail: AdminAiJobDetail }) {
+  const events = timelineEventsForJob(detail);
+  if (events.length === 0) return null;
+  const startMs = events[0].timeMs;
+  const endMs = events.at(-1)?.timeMs ?? startMs;
+  const totalMs = Math.max(1, endMs - startMs);
+  return (
+    <section className="overflow-hidden rounded-xl border border-slate-200">
+      <div className="border-b border-slate-200 bg-slate-50 px-3 py-2 text-[12px] font-semibold text-slate-600">
+        Timing
+      </div>
+      <div className="border-b border-slate-100 px-4 py-4">
+        <div className="relative h-12">
+          <div className="absolute left-0 right-0 top-5 h-2 rounded-full bg-slate-100" />
+          {events.map((event) => {
+            const left = `${Math.min(100, Math.max(0, ((event.timeMs - startMs) / totalMs) * 100))}%`;
+            return (
+              <div
+                key={event.key}
+                className="absolute top-0 -translate-x-1/2"
+                style={{ left }}
+                title={`${event.title} · ${event.offset}`}
+              >
+                <div className={cn("mx-auto h-8 w-1 rounded-full", traceToneClass(event))} />
+                <div className="mt-1 w-24 truncate text-center text-[10px] font-medium text-slate-500">
+                  {event.offset}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+      <div className="divide-y divide-slate-100">
+        {events.map((event) => (
+          <div key={event.key} className="grid gap-3 px-4 py-3 md:grid-cols-[140px_1fr_auto]">
+            <div className="font-mono text-[12px] text-slate-500">{event.offset}</div>
+            <div>
+              <div className="flex flex-wrap items-center gap-2">
+                <p className="text-sm font-semibold text-slate-900">{event.title}</p>
+                <span className="rounded-full bg-slate-100 px-1.5 py-0.5 text-[10px] font-medium text-slate-500">
+                  {event.source} · {event.confidence}
+                </span>
+              </div>
+              {event.description ? (
+                <p className="mt-1 text-[12px] leading-5 text-slate-500">{event.description}</p>
+              ) : null}
+              <p className="mt-1 font-mono text-[11px] text-slate-400">
+                {event.occurredAt ? formatDate(event.occurredAt) : "-"}
+              </p>
+            </div>
+            <div className="font-mono text-[12px] text-slate-500">
+              {event.durationMs != null ? formatDurationMs(event.durationMs) : ""}
+            </div>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function JobPayloadEvidence({ detail }: { detail: AdminAiJobDetail }) {
+  const lastAttempt = detail.attempts.at(-1);
+  return (
+    <div className="space-y-4">
+      <JsonBlock
+        title="Input"
+        value={lastAttempt?.providerRequest ?? detail.normalizedInput ?? detail.input}
+      />
+      <JsonBlock title="Output" value={lastAttempt?.providerResponse ?? detail.outputs} />
+      <JsonBlock title="Logs" value={lastAttempt?.providerLogs ?? detail.logs ?? []} />
+      <CodeBlock title="Replay code" value={buildReplaySnippet(detail)} />
+    </div>
+  );
+}
+
+function JobAttemptsEvidence({ attempts }: { attempts: AdminAiJobDetail["attempts"] }) {
+  if (attempts.length === 0) {
+    return (
+      <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-6 text-center text-sm text-slate-500">
+        暂无 provider attempt。
+      </div>
+    );
+  }
+  return (
+    <section className="overflow-hidden rounded-xl border border-slate-200">
+      <div className="border-b border-slate-200 bg-slate-50 px-3 py-2 text-[12px] font-semibold text-slate-600">
+        Provider attempts
+      </div>
+      <div className="divide-y divide-slate-200">
+        {attempts.map((attempt) => {
+          const cost = asRecord(attempt.costAccounting);
+          return (
+            <div key={attempt.id} className="grid gap-3 px-3 py-3 md:grid-cols-[1fr_1fr_1fr]">
+              <ReadOnlyValue
+                primary={`#${attempt.attemptNumber} · ${attempt.status}`}
+                secondary={attempt.providerEndpoint ?? attempt.providerRequestId}
+              />
+              <ReadOnlyValue
+                primary={
+                  numberFromRecord(cost, "providerCostUsd") != null
+                    ? formatMoney(numberFromRecord(cost, "providerCostUsd"), "USD")
+                    : "-"
+                }
+                secondary={
+                  numberFromRecord(cost, "billableUnits") != null
+                    ? `${numberFromRecord(cost, "billableUnits")} billable units`
+                    : "costAccounting -"
+                }
+              />
+              <ReadOnlyValue
+                primary={attempt.runDurationMs != null ? `${attempt.runDurationMs}ms` : "-"}
+                secondary={attempt.completedAt ? formatDate(attempt.completedAt) : null}
+              />
+            </div>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
+function JobCostLedgerEvidence({ entries }: { entries: AdminAiJobDetail["costLedger"] }) {
+  if (entries.length === 0) {
+    return (
+      <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-6 text-center text-sm text-slate-500">
+        暂无成本账本记录。
+      </div>
+    );
+  }
+  return (
+    <section className="overflow-hidden rounded-xl border border-slate-200">
+      <div className="border-b border-slate-200 bg-slate-50 px-3 py-2 text-[12px] font-semibold text-slate-600">
+        Cost ledger
+      </div>
+      <div className="divide-y divide-slate-200">
+        {entries.map((entry, index) => (
+          <div
+            key={entry.id ?? `${entry.entryType}-${index}`}
+            className="grid gap-3 px-3 py-3 md:grid-cols-[1fr_1fr_1fr_1fr]"
+          >
+            <ReadOnlyValue
+              primary={entry.provider ?? entry.entryType}
+              secondary={entry.endpointId ?? entry.source}
+            />
+            <ReadOnlyValue
+              primary={entry.providerRequestId ?? entry.entryType}
+              secondary={entry.source}
+            />
+            <ReadOnlyValue
+              primary={formatMoney(entry.amount, entry.currency)}
+              secondary={
+                entry.providerCostUsd
+                  ? `providerCostUsd ${formatMoney(entry.providerCostUsd, "USD")}`
+                  : null
+              }
+            />
+            <ReadOnlyValue
+              primary={
+                entry.billableUnits != null
+                  ? `${entry.billableUnits} ${entry.unit ?? "units"}`
+                  : entry.listPriceCredits != null
+                    ? `${entry.listPriceCredits} 积分`
+                    : "-"
+              }
+              secondary={
+                [
+                  entry.unitPrice != null
+                    ? `unitPrice ${formatMoney(entry.unitPrice, entry.currency)}`
+                    : null,
+                  entry.listPriceCredits != null
+                    ? `listPrice ${entry.listPriceCredits} 积分`
+                    : null,
+                  entry.createdAt ? formatDate(entry.createdAt) : null,
+                ]
+                  .filter(Boolean)
+                  .join(" · ") || null
+              }
+            />
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function JobOutputsEvidence({ outputs }: { outputs: AdminAiJobDetail["outputs"] }) {
+  if (outputs.length === 0) return null;
+  return (
+    <section className="overflow-hidden rounded-xl border border-slate-200">
+      <div className="border-b border-slate-200 bg-slate-50 px-3 py-2 text-[12px] font-semibold text-slate-600">
+        Outputs
+      </div>
+      <div className="grid gap-3 p-3 sm:grid-cols-2 lg:grid-cols-4">
+        {outputs.map((output) => (
+          <a
+            key={output.id}
+            href={output.url}
+            target="_blank"
+            rel="noreferrer"
+            className="overflow-hidden rounded-lg border border-slate-200 bg-slate-50"
+          >
+            <div className="aspect-square bg-white">
+              {/* eslint-disable-next-line @next/next/no-img-element -- provider outputs can be arbitrary external URLs. */}
+              <img src={output.url} alt="" className="size-full object-cover" />
+            </div>
+            <div className="px-2 py-1.5 font-mono text-[11px] text-slate-500">
+              #{output.outputIndex} · {output.type}
+            </div>
+          </a>
+        ))}
+      </div>
+    </section>
   );
 }
 
@@ -2880,6 +2936,19 @@ function JsonBlock({ title, value }: { title: string; value: unknown }) {
   );
 }
 
+function CodeBlock({ title, value }: { title: string; value: string }) {
+  return (
+    <section className="overflow-hidden rounded-xl border border-slate-200">
+      <div className="border-b border-slate-200 bg-slate-50 px-3 py-2 text-[12px] font-semibold text-slate-600">
+        {title}
+      </div>
+      <pre className="max-h-[420px] overflow-auto bg-slate-950 p-4 text-[12px] leading-5 text-slate-100">
+        {value}
+      </pre>
+    </section>
+  );
+}
+
 function AiStatusPill({ status }: { status: string }) {
   const tone =
     status === "active"
@@ -2910,6 +2979,205 @@ function JobStatusPill({ status }: { status: string }) {
   return <StatusPill tone={tone}>{jobStatusLabel(status)}</StatusPill>;
 }
 
+function latestProviderCost(job: Pick<AdminAiJobListItem, "costLedger">) {
+  return (job.costLedger ?? []).find((entry) => entry.entryType === "provider_cost") ?? null;
+}
+
+function grossProfitFromCosts(
+  quotaCost: number | null,
+  providerCost: ReturnType<typeof latestProviderCost>
+): {
+  userPriceUsd: number;
+  providerCostUsd: number;
+  grossProfitUsd: number;
+  margin: number;
+} | null {
+  if (quotaCost == null || quotaCost <= 0 || !providerCost) return null;
+  const providerCostUsd =
+    parseFiniteNumber(providerCost.providerCostUsd) ??
+    (providerCost.currency.trim().toUpperCase() === "USD"
+      ? parseFiniteNumber(providerCost.amount)
+      : null);
+  if (providerCostUsd == null) return null;
+  const userPriceUsd = quotaCost * COMPUTE_POINT_USD;
+  const grossProfitUsd = userPriceUsd - providerCostUsd;
+  return {
+    userPriceUsd,
+    providerCostUsd,
+    grossProfitUsd,
+    margin: grossProfitUsd / userPriceUsd,
+  };
+}
+
+type TimelineEvent = {
+  key: string;
+  title: string;
+  description?: string | null;
+  source: string;
+  confidence: string;
+  occurredAt: string;
+  timeMs: number;
+  offset: string;
+  durationMs?: number | null;
+  eventType: string;
+};
+
+type TimelineRawEvent = {
+  id?: string;
+  eventType: string;
+  title?: string | null;
+  description?: string | null;
+  source: string;
+  confidence: string;
+  occurredAt: string;
+  durationMs?: number | null;
+};
+
+function timelineEventsForJob(detail: AdminAiJobDetail): TimelineEvent[] {
+  const rawEvents: TimelineRawEvent[] =
+    detail.traceEvents?.length > 0 ? detail.traceEvents : fallbackTraceEvents(detail);
+  const parsed: TimelineEvent[] = [];
+  rawEvents.forEach((event, index) => {
+    const timeMs = Date.parse(event.occurredAt);
+    if (!Number.isFinite(timeMs)) return;
+    parsed.push({
+      key: event.id ?? `${event.eventType}-${index}`,
+      title: event.title || traceEventLabel(event.eventType),
+      description: event.description,
+      source: event.source,
+      confidence: event.confidence,
+      occurredAt: event.occurredAt,
+      timeMs,
+      offset: "0.000s",
+      durationMs: event.durationMs,
+      eventType: event.eventType,
+    });
+  });
+  parsed.sort((a, b) => a.timeMs - b.timeMs);
+  const startMs = parsed[0]?.timeMs ?? 0;
+  return parsed.map((event) => ({
+    ...event,
+    offset: formatDurationMs(event.timeMs - startMs),
+  }));
+}
+
+function fallbackTraceEvents(detail: AdminAiJobDetail): TimelineRawEvent[] {
+  const points = [
+    ["job_submitted", "Submitted", detail.createdAt],
+    ["worker_started", "Worker started", detail.startedAt],
+    ["provider_submitted", "Provider submitted", detail.providerSubmittedAt],
+    ["provider_execution_started", "Execution started", detail.providerStartedAt],
+    ["provider_execution_finished", "Execution finished", detail.providerCompletedAt],
+    [
+      "job_completed",
+      detail.status === "failed" ? "Job failed" : "Job completed",
+      detail.completedAt,
+    ],
+  ] as const;
+  return points
+    .filter(([, , occurredAt]) => Boolean(occurredAt))
+    .map(([eventType, title, occurredAt], index) => ({
+      id: `fallback-${eventType}-${index}`,
+      eventType,
+      title,
+      source: "internal",
+      confidence: "observed",
+      occurredAt: occurredAt as string,
+      description: null,
+      durationMs: null,
+    }));
+}
+
+function traceToneClass(event: TimelineEvent) {
+  if (event.eventType.includes("failed") || event.eventType.includes("error")) return "bg-rose-500";
+  if (event.source === "provider_platform") return "bg-violet-500";
+  if (event.source === "provider_header") return "bg-amber-500";
+  return "bg-slate-700";
+}
+
+function traceEventLabel(eventType: string) {
+  return eventType
+    .split("_")
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
+}
+
+function formatDurationMs(value: number): string {
+  if (!Number.isFinite(value)) return "-";
+  if (value < 1000) return `${Math.max(0, Math.round(value))}ms`;
+  return `${(value / 1000).toFixed(3)}s`;
+}
+
+function buildReplaySnippet(detail: AdminAiJobDetail): string {
+  const lastAttempt = detail.attempts.at(-1);
+  const endpoint = lastAttempt?.providerEndpoint ?? detail.deployment;
+  const input = lastAttempt?.providerRequest ?? detail.normalizedInput ?? detail.input ?? {};
+  return [
+    'import { fal } from "@fal-ai/client";',
+    "",
+    `const result = await fal.subscribe(${JSON.stringify(endpoint)}, {`,
+    `  input: ${formatJson(input).replaceAll("\n", "\n  ")},`,
+    "  logs: true,",
+    "  onQueueUpdate: (update) => {",
+    '    if (update.status === "IN_PROGRESS") {',
+    "      update.logs?.map((log) => log.message).forEach(console.log);",
+    "    }",
+    "  },",
+    "});",
+    "",
+    "console.log(result.data);",
+    "console.log(result.requestId);",
+  ].join("\n");
+}
+
+function quotaCostFromRoutingSnapshot(value: unknown): number | null {
+  const snapshot = asRecord(value);
+  const policy = asRecord(snapshot.policy);
+  const quota = asRecord(policy.quota);
+  return numberFromRecord(quota, "cost");
+}
+
+function formatMoney(value: unknown, currency: string | null | undefined): string {
+  const amount = typeof value === "number" ? value : Number(value);
+  const code = currency?.trim().toUpperCase() || "USD";
+  if (!Number.isFinite(amount)) return `${String(value)} ${code}`;
+  if (code === "USD") {
+    return `$${amount.toFixed(Math.abs(amount) < 0.01 ? 6 : 2)}`;
+  }
+  return `${amount.toFixed(6)} ${code}`;
+}
+
+function formatProfitUsd(value: number): string {
+  if (!Number.isFinite(value)) return "-";
+  return `$${value.toFixed(Math.abs(value) < 1 ? 6 : 2)}`;
+}
+
+function formatPercent(value: number): string {
+  if (!Number.isFinite(value)) return "-";
+  return `${(value * 100).toFixed(2)}%`;
+}
+
+function asRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : {};
+}
+
+function parseFiniteNumber(value: unknown): number | null {
+  const parsed = typeof value === "number" ? value : Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function numberFromRecord(record: Record<string, unknown>, key: string): number | null {
+  return parseFiniteNumber(record[key]);
+}
+
+function stringFromRecord(record: Record<string, unknown>, key: string): string | null {
+  const value = record[key];
+  return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
 function computeReadiness(
   providers: AdminAiProviderAccount[],
   bindings: AdminAiProviderBinding[],
@@ -2917,38 +3185,25 @@ function computeReadiness(
 ) {
   const activeProviders = providers.filter((item) => item.status === "active").length;
   const activeBindings = bindings.filter((item) => item.status === "active").length;
-  const visibleModels = models.filter(
-    (item) => item.status === "active" && item.visibility !== "hidden"
-  ).length;
+  const activeModels = models.filter((item) => item.status === "active").length;
   const risks: Array<{ message: string; model?: AdminAiCanonicalModel }> = [];
 
   if (activeProviders === 0)
     risks.push({ message: "没有启用的 provider 账号，前台提交会缺少可用资源。" });
   if (activeBindings === 0)
     risks.push({ message: "没有启用的 provider binding，统一模型无法路由到真实 endpoint。" });
-  if (visibleModels === 0)
-    risks.push({ message: "没有启用且可见的统一模型，前台模型选择无法闭环。" });
-
-  const noPricing = bindings.filter(
-    (item) =>
-      item.status === "active" &&
-      (!item.providerPricing ||
-        (typeof item.providerPricing === "object" &&
-          Object.keys(item.providerPricing as Record<string, unknown>).length === 0))
-  );
-  if (noPricing.length > 0)
-    risks.push({ message: `${noPricing.length} 个启用 binding 缺少 provider pricing 快照。` });
+  if (activeModels === 0) risks.push({ message: "没有启用的统一模型，前台模型选择无法闭环。" });
 
   for (const model of models.filter(
-    (item) => item.status === "active" && item.visibility !== "hidden" && item.bindingCount === 0
+    (item) => item.status === "active" && item.bindingCount === 0
   )) {
     risks.push({
-      message: `统一模型「${model.displayName}」可见但没有启用 provider 绑定。`,
+      message: `统一模型「${model.displayName}」已启用但没有启用 provider 绑定。`,
       model,
     });
   }
 
-  return { activeProviders, activeBindings, visibleModels, risks };
+  return { activeProviders, activeBindings, activeModels, risks };
 }
 
 function defaultModelDraft(): AdminAiCanonicalModel {
@@ -2959,16 +3214,14 @@ function defaultModelDraft(): AdminAiCanonicalModel {
     modality: "image",
     family: "gpt-image",
     generationModes: ["text_to_image"],
-    visibility: "direct",
     status: "draft",
     description: "",
     parameterPolicy: {},
     outputPolicy: {},
     entitlementPolicy: {},
-    billingPolicy: { pricingMode: "credit_estimated_cost", creditFloor: 2, marginRatio: 0.45 },
-    marginBps: DEFAULT_MARGIN_BPS,
+    billingPolicy: { mode: "charge", unit: "compute_point", finalCostSource: "product_pricing" },
     queuePolicy: { priorityTier: "standard", maxConcurrentPerUser: 2, timeoutMs: 150000 },
-    uiPolicy: { frontstageVisible: true },
+    uiPolicy: {},
     observabilityPolicy: {
       providerTrace: true,
       requestPayloads: true,
@@ -2979,9 +3232,7 @@ function defaultModelDraft(): AdminAiCanonicalModel {
     updatedAt: "",
     bindingCount: 0,
     jobCount: 0,
-    referenceSellPoints: null,
-    referenceCostPoints: null,
-    realizedMarginBps: null,
+    priceBand: null,
   };
 }
 
@@ -3014,11 +3265,6 @@ function defaultProviderEndpointDraft(
       type: "object",
       properties: {},
     },
-    providerPricing: {
-      mode: "charge",
-      unit: "request",
-      currency: "USD",
-    },
     providerQuotaPolicy: {
       maxConcurrentRequests: 2,
       timeoutMs: 150000,
@@ -3037,205 +3283,6 @@ function defaultProviderEndpointDraft(
   };
 }
 
-// ---------------------------------------------------------------------------
-// Parameterized pricing helpers (financial-grade, mirrors @repo/shared).
-// COST lives per-binding (unitPriceNanoUsd + unitType); MARKUP lives
-// per-canonical (marginBps). The live preview folds them via the shared
-// estimator so admin and runtime never disagree.
-// ---------------------------------------------------------------------------
-
-const UNIT_TYPE_LABELS: Record<AiGenUnitType, string> = {
-  per_image: "按张（per image）",
-  per_megapixel: "按百万像素（per MP）",
-  per_unit: "按次（per unit）",
-};
-
-const RESOLUTION_PRESETS: Array<{ value: string; label: string; megapixels: number }> = [
-  { value: "1K", label: "1K · 1MP", megapixels: RESOLUTION_MEGAPIXELS["1K"] ?? 1 },
-  { value: "2K", label: "2K · 4MP", megapixels: RESOLUTION_MEGAPIXELS["2K"] ?? 4 },
-  { value: "4K", label: "4K · 16MP", megapixels: RESOLUTION_MEGAPIXELS["4K"] ?? 16 },
-];
-
-/** nanoUSD numeric string → "$0.080" display (3 decimals). */
-function nanoUsdToUsdDisplay(nanoUsd: string): string {
-  const value = Number(nanoUsd) / Number(NANO_USD_PER_USD);
-  if (!Number.isFinite(value)) return "$0.000";
-  return `$${value.toFixed(3)}`;
-}
-
-/** nanoUSD numeric string → plain USD number string for an editable input. */
-function nanoUsdToUsdInputValue(nanoUsd: string): string {
-  const value = Number(nanoUsd) / Number(NANO_USD_PER_USD);
-  if (!Number.isFinite(value) || value === 0) return "";
-  // Trim to a stable decimal without trailing-zero noise.
-  return String(Number(value.toFixed(6)));
-}
-
-/** USD input string → integer nanoUSD numeric string (BigInt-safe). */
-function usdInputToNanoUsdString(usd: string): string {
-  const trimmed = usd.trim();
-  if (!trimmed) return "0";
-  const value = Number(trimmed);
-  if (!Number.isFinite(value) || value < 0) {
-    throw new Error("供应商成本（USD）必须是非负数字。");
-  }
-  // Round to the nearest nanoUSD; USD has 9 decimals of nano precision.
-  return String(Math.round(value * Number(NANO_USD_PER_USD)));
-}
-
-/** bps (0..9999) → "70.0%" margin display. */
-function marginBpsToPercentDisplay(bps: number): string {
-  return `${(bps / 100).toFixed(1)}%`;
-}
-
-/** Percent input string → integer bps; validates the [0, 99.99] range. */
-function percentInputToMarginBps(percent: string): number {
-  const value = Number(percent.trim());
-  if (!Number.isFinite(value) || value < 0 || value >= 100) {
-    throw new Error("毛利率（%）必须在 0 到 99.99 之间。");
-  }
-  return Math.round(value * 100);
-}
-
-/**
- * Live economics preview. Operator picks 张数 + 分辨率; everything else
- * (cost / sell / margin) is computed client-side via the shared estimator on
- * every change. Pure display — never persists.
- */
-function EconomicsPreview({
-  unitPriceNanoUsd,
-  unitType,
-  marginBps,
-}: {
-  unitPriceNanoUsd: string;
-  unitType: AiGenUnitType;
-  marginBps: number;
-}) {
-  const [numImages, setNumImages] = useState(1);
-  const [resolution, setResolution] = useState("2K");
-
-  const estimate = useMemo(() => {
-    let priceNanoUsd: bigint;
-    try {
-      priceNanoUsd = BigInt(unitPriceNanoUsd || "0");
-    } catch {
-      priceNanoUsd = BigInt(0);
-    }
-    const safeMargin =
-      Number.isInteger(marginBps) && marginBps >= 0 && marginBps < 10_000
-        ? marginBps
-        : DEFAULT_MARGIN_BPS;
-    const safeImages = Number.isInteger(numImages) && numImages > 0 ? numImages : 1;
-    const megapixels =
-      RESOLUTION_PRESETS.find((preset) => preset.value === resolution)?.megapixels ?? 4;
-    try {
-      return estimateGenerationPrice({
-        unitPriceNanoUsd: priceNanoUsd,
-        unitType,
-        marginBps: safeMargin,
-        numImages: safeImages,
-        megapixels,
-      });
-    } catch {
-      return null;
-    }
-  }, [unitPriceNanoUsd, unitType, marginBps, numImages, resolution]);
-
-  const showResolution = unitType === "per_megapixel";
-
-  return (
-    <section className="overflow-hidden rounded-xl border border-slate-200 bg-white">
-      <div className="flex items-center justify-between border-b border-slate-200 bg-slate-50 px-3 py-2">
-        <div className="flex items-center gap-1.5 text-[12px] font-semibold text-slate-600">
-          <IconCoin className="size-4 text-slate-400" />
-          实时定价预览
-        </div>
-        <span className="text-[11px] text-slate-400">客户端实时计算 · 不写入</span>
-      </div>
-      <div className="grid gap-3 px-3 py-3 md:grid-cols-2">
-        <label className="grid gap-1.5">
-          <span className="text-[11px] font-medium text-slate-500">张数（numImages）</span>
-          <Input
-            type="number"
-            min={1}
-            max={100}
-            step={1}
-            value={numImages}
-            onChange={(event) => setNumImages(Math.max(1, Number(event.target.value) || 1))}
-            className="h-9 rounded-lg"
-          />
-        </label>
-        <label className="grid gap-1.5">
-          <span className="text-[11px] font-medium text-slate-500">分辨率（megapixels）</span>
-          <NativeSelect
-            value={resolution}
-            onChange={(event) => setResolution(event.target.value)}
-            disabled={!showResolution}
-            title={showResolution ? undefined : "仅 per_megapixel 计费单位使用分辨率"}
-          >
-            {RESOLUTION_PRESETS.map((preset) => (
-              <option key={preset.value} value={preset.value}>
-                {preset.label}
-              </option>
-            ))}
-          </NativeSelect>
-        </label>
-      </div>
-      <div className="grid grid-cols-3 gap-2 border-t border-slate-100 px-3 py-3">
-        <EconomicsStat
-          label="成本"
-          value={estimate ? `${formatPoints(estimate.costPoints)} 积分` : "—"}
-        />
-        <EconomicsStat
-          label="售价"
-          value={estimate ? `${estimate.sellPoints} 积分` : "—"}
-          emphasis
-        />
-        <EconomicsStat
-          label="毛利率"
-          value={estimate ? marginBpsToPercentDisplay(estimate.marginBps) : "—"}
-        />
-      </div>
-    </section>
-  );
-}
-
-function EconomicsStat({
-  label,
-  value,
-  emphasis,
-}: {
-  label: string;
-  value: string;
-  emphasis?: boolean;
-}) {
-  return (
-    <div
-      className={cn(
-        "rounded-lg border px-3 py-2",
-        emphasis ? "border-[#E52227]/30 bg-[#E52227]/5" : "border-slate-200 bg-slate-50"
-      )}
-    >
-      <p className="text-[11px] font-medium text-slate-500">{label}</p>
-      <p
-        className={cn(
-          "mt-1 truncate text-[15px] font-semibold tabular-nums",
-          emphasis ? "text-[#E52227]" : "text-slate-950"
-        )}
-      >
-        {value}
-      </p>
-    </div>
-  );
-}
-
-/** Display compute points; trims fractional noise but keeps sub-point precision. */
-function formatPoints(points: number): string {
-  if (!Number.isFinite(points)) return "0";
-  if (Number.isInteger(points)) return String(points);
-  return String(Number(points.toFixed(4)));
-}
-
 function buildProviderAccountPayload(form: FormData) {
   return {
     status: requiredString(form, PROVIDER_ACCOUNT_FIELDS.status),
@@ -3249,9 +3296,7 @@ function buildModelPayload(form: FormData) {
     displayName: requiredString(form, MODEL_POLICY_FIELDS.displayName),
     family: requiredString(form, MODEL_POLICY_FIELDS.family),
     status: requiredString(form, MODEL_POLICY_FIELDS.status),
-    visibility: requiredString(form, MODEL_POLICY_FIELDS.visibility),
     description: nullableString(form, MODEL_POLICY_FIELDS.description),
-    marginBps: marginBpsField(form, MODEL_POLICY_FIELDS.marginBps),
     generationModes: jsonArrayField(form, MODEL_POLICY_FIELDS.generationModes),
     parameterPolicy: jsonObjectField(form, MODEL_POLICY_FIELDS.parameterPolicy),
     billingPolicy: jsonObjectField(form, MODEL_POLICY_FIELDS.billingPolicy),
@@ -3280,7 +3325,6 @@ function buildProviderEndpointPayload(form: FormData) {
     capabilities: jsonObjectField(form, PROVIDER_ENDPOINT_FIELDS.capabilities),
     providerInputSchema: jsonObjectField(form, PROVIDER_ENDPOINT_FIELDS.providerInputSchema),
     providerOutputSchema: jsonObjectField(form, PROVIDER_ENDPOINT_FIELDS.providerOutputSchema),
-    providerPricing: jsonObjectField(form, PROVIDER_ENDPOINT_FIELDS.providerPricing),
     providerQuotaPolicy: jsonObjectField(form, PROVIDER_ENDPOINT_FIELDS.providerQuotaPolicy),
     catalogSnapshot: jsonObjectField(form, PROVIDER_ENDPOINT_FIELDS.catalogSnapshot),
     documentation: jsonObjectField(form, PROVIDER_ENDPOINT_FIELDS.documentation),
@@ -3302,11 +3346,8 @@ function buildProviderBindingPayload(form: FormData) {
     status: requiredString(form, PROVIDER_BINDING_FIELDS.status),
     priority: integerField(form, PROVIDER_BINDING_FIELDS.priority, 100),
     weight: integerField(form, PROVIDER_BINDING_FIELDS.weight, 100),
-    unitPriceNanoUsd: unitPriceNanoUsdField(form, PROVIDER_BINDING_FIELDS.unitPriceUsd),
-    unitType: unitTypeField(form, PROVIDER_BINDING_FIELDS.unitType),
     disabledReason: nullableString(form, PROVIDER_BINDING_FIELDS.disabledReason),
     parameterMap: jsonObjectField(form, PROVIDER_BINDING_FIELDS.parameterMap),
-    pricingPolicy: jsonObjectField(form, PROVIDER_BINDING_FIELDS.pricingPolicy),
     queuePolicy: jsonObjectField(form, PROVIDER_BINDING_FIELDS.queuePolicy),
     routingPolicy: jsonObjectField(form, PROVIDER_BINDING_FIELDS.routingPolicy),
     fallbackPolicy: jsonObjectField(form, PROVIDER_BINDING_FIELDS.fallbackPolicy),
@@ -3340,26 +3381,6 @@ function stringField(form: FormData, field: AdminFieldDefinition) {
 function integerField(form: FormData, field: AdminFieldDefinition, fallback: number) {
   const value = Number.parseInt(stringField(form, field), 10);
   return Number.isFinite(value) ? value : fallback;
-}
-
-/** 毛利率 % input → integer bps (server stores bps; UI shows %). */
-function marginBpsField(form: FormData, field: AdminFieldDefinition) {
-  const raw = stringField(form, field);
-  if (!raw) return DEFAULT_MARGIN_BPS;
-  return percentInputToMarginBps(raw);
-}
-
-/** 供应商成本（USD）input → integer nanoUSD numeric string (BigInt-safe). */
-function unitPriceNanoUsdField(form: FormData, field: AdminFieldDefinition): string {
-  return usdInputToNanoUsdString(stringField(form, field));
-}
-
-function unitTypeField(form: FormData, field: AdminFieldDefinition): AiGenUnitType {
-  const value = stringField(form, field);
-  if (value === "per_image" || value === "per_megapixel" || value === "per_unit") {
-    return value;
-  }
-  return "per_image";
 }
 
 function jsonObjectField(form: FormData, field: AdminFieldDefinition): JsonObject {
@@ -3436,27 +3457,6 @@ function jobStatusLabel(status: string) {
       expired: "过期",
     }[status] ?? status
   );
-}
-
-function visibilityLabel(visibility: string) {
-  return (
-    {
-      hidden: "隐藏",
-      direct: "可直选",
-    }[visibility] ?? visibility
-  );
-}
-
-function pricingPreview(value: unknown) {
-  if (!value || (typeof value === "object" && Object.keys(value).length === 0)) {
-    return "未配置 pricing";
-  }
-  if (isPlainObject(value)) {
-    const amount = value.amount ?? value.price ?? value.unit_price ?? value.unitPrice;
-    const unit = value.unit ?? value.billing_unit ?? value.billingUnit;
-    if (amount || unit) return [amount, unit].filter(Boolean).join(" / ");
-  }
-  return JSON.stringify(value).slice(0, 160);
 }
 
 function modePreview(supportedModes: unknown, capabilities: unknown) {

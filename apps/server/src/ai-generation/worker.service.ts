@@ -25,12 +25,18 @@ import {
 } from '@nestjs/common';
 import type { Worker, Job as BullJob } from 'bullmq';
 import { createHash } from 'crypto';
+import { AlertingService, type AlertSeverity } from '../common/alerting';
 import { newShortId } from '../common/id';
 import { EntitlementService } from '../entitlements';
 import { QuotaService } from '../quota/quota.service';
 import { OutputStorageService } from '../infra/storage/storage.types';
 import { AiGenerationOutboxService } from './outbox.service';
-import type { ProviderAdapter, RawProviderOutput } from './provider-adapter';
+import type {
+  ProviderAdapter,
+  ProviderTimingSnapshot,
+  ProviderTraceEvent,
+  RawProviderOutput,
+} from './provider-adapter';
 import { ProviderRegistry } from './provider-registry.service';
 import {
   createAiWorker,
@@ -98,6 +104,7 @@ export class AiGenerationWorkerService
     private readonly queueService: AiGenerationQueueService,
     private readonly quota: QuotaService,
     private readonly entitlements: EntitlementService,
+    private readonly alerts: AlertingService,
   ) {}
 
   private queuePriorityFor(job: AiJob): number {
@@ -111,6 +118,107 @@ export class AiGenerationWorkerService
     return job.entitlementSnapshot
       ? this.entitlements.quotaTierFor(job.entitlementSnapshot)
       : 'Free';
+  }
+
+  private alertQueueFailure(
+    queueName: string,
+    queueJob: BullJob<AiQueueJobData> | undefined,
+    err: Error,
+  ): void {
+    this.alerts.notify({
+      kind: 'ai_generation_queue_failure',
+      severity: 'critical',
+      source: 'ai-generation.worker',
+      title: 'AI generation queue processor failed',
+      summary: `BullMQ ${queueName} job ${queueJob?.id ?? '?'} failed outside the managed provider error path: ${err.message}`,
+      occurredAt: new Date().toISOString(),
+      fingerprint: [
+        'ai_generation_queue_failure',
+        queueName,
+        err.name,
+        err.message,
+      ].join('|'),
+      error: {
+        name: err.name,
+        message: err.message,
+        stack: err.stack,
+      },
+      context: {
+        queueName,
+        bullJobId: queueJob?.id,
+        attemptsMade: queueJob?.attemptsMade,
+        data: queueJob?.data,
+      },
+      tags: ['ai-generation', 'queue', 'bullmq'],
+    });
+  }
+
+  private alertJobFailure(job: AiJob, payload: AiJobError, failedAt: string) {
+    if (payload.code === 'CANCELLED_BY_USER') return;
+    const selectedProvider =
+      job.routingSnapshot?.selectedProvider ?? job.provider;
+    const selectedModel = job.routingSnapshot?.selectedModelId ?? job.modelId;
+    const selectedDeployment =
+      job.routingSnapshot?.selectedDeployment ?? job.deployment;
+    this.alerts.notify({
+      kind: 'ai_generation_job_failed',
+      severity: severityForAiFailure(payload.code),
+      source: 'ai-generation.worker',
+      title: `AI generation failed: ${payload.code}`,
+      summary: `${selectedProvider}/${selectedModel} failed for job ${job.id}: ${payload.message}`,
+      occurredAt: failedAt,
+      fingerprint: [
+        'ai_generation_job_failed',
+        selectedProvider,
+        selectedModel,
+        selectedDeployment,
+        payload.code,
+      ].join('|'),
+      error: {
+        code: payload.code,
+        name: 'AiJobError',
+        message: payload.message,
+      },
+      context: {
+        jobId: job.id,
+        userId: job.userId,
+        type: job.type,
+        provider: job.provider,
+        modelId: job.modelId,
+        deployment: job.deployment,
+        canonicalModelId: job.canonicalModelId,
+        providerBindingId: job.providerBindingId,
+        providerJobId: job.providerJobId,
+        selectedProvider,
+        selectedModel,
+        selectedDeployment,
+        selectedProviderEndpointId:
+          job.routingSnapshot?.selectedProviderEndpointId,
+        queueName: job.queueName,
+        queuePosition: job.queuePosition,
+        attempt: job.attempt,
+        retryable: payload.retryable,
+        stage: job.stage,
+        status: job.status,
+        workspaceId: job.workspaceId,
+        projectId: job.projectId,
+        documentId: job.documentId,
+        documentBlockId: job.documentBlockId,
+        sourceSurface: job.sourceSurface,
+        createdAt: job.createdAt,
+        queuedAt: job.queuedAt,
+        startedAt: job.startedAt,
+        providerSubmittedAt: job.providerSubmittedAt,
+        providerStartedAt: job.providerStartedAt,
+        completedAt: failedAt,
+        durationMs: this.elapsedMs(job.createdAt, failedAt),
+        chargedCredits: job.routingSnapshot?.policy.quota.cost,
+        quotaMode: job.routingSnapshot?.policy.quota.mode,
+        quotaDimension: job.routingSnapshot?.policy.quota.dimension,
+        userMessage: payload.userMessage,
+      },
+      tags: ['ai-generation', job.type, selectedProvider, payload.code],
+    });
   }
 
   onApplicationBootstrap() {
@@ -144,6 +252,7 @@ export class AiGenerationWorkerService
         this.logger.error(
           `BullMQ job ${job?.id ?? '?'} failed at queue layer: ${err.message}`,
         );
+        this.alertQueueFailure(w.name, job, err);
       });
     }
     this.logger.log(
@@ -257,6 +366,19 @@ export class AiGenerationWorkerService
       ],
     });
     if (!next) return null;
+    await this.recordTraceSafe(next, {
+      eventType: 'worker_started',
+      occurredAt: now,
+      source: 'internal',
+      confidence: 'exact',
+      title: 'Worker started',
+      description: 'A worker picked up the queued job.',
+      idempotencyKey: `ai_trace:${job.id}:worker_started:${job.attempt}`,
+      payload: {
+        queueName: job.queueName,
+        attempt: job.attempt,
+      },
+    });
     const repositioned = await this.store.recomputeQueuePositions(
       job.queueName,
     );
@@ -334,7 +456,7 @@ export class AiGenerationWorkerService
           !job.providerStartedAt && (result.progress ?? 0) >= 0.5
             ? now
             : undefined;
-        await this.recordAttemptSafe(job, {
+        const attempt = await this.recordAttemptSafe(job, {
           status: 'running',
           providerRequestId: result.providerRequestId,
           providerEndpoint: result.providerEndpoint ?? job.deployment,
@@ -348,6 +470,31 @@ export class AiGenerationWorkerService
             stageHint: result.stageHint,
           },
         });
+        await this.recordProviderTraceEventsSafe(
+          job,
+          attempt?.id,
+          result.providerTraceEvents,
+          result.providerRequestId,
+          result.providerEndpoint,
+        );
+        if (executionStartedAt) {
+          await this.recordTraceSafe(job, {
+            eventType: 'provider_execution_started',
+            occurredAt: executionStartedAt,
+            source: 'internal',
+            confidence: 'inferred',
+            title: 'Execution started',
+            description:
+              'Provider status indicated execution had started; exact provider timing may be backfilled later.',
+            idempotencyKey: `ai_trace:${job.id}:provider_execution_started:inferred:${job.attempt}`,
+            providerRequestId: result.providerRequestId,
+            endpointId: result.providerEndpoint ?? job.deployment,
+            payload: {
+              progress: result.progress,
+              stageHint: result.stageHint,
+            },
+          });
+        }
         const updated = await this.store.update(job.id, {
           stage: 'generating',
           progress: result.progress ?? job.progress ?? 0.5,
@@ -379,37 +526,115 @@ export class AiGenerationWorkerService
       if (result.kind === 'completed') {
         const latestJob = (await this.store.findById(job.id)) ?? job;
         const now = new Date().toISOString();
-        await this.recordAttemptSafe(latestJob, {
+        const providerCompletedAt = result.providerTiming?.completedAt ?? now;
+        const attempt = await this.recordAttemptSafe(latestJob, {
           status: 'succeeded',
           providerRequestId: result.providerRequestId,
           providerEndpoint: result.providerEndpoint ?? latestJob.deployment,
-          rawStatus: result.rawStatus,
+          providerStatus: result.providerStatus,
+          rawStatus: rawStatusWithDiagnostics(
+            result.rawStatus,
+            result.providerDiagnostics,
+          ),
           providerResponse: result.providerResponse,
+          providerResponseHeaders: result.providerResponseHeaders,
           providerLogs: result.providerLogs,
-          runDurationMs: this.elapsedMs(latestJob.providerSubmittedAt, now),
-          completedAt: now,
+          costAccounting: result.costAccounting,
+          pricingSnapshot: result.pricingSnapshot,
+          runDurationMs:
+            result.providerTiming?.durationMs ??
+            this.elapsedMs(latestJob.providerSubmittedAt, now),
+          submittedAt:
+            result.providerTiming?.submittedAt ?? latestJob.providerSubmittedAt,
+          executionStartedAt:
+            result.providerTiming?.executionStartedAt ??
+            latestJob.providerStartedAt,
+          completedAt: providerCompletedAt,
           timing: {
-            submittedAt: latestJob.providerSubmittedAt,
-            executionStartedAt: latestJob.providerStartedAt,
-            completedAt: now,
+            submittedAt:
+              result.providerTiming?.submittedAt ??
+              latestJob.providerSubmittedAt,
+            executionStartedAt:
+              result.providerTiming?.executionStartedAt ??
+              latestJob.providerStartedAt,
+            completedAt: providerCompletedAt,
+            provider: result.providerTiming,
+            diagnostics: result.providerDiagnostics,
           },
         });
-        await this.completeWithOutputs(latestJob, result.outputs);
+        await this.recordProviderTraceEventsSafe(
+          latestJob,
+          attempt?.id,
+          result.providerTraceEvents,
+          result.providerRequestId,
+          result.providerEndpoint,
+        );
+        await this.recordTraceSafe(latestJob, {
+          eventType: 'provider_response_received',
+          occurredAt: now,
+          source: 'internal',
+          confidence: 'observed',
+          title: 'Provider response received',
+          description: 'Worker retrieved the final provider response.',
+          idempotencyKey: `ai_trace:${latestJob.id}:provider_response_received:${latestJob.attempt}`,
+          providerRequestId: result.providerRequestId,
+          endpointId: result.providerEndpoint ?? latestJob.deployment,
+          payload: {
+            providerStatus: result.providerStatus,
+          },
+        });
+        await this.recordProviderCostLedger(latestJob, attempt?.id, result);
+        await this.completeWithOutputs(
+          latestJob,
+          result.outputs,
+          result.providerTiming,
+        );
         return;
       }
 
       const latestJob = (await this.store.findById(job.id)) ?? job;
       const now = new Date().toISOString();
-      await this.recordAttemptSafe(latestJob, {
+      const providerCompletedAt = result.providerTiming?.completedAt ?? now;
+      const attempt = await this.recordAttemptSafe(latestJob, {
         status: 'failed',
         providerRequestId: result.providerRequestId,
         providerEndpoint: result.providerEndpoint ?? latestJob.deployment,
-        rawStatus: result.rawStatus,
+        providerStatus: result.providerStatus,
+        rawStatus: rawStatusWithDiagnostics(
+          result.rawStatus,
+          result.providerDiagnostics,
+        ),
+        providerResponse: result.providerResponse,
+        providerResponseHeaders: result.providerResponseHeaders,
         providerLogs: result.providerLogs,
         error: result.error,
-        runDurationMs: this.elapsedMs(latestJob.providerSubmittedAt, now),
-        completedAt: now,
+        runDurationMs:
+          result.providerTiming?.durationMs ??
+          this.elapsedMs(latestJob.providerSubmittedAt, now),
+        submittedAt:
+          result.providerTiming?.submittedAt ?? latestJob.providerSubmittedAt,
+        executionStartedAt:
+          result.providerTiming?.executionStartedAt ??
+          latestJob.providerStartedAt,
+        completedAt: providerCompletedAt,
+        timing: {
+          submittedAt:
+            result.providerTiming?.submittedAt ?? latestJob.providerSubmittedAt,
+          executionStartedAt:
+            result.providerTiming?.executionStartedAt ??
+            latestJob.providerStartedAt,
+          completedAt: providerCompletedAt,
+          provider: result.providerTiming,
+          diagnostics: result.providerDiagnostics,
+        },
       });
+      await this.recordProviderTraceEventsSafe(
+        latestJob,
+        attempt?.id,
+        result.providerTraceEvents,
+        result.providerRequestId,
+        result.providerEndpoint,
+      );
       await this.handleFailure(latestJob, result.error);
     } catch (err) {
       const payload = adapter.mapError(err);
@@ -480,12 +705,82 @@ export class AiGenerationWorkerService
   private async recordAttemptSafe(
     job: Pick<AiJob, 'id' | 'attempt'>,
     input: RecordAiJobAttemptInput,
-  ): Promise<void> {
+  ): Promise<{ id: string } | null> {
     try {
-      await this.store.recordAttempt(job, input);
+      const attempt = await this.store.recordAttempt(job, input);
+      return { id: String(attempt.id) };
     } catch (err) {
       this.logger.warn(
         `Failed to record attempt for job ${job.id}: ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+      );
+      return null;
+    }
+  }
+
+  private async recordProviderTraceEventsSafe(
+    job: Pick<AiJob, 'id' | 'provider' | 'deployment' | 'createdAt'>,
+    attemptId: string | null | undefined,
+    events: ProviderTraceEvent[] | undefined,
+    providerRequestId?: string | null,
+    endpointId?: string | null,
+  ): Promise<void> {
+    if (!events || events.length === 0) return;
+    try {
+      await this.store.recordProviderTraceEvents(
+        job,
+        events.map((event) => ({
+          attemptId: attemptId ?? null,
+          provider: job.provider,
+          endpointId: endpointId ?? job.deployment,
+          providerRequestId,
+          eventType: event.eventType,
+          source: event.source,
+          confidence: event.confidence,
+          occurredAt: event.occurredAt ?? null,
+          offsetMs: event.offsetMs ?? null,
+          durationMs: event.durationMs ?? null,
+          title: event.title ?? null,
+          description: event.description ?? null,
+          payload: event.payload ?? null,
+          idempotencyKey: event.idempotencyKey
+            ? `ai_trace:${job.id}:${event.idempotencyKey}`
+            : null,
+        })),
+      );
+    } catch (err) {
+      this.logger.warn(
+        `Failed to record provider trace events for job ${job.id}: ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+      );
+    }
+  }
+
+  private async recordTraceSafe(
+    job: Pick<AiJob, 'id' | 'provider' | 'deployment' | 'createdAt'>,
+    input: {
+      attemptId?: string | null;
+      providerRequestId?: string | null;
+      endpointId?: string | null;
+      eventType: string;
+      source: string;
+      confidence: string;
+      occurredAt?: string | null;
+      offsetMs?: number | null;
+      durationMs?: number | null;
+      title?: string | null;
+      description?: string | null;
+      payload?: Record<string, unknown> | null;
+      idempotencyKey?: string | null;
+    },
+  ): Promise<void> {
+    try {
+      await this.store.recordProviderTraceEvent(job, input);
+    } catch (err) {
+      this.logger.warn(
+        `Failed to record provider trace event for job ${job.id}: ${
           err instanceof Error ? err.message : String(err)
         }`,
       );
@@ -498,6 +793,68 @@ export class AiGenerationWorkerService
     const endMs = Date.parse(end);
     if (!Number.isFinite(startMs) || !Number.isFinite(endMs)) return null;
     return Math.max(0, endMs - startMs);
+  }
+
+  private async recordProviderCostLedger(
+    job: AiJob,
+    attemptId: string | null | undefined,
+    result: {
+      providerRequestId?: string;
+      providerEndpoint?: string;
+      costAccounting?: Record<string, unknown> | null;
+      pricingSnapshot?: Record<string, unknown> | null;
+    },
+  ): Promise<void> {
+    const cost = result.costAccounting;
+    if (!cost) return;
+
+    const providerCostUsd = numberFromRecord(cost, 'providerCostUsd');
+    const providerCost = numberFromRecord(cost, 'providerCost');
+    const amount = providerCost ?? providerCostUsd;
+    if (amount == null) return;
+
+    const currency = stringFromRecord(cost, 'currency') ?? 'USD';
+    const endpointId =
+      stringFromRecord(cost, 'endpointId') ??
+      result.providerEndpoint ??
+      job.deployment;
+    const requestId =
+      stringFromRecord(cost, 'requestId') ??
+      result.providerRequestId ??
+      job.providerJobId ??
+      job.id;
+
+    try {
+      await this.store.recordCostLedgerEntry(job, {
+        attemptId: attemptId ?? null,
+        providerBindingId: job.providerBindingId,
+        entryType: 'provider_cost',
+        currency,
+        amount,
+        providerCostUsd,
+        listPriceCredits: job.routingSnapshot?.policy.quota.cost ?? null,
+        pricingSnapshot: result.pricingSnapshot ?? cost,
+        idempotencyKey: `ai_provider_cost:${job.id}:${requestId}`,
+        source: stringFromRecord(cost, 'source') ?? 'provider_response',
+        metadata: {
+          provider: job.provider,
+          endpointId,
+          requestId,
+          billableUnits: numberFromRecord(cost, 'billableUnits'),
+          unitPrice: numberFromRecord(cost, 'unitPrice'),
+          unit: stringFromRecord(cost, 'unit'),
+          selectedProviderEndpointId:
+            job.routingSnapshot?.selectedProviderEndpointId,
+          selectedProviderBindingId: job.providerBindingId,
+        },
+      });
+    } catch (err) {
+      this.logger.warn(
+        `Failed to record provider cost ledger for job ${job.id}: ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+      );
+    }
   }
 
   private async runJob(job: AiJob) {
@@ -531,11 +888,25 @@ export class AiGenerationWorkerService
       if (result.kind === 'completed') {
         // Sync provider (Azure Foundry image): bytes are here, go
         // straight to upload + complete.
-        await this.recordAttemptSafe(job, {
+        const attempt = await this.recordAttemptSafe(job, {
           status: 'succeeded',
           providerEndpoint: job.deployment,
+          providerResponseHeaders: result.providerResponseHeaders,
+          costAccounting: result.costAccounting,
+          pricingSnapshot: result.pricingSnapshot,
+          timing: {
+            diagnostics: result.providerDiagnostics,
+          },
           completedAt: new Date().toISOString(),
         });
+        await this.recordProviderTraceEventsSafe(
+          job,
+          attempt?.id,
+          result.providerTraceEvents,
+          undefined,
+          job.deployment,
+        );
+        await this.recordProviderCostLedger(job, attempt?.id, result);
         await this.completeWithOutputs(job, result.outputs);
         return;
       }
@@ -544,23 +915,34 @@ export class AiGenerationWorkerService
       // re-enqueue a poll marker. Poll completion reuses the same
       // upload / failure / refund paths as sync providers.
       const now = new Date().toISOString();
-      await this.recordAttemptSafe(job, {
+      const attempt = await this.recordAttemptSafe(job, {
         status: 'submitted',
         providerRequestId: result.providerRequestId,
         providerEndpoint: result.providerEndpoint ?? job.deployment,
         providerRequest: result.providerRequest,
         providerResponse: result.providerResponse,
+        providerResponseHeaders: result.providerResponseHeaders,
+        costAccounting: result.costAccounting,
+        pricingSnapshot: result.pricingSnapshot,
         queuePosition: result.queuePosition,
         submittedAt: result.submittedAt ?? now,
         timing: {
           submittedAt: result.submittedAt ?? now,
           workerAcceptedAt: job.startedAt,
+          diagnostics: result.providerDiagnostics,
         },
       });
+      await this.recordProviderTraceEventsSafe(
+        job,
+        attempt?.id,
+        result.providerTraceEvents,
+        result.providerRequestId,
+        result.providerEndpoint,
+      );
       const queued = await this.store.update(job.id, {
         stage: 'provider_queued',
         providerJobId: result.providerJobId,
-        providerSubmittedAt: now,
+        providerSubmittedAt: result.submittedAt ?? now,
         progress: 0.1,
         logs: [
           ...job.logs,
@@ -600,6 +982,7 @@ export class AiGenerationWorkerService
   private async completeWithOutputs(
     job: AiJob,
     rawOutputs: RawProviderOutput[],
+    providerTiming?: ProviderTimingSnapshot | null,
   ) {
     if (rawOutputs.length === 0) {
       await this.handleFailure(job, {
@@ -612,10 +995,24 @@ export class AiGenerationWorkerService
       return;
     }
 
+    const outputFetchStartedAt = new Date().toISOString();
+    await this.recordTraceSafe(job, {
+      eventType: 'output_fetch_started',
+      occurredAt: outputFetchStartedAt,
+      source: 'internal',
+      confidence: 'exact',
+      title: 'Output fetch started',
+      description: 'Worker started fetching provider-hosted outputs.',
+      idempotencyKey: `ai_trace:${job.id}:output_fetch_started:${job.attempt}`,
+      payload: {
+        outputCount: rawOutputs.length,
+      },
+    });
+
     const fetched = await this.store.update(job.id, {
       stage: 'fetching_output',
       progress: 0.85,
-      outputFetchedAt: new Date().toISOString(),
+      outputFetchedAt: outputFetchStartedAt,
     });
     if (fetched) this.emit(fetched);
 
@@ -641,12 +1038,32 @@ export class AiGenerationWorkerService
     }
 
     const now = new Date().toISOString();
+    await this.recordTraceSafe(job, {
+      eventType: 'oss_upload_finished',
+      occurredAt: now,
+      source: 'internal',
+      confidence: 'exact',
+      title: 'OSS upload finished',
+      description: 'Generated outputs were persisted to FizzDragon storage.',
+      idempotencyKey: `ai_trace:${job.id}:oss_upload_finished:${job.attempt}`,
+      payload: {
+        outputCount: outputs.length,
+        outputBytes: outputs.reduce(
+          (sum, output) => sum + (output.bytes ?? 0),
+          0,
+        ),
+      },
+    });
     const completed = await this.store.update(job.id, {
       status: 'completed',
       stage: 'completed',
       outputs,
       progress: 1,
-      providerCompletedAt: now,
+      providerSubmittedAt:
+        providerTiming?.submittedAt ?? job.providerSubmittedAt,
+      providerStartedAt:
+        providerTiming?.executionStartedAt ?? job.providerStartedAt,
+      providerCompletedAt: providerTiming?.completedAt ?? now,
       ossUploadedAt: now,
       completedAt: now,
       logs: [
@@ -658,7 +1075,22 @@ export class AiGenerationWorkerService
         },
       ],
     });
-    if (completed) this.emit(completed);
+    if (completed) {
+      await this.recordTraceSafe(completed, {
+        eventType: 'job_completed',
+        occurredAt: now,
+        source: 'internal',
+        confidence: 'exact',
+        title: 'Job completed',
+        description:
+          'Job completed after output persistence and database update.',
+        idempotencyKey: `ai_trace:${job.id}:job_completed:${job.attempt}`,
+        payload: {
+          outputCount: outputs.length,
+        },
+      });
+      this.emit(completed);
+    }
   }
 
   private async handleFailure(job: AiJob, payload: AiJobError): Promise<void> {
@@ -707,6 +1139,20 @@ export class AiGenerationWorkerService
 
   private async markFailed(job: AiJob, payload: AiJobError): Promise<void> {
     const now = new Date().toISOString();
+    await this.recordTraceSafe(job, {
+      eventType: 'job_failed',
+      occurredAt: now,
+      source: 'internal',
+      confidence: 'exact',
+      title: 'Job failed',
+      description: payload.message,
+      idempotencyKey: `ai_trace:${job.id}:job_failed:${job.attempt}`,
+      payload: {
+        code: payload.code,
+        retryable: payload.retryable,
+        userMessage: payload.userMessage,
+      },
+    });
     const failed = await this.store.update(job.id, {
       status: 'failed',
       stage: 'failed',
@@ -722,19 +1168,21 @@ export class AiGenerationWorkerService
       this.logger.warn(
         `job ${job.id} failed: ${payload.code} ${payload.message}`,
       );
+      this.alertJobFailure(failed, payload, now);
       // Refund the route-selected quota policy. Free campaign jobs
       // intentionally skip refunds because they never consumed.
       if (job.idempotencyKey) {
         const policy = job.routingSnapshot?.policy.quota;
-        if (policy?.mode === 'free') return;
-        void this.quota.refundFor({
-          userId: job.userId,
-          tier: this.quotaTierFor(job),
-          dimension: policy?.dimension ?? 'image',
-          cost: policy?.cost && policy.cost > 0 ? policy.cost : 1,
-          idempotencyKey: job.idempotencyKey,
-          reason: `ai_job_failed_${payload.code}`,
-        });
+        if (policy?.mode !== 'free') {
+          void this.quota.refundFor({
+            userId: job.userId,
+            tier: this.quotaTierFor(job),
+            dimension: policy?.dimension ?? 'image',
+            cost: policy?.cost && policy.cost > 0 ? policy.cost : 1,
+            idempotencyKey: job.idempotencyKey,
+            reason: `ai_job_failed_${payload.code}`,
+          });
+        }
       }
     }
   }
@@ -800,4 +1248,57 @@ export class AiGenerationWorkerService
     // Outbox-mediated emit — durable record + optimistic publish.
     void this.outbox.record(job);
   }
+}
+
+function severityForAiFailure(code: AiJobError['code']): AlertSeverity {
+  switch (code) {
+    case 'PROVIDER_NOT_CONFIGURED':
+    case 'QUEUE_UNAVAILABLE':
+    case 'OSS_UPLOAD_FAILED':
+    case 'WORKER_CRASHED':
+      return 'critical';
+    case 'PROVIDER_429':
+    case 'PROVIDER_5XX':
+    case 'PROVIDER_TIMEOUT':
+    case 'UNKNOWN':
+      return 'error';
+    case 'VALIDATION_ERROR':
+    case 'SCHEMA_VERSION_MISMATCH':
+    case 'MEMBERSHIP_REQUIRED':
+    case 'MEMBERSHIP_EXPIRED':
+    case 'RATE_LIMITED':
+    case 'QUEUE_LIMIT_EXCEEDED':
+    case 'PROVIDER_CONTENT_FILTER':
+    case 'OUTPUT_EXPIRED':
+    case 'CANCELLED_BY_USER':
+      return 'warning';
+  }
+}
+
+function numberFromRecord(
+  record: Record<string, unknown>,
+  key: string,
+): number | null {
+  const value = record[key];
+  const parsed = typeof value === 'number' ? value : Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function stringFromRecord(
+  record: Record<string, unknown>,
+  key: string,
+): string | null {
+  const value = record[key];
+  return typeof value === 'string' && value.trim() ? value.trim() : null;
+}
+
+function rawStatusWithDiagnostics(
+  rawStatus: unknown,
+  diagnostics: Record<string, unknown> | null | undefined,
+): unknown {
+  if (!diagnostics) return rawStatus;
+  return {
+    queueStatus: rawStatus ?? null,
+    diagnostics,
+  };
 }

@@ -2,6 +2,7 @@ import type {
   AiBillingPolicy,
   AiGenerationMode,
   AiInputSchema,
+  AiJsonValue,
   AiJobType,
   AiModelFamily,
   AiOutputSchema,
@@ -50,6 +51,7 @@ export interface BailianModelRuntimeConfig {
   };
   queuePolicy: AiQueuePolicy;
   billingPolicy: AiBillingPolicy;
+  parameterPolicy?: AiJsonValue;
   inputSchema: AiInputSchema;
   outputSchema: AiOutputSchema;
   providerInputMap: Record<string, BailianProviderFieldBinding>;

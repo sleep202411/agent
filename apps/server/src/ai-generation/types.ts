@@ -9,6 +9,7 @@ import type {
   AiInputControl,
   AiJsonSchema,
   AiGenerationMode,
+  AiJsonValue,
   AiModelFamily,
   AiModelDefinition as SharedAiModelDefinition,
   AiObservabilityContract,
@@ -34,6 +35,7 @@ export type {
   AiFieldUi,
   AiInputControl,
   AiGenerationMode,
+  AiJsonValue,
   AiJsonSchema,
   AiModelFamily,
   AiModelCatalogResponse,
@@ -61,6 +63,7 @@ export type FoundryCatalogSource =
   | 'env-override'
   | 'fal-config'
   | 'bailian-config'
+  | 'replicate-config'
   | 'seed-fallback';
 
 export type AiJobStatus =

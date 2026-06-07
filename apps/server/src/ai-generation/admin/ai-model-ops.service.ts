@@ -5,7 +5,10 @@ import {
 } from '@nestjs/common';
 import { AiControlPlaneStatus, Prisma } from '@prisma/client';
 import { PrismaService } from '../../infra/db/db.module';
-import { estimateGenerationPrice } from '@repo/shared';
+import {
+  estimateProductModelPoints,
+  type AiProductPricingPolicy,
+} from '@repo/shared';
 import type {
   CreateCanonicalModelInput,
   CreateProviderEndpointInput,
@@ -156,7 +159,6 @@ export class AiModelOpsService {
         ...(query.modality ? { modality: query.modality } : {}),
         ...(query.family ? { family: query.family } : {}),
         ...(query.status ? { status: query.status } : {}),
-        ...(query.visibility ? { visibility: query.visibility } : {}),
       },
       orderBy: [{ modality: 'asc' }, { family: 'asc' }, { displayName: 'asc' }],
       take: query.limit,
@@ -167,8 +169,6 @@ export class AiModelOpsService {
         bindings: {
           where: { archivedAt: null },
           select: {
-            unitPriceNanoUsd: true,
-            unitType: true,
             priority: true,
             status: true,
           },
@@ -205,9 +205,6 @@ export class AiModelOpsService {
         ? { displayName: input.displayName }
         : {}),
       ...(input.family !== undefined ? { family: input.family } : {}),
-      ...(input.visibility !== undefined
-        ? { visibility: input.visibility }
-        : {}),
       ...(input.status !== undefined ? { status: input.status } : {}),
       ...(input.description !== undefined
         ? { description: input.description }
@@ -229,7 +226,6 @@ export class AiModelOpsService {
       ...(input.billingPolicy !== undefined
         ? { billingPolicy: input.billingPolicy as Prisma.InputJsonValue }
         : {}),
-      ...(input.marginBps !== undefined ? { marginBps: input.marginBps } : {}),
       ...(input.queuePolicy !== undefined
         ? { queuePolicy: input.queuePolicy as Prisma.InputJsonValue }
         : {}),
@@ -349,7 +345,6 @@ export class AiModelOpsService {
         providerInputSchema: input.providerInputSchema as Prisma.InputJsonValue,
         providerOutputSchema:
           input.providerOutputSchema as Prisma.InputJsonValue,
-        providerPricing: input.providerPricing as Prisma.InputJsonValue,
         providerQuotaPolicy: input.providerQuotaPolicy as Prisma.InputJsonValue,
         catalogSnapshot: input.catalogSnapshot as Prisma.InputJsonValue,
         documentation: input.documentation as Prisma.InputJsonValue,
@@ -400,9 +395,6 @@ export class AiModelOpsService {
               providerOutputSchema:
                 input.providerOutputSchema as Prisma.InputJsonValue,
             }
-          : {}),
-        ...(input.providerPricing !== undefined
-          ? { providerPricing: input.providerPricing as Prisma.InputJsonValue }
           : {}),
         ...(input.providerQuotaPolicy !== undefined
           ? {
@@ -512,18 +504,9 @@ export class AiModelOpsService {
         status: input.status,
         priority: input.priority,
         weight: input.weight,
-        unitPriceNanoUsd:
-          input.unitPriceNanoUsd !== undefined
-            ? input.unitPriceNanoUsd
-            : undefined,
-        unitType: input.unitType !== undefined ? input.unitType : undefined,
         parameterMap:
           input.parameterMap !== undefined
             ? (input.parameterMap as Prisma.InputJsonValue)
-            : undefined,
-        pricingPolicy:
-          input.pricingPolicy !== undefined
-            ? (input.pricingPolicy as Prisma.InputJsonValue)
             : undefined,
         queuePolicy:
           input.queuePolicy !== undefined
@@ -579,6 +562,10 @@ export class AiModelOpsService {
           orderBy: { outputIndex: 'asc' },
           take: 4,
         },
+        costLedger: {
+          orderBy: { createdAt: 'desc' },
+          take: 3,
+        },
       },
     });
     return { items: items.map(serializeJobListItem) };
@@ -595,6 +582,7 @@ export class AiModelOpsService {
         attempts: { orderBy: { attemptNumber: 'asc' } },
         outputs: { orderBy: { outputIndex: 'asc' } },
         costLedger: { orderBy: { createdAt: 'asc' } },
+        traceEvents: { orderBy: [{ occurredAt: 'asc' }, { createdAt: 'asc' }] },
       },
     });
     return serializeJobDetail(job);
@@ -641,14 +629,12 @@ function canonicalModelCreateData(
     modality: input.modality,
     family: input.family,
     generationModes: input.generationModes as Prisma.InputJsonValue,
-    visibility: input.visibility,
     status: input.status,
     description: input.description ?? null,
     parameterPolicy: input.parameterPolicy as Prisma.InputJsonValue,
     outputPolicy: input.outputPolicy as Prisma.InputJsonValue,
     entitlementPolicy: input.entitlementPolicy as Prisma.InputJsonValue,
     billingPolicy: input.billingPolicy as Prisma.InputJsonValue,
-    marginBps: input.marginBps,
     queuePolicy: input.queuePolicy as Prisma.InputJsonValue,
     uiPolicy: input.uiPolicy as Prisma.InputJsonValue,
     observabilityPolicy: input.observabilityPolicy as Prisma.InputJsonValue,
@@ -669,7 +655,6 @@ function providerBindingDataFromEndpoint(
     supportedModes: unknown;
     providerInputSchema: unknown;
     providerOutputSchema: unknown;
-    providerPricing: unknown;
     catalogSnapshot: unknown;
     documentation: unknown;
   },
@@ -688,8 +673,6 @@ function providerBindingDataFromEndpoint(
     status: input.status,
     priority: input.priority,
     weight: input.weight,
-    unitPriceNanoUsd: input.unitPriceNanoUsd ?? 0n,
-    unitType: input.unitType ?? 'per_image',
     supportedModes: endpoint.supportedModes as Prisma.InputJsonValue,
     inputSchema: endpoint.providerInputSchema as Prisma.InputJsonValue,
     outputSchema: endpoint.providerOutputSchema as Prisma.InputJsonValue,
@@ -697,8 +680,6 @@ function providerBindingDataFromEndpoint(
     providerOutputSchema:
       endpoint.providerOutputSchema as Prisma.InputJsonValue,
     parameterMap: input.parameterMap as Prisma.InputJsonValue,
-    providerPricing: endpoint.providerPricing as Prisma.InputJsonValue,
-    pricingPolicy: input.pricingPolicy as Prisma.InputJsonValue,
     queuePolicy: input.queuePolicy as Prisma.InputJsonValue,
     routingPolicy: input.routingPolicy as Prisma.InputJsonValue,
     fallbackPolicy: input.fallbackPolicy as Prisma.InputJsonValue,
@@ -759,7 +740,6 @@ function serializeProviderEndpoint(endpoint: {
   capabilities: unknown;
   providerInputSchema: unknown;
   providerOutputSchema: unknown;
-  providerPricing: unknown;
   providerQuotaPolicy: unknown;
   catalogSnapshot: unknown;
   documentation: unknown;
@@ -782,62 +762,127 @@ function serializeCanonicalModel(model: {
   modality: string;
   family: string;
   generationModes: unknown;
-  visibility: string;
   status: string;
   description: string | null;
   parameterPolicy: unknown;
   outputPolicy: unknown;
   entitlementPolicy: unknown;
   billingPolicy: unknown;
-  marginBps: number;
   queuePolicy: unknown;
   uiPolicy: unknown;
   observabilityPolicy: unknown;
   metadata: unknown;
   updatedAt: Date;
   _count?: { bindings: number; jobs: number };
-  bindings?: Array<{
-    unitPriceNanoUsd: bigint | null;
-    unitType: string;
-    priority: number;
-    status: string;
-  }>;
+  bindings?: Array<{ priority: number; status: string }>;
 }) {
-  // Representative 售价 for the list: 1 image @ 1K (1 MP) through the primary
-  // active binding's provider cost × this model's markup. The real per-request
-  // price is parameterized — this is a reference / 起价 only.
-  const primaryBinding =
-    model.bindings?.find((b) => b.status === 'active') ??
-    model.bindings?.[0] ??
-    null;
-  let referenceSellPoints: number | null = null;
-  let referenceCostPoints: number | null = null;
-  if (primaryBinding && primaryBinding.unitPriceNanoUsd != null) {
-    const estimate = estimateGenerationPrice({
-      unitPriceNanoUsd: primaryBinding.unitPriceNanoUsd,
-      unitType: primaryBinding.unitType as
-        | 'per_image'
-        | 'per_megapixel'
-        | 'per_unit',
-      marginBps: model.marginBps,
-      numImages: 1,
-      megapixels: 1,
-    });
-    referenceSellPoints = estimate.sellPoints;
-    referenceCostPoints = estimate.costPoints;
-  }
+  const billingPolicy = recordValue(model.billingPolicy);
+  const priceBand = summarizeProductPricing(billingPolicy?.productPricing);
   return {
     ...model,
     bindingCount: model._count?.bindings ?? 0,
     jobCount: model._count?.jobs ?? 0,
-    referenceSellPoints,
-    referenceCostPoints,
-    // Realized gross margin is computed from the cost ledger — wired with P0
-    // billing once charge / provider_cost entries exist; null (—) until then.
-    realizedMarginBps: null as number | null,
+    priceBand,
     bindings: undefined,
     _count: undefined,
   };
+}
+
+type ProductPriceBand = {
+  minPoints: number;
+  maxPoints: number;
+  defaultPoints: number;
+  currency: string;
+  pricingVersion: string;
+  unit: 'per_output';
+  minLabel: string | null;
+  maxLabel: string | null;
+  defaultLabel: string | null;
+  referenceImageSurchargePoints: number | null;
+  extraReferenceImagePoints: number | null;
+  maskSurchargePoints: number | null;
+};
+
+function summarizeProductPricing(value: unknown): ProductPriceBand | null {
+  const policy = recordValue(value) as unknown as AiProductPricingPolicy | null;
+  if (!policy) return null;
+
+  try {
+    const defaultEstimate = estimateProductModelPoints({
+      policy,
+      numOutputs: 1,
+    });
+    const candidates = priceBandCandidates(policy);
+    if (candidates.length === 0) return null;
+    const min = candidates.reduce((best, item) =>
+      item.points < best.points ? item : best,
+    );
+    const max = candidates.reduce((best, item) =>
+      item.points > best.points ? item : best,
+    );
+    return {
+      minPoints: min.points,
+      maxPoints: max.points,
+      defaultPoints: defaultEstimate.sellPoints,
+      currency: policy.currency,
+      pricingVersion: policy.version,
+      unit: 'per_output',
+      minLabel: min.label,
+      maxLabel: max.label,
+      defaultLabel: labelFromSelection(defaultEstimate.selection),
+      referenceImageSurchargePoints: numberOrNull(
+        policy.referenceImageSurchargePoints,
+      ),
+      extraReferenceImagePoints: numberOrNull(policy.extraReferenceImagePoints),
+      maskSurchargePoints: numberOrNull(policy.maskSurchargePoints),
+    };
+  } catch {
+    return null;
+  }
+}
+
+function priceBandCandidates(policy: AiProductPricingPolicy) {
+  if (policy.mode === 'fixed_per_output') {
+    const estimate = estimateProductModelPoints({ policy, numOutputs: 1 });
+    return [{ points: estimate.sellPoints, label: null as string | null }];
+  }
+
+  const candidates: Array<{ points: number; label: string | null }> = [];
+  for (const [resolution, qualities] of Object.entries(policy.matrix)) {
+    for (const quality of Object.keys(qualities)) {
+      const estimate = estimateProductModelPoints({
+        policy,
+        numOutputs: 1,
+        resolution,
+        quality,
+      });
+      candidates.push({
+        points: estimate.sellPoints,
+        label: labelFromSelection(estimate.selection),
+      });
+    }
+  }
+  return candidates;
+}
+
+function labelFromSelection(selection: {
+  resolution?: string;
+  quality?: string;
+}): string | null {
+  return (
+    [selection.resolution, selection.quality].filter(Boolean).join(' / ') ||
+    null
+  );
+}
+
+function numberOrNull(value: unknown): number | null {
+  return typeof value === 'number' && Number.isFinite(value) ? value : null;
+}
+
+function recordValue(value: unknown): Record<string, unknown> | null {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : null;
 }
 
 function serializeProviderBinding(binding: {
@@ -850,14 +895,10 @@ function serializeProviderBinding(binding: {
   status: string;
   priority: number;
   weight: number;
-  unitPriceNanoUsd: bigint | null;
-  unitType: string;
   supportedModes: unknown;
   inputSchema: unknown;
   outputSchema: unknown;
   parameterMap: unknown;
-  pricingPolicy: unknown;
-  providerPricing: unknown;
   queuePolicy: unknown;
   routingPolicy: unknown;
   fallbackPolicy: unknown;
@@ -877,14 +918,11 @@ function serializeProviderBinding(binding: {
     id: string;
     slug: string;
     displayName: string;
-    marginBps?: number;
   };
   _count?: { jobs: number };
 }) {
   return {
     ...binding,
-    // BigInt is not JSON-serializable — emit as a numeric string.
-    unitPriceNanoUsd: binding.unitPriceNanoUsd?.toString() ?? '0',
     jobCount: binding._count?.jobs ?? 0,
     _count: undefined,
   };
@@ -937,11 +975,18 @@ function serializeJobListItem(job: {
     url: string;
     outputIndex: number;
   }>;
+  costLedger: Array<{
+    amount: Prisma.Decimal;
+    providerCostUsd: Prisma.Decimal | null;
+    marginUsd: Prisma.Decimal | null;
+    [key: string]: unknown;
+  }>;
 }) {
   return {
     ...job,
     prompt:
       job.prompt.length > 220 ? `${job.prompt.slice(0, 220)}...` : job.prompt,
+    costLedger: serializeCostLedger(job.costLedger),
   };
 }
 
@@ -956,11 +1001,45 @@ function serializeJobDetail(job: {
 }) {
   return {
     ...job,
-    costLedger: job.costLedger.map((entry) => ({
-      ...entry,
-      amount: entry.amount.toString(),
-      providerCostUsd: entry.providerCostUsd?.toString() ?? null,
-      marginUsd: entry.marginUsd?.toString() ?? null,
-    })),
+    costLedger: serializeCostLedger(job.costLedger),
   };
+}
+
+function serializeCostLedger(
+  entries: Array<{
+    amount: Prisma.Decimal;
+    providerCostUsd: Prisma.Decimal | null;
+    marginUsd: Prisma.Decimal | null;
+    [key: string]: unknown;
+  }>,
+) {
+  return entries.map((entry) => ({
+    ...entry,
+    amount: entry.amount.toString(),
+    providerCostUsd: entry.providerCostUsd?.toString() ?? null,
+    marginUsd: entry.marginUsd?.toString() ?? null,
+    provider: stringFromUnknown(metadataField(entry.metadata, 'provider')),
+    endpointId: stringFromUnknown(metadataField(entry.metadata, 'endpointId')),
+    providerRequestId: stringFromUnknown(
+      metadataField(entry.metadata, 'requestId'),
+    ),
+    billableUnits: numberFromUnknown(
+      metadataField(entry.metadata, 'billableUnits'),
+    ),
+    unitPrice: numberFromUnknown(metadataField(entry.metadata, 'unitPrice')),
+    unit: stringFromUnknown(metadataField(entry.metadata, 'unit')),
+  }));
+}
+
+function metadataField(value: unknown, key: string): unknown {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  return (value as Record<string, unknown>)[key];
+}
+
+function stringFromUnknown(value: unknown): string | null {
+  return typeof value === 'string' && value.trim().length > 0 ? value : null;
+}
+
+function numberFromUnknown(value: unknown): number | null {
+  return typeof value === 'number' && Number.isFinite(value) ? value : null;
 }

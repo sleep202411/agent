@@ -15,7 +15,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { type RequestGeoContext } from '../common/region';
+import { estimateProductModelPoints } from '@repo/shared';
 import { EntitlementService, type EntitlementSnapshot } from '../entitlements';
 import {
   AiModelPresetRegistryService,
@@ -31,6 +31,7 @@ import type { ProviderAdapter } from './provider-adapter';
 import { ProviderRegistry } from './provider-registry.service';
 import type {
   AiCampaignPolicy,
+  AiBillingPolicy,
   AiModelDefinition,
   AiModelPresetDefinition,
   AiProvider,
@@ -132,9 +133,7 @@ export class AiGenerationRoutingService {
     const quotaCost =
       billingPolicy.mode === 'free'
         ? 0
-        : Number.isFinite(billingPolicy.preflightCost)
-          ? Number(billingPolicy.preflightCost)
-          : 1;
+        : estimateQuotaCost(billingPolicy, args.body.input);
 
     return {
       adapter,
@@ -212,11 +211,8 @@ export class AiGenerationRoutingService {
     };
   }
 
-  listPresets(
-    models: AiModelDefinition[],
-    geo?: RequestGeoContext,
-  ): AiModelPresetDefinition[] {
-    return this.presets.listCatalogPresets(models, geo);
+  listPresets(models: AiModelDefinition[]): AiModelPresetDefinition[] {
+    return this.presets.listCatalogPresets(models);
   }
 
   listCampaigns(): AiCampaignPolicy[] {
@@ -331,4 +327,61 @@ export class AiGenerationRoutingService {
   private listCatalogModels(): Promise<AiModelDefinition[]> {
     return this.catalog.listModels();
   }
+}
+
+function estimateQuotaCost(
+  billingPolicy: AiBillingPolicy,
+  input: Record<string, unknown> | undefined,
+): number {
+  const productPricing = billingPolicy.productPricing;
+
+  if (!productPricing) {
+    throw new BadRequestException({
+      code: 'MODEL_PRICING_NOT_CONFIGURED',
+      msg: 'This model is missing product pricing.',
+    });
+  }
+
+  try {
+    return estimateProductModelPoints({
+      policy: productPricing,
+      numOutputs: numberInput(input?.numOutputs),
+      resolution: stringInput(input?.resolution),
+      quality: stringInput(input?.quality),
+      referenceImageCount: arrayLength(input?.referenceImages),
+      hasMask: hasMediaValue(input?.maskImage),
+    }).sellPoints;
+  } catch (err) {
+    throw new BadRequestException({
+      code: 'MODEL_PRICING_INVALID',
+      msg:
+        err instanceof Error
+          ? `Invalid product pricing: ${err.message}`
+          : 'Invalid product pricing.',
+    });
+  }
+}
+
+function numberInput(value: unknown): number | undefined {
+  return typeof value === 'number' && Number.isFinite(value)
+    ? value
+    : undefined;
+}
+
+function stringInput(value: unknown): string | undefined {
+  return typeof value === 'string' && value.trim() ? value.trim() : undefined;
+}
+
+function arrayLength(value: unknown): number {
+  return Array.isArray(value) ? value.length : 0;
+}
+
+function hasMediaValue(value: unknown): boolean {
+  if (typeof value === 'string') return value.trim().length > 0;
+  if (!value || typeof value !== 'object') return false;
+  return (
+    'url' in value &&
+    typeof (value as { url?: unknown }).url === 'string' &&
+    Boolean((value as { url?: string }).url?.trim())
+  );
 }

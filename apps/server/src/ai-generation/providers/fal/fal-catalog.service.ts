@@ -1,9 +1,13 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
-import { DEFAULT_MARGIN_BPS, type AiGenUnitType } from '@repo/shared';
 import { PrismaService } from '../../../infra/db/db.module';
 import { AI_QUEUE_IMAGE, AI_QUEUE_VIDEO } from '../../queue';
-import type { AiBillingPolicy, AiGenerationMode, AiJobType } from '../../types';
+import type {
+  AiBillingPolicy,
+  AiGenerationMode,
+  AiJsonValue,
+  AiJobType,
+} from '../../types';
 import type { AiModelDefinition } from '../../types';
 import { FalConfigService } from './fal-config.service';
 import type { FalModelRuntimeConfig } from './fal.types';
@@ -139,6 +143,7 @@ export class FalCatalogService {
         perUserQueued: numberFromPolicy(row.queuePolicy, 'perUserQueued') ?? 10,
         pollDelayMs: config.pollDelayMs,
         billing: billingPolicyFromRow(row),
+        parameterPolicy: row.canonicalModel.parameterPolicy as AiJsonValue,
       });
       return {
         runtime,
@@ -204,15 +209,19 @@ function requiredPlanFromPolicy(value: unknown): string | null {
 }
 
 function billingPolicyFromRow(row: {
-  pricingPolicy: Prisma.JsonValue;
-  canonicalModel: { billingPolicy: Prisma.JsonValue; marginBps: number };
-  unitPriceNanoUsd: bigint | null;
-  unitType: AiGenUnitType;
-  modality: string;
+  canonicalModel: { billingPolicy: Prisma.JsonValue };
 }): Partial<AiBillingPolicy> {
-  const binding = recordValue(row.pricingPolicy);
   const canonical = recordValue(row.canonicalModel.billingPolicy);
-  const policy = { ...canonical, ...binding };
+  const policy = canonical ?? {};
+  const productPricing =
+    policy.productPricing &&
+    typeof policy.productPricing === 'object' &&
+    !Array.isArray(policy.productPricing)
+      ? (policy.productPricing as AiBillingPolicy['productPricing'])
+      : null;
+  if (!productPricing) {
+    throw new Error('Canonical model is missing productPricing.');
+  }
   return {
     mode:
       policy.mode === 'free' || policy.mode === 'estimate_then_finalize'
@@ -229,24 +238,16 @@ function billingPolicyFromRow(row: {
     preflightCost:
       typeof policy.preflightCost === 'number'
         ? policy.preflightCost
-        : row.modality === 'video'
-          ? 20
-          : 1,
+        : undefined,
     finalCostSource:
       typeof policy.finalCostSource === 'string'
         ? (policy.finalCostSource as AiBillingPolicy['finalCostSource'])
-        : 'fixed_table',
+        : 'product_pricing',
     refundPolicy:
       typeof policy.refundPolicy === 'string'
         ? (policy.refundPolicy as AiBillingPolicy['refundPolicy'])
         : 'refund_on_final_failure',
-    // Parameterized pricing for the shared estimator. BigInt → string HERE,
-    // since Nest's JSON.stringify throws on a raw bigint downstream.
-    pricing: {
-      unitPriceNanoUsd: (row.unitPriceNanoUsd ?? 0n).toString(),
-      unitType: row.unitType,
-      marginBps: row.canonicalModel.marginBps ?? DEFAULT_MARGIN_BPS,
-    },
+    productPricing,
   };
 }
 

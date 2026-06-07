@@ -7,7 +7,6 @@ DROP INDEX IF EXISTS "ai_provider_endpoints_last_synced_idx";
 
 ALTER TABLE "ai_provider_endpoints"
   DROP COLUMN "schema_hash",
-  DROP COLUMN "pricing_hash",
   DROP COLUMN "last_synced_at";
 
 ALTER TABLE "ai_provider_model_bindings"

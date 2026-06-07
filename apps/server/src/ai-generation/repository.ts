@@ -18,6 +18,7 @@ import type {
   AiEventOutbox as AiEventOutboxRow,
   AiJob as AiJobRow,
   AiJobOutput as AiJobOutputRow,
+  AiProviderTraceEvent as AiProviderTraceEventRow,
 } from '@prisma/client';
 import { PrismaService } from '../infra/db/db.module';
 import { newShortId } from '../common/id';
@@ -94,6 +95,44 @@ export interface RecordAiJobAttemptInput {
   executionStartedAt?: string | null;
   firstByteAt?: string | null;
   completedAt?: string | null;
+}
+
+export interface RecordAiCostLedgerEntryInput {
+  attemptId?: string | null;
+  providerBindingId?: string | null;
+  entryType:
+    | 'reservation'
+    | 'charge'
+    | 'refund'
+    | 'provider_cost'
+    | 'adjustment';
+  currency: string;
+  amount: number;
+  internalCredits?: number | null;
+  providerCostUsd?: number | null;
+  listPriceCredits?: number | null;
+  marginUsd?: number | null;
+  pricingSnapshot?: Record<string, unknown> | null;
+  idempotencyKey: string;
+  source: string;
+  metadata?: Record<string, unknown> | null;
+}
+
+export interface RecordAiProviderTraceEventInput {
+  attemptId?: string | null;
+  provider?: string | null;
+  endpointId?: string | null;
+  providerRequestId?: string | null;
+  eventType: string;
+  source: string;
+  confidence: string;
+  occurredAt?: string | null;
+  offsetMs?: number | null;
+  durationMs?: number | null;
+  title?: string | null;
+  description?: string | null;
+  payload?: Record<string, unknown> | null;
+  idempotencyKey?: string | null;
 }
 
 /**
@@ -336,6 +375,105 @@ export class AiGenerationRepository {
         startedAt: new Date(),
       } as Prisma.AiJobAttemptUncheckedCreateInput,
     });
+  }
+
+  async recordCostLedgerEntry(
+    job: Pick<AiJob, 'id' | 'userId' | 'workspaceId'>,
+    input: RecordAiCostLedgerEntryInput,
+  ) {
+    const data: Prisma.AiCostLedgerEntryUncheckedCreateInput = {
+      jobId: job.id,
+      attemptId: input.attemptId ?? null,
+      providerBindingId: input.providerBindingId ?? null,
+      userId: job.userId,
+      workspaceId: job.workspaceId ?? null,
+      entryType: input.entryType,
+      currency: input.currency,
+      amount: input.amount,
+      internalCredits: input.internalCredits ?? null,
+      providerCostUsd: input.providerCostUsd ?? null,
+      listPriceCredits: input.listPriceCredits ?? null,
+      marginUsd: input.marginUsd ?? null,
+      pricingSnapshot:
+        (input.pricingSnapshot as Prisma.InputJsonValue | undefined) ?? {},
+      idempotencyKey: input.idempotencyKey,
+      source: input.source,
+      metadata: (input.metadata as Prisma.InputJsonValue | undefined) ?? {},
+    };
+    return await this.prisma.aiCostLedgerEntry.upsert({
+      where: { idempotencyKey: input.idempotencyKey },
+      create: data,
+      update: {
+        attemptId: data.attemptId,
+        providerBindingId: data.providerBindingId,
+        currency: data.currency,
+        amount: data.amount,
+        internalCredits: data.internalCredits,
+        providerCostUsd: data.providerCostUsd,
+        listPriceCredits: data.listPriceCredits,
+        marginUsd: data.marginUsd,
+        pricingSnapshot: data.pricingSnapshot,
+        source: data.source,
+        metadata: data.metadata,
+      },
+    });
+  }
+
+  async recordProviderTraceEvent(
+    job: Pick<AiJob, 'id' | 'provider' | 'deployment' | 'createdAt'>,
+    input: RecordAiProviderTraceEventInput,
+  ): Promise<AiProviderTraceEventRow> {
+    const occurredAt = parseDateOrNow(input.occurredAt);
+    const offsetMs =
+      input.offsetMs ?? elapsedMsFromIso(job.createdAt, occurredAt);
+    const idempotencyKey =
+      input.idempotencyKey ??
+      [
+        'ai_trace',
+        job.id,
+        input.source,
+        input.eventType,
+        input.providerRequestId ?? '',
+        occurredAt.toISOString(),
+      ].join(':');
+
+    const data: Prisma.AiProviderTraceEventUncheckedCreateInput = {
+      jobId: job.id,
+      attemptId: input.attemptId ?? null,
+      provider: input.provider?.trim() || job.provider,
+      endpointId: input.endpointId?.trim() || job.deployment,
+      providerRequestId: input.providerRequestId?.trim() || null,
+      eventType: input.eventType,
+      source: input.source,
+      confidence: input.confidence,
+      occurredAt,
+      offsetMs,
+      durationMs: input.durationMs ?? null,
+      title: input.title ?? null,
+      description: input.description ?? null,
+      payload: (input.payload as Prisma.InputJsonValue | undefined) ?? {},
+      idempotencyKey,
+    };
+
+    try {
+      return await this.prisma.aiProviderTraceEvent.create({ data });
+    } catch (err) {
+      if (isUniqueConstraintError(err)) {
+        return this.prisma.aiProviderTraceEvent.findUniqueOrThrow({
+          where: { idempotencyKey },
+        });
+      }
+      throw err;
+    }
+  }
+
+  async recordProviderTraceEvents(
+    job: Pick<AiJob, 'id' | 'provider' | 'deployment' | 'createdAt'>,
+    events: RecordAiProviderTraceEventInput[],
+  ): Promise<void> {
+    for (const event of events) {
+      await this.recordProviderTraceEvent(job, event);
+    }
   }
 
   async listForUser(options: AiJobListOptions): Promise<AiJob[]> {
@@ -742,4 +880,30 @@ function setJsonIfPresent(
 
 // Re-export Prisma row types so other repo-adjacent code can use them
 // without import gymnastics.
-export type { AiJobAttemptRow, AiEventOutboxRow, AiJobRow, AiJobOutputRow };
+function parseDateOrNow(value: string | null | undefined): Date {
+  if (!value) return new Date();
+  const time = Date.parse(value);
+  if (!Number.isFinite(time)) return new Date();
+  return new Date(time);
+}
+
+function elapsedMsFromIso(start: string | undefined, end: Date): number | null {
+  if (!start) return null;
+  const startMs = Date.parse(start);
+  if (!Number.isFinite(startMs)) return null;
+  return Math.max(0, end.getTime() - startMs);
+}
+
+function isUniqueConstraintError(err: unknown): boolean {
+  return (
+    err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002'
+  );
+}
+
+export type {
+  AiJobAttemptRow,
+  AiEventOutboxRow,
+  AiJobRow,
+  AiJobOutputRow,
+  AiProviderTraceEventRow,
+};

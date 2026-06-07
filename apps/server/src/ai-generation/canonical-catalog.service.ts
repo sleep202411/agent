@@ -3,23 +3,23 @@
  * runtime model catalog.
  *
  * The control plane (`AiCanonicalModel`) is canonical: the catalog is
- * exactly the list of VISIBLE + ACTIVE canonical models, ONE entry per
+ * exactly the list of ACTIVE canonical models, ONE entry per
  * canonical. There is no provider fan-out and no provider-merge:
  *
- *   1. Query the visible/active `AiCanonicalModel` rows, joined to their
+ *   1. Query the active `AiCanonicalModel` rows, joined to their
  *      ACTIVE provider bindings ordered by route priority (asc) → weight
  *      (desc) → endpointId. `bindings[0]` is the PRIMARY active binding.
- *   2. Canonical models with NO active binding (e.g. `midjourney-v7`,
- *      `minimax-image`) cannot generate — every part of the
- *      AiModelDefinition (input_schema, provider, deployment, pricing,
- *      ops) is assembled from the primary binding — so they are EXCLUDED
- *      from the runtime catalog.
+ *   2. Canonical models with NO active binding cannot generate — every part
+ *      of the AiModelDefinition (input_schema, provider, deployment, ops) is
+ *      assembled from the primary binding — so they are EXCLUDED from the
+ *      runtime catalog.
  *   3. The primary binding is assembled into an AiModelDefinition by the
  *      provider's own binding-driven catalog service (fal / bailian).
  *      Those services already collapse to one definition per canonical
  *      (keyed by `canonicalModel.slug`) and already carry `ops`,
- *      `deployment = endpointId`, and pricing from
- *      `binding.unitPriceNanoUsd/unitType + canonicalModel.marginBps`.
+ *      `deployment = endpointId`. User-facing pricing comes from
+ *      `AiCanonicalModel.billingPolicy.productPricing`; provider request cost
+ *      is recorded later per job only when the provider reports usage/cost.
  *
  * Provider adapters whose definitions are NOT PG-binding-driven (Azure
  * Foundry self-emits hardcoded schemas) are never used to source the
@@ -39,6 +39,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../infra/db/db.module';
 import { FalCatalogService } from './providers/fal/fal-catalog.service';
 import { BailianCatalogService } from './providers/bailian/bailian-catalog.service';
+import { ReplicateCatalogService } from './providers/replicate/replicate-catalog.service';
 import type { AiModelDefinition } from './types';
 
 /**
@@ -65,23 +66,24 @@ export class AiCanonicalCatalogService {
     private readonly prisma: PrismaService,
     private readonly fal: FalCatalogService,
     private readonly bailian: BailianCatalogService,
+    private readonly replicate: ReplicateCatalogService,
   ) {
     this.catalogByProvider = {
       'fal-ai': this.fal,
       'aliyun-bailian': this.bailian,
+      replicate: this.replicate,
     };
   }
 
   /**
-   * The canonical-driven catalog: one AiModelDefinition per visible +
-   * active canonical model that has at least one active provider
-   * binding, assembled from that canonical's PRIMARY active binding.
+   * The canonical-driven catalog: one AiModelDefinition per active canonical
+   * model that has at least one active provider binding, assembled from that
+   * canonical's PRIMARY active binding.
    */
   async listModels(): Promise<AiModelDefinition[]> {
     const canonicals = await this.prisma.aiCanonicalModel.findMany({
       where: {
         status: 'active',
-        visibility: 'direct',
         archivedAt: null,
       },
       include: {
@@ -110,7 +112,7 @@ export class AiCanonicalCatalogService {
       const primary = canonical.bindings[0];
       // Canonical-only model (no active binding) — cannot generate.
       // Excluded from the runtime catalog: there is no provider /
-      // endpoint / schema / price to assemble and routing.resolve would
+      // endpoint / schema to assemble and routing.resolve would
       // MODEL_NOT_FOUND on submit.
       if (!primary) continue;
 
@@ -128,8 +130,8 @@ export class AiCanonicalCatalogService {
 
       // The provider catalog already collapses to the primary binding
       // and emits the definition keyed by the canonical slug, carrying
-      // ops + deployment + pricing. Resolving by slug returns exactly
-      // that primary-binding definition.
+      // ops + deployment. Resolving by slug returns exactly that
+      // primary-binding definition.
       const model = await catalog.getModel(canonical.slug);
       if (!model) {
         this.logger.warn(

@@ -37,7 +37,6 @@ export type AdminAiProviderEndpoint = {
   capabilities: unknown;
   providerInputSchema: unknown;
   providerOutputSchema: unknown;
-  providerPricing: unknown;
   providerQuotaPolicy: unknown;
   catalogSnapshot: unknown;
   documentation: unknown;
@@ -57,15 +56,12 @@ export type AdminAiCanonicalModel = {
   modality: "image" | "video";
   family: string;
   generationModes: unknown;
-  visibility: "hidden" | "direct";
   status: "draft" | "active" | "disabled" | "degraded" | "archived";
   description: string | null;
   parameterPolicy: unknown;
   outputPolicy: unknown;
   entitlementPolicy: unknown;
   billingPolicy: unknown;
-  /** Gross-margin basis points (7000 = 70%). MARKUP lives per-canonical. */
-  marginBps: number;
   queuePolicy: unknown;
   uiPolicy: unknown;
   observabilityPolicy: unknown;
@@ -73,11 +69,20 @@ export type AdminAiCanonicalModel = {
   updatedAt: string;
   bindingCount: number;
   jobCount: number;
-  /** Representative 售价 (1 image @ 1K) via primary binding × markup; null if unbound. */
-  referenceSellPoints: number | null;
-  referenceCostPoints: number | null;
-  /** Realized gross margin (bps) from the cost ledger; null until billing produces data. */
-  realizedMarginBps: number | null;
+  priceBand: {
+    minPoints: number;
+    maxPoints: number;
+    defaultPoints: number;
+    currency: string;
+    pricingVersion: string;
+    unit: "per_output";
+    minLabel: string | null;
+    maxLabel: string | null;
+    defaultLabel: string | null;
+    referenceImageSurchargePoints: number | null;
+    extraReferenceImagePoints: number | null;
+    maskSurchargePoints: number | null;
+  } | null;
 };
 
 export type AdminAiProviderBinding = {
@@ -89,16 +94,10 @@ export type AdminAiProviderBinding = {
   status: "draft" | "active" | "disabled" | "degraded" | "archived";
   priority: number;
   weight: number;
-  /** Provider COST per unit in nanoUSD, serialized as a numeric string (BigInt). */
-  unitPriceNanoUsd: string;
-  /** What `unitPriceNanoUsd` is priced per. COST lives per-binding. */
-  unitType: "per_image" | "per_megapixel" | "per_unit";
   supportedModes: unknown;
   inputSchema: unknown;
   outputSchema: unknown;
   parameterMap: unknown;
-  pricingPolicy: unknown;
-  providerPricing: unknown;
   queuePolicy: unknown;
   routingPolicy: unknown;
   fallbackPolicy: unknown;
@@ -121,8 +120,6 @@ export type AdminAiProviderBinding = {
     id: string;
     slug: string;
     displayName: string;
-    /** Margin basis points from the canonical model; drives the live preview. */
-    marginBps?: number;
   };
   jobCount: number;
 };
@@ -131,16 +128,25 @@ export type AdminAiJobListItem = {
   id: string;
   provider: string;
   modelId: string;
+  deployment: string;
   providerJobId: string | null;
   status: string;
   stage: string;
   userId: string;
   prompt: string;
   createdAt: string;
+  queuedAt?: string | null;
+  startedAt?: string | null;
+  providerSubmittedAt?: string | null;
+  providerStartedAt?: string | null;
+  providerCompletedAt?: string | null;
+  outputFetchedAt?: string | null;
+  ossUploadedAt?: string | null;
   completedAt: string | null;
   cost: unknown;
   metrics: unknown;
   error: unknown;
+  routingSnapshot: unknown;
   canonicalModel: { id: string; slug: string; displayName: string } | null;
   providerBinding: { id: string; endpointId: string; status: string } | null;
   attempts: Array<{
@@ -151,8 +157,72 @@ export type AdminAiJobListItem = {
     providerStatus: number | null;
     runDurationMs: number | null;
     completedAt: string | null;
+    providerResponseHeaders?: unknown;
+    costAccounting?: unknown;
+    pricingSnapshot?: unknown;
   }>;
   outputs: Array<{ id: string; type: string; url: string; outputIndex: number }>;
+  costLedger: AdminAiCostLedgerEntry[];
+};
+
+export type AdminAiCostLedgerEntry = {
+  id?: string;
+  entryType: string;
+  currency: string;
+  amount: string;
+  internalCredits?: number | null;
+  providerCostUsd?: string | null;
+  listPriceCredits?: number | null;
+  marginUsd?: string | null;
+  source: string;
+  provider?: string | null;
+  endpointId?: string | null;
+  providerRequestId?: string | null;
+  billableUnits?: number | null;
+  unitPrice?: number | null;
+  unit?: string | null;
+  metadata?: unknown;
+  pricingSnapshot?: unknown;
+  createdAt?: string;
+};
+
+export type AdminAiProviderTraceEvent = {
+  id: string;
+  attemptId?: string | null;
+  provider: string;
+  endpointId?: string | null;
+  providerRequestId?: string | null;
+  eventType: string;
+  source: string;
+  confidence: string;
+  occurredAt: string;
+  offsetMs?: number | null;
+  durationMs?: number | null;
+  title?: string | null;
+  description?: string | null;
+  payload?: unknown;
+  idempotencyKey?: string;
+  createdAt?: string;
+};
+
+export type AdminAiJobDetail = Omit<AdminAiJobListItem, "attempts"> & {
+  input?: unknown;
+  normalizedInput?: unknown;
+  providerRequest?: unknown;
+  providerResponse?: unknown;
+  logs?: unknown;
+  timings?: unknown;
+  attempts: Array<
+    AdminAiJobListItem["attempts"][number] & {
+      providerEndpoint?: string | null;
+      providerRequest?: unknown;
+      providerResponse?: unknown;
+      providerLogs?: unknown;
+      rawStatus?: unknown;
+      error?: unknown;
+    }
+  >;
+  traceEvents: AdminAiProviderTraceEvent[];
 };
 
 export type AdminAiOverviewData = {

@@ -51,6 +51,7 @@ import {
   OutputStorageService,
   type HeadObjectResult,
 } from '../infra/storage/storage.types';
+import { MediaAssetUrlResolverService } from '../infra/storage/media-asset-url-resolver.service';
 import type {
   ConfirmUploadInputDto,
   ConfirmUploadResponseDto,
@@ -115,6 +116,13 @@ const UPLOAD_KIND_POLICY: Record<UploadKind, UploadKindPolicy> = {
     ttlSeconds: 900,
     keySegment: 'ip-banner',
   },
+  ai_reference_image: {
+    contentTypes: IMAGE_CONTENT_TYPES,
+    maxBytes: 20 * MiB,
+    assetKind: MediaAssetKind.image,
+    ttlSeconds: 900,
+    keySegment: 'ai-reference-image',
+  },
 };
 
 /** Prisma's MediaStorageProvider is the durable enum; the storage result
@@ -132,6 +140,7 @@ export class MediaUploadService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly storage: OutputStorageService,
+    private readonly assetUrls: MediaAssetUrlResolverService,
   ) {}
 
   /**
@@ -262,13 +271,21 @@ export class MediaUploadService {
     //    resurrected through a stale tombstone.
     const existing = await this.prisma.mediaAsset.findFirst({
       where: { objectKey: storageKey, deletedAt: null },
-      select: { id: true, storageProvider: true },
+      select: {
+        id: true,
+        storageProvider: true,
+        bucket: true,
+        region: true,
+        objectKey: true,
+        externalUrl: true,
+      },
     });
     if (existing) {
       return {
         mediaAssetId: existing.id,
         storageKey,
         provider: prismaProviderToId(existing.storageProvider),
+        url: this.assetUrls.resolve(existing),
       };
     }
 
@@ -333,13 +350,21 @@ export class MediaUploadService {
         status: MediaAssetStatus.ready,
         createdByUserId: userId,
       },
-      select: { id: true },
+      select: {
+        id: true,
+        storageProvider: true,
+        bucket: true,
+        region: true,
+        objectKey: true,
+        externalUrl: true,
+      },
     });
 
     return {
       mediaAssetId: asset.id,
       storageKey,
       provider: providerId,
+      url: this.assetUrls.resolve(asset),
     };
   }
 

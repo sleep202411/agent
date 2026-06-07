@@ -1284,32 +1284,32 @@ model BillingPromotionProviderBinding {
 }
 
 model BillingOrder {
-  id                  String             @id @default(uuid()) @db.Uuid
-  orderNo             String             @map("order_no") @db.VarChar(64)
+  id                      String              @id @default(uuid()) @db.Uuid
+  orderNo                 String              @map("order_no") @db.VarChar(64)
   /// Client or server idempotency key. Retrying checkout must not create another
   /// payable order for the same logical request.
-  idempotencyKey      String             @map("idempotency_key") @db.VarChar(160)
-  userId              String             @map("user_id") @db.VarChar(64)
-  workspaceId         String?            @map("workspace_id") @db.Uuid
-  subjectType         BillingSubjectType @map("subject_type")
-  subjectId           String             @map("subject_id") @db.VarChar(64)
-  orderType           BillingOrderType   @map("order_type")
-  status              BillingOrderStatus @default(draft)
-  itemId              String             @map("item_id") @db.Uuid
-  priceId             String             @map("price_id") @db.Uuid
-  providerBindingId   String?            @map("provider_binding_id") @db.Uuid
-  provider            PaymentProvider
-  currency            String             @db.Char(3)
+  idempotencyKey          String              @map("idempotency_key") @db.VarChar(160)
+  userId                  String              @map("user_id") @db.VarChar(64)
+  workspaceId             String?             @map("workspace_id") @db.Uuid
+  subjectType             BillingSubjectType  @map("subject_type")
+  subjectId               String              @map("subject_id") @db.VarChar(64)
+  orderType               BillingOrderType    @map("order_type")
+  status                  BillingOrderStatus  @default(draft)
+  itemId                  String              @map("item_id") @db.Uuid
+  priceId                 String              @map("price_id") @db.Uuid
+  providerBindingId       String?             @map("provider_binding_id") @db.Uuid
+  provider                PaymentProvider
+  currency                String              @db.Char(3)
   /// Amount before promotion discount.
-  subtotalAmountMinor BigInt             @default(0) @map("subtotal_amount_minor")
+  subtotalAmountMinor     BigInt              @default(0) @map("subtotal_amount_minor")
   /// Promotion discount applied to this order.
-  discountAmountMinor BigInt             @default(0) @map("discount_amount_minor")
+  discountAmountMinor     BigInt              @default(0) @map("discount_amount_minor")
   /// Final payable fiat amount after discount.
-  amountMinor         BigInt             @map("amount_minor")
+  amountMinor             BigInt              @map("amount_minor")
   /// Provider-accepted refunded fiat amount. Pending refund requests are tracked
   /// in BillingRefund and are not counted here until provider acceptance.
-  refundedAmountMinor BigInt             @default(0) @map("refunded_amount_minor")
-  quantity            Int                @default(1)
+  refundedAmountMinor     BigInt              @default(0) @map("refunded_amount_minor")
+  quantity                Int                 @default(1)
   /// Per-unit wallet grant frozen at checkout (a snapshot of price.grantsWalletAmount,
   /// or dollars*ratio for an ad-hoc custom recharge). Fulfillment + refund prefer this
   /// over the live price so the grant can never drift after the order is placed. NULL on
@@ -1317,15 +1317,15 @@ model BillingOrder {
   grantsWalletAmount      BigInt?             @map("grants_wallet_amount")
   grantsWalletCurrency    WalletCurrencyType? @map("grants_wallet_currency")
   grantsWalletBalanceKind WalletBalanceKind?  @map("grants_wallet_balance_kind")
-  description         String?            @db.VarChar(255)
-  metadata            Json               @default("{}") @db.JsonB
-  version             Int                @default(0)
-  expiresAt           DateTime?          @map("expires_at") @db.Timestamptz(6)
-  paidAt              DateTime?          @map("paid_at") @db.Timestamptz(6)
-  fulfilledAt         DateTime?          @map("fulfilled_at") @db.Timestamptz(6)
-  canceledAt          DateTime?          @map("canceled_at") @db.Timestamptz(6)
-  createdAt           DateTime           @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt           DateTime           @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  description             String?             @db.VarChar(255)
+  metadata                Json                @default("{}") @db.JsonB
+  version                 Int                 @default(0)
+  expiresAt               DateTime?           @map("expires_at") @db.Timestamptz(6)
+  paidAt                  DateTime?           @map("paid_at") @db.Timestamptz(6)
+  fulfilledAt             DateTime?           @map("fulfilled_at") @db.Timestamptz(6)
+  canceledAt              DateTime?           @map("canceled_at") @db.Timestamptz(6)
+  createdAt               DateTime            @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt               DateTime            @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   workspace            Workspace?                   @relation(fields: [workspaceId], references: [id], onDelete: SetNull)
   item                 BillingCatalogItem           @relation(fields: [itemId], references: [id], onDelete: Restrict)
@@ -2312,7 +2312,7 @@ model IpEpisodeLocalization {
   status               IpLocalizationStatus @default(draft)
   title                String               @db.VarChar(160)
   subtitle             String?              @db.VarChar(160)
-  summary              String?              @db.VarChar(500)
+  summary              String?              @db.Text
   description          String?              @db.Text
   sourceHash           String?              @map("source_hash") @db.VarChar(64)
   translatedFromLocale String?              @map("translated_from_locale") @db.VarChar(16)
@@ -3344,27 +3344,12 @@ enum AiProviderHealthStatus {
   outage
 }
 
-
-enum AiModelVisibility {
-  hidden
-  direct
-}
-
 enum AiCostLedgerEntryType {
   reservation
   charge
   refund
   provider_cost
   adjustment
-}
-
-// AiGenUnitType — what a provider binding's unitPriceNanoUsd is priced per.
-// per_image / per_unit bill per generated image; per_megapixel scales with
-// the requested resolution's megapixels.
-enum AiGenUnitType {
-  per_image
-  per_megapixel
-  per_unit
 }
 
 // AiProviderAccount — operational provider account, region cell, SLO policy,
@@ -3392,35 +3377,33 @@ model AiProviderAccount {
   @@map("ai_provider_accounts")
 }
 
-
 // AiProviderEndpoint — provider-side inventory. Provider catalog sync writes
 // only here, so upstream endpoint churn never pollutes the user-facing model
 // catalog. Operators explicitly bind verified endpoints to canonical models.
 model AiProviderEndpoint {
-  id                    String                 @id @default(uuid()) @db.Uuid
-  providerAccountId     String                 @map("provider_account_id") @db.Uuid
-  provider              String                 @db.VarChar(64)
-  endpointId            String                 @map("endpoint_id") @db.VarChar(180)
-  displayName           String?                @map("display_name") @db.VarChar(160)
-  modality              AiJobType
-  status                AiControlPlaneStatus   @default(draft)
-  healthStatus          AiProviderHealthStatus @default(unknown) @map("health_status")
-  supportedModes        Json                   @default("[]") @map("supported_modes") @db.JsonB
-  capabilities          Json                   @default("{}") @db.JsonB
-  providerInputSchema   Json                   @default("{}") @map("provider_input_schema") @db.JsonB
-  providerOutputSchema  Json                   @default("{}") @map("provider_output_schema") @db.JsonB
-  providerPricing       Json                   @default("{}") @map("provider_pricing") @db.JsonB
-  providerQuotaPolicy   Json                   @default("{}") @map("provider_quota_policy") @db.JsonB
-  catalogSnapshot       Json                   @default("{}") @map("catalog_snapshot") @db.JsonB
-  documentation         Json                   @default("{}") @db.JsonB
-  disabledReason        String?                @map("disabled_reason") @db.Text
-  createdByAdminId      String?                @map("created_by_admin_id") @db.Uuid
-  updatedByAdminId      String?                @map("updated_by_admin_id") @db.Uuid
-  createdAt             DateTime               @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt             DateTime               @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
-  archivedAt            DateTime?              @map("archived_at") @db.Timestamptz(6)
+  id                   String                 @id @default(uuid()) @db.Uuid
+  providerAccountId    String                 @map("provider_account_id") @db.Uuid
+  provider             String                 @db.VarChar(64)
+  endpointId           String                 @map("endpoint_id") @db.VarChar(180)
+  displayName          String?                @map("display_name") @db.VarChar(160)
+  modality             AiJobType
+  status               AiControlPlaneStatus   @default(draft)
+  healthStatus         AiProviderHealthStatus @default(unknown) @map("health_status")
+  supportedModes       Json                   @default("[]") @map("supported_modes") @db.JsonB
+  capabilities         Json                   @default("{}") @db.JsonB
+  providerInputSchema  Json                   @default("{}") @map("provider_input_schema") @db.JsonB
+  providerOutputSchema Json                   @default("{}") @map("provider_output_schema") @db.JsonB
+  providerQuotaPolicy  Json                   @default("{}") @map("provider_quota_policy") @db.JsonB
+  catalogSnapshot      Json                   @default("{}") @map("catalog_snapshot") @db.JsonB
+  documentation        Json                   @default("{}") @db.JsonB
+  disabledReason       String?                @map("disabled_reason") @db.Text
+  createdByAdminId     String?                @map("created_by_admin_id") @db.Uuid
+  updatedByAdminId     String?                @map("updated_by_admin_id") @db.Uuid
+  createdAt            DateTime               @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt            DateTime               @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  archivedAt           DateTime?              @map("archived_at") @db.Timestamptz(6)
 
-  providerAccount AiProviderAccount       @relation(fields: [providerAccountId], references: [id], onDelete: Cascade)
+  providerAccount AiProviderAccount        @relation(fields: [providerAccountId], references: [id], onDelete: Cascade)
   bindings        AiProviderModelBinding[]
 
   @@unique([providerAccountId, endpointId], map: "ai_provider_endpoints_account_endpoint_unique")
@@ -3432,85 +3415,76 @@ model AiProviderEndpoint {
 // AiCanonicalModel — user-facing model identity. Multiple providers may back
 // the same canonical model; routing selects an active binding per request.
 model AiCanonicalModel {
-  id                    String               @id @default(uuid()) @db.Uuid
-  slug                  String               @db.VarChar(120)
-  displayName           String               @map("display_name") @db.VarChar(160)
-  modality              AiJobType
-  family                String               @db.VarChar(80)
-  generationModes       Json                 @default("[]") @map("generation_modes") @db.JsonB
-  visibility            AiModelVisibility    @default(direct)
-  status                AiControlPlaneStatus @default(draft)
-  description           String?              @db.Text
-  parameterPolicy       Json                 @default("{}") @map("parameter_policy") @db.JsonB
-  outputPolicy          Json                 @default("{}") @map("output_policy") @db.JsonB
-  entitlementPolicy     Json                 @default("{}") @map("entitlement_policy") @db.JsonB
-  billingPolicy         Json                 @default("{}") @map("billing_policy") @db.JsonB
-  /// Gross-margin basis points applied over provider cost to derive 售价 (10000 = 100%). MARKUP lives per-canonical.
-  marginBps             Int                  @default(7000) @map("margin_bps")
-  queuePolicy           Json                 @default("{}") @map("queue_policy") @db.JsonB
-  uiPolicy              Json                 @default("{}") @map("ui_policy") @db.JsonB
-  observabilityPolicy   Json                 @default("{}") @map("observability_policy") @db.JsonB
-  metadata              Json                 @default("{}") @db.JsonB
-  createdByAdminId      String?              @map("created_by_admin_id") @db.Uuid
-  updatedByAdminId      String?              @map("updated_by_admin_id") @db.Uuid
-  createdAt             DateTime             @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt             DateTime             @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
-  archivedAt            DateTime?            @map("archived_at") @db.Timestamptz(6)
+  id                  String               @id @default(uuid()) @db.Uuid
+  slug                String               @db.VarChar(120)
+  displayName         String               @map("display_name") @db.VarChar(160)
+  modality            AiJobType
+  family              String               @db.VarChar(80)
+  generationModes     Json                 @default("[]") @map("generation_modes") @db.JsonB
+  status              AiControlPlaneStatus @default(draft)
+  description         String?              @db.Text
+  parameterPolicy     Json                 @default("{}") @map("parameter_policy") @db.JsonB
+  outputPolicy        Json                 @default("{}") @map("output_policy") @db.JsonB
+  entitlementPolicy   Json                 @default("{}") @map("entitlement_policy") @db.JsonB
+  billingPolicy       Json                 @default("{}") @map("billing_policy") @db.JsonB
+  queuePolicy         Json                 @default("{}") @map("queue_policy") @db.JsonB
+  uiPolicy            Json                 @default("{}") @map("ui_policy") @db.JsonB
+  observabilityPolicy Json                 @default("{}") @map("observability_policy") @db.JsonB
+  metadata            Json                 @default("{}") @db.JsonB
+  createdByAdminId    String?              @map("created_by_admin_id") @db.Uuid
+  updatedByAdminId    String?              @map("updated_by_admin_id") @db.Uuid
+  createdAt           DateTime             @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt           DateTime             @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  archivedAt          DateTime?            @map("archived_at") @db.Timestamptz(6)
 
   bindings AiProviderModelBinding[]
   jobs     AiJob[]
 
   @@unique([slug], map: "ai_canonical_models_slug_unique")
-  @@index([modality, status, visibility], map: "ai_canonical_models_catalog_idx")
+  @@index([modality, status], map: "ai_canonical_models_catalog_idx")
   @@index([family, status], map: "ai_canonical_models_family_idx")
   @@map("ai_canonical_models")
 }
 
-// AiProviderModelBinding — provider-specific endpoint, schemas, pricing,
-// routing weights, and the raw provider catalog snapshot. This is where fal,
-// Replicate, OpenAI, or private clusters can differ while the user still sees
-// one canonical model.
+// AiProviderModelBinding — provider-specific endpoint, schemas, parameter maps,
+// routing weights, and the raw provider catalog snapshot. Product pricing lives
+// on AiCanonicalModel.billingPolicy; request-level provider cost is written only
+// to AiCostLedgerEntry when the provider exposes actual usage/cost.
 model AiProviderModelBinding {
-  id                    String               @id @default(uuid()) @db.Uuid
-  providerAccountId     String               @map("provider_account_id") @db.Uuid
-  providerEndpointId    String               @map("provider_endpoint_id") @db.Uuid
-  canonicalModelId      String               @map("canonical_model_id") @db.Uuid
-  provider              String               @db.VarChar(64)
-  endpointId            String               @map("endpoint_id") @db.VarChar(180)
-  displayName           String?              @map("display_name") @db.VarChar(160)
-  modality              AiJobType
-  status                AiControlPlaneStatus @default(draft)
-  priority              Int                  @default(100)
-  weight                Int                  @default(100)
-  supportedModes        Json                 @default("[]") @map("supported_modes") @db.JsonB
-  inputSchema           Json                 @default("{}") @map("input_schema") @db.JsonB
-  outputSchema          Json                 @default("{}") @map("output_schema") @db.JsonB
-  providerInputSchema   Json                 @default("{}") @map("provider_input_schema") @db.JsonB
-  providerOutputSchema  Json                 @default("{}") @map("provider_output_schema") @db.JsonB
-  parameterMap          Json                 @default("{}") @map("parameter_map") @db.JsonB
-  outputMap             Json                 @default("{}") @map("output_map") @db.JsonB
-  pricingPolicy         Json                 @default("{}") @map("pricing_policy") @db.JsonB
-  providerPricing       Json                 @default("{}") @map("provider_pricing") @db.JsonB
-  /// Provider cost per unit, in nanoUSD (1 USD = 1e9 nanoUSD). COST lives per-binding.
-  unitPriceNanoUsd      BigInt?              @default(0) @map("unit_price_nano_usd")
-  /// What unitPriceNanoUsd is priced per (per_image / per_megapixel / per_unit).
-  unitType              AiGenUnitType        @default(per_image) @map("unit_type")
-  queuePolicy           Json                 @default("{}") @map("queue_policy") @db.JsonB
-  routingPolicy         Json                 @default("{}") @map("routing_policy") @db.JsonB
-  fallbackPolicy        Json                 @default("{}") @map("fallback_policy") @db.JsonB
-  observabilityPolicy   Json                 @default("{}") @map("observability_policy") @db.JsonB
-  catalogSnapshot       Json                 @default("{}") @map("catalog_snapshot") @db.JsonB
-  documentation         Json                 @default("{}") @db.JsonB
-  disabledReason        String?              @map("disabled_reason") @db.Text
-  createdByAdminId      String?              @map("created_by_admin_id") @db.Uuid
-  updatedByAdminId      String?              @map("updated_by_admin_id") @db.Uuid
-  createdAt             DateTime             @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt             DateTime             @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
-  archivedAt            DateTime?            @map("archived_at") @db.Timestamptz(6)
+  id                   String               @id @default(uuid()) @db.Uuid
+  providerAccountId    String               @map("provider_account_id") @db.Uuid
+  providerEndpointId   String               @map("provider_endpoint_id") @db.Uuid
+  canonicalModelId     String               @map("canonical_model_id") @db.Uuid
+  provider             String               @db.VarChar(64)
+  endpointId           String               @map("endpoint_id") @db.VarChar(180)
+  displayName          String?              @map("display_name") @db.VarChar(160)
+  modality             AiJobType
+  status               AiControlPlaneStatus @default(draft)
+  priority             Int                  @default(100)
+  weight               Int                  @default(100)
+  supportedModes       Json                 @default("[]") @map("supported_modes") @db.JsonB
+  inputSchema          Json                 @default("{}") @map("input_schema") @db.JsonB
+  outputSchema         Json                 @default("{}") @map("output_schema") @db.JsonB
+  providerInputSchema  Json                 @default("{}") @map("provider_input_schema") @db.JsonB
+  providerOutputSchema Json                 @default("{}") @map("provider_output_schema") @db.JsonB
+  parameterMap         Json                 @default("{}") @map("parameter_map") @db.JsonB
+  outputMap            Json                 @default("{}") @map("output_map") @db.JsonB
+  queuePolicy          Json                 @default("{}") @map("queue_policy") @db.JsonB
+  routingPolicy        Json                 @default("{}") @map("routing_policy") @db.JsonB
+  fallbackPolicy       Json                 @default("{}") @map("fallback_policy") @db.JsonB
+  observabilityPolicy  Json                 @default("{}") @map("observability_policy") @db.JsonB
+  catalogSnapshot      Json                 @default("{}") @map("catalog_snapshot") @db.JsonB
+  documentation        Json                 @default("{}") @db.JsonB
+  disabledReason       String?              @map("disabled_reason") @db.Text
+  createdByAdminId     String?              @map("created_by_admin_id") @db.Uuid
+  updatedByAdminId     String?              @map("updated_by_admin_id") @db.Uuid
+  createdAt            DateTime             @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt            DateTime             @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  archivedAt           DateTime?            @map("archived_at") @db.Timestamptz(6)
 
-  providerAccount  AiProviderAccount      @relation(fields: [providerAccountId], references: [id], onDelete: Cascade)
-  providerEndpoint AiProviderEndpoint      @relation(fields: [providerEndpointId], references: [id], onDelete: Restrict)
-  canonicalModel   AiCanonicalModel        @relation(fields: [canonicalModelId], references: [id], onDelete: Restrict)
+  providerAccount  AiProviderAccount   @relation(fields: [providerAccountId], references: [id], onDelete: Cascade)
+  providerEndpoint AiProviderEndpoint  @relation(fields: [providerEndpointId], references: [id], onDelete: Restrict)
+  canonicalModel   AiCanonicalModel    @relation(fields: [canonicalModelId], references: [id], onDelete: Restrict)
   jobs             AiJob[]
   costLedger       AiCostLedgerEntry[]
 
@@ -3523,27 +3497,27 @@ model AiProviderModelBinding {
 }
 
 model AiCostLedgerEntry {
-  id                    String                @id @default(uuid()) @db.Uuid
-  jobId                 String                @map("job_id")
-  attemptId             String?               @map("attempt_id")
-  providerBindingId     String?               @map("provider_binding_id") @db.Uuid
-  userId                String                @map("user_id") @db.VarChar(64)
-  workspaceId           String?               @map("workspace_id") @db.Uuid
-  entryType             AiCostLedgerEntryType @map("entry_type")
-  currency              String                @db.VarChar(16)
-  amount                Decimal               @db.Decimal(18, 6)
-  internalCredits       Int?                  @map("internal_credits")
-  providerCostUsd       Decimal?              @map("provider_cost_usd") @db.Decimal(18, 6)
-  listPriceCredits      Int?                  @map("list_price_credits")
-  marginUsd             Decimal?              @map("margin_usd") @db.Decimal(18, 6)
-  pricingSnapshot       Json                  @default("{}") @map("pricing_snapshot") @db.JsonB
-  idempotencyKey        String                @map("idempotency_key") @db.VarChar(180)
-  source                String                @db.VarChar(80)
-  metadata              Json                  @default("{}") @db.JsonB
-  createdAt             DateTime              @default(now()) @map("created_at") @db.Timestamptz(6)
+  id                String                @id @default(uuid()) @db.Uuid
+  jobId             String                @map("job_id") @db.Uuid
+  attemptId         String?               @map("attempt_id")
+  providerBindingId String?               @map("provider_binding_id") @db.Uuid
+  userId            String                @map("user_id") @db.VarChar(64)
+  workspaceId       String?               @map("workspace_id") @db.Uuid
+  entryType         AiCostLedgerEntryType @map("entry_type")
+  currency          String                @db.VarChar(16)
+  amount            Decimal               @db.Decimal(18, 6)
+  internalCredits   Int?                  @map("internal_credits")
+  providerCostUsd   Decimal?              @map("provider_cost_usd") @db.Decimal(18, 6)
+  listPriceCredits  Int?                  @map("list_price_credits")
+  marginUsd         Decimal?              @map("margin_usd") @db.Decimal(18, 6)
+  pricingSnapshot   Json                  @default("{}") @map("pricing_snapshot") @db.JsonB
+  idempotencyKey    String                @map("idempotency_key") @db.VarChar(180)
+  source            String                @db.VarChar(80)
+  metadata          Json                  @default("{}") @db.JsonB
+  createdAt         DateTime              @default(now()) @map("created_at") @db.Timestamptz(6)
 
-  job             AiJob                  @relation(fields: [jobId], references: [id], onDelete: Cascade)
-  attempt         AiJobAttempt?          @relation(fields: [attemptId], references: [id], onDelete: SetNull)
+  job             AiJob                   @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  attempt         AiJobAttempt?           @relation(fields: [attemptId], references: [id], onDelete: SetNull)
   providerBinding AiProviderModelBinding? @relation(fields: [providerBindingId], references: [id], onDelete: SetNull)
 
   @@unique([idempotencyKey], map: "ai_cost_ledger_idempotency_key_unique")
@@ -3568,7 +3542,7 @@ model AiCostLedgerEntry {
 //   amount, currency, source, reversal_of FK. This Json is a stopgap
 //   until billing goes live.
 model AiJob {
-  id                    String      @id
+  id                    String      @id @db.Uuid
   userId                String      @map("user_id")
   /// Immutable product entitlement policy selected at submission time.
   /// This is the source for model access, queue priority, quota bridge,
@@ -3617,7 +3591,7 @@ model AiJob {
   estimatedTotalSeconds Int?        @map("estimated_total_seconds")
   etaConfidence         String?     @map("eta_confidence")
   attempt               Int         @default(1)
-  retryOfJobId          String?     @map("retry_of_job_id")
+  retryOfJobId          String?     @map("retry_of_job_id") @db.Uuid
   /// Provider-side job id for async providers (fal.ai request_id,
   /// Replicate prediction id, Azure video job id). NULL for sync
   /// providers like Azure Foundry images. Indexed with `provider` for
@@ -3649,15 +3623,16 @@ model AiJob {
   /// raw Prisma callers must do the same.
   deletedAt             DateTime?   @map("deleted_at") @db.Timestamptz(6)
 
-  outputs   AiJobOutput[]
-  attempts  AiJobAttempt[]
-  events    AiEventOutbox[]
-  costLedger AiCostLedgerEntry[]
+  outputs         AiJobOutput[]
+  attempts        AiJobAttempt[]
+  events          AiEventOutbox[]
+  costLedger      AiCostLedgerEntry[]
+  traceEvents     AiProviderTraceEvent[]
   canonicalModel  AiCanonicalModel?       @relation(fields: [canonicalModelId], references: [id], onDelete: SetNull)
   providerBinding AiProviderModelBinding? @relation(fields: [providerBindingId], references: [id], onDelete: SetNull)
-  workspace Workspace?        @relation(fields: [workspaceId], references: [id])
-  project   PlatformProject?  @relation(fields: [projectId], references: [id])
-  document  PlatformDocument? @relation(fields: [documentId, workspaceId], references: [id, workspaceId], onDelete: NoAction)
+  workspace       Workspace?              @relation(fields: [workspaceId], references: [id])
+  project         PlatformProject?        @relation(fields: [projectId], references: [id])
+  document        PlatformDocument?       @relation(fields: [documentId, workspaceId], references: [id, workspaceId], onDelete: NoAction)
 
   /// Active-row idempotency is enforced by a partial unique index in
   /// migration SQL: (user_id, model_id, idempotency_key) WHERE deleted_at IS NULL.
@@ -3679,7 +3654,7 @@ model AiJob {
 // AiJobOutput — one row per generated artifact (OSS-backed).
 model AiJobOutput {
   id              String    @id
-  jobId           String    @map("job_id")
+  jobId           String    @map("job_id") @db.Uuid
   type            AiJobType
   url             String
   /// CDN thumbnail variant — gallery uses this; original `url` is the
@@ -3722,7 +3697,7 @@ model AiJobOutput {
 // generation can be replayed or audited.
 model AiJobAttempt {
   id                      String          @id
-  jobId                   String          @map("job_id")
+  jobId                   String          @map("job_id") @db.Uuid
   attemptNumber           Int             @map("attempt_number")
   status                  AiAttemptStatus
   providerStatus          Int?            @map("provider_status")
@@ -3755,13 +3730,49 @@ model AiJobAttempt {
   startedAt               DateTime        @default(now()) @map("started_at") @db.Timestamptz(6)
   completedAt             DateTime?       @map("completed_at") @db.Timestamptz(6)
 
-  job        AiJob              @relation(fields: [jobId], references: [id], onDelete: Cascade)
-  costLedger AiCostLedgerEntry[]
+  job         AiJob                  @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  costLedger  AiCostLedgerEntry[]
+  traceEvents AiProviderTraceEvent[]
 
   @@unique([jobId, attemptNumber], map: "ai_attempts_job_attempt_unique")
   @@index([jobId], map: "ai_attempts_job_idx")
   @@index([providerRequestId], map: "ai_attempts_provider_request_id_idx")
   @@map("ai_attempts")
+}
+
+// AiProviderTraceEvent — append-only, request-level evidence timeline.
+//
+// This table is intentionally separate from AiJobAttempt JSON blobs:
+// operators need a fast, stable timeline that can merge our internal
+// lifecycle, provider queue status, provider platform analytics, billing
+// headers, and future webhook callbacks without reparsing provider-specific
+// payloads. `source` + `confidence` make inferred timings explicit.
+model AiProviderTraceEvent {
+  id                String   @id @default(uuid()) @db.Uuid
+  jobId             String   @map("job_id") @db.Uuid
+  attemptId         String?  @map("attempt_id")
+  provider          String   @db.VarChar(64)
+  endpointId        String?  @map("endpoint_id") @db.VarChar(180)
+  providerRequestId String?  @map("provider_request_id") @db.VarChar(180)
+  eventType         String   @map("event_type") @db.VarChar(64)
+  source            String   @db.VarChar(64)
+  confidence        String   @db.VarChar(24)
+  occurredAt        DateTime @map("occurred_at") @db.Timestamptz(6)
+  offsetMs          Int?     @map("offset_ms")
+  durationMs        Int?     @map("duration_ms")
+  title             String?  @db.VarChar(160)
+  description       String?
+  payload           Json     @default("{}") @db.JsonB
+  idempotencyKey    String   @map("idempotency_key") @db.VarChar(220)
+  createdAt         DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  job     AiJob         @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  attempt AiJobAttempt? @relation(fields: [attemptId], references: [id], onDelete: SetNull)
+
+  @@unique([idempotencyKey], map: "ai_provider_trace_events_idempotency_key_unique")
+  @@index([jobId, occurredAt(sort: Asc)], map: "ai_provider_trace_events_job_timeline_idx")
+  @@index([provider, providerRequestId], map: "ai_provider_trace_events_provider_request_idx")
+  @@map("ai_provider_trace_events")
 }
 
 // AiProviderEvent — inbound webhook / async callback log.
@@ -3777,7 +3788,7 @@ model AiJobAttempt {
 // store them anyway so we can investigate later.
 model AiProviderEvent {
   id               String              @id
-  jobId            String?             @map("job_id")
+  jobId            String?             @map("job_id") @db.Uuid
   provider         String
   /// Provider's own ID for this event (fal: request_id; others may vary).
   providerEventId  String?             @map("provider_event_id")
@@ -3807,7 +3818,7 @@ model AiProviderEvent {
 // dispatcher instances coexist without double-publishing.
 model AiEventOutbox {
   id            String            @id
-  jobId         String            @map("job_id")
+  jobId         String            @map("job_id") @db.Uuid
   userId        String            @map("user_id")
   eventType     AiOutboxEventType @map("event_type")
   payload       Json

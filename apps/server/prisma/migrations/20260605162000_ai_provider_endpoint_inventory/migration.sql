@@ -2,7 +2,7 @@
 --
 -- Provider catalog sync now writes into ai_provider_endpoints only. A
 -- provider binding is an explicit operator decision that connects a verified
--- endpoint to a canonical model for routing, pricing, quota and fallback.
+-- endpoint to a canonical model for routing, quota and fallback.
 
 CREATE TABLE "ai_provider_endpoints" (
   "id" UUID NOT NULL DEFAULT gen_random_uuid(),
@@ -17,12 +17,10 @@ CREATE TABLE "ai_provider_endpoints" (
   "capabilities" JSONB NOT NULL DEFAULT '{}'::jsonb,
   "provider_input_schema" JSONB NOT NULL DEFAULT '{}'::jsonb,
   "provider_output_schema" JSONB NOT NULL DEFAULT '{}'::jsonb,
-  "provider_pricing" JSONB NOT NULL DEFAULT '{}'::jsonb,
   "provider_quota_policy" JSONB NOT NULL DEFAULT '{}'::jsonb,
   "catalog_snapshot" JSONB NOT NULL DEFAULT '{}'::jsonb,
   "documentation" JSONB NOT NULL DEFAULT '{}'::jsonb,
   "schema_hash" VARCHAR(80),
-  "pricing_hash" VARCHAR(80),
   "disabled_reason" TEXT,
   "last_synced_at" TIMESTAMPTZ(6),
   "created_by_admin_id" UUID,
@@ -72,7 +70,6 @@ INSERT INTO "ai_provider_endpoints" (
   "supported_modes",
   "provider_input_schema",
   "provider_output_schema",
-  "provider_pricing",
   "catalog_snapshot",
   "documentation",
   "last_synced_at",
@@ -95,7 +92,6 @@ SELECT DISTINCT ON ("provider_account_id", "endpoint_id")
   "supported_modes",
   "provider_input_schema",
   "provider_output_schema",
-  "provider_pricing",
   "catalog_snapshot",
   "documentation",
   "last_synced_at",

@@ -6,6 +6,7 @@ import { AssistantModule } from './assistant/assistant.module';
 import { AuthModule, AuthGuard } from './auth';
 import { BillingModule } from './billing';
 import { CertificatesModule } from './certificates/certificates.module';
+import { AlertingModule } from './common/alerting';
 import { RegionModule } from './common/region';
 import { ThrottleModule } from './common/throttle/throttle.module';
 import { ConversationsModule } from './conversations/conversations.module';
@@ -31,6 +32,7 @@ import { WorkspacesModule } from './workspaces';
     // Infra modules first — global, others can inject PrismaService / REDIS.
     DbModule,
     RedisModule,
+    AlertingModule,
     AuthModule,
     AdminAuthModule,
     // Region wires CountryMiddleware globally before any controller runs.

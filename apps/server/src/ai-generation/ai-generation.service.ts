@@ -11,7 +11,7 @@ import {
 import { ProjectMemberRole, WorkspaceMemberRole } from '@prisma/client';
 import { randomUUID } from 'crypto';
 import type { AuthUser } from '../auth';
-import { newShortId } from '../common/id';
+import { newUuidV7 } from '../common/id';
 import { EntitlementService, type EntitlementSnapshot } from '../entitlements';
 import { QuotaService } from '../quota/quota.service';
 import type { QuotaDimension } from '../quota/quota.types';
@@ -112,10 +112,9 @@ export class AiGenerationService {
 
   async listModels(user: AuthUser) {
     // Canonical-model-driven catalog: the control plane is the single
-    // source of truth. One AiModelDefinition per visible + active
-    // canonical model, assembled from its primary active provider
-    // binding (no provider fan-out, no provider-merge). We only stamp
-    // per-user access on top.
+    // source of truth. One AiModelDefinition per active canonical model,
+    // assembled from its primary active provider binding (no provider fan-out,
+    // no provider-merge). We only stamp per-user access on top.
     const models = await this.catalog.listModels();
     const entitlement = this.entitlements.resolveForUser(user);
     return models.map((model) => {
@@ -206,8 +205,9 @@ export class AiGenerationService {
 
     // Generated app-side so we know the id before insert — needed to
     // enqueue BullMQ + emit the optimistic queued push before save()
-    // resolves. Keep it short because this id appears in URLs/logs.
-    const id = newShortId();
+    // resolves. UUIDv7 keeps the durable job id standard, sortable, and
+    // audit-friendly across DB, queues, logs, and provider evidence.
+    const id = newUuidV7();
     const queueName = snapshot.policy.concurrency.queueName;
     let reservation: ReserveQueuedJobResult;
     try {
@@ -318,6 +318,24 @@ export class AiGenerationService {
     }
 
     const job = reservation.job;
+    await this.recordTraceSafe(job, {
+      eventType: 'job_submitted',
+      occurredAt: job.queuedAt ?? job.createdAt,
+      source: 'internal',
+      confidence: 'exact',
+      title: 'Submitted',
+      description: 'Request accepted and waiting for a generation slot.',
+      idempotencyKey: `ai_trace:${job.id}:job_submitted`,
+      payload: {
+        queueName,
+        queuePosition: job.queuePosition,
+        sourceSurface: job.sourceSurface,
+        modelId: job.modelId,
+        selectedProvider: snapshot.selectedProvider,
+        selectedDeployment: snapshot.selectedDeployment,
+        quotaCost: snapshot.policy.quota.cost,
+      },
+    });
     // Hand off to BullMQ. The worker reads the canonical row from DB
     // when it picks the message up, so the payload is just the jobId.
     // Priority is frozen in the routing snapshot so later tier/config
@@ -840,5 +858,29 @@ export class AiGenerationService {
         completedAt: job.completedAt,
       },
     };
+  }
+
+  private async recordTraceSafe(
+    job: Pick<AiJob, 'id' | 'provider' | 'deployment' | 'createdAt'>,
+    input: {
+      eventType: string;
+      occurredAt?: string | null;
+      source: string;
+      confidence: string;
+      title?: string | null;
+      description?: string | null;
+      payload?: Record<string, unknown> | null;
+      idempotencyKey?: string | null;
+    },
+  ): Promise<void> {
+    try {
+      await this.store.recordProviderTraceEvent(job, input);
+    } catch (err) {
+      this.logger.warn(
+        `Failed to record AI trace event for job ${job.id}: ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+      );
+    }
   }
 }

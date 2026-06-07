@@ -4,6 +4,7 @@ import type {
   AiCapabilityMatrix,
   AiGenerationMode,
   AiInputSchema,
+  AiJsonValue,
   AiJobType,
   AiModelDefinition,
   AiModelFamily,
@@ -36,6 +37,7 @@ interface CreateBailianModelConfigArgs {
   perUserQueued: number;
   pollDelayMs: number;
   billing?: Partial<AiBillingPolicy>;
+  parameterPolicy?: AiJsonValue;
 }
 
 function providerProperty(
@@ -445,6 +447,12 @@ export function createBailianModelConfig(
       backoffMs: [3_000, 15_000, 45_000],
     },
   };
+  const productPricing = args.billing?.productPricing;
+  if (!productPricing) {
+    throw new Error(
+      `Alibaba Model Studio endpoint "${args.endpointId}" is missing canonical product pricing.`,
+    );
+  }
 
   return {
     endpointId: args.endpointId,
@@ -470,12 +478,12 @@ export function createBailianModelConfig(
       mode: args.billing?.mode ?? 'charge',
       unit: args.billing?.unit ?? 'compute_point',
       displayCurrency: args.billing?.displayCurrency ?? 'COMPUTE_POINTS',
-      preflightCost:
-        args.billing?.preflightCost ?? (args.type === 'video' ? 24 : 2),
-      finalCostSource: args.billing?.finalCostSource ?? 'fixed_table',
+      preflightCost: args.billing?.preflightCost,
+      finalCostSource: args.billing?.finalCostSource ?? 'product_pricing',
       refundPolicy: args.billing?.refundPolicy ?? 'refund_on_final_failure',
-      pricing: args.billing?.pricing,
+      productPricing,
     },
+    parameterPolicy: args.parameterPolicy,
     inputSchema,
     outputSchema,
     providerInputMap: providerInputMap(inputSchema),
@@ -593,6 +601,7 @@ export function toAiModelDefinition(
     entitlement: { requiredPlan: config.requiredPlan },
     entitlement_policy: { requiredPlan: config.requiredPlan },
     billing_policy: config.billingPolicy,
+    parameter_policy: config.parameterPolicy,
     ui_policy: {
       defaultMode: 'simple',
       advancedVisible: true,

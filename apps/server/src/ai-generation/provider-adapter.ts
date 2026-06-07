@@ -57,9 +57,43 @@ export interface RawProviderOutput {
   safetyFlags?: Record<string, unknown>;
 }
 
+export interface ProviderTraceEvent {
+  eventType: string;
+  occurredAt?: string | null;
+  offsetMs?: number | null;
+  durationMs?: number | null;
+  source:
+    | 'internal'
+    | 'provider_queue'
+    | 'provider_platform'
+    | 'provider_header'
+    | 'provider_response';
+  confidence: 'exact' | 'observed' | 'inferred';
+  title?: string | null;
+  description?: string | null;
+  payload?: Record<string, unknown> | null;
+  idempotencyKey?: string | null;
+}
+
+export interface ProviderTimingSnapshot {
+  submittedAt?: string | null;
+  executionStartedAt?: string | null;
+  completedAt?: string | null;
+  durationMs?: number | null;
+  statusCode?: number | null;
+}
+
 export type StartResult =
   /** Sync provider — bytes are already here, worker proceeds to OSS. */
-  | { kind: 'completed'; outputs: RawProviderOutput[] }
+  | {
+      kind: 'completed';
+      outputs: RawProviderOutput[];
+      providerResponseHeaders?: Record<string, string>;
+      costAccounting?: Record<string, unknown> | null;
+      pricingSnapshot?: Record<string, unknown> | null;
+      providerDiagnostics?: Record<string, unknown> | null;
+      providerTraceEvents?: ProviderTraceEvent[];
+    }
   /** Async provider — worker stores `providerJobId`, schedules a poll
    *  (and/or waits for a webhook). */
   | {
@@ -71,8 +105,13 @@ export type StartResult =
       providerEndpoint?: string;
       providerRequest?: Record<string, unknown>;
       providerResponse?: unknown;
+      providerResponseHeaders?: Record<string, string>;
+      costAccounting?: Record<string, unknown> | null;
+      pricingSnapshot?: Record<string, unknown> | null;
       submittedAt?: string;
       queuePosition?: number | null;
+      providerDiagnostics?: Record<string, unknown> | null;
+      providerTraceEvents?: ProviderTraceEvent[];
     };
 
 export type PollResult =
@@ -85,23 +124,38 @@ export type PollResult =
       queuePosition?: number | null;
       rawStatus?: unknown;
       providerLogs?: unknown;
+      providerDiagnostics?: Record<string, unknown> | null;
+      providerTraceEvents?: ProviderTraceEvent[];
     }
   | {
       kind: 'completed';
       outputs: RawProviderOutput[];
       providerRequestId?: string;
       providerEndpoint?: string;
+      providerStatus?: number | null;
       rawStatus?: unknown;
       providerResponse?: unknown;
+      providerResponseHeaders?: Record<string, string>;
       providerLogs?: unknown;
+      costAccounting?: Record<string, unknown> | null;
+      pricingSnapshot?: Record<string, unknown> | null;
+      providerTiming?: ProviderTimingSnapshot | null;
+      providerDiagnostics?: Record<string, unknown> | null;
+      providerTraceEvents?: ProviderTraceEvent[];
     }
   | {
       kind: 'failed';
       error: AiJobError;
       providerRequestId?: string;
       providerEndpoint?: string;
+      providerStatus?: number | null;
       rawStatus?: unknown;
+      providerResponse?: unknown;
+      providerResponseHeaders?: Record<string, string>;
       providerLogs?: unknown;
+      providerTiming?: ProviderTimingSnapshot | null;
+      providerDiagnostics?: Record<string, unknown> | null;
+      providerTraceEvents?: ProviderTraceEvent[];
     };
 
 /**
