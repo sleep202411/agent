@@ -287,9 +287,9 @@ export function NewIpCreateForm({ onClose }: NewIpCreateFormProps = {}) {
                 clearAi("name");
               }}
               maxLength={NAME_MAX_LENGTH}
+              showCount
               placeholder={t("fieldNamePlaceholder")}
             />
-            <CharacterCount value={name.length} max={NAME_MAX_LENGTH} />
           </Field>
 
           <Field>
@@ -320,10 +320,10 @@ export function NewIpCreateForm({ onClose }: NewIpCreateFormProps = {}) {
                 clearAi("description");
               }}
               maxLength={DESCRIPTION_MAX_LENGTH}
+              showCount
               placeholder={t("fieldDescriptionPlaceholder")}
               rows={3}
             />
-            <CharacterCount value={description.length} max={DESCRIPTION_MAX_LENGTH} />
           </Field>
         </FieldGroup>
       </DialogBody>
@@ -406,14 +406,6 @@ function TaxonomyPicker({
         );
       })}
     </div>
-  );
-}
-
-function CharacterCount({ value, max }: { value: number; max: number }) {
-  return (
-    <FieldDescription className="text-right tabular-nums">
-      {value}/{max}
-    </FieldDescription>
   );
 }
 

@@ -18,16 +18,44 @@ const inputVariants = cva(
 );
 
 export type InputProps = Omit<React.ComponentProps<"input">, "size"> &
-  VariantProps<typeof inputVariants>;
+  VariantProps<typeof inputVariants> & { showCount?: boolean };
 
-function Input({ className, type, size, ...props }: InputProps) {
-  return (
+/**
+ * `showCount` opt-in renders a live `xx/max` counter centered on the right edge
+ * when a `maxLength` is set — mirrors <Textarea>'s counter so callers stop
+ * hand-placing a separate <CharacterCount>. It's a prop (not auto-on-maxLength)
+ * on purpose: plenty of fields carry a maxLength without wanting a visible
+ * counter. The counter needs the controlled `value` to count; uncontrolled
+ * fields read as 0.
+ */
+function Input({ className, type, size, showCount, maxLength, value, ...props }: InputProps) {
+  const field = (
     <input
       type={type}
       data-slot="input"
-      className={cn(inputVariants({ size }), className)}
+      maxLength={maxLength}
+      value={value}
+      className={cn(inputVariants({ size }), showCount && maxLength ? "pr-14" : null, className)}
       {...props}
     />
+  );
+
+  if (!showCount || !maxLength) return field;
+
+  const count = typeof value === "string" ? value.length : 0;
+  return (
+    <div className="relative w-full">
+      {field}
+      <span
+        aria-hidden
+        className={cn(
+          "pointer-events-none absolute bottom-1/2 right-2.5 -translate-y-1/2 text-[11px] tabular-nums",
+          count >= maxLength ? "text-destructive" : "text-muted-foreground/60"
+        )}
+      >
+        {count}/{maxLength}
+      </span>
+    </div>
   );
 }
 

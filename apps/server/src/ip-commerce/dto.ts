@@ -411,7 +411,7 @@ export type UpdateCreatorIpAssetsInput = z.infer<
 export const CreateCreatorIpEpisodeSchema = z
   .object({
     title: z.string().trim().min(1).max(80),
-    summary: z.string().trim().max(280).optional(),
+    summary: z.string().trim().max(800).optional(),
     episodeNo: z.number().int().positive().max(10_000).optional(),
     sortOrder: z.number().int().min(0).max(1_000_000).optional(),
     durationSeconds: z.number().int().positive().max(86_400).optional(),
@@ -429,7 +429,7 @@ export type CreateCreatorIpEpisodeInput = z.infer<
 export const UpdateCreatorIpEpisodeSchema = z
   .object({
     title: z.string().trim().min(1).max(80).optional(),
-    summary: z.string().trim().max(280).optional(),
+    summary: z.string().trim().max(800).optional(),
     episodeNo: z.number().int().positive().max(10_000).optional(),
     sortOrder: z.number().int().min(0).max(1_000_000).optional(),
     durationSeconds: z

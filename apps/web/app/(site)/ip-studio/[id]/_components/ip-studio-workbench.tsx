@@ -109,6 +109,7 @@ type StudioTabKey = (typeof STUDIO_TABS)[number]["key"];
 
 const NAME_MAX_LENGTH = 80;
 const SUMMARY_MAX_LENGTH = 280;
+const EPISODE_SUMMARY_MAX_LENGTH = 800;
 const DESCRIPTION_MAX_LENGTH = 3000;
 const GENRE_MAX_COUNT = 8;
 const VISIBILITY_OPTIONS = ["private", "unlisted", "public"] as const;
@@ -872,6 +873,7 @@ function EpisodeUpsertDialog({
               }
               placeholder={oldT("epTitlePlaceholder")}
               maxLength={NAME_MAX_LENGTH}
+              showCount
             />
             <FieldDescription>{oldT("epTitleHelp")}</FieldDescription>
           </Field>
@@ -883,10 +885,11 @@ function EpisodeUpsertDialog({
             <Textarea
               value={draft.summary}
               onChange={(event) =>
-                updateDraft({ summary: event.target.value.slice(0, SUMMARY_MAX_LENGTH) })
+                updateDraft({ summary: event.target.value.slice(0, EPISODE_SUMMARY_MAX_LENGTH) })
               }
               placeholder={oldT("epDescriptionPlaceholder")}
-              maxLength={SUMMARY_MAX_LENGTH}
+              maxLength={EPISODE_SUMMARY_MAX_LENGTH}
+              showCount
               rows={3}
             />
             <FieldDescription>{oldT("epDescriptionHelp")}</FieldDescription>
@@ -1261,6 +1264,7 @@ function FormTextField({
       value={value}
       onChange={(event) => onChange(event.target.value)}
       maxLength={maxLength}
+      showCount={Boolean(maxLength)}
       placeholder={placeholder}
       rows={3}
     />
@@ -1270,6 +1274,7 @@ function FormTextField({
       value={value}
       onChange={(event) => onChange(event.target.value)}
       maxLength={maxLength}
+      showCount={Boolean(maxLength)}
       placeholder={placeholder}
     />
   );
@@ -1278,7 +1283,6 @@ function FormTextField({
     <div className="space-y-2">
       <FieldLabel>{label}</FieldLabel>
       {control}
-      {maxLength ? <CharacterCount value={value.length} max={maxLength} /> : null}
     </div>
   );
 }
@@ -2908,9 +2912,9 @@ function IpProfileEditDialog({
                 value={title}
                 onChange={(event) => setTitle(event.target.value)}
                 maxLength={NAME_MAX_LENGTH}
+                showCount
                 placeholder={typeT("fieldNamePlaceholder")}
               />
-              <CharacterCount value={title.length} max={NAME_MAX_LENGTH} />
             </Field>
 
             <Field>
@@ -2919,10 +2923,10 @@ function IpProfileEditDialog({
                 value={summary}
                 onChange={(event) => setSummary(event.target.value)}
                 maxLength={SUMMARY_MAX_LENGTH}
+                showCount
                 placeholder={typeT("fieldDescriptionPlaceholder")}
                 rows={4}
               />
-              <CharacterCount value={summary.length} max={SUMMARY_MAX_LENGTH} />
             </Field>
 
             <Field>
@@ -2931,10 +2935,10 @@ function IpProfileEditDialog({
                 value={description}
                 onChange={(event) => setDescription(event.target.value)}
                 maxLength={DESCRIPTION_MAX_LENGTH}
+                showCount
                 placeholder={t("profileEdit.descriptionPlaceholder")}
                 rows={6}
               />
-              <CharacterCount value={description.length} max={DESCRIPTION_MAX_LENGTH} />
             </Field>
 
             <div className="grid gap-4 sm:grid-cols-2">
@@ -3218,14 +3222,6 @@ function ReadinessRing({ ip, t }: { ip: IpCreatorIp; t: Translate }) {
         </ul>
       </div>
     </div>
-  );
-}
-
-function CharacterCount({ value, max }: { value: number; max: number }) {
-  return (
-    <FieldDescription className="text-right tabular-nums text-muted-foreground">
-      {value}/{max}
-    </FieldDescription>
   );
 }
 
