@@ -699,7 +699,7 @@ enum IpUserBlockTargetType {
 }
 
 model Workspace {
-  id               String          @id @default(uuid()) @db.Uuid
+  id               String          @id @default(uuid(7)) @db.Uuid
   type             WorkspaceType
   status           WorkspaceStatus @default(active)
   name             String          @db.VarChar(120)
@@ -737,7 +737,7 @@ model Workspace {
 }
 
 model WorkspaceMember {
-  id           String                @id @default(uuid()) @db.Uuid
+  id           String                @id @default(uuid(7)) @db.Uuid
   workspaceId  String                @map("workspace_id") @db.Uuid
   userId       String                @map("user_id") @db.VarChar(64)
   role         WorkspaceMemberRole
@@ -759,7 +759,7 @@ model WorkspaceMember {
 }
 
 model WorkspaceInvite {
-  id            String                @id @default(uuid()) @db.Uuid
+  id            String                @id @default(uuid(7)) @db.Uuid
   workspaceId   String                @map("workspace_id") @db.Uuid
   inviteeUserId String?               @map("invitee_user_id") @db.VarChar(64)
   inviteeEmail  String?               @map("invitee_email") @db.VarChar(320)
@@ -782,7 +782,7 @@ model WorkspaceInvite {
 }
 
 model PlatformProject {
-  id           String                @id @default(uuid()) @db.Uuid
+  id           String                @id @default(uuid(7)) @db.Uuid
   workspaceId  String                @map("workspace_id") @db.Uuid
   name         String                @db.VarChar(160)
   slug         String?               @db.VarChar(100)
@@ -816,7 +816,7 @@ model PlatformProject {
 }
 
 model PlatformDocument {
-  id                   String                 @id @default(uuid()) @db.Uuid
+  id                   String                 @id @default(uuid(7)) @db.Uuid
   workspaceId          String                 @map("workspace_id") @db.Uuid
   projectId            String                 @map("project_id") @db.Uuid
   type                 PlatformDocumentType
@@ -825,7 +825,7 @@ model PlatformDocument {
   slug                 String?                @db.VarChar(100)
   schemaVersion        String                 @default("2026-05-27") @map("schema_version") @db.VarChar(32)
   collaborationDialect String                 @default("fizzdragon.document.v1") @map("collaboration_dialect") @db.VarChar(64)
-  collaborationRoomId  String                 @default(uuid()) @map("collaboration_room_id") @db.Uuid
+  collaborationRoomId  String                 @default(uuid(7)) @map("collaboration_room_id") @db.Uuid
   contentSnapshot      Json                   @default("{}") @map("content_snapshot") @db.JsonB
   crdtState            Bytes?                 @map("crdt_state")
   currentSequence      Int                    @default(0) @map("current_sequence")
@@ -859,7 +859,7 @@ model PlatformDocument {
 }
 
 model PlatformDocumentVersion {
-  id            String                        @id @default(uuid()) @db.Uuid
+  id            String                        @id @default(uuid(7)) @db.Uuid
   documentId    String                        @map("document_id") @db.Uuid
   versionNumber Int                           @map("version_number")
   schemaVersion String                        @map("schema_version") @db.VarChar(32)
@@ -882,7 +882,7 @@ model PlatformDocumentVersion {
 }
 
 model PlatformDocumentOperation {
-  id               String                        @id @default(uuid()) @db.Uuid
+  id               String                        @id @default(uuid(7)) @db.Uuid
   documentId       String                        @map("document_id") @db.Uuid
   sequence         Int
   operationType    PlatformDocumentOperationType @map("operation_type")
@@ -905,7 +905,7 @@ model PlatformDocumentOperation {
 }
 
 model PlatformDocumentPresence {
-  id           String   @id @default(uuid()) @db.Uuid
+  id           String   @id @default(uuid(7)) @db.Uuid
   documentId   String   @map("document_id") @db.Uuid
   userId       String   @map("user_id") @db.VarChar(64)
   connectionId String   @map("connection_id") @db.VarChar(128)
@@ -924,7 +924,7 @@ model PlatformDocumentPresence {
 }
 
 model PlatformDocumentCommentThread {
-  id           String                        @id @default(uuid()) @db.Uuid
+  id           String                        @id @default(uuid(7)) @db.Uuid
   documentId   String                        @map("document_id") @db.Uuid
   blockId      String?                       @map("block_id") @db.VarChar(128)
   anchor       Json?                         @db.JsonB
@@ -946,7 +946,7 @@ model PlatformDocumentCommentThread {
 }
 
 model PlatformDocumentComment {
-  id          String    @id @default(uuid()) @db.Uuid
+  id          String    @id @default(uuid(7)) @db.Uuid
   threadId    String    @map("thread_id") @db.Uuid
   documentId  String    @map("document_id") @db.Uuid
   body        String    @db.Text
@@ -963,7 +963,7 @@ model PlatformDocumentComment {
 }
 
 model ProjectMember {
-  id          String              @id @default(uuid()) @db.Uuid
+  id          String              @id @default(uuid(7)) @db.Uuid
   projectId   String              @map("project_id") @db.Uuid
   userId      String              @map("user_id") @db.VarChar(64)
   role        ProjectMemberRole
@@ -983,7 +983,7 @@ model ProjectMember {
 }
 
 model ProjectAsset {
-  id              String                 @id @default(uuid()) @db.Uuid
+  id              String                 @id @default(uuid(7)) @db.Uuid
   workspaceId     String                 @map("workspace_id") @db.Uuid
   projectId       String                 @map("project_id") @db.Uuid
   type            ProjectAssetType
@@ -1018,7 +1018,7 @@ model ProjectAsset {
 }
 
 model WalletAccount {
-  id               String              @id @default(uuid()) @db.Uuid
+  id               String              @id @default(uuid(7)) @db.Uuid
   ownerType        WalletOwnerType     @map("owner_type")
   ownerId          String              @map("owner_id") @db.VarChar(64)
   currency         WalletCurrencyType
@@ -1042,7 +1042,7 @@ model WalletAccount {
 }
 
 model WalletTransaction {
-  id             String                  @id @default(uuid()) @db.Uuid
+  id             String                  @id @default(uuid(7)) @db.Uuid
   status         WalletTransactionStatus @default(posted)
   sourceType     String                  @map("source_type") @db.VarChar(64)
   sourceId       String?                 @map("source_id") @db.VarChar(128)
@@ -1069,7 +1069,7 @@ model WalletTransaction {
 }
 
 model WalletLedgerEntry {
-  id                    String                @id @default(uuid()) @db.Uuid
+  id                    String                @id @default(uuid(7)) @db.Uuid
   transactionId         String                @map("transaction_id") @db.Uuid
   accountId             String                @map("account_id") @db.Uuid
   entryType             WalletLedgerEntryType @map("entry_type")
@@ -1092,7 +1092,7 @@ model WalletLedgerEntry {
 }
 
 model BillingCatalogItem {
-  id          String             @id @default(uuid()) @db.Uuid
+  id          String             @id @default(uuid(7)) @db.Uuid
   /// Internal product category. This decides fulfillment shape and default
   /// ledger allocation; it is independent from provider-side product objects.
   productType BillingProductType @map("product_type")
@@ -1117,7 +1117,7 @@ model BillingCatalogItem {
 }
 
 model BillingPrice {
-  id                      String               @id @default(uuid()) @db.Uuid
+  id                      String               @id @default(uuid(7)) @db.Uuid
   itemId                  String               @map("item_id") @db.Uuid
   /// Fiat order currency, not wallet currency. Use ISO 4217 such as USD or CNY.
   currency                String               @db.Char(3)
@@ -1152,7 +1152,7 @@ model BillingPrice {
 }
 
 model BillingPriceLedgerAllocation {
-  id                String                        @id @default(uuid()) @db.Uuid
+  id                String                        @id @default(uuid(7)) @db.Uuid
   priceId           String                        @map("price_id") @db.Uuid
   /// Fulfillment accounting target. It determines which ledger account receives
   /// customer funds after payment is fulfilled.
@@ -1183,7 +1183,7 @@ model BillingPriceLedgerAllocation {
 }
 
 model BillingProviderPriceBinding {
-  id                String                       @id @default(uuid()) @db.Uuid
+  id                String                       @id @default(uuid(7)) @db.Uuid
   priceId           String                       @map("price_id") @db.Uuid
   /// Provider used for checkout or fulfillment source. `manual` means offline
   /// payment confirmed by an operator; `internal` means platform-funded
@@ -1218,7 +1218,7 @@ model BillingProviderPriceBinding {
 }
 
 model BillingPromotion {
-  id                    String                       @id @default(uuid()) @db.Uuid
+  id                    String                       @id @default(uuid(7)) @db.Uuid
   /// User-entered promotion or redemption code. This is separate from
   /// PaymentProvider; a free code still creates an order and fulfillment record.
   code                  String                       @db.VarChar(64)
@@ -1260,7 +1260,7 @@ model BillingPromotion {
 }
 
 model BillingPromotionProviderBinding {
-  id               String                       @id @default(uuid()) @db.Uuid
+  id               String                       @id @default(uuid(7)) @db.Uuid
   promotionId      String                       @map("promotion_id") @db.Uuid
   /// Provider-side coupon binding. Free internal redemption codes may have no
   /// provider binding and should be fulfilled through internal zero-amount orders.
@@ -1284,7 +1284,7 @@ model BillingPromotionProviderBinding {
 }
 
 model BillingOrder {
-  id                      String              @id @default(uuid()) @db.Uuid
+  id                      String              @id @default(uuid(7)) @db.Uuid
   orderNo                 String              @map("order_no") @db.VarChar(64)
   /// Client or server idempotency key. Retrying checkout must not create another
   /// payable order for the same logical request.
@@ -1347,7 +1347,7 @@ model BillingOrder {
 }
 
 model BillingPromotionRedemption {
-  id                  String                           @id @default(uuid()) @db.Uuid
+  id                  String                           @id @default(uuid(7)) @db.Uuid
   promotionId         String                           @map("promotion_id") @db.Uuid
   orderId             String?                          @map("order_id") @db.Uuid
   userId              String                           @map("user_id") @db.VarChar(64)
@@ -1374,7 +1374,7 @@ model BillingPromotionRedemption {
 }
 
 model BillingPaymentIntent {
-  id                      String              @id @default(uuid()) @db.Uuid
+  id                      String              @id @default(uuid(7)) @db.Uuid
   orderId                 String              @map("order_id") @db.Uuid
   provider                PaymentProvider
   kind                    PaymentIntentKind
@@ -1410,7 +1410,7 @@ model BillingPaymentIntent {
 }
 
 model BillingPaymentProviderEvent {
-  id              String                     @id @default(uuid()) @db.Uuid
+  id              String                     @id @default(uuid(7)) @db.Uuid
   provider        PaymentProvider
   /// Stable provider webhook/event id. This is the idempotency key for ingestion.
   providerEventId String                     @map("provider_event_id") @db.VarChar(160)
@@ -1445,7 +1445,7 @@ model BillingPaymentProviderEvent {
 }
 
 model BillingRefund {
-  id                      String              @id @default(uuid()) @db.Uuid
+  id                      String              @id @default(uuid(7)) @db.Uuid
   refundNo                String              @map("refund_no") @db.VarChar(64)
   orderId                 String              @map("order_id") @db.Uuid
   paymentIntentId         String?             @map("payment_intent_id") @db.Uuid
@@ -1506,7 +1506,7 @@ model BillingRefund {
 }
 
 model BillingRefundEvent {
-  id              String               @id @default(uuid()) @db.Uuid
+  id              String               @id @default(uuid(7)) @db.Uuid
   refundId        String               @map("refund_id") @db.Uuid
   eventType       String               @map("event_type") @db.VarChar(120)
   fromStatus      BillingRefundStatus? @map("from_status")
@@ -1525,7 +1525,7 @@ model BillingRefundEvent {
 }
 
 model BillingSubscription {
-  id                     String                    @id @default(uuid()) @db.Uuid
+  id                     String                    @id @default(uuid(7)) @db.Uuid
   userId                 String                    @map("user_id") @db.VarChar(64)
   workspaceId            String?                   @map("workspace_id") @db.Uuid
   subjectType            BillingSubjectType        @map("subject_type")
@@ -1554,7 +1554,7 @@ model BillingSubscription {
 }
 
 model BillingLedgerAccount {
-  id                String                     @id @default(uuid()) @db.Uuid
+  id                String                     @id @default(uuid(7)) @db.Uuid
   /// Stable chart-of-accounts code. Generated by ledger service from provider,
   /// currency, wallet type, and revenue category.
   code              String                     @db.VarChar(120)
@@ -1584,7 +1584,7 @@ model BillingLedgerAccount {
 }
 
 model BillingLedgerJournal {
-  id               String                     @id @default(uuid()) @db.Uuid
+  id               String                     @id @default(uuid(7)) @db.Uuid
   /// Human-readable journal number. The idempotency key is the real duplicate
   /// guard for posting.
   journalNo        String                     @map("journal_no") @db.VarChar(64)
@@ -1633,7 +1633,7 @@ model BillingLedgerJournal {
 }
 
 model BillingLedgerEntry {
-  id                String                      @id @default(uuid()) @db.Uuid
+  id                String                      @id @default(uuid(7)) @db.Uuid
   journalId         String                      @map("journal_id") @db.Uuid
   accountId         String                      @map("account_id") @db.Uuid
   direction         BillingLedgerEntryDirection
@@ -1655,7 +1655,7 @@ model BillingLedgerEntry {
 }
 
 model BillingSettlement {
-  id                   String                  @id @default(uuid()) @db.Uuid
+  id                   String                  @id @default(uuid(7)) @db.Uuid
   provider             PaymentProvider
   /// Provider-side settlement / payout batch id.
   providerSettlementId String                  @map("provider_settlement_id") @db.VarChar(160)
@@ -1681,7 +1681,7 @@ model BillingSettlement {
 }
 
 model BillingReconciliationRun {
-  id                   String                      @id @default(uuid()) @db.Uuid
+  id                   String                      @id @default(uuid(7)) @db.Uuid
   provider             PaymentProvider
   status               BillingReconciliationStatus @default(running)
   currency             String?                     @db.Char(3)
@@ -1704,7 +1704,7 @@ model BillingReconciliationRun {
 }
 
 model BillingReconciliationItem {
-  id                  String                          @id @default(uuid()) @db.Uuid
+  id                  String                          @id @default(uuid(7)) @db.Uuid
   runId               String                          @map("run_id") @db.Uuid
   status              BillingReconciliationItemStatus
   issueType           String?                         @map("issue_type") @db.VarChar(80)
@@ -1730,7 +1730,7 @@ model BillingReconciliationItem {
 }
 
 model EntitlementGrant {
-  id          String                 @id @default(uuid()) @db.Uuid
+  id          String                 @id @default(uuid(7)) @db.Uuid
   subjectType BillingSubjectType     @map("subject_type")
   subjectId   String                 @map("subject_id") @db.VarChar(64)
   planKey     String                 @map("plan_key") @db.VarChar(64)
@@ -1752,7 +1752,7 @@ model EntitlementGrant {
 }
 
 model PlatformAuditLog {
-  id          String   @id @default(uuid()) @db.Uuid
+  id          String   @id @default(uuid(7)) @db.Uuid
   workspaceId String?  @map("workspace_id") @db.Uuid
   projectId   String?  @map("project_id") @db.Uuid
   actorUserId String?  @map("actor_user_id") @db.VarChar(64)
@@ -1785,7 +1785,7 @@ model PlatformAuditLog {
 // but each cell owns its own admin users and permissions.
 
 model AdminUser {
-  id                String          @id @default(uuid()) @db.Uuid
+  id                String          @id @default(uuid(7)) @db.Uuid
   email             String          @unique @db.VarChar(320)
   displayName       String          @map("display_name") @db.VarChar(120)
   avatarUrl         String?         @map("avatar_url") @db.VarChar(512)
@@ -1817,7 +1817,7 @@ model AdminUser {
 }
 
 model AdminRole {
-  id          String         @id @default(uuid()) @db.Uuid
+  id          String         @id @default(uuid(7)) @db.Uuid
   key         String         @unique @db.VarChar(80)
   name        String         @db.VarChar(120)
   description String?        @db.VarChar(500)
@@ -1833,7 +1833,7 @@ model AdminRole {
 }
 
 model AdminPermission {
-  id          String   @id @default(uuid()) @db.Uuid
+  id          String   @id @default(uuid(7)) @db.Uuid
   key         String   @unique @db.VarChar(120)
   description String   @db.VarChar(500)
   createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
@@ -1871,7 +1871,7 @@ model AdminRolePermission {
 }
 
 model AdminSession {
-  id         String             @id @default(uuid()) @db.Uuid
+  id         String             @id @default(uuid(7)) @db.Uuid
   userId     String             @map("user_id") @db.Uuid
   tokenHash  String             @unique @map("token_hash") @db.VarChar(128)
   status     AdminSessionStatus @default(active)
@@ -1891,7 +1891,7 @@ model AdminSession {
 }
 
 model AdminPasswordHistory {
-  id           String   @id @default(uuid()) @db.Uuid
+  id           String   @id @default(uuid(7)) @db.Uuid
   userId       String   @map("user_id") @db.Uuid
   passwordHash String   @map("password_hash") @db.VarChar(255)
   createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
@@ -1903,7 +1903,7 @@ model AdminPasswordHistory {
 }
 
 model AdminMfaChallenge {
-  id              String    @id @default(uuid()) @db.Uuid
+  id              String    @id @default(uuid(7)) @db.Uuid
   userId          String    @map("user_id") @db.Uuid
   tokenHash       String    @unique @map("token_hash") @db.VarChar(128)
   purpose         String    @db.VarChar(32)
@@ -1922,7 +1922,7 @@ model AdminMfaChallenge {
 }
 
 model AdminLoginAttempt {
-  id        String                   @id @default(uuid()) @db.Uuid
+  id        String                   @id @default(uuid(7)) @db.Uuid
   email     String                   @db.VarChar(320)
   userId    String?                  @map("user_id") @db.Uuid
   outcome   AdminLoginAttemptOutcome
@@ -1940,7 +1940,7 @@ model AdminLoginAttempt {
 }
 
 model AdminAuditLog {
-  id             String            @id @default(uuid()) @db.Uuid
+  id             String            @id @default(uuid(7)) @db.Uuid
   actorUserId    String?           @map("actor_user_id") @db.Uuid
   actorSessionId String?           @map("actor_session_id") @db.Uuid
   siteScope      AdminSiteScope    @default(all) @map("site_scope")
@@ -2012,7 +2012,7 @@ model SupportedLocale {
 }
 
 model Ip {
-  id                     String              @id @default(uuid()) @db.Uuid
+  id                     String              @id @default(uuid(7)) @db.Uuid
   status                 IpPublicationStatus @default(draft)
   listingVisibility      IpListingVisibility @default(private) @map("listing_visibility")
   ageRating              IpAgeRating         @default(general) @map("age_rating")
@@ -2068,7 +2068,7 @@ model Ip {
 }
 
 model IpTaxonomyTerm {
-  id           String               @id @default(uuid()) @db.Uuid
+  id           String               @id @default(uuid(7)) @db.Uuid
   type         IpTaxonomyTermType
   code         String               @db.VarChar(80)
   status       IpTaxonomyTermStatus @default(active)
@@ -2089,7 +2089,7 @@ model IpTaxonomyTerm {
 }
 
 model IpTaxonomyTermLocalization {
-  id          String   @id @default(uuid()) @db.Uuid
+  id          String   @id @default(uuid(7)) @db.Uuid
   termId      String   @map("term_id") @db.Uuid
   locale      String   @db.VarChar(16)
   label       String   @db.VarChar(80)
@@ -2107,7 +2107,7 @@ model IpTaxonomyTermLocalization {
 }
 
 model IpTaxonomyAssignment {
-  id           String                     @id @default(uuid()) @db.Uuid
+  id           String                     @id @default(uuid(7)) @db.Uuid
   ipId         String                     @map("ip_id") @db.Uuid
   termId       String                     @map("term_id") @db.Uuid
   source       IpTaxonomyAssignmentSource @default(creator)
@@ -2126,7 +2126,7 @@ model IpTaxonomyAssignment {
 }
 
 model IpAsset {
-  id           String         @id @default(uuid()) @db.Uuid
+  id           String         @id @default(uuid(7)) @db.Uuid
   ipId         String         @map("ip_id") @db.Uuid
   mediaAssetId String         @map("media_asset_id") @db.Uuid
   purpose      IpAssetPurpose @default(source_material)
@@ -2149,7 +2149,7 @@ model IpAsset {
 }
 
 model IpDiscoveryRecommendation {
-  id                 String                          @id @default(uuid()) @db.Uuid
+  id                 String                          @id @default(uuid(7)) @db.Uuid
   placementKey       IpDiscoveryPlacementKey         @map("placement_key")
   ipId               String                          @map("ip_id") @db.Uuid
   status             IpDiscoveryRecommendationStatus @default(draft)
@@ -2181,7 +2181,7 @@ model IpDiscoveryRecommendation {
 }
 
 model IpDiscoveryRecommendationLocalization {
-  id               String   @id @default(uuid()) @db.Uuid
+  id               String   @id @default(uuid(7)) @db.Uuid
   recommendationId String   @map("recommendation_id") @db.Uuid
   locale           String   @db.VarChar(16)
   eyebrow          String?  @db.VarChar(80)
@@ -2200,7 +2200,7 @@ model IpDiscoveryRecommendationLocalization {
 }
 
 model IpEpisode {
-  id              String              @id @default(uuid()) @db.Uuid
+  id              String              @id @default(uuid(7)) @db.Uuid
   ipId            String              @map("ip_id") @db.Uuid
   episodeNo       Int                 @map("episode_no")
   sortOrder       Int                 @default(0) @map("sort_order")
@@ -2244,7 +2244,7 @@ model IpEpisode {
 }
 
 model IpCampaign {
-  id             String           @id @default(uuid()) @db.Uuid
+  id             String           @id @default(uuid(7)) @db.Uuid
   ipId           String           @map("ip_id") @db.Uuid
   campaignType   IpCampaignType   @map("campaign_type")
   status         IpCampaignStatus @default(draft)
@@ -2273,7 +2273,7 @@ model IpCampaign {
 }
 
 model IpLocalization {
-  id                   String               @id @default(uuid()) @db.Uuid
+  id                   String               @id @default(uuid(7)) @db.Uuid
   ipId                 String               @map("ip_id") @db.Uuid
   locale               String               @db.VarChar(16)
   status               IpLocalizationStatus @default(draft)
@@ -2306,7 +2306,7 @@ model IpLocalization {
 }
 
 model IpEpisodeLocalization {
-  id                   String               @id @default(uuid()) @db.Uuid
+  id                   String               @id @default(uuid(7)) @db.Uuid
   episodeId            String               @map("episode_id") @db.Uuid
   locale               String               @db.VarChar(16)
   status               IpLocalizationStatus @default(draft)
@@ -2334,7 +2334,7 @@ model IpEpisodeLocalization {
 }
 
 model IpCampaignLocalization {
-  id                   String               @id @default(uuid()) @db.Uuid
+  id                   String               @id @default(uuid(7)) @db.Uuid
   campaignId           String               @map("campaign_id") @db.Uuid
   locale               String               @db.VarChar(16)
   status               IpLocalizationStatus @default(draft)
@@ -2360,7 +2360,7 @@ model IpCampaignLocalization {
 }
 
 model IpTranslationJob {
-  id                   String                  @id @default(uuid()) @db.Uuid
+  id                   String                  @id @default(uuid(7)) @db.Uuid
   targetType           IpTranslationTargetType @map("target_type")
   targetId             String                  @map("target_id") @db.Uuid
   sourceLocale         String                  @map("source_locale") @db.VarChar(16)
@@ -2389,7 +2389,7 @@ model IpTranslationJob {
 }
 
 model IpPriceRule {
-  id              String             @id @default(uuid()) @db.Uuid
+  id              String             @id @default(uuid(7)) @db.Uuid
   ipId            String             @map("ip_id") @db.Uuid
   episodeId       String?            @map("episode_id") @db.Uuid
   campaignId      String?            @map("campaign_id") @db.Uuid
@@ -2428,7 +2428,7 @@ model IpPriceRule {
 }
 
 model IpPurchaseOrder {
-  id                  String                @id @default(uuid()) @db.Uuid
+  id                  String                @id @default(uuid(7)) @db.Uuid
   orderNo             String                @map("order_no") @db.VarChar(64)
   userId              String                @map("user_id") @db.VarChar(64)
   ipId                String                @map("ip_id") @db.Uuid
@@ -2476,7 +2476,7 @@ model IpPurchaseOrder {
 }
 
 model IpContentEntitlement {
-  id            String              @id @default(uuid()) @db.Uuid
+  id            String              @id @default(uuid(7)) @db.Uuid
   userId        String              @map("user_id") @db.VarChar(64)
   ipId          String              @map("ip_id") @db.Uuid
   episodeId     String?             @map("episode_id") @db.Uuid
@@ -2505,7 +2505,7 @@ model IpContentEntitlement {
 }
 
 model IpCollectionItem {
-  id            String                 @id @default(uuid()) @db.Uuid
+  id            String                 @id @default(uuid(7)) @db.Uuid
   userId        String                 @map("user_id") @db.VarChar(64)
   ipId          String                 @map("ip_id") @db.Uuid
   episodeId     String?                @map("episode_id") @db.Uuid
@@ -2531,7 +2531,7 @@ model IpCollectionItem {
 }
 
 model IpContributor {
-  id              String            @id @default(uuid()) @db.Uuid
+  id              String            @id @default(uuid(7)) @db.Uuid
   ipId            String            @map("ip_id") @db.Uuid
   userId          String?           @map("user_id") @db.VarChar(64)
   displayName     String            @map("display_name") @db.VarChar(120)
@@ -2576,7 +2576,7 @@ enum IpRevenueLedgerStatus {
 /// withdrawable community points. Earning-only: no fiat payout. Forward-compat
 /// for refunds (refund_reversal + voided) and multi-contributor splits.
 model IpRevenueLedgerEntry {
-  id                  String                   @id @default(uuid()) @db.Uuid
+  id                  String                   @id @default(uuid(7)) @db.Uuid
   /// Beneficiary platform user id (creator/contributor). VarChar to match the
   /// Java numeric user id stored as string across the IP schema.
   userId              String                   @map("user_id") @db.VarChar(64)
@@ -2616,7 +2616,7 @@ model IpRevenueLedgerEntry {
 /// Small key/value store for admin-editable IP-commerce platform settings
 /// (e.g. the default creator revenue share). Integer-valued for now.
 model IpCommerceSetting {
-  id          String   @id @default(uuid()) @db.Uuid
+  id          String   @id @default(uuid(7)) @db.Uuid
   key         String   @db.VarChar(120)
   valueInt    BigInt?  @map("value_int")
   metadata    Json     @default("{}") @db.JsonB
@@ -2629,7 +2629,7 @@ model IpCommerceSetting {
 }
 
 model IpReferralLink {
-  id          String               @id @default(uuid()) @db.Uuid
+  id          String               @id @default(uuid(7)) @db.Uuid
   ipId        String               @map("ip_id") @db.Uuid
   episodeId   String?              @map("episode_id") @db.Uuid
   userId      String               @map("user_id") @db.VarChar(64)
@@ -2656,7 +2656,7 @@ model IpReferralLink {
 }
 
 model IpReferralAttribution {
-  id             String   @id @default(uuid()) @db.Uuid
+  id             String   @id @default(uuid(7)) @db.Uuid
   referralLinkId String   @map("referral_link_id") @db.Uuid
   ipId           String   @map("ip_id") @db.Uuid
   episodeId      String?  @map("episode_id") @db.Uuid
@@ -2678,7 +2678,7 @@ model IpReferralAttribution {
 }
 
 model IpReviewSubmission {
-  id             String             @id @default(uuid()) @db.Uuid
+  id             String             @id @default(uuid(7)) @db.Uuid
   targetType     IpReviewTargetType @map("target_type")
   targetId       String             @map("target_id") @db.VarChar(64)
   ipId           String?            @map("ip_id") @db.Uuid
@@ -2709,7 +2709,7 @@ model IpReviewSubmission {
 }
 
 model IpReviewEvent {
-  id           String            @id @default(uuid()) @db.Uuid
+  id           String            @id @default(uuid(7)) @db.Uuid
   submissionId String            @map("submission_id") @db.Uuid
   eventType    IpReviewEventType @map("event_type")
   actorUserId  String            @map("actor_user_id") @db.VarChar(64)
@@ -2724,7 +2724,7 @@ model IpReviewEvent {
 }
 
 model IpRightsDeclaration {
-  id             String                    @id @default(uuid()) @db.Uuid
+  id             String                    @id @default(uuid(7)) @db.Uuid
   targetType     IpRightsTargetType        @map("target_type")
   ipId           String                    @map("ip_id") @db.Uuid
   episodeId      String?                   @map("episode_id") @db.Uuid
@@ -2752,7 +2752,7 @@ model IpRightsDeclaration {
 }
 
 model IpContentReport {
-  id              String         @id @default(uuid()) @db.Uuid
+  id              String         @id @default(uuid(7)) @db.Uuid
   targetType      IpTargetType   @map("target_type")
   targetId        String         @map("target_id") @db.VarChar(64)
   ipId            String?        @map("ip_id") @db.Uuid
@@ -2779,7 +2779,7 @@ model IpContentReport {
 }
 
 model IpModerationAction {
-  id          String                 @id @default(uuid()) @db.Uuid
+  id          String                 @id @default(uuid(7)) @db.Uuid
   targetType  IpModerationTargetType @map("target_type")
   targetId    String                 @map("target_id") @db.VarChar(64)
   actionType  IpModerationActionType @map("action_type")
@@ -2798,7 +2798,7 @@ model IpModerationAction {
 }
 
 model IpUserContentBlock {
-  id          String                @id @default(uuid()) @db.Uuid
+  id          String                @id @default(uuid(7)) @db.Uuid
   userId      String                @map("user_id") @db.VarChar(64)
   targetType  IpUserBlockTargetType @map("target_type")
   targetId    String                @map("target_id") @db.VarChar(64)
@@ -3356,7 +3356,7 @@ enum AiCostLedgerEntryType {
 // and alert routing. Secrets are stored in AiProviderCredential with envelope
 // encryption; this row only owns provider routing and operational policy.
 model AiProviderAccount {
-  id               String               @id @default(uuid()) @db.Uuid
+  id               String               @id @default(uuid(7)) @db.Uuid
   provider         String               @db.VarChar(64)
   status           AiControlPlaneStatus @default(active)
   /// key-wide outbound throttle (maxConcurrentRequests / refillPerMinute) — consumed by provider-aware queue dispatch.
@@ -3381,7 +3381,7 @@ model AiProviderAccount {
 // only here, so upstream endpoint churn never pollutes the user-facing model
 // catalog. Operators explicitly bind verified endpoints to canonical models.
 model AiProviderEndpoint {
-  id                   String                 @id @default(uuid()) @db.Uuid
+  id                   String                 @id @default(uuid(7)) @db.Uuid
   providerAccountId    String                 @map("provider_account_id") @db.Uuid
   provider             String                 @db.VarChar(64)
   endpointId           String                 @map("endpoint_id") @db.VarChar(180)
@@ -3415,7 +3415,7 @@ model AiProviderEndpoint {
 // AiCanonicalModel — user-facing model identity. Multiple providers may back
 // the same canonical model; routing selects an active binding per request.
 model AiCanonicalModel {
-  id                  String               @id @default(uuid()) @db.Uuid
+  id                  String               @id @default(uuid(7)) @db.Uuid
   slug                String               @db.VarChar(120)
   displayName         String               @map("display_name") @db.VarChar(160)
   modality            AiJobType
@@ -3451,7 +3451,7 @@ model AiCanonicalModel {
 // on AiCanonicalModel.billingPolicy; request-level provider cost is written only
 // to AiCostLedgerEntry when the provider exposes actual usage/cost.
 model AiProviderModelBinding {
-  id                   String               @id @default(uuid()) @db.Uuid
+  id                   String               @id @default(uuid(7)) @db.Uuid
   providerAccountId    String               @map("provider_account_id") @db.Uuid
   providerEndpointId   String               @map("provider_endpoint_id") @db.Uuid
   canonicalModelId     String               @map("canonical_model_id") @db.Uuid
@@ -3497,7 +3497,7 @@ model AiProviderModelBinding {
 }
 
 model AiCostLedgerEntry {
-  id                String                @id @default(uuid()) @db.Uuid
+  id                String                @id @default(uuid(7)) @db.Uuid
   jobId             String                @map("job_id") @db.Uuid
   attemptId         String?               @map("attempt_id")
   providerBindingId String?               @map("provider_binding_id") @db.Uuid
@@ -3748,7 +3748,7 @@ model AiJobAttempt {
 // headers, and future webhook callbacks without reparsing provider-specific
 // payloads. `source` + `confidence` make inferred timings explicit.
 model AiProviderTraceEvent {
-  id                String   @id @default(uuid()) @db.Uuid
+  id                String   @id @default(uuid(7)) @db.Uuid
   jobId             String   @map("job_id") @db.Uuid
   attemptId         String?  @map("attempt_id")
   provider          String   @db.VarChar(64)
@@ -4335,7 +4335,7 @@ enum MediaAssetStatus {
 }
 
 model MediaAsset {
-  id              String               @id @default(uuid()) @db.Uuid
+  id              String               @id @default(uuid(7)) @db.Uuid
   kind            MediaAssetKind
   storageProvider MediaStorageProvider @map("storage_provider")
   /// Azure container / OSS bucket / S3 bucket. NULL only for
@@ -4412,7 +4412,7 @@ model MediaAsset {
 //   FD-OPC-2605-8K3Q7P
 
 model UserCertificate {
-  id            String     @id @default(uuid()) @db.Uuid
+  id            String     @id @default(uuid(7)) @db.Uuid
   /// External auth user id. FK not enforced — orphaned rows
   /// just render as "Unknown user" client-side, matching the crew /
   /// services convention.
