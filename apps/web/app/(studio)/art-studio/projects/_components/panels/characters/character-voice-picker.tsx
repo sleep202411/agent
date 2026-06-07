@@ -35,10 +35,12 @@ import { buildOssUrl, uploadWorkspaceFile } from "@/src/lib/uploads/workspace-up
 
 const AUDIO_MAX_SIZE = 20 * 1024 * 1024;
 
-// Language options for the custom-voice form. Values map to the `lang`
-// codes Java groups voices by; labels are localized via the picker's
-// translations so the chips read in the user's UI language.
-const CUSTOM_VOICE_LANGS = ["zh", "en", "ja", "ko"] as const;
+// Language options for the custom-voice form. The `lang` value Java stores on
+// VoiceInfo IS the language display label itself (voices/list groups by
+// voiceInfo.getLang() directly), so these are the exact label strings the
+// backend expects — NOT codes like "zh"/"en". They render as-is (a language in
+// its own script is the clearest label).
+const CUSTOM_VOICE_LANGS = ["简体中文", "English", "粵語", "한국어", "日本語"] as const;
 
 export function VoicePickerDialog({
   open,
@@ -121,7 +123,10 @@ export function VoicePickerDialog({
         accept: "audio/*",
         maxSize: AUDIO_MAX_SIZE,
       });
-      await backendApi.post("/api/ai/voice/voices/add", {
+      // voices/add CREATES the voice and returns it carrying its new id; the
+      // character binds that id (same as picking an existing voice). Bind by the
+      // returned id — names aren't unique, so don't match on voiceName.
+      const created = (await backendApi.post<VoiceOptionItem>("/api/ai/voice/voices/add", {
         data: {
           lang: addLang,
           voiceName: name,
@@ -129,18 +134,28 @@ export function VoicePickerDialog({
           remark: "",
           voicePath: uploaded.path,
         },
-      });
+      })) as VoiceOptionItem | undefined;
+      const newVoiceId = String(created?.voiceId ?? created?.id ?? "");
       toast.success(t("customVoiceAdded"));
-      // Refresh the list so the new voice appears (it surfaces under
-      // voiceType=all), then auto-select it if we can locate it.
+      // Refresh so the new voice surfaces in the list (under voiceType=all).
       const refreshed = (await onVoiceAdded?.()) ?? {};
-      const added = Object.values(refreshed)
-        .flat()
-        .find((v) => String(v.voiceName ?? "") === name);
+      const flat = Object.values(refreshed).flat();
+      const added =
+        (newVoiceId
+          ? flat.find((v) => String(v.voiceId ?? v.id ?? "") === newVoiceId)
+          : undefined) ?? flat.find((v) => String(v.voiceName ?? "") === name);
       resetAddForm();
       setActiveLang(addLang);
       if (added) {
         onSelect(added);
+        onOpenChange(false);
+      } else if (newVoiceId) {
+        // The refreshed list hasn't caught up — still bind the returned id.
+        onSelect({
+          voiceId: newVoiceId,
+          voiceName: name,
+          voicePath: uploaded.path,
+        } as VoiceOptionItem);
         onOpenChange(false);
       }
     } catch (error) {
@@ -358,7 +373,7 @@ export function VoicePickerDialog({
                 <SelectContent position="popper">
                   {CUSTOM_VOICE_LANGS.map((lang) => (
                     <SelectItem key={lang} value={lang}>
-                      {t(`customVoiceLang_${lang}`)}
+                      {lang}
                     </SelectItem>
                   ))}
                 </SelectContent>
