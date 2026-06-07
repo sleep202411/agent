@@ -58,8 +58,8 @@ export function VoicePickerDialog({
   loading: boolean;
   selectedVoiceId: string;
   onSelect: (voice: VoiceOptionItem) => void;
-  /** Whether to surface the "Add custom voice" entry. Custom voices only
-   *  surface under `voiceType=all`, so this is gated to "All" mode. */
+  /** Whether to surface the "Add custom voice" entry. Gated to the "Custom"
+   *  voice mode, where the list is the user's own voices (myvoices/list). */
   canAddCustomVoice?: boolean;
   /** Re-fetches the voice list after a custom voice is registered, so the
    *  new voice appears immediately. Resolves to the refreshed grouped map. */
@@ -123,10 +123,7 @@ export function VoicePickerDialog({
         accept: "audio/*",
         maxSize: AUDIO_MAX_SIZE,
       });
-      // voices/add CREATES the voice and returns it carrying its new id; the
-      // character binds that id (same as picking an existing voice). Bind by the
-      // returned id — names aren't unique, so don't match on voiceName.
-      const created = (await backendApi.post<VoiceOptionItem>("/api/ai/voice/voices/add", {
+      await backendApi.post("/api/ai/voice/voices/add", {
         data: {
           lang: addLang,
           voiceName: name,
@@ -134,28 +131,18 @@ export function VoicePickerDialog({
           remark: "",
           voicePath: uploaded.path,
         },
-      })) as VoiceOptionItem | undefined;
-      const newVoiceId = String(created?.voiceId ?? created?.id ?? "");
+      });
       toast.success(t("customVoiceAdded"));
-      // Refresh so the new voice surfaces in the list (under voiceType=all).
+      // voices/add does NOT return the new voice id. The voice surfaces in
+      // myvoices/list — refresh, locate it by the upload path (unique per
+      // upload), and bind its voiceId (the Minimax voice id the character stores).
       const refreshed = (await onVoiceAdded?.()) ?? {};
-      const flat = Object.values(refreshed).flat();
-      const added =
-        (newVoiceId
-          ? flat.find((v) => String(v.voiceId ?? v.id ?? "") === newVoiceId)
-          : undefined) ?? flat.find((v) => String(v.voiceName ?? "") === name);
+      const added = Object.values(refreshed)
+        .flat()
+        .find((v) => String(v.voicePath ?? "") === uploaded.path);
       resetAddForm();
-      setActiveLang(addLang);
       if (added) {
         onSelect(added);
-        onOpenChange(false);
-      } else if (newVoiceId) {
-        // The refreshed list hasn't caught up — still bind the returned id.
-        onSelect({
-          voiceId: newVoiceId,
-          voiceName: name,
-          voicePath: uploaded.path,
-        } as VoiceOptionItem);
         onOpenChange(false);
       }
     } catch (error) {

@@ -63,11 +63,11 @@ import {
   translateVideoPrompt,
 } from "../../storyboard/ai-generator/video-dialog/expand-video-prompt";
 
-/** Sentinel `voiceModelCode` that fetches every voice across all models
- *  (Java `voiceType=all`), including custom-added voices that carry no
- *  model in their metadata. Picking a voice while in this mode resolves
- *  the saved model from the voice's own `model` field. */
-const ALL_VOICE_MODELS = "all";
+/** Sentinel `voiceModelCode` for the "Custom" voice mode: the picker lists the
+ *  user's OWN voices (Java `myvoices/list`) with an upload entry, instead of a
+ *  model's public voices. Picking one resolves the saved model from the voice's
+ *  own `model` field (custom voices are `minimax`). */
+const CUSTOM_VOICE_MODE = "custom";
 
 function createEmptyForm(): CharacterFormState {
   return {
@@ -185,10 +185,10 @@ export function CharacterEditDialog({
   // Voice models are now read from preloaded cache via useRawAiModels
 
   // Fetch the voice list for whatever model code is currently selected.
-  // `voiceType=all` returns every voice across models (including custom
-  // ones with no model field); a specific serviceCode scopes to that
-  // model. Returns the result so callers (e.g. the post-upload refresh)
-  // can locate a freshly-added voice to auto-select.
+  // CUSTOM_VOICE_MODE → the user's own voices (myvoices/list, a flat list with
+  // an upload entry); a specific serviceCode → that model's public voices
+  // (voices/list, grouped by language). Returns the result so callers (e.g. the
+  // post-upload refresh) can locate a freshly-added voice to auto-select.
   const fetchVoices = useCallback(async (): Promise<Record<string, VoiceOptionItem[]>> => {
     const modelCode = formData.voiceModelCode.trim();
     if (!modelCode) {
@@ -197,11 +197,23 @@ export function CharacterEditDialog({
     }
     try {
       setLoadingVoices(true);
-      const result = await backendApi.get<Record<string, VoiceOptionItem[]>>(
-        "/api/ai/voice/voices/list",
-        { params: { voiceType: modelCode } }
-      );
-      const next = result ?? {};
+      let next: Record<string, VoiceOptionItem[]> = {};
+      if (modelCode === CUSTOM_VOICE_MODE) {
+        // Custom mode: ONLY the user's own voices (myvoices/list, a flat list —
+        // these do NOT appear in voices/list). Shown as a single custom list.
+        const myList = await backendApi
+          .get<VoiceOptionItem[]>("/api/ai/voice/myvoices/list")
+          .catch(() => [] as VoiceOptionItem[]);
+        if (Array.isArray(myList) && myList.length > 0) {
+          next = { [t("myVoices")]: myList };
+        }
+      } else {
+        // A specific model: that model's public voices, grouped by language.
+        next =
+          (await backendApi.get<Record<string, VoiceOptionItem[]>>("/api/ai/voice/voices/list", {
+            params: { voiceType: modelCode },
+          })) ?? {};
+      }
       setVoices(next);
       return next;
     } catch (error) {
@@ -211,7 +223,7 @@ export function CharacterEditDialog({
     } finally {
       setLoadingVoices(false);
     }
-  }, [formData.voiceModelCode]);
+  }, [formData.voiceModelCode, t]);
 
   useEffect(() => {
     if (!open) {
@@ -555,9 +567,12 @@ export function CharacterEditDialog({
                     <Select
                       value={formData.voiceModelCode || "__none__"}
                       onValueChange={(value) =>
+                        // Switching the voice model clears the picked voice (the
+                        // new model has a different voice list) — the effect then
+                        // re-fetches that model's voices.
                         updateForm({
                           voiceModelCode: value === "__none__" ? "" : value,
-                          voiceId: value === "__none__" ? "" : formData.voiceId,
+                          voiceId: "",
                         })
                       }
                     >
@@ -566,7 +581,7 @@ export function CharacterEditDialog({
                       </SelectTrigger>
                       <SelectContent position="popper" className="max-h-60">
                         <SelectItem value="__none__">{t("noVoiceModel")}</SelectItem>
-                        <SelectItem value={ALL_VOICE_MODELS}>{t("allVoiceModels")}</SelectItem>
+                        <SelectItem value={CUSTOM_VOICE_MODE}>{t("customVoiceMode")}</SelectItem>
                         {voiceModels.map((item) => {
                           const value = String(item.serviceCode ?? "");
                           if (!value) return null;
@@ -812,20 +827,9 @@ export function CharacterEditDialog({
         voices={voices}
         loading={loadingVoices}
         selectedVoiceId={formData.voiceId}
-        canAddCustomVoice={formData.voiceModelCode === ALL_VOICE_MODELS}
+        canAddCustomVoice={formData.voiceModelCode === CUSTOM_VOICE_MODE}
         onVoiceAdded={fetchVoices}
-        onSelect={(voice) => {
-          const voiceId = String(voice.voiceId ?? "");
-          // In "All" mode the dropdown holds the "all" sentinel, not a real
-          // model — so persist the voice's own model. Custom voices may have
-          // no model field; fall back to the sentinel so the saved character
-          // still re-fetches from the all-voices list and finds it.
-          const resolvedModel =
-            formData.voiceModelCode === ALL_VOICE_MODELS
-              ? String(voice.model ?? ALL_VOICE_MODELS)
-              : formData.voiceModelCode;
-          updateForm({ voiceId, voiceModelCode: resolvedModel });
-        }}
+        onSelect={(voice) => updateForm({ voiceId: String(voice.voiceId ?? "") })}
       />
 
       {/* Role-portrait asset picker — shared by both the empty-state
