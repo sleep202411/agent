@@ -477,6 +477,26 @@ export type UploadCreatorIpMediaQuery = z.infer<
   typeof UploadCreatorIpMediaQuerySchema
 >;
 
+/**
+ * Body for `POST /aurora/ip-commerce/me/ips/:ipId/media`.
+ *
+ * The file no longer streams through the server. The client first uploads
+ * the bytes direct-to-storage via the stateless SAS pipeline
+ * (`/aurora/media/upload-url` → PUT → `/aurora/media/confirm`), which mints
+ * an active MediaAsset and returns its id. This endpoint then ASSOCIATES
+ * that already-confirmed asset with the IP (validating ownership + kind),
+ * never proxying large media through nginx.
+ */
+export const UploadCreatorIpMediaBodySchema = z
+  .object({
+    /** Id of a MediaAsset the caller just confirmed via /aurora/media/confirm. */
+    mediaAssetId: z.string().trim().uuid(),
+  })
+  .strict();
+export type UploadCreatorIpMediaInput = z.infer<
+  typeof UploadCreatorIpMediaBodySchema
+>;
+
 export const ListCreatorIpAssetsQuerySchema = z
   .object({
     purpose: IpAssetPurposeSchema.optional(),

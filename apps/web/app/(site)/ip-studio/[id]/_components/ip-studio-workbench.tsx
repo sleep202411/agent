@@ -674,6 +674,8 @@ function EpisodeUpsertDialog({
   const [probing, setProbing] = useState(false);
   const [uploadingVideo, setUploadingVideo] = useState(false);
   const [uploadingCover, setUploadingCover] = useState(false);
+  const [videoProgress, setVideoProgress] = useState(0);
+  const [coverProgress, setCoverProgress] = useState(0);
   const [videoDragOver, setVideoDragOver] = useState(false);
   const [coverDragOver, setCoverDragOver] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
@@ -732,6 +734,7 @@ function EpisodeUpsertDialog({
     setVideoError(null);
     updateDraft({ mediaUrl: localUrl, mediaAssetId: null });
     void probeAndApply(localUrl);
+    setVideoProgress(0);
     setUploadingVideo(true);
     try {
       const { asset } = await uploadMedia.mutateAsync({
@@ -739,6 +742,7 @@ function EpisodeUpsertDialog({
         file,
         kind: "video",
         purpose: "episode_media",
+        onProgress: setVideoProgress,
       });
       updateDraft({ mediaAssetId: asset.id });
       toast.success(commonT("uploadSuccess"));
@@ -767,6 +771,7 @@ function EpisodeUpsertDialog({
     coverObjectUrlRef.current = localUrl;
     setCoverError(null);
     updateDraft({ coverUrl: localUrl, coverAssetId: null });
+    setCoverProgress(0);
     setUploadingCover(true);
     try {
       const { asset } = await uploadMedia.mutateAsync({
@@ -774,6 +779,7 @@ function EpisodeUpsertDialog({
         file,
         kind: "image",
         purpose: "episode_cover",
+        onProgress: setCoverProgress,
       });
       updateDraft({ coverAssetId: asset.id });
       toast.success(commonT("uploadSuccess"));
@@ -912,7 +918,10 @@ function EpisodeUpsertDialog({
                   {uploadingVideo ? (
                     <div className="absolute inset-0 z-20 flex flex-col items-center justify-center gap-1.5 bg-black/55 text-white">
                       <IconLoader2 className="size-5 animate-spin" />
-                      <span className="text-[11px] font-medium">{commonT("uploading")}</span>
+                      <span className="text-[11px] font-medium">
+                        {commonT("uploading")}
+                        {videoProgress > 0 ? ` ${videoProgress}%` : ""}
+                      </span>
                     </div>
                   ) : null}
                   <button
@@ -956,7 +965,9 @@ function EpisodeUpsertDialog({
                     <>
                       <IconLoader2 className="size-5 animate-spin" />
                       <span className="text-[11px]">
-                        {uploadingVideo ? commonT("uploading") : oldT("epProbing")}
+                        {uploadingVideo
+                          ? `${commonT("uploading")}${videoProgress > 0 ? ` ${videoProgress}%` : ""}`
+                          : oldT("epProbing")}
                       </span>
                     </>
                   ) : (
@@ -999,7 +1010,10 @@ function EpisodeUpsertDialog({
                   {uploadingCover ? (
                     <div className="absolute inset-0 z-20 flex flex-col items-center justify-center gap-1.5 bg-black/55 text-white">
                       <IconLoader2 className="size-5 animate-spin" />
-                      <span className="text-[11px] font-medium">{commonT("uploading")}</span>
+                      <span className="text-[11px] font-medium">
+                        {commonT("uploading")}
+                        {coverProgress > 0 ? ` ${coverProgress}%` : ""}
+                      </span>
                     </div>
                   ) : null}
                   <button
@@ -1037,7 +1051,10 @@ function EpisodeUpsertDialog({
                   {uploadingCover ? (
                     <>
                       <IconLoader2 className="size-5 animate-spin" />
-                      <span className="text-[11px]">{commonT("uploading")}</span>
+                      <span className="text-[11px]">
+                        {commonT("uploading")}
+                        {coverProgress > 0 ? ` ${coverProgress}%` : ""}
+                      </span>
                     </>
                   ) : (
                     <>

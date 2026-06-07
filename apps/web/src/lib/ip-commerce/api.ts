@@ -1,4 +1,5 @@
 import { api } from "@/src/lib/api";
+import { uploadFileViaSignedUrl } from "@/src/lib/media-upload";
 
 export type IpTargetType = "ip" | "episode";
 export type IpCommerceAccess =
@@ -552,6 +553,10 @@ export interface UploadIpMediaInput {
     | "episode_trailer"
     | "source_material"
     | "report_evidence";
+  /** Real upload progress (0–100) as the bytes stream straight to storage. */
+  onProgress?: (percent: number) => void;
+  /** Abort the in-flight direct-to-storage upload. */
+  signal?: AbortSignal;
 }
 
 export interface DeleteIpAssetInput {
@@ -771,16 +776,61 @@ export function updateIpCommerceIpAssets(input: UpdateIpAssetsInput) {
   );
 }
 
-export function uploadIpCommerceMedia(input: UploadIpMediaInput) {
+/**
+ * Map an ip-commerce `(kind, purpose)` pair to the server's CLOSED media
+ * UploadKind (apps/server media/dto `UploadKindSchema`). The /media SAS
+ * pipeline drives its content-type allowlist, byte cap, and storage-key
+ * prefix off this kind, so every entry point must resolve to one of the
+ * three the server recognizes:
+ *   - `episode_video` — any moving-image asset (episode video / trailers).
+ *   - `episode_cover` — any image/poster (covers, episode covers).
+ *   - `ip_banner`     — IP-level banner (hero / plaza card image).
+ * Non-image / non-video kinds (audio, document, other) and IP-level
+ * source material don't have a dedicated server kind yet; they fall back
+ * to the closest container kind by the file's media type.
+ */
+function mapToUploadKind(input: UploadIpMediaInput): string {
+  // IP-level hero/banner image.
+  if (input.purpose === "cover" || input.purpose === "trailer") {
+    return input.kind === "video" ? "episode_video" : "ip_banner";
+  }
+  // Episode poster / cover image.
+  if (input.purpose === "episode_cover") return "episode_cover";
+  // Episode source video + episode trailer = moving image.
+  if (input.purpose === "episode_media" || input.purpose === "episode_trailer") {
+    return "episode_video";
+  }
+  // source_material / report_evidence and anything else: route by media
+  // container so the server's content-type allowlist still matches.
+  return input.kind === "video" ? "episode_video" : "episode_cover";
+}
+
+/**
+ * Upload IP media via the direct-to-storage SAS pipeline, then associate
+ * the confirmed MediaAsset by id.
+ *
+ * The bytes go straight to the storage provider (the file NEVER streams
+ * through our server — that 413'd 2GB episode videos at nginx). We then
+ * POST the resulting `mediaAssetId` as JSON to the (unchanged-route)
+ * `/media` endpoint, which sets visibility + creates the `ipAsset` for
+ * `source_material` and returns the SAME `{ asset, ipAsset }` shape the
+ * episode-create flow already consumes (`asset.id → videoAssetId /
+ * coverAssetId`).
+ */
+export async function uploadIpCommerceMedia(input: UploadIpMediaInput) {
+  const { mediaAssetId } = await uploadFileViaSignedUrl(input.file, {
+    kind: mapToUploadKind(input),
+    onProgress: input.onProgress,
+    signal: input.signal,
+  });
+
   const params = new URLSearchParams({
     kind: input.kind,
     purpose: input.purpose,
   });
-  return api.upload<{ asset: IpCommerceAsset; ipAsset: IpCommerceLibraryAsset | null }>(
+  return api.post<{ asset: IpCommerceAsset; ipAsset: IpCommerceLibraryAsset | null }>(
     `/aurora/ip-commerce/me/ips/${encodeURIComponent(input.ipId)}/media?${params.toString()}`,
-    input.file,
-    "file",
-    { timeout: 10 * 60_000 }
+    { data: { mediaAssetId } }
   );
 }
 
