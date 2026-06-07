@@ -26,6 +26,7 @@ import { useTranslations } from "@/src/i18n/i18n";
 import {
   enumDefault,
   enumOptions,
+  estimateModelSellPoints,
   isFizzAiModelUsable,
   maxOutputs,
   supportsOutputCount,
@@ -208,7 +209,7 @@ export function ImageSettingsPanel({
       role="region"
       aria-labelledby={titleId}
       aria-describedby={descriptionId}
-      className="mb-4 max-h-[calc(100svh-15rem)] overflow-hidden rounded-[28px] border border-white/[0.08] bg-[#0e0e10]/55 text-white shadow-[0_24px_70px_rgba(0,0,0,0.45),inset_0_1px_0_rgba(255,255,255,0.08)] backdrop-blur-2xl duration-150 animate-in fade-in-0 zoom-in-95 slide-in-from-bottom-3"
+      className="mb-4 max-h-[calc(100svh-15rem)] overflow-hidden rounded-[28px] border border-white/[0.08] bg-[#141416] text-white shadow-[0_24px_70px_rgba(0,0,0,0.55),inset_0_1px_0_rgba(255,255,255,0.08)] duration-150 animate-in fade-in-0 zoom-in-95 slide-in-from-bottom-3"
     >
       <div className="flex h-20 items-center justify-between px-7">
         <div>
@@ -336,9 +337,9 @@ function ModelPanel({
           </p>
         </div>
       ) : (
-        <div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-4">
+        <div className="mt-4 flex max-h-[420px] flex-col gap-1 overflow-y-auto pr-1">
           {filtered.map((model) => (
-            <ModelCard
+            <ModelRow
               key={model.id}
               active={selectedModelId === model.id}
               locked={!isFizzAiModelUsable(model)}
@@ -356,18 +357,19 @@ function ModelPanel({
 
 function ModelGridSkeleton() {
   return (
-    <div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-4">
-      {Array.from({ length: 8 }).map((_, index) => (
-        <div key={index} className="flex min-h-[116px] flex-col gap-2">
-          <span className="h-[86px] animate-pulse rounded-[12px] border border-white/[0.06] bg-white/[0.04]" />
-          <span className="h-3.5 w-3/4 animate-pulse rounded-full bg-white/[0.06]" />
+    <div className="mt-4 flex flex-col gap-1">
+      {Array.from({ length: 7 }).map((_, index) => (
+        <div key={index} className="flex items-center gap-3 rounded-[14px] px-3 py-2.5">
+          <span className="size-9 shrink-0 animate-pulse rounded-[11px] bg-white/[0.06]" />
+          <span className="h-3.5 flex-1 animate-pulse rounded-full bg-white/[0.06]" />
+          <span className="h-5 w-12 shrink-0 animate-pulse rounded-full bg-white/[0.05]" />
         </div>
       ))}
     </div>
   );
 }
 
-function ModelCard({
+function ModelRow({
   active,
   locked,
   model,
@@ -378,8 +380,10 @@ function ModelCard({
   model: FizzAiModel;
   onSelect: () => void;
 }) {
+  const t = useTranslations("fizzStudio.imageStudio");
   const lockReason = model.access?.reason || model.disabledReason;
   const Icon = modelIcon(model);
+  const price = estimateModelSellPoints(model, 1, 1);
 
   return (
     <button
@@ -389,31 +393,36 @@ function ModelCard({
       title={locked ? lockReason : undefined}
       onClick={onSelect}
       className={cn(
-        "group relative flex min-h-[116px] flex-col items-stretch gap-2 rounded-[14px] text-left transition duration-200",
+        "group flex w-full items-center gap-3 rounded-[14px] border px-3 py-2.5 text-left transition duration-150",
         locked
-          ? "cursor-not-allowed text-white/40"
+          ? "cursor-not-allowed border-transparent text-white/40"
           : active
-            ? "text-white"
-            : "text-white/58 hover:text-white"
+            ? "border-white/20 bg-white/[0.08] text-white"
+            : "border-transparent text-white/72 hover:bg-white/[0.05] hover:text-white"
       )}
     >
       <span
         className={cn(
-          "relative flex h-[86px] items-center justify-center rounded-[12px] border transition duration-200",
-          active
-            ? "border-white/25 bg-white/[0.12] ring-1 ring-white/15"
-            : "border-white/[0.07] bg-white/[0.03] group-hover:bg-white/[0.06]",
+          "flex size-9 shrink-0 items-center justify-center rounded-[11px] border transition duration-150",
+          active ? "border-white/20 bg-white/[0.12]" : "border-white/[0.07] bg-white/[0.03]",
           locked && "opacity-60"
         )}
       >
-        <Icon className="size-7" stroke={1.7} />
+        <Icon className="size-[18px]" stroke={1.7} />
+      </span>
+      <span className="flex min-w-0 flex-1 items-center gap-1.5">
+        <span className="truncate text-sm font-semibold">{model.name}</span>
         {locked ? (
-          <span className="absolute right-2 top-2 flex size-5 items-center justify-center rounded-full bg-black/78 text-white">
-            <IconLock className="size-3" stroke={2.2} />
+          <span className="flex size-4 shrink-0 items-center justify-center rounded-full bg-amber-400/15 text-amber-300">
+            <IconLock className="size-2.5" stroke={2.4} />
           </span>
         ) : null}
       </span>
-      <span className="truncate px-0.5 text-[13px] font-medium text-white/80">{model.name}</span>
+      {price ? (
+        <span className="shrink-0 rounded-full bg-white/[0.06] px-2.5 py-1 text-xs font-medium tabular-nums text-white/68">
+          {t("priceEstimate", { points: price.sellPoints })}
+        </span>
+      ) : null}
     </button>
   );
 }

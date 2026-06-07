@@ -624,95 +624,105 @@ function ImagePromptComposer({
     : t("noModelSelected");
 
   return (
-    <div className="fixed inset-x-4 bottom-4 z-40 lg:left-[312px] lg:right-6">
-      <ImageSettingsPanel
-        open={settingsOpen}
-        models={models}
-        isLoading={catalogLoading}
-        error={catalogError}
-        settings={settings}
-        onOpenChange={onOpenSettingsChange}
-        onRetry={onRetryCatalog}
-        onSettingsChange={onSettingsChange}
-      />
-      <div className="w-full overflow-hidden rounded-[26px] border border-white/[0.08] bg-[#0e0e10]/55 text-white shadow-[0_24px_70px_rgba(0,0,0,0.45),inset_0_1px_0_rgba(255,255,255,0.08)] backdrop-blur-2xl">
-        <div className="grid gap-0 md:grid-cols-[168px_1fr]">
-          <div className="hidden border-r border-white/[0.07] p-4 md:block">
-            <button
-              type="button"
-              className="flex h-[86px] w-full items-center justify-center rounded-[18px] border border-white/[0.07] bg-white/[0.03] text-white/70 transition-colors hover:border-white/[0.12] hover:bg-white/[0.06] hover:text-white"
-              aria-label={t("addImage")}
-            >
-              <IconPlus className="size-5" stroke={1.9} />
-            </button>
-            <button
-              type="button"
-              className="mt-3 inline-flex h-9 w-full items-center justify-center gap-2 rounded-full border border-white/[0.08] bg-white/[0.05] px-3 text-sm font-semibold text-white/86 transition-colors hover:bg-white/[0.08] hover:text-white"
-            >
-              <IconPlus className="size-4" stroke={1.9} />
-              {t("addImage")}
-            </button>
-          </div>
+    <>
+      {settingsOpen ? (
+        <button
+          type="button"
+          aria-label="Close settings"
+          onClick={() => onOpenSettingsChange(false)}
+          className="fixed inset-0 z-[39] cursor-default bg-black/55 duration-150 animate-in fade-in-0"
+        />
+      ) : null}
+      <div className="fixed inset-x-4 bottom-4 z-40 mx-auto max-w-[960px] lg:left-[312px] lg:right-6">
+        <ImageSettingsPanel
+          open={settingsOpen}
+          models={models}
+          isLoading={catalogLoading}
+          error={catalogError}
+          settings={settings}
+          onOpenChange={onOpenSettingsChange}
+          onRetry={onRetryCatalog}
+          onSettingsChange={onSettingsChange}
+        />
+        <div className="relative z-10 w-full overflow-hidden rounded-[26px] border border-white/[0.08] bg-[#141416] text-white shadow-[0_24px_70px_rgba(0,0,0,0.55),inset_0_1px_0_rgba(255,255,255,0.08)]">
+          <div className="grid gap-0 md:grid-cols-[168px_1fr]">
+            <div className="hidden border-r border-white/[0.07] p-4 md:block">
+              <button
+                type="button"
+                className="flex h-[86px] w-full items-center justify-center rounded-[18px] border border-white/[0.07] bg-white/[0.03] text-white/70 transition-colors hover:border-white/[0.12] hover:bg-white/[0.06] hover:text-white"
+                aria-label={t("addImage")}
+              >
+                <IconPlus className="size-5" stroke={1.9} />
+              </button>
+              <button
+                type="button"
+                className="mt-3 inline-flex h-9 w-full items-center justify-center gap-2 rounded-full border border-white/[0.08] bg-white/[0.05] px-3 text-sm font-semibold text-white/86 transition-colors hover:bg-white/[0.08] hover:text-white"
+              >
+                <IconPlus className="size-4" stroke={1.9} />
+                {t("addImage")}
+              </button>
+            </div>
 
-          <div className="min-w-0 p-4">
-            <label className="sr-only" htmlFor="image-prompt">
-              {t("promptLabel")}
-            </label>
-            <textarea
-              id="image-prompt"
-              maxLength={800}
-              value={prompt}
-              onChange={(event) => onPromptChange(event.target.value)}
-              onKeyDown={(event) => {
-                if ((event.metaKey || event.ctrlKey) && event.key === "Enter" && canSubmit) {
-                  event.preventDefault();
-                  onSubmit();
-                }
-              }}
-              placeholder={t("promptPlaceholder")}
-              className="h-20 w-full resize-none bg-transparent text-sm leading-7 text-white outline-none placeholder:text-white/40 md:h-[76px]"
-            />
-            {submitError ? (
-              <p className="mt-1 text-xs font-medium text-[#ff8a8d]">{submitError}</p>
-            ) : null}
-            <div className="mt-3 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-              <div className="flex flex-wrap items-center gap-2">
-                <button
-                  type="button"
-                  aria-expanded={settingsOpen}
-                  onClick={() => onOpenSettingsChange(!settingsOpen)}
-                  className="inline-flex h-10 items-center gap-2 rounded-full border border-white/[0.08] bg-white/[0.05] px-4 text-sm font-semibold text-white transition-colors hover:bg-white/[0.08]"
-                >
-                  <IconAdjustmentsHorizontal className="size-4" stroke={1.8} />
-                  {modelLabel}
-                  {settings.aspectRatio ? ` / ${settings.aspectRatio}` : ""}
-                  <IconChevronDown className="size-4 text-white/48" stroke={1.9} />
-                </button>
-              </div>
-              <div className="flex items-center gap-3">
-                {priceEstimate ? (
-                  <span className="text-sm font-semibold tabular-nums text-white/70">
-                    {t("priceEstimate", { points: priceEstimate.sellPoints })}
-                  </span>
-                ) : null}
-                <button
-                  type="button"
-                  disabled={!canSubmit}
-                  onClick={onSubmit}
-                  className="inline-flex h-12 shrink-0 items-center justify-center gap-2 rounded-[18px] bg-[#E52227] px-9 text-sm font-semibold text-white shadow-[0_18px_38px_rgba(229,34,39,0.28)] transition hover:bg-[#c91d22] hover:scale-[1.01] active:translate-y-px disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:scale-100"
-                >
-                  {submitting ? t("creating") : t("create")}
-                  {submitting ? (
-                    <IconLoader2 className="size-5 animate-spin" stroke={1.9} />
-                  ) : (
-                    <IconSend className="size-5" stroke={1.9} />
-                  )}
-                </button>
+            <div className="min-w-0 p-4">
+              <label className="sr-only" htmlFor="image-prompt">
+                {t("promptLabel")}
+              </label>
+              <textarea
+                id="image-prompt"
+                maxLength={800}
+                value={prompt}
+                onChange={(event) => onPromptChange(event.target.value)}
+                onKeyDown={(event) => {
+                  if ((event.metaKey || event.ctrlKey) && event.key === "Enter" && canSubmit) {
+                    event.preventDefault();
+                    onSubmit();
+                  }
+                }}
+                placeholder={t("promptPlaceholder")}
+                className="h-20 w-full resize-none bg-transparent text-sm leading-7 text-white outline-none placeholder:text-white/40 md:h-[76px]"
+              />
+              {submitError ? (
+                <p className="mt-1 text-xs font-medium text-[#ff8a8d]">{submitError}</p>
+              ) : null}
+              <div className="mt-3 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    aria-expanded={settingsOpen}
+                    onClick={() => onOpenSettingsChange(!settingsOpen)}
+                    className="inline-flex h-10 items-center gap-2 rounded-full border border-white/[0.08] bg-white/[0.05] px-4 text-sm font-semibold text-white transition-colors hover:bg-white/[0.08]"
+                  >
+                    <IconAdjustmentsHorizontal className="size-4" stroke={1.8} />
+                    {modelLabel}
+                    {settings.aspectRatio ? ` / ${settings.aspectRatio}` : ""}
+                    <IconChevronDown className="size-4 text-white/48" stroke={1.9} />
+                  </button>
+                </div>
+                <div className="flex items-center gap-3">
+                  {priceEstimate ? (
+                    <span className="text-sm font-semibold tabular-nums text-white/70">
+                      {t("priceEstimate", { points: priceEstimate.sellPoints })}
+                    </span>
+                  ) : null}
+                  <button
+                    type="button"
+                    disabled={!canSubmit}
+                    onClick={onSubmit}
+                    className="inline-flex h-12 shrink-0 items-center justify-center gap-2 rounded-[18px] bg-[#E52227] px-9 text-sm font-semibold text-white shadow-[0_18px_38px_rgba(229,34,39,0.28)] transition hover:bg-[#c91d22] hover:scale-[1.01] active:translate-y-px disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:scale-100"
+                  >
+                    {submitting ? t("creating") : t("create")}
+                    {submitting ? (
+                      <IconLoader2 className="size-5 animate-spin" stroke={1.9} />
+                    ) : (
+                      <IconSend className="size-5" stroke={1.9} />
+                    )}
+                  </button>
+                </div>
               </div>
             </div>
           </div>
         </div>
       </div>
-    </div>
+    </>
   );
 }
