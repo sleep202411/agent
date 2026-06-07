@@ -1,19 +1,22 @@
 "use client";
 
 /**
- * AboutTab — biography, education, work experience, contact.
+ * AboutTab — biography, education, work experience.
  *
  * Data sources are all read-only here:
  *   - creator.bio          → 简介
  *   - creator.study        → 教育经历 (JSON via parseEducation)
  *   - useCreatorExperience → 工作经历 (GET /user/resumer/list/{id})
- *   - creator.contact      → 联系方式 (only shown if non-empty)
+ *
+ * 联系方式 (creator.contact) is intentionally NOT displayed on the public
+ * profile (privacy); it is still collected in profile settings + used for
+ * crew recruitment.
  *
  * Owner sees a "编辑资料" affordance per section that today just
  * toasts the Phase-1b hint — the edit flows live in the profile
  * settings route and get linked when we wire deep links in.
  */
-import { IconBriefcase, IconEdit, IconMail, IconSchool } from "@tabler/icons-react";
+import { IconBriefcase, IconEdit, IconSchool } from "@tabler/icons-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { useTranslations } from "@/src/i18n/i18n";
@@ -33,7 +36,6 @@ export function AboutTab({ creator, isOwner }: AboutTabProps) {
   const bio = (creator.bio || "").trim();
   const education = parseEducation(creator.study);
   const experiences = (experience ?? []).filter((e): e is ExperienceEntry => !!e);
-  const contact = (creator.contact || "").trim();
 
   return (
     <div className="space-y-5">
@@ -81,15 +83,6 @@ export function AboutTab({ creator, isOwner }: AboutTabProps) {
           </ul>
         )}
       </Section>
-
-      {contact ? (
-        <Section title={t("about.contactHeading")}>
-          <div className="inline-flex items-center gap-2 rounded-lg bg-secondary px-3 py-2 text-sm text-foreground">
-            <IconMail className="size-4 text-muted-foreground" />
-            <span className="font-mono">{contact}</span>
-          </div>
-        </Section>
-      ) : null}
     </div>
   );
 }

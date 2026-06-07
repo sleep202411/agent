@@ -89,7 +89,6 @@ export function CreatorLeftRail({ creator, isOwner, onEditProfile }: CreatorLeft
             value={creator.contact ? t("info.kycVerified") : t("info.kycPending")}
           />
           {joined ? <InfoRow label={t("info.joined")} value={joined} /> : null}
-          {creator.contact ? <InfoRow label={t("info.contact")} value={creator.contact} /> : null}
         </div>
       </RailCard>
 
