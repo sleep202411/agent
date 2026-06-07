@@ -439,7 +439,7 @@ function ResultsStrip({
   const t = useTranslations("fizzStudio.imageStudio");
 
   return (
-    <div className="mb-8 rounded-[20px] border border-white/[0.08] bg-white/[0.02] p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.06)] backdrop-blur-xl">
+    <div className="mb-8 rounded-[16px] border border-white/[0.08] bg-white/[0.02] p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.06)] backdrop-blur-xl">
       <h2 className="mb-4 text-sm font-semibold tracking-[0.01em] text-white/85">
         {t("results.title")}
       </h2>
@@ -644,12 +644,12 @@ function ImagePromptComposer({
           onRetry={onRetryCatalog}
           onSettingsChange={onSettingsChange}
         />
-        <div className="relative z-10 w-full overflow-hidden rounded-[26px] border border-white/[0.08] bg-[#141416] text-white shadow-[0_24px_70px_rgba(0,0,0,0.55),inset_0_1px_0_rgba(255,255,255,0.08)]">
+        <div className="relative z-10 w-full overflow-hidden rounded-[16px] border border-white/[0.08] bg-[#141416] text-white shadow-[0_24px_70px_rgba(0,0,0,0.55),inset_0_1px_0_rgba(255,255,255,0.08)]">
           <div className="grid gap-0 md:grid-cols-[168px_1fr]">
             <div className="hidden border-r border-white/[0.07] p-4 md:block">
               <button
                 type="button"
-                className="flex h-[86px] w-full items-center justify-center rounded-[18px] border border-white/[0.07] bg-white/[0.03] text-white/70 transition-colors hover:border-white/[0.12] hover:bg-white/[0.06] hover:text-white"
+                className="flex h-[86px] w-full items-center justify-center rounded-[16px] border border-white/[0.07] bg-white/[0.03] text-white/70 transition-colors hover:border-white/[0.12] hover:bg-white/[0.06] hover:text-white"
                 aria-label={t("addImage")}
               >
                 <IconPlus className="size-5" stroke={1.9} />
@@ -708,7 +708,7 @@ function ImagePromptComposer({
                     type="button"
                     disabled={!canSubmit}
                     onClick={onSubmit}
-                    className="inline-flex h-12 shrink-0 items-center justify-center gap-2 rounded-[18px] bg-[#E52227] px-9 text-sm font-semibold text-white shadow-[0_18px_38px_rgba(229,34,39,0.28)] transition hover:bg-[#c91d22] hover:scale-[1.01] active:translate-y-px disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:scale-100"
+                    className="inline-flex h-12 shrink-0 items-center justify-center gap-2 rounded-[16px] bg-[#E52227] px-9 text-sm font-semibold text-white shadow-[0_18px_38px_rgba(229,34,39,0.28)] transition hover:bg-[#c91d22] hover:scale-[1.01] active:translate-y-px disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:scale-100"
                   >
                     {submitting ? t("creating") : t("create")}
                     {submitting ? (

@@ -56,8 +56,6 @@ function modelIcon(model: FizzAiModel): SettingsIcon {
   return IconPhoto;
 }
 
-export type ImageVisibility = "public" | "private";
-
 /**
  * Panel value object. `model` is now the catalog model id (a free string), and
  * `aspectRatio` carries the selected model's `imageSize` enum token (e.g.
@@ -67,10 +65,8 @@ export type ImageVisibility = "public" | "private";
 export interface ImageGenerationSettings {
   aspectRatio: string;
   model: string;
-  promptEnhancer: boolean;
   resolution: string;
   variations: number;
-  visibility: ImageVisibility;
 }
 
 interface ImageSettingsPanelProps {
@@ -87,13 +83,9 @@ interface ImageSettingsPanelProps {
 export const DEFAULT_IMAGE_GENERATION_SETTINGS: ImageGenerationSettings = {
   aspectRatio: "",
   model: "",
-  promptEnhancer: false,
   resolution: "",
   variations: 1,
-  visibility: "public",
 };
-
-const VISIBILITY_OPTIONS: ImageVisibility[] = ["public", "private"];
 
 // fal `imageSize` enum tokens → friendly label + orientation icon. Unknown tokens
 // fall back to the raw token + a generic rectangle so new server enums still render.
@@ -209,13 +201,13 @@ export function ImageSettingsPanel({
       role="region"
       aria-labelledby={titleId}
       aria-describedby={descriptionId}
-      className="mb-4 max-h-[calc(100svh-15rem)] overflow-hidden rounded-[28px] border border-white/[0.08] bg-[#141416] text-white shadow-[0_24px_70px_rgba(0,0,0,0.55),inset_0_1px_0_rgba(255,255,255,0.08)] duration-150 animate-in fade-in-0 zoom-in-95 slide-in-from-bottom-3"
+      className="mb-4 max-h-[calc(100svh-15rem)] overflow-hidden rounded-[16px] border border-white/[0.08] bg-[#141416] text-white shadow-[0_24px_70px_rgba(0,0,0,0.55),inset_0_1px_0_rgba(255,255,255,0.08)] duration-150 animate-in fade-in-0 zoom-in-95 slide-in-from-bottom-3"
     >
-      <div className="flex h-20 items-center justify-between px-7">
+      <div className="flex h-14 items-center justify-between px-5">
         <div>
           <h2
             id={titleId}
-            className="text-[15px] font-semibold leading-tight tracking-[-0.01em] text-white/90"
+            className="text-sm font-semibold leading-tight tracking-[-0.01em] text-white/90"
           >
             {t("settings.title")}
           </h2>
@@ -233,8 +225,8 @@ export function ImageSettingsPanel({
         </button>
       </div>
 
-      <div className="max-h-[calc(100svh-20rem)] overflow-y-auto px-5 pb-5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-        <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.06fr)]">
+      <div className="max-h-[calc(100svh-20rem)] overflow-y-auto px-4 pb-4 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+        <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.06fr)]">
           <ModelPanel
             models={models}
             isLoading={isLoading}
@@ -295,12 +287,12 @@ function ModelPanel({
   }, [models, query]);
 
   return (
-    <section className="min-w-0 rounded-[24px] border border-white/[0.08] bg-white/[0.04] p-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.08)] backdrop-blur-2xl">
+    <section className="min-w-0">
       <h3 className="text-center text-sm font-semibold tracking-[0.01em] text-white/90">
         {t("settings.selectModel")}
       </h3>
-      <div className="mt-5">
-        <label className="flex h-10 min-w-0 items-center gap-2 rounded-[14px] border border-white/[0.07] bg-white/[0.03] px-3 text-white/52">
+      <div className="mt-4">
+        <label className="flex h-9 min-w-0 items-center gap-2 rounded-[12px] border border-white/[0.07] bg-white/[0.03] px-3 text-white/52">
           <IconSearch className="size-4 shrink-0" stroke={1.8} />
           <span className="sr-only">{t("settings.searchModels")}</span>
           <input
@@ -316,7 +308,7 @@ function ModelPanel({
       {isLoading ? (
         <ModelGridSkeleton />
       ) : error ? (
-        <div className="mt-5 flex flex-col items-center gap-3 rounded-[16px] border border-white/[0.07] bg-white/[0.02] p-6 text-center">
+        <div className="mt-4 flex flex-col items-center gap-3 rounded-[16px] border border-white/[0.07] bg-white/[0.02] p-5 text-center">
           <IconAlertTriangle className="size-6 text-white/60" stroke={1.8} />
           <p className="text-sm text-white/64">{t("settings.modelsError")}</p>
           {onRetry ? (
@@ -330,7 +322,7 @@ function ModelPanel({
           ) : null}
         </div>
       ) : filtered.length === 0 ? (
-        <div className="mt-5 flex flex-col items-center gap-2 rounded-[16px] border border-white/[0.07] bg-white/[0.02] p-6 text-center">
+        <div className="mt-4 flex flex-col items-center gap-2 rounded-[16px] border border-white/[0.07] bg-white/[0.02] p-5 text-center">
           <IconPhoto className="size-6 text-white/50" stroke={1.8} />
           <p className="text-sm text-white/60">
             {query.trim() ? t("settings.noModelMatch") : t("settings.noModels")}
@@ -393,7 +385,7 @@ function ModelRow({
       title={locked ? lockReason : undefined}
       onClick={onSelect}
       className={cn(
-        "group flex w-full items-center gap-3 rounded-[14px] border px-3 py-2.5 text-left transition duration-150",
+        "group flex w-full items-center gap-2.5 rounded-[12px] border px-2.5 py-2 text-left transition duration-150",
         locked
           ? "cursor-not-allowed border-transparent text-white/40"
           : active
@@ -403,15 +395,15 @@ function ModelRow({
     >
       <span
         className={cn(
-          "flex size-9 shrink-0 items-center justify-center rounded-[11px] border transition duration-150",
+          "flex size-8 shrink-0 items-center justify-center rounded-[10px] border transition duration-150",
           active ? "border-white/20 bg-white/[0.12]" : "border-white/[0.07] bg-white/[0.03]",
           locked && "opacity-60"
         )}
       >
-        <Icon className="size-[18px]" stroke={1.7} />
+        <Icon className="size-4" stroke={1.7} />
       </span>
       <span className="flex min-w-0 flex-1 items-center gap-1.5">
-        <span className="truncate text-sm font-semibold">{model.name}</span>
+        <span className="truncate text-[13px] font-medium">{model.name}</span>
         {locked ? (
           <span className="flex size-4 shrink-0 items-center justify-center rounded-full bg-amber-400/15 text-amber-300">
             <IconLock className="size-2.5" stroke={2.4} />
@@ -446,7 +438,7 @@ function AspectRatioPanel({
   if (!options || options.length === 0) return null;
 
   return (
-    <section className="min-w-0 rounded-[24px] border border-white/[0.08] bg-white/[0.04] p-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.08)] backdrop-blur-2xl">
+    <section className="min-w-0">
       <div className="flex items-center justify-between gap-4">
         <h3 className="flex-1 text-center text-sm font-semibold tracking-[0.01em] text-white/90">
           {t("settings.selectAspectRatio")}
@@ -460,7 +452,7 @@ function AspectRatioPanel({
           {t("settings.reset")}
         </button>
       </div>
-      <div className="mt-5 grid grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-4">
+      <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-4">
         {options.map((value) => {
           const { icon: Icon, label } = imageSizeMeta(value);
           return (
@@ -470,7 +462,7 @@ function AspectRatioPanel({
               aria-pressed={selected === value}
               onClick={() => onSelect(value)}
               className={cn(
-                "flex h-10 items-center justify-center gap-2 rounded-[14px] border text-sm font-semibold transition duration-200",
+                "flex h-9 items-center justify-center gap-2 rounded-[12px] border text-[13px] font-semibold transition duration-200",
                 selected === value
                   ? "border-white/25 bg-white/[0.12] text-white ring-1 ring-white/15"
                   : "border-white/[0.07] bg-white/[0.03] text-white/62 hover:bg-white/[0.06] hover:text-white"
@@ -509,18 +501,11 @@ function MoreOptionsPanel({
   const showResolution = Boolean(resolutionOptions && resolutionOptions.length > 0);
 
   return (
-    <section className="min-w-0 rounded-[24px] border border-white/[0.08] bg-white/[0.04] p-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.08)] backdrop-blur-2xl">
+    <section className="min-w-0">
       <h3 className="text-center text-sm font-semibold tracking-[0.01em] text-white/90">
         {t("settings.moreOptions")}
       </h3>
-      <div className="mt-5 divide-y divide-white/[0.07]">
-        <SettingRow label={t("settings.promptEnhancer")}>
-          <ToggleSwitch
-            checked={settings.promptEnhancer}
-            label={t("settings.promptEnhancer")}
-            onChange={(promptEnhancer) => onChange({ promptEnhancer })}
-          />
-        </SettingRow>
+      <div className="mt-4 divide-y divide-white/[0.07]">
         {showVariations ? (
           <SettingRow label={t("settings.variations")}>
             <div
@@ -576,27 +561,6 @@ function MoreOptionsPanel({
           </SettingRow>
         ) : null}
       </div>
-      <div className="mt-5 flex items-center justify-between gap-4 rounded-[18px] border border-white/[0.07] bg-white/[0.03] p-4">
-        <span className="text-sm font-medium text-white/80">{t("settings.visibility")}</span>
-        <div className="flex rounded-[16px] bg-white/[0.07] p-1">
-          {VISIBILITY_OPTIONS.map((visibility) => (
-            <button
-              key={visibility}
-              type="button"
-              aria-pressed={settings.visibility === visibility}
-              onClick={() => onChange({ visibility })}
-              className={cn(
-                "h-9 rounded-[13px] px-4 text-sm font-semibold transition duration-200",
-                settings.visibility === visibility
-                  ? "bg-white/[0.14] text-white"
-                  : "text-white/48 hover:text-white"
-              )}
-            >
-              {t(`settings.visibilityOptions.${visibility}`)}
-            </button>
-          ))}
-        </div>
-      </div>
     </section>
   );
 }
@@ -607,36 +571,5 @@ function SettingRow({ label, children }: { children: React.ReactNode; label: str
       <span className="text-sm font-medium text-white/80">{label}</span>
       {children}
     </div>
-  );
-}
-
-function ToggleSwitch({
-  checked,
-  label,
-  onChange,
-}: {
-  checked: boolean;
-  label: string;
-  onChange: (checked: boolean) => void;
-}) {
-  return (
-    <button
-      type="button"
-      role="switch"
-      aria-checked={checked}
-      aria-label={label}
-      onClick={() => onChange(!checked)}
-      className={cn(
-        "flex h-8 w-14 items-center rounded-full p-1 transition duration-200",
-        checked ? "bg-white/25" : "bg-white/[0.08]"
-      )}
-    >
-      <span
-        className={cn(
-          "size-6 rounded-full bg-white shadow-[0_6px_18px_rgba(0,0,0,.35)] transition-transform duration-200",
-          checked && "translate-x-6"
-        )}
-      />
-    </button>
   );
 }

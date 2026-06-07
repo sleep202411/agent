@@ -2455,6 +2455,18 @@
     "clickGenerateHint": "Click \"AI Generate\" on the left to start",
     "clearVoice": "Clear",
     "noVoiceModel": "None",
+    "allVoiceModels": "All voices",
+    "addCustomVoice": "Add custom voice",
+    "customVoiceFile": "Choose an audio file",
+    "customVoiceName": "Voice name",
+    "customVoiceLanguage": "Language",
+    "customVoiceDescription": "Description (optional)",
+    "customVoiceMissingFields": "Please choose an audio file and enter a voice name",
+    "customVoiceAdded": "Custom voice added",
+    "customVoiceLang_zh": "Chinese",
+    "customVoiceLang_en": "English",
+    "customVoiceLang_ja": "Japanese",
+    "customVoiceLang_ko": "Korean",
     "noCharacters": "No characters",
     "aiFusion": "AI Fusion",
     "fusionTitle": "AI Character Fusion",
@@ -6157,14 +6169,8 @@
         "selectAspectRatio": "Select Aspect ratio",
         "reset": "Reset",
         "moreOptions": "More options",
-        "promptEnhancer": "Prompt Enhancer",
         "variations": "Variations",
-        "resolution": "Resolution",
-        "visibility": "Visibility",
-        "visibilityOptions": {
-          "public": "Public",
-          "private": "Private"
-        }
+        "resolution": "Resolution"
       },
       "models": {
         "gptImage2": "GPT Image 2",

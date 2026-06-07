@@ -2455,6 +2455,18 @@
     "clickGenerateHint": "點擊左側「AI 生圖」開始生成",
     "clearVoice": "清空",
     "noVoiceModel": "不選擇",
+    "allVoiceModels": "全部音色",
+    "addCustomVoice": "新增自訂音色",
+    "customVoiceFile": "選擇音訊檔案",
+    "customVoiceName": "音色名稱",
+    "customVoiceLanguage": "語言",
+    "customVoiceDescription": "描述（可選）",
+    "customVoiceMissingFields": "請選擇音訊檔案並填寫音色名稱",
+    "customVoiceAdded": "自訂音色已新增",
+    "customVoiceLang_zh": "中文",
+    "customVoiceLang_en": "英語",
+    "customVoiceLang_ja": "日語",
+    "customVoiceLang_ko": "韓語",
     "noCharacters": "暫無角色",
     "aiFusion": "AI 溶圖",
     "fusionTitle": "AI 角色溶圖",
@@ -6157,14 +6169,8 @@
         "selectAspectRatio": "選擇畫幅比例",
         "reset": "重置",
         "moreOptions": "更多選項",
-        "promptEnhancer": "提示詞增強",
         "variations": "生成數量",
-        "resolution": "解像度",
-        "visibility": "可見性",
-        "visibilityOptions": {
-          "public": "公開",
-          "private": "私密"
-        }
+        "resolution": "解像度"
       },
       "models": {
         "gptImage2": "GPT Image 2",

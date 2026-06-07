@@ -63,6 +63,12 @@ import {
   translateVideoPrompt,
 } from "../../storyboard/ai-generator/video-dialog/expand-video-prompt";
 
+/** Sentinel `voiceModelCode` that fetches every voice across all models
+ *  (Java `voiceType=all`), including custom-added voices that carry no
+ *  model in their metadata. Picking a voice while in this mode resolves
+ *  the saved model from the voice's own `model` field. */
+const ALL_VOICE_MODELS = "all";
+
 function createEmptyForm(): CharacterFormState {
   return {
     id: "",
@@ -178,38 +184,42 @@ export function CharacterEditDialog({
 
   // Voice models are now read from preloaded cache via useRawAiModels
 
-  useEffect(() => {
+  // Fetch the voice list for whatever model code is currently selected.
+  // `voiceType=all` returns every voice across models (including custom
+  // ones with no model field); a specific serviceCode scopes to that
+  // model. Returns the result so callers (e.g. the post-upload refresh)
+  // can locate a freshly-added voice to auto-select.
+  const fetchVoices = useCallback(async (): Promise<Record<string, VoiceOptionItem[]>> => {
     const modelCode = formData.voiceModelCode.trim();
-    if (!open || !modelCode) {
+    if (!modelCode) {
+      setVoices({});
+      return {};
+    }
+    try {
+      setLoadingVoices(true);
+      const result = await backendApi.get<Record<string, VoiceOptionItem[]>>(
+        "/api/ai/voice/voices/list",
+        { params: { voiceType: modelCode } }
+      );
+      const next = result ?? {};
+      setVoices(next);
+      return next;
+    } catch (error) {
+      console.error("[CharacterEditDialog] 获取语音列表失败:", error);
+      setVoices({});
+      return {};
+    } finally {
+      setLoadingVoices(false);
+    }
+  }, [formData.voiceModelCode]);
+
+  useEffect(() => {
+    if (!open) {
       setVoices({});
       return;
     }
-    let cancelled = false;
-    void (async () => {
-      try {
-        setLoadingVoices(true);
-        const result = await backendApi.get<Record<string, VoiceOptionItem[]>>(
-          "/api/ai/voice/voices/list",
-          { params: { voiceType: modelCode } }
-        );
-        if (!cancelled) {
-          setVoices(result ?? {});
-        }
-      } catch (error) {
-        console.error("[CharacterEditDialog] 获取语音列表失败:", error);
-        if (!cancelled) {
-          setVoices({});
-        }
-      } finally {
-        if (!cancelled) {
-          setLoadingVoices(false);
-        }
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [formData.voiceModelCode, open]);
+    void fetchVoices();
+  }, [fetchVoices, open]);
 
   const roleImagePath = formData.roleImgPath[0] ?? "";
   const roleImageUrl = buildOssUrl(roleImagePath);
@@ -556,6 +566,7 @@ export function CharacterEditDialog({
                       </SelectTrigger>
                       <SelectContent position="popper" className="max-h-60">
                         <SelectItem value="__none__">{t("noVoiceModel")}</SelectItem>
+                        <SelectItem value={ALL_VOICE_MODELS}>{t("allVoiceModels")}</SelectItem>
                         {voiceModels.map((item) => {
                           const value = String(item.serviceCode ?? "");
                           if (!value) return null;
@@ -801,7 +812,20 @@ export function CharacterEditDialog({
         voices={voices}
         loading={loadingVoices}
         selectedVoiceId={formData.voiceId}
-        onSelect={(voice) => updateForm({ voiceId: String(voice.voiceId ?? "") })}
+        canAddCustomVoice={formData.voiceModelCode === ALL_VOICE_MODELS}
+        onVoiceAdded={fetchVoices}
+        onSelect={(voice) => {
+          const voiceId = String(voice.voiceId ?? "");
+          // In "All" mode the dropdown holds the "all" sentinel, not a real
+          // model — so persist the voice's own model. Custom voices may have
+          // no model field; fall back to the sentinel so the saved character
+          // still re-fetches from the all-voices list and finds it.
+          const resolvedModel =
+            formData.voiceModelCode === ALL_VOICE_MODELS
+              ? String(voice.model ?? ALL_VOICE_MODELS)
+              : formData.voiceModelCode;
+          updateForm({ voiceId, voiceModelCode: resolvedModel });
+        }}
       />
 
       {/* Role-portrait asset picker — shared by both the empty-state
