@@ -20,6 +20,7 @@ export interface AuthUser {
   phone?: string;
   email?: string;
   avatar?: string;
+  authStatus?: number | string;
   headImg?: string;
   headImgUrl?: string;
   banner?: string;

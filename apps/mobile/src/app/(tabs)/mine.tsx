@@ -1,5 +1,7 @@
 import { Image } from "expo-image";
+import { useRouter } from "expo-router";
 import { SymbolView, type SymbolViewProps } from "expo-symbols";
+import { useMemo } from "react";
 import { Pressable, StyleSheet, View } from "react-native";
 
 import { useAuth } from "@/auth";
@@ -7,29 +9,36 @@ import { TabScreen } from "@/components/tab-screen";
 import { ThemedText } from "@/components/themed-text";
 import { ThemedView } from "@/components/themed-view";
 import { ScreenHeader, SectionHeader } from "@/components/ui";
-import { appEnv, resolveAssetUrl } from "@/config";
+import { appEnv, isChinaRegion, resolveAssetUrl } from "@/config";
 import { Spacing } from "@/constants/theme";
+import { isKycVerified } from "@/data/kyc-api";
 import { useTheme } from "@/hooks/use-theme";
+import { t } from "@/i18n";
 
 type AppSymbol = SymbolViewProps["name"];
+type MenuItemKey = "portfolio" | "projects" | "kyc" | "role" | "settings";
 
-const menuItems: { label: string; detail: string; symbol: AppSymbol }[] = [
+const baseMenuItems: { detail: string; key: MenuItemKey; label: string; symbol: AppSymbol }[] = [
   {
+    key: "portfolio",
     label: "Personal portfolio",
     detail: "Works, videos, and public profile",
     symbol: { ios: "person.crop.rectangle", android: "badge", web: "badge" },
   },
   {
+    key: "projects",
     label: "My projects",
     detail: "Created and joined productions",
     symbol: { ios: "folder", android: "folder", web: "folder" },
   },
   {
+    key: "role",
     label: "Role certification",
     detail: "Creator identity and credentials",
     symbol: { ios: "checkmark.seal", android: "verified", web: "verified" },
   },
   {
+    key: "settings",
     label: "Account settings",
     detail: "Binding, privacy, and security",
     symbol: { ios: "gearshape", android: "settings", web: "settings" },
@@ -48,10 +57,24 @@ function getAccountMeta(user: ReturnType<typeof useAuth>["user"]) {
 
 export default function MineScreen() {
   const auth = useAuth();
+  const router = useRouter();
   const theme = useTheme();
   const displayName = getDisplayName(auth.user) ?? "Creator";
   const accountMeta = getAccountMeta(auth.user);
   const initial = displayName.trim().slice(0, 1).toUpperCase();
+  const kycVerified = isKycVerified(auth.user);
+  const menuItems = useMemo(() => {
+    if (!isChinaRegion) return baseMenuItems;
+
+    const kycItem: { detail: string; key: "kyc"; label: string; symbol: AppSymbol } = {
+      key: "kyc" as const,
+      label: t("mine.kycLabel"),
+      detail: kycVerified ? t("mine.kycDetailVerified") : t("mine.kycDetailRequired"),
+      symbol: { ios: "checkmark.shield", android: "verified_user", web: "verified_user" },
+    };
+
+    return [baseMenuItems[0], baseMenuItems[1], kycItem, baseMenuItems[2], baseMenuItems[3]];
+  }, [kycVerified]);
 
   const rawAvatar = auth.user?.avatar ?? auth.user?.headImg ?? auth.user?.headImgUrl;
   const avatarUrl =
@@ -59,8 +82,8 @@ export default function MineScreen() {
       ? resolveAssetUrl(rawAvatar, appEnv.assets.userBaseUrl)
       : undefined;
 
-  function handlePress() {
-    // Account routes land in a later pass; browse modules ship first.
+  function handleMenuPress(key: MenuItemKey) {
+    if (key === "kyc") router.push("/kyc");
   }
 
   return (
@@ -85,32 +108,14 @@ export default function MineScreen() {
             {accountMeta}
           </ThemedText>
         </View>
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel="Edit profile"
-          onPress={handlePress}
-          style={({ pressed }) => pressed && styles.pressed}
-        >
-          <View style={[styles.editButton, { backgroundColor: theme.backgroundSelected }]}>
-            <SymbolView
-              name={{ ios: "pencil", android: "edit", web: "edit" }}
-              size={16}
-              tintColor={theme.text}
-            />
-          </View>
-        </Pressable>
       </ThemedView>
 
       <View style={styles.section}>
         <SectionHeader title="Account" trailing="Profile" />
         <ThemedView type="backgroundElement" style={styles.menuPanel}>
-          {menuItems.map((item, index) => (
-            <Pressable
-              key={item.label}
-              accessibilityRole="button"
-              onPress={handlePress}
-              style={({ pressed }) => pressed && styles.pressed}
-            >
+          {menuItems.map((item, index) => {
+            const actionable = item.key === "kyc";
+            const row = (
               <View
                 style={[
                   styles.menuRow,
@@ -131,14 +136,29 @@ export default function MineScreen() {
                     </ThemedText>
                   </View>
                 </View>
-                <SymbolView
-                  name={{ ios: "chevron.right", android: "chevron_right", web: "chevron_right" }}
-                  size={16}
-                  tintColor={theme.textSecondary}
-                />
+                {actionable ? (
+                  <SymbolView
+                    name={{ ios: "chevron.right", android: "chevron_right", web: "chevron_right" }}
+                    size={16}
+                    tintColor={theme.textSecondary}
+                  />
+                ) : null}
               </View>
-            </Pressable>
-          ))}
+            );
+
+            return actionable ? (
+              <Pressable
+                key={item.key}
+                accessibilityRole="button"
+                onPress={() => handleMenuPress(item.key)}
+                style={({ pressed }) => pressed && styles.pressed}
+              >
+                {row}
+              </Pressable>
+            ) : (
+              <View key={item.key}>{row}</View>
+            );
+          })}
         </ThemedView>
       </View>
 
@@ -188,13 +208,6 @@ const styles = StyleSheet.create({
   profileName: {
     fontSize: 22,
     lineHeight: 28,
-  },
-  editButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 8,
-    alignItems: "center",
-    justifyContent: "center",
   },
   section: {
     gap: Spacing.two,
