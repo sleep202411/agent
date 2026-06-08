@@ -12,12 +12,10 @@ import { ProjectMemberRole, WorkspaceMemberRole } from '@prisma/client';
 import { randomUUID } from 'crypto';
 import type { AuthUser } from '../auth';
 import { newUuidV7 } from '../common/id';
-import { EntitlementService, type EntitlementSnapshot } from '../entitlements';
-import { QuotaService } from '../quota/quota.service';
-import type { QuotaDimension } from '../quota/quota.types';
-import type { Tier } from '../quota/tiers.config';
+import { EntitlementService } from '../entitlements';
 import { WorkspacesService, WorkspacePermissionService } from '../workspaces';
 import { AiGenerationAuthzService } from './authz.service';
+import { AiGenerationBillingWalletService } from './billing-wallet.service';
 import { AiGenerationEtaService } from './eta.service';
 import {
   AiGenerationRepository,
@@ -48,14 +46,6 @@ const TERMINAL_STATUSES = new Set([
   'expired',
 ]);
 
-interface QuotaRefundToken {
-  userId: string;
-  tier: Tier;
-  dimension: QuotaDimension;
-  cost: number;
-  idempotencyKey: string;
-}
-
 interface AiJobContext {
   workspaceId: string;
   projectId?: string;
@@ -78,10 +68,10 @@ export class AiGenerationService {
     private readonly outbox: AiGenerationOutboxService,
     private readonly queue: AiGenerationQueueService,
     private readonly routing: AiGenerationRoutingService,
-    private readonly quota: QuotaService,
     private readonly workspaces: WorkspacesService,
     private readonly workspacePermissions: WorkspacePermissionService,
     private readonly entitlements: EntitlementService,
+    private readonly billingWallet: AiGenerationBillingWalletService,
   ) {}
 
   /**
@@ -144,9 +134,10 @@ export class AiGenerationService {
   async submitJob(
     user: AuthUser,
     body: AiSubmitJobBody,
+    workspaceHeaderId?: string,
   ): Promise<AiSubmitResponse> {
     const now = new Date().toISOString();
-    const context = await this.resolveJobContext(user, body);
+    const context = await this.resolveJobContext(user, body, workspaceHeaderId);
     const entitlement = this.entitlements.resolveForUser(user, {
       workspaceId: context.workspaceId,
       now,
@@ -196,22 +187,14 @@ export class AiGenerationService {
     );
     if (existing) return this.toSubmitResponse(existing);
 
-    const quotaRefund = await this.consumeQuotaIfNeeded(
-      user,
-      entitlement,
-      snapshot,
-      idempotencyKey,
-    );
-
     // Generated app-side so we know the id before insert — needed to
     // enqueue BullMQ + emit the optimistic queued push before save()
     // resolves. UUIDv7 keeps the durable job id standard, sortable, and
     // audit-friendly across DB, queues, logs, and provider evidence.
     const id = newUuidV7();
     const queueName = snapshot.policy.concurrency.queueName;
-    let reservation: ReserveQueuedJobResult;
-    try {
-      reservation = await this.store.reserveQueuedJob({
+    const reservation: ReserveQueuedJobResult =
+      await this.store.reserveQueuedJob({
         userId: user.userId,
         modelId: model.id,
         idempotencyKey,
@@ -220,6 +203,12 @@ export class AiGenerationService {
         perUserQueued: snapshot.policy.concurrency.perUserQueued,
         perUserRunning: snapshot.policy.concurrency.perUserRunning,
         campaignLimit: this.campaignLimitFor(snapshot),
+        beforeCreate: (tx, job) =>
+          this.billingWallet.reserveForJobInTransaction({
+            tx,
+            job,
+            requestIdempotencyKey: idempotencyKey,
+          }),
         buildJob: (queuePosition) => {
           const estimate = this.eta.estimateForNewJob(
             model,
@@ -274,34 +263,23 @@ export class AiGenerationService {
           };
         },
       });
-    } catch (err) {
-      await this.refundQuotaIfNeeded(quotaRefund, 'ai_job_reserve_failed');
-      throw err;
-    }
 
     if (reservation.kind === 'existing') {
-      await this.refundQuotaIfNeeded(
-        quotaRefund,
-        'ai_job_duplicate_submission',
-      );
       return this.toSubmitResponse(reservation.job);
     }
     if (reservation.kind === 'queued_limit') {
-      await this.refundQuotaIfNeeded(quotaRefund, 'ai_job_queue_limit');
       throw new ConflictException({
         code: 'QUEUE_LIMIT_EXCEEDED',
         msg: `You can queue up to ${reservation.limit} generation task(s).`,
       });
     }
     if (reservation.kind === 'running_limit') {
-      await this.refundQuotaIfNeeded(quotaRefund, 'ai_job_running_limit');
       throw new ConflictException({
         code: 'RATE_LIMITED',
         msg: `You can run up to ${reservation.limit} ${reservation.type} generation task(s) at once.`,
       });
     }
     if (reservation.kind === 'campaign_limit') {
-      await this.refundQuotaIfNeeded(quotaRefund, 'ai_job_campaign_limit');
       throw new HttpException(
         {
           code: 'CAMPAIGN_LIMIT_EXCEEDED',
@@ -344,7 +322,7 @@ export class AiGenerationService {
     try {
       await this.queue.enqueue(queueName, id, 0, priority);
     } catch (err) {
-      await this.refundQuotaIfNeeded(quotaRefund, 'ai_job_enqueue_failed');
+      await this.billingWallet.releaseForJob(job, 'ai_job_enqueue_failed');
       const failed = await this.store.update(id, {
         status: 'failed',
         stage: 'failed',
@@ -370,63 +348,6 @@ export class AiGenerationService {
     return this.toSubmitResponse(saved);
   }
 
-  private async consumeQuotaIfNeeded(
-    user: AuthUser,
-    entitlement: EntitlementSnapshot,
-    snapshot: AiRoutingSnapshot,
-    idempotencyKey: string,
-  ): Promise<QuotaRefundToken | null> {
-    const policy = snapshot.policy.quota;
-    if (policy.mode !== 'charge' || policy.cost <= 0) return null;
-
-    const tier = this.entitlements.quotaTierFor(entitlement);
-    const dimension = policy.dimension as QuotaDimension;
-    const result = await this.quota.consume({
-      userId: user.userId,
-      tier,
-      dimension,
-      cost: policy.cost,
-      idempotencyKey,
-      reason: policy.reason,
-      metadata: {
-        routeId: snapshot.routeId,
-        presetId: snapshot.presetId,
-        selectedProvider: snapshot.selectedProvider,
-        selectedModelId: snapshot.selectedModelId,
-        selectedCanonicalModelId: snapshot.selectedCanonicalModelId,
-        selectedProviderBindingId: snapshot.selectedProviderBindingId,
-        selectedProviderEndpointId: snapshot.selectedProviderEndpointId,
-        strategy: snapshot.strategy,
-        campaignId: policy.campaignId,
-      },
-    });
-
-    if (!result.ok) {
-      throw new HttpException(
-        {
-          code: 429,
-          error: result.reason,
-          dimension: result.dimension,
-          used: result.used,
-          limit: result.limit,
-          resetAt: result.resetAt,
-          nextTier: result.nextTier,
-          nextTierLimit: result.nextTierLimit,
-        },
-        HttpStatus.TOO_MANY_REQUESTS,
-      );
-    }
-
-    if (result.deduped) return null;
-    return {
-      userId: user.userId,
-      tier,
-      dimension,
-      cost: policy.cost,
-      idempotencyKey,
-    };
-  }
-
   private campaignLimitFor(snapshot: AiRoutingSnapshot):
     | {
         campaignId: string;
@@ -447,24 +368,13 @@ export class AiGenerationService {
     };
   }
 
-  private async refundQuotaIfNeeded(
-    token: QuotaRefundToken | null,
-    reason: string,
-  ): Promise<void> {
-    if (!token) return;
-    await this.quota.refundFor({
-      userId: token.userId,
-      tier: token.tier,
-      dimension: token.dimension,
-      cost: token.cost,
-      idempotencyKey: token.idempotencyKey,
-      reason,
-    });
-  }
-
-  async listJobs(user: AuthUser, query: AiJobListQuery) {
+  async listJobs(
+    user: AuthUser,
+    query: AiJobListQuery,
+    workspaceHeaderId?: string,
+  ) {
     const limit = query.limit ? Number(query.limit) : 50;
-    const scope = await this.resolveListScope(user, query);
+    const scope = await this.resolveListScope(user, query, workspaceHeaderId);
     const jobs = await this.store.listForUser({
       userId: user.userId,
       workspaceId: scope.workspaceId,
@@ -496,6 +406,7 @@ export class AiGenerationService {
       return this.publicJob(job, { detail: true });
 
     await this.cancelProviderJobIfNeeded(job);
+    await this.billingWallet.releaseForJob(job, 'ai_job_cancelled');
 
     const now = new Date().toISOString();
     const next = await this.store.update(id, {
@@ -612,8 +523,12 @@ export class AiGenerationService {
   private async resolveJobContext(
     user: AuthUser,
     body: AiSubmitJobBody,
+    workspaceHeaderId?: string,
   ): Promise<AiJobContext> {
-    const workspaceId = body.context?.workspaceId ?? body.workspaceId;
+    const workspaceId = this.resolveWorkspaceScope(
+      workspaceHeaderId,
+      body.context?.workspaceId ?? body.workspaceId,
+    );
     const projectId = body.context?.projectId ?? body.projectId;
     const documentId = body.context?.documentId ?? body.documentId;
     const documentBlockId =
@@ -684,18 +599,24 @@ export class AiGenerationService {
   private async resolveListScope(
     user: AuthUser,
     query: AiJobListQuery,
+    workspaceHeaderId?: string,
   ): Promise<{
     workspaceId?: string;
     projectId?: string;
     documentId?: string;
   }> {
+    const workspaceId = this.resolveWorkspaceScope(
+      workspaceHeaderId,
+      query.workspaceId,
+    );
+
     if (query.documentId) {
       const document = await this.workspacePermissions.requireDocumentRole(
         user.userId,
         query.documentId,
         ProjectMemberRole.viewer,
       );
-      if (query.workspaceId && query.workspaceId !== document.workspaceId) {
+      if (workspaceId && workspaceId !== document.workspaceId) {
         throw new BadRequestException({
           code: 'DOCUMENT_WORKSPACE_MISMATCH',
           msg: 'Document does not belong to the selected workspace.',
@@ -720,7 +641,7 @@ export class AiGenerationService {
         query.projectId,
         ProjectMemberRole.viewer,
       );
-      if (query.workspaceId && query.workspaceId !== project.workspaceId) {
+      if (workspaceId && workspaceId !== project.workspaceId) {
         throw new BadRequestException({
           code: 'PROJECT_WORKSPACE_MISMATCH',
           msg: 'Project does not belong to the selected workspace.',
@@ -729,16 +650,33 @@ export class AiGenerationService {
       return { workspaceId: project.workspaceId, projectId: project.id };
     }
 
-    if (query.workspaceId) {
+    if (workspaceId) {
       await this.workspacePermissions.requireWorkspaceRole(
         user.userId,
-        query.workspaceId,
+        workspaceId,
         WorkspaceMemberRole.viewer,
       );
-      return { workspaceId: query.workspaceId };
+      return { workspaceId };
     }
 
     return {};
+  }
+
+  private resolveWorkspaceScope(
+    headerWorkspaceId?: string,
+    explicitWorkspaceId?: string,
+  ): string | undefined {
+    if (
+      headerWorkspaceId &&
+      explicitWorkspaceId &&
+      headerWorkspaceId !== explicitWorkspaceId
+    ) {
+      throw new BadRequestException({
+        code: 'WORKSPACE_SCOPE_MISMATCH',
+        msg: 'Workspace header does not match the request workspace.',
+      });
+    }
+    return headerWorkspaceId ?? explicitWorkspaceId;
   }
 
   private normalizeSourceSurface(

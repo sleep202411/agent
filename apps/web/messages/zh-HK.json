@@ -5995,6 +5995,66 @@
       "completedToast": "充值已完成，餘額正在刷新。",
       "cancelledToast": "充值已取消。"
     },
+    "billingUsage": {
+      "title": "賬單",
+      "subtitle": "查看充值、AI 生成、退款和人工調整帶來的算力積分餘額變化。",
+      "refresh": "刷新",
+      "summary": {
+        "available": "可用餘額",
+        "held": "佔用中",
+        "total": "總計"
+      },
+      "table": {
+        "time": "時間",
+        "activity": "事項",
+        "source": "積分來源",
+        "status": "狀態",
+        "points": "積分變化",
+        "balance": "餘額",
+        "reference": "憑證"
+      },
+      "activities": {
+        "aiJobHold": "AI 生成佔用",
+        "aiJobSettle": "AI 生成結算",
+        "aiJobRelease": "AI 生成釋放",
+        "topupCredit": "算力積分充值",
+        "refund": "退款",
+        "expired": "積分過期",
+        "adjustment": "人工調整",
+        "transfer": "轉賬",
+        "default": "錢包流水"
+      },
+      "statuses": {
+        "hold": "佔用",
+        "settle": "已結算",
+        "release": "已釋放",
+        "credit": "入賬",
+        "debit": "扣除",
+        "expire": "已過期",
+        "refund": "退款",
+        "adjustment": "調整",
+        "transfer_in": "轉入",
+        "transfer_out": "轉出"
+      },
+      "grantTypes": {
+        "purchase_topup": "購買充值",
+        "membership_included": "會員包含",
+        "check_in_reward": "簽到獎勵",
+        "campaign_reward": "活動獎勵",
+        "admin_adjustment": "管理員調整",
+        "refund_return": "退款返還",
+        "migration": "歷史餘額",
+        "system_grant": "系統發放",
+        "other": "其他來源",
+        "unspecified": "未標記來源",
+        "mixed": "{primary} 等 {count} 類"
+      },
+      "expiresAt": "{value} 過期",
+      "emptyTitle": "暫無賬單記錄",
+      "emptyDescription": "充值算力積分或建立 AI 生成後，餘額變化會顯示在這裡。",
+      "loading": "正在加載賬單記錄",
+      "noReference": "無憑證"
+    },
     "workspace": {
       "personal": "個人工作區",
       "current": "當前製作空間",
@@ -6050,6 +6110,7 @@
         "chatly": "Chatly",
         "models": "模型",
         "usage": "用量",
+        "billing": "賬單",
         "settings": "設置",
         "discord": "Discord",
         "docs": "文檔",

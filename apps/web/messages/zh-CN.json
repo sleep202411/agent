@@ -5995,6 +5995,66 @@
       "completedToast": "充值已完成，余额正在刷新。",
       "cancelledToast": "充值已取消。"
     },
+    "billingUsage": {
+      "title": "账单",
+      "subtitle": "查看充值、AI 生成、退款和人工调整带来的算力积分余额变化。",
+      "refresh": "刷新",
+      "summary": {
+        "available": "可用余额",
+        "held": "占用中",
+        "total": "总计"
+      },
+      "table": {
+        "time": "时间",
+        "activity": "事项",
+        "source": "积分来源",
+        "status": "状态",
+        "points": "积分变化",
+        "balance": "余额",
+        "reference": "凭证"
+      },
+      "activities": {
+        "aiJobHold": "AI 生成占用",
+        "aiJobSettle": "AI 生成结算",
+        "aiJobRelease": "AI 生成释放",
+        "topupCredit": "算力积分充值",
+        "refund": "退款",
+        "expired": "积分过期",
+        "adjustment": "人工调整",
+        "transfer": "转账",
+        "default": "钱包流水"
+      },
+      "statuses": {
+        "hold": "占用",
+        "settle": "已结算",
+        "release": "已释放",
+        "credit": "入账",
+        "debit": "扣除",
+        "expire": "已过期",
+        "refund": "退款",
+        "adjustment": "调整",
+        "transfer_in": "转入",
+        "transfer_out": "转出"
+      },
+      "grantTypes": {
+        "purchase_topup": "购买充值",
+        "membership_included": "会员包含",
+        "check_in_reward": "签到奖励",
+        "campaign_reward": "活动奖励",
+        "admin_adjustment": "管理员调整",
+        "refund_return": "退款返还",
+        "migration": "历史余额",
+        "system_grant": "系统发放",
+        "other": "其他来源",
+        "unspecified": "未标记来源",
+        "mixed": "{primary} 等 {count} 类"
+      },
+      "expiresAt": "{value} 过期",
+      "emptyTitle": "暂无账单记录",
+      "emptyDescription": "充值算力积分或创建 AI 生成后，余额变化会显示在这里。",
+      "loading": "正在加载账单记录",
+      "noReference": "无凭证"
+    },
     "workspace": {
       "personal": "个人工作区",
       "current": "当前制作空间",
@@ -6050,6 +6110,7 @@
         "chatly": "Chatly",
         "models": "模型",
         "usage": "用量",
+        "billing": "账单",
         "settings": "设置",
         "discord": "Discord",
         "docs": "文档",

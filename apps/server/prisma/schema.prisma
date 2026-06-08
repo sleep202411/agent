@@ -47,6 +47,11 @@ enum WorkspaceStatus {
   archived
 }
 
+enum WorkspaceBillingMode {
+  member_pays
+  workspace_pool
+}
+
 enum WorkspaceMemberRole {
   owner
   admin
@@ -181,9 +186,30 @@ enum WalletLedgerEntryType {
   release
   settle
   refund
+  expire
   adjustment
   transfer_in
   transfer_out
+}
+
+enum WalletCreditGrantType {
+  purchase_topup
+  membership_included
+  check_in_reward
+  campaign_reward
+  admin_adjustment
+  refund_return
+  migration
+  system_grant
+  other
+}
+
+enum WalletCreditGrantStatus {
+  active
+  exhausted
+  expired
+  reversed
+  voided
 }
 
 enum BillingSubjectType {
@@ -699,25 +725,26 @@ enum IpUserBlockTargetType {
 }
 
 model Workspace {
-  id               String          @id @default(uuid(7)) @db.Uuid
+  id               String               @id @default(uuid(7)) @db.Uuid
   type             WorkspaceType
-  status           WorkspaceStatus @default(active)
-  name             String          @db.VarChar(120)
-  slug             String?         @db.VarChar(80)
-  avatarUrl        String?         @map("avatar_url") @db.VarChar(512)
-  description      String?         @db.VarChar(500)
+  status           WorkspaceStatus      @default(active)
+  billingMode      WorkspaceBillingMode @default(member_pays) @map("billing_mode")
+  name             String               @db.VarChar(120)
+  slug             String?              @db.VarChar(80)
+  avatarUrl        String?              @map("avatar_url") @db.VarChar(512)
+  description      String?              @db.VarChar(500)
   /// External authenticated user id. For personal workspaces this is
   /// the owning user; for team workspaces this is the creator/admin who
   /// initialized the team. No FK to external user tables.
-  ownerUserId      String          @map("owner_user_id") @db.VarChar(64)
-  createdById      String          @map("created_by_id") @db.VarChar(64)
-  defaultProjectId String?         @map("default_project_id") @db.Uuid
-  version          Int             @default(0)
-  suspendedAt      DateTime?       @map("suspended_at") @db.Timestamptz(6)
-  archivedAt       DateTime?       @map("archived_at") @db.Timestamptz(6)
-  createdAt        DateTime        @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt        DateTime        @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
-  deletedAt        DateTime?       @map("deleted_at") @db.Timestamptz(6)
+  ownerUserId      String               @map("owner_user_id") @db.VarChar(64)
+  createdById      String               @map("created_by_id") @db.VarChar(64)
+  defaultProjectId String?              @map("default_project_id") @db.Uuid
+  version          Int                  @default(0)
+  suspendedAt      DateTime?            @map("suspended_at") @db.Timestamptz(6)
+  archivedAt       DateTime?            @map("archived_at") @db.Timestamptz(6)
+  createdAt        DateTime             @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt        DateTime             @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  deletedAt        DateTime?            @map("deleted_at") @db.Timestamptz(6)
 
   members       WorkspaceMember[]
   invites       WorkspaceInvite[]
@@ -1035,6 +1062,7 @@ model WalletAccount {
   closedAt         DateTime?           @map("closed_at") @db.Timestamptz(6)
 
   ledgerEntries WalletLedgerEntry[]
+  creditGrants  WalletCreditGrant[]
 
   @@unique([ownerType, ownerId, currency, balanceKind], map: "wallet_accounts_owner_currency_kind_unique")
   @@index([ownerType, ownerId, status, balanceKind], map: "wallet_accounts_owner_status_idx")
@@ -1057,6 +1085,8 @@ model WalletTransaction {
   voidedAt       DateTime?               @map("voided_at") @db.Timestamptz(6)
 
   entries                WalletLedgerEntry[]
+  creditGrants           WalletCreditGrant[]
+  creditAllocations      WalletCreditAllocation[]
   ipPurchaseOrders       IpPurchaseOrder[]
   billingRefunds         BillingRefund[]
   ipRevenueLedgerEntries IpRevenueLedgerEntry[]
@@ -1086,9 +1116,65 @@ model WalletLedgerEntry {
   transaction WalletTransaction @relation(fields: [transactionId], references: [id], onDelete: Cascade)
   account     WalletAccount     @relation(fields: [accountId], references: [id])
 
+  creditAllocations WalletCreditAllocation[]
+
   @@index([accountId, createdAt(sort: Desc)], map: "wallet_ledger_entries_account_recent_idx")
   @@index([transactionId], map: "wallet_ledger_entries_transaction_idx")
   @@map("wallet_ledger_entries")
+}
+
+model WalletCreditGrant {
+  id              String                  @id @default(uuid(7)) @db.Uuid
+  accountId       String                  @map("account_id") @db.Uuid
+  transactionId   String?                 @map("transaction_id") @db.Uuid
+  grantType       WalletCreditGrantType   @map("grant_type")
+  status          WalletCreditGrantStatus @default(active)
+  totalAmount     BigInt                  @map("total_amount")
+  availableAmount BigInt                  @default(0) @map("available_amount")
+  heldAmount      BigInt                  @default(0) @map("held_amount")
+  consumedAmount  BigInt                  @default(0) @map("consumed_amount")
+  expiredAmount   BigInt                  @default(0) @map("expired_amount")
+  reversedAmount  BigInt                  @default(0) @map("reversed_amount")
+  priority        Int                     @default(100)
+  validFrom       DateTime                @default(now()) @map("valid_from") @db.Timestamptz(6)
+  expiresAt       DateTime?               @map("expires_at") @db.Timestamptz(6)
+  sourceType      String                  @map("source_type") @db.VarChar(64)
+  sourceId        String?                 @map("source_id") @db.VarChar(128)
+  metadata        Json                    @default("{}") @db.JsonB
+  createdAt       DateTime                @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt       DateTime                @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  account     WalletAccount            @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  transaction WalletTransaction?       @relation(fields: [transactionId], references: [id], onDelete: SetNull)
+  allocations WalletCreditAllocation[]
+
+  @@index([accountId, status, expiresAt, priority, createdAt], map: "wallet_credit_grants_account_spend_idx")
+  @@index([sourceType, sourceId], map: "wallet_credit_grants_source_idx")
+  @@index([transactionId], map: "wallet_credit_grants_transaction_idx")
+  @@map("wallet_credit_grants")
+}
+
+model WalletCreditAllocation {
+  id             String   @id @default(uuid(7)) @db.Uuid
+  grantId        String   @map("grant_id") @db.Uuid
+  transactionId  String   @map("transaction_id") @db.Uuid
+  ledgerEntryId  String   @map("ledger_entry_id") @db.Uuid
+  amount         BigInt
+  availableDelta BigInt   @default(0) @map("available_delta")
+  heldDelta      BigInt   @default(0) @map("held_delta")
+  consumedDelta  BigInt   @default(0) @map("consumed_delta")
+  expiredDelta   BigInt   @default(0) @map("expired_delta")
+  reversedDelta  BigInt   @default(0) @map("reversed_delta")
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  grant       WalletCreditGrant @relation(fields: [grantId], references: [id], onDelete: Cascade)
+  transaction WalletTransaction @relation(fields: [transactionId], references: [id], onDelete: Cascade)
+  ledgerEntry WalletLedgerEntry @relation(fields: [ledgerEntryId], references: [id], onDelete: Cascade)
+
+  @@index([grantId, createdAt(sort: Desc)], map: "wallet_credit_allocations_grant_recent_idx")
+  @@index([transactionId], map: "wallet_credit_allocations_transaction_idx")
+  @@index([ledgerEntryId], map: "wallet_credit_allocations_ledger_entry_idx")
+  @@map("wallet_credit_allocations")
 }
 
 model BillingCatalogItem {

@@ -28,8 +28,8 @@ import { createHash } from 'crypto';
 import { AlertingService, type AlertSeverity } from '../common/alerting';
 import { newShortId } from '../common/id';
 import { EntitlementService } from '../entitlements';
-import { QuotaService } from '../quota/quota.service';
 import { OutputStorageService } from '../infra/storage/storage.types';
+import { AiGenerationBillingWalletService } from './billing-wallet.service';
 import { AiGenerationOutboxService } from './outbox.service';
 import type {
   ProviderAdapter,
@@ -102,9 +102,9 @@ export class AiGenerationWorkerService
     private readonly outbox: AiGenerationOutboxService,
     private readonly storage: OutputStorageService,
     private readonly queueService: AiGenerationQueueService,
-    private readonly quota: QuotaService,
     private readonly entitlements: EntitlementService,
     private readonly alerts: AlertingService,
+    private readonly billingWallet: AiGenerationBillingWalletService,
   ) {}
 
   private queuePriorityFor(job: AiJob): number {
@@ -112,12 +112,6 @@ export class AiGenerationWorkerService
       job.routingSnapshot?.policy.entitlement.queuePriority ??
       this.entitlements.queuePriorityFor(job.entitlementSnapshot)
     );
-  }
-
-  private quotaTierFor(job: AiJob) {
-    return job.entitlementSnapshot
-      ? this.entitlements.quotaTierFor(job.entitlementSnapshot)
-      : 'Free';
   }
 
   private alertQueueFailure(
@@ -1054,6 +1048,22 @@ export class AiGenerationWorkerService
         ),
       },
     });
+    try {
+      await this.billingWallet.settleForJob(job);
+    } catch (err) {
+      await this.handleFailure(job, {
+        code: 'BILLING_SETTLEMENT_FAILED',
+        message:
+          err instanceof Error
+            ? err.message
+            : 'Compute point settlement failed',
+        userMessage:
+          'Generation finished but billing settlement failed. Please try again or contact support.',
+        retryable: true,
+        createdAt: new Date().toISOString(),
+      });
+      return;
+    }
     const completed = await this.store.update(job.id, {
       status: 'completed',
       stage: 'completed',
@@ -1164,26 +1174,15 @@ export class AiGenerationWorkerService
       ],
     });
     if (failed) {
+      await this.billingWallet.releaseForJob(
+        failed,
+        `ai_job_failed_${payload.code}`,
+      );
       this.emit(failed);
       this.logger.warn(
         `job ${job.id} failed: ${payload.code} ${payload.message}`,
       );
       this.alertJobFailure(failed, payload, now);
-      // Refund the route-selected quota policy. Free campaign jobs
-      // intentionally skip refunds because they never consumed.
-      if (job.idempotencyKey) {
-        const policy = job.routingSnapshot?.policy.quota;
-        if (policy?.mode !== 'free') {
-          void this.quota.refundFor({
-            userId: job.userId,
-            tier: this.quotaTierFor(job),
-            dimension: policy?.dimension ?? 'image',
-            cost: policy?.cost && policy.cost > 0 ? policy.cost : 1,
-            idempotencyKey: job.idempotencyKey,
-            reason: `ai_job_failed_${payload.code}`,
-          });
-        }
-      }
     }
   }
 
@@ -1255,6 +1254,7 @@ function severityForAiFailure(code: AiJobError['code']): AlertSeverity {
     case 'PROVIDER_NOT_CONFIGURED':
     case 'QUEUE_UNAVAILABLE':
     case 'OSS_UPLOAD_FAILED':
+    case 'BILLING_SETTLEMENT_FAILED':
     case 'WORKER_CRASHED':
       return 'critical';
     case 'PROVIDER_429':

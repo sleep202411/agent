@@ -15,6 +15,7 @@ import {
   IconLayoutSidebarLeftCollapse,
   IconLayoutSidebarLeftExpand,
   IconPhoto,
+  IconReceipt,
   IconSettings,
   IconVideo,
   IconVolume,
@@ -194,6 +195,7 @@ export function FizzStudioSidebar({
   const homeHref = localizePath("/fizzstudio", locale);
   const aiLabHref = localizePath("/ai-lab", locale);
   const projectsHref = localizePath("/fizzstudio/projects", locale);
+  const billingHref = localizePath("/fizzstudio/billing", locale);
   const imageHref =
     variant === "enterprise"
       ? localizePath("/fizzstudio/images", locale)
@@ -204,6 +206,7 @@ export function FizzStudioSidebar({
     { key: "home", href: homeHref, icon: IconHome },
     { key: "projects", href: projectsHref, icon: IconFolders },
     { key: "history", href: `${homeHref}#works-show`, icon: IconHistory },
+    { key: "billing", href: billingHref, icon: IconReceipt },
   ];
 
   const sections: SidebarSection[] =

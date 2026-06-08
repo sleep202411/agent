@@ -1,6 +1,7 @@
 "use client";
 
 import { type ComponentType, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import {
   IconAdjustmentsHorizontal,
   IconAlertTriangle,
@@ -26,6 +27,7 @@ import { isUploadAbort, uploadFileViaSignedUrl } from "@/src/lib/media-upload";
 import { useAppDispatch } from "@/src/store";
 import { touchCredits } from "@/src/store/slices/userSlice";
 import { useAiCatalog, usableImageModels } from "../../_hooks/use-ai-catalog";
+import { computeBillingKeys } from "../../_hooks/use-billing";
 import {
   compactFizzAiInput,
   errorMessageFromJob,
@@ -200,6 +202,7 @@ export function ImageStudioPage() {
 function ImageStudioSurface({ workspaceId }: { workspaceId: string }) {
   const t = useTranslations("fizzStudio.imageStudio");
   const dispatch = useAppDispatch();
+  const queryClient = useQueryClient();
   const catalogQuery = useAiCatalog();
 
   const [activeTab, setActiveTab] = useState<ImageStudioTab>("community");
@@ -215,6 +218,7 @@ function ImageStudioSurface({ workspaceId }: { workspaceId: string }) {
   const [jobs, setJobs] = useState<ResultJob[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
   const [selectedDetailId, setSelectedDetailId] = useState<string | null>(null);
+  const historyRequestSeqRef = useRef(0);
 
   const imageModels = useMemo(
     () => (catalogQuery.data?.models ?? []).filter((model) => model.type === "image"),
@@ -279,75 +283,96 @@ function ImageStudioSurface({ workspaceId }: { workspaceId: string }) {
     selectedDetail?.job.modelId && imageModels.length > 0
       ? getImageModelLabel(imageModels, selectedDetail.job.modelId)
       : (selectedDetail?.job.modelId ?? t("detail.modelFallback"));
+  const refreshComputeBilling = useCallback(() => {
+    void queryClient.invalidateQueries({ queryKey: computeBillingKeys.all });
+  }, [queryClient]);
 
   const mergeJob = useCallback((job: ResultJob) => {
     setJobs((prev) => mergeResultJob(prev, job));
   }, []);
 
-  const reconcileHistory = useCallback(async () => {
-    if (!workspaceId) return;
-    setHistoryLoading(true);
-    try {
-      const response = await listFizzAiJobs({
-        limit: HISTORY_LIMIT,
-        type: "image",
-        workspaceId,
-      });
-      setJobs((prev) =>
-        mergeResultJobs(
-          response.jobs.map((job) => jobViewToResultJob(job, t)),
-          prev
-        )
-      );
-    } catch (err) {
-      if (process.env.NODE_ENV !== "production") {
-        console.warn("[fizzstudio-images] history reconcile failed", err);
+  const reconcileHistory = useCallback(
+    async (mode: "merge" | "replace" = "merge") => {
+      const requestWorkspaceId = workspaceId;
+      const requestSeq = ++historyRequestSeqRef.current;
+      if (!requestWorkspaceId) {
+        setJobs([]);
+        setHistoryLoading(false);
+        return;
       }
-    } finally {
-      setHistoryLoading(false);
-    }
-  }, [t, workspaceId]);
+      setHistoryLoading(true);
+      try {
+        const response = await listFizzAiJobs({
+          limit: HISTORY_LIMIT,
+          type: "image",
+        });
+        if (historyRequestSeqRef.current !== requestSeq) return;
+        const incoming = response.jobs.map((job) => jobViewToResultJob(job, t));
+        setJobs((prev) => mergeResultJobs(incoming, mode === "replace" ? [] : prev));
+      } catch (err) {
+        if (process.env.NODE_ENV !== "production") {
+          console.warn("[fizzstudio-images] history reconcile failed", err);
+        }
+      } finally {
+        if (historyRequestSeqRef.current === requestSeq) setHistoryLoading(false);
+      }
+    },
+    [t, workspaceId]
+  );
 
   useEffect(() => {
+    historyRequestSeqRef.current += 1;
     let cancelled = false;
     queueMicrotask(() => {
-      if (!cancelled) void reconcileHistory();
+      if (cancelled) return;
+      setJobs([]);
+      setSelectedDetailId(null);
+      if (!workspaceId) {
+        setHistoryLoading(false);
+        return;
+      }
+      setHistoryLoading(true);
+      void reconcileHistory("replace");
     });
     return () => {
       cancelled = true;
     };
-  }, [reconcileHistory]);
+  }, [reconcileHistory, workspaceId]);
 
   const handleAssetEvent = useCallback(
     (event: AssetEvent) => {
       if (event.kind !== "ai_job_update") return;
       const job = event.job;
       if (job.type !== "image") return;
-      if (workspaceId && job.workspaceId && job.workspaceId !== workspaceId) return;
       mergeJob(jobUpdateToResultJob(job, t));
       if (isTerminalGenerationStatus(generationStatusFromRaw(job.status))) {
         dispatch(touchCredits());
+        refreshComputeBilling();
       }
     },
-    [dispatch, mergeJob, t, workspaceId]
+    [dispatch, mergeJob, refreshComputeBilling, t]
   );
 
   useEffect(() => {
+    if (!workspaceId) return;
     let hasConnectedBefore = false;
-    const client = openAssetsRealtime({
-      onConnected: () => {
-        if (hasConnectedBefore) void reconcileHistory();
-        hasConnectedBefore = true;
+    const client = openAssetsRealtime(
+      {
+        onConnected: () => {
+          if (hasConnectedBefore) void reconcileHistory();
+          hasConnectedBefore = true;
+        },
+        onEvent: handleAssetEvent,
+        onDisconnected: (reason) => {
+          if (process.env.NODE_ENV !== "production") {
+            console.log(`[fizzstudio-assets-realtime] disconnected: ${reason}`);
+          }
+        },
       },
-      onEvent: handleAssetEvent,
-      onDisconnected: (reason) => {
-        if (process.env.NODE_ENV !== "production") {
-          console.log(`[fizzstudio-assets-realtime] disconnected: ${reason}`);
-        }
-      },
-    });
+      { workspaceId }
+    );
     return () => client.close();
-  }, [handleAssetEvent, reconcileHistory]);
+  }, [handleAssetEvent, reconcileHistory, workspaceId]);
 
   useEffect(() => {
     const onVisible = () => {
@@ -402,7 +427,10 @@ function ImageStudioSurface({ workspaceId }: { workspaceId: string }) {
             };
           })
         );
-        if (anyTerminal) dispatch(touchCredits());
+        if (anyTerminal) {
+          dispatch(touchCredits());
+          refreshComputeBilling();
+        }
       } finally {
         pollInFlightRef.current = false;
       }
@@ -417,7 +445,7 @@ function ImageStudioSurface({ workspaceId }: { workspaceId: string }) {
     // activeJobKey collapses the id list into a stable dep so the interval only
     // resets when the set of in-flight jobs actually changes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeJobKey, dispatch, t]);
+  }, [activeJobKey, dispatch, refreshComputeBilling, t]);
 
   const submit = useCallback(async () => {
     const trimmedPrompt = prompt.trim();
@@ -472,7 +500,6 @@ function ImageStudioSurface({ workspaceId }: { workspaceId: string }) {
     try {
       const response = await submitFizzAiJob({
         context: {
-          workspaceId,
           projectId: "",
           documentId: "",
           documentBlockId: "",
@@ -484,6 +511,7 @@ function ImageStudioSurface({ workspaceId }: { workspaceId: string }) {
         schemaVersion: selectedModel.schemaVersion,
       });
       dispatch(touchCredits());
+      refreshComputeBilling();
       const status = generationStatusFromRaw(response.status);
       setJobs((prev) =>
         prev.map((row) =>
@@ -526,6 +554,7 @@ function ImageStudioSurface({ workspaceId }: { workspaceId: string }) {
     }
   }, [
     dispatch,
+    refreshComputeBilling,
     hasUploadingReferences,
     prompt,
     referenceImages,
@@ -646,7 +675,6 @@ function ImageStudioSurface({ workspaceId }: { workspaceId: string }) {
         try {
           const response = await submitFizzAiJob({
             context: {
-              workspaceId,
               projectId: "",
               documentId: "",
               documentBlockId: "",
@@ -660,6 +688,7 @@ function ImageStudioSurface({ workspaceId }: { workspaceId: string }) {
             schemaVersion: model.schemaVersion,
           });
           dispatch(touchCredits());
+          refreshComputeBilling();
           const status = generationStatusFromRaw(response.status);
           setJobs((prev) =>
             prev.map((row) =>
@@ -702,7 +731,17 @@ function ImageStudioSurface({ workspaceId }: { workspaceId: string }) {
         }
       })();
     },
-    [dispatch, imageModels, jobs, selectedModel, settings, submitting, t, workspaceId]
+    [
+      dispatch,
+      imageModels,
+      jobs,
+      refreshComputeBilling,
+      selectedModel,
+      settings,
+      submitting,
+      t,
+      workspaceId,
+    ]
   );
 
   return (
@@ -1470,6 +1509,7 @@ async function copyTextToClipboard(text: string): Promise<boolean> {
   } catch {
     return false;
   }
+  return false;
 }
 
 function copyTextWithSelection(text: string): boolean {

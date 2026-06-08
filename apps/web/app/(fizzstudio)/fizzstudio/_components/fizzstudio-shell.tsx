@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import Link from "next/link";
 import {
   IconBell,
@@ -13,6 +13,7 @@ import {
 import { cn } from "@/lib/utils";
 import { StudioAccountMenu } from "@/components/studio-account-menu";
 import { UpgradeDialog } from "@/components/payment/upgrade-dialog";
+import { setApiWorkspaceId } from "@/src/lib/api";
 import type { Locale } from "@/src/i18n/config";
 import { useLocale, useTranslations } from "@/src/i18n/i18n";
 import { localizePath } from "@/src/i18n/locale-url";
@@ -81,6 +82,11 @@ export function FizzStudioShell({
 }) {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const isEnterprise = sidebarVariant === "enterprise";
+
+  useLayoutEffect(() => {
+    setApiWorkspaceId(workspaceState.workspaceId || null);
+    return () => setApiWorkspaceId(null);
+  }, [workspaceState.workspaceId]);
 
   return (
     <div

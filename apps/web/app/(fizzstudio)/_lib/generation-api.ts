@@ -137,7 +137,7 @@ export type FizzAiSourceSurface = "fizzstudio-canvas" | "fizzstudio-image-studio
 
 export interface FizzAiSubmitJobInput {
   context: {
-    workspaceId: string;
+    workspaceId?: string;
     projectId: string;
     documentId: string;
     documentBlockId: string;
@@ -366,12 +366,10 @@ export async function getFizzAiJob(id: string): Promise<FizzAiJobView> {
 export async function listFizzAiJobs(input: {
   limit?: number;
   type?: FizzAiJobType;
-  workspaceId?: string;
 }): Promise<FizzAiJobListResponse> {
   const params = new URLSearchParams();
   if (input.limit) params.set("limit", String(input.limit));
   if (input.type) params.set("type", input.type);
-  if (input.workspaceId) params.set("workspaceId", input.workspaceId);
   const query = params.toString();
   return api.get<FizzAiJobListResponse>(`/aurora/ai/jobs${query ? `?${query}` : ""}`, {
     timeout: 15_000,

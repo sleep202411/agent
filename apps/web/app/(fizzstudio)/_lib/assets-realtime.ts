@@ -13,15 +13,20 @@ export interface AssetsRealtimeClient {
   close(): void;
 }
 
+export interface AssetsRealtimeOptions {
+  workspaceId?: string;
+}
+
 interface NegotiateResponse {
   code: number;
   data?: { url: string; accessToken: string; expiresAt: number };
   message?: string;
 }
 
-async function negotiate(): Promise<string> {
+async function negotiate(workspaceId?: string): Promise<string> {
   const res = await fetch("/aurora/realtime/negotiate/assets", {
     credentials: "include",
+    headers: workspaceId ? { "X-Fizz-Workspace-Id": workspaceId } : undefined,
     method: "POST",
   });
   if (!res.ok) throw new Error(`negotiate http ${res.status}`);
@@ -32,11 +37,14 @@ async function negotiate(): Promise<string> {
   return body.data.url;
 }
 
-export function openAssetsRealtime(handlers: AssetsRealtimeHandlers): AssetsRealtimeClient {
+export function openAssetsRealtime(
+  handlers: AssetsRealtimeHandlers,
+  options: AssetsRealtimeOptions = {}
+): AssetsRealtimeClient {
   let userClosed = false;
 
   const client = new WebPubSubClient(
-    { getClientAccessUrl: () => negotiate() },
+    { getClientAccessUrl: () => negotiate(options.workspaceId) },
     { autoReconnect: true, autoRejoinGroups: true }
   );
 

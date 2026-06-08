@@ -5995,6 +5995,66 @@
       "completedToast": "Recharge completed. Balance is refreshing.",
       "cancelledToast": "Recharge cancelled."
     },
+    "billingUsage": {
+      "title": "Billing",
+      "subtitle": "Track compute point balance changes from recharge, AI generation, refunds, and manual adjustments.",
+      "refresh": "Refresh",
+      "summary": {
+        "available": "Available",
+        "held": "Reserved",
+        "total": "Total"
+      },
+      "table": {
+        "time": "Time",
+        "activity": "Activity",
+        "source": "Source",
+        "status": "Status",
+        "points": "Points",
+        "balance": "Balance",
+        "reference": "Reference"
+      },
+      "activities": {
+        "aiJobHold": "AI generation reserved",
+        "aiJobSettle": "AI generation settled",
+        "aiJobRelease": "AI generation released",
+        "topupCredit": "Compute point recharge",
+        "refund": "Refund",
+        "expired": "Points expired",
+        "adjustment": "Adjustment",
+        "transfer": "Transfer",
+        "default": "Wallet activity"
+      },
+      "statuses": {
+        "hold": "Reserved",
+        "settle": "Settled",
+        "release": "Released",
+        "credit": "Credited",
+        "debit": "Debited",
+        "expire": "Expired",
+        "refund": "Refunded",
+        "adjustment": "Adjusted",
+        "transfer_in": "Transfer in",
+        "transfer_out": "Transfer out"
+      },
+      "grantTypes": {
+        "purchase_topup": "Purchased recharge",
+        "membership_included": "Membership included",
+        "check_in_reward": "Check-in reward",
+        "campaign_reward": "Campaign reward",
+        "admin_adjustment": "Admin adjustment",
+        "refund_return": "Refund return",
+        "migration": "Historical balance",
+        "system_grant": "System grant",
+        "other": "Other source",
+        "unspecified": "Unspecified source",
+        "mixed": "{primary} + {count} more"
+      },
+      "expiresAt": "Expires {value}",
+      "emptyTitle": "No billing activity yet",
+      "emptyDescription": "Recharge compute points or create an AI generation to see balance changes here.",
+      "loading": "Loading billing activity",
+      "noReference": "No reference"
+    },
     "workspace": {
       "personal": "Personal workspace",
       "current": "Current production space",
@@ -6050,6 +6110,7 @@
         "chatly": "Chatly",
         "models": "Models",
         "usage": "Usage",
+        "billing": "Billing",
         "settings": "Settings",
         "discord": "Discord",
         "docs": "Docs",

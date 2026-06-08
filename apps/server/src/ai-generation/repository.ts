@@ -70,6 +70,7 @@ export interface ReserveQueuedJobOptions {
     perUserLimit?: number;
     totalLimit?: number;
   };
+  beforeCreate?: (tx: Prisma.TransactionClient, job: AiJob) => Promise<void>;
   buildJob: (queuePosition: number) => AiJob;
 }
 
@@ -278,6 +279,7 @@ export class AiGenerationRepository {
         await this.waitingInQueueWith(tx, options.queueName)
       ).length;
       const job = options.buildJob(queuePosition);
+      await options.beforeCreate?.(tx, job);
       await tx.aiJob.create({ data: this.toRow(job) });
       const repositioned = await this.recomputeQueuePositionsWith(
         tx,

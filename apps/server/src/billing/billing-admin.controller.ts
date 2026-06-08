@@ -34,12 +34,14 @@ import {
   ListAdminBillingReconciliationRunsQuerySchema,
   ListAdminBillingSettlementsQuerySchema,
   BillingPriceParamsSchema,
+  BillingWalletAccountParamsSchema,
   BillingProviderEventParamsSchema,
   BillingProviderBindingParamsSchema,
   BillingPromotionParamsSchema,
   CreateAdminBillingPriceSchema,
   CreateAdminBillingPromotionSchema,
   CreateAdminBillingRefundSchema,
+  CreateAdminWalletAdjustmentSchema,
   IgnoreAdminBillingProviderEventSchema,
   QuoteAdminBillingRefundSchema,
   UpdateAdminBillingPriceSchema,
@@ -47,12 +49,14 @@ import {
   UpsertAdminBillingProviderBindingSchema,
   UpsertAdminBillingPromotionProviderBindingSchema,
   type BillingPriceParams,
+  type BillingWalletAccountParams,
   type BillingProviderEventParams,
   type BillingProviderBindingParams,
   type BillingPromotionParams,
   type CreateAdminBillingPriceInput,
   type CreateAdminBillingPromotionInput,
   type CreateAdminBillingRefundInput,
+  type CreateAdminWalletAdjustmentInput,
   type IgnoreAdminBillingProviderEventInput,
   type ListAdminBillingLedgerJournalsQuery,
   type ListAdminBillingOrdersQuery,
@@ -86,6 +90,50 @@ export class BillingAdminController {
       code: 200,
       data: await this.billing.getAdminOverview(),
     };
+  }
+
+  @RequireAdminPermissions(ADMIN_PERMISSION_KEYS.BillingRead)
+  @Get('wallets/:accountId')
+  async walletDetail(
+    @Param(new ZodValidationPipe(BillingWalletAccountParamsSchema))
+    params: BillingWalletAccountParams,
+  ) {
+    return {
+      code: 200,
+      data: await this.billing.getAdminWalletAccountDetail(params.accountId),
+    };
+  }
+
+  @RequireAdminPermissions(ADMIN_PERMISSION_KEYS.BillingWrite)
+  @Post('wallets/:accountId/adjustments')
+  async createWalletAdjustment(
+    @CurrentAdmin() admin: AdminActor,
+    @Param(new ZodValidationPipe(BillingWalletAccountParamsSchema))
+    params: BillingWalletAccountParams,
+    @Body(new ZodValidationPipe(CreateAdminWalletAdjustmentSchema))
+    body: CreateAdminWalletAdjustmentInput,
+    @Req() request: Request,
+  ) {
+    const data = await this.billing.createAdminWalletAdjustment(
+      admin.id,
+      params.accountId,
+      body,
+    );
+    await this.audit(
+      admin,
+      request,
+      'admin.billing.wallet.adjust',
+      'wallet_account',
+      params.accountId,
+      {
+        amount: body.amount.toString(),
+        grantType: body.grantType,
+        expiresAt: body.expiresAt?.toISOString() ?? null,
+        reason: body.reason,
+        idempotencyKey: body.idempotencyKey,
+      },
+    );
+    return { code: 200, data };
   }
 
   @RequireAdminPermissions(ADMIN_PERMISSION_KEYS.BillingRead)

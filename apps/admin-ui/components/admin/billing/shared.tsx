@@ -964,11 +964,38 @@ export function walletEntryTypeLabel(value: string) {
   const labels: Record<string, string> = {
     credit: "入账",
     debit: "扣款",
+    expire: "过期",
     hold: "冻结",
     release: "释放",
     settle: "结算",
     refund: "退款",
     adjustment: "调整",
+  };
+  return labels[value] ?? value;
+}
+
+export function walletGrantTypeLabel(value: string) {
+  const labels: Record<string, string> = {
+    purchase_topup: "购买充值",
+    membership_included: "会员赠送",
+    check_in_reward: "签到奖励",
+    campaign_reward: "活动奖励",
+    admin_adjustment: "管理员调整",
+    refund_return: "退款返还",
+    migration: "历史迁移",
+    system_grant: "系统赠送",
+    other: "其他",
+  };
+  return labels[value] ?? value;
+}
+
+export function walletGrantStatusLabel(value: string) {
+  const labels: Record<string, string> = {
+    active: "可用",
+    exhausted: "已用尽",
+    expired: "已过期",
+    reversed: "已冲回",
+    voided: "已作废",
   };
   return labels[value] ?? value;
 }

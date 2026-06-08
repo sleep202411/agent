@@ -65,6 +65,13 @@ export const WalletCurrencyTypeSchema = z.enum([
   'community_point',
 ]);
 export const WalletBalanceKindSchema = z.enum(['consumable', 'withdrawable']);
+export const AdminWalletCreditGrantTypeSchema = z.enum([
+  'admin_adjustment',
+  'check_in_reward',
+  'campaign_reward',
+  'system_grant',
+  'other',
+]);
 export const BillingProviderBindingStatusSchema = z.enum([
   'active',
   'inactive',
@@ -151,6 +158,51 @@ export const ListWalletLedgerQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(100).default(20),
 });
 export type ListWalletLedgerQuery = z.infer<typeof ListWalletLedgerQuerySchema>;
+
+export const BillingWalletAccountParamsSchema = z.object({
+  accountId: z.string().uuid(),
+});
+export type BillingWalletAccountParams = z.infer<
+  typeof BillingWalletAccountParamsSchema
+>;
+
+export const CreateAdminWalletAdjustmentSchema = z
+  .object({
+    amount: z.coerce
+      .bigint()
+      .refine((value) => value !== 0n, 'Adjustment amount cannot be zero.'),
+    grantType: AdminWalletCreditGrantTypeSchema.default('admin_adjustment'),
+    expiresAt: z.coerce.date().nullable().optional(),
+    reason: z.string().trim().min(6).max(1000),
+    idempotencyKey: z.string().trim().min(8).max(180),
+    metadata: z.record(z.string(), z.unknown()).default({}),
+  })
+  .superRefine((value, ctx) => {
+    if (value.amount < 0n && value.grantType !== 'admin_adjustment') {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['grantType'],
+        message: 'Negative adjustments must use admin_adjustment.',
+      });
+    }
+    if (value.amount < 0n && value.expiresAt) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['expiresAt'],
+        message: 'Negative adjustments cannot set expiry.',
+      });
+    }
+    if (value.expiresAt && value.expiresAt <= new Date()) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['expiresAt'],
+        message: 'Expiry must be in the future.',
+      });
+    }
+  });
+export type CreateAdminWalletAdjustmentInput = z.infer<
+  typeof CreateAdminWalletAdjustmentSchema
+>;
 
 export const ListAdminBillingPricesQuerySchema = z.object({
   productType: BillingProductTypeSchema.optional(),

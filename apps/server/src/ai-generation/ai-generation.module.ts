@@ -8,6 +8,7 @@ import { AiModelOpsController } from './admin/ai-model-ops.controller';
 import { AiModelOpsService } from './admin/ai-model-ops.service';
 import { AiGenerationController } from './ai-generation.controller';
 import { AiGenerationService } from './ai-generation.service';
+import { AiGenerationBillingWalletService } from './billing-wallet.service';
 import { AiCanonicalCatalogService } from './canonical-catalog.service';
 import { AiGenerationAuthzService } from './authz.service';
 import { AiGenerationEtaService } from './eta.service';
@@ -49,6 +50,7 @@ import { AiGenerationWorkerService } from './worker.service';
   providers: [
     // Generic layer
     AiGenerationService,
+    AiGenerationBillingWalletService,
     AiCanonicalCatalogService,
     AiGenerationRepository,
     AiGenerationWorkerService,

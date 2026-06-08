@@ -55,12 +55,13 @@ export class BillingController {
   @Get('wallet-ledger')
   async listWalletLedger(
     @CurrentUser() user: AuthUser,
+    @Headers('x-fizz-workspace-id') workspaceId: string | undefined,
     @Query(new ZodValidationPipe(ListWalletLedgerQuerySchema))
     query: ListWalletLedgerQuery,
   ) {
     return {
       code: 200,
-      data: await this.billing.listWalletLedger(user, query),
+      data: await this.billing.listWalletLedger(user, query, workspaceId),
     };
   }
 

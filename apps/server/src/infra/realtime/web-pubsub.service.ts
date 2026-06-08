@@ -106,19 +106,24 @@ export class WebPubSubService {
   // ─── Assets hub (Foundry jobs + future asset event kinds) ────────
 
   /**
-   * Mint a client access URL for the assets hub. Pre-joins the user
-   * to their `assets-user:{userId}` group; grants joinLeave role on
-   * that group only (so reconnects re-attach cleanly, no cross-user
-   * leakage possible).
+   * Mint a client access URL for the assets hub. Workspace-aware
+   * clients pre-join `assets-workspace:{workspaceId}` so switching
+   * workspace naturally tears down one stream and opens another.
+   * Clients without a workspace context keep the per-user group.
    */
-  async issueAssetsClientAccess(userId: string): Promise<{
+  async issueAssetsClientAccess(
+    userId: string,
+    workspaceId?: string,
+  ): Promise<{
     url: string;
     accessToken: string;
     expiresAt: number;
   } | null> {
     const client = this.clientFor(ASSETS_HUB);
     if (!client) return null;
-    const group = assetsUserGroup(userId);
+    const group = workspaceId
+      ? assetsWorkspaceGroup(workspaceId)
+      : assetsUserGroup(userId);
     const expiresAt = Date.now() + TOKEN_TTL_MINUTES * 60_000;
     const token = await client.getClientAccessToken({
       userId,
@@ -130,18 +135,25 @@ export class WebPubSubService {
   }
 
   /**
-   * Publish an asset event to the user's group. `AssetEvent.kind`
-   * discriminates between event types; clients dispatch on `kind`.
+   * Publish an asset event. Workspace-owned events go to the workspace
+   * group; unscoped events go to the user's group.
    */
   async publishAssetEvent(userId: string, event: AssetEvent): Promise<void> {
     const client = this.clientFor(ASSETS_HUB);
     if (!client) return;
+    const workspaceId =
+      event.kind === 'ai_job_update' ? event.job.workspaceId : undefined;
+    const groups = workspaceId
+      ? [assetsWorkspaceGroup(workspaceId), assetsUserGroup(userId)]
+      : [assetsUserGroup(userId)];
     try {
-      await client.group(assetsUserGroup(userId)).sendToAll(event);
+      for (const group of groups) {
+        await client.group(group).sendToAll(event);
+      }
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       this.logger.warn(
-        `publishAssetEvent failed userId=${userId} kind=${event.kind}: ${msg}`,
+        `publishAssetEvent failed groups=${groups.join(',')} userId=${userId} kind=${event.kind}: ${msg}`,
       );
     }
   }
@@ -149,4 +161,8 @@ export class WebPubSubService {
 
 function userGroup(userId: string): string {
   return `user:${userId}`;
+}
+
+function assetsWorkspaceGroup(workspaceId: string): string {
+  return `assets-workspace:${workspaceId}`;
 }

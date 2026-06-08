@@ -26,10 +26,13 @@ import {
   Prisma,
   WalletAccountStatus,
   WalletBalanceKind,
+  WalletCreditGrantStatus,
+  WalletCreditGrantType,
   WalletCurrencyType,
   WalletLedgerEntryType,
   WalletOwnerType,
   WalletTransactionStatus,
+  WorkspaceBillingMode,
   WorkspaceMemberRole,
   type BillingOrder,
   type BillingPaymentIntent,
@@ -53,6 +56,7 @@ import { createHash, randomUUID } from 'crypto';
 import type { AuthUser } from '../auth';
 import { CURRENT_CELL } from '../common/region';
 import { PrismaService } from '../infra/db/db.module';
+import { WalletLedgerService } from '../workspaces';
 import { WorkspacePermissionService } from '../workspaces/workspace-permission.service';
 import type {
   CreateBillingCheckoutInput,
@@ -61,6 +65,7 @@ import type {
   CreateAdminBillingPriceInput,
   CreateAdminBillingPromotionInput,
   CreateAdminBillingRefundInput,
+  CreateAdminWalletAdjustmentInput,
   ListAdminBillingOrdersQuery,
   ListAdminBillingProviderEventsQuery,
   ListAdminBillingPricesQuery,
@@ -200,6 +205,27 @@ type CheckoutPromotionReservation = {
   discountAmountMinor: bigint;
   providerCouponId: string | null;
 };
+type AdminWalletLedgerEntryWithRelations = Prisma.WalletLedgerEntryGetPayload<{
+  include: {
+    account: true;
+    transaction: true;
+    creditAllocations: {
+      include: {
+        grant: {
+          select: {
+            id: true;
+            grantType: true;
+            status: true;
+            validFrom: true;
+            expiresAt: true;
+            sourceType: true;
+            sourceId: true;
+          };
+        };
+      };
+    };
+  };
+}>;
 
 @Injectable()
 export class BillingService {
@@ -207,6 +233,7 @@ export class BillingService {
     private readonly prisma: PrismaService,
     private readonly providerRegistry: PaymentProviderRegistry,
     private readonly permissions: WorkspacePermissionService,
+    private readonly walletLedger: WalletLedgerService,
     private readonly ledger: BillingLedgerService,
   ) {}
 
@@ -306,11 +333,16 @@ export class BillingService {
     };
   }
 
-  async listWalletLedger(user: AuthUser, query: ListWalletLedgerQuery) {
+  async listWalletLedger(
+    user: AuthUser,
+    query: ListWalletLedgerQuery,
+    workspaceId?: string | null,
+  ) {
+    const scope = await this.walletLedgerScope(user, workspaceId);
     const accounts = await this.prisma.walletAccount.findMany({
       where: {
-        ownerType: WalletOwnerType.user,
-        ownerId: user.userId,
+        ownerType: scope.ownerType,
+        ownerId: scope.ownerId,
         currency: query.currency as WalletCurrencyType,
         balanceKind: query.balanceKind as WalletBalanceKind,
       },
@@ -325,7 +357,25 @@ export class BillingService {
 
     const entries = await this.prisma.walletLedgerEntry.findMany({
       where: { accountId: { in: accounts.map((account) => account.id) } },
-      include: { transaction: true },
+      include: {
+        transaction: true,
+        creditAllocations: {
+          include: {
+            grant: {
+              select: {
+                id: true,
+                grantType: true,
+                status: true,
+                validFrom: true,
+                expiresAt: true,
+                sourceType: true,
+                sourceId: true,
+              },
+            },
+          },
+          orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+        },
+      },
       orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
       take: query.limit,
     });
@@ -363,10 +413,62 @@ export class BillingService {
           sourceId: entry.transaction.sourceId,
           orderNo: stringAt(metadata, ['orderNo']),
           description: entry.transaction.description,
+          metadata,
+          creditAllocations: entry.creditAllocations.map((allocation) => ({
+            id: allocation.id,
+            grantId: allocation.grantId,
+            grantType: allocation.grant.grantType,
+            grantStatus: allocation.grant.status,
+            amount: allocation.amount.toString(),
+            availableDelta: allocation.availableDelta.toString(),
+            heldDelta: allocation.heldDelta.toString(),
+            consumedDelta: allocation.consumedDelta.toString(),
+            expiredDelta: allocation.expiredDelta.toString(),
+            reversedDelta: allocation.reversedDelta.toString(),
+            validFrom: allocation.grant.validFrom.toISOString(),
+            expiresAt: allocation.grant.expiresAt?.toISOString() ?? null,
+            sourceType: allocation.grant.sourceType,
+            sourceId: allocation.grant.sourceId,
+          })),
           createdAt: entry.createdAt.toISOString(),
         };
       }),
     };
+  }
+
+  private async walletLedgerScope(
+    user: AuthUser,
+    workspaceId?: string | null,
+  ): Promise<{ ownerType: WalletOwnerType; ownerId: string }> {
+    if (!workspaceId) {
+      return { ownerType: WalletOwnerType.user, ownerId: user.userId };
+    }
+
+    const membership = await this.permissions.requireWorkspaceRole(
+      user.userId,
+      workspaceId,
+      WorkspaceMemberRole.viewer,
+    );
+    const workspace = await this.prisma.workspace.findUnique({
+      where: { id: membership.workspaceId, deletedAt: null },
+      select: { id: true, billingMode: true },
+    });
+    if (!workspace) {
+      throw new NotFoundException({
+        code: 'WORKSPACE_NOT_FOUND',
+        msg: 'Workspace not found.',
+      });
+    }
+    if (workspace.billingMode !== WorkspaceBillingMode.workspace_pool) {
+      return { ownerType: WalletOwnerType.user, ownerId: user.userId };
+    }
+
+    await this.permissions.requireWorkspaceRole(
+      user.userId,
+      workspace.id,
+      WorkspaceMemberRole.billing,
+    );
+    return { ownerType: WalletOwnerType.workspace, ownerId: workspace.id };
   }
 
   async getAdminOverview() {
@@ -453,6 +555,22 @@ export class BillingService {
         include: {
           account: true,
           transaction: true,
+          creditAllocations: {
+            include: {
+              grant: {
+                select: {
+                  id: true,
+                  grantType: true,
+                  status: true,
+                  validFrom: true,
+                  expiresAt: true,
+                  sourceType: true,
+                  sourceId: true,
+                },
+              },
+            },
+            orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+          },
         },
         orderBy: { createdAt: 'desc' },
         take: 12,
@@ -507,40 +625,223 @@ export class BillingService {
           amountMinor: binding.price.amountMinor.toString(),
         },
       })),
-      walletAccounts: walletAccounts.map((account) => ({
-        id: account.id,
-        ownerType: account.ownerType,
-        ownerId: account.ownerId,
-        currency: account.currency,
-        balanceKind: account.balanceKind,
-        status: account.status,
-        availableBalance: account.availableBalance.toString(),
-        heldBalance: account.heldBalance.toString(),
-        ledgerEntryCount: account._count.ledgerEntries,
-        updatedAt: account.updatedAt.toISOString(),
-      })),
-      walletLedgerEntries: walletLedgerEntries.map((entry) => ({
-        id: entry.id,
-        transactionId: entry.transactionId,
-        accountId: entry.accountId,
-        ownerType: entry.account.ownerType,
-        ownerId: entry.account.ownerId,
-        entryType: entry.entryType,
-        currency: entry.currency,
-        balanceKind: entry.balanceKind,
-        amount: entry.amount.toString(),
-        availableDelta: entry.availableDelta.toString(),
-        heldDelta: entry.heldDelta.toString(),
-        availableBalanceAfter: entry.availableBalanceAfter.toString(),
-        heldBalanceAfter: entry.heldBalanceAfter.toString(),
-        reason: entry.reason,
-        sourceType: entry.transaction.sourceType,
-        sourceId: entry.transaction.sourceId,
-        idempotencyKey: entry.transaction.idempotencyKey,
-        description: entry.transaction.description,
-        createdAt: entry.createdAt.toISOString(),
-      })),
+      walletAccounts: walletAccounts.map((account) =>
+        this.adminWalletAccountDto(account),
+      ),
+      walletLedgerEntries: walletLedgerEntries.map((entry) =>
+        this.adminWalletLedgerEntryDto(entry),
+      ),
       recentOrders: recentOrders.map((order) => this.adminOrderDto(order)),
+    };
+  }
+
+  async getAdminWalletAccountDetail(accountId: string) {
+    const [account, entries, grants] = await Promise.all([
+      this.prisma.walletAccount.findUnique({
+        where: { id: accountId },
+        include: {
+          _count: { select: { ledgerEntries: true } },
+        },
+      }),
+      this.prisma.walletLedgerEntry.findMany({
+        where: { accountId },
+        include: {
+          account: true,
+          transaction: true,
+          creditAllocations: {
+            include: {
+              grant: {
+                select: {
+                  id: true,
+                  grantType: true,
+                  status: true,
+                  validFrom: true,
+                  expiresAt: true,
+                  sourceType: true,
+                  sourceId: true,
+                },
+              },
+            },
+            orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+          },
+        },
+        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+        take: 100,
+      }),
+      this.prisma.walletCreditGrant.findMany({
+        where: { accountId },
+        orderBy: [
+          { status: 'asc' },
+          { expiresAt: { sort: 'asc', nulls: 'last' } },
+          { createdAt: 'desc' },
+          { id: 'desc' },
+        ],
+        take: 100,
+      }),
+    ]);
+
+    if (!account) {
+      throw new NotFoundException({
+        code: 'WALLET_ACCOUNT_NOT_FOUND',
+        msg: 'Wallet account not found.',
+      });
+    }
+
+    return {
+      account: this.adminWalletAccountDto(account),
+      entries: entries.map((entry) => this.adminWalletLedgerEntryDto(entry)),
+      grants: grants.map((grant) => ({
+        id: grant.id,
+        accountId: grant.accountId,
+        transactionId: grant.transactionId,
+        grantType: grant.grantType,
+        status: grant.status,
+        totalAmount: grant.totalAmount.toString(),
+        availableAmount: grant.availableAmount.toString(),
+        heldAmount: grant.heldAmount.toString(),
+        consumedAmount: grant.consumedAmount.toString(),
+        expiredAmount: grant.expiredAmount.toString(),
+        reversedAmount: grant.reversedAmount.toString(),
+        priority: grant.priority,
+        validFrom: grant.validFrom.toISOString(),
+        expiresAt: grant.expiresAt?.toISOString() ?? null,
+        sourceType: grant.sourceType,
+        sourceId: grant.sourceId,
+        metadata: grant.metadata,
+        createdAt: grant.createdAt.toISOString(),
+        updatedAt: grant.updatedAt.toISOString(),
+      })),
+    };
+  }
+
+  async createAdminWalletAdjustment(
+    adminId: string,
+    accountId: string,
+    input: CreateAdminWalletAdjustmentInput,
+  ) {
+    const account = await this.prisma.walletAccount.findUnique({
+      where: { id: accountId },
+    });
+    if (!account) {
+      throw new NotFoundException({
+        code: 'WALLET_ACCOUNT_NOT_FOUND',
+        msg: 'Wallet account not found.',
+      });
+    }
+    if (account.status !== WalletAccountStatus.active) {
+      throw new ConflictException({
+        code: 'WALLET_ACCOUNT_NOT_ACTIVE',
+        msg: 'Only active wallet accounts can be adjusted.',
+      });
+    }
+    if (
+      account.currency !== WalletCurrencyType.compute_point ||
+      account.balanceKind !== WalletBalanceKind.consumable
+    ) {
+      throw new ConflictException({
+        code: 'ADMIN_WALLET_ADJUSTMENT_UNSUPPORTED_ACCOUNT',
+        msg: 'Admin credit adjustments currently support compute-point consumable wallets only.',
+      });
+    }
+
+    const amount = input.amount;
+    const isPositive = amount > 0n;
+    await this.walletLedger.postEntry({
+      accountId: account.id,
+      entryType: WalletLedgerEntryType.adjustment,
+      amount: amount > 0n ? amount : -amount,
+      availableDelta: amount,
+      heldDelta: 0n,
+      sourceType: 'admin_wallet_adjustment',
+      sourceId: adminId,
+      idempotencyKey: `admin_wallet_adjustment:${account.id}:${input.idempotencyKey}`,
+      actorUserId: adminId,
+      workspaceId:
+        account.ownerType === WalletOwnerType.workspace
+          ? account.ownerId
+          : null,
+      description: input.reason,
+      reason: isPositive
+        ? 'admin_compute_point_credit'
+        : 'admin_compute_point_debit',
+      metadata: {
+        ...input.metadata,
+        adminId,
+        reason: input.reason,
+        grantType: input.grantType,
+        rawIdempotencyKey: input.idempotencyKey,
+      },
+      creditGrant: isPositive
+        ? {
+            grantType: input.grantType as WalletCreditGrantType,
+            expiresAt: input.expiresAt ?? null,
+            metadata: {
+              adminId,
+              reason: input.reason,
+            },
+          }
+        : undefined,
+    });
+
+    return this.getAdminWalletAccountDetail(account.id);
+  }
+
+  private adminWalletAccountDto(
+    account: WalletAccount & { _count?: { ledgerEntries: number } },
+  ) {
+    return {
+      id: account.id,
+      ownerType: account.ownerType,
+      ownerId: account.ownerId,
+      currency: account.currency,
+      balanceKind: account.balanceKind,
+      status: account.status,
+      availableBalance: account.availableBalance.toString(),
+      heldBalance: account.heldBalance.toString(),
+      ledgerEntryCount: account._count?.ledgerEntries ?? 0,
+      updatedAt: account.updatedAt.toISOString(),
+    };
+  }
+
+  private adminWalletLedgerEntryDto(
+    entry: AdminWalletLedgerEntryWithRelations,
+  ) {
+    return {
+      id: entry.id,
+      transactionId: entry.transactionId,
+      accountId: entry.accountId,
+      ownerType: entry.account.ownerType,
+      ownerId: entry.account.ownerId,
+      entryType: entry.entryType,
+      currency: entry.currency,
+      balanceKind: entry.balanceKind,
+      amount: entry.amount.toString(),
+      availableDelta: entry.availableDelta.toString(),
+      heldDelta: entry.heldDelta.toString(),
+      availableBalanceAfter: entry.availableBalanceAfter.toString(),
+      heldBalanceAfter: entry.heldBalanceAfter.toString(),
+      reason: entry.reason,
+      sourceType: entry.transaction.sourceType,
+      sourceId: entry.transaction.sourceId,
+      idempotencyKey: entry.transaction.idempotencyKey,
+      description: entry.transaction.description,
+      creditAllocations: entry.creditAllocations.map((allocation) => ({
+        id: allocation.id,
+        grantId: allocation.grantId,
+        grantType: allocation.grant.grantType,
+        grantStatus: allocation.grant.status,
+        amount: allocation.amount.toString(),
+        availableDelta: allocation.availableDelta.toString(),
+        heldDelta: allocation.heldDelta.toString(),
+        consumedDelta: allocation.consumedDelta.toString(),
+        expiredDelta: allocation.expiredDelta.toString(),
+        reversedDelta: allocation.reversedDelta.toString(),
+        validFrom: allocation.grant.validFrom.toISOString(),
+        expiresAt: allocation.grant.expiresAt?.toISOString() ?? null,
+        sourceType: allocation.grant.sourceType,
+        sourceId: allocation.grant.sourceId,
+      })),
+      createdAt: entry.createdAt.toISOString(),
     };
   }
 
@@ -3240,7 +3541,7 @@ export class BillingService {
         },
       },
     });
-    await tx.walletLedgerEntry.create({
+    const entry = await tx.walletLedgerEntry.create({
       data: {
         transactionId: transaction.id,
         accountId: locked.id,
@@ -3255,6 +3556,19 @@ export class BillingService {
         reason: `billing_${walletCurrency}_refund_reversal`,
       },
     });
+    if (
+      locked.currency === WalletCurrencyType.compute_point &&
+      locked.balanceKind === WalletBalanceKind.consumable
+    ) {
+      await reverseWalletCreditGrantForRefundTx(tx, {
+        accountId: locked.id,
+        order: input.order,
+        refund: input.refund,
+        transactionId: transaction.id,
+        ledgerEntryId: entry.id,
+        amount: input.amount,
+      });
+    }
     await tx.walletAccount.update({
       where: { id: locked.id },
       data: {
@@ -3829,7 +4143,11 @@ export class BillingService {
 
     let walletTransactionId: string | null = null;
     if (current.grantsWalletAmount ?? current.price.grantsWalletAmount) {
-      walletTransactionId = await this.creditWalletGrantForOrderTx(tx, current);
+      walletTransactionId = await this.creditWalletGrantForOrderTx(
+        tx,
+        current,
+        now,
+      );
     }
     let entitlementGrantId: string | null = null;
     if (current.price.grantsPlanKey) {
@@ -3993,6 +4311,7 @@ export class BillingService {
   private async creditWalletGrantForOrderTx(
     tx: Prisma.TransactionClient,
     order: OrderWithPrice,
+    now: Date,
   ): Promise<string | null> {
     // Prefer the per-order snapshot (set at checkout); fall back to the live price
     // for legacy orders created before the snapshot existed. The snapshot is what
@@ -4055,6 +4374,8 @@ export class BillingService {
 
     const amount = grantPerUnit * BigInt(order.quantity);
     const nextAvailable = lockedAccount.availableBalance + amount;
+    const grantType = billingOrderGrantType(order);
+    const grantExpiresAt = grantEndsAt(now, order.price.grantDurationDays);
     const transaction = await tx.walletTransaction.create({
       data: {
         status: WalletTransactionStatus.posted,
@@ -4067,11 +4388,13 @@ export class BillingService {
         metadata: {
           orderNo: order.orderNo,
           priceId: order.priceId,
+          grantType,
+          expiresAt: grantExpiresAt?.toISOString() ?? null,
         },
       },
     });
 
-    await tx.walletLedgerEntry.create({
+    const entry = await tx.walletLedgerEntry.create({
       data: {
         transactionId: transaction.id,
         accountId: lockedAccount.id,
@@ -4086,6 +4409,51 @@ export class BillingService {
         reason: `billing_${grantCurrency}_topup`,
       },
     });
+
+    if (
+      lockedAccount.currency === WalletCurrencyType.compute_point &&
+      lockedAccount.balanceKind === WalletBalanceKind.consumable
+    ) {
+      const creditGrant = await tx.walletCreditGrant.create({
+        data: {
+          accountId: lockedAccount.id,
+          transactionId: transaction.id,
+          grantType,
+          status: WalletCreditGrantStatus.active,
+          totalAmount: amount,
+          availableAmount: amount,
+          heldAmount: 0n,
+          consumedAmount: 0n,
+          expiredAmount: 0n,
+          reversedAmount: 0n,
+          priority: defaultGrantPriority(grantType, grantExpiresAt),
+          validFrom: now,
+          expiresAt: grantExpiresAt,
+          sourceType: 'billing_order',
+          sourceId: order.id,
+          metadata: {
+            orderNo: order.orderNo,
+            priceId: order.priceId,
+            orderType: order.orderType,
+            subjectType: order.subjectType,
+            subjectId: order.subjectId,
+          },
+        },
+      });
+      await tx.walletCreditAllocation.create({
+        data: {
+          grantId: creditGrant.id,
+          transactionId: transaction.id,
+          ledgerEntryId: entry.id,
+          amount,
+          availableDelta: amount,
+          heldDelta: 0n,
+          consumedDelta: 0n,
+          expiredDelta: 0n,
+          reversedDelta: 0n,
+        },
+      });
+    }
 
     await tx.walletAccount.update({
       where: { id: lockedAccount.id },
@@ -5121,6 +5489,120 @@ function isPaymentFailedEvent(
     normalizedStatus === 'CANCELED' ||
     normalizedStatus === 'EXPIRED'
   );
+}
+
+function billingOrderGrantType(order: OrderWithPrice): WalletCreditGrantType {
+  return order.price.grantsPlanKey
+    ? WalletCreditGrantType.membership_included
+    : WalletCreditGrantType.purchase_topup;
+}
+
+async function reverseWalletCreditGrantForRefundTx(
+  tx: Prisma.TransactionClient,
+  input: {
+    accountId: string;
+    order: OrderWithPrice;
+    refund: BillingRefund;
+    transactionId: string;
+    ledgerEntryId: string;
+    amount: bigint;
+  },
+) {
+  let remaining = input.amount;
+  const grants = await tx.walletCreditGrant.findMany({
+    where: {
+      accountId: input.accountId,
+      sourceType: 'billing_order',
+      sourceId: input.order.id,
+      status: WalletCreditGrantStatus.active,
+      availableAmount: { gt: 0n },
+    },
+    orderBy: [
+      { expiresAt: { sort: 'asc', nulls: 'last' } },
+      { priority: 'asc' },
+      { createdAt: 'asc' },
+      { id: 'asc' },
+    ],
+  });
+
+  for (const grant of grants) {
+    if (remaining <= 0n) break;
+    const take =
+      grant.availableAmount < remaining ? grant.availableAmount : remaining;
+    const nextAvailable = grant.availableAmount - take;
+    const nextReversed = grant.reversedAmount + take;
+    await tx.walletCreditGrant.update({
+      where: { id: grant.id },
+      data: {
+        availableAmount: nextAvailable,
+        reversedAmount: nextReversed,
+        status: walletCreditGrantStatusAfter({
+          totalAmount: grant.totalAmount,
+          availableAmount: nextAvailable,
+          heldAmount: grant.heldAmount,
+          consumedAmount: grant.consumedAmount,
+          expiredAmount: grant.expiredAmount,
+          reversedAmount: nextReversed,
+        }),
+      },
+    });
+    await tx.walletCreditAllocation.create({
+      data: {
+        grantId: grant.id,
+        transactionId: input.transactionId,
+        ledgerEntryId: input.ledgerEntryId,
+        amount: take,
+        availableDelta: -take,
+        heldDelta: 0n,
+        consumedDelta: 0n,
+        expiredDelta: 0n,
+        reversedDelta: take,
+      },
+    });
+    remaining -= take;
+  }
+
+  if (remaining > 0n) {
+    throw new ConflictException({
+      code: 'BILLING_REFUND_WALLET_GRANT_CONSUMED',
+      msg: 'Refund is blocked because the granted credits from this order have already been consumed.',
+      refundNo: input.refund.refundNo,
+      orderNo: input.order.orderNo,
+      requiredAmount: input.amount.toString(),
+      unavailableAmount: remaining.toString(),
+    });
+  }
+}
+
+function defaultGrantPriority(
+  grantType: WalletCreditGrantType,
+  expiresAt: Date | null,
+): number {
+  if (expiresAt) return 10;
+  if (grantType === WalletCreditGrantType.membership_included) return 20;
+  if (grantType === WalletCreditGrantType.check_in_reward) return 30;
+  if (grantType === WalletCreditGrantType.campaign_reward) return 40;
+  if (grantType === WalletCreditGrantType.admin_adjustment) return 80;
+  if (grantType === WalletCreditGrantType.purchase_topup) return 100;
+  return 120;
+}
+
+function walletCreditGrantStatusAfter(input: {
+  totalAmount: bigint;
+  availableAmount: bigint;
+  heldAmount: bigint;
+  consumedAmount: bigint;
+  expiredAmount: bigint;
+  reversedAmount: bigint;
+}): WalletCreditGrantStatus {
+  if (input.availableAmount > 0n || input.heldAmount > 0n) {
+    return WalletCreditGrantStatus.active;
+  }
+  if (input.expiredAmount > 0n) return WalletCreditGrantStatus.expired;
+  if (input.reversedAmount === input.totalAmount) {
+    return WalletCreditGrantStatus.reversed;
+  }
+  return WalletCreditGrantStatus.exhausted;
 }
 
 function grantEndsAt(now: Date, days: number | null): Date | null {

@@ -9,7 +9,6 @@ import type {
   AiInputControl,
   AiJsonSchema,
   AiGenerationMode,
-  AiJsonValue,
   AiModelFamily,
   AiModelDefinition as SharedAiModelDefinition,
   AiObservabilityContract,
@@ -301,6 +300,7 @@ export interface AiJobError {
     | 'PROVIDER_CONTENT_FILTER'
     | 'OUTPUT_EXPIRED'
     | 'OSS_UPLOAD_FAILED'
+    | 'BILLING_SETTLEMENT_FAILED'
     | 'WORKER_CRASHED'
     | 'CANCELLED_BY_USER'
     | 'UNKNOWN';

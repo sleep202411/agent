@@ -11,7 +11,7 @@ import {
 export const computeBillingKeys = {
   all: ["fizzstudio", "compute-billing"] as const,
   catalog: () => [...computeBillingKeys.all, "catalog"] as const,
-  wallet: () => [...computeBillingKeys.all, "wallet"] as const,
+  wallet: (limit = 12) => [...computeBillingKeys.all, "wallet", limit] as const,
 };
 
 export function useComputeTopupCatalog() {
@@ -22,10 +22,10 @@ export function useComputeTopupCatalog() {
   });
 }
 
-export function useComputeWalletLedger() {
+export function useComputeWalletLedger(limit = 12) {
   return useQuery({
-    queryKey: computeBillingKeys.wallet(),
-    queryFn: getComputeWalletLedger,
+    queryKey: computeBillingKeys.wallet(limit),
+    queryFn: () => getComputeWalletLedger(limit),
     staleTime: 20_000,
   });
 }
@@ -36,7 +36,7 @@ export function useCreateComputeTopup() {
     mutationFn: createComputeTopup,
     onSuccess: (result) => {
       if (result.order.status === "fulfilled") {
-        void qc.invalidateQueries({ queryKey: computeBillingKeys.wallet() });
+        void qc.invalidateQueries({ queryKey: computeBillingKeys.all });
       }
     },
   });

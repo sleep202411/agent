@@ -58,11 +58,56 @@ export interface ComputeWalletLedgerData {
   entries: Array<{
     id: string;
     transactionId: string;
+    accountId: string;
+    entryType:
+      | "adjustment"
+      | "credit"
+      | "debit"
+      | "expire"
+      | "hold"
+      | "refund"
+      | "release"
+      | "settle"
+      | "transfer_in"
+      | "transfer_out";
+    currency: "compute_point";
+    balanceKind: "consumable";
     amount: string;
     availableDelta: string;
+    heldDelta: string;
     availableBalanceAfter: string;
+    heldBalanceAfter: string;
     reason: string;
+    sourceType: string;
+    sourceId: string | null;
+    orderNo?: string | null;
     description: string | null;
+    metadata: Record<string, unknown>;
+    creditAllocations: Array<{
+      id: string;
+      grantId: string;
+      grantType:
+        | "purchase_topup"
+        | "membership_included"
+        | "check_in_reward"
+        | "campaign_reward"
+        | "admin_adjustment"
+        | "refund_return"
+        | "migration"
+        | "system_grant"
+        | "other";
+      grantStatus: string;
+      amount: string;
+      availableDelta: string;
+      heldDelta: string;
+      consumedDelta: string;
+      expiredDelta: string;
+      reversedDelta: string;
+      validFrom: string;
+      expiresAt: string | null;
+      sourceType: string;
+      sourceId: string | null;
+    }>;
     createdAt: string;
   }>;
 }
@@ -103,9 +148,9 @@ export async function listComputeTopupPackages(): Promise<ComputeTopupCatalog> {
   return api.get<ComputeTopupCatalog>("/aurora/billing/compute-topup-packages");
 }
 
-export async function getComputeWalletLedger(): Promise<ComputeWalletLedgerData> {
+export async function getComputeWalletLedger(limit = 12): Promise<ComputeWalletLedgerData> {
   return api.get<ComputeWalletLedgerData>("/aurora/billing/wallet-ledger", {
-    params: { currency: "compute_point", balanceKind: "consumable", limit: 12 },
+    params: { currency: "compute_point", balanceKind: "consumable", limit },
   });
 }
 
