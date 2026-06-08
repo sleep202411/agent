@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import Image from "next/image";
 import Link from "next/link";
 import {
   IconBell,
@@ -80,7 +81,6 @@ export function FizzStudioShell({
   sidebarVariant?: "enterprise" | "studio";
   workspaceState: FizzStudioWorkspaceState;
 }) {
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const isEnterprise = sidebarVariant === "enterprise";
 
   useLayoutEffect(() => {
@@ -96,21 +96,9 @@ export function FizzStudioShell({
         className
       )}
     >
-      <FizzStudioSidebar
-        collapsed={sidebarCollapsed}
-        hideToggle={false}
-        onToggleCollapsed={() => {
-          setSidebarCollapsed((value) => !value);
-        }}
-        variant={sidebarVariant}
-      />
+      <FizzStudioSidebar variant={sidebarVariant} />
 
-      <div
-        className={cn(
-          "min-w-0 transition-[padding] duration-300",
-          sidebarCollapsed ? "lg:pl-16" : "lg:pl-60"
-        )}
-      >
+      <div className="min-w-0 lg:pl-[72px]">
         <StudioHeader
           activeWorkspaceId={workspaceState.workspaceId}
           currentLocale={workspaceState.currentLocale}
@@ -151,6 +139,20 @@ function StudioHeader({
     return (
       <header className="sticky top-0 z-40 bg-transparent">
         <div className="flex h-16 items-center justify-end gap-4 px-4 sm:px-5">
+          <Link
+            href={localizePath("/fizzstudio", currentLocale)}
+            aria-label={t("brand")}
+            className="mr-auto flex shrink-0 items-center"
+          >
+            <Image
+              src="/logo.png"
+              alt="FizzDragon"
+              width={439}
+              height={78}
+              priority
+              className="h-7 w-auto"
+            />
+          </Link>
           <button
             type="button"
             onClick={() => setUpgradeOpen(true)}
