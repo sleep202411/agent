@@ -23,6 +23,31 @@ const ProviderHealthStatusSchema = z.enum([
   'degraded',
   'outage',
 ]);
+const ProviderCapacitySchema = {
+  maxConcurrentRequests: z
+    .number()
+    .int()
+    .min(1)
+    .max(1000)
+    .nullable()
+    .optional(),
+  maxRequestsPerMinute: z
+    .number()
+    .int()
+    .min(1)
+    .max(100_000)
+    .nullable()
+    .optional(),
+  requestTimeoutSeconds: z
+    .number()
+    .int()
+    .min(1)
+    .max(86_400)
+    .nullable()
+    .optional(),
+  cooldownSeconds: z.number().int().min(0).max(86_400).nullable().optional(),
+  failureThreshold: z.number().int().min(1).max(100).nullable().optional(),
+} as const;
 
 export const ListAdminAiProvidersQuerySchema = z.object({
   provider: z.string().trim().min(1).optional(),
@@ -154,12 +179,10 @@ export const CreateProviderEndpointSchema = z.object({
   status: WritableControlPlaneStatusSchema.default('draft'),
   healthStatus: ProviderHealthStatusSchema.default('unknown'),
   supportedModes: z.array(z.string().trim().min(1)).default([]),
-  capabilities: JsonObjectSchema.default({}),
   providerInputSchema: JsonObjectSchema.default({}),
   providerOutputSchema: JsonObjectSchema.default({}),
-  providerQuotaPolicy: JsonObjectSchema.default({}),
+  ...ProviderCapacitySchema,
   catalogSnapshot: JsonObjectSchema.default({}),
-  documentation: JsonObjectSchema.default({}),
   disabledReason: z.string().trim().max(4000).nullable().optional(),
 });
 export type CreateProviderEndpointInput = z.infer<
@@ -171,12 +194,10 @@ export const UpdateProviderEndpointSchema = z.object({
   status: WritableControlPlaneStatusSchema.optional(),
   healthStatus: ProviderHealthStatusSchema.optional(),
   supportedModes: z.array(z.string().trim().min(1)).optional(),
-  capabilities: JsonObjectSchema.optional(),
   providerInputSchema: JsonObjectSchema.optional(),
   providerOutputSchema: JsonObjectSchema.optional(),
-  providerQuotaPolicy: JsonObjectSchema.optional(),
+  ...ProviderCapacitySchema,
   catalogSnapshot: JsonObjectSchema.optional(),
-  documentation: JsonObjectSchema.optional(),
   disabledReason: z.string().trim().max(4000).nullable().optional(),
 });
 export type UpdateProviderEndpointInput = z.infer<
@@ -186,14 +207,9 @@ export type UpdateProviderEndpointInput = z.infer<
 export const CreateProviderBindingSchema = z.object({
   canonicalModelId: z.string().uuid(),
   providerEndpointId: z.string().uuid(),
-  status: AiControlPlaneStatusSchema.default('draft'),
+  status: WritableControlPlaneStatusSchema.default('draft'),
   priority: z.coerce.number().int().min(0).max(10_000).default(100),
   weight: z.coerce.number().int().min(0).max(10_000).default(100),
-  parameterMap: JsonObjectSchema.default({}),
-  queuePolicy: JsonObjectSchema.default({}),
-  routingPolicy: JsonObjectSchema.default({}),
-  fallbackPolicy: JsonObjectSchema.default({}),
-  observabilityPolicy: JsonObjectSchema.default({}),
   disabledReason: z.string().trim().max(4000).nullable().optional(),
 });
 export type CreateProviderBindingInput = z.infer<
@@ -204,11 +220,6 @@ export const UpdateProviderBindingSchema = z.object({
   status: AiControlPlaneStatusSchema.optional(),
   priority: z.coerce.number().int().min(0).max(10_000).optional(),
   weight: z.coerce.number().int().min(0).max(10_000).optional(),
-  parameterMap: JsonObjectSchema.optional(),
-  queuePolicy: JsonObjectSchema.optional(),
-  routingPolicy: JsonObjectSchema.optional(),
-  fallbackPolicy: JsonObjectSchema.optional(),
-  observabilityPolicy: JsonObjectSchema.optional(),
   disabledReason: z.string().trim().max(4000).nullable().optional(),
 });
 export type UpdateProviderBindingInput = z.infer<

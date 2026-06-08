@@ -27,6 +27,7 @@ import {
   type ProviderModelCandidate,
 } from './model-catalog-routing';
 import { AiCanonicalCatalogService } from './canonical-catalog.service';
+import { applyProviderRuntimeLimit } from './provider-capacity';
 import type { ProviderAdapter } from './provider-adapter';
 import { ProviderRegistry } from './provider-registry.service';
 import type {
@@ -86,9 +87,13 @@ export class AiGenerationRoutingService {
         this.presets.findPresetRoute(presetId, await this.listCatalogModels()))
       : undefined;
     const resolved = configuredRoute
-      ? await this.resolveConfiguredRoute(configuredRoute, requestedModelId)
+      ? await this.resolveConfiguredRoute(
+          configuredRoute,
+          requestedModelId,
+          args.body.input,
+        )
       : requestedModelId
-        ? await this.findModel(requestedModelId)
+        ? await this.findModel(requestedModelId, args.body.input)
         : null;
 
     if (!resolved) {
@@ -121,6 +126,11 @@ export class AiGenerationRoutingService {
     const queueName = this.presets.queueNameFor(
       queuePolicy.queueName,
       model.type,
+    );
+    const maxProviderRuntimeSeconds = applyProviderRuntimeLimit(
+      queuePolicy?.maxProviderRuntimeSeconds ??
+        (model.type === 'video' ? 45 * 60 : 10 * 60),
+      model.ops?.providerCapacity,
     );
     const requiredPlan = this.entitlements.requiredPlan(
       configuredRoute?.requiredPlan ??
@@ -196,15 +206,14 @@ export class AiGenerationRoutingService {
             perUserQueued: queuePolicy.perUserQueued,
           },
           runtime: {
-            maxProviderRuntimeSeconds:
-              queuePolicy?.maxProviderRuntimeSeconds ??
-              (model.type === 'video' ? 45 * 60 : 10 * 60),
+            maxProviderRuntimeSeconds,
             maxQueueWaitSeconds: queuePolicy?.maxQueueWaitSeconds ?? null,
             pollIntervalMs: Math.max(
               1_000,
               Number(process.env.AI_ASYNC_PROVIDER_POLL_DELAY_MS ?? 5_000),
             ),
           },
+          providerCapacity: model.ops?.providerCapacity,
         },
         selectedAt: args.now,
       },
@@ -232,6 +241,7 @@ export class AiGenerationRoutingService {
   private async resolveConfiguredRoute(
     route: AiModelPresetConfig,
     requestedModelId?: string,
+    input?: Record<string, unknown>,
   ): Promise<{
     adapter: ProviderAdapter;
     provider: AiProvider;
@@ -251,14 +261,17 @@ export class AiGenerationRoutingService {
         : route.modelIds.slice(0, 1);
 
     for (const modelId of candidates) {
-      const resolved = await this.findModel(modelId);
+      const resolved = await this.findModel(modelId, input);
       if (!resolved?.model.enabled) continue;
       return resolved;
     }
     return null;
   }
 
-  private async findModel(modelId: string): Promise<{
+  private async findModel(
+    modelId: string,
+    input?: Record<string, unknown>,
+  ): Promise<{
     adapter: ProviderAdapter;
     provider: AiProvider;
     model: AiModelDefinition;
@@ -270,7 +283,14 @@ export class AiGenerationRoutingService {
         candidates.push({ adapter, provider: adapter.provider, model });
       }
     }
-    return selectProviderModelCandidate(candidates);
+    const selected = selectProviderModelCandidate(candidates, input);
+    if (!selected && candidates.length > 0 && input) {
+      throw new BadRequestException({
+        code: 'MODEL_PROVIDER_PARAMS_UNSUPPORTED',
+        msg: 'No active provider endpoint supports the selected parameter combination.',
+      });
+    }
+    return selected;
   }
 
   private resolveFreeCampaign(

@@ -31,6 +31,10 @@ import { EntitlementService } from '../entitlements';
 import { OutputStorageService } from '../infra/storage/storage.types';
 import { AiGenerationBillingWalletService } from './billing-wallet.service';
 import { AiGenerationOutboxService } from './outbox.service';
+import {
+  ProviderCapacityRuntimeService,
+  type ProviderCapacityGate,
+} from './provider-capacity-runtime.service';
 import type {
   ProviderAdapter,
   ProviderTimingSnapshot,
@@ -105,6 +109,7 @@ export class AiGenerationWorkerService
     private readonly entitlements: EntitlementService,
     private readonly alerts: AlertingService,
     private readonly billingWallet: AiGenerationBillingWalletService,
+    private readonly providerCapacity: ProviderCapacityRuntimeService,
   ) {}
 
   private queuePriorityFor(job: AiJob): number {
@@ -432,18 +437,26 @@ export class AiGenerationWorkerService
 
     try {
       if (this.isAsyncProviderTimedOut(job)) {
-        await this.handleFailure(job, {
+        const payload: AiJobError = {
           code: 'PROVIDER_TIMEOUT',
           message: `Provider job exceeded ${this.maxProviderRuntimeSeconds(job)}s runtime budget.`,
           userMessage:
             'Generation took too long and was stopped. Please try again.',
           retryable: true,
           createdAt: new Date().toISOString(),
-        });
+        };
+        await this.providerCapacity.recordFailure(job, payload);
+        await this.providerCapacity.release(job);
+        await this.handleFailure(job, payload);
         return;
       }
 
-      const result = await adapter.pollStatus(job.providerJobId);
+      await this.providerCapacity.heartbeat(job);
+      const providerContext = await this.store.findProviderAttemptContext(job);
+      const result = await adapter.pollStatus(
+        job.providerJobId,
+        providerContext,
+      );
       if (result.kind === 'pending') {
         const now = new Date().toISOString();
         const executionStartedAt =
@@ -578,6 +591,8 @@ export class AiGenerationWorkerService
           },
         });
         await this.recordProviderCostLedger(latestJob, attempt?.id, result);
+        await this.providerCapacity.recordSuccess(latestJob);
+        await this.providerCapacity.release(latestJob);
         await this.completeWithOutputs(
           latestJob,
           result.outputs,
@@ -629,6 +644,8 @@ export class AiGenerationWorkerService
         result.providerRequestId,
         result.providerEndpoint,
       );
+      await this.providerCapacity.recordFailure(latestJob, result.error);
+      await this.providerCapacity.release(latestJob);
       await this.handleFailure(latestJob, result.error);
     } catch (err) {
       const payload = adapter.mapError(err);
@@ -640,6 +657,7 @@ export class AiGenerationWorkerService
     job: AiJob,
     payload: AiJobError,
   ): Promise<void> {
+    await this.providerCapacity.recordFailure(job, payload);
     await this.recordAttemptSafe(job, {
       status: RETRYABLE_CODES.has(payload.code) ? 'running' : 'failed',
       providerEndpoint: job.deployment,
@@ -647,6 +665,7 @@ export class AiGenerationWorkerService
       timing: { lastStatusAt: new Date().toISOString() },
     });
     if (!RETRYABLE_CODES.has(payload.code)) {
+      await this.providerCapacity.release(job);
       await this.handleFailure(job, payload);
       return;
     }
@@ -868,6 +887,12 @@ export class AiGenerationWorkerService
       return;
     }
 
+    const gate = await this.providerCapacity.reserveForProviderSubmit(job);
+    if (!gate.ok) {
+      await this.deferForProviderCapacity(job, gate);
+      return;
+    }
+
     try {
       const result = await adapter.startGeneration(
         modelId,
@@ -882,26 +907,47 @@ export class AiGenerationWorkerService
       if (result.kind === 'completed') {
         // Sync provider (Azure Foundry image): bytes are here, go
         // straight to upload + complete.
+        const now = new Date().toISOString();
+        const providerCompletedAt = result.providerTiming?.completedAt ?? now;
         const attempt = await this.recordAttemptSafe(job, {
           status: 'succeeded',
-          providerEndpoint: job.deployment,
+          providerRequestId: result.providerRequestId,
+          providerEndpoint: result.providerEndpoint ?? job.deployment,
+          providerStatus: result.providerStatus,
+          providerRequest: result.providerRequest,
+          providerResponse: result.providerResponse,
           providerResponseHeaders: result.providerResponseHeaders,
           costAccounting: result.costAccounting,
           pricingSnapshot: result.pricingSnapshot,
+          runDurationMs:
+            result.providerTiming?.durationMs ??
+            this.elapsedMs(job.startedAt, now),
+          submittedAt: result.providerTiming?.submittedAt ?? job.startedAt,
+          executionStartedAt: result.providerTiming?.executionStartedAt,
           timing: {
+            submittedAt: result.providerTiming?.submittedAt ?? job.startedAt,
+            executionStartedAt: result.providerTiming?.executionStartedAt,
+            completedAt: providerCompletedAt,
+            provider: result.providerTiming,
             diagnostics: result.providerDiagnostics,
           },
-          completedAt: new Date().toISOString(),
+          completedAt: providerCompletedAt,
         });
         await this.recordProviderTraceEventsSafe(
           job,
           attempt?.id,
           result.providerTraceEvents,
-          undefined,
-          job.deployment,
+          result.providerRequestId,
+          result.providerEndpoint ?? job.deployment,
         );
         await this.recordProviderCostLedger(job, attempt?.id, result);
-        await this.completeWithOutputs(job, result.outputs);
+        await this.providerCapacity.recordSuccess(job);
+        await this.providerCapacity.release(job);
+        await this.completeWithOutputs(
+          job,
+          result.outputs,
+          result.providerTiming,
+        );
         return;
       }
 
@@ -960,6 +1006,8 @@ export class AiGenerationWorkerService
       );
     } catch (err) {
       const payload = adapter.mapError(err);
+      await this.providerCapacity.recordFailure(job, payload);
+      await this.providerCapacity.release(job);
       await this.recordAttemptSafe(job, {
         status: 'failed',
         providerEndpoint: job.deployment,
@@ -968,6 +1016,68 @@ export class AiGenerationWorkerService
       });
       await this.handleFailure(job, payload);
     }
+  }
+
+  private async deferForProviderCapacity(
+    job: AiJob,
+    gate: Extract<ProviderCapacityGate, { ok: false }>,
+  ): Promise<void> {
+    const now = new Date().toISOString();
+    const delayMs = Math.max(1_000, gate.retryAfterMs);
+    const retryAt = new Date(Date.now() + delayMs).toISOString();
+    await this.recordTraceSafe(job, {
+      eventType: 'provider_capacity_wait',
+      occurredAt: now,
+      source: 'internal',
+      confidence: 'exact',
+      title: 'Provider capacity wait',
+      description: gate.message,
+      idempotencyKey: `ai_trace:${job.id}:provider_capacity_wait:${job.attempt}:${Date.now()}`,
+      endpointId: gate.endpointKey,
+      payload: {
+        reason: gate.reason,
+        endpointKey: gate.endpointKey,
+        retryAfterMs: delayMs,
+        retryAt,
+        capacity: gate.capacity,
+      },
+    });
+
+    const updated = await this.store.update(job.id, {
+      status: 'in_queue',
+      stage: 'queued',
+      queuedAt: retryAt,
+      progress: null,
+      queuePosition: null,
+      logs: [
+        ...job.logs,
+        {
+          time: now,
+          stage: 'queued',
+          message: `Generation capacity is busy; retrying in ${Math.max(1, Math.round(delayMs / 1000))}s.`,
+        },
+      ],
+    });
+
+    if (updated) {
+      await this.queueService.enqueue(
+        job.queueName,
+        job.id,
+        delayMs,
+        this.queuePriorityFor(job),
+      );
+      const repositioned = await this.store.recomputeQueuePositions(
+        job.queueName,
+      );
+      this.emit(updated);
+      for (const moved of repositioned) {
+        if (moved.id === updated.id) continue;
+        this.emit(moved);
+      }
+    }
+    this.logger.log(
+      `job ${job.id} deferred ${Math.round(delayMs / 1000)}s for ${gate.reason} (${gate.endpointKey})`,
+    );
   }
 
   /**
@@ -1149,6 +1259,7 @@ export class AiGenerationWorkerService
 
   private async markFailed(job: AiJob, payload: AiJobError): Promise<void> {
     const now = new Date().toISOString();
+    await this.providerCapacity.release(job);
     await this.recordTraceSafe(job, {
       eventType: 'job_failed',
       occurredAt: now,

@@ -83,14 +83,29 @@ export interface ProviderTimingSnapshot {
   statusCode?: number | null;
 }
 
+export interface ProviderAsyncOperationContext {
+  providerEndpoint?: string | null;
+  providerRequestId?: string | null;
+  providerRequest?: Record<string, unknown> | null;
+  providerResponse?: unknown;
+  providerResponseHeaders?: Record<string, string> | null;
+  rawStatus?: unknown;
+}
+
 export type StartResult =
   /** Sync provider — bytes are already here, worker proceeds to OSS. */
   | {
       kind: 'completed';
       outputs: RawProviderOutput[];
+      providerRequestId?: string;
+      providerEndpoint?: string;
+      providerStatus?: number | null;
+      providerRequest?: Record<string, unknown>;
+      providerResponse?: unknown;
       providerResponseHeaders?: Record<string, string>;
       costAccounting?: Record<string, unknown> | null;
       pricingSnapshot?: Record<string, unknown> | null;
+      providerTiming?: ProviderTimingSnapshot | null;
       providerDiagnostics?: Record<string, unknown> | null;
       providerTraceEvents?: ProviderTraceEvent[];
     }
@@ -216,7 +231,10 @@ export interface ProviderAdapter {
 
   /** Required for async providers; omit for sync. Adapters
    *  authenticate the status call with their own env-configured key. */
-  pollStatus?(providerJobId: string): Promise<PollResult>;
+  pollStatus?(
+    providerJobId: string,
+    ctx?: ProviderAsyncOperationContext,
+  ): Promise<PollResult>;
 
   /** Required for webhook-based providers; omit for poll-only or sync. */
   parseWebhook?(headers: Record<string, string>, body: unknown): WebhookResult;
@@ -228,7 +246,10 @@ export interface ProviderAdapter {
    * not the source of truth for user-visible state. Adapters
    * authenticate the cancel call with their own env-configured key.
    */
-  cancelGeneration?(providerJobId: string): Promise<void>;
+  cancelGeneration?(
+    providerJobId: string,
+    ctx?: ProviderAsyncOperationContext,
+  ): Promise<void>;
 
   /**
    * Translate a provider-native error (thrown by SDK / HTTP layer)

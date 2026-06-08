@@ -379,7 +379,7 @@ export function PropEditDialog({
                   <AlertDialogHeader>
                     <AlertDialogTitle>Delete prop</AlertDialogTitle>
                     <AlertDialogDescription>
-                      Delete "{form.name || t("unnamedProp")}"? This cannot be undone.
+                      Delete &quot;{form.name || t("unnamedProp")}&quot;? This cannot be undone.
                     </AlertDialogDescription>
                   </AlertDialogHeader>
                   <AlertDialogFooter>

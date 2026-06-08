@@ -34,12 +34,14 @@ export type AdminAiProviderEndpoint = {
   status: "draft" | "active" | "disabled" | "degraded" | "archived";
   healthStatus: "unknown" | "healthy" | "degraded" | "outage";
   supportedModes: unknown;
-  capabilities: unknown;
   providerInputSchema: unknown;
   providerOutputSchema: unknown;
-  providerQuotaPolicy: unknown;
+  maxConcurrentRequests: number | null;
+  maxRequestsPerMinute: number | null;
+  requestTimeoutSeconds: number | null;
+  cooldownSeconds: number | null;
+  failureThreshold: number | null;
   catalogSnapshot: unknown;
-  documentation: unknown;
   disabledReason: string | null;
   updatedAt: string;
   providerAccount?: {
@@ -97,13 +99,7 @@ export type AdminAiProviderBinding = {
   supportedModes: unknown;
   inputSchema: unknown;
   outputSchema: unknown;
-  parameterMap: unknown;
-  queuePolicy: unknown;
-  routingPolicy: unknown;
-  fallbackPolicy: unknown;
-  observabilityPolicy: unknown;
   catalogSnapshot: unknown;
-  documentation: unknown;
   disabledReason: string | null;
   updatedAt: string;
   providerAccount?: {

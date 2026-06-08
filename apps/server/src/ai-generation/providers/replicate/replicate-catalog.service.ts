@@ -1,6 +1,10 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../../infra/db/db.module';
+import {
+  applyProviderConcurrencyLimit,
+  providerCapacityFromRow,
+} from '../../provider-capacity';
 import { AI_QUEUE_IMAGE } from '../../queue';
 import type {
   AiBillingPolicy,
@@ -10,17 +14,17 @@ import type {
 } from '../../types';
 import type { AiModelDefinition } from '../../types';
 import {
-  createGptImage2RuntimeConfig,
-  toGptImage2ModelDefinition,
-  type GptImage2RuntimeConfig,
-} from '../gpt-image-2/gpt-image-2-runtime';
+  createReplicateImageRuntimeConfig,
+  toReplicateImageModelDefinition,
+  type ReplicateImageRuntimeConfig,
+} from './replicate-runtime';
 import { ReplicateConfigService } from './replicate-config.service';
 
 interface ReplicateCatalogCache {
   expiresAt: number;
   models: AiModelDefinition[];
-  runtimeByModelId: Map<string, GptImage2RuntimeConfig>;
-  runtimeByEndpointId: Map<string, GptImage2RuntimeConfig>;
+  runtimeByModelId: Map<string, ReplicateImageRuntimeConfig>;
+  runtimeByEndpointId: Map<string, ReplicateImageRuntimeConfig>;
 }
 
 @Injectable()
@@ -52,7 +56,7 @@ export class ReplicateCatalogService {
 
   async getRuntimeConfig(
     modelId: string,
-  ): Promise<GptImage2RuntimeConfig | null> {
+  ): Promise<ReplicateImageRuntimeConfig | null> {
     const cache = await this.getCache();
     return (
       cache.runtimeByModelId.get(modelId) ??
@@ -65,11 +69,11 @@ export class ReplicateCatalogService {
   private async getCache(): Promise<ReplicateCatalogCache> {
     if (this.cache && this.cache.expiresAt > Date.now()) return this.cache;
     const config = this.configService.config;
-    const runtimeByModelId = new Map<string, GptImage2RuntimeConfig>();
-    const runtimeByEndpointId = new Map<string, GptImage2RuntimeConfig>();
+    const runtimeByModelId = new Map<string, ReplicateImageRuntimeConfig>();
+    const runtimeByEndpointId = new Map<string, ReplicateImageRuntimeConfig>();
     const entries = await this.dbRuntimeConfigs();
     const models = entries.map((entry) => {
-      const model = toGptImage2ModelDefinition({
+      const model = toReplicateImageModelDefinition({
         config: entry.runtime,
         modelId: entry.modelId,
         source: 'replicate-config',
@@ -116,13 +120,18 @@ export class ReplicateCatalogService {
       include: {
         canonicalModel: true,
         providerAccount: true,
+        providerEndpoint: true,
       },
       orderBy: [{ priority: 'asc' }, { weight: 'desc' }, { endpointId: 'asc' }],
     });
 
     return rows.map((row) => {
       const generationModes = stringArray(row.supportedModes);
-      const runtime = createGptImage2RuntimeConfig({
+      const providerCapacity = providerCapacityFromRow(row.providerEndpoint);
+      const canonicalGlobalConcurrency =
+        numberFromPolicy(row.canonicalModel.queuePolicy, 'globalConcurrency') ??
+        12;
+      const runtime = createReplicateImageRuntimeConfig({
         provider: 'replicate',
         endpointId: row.endpointId,
         name: row.canonicalModel.displayName,
@@ -138,11 +147,16 @@ export class ReplicateCatalogService {
           ? (row.disabledReason ?? undefined)
           : 'Replicate provider is not enabled for this environment.',
         queueName: AI_QUEUE_IMAGE,
-        globalConcurrency:
-          numberFromPolicy(row.queuePolicy, 'globalConcurrency') ?? 12,
+        globalConcurrency: applyProviderConcurrencyLimit(
+          canonicalGlobalConcurrency,
+          providerCapacity,
+        ),
         perUserRunning:
-          numberFromPolicy(row.queuePolicy, 'perUserRunning') ?? 2,
-        perUserQueued: numberFromPolicy(row.queuePolicy, 'perUserQueued') ?? 10,
+          numberFromPolicy(row.canonicalModel.queuePolicy, 'perUserRunning') ??
+          2,
+        perUserQueued:
+          numberFromPolicy(row.canonicalModel.queuePolicy, 'perUserQueued') ??
+          10,
         billingPolicy: billingPolicyFromRow(row),
         parameterPolicy: row.canonicalModel.parameterPolicy as AiJsonValue,
       });
@@ -157,6 +171,7 @@ export class ReplicateCatalogService {
           providerEndpointId: row.providerEndpointId,
           providerRoutePriority: row.priority,
           providerRouteWeight: row.weight,
+          providerCapacity,
         },
       };
     });
@@ -164,7 +179,7 @@ export class ReplicateCatalogService {
 }
 
 type ReplicateRuntimeEntry = {
-  runtime: GptImage2RuntimeConfig;
+  runtime: ReplicateImageRuntimeConfig;
   modelId: string;
   ops: NonNullable<AiModelDefinition['ops']>;
 };

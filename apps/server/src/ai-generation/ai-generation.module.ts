@@ -16,6 +16,7 @@ import { AiModelPresetRegistryService } from './model-preset-registry.service';
 import { AiGenerationOutboxService } from './outbox.service';
 import { ProviderAccountReconciler } from './provider-account-reconciler.service';
 import { ProviderRegistry } from './provider-registry.service';
+import { ProviderCapacityRuntimeService } from './provider-capacity-runtime.service';
 import { FoundryProviderAdapter } from './providers/foundry/foundry-provider.adapter';
 import { FoundryCatalogService } from './providers/foundry/catalog.service';
 import { FoundrySchemaFactory } from './providers/foundry/schema.factory';
@@ -32,6 +33,10 @@ import { ReplicateCatalogService } from './providers/replicate/replicate-catalog
 import { ReplicateClient } from './providers/replicate/replicate-client';
 import { ReplicateConfigService } from './providers/replicate/replicate-config.service';
 import { ReplicateProviderAdapter } from './providers/replicate/replicate-provider.adapter';
+import { BytePlusCatalogService } from './providers/byteplus/byteplus-catalog.service';
+import { BytePlusClient } from './providers/byteplus/byteplus-client';
+import { BytePlusConfigService } from './providers/byteplus/byteplus-config.service';
+import { BytePlusProviderAdapter } from './providers/byteplus/byteplus-provider.adapter';
 import { AiGenerationQueueService } from './queue.service';
 import { AiGenerationRepository } from './repository';
 import { AiGenerationRoutingService } from './routing.service';
@@ -64,6 +69,7 @@ import { AiGenerationWorkerService } from './worker.service';
     AiModelOpsService,
     ProviderAccountReconciler,
     ProviderRegistry,
+    ProviderCapacityRuntimeService,
 
     // Provider: Foundry (Azure)
     FoundryCatalogService,
@@ -88,6 +94,12 @@ import { AiGenerationWorkerService } from './worker.service';
     ReplicateCatalogService,
     ReplicateClient,
     ReplicateProviderAdapter,
+
+    // Provider: BytePlus ModelArk
+    BytePlusConfigService,
+    BytePlusCatalogService,
+    BytePlusClient,
+    BytePlusProviderAdapter,
   ],
   exports: [],
 })
@@ -104,6 +116,7 @@ export class AiGenerationModule implements OnModuleInit {
     private readonly fal: FalProviderAdapter,
     private readonly bailian: BailianProviderAdapter,
     private readonly replicate: ReplicateProviderAdapter,
+    private readonly bytePlus: BytePlusProviderAdapter,
   ) {}
 
   onModuleInit(): void {
@@ -111,5 +124,6 @@ export class AiGenerationModule implements OnModuleInit {
     this.registry.register(this.fal);
     this.registry.register(this.bailian);
     this.registry.register(this.replicate);
+    this.registry.register(this.bytePlus);
   }
 }

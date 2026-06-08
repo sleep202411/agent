@@ -36,6 +36,7 @@ import {
   type NotificationDTO,
 } from '@repo/shared';
 import { AuthService } from '../auth/auth.service';
+import { describeUnknown } from '../common/values';
 
 const HEARTBEAT_INTERVAL_MS = 30_000;
 const ZOMBIE_TIMEOUT_MS = 90_000;
@@ -70,17 +71,20 @@ export class NotificationGateway
 
   constructor(private readonly authService: AuthService) {}
 
-  afterInit(_server: Server) {
+  afterInit() {
     const url = process.env.REDIS_URL ?? 'redis://localhost:6379';
     this.redisSubscriber = new Redis(url, { maxRetriesPerRequest: null });
 
-    this.redisSubscriber.psubscribe(NOTIFICATION_CHANNEL_PATTERN, (err) => {
-      if (err) {
-        this.logger.error(`psubscribe failed: ${err.message}`);
-        return;
-      }
-      this.logger.log(`subscribed to ${NOTIFICATION_CHANNEL_PATTERN}`);
-    });
+    void this.redisSubscriber.psubscribe(
+      NOTIFICATION_CHANNEL_PATTERN,
+      (err) => {
+        if (err) {
+          this.logger.error(`psubscribe failed: ${describeUnknown(err)}`);
+          return;
+        }
+        this.logger.log(`subscribed to ${NOTIFICATION_CHANNEL_PATTERN}`);
+      },
+    );
 
     this.redisSubscriber.on('pmessage', (_pattern, channel, raw) => {
       const userId = channel.slice(NOTIFICATION_CHANNEL_PREFIX.length);
@@ -177,7 +181,9 @@ export class NotificationGateway
     if (this.heartbeatTimer) clearInterval(this.heartbeatTimer);
     try {
       await this.redisSubscriber?.quit();
-    } catch {}
+    } catch {
+      this.logger.debug('redis subscriber quit skipped during shutdown');
+    }
   }
 
   private addSubscriber(userId: string, sock: TrackedSocket) {
@@ -213,13 +219,19 @@ export class NotificationGateway
       client.send(
         JSON.stringify({ event: 'terminate', data: { reason, code } }),
       );
-    } catch {}
+    } catch {
+      this.logger.debug('terminate frame skipped because socket is closing');
+    }
     try {
       client.close(code, reason);
-    } catch {}
+    } catch {
+      this.logger.debug(
+        'socket close skipped because socket is already closed',
+      );
+    }
   }
 
-  private async sendHeartbeats() {
+  private sendHeartbeats() {
     for (const subs of this.socketsByUser.values()) {
       for (const sock of subs) {
         if (sock.readyState !== sock.OPEN) continue;
@@ -231,7 +243,9 @@ export class NotificationGateway
             }),
           );
           (sock as TrackedSocket & { ping?: () => void }).ping?.();
-        } catch {}
+        } catch {
+          this.logger.debug('heartbeat skipped because socket is closing');
+        }
       }
     }
   }

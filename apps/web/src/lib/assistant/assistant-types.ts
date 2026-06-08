@@ -388,6 +388,7 @@ export function readMostRecentProjectParam(
     const parts = messages[i]?.parts ?? [];
     for (const part of parts) {
       if (
+        isAssistantToolPart(part) &&
         PARAM_TOOL_TYPES.has(part.type) &&
         part.state === "output-available" &&
         part.output &&

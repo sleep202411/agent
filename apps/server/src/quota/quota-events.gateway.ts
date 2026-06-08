@@ -27,6 +27,7 @@ import {
   type QuotaEventFrame,
 } from '@repo/shared';
 import { AuthService } from '../auth/auth.service';
+import { describeUnknown } from '../common/values';
 
 const HEARTBEAT_INTERVAL_MS = 30_000;
 const ZOMBIE_TIMEOUT_MS = 90_000;
@@ -59,13 +60,13 @@ export class QuotaEventsGateway
 
   constructor(private readonly authService: AuthService) {}
 
-  afterInit(_server: Server) {
+  afterInit() {
     const url = process.env.REDIS_URL ?? 'redis://localhost:6379';
     this.redisSubscriber = new Redis(url, { maxRetriesPerRequest: null });
 
-    this.redisSubscriber.psubscribe(QUOTA_CHANNEL_PATTERN, (err) => {
+    void this.redisSubscriber.psubscribe(QUOTA_CHANNEL_PATTERN, (err) => {
       if (err) {
-        this.logger.error(`psubscribe failed: ${err.message}`);
+        this.logger.error(`psubscribe failed: ${describeUnknown(err)}`);
         return;
       }
       this.logger.log(`subscribed to ${QUOTA_CHANNEL_PATTERN}`);
@@ -159,7 +160,9 @@ export class QuotaEventsGateway
     if (this.heartbeatTimer) clearInterval(this.heartbeatTimer);
     try {
       await this.redisSubscriber?.quit();
-    } catch {}
+    } catch {
+      this.logger.debug('redis subscriber quit skipped during shutdown');
+    }
   }
 
   // ─── helpers ────────────────────────────────────────────────────
@@ -205,7 +208,11 @@ export class QuotaEventsGateway
           sock.send(payload);
           try {
             sock.ping();
-          } catch {}
+          } catch {
+            this.logger.debug(
+              'heartbeat ping skipped because socket is closing',
+            );
+          }
         }
       }
     }
@@ -218,9 +225,15 @@ export class QuotaEventsGateway
         data: { reason, code },
       };
       client.send(JSON.stringify(frame));
-    } catch {}
+    } catch {
+      this.logger.debug('terminate frame skipped because socket is closing');
+    }
     try {
       client.close(code, reason);
-    } catch {}
+    } catch {
+      this.logger.debug(
+        'socket close skipped because socket is already closed',
+      );
+    }
   }
 }

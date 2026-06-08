@@ -16,6 +16,7 @@
 import { Injectable, Logger, OnModuleDestroy } from '@nestjs/common';
 import Redis from 'ioredis';
 import type { AgentState, AgentStateKind } from '@repo/shared';
+import { describeUnknown } from '../../common/values';
 
 @Injectable()
 export class AgentStateService implements OnModuleDestroy {
@@ -36,16 +37,20 @@ export class AgentStateService implements OnModuleDestroy {
         times > 10 ? null : Math.min(times * 500, 5000),
       lazyConnect: true,
     });
-    this.redis.on('error', (err) =>
-      this.logger.warn(`redis error: ${err.message}`),
+    this.redis.on('error', (err: unknown) =>
+      this.logger.warn(`redis error: ${describeUnknown(err)}`),
     );
     void this.redis
       .connect()
-      .catch((err) => this.logger.warn(`redis connect: ${err.message}`));
+      .catch((err: unknown) =>
+        this.logger.warn(`redis connect: ${describeUnknown(err)}`),
+      );
   }
 
   async onModuleDestroy() {
-    await this.redis?.quit().catch(() => {});
+    await this.redis?.quit().catch(() => {
+      this.logger.debug('redis quit skipped during shutdown');
+    });
   }
 
   private k(projectId: string): string {
@@ -67,7 +72,7 @@ export class AgentStateService implements OnModuleDestroy {
       return JSON.parse(raw) as AgentState;
     } catch (err) {
       this.logger.warn(
-        `get(${projectId}) failed, defaulting to idle: ${err instanceof Error ? err.message : err}`,
+        `get(${projectId}) failed, defaulting to idle: ${describeUnknown(err)}`,
       );
       return { kind: 'idle' };
     }

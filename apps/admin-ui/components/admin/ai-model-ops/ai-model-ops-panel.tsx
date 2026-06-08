@@ -177,27 +177,32 @@ const PROVIDER_ENDPOINT_FIELDS = {
   status: { name: "status", label: "状态", required: true },
   healthStatus: { name: "healthStatus", label: "健康状态", required: true },
   disabledReason: { name: "disabledReason", label: "停用原因" },
-  supportedModes: { name: "supportedModes", label: "支持模式 JSON Array" },
-  capabilities: { name: "capabilities", label: "能力描述 JSON" },
+  supportedModes: { name: "supportedModes", label: "支持模式" },
   providerInputSchema: { name: "providerInputSchema", label: "Provider input schema JSON" },
   providerOutputSchema: { name: "providerOutputSchema", label: "Provider output schema JSON" },
-  providerQuotaPolicy: { name: "providerQuotaPolicy", label: "Provider quota JSON" },
+  maxConcurrentRequests: { name: "maxConcurrentRequests", label: "最大并发" },
+  maxRequestsPerMinute: { name: "maxRequestsPerMinute", label: "每分钟请求上限" },
+  requestTimeoutSeconds: { name: "requestTimeoutSeconds", label: "请求超时秒数" },
+  cooldownSeconds: { name: "cooldownSeconds", label: "熔断冷却秒数" },
+  failureThreshold: { name: "failureThreshold", label: "失败熔断阈值" },
   catalogSnapshot: { name: "catalogSnapshot", label: "Catalog snapshot JSON" },
-  documentation: { name: "documentation", label: "Documentation JSON" },
 } satisfies Record<string, AdminFieldDefinition>;
+
+const PROVIDER_MODE_OPTIONS = [
+  { value: "text_to_image", label: "Text to image" },
+  { value: "image_to_image", label: "Image to image" },
+  { value: "inpainting", label: "Inpainting" },
+  { value: "text_to_video", label: "Text to video" },
+  { value: "image_to_video", label: "Image to video" },
+] as const;
 
 const PROVIDER_BINDING_FIELDS = {
   canonicalModelId: { name: "canonicalModelId", label: "统一模型", required: true },
   providerEndpointId: { name: "providerEndpointId", label: "供应商端点", required: true },
   status: { name: "status", label: "状态", required: true },
-  priority: { name: "priority", label: "Priority" },
-  weight: { name: "weight", label: "Weight" },
+  priority: { name: "priority", label: "路由优先级" },
+  weight: { name: "weight", label: "权重" },
   disabledReason: { name: "disabledReason", label: "停用原因" },
-  parameterMap: { name: "parameterMap", label: "参数映射 JSON" },
-  queuePolicy: { name: "queuePolicy", label: "队列策略 JSON" },
-  routingPolicy: { name: "routingPolicy", label: "路由策略 JSON" },
-  fallbackPolicy: { name: "fallbackPolicy", label: "Fallback 策略 JSON" },
-  observabilityPolicy: { name: "observabilityPolicy", label: "观测策略 JSON" },
 } satisfies Record<string, AdminFieldDefinition>;
 
 export function AiModelOpsPanel({
@@ -1091,7 +1096,7 @@ function EndpointsPanel({
         enableSorting: false,
         cell: ({ row }) => (
           <span className="line-clamp-2 max-w-[240px] text-[12px] text-slate-600">
-            {modePreview(row.original.supportedModes, row.original.capabilities)}
+            {modePreview(row.original.supportedModes)}
           </span>
         ),
       },
@@ -1352,13 +1357,9 @@ function ModelsPanel({
       },
       {
         id: "policy",
-        header: "策略",
+        header: "运行策略",
         enableSorting: false,
-        cell: ({ row }) => (
-          <span className="line-clamp-2 max-w-[260px] text-[12px] text-slate-500">
-            {policyPreview(row.original.billingPolicy, row.original.queuePolicy)}
-          </span>
-        ),
+        cell: ({ row }) => <ModelRuntimePolicyCell model={row.original} />,
       },
       {
         id: "actions",
@@ -1413,8 +1414,9 @@ function ModelsPanel({
  * - add a binding (pick an existing endpoint, set priority / weight / status) via the create flow,
  * - edit a binding's routing via the existing BindingPolicyDrawer,
  * - archive (soft-remove) a binding via status: archived.
- * Snapshotted provider schema and parameter maps stay read-only/informational;
- * product pricing is owned by the canonical model.
+ * Snapshotted provider schemas stay read-only/informational; product pricing,
+ * user-facing parameter policy, queue policy, and observability are owned by
+ * the canonical model.
  */
 function ModelBindingsSubTable({
   model,
@@ -1572,6 +1574,36 @@ function ModelBindingsSubTable({
   );
 }
 
+function ModelRuntimePolicyCell({ model }: { model: AdminAiCanonicalModel }) {
+  const parameter = asRecord(model.parameterPolicy);
+  const queue = asRecord(model.queuePolicy);
+  const queueName =
+    stringFromRecord(queue, "queueName") ??
+    (model.modality === "video" ? "ai-video-generation" : "ai-image-generation");
+  const defaults = [
+    stringFromRecord(parameter, "defaultResolution"),
+    stringFromRecord(parameter, "defaultQuality"),
+    stringFromRecord(parameter, "defaultAspectRatio"),
+  ]
+    .filter(Boolean)
+    .join(" / ");
+  const concurrency = `G${numberFromRecord(queue, "globalConcurrency") ?? "-"} · U${
+    numberFromRecord(queue, "perUserRunning") ?? "-"
+  }/${numberFromRecord(queue, "perUserQueued") ?? "-"}`;
+
+  return (
+    <div className="min-w-[230px] leading-tight">
+      <p className="text-[12px] font-medium text-slate-700">
+        {queueName} · {concurrency}
+      </p>
+      <p className="mt-0.5 text-[11px] text-slate-500">
+        {defaults ? `默认 ${defaults}` : "参数策略未配置"}
+      </p>
+      <p className="mt-0.5 text-[11px] text-slate-400">路由按绑定 P/W 执行 · 重试保持提交时路由</p>
+    </div>
+  );
+}
+
 function JobsPanel({
   jobs,
   loading,
@@ -1659,16 +1691,16 @@ function JobsPanel({
               <p className="font-medium text-slate-900">
                 {quotaCost != null ? `${quotaCost} 积分` : "-"}
               </p>
-              <p className="font-mono text-slate-500">
-                {providerCost
-                  ? formatMoney(providerCost.amount, providerCost.currency)
-                  : "provider cost -"}
-              </p>
-              <p className="font-mono text-emerald-700">
-                {profit
-                  ? `${formatProfitUsd(profit.grossProfitUsd)} · ${formatPercent(profit.margin)}`
-                  : "margin -"}
-              </p>
+              {providerCost ? (
+                <p className="font-mono text-slate-500">
+                  {formatMoney(providerCost.amount, providerCost.currency)}
+                </p>
+              ) : null}
+              {profit ? (
+                <p className="font-mono text-emerald-700">
+                  {formatProfitUsd(profit.grossProfitUsd)} · {formatPercent(profit.margin)}
+                </p>
+              ) : null}
             </div>
           );
         },
@@ -1905,6 +1937,7 @@ function ModelPolicyDrawer({
                 />
               )}
             </FormField>
+            <ModelPolicySummary model={draft} />
             <div className="mt-4 grid gap-3 xl:grid-cols-2">
               <JsonTextarea
                 field={MODEL_POLICY_FIELDS.generationModes}
@@ -1953,6 +1986,76 @@ function ModelPolicyDrawer({
         </SheetFooter>
       </SheetContent>
     </Sheet>
+  );
+}
+
+function ModelPolicySummary({ model }: { model: AdminAiCanonicalModel }) {
+  const parameter = asRecord(model.parameterPolicy);
+  const queue = asRecord(model.queuePolicy);
+  const observability = asRecord(model.observabilityPolicy);
+  const priceBand = model.priceBand;
+  const resolutionOptions = compactArray(parameter.resolutionOptions).join(" / ");
+  const qualityOptions = compactArray(parameter.qualityOptions).join(" / ");
+  const aspectRatios = compactArray(parameter.supportedAspectRatios).join(" / ");
+  const queueName =
+    typeof queue.queueName === "string" && queue.queueName.trim()
+      ? queue.queueName
+      : model.modality === "video"
+        ? "ai-video-generation"
+        : "ai-image-generation";
+  const runtimeSeconds = numberFromRecord(queue, "maxProviderRuntimeSeconds");
+  const alertSeconds = numberFromRecord(observability, "alertOnQueueWaitSeconds");
+
+  return (
+    <section className="mt-4 space-y-2">
+      <div className="flex items-center justify-between gap-3">
+        <p className="text-[12px] font-semibold uppercase tracking-[0.08em] text-slate-500">
+          模型级运行策略
+        </p>
+        <span className="text-[11px] text-slate-400">Provider 绑定只负责路由。</span>
+      </div>
+      <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-4">
+        <PolicyStat
+          label="用户价格"
+          value={
+            priceBand
+              ? priceBand.minPoints === priceBand.maxPoints
+                ? `${priceBand.minPoints} 积分/张`
+                : `${priceBand.minPoints}-${priceBand.maxPoints} 积分/张`
+              : "未配置"
+          }
+        />
+        <PolicyStat
+          label="默认价格"
+          value={priceBand ? `${priceBand.defaultPoints} 积分` : "未配置"}
+        />
+        <PolicyStat label="队列" value={queueName} />
+        <PolicyStat
+          label="并发"
+          value={`G${numberFromRecord(queue, "globalConcurrency") ?? "-"} · U${
+            numberFromRecord(queue, "perUserRunning") ?? "-"
+          }/${numberFromRecord(queue, "perUserQueued") ?? "-"}`}
+        />
+        <PolicyStat
+          label="参数默认"
+          value={[
+            stringFromRecord(parameter, "defaultResolution"),
+            stringFromRecord(parameter, "defaultQuality"),
+            stringFromRecord(parameter, "defaultAspectRatio"),
+          ]
+            .filter(Boolean)
+            .join(" / ")}
+        />
+        <PolicyStat label="分辨率" value={resolutionOptions || "未声明"} />
+        <PolicyStat label="质量档" value={qualityOptions || "未声明"} />
+        <PolicyStat label="画幅" value={aspectRatios || "未声明"} />
+        <PolicyStat
+          label="运行超时"
+          value={runtimeSeconds != null ? `${runtimeSeconds}s` : "默认"}
+        />
+        <PolicyStat label="队列告警" value={alertSeconds != null ? `${alertSeconds}s` : "未配置"} />
+      </div>
+    </section>
   );
 }
 
@@ -2100,16 +2203,51 @@ function ProviderEndpointDrawer({
             </FormField>
           </div>
           <div className="mt-4 grid gap-3 xl:grid-cols-2">
-            <JsonTextarea
-              field={PROVIDER_ENDPOINT_FIELDS.supportedModes}
-              value={draft.supportedModes}
-              rows={8}
-            />
-            <JsonTextarea
-              field={PROVIDER_ENDPOINT_FIELDS.capabilities}
-              value={draft.capabilities}
-              rows={8}
-            />
+            <SupportedModesControl value={draft.supportedModes} />
+            <div className="grid gap-3 rounded-xl border border-slate-200 bg-slate-50/60 p-3 md:grid-cols-2">
+              <div className="md:col-span-2">
+                <p className="text-[12px] font-semibold text-slate-700">Provider capacity</p>
+                <p className="mt-0.5 text-[11px] leading-4 text-slate-500">
+                  Static safety limits for this provider endpoint. Runtime lowers model concurrency
+                  against these values and freezes the selected controls on each job.
+                </p>
+              </div>
+              <NumberInputField
+                field={PROVIDER_ENDPOINT_FIELDS.maxConcurrentRequests}
+                value={draft.maxConcurrentRequests}
+                placeholder="例如 4"
+                min={1}
+                max={1000}
+              />
+              <NumberInputField
+                field={PROVIDER_ENDPOINT_FIELDS.maxRequestsPerMinute}
+                value={draft.maxRequestsPerMinute}
+                placeholder="例如 60"
+                min={1}
+                max={100000}
+              />
+              <NumberInputField
+                field={PROVIDER_ENDPOINT_FIELDS.requestTimeoutSeconds}
+                value={draft.requestTimeoutSeconds}
+                placeholder="例如 600"
+                min={1}
+                max={86400}
+              />
+              <NumberInputField
+                field={PROVIDER_ENDPOINT_FIELDS.cooldownSeconds}
+                value={draft.cooldownSeconds}
+                placeholder="例如 120"
+                min={0}
+                max={86400}
+              />
+              <NumberInputField
+                field={PROVIDER_ENDPOINT_FIELDS.failureThreshold}
+                value={draft.failureThreshold}
+                placeholder="例如 3"
+                min={1}
+                max={100}
+              />
+            </div>
             <JsonTextarea
               field={PROVIDER_ENDPOINT_FIELDS.providerInputSchema}
               value={draft.providerInputSchema}
@@ -2121,18 +2259,8 @@ function ProviderEndpointDrawer({
               rows={12}
             />
             <JsonTextarea
-              field={PROVIDER_ENDPOINT_FIELDS.providerQuotaPolicy}
-              value={draft.providerQuotaPolicy}
-              rows={10}
-            />
-            <JsonTextarea
               field={PROVIDER_ENDPOINT_FIELDS.catalogSnapshot}
               value={draft.catalogSnapshot}
-              rows={10}
-            />
-            <JsonTextarea
-              field={PROVIDER_ENDPOINT_FIELDS.documentation}
-              value={draft.documentation}
               rows={10}
             />
           </div>
@@ -2351,25 +2479,7 @@ function EndpointBindingDrawer({
           <FormField field={PROVIDER_BINDING_FIELDS.disabledReason} optional className="mt-4">
             {(controlProps) => <Textarea {...controlProps} className="min-h-20 rounded-lg" />}
           </FormField>
-          <div className="mt-4 grid gap-3 lg:grid-cols-2">
-            <JsonTextarea field={PROVIDER_BINDING_FIELDS.parameterMap} value={{}} />
-            <JsonTextarea
-              field={PROVIDER_BINDING_FIELDS.queuePolicy}
-              value={{ priorityTier: "standard", timeoutMs: 150000 }}
-            />
-            <JsonTextarea
-              field={PROVIDER_BINDING_FIELDS.routingPolicy}
-              value={{ allocation: "weighted", failover: true }}
-            />
-            <JsonTextarea
-              field={PROVIDER_BINDING_FIELDS.fallbackPolicy}
-              value={{ enabled: true, maxAttempts: 2 }}
-            />
-            <JsonTextarea
-              field={PROVIDER_BINDING_FIELDS.observabilityPolicy}
-              value={{ requestPayloads: true, providerTrace: true }}
-            />
-          </div>
+          <RouteBindingPolicyNotice endpoint={snapshotEndpoint} model={model} className="mt-4" />
         </form>
         <SheetFooter className="border-t border-slate-200 bg-slate-50 px-5 py-4">
           <div className="flex justify-end gap-2">
@@ -2470,25 +2580,7 @@ function BindingPolicyDrawer({
               />
             )}
           </FormField>
-          <div className="mt-4 grid gap-3 lg:grid-cols-2">
-            <JsonTextarea
-              field={PROVIDER_BINDING_FIELDS.parameterMap}
-              value={binding.parameterMap}
-            />
-            <JsonTextarea field={PROVIDER_BINDING_FIELDS.queuePolicy} value={binding.queuePolicy} />
-            <JsonTextarea
-              field={PROVIDER_BINDING_FIELDS.routingPolicy}
-              value={binding.routingPolicy}
-            />
-            <JsonTextarea
-              field={PROVIDER_BINDING_FIELDS.fallbackPolicy}
-              value={binding.fallbackPolicy}
-            />
-            <JsonTextarea
-              field={PROVIDER_BINDING_FIELDS.observabilityPolicy}
-              value={binding.observabilityPolicy}
-            />
-          </div>
+          <RouteBindingPolicyNotice binding={binding} className="mt-4" />
         </form>
         <SheetFooter className="border-t border-slate-200 bg-slate-50 px-5 py-4">
           <div className="flex justify-end gap-2">
@@ -2502,6 +2594,38 @@ function BindingPolicyDrawer({
         </SheetFooter>
       </SheetContent>
     </Sheet>
+  );
+}
+
+function RouteBindingPolicyNotice({
+  binding,
+  endpoint,
+  model,
+  className,
+}: {
+  binding?: AdminAiProviderBinding | null;
+  endpoint?: AdminAiProviderEndpoint | null;
+  model?: AdminAiCanonicalModel | null;
+  className?: string;
+}) {
+  const provider = binding?.provider ?? endpoint?.provider ?? "";
+  const endpointId = binding?.endpointId ?? endpoint?.endpointId ?? "";
+  const endpointStatus = binding?.providerEndpoint?.status ?? endpoint?.status ?? "-";
+  const healthStatus =
+    binding?.providerEndpoint?.healthStatus ?? endpoint?.healthStatus ?? "unknown";
+  const canonical = binding?.canonicalModel ?? model;
+
+  return (
+    <section className={cn("grid gap-2 md:grid-cols-2 xl:grid-cols-4", className)}>
+      <PolicyStat label="运行规则" value="先过滤可用能力，再按 Priority 升序" />
+      <PolicyStat label="权重规则" value="同 Priority 下 Weight 越高越优先" />
+      <PolicyStat label="绑定范围" value={canonical ? canonical.displayName : "选择统一模型"} />
+      <PolicyStat label="Provider" value={provider ? providerLabel(provider) : "选择端点"} />
+      <ReadOnlyValue primary={endpointId || "-"} secondary="provider endpoint" />
+      <ReadOnlyValue primary={statusLabel(endpointStatus)} secondary="endpoint status" />
+      <ReadOnlyValue primary={healthLabel(healthStatus)} secondary="endpoint health" />
+      <ReadOnlyValue primary="参数映射由代码 adapter 管理" secondary="DB 不存自由 JSON 映射" />
+    </section>
   );
 }
 
@@ -2581,15 +2705,18 @@ function JobEvidenceSummary({ detail }: { detail: AdminAiJobDetail }) {
         <PolicyStat label="FizzDragon job ID" value={detail.id} />
         <PolicyStat label="Status" value={<JobStatusPill status={detail.status} />} />
         <PolicyStat label="User price" value={quotaCost != null ? `${quotaCost} 积分` : "-"} />
-        <PolicyStat
-          label="Provider cost"
-          value={providerCost ? formatMoney(providerCost.amount, providerCost.currency) : "-"}
-        />
-        <PolicyStat
-          label="Gross profit"
-          value={profit ? formatProfitUsd(profit.grossProfitUsd) : "-"}
-        />
-        <PolicyStat label="Gross margin" value={profit ? formatPercent(profit.margin) : "-"} />
+        {providerCost ? (
+          <PolicyStat
+            label="Provider cost"
+            value={formatMoney(providerCost.amount, providerCost.currency)}
+          />
+        ) : null}
+        {profit ? (
+          <>
+            <PolicyStat label="Gross profit" value={formatProfitUsd(profit.grossProfitUsd)} />
+            <PolicyStat label="Gross margin" value={formatPercent(profit.margin)} />
+          </>
+        ) : null}
       </div>
       <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
         <ReadOnlyValue
@@ -2600,19 +2727,19 @@ function JobEvidenceSummary({ detail }: { detail: AdminAiJobDetail }) {
           primary={detail.providerBinding?.endpointId ?? detail.provider}
           secondary={detail.providerJobId ?? "provider job id -"}
         />
-        <ReadOnlyValue
-          primary={headerUnits ? `${headerUnits} billable units` : "billable units -"}
-          secondary={lastAttempt?.providerRequestId ?? null}
-        />
+        {headerUnits ? (
+          <ReadOnlyValue
+            primary={`${headerUnits} billable units`}
+            secondary={lastAttempt?.providerRequestId ?? null}
+          />
+        ) : null}
         <ReadOnlyValue
           primary={
-            lastAttempt?.providerStatus != null
-              ? `HTTP ${lastAttempt.providerStatus}`
-              : "provider status -"
+            lastAttempt?.providerStatus != null ? `HTTP ${lastAttempt.providerStatus}` : duration
           }
-          secondary={duration}
+          secondary={lastAttempt?.providerStatus != null ? duration : "duration"}
         />
-        <ReadOnlyValue primary={runnerId ?? "runner -"} secondary="x-fal-served-from" />
+        {runnerId ? <ReadOnlyValue primary={runnerId} secondary="x-fal-served-from" /> : null}
       </div>
     </section>
   );
@@ -2709,24 +2836,28 @@ function JobAttemptsEvidence({ attempts }: { attempts: AdminAiJobDetail["attempt
       <div className="divide-y divide-slate-200">
         {attempts.map((attempt) => {
           const cost = asRecord(attempt.costAccounting);
+          const costUsd = numberFromRecord(cost, "providerCostUsd");
+          const billableUnits = numberFromRecord(cost, "billableUnits");
+          const hasCostEvidence = costUsd != null || billableUnits != null;
           return (
-            <div key={attempt.id} className="grid gap-3 px-3 py-3 md:grid-cols-[1fr_1fr_1fr]">
+            <div
+              key={attempt.id}
+              className={
+                hasCostEvidence
+                  ? "grid gap-3 px-3 py-3 md:grid-cols-[1fr_1fr_1fr]"
+                  : "grid gap-3 px-3 py-3 md:grid-cols-[1fr_1fr]"
+              }
+            >
               <ReadOnlyValue
                 primary={`#${attempt.attemptNumber} · ${attempt.status}`}
                 secondary={attempt.providerEndpoint ?? attempt.providerRequestId}
               />
-              <ReadOnlyValue
-                primary={
-                  numberFromRecord(cost, "providerCostUsd") != null
-                    ? formatMoney(numberFromRecord(cost, "providerCostUsd"), "USD")
-                    : "-"
-                }
-                secondary={
-                  numberFromRecord(cost, "billableUnits") != null
-                    ? `${numberFromRecord(cost, "billableUnits")} billable units`
-                    : "costAccounting -"
-                }
-              />
+              {hasCostEvidence ? (
+                <ReadOnlyValue
+                  primary={costUsd != null ? formatMoney(costUsd, "USD") : "Provider cost"}
+                  secondary={billableUnits != null ? `${billableUnits} billable units` : null}
+                />
+              ) : null}
               <ReadOnlyValue
                 primary={attempt.runDurationMs != null ? `${attempt.runDurationMs}ms` : "-"}
                 secondary={attempt.completedAt ? formatDate(attempt.completedAt) : null}
@@ -2888,6 +3019,70 @@ function NativeSelect({
     >
       {children}
     </select>
+  );
+}
+
+function SupportedModesControl({ value }: { value: unknown }) {
+  const selected = new Set(
+    Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : []
+  );
+
+  return (
+    <FormField field={PROVIDER_ENDPOINT_FIELDS.supportedModes} optional>
+      {() => (
+        <div className="rounded-xl border border-slate-200 bg-white p-3">
+          <p className="text-[12px] font-semibold text-slate-700">支持模式</p>
+          <div className="mt-2 grid gap-2 sm:grid-cols-2">
+            {PROVIDER_MODE_OPTIONS.map((mode) => (
+              <label
+                key={mode.value}
+                className="flex h-8 items-center gap-2 rounded-lg border border-slate-200 px-2 text-[12px] font-medium text-slate-700"
+              >
+                <input
+                  type="checkbox"
+                  name={PROVIDER_ENDPOINT_FIELDS.supportedModes.name}
+                  value={mode.value}
+                  defaultChecked={selected.has(mode.value)}
+                  className="size-3.5 rounded border-slate-300 text-slate-950"
+                />
+                {mode.label}
+              </label>
+            ))}
+          </div>
+        </div>
+      )}
+    </FormField>
+  );
+}
+
+function NumberInputField({
+  field,
+  value,
+  placeholder,
+  min,
+  max,
+}: {
+  field: AdminFieldDefinition;
+  value: number | null | undefined;
+  placeholder: string;
+  min: number;
+  max: number;
+}) {
+  return (
+    <FormField field={field} optional>
+      {(controlProps) => (
+        <Input
+          {...controlProps}
+          type="number"
+          min={min}
+          max={max}
+          step={1}
+          defaultValue={value ?? ""}
+          className="h-9 rounded-lg"
+          placeholder={placeholder}
+        />
+      )}
+    </FormField>
   );
 }
 
@@ -3113,6 +3308,39 @@ function buildReplaySnippet(detail: AdminAiJobDetail): string {
   const lastAttempt = detail.attempts.at(-1);
   const endpoint = lastAttempt?.providerEndpoint ?? detail.deployment;
   const input = lastAttempt?.providerRequest ?? detail.normalizedInput ?? detail.input ?? {};
+  if (detail.provider === "replicate") {
+    return [
+      'import Replicate from "replicate";',
+      "",
+      "const replicate = new Replicate({ auth: process.env.REPLICATE_API_TOKEN });",
+      `const prediction = await replicate.predictions.create({`,
+      `  model: ${JSON.stringify(endpoint)},`,
+      `  input: ${formatJson(asRecord(input).input ?? input).replaceAll("\n", "\n  ")},`,
+      "});",
+      "",
+      "console.log(prediction.id);",
+      "console.log(prediction.output);",
+    ].join("\n");
+  }
+
+  if (detail.provider === "byteplus-modelark") {
+    return [
+      "const response = await fetch(",
+      '  `${process.env.BYTEPLUS_MODELARK_API_BASE_URL ?? "https://ark.ap-southeast.bytepluses.com/api/v3"}/images/generations`,',
+      "  {",
+      '    method: "POST",',
+      "    headers: {",
+      "      Authorization: `Bearer ${process.env.BYTEPLUS_MODELARK_API_KEY}`,",
+      '      "Content-Type": "application/json",',
+      "    },",
+      `    body: JSON.stringify(${formatJson(input).replaceAll("\n", "\n    ")}),`,
+      "  },",
+      ");",
+      "",
+      "console.log(await response.json());",
+    ].join("\n");
+  }
+
   return [
     'import { fal } from "@fal-ai/client";',
     "",
@@ -3162,6 +3390,12 @@ function asRecord(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" && !Array.isArray(value)
     ? (value as Record<string, unknown>)
     : {};
+}
+
+function compactArray(value: unknown): string[] {
+  return Array.isArray(value)
+    ? value.filter((item): item is string => typeof item === "string" && item.trim().length > 0)
+    : [];
 }
 
 function parseFiniteNumber(value: unknown): number | null {
@@ -3250,12 +3484,6 @@ function defaultProviderEndpointDraft(
     status: "draft",
     healthStatus: "unknown",
     supportedModes: ["text_to_image"],
-    capabilities: {
-      family: "",
-      supportsReferenceImage: false,
-      supportsImageEdit: false,
-      supportsBatchOutput: true,
-    },
     providerInputSchema: {
       type: "object",
       properties: {},
@@ -3265,12 +3493,12 @@ function defaultProviderEndpointDraft(
       type: "object",
       properties: {},
     },
-    providerQuotaPolicy: {
-      maxConcurrentRequests: 2,
-      timeoutMs: 150000,
-    },
+    maxConcurrentRequests: null,
+    maxRequestsPerMinute: null,
+    requestTimeoutSeconds: null,
+    cooldownSeconds: null,
+    failureThreshold: null,
     catalogSnapshot: {},
-    documentation: {},
     disabledReason: null,
     updatedAt: "",
     providerAccount: providerAccount
@@ -3321,13 +3549,21 @@ function buildProviderEndpointPayload(form: FormData) {
     displayName: requiredString(form, PROVIDER_ENDPOINT_FIELDS.displayName),
     status: requiredString(form, PROVIDER_ENDPOINT_FIELDS.status),
     healthStatus: requiredString(form, PROVIDER_ENDPOINT_FIELDS.healthStatus),
-    supportedModes: jsonArrayField(form, PROVIDER_ENDPOINT_FIELDS.supportedModes),
-    capabilities: jsonObjectField(form, PROVIDER_ENDPOINT_FIELDS.capabilities),
+    supportedModes: stringArrayField(form, PROVIDER_ENDPOINT_FIELDS.supportedModes),
     providerInputSchema: jsonObjectField(form, PROVIDER_ENDPOINT_FIELDS.providerInputSchema),
     providerOutputSchema: jsonObjectField(form, PROVIDER_ENDPOINT_FIELDS.providerOutputSchema),
-    providerQuotaPolicy: jsonObjectField(form, PROVIDER_ENDPOINT_FIELDS.providerQuotaPolicy),
+    maxConcurrentRequests: nullableIntegerField(
+      form,
+      PROVIDER_ENDPOINT_FIELDS.maxConcurrentRequests
+    ),
+    maxRequestsPerMinute: nullableIntegerField(form, PROVIDER_ENDPOINT_FIELDS.maxRequestsPerMinute),
+    requestTimeoutSeconds: nullableIntegerField(
+      form,
+      PROVIDER_ENDPOINT_FIELDS.requestTimeoutSeconds
+    ),
+    cooldownSeconds: nullableIntegerField(form, PROVIDER_ENDPOINT_FIELDS.cooldownSeconds),
+    failureThreshold: nullableIntegerField(form, PROVIDER_ENDPOINT_FIELDS.failureThreshold),
     catalogSnapshot: jsonObjectField(form, PROVIDER_ENDPOINT_FIELDS.catalogSnapshot),
-    documentation: jsonObjectField(form, PROVIDER_ENDPOINT_FIELDS.documentation),
     disabledReason: nullableString(form, PROVIDER_ENDPOINT_FIELDS.disabledReason),
   };
 }
@@ -3347,11 +3583,6 @@ function buildProviderBindingPayload(form: FormData) {
     priority: integerField(form, PROVIDER_BINDING_FIELDS.priority, 100),
     weight: integerField(form, PROVIDER_BINDING_FIELDS.weight, 100),
     disabledReason: nullableString(form, PROVIDER_BINDING_FIELDS.disabledReason),
-    parameterMap: jsonObjectField(form, PROVIDER_BINDING_FIELDS.parameterMap),
-    queuePolicy: jsonObjectField(form, PROVIDER_BINDING_FIELDS.queuePolicy),
-    routingPolicy: jsonObjectField(form, PROVIDER_BINDING_FIELDS.routingPolicy),
-    fallbackPolicy: jsonObjectField(form, PROVIDER_BINDING_FIELDS.fallbackPolicy),
-    observabilityPolicy: jsonObjectField(form, PROVIDER_BINDING_FIELDS.observabilityPolicy),
   };
 }
 
@@ -3381,6 +3612,21 @@ function stringField(form: FormData, field: AdminFieldDefinition) {
 function integerField(form: FormData, field: AdminFieldDefinition, fallback: number) {
   const value = Number.parseInt(stringField(form, field), 10);
   return Number.isFinite(value) ? value : fallback;
+}
+
+function nullableIntegerField(form: FormData, field: AdminFieldDefinition) {
+  const raw = stringField(form, field);
+  if (!raw) return null;
+  const value = Number.parseInt(raw, 10);
+  return Number.isFinite(value) ? value : null;
+}
+
+function stringArrayField(form: FormData, field: AdminFieldDefinition) {
+  return form
+    .getAll(field.name)
+    .filter((item): item is string => typeof item === "string")
+    .map((item) => item.trim())
+    .filter(Boolean);
 }
 
 function jsonObjectField(form: FormData, field: AdminFieldDefinition): JsonObject {
@@ -3459,18 +3705,9 @@ function jobStatusLabel(status: string) {
   );
 }
 
-function modePreview(supportedModes: unknown, capabilities: unknown) {
+function modePreview(supportedModes: unknown) {
   const modes = Array.isArray(supportedModes)
     ? supportedModes.filter((item): item is string => typeof item === "string")
     : [];
-  const family =
-    isPlainObject(capabilities) && typeof capabilities.family === "string"
-      ? capabilities.family
-      : null;
-  return [family, modes.join(" / ")].filter(Boolean).join(" · ") || "未声明能力";
-}
-
-function policyPreview(...values: unknown[]) {
-  const populated = values.find((value) => isPlainObject(value) && Object.keys(value).length > 0);
-  return populated ? JSON.stringify(populated).slice(0, 160) : "继承默认策略";
+  return modes.join(" / ") || "未声明能力";
 }

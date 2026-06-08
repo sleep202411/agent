@@ -19,6 +19,7 @@ import {
   Req,
 } from '@nestjs/common';
 import type { Request } from 'express';
+import { describeUnknown } from '../common/values';
 
 type JavaService = 'content' | 'studio';
 
@@ -71,7 +72,9 @@ export class DictionariesController {
         },
       });
     } catch (err) {
-      this.logger.error(`[dictionaries] fetch failed ${path}: ${String(err)}`);
+      this.logger.error(
+        `[dictionaries] fetch failed ${path}: ${describeUnknown(err)}`,
+      );
       throw new HttpException('upstream unreachable', HttpStatus.BAD_GATEWAY);
     }
 
@@ -87,7 +90,8 @@ export class DictionariesController {
     }
 
     try {
-      return JSON.parse(text);
+      const parsed: unknown = JSON.parse(text);
+      return parsed;
     } catch {
       this.logger.error(
         `[dictionaries] invalid JSON from ${path}: ${text.slice(0, 300)}`,

@@ -8,7 +8,7 @@
  *
  *   1. Query the active `AiCanonicalModel` rows, joined to their
  *      ACTIVE provider bindings ordered by route priority (asc) → weight
- *      (desc) → endpointId. `bindings[0]` is the PRIMARY active binding.
+ *      (desc) → endpointId.
  *   2. Canonical models with NO active binding cannot generate — every part
  *      of the AiModelDefinition (input_schema, provider, deployment, ops) is
  *      assembled from the primary binding — so they are EXCLUDED from the
@@ -40,6 +40,7 @@ import { PrismaService } from '../infra/db/db.module';
 import { FalCatalogService } from './providers/fal/fal-catalog.service';
 import { BailianCatalogService } from './providers/bailian/bailian-catalog.service';
 import { ReplicateCatalogService } from './providers/replicate/replicate-catalog.service';
+import { BytePlusCatalogService } from './providers/byteplus/byteplus-catalog.service';
 import type { AiModelDefinition } from './types';
 
 /**
@@ -67,9 +68,11 @@ export class AiCanonicalCatalogService {
     private readonly fal: FalCatalogService,
     private readonly bailian: BailianCatalogService,
     private readonly replicate: ReplicateCatalogService,
+    private readonly bytePlus: BytePlusCatalogService,
   ) {
     this.catalogByProvider = {
       'fal-ai': this.fal,
+      'byteplus-modelark': this.bytePlus,
       'aliyun-bailian': this.bailian,
       replicate: this.replicate,
     };
@@ -93,14 +96,11 @@ export class AiCanonicalCatalogService {
             archivedAt: null,
             providerAccount: { status: 'active', archivedAt: null },
           },
-          // Same ordering the provider catalogs use: the survivor is the
-          // primary (highest-priority) binding per canonical.
           orderBy: [
             { priority: 'asc' },
             { weight: 'desc' },
             { endpointId: 'asc' },
           ],
-          take: 1,
           select: { provider: true },
         },
       },
@@ -109,38 +109,37 @@ export class AiCanonicalCatalogService {
 
     const models: AiModelDefinition[] = [];
     for (const canonical of canonicals) {
-      const primary = canonical.bindings[0];
       // Canonical-only model (no active binding) — cannot generate.
       // Excluded from the runtime catalog: there is no provider /
       // endpoint / schema to assemble and routing.resolve would
       // MODEL_NOT_FOUND on submit.
-      if (!primary) continue;
+      if (canonical.bindings.length === 0) continue;
 
-      const catalog = this.catalogByProvider[primary.provider];
-      if (!catalog) {
-        // A binding points at a provider that has no binding-driven
-        // catalog service registered here. Skip rather than fall back to
-        // any self-emitted definition.
-        this.logger.warn(
-          `Canonical "${canonical.slug}" primary binding uses provider ` +
-            `"${primary.provider}" which has no binding-driven catalog; skipping.`,
-        );
-        continue;
+      const candidates: AiModelDefinition[] = [];
+      for (const binding of canonical.bindings) {
+        const catalog = this.catalogByProvider[binding.provider];
+        if (!catalog) {
+          this.logger.warn(
+            `Canonical "${canonical.slug}" binding uses provider ` +
+              `"${binding.provider}" which has no binding-driven catalog; skipping provider.`,
+          );
+          continue;
+        }
+
+        const model = await catalog.getModel(canonical.slug);
+        if (!model) {
+          this.logger.warn(
+            `Canonical "${canonical.slug}" has an active ${binding.provider} ` +
+              `binding but its catalog produced no definition; skipping provider.`,
+          );
+          continue;
+        }
+        candidates.push(model);
+        if (model.enabled) break;
       }
 
-      // The provider catalog already collapses to the primary binding
-      // and emits the definition keyed by the canonical slug, carrying
-      // ops + deployment. Resolving by slug returns exactly that
-      // primary-binding definition.
-      const model = await catalog.getModel(canonical.slug);
-      if (!model) {
-        this.logger.warn(
-          `Canonical "${canonical.slug}" has an active ${primary.provider} ` +
-            `binding but its catalog produced no definition; skipping.`,
-        );
-        continue;
-      }
-      models.push(model);
+      const model = candidates.find((item) => item.enabled) ?? candidates[0];
+      if (model) models.push(model);
     }
 
     return models;

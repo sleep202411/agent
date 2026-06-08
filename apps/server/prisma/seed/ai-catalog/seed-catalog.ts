@@ -21,11 +21,10 @@ import {
   buildBillingPolicy,
   buildEntitlementPolicy,
   buildMetadata,
+  buildOutputPolicy,
   buildQueuePolicy,
   buildUiPolicy,
   OBSERVABILITY_POLICY,
-  OUTPUT_POLICY,
-  PARAMETER_POLICY,
 } from './defaults';
 import {
   IMAGE_MODELS,
@@ -52,8 +51,8 @@ function buildCanonicalPayload(
     generationModes: model.modes as Prisma.InputJsonValue,
     status: 'active',
     description: model.description,
-    parameterPolicy: PARAMETER_POLICY,
-    outputPolicy: OUTPUT_POLICY,
+    parameterPolicy: model.parameterPolicy,
+    outputPolicy: buildOutputPolicy(model.productPricing),
     entitlementPolicy: buildEntitlementPolicy(model.tier),
     billingPolicy: buildBillingPolicy(model.cost, model.productPricing),
     queuePolicy: buildQueuePolicy(model.tier),
@@ -104,8 +103,10 @@ function buildEndpointPayload(args: {
 
 /**
  * Build the binding payload once, matching `providerBindingDataFromEndpoint`:
- * provider-facing fields come from the endpoint; `queuePolicy` mirrors the
- * canonical queue caps. Product pricing is read from the canonical model.
+ * provider-facing fields come from the endpoint. Product pricing, user-facing
+ * parameter policy, queue policy, and observability stay on the canonical
+ * model. Provider request mapping stays in adapter code; retries preserve the
+ * submit-time routing snapshot.
  */
 function buildBindingPayload(args: {
   endpoint: {
@@ -118,12 +119,10 @@ function buildBindingPayload(args: {
     providerInputSchema: Prisma.JsonValue;
     providerOutputSchema: Prisma.JsonValue;
     catalogSnapshot: Prisma.JsonValue;
-    documentation: Prisma.JsonValue;
   };
   canonicalModelId: string;
   priority: number;
   weight: number;
-  queuePolicy: Prisma.InputJsonObject;
 }): Prisma.AiProviderModelBindingUncheckedCreateInput {
   const { endpoint } = args;
   return {
@@ -143,9 +142,7 @@ function buildBindingPayload(args: {
     providerInputSchema: endpoint.providerInputSchema as Prisma.InputJsonValue,
     providerOutputSchema:
       endpoint.providerOutputSchema as Prisma.InputJsonValue,
-    queuePolicy: args.queuePolicy,
     catalogSnapshot: endpoint.catalogSnapshot as Prisma.InputJsonValue,
-    documentation: endpoint.documentation as Prisma.InputJsonValue,
     disabledReason: null,
     createdByAdminId: SEED_ADMIN_ID,
     updatedByAdminId: SEED_ADMIN_ID,
@@ -322,18 +319,14 @@ async function bindProviderEntry(args: {
       providerInputSchema: true,
       providerOutputSchema: true,
       catalogSnapshot: true,
-      documentation: true,
     },
   });
-
-  const queuePolicy = buildQueuePolicy(model.tier);
 
   const bindingPayload = buildBindingPayload({
     endpoint,
     canonicalModelId,
     priority: entry.priority ?? 100,
     weight: entry.weight ?? 100,
-    queuePolicy,
   });
 
   await prisma.aiProviderModelBinding.upsert({

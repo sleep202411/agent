@@ -34,6 +34,7 @@ import type {
   AiJobType,
   AiRoutingSnapshot,
 } from './types';
+import type { ProviderAsyncOperationContext } from './provider-adapter';
 
 export interface AiJobListOptions {
   userId: string;
@@ -377,6 +378,31 @@ export class AiGenerationRepository {
         startedAt: new Date(),
       } as Prisma.AiJobAttemptUncheckedCreateInput,
     });
+  }
+
+  async findProviderAttemptContext(
+    job: Pick<AiJob, 'id' | 'attempt'>,
+  ): Promise<ProviderAsyncOperationContext | undefined> {
+    const row = await this.prisma.aiJobAttempt.findFirst({
+      where: { jobId: job.id, attemptNumber: job.attempt },
+      select: {
+        providerEndpoint: true,
+        providerRequestId: true,
+        providerRequest: true,
+        providerResponse: true,
+        providerResponseHeaders: true,
+        rawStatus: true,
+      },
+    });
+    if (!row) return undefined;
+    return {
+      providerEndpoint: row.providerEndpoint,
+      providerRequestId: row.providerRequestId,
+      providerRequest: jsonRecordOrNull(row.providerRequest),
+      providerResponse: row.providerResponse,
+      providerResponseHeaders: stringRecordOrNull(row.providerResponseHeaders),
+      rawStatus: row.rawStatus,
+    };
   }
 
   async recordCostLedgerEntry(
@@ -878,6 +904,21 @@ function setJsonIfPresent(
 ): void {
   if (value === undefined) return;
   out[key] = value === null ? Prisma.DbNull : (value as Prisma.InputJsonValue);
+}
+
+function jsonRecordOrNull(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : null;
+}
+
+function stringRecordOrNull(value: unknown): Record<string, string> | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  const out: Record<string, string> = {};
+  for (const [key, item] of Object.entries(value)) {
+    if (typeof item === 'string') out[key] = item;
+  }
+  return out;
 }
 
 // Re-export Prisma row types so other repo-adjacent code can use them

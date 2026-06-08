@@ -33,6 +33,7 @@ import type { IncomingMessage } from 'http';
 import type { Server, WebSocket } from 'ws';
 import { AuthService } from '../../auth/auth.service';
 import { MessageStoreService } from './message-store.service';
+import { describeUnknown } from '../../common/values';
 
 const REDIS_CHANNEL_PATTERN = 'chat:events:*';
 const REDIS_CHANNEL_PREFIX = 'chat:events:';
@@ -107,14 +108,14 @@ export class ChatEventsGateway
     private readonly store: MessageStoreService,
   ) {}
 
-  afterInit(_server: Server) {
+  afterInit() {
     const url = process.env.REDIS_URL ?? 'redis://localhost:6379';
     this.redisSubscriber = new Redis(url, { maxRetriesPerRequest: null });
 
-    this.redisSubscriber.psubscribe(REDIS_CHANNEL_PATTERN, (err) => {
+    void this.redisSubscriber.psubscribe(REDIS_CHANNEL_PATTERN, (err) => {
       if (err) {
         this.logger.error(
-          `Failed to psubscribe(${REDIS_CHANNEL_PATTERN}): ${err.message}`,
+          `Failed to psubscribe(${REDIS_CHANNEL_PATTERN}): ${describeUnknown(err)}`,
         );
         return;
       }
@@ -256,7 +257,9 @@ export class ChatEventsGateway
     if (this.heartbeatTimer) clearInterval(this.heartbeatTimer);
     try {
       await this.redisSubscriber?.quit();
-    } catch {}
+    } catch {
+      this.logger.debug('redis subscriber quit skipped during shutdown');
+    }
   }
 
   // ─── Helpers ─────────────────────────────────────────────
@@ -294,10 +297,16 @@ export class ChatEventsGateway
       client.send(
         JSON.stringify({ event: 'terminate', data: { reason, code } }),
       );
-    } catch {}
+    } catch {
+      this.logger.debug('terminate frame skipped because socket is closing');
+    }
     try {
       client.close(code, reason);
-    } catch {}
+    } catch {
+      this.logger.debug(
+        'socket close skipped because socket is already closed',
+      );
+    }
   }
 
   private async sendHeartbeats() {

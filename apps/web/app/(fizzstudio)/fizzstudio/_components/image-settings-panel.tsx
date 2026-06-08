@@ -29,7 +29,10 @@ import {
 type SettingsIcon = ComponentType<{ className?: string; stroke?: number }>;
 
 /** Map a catalog model (by id / name) to a brand-or-family tabler icon. */
-const MODEL_ICON_RULES: Array<[RegExp, SettingsIcon]> = [[/gpt/, IconBrandOpenai]];
+const MODEL_ICON_RULES: Array<[RegExp, SettingsIcon]> = [
+  [/gpt/, IconBrandOpenai],
+  [/seedream|nano/, IconSparkles],
+];
 
 function modelIcon(model: FizzAiModel): SettingsIcon {
   const key = `${model.id ?? ""} ${model.name ?? ""}`.toLowerCase();
@@ -77,6 +80,17 @@ export const DEFAULT_IMAGE_GENERATION_SETTINGS: ImageGenerationSettings = {
 // fal `imageSize` enum tokens → friendly label + orientation icon. Unknown tokens
 // fall back to the raw token + a generic rectangle so new server enums still render.
 const IMAGE_SIZE_META: Record<string, { icon: SettingsIcon; label: string; mp: number }> = {
+  "1:1": { icon: IconSquare, label: "1:1", mp: 1 },
+  "4:3": { icon: IconRectangle, label: "4:3", mp: 1 },
+  "3:4": { icon: IconRectangleVertical, label: "3:4", mp: 1 },
+  "16:9": { icon: IconRectangle, label: "16:9", mp: 1 },
+  "9:16": { icon: IconRectangleVertical, label: "9:16", mp: 1 },
+  "3:2": { icon: IconRectangle, label: "3:2", mp: 1 },
+  "2:3": { icon: IconRectangleVertical, label: "2:3", mp: 1 },
+  "4:5": { icon: IconRectangleVertical, label: "4:5", mp: 1 },
+  "5:4": { icon: IconRectangle, label: "5:4", mp: 1 },
+  "21:9": { icon: IconRectangle, label: "21:9", mp: 1 },
+  "9:21": { icon: IconRectangleVertical, label: "9:21", mp: 1 },
   square_hd: { icon: IconSquare, label: "1:1 HD", mp: 1.05 }, // 1024×1024
   square: { icon: IconSquare, label: "1:1", mp: 0.26 }, // 512×512
   portrait_4_3: { icon: IconRectangleVertical, label: "3:4", mp: 0.79 }, // 768×1024

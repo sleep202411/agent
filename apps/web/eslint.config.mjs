@@ -11,8 +11,22 @@ const eslintConfig = defineConfig([
     ".next/**",
     "out/**",
     "build/**",
+    "public/assets/**",
     "next-env.d.ts",
   ]),
+  {
+    rules: {
+      // React Compiler is not enabled in next.config.ts. Keep these diagnostics
+      // visible, but do not make them the current production gate until the app
+      // is intentionally migrated to compiler-compatible patterns.
+      "react-hooks/immutability": "warn",
+      "react-hooks/preserve-manual-memoization": "warn",
+      "react-hooks/purity": "warn",
+      "react-hooks/refs": "warn",
+      "react-hooks/set-state-in-effect": "warn",
+      "react-hooks/use-memo": "warn",
+    },
+  },
 ]);
 
 export default eslintConfig;

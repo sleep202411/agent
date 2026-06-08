@@ -69,6 +69,7 @@ export function ToolProposalCard({ toolName, part, onApplyResult }: ToolProposal
   const t = useTranslations("ai");
   const displayName = getAssistantToolDisplayName(toolName);
   const [submitted, setSubmitted] = useState(false);
+  const [currentIdx, setCurrentIdx] = useState(0);
 
   const isStreaming = part.state === "input-streaming";
   const isReady = part.state === "input-available";
@@ -103,7 +104,6 @@ export function ToolProposalCard({ toolName, part, onApplyResult }: ToolProposal
       | BatchScriptsOutput
       | undefined;
     const scripts = output?.scripts ?? [];
-    const [currentIdx, setCurrentIdx] = useState(0);
     const current = scripts[currentIdx];
 
     if (scripts.length === 0 && !isStreaming) {

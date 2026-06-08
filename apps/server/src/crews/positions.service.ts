@@ -19,11 +19,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { PrismaService } from '../infra/db/db.module';
-import {
-  assertAllowedCurrency,
-  toSmallestUnit,
-  type CurrencyCode,
-} from '../common/currency';
+import { assertAllowedCurrency, toSmallestUnit } from '../common/currency';
 import type { CreatePositionInput, UpdatePositionInput } from './dto';
 import { newCrewDomainId } from './id';
 import { toPositionDTO } from './mappers';

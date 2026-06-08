@@ -59,14 +59,95 @@ function coarseCapability(type: AiJobType) {
   return type === 'video' ? 'video_generation' : 'image_generation';
 }
 
+function isNanoBananaEndpoint(endpointId: string): boolean {
+  return /^fal-ai\/nano-banana(?:-2|-pro)?(?:\/edit)?$/.test(endpointId);
+}
+
+function isSeedreamEndpoint(endpointId: string): boolean {
+  return /^fal-ai\/bytedance\/seedream\/v(?:4(?:\.5)?|5\/lite)\/text-to-image(?:\/edit)?$/.test(
+    endpointId,
+  );
+}
+
+function recordValue(value: unknown): Record<string, unknown> | null {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : null;
+}
+
+function stringArrayFromPolicy(
+  policy: AiJsonValue | undefined,
+  key: string,
+): string[] {
+  const value = recordValue(policy)?.[key];
+  return Array.isArray(value)
+    ? value.filter((item): item is string => typeof item === 'string')
+    : [];
+}
+
+function numberArrayFromPolicy(
+  policy: AiJsonValue | undefined,
+  key: string,
+): number[] {
+  const value = recordValue(policy)?.[key];
+  return Array.isArray(value)
+    ? value.filter(
+        (item): item is number =>
+          typeof item === 'number' && Number.isFinite(item),
+      )
+    : [];
+}
+
+function stringFromPolicy(
+  policy: AiJsonValue | undefined,
+  key: string,
+): string | undefined {
+  const value = recordValue(policy)?.[key];
+  return typeof value === 'string' && value.trim() ? value : undefined;
+}
+
+function referencePolicy(policy: AiJsonValue | undefined): {
+  enabled: boolean;
+  min: number;
+  max: number;
+  maskSupported: boolean;
+} {
+  const value = recordValue(recordValue(policy)?.referenceImages);
+  return {
+    enabled: value?.enabled !== false,
+    min:
+      typeof value?.min === 'number' && Number.isFinite(value.min)
+        ? Math.max(0, value.min)
+        : 0,
+    max:
+      typeof value?.max === 'number' && Number.isFinite(value.max)
+        ? Math.max(0, value.max)
+        : 4,
+    maskSupported: value?.maskSupported !== false,
+  };
+}
+
+function seedEnabled(policy: AiJsonValue | undefined): boolean {
+  return recordValue(recordValue(policy)?.seed)?.enabled !== false;
+}
+
 function inputSchemaFor(
+  endpointId: string,
   type: AiJobType,
   generationModes: AiGenerationMode[],
+  parameterPolicy?: AiJsonValue,
 ): AiInputSchema {
   const imageMode = type === 'image';
   const firstLastFrame = generationModes.includes('first_last_frame_to_video');
   const imageToVideo = generationModes.includes('image_to_video');
   const imageToImage = generationModes.includes('image_to_image');
+  const nanoBanana = isNanoBananaEndpoint(endpointId);
+  const seedream = isSeedreamEndpoint(endpointId);
+  const aspectRatioDriven = nanoBanana || seedream;
+  const referenceBase = referencePolicy(parameterPolicy);
+  const reference = seedream
+    ? { ...referenceBase, max: Math.min(referenceBase.max, 10) }
+    : referenceBase;
 
   const properties: AiInputSchema['properties'] = {
     prompt: {
@@ -86,86 +167,160 @@ function inputSchemaFor(
   };
 
   if (imageMode || imageToImage) {
+    const aspectOptions = stringArrayFromPolicy(
+      parameterPolicy,
+      'supportedAspectRatios',
+    );
+    const resolutionOptions = stringArrayFromPolicy(
+      parameterPolicy,
+      'resolutionOptions',
+    );
+    const qualityOptions = stringArrayFromPolicy(
+      parameterPolicy,
+      'qualityOptions',
+    );
+    const outputFormatOptions = stringArrayFromPolicy(
+      parameterPolicy,
+      'outputFormatOptions',
+    );
+    const variationOptions = numberArrayFromPolicy(
+      parameterPolicy,
+      'variationOptions',
+    );
+    const maxVariations =
+      variationOptions.length > 0 ? Math.max(...variationOptions) : 4;
+
     properties.imageSize = {
       type: 'string',
       title: 'Image size',
-      default: 'landscape_4_3',
-      enum: [
-        'square_hd',
-        'square',
-        'portrait_4_3',
-        'portrait_16_9',
-        'landscape_4_3',
-        'landscape_16_9',
-      ],
+      default: aspectRatioDriven
+        ? (stringFromPolicy(parameterPolicy, 'defaultAspectRatio') ?? '1:1')
+        : 'landscape_4_3',
+      enum: aspectRatioDriven
+        ? aspectOptions.length > 0
+          ? aspectOptions
+          : ['1:1', '4:3', '3:4', '16:9', '9:16']
+        : [
+            'square_hd',
+            'square',
+            'portrait_4_3',
+            'portrait_16_9',
+            'landscape_4_3',
+            'landscape_16_9',
+          ],
       'x-ui': {
         control: 'select',
         group: 'settings',
         order: 20,
         importance: 'secondary',
       },
-      'x-provider': { parameter: 'image_size' },
-    };
-    properties.resolution = {
-      type: 'string',
-      title: 'Resolution',
-      default: '1K',
-      enum: ['1K', '2K', '4K'],
-      'x-ui': {
-        control: 'segmented',
-        group: 'settings',
-        order: 24,
-        importance: 'secondary',
+      'x-provider': {
+        parameter: nanoBanana ? 'aspect_ratio' : 'image_size',
       },
     };
-    properties.quality = {
-      type: 'string',
-      title: 'Quality',
-      default: 'medium',
-      enum: ['low', 'medium', 'high'],
-      'x-ui': {
-        control: 'segmented',
-        group: 'settings',
-        order: 26,
-        importance: 'secondary',
-      },
-      'x-provider': { parameter: 'quality' },
-    };
-    properties.numOutputs = {
-      type: 'integer',
-      title: 'Outputs',
-      default: 1,
-      minimum: 1,
-      maximum: 4,
-      'x-ui': {
-        control: 'stepper',
-        group: 'settings',
-        order: 30,
-        importance: 'secondary',
-      },
-      'x-provider': { parameter: 'num_images', omitIfDefault: true },
-    };
-    properties.outputFormat = {
-      type: 'string',
-      title: 'Output format',
-      default: 'png',
-      enum: ['png', 'jpeg', 'webp'],
-      'x-ui': {
-        control: 'segmented',
-        group: 'advanced',
-        order: 84,
-        importance: 'advanced',
-      },
-      'x-provider': { parameter: 'output_format', omitIfDefault: true },
-    };
+
+    if (resolutionOptions.length > 0) {
+      properties.resolution = {
+        type: 'string',
+        title: 'Resolution',
+        default:
+          stringFromPolicy(parameterPolicy, 'defaultResolution') ??
+          resolutionOptions[0],
+        enum: resolutionOptions,
+        'x-ui': {
+          control: 'segmented',
+          group: 'settings',
+          order: 24,
+          importance: 'secondary',
+        },
+        ...(nanoBanana
+          ? ({
+              'x-provider': {
+                parameter: 'resolution',
+                omitIfDefault: true,
+              },
+            } as const)
+          : {}),
+      };
+    } else if (!nanoBanana) {
+      properties.resolution = {
+        type: 'string',
+        title: 'Resolution',
+        default: '1K',
+        enum: ['1K', '2K', '4K'],
+        'x-ui': {
+          control: 'segmented',
+          group: 'settings',
+          order: 24,
+          importance: 'secondary',
+        },
+      };
+    }
+
+    if (!nanoBanana && qualityOptions.length > 0) {
+      properties.quality = {
+        type: 'string',
+        title: 'Quality',
+        default:
+          stringFromPolicy(parameterPolicy, 'defaultQuality') ?? 'medium',
+        enum:
+          qualityOptions.length > 0
+            ? qualityOptions
+            : ['low', 'medium', 'high'],
+        'x-ui': {
+          control: 'segmented',
+          group: 'settings',
+          order: 26,
+          importance: 'secondary',
+        },
+        'x-provider': { parameter: 'quality' },
+      };
+    }
+
+    if (maxVariations > 1) {
+      properties.numOutputs = {
+        type: 'integer',
+        title: 'Outputs',
+        default:
+          typeof recordValue(parameterPolicy)?.defaultVariations === 'number'
+            ? (recordValue(parameterPolicy)?.defaultVariations as number)
+            : 1,
+        minimum: Math.min(...variationOptions),
+        maximum: maxVariations,
+        'x-ui': {
+          control: 'stepper',
+          group: 'settings',
+          order: 30,
+          importance: 'secondary',
+        },
+        'x-provider': { parameter: 'num_images', omitIfDefault: true },
+      };
+    }
+
+    if (outputFormatOptions.length > 0) {
+      properties.outputFormat = {
+        type: 'string',
+        title: 'Output format',
+        default:
+          stringFromPolicy(parameterPolicy, 'defaultOutputFormat') ?? 'png',
+        enum: outputFormatOptions,
+        'x-ui': {
+          control: 'segmented',
+          group: 'advanced',
+          order: 84,
+          importance: 'advanced',
+        },
+        'x-provider': { parameter: 'output_format', omitIfDefault: true },
+      };
+    }
   }
 
-  if (imageToImage) {
+  if (imageToImage && reference.enabled) {
     properties.referenceImages = {
       type: 'array',
       title: 'Reference images',
-      minItems: 0,
-      maxItems: 4,
+      minItems: reference.min,
+      maxItems: reference.max,
       items: {
         type: 'object',
         properties: {
@@ -182,6 +337,9 @@ function inputSchemaFor(
       },
       'x-provider': { parameter: 'image_urls', transform: 'mediaArrayToUrls' },
     };
+  }
+
+  if (imageToImage && reference.enabled && reference.maskSupported) {
     properties.maskImage = {
       type: 'object',
       title: 'Mask image',
@@ -293,18 +451,20 @@ function inputSchemaFor(
     };
   }
 
-  properties.seed = {
-    type: 'integer',
-    title: 'Seed',
-    minimum: 0,
-    'x-ui': {
-      control: 'stepper',
-      group: 'advanced',
-      order: 200,
-      importance: 'advanced',
-    },
-    'x-provider': { parameter: 'seed', omitIfEmpty: true },
-  };
+  if (seedEnabled(parameterPolicy)) {
+    properties.seed = {
+      type: 'integer',
+      title: 'Seed',
+      minimum: 0,
+      'x-ui': {
+        control: 'stepper',
+        group: 'advanced',
+        order: 200,
+        importance: 'advanced',
+      },
+      'x-provider': { parameter: 'seed', omitIfEmpty: true },
+    };
+  }
 
   return {
     type: 'object',
@@ -413,6 +573,11 @@ function providerInputMap(
   return map;
 }
 
+function maxOutputsFromSchema(schema: AiInputSchema): number {
+  const value = recordValue(schema.properties.numOutputs)?.maximum;
+  return typeof value === 'number' && Number.isFinite(value) ? value : 1;
+}
+
 export function createFalModelConfig(
   args: CreateFalModelConfigArgs,
 ): FalModelRuntimeConfig {
@@ -421,7 +586,12 @@ export function createFalModelConfig(
       ? args.generationModes
       : defaultGenerationModes(args.type)
   ) as AiGenerationMode[];
-  const inputSchema = inputSchemaFor(args.type, generationModes);
+  const inputSchema = inputSchemaFor(
+    args.endpointId,
+    args.type,
+    generationModes,
+    args.parameterPolicy,
+  );
   const outputSchema = outputSchemaFor(args.type);
   const queuePolicy: AiQueuePolicy = {
     queueName: args.queueName,
@@ -589,9 +759,9 @@ export function toAiModelDefinition(
       imageToVideo:
         config.generationModes.includes('image_to_video') ||
         config.generationModes.includes('first_last_frame_to_video'),
-      supportsSeed: true,
+      supportsSeed: Boolean(config.inputSchema.properties.seed),
       supportsCancel: true,
-      maxOutputs: Number(capabilityMatrix.limits.maxOutputs ?? 1),
+      maxOutputs: maxOutputsFromSchema(config.inputSchema),
     },
     queue: config.queue,
     queue_policy: config.queuePolicy,

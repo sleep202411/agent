@@ -21,6 +21,7 @@ export function mapFalProviderRequest(
     body[binding.parameter] = mapped;
   }
   normalizeGptImage2Request(config, input, body);
+  normalizeSeedreamRequest(config, input, body);
   return body;
 }
 
@@ -40,6 +41,31 @@ function normalizeGptImage2Request(
     typeof input.resolution === 'string' ? input.resolution : undefined;
   const dimensions = dimensionsFromImageSize(imageSize, resolution);
   if (dimensions) body.image_size = dimensions;
+}
+
+function normalizeSeedreamRequest(
+  config: FalModelRuntimeConfig,
+  input: Record<string, unknown>,
+  body: Record<string, unknown>,
+): void {
+  if (!isSeedreamEndpoint(config.endpointId)) return;
+
+  const imageSize =
+    typeof input.imageSize === 'string'
+      ? input.imageSize
+      : typeof body.image_size === 'string'
+        ? body.image_size
+        : undefined;
+  const resolution =
+    typeof input.resolution === 'string' ? input.resolution : undefined;
+  const dimensions = dimensionsFromAspectRatio(imageSize, resolution);
+  if (dimensions) body.image_size = dimensions;
+}
+
+function isSeedreamEndpoint(endpointId: string): boolean {
+  return /^fal-ai\/bytedance\/seedream\/v(?:4(?:\.5)?|5\/lite)\/text-to-image(?:\/edit)?$/.test(
+    endpointId,
+  );
 }
 
 function transformValue(value: unknown, transform = 'identity'): unknown {
@@ -113,6 +139,8 @@ function dimensionsFromImageSize(
 }
 
 function aspectRatioForImageSize(imageSize: string): number | undefined {
+  const explicit = explicitAspectRatio(imageSize);
+  if (explicit) return explicit;
   switch (imageSize) {
     case 'square':
     case 'square_hd':
@@ -130,12 +158,76 @@ function aspectRatioForImageSize(imageSize: string): number | undefined {
   }
 }
 
+function dimensionsFromAspectRatio(
+  imageSize: string | undefined,
+  resolution: string | undefined,
+): { width: number; height: number } | undefined {
+  if (!imageSize || imageSize === 'auto') return undefined;
+  const aspect =
+    explicitAspectRatio(imageSize) ?? aspectRatioForImageSize(imageSize);
+  if (!aspect) return undefined;
+
+  const maxLongEdge =
+    resolution === '4K'
+      ? 4096
+      : resolution === '3K'
+        ? 3072
+        : resolution === '2K'
+          ? 2048
+          : 1024;
+  const maxPixels =
+    resolution === '4K'
+      ? 16_777_216
+      : resolution === '3K'
+        ? 9_437_184
+        : resolution === '2K'
+          ? 4_194_304
+          : 1_048_576;
+
+  let width: number;
+  let height: number;
+  if (aspect >= 1) {
+    width = maxLongEdge;
+    height = width / aspect;
+  } else {
+    height = maxLongEdge;
+    width = height * aspect;
+  }
+
+  const pixels = width * height;
+  if (pixels > maxPixels) {
+    const scale = Math.sqrt(maxPixels / pixels);
+    width *= scale;
+    height *= scale;
+  }
+
+  return {
+    width: clampSeedreamDimension(roundToMultiple(width, 16)),
+    height: clampSeedreamDimension(roundToMultiple(height, 16)),
+  };
+}
+
+function explicitAspectRatio(value: string): number | undefined {
+  const match = /^(\d+):(\d+)$/.exec(value);
+  if (!match) return undefined;
+  const width = Number(match[1]);
+  const height = Number(match[2]);
+  if (!Number.isFinite(width) || !Number.isFinite(height) || height <= 0) {
+    return undefined;
+  }
+  return width / height;
+}
+
 function roundToMultiple(value: number, multiple: number): number {
   return Math.max(multiple, Math.round(value / multiple) * multiple);
 }
 
 function clampFalDimension(value: number): number {
   return Math.min(3840, Math.max(16, value));
+}
+
+function clampSeedreamDimension(value: number): number {
+  return Math.min(4096, Math.max(16, value));
 }
 
 function isEmpty(value: unknown): boolean {

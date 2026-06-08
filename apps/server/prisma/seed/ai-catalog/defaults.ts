@@ -16,10 +16,11 @@ import type { AiProductPricingPolicy } from '@repo/shared';
 export type RequiredPlan = 'vip' | null;
 
 /**
- * Canonical `parameterPolicy` — identical for every image model. Declares the
- * shared aspect-ratio / variation / resolution option sets the UI renders.
+ * GPT Image 2 `parameterPolicy`. Parameter policies are per ContainerModel:
+ * provider endpoints are implementation details, but the user-facing controls
+ * must accurately describe the selected canonical model.
  */
-export const PARAMETER_POLICY = {
+export const GPT_IMAGE_2_PARAMETER_POLICY = {
   parameterMode: 'provider_union',
   defaultAspectRatio: '4:3',
   supportedAspectRatios: [
@@ -48,6 +49,160 @@ export const PARAMETER_POLICY = {
   },
 } as const satisfies Prisma.InputJsonObject;
 
+export const NANO_BANANA_PARAMETER_POLICY = {
+  parameterMode: 'provider_intersection',
+  defaultAspectRatio: '1:1',
+  supportedAspectRatios: [
+    '1:1',
+    '4:3',
+    '3:4',
+    '16:9',
+    '9:16',
+    '3:2',
+    '2:3',
+    '4:5',
+    '5:4',
+    '21:9',
+  ],
+  defaultVariations: 1,
+  variationOptions: [1],
+  defaultOutputFormat: 'png',
+  outputFormatOptions: ['png', 'jpeg'],
+  referenceImages: {
+    enabled: true,
+    min: 0,
+    max: 4,
+    maskSupported: false,
+  },
+  seed: { enabled: false },
+} as const satisfies Prisma.InputJsonObject;
+
+export const NANO_BANANA_2_PARAMETER_POLICY = {
+  parameterMode: 'provider_intersection',
+  defaultAspectRatio: '1:1',
+  supportedAspectRatios: [
+    '1:1',
+    '4:3',
+    '3:4',
+    '16:9',
+    '9:16',
+    '3:2',
+    '2:3',
+    '4:5',
+    '5:4',
+    '21:9',
+  ],
+  advancedAspectRatios: ['4:1', '1:4', '8:1', '1:8'],
+  defaultVariations: 1,
+  variationOptions: [1],
+  defaultResolution: '1K',
+  resolutionOptions: ['1K', '2K', '4K'],
+  defaultOutputFormat: 'png',
+  outputFormatOptions: ['png', 'jpeg'],
+  referenceImages: {
+    enabled: true,
+    min: 0,
+    max: 14,
+    maskSupported: false,
+  },
+  seed: { enabled: false },
+  webSearch: { enabled: false },
+  thinking: { enabled: false },
+} as const satisfies Prisma.InputJsonObject;
+
+export const NANO_BANANA_PRO_PARAMETER_POLICY = {
+  parameterMode: 'provider_intersection',
+  defaultAspectRatio: '1:1',
+  supportedAspectRatios: [
+    '1:1',
+    '4:3',
+    '3:4',
+    '16:9',
+    '9:16',
+    '3:2',
+    '2:3',
+    '4:5',
+    '5:4',
+    '21:9',
+  ],
+  defaultVariations: 1,
+  variationOptions: [1],
+  defaultResolution: '2K',
+  resolutionOptions: ['2K', '4K'],
+  defaultOutputFormat: 'png',
+  outputFormatOptions: ['png', 'jpeg'],
+  referenceImages: {
+    enabled: true,
+    min: 0,
+    max: 14,
+    maskSupported: false,
+  },
+  seed: { enabled: false },
+  webSearch: { enabled: false },
+  replicateFallbackModel: { enabled: false },
+} as const satisfies Prisma.InputJsonObject;
+
+const SEEDREAM_BASE_ASPECT_RATIOS = [
+  '1:1',
+  '4:3',
+  '3:4',
+  '16:9',
+  '9:16',
+  '3:2',
+  '2:3',
+  '21:9',
+] as const;
+
+const SEEDREAM_EXTENDED_ASPECT_RATIOS = [
+  ...SEEDREAM_BASE_ASPECT_RATIOS,
+  '4:5',
+  '5:4',
+  '9:21',
+] as const;
+
+const SEEDREAM_REFERENCE_IMAGES = {
+  enabled: true,
+  min: 0,
+  max: 14,
+  maskSupported: false,
+} as const;
+
+export const SEEDREAM_4_PARAMETER_POLICY = {
+  parameterMode: 'provider_union',
+  defaultAspectRatio: '1:1',
+  supportedAspectRatios: SEEDREAM_BASE_ASPECT_RATIOS,
+  defaultVariations: 1,
+  variationOptions: [1],
+  defaultResolution: '2K',
+  resolutionOptions: ['1K', '2K', '4K'],
+  referenceImages: SEEDREAM_REFERENCE_IMAGES,
+  seed: { enabled: false },
+} as const satisfies Prisma.InputJsonObject;
+
+export const SEEDREAM_45_PARAMETER_POLICY = {
+  parameterMode: 'provider_union',
+  defaultAspectRatio: '1:1',
+  supportedAspectRatios: SEEDREAM_EXTENDED_ASPECT_RATIOS,
+  defaultVariations: 1,
+  variationOptions: [1],
+  defaultResolution: '2K',
+  resolutionOptions: ['2K', '4K'],
+  referenceImages: SEEDREAM_REFERENCE_IMAGES,
+  seed: { enabled: false },
+} as const satisfies Prisma.InputJsonObject;
+
+export const SEEDREAM_5_LITE_PARAMETER_POLICY = {
+  parameterMode: 'provider_union',
+  defaultAspectRatio: '1:1',
+  supportedAspectRatios: SEEDREAM_BASE_ASPECT_RATIOS,
+  defaultVariations: 1,
+  variationOptions: [1],
+  defaultResolution: '2K',
+  resolutionOptions: ['2K', '3K', '4K'],
+  referenceImages: SEEDREAM_REFERENCE_IMAGES,
+  seed: { enabled: false },
+} as const satisfies Prisma.InputJsonObject;
+
 export const GPT_IMAGE_2_PRODUCT_PRICING: AiProductPricingPolicy = {
   mode: 'parameter_matrix',
   version: 'gpt-image-2-points-v1-2026-06-07',
@@ -71,12 +226,144 @@ export const GPT_IMAGE_2_PRODUCT_PRICING: AiProductPricingPolicy = {
   roundTo: 1,
 };
 
-/** Canonical `outputPolicy` — identical for every image model. */
-export const OUTPUT_POLICY = {
-  outputTypes: ['image'],
-  maxOutputs: 4,
-  storeOriginalProviderOutput: true,
-} as const satisfies Prisma.InputJsonObject;
+export const NANO_BANANA_PRODUCT_PRICING: AiProductPricingPolicy = {
+  mode: 'fixed_per_output',
+  version: 'nano-banana-points-v1-2026-06-08',
+  currency: 'COMPUTE_POINTS',
+  defaultOutputCount: 1,
+  minOutputCount: 1,
+  maxOutputCount: 1,
+  pointsPerOutput: 10,
+  referenceImageSurchargePoints: 0,
+  extraReferenceImagePoints: 0,
+  maskSurchargePoints: 0,
+  minimumPoints: 1,
+  roundTo: 1,
+};
+
+export const NANO_BANANA_2_PRODUCT_PRICING: AiProductPricingPolicy = {
+  mode: 'parameter_matrix',
+  version: 'nano-banana-2-points-v1-2026-06-08',
+  currency: 'COMPUTE_POINTS',
+  defaultOutputCount: 1,
+  minOutputCount: 1,
+  maxOutputCount: 1,
+  defaultResolution: '1K',
+  defaultQuality: 'standard',
+  resolutionOptions: ['1K', '2K', '4K'],
+  qualityOptions: ['standard'],
+  matrix: {
+    '1K': { standard: 20 },
+    '2K': { standard: 30 },
+    '4K': { standard: 50 },
+  },
+  referenceImageSurchargePoints: 0,
+  extraReferenceImagePoints: 0,
+  maskSurchargePoints: 0,
+  minimumPoints: 1,
+  roundTo: 1,
+};
+
+export const NANO_BANANA_PRO_PRODUCT_PRICING: AiProductPricingPolicy = {
+  mode: 'parameter_matrix',
+  version: 'nano-banana-pro-points-v1-2026-06-08',
+  currency: 'COMPUTE_POINTS',
+  defaultOutputCount: 1,
+  minOutputCount: 1,
+  maxOutputCount: 1,
+  defaultResolution: '2K',
+  defaultQuality: 'standard',
+  resolutionOptions: ['2K', '4K'],
+  qualityOptions: ['standard'],
+  matrix: {
+    '2K': { standard: 50 },
+    '4K': { standard: 90 },
+  },
+  referenceImageSurchargePoints: 0,
+  extraReferenceImagePoints: 0,
+  maskSurchargePoints: 0,
+  minimumPoints: 1,
+  roundTo: 1,
+};
+
+export const SEEDREAM_4_PRODUCT_PRICING: AiProductPricingPolicy = {
+  mode: 'parameter_matrix',
+  version: 'seedream-4-points-v1-2026-06-08',
+  currency: 'COMPUTE_POINTS',
+  defaultOutputCount: 1,
+  minOutputCount: 1,
+  maxOutputCount: 1,
+  defaultResolution: '2K',
+  defaultQuality: 'standard',
+  resolutionOptions: ['1K', '2K', '4K'],
+  qualityOptions: ['standard'],
+  matrix: {
+    '1K': { standard: 20 },
+    '2K': { standard: 30 },
+    '4K': { standard: 50 },
+  },
+  referenceImageSurchargePoints: 0,
+  extraReferenceImagePoints: 0,
+  maskSurchargePoints: 0,
+  minimumPoints: 1,
+  roundTo: 1,
+};
+
+export const SEEDREAM_45_PRODUCT_PRICING: AiProductPricingPolicy = {
+  mode: 'parameter_matrix',
+  version: 'seedream-4-5-points-v1-2026-06-08',
+  currency: 'COMPUTE_POINTS',
+  defaultOutputCount: 1,
+  minOutputCount: 1,
+  maxOutputCount: 1,
+  defaultResolution: '2K',
+  defaultQuality: 'standard',
+  resolutionOptions: ['2K', '4K'],
+  qualityOptions: ['standard'],
+  matrix: {
+    '2K': { standard: 40 },
+    '4K': { standard: 70 },
+  },
+  referenceImageSurchargePoints: 0,
+  extraReferenceImagePoints: 0,
+  maskSurchargePoints: 0,
+  minimumPoints: 1,
+  roundTo: 1,
+};
+
+export const SEEDREAM_5_LITE_PRODUCT_PRICING: AiProductPricingPolicy = {
+  mode: 'parameter_matrix',
+  version: 'seedream-5-lite-points-v1-2026-06-08',
+  currency: 'COMPUTE_POINTS',
+  defaultOutputCount: 1,
+  minOutputCount: 1,
+  maxOutputCount: 1,
+  defaultResolution: '2K',
+  defaultQuality: 'standard',
+  resolutionOptions: ['2K', '3K', '4K'],
+  qualityOptions: ['standard'],
+  matrix: {
+    '2K': { standard: 35 },
+    '3K': { standard: 50 },
+    '4K': { standard: 70 },
+  },
+  referenceImageSurchargePoints: 0,
+  extraReferenceImagePoints: 0,
+  maskSurchargePoints: 0,
+  minimumPoints: 1,
+  roundTo: 1,
+};
+
+/** Canonical `outputPolicy` factory. Output count follows product pricing. */
+export function buildOutputPolicy(
+  productPricing: AiProductPricingPolicy,
+): Prisma.InputJsonObject {
+  return {
+    outputTypes: ['image'],
+    maxOutputs: productPricing.maxOutputCount,
+    storeOriginalProviderOutput: true,
+  };
+}
 
 /** Canonical `observabilityPolicy` — identical for every image model. */
 export const OBSERVABILITY_POLICY = {

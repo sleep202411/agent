@@ -218,6 +218,16 @@ export function maxOutputs(model: FizzAiModel): number {
   return 4;
 }
 
+export function maxReferenceImages(model: FizzAiModel | undefined): number {
+  if (!model) return 4;
+  const prop = schemaProperty(model, "referenceImages");
+  const schemaMax = prop?.maxItems;
+  if (typeof schemaMax === "number" && Number.isFinite(schemaMax) && schemaMax > 0) {
+    return Math.floor(schemaMax);
+  }
+  return 4;
+}
+
 export function supportsOutputCount(model: FizzAiModel): boolean {
   return Boolean(schemaProperty(model, "numOutputs"));
 }

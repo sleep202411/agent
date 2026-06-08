@@ -61,6 +61,7 @@ import type {
   CrewGenre,
   CrewStyle,
   CurrencyCode,
+  ExperienceLevel,
   SalaryPeriod,
   SocialLink,
   ShowcaseWork,
@@ -104,7 +105,7 @@ export interface CreatePositionInput {
   workMode?: "remote" | "hybrid" | "onsite";
   location?: string | null;
   employmentType?: "full_time" | "part_time" | "contract" | "freelance" | "project_based";
-  experienceLevel?: "any" | "junior" | "mid" | "senior" | "lead";
+  experienceLevel?: ExperienceLevel;
   requiredSkills?: string[];
   salary?: SalaryInput;
   /** Months of commitment (1-60). null = long-term / open-ended. */

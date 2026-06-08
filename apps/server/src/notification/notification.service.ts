@@ -18,7 +18,7 @@
  * Same event fired twice → at most one notification row + one outbox
  * row + at most one user-facing toast.
  */
-import { Inject, Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { Prisma, PrismaClient } from '@prisma/client';
 import type { NotificationDTO, NotificationMeta } from '@repo/shared';
 import { newShortId } from '../common/id';

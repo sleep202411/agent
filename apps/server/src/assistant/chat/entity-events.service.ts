@@ -13,6 +13,7 @@ import {
   entityEventsChannel,
   type EntityEvent,
 } from '@repo/shared/entity-events';
+import { describeUnknown } from '../../common/values';
 
 type PublishInput = Omit<EntityEvent, 'ts'>;
 
@@ -32,15 +33,17 @@ export class EntityEventsService implements OnModuleDestroy {
       maxRetriesPerRequest: null,
       enableReadyCheck: true,
     });
-    this.publisher.on('error', (err) =>
-      this.logger.warn(`publisher error: ${err.message}`),
+    this.publisher.on('error', (err: unknown) =>
+      this.logger.warn(`publisher error: ${describeUnknown(err)}`),
     );
   }
 
   async onModuleDestroy() {
     try {
       await this.publisher?.quit();
-    } catch {}
+    } catch {
+      this.logger.debug('publisher quit skipped during shutdown');
+    }
   }
 
   async publish(userId: string, input: PublishInput): Promise<void> {

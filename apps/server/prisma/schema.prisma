@@ -3467,27 +3467,29 @@ model AiProviderAccount {
 // only here, so upstream endpoint churn never pollutes the user-facing model
 // catalog. Operators explicitly bind verified endpoints to canonical models.
 model AiProviderEndpoint {
-  id                   String                 @id @default(uuid(7)) @db.Uuid
-  providerAccountId    String                 @map("provider_account_id") @db.Uuid
-  provider             String                 @db.VarChar(64)
-  endpointId           String                 @map("endpoint_id") @db.VarChar(180)
-  displayName          String?                @map("display_name") @db.VarChar(160)
-  modality             AiJobType
-  status               AiControlPlaneStatus   @default(draft)
-  healthStatus         AiProviderHealthStatus @default(unknown) @map("health_status")
-  supportedModes       Json                   @default("[]") @map("supported_modes") @db.JsonB
-  capabilities         Json                   @default("{}") @db.JsonB
-  providerInputSchema  Json                   @default("{}") @map("provider_input_schema") @db.JsonB
-  providerOutputSchema Json                   @default("{}") @map("provider_output_schema") @db.JsonB
-  providerQuotaPolicy  Json                   @default("{}") @map("provider_quota_policy") @db.JsonB
-  catalogSnapshot      Json                   @default("{}") @map("catalog_snapshot") @db.JsonB
-  documentation        Json                   @default("{}") @db.JsonB
-  disabledReason       String?                @map("disabled_reason") @db.Text
-  createdByAdminId     String?                @map("created_by_admin_id") @db.Uuid
-  updatedByAdminId     String?                @map("updated_by_admin_id") @db.Uuid
-  createdAt            DateTime               @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt            DateTime               @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
-  archivedAt           DateTime?              @map("archived_at") @db.Timestamptz(6)
+  id                    String                 @id @default(uuid(7)) @db.Uuid
+  providerAccountId     String                 @map("provider_account_id") @db.Uuid
+  provider              String                 @db.VarChar(64)
+  endpointId            String                 @map("endpoint_id") @db.VarChar(180)
+  displayName           String?                @map("display_name") @db.VarChar(160)
+  modality              AiJobType
+  status                AiControlPlaneStatus   @default(draft)
+  healthStatus          AiProviderHealthStatus @default(unknown) @map("health_status")
+  supportedModes        Json                   @default("[]") @map("supported_modes") @db.JsonB
+  providerInputSchema   Json                   @default("{}") @map("provider_input_schema") @db.JsonB
+  providerOutputSchema  Json                   @default("{}") @map("provider_output_schema") @db.JsonB
+  maxConcurrentRequests Int?                   @map("max_concurrent_requests")
+  maxRequestsPerMinute  Int?                   @map("max_requests_per_minute")
+  requestTimeoutSeconds Int?                   @map("request_timeout_seconds")
+  cooldownSeconds       Int?                   @map("cooldown_seconds")
+  failureThreshold      Int?                   @map("failure_threshold")
+  catalogSnapshot       Json                   @default("{}") @map("catalog_snapshot") @db.JsonB
+  disabledReason        String?                @map("disabled_reason") @db.Text
+  createdByAdminId      String?                @map("created_by_admin_id") @db.Uuid
+  updatedByAdminId      String?                @map("updated_by_admin_id") @db.Uuid
+  createdAt             DateTime               @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt             DateTime               @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  archivedAt            DateTime?              @map("archived_at") @db.Timestamptz(6)
 
   providerAccount AiProviderAccount        @relation(fields: [providerAccountId], references: [id], onDelete: Cascade)
   bindings        AiProviderModelBinding[]
@@ -3498,8 +3500,10 @@ model AiProviderEndpoint {
   @@map("ai_provider_endpoints")
 }
 
-// AiCanonicalModel — user-facing model identity. Multiple providers may back
-// the same canonical model; routing selects an active binding per request.
+// AiCanonicalModel — user-facing model identity. It owns product policy:
+// user-facing parameters, billing, queue limits, UI metadata, and observability
+// defaults. Multiple providers may back the same canonical model; routing
+// selects an active binding per request and freezes the decision on AiJob.
 model AiCanonicalModel {
   id                  String               @id @default(uuid(7)) @db.Uuid
   slug                String               @db.VarChar(120)
@@ -3532,10 +3536,13 @@ model AiCanonicalModel {
   @@map("ai_canonical_models")
 }
 
-// AiProviderModelBinding — provider-specific endpoint, schemas, parameter maps,
-// routing weights, and the raw provider catalog snapshot. Product pricing lives
-// on AiCanonicalModel.billingPolicy; request-level provider cost is written only
-// to AiCostLedgerEntry when the provider exposes actual usage/cost.
+// AiProviderModelBinding — the route from one user-facing canonical model to
+// one verified provider endpoint. It owns only route controls
+// (status/priority/weight) and immutable endpoint snapshots for audit. Product
+// pricing, user-facing parameter policy, queue policy, and observability live
+// on AiCanonicalModel; provider request mapping lives in adapter code; retries
+// preserve the submit-time routing snapshot. Provider request cost is written
+// only to AiCostLedgerEntry when the provider exposes actual usage/cost.
 model AiProviderModelBinding {
   id                   String               @id @default(uuid(7)) @db.Uuid
   providerAccountId    String               @map("provider_account_id") @db.Uuid
@@ -3553,14 +3560,7 @@ model AiProviderModelBinding {
   outputSchema         Json                 @default("{}") @map("output_schema") @db.JsonB
   providerInputSchema  Json                 @default("{}") @map("provider_input_schema") @db.JsonB
   providerOutputSchema Json                 @default("{}") @map("provider_output_schema") @db.JsonB
-  parameterMap         Json                 @default("{}") @map("parameter_map") @db.JsonB
-  outputMap            Json                 @default("{}") @map("output_map") @db.JsonB
-  queuePolicy          Json                 @default("{}") @map("queue_policy") @db.JsonB
-  routingPolicy        Json                 @default("{}") @map("routing_policy") @db.JsonB
-  fallbackPolicy       Json                 @default("{}") @map("fallback_policy") @db.JsonB
-  observabilityPolicy  Json                 @default("{}") @map("observability_policy") @db.JsonB
   catalogSnapshot      Json                 @default("{}") @map("catalog_snapshot") @db.JsonB
-  documentation        Json                 @default("{}") @db.JsonB
   disabledReason       String?              @map("disabled_reason") @db.Text
   createdByAdminId     String?              @map("created_by_admin_id") @db.Uuid
   updatedByAdminId     String?              @map("updated_by_admin_id") @db.Uuid

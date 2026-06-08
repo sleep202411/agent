@@ -1,6 +1,10 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../../infra/db/db.module';
+import {
+  applyProviderConcurrencyLimit,
+  providerCapacityFromRow,
+} from '../../provider-capacity';
 import { AI_QUEUE_IMAGE, AI_QUEUE_VIDEO } from '../../queue';
 import type {
   AiBillingPolicy,
@@ -121,6 +125,7 @@ export class BailianCatalogService {
       include: {
         canonicalModel: true,
         providerAccount: true,
+        providerEndpoint: true,
       },
       orderBy: [{ priority: 'asc' }, { weight: 'desc' }, { endpointId: 'asc' }],
     });
@@ -130,6 +135,10 @@ export class BailianCatalogService {
       const type = row.modality as AiJobType;
       const catalog = recordValue(row.catalogSnapshot);
       const service = bailianServiceFromCatalog(catalog, type);
+      const providerCapacity = providerCapacityFromRow(row.providerEndpoint);
+      const canonicalGlobalConcurrency =
+        numberFromPolicy(row.canonicalModel.queuePolicy, 'globalConcurrency') ??
+        12;
       const runtime = createBailianModelConfig({
         endpointId: row.endpointId,
         service,
@@ -147,12 +156,16 @@ export class BailianCatalogService {
           ? (row.disabledReason ?? undefined)
           : 'Alibaba Model Studio provider is not enabled for this environment.',
         queueName: type === 'video' ? AI_QUEUE_VIDEO : AI_QUEUE_IMAGE,
-        globalConcurrency:
-          numberFromPolicy(row.queuePolicy, 'globalConcurrency') ?? 12,
+        globalConcurrency: applyProviderConcurrencyLimit(
+          canonicalGlobalConcurrency,
+          providerCapacity,
+        ),
         perUserRunning:
-          numberFromPolicy(row.queuePolicy, 'perUserRunning') ??
+          numberFromPolicy(row.canonicalModel.queuePolicy, 'perUserRunning') ??
           (type === 'video' ? 1 : 2),
-        perUserQueued: numberFromPolicy(row.queuePolicy, 'perUserQueued') ?? 10,
+        perUserQueued:
+          numberFromPolicy(row.canonicalModel.queuePolicy, 'perUserQueued') ??
+          10,
         pollDelayMs: config.pollDelayMs,
         billing: billingPolicyFromRow(row),
         parameterPolicy: row.canonicalModel.parameterPolicy as AiJsonValue,
@@ -171,6 +184,7 @@ export class BailianCatalogService {
           providerEndpointId: row.providerEndpointId,
           providerRoutePriority: row.priority,
           providerRouteWeight: row.weight,
+          providerCapacity,
         },
       };
     });

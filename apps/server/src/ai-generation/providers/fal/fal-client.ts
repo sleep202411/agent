@@ -32,10 +32,12 @@ export class FalClient {
     config: FalProviderConfig,
     endpointId: string,
     requestId: string,
+    statusUrl?: string | null,
   ): Promise<FalStatusResponse> {
     return this.requestJson(
       config,
-      `${config.queueBaseUrl}/${endpointId}/requests/${requestId}/status`,
+      statusUrl ??
+        `${config.queueBaseUrl}/${endpointId}/requests/${requestId}/status`,
       { method: 'GET' },
     );
   }
@@ -44,10 +46,12 @@ export class FalClient {
     config: FalProviderConfig,
     endpointId: string,
     requestId: string,
+    responseUrl?: string | null,
   ): Promise<FalJsonResponse<unknown>> {
     return this.requestJsonWithHeaders(
       config,
-      `${config.queueBaseUrl}/${endpointId}/requests/${requestId}`,
+      responseUrl ??
+        `${config.queueBaseUrl}/${endpointId}/requests/${requestId}`,
       { method: 'GET' },
       { allowErrorBody: true },
     );
@@ -78,10 +82,12 @@ export class FalClient {
     config: FalProviderConfig,
     endpointId: string,
     requestId: string,
+    cancelUrl?: string | null,
   ): Promise<void> {
     await this.requestJson(
       config,
-      `${config.queueBaseUrl}/${endpointId}/requests/${requestId}/cancel`,
+      cancelUrl ??
+        `${config.queueBaseUrl}/${endpointId}/requests/${requestId}/cancel`,
       { method: 'PUT' },
     );
   }

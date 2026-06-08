@@ -18,7 +18,7 @@ import {
   mapReplicateUnknownError,
   replicateError,
 } from './replicate-error.mapper';
-import { mapReplicateGptImage2Request } from './replicate-request.mapper';
+import { mapReplicateProviderRequest } from './replicate-request.mapper';
 
 @Injectable()
 export class ReplicateProviderAdapter implements ProviderAdapter {
@@ -51,7 +51,7 @@ export class ReplicateProviderAdapter implements ProviderAdapter {
     ctx: ProviderGenerationContext,
   ): Promise<StartResult> {
     const runtime = await this.requireRuntime(modelId);
-    const payload = mapReplicateGptImage2Request(input, ctx.userId);
+    const payload = mapReplicateProviderRequest(runtime, input, ctx.userId);
     const response = await this.client.submit(
       this.configService.config,
       runtime.endpointId,
@@ -67,7 +67,7 @@ export class ReplicateProviderAdapter implements ProviderAdapter {
     }
     return {
       kind: 'pending',
-      providerJobId: response.id,
+      providerJobId: this.encodeProviderJobId(runtime.endpointId, response.id),
       initialPollDelayMs: this.configService.config.pollDelayMs,
       providerRequestId: response.id,
       providerEndpoint: runtime.endpointId,
@@ -79,30 +79,37 @@ export class ReplicateProviderAdapter implements ProviderAdapter {
   }
 
   async pollStatus(providerJobId: string): Promise<PollResult> {
+    const { endpointId, predictionId } =
+      this.decodeProviderJobId(providerJobId);
     const response = await this.client.status(
       this.configService.config,
-      providerJobId,
+      predictionId,
     );
-    const status = response.status ?? 'processing';
+    const status = String(response.status ?? 'processing');
 
-    if (status === 'succeeded') {
+    if (status === 'succeeded' || status === 'successful') {
       return {
         kind: 'completed',
         outputs: collectOutputs(response),
-        providerRequestId: response.id ?? providerJobId,
-        providerEndpoint: 'openai/gpt-image-2',
+        providerRequestId: response.id ?? predictionId,
+        providerEndpoint: endpointId,
         rawStatus: response,
         providerResponse: response,
         providerLogs: response.logs,
       };
     }
 
-    if (status === 'failed' || status === 'canceled') {
+    if (
+      status === 'failed' ||
+      status === 'canceled' ||
+      status === 'cancelled' ||
+      status === 'aborted'
+    ) {
       return {
         kind: 'failed',
-        error: errorFromPrediction(providerJobId, response),
-        providerRequestId: response.id ?? providerJobId,
-        providerEndpoint: 'openai/gpt-image-2',
+        error: errorFromPrediction(predictionId, response),
+        providerRequestId: response.id ?? predictionId,
+        providerEndpoint: endpointId,
         rawStatus: response,
         providerLogs: response.logs,
       };
@@ -111,8 +118,8 @@ export class ReplicateProviderAdapter implements ProviderAdapter {
     return {
       kind: 'pending',
       progress: status === 'processing' ? 0.55 : 0.2,
-      providerRequestId: response.id ?? providerJobId,
-      providerEndpoint: 'openai/gpt-image-2',
+      providerRequestId: response.id ?? predictionId,
+      providerEndpoint: endpointId,
       rawStatus: response,
       providerLogs: response.logs,
       stageHint: `Replicate status ${status}`,
@@ -120,7 +127,8 @@ export class ReplicateProviderAdapter implements ProviderAdapter {
   }
 
   async cancelGeneration(providerJobId: string): Promise<void> {
-    await this.client.cancel(this.configService.config, providerJobId);
+    const { predictionId } = this.decodeProviderJobId(providerJobId);
+    await this.client.cancel(this.configService.config, predictionId);
   }
 
   mapError(err: unknown): AiJobError {
@@ -144,6 +152,33 @@ export class ReplicateProviderAdapter implements ProviderAdapter {
       );
     }
     return runtime;
+  }
+
+  private encodeProviderJobId(
+    endpointId: string,
+    predictionId: string,
+  ): string {
+    return [endpointId, predictionId].join('::');
+  }
+
+  private decodeProviderJobId(providerJobId: string): {
+    endpointId: string;
+    predictionId: string;
+  } {
+    const [endpointId, predictionId] = providerJobId.split('::');
+    if (endpointId && predictionId) {
+      return {
+        endpointId,
+        predictionId,
+      };
+    }
+
+    // Backward compatibility for local jobs created before endpoint-qualified
+    // Replicate IDs existed.
+    return {
+      endpointId: 'openai/gpt-image-2',
+      predictionId: providerJobId,
+    };
   }
 }
 
@@ -174,8 +209,19 @@ function collectOutputs(
 
 function collectOutputUrls(value: unknown): string[] {
   if (typeof value === 'string') return [value];
-  if (!Array.isArray(value)) return [];
-  return value.filter((item): item is string => typeof item === 'string');
+  if (Array.isArray(value)) {
+    return value.flatMap((item) => collectOutputUrls(item));
+  }
+  if (value && typeof value === 'object') {
+    const record = value as Record<string, unknown>;
+    return [
+      ...collectOutputUrls(record.url),
+      ...collectOutputUrls(record.image),
+      ...collectOutputUrls(record.images),
+      ...collectOutputUrls(record.output),
+    ];
+  }
+  return [];
 }
 
 function errorFromPrediction(

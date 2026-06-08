@@ -82,7 +82,7 @@ export const TIERS: Record<Tier, TierLimits> = {
 /** Tier rank (lower = lower) for upgrade-suggestion logic. */
 const RANK: Record<Tier, number> = { Free: 0, VIP1: 1, VIP2: 2, VIP3: 3 };
 
-export function tierRank(tier: Tier | string | null | undefined): number {
+export function tierRank(tier: string | null | undefined): number {
   if (!tier) return RANK.Free;
   return RANK[tier as Tier] ?? RANK.Free;
 }

@@ -61,6 +61,7 @@ export type FoundryCatalogSource =
   | 'openai-models'
   | 'env-override'
   | 'fal-config'
+  | 'byteplus-config'
   | 'bailian-config'
   | 'replicate-config'
   | 'seed-fallback';
@@ -141,6 +142,7 @@ export interface AiRoutingPolicySnapshot {
     maxQueueWaitSeconds: number | null;
     pollIntervalMs: number;
   };
+  providerCapacity?: AiProviderCapacitySnapshot;
 }
 
 export interface AiRoutingSnapshot {
@@ -219,6 +221,15 @@ export interface AiModelOpsMetadata {
   providerEndpointId: string;
   providerRoutePriority: number;
   providerRouteWeight: number;
+  providerCapacity?: AiProviderCapacitySnapshot;
+}
+
+export interface AiProviderCapacitySnapshot {
+  maxConcurrentRequests: number | null;
+  maxRequestsPerMinute: number | null;
+  requestTimeoutSeconds: number | null;
+  cooldownSeconds: number | null;
+  failureThreshold: number | null;
 }
 
 export interface AiModelDefinition extends SharedAiModelDefinition {

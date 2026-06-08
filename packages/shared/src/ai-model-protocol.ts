@@ -56,6 +56,7 @@ export type AiModelSchemaDialect =
 export type AiModelProviderId =
   | "microsoft-foundry"
   | "fal-ai"
+  | "byteplus-modelark"
   | "replicate"
   | "dashscope"
   | "self-hosted"
@@ -109,6 +110,7 @@ export type AiPricingUnit =
  */
 export const AI_PROVIDER_KEYS = [
   "fal-ai",
+  "byteplus-modelark",
   "aliyun-bailian",
   "microsoft-foundry",
   "replicate",
@@ -118,6 +120,7 @@ export type AiProviderKey = (typeof AI_PROVIDER_KEYS)[number];
 /** Human-readable labels for the provider keys (admin UI). */
 export const AI_PROVIDER_LABELS: Record<AiProviderKey, string> = {
   "fal-ai": "Fal",
+  "byteplus-modelark": "BytePlus ModelArk",
   "aliyun-bailian": "百炼",
   "microsoft-foundry": "Azure Foundry",
   replicate: "Replicate",

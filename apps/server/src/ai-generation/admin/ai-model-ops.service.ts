@@ -341,13 +341,15 @@ export class AiModelOpsService {
         status: input.status,
         healthStatus: input.healthStatus,
         supportedModes: input.supportedModes as Prisma.InputJsonValue,
-        capabilities: input.capabilities as Prisma.InputJsonValue,
         providerInputSchema: input.providerInputSchema as Prisma.InputJsonValue,
         providerOutputSchema:
           input.providerOutputSchema as Prisma.InputJsonValue,
-        providerQuotaPolicy: input.providerQuotaPolicy as Prisma.InputJsonValue,
+        maxConcurrentRequests: input.maxConcurrentRequests ?? null,
+        maxRequestsPerMinute: input.maxRequestsPerMinute ?? null,
+        requestTimeoutSeconds: input.requestTimeoutSeconds ?? null,
+        cooldownSeconds: input.cooldownSeconds ?? null,
+        failureThreshold: input.failureThreshold ?? null,
         catalogSnapshot: input.catalogSnapshot as Prisma.InputJsonValue,
-        documentation: input.documentation as Prisma.InputJsonValue,
         disabledReason: input.disabledReason ?? null,
         createdByAdminId: adminId,
         updatedByAdminId: adminId,
@@ -381,9 +383,6 @@ export class AiModelOpsService {
         ...(input.supportedModes !== undefined
           ? { supportedModes: input.supportedModes as Prisma.InputJsonValue }
           : {}),
-        ...(input.capabilities !== undefined
-          ? { capabilities: input.capabilities as Prisma.InputJsonValue }
-          : {}),
         ...(input.providerInputSchema !== undefined
           ? {
               providerInputSchema:
@@ -396,17 +395,23 @@ export class AiModelOpsService {
                 input.providerOutputSchema as Prisma.InputJsonValue,
             }
           : {}),
-        ...(input.providerQuotaPolicy !== undefined
-          ? {
-              providerQuotaPolicy:
-                input.providerQuotaPolicy as Prisma.InputJsonValue,
-            }
+        ...(input.maxConcurrentRequests !== undefined
+          ? { maxConcurrentRequests: input.maxConcurrentRequests }
+          : {}),
+        ...(input.maxRequestsPerMinute !== undefined
+          ? { maxRequestsPerMinute: input.maxRequestsPerMinute }
+          : {}),
+        ...(input.requestTimeoutSeconds !== undefined
+          ? { requestTimeoutSeconds: input.requestTimeoutSeconds }
+          : {}),
+        ...(input.cooldownSeconds !== undefined
+          ? { cooldownSeconds: input.cooldownSeconds }
+          : {}),
+        ...(input.failureThreshold !== undefined
+          ? { failureThreshold: input.failureThreshold }
           : {}),
         ...(input.catalogSnapshot !== undefined
           ? { catalogSnapshot: input.catalogSnapshot as Prisma.InputJsonValue }
-          : {}),
-        ...(input.documentation !== undefined
-          ? { documentation: input.documentation as Prisma.InputJsonValue }
           : {}),
         ...(input.disabledReason !== undefined
           ? { disabledReason: input.disabledReason ?? null }
@@ -504,26 +509,6 @@ export class AiModelOpsService {
         status: input.status,
         priority: input.priority,
         weight: input.weight,
-        parameterMap:
-          input.parameterMap !== undefined
-            ? (input.parameterMap as Prisma.InputJsonValue)
-            : undefined,
-        queuePolicy:
-          input.queuePolicy !== undefined
-            ? (input.queuePolicy as Prisma.InputJsonValue)
-            : undefined,
-        routingPolicy:
-          input.routingPolicy !== undefined
-            ? (input.routingPolicy as Prisma.InputJsonValue)
-            : undefined,
-        fallbackPolicy:
-          input.fallbackPolicy !== undefined
-            ? (input.fallbackPolicy as Prisma.InputJsonValue)
-            : undefined,
-        observabilityPolicy:
-          input.observabilityPolicy !== undefined
-            ? (input.observabilityPolicy as Prisma.InputJsonValue)
-            : undefined,
         disabledReason:
           input.disabledReason !== undefined ? input.disabledReason : undefined,
         updatedByAdminId: adminId,
@@ -655,8 +640,12 @@ function providerBindingDataFromEndpoint(
     supportedModes: unknown;
     providerInputSchema: unknown;
     providerOutputSchema: unknown;
+    maxConcurrentRequests: number | null;
+    maxRequestsPerMinute: number | null;
+    requestTimeoutSeconds: number | null;
+    cooldownSeconds: number | null;
+    failureThreshold: number | null;
     catalogSnapshot: unknown;
-    documentation: unknown;
   },
   input: CreateProviderBindingInput,
   adminId: string,
@@ -679,13 +668,7 @@ function providerBindingDataFromEndpoint(
     providerInputSchema: endpoint.providerInputSchema as Prisma.InputJsonValue,
     providerOutputSchema:
       endpoint.providerOutputSchema as Prisma.InputJsonValue,
-    parameterMap: input.parameterMap as Prisma.InputJsonValue,
-    queuePolicy: input.queuePolicy as Prisma.InputJsonValue,
-    routingPolicy: input.routingPolicy as Prisma.InputJsonValue,
-    fallbackPolicy: input.fallbackPolicy as Prisma.InputJsonValue,
-    observabilityPolicy: input.observabilityPolicy as Prisma.InputJsonValue,
     catalogSnapshot: endpoint.catalogSnapshot as Prisma.InputJsonValue,
-    documentation: endpoint.documentation as Prisma.InputJsonValue,
     disabledReason: input.disabledReason ?? null,
     updatedByAdminId: adminId,
   };
@@ -737,12 +720,14 @@ function serializeProviderEndpoint(endpoint: {
   status: string;
   healthStatus: string;
   supportedModes: unknown;
-  capabilities: unknown;
   providerInputSchema: unknown;
   providerOutputSchema: unknown;
-  providerQuotaPolicy: unknown;
+  maxConcurrentRequests: number | null;
+  maxRequestsPerMinute: number | null;
+  requestTimeoutSeconds: number | null;
+  cooldownSeconds: number | null;
+  failureThreshold: number | null;
   catalogSnapshot: unknown;
-  documentation: unknown;
   disabledReason: string | null;
   updatedAt: Date;
   providerAccount?: { id: string; provider: string };
@@ -898,13 +883,7 @@ function serializeProviderBinding(binding: {
   supportedModes: unknown;
   inputSchema: unknown;
   outputSchema: unknown;
-  parameterMap: unknown;
-  queuePolicy: unknown;
-  routingPolicy: unknown;
-  fallbackPolicy: unknown;
-  observabilityPolicy: unknown;
   catalogSnapshot: unknown;
-  documentation: unknown;
   disabledReason: string | null;
   updatedAt: Date;
   providerAccount?: { id: string; provider: string };

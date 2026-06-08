@@ -63,7 +63,7 @@ export class QuotaInterceptor implements NestInterceptor {
     const idem = req.__quotaConsumeKey;
 
     return next.handle().pipe(
-      catchError((err) => {
+      catchError((err: unknown) => {
         // Don't refund on QuotaGuard-thrown 429 (we never consumed).
         const status =
           err instanceof HttpException ? err.getStatus() : undefined;

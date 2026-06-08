@@ -1,6 +1,10 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../../infra/db/db.module';
+import {
+  applyProviderConcurrencyLimit,
+  providerCapacityFromRow,
+} from '../../provider-capacity';
 import { AI_QUEUE_IMAGE, AI_QUEUE_VIDEO } from '../../queue';
 import type {
   AiBillingPolicy,
@@ -112,6 +116,7 @@ export class FalCatalogService {
       include: {
         canonicalModel: true,
         providerAccount: true,
+        providerEndpoint: true,
       },
       orderBy: [{ priority: 'asc' }, { weight: 'desc' }, { endpointId: 'asc' }],
     });
@@ -119,6 +124,10 @@ export class FalCatalogService {
     return rows.map((row) => {
       const generationModes = stringArray(row.supportedModes);
       const type = row.modality as AiJobType;
+      const providerCapacity = providerCapacityFromRow(row.providerEndpoint);
+      const canonicalGlobalConcurrency =
+        numberFromPolicy(row.canonicalModel.queuePolicy, 'globalConcurrency') ??
+        12;
       const runtime = createFalModelConfig({
         endpointId: row.endpointId,
         type,
@@ -135,12 +144,16 @@ export class FalCatalogService {
           ? (row.disabledReason ?? undefined)
           : 'fal.ai provider is not enabled for this environment.',
         queueName: type === 'video' ? AI_QUEUE_VIDEO : AI_QUEUE_IMAGE,
-        globalConcurrency:
-          numberFromPolicy(row.queuePolicy, 'globalConcurrency') ?? 12,
+        globalConcurrency: applyProviderConcurrencyLimit(
+          canonicalGlobalConcurrency,
+          providerCapacity,
+        ),
         perUserRunning:
-          numberFromPolicy(row.queuePolicy, 'perUserRunning') ??
+          numberFromPolicy(row.canonicalModel.queuePolicy, 'perUserRunning') ??
           (type === 'video' ? 1 : 2),
-        perUserQueued: numberFromPolicy(row.queuePolicy, 'perUserQueued') ?? 10,
+        perUserQueued:
+          numberFromPolicy(row.canonicalModel.queuePolicy, 'perUserQueued') ??
+          10,
         pollDelayMs: config.pollDelayMs,
         billing: billingPolicyFromRow(row),
         parameterPolicy: row.canonicalModel.parameterPolicy as AiJsonValue,
@@ -159,6 +172,7 @@ export class FalCatalogService {
           providerEndpointId: row.providerEndpointId,
           providerRoutePriority: row.priority,
           providerRouteWeight: row.weight,
+          providerCapacity,
         },
       };
     });

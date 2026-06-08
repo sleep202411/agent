@@ -1,4 +1,64 @@
-export function mapReplicateGptImage2Request(
+import type { ReplicateImageRuntimeConfig } from './replicate-runtime';
+
+export function mapReplicateProviderRequest(
+  config: ReplicateImageRuntimeConfig,
+  input: Record<string, unknown>,
+  userId: string,
+): Record<string, unknown> {
+  if (isNanoBananaEndpoint(config.endpointId)) {
+    return mapNanoBananaRequest(config, input);
+  }
+  if (isSeedreamEndpoint(config.endpointId)) {
+    return mapSeedreamRequest(config, input);
+  }
+  return mapGptImage2Request(input, userId);
+}
+
+function mapNanoBananaRequest(
+  config: ReplicateImageRuntimeConfig,
+  input: Record<string, unknown>,
+): Record<string, unknown> {
+  const body: Record<string, unknown> = {
+    prompt: stringValue(input.prompt),
+    aspect_ratio: nanoAspectRatio(config, input.imageSize),
+    output_format: nanoOutputFormat(input.outputFormat),
+  };
+
+  const images = referenceImageUrls(input.referenceImages);
+  if (images.length > 0) body.image_input = images;
+
+  if (
+    config.endpointId === 'google/nano-banana-2' ||
+    config.endpointId === 'google/nano-banana-pro'
+  ) {
+    body.resolution = resolutionValue(config, input.resolution);
+  }
+
+  if (config.endpointId === 'google/nano-banana-pro') {
+    body.allow_fallback_model = false;
+  }
+
+  return { input: body };
+}
+
+function mapSeedreamRequest(
+  config: ReplicateImageRuntimeConfig,
+  input: Record<string, unknown>,
+): Record<string, unknown> {
+  const body: Record<string, unknown> = {
+    prompt: stringValue(input.prompt),
+    aspect_ratio: nanoAspectRatio(config, input.imageSize),
+    size: resolutionValue(config, input.resolution),
+    sequential_image_generation: 'disabled',
+  };
+
+  const images = referenceImageUrls(input.referenceImages);
+  if (images.length > 0) body.image_input = images;
+
+  return { input: body };
+}
+
+function mapGptImage2Request(
   input: Record<string, unknown>,
   userId: string,
 ): Record<string, unknown> {
@@ -7,7 +67,7 @@ export function mapReplicateGptImage2Request(
     aspect_ratio: replicateAspectRatio(input.imageSize),
     quality: qualityValue(input.quality),
     number_of_images: outputCount(input.numOutputs),
-    output_format: outputFormat(input.outputFormat),
+    output_format: gptOutputFormat(input.outputFormat),
     output_compression: 100,
     background: 'opaque',
     moderation: 'auto',
@@ -18,6 +78,14 @@ export function mapReplicateGptImage2Request(
   return { input: body };
 }
 
+function isNanoBananaEndpoint(endpointId: string): boolean {
+  return /^google\/nano-banana(?:-2|-pro)?$/.test(endpointId);
+}
+
+function isSeedreamEndpoint(endpointId: string): boolean {
+  return /^bytedance\/seedream-(?:4|4\.5|5-lite)$/.test(endpointId);
+}
+
 function stringValue(value: unknown): string {
   return typeof value === 'string' ? value : '';
 }
@@ -26,9 +94,13 @@ function qualityValue(value: unknown): 'low' | 'medium' | 'high' {
   return value === 'low' || value === 'high' ? value : 'medium';
 }
 
-function outputFormat(value: unknown): 'png' | 'jpeg' | 'webp' {
+function gptOutputFormat(value: unknown): 'png' | 'jpeg' | 'webp' {
   if (value === 'jpeg' || value === 'webp') return value;
   return 'png';
+}
+
+function nanoOutputFormat(value: unknown): 'png' | 'jpg' {
+  return value === 'jpeg' || value === 'jpg' ? 'jpg' : 'png';
 }
 
 function outputCount(value: unknown): number {
@@ -38,9 +110,63 @@ function outputCount(value: unknown): number {
 }
 
 function replicateAspectRatio(value: unknown): '1:1' | '3:2' | '2:3' {
-  if (value === 'square' || value === 'square_hd') return '1:1';
-  if (value === 'portrait_4_3' || value === 'portrait_16_9') return '2:3';
+  if (value === 'square' || value === 'square_hd' || value === '1:1') {
+    return '1:1';
+  }
+  if (
+    value === 'portrait_4_3' ||
+    value === 'portrait_16_9' ||
+    value === '3:4' ||
+    value === '9:16' ||
+    value === '2:3'
+  ) {
+    return '2:3';
+  }
   return '3:2';
+}
+
+function nanoAspectRatio(
+  config: ReplicateImageRuntimeConfig,
+  value: unknown,
+): string {
+  if (typeof value === 'string' && /^\d+:\d+$/.test(value)) return value;
+  switch (value) {
+    case 'square':
+    case 'square_hd':
+      return '1:1';
+    case 'landscape_4_3':
+      return '4:3';
+    case 'portrait_4_3':
+      return '3:4';
+    case 'landscape_16_9':
+      return '16:9';
+    case 'portrait_16_9':
+      return '9:16';
+    default:
+      return defaultString(
+        config.inputSchema.properties.imageSize?.default,
+        '1:1',
+      );
+  }
+}
+
+function resolutionValue(
+  config: ReplicateImageRuntimeConfig,
+  value: unknown,
+): string {
+  const allowed = config.inputSchema.properties.resolution?.enum;
+  if (
+    typeof value === 'string' &&
+    Array.isArray(allowed) &&
+    allowed.includes(value)
+  ) {
+    return value;
+  }
+  return defaultString(config.inputSchema.properties.resolution?.default, '1K');
+}
+
+function defaultString(value: unknown, fallback: string): string {
+  return typeof value === 'string' && value.trim() ? value : fallback;
 }
 
 function referenceImageUrls(value: unknown): string[] {

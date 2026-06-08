@@ -23,6 +23,7 @@ import {
 } from './repository';
 import { AiGenerationOutboxService } from './outbox.service';
 import { ProviderRegistry } from './provider-registry.service';
+import { ProviderCapacityRuntimeService } from './provider-capacity-runtime.service';
 import { AiGenerationQueueService } from './queue.service';
 import { AiGenerationRoutingService } from './routing.service';
 import { AiGenerationValidatorService } from './validator.service';
@@ -72,6 +73,7 @@ export class AiGenerationService {
     private readonly workspacePermissions: WorkspacePermissionService,
     private readonly entitlements: EntitlementService,
     private readonly billingWallet: AiGenerationBillingWalletService,
+    private readonly providerCapacity: ProviderCapacityRuntimeService,
   ) {}
 
   /**
@@ -406,6 +408,7 @@ export class AiGenerationService {
       return this.publicJob(job, { detail: true });
 
     await this.cancelProviderJobIfNeeded(job);
+    await this.providerCapacity.release(job);
     await this.billingWallet.releaseForJob(job, 'ai_job_cancelled');
 
     const now = new Date().toISOString();
@@ -462,7 +465,8 @@ export class AiGenerationService {
     try {
       const adapter = this.providers.get(provider);
       if (!adapter.cancelGeneration) return;
-      await adapter.cancelGeneration(job.providerJobId);
+      const providerContext = await this.store.findProviderAttemptContext(job);
+      await adapter.cancelGeneration(job.providerJobId, providerContext);
     } catch (err) {
       this.logger.warn(
         `provider cancel failed for job ${job.id}: ${

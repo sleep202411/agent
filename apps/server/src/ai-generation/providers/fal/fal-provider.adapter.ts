@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import type {
   AiModelDefinition,
+  ProviderAsyncOperationContext,
   ProviderAdapter,
   ProviderGenerationContext,
   ProviderTimingSnapshot,
@@ -115,13 +116,18 @@ export class FalProviderAdapter implements ProviderAdapter {
     };
   }
 
-  async pollStatus(providerJobId: string): Promise<PollResult> {
+  async pollStatus(
+    providerJobId: string,
+    ctx?: ProviderAsyncOperationContext,
+  ): Promise<PollResult> {
     const { endpointId, requestId } = this.decodeProviderJobId(providerJobId);
+    const urls = falQueueUrlsFromContext(ctx);
     const runtime = await this.requireRuntime(endpointId);
     const status = await this.client.status(
       this.configService.config,
       endpointId,
       requestId,
+      urls.statusUrl,
     );
     const normalized = String(status.status ?? '').toUpperCase();
 
@@ -130,6 +136,7 @@ export class FalProviderAdapter implements ProviderAdapter {
         this.configService.config,
         endpointId,
         requestId,
+        urls.responseUrl,
       );
       const requestDiagnostics = await this.resolveRequestDiagnostics(
         endpointId,
@@ -234,9 +241,18 @@ export class FalProviderAdapter implements ProviderAdapter {
     };
   }
 
-  async cancelGeneration(providerJobId: string): Promise<void> {
+  async cancelGeneration(
+    providerJobId: string,
+    ctx?: ProviderAsyncOperationContext,
+  ): Promise<void> {
     const { endpointId, requestId } = this.decodeProviderJobId(providerJobId);
-    await this.client.cancel(this.configService.config, endpointId, requestId);
+    const urls = falQueueUrlsFromContext(ctx);
+    await this.client.cancel(
+      this.configService.config,
+      endpointId,
+      requestId,
+      urls.cancelUrl,
+    );
   }
 
   mapError(err: unknown): AiJobError {
@@ -275,13 +291,25 @@ export class FalProviderAdapter implements ProviderAdapter {
     runtime: FalModelRuntimeConfig,
     payload: Record<string, unknown>,
   ): string {
-    if (
-      runtime.endpointId === 'openai/gpt-image-2' &&
-      Array.isArray(payload.image_urls) &&
-      payload.image_urls.length > 0
-    ) {
-      return 'openai/gpt-image-2/edit';
+    const hasReferenceImages =
+      Array.isArray(payload.image_urls) && payload.image_urls.length > 0;
+    if (!hasReferenceImages) return runtime.endpointId;
+
+    if (runtime.endpointId === 'openai/gpt-image-2')
+      return `${runtime.endpointId}/edit`;
+
+    if (/^fal-ai\/nano-banana(?:-2|-pro)?$/.test(runtime.endpointId)) {
+      return `${runtime.endpointId}/edit`;
     }
+
+    if (
+      /^fal-ai\/bytedance\/seedream\/v(?:4(?:\.5)?|5\/lite)\/text-to-image$/.test(
+        runtime.endpointId,
+      )
+    ) {
+      return `${runtime.endpointId}/edit`;
+    }
+
     return runtime.endpointId;
   }
 
@@ -629,6 +657,48 @@ export class FalProviderAdapter implements ProviderAdapter {
       createdAt: new Date().toISOString(),
     };
   }
+}
+
+interface FalQueueUrls {
+  statusUrl?: string | null;
+  responseUrl?: string | null;
+  cancelUrl?: string | null;
+}
+
+function falQueueUrlsFromContext(
+  ctx: ProviderAsyncOperationContext | undefined,
+): FalQueueUrls {
+  const response =
+    ctx?.providerResponse &&
+    typeof ctx.providerResponse === 'object' &&
+    !Array.isArray(ctx.providerResponse)
+      ? (ctx.providerResponse as Record<string, unknown>)
+      : null;
+  if (!response) return {};
+  return normalizeFalQueueUrls({
+    statusUrl: maybeString(response.status_url),
+    responseUrl: maybeString(response.response_url),
+    cancelUrl: maybeString(response.cancel_url),
+  });
+}
+
+function normalizeFalQueueUrls(urls: FalQueueUrls): FalQueueUrls {
+  const out: FalQueueUrls = {};
+  if (isHttpUrl(urls.statusUrl)) out.statusUrl = urls.statusUrl;
+  if (isHttpUrl(urls.responseUrl)) out.responseUrl = urls.responseUrl;
+  if (isHttpUrl(urls.cancelUrl)) out.cancelUrl = urls.cancelUrl;
+  return out;
+}
+
+function isHttpUrl(value: unknown): value is string {
+  return (
+    typeof value === 'string' &&
+    (value.startsWith('https://') || value.startsWith('http://'))
+  );
+}
+
+function maybeString(value: unknown): string | null {
+  return typeof value === 'string' ? value : null;
 }
 
 function readPath(value: unknown, path: string): unknown {

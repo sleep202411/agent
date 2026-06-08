@@ -38,6 +38,7 @@ import {
   getFizzAiJob,
   isTerminalGenerationStatus,
   listFizzAiJobs,
+  maxReferenceImages,
   normalizeFizzAiError,
   submitFizzAiJob,
   type FizzAiGenerationStatus,
@@ -244,7 +245,17 @@ function ImageStudioSurface({ workspaceId }: { workspaceId: string }) {
     () => modelById(imageModels, settings.model),
     [imageModels, settings.model]
   );
+  const referenceLimit = maxReferenceImages(selectedModel);
   const chargeableReferenceCount = referenceImages.filter((image) => !image.error).length;
+
+  const applySettings = useCallback(
+    (next: ImageGenerationSettings) => {
+      const nextLimit = maxReferenceImages(modelById(imageModels, next.model));
+      setReferenceImages((prev) => (prev.length > nextLimit ? prev.slice(0, nextLimit) : prev));
+      setSettings(next);
+    },
+    [imageModels]
+  );
 
   // Live 积分 price for the selected model + output count. Recomputes on model
   // switch and count change; null when the model carries no real pricing.
@@ -569,7 +580,7 @@ function ImageStudioSurface({ workspaceId }: { workspaceId: string }) {
     async (files: FileList | null) => {
       if (!files || files.length === 0) return;
       setReferenceUploadError(null);
-      const remaining = Math.max(0, 4 - referenceImages.length);
+      const remaining = Math.max(0, referenceLimit - referenceImages.length);
       const selected = Array.from(files).slice(0, remaining);
       if (selected.length === 0) return;
 
@@ -610,7 +621,7 @@ function ImageStudioSurface({ workspaceId }: { workspaceId: string }) {
         }
       }
     },
-    [referenceImages.length, t]
+    [referenceImages.length, referenceLimit, t]
   );
 
   const removeReferenceImage = useCallback((id: string) => {
@@ -774,6 +785,7 @@ function ImageStudioSurface({ workspaceId }: { workspaceId: string }) {
         submitError={submitError}
         priceEstimate={priceEstimate}
         referenceImages={referenceImages}
+        referenceLimit={referenceLimit}
         referenceUploadError={referenceUploadError}
         canSubmit={Boolean(
           prompt.trim() && selectedModel && !submitting && !hasUploadingReferences
@@ -784,7 +796,7 @@ function ImageStudioSurface({ workspaceId }: { workspaceId: string }) {
         onSubmit={submit}
         onOpenSettingsChange={setSettingsOpen}
         onRetryCatalog={() => void catalogQuery.refetch()}
-        onSettingsChange={setSettings}
+        onSettingsChange={applySettings}
       />
 
       {selectedDetail ? (
@@ -1061,7 +1073,6 @@ function PendingTile({ job, nowMs, ratio }: { job: ResultJob; nowMs: number; rat
           </span>
         </div>
         <div className="mt-auto space-y-2.5 pt-6">
-          <p className="line-clamp-3 text-xs font-medium leading-5 text-white/82">{job.prompt}</p>
           <div className="h-1 overflow-hidden rounded-full bg-white/[0.08]">
             <div
               className="h-full rounded-full bg-[#E52227] transition-[width] duration-700 ease-out"
@@ -1865,6 +1876,7 @@ function ImagePromptComposer({
   submitError,
   priceEstimate,
   referenceImages,
+  referenceLimit,
   referenceUploadError,
   canSubmit,
   onPromptChange,
@@ -1885,6 +1897,7 @@ function ImagePromptComposer({
   submitError: string | null;
   priceEstimate: { sellPoints: number } | null;
   referenceImages: ReferenceImage[];
+  referenceLimit: number;
   referenceUploadError: string | null;
   canSubmit: boolean;
   onPromptChange: (value: string) => void;
@@ -1938,7 +1951,7 @@ function ImagePromptComposer({
               />
               <button
                 type="button"
-                disabled={referenceImages.length >= 4}
+                disabled={referenceImages.length >= referenceLimit}
                 onClick={() => fileInputRef.current?.click()}
                 className="flex h-[86px] w-full items-center justify-center overflow-hidden rounded-[16px] border border-white/[0.07] bg-white/[0.03] text-white/70 transition-colors hover:border-white/[0.12] hover:bg-white/[0.06] hover:text-white disabled:cursor-not-allowed disabled:opacity-45"
                 aria-label={t("addImage")}
@@ -1965,7 +1978,7 @@ function ImagePromptComposer({
               ) : null}
               <button
                 type="button"
-                disabled={referenceImages.length >= 4}
+                disabled={referenceImages.length >= referenceLimit}
                 onClick={() => fileInputRef.current?.click()}
                 className="mt-3 inline-flex h-9 w-full items-center justify-center gap-2 rounded-full border border-white/[0.08] bg-white/[0.05] px-3 text-sm font-semibold text-white/86 transition-colors hover:bg-white/[0.08] hover:text-white disabled:cursor-not-allowed disabled:opacity-45"
               >
