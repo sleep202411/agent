@@ -105,6 +105,27 @@ const IP_COMMERCE_DETAIL_MOCK_ID = '00000000-0000-4000-8000-000000000001';
 const PUBLIC_LOCALIZATION_STATUSES: IpLocalizationStatus[] = [
   IpLocalizationStatus.published,
 ];
+
+// (a)-policy: content (localization / episode) created or edited on a
+// publicly-live IP (status `published`) goes live immediately instead of being
+// reset to `draft` — editing a published IP no longer hides it / its episodes.
+// On a not-yet-published IP, content still defaults to draft (pre-publish).
+// NOTE: this relaxes the admin re-review gate for published IPs; revisit if UGC
+// moderation is enforced.
+function contentLocalizationStatus(
+  ipStatus: IpPublicationStatus,
+): IpLocalizationStatus {
+  return ipStatus === IpPublicationStatus.published
+    ? IpLocalizationStatus.published
+    : IpLocalizationStatus.draft;
+}
+function contentEpisodeStatus(
+  ipStatus: IpPublicationStatus,
+): IpPublicationStatus {
+  return ipStatus === IpPublicationStatus.published
+    ? IpPublicationStatus.published
+    : IpPublicationStatus.draft;
+}
 const IP_MEDIA_UPLOAD_LIMITS: Record<MediaAssetKind, number> = {
   [MediaAssetKind.image]: 20 * 1024 * 1024,
   [MediaAssetKind.video]: 2 * 1024 * 1024 * 1024,
@@ -1734,7 +1755,7 @@ export class IpCommerceService {
           create: {
             ipId: ip.id,
             locale: sourceLocale,
-            status: IpLocalizationStatus.draft,
+            status: contentLocalizationStatus(ip.status),
             title: title ?? sourceCopy?.title ?? ip.id,
             summary: summary ?? sourceCopy?.summary ?? title ?? ip.id,
             description:
@@ -1746,9 +1767,11 @@ export class IpCommerceService {
             ...(title !== undefined ? { title } : {}),
             ...(summary !== undefined ? { summary } : {}),
             ...(description !== undefined ? { description } : {}),
-            ...(sourceCopy?.status === IpLocalizationStatus.published
-              ? { status: IpLocalizationStatus.draft }
-              : {}),
+            ...(ip.status === IpPublicationStatus.published
+              ? { status: IpLocalizationStatus.published }
+              : sourceCopy?.status === IpLocalizationStatus.published
+                ? { status: IpLocalizationStatus.draft }
+                : {}),
           },
         });
       }
@@ -2023,7 +2046,7 @@ export class IpCommerceService {
             (maxEpisode._max.sortOrder != null
               ? maxEpisode._max.sortOrder + 1000
               : episodeNo * 1000),
-          status: IpPublicationStatus.draft,
+          status: contentEpisodeStatus(ip.status),
           durationSeconds: input.durationSeconds,
           isFreePreview: input.isFreePreview ?? false,
           coverAssetId,
@@ -2033,7 +2056,7 @@ export class IpCommerceService {
           localizations: {
             create: {
               locale: ip.sourceLocale,
-              status: IpLocalizationStatus.draft,
+              status: contentLocalizationStatus(ip.status),
               title: input.title,
               summary: input.summary?.trim() || null,
               description: input.summary?.trim() || null,
@@ -2138,7 +2161,7 @@ export class IpCommerceService {
           create: {
             episodeId: episode.id,
             locale: ip.sourceLocale,
-            status: IpLocalizationStatus.draft,
+            status: contentLocalizationStatus(ip.status),
             title: title ?? sourceCopy?.title ?? `Episode ${episode.episodeNo}`,
             summary: summary ?? sourceCopy?.summary ?? null,
             description:
@@ -2151,9 +2174,11 @@ export class IpCommerceService {
             ...(summary !== undefined
               ? { summary, description: summary || null }
               : {}),
-            ...(sourceCopy?.status === IpLocalizationStatus.published
-              ? { status: IpLocalizationStatus.draft }
-              : {}),
+            ...(ip.status === IpPublicationStatus.published
+              ? { status: IpLocalizationStatus.published }
+              : sourceCopy?.status === IpLocalizationStatus.published
+                ? { status: IpLocalizationStatus.draft }
+                : {}),
           },
         });
       }
@@ -4023,6 +4048,7 @@ export class IpCommerceService {
         id: true,
         sourceLocale: true,
         version: true,
+        status: true,
       },
     });
     if (!ip) {
