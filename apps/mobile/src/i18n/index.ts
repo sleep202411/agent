@@ -1,4 +1,4 @@
-import { useSyncExternalStore } from "react";
+import { useCallback, useSyncExternalStore } from "react";
 
 import type { AppLocale } from "@/config";
 
@@ -29,10 +29,14 @@ export function t(key: MessageKey): string {
   return translate(getLocale(), key);
 }
 
-/** Reactive translator — re-renders the component when the locale changes. */
+/**
+ * Reactive translator — re-renders the component when the locale changes.
+ * The returned `t` is referentially stable per locale (useCallback) so it is
+ * safe to use in useEffect/useMemo dependency arrays without causing loops.
+ */
 export function useTranslations(): (key: MessageKey) => string {
   const locale = useSyncExternalStore(subscribeLocale, getLocale, getLocale);
-  return (key: MessageKey) => translate(locale, key);
+  return useCallback((key: MessageKey) => translate(locale, key), [locale]);
 }
 
 /** Reactive current locale. */
