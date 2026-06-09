@@ -19,12 +19,16 @@ import { MaxContentWidth, Spacing } from "@/constants/theme";
 import { getIpDiscovery, type IpDiscovery } from "@/data/browse-service";
 import type { IpStatus, IpSummary } from "@/data/types";
 import { useTheme } from "@/hooks/use-theme";
+import { type MessageKey, useTranslations } from "@/i18n";
 import { toHref } from "@/lib/navigation";
 
-function statusTag(status: IpStatus): { label: string; tone: "info" | "neutral" | "warning" } {
-  if (status === "updating") return { label: "Updating", tone: "info" };
-  if (status === "upcoming") return { label: "Upcoming", tone: "warning" };
-  return { label: "Completed", tone: "neutral" };
+function statusTagKey(status: IpStatus): {
+  labelKey: MessageKey;
+  tone: "info" | "neutral" | "warning";
+} {
+  if (status === "updating") return { labelKey: "home.statusUpdating", tone: "info" };
+  if (status === "upcoming") return { labelKey: "home.statusUpcoming", tone: "warning" };
+  return { labelKey: "home.statusCompleted", tone: "neutral" };
 }
 
 function openIp(id: string) {
@@ -32,6 +36,7 @@ function openIp(id: string) {
 }
 
 export default function IpDiscoveryScreen() {
+  const t = useTranslations();
   const { width } = useWindowDimensions();
   const featuredWidth = Math.min(width, MaxContentWidth) - Spacing.four * 2;
   const [discovery, setDiscovery] = useState<IpDiscovery>();
@@ -40,10 +45,10 @@ export default function IpDiscoveryScreen() {
   const [genreIndex, setGenreIndex] = useState(0);
   // Genres come from the Nest taxonomy endpoint (not scraped from IP records).
   const genreList = discovery?.genres ?? [];
-  const genreChips = ["All", ...genreList.map((genre) => genre.label)];
+  const genreChips = [t("home.genreAll"), ...genreList.map((genre) => genre.label)];
   const selectedGenreCode = genreIndex > 0 ? genreList[genreIndex - 1]?.code : undefined;
   const activeGenreLabel =
-    genreIndex > 0 ? (genreList[genreIndex - 1]?.label ?? "this genre") : "All";
+    genreIndex > 0 ? (genreList[genreIndex - 1]?.label ?? t("home.genreThis")) : t("home.genreAll");
 
   useEffect(() => {
     let alive = true;
@@ -54,7 +59,7 @@ export default function IpDiscoveryScreen() {
         const data = await getIpDiscovery();
         if (alive) setDiscovery(data);
       } catch (loadError) {
-        if (alive) setError(loadError instanceof Error ? loadError.message : "Failed to load IPs.");
+        if (alive) setError(loadError instanceof Error ? loadError.message : t("home.loadError"));
       } finally {
         if (alive) setLoading(false);
       }
@@ -63,7 +68,7 @@ export default function IpDiscoveryScreen() {
     return () => {
       alive = false;
     };
-  }, []);
+  }, [t]);
 
   const featured = discovery?.featured ?? [];
   const trending = discovery?.trending ?? [];
@@ -77,13 +82,13 @@ export default function IpDiscoveryScreen() {
 
   return (
     <TabScreen gap={Spacing.five}>
-      <ScreenHeader title="Discover" />
+      <ScreenHeader title={t("home.title")} />
 
       {loading ? (
         <DiscoverySkeleton width={featuredWidth} />
       ) : error ? (
         <EmptyState
-          title="Couldn't load IPs"
+          title={t("home.errorTitle")}
           detail={error}
           symbol={{ ios: "exclamationmark.triangle", android: "warning", web: "warning" }}
         />
@@ -106,7 +111,7 @@ export default function IpDiscoveryScreen() {
 
           {trending.length ? (
             <View style={styles.section}>
-              <SectionHeader title="Trending now" trailing={`${trending.length}`} />
+              <SectionHeader title={t("home.trendingTitle")} trailing={`${trending.length}`} />
               <ScrollView
                 horizontal
                 showsHorizontalScrollIndicator={false}
@@ -120,7 +125,7 @@ export default function IpDiscoveryScreen() {
           ) : null}
 
           <View style={styles.section}>
-            <SectionHeader title="All IPs" trailing={`${allIps.length}`} />
+            <SectionHeader title={t("home.allIpsTitle")} trailing={`${allIps.length}`} />
             {genreChips.length > 1 ? (
               <ChipRail items={genreChips} activeIndex={genreIndex} onChange={setGenreIndex} />
             ) : null}
@@ -131,7 +136,10 @@ export default function IpDiscoveryScreen() {
                 ))}
               </View>
             ) : (
-              <EmptyState title="No IPs" detail={`No ${activeGenreLabel} titles yet.`} />
+              <EmptyState
+                title={t("home.emptyTitle")}
+                detail={`${t("home.emptyDetailPrefix")}${activeGenreLabel}${t("home.emptyDetailSuffix")}`}
+              />
             )}
           </View>
         </>
@@ -158,6 +166,7 @@ function RatingRow({ rating }: { rating?: number }) {
 }
 
 function FeaturedCard({ ip, width }: { ip: IpSummary; width: number }) {
+  const t = useTranslations();
   const theme = useTheme();
   return (
     <Pressable
@@ -176,7 +185,7 @@ function FeaturedCard({ ip, width }: { ip: IpSummary; width: number }) {
         <View style={styles.featuredTopRow}>
           <View style={[styles.featuredBadge, { backgroundColor: theme.brand }]}>
             <ThemedText type="code" style={styles.featuredBadgeText}>
-              FEATURED
+              {t("home.featuredBadge")}
             </ThemedText>
           </View>
           <RatingRow rating={ip.rating} />
@@ -201,7 +210,7 @@ function FeaturedCard({ ip, width }: { ip: IpSummary; width: number }) {
                 tintColor="#FFFFFF"
               />
               <ThemedText type="code" style={styles.watchText}>
-                Watch
+                {t("home.watch")}
               </ThemedText>
             </View>
           </View>
@@ -228,7 +237,8 @@ function TrendingCard({ ip }: { ip: IpSummary }) {
 }
 
 function IpRow({ ip }: { ip: IpSummary }) {
-  const tag = statusTag(ip.status);
+  const t = useTranslations();
+  const tag = statusTagKey(ip.status);
   return (
     <Pressable
       accessibilityRole="button"
@@ -249,10 +259,10 @@ function IpRow({ ip }: { ip: IpSummary }) {
             ) : null}
             {ip.episodeCount ? (
               <ThemedText type="code" themeColor="textSecondary">
-                · {ip.episodeCount} eps
+                · {ip.episodeCount} {t("home.episodesSuffix")}
               </ThemedText>
             ) : null}
-            <Tag label={tag.label} tone={tag.tone} />
+            <Tag label={t(tag.labelKey)} tone={tag.tone} />
           </View>
           <ThemedText type="small" themeColor="textSecondary" numberOfLines={2}>
             {ip.synopsis}

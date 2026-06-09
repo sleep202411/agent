@@ -11,17 +11,18 @@ import { Spacing } from "@/constants/theme";
 import { getCrewFeed } from "@/data/browse-service";
 import type { CrewStatus, CrewSummary } from "@/data/types";
 import { useTheme } from "@/hooks/use-theme";
+import { type MessageKey, useTranslations } from "@/i18n";
 import { toHref } from "@/lib/navigation";
 
-const FILTERS = ["All", "Recruiting", "In production"] as const;
+const FILTERS = ["crews.filterAll", "crews.filterRecruiting", "crews.filterInProduction"] as const;
 
 export function crewStatusTag(status: CrewStatus): {
-  label: string;
+  labelKey: MessageKey;
   tone: "success" | "info" | "neutral";
 } {
-  if (status === "recruiting") return { label: "Recruiting", tone: "success" };
-  if (status === "in-production") return { label: "In production", tone: "info" };
-  return { label: "Closed", tone: "neutral" };
+  if (status === "recruiting") return { labelKey: "crews.statusRecruiting", tone: "success" };
+  if (status === "in-production") return { labelKey: "crews.statusInProduction", tone: "info" };
+  return { labelKey: "crews.statusClosed", tone: "neutral" };
 }
 
 function matchesFilter(crew: CrewSummary, filterIndex: number) {
@@ -31,6 +32,7 @@ function matchesFilter(crew: CrewSummary, filterIndex: number) {
 }
 
 export default function CrewsScreen() {
+  const t = useTranslations();
   const [crews, setCrews] = useState<CrewSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string>();
@@ -46,7 +48,7 @@ export default function CrewsScreen() {
         if (alive) setCrews(data);
       } catch (loadError) {
         if (alive)
-          setError(loadError instanceof Error ? loadError.message : "Failed to load crews.");
+          setError(loadError instanceof Error ? loadError.message : t("crews.loadErrorFallback"));
       } finally {
         if (alive) setLoading(false);
       }
@@ -55,7 +57,7 @@ export default function CrewsScreen() {
     return () => {
       alive = false;
     };
-  }, []);
+  }, [t]);
 
   const visible = useMemo(
     () => crews.filter((crew) => matchesFilter(crew, filterIndex)),
@@ -64,8 +66,12 @@ export default function CrewsScreen() {
 
   return (
     <TabScreen gap={Spacing.five}>
-      <ScreenHeader eyebrow="Recruitment" title="Crews" />
-      <ChipRail items={FILTERS} activeIndex={filterIndex} onChange={setFilterIndex} />
+      <ScreenHeader eyebrow={t("crews.eyebrow")} title={t("crews.title")} />
+      <ChipRail
+        items={FILTERS.map((key) => t(key))}
+        activeIndex={filterIndex}
+        onChange={setFilterIndex}
+      />
 
       {loading ? (
         <View style={styles.list}>
@@ -79,7 +85,7 @@ export default function CrewsScreen() {
         </View>
       ) : error ? (
         <EmptyState
-          title="Couldn't load crews"
+          title={t("crews.loadErrorTitle")}
           detail={error}
           symbol={{ ios: "exclamationmark.triangle", android: "warning", web: "warning" }}
         />
@@ -91,8 +97,8 @@ export default function CrewsScreen() {
         </View>
       ) : (
         <EmptyState
-          title="No crews here"
-          detail="No crews match this filter right now. Try another."
+          title={t("crews.emptyTitle")}
+          detail={t("crews.emptyDetail")}
           symbol={{ ios: "person.2", android: "group", web: "group" }}
         />
       )}
@@ -102,6 +108,7 @@ export default function CrewsScreen() {
 
 function CrewCard({ crew }: { crew: CrewSummary }) {
   const theme = useTheme();
+  const t = useTranslations();
   const tag = crewStatusTag(crew.status);
 
   return (
@@ -120,11 +127,11 @@ function CrewCard({ crew }: { crew: CrewSummary }) {
           />
           <View style={styles.coverScrim} />
           <View style={styles.coverTop}>
-            <Tag label={tag.label} tone={tag.tone} />
+            <Tag label={t(tag.labelKey)} tone={tag.tone} />
             {crew.status === "recruiting" ? (
               <View style={[styles.rolesPill, { backgroundColor: theme.brand }]}>
                 <ThemedText type="code" style={styles.rolesPillText}>
-                  {crew.openRoles} roles open
+                  {crew.openRoles} {t("crews.rolesOpen")}
                 </ThemedText>
               </View>
             ) : null}
@@ -168,7 +175,7 @@ function CrewCard({ crew }: { crew: CrewSummary }) {
                   tintColor={theme.textSecondary}
                 />
                 <ThemedText type="code" themeColor="textSecondary">
-                  {crew.memberCount} members
+                  {crew.memberCount} {t("crews.members")}
                 </ThemedText>
               </View>
             ) : null}

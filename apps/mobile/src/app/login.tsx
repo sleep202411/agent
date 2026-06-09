@@ -19,7 +19,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useAuth } from "@/auth";
 import { appEnv } from "@/config";
 import { Colors, MaxContentWidth, Spacing } from "@/constants/theme";
-import { t } from "@/i18n";
+import { useTranslations } from "@/i18n";
 
 type FieldName = "identifier" | "password";
 
@@ -33,6 +33,7 @@ function pressedStyle(pressed: boolean) {
 }
 
 export default function LoginScreen() {
+  const t = useTranslations();
   const auth = useAuth();
   const router = useRouter();
   const safeAreaInsets = useSafeAreaInsets();
@@ -189,7 +190,9 @@ export default function LoginScreen() {
                     value={password}
                   />
                   <Pressable
-                    accessibilityLabel={showPassword ? "Hide password" : "Show password"}
+                    accessibilityLabel={
+                      showPassword ? t("login.hidePassword") : t("login.showPassword")
+                    }
                     accessibilityRole="button"
                     hitSlop={10}
                     onPress={() => setShowPassword((current) => !current)}

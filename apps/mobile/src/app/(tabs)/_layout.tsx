@@ -6,15 +6,17 @@ import AppTabs from "@/components/app-tabs";
 import { ThemedText } from "@/components/themed-text";
 import { ThemedView } from "@/components/themed-view";
 import { Spacing } from "@/constants/theme";
+import { useTranslations } from "@/i18n";
 
 export default function TabLayout() {
   const auth = useAuth();
+  const t = useTranslations();
 
   if (auth.status === "hydrating" || auth.status === "submitting") {
     return (
       <ThemedView style={styles.loadingScreen}>
         <ThemedText type="smallBold" themeColor="textSecondary">
-          Loading workspace
+          {t("tabs.loadingWorkspace")}
         </ThemedText>
       </ThemedView>
     );

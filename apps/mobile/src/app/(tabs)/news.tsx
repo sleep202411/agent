@@ -9,12 +9,14 @@ import { EmptyState, PosterImage, ScreenHeader, Skeleton } from "@/components/ui
 import { Spacing } from "@/constants/theme";
 import { getNewsFeed } from "@/data/browse-service";
 import type { NewsArticle } from "@/data/types";
+import { useTranslations } from "@/i18n";
 
 function openArticle(article: NewsArticle) {
   if (article.url) void WebBrowser.openBrowserAsync(article.url);
 }
 
 export default function NewsScreen() {
+  const t = useTranslations();
   const [articles, setArticles] = useState<NewsArticle[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string>();
@@ -28,8 +30,7 @@ export default function NewsScreen() {
         const data = await getNewsFeed();
         if (alive) setArticles(data);
       } catch (loadError) {
-        if (alive)
-          setError(loadError instanceof Error ? loadError.message : "Failed to load news.");
+        if (alive) setError(loadError instanceof Error ? loadError.message : t("news.loadError"));
       } finally {
         if (alive) setLoading(false);
       }
@@ -45,7 +46,7 @@ export default function NewsScreen() {
 
   return (
     <TabScreen gap={Spacing.five}>
-      <ScreenHeader eyebrow="Newsroom" title="News" />
+      <ScreenHeader eyebrow={t("news.eyebrow")} title={t("news.title")} />
 
       {loading ? (
         <View style={styles.list}>
@@ -62,7 +63,7 @@ export default function NewsScreen() {
         </View>
       ) : error ? (
         <EmptyState
-          title="Couldn't load news"
+          title={t("news.errorTitle")}
           detail={error}
           symbol={{ ios: "exclamationmark.triangle", android: "warning", web: "warning" }}
         />
@@ -79,8 +80,8 @@ export default function NewsScreen() {
         </>
       ) : (
         <EmptyState
-          title="No stories yet"
-          detail="No news is published right now."
+          title={t("news.emptyTitle")}
+          detail={t("news.emptyDetail")}
           symbol={{ ios: "newspaper", android: "feed", web: "feed" }}
         />
       )}

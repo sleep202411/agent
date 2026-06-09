@@ -19,7 +19,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { sendVerificationCode, useAuth } from "@/auth";
 import { appEnv } from "@/config";
 import { Colors, MaxContentWidth, Spacing } from "@/constants/theme";
-import { t } from "@/i18n";
+import { useTranslations } from "@/i18n";
 
 type FieldName = "identifier" | "code" | "password" | "confirmPassword";
 
@@ -34,6 +34,7 @@ function pressedStyle(pressed: boolean) {
 }
 
 export default function RegisterScreen() {
+  const t = useTranslations();
   const auth = useAuth();
   const router = useRouter();
   const safeAreaInsets = useSafeAreaInsets();
@@ -145,7 +146,7 @@ export default function RegisterScreen() {
         >
           <View style={styles.page}>
             <Pressable
-              accessibilityLabel="Back"
+              accessibilityLabel={t("register.back")}
               accessibilityRole="button"
               hitSlop={12}
               onPress={() => router.back()}
@@ -272,7 +273,9 @@ export default function RegisterScreen() {
                     value={password}
                   />
                   <Pressable
-                    accessibilityLabel={showPassword ? "Hide password" : "Show password"}
+                    accessibilityLabel={
+                      showPassword ? t("register.hidePassword") : t("register.showPassword")
+                    }
                     accessibilityRole="button"
                     hitSlop={10}
                     onPress={() => setShowPassword((value) => !value)}

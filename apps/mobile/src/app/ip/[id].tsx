@@ -12,11 +12,13 @@ import { Spacing } from "@/constants/theme";
 import { getIpById } from "@/data/browse-service";
 import type { IpDetail, IpEpisode, Person } from "@/data/types";
 import { useTheme } from "@/hooks/use-theme";
+import { useTranslations } from "@/i18n";
 
 export default function IpDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const insets = useSafeAreaInsets();
   const theme = useTheme();
+  const t = useTranslations();
   const [ip, setIp] = useState<IpDetail>();
   const [loading, setLoading] = useState(true);
   const [expanded, setExpanded] = useState(false);
@@ -52,8 +54,8 @@ export default function IpDetailScreen() {
     return (
       <ThemedView style={[styles.fullCenter, { padding: Spacing.four }]}>
         <EmptyState
-          title="IP not found"
-          detail="This title may have been unpublished or moved."
+          title={t("ipDetail.notFoundTitle")}
+          detail={t("ipDetail.notFoundDetail")}
           symbol={{ ios: "film", android: "movie", web: "movie" }}
         />
       </ThemedView>
@@ -63,7 +65,7 @@ export default function IpDetailScreen() {
   const metaParts = [
     ip.year?.toString(),
     ip.genres.slice(0, 2).join(" · "),
-    ip.episodeCount ? `${ip.episodeCount} eps` : undefined,
+    ip.episodeCount ? `${ip.episodeCount} ${t("ipDetail.episodesUnit")}` : undefined,
   ].filter(Boolean);
 
   return (
@@ -122,7 +124,7 @@ export default function IpDetailScreen() {
                 tintColor="#FFFFFF"
               />
               <ThemedText type="smallBold" style={styles.playText}>
-                Play
+                {t("ipDetail.play")}
               </ThemedText>
             </Pressable>
             <Pressable
@@ -136,7 +138,7 @@ export default function IpDetailScreen() {
                   size={16}
                   tintColor={theme.text}
                 />
-                <ThemedText type="smallBold">My List</ThemedText>
+                <ThemedText type="smallBold">{t("ipDetail.myList")}</ThemedText>
               </ThemedView>
             </Pressable>
           </View>
@@ -149,7 +151,7 @@ export default function IpDetailScreen() {
                 tintColor={theme.textSecondary}
               />
               <ThemedText type="code" themeColor="textSecondary">
-                FizzDragon Room
+                {t("ipDetail.room")}
               </ThemedText>
               <ThemedText type="smallBold" style={{ color: theme.brand }}>
                 {ip.roomCode}
@@ -167,7 +169,7 @@ export default function IpDetailScreen() {
             </ThemedText>
             <Pressable accessibilityRole="button" onPress={() => setExpanded((value) => !value)}>
               <ThemedText type="smallBold" style={{ color: theme.brand }}>
-                {expanded ? "Show less" : "Show more"}
+                {expanded ? t("ipDetail.showLess") : t("ipDetail.showMore")}
               </ThemedText>
             </Pressable>
           </View>
@@ -181,8 +183,8 @@ export default function IpDetailScreen() {
           {ip.episodes.length ? (
             <View style={styles.section}>
               <SectionHeader
-                title="Episodes"
-                trailing={`${ip.episodeCount ?? ip.episodes.length} total`}
+                title={t("ipDetail.episodesTitle")}
+                trailing={`${ip.episodeCount ?? ip.episodes.length} ${t("ipDetail.episodesTotal")}`}
               />
               <ScrollView
                 horizontal
@@ -197,7 +199,7 @@ export default function IpDetailScreen() {
           ) : null}
 
           <View style={styles.section}>
-            <SectionHeader title="Cast & creators" />
+            <SectionHeader title={t("ipDetail.castTitle")} />
             <ScrollView
               horizontal
               showsHorizontalScrollIndicator={false}
@@ -215,6 +217,7 @@ export default function IpDetailScreen() {
 }
 
 function EpisodeCard({ episode, title }: { episode: IpEpisode; title: string }) {
+  const t = useTranslations();
   return (
     <Pressable
       accessibilityRole="button"
@@ -233,13 +236,13 @@ function EpisodeCard({ episode, title }: { episode: IpEpisode; title: string }) 
         {episode.free ? (
           <View style={styles.freeBadge}>
             <ThemedText type="code" style={styles.freeText}>
-              FREE
+              {t("ipDetail.free")}
             </ThemedText>
           </View>
         ) : null}
       </View>
       <ThemedText type="smallBold" numberOfLines={1}>
-        Episode {episode.index}
+        {`${t("ipDetail.episodePrefix")}${episode.index}${t("ipDetail.episodeSuffix")}`}
       </ThemedText>
       {episode.durationLabel ? (
         <ThemedText type="code" themeColor="textSecondary">

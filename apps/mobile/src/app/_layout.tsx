@@ -1,8 +1,10 @@
 import { StatusBar } from "expo-status-bar";
 import { DarkTheme, Stack, ThemeProvider } from "expo-router";
+import { useEffect } from "react";
 
 import "@/global.css";
 import { AuthProvider } from "@/auth";
+import { initLocale } from "@/i18n";
 import { AnimatedSplashOverlay } from "@/components/animated-icon";
 import { Colors } from "@/constants/theme";
 
@@ -23,6 +25,10 @@ const detailHeader = {
 } as const;
 
 export default function RootLayout() {
+  useEffect(() => {
+    void initLocale();
+  }, []);
+
   return (
     <ThemeProvider value={DarkTheme}>
       <StatusBar style="light" />
@@ -32,7 +38,6 @@ export default function RootLayout() {
           <Stack.Screen name="(tabs)" />
           <Stack.Screen name="login" />
           <Stack.Screen name="register" />
-          <Stack.Screen name="kyc" />
           <Stack.Screen name="ip/[id]" options={detailHeader} />
           <Stack.Screen name="crew/[id]" options={detailHeader} />
         </Stack>

@@ -11,20 +11,26 @@ import { Spacing } from "@/constants/theme";
 import { getCrewById } from "@/data/browse-service";
 import type { CrewDetail, CrewStatus, Person } from "@/data/types";
 import { useTheme } from "@/hooks/use-theme";
+import { useTranslations } from "@/i18n";
 
-function crewStatusTag(status: CrewStatus): {
+function crewStatusTag(
+  status: CrewStatus,
+  t: ReturnType<typeof useTranslations>
+): {
   label: string;
   tone: "success" | "info" | "neutral";
 } {
-  if (status === "recruiting") return { label: "Recruiting", tone: "success" };
-  if (status === "in-production") return { label: "In production", tone: "info" };
-  return { label: "Closed", tone: "neutral" };
+  if (status === "recruiting") return { label: t("crewDetail.statusRecruiting"), tone: "success" };
+  if (status === "in-production")
+    return { label: t("crewDetail.statusInProduction"), tone: "info" };
+  return { label: t("crewDetail.statusClosed"), tone: "neutral" };
 }
 
 export default function CrewDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const insets = useSafeAreaInsets();
   const theme = useTheme();
+  const t = useTranslations();
   const [crew, setCrew] = useState<CrewDetail>();
   const [loading, setLoading] = useState(true);
 
@@ -59,15 +65,15 @@ export default function CrewDetailScreen() {
     return (
       <ThemedView style={[styles.fullCenter, { padding: Spacing.four }]}>
         <EmptyState
-          title="Crew not found"
-          detail="This crew may have closed recruitment."
+          title={t("crewDetail.notFoundTitle")}
+          detail={t("crewDetail.notFoundDetail")}
           symbol={{ ios: "person.2", android: "group", web: "group" }}
         />
       </ThemedView>
     );
   }
 
-  const tag = crewStatusTag(crew.status);
+  const tag = crewStatusTag(crew.status, t);
 
   return (
     <ThemedView style={styles.screen}>
@@ -109,7 +115,7 @@ export default function CrewDetailScreen() {
               ) : null}
               {crew.memberCount ? (
                 <ThemedText type="code" themeColor="textSecondary">
-                  {crew.memberCount} members
+                  {crew.memberCount} {t("crewDetail.membersSuffix")}
                 </ThemedText>
               ) : null}
             </View>
@@ -123,7 +129,10 @@ export default function CrewDetailScreen() {
 
           {crew.roles.length ? (
             <View style={styles.section}>
-              <SectionHeader title="Open roles" trailing={`${crew.openRoles} open`} />
+              <SectionHeader
+                title={t("crewDetail.openRolesTitle")}
+                trailing={`${crew.openRoles} ${t("crewDetail.openSuffix")}`}
+              />
               <ThemedView type="backgroundElement" style={styles.rolePanel}>
                 {crew.roles.map((role, index) => (
                   <View
@@ -144,7 +153,7 @@ export default function CrewDetailScreen() {
                         </ThemedText>
                       ) : null}
                     </View>
-                    <Tag label={`${role.count} open`} tone="brand" />
+                    <Tag label={`${role.count} ${t("crewDetail.openSuffix")}`} tone="brand" />
                   </View>
                 ))}
               </ThemedView>
@@ -153,7 +162,7 @@ export default function CrewDetailScreen() {
 
           {crew.members.length ? (
             <View style={styles.section}>
-              <SectionHeader title="Crew members" />
+              <SectionHeader title={t("crewDetail.membersTitle")} />
               <ScrollView
                 horizontal
                 showsHorizontalScrollIndicator={false}
@@ -177,7 +186,7 @@ export default function CrewDetailScreen() {
               ]}
             >
               <ThemedText type="smallBold" style={styles.applyText}>
-                Apply to join
+                {t("crewDetail.applyButton")}
               </ThemedText>
             </Pressable>
           ) : null}

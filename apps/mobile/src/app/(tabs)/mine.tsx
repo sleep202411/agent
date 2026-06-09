@@ -1,46 +1,59 @@
 import { Image } from "expo-image";
-import { useRouter } from "expo-router";
 import { SymbolView, type SymbolViewProps } from "expo-symbols";
-import { useMemo } from "react";
-import { Pressable, StyleSheet, View } from "react-native";
+import { useState } from "react";
+import { Modal, Pressable, StyleSheet, View } from "react-native";
 
 import { useAuth } from "@/auth";
 import { TabScreen } from "@/components/tab-screen";
 import { ThemedText } from "@/components/themed-text";
 import { ThemedView } from "@/components/themed-view";
 import { ScreenHeader, SectionHeader } from "@/components/ui";
-import { appEnv, isChinaRegion, resolveAssetUrl } from "@/config";
+import { appEnv, resolveAssetUrl, type AppLocale } from "@/config";
 import { Spacing } from "@/constants/theme";
-import { isKycVerified } from "@/data/kyc-api";
 import { useTheme } from "@/hooks/use-theme";
-import { t } from "@/i18n";
+import { SUPPORTED_LOCALES, setLocale, useLocale, useTranslations } from "@/i18n";
 
 type AppSymbol = SymbolViewProps["name"];
-type MenuItemKey = "portfolio" | "projects" | "kyc" | "role" | "settings";
 
-const baseMenuItems: { detail: string; key: MenuItemKey; label: string; symbol: AppSymbol }[] = [
+/** Language names are endonyms — always shown in their own script. */
+const LOCALE_NAMES: Record<AppLocale, string> = {
+  "en-US": "English",
+  "zh-CN": "简体中文",
+  "zh-HK": "繁體中文",
+};
+
+const INFO_ITEMS: {
+  key: string;
+  labelKey: "mine.portfolioLabel" | "mine.projectsLabel" | "mine.roleLabel" | "mine.settingsLabel";
+  detailKey:
+    | "mine.portfolioDetail"
+    | "mine.projectsDetail"
+    | "mine.roleDetail"
+    | "mine.settingsDetail";
+  symbol: AppSymbol;
+}[] = [
   {
     key: "portfolio",
-    label: "Personal portfolio",
-    detail: "Works, videos, and public profile",
+    labelKey: "mine.portfolioLabel",
+    detailKey: "mine.portfolioDetail",
     symbol: { ios: "person.crop.rectangle", android: "badge", web: "badge" },
   },
   {
     key: "projects",
-    label: "My projects",
-    detail: "Created and joined productions",
+    labelKey: "mine.projectsLabel",
+    detailKey: "mine.projectsDetail",
     symbol: { ios: "folder", android: "folder", web: "folder" },
   },
   {
     key: "role",
-    label: "Role certification",
-    detail: "Creator identity and credentials",
+    labelKey: "mine.roleLabel",
+    detailKey: "mine.roleDetail",
     symbol: { ios: "checkmark.seal", android: "verified", web: "verified" },
   },
   {
     key: "settings",
-    label: "Account settings",
-    detail: "Binding, privacy, and security",
+    labelKey: "mine.settingsLabel",
+    detailKey: "mine.settingsDetail",
     symbol: { ios: "gearshape", android: "settings", web: "settings" },
   },
 ];
@@ -52,29 +65,19 @@ function getDisplayName(user: ReturnType<typeof useAuth>["user"]) {
 }
 
 function getAccountMeta(user: ReturnType<typeof useAuth>["user"]) {
-  return user?.email ?? user?.phone ?? user?.userName ?? "FizzDragon account";
+  return user?.email ?? user?.phone ?? user?.userName;
 }
 
 export default function MineScreen() {
   const auth = useAuth();
-  const router = useRouter();
   const theme = useTheme();
-  const displayName = getDisplayName(auth.user) ?? "Creator";
-  const accountMeta = getAccountMeta(auth.user);
+  const t = useTranslations();
+  const locale = useLocale();
+  const [languageOpen, setLanguageOpen] = useState(false);
+
+  const displayName = getDisplayName(auth.user) ?? t("mine.creatorFallback");
+  const accountMeta = getAccountMeta(auth.user) ?? t("mine.accountFallback");
   const initial = displayName.trim().slice(0, 1).toUpperCase();
-  const kycVerified = isKycVerified(auth.user);
-  const menuItems = useMemo(() => {
-    if (!isChinaRegion) return baseMenuItems;
-
-    const kycItem: { detail: string; key: "kyc"; label: string; symbol: AppSymbol } = {
-      key: "kyc" as const,
-      label: t("mine.kycLabel"),
-      detail: kycVerified ? t("mine.kycDetailVerified") : t("mine.kycDetailRequired"),
-      symbol: { ios: "checkmark.shield", android: "verified_user", web: "verified_user" },
-    };
-
-    return [baseMenuItems[0], baseMenuItems[1], kycItem, baseMenuItems[2], baseMenuItems[3]];
-  }, [kycVerified]);
 
   const rawAvatar = auth.user?.avatar ?? auth.user?.headImg ?? auth.user?.headImgUrl;
   const avatarUrl =
@@ -82,13 +85,9 @@ export default function MineScreen() {
       ? resolveAssetUrl(rawAvatar, appEnv.assets.userBaseUrl)
       : undefined;
 
-  function handleMenuPress(key: MenuItemKey) {
-    if (key === "kyc") router.push("/kyc");
-  }
-
   return (
     <TabScreen gap={Spacing.five}>
-      <ScreenHeader title="Mine" />
+      <ScreenHeader title={t("mine.title")} />
 
       <ThemedView type="backgroundElement" style={styles.profilePanel}>
         <View style={[styles.avatar, { backgroundColor: theme.brand }]}>
@@ -111,54 +110,64 @@ export default function MineScreen() {
       </ThemedView>
 
       <View style={styles.section}>
-        <SectionHeader title="Account" trailing="Profile" />
+        <SectionHeader title={t("mine.accountSection")} trailing={t("mine.profileTrailing")} />
         <ThemedView type="backgroundElement" style={styles.menuPanel}>
-          {menuItems.map((item, index) => {
-            const actionable = item.key === "kyc";
-            const row = (
-              <View
-                style={[
-                  styles.menuRow,
-                  index < menuItems.length - 1 && {
-                    borderBottomColor: theme.border,
-                    borderBottomWidth: 1,
-                  },
-                ]}
-              >
-                <View style={styles.menuLeft}>
-                  <View style={[styles.menuIcon, { backgroundColor: theme.backgroundSelected }]}>
-                    <SymbolView name={item.symbol} size={18} tintColor={theme.textSecondary} />
-                  </View>
-                  <View style={styles.menuCopy}>
-                    <ThemedText type="smallBold">{item.label}</ThemedText>
-                    <ThemedText type="small" themeColor="textSecondary" numberOfLines={1}>
-                      {item.detail}
-                    </ThemedText>
-                  </View>
-                </View>
-                {actionable ? (
+          {/* Language switcher — the one actionable preference */}
+          <Pressable
+            accessibilityRole="button"
+            onPress={() => setLanguageOpen(true)}
+            style={({ pressed }) => pressed && styles.pressed}
+          >
+            <View
+              style={[styles.menuRow, { borderBottomColor: theme.border, borderBottomWidth: 1 }]}
+            >
+              <View style={styles.menuLeft}>
+                <View style={[styles.menuIcon, { backgroundColor: theme.backgroundSelected }]}>
                   <SymbolView
-                    name={{ ios: "chevron.right", android: "chevron_right", web: "chevron_right" }}
-                    size={16}
+                    name={{ ios: "globe", android: "language", web: "language" }}
+                    size={18}
                     tintColor={theme.textSecondary}
                   />
-                ) : null}
+                </View>
+                <View style={styles.menuCopy}>
+                  <ThemedText type="smallBold">{t("mine.languageLabel")}</ThemedText>
+                  <ThemedText type="small" themeColor="textSecondary" numberOfLines={1}>
+                    {LOCALE_NAMES[locale]}
+                  </ThemedText>
+                </View>
               </View>
-            );
+              <SymbolView
+                name={{ ios: "chevron.right", android: "chevron_right", web: "chevron_right" }}
+                size={16}
+                tintColor={theme.textSecondary}
+              />
+            </View>
+          </Pressable>
 
-            return actionable ? (
-              <Pressable
-                key={item.key}
-                accessibilityRole="button"
-                onPress={() => handleMenuPress(item.key)}
-                style={({ pressed }) => pressed && styles.pressed}
-              >
-                {row}
-              </Pressable>
-            ) : (
-              <View key={item.key}>{row}</View>
-            );
-          })}
+          {INFO_ITEMS.map((item, index) => (
+            <View
+              key={item.key}
+              style={[
+                styles.menuRow,
+                index < INFO_ITEMS.length - 1 && {
+                  borderBottomColor: theme.border,
+                  borderBottomWidth: 1,
+                },
+              ]}
+            >
+              <View style={styles.menuLeft}>
+                <View style={[styles.menuIcon, { backgroundColor: theme.backgroundSelected }]}>
+                  <SymbolView name={item.symbol} size={18} tintColor={theme.textSecondary} />
+                </View>
+                <View style={styles.menuCopy}>
+                  <ThemedText type="smallBold">{t(item.labelKey)}</ThemedText>
+                  <ThemedText type="small" themeColor="textSecondary" numberOfLines={1}>
+                    {t(item.detailKey)}
+                  </ThemedText>
+                </View>
+              </View>
+            </View>
+          ))}
         </ThemedView>
       </View>
 
@@ -169,10 +178,60 @@ export default function MineScreen() {
       >
         <ThemedView type="backgroundElement" style={styles.signOutButton}>
           <ThemedText type="smallBold" style={{ color: theme.brand }}>
-            Sign out
+            {t("mine.signOut")}
           </ThemedText>
         </ThemedView>
       </Pressable>
+
+      <Modal
+        visible={languageOpen}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setLanguageOpen(false)}
+      >
+        <Pressable style={styles.modalBackdrop} onPress={() => setLanguageOpen(false)}>
+          <Pressable
+            style={[styles.modalSheet, { backgroundColor: theme.backgroundElement }]}
+            onPress={(e) => e.stopPropagation()}
+          >
+            <ThemedText type="smallBold" style={styles.modalTitle}>
+              {t("mine.languageSheetTitle")}
+            </ThemedText>
+            {SUPPORTED_LOCALES.map((option, index) => {
+              const selected = option === locale;
+              return (
+                <Pressable
+                  key={option}
+                  accessibilityRole="button"
+                  onPress={() => {
+                    setLocale(option);
+                    setLanguageOpen(false);
+                  }}
+                  style={({ pressed }) => [
+                    styles.modalRow,
+                    index < SUPPORTED_LOCALES.length - 1 && {
+                      borderBottomColor: theme.border,
+                      borderBottomWidth: 1,
+                    },
+                    pressed && styles.pressed,
+                  ]}
+                >
+                  <ThemedText type={selected ? "smallBold" : "small"}>
+                    {LOCALE_NAMES[option]}
+                  </ThemedText>
+                  {selected ? (
+                    <SymbolView
+                      name={{ ios: "checkmark", android: "check", web: "check" }}
+                      size={16}
+                      tintColor={theme.brand}
+                    />
+                  ) : null}
+                </Pressable>
+              );
+            })}
+          </Pressable>
+        </Pressable>
+      </Modal>
     </TabScreen>
   );
 }
@@ -252,5 +311,26 @@ const styles = StyleSheet.create({
   },
   pressed: {
     opacity: 0.72,
+  },
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.55)",
+    justifyContent: "flex-end",
+  },
+  modalSheet: {
+    borderTopLeftRadius: 16,
+    borderTopRightRadius: 16,
+    paddingHorizontal: Spacing.three,
+    paddingTop: Spacing.three,
+    paddingBottom: Spacing.six,
+  },
+  modalTitle: {
+    paddingVertical: Spacing.two,
+  },
+  modalRow: {
+    minHeight: 52,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
   },
 });

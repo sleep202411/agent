@@ -255,6 +255,7 @@ module.exports = ({ config }) => {
     plugins: [
       "expo-router",
       "expo-image",
+      "expo-localization",
       [
         "expo-status-bar",
         {
