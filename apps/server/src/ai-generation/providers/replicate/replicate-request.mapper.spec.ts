@@ -94,4 +94,80 @@ describe('mapReplicateProviderRequest', () => {
       },
     });
   });
+
+  it('maps Flux 2 Max with the pro-style body and no steps/guidance', () => {
+    const config = {
+      endpointId: 'black-forest-labs/flux-2-max',
+      inputSchema: {
+        properties: {
+          imageSize: { default: '1:1' },
+          resolution: { default: '1K', enum: ['1K', '2K'] },
+          outputFormat: { default: 'jpeg', enum: ['jpeg', 'png'] },
+        },
+      },
+    } as unknown as ReplicateImageRuntimeConfig;
+
+    const body = mapReplicateProviderRequest(
+      config,
+      {
+        prompt: 'hero product shot',
+        imageSize: '1:1',
+        resolution: '2K',
+        outputFormat: 'jpeg',
+        seed: 7,
+      },
+      'user-1',
+    );
+
+    expect(body).toEqual({
+      input: {
+        prompt: 'hero product shot',
+        aspect_ratio: '1:1',
+        resolution: '4 MP',
+        output_format: 'jpg',
+        output_quality: 95,
+        safety_tolerance: 2,
+        prompt_upsampling: false,
+        seed: 7,
+      },
+    });
+  });
+
+  it('maps Flux 2 Dev to its distilled schema and drops steps/guidance', () => {
+    const config = {
+      endpointId: 'black-forest-labs/flux-2-dev',
+      inputSchema: {
+        properties: {
+          imageSize: { default: '1:1' },
+          resolution: { default: '1K', enum: ['1K', '2K'] },
+          outputFormat: { default: 'jpeg', enum: ['jpeg', 'png'] },
+        },
+      },
+    } as unknown as ReplicateImageRuntimeConfig;
+
+    const body = mapReplicateProviderRequest(
+      config,
+      {
+        prompt: 'concept art',
+        imageSize: '16:9',
+        outputFormat: 'png',
+        guidanceScale: 4,
+        inferenceSteps: 30,
+        seed: 9,
+      },
+      'user-1',
+    );
+
+    expect(body).toEqual({
+      input: {
+        prompt: 'concept art',
+        aspect_ratio: '16:9',
+        output_format: 'png',
+        output_quality: 95,
+        disable_safety_checker: false,
+        go_fast: true,
+        seed: 9,
+      },
+    });
+  });
 });

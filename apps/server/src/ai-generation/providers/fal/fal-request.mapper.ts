@@ -103,8 +103,22 @@ function normalizeFluxImageRequest(
   const dimensions = dimensionsFromAspectRatio(imageSize, resolution);
   if (dimensions) body.image_size = dimensions;
 
+  // flux-2 [dev] (fal-ai/flux-2) is the only flux tier that batches images.
+  if (config.endpointId === 'fal-ai/flux-2') {
+    const numImages = Number(body.num_images ?? input.numOutputs);
+    if (Number.isFinite(numImages) && numImages > 0) {
+      body.num_images = Math.min(4, Math.max(1, Math.floor(numImages)));
+    }
+  }
+
   body.enable_safety_checker = true;
-  body.safety_tolerance = '2';
+  // flux-2 [dev] (the bare fal-ai/flux-2 endpoint) has no safety_tolerance input.
+  if (
+    config.endpointId !== 'fal-ai/flux-2' &&
+    config.endpointId !== 'fal-ai/flux-2/edit'
+  ) {
+    body.safety_tolerance = '2';
+  }
 }
 
 function isSeedreamEndpoint(endpointId: string): boolean {
@@ -118,7 +132,8 @@ function isQwenImageEndpoint(endpointId: string): boolean {
 }
 
 function isFluxImageEndpoint(endpointId: string): boolean {
-  return /^fal-ai\/flux-2-(?:pro|flex)(?:\/edit)?$/.test(endpointId);
+  // flux-2 (dev), flux-2-pro, flux-2-flex, flux-2-max (+ /edit variants).
+  return /^fal-ai\/flux-2(?:-(?:pro|flex|max))?(?:\/edit)?$/.test(endpointId);
 }
 
 function transformValue(value: unknown, transform = 'identity'): unknown {

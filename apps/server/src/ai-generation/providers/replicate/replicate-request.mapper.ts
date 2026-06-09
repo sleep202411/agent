@@ -116,21 +116,32 @@ function mapFluxImageRequest(
     0,
     maxReferenceImages(config),
   );
+  const isDev = config.endpointId === 'black-forest-labs/flux-2-dev';
+  const isFlex = config.endpointId === 'black-forest-labs/flux-2-flex';
   const body: Record<string, unknown> = {
     prompt: stringValue(input.prompt),
     aspect_ratio: nanoAspectRatio(config, input.imageSize),
-    resolution: fluxResolutionValue(config, input.resolution),
     output_format: fluxOutputFormat(input.outputFormat),
     output_quality: 95,
-    safety_tolerance: 2,
-    prompt_upsampling: false,
   };
-  if (images.length > 0) body.input_images = images;
-  if (typeof input.guidanceScale === 'number') {
-    body.guidance = input.guidanceScale;
+  if (isDev) {
+    // flux-2 [dev] is distilled: disable_safety_checker + go_fast, and has no
+    // resolution / safety_tolerance / prompt_upsampling / steps / guidance.
+    body.disable_safety_checker = false;
+    body.go_fast = true;
+  } else {
+    body.resolution = fluxResolutionValue(config, input.resolution);
+    body.safety_tolerance = 2;
+    body.prompt_upsampling = false;
   }
-  if (typeof input.inferenceSteps === 'number') {
-    body.steps = Math.floor(input.inferenceSteps);
+  if (images.length > 0) body.input_images = images;
+  if (isFlex) {
+    // Only flux-2 [flex] exposes guidance + inference steps on replicate.
+    if (typeof input.guidanceScale === 'number')
+      body.guidance = input.guidanceScale;
+    if (typeof input.inferenceSteps === 'number') {
+      body.steps = Math.floor(input.inferenceSteps);
+    }
   }
   if (typeof input.seed === 'number') body.seed = Math.floor(input.seed);
   return { input: body };
@@ -173,7 +184,7 @@ function isQwenImageEndpoint(endpointId: string): boolean {
 }
 
 function isFluxImageEndpoint(endpointId: string): boolean {
-  return /^black-forest-labs\/flux-2-(?:pro|flex)$/.test(endpointId);
+  return /^black-forest-labs\/flux-2-(?:pro|flex|max|dev)$/.test(endpointId);
 }
 
 function stringValue(value: unknown): string {

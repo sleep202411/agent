@@ -100,4 +100,48 @@ describe('mapFalProviderRequest', () => {
       safety_tolerance: '2',
     });
   });
+
+  it('maps Flux 2 Dev with batch images and no safety_tolerance', () => {
+    const config = {
+      endpointId: 'fal-ai/flux-2',
+      inputSchema: {
+        properties: {
+          prompt: {},
+          imageSize: {},
+          guidanceScale: {},
+          inferenceSteps: {},
+          outputFormat: { default: 'jpeg' },
+          seed: {},
+        },
+      },
+      providerInputMap: {
+        prompt: { parameter: 'prompt' },
+        imageSize: { parameter: 'image_size' },
+        guidanceScale: { parameter: 'guidance_scale' },
+        inferenceSteps: { parameter: 'num_inference_steps' },
+        outputFormat: { parameter: 'output_format', omitIfDefault: true },
+        seed: { parameter: 'seed', omitIfEmpty: true },
+      },
+    } as unknown as FalModelRuntimeConfig;
+
+    const body = mapFalProviderRequest(config, {
+      prompt: 'open weight render',
+      imageSize: '4:5',
+      resolution: '1K',
+      guidanceScale: 3,
+      inferenceSteps: 28,
+      outputFormat: 'png',
+      numOutputs: 3,
+    });
+
+    expect(body).toEqual({
+      prompt: 'open weight render',
+      image_size: { width: 816, height: 1024 },
+      guidance_scale: 3,
+      num_inference_steps: 28,
+      output_format: 'png',
+      num_images: 3,
+      enable_safety_checker: true,
+    });
+  });
 });

@@ -348,6 +348,68 @@ export const FLUX_2_FLEX_PARAMETER_POLICY = {
   seed: { enabled: true, minimum: 0, maximum: 2_147_483_647 },
 } as const satisfies Prisma.InputJsonObject;
 
+// FLUX.2 [max] — premium zero-config tier (no guidance/steps; one image/request).
+// Provider union across fal-ai/flux-2-max + replicate black-forest-labs/flux-2-max.
+export const FLUX_2_MAX_PARAMETER_POLICY = {
+  parameterMode: 'provider_union',
+  providerFamily: 'flux-2',
+  defaultAspectRatio: '1:1',
+  supportedAspectRatios: FLUX_2_IMAGE_ASPECT_RATIOS,
+  defaultVariations: 1,
+  variationOptions: [1],
+  defaultResolution: '1K',
+  resolutionOptions: ['1K', '2K'],
+  defaultOutputFormat: 'jpeg',
+  outputFormatOptions: ['jpeg', 'png', 'webp'],
+  referenceImages: {
+    enabled: true,
+    min: 0,
+    max: 8,
+    maskSupported: false,
+  },
+  safetyTolerance: { enabled: false, default: 2 },
+  promptUpsampling: { enabled: false, default: false },
+  seed: { enabled: true, minimum: 0, maximum: 2_147_483_647 },
+} as const satisfies Prisma.InputJsonObject;
+
+// FLUX.2 [dev] — open-weight base tier. Provider union: fal exposes guidance +
+// inference steps + up to 4 images; replicate is distilled (no steps). The union
+// keeps the richer fal controls; replicate routing ignores unsupported fields.
+export const FLUX_2_DEV_PARAMETER_POLICY = {
+  parameterMode: 'provider_union',
+  providerFamily: 'flux-2',
+  defaultAspectRatio: '1:1',
+  supportedAspectRatios: FLUX_2_IMAGE_ASPECT_RATIOS,
+  defaultVariations: 1,
+  variationOptions: [1, 2, 3, 4],
+  defaultResolution: '1K',
+  resolutionOptions: ['1K', '2K'],
+  defaultOutputFormat: 'jpeg',
+  outputFormatOptions: ['jpeg', 'png', 'webp'],
+  referenceImages: {
+    enabled: true,
+    min: 0,
+    max: 4,
+    maskSupported: false,
+  },
+  safetyTolerance: { enabled: false, default: 2 },
+  promptUpsampling: { enabled: false, default: false },
+  guidanceScale: {
+    enabled: true,
+    default: 2.5,
+    minimum: 1,
+    maximum: 10,
+    step: 0.5,
+  },
+  inferenceSteps: {
+    enabled: true,
+    default: 28,
+    minimum: 4,
+    maximum: 50,
+  },
+  seed: { enabled: true, minimum: 0, maximum: 2_147_483_647 },
+} as const satisfies Prisma.InputJsonObject;
+
 export const SEEDREAM_4_PARAMETER_POLICY = {
   parameterMode: 'provider_union',
   defaultAspectRatio: '1:1',
@@ -581,6 +643,54 @@ export const FLUX_2_FLEX_PRODUCT_PRICING: AiProductPricingPolicy = {
   },
   referenceImageSurchargePoints: 15,
   extraReferenceImagePoints: 5,
+  maskSurchargePoints: 0,
+  minimumPoints: 1,
+  roundTo: 1,
+};
+
+// Premium flux tier. Cost basis: fal $0.07 first MP + $0.03/extra MP
+// (1K≈1MP=$0.07, 2K≈4MP=$0.16). Points keep the ~10x flux margin.
+export const FLUX_2_MAX_PRODUCT_PRICING: AiProductPricingPolicy = {
+  mode: 'parameter_matrix',
+  version: 'flux-2-max-points-v1-2026-06-09',
+  currency: 'COMPUTE_POINTS',
+  defaultOutputCount: 1,
+  minOutputCount: 1,
+  maxOutputCount: 1,
+  defaultResolution: '1K',
+  defaultQuality: 'standard',
+  resolutionOptions: ['1K', '2K'],
+  qualityOptions: ['standard'],
+  matrix: {
+    '1K': { standard: 70 },
+    '2K': { standard: 160 },
+  },
+  referenceImageSurchargePoints: 15,
+  extraReferenceImagePoints: 5,
+  maskSurchargePoints: 0,
+  minimumPoints: 1,
+  roundTo: 1,
+};
+
+// Budget open-weight flux tier. Cost basis: $0.012/MP flat on both fal +
+// replicate (1K≈$0.012, 2K≈4MP=$0.048). Up to 4 images/request on fal.
+export const FLUX_2_DEV_PRODUCT_PRICING: AiProductPricingPolicy = {
+  mode: 'parameter_matrix',
+  version: 'flux-2-dev-points-v1-2026-06-09',
+  currency: 'COMPUTE_POINTS',
+  defaultOutputCount: 1,
+  minOutputCount: 1,
+  maxOutputCount: 4,
+  defaultResolution: '1K',
+  defaultQuality: 'standard',
+  resolutionOptions: ['1K', '2K'],
+  qualityOptions: ['standard'],
+  matrix: {
+    '1K': { standard: 12 },
+    '2K': { standard: 40 },
+  },
+  referenceImageSurchargePoints: 5,
+  extraReferenceImagePoints: 3,
   maskSurchargePoints: 0,
   minimumPoints: 1,
   roundTo: 1,
