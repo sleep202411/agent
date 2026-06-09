@@ -17,6 +17,7 @@ import { AiGenerationOutboxService } from './outbox.service';
 import { ProviderAccountReconciler } from './provider-account-reconciler.service';
 import { ProviderRegistry } from './provider-registry.service';
 import { ProviderCapacityRuntimeService } from './provider-capacity-runtime.service';
+import { AiPromptCompilerService } from './prompt-compiler.service';
 import { FoundryProviderAdapter } from './providers/foundry/foundry-provider.adapter';
 import { FoundryCatalogService } from './providers/foundry/catalog.service';
 import { FoundrySchemaFactory } from './providers/foundry/schema.factory';
@@ -66,6 +67,7 @@ import { AiGenerationWorkerService } from './worker.service';
     AiGenerationAuthzService,
     AiGenerationEtaService,
     AiGenerationValidatorService,
+    AiPromptCompilerService,
     AiModelOpsService,
     ProviderAccountReconciler,
     ProviderRegistry,

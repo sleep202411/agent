@@ -11,7 +11,15 @@
  * is idempotent — same outputIndex resolves to the same row.
  */
 import { Injectable } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
+import {
+  MediaAssetKind,
+  MediaAssetModerationStatus,
+  MediaAssetSource,
+  MediaAssetStatus,
+  MediaAssetVisibility,
+  MediaStorageProvider,
+  Prisma,
+} from '@prisma/client';
 import type {
   AiJobAttempt as AiJobAttemptRow,
   AiAttemptStatus as AiAttemptStatusRow,
@@ -22,6 +30,7 @@ import type {
 } from '@prisma/client';
 import { PrismaService } from '../infra/db/db.module';
 import { newShortId } from '../common/id';
+import type { StorageProviderId } from '../infra/storage/storage.types';
 import type {
   AiEtaConfidence,
   AiJobStatus,
@@ -137,6 +146,24 @@ export interface RecordAiProviderTraceEventInput {
   idempotencyKey?: string | null;
 }
 
+export interface CreateAiOutputAssetInput {
+  type: AiJobType;
+  url: string;
+  storageProvider: StorageProviderId;
+  bucket: string;
+  region: string | null;
+  objectKey: string;
+  contentType: string;
+  sizeBytes: number;
+  width?: number;
+  height?: number;
+  durationSeconds?: number;
+  checksumSha256: string;
+  outputIndex: number;
+  contentHash: string;
+  safetyFlags?: Record<string, unknown>;
+}
+
 /**
  * Thrown by `repository.update(id, patch, expectedVersion)` when the
  * row's current `version` no longer matches what the caller saw.
@@ -154,7 +181,15 @@ export class OptimisticLockError extends Error {
   }
 }
 
-type JobWithOutputs = AiJobRow & { outputs: AiJobOutputRow[] };
+type AiJobOutputAssetRow = {
+  status: MediaAssetStatus;
+  moderationStatus: MediaAssetModerationStatus;
+  deletedAt: Date | null;
+};
+type AiJobOutputWithAssetRow = AiJobOutputRow & {
+  asset: AiJobOutputAssetRow | null;
+};
+type JobWithOutputs = AiJobRow & { outputs: AiJobOutputWithAssetRow[] };
 type DbClient = PrismaService | Prisma.TransactionClient;
 
 @Injectable()
@@ -504,6 +539,88 @@ export class AiGenerationRepository {
     }
   }
 
+  async createAiOutputAsset(
+    job: Pick<
+      AiJob,
+      | 'id'
+      | 'userId'
+      | 'workspaceId'
+      | 'provider'
+      | 'modelId'
+      | 'deployment'
+      | 'canonicalModelId'
+      | 'providerBindingId'
+    >,
+    input: CreateAiOutputAssetInput,
+  ): Promise<string> {
+    const storageProvider = input.storageProvider as MediaStorageProvider;
+    const metadata = {
+      aiJobId: job.id,
+      provider: job.provider,
+      modelId: job.modelId,
+      deployment: job.deployment,
+      canonicalModelId: job.canonicalModelId,
+      providerBindingId: job.providerBindingId,
+      outputIndex: input.outputIndex,
+      safetyFlags: input.safetyFlags ?? null,
+    } satisfies Record<string, unknown>;
+
+    const existing = await this.prisma.mediaAsset.findFirst({
+      where: {
+        storageProvider,
+        bucket: input.bucket,
+        objectKey: input.objectKey,
+        deletedAt: null,
+      },
+      select: { id: true },
+    });
+    if (existing) return existing.id;
+
+    const data: Prisma.MediaAssetUncheckedCreateInput = {
+      kind:
+        input.type === 'video' ? MediaAssetKind.video : MediaAssetKind.image,
+      storageProvider,
+      bucket: input.bucket,
+      region: input.region,
+      objectKey: input.objectKey,
+      externalUrl: null,
+      contentType: input.contentType,
+      sizeBytes: BigInt(input.sizeBytes),
+      width: input.width ?? null,
+      height: input.height ?? null,
+      durationSeconds: input.durationSeconds ?? null,
+      checksumSha256: input.checksumSha256,
+      visibility: MediaAssetVisibility.private,
+      status: MediaAssetStatus.ready,
+      source: MediaAssetSource.ai_output,
+      moderationStatus: MediaAssetModerationStatus.unreviewed,
+      workspaceId: job.workspaceId ?? null,
+      createdByUserId: job.userId,
+      metadata: metadata as Prisma.InputJsonValue,
+    };
+
+    try {
+      const asset = await this.prisma.mediaAsset.create({
+        data,
+        select: { id: true },
+      });
+      return asset.id;
+    } catch (err) {
+      if (!isUniqueConstraintError(err)) throw err;
+      const asset = await this.prisma.mediaAsset.findFirst({
+        where: {
+          storageProvider,
+          bucket: input.bucket,
+          objectKey: input.objectKey,
+          deletedAt: null,
+        },
+        select: { id: true },
+      });
+      if (asset) return asset.id;
+      throw err;
+    }
+  }
+
   async listForUser(options: AiJobListOptions): Promise<AiJob[]> {
     const limit = Math.min(Math.max(options.limit ?? 50, 1), 100);
     const rows = await this.prisma.aiJob.findMany({
@@ -627,7 +744,34 @@ export class AiGenerationRepository {
    */
   private outputsInclude(includeDeleted: boolean | undefined) {
     return {
-      where: includeDeleted ? undefined : { deletedAt: null },
+      where: includeDeleted
+        ? undefined
+        : {
+            deletedAt: null,
+            OR: [
+              { assetId: null },
+              {
+                asset: {
+                  is: {
+                    deletedAt: null,
+                    status: MediaAssetStatus.ready,
+                    moderationStatus: {
+                      not: MediaAssetModerationStatus.blocked,
+                    },
+                  },
+                },
+              },
+            ],
+          },
+      include: {
+        asset: {
+          select: {
+            status: true,
+            moderationStatus: true,
+            deletedAt: true,
+          },
+        },
+      },
       orderBy: { outputIndex: 'asc' as const },
     };
   }
@@ -657,6 +801,16 @@ export class AiGenerationRepository {
       routingSnapshot:
         (row.routingSnapshot as AiRoutingSnapshot | null) ?? undefined,
       prompt: row.prompt,
+      promptDocument:
+        (row.promptDocument as AiJob['promptDocument'] | null) ?? undefined,
+      promptDisplayText: row.promptDisplayText ?? undefined,
+      promptSearchText: row.promptSearchText ?? undefined,
+      compiledPrompt: row.compiledPrompt ?? undefined,
+      referenceSnapshot:
+        (row.referenceSnapshot as AiJob['referenceSnapshot'] | null) ??
+        undefined,
+      styleSnapshot:
+        (row.styleSnapshot as AiJob['styleSnapshot'] | null) ?? undefined,
       idempotencyKey: row.idempotencyKey,
       providerJobId: row.providerJobId ?? undefined,
       outputs: row.outputs.map((o) => this.outputToDomain(o)),
@@ -685,17 +839,24 @@ export class AiGenerationRepository {
     };
   }
 
-  private outputToDomain(row: AiJobOutputRow): AiJobOutput {
+  private outputToDomain(row: AiJobOutputWithAssetRow): AiJobOutput {
     return {
       id: row.id,
+      assetId: row.assetId ?? undefined,
       type: row.type,
       url: row.url,
       storagePath: row.storagePath,
+      contentHash: row.contentHash ?? undefined,
       width: row.width ?? undefined,
       height: row.height ?? undefined,
       durationSeconds: row.durationSeconds ?? undefined,
       mimeType: row.mimeType ?? undefined,
       bytes: row.bytes ?? undefined,
+      seed: row.seed ?? undefined,
+      safetyFlags:
+        (row.safetyFlags as Record<string, unknown> | null) ?? undefined,
+      provenance:
+        (row.provenance as Record<string, unknown> | null) ?? undefined,
       createdAt: row.createdAt.toISOString(),
     };
   }
@@ -723,6 +884,18 @@ export class AiGenerationRepository {
       stage: job.stage,
       queueName: job.queueName,
       prompt: job.prompt,
+      promptDocument:
+        (job.promptDocument as Prisma.InputJsonValue | undefined) ??
+        Prisma.DbNull,
+      promptDisplayText: job.promptDisplayText ?? null,
+      promptSearchText: job.promptSearchText ?? null,
+      compiledPrompt: job.compiledPrompt ?? null,
+      referenceSnapshot:
+        (job.referenceSnapshot as Prisma.InputJsonValue | undefined) ??
+        Prisma.DbNull,
+      styleSnapshot:
+        (job.styleSnapshot as Prisma.InputJsonValue | undefined) ??
+        Prisma.DbNull,
       idempotencyKey: job.idempotencyKey,
       input: job.input as Prisma.InputJsonValue,
       normalizedInput: job.normalizedInput as Prisma.InputJsonValue,
@@ -788,6 +961,9 @@ export class AiGenerationRepository {
       if (
         key === 'input' ||
         key === 'normalizedInput' ||
+        key === 'promptDocument' ||
+        key === 'referenceSnapshot' ||
+        key === 'styleSnapshot' ||
         key === 'entitlementSnapshot' ||
         key === 'routingSnapshot' ||
         key === 'logs' ||
@@ -861,15 +1037,24 @@ export class AiGenerationRepository {
               data: outputs.map((o, idx) => ({
                 id: o.id || newShortId(),
                 jobId,
+                assetId: o.assetId ?? null,
                 type: o.type,
                 url: o.url,
                 storagePath: o.storagePath,
+                contentHash: o.contentHash ?? null,
                 width: o.width ?? null,
                 height: o.height ?? null,
                 durationSeconds: o.durationSeconds ?? null,
                 mimeType: o.mimeType ?? null,
                 bytes: o.bytes ?? null,
                 outputIndex: idx,
+                seed: o.seed ?? null,
+                safetyFlags:
+                  (o.safetyFlags as Prisma.InputJsonValue | undefined) ??
+                  Prisma.DbNull,
+                provenance:
+                  (o.provenance as Prisma.InputJsonValue | undefined) ??
+                  Prisma.DbNull,
                 createdAt: new Date(o.createdAt),
               })),
             }),

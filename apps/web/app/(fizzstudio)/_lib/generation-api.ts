@@ -79,6 +79,46 @@ export interface FizzAiJobOutput {
   createdAt: string;
 }
 
+export type FizzAiPromptDocumentNode =
+  | {
+      type: "text";
+      text: string;
+    }
+  | {
+      type: "asset_ref";
+      refId: string;
+      label?: string;
+    }
+  | {
+      type: "style_ref";
+      refId: string;
+      label?: string;
+    };
+
+export interface FizzAiPromptDocument {
+  version: 1;
+  nodes: FizzAiPromptDocumentNode[];
+}
+
+export interface FizzAiReferenceBinding {
+  refId: string;
+  kind: "image";
+  label: string;
+  order: number;
+  url?: string;
+  assetId?: string;
+  role?: string;
+  weight?: number;
+}
+
+export interface FizzAiStyleBinding {
+  refId: string;
+  label: string;
+  slug?: string;
+  type?: string;
+  weight?: number;
+}
+
 export interface FizzAiJobView {
   id: string;
   request_id?: string;
@@ -93,6 +133,12 @@ export interface FizzAiJobView {
   status: string;
   stage: string;
   prompt: string;
+  promptDocument?: FizzAiPromptDocument | null;
+  promptDisplayText?: string | null;
+  promptSearchText?: string | null;
+  compiledPrompt?: string | null;
+  referenceSnapshot?: FizzAiReferenceBinding[];
+  styleSnapshot?: FizzAiStyleBinding[];
   input: Record<string, unknown>;
   outputs: FizzAiJobOutput[];
   error?: {
@@ -145,6 +191,9 @@ export interface FizzAiSubmitJobInput {
   };
   idempotencyKey: string;
   input: Record<string, unknown>;
+  promptDocument?: FizzAiPromptDocument;
+  referenceBindings?: FizzAiReferenceBinding[];
+  styleBindings?: FizzAiStyleBinding[];
   modelId: string;
   schemaVersion: string;
 }
@@ -219,13 +268,18 @@ export function maxOutputs(model: FizzAiModel): number {
 }
 
 export function maxReferenceImages(model: FizzAiModel | undefined): number {
-  if (!model) return 4;
+  if (!model) return 0;
   const prop = schemaProperty(model, "referenceImages");
+  if (!prop) return 0;
   const schemaMax = prop?.maxItems;
   if (typeof schemaMax === "number" && Number.isFinite(schemaMax) && schemaMax > 0) {
     return Math.floor(schemaMax);
   }
-  return 4;
+  return 0;
+}
+
+export function supportsReferenceImages(model: FizzAiModel | undefined): boolean {
+  return maxReferenceImages(model) > 0;
 }
 
 export function supportsOutputCount(model: FizzAiModel): boolean {
@@ -349,6 +403,9 @@ export async function submitFizzAiJob(input: FizzAiSubmitJobInput): Promise<Fizz
         context: input.context,
         idempotencyKey: input.idempotencyKey,
         input: input.input,
+        promptDocument: input.promptDocument,
+        referenceBindings: input.referenceBindings,
+        styleBindings: input.styleBindings,
         modelId: input.modelId,
         schemaVersion: input.schemaVersion,
       },

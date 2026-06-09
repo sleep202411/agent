@@ -3,8 +3,15 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { AiControlPlaneStatus, Prisma } from '@prisma/client';
+import {
+  AiControlPlaneStatus,
+  MediaAssetModerationStatus,
+  MediaAssetSource,
+  MediaAssetStatus,
+  Prisma,
+} from '@prisma/client';
 import { PrismaService } from '../../infra/db/db.module';
+import { MediaAssetUrlResolverService } from '../../infra/storage/media-asset-url-resolver.service';
 import {
   estimateProductModelPoints,
   type AiProductPricingPolicy,
@@ -14,11 +21,13 @@ import type {
   CreateProviderEndpointInput,
   CreateProviderBindingInput,
   ListAdminAiJobsQuery,
+  ListAdminAiAssetsQuery,
   ListAdminAiModelsQuery,
   ListAdminAiProviderBindingsQuery,
   ListAdminAiProviderEndpointsQuery,
   ListAdminAiProvidersQuery,
   UpdateAdminAiProviderInput,
+  UpdateAdminAiMediaAssetModerationInput,
   UpdateCanonicalModelInput,
   UpdateProviderEndpointInput,
   UpdateProviderBindingInput,
@@ -26,7 +35,10 @@ import type {
 
 @Injectable()
 export class AiModelOpsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly assetUrls: MediaAssetUrlResolverService,
+  ) {}
 
   async getOverview() {
     const since = new Date(Date.now() - 24 * 60 * 60 * 1000);
@@ -546,6 +558,7 @@ export class AiModelOpsService {
           where: { deletedAt: null },
           orderBy: { outputIndex: 'asc' },
           take: 4,
+          include: { asset: true },
         },
         costLedger: {
           orderBy: { createdAt: 'desc' },
@@ -554,6 +567,110 @@ export class AiModelOpsService {
       },
     });
     return { items: items.map(serializeJobListItem) };
+  }
+
+  async listAssets(query: ListAdminAiAssetsQuery) {
+    const items = await this.prisma.mediaAsset.findMany({
+      where: {
+        deletedAt: null,
+        source: query.source ?? MediaAssetSource.ai_output,
+        ...(query.moderationStatus
+          ? { moderationStatus: query.moderationStatus }
+          : {}),
+        ...(query.workspaceId ? { workspaceId: query.workspaceId } : {}),
+        ...(query.userId ? { createdByUserId: query.userId } : {}),
+      },
+      orderBy: { createdAt: 'desc' },
+      take: query.limit,
+      include: {
+        aiJobOutputs: {
+          where: { deletedAt: null },
+          orderBy: { outputIndex: 'asc' },
+          take: 4,
+          include: {
+            job: {
+              select: {
+                id: true,
+                prompt: true,
+                provider: true,
+                modelId: true,
+                deployment: true,
+                status: true,
+                stage: true,
+                userId: true,
+                workspaceId: true,
+                createdAt: true,
+                canonicalModel: {
+                  select: { id: true, slug: true, displayName: true },
+                },
+                providerBinding: {
+                  select: { id: true, endpointId: true, provider: true },
+                },
+              },
+            },
+          },
+        },
+      },
+    });
+    return {
+      items: items.map((asset) => serializeMediaAsset(asset, this.assetUrls)),
+    };
+  }
+
+  async updateAssetModeration(
+    assetId: string,
+    adminId: string,
+    input: UpdateAdminAiMediaAssetModerationInput,
+  ) {
+    const existing = await this.prisma.mediaAsset.findFirst({
+      where: { id: assetId, deletedAt: null },
+      select: { id: true },
+    });
+    if (!existing) throw new NotFoundException('资产不存在或已删除。');
+
+    const asset = await this.prisma.mediaAsset.update({
+      where: { id: assetId },
+      data: {
+        moderationStatus: input.moderationStatus,
+        moderationReason: input.reason ?? null,
+        moderatedByAdminId: adminId,
+        moderatedAt: new Date(),
+        status:
+          input.moderationStatus === MediaAssetModerationStatus.blocked
+            ? MediaAssetStatus.ready
+            : undefined,
+      },
+      include: {
+        aiJobOutputs: {
+          where: { deletedAt: null },
+          orderBy: { outputIndex: 'asc' },
+          take: 4,
+          include: {
+            job: {
+              select: {
+                id: true,
+                prompt: true,
+                provider: true,
+                modelId: true,
+                deployment: true,
+                status: true,
+                stage: true,
+                userId: true,
+                workspaceId: true,
+                createdAt: true,
+                canonicalModel: {
+                  select: { id: true, slug: true, displayName: true },
+                },
+                providerBinding: {
+                  select: { id: true, endpointId: true, provider: true },
+                },
+              },
+            },
+          },
+        },
+      },
+    });
+    return serializeMediaAsset(asset, this.assetUrls);
   }
 
   async getJob(jobId: string) {
@@ -565,7 +682,10 @@ export class AiModelOpsService {
           include: { providerAccount: true },
         },
         attempts: { orderBy: { attemptNumber: 'asc' } },
-        outputs: { orderBy: { outputIndex: 'asc' } },
+        outputs: {
+          orderBy: { outputIndex: 'asc' },
+          include: { asset: true },
+        },
         costLedger: { orderBy: { createdAt: 'asc' } },
         traceEvents: { orderBy: [{ occurredAt: 'asc' }, { createdAt: 'asc' }] },
       },
@@ -981,6 +1101,86 @@ function serializeJobDetail(job: {
   return {
     ...job,
     costLedger: serializeCostLedger(job.costLedger),
+  };
+}
+
+function serializeMediaAsset(
+  asset: {
+    id: string;
+    kind: string;
+    storageProvider: string;
+    bucket: string | null;
+    region: string | null;
+    objectKey: string | null;
+    externalUrl: string | null;
+    contentType: string;
+    sizeBytes: bigint | null;
+    width: number | null;
+    height: number | null;
+    durationSeconds: number | null;
+    checksumSha256: string | null;
+    visibility: string;
+    status: string;
+    source: string;
+    moderationStatus: string;
+    moderationReason: string | null;
+    moderatedByAdminId: string | null;
+    moderatedAt: Date | null;
+    workspaceId: string | null;
+    createdByUserId: string | null;
+    metadata: unknown;
+    createdAt: Date;
+    updatedAt: Date;
+    aiJobOutputs: Array<{
+      id: string;
+      outputIndex: number;
+      job: {
+        id: string;
+        prompt: string;
+        provider: string;
+        modelId: string;
+        deployment: string;
+        status: string;
+        stage: string;
+        userId: string;
+        workspaceId: string | null;
+        createdAt: Date;
+        canonicalModel: {
+          id: string;
+          slug: string;
+          displayName: string;
+        } | null;
+        providerBinding: {
+          id: string;
+          endpointId: string;
+          provider: string;
+        } | null;
+      };
+    }>;
+  },
+  assetUrls: MediaAssetUrlResolverService,
+) {
+  let resolvedUrl: string | null = null;
+  try {
+    resolvedUrl = assetUrls.resolve(asset);
+  } catch {
+    resolvedUrl = asset.externalUrl;
+  }
+  return {
+    ...asset,
+    url: resolvedUrl,
+    sizeBytes: asset.sizeBytes?.toString() ?? null,
+    aiJobOutputs: asset.aiJobOutputs.map((output) => ({
+      id: output.id,
+      outputIndex: output.outputIndex,
+      job: {
+        ...output.job,
+        prompt:
+          output.job.prompt.length > 220
+            ? `${output.job.prompt.slice(0, 220)}...`
+            : output.job.prompt,
+      },
+    })),
   };
 }
 

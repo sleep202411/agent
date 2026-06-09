@@ -23,6 +23,18 @@ const ProviderHealthStatusSchema = z.enum([
   'degraded',
   'outage',
 ]);
+const MediaAssetSourceSchema = z.enum([
+  'user_upload',
+  'ai_output',
+  'imported',
+  'system',
+]);
+export const MediaAssetModerationStatusSchema = z.enum([
+  'unreviewed',
+  'approved',
+  'flagged',
+  'blocked',
+]);
 const ProviderCapacitySchema = {
   maxConcurrentRequests: z
     .number()
@@ -250,3 +262,29 @@ export const AdminAiJobParamsSchema = z.object({
   jobId: z.string().min(1),
 });
 export type AdminAiJobParams = z.infer<typeof AdminAiJobParamsSchema>;
+
+export const ListAdminAiAssetsQuerySchema = z.object({
+  source: MediaAssetSourceSchema.optional(),
+  moderationStatus: MediaAssetModerationStatusSchema.optional(),
+  workspaceId: z.string().uuid().optional(),
+  userId: z.string().trim().min(1).optional(),
+  limit: z.coerce.number().int().min(1).max(200).default(80),
+});
+export type ListAdminAiAssetsQuery = z.infer<
+  typeof ListAdminAiAssetsQuerySchema
+>;
+
+export const AdminAiMediaAssetParamsSchema = z.object({
+  assetId: z.string().uuid(),
+});
+export type AdminAiMediaAssetParams = z.infer<
+  typeof AdminAiMediaAssetParamsSchema
+>;
+
+export const UpdateAdminAiMediaAssetModerationSchema = z.object({
+  moderationStatus: MediaAssetModerationStatusSchema,
+  reason: z.string().trim().max(2000).nullable().optional(),
+});
+export type UpdateAdminAiMediaAssetModerationInput = z.infer<
+  typeof UpdateAdminAiMediaAssetModerationSchema
+>;

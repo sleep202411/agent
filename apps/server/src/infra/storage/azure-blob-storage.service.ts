@@ -96,6 +96,9 @@ export class AzureBlobStorageService extends OutputStorageService {
       url: this.publicUrl(input.key, block.url),
       storagePath: input.key,
       bytes: input.body.byteLength,
+      provider: 'azure_blob',
+      bucket: this.containerName,
+      region: this.region,
     };
   }
 

@@ -25,6 +25,7 @@ import { Public } from '../../auth';
 import { ZodValidationPipe } from '../../common/zod.pipe';
 import {
   AdminAiModelParamsSchema,
+  AdminAiMediaAssetParamsSchema,
   AdminAiJobParamsSchema,
   AdminAiProviderParamsSchema,
   AdminAiProviderBindingParamsSchema,
@@ -32,6 +33,7 @@ import {
   CreateCanonicalModelSchema,
   CreateProviderEndpointSchema,
   CreateProviderBindingSchema,
+  ListAdminAiAssetsQuerySchema,
   ListAdminAiJobsQuerySchema,
   ListAdminAiModelsQuerySchema,
   ListAdminAiProviderBindingsQuerySchema,
@@ -39,9 +41,11 @@ import {
   ListAdminAiProvidersQuerySchema,
   UpdateCanonicalModelSchema,
   UpdateAdminAiProviderSchema,
+  UpdateAdminAiMediaAssetModerationSchema,
   UpdateProviderEndpointSchema,
   UpdateProviderBindingSchema,
   type AdminAiModelParams,
+  type AdminAiMediaAssetParams,
   type AdminAiJobParams,
   type AdminAiProviderParams,
   type AdminAiProviderBindingParams,
@@ -49,12 +53,14 @@ import {
   type CreateCanonicalModelInput,
   type CreateProviderEndpointInput,
   type CreateProviderBindingInput,
+  type ListAdminAiAssetsQuery,
   type ListAdminAiJobsQuery,
   type ListAdminAiModelsQuery,
   type ListAdminAiProviderBindingsQuery,
   type ListAdminAiProviderEndpointsQuery,
   type ListAdminAiProvidersQuery,
   type UpdateAdminAiProviderInput,
+  type UpdateAdminAiMediaAssetModerationInput,
   type UpdateCanonicalModelInput,
   type UpdateProviderEndpointInput,
   type UpdateProviderBindingInput,
@@ -331,6 +337,44 @@ export class AiModelOpsController {
     query: ListAdminAiJobsQuery,
   ) {
     return { code: 200, data: await this.modelOps.listJobs(query) };
+  }
+
+  @RequireAdminPermissions(ADMIN_PERMISSION_KEYS.AiModelOpsRead)
+  @Get('assets')
+  async listAssets(
+    @Query(new ZodValidationPipe(ListAdminAiAssetsQuerySchema))
+    query: ListAdminAiAssetsQuery,
+  ) {
+    return { code: 200, data: await this.modelOps.listAssets(query) };
+  }
+
+  @RequireAdminPermissions(ADMIN_PERMISSION_KEYS.AiModelOpsWrite)
+  @Patch('assets/:assetId/moderation')
+  async updateAssetModeration(
+    @CurrentAdmin() admin: AdminActor,
+    @Param(new ZodValidationPipe(AdminAiMediaAssetParamsSchema))
+    params: AdminAiMediaAssetParams,
+    @Body(new ZodValidationPipe(UpdateAdminAiMediaAssetModerationSchema))
+    body: UpdateAdminAiMediaAssetModerationInput,
+    @Req() request: Request,
+  ) {
+    const data = await this.modelOps.updateAssetModeration(
+      params.assetId,
+      admin.id,
+      body,
+    );
+    await this.audit(
+      admin,
+      request,
+      'admin.ai_model_ops.asset.moderation_update',
+      'media_asset',
+      params.assetId,
+      {
+        moderationStatus: body.moderationStatus,
+        reason: body.reason,
+      },
+    );
+    return { code: 200, data };
   }
 
   @RequireAdminPermissions(ADMIN_PERMISSION_KEYS.AiModelOpsRead)

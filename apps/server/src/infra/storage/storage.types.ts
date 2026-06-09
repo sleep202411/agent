@@ -29,6 +29,12 @@ export interface OutputStorageResult {
   storagePath: string;
   /** Size of the uploaded bytes, useful for accounting. */
   bytes: number;
+  /** Which storage backend owns this persisted output. */
+  provider: StorageProviderId;
+  /** Azure container / OSS bucket the output was written to. */
+  bucket: string;
+  /** Provider region in MediaAsset resolver form. */
+  region: string | null;
 }
 
 /**

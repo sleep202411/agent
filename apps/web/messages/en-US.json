@@ -6187,6 +6187,9 @@
       "recreate": "Recreate",
       "edit": "Edit",
       "addImage": "Add image",
+      "addReferenceImage": "Add reference image",
+      "removeReferenceImage": "Remove reference image",
+      "referenceOverflow": "+{count}",
       "promptLabel": "Image prompt",
       "promptPlaceholder": "Describe the image you imagine",
       "generateFree": "Generate Free",
@@ -6201,6 +6204,11 @@
       "referenceUpload": {
         "failed": "Reference image upload failed",
         "limit": "You can attach up to 4 reference images."
+      },
+      "referenceMention": {
+        "label": "Image {number}",
+        "empty": "Upload a reference image first.",
+        "add": "Add reference image"
       },
       "detail": {
         "title": "Image details",

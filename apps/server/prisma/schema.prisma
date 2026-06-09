@@ -752,6 +752,7 @@ model Workspace {
   auditLogs     PlatformAuditLog[]
   projectAssets ProjectAsset[]
   aiJobs        AiJob[]
+  mediaAssets   MediaAsset[]
   documents     PlatformDocument[]
   billingOrders BillingOrder[]
   subscriptions BillingSubscription[]
@@ -3657,6 +3658,17 @@ model AiJob {
   stage                 AiJobStage
   queueName             String      @map("queue_name")
   prompt                String
+  /// User-facing structured prompt AST captured at submission time.
+  /// Provider adapters never parse UI tokens directly; they consume
+  /// `normalizedInput.prompt`, which is compiled from this document.
+  promptDocument        Json?       @map("prompt_document")
+  promptDisplayText     String?     @map("prompt_display_text") @db.Text
+  promptSearchText      String?     @map("prompt_search_text") @db.Text
+  compiledPrompt        String?     @map("compiled_prompt") @db.Text
+  /// Ordered reference/style snapshots used by the prompt compiler.
+  /// The order is immutable and matches the provider image payload order.
+  referenceSnapshot     Json?       @map("reference_snapshot")
+  styleSnapshot         Json?       @map("style_snapshot")
   idempotencyKey        String      @map("idempotency_key")
   /// External trace id (X-Request-Id header), nullable until UI sends one.
   requestId             String?     @map("request_id")
@@ -3741,6 +3753,7 @@ model AiJob {
 model AiJobOutput {
   id              String    @id
   jobId           String    @map("job_id") @db.Uuid
+  assetId         String?   @map("asset_id") @db.Uuid
   type            AiJobType
   url             String
   /// CDN thumbnail variant — gallery uses this; original `url` is the
@@ -3769,10 +3782,12 @@ model AiJobOutput {
   /// generated even after the user hides a gallery item.
   deletedAt       DateTime? @map("deleted_at") @db.Timestamptz(6)
 
-  job AiJob @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  job   AiJob       @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  asset MediaAsset? @relation(fields: [assetId], references: [id], onDelete: SetNull)
 
   @@unique([jobId, outputIndex], name: "uniq_job_output_index", map: "ai_outputs_job_index_unique")
   @@index([jobId], map: "ai_outputs_job_idx")
+  @@index([assetId], map: "ai_outputs_asset_idx")
   @@index([contentHash], map: "ai_outputs_content_hash_idx")
   @@index([deletedAt], map: "ai_outputs_deleted_at_idx")
   @@map("ai_outputs")
@@ -4420,42 +4435,65 @@ enum MediaAssetStatus {
   deleted
 }
 
+enum MediaAssetSource {
+  user_upload
+  ai_output
+  imported
+  system
+}
+
+enum MediaAssetModerationStatus {
+  unreviewed
+  approved
+  flagged
+  blocked
+}
+
 model MediaAsset {
-  id              String               @id @default(uuid(7)) @db.Uuid
-  kind            MediaAssetKind
-  storageProvider MediaStorageProvider @map("storage_provider")
+  id                 String                     @id @default(uuid(7)) @db.Uuid
+  kind               MediaAssetKind
+  storageProvider    MediaStorageProvider       @map("storage_provider")
+  workspaceId        String?                    @map("workspace_id") @db.Uuid
   /// Azure container / OSS bucket / S3 bucket. NULL only for
   /// `external_url`, where the full URL is a legacy/emergency asset
   /// identity.
-  bucket          String?              @db.VarChar(128)
+  bucket             String?                    @db.VarChar(128)
   /// Provider region such as `eastus2`, `oss-cn-hangzhou`, or
   /// `ap-southeast-1`. Optional because custom-CDN providers may not
   /// expose a meaningful bucket region to product code.
-  region          String?              @db.VarChar(64)
+  region             String?                    @db.VarChar(64)
   /// Stable object key inside the bucket/container. Never a public URL.
-  objectKey       String?              @map("object_key") @db.VarChar(1024)
+  objectKey          String?                    @map("object_key") @db.VarChar(1024)
   /// Legacy/external escape hatch. Product-owned uploads should not
   /// use this; keep it for imports where we only know a public URL.
-  externalUrl     String?              @map("external_url") @db.VarChar(2048)
-  contentType     String               @default("application/octet-stream") @map("content_type") @db.VarChar(128)
-  sizeBytes       BigInt?              @map("size_bytes")
-  width           Int?
-  height          Int?
-  durationSeconds Int?                 @map("duration_seconds")
-  checksumSha256  String?              @map("checksum_sha256") @db.VarChar(64)
-  visibility      MediaAssetVisibility @default(public)
-  status          MediaAssetStatus     @default(ready)
+  externalUrl        String?                    @map("external_url") @db.VarChar(2048)
+  contentType        String                     @default("application/octet-stream") @map("content_type") @db.VarChar(128)
+  sizeBytes          BigInt?                    @map("size_bytes")
+  width              Int?
+  height             Int?
+  durationSeconds    Int?                       @map("duration_seconds")
+  checksumSha256     String?                    @map("checksum_sha256") @db.VarChar(64)
+  visibility         MediaAssetVisibility       @default(public)
+  status             MediaAssetStatus           @default(ready)
+  source             MediaAssetSource           @default(imported)
+  moderationStatus   MediaAssetModerationStatus @default(unreviewed) @map("moderation_status")
+  moderationReason   String?                    @map("moderation_reason") @db.Text
+  moderatedByAdminId String?                    @map("moderated_by_admin_id") @db.VarChar(64)
+  moderatedAt        DateTime?                  @map("moderated_at") @db.Timestamptz(6)
+  metadata           Json                       @default("{}") @db.JsonB
   /// AUDIT ONLY — external auth user id (Java identity, VarChar(64) like
   /// UserCertificate.userId) of whoever confirmed the direct-to-storage upload
   /// this asset records. NULL for legacy / worker-produced assets. This is NOT
   /// the storage-quota key: quota is per-WORKSPACE, so a `workspaceId` column
   /// will be added (with IP→workspace scoping decided) WHEN that feature lands;
   /// this column only answers "who uploaded it" for audit.
-  createdByUserId String?              @map("created_by_user_id") @db.VarChar(64)
-  createdAt       DateTime             @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt       DateTime             @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
-  deletedAt       DateTime?            @map("deleted_at") @db.Timestamptz(6)
+  createdByUserId    String?                    @map("created_by_user_id") @db.VarChar(64)
+  createdAt          DateTime                   @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt          DateTime                   @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  deletedAt          DateTime?                  @map("deleted_at") @db.Timestamptz(6)
 
+  workspace               Workspace?                  @relation(fields: [workspaceId], references: [id], onDelete: SetNull)
+  aiJobOutputs            AiJobOutput[]
   certificateImages       UserCertificate[]           @relation("UserCertificateImage")
   ipCovers                Ip[]                        @relation("IpCoverAsset")
   ipTrailers              Ip[]                        @relation("IpTrailerAsset")
@@ -4469,6 +4507,8 @@ model MediaAsset {
   ipReportEvidence        IpContentReport[]           @relation("IpReportEvidenceAsset")
 
   @@index([storageProvider, bucket, objectKey], map: "media_assets_storage_lookup_idx")
+  @@index([workspaceId, source, createdAt(sort: Desc)], map: "media_assets_workspace_source_recent_idx")
+  @@index([source, moderationStatus, createdAt(sort: Desc)], map: "media_assets_source_moderation_idx")
   @@index([kind, status, createdAt(sort: Desc)], map: "media_assets_kind_status_idx")
   /// Lifecycle + quota: scan rows by status across all kinds ordered by
   /// age (e.g. a future per-user quota tally over active assets, or a

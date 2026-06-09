@@ -1315,30 +1315,61 @@ export class AiGenerationWorkerService
       if (!body) {
         throw new Error(`no bytes available for output index ${raw.index}`);
       }
-      const hash = createHash('sha256').update(body).digest('hex').slice(0, 12);
+      const checksumSha256 = createHash('sha256').update(body).digest('hex');
+      const contentHash = checksumSha256.slice(0, 12);
       // Storage key prefix is the historical container name; safe to
       // keep even as more providers land (`foundry-outputs` is just
       // the container, not a provider-specific path).
-      const key = `${job.provider}/${yyyy}/${mm}/${dd}/${job.userId}/${job.id}/${raw.index}-${hash}.${raw.ext}`;
+      const key = `${job.provider}/${yyyy}/${mm}/${dd}/${job.userId}/${job.id}/${raw.index}-${contentHash}.${raw.ext}`;
       const result = await this.storage.upload({
         body,
         key,
         contentType: raw.mimeType,
         filename: `${job.id}-${raw.index}.${raw.ext}`,
       });
+      const outputType = raw.type ?? job.type;
+      const assetId = await this.store.createAiOutputAsset(job, {
+        type: outputType,
+        url: result.url,
+        storageProvider: result.provider,
+        bucket: result.bucket,
+        region: result.region,
+        objectKey: result.storagePath,
+        contentType: raw.mimeType,
+        sizeBytes: result.bytes,
+        width: raw.width,
+        height: raw.height,
+        durationSeconds: raw.durationSeconds,
+        checksumSha256,
+        outputIndex: raw.index,
+        contentHash,
+        safetyFlags: raw.safetyFlags,
+      });
       out.push({
         // Short app-generated ID. Idempotent recovery on retry is via
         // `(jobId, outputIndex)` unique + repository.replaceOutputs
         // transactional DELETE + INSERT.
         id: newShortId(),
-        type: raw.type ?? job.type,
+        assetId,
+        type: outputType,
         url: result.url,
         storagePath: result.storagePath,
+        contentHash,
         width: raw.width,
         height: raw.height,
         durationSeconds: raw.durationSeconds,
         mimeType: raw.mimeType,
         bytes: result.bytes,
+        seed: raw.seed,
+        safetyFlags: raw.safetyFlags,
+        provenance: {
+          provider: job.provider,
+          modelId: job.modelId,
+          deployment: job.deployment,
+          canonicalModelId: job.canonicalModelId,
+          providerBindingId: job.providerBindingId,
+          checksumSha256,
+        },
         createdAt: new Date().toISOString(),
       });
     }

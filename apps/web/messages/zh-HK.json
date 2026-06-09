@@ -6187,6 +6187,9 @@
       "recreate": "復刻",
       "edit": "編輯",
       "addImage": "添加圖片",
+      "addReferenceImage": "添加參考圖",
+      "removeReferenceImage": "移除參考圖",
+      "referenceOverflow": "+{count}",
       "promptLabel": "圖片提示詞",
       "promptPlaceholder": "描述你想像中的圖片",
       "generateFree": "免費生成",
@@ -6201,6 +6204,11 @@
       "referenceUpload": {
         "failed": "參考圖上傳失敗",
         "limit": "最多只能添加 4 張參考圖。"
+      },
+      "referenceMention": {
+        "label": "參考圖{number}",
+        "empty": "請先上傳參考圖。",
+        "add": "添加參考圖"
       },
       "detail": {
         "title": "圖片詳情",

@@ -96,6 +96,9 @@ export class AliyunOssStorageService extends OutputStorageService {
       url: result.url,
       storagePath: result.name,
       bytes: input.body.byteLength,
+      provider: 'aliyun_oss',
+      bucket: this.bucket,
+      region: this.region,
     };
   }
 

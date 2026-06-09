@@ -18,6 +18,7 @@ import {
   IconDatabaseSearch,
   IconEdit,
   IconFileSearch,
+  IconPhoto,
   IconPlus,
   IconRefresh,
   IconRoute,
@@ -44,12 +45,14 @@ import {
 } from "@/components/admin/form-field";
 import { cn } from "@/lib/utils";
 import {
+  type AdminAiAssetListData,
   type AdminAiBindingListData,
   type AdminAiCanonicalModel,
   type AdminAiEndpointListData,
   type AdminAiJobDetail,
   type AdminAiJobListData,
   type AdminAiJobListItem,
+  type AdminAiMediaAsset,
   type AdminAiModelListData,
   type AdminAiModelOpsInitialData,
   type AdminAiModelOpsView,
@@ -72,6 +75,7 @@ import { PageHeader } from "@/components/admin/page-header";
 
 type StatusFilter = "" | "draft" | "active" | "disabled" | "degraded" | "archived";
 type DrawerMode = "provider" | "endpoint" | "model" | "binding" | "endpointBinding" | "job" | null;
+type AssetModerationFilter = "" | "unreviewed" | "approved" | "flagged" | "blocked";
 type JsonObject = Record<string, unknown>;
 
 const COMPUTE_POINT_USD = 0.01;
@@ -81,6 +85,7 @@ const EMPTY_ENDPOINTS: AdminAiEndpointListData = { items: [] };
 const EMPTY_MODELS: AdminAiModelListData = { items: [] };
 const EMPTY_BINDINGS: AdminAiBindingListData = { items: [] };
 const EMPTY_JOBS: AdminAiJobListData = { items: [] };
+const EMPTY_ASSETS: AdminAiAssetListData = { items: [] };
 const AI_MODEL_DRAWER_GUTTER = "calc(100vw - 64px)";
 const AI_MODEL_POLICY_DRAWER_STYLE = {
   width: `min(1480px, ${AI_MODEL_DRAWER_GUTTER})`,
@@ -142,6 +147,11 @@ const VIEW_META: Record<
     title: "请求任务",
     description: "查看每一次生成 request 的输入、输出、attempt、timing、成本和 provider 证据。",
     icon: <IconFileSearch className="size-5" />,
+  },
+  assets: {
+    title: "生成资产",
+    description: "治理 AI 生成后的图片、视频和音频资产；下线后前台不再展示该输出。",
+    icon: <IconPhoto className="size-5" />,
   },
 };
 
@@ -229,7 +239,9 @@ export function AiModelOpsPanel({
     initialData.bindings ?? EMPTY_BINDINGS
   );
   const [jobs, setJobs] = useState<AdminAiJobListData>(initialData.jobs ?? EMPTY_JOBS);
+  const [assets, setAssets] = useState<AdminAiAssetListData>(initialData.assets ?? EMPTY_ASSETS);
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("");
+  const [assetModerationFilter, setAssetModerationFilter] = useState<AssetModerationFilter>("");
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(initialData.error);
@@ -254,25 +266,34 @@ export function AiModelOpsPanel({
       if (nextStatus) endpointQuery.set("status", nextStatus);
 
       if (view === "overview") {
-        const [nextOverview, nextProviders, nextEndpoints, nextModels, nextBindings, nextJobs] =
-          await Promise.all([
-            requestEnvelope<AdminAiOverviewData>("/api/admin/ai-model-ops/overview"),
-            requestEnvelope<AdminAiProviderListData>("/api/admin/ai-model-ops/providers"),
-            requestEnvelope<AdminAiEndpointListData>(
-              `/api/admin/ai-model-ops/endpoints?${endpointQuery.toString()}`
-            ),
-            requestEnvelope<AdminAiModelListData>("/api/admin/ai-model-ops/models?modality=image"),
-            requestEnvelope<AdminAiBindingListData>(
-              `/api/admin/ai-model-ops/bindings?${bindingQuery.toString()}`
-            ),
-            requestEnvelope<AdminAiJobListData>("/api/admin/ai-model-ops/jobs"),
-          ]);
+        const [
+          nextOverview,
+          nextProviders,
+          nextEndpoints,
+          nextModels,
+          nextBindings,
+          nextJobs,
+          nextAssets,
+        ] = await Promise.all([
+          requestEnvelope<AdminAiOverviewData>("/api/admin/ai-model-ops/overview"),
+          requestEnvelope<AdminAiProviderListData>("/api/admin/ai-model-ops/providers"),
+          requestEnvelope<AdminAiEndpointListData>(
+            `/api/admin/ai-model-ops/endpoints?${endpointQuery.toString()}`
+          ),
+          requestEnvelope<AdminAiModelListData>("/api/admin/ai-model-ops/models?modality=image"),
+          requestEnvelope<AdminAiBindingListData>(
+            `/api/admin/ai-model-ops/bindings?${bindingQuery.toString()}`
+          ),
+          requestEnvelope<AdminAiJobListData>("/api/admin/ai-model-ops/jobs"),
+          requestEnvelope<AdminAiAssetListData>("/api/admin/ai-model-ops/assets"),
+        ]);
         setOverview(nextOverview);
         setProviders(nextProviders);
         setEndpoints(nextEndpoints);
         setModels(nextModels);
         setBindings(nextBindings);
         setJobs(nextJobs);
+        setAssets(nextAssets);
         reconcileSelections(nextModels, nextBindings);
         return;
       }
@@ -320,7 +341,19 @@ export function AiModelOpsPanel({
         return;
       }
 
-      setJobs(await requestEnvelope<AdminAiJobListData>("/api/admin/ai-model-ops/jobs"));
+      if (view === "jobs") {
+        setJobs(await requestEnvelope<AdminAiJobListData>("/api/admin/ai-model-ops/jobs"));
+        return;
+      }
+
+      const assetsQuery = new URLSearchParams();
+      if (assetModerationFilter) {
+        assetsQuery.set("moderationStatus", assetModerationFilter);
+      }
+      const suffix = assetsQuery.size ? `?${assetsQuery.toString()}` : "";
+      setAssets(
+        await requestEnvelope<AdminAiAssetListData>(`/api/admin/ai-model-ops/assets${suffix}`)
+      );
     } catch (err) {
       setError(toErrorMessage(err));
     } finally {
@@ -354,6 +387,19 @@ export function AiModelOpsPanel({
   function handleStatusFilter(next: StatusFilter) {
     setStatusFilter(next);
     void refresh(next);
+  }
+
+  function handleAssetModerationFilter(next: AssetModerationFilter) {
+    setAssetModerationFilter(next);
+    setLoading(true);
+    setError(null);
+    const params = new URLSearchParams();
+    if (next) params.set("moderationStatus", next);
+    const suffix = params.size ? `?${params.toString()}` : "";
+    requestEnvelope<AdminAiAssetListData>(`/api/admin/ai-model-ops/assets${suffix}`)
+      .then(setAssets)
+      .catch((err) => setError(toErrorMessage(err)))
+      .finally(() => setLoading(false));
   }
 
   function openModel(model: AdminAiCanonicalModel) {
@@ -554,7 +600,50 @@ export function AiModelOpsPanel({
       );
     }
 
-    return <JobsPanel jobs={jobs.items} loading={loading} onOpenJob={openJob} />;
+    if (view === "jobs") {
+      return <JobsPanel jobs={jobs.items} loading={loading} onOpenJob={openJob} />;
+    }
+
+    return (
+      <AssetsPanel
+        assets={assets.items}
+        loading={loading || saving}
+        moderationFilter={assetModerationFilter}
+        onModerationFilter={handleAssetModerationFilter}
+        onOpenJobId={(jobId) => {
+          setDrawerError(null);
+          setSelectedJob(null);
+          setJobDetail(null);
+          setDrawerMode("job");
+          void loadJobDetail(jobId);
+        }}
+        onModerationChange={async (asset, moderationStatus) => {
+          setSaving(true);
+          setError(null);
+          try {
+            await mutateEnvelope<AdminAiMediaAsset>(
+              `/api/admin/ai-model-ops/assets/${asset.id}/moderation`,
+              {
+                moderationStatus,
+                reason:
+                  moderationStatus === "blocked"
+                    ? "Admin manual takedown from AI asset ops."
+                    : moderationStatus === "flagged"
+                      ? "Admin marked asset for manual review from AI asset ops."
+                      : null,
+              },
+              "PATCH"
+            );
+            await refresh();
+          } catch (err) {
+            setError(toErrorMessage(err));
+            throw err;
+          } finally {
+            setSaving(false);
+          }
+        }}
+      />
+    );
   }
 
   return (
@@ -1751,6 +1840,219 @@ function JobsPanel({
   );
 }
 
+function AssetsPanel({
+  assets,
+  loading,
+  moderationFilter,
+  onModerationFilter,
+  onModerationChange,
+  onOpenJobId,
+}: {
+  assets: AdminAiMediaAsset[];
+  loading: boolean;
+  moderationFilter: AssetModerationFilter;
+  onModerationFilter: (status: AssetModerationFilter) => void;
+  onModerationChange: (
+    asset: AdminAiMediaAsset,
+    moderationStatus: AdminAiMediaAsset["moderationStatus"]
+  ) => Promise<void>;
+  onOpenJobId: (jobId: string) => void;
+}) {
+  const columns = useMemo<ColumnDef<AdminAiMediaAsset, unknown>[]>(
+    () => [
+      {
+        accessorKey: "id",
+        header: "资产",
+        cell: ({ row }) => {
+          const asset = row.original;
+          return (
+            <div className="flex items-center gap-3">
+              <div className="flex size-14 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-slate-200 bg-slate-50">
+                {asset.kind === "image" && asset.url ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={asset.url} alt="" className="size-full object-cover" />
+                ) : (
+                  <IconPhoto className="size-5 text-slate-400" />
+                )}
+              </div>
+              <div className="min-w-0">
+                <p className="font-mono text-[12px] font-semibold text-slate-950">{asset.id}</p>
+                <p className="mt-0.5 truncate font-mono text-[11px] text-slate-500">
+                  {asset.objectKey ?? asset.externalUrl ?? "-"}
+                </p>
+              </div>
+            </div>
+          );
+        },
+      },
+      {
+        accessorKey: "moderationStatus",
+        header: "审核",
+        cell: ({ row }) => <AssetModerationPill status={row.original.moderationStatus} />,
+      },
+      {
+        id: "file",
+        header: "文件",
+        cell: ({ row }) => {
+          const asset = row.original;
+          return (
+            <div className="text-[12px] leading-5 text-slate-600">
+              <p className="font-medium text-slate-900">
+                {asset.kind} · {asset.contentType}
+              </p>
+              <p>
+                {asset.width && asset.height ? `${asset.width}×${asset.height}` : "-"} ·{" "}
+                {formatBytes(asset.sizeBytes)}
+              </p>
+            </div>
+          );
+        },
+      },
+      {
+        id: "job",
+        header: "来源任务",
+        cell: ({ row }) => {
+          const output = row.original.aiJobOutputs[0];
+          if (!output) return <span className="text-[12px] text-slate-400">-</span>;
+          return (
+            <button
+              type="button"
+              onClick={() => onOpenJobId(output.job.id)}
+              className="block max-w-[360px] text-left"
+            >
+              <p className="text-[13px] font-medium text-slate-950">
+                {output.job.canonicalModel?.displayName ?? output.job.modelId}
+              </p>
+              <p className="truncate text-[12px] text-slate-500">{output.job.prompt || "-"}</p>
+              <p className="mt-0.5 font-mono text-[11px] text-slate-400">{output.job.id}</p>
+            </button>
+          );
+        },
+      },
+      {
+        id: "owner",
+        header: "归属",
+        cell: ({ row }) => (
+          <div className="font-mono text-[12px] leading-5 text-slate-600">
+            <p>{row.original.workspaceId ?? "-"}</p>
+            <p className="text-slate-400">{row.original.createdByUserId ?? "-"}</p>
+          </div>
+        ),
+      },
+      {
+        accessorKey: "createdAt",
+        header: "创建",
+        cell: ({ row }) => (
+          <span className="text-[12px] text-slate-500">{formatDate(row.original.createdAt)}</span>
+        ),
+      },
+      {
+        id: "actions",
+        header: "操作",
+        enableSorting: false,
+        meta: { pin: "right", cellClassName: "w-[230px]" },
+        cell: ({ row }) => {
+          const asset = row.original;
+          const blocked = asset.moderationStatus === "blocked";
+          return (
+            <div className="flex items-center justify-end gap-1.5">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="h-8 rounded-lg px-2.5 text-[12px]"
+                disabled={!asset.aiJobOutputs[0]?.job.id}
+                onClick={() => {
+                  const jobId = asset.aiJobOutputs[0]?.job.id;
+                  if (jobId) onOpenJobId(jobId);
+                }}
+              >
+                证据
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="h-8 rounded-lg px-2.5 text-[12px]"
+                disabled={asset.moderationStatus === "approved"}
+                onClick={() => void onModerationChange(asset, "approved")}
+              >
+                放行
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="h-8 rounded-lg px-2.5 text-[12px]"
+                disabled={asset.moderationStatus === "flagged" || blocked}
+                onClick={() => void onModerationChange(asset, "flagged")}
+              >
+                标记
+              </Button>
+              <ConfirmDialog
+                title={blocked ? "恢复展示该资产？" : "下线该资产？"}
+                description={
+                  blocked
+                    ? "恢复后，前台历史记录会重新展示这个输出。"
+                    : "下线后，前台历史记录不会再展示这个输出；任务证据和账单记录仍保留。"
+                }
+                confirmLabel={blocked ? "恢复" : "下线"}
+                destructive={!blocked}
+                onConfirm={() => onModerationChange(asset, blocked ? "approved" : "blocked")}
+                trigger={
+                  <Button
+                    type="button"
+                    variant={blocked ? "outline" : "destructive"}
+                    size="sm"
+                    className="h-8 rounded-lg px-2.5 text-[12px]"
+                  >
+                    {blocked ? "恢复" : "下线"}
+                  </Button>
+                }
+              />
+            </div>
+          );
+        },
+      },
+    ],
+    [onModerationChange, onOpenJobId]
+  );
+
+  return (
+    <section className="space-y-3">
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <SectionTitle
+          icon={<IconPhoto className="size-4" />}
+          title="AI 生成资产"
+          description="生成结果进入资产治理后，运营可审核、放行或下线；前台读取自动尊重审核状态。"
+        />
+        <NativeSelect
+          name="assetModerationStatus"
+          value={moderationFilter}
+          onChange={(event) =>
+            onModerationFilter(event.currentTarget.value as AssetModerationFilter)
+          }
+          className="h-9 w-[156px] rounded-lg text-[12px]"
+        >
+          <option value="">全部审核状态</option>
+          <option value="unreviewed">未审核</option>
+          <option value="approved">已放行</option>
+          <option value="flagged">已标记</option>
+          <option value="blocked">已下线</option>
+        </NativeSelect>
+      </div>
+      <DataTable
+        data={assets}
+        columns={columns}
+        loading={loading}
+        minWidth={1320}
+        pageSize={12}
+        emptyLabel="暂无 AI 生成资产。"
+      />
+    </section>
+  );
+}
+
 function ProviderAccountDrawer({
   open,
   providerAccount,
@@ -2644,6 +2946,8 @@ function JobDetailDrawer({
   onClose: () => void;
   onLoad: (jobId: string) => void;
 }) {
+  const jobId = detail?.id ?? job?.id ?? "-";
+
   useEffect(() => {
     if (open && job?.id && !detail) onLoad(job.id);
   }, [detail, job?.id, onLoad, open]);
@@ -2658,7 +2962,7 @@ function JobDetailDrawer({
         <SheetHeader className="border-b border-slate-200 px-5 py-4">
           <SheetTitle>Request 证据</SheetTitle>
           <SheetDescription className="font-mono text-[12px] text-slate-500">
-            FizzDragon job ID · {job?.id ?? "-"}
+            FizzDragon job ID · {jobId}
           </SheetDescription>
         </SheetHeader>
         <div className="min-h-0 flex-1 overflow-y-auto px-5 py-5">
@@ -2670,6 +2974,7 @@ function JobDetailDrawer({
           ) : (
             <div className="space-y-4">
               <JobEvidenceSummary detail={detail} />
+              <JobPromptEvidence detail={detail} />
               <JobTimelineEvidence detail={detail} />
               <JobPayloadEvidence detail={detail} />
               <JobAttemptsEvidence attempts={detail.attempts} />
@@ -2741,6 +3046,33 @@ function JobEvidenceSummary({ detail }: { detail: AdminAiJobDetail }) {
         />
         {runnerId ? <ReadOnlyValue primary={runnerId} secondary="x-fal-served-from" /> : null}
       </div>
+    </section>
+  );
+}
+
+function JobPromptEvidence({ detail }: { detail: AdminAiJobDetail }) {
+  const compiledPrompt =
+    typeof detail.compiledPrompt === "string" && detail.compiledPrompt.trim()
+      ? detail.compiledPrompt
+      : stringFromRecord(asRecord(detail.normalizedInput), "prompt");
+  const displayPrompt =
+    typeof detail.promptDisplayText === "string" && detail.promptDisplayText.trim()
+      ? detail.promptDisplayText
+      : detail.prompt;
+
+  return (
+    <section className="space-y-3">
+      <div className="grid gap-3 md:grid-cols-2">
+        <ReadOnlyValue primary={displayPrompt || "-"} secondary="User-facing prompt" />
+        <ReadOnlyValue primary={compiledPrompt || "-"} secondary="Compiled provider prompt" />
+      </div>
+      <div className="grid gap-3 md:grid-cols-2">
+        <JsonBlock title="Prompt document" value={detail.promptDocument ?? {}} />
+        <JsonBlock title="Reference snapshot" value={detail.referenceSnapshot ?? []} />
+      </div>
+      {detail.styleSnapshot ? (
+        <JsonBlock title="Style snapshot" value={detail.styleSnapshot} />
+      ) : null}
     </section>
   );
 }
@@ -2955,7 +3287,17 @@ function JobOutputsEvidence({ outputs }: { outputs: AdminAiJobDetail["outputs"] 
               <img src={output.url} alt="" className="size-full object-cover" />
             </div>
             <div className="px-2 py-1.5 font-mono text-[11px] text-slate-500">
-              #{output.outputIndex} · {output.type}
+              <div className="flex items-center justify-between gap-2">
+                <span>
+                  #{output.outputIndex} · {output.type}
+                </span>
+                {output.asset ? (
+                  <AssetModerationPill status={output.asset.moderationStatus} />
+                ) : null}
+              </div>
+              {output.assetId ? (
+                <p className="mt-1 truncate text-slate-400">asset · {output.assetId}</p>
+              ) : null}
             </div>
           </a>
         ))}
@@ -3174,6 +3516,19 @@ function JobStatusPill({ status }: { status: string }) {
   return <StatusPill tone={tone}>{jobStatusLabel(status)}</StatusPill>;
 }
 
+function AssetModerationPill({ status }: { status: AdminAiMediaAsset["moderationStatus"] }) {
+  const tone = status === "approved" ? "success" : status === "blocked" ? "risk" : "muted";
+  const label =
+    status === "approved"
+      ? "已放行"
+      : status === "blocked"
+        ? "已下线"
+        : status === "flagged"
+          ? "已标记"
+          : "未审核";
+  return <StatusPill tone={tone}>{label}</StatusPill>;
+}
+
 function latestProviderCost(job: Pick<AdminAiJobListItem, "costLedger">) {
   return (job.costLedger ?? []).find((entry) => entry.entryType === "provider_cost") ?? null;
 }
@@ -3384,6 +3739,20 @@ function formatProfitUsd(value: number): string {
 function formatPercent(value: number): string {
   if (!Number.isFinite(value)) return "-";
   return `${(value * 100).toFixed(2)}%`;
+}
+
+function formatBytes(value: string | number | null | undefined): string {
+  if (value == null || value === "") return "-";
+  const bytes = typeof value === "number" ? value : Number(value);
+  if (!Number.isFinite(bytes) || bytes < 0) return "-";
+  if (bytes < 1024) return `${bytes} B`;
+  const units = ["KB", "MB", "GB", "TB"];
+  let current = bytes / 1024;
+  for (const unit of units) {
+    if (current < 1024) return `${current.toFixed(current < 10 ? 1 : 0)} ${unit}`;
+    current /= 1024;
+  }
+  return `${current.toFixed(1)} PB`;
 }
 
 function asRecord(value: unknown): Record<string, unknown> {

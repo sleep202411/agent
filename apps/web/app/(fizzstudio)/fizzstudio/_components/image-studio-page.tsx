@@ -44,6 +44,8 @@ import {
   type FizzAiGenerationStatus,
   type FizzAiJobView,
   type FizzAiModel,
+  type FizzAiPromptDocument,
+  type FizzAiReferenceBinding,
 } from "../../_lib/generation-api";
 import { openAssetsRealtime } from "../../_lib/assets-realtime";
 import { FizzStudioShell, useFizzStudioWorkspace } from "./fizzstudio-shell";
@@ -89,12 +91,25 @@ interface ResultJob {
 }
 
 interface ReferenceImage {
+  assetId?: string;
   id: string;
   name: string;
   progress: number;
   uploading: boolean;
   url?: string;
   error?: string;
+}
+
+interface ReferenceMentionOption {
+  id: string;
+  image: ReferenceImage;
+  label: string;
+}
+
+interface PromptMentionRange {
+  end: number;
+  query: string;
+  start: number;
 }
 
 const IMAGE_FEED = [
@@ -246,7 +261,10 @@ function ImageStudioSurface({ workspaceId }: { workspaceId: string }) {
     [imageModels, settings.model]
   );
   const referenceLimit = maxReferenceImages(selectedModel);
-  const chargeableReferenceCount = referenceImages.filter((image) => !image.error).length;
+  const supportsReferences = referenceLimit > 0;
+  const chargeableReferenceCount = supportsReferences
+    ? referenceImages.filter((image) => !image.error).length
+    : 0;
 
   const applySettings = useCallback(
     (next: ImageGenerationSettings) => {
@@ -256,6 +274,11 @@ function ImageStudioSurface({ workspaceId }: { workspaceId: string }) {
     },
     [imageModels]
   );
+
+  useEffect(() => {
+    if (referenceImages.length <= referenceLimit) return;
+    setReferenceImages((prev) => prev.slice(0, referenceLimit));
+  }, [referenceImages.length, referenceLimit]);
 
   // Live 积分 price for the selected model + output count. Recomputes on model
   // switch and count change; null when the model carries no real pricing.
@@ -468,6 +491,13 @@ function ImageStudioSurface({ workspaceId }: { workspaceId: string }) {
     const localId = generationIdempotencyKey("local");
     const now = new Date().toISOString();
     const estimatedRunSeconds = optimisticRunSeconds(settings);
+    const validReferenceImages = supportsReferences
+      ? referenceImages.filter((image) => image.url && !image.error)
+      : [];
+    const referenceBindings = buildReferenceBindings(validReferenceImages, (index) =>
+      t("referenceMention.label", { number: index + 1 })
+    );
+    const promptDocument = buildPromptDocument(trimmedPrompt, referenceBindings);
     const rawInput = compactFizzAiInput({
       prompt: trimmedPrompt,
       imageSize: settings.aspectRatio,
@@ -476,9 +506,15 @@ function ImageStudioSurface({ workspaceId }: { workspaceId: string }) {
       aspect_ratio: settings.aspectRatio,
       outputFormat: settings.outputFormat,
       quality: settings.quality,
-      referenceImages: referenceImages
-        .filter((image) => image.url && !image.error)
-        .map((image) => ({ url: image.url })),
+      referenceImages:
+        validReferenceImages.length > 0
+          ? validReferenceImages.map((image) => ({
+              url: image.url,
+              refId: image.id,
+              label: referenceBindings.find((binding) => binding.refId === image.id)?.label,
+              assetId: image.assetId,
+            }))
+          : undefined,
       resolution: settings.resolution,
       n: settings.variations,
       numOutputs: settings.variations,
@@ -518,6 +554,8 @@ function ImageStudioSurface({ workspaceId }: { workspaceId: string }) {
         },
         idempotencyKey: generationIdempotencyKey(`fizzstudio:image-studio:${workspaceId}`),
         input,
+        promptDocument,
+        referenceBindings,
         modelId: selectedModel.id,
         schemaVersion: selectedModel.schemaVersion,
       });
@@ -572,13 +610,14 @@ function ImageStudioSurface({ workspaceId }: { workspaceId: string }) {
     selectedModel,
     settings,
     submitting,
+    supportsReferences,
     t,
     workspaceId,
   ]);
 
   const uploadReferenceImages = useCallback(
     async (files: FileList | null) => {
-      if (!files || files.length === 0) return;
+      if (!files || files.length === 0 || referenceLimit <= 0) return;
       setReferenceUploadError(null);
       const remaining = Math.max(0, referenceLimit - referenceImages.length);
       const selected = Array.from(files).slice(0, remaining);
@@ -602,7 +641,13 @@ function ImageStudioSurface({ workspaceId }: { workspaceId: string }) {
           setReferenceImages((prev) =>
             prev.map((image) =>
               image.id === id
-                ? { ...image, progress: 100, uploading: false, url: uploaded.url }
+                ? {
+                    ...image,
+                    assetId: uploaded.mediaAssetId,
+                    progress: 100,
+                    uploading: false,
+                    url: uploaded.url,
+                  }
                 : image
             )
           );
@@ -786,6 +831,7 @@ function ImageStudioSurface({ workspaceId }: { workspaceId: string }) {
         priceEstimate={priceEstimate}
         referenceImages={referenceImages}
         referenceLimit={referenceLimit}
+        supportsReferences={supportsReferences}
         referenceUploadError={referenceUploadError}
         canSubmit={Boolean(
           prompt.trim() && selectedModel && !submitting && !hasUploadingReferences
@@ -1650,6 +1696,96 @@ function mergeResultJobRow(current: ResultJob, incoming: ResultJob): ResultJob {
   };
 }
 
+function buildPromptDocument(
+  prompt: string,
+  references: FizzAiReferenceBinding[]
+): FizzAiPromptDocument {
+  const nodes = promptDocumentNodesFromMentions(prompt, references);
+  return {
+    version: 1,
+    nodes: nodes.length > 0 ? nodes : [{ type: "text", text: prompt }],
+  };
+}
+
+function buildReferenceBindings(
+  images: ReferenceImage[],
+  labelForIndex: (index: number) => string
+): FizzAiReferenceBinding[] {
+  return images
+    .filter((image): image is ReferenceImage & { url: string } => Boolean(image.url))
+    .map((image, index) => {
+      const binding: FizzAiReferenceBinding = {
+        refId: image.id,
+        kind: "image",
+        label: labelForIndex(index),
+        order: index + 1,
+        url: image.url,
+      };
+      if (image.assetId) binding.assetId = image.assetId;
+      return binding;
+    });
+}
+
+function findPromptMentionRange(value: string, caret: number): PromptMentionRange | null {
+  const beforeCaret = value.slice(0, caret);
+  const start = beforeCaret.lastIndexOf("@");
+  if (start < 0) return null;
+  const query = beforeCaret.slice(start + 1);
+  if (query.includes("\n") || query.length > 32) return null;
+  const previous = start > 0 ? value[start - 1] : "";
+  if (previous && !/\s|[\u3000([{"'“‘，。；：！？、]/.test(previous)) return null;
+  return {
+    start,
+    end: caret,
+    query,
+  };
+}
+
+function normalizeMentionQuery(value: string): string {
+  return value.trim().toLocaleLowerCase();
+}
+
+function promptDocumentNodesFromMentions(
+  prompt: string,
+  references: FizzAiReferenceBinding[]
+): FizzAiPromptDocument["nodes"] {
+  if (!prompt || references.length === 0) return [];
+
+  const matches: Array<{ binding: FizzAiReferenceBinding; end: number; start: number }> = [];
+  for (const binding of references) {
+    const token = `@${binding.label}`;
+    let cursor = 0;
+    while (cursor < prompt.length) {
+      const start = prompt.indexOf(token, cursor);
+      if (start < 0) break;
+      matches.push({ binding, start, end: start + token.length });
+      cursor = start + token.length;
+    }
+  }
+
+  if (matches.length === 0) return [];
+  matches.sort((a, b) =>
+    a.start === b.start ? b.end - b.start - (a.end - a.start) : a.start - b.start
+  );
+
+  const nodes: FizzAiPromptDocument["nodes"] = [];
+  let cursor = 0;
+  for (const match of matches) {
+    if (match.start < cursor) continue;
+    if (match.start > cursor) {
+      nodes.push({ type: "text", text: prompt.slice(cursor, match.start) });
+    }
+    nodes.push({
+      type: "asset_ref",
+      refId: match.binding.refId,
+      label: match.binding.label,
+    });
+    cursor = match.end;
+  }
+  if (cursor < prompt.length) nodes.push({ type: "text", text: prompt.slice(cursor) });
+  return nodes;
+}
+
 function optimisticRunSeconds(settings: ImageGenerationSettings): number {
   const count = Math.max(1, settings.variations || 1);
   const qualityFactor = settings.quality === "high" ? 1.35 : settings.quality === "low" ? 0.8 : 1;
@@ -1834,12 +1970,12 @@ function ImageMasonry({ items }: { items: typeof IMAGE_FEED }) {
   const t = useTranslations("fizzStudio.imageStudio");
 
   return (
-    <div className="columns-1 gap-3 sm:columns-2 xl:columns-3 2xl:columns-4">
+    <div className="columns-2 gap-2.5 sm:columns-3 lg:columns-4 xl:columns-5 2xl:columns-6">
       {items.map((item, index) => (
         <article
           key={`${item.key}-${index}`}
           className={cn(
-            "group relative mb-3 break-inside-avoid overflow-hidden rounded-[16px] bg-[#171719] shadow-[0_18px_55px_rgba(0,0,0,.32)] ring-1 ring-white/[0.08]",
+            "group relative mb-2.5 break-inside-avoid overflow-hidden rounded-[12px] bg-[#171719] shadow-[0_12px_32px_rgba(0,0,0,.28)] ring-1 ring-white/[0.08]",
             item.className
           )}
         >
@@ -1877,6 +2013,7 @@ function ImagePromptComposer({
   priceEstimate,
   referenceImages,
   referenceLimit,
+  supportsReferences,
   referenceUploadError,
   canSubmit,
   onPromptChange,
@@ -1898,6 +2035,7 @@ function ImagePromptComposer({
   priceEstimate: { sellPoints: number } | null;
   referenceImages: ReferenceImage[];
   referenceLimit: number;
+  supportsReferences: boolean;
   referenceUploadError: string | null;
   canSubmit: boolean;
   onPromptChange: (value: string) => void;
@@ -1910,9 +2048,72 @@ function ImagePromptComposer({
 }) {
   const t = useTranslations("fizzStudio.imageStudio");
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const promptInputRef = useRef<HTMLTextAreaElement | null>(null);
+  const [mentionRange, setMentionRange] = useState<PromptMentionRange | null>(null);
+  const [activeMentionIndex, setActiveMentionIndex] = useState(0);
   const modelLabel = settings.model
     ? getImageModelLabel(models, settings.model)
     : t("noModelSelected");
+  const mentionOptions = useMemo<ReferenceMentionOption[]>(
+    () =>
+      referenceImages
+        .filter((image) => image.url && !image.error)
+        .map((image, index) => ({
+          id: image.id,
+          image,
+          label: t("referenceMention.label", { number: index + 1 }),
+        })),
+    [referenceImages, t]
+  );
+  const filteredMentionOptions = useMemo(() => {
+    if (!mentionRange) return [];
+    const query = normalizeMentionQuery(mentionRange.query);
+    if (!query) return mentionOptions;
+    return mentionOptions.filter((option) =>
+      normalizeMentionQuery(`${option.label} ${option.image.name}`).includes(query)
+    );
+  }, [mentionOptions, mentionRange]);
+  const mentionOpen = Boolean(mentionRange && supportsReferences);
+
+  const syncMentionRange = useCallback(
+    (value: string, caret: number | null | undefined) => {
+      if (!supportsReferences || caret == null) {
+        setMentionRange(null);
+        return;
+      }
+      const range = findPromptMentionRange(value, caret);
+      setMentionRange(range);
+      setActiveMentionIndex(0);
+    },
+    [supportsReferences]
+  );
+
+  const insertReferenceMention = useCallback(
+    (option: ReferenceMentionOption) => {
+      if (!mentionRange) return;
+      const before = prompt.slice(0, mentionRange.start);
+      const after = prompt.slice(mentionRange.end);
+      const leading = before && !/\s$/.test(before) ? " " : "";
+      const trailing = after && /^\s/.test(after) ? "" : " ";
+      const insert = `${leading}@${option.label}${trailing}`;
+      const nextPrompt = `${before}${insert}${after}`;
+      const nextCaret = before.length + insert.length;
+      onPromptChange(nextPrompt);
+      setMentionRange(null);
+      window.requestAnimationFrame(() => {
+        promptInputRef.current?.focus();
+        promptInputRef.current?.setSelectionRange(nextCaret, nextCaret);
+      });
+    },
+    [mentionRange, onPromptChange, prompt]
+  );
+
+  useEffect(() => {
+    if (!mentionRange) return;
+    setActiveMentionIndex((index) =>
+      filteredMentionOptions.length === 0 ? 0 : Math.min(index, filteredMentionOptions.length - 1)
+    );
+  }, [filteredMentionOptions.length, mentionRange]);
 
   return (
     <>
@@ -1924,7 +2125,7 @@ function ImagePromptComposer({
           className="fixed inset-0 z-[39] cursor-default bg-black/55 duration-150 animate-in fade-in-0"
         />
       ) : null}
-      <div className="fixed inset-x-4 bottom-4 z-40 mx-auto max-w-[960px] lg:left-[312px] lg:right-6">
+      <div className="fixed inset-x-4 bottom-4 z-40 mx-auto max-w-[960px] lg:left-[72px] lg:right-6">
         <ImageSettingsPanel
           open={settingsOpen}
           models={models}
@@ -1935,9 +2136,9 @@ function ImagePromptComposer({
           onRetry={onRetryCatalog}
           onSettingsChange={onSettingsChange}
         />
-        <div className="relative z-10 w-full overflow-hidden rounded-[16px] border border-white/[0.08] bg-[#141416] text-white shadow-[0_24px_70px_rgba(0,0,0,0.55),inset_0_1px_0_rgba(255,255,255,0.08)]">
-          <div className="grid gap-0 md:grid-cols-[168px_1fr]">
-            <div className="border-b border-white/[0.07] p-4 md:border-b-0 md:border-r">
+        <div className="relative z-10 w-full overflow-visible rounded-[16px] border border-white/[0.08] bg-[#141416] text-white shadow-[0_24px_70px_rgba(0,0,0,0.55),inset_0_1px_0_rgba(255,255,255,0.08)]">
+          <div className="min-w-0 p-4">
+            {supportsReferences ? (
               <input
                 ref={fileInputRef}
                 type="file"
@@ -1949,109 +2150,207 @@ function ImagePromptComposer({
                   event.currentTarget.value = "";
                 }}
               />
-              <button
-                type="button"
-                disabled={referenceImages.length >= referenceLimit}
-                onClick={() => fileInputRef.current?.click()}
-                className="flex h-[86px] w-full items-center justify-center overflow-hidden rounded-[16px] border border-white/[0.07] bg-white/[0.03] text-white/70 transition-colors hover:border-white/[0.12] hover:bg-white/[0.06] hover:text-white disabled:cursor-not-allowed disabled:opacity-45"
-                aria-label={t("addImage")}
-              >
-                {referenceImages[0]?.url ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img src={referenceImages[0].url} alt="" className="size-full object-cover" />
-                ) : referenceImages[0]?.uploading ? (
-                  <ReferenceUploadProgress progress={referenceImages[0].progress} />
-                ) : (
-                  <IconPlus className="size-5" stroke={1.9} />
-                )}
-              </button>
-              {referenceImages.length > 0 ? (
-                <div className="mt-2 grid grid-cols-4 gap-1.5 md:grid-cols-3">
-                  {referenceImages.map((image) => (
-                    <ReferenceThumb
-                      key={image.id}
-                      image={image}
-                      onRemove={() => onRemoveReferenceImage(image.id)}
-                    />
-                  ))}
-                </div>
+            ) : null}
+            <div
+              className={cn(
+                "relative min-h-[98px]",
+                supportsReferences &&
+                  (referenceLimit > 4 ? "pl-[238px] sm:pl-[260px]" : "pl-[184px] sm:pl-[202px]")
+              )}
+            >
+              {supportsReferences ? (
+                <ReferenceStack
+                  images={referenceImages}
+                  limit={referenceLimit}
+                  addLabel={t("addReferenceImage")}
+                  removeLabel={t("removeReferenceImage")}
+                  overflowLabel={(count) => t("referenceOverflow", { count })}
+                  onAdd={() => fileInputRef.current?.click()}
+                  onRemove={onRemoveReferenceImage}
+                />
               ) : null}
-              <button
-                type="button"
-                disabled={referenceImages.length >= referenceLimit}
-                onClick={() => fileInputRef.current?.click()}
-                className="mt-3 inline-flex h-9 w-full items-center justify-center gap-2 rounded-full border border-white/[0.08] bg-white/[0.05] px-3 text-sm font-semibold text-white/86 transition-colors hover:bg-white/[0.08] hover:text-white disabled:cursor-not-allowed disabled:opacity-45"
-              >
-                <IconPlus className="size-4" stroke={1.9} />
-                {t("addImage")}
-              </button>
-              {referenceUploadError ? (
-                <p className="mt-2 text-xs font-medium text-[#ff8a8d]">{referenceUploadError}</p>
-              ) : null}
-            </div>
-
-            <div className="min-w-0 p-4">
               <label className="sr-only" htmlFor="image-prompt">
                 {t("promptLabel")}
               </label>
               <textarea
+                ref={promptInputRef}
                 id="image-prompt"
                 maxLength={800}
                 value={prompt}
-                onChange={(event) => onPromptChange(event.target.value)}
+                onChange={(event) => {
+                  onPromptChange(event.target.value);
+                  syncMentionRange(event.target.value, event.target.selectionStart);
+                }}
                 onKeyDown={(event) => {
+                  if (mentionOpen) {
+                    if (event.key === "Escape") {
+                      event.preventDefault();
+                      setMentionRange(null);
+                      return;
+                    }
+                    if (event.key === "ArrowDown" && filteredMentionOptions.length > 0) {
+                      event.preventDefault();
+                      setActiveMentionIndex((index) => (index + 1) % filteredMentionOptions.length);
+                      return;
+                    }
+                    if (event.key === "ArrowUp" && filteredMentionOptions.length > 0) {
+                      event.preventDefault();
+                      setActiveMentionIndex(
+                        (index) =>
+                          (index - 1 + filteredMentionOptions.length) %
+                          filteredMentionOptions.length
+                      );
+                      return;
+                    }
+                    if (event.key === "Enter" && filteredMentionOptions[activeMentionIndex]) {
+                      event.preventDefault();
+                      insertReferenceMention(filteredMentionOptions[activeMentionIndex]);
+                      return;
+                    }
+                  }
                   if ((event.metaKey || event.ctrlKey) && event.key === "Enter" && canSubmit) {
                     event.preventDefault();
                     onSubmit();
                   }
                 }}
+                onSelect={(event) =>
+                  syncMentionRange(event.currentTarget.value, event.currentTarget.selectionStart)
+                }
+                onBlur={() => {
+                  window.setTimeout(() => setMentionRange(null), 120);
+                }}
                 placeholder={t("promptPlaceholder")}
-                className="h-20 w-full resize-none bg-transparent text-sm leading-7 text-white outline-none placeholder:text-white/40 md:h-[76px]"
+                className="h-[98px] w-full resize-none bg-transparent text-sm leading-7 text-white outline-none placeholder:text-white/40"
               />
-              {submitError ? (
-                <p className="mt-1 text-xs font-medium text-[#ff8a8d]">{submitError}</p>
+              {mentionOpen ? (
+                <ReferenceMentionMenu
+                  options={filteredMentionOptions}
+                  activeIndex={activeMentionIndex}
+                  emptyLabel={t("referenceMention.empty")}
+                  addLabel={t("referenceMention.add")}
+                  canAdd={referenceImages.length < referenceLimit}
+                  onAdd={() => fileInputRef.current?.click()}
+                  onSelect={insertReferenceMention}
+                />
               ) : null}
-              <div className="mt-3 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-                <div className="flex flex-wrap items-center gap-2">
-                  <button
-                    type="button"
-                    aria-expanded={settingsOpen}
-                    onClick={() => onOpenSettingsChange(!settingsOpen)}
-                    className="inline-flex h-10 items-center gap-2 rounded-full border border-white/[0.08] bg-white/[0.05] px-4 text-sm font-semibold text-white transition-colors hover:bg-white/[0.08]"
-                  >
-                    <IconAdjustmentsHorizontal className="size-4" stroke={1.8} />
-                    {modelLabel}
-                    {settings.aspectRatio ? ` / ${settings.aspectRatio}` : ""}
-                    {settings.resolution ? ` / ${settings.resolution}` : ""}
-                    <IconChevronDown className="size-4 text-white/48" stroke={1.9} />
-                  </button>
-                </div>
-                <div className="flex items-center gap-3">
-                  {priceEstimate ? (
-                    <span className="text-sm font-semibold tabular-nums text-white/70">
-                      {t("priceEstimate", { points: priceEstimate.sellPoints })}
-                    </span>
-                  ) : null}
-                  <button
-                    type="button"
-                    disabled={!canSubmit}
-                    onClick={onSubmit}
-                    className="inline-flex h-12 shrink-0 items-center justify-center gap-2 rounded-[16px] bg-[#E52227] px-9 text-sm font-semibold text-white shadow-[0_18px_38px_rgba(229,34,39,0.28)] transition hover:bg-[#c91d22] hover:scale-[1.01] active:translate-y-px disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:scale-100"
-                  >
-                    {submitting ? t("creating") : t("create")}
-                    {submitting ? (
-                      <IconLoader2 className="size-5 animate-spin" stroke={1.9} />
-                    ) : (
-                      <IconSend className="size-5" stroke={1.9} />
-                    )}
-                  </button>
-                </div>
+            </div>
+            {referenceUploadError ? (
+              <p className="mt-1 text-xs font-medium text-[#ff8a8d]">{referenceUploadError}</p>
+            ) : null}
+            {submitError ? (
+              <p className="mt-1 text-xs font-medium text-[#ff8a8d]">{submitError}</p>
+            ) : null}
+            <div className="mt-3 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  aria-expanded={settingsOpen}
+                  onClick={() => onOpenSettingsChange(!settingsOpen)}
+                  className="inline-flex h-10 items-center gap-2 rounded-full border border-white/[0.08] bg-white/[0.05] px-4 text-sm font-semibold text-white transition-colors hover:bg-white/[0.08]"
+                >
+                  <IconAdjustmentsHorizontal className="size-4" stroke={1.8} />
+                  {modelLabel}
+                  {settings.aspectRatio ? ` / ${settings.aspectRatio}` : ""}
+                  {settings.resolution ? ` / ${settings.resolution}` : ""}
+                  <IconChevronDown className="size-4 text-white/48" stroke={1.9} />
+                </button>
+              </div>
+              <div className="flex items-center gap-3">
+                {priceEstimate ? (
+                  <span className="text-sm font-semibold tabular-nums text-white/70">
+                    {t("priceEstimate", { points: priceEstimate.sellPoints })}
+                  </span>
+                ) : null}
+                <button
+                  type="button"
+                  disabled={!canSubmit}
+                  onClick={onSubmit}
+                  className="inline-flex h-12 shrink-0 items-center justify-center gap-2 rounded-[16px] bg-[#E52227] px-9 text-sm font-semibold text-white shadow-[0_18px_38px_rgba(229,34,39,0.28)] transition hover:bg-[#c91d22] hover:scale-[1.01] active:translate-y-px disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:scale-100"
+                >
+                  {submitting ? t("creating") : t("create")}
+                  {submitting ? (
+                    <IconLoader2 className="size-5 animate-spin" stroke={1.9} />
+                  ) : (
+                    <IconSend className="size-5" stroke={1.9} />
+                  )}
+                </button>
               </div>
             </div>
           </div>
         </div>
       </div>
     </>
+  );
+}
+
+function ReferenceMentionMenu({
+  options,
+  activeIndex,
+  emptyLabel,
+  addLabel,
+  canAdd,
+  onAdd,
+  onSelect,
+}: {
+  options: ReferenceMentionOption[];
+  activeIndex: number;
+  emptyLabel: string;
+  addLabel: string;
+  canAdd: boolean;
+  onAdd: () => void;
+  onSelect: (option: ReferenceMentionOption) => void;
+}) {
+  return (
+    <div className="absolute left-[184px] top-8 z-[70] w-[270px] overflow-hidden rounded-[14px] border border-white/[0.1] bg-[#202124]/95 p-1.5 text-white shadow-[0_18px_48px_rgba(0,0,0,0.48)] backdrop-blur-xl sm:left-[202px]">
+      {options.length > 0 ? (
+        <div className="max-h-[214px] overflow-y-auto">
+          {options.map((option, index) => (
+            <button
+              key={option.id}
+              type="button"
+              onMouseDown={(event) => {
+                event.preventDefault();
+                onSelect(option);
+              }}
+              className={cn(
+                "flex w-full items-center gap-2.5 rounded-[10px] px-2 py-2 text-left transition-colors",
+                index === activeIndex ? "bg-white/[0.1]" : "hover:bg-white/[0.07]"
+              )}
+            >
+              <span className="relative flex size-10 shrink-0 overflow-hidden rounded-[8px] bg-white/[0.06] ring-1 ring-white/[0.12]">
+                {option.image.url ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={option.image.url} alt="" className="size-full object-cover" />
+                ) : (
+                  <IconPhoto className="m-auto size-4 text-white/50" stroke={1.8} />
+                )}
+              </span>
+              <span className="min-w-0">
+                <span className="block truncate text-sm font-semibold text-white">
+                  @{option.label}
+                </span>
+                <span className="block truncate text-xs text-white/45">{option.image.name}</span>
+              </span>
+            </button>
+          ))}
+        </div>
+      ) : (
+        <div className="px-3 py-2.5 text-xs font-medium text-white/48">{emptyLabel}</div>
+      )}
+      {canAdd ? (
+        <button
+          type="button"
+          onMouseDown={(event) => {
+            event.preventDefault();
+            onAdd();
+          }}
+          className="mt-1 flex h-9 w-full items-center justify-center gap-2 rounded-[10px] border border-white/[0.08] bg-white/[0.04] text-xs font-semibold text-white/78 transition-colors hover:bg-white/[0.08] hover:text-white"
+        >
+          <IconPlus className="size-4" stroke={1.8} />
+          {addLabel}
+        </button>
+      ) : null}
+    </div>
   );
 }
 
@@ -2064,9 +2363,114 @@ function ReferenceUploadProgress({ progress }: { progress: number }) {
   );
 }
 
-function ReferenceThumb({ image, onRemove }: { image: ReferenceImage; onRemove: () => void }) {
+function ReferenceStack({
+  images,
+  limit,
+  addLabel,
+  removeLabel,
+  overflowLabel,
+  onAdd,
+  onRemove,
+}: {
+  images: ReferenceImage[];
+  limit: number;
+  addLabel: string;
+  removeLabel: string;
+  overflowLabel: (count: number) => string;
+  onAdd: () => void;
+  onRemove: (id: string) => void;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const visibleImages = images.slice(0, 4);
+  const overflowCount = Math.max(0, images.length - visibleImages.length);
+  const canAdd = images.length < limit;
+
+  if (visibleImages.length === 0) {
+    return (
+      <button
+        type="button"
+        onClick={onAdd}
+        className="absolute left-0 top-0 flex h-[72px] w-[54px] rotate-[-5deg] items-center justify-center rounded-[9px] border-2 border-white/[0.16] bg-[#30343d] text-white/62 shadow-[0_16px_42px_rgba(0,0,0,0.32)] transition-colors hover:border-white/[0.26] hover:bg-[#3a3f49] hover:text-white"
+        aria-label={addLabel}
+      >
+        <IconPlus className="size-6" stroke={1.8} />
+      </button>
+    );
+  }
+
   return (
-    <div className="group relative aspect-square overflow-hidden rounded-[10px] border border-white/[0.08] bg-white/[0.04]">
+    <div
+      className="group/stack absolute left-0 top-0 z-10 h-[92px] w-[248px] overflow-visible"
+      onMouseEnter={() => setExpanded(true)}
+      onMouseMove={() => setExpanded(true)}
+      onMouseLeave={() => setExpanded(false)}
+      onPointerEnter={() => setExpanded(true)}
+      onPointerMove={() => setExpanded(true)}
+      onPointerLeave={() => setExpanded(false)}
+    >
+      {visibleImages.map((image, index) => {
+        const compactLeft = index * 24;
+        const expandedLeft = index * 42;
+        const compactTop = [8, 0, 8, 4][index] ?? 6;
+        const expandedTop = [6, 2, 6, 3][index] ?? 6;
+        const compactRotate = ["-8deg", "4deg", "-3deg", "6deg"][index] ?? "0deg";
+        const expandedRotate = ["-6deg", "-2deg", "2deg", "6deg"][index] ?? "0deg";
+        const isLastVisible = index === visibleImages.length - 1;
+        return (
+          <div
+            key={image.id}
+            className="group/card absolute h-[72px] w-[54px] overflow-visible rounded-[9px] border-2 border-white/90 bg-[#202022] shadow-[0_16px_42px_rgba(0,0,0,0.35)] transition-[left,top,rotate,translate] duration-200 ease-out hover:z-30 hover:-translate-y-1 hover:rotate-0"
+            style={{
+              left: expanded ? expandedLeft : compactLeft,
+              top: expanded ? expandedTop : compactTop,
+              rotate: expanded ? expandedRotate : compactRotate,
+              zIndex: 10 + index,
+            }}
+          >
+            <ReferenceStackMedia image={image} />
+            {overflowCount > 0 && isLastVisible ? (
+              <span className="absolute inset-x-1 bottom-1 rounded-full bg-black/62 px-1.5 py-0.5 text-center text-[10px] font-bold text-white">
+                {overflowLabel(overflowCount)}
+              </span>
+            ) : null}
+            <button
+              type="button"
+              onClick={(event) => {
+                event.stopPropagation();
+                onRemove(image.id);
+              }}
+              className={cn(
+                "absolute -right-2.5 -top-2.5 z-50 flex size-6 items-center justify-center rounded-full bg-[#27292e] text-white shadow-[0_8px_22px_rgba(0,0,0,0.5)] ring-1 ring-white/25 transition-opacity duration-150 group-hover/card:opacity-100",
+                expanded ? "opacity-100" : "opacity-0"
+              )}
+              aria-label={removeLabel}
+            >
+              <IconX className="size-3.5" stroke={2.2} />
+            </button>
+          </div>
+        );
+      })}
+      {canAdd ? (
+        <button
+          type="button"
+          onClick={onAdd}
+          className="absolute top-[6px] flex h-[72px] w-[54px] rotate-[5deg] items-center justify-center rounded-[9px] border-2 border-white/[0.12] bg-[#30343d] text-white/68 shadow-[0_16px_38px_rgba(0,0,0,0.28)] transition-colors hover:border-white/[0.22] hover:bg-[#3a3f49] hover:text-white"
+          style={{
+            left: (expanded ? visibleImages.length * 42 : visibleImages.length * 24) + 12,
+            zIndex: 20 + visibleImages.length,
+          }}
+          aria-label={addLabel}
+        >
+          <IconPlus className="size-6" stroke={1.8} />
+        </button>
+      ) : null}
+    </div>
+  );
+}
+
+function ReferenceStackMedia({ image }: { image: ReferenceImage }) {
+  return (
+    <div className="size-full overflow-hidden rounded-[7px]">
       {image.url ? (
         // eslint-disable-next-line @next/next/no-img-element
         <img src={image.url} alt="" className="size-full object-cover" />
@@ -2077,13 +2481,6 @@ function ReferenceThumb({ image, onRemove }: { image: ReferenceImage; onRemove: 
           <IconPhoto className="size-4" stroke={1.8} />
         </span>
       )}
-      <button
-        type="button"
-        onClick={onRemove}
-        className="absolute right-1 top-1 flex size-5 items-center justify-center rounded-full bg-black/62 text-white opacity-0 transition-opacity group-hover:opacity-100"
-      >
-        <IconX className="size-3" stroke={2} />
-      </button>
     </div>
   );
 }

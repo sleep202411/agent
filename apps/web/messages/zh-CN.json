@@ -6187,6 +6187,9 @@
       "recreate": "复刻",
       "edit": "编辑",
       "addImage": "添加图片",
+      "addReferenceImage": "添加参考图",
+      "removeReferenceImage": "移除参考图",
+      "referenceOverflow": "+{count}",
       "promptLabel": "图片提示词",
       "promptPlaceholder": "描述你想象中的图片",
       "generateFree": "免费生成",
@@ -6201,6 +6204,11 @@
       "referenceUpload": {
         "failed": "参考图上传失败",
         "limit": "最多只能添加 4 张参考图。"
+      },
+      "referenceMention": {
+        "label": "参考图{number}",
+        "empty": "请先上传参考图。",
+        "add": "添加参考图"
       },
       "detail": {
         "title": "图片详情",

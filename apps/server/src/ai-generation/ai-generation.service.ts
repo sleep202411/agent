@@ -24,6 +24,7 @@ import {
 import { AiGenerationOutboxService } from './outbox.service';
 import { ProviderRegistry } from './provider-registry.service';
 import { ProviderCapacityRuntimeService } from './provider-capacity-runtime.service';
+import { AiPromptCompilerService } from './prompt-compiler.service';
 import { AiGenerationQueueService } from './queue.service';
 import { AiGenerationRoutingService } from './routing.service';
 import { AiGenerationValidatorService } from './validator.service';
@@ -74,6 +75,7 @@ export class AiGenerationService {
     private readonly entitlements: EntitlementService,
     private readonly billingWallet: AiGenerationBillingWalletService,
     private readonly providerCapacity: ProviderCapacityRuntimeService,
+    private readonly promptCompiler: AiPromptCompilerService,
   ) {}
 
   /**
@@ -171,15 +173,25 @@ export class AiGenerationService {
 
     const input =
       body.input && typeof body.input === 'object' ? body.input : {};
-    const normalizedInput = this.validator.normalizeInput(
+    const schemaNormalizedInput = this.validator.normalizeInput(
       model.input_schema,
       input,
     );
     // Per-option plan gate (for example, high-resolution renders).
     // Server-side enforcement; the UI already gates these.
-    this.authz.assertCanUseOptions(entitlement, model, normalizedInput);
-    const rawPrompt = normalizedInput.prompt;
-    const prompt = typeof rawPrompt === 'string' ? rawPrompt.trim() : '';
+    this.authz.assertCanUseOptions(entitlement, model, schemaNormalizedInput);
+    const supportsReferenceImages = Boolean(
+      model.input_schema.properties?.referenceImages,
+    );
+    const promptCompilation = this.promptCompiler.compile({
+      normalizedInput: schemaNormalizedInput,
+      rawInput: input,
+      promptDocument: body.promptDocument,
+      references: supportsReferenceImages ? body.referenceBindings : undefined,
+      styles: body.styleBindings,
+    });
+    const normalizedInput = promptCompilation.normalizedInput;
+    const prompt = promptCompilation.snapshot.displayText;
     const idempotencyKey = body.idempotencyKey?.trim() || randomUUID();
 
     const existing = await this.store.findByIdempotency(
@@ -246,6 +258,12 @@ export class AiGenerationService {
             input,
             normalizedInput,
             prompt,
+            promptDocument: promptCompilation.snapshot.promptDocument,
+            promptDisplayText: promptCompilation.snapshot.displayText,
+            promptSearchText: promptCompilation.snapshot.searchText,
+            compiledPrompt: promptCompilation.snapshot.compiledPrompt,
+            referenceSnapshot: promptCompilation.snapshot.references,
+            styleSnapshot: promptCompilation.snapshot.styles,
             idempotencyKey,
             routingSnapshot: snapshot,
             outputs: [],
@@ -455,6 +473,9 @@ export class AiGenerationService {
       documentBlockId: job.documentBlockId ?? undefined,
       sourceSurface: job.sourceSurface ?? undefined,
       input: job.normalizedInput,
+      promptDocument: job.promptDocument ?? undefined,
+      referenceBindings: job.referenceSnapshot ?? undefined,
+      styleBindings: job.styleSnapshot ?? undefined,
       idempotencyKey: randomUUID(),
     });
   }
@@ -770,6 +791,12 @@ export class AiGenerationService {
       estimatedTotalSeconds: job.estimatedTotalSeconds ?? null,
       etaConfidence: job.etaConfidence ?? 'low',
       prompt: job.prompt,
+      promptDocument: job.promptDocument ?? null,
+      promptDisplayText: job.promptDisplayText ?? job.prompt,
+      promptSearchText: job.promptSearchText ?? job.prompt,
+      compiledPrompt: job.compiledPrompt ?? null,
+      referenceSnapshot: job.referenceSnapshot ?? [],
+      styleSnapshot: job.styleSnapshot ?? [],
       // Always include the normalized input so the gallery can render
       // the correct aspect ratio for queued/in-flight cards on reload
       // (output rows don't carry width/height until upload finishes).

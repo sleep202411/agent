@@ -157,7 +157,20 @@ export type AdminAiJobListItem = {
     costAccounting?: unknown;
     pricingSnapshot?: unknown;
   }>;
-  outputs: Array<{ id: string; type: string; url: string; outputIndex: number }>;
+  outputs: Array<{
+    id: string;
+    type: string;
+    url: string;
+    outputIndex: number;
+    assetId?: string | null;
+    asset?: {
+      id: string;
+      status: string;
+      moderationStatus: "unreviewed" | "approved" | "flagged" | "blocked";
+      moderationReason?: string | null;
+      deletedAt?: string | null;
+    } | null;
+  }>;
   costLedger: AdminAiCostLedgerEntry[];
 };
 
@@ -204,6 +217,12 @@ export type AdminAiProviderTraceEvent = {
 export type AdminAiJobDetail = Omit<AdminAiJobListItem, "attempts"> & {
   input?: unknown;
   normalizedInput?: unknown;
+  promptDocument?: unknown;
+  promptDisplayText?: string | null;
+  promptSearchText?: string | null;
+  compiledPrompt?: string | null;
+  referenceSnapshot?: unknown;
+  styleSnapshot?: unknown;
   providerRequest?: unknown;
   providerResponse?: unknown;
   logs?: unknown;
@@ -219,6 +238,53 @@ export type AdminAiJobDetail = Omit<AdminAiJobListItem, "attempts"> & {
     }
   >;
   traceEvents: AdminAiProviderTraceEvent[];
+};
+
+export type AdminAiMediaAsset = {
+  id: string;
+  kind: "image" | "video" | "audio" | "document" | "other";
+  storageProvider: string;
+  bucket: string | null;
+  region: string | null;
+  objectKey: string | null;
+  externalUrl: string | null;
+  url: string | null;
+  contentType: string;
+  sizeBytes: string | null;
+  width: number | null;
+  height: number | null;
+  durationSeconds: number | null;
+  checksumSha256: string | null;
+  visibility: "public" | "private";
+  status: "uploading" | "ready" | "failed" | "deleted";
+  source: "user_upload" | "ai_output" | "imported" | "system";
+  moderationStatus: "unreviewed" | "approved" | "flagged" | "blocked";
+  moderationReason: string | null;
+  moderatedByAdminId: string | null;
+  moderatedAt: string | null;
+  workspaceId: string | null;
+  createdByUserId: string | null;
+  metadata: unknown;
+  createdAt: string;
+  updatedAt: string;
+  aiJobOutputs: Array<{
+    id: string;
+    outputIndex: number;
+    job: {
+      id: string;
+      prompt: string;
+      provider: string;
+      modelId: string;
+      deployment: string;
+      status: string;
+      stage: string;
+      userId: string;
+      workspaceId: string | null;
+      createdAt: string;
+      canonicalModel: { id: string; slug: string; displayName: string } | null;
+      providerBinding: { id: string; endpointId: string; provider: string } | null;
+    };
+  }>;
 };
 
 export type AdminAiOverviewData = {
@@ -258,8 +324,15 @@ export type AdminAiEndpointListData = { items: AdminAiProviderEndpoint[] };
 export type AdminAiModelListData = { items: AdminAiCanonicalModel[] };
 export type AdminAiBindingListData = { items: AdminAiProviderBinding[] };
 export type AdminAiJobListData = { items: AdminAiJobListItem[] };
+export type AdminAiAssetListData = { items: AdminAiMediaAsset[] };
 
-export type AdminAiModelOpsView = "overview" | "providers" | "endpoints" | "models" | "jobs";
+export type AdminAiModelOpsView =
+  | "overview"
+  | "providers"
+  | "endpoints"
+  | "models"
+  | "jobs"
+  | "assets";
 
 export type AdminAiModelOpsInitialData = {
   overview: AdminAiOverviewData | null;
@@ -268,11 +341,12 @@ export type AdminAiModelOpsInitialData = {
   models: AdminAiModelListData | null;
   bindings: AdminAiBindingListData | null;
   jobs: AdminAiJobListData | null;
+  assets: AdminAiAssetListData | null;
   error: string | null;
 };
 
 export async function fetchAdminAiModelOpsInitial(): Promise<AdminAiModelOpsInitialData> {
-  const [overview, providers, endpoints, models, bindings, jobs] = await Promise.all([
+  const [overview, providers, endpoints, models, bindings, jobs, assets] = await Promise.all([
     fetchAdminAiResource<AdminAiOverviewData>("/ai-model-ops/overview", "AI 模型总览加载失败。"),
     fetchAdminAiResource<AdminAiProviderListData>(
       "/ai-model-ops/providers",
@@ -291,6 +365,7 @@ export async function fetchAdminAiModelOpsInitial(): Promise<AdminAiModelOpsInit
       "供应商绑定加载失败。"
     ),
     fetchAdminAiResource<AdminAiJobListData>("/ai-model-ops/jobs", "AI 任务加载失败。"),
+    fetchAdminAiResource<AdminAiAssetListData>("/ai-model-ops/assets", "AI 资产加载失败。"),
   ]);
   return {
     overview: overview.data,
@@ -299,6 +374,7 @@ export async function fetchAdminAiModelOpsInitial(): Promise<AdminAiModelOpsInit
     models: models.data,
     bindings: bindings.data,
     jobs: jobs.data,
+    assets: assets.data,
     error:
       overview.error ??
       providers.error ??
@@ -306,6 +382,7 @@ export async function fetchAdminAiModelOpsInitial(): Promise<AdminAiModelOpsInit
       models.error ??
       bindings.error ??
       jobs.error ??
+      assets.error ??
       null,
   };
 }
@@ -316,7 +393,7 @@ export async function fetchAdminAiModelOpsView(
   const empty = emptyAdminAiModelOpsInitialData();
 
   if (view === "overview") {
-    const [overview, providers, endpoints, models, bindings, jobs] = await Promise.all([
+    const [overview, providers, endpoints, models, bindings, jobs, assets] = await Promise.all([
       fetchAdminAiResource<AdminAiOverviewData>("/ai-model-ops/overview", "AI 模型总览加载失败。"),
       fetchAdminAiResource<AdminAiProviderListData>(
         "/ai-model-ops/providers",
@@ -335,6 +412,7 @@ export async function fetchAdminAiModelOpsView(
         "供应商绑定加载失败。"
       ),
       fetchAdminAiResource<AdminAiJobListData>("/ai-model-ops/jobs", "AI 任务加载失败。"),
+      fetchAdminAiResource<AdminAiAssetListData>("/ai-model-ops/assets", "AI 资产加载失败。"),
     ]);
     return {
       overview: overview.data,
@@ -343,6 +421,7 @@ export async function fetchAdminAiModelOpsView(
       models: models.data,
       bindings: bindings.data,
       jobs: jobs.data,
+      assets: assets.data,
       error:
         overview.error ??
         providers.error ??
@@ -350,6 +429,7 @@ export async function fetchAdminAiModelOpsView(
         models.error ??
         bindings.error ??
         jobs.error ??
+        assets.error ??
         null,
     };
   }
@@ -421,11 +501,19 @@ export async function fetchAdminAiModelOpsView(
     };
   }
 
-  const jobs = await fetchAdminAiResource<AdminAiJobListData>(
-    "/ai-model-ops/jobs",
-    "AI 任务加载失败。"
+  if (view === "jobs") {
+    const jobs = await fetchAdminAiResource<AdminAiJobListData>(
+      "/ai-model-ops/jobs",
+      "AI 任务加载失败。"
+    );
+    return { ...empty, jobs: jobs.data, error: jobs.error };
+  }
+
+  const assets = await fetchAdminAiResource<AdminAiAssetListData>(
+    "/ai-model-ops/assets",
+    "AI 资产加载失败。"
   );
-  return { ...empty, jobs: jobs.data, error: jobs.error };
+  return { ...empty, assets: assets.data, error: assets.error };
 }
 
 function emptyAdminAiModelOpsInitialData(): AdminAiModelOpsInitialData {
@@ -436,6 +524,7 @@ function emptyAdminAiModelOpsInitialData(): AdminAiModelOpsInitialData {
     models: null,
     bindings: null,
     jobs: null,
+    assets: null,
     error: null,
   };
 }

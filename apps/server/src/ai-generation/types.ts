@@ -20,6 +20,11 @@ import type {
   AiUiSchema,
 } from '@repo/shared';
 import type { EntitlementPlanKey, EntitlementSnapshot } from '../entitlements';
+import type {
+  AiPromptDocument,
+  AiPromptReferenceBinding,
+  AiPromptStyleBinding,
+} from './prompt-document.types';
 
 export { AI_MODEL_PROTOCOL_DIALECT } from '@repo/shared';
 export type {
@@ -284,14 +289,19 @@ export type FoundryModelDefinition = AiModelDefinition;
 
 export interface AiJobOutput {
   id: string;
+  assetId?: string;
   type: AiJobType;
   url: string;
   storagePath: string;
+  contentHash?: string;
   width?: number;
   height?: number;
   durationSeconds?: number;
   mimeType?: string;
   bytes?: number;
+  seed?: bigint;
+  safetyFlags?: Record<string, unknown>;
+  provenance?: Record<string, unknown>;
   createdAt: string;
 }
 
@@ -357,6 +367,12 @@ export interface AiJob {
   input: Record<string, unknown>;
   normalizedInput: Record<string, unknown>;
   prompt: string;
+  promptDocument?: AiPromptDocument | null;
+  promptDisplayText?: string | null;
+  promptSearchText?: string | null;
+  compiledPrompt?: string | null;
+  referenceSnapshot?: AiPromptReferenceBinding[] | null;
+  styleSnapshot?: AiPromptStyleBinding[] | null;
   idempotencyKey: string;
   providerJobId?: string;
   providerRequest?: Record<string, unknown>;
@@ -405,6 +421,9 @@ export interface AiSubmitJobBody {
     sourceSurface?: string;
   };
   input?: Record<string, unknown>;
+  promptDocument?: AiPromptDocument;
+  referenceBindings?: AiPromptReferenceBinding[];
+  styleBindings?: AiPromptStyleBinding[];
   idempotencyKey?: string;
   routing?: {
     presetId?: string;
