@@ -22,6 +22,7 @@ export function mapFalProviderRequest(
   }
   normalizeGptImage2Request(config, input, body);
   normalizeSeedreamRequest(config, input, body);
+  normalizeQwenImageRequest(config, input, body);
   return body;
 }
 
@@ -62,10 +63,36 @@ function normalizeSeedreamRequest(
   if (dimensions) body.image_size = dimensions;
 }
 
+function normalizeQwenImageRequest(
+  config: FalModelRuntimeConfig,
+  input: Record<string, unknown>,
+  body: Record<string, unknown>,
+): void {
+  if (!isQwenImageEndpoint(config.endpointId)) return;
+  const numImages = Number(body.num_images ?? input.numOutputs);
+  if (Number.isFinite(numImages)) {
+    body.num_images = Math.min(4, Math.max(1, Math.floor(numImages)));
+  }
+  const imageSize =
+    typeof input.imageSize === 'string'
+      ? input.imageSize
+      : typeof body.image_size === 'string'
+        ? body.image_size
+        : undefined;
+  const resolution =
+    typeof input.resolution === 'string' ? input.resolution : undefined;
+  const dimensions = dimensionsFromAspectRatio(imageSize, resolution);
+  if (dimensions) body.image_size = dimensions;
+}
+
 function isSeedreamEndpoint(endpointId: string): boolean {
   return /^fal-ai\/bytedance\/seedream\/v(?:4(?:\.5)?|5\/lite)\/text-to-image(?:\/edit)?$/.test(
     endpointId,
   );
+}
+
+function isQwenImageEndpoint(endpointId: string): boolean {
+  return /^fal-ai\/qwen-image-2(?:\/pro)?\/text-to-image$/.test(endpointId);
 }
 
 function transformValue(value: unknown, transform = 'identity'): unknown {

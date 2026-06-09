@@ -11,7 +11,11 @@ import type { AiJobError } from '../../types';
 import { BailianCatalogService } from './bailian-catalog.service';
 import { BailianClient } from './bailian-client';
 import { BailianConfigService } from './bailian-config.service';
-import { bailianError, mapBailianUnknownError } from './bailian-error.mapper';
+import {
+  bailianError,
+  isBailianAsyncUnsupportedError,
+  mapBailianUnknownError,
+} from './bailian-error.mapper';
 import { mapBailianProviderRequest } from './bailian-request.mapper';
 import type {
   BailianMediaObject,
@@ -52,11 +56,23 @@ export class BailianProviderAdapter implements ProviderAdapter {
     void ctx;
     const runtime = await this.requireRuntime(modelId);
     const payload = mapBailianProviderRequest(runtime, input);
-    const response = await this.client.submit(
-      this.configService.config,
-      runtime,
-      payload,
-    );
+    if (runtime.callMode === 'sync') {
+      return this.generateSync(runtime, payload);
+    }
+
+    let response: Awaited<ReturnType<BailianClient['submit']>>;
+    try {
+      response = await this.client.submit(
+        this.configService.config,
+        runtime,
+        payload,
+      );
+    } catch (err) {
+      if (runtime.type === 'image' && isBailianAsyncUnsupportedError(err)) {
+        return this.generateSync(runtime, payload, 'bailian_async_fallback');
+      }
+      throw err;
+    }
     const taskId = response.output?.task_id;
     if (!taskId) {
       throw bailianError(
@@ -79,6 +95,50 @@ export class BailianProviderAdapter implements ProviderAdapter {
     };
   }
 
+  private async generateSync(
+    runtime: BailianModelRuntimeConfig,
+    payload: Record<string, unknown>,
+    source = 'bailian_sync_generation',
+  ): Promise<StartResult> {
+    const startedAt = new Date().toISOString();
+    const response = await this.client.generate(
+      this.configService.config,
+      runtime,
+      payload,
+    );
+    const completedAt = new Date().toISOString();
+    const outputs = this.collectOutputs(runtime, response);
+    const providerCost = this.resolveProviderCost(
+      runtime,
+      response,
+      outputs.length,
+    );
+    return {
+      kind: 'completed',
+      outputs,
+      providerRequestId: response.request_id,
+      providerEndpoint: runtime.endpointId,
+      providerRequest: payload,
+      providerResponse: response,
+      costAccounting: providerCost.costAccounting,
+      pricingSnapshot: providerCost.pricingSnapshot,
+      providerTiming: {
+        submittedAt: startedAt,
+        executionStartedAt: startedAt,
+        completedAt,
+        durationMs: Date.parse(completedAt) - Date.parse(startedAt),
+      },
+      providerDiagnostics: {
+        source,
+        endpointId: runtime.endpointId,
+        configuredCallMode: runtime.callMode,
+        effectiveCallMode: 'sync',
+        requestId: response.request_id,
+        capturedAt: completedAt,
+      },
+    };
+  }
+
   async pollStatus(providerJobId: string): Promise<PollResult> {
     const { endpointId, taskId } = this.decodeProviderJobId(providerJobId);
     const runtime = await this.requireRuntime(endpointId);
@@ -86,14 +146,23 @@ export class BailianProviderAdapter implements ProviderAdapter {
     const normalized = String(status.output?.task_status ?? '').toUpperCase();
 
     if (normalized === 'SUCCEEDED') {
+      const outputs = this.collectOutputs(runtime, status);
+      const providerCost = this.resolveProviderCost(
+        runtime,
+        status,
+        outputs.length,
+      );
       return {
         kind: 'completed',
-        outputs: this.collectOutputs(runtime, status),
+        outputs,
         providerRequestId: status.request_id,
         providerEndpoint: runtime.endpointId,
         rawStatus: status,
         providerResponse: status,
         providerLogs: status.output,
+        costAccounting: providerCost.costAccounting,
+        pricingSnapshot: providerCost.pricingSnapshot,
+        providerTiming: timingFromStatus(status),
       };
     }
 
@@ -226,19 +295,61 @@ export class BailianProviderAdapter implements ProviderAdapter {
       'images',
       'videos',
       'results',
+      'choices',
     ]) {
       const value = readPath(output, path);
       if (Array.isArray(value)) {
         for (const item of value) {
-          const media = toMediaObject(item);
-          if (media) out.push(media);
+          out.push(...collectMediaObjectsDeep(item));
         }
         continue;
       }
-      const media = toMediaObject(value);
-      if (media) out.push(media);
+      out.push(...collectMediaObjectsDeep(value));
     }
     return dedupeByUrl(out);
+  }
+
+  private resolveProviderCost(
+    runtime: BailianModelRuntimeConfig,
+    response: BailianTaskStatusResponse,
+    outputCount: number,
+  ): {
+    costAccounting: Record<string, unknown> | null;
+    pricingSnapshot: Record<string, unknown> | null;
+  } {
+    const pricing = runtime.providerPricing;
+    if (!pricing) return { costAccounting: null, pricingSnapshot: null };
+    const unitPrice = numberFromRecord(pricing, 'unitPrice');
+    if (unitPrice == null) {
+      return { costAccounting: null, pricingSnapshot: pricing };
+    }
+    const usage = recordValue(response.usage);
+    const billableUnits =
+      numberFromRecord(usage, 'image_count') ??
+      numberFromRecord(response.output, 'image_count') ??
+      outputCount;
+    const currency = stringFromRecord(pricing, 'currency') ?? 'CNY';
+    const unit = stringFromRecord(pricing, 'unit') ?? 'image';
+    const providerCost = unitPrice * Math.max(1, billableUnits);
+    const capturedAt = new Date().toISOString();
+    return {
+      costAccounting: {
+        provider: this.provider,
+        source: stringFromRecord(pricing, 'source') ?? 'catalog_snapshot',
+        endpointId: runtime.endpointId,
+        requestId: response.request_id,
+        billableUnits,
+        unitPrice,
+        unit,
+        currency,
+        providerCost,
+        capturedAt,
+      },
+      pricingSnapshot: {
+        ...pricing,
+        capturedAt,
+      },
+    };
   }
 
   private errorFromStatus(
@@ -279,7 +390,9 @@ function toMediaObject(value: unknown): BailianMediaObject | null {
           ? raw.image_url
           : typeof raw.output_url === 'string'
             ? raw.output_url
-            : undefined;
+            : typeof raw.image === 'string'
+              ? raw.image
+              : undefined;
   if (!url) return null;
   return {
     url,
@@ -302,6 +415,25 @@ function toMediaObject(value: unknown): BailianMediaObject | null {
   };
 }
 
+function collectMediaObjectsDeep(value: unknown): BailianMediaObject[] {
+  const direct = toMediaObject(value);
+  if (direct) return [direct];
+  if (Array.isArray(value)) {
+    return value.flatMap((item) => collectMediaObjectsDeep(item));
+  }
+  if (!value || typeof value !== 'object') return [];
+  const record = value as Record<string, unknown>;
+  return [
+    ...collectMediaObjectsDeep(record.message),
+    ...collectMediaObjectsDeep(record.content),
+    ...collectMediaObjectsDeep(record.output),
+    ...collectMediaObjectsDeep(record.result),
+    ...collectMediaObjectsDeep(record.results),
+    ...collectMediaObjectsDeep(record.image),
+    ...collectMediaObjectsDeep(record.url),
+  ];
+}
+
 function dedupeByUrl(items: BailianMediaObject[]): BailianMediaObject[] {
   const seen = new Set<string>();
   const out: BailianMediaObject[] = [];
@@ -311,6 +443,47 @@ function dedupeByUrl(items: BailianMediaObject[]): BailianMediaObject[] {
     out.push(item);
   }
   return out;
+}
+
+function timingFromStatus(status: BailianTaskStatusResponse) {
+  const submittedAt = stringFromRecord(status.output, 'submit_time');
+  const executionStartedAt = stringFromRecord(status.output, 'scheduled_time');
+  const completedAt = stringFromRecord(status.output, 'end_time');
+  const durationMs =
+    executionStartedAt && completedAt
+      ? Date.parse(completedAt) - Date.parse(executionStartedAt)
+      : null;
+  return {
+    submittedAt,
+    executionStartedAt,
+    completedAt,
+    durationMs:
+      durationMs != null && Number.isFinite(durationMs)
+        ? Math.max(0, durationMs)
+        : null,
+  };
+}
+
+function recordValue(value: unknown): Record<string, unknown> | null {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : null;
+}
+
+function numberFromRecord(
+  value: Record<string, unknown> | null | undefined,
+  key: string,
+): number | undefined {
+  const raw = value?.[key];
+  return typeof raw === 'number' && Number.isFinite(raw) ? raw : undefined;
+}
+
+function stringFromRecord(
+  value: Record<string, unknown> | null | undefined,
+  key: string,
+): string | undefined {
+  const raw = value?.[key];
+  return typeof raw === 'string' && raw.trim() ? raw.trim() : undefined;
 }
 
 function extFromMime(mime: string, type: 'image' | 'video'): string {

@@ -11,6 +11,12 @@ export function mapReplicateProviderRequest(
   if (isSeedreamEndpoint(config.endpointId)) {
     return mapSeedreamRequest(config, input);
   }
+  if (isWanImageEndpoint(config.endpointId)) {
+    return mapWanImageRequest(config, input);
+  }
+  if (isQwenImageEndpoint(config.endpointId)) {
+    return mapQwenImageRequest(config, input);
+  }
   return mapGptImage2Request(input, userId);
 }
 
@@ -58,6 +64,47 @@ function mapSeedreamRequest(
   return { input: body };
 }
 
+function mapWanImageRequest(
+  config: ReplicateImageRuntimeConfig,
+  input: Record<string, unknown>,
+): Record<string, unknown> {
+  const body: Record<string, unknown> = {
+    prompt: stringValue(input.prompt),
+    size: resolutionValue(config, input.resolution),
+    num_outputs: outputCount(input.numOutputs),
+  };
+  const images = referenceImageUrls(input.referenceImages);
+  if (images.length > 0) body.images = images;
+  if (typeof input.thinkingMode === 'boolean') {
+    body.thinking_mode = input.thinkingMode;
+  }
+  if (typeof input.seed === 'number') body.seed = Math.floor(input.seed);
+  return { input: body };
+}
+
+function mapQwenImageRequest(
+  config: ReplicateImageRuntimeConfig,
+  input: Record<string, unknown>,
+): Record<string, unknown> {
+  const body: Record<string, unknown> = {
+    prompt: stringValue(input.prompt),
+    aspect_ratio: nanoAspectRatio(config, input.imageSize),
+  };
+  const images = referenceImageUrls(input.referenceImages);
+  if (images.length > 0) {
+    body.image = images[0];
+    body.match_input_image = true;
+  }
+  if (typeof input.negativePrompt === 'string' && input.negativePrompt.trim()) {
+    body.negative_prompt = input.negativePrompt.trim();
+  }
+  if (typeof input.promptExtend === 'boolean') {
+    body.enable_prompt_expansion = input.promptExtend;
+  }
+  if (typeof input.seed === 'number') body.seed = Math.floor(input.seed);
+  return { input: body };
+}
+
 function mapGptImage2Request(
   input: Record<string, unknown>,
   userId: string,
@@ -84,6 +131,14 @@ function isNanoBananaEndpoint(endpointId: string): boolean {
 
 function isSeedreamEndpoint(endpointId: string): boolean {
   return /^bytedance\/seedream-(?:4|4\.5|5-lite)$/.test(endpointId);
+}
+
+function isWanImageEndpoint(endpointId: string): boolean {
+  return /^wan-video\/wan-2\.7-image-pro$/.test(endpointId);
+}
+
+function isQwenImageEndpoint(endpointId: string): boolean {
+  return /^qwen\/qwen-image-(?:2-pro|2512)$/.test(endpointId);
 }
 
 function stringValue(value: unknown): string {

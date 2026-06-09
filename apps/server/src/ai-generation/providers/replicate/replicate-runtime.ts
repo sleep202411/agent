@@ -224,6 +224,7 @@ function inputSchemaFor(
   const inpainting = generationModes.includes('inpainting');
   const nanoBanana = isNanoBananaEndpoint(endpointId);
   const seedream = isSeedreamEndpoint(endpointId);
+  const qwenImage = isQwenImageEndpoint(endpointId);
   const reference = referencePolicy(parameterPolicy);
   const properties: AiInputSchema['properties'] = {
     prompt: {
@@ -283,8 +284,11 @@ function inputSchemaFor(
     parameterPolicy,
     'variationOptions',
   );
-  const maxVariations =
-    variationOptions.length > 0 ? Math.max(...variationOptions) : 1;
+  const maxVariations = qwenImage
+    ? 1
+    : variationOptions.length > 0
+      ? Math.max(...variationOptions)
+      : 1;
   if (maxVariations > 1) {
     properties.numOutputs = {
       type: 'integer',
@@ -388,29 +392,12 @@ function imageSizeProperty(
   endpointId: string,
   parameterPolicy?: AiJsonValue,
 ): AiInputSchema['properties'][string] {
-  if (isNanoBananaEndpoint(endpointId)) {
-    const aspectOptions = stringArrayFromPolicy(
-      parameterPolicy,
-      'supportedAspectRatios',
-    );
-    return {
-      type: 'string',
-      title: 'Image size',
-      default: stringFromPolicy(parameterPolicy, 'defaultAspectRatio') ?? '1:1',
-      enum:
-        aspectOptions.length > 0
-          ? aspectOptions
-          : ['1:1', '4:3', '3:4', '16:9', '9:16'],
-      'x-ui': {
-        control: 'select',
-        group: 'settings',
-        order: 20,
-        importance: 'secondary',
-      },
-    };
-  }
-
-  if (isSeedreamEndpoint(endpointId)) {
+  if (
+    isNanoBananaEndpoint(endpointId) ||
+    isSeedreamEndpoint(endpointId) ||
+    isWanImageEndpoint(endpointId) ||
+    isQwenImageEndpoint(endpointId)
+  ) {
     const aspectOptions = stringArrayFromPolicy(
       parameterPolicy,
       'supportedAspectRatios',
@@ -516,6 +503,14 @@ function documentationFor(
       scope: 'api_reference',
     },
   ];
+}
+
+function isWanImageEndpoint(endpointId: string): boolean {
+  return /^wan-video\/wan-2\.7-image-pro$/.test(endpointId);
+}
+
+function isQwenImageEndpoint(endpointId: string): boolean {
+  return /^qwen\/qwen-image-(?:2-pro|2512)$/.test(endpointId);
 }
 
 function isNanoBananaEndpoint(endpointId: string): boolean {

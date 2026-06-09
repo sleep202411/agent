@@ -6292,7 +6292,15 @@
           "medium": "Standard",
           "high": "High"
         },
-        "outputFormat": "Format"
+        "outputFormat": "Format",
+        "negativePrompt": "Negative prompt",
+        "negativePromptPlaceholder": "Describe what to avoid",
+        "providerOptions": "Provider options",
+        "promptExtend": "Prompt enhance",
+        "thinkingMode": "Thinking mode",
+        "watermark": "Provider watermark",
+        "seed": "Seed",
+        "seedPlaceholder": "Random"
       },
       "models": {
         "gptImage2": "GPT Image 2",

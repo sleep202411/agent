@@ -72,7 +72,16 @@ export class BailianConfigService {
 }
 
 function defaultApiBaseUrl(region: string, workspaceId: string | null): string {
-  const base = `https://dashscope-intl.aliyuncs.com/api/v1`;
-  if (!workspaceId) return base;
-  return `${base}/workspaces/${workspaceId}`;
+  const normalized = region.trim().toLowerCase();
+  if (
+    normalized === 'cn-beijing' ||
+    normalized === 'beijing' ||
+    normalized === 'cn'
+  ) {
+    return 'https://dashscope.aliyuncs.com/api/v1';
+  }
+  if (normalized === 'ap-southeast-1' && workspaceId) {
+    return `https://${workspaceId}.ap-southeast-1.maas.aliyuncs.com/api/v1`;
+  }
+  return 'https://dashscope-intl.aliyuncs.com/api/v1';
 }

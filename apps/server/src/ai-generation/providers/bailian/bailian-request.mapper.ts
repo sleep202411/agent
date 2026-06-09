@@ -32,7 +32,7 @@ export function mapBailianProviderRequest(
     target[binding.parameter] = mapped;
   }
 
-  normalizeServiceRequest(config, request);
+  normalizeServiceRequest(config, request, input);
   if (Object.keys(parameters).length === 0) delete request.parameters;
   return request;
 }
@@ -40,12 +40,18 @@ export function mapBailianProviderRequest(
 function normalizeServiceRequest(
   config: BailianModelRuntimeConfig,
   request: Record<string, unknown>,
+  rawInput: Record<string, unknown>,
 ): void {
-  if (config.service !== 'image-generation') return;
+  if (
+    config.service !== 'image-generation' &&
+    config.service !== 'multimodal-generation'
+  ) {
+    return;
+  }
 
   const input = request.input as Record<string, unknown>;
   const prompt = typeof input.prompt === 'string' ? input.prompt.trim() : '';
-  const imageUrls = collectReferenceImageUrls(input);
+  const imageUrls = collectReferenceImageUrls(input, rawInput);
   const content: Record<string, string>[] = [];
 
   for (const url of imageUrls) {
@@ -63,12 +69,35 @@ function normalizeServiceRequest(
       },
     ],
   };
+
+  const parameters = request.parameters as Record<string, unknown> | undefined;
+  if (parameters) {
+    const size = providerSize(rawInput, config);
+    if (size) parameters.size = size;
+  }
 }
 
-function collectReferenceImageUrls(input: Record<string, unknown>): string[] {
+function collectReferenceImageUrls(
+  input: Record<string, unknown>,
+  rawInput: Record<string, unknown>,
+): string[] {
   const urls = new Set<string>();
   const imgUrl = typeof input.img_url === 'string' ? input.img_url.trim() : '';
   if (imgUrl) urls.add(imgUrl);
+
+  for (const value of [
+    rawInput.startFrame,
+    rawInput.referenceImage,
+    rawInput.referenceImageUrl,
+    rawInput.image,
+  ]) {
+    const url = mediaUrl(value);
+    if (url) urls.add(url);
+  }
+
+  for (const value of [rawInput.referenceImages, rawInput.images]) {
+    for (const url of mediaArrayUrls(value)) urls.add(url);
+  }
 
   const media = Array.isArray(input.media) ? input.media : [];
   for (const item of media) {
@@ -88,6 +117,85 @@ function collectReferenceImageUrls(input: Record<string, unknown>): string[] {
   }
 
   return Array.from(urls);
+}
+
+function providerSize(
+  input: Record<string, unknown>,
+  config: BailianModelRuntimeConfig,
+): string | undefined {
+  const explicit = normalizeExplicitSize(input.size);
+  if (explicit) return explicit;
+
+  const imageSize =
+    typeof input.imageSize === 'string'
+      ? input.imageSize
+      : typeof input.aspectRatio === 'string'
+        ? input.aspectRatio
+        : undefined;
+  const resolution =
+    typeof input.resolution === 'string'
+      ? input.resolution
+      : defaultResolution(config);
+
+  const dimensions = dimensionsFromAspectRatio(imageSize, resolution);
+  if (dimensions) return `${dimensions.width}*${dimensions.height}`;
+  return resolution;
+}
+
+function defaultResolution(
+  config: BailianModelRuntimeConfig,
+): string | undefined {
+  const policy = recordValue(config.parameterPolicy);
+  const value = policy?.defaultResolution;
+  return typeof value === 'string' && value.trim() ? value.trim() : undefined;
+}
+
+function normalizeExplicitSize(value: unknown): string | undefined {
+  if (typeof value !== 'string') return undefined;
+  const raw = value.trim();
+  if (!raw) return undefined;
+  const normalized = raw.replace(/[xX]/g, '*');
+  if (/^\d+\*\d+$/.test(normalized)) return normalized;
+  if (/^[1-4]K$/.test(raw)) return raw;
+  return undefined;
+}
+
+function dimensionsFromAspectRatio(
+  aspectRatio: string | undefined,
+  resolution: string | undefined,
+): { width: number; height: number } | undefined {
+  const aspect = aspectRatio ? explicitAspectRatio(aspectRatio) : 1;
+  if (!aspect || !resolution) return undefined;
+  const longEdge =
+    resolution === '4K' ? 4096 : resolution === '2K' ? 2048 : 1024;
+  let width: number;
+  let height: number;
+  if (aspect >= 1) {
+    width = longEdge;
+    height = longEdge / aspect;
+  } else {
+    height = longEdge;
+    width = longEdge * aspect;
+  }
+  return {
+    width: roundToMultiple(width, 16),
+    height: roundToMultiple(height, 16),
+  };
+}
+
+function explicitAspectRatio(value: string): number | undefined {
+  const match = /^(\d+):(\d+)$/.exec(value.trim());
+  if (!match) return undefined;
+  const width = Number(match[1]);
+  const height = Number(match[2]);
+  if (!Number.isFinite(width) || !Number.isFinite(height) || height <= 0) {
+    return undefined;
+  }
+  return width / height;
+}
+
+function roundToMultiple(value: number, multiple: number): number {
+  return Math.max(multiple, Math.round(value / multiple) * multiple);
 }
 
 function transformValue(
@@ -132,6 +240,28 @@ function transformValue(
     return Number.isFinite(number) ? Math.floor(number) : undefined;
   }
   return value;
+}
+
+function mediaUrl(value: unknown): string | undefined {
+  if (typeof value === 'string') return value.trim() || undefined;
+  if (value && typeof value === 'object' && 'url' in value) {
+    const url = (value as { url?: unknown }).url;
+    return typeof url === 'string' && url.trim() ? url.trim() : undefined;
+  }
+  return undefined;
+}
+
+function mediaArrayUrls(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((item) => mediaUrl(item))
+    .filter((item): item is string => Boolean(item));
+}
+
+function recordValue(value: unknown): Record<string, unknown> | null {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : null;
 }
 
 function isEmpty(value: unknown): boolean {

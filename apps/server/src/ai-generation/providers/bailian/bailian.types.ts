@@ -17,6 +17,8 @@ export type BailianModelService =
   | 'multimodal-generation'
   | 'video-synthesis';
 
+export type BailianCallMode = 'async' | 'sync';
+
 export type BailianProviderTransform =
   | 'identity'
   | 'mediaUrl'
@@ -35,6 +37,7 @@ export interface BailianProviderFieldBinding {
 export interface BailianModelRuntimeConfig {
   endpointId: string;
   service: BailianModelService;
+  callMode: BailianCallMode;
   type: AiJobType;
   family: AiModelFamily;
   generationModes: AiGenerationMode[];
@@ -52,6 +55,8 @@ export interface BailianModelRuntimeConfig {
   queuePolicy: AiQueuePolicy;
   billingPolicy: AiBillingPolicy;
   parameterPolicy?: AiJsonValue;
+  catalogSnapshot?: AiJsonValue;
+  providerPricing?: Record<string, unknown> | null;
   inputSchema: AiInputSchema;
   outputSchema: AiOutputSchema;
   providerInputMap: Record<string, BailianProviderFieldBinding>;

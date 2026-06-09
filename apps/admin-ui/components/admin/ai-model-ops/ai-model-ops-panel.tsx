@@ -1190,6 +1190,20 @@ function EndpointsPanel({
         ),
       },
       {
+        id: "provider-pricing",
+        header: "成本",
+        enableSorting: false,
+        cell: ({ row }) => {
+          const summary = providerPricingSummary(row.original.catalogSnapshot);
+          return (
+            <div className="min-w-[150px] leading-tight">
+              <p className="text-[12px] font-medium text-slate-700">{summary.primary}</p>
+              <p className="mt-0.5 text-[11px] text-slate-500">{summary.secondary}</p>
+            </div>
+          );
+        },
+      },
+      {
         accessorKey: "bindingCount",
         header: "绑定",
         cell: ({ row }) => (
@@ -3663,6 +3677,28 @@ function buildReplaySnippet(detail: AdminAiJobDetail): string {
   const lastAttempt = detail.attempts.at(-1);
   const endpoint = lastAttempt?.providerEndpoint ?? detail.deployment;
   const input = lastAttempt?.providerRequest ?? detail.normalizedInput ?? detail.input ?? {};
+  if (detail.provider === "aliyun-bailian") {
+    const request = asRecord(input);
+    const path = "/services/aigc/multimodal-generation/generation";
+    const asyncHeader = detail.providerJobId ? '\n      "X-DashScope-Async": "enable",' : "";
+    return [
+      "const response = await fetch(",
+      '  `${process.env.BAILIAN_API_BASE_URL ?? "https://dashscope.aliyuncs.com/api/v1"}' +
+        path +
+        "`,",
+      "  {",
+      '    method: "POST",',
+      "    headers: {",
+      "      Authorization: `Bearer ${process.env.DASHSCOPE_API_KEY ?? process.env.BAILIAN_API_KEY}`,",
+      '      "Content-Type": "application/json",' + asyncHeader,
+      "    },",
+      `    body: JSON.stringify(${formatJson(request).replaceAll("\n", "\n    ")}),`,
+      "  },",
+      ");",
+      "",
+      "console.log(await response.json());",
+    ].join("\n");
+  }
   if (detail.provider === "replicate") {
     return [
       'import Replicate from "replicate";',
@@ -3712,6 +3748,32 @@ function buildReplaySnippet(detail: AdminAiJobDetail): string {
     "console.log(result.data);",
     "console.log(result.requestId);",
   ].join("\n");
+}
+
+function providerPricingSummary(value: unknown): { primary: string; secondary: string } {
+  const snapshot = asRecord(value);
+  const pricing = asRecord(snapshot.pricing);
+  const callMode = stringFromRecord(snapshot, "callMode");
+  const currency = stringFromRecord(pricing, "currency");
+  const unit = stringFromRecord(pricing, "unit") ?? "unit";
+  const unitPrice =
+    numberFromRecord(pricing, "unitPrice") ?? numberFromRecord(pricing, "defaultUnitPrice");
+  if (unitPrice == null || !currency) {
+    return {
+      primary: callMode ? callModeLabel(callMode) : "未声明",
+      secondary: "provider cost snapshot",
+    };
+  }
+  return {
+    primary: `${formatMoney(unitPrice, currency)} / ${unit}`,
+    secondary: callMode ? `${callModeLabel(callMode)} · snapshot` : "catalog snapshot",
+  };
+}
+
+function callModeLabel(value: string): string {
+  if (value === "sync") return "sync";
+  if (value === "async") return "async";
+  return value;
 }
 
 function quotaCostFromRoutingSnapshot(value: unknown): number | null {

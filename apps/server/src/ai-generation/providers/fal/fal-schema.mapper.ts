@@ -69,6 +69,10 @@ function isSeedreamEndpoint(endpointId: string): boolean {
   );
 }
 
+function isQwenImageEndpoint(endpointId: string): boolean {
+  return /^fal-ai\/qwen-image-2(?:\/pro)?\/text-to-image$/.test(endpointId);
+}
+
 function recordValue(value: unknown): Record<string, unknown> | null {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
     ? (value as Record<string, unknown>)
@@ -143,7 +147,8 @@ function inputSchemaFor(
   const imageToImage = generationModes.includes('image_to_image');
   const nanoBanana = isNanoBananaEndpoint(endpointId);
   const seedream = isSeedreamEndpoint(endpointId);
-  const aspectRatioDriven = nanoBanana || seedream;
+  const qwenImage = isQwenImageEndpoint(endpointId);
+  const aspectRatioDriven = nanoBanana || seedream || qwenImage;
   const referenceBase = referencePolicy(parameterPolicy);
   const reference = seedream
     ? { ...referenceBase, max: Math.min(referenceBase.max, 10) }
@@ -311,6 +316,29 @@ function inputSchemaFor(
           importance: 'advanced',
         },
         'x-provider': { parameter: 'output_format', omitIfDefault: true },
+      };
+    }
+
+    if (
+      qwenImage &&
+      recordValue(recordValue(parameterPolicy)?.negativePrompt)?.enabled !==
+        false
+    ) {
+      properties.negativePrompt = {
+        type: 'string',
+        title: 'Negative prompt',
+        maxLength: 500,
+        'x-ui': {
+          control: 'textarea',
+          group: 'advanced',
+          order: 82,
+          rows: 3,
+          importance: 'advanced',
+        },
+        'x-provider': {
+          parameter: 'negative_prompt',
+          omitIfEmpty: true,
+        },
       };
     }
   }

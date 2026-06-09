@@ -64,6 +64,15 @@ export function mapBailianHttpError(
   );
 }
 
+export function isBailianAsyncUnsupportedError(err: unknown): boolean {
+  if (!(err instanceof BailianProviderError)) return false;
+  const raw = typeof err.payload.raw === 'string' ? err.payload.raw : '';
+  return (
+    err.payload.message.includes('does not support asynchronous calls') ||
+    raw.includes('does not support asynchronous calls')
+  );
+}
+
 export function mapBailianUnknownError(err: unknown): AiJobError {
   if (err instanceof BailianProviderError) return err.payload;
   const message = err instanceof Error ? err.message : String(err);

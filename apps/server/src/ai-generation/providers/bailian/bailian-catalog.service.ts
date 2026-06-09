@@ -135,6 +135,7 @@ export class BailianCatalogService {
       const type = row.modality as AiJobType;
       const catalog = recordValue(row.catalogSnapshot);
       const service = bailianServiceFromCatalog(catalog, type);
+      const callMode = bailianCallModeFromCatalog(catalog);
       const providerCapacity = providerCapacityFromRow(row.providerEndpoint);
       const canonicalGlobalConcurrency =
         numberFromPolicy(row.canonicalModel.queuePolicy, 'globalConcurrency') ??
@@ -142,6 +143,7 @@ export class BailianCatalogService {
       const runtime = createBailianModelConfig({
         endpointId: row.endpointId,
         service,
+        callMode,
         type,
         name: row.canonicalModel.displayName,
         description:
@@ -169,6 +171,8 @@ export class BailianCatalogService {
         pollDelayMs: config.pollDelayMs,
         billing: billingPolicyFromRow(row),
         parameterPolicy: row.canonicalModel.parameterPolicy as AiJsonValue,
+        catalogSnapshot: row.catalogSnapshot as AiJsonValue,
+        providerPricing: providerPricingFromCatalog(catalog, config.region),
       });
       return {
         runtime,
@@ -252,6 +256,50 @@ function bailianServiceFromCatalog(
   return type === 'video' ? 'video-synthesis' : 'image-generation';
 }
 
+function bailianCallModeFromCatalog(
+  catalog: Record<string, unknown> | null,
+): 'async' | 'sync' {
+  return catalog?.callMode === 'sync' ? 'sync' : 'async';
+}
+
+function providerPricingFromCatalog(
+  catalog: Record<string, unknown> | null,
+  region: string,
+): Record<string, unknown> | null {
+  const pricing = recordValue(catalog?.pricing);
+  if (!pricing) return null;
+  const currency =
+    typeof pricing.currency === 'string' && pricing.currency.trim()
+      ? pricing.currency.trim()
+      : 'CNY';
+  const unit =
+    typeof pricing.unit === 'string' && pricing.unit.trim()
+      ? pricing.unit.trim()
+      : 'image';
+  const market = marketForRegion(region);
+  const byMarket = recordValue(pricing.unitPriceByMarket);
+  const marketPrice = numberFromRecord(byMarket, market);
+  const defaultUnitPrice = numberFromRecord(pricing, 'defaultUnitPrice');
+  const directUnitPrice = numberFromRecord(pricing, 'unitPrice');
+  const unitPrice = marketPrice ?? directUnitPrice ?? defaultUnitPrice;
+  if (unitPrice == null) return pricing;
+  return {
+    ...pricing,
+    unit,
+    currency,
+    unitPrice,
+    market,
+    region,
+  };
+}
+
+function marketForRegion(region: string): 'cn' | 'global' {
+  const normalized = region.trim().toLowerCase();
+  return normalized.startsWith('cn') || normalized === 'beijing'
+    ? 'cn'
+    : 'global';
+}
+
 function billingPolicyFromRow(row: {
   canonicalModel: { billingPolicy: Prisma.JsonValue };
 }): Partial<AiBillingPolicy> {
@@ -299,4 +347,12 @@ function recordValue(value: unknown): Record<string, unknown> | null {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
     ? (value as Record<string, unknown>)
     : null;
+}
+
+function numberFromRecord(
+  value: Record<string, unknown> | null,
+  key: string,
+): number | undefined {
+  const raw = value?.[key];
+  return typeof raw === 'number' && Number.isFinite(raw) ? raw : undefined;
 }

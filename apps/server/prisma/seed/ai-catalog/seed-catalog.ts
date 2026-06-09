@@ -79,23 +79,31 @@ function buildCanonicalPayload(
 function buildEndpointPayload(args: {
   providerAccountId: string;
   provider: string;
-  endpointId: string;
+  entry: ProviderEntry;
   displayName: string;
   modes: string[];
 }): Prisma.AiProviderEndpointUncheckedCreateInput {
-  const providerInputSchema: Prisma.InputJsonObject = {};
-  const providerOutputSchema: Prisma.InputJsonObject = {};
+  const providerInputSchema: Prisma.InputJsonObject =
+    args.entry.providerInputSchema ?? {};
+  const providerOutputSchema: Prisma.InputJsonObject =
+    args.entry.providerOutputSchema ?? {};
   return {
     providerAccountId: args.providerAccountId,
     provider: args.provider,
-    endpointId: args.endpointId,
-    displayName: args.displayName,
+    endpointId: args.entry.endpointId,
+    displayName: args.entry.displayName ?? args.displayName,
     modality: 'image',
     status: 'active',
     healthStatus: 'unknown',
     supportedModes: args.modes as Prisma.InputJsonValue,
     providerInputSchema,
     providerOutputSchema,
+    maxConcurrentRequests: args.entry.maxConcurrentRequests ?? null,
+    maxRequestsPerMinute: args.entry.maxRequestsPerMinute ?? null,
+    requestTimeoutSeconds: args.entry.requestTimeoutSeconds ?? null,
+    cooldownSeconds: args.entry.cooldownSeconds ?? null,
+    failureThreshold: args.entry.failureThreshold ?? null,
+    catalogSnapshot: args.entry.catalogSnapshot ?? {},
     createdByAdminId: SEED_ADMIN_ID,
     updatedByAdminId: SEED_ADMIN_ID,
   };
@@ -295,7 +303,7 @@ async function bindProviderEntry(args: {
   const endpointPayload = buildEndpointPayload({
     providerAccountId: account.id,
     provider: account.provider,
-    endpointId: entry.endpointId,
+    entry,
     displayName: model.displayName,
     modes: entry.modes ?? model.modes,
   });

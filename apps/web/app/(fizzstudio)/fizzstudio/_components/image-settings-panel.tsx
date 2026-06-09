@@ -17,11 +17,16 @@ import {
 import { cn } from "@/lib/utils";
 import { useTranslations } from "@/src/i18n/i18n";
 import {
+  booleanDefault,
   enumDefault,
   enumOptions,
   estimateModelSellPoints,
+  hasSchemaProperty,
+  integerBounds,
+  integerDefault,
   isFizzAiModelUsable,
   maxOutputs,
+  stringMaxLength,
   supportsOutputCount,
   type FizzAiModel,
 } from "../../_lib/generation-api";
@@ -51,10 +56,15 @@ function modelIcon(model: FizzAiModel): SettingsIcon {
 export interface ImageGenerationSettings {
   aspectRatio: string;
   model: string;
+  negativePrompt: string;
   outputFormat: string;
+  promptExtend: boolean;
   quality: string;
   resolution: string;
+  seed: string;
+  thinkingMode: boolean;
   variations: number;
+  watermark: boolean;
 }
 
 interface ImageSettingsPanelProps {
@@ -71,10 +81,15 @@ interface ImageSettingsPanelProps {
 export const DEFAULT_IMAGE_GENERATION_SETTINGS: ImageGenerationSettings = {
   aspectRatio: "",
   model: "",
+  negativePrompt: "",
   outputFormat: "",
+  promptExtend: false,
   quality: "",
   resolution: "",
+  seed: "",
+  thinkingMode: false,
   variations: 1,
+  watermark: false,
 };
 
 // fal `imageSize` enum tokens → friendly label + orientation icon. Unknown tokens
@@ -119,6 +134,11 @@ const SIZE_FIELD = "imageSize";
 const RESOLUTION_FIELD = "resolution";
 const QUALITY_FIELD = "quality";
 const OUTPUT_FORMAT_FIELD = "outputFormat";
+const NEGATIVE_PROMPT_FIELD = "negativePrompt";
+const PROMPT_EXTEND_FIELD = "promptExtend";
+const THINKING_MODE_FIELD = "thinkingMode";
+const WATERMARK_FIELD = "watermark";
+const SEED_FIELD = "seed";
 
 export function modelById(models: FizzAiModel[], id: string): FizzAiModel | undefined {
   return models.find((model) => model.id === id);
@@ -152,14 +172,20 @@ export function settingsForModel(
   const defaultResolution = enumDefault(model, RESOLUTION_FIELD) ?? resolutions?.[0] ?? "";
   const defaultQuality = enumDefault(model, QUALITY_FIELD) ?? qualities?.[0] ?? "";
   const defaultOutputFormat = enumDefault(model, OUTPUT_FORMAT_FIELD) ?? outputFormats?.[0] ?? "";
+  const defaultSeed = integerDefault(model, SEED_FIELD);
   return {
     ...base,
     model: model.id,
     aspectRatio: defaultSize,
+    negativePrompt: "",
     outputFormat: defaultOutputFormat,
+    promptExtend: booleanDefault(model, PROMPT_EXTEND_FIELD) ?? false,
     quality: defaultQuality,
     resolution: defaultResolution,
+    seed: typeof defaultSeed === "number" ? String(defaultSeed) : "",
+    thinkingMode: booleanDefault(model, THINKING_MODE_FIELD) ?? false,
     variations: clampVariations(model, base.variations || 1),
+    watermark: booleanDefault(model, WATERMARK_FIELD) ?? false,
   };
 }
 
@@ -260,6 +286,7 @@ export function ImageSettingsPanel({
               onSelect={(aspectRatio) => updateSettings({ aspectRatio })}
             />
             <MoreOptionsPanel
+              model={selectedModel}
               settings={settings}
               variationMax={variationMax}
               showVariations={showVariations}
@@ -494,6 +521,7 @@ function AspectRatioPanel({
 }
 
 function MoreOptionsPanel({
+  model,
   settings,
   variationMax,
   showVariations,
@@ -502,6 +530,7 @@ function MoreOptionsPanel({
   outputFormatOptions,
   onChange,
 }: {
+  model: FizzAiModel | undefined;
   settings: ImageGenerationSettings;
   variationMax: number;
   showVariations: boolean;
@@ -520,6 +549,13 @@ function MoreOptionsPanel({
   const showResolution = Boolean(resolutionOptions && resolutionOptions.length > 0);
   const showQuality = Boolean(qualityOptions && qualityOptions.length > 0);
   const showOutputFormat = Boolean(outputFormatOptions && outputFormatOptions.length > 0);
+  const showNegativePrompt = hasSchemaProperty(model, NEGATIVE_PROMPT_FIELD);
+  const showPromptExtend = hasSchemaProperty(model, PROMPT_EXTEND_FIELD);
+  const showThinkingMode = hasSchemaProperty(model, THINKING_MODE_FIELD);
+  const showWatermark = hasSchemaProperty(model, WATERMARK_FIELD);
+  const showSeed = hasSchemaProperty(model, SEED_FIELD);
+  const seedBounds = integerBounds(model, SEED_FIELD);
+  const negativePromptMax = stringMaxLength(model, NEGATIVE_PROMPT_FIELD);
 
   return (
     <section className="min-w-0">
@@ -625,9 +661,105 @@ function MoreOptionsPanel({
             </div>
           </SettingRow>
         ) : null}
+        {showNegativePrompt ? (
+          <SettingRow label={t("settings.negativePrompt")}>
+            <textarea
+              value={settings.negativePrompt}
+              maxLength={negativePromptMax}
+              rows={3}
+              placeholder={t("settings.negativePromptPlaceholder")}
+              onChange={(event) => onChange({ negativePrompt: event.target.value })}
+              className="min-h-20 w-full resize-none rounded-[12px] border border-white/[0.08] bg-white/[0.04] px-3 py-2 text-sm leading-5 text-white outline-none transition-colors placeholder:text-white/32 focus:border-white/20 sm:max-w-[360px]"
+            />
+          </SettingRow>
+        ) : null}
+        {showPromptExtend || showThinkingMode || showWatermark ? (
+          <SettingRow label={t("settings.providerOptions")}>
+            <div className="flex flex-wrap items-center justify-end gap-2">
+              {showPromptExtend ? (
+                <AdvancedToggle
+                  active={settings.promptExtend}
+                  label={t("settings.promptExtend")}
+                  onClick={() => onChange({ promptExtend: !settings.promptExtend })}
+                />
+              ) : null}
+              {showThinkingMode ? (
+                <AdvancedToggle
+                  active={settings.thinkingMode}
+                  label={t("settings.thinkingMode")}
+                  onClick={() => onChange({ thinkingMode: !settings.thinkingMode })}
+                />
+              ) : null}
+              {showWatermark ? (
+                <AdvancedToggle
+                  active={settings.watermark}
+                  label={t("settings.watermark")}
+                  onClick={() => onChange({ watermark: !settings.watermark })}
+                />
+              ) : null}
+            </div>
+          </SettingRow>
+        ) : null}
+        {showSeed ? (
+          <SettingRow label={t("settings.seed")}>
+            <input
+              inputMode="numeric"
+              value={settings.seed}
+              placeholder={t("settings.seedPlaceholder")}
+              onChange={(event) =>
+                onChange({ seed: sanitizeSeed(event.target.value, seedBounds.min, seedBounds.max) })
+              }
+              className="h-9 w-full rounded-[12px] border border-white/[0.08] bg-white/[0.04] px-3 text-right text-sm font-medium tabular-nums text-white outline-none transition-colors placeholder:text-white/32 focus:border-white/20 sm:w-44"
+            />
+          </SettingRow>
+        ) : null}
       </div>
     </section>
   );
+}
+
+function AdvancedToggle({
+  active,
+  label,
+  onClick,
+}: {
+  active: boolean;
+  label: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      aria-pressed={active}
+      onClick={onClick}
+      className={cn(
+        "flex h-9 items-center gap-2 rounded-[12px] border px-3 text-sm font-semibold transition duration-200",
+        active
+          ? "border-white/25 bg-white/[0.12] text-white ring-1 ring-white/15"
+          : "border-white/[0.07] bg-white/[0.03] text-white/68 hover:bg-white/[0.06] hover:text-white"
+      )}
+    >
+      <span
+        className={cn(
+          "flex size-4 items-center justify-center rounded-full border",
+          active ? "border-white bg-white" : "border-white/24"
+        )}
+      >
+        {active ? <span className="size-1.5 rounded-full bg-[#111]" /> : null}
+      </span>
+      {label}
+    </button>
+  );
+}
+
+function sanitizeSeed(value: string, min?: number, max?: number): string {
+  const digits = value.replace(/\D/g, "");
+  if (!digits) return "";
+  const parsed = Number(digits);
+  if (!Number.isFinite(parsed)) return "";
+  const lowerBounded = typeof min === "number" ? Math.max(min, parsed) : parsed;
+  const bounded = typeof max === "number" ? Math.min(max, lowerBounded) : lowerBounded;
+  return String(Math.floor(bounded));
 }
 
 function SettingRow({ label, children }: { children: React.ReactNode; label: string }) {

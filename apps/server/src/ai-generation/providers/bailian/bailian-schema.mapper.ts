@@ -24,6 +24,7 @@ export const BAILIAN_SCHEMA_VERSION = '2026-06-05';
 interface CreateBailianModelConfigArgs {
   endpointId: string;
   service: BailianModelService;
+  callMode: 'async' | 'sync';
   type: AiJobType;
   name?: string;
   description?: string;
@@ -38,6 +39,8 @@ interface CreateBailianModelConfigArgs {
   pollDelayMs: number;
   billing?: Partial<AiBillingPolicy>;
   parameterPolicy?: AiJsonValue;
+  catalogSnapshot?: AiJsonValue;
+  providerPricing?: Record<string, unknown> | null;
 }
 
 function providerProperty(
@@ -73,10 +76,95 @@ function coarseCapability(type: AiJobType) {
   return type === 'video' ? 'video_generation' : 'image_generation';
 }
 
+function recordValue(value: unknown): Record<string, unknown> | null {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : null;
+}
+
+function stringArrayFromPolicy(
+  policy: AiJsonValue | undefined,
+  key: string,
+): string[] {
+  const value = recordValue(policy)?.[key];
+  return Array.isArray(value)
+    ? value.filter((item): item is string => typeof item === 'string')
+    : [];
+}
+
+function numberArrayFromPolicy(
+  policy: AiJsonValue | undefined,
+  key: string,
+): number[] {
+  const value = recordValue(policy)?.[key];
+  return Array.isArray(value)
+    ? value.filter(
+        (item): item is number =>
+          typeof item === 'number' && Number.isFinite(item),
+      )
+    : [];
+}
+
+function stringFromPolicy(
+  policy: AiJsonValue | undefined,
+  key: string,
+): string | undefined {
+  const value = recordValue(policy)?.[key];
+  return typeof value === 'string' && value.trim() ? value : undefined;
+}
+
+function numberFromPolicy(value: unknown, key: string): number | undefined {
+  const raw = recordValue(value)?.[key];
+  return typeof raw === 'number' && Number.isFinite(raw) ? raw : undefined;
+}
+
+function referencePolicy(policy: AiJsonValue | undefined): {
+  enabled: boolean;
+  min: number;
+  max: number;
+  maskSupported: boolean;
+} {
+  const value = recordValue(recordValue(policy)?.referenceImages);
+  return {
+    enabled: value?.enabled !== false,
+    min:
+      typeof value?.min === 'number' && Number.isFinite(value.min)
+        ? Math.max(0, value.min)
+        : 0,
+    max:
+      typeof value?.max === 'number' && Number.isFinite(value.max)
+        ? Math.max(0, value.max)
+        : 4,
+    maskSupported: value?.maskSupported !== false,
+  };
+}
+
 function inputSchemaFor(
+  endpointId: string,
   type: AiJobType,
   generationModes: AiGenerationMode[],
+  parameterPolicy?: AiJsonValue,
 ): AiInputSchema {
+  const policy = recordValue(parameterPolicy);
+  const aspectOptions = stringArrayFromPolicy(
+    parameterPolicy,
+    'supportedAspectRatios',
+  );
+  const resolutionOptions = stringArrayFromPolicy(
+    parameterPolicy,
+    'resolutionOptions',
+  );
+  const outputFormatOptions = stringArrayFromPolicy(
+    parameterPolicy,
+    'outputFormatOptions',
+  );
+  const variationOptions = numberArrayFromPolicy(
+    parameterPolicy,
+    'variationOptions',
+  );
+  const reference = referencePolicy(parameterPolicy);
+  const qwenImage = endpointId.startsWith('qwen-image-2.0');
+  const wanImage = endpointId.startsWith('wan2.7-image');
   const properties: AiInputSchema['properties'] = {
     prompt: providerProperty({
       type: 'string',
@@ -95,12 +183,13 @@ function inputSchemaFor(
   };
 
   if (
-    generationModes.includes('image_to_image') ||
-    generationModes.includes('image_to_video')
+    type !== 'image' &&
+    (generationModes.includes('image_to_image') ||
+      generationModes.includes('image_to_video'))
   ) {
     properties.startFrame = providerProperty({
       type: 'object',
-      title: type === 'video' ? 'Start frame' : 'Reference image',
+      title: 'Start frame',
       properties: {
         url: { type: 'string', format: 'uri', title: 'URL' },
       },
@@ -164,18 +253,14 @@ function inputSchemaFor(
   }
 
   if (type === 'image') {
-    properties.size = providerProperty({
+    properties.imageSize = providerProperty({
       type: 'string',
-      title: 'Size',
-      default: '1024*1024',
-      enum: [
-        '1024*1024',
-        '1280*720',
-        '720*1280',
-        '960*1280',
-        '1280*960',
-        '1440*1440',
-      ],
+      title: 'Image size',
+      default: stringFromPolicy(parameterPolicy, 'defaultAspectRatio') ?? '1:1',
+      enum:
+        aspectOptions.length > 0
+          ? aspectOptions
+          : ['1:1', '4:3', '3:4', '16:9', '9:16'],
       'x-ui': {
         control: 'select',
         group: 'settings',
@@ -188,12 +273,37 @@ function inputSchemaFor(
         omitIfDefault: true,
       },
     });
+
+    if (resolutionOptions.length > 0) {
+      properties.resolution = providerProperty({
+        type: 'string',
+        title: 'Resolution',
+        default:
+          stringFromPolicy(parameterPolicy, 'defaultResolution') ??
+          resolutionOptions[0],
+        enum: resolutionOptions,
+        'x-ui': {
+          control: 'segmented',
+          group: 'settings',
+          order: 45,
+          importance: 'secondary',
+        },
+        'x-provider': {
+          section: 'parameters',
+          parameter: 'size',
+          omitIfDefault: true,
+        },
+      });
+    }
+
+    const maxVariations =
+      variationOptions.length > 0 ? Math.max(...variationOptions) : 4;
     properties.numOutputs = providerProperty({
       type: 'integer',
       title: 'Outputs',
-      default: 1,
-      minimum: 1,
-      maximum: 4,
+      default: numberFromPolicy(parameterPolicy, 'defaultVariations') ?? 1,
+      minimum: variationOptions.length > 0 ? Math.min(...variationOptions) : 1,
+      maximum: maxVariations,
       'x-ui': {
         control: 'stepper',
         group: 'settings',
@@ -206,6 +316,90 @@ function inputSchemaFor(
         omitIfDefault: true,
       },
     });
+
+    if (reference.enabled && generationModes.includes('image_to_image')) {
+      properties.referenceImages = providerProperty({
+        type: 'array',
+        title: 'Reference images',
+        minItems: reference.min,
+        maxItems: reference.max,
+        items: {
+          type: 'object',
+          properties: {
+            url: { type: 'string', format: 'uri', title: 'URL' },
+          },
+          required: ['url'],
+          additionalProperties: true,
+        },
+        'x-ui': {
+          control: 'image_upload',
+          group: 'references',
+          order: 30,
+          importance: 'primary',
+        },
+        'x-provider': {
+          section: 'input',
+          parameter: 'media',
+          transform: 'mediaArray',
+          omitIfEmpty: true,
+        },
+      });
+    }
+
+    if (qwenImage && recordValue(policy?.negativePrompt)?.enabled !== false) {
+      properties.negativePrompt = providerProperty({
+        type: 'string',
+        title: 'Negative prompt',
+        maxLength: 500,
+        'x-ui': {
+          control: 'textarea',
+          group: 'advanced',
+          order: 120,
+          rows: 3,
+          importance: 'advanced',
+        },
+        'x-provider': {
+          section: 'parameters',
+          parameter: 'negative_prompt',
+          omitIfEmpty: true,
+        },
+      });
+    }
+
+    if (outputFormatOptions.length > 0) {
+      properties.outputFormat = providerProperty({
+        type: 'string',
+        title: 'Output format',
+        default:
+          stringFromPolicy(parameterPolicy, 'defaultOutputFormat') ?? 'png',
+        enum: outputFormatOptions,
+        'x-ui': {
+          control: 'segmented',
+          group: 'advanced',
+          order: 150,
+          importance: 'advanced',
+        },
+      });
+    }
+
+    if (wanImage && recordValue(policy?.thinkingMode)?.enabled !== false) {
+      properties.thinkingMode = providerProperty({
+        type: 'boolean',
+        title: 'Thinking mode',
+        default: recordValue(policy?.thinkingMode)?.default !== false,
+        'x-ui': {
+          control: 'switch',
+          group: 'advanced',
+          order: 170,
+          importance: 'advanced',
+        },
+        'x-provider': {
+          section: 'parameters',
+          parameter: 'thinking_mode',
+          omitIfDefault: true,
+        },
+      });
+    }
   }
 
   if (type === 'video') {
@@ -265,38 +459,61 @@ function inputSchemaFor(
     });
   }
 
-  properties.promptExtend = providerProperty({
-    type: 'boolean',
-    title: 'Prompt enhance',
-    default: true,
-    'x-ui': {
-      control: 'switch',
-      group: 'advanced',
-      order: 180,
-      importance: 'advanced',
-    },
-    'x-provider': {
-      section: 'parameters',
-      parameter: 'prompt_extend',
-      omitIfDefault: true,
-    },
-  });
-  properties.seed = providerProperty({
-    type: 'integer',
-    title: 'Seed',
-    minimum: 0,
-    'x-ui': {
-      control: 'stepper',
-      group: 'advanced',
-      order: 200,
-      importance: 'advanced',
-    },
-    'x-provider': {
-      section: 'parameters',
-      parameter: 'seed',
-      omitIfEmpty: true,
-    },
-  });
+  if (recordValue(policy?.promptExtend)?.enabled !== false) {
+    properties.promptExtend = providerProperty({
+      type: 'boolean',
+      title: 'Prompt enhance',
+      default: recordValue(policy?.promptExtend)?.default !== false,
+      'x-ui': {
+        control: 'switch',
+        group: 'advanced',
+        order: 180,
+        importance: 'advanced',
+      },
+      'x-provider': {
+        section: 'parameters',
+        parameter: 'prompt_extend',
+        omitIfDefault: true,
+      },
+    });
+  }
+  if (recordValue(policy?.watermark)?.enabled !== false) {
+    properties.watermark = providerProperty({
+      type: 'boolean',
+      title: 'Watermark',
+      default: recordValue(policy?.watermark)?.default === true,
+      'x-ui': {
+        control: 'switch',
+        group: 'advanced',
+        order: 190,
+        importance: 'advanced',
+      },
+      'x-provider': {
+        section: 'parameters',
+        parameter: 'watermark',
+        omitIfDefault: true,
+      },
+    });
+  }
+  if (recordValue(policy?.seed)?.enabled !== false) {
+    properties.seed = providerProperty({
+      type: 'integer',
+      title: 'Seed',
+      minimum: 0,
+      maximum: numberFromPolicy(policy?.seed, 'maximum'),
+      'x-ui': {
+        control: 'stepper',
+        group: 'advanced',
+        order: 200,
+        importance: 'advanced',
+      },
+      'x-provider': {
+        section: 'parameters',
+        parameter: 'seed',
+        omitIfEmpty: true,
+      },
+    });
+  }
 
   return {
     type: 'object',
@@ -352,6 +569,7 @@ function outputSchemaFor(type: AiJobType): AiOutputSchema {
 function capabilityMatrixFor(
   type: AiJobType,
   generationModes: AiGenerationMode[],
+  inputSchema: AiInputSchema,
 ): AiCapabilityMatrix {
   const inputModalities = new Set<'text' | 'image' | 'video'>(['text']);
   if (
@@ -375,18 +593,7 @@ function capabilityMatrixFor(
     inputModalities: Array.from(inputModalities),
     outputModalities: [type],
     generationModes,
-    supportedParameters: [
-      'prompt',
-      'media',
-      'img_url',
-      'size',
-      'n',
-      'duration',
-      'resolution',
-      'aspect_ratio',
-      'prompt_extend',
-      'seed',
-    ],
+    supportedParameters: Object.keys(inputSchema.properties),
     unsupportedParameters: [],
     features: {
       cancel: false,
@@ -394,10 +601,16 @@ function capabilityMatrixFor(
       providerUrlOutput: true,
     },
     limits: {
-      maxOutputs: type === 'video' ? 1 : 4,
+      maxOutputs: maxOutputsFromSchema(inputSchema, type),
       maxPromptCharacters: type === 'video' ? 2000 : 4000,
     },
   };
+}
+
+function maxOutputsFromSchema(schema: AiInputSchema, type: AiJobType): number {
+  if (type === 'video') return 1;
+  const maximum = recordValue(schema.properties.numOutputs)?.maximum;
+  return typeof maximum === 'number' && Number.isFinite(maximum) ? maximum : 1;
 }
 
 function providerInputMap(
@@ -431,7 +644,12 @@ export function createBailianModelConfig(
       ? args.generationModes
       : defaultGenerationModes(args.type, args.service)
   ) as AiGenerationMode[];
-  const inputSchema = inputSchemaFor(args.type, generationModes);
+  const inputSchema = inputSchemaFor(
+    args.endpointId,
+    args.type,
+    generationModes,
+    args.parameterPolicy,
+  );
   const outputSchema = outputSchemaFor(args.type);
   const queuePolicy: AiQueuePolicy = {
     queueName: args.queueName,
@@ -457,6 +675,7 @@ export function createBailianModelConfig(
   return {
     endpointId: args.endpointId,
     service: args.service,
+    callMode: args.callMode,
     type: args.type,
     family: familyForType(args.type),
     generationModes,
@@ -484,6 +703,8 @@ export function createBailianModelConfig(
       productPricing,
     },
     parameterPolicy: args.parameterPolicy,
+    catalogSnapshot: args.catalogSnapshot,
+    providerPricing: args.providerPricing ?? null,
     inputSchema,
     outputSchema,
     providerInputMap: providerInputMap(inputSchema),
@@ -497,6 +718,7 @@ export function toAiModelDefinition(
   const capabilityMatrix = capabilityMatrixFor(
     config.type,
     config.generationModes,
+    config.inputSchema,
   );
   return {
     id: `bailian/${config.endpointId}`,
@@ -593,7 +815,7 @@ export function toAiModelDefinition(
         config.generationModes.includes('image_to_video') ||
         config.generationModes.includes('multimodal_to_video'),
       supportsSeed: true,
-      supportsCancel: false,
+      supportsCancel: config.callMode === 'async',
       maxOutputs: Number(capabilityMatrix.limits.maxOutputs ?? 1),
     },
     queue: config.queue,
@@ -629,12 +851,14 @@ function documentationForEndpoint(
       ? 'https://help.aliyun.com/zh/model-studio/wan-video-to-video-api-reference'
       : endpointId.startsWith('wan2.7-image') ||
           endpointId === 'wanx2.1-imageedit'
-        ? 'https://help.aliyun.com/zh/model-studio/wan-image-api-reference'
-        : service === 'video-synthesis'
-          ? 'https://help.aliyun.com/zh/model-studio/video-generation-api/'
-          : service === 'text2image'
-            ? 'https://help.aliyun.com/zh/model-studio/qwen-image-api'
-            : 'https://help.aliyun.com/zh/model-studio/image-model/';
+        ? 'https://help.aliyun.com/zh/model-studio/wan-image-generation-and-editing-api-reference'
+        : endpointId.startsWith('qwen-image-2.0')
+          ? 'https://help.aliyun.com/zh/model-studio/qwen-image-api'
+          : service === 'video-synthesis'
+            ? 'https://help.aliyun.com/zh/model-studio/video-generation-api/'
+            : service === 'text2image'
+              ? 'https://help.aliyun.com/zh/model-studio/qwen-image-api'
+              : 'https://help.aliyun.com/zh/model-studio/image-model/';
   return [
     {
       title: 'Alibaba Model Studio API reference',

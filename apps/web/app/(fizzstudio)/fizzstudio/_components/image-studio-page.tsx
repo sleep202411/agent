@@ -504,7 +504,9 @@ function ImageStudioSurface({ workspaceId }: { workspaceId: string }) {
       size: settings.aspectRatio,
       aspectRatio: settings.aspectRatio,
       aspect_ratio: settings.aspectRatio,
+      negativePrompt: settings.negativePrompt,
       outputFormat: settings.outputFormat,
+      promptExtend: settings.promptExtend,
       quality: settings.quality,
       referenceImages:
         validReferenceImages.length > 0
@@ -516,6 +518,9 @@ function ImageStudioSurface({ workspaceId }: { workspaceId: string }) {
             }))
           : undefined,
       resolution: settings.resolution,
+      seed: seedInputValue(settings.seed),
+      thinkingMode: settings.thinkingMode,
+      watermark: settings.watermark,
       n: settings.variations,
       numOutputs: settings.variations,
     });
@@ -1792,6 +1797,13 @@ function optimisticRunSeconds(settings: ImageGenerationSettings): number {
   const resolution = settings.resolution.toLowerCase();
   const resolutionFactor = resolution.includes("4k") ? 1.55 : resolution.includes("2k") ? 1.2 : 1;
   return Math.ceil(72 * count * qualityFactor * resolutionFactor);
+}
+
+function seedInputValue(value: string): number | undefined {
+  const trimmed = value.trim();
+  if (!trimmed) return undefined;
+  const parsed = Number(trimmed);
+  return Number.isFinite(parsed) ? Math.floor(parsed) : undefined;
 }
 
 function pendingProgress(job: ResultJob, nowMs: number): number {

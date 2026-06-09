@@ -27,6 +27,21 @@ export class BailianClient {
     );
   }
 
+  async generate(
+    config: BailianProviderConfig,
+    runtime: BailianModelRuntimeConfig,
+    body: Record<string, unknown>,
+  ): Promise<BailianTaskStatusResponse> {
+    return this.requestJson(
+      config,
+      `${config.apiBaseUrl}${servicePath(runtime)}`,
+      {
+        method: 'POST',
+        body: JSON.stringify(body),
+      },
+    );
+  }
+
   async status(
     config: BailianProviderConfig,
     taskId: string,

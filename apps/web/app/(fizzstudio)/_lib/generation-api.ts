@@ -17,6 +17,7 @@ type FizzAiSchemaProperty = {
   default?: unknown;
   enum?: unknown[];
   maximum?: number;
+  maxLength?: number;
   minimum?: number;
   maxItems?: number;
   minItems?: number;
@@ -240,6 +241,10 @@ function schemaProperty(model: FizzAiModel, key: string): FizzAiSchemaProperty |
   return model.input_schema?.properties?.[key];
 }
 
+export function hasSchemaProperty(model: FizzAiModel | undefined, key: string): boolean {
+  return Boolean(model?.input_schema?.properties?.[key]);
+}
+
 /** String-enum options for a schema field (e.g. `imageSize`), or `null` if absent. */
 export function enumOptions(model: FizzAiModel, key: string): string[] | null {
   const prop = schemaProperty(model, key);
@@ -250,6 +255,38 @@ export function enumOptions(model: FizzAiModel, key: string): string[] | null {
 export function enumDefault(model: FizzAiModel, key: string): string | undefined {
   const prop = schemaProperty(model, key);
   return typeof prop?.default === "string" ? prop.default : undefined;
+}
+
+export function booleanDefault(model: FizzAiModel, key: string): boolean | undefined {
+  const prop = schemaProperty(model, key);
+  return typeof prop?.default === "boolean" ? prop.default : undefined;
+}
+
+export function integerDefault(model: FizzAiModel, key: string): number | undefined {
+  const prop = schemaProperty(model, key);
+  return typeof prop?.default === "number" && Number.isFinite(prop.default)
+    ? Math.floor(prop.default)
+    : undefined;
+}
+
+export function integerBounds(
+  model: FizzAiModel | undefined,
+  key: string
+): { max?: number; min?: number } {
+  const prop = model ? schemaProperty(model, key) : undefined;
+  return {
+    min:
+      typeof prop?.minimum === "number" && Number.isFinite(prop.minimum) ? prop.minimum : undefined,
+    max:
+      typeof prop?.maximum === "number" && Number.isFinite(prop.maximum) ? prop.maximum : undefined,
+  };
+}
+
+export function stringMaxLength(model: FizzAiModel | undefined, key: string): number | undefined {
+  const prop = model ? schemaProperty(model, key) : undefined;
+  return typeof prop?.maxLength === "number" && Number.isFinite(prop.maxLength)
+    ? prop.maxLength
+    : undefined;
 }
 
 /**

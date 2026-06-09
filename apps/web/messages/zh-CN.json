@@ -6292,7 +6292,15 @@
           "medium": "标准",
           "high": "高"
         },
-        "outputFormat": "格式"
+        "outputFormat": "格式",
+        "negativePrompt": "负向提示词",
+        "negativePromptPlaceholder": "描述需要避免的内容",
+        "providerOptions": "供应商选项",
+        "promptExtend": "提示词增强",
+        "thinkingMode": "思考模式",
+        "watermark": "供应商水印",
+        "seed": "种子",
+        "seedPlaceholder": "随机"
       },
       "models": {
         "gptImage2": "GPT Image 2",
