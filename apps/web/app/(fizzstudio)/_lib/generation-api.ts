@@ -19,6 +19,7 @@ type FizzAiSchemaProperty = {
   maximum?: number;
   maxLength?: number;
   minimum?: number;
+  multipleOf?: number;
   maxItems?: number;
   minItems?: number;
   items?: FizzAiSchemaProperty;
@@ -269,6 +270,13 @@ export function integerDefault(model: FizzAiModel, key: string): number | undefi
     : undefined;
 }
 
+export function numberDefault(model: FizzAiModel, key: string): number | undefined {
+  const prop = schemaProperty(model, key);
+  return typeof prop?.default === "number" && Number.isFinite(prop.default)
+    ? prop.default
+    : undefined;
+}
+
 export function integerBounds(
   model: FizzAiModel | undefined,
   key: string
@@ -279,6 +287,23 @@ export function integerBounds(
       typeof prop?.minimum === "number" && Number.isFinite(prop.minimum) ? prop.minimum : undefined,
     max:
       typeof prop?.maximum === "number" && Number.isFinite(prop.maximum) ? prop.maximum : undefined,
+  };
+}
+
+export function numberBounds(
+  model: FizzAiModel | undefined,
+  key: string
+): { max?: number; min?: number; step?: number } {
+  const prop = model ? schemaProperty(model, key) : undefined;
+  return {
+    min:
+      typeof prop?.minimum === "number" && Number.isFinite(prop.minimum) ? prop.minimum : undefined,
+    max:
+      typeof prop?.maximum === "number" && Number.isFinite(prop.maximum) ? prop.maximum : undefined,
+    step:
+      typeof prop?.multipleOf === "number" && Number.isFinite(prop.multipleOf)
+        ? prop.multipleOf
+        : undefined,
   };
 }
 

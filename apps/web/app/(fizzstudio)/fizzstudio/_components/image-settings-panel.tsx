@@ -4,6 +4,7 @@ import { createElement, useEffect, useId, useMemo, useState } from "react";
 import type { ComponentType } from "react";
 import {
   IconAlertTriangle,
+  IconBolt,
   IconBrandOpenai,
   IconLock,
   IconPhoto,
@@ -26,6 +27,8 @@ import {
   integerDefault,
   isFizzAiModelUsable,
   maxOutputs,
+  numberBounds,
+  numberDefault,
   stringMaxLength,
   supportsOutputCount,
   type FizzAiModel,
@@ -36,6 +39,7 @@ type SettingsIcon = ComponentType<{ className?: string; stroke?: number }>;
 /** Map a catalog model (by id / name) to a brand-or-family tabler icon. */
 const MODEL_ICON_RULES: Array<[RegExp, SettingsIcon]> = [
   [/gpt/, IconBrandOpenai],
+  [/flux/, IconBolt],
   [/seedream|nano/, IconSparkles],
 ];
 
@@ -55,6 +59,8 @@ function modelIcon(model: FizzAiModel): SettingsIcon {
  */
 export interface ImageGenerationSettings {
   aspectRatio: string;
+  guidanceScale: number;
+  inferenceSteps: number;
   model: string;
   negativePrompt: string;
   outputFormat: string;
@@ -80,6 +86,8 @@ interface ImageSettingsPanelProps {
 
 export const DEFAULT_IMAGE_GENERATION_SETTINGS: ImageGenerationSettings = {
   aspectRatio: "",
+  guidanceScale: 0,
+  inferenceSteps: 0,
   model: "",
   negativePrompt: "",
   outputFormat: "",
@@ -134,6 +142,8 @@ const SIZE_FIELD = "imageSize";
 const RESOLUTION_FIELD = "resolution";
 const QUALITY_FIELD = "quality";
 const OUTPUT_FORMAT_FIELD = "outputFormat";
+const GUIDANCE_SCALE_FIELD = "guidanceScale";
+const INFERENCE_STEPS_FIELD = "inferenceSteps";
 const NEGATIVE_PROMPT_FIELD = "negativePrompt";
 const PROMPT_EXTEND_FIELD = "promptExtend";
 const THINKING_MODE_FIELD = "thinkingMode";
@@ -172,11 +182,15 @@ export function settingsForModel(
   const defaultResolution = enumDefault(model, RESOLUTION_FIELD) ?? resolutions?.[0] ?? "";
   const defaultQuality = enumDefault(model, QUALITY_FIELD) ?? qualities?.[0] ?? "";
   const defaultOutputFormat = enumDefault(model, OUTPUT_FORMAT_FIELD) ?? outputFormats?.[0] ?? "";
+  const defaultGuidanceScale = numberDefault(model, GUIDANCE_SCALE_FIELD);
+  const defaultInferenceSteps = integerDefault(model, INFERENCE_STEPS_FIELD);
   const defaultSeed = integerDefault(model, SEED_FIELD);
   return {
     ...base,
     model: model.id,
     aspectRatio: defaultSize,
+    guidanceScale: defaultGuidanceScale ?? 0,
+    inferenceSteps: defaultInferenceSteps ?? 0,
     negativePrompt: "",
     outputFormat: defaultOutputFormat,
     promptExtend: booleanDefault(model, PROMPT_EXTEND_FIELD) ?? false,
@@ -549,11 +563,15 @@ function MoreOptionsPanel({
   const showResolution = Boolean(resolutionOptions && resolutionOptions.length > 0);
   const showQuality = Boolean(qualityOptions && qualityOptions.length > 0);
   const showOutputFormat = Boolean(outputFormatOptions && outputFormatOptions.length > 0);
+  const showGuidanceScale = hasSchemaProperty(model, GUIDANCE_SCALE_FIELD);
+  const showInferenceSteps = hasSchemaProperty(model, INFERENCE_STEPS_FIELD);
   const showNegativePrompt = hasSchemaProperty(model, NEGATIVE_PROMPT_FIELD);
   const showPromptExtend = hasSchemaProperty(model, PROMPT_EXTEND_FIELD);
   const showThinkingMode = hasSchemaProperty(model, THINKING_MODE_FIELD);
   const showWatermark = hasSchemaProperty(model, WATERMARK_FIELD);
   const showSeed = hasSchemaProperty(model, SEED_FIELD);
+  const guidanceScaleBounds = numberBounds(model, GUIDANCE_SCALE_FIELD);
+  const inferenceStepsBounds = numberBounds(model, INFERENCE_STEPS_FIELD);
   const seedBounds = integerBounds(model, SEED_FIELD);
   const negativePromptMax = stringMaxLength(model, NEGATIVE_PROMPT_FIELD);
 
@@ -661,6 +679,32 @@ function MoreOptionsPanel({
             </div>
           </SettingRow>
         ) : null}
+        {showGuidanceScale ? (
+          <SettingRow label={t("settings.guidanceScale")}>
+            <RangeControl
+              value={settings.guidanceScale}
+              min={guidanceScaleBounds.min ?? 1.5}
+              max={guidanceScaleBounds.max ?? 10}
+              step={guidanceScaleBounds.step ?? 0.5}
+              formatter={formatDecimal}
+              onChange={(guidanceScale) => onChange({ guidanceScale })}
+            />
+          </SettingRow>
+        ) : null}
+        {showInferenceSteps ? (
+          <SettingRow label={t("settings.inferenceSteps")}>
+            <RangeControl
+              value={settings.inferenceSteps}
+              min={inferenceStepsBounds.min ?? 1}
+              max={inferenceStepsBounds.max ?? 50}
+              step={inferenceStepsBounds.step ?? 1}
+              formatter={formatInteger}
+              onChange={(inferenceSteps) =>
+                onChange({ inferenceSteps: Math.round(inferenceSteps) })
+              }
+            />
+          </SettingRow>
+        ) : null}
         {showNegativePrompt ? (
           <SettingRow label={t("settings.negativePrompt")}>
             <textarea
@@ -750,6 +794,54 @@ function AdvancedToggle({
       {label}
     </button>
   );
+}
+
+function RangeControl({
+  value,
+  min,
+  max,
+  step,
+  formatter,
+  onChange,
+}: {
+  value: number;
+  min: number;
+  max: number;
+  step: number;
+  formatter: (value: number) => string;
+  onChange: (value: number) => void;
+}) {
+  const current = clampNumber(Number.isFinite(value) && value > 0 ? value : min, min, max);
+
+  return (
+    <div className="flex w-full items-center justify-end gap-3 sm:max-w-[360px]">
+      <input
+        type="range"
+        min={min}
+        max={max}
+        step={step}
+        value={current}
+        onChange={(event) => onChange(clampNumber(Number(event.target.value), min, max))}
+        className="h-8 min-w-0 flex-1 accent-white"
+      />
+      <span className="flex h-8 min-w-12 items-center justify-center rounded-[10px] border border-white/[0.08] bg-white/[0.04] px-2 text-xs font-semibold tabular-nums text-white/78">
+        {formatter(current)}
+      </span>
+    </div>
+  );
+}
+
+function clampNumber(value: number, min: number, max: number): number {
+  if (!Number.isFinite(value)) return min;
+  return Math.min(max, Math.max(min, value));
+}
+
+function formatInteger(value: number): string {
+  return String(Math.round(value));
+}
+
+function formatDecimal(value: number): string {
+  return Number.isInteger(value) ? String(value) : value.toFixed(1);
 }
 
 function sanitizeSeed(value: string, min?: number, max?: number): string {

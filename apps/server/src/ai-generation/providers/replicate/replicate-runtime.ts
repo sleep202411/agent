@@ -186,7 +186,7 @@ export function toReplicateImageModelDefinition(args: {
     capabilities: {
       textToImage: config.generationModes.includes('text_to_image'),
       imageToImage: config.generationModes.includes('image_to_image'),
-      supportsSeed: false,
+      supportsSeed: Boolean(config.inputSchema.properties.seed),
       supportsCancel: true,
       maxOutputs: maxOutputsFromSchema(config.inputSchema),
     },
@@ -225,6 +225,7 @@ function inputSchemaFor(
   const nanoBanana = isNanoBananaEndpoint(endpointId);
   const seedream = isSeedreamEndpoint(endpointId);
   const qwenImage = isQwenImageEndpoint(endpointId);
+  const fluxImage = isFluxImageEndpoint(endpointId);
   const reference = referencePolicy(parameterPolicy);
   const properties: AiInputSchema['properties'] = {
     prompt: {
@@ -325,6 +326,59 @@ function inputSchemaFor(
     };
   }
 
+  const guidanceScale = fluxImage
+    ? numberControlPolicy(parameterPolicy, 'guidanceScale')
+    : undefined;
+  if (guidanceScale) {
+    properties.guidanceScale = {
+      type: 'number',
+      title: 'Guidance scale',
+      default: guidanceScale.defaultValue ?? 3.5,
+      minimum: guidanceScale.minimum ?? 1.5,
+      maximum: guidanceScale.maximum ?? 10,
+      ...(guidanceScale.step ? { multipleOf: guidanceScale.step } : {}),
+      'x-ui': {
+        control: 'slider',
+        group: 'advanced',
+        order: 88,
+        importance: 'advanced',
+      },
+    };
+  }
+
+  const inferenceSteps = fluxImage
+    ? numberControlPolicy(parameterPolicy, 'inferenceSteps')
+    : undefined;
+  if (inferenceSteps) {
+    properties.inferenceSteps = {
+      type: 'integer',
+      title: 'Inference steps',
+      default: inferenceSteps.defaultValue ?? 28,
+      minimum: inferenceSteps.minimum ?? 1,
+      maximum: inferenceSteps.maximum ?? 50,
+      'x-ui': {
+        control: 'slider',
+        group: 'advanced',
+        order: 89,
+        importance: 'advanced',
+      },
+    };
+  }
+
+  if (seedEnabled(parameterPolicy)) {
+    properties.seed = {
+      type: 'integer',
+      title: 'Seed',
+      minimum: 0,
+      'x-ui': {
+        control: 'stepper',
+        group: 'advanced',
+        order: 200,
+        importance: 'advanced',
+      },
+    };
+  }
+
   if (imageToImage && reference.enabled) {
     properties.referenceImages = {
       type: 'array',
@@ -396,7 +450,8 @@ function imageSizeProperty(
     isNanoBananaEndpoint(endpointId) ||
     isSeedreamEndpoint(endpointId) ||
     isWanImageEndpoint(endpointId) ||
-    isQwenImageEndpoint(endpointId)
+    isQwenImageEndpoint(endpointId) ||
+    isFluxImageEndpoint(endpointId)
   ) {
     const aspectOptions = stringArrayFromPolicy(
       parameterPolicy,
@@ -521,6 +576,10 @@ function isSeedreamEndpoint(endpointId: string): boolean {
   return /^bytedance\/seedream-(?:4|4\.5|5-lite)$/.test(endpointId);
 }
 
+function isFluxImageEndpoint(endpointId: string): boolean {
+  return /^black-forest-labs\/flux-2-(?:pro|flex)$/.test(endpointId);
+}
+
 function recordValue(value: unknown): Record<string, unknown> | null {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
     ? (value as Record<string, unknown>)
@@ -566,6 +625,41 @@ function numberFromPolicy(
   return typeof value === 'number' && Number.isFinite(value)
     ? value
     : undefined;
+}
+
+function numberControlPolicy(
+  policy: AiJsonValue | undefined,
+  key: string,
+):
+  | {
+      defaultValue?: number;
+      maximum?: number;
+      minimum?: number;
+      step?: number;
+    }
+  | undefined {
+  const value = recordValue(recordValue(policy)?.[key]);
+  if (value?.enabled !== true) return undefined;
+  return {
+    defaultValue: numberFromRecord(value, 'default'),
+    minimum: numberFromRecord(value, 'minimum'),
+    maximum: numberFromRecord(value, 'maximum'),
+    step: numberFromRecord(value, 'step'),
+  };
+}
+
+function numberFromRecord(
+  value: Record<string, unknown>,
+  key: string,
+): number | undefined {
+  const number = value[key];
+  return typeof number === 'number' && Number.isFinite(number)
+    ? number
+    : undefined;
+}
+
+function seedEnabled(policy: AiJsonValue | undefined): boolean {
+  return recordValue(recordValue(policy)?.seed)?.enabled === true;
 }
 
 function resolutionOptionsFor(

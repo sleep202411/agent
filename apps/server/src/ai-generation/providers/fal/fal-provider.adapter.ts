@@ -310,6 +310,10 @@ export class FalProviderAdapter implements ProviderAdapter {
       return `${runtime.endpointId}/edit`;
     }
 
+    if (/^fal-ai\/flux-2-(?:pro|flex)$/.test(runtime.endpointId)) {
+      return `${runtime.endpointId}/edit`;
+    }
+
     return runtime.endpointId;
   }
 

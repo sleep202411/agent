@@ -23,6 +23,7 @@ export function mapFalProviderRequest(
   normalizeGptImage2Request(config, input, body);
   normalizeSeedreamRequest(config, input, body);
   normalizeQwenImageRequest(config, input, body);
+  normalizeFluxImageRequest(config, input, body);
   return body;
 }
 
@@ -85,6 +86,27 @@ function normalizeQwenImageRequest(
   if (dimensions) body.image_size = dimensions;
 }
 
+function normalizeFluxImageRequest(
+  config: FalModelRuntimeConfig,
+  input: Record<string, unknown>,
+  body: Record<string, unknown>,
+): void {
+  if (!isFluxImageEndpoint(config.endpointId)) return;
+  const imageSize =
+    typeof input.imageSize === 'string'
+      ? input.imageSize
+      : typeof body.image_size === 'string'
+        ? body.image_size
+        : undefined;
+  const resolution =
+    typeof input.resolution === 'string' ? input.resolution : undefined;
+  const dimensions = dimensionsFromAspectRatio(imageSize, resolution);
+  if (dimensions) body.image_size = dimensions;
+
+  body.enable_safety_checker = true;
+  body.safety_tolerance = '2';
+}
+
 function isSeedreamEndpoint(endpointId: string): boolean {
   return /^fal-ai\/bytedance\/seedream\/v(?:4(?:\.5)?|5\/lite)\/text-to-image(?:\/edit)?$/.test(
     endpointId,
@@ -93,6 +115,10 @@ function isSeedreamEndpoint(endpointId: string): boolean {
 
 function isQwenImageEndpoint(endpointId: string): boolean {
   return /^fal-ai\/qwen-image-2(?:\/pro)?\/text-to-image$/.test(endpointId);
+}
+
+function isFluxImageEndpoint(endpointId: string): boolean {
+  return /^fal-ai\/flux-2-(?:pro|flex)(?:\/edit)?$/.test(endpointId);
 }
 
 function transformValue(value: unknown, transform = 'identity'): unknown {

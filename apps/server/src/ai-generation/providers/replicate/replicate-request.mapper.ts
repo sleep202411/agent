@@ -17,6 +17,9 @@ export function mapReplicateProviderRequest(
   if (isQwenImageEndpoint(config.endpointId)) {
     return mapQwenImageRequest(config, input);
   }
+  if (isFluxImageEndpoint(config.endpointId)) {
+    return mapFluxImageRequest(config, input);
+  }
   return mapGptImage2Request(input, userId);
 }
 
@@ -105,6 +108,34 @@ function mapQwenImageRequest(
   return { input: body };
 }
 
+function mapFluxImageRequest(
+  config: ReplicateImageRuntimeConfig,
+  input: Record<string, unknown>,
+): Record<string, unknown> {
+  const images = referenceImageUrls(input.referenceImages).slice(
+    0,
+    maxReferenceImages(config),
+  );
+  const body: Record<string, unknown> = {
+    prompt: stringValue(input.prompt),
+    aspect_ratio: nanoAspectRatio(config, input.imageSize),
+    resolution: fluxResolutionValue(config, input.resolution),
+    output_format: fluxOutputFormat(input.outputFormat),
+    output_quality: 95,
+    safety_tolerance: 2,
+    prompt_upsampling: false,
+  };
+  if (images.length > 0) body.input_images = images;
+  if (typeof input.guidanceScale === 'number') {
+    body.guidance = input.guidanceScale;
+  }
+  if (typeof input.inferenceSteps === 'number') {
+    body.steps = Math.floor(input.inferenceSteps);
+  }
+  if (typeof input.seed === 'number') body.seed = Math.floor(input.seed);
+  return { input: body };
+}
+
 function mapGptImage2Request(
   input: Record<string, unknown>,
   userId: string,
@@ -141,6 +172,10 @@ function isQwenImageEndpoint(endpointId: string): boolean {
   return /^qwen\/qwen-image-(?:2-pro|2512)$/.test(endpointId);
 }
 
+function isFluxImageEndpoint(endpointId: string): boolean {
+  return /^black-forest-labs\/flux-2-(?:pro|flex)$/.test(endpointId);
+}
+
 function stringValue(value: unknown): string {
   return typeof value === 'string' ? value : '';
 }
@@ -156,6 +191,10 @@ function gptOutputFormat(value: unknown): 'png' | 'jpeg' | 'webp' {
 
 function nanoOutputFormat(value: unknown): 'png' | 'jpg' {
   return value === 'jpeg' || value === 'jpg' ? 'jpg' : 'png';
+}
+
+function fluxOutputFormat(value: unknown): 'png' | 'jpg' {
+  return value === 'png' ? 'png' : 'jpg';
 }
 
 function outputCount(value: unknown): number {
@@ -218,6 +257,24 @@ function resolutionValue(
     return value;
   }
   return defaultString(config.inputSchema.properties.resolution?.default, '1K');
+}
+
+function fluxResolutionValue(
+  config: ReplicateImageRuntimeConfig,
+  value: unknown,
+): '1 MP' | '4 MP' {
+  const selected = resolutionValue(config, value);
+  return selected === '2K' ? '4 MP' : '1 MP';
+}
+
+function maxReferenceImages(config: ReplicateImageRuntimeConfig): number {
+  const referenceImages = config.inputSchema.properties.referenceImages as
+    | { maxItems?: unknown }
+    | undefined;
+  const maxItems = referenceImages?.maxItems;
+  return typeof maxItems === 'number' && Number.isFinite(maxItems)
+    ? Math.max(0, Math.floor(maxItems))
+    : 8;
 }
 
 function defaultString(value: unknown, fallback: string): string {

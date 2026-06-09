@@ -6293,6 +6293,8 @@
           "high": "高"
         },
         "outputFormat": "格式",
+        "guidanceScale": "引導強度",
+        "inferenceSteps": "步數",
         "negativePrompt": "負向提示詞",
         "negativePromptPlaceholder": "描述需要避免的內容",
         "providerOptions": "供應商選項",

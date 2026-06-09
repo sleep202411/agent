@@ -19,6 +19,10 @@ import type { Prisma } from '@prisma/client';
 import type { AiGenerationMode, AiProductPricingPolicy } from '@repo/shared';
 
 import {
+  FLUX_2_FLEX_PARAMETER_POLICY,
+  FLUX_2_FLEX_PRODUCT_PRICING,
+  FLUX_2_PRO_PARAMETER_POLICY,
+  FLUX_2_PRO_PRODUCT_PRICING,
   GPT_IMAGE_2_PARAMETER_POLICY,
   GPT_IMAGE_2_PRODUCT_PRICING,
   NANO_BANANA_2_PARAMETER_POLICY,
@@ -168,11 +172,91 @@ const FAL_QWEN_INPUT_SCHEMA = {
   },
 } as const satisfies Prisma.InputJsonObject;
 
+const FAL_FLUX_INPUT_SCHEMA = {
+  type: 'object',
+  required: ['prompt'],
+  properties: {
+    prompt: { type: 'string' },
+    image_size: { type: ['string', 'object'] },
+    image_urls: { type: 'array', items: { type: 'string' } },
+    seed: { type: 'integer' },
+    safety_tolerance: { type: 'integer' },
+    enable_safety_checker: { type: 'boolean' },
+    output_format: { type: 'string' },
+    sync_mode: { type: 'boolean' },
+  },
+} as const satisfies Prisma.InputJsonObject;
+
+const FAL_FLUX_FLEX_INPUT_SCHEMA = {
+  type: 'object',
+  required: ['prompt'],
+  properties: {
+    prompt: { type: 'string' },
+    image_size: { type: ['string', 'object'] },
+    image_urls: { type: 'array', items: { type: 'string' } },
+    seed: { type: 'integer' },
+    safety_tolerance: { type: 'integer' },
+    enable_safety_checker: { type: 'boolean' },
+    output_format: { type: 'string' },
+    sync_mode: { type: 'boolean' },
+    guidance_scale: { type: 'number' },
+    num_inference_steps: { type: 'integer' },
+  },
+} as const satisfies Prisma.InputJsonObject;
+
 const REPLICATE_GENERIC_IMAGE_INPUT_SCHEMA = {
   type: 'object',
   required: ['input'],
   properties: {
     input: { type: 'object' },
+  },
+} as const satisfies Prisma.InputJsonObject;
+
+const REPLICATE_FLUX_INPUT_SCHEMA = {
+  type: 'object',
+  required: ['input'],
+  properties: {
+    input: {
+      type: 'object',
+      required: ['prompt'],
+      properties: {
+        prompt: { type: 'string' },
+        input_images: { type: 'array', items: { type: 'string' } },
+        aspect_ratio: { type: 'string' },
+        resolution: { type: 'string' },
+        seed: { type: 'integer' },
+        output_format: { type: 'string' },
+        output_quality: { type: 'integer' },
+        safety_tolerance: { type: 'integer' },
+        prompt_upsampling: { type: 'boolean' },
+      },
+    },
+  },
+} as const satisfies Prisma.InputJsonObject;
+
+const REPLICATE_FLUX_FLEX_INPUT_SCHEMA = {
+  type: 'object',
+  required: ['input'],
+  properties: {
+    input: {
+      type: 'object',
+      required: ['prompt'],
+      properties: {
+        prompt: { type: 'string' },
+        input_images: { type: 'array', items: { type: 'string' } },
+        aspect_ratio: { type: 'string' },
+        resolution: { type: 'string' },
+        width: { type: 'integer' },
+        height: { type: 'integer' },
+        seed: { type: 'integer' },
+        steps: { type: 'integer' },
+        guidance: { type: 'number' },
+        output_format: { type: 'string' },
+        output_quality: { type: 'integer' },
+        safety_tolerance: { type: 'integer' },
+        prompt_upsampling: { type: 'boolean' },
+      },
+    },
   },
 } as const satisfies Prisma.InputJsonObject;
 
@@ -204,15 +288,20 @@ function bailianCatalogSnapshot(args: {
 
 function falCatalogSnapshot(args: {
   model: string;
-  usdPerImage: number;
+  usdPerImage?: number;
+  usdPerUnit?: number;
+  unit?: string;
+  pricingSource?: string;
+  pricingNote?: string;
   docsUrl: string;
 }): Prisma.InputJsonObject {
   return {
     pricing: {
-      source: 'fal_public_pricing',
-      unit: 'image',
+      source: args.pricingSource ?? 'fal_public_pricing',
+      unit: args.unit ?? 'image',
       currency: 'USD',
-      unitPrice: args.usdPerImage,
+      unitPrice: args.usdPerUnit ?? args.usdPerImage,
+      ...(args.pricingNote ? { note: args.pricingNote } : {}),
     },
     docs: [{ title: 'fal.ai model', url: args.docsUrl }],
     model: args.model,
@@ -221,15 +310,20 @@ function falCatalogSnapshot(args: {
 
 function replicateCatalogSnapshot(args: {
   model: string;
-  usdPerImage: number;
+  usdPerImage?: number;
+  usdPerUnit?: number;
+  unit?: string;
+  pricingSource?: string;
+  pricingNote?: string;
   docsUrl: string;
 }): Prisma.InputJsonObject {
   return {
     pricing: {
-      source: 'replicate_public_pricing',
-      unit: 'image',
+      source: args.pricingSource ?? 'replicate_public_pricing',
+      unit: args.unit ?? 'image',
       currency: 'USD',
-      unitPrice: args.usdPerImage,
+      unitPrice: args.usdPerUnit ?? args.usdPerImage,
+      ...(args.pricingNote ? { note: args.pricingNote } : {}),
     },
     docs: [{ title: 'Replicate API reference', url: args.docsUrl }],
     model: args.model,
@@ -267,6 +361,129 @@ export const IMAGE_MODELS: ImageModelSeed[] = [
       },
     ],
     providerAliases: ['fal/openai/gpt-image-2', 'replicate/openai/gpt-image-2'],
+  },
+  {
+    slug: 'flux-2-pro',
+    displayName: 'Flux 2 Pro',
+    family: 'flux',
+    description:
+      'Black Forest Labs Flux 2 Pro for production photorealism, product marketing visuals, typography, color control, and multi-reference image editing up to 4 megapixels.',
+    modes: [T2I, I2I],
+    tier: 'vip',
+    cost: 30,
+    parameterPolicy: FLUX_2_PRO_PARAMETER_POLICY,
+    productPricing: FLUX_2_PRO_PRODUCT_PRICING,
+    group: 'recommended',
+    sortOrder: 35,
+    recommended: true,
+    providers: [
+      {
+        provider: 'fal-ai',
+        endpointId: 'fal-ai/flux-2-pro',
+        priority: 10,
+        weight: 100,
+        providerInputSchema: FAL_FLUX_INPUT_SCHEMA,
+        providerOutputSchema: PROVIDER_IMAGE_OUTPUT_SCHEMA,
+        catalogSnapshot: falCatalogSnapshot({
+          model: 'fal-ai/flux-2-pro',
+          usdPerUnit: 0.03,
+          unit: 'MP',
+          pricingSource: 'black_forest_labs_official_pricing',
+          pricingNote:
+            'FLUX.2 Pro text-to-image starts at $0.03 per output megapixel; editing starts at $0.045 per megapixel.',
+          docsUrl:
+            'https://fal.ai/docs/model-api-reference/image-generation-api/flux-2-pro',
+        }),
+        maxConcurrentRequests: 8,
+        requestTimeoutSeconds: 600,
+        failureThreshold: 3,
+      },
+      {
+        provider: 'replicate',
+        endpointId: 'black-forest-labs/flux-2-pro',
+        priority: 30,
+        weight: 90,
+        providerInputSchema: REPLICATE_FLUX_INPUT_SCHEMA,
+        providerOutputSchema: PROVIDER_IMAGE_OUTPUT_SCHEMA,
+        catalogSnapshot: replicateCatalogSnapshot({
+          model: 'black-forest-labs/flux-2-pro',
+          usdPerUnit: 0.03,
+          unit: 'MP',
+          pricingSource: 'replicate_model_page_and_bfl_official_pricing',
+          pricingNote:
+            'Replicate lists this model as priced by input and output megapixels; BFL official pricing starts at $0.03 per output megapixel.',
+          docsUrl: 'https://replicate.com/black-forest-labs/flux-2-pro/api',
+        }),
+        maxConcurrentRequests: 4,
+        requestTimeoutSeconds: 600,
+        failureThreshold: 3,
+      },
+    ],
+    providerAliases: [
+      'fal/fal-ai/flux-2-pro',
+      'replicate/black-forest-labs/flux-2-pro',
+    ],
+  },
+  {
+    slug: 'flux-2-flex',
+    displayName: 'Flux 2 Flex',
+    family: 'flux',
+    description:
+      'Black Forest Labs Flux 2 Flex for typography-heavy production images and multi-reference editing with explicit guidance and inference-step controls.',
+    modes: [T2I, I2I],
+    tier: 'vip',
+    cost: 50,
+    parameterPolicy: FLUX_2_FLEX_PARAMETER_POLICY,
+    productPricing: FLUX_2_FLEX_PRODUCT_PRICING,
+    group: 'recommended',
+    sortOrder: 36,
+    recommended: true,
+    providers: [
+      {
+        provider: 'fal-ai',
+        endpointId: 'fal-ai/flux-2-flex',
+        priority: 10,
+        weight: 100,
+        providerInputSchema: FAL_FLUX_FLEX_INPUT_SCHEMA,
+        providerOutputSchema: PROVIDER_IMAGE_OUTPUT_SCHEMA,
+        catalogSnapshot: falCatalogSnapshot({
+          model: 'fal-ai/flux-2-flex',
+          usdPerUnit: 0.05,
+          unit: 'MP',
+          pricingSource: 'fal_public_flux_2_pricing',
+          pricingNote:
+            'fal.ai lists FLUX.2 Flex at $0.05 per megapixel; editing bills input and output megapixels rounded up separately.',
+          docsUrl: 'https://fal.ai/models/fal-ai/flux-2-flex/api',
+        }),
+        maxConcurrentRequests: 6,
+        requestTimeoutSeconds: 600,
+        failureThreshold: 3,
+      },
+      {
+        provider: 'replicate',
+        endpointId: 'black-forest-labs/flux-2-flex',
+        priority: 30,
+        weight: 90,
+        providerInputSchema: REPLICATE_FLUX_FLEX_INPUT_SCHEMA,
+        providerOutputSchema: PROVIDER_IMAGE_OUTPUT_SCHEMA,
+        catalogSnapshot: replicateCatalogSnapshot({
+          model: 'black-forest-labs/flux-2-flex',
+          usdPerUnit: 0.06,
+          unit: 'MP',
+          pricingSource: 'replicate_model_page_and_bfl_official_pricing',
+          pricingNote:
+            'Replicate lists this model as priced by input and output megapixels; BFL official pricing starts at $0.06 per megapixel for FLUX.2 Flex.',
+          docsUrl: 'https://replicate.com/black-forest-labs/flux-2-flex/api',
+        }),
+        maxConcurrentRequests: 4,
+        requestTimeoutSeconds: 600,
+        failureThreshold: 3,
+      },
+    ],
+    providerAliases: [
+      'fal/fal-ai/flux-2-flex',
+      'replicate/black-forest-labs/flux-2-flex',
+    ],
   },
   {
     slug: 'wan-image-2.7-pro',

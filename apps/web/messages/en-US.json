@@ -6293,6 +6293,8 @@
           "high": "High"
         },
         "outputFormat": "Format",
+        "guidanceScale": "Guidance",
+        "inferenceSteps": "Steps",
         "negativePrompt": "Negative prompt",
         "negativePromptPlaceholder": "Describe what to avoid",
         "providerOptions": "Provider options",

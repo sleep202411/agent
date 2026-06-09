@@ -73,6 +73,10 @@ function isQwenImageEndpoint(endpointId: string): boolean {
   return /^fal-ai\/qwen-image-2(?:\/pro)?\/text-to-image$/.test(endpointId);
 }
 
+function isFluxImageEndpoint(endpointId: string): boolean {
+  return /^fal-ai\/flux-2-(?:pro|flex)(?:\/edit)?$/.test(endpointId);
+}
+
 function recordValue(value: unknown): Record<string, unknown> | null {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
     ? (value as Record<string, unknown>)
@@ -132,7 +136,35 @@ function referencePolicy(policy: AiJsonValue | undefined): {
 }
 
 function seedEnabled(policy: AiJsonValue | undefined): boolean {
-  return recordValue(recordValue(policy)?.seed)?.enabled !== false;
+  return recordValue(recordValue(policy)?.seed)?.enabled === true;
+}
+
+function numberFromPolicy(value: unknown, key: string): number | undefined {
+  const number = recordValue(value)?.[key];
+  return typeof number === 'number' && Number.isFinite(number)
+    ? number
+    : undefined;
+}
+
+function numberControlPolicy(
+  policy: AiJsonValue | undefined,
+  key: string,
+):
+  | {
+      defaultValue?: number;
+      maximum?: number;
+      minimum?: number;
+      step?: number;
+    }
+  | undefined {
+  const value = recordValue(recordValue(policy)?.[key]);
+  if (value?.enabled !== true) return undefined;
+  return {
+    defaultValue: numberFromPolicy(value, 'default'),
+    minimum: numberFromPolicy(value, 'minimum'),
+    maximum: numberFromPolicy(value, 'maximum'),
+    step: numberFromPolicy(value, 'step'),
+  };
 }
 
 function inputSchemaFor(
@@ -148,11 +180,14 @@ function inputSchemaFor(
   const nanoBanana = isNanoBananaEndpoint(endpointId);
   const seedream = isSeedreamEndpoint(endpointId);
   const qwenImage = isQwenImageEndpoint(endpointId);
-  const aspectRatioDriven = nanoBanana || seedream || qwenImage;
+  const fluxImage = isFluxImageEndpoint(endpointId);
+  const aspectRatioDriven = nanoBanana || seedream || qwenImage || fluxImage;
   const referenceBase = referencePolicy(parameterPolicy);
   const reference = seedream
     ? { ...referenceBase, max: Math.min(referenceBase.max, 10) }
-    : referenceBase;
+    : fluxImage
+      ? { ...referenceBase, max: Math.min(referenceBase.max, 10) }
+      : referenceBase;
 
   const properties: AiInputSchema['properties'] = {
     prompt: {
@@ -316,6 +351,53 @@ function inputSchemaFor(
           importance: 'advanced',
         },
         'x-provider': { parameter: 'output_format', omitIfDefault: true },
+      };
+    }
+
+    const guidanceScale = fluxImage
+      ? numberControlPolicy(parameterPolicy, 'guidanceScale')
+      : undefined;
+    if (guidanceScale) {
+      properties.guidanceScale = {
+        type: 'number',
+        title: 'Guidance scale',
+        default: guidanceScale.defaultValue ?? 3.5,
+        minimum: guidanceScale.minimum ?? 1.5,
+        maximum: guidanceScale.maximum ?? 10,
+        ...(guidanceScale.step ? { multipleOf: guidanceScale.step } : {}),
+        'x-ui': {
+          control: 'slider',
+          group: 'advanced',
+          order: 88,
+          importance: 'advanced',
+        },
+        'x-provider': {
+          parameter: 'guidance_scale',
+          omitIfEmpty: true,
+        },
+      };
+    }
+
+    const inferenceSteps = fluxImage
+      ? numberControlPolicy(parameterPolicy, 'inferenceSteps')
+      : undefined;
+    if (inferenceSteps) {
+      properties.inferenceSteps = {
+        type: 'integer',
+        title: 'Inference steps',
+        default: inferenceSteps.defaultValue ?? 28,
+        minimum: inferenceSteps.minimum ?? 1,
+        maximum: inferenceSteps.maximum ?? 50,
+        'x-ui': {
+          control: 'slider',
+          group: 'advanced',
+          order: 89,
+          importance: 'advanced',
+        },
+        'x-provider': {
+          parameter: 'num_inference_steps',
+          omitIfEmpty: true,
+        },
       };
     }
 

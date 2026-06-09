@@ -500,7 +500,9 @@ function ImageStudioSurface({ workspaceId }: { workspaceId: string }) {
     const promptDocument = buildPromptDocument(trimmedPrompt, referenceBindings);
     const rawInput = compactFizzAiInput({
       prompt: trimmedPrompt,
+      guidanceScale: settings.guidanceScale || undefined,
       imageSize: settings.aspectRatio,
+      inferenceSteps: settings.inferenceSteps || undefined,
       size: settings.aspectRatio,
       aspectRatio: settings.aspectRatio,
       aspect_ratio: settings.aspectRatio,
@@ -1796,7 +1798,9 @@ function optimisticRunSeconds(settings: ImageGenerationSettings): number {
   const qualityFactor = settings.quality === "high" ? 1.35 : settings.quality === "low" ? 0.8 : 1;
   const resolution = settings.resolution.toLowerCase();
   const resolutionFactor = resolution.includes("4k") ? 1.55 : resolution.includes("2k") ? 1.2 : 1;
-  return Math.ceil(72 * count * qualityFactor * resolutionFactor);
+  const stepFactor =
+    settings.inferenceSteps > 0 ? Math.min(1.8, Math.max(0.8, settings.inferenceSteps / 28)) : 1;
+  return Math.ceil(72 * count * qualityFactor * resolutionFactor * stepFactor);
 }
 
 function seedInputValue(value: string): number | undefined {

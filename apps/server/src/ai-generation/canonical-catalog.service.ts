@@ -107,7 +107,11 @@ export class AiCanonicalCatalogService {
       orderBy: [{ family: 'asc' }, { modality: 'asc' }, { slug: 'asc' }],
     });
 
-    const models: AiModelDefinition[] = [];
+    const models: Array<{
+      model: AiModelDefinition;
+      sortOrder: number;
+      slug: string;
+    }> = [];
     for (const canonical of canonicals) {
       // Canonical-only model (no active binding) — cannot generate.
       // Excluded from the runtime catalog: there is no provider /
@@ -139,9 +143,31 @@ export class AiCanonicalCatalogService {
       }
 
       const model = candidates.find((item) => item.enabled) ?? candidates[0];
-      if (model) models.push(model);
+      if (model) {
+        models.push({
+          model,
+          sortOrder: uiSortOrder(canonical.uiPolicy),
+          slug: canonical.slug,
+        });
+      }
     }
 
-    return models;
+    return models
+      .sort((a, b) => {
+        const order = a.sortOrder - b.sortOrder;
+        if (order !== 0) return order;
+        return a.slug.localeCompare(b.slug);
+      })
+      .map((item) => item.model);
   }
+}
+
+function uiSortOrder(value: unknown): number {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return Number.MAX_SAFE_INTEGER;
+  }
+  const raw = (value as Record<string, unknown>).sortOrder;
+  return typeof raw === 'number' && Number.isFinite(raw)
+    ? raw
+    : Number.MAX_SAFE_INTEGER;
 }

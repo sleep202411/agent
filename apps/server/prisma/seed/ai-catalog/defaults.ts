@@ -180,6 +180,19 @@ const BAILIAN_IMAGE_ASPECT_RATIOS = [
   '21:9',
 ] as const;
 
+const FLUX_2_IMAGE_ASPECT_RATIOS = [
+  '1:1',
+  '4:3',
+  '3:4',
+  '16:9',
+  '9:16',
+  '3:2',
+  '2:3',
+  '4:5',
+  '5:4',
+  '21:9',
+] as const;
+
 export const WAN_IMAGE_27_PRO_PARAMETER_POLICY = {
   parameterMode: 'provider_intersection',
   providerFamily: 'wan-image-2.7',
@@ -275,6 +288,63 @@ export const QWEN_IMAGE_20_PARAMETER_POLICY = {
   },
   promptExtend: { enabled: true, default: true },
   watermark: { enabled: true, default: false },
+  seed: { enabled: true, minimum: 0, maximum: 2_147_483_647 },
+} as const satisfies Prisma.InputJsonObject;
+
+export const FLUX_2_PRO_PARAMETER_POLICY = {
+  parameterMode: 'provider_intersection',
+  providerFamily: 'flux-2',
+  defaultAspectRatio: '1:1',
+  supportedAspectRatios: FLUX_2_IMAGE_ASPECT_RATIOS,
+  defaultVariations: 1,
+  variationOptions: [1],
+  defaultResolution: '1K',
+  resolutionOptions: ['1K', '2K'],
+  defaultOutputFormat: 'jpeg',
+  outputFormatOptions: ['jpeg', 'png'],
+  referenceImages: {
+    enabled: true,
+    min: 0,
+    max: 8,
+    maskSupported: false,
+  },
+  safetyTolerance: { enabled: false, default: 2 },
+  promptUpsampling: { enabled: false, default: false },
+  seed: { enabled: true, minimum: 0, maximum: 2_147_483_647 },
+} as const satisfies Prisma.InputJsonObject;
+
+export const FLUX_2_FLEX_PARAMETER_POLICY = {
+  parameterMode: 'provider_intersection',
+  providerFamily: 'flux-2',
+  defaultAspectRatio: '1:1',
+  supportedAspectRatios: FLUX_2_IMAGE_ASPECT_RATIOS,
+  defaultVariations: 1,
+  variationOptions: [1],
+  defaultResolution: '1K',
+  resolutionOptions: ['1K', '2K'],
+  defaultOutputFormat: 'jpeg',
+  outputFormatOptions: ['jpeg', 'png'],
+  referenceImages: {
+    enabled: true,
+    min: 0,
+    max: 10,
+    maskSupported: false,
+  },
+  safetyTolerance: { enabled: false, default: 2 },
+  promptUpsampling: { enabled: false, default: false },
+  guidanceScale: {
+    enabled: true,
+    default: 3.5,
+    minimum: 1.5,
+    maximum: 10,
+    step: 0.5,
+  },
+  inferenceSteps: {
+    enabled: true,
+    default: 28,
+    minimum: 1,
+    maximum: 50,
+  },
   seed: { enabled: true, minimum: 0, maximum: 2_147_483_647 },
 } as const satisfies Prisma.InputJsonObject;
 
@@ -467,6 +537,50 @@ export const QWEN_IMAGE_20_PRODUCT_PRICING: AiProductPricingPolicy = {
   pointsPerOutput: 20,
   referenceImageSurchargePoints: 0,
   extraReferenceImagePoints: 0,
+  maskSurchargePoints: 0,
+  minimumPoints: 1,
+  roundTo: 1,
+};
+
+export const FLUX_2_PRO_PRODUCT_PRICING: AiProductPricingPolicy = {
+  mode: 'parameter_matrix',
+  version: 'flux-2-pro-points-v1-2026-06-09',
+  currency: 'COMPUTE_POINTS',
+  defaultOutputCount: 1,
+  minOutputCount: 1,
+  maxOutputCount: 1,
+  defaultResolution: '1K',
+  defaultQuality: 'standard',
+  resolutionOptions: ['1K', '2K'],
+  qualityOptions: ['standard'],
+  matrix: {
+    '1K': { standard: 30 },
+    '2K': { standard: 70 },
+  },
+  referenceImageSurchargePoints: 10,
+  extraReferenceImagePoints: 5,
+  maskSurchargePoints: 0,
+  minimumPoints: 1,
+  roundTo: 1,
+};
+
+export const FLUX_2_FLEX_PRODUCT_PRICING: AiProductPricingPolicy = {
+  mode: 'parameter_matrix',
+  version: 'flux-2-flex-points-v1-2026-06-09',
+  currency: 'COMPUTE_POINTS',
+  defaultOutputCount: 1,
+  minOutputCount: 1,
+  maxOutputCount: 1,
+  defaultResolution: '1K',
+  defaultQuality: 'standard',
+  resolutionOptions: ['1K', '2K'],
+  qualityOptions: ['standard'],
+  matrix: {
+    '1K': { standard: 50 },
+    '2K': { standard: 120 },
+  },
+  referenceImageSurchargePoints: 15,
+  extraReferenceImagePoints: 5,
   maskSurchargePoints: 0,
   minimumPoints: 1,
   roundTo: 1,
