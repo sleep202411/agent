@@ -17,6 +17,7 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { useAuth } from "@/auth";
+import { LanguageSwitcher } from "@/components/language-switcher";
 import { appEnv } from "@/config";
 import { Colors, MaxContentWidth, Spacing } from "@/constants/theme";
 import { useTranslations } from "@/i18n";
@@ -160,7 +161,7 @@ export default function LoginScreen() {
                   <Pressable
                     accessibilityRole="link"
                     hitSlop={8}
-                    onPress={() => openSitePath("/forgot-password")}
+                    onPress={() => router.push("/forgot-password")}
                     style={({ pressed }) => pressedStyle(pressed)}
                   >
                     <Text style={styles.forgotLink}>{t("login.forgot")}</Text>
@@ -229,47 +230,58 @@ export default function LoginScreen() {
                   setAcceptedTerms((current) => !current);
                   clearLocalError();
                 }}
-                style={({ pressed }) => [styles.termsRow, pressedStyle(pressed)]}
+                style={({ pressed }) => (pressed ? styles.pressed : null)}
               >
-                <View style={[styles.checkbox, acceptedTerms && styles.checkboxChecked]}>
-                  {acceptedTerms ? (
-                    <SymbolView
-                      name={{ ios: "checkmark", android: "check", web: "check" }}
-                      size={12}
-                      tintColor="#FFFFFF"
-                    />
-                  ) : null}
+                <View style={styles.termsRow}>
+                  <View style={[styles.checkbox, acceptedTerms && styles.checkboxChecked]}>
+                    {acceptedTerms ? (
+                      <SymbolView
+                        name={{ ios: "checkmark", android: "check", web: "check" }}
+                        size={12}
+                        tintColor="#FFFFFF"
+                      />
+                    ) : null}
+                  </View>
+                  <Text style={styles.termsText}>
+                    {t("login.agreementLead")}
+                    <Text
+                      style={styles.termsLink}
+                      onPress={() => openSitePath("/terms-of-service")}
+                    >
+                      {t("login.terms")}
+                    </Text>
+                    {t("login.and")}
+                    <Text style={styles.termsLink} onPress={() => openSitePath("/privacy-policy")}>
+                      {t("login.privacy")}
+                    </Text>
+                  </Text>
                 </View>
-                <Text style={styles.termsText}>
-                  {t("login.agreementLead")}
-                  <Text style={styles.termsLink} onPress={() => openSitePath("/terms-of-service")}>
-                    {t("login.terms")}
-                  </Text>
-                  {t("login.and")}
-                  <Text style={styles.termsLink} onPress={() => openSitePath("/privacy-policy")}>
-                    {t("login.privacy")}
-                  </Text>
-                </Text>
               </Pressable>
 
               <Pressable
                 accessibilityRole="button"
                 disabled={!canSubmit}
                 onPress={handleSubmit}
-                style={({ pressed }) => [
-                  styles.primaryButton,
-                  canSubmit ? styles.primaryButtonEnabled : styles.primaryButtonDisabled,
-                  pressed && canSubmit ? styles.pressed : null,
-                ]}
+                style={({ pressed }) => (pressed && canSubmit ? styles.pressed : null)}
               >
-                {isSubmitting ? (
-                  <ActivityIndicator color="#FFFFFF" size="small" style={styles.buttonSpinner} />
-                ) : null}
-                <Text
-                  style={[styles.primaryButtonText, !canSubmit && styles.primaryButtonTextDisabled]}
+                <View
+                  style={[
+                    styles.primaryButton,
+                    canSubmit ? styles.primaryButtonEnabled : styles.primaryButtonDisabled,
+                  ]}
                 >
-                  {isSubmitting ? t("login.signingIn") : t("login.signIn")}
-                </Text>
+                  {isSubmitting ? (
+                    <ActivityIndicator color="#FFFFFF" size="small" style={styles.buttonSpinner} />
+                  ) : null}
+                  <Text
+                    style={[
+                      styles.primaryButtonText,
+                      !canSubmit && styles.primaryButtonTextDisabled,
+                    ]}
+                  >
+                    {isSubmitting ? t("login.signingIn") : t("login.signIn")}
+                  </Text>
+                </View>
               </Pressable>
             </View>
 
@@ -288,6 +300,7 @@ export default function LoginScreen() {
           </View>
         </ScrollView>
       </KeyboardAvoidingView>
+      <LanguageSwitcher style={[styles.langSwitch, { top: safeAreaInsets.top + Spacing.two }]} />
     </View>
   );
 }
@@ -299,6 +312,11 @@ const styles = StyleSheet.create({
   },
   flex: {
     flex: 1,
+  },
+  langSwitch: {
+    position: "absolute",
+    right: Spacing.five,
+    zIndex: 10,
   },
   scrollContent: {
     alignItems: "center",
@@ -392,7 +410,7 @@ const styles = StyleSheet.create({
   },
   // Terms
   termsRow: {
-    alignItems: "center",
+    alignItems: "flex-start",
     flexDirection: "row",
     gap: Spacing.three,
     marginTop: Spacing.one,
@@ -403,8 +421,10 @@ const styles = StyleSheet.create({
     borderColor: theme.border,
     borderRadius: 6,
     borderWidth: 1,
+    flexShrink: 0,
     height: 22,
     justifyContent: "center",
+    marginTop: 1,
     width: 22,
   },
   checkboxChecked: {

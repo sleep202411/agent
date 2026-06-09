@@ -17,6 +17,7 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { sendVerificationCode, useAuth } from "@/auth";
+import { LanguageSwitcher } from "@/components/language-switcher";
 import { appEnv } from "@/config";
 import { Colors, MaxContentWidth, Spacing } from "@/constants/theme";
 import { useTranslations } from "@/i18n";
@@ -401,6 +402,7 @@ export default function RegisterScreen() {
           </View>
         </ScrollView>
       </KeyboardAvoidingView>
+      <LanguageSwitcher style={[styles.langSwitch, { top: safeAreaInsets.top + Spacing.two }]} />
     </View>
   );
 }
@@ -412,6 +414,11 @@ const styles = StyleSheet.create({
   },
   flex: {
     flex: 1,
+  },
+  langSwitch: {
+    position: "absolute",
+    right: Spacing.five,
+    zIndex: 10,
   },
   scrollContent: {
     alignItems: "center",

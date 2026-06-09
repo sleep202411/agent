@@ -230,3 +230,42 @@ export async function registerWithIdentifier(
     user,
   };
 }
+
+export async function emailResetPassword(params: {
+  email: string;
+  code: string;
+  password: string;
+}) {
+  await api.postForm<unknown>("/user/email/reset/password", {
+    code: params.code,
+    email: params.email,
+    password: params.password,
+  });
+}
+
+export async function phoneResetPassword(params: {
+  phone: string;
+  code: string;
+  password: string;
+}) {
+  await api.postForm<unknown>("/user/reset/password", {
+    code: params.code,
+    password: params.password,
+    phone: params.phone,
+  });
+}
+
+/** Reset a password using a verification code — email (global) or phone (CN). */
+export async function resetPasswordWithIdentifier(params: {
+  identifier: string;
+  code: string;
+  password: string;
+}) {
+  const identifier = params.identifier.trim();
+  const code = params.code.trim();
+  if (isEmailIdentifier(identifier)) {
+    await emailResetPassword({ code, email: identifier, password: params.password });
+  } else {
+    await phoneResetPassword({ code, password: params.password, phone: identifier });
+  }
+}

@@ -8,7 +8,7 @@ export {
   signIn,
   signOut,
 } from "./auth-store";
-export { sendVerificationCode } from "./auth-service";
+export { resetPasswordWithIdentifier, sendVerificationCode } from "./auth-service";
 export type {
   AuthSession,
   AuthState,

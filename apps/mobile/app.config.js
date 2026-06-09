@@ -274,8 +274,15 @@ module.exports = ({ config }) => {
       ],
     ],
     experiments: {
-      typedRoutes: true,
-      reactCompiler: true,
+      // Disabled: the install-time re-hoist broke expo-router's
+      // `_ctx-shared` resolution, so typed-route generation crashed `expo start`
+      // and left stale route types. Re-enable after `npx expo install --fix`.
+      typedRoutes: false,
+      // Disabled: the experimental React Compiler mis-compiled Pressable
+      // function styles (style={({pressed}) => [layoutStyle, ...]}), silently
+      // dropping the layout so checkboxes/buttons rendered unstyled. Re-enable
+      // only after verifying that pattern across the app.
+      reactCompiler: false,
     },
     extra: {
       ...config.extra,
