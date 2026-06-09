@@ -6816,7 +6816,45 @@
     "sbPanoramaOutputOne": "1張",
     "sbPanoramaOutputMany": "{count}張",
     "sbPanoramaGenerate": "生成全景圖",
-    "sbPanoramaGenerating": "生成中…"
+    "sbPanoramaGenerating": "生成中…",
+    "videoStudio": {
+      "title": "視頻生成",
+      "subtitle": "先選模式,再描述你的視頻。",
+      "promptPlaceholder": "描述你想要的視頻…",
+      "create": "生成",
+      "noModels": "視頻模型正在接入,即將上線。",
+      "modes": {
+        "textToVideo": "文生視頻",
+        "textToVideoDesc": "用一句話生成",
+        "imageToVideo": "圖生視頻",
+        "imageToVideoDesc": "讓首幀動起來",
+        "firstLastFrame": "首尾幀",
+        "firstLastFrameDesc": "首尾幀之間補全",
+        "referenceToVideo": "參考生視頻",
+        "referenceToVideoDesc": "用參考圖保持主體或風格",
+        "editVideo": "編輯視頻",
+        "editVideoDesc": "改寫或重繪已有視頻",
+        "extendVideo": "延長",
+        "extendVideoDesc": "續長已有片段"
+      },
+      "slots": {
+        "firstFrame": "首幀",
+        "lastFrame": "尾幀",
+        "sourceVideo": "源視頻",
+        "referenceImages": "參考圖",
+        "referenceVideo": "參考視頻",
+        "audio": "音頻"
+      },
+      "modePanelTitle": "選擇模式",
+      "settingsPanelTitle": "模型與設置",
+      "selectModel": "選擇模型",
+      "modeTabsLabel": "資訊流標籤",
+      "historyEmpty": "你的視頻生成記錄會顯示在這裏。",
+      "modeTabs": {
+        "history": "歷史",
+        "community": "社區"
+      }
+    }
   },
   "ipCommerce": {
     "shell": {

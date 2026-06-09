@@ -116,7 +116,7 @@ interface PromptMentionRange {
   start: number;
 }
 
-const IMAGE_FEED = [
+export const IMAGE_FEED = [
   {
     key: "dogPortrait",
     imageUrl:
@@ -1998,7 +1998,7 @@ function ImageStudioTopBar({
   );
 }
 
-function ImageMasonry({ items }: { items: typeof IMAGE_FEED }) {
+export function ImageMasonry({ items }: { items: typeof IMAGE_FEED }) {
   const t = useTranslations("fizzStudio.imageStudio");
 
   return (

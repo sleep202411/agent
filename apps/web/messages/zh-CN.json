@@ -6816,7 +6816,45 @@
     "sbPanoramaOutputOne": "1张",
     "sbPanoramaOutputMany": "{count}张",
     "sbPanoramaGenerate": "生成全景图",
-    "sbPanoramaGenerating": "生成中…"
+    "sbPanoramaGenerating": "生成中…",
+    "videoStudio": {
+      "title": "视频生成",
+      "subtitle": "先选模式,再描述你的视频。",
+      "promptPlaceholder": "描述你想要的视频…",
+      "create": "生成",
+      "noModels": "视频模型正在接入,即将上线。",
+      "modes": {
+        "textToVideo": "文生视频",
+        "textToVideoDesc": "用一句话生成",
+        "imageToVideo": "图生视频",
+        "imageToVideoDesc": "让首帧动起来",
+        "firstLastFrame": "首尾帧",
+        "firstLastFrameDesc": "首尾帧之间补全",
+        "referenceToVideo": "参考生视频",
+        "referenceToVideoDesc": "用参考图保持主体或风格",
+        "editVideo": "编辑视频",
+        "editVideoDesc": "改写或重绘已有视频",
+        "extendVideo": "延长",
+        "extendVideoDesc": "续长已有片段"
+      },
+      "slots": {
+        "firstFrame": "首帧",
+        "lastFrame": "尾帧",
+        "sourceVideo": "源视频",
+        "referenceImages": "参考图",
+        "referenceVideo": "参考视频",
+        "audio": "音频"
+      },
+      "modePanelTitle": "选择模式",
+      "settingsPanelTitle": "模型与设置",
+      "selectModel": "选择模型",
+      "modeTabsLabel": "信息流标签",
+      "historyEmpty": "你的视频生成记录会显示在这里。",
+      "modeTabs": {
+        "history": "历史",
+        "community": "社区"
+      }
+    }
   },
   "ipCommerce": {
     "shell": {

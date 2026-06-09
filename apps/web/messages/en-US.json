@@ -6816,7 +6816,45 @@
     "sbPanoramaOutputOne": "1 image",
     "sbPanoramaOutputMany": "{count} images",
     "sbPanoramaGenerate": "Generate panorama",
-    "sbPanoramaGenerating": "Generating…"
+    "sbPanoramaGenerating": "Generating…",
+    "videoStudio": {
+      "title": "Video Studio",
+      "subtitle": "Pick a mode, then describe your video.",
+      "promptPlaceholder": "Describe the video you want…",
+      "create": "Create",
+      "noModels": "Video models are being wired up — coming soon.",
+      "modes": {
+        "textToVideo": "Text to Video",
+        "textToVideoDesc": "Generate from a prompt",
+        "imageToVideo": "Image to Video",
+        "imageToVideoDesc": "Animate a starting image",
+        "firstLastFrame": "First & Last Frame",
+        "firstLastFrameDesc": "Interpolate between two frames",
+        "referenceToVideo": "Reference to Video",
+        "referenceToVideoDesc": "Use reference images for subject or style",
+        "editVideo": "Edit Video",
+        "editVideoDesc": "Edit or restyle an existing video",
+        "extendVideo": "Extend",
+        "extendVideoDesc": "Continue an existing clip"
+      },
+      "slots": {
+        "firstFrame": "First frame",
+        "lastFrame": "Last frame",
+        "sourceVideo": "Source video",
+        "referenceImages": "Reference images",
+        "referenceVideo": "Reference video",
+        "audio": "Audio"
+      },
+      "modePanelTitle": "Choose a mode",
+      "settingsPanelTitle": "Model & settings",
+      "selectModel": "Select model",
+      "modeTabsLabel": "Feed tabs",
+      "historyEmpty": "Your video generations will show up here.",
+      "modeTabs": {
+        "history": "History",
+        "community": "Community"
+      }
+    }
   },
   "ipCommerce": {
     "shell": {

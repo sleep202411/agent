@@ -1,5 +1,5 @@
-import { ImageStudioPage } from "../_components/image-studio-page";
+import { VideoStudioPage } from "../_components/video-studio-page";
 
 export default function Page() {
-  return <ImageStudioPage modality="video" />;
+  return <VideoStudioPage />;
 }
