@@ -57,6 +57,14 @@ export interface SignInCredentials {
   password: string;
 }
 
+export interface RegisterCredentials {
+  /** Phone number (CN region) or email address (global region). */
+  identifier: string;
+  code: string;
+  password: string;
+  recommendationCode?: string;
+}
+
 export interface AuthResult {
   raw: unknown;
   token?: AuthToken;

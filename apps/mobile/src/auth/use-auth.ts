@@ -1,6 +1,13 @@
 import { useMemo, useSyncExternalStore } from "react";
 
-import { getAuthSnapshot, refreshCurrentUser, signIn, signOut, subscribeAuth } from "./auth-store";
+import {
+  getAuthSnapshot,
+  refreshCurrentUser,
+  register,
+  signIn,
+  signOut,
+  subscribeAuth,
+} from "./auth-store";
 
 export function useAuth() {
   const state = useSyncExternalStore(subscribeAuth, getAuthSnapshot, getAuthSnapshot);
@@ -9,6 +16,7 @@ export function useAuth() {
     () => ({
       ...state,
       refreshCurrentUser,
+      register,
       signIn,
       signOut,
     }),

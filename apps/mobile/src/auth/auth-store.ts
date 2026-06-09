@@ -1,8 +1,13 @@
 import { setApiTokenProvider, setUnauthorizedHandler, ApiRequestError } from "@/lib/api-client";
 
-import { getCurrentUser, logout, signInWithIdentifier } from "./auth-service";
+import {
+  getCurrentUser,
+  logout,
+  registerWithIdentifier,
+  signInWithIdentifier,
+} from "./auth-service";
 import { clearStoredSession, readStoredSession, writeStoredSession } from "./token-storage";
-import type { AuthSession, AuthState, SignInCredentials } from "./types";
+import type { AuthSession, AuthState, RegisterCredentials, SignInCredentials } from "./types";
 
 const listeners = new Set<() => void>();
 
@@ -100,6 +105,22 @@ export async function signIn(credentials: SignInCredentials) {
 
   try {
     const session = await signInWithIdentifier(credentials);
+    await replaceSession(session);
+    return session;
+  } catch (error) {
+    setState({
+      error: messageFromError(error),
+      status: "anonymous",
+    });
+    throw error;
+  }
+}
+
+export async function register(credentials: RegisterCredentials) {
+  setState({ ...state, error: undefined, status: "submitting" });
+
+  try {
+    const session = await registerWithIdentifier(credentials);
     await replaceSession(session);
     return session;
   } catch (error) {

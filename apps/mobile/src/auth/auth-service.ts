@@ -7,6 +7,7 @@ import type {
   AuthToken,
   AuthUser,
   AuthUserLevel,
+  RegisterCredentials,
   SignInCredentials,
 } from "./types";
 
@@ -139,6 +140,87 @@ export async function signInWithIdentifier(credentials: SignInCredentials): Prom
 
   if (!user) {
     throw new Error("Login succeeded, but user profile was not returned.");
+  }
+
+  return {
+    region: appEnv.appRegion,
+    token: authResult.token,
+    updatedAt: new Date().toISOString(),
+    user,
+  };
+}
+
+export async function emailRegister(params: {
+  email: string;
+  code: string;
+  password: string;
+  recommendationCode?: string;
+}) {
+  const body: Record<string, string> = {
+    code: params.code,
+    email: params.email,
+    password: params.password,
+  };
+  if (params.recommendationCode) body.recommendationCode = params.recommendationCode;
+  const data = await api.postForm<unknown>("/user/email/regist", body);
+  return toAuthResult(data);
+}
+
+export async function phoneRegister(params: {
+  phone: string;
+  code: string;
+  password: string;
+  recommendationCode?: string;
+}) {
+  const body: Record<string, string> = {
+    code: params.code,
+    password: params.password,
+    phone: params.phone,
+  };
+  if (params.recommendationCode) body.recommendationCode = params.recommendationCode;
+  const data = await api.postForm<unknown>("/user/regist", body);
+  return toAuthResult(data);
+}
+
+/** Send a registration verification code to a phone (CN) or email (global). */
+export async function sendVerificationCode(identifier: string) {
+  const value = identifier.trim();
+  if (isEmailIdentifier(value)) {
+    await sendEmailCode(value);
+  } else {
+    await sendPhoneCode(value);
+  }
+}
+
+export async function registerWithIdentifier(
+  credentials: RegisterCredentials
+): Promise<AuthSession> {
+  const identifier = credentials.identifier.trim();
+  const code = credentials.code.trim();
+  const authResult = isEmailIdentifier(identifier)
+    ? await emailRegister({
+        code,
+        email: identifier,
+        password: credentials.password,
+        recommendationCode: credentials.recommendationCode,
+      })
+    : await phoneRegister({
+        code,
+        password: credentials.password,
+        phone: identifier,
+        recommendationCode: credentials.recommendationCode,
+      });
+
+  let freshUser: AuthUser | undefined;
+  try {
+    freshUser = await getCurrentUser(authResult.token);
+  } catch (error) {
+    if (!authResult.user) throw error;
+  }
+
+  const user = freshUser ?? authResult.user;
+  if (!user) {
+    throw new Error("Registration succeeded, but user profile was not returned.");
   }
 
   return {

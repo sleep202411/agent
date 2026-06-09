@@ -18,24 +18,24 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { useAuth } from "@/auth";
 import { appEnv } from "@/config";
-import { MaxContentWidth, Spacing } from "@/constants/theme";
-import { useTheme } from "@/hooks/use-theme";
+import { Colors, MaxContentWidth, Spacing } from "@/constants/theme";
 import { t } from "@/i18n";
 
 type FieldName = "identifier" | "password";
+
+const theme = Colors.dark;
 
 const SITE_BASE_URL =
   appEnv.siteRegion === "cn" ? "https://fizzdragon.fizzspace.cn" : "https://fizzdragon.com";
 
 function pressedStyle(pressed: boolean) {
-  return { opacity: pressed ? 0.72 : 1 };
+  return { opacity: pressed ? 0.7 : 1 };
 }
 
 export default function LoginScreen() {
   const auth = useAuth();
   const router = useRouter();
   const safeAreaInsets = useSafeAreaInsets();
-  const theme = useTheme();
   const passwordInputRef = useRef<TextInput>(null);
   const [identifier, setIdentifier] = useState("");
   const [password, setPassword] = useState("");
@@ -54,8 +54,7 @@ export default function LoginScreen() {
   }, [auth.status, router]);
 
   function openSitePath(path: string) {
-    const url = `${SITE_BASE_URL}${path}`;
-    void Linking.openURL(url).catch(() => {
+    void Linking.openURL(`${SITE_BASE_URL}${path}`).catch(() => {
       setLocalError(t("login.linkFailed"));
     });
   }
@@ -79,14 +78,11 @@ export default function LoginScreen() {
       setLocalError(t("login.enterCredentials"));
       return;
     }
-
     if (!acceptedTerms) {
       setLocalError(t("login.termsRequired"));
       return;
     }
-
     setLocalError(undefined);
-
     try {
       await auth.signIn({ identifier, password });
       router.replace("/");
@@ -98,176 +94,128 @@ export default function LoginScreen() {
   const errorMessage = localError ?? auth.error;
 
   return (
-    <View style={[styles.root, { backgroundColor: theme.background }]}>
-      <Image
-        contentFit="cover"
-        source={require("@/assets/images/login-splash.png")}
-        style={StyleSheet.absoluteFill}
-      />
-      <View style={styles.topScrim} />
-      <View style={styles.bottomScrim} />
-
+    <View style={styles.root}>
       <KeyboardAvoidingView
         behavior={Platform.OS === "ios" ? "padding" : undefined}
-        style={styles.keyboard}
+        style={styles.flex}
       >
         <ScrollView
           contentContainerStyle={[
             styles.scrollContent,
             {
-              paddingBottom: safeAreaInsets.bottom + Spacing.four,
-              paddingLeft: Math.max(safeAreaInsets.left, Spacing.four),
-              paddingRight: Math.max(safeAreaInsets.right, Spacing.four),
-              paddingTop: safeAreaInsets.top + Spacing.three,
+              paddingTop: safeAreaInsets.top + Spacing.seven,
+              paddingBottom: safeAreaInsets.bottom + Spacing.five,
+              paddingLeft: Math.max(safeAreaInsets.left, Spacing.five),
+              paddingRight: Math.max(safeAreaInsets.right, Spacing.five),
             },
           ]}
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
         >
           <View style={styles.page}>
-            <View style={styles.topBar}>
-              <View style={styles.appMark}>
-                <Text style={styles.appMarkText}>FD</Text>
-              </View>
-              <View style={styles.regionBadge}>
-                <View style={[styles.statusDot, { backgroundColor: theme.brand }]} />
-                <Text style={styles.regionText}>{t("login.mobileStudio")}</Text>
-              </View>
+            {/* Brand + heading */}
+            <View style={styles.header}>
+              <Image
+                accessibilityLabel="FizzDragon"
+                contentFit="contain"
+                source={require("@/assets/images/fizzdragon-logo.png")}
+                style={styles.logo}
+              />
             </View>
 
-            <View style={styles.heroSpacer} />
-
-            <View style={[styles.formCard, { borderColor: theme.border }]}>
-              <View style={styles.cardHeader}>
-                <View style={styles.cardTitleGroup}>
-                  <Text style={styles.eyebrow}>FizzDragon</Text>
-                  <Text style={styles.title}>{t("login.title")}</Text>
-                  <Text style={styles.subtitle}>{t("login.subtitle")}</Text>
-                </View>
-                <View style={styles.secureBadge}>
-                  <SymbolView
-                    name={{ ios: "lock.shield", android: "security", web: "security" }}
-                    size={16}
-                    tintColor="#FFFFFF"
+            {/* Form */}
+            <View style={styles.form}>
+              <View style={styles.field}>
+                <Text style={styles.label}>{t("login.emailOrPhone")}</Text>
+                <View
+                  style={[
+                    styles.inputShell,
+                    focusedField === "identifier" && styles.inputShellFocused,
+                  ]}
+                >
+                  <TextInput
+                    accessibilityLabel={t("login.emailOrPhone")}
+                    autoCapitalize="none"
+                    autoComplete="username"
+                    inputMode="email"
+                    keyboardType="email-address"
+                    onBlur={() => setFocusedField(undefined)}
+                    onChangeText={handleIdentifierChange}
+                    onFocus={() => setFocusedField("identifier")}
+                    onSubmitEditing={() => passwordInputRef.current?.focus()}
+                    placeholder={t("login.emailOrPhonePlaceholder")}
+                    placeholderTextColor="rgba(255,255,255,0.34)"
+                    returnKeyType="next"
+                    style={styles.input}
+                    textContentType="username"
+                    value={identifier}
                   />
-                  <Text style={styles.secureText}>{t("login.secure")}</Text>
                 </View>
               </View>
 
-              <View style={styles.fields}>
-                <View style={styles.field}>
-                  <Text style={styles.fieldLabel}>{t("login.emailOrPhone")}</Text>
-                  <View
-                    style={[
-                      styles.inputShell,
-                      {
-                        borderColor: focusedField === "identifier" ? theme.brand : theme.border,
-                      },
-                    ]}
+              <View style={styles.field}>
+                <View style={styles.labelRow}>
+                  <Text style={styles.label}>{t("login.password")}</Text>
+                  <Pressable
+                    accessibilityRole="link"
+                    hitSlop={8}
+                    onPress={() => openSitePath("/forgot-password")}
+                    style={({ pressed }) => pressedStyle(pressed)}
                   >
-                    <SymbolView
-                      name={{ ios: "person", android: "person", web: "person" }}
-                      size={18}
-                      tintColor={
-                        focusedField === "identifier" ? "#FFFFFF" : "rgba(255,255,255,0.62)"
-                      }
-                    />
-                    <TextInput
-                      accessibilityLabel={t("login.emailOrPhone")}
-                      autoCapitalize="none"
-                      autoComplete="username"
-                      inputMode="email"
-                      keyboardType="email-address"
-                      onBlur={() => setFocusedField(undefined)}
-                      onChangeText={handleIdentifierChange}
-                      onFocus={() => setFocusedField("identifier")}
-                      onSubmitEditing={() => passwordInputRef.current?.focus()}
-                      placeholder={t("login.emailOrPhonePlaceholder")}
-                      placeholderTextColor="rgba(255,255,255,0.42)"
-                      returnKeyType="next"
-                      style={styles.input}
-                      textContentType="username"
-                      value={identifier}
-                    />
-                  </View>
+                    <Text style={styles.forgotLink}>{t("login.forgot")}</Text>
+                  </Pressable>
                 </View>
-
-                <View style={styles.field}>
-                  <View style={styles.fieldHeader}>
-                    <Text style={styles.fieldLabel}>{t("login.password")}</Text>
-                    <Pressable
-                      accessibilityRole="link"
-                      hitSlop={8}
-                      onPress={() => openSitePath("/forgot-password")}
-                      style={({ pressed }) => pressedStyle(pressed)}
-                    >
-                      <Text style={[styles.textButton, { color: theme.brand }]}>
-                        {t("login.forgot")}
-                      </Text>
-                    </Pressable>
-                  </View>
-                  <View
-                    style={[
-                      styles.inputShell,
-                      {
-                        borderColor: focusedField === "password" ? theme.brand : theme.border,
-                      },
-                    ]}
+                <View
+                  style={[
+                    styles.inputShell,
+                    focusedField === "password" && styles.inputShellFocused,
+                  ]}
+                >
+                  <TextInput
+                    ref={passwordInputRef}
+                    accessibilityLabel={t("login.password")}
+                    autoCapitalize="none"
+                    autoComplete="password"
+                    onBlur={() => setFocusedField(undefined)}
+                    onChangeText={handlePasswordChange}
+                    onFocus={() => setFocusedField("password")}
+                    onSubmitEditing={handleSubmit}
+                    placeholder={t("login.passwordPlaceholder")}
+                    placeholderTextColor="rgba(255,255,255,0.34)"
+                    returnKeyType="done"
+                    secureTextEntry={!showPassword}
+                    style={styles.input}
+                    textContentType="password"
+                    value={password}
+                  />
+                  <Pressable
+                    accessibilityLabel={showPassword ? "Hide password" : "Show password"}
+                    accessibilityRole="button"
+                    hitSlop={10}
+                    onPress={() => setShowPassword((current) => !current)}
+                    style={({ pressed }) => [styles.eyeButton, pressedStyle(pressed)]}
                   >
                     <SymbolView
-                      name={{ ios: "lock", android: "lock", web: "lock" }}
+                      name={{
+                        ios: showPassword ? "eye.slash" : "eye",
+                        android: showPassword ? "visibility_off" : "visibility",
+                        web: showPassword ? "visibility_off" : "visibility",
+                      }}
                       size={18}
-                      tintColor={focusedField === "password" ? "#FFFFFF" : "rgba(255,255,255,0.62)"}
+                      tintColor="rgba(255,255,255,0.55)"
                     />
-                    <TextInput
-                      ref={passwordInputRef}
-                      accessibilityLabel={t("login.password")}
-                      autoCapitalize="none"
-                      autoComplete="password"
-                      onBlur={() => setFocusedField(undefined)}
-                      onChangeText={handlePasswordChange}
-                      onFocus={() => setFocusedField("password")}
-                      onSubmitEditing={handleSubmit}
-                      placeholder={t("login.passwordPlaceholder")}
-                      placeholderTextColor="rgba(255,255,255,0.42)"
-                      returnKeyType="done"
-                      secureTextEntry={!showPassword}
-                      style={styles.input}
-                      textContentType="password"
-                      value={password}
-                    />
-                    <Pressable
-                      accessibilityLabel={showPassword ? "Hide password" : "Show password"}
-                      accessibilityRole="button"
-                      hitSlop={10}
-                      onPress={() => setShowPassword((current) => !current)}
-                      style={({ pressed }) => [styles.iconButton, pressedStyle(pressed)]}
-                    >
-                      <SymbolView
-                        name={{
-                          ios: showPassword ? "eye.slash" : "eye",
-                          android: showPassword ? "visibility_off" : "visibility",
-                          web: showPassword ? "visibility_off" : "visibility",
-                        }}
-                        size={18}
-                        tintColor="rgba(255,255,255,0.68)"
-                      />
-                    </Pressable>
-                  </View>
+                  </Pressable>
                 </View>
               </View>
 
               {errorMessage ? (
-                <View
-                  accessibilityLiveRegion="polite"
-                  style={[styles.errorPanel, { borderColor: theme.brand }]}
-                >
+                <View accessibilityLiveRegion="polite" style={styles.errorPanel}>
                   <SymbolView
-                    name={{ ios: "exclamationmark.triangle", android: "warning", web: "warning" }}
-                    size={18}
+                    name={{ ios: "exclamationmark.circle.fill", android: "error", web: "error" }}
+                    size={16}
                     tintColor={theme.brand}
                   />
-                  <Text style={[styles.errorText, { color: theme.brand }]}>{errorMessage}</Text>
+                  <Text style={styles.errorText}>{errorMessage}</Text>
                 </View>
               ) : null}
 
@@ -280,19 +228,11 @@ export default function LoginScreen() {
                 }}
                 style={({ pressed }) => [styles.termsRow, pressedStyle(pressed)]}
               >
-                <View
-                  style={[
-                    styles.checkbox,
-                    {
-                      backgroundColor: acceptedTerms ? theme.brand : "rgba(255,255,255,0.04)",
-                      borderColor: acceptedTerms ? theme.brand : theme.border,
-                    },
-                  ]}
-                >
+                <View style={[styles.checkbox, acceptedTerms && styles.checkboxChecked]}>
                   {acceptedTerms ? (
                     <SymbolView
                       name={{ ios: "checkmark", android: "check", web: "check" }}
-                      size={13}
+                      size={12}
                       tintColor="#FFFFFF"
                     />
                   ) : null}
@@ -315,30 +255,32 @@ export default function LoginScreen() {
                 onPress={handleSubmit}
                 style={({ pressed }) => [
                   styles.primaryButton,
-                  {
-                    backgroundColor: canSubmit ? theme.brand : "rgba(255,255,255,0.1)",
-                    borderColor: canSubmit ? theme.brand : theme.border,
-                  },
+                  canSubmit ? styles.primaryButtonEnabled : styles.primaryButtonDisabled,
                   pressed && canSubmit ? styles.pressed : null,
                 ]}
               >
-                {isSubmitting ? <ActivityIndicator color="#FFFFFF" size="small" /> : null}
-                <Text style={[styles.primaryButtonText, !canSubmit && styles.disabledButtonText]}>
+                {isSubmitting ? (
+                  <ActivityIndicator color="#FFFFFF" size="small" style={styles.buttonSpinner} />
+                ) : null}
+                <Text
+                  style={[styles.primaryButtonText, !canSubmit && styles.primaryButtonTextDisabled]}
+                >
                   {isSubmitting ? t("login.signingIn") : t("login.signIn")}
                 </Text>
               </Pressable>
+            </View>
 
-              <View style={styles.secondaryRow}>
-                <Text style={styles.secondaryText}>{t("login.newUser")}</Text>
-                <Pressable
-                  accessibilityRole="link"
-                  hitSlop={8}
-                  onPress={() => openSitePath("/register")}
-                  style={({ pressed }) => pressedStyle(pressed)}
-                >
-                  <Text style={styles.secondaryLink}>{t("login.createAccount")}</Text>
-                </Pressable>
-              </View>
+            {/* Footer */}
+            <View style={styles.footer}>
+              <Text style={styles.footerText}>{t("login.newUser")}</Text>
+              <Pressable
+                accessibilityRole="button"
+                hitSlop={8}
+                onPress={() => router.push("/register")}
+                style={({ pressed }) => pressedStyle(pressed)}
+              >
+                <Text style={styles.footerLink}>{t("login.createAccount")}</Text>
+              </Pressable>
             </View>
           </View>
         </ScrollView>
@@ -349,26 +291,11 @@ export default function LoginScreen() {
 
 const styles = StyleSheet.create({
   root: {
+    backgroundColor: theme.background,
     flex: 1,
   },
-  keyboard: {
+  flex: {
     flex: 1,
-  },
-  topScrim: {
-    bottom: 0,
-    left: 0,
-    position: "absolute",
-    right: 0,
-    top: 0,
-    backgroundColor: "rgba(0,0,0,0.18)",
-  },
-  bottomScrim: {
-    bottom: 0,
-    height: "58%",
-    left: 0,
-    position: "absolute",
-    right: 0,
-    backgroundColor: "rgba(0,0,0,0.62)",
   },
   scrollContent: {
     alignItems: "center",
@@ -376,235 +303,169 @@ const styles = StyleSheet.create({
   },
   page: {
     flex: 1,
-    justifyContent: "space-between",
+    gap: Spacing.seven,
     maxWidth: MaxContentWidth,
-    minHeight: 790,
     width: "100%",
   },
-  topBar: {
+  // Header
+  header: {
     alignItems: "center",
-    flexDirection: "row",
-    justifyContent: "space-between",
+    paddingVertical: Spacing.six,
   },
-  appMark: {
-    alignItems: "center",
-    backgroundColor: "rgba(0,0,0,0.42)",
-    borderColor: "rgba(255,255,255,0.16)",
-    borderRadius: 8,
-    borderWidth: 1,
-    height: 46,
-    justifyContent: "center",
-    width: 46,
+  logo: {
+    height: 34,
+    width: 191,
   },
-  appMarkText: {
-    color: "#FFFFFF",
-    fontSize: 16,
-    fontWeight: "800",
-    lineHeight: 20,
-  },
-  regionBadge: {
-    alignItems: "center",
-    backgroundColor: "rgba(0,0,0,0.42)",
-    borderColor: "rgba(255,255,255,0.16)",
-    borderRadius: 8,
-    borderWidth: 1,
-    flexDirection: "row",
-    gap: Spacing.two,
-    minHeight: 38,
-    paddingHorizontal: Spacing.three,
-  },
-  statusDot: {
-    borderRadius: 4,
-    height: 8,
-    width: 8,
-  },
-  regionText: {
-    color: "rgba(255,255,255,0.78)",
-    fontSize: 12,
-    fontWeight: "700",
-    lineHeight: 16,
-  },
-  heroSpacer: {
-    flex: 1,
-    minHeight: 240,
-  },
-  formCard: {
-    backgroundColor: "rgba(20,20,26,0.78)",
-    borderRadius: 8,
-    borderWidth: 1,
+  // Form
+  form: {
     gap: Spacing.four,
-    overflow: "hidden",
-    padding: Spacing.four,
-  },
-  cardHeader: {
-    alignItems: "flex-start",
-    flexDirection: "row",
-    gap: Spacing.three,
-    justifyContent: "space-between",
-  },
-  cardTitleGroup: {
-    flex: 1,
-    gap: Spacing.half,
-    minWidth: 0,
-  },
-  eyebrow: {
-    color: "rgba(255,255,255,0.64)",
-    fontSize: 13,
-    fontWeight: "800",
-    lineHeight: 18,
-  },
-  title: {
-    color: "#FFFFFF",
-    fontSize: 30,
-    fontWeight: "800",
-    lineHeight: 36,
-  },
-  subtitle: {
-    color: "rgba(255,255,255,0.66)",
-    fontSize: 14,
-    fontWeight: "600",
-    lineHeight: 20,
-  },
-  secureBadge: {
-    alignItems: "center",
-    backgroundColor: "rgba(255,255,255,0.1)",
-    borderRadius: 8,
-    flexDirection: "row",
-    gap: Spacing.two,
-    minHeight: 36,
-    paddingHorizontal: Spacing.three,
-  },
-  secureText: {
-    color: "#FFFFFF",
-    fontSize: 12,
-    fontWeight: "800",
-    lineHeight: 16,
-  },
-  fields: {
-    gap: Spacing.three,
   },
   field: {
     gap: Spacing.two,
   },
-  fieldHeader: {
+  labelRow: {
     alignItems: "center",
     flexDirection: "row",
     justifyContent: "space-between",
   },
-  fieldLabel: {
-    color: "#FFFFFF",
-    fontSize: 14,
-    fontWeight: "800",
-    lineHeight: 20,
-  },
-  textButton: {
+  label: {
+    color: theme.textSecondary,
     fontSize: 13,
-    fontWeight: "800",
-    lineHeight: 18,
+    fontWeight: "600",
+    letterSpacing: 0.1,
+  },
+  forgotLink: {
+    color: theme.brand,
+    fontSize: 13,
+    fontWeight: "600",
   },
   inputShell: {
     alignItems: "center",
-    backgroundColor: "rgba(255,255,255,0.08)",
-    borderRadius: 8,
+    backgroundColor: "rgba(255,255,255,0.04)",
+    borderColor: theme.border,
+    borderRadius: 14,
     borderWidth: 1,
     flexDirection: "row",
-    gap: Spacing.three,
-    minHeight: 54,
-    paddingHorizontal: Spacing.three,
+    height: 54,
+    paddingHorizontal: Spacing.four,
+  },
+  inputShellFocused: {
+    backgroundColor: "rgba(229,34,39,0.06)",
+    borderColor: theme.brand,
   },
   input: {
-    color: "#FFFFFF",
+    color: theme.text,
     flex: 1,
     fontSize: 16,
-    fontWeight: "700",
-    minHeight: 54,
+    fontWeight: "500",
+    height: "100%",
     padding: 0,
   },
-  iconButton: {
+  eyeButton: {
     alignItems: "center",
-    height: 36,
+    height: 32,
     justifyContent: "center",
-    width: 36,
+    marginLeft: Spacing.two,
+    width: 32,
   },
+  // Error
   errorPanel: {
-    alignItems: "flex-start",
-    backgroundColor: "rgba(229,34,39,0.12)",
-    borderRadius: 8,
+    alignItems: "center",
+    backgroundColor: "rgba(229,34,39,0.1)",
+    borderColor: "rgba(229,34,39,0.32)",
+    borderRadius: 10,
     borderWidth: 1,
     flexDirection: "row",
     gap: Spacing.two,
-    padding: Spacing.three,
+    paddingHorizontal: Spacing.three,
+    paddingVertical: Spacing.three,
   },
   errorText: {
+    color: "#FF8088",
     flex: 1,
     fontSize: 13,
-    fontWeight: "800",
+    fontWeight: "500",
     lineHeight: 18,
   },
+  // Terms
   termsRow: {
-    alignItems: "flex-start",
+    alignItems: "center",
     flexDirection: "row",
     gap: Spacing.three,
+    marginTop: Spacing.one,
   },
   checkbox: {
     alignItems: "center",
+    backgroundColor: "rgba(255,255,255,0.04)",
+    borderColor: theme.border,
     borderRadius: 6,
     borderWidth: 1,
     height: 22,
     justifyContent: "center",
-    marginTop: 1,
     width: 22,
   },
+  checkboxChecked: {
+    backgroundColor: theme.brand,
+    borderColor: theme.brand,
+  },
   termsText: {
-    color: "rgba(255,255,255,0.62)",
+    color: theme.textSecondary,
     flex: 1,
-    fontSize: 12,
-    fontWeight: "600",
-    lineHeight: 18,
+    fontSize: 13,
+    fontWeight: "400",
+    lineHeight: 19,
   },
   termsLink: {
-    color: "#FFFFFF",
-    fontWeight: "800",
+    color: theme.text,
+    fontWeight: "600",
   },
+  // Primary button
   primaryButton: {
     alignItems: "center",
-    borderRadius: 8,
-    borderWidth: 1,
+    borderRadius: 14,
     flexDirection: "row",
-    gap: Spacing.two,
+    height: 54,
     justifyContent: "center",
-    minHeight: 54,
-    paddingHorizontal: Spacing.four,
+    marginTop: Spacing.two,
+  },
+  primaryButtonEnabled: {
+    backgroundColor: theme.brand,
+  },
+  primaryButtonDisabled: {
+    backgroundColor: theme.backgroundSelected,
   },
   primaryButtonText: {
     color: "#FFFFFF",
     fontSize: 16,
-    fontWeight: "800",
-    lineHeight: 22,
+    fontWeight: "700",
+    letterSpacing: 0.1,
   },
-  disabledButtonText: {
-    color: "rgba(255,255,255,0.48)",
+  primaryButtonTextDisabled: {
+    color: "rgba(255,255,255,0.4)",
   },
-  secondaryRow: {
+  buttonSpinner: {
+    marginRight: Spacing.two,
+  },
+  // Footer
+  footer: {
     alignItems: "center",
     flexDirection: "row",
     gap: Spacing.two,
     justifyContent: "center",
-    minHeight: 28,
+    marginTop: "auto",
+    paddingTop: Spacing.five,
   },
-  secondaryText: {
-    color: "rgba(255,255,255,0.62)",
+  footerText: {
+    color: theme.textSecondary,
+    fontSize: 14,
+    fontWeight: "400",
+  },
+  footerLink: {
+    color: theme.brand,
     fontSize: 14,
     fontWeight: "600",
-    lineHeight: 20,
-  },
-  secondaryLink: {
-    color: "#FFFFFF",
-    fontSize: 14,
-    fontWeight: "800",
-    lineHeight: 20,
   },
   pressed: {
-    opacity: 0.72,
+    opacity: 0.85,
   },
 });

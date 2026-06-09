@@ -4,7 +4,15 @@ export {
   clearAuthSession,
   hydrateAuthSession,
   refreshCurrentUser,
+  register,
   signIn,
   signOut,
 } from "./auth-store";
-export type { AuthSession, AuthState, AuthUser, SignInCredentials } from "./types";
+export { sendVerificationCode } from "./auth-service";
+export type {
+  AuthSession,
+  AuthState,
+  AuthUser,
+  RegisterCredentials,
+  SignInCredentials,
+} from "./types";
