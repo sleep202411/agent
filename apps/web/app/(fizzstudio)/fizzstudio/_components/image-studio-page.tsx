@@ -26,7 +26,11 @@ import { useTranslations } from "@/src/i18n/i18n";
 import { isUploadAbort, uploadFileViaSignedUrl } from "@/src/lib/media-upload";
 import { useAppDispatch } from "@/src/store";
 import { touchCredits } from "@/src/store/slices/userSlice";
-import { useAiCatalog, usableImageModels } from "../../_hooks/use-ai-catalog";
+import {
+  useAiCatalog,
+  usableModelsByModality,
+  type StudioModality,
+} from "../../_hooks/use-ai-catalog";
 import { computeBillingKeys } from "../../_hooks/use-billing";
 import {
   compactFizzAiInput,
@@ -199,7 +203,11 @@ const IMAGE_FEED = [
   },
 ];
 
-export function ImageStudioPage() {
+export function ImageStudioPage({
+  modality = "image",
+}: {
+  modality?: StudioModality;
+} = {}) {
   const workspaceState = useFizzStudioWorkspace();
 
   return (
@@ -210,12 +218,18 @@ export function ImageStudioPage() {
       sidebarVariant="enterprise"
       workspaceState={workspaceState}
     >
-      <ImageStudioSurface workspaceId={workspaceState.workspaceId} />
+      <ImageStudioSurface modality={modality} workspaceId={workspaceState.workspaceId} />
     </FizzStudioShell>
   );
 }
 
-function ImageStudioSurface({ workspaceId }: { workspaceId: string }) {
+function ImageStudioSurface({
+  workspaceId,
+  modality,
+}: {
+  workspaceId: string;
+  modality: StudioModality;
+}) {
   const t = useTranslations("fizzStudio.imageStudio");
   const dispatch = useAppDispatch();
   const queryClient = useQueryClient();
@@ -237,14 +251,14 @@ function ImageStudioSurface({ workspaceId }: { workspaceId: string }) {
   const historyRequestSeqRef = useRef(0);
 
   const imageModels = useMemo(
-    () => (catalogQuery.data?.models ?? []).filter((model) => model.type === "image"),
-    [catalogQuery.data]
+    () => (catalogQuery.data?.models ?? []).filter((model) => model.type === modality),
+    [catalogQuery.data, modality]
   );
 
   // Seed the default model + its schema defaults once the catalog resolves.
   useEffect(() => {
     if (settings.model || !catalogQuery.data) return;
-    const usable = usableImageModels(catalogQuery.data);
+    const usable = usableModelsByModality(catalogQuery.data, modality);
     const first = usable[0];
     if (!first) return;
     let cancelled = false;
@@ -254,7 +268,7 @@ function ImageStudioSurface({ workspaceId }: { workspaceId: string }) {
     return () => {
       cancelled = true;
     };
-  }, [catalogQuery.data, settings.model]);
+  }, [catalogQuery.data, settings.model, modality]);
 
   const selectedModel = useMemo<FizzAiModel | undefined>(
     () => modelById(imageModels, settings.model),
@@ -329,7 +343,9 @@ function ImageStudioSurface({ workspaceId }: { workspaceId: string }) {
     async (mode: "merge" | "replace" = "merge") => {
       const requestWorkspaceId = workspaceId;
       const requestSeq = ++historyRequestSeqRef.current;
-      if (!requestWorkspaceId) {
+      // Audio runs on the separate Java voice service, not the catalog/job
+      // system, so there is no job history to reconcile for it yet.
+      if (!requestWorkspaceId || modality === "audio") {
         setJobs([]);
         setHistoryLoading(false);
         return;
@@ -338,7 +354,7 @@ function ImageStudioSurface({ workspaceId }: { workspaceId: string }) {
       try {
         const response = await listFizzAiJobs({
           limit: HISTORY_LIMIT,
-          type: "image",
+          type: modality,
         });
         if (historyRequestSeqRef.current !== requestSeq) return;
         const incoming = response.jobs.map((job) => jobViewToResultJob(job, t));
@@ -351,7 +367,7 @@ function ImageStudioSurface({ workspaceId }: { workspaceId: string }) {
         if (historyRequestSeqRef.current === requestSeq) setHistoryLoading(false);
       }
     },
-    [t, workspaceId]
+    [t, workspaceId, modality]
   );
 
   useEffect(() => {
@@ -377,7 +393,7 @@ function ImageStudioSurface({ workspaceId }: { workspaceId: string }) {
     (event: AssetEvent) => {
       if (event.kind !== "ai_job_update") return;
       const job = event.job;
-      if (job.type !== "image") return;
+      if (job.type !== modality) return;
       mergeJob(jobUpdateToResultJob(job, t));
       if (isTerminalGenerationStatus(generationStatusFromRaw(job.status))) {
         dispatch(touchCredits());
