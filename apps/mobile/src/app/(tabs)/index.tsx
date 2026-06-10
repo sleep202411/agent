@@ -1,6 +1,6 @@
 import { SymbolView } from "expo-symbols";
 import { router } from "expo-router";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Pressable, ScrollView, StyleSheet, useWindowDimensions, View } from "react-native";
 
 import { TabScreen } from "@/components/tab-screen";
@@ -16,6 +16,7 @@ import {
   Tag,
 } from "@/components/ui";
 import { MaxContentWidth, Spacing } from "@/constants/theme";
+import { useBrowseVersion } from "@/data/browse-refresh";
 import { getIpDiscovery, type IpDiscovery } from "@/data/browse-service";
 import type { IpStatus, IpSummary } from "@/data/types";
 import { useTheme } from "@/hooks/use-theme";
@@ -43,6 +44,9 @@ export default function IpDiscoveryScreen() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string>();
   const [genreIndex, setGenreIndex] = useState(0);
+  // Bumped when a mutation elsewhere (e.g. blocking an IP) invalidates lists.
+  const browseVersion = useBrowseVersion();
+  const hasDataRef = useRef(false);
   // Genres come from the Nest taxonomy endpoint (not scraped from IP records).
   const genreList = discovery?.genres ?? [];
   const genreChips = [t("home.genreAll"), ...genreList.map((genre) => genre.label)];
@@ -53,13 +57,22 @@ export default function IpDiscoveryScreen() {
   useEffect(() => {
     let alive = true;
     async function load() {
-      setLoading(true);
+      // Skeleton only when there is nothing to show yet — refetches (locale
+      // switch, browse invalidation) swap the list in place.
+      setLoading(hasDataRef.current === false);
       setError(undefined);
       try {
         const data = await getIpDiscovery();
-        if (alive) setDiscovery(data);
+        if (alive) {
+          hasDataRef.current = true;
+          setDiscovery(data);
+        }
       } catch (loadError) {
-        if (alive) setError(loadError instanceof Error ? loadError.message : t("home.loadError"));
+        // A failed background refetch keeps the list we already have; the
+        // full-screen error is reserved for an empty first load.
+        if (alive && !hasDataRef.current) {
+          setError(loadError instanceof Error ? loadError.message : t("home.loadError"));
+        }
       } finally {
         if (alive) setLoading(false);
       }
@@ -68,7 +81,7 @@ export default function IpDiscoveryScreen() {
     return () => {
       alive = false;
     };
-  }, [t]);
+  }, [t, browseVersion]);
 
   const featured = discovery?.featured ?? [];
   const trending = discovery?.trending ?? [];
@@ -222,11 +235,7 @@ function FeaturedCard({ ip, width }: { ip: IpSummary; width: number }) {
 
 function TrendingCard({ ip }: { ip: IpSummary }) {
   return (
-    <Pressable
-      accessibilityRole="button"
-      onPress={() => openIp(ip.id)}
-      style={({ pressed }) => [styles.rankCard, pressed && styles.pressed]}
-    >
+    <Pressable accessibilityRole="button" onPress={() => openIp(ip.id)} style={styles.rankCard}>
       <PosterImage uri={ip.coverUrl} label={ip.title} style={styles.rankPoster} />
       <ThemedText type="smallBold" numberOfLines={2}>
         {ip.title}

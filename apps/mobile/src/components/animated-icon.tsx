@@ -126,7 +126,9 @@ const styles = StyleSheet.create({
   },
   backgroundSolidColor: {
     ...StyleSheet.absoluteFill,
-    backgroundColor: "#208AEF",
+    // Brand dark canvas — matches the native splash so the fade is seamless
+    // (was Expo blue #208AEF).
+    backgroundColor: "#0C0E14",
     zIndex: 1000,
   },
 });

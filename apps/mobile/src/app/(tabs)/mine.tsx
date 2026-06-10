@@ -1,336 +1,464 @@
 import { Image } from "expo-image";
-import { SymbolView, type SymbolViewProps } from "expo-symbols";
-import { useState } from "react";
-import { Modal, Pressable, StyleSheet, View } from "react-native";
+import { useRouter } from "expo-router";
+import { SymbolView } from "expo-symbols";
+import { useEffect, useMemo, useState } from "react";
+import { Alert, FlatList, Pressable, StyleSheet, View } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { useAuth } from "@/auth";
-import { TabScreen } from "@/components/tab-screen";
+import { LanguageSheet, LOCALE_NAMES } from "@/components/language-switcher";
 import { ThemedText } from "@/components/themed-text";
-import { ThemedView } from "@/components/themed-view";
-import { ScreenHeader, SectionHeader } from "@/components/ui";
-import { appEnv, resolveAssetUrl, type AppLocale } from "@/config";
+import { appEnv, resolveAssetUrl } from "@/config";
 import { Spacing } from "@/constants/theme";
+import { fetchMyCrews } from "@/data/crew-api";
+import { fetchMyIps, type MyIp } from "@/data/ip-api";
+import { fetchMyWorks, type MyWork } from "@/data/mine-api";
+import type { CrewSummary } from "@/data/types";
 import { useTheme } from "@/hooks/use-theme";
-import { SUPPORTED_LOCALES, setLocale, useLocale, useTranslations } from "@/i18n";
+import { useLocale, useTranslations } from "@/i18n";
 
-type AppSymbol = SymbolViewProps["name"];
+type TabKey = "works" | "ips" | "crews";
 
-/** Language names are endonyms — always shown in their own script. */
-const LOCALE_NAMES: Record<AppLocale, string> = {
-  "en-US": "English",
-  "zh-CN": "简体中文",
-  "zh-HK": "繁體中文",
-};
-
-const INFO_ITEMS: {
-  key: string;
-  labelKey: "mine.portfolioLabel" | "mine.projectsLabel" | "mine.roleLabel" | "mine.settingsLabel";
-  detailKey:
-    | "mine.portfolioDetail"
-    | "mine.projectsDetail"
-    | "mine.roleDetail"
-    | "mine.settingsDetail";
-  symbol: AppSymbol;
-}[] = [
-  {
-    key: "portfolio",
-    labelKey: "mine.portfolioLabel",
-    detailKey: "mine.portfolioDetail",
-    symbol: { ios: "person.crop.rectangle", android: "badge", web: "badge" },
-  },
-  {
-    key: "projects",
-    labelKey: "mine.projectsLabel",
-    detailKey: "mine.projectsDetail",
-    symbol: { ios: "folder", android: "folder", web: "folder" },
-  },
-  {
-    key: "role",
-    labelKey: "mine.roleLabel",
-    detailKey: "mine.roleDetail",
-    symbol: { ios: "checkmark.seal", android: "verified", web: "verified" },
-  },
-  {
-    key: "settings",
-    labelKey: "mine.settingsLabel",
-    detailKey: "mine.settingsDetail",
-    symbol: { ios: "gearshape", android: "settings", web: "settings" },
-  },
+const TABS: { key: TabKey; labelKey: "mine.tabWorks" | "mine.tabIps" | "mine.tabCrews" }[] = [
+  { key: "works", labelKey: "mine.tabWorks" },
+  { key: "ips", labelKey: "mine.tabIps" },
+  { key: "crews", labelKey: "mine.tabCrews" },
 ];
 
-function getDisplayName(user: ReturnType<typeof useAuth>["user"]) {
-  return (
-    user?.nickName ?? user?.nickname ?? user?.userName ?? user?.name ?? user?.email ?? user?.phone
-  );
+interface Tile {
+  id: string;
+  title: string;
+  coverUrl?: string;
+  subtitle?: string;
+  badge?: string;
+  href?: string;
+  /** Tap feedback for tiles with no destination (e.g. unpublished IPs). */
+  alert?: { title: string; message: string };
+  /** Invisible spacer that pads a partial last row to keep the grid aligned. */
+  ghost?: boolean;
 }
 
-function getAccountMeta(user: ReturnType<typeof useAuth>["user"]) {
-  return user?.email ?? user?.phone ?? user?.userName;
-}
+const COLUMNS = 3;
 
 export default function MineScreen() {
   const auth = useAuth();
   const theme = useTheme();
   const t = useTranslations();
   const locale = useLocale();
+  const router = useRouter();
+  const insets = useSafeAreaInsets();
+
+  const [tab, setTab] = useState<TabKey>("works");
   const [languageOpen, setLanguageOpen] = useState(false);
+  const [works, setWorks] = useState<MyWork[]>();
+  const [ips, setIps] = useState<MyIp[]>();
+  const [crews, setCrews] = useState<CrewSummary[]>();
 
-  const displayName = getDisplayName(auth.user) ?? t("mine.creatorFallback");
-  const accountMeta = getAccountMeta(auth.user) ?? t("mine.accountFallback");
+  useEffect(() => {
+    let active = true;
+    void fetchMyWorks().then((rows) => active && setWorks(rows));
+    void fetchMyIps().then((rows) => active && setIps(rows));
+    void fetchMyCrews().then((rows) => active && setCrews(rows));
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  const displayName =
+    auth.user?.nickName ??
+    auth.user?.nickname ??
+    auth.user?.userName ??
+    auth.user?.name ??
+    auth.user?.email ??
+    auth.user?.phone ??
+    t("mine.creatorFallback");
+  // Phone first, then email; no generic fallback — hide the line when absent.
+  const accountMeta = auth.user?.phone || auth.user?.email || undefined;
   const initial = displayName.trim().slice(0, 1).toUpperCase();
-
   const rawAvatar = auth.user?.avatar ?? auth.user?.headImg ?? auth.user?.headImgUrl;
   const avatarUrl =
     typeof rawAvatar === "string" && rawAvatar
       ? resolveAssetUrl(rawAvatar, appEnv.assets.userBaseUrl)
       : undefined;
 
+  const tiles = useMemo<Tile[] | undefined>(() => {
+    if (tab === "works") {
+      return works?.map((work) => ({
+        id: work.id,
+        title: work.title,
+        coverUrl: work.coverUrl,
+        badge:
+          work.reviewStatus === 0
+            ? t("mine.reviewPending")
+            : work.reviewStatus === 3
+              ? t("mine.reviewRejected")
+              : work.isPrivate
+                ? t("mine.private")
+                : undefined,
+      }));
+    }
+    if (tab === "ips") {
+      // Only published IPs open the public plaza detail; everything else is
+      // not publicly resolvable yet, so explain instead of 404-ing.
+      return ips?.map((ip) => ({
+        id: ip.id,
+        title: ip.title,
+        coverUrl: ip.coverUrl,
+        ...(ip.published
+          ? { href: `/ip/${ip.id}` }
+          : {
+              badge: t("mine.reviewPending"),
+              alert: { title: t("mine.ipPendingTitle"), message: t("mine.ipPendingBody") },
+            }),
+      }));
+    }
+    return crews?.map((crew) => ({
+      id: crew.id,
+      title: crew.name,
+      coverUrl: crew.coverUrl,
+      subtitle: crew.openRoles > 0 ? `${crew.openRoles} ${t("mine.rolesOpen")}` : undefined,
+      href: `/crew/${crew.id}`,
+    }));
+  }, [tab, works, ips, crews, t]);
+
+  // Pad the last row with invisible spacers so 3-col rows stay left-aligned
+  // (otherwise space-between/flex spreads a partial row).
+  const gridData = useMemo<Tile[]>(() => {
+    if (!tiles) return [];
+    const remainder = tiles.length % COLUMNS;
+    if (remainder === 0) return tiles;
+    const ghosts: Tile[] = Array.from({ length: COLUMNS - remainder }, (_, i) => ({
+      id: `__ghost_${i}`,
+      title: "",
+      ghost: true,
+    }));
+    return [...tiles, ...ghosts];
+  }, [tiles]);
+
+  const loading = tiles === undefined;
+  const emptyText =
+    tab === "works"
+      ? t("mine.worksEmpty")
+      : tab === "ips"
+        ? t("mine.ipsEmpty")
+        : t("mine.crewsEmpty");
+
   return (
-    <TabScreen gap={Spacing.five}>
-      <ScreenHeader title={t("mine.title")} />
+    <View style={[styles.root, { backgroundColor: theme.background }]}>
+      <FlatList
+        data={gridData}
+        key={`grid-${COLUMNS}`}
+        keyExtractor={(item) => item.id}
+        numColumns={COLUMNS}
+        columnWrapperStyle={styles.column}
+        contentContainerStyle={{ paddingBottom: insets.bottom + 96 }}
+        showsVerticalScrollIndicator={false}
+        ListHeaderComponent={
+          <View>
+            {/* Profile header — avatar as a blurred banner */}
+            <View style={styles.header}>
+              {avatarUrl ? (
+                <Image
+                  source={{ uri: avatarUrl }}
+                  style={StyleSheet.absoluteFill}
+                  contentFit="cover"
+                  blurRadius={40}
+                />
+              ) : (
+                <View
+                  style={[StyleSheet.absoluteFill, { backgroundColor: theme.backgroundElement }]}
+                />
+              )}
+              <View style={[StyleSheet.absoluteFill, styles.headerScrim]} />
 
-      <ThemedView type="backgroundElement" style={styles.profilePanel}>
-        <View style={[styles.avatar, { backgroundColor: theme.brand }]}>
-          {avatarUrl ? (
-            <Image source={{ uri: avatarUrl }} style={StyleSheet.absoluteFill} contentFit="cover" />
-          ) : (
-            <ThemedText type="subtitle" style={styles.avatarInitial}>
-              {initial}
-            </ThemedText>
-          )}
-        </View>
-        <View style={styles.profileCopy}>
-          <ThemedText type="subtitle" style={styles.profileName} numberOfLines={1}>
-            {displayName}
-          </ThemedText>
-          <ThemedText type="small" themeColor="textSecondary" numberOfLines={1}>
-            {accountMeta}
-          </ThemedText>
-        </View>
-      </ThemedView>
-
-      <View style={styles.section}>
-        <SectionHeader title={t("mine.accountSection")} trailing={t("mine.profileTrailing")} />
-        <ThemedView type="backgroundElement" style={styles.menuPanel}>
-          {/* Language switcher — the one actionable preference */}
-          <Pressable
-            accessibilityRole="button"
-            onPress={() => setLanguageOpen(true)}
-            style={({ pressed }) => pressed && styles.pressed}
-          >
-            <View
-              style={[styles.menuRow, { borderBottomColor: theme.border, borderBottomWidth: 1 }]}
-            >
-              <View style={styles.menuLeft}>
-                <View style={[styles.menuIcon, { backgroundColor: theme.backgroundSelected }]}>
-                  <SymbolView
-                    name={{ ios: "globe", android: "language", web: "language" }}
-                    size={18}
-                    tintColor={theme.textSecondary}
-                  />
-                </View>
-                <View style={styles.menuCopy}>
-                  <ThemedText type="smallBold">{t("mine.languageLabel")}</ThemedText>
-                  <ThemedText type="small" themeColor="textSecondary" numberOfLines={1}>
-                    {LOCALE_NAMES[locale]}
-                  </ThemedText>
-                </View>
-              </View>
-              <SymbolView
-                name={{ ios: "chevron.right", android: "chevron_right", web: "chevron_right" }}
-                size={16}
-                tintColor={theme.textSecondary}
-              />
-            </View>
-          </Pressable>
-
-          {INFO_ITEMS.map((item, index) => (
-            <View
-              key={item.key}
-              style={[
-                styles.menuRow,
-                index < INFO_ITEMS.length - 1 && {
-                  borderBottomColor: theme.border,
-                  borderBottomWidth: 1,
-                },
-              ]}
-            >
-              <View style={styles.menuLeft}>
-                <View style={[styles.menuIcon, { backgroundColor: theme.backgroundSelected }]}>
-                  <SymbolView name={item.symbol} size={18} tintColor={theme.textSecondary} />
-                </View>
-                <View style={styles.menuCopy}>
-                  <ThemedText type="smallBold">{t(item.labelKey)}</ThemedText>
-                  <ThemedText type="small" themeColor="textSecondary" numberOfLines={1}>
-                    {t(item.detailKey)}
-                  </ThemedText>
-                </View>
-              </View>
-            </View>
-          ))}
-        </ThemedView>
-      </View>
-
-      <Pressable
-        accessibilityRole="button"
-        onPress={() => void auth.signOut()}
-        style={({ pressed }) => pressed && styles.pressed}
-      >
-        <ThemedView type="backgroundElement" style={styles.signOutButton}>
-          <ThemedText type="smallBold" style={{ color: theme.brand }}>
-            {t("mine.signOut")}
-          </ThemedText>
-        </ThemedView>
-      </Pressable>
-
-      <Modal
-        visible={languageOpen}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setLanguageOpen(false)}
-      >
-        <Pressable style={styles.modalBackdrop} onPress={() => setLanguageOpen(false)}>
-          <Pressable
-            style={[styles.modalSheet, { backgroundColor: theme.backgroundElement }]}
-            onPress={(e) => e.stopPropagation()}
-          >
-            <ThemedText type="smallBold" style={styles.modalTitle}>
-              {t("mine.languageSheetTitle")}
-            </ThemedText>
-            {SUPPORTED_LOCALES.map((option, index) => {
-              const selected = option === locale;
-              return (
+              <View style={[styles.headerTop, { paddingTop: insets.top + Spacing.two }]}>
                 <Pressable
-                  key={option}
                   accessibilityRole="button"
-                  onPress={() => {
-                    setLocale(option);
-                    setLanguageOpen(false);
-                  }}
-                  style={({ pressed }) => [
-                    styles.modalRow,
-                    index < SUPPORTED_LOCALES.length - 1 && {
-                      borderBottomColor: theme.border,
-                      borderBottomWidth: 1,
-                    },
-                    pressed && styles.pressed,
-                  ]}
+                  onPress={() => setLanguageOpen(true)}
+                  style={({ pressed }) => (pressed ? styles.pressed : null)}
                 >
-                  <ThemedText type={selected ? "smallBold" : "small"}>
-                    {LOCALE_NAMES[option]}
-                  </ThemedText>
-                  {selected ? (
+                  <View style={styles.iconPill}>
                     <SymbolView
-                      name={{ ios: "checkmark", android: "check", web: "check" }}
-                      size={16}
-                      tintColor={theme.brand}
+                      name={{ ios: "globe", android: "language", web: "language" }}
+                      size={15}
+                      tintColor="#FFFFFF"
                     />
-                  ) : null}
+                    <ThemedText type="small" style={styles.iconPillText}>
+                      {LOCALE_NAMES[locale]}
+                    </ThemedText>
+                  </View>
                 </Pressable>
-              );
-            })}
-          </Pressable>
-        </Pressable>
-      </Modal>
-    </TabScreen>
+                <Pressable
+                  accessibilityLabel={t("mine.signOut")}
+                  accessibilityRole="button"
+                  hitSlop={10}
+                  onPress={() => void auth.signOut()}
+                  style={({ pressed }) => (pressed ? styles.pressed : null)}
+                >
+                  <View style={styles.iconButton}>
+                    <SymbolView
+                      name={{
+                        ios: "rectangle.portrait.and.arrow.right",
+                        android: "logout",
+                        web: "logout",
+                      }}
+                      size={18}
+                      tintColor="#FFFFFF"
+                    />
+                  </View>
+                </Pressable>
+              </View>
+
+              <View style={styles.profileRow}>
+                <View style={[styles.avatar, { backgroundColor: theme.brand }]}>
+                  {avatarUrl ? (
+                    <Image
+                      source={{ uri: avatarUrl }}
+                      style={StyleSheet.absoluteFill}
+                      contentFit="cover"
+                    />
+                  ) : (
+                    <ThemedText type="subtitle" style={styles.avatarInitial}>
+                      {initial}
+                    </ThemedText>
+                  )}
+                </View>
+                <View style={styles.profileCopy}>
+                  <ThemedText type="subtitle" style={styles.profileName} numberOfLines={1}>
+                    {displayName}
+                  </ThemedText>
+                  {accountMeta ? (
+                    <ThemedText type="small" style={styles.profileMeta} numberOfLines={1}>
+                      {accountMeta}
+                    </ThemedText>
+                  ) : null}
+                </View>
+              </View>
+            </View>
+
+            {/* Tab bar */}
+            <View style={[styles.tabBar, { borderBottomColor: theme.border }]}>
+              {TABS.map((item) => {
+                const active = item.key === tab;
+                return (
+                  <Pressable
+                    key={item.key}
+                    accessibilityRole="tab"
+                    accessibilityState={{ selected: active }}
+                    onPress={() => setTab(item.key)}
+                    style={({ pressed }) => (pressed ? styles.pressed : null)}
+                  >
+                    <View style={styles.tabItem}>
+                      <ThemedText
+                        type={active ? "smallBold" : "small"}
+                        themeColor={active ? "text" : "textSecondary"}
+                      >
+                        {t(item.labelKey)}
+                      </ThemedText>
+                      <View
+                        style={[
+                          styles.tabUnderline,
+                          { backgroundColor: active ? theme.brand : "transparent" },
+                        ]}
+                      />
+                    </View>
+                  </Pressable>
+                );
+              })}
+            </View>
+          </View>
+        }
+        ListEmptyComponent={
+          <ThemedText type="small" themeColor="textSecondary" style={styles.empty}>
+            {loading ? "" : emptyText}
+          </ThemedText>
+        }
+        renderItem={({ item }) => {
+          if (item.ghost) return <View style={styles.cell} />;
+          const tileAlert = item.alert;
+          const onPress = item.href
+            ? () => router.push(item.href as never)
+            : tileAlert
+              ? () => Alert.alert(tileAlert.title, tileAlert.message)
+              : undefined;
+          return (
+            <Pressable
+              accessibilityRole={onPress ? "button" : undefined}
+              disabled={!onPress}
+              onPress={onPress}
+              style={styles.cell}
+            >
+              <View style={styles.tile}>
+                <View style={[styles.tileCover, { backgroundColor: theme.backgroundElement }]}>
+                  {item.coverUrl ? (
+                    <Image
+                      source={{ uri: item.coverUrl }}
+                      style={StyleSheet.absoluteFill}
+                      contentFit="cover"
+                    />
+                  ) : (
+                    <View style={styles.tileNoCover}>
+                      <ThemedText type="small" themeColor="textSecondary">
+                        {t("mine.noCover")}
+                      </ThemedText>
+                    </View>
+                  )}
+                  {item.badge ? (
+                    <View style={styles.tileBadge}>
+                      <ThemedText type="small" style={styles.tileBadgeText}>
+                        {item.badge}
+                      </ThemedText>
+                    </View>
+                  ) : null}
+                </View>
+                <ThemedText type="smallBold" numberOfLines={1} style={styles.tileTitle}>
+                  {item.title}
+                </ThemedText>
+                {item.subtitle ? (
+                  <ThemedText type="small" themeColor="textSecondary" numberOfLines={1}>
+                    {item.subtitle}
+                  </ThemedText>
+                ) : null}
+              </View>
+            </Pressable>
+          );
+        }}
+      />
+      <LanguageSheet visible={languageOpen} onClose={() => setLanguageOpen(false)} />
+    </View>
   );
 }
 
-const AVATAR = 60;
-
 const styles = StyleSheet.create({
-  profilePanel: {
-    borderRadius: 8,
-    padding: Spacing.three,
+  root: {
+    flex: 1,
+  },
+  header: {
+    overflow: "hidden",
+    paddingBottom: Spacing.four,
+  },
+  headerScrim: {
+    backgroundColor: "rgba(9,9,11,0.55)",
+  },
+  headerTop: {
     flexDirection: "row",
+    gap: Spacing.two,
+    justifyContent: "flex-end",
+    paddingHorizontal: Spacing.four,
+  },
+  iconPill: {
     alignItems: "center",
+    backgroundColor: "rgba(0,0,0,0.32)",
+    borderRadius: 999,
+    flexDirection: "row",
+    gap: Spacing.one,
+    paddingHorizontal: Spacing.three,
+    paddingVertical: Spacing.one + 2,
+  },
+  iconPillText: {
+    color: "#FFFFFF",
+  },
+  iconButton: {
+    alignItems: "center",
+    backgroundColor: "rgba(0,0,0,0.32)",
+    borderRadius: 999,
+    height: 34,
+    justifyContent: "center",
+    width: 34,
+  },
+  profileRow: {
+    alignItems: "center",
+    flexDirection: "row",
     gap: Spacing.three,
+    paddingHorizontal: Spacing.four,
+    paddingTop: Spacing.six,
   },
   avatar: {
-    width: AVATAR,
-    height: AVATAR,
-    borderRadius: 8,
-    overflow: "hidden",
     alignItems: "center",
+    borderRadius: 14,
+    height: 64,
     justifyContent: "center",
+    overflow: "hidden",
+    width: 64,
   },
   avatarInitial: {
-    fontSize: 24,
-    lineHeight: 28,
     color: "#FFFFFF",
+    fontSize: 26,
   },
   profileCopy: {
     flex: 1,
-    minWidth: 0,
     gap: Spacing.half,
+    minWidth: 0,
   },
   profileName: {
+    color: "#FFFFFF",
     fontSize: 22,
     lineHeight: 28,
   },
-  section: {
+  profileMeta: {
+    color: "rgba(255,255,255,0.7)",
+  },
+  tabBar: {
+    borderBottomWidth: 1,
+    flexDirection: "row",
+    gap: Spacing.five,
+    paddingHorizontal: Spacing.four,
+  },
+  tabItem: {
+    alignItems: "center",
     gap: Spacing.two,
-  },
-  menuPanel: {
-    borderRadius: 8,
-    overflow: "hidden",
-  },
-  menuRow: {
-    minHeight: 70,
-    paddingHorizontal: Spacing.three,
     paddingVertical: Spacing.three,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    gap: Spacing.three,
   },
-  menuLeft: {
+  tabUnderline: {
+    borderRadius: 999,
+    height: 2,
+    width: 24,
+  },
+  column: {
+    gap: Spacing.two,
+    paddingHorizontal: Spacing.four,
+  },
+  cell: {
     flex: 1,
-    minWidth: 0,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: Spacing.three,
   },
-  menuIcon: {
-    width: 38,
-    height: 38,
-    borderRadius: 8,
-    alignItems: "center",
-    justifyContent: "center",
+  tile: {
+    gap: Spacing.one + 2,
+    marginTop: Spacing.four,
+    width: "100%",
   },
-  menuCopy: {
+  tileCover: {
+    aspectRatio: 3 / 4,
+    borderRadius: 10,
+    overflow: "hidden",
+    width: "100%",
+  },
+  tileNoCover: {
+    alignItems: "center",
     flex: 1,
-    minWidth: 0,
-    gap: Spacing.half,
-  },
-  signOutButton: {
-    minHeight: 48,
-    borderRadius: 8,
-    alignItems: "center",
     justifyContent: "center",
+    padding: Spacing.two,
+  },
+  tileBadge: {
+    backgroundColor: "rgba(0,0,0,0.6)",
+    borderRadius: 6,
+    left: 6,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    position: "absolute",
+    top: 6,
+  },
+  tileBadgeText: {
+    color: "#FFFFFF",
+  },
+  tileTitle: {
+    paddingHorizontal: 2,
+  },
+  empty: {
+    paddingTop: Spacing.eight,
+    textAlign: "center",
+    width: "100%",
   },
   pressed: {
     opacity: 0.72,
-  },
-  modalBackdrop: {
-    flex: 1,
-    backgroundColor: "rgba(0,0,0,0.55)",
-    justifyContent: "flex-end",
-  },
-  modalSheet: {
-    borderTopLeftRadius: 16,
-    borderTopRightRadius: 16,
-    paddingHorizontal: Spacing.three,
-    paddingTop: Spacing.three,
-    paddingBottom: Spacing.six,
-  },
-  modalTitle: {
-    paddingVertical: Spacing.two,
-  },
-  modalRow: {
-    minHeight: 52,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
   },
 });

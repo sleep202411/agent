@@ -11,6 +11,8 @@ export interface Person {
   name: string;
   role?: string;
   avatarUrl?: string;
+  /** Backing user id — used to resolve the live name/avatar by-id. */
+  userId?: string;
 }
 
 export interface IpEpisode {
@@ -20,6 +22,8 @@ export interface IpEpisode {
   durationLabel?: string;
   thumbnailUrl?: string;
   free?: boolean;
+  /** Playable video URL (from the episode's trailer/video asset). */
+  videoUrl?: string;
 }
 
 export interface IpSummary {
@@ -49,8 +53,18 @@ export interface IpDetail extends IpSummary {
   cast: Person[];
   creators: Person[];
   tags: string[];
+  /** Playable IP-level trailer URL, if the IP has one. */
+  trailerUrl?: string;
   /** Human-shareable "room number". Not yet provided by the server — optional. */
   roomCode?: string;
+  /** Rights holder (`Ip.copyrightOwner`). */
+  copyrightOwner?: string;
+  /** True when the creator declared AI-generated visuals and/or copy. */
+  aiGenerated: boolean;
+  /** Creator's rights statement (`rightsSummary.statement`). */
+  rightsStatement?: string;
+  /** Creator's AI-usage statement (`aiDisclosure.statement`). */
+  aiStatement?: string;
 }
 
 /** A genre taxonomy term (from Nest ip-commerce `/taxonomy?type=genre`). */

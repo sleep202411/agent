@@ -1,7 +1,7 @@
 import * as Localization from "expo-localization";
 import * as SecureStore from "expo-secure-store";
 
-import type { AppLocale } from "@/config";
+import { appEnv, type AppLocale } from "@/config";
 
 /**
  * Reactive locale store — mirrors the auth store pattern (external store +
@@ -12,15 +12,21 @@ import type { AppLocale } from "@/config";
 export const SUPPORTED_LOCALES: AppLocale[] = ["en-US", "zh-CN", "zh-HK"];
 const STORAGE_KEY = "fizzdragon.locale.override";
 
+// Region default: global → en-US, CN → zh-CN. Used when the device language
+// isn't one we localize into, so the CN build opens in Chinese (not English).
+const DEFAULT_LOCALE: AppLocale = appEnv.defaultLocale;
+
 /** Map any BCP-47 device tag to one of our supported locales. */
 function mapToSupported(tag: string | null | undefined): AppLocale {
-  if (!tag) return "en-US";
+  if (!tag) return DEFAULT_LOCALE;
   const lower = tag.toLowerCase();
   if (lower.startsWith("zh")) {
     // Traditional Chinese (Hant / HK / TW / MO) → zh-HK, otherwise Simplified.
     return /hant|hk|tw|mo/.test(lower) ? "zh-HK" : "zh-CN";
   }
-  return "en-US";
+  if (lower.startsWith("en")) return "en-US";
+  // Any other device language falls back to the region default.
+  return DEFAULT_LOCALE;
 }
 
 function detectDeviceLocale(): AppLocale {
@@ -28,7 +34,7 @@ function detectDeviceLocale(): AppLocale {
     const locales = Localization.getLocales();
     return mapToSupported(locales?.[0]?.languageTag);
   } catch {
-    return "en-US";
+    return DEFAULT_LOCALE;
   }
 }
 

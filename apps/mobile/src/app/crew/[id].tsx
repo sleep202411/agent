@@ -1,17 +1,26 @@
-import { useLocalSearchParams } from "expo-router";
+import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import { SymbolView } from "expo-symbols";
 import { useEffect, useState } from "react";
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, View } from "react-native";
+import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
+import { useAuth } from "@/auth";
+import {
+  MoreActionsButton,
+  promptSignIn,
+  ReportReasonSheet,
+  showContentActionsMenu,
+} from "@/components/report-actions";
 import { ThemedText } from "@/components/themed-text";
 import { ThemedView } from "@/components/themed-view";
 import { EmptyState, PosterImage, SectionHeader, Tag } from "@/components/ui";
 import { Spacing } from "@/constants/theme";
-import { getCrewById } from "@/data/browse-service";
+import { invalidateBrowse } from "@/data/browse-refresh";
+import { blockCrew, getCrewById, reportCrew, type IpReportReason } from "@/data/browse-service";
 import type { CrewDetail, CrewStatus, Person } from "@/data/types";
 import { useTheme } from "@/hooks/use-theme";
 import { useTranslations } from "@/i18n";
+import { ApiRequestError } from "@/lib/api-client";
 
 function crewStatusTag(
   status: CrewStatus,
@@ -31,8 +40,12 @@ export default function CrewDetailScreen() {
   const insets = useSafeAreaInsets();
   const theme = useTheme();
   const t = useTranslations();
+  const router = useRouter();
+  const { status: authStatus } = useAuth();
   const [crew, setCrew] = useState<CrewDetail>();
   const [loading, setLoading] = useState(true);
+  const [reportOpen, setReportOpen] = useState(false);
+  const [reporting, setReporting] = useState(false);
 
   useEffect(() => {
     let alive = true;
@@ -75,8 +88,84 @@ export default function CrewDetailScreen() {
 
   const tag = crewStatusTag(crew.status, t);
 
+  // Report/block require a signed-in viewer (Nest rejects anonymous calls).
+  const requireSignIn = () => promptSignIn(t, () => router.push("/login"));
+
+  const submitBlock = async () => {
+    try {
+      await blockCrew(crew.id);
+      // The crews list is filtered server-side for this viewer; nudge it to
+      // refetch, then leave the page.
+      invalidateBrowse();
+      Alert.alert(t("crewDetail.blockSuccessTitle"), t("crewDetail.blockSuccessBody"), [
+        { text: t("report.close"), onPress: () => router.back() },
+      ]);
+    } catch (error) {
+      if (error instanceof ApiRequestError && error.status === 401) {
+        requireSignIn();
+        return;
+      }
+      Alert.alert(t("crewDetail.blockFailed"));
+    }
+  };
+
+  const confirmBlock = () => {
+    Alert.alert(t("crewDetail.blockConfirmTitle"), t("crewDetail.blockConfirmBody"), [
+      { text: t("report.cancel"), style: "cancel" },
+      {
+        text: t("crewDetail.blockConfirmAction"),
+        style: "destructive",
+        onPress: () => void submitBlock(),
+      },
+    ]);
+  };
+
+  const submitReport = async (reason: IpReportReason) => {
+    setReporting(true);
+    try {
+      await reportCrew(crew.id, reason);
+      setReportOpen(false);
+      Alert.alert(t("report.successTitle"), t("report.successBody"));
+    } catch (error) {
+      if (error instanceof ApiRequestError && error.status === 401) {
+        setReportOpen(false);
+        requireSignIn();
+        return;
+      }
+      Alert.alert(t("report.failed"));
+    } finally {
+      setReporting(false);
+    }
+  };
+
+  const openActions = () => {
+    if (authStatus !== "authenticated") {
+      requireSignIn();
+      return;
+    }
+    showContentActionsMenu({
+      t,
+      blockLabel: t("crewDetail.blockAction"),
+      onReport: () => setReportOpen(true),
+      onBlock: confirmBlock,
+    });
+  };
+
   return (
     <ThemedView style={styles.screen}>
+      <Stack.Screen
+        options={{
+          headerRight: () => (
+            <MoreActionsButton label={t("report.moreActions")} onPress={openActions} />
+          ),
+        }}
+      />
+      <ReportReasonSheet
+        visible={reportOpen}
+        submitting={reporting}
+        onSelect={(reason) => void submitReport(reason)}
+        onClose={() => setReportOpen(false)}
+      />
       <ScrollView
         showsVerticalScrollIndicator={false}
         contentInsetAdjustmentBehavior="never"

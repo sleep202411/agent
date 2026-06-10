@@ -8,42 +8,45 @@ import { ThemedView } from "./themed-view";
 
 import { MaxContentWidth, Spacing } from "@/constants/theme";
 import { useTheme } from "@/hooks/use-theme";
+import { useTranslations } from "@/i18n";
 
 const tabItems = [
   {
     href: "/(tabs)",
-    label: "IP",
+    labelKey: "tabs.ip",
     name: "index",
     symbol: { ios: "film.stack", android: "movie", web: "movie" },
   },
   {
     href: "/crews",
-    label: "Crews",
+    labelKey: "tabs.crews",
     name: "crews",
     symbol: { ios: "person.2", android: "group", web: "group" },
   },
   {
     href: "/news",
-    label: "News",
+    labelKey: "tabs.news",
     name: "news",
     symbol: { ios: "newspaper", android: "feed", web: "feed" },
   },
   {
     href: "/mine",
-    label: "Mine",
+    labelKey: "tabs.mine",
     name: "mine",
     symbol: { ios: "person", android: "person", web: "person" },
   },
 ] as const;
 
 export default function AppTabs() {
+  const t = useTranslations();
+
   return (
     <Tabs style={styles.shell}>
       <TabSlot style={styles.slot} />
       <TabList style={styles.tabList}>
         {tabItems.map((item) => (
           <TabTrigger key={item.name} name={item.name} href={item.href as Href} asChild>
-            <TabButton symbol={item.symbol}>{item.label}</TabButton>
+            <TabButton symbol={item.symbol}>{t(item.labelKey)}</TabButton>
           </TabTrigger>
         ))}
       </TabList>

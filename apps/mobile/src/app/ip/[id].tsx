@@ -1,27 +1,49 @@
 import { Image } from "expo-image";
-import { useLocalSearchParams } from "expo-router";
+import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import { SymbolView } from "expo-symbols";
-import { useEffect, useState } from "react";
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, View } from "react-native";
+import { useEffect, useRef, useState } from "react";
+import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { WebView } from "react-native-webview";
 
+import { useAuth } from "@/auth";
+import {
+  MoreActionsButton,
+  promptSignIn,
+  ReportReasonSheet,
+  showContentActionsMenu,
+} from "@/components/report-actions";
 import { ThemedText } from "@/components/themed-text";
 import { ThemedView } from "@/components/themed-view";
 import { EmptyState, PosterImage, SectionHeader, Tag } from "@/components/ui";
 import { Spacing } from "@/constants/theme";
-import { getIpById } from "@/data/browse-service";
+import { invalidateBrowse } from "@/data/browse-refresh";
+import {
+  blockIpContent,
+  getIpById,
+  reportIpContent,
+  type IpReportReason,
+} from "@/data/browse-service";
 import type { IpDetail, IpEpisode, Person } from "@/data/types";
 import { useTheme } from "@/hooks/use-theme";
 import { useTranslations } from "@/i18n";
+import { ApiRequestError } from "@/lib/api-client";
+import { dicebearAvatarUrl } from "@/lib/avatar";
 
 export default function IpDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const insets = useSafeAreaInsets();
   const theme = useTheme();
   const t = useTranslations();
+  const router = useRouter();
+  const { status: authStatus } = useAuth();
+  const scrollRef = useRef<ScrollView>(null);
   const [ip, setIp] = useState<IpDetail>();
   const [loading, setLoading] = useState(true);
   const [expanded, setExpanded] = useState(false);
+  const [playing, setPlaying] = useState<{ url: string; title: string }>();
+  const [reportOpen, setReportOpen] = useState(false);
+  const [reporting, setReporting] = useState(false);
 
   useEffect(() => {
     let alive = true;
@@ -68,78 +90,188 @@ export default function IpDetailScreen() {
     ip.episodeCount ? `${ip.episodeCount} ${t("ipDetail.episodesUnit")}` : undefined,
   ].filter(Boolean);
 
+  // Play the IP trailer if present, else the first episode that has a video.
+  const playUrl = ip.trailerUrl ?? ip.episodes.find((episode) => episode.videoUrl)?.videoUrl;
+  const playVideo = (url?: string, title?: string) => {
+    if (!url) return;
+    setPlaying({ url, title: title ?? ip.title });
+    scrollRef.current?.scrollTo({ y: 0, animated: true });
+  };
+
+  // Report/block require a signed-in viewer (Nest rejects anonymous calls).
+  const requireSignIn = () => promptSignIn(t, () => router.push("/login"));
+
+  const submitBlock = async () => {
+    try {
+      await blockIpContent(ip.id);
+      // Lists are filtered server-side for this viewer; nudge browse screens
+      // to refetch, then leave the page.
+      invalidateBrowse();
+      Alert.alert(t("ipDetail.blockSuccessTitle"), t("ipDetail.blockSuccessBody"), [
+        { text: t("report.close"), onPress: () => router.back() },
+      ]);
+    } catch (error) {
+      // A 401 means the session expired mid-call (the global handler already
+      // cleared it) — tell the user to sign back in, not "try again later".
+      if (error instanceof ApiRequestError && error.status === 401) {
+        requireSignIn();
+        return;
+      }
+      Alert.alert(t("ipDetail.blockFailed"));
+    }
+  };
+
+  const confirmBlock = () => {
+    Alert.alert(t("ipDetail.blockConfirmTitle"), t("ipDetail.blockConfirmBody"), [
+      { text: t("report.cancel"), style: "cancel" },
+      {
+        text: t("ipDetail.blockConfirmAction"),
+        style: "destructive",
+        onPress: () => void submitBlock(),
+      },
+    ]);
+  };
+
+  const submitReport = async (reason: IpReportReason) => {
+    setReporting(true);
+    try {
+      await reportIpContent(ip.id, reason);
+      setReportOpen(false);
+      Alert.alert(t("report.successTitle"), t("report.successBody"));
+    } catch (error) {
+      if (error instanceof ApiRequestError && error.status === 401) {
+        setReportOpen(false);
+        requireSignIn();
+        return;
+      }
+      Alert.alert(t("report.failed"));
+    } finally {
+      setReporting(false);
+    }
+  };
+
+  const openActions = () => {
+    if (authStatus !== "authenticated") {
+      requireSignIn();
+      return;
+    }
+    showContentActionsMenu({
+      t,
+      blockLabel: t("ipDetail.blockAction"),
+      onReport: () => setReportOpen(true),
+      onBlock: confirmBlock,
+    });
+  };
+
   return (
     <ThemedView style={styles.screen}>
+      <Stack.Screen
+        options={{
+          // While the inline player is up the slot becomes its close button —
+          // a floating control under the transparent native header would not
+          // receive taps (the navigation bar wins the hit test).
+          headerRight: playing
+            ? () => (
+                <Pressable
+                  accessibilityLabel={t("ipDetail.close")}
+                  accessibilityRole="button"
+                  hitSlop={10}
+                  onPress={() => setPlaying(undefined)}
+                >
+                  <SymbolView
+                    name={{ ios: "xmark", android: "close", web: "close" }}
+                    size={18}
+                    tintColor="#FFFFFF"
+                  />
+                </Pressable>
+              )
+            : () => <MoreActionsButton label={t("report.moreActions")} onPress={openActions} />,
+        }}
+      />
+      <ReportReasonSheet
+        visible={reportOpen}
+        submitting={reporting}
+        onSelect={(reason) => void submitReport(reason)}
+        onClose={() => setReportOpen(false)}
+      />
       <ScrollView
+        ref={scrollRef}
         showsVerticalScrollIndicator={false}
         contentInsetAdjustmentBehavior="never"
         contentContainerStyle={{ paddingBottom: insets.bottom + Spacing.seven }}
       >
-        <View style={styles.backdrop}>
-          <PosterImage
-            uri={ip.backdropUrl ?? ip.coverUrl}
-            label={ip.title}
-            radius={0}
-            style={StyleSheet.absoluteFill}
-          />
-          <View style={styles.backdropScrim} />
-          <View style={styles.backdropCopy}>
-            <ThemedText type="subtitle" style={styles.title} numberOfLines={2}>
-              {ip.title}
-            </ThemedText>
-            <View style={styles.metaRow}>
-              {ip.rating != null ? (
-                <View style={styles.ratingRow}>
-                  <SymbolView
-                    name={{ ios: "star.fill", android: "star", web: "star" }}
-                    size={12}
-                    tintColor={theme.brand}
-                  />
-                  <ThemedText type="code" style={{ color: theme.brand }}>
-                    {ip.rating.toFixed(1)}
-                  </ThemedText>
-                </View>
-              ) : null}
-              <ThemedText type="code" themeColor="textSecondary">
-                {metaParts.join("  ·  ")}
-              </ThemedText>
+        <View style={[styles.backdrop, playing && styles.backdropPlaying]}>
+          {playing ? (
+            <View style={[styles.videoBox, { top: insets.top + 44 }]}>
+              <InlineVideo url={playing.url} />
             </View>
-          </View>
+          ) : (
+            <>
+              <PosterImage
+                uri={ip.backdropUrl ?? ip.coverUrl}
+                label={ip.title}
+                radius={0}
+                style={StyleSheet.absoluteFill}
+              />
+              <View style={styles.backdropScrim} />
+              <View style={styles.backdropCopy}>
+                <ThemedText type="subtitle" style={styles.title} numberOfLines={2}>
+                  {ip.title}
+                </ThemedText>
+                <View style={styles.metaRow}>
+                  {ip.rating != null ? (
+                    <View style={styles.ratingRow}>
+                      <SymbolView
+                        name={{ ios: "star.fill", android: "star", web: "star" }}
+                        size={12}
+                        tintColor={theme.brand}
+                      />
+                      <ThemedText type="code" style={{ color: theme.brand }}>
+                        {ip.rating.toFixed(1)}
+                      </ThemedText>
+                    </View>
+                  ) : null}
+                  <ThemedText type="code" themeColor="textSecondary">
+                    {metaParts.join("  ·  ")}
+                  </ThemedText>
+                  {/* Platform-wide AIGC label — all published IPs are AI-produced. */}
+                  <View style={[styles.aiBadge, { borderColor: theme.border }]}>
+                    <ThemedText type="code" themeColor="textSecondary">
+                      {t("ipDetail.aiBadge")}
+                    </ThemedText>
+                  </View>
+                </View>
+              </View>
+            </>
+          )}
         </View>
 
         <View style={styles.body}>
           <View style={styles.actionRow}>
             <Pressable
               accessibilityRole="button"
-              onPress={() => {}}
-              style={({ pressed }) => [
+              disabled={!playUrl}
+              onPress={() => playVideo(playUrl, ip.title)}
+              style={[
                 styles.playButton,
-                { backgroundColor: theme.brand },
-                pressed && styles.pressed,
+                { backgroundColor: playUrl ? theme.brand : theme.backgroundSelected },
               ]}
             >
               <SymbolView
-                name={{ ios: "play.fill", android: "play_arrow", web: "play_arrow" }}
+                name={
+                  playUrl
+                    ? { ios: "play.fill", android: "play_arrow", web: "play_arrow" }
+                    : { ios: "clock", android: "schedule", web: "schedule" }
+                }
                 size={16}
-                tintColor="#FFFFFF"
+                tintColor={playUrl ? "#FFFFFF" : theme.textSecondary}
               />
-              <ThemedText type="smallBold" style={styles.playText}>
-                {t("ipDetail.play")}
+              <ThemedText
+                type="smallBold"
+                style={{ color: playUrl ? "#FFFFFF" : theme.textSecondary }}
+              >
+                {playUrl ? t("ipDetail.play") : t("ipDetail.comingSoon")}
               </ThemedText>
-            </Pressable>
-            <Pressable
-              accessibilityRole="button"
-              onPress={() => {}}
-              style={({ pressed }) => pressed && styles.pressed}
-            >
-              <ThemedView type="backgroundElement" style={styles.secondaryButton}>
-                <SymbolView
-                  name={{ ios: "plus", android: "add", web: "add" }}
-                  size={16}
-                  tintColor={theme.text}
-                />
-                <ThemedText type="smallBold">{t("ipDetail.myList")}</ThemedText>
-              </ThemedView>
             </Pressable>
           </View>
 
@@ -191,8 +323,25 @@ export default function IpDetailScreen() {
                 showsHorizontalScrollIndicator={false}
                 contentContainerStyle={styles.episodeRow}
               >
+                {ip.trailerUrl ? (
+                  <MediaCard
+                    coverUrl={ip.coverUrl}
+                    label={t("ipDetail.trailer")}
+                    onPlay={() => playVideo(ip.trailerUrl, t("ipDetail.trailer"))}
+                  />
+                ) : null}
                 {ip.episodes.map((episode) => (
-                  <EpisodeCard key={episode.id} episode={episode} title={ip.title} />
+                  <EpisodeCard
+                    key={episode.id}
+                    episode={episode}
+                    title={ip.title}
+                    onPlay={() =>
+                      playVideo(
+                        episode.videoUrl,
+                        `${t("ipDetail.episodePrefix")}${episode.index}${t("ipDetail.episodeSuffix")}`
+                      )
+                    }
+                  />
                 ))}
               </ScrollView>
             </View>
@@ -210,22 +359,64 @@ export default function IpDetailScreen() {
               ))}
             </ScrollView>
           </View>
+
+          <View style={styles.section}>
+            <SectionHeader title={t("ipDetail.rightsTitle")} />
+            {ip.copyrightOwner ? (
+              <ThemedText type="small" themeColor="textSecondary">
+                {`© ${ip.copyrightOwner}`}
+              </ThemedText>
+            ) : null}
+            {ip.rightsStatement ? (
+              <ThemedText type="small" themeColor="textSecondary">
+                {ip.rightsStatement}
+              </ThemedText>
+            ) : null}
+            <ThemedText type="small" themeColor="textSecondary">
+              {ip.aiStatement ?? t("ipDetail.aiNotice")}
+            </ThemedText>
+          </View>
         </View>
       </ScrollView>
     </ThemedView>
   );
 }
 
-function EpisodeCard({ episode, title }: { episode: IpEpisode; title: string }) {
-  const t = useTranslations();
+function InlineVideo({ url }: { url: string }) {
+  const safeUrl = url.replace(/"/g, "&quot;");
+  const html = `<!DOCTYPE html><html><head>
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<style>html,body{margin:0;height:100%;background:#000;overflow:hidden}video{width:100%;height:100%;object-fit:contain}</style>
+</head><body>
+<video src="${safeUrl}" controls autoplay playsinline webkit-playsinline preload="auto"></video>
+</body></html>`;
   return (
-    <Pressable
-      accessibilityRole="button"
-      onPress={() => {}}
-      style={({ pressed }) => [styles.episodeCard, pressed && styles.pressed]}
-    >
+    <WebView
+      source={{ html }}
+      originWhitelist={["*"]}
+      style={StyleSheet.absoluteFill}
+      allowsInlineMediaPlayback
+      mediaPlaybackRequiresUserAction={false}
+      allowsFullscreenVideo
+      javaScriptEnabled
+    />
+  );
+}
+
+/** Trailer / promo card at the head of the episode list. */
+function MediaCard({
+  coverUrl,
+  label,
+  onPlay,
+}: {
+  coverUrl?: string;
+  label: string;
+  onPlay: () => void;
+}) {
+  return (
+    <Pressable accessibilityRole="button" onPress={onPlay} style={styles.episodeCard}>
       <View style={styles.episodeThumbWrap}>
-        <PosterImage uri={episode.thumbnailUrl} label={title} style={styles.episodeThumb} />
+        <PosterImage uri={coverUrl} label={label} style={styles.episodeThumb} />
         <View style={styles.episodePlay}>
           <SymbolView
             name={{ ios: "play.fill", android: "play_arrow", web: "play_arrow" }}
@@ -233,6 +424,43 @@ function EpisodeCard({ episode, title }: { episode: IpEpisode; title: string }) 
             tintColor="#FFFFFF"
           />
         </View>
+      </View>
+      <ThemedText type="smallBold" numberOfLines={1}>
+        {label}
+      </ThemedText>
+    </Pressable>
+  );
+}
+
+function EpisodeCard({
+  episode,
+  title,
+  onPlay,
+}: {
+  episode: IpEpisode;
+  title: string;
+  onPlay: () => void;
+}) {
+  const t = useTranslations();
+  const playable = !!episode.videoUrl;
+  return (
+    <Pressable
+      accessibilityRole="button"
+      disabled={!playable}
+      onPress={onPlay}
+      style={styles.episodeCard}
+    >
+      <View style={styles.episodeThumbWrap}>
+        <PosterImage uri={episode.thumbnailUrl} label={title} style={styles.episodeThumb} />
+        {playable ? (
+          <View style={styles.episodePlay}>
+            <SymbolView
+              name={{ ios: "play.fill", android: "play_arrow", web: "play_arrow" }}
+              size={14}
+              tintColor="#FFFFFF"
+            />
+          </View>
+        ) : null}
         {episode.free ? (
           <View style={styles.freeBadge}>
             <ThemedText type="code" style={styles.freeText}>
@@ -255,21 +483,12 @@ function EpisodeCard({ episode, title }: { episode: IpEpisode; title: string }) 
 
 function PersonChip({ person }: { person: Person }) {
   const theme = useTheme();
-  const initial = person.name.trim().slice(0, 1).toUpperCase();
+  // Real avatar if resolved, else a deterministic DiceBear face by id (web parity).
+  const avatarUrl = person.avatarUrl ?? dicebearAvatarUrl(`user:${person.userId ?? person.id}`);
   return (
     <View style={styles.personChip}>
       <View style={[styles.avatar, { backgroundColor: theme.backgroundSelected }]}>
-        {person.avatarUrl ? (
-          <Image
-            source={{ uri: person.avatarUrl }}
-            style={StyleSheet.absoluteFill}
-            contentFit="cover"
-          />
-        ) : (
-          <ThemedText type="smallBold" themeColor="textSecondary">
-            {initial}
-          </ThemedText>
-        )}
+        <Image source={{ uri: avatarUrl }} style={StyleSheet.absoluteFill} contentFit="cover" />
       </View>
       <ThemedText type="code" numberOfLines={1} style={styles.personName}>
         {person.name}
@@ -307,6 +526,15 @@ const styles = StyleSheet.create({
     left: 0,
     backgroundColor: "rgba(7,8,12,0.42)",
   },
+  backdropPlaying: {
+    backgroundColor: "#000000",
+  },
+  videoBox: {
+    position: "absolute",
+    bottom: 0,
+    left: 0,
+    right: 0,
+  },
   topBar: {
     flexDirection: "row",
     alignItems: "center",
@@ -330,6 +558,12 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 4,
+  },
+  aiBadge: {
+    borderWidth: 1,
+    borderRadius: 4,
+    paddingHorizontal: 5,
+    paddingVertical: 1,
   },
   body: {
     padding: Spacing.four,

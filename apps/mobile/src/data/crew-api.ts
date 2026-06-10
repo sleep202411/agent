@@ -9,6 +9,7 @@
 import { appEnv, resolveAssetUrl } from "@/config";
 import { api } from "@/lib/api-client";
 
+import type { IpReportReason } from "./ip-api";
 import type { CrewDetail, CrewRoleOpening, CrewStatus, CrewSummary } from "./types";
 
 const AURORA = { service: "aurora" } as const;
@@ -103,4 +104,31 @@ export async function fetchCrewById(id: string): Promise<CrewDetail | undefined>
     // No public member-list endpoint; section hidden when empty.
     members: [],
   };
+}
+
+/** The signed-in user's crews — owned + joined (auth'd; `/aurora/crews/my`). */
+export async function fetchMyCrews(): Promise<CrewSummary[]> {
+  try {
+    const res = await api.get<
+      { items?: CrewDto[]; owned?: CrewDto[]; joined?: CrewDto[] } | CrewDto[]
+    >("/crews/my", { ...AURORA });
+    const list = Array.isArray(res)
+      ? res
+      : (res.items ?? [...(res.owned ?? []), ...(res.joined ?? [])]);
+    // De-dupe (a crew can be both owned and joined).
+    const seen = new Set<string>();
+    return list.filter((dto) => dto?.id && !seen.has(dto.id) && seen.add(dto.id)).map(mapSummary);
+  } catch {
+    return [];
+  }
+}
+
+/** File a content report against a crew (auth'd; same reason set as IPs). */
+export async function reportCrew(crewId: string, reason: IpReportReason): Promise<void> {
+  await api.post(`/crews/${crewId}/reports`, { ...AURORA, data: { reason } });
+}
+
+/** Hide a crew for the signed-in viewer (auth'd; lists/detail filter it server-side). */
+export async function blockCrew(crewId: string): Promise<void> {
+  await api.post(`/crews/${crewId}/blocks`, { ...AURORA });
 }

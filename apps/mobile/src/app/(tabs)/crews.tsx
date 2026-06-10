@@ -1,20 +1,19 @@
 import { router } from "expo-router";
 import { SymbolView } from "expo-symbols";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Pressable, StyleSheet, View } from "react-native";
 
 import { TabScreen } from "@/components/tab-screen";
 import { ThemedText } from "@/components/themed-text";
 import { ThemedView } from "@/components/themed-view";
-import { ChipRail, EmptyState, PosterImage, ScreenHeader, Skeleton, Tag } from "@/components/ui";
+import { EmptyState, PosterImage, ScreenHeader, Skeleton, Tag } from "@/components/ui";
 import { Spacing } from "@/constants/theme";
+import { useBrowseVersion } from "@/data/browse-refresh";
 import { getCrewFeed } from "@/data/browse-service";
 import type { CrewStatus, CrewSummary } from "@/data/types";
 import { useTheme } from "@/hooks/use-theme";
 import { type MessageKey, useTranslations } from "@/i18n";
 import { toHref } from "@/lib/navigation";
-
-const FILTERS = ["crews.filterAll", "crews.filterRecruiting", "crews.filterInProduction"] as const;
 
 export function crewStatusTag(status: CrewStatus): {
   labelKey: MessageKey;
@@ -25,30 +24,32 @@ export function crewStatusTag(status: CrewStatus): {
   return { labelKey: "crews.statusClosed", tone: "neutral" };
 }
 
-function matchesFilter(crew: CrewSummary, filterIndex: number) {
-  if (filterIndex === 1) return crew.status === "recruiting";
-  if (filterIndex === 2) return crew.status === "in-production";
-  return true;
-}
-
 export default function CrewsScreen() {
   const t = useTranslations();
   const [crews, setCrews] = useState<CrewSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string>();
-  const [filterIndex, setFilterIndex] = useState(0);
+  // Bumped when a mutation elsewhere (e.g. blocking a crew) invalidates lists.
+  const browseVersion = useBrowseVersion();
+  const hasDataRef = useRef(false);
 
   useEffect(() => {
     let alive = true;
     async function load() {
-      setLoading(true);
+      // Skeleton only when there is nothing to show yet — refetches swap in place.
+      setLoading(hasDataRef.current === false);
       setError(undefined);
       try {
         const data = await getCrewFeed();
-        if (alive) setCrews(data);
+        if (alive) {
+          hasDataRef.current = true;
+          setCrews(data);
+        }
       } catch (loadError) {
-        if (alive)
+        // A failed background refetch keeps the list we already have.
+        if (alive && !hasDataRef.current) {
           setError(loadError instanceof Error ? loadError.message : t("crews.loadErrorFallback"));
+        }
       } finally {
         if (alive) setLoading(false);
       }
@@ -57,21 +58,11 @@ export default function CrewsScreen() {
     return () => {
       alive = false;
     };
-  }, [t]);
-
-  const visible = useMemo(
-    () => crews.filter((crew) => matchesFilter(crew, filterIndex)),
-    [crews, filterIndex]
-  );
+  }, [t, browseVersion]);
 
   return (
     <TabScreen gap={Spacing.five}>
-      <ScreenHeader eyebrow={t("crews.eyebrow")} title={t("crews.title")} />
-      <ChipRail
-        items={FILTERS.map((key) => t(key))}
-        activeIndex={filterIndex}
-        onChange={setFilterIndex}
-      />
+      <ScreenHeader title={t("crews.title")} />
 
       {loading ? (
         <View style={styles.list}>
@@ -89,9 +80,9 @@ export default function CrewsScreen() {
           detail={error}
           symbol={{ ios: "exclamationmark.triangle", android: "warning", web: "warning" }}
         />
-      ) : visible.length ? (
+      ) : crews.length ? (
         <View style={styles.list}>
-          {visible.map((crew) => (
+          {crews.map((crew) => (
             <CrewCard key={crew.id} crew={crew} />
           ))}
         </View>

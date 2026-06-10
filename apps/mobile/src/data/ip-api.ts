@@ -9,7 +9,7 @@
  * Region note: as of 2026-06, ip-commerce is served on the global host
  * (fizzdragon.com/aurora); the CN host returns 404 for these routes.
  */
-import { appEnv } from "@/config";
+import { appEnv, resolveAssetUrl } from "@/config";
 import { api } from "@/lib/api-client";
 
 import type { Genre, IpDetail, IpDiscovery, IpEpisode, IpStatus, IpSummary, Person } from "./types";
@@ -17,6 +17,7 @@ import type { Genre, IpDetail, IpDiscovery, IpEpisode, IpStatus, IpSummary, Pers
 type AssetDto = { url?: string | null; externalUrl?: string | null } | null | undefined;
 
 type ContributorDto = {
+  userId?: string | null;
   displayName?: string | null;
   role?: string | null;
   customRole?: string | null;
@@ -30,6 +31,8 @@ type EpisodeDto = {
   durationSeconds?: number | null;
   isFreePreview?: boolean;
   coverAsset?: AssetDto;
+  mediaAsset?: AssetDto;
+  trailerAsset?: AssetDto;
 };
 
 type IpDto = {
@@ -42,9 +45,16 @@ type IpDto = {
   genreCodes?: string[];
   tags?: string[];
   status?: string;
+  listingVisibility?: string;
   publishedAt?: string | null;
   scheduledAt?: string | null;
   copyrightOwner?: string | null;
+  rightsSummary?: { statement?: string | null } | null;
+  aiDisclosure?: {
+    generatedVisuals?: boolean;
+    generatedCopy?: boolean;
+    statement?: string | null;
+  } | null;
   coverAsset?: AssetDto;
   trailerAsset?: AssetDto;
   contributors?: ContributorDto[];
@@ -104,6 +114,7 @@ function mapPeople(dto: IpDto): Person[] {
       id: `${dto.id}-c-${index}`,
       name: c.displayName as string,
       role: c.customRole ?? c.role ?? undefined,
+      userId: c.userId ?? undefined,
     }));
 }
 
@@ -114,6 +125,8 @@ function mapDetail(dto: IpDto): IpDetail {
     title: episode.title ?? `Episode ${episode.episodeNo ?? index + 1}`,
     durationLabel: durationLabel(episode.durationSeconds),
     thumbnailUrl: assetUrl(episode.coverAsset),
+    // The episode's playable video is `mediaAsset`; fall back to a trailer preview.
+    videoUrl: assetUrl(episode.mediaAsset) ?? assetUrl(episode.trailerAsset),
     free: !!episode.isFreePreview,
   }));
   const people = mapPeople(dto);
@@ -124,15 +137,22 @@ function mapDetail(dto: IpDto): IpDetail {
   const creators = people.filter(isCreator);
   const cast = people.filter((person) => !isCreator(person));
 
+  const aiDisclosure = dto.aiDisclosure ?? {};
   return {
     ...mapSummary(dto),
     longSynopsis: dto.description ?? dto.summary ?? "",
     episodes,
     cast,
     creators,
+    trailerUrl: assetUrl(dto.trailerAsset),
     tags: [...(dto.genres ?? []), ...(dto.tags ?? [])].filter(Boolean),
     // No server-side room number yet; the detail chip stays hidden when undefined.
     roomCode: undefined,
+    copyrightOwner: dto.copyrightOwner?.trim() || undefined,
+    // Same predicate the server's review gate uses for "is AI-generated".
+    aiGenerated: aiDisclosure.generatedVisuals === true || aiDisclosure.generatedCopy === true,
+    rightsStatement: dto.rightsSummary?.statement?.trim() || undefined,
+    aiStatement: aiDisclosure.statement?.trim() || undefined,
   };
 }
 
@@ -190,10 +210,118 @@ export async function fetchIpDiscovery(): Promise<IpDiscovery> {
   return { featured, trending, updating: all, genres };
 }
 
+// Legacy default-avatar PNG baked into the user OSS bucket — treat as "no
+// avatar" so the initial fallback shows instead of the generic silhouette.
+const PLACEHOLDER_AVATAR_UUID = "d17b1d5e-282e-47e0-bd99-9a72477adf93";
+
+/** Resolve a stored user-avatar value to a loadable URL (mirrors the web's
+ * resolveUserAvatarUrl): http passes through, a bare path gets the user base. */
+function resolveUserAvatarUrl(path?: string | null): string | undefined {
+  if (!path || path.includes(PLACEHOLDER_AVATAR_UUID)) return undefined;
+  return resolveAssetUrl(path, appEnv.assets.userBaseUrl) || undefined;
+}
+
+type LookupUser = { userId: string; nickname?: string | null; avatar?: string | null };
+
+/** Batch-resolve live name/avatar by user id (`/aurora/users/by-ids?ids=`). */
+async function fetchUserDisplays(userIds: string[]): Promise<Map<string, LookupUser>> {
+  const map = new Map<string, LookupUser>();
+  if (!userIds.length) return map;
+  try {
+    const res = await api.get<{ users?: LookupUser[] }>("/users/by-ids", {
+      ...AURORA,
+      params: { ids: userIds.slice(0, 50).join(",") },
+    });
+    for (const user of res.users ?? []) {
+      if (user.userId) map.set(user.userId, user);
+    }
+  } catch {
+    // Fall back to the contributor snapshot name + initial avatar.
+  }
+  return map;
+}
+
 export async function fetchIpDetail(id: string): Promise<IpDetail | undefined> {
   const res = await api.get<DetailResponse>(`/ip-commerce/ips/${id}`, {
     ...AURORA,
     params: { locale: locale() },
   });
-  return res?.ip ? mapDetail(res.ip) : undefined;
+  if (!res?.ip) return undefined;
+
+  const detail = mapDetail(res.ip);
+  // Contributor rows only carry a display-name snapshot (no avatar). Resolve
+  // the live name + avatar by user id, same as the web's creator-team card.
+  const userIds = Array.from(
+    new Set(
+      [...detail.creators, ...detail.cast]
+        .map((person) => person.userId)
+        .filter(Boolean) as string[]
+    )
+  );
+  if (userIds.length) {
+    const displays = await fetchUserDisplays(userIds);
+    const enrich = (person: Person): Person => {
+      const display = person.userId ? displays.get(person.userId) : undefined;
+      if (!display) return person;
+      return {
+        ...person,
+        name: display.nickname?.trim() || person.name,
+        avatarUrl: resolveUserAvatarUrl(display.avatar) ?? person.avatarUrl,
+      };
+    };
+    detail.creators = detail.creators.map(enrich);
+    detail.cast = detail.cast.map(enrich);
+  }
+  return detail;
+}
+
+/** Report reasons accepted by Nest `POST /aurora/ip-commerce/reports`. */
+export const IP_REPORT_REASONS = [
+  "copyright",
+  "unsafe_content",
+  "fraud",
+  "misleading",
+  "privacy",
+  "harassment",
+  "other",
+] as const;
+
+export type IpReportReason = (typeof IP_REPORT_REASONS)[number];
+
+/** File a content report against an IP (auth'd; admin reviews in ip-commerce). */
+export async function reportIpContent(ipId: string, reason: IpReportReason): Promise<void> {
+  await api.post("/ip-commerce/reports", {
+    ...AURORA,
+    data: { targetType: "ip", targetId: ipId, reason },
+  });
+}
+
+/** Hide an IP for the signed-in viewer (auth'd; lists/detail filter it server-side). */
+export async function blockIpContent(ipId: string): Promise<void> {
+  await api.post("/ip-commerce/blocks", {
+    ...AURORA,
+    data: { targetType: "ip", targetId: ipId },
+  });
+}
+
+/** A creator-owned IP row; `published` mirrors the public-detail visibility
+ * predicate (status published/scheduled + public/unlisted listing). */
+export type MyIp = IpSummary & { published: boolean };
+
+/** The signed-in user's own IPs (auth'd; `/aurora/ip-commerce/me/ips`). */
+export async function fetchMyIps(): Promise<MyIp[]> {
+  try {
+    const res = await api.get<ListResponse>("/ip-commerce/me/ips", {
+      ...AURORA,
+      params: { limit: 50, locale: locale() },
+    });
+    return (res.items ?? []).map((dto) => ({
+      ...mapSummary(dto),
+      published:
+        (dto.status === "published" || dto.status === "scheduled") &&
+        (dto.listingVisibility === "public" || dto.listingVisibility === "unlisted"),
+    }));
+  } catch {
+    return [];
+  }
 }

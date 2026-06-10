@@ -9,6 +9,8 @@ import { fetchNewsFeed } from "./news-api";
 import type { CrewDetail, CrewSummary, IpDetail, IpDiscovery, NewsArticle } from "./types";
 
 export type { IpDiscovery } from "./types";
+export { blockIpContent, IP_REPORT_REASONS, reportIpContent, type IpReportReason } from "./ip-api";
+export { blockCrew, reportCrew } from "./crew-api";
 
 export async function getIpDiscovery(): Promise<IpDiscovery> {
   return fetchIpDiscovery();
