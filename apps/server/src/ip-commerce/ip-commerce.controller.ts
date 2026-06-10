@@ -92,12 +92,13 @@ export class IpCommerceController {
   @Public()
   @Get('discovery')
   async listDiscovery(
+    @CurrentUser() user: AuthUser | undefined,
     @Query(new ZodValidationPipe(ListPublicIpDiscoveryQuerySchema))
     query: ListPublicIpDiscoveryQuery,
   ) {
     return {
       code: 200,
-      data: await this.ipCommerce.listPublicDiscovery(query),
+      data: await this.ipCommerce.listPublicDiscovery(query, user),
     };
   }
 

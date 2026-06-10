@@ -31,6 +31,8 @@ import { CrewsService } from './crews.service';
 import {
   CreateCrewSchema,
   type CreateCrewInput,
+  CreateCrewReportSchema,
+  type CreateCrewReportInput,
   UpdateCrewSchema,
   type UpdateCrewInput,
   UpdateCrewListingSchema,
@@ -59,11 +61,18 @@ export class CrewsController {
 
   @Public()
   @Get()
-  list(@Query('limit') limit?: string, @Query('cursor') cursor?: string) {
-    return this.svc.list({
-      limit: limit ? Number.parseInt(limit, 10) : undefined,
-      cursor: cursor || undefined,
-    });
+  list(
+    @CurrentUser() user?: AuthUser,
+    @Query('limit') limit?: string,
+    @Query('cursor') cursor?: string,
+  ) {
+    return this.svc.list(
+      {
+        limit: limit ? Number.parseInt(limit, 10) : undefined,
+        cursor: cursor || undefined,
+      },
+      user?.userId ?? null,
+    );
   }
 
   @Get('my')
@@ -75,9 +84,12 @@ export class CrewsController {
   // Two-segment path so it never collides with the one-segment `:id` route.
   @Public()
   @Get('by-user/:userId')
-  listByUser(@Param('userId') userIdRaw: string) {
+  listByUser(
+    @Param('userId') userIdRaw: string,
+    @CurrentUser() user?: AuthUser,
+  ) {
     const userId = parseIdParam(userIdRaw, 'userId');
-    return this.svc.listPublicCreatorCrews(userId);
+    return this.svc.listPublicCreatorCrews(userId, user?.userId ?? null);
   }
 
   @Public()
@@ -113,6 +125,29 @@ export class CrewsController {
   async remove(@Param('id') idRaw: string, @CurrentUser() user: AuthUser) {
     const id = parseIdParam(idRaw, 'id');
     await this.svc.softDelete(id, user.userId);
+  }
+
+  @Post(':id/reports')
+  report(
+    @Param('id') idRaw: string,
+    @CurrentUser() user: AuthUser,
+    @Body(new ZodValidationPipe(CreateCrewReportSchema))
+    body: CreateCrewReportInput,
+  ) {
+    const id = parseIdParam(idRaw, 'id');
+    return this.svc.report(id, user.userId, body);
+  }
+
+  @Post(':id/blocks')
+  block(@Param('id') idRaw: string, @CurrentUser() user: AuthUser) {
+    const id = parseIdParam(idRaw, 'id');
+    return this.svc.block(id, user.userId);
+  }
+
+  @Post(':id/blocks/remove')
+  unblock(@Param('id') idRaw: string, @CurrentUser() user: AuthUser) {
+    const id = parseIdParam(idRaw, 'id');
+    return this.svc.unblock(id, user.userId);
   }
 
   private async assertCreateAllowed(cookie: string) {

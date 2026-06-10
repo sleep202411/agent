@@ -17,10 +17,16 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
+import {
+  IpReportStatus,
+  IpTargetType,
+  IpUserBlockTargetType,
+  Prisma,
+} from '@prisma/client';
 import { PrismaService } from '../infra/db/db.module';
 import type {
   CreateCrewInput,
+  CreateCrewReportInput,
   UpdateCrewInput,
   UpdateCrewListingInput,
 } from './dto';
@@ -85,10 +91,18 @@ export class CrewsService {
     });
   }
 
-  async list(opts: { limit?: number; cursor?: string } = {}) {
+  async list(
+    opts: { limit?: number; cursor?: string } = {},
+    viewerId: string | null = null,
+  ) {
     const limit = clampPageSize(opts.limit);
+    const blockedIds = await this.blockedCrewIds(viewerId);
     const rows = await this.prisma.crew.findMany({
-      where: { deletedAt: null, listingStatus: 'listed' },
+      where: {
+        deletedAt: null,
+        listingStatus: 'listed',
+        ...(blockedIds.length ? { id: { notIn: blockedIds } } : {}),
+      },
       orderBy: [{ listedAt: 'desc' }, { createdAt: 'desc' }],
       take: limit + 1,
       ...(opts.cursor ? { cursor: { id: opts.cursor }, skip: 1 } : {}),
@@ -113,6 +127,9 @@ export class CrewsService {
       where: { id, deletedAt: null },
     });
     if (!crew) throw new NotFoundException('Crew not found');
+    if (viewerId && (await this.isCrewBlockedBy(id, viewerId))) {
+      throw new NotFoundException('Crew not found');
+    }
     if (crew.listingStatus !== 'listed') {
       const canView =
         viewerId !== null &&
@@ -297,7 +314,7 @@ export class CrewsService {
    * crews are returned; the owner's own tab uses myCrews() for the full set
    * (including unlisted). Newest-membership-first.
    */
-  async listPublicCreatorCrews(userId: string) {
+  async listPublicCreatorCrews(userId: string, viewerId: string | null = null) {
     const memberships = await this.prisma.crewMember.findMany({
       where: {
         userId,
@@ -307,7 +324,10 @@ export class CrewsService {
       orderBy: { joinedAt: 'desc' },
       include: { crew: true },
     });
-    const crews = memberships.map((m) => m.crew);
+    const blockedIds = new Set(await this.blockedCrewIds(viewerId));
+    const crews = memberships
+      .map((m) => m.crew)
+      .filter((c) => !blockedIds.has(c.id));
     const counts = await this.countsFor(crews.map((c) => c.id));
     return {
       items: crews.map((c) =>
@@ -318,6 +338,115 @@ export class CrewsService {
         }),
       ),
     };
+  }
+
+  // ─── Viewer moderation — report / block (shared ip_* moderation tables,
+  //     targetType 'crew'; admin triages crew reports in the same queue) ───
+
+  async report(
+    crewId: string,
+    reporterId: string,
+    input: CreateCrewReportInput,
+  ) {
+    await this.assertCrewExists(crewId);
+    const report = await this.prisma.ipContentReport.create({
+      data: {
+        targetType: IpTargetType.crew,
+        targetId: crewId,
+        reporterUserId: reporterId,
+        reason: input.reason,
+        status: IpReportStatus.submitted,
+        description: input.description,
+        metadata: {},
+      },
+    });
+    return {
+      report: {
+        id: report.id,
+        status: report.status,
+        targetType: report.targetType,
+        targetId: report.targetId,
+        reason: report.reason,
+        createdAt: report.createdAt.toISOString(),
+      },
+    };
+  }
+
+  async block(crewId: string, viewerId: string) {
+    await this.assertCrewExists(crewId);
+    const block = await this.prisma.$transaction(async (tx) => {
+      await tx.$executeRaw`
+        SELECT pg_advisory_xact_lock(hashtext(${`crew:block:${viewerId}:${crewId}`})::bigint)
+      `;
+      const existing = await tx.ipUserContentBlock.findFirst({
+        where: {
+          userId: viewerId,
+          targetType: IpUserBlockTargetType.crew,
+          targetId: crewId,
+          unblockedAt: null,
+        },
+      });
+      if (existing) return existing;
+      return tx.ipUserContentBlock.create({
+        data: {
+          userId: viewerId,
+          targetType: IpUserBlockTargetType.crew,
+          targetId: crewId,
+        },
+      });
+    });
+    return { block: crewBlockDto(block) };
+  }
+
+  async unblock(crewId: string, viewerId: string) {
+    const existing = await this.prisma.ipUserContentBlock.findFirst({
+      where: {
+        userId: viewerId,
+        targetType: IpUserBlockTargetType.crew,
+        targetId: crewId,
+        unblockedAt: null,
+      },
+    });
+    if (!existing) return { block: null };
+    const updated = await this.prisma.ipUserContentBlock.update({
+      where: { id: existing.id },
+      data: { unblockedAt: new Date() },
+    });
+    return { block: crewBlockDto(updated) };
+  }
+
+  private async assertCrewExists(crewId: string) {
+    const crew = await this.prisma.crew.findFirst({
+      where: { id: crewId, deletedAt: null },
+      select: { id: true },
+    });
+    if (!crew) throw new NotFoundException('Crew not found');
+  }
+
+  private async isCrewBlockedBy(crewId: string, viewerId: string) {
+    const block = await this.prisma.ipUserContentBlock.findFirst({
+      where: {
+        userId: viewerId,
+        targetType: IpUserBlockTargetType.crew,
+        targetId: crewId,
+        unblockedAt: null,
+      },
+      select: { id: true },
+    });
+    return block !== null;
+  }
+
+  private async blockedCrewIds(viewerId: string | null): Promise<string[]> {
+    if (!viewerId) return [];
+    const blocks = await this.prisma.ipUserContentBlock.findMany({
+      where: {
+        userId: viewerId,
+        targetType: IpUserBlockTargetType.crew,
+        unblockedAt: null,
+      },
+      select: { targetId: true },
+    });
+    return blocks.map((b) => b.targetId);
   }
 
   private async assertOwner(crewId: string, userId: string) {
@@ -388,6 +517,22 @@ export class CrewsService {
     }
     return { members, openPositions, openPositionPreview };
   }
+}
+
+function crewBlockDto(block: {
+  id: string;
+  targetType: IpUserBlockTargetType;
+  targetId: string;
+  createdAt: Date;
+  unblockedAt: Date | null;
+}) {
+  return {
+    id: block.id,
+    targetType: block.targetType,
+    targetId: block.targetId,
+    createdAt: block.createdAt.toISOString(),
+    unblockedAt: block.unblockedAt?.toISOString() ?? null,
+  };
 }
 
 function clampPageSize(n?: number): number {

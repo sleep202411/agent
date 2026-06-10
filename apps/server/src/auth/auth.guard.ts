@@ -43,7 +43,13 @@ export class AuthGuard implements CanActivate {
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
     const request = context.switchToHttp().getRequest<GuardRequest>();
-    const cookie = request.headers.cookie;
+    // Native clients (mobile app) carry the satoken in an Authorization
+    // bearer header instead of a browser cookie jar. Normalize it to the
+    // cookie form Java expects; an explicit bearer wins over whatever the
+    // OS cookie jar happens to still hold.
+    const bearer =
+      request.headers.authorization?.match(/^Bearer\s+(\S+)$/i)?.[1];
+    const cookie = bearer ? `satoken=${bearer}` : request.headers.cookie;
 
     // Check if endpoint is marked as @Public()
     const isPublic = this.reflector.getAllAndOverride<boolean>(IS_PUBLIC_KEY, [

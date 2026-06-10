@@ -570,6 +570,8 @@ enum IpCampaignStatus {
 enum IpTargetType {
   ip
   episode
+  /// Content-report target only (IpContentReport); commerce tables never use it.
+  crew
 }
 
 enum IpAssetPurpose {
@@ -722,6 +724,7 @@ enum IpReportStatus {
 enum IpUserBlockTargetType {
   ip
   creator
+  crew
 }
 
 model Workspace {

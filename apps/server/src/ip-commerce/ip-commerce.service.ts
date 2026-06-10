@@ -790,9 +790,13 @@ export class IpCommerceService {
     return this.listAdminDiscovery({ placementKey: input.placementKey });
   }
 
-  async listPublicDiscovery(query: ListPublicIpDiscoveryQuery) {
+  async listPublicDiscovery(
+    query: ListPublicIpDiscoveryQuery,
+    user?: AuthUser,
+  ) {
     const locale = normalizeLocale(query.locale);
     const now = new Date();
+    const viewerBlockWhere = await this.viewerBlockWhere(user);
     const rows = await this.prisma.ipDiscoveryRecommendation.findMany({
       where: {
         placementKey: query.placementKey as IpDiscoveryPlacementKey,
@@ -807,6 +811,7 @@ export class IpCommerceService {
           status: IpPublicationStatus.published,
           listingVisibility: IpListingVisibility.public,
           deletedAt: null,
+          ...viewerBlockWhere,
         },
       },
       include: publicIpDiscoveryInclude,

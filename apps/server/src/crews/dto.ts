@@ -205,3 +205,22 @@ export const UpdateMemberSchema = z.object({
   isFinance: z.boolean().optional(),
 });
 export type UpdateMemberInput = z.infer<typeof UpdateMemberSchema>;
+
+// ─── Viewer moderation ──────────────────────────────────────
+
+/** Same reason set as ip-commerce content reports (shared moderation queue). */
+export const CreateCrewReportSchema = z
+  .object({
+    reason: z.enum([
+      'copyright',
+      'unsafe_content',
+      'fraud',
+      'misleading',
+      'privacy',
+      'harassment',
+      'other',
+    ]),
+    description: z.string().trim().max(2000).optional(),
+  })
+  .strict();
+export type CreateCrewReportInput = z.infer<typeof CreateCrewReportSchema>;
