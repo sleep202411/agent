@@ -1967,7 +1967,9 @@
     "openInNewTab": "在新标签页打开",
     "more": "更多 FizzDragon 内容",
     "notFoundTitle": "文章不存在",
-    "notFoundDesc": "这篇文章可能已被移除，或链接无效。"
+    "notFoundDesc": "这篇文章可能已被移除，或链接无效。",
+    "categoryAll": "全部",
+    "categorySubtitle": "来自{category}的 AIGC 报道、访谈与公告。"
   },
   "creator": {
     "plaza": "人才市场",

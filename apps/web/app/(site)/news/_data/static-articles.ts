@@ -105,6 +105,7 @@ export function getStaticArticles(rawLang: string): NewsItem[] {
       body: file.body,
       slug: meta.slug,
       author: meta.author,
+      category: meta.category,
     });
   }
   return items;

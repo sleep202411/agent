@@ -1967,7 +1967,9 @@
     "openInNewTab": "Open in new tab",
     "more": "More from FizzDragon",
     "notFoundTitle": "Article not found",
-    "notFoundDesc": "This story may have been removed or the link is invalid."
+    "notFoundDesc": "This story may have been removed or the link is invalid.",
+    "categoryAll": "All",
+    "categorySubtitle": "AIGC stories, interviews and announcements from {category}."
   },
   "creator": {
     "plaza": "Talent Market",

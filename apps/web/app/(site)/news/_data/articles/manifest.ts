@@ -29,6 +29,8 @@ export interface ArticleMeta {
   /** Days ago — the article's `createTime` is computed at request time so the list stays fresh-looking. */
   daysAgo: number;
   author: string;
+  /** Category slug — see _data/categories.ts. */
+  category: string;
 }
 
 export const ARTICLE_MANIFEST: ArticleMeta[] = [
@@ -39,6 +41,7 @@ export const ARTICLE_MANIFEST: ArticleMeta[] = [
     cover: "https://static.fizzspace.cn/static/pc/article-1.jpg",
     daysAgo: 1,
     author: "FizzDragon",
+    category: "italy",
   },
   {
     id: 1_000_002,
@@ -47,6 +50,7 @@ export const ARTICLE_MANIFEST: ArticleMeta[] = [
     cover: "https://static.fizzspace.cn/static/pc/article-2.jpg",
     daysAgo: 2,
     author: "FizzDragon",
+    category: "italy",
   },
   {
     id: 1_000_003,
@@ -55,6 +59,7 @@ export const ARTICLE_MANIFEST: ArticleMeta[] = [
     cover: "https://static.fizzspace.cn/static/pc/article-3.jpg",
     daysAgo: 3,
     author: "FizzDragon",
+    category: "italy",
   },
   {
     id: 1_000_004,
@@ -63,6 +68,7 @@ export const ARTICLE_MANIFEST: ArticleMeta[] = [
     cover: "https://static.fizzspace.cn/static/pc/article-4.jpg",
     daysAgo: 4,
     author: "FizzDragon",
+    category: "italy",
   },
   {
     id: 1_000_005,
@@ -71,6 +77,7 @@ export const ARTICLE_MANIFEST: ArticleMeta[] = [
     cover: "https://static.fizzspace.cn/static/pc/article-5.jpg",
     daysAgo: 5,
     author: "FizzDragon",
+    category: "italy",
   },
   {
     id: 1_000_006,
@@ -79,6 +86,7 @@ export const ARTICLE_MANIFEST: ArticleMeta[] = [
     cover: "https://static.fizzspace.cn/static/pc/article-6.jpg",
     daysAgo: 6,
     author: "FizzDragon",
+    category: "italy",
   },
   {
     id: 1_000_007,
@@ -87,6 +95,7 @@ export const ARTICLE_MANIFEST: ArticleMeta[] = [
     cover: "https://static.fizzspace.cn/static/pc/article-7.jpg",
     daysAgo: 7,
     author: "FizzDragon",
+    category: "italy",
   },
   {
     id: 1_000_008,
@@ -95,6 +104,7 @@ export const ARTICLE_MANIFEST: ArticleMeta[] = [
     cover: "https://static.fizzspace.cn/static/pc/article-8.jpg",
     daysAgo: 8,
     author: "FizzDragon",
+    category: "italy",
   },
   {
     id: 1_000_009,
@@ -103,6 +113,7 @@ export const ARTICLE_MANIFEST: ArticleMeta[] = [
     cover: "https://static.fizzspace.cn/static/pc/article-9.jpg",
     daysAgo: 9,
     author: "FizzDragon",
+    category: "italy",
   },
   {
     id: 1_000_010,
@@ -111,5 +122,6 @@ export const ARTICLE_MANIFEST: ArticleMeta[] = [
     cover: "https://static.fizzspace.cn/static/pc/article-10.jpg",
     daysAgo: 10,
     author: "FizzDragon",
+    category: "italy",
   },
 ];
