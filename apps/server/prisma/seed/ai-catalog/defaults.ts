@@ -22,6 +22,11 @@ export type RequiredPlan = 'vip' | null;
  */
 export const GPT_IMAGE_2_PARAMETER_POLICY = {
   parameterMode: 'provider_union',
+  providerFamily: 'gpt-image',
+  // Aspect-driven via supportedAspectRatios; the fal request mapper converts
+  // ratio + resolution into the `image_size: {width, height}` object that
+  // openai/gpt-image-2 accepts (multiples of 16, max edge 3840):
+  // https://fal.ai/models/openai/gpt-image-2/api
   defaultAspectRatio: '4:3',
   supportedAspectRatios: [
     '1:1',
@@ -51,6 +56,10 @@ export const GPT_IMAGE_2_PARAMETER_POLICY = {
 
 export const NANO_BANANA_PARAMETER_POLICY = {
   parameterMode: 'provider_intersection',
+  providerFamily: 'nano-banana',
+  // fal nano-banana endpoints take a native `aspect_ratio` enum (not
+  // image_size): https://fal.ai/models/fal-ai/nano-banana/api
+  aspectParameter: 'aspect_ratio',
   defaultAspectRatio: '1:1',
   supportedAspectRatios: [
     '1:1',
@@ -79,6 +88,8 @@ export const NANO_BANANA_PARAMETER_POLICY = {
 
 export const NANO_BANANA_2_PARAMETER_POLICY = {
   parameterMode: 'provider_intersection',
+  providerFamily: 'nano-banana',
+  aspectParameter: 'aspect_ratio',
   defaultAspectRatio: '1:1',
   supportedAspectRatios: [
     '1:1',
@@ -112,6 +123,8 @@ export const NANO_BANANA_2_PARAMETER_POLICY = {
 
 export const NANO_BANANA_PRO_PARAMETER_POLICY = {
   parameterMode: 'provider_intersection',
+  providerFamily: 'nano-banana',
+  aspectParameter: 'aspect_ratio',
   defaultAspectRatio: '1:1',
   supportedAspectRatios: [
     '1:1',
@@ -160,10 +173,15 @@ const SEEDREAM_EXTENDED_ASPECT_RATIOS = [
   '9:21',
 ] as const;
 
+// Seedream's documented reference-image cap is 10 ("up to 10 image inputs;
+// if over 10 images are sent, only the last 10 will be used") — verified on
+// fal for v4 and v4.5 edit: https://fal.ai/models/fal-ai/bytedance/seedream/v4/edit/api
+// and https://fal.ai/models/fal-ai/bytedance/seedream/v4.5/edit/api. The seed
+// encodes the real cap so mappers no longer need a hardcoded clamp.
 const SEEDREAM_REFERENCE_IMAGES = {
   enabled: true,
   min: 0,
-  max: 14,
+  max: 10,
   maskSupported: false,
 } as const;
 
@@ -350,6 +368,9 @@ export const FLUX_2_FLEX_PARAMETER_POLICY = {
 
 // FLUX.2 [max] — premium zero-config tier (no guidance/steps; one image/request).
 // Provider union across fal-ai/flux-2-max + replicate black-forest-labs/flux-2-max.
+// Aspect-driven: fal-ai/flux-2-max accepts `image_size` as preset token OR
+// {width, height} object (https://fal.ai/models/fal-ai/flux-2-max/api); the
+// request mapper converts ratio + resolution into the object form.
 export const FLUX_2_MAX_PARAMETER_POLICY = {
   parameterMode: 'provider_union',
   providerFamily: 'flux-2',
@@ -375,6 +396,9 @@ export const FLUX_2_MAX_PARAMETER_POLICY = {
 // FLUX.2 [dev] — open-weight base tier. Provider union: fal exposes guidance +
 // inference steps + up to 4 images; replicate is distilled (no steps). The union
 // keeps the richer fal controls; replicate routing ignores unsupported fields.
+// Aspect-driven: fal-ai/flux-2 accepts `image_size` as preset token OR
+// {width, height} object, 512–2048 px (https://fal.ai/models/fal-ai/flux-2/api);
+// the request mapper converts ratio + resolution into the object form.
 export const FLUX_2_DEV_PARAMETER_POLICY = {
   parameterMode: 'provider_union',
   providerFamily: 'flux-2',
@@ -412,6 +436,7 @@ export const FLUX_2_DEV_PARAMETER_POLICY = {
 
 export const SEEDREAM_4_PARAMETER_POLICY = {
   parameterMode: 'provider_union',
+  providerFamily: 'seedream',
   defaultAspectRatio: '1:1',
   supportedAspectRatios: SEEDREAM_BASE_ASPECT_RATIOS,
   defaultVariations: 1,
@@ -424,6 +449,7 @@ export const SEEDREAM_4_PARAMETER_POLICY = {
 
 export const SEEDREAM_45_PARAMETER_POLICY = {
   parameterMode: 'provider_union',
+  providerFamily: 'seedream',
   defaultAspectRatio: '1:1',
   supportedAspectRatios: SEEDREAM_EXTENDED_ASPECT_RATIOS,
   defaultVariations: 1,
@@ -436,6 +462,7 @@ export const SEEDREAM_45_PARAMETER_POLICY = {
 
 export const SEEDREAM_5_LITE_PARAMETER_POLICY = {
   parameterMode: 'provider_union',
+  providerFamily: 'seedream',
   defaultAspectRatio: '1:1',
   supportedAspectRatios: SEEDREAM_BASE_ASPECT_RATIOS,
   defaultVariations: 1,
@@ -764,12 +791,113 @@ export const SEEDREAM_5_LITE_PRODUCT_PRICING: AiProductPricingPolicy = {
   roundTo: 1,
 };
 
+// ── Seedance 2.0 (ByteDance video) ──────────────────────────────
+// Mode union (t2v / i2v / first-last-frame / omni-reference) lives on the
+// canonical model; the param panel filters per selected mode. Reference (全能参考)
+// is multimodal_to_video: ≤9 images / ≤3 videos / ≤3 audios.
+const SEEDANCE_2_0_ASPECT_RATIOS = [
+  'auto',
+  '21:9',
+  '16:9',
+  '4:3',
+  '1:1',
+  '3:4',
+  '9:16',
+];
+const SEEDANCE_2_0_DURATION_OPTIONS = [
+  'auto',
+  '4',
+  '5',
+  '6',
+  '7',
+  '8',
+  '9',
+  '10',
+  '11',
+  '12',
+  '13',
+  '14',
+  '15',
+];
+
+export const SEEDANCE_2_0_PARAMETER_POLICY = {
+  parameterMode: 'provider_union',
+  providerFamily: 'seedance',
+  defaultResolution: '720p',
+  resolutionOptions: ['480p', '720p'], // 1080p pending pricing approval
+  // Default '5' (not 'auto'): 'auto' bills at the 15 s ceiling, so defaulting
+  // to it would make the default quote the maximum price. 'auto' remains
+  // selectable in durationOptions.
+  defaultDurationSeconds: '5',
+  durationOptions: SEEDANCE_2_0_DURATION_OPTIONS, // STRING enum incl. "auto"
+  defaultAspectRatio: 'auto',
+  supportedAspectRatios: SEEDANCE_2_0_ASPECT_RATIOS,
+  generateAudio: { enabled: true, default: true },
+  startFrame: { enabled: true }, // i2v first frame (image_url)
+  endFrame: { enabled: true }, // i2v optional last frame (end_image_url)
+  referenceInputs: {
+    enabled: true, // 全能参考 / multimodal_to_video
+    images: { min: 0, max: 9 },
+    videos: { min: 0, max: 3 },
+    audios: { min: 0, max: 3 },
+    maxTotalFiles: 12,
+  },
+  seed: { enabled: true, minimum: 0, maximum: 2147483647 },
+} as const satisfies Prisma.InputJsonObject;
+
+// Per-second pricing matching fal's `video_seconds` billing. Points =
+// ceil(fal USD/s × 2.0 margin × 100) (积分 ≡ US cent): 720p $0.3034/s → 61,
+// 480p ≈ $0.185/s → 37. Duration 4–15 s; 'auto' quotes at the 15 s ceiling so
+// the estimate can never undercharge the final per-second provider bill.
+// 1080p stays ABSENT until its pricing is approved.
+export const SEEDANCE_2_0_PRODUCT_PRICING: AiProductPricingPolicy = {
+  mode: 'per_second_matrix',
+  version: 'seedance-2-0-points-v2-2026-06-11',
+  currency: 'COMPUTE_POINTS',
+  defaultOutputCount: 1,
+  minOutputCount: 1,
+  maxOutputCount: 1,
+  defaultResolution: '720p',
+  pointsPerSecond: { '480p': 37, '720p': 61 },
+  minSeconds: 4,
+  maxSeconds: 15,
+  defaultSeconds: 5,
+  autoQuoteSeconds: 15,
+  referenceImageSurchargePoints: 0,
+  extraReferenceImagePoints: 0,
+  maskSurchargePoints: 0,
+  minimumPoints: 1,
+  roundTo: 1,
+};
+
+// fast 720p $0.2419/s → 49; 480p ≈ $0.15/s → 30.
+export const SEEDANCE_2_0_FAST_PRODUCT_PRICING: AiProductPricingPolicy = {
+  mode: 'per_second_matrix',
+  version: 'seedance-2-0-fast-points-v2-2026-06-11',
+  currency: 'COMPUTE_POINTS',
+  defaultOutputCount: 1,
+  minOutputCount: 1,
+  maxOutputCount: 1,
+  defaultResolution: '720p',
+  pointsPerSecond: { '480p': 30, '720p': 49 },
+  minSeconds: 4,
+  maxSeconds: 15,
+  defaultSeconds: 5,
+  autoQuoteSeconds: 15,
+  referenceImageSurchargePoints: 0,
+  extraReferenceImagePoints: 0,
+  maskSurchargePoints: 0,
+  minimumPoints: 1,
+  roundTo: 1,
+};
+
 /** Canonical `outputPolicy` factory. Output count follows product pricing. */
 export function buildOutputPolicy(
   productPricing: AiProductPricingPolicy,
+  outputType: 'image' | 'video' = 'image',
 ): Prisma.InputJsonObject {
   return {
-    outputTypes: ['image'],
+    outputTypes: [outputType],
     maxOutputs: productPricing.maxOutputCount,
     storeOriginalProviderOutput: true,
   };
@@ -787,6 +915,8 @@ export const OBSERVABILITY_POLICY = {
 
 /** Queue name shared by every image binding/canonical model. */
 export const IMAGE_QUEUE_NAME = 'ai-image-generation';
+/** Queue name for video binding/canonical models (matches AI_QUEUE_VIDEO). */
+export const VIDEO_QUEUE_NAME = 'ai-video-generation';
 
 /**
  * `entitlementPolicy` factory — only `requiredPlan` varies. `freeUserVisible`
@@ -830,15 +960,21 @@ export function buildBillingPolicy(
  */
 export function buildQueuePolicy(
   requiredPlan: RequiredPlan,
+  overrides: {
+    queueName?: string;
+    globalConcurrency?: number;
+    perUserRunning?: number;
+    maxProviderRuntimeSeconds?: number;
+  } = {},
 ): Prisma.InputJsonObject {
   const gated = Boolean(requiredPlan);
   return {
-    queueName: IMAGE_QUEUE_NAME,
-    globalConcurrency: 12,
-    perUserRunning: gated ? 2 : 1,
+    queueName: overrides.queueName ?? IMAGE_QUEUE_NAME,
+    globalConcurrency: overrides.globalConcurrency ?? 12,
+    perUserRunning: overrides.perUserRunning ?? (gated ? 2 : 1),
     perUserQueued: gated ? 12 : 8,
     priority: gated ? 10 : 0,
-    maxProviderRuntimeSeconds: 600,
+    maxProviderRuntimeSeconds: overrides.maxProviderRuntimeSeconds ?? 600,
   };
 }
 

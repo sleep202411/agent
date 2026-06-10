@@ -16,6 +16,14 @@ export interface FalModelRuntimeConfig {
   type: AiJobType;
   family: AiModelFamily;
   generationModes: AiGenerationMode[];
+  /**
+   * Per-mode submit endpoints for multi-endpoint models (e.g. seedance 2.0
+   * splits text/image/reference-to-video across 3 fal endpoints). Built from
+   * each active binding's OWN supportedModes in priority/weight/endpointId
+   * order (first binding wins per mode). Every sibling runtime of a canonical
+   * carries the SAME map so poll-time lookups behave identically.
+   */
+  modeEndpoints?: Partial<Record<AiGenerationMode, string>>;
   name: string;
   description: string;
   enabled: boolean;

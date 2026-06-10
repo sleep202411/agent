@@ -5975,7 +5975,8 @@
       "contactSales": "Contact Sales",
       "upgrade": "Upgrade",
       "upgradeDiscount": "-50%",
-      "chat": "Chat"
+      "chat": "Chat",
+      "comingSoon": "{label} is coming soon."
     },
     "computeBilling": {
       "openRecharge": "Open compute point recharge",
@@ -6232,6 +6233,7 @@
         "metadata": "Metadata",
         "resolution": "Resolution",
         "ratio": "Ratio",
+        "duration": "Duration",
         "model": "Model",
         "unknownResolution": "Unknown"
       },
@@ -6821,10 +6823,6 @@
     "sbPanoramaGenerating": "Generating…",
     "videoStudio": {
       "title": "Video Studio",
-      "subtitle": "Pick a mode, then describe your video.",
-      "promptPlaceholder": "Describe the video you want…",
-      "create": "Create",
-      "noModels": "Video models are being wired up — coming soon.",
       "modes": {
         "textToVideo": "Text to Video",
         "textToVideoDesc": "Generate from a prompt",
@@ -6832,12 +6830,139 @@
         "imageToVideoDesc": "Animate a starting image",
         "firstLastFrame": "First & Last Frame",
         "firstLastFrameDesc": "Interpolate between two frames",
-        "referenceToVideo": "Reference to Video",
-        "referenceToVideoDesc": "Use reference images for subject or style",
-        "editVideo": "Edit Video",
-        "editVideoDesc": "Edit or restyle an existing video",
+        "referenceToVideo": "Omni Reference",
+        "referenceToVideoDesc": "Generate from image, video & audio references",
         "extendVideo": "Extend",
-        "extendVideoDesc": "Continue an existing clip"
+        "extendVideoDesc": "Continue an existing clip",
+        "comingSoon": "Coming soon"
+      },
+      "modeTabsLabel": "Feed tabs",
+      "historyEmpty": "Your video generations will show up here.",
+      "modeTabs": {
+        "history": "History",
+        "community": "Community"
+      },
+      "communityEmpty": "No community videos yet.",
+      "results": {
+        "title": "Generation history",
+        "hint": "Recent video jobs in this workspace — live updates while jobs run.",
+        "emptyTitle": "No video jobs yet",
+        "preparing": "Preparing",
+        "queued": "Queued",
+        "generating": "Generating",
+        "finalizing": "Finalizing",
+        "queuePosition": "Queue #{position}",
+        "failed": "Generation failed",
+        "noOutput": "The provider did not return a video. Try again.",
+        "retry": "Retry",
+        "retryUnavailable": "This job cannot be retried right now. Check that the model is still available.",
+        "download": "Download video",
+        "fullscreen": "Play fullscreen",
+        "open": "Open video details",
+        "modelFallback": "Video model",
+        "alt": "Generated video",
+        "relative": {
+          "justNow": "Just now",
+          "minutesAgo": "{minutes}m ago",
+          "hoursAgo": "{hours}h ago",
+          "daysAgo": "{days}d ago"
+        }
+      },
+      "referenceErrors": {
+        "format": "Unsupported format. Allowed: {formats}.",
+        "fileTooLarge": "File exceeds {max} MB.",
+        "combinedSizeTooLarge": "Combined video size exceeds {max} MB.",
+        "videoCombinedDuration": "Combined video duration must be {min}–{max}s.",
+        "audioCombinedDuration": "Combined audio duration must be {max}s or less.",
+        "resolutionBand": "Video resolution must be within the {band} range.",
+        "probeFailed": "Could not read the file's media info. Try a different file.",
+        "uploadFailed": "Reference upload failed"
+      }
+    },
+    "modelSettings": {
+      "title": "Settings",
+      "close": "Close",
+      "selectModel": "Select model",
+      "searchModels": "Search models",
+      "modelsError": "Couldn't load models",
+      "retry": "Retry",
+      "noModels": "No models",
+      "noModelMatch": "No matching models",
+      "selectAspectRatio": "Aspect ratio",
+      "reset": "Reset",
+      "moreOptions": "More options",
+      "priceEstimate": "{points} points",
+      "on": "On",
+      "off": "Off",
+      "auto": "Auto",
+      "seedPlaceholder": "Random",
+      "modelLocked": "Not available on your plan",
+      "fields": {
+        "resolution": "Resolution",
+        "quality": "Quality",
+        "numOutputs": "Count",
+        "outputFormat": "Format",
+        "duration": "Duration",
+        "durationSeconds": "Duration",
+        "generateAudio": "Generate audio",
+        "seed": "Seed",
+        "guidanceScale": "Guidance",
+        "inferenceSteps": "Steps",
+        "negativePrompt": "Negative prompt",
+        "promptExtend": "Prompt extend",
+        "thinkingMode": "Thinking",
+        "watermark": "Watermark",
+        "aspectRatio": "Aspect ratio",
+        "imageSize": "Size"
+      },
+      "qualityOptions": {
+        "low": "Low",
+        "medium": "Standard",
+        "high": "High",
+        "standard": "Standard"
+      },
+      "priceFrom": "from {points} pts"
+    },
+    "studioComposer": {
+      "promptLabel": "Prompt",
+      "promptPlaceholder": "Describe what you want to create",
+      "create": "Create",
+      "creating": "Creating",
+      "priceEstimate": "{points} points",
+      "noModelSelected": "No models available",
+      "loadingModels": "Loading models…",
+      "selectModel": "Select model",
+      "addReferenceImage": "Add reference image",
+      "removeReferenceImage": "Remove reference image",
+      "referenceOverflow": "+{count}",
+      "closeSettings": "Close settings",
+      "closePanel": "Close panel",
+      "modePanelTitle": "Choose a mode",
+      "settingsDialogLabel": "Model & settings",
+      "tokens": {
+        "auto": "Auto"
+      },
+      "referenceUpload": {
+        "failed": "Reference image upload failed"
+      },
+      "referenceMention": {
+        "label": "Image {number}",
+        "empty": "Upload a reference image first.",
+        "add": "Add reference image"
+      },
+      "references": {
+        "imagesTitle": "Reference images",
+        "videosTitle": "Reference videos",
+        "audiosTitle": "Reference audio",
+        "total": "Total {count}/{max}",
+        "addImage": "Add reference image",
+        "addVideo": "Add reference video",
+        "addAudio": "Add reference audio",
+        "remove": "Remove reference",
+        "add": "Add reference",
+        "typeAtMax": "This reference type is full",
+        "totalAtMax": "Reference limit reached ({max} files total)",
+        "audioNeedsVisual": "Add an image or video reference first"
       },
       "slots": {
         "firstFrame": "First frame",
@@ -6846,15 +6971,6 @@
         "referenceImages": "Reference images",
         "referenceVideo": "Reference video",
         "audio": "Audio"
-      },
-      "modePanelTitle": "Choose a mode",
-      "settingsPanelTitle": "Model & settings",
-      "selectModel": "Select model",
-      "modeTabsLabel": "Feed tabs",
-      "historyEmpty": "Your video generations will show up here.",
-      "modeTabs": {
-        "history": "History",
-        "community": "Community"
       }
     }
   },

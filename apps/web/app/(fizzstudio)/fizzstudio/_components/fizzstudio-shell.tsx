@@ -11,6 +11,7 @@ import {
   IconSearch,
   IconSparkles,
 } from "@tabler/icons-react";
+import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { StudioAccountMenu } from "@/components/studio-account-menu";
 import { UpgradeDialog } from "@/components/payment/upgrade-dialog";
@@ -134,6 +135,9 @@ function StudioHeader({
 }) {
   const t = useTranslations("fizzStudio");
   const [upgradeOpen, setUpgradeOpen] = useState(false);
+  // Chat/notifications/search have no backing feature yet — surface that
+  // honestly instead of rendering live-looking dead buttons.
+  const comingSoon = (label: string) => toast.info(t("shell.comingSoon", { label }));
 
   if (variant === "enterprise") {
     return (
@@ -172,6 +176,7 @@ function StudioHeader({
           <button
             type="button"
             aria-label={t("shell.chat")}
+            onClick={() => comingSoon(t("shell.chat"))}
             className="flex size-9 items-center justify-center text-white transition-colors hover:text-white/72"
           >
             <IconMessageCircle className="size-5 fill-white" stroke={1.9} />
@@ -180,6 +185,7 @@ function StudioHeader({
           <button
             type="button"
             aria-label={t("shell.notifications")}
+            onClick={() => comingSoon(t("shell.notifications"))}
             className="flex size-9 items-center justify-center text-white transition-colors hover:text-white/72"
           >
             <IconBell className="size-5" stroke={1.9} />
@@ -217,18 +223,19 @@ function StudioHeader({
           <button
             type="button"
             aria-label={t("shell.search")}
+            onClick={() => comingSoon(t("shell.search"))}
             className="flex size-10 items-center justify-center rounded-full text-white/54 transition-colors hover:bg-white/8 hover:text-white"
           >
             <IconSearch className="size-5" />
           </button>
 
-          <button
-            type="button"
+          <a
+            href="mailto:business@fizzdragon.com"
             className="hidden h-10 items-center gap-2 rounded-full bg-[#242426] px-4 text-sm font-semibold text-white/86 transition-colors hover:bg-[#2d2d30] hover:text-white sm:inline-flex"
           >
             <IconPhone className="size-4" />
             {t("shell.contactSales")}
-          </button>
+          </a>
 
           <button
             type="button"
@@ -246,6 +253,7 @@ function StudioHeader({
           <button
             type="button"
             aria-label={t("shell.chat")}
+            onClick={() => comingSoon(t("shell.chat"))}
             className="flex size-10 items-center justify-center rounded-full text-white/54 transition-colors hover:bg-white/8 hover:text-white"
           >
             <IconMessageCircle className="size-5" />
@@ -254,6 +262,7 @@ function StudioHeader({
           <button
             type="button"
             aria-label={t("shell.notifications")}
+            onClick={() => comingSoon(t("shell.notifications"))}
             className="flex size-10 items-center justify-center rounded-full text-white/54 transition-colors hover:bg-white/8 hover:text-white"
           >
             <IconBell className="size-5" />

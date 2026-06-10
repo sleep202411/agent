@@ -74,6 +74,11 @@ import {
 import { PageHeader } from "@/components/admin/page-header";
 
 type StatusFilter = "" | "draft" | "active" | "disabled" | "degraded" | "archived";
+type AiModality = "image" | "video";
+const MODALITY_OPTIONS: { value: AiModality; label: string }[] = [
+  { value: "image", label: "图片" },
+  { value: "video", label: "视频" },
+];
 type DrawerMode = "provider" | "endpoint" | "model" | "binding" | "endpointBinding" | "job" | null;
 type AssetModerationFilter = "" | "unreviewed" | "approved" | "flagged" | "blocked";
 type JsonObject = Record<string, unknown>;
@@ -204,6 +209,11 @@ const PROVIDER_MODE_OPTIONS = [
   { value: "inpainting", label: "Inpainting" },
   { value: "text_to_video", label: "Text to video" },
   { value: "image_to_video", label: "Image to video" },
+  // Video multi-endpoint modes (seedance et al). Missing entries here would
+  // silently DROP the mode from supportedModes on endpoint save (the payload
+  // is built from rendered checkboxes only), breaking per-mode routing.
+  { value: "first_last_frame_to_video", label: "First/last frame to video" },
+  { value: "multimodal_to_video", label: "Multimodal (omni) to video" },
 ] as const;
 
 const PROVIDER_BINDING_FIELDS = {
@@ -241,6 +251,7 @@ export function AiModelOpsPanel({
   const [jobs, setJobs] = useState<AdminAiJobListData>(initialData.jobs ?? EMPTY_JOBS);
   const [assets, setAssets] = useState<AdminAiAssetListData>(initialData.assets ?? EMPTY_ASSETS);
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("");
+  const [modality, setModality] = useState<AiModality>("image");
   const [assetModerationFilter, setAssetModerationFilter] = useState<AssetModerationFilter>("");
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -256,13 +267,13 @@ export function AiModelOpsPanel({
   const [selectedJob, setSelectedJob] = useState<AdminAiJobListItem | null>(null);
   const [jobDetail, setJobDetail] = useState<AdminAiJobDetail | null>(null);
 
-  async function refresh(nextStatus = statusFilter) {
+  async function refresh(nextStatus = statusFilter, nextModality: AiModality = modality) {
     setLoading(true);
     setError(null);
     try {
-      const bindingQuery = new URLSearchParams({ modality: "image" });
+      const bindingQuery = new URLSearchParams({ modality: nextModality });
       if (nextStatus) bindingQuery.set("status", nextStatus);
-      const endpointQuery = new URLSearchParams({ modality: "image" });
+      const endpointQuery = new URLSearchParams({ modality: nextModality });
       if (nextStatus) endpointQuery.set("status", nextStatus);
 
       if (view === "overview") {
@@ -280,7 +291,9 @@ export function AiModelOpsPanel({
           requestEnvelope<AdminAiEndpointListData>(
             `/api/admin/ai-model-ops/endpoints?${endpointQuery.toString()}`
           ),
-          requestEnvelope<AdminAiModelListData>("/api/admin/ai-model-ops/models?modality=image"),
+          requestEnvelope<AdminAiModelListData>(
+            `/api/admin/ai-model-ops/models?modality=${nextModality}`
+          ),
           requestEnvelope<AdminAiBindingListData>(
             `/api/admin/ai-model-ops/bindings?${bindingQuery.toString()}`
           ),
@@ -316,7 +329,9 @@ export function AiModelOpsPanel({
             `/api/admin/ai-model-ops/endpoints?${endpointQuery.toString()}`
           ),
           requestEnvelope<AdminAiProviderListData>("/api/admin/ai-model-ops/providers"),
-          requestEnvelope<AdminAiModelListData>("/api/admin/ai-model-ops/models?modality=image"),
+          requestEnvelope<AdminAiModelListData>(
+            `/api/admin/ai-model-ops/models?modality=${nextModality}`
+          ),
         ]);
         setEndpoints(nextEndpoints);
         setProviders(nextProviders);
@@ -326,12 +341,14 @@ export function AiModelOpsPanel({
 
       if (view === "models") {
         const [nextModels, nextBindings, nextEndpoints] = await Promise.all([
-          requestEnvelope<AdminAiModelListData>("/api/admin/ai-model-ops/models?modality=image"),
+          requestEnvelope<AdminAiModelListData>(
+            `/api/admin/ai-model-ops/models?modality=${nextModality}`
+          ),
           requestEnvelope<AdminAiBindingListData>(
-            "/api/admin/ai-model-ops/bindings?modality=image"
+            `/api/admin/ai-model-ops/bindings?modality=${nextModality}`
           ),
           requestEnvelope<AdminAiEndpointListData>(
-            "/api/admin/ai-model-ops/endpoints?modality=image"
+            `/api/admin/ai-model-ops/endpoints?modality=${nextModality}`
           ),
         ]);
         setModels(nextModels);
@@ -365,11 +382,20 @@ export function AiModelOpsPanel({
     nextModels: AdminAiModelListData,
     nextBindings: AdminAiBindingListData
   ) {
+    // Drop selections whose subject is no longer in the refetched list (modality switch,
+    // archived elsewhere, …) instead of keeping a stale object around.
     setSelectedModel((current) =>
-      current ? (nextModels.items.find((item) => item.id === current.id) ?? current) : current
+      current ? (nextModels.items.find((item) => item.id === current.id) ?? null) : current
     );
     setSelectedBinding((current) =>
-      current ? (nextBindings.items.find((item) => item.id === current.id) ?? current) : current
+      current ? (nextBindings.items.find((item) => item.id === current.id) ?? null) : current
+    );
+    const modelVanished =
+      selectedModel != null && !nextModels.items.some((item) => item.id === selectedModel.id);
+    const bindingVanished =
+      selectedBinding != null && !nextBindings.items.some((item) => item.id === selectedBinding.id);
+    setDrawerMode((mode) =>
+      (mode === "model" && modelVanished) || (mode === "binding" && bindingVanished) ? null : mode
     );
   }
 
@@ -466,8 +492,11 @@ export function AiModelOpsPanel({
     setDrawerMode(null);
     setDrawerError(null);
     setSelectedProvider(null);
+    setSelectedModel(null);
     setSelectedEndpoint(null);
     setBindingModel(null);
+    setSelectedBinding(null);
+    setSelectedJob(null);
     setJobDetail(null);
   }
 
@@ -659,6 +688,31 @@ export function AiModelOpsPanel({
         icon={meta.icon}
         actions={
           <div className="flex flex-wrap items-center gap-2">
+            {view !== "jobs" && view !== "assets" ? (
+              <div className="flex items-center gap-0.5 rounded-lg border border-slate-200 bg-slate-50 p-0.5">
+                {MODALITY_OPTIONS.map((option) => {
+                  const active = option.value === modality;
+                  return (
+                    <button
+                      key={option.value}
+                      type="button"
+                      disabled={loading || saving}
+                      onClick={() => {
+                        if (option.value === modality) return;
+                        setModality(option.value);
+                        void refresh(statusFilter, option.value);
+                      }}
+                      className={cn(
+                        "h-8 rounded-md px-3 text-sm font-medium transition-colors disabled:opacity-50",
+                        active ? "bg-slate-950 text-white" : "text-slate-600 hover:text-slate-900"
+                      )}
+                    >
+                      {option.label}
+                    </button>
+                  );
+                })}
+              </div>
+            ) : null}
             <Button
               type="button"
               variant="outline"
@@ -732,6 +786,7 @@ export function AiModelOpsPanel({
       <ModelPolicyDrawer
         open={drawerMode === "model"}
         model={selectedModel}
+        modality={modality}
         saving={saving}
         error={drawerError}
         onClose={closeDrawer}
@@ -747,10 +802,12 @@ export function AiModelOpsPanel({
                 buildModelPayload(form),
                 "PATCH"
               );
+              await refresh();
             } else {
               await mutateEnvelope("/api/admin/ai-model-ops/models", buildCreateModelPayload(form));
+              await refresh();
+              closeDrawer();
             }
-            await refresh();
           } catch (err) {
             setDrawerError(toErrorMessage(err));
           } finally {
@@ -763,6 +820,7 @@ export function AiModelOpsPanel({
         open={drawerMode === "endpoint"}
         endpoint={selectedEndpoint}
         providers={providers.items}
+        modality={modality}
         saving={saving}
         error={drawerError}
         onClose={closeDrawer}
@@ -2161,6 +2219,7 @@ function ProviderAccountDrawer({
 function ModelPolicyDrawer({
   open,
   model,
+  modality,
   saving,
   error,
   onClose,
@@ -2168,12 +2227,14 @@ function ModelPolicyDrawer({
 }: {
   open: boolean;
   model: AdminAiCanonicalModel | null;
+  /** Active panel modality toggle; seeds the create-mode draft. */
+  modality: AiModality;
   saving: boolean;
   error: string | null;
   onClose: () => void;
   onSave: (event: FormEvent<HTMLFormElement>) => void;
 }) {
-  const draft = model ?? defaultModelDraft();
+  const draft = model ?? defaultModelDraft(modality);
   const creating = !model;
   return (
     <Sheet open={open} onOpenChange={(next) => (!next ? onClose() : null)}>
@@ -2379,6 +2440,7 @@ function ProviderEndpointDrawer({
   open,
   endpoint,
   providers,
+  modality,
   saving,
   error,
   onClose,
@@ -2387,12 +2449,14 @@ function ProviderEndpointDrawer({
   open: boolean;
   endpoint: AdminAiProviderEndpoint | null;
   providers: AdminAiProviderAccount[];
+  /** Active panel modality toggle; seeds the create-mode draft. */
+  modality: AiModality;
   saving: boolean;
   error: string | null;
   onClose: () => void;
   onSave: (event: FormEvent<HTMLFormElement>) => void;
 }) {
-  const draft = endpoint ?? defaultProviderEndpointDraft(providers);
+  const draft = endpoint ?? defaultProviderEndpointDraft(providers, modality);
   const creating = !endpoint;
   return (
     <Sheet open={open} onOpenChange={(next) => (!next ? onClose() : null)}>
@@ -3871,14 +3935,15 @@ function computeReadiness(
   return { activeProviders, activeBindings, activeModels, risks };
 }
 
-function defaultModelDraft(): AdminAiCanonicalModel {
+function defaultModelDraft(modality: AiModality): AdminAiCanonicalModel {
+  const video = modality === "video";
   return {
     id: "",
-    slug: "gpt-image-2",
-    displayName: "GPT Image 2",
-    modality: "image",
-    family: "gpt-image",
-    generationModes: ["text_to_image"],
+    slug: video ? "seedance-2.0" : "gpt-image-2",
+    displayName: video ? "Seedance 2.0" : "GPT Image 2",
+    modality,
+    family: video ? "seedance" : "gpt-image",
+    generationModes: video ? ["text_to_video"] : ["text_to_image"],
     status: "draft",
     description: "",
     parameterPolicy: {},
@@ -3902,7 +3967,8 @@ function defaultModelDraft(): AdminAiCanonicalModel {
 }
 
 function defaultProviderEndpointDraft(
-  providers: AdminAiProviderAccount[]
+  providers: AdminAiProviderAccount[],
+  modality: AiModality
 ): AdminAiProviderEndpoint {
   const providerAccount = providers[0];
   return {
@@ -3911,10 +3977,10 @@ function defaultProviderEndpointDraft(
     provider: providerAccount?.provider ?? "fal-ai",
     endpointId: "",
     displayName: "",
-    modality: "image",
+    modality,
     status: "draft",
     healthStatus: "unknown",
-    supportedModes: ["text_to_image"],
+    supportedModes: modality === "video" ? ["text_to_video"] : ["text_to_image"],
     providerInputSchema: {
       type: "object",
       properties: {},

@@ -63,20 +63,6 @@ function isNanoBananaEndpoint(endpointId: string): boolean {
   return /^fal-ai\/nano-banana(?:-2|-pro)?(?:\/edit)?$/.test(endpointId);
 }
 
-function isSeedreamEndpoint(endpointId: string): boolean {
-  return /^fal-ai\/bytedance\/seedream\/v(?:4(?:\.5)?|5\/lite)\/text-to-image(?:\/edit)?$/.test(
-    endpointId,
-  );
-}
-
-function isQwenImageEndpoint(endpointId: string): boolean {
-  return /^fal-ai\/qwen-image-2(?:\/pro)?\/text-to-image$/.test(endpointId);
-}
-
-function isFluxImageEndpoint(endpointId: string): boolean {
-  return /^fal-ai\/flux-2-(?:pro|flex)(?:\/edit)?$/.test(endpointId);
-}
-
 function recordValue(value: unknown): Record<string, unknown> | null {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
     ? (value as Record<string, unknown>)
@@ -139,6 +125,56 @@ function seedEnabled(policy: AiJsonValue | undefined): boolean {
   return recordValue(recordValue(policy)?.seed)?.enabled === true;
 }
 
+function booleanFromPolicy(value: unknown, key: string): boolean | undefined {
+  const flag = recordValue(value)?.[key];
+  return typeof flag === 'boolean' ? flag : undefined;
+}
+
+/**
+ * `generateAudio` policy block (Seedance & other audio-video models). When
+ * `enabled` is false (or missing) the switch is not emitted at all.
+ */
+function generateAudioPolicy(
+  policy: AiJsonValue | undefined,
+): { default: boolean } | undefined {
+  const value = recordValue(recordValue(policy)?.generateAudio);
+  if (!value || value.enabled !== true) return undefined;
+  return { default: booleanFromPolicy(value, 'default') ?? true };
+}
+
+/**
+ * Multimodal `referenceInputs` policy (Seedance 全能参考 / multimodal_to_video).
+ * Distinct from the image-model `referenceImages` shape read by
+ * `referencePolicy()` — this carries separate image/video/audio caps and a
+ * combined `maxTotalFiles` ceiling.
+ */
+function referenceInputsPolicy(policy: AiJsonValue | undefined):
+  | {
+      images: { min: number; max: number };
+      videos: { min: number; max: number };
+      audios: { min: number; max: number };
+      maxTotalFiles?: number;
+    }
+  | undefined {
+  const value = recordValue(recordValue(policy)?.referenceInputs);
+  if (!value || value.enabled !== true) return undefined;
+  const slot = (key: string): { min: number; max: number } => {
+    const entry = recordValue(value[key]);
+    const min = numberFromPolicy(entry, 'min');
+    const max = numberFromPolicy(entry, 'max');
+    return {
+      min: typeof min === 'number' ? Math.max(0, min) : 0,
+      max: typeof max === 'number' ? Math.max(0, max) : 0,
+    };
+  };
+  return {
+    images: slot('images'),
+    videos: slot('videos'),
+    audios: slot('audios'),
+    maxTotalFiles: numberFromPolicy(value, 'maxTotalFiles'),
+  };
+}
+
 function numberFromPolicy(value: unknown, key: string): number | undefined {
   const number = recordValue(value)?.[key];
   return typeof number === 'number' && Number.isFinite(number)
@@ -178,16 +214,11 @@ function inputSchemaFor(
   const imageToVideo = generationModes.includes('image_to_video');
   const imageToImage = generationModes.includes('image_to_image');
   const nanoBanana = isNanoBananaEndpoint(endpointId);
-  const seedream = isSeedreamEndpoint(endpointId);
-  const qwenImage = isQwenImageEndpoint(endpointId);
-  const fluxImage = isFluxImageEndpoint(endpointId);
-  const aspectRatioDriven = nanoBanana || seedream || qwenImage || fluxImage;
-  const referenceBase = referencePolicy(parameterPolicy);
-  const reference = seedream
-    ? { ...referenceBase, max: Math.min(referenceBase.max, 10) }
-    : fluxImage
-      ? { ...referenceBase, max: Math.min(referenceBase.max, 10) }
-      : referenceBase;
+  // Reference-image limits come straight from the canonical parameterPolicy —
+  // the seed encodes each provider's real cap (e.g. seedream's documented max
+  // of 10: https://fal.ai/models/fal-ai/bytedance/seedream/v4/edit/api), so no
+  // hardcoded per-endpoint clamps live here anymore.
+  const reference = referencePolicy(parameterPolicy);
 
   const properties: AiInputSchema['properties'] = {
     prompt: {
@@ -211,6 +242,27 @@ function inputSchemaFor(
       parameterPolicy,
       'supportedAspectRatios',
     );
+    // Aspect-driven iff the canonical policy declares supportedAspectRatios.
+    // Verified per currently-seeded fal image endpoint (2026-06): every one
+    // either takes aspect ratios natively or takes `image_size` as a
+    // {width, height} object that the request mapper derives from
+    // ratio + resolution —
+    //  - openai/gpt-image-2: presets OR {width, height}
+    //    (https://fal.ai/models/openai/gpt-image-2/api)
+    //  - fal-ai/flux-2 (dev) / flux-2-pro / flux-2-flex / flux-2-max:
+    //    presets OR {width, height} (https://fal.ai/models/fal-ai/flux-2/api,
+    //    https://fal.ai/models/fal-ai/flux-2-max/api)
+    //  - fal-ai/bytedance/seedream/*: {width, height}
+    //  - fal-ai/qwen-image-2*: {width, height}
+    //  - fal-ai/nano-banana*: native `aspect_ratio` enum (policy declares
+    //    aspectParameter: 'aspect_ratio')
+    // An endpoint that only accepted preset tokens would have to drop
+    // supportedAspectRatios (or set aspectParameter) in its seed policy.
+    const aspectRatioDriven = aspectOptions.length > 0;
+    const aspectParameter =
+      stringFromPolicy(parameterPolicy, 'aspectParameter') ??
+      // Per-family fallback for policies that predate `aspectParameter`.
+      (nanoBanana ? 'aspect_ratio' : 'image_size');
     const resolutionOptions = stringArrayFromPolicy(
       parameterPolicy,
       'resolutionOptions',
@@ -255,7 +307,7 @@ function inputSchemaFor(
         importance: 'secondary',
       },
       'x-provider': {
-        parameter: nanoBanana ? 'aspect_ratio' : 'image_size',
+        parameter: aspectParameter,
       },
     };
 
@@ -354,9 +406,11 @@ function inputSchemaFor(
       };
     }
 
-    const guidanceScale = fluxImage
-      ? numberControlPolicy(parameterPolicy, 'guidanceScale')
-      : undefined;
+    // Emission is gated by the policy itself (numberControlPolicy returns
+    // undefined unless `enabled === true`) — NOT by endpoint regexes, which
+    // drifted and silently dropped flux-2-dev's declared sliders (its
+    // endpoint is the bare `fal-ai/flux-2`).
+    const guidanceScale = numberControlPolicy(parameterPolicy, 'guidanceScale');
     if (guidanceScale) {
       properties.guidanceScale = {
         type: 'number',
@@ -378,9 +432,10 @@ function inputSchemaFor(
       };
     }
 
-    const inferenceSteps = fluxImage
-      ? numberControlPolicy(parameterPolicy, 'inferenceSteps')
-      : undefined;
+    const inferenceSteps = numberControlPolicy(
+      parameterPolicy,
+      'inferenceSteps',
+    );
     if (inferenceSteps) {
       properties.inferenceSteps = {
         type: 'integer',
@@ -401,15 +456,16 @@ function inputSchemaFor(
       };
     }
 
-    if (
-      qwenImage &&
-      recordValue(recordValue(parameterPolicy)?.negativePrompt)?.enabled !==
-        false
-    ) {
+    // Any model whose policy declares negativePrompt { enabled: true } gets
+    // the control (today: the qwen-image seeds) — no endpoint gating.
+    const negativePrompt = recordValue(
+      recordValue(parameterPolicy)?.negativePrompt,
+    );
+    if (negativePrompt?.enabled === true) {
       properties.negativePrompt = {
         type: 'string',
         title: 'Negative prompt',
-        maxLength: 500,
+        maxLength: numberFromPolicy(negativePrompt, 'maxLength') ?? 500,
         'x-ui': {
           control: 'textarea',
           group: 'advanced',
@@ -527,30 +583,96 @@ function inputSchemaFor(
   }
 
   if (type === 'video') {
-    properties.durationSeconds = {
-      type: 'integer',
-      title: 'Duration',
-      default: 5,
-      minimum: 3,
-      maximum: 10,
-      'x-ui': {
-        control: 'slider',
-        group: 'settings',
-        order: 60,
-        unit: 's',
-        importance: 'secondary',
-      },
-      'x-provider': {
-        parameter: 'duration',
-        transform: 'secondsToInteger',
-        omitIfDefault: true,
-      },
-    };
+    // Policy-driven video controls. Models whose parameterPolicy declares the
+    // relevant keys (e.g. Seedance 2.0) get the canonical enum/switch controls;
+    // models without those keys fall back to the previous hardcoded shape so we
+    // never regress the other fal video endpoints.
+    const videoResolutionOptions = stringArrayFromPolicy(
+      parameterPolicy,
+      'resolutionOptions',
+    );
+    const videoDurationOptions = stringArrayFromPolicy(
+      parameterPolicy,
+      'durationOptions',
+    );
+    const videoAspectOptions = stringArrayFromPolicy(
+      parameterPolicy,
+      'supportedAspectRatios',
+    );
+    const audioPolicy = generateAudioPolicy(parameterPolicy);
+
+    if (videoResolutionOptions.length > 0) {
+      properties.resolution = {
+        type: 'string',
+        title: 'Resolution',
+        default:
+          stringFromPolicy(parameterPolicy, 'defaultResolution') ??
+          videoResolutionOptions[0],
+        enum: videoResolutionOptions,
+        'x-ui': {
+          control: 'segmented',
+          group: 'settings',
+          order: 55,
+          importance: 'secondary',
+        },
+        'x-provider': { parameter: 'resolution', omitIfDefault: true },
+      };
+    }
+
+    if (videoDurationOptions.length > 0) {
+      // STRING enum incl. 'auto' (e.g. Seedance 'auto'/'4'..'15') rendered as a
+      // dropdown, NOT an integer slider.
+      properties.duration = {
+        type: 'string',
+        title: 'Duration',
+        default:
+          stringFromPolicy(parameterPolicy, 'defaultDurationSeconds') ??
+          videoDurationOptions[0],
+        enum: videoDurationOptions,
+        'x-ui': {
+          control: 'select',
+          group: 'settings',
+          order: 60,
+          importance: 'secondary',
+        },
+        // ALWAYS sent (no omitIfDefault): duration drives per-second billing
+        // and fal's own default is 'auto' (= the ceiling). Omitting our '5'
+        // default would let the provider run 15 s while we charged 5 s.
+        'x-provider': { parameter: 'duration' },
+      };
+    } else {
+      // Fallback: integer slider for video models without a duration policy.
+      properties.durationSeconds = {
+        type: 'integer',
+        title: 'Duration',
+        default: 5,
+        minimum: 3,
+        maximum: 10,
+        'x-ui': {
+          control: 'slider',
+          group: 'settings',
+          order: 60,
+          unit: 's',
+          importance: 'secondary',
+        },
+        'x-provider': {
+          parameter: 'duration',
+          transform: 'secondsToInteger',
+          omitIfDefault: true,
+        },
+      };
+    }
+
     properties.aspectRatio = {
       type: 'string',
       title: 'Aspect ratio',
-      default: '16:9',
-      enum: ['16:9', '9:16', '1:1'],
+      default:
+        stringFromPolicy(parameterPolicy, 'defaultAspectRatio') ??
+        (videoAspectOptions.length > 0 ? videoAspectOptions[0] : '16:9'),
+      enum:
+        videoAspectOptions.length > 0
+          ? videoAspectOptions
+          : ['16:9', '9:16', '1:1'],
       'x-ui': {
         control: 'segmented',
         group: 'settings',
@@ -559,6 +681,130 @@ function inputSchemaFor(
       },
       'x-provider': { parameter: 'aspect_ratio', omitIfDefault: true },
     };
+
+    if (audioPolicy) {
+      properties.generateAudio = {
+        type: 'boolean',
+        title: 'Generate audio',
+        default: audioPolicy.default,
+        'x-ui': {
+          control: 'switch',
+          group: 'settings',
+          order: 75,
+          importance: 'secondary',
+        },
+        'x-provider': { parameter: 'generate_audio' },
+      };
+    }
+  }
+
+  // Multimodal references (Seedance 全能参考 / multimodal_to_video): up to
+  // 9 images + 3 videos + 3 audios, ≤ maxTotalFiles across all three. Each
+  // array is a separate upload control; the per-spec format/size/duration
+  // constraints ride on `x-ui` so the composer + validation layer can enforce
+  // them (the panel skips group 'references' — these belong to Layer 2).
+  const referenceInputs = referenceInputsPolicy(parameterPolicy);
+  if (generationModes.includes('multimodal_to_video') && referenceInputs) {
+    const maxTotalFiles = referenceInputs.maxTotalFiles;
+    const referenceItems = {
+      type: 'object' as const,
+      properties: {
+        url: { type: 'string' as const, format: 'uri', title: 'URL' },
+      },
+      required: ['url'],
+      additionalProperties: true,
+    };
+
+    if (referenceInputs.images.max > 0) {
+      properties.referenceImages = {
+        type: 'array',
+        title: 'Reference images',
+        minItems: referenceInputs.images.min,
+        maxItems: referenceInputs.images.max,
+        items: referenceItems,
+        'x-ui': {
+          control: 'image_upload',
+          group: 'references',
+          order: 30,
+          importance: 'primary',
+          accept: 'image/jpeg,image/png,image/webp',
+          // Per-spec constraints carried for the UI/validation layer.
+          ...({
+            mediaKind: 'image',
+            acceptFormats: ['jpeg', 'png', 'webp'],
+            maxFileSizeMb: 30,
+            promptRefPrefix: '@Image',
+            maxTotalFiles,
+          } as Record<string, unknown>),
+        } as AiInputSchema['properties'][string]['x-ui'],
+        'x-provider': {
+          parameter: 'image_urls',
+          transform: 'mediaArrayToUrls',
+        },
+      };
+    }
+
+    if (referenceInputs.videos.max > 0) {
+      properties.referenceVideos = {
+        type: 'array',
+        title: 'Reference videos',
+        minItems: referenceInputs.videos.min,
+        maxItems: referenceInputs.videos.max,
+        items: referenceItems,
+        'x-ui': {
+          control: 'video_upload',
+          group: 'references',
+          order: 31,
+          importance: 'primary',
+          accept: 'video/mp4,video/quicktime',
+          ...({
+            mediaKind: 'video',
+            acceptFormats: ['mp4', 'mov'],
+            maxCombinedFileSizeMb: 50,
+            minCombinedDurationSeconds: 2,
+            maxCombinedDurationSeconds: 15,
+            resolutionBand: '480p-720p',
+            promptRefPrefix: '@Video',
+            maxTotalFiles,
+          } as Record<string, unknown>),
+        } as AiInputSchema['properties'][string]['x-ui'],
+        'x-provider': {
+          parameter: 'video_urls',
+          transform: 'mediaArrayToUrls',
+        },
+      };
+    }
+
+    if (referenceInputs.audios.max > 0) {
+      properties.referenceAudios = {
+        type: 'array',
+        title: 'Reference audio',
+        minItems: referenceInputs.audios.min,
+        maxItems: referenceInputs.audios.max,
+        items: referenceItems,
+        'x-ui': {
+          control: 'audio_upload',
+          group: 'references',
+          order: 32,
+          importance: 'primary',
+          accept: 'audio/mpeg,audio/wav',
+          ...({
+            mediaKind: 'audio',
+            acceptFormats: ['mp3', 'wav'],
+            maxFileSizeMb: 15,
+            maxCombinedDurationSeconds: 15,
+            // Audio cannot be sent without ≥1 image or video reference.
+            audioRequiresVisual: true,
+            promptRefPrefix: '@Audio',
+            maxTotalFiles,
+          } as Record<string, unknown>),
+        } as AiInputSchema['properties'][string]['x-ui'],
+        'x-provider': {
+          parameter: 'audio_urls',
+          transform: 'mediaArrayToUrls',
+        },
+      };
+    }
   }
 
   if (seedEnabled(parameterPolicy)) {
@@ -646,11 +892,14 @@ function capabilityMatrixFor(
       'num_images',
       'image_url',
       'image_urls',
+      'video_urls',
+      'audio_urls',
       'mask_url',
       'end_image_url',
       'output_format',
       'duration',
       'aspect_ratio',
+      'generate_audio',
       'seed',
     ],
     unsupportedParameters: [],

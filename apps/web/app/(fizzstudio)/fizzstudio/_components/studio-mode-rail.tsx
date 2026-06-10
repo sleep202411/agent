@@ -20,37 +20,45 @@ export function StudioModeRail({
   const t = useTranslations("fizzStudio.videoStudio.modes");
 
   return (
-    <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
+    <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5">
       {modes.map((mode) => {
         const Icon = mode.icon;
         const selected = mode.key === active;
+        const disabled = mode.disabled === true;
         return (
           <button
             key={mode.key}
             type="button"
-            onClick={() => onSelect(mode.key)}
+            disabled={disabled}
+            onClick={disabled ? undefined : () => onSelect(mode.key)}
             aria-pressed={selected}
+            title={disabled ? t("comingSoon") : undefined}
             className={cn(
               "flex flex-col gap-1.5 rounded-2xl border p-3 text-left transition-colors",
-              selected
-                ? "border-white/15 bg-white/[0.08]"
-                : "border-white/[0.06] bg-white/[0.02] hover:bg-white/[0.05]"
+              disabled
+                ? "cursor-not-allowed border-white/[0.04] bg-white/[0.01] opacity-40"
+                : selected
+                  ? "border-white/15 bg-white/[0.08]"
+                  : "border-white/[0.06] bg-white/[0.02] hover:bg-white/[0.05]"
             )}
           >
             <Icon
-              className={cn("size-5", selected ? "text-white" : "text-white/55")}
+              className={cn(
+                "size-5",
+                disabled ? "text-white/40" : selected ? "text-white" : "text-white/55"
+              )}
               stroke={1.8}
             />
             <span
               className={cn(
                 "text-sm font-medium leading-tight",
-                selected ? "text-white" : "text-white/80"
+                disabled ? "text-white/50" : selected ? "text-white" : "text-white/80"
               )}
             >
               {t(mode.i18nKey)}
             </span>
             <span className="line-clamp-2 text-xs leading-snug text-white/40">
-              {t(`${mode.i18nKey}Desc`)}
+              {disabled ? t("comingSoon") : t(`${mode.i18nKey}Desc`)}
             </span>
           </button>
         );

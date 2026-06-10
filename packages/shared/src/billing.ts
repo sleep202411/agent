@@ -9,7 +9,7 @@ export const COMPUTE_POINTS_PER_USD_CENT = 1 as const;
 export const COMPUTE_POINT_EXPLICIT_ADMIN_PRICING = "explicit_admin_pricing" as const;
 
 export type AiProductPricingCurrency = "COMPUTE_POINTS";
-export type AiProductPricingMode = "fixed_per_output" | "parameter_matrix";
+export type AiProductPricingMode = "fixed_per_output" | "parameter_matrix" | "per_second_matrix";
 
 interface AiProductPricingBase {
   /**
@@ -47,13 +47,44 @@ export interface AiParameterMatrixPricingPolicy extends AiProductPricingBase {
   matrix: Record<string, Record<string, number>>;
 }
 
-export type AiProductPricingPolicy = AiFixedPerOutputPricingPolicy | AiParameterMatrixPricingPolicy;
+/**
+ * Per-second pricing for duration-billed video models (e.g. Seedance, which
+ * fal bills as `video_seconds`). The billed seconds come from the submitted
+ * `duration`; non-numeric durations ('auto') and absent durations quote at
+ * `autoQuoteSeconds` — the ceiling — so an estimate can never undercharge.
+ */
+export interface AiPerSecondMatrixPricingPolicy extends AiProductPricingBase {
+  mode: "per_second_matrix";
+  defaultResolution: string;
+  /** resolution -> points charged per generated output second. */
+  pointsPerSecond: Record<string, number>;
+  /** Provider's minimum billable duration; shorter requests bill this floor. */
+  minSeconds: number;
+  /** Provider's maximum duration; longer requests are clamped (and rejected upstream). */
+  maxSeconds: number;
+  /** Duration the product UI pre-selects; informational for pricing displays. */
+  defaultSeconds: number;
+  /** Seconds quoted when duration is 'auto'/absent — always the ceiling. */
+  autoQuoteSeconds: number;
+}
+
+export type AiProductPricingPolicy =
+  | AiFixedPerOutputPricingPolicy
+  | AiParameterMatrixPricingPolicy
+  | AiPerSecondMatrixPricingPolicy;
 
 export interface EstimateProductModelPointsInput {
   policy: AiProductPricingPolicy;
   numOutputs?: number;
   resolution?: string;
   quality?: string;
+  /**
+   * Video duration as submitted (string enum incl. 'auto', or plain seconds).
+   * Takes precedence over `durationSeconds` when both are present.
+   */
+  duration?: string | number;
+  /** Legacy numeric duration field (integer-slider video models). */
+  durationSeconds?: number;
   referenceImageCount?: number;
   hasMask?: boolean;
 }
@@ -70,6 +101,8 @@ export interface EstimateProductModelPointsResult {
   selection: {
     resolution?: string;
     quality?: string;
+    /** Billed seconds for per_second_matrix pricing. */
+    seconds?: number;
   };
 }
 
@@ -84,11 +117,19 @@ export function estimateProductModelPoints(
   const selection: EstimateProductModelPointsResult["selection"] = {};
   let pointsPerOutput: number;
 
+  const requestedDuration = input.duration ?? input.durationSeconds;
+
   if (policy.mode === "fixed_per_output") {
     pointsPerOutput = positiveNumber(policy.pointsPerOutput) ?? 0;
+  } else if (policy.mode === "per_second_matrix") {
+    const resolution = selectPerSecondResolution(policy, input.resolution);
+    const seconds = selectBilledSeconds(policy, requestedDuration);
+    selection.resolution = resolution;
+    selection.seconds = seconds;
+    pointsPerOutput = (positiveNumber(policy.pointsPerSecond[resolution]) ?? 0) * seconds;
   } else {
     const resolution = selectMatrixResolution(policy, input.resolution);
-    const quality = selectMatrixQuality(policy, resolution, input.quality);
+    const quality = selectMatrixQuality(policy, resolution, input.quality, requestedDuration);
     selection.resolution = resolution;
     selection.quality = quality;
     pointsPerOutput = positiveNumber(policy.matrix[resolution]?.[quality]) ?? 0;
@@ -145,12 +186,82 @@ function selectMatrixResolution(
 function selectMatrixQuality(
   policy: AiParameterMatrixPricingPolicy,
   resolution: string,
-  requested: string | undefined
+  requested: string | undefined,
+  duration?: string | number
 ): string {
   const row = policy.matrix[resolution] ?? {};
   if (requested && row[requested] !== undefined) return requested;
+  // Duration-aware tier selection: when the caller supplies a duration (and no
+  // explicit quality), bucket up to the smallest '<N>s' tier that covers it so
+  // the quote never undercharges. The silent defaultQuality fallback applies
+  // ONLY when no duration was given at all.
+  if (duration !== undefined) {
+    const tier = durationTierForRow(row, duration);
+    if (tier !== undefined) return tier;
+  }
   if (row[policy.defaultQuality] !== undefined) return policy.defaultQuality;
   return Object.keys(row)[0] ?? policy.defaultQuality;
+}
+
+/**
+ * Picks the smallest '<N>s' duration tier >= the requested duration (clamped
+ * to the top tier). Non-numeric durations ('auto') select the top tier —
+ * ceiling pricing, never undercharge. Returns undefined when the row carries
+ * no duration tiers (plain quality matrices stay on the default path).
+ */
+function durationTierForRow(
+  row: Record<string, number>,
+  duration: string | number
+): string | undefined {
+  const tiers = Object.keys(row)
+    .map((key) => {
+      const match = /^(\d+(?:\.\d+)?)s$/.exec(key);
+      return match ? { key, seconds: Number(match[1]) } : null;
+    })
+    .filter((tier): tier is { key: string; seconds: number } => tier !== null)
+    .sort((a, b) => a.seconds - b.seconds);
+  if (tiers.length === 0) return undefined;
+  const seconds = numericSeconds(duration);
+  if (seconds === undefined) return tiers[tiers.length - 1].key;
+  return (tiers.find((tier) => tier.seconds >= seconds) ?? tiers[tiers.length - 1]).key;
+}
+
+function selectPerSecondResolution(
+  policy: AiPerSecondMatrixPricingPolicy,
+  requested: string | undefined
+): string {
+  if (requested && policy.pointsPerSecond[requested] !== undefined) return requested;
+  if (policy.pointsPerSecond[policy.defaultResolution] !== undefined) {
+    return policy.defaultResolution;
+  }
+  return Object.keys(policy.pointsPerSecond)[0] ?? policy.defaultResolution;
+}
+
+function selectBilledSeconds(
+  policy: AiPerSecondMatrixPricingPolicy,
+  requested: string | number | undefined
+): number {
+  // Only an EXPLICIT 'auto' quotes at the ceiling (provider picks the length —
+  // never undercharge). An ABSENT duration is quoted at defaultSeconds: the
+  // submit validator fills the schema default before the provider call, so the
+  // provider runs the default length — quoting the ceiling there would
+  // overcharge sparse/API callers ~3x.
+  if (requested === undefined) {
+    return Math.min(Math.max(policy.defaultSeconds, policy.minSeconds), policy.maxSeconds);
+  }
+  const seconds = numericSeconds(requested);
+  const effective = seconds ?? policy.autoQuoteSeconds;
+  return Math.min(Math.max(effective, policy.minSeconds), policy.maxSeconds);
+}
+
+function numericSeconds(value: string | number): number | undefined {
+  if (typeof value === "number") {
+    return Number.isFinite(value) && value >= 0 ? value : undefined;
+  }
+  const trimmed = value.trim();
+  if (!trimmed) return undefined;
+  const parsed = Number(trimmed);
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : undefined;
 }
 
 function positiveNumber(value: unknown): number | undefined {

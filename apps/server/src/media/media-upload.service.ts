@@ -94,6 +94,19 @@ const VIDEO_CONTENT_TYPES: Record<string, string> = {
   'video/webm': 'webm',
 };
 
+/** AI reference videos: MP4/MOV only (Seedance 全能参考 spec — no webm). */
+const REFERENCE_VIDEO_CONTENT_TYPES: Record<string, string> = {
+  'video/mp4': 'mp4',
+  'video/quicktime': 'mov',
+};
+
+/** AI reference audio: MP3/WAV per the Seedance 全能参考 spec. */
+const REFERENCE_AUDIO_CONTENT_TYPES: Record<string, string> = {
+  'audio/mpeg': 'mp3',
+  'audio/wav': 'wav',
+  'audio/x-wav': 'wav',
+};
+
 const UPLOAD_KIND_POLICY: Record<UploadKind, UploadKindPolicy> = {
   episode_video: {
     contentTypes: VIDEO_CONTENT_TYPES,
@@ -118,10 +131,28 @@ const UPLOAD_KIND_POLICY: Record<UploadKind, UploadKindPolicy> = {
   },
   ai_reference_image: {
     contentTypes: IMAGE_CONTENT_TYPES,
-    maxBytes: 20 * MiB,
+    // 30 MiB matches the catalog's advertised x-ui maxFileSizeMb for
+    // multimodal reference images (Seedance 全能参考 spec).
+    maxBytes: 30 * MiB,
     assetKind: MediaAssetKind.image,
     ttlSeconds: 900,
     keySegment: 'ai-reference-image',
+  },
+  ai_reference_video: {
+    contentTypes: REFERENCE_VIDEO_CONTENT_TYPES,
+    // The catalog caps COMBINED reference-video size at 50 MB, so 50 MiB is
+    // also the per-file ceiling.
+    maxBytes: 50 * MiB,
+    assetKind: MediaAssetKind.video,
+    ttlSeconds: 900,
+    keySegment: 'ai-reference-video',
+  },
+  ai_reference_audio: {
+    contentTypes: REFERENCE_AUDIO_CONTENT_TYPES,
+    maxBytes: 15 * MiB,
+    assetKind: MediaAssetKind.audio,
+    ttlSeconds: 900,
+    keySegment: 'ai-reference-audio',
   },
 };
 

@@ -5975,7 +5975,8 @@
       "contactSales": "联系销售",
       "upgrade": "升级会员",
       "upgradeDiscount": "-50%",
-      "chat": "消息"
+      "chat": "消息",
+      "comingSoon": "{label}即将上线。"
     },
     "computeBilling": {
       "openRecharge": "打开算力积分充值",
@@ -6232,6 +6233,7 @@
         "metadata": "元数据",
         "resolution": "分辨率",
         "ratio": "比例",
+        "duration": "时长",
         "model": "模型",
         "unknownResolution": "未知"
       },
@@ -6821,10 +6823,6 @@
     "sbPanoramaGenerating": "生成中…",
     "videoStudio": {
       "title": "视频生成",
-      "subtitle": "先选模式,再描述你的视频。",
-      "promptPlaceholder": "描述你想要的视频…",
-      "create": "生成",
-      "noModels": "视频模型正在接入,即将上线。",
       "modes": {
         "textToVideo": "文生视频",
         "textToVideoDesc": "用一句话生成",
@@ -6832,12 +6830,139 @@
         "imageToVideoDesc": "让首帧动起来",
         "firstLastFrame": "首尾帧",
         "firstLastFrameDesc": "首尾帧之间补全",
-        "referenceToVideo": "参考生视频",
-        "referenceToVideoDesc": "用参考图保持主体或风格",
-        "editVideo": "编辑视频",
-        "editVideoDesc": "改写或重绘已有视频",
-        "extendVideo": "延长",
-        "extendVideoDesc": "续长已有片段"
+        "referenceToVideo": "全能参考",
+        "referenceToVideoDesc": "用图、视频、音频参考生成",
+        "extendVideo": "扩展",
+        "extendVideoDesc": "续长已有片段",
+        "comingSoon": "敬请期待"
+      },
+      "modeTabsLabel": "信息流标签",
+      "historyEmpty": "你的视频生成记录会显示在这里。",
+      "modeTabs": {
+        "history": "历史",
+        "community": "社区"
+      },
+      "communityEmpty": "暂无社区视频。",
+      "results": {
+        "title": "生成记录",
+        "hint": "本工作区最近的视频任务,运行中会实时更新。",
+        "emptyTitle": "暂无视频任务",
+        "preparing": "准备中",
+        "queued": "排队中",
+        "generating": "生成中",
+        "finalizing": "收尾中",
+        "queuePosition": "队列第 {position} 位",
+        "failed": "生成失败",
+        "noOutput": "模型没有返回视频,请重试。",
+        "retry": "重试",
+        "retryUnavailable": "当前无法重试该任务,请确认模型仍然可用。",
+        "download": "下载视频",
+        "fullscreen": "全屏播放",
+        "open": "打开视频详情",
+        "modelFallback": "视频模型",
+        "alt": "生成的视频",
+        "relative": {
+          "justNow": "刚刚",
+          "minutesAgo": "{minutes} 分钟前",
+          "hoursAgo": "{hours} 小时前",
+          "daysAgo": "{days} 天前"
+        }
+      },
+      "referenceErrors": {
+        "format": "不支持的格式,仅支持:{formats}。",
+        "fileTooLarge": "文件超过 {max} MB。",
+        "combinedSizeTooLarge": "视频总大小超过 {max} MB。",
+        "videoCombinedDuration": "视频总时长需在 {min}–{max} 秒之间。",
+        "audioCombinedDuration": "音频总时长不能超过 {max} 秒。",
+        "resolutionBand": "视频分辨率需在 {band} 范围内。",
+        "probeFailed": "无法读取媒体信息,请换一个文件。",
+        "uploadFailed": "参考素材上传失败"
+      }
+    },
+    "modelSettings": {
+      "title": "设置",
+      "close": "关闭",
+      "selectModel": "选择模型",
+      "searchModels": "搜索模型",
+      "modelsError": "模型加载失败",
+      "retry": "重试",
+      "noModels": "暂无模型",
+      "noModelMatch": "没有匹配的模型",
+      "selectAspectRatio": "选择画幅比例",
+      "reset": "重置",
+      "moreOptions": "更多选项",
+      "priceEstimate": "{points} 积分",
+      "on": "开",
+      "off": "关",
+      "auto": "自动",
+      "seedPlaceholder": "随机",
+      "modelLocked": "当前套餐不可用",
+      "fields": {
+        "resolution": "分辨率",
+        "quality": "质量",
+        "numOutputs": "生成数量",
+        "outputFormat": "格式",
+        "duration": "时长",
+        "durationSeconds": "时长",
+        "generateAudio": "生成音频",
+        "seed": "种子",
+        "guidanceScale": "引导强度",
+        "inferenceSteps": "步数",
+        "negativePrompt": "反向提示词",
+        "promptExtend": "提示词扩展",
+        "thinkingMode": "思考模式",
+        "watermark": "水印",
+        "aspectRatio": "画幅比例",
+        "imageSize": "尺寸"
+      },
+      "qualityOptions": {
+        "low": "低",
+        "medium": "标准",
+        "high": "高",
+        "standard": "标准"
+      },
+      "priceFrom": "{points} 积分起"
+    },
+    "studioComposer": {
+      "promptLabel": "提示词",
+      "promptPlaceholder": "描述你想创作的内容",
+      "create": "创建",
+      "creating": "生成中",
+      "priceEstimate": "{points} 积分",
+      "noModelSelected": "暂无可用的模型",
+      "loadingModels": "模型加载中…",
+      "selectModel": "选择模型",
+      "addReferenceImage": "添加参考图",
+      "removeReferenceImage": "移除参考图",
+      "referenceOverflow": "+{count}",
+      "closeSettings": "关闭设置",
+      "closePanel": "关闭面板",
+      "modePanelTitle": "选择模式",
+      "settingsDialogLabel": "模型与设置",
+      "tokens": {
+        "auto": "自动"
+      },
+      "referenceUpload": {
+        "failed": "参考图上传失败"
+      },
+      "referenceMention": {
+        "label": "参考图{number}",
+        "empty": "请先上传参考图。",
+        "add": "添加参考图"
+      },
+      "references": {
+        "imagesTitle": "参考图片",
+        "videosTitle": "参考视频",
+        "audiosTitle": "参考音频",
+        "total": "共 {count}/{max}",
+        "addImage": "添加参考图片",
+        "addVideo": "添加参考视频",
+        "addAudio": "添加参考音频",
+        "remove": "移除参考",
+        "add": "添加参考素材",
+        "typeAtMax": "该类型参考已达上限",
+        "totalAtMax": "参考文件总数已达上限(共 {max} 个)",
+        "audioNeedsVisual": "请先添加图片或视频参考"
       },
       "slots": {
         "firstFrame": "首帧",
@@ -6846,15 +6971,6 @@
         "referenceImages": "参考图",
         "referenceVideo": "参考视频",
         "audio": "音频"
-      },
-      "modePanelTitle": "选择模式",
-      "settingsPanelTitle": "模型与设置",
-      "selectModel": "选择模型",
-      "modeTabsLabel": "信息流标签",
-      "historyEmpty": "你的视频生成记录会显示在这里。",
-      "modeTabs": {
-        "history": "历史",
-        "community": "社区"
       }
     }
   },

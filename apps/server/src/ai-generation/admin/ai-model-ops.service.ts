@@ -952,6 +952,26 @@ function priceBandCandidates(policy: AiProductPricingPolicy) {
     return [{ points: estimate.sellPoints, label: null as string | null }];
   }
 
+  if (policy.mode === 'per_second_matrix') {
+    // Band = cheapest resolution at minSeconds → priciest at maxSeconds.
+    const candidates: Array<{ points: number; label: string | null }> = [];
+    for (const resolution of Object.keys(policy.pointsPerSecond)) {
+      for (const seconds of [policy.minSeconds, policy.maxSeconds]) {
+        const estimate = estimateProductModelPoints({
+          policy,
+          numOutputs: 1,
+          resolution,
+          duration: seconds,
+        });
+        candidates.push({
+          points: estimate.sellPoints,
+          label: labelFromSelection(estimate.selection),
+        });
+      }
+    }
+    return candidates;
+  }
+
   const candidates: Array<{ points: number; label: string | null }> = [];
   for (const [resolution, qualities] of Object.entries(policy.matrix)) {
     for (const quality of Object.keys(qualities)) {
@@ -973,10 +993,16 @@ function priceBandCandidates(policy: AiProductPricingPolicy) {
 function labelFromSelection(selection: {
   resolution?: string;
   quality?: string;
+  seconds?: number;
 }): string | null {
   return (
-    [selection.resolution, selection.quality].filter(Boolean).join(' / ') ||
-    null
+    [
+      selection.resolution,
+      selection.quality,
+      selection.seconds !== undefined ? `${selection.seconds}s` : undefined,
+    ]
+      .filter(Boolean)
+      .join(' / ') || null
   );
 }
 

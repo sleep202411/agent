@@ -10,13 +10,17 @@
 import 'dotenv/config';
 
 import { buildPrisma } from '../../src/infra/db/db.module';
-import { seedAiImageCatalog } from './ai-catalog/seed-catalog';
+import {
+  seedAiImageCatalog,
+  seedAiVideoCatalog,
+} from './ai-catalog/seed-catalog';
 
 async function main(): Promise<void> {
   const prisma = buildPrisma();
   await prisma.$connect();
   try {
     await seedAiImageCatalog(prisma);
+    await seedAiVideoCatalog(prisma);
   } finally {
     await prisma.$disconnect();
   }

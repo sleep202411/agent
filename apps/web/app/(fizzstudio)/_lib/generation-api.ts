@@ -10,8 +10,13 @@ export type FizzAiGenerationMode =
   | "first_last_frame_to_video"
   | "image_to_image"
   | "image_to_video"
+  | "multimodal_to_video"
   | "text_to_image"
-  | "text_to_video";
+  | "text_to_video"
+  | "video_to_video";
+
+/** Media kind of a reference upload — mirrors the catalog's `x-ui.mediaKind`. */
+export type FizzAiReferenceKind = "image" | "video" | "audio";
 
 type FizzAiSchemaProperty = {
   default?: unknown;
@@ -26,6 +31,27 @@ type FizzAiSchemaProperty = {
   properties?: Record<string, FizzAiSchemaProperty>;
   required?: string[];
   type?: string;
+  title?: string;
+  /** Schema-driven UI hint emitted by the catalog (control type, grouping, order). */
+  "x-ui"?: {
+    control?: string;
+    group?: string;
+    order?: number;
+    unit?: string;
+    importance?: string;
+    /** Upload constraint metadata (reference upload fields). */
+    accept?: string;
+    mediaKind?: FizzAiReferenceKind;
+    acceptFormats?: string[];
+    maxFileSizeMb?: number;
+    maxCombinedFileSizeMb?: number;
+    minCombinedDurationSeconds?: number;
+    maxCombinedDurationSeconds?: number;
+    resolutionBand?: string;
+    audioRequiresVisual?: boolean;
+    promptRefPrefix?: string;
+    maxTotalFiles?: number;
+  };
 };
 
 export type FizzAiInputSchema = {
@@ -104,7 +130,7 @@ export interface FizzAiPromptDocument {
 
 export interface FizzAiReferenceBinding {
   refId: string;
-  kind: "image";
+  kind: FizzAiReferenceKind;
   label: string;
   order: number;
   url?: string;
@@ -344,8 +370,183 @@ export function supportsReferenceImages(model: FizzAiModel | undefined): boolean
   return maxReferenceImages(model) > 0;
 }
 
+/**
+ * Parsed upload constraints for one schema reference field (`startFrame`,
+ * `endFrame`, `referenceImages`, `referenceVideos`, `referenceAudios`, …).
+ * All values come from the catalog's `x-ui` constraint metadata so the
+ * upload cards + client validation stay schema-driven. `null` when the
+ * selected model doesn't declare the field at all.
+ */
+export interface FizzAiReferenceFieldConstraints {
+  field: string;
+  kind: FizzAiReferenceKind;
+  /** 1 for single-object fields (start/end frame); `maxItems` for arrays. */
+  maxItems: number;
+  /** File-picker accept attribute (comma-separated mime types). */
+  accept: string;
+  acceptFormats: string[];
+  maxFileSizeMb?: number;
+  maxCombinedFileSizeMb?: number;
+  minCombinedDurationSeconds?: number;
+  maxCombinedDurationSeconds?: number;
+  resolutionBand?: string;
+  audioRequiresVisual: boolean;
+  /** e.g. "@Image" — uploads are cited in the prompt as `@Image1`, `@Image2`… */
+  promptRefPrefix?: string;
+  maxTotalFiles?: number;
+}
+
+const DEFAULT_REFERENCE_ACCEPT: Record<FizzAiReferenceKind, string> = {
+  image: "image/jpeg,image/png,image/webp",
+  video: "video/mp4,video/quicktime",
+  audio: "audio/mpeg,audio/wav",
+};
+
+function referenceKindFromUi(
+  ui: NonNullable<FizzAiSchemaProperty["x-ui"]> | undefined
+): FizzAiReferenceKind {
+  if (ui?.mediaKind === "video" || ui?.mediaKind === "audio" || ui?.mediaKind === "image") {
+    return ui.mediaKind;
+  }
+  if (ui?.control === "video_upload") return "video";
+  if (ui?.control === "audio_upload") return "audio";
+  return "image";
+}
+
+export function referenceFieldConstraints(
+  model: FizzAiModel | undefined,
+  field: string
+): FizzAiReferenceFieldConstraints | null {
+  const prop = model ? schemaProperty(model, field) : undefined;
+  if (!prop) return null;
+  const ui = prop["x-ui"];
+  const kind = referenceKindFromUi(ui);
+  const maxItems =
+    prop.type === "array"
+      ? typeof prop.maxItems === "number" && prop.maxItems > 0
+        ? Math.floor(prop.maxItems)
+        : 0
+      : 1;
+  if (maxItems <= 0) return null;
+  return {
+    field,
+    kind,
+    maxItems,
+    accept:
+      typeof ui?.accept === "string" && ui.accept ? ui.accept : DEFAULT_REFERENCE_ACCEPT[kind],
+    acceptFormats: Array.isArray(ui?.acceptFormats)
+      ? ui.acceptFormats.filter((value): value is string => typeof value === "string")
+      : [],
+    maxFileSizeMb: typeof ui?.maxFileSizeMb === "number" ? ui.maxFileSizeMb : undefined,
+    maxCombinedFileSizeMb:
+      typeof ui?.maxCombinedFileSizeMb === "number" ? ui.maxCombinedFileSizeMb : undefined,
+    minCombinedDurationSeconds:
+      typeof ui?.minCombinedDurationSeconds === "number"
+        ? ui.minCombinedDurationSeconds
+        : undefined,
+    maxCombinedDurationSeconds:
+      typeof ui?.maxCombinedDurationSeconds === "number"
+        ? ui.maxCombinedDurationSeconds
+        : undefined,
+    resolutionBand: typeof ui?.resolutionBand === "string" ? ui.resolutionBand : undefined,
+    audioRequiresVisual: ui?.audioRequiresVisual === true,
+    promptRefPrefix: typeof ui?.promptRefPrefix === "string" ? ui.promptRefPrefix : undefined,
+    maxTotalFiles: typeof ui?.maxTotalFiles === "number" ? ui.maxTotalFiles : undefined,
+  };
+}
+
 export function supportsOutputCount(model: FizzAiModel): boolean {
   return Boolean(schemaProperty(model, "numOutputs"));
+}
+
+// ── Schema-driven UI (x-ui hints) ───────────────────────────────────────────
+// The catalog stamps each schema property with an `x-ui` hint (control type,
+// group, order). One generic settings panel renders any model — image, video,
+// audio — straight from these, so adding a model/param needs no UI change.
+
+export type SchemaControl =
+  | "select"
+  | "segmented"
+  | "stepper"
+  | "slider"
+  | "switch"
+  | "radio"
+  | "textarea"
+  | "image_upload"
+  | (string & {});
+
+export interface SchemaFieldDescriptor {
+  name: string;
+  control: SchemaControl;
+  group: string;
+  order: number;
+  type: string;
+  enum: string[] | null;
+  default: string | number | boolean | undefined;
+  min?: number;
+  max?: number;
+  unit?: string;
+  title?: string;
+}
+
+/** A flat field→value bag — exactly the shape the submit input expects. */
+export type ModelSettings = Record<string, string | number | boolean>;
+
+function inferControl(prop: FizzAiSchemaProperty): SchemaControl {
+  if (Array.isArray(prop.enum) && prop.enum.length > 0) return "segmented";
+  if (prop.type === "boolean") return "switch";
+  if (prop.type === "integer" || prop.type === "number") return "slider";
+  return "segmented";
+}
+
+/**
+ * Ordered, renderable schema fields for a model. Prompt + upload fields are
+ * skipped — the composer owns those. Sorted by the schema's `x-ui.order`.
+ */
+export function schemaFields(model: FizzAiModel | undefined): SchemaFieldDescriptor[] {
+  const props = model?.input_schema?.properties;
+  if (!props) return [];
+  const fields: SchemaFieldDescriptor[] = [];
+  for (const [name, prop] of Object.entries(props)) {
+    const ui = prop["x-ui"] ?? {};
+    const control = ui.control ?? inferControl(prop);
+    const group = ui.group ?? "settings";
+    // The main prompt (composer-owned) + reference/upload fields are NOT panel
+    // settings. Other text fields (e.g. negativePrompt) ARE rendered here.
+    if (name === "prompt" || control === "image_upload" || group === "references") continue;
+    fields.push({
+      name,
+      control,
+      group,
+      order: typeof ui.order === "number" ? ui.order : 999,
+      type: prop.type ?? "string",
+      enum: Array.isArray(prop.enum)
+        ? prop.enum.filter((value): value is string => typeof value === "string")
+        : null,
+      default: prop.default as string | number | boolean | undefined,
+      min: typeof prop.minimum === "number" ? prop.minimum : undefined,
+      max: typeof prop.maximum === "number" ? prop.maximum : undefined,
+      unit: typeof ui.unit === "string" ? ui.unit : undefined,
+      title: prop.title,
+    });
+  }
+  return fields.sort((a, b) => a.order - b.order || a.name.localeCompare(b.name));
+}
+
+/**
+ * Seed a settings bag from a model's schema defaults. Numerics WITHOUT a
+ * schema default stay unset on purpose (e.g. `seed` → empty input with a
+ * "Random" placeholder, so the provider randomizes instead of receiving the
+ * schema minimum).
+ */
+export function defaultSettingsForModel(model: FizzAiModel | undefined): ModelSettings {
+  const out: ModelSettings = {};
+  for (const field of schemaFields(model)) {
+    if (field.default !== undefined) out[field.name] = field.default;
+    else if (field.enum && field.enum.length > 0) out[field.name] = field.enum[0];
+    else if (field.type === "boolean") out[field.name] = false;
+  }
+  return out;
 }
 
 export function isFizzAiModelUsable(model: FizzAiModel): boolean {
@@ -424,6 +625,10 @@ export async function listFizzAiCatalog(): Promise<FizzAiCatalog> {
 }
 
 export interface FizzAiPointEstimateInput {
+  /** Video duration as submitted (string enum incl. "auto", or seconds). */
+  duration?: string | number;
+  /** Legacy numeric duration field (integer-slider video models). */
+  durationSeconds?: number;
   hasMask?: boolean;
   numOutputs?: number;
   quality?: string;
@@ -443,6 +648,8 @@ export function estimateModelSellPoints(
       policy: productPricing,
       numOutputs: input.numOutputs,
       quality: input.quality,
+      duration: input.duration,
+      durationSeconds: input.durationSeconds,
       referenceImageCount: input.referenceImageCount,
       resolution: input.resolution,
       hasMask: input.hasMask,
@@ -454,6 +661,56 @@ export function estimateModelSellPoints(
     };
   } catch {
     return null;
+  }
+}
+
+/**
+ * Cheapest sell-points across a model's pricing tiers (the catalog default is
+ * the *most expensive* combo for some models, e.g. seedance 720p/10s). The
+ * model row should advertise the floor ("from X"), not the max.
+ */
+export function cheapestSellPoints(model: FizzAiModel | undefined): number | null {
+  const pricing = model?.billing_policy?.productPricing;
+  if (!pricing) return null;
+  const numOutputs = (pricing as { minOutputCount?: number }).minOutputCount ?? 1;
+  if (pricing.mode === "parameter_matrix") {
+    const resolutions = pricing.resolutionOptions?.length ? pricing.resolutionOptions : [undefined];
+    const qualities = pricing.qualityOptions?.length ? pricing.qualityOptions : [undefined];
+    let min: number | null = null;
+    for (const resolution of resolutions) {
+      for (const quality of qualities) {
+        const est = estimateModelSellPoints(model, { resolution, quality, numOutputs });
+        if (est && (min === null || est.sellPoints < min)) min = est.sellPoints;
+      }
+    }
+    if (min !== null) return min;
+  }
+  if (pricing.mode === "per_second_matrix") {
+    // Floor = cheapest resolution at the minimum billable duration.
+    let min: number | null = null;
+    for (const resolution of Object.keys(pricing.pointsPerSecond)) {
+      const est = estimateModelSellPoints(model, {
+        resolution,
+        duration: pricing.minSeconds,
+        numOutputs,
+      });
+      if (est && (min === null || est.sellPoints < min)) min = est.sellPoints;
+    }
+    if (min !== null) return min;
+  }
+  return estimateModelSellPoints(model, { numOutputs })?.sellPoints ?? null;
+}
+
+/** Surface a 429 quota rejection as the shared upgrade dialog, then rethrow. */
+function emitUpgradeOn429(err: unknown): void {
+  if (err instanceof ApiRequestError && err.status === 429 && err.responseBody) {
+    try {
+      const parsed = JSON.parse(err.responseBody) as Record<string, unknown>;
+      const payload = payloadFromServerError(parsed);
+      if (payload) emitUpgrade(payload);
+    } catch {
+      // Let the original request error propagate.
+    }
   }
 }
 
@@ -473,17 +730,84 @@ export async function submitFizzAiJob(input: FizzAiSubmitJobInput): Promise<Fizz
       },
     });
   } catch (err) {
-    if (err instanceof ApiRequestError && err.status === 429 && err.responseBody) {
-      try {
-        const parsed = JSON.parse(err.responseBody) as Record<string, unknown>;
-        const payload = payloadFromServerError(parsed);
-        if (payload) emitUpgrade(payload);
-      } catch {
-        // Let the original request error propagate.
-      }
-    }
+    emitUpgradeOn429(err);
     throw err;
   }
+}
+
+/**
+ * Server-side retry of an existing job (`POST /aurora/ai/jobs/:id/retry`).
+ * The server resubmits the job's own normalized input / prompt document /
+ * bindings, so the client never has to reconstruct the original contract.
+ */
+export async function retryFizzAiJob(id: string): Promise<FizzAiSubmitResponse> {
+  try {
+    return await api.post<FizzAiSubmitResponse>(`/aurora/ai/jobs/${encodeURIComponent(id)}/retry`, {
+      timeout: 30_000,
+    });
+  } catch (err) {
+    emitUpgradeOn429(err);
+    throw err;
+  }
+}
+
+/* ── prompt document builders (shared by the image + video studios) ───────── */
+
+/**
+ * Build the structured prompt document from the raw prompt text plus the
+ * reference bindings whose `@Label` tokens appear in it. Falls back to a
+ * single text node when nothing is mentioned.
+ */
+export function buildPromptDocument(
+  prompt: string,
+  references: FizzAiReferenceBinding[]
+): FizzAiPromptDocument {
+  const nodes = promptDocumentNodesFromMentions(prompt, references);
+  return {
+    version: 1,
+    nodes: nodes.length > 0 ? nodes : [{ type: "text", text: prompt }],
+  };
+}
+
+function promptDocumentNodesFromMentions(
+  prompt: string,
+  references: FizzAiReferenceBinding[]
+): FizzAiPromptDocument["nodes"] {
+  if (!prompt || references.length === 0) return [];
+
+  const matches: Array<{ binding: FizzAiReferenceBinding; end: number; start: number }> = [];
+  for (const binding of references) {
+    const token = `@${binding.label}`;
+    let cursor = 0;
+    while (cursor < prompt.length) {
+      const start = prompt.indexOf(token, cursor);
+      if (start < 0) break;
+      matches.push({ binding, start, end: start + token.length });
+      cursor = start + token.length;
+    }
+  }
+
+  if (matches.length === 0) return [];
+  matches.sort((a, b) =>
+    a.start === b.start ? b.end - b.start - (a.end - a.start) : a.start - b.start
+  );
+
+  const nodes: FizzAiPromptDocument["nodes"] = [];
+  let cursor = 0;
+  for (const match of matches) {
+    if (match.start < cursor) continue;
+    if (match.start > cursor) {
+      nodes.push({ type: "text", text: prompt.slice(cursor, match.start) });
+    }
+    nodes.push({
+      type: "asset_ref",
+      refId: match.binding.refId,
+      label: match.binding.label,
+    });
+    cursor = match.end;
+  }
+  if (cursor < prompt.length) nodes.push({ type: "text", text: prompt.slice(cursor) });
+  return nodes;
 }
 
 export async function getFizzAiJob(id: string): Promise<FizzAiJobView> {

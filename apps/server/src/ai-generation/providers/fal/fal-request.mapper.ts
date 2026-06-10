@@ -1,4 +1,28 @@
+import { Logger } from '@nestjs/common';
 import type { FalModelRuntimeConfig } from './fal.types';
+
+const logger = new Logger('FalRequestMapper');
+
+/**
+ * Post-mapping request normalizers, dispatched off the canonical
+ * `parameterPolicy.providerFamily` key. The seed declares the family once per
+ * model, so the normalizers can't drift from per-endpoint regexes (which is
+ * exactly how flux-2-dev — endpoint `fal-ai/flux-2` — fell out of the schema
+ * mapper's flux regex). Families without a normalizer (nano-banana, seedance)
+ * are deliberate no-ops.
+ */
+type FalRequestNormalizer = (
+  config: FalModelRuntimeConfig,
+  input: Record<string, unknown>,
+  body: Record<string, unknown>,
+) => void;
+
+const NORMALIZERS_BY_FAMILY: Record<string, FalRequestNormalizer> = {
+  'gpt-image': normalizeGptImage2Request,
+  seedream: normalizeSeedreamRequest,
+  'qwen-image-2.0': normalizeQwenImageRequest,
+  'flux-2': normalizeFluxImageRequest,
+};
 
 export function mapFalProviderRequest(
   config: FalModelRuntimeConfig,
@@ -20,11 +44,39 @@ export function mapFalProviderRequest(
     if (mapped === undefined) continue;
     body[binding.parameter] = mapped;
   }
-  normalizeGptImage2Request(config, input, body);
-  normalizeSeedreamRequest(config, input, body);
-  normalizeQwenImageRequest(config, input, body);
-  normalizeFluxImageRequest(config, input, body);
+  const family = policyProviderFamily(config) ?? endpointFamilyFallback(config);
+  if (family) NORMALIZERS_BY_FAMILY[family]?.(config, input, body);
   return body;
+}
+
+function policyProviderFamily(
+  config: FalModelRuntimeConfig,
+): string | undefined {
+  const policy = config.parameterPolicy;
+  if (!policy || typeof policy !== 'object' || Array.isArray(policy)) {
+    return undefined;
+  }
+  const value = (policy as Record<string, unknown>).providerFamily;
+  return typeof value === 'string' && value.trim() ? value : undefined;
+}
+
+/**
+ * Endpoint-regex fallback for runtimes whose parameterPolicy predates the
+ * `providerFamily` key. Every seeded policy declares the key; hitting this
+ * path means the seed (or an ops edit) is missing it.
+ */
+function endpointFamilyFallback(
+  config: FalModelRuntimeConfig,
+): string | undefined {
+  logger.warn(
+    `fal runtime "${config.endpointId}" declares no parameterPolicy.providerFamily; ` +
+      'falling back to endpoint-regex normalizer dispatch.',
+  );
+  if (config.endpointId.startsWith('openai/gpt-image-2')) return 'gpt-image';
+  if (isSeedreamEndpoint(config.endpointId)) return 'seedream';
+  if (isQwenImageEndpoint(config.endpointId)) return 'qwen-image-2.0';
+  if (isFluxImageEndpoint(config.endpointId)) return 'flux-2';
+  return undefined;
 }
 
 function normalizeGptImage2Request(
@@ -32,7 +84,6 @@ function normalizeGptImage2Request(
   input: Record<string, unknown>,
   body: Record<string, unknown>,
 ): void {
-  if (!config.endpointId.startsWith('openai/gpt-image-2')) return;
   const imageSize =
     typeof input.imageSize === 'string'
       ? input.imageSize
@@ -50,8 +101,6 @@ function normalizeSeedreamRequest(
   input: Record<string, unknown>,
   body: Record<string, unknown>,
 ): void {
-  if (!isSeedreamEndpoint(config.endpointId)) return;
-
   const imageSize =
     typeof input.imageSize === 'string'
       ? input.imageSize
@@ -69,7 +118,6 @@ function normalizeQwenImageRequest(
   input: Record<string, unknown>,
   body: Record<string, unknown>,
 ): void {
-  if (!isQwenImageEndpoint(config.endpointId)) return;
   const numImages = Number(body.num_images ?? input.numOutputs);
   if (Number.isFinite(numImages)) {
     body.num_images = Math.min(4, Math.max(1, Math.floor(numImages)));
@@ -91,7 +139,6 @@ function normalizeFluxImageRequest(
   input: Record<string, unknown>,
   body: Record<string, unknown>,
 ): void {
-  if (!isFluxImageEndpoint(config.endpointId)) return;
   const imageSize =
     typeof input.imageSize === 'string'
       ? input.imageSize

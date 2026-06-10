@@ -1,21 +1,20 @@
 /**
- * Generic, idempotent AI image-catalog seeder.
+ * Generic, idempotent AI catalog seeder (image + video).
  *
- * For each declarative model in `image-models.ts`:
+ * For each declarative model in its modality list (`image-models.ts` /
+ * `video-models.ts`):
  *   1. Build the canonical payload ONCE (defaults merged with overrides) and
- *      upsert `AiCanonicalModel` by `slug` with `{ create: payload, update:
- *      payload }` — no duplicated create/update blocks.
+ *      upsert `AiCanonicalModel` by `slug` with `{ create, update }` — no
+ *      duplicated create/update blocks.
  *   2. For each account-backed provider entry: look up the `AiProviderAccount`
- *      by provider key (skip with a warning if missing), promote it to
- *      `active` so its bindings are runtime-visible, upsert the
- *      `AiProviderEndpoint` (unique on `[providerAccountId, endpointId]`), then
- *      upsert the `AiProviderModelBinding` (same composite unique) shaped to
- *      match `providerBindingDataFromEndpoint` so the fal runtime catalog can
- *      read it.
+ *      by provider key, promote it to `active`, upsert the `AiProviderEndpoint`
+ *      (unique on `[providerAccountId, endpointId]`), then upsert the
+ *      `AiProviderModelBinding` (same composite unique).
  *
- * Every write is an upsert on a documented unique key — safe to re-run.
+ * Every write is an upsert on a documented unique key — safe to re-run. Stale
+ * rows for the same modality (not in the current list) are pruned.
  */
-import type { Prisma, PrismaClient } from '@prisma/client';
+import type { AiJobType, Prisma, PrismaClient } from '@prisma/client';
 
 import {
   buildBillingPolicy,
@@ -25,14 +24,49 @@ import {
   buildQueuePolicy,
   buildUiPolicy,
   OBSERVABILITY_POLICY,
+  VIDEO_QUEUE_NAME,
 } from './defaults';
 import {
   IMAGE_MODELS,
   type ImageModelSeed,
   type ProviderEntry,
 } from './image-models';
+import { VIDEO_MODELS } from './video-models';
 
 const SEED_ADMIN_ID: string | null = null; // seed-managed rows have no admin author.
+
+type OutputType = 'image' | 'video';
+
+/** Per-modality knobs that differ between the image and video catalogs. */
+interface ModalityConfig {
+  modality: AiJobType;
+  outputType: OutputType;
+  models: ImageModelSeed[];
+  /** Overrides forwarded to `buildQueuePolicy`. */
+  queueOverrides: Parameters<typeof buildQueuePolicy>[1];
+  label: string;
+}
+
+const IMAGE_CONFIG: ModalityConfig = {
+  modality: 'image',
+  outputType: 'image',
+  models: IMAGE_MODELS,
+  queueOverrides: {},
+  label: 'image',
+};
+
+const VIDEO_CONFIG: ModalityConfig = {
+  modality: 'video',
+  outputType: 'video',
+  models: VIDEO_MODELS,
+  queueOverrides: {
+    queueName: VIDEO_QUEUE_NAME,
+    globalConcurrency: 4,
+    perUserRunning: 1,
+    maxProviderRuntimeSeconds: 2700,
+  },
+  label: 'video',
+};
 
 /**
  * Build the canonical-model payload once. Returned shape is used verbatim for
@@ -42,20 +76,21 @@ const SEED_ADMIN_ID: string | null = null; // seed-managed rows have no admin au
 function buildCanonicalPayload(
   model: ImageModelSeed,
   seededAt: string,
+  cfg: ModalityConfig,
 ): Prisma.AiCanonicalModelUncheckedCreateInput {
   return {
     slug: model.slug,
     displayName: model.displayName,
-    modality: 'image',
+    modality: cfg.modality,
     family: model.family,
     generationModes: model.modes as Prisma.InputJsonValue,
     status: 'active',
     description: model.description,
     parameterPolicy: model.parameterPolicy,
-    outputPolicy: buildOutputPolicy(model.productPricing),
+    outputPolicy: buildOutputPolicy(model.productPricing, cfg.outputType),
     entitlementPolicy: buildEntitlementPolicy(model.tier),
     billingPolicy: buildBillingPolicy(model.cost, model.productPricing),
-    queuePolicy: buildQueuePolicy(model.tier),
+    queuePolicy: buildQueuePolicy(model.tier, cfg.queueOverrides),
     uiPolicy: buildUiPolicy({
       group: model.group,
       recommended: model.recommended ?? false,
@@ -73,8 +108,7 @@ function buildCanonicalPayload(
 
 /**
  * Build the provider-endpoint payload once. `provider` and `providerAccountId`
- * are derived from the resolved account (never from an alias). `supportedModes`
- * carries the canonical modes so the binding copy is runtime-valid.
+ * are derived from the resolved account (never from an alias).
  */
 function buildEndpointPayload(args: {
   providerAccountId: string;
@@ -82,6 +116,7 @@ function buildEndpointPayload(args: {
   entry: ProviderEntry;
   displayName: string;
   modes: string[];
+  modality: AiJobType;
 }): Prisma.AiProviderEndpointUncheckedCreateInput {
   const providerInputSchema: Prisma.InputJsonObject =
     args.entry.providerInputSchema ?? {};
@@ -92,7 +127,7 @@ function buildEndpointPayload(args: {
     provider: args.provider,
     endpointId: args.entry.endpointId,
     displayName: args.entry.displayName ?? args.displayName,
-    modality: 'image',
+    modality: args.modality,
     status: 'active',
     healthStatus: 'unknown',
     supportedModes: args.modes as Prisma.InputJsonValue,
@@ -111,10 +146,7 @@ function buildEndpointPayload(args: {
 
 /**
  * Build the binding payload once, matching `providerBindingDataFromEndpoint`:
- * provider-facing fields come from the endpoint. Product pricing, user-facing
- * parameter policy, queue policy, and observability stay on the canonical
- * model. Provider request mapping stays in adapter code; retries preserve the
- * submit-time routing snapshot.
+ * provider-facing fields come from the endpoint.
  */
 function buildBindingPayload(args: {
   endpoint: {
@@ -131,6 +163,7 @@ function buildBindingPayload(args: {
   canonicalModelId: string;
   priority: number;
   weight: number;
+  modality: AiJobType;
 }): Prisma.AiProviderModelBindingUncheckedCreateInput {
   const { endpoint } = args;
   return {
@@ -140,7 +173,7 @@ function buildBindingPayload(args: {
     provider: endpoint.provider,
     endpointId: endpoint.endpointId,
     displayName: endpoint.displayName,
-    modality: 'image',
+    modality: args.modality,
     status: 'active',
     priority: args.priority,
     weight: args.weight,
@@ -166,21 +199,23 @@ interface SeedSummaryRow {
   bindings: number;
 }
 
-/** Run the full image-catalog seed. Idempotent. */
-export async function seedAiImageCatalog(prisma: PrismaClient): Promise<void> {
+/** Run one modality's catalog seed. Idempotent. */
+async function seedModalityCatalog(
+  prisma: PrismaClient,
+  cfg: ModalityConfig,
+): Promise<void> {
   const seededAt = new Date().toISOString();
 
-  const allowedSlugs = IMAGE_MODELS.map((model) => model.slug);
-  const allowedProviderEndpointPairs = IMAGE_MODELS.flatMap((model) =>
+  const allowedSlugs = cfg.models.map((model) => model.slug);
+  const allowedProviderEndpointPairs = cfg.models.flatMap((model) =>
     model.providers.map((provider) => ({
       provider: provider.provider,
       endpointId: provider.endpointId,
     })),
   );
 
-  // This catalog is deliberately narrow while we validate models one by one.
-  // Remove old image ContainerModels and their endpoint bindings instead of
-  // keeping stale choices around in admin/runtime state.
+  // Deliberately narrow while validating models one by one — prune stale rows
+  // of the same modality instead of leaving them in admin/runtime state.
   const allowedProviderEndpointWhere =
     allowedProviderEndpointPairs.length > 0
       ? {
@@ -192,7 +227,7 @@ export async function seedAiImageCatalog(prisma: PrismaClient): Promise<void> {
       : undefined;
   const staleBindings = await prisma.aiProviderModelBinding.deleteMany({
     where: {
-      modality: 'image',
+      modality: cfg.modality,
       OR: [
         { canonicalModel: { slug: { notIn: allowedSlugs } } },
         allowedProviderEndpointWhere
@@ -203,7 +238,7 @@ export async function seedAiImageCatalog(prisma: PrismaClient): Promise<void> {
   });
   const staleEndpoints = await prisma.aiProviderEndpoint.deleteMany({
     where: {
-      modality: 'image',
+      modality: cfg.modality,
       ...(allowedProviderEndpointWhere
         ? { NOT: allowedProviderEndpointWhere }
         : { endpointId: { not: '' } }),
@@ -211,16 +246,12 @@ export async function seedAiImageCatalog(prisma: PrismaClient): Promise<void> {
   });
   const staleCanonicalModels = await prisma.aiCanonicalModel.deleteMany({
     where: {
-      modality: 'image',
+      modality: cfg.modality,
       slug: { notIn: allowedSlugs },
     },
   });
 
-  // Cache provider-account upserts. The seed owns the initial GPT Image 2
-  // provider route graph, so it creates/activates the required account rows
-  // instead of depending on application bootstrap to reconcile them first.
   const accountCache = new Map<string, { id: string; provider: string }>();
-
   const resolveAccount = async (
     provider: string,
   ): Promise<{ id: string; provider: string }> => {
@@ -238,8 +269,8 @@ export async function seedAiImageCatalog(prisma: PrismaClient): Promise<void> {
 
   const summary: SeedSummaryRow[] = [];
 
-  for (const model of IMAGE_MODELS) {
-    const canonicalPayload = buildCanonicalPayload(model, seededAt);
+  for (const model of cfg.models) {
+    const canonicalPayload = buildCanonicalPayload(model, seededAt, cfg);
     const canonical = await prisma.aiCanonicalModel.upsert({
       where: { slug: model.slug },
       create: canonicalPayload,
@@ -252,13 +283,13 @@ export async function seedAiImageCatalog(prisma: PrismaClient): Promise<void> {
 
     for (const entry of model.providers) {
       const account = await resolveAccount(entry.provider);
-
       await bindProviderEntry({
         prisma,
         model,
         canonicalModelId: canonical.id,
         account,
         entry,
+        modality: cfg.modality,
       });
       bindingCount += 1;
       boundProviders.push(`${entry.provider}:${entry.endpointId}`);
@@ -276,14 +307,24 @@ export async function seedAiImageCatalog(prisma: PrismaClient): Promise<void> {
 
   console.table(summary);
   console.log(
-    `[seed] upserted ${summary.length} canonical image model(s); pruned ${staleCanonicalModels.count} stale ContainerModel(s), ${staleEndpoints.count} stale provider endpoint(s), ${staleBindings.count} stale binding(s).`,
+    `[seed:${cfg.label}] upserted ${summary.length} canonical ${cfg.label} model(s); pruned ${staleCanonicalModels.count} stale ContainerModel(s), ${staleEndpoints.count} stale endpoint(s), ${staleBindings.count} stale binding(s).`,
   );
+}
+
+/** Run the full image-catalog seed. Idempotent. */
+export async function seedAiImageCatalog(prisma: PrismaClient): Promise<void> {
+  await seedModalityCatalog(prisma, IMAGE_CONFIG);
+}
+
+/** Run the full video-catalog seed. Idempotent. */
+export async function seedAiVideoCatalog(prisma: PrismaClient): Promise<void> {
+  await seedModalityCatalog(prisma, VIDEO_CONFIG);
 }
 
 /**
  * Activate the account, then upsert the endpoint and binding for one provider
  * entry. Account promotion is required: the reconciler leaves accounts `draft`,
- * but the fal runtime only reads bindings whose account is `active`.
+ * but the runtime only reads bindings whose account is `active`.
  */
 async function bindProviderEntry(args: {
   prisma: PrismaClient;
@@ -291,10 +332,10 @@ async function bindProviderEntry(args: {
   canonicalModelId: string;
   account: { id: string; provider: string };
   entry: ProviderEntry;
+  modality: AiJobType;
 }): Promise<void> {
-  const { prisma, model, canonicalModelId, account, entry } = args;
+  const { prisma, model, canonicalModelId, account, entry, modality } = args;
 
-  // Promote the account so seeded bindings are runtime-visible.
   await prisma.aiProviderAccount.update({
     where: { provider: account.provider },
     data: { status: 'active' },
@@ -306,6 +347,7 @@ async function bindProviderEntry(args: {
     entry,
     displayName: model.displayName,
     modes: entry.modes ?? model.modes,
+    modality,
   });
 
   const endpoint = await prisma.aiProviderEndpoint.upsert({
@@ -335,6 +377,7 @@ async function bindProviderEntry(args: {
     canonicalModelId,
     priority: entry.priority ?? 100,
     weight: entry.weight ?? 100,
+    modality,
   });
 
   await prisma.aiProviderModelBinding.upsert({

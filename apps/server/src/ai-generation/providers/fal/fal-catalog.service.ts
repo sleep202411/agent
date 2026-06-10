@@ -69,6 +69,24 @@ export class FalCatalogService {
     const runtimeByModelId = new Map<string, FalModelRuntimeConfig>();
     const runtimeByEndpointId = new Map<string, FalModelRuntimeConfig>();
     const dbRuntimes = await this.dbRuntimeConfigs();
+
+    // Register EVERY active binding's endpoint BEFORE the catalog dedupe so
+    // poll/cancel can resolve any endpoint a job was actually submitted to
+    // (multi-endpoint models route per mode at submit; the real endpoint is
+    // encoded in providerJobId). First entry wins: rows are already in
+    // priority/weight/endpointId order.
+    for (const entry of dbRuntimes) {
+      if (!runtimeByEndpointId.has(entry.runtime.endpointId)) {
+        runtimeByEndpointId.set(entry.runtime.endpointId, entry.runtime);
+      }
+      if (!runtimeByModelId.has(entry.runtime.endpointId)) {
+        runtimeByModelId.set(entry.runtime.endpointId, entry.runtime);
+      }
+      if (!runtimeByModelId.has(`fal/${entry.runtime.endpointId}`)) {
+        runtimeByModelId.set(`fal/${entry.runtime.endpointId}`, entry.runtime);
+      }
+    }
+
     const runtimeEntries = this.dedupeRuntimeEntries(dbRuntimes);
     const models = runtimeEntries.map((entry) => {
       const model = {
@@ -79,10 +97,9 @@ export class FalCatalogService {
         ops: entry.ops,
       };
       runtimeByModelId.set(model.id, entry.runtime);
-      runtimeByModelId.set(model.deployment, entry.runtime);
-      runtimeByModelId.set(entry.runtime.endpointId, entry.runtime);
-      runtimeByModelId.set(`fal/${entry.runtime.endpointId}`, entry.runtime);
-      runtimeByEndpointId.set(entry.runtime.endpointId, entry.runtime);
+      if (!runtimeByModelId.has(model.deployment)) {
+        runtimeByModelId.set(model.deployment, entry.runtime);
+      }
       return model;
     });
 
@@ -121,8 +138,38 @@ export class FalCatalogService {
       orderBy: [{ priority: 'asc' }, { weight: 'desc' }, { endpointId: 'asc' }],
     });
 
+    // Multi-endpoint models (e.g. seedance: text/image/reference-to-video) split
+    // their modes across one binding per mode. The catalog assembles a single
+    // entry per model, so advertise the UNION of modes across all of a
+    // canonical's active fal bindings — otherwise the UI only sees the primary
+    // binding's modes and the model looks unavailable for every other mode.
+    const modesByCanonical = new Map<string, Set<AiGenerationMode>>();
+    // Per-canonical mode -> endpointId routing map, built from each row's OWN
+    // supportedModes. Rows are in priority/weight/endpointId order, so the
+    // first binding wins per mode — official-first routing falls out of the
+    // binding priorities.
+    const modeEndpointsByCanonical = new Map<
+      string,
+      Partial<Record<AiGenerationMode, string>>
+    >();
+    for (const row of rows) {
+      const set =
+        modesByCanonical.get(row.canonicalModelId) ??
+        new Set<AiGenerationMode>();
+      const modeEndpoints: Partial<Record<AiGenerationMode, string>> =
+        modeEndpointsByCanonical.get(row.canonicalModelId) ?? {};
+      for (const mode of stringArray(row.supportedModes)) {
+        set.add(mode);
+        modeEndpoints[mode] ??= row.endpointId;
+      }
+      modesByCanonical.set(row.canonicalModelId, set);
+      modeEndpointsByCanonical.set(row.canonicalModelId, modeEndpoints);
+    }
+
     return rows.map((row) => {
-      const generationModes = stringArray(row.supportedModes);
+      const generationModes = Array.from(
+        modesByCanonical.get(row.canonicalModelId) ?? [],
+      );
       const type = row.modality as AiJobType;
       const providerCapacity = providerCapacityFromRow(row.providerEndpoint);
       const canonicalGlobalConcurrency =
@@ -158,6 +205,11 @@ export class FalCatalogService {
         billing: billingPolicyFromRow(row),
         parameterPolicy: row.canonicalModel.parameterPolicy as AiJsonValue,
       });
+      // Every sibling runtime of a canonical carries the SAME map, so a
+      // poll-time lookup via any endpointId routes identically to submit-time.
+      runtime.modeEndpoints = modeEndpointsByCanonical.get(
+        row.canonicalModelId,
+      );
       return {
         runtime,
         modelId: row.canonicalModel.slug,

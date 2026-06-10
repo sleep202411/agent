@@ -91,6 +91,10 @@ interface ConfirmResponse {
 export interface UploadFileOptions {
   /** Closed media upload kind (apps/server media/dto UploadKindSchema). */
   kind: string;
+  /** Override the declared mime (e.g. browser quirks like `audio/x-wav`
+   *  normalized to the server allowlist's canonical type). Defaults to
+   *  `file.type`. */
+  contentType?: string;
   /** Called with 0–100 as the PUT streams bytes (only when total is known). */
   onProgress?: (percent: number) => void;
   /** Abort the in-flight PUT (and the surrounding requests). */
@@ -295,7 +299,7 @@ export async function uploadFileViaSignedUrl(
   file: File,
   opts: UploadFileOptions
 ): Promise<UploadFileResult> {
-  const contentType = file.type || "application/octet-stream";
+  const contentType = opts.contentType || file.type || "application/octet-stream";
   const info = await requestSignedUrl(
     { kind: opts.kind, contentType, fileName: file.name, sizeBytes: file.size },
     opts.signal

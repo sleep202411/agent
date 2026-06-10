@@ -159,6 +159,15 @@ export class AiGenerationRoutingService {
         selectedModelId: model.id,
         selectedDeployment: model.deployment,
         selectedCanonicalModelId: model.ops?.canonicalModelId,
+        // TODO(mode-routing-attribution): for multi-endpoint models (e.g.
+        // seedance 2.0) these snapshot the PRIMARY binding/endpoint chosen at
+        // routing time. The fal adapter resolves the real endpoint per mode at
+        // submit (runtime.modeEndpoints) and StartResult.providerEndpoint is
+        // persisted on the attempt (worker.service.ts), so attempt-level
+        // endpoint attribution is truthful. Binding-id attribution would need
+        // model.ops to carry a mode->bindingId map (or back-propagation from
+        // StartResult into the snapshot) — do that as one deliberate change,
+        // not here.
         selectedProviderBindingId: model.ops?.providerBindingId,
         selectedProviderEndpointId: model.ops?.providerEndpointId,
         fallbackAllowed: configuredRoute?.fallbackAllowed === true,
@@ -368,6 +377,11 @@ function estimateQuotaCost(
       numOutputs: numberInput(input?.numOutputs),
       resolution: stringInput(input?.resolution),
       quality: stringInput(input?.quality),
+      // Duration drives per-second video pricing (quote == charge). `duration`
+      // is the string-enum field (incl. 'auto'); `durationSeconds` is the
+      // legacy integer-slider field.
+      duration: durationInput(input?.duration),
+      durationSeconds: numberInput(input?.durationSeconds),
       referenceImageCount: arrayLength(input?.referenceImages),
       hasMask: hasMediaValue(input?.maskImage),
     }).sellPoints;
@@ -386,6 +400,11 @@ function numberInput(value: unknown): number | undefined {
   return typeof value === 'number' && Number.isFinite(value)
     ? value
     : undefined;
+}
+
+function durationInput(value: unknown): string | number | undefined {
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  return typeof value === 'string' && value.trim() ? value.trim() : undefined;
 }
 
 function stringInput(value: unknown): string | undefined {

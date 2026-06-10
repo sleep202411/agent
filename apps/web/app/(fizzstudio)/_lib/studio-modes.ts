@@ -5,7 +5,6 @@ import {
   IconPhotoUp,
   IconStack2,
   IconTextCaption,
-  IconWand,
 } from "@tabler/icons-react";
 
 /**
@@ -24,15 +23,14 @@ export type StudioSlotKind =
   | "lastFrame"
   | "sourceVideo"
   | "referenceImages"
-  | "referenceVideo"
-  | "audio";
+  | "referenceVideos"
+  | "referenceAudios";
 
 export type StudioModeKey =
   | "text_to_video"
   | "image_to_video"
   | "first_last_frame_to_video"
   | "reference_to_video"
-  | "video_to_video"
   | "video_extend";
 
 export interface StudioModeConfig {
@@ -44,7 +42,23 @@ export interface StudioModeConfig {
   i18nKey: string;
   /** Declarative composer inputs for this mode — the heart of the abstraction. */
   inputSlots: StudioSlotKind[];
+  /** Not yet wired — rendered greyed-out and unselectable in the mode rail. */
+  disabled?: boolean;
 }
+
+/**
+ * Upload slot → catalog input-schema field. The composer reads the selected
+ * model's schema property (incl. its `x-ui` constraint metadata) through this
+ * mapping, so the rendered upload cards always match what the model accepts.
+ */
+export const SLOT_SCHEMA_FIELD: Record<Exclude<StudioSlotKind, "prompt">, string> = {
+  firstFrame: "startFrame",
+  lastFrame: "endFrame",
+  sourceVideo: "sourceVideo",
+  referenceImages: "referenceImages",
+  referenceVideos: "referenceVideos",
+  referenceAudios: "referenceAudios",
+};
 
 export const VIDEO_MODES: StudioModeConfig[] = [
   {
@@ -73,14 +87,7 @@ export const VIDEO_MODES: StudioModeConfig[] = [
     generationMode: "multimodal_to_video",
     icon: IconStack2,
     i18nKey: "referenceToVideo",
-    inputSlots: ["referenceImages", "prompt"],
-  },
-  {
-    key: "video_to_video",
-    generationMode: "video_to_video",
-    icon: IconWand,
-    i18nKey: "editVideo",
-    inputSlots: ["sourceVideo", "prompt"],
+    inputSlots: ["referenceImages", "referenceVideos", "referenceAudios", "prompt"],
   },
   {
     key: "video_extend",
@@ -88,5 +95,6 @@ export const VIDEO_MODES: StudioModeConfig[] = [
     icon: IconArrowBarToRight,
     i18nKey: "extendVideo",
     inputSlots: ["sourceVideo", "prompt"],
+    disabled: true,
   },
 ];

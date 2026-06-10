@@ -10,7 +10,7 @@ import type {
   PollResult,
   StartResult,
 } from '../../provider-adapter';
-import type { AiJobError } from '../../types';
+import type { AiGenerationMode, AiJobError } from '../../types';
 import { FalCatalogService } from './fal-catalog.service';
 import { FalClient } from './fal-client';
 import { FalConfigService } from './fal-config.service';
@@ -291,6 +291,13 @@ export class FalProviderAdapter implements ProviderAdapter {
     runtime: FalModelRuntimeConfig,
     payload: Record<string, unknown>,
   ): string {
+    // Multi-endpoint video models (e.g. seedance 2.0) split modes across fal
+    // endpoints. Route per mode, derived from the post-mapping payload shape.
+    if (runtime.type === 'video' && runtime.modeEndpoints) {
+      const mode = videoGenerationModeFromPayload(payload);
+      return runtime.modeEndpoints[mode] ?? runtime.endpointId;
+    }
+
     const hasReferenceImages =
       Array.isArray(payload.image_urls) && payload.image_urls.length > 0;
     if (!hasReferenceImages) return runtime.endpointId;
@@ -661,6 +668,39 @@ export class FalProviderAdapter implements ProviderAdapter {
       createdAt: new Date().toISOString(),
     };
   }
+}
+
+/**
+ * Derive the video generation mode from the POST-MAPPING provider payload
+ * shape (fal field names, not our schema fields):
+ * - any reference array (image_urls / video_urls / audio_urls) -> multimodal_to_video
+ * - end_image_url -> first_last_frame_to_video
+ * - image_url -> image_to_video
+ * - prompt only -> text_to_video
+ */
+export function videoGenerationModeFromPayload(
+  payload: Record<string, unknown>,
+): AiGenerationMode {
+  if (
+    hasItems(payload.image_urls) ||
+    hasItems(payload.video_urls) ||
+    hasItems(payload.audio_urls)
+  ) {
+    return 'multimodal_to_video';
+  }
+  if (isNonEmptyString(payload.end_image_url)) {
+    return 'first_last_frame_to_video';
+  }
+  if (isNonEmptyString(payload.image_url)) return 'image_to_video';
+  return 'text_to_video';
+}
+
+function hasItems(value: unknown): boolean {
+  return Array.isArray(value) && value.length > 0;
+}
+
+function isNonEmptyString(value: unknown): boolean {
+  return typeof value === 'string' && value.trim() !== '';
 }
 
 interface FalQueueUrls {

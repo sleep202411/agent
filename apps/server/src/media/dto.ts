@@ -23,6 +23,8 @@ export const UploadKindSchema = z.enum([
   'episode_cover',
   'ip_banner',
   'ai_reference_image',
+  'ai_reference_video',
+  'ai_reference_audio',
 ]);
 export type UploadKind = z.infer<typeof UploadKindSchema>;
 
