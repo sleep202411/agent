@@ -28,6 +28,7 @@
  */
 
 import { useMemo } from "react";
+import { encodeUserId } from "@/src/lib/user-id-codec";
 import Link from "next/link";
 import {
   IconBriefcase,
@@ -280,7 +281,7 @@ export function ApplicationReviewDialog({
 
           <div className="mt-3 flex flex-wrap items-center gap-3 text-[11px]">
             <Link
-              href={localizePath(`/creators/${application.applicantId}`, locale)}
+              href={localizePath(`/creators/${encodeUserId(application.applicantId)}`, locale)}
               target="_blank"
               rel="noopener noreferrer"
               className="inline-flex items-center gap-1 text-primary hover:underline"

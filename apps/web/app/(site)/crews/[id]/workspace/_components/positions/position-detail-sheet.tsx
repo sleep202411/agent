@@ -9,6 +9,7 @@
  */
 
 import { useMemo, useState } from "react";
+import { encodeUserId } from "@/src/lib/user-id-codec";
 import {
   IconBriefcase,
   IconCalendar,
@@ -581,7 +582,7 @@ function ApplicantRow({
                 works). /profile is the viewer's own page with no
                 dynamic segment. */}
             <Link
-              href={`/creators/${applicant.applicantId}`}
+              href={`/creators/${encodeUserId(applicant.applicantId)}`}
               className="text-primary hover:underline"
             >
               {t("applicantProfile")}

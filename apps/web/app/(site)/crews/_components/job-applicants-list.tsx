@@ -11,6 +11,7 @@
  */
 
 import { IconCheck, IconLoader2, IconX } from "@tabler/icons-react";
+import { encodeUserId } from "@/src/lib/user-id-codec";
 import Link from "next/link";
 import { useMemo } from "react";
 import { useTranslations } from "@/src/i18n/i18n";
@@ -144,7 +145,10 @@ export function JobApplicantsList({ crewId, positionId, canManage }: JobApplican
                     bio + published works combined. `/profile` is the
                     viewer's OWN page with no dynamic segment, so a
                     `/profile/<id>` URL would 404. */}
-                <Link href={`/creators/${a.applicantId}`} className="text-primary hover:underline">
+                <Link
+                  href={`/creators/${encodeUserId(a.applicantId)}`}
+                  className="text-primary hover:underline"
+                >
                   {t("applicantProfile")}
                 </Link>
                 {a.portfolioUrl ? (

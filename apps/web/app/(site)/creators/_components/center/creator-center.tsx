@@ -38,6 +38,7 @@
  * service yet" message.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { encodeUserId } from "@/src/lib/user-id-codec";
 import { IconCheck, IconCopy, IconLoader2 } from "@tabler/icons-react";
 import QRCode from "qrcode";
 import { toast } from "sonner";
@@ -189,7 +190,7 @@ export function CreatorCenter({ creatorId }: CreatorCenterProps) {
   // clipboard so the owner can paste it anywhere (chat, social, business
   // card). No dialog — single click → toast.
   const handleShareProfile = async () => {
-    const url = `${window.location.origin}${localizePath(`/creators/${creatorId}`, locale)}`;
+    const url = `${window.location.origin}${localizePath(`/creators/${encodeUserId(creatorId)}`, locale)}`;
     try {
       await navigator.clipboard.writeText(url);
       toast.success(t("cta.shareProfileCopied"));

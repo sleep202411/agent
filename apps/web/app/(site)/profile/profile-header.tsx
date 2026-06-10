@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { encodeUserId } from "@/src/lib/user-id-codec";
 import QRCode from "qrcode";
 import { useRouter } from "next/navigation";
 import {
@@ -373,7 +374,7 @@ export function ProfileHeader({ userInfo, onEditProfile }: ProfileHeaderProps) {
               className="border-white/20 bg-white/5 text-white hover:bg-white/10"
               onClick={async () => {
                 if (!info?.id) return;
-                const link = `${window.location.origin}/creators/${info.id}`;
+                const link = `${window.location.origin}/creators/${encodeUserId(info.id)}`;
                 try {
                   await navigator.clipboard.writeText(link);
                   toast.success(t("profileLinkCopied"));

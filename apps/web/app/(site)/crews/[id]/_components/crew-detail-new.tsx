@@ -25,6 +25,7 @@
  */
 
 import { useMemo, useState } from "react";
+import { encodeUserId } from "@/src/lib/user-id-codec";
 import Link from "next/link";
 import {
   IconArrowLeft,
@@ -336,7 +337,7 @@ function TeamRow({
   const initial = displayName.charAt(0).toUpperCase();
   const role = founder ? t("memberRoleOwner") : translatePosition(member.roleType);
   const avatarUrl = resolveAvatar(lookup?.avatar ?? null);
-  const profileHref = localizePath(`/creators/${member.userId}`, locale);
+  const profileHref = localizePath(`/creators/${encodeUserId(member.userId)}`, locale);
 
   return (
     <Link
