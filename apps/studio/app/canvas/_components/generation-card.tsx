@@ -30,6 +30,7 @@ import {
   type ModelSettings,
 } from "@/app/canvas/_lib/generation-api";
 import { CanvasNodeToolbar, ToolbarButton } from "./node-toolbar";
+import { Icon720, PanoramaViewer } from "./panorama-viewer";
 import { ModeMenu } from "./mode-menu";
 import { ModelPicker } from "./model-picker";
 import { ModelSettings as ModelSettingsPanel } from "./model-settings";
@@ -134,6 +135,7 @@ function GenerationCard({
   const { submit } = useGeneration();
   const [panel, setPanel] = useState<"model" | "settings" | "mode" | null>(null);
   const [renaming, setRenaming] = useState(false);
+  const [pano, setPano] = useState(false);
   // Keep the composer at a constant screen size (don't shrink/grow with zoom).
   const zoom = useStore((s) => s.transform[2]);
   useDismiss(panel !== null, () => setPanel(null));
@@ -215,6 +217,11 @@ function GenerationCard({
   return (
     <div className="relative">
       <CanvasNodeToolbar nodeId={id} visible={(selected ?? false) && panel === null && !dragging}>
+        {output?.type === "image" && (
+          <ToolbarButton label="720° View" onClick={() => setPano(true)}>
+            <Icon720 className="size-4" />
+          </ToolbarButton>
+        )}
         {output && (
           <ToolbarButton label="Download" onClick={onDownload}>
             <IconDownload className="size-4" stroke={1.8} />
@@ -224,6 +231,7 @@ function GenerationCard({
           <IconPencil className="size-4" stroke={1.8} />
         </ToolbarButton>
       </CanvasNodeToolbar>
+      {pano && output && <PanoramaViewer src={output.url} onClose={() => setPano(false)} />}
 
       {/* Header: node name left, model used right. */}
       <div className="flex items-center justify-between px-1 pb-1.5 text-xs">

@@ -2,10 +2,10 @@
 
 import { memo, useCallback, useState } from "react";
 import type { Node, NodeProps } from "@xyflow/react";
-import { IconDownload, IconView360 } from "@tabler/icons-react";
+import { IconDownload } from "@tabler/icons-react";
 import { cn } from "@/lib/utils";
 import { CanvasNodeToolbar, ToolbarButton } from "./node-toolbar";
-import { PanoramaViewer } from "./panorama-viewer";
+import { Icon720, PanoramaViewer } from "./panorama-viewer";
 import { PortPlus } from "./ports";
 
 export type ImageNodeType = Node<{ src: string; imageId: string; label?: string }, "image">;
@@ -27,7 +27,7 @@ function ImageNodeComponent({ id, data, selected }: NodeProps<ImageNodeType>) {
       <PortPlus type="source" id="output" side="right" />
       <CanvasNodeToolbar nodeId={id} visible={selected ?? false}>
         <ToolbarButton label="720° View" onClick={() => setPano(true)}>
-          <IconView360 className="size-4" stroke={1.8} />
+          <Icon720 className="size-4" />
         </ToolbarButton>
         <ToolbarButton label="Download" onClick={onDownload}>
           <IconDownload className="size-4" stroke={1.8} />
