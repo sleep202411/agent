@@ -39,6 +39,13 @@ import {
 /** Single-value frame fields (startFrame/endFrame) vs array reference fields. */
 const SINGLE_FIELDS = new Set(["startFrame", "firstFrame", "endFrame", "lastFrame"]);
 
+/** Default video mode: Omni Reference when the model offers it (web parity). */
+function defaultVideoMode(model: FizzAiModel): string | undefined {
+  return model.generationModes?.includes("multimodal_to_video")
+    ? "multimodal_to_video"
+    : defaultMode(model);
+}
+
 /** Whether the active mode's required inputs are satisfied. */
 function modeInputsSatisfied(
   mode: string | undefined,
@@ -86,7 +93,7 @@ export function VideoStudio() {
     if (first) {
       setModel(first);
       setSettings(defaultSettingsForModel(first));
-      setMode(defaultMode(first));
+      setMode(defaultVideoMode(first));
     }
   }, [catalog, model]);
 
@@ -97,7 +104,7 @@ export function VideoStudio() {
     setMode((current) =>
       current && selected.generationModes?.includes(current as never)
         ? current
-        : defaultMode(selected)
+        : defaultVideoMode(selected)
     );
   };
 
