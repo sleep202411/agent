@@ -20,6 +20,7 @@ import { cn } from "@/lib/utils";
 import { useDismiss } from "@/lib/use-dismiss";
 import { useAiCatalog } from "@/app/canvas/_lib/use-ai-catalog";
 import { useGeneration } from "@/app/canvas/_lib/use-canvas-generation";
+import { useCreatePanorama } from "@/app/canvas/_lib/use-panorama";
 import {
   defaultMode,
   defaultSettingsForModel,
@@ -56,6 +57,8 @@ export type GenerationNodeData = {
   settings?: ModelSettings;
   references?: CardReferences;
   generation?: GenerationState;
+  /** Set when a node is spawned to auto-run once on mount (e.g. panorama). */
+  autoSubmit?: boolean;
 };
 export type GenerationNodeType = Node<GenerationNodeData, "prompt" | "video">;
 
@@ -133,6 +136,8 @@ function GenerationCard({
   const { updateNodeData } = useReactFlow();
   const { data: catalog } = useAiCatalog();
   const { submit } = useGeneration();
+  const createPanorama = useCreatePanorama();
+  const autoSubmittedRef = useRef(false);
   const [panel, setPanel] = useState<"model" | "settings" | "mode" | null>(null);
   const [renaming, setRenaming] = useState(false);
   const [pano, setPano] = useState(false);
@@ -161,6 +166,17 @@ function GenerationCard({
   const mode = data.mode ?? defaultMode(model);
   const modes = model?.generationModes ?? [];
   const refFields = useMemo(() => referenceFieldsForMode(model, mode), [model, mode]);
+  const isPanorama =
+    mode === "image_to_panorama" || /hunyuan|panorama|world/i.test(model?.id ?? "");
+
+  // A spawned panorama node auto-runs once, as soon as its model resolves.
+  useEffect(() => {
+    if (data.autoSubmit && !autoSubmittedRef.current && model) {
+      autoSubmittedRef.current = true;
+      submit(id);
+      updateNodeData(id, { autoSubmit: false });
+    }
+  }, [data.autoSubmit, model, id, submit, updateNodeData]);
 
   // Revoke object URLs this card created when it unmounts (blobs would leak).
   const createdUrls = useRef<string[]>([]);
@@ -217,11 +233,16 @@ function GenerationCard({
   return (
     <div className="relative">
       <CanvasNodeToolbar nodeId={id} visible={(selected ?? false) && panel === null && !dragging}>
-        {output?.type === "image" && (
-          <ToolbarButton label="720° View" onClick={() => setPano(true)}>
-            <Icon720 className="size-4" />
-          </ToolbarButton>
-        )}
+        {output?.type === "image" &&
+          (isPanorama ? (
+            <ToolbarButton label="720° View" onClick={() => setPano(true)}>
+              <Icon720 className="size-4" />
+            </ToolbarButton>
+          ) : (
+            <ToolbarButton label="Generate Panorama" onClick={() => createPanorama(id, output.url)}>
+              <Icon720 className="size-4" />
+            </ToolbarButton>
+          ))}
         {output && (
           <ToolbarButton label="Download" onClick={onDownload}>
             <IconDownload className="size-4" stroke={1.8} />

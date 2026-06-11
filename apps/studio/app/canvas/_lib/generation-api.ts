@@ -8,6 +8,7 @@ export type FizzAiJobType = "image" | "video";
 export type FizzAiGenerationMode =
   | "first_last_frame_to_video"
   | "image_to_image"
+  | "image_to_panorama"
   | "image_to_video"
   | "multimodal_to_video"
   | "text_to_image"
@@ -534,6 +535,7 @@ const MODE_LABELS: Record<string, string> = {
   text_to_image: "Text to Image",
   text_to_video: "Text to Video",
   image_to_image: "Image to Image",
+  image_to_panorama: "Panorama",
   image_to_video: "Image to Video",
   video_to_video: "Video to Video",
   first_last_frame_to_video: "First & Last Frame",
@@ -586,7 +588,7 @@ export function referenceFieldsForMode(
     const explicit = pick("referenceImages", "referenceVideos", "referenceAudios");
     return explicit.length ? explicit : nonFrames;
   }
-  if (mode === "image_to_video") {
+  if (mode === "image_to_video" || mode === "image_to_panorama") {
     const explicit = pick("startFrame", "referenceImages");
     return explicit.length ? [explicit[0]] : all.filter((f) => f.kind === "image").slice(0, 1);
   }

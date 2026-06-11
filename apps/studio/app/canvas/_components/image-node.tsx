@@ -1,11 +1,12 @@
 "use client";
 
-import { memo, useCallback, useState } from "react";
+import { memo, useCallback } from "react";
 import type { Node, NodeProps } from "@xyflow/react";
 import { IconDownload } from "@tabler/icons-react";
 import { cn } from "@/lib/utils";
+import { useCreatePanorama } from "@/app/canvas/_lib/use-panorama";
 import { CanvasNodeToolbar, ToolbarButton } from "./node-toolbar";
-import { Icon720, PanoramaViewer } from "./panorama-viewer";
+import { Icon720 } from "./panorama-viewer";
 import { PortPlus } from "./ports";
 
 export type ImageNodeType = Node<{ src: string; imageId: string; label?: string }, "image">;
@@ -13,7 +14,7 @@ export type ImageNodeType = Node<{ src: string; imageId: string; label?: string 
 export const IMAGE_NODE_WIDTH = 280;
 
 function ImageNodeComponent({ id, data, selected }: NodeProps<ImageNodeType>) {
-  const [pano, setPano] = useState(false);
+  const createPanorama = useCreatePanorama();
 
   const onDownload = useCallback(() => {
     const anchor = document.createElement("a");
@@ -26,7 +27,7 @@ function ImageNodeComponent({ id, data, selected }: NodeProps<ImageNodeType>) {
     <div className={cn("relative rounded-xl bg-card", selected && "ring-2 ring-ring")}>
       <PortPlus type="source" id="output" side="right" />
       <CanvasNodeToolbar nodeId={id} visible={selected ?? false}>
-        <ToolbarButton label="720° View" onClick={() => setPano(true)}>
+        <ToolbarButton label="Generate Panorama" onClick={() => createPanorama(id, data.src)}>
           <Icon720 className="size-4" />
         </ToolbarButton>
         <ToolbarButton label="Download" onClick={onDownload}>
@@ -42,8 +43,6 @@ function ImageNodeComponent({ id, data, selected }: NodeProps<ImageNodeType>) {
         draggable={false}
         className="block max-h-[480px] w-[280px] rounded-xl object-cover select-none"
       />
-
-      {pano && <PanoramaViewer src={data.src} onClose={() => setPano(false)} />}
     </div>
   );
 }
