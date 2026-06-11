@@ -116,6 +116,12 @@ secrets:
       env: AZURE_OPENAI_API_KEY
     - kv: image-cover-key
       env: REPLICATE_API_TOKEN
+    - kv: fal-api-key
+      env: FAL_API_KEY
+    - kv: dashscope-api-key
+      env: DASHSCOPE_API_KEY
+    - kv: byteplus-modelark-api-key
+      env: BYTEPLUS_MODELARK_API_KEY
     - kv: realtime-conn-string
       env: AZURE_WEB_PUBSUB_CONNECTION_STRING
     - kv: blob-conn-string
@@ -252,6 +258,9 @@ server:
     tag: 18a6e0fc2a6bbed54f2e345f9d4e20be3e4e1f53
   containerPort: 3001
   env:
+    FAL_ENABLED: "true"
+    BAILIAN_ENABLED: "true"
+    BYTEPLUS_MODELARK_ENABLED: "true"
     PORT: "3001"
     AI_PROVIDER: alibaba
     # REDIS_URL comes from KV via projected `fizzdragon-secrets` (envFrom).
