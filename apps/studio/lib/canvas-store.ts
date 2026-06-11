@@ -133,6 +133,37 @@ function normalizeMeta<T extends { mode?: ProjectMode }>(record: T): T & { mode:
   return { ...record, mode: record.mode ?? "canvas" };
 }
 
+/**
+ * Atomic read-modify-write of one project in a single transaction. Multiple
+ * writers (content autosave + asset ingest) target the same record, so a plain
+ * get-then-put would lose updates; doing both inside one transaction serializes
+ * them. Returns the written record, or undefined if it doesn't exist.
+ */
+async function updateProject(
+  id: string,
+  mutate: (record: ProjectRecord) => ProjectRecord
+): Promise<ProjectRecord | undefined> {
+  const db = await openDb();
+  try {
+    return await new Promise<ProjectRecord | undefined>((resolve, reject) => {
+      const tx = db.transaction("projects", "readwrite");
+      const store = tx.objectStore("projects");
+      let next: ProjectRecord | undefined;
+      const getRequest = store.get(id);
+      getRequest.onsuccess = () => {
+        const record = getRequest.result as ProjectRecord | undefined;
+        if (!record) return;
+        next = mutate(normalizeMeta(record));
+        store.put(next);
+      };
+      tx.oncomplete = () => resolve(next);
+      tx.onerror = () => reject(tx.error);
+    });
+  } finally {
+    db.close();
+  }
+}
+
 export async function listProjects(): Promise<ProjectMeta[]> {
   const all = await run<ProjectRecord[]>("projects", "readonly", (s) => s.getAll());
   return all
@@ -181,11 +212,7 @@ export async function saveProjectContent(
   nodes: StoredCanvasNode[],
   edges: StoredCanvasEdge[]
 ): Promise<void> {
-  const existing = await getProject(id);
-  if (!existing) return;
-  await run("projects", "readwrite", (s) =>
-    s.put({ ...existing, nodes, edges, updatedAt: Date.now() })
-  );
+  await updateProject(id, (record) => ({ ...record, nodes, edges, updatedAt: Date.now() }));
 }
 
 export async function listProjectAssets(id: string): Promise<ProjectAsset[]> {
@@ -197,39 +224,34 @@ export async function addProjectAssets(
   id: string,
   assets: ProjectAsset[]
 ): Promise<ProjectAsset[]> {
-  const existing = await getProject(id);
-  if (!existing) return [];
-  const have = new Set((existing.assets ?? []).map((a) => a.id));
-  const fresh = assets.filter((a) => !have.has(a.id));
-  if (fresh.length === 0) return existing.assets ?? [];
-  const next = [...(existing.assets ?? []), ...fresh];
-  await run("projects", "readwrite", (s) => s.put({ ...existing, assets: next }));
-  return next;
+  const written = await updateProject(id, (record) => {
+    const have = new Set((record.assets ?? []).map((a) => a.id));
+    const fresh = assets.filter((a) => !have.has(a.id));
+    return fresh.length === 0
+      ? record
+      : { ...record, assets: [...(record.assets ?? []), ...fresh] };
+  });
+  return written?.assets ?? [];
 }
 
 export async function deleteProjectAsset(id: string, assetId: string): Promise<void> {
-  const existing = await getProject(id);
-  if (!existing) return;
-  const asset = (existing.assets ?? []).find((a) => a.id === assetId);
-  await run("projects", "readwrite", (s) =>
-    s.put({ ...existing, assets: (existing.assets ?? []).filter((a) => a.id !== assetId) })
-  );
+  let removed: ProjectAsset | undefined;
+  const after = await updateProject(id, (record) => {
+    removed = (record.assets ?? []).find((a) => a.id === assetId);
+    return { ...record, assets: (record.assets ?? []).filter((a) => a.id !== assetId) };
+  });
   // GC an uploaded asset's blob if no canvas node still references it.
-  if (
-    asset?.imageId &&
-    !existing.nodes.some((n) => n.kind === "image" && n.imageId === asset.imageId)
-  ) {
-    await run("images", "readwrite", (s) => s.delete(asset.imageId!));
+  const imageId = removed?.imageId;
+  if (after && imageId && !after.nodes.some((n) => n.kind === "image" && n.imageId === imageId)) {
+    await run("images", "readwrite", (s) => s.delete(imageId));
   }
 }
 
 export async function renameProject(id: string, name: string): Promise<void> {
-  const existing = await getProject(id);
-  if (!existing) return;
   const next = name.trim();
-  if (!next || next === existing.name) return;
-  await run("projects", "readwrite", (s) =>
-    s.put({ ...existing, name: next, updatedAt: Date.now() })
+  if (!next) return;
+  await updateProject(id, (record) =>
+    next === record.name ? record : { ...record, name: next, updatedAt: Date.now() }
   );
 }
 
