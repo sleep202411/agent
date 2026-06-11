@@ -122,6 +122,90 @@ export class DocumentsService {
     return { document: this.documentDto(document) };
   }
 
+  /**
+   * Idempotent — returns the project's primary storyboard document,
+   * creating it if absent. "Documents" are an internal concept; the user
+   * just enters a project and lands on its storyboard (with view-mode
+   * switching). One storyboard doc per project, lazily created on first
+   * open. Concurrency-safe via a pg advisory lock keyed on the project.
+   */
+  async ensurePrimaryStoryboard(user: AuthUser, projectId: string) {
+    const project = await this.permissions.requireProjectRole(
+      user.userId,
+      projectId,
+      ProjectMemberRole.editor,
+    );
+
+    const existing = await this.prisma.platformDocument.findFirst({
+      where: {
+        projectId,
+        type: 'storyboard',
+        deletedAt: null,
+        status: PlatformDocumentStatus.active,
+      },
+      orderBy: [{ createdAt: 'asc' }],
+    });
+    if (existing) {
+      return { document: this.documentDto(existing, { detail: true }) };
+    }
+
+    const document = await this.prisma.$transaction(async (tx) => {
+      await tx.$executeRaw`
+        SELECT pg_advisory_xact_lock(hashtext(${`document:primary-storyboard:${projectId}`})::bigint)
+      `;
+      // Re-check inside the lock to avoid a race creating two docs.
+      const found = await tx.platformDocument.findFirst({
+        where: {
+          projectId,
+          type: 'storyboard',
+          deletedAt: null,
+          status: PlatformDocumentStatus.active,
+        },
+        orderBy: [{ createdAt: 'asc' }],
+      });
+      if (found) return found;
+
+      const created = await tx.platformDocument.create({
+        data: {
+          workspaceId: project.workspaceId,
+          projectId,
+          type: 'storyboard',
+          title: project.name,
+          createdById: user.userId,
+        },
+      });
+      const version = await tx.platformDocumentVersion.create({
+        data: {
+          documentId: created.id,
+          versionNumber: 1,
+          schemaVersion: created.schemaVersion,
+          sequence: 0,
+          title: created.title,
+          source: PlatformDocumentVersionSource.system,
+          snapshot: created.contentSnapshot as Prisma.InputJsonValue,
+          createdById: user.userId,
+          metadata: { reason: 'initial_storyboard' },
+        },
+      });
+      return tx.platformDocument.update({
+        where: { id: created.id },
+        data: { currentVersionId: version.id },
+      });
+    });
+
+    await this.audit.record({
+      workspaceId: document.workspaceId,
+      projectId: document.projectId,
+      actorUserId: user.userId,
+      action: 'document.created',
+      entityType: 'document',
+      entityId: document.id,
+      after: document,
+    });
+
+    return { document: this.documentDto(document, { detail: true }) };
+  }
+
   async getDocument(user: AuthUser, documentId: string) {
     const document = await this.permissions.requireDocumentRole(
       user.userId,

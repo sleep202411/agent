@@ -39,7 +39,13 @@ import type { AdminBillingOverviewData, BillingProviderBinding, PaymentProvider 
 
 // The four payment providers, in display order. This mirrors the provider
 // option order used across the catalog/events filters verbatim.
-const PROVIDER_ORDER: PaymentProvider[] = ["airwallex", "wechat_pay", "manual", "internal"];
+const PROVIDER_ORDER: PaymentProvider[] = [
+  "airwallex",
+  "wechat_pay",
+  "alipay",
+  "manual",
+  "internal",
+];
 
 // Providers that do not require provider-side sync (line offline / internal
 // issuance). Mirrors the ProviderBadge sync-button exemption verbatim.

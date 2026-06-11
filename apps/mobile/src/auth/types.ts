@@ -20,6 +20,7 @@ export interface AuthUser {
   phone?: string;
   email?: string;
   avatar?: string;
+  authStatus?: number | string;
   headImg?: string;
   headImgUrl?: string;
   banner?: string;
@@ -54,6 +55,14 @@ export interface AuthState {
 export interface SignInCredentials {
   identifier: string;
   password: string;
+}
+
+export interface RegisterCredentials {
+  /** Phone number (CN region) or email address (global region). */
+  identifier: string;
+  code: string;
+  password: string;
+  recommendationCode?: string;
 }
 
 export interface AuthResult {

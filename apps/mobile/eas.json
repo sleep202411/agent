@@ -38,14 +38,18 @@
       "autoIncrement": true,
       "env": {
         "APP_VARIANT": "production",
-        "FD_APP_REGION": "global"
+        "FD_APP_REGION": "global",
+        "FD_GLOBAL_IOS_BUNDLE_IDENTIFIER": "com.fizzdragon.app",
+        "FD_GLOBAL_ANDROID_PACKAGE": "com.fizzdragon"
       }
     },
     "production-cn": {
       "autoIncrement": true,
       "env": {
         "APP_VARIANT": "production",
-        "FD_APP_REGION": "cn"
+        "FD_APP_REGION": "cn",
+        "FD_CN_IOS_BUNDLE_IDENTIFIER": "cn.fizzspaceapp",
+        "FD_CN_ANDROID_PACKAGE": "cn.fizzdragon"
       }
     }
   },

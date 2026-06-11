@@ -1,6 +1,14 @@
 import 'dotenv/config';
 import { Agent, setGlobalDispatcher } from 'undici';
 import { Logger } from '@nestjs/common';
+
+// Safety net for JSON responses: `JSON.stringify` throws on BigInt (Prisma
+// returns BigInt for columns like `MediaAsset.sizeBytes`). Serializers should
+// convert explicitly, but any leak otherwise crashes the request with a 500.
+// Emit BigInt as a string — matches the existing `.toString()` convention.
+(BigInt.prototype as unknown as { toJSON: () => string }).toJSON = function () {
+  return this.toString();
+};
 import { NestFactory } from '@nestjs/core';
 import { WsAdapter } from '@nestjs/platform-ws';
 import { AppModule } from './app.module';

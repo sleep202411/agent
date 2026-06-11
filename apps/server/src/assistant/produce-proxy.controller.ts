@@ -19,6 +19,7 @@ import {
 import { FileInterceptor } from '@nestjs/platform-express';
 import type { Request } from 'express';
 import { CurrentUser, type AuthUser } from '../auth';
+import { describeUnknown } from '../common/values';
 import { SparkService, type SparkUpload } from '../spark/spark.service';
 import { mastraFetch } from './mastra-fetch';
 
@@ -89,17 +90,11 @@ export class ProduceProxyController {
     body: JsonBody,
   ): Promise<T> {
     const url = `${this.mastraUrl}${path}`;
-    // Diagnostic — log the full satoken value on every produce/*
-    // forward so we can verify the browser is attaching the session
-    // cookie. Remove once Step 2 / Step 3 are stable.
     const cookie = req.headers.cookie;
     if (cookie) {
-      const m = /(?:^|;\s*)satoken=([^;]+)/.exec(String(cookie));
-      const satoken = m?.[1];
+      const satoken = /(?:^|;\s*)satoken=([^;]+)/.exec(cookie)?.[1];
       this.logger.log(
-        satoken
-          ? `→ ${path} satoken=${satoken} cookie=${String(cookie)}`
-          : `→ ${path} cookie=${String(cookie)} (no satoken pair)`,
+        `→ ${path} cookie=present token=${satoken?.slice(0, 8) ?? '(none)'}`,
       );
     } else {
       this.logger.warn(`→ ${path} cookie=MISSING`);
@@ -120,7 +115,7 @@ export class ProduceProxyController {
         signal: AbortSignal.timeout(FORWARD_TIMEOUT_MS),
       });
     } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
+      const msg = describeUnknown(err);
       this.logger.error(
         `← ${path} fetch FAILED after=${Date.now() - startedAt}ms reason=${msg}`,
       );

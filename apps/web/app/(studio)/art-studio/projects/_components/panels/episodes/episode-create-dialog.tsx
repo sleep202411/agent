@@ -2,7 +2,6 @@
 
 import { useEffect, useMemo } from "react";
 import { Controller, useForm } from "react-hook-form";
-import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { IconLoader2 } from "@tabler/icons-react";
 import { useTranslations } from "@/src/i18n/i18n";
@@ -19,6 +18,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Field, FieldLabel, FieldError, FieldGroup } from "@/components/ui/field";
 import { backendApi } from "@/src/lib/api";
+import { typedZodResolver } from "@/src/lib/forms/typed-zod-resolver";
 import { useAppSelector } from "@/src/store";
 
 function useEpisodeCreateSchema() {
@@ -50,7 +50,7 @@ export function EpisodeCreateDialog({ open, onOpenChange, onCreated }: EpisodeCr
   type FormValues = z.infer<typeof schema>;
 
   const form = useForm<FormValues>({
-    resolver: zodResolver(schema),
+    resolver: typedZodResolver<FormValues>(schema),
     defaultValues: {
       title: "",
       introduction: "",

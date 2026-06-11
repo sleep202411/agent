@@ -8,6 +8,7 @@ export default async function BillingPromotionsPage() {
 
   return (
     <BillingPromotionsPanel
+      siteKey={session?.site.key ?? "global"}
       siteLabel={session?.site.label ?? "当前站点"}
       databaseLabel={session?.site.databaseLabel ?? "当前站点数据库"}
       initialPromotions={promotions.data}

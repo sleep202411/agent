@@ -147,6 +147,7 @@ export interface FoundryProviderFieldBinding {
     | "identity"
     | "omitAuto"
     | "mediaUrl"
+    | "mediaFirstUrl"
     | "mediaArrayToUrls"
     | "mediaArrayToOpenAIImageInput"
     | "uriArrayToFiles"
@@ -336,7 +337,12 @@ export interface FoundryCostEstimate {
    * before execution. Heuristic UI chips are represented by preflight_estimator.
    */
   supportsPreflightEstimate: boolean;
-  finalCostSource: "provider_usage" | "internal_metering" | "fixed_table" | "campaign" | "unknown";
+  finalCostSource:
+    | "product_pricing"
+    | "provider_usage"
+    | "internal_metering"
+    | "campaign"
+    | "unknown";
 }
 
 export type FoundryPreflightEstimateConfidence = "low" | "medium" | "high";

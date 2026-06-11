@@ -82,8 +82,6 @@ export function mapFoundryProviderRequest(
   // aspect_ratio + resolution_tier → Azure's single `size` field.
   // The two fields are user-facing (cleaner UX); Azure only takes
   // `WIDTHxHEIGHT`, so we combine here, after generic field mapping.
-  // Backwards-compat: if a legacy caller sent `size` directly, the
-  // generic loop above already set body.size and we don't overwrite.
   if (body.size === undefined) {
     const composed = composeSize(
       normalizedInput.aspect_ratio,

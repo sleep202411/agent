@@ -21,6 +21,7 @@ import type {
   FoundryUiOption,
   FoundryUiSchema,
 } from "./foundry-schema.js";
+import type { AiProductPricingPolicy } from "./billing.js";
 
 export const AI_MODEL_PROTOCOL_DIALECT = "https://fizzdragon.com/schemas/ai/model/v1";
 
@@ -55,6 +56,7 @@ export type AiModelSchemaDialect =
 export type AiModelProviderId =
   | "microsoft-foundry"
   | "fal-ai"
+  | "byteplus-modelark"
   | "replicate"
   | "dashscope"
   | "self-hosted"
@@ -79,11 +81,7 @@ export type AiGenerationMode =
   | "multimodal_to_image"
   | "multimodal_to_video";
 
-/**
- * Legacy coarse capability kept for existing clients. New product logic should
- * use `family` for top-level navigation and `generationModes` for concrete
- * interaction modes.
- */
+/** Coarse capability used for catalog grouping alongside concrete generation modes. */
 export type AiModelCapability =
   | "image_generation"
   | "video_generation"
@@ -95,15 +93,57 @@ export type AiJobOutputType = "image" | "video" | "audio" | "file" | "text";
 
 export type AiModelRouteMode = "managed_preset" | "direct_model" | "campaign_locked";
 
-export type AiPricingUnit = "bubble" | "request" | "output" | "second" | "token" | "provider_usage";
+export type AiPricingUnit =
+  | "compute_point"
+  | "request"
+  | "output"
+  | "second"
+  | "token"
+  | "provider_usage";
+
+/**
+ * Canonical list of providers we onboard. Provider accounts are reconciled from
+ * THIS list on boot (one draft account per key). A key may exist before its
+ * server adapter does — that account is a draft placeholder: visible/editable in
+ * admin, but generation through it fails the ProviderRegistry guard until the
+ * adapter ships and the account is activated.
+ */
+export const AI_PROVIDER_KEYS = [
+  "fal-ai",
+  "byteplus-modelark",
+  "aliyun-bailian",
+  "microsoft-foundry",
+  "replicate",
+] as const;
+export type AiProviderKey = (typeof AI_PROVIDER_KEYS)[number];
+
+/** Human-readable labels for the provider keys (admin UI). */
+export const AI_PROVIDER_LABELS: Record<AiProviderKey, string> = {
+  "fal-ai": "Fal",
+  "byteplus-modelark": "BytePlus ModelArk",
+  "aliyun-bailian": "百炼",
+  "microsoft-foundry": "Azure Foundry",
+  replicate: "Replicate",
+};
 
 export interface AiBillingPolicy {
   mode: "charge" | "free" | "estimate_then_finalize";
   unit: AiPricingUnit;
-  displayCurrency: "BUBBLES" | "CREDITS" | "USD" | "CNY" | string;
+  displayCurrency: "COMPUTE_POINTS" | "CREDITS" | "USD" | "CNY" | string;
   preflightCost?: number;
-  finalCostSource: "fixed_table" | "provider_usage" | "internal_metering" | "campaign" | "unknown";
+  finalCostSource:
+    | "product_pricing"
+    | "provider_usage"
+    | "internal_metering"
+    | "campaign"
+    | "unknown";
   refundPolicy: "refund_on_final_failure" | "no_refund" | "manual_review";
+  /**
+   * User-facing product pricing. This is the source of truth for displayed
+   * compute-point prices. Provider request cost is recorded later per job
+   * only when the provider exposes actual usage/cost.
+   */
+  productPricing?: AiProductPricingPolicy;
 }
 
 export interface AiQueuePolicy {
@@ -138,26 +178,6 @@ export interface AiCampaignPolicy {
   budgetLimit?: number;
 }
 
-export interface AiCatalogContext {
-  cell: string;
-  country: string;
-  ip?: {
-    country?: string;
-    region?: string;
-    city?: string;
-    source?: "cdn" | "proxy" | "maxmind" | "manual" | "unknown" | string;
-    confidence?: "high" | "medium" | "low" | string;
-  };
-}
-
-export interface AiRegionPolicy {
-  allowedCells?: string[];
-  blockedCells?: string[];
-  allowedCountries?: string[];
-  blockedCountries?: string[];
-  preferredProviderRegions?: string[];
-}
-
 export interface AiModelUiPolicy {
   defaultMode: "simple" | "advanced";
   simplePresetIds?: string[];
@@ -178,7 +198,6 @@ export interface AiModelDefinition {
   source: string;
   family: AiModelFamily;
   generationModes: AiGenerationMode[];
-  /** @deprecated Use `family` + `generationModes`. */
   capability?: AiModelCapability;
   type: "image" | "video";
   name: string;
@@ -214,7 +233,7 @@ export interface AiModelDefinition {
   billing_policy?: AiBillingPolicy;
   queue_policy?: AiQueuePolicy;
   entitlement_policy?: AiEntitlementPolicy;
-  region_policy?: AiRegionPolicy;
+  parameter_policy?: AiJsonValue;
   ui_policy?: AiModelUiPolicy;
   input_schema: AiInputSchema;
   output_schema: AiOutputSchema;
@@ -229,7 +248,6 @@ export interface AiModelPresetDefinition {
   description?: string;
   family: AiModelFamily;
   generationModes: AiGenerationMode[];
-  /** @deprecated Use `family` + `generationModes`. */
   capability?: AiModelCapability;
   type: "image" | "video";
   routeMode: AiModelRouteMode;
@@ -240,7 +258,6 @@ export interface AiModelPresetDefinition {
   campaignId?: string;
   fallbackAllowed?: boolean;
   sortOrder?: number;
-  regionPolicy?: AiRegionPolicy;
   billingPolicy: AiBillingPolicy;
   queuePolicy: AiQueuePolicy;
 }
@@ -249,7 +266,6 @@ export interface AiModelCatalogResponse {
   dialect: typeof AI_MODEL_PROTOCOL_DIALECT;
   version: string;
   region: string;
-  context?: AiCatalogContext;
   presets: AiModelPresetDefinition[];
   models: AiModelDefinition[];
   campaigns?: AiCampaignPolicy[];

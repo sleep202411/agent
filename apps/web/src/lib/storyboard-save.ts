@@ -1198,29 +1198,6 @@ function isEntityIdListEqual(left: string[], right: string[]) {
   return normalizedLeft.every((value, index) => value === normalizedRight[index]);
 }
 
-function hasPlainText(value: unknown) {
-  return !!String(value ?? "")
-    .replace(/<mention\s+[^>]*>([\s\S]*?)<\/mention>/gi, "$1")
-    .replace(/<[^>]+>/g, "")
-    .replace(/\r\n?/g, "\n")
-    .trim();
-}
-
-function validateImportedRows(rows: StoryboardImportedRow[]) {
-  const invalidRows: Array<{ rowIndex: number; missingFields: string[] }> = [];
-  rows.forEach((row) => {
-    const missingFields: string[] = [];
-    if (!isMeaningfulValue(row.scene)) missingFields.push("场景");
-    if (!hasPlainText(row.description)) missingFields.push("画面描述");
-    if (!hasPlainText(row.imagePrompt)) missingFields.push("图片提示词");
-    if (!hasPlainText(row.videoPrompt)) missingFields.push("视频提示词");
-    if (missingFields.length) {
-      invalidRows.push({ rowIndex: row.rowIndex, missingFields });
-    }
-  });
-  return invalidRows;
-}
-
 function findStoryboardColumn(
   columns: ShotColumn[],
   options: { presetKeys?: string[]; columnTypes?: string[]; columnNames?: string[] }
@@ -1407,6 +1384,7 @@ export async function saveStoryboardTableWithBackfill(params: {
   if (!datas) {
     throw new Error("分镜保存数据构建失败");
   }
+  const importedRows = buildImportedRows(datas);
 
   if (params.replaceExisting) {
     await deleteExistingShots(params.episodeId);
@@ -1475,7 +1453,7 @@ export async function saveStoryboardTableWithBackfill(params: {
     const persistedRows = buildPersistedRows(persistedShots);
     const matchedIndexes =
       params.replaceExisting && persistedRows.length === importedRows.length
-        ? new Map(importedRows.map((_item, index) => [index, index]))
+        ? new Map<number, number>(importedRows.map((_item, index) => [index, index]))
         : matchRows(importedRows, persistedRows);
     const sceneMap = worldId ? await loadWorldSceneMap(worldId) : new Map<string, Asset>();
 

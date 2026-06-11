@@ -1,6 +1,5 @@
 import type {
   AiAvailability,
-  AiCatalogContext,
   AiCapabilityMatrix,
   AiConditionExpression,
   AiCostEstimate,
@@ -21,12 +20,16 @@ import type {
   AiUiSchema,
 } from '@repo/shared';
 import type { EntitlementPlanKey, EntitlementSnapshot } from '../entitlements';
+import type {
+  AiPromptDocument,
+  AiPromptReferenceBinding,
+  AiPromptStyleBinding,
+} from './prompt-document.types';
 
 export { AI_MODEL_PROTOCOL_DIALECT } from '@repo/shared';
 export type {
   AiAvailability,
   AiBillingPolicy,
-  AiCatalogContext,
   AiCampaignPolicy,
   AiCapabilityMatrix,
   AiConditionExpression,
@@ -36,6 +39,7 @@ export type {
   AiFieldUi,
   AiInputControl,
   AiGenerationMode,
+  AiJsonValue,
   AiJsonSchema,
   AiModelFamily,
   AiModelCatalogResponse,
@@ -46,7 +50,6 @@ export type {
   AiPreflightEstimator,
   AiProviderBinding,
   AiQueuePolicy,
-  AiRegionPolicy,
   AiSchemaRule,
   AiUiSchema,
 } from '@repo/shared';
@@ -63,6 +66,9 @@ export type FoundryCatalogSource =
   | 'openai-models'
   | 'env-override'
   | 'fal-config'
+  | 'byteplus-config'
+  | 'bailian-config'
+  | 'replicate-config'
   | 'seed-fallback';
 
 export type AiJobStatus =
@@ -91,11 +97,11 @@ export type AiEtaConfidence = 'low' | 'medium' | 'high';
 
 /**
  * Provider id — open string because new providers ship as adapter
- * packages without schema migrations. ProviderRegistry validates the
+ * modules without schema migrations. ProviderRegistry validates the
  * value is registered at request time.
  *
- * Known values today: 'microsoft-foundry'. Planned: 'fal-ai',
- * 'replicate', 'stability-self-hosted', 'dashscope'.
+ * Known values today: 'microsoft-foundry', 'fal-ai',
+ * 'aliyun-bailian'. Planned: 'replicate', 'stability-self-hosted'.
  */
 export type AiProvider = string;
 export type AiQueueName = 'ai-image-generation' | 'ai-video-generation';
@@ -141,6 +147,7 @@ export interface AiRoutingPolicySnapshot {
     maxQueueWaitSeconds: number | null;
     pollIntervalMs: number;
   };
+  providerCapacity?: AiProviderCapacitySnapshot;
 }
 
 export interface AiRoutingSnapshot {
@@ -152,9 +159,11 @@ export interface AiRoutingSnapshot {
   selectedProvider: AiProvider;
   selectedModelId: string;
   selectedDeployment: string;
+  selectedCanonicalModelId?: string;
+  selectedProviderBindingId?: string;
+  selectedProviderEndpointId?: string;
   fallbackAllowed: boolean;
   inputMapperVersion: string;
-  geo?: AiCatalogContext;
   policy: AiRoutingPolicySnapshot;
   selectedAt: string;
 }
@@ -209,6 +218,25 @@ export interface FoundryDeploymentRecord {
   raw?: unknown;
 }
 
+export interface AiModelOpsMetadata {
+  canonicalModelId: string;
+  canonicalSlug: string;
+  providerAccountId: string;
+  providerBindingId: string;
+  providerEndpointId: string;
+  providerRoutePriority: number;
+  providerRouteWeight: number;
+  providerCapacity?: AiProviderCapacitySnapshot;
+}
+
+export interface AiProviderCapacitySnapshot {
+  maxConcurrentRequests: number | null;
+  maxRequestsPerMinute: number | null;
+  requestTimeoutSeconds: number | null;
+  cooldownSeconds: number | null;
+  failureThreshold: number | null;
+}
+
 export interface AiModelDefinition extends SharedAiModelDefinition {
   id: string;
   provider: AiProvider;
@@ -254,20 +282,26 @@ export interface AiModelDefinition extends SharedAiModelDefinition {
   provider_output_schema?: FoundryOutputSchema;
   stream_event_schema?: FoundryOutputSchema;
   provider_binding: FoundryProviderBinding;
+  ops?: AiModelOpsMetadata;
 }
 
 export type FoundryModelDefinition = AiModelDefinition;
 
 export interface AiJobOutput {
   id: string;
+  assetId?: string;
   type: AiJobType;
   url: string;
   storagePath: string;
+  contentHash?: string;
   width?: number;
   height?: number;
   durationSeconds?: number;
   mimeType?: string;
   bytes?: number;
+  seed?: bigint;
+  safetyFlags?: Record<string, unknown>;
+  provenance?: Record<string, unknown>;
   createdAt: string;
 }
 
@@ -287,6 +321,7 @@ export interface AiJobError {
     | 'PROVIDER_CONTENT_FILTER'
     | 'OUTPUT_EXPIRED'
     | 'OSS_UPLOAD_FAILED'
+    | 'BILLING_SETTLEMENT_FAILED'
     | 'WORKER_CRASHED'
     | 'CANCELLED_BY_USER'
     | 'UNKNOWN';
@@ -319,18 +354,25 @@ export interface AiJob {
   provider: AiProvider;
   modelId: string;
   deployment: string;
+  canonicalModelId: string | null;
+  providerBindingId: string | null;
   schemaVersion: string;
   workspaceId?: string | null;
   projectId?: string | null;
   documentId?: string | null;
   documentBlockId?: string | null;
-  siteRegion?: string | null;
   sourceSurface?: string | null;
   status: AiJobStatus;
   stage: AiJobStage;
   input: Record<string, unknown>;
   normalizedInput: Record<string, unknown>;
   prompt: string;
+  promptDocument?: AiPromptDocument | null;
+  promptDisplayText?: string | null;
+  promptSearchText?: string | null;
+  compiledPrompt?: string | null;
+  referenceSnapshot?: AiPromptReferenceBinding[] | null;
+  styleSnapshot?: AiPromptStyleBinding[] | null;
   idempotencyKey: string;
   providerJobId?: string;
   providerRequest?: Record<string, unknown>;
@@ -379,6 +421,9 @@ export interface AiSubmitJobBody {
     sourceSurface?: string;
   };
   input?: Record<string, unknown>;
+  promptDocument?: AiPromptDocument;
+  referenceBindings?: AiPromptReferenceBinding[];
+  styleBindings?: AiPromptStyleBinding[];
   idempotencyKey?: string;
   routing?: {
     presetId?: string;
@@ -402,7 +447,6 @@ export interface AiStatusResponse {
   project_id: string | null;
   document_id: string | null;
   document_block_id: string | null;
-  site_region: string | null;
   source_surface: string | null;
   status: AiJobStatus;
   stage: AiJobStage;

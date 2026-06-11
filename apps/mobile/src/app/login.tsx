@@ -1,12 +1,15 @@
-import { SymbolView } from "expo-symbols";
+import { Image } from "expo-image";
+import * as Linking from "expo-linking";
 import { useRouter } from "expo-router";
+import { SymbolView } from "expo-symbols";
 import { useEffect, useRef, useState } from "react";
 import {
+  ActivityIndicator,
   KeyboardAvoidingView,
-  Linking,
   Platform,
   Pressable,
   ScrollView,
+  StyleSheet,
   Text,
   TextInput,
   View,
@@ -14,24 +17,27 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { useAuth } from "@/auth";
+import { LanguageSwitcher } from "@/components/language-switcher";
 import { appEnv } from "@/config";
-import { MaxContentWidth, Spacing } from "@/constants/theme";
-import { useTheme } from "@/hooks/use-theme";
+import { Colors, MaxContentWidth, Spacing } from "@/constants/theme";
+import { useTranslations } from "@/i18n";
 
 type FieldName = "identifier" | "password";
+
+const theme = Colors.dark;
 
 const SITE_BASE_URL =
   appEnv.siteRegion === "cn" ? "https://fizzdragon.fizzspace.cn" : "https://fizzdragon.com";
 
 function pressedStyle(pressed: boolean) {
-  return { opacity: pressed ? 0.72 : 1 };
+  return { opacity: pressed ? 0.7 : 1 };
 }
 
 export default function LoginScreen() {
+  const t = useTranslations();
   const auth = useAuth();
   const router = useRouter();
   const safeAreaInsets = useSafeAreaInsets();
-  const theme = useTheme();
   const passwordInputRef = useRef<TextInput>(null);
   const [identifier, setIdentifier] = useState("");
   const [password, setPassword] = useState("");
@@ -50,182 +56,148 @@ export default function LoginScreen() {
   }, [auth.status, router]);
 
   function openSitePath(path: string) {
-    const url = `${SITE_BASE_URL}${path}`;
-    void Linking.openURL(url).catch(() => {
-      setLocalError("Unable to open this link. Try again from the web studio.");
+    void Linking.openURL(`${SITE_BASE_URL}${path}`).catch(() => {
+      setLocalError(t("login.linkFailed"));
     });
+  }
+
+  function clearLocalError() {
+    if (localError) setLocalError(undefined);
   }
 
   function handleIdentifierChange(value: string) {
     setIdentifier(value);
-    if (localError) setLocalError(undefined);
+    clearLocalError();
   }
 
   function handlePasswordChange(value: string) {
     setPassword(value);
-    if (localError) setLocalError(undefined);
+    clearLocalError();
   }
 
   async function handleSubmit() {
     if (!hasCredentials) {
-      setLocalError("Enter your email or phone and password.");
+      setLocalError(t("login.enterCredentials"));
       return;
     }
-
     if (!acceptedTerms) {
-      setLocalError("Please accept the terms before signing in.");
+      setLocalError(t("login.termsRequired"));
       return;
     }
-
     setLocalError(undefined);
-
     try {
       await auth.signIn({ identifier, password });
       router.replace("/");
     } catch (error) {
-      setLocalError(error instanceof Error ? error.message : "Sign in failed.");
+      setLocalError(error instanceof Error ? error.message : t("login.signInFailed"));
     }
   }
 
   const errorMessage = localError ?? auth.error;
 
   return (
-    <KeyboardAvoidingView
-      behavior={Platform.OS === "ios" ? "padding" : undefined}
-      className="flex-1 bg-canvas"
-    >
-      <ScrollView
-        className="bg-canvas"
-        keyboardShouldPersistTaps="handled"
-        showsVerticalScrollIndicator={false}
-        contentContainerStyle={{
-          alignItems: "center",
-          flexGrow: 1,
-          justifyContent: "center",
-          paddingBottom: safeAreaInsets.bottom + Spacing.five,
-          paddingLeft: Math.max(safeAreaInsets.left, Spacing.four),
-          paddingRight: Math.max(safeAreaInsets.right, Spacing.four),
-          paddingTop: safeAreaInsets.top + Spacing.five,
-        }}
+    <View style={styles.root}>
+      <KeyboardAvoidingView
+        behavior={Platform.OS === "ios" ? "padding" : undefined}
+        style={styles.flex}
       >
-        <View className="w-full gap-4" style={{ maxWidth: MaxContentWidth }}>
-          <View className="gap-6 pt-2">
-            <View className="flex-row items-center justify-between">
-              <View className="h-12 w-12 items-center justify-center rounded-md bg-brand-500">
-                <Text className="text-lg font-bold leading-6 text-white">FD</Text>
-              </View>
-              <View className="rounded-md bg-surface px-3 py-2">
-                <Text className="font-mono text-xs font-medium uppercase tracking-normal text-ink-muted">
-                  Mobile Studio
-                </Text>
-              </View>
+        <ScrollView
+          contentContainerStyle={[
+            styles.scrollContent,
+            {
+              paddingTop: safeAreaInsets.top + Spacing.seven,
+              paddingBottom: safeAreaInsets.bottom + Spacing.five,
+              paddingLeft: Math.max(safeAreaInsets.left, Spacing.five),
+              paddingRight: Math.max(safeAreaInsets.right, Spacing.five),
+            },
+          ]}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+        >
+          <View style={styles.page}>
+            {/* Brand + heading */}
+            <View style={styles.header}>
+              <Image
+                accessibilityLabel="FizzDragon"
+                contentFit="contain"
+                source={require("@/assets/images/fizzdragon-logo.png")}
+                style={styles.logo}
+              />
             </View>
 
-            <View className="gap-2">
-              <Text className="text-sm font-bold leading-5 text-ink-muted">FizzDragon</Text>
-              <Text className="text-[40px] font-semibold leading-[44px] text-ink">Sign in</Text>
-              <Text className="max-w-[360px] text-[15px] font-medium leading-[22px] text-ink-muted">
-                Sync your projects, credits, productions, and creator profile with the web studio.
-              </Text>
-            </View>
-          </View>
-
-          <View className="gap-4 rounded-md bg-surface p-4">
-            <View className="flex-row items-center justify-between gap-3">
-              <View>
-                <Text className="text-sm font-bold leading-5 text-ink">Account access</Text>
-                <Text className="text-sm font-medium leading-5 text-ink-muted">
-                  Email or phone sign-in
-                </Text>
-              </View>
-              <View className="flex-row items-center gap-2 rounded-md border border-line px-3 py-2">
-                <View className="h-[7px] w-[7px] rounded-full bg-brand-500" />
-                <Text className="font-mono text-xs font-medium uppercase tracking-normal text-ink-muted">
-                  Secure
-                </Text>
-              </View>
-            </View>
-
-            <View className="gap-4">
-              <View className="gap-2">
-                <Text className="text-sm font-bold leading-5 text-ink">Email or phone</Text>
+            {/* Form */}
+            <View style={styles.form}>
+              <View style={styles.field}>
+                <Text style={styles.label}>{t("login.emailOrPhone")}</Text>
                 <View
-                  className={[
-                    "min-h-[52px] flex-row items-center gap-3 rounded-md border bg-surface-muted px-3",
-                    focusedField === "identifier" ? "border-brand-500" : "border-line",
-                  ].join(" ")}
+                  style={[
+                    styles.inputShell,
+                    focusedField === "identifier" && styles.inputShellFocused,
+                  ]}
                 >
-                  <SymbolView
-                    name={{ ios: "person", android: "person", web: "person" }}
-                    size={18}
-                    tintColor={focusedField === "identifier" ? theme.text : theme.textSecondary}
-                  />
                   <TextInput
-                    accessibilityLabel="Email or phone"
+                    accessibilityLabel={t("login.emailOrPhone")}
                     autoCapitalize="none"
                     autoComplete="username"
-                    className="min-h-[52px] flex-1 p-0 text-base font-semibold text-ink"
                     inputMode="email"
                     keyboardType="email-address"
                     onBlur={() => setFocusedField(undefined)}
                     onChangeText={handleIdentifierChange}
                     onFocus={() => setFocusedField("identifier")}
                     onSubmitEditing={() => passwordInputRef.current?.focus()}
-                    placeholder="Email or phone number"
-                    placeholderTextColor={theme.textSecondary}
+                    placeholder={t("login.emailOrPhonePlaceholder")}
+                    placeholderTextColor="rgba(255,255,255,0.34)"
                     returnKeyType="next"
+                    style={styles.input}
                     textContentType="username"
                     value={identifier}
                   />
                 </View>
               </View>
 
-              <View className="gap-2">
-                <View className="flex-row items-center justify-between">
-                  <Text className="text-sm font-bold leading-5 text-ink">Password</Text>
+              <View style={styles.field}>
+                <View style={styles.labelRow}>
+                  <Text style={styles.label}>{t("login.password")}</Text>
                   <Pressable
                     accessibilityRole="link"
-                    onPress={() => openSitePath("/forgot-password")}
+                    hitSlop={8}
+                    onPress={() => router.push("/forgot-password")}
                     style={({ pressed }) => pressedStyle(pressed)}
                   >
-                    <Text className="text-sm font-bold leading-5 text-brand-500">Forgot?</Text>
+                    <Text style={styles.forgotLink}>{t("login.forgot")}</Text>
                   </Pressable>
                 </View>
                 <View
-                  className={[
-                    "min-h-[52px] flex-row items-center gap-3 rounded-md border bg-surface-muted px-3",
-                    focusedField === "password" ? "border-brand-500" : "border-line",
-                  ].join(" ")}
+                  style={[
+                    styles.inputShell,
+                    focusedField === "password" && styles.inputShellFocused,
+                  ]}
                 >
-                  <SymbolView
-                    name={{ ios: "lock", android: "lock", web: "lock" }}
-                    size={18}
-                    tintColor={focusedField === "password" ? theme.text : theme.textSecondary}
-                  />
                   <TextInput
                     ref={passwordInputRef}
-                    accessibilityLabel="Password"
+                    accessibilityLabel={t("login.password")}
                     autoCapitalize="none"
                     autoComplete="password"
-                    className="min-h-[52px] flex-1 p-0 text-base font-semibold text-ink"
                     onBlur={() => setFocusedField(undefined)}
                     onChangeText={handlePasswordChange}
                     onFocus={() => setFocusedField("password")}
                     onSubmitEditing={handleSubmit}
-                    placeholder="Password"
-                    placeholderTextColor={theme.textSecondary}
+                    placeholder={t("login.passwordPlaceholder")}
+                    placeholderTextColor="rgba(255,255,255,0.34)"
                     returnKeyType="done"
                     secureTextEntry={!showPassword}
+                    style={styles.input}
                     textContentType="password"
                     value={password}
                   />
                   <Pressable
-                    accessibilityLabel={showPassword ? "Hide password" : "Show password"}
+                    accessibilityLabel={
+                      showPassword ? t("login.hidePassword") : t("login.showPassword")
+                    }
                     accessibilityRole="button"
-                    className="h-9 w-9 items-center justify-center"
                     hitSlop={10}
                     onPress={() => setShowPassword((current) => !current)}
-                    style={({ pressed }) => pressedStyle(pressed)}
+                    style={({ pressed }) => [styles.eyeButton, pressedStyle(pressed)]}
                   >
                     <SymbolView
                       name={{
@@ -234,105 +206,289 @@ export default function LoginScreen() {
                         web: showPassword ? "visibility_off" : "visibility",
                       }}
                       size={18}
-                      tintColor={theme.textSecondary}
+                      tintColor="rgba(255,255,255,0.55)"
                     />
                   </Pressable>
                 </View>
               </View>
+
+              {errorMessage ? (
+                <View accessibilityLiveRegion="polite" style={styles.errorPanel}>
+                  <SymbolView
+                    name={{ ios: "exclamationmark.circle.fill", android: "error", web: "error" }}
+                    size={16}
+                    tintColor={theme.brand}
+                  />
+                  <Text style={styles.errorText}>{errorMessage}</Text>
+                </View>
+              ) : null}
+
+              <Pressable
+                accessibilityRole="checkbox"
+                accessibilityState={{ checked: acceptedTerms }}
+                onPress={() => {
+                  setAcceptedTerms((current) => !current);
+                  clearLocalError();
+                }}
+                style={({ pressed }) => (pressed ? styles.pressed : null)}
+              >
+                <View style={styles.termsRow}>
+                  <View style={[styles.checkbox, acceptedTerms && styles.checkboxChecked]}>
+                    {acceptedTerms ? (
+                      <SymbolView
+                        name={{ ios: "checkmark", android: "check", web: "check" }}
+                        size={12}
+                        tintColor="#FFFFFF"
+                      />
+                    ) : null}
+                  </View>
+                  <Text style={styles.termsText}>
+                    {t("login.agreementLead")}
+                    <Text
+                      style={styles.termsLink}
+                      onPress={() => openSitePath("/terms-of-service")}
+                    >
+                      {t("login.terms")}
+                    </Text>
+                    {t("login.and")}
+                    <Text style={styles.termsLink} onPress={() => openSitePath("/privacy-policy")}>
+                      {t("login.privacy")}
+                    </Text>
+                  </Text>
+                </View>
+              </Pressable>
+
+              <Pressable
+                accessibilityRole="button"
+                disabled={!canSubmit}
+                onPress={handleSubmit}
+                style={({ pressed }) => (pressed && canSubmit ? styles.pressed : null)}
+              >
+                <View
+                  style={[
+                    styles.primaryButton,
+                    canSubmit ? styles.primaryButtonEnabled : styles.primaryButtonDisabled,
+                  ]}
+                >
+                  {isSubmitting ? (
+                    <ActivityIndicator color="#FFFFFF" size="small" style={styles.buttonSpinner} />
+                  ) : null}
+                  <Text
+                    style={[
+                      styles.primaryButtonText,
+                      !canSubmit && styles.primaryButtonTextDisabled,
+                    ]}
+                  >
+                    {isSubmitting ? t("login.signingIn") : t("login.signIn")}
+                  </Text>
+                </View>
+              </Pressable>
             </View>
 
-            {errorMessage && (
-              <View
-                accessibilityLiveRegion="polite"
-                className="flex-row items-start gap-2 rounded-md border border-brand-500/30 bg-brand-500/10 p-3"
+            {/* Footer */}
+            <View style={styles.footer}>
+              <Text style={styles.footerText}>{t("login.newUser")}</Text>
+              <Pressable
+                accessibilityRole="button"
+                hitSlop={8}
+                onPress={() => router.push("/register")}
+                style={({ pressed }) => pressedStyle(pressed)}
               >
-                <SymbolView
-                  name={{ ios: "exclamationmark.triangle", android: "warning", web: "warning" }}
-                  size={18}
-                  tintColor={theme.brand}
-                />
-                <Text className="flex-1 text-sm font-bold leading-5 text-brand-500">
-                  {errorMessage}
-                </Text>
-              </View>
-            )}
-
-            <Pressable
-              accessibilityRole="checkbox"
-              accessibilityState={{ checked: acceptedTerms }}
-              className="flex-row items-start gap-3"
-              onPress={() => {
-                setAcceptedTerms((current) => !current);
-                if (localError) setLocalError(undefined);
-              }}
-              style={({ pressed }) => pressedStyle(pressed)}
-            >
-              <View
-                className={[
-                  "mt-px h-5 w-5 items-center justify-center rounded-sm border",
-                  acceptedTerms ? "border-brand-500 bg-brand-500" : "border-line bg-transparent",
-                ].join(" ")}
-              >
-                {acceptedTerms && (
-                  <SymbolView
-                    name={{ ios: "checkmark", android: "check", web: "check" }}
-                    size={13}
-                    tintColor="#FFFFFF"
-                  />
-                )}
-              </View>
-              <Text className="flex-1 text-xs font-medium leading-[18px] text-ink-muted">
-                I have read and agree to the{" "}
-                <Text
-                  className="font-bold text-ink"
-                  onPress={() => openSitePath("/terms-of-service")}
-                >
-                  Terms
-                </Text>{" "}
-                and{" "}
-                <Text
-                  className="font-bold text-ink"
-                  onPress={() => openSitePath("/privacy-policy")}
-                >
-                  Privacy Policy
-                </Text>
-                .
-              </Text>
-            </Pressable>
-
-            <Pressable
-              accessibilityRole="button"
-              className={[
-                "min-h-[52px] items-center justify-center rounded-md border",
-                canSubmit ? "border-brand-500 bg-brand-500" : "border-line bg-surface-muted",
-              ].join(" ")}
-              disabled={!canSubmit}
-              onPress={handleSubmit}
-              style={({ pressed }) => pressedStyle(pressed)}
-            >
-              <Text
-                className={[
-                  "text-base font-bold leading-[22px]",
-                  canSubmit ? "text-white" : "text-ink-muted",
-                ].join(" ")}
-              >
-                {isSubmitting ? "Signing in" : "Sign in"}
-              </Text>
-            </Pressable>
+                <Text style={styles.footerLink}>{t("login.createAccount")}</Text>
+              </Pressable>
+            </View>
           </View>
-
-          <View className="min-h-8 flex-row items-center justify-center gap-2">
-            <Text className="text-sm font-medium leading-5 text-ink-muted">New to FizzDragon?</Text>
-            <Pressable
-              accessibilityRole="link"
-              onPress={() => openSitePath("/register")}
-              style={({ pressed }) => pressedStyle(pressed)}
-            >
-              <Text className="text-sm font-bold leading-5 text-ink">Create account</Text>
-            </Pressable>
-          </View>
-        </View>
-      </ScrollView>
-    </KeyboardAvoidingView>
+        </ScrollView>
+      </KeyboardAvoidingView>
+      <LanguageSwitcher style={[styles.langSwitch, { top: safeAreaInsets.top + Spacing.two }]} />
+    </View>
   );
 }
+
+const styles = StyleSheet.create({
+  root: {
+    backgroundColor: theme.background,
+    flex: 1,
+  },
+  flex: {
+    flex: 1,
+  },
+  langSwitch: {
+    position: "absolute",
+    right: Spacing.five,
+    zIndex: 10,
+  },
+  scrollContent: {
+    alignItems: "center",
+    flexGrow: 1,
+  },
+  page: {
+    flex: 1,
+    gap: Spacing.seven,
+    maxWidth: MaxContentWidth,
+    width: "100%",
+  },
+  // Header
+  header: {
+    alignItems: "center",
+    paddingVertical: Spacing.six,
+  },
+  logo: {
+    height: 34,
+    width: 191,
+  },
+  // Form
+  form: {
+    gap: Spacing.four,
+  },
+  field: {
+    gap: Spacing.two,
+  },
+  labelRow: {
+    alignItems: "center",
+    flexDirection: "row",
+    justifyContent: "space-between",
+  },
+  label: {
+    color: theme.textSecondary,
+    fontSize: 13,
+    fontWeight: "600",
+    letterSpacing: 0.1,
+  },
+  forgotLink: {
+    color: theme.brand,
+    fontSize: 13,
+    fontWeight: "600",
+  },
+  inputShell: {
+    alignItems: "center",
+    backgroundColor: "rgba(255,255,255,0.04)",
+    borderColor: theme.border,
+    borderRadius: 14,
+    borderWidth: 1,
+    flexDirection: "row",
+    height: 54,
+    paddingHorizontal: Spacing.four,
+  },
+  inputShellFocused: {
+    backgroundColor: "rgba(229,34,39,0.06)",
+    borderColor: theme.brand,
+  },
+  input: {
+    color: theme.text,
+    flex: 1,
+    fontSize: 16,
+    fontWeight: "500",
+    height: "100%",
+    padding: 0,
+  },
+  eyeButton: {
+    alignItems: "center",
+    height: 32,
+    justifyContent: "center",
+    marginLeft: Spacing.two,
+    width: 32,
+  },
+  // Error
+  errorPanel: {
+    alignItems: "center",
+    backgroundColor: "rgba(229,34,39,0.1)",
+    borderColor: "rgba(229,34,39,0.32)",
+    borderRadius: 10,
+    borderWidth: 1,
+    flexDirection: "row",
+    gap: Spacing.two,
+    paddingHorizontal: Spacing.three,
+    paddingVertical: Spacing.three,
+  },
+  errorText: {
+    color: "#FF8088",
+    flex: 1,
+    fontSize: 13,
+    fontWeight: "500",
+    lineHeight: 18,
+  },
+  // Terms
+  termsRow: {
+    alignItems: "flex-start",
+    flexDirection: "row",
+    gap: Spacing.three,
+    marginTop: Spacing.one,
+  },
+  checkbox: {
+    alignItems: "center",
+    backgroundColor: "rgba(255,255,255,0.04)",
+    borderColor: theme.border,
+    borderRadius: 6,
+    borderWidth: 1,
+    flexShrink: 0,
+    height: 22,
+    justifyContent: "center",
+    marginTop: 1,
+    width: 22,
+  },
+  checkboxChecked: {
+    backgroundColor: theme.brand,
+    borderColor: theme.brand,
+  },
+  termsText: {
+    color: theme.textSecondary,
+    flex: 1,
+    fontSize: 13,
+    fontWeight: "400",
+    lineHeight: 19,
+  },
+  termsLink: {
+    color: theme.text,
+    fontWeight: "600",
+  },
+  // Primary button
+  primaryButton: {
+    alignItems: "center",
+    borderRadius: 14,
+    flexDirection: "row",
+    height: 54,
+    justifyContent: "center",
+    marginTop: Spacing.two,
+  },
+  primaryButtonEnabled: {
+    backgroundColor: theme.brand,
+  },
+  primaryButtonDisabled: {
+    backgroundColor: theme.backgroundSelected,
+  },
+  primaryButtonText: {
+    color: "#FFFFFF",
+    fontSize: 16,
+    fontWeight: "700",
+    letterSpacing: 0.1,
+  },
+  primaryButtonTextDisabled: {
+    color: "rgba(255,255,255,0.4)",
+  },
+  buttonSpinner: {
+    marginRight: Spacing.two,
+  },
+  // Footer
+  footer: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: Spacing.two,
+    justifyContent: "center",
+    marginTop: "auto",
+    paddingTop: Spacing.five,
+  },
+  footerText: {
+    color: theme.textSecondary,
+    fontSize: 14,
+    fontWeight: "400",
+  },
+  footerLink: {
+    color: theme.brand,
+    fontSize: 14,
+    fontWeight: "600",
+  },
+  pressed: {
+    opacity: 0.85,
+  },
+});

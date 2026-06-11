@@ -1,7 +1,19 @@
 import { Injectable } from '@nestjs/common';
 import { falError, mapFalHttpError } from './fal-error.mapper';
 import type { FalProviderConfig } from './fal-config.service';
-import type { FalStatusResponse, FalSubmitResponse } from './fal.types';
+import type {
+  FalPricingResponse,
+  FalRequestListResponse,
+  FalStatusResponse,
+  FalSubmitResponse,
+} from './fal.types';
+
+export interface FalJsonResponse<T> {
+  body: T;
+  headers: Record<string, string>;
+  ok: boolean;
+  status: number;
+}
 
 @Injectable()
 export class FalClient {
@@ -20,10 +32,12 @@ export class FalClient {
     config: FalProviderConfig,
     endpointId: string,
     requestId: string,
+    statusUrl?: string | null,
   ): Promise<FalStatusResponse> {
     return this.requestJson(
       config,
-      `${config.queueBaseUrl}/${endpointId}/requests/${requestId}/status`,
+      statusUrl ??
+        `${config.queueBaseUrl}/${endpointId}/requests/${requestId}/status`,
       { method: 'GET' },
     );
   }
@@ -32,22 +46,48 @@ export class FalClient {
     config: FalProviderConfig,
     endpointId: string,
     requestId: string,
-  ): Promise<unknown> {
-    return this.requestJson(
+    responseUrl?: string | null,
+  ): Promise<FalJsonResponse<unknown>> {
+    return this.requestJsonWithHeaders(
       config,
-      `${config.queueBaseUrl}/${endpointId}/requests/${requestId}`,
+      responseUrl ??
+        `${config.queueBaseUrl}/${endpointId}/requests/${requestId}`,
       { method: 'GET' },
+      { allowErrorBody: true },
     );
+  }
+
+  async pricing(
+    config: FalProviderConfig,
+    endpointId: string,
+  ): Promise<FalPricingResponse> {
+    const url = new URL(`${config.apiBaseUrl}/models/pricing`);
+    url.searchParams.set('endpoint_id', endpointId);
+    return this.requestJson(config, url.toString(), { method: 'GET' });
+  }
+
+  async requestByEndpoint(
+    config: FalProviderConfig,
+    endpointId: string,
+    requestId: string,
+  ): Promise<FalRequestListResponse> {
+    const url = new URL(`${config.apiBaseUrl}/models/requests/by-endpoint`);
+    url.searchParams.set('endpoint_id', endpointId);
+    url.searchParams.set('request_id', requestId);
+    url.searchParams.set('expand', 'payloads');
+    return this.requestJson(config, url.toString(), { method: 'GET' });
   }
 
   async cancel(
     config: FalProviderConfig,
     endpointId: string,
     requestId: string,
+    cancelUrl?: string | null,
   ): Promise<void> {
     await this.requestJson(
       config,
-      `${config.queueBaseUrl}/${endpointId}/requests/${requestId}/cancel`,
+      cancelUrl ??
+        `${config.queueBaseUrl}/${endpointId}/requests/${requestId}/cancel`,
       { method: 'PUT' },
     );
   }
@@ -57,6 +97,15 @@ export class FalClient {
     url: string,
     init: RequestInit,
   ): Promise<T> {
+    return (await this.requestJsonWithHeaders<T>(config, url, init)).body;
+  }
+
+  private async requestJsonWithHeaders<T>(
+    config: FalProviderConfig,
+    url: string,
+    init: RequestInit,
+    options: { allowErrorBody?: boolean } = {},
+  ): Promise<FalJsonResponse<T>> {
     if (!config.apiKey) {
       throw falError(
         'PROVIDER_NOT_CONFIGURED',
@@ -94,11 +143,42 @@ export class FalClient {
       clearTimeout(timer);
     }
 
-    if (!response.ok) {
-      const raw = await response.text().catch(() => '');
+    const raw = await response.text().catch(() => '');
+    const body = parseFalBody(raw) as T;
+
+    if (!response.ok && !options.allowErrorBody) {
       throw mapFalHttpError(response.status, raw);
     }
 
-    return (await response.json()) as T;
+    return {
+      body,
+      headers: responseHeaders(response.headers),
+      ok: response.ok,
+      status: response.status,
+    };
   }
+}
+
+function parseFalBody(raw: string): unknown {
+  if (!raw) return null;
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return raw;
+  }
+}
+
+function responseHeaders(headers: Headers): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const [key, value] of headers.entries()) {
+    const normalized = key.toLowerCase();
+    if (
+      normalized.startsWith('x-fal-') ||
+      normalized === 'content-type' ||
+      normalized === 'retry-after'
+    ) {
+      out[normalized] = value;
+    }
+  }
+  return out;
 }

@@ -497,7 +497,7 @@ function randomToken(length: number): string {
   const bytes = randomBytes(length);
   let out = '';
   for (let i = 0; i < length; i += 1) {
-    out += CERT_NO_ALPHABET[bytes[i]! % CERT_NO_ALPHABET.length];
+    out += CERT_NO_ALPHABET[bytes[i] % CERT_NO_ALPHABET.length];
   }
   return out;
 }

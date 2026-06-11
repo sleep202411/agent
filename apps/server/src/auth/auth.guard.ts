@@ -5,9 +5,13 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
+import type { Request } from 'express';
 import { AuthService } from './auth.service';
 import { IS_PUBLIC_KEY } from './auth.decorator';
-import type { AuthUser } from './auth.types';
+import type { AuthenticatedRequest, AuthUser } from './auth.types';
+
+type GuardRequest = Request &
+  Partial<Pick<AuthenticatedRequest, 'user' | 'rawCookie'>>;
 
 const DEV_USER: AuthUser = {
   userId: 'dev',
@@ -38,8 +42,14 @@ export class AuthGuard implements CanActivate {
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
-    const request = context.switchToHttp().getRequest();
-    const cookie = request.headers?.cookie as string | undefined;
+    const request = context.switchToHttp().getRequest<GuardRequest>();
+    // Native clients (mobile app) carry the satoken in an Authorization
+    // bearer header instead of a browser cookie jar. Normalize it to the
+    // cookie form Java expects; an explicit bearer wins over whatever the
+    // OS cookie jar happens to still hold.
+    const bearer =
+      request.headers.authorization?.match(/^Bearer\s+(\S+)$/i)?.[1];
+    const cookie = bearer ? `satoken=${bearer}` : request.headers.cookie;
 
     // Check if endpoint is marked as @Public()
     const isPublic = this.reflector.getAllAndOverride<boolean>(IS_PUBLIC_KEY, [

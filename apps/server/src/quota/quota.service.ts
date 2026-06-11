@@ -247,7 +247,7 @@ export class QuotaService implements OnModuleInit {
 
   // ─── refund ─────────────────────────────────────────────────────
 
-  async refund(args: RefundArgs): Promise<{ ok: true; status: string }> {
+  refund(args: RefundArgs): Promise<{ ok: true; status: string }> {
     try {
       // We need to know dimension + cost to refund correctly. Encode
       // by reading the audit log for this idempotency key — Phase 2
@@ -266,11 +266,11 @@ export class QuotaService implements OnModuleInit {
         reason: args.reason ?? 'refund_unknown',
         idempotencyKey: args.idempotencyKey,
       });
-      return { ok: true, status: 'stub' };
+      return Promise.resolve({ ok: true, status: 'stub' });
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       this.logger.warn(`refund() failed: ${msg}`);
-      return { ok: true, status: 'error' };
+      return Promise.resolve({ ok: true, status: 'error' });
     }
   }
 

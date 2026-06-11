@@ -1500,33 +1500,6 @@ export class FoundrySchemaFactory {
     };
   }
 
-  seedModels(): FoundryModelDefinition[] {
-    const records: FoundryDeploymentRecord[] = [
-      {
-        id: 'seed-fallback:gpt-image-2',
-        deployment: 'gpt-image-2',
-        modelName: 'gpt-image-2',
-        displayName: 'GPT Image 2',
-        description:
-          'Seed fallback GPT Image 2 model until Foundry catalog is configured.',
-        source: 'seed-fallback',
-      },
-      {
-        id: 'seed-fallback:sora-2',
-        deployment: 'sora-2',
-        modelName: 'sora-2',
-        displayName: 'Sora 2',
-        description:
-          'Seed fallback video model until Foundry catalog is configured.',
-        source: 'seed-fallback',
-      },
-    ];
-
-    return records
-      .map((record) => this.buildModel(record))
-      .filter((model): model is FoundryModelDefinition => Boolean(model));
-  }
-
   private inferCapability(
     record: FoundryDeploymentRecord,
   ): FoundryModelCapability {

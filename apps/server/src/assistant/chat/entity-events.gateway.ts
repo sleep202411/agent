@@ -34,6 +34,7 @@ import {
   type EntityEvent,
 } from '@repo/shared/entity-events';
 import { AuthService } from '../../auth/auth.service';
+import { describeUnknown } from '../../common/values';
 
 const HEARTBEAT_INTERVAL_MS = 30_000;
 const ZOMBIE_TIMEOUT_MS = 90_000;
@@ -73,21 +74,24 @@ export class EntityEventsGateway
 
   constructor(private readonly authService: AuthService) {}
 
-  afterInit(_server: Server) {
+  afterInit() {
     const url = process.env.REDIS_URL ?? 'redis://localhost:6379';
     this.redisSubscriber = new Redis(url, { maxRetriesPerRequest: null });
 
-    this.redisSubscriber.psubscribe(ENTITY_EVENTS_CHANNEL_PATTERN, (err) => {
-      if (err) {
-        this.logger.error(
-          `Failed to psubscribe(${ENTITY_EVENTS_CHANNEL_PATTERN}): ${err.message}`,
+    void this.redisSubscriber.psubscribe(
+      ENTITY_EVENTS_CHANNEL_PATTERN,
+      (err) => {
+        if (err) {
+          this.logger.error(
+            `Failed to psubscribe(${ENTITY_EVENTS_CHANNEL_PATTERN}): ${describeUnknown(err)}`,
+          );
+          return;
+        }
+        this.logger.log(
+          `EntityEventsGateway subscribed to ${ENTITY_EVENTS_CHANNEL_PATTERN}`,
         );
-        return;
-      }
-      this.logger.log(
-        `EntityEventsGateway subscribed to ${ENTITY_EVENTS_CHANNEL_PATTERN}`,
-      );
-    });
+      },
+    );
 
     this.redisSubscriber.on('pmessage', (_pattern, channel, raw) => {
       const userId = channel.slice(ENTITY_EVENTS_CHANNEL_PREFIX.length);
@@ -201,7 +205,9 @@ export class EntityEventsGateway
     if (this.heartbeatTimer) clearInterval(this.heartbeatTimer);
     try {
       await this.redisSubscriber?.quit();
-    } catch {}
+    } catch {
+      this.logger.debug('redis subscriber quit skipped during shutdown');
+    }
   }
 
   // ─── Helpers ─────────────────────────────────────────────
@@ -239,13 +245,19 @@ export class EntityEventsGateway
       client.send(
         JSON.stringify({ event: 'terminate', data: { reason, code } }),
       );
-    } catch {}
+    } catch {
+      this.logger.debug('terminate frame skipped because socket is closing');
+    }
     try {
       client.close(code, reason);
-    } catch {}
+    } catch {
+      this.logger.debug(
+        'socket close skipped because socket is already closed',
+      );
+    }
   }
 
-  private async sendHeartbeats() {
+  private sendHeartbeats() {
     for (const subs of this.socketsByUser.values()) {
       for (const sock of subs) {
         if (sock.readyState !== sock.OPEN) continue;
@@ -257,7 +269,9 @@ export class EntityEventsGateway
             }),
           );
           (sock as TrackedSocket & { ping?: () => void }).ping?.();
-        } catch {}
+        } catch {
+          this.logger.debug('heartbeat skipped because socket is closing');
+        }
       }
     }
   }

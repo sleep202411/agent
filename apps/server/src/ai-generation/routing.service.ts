@@ -15,17 +15,24 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { GeoPolicyService, type RequestGeoContext } from '../common/region';
+import { estimateProductModelPoints } from '@repo/shared';
 import { EntitlementService, type EntitlementSnapshot } from '../entitlements';
 import {
   AiModelPresetRegistryService,
   type AiFreeCampaignConfig,
   type AiModelPresetConfig,
 } from './model-preset-registry.service';
+import {
+  selectProviderModelCandidate,
+  type ProviderModelCandidate,
+} from './model-catalog-routing';
+import { AiCanonicalCatalogService } from './canonical-catalog.service';
+import { applyProviderRuntimeLimit } from './provider-capacity';
 import type { ProviderAdapter } from './provider-adapter';
 import { ProviderRegistry } from './provider-registry.service';
 import type {
   AiCampaignPolicy,
+  AiBillingPolicy,
   AiModelDefinition,
   AiModelPresetDefinition,
   AiProvider,
@@ -46,15 +53,14 @@ export class AiGenerationRoutingService {
   constructor(
     private readonly providers: ProviderRegistry,
     private readonly presets: AiModelPresetRegistryService,
-    private readonly geoPolicy: GeoPolicyService,
     private readonly entitlements: EntitlementService,
+    private readonly catalog: AiCanonicalCatalogService,
   ) {}
 
   async resolve(args: {
     entitlement: EntitlementSnapshot;
     body: AiSubmitJobBody;
     now: string;
-    geo?: RequestGeoContext;
   }): Promise<AiRoutingDecision> {
     const requestedModelId = args.body.modelId?.trim();
     const presetId = this.resolvePresetId(args.body);
@@ -78,27 +84,16 @@ export class AiGenerationRoutingService {
 
     const configuredRoute = presetId
       ? (configuredPreset ??
-        this.presets.findPresetRoute(presetId, await this.listProviderModels()))
+        this.presets.findPresetRoute(presetId, await this.listCatalogModels()))
       : undefined;
-    const presetGeoDecision =
-      configuredRoute && args.geo
-        ? this.geoPolicy.evaluate(configuredRoute.regionPolicy, args.geo)
-        : { allowed: true };
-    if (!presetGeoDecision.allowed) {
-      throw new BadRequestException({
-        code: 'PRESET_REGION_NOT_AVAILABLE',
-        msg: presetGeoDecision.reason ?? 'This preset is not available here.',
-      });
-    }
-
     const resolved = configuredRoute
       ? await this.resolveConfiguredRoute(
           configuredRoute,
           requestedModelId,
-          args.geo,
+          args.body.input,
         )
       : requestedModelId
-        ? await this.findModel(requestedModelId)
+        ? await this.findModel(requestedModelId, args.body.input)
         : null;
 
     if (!resolved) {
@@ -109,15 +104,6 @@ export class AiGenerationRoutingService {
     }
 
     const { adapter, model, provider } = resolved;
-    const modelGeoDecision = args.geo
-      ? this.geoPolicy.evaluate(model.region_policy, args.geo)
-      : { allowed: true };
-    if (!modelGeoDecision.allowed) {
-      throw new BadRequestException({
-        code: 'MODEL_REGION_NOT_AVAILABLE',
-        msg: modelGeoDecision.reason ?? 'This model is not available here.',
-      });
-    }
     const routePresetId = configuredRoute
       ? this.presets.presetId(configuredRoute)
       : (presetId ?? model.id);
@@ -141,6 +127,11 @@ export class AiGenerationRoutingService {
       queuePolicy.queueName,
       model.type,
     );
+    const maxProviderRuntimeSeconds = applyProviderRuntimeLimit(
+      queuePolicy?.maxProviderRuntimeSeconds ??
+        (model.type === 'video' ? 45 * 60 : 10 * 60),
+      model.ops?.providerCapacity,
+    );
     const requiredPlan = this.entitlements.requiredPlan(
       configuredRoute?.requiredPlan ??
         (model.entitlement_policy?.requiredPlan as
@@ -152,9 +143,7 @@ export class AiGenerationRoutingService {
     const quotaCost =
       billingPolicy.mode === 'free'
         ? 0
-        : Number.isFinite(billingPolicy.preflightCost)
-          ? Number(billingPolicy.preflightCost)
-          : 1;
+        : estimateQuotaCost(billingPolicy, args.body.input);
 
     return {
       adapter,
@@ -169,9 +158,20 @@ export class AiGenerationRoutingService {
         selectedProvider: provider,
         selectedModelId: model.id,
         selectedDeployment: model.deployment,
+        selectedCanonicalModelId: model.ops?.canonicalModelId,
+        // TODO(mode-routing-attribution): for multi-endpoint models (e.g.
+        // seedance 2.0) these snapshot the PRIMARY binding/endpoint chosen at
+        // routing time. The fal adapter resolves the real endpoint per mode at
+        // submit (runtime.modeEndpoints) and StartResult.providerEndpoint is
+        // persisted on the attempt (worker.service.ts), so attempt-level
+        // endpoint attribution is truthful. Binding-id attribution would need
+        // model.ops to carry a mode->bindingId map (or back-propagation from
+        // StartResult into the snapshot) — do that as one deliberate change,
+        // not here.
+        selectedProviderBindingId: model.ops?.providerBindingId,
+        selectedProviderEndpointId: model.ops?.providerEndpointId,
         fallbackAllowed: configuredRoute?.fallbackAllowed === true,
         inputMapperVersion: model.schemaVersion,
-        geo: args.geo ? this.geoPolicy.snapshot(args.geo) : undefined,
         policy: {
           quota:
             freeCampaign || billingPolicy.mode === 'free'
@@ -215,26 +215,22 @@ export class AiGenerationRoutingService {
             perUserQueued: queuePolicy.perUserQueued,
           },
           runtime: {
-            maxProviderRuntimeSeconds:
-              queuePolicy?.maxProviderRuntimeSeconds ??
-              (model.type === 'video' ? 45 * 60 : 10 * 60),
+            maxProviderRuntimeSeconds,
             maxQueueWaitSeconds: queuePolicy?.maxQueueWaitSeconds ?? null,
             pollIntervalMs: Math.max(
               1_000,
               Number(process.env.AI_ASYNC_PROVIDER_POLL_DELAY_MS ?? 5_000),
             ),
           },
+          providerCapacity: model.ops?.providerCapacity,
         },
         selectedAt: args.now,
       },
     };
   }
 
-  listPresets(
-    models: AiModelDefinition[],
-    geo?: RequestGeoContext,
-  ): AiModelPresetDefinition[] {
-    return this.presets.listCatalogPresets(models, geo);
+  listPresets(models: AiModelDefinition[]): AiModelPresetDefinition[] {
+    return this.presets.listCatalogPresets(models);
   }
 
   listCampaigns(): AiCampaignPolicy[] {
@@ -254,7 +250,7 @@ export class AiGenerationRoutingService {
   private async resolveConfiguredRoute(
     route: AiModelPresetConfig,
     requestedModelId?: string,
-    geo?: RequestGeoContext,
+    input?: Record<string, unknown>,
   ): Promise<{
     adapter: ProviderAdapter;
     provider: AiProvider;
@@ -274,29 +270,36 @@ export class AiGenerationRoutingService {
         : route.modelIds.slice(0, 1);
 
     for (const modelId of candidates) {
-      const resolved = await this.findModel(modelId);
+      const resolved = await this.findModel(modelId, input);
       if (!resolved?.model.enabled) continue;
-      if (
-        geo &&
-        !this.geoPolicy.evaluate(resolved.model.region_policy, geo).allowed
-      ) {
-        continue;
-      }
       return resolved;
     }
     return null;
   }
 
-  private async findModel(modelId: string): Promise<{
+  private async findModel(
+    modelId: string,
+    input?: Record<string, unknown>,
+  ): Promise<{
     adapter: ProviderAdapter;
     provider: AiProvider;
     model: AiModelDefinition;
   } | null> {
+    const candidates: Array<ProviderModelCandidate<ProviderAdapter>> = [];
     for (const adapter of this.providers.list()) {
       const model = await adapter.getModel(modelId);
-      if (model) return { adapter, provider: adapter.provider, model };
+      if (model) {
+        candidates.push({ adapter, provider: adapter.provider, model });
+      }
     }
-    return null;
+    const selected = selectProviderModelCandidate(candidates, input);
+    if (!selected && candidates.length > 0 && input) {
+      throw new BadRequestException({
+        code: 'MODEL_PROVIDER_PARAMS_UNSUPPORTED',
+        msg: 'No active provider endpoint supports the selected parameter combination.',
+      });
+    }
+    return selected;
   }
 
   private resolveFreeCampaign(
@@ -343,10 +346,81 @@ export class AiGenerationRoutingService {
     return campaign;
   }
 
-  private async listProviderModels(): Promise<AiModelDefinition[]> {
-    const results = await Promise.all(
-      this.providers.list().map((adapter) => adapter.listModels()),
-    );
-    return results.flat();
+  /**
+   * Catalog model set used to resolve preset routes. Same canonical-
+   * model-driven source the public catalog uses, so presets resolve
+   * against exactly the models the catalog shows. (Submit-time
+   * multi-provider failover still happens in `findModel` via
+   * `selectProviderModelCandidate`.)
+   */
+  private listCatalogModels(): Promise<AiModelDefinition[]> {
+    return this.catalog.listModels();
   }
+}
+
+function estimateQuotaCost(
+  billingPolicy: AiBillingPolicy,
+  input: Record<string, unknown> | undefined,
+): number {
+  const productPricing = billingPolicy.productPricing;
+
+  if (!productPricing) {
+    throw new BadRequestException({
+      code: 'MODEL_PRICING_NOT_CONFIGURED',
+      msg: 'This model is missing product pricing.',
+    });
+  }
+
+  try {
+    return estimateProductModelPoints({
+      policy: productPricing,
+      numOutputs: numberInput(input?.numOutputs),
+      resolution: stringInput(input?.resolution),
+      quality: stringInput(input?.quality),
+      // Duration drives per-second video pricing (quote == charge). `duration`
+      // is the string-enum field (incl. 'auto'); `durationSeconds` is the
+      // legacy integer-slider field.
+      duration: durationInput(input?.duration),
+      durationSeconds: numberInput(input?.durationSeconds),
+      referenceImageCount: arrayLength(input?.referenceImages),
+      hasMask: hasMediaValue(input?.maskImage),
+    }).sellPoints;
+  } catch (err) {
+    throw new BadRequestException({
+      code: 'MODEL_PRICING_INVALID',
+      msg:
+        err instanceof Error
+          ? `Invalid product pricing: ${err.message}`
+          : 'Invalid product pricing.',
+    });
+  }
+}
+
+function numberInput(value: unknown): number | undefined {
+  return typeof value === 'number' && Number.isFinite(value)
+    ? value
+    : undefined;
+}
+
+function durationInput(value: unknown): string | number | undefined {
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  return typeof value === 'string' && value.trim() ? value.trim() : undefined;
+}
+
+function stringInput(value: unknown): string | undefined {
+  return typeof value === 'string' && value.trim() ? value.trim() : undefined;
+}
+
+function arrayLength(value: unknown): number {
+  return Array.isArray(value) ? value.length : 0;
+}
+
+function hasMediaValue(value: unknown): boolean {
+  if (typeof value === 'string') return value.trim().length > 0;
+  if (!value || typeof value !== 'object') return false;
+  return (
+    'url' in value &&
+    typeof (value as { url?: unknown }).url === 'string' &&
+    Boolean((value as { url?: string }).url?.trim())
+  );
 }

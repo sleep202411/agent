@@ -48,12 +48,16 @@ import {
 import type { AdminBillingPricesData, BillingPriceRow } from "./types";
 import { emptyPrices } from "./types";
 
+type BillingSiteKey = "global" | "cn";
+
 export function BillingCatalogPanel({
+  siteKey,
   siteLabel,
   databaseLabel,
   initialPrices,
   initialError,
 }: {
+  siteKey: BillingSiteKey;
   siteLabel: string;
   databaseLabel: string;
   initialPrices: AdminBillingPricesData | null;
@@ -104,6 +108,15 @@ export function BillingCatalogPanel({
     const productType = stringField(form, "productType");
     const currency = stringField(form, "currency").toUpperCase();
     const amountMinor = stringField(form, "amountMinor");
+    const computeTopupMetadata =
+      productType === "compute_point_pack"
+        ? {
+            topupKind: "compute_point",
+            rateMode: currency === "USD" ? "usd_cent_anchor" : "explicit_admin_pricing",
+            cell: siteKey,
+            entrySurface: "fizzstudio_compute_topup",
+          }
+        : undefined;
     try {
       await mutateEnvelope("/api/admin/billing/prices", {
         itemCode: buildBillingItemCode({
@@ -124,6 +137,7 @@ export function BillingCatalogPanel({
         grantsWalletAmount: walletCurrency && walletAmount ? walletAmount : undefined,
         grantsPlanKey: planKey || undefined,
         grantDurationDays: grantDurationDays ? Number(grantDurationDays) : undefined,
+        priceMetadata: computeTopupMetadata,
         providerBindings: provider
           ? [
               {
@@ -182,6 +196,7 @@ export function BillingCatalogPanel({
         onRefresh={() => void refreshPrices()}
         onCreatePrice={handleCreatePrice}
         onSyncBinding={handleSyncPriceBinding}
+        siteKey={siteKey}
       />
     </div>
   );
@@ -199,6 +214,7 @@ function CatalogView({
   onRefresh,
   onCreatePrice,
   onSyncBinding,
+  siteKey,
 }: {
   prices: BillingPriceRow[];
   productType: string;
@@ -211,6 +227,7 @@ function CatalogView({
   onRefresh: () => void;
   onCreatePrice: (event: React.FormEvent<HTMLFormElement>) => void;
   onSyncBinding: (bindingId: string) => void;
+  siteKey: BillingSiteKey;
 }) {
   const columns = useMemo<ColumnDef<BillingPriceRow, unknown>[]>(
     () => [
@@ -347,7 +364,7 @@ function CatalogView({
                 >
                   社区积分
                 </option>
-                <option value="bubble_pack" title={productTypeHelp("bubble_pack")}>
+                <option value="compute_point_pack" title={productTypeHelp("compute_point_pack")}>
                   算力积分
                 </option>
                 <option value="membership_plan" title={productTypeHelp("membership_plan")}>
@@ -371,6 +388,9 @@ function CatalogView({
                 </option>
                 <option value="wechat_pay" title={providerHelp("wechat_pay")}>
                   微信支付
+                </option>
+                <option value="alipay" title={providerHelp("alipay")}>
+                  支付宝
                 </option>
                 <option value="manual" title={providerHelp("manual")}>
                   线下确认
@@ -423,7 +443,7 @@ function CatalogView({
           </>
         }
       >
-        <CreatePriceForm onSubmit={onCreatePrice} />
+        <CreatePriceForm onSubmit={onCreatePrice} siteKey={siteKey} />
       </AdminDialog>
     </>
   );
@@ -431,15 +451,21 @@ function CatalogView({
 
 function CreatePriceForm({
   onSubmit,
+  siteKey,
 }: {
   onSubmit: (event: React.FormEvent<HTMLFormElement>) => void;
+  siteKey: BillingSiteKey;
 }) {
-  const [productType, setProductType] = useState("community_point_pack");
-  const [walletCurrency, setWalletCurrency] = useState("community_point");
+  const defaults = computePointCatalogDefaults(siteKey);
+  const [productType, setProductType] = useState("compute_point_pack");
+  const [walletCurrency, setWalletCurrency] = useState("compute_point");
   const [walletAmount, setWalletAmount] = useState("");
   const [planKey, setPlanKey] = useState("");
-  const [currency, setCurrency] = useState("USD");
+  const [currency, setCurrency] = useState(defaults.currency);
   const [amountMinor, setAmountMinor] = useState("");
+  const [priceInterval, setPriceInterval] = useState("one_time");
+  const [subjectType, setSubjectType] = useState("user");
+  const [provider, setProvider] = useState(defaults.provider);
 
   const generatedItemCode = buildBillingItemCode({
     productType,
@@ -453,10 +479,24 @@ function CreatePriceForm({
     setProductType(value);
     if (value === "community_point_pack") {
       setWalletCurrency("community_point");
-    } else if (value === "bubble_pack") {
-      setWalletCurrency("bubble");
+      setProvider(defaults.provider);
+    } else if (value === "compute_point_pack") {
+      setWalletCurrency("compute_point");
+      setCurrency(defaults.currency);
+      setPriceInterval("one_time");
+      setSubjectType("user");
+      setPlanKey("");
+      setProvider(defaults.provider);
+      if (
+        defaults.currency === "USD" &&
+        amountMinor &&
+        (!walletAmount || walletAmount === amountMinor)
+      ) {
+        setWalletAmount(amountMinor);
+      }
     } else {
       setWalletCurrency("");
+      setProvider(defaults.provider);
     }
   }
 
@@ -465,13 +505,33 @@ function CreatePriceForm({
     if (!value) setWalletAmount("");
   }
 
+  function handleCurrencyChange(value: string) {
+    const nextCurrency = value.toUpperCase();
+    setCurrency(nextCurrency);
+    if (productType === "compute_point_pack" && nextCurrency === "USD" && amountMinor) {
+      setWalletAmount(amountMinor);
+    }
+  }
+
+  function handleAmountMinorChange(value: string) {
+    const previousAmountMinor = amountMinor;
+    setAmountMinor(value);
+    if (
+      productType === "compute_point_pack" &&
+      currency === "USD" &&
+      (!walletAmount || walletAmount === previousAmountMinor)
+    ) {
+      setWalletAmount(value);
+    }
+  }
+
   return (
     <form id="catalog-create-price-form" onSubmit={onSubmit} className="grid gap-4">
       <FormLabel
         label="商品名称"
         help="运营后台展示名，不等同于支付供应商侧商品名；同步时会复制到 provider payload。"
       >
-        <TextInput name="itemName" required placeholder="1000 社区积分" />
+        <TextInput name="itemName" required placeholder="10,000 算力积分" />
       </FormLabel>
       <FormLabel
         label="商品类型"
@@ -481,7 +541,7 @@ function CreatePriceForm({
           <option value="community_point_pack" title={productTypeHelp("community_point_pack")}>
             社区积分
           </option>
-          <option value="bubble_pack" title={productTypeHelp("bubble_pack")}>
+          <option value="compute_point_pack" title={productTypeHelp("compute_point_pack")}>
             算力积分
           </option>
           <option value="membership_plan" title={productTypeHelp("membership_plan")}>
@@ -502,8 +562,8 @@ function CreatePriceForm({
             required
             maxLength={3}
             value={currency}
-            onChange={(event) => setCurrency(event.target.value.toUpperCase())}
-            placeholder="USD"
+            onChange={(event) => handleCurrencyChange(event.target.value)}
+            placeholder={defaults.currency}
           />
         </FormLabel>
         <FormLabel
@@ -515,21 +575,21 @@ function CreatePriceForm({
             required
             inputMode="numeric"
             value={amountMinor}
-            onChange={(event) => setAmountMinor(event.target.value)}
-            placeholder="9900"
+            onChange={(event) => handleAmountMinorChange(event.target.value)}
+            placeholder={siteKey === "cn" ? "9900" : "10000"}
           />
         </FormLabel>
       </div>
       <div className="grid grid-cols-2 gap-2">
         <FormLabel label="周期" help="一次性适用于积分包；月付/年付适用于会员订阅价格。">
-          <Select name="interval" defaultValue="one_time">
+          <Select name="interval" value={priceInterval} onChange={setPriceInterval}>
             <option value="one_time">一次性</option>
             <option value="month">月付</option>
             <option value="year">年付</option>
           </Select>
         </FormLabel>
         <FormLabel label="主体" help="权益归属对象。个人会员/积分通常归用户，团队会员可归工作区。">
-          <Select name="subjectType" defaultValue="user">
+          <Select name="subjectType" value={subjectType} onChange={setSubjectType}>
             <option value="user">用户</option>
             <option value="workspace">工作区</option>
           </Select>
@@ -547,7 +607,7 @@ function CreatePriceForm({
             onChange={handleWalletCurrencyChange}
           >
             <option value="">不发放积分</option>
-            <option value="bubble">算力积分</option>
+            <option value="compute_point">算力积分</option>
             <option value="community_point">社区积分</option>
           </Select>
           <TextInput
@@ -557,7 +617,11 @@ function CreatePriceForm({
             disabled={!walletCurrency}
             value={walletAmount}
             onChange={(event) => setWalletAmount(event.target.value)}
-            placeholder="发放数量"
+            placeholder={
+              productType === "compute_point_pack" && currency === "USD"
+                ? "自动等于 USD minor"
+                : "发放数量"
+            }
           />
           <TextInput
             name="grantsPlanKey"
@@ -572,7 +636,7 @@ function CreatePriceForm({
         label="供应商"
         help="选择后创建 provider binding。线下确认用于线下收款补单；兑换码请在促销券里创建。"
       >
-        <Select name="provider" defaultValue="airwallex">
+        <Select name="provider" value={provider} onChange={setProvider}>
           <option value="">稍后配置</option>
           <option value="airwallex" title={providerHelp("airwallex")}>
             Airwallex
@@ -580,13 +644,28 @@ function CreatePriceForm({
           <option value="wechat_pay" title={providerHelp("wechat_pay")}>
             微信支付
           </option>
+          <option value="alipay" title={providerHelp("alipay")}>
+            支付宝
+          </option>
           <option value="manual" title={providerHelp("manual")}>
             线下确认
           </option>
         </Select>
       </FormLabel>
       <TextInput name="itemDescription" placeholder="内部备注，可选" />
+      <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-[12px] leading-5 text-slate-600">
+        {siteKey === "cn"
+          ? "中国站算力积分必须使用 CNY，后台显式填写售价和到账算力积分；支付通道使用微信支付或支付宝，不能混入国际站 USD 价格。"
+          : "国际站算力积分锚定 USD：1 USD minor = 1 算力积分，Airwallex 负责面向用户的本地币种和 FX。"}
+      </div>
       <AutoCodePreview code={generatedItemCode} />
     </form>
   );
+}
+
+function computePointCatalogDefaults(siteKey: BillingSiteKey) {
+  if (siteKey === "cn") {
+    return { currency: "CNY", provider: "wechat_pay" };
+  }
+  return { currency: "USD", provider: "airwallex" };
 }

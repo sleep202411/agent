@@ -291,6 +291,7 @@ export function BillingRefundsPanel({
                 <option value="">全部渠道</option>
                 <option value="airwallex">Airwallex</option>
                 <option value="wechat_pay">微信支付</option>
+                <option value="alipay">支付宝</option>
                 <option value="manual">线下确认</option>
               </Select>
               <Button

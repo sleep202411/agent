@@ -2,8 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslations } from "@/src/i18n/i18n";
-import { Controller, useForm } from "react-hook-form";
-import { zodResolver } from "@hookform/resolvers/zod";
+import { Controller, useForm, useWatch } from "react-hook-form";
 import { z } from "zod";
 import { IconDeviceFloppy, IconLoader2, IconTrash } from "@tabler/icons-react";
 import { Sheet, SheetContent, SheetFooter, SheetHeader, SheetTitle } from "@/components/ui/sheet";
@@ -26,6 +25,7 @@ import { ModelPicker } from "@/components/ui/schema-field/model-picker";
 import { ToolbarSelect } from "@/components/ui/schema-field/toolbar-select";
 import { GenerateButton } from "@/components/ui/generate-button";
 import { backendApi } from "@/src/lib/api";
+import { typedZodResolver } from "@/src/lib/forms/typed-zod-resolver";
 import { toast } from "sonner";
 import { useAiModels } from "@/src/hooks/use-ai-models";
 import { buildOssUrl } from "@/src/lib/uploads/workspace-upload";
@@ -94,9 +94,13 @@ export function SceneEditDialog({
   const [imageModelId, setImageModelId] = useState("");
   const [imageSize, setImageSize] = useState("");
   const [imageCount, setImageCount] = useState(1);
+  const effectiveImageModelId = useMemo(() => {
+    if (imageModels.some((model) => model.id === imageModelId)) return imageModelId;
+    return (imageModels.find((model) => model.isDefault) ?? imageModels[0])?.id ?? "";
+  }, [imageModels, imageModelId]);
   const selectedImageModel = useMemo(
-    () => imageModels.find((model) => model.id === imageModelId),
-    [imageModels, imageModelId]
+    () => imageModels.find((model) => model.id === effectiveImageModelId),
+    [imageModels, effectiveImageModelId]
   );
   const sizeField = selectedImageModel?.inputSchema?.properties?.size;
   const sizeOptions = useMemo(() => {
@@ -107,28 +111,15 @@ export function SceneEditDialog({
       value: String(v),
     }));
   }, [sizeField]);
+  const effectiveImageSize = useMemo(() => {
+    const enumValues = sizeField?.enum?.map(String) ?? [];
+    if (imageSize && enumValues.includes(imageSize)) return imageSize;
+    return sizeField?.default != null ? String(sizeField.default) : (enumValues[0] ?? "");
+  }, [imageSize, sizeField]);
   const imageCost = (selectedImageModel?.cost ?? 0) * (imageCount || 1);
 
-  // Default-select first model once the list loads.
-  useEffect(() => {
-    if (imageModels.length === 0) return;
-    if (imageModels.some((model) => model.id === imageModelId)) return;
-    const preferred = imageModels.find((model) => model.isDefault) ?? imageModels[0];
-    if (preferred) setImageModelId(preferred.id);
-  }, [imageModels, imageModelId]);
-
-  // Reset size to the model's default whenever the selected model changes or
-  // the current size isn't in the new model's enum.
-  useEffect(() => {
-    if (!selectedImageModel) return;
-    const enumValues = sizeField?.enum?.map(String) ?? [];
-    if (imageSize && enumValues.includes(imageSize)) return;
-    const next = sizeField?.default != null ? String(sizeField.default) : (enumValues[0] ?? "");
-    if (next !== imageSize) setImageSize(next);
-  }, [selectedImageModel, sizeField, imageSize]);
-
   const form = useForm<SceneFormValues>({
-    resolver: zodResolver(sceneSchema),
+    resolver: typedZodResolver<SceneFormValues>(sceneSchema),
     defaultValues: {
       name: "",
       description: "",
@@ -152,9 +143,12 @@ export function SceneEditDialog({
   }, [open, scene, form]);
 
   const sceneId = String(scene?.id ?? "");
-  const sceneImages = form.watch("sceneImgPath");
-  const promptValue = form.watch("prompt");
-  const description = form.watch("description");
+  const sceneName = useWatch({ control: form.control, name: "name" });
+  const sceneImages = useWatch({ control: form.control, name: "sceneImgPath" });
+  const referenceImages = useWatch({ control: form.control, name: "referenceImgPath" });
+  const promptValue = useWatch({ control: form.control, name: "prompt" });
+  const description = useWatch({ control: form.control, name: "description" });
+  const panoramaImagePath = useWatch({ control: form.control, name: "panoramaImagePath" });
   const composerPrompt = promptValue || description;
 
   const onSubmit = async (values: SceneFormValues) => {
@@ -248,7 +242,7 @@ export function SceneEditDialog({
                       sceneId={sceneId}
                       images={sceneImages}
                       prompt={composerPrompt}
-                      panoramaImagePath={form.watch("panoramaImagePath") ?? ""}
+                      panoramaImagePath={panoramaImagePath ?? ""}
                       onImagesChange={(v) =>
                         form.setValue("sceneImgPath", v, { shouldDirty: true })
                       }
@@ -299,7 +293,7 @@ export function SceneEditDialog({
                   <Field>
                     <FieldLabel>{t("referenceImages")}</FieldLabel>
                     <ReferenceImageUploader
-                      paths={form.watch("referenceImgPath")}
+                      paths={referenceImages}
                       onChange={(v) => form.setValue("referenceImgPath", v, { shouldDirty: true })}
                       addLabel={tc("addReferenceImage")}
                     />
@@ -316,10 +310,10 @@ export function SceneEditDialog({
                           assetId={sceneId}
                           columnKey={SCENE_COLUMN_KEY}
                           prompt={composerPrompt}
-                          model={imageModelId}
-                          size={imageSize}
+                          model={effectiveImageModelId}
+                          size={effectiveImageSize}
                           count={imageCount}
-                          referenceImageUrl={form.watch("referenceImgPath")[0] ?? sceneImages[0]}
+                          referenceImageUrl={referenceImages[0] ?? sceneImages[0]}
                           selectedPaths={sceneImages}
                           onSelect={handleSelectFromGallery}
                           onPreview={(path) => setPreviewImage(buildOssUrl(path))}
@@ -351,15 +345,18 @@ export function SceneEditDialog({
                           <div className="flex items-center gap-2">
                             <ModelPicker
                               models={imageModels}
-                              value={imageModelId}
-                              onChange={setImageModelId}
+                              value={effectiveImageModelId}
+                              onChange={(value) => {
+                                setImageModelId(value);
+                                setImageSize("");
+                              }}
                               compact
                               contentClassName="bg-popover backdrop-blur-none backdrop-saturate-100 border-border"
                             />
                             {sizeOptions.length > 0 ? (
                               <ToolbarSelect
                                 options={sizeOptions}
-                                value={imageSize}
+                                value={effectiveImageSize}
                                 onChange={setImageSize}
                               />
                             ) : null}
@@ -413,7 +410,7 @@ export function SceneEditDialog({
                     <AlertDialogHeader>
                       <AlertDialogTitle>Delete scene</AlertDialogTitle>
                       <AlertDialogDescription>
-                        Delete "{form.watch("name") || "Untitled scene"}"? This cannot be undone.
+                        Delete &quot;{sceneName || "Untitled scene"}&quot;? This cannot be undone.
                       </AlertDialogDescription>
                     </AlertDialogHeader>
                     <AlertDialogFooter>

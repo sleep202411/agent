@@ -109,6 +109,7 @@ type StudioTabKey = (typeof STUDIO_TABS)[number]["key"];
 
 const NAME_MAX_LENGTH = 80;
 const SUMMARY_MAX_LENGTH = 280;
+const EPISODE_SUMMARY_MAX_LENGTH = 800;
 const DESCRIPTION_MAX_LENGTH = 3000;
 const GENRE_MAX_COUNT = 8;
 const VISIBILITY_OPTIONS = ["private", "unlisted", "public"] as const;
@@ -674,6 +675,8 @@ function EpisodeUpsertDialog({
   const [probing, setProbing] = useState(false);
   const [uploadingVideo, setUploadingVideo] = useState(false);
   const [uploadingCover, setUploadingCover] = useState(false);
+  const [videoProgress, setVideoProgress] = useState(0);
+  const [coverProgress, setCoverProgress] = useState(0);
   const [videoDragOver, setVideoDragOver] = useState(false);
   const [coverDragOver, setCoverDragOver] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
@@ -732,6 +735,7 @@ function EpisodeUpsertDialog({
     setVideoError(null);
     updateDraft({ mediaUrl: localUrl, mediaAssetId: null });
     void probeAndApply(localUrl);
+    setVideoProgress(0);
     setUploadingVideo(true);
     try {
       const { asset } = await uploadMedia.mutateAsync({
@@ -739,6 +743,7 @@ function EpisodeUpsertDialog({
         file,
         kind: "video",
         purpose: "episode_media",
+        onProgress: setVideoProgress,
       });
       updateDraft({ mediaAssetId: asset.id });
       toast.success(commonT("uploadSuccess"));
@@ -767,6 +772,7 @@ function EpisodeUpsertDialog({
     coverObjectUrlRef.current = localUrl;
     setCoverError(null);
     updateDraft({ coverUrl: localUrl, coverAssetId: null });
+    setCoverProgress(0);
     setUploadingCover(true);
     try {
       const { asset } = await uploadMedia.mutateAsync({
@@ -774,6 +780,7 @@ function EpisodeUpsertDialog({
         file,
         kind: "image",
         purpose: "episode_cover",
+        onProgress: setCoverProgress,
       });
       updateDraft({ coverAssetId: asset.id });
       toast.success(commonT("uploadSuccess"));
@@ -866,6 +873,7 @@ function EpisodeUpsertDialog({
               }
               placeholder={oldT("epTitlePlaceholder")}
               maxLength={NAME_MAX_LENGTH}
+              showCount
             />
             <FieldDescription>{oldT("epTitleHelp")}</FieldDescription>
           </Field>
@@ -877,10 +885,11 @@ function EpisodeUpsertDialog({
             <Textarea
               value={draft.summary}
               onChange={(event) =>
-                updateDraft({ summary: event.target.value.slice(0, SUMMARY_MAX_LENGTH) })
+                updateDraft({ summary: event.target.value.slice(0, EPISODE_SUMMARY_MAX_LENGTH) })
               }
               placeholder={oldT("epDescriptionPlaceholder")}
-              maxLength={SUMMARY_MAX_LENGTH}
+              maxLength={EPISODE_SUMMARY_MAX_LENGTH}
+              showCount
               rows={3}
             />
             <FieldDescription>{oldT("epDescriptionHelp")}</FieldDescription>
@@ -912,7 +921,10 @@ function EpisodeUpsertDialog({
                   {uploadingVideo ? (
                     <div className="absolute inset-0 z-20 flex flex-col items-center justify-center gap-1.5 bg-black/55 text-white">
                       <IconLoader2 className="size-5 animate-spin" />
-                      <span className="text-[11px] font-medium">{commonT("uploading")}</span>
+                      <span className="text-[11px] font-medium">
+                        {commonT("uploading")}
+                        {videoProgress > 0 ? ` ${videoProgress}%` : ""}
+                      </span>
                     </div>
                   ) : null}
                   <button
@@ -956,7 +968,9 @@ function EpisodeUpsertDialog({
                     <>
                       <IconLoader2 className="size-5 animate-spin" />
                       <span className="text-[11px]">
-                        {uploadingVideo ? commonT("uploading") : oldT("epProbing")}
+                        {uploadingVideo
+                          ? `${commonT("uploading")}${videoProgress > 0 ? ` ${videoProgress}%` : ""}`
+                          : oldT("epProbing")}
                       </span>
                     </>
                   ) : (
@@ -999,7 +1013,10 @@ function EpisodeUpsertDialog({
                   {uploadingCover ? (
                     <div className="absolute inset-0 z-20 flex flex-col items-center justify-center gap-1.5 bg-black/55 text-white">
                       <IconLoader2 className="size-5 animate-spin" />
-                      <span className="text-[11px] font-medium">{commonT("uploading")}</span>
+                      <span className="text-[11px] font-medium">
+                        {commonT("uploading")}
+                        {coverProgress > 0 ? ` ${coverProgress}%` : ""}
+                      </span>
                     </div>
                   ) : null}
                   <button
@@ -1037,7 +1054,10 @@ function EpisodeUpsertDialog({
                   {uploadingCover ? (
                     <>
                       <IconLoader2 className="size-5 animate-spin" />
-                      <span className="text-[11px]">{commonT("uploading")}</span>
+                      <span className="text-[11px]">
+                        {commonT("uploading")}
+                        {coverProgress > 0 ? ` ${coverProgress}%` : ""}
+                      </span>
                     </>
                   ) : (
                     <>
@@ -1244,6 +1264,7 @@ function FormTextField({
       value={value}
       onChange={(event) => onChange(event.target.value)}
       maxLength={maxLength}
+      showCount={Boolean(maxLength)}
       placeholder={placeholder}
       rows={3}
     />
@@ -1253,6 +1274,7 @@ function FormTextField({
       value={value}
       onChange={(event) => onChange(event.target.value)}
       maxLength={maxLength}
+      showCount={Boolean(maxLength)}
       placeholder={placeholder}
     />
   );
@@ -1261,7 +1283,6 @@ function FormTextField({
     <div className="space-y-2">
       <FieldLabel>{label}</FieldLabel>
       {control}
-      {maxLength ? <CharacterCount value={value.length} max={maxLength} /> : null}
     </div>
   );
 }
@@ -2891,9 +2912,9 @@ function IpProfileEditDialog({
                 value={title}
                 onChange={(event) => setTitle(event.target.value)}
                 maxLength={NAME_MAX_LENGTH}
+                showCount
                 placeholder={typeT("fieldNamePlaceholder")}
               />
-              <CharacterCount value={title.length} max={NAME_MAX_LENGTH} />
             </Field>
 
             <Field>
@@ -2902,10 +2923,10 @@ function IpProfileEditDialog({
                 value={summary}
                 onChange={(event) => setSummary(event.target.value)}
                 maxLength={SUMMARY_MAX_LENGTH}
+                showCount
                 placeholder={typeT("fieldDescriptionPlaceholder")}
                 rows={4}
               />
-              <CharacterCount value={summary.length} max={SUMMARY_MAX_LENGTH} />
             </Field>
 
             <Field>
@@ -2914,10 +2935,10 @@ function IpProfileEditDialog({
                 value={description}
                 onChange={(event) => setDescription(event.target.value)}
                 maxLength={DESCRIPTION_MAX_LENGTH}
+                showCount
                 placeholder={t("profileEdit.descriptionPlaceholder")}
                 rows={6}
               />
-              <CharacterCount value={description.length} max={DESCRIPTION_MAX_LENGTH} />
             </Field>
 
             <div className="grid gap-4 sm:grid-cols-2">
@@ -3201,14 +3222,6 @@ function ReadinessRing({ ip, t }: { ip: IpCreatorIp; t: Translate }) {
         </ul>
       </div>
     </div>
-  );
-}
-
-function CharacterCount({ value, max }: { value: number; max: number }) {
-  return (
-    <FieldDescription className="text-right tabular-nums text-muted-foreground">
-      {value}/{max}
-    </FieldDescription>
   );
 }
 

@@ -27,6 +27,7 @@
  */
 import { Injectable, Logger, OnModuleDestroy } from '@nestjs/common';
 import Redis from 'ioredis';
+import { describeUnknown } from '../../common/values';
 
 const DEFAULT_TTL_SECONDS = 7 * 24 * 3600;
 
@@ -94,27 +95,35 @@ export class MessageStoreService implements OnModuleDestroy {
     };
     this.redis = new Redis(url, opts);
     this.publisher = new Redis(url, opts);
-    this.redis.on('error', (err) =>
-      this.logger.warn(`redis error: ${err.message}`),
+    this.redis.on('error', (err: unknown) =>
+      this.logger.warn(`redis error: ${describeUnknown(err)}`),
     );
-    this.publisher.on('error', (err) =>
-      this.logger.warn(`publisher error: ${err.message}`),
+    this.publisher.on('error', (err: unknown) =>
+      this.logger.warn(`publisher error: ${describeUnknown(err)}`),
     );
     void this.redis
       .connect()
-      .catch((err) => this.logger.warn(`redis connect: ${err.message}`));
+      .catch((err: unknown) =>
+        this.logger.warn(`redis connect: ${describeUnknown(err)}`),
+      );
     void this.publisher
       .connect()
-      .catch((err) => this.logger.warn(`publisher connect: ${err.message}`));
+      .catch((err: unknown) =>
+        this.logger.warn(`publisher connect: ${describeUnknown(err)}`),
+      );
   }
 
   async onModuleDestroy(): Promise<void> {
     try {
       await this.redis?.quit();
-    } catch {}
+    } catch {
+      this.logger.debug('redis quit skipped during shutdown');
+    }
     try {
       await this.publisher?.quit();
-    } catch {}
+    } catch {
+      this.logger.debug('publisher quit skipped during shutdown');
+    }
   }
 
   private ensureMessageId(message: MessageLike): string {

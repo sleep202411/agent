@@ -1,5 +1,28 @@
 import { Injectable, Logger } from '@nestjs/common';
+import {
+  get as httpGet,
+  type ClientRequest,
+  type IncomingMessage,
+  type RequestOptions,
+} from 'node:http';
+import { get as httpsGet } from 'node:https';
+import { describeUnknown, isRecord, scalarString } from '../common/values';
 import type { AuthUser } from './auth.types';
+
+type JavaAuthResponse = {
+  success?: boolean;
+  code?: number | string;
+  data?: Record<string, unknown>;
+  info?: Record<string, unknown>;
+  msg?: unknown;
+  message?: unknown;
+};
+
+type NodeGet = (
+  url: string | URL,
+  options: RequestOptions,
+  callback: (res: IncomingMessage) => void,
+) => ClientRequest;
 
 /**
  * AuthService — validates session tokens and returns user info.
@@ -21,6 +44,54 @@ export class AuthService {
   private static readonly CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
   private static readonly CACHE_MAX_SIZE = 1000;
   private pruneTimer: ReturnType<typeof setInterval> | null = null;
+
+  private async getJson<T extends object>(
+    url: string,
+    cookie: string,
+    label: string,
+    timeoutMs = 10_000,
+  ): Promise<T | null> {
+    const get: NodeGet = url.startsWith('https') ? httpsGet : httpGet;
+    return new Promise<T | null>((resolve) => {
+      const req = get(
+        url,
+        {
+          headers: { Cookie: cookie },
+        },
+        (res) => {
+          const statusCode = res.statusCode ?? 0;
+          res.setEncoding('utf8');
+          let data = '';
+          res.on('data', (chunk: string) => {
+            data += chunk;
+          });
+          res.on('end', () => {
+            if (statusCode !== 200) {
+              this.logger.warn(
+                `${label} failed: HTTP ${statusCode} body=${data.slice(0, 200)}`,
+              );
+              resolve(null);
+              return;
+            }
+            try {
+              const parsed: unknown = JSON.parse(data);
+              resolve(isRecord(parsed) ? (parsed as T) : null);
+            } catch {
+              this.logger.warn(`${label} returned invalid JSON`);
+              resolve(null);
+            }
+          });
+        },
+      );
+      req.setTimeout(timeoutMs, () => {
+        req.destroy(new Error(`${label} request timed out`));
+      });
+      req.on('error', (err: Error) => {
+        this.logger.error(`${label} request error: ${err.message}`);
+        resolve(null);
+      });
+    });
+  }
 
   constructor() {
     // Prune expired entries every 60 seconds
@@ -57,71 +128,15 @@ export class AuthService {
         ? `satoken=${satokenMatch[1]}`
         : cookie;
       const tokenHint = satokenMatch?.[1].slice(0, 8) ?? '(none)';
-      // TEMP DIAGNOSTIC — dump full satoken values + count duplicates so we can
-      // tell apart "Cookie header has multiple satoken= entries" from "Java
-      // doesn't recognize the only token sent". Remove once root cause found.
-      const allSatokens = (
-        cookie.match(/(?:^|;\s*)satoken=([^;]+)/g) ?? []
-      ).map((s: string) => s.replace(/^[;\s]*satoken=/, ''));
-      this.logger.log(
-        `[diag] satoken-count=${allSatokens.length} sending=${satokenMatch?.[1] ?? '(none)'} all=${JSON.stringify(allSatokens)}`,
-      );
-
       // Use https module instead of fetch — Node.js undici fetch
       // does not reliably forward cookie headers in all environments.
       const url = `${baseUrl}/user/query/user/info`;
-      // TEMP DIAGNOSTIC — print full outbound request so we can compare
-      // against the working `node -e https.get(...)` repro from the shell.
-      this.logger.log(
-        `[diag] outbound GET ${url} headers=${JSON.stringify({ Cookie: satokenCookie })}`,
+      this.logger.log(`Auth validation request url=${url} token=${tokenHint}`);
+      const body = await this.getJson<JavaAuthResponse>(
+        url,
+        satokenCookie,
+        `Auth validation token=${tokenHint}`,
       );
-      const body = await new Promise<{
-        success?: boolean;
-        code?: number | string;
-        data?: Record<string, unknown>;
-        info?: Record<string, unknown>;
-        msg?: string;
-        message?: string;
-      } | null>((resolve) => {
-        const https = require('https');
-        const http = require('http');
-        const mod = url.startsWith('https') ? https : http;
-        const req = mod.get(
-          url,
-          {
-            headers: { Cookie: satokenCookie },
-          },
-          (res: { statusCode: number; on: Function }) => {
-            this.logger.log(
-              `[diag] inbound status=${res.statusCode} from ${url}`,
-            );
-            if (res.statusCode !== 200) {
-              let errData = '';
-              res.on('data', (c: string) => (errData += c));
-              res.on('end', () => {
-                this.logger.warn(
-                  `Auth validation failed: HTTP ${res.statusCode} token=${tokenHint} url=${url} body=${errData.slice(0, 200)}`,
-                );
-                resolve(null);
-              });
-              return;
-            }
-            let data = '';
-            res.on('data', (chunk: string) => (data += chunk));
-            res.on('end', () => {
-              try {
-                resolve(JSON.parse(data));
-              } catch {
-                resolve(null);
-              }
-            });
-          },
-        );
-        req.on('error', (err: Error) => {
-          this.logger.error(`Auth request error: ${err.message}`);
-          resolve(null);
-        });
-      });
 
       if (!body) return null;
 
@@ -131,21 +146,20 @@ export class AuthService {
       // API returns user info in `info` field (not `data`)
       const data = body.info ?? body.data;
       if (!isSuccess || !data) {
-        const msg = body.msg || body.message || 'unknown';
+        const msg =
+          scalarString(body.msg) ?? scalarString(body.message) ?? 'unknown';
         this.logger.warn(`Auth validation rejected: ${msg} token=${tokenHint}`);
         return null;
       }
       const user: AuthUser = {
-        userId: String(data.id ?? data.userId ?? ''),
-        userName: (data.userName as string) ?? undefined,
-        nickName: (data.nickName as string) ?? undefined,
-        email: (data.email as string) ?? undefined,
-        phone: (data.phone as string) ?? undefined,
-        headImg: (data.headImg as string) ?? undefined,
-        userLevel: data.userLevel
-          ? String(data.userLevel).toUpperCase()
-          : undefined,
-        expireTime: data.expireTime ? String(data.expireTime) : undefined,
+        userId: scalarString(data.id) ?? scalarString(data.userId) ?? '',
+        userName: scalarString(data.userName),
+        nickName: scalarString(data.nickName),
+        email: scalarString(data.email),
+        phone: scalarString(data.phone),
+        headImg: scalarString(data.headImg),
+        userLevel: scalarString(data.userLevel)?.toUpperCase(),
+        expireTime: scalarString(data.expireTime),
       };
 
       if (!user.userId) {
@@ -158,8 +172,8 @@ export class AuthService {
       // Cache the result
       // Evict oldest if cache is full
       if (this.cache.size >= AuthService.CACHE_MAX_SIZE) {
-        const firstKey = this.cache.keys().next().value;
-        if (firstKey) this.cache.delete(firstKey);
+        const first = this.cache.keys().next();
+        if (!first.done) this.cache.delete(first.value);
       }
       this.cache.set(cookie, {
         user,
@@ -171,9 +185,7 @@ export class AuthService {
       );
       return user;
     } catch (error) {
-      this.logger.error(
-        `Auth validation error: ${error instanceof Error ? error.message : error}`,
-      );
+      this.logger.error(`Auth validation error: ${describeUnknown(error)}`);
       return null;
     }
   }
@@ -200,44 +212,11 @@ export class AuthService {
     const tokenHint = satokenMatch?.[1].slice(0, 8) ?? '(none)';
     const url = `${baseUrl}/user/needAuth`;
 
-    const body = await new Promise<Record<string, unknown> | null>(
-      (resolve) => {
-        const https = require('https');
-        const http = require('http');
-        const mod = url.startsWith('https') ? https : http;
-        const req = mod.get(
-          url,
-          { headers: { Cookie: satokenCookie } },
-          (res: { statusCode: number; on: Function }) => {
-            let data = '';
-            res.on('data', (chunk: string) => (data += chunk));
-            res.on('end', () => {
-              if (res.statusCode !== 200) {
-                this.logger.warn(
-                  `KYC status check failed: HTTP ${res.statusCode} token=${tokenHint} body=${data.slice(0, 200)}`,
-                );
-                resolve(null);
-                return;
-              }
-              try {
-                resolve(JSON.parse(data) as Record<string, unknown>);
-              } catch {
-                this.logger.warn(
-                  `KYC status check returned invalid JSON token=${tokenHint}`,
-                );
-                resolve(null);
-              }
-            });
-          },
-        );
-        req.setTimeout(5000, () => {
-          req.destroy(new Error('KYC status request timed out'));
-        });
-        req.on('error', (err: Error) => {
-          this.logger.error(`KYC status request error: ${err.message}`);
-          resolve(null);
-        });
-      },
+    const body = await this.getJson<Record<string, unknown>>(
+      url,
+      satokenCookie,
+      `KYC status token=${tokenHint}`,
+      5000,
     );
 
     if (!body) return null;
@@ -252,7 +231,9 @@ export class AuthService {
           : body;
     if (!isSuccess && !('needAuth' in payload)) {
       this.logger.warn(
-        `KYC status check rejected: ${String(body.msg ?? body.message ?? 'unknown')} token=${tokenHint}`,
+        `KYC status check rejected: ${
+          scalarString(body.msg) ?? scalarString(body.message) ?? 'unknown'
+        } token=${tokenHint}`,
       );
       return null;
     }

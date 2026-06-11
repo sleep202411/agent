@@ -26,10 +26,13 @@ import {
   Prisma,
   WalletAccountStatus,
   WalletBalanceKind,
+  WalletCreditGrantStatus,
+  WalletCreditGrantType,
   WalletCurrencyType,
   WalletLedgerEntryType,
   WalletOwnerType,
   WalletTransactionStatus,
+  WorkspaceBillingMode,
   WorkspaceMemberRole,
   type BillingOrder,
   type BillingPaymentIntent,
@@ -44,22 +47,32 @@ import {
   type BillingRefund,
   type WalletAccount,
 } from '@prisma/client';
+import {
+  COMPUTE_POINT_EXPLICIT_ADMIN_PRICING,
+  COMPUTE_POINT_FIAT_CURRENCY,
+  COMPUTE_POINTS_PER_USD_CENT,
+} from '@repo/shared';
 import { createHash, randomUUID } from 'crypto';
 import type { AuthUser } from '../auth';
+import { CURRENT_CELL } from '../common/region';
 import { PrismaService } from '../infra/db/db.module';
+import { WalletLedgerService } from '../workspaces';
 import { WorkspacePermissionService } from '../workspaces/workspace-permission.service';
 import type {
   CreateBillingCheckoutInput,
+  CreateComputePointTopupInput,
   CreateCustomRechargeInput,
   CreateAdminBillingPriceInput,
   CreateAdminBillingPromotionInput,
   CreateAdminBillingRefundInput,
+  CreateAdminWalletAdjustmentInput,
   ListAdminBillingOrdersQuery,
   ListAdminBillingProviderEventsQuery,
   ListAdminBillingPricesQuery,
   ListAdminBillingPromotionsQuery,
   ListAdminBillingRefundsQuery,
   ListBillingPricesQuery,
+  ListWalletLedgerQuery,
   QuoteAdminBillingRefundInput,
   UpdateAdminBillingPriceInput,
   UpdateAdminBillingPromotionInput,
@@ -192,6 +205,27 @@ type CheckoutPromotionReservation = {
   discountAmountMinor: bigint;
   providerCouponId: string | null;
 };
+type AdminWalletLedgerEntryWithRelations = Prisma.WalletLedgerEntryGetPayload<{
+  include: {
+    account: true;
+    transaction: true;
+    creditAllocations: {
+      include: {
+        grant: {
+          select: {
+            id: true;
+            grantType: true;
+            status: true;
+            validFrom: true;
+            expiresAt: true;
+            sourceType: true;
+            sourceId: true;
+          };
+        };
+      };
+    };
+  };
+}>;
 
 @Injectable()
 export class BillingService {
@@ -199,6 +233,7 @@ export class BillingService {
     private readonly prisma: PrismaService,
     private readonly providerRegistry: PaymentProviderRegistry,
     private readonly permissions: WorkspacePermissionService,
+    private readonly walletLedger: WalletLedgerService,
     private readonly ledger: BillingLedgerService,
   ) {}
 
@@ -241,6 +276,199 @@ export class BillingService {
       provider,
       prices: prices.map((price) => this.priceDto(price, provider)),
     };
+  }
+
+  async listComputePointTopupPackages() {
+    const policy = computePointTopupPolicy();
+    const provider = policy.defaultProvider;
+    const prices = await this.prisma.billingPrice.findMany({
+      where: {
+        isActive: true,
+        archivedAt: null,
+        currency: policy.currency,
+        grantsWalletCurrency: WalletCurrencyType.compute_point,
+        grantsWalletBalanceKind: WalletBalanceKind.consumable,
+        providerBindings: {
+          some: {
+            provider,
+            status: BillingProviderBindingStatus.active,
+            archivedAt: null,
+            providerPriceId: { not: null },
+          },
+        },
+        item: {
+          isActive: true,
+          archivedAt: null,
+          productType: BillingProductType.compute_point_pack,
+        },
+      },
+      include: {
+        item: true,
+        providerBindings: {
+          where: { provider, archivedAt: null },
+          orderBy: { createdAt: 'asc' },
+        },
+      },
+      orderBy: [{ amountMinor: 'asc' }, { createdAt: 'asc' }],
+    });
+
+    for (const price of prices) {
+      assertComputePointTopupPrice(price, policy);
+    }
+
+    return {
+      provider,
+      providers: policy.providers,
+      currency: policy.currency,
+      cell: policy.cell,
+      exchangeRate:
+        policy.currency === COMPUTE_POINT_FIAT_CURRENCY
+          ? {
+              computePointsPerUsdCent: COMPUTE_POINTS_PER_USD_CENT,
+              usdCentsPerComputePoint: 1,
+            }
+          : null,
+      rateMode: policy.rateMode,
+      prices: prices.map((price) => this.priceDto(price, provider)),
+    };
+  }
+
+  async listWalletLedger(
+    user: AuthUser,
+    query: ListWalletLedgerQuery,
+    workspaceId?: string | null,
+  ) {
+    const scope = await this.walletLedgerScope(user, workspaceId);
+    const accounts = await this.prisma.walletAccount.findMany({
+      where: {
+        ownerType: scope.ownerType,
+        ownerId: scope.ownerId,
+        currency: query.currency as WalletCurrencyType,
+        balanceKind: query.balanceKind as WalletBalanceKind,
+      },
+      orderBy: [{ createdAt: 'asc' }],
+    });
+    if (accounts.length === 0) {
+      return {
+        accounts: [],
+        entries: [],
+      };
+    }
+
+    const entries = await this.prisma.walletLedgerEntry.findMany({
+      where: { accountId: { in: accounts.map((account) => account.id) } },
+      include: {
+        transaction: true,
+        creditAllocations: {
+          include: {
+            grant: {
+              select: {
+                id: true,
+                grantType: true,
+                status: true,
+                validFrom: true,
+                expiresAt: true,
+                sourceType: true,
+                sourceId: true,
+              },
+            },
+          },
+          orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+        },
+      },
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+      take: query.limit,
+    });
+
+    return {
+      accounts: accounts.map((account) => ({
+        id: account.id,
+        ownerType: account.ownerType,
+        ownerId: account.ownerId,
+        currency: account.currency,
+        balanceKind: account.balanceKind,
+        status: account.status,
+        availableBalance: account.availableBalance.toString(),
+        heldBalance: account.heldBalance.toString(),
+        updatedAt: account.updatedAt.toISOString(),
+      })),
+      entries: entries.map((entry) => {
+        const metadata = isRecord(entry.transaction.metadata)
+          ? entry.transaction.metadata
+          : {};
+        return {
+          id: entry.id,
+          transactionId: entry.transactionId,
+          accountId: entry.accountId,
+          entryType: entry.entryType,
+          currency: entry.currency,
+          balanceKind: entry.balanceKind,
+          amount: entry.amount.toString(),
+          availableDelta: entry.availableDelta.toString(),
+          heldDelta: entry.heldDelta.toString(),
+          availableBalanceAfter: entry.availableBalanceAfter.toString(),
+          heldBalanceAfter: entry.heldBalanceAfter.toString(),
+          reason: entry.reason,
+          sourceType: entry.transaction.sourceType,
+          sourceId: entry.transaction.sourceId,
+          orderNo: stringAt(metadata, ['orderNo']),
+          description: entry.transaction.description,
+          metadata,
+          creditAllocations: entry.creditAllocations.map((allocation) => ({
+            id: allocation.id,
+            grantId: allocation.grantId,
+            grantType: allocation.grant.grantType,
+            grantStatus: allocation.grant.status,
+            amount: allocation.amount.toString(),
+            availableDelta: allocation.availableDelta.toString(),
+            heldDelta: allocation.heldDelta.toString(),
+            consumedDelta: allocation.consumedDelta.toString(),
+            expiredDelta: allocation.expiredDelta.toString(),
+            reversedDelta: allocation.reversedDelta.toString(),
+            validFrom: allocation.grant.validFrom.toISOString(),
+            expiresAt: allocation.grant.expiresAt?.toISOString() ?? null,
+            sourceType: allocation.grant.sourceType,
+            sourceId: allocation.grant.sourceId,
+          })),
+          createdAt: entry.createdAt.toISOString(),
+        };
+      }),
+    };
+  }
+
+  private async walletLedgerScope(
+    user: AuthUser,
+    workspaceId?: string | null,
+  ): Promise<{ ownerType: WalletOwnerType; ownerId: string }> {
+    if (!workspaceId) {
+      return { ownerType: WalletOwnerType.user, ownerId: user.userId };
+    }
+
+    const membership = await this.permissions.requireWorkspaceRole(
+      user.userId,
+      workspaceId,
+      WorkspaceMemberRole.viewer,
+    );
+    const workspace = await this.prisma.workspace.findUnique({
+      where: { id: membership.workspaceId, deletedAt: null },
+      select: { id: true, billingMode: true },
+    });
+    if (!workspace) {
+      throw new NotFoundException({
+        code: 'WORKSPACE_NOT_FOUND',
+        msg: 'Workspace not found.',
+      });
+    }
+    if (workspace.billingMode !== WorkspaceBillingMode.workspace_pool) {
+      return { ownerType: WalletOwnerType.user, ownerId: user.userId };
+    }
+
+    await this.permissions.requireWorkspaceRole(
+      user.userId,
+      workspace.id,
+      WorkspaceMemberRole.billing,
+    );
+    return { ownerType: WalletOwnerType.workspace, ownerId: workspace.id };
   }
 
   async getAdminOverview() {
@@ -327,6 +555,22 @@ export class BillingService {
         include: {
           account: true,
           transaction: true,
+          creditAllocations: {
+            include: {
+              grant: {
+                select: {
+                  id: true,
+                  grantType: true,
+                  status: true,
+                  validFrom: true,
+                  expiresAt: true,
+                  sourceType: true,
+                  sourceId: true,
+                },
+              },
+            },
+            orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+          },
         },
         orderBy: { createdAt: 'desc' },
         take: 12,
@@ -381,40 +625,223 @@ export class BillingService {
           amountMinor: binding.price.amountMinor.toString(),
         },
       })),
-      walletAccounts: walletAccounts.map((account) => ({
-        id: account.id,
-        ownerType: account.ownerType,
-        ownerId: account.ownerId,
-        currency: account.currency,
-        balanceKind: account.balanceKind,
-        status: account.status,
-        availableBalance: account.availableBalance.toString(),
-        heldBalance: account.heldBalance.toString(),
-        ledgerEntryCount: account._count.ledgerEntries,
-        updatedAt: account.updatedAt.toISOString(),
-      })),
-      walletLedgerEntries: walletLedgerEntries.map((entry) => ({
-        id: entry.id,
-        transactionId: entry.transactionId,
-        accountId: entry.accountId,
-        ownerType: entry.account.ownerType,
-        ownerId: entry.account.ownerId,
-        entryType: entry.entryType,
-        currency: entry.currency,
-        balanceKind: entry.balanceKind,
-        amount: entry.amount.toString(),
-        availableDelta: entry.availableDelta.toString(),
-        heldDelta: entry.heldDelta.toString(),
-        availableBalanceAfter: entry.availableBalanceAfter.toString(),
-        heldBalanceAfter: entry.heldBalanceAfter.toString(),
-        reason: entry.reason,
-        sourceType: entry.transaction.sourceType,
-        sourceId: entry.transaction.sourceId,
-        idempotencyKey: entry.transaction.idempotencyKey,
-        description: entry.transaction.description,
-        createdAt: entry.createdAt.toISOString(),
-      })),
+      walletAccounts: walletAccounts.map((account) =>
+        this.adminWalletAccountDto(account),
+      ),
+      walletLedgerEntries: walletLedgerEntries.map((entry) =>
+        this.adminWalletLedgerEntryDto(entry),
+      ),
       recentOrders: recentOrders.map((order) => this.adminOrderDto(order)),
+    };
+  }
+
+  async getAdminWalletAccountDetail(accountId: string) {
+    const [account, entries, grants] = await Promise.all([
+      this.prisma.walletAccount.findUnique({
+        where: { id: accountId },
+        include: {
+          _count: { select: { ledgerEntries: true } },
+        },
+      }),
+      this.prisma.walletLedgerEntry.findMany({
+        where: { accountId },
+        include: {
+          account: true,
+          transaction: true,
+          creditAllocations: {
+            include: {
+              grant: {
+                select: {
+                  id: true,
+                  grantType: true,
+                  status: true,
+                  validFrom: true,
+                  expiresAt: true,
+                  sourceType: true,
+                  sourceId: true,
+                },
+              },
+            },
+            orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+          },
+        },
+        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+        take: 100,
+      }),
+      this.prisma.walletCreditGrant.findMany({
+        where: { accountId },
+        orderBy: [
+          { status: 'asc' },
+          { expiresAt: { sort: 'asc', nulls: 'last' } },
+          { createdAt: 'desc' },
+          { id: 'desc' },
+        ],
+        take: 100,
+      }),
+    ]);
+
+    if (!account) {
+      throw new NotFoundException({
+        code: 'WALLET_ACCOUNT_NOT_FOUND',
+        msg: 'Wallet account not found.',
+      });
+    }
+
+    return {
+      account: this.adminWalletAccountDto(account),
+      entries: entries.map((entry) => this.adminWalletLedgerEntryDto(entry)),
+      grants: grants.map((grant) => ({
+        id: grant.id,
+        accountId: grant.accountId,
+        transactionId: grant.transactionId,
+        grantType: grant.grantType,
+        status: grant.status,
+        totalAmount: grant.totalAmount.toString(),
+        availableAmount: grant.availableAmount.toString(),
+        heldAmount: grant.heldAmount.toString(),
+        consumedAmount: grant.consumedAmount.toString(),
+        expiredAmount: grant.expiredAmount.toString(),
+        reversedAmount: grant.reversedAmount.toString(),
+        priority: grant.priority,
+        validFrom: grant.validFrom.toISOString(),
+        expiresAt: grant.expiresAt?.toISOString() ?? null,
+        sourceType: grant.sourceType,
+        sourceId: grant.sourceId,
+        metadata: grant.metadata,
+        createdAt: grant.createdAt.toISOString(),
+        updatedAt: grant.updatedAt.toISOString(),
+      })),
+    };
+  }
+
+  async createAdminWalletAdjustment(
+    adminId: string,
+    accountId: string,
+    input: CreateAdminWalletAdjustmentInput,
+  ) {
+    const account = await this.prisma.walletAccount.findUnique({
+      where: { id: accountId },
+    });
+    if (!account) {
+      throw new NotFoundException({
+        code: 'WALLET_ACCOUNT_NOT_FOUND',
+        msg: 'Wallet account not found.',
+      });
+    }
+    if (account.status !== WalletAccountStatus.active) {
+      throw new ConflictException({
+        code: 'WALLET_ACCOUNT_NOT_ACTIVE',
+        msg: 'Only active wallet accounts can be adjusted.',
+      });
+    }
+    if (
+      account.currency !== WalletCurrencyType.compute_point ||
+      account.balanceKind !== WalletBalanceKind.consumable
+    ) {
+      throw new ConflictException({
+        code: 'ADMIN_WALLET_ADJUSTMENT_UNSUPPORTED_ACCOUNT',
+        msg: 'Admin credit adjustments currently support compute-point consumable wallets only.',
+      });
+    }
+
+    const amount = input.amount;
+    const isPositive = amount > 0n;
+    await this.walletLedger.postEntry({
+      accountId: account.id,
+      entryType: WalletLedgerEntryType.adjustment,
+      amount: amount > 0n ? amount : -amount,
+      availableDelta: amount,
+      heldDelta: 0n,
+      sourceType: 'admin_wallet_adjustment',
+      sourceId: adminId,
+      idempotencyKey: `admin_wallet_adjustment:${account.id}:${input.idempotencyKey}`,
+      actorUserId: adminId,
+      workspaceId:
+        account.ownerType === WalletOwnerType.workspace
+          ? account.ownerId
+          : null,
+      description: input.reason,
+      reason: isPositive
+        ? 'admin_compute_point_credit'
+        : 'admin_compute_point_debit',
+      metadata: {
+        ...input.metadata,
+        adminId,
+        reason: input.reason,
+        grantType: input.grantType,
+        rawIdempotencyKey: input.idempotencyKey,
+      },
+      creditGrant: isPositive
+        ? {
+            grantType: input.grantType as WalletCreditGrantType,
+            expiresAt: input.expiresAt ?? null,
+            metadata: {
+              adminId,
+              reason: input.reason,
+            },
+          }
+        : undefined,
+    });
+
+    return this.getAdminWalletAccountDetail(account.id);
+  }
+
+  private adminWalletAccountDto(
+    account: WalletAccount & { _count?: { ledgerEntries: number } },
+  ) {
+    return {
+      id: account.id,
+      ownerType: account.ownerType,
+      ownerId: account.ownerId,
+      currency: account.currency,
+      balanceKind: account.balanceKind,
+      status: account.status,
+      availableBalance: account.availableBalance.toString(),
+      heldBalance: account.heldBalance.toString(),
+      ledgerEntryCount: account._count?.ledgerEntries ?? 0,
+      updatedAt: account.updatedAt.toISOString(),
+    };
+  }
+
+  private adminWalletLedgerEntryDto(
+    entry: AdminWalletLedgerEntryWithRelations,
+  ) {
+    return {
+      id: entry.id,
+      transactionId: entry.transactionId,
+      accountId: entry.accountId,
+      ownerType: entry.account.ownerType,
+      ownerId: entry.account.ownerId,
+      entryType: entry.entryType,
+      currency: entry.currency,
+      balanceKind: entry.balanceKind,
+      amount: entry.amount.toString(),
+      availableDelta: entry.availableDelta.toString(),
+      heldDelta: entry.heldDelta.toString(),
+      availableBalanceAfter: entry.availableBalanceAfter.toString(),
+      heldBalanceAfter: entry.heldBalanceAfter.toString(),
+      reason: entry.reason,
+      sourceType: entry.transaction.sourceType,
+      sourceId: entry.transaction.sourceId,
+      idempotencyKey: entry.transaction.idempotencyKey,
+      description: entry.transaction.description,
+      creditAllocations: entry.creditAllocations.map((allocation) => ({
+        id: allocation.id,
+        grantId: allocation.grantId,
+        grantType: allocation.grant.grantType,
+        grantStatus: allocation.grant.status,
+        amount: allocation.amount.toString(),
+        availableDelta: allocation.availableDelta.toString(),
+        heldDelta: allocation.heldDelta.toString(),
+        consumedDelta: allocation.consumedDelta.toString(),
+        expiredDelta: allocation.expiredDelta.toString(),
+        reversedDelta: allocation.reversedDelta.toString(),
+        validFrom: allocation.grant.validFrom.toISOString(),
+        expiresAt: allocation.grant.expiresAt?.toISOString() ?? null,
+        sourceType: allocation.grant.sourceType,
+        sourceId: allocation.grant.sourceId,
+      })),
+      createdAt: entry.createdAt.toISOString(),
     };
   }
 
@@ -501,6 +928,7 @@ export class BillingService {
   }
 
   async createAdminPrice(adminId: string, input: CreateAdminBillingPriceInput) {
+    const priceMetadata = normalizeAdminPriceMetadata(input);
     const itemCode = input.itemCode ?? buildBillingItemCode(input);
     return this.prisma.$transaction(async (tx) => {
       const item = await tx.billingCatalogItem.upsert({
@@ -539,7 +967,7 @@ export class BillingService {
           grantsPlanKey: input.grantsPlanKey ?? null,
           grantDurationDays: input.grantDurationDays ?? null,
           metadata: {
-            ...(input.priceMetadata ?? {}),
+            ...priceMetadata,
             createdByAdminId: adminId,
           } as Prisma.InputJsonValue,
           providerBindings: {
@@ -755,6 +1183,7 @@ export class BillingService {
     adminId: string,
     input: CreateAdminBillingPromotionInput,
   ) {
+    assertAdminPromotionProviderPolicy(input);
     const promotion = await this.prisma.billingPromotion.create({
       data: {
         code: input.code,
@@ -856,6 +1285,13 @@ export class BillingService {
         code: 'BILLING_PROMOTION_NOT_FOUND',
         msg: 'Billing promotion not found.',
       });
+    }
+    if (
+      promotion.appliesProductType === BillingProductType.compute_point_pack
+    ) {
+      assertComputePointPromotionProviderAllowed(
+        input.provider as PaymentProvider,
+      );
     }
     const existing =
       await this.prisma.billingPromotionProviderBinding.findFirst({
@@ -1526,6 +1962,326 @@ export class BillingService {
     };
   }
 
+  // Compute-point top-up is a fixed catalog product, so payable orders go
+  // through provider Billing Checkout with a synced provider price and coupon.
+  // This keeps provider collection, internal order amount, and wallet grant in
+  // one auditable flow. Only fully-discounted redemptions bypass the provider.
+  async createComputePointTopup(
+    user: AuthUser,
+    input: CreateComputePointTopupInput,
+    shopperCountry: string,
+  ) {
+    this.assertReturnUrlAllowed(input.successUrl);
+    this.assertReturnUrlAllowed(input.backUrl);
+
+    const policy = computePointTopupPolicy();
+    const sdkEnv = airwallexSdkEnv();
+    const country = (shopperCountry || 'US').toUpperCase();
+    const provider =
+      (input.provider as PaymentProvider | undefined) ?? policy.defaultProvider;
+    if (!policy.providers.includes(provider)) {
+      throw new ServiceUnavailableException({
+        code: 'BILLING_COMPUTE_TOPUP_PROVIDER_UNSUPPORTED',
+        msg: `Compute point top-up in this deployment supports ${policy.providers.join(
+          ', ',
+        )} with ${policy.currency} only.`,
+      });
+    }
+
+    const existingOrder = await this.prisma.billingOrder.findUnique({
+      where: {
+        userId_idempotencyKey: {
+          userId: user.userId,
+          idempotencyKey: input.idempotencyKey,
+        },
+      },
+      include: {
+        paymentIntents: { orderBy: { createdAt: 'desc' }, take: 1 },
+      },
+    });
+    if (existingOrder) {
+      const existingMetadata = isRecord(existingOrder.metadata)
+        ? existingOrder.metadata
+        : {};
+      const existingPromotionCode = stringAt(existingMetadata, [
+        'promotion',
+        'code',
+      ]);
+      const requestedPromotionCode = input.promotionCode
+        ? input.promotionCode.trim().toUpperCase()
+        : null;
+      if (
+        existingOrder.orderType !== BillingOrderType.compute_point_topup ||
+        existingOrder.priceId !== input.priceId ||
+        existingPromotionCode !== requestedPromotionCode
+      ) {
+        throw new ConflictException({
+          code: 'BILLING_IDEMPOTENCY_KEY_REUSED',
+          msg: 'Idempotency key was already used for a different billing intent.',
+        });
+      }
+      return {
+        order: this.orderDto(existingOrder),
+        paymentIntent: existingOrder.paymentIntents[0]
+          ? this.paymentIntentDto(existingOrder.paymentIntents[0])
+          : null,
+        shopperCountry: country,
+        env: sdkEnv,
+      };
+    }
+
+    const adapter = this.providerRegistry.get(provider);
+
+    const price = await this.prisma.billingPrice.findFirst({
+      where: {
+        id: input.priceId,
+        isActive: true,
+        archivedAt: null,
+        currency: policy.currency,
+        item: {
+          productType: BillingProductType.compute_point_pack,
+          isActive: true,
+          archivedAt: null,
+        },
+      },
+      include: {
+        item: true,
+        providerBindings: {
+          where: {
+            provider,
+            status: BillingProviderBindingStatus.active,
+            archivedAt: null,
+          },
+          take: 1,
+        },
+      },
+    });
+    if (!price) {
+      throw new NotFoundException({
+        code: 'BILLING_COMPUTE_TOPUP_PRICE_NOT_FOUND',
+        msg: 'Compute point top-up package is not available.',
+      });
+    }
+    assertComputePointTopupPrice(price, policy);
+
+    const requestId = randomUUID();
+    const orderNo = createOrderNo();
+    const subtotalAmountMinor = price.amountMinor;
+    const { order, promotionReservation } = await this.prisma.$transaction(
+      async (tx) => {
+        const promotionReservation = input.promotionCode
+          ? await this.reserveCheckoutPromotionTx(tx, {
+              userId: user.userId,
+              provider,
+              code: input.promotionCode,
+              price,
+              subtotalAmountMinor,
+              now: new Date(),
+            })
+          : null;
+        const discountAmountMinor =
+          promotionReservation?.discountAmountMinor ?? 0n;
+        const amountMinor = subtotalAmountMinor - discountAmountMinor;
+        const requiresExternalPayment = amountMinor > 0n;
+        const providerBinding = requiresExternalPayment
+          ? price.providerBindings[0]
+          : null;
+        if (requiresExternalPayment && !providerBinding) {
+          throw new ConflictException({
+            code: 'BILLING_COMPUTE_TOPUP_PROVIDER_BINDING_MISSING',
+            msg: `Compute point top-up package is not available through "${provider}". Sync the provider price before enabling sales.`,
+          });
+        }
+        if (providerBinding) {
+          assertProviderBindingReady(providerBinding);
+        }
+        const order = await tx.billingOrder.create({
+          data: {
+            orderNo,
+            idempotencyKey: input.idempotencyKey,
+            userId: user.userId,
+            workspaceId: null,
+            subjectType: BillingSubjectType.user,
+            subjectId: user.userId,
+            orderType: BillingOrderType.compute_point_topup,
+            status: BillingOrderStatus.pending_payment,
+            itemId: price.itemId,
+            priceId: price.id,
+            providerBindingId: providerBinding?.id ?? null,
+            provider: requiresExternalPayment
+              ? provider
+              : PaymentProvider.internal,
+            currency: price.currency,
+            subtotalAmountMinor,
+            discountAmountMinor,
+            amountMinor,
+            quantity: 1,
+            grantsWalletAmount: price.grantsWalletAmount,
+            grantsWalletCurrency: price.grantsWalletCurrency,
+            grantsWalletBalanceKind: price.grantsWalletBalanceKind,
+            description: price.item.name,
+            expiresAt: new Date(Date.now() + 60 * 60 * 1000),
+            metadata: {
+              checkout: {
+                successUrl: input.successUrl,
+                backUrl: input.backUrl,
+              },
+              promotion: promotionReservation
+                ? {
+                    id: promotionReservation.promotion.id,
+                    code: promotionReservation.promotion.code,
+                    discountAmountMinor:
+                      promotionReservation.discountAmountMinor.toString(),
+                    providerCouponId: promotionReservation.providerCouponId,
+                  }
+                : null,
+              computePointTopup: {
+                cell: policy.cell,
+                shopperCountry: country,
+                rateMode: policy.rateMode,
+                exchangeRate:
+                  price.currency === COMPUTE_POINT_FIAT_CURRENCY
+                    ? {
+                        computePointsPerUsdCent: COMPUTE_POINTS_PER_USD_CENT,
+                        usdCentsPerComputePoint: 1,
+                      }
+                    : null,
+              },
+            },
+          },
+          include: { price: true },
+        });
+        if (promotionReservation) {
+          await tx.billingPromotionRedemption.create({
+            data: {
+              promotionId: promotionReservation.promotion.id,
+              orderId: order.id,
+              userId: user.userId,
+              codeSnapshot: promotionReservation.promotion.code,
+              provider: requiresExternalPayment
+                ? provider
+                : PaymentProvider.internal,
+              providerDiscountId: promotionReservation.providerCouponId,
+              status: BillingPromotionRedemptionStatus.reserved,
+              currency: price.currency,
+              subtotalAmountMinor,
+              discountAmountMinor,
+              metadata: {
+                priceId: price.id,
+                itemId: price.itemId,
+                productType: price.item.productType,
+                providerCouponRequired: requiresExternalPayment,
+              },
+            },
+          });
+          await tx.billingPromotion.update({
+            where: { id: promotionReservation.promotion.id },
+            data: { redemptionCount: { increment: 1 } },
+          });
+        }
+        return { order, promotionReservation };
+      },
+    );
+
+    if (order.amountMinor === 0n) {
+      await this.prisma.$transaction((tx) =>
+        this.markOrderPaidAndFulfill(tx, order, new Date(), null, null, {
+          internalPromotionCheckout: true,
+          promotionCode: promotionReservation?.promotion.code ?? null,
+        }),
+      );
+      const fulfilledOrder = await this.prisma.billingOrder.findUniqueOrThrow({
+        where: { id: order.id },
+        include: {
+          paymentIntents: { orderBy: { createdAt: 'desc' }, take: 1 },
+        },
+      });
+      return {
+        order: this.orderDto(fulfilledOrder),
+        paymentIntent: null,
+        shopperCountry: country,
+        env: sdkEnv,
+      };
+    }
+
+    const providerBinding = price.providerBindings[0];
+    assertProviderBindingReady(providerBinding);
+    let checkout: HostedCheckoutResult;
+    try {
+      checkout = await adapter.createHostedCheckout({
+        requestId,
+        mode: 'PAYMENT',
+        successUrl: input.successUrl,
+        backUrl: input.backUrl,
+        providerCouponId: promotionReservation?.providerCouponId ?? undefined,
+        lineItems: [
+          {
+            providerPriceId: providerBinding.providerPriceId,
+            internalPriceId: price.id,
+            name: price.item.name,
+            currency: price.currency,
+            amountMinor: price.amountMinor,
+            quantity: 1,
+            providerCouponId:
+              promotionReservation?.providerCouponId ?? undefined,
+          },
+        ],
+        metadata: {
+          fizzdragon_order_id: order.id,
+          fizzdragon_order_no: order.orderNo,
+          fizzdragon_user_id: user.userId,
+          fizzdragon_product_type: BillingProductType.compute_point_pack,
+        },
+      });
+    } catch (err) {
+      await this.prisma.$transaction(async (tx) => {
+        await tx.billingOrder.update({
+          where: { id: order.id },
+          data: {
+            status: BillingOrderStatus.failed,
+            metadata: {
+              ...(order.metadata as Record<string, unknown>),
+              providerError:
+                err instanceof Error
+                  ? err.message
+                  : 'Provider checkout failed.',
+            },
+          },
+        });
+        await this.voidReservedPromotionsForOrderTx(tx, order.id);
+      });
+      throw err;
+    }
+
+    const paymentIntent = await this.prisma.billingPaymentIntent.create({
+      data: {
+        orderId: order.id,
+        provider,
+        kind: PaymentIntentKind.hosted_checkout,
+        status: PaymentIntentStatus.requires_action,
+        requestId,
+        providerCheckoutId: checkout.providerCheckoutId,
+        providerCustomerId: checkout.providerCustomerId,
+        providerSubscriptionId: checkout.providerSubscriptionId,
+        providerInvoiceId: checkout.providerInvoiceId,
+        checkoutUrl: checkout.checkoutUrl,
+        clientSecret: checkout.clientSecret,
+        currency: order.currency,
+        amountMinor: order.amountMinor,
+        providerStatus: checkout.providerStatus,
+        providerPayload: checkout.raw as Prisma.InputJsonValue,
+        expiresAt: checkout.expiresAt ?? order.expiresAt,
+      },
+    });
+
+    return {
+      order: this.orderDto(order),
+      paymentIntent: this.paymentIntentDto(paymentIntent),
+      shopperCountry: country,
+      env: sdkEnv,
+    };
+  }
+
   // Ad-hoc, arbitrary-amount community-point recharge via Airwallex Payment
   // Intents (no catalog selection, no provider-price binding). The amount is the
   // input; the order snapshots its own fiat amount + wallet grant, and the
@@ -1970,6 +2726,7 @@ export class BillingService {
         where: { id: intent.orderId },
         include: { price: true },
       });
+      await this.reconcileProviderPaidAmountTx(tx, order, intent, payload);
       const providerSubscriptionId =
         stringAt(payload, ['data', 'subscription_id']) ??
         intent.providerSubscriptionId;
@@ -2784,7 +3541,7 @@ export class BillingService {
         },
       },
     });
-    await tx.walletLedgerEntry.create({
+    const entry = await tx.walletLedgerEntry.create({
       data: {
         transactionId: transaction.id,
         accountId: locked.id,
@@ -2799,6 +3556,19 @@ export class BillingService {
         reason: `billing_${walletCurrency}_refund_reversal`,
       },
     });
+    if (
+      locked.currency === WalletCurrencyType.compute_point &&
+      locked.balanceKind === WalletBalanceKind.consumable
+    ) {
+      await reverseWalletCreditGrantForRefundTx(tx, {
+        accountId: locked.id,
+        order: input.order,
+        refund: input.refund,
+        transactionId: transaction.id,
+        ledgerEntryId: entry.id,
+        amount: input.amount,
+      });
+    }
     await tx.walletAccount.update({
       where: { id: locked.id },
       data: {
@@ -3171,6 +3941,7 @@ export class BillingService {
       price: PriceWithProviderBindings;
       subtotalAmountMinor: bigint;
       now: Date;
+      requiresProviderCoupon?: boolean;
     },
   ): Promise<CheckoutPromotionReservation> {
     const code = input.code.trim().toUpperCase();
@@ -3278,6 +4049,7 @@ export class BillingService {
     }
 
     const requiresExternalCoupon =
+      (input.requiresProviderCoupon ?? true) &&
       input.subtotalAmountMinor - discountAmountMinor > 0n;
     const providerCouponId =
       promotion.providerBindings[0]?.providerCouponId ?? null;
@@ -3371,7 +4143,11 @@ export class BillingService {
 
     let walletTransactionId: string | null = null;
     if (current.grantsWalletAmount ?? current.price.grantsWalletAmount) {
-      walletTransactionId = await this.creditWalletGrantForOrderTx(tx, current);
+      walletTransactionId = await this.creditWalletGrantForOrderTx(
+        tx,
+        current,
+        now,
+      );
     }
     let entitlementGrantId: string | null = null;
     if (current.price.grantsPlanKey) {
@@ -3480,9 +4256,62 @@ export class BillingService {
     await tx.billingSubscription.create({ data });
   }
 
+  private async reconcileProviderPaidAmountTx(
+    tx: Prisma.TransactionClient,
+    order: OrderWithPrice,
+    intent: BillingPaymentIntent,
+    payload: Record<string, unknown>,
+  ): Promise<void> {
+    const providerPaidAmountMinor = providerPaidAmountMinorFromPayload(payload);
+    if (providerPaidAmountMinor === null) {
+      return;
+    }
+    if (providerPaidAmountMinor === order.amountMinor) {
+      return;
+    }
+    if (providerPaidAmountMinor > order.subtotalAmountMinor) {
+      throw new ConflictException({
+        code: 'BILLING_PROVIDER_AMOUNT_EXCEEDS_ORDER',
+        msg: 'Provider paid amount exceeds the internal order subtotal.',
+      });
+    }
+    if (providerPaidAmountMinor > order.amountMinor) {
+      throw new ConflictException({
+        code: 'BILLING_PROVIDER_AMOUNT_EXCEEDS_EXPECTED',
+        msg: 'Provider paid amount exceeds the expected payable order amount.',
+      });
+    }
+
+    await tx.billingPaymentIntent.update({
+      where: { id: intent.id },
+      data: { amountMinor: providerPaidAmountMinor },
+    });
+
+    const existingMetadata = isRecord(order.metadata) ? order.metadata : {};
+    await tx.billingOrder.update({
+      where: { id: order.id },
+      data: {
+        amountMinor: providerPaidAmountMinor,
+        discountAmountMinor:
+          order.subtotalAmountMinor - providerPaidAmountMinor,
+        metadata: {
+          ...existingMetadata,
+          providerAmountReconciliation: {
+            provider: intent.provider,
+            eventType: eventTypeFromPayload(payload),
+            previousAmountMinor: order.amountMinor.toString(),
+            providerPaidAmountMinor: providerPaidAmountMinor.toString(),
+            reconciledAt: new Date().toISOString(),
+          },
+        } as Prisma.InputJsonValue,
+      },
+    });
+  }
+
   private async creditWalletGrantForOrderTx(
     tx: Prisma.TransactionClient,
     order: OrderWithPrice,
+    now: Date,
   ): Promise<string | null> {
     // Prefer the per-order snapshot (set at checkout); fall back to the live price
     // for legacy orders created before the snapshot existed. The snapshot is what
@@ -3545,6 +4374,8 @@ export class BillingService {
 
     const amount = grantPerUnit * BigInt(order.quantity);
     const nextAvailable = lockedAccount.availableBalance + amount;
+    const grantType = billingOrderGrantType(order);
+    const grantExpiresAt = grantEndsAt(now, order.price.grantDurationDays);
     const transaction = await tx.walletTransaction.create({
       data: {
         status: WalletTransactionStatus.posted,
@@ -3557,11 +4388,13 @@ export class BillingService {
         metadata: {
           orderNo: order.orderNo,
           priceId: order.priceId,
+          grantType,
+          expiresAt: grantExpiresAt?.toISOString() ?? null,
         },
       },
     });
 
-    await tx.walletLedgerEntry.create({
+    const entry = await tx.walletLedgerEntry.create({
       data: {
         transactionId: transaction.id,
         accountId: lockedAccount.id,
@@ -3576,6 +4409,51 @@ export class BillingService {
         reason: `billing_${grantCurrency}_topup`,
       },
     });
+
+    if (
+      lockedAccount.currency === WalletCurrencyType.compute_point &&
+      lockedAccount.balanceKind === WalletBalanceKind.consumable
+    ) {
+      const creditGrant = await tx.walletCreditGrant.create({
+        data: {
+          accountId: lockedAccount.id,
+          transactionId: transaction.id,
+          grantType,
+          status: WalletCreditGrantStatus.active,
+          totalAmount: amount,
+          availableAmount: amount,
+          heldAmount: 0n,
+          consumedAmount: 0n,
+          expiredAmount: 0n,
+          reversedAmount: 0n,
+          priority: defaultGrantPriority(grantType, grantExpiresAt),
+          validFrom: now,
+          expiresAt: grantExpiresAt,
+          sourceType: 'billing_order',
+          sourceId: order.id,
+          metadata: {
+            orderNo: order.orderNo,
+            priceId: order.priceId,
+            orderType: order.orderType,
+            subjectType: order.subjectType,
+            subjectId: order.subjectId,
+          },
+        },
+      });
+      await tx.walletCreditAllocation.create({
+        data: {
+          grantId: creditGrant.id,
+          transactionId: transaction.id,
+          ledgerEntryId: entry.id,
+          amount,
+          availableDelta: amount,
+          heldDelta: 0n,
+          consumedDelta: 0n,
+          expiredDelta: 0n,
+          reversedDelta: 0n,
+        },
+      });
+    }
 
     await tx.walletAccount.update({
       where: { id: lockedAccount.id },
@@ -4244,8 +5122,8 @@ function isRefundEvent(eventType: string): boolean {
 }
 
 function orderTypeForPrice(price: PriceWithItem): BillingOrderType {
-  if (price.item.productType === BillingProductType.bubble_pack) {
-    return BillingOrderType.bubble_topup;
+  if (price.item.productType === BillingProductType.compute_point_pack) {
+    return BillingOrderType.compute_point_topup;
   }
   if (price.item.productType === BillingProductType.community_point_pack) {
     return BillingOrderType.community_point_topup;
@@ -4254,6 +5132,238 @@ function orderTypeForPrice(price: PriceWithItem): BillingOrderType {
     return BillingOrderType.membership_purchase;
   }
   return BillingOrderType.subscription_checkout;
+}
+
+type ComputePointTopupPolicy = {
+  cell: 'global' | 'cn';
+  currency: string;
+  defaultProvider: PaymentProvider;
+  providers: PaymentProvider[];
+  rateMode: 'usd_cent_anchor' | typeof COMPUTE_POINT_EXPLICIT_ADMIN_PRICING;
+};
+
+function computePointTopupPolicy(): ComputePointTopupPolicy {
+  if (CURRENT_CELL === 'cn') {
+    return {
+      cell: 'cn',
+      currency: 'CNY',
+      defaultProvider: PaymentProvider.wechat_pay,
+      providers: [PaymentProvider.wechat_pay, PaymentProvider.alipay],
+      rateMode: COMPUTE_POINT_EXPLICIT_ADMIN_PRICING,
+    };
+  }
+  return {
+    cell: 'global',
+    currency: COMPUTE_POINT_FIAT_CURRENCY,
+    defaultProvider: PaymentProvider.airwallex,
+    providers: [PaymentProvider.airwallex],
+    rateMode: 'usd_cent_anchor',
+  };
+}
+
+function assertComputePointTopupPrice(
+  price: PriceWithItem,
+  policy: ComputePointTopupPolicy,
+): void {
+  if (price.item.productType !== BillingProductType.compute_point_pack) {
+    throw new ConflictException({
+      code: 'BILLING_COMPUTE_TOPUP_PRICE_TYPE_INVALID',
+      msg: 'Billing price is not a compute-point package.',
+    });
+  }
+  if (price.interval !== BillingPriceInterval.one_time) {
+    throw new ConflictException({
+      code: 'BILLING_COMPUTE_TOPUP_INTERVAL_INVALID',
+      msg: 'Compute point top-up package must be a one-time price.',
+    });
+  }
+  if (price.subjectType !== BillingSubjectType.user) {
+    throw new ConflictException({
+      code: 'BILLING_COMPUTE_TOPUP_SUBJECT_INVALID',
+      msg: 'Compute point top-up package must grant to a user wallet.',
+    });
+  }
+  if (price.currency !== policy.currency) {
+    throw new ConflictException({
+      code: 'BILLING_COMPUTE_TOPUP_CURRENCY_INVALID',
+      msg: `Compute point top-up in this deployment supports ${policy.currency} only.`,
+    });
+  }
+  if (
+    price.grantsWalletCurrency !== WalletCurrencyType.compute_point ||
+    price.grantsWalletBalanceKind !== WalletBalanceKind.consumable ||
+    !price.grantsWalletAmount
+  ) {
+    throw new ConflictException({
+      code: 'BILLING_COMPUTE_TOPUP_GRANT_INVALID',
+      msg: 'Compute point top-up package must grant consumable compute points.',
+    });
+  }
+  const metadata = isRecord(price.metadata) ? price.metadata : {};
+  if (metadata.topupKind !== 'compute_point') {
+    throw new ConflictException({
+      code: 'BILLING_COMPUTE_TOPUP_METADATA_INVALID',
+      msg: 'Compute point top-up package must be explicitly marked as compute_point top-up.',
+    });
+  }
+  if (price.currency !== COMPUTE_POINT_FIAT_CURRENCY) {
+    if (metadata.rateMode !== COMPUTE_POINT_EXPLICIT_ADMIN_PRICING) {
+      throw new ConflictException({
+        code: 'BILLING_COMPUTE_TOPUP_RATE_MODE_INVALID',
+        msg: 'Non-USD compute point prices must use explicit admin pricing.',
+      });
+    }
+    return;
+  }
+  const expectedGrant = price.amountMinor * BigInt(COMPUTE_POINTS_PER_USD_CENT);
+  if (price.grantsWalletAmount !== expectedGrant) {
+    throw new ConflictException({
+      code: 'BILLING_COMPUTE_TOPUP_RATE_MISMATCH',
+      msg: 'Compute point top-up package violates the USD cent exchange rate.',
+    });
+  }
+}
+
+function assertAdminPromotionProviderPolicy(
+  input: CreateAdminBillingPromotionInput,
+): void {
+  if (input.appliesProductType !== BillingProductType.compute_point_pack) {
+    return;
+  }
+
+  const policy = computePointTopupPolicy();
+  for (const binding of input.providerBindings) {
+    assertComputePointPromotionProviderAllowed(
+      binding.provider as PaymentProvider,
+      policy,
+    );
+  }
+
+  if (input.percentOffBps >= 10000) {
+    return;
+  }
+
+  const hasDefaultProviderBinding = input.providerBindings.some(
+    (binding) => binding.provider === policy.defaultProvider,
+  );
+  if (!hasDefaultProviderBinding) {
+    throw new BadRequestException({
+      code: 'BILLING_ADMIN_COMPUTE_PROMOTION_PROVIDER_REQUIRED',
+      msg: `Paid compute point promotions must bind the current payment provider "${policy.defaultProvider}" so the provider coupon can be synced before checkout.`,
+    });
+  }
+}
+
+function assertComputePointPromotionProviderAllowed(
+  provider: PaymentProvider,
+  policy = computePointTopupPolicy(),
+): void {
+  if (!policy.providers.includes(provider)) {
+    throw new BadRequestException({
+      code: 'BILLING_ADMIN_COMPUTE_PROMOTION_PROVIDER_INVALID',
+      msg: `Compute point promotions in this deployment support ${policy.providers.join(
+        ', ',
+      )} only.`,
+    });
+  }
+}
+
+function normalizeAdminPriceMetadata(
+  input: CreateAdminBillingPriceInput,
+): Record<string, unknown> {
+  const existing = input.priceMetadata ?? {};
+  if (input.productType !== BillingProductType.compute_point_pack) {
+    return existing;
+  }
+
+  const policy = computePointTopupPolicy();
+  if (input.currency !== policy.currency) {
+    throw new BadRequestException({
+      code: 'BILLING_ADMIN_COMPUTE_TOPUP_CURRENCY_INVALID',
+      msg: `Compute point top-up packages in this deployment must be priced in ${policy.currency}.`,
+    });
+  }
+  if (input.interval !== BillingPriceInterval.one_time) {
+    throw new BadRequestException({
+      code: 'BILLING_ADMIN_COMPUTE_TOPUP_INTERVAL_INVALID',
+      msg: 'Compute point top-up packages must be one-time prices.',
+    });
+  }
+  if (input.subjectType !== BillingSubjectType.user) {
+    throw new BadRequestException({
+      code: 'BILLING_ADMIN_COMPUTE_TOPUP_SUBJECT_INVALID',
+      msg: 'Compute point top-up packages must grant to a user wallet.',
+    });
+  }
+  if (
+    input.grantsWalletCurrency !== WalletCurrencyType.compute_point ||
+    input.grantsWalletAmount === undefined
+  ) {
+    throw new BadRequestException({
+      code: 'BILLING_ADMIN_COMPUTE_TOPUP_GRANT_INVALID',
+      msg: 'Compute point top-up packages must grant consumable compute points.',
+    });
+  }
+  if (input.grantsPlanKey || input.grantDurationDays) {
+    throw new BadRequestException({
+      code: 'BILLING_ADMIN_COMPUTE_TOPUP_BENEFIT_INVALID',
+      msg: 'Compute point top-up packages cannot grant memberships.',
+    });
+  }
+
+  for (const binding of input.providerBindings) {
+    if (!policy.providers.includes(binding.provider as PaymentProvider)) {
+      throw new BadRequestException({
+        code: 'BILLING_ADMIN_COMPUTE_TOPUP_PROVIDER_INVALID',
+        msg: `Compute point top-up packages in this deployment support ${policy.providers.join(
+          ', ',
+        )} only.`,
+      });
+    }
+  }
+
+  if (input.currency === COMPUTE_POINT_FIAT_CURRENCY) {
+    const expectedGrant =
+      input.amountMinor * BigInt(COMPUTE_POINTS_PER_USD_CENT);
+    if (input.grantsWalletAmount !== expectedGrant) {
+      throw new BadRequestException({
+        code: 'BILLING_ADMIN_COMPUTE_TOPUP_RATE_MISMATCH',
+        msg: 'USD compute point packages must grant exactly one compute point per USD cent.',
+      });
+    }
+  }
+
+  assertMetadataMatches(existing, 'topupKind', 'compute_point');
+  assertMetadataMatches(existing, 'rateMode', policy.rateMode);
+  assertMetadataMatches(existing, 'cell', policy.cell);
+
+  return {
+    ...existing,
+    topupKind: 'compute_point',
+    rateMode: policy.rateMode,
+    cell: policy.cell,
+    exchangeRate:
+      input.currency === COMPUTE_POINT_FIAT_CURRENCY
+        ? {
+            computePointsPerUsdCent: COMPUTE_POINTS_PER_USD_CENT,
+            usdCentsPerComputePoint: 1,
+          }
+        : null,
+  };
+}
+
+function assertMetadataMatches(
+  metadata: Record<string, unknown>,
+  key: string,
+  expected: string,
+) {
+  const actual = metadata[key];
+  if (actual !== undefined && actual !== expected) {
+    throw new BadRequestException({
+      code: 'BILLING_ADMIN_METADATA_CONFLICT',
+      msg: `Billing price metadata "${key}" must be "${expected}".`,
+    });
+  }
 }
 
 function assertProviderBindingReady(
@@ -4330,12 +5440,18 @@ function providerEventErrorMessage(err: unknown): string {
 }
 
 function isProviderEventAlreadyProcessedError(err: unknown): boolean {
-  if (!isRecord(err) || typeof err.getResponse !== 'function') return false;
-  const response = err.getResponse() as unknown;
+  if (!hasExceptionResponse(err)) return false;
+  const response = err.getResponse();
   return (
     isRecord(response) &&
     response.code === 'BILLING_PROVIDER_EVENT_ALREADY_PROCESSED'
   );
+}
+
+function hasExceptionResponse(
+  err: unknown,
+): err is { getResponse: () => unknown } {
+  return isRecord(err) && typeof err.getResponse === 'function';
 }
 
 function isUuid(value: string): boolean {
@@ -4375,6 +5491,120 @@ function isPaymentFailedEvent(
   );
 }
 
+function billingOrderGrantType(order: OrderWithPrice): WalletCreditGrantType {
+  return order.price.grantsPlanKey
+    ? WalletCreditGrantType.membership_included
+    : WalletCreditGrantType.purchase_topup;
+}
+
+async function reverseWalletCreditGrantForRefundTx(
+  tx: Prisma.TransactionClient,
+  input: {
+    accountId: string;
+    order: OrderWithPrice;
+    refund: BillingRefund;
+    transactionId: string;
+    ledgerEntryId: string;
+    amount: bigint;
+  },
+) {
+  let remaining = input.amount;
+  const grants = await tx.walletCreditGrant.findMany({
+    where: {
+      accountId: input.accountId,
+      sourceType: 'billing_order',
+      sourceId: input.order.id,
+      status: WalletCreditGrantStatus.active,
+      availableAmount: { gt: 0n },
+    },
+    orderBy: [
+      { expiresAt: { sort: 'asc', nulls: 'last' } },
+      { priority: 'asc' },
+      { createdAt: 'asc' },
+      { id: 'asc' },
+    ],
+  });
+
+  for (const grant of grants) {
+    if (remaining <= 0n) break;
+    const take =
+      grant.availableAmount < remaining ? grant.availableAmount : remaining;
+    const nextAvailable = grant.availableAmount - take;
+    const nextReversed = grant.reversedAmount + take;
+    await tx.walletCreditGrant.update({
+      where: { id: grant.id },
+      data: {
+        availableAmount: nextAvailable,
+        reversedAmount: nextReversed,
+        status: walletCreditGrantStatusAfter({
+          totalAmount: grant.totalAmount,
+          availableAmount: nextAvailable,
+          heldAmount: grant.heldAmount,
+          consumedAmount: grant.consumedAmount,
+          expiredAmount: grant.expiredAmount,
+          reversedAmount: nextReversed,
+        }),
+      },
+    });
+    await tx.walletCreditAllocation.create({
+      data: {
+        grantId: grant.id,
+        transactionId: input.transactionId,
+        ledgerEntryId: input.ledgerEntryId,
+        amount: take,
+        availableDelta: -take,
+        heldDelta: 0n,
+        consumedDelta: 0n,
+        expiredDelta: 0n,
+        reversedDelta: take,
+      },
+    });
+    remaining -= take;
+  }
+
+  if (remaining > 0n) {
+    throw new ConflictException({
+      code: 'BILLING_REFUND_WALLET_GRANT_CONSUMED',
+      msg: 'Refund is blocked because the granted credits from this order have already been consumed.',
+      refundNo: input.refund.refundNo,
+      orderNo: input.order.orderNo,
+      requiredAmount: input.amount.toString(),
+      unavailableAmount: remaining.toString(),
+    });
+  }
+}
+
+function defaultGrantPriority(
+  grantType: WalletCreditGrantType,
+  expiresAt: Date | null,
+): number {
+  if (expiresAt) return 10;
+  if (grantType === WalletCreditGrantType.membership_included) return 20;
+  if (grantType === WalletCreditGrantType.check_in_reward) return 30;
+  if (grantType === WalletCreditGrantType.campaign_reward) return 40;
+  if (grantType === WalletCreditGrantType.admin_adjustment) return 80;
+  if (grantType === WalletCreditGrantType.purchase_topup) return 100;
+  return 120;
+}
+
+function walletCreditGrantStatusAfter(input: {
+  totalAmount: bigint;
+  availableAmount: bigint;
+  heldAmount: bigint;
+  consumedAmount: bigint;
+  expiredAmount: bigint;
+  reversedAmount: bigint;
+}): WalletCreditGrantStatus {
+  if (input.availableAmount > 0n || input.heldAmount > 0n) {
+    return WalletCreditGrantStatus.active;
+  }
+  if (input.expiredAmount > 0n) return WalletCreditGrantStatus.expired;
+  if (input.reversedAmount === input.totalAmount) {
+    return WalletCreditGrantStatus.reversed;
+  }
+  return WalletCreditGrantStatus.exhausted;
+}
+
 function grantEndsAt(now: Date, days: number | null): Date | null {
   if (!days) return null;
   return new Date(now.getTime() + days * 24 * 60 * 60 * 1000);
@@ -4383,7 +5613,7 @@ function grantEndsAt(now: Date, days: number | null): Date | null {
 function buildBillingItemCode(input: CreateAdminBillingPriceInput): string {
   const prefixes: Record<string, string> = {
     community_point_pack: 'COMMUNITY_POINT',
-    bubble_pack: 'BUBBLE',
+    compute_point_pack: 'COMPUTE_POINT',
     membership_plan: 'MEMBERSHIP',
     team_membership_plan: 'TEAM_MEMBERSHIP',
   };
@@ -4450,6 +5680,53 @@ function stringAt(
     current = current[key];
   }
   return typeof current === 'string' && current.trim() ? current : null;
+}
+
+function valueAt(value: Record<string, unknown>, path: string[]): unknown {
+  let current: unknown = value;
+  for (const key of path) {
+    if (!isRecord(current)) return undefined;
+    current = current[key];
+  }
+  return current;
+}
+
+function providerPaidAmountMinorFromPayload(
+  payload: Record<string, unknown>,
+): bigint | null {
+  const candidatePaths = [
+    ['data', 'amount_paid'],
+    ['data', 'paid_amount'],
+    ['data', 'total_amount'],
+    ['data', 'amount_due'],
+    ['data', 'amount'],
+    ['data', 'invoice', 'amount_paid'],
+    ['data', 'invoice', 'paid_amount'],
+    ['data', 'invoice', 'total_amount'],
+  ];
+  for (const path of candidatePaths) {
+    const amount = majorAmountToMinor(valueAt(payload, path));
+    if (amount !== null) return amount;
+  }
+  return null;
+}
+
+function majorAmountToMinor(value: unknown): bigint | null {
+  if (typeof value === 'number') {
+    if (!Number.isFinite(value) || value < 0) return null;
+    return BigInt(Math.round(value * 100));
+  }
+  if (typeof value !== 'string') return null;
+  const normalized = value.trim();
+  const match = /^(\d+)(?:\.(\d+))?$/.exec(normalized);
+  if (!match) return null;
+  const whole = BigInt(match[1]);
+  const fraction = match[2] ?? '';
+  if (fraction.length > 2 && /[1-9]/.test(fraction.slice(2))) {
+    return null;
+  }
+  const cents = BigInt(fraction.slice(0, 2).padEnd(2, '0') || '0');
+  return whole * 100n + cents;
 }
 
 function dateAt(value: Record<string, unknown>, path: string[]): Date | null {

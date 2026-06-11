@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { IconUpload, IconLoader2, IconX } from "@tabler/icons-react";
+import { IconUpload, IconLoader2, IconX, IconRefresh } from "@tabler/icons-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import {
@@ -17,7 +17,11 @@ import { Field, FieldDescription, FieldLabel } from "@/components/ui/field";
 import { VideoPlayer } from "@/components/media/video-player";
 import { useTranslations } from "@/src/i18n/i18n";
 import { cn } from "@/lib/utils";
-import { uploadEpisodeCover, uploadEpisodeVideo } from "@/app/(site)/ips/_hooks/uploads";
+import {
+  isUploadAbort,
+  uploadEpisodeCover,
+  uploadEpisodeVideo,
+} from "@/app/(site)/ips/_hooks/uploads";
 import { useEpisodeVideoLink } from "@/app/(site)/ips/_hooks/use-ip";
 
 // Episode-specific Van Gogh artwork on the static CDN.
@@ -29,17 +33,24 @@ export interface EpisodeDraft {
   title: string;
   description: string;
   /** Wire-format string — what the backend persists as `videoLink`. For
-   *  newly-uploaded files this is the OSS object key returned by the
-   *  signed-upload pipeline. For existing episodes loaded for edit, this
+   *  newly-uploaded files this is the storage object key returned by the
+   *  direct-to-storage pipeline. For existing episodes loaded for edit, this
    *  is the opaque value pulled off the list response and round-tripped
    *  unchanged so non-video edits don't null the attachment. */
   videoLink: string;
+  /** MediaAsset id for a freshly-uploaded video (server-owned save path).
+   *  Empty for existing episodes / before upload. Threaded through so the
+   *  future server-side save can reconcile-and-link by id rather than key. */
+  videoAssetId: string;
   /** Display-only playable URL (blob: while uploading, full URL fetched
    *  via `useEpisodeVideoLink` when editing existing episodes, or the
    *  sample fixture URL). Never sent to the backend — `videoLink` is. */
   videoUrl: string;
   /** Wire-format OSS object key — sent on save as `videoBanner`. */
   videoBanner: string;
+  /** MediaAsset id for a freshly-uploaded cover (server-owned save path).
+   *  Empty for existing episodes / before upload. */
+  coverAssetId: string;
   /** Display-only image URL for the `<img>` preview (blob: during upload,
    *  `ipImageUrl(videoBanner)` for existing episodes, or sample URL).
    *  Never sent to the backend. */
@@ -57,8 +68,10 @@ const EMPTY_DRAFT: EpisodeDraft = {
   title: "",
   description: "",
   videoLink: "",
+  videoAssetId: "",
   videoUrl: "",
   videoBanner: "",
+  coverAssetId: "",
   coverUrl: "",
   duration: 0,
   width: 0,
@@ -144,6 +157,9 @@ export function EpisodeDialog({
   const [probing, setProbing] = useState(false);
   const [uploadingVideo, setUploadingVideo] = useState(false);
   const [uploadingCover, setUploadingCover] = useState(false);
+  // 0–100 while the PUT streams bytes; null when no upload is in flight.
+  const [videoProgress, setVideoProgress] = useState<number | null>(null);
+  const [coverProgress, setCoverProgress] = useState<number | null>(null);
   const [videoDragOver, setVideoDragOver] = useState(false);
   const [coverDragOver, setCoverDragOver] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -158,6 +174,15 @@ export function EpisodeDialog({
   const coverInputRef = useRef<HTMLInputElement>(null);
   const fileObjectUrlRef = useRef<string>("");
   const coverObjectUrlRef = useRef<string>("");
+  // Hold the abort controller per slot so the cancel/delete button can
+  // abort the in-flight PUT.
+  const videoAbortRef = useRef<AbortController | null>(null);
+  const coverAbortRef = useRef<AbortController | null>(null);
+  // Hold the selected File in STATE (not a ref): render reads it for the
+  // Retry-button visibility + the cover overlay's byte readout, so it must
+  // trigger re-render. Powers inline retry without making the user re-pick.
+  const [videoFile, setVideoFile] = useState<File | null>(null);
+  const [coverFile, setCoverFile] = useState<File | null>(null);
 
   useEffect(() => {
     if (open) {
@@ -166,6 +191,10 @@ export function EpisodeDialog({
       setSubmitting(false);
       setVideoError(null);
       setCoverError(null);
+      setVideoProgress(null);
+      setCoverProgress(null);
+      setVideoFile(null);
+      setCoverFile(null);
     }
   }, [open, initial]);
 
@@ -207,11 +236,15 @@ export function EpisodeDialog({
     };
   }, [open, draft.videoUrl, draft.duration]);
 
-  // Revoke any object URLs we created when dialog closes.
+  // Revoke any object URLs + abort any in-flight uploads when the dialog
+  // unmounts (covers tab close / navigation mid-upload). Aborting is safe
+  // by construction — the asset row stays `uploading` and gets GC'd.
   useEffect(() => {
     return () => {
       if (fileObjectUrlRef.current) URL.revokeObjectURL(fileObjectUrlRef.current);
       if (coverObjectUrlRef.current) URL.revokeObjectURL(coverObjectUrlRef.current);
+      videoAbortRef.current?.abort();
+      coverAbortRef.current?.abort();
     };
   }, []);
 
@@ -247,39 +280,87 @@ export function EpisodeDialog({
       toast.error(t("epFileTooLarge"));
       return;
     }
+    // Stash the File so inline retry can re-run without a re-pick.
+    setVideoFile(file);
     // Probe metadata + grab a thumbnail off the local blob first so the UI
     // updates immediately. The blob URL stays in `videoUrl` (display) for
     // the lifetime of the dialog, even after upload completes — `videoLink`
-    // (wire) is what swaps to the OSS object key.
+    // (wire) is what swaps to the storage object key.
     if (fileObjectUrlRef.current) URL.revokeObjectURL(fileObjectUrlRef.current);
     const localUrl = URL.createObjectURL(file);
     fileObjectUrlRef.current = localUrl;
     setVideoError(null);
-    update({ videoUrl: localUrl, videoLink: "", size: file.size });
+    setVideoProgress(0);
+    update({ videoUrl: localUrl, videoLink: "", videoAssetId: "", size: file.size });
     void probeAndApply(localUrl);
 
+    const controller = new AbortController();
+    videoAbortRef.current = controller;
     setUploadingVideo(true);
     try {
-      const uploaded = await uploadEpisodeVideo(file, { projectId, videoId: episodeId });
-      update({ videoLink: uploaded.path });
+      const uploaded = await uploadEpisodeVideo(
+        file,
+        { projectId, videoId: episodeId },
+        { onProgress: setVideoProgress, signal: controller.signal }
+      );
+      // Persist the storage key (legacy Java save reads `videoLink`) and
+      // the MediaAsset id (server-owned save path).
+      update({ videoLink: uploaded.path, videoAssetId: uploaded.mediaAssetId });
       toast.success(tc("uploadSuccess"));
     } catch (err) {
+      // User-initiated cancel is NOT a failure — the slot was already
+      // reset by handleCancelVideo; stay quiet (no error toast / inline error).
+      if (isUploadAbort(err)) return;
       // Failure path: scrub the blob preview so the slot visibly returns to
       // the empty dropzone — without this the played-back video looks
       // identical to a successful upload, and the user only finds out at
-      // Save time that nothing landed in OSS. Persistent inline error
-      // survives the toast disappearing.
+      // Save time that nothing landed in storage. Persistent inline error
+      // survives the toast disappearing; the stored File powers Retry.
       const message = err instanceof Error && err.message ? err.message : tc("uploadFailed");
       if (fileObjectUrlRef.current) {
         URL.revokeObjectURL(fileObjectUrlRef.current);
         fileObjectUrlRef.current = "";
       }
-      update({ videoUrl: "", videoLink: "", duration: 0, width: 0, height: 0, size: 0 });
+      update({
+        videoUrl: "",
+        videoLink: "",
+        videoAssetId: "",
+        duration: 0,
+        width: 0,
+        height: 0,
+        size: 0,
+      });
       setVideoError(message);
       toast.error(message);
     } finally {
       setUploadingVideo(false);
+      setVideoProgress(null);
+      if (videoAbortRef.current === controller) videoAbortRef.current = null;
     }
+  };
+
+  // Cancel an in-flight video upload (or clear a finished one). Aborting
+  // the controller resolves the XHR's onabort → handleVideoFile returns
+  // quietly; here we reset the slot to its empty state.
+  const handleCancelVideo = () => {
+    videoAbortRef.current?.abort();
+    videoAbortRef.current = null;
+    setVideoFile(null);
+    if (fileObjectUrlRef.current) {
+      URL.revokeObjectURL(fileObjectUrlRef.current);
+      fileObjectUrlRef.current = "";
+    }
+    setVideoError(null);
+    setVideoProgress(null);
+    update({ videoUrl: "", videoLink: "", videoAssetId: "", duration: 0 });
+  };
+
+  // Re-run the last attempt with the stored File — covers transient
+  // failures and signed-URL expiry (a fresh URL is requested transparently).
+  const handleRetryVideo = () => {
+    if (!videoFile) return;
+    setVideoError(null);
+    void handleVideoFile(videoFile);
   };
 
   const handleCoverFile = async (file: File) => {
@@ -291,19 +372,29 @@ export function EpisodeDialog({
       toast.error(t("epCoverTooLarge"));
       return;
     }
+    setCoverFile(file);
     if (coverObjectUrlRef.current) URL.revokeObjectURL(coverObjectUrlRef.current);
     const localUrl = URL.createObjectURL(file);
     coverObjectUrlRef.current = localUrl;
     setCoverError(null);
-    update({ coverUrl: localUrl, videoBanner: "" });
+    setCoverProgress(0);
+    update({ coverUrl: localUrl, videoBanner: "", coverAssetId: "" });
 
+    const controller = new AbortController();
+    coverAbortRef.current = controller;
     setUploadingCover(true);
     try {
-      const uploaded = await uploadEpisodeCover(file, { projectId, videoId: episodeId });
-      // Persist the OSS path; UI keeps using the blob preview until then.
-      update({ videoBanner: uploaded.path });
+      const uploaded = await uploadEpisodeCover(
+        file,
+        { projectId, videoId: episodeId },
+        { onProgress: setCoverProgress, signal: controller.signal }
+      );
+      // Persist the storage key (legacy Java save reads `videoBanner`) and
+      // the MediaAsset id (server-owned save path). UI keeps the blob preview.
+      update({ videoBanner: uploaded.path, coverAssetId: uploaded.mediaAssetId });
       toast.success(tc("uploadSuccess"));
     } catch (err) {
+      if (isUploadAbort(err)) return;
       // See handleVideoFile — scrub preview + persist inline error so the
       // slot truly reflects "nothing got saved".
       const message = err instanceof Error && err.message ? err.message : tc("uploadFailed");
@@ -311,12 +402,33 @@ export function EpisodeDialog({
         URL.revokeObjectURL(coverObjectUrlRef.current);
         coverObjectUrlRef.current = "";
       }
-      update({ coverUrl: "", videoBanner: "" });
+      update({ coverUrl: "", videoBanner: "", coverAssetId: "" });
       setCoverError(message);
       toast.error(message);
     } finally {
       setUploadingCover(false);
+      setCoverProgress(null);
+      if (coverAbortRef.current === controller) coverAbortRef.current = null;
     }
+  };
+
+  const handleCancelCover = () => {
+    coverAbortRef.current?.abort();
+    coverAbortRef.current = null;
+    setCoverFile(null);
+    if (coverObjectUrlRef.current) {
+      URL.revokeObjectURL(coverObjectUrlRef.current);
+      coverObjectUrlRef.current = "";
+    }
+    setCoverError(null);
+    setCoverProgress(null);
+    update({ coverUrl: "", videoBanner: "", coverAssetId: "" });
+  };
+
+  const handleRetryCover = () => {
+    if (!coverFile) return;
+    setCoverError(null);
+    void handleCoverFile(coverFile);
   };
 
   const handleSave = async () => {
@@ -424,21 +536,30 @@ export function EpisodeDialog({
                       "[&_.vjs-picture-in-picture-control]:hidden!"
                     )}
                   />
-                  {/* Overlay while OSS upload is still in flight — without
+                  {/* Overlay while the upload is still in flight — without
                       this the local blob preview reads as "done" the
                       instant the user picks the file, even though wire
-                      `videoLink` won't land until the PUT returns. */}
+                      `videoLink` won't land until the PUT returns. Now a
+                      determinate bar with real %, byte readout, and Cancel. */}
                   {uploadingVideo && (
-                    <div className="absolute inset-0 z-20 flex flex-col items-center justify-center gap-1.5 bg-black/55 text-white">
-                      <IconLoader2 className="size-5 animate-spin" />
-                      <span className="text-[11px] font-medium">{tc("uploading")}</span>
-                    </div>
+                    <UploadOverlay
+                      progress={videoProgress}
+                      loaded={draft.size}
+                      label={tc("uploading")}
+                      cancelLabel={tc("cancel")}
+                      onCancel={handleCancelVideo}
+                    />
                   )}
+                  {/* While uploading the X button cancels; once done it clears. */}
                   <button
                     type="button"
-                    onClick={() => update({ videoUrl: "", videoLink: "", duration: 0 })}
-                    disabled={uploadingVideo}
-                    className="absolute right-1.5 top-1.5 z-30 inline-flex size-6 items-center justify-center rounded-full bg-black/60 text-white hover:bg-black/80 disabled:cursor-not-allowed disabled:opacity-40"
+                    onClick={
+                      uploadingVideo
+                        ? handleCancelVideo
+                        : () =>
+                            update({ videoUrl: "", videoLink: "", videoAssetId: "", duration: 0 })
+                    }
+                    className="absolute right-1.5 top-1.5 z-30 inline-flex size-6 items-center justify-center rounded-full bg-black/60 text-white hover:bg-black/80"
                   >
                     <IconX className="size-3.5" />
                   </button>
@@ -503,7 +624,19 @@ export function EpisodeDialog({
                 }}
               />
               {videoError ? (
-                <p className="text-[11px] text-destructive">{videoError}</p>
+                <div className="flex items-center gap-2">
+                  <p className="text-[11px] text-destructive">{videoError}</p>
+                  {videoFile && (
+                    <button
+                      type="button"
+                      onClick={handleRetryVideo}
+                      className="inline-flex items-center gap-1 text-[11px] font-medium text-primary hover:underline"
+                    >
+                      <IconRefresh className="size-3" />
+                      {tc("retry")}
+                    </button>
+                  )}
+                </div>
               ) : (
                 <FieldDescription>{t("epVideoHelp")}</FieldDescription>
               )}
@@ -520,16 +653,22 @@ export function EpisodeDialog({
                       about upload completion just because the local blob
                       paints instantly. */}
                   {uploadingCover && (
-                    <div className="absolute inset-0 z-20 flex flex-col items-center justify-center gap-1.5 bg-black/55 text-white">
-                      <IconLoader2 className="size-5 animate-spin" />
-                      <span className="text-[11px] font-medium">{tc("uploading")}</span>
-                    </div>
+                    <UploadOverlay
+                      progress={coverProgress}
+                      loaded={coverFile?.size ?? 0}
+                      label={tc("uploading")}
+                      cancelLabel={tc("cancel")}
+                      onCancel={handleCancelCover}
+                    />
                   )}
                   <button
                     type="button"
-                    onClick={() => update({ coverUrl: "", videoBanner: "" })}
-                    disabled={uploadingCover}
-                    className="absolute right-1.5 top-1.5 z-30 inline-flex size-6 items-center justify-center rounded-full bg-black/60 text-white hover:bg-black/80 disabled:cursor-not-allowed disabled:opacity-40"
+                    onClick={
+                      uploadingCover
+                        ? handleCancelCover
+                        : () => update({ coverUrl: "", videoBanner: "", coverAssetId: "" })
+                    }
+                    className="absolute right-1.5 top-1.5 z-30 inline-flex size-6 items-center justify-center rounded-full bg-black/60 text-white hover:bg-black/80"
                   >
                     <IconX className="size-3.5" />
                   </button>
@@ -582,7 +721,19 @@ export function EpisodeDialog({
                 }}
               />
               {coverError ? (
-                <p className="text-[11px] text-destructive">{coverError}</p>
+                <div className="flex items-center gap-2">
+                  <p className="text-[11px] text-destructive">{coverError}</p>
+                  {coverFile && (
+                    <button
+                      type="button"
+                      onClick={handleRetryCover}
+                      className="inline-flex items-center gap-1 text-[11px] font-medium text-primary hover:underline"
+                    >
+                      <IconRefresh className="size-3" />
+                      {tc("retry")}
+                    </button>
+                  )}
+                </div>
               ) : (
                 <FieldDescription>{t("epCoverHelp")}</FieldDescription>
               )}
@@ -610,6 +761,63 @@ export function EpisodeDialog({
       </DialogContent>
     </Dialog>
   );
+}
+
+/**
+ * In-flight upload overlay: determinate progress bar + byte/percent
+ * readout + an explicit Cancel. `progress` is null until the first
+ * onprogress event fires (or when total is unknown) — show an
+ * indeterminate state then, never a misleading 0%.
+ */
+function UploadOverlay({
+  progress,
+  loaded,
+  label,
+  cancelLabel,
+  onCancel,
+}: {
+  progress: number | null;
+  loaded: number;
+  label: string;
+  cancelLabel: string;
+  onCancel: () => void;
+}) {
+  const pct = progress ?? 0;
+  const determinate = progress !== null;
+  return (
+    <div className="absolute inset-0 z-20 flex flex-col items-center justify-center gap-2 bg-black/65 px-3 text-white">
+      <span className="text-[11px] font-medium">{label}</span>
+      <div className="h-1.5 w-full max-w-[120px] overflow-hidden rounded-full bg-white/25">
+        <div
+          className={cn(
+            "h-full rounded-full bg-white transition-[width] duration-200",
+            !determinate && "w-1/3 animate-pulse"
+          )}
+          style={determinate ? { width: `${pct}%` } : undefined}
+        />
+      </div>
+      <span className="text-[10px] tabular-nums text-white/90">
+        {determinate
+          ? `${formatBytes((loaded * pct) / 100)} / ${formatBytes(loaded)} · ${pct}%`
+          : formatBytes(loaded)}
+      </span>
+      <button
+        type="button"
+        onClick={onCancel}
+        className="mt-0.5 rounded-full bg-white/15 px-2.5 py-0.5 text-[10px] font-medium hover:bg-white/25"
+      >
+        {cancelLabel}
+      </button>
+    </div>
+  );
+}
+
+function formatBytes(bytes: number): string {
+  if (!Number.isFinite(bytes) || bytes <= 0) return "0 B";
+  const units = ["B", "KB", "MB", "GB"];
+  const i = Math.min(units.length - 1, Math.floor(Math.log(bytes) / Math.log(1024)));
+  const value = bytes / Math.pow(1024, i);
+  return `${value.toFixed(i === 0 ? 0 : 1)} ${units[i]}`;
 }
 
 function formatDuration(seconds: number): string {

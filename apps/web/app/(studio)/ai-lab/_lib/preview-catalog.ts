@@ -49,10 +49,10 @@ const imageModel: AiLabModel = {
   },
   cost_estimate: {
     billingMode: "request",
-    currency: "BUBBLES",
+    currency: "COMPUTE_POINTS",
     meters: [{ meter: "request", unit: "request", pricePerUnitUsd: 0 }],
     supportsPreflightEstimate: true,
-    finalCostSource: "fixed_table",
+    finalCostSource: "product_pricing",
   },
   observability: {
     requestId: { jobField: "id" },
@@ -85,11 +85,22 @@ const imageModel: AiLabModel = {
   entitlement: { requiredPlan: null },
   billing_policy: {
     mode: "charge",
-    unit: "bubble",
-    displayCurrency: "BUBBLES",
+    unit: "compute_point",
+    displayCurrency: "COMPUTE_POINTS",
     preflightCost: 1,
-    finalCostSource: "fixed_table",
+    finalCostSource: "product_pricing",
     refundPolicy: "refund_on_final_failure",
+    productPricing: {
+      mode: "fixed_per_output",
+      version: "ai-lab-preview-image-fixed-points-v1",
+      currency: "COMPUTE_POINTS",
+      pointsPerOutput: 1,
+      defaultOutputCount: 1,
+      minOutputCount: 1,
+      maxOutputCount: 4,
+      minimumPoints: 1,
+      roundTo: 1,
+    },
   },
   queue_policy: {
     queueName: "ai-image-generation",
@@ -100,7 +111,6 @@ const imageModel: AiLabModel = {
     maxProviderRuntimeSeconds: 600,
   },
   entitlement_policy: { requiredPlan: null },
-  region_policy: { allowedCells: ["global", "cn"] },
   ui_policy: {
     defaultMode: "simple",
     simplePresetIds: ["image.fast", "image.standard", "image.professional"],
@@ -253,11 +263,22 @@ const videoModel: AiLabModel = {
   },
   billing_policy: {
     mode: "charge",
-    unit: "bubble",
-    displayCurrency: "BUBBLES",
+    unit: "compute_point",
+    displayCurrency: "COMPUTE_POINTS",
     preflightCost: 20,
-    finalCostSource: "fixed_table",
+    finalCostSource: "product_pricing",
     refundPolicy: "refund_on_final_failure",
+    productPricing: {
+      mode: "fixed_per_output",
+      version: "ai-lab-preview-video-fixed-points-v1",
+      currency: "COMPUTE_POINTS",
+      pointsPerOutput: 20,
+      defaultOutputCount: 1,
+      minOutputCount: 1,
+      maxOutputCount: 1,
+      minimumPoints: 20,
+      roundTo: 1,
+    },
   },
   queue_policy: {
     queueName: "ai-video-generation",
@@ -346,11 +367,6 @@ export function previewCatalog(): AiLabCatalog {
     dialect: AI_MODEL_PROTOCOL_DIALECT,
     version: "preview-2026-05-27",
     region: "preview",
-    context: {
-      cell: "global",
-      country: "local",
-      ip: { source: "manual", confidence: "low" },
-    },
     campaigns: [
       {
         campaignId: "opc-creator-preview",
@@ -394,8 +410,8 @@ export function previewCatalog(): AiLabCatalog {
         sortOrder: 15,
         billingPolicy: {
           mode: "free",
-          unit: "bubble",
-          displayCurrency: "BUBBLES",
+          unit: "compute_point",
+          displayCurrency: "COMPUTE_POINTS",
           preflightCost: 0,
           finalCostSource: "campaign",
           refundPolicy: "no_refund",

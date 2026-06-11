@@ -11,14 +11,11 @@ import {
 import { ProjectMemberRole, WorkspaceMemberRole } from '@prisma/client';
 import { randomUUID } from 'crypto';
 import type { AuthUser } from '../auth';
-import { newShortId } from '../common/id';
-import { GeoPolicyService, type RequestGeoContext } from '../common/region';
-import { EntitlementService, type EntitlementSnapshot } from '../entitlements';
-import { QuotaService } from '../quota/quota.service';
-import type { QuotaDimension } from '../quota/quota.types';
-import type { Tier } from '../quota/tiers.config';
+import { newUuidV7 } from '../common/id';
+import { EntitlementService } from '../entitlements';
 import { WorkspacesService, WorkspacePermissionService } from '../workspaces';
 import { AiGenerationAuthzService } from './authz.service';
+import { AiGenerationBillingWalletService } from './billing-wallet.service';
 import { AiGenerationEtaService } from './eta.service';
 import {
   AiGenerationRepository,
@@ -26,9 +23,12 @@ import {
 } from './repository';
 import { AiGenerationOutboxService } from './outbox.service';
 import { ProviderRegistry } from './provider-registry.service';
+import { ProviderCapacityRuntimeService } from './provider-capacity-runtime.service';
+import { AiPromptCompilerService } from './prompt-compiler.service';
 import { AiGenerationQueueService } from './queue.service';
 import { AiGenerationRoutingService } from './routing.service';
 import { AiGenerationValidatorService } from './validator.service';
+import { AiCanonicalCatalogService } from './canonical-catalog.service';
 import { AI_MODEL_PROTOCOL_DIALECT } from './types';
 import type {
   AiModelCatalogResponse,
@@ -48,21 +48,12 @@ const TERMINAL_STATUSES = new Set([
   'expired',
 ]);
 
-interface QuotaRefundToken {
-  userId: string;
-  tier: Tier;
-  dimension: QuotaDimension;
-  cost: number;
-  idempotencyKey: string;
-}
-
 interface AiJobContext {
   workspaceId: string;
   projectId?: string;
   documentId?: string;
   documentBlockId?: string;
   sourceSurface?: string;
-  siteRegion: string;
 }
 
 @Injectable()
@@ -71,6 +62,7 @@ export class AiGenerationService {
 
   constructor(
     private readonly providers: ProviderRegistry,
+    private readonly catalog: AiCanonicalCatalogService,
     private readonly authz: AiGenerationAuthzService,
     private readonly validator: AiGenerationValidatorService,
     private readonly store: AiGenerationRepository,
@@ -78,11 +70,12 @@ export class AiGenerationService {
     private readonly outbox: AiGenerationOutboxService,
     private readonly queue: AiGenerationQueueService,
     private readonly routing: AiGenerationRoutingService,
-    private readonly quota: QuotaService,
-    private readonly geoPolicy: GeoPolicyService,
     private readonly workspaces: WorkspacesService,
     private readonly workspacePermissions: WorkspacePermissionService,
     private readonly entitlements: EntitlementService,
+    private readonly billingWallet: AiGenerationBillingWalletService,
+    private readonly providerCapacity: ProviderCapacityRuntimeService,
+    private readonly promptCompiler: AiPromptCompilerService,
   ) {}
 
   /**
@@ -111,45 +104,31 @@ export class AiGenerationService {
     }
   }
 
-  async listModels(user: AuthUser, geo?: RequestGeoContext) {
-    // Fan out across every registered provider. Each adapter returns
-    // its own model definitions; we concat and stamp per-user access.
-    const results = await Promise.all(
-      this.providers.list().map((adapter) => adapter.listModels()),
-    );
-    const models = results.flat();
+  async listModels(user: AuthUser) {
+    // Canonical-model-driven catalog: the control plane is the single
+    // source of truth. One AiModelDefinition per active canonical model,
+    // assembled from its primary active provider binding (no provider fan-out,
+    // no provider-merge). We only stamp per-user access on top.
+    const models = await this.catalog.listModels();
     const entitlement = this.entitlements.resolveForUser(user);
     return models.map((model) => {
       const access = this.authz.decideModelAccess(entitlement, model);
-      const geoDecision = geo
-        ? this.geoPolicy.evaluate(model.region_policy, geo)
-        : { allowed: true };
       return {
         ...model,
-        enabled: model.enabled && geoDecision.allowed,
-        disabledReason:
-          model.disabledReason ??
-          (!geoDecision.allowed ? geoDecision.reason : undefined),
-        access: {
-          ...access,
-          allowed: access.allowed && geoDecision.allowed,
-          reason: access.reason ?? geoDecision.reason,
-        },
+        enabled: model.enabled,
+        disabledReason: model.disabledReason,
+        access,
       };
     });
   }
 
-  async listCatalog(
-    user: AuthUser,
-    geo?: RequestGeoContext,
-  ): Promise<AiModelCatalogResponse> {
-    const models = await this.listModels(user, geo);
-    const presets = this.routing.listPresets(models, geo);
+  async listCatalog(user: AuthUser): Promise<AiModelCatalogResponse> {
+    const models = await this.listModels(user);
+    const presets = this.routing.listPresets(models);
     return {
       dialect: AI_MODEL_PROTOCOL_DIALECT,
       version: '2026-05-26',
       region: process.env.NEXT_PUBLIC_SITE_REGION ?? 'global',
-      context: geo ? this.geoPolicy.snapshot(geo) : undefined,
       presets,
       campaigns: this.routing.listCampaigns(),
       models,
@@ -159,10 +138,10 @@ export class AiGenerationService {
   async submitJob(
     user: AuthUser,
     body: AiSubmitJobBody,
-    geo?: RequestGeoContext,
+    workspaceHeaderId?: string,
   ): Promise<AiSubmitResponse> {
     const now = new Date().toISOString();
-    const context = await this.resolveJobContext(user, body);
+    const context = await this.resolveJobContext(user, body, workspaceHeaderId);
     const entitlement = this.entitlements.resolveForUser(user, {
       workspaceId: context.workspaceId,
       now,
@@ -171,7 +150,6 @@ export class AiGenerationService {
       entitlement,
       body,
       now,
-      geo,
     });
     const { model, provider, snapshot } = decision;
 
@@ -195,15 +173,25 @@ export class AiGenerationService {
 
     const input =
       body.input && typeof body.input === 'object' ? body.input : {};
-    const normalizedInput = this.validator.normalizeInput(
+    const schemaNormalizedInput = this.validator.normalizeInput(
       model.input_schema,
       input,
     );
     // Per-option plan gate (for example, high-resolution renders).
     // Server-side enforcement; the UI already gates these.
-    this.authz.assertCanUseOptions(entitlement, model, normalizedInput);
-    const rawPrompt = normalizedInput.prompt;
-    const prompt = typeof rawPrompt === 'string' ? rawPrompt.trim() : '';
+    this.authz.assertCanUseOptions(entitlement, model, schemaNormalizedInput);
+    const supportsReferenceImages = Boolean(
+      model.input_schema.properties?.referenceImages,
+    );
+    const promptCompilation = this.promptCompiler.compile({
+      normalizedInput: schemaNormalizedInput,
+      rawInput: input,
+      promptDocument: body.promptDocument,
+      references: supportsReferenceImages ? body.referenceBindings : undefined,
+      styles: body.styleBindings,
+    });
+    const normalizedInput = promptCompilation.normalizedInput;
+    const prompt = promptCompilation.snapshot.displayText;
     const idempotencyKey = body.idempotencyKey?.trim() || randomUUID();
 
     const existing = await this.store.findByIdempotency(
@@ -213,21 +201,14 @@ export class AiGenerationService {
     );
     if (existing) return this.toSubmitResponse(existing);
 
-    const quotaRefund = await this.consumeQuotaIfNeeded(
-      user,
-      entitlement,
-      snapshot,
-      idempotencyKey,
-    );
-
     // Generated app-side so we know the id before insert — needed to
     // enqueue BullMQ + emit the optimistic queued push before save()
-    // resolves. Keep it short because this id appears in URLs/logs.
-    const id = newShortId();
+    // resolves. UUIDv7 keeps the durable job id standard, sortable, and
+    // audit-friendly across DB, queues, logs, and provider evidence.
+    const id = newUuidV7();
     const queueName = snapshot.policy.concurrency.queueName;
-    let reservation: ReserveQueuedJobResult;
-    try {
-      reservation = await this.store.reserveQueuedJob({
+    const reservation: ReserveQueuedJobResult =
+      await this.store.reserveQueuedJob({
         userId: user.userId,
         modelId: model.id,
         idempotencyKey,
@@ -236,6 +217,12 @@ export class AiGenerationService {
         perUserQueued: snapshot.policy.concurrency.perUserQueued,
         perUserRunning: snapshot.policy.concurrency.perUserRunning,
         campaignLimit: this.campaignLimitFor(snapshot),
+        beforeCreate: (tx, job) =>
+          this.billingWallet.reserveForJobInTransaction({
+            tx,
+            job,
+            requestIdempotencyKey: idempotencyKey,
+          }),
         buildJob: (queuePosition) => {
           const estimate = this.eta.estimateForNewJob(
             model,
@@ -258,18 +245,25 @@ export class AiGenerationService {
             provider,
             modelId: model.id,
             deployment: model.deployment,
+            canonicalModelId: snapshot.selectedCanonicalModelId ?? null,
+            providerBindingId: snapshot.selectedProviderBindingId ?? null,
             schemaVersion: model.schemaVersion,
             workspaceId: context.workspaceId,
             projectId: context.projectId,
             documentId: context.documentId,
             documentBlockId: context.documentBlockId,
-            siteRegion: context.siteRegion,
             sourceSurface: context.sourceSurface,
             status: 'in_queue',
             stage: 'queued',
             input,
             normalizedInput,
             prompt,
+            promptDocument: promptCompilation.snapshot.promptDocument,
+            promptDisplayText: promptCompilation.snapshot.displayText,
+            promptSearchText: promptCompilation.snapshot.searchText,
+            compiledPrompt: promptCompilation.snapshot.compiledPrompt,
+            referenceSnapshot: promptCompilation.snapshot.references,
+            styleSnapshot: promptCompilation.snapshot.styles,
             idempotencyKey,
             routingSnapshot: snapshot,
             outputs: [],
@@ -289,34 +283,23 @@ export class AiGenerationService {
           };
         },
       });
-    } catch (err) {
-      await this.refundQuotaIfNeeded(quotaRefund, 'ai_job_reserve_failed');
-      throw err;
-    }
 
     if (reservation.kind === 'existing') {
-      await this.refundQuotaIfNeeded(
-        quotaRefund,
-        'ai_job_duplicate_submission',
-      );
       return this.toSubmitResponse(reservation.job);
     }
     if (reservation.kind === 'queued_limit') {
-      await this.refundQuotaIfNeeded(quotaRefund, 'ai_job_queue_limit');
       throw new ConflictException({
         code: 'QUEUE_LIMIT_EXCEEDED',
         msg: `You can queue up to ${reservation.limit} generation task(s).`,
       });
     }
     if (reservation.kind === 'running_limit') {
-      await this.refundQuotaIfNeeded(quotaRefund, 'ai_job_running_limit');
       throw new ConflictException({
         code: 'RATE_LIMITED',
         msg: `You can run up to ${reservation.limit} ${reservation.type} generation task(s) at once.`,
       });
     }
     if (reservation.kind === 'campaign_limit') {
-      await this.refundQuotaIfNeeded(quotaRefund, 'ai_job_campaign_limit');
       throw new HttpException(
         {
           code: 'CAMPAIGN_LIMIT_EXCEEDED',
@@ -333,6 +316,24 @@ export class AiGenerationService {
     }
 
     const job = reservation.job;
+    await this.recordTraceSafe(job, {
+      eventType: 'job_submitted',
+      occurredAt: job.queuedAt ?? job.createdAt,
+      source: 'internal',
+      confidence: 'exact',
+      title: 'Submitted',
+      description: 'Request accepted and waiting for a generation slot.',
+      idempotencyKey: `ai_trace:${job.id}:job_submitted`,
+      payload: {
+        queueName,
+        queuePosition: job.queuePosition,
+        sourceSurface: job.sourceSurface,
+        modelId: job.modelId,
+        selectedProvider: snapshot.selectedProvider,
+        selectedDeployment: snapshot.selectedDeployment,
+        quotaCost: snapshot.policy.quota.cost,
+      },
+    });
     // Hand off to BullMQ. The worker reads the canonical row from DB
     // when it picks the message up, so the payload is just the jobId.
     // Priority is frozen in the routing snapshot so later tier/config
@@ -341,7 +342,7 @@ export class AiGenerationService {
     try {
       await this.queue.enqueue(queueName, id, 0, priority);
     } catch (err) {
-      await this.refundQuotaIfNeeded(quotaRefund, 'ai_job_enqueue_failed');
+      await this.billingWallet.releaseForJob(job, 'ai_job_enqueue_failed');
       const failed = await this.store.update(id, {
         status: 'failed',
         stage: 'failed',
@@ -367,60 +368,6 @@ export class AiGenerationService {
     return this.toSubmitResponse(saved);
   }
 
-  private async consumeQuotaIfNeeded(
-    user: AuthUser,
-    entitlement: EntitlementSnapshot,
-    snapshot: AiRoutingSnapshot,
-    idempotencyKey: string,
-  ): Promise<QuotaRefundToken | null> {
-    const policy = snapshot.policy.quota;
-    if (policy.mode !== 'charge' || policy.cost <= 0) return null;
-
-    const tier = this.entitlements.quotaTierFor(entitlement);
-    const dimension = policy.dimension as QuotaDimension;
-    const result = await this.quota.consume({
-      userId: user.userId,
-      tier,
-      dimension,
-      cost: policy.cost,
-      idempotencyKey,
-      reason: policy.reason,
-      metadata: {
-        routeId: snapshot.routeId,
-        presetId: snapshot.presetId,
-        selectedProvider: snapshot.selectedProvider,
-        selectedModelId: snapshot.selectedModelId,
-        strategy: snapshot.strategy,
-        campaignId: policy.campaignId,
-      },
-    });
-
-    if (!result.ok) {
-      throw new HttpException(
-        {
-          code: 429,
-          error: result.reason,
-          dimension: result.dimension,
-          used: result.used,
-          limit: result.limit,
-          resetAt: result.resetAt,
-          nextTier: result.nextTier,
-          nextTierLimit: result.nextTierLimit,
-        },
-        HttpStatus.TOO_MANY_REQUESTS,
-      );
-    }
-
-    if (result.deduped) return null;
-    return {
-      userId: user.userId,
-      tier,
-      dimension,
-      cost: policy.cost,
-      idempotencyKey,
-    };
-  }
-
   private campaignLimitFor(snapshot: AiRoutingSnapshot):
     | {
         campaignId: string;
@@ -441,24 +388,13 @@ export class AiGenerationService {
     };
   }
 
-  private async refundQuotaIfNeeded(
-    token: QuotaRefundToken | null,
-    reason: string,
-  ): Promise<void> {
-    if (!token) return;
-    await this.quota.refundFor({
-      userId: token.userId,
-      tier: token.tier,
-      dimension: token.dimension,
-      cost: token.cost,
-      idempotencyKey: token.idempotencyKey,
-      reason,
-    });
-  }
-
-  async listJobs(user: AuthUser, query: AiJobListQuery) {
+  async listJobs(
+    user: AuthUser,
+    query: AiJobListQuery,
+    workspaceHeaderId?: string,
+  ) {
     const limit = query.limit ? Number(query.limit) : 50;
-    const scope = await this.resolveListScope(user, query);
+    const scope = await this.resolveListScope(user, query, workspaceHeaderId);
     const jobs = await this.store.listForUser({
       userId: user.userId,
       workspaceId: scope.workspaceId,
@@ -490,6 +426,8 @@ export class AiGenerationService {
       return this.publicJob(job, { detail: true });
 
     await this.cancelProviderJobIfNeeded(job);
+    await this.providerCapacity.release(job);
+    await this.billingWallet.releaseForJob(job, 'ai_job_cancelled');
 
     const now = new Date().toISOString();
     const next = await this.store.update(id, {
@@ -522,29 +460,24 @@ export class AiGenerationService {
     return this.publicJob(updated, { detail: true });
   }
 
-  async retryJob(
-    user: AuthUser,
-    id: string,
-    geo?: RequestGeoContext,
-  ): Promise<AiSubmitResponse> {
+  async retryJob(user: AuthUser, id: string): Promise<AiSubmitResponse> {
     const job = await this.getEditableJob(user, id);
-    return this.submitJob(
-      user,
-      {
-        modelId: job.modelId,
-        presetId: job.routingSnapshot?.presetId,
-        campaignId: job.routingSnapshot?.policy.quota.campaignId,
-        schemaVersion: job.schemaVersion,
-        workspaceId: job.workspaceId ?? undefined,
-        projectId: job.projectId ?? undefined,
-        documentId: job.documentId ?? undefined,
-        documentBlockId: job.documentBlockId ?? undefined,
-        sourceSurface: job.sourceSurface ?? undefined,
-        input: job.normalizedInput,
-        idempotencyKey: randomUUID(),
-      },
-      geo,
-    );
+    return this.submitJob(user, {
+      modelId: job.modelId,
+      presetId: job.routingSnapshot?.presetId,
+      campaignId: job.routingSnapshot?.policy.quota.campaignId,
+      schemaVersion: job.schemaVersion,
+      workspaceId: job.workspaceId ?? undefined,
+      projectId: job.projectId ?? undefined,
+      documentId: job.documentId ?? undefined,
+      documentBlockId: job.documentBlockId ?? undefined,
+      sourceSurface: job.sourceSurface ?? undefined,
+      input: job.normalizedInput,
+      promptDocument: job.promptDocument ?? undefined,
+      referenceBindings: job.referenceSnapshot ?? undefined,
+      styleBindings: job.styleSnapshot ?? undefined,
+      idempotencyKey: randomUUID(),
+    });
   }
 
   private async cancelProviderJobIfNeeded(job: AiJob): Promise<void> {
@@ -553,7 +486,8 @@ export class AiGenerationService {
     try {
       const adapter = this.providers.get(provider);
       if (!adapter.cancelGeneration) return;
-      await adapter.cancelGeneration(job.providerJobId);
+      const providerContext = await this.store.findProviderAttemptContext(job);
+      await adapter.cancelGeneration(job.providerJobId, providerContext);
     } catch (err) {
       this.logger.warn(
         `provider cancel failed for job ${job.id}: ${
@@ -614,8 +548,12 @@ export class AiGenerationService {
   private async resolveJobContext(
     user: AuthUser,
     body: AiSubmitJobBody,
+    workspaceHeaderId?: string,
   ): Promise<AiJobContext> {
-    const workspaceId = body.context?.workspaceId ?? body.workspaceId;
+    const workspaceId = this.resolveWorkspaceScope(
+      workspaceHeaderId,
+      body.context?.workspaceId ?? body.workspaceId,
+    );
     const projectId = body.context?.projectId ?? body.projectId;
     const documentId = body.context?.documentId ?? body.documentId;
     const documentBlockId =
@@ -623,7 +561,6 @@ export class AiGenerationService {
     const sourceSurface = this.normalizeSourceSurface(
       body.context?.sourceSurface ?? body.sourceSurface,
     );
-    const siteRegion = process.env.NEXT_PUBLIC_SITE_REGION ?? 'global';
 
     if (documentId) {
       const document = await this.workspacePermissions.requireDocumentRole(
@@ -649,7 +586,6 @@ export class AiGenerationService {
         documentId: document.id,
         documentBlockId: this.normalizeDocumentBlockId(documentBlockId),
         sourceSurface,
-        siteRegion,
       };
     }
 
@@ -669,7 +605,6 @@ export class AiGenerationService {
         workspaceId: project.workspaceId,
         projectId: project.id,
         sourceSurface,
-        siteRegion,
       };
     }
 
@@ -679,28 +614,34 @@ export class AiGenerationService {
         workspaceId,
         WorkspaceMemberRole.editor,
       );
-      return { workspaceId, sourceSurface, siteRegion };
+      return { workspaceId, sourceSurface };
     }
 
     const workspace = await this.workspaces.ensurePersonalWorkspace(user);
-    return { workspaceId: workspace.id, sourceSurface, siteRegion };
+    return { workspaceId: workspace.id, sourceSurface };
   }
 
   private async resolveListScope(
     user: AuthUser,
     query: AiJobListQuery,
+    workspaceHeaderId?: string,
   ): Promise<{
     workspaceId?: string;
     projectId?: string;
     documentId?: string;
   }> {
+    const workspaceId = this.resolveWorkspaceScope(
+      workspaceHeaderId,
+      query.workspaceId,
+    );
+
     if (query.documentId) {
       const document = await this.workspacePermissions.requireDocumentRole(
         user.userId,
         query.documentId,
         ProjectMemberRole.viewer,
       );
-      if (query.workspaceId && query.workspaceId !== document.workspaceId) {
+      if (workspaceId && workspaceId !== document.workspaceId) {
         throw new BadRequestException({
           code: 'DOCUMENT_WORKSPACE_MISMATCH',
           msg: 'Document does not belong to the selected workspace.',
@@ -725,7 +666,7 @@ export class AiGenerationService {
         query.projectId,
         ProjectMemberRole.viewer,
       );
-      if (query.workspaceId && query.workspaceId !== project.workspaceId) {
+      if (workspaceId && workspaceId !== project.workspaceId) {
         throw new BadRequestException({
           code: 'PROJECT_WORKSPACE_MISMATCH',
           msg: 'Project does not belong to the selected workspace.',
@@ -734,16 +675,33 @@ export class AiGenerationService {
       return { workspaceId: project.workspaceId, projectId: project.id };
     }
 
-    if (query.workspaceId) {
+    if (workspaceId) {
       await this.workspacePermissions.requireWorkspaceRole(
         user.userId,
-        query.workspaceId,
+        workspaceId,
         WorkspaceMemberRole.viewer,
       );
-      return { workspaceId: query.workspaceId };
+      return { workspaceId };
     }
 
     return {};
+  }
+
+  private resolveWorkspaceScope(
+    headerWorkspaceId?: string,
+    explicitWorkspaceId?: string,
+  ): string | undefined {
+    if (
+      headerWorkspaceId &&
+      explicitWorkspaceId &&
+      headerWorkspaceId !== explicitWorkspaceId
+    ) {
+      throw new BadRequestException({
+        code: 'WORKSPACE_SCOPE_MISMATCH',
+        msg: 'Workspace header does not match the request workspace.',
+      });
+    }
+    return headerWorkspaceId ?? explicitWorkspaceId;
   }
 
   private normalizeSourceSurface(
@@ -789,7 +747,6 @@ export class AiGenerationService {
       project_id: job.projectId ?? null,
       document_id: job.documentId ?? null,
       document_block_id: job.documentBlockId ?? null,
-      site_region: job.siteRegion ?? null,
       source_surface: job.sourceSurface ?? null,
       status: job.status,
       stage: job.stage,
@@ -813,7 +770,6 @@ export class AiGenerationService {
       projectId: job.projectId ?? null,
       documentId: job.documentId ?? null,
       documentBlockId: job.documentBlockId ?? null,
-      siteRegion: job.siteRegion ?? null,
       sourceSurface: job.sourceSurface ?? null,
       provider: job.provider,
       modelId: job.modelId,
@@ -835,6 +791,12 @@ export class AiGenerationService {
       estimatedTotalSeconds: job.estimatedTotalSeconds ?? null,
       etaConfidence: job.etaConfidence ?? 'low',
       prompt: job.prompt,
+      promptDocument: job.promptDocument ?? null,
+      promptDisplayText: job.promptDisplayText ?? job.prompt,
+      promptSearchText: job.promptSearchText ?? job.prompt,
+      compiledPrompt: job.compiledPrompt ?? null,
+      referenceSnapshot: job.referenceSnapshot ?? [],
+      styleSnapshot: job.styleSnapshot ?? [],
       // Always include the normalized input so the gallery can render
       // the correct aspect ratio for queued/in-flight cards on reload
       // (output rows don't carry width/height until upload finishes).
@@ -865,5 +827,29 @@ export class AiGenerationService {
         completedAt: job.completedAt,
       },
     };
+  }
+
+  private async recordTraceSafe(
+    job: Pick<AiJob, 'id' | 'provider' | 'deployment' | 'createdAt'>,
+    input: {
+      eventType: string;
+      occurredAt?: string | null;
+      source: string;
+      confidence: string;
+      title?: string | null;
+      description?: string | null;
+      payload?: Record<string, unknown> | null;
+      idempotencyKey?: string | null;
+    },
+  ): Promise<void> {
+    try {
+      await this.store.recordProviderTraceEvent(job, input);
+    } catch (err) {
+      this.logger.warn(
+        `Failed to record AI trace event for job ${job.id}: ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+      );
+    }
   }
 }

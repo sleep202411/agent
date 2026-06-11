@@ -411,7 +411,7 @@ export type UpdateCreatorIpAssetsInput = z.infer<
 export const CreateCreatorIpEpisodeSchema = z
   .object({
     title: z.string().trim().min(1).max(80),
-    summary: z.string().trim().max(280).optional(),
+    summary: z.string().trim().max(800).optional(),
     episodeNo: z.number().int().positive().max(10_000).optional(),
     sortOrder: z.number().int().min(0).max(1_000_000).optional(),
     durationSeconds: z.number().int().positive().max(86_400).optional(),
@@ -429,7 +429,7 @@ export type CreateCreatorIpEpisodeInput = z.infer<
 export const UpdateCreatorIpEpisodeSchema = z
   .object({
     title: z.string().trim().min(1).max(80).optional(),
-    summary: z.string().trim().max(280).optional(),
+    summary: z.string().trim().max(800).optional(),
     episodeNo: z.number().int().positive().max(10_000).optional(),
     sortOrder: z.number().int().min(0).max(1_000_000).optional(),
     durationSeconds: z
@@ -475,6 +475,26 @@ export const UploadCreatorIpMediaQuerySchema = z
   .strict();
 export type UploadCreatorIpMediaQuery = z.infer<
   typeof UploadCreatorIpMediaQuerySchema
+>;
+
+/**
+ * Body for `POST /aurora/ip-commerce/me/ips/:ipId/media`.
+ *
+ * The file no longer streams through the server. The client first uploads
+ * the bytes direct-to-storage via the stateless SAS pipeline
+ * (`/aurora/media/upload-url` → PUT → `/aurora/media/confirm`), which mints
+ * an active MediaAsset and returns its id. This endpoint then ASSOCIATES
+ * that already-confirmed asset with the IP (validating ownership + kind),
+ * never proxying large media through nginx.
+ */
+export const UploadCreatorIpMediaBodySchema = z
+  .object({
+    /** Id of a MediaAsset the caller just confirmed via /aurora/media/confirm. */
+    mediaAssetId: z.string().trim().uuid(),
+  })
+  .strict();
+export type UploadCreatorIpMediaInput = z.infer<
+  typeof UploadCreatorIpMediaBodySchema
 >;
 
 export const ListCreatorIpAssetsQuerySchema = z

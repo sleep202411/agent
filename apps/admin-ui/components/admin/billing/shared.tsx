@@ -713,6 +713,7 @@ export function providerLabel(provider: string) {
   const labels: Record<string, string> = {
     airwallex: "Airwallex",
     wechat_pay: "微信支付",
+    alipay: "支付宝",
     manual: "线下确认",
     internal: "内部发放",
   };
@@ -723,6 +724,7 @@ export function providerHelp(provider: string) {
   const labels: Record<string, string> = {
     airwallex: "国际站支付供应商。用于银行卡、本地支付、订阅、优惠券同步和结算对账。",
     wechat_pay: "中国站支付供应商。只在中国站部署中使用，不和国际站数据库共享。",
+    alipay: "中国站支付供应商。只在中国站部署中使用，不和国际站数据库共享。",
     manual: "后台确认的线下收款或企业转账。不是兑换码，仍然必须走订单、履约、ledger 和审计。",
     internal: "平台内部承担成本的发放，例如迁移补偿、运营赠送或 100% 免费兑换码的零元订单。",
   };
@@ -744,7 +746,7 @@ export function buildBillingItemCode({
 }) {
   const prefixes: Record<string, string> = {
     community_point_pack: "COMMUNITY_POINT",
-    bubble_pack: "BUBBLE",
+    compute_point_pack: "COMPUTE_POINT",
     membership_plan: "MEMBERSHIP",
     team_membership_plan: "TEAM_MEMBERSHIP",
   };
@@ -771,7 +773,7 @@ function sanitizeCodeToken(value: string) {
 export function productTypeLabel(value: string) {
   const labels: Record<string, string> = {
     community_point_pack: "社区积分",
-    bubble_pack: "算力积分",
+    compute_point_pack: "算力积分",
     membership_plan: "会员",
     team_membership_plan: "团队会员",
   };
@@ -781,7 +783,7 @@ export function productTypeLabel(value: string) {
 export function productTypeHelp(value: string) {
   const labels: Record<string, string> = {
     community_point_pack: "购买后发放可消费社区积分；可提现社区积分只能来自创作者收入。",
-    bubble_pack: "购买后发放算力积分，用于 AI 生成等平台能力消耗。",
+    compute_point_pack: "购买后发放算力积分，用于 AI 生成等平台能力消耗。",
     membership_plan: "购买后开通个人会员权益，可按月/年订阅或一次性购买。",
     team_membership_plan: "购买后开通工作区或团队会员权益。",
   };
@@ -841,7 +843,7 @@ export function promotionStatusLabel(value: string) {
 
 export function walletCurrencyLabel(value: string | null) {
   const labels: Record<string, string> = {
-    bubble: "算力积分",
+    compute_point: "算力积分",
     community_point: "社区积分",
   };
   return value ? (labels[value] ?? value) : "钱包";
@@ -945,7 +947,7 @@ export function grantLabel(price: BillingPriceRow) {
 export function currencyLabel(value: string) {
   const labels: Record<string, string> = {
     community_point: "社区积分",
-    bubble: "算力积分",
+    compute_point: "算力积分",
   };
   return labels[value] ?? value;
 }
@@ -962,11 +964,38 @@ export function walletEntryTypeLabel(value: string) {
   const labels: Record<string, string> = {
     credit: "入账",
     debit: "扣款",
+    expire: "过期",
     hold: "冻结",
     release: "释放",
     settle: "结算",
     refund: "退款",
     adjustment: "调整",
+  };
+  return labels[value] ?? value;
+}
+
+export function walletGrantTypeLabel(value: string) {
+  const labels: Record<string, string> = {
+    purchase_topup: "购买充值",
+    membership_included: "会员赠送",
+    check_in_reward: "签到奖励",
+    campaign_reward: "活动奖励",
+    admin_adjustment: "管理员调整",
+    refund_return: "退款返还",
+    migration: "历史迁移",
+    system_grant: "系统赠送",
+    other: "其他",
+  };
+  return labels[value] ?? value;
+}
+
+export function walletGrantStatusLabel(value: string) {
+  const labels: Record<string, string> = {
+    active: "可用",
+    exhausted: "已用尽",
+    expired: "已过期",
+    reversed: "已冲回",
+    voided: "已作废",
   };
   return labels[value] ?? value;
 }

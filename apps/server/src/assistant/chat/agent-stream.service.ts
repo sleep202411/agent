@@ -44,7 +44,7 @@ const CHECKPOINT_MS = 1500;
  * with optional surrounding whitespace/newlines.
  */
 const END_MARKER_REGEX =
-  /\s*(?:[（(\[【<]\s*(?:结束|END|DONE)\s*[)）\]】>])\s*$/gi;
+  /\s*(?:[（(【<[]\s*(?:结束|END|DONE)\s*[)）\]】>])\s*$/gi;
 
 /**
  * Strip the system-injection XML tags that Nest inlines into user messages
@@ -168,8 +168,8 @@ function hasUsableContent(message: StoredMessage | null): boolean {
 function sanitizeMessage(message: StoredMessage): StoredMessage {
   const parts = message.parts;
   if (!Array.isArray(parts)) return message;
-  const cleaned = parts
-    .map((part) => {
+  const cleaned = (parts as unknown[])
+    .map((part): unknown => {
       if (!part || typeof part !== 'object') return part;
       const p = part as { type?: unknown; text?: unknown };
       if (p.type === 'text' && typeof p.text === 'string') {

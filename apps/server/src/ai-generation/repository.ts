@@ -11,15 +11,26 @@
  * is idempotent — same outputIndex resolves to the same row.
  */
 import { Injectable } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
+import {
+  MediaAssetKind,
+  MediaAssetModerationStatus,
+  MediaAssetSource,
+  MediaAssetStatus,
+  MediaAssetVisibility,
+  MediaStorageProvider,
+  Prisma,
+} from '@prisma/client';
 import type {
   AiJobAttempt as AiJobAttemptRow,
+  AiAttemptStatus as AiAttemptStatusRow,
   AiEventOutbox as AiEventOutboxRow,
   AiJob as AiJobRow,
   AiJobOutput as AiJobOutputRow,
+  AiProviderTraceEvent as AiProviderTraceEventRow,
 } from '@prisma/client';
 import { PrismaService } from '../infra/db/db.module';
 import { newShortId } from '../common/id';
+import type { StorageProviderId } from '../infra/storage/storage.types';
 import type {
   AiEtaConfidence,
   AiJobStatus,
@@ -32,6 +43,7 @@ import type {
   AiJobType,
   AiRoutingSnapshot,
 } from './types';
+import type { ProviderAsyncOperationContext } from './provider-adapter';
 
 export interface AiJobListOptions {
   userId: string;
@@ -68,7 +80,88 @@ export interface ReserveQueuedJobOptions {
     perUserLimit?: number;
     totalLimit?: number;
   };
+  beforeCreate?: (tx: Prisma.TransactionClient, job: AiJob) => Promise<void>;
   buildJob: (queuePosition: number) => AiJob;
+}
+
+export interface RecordAiJobAttemptInput {
+  status: AiAttemptStatusRow;
+  providerStatus?: number | null;
+  providerRequestId?: string | null;
+  providerEndpoint?: string | null;
+  queuePosition?: number | null;
+  providerRequest?: Record<string, unknown> | null;
+  providerRequestHeaders?: Record<string, unknown> | null;
+  providerResponse?: unknown;
+  providerResponseHeaders?: Record<string, unknown> | null;
+  providerLogs?: unknown;
+  costAccounting?: Record<string, unknown> | null;
+  pricingSnapshot?: Record<string, unknown> | null;
+  profitAccounting?: Record<string, unknown> | null;
+  timing?: Record<string, unknown> | null;
+  rawStatus?: unknown;
+  error?: AiJobError | null;
+  runDurationMs?: number | null;
+  submittedAt?: string | null;
+  executionStartedAt?: string | null;
+  firstByteAt?: string | null;
+  completedAt?: string | null;
+}
+
+export interface RecordAiCostLedgerEntryInput {
+  attemptId?: string | null;
+  providerBindingId?: string | null;
+  entryType:
+    | 'reservation'
+    | 'charge'
+    | 'refund'
+    | 'provider_cost'
+    | 'adjustment';
+  currency: string;
+  amount: number;
+  internalCredits?: number | null;
+  providerCostUsd?: number | null;
+  listPriceCredits?: number | null;
+  marginUsd?: number | null;
+  pricingSnapshot?: Record<string, unknown> | null;
+  idempotencyKey: string;
+  source: string;
+  metadata?: Record<string, unknown> | null;
+}
+
+export interface RecordAiProviderTraceEventInput {
+  attemptId?: string | null;
+  provider?: string | null;
+  endpointId?: string | null;
+  providerRequestId?: string | null;
+  eventType: string;
+  source: string;
+  confidence: string;
+  occurredAt?: string | null;
+  offsetMs?: number | null;
+  durationMs?: number | null;
+  title?: string | null;
+  description?: string | null;
+  payload?: Record<string, unknown> | null;
+  idempotencyKey?: string | null;
+}
+
+export interface CreateAiOutputAssetInput {
+  type: AiJobType;
+  url: string;
+  storageProvider: StorageProviderId;
+  bucket: string;
+  region: string | null;
+  objectKey: string;
+  contentType: string;
+  sizeBytes: number;
+  width?: number;
+  height?: number;
+  durationSeconds?: number;
+  checksumSha256: string;
+  outputIndex: number;
+  contentHash: string;
+  safetyFlags?: Record<string, unknown>;
 }
 
 /**
@@ -88,7 +181,15 @@ export class OptimisticLockError extends Error {
   }
 }
 
-type JobWithOutputs = AiJobRow & { outputs: AiJobOutputRow[] };
+type AiJobOutputAssetRow = {
+  status: MediaAssetStatus;
+  moderationStatus: MediaAssetModerationStatus;
+  deletedAt: Date | null;
+};
+type AiJobOutputWithAssetRow = AiJobOutputRow & {
+  asset: AiJobOutputAssetRow | null;
+};
+type JobWithOutputs = AiJobRow & { outputs: AiJobOutputWithAssetRow[] };
 type DbClient = PrismaService | Prisma.TransactionClient;
 
 @Injectable()
@@ -214,6 +315,7 @@ export class AiGenerationRepository {
         await this.waitingInQueueWith(tx, options.queueName)
       ).length;
       const job = options.buildJob(queuePosition);
+      await options.beforeCreate?.(tx, job);
       await tx.aiJob.create({ data: this.toRow(job) });
       const repositioned = await this.recomputeQueuePositionsWith(
         tx,
@@ -286,6 +388,237 @@ export class AiGenerationRepository {
     }
     if (patch.outputs) await this.replaceOutputs(id, patch.outputs);
     return this.findById(id);
+  }
+
+  async recordAttempt(
+    job: Pick<AiJob, 'id' | 'attempt'>,
+    input: RecordAiJobAttemptInput,
+  ): Promise<AiJobAttemptRow> {
+    const existing = await this.prisma.aiJobAttempt.findFirst({
+      where: { jobId: job.id, attemptNumber: job.attempt },
+    });
+    const data = this.toAttemptRow(job, input);
+    if (existing) {
+      return this.prisma.aiJobAttempt.update({
+        where: { id: existing.id },
+        data,
+      });
+    }
+    return this.prisma.aiJobAttempt.create({
+      data: {
+        ...data,
+        id: newShortId(),
+        jobId: job.id,
+        attemptNumber: job.attempt,
+        startedAt: new Date(),
+      } as Prisma.AiJobAttemptUncheckedCreateInput,
+    });
+  }
+
+  async findProviderAttemptContext(
+    job: Pick<AiJob, 'id' | 'attempt'>,
+  ): Promise<ProviderAsyncOperationContext | undefined> {
+    const row = await this.prisma.aiJobAttempt.findFirst({
+      where: { jobId: job.id, attemptNumber: job.attempt },
+      select: {
+        providerEndpoint: true,
+        providerRequestId: true,
+        providerRequest: true,
+        providerResponse: true,
+        providerResponseHeaders: true,
+        rawStatus: true,
+      },
+    });
+    if (!row) return undefined;
+    return {
+      providerEndpoint: row.providerEndpoint,
+      providerRequestId: row.providerRequestId,
+      providerRequest: jsonRecordOrNull(row.providerRequest),
+      providerResponse: row.providerResponse,
+      providerResponseHeaders: stringRecordOrNull(row.providerResponseHeaders),
+      rawStatus: row.rawStatus,
+    };
+  }
+
+  async recordCostLedgerEntry(
+    job: Pick<AiJob, 'id' | 'userId' | 'workspaceId'>,
+    input: RecordAiCostLedgerEntryInput,
+  ) {
+    const data: Prisma.AiCostLedgerEntryUncheckedCreateInput = {
+      jobId: job.id,
+      attemptId: input.attemptId ?? null,
+      providerBindingId: input.providerBindingId ?? null,
+      userId: job.userId,
+      workspaceId: job.workspaceId ?? null,
+      entryType: input.entryType,
+      currency: input.currency,
+      amount: input.amount,
+      internalCredits: input.internalCredits ?? null,
+      providerCostUsd: input.providerCostUsd ?? null,
+      listPriceCredits: input.listPriceCredits ?? null,
+      marginUsd: input.marginUsd ?? null,
+      pricingSnapshot:
+        (input.pricingSnapshot as Prisma.InputJsonValue | undefined) ?? {},
+      idempotencyKey: input.idempotencyKey,
+      source: input.source,
+      metadata: (input.metadata as Prisma.InputJsonValue | undefined) ?? {},
+    };
+    return await this.prisma.aiCostLedgerEntry.upsert({
+      where: { idempotencyKey: input.idempotencyKey },
+      create: data,
+      update: {
+        attemptId: data.attemptId,
+        providerBindingId: data.providerBindingId,
+        currency: data.currency,
+        amount: data.amount,
+        internalCredits: data.internalCredits,
+        providerCostUsd: data.providerCostUsd,
+        listPriceCredits: data.listPriceCredits,
+        marginUsd: data.marginUsd,
+        pricingSnapshot: data.pricingSnapshot,
+        source: data.source,
+        metadata: data.metadata,
+      },
+    });
+  }
+
+  async recordProviderTraceEvent(
+    job: Pick<AiJob, 'id' | 'provider' | 'deployment' | 'createdAt'>,
+    input: RecordAiProviderTraceEventInput,
+  ): Promise<AiProviderTraceEventRow> {
+    const occurredAt = parseDateOrNow(input.occurredAt);
+    const offsetMs =
+      input.offsetMs ?? elapsedMsFromIso(job.createdAt, occurredAt);
+    const idempotencyKey =
+      input.idempotencyKey ??
+      [
+        'ai_trace',
+        job.id,
+        input.source,
+        input.eventType,
+        input.providerRequestId ?? '',
+        occurredAt.toISOString(),
+      ].join(':');
+
+    const data: Prisma.AiProviderTraceEventUncheckedCreateInput = {
+      jobId: job.id,
+      attemptId: input.attemptId ?? null,
+      provider: input.provider?.trim() || job.provider,
+      endpointId: input.endpointId?.trim() || job.deployment,
+      providerRequestId: input.providerRequestId?.trim() || null,
+      eventType: input.eventType,
+      source: input.source,
+      confidence: input.confidence,
+      occurredAt,
+      offsetMs,
+      durationMs: input.durationMs ?? null,
+      title: input.title ?? null,
+      description: input.description ?? null,
+      payload: (input.payload as Prisma.InputJsonValue | undefined) ?? {},
+      idempotencyKey,
+    };
+
+    try {
+      return await this.prisma.aiProviderTraceEvent.create({ data });
+    } catch (err) {
+      if (isUniqueConstraintError(err)) {
+        return this.prisma.aiProviderTraceEvent.findUniqueOrThrow({
+          where: { idempotencyKey },
+        });
+      }
+      throw err;
+    }
+  }
+
+  async recordProviderTraceEvents(
+    job: Pick<AiJob, 'id' | 'provider' | 'deployment' | 'createdAt'>,
+    events: RecordAiProviderTraceEventInput[],
+  ): Promise<void> {
+    for (const event of events) {
+      await this.recordProviderTraceEvent(job, event);
+    }
+  }
+
+  async createAiOutputAsset(
+    job: Pick<
+      AiJob,
+      | 'id'
+      | 'userId'
+      | 'workspaceId'
+      | 'provider'
+      | 'modelId'
+      | 'deployment'
+      | 'canonicalModelId'
+      | 'providerBindingId'
+    >,
+    input: CreateAiOutputAssetInput,
+  ): Promise<string> {
+    const storageProvider = input.storageProvider as MediaStorageProvider;
+    const metadata = {
+      aiJobId: job.id,
+      provider: job.provider,
+      modelId: job.modelId,
+      deployment: job.deployment,
+      canonicalModelId: job.canonicalModelId,
+      providerBindingId: job.providerBindingId,
+      outputIndex: input.outputIndex,
+      safetyFlags: input.safetyFlags ?? null,
+    } satisfies Record<string, unknown>;
+
+    const existing = await this.prisma.mediaAsset.findFirst({
+      where: {
+        storageProvider,
+        bucket: input.bucket,
+        objectKey: input.objectKey,
+        deletedAt: null,
+      },
+      select: { id: true },
+    });
+    if (existing) return existing.id;
+
+    const data: Prisma.MediaAssetUncheckedCreateInput = {
+      kind:
+        input.type === 'video' ? MediaAssetKind.video : MediaAssetKind.image,
+      storageProvider,
+      bucket: input.bucket,
+      region: input.region,
+      objectKey: input.objectKey,
+      externalUrl: null,
+      contentType: input.contentType,
+      sizeBytes: BigInt(input.sizeBytes),
+      width: input.width ?? null,
+      height: input.height ?? null,
+      durationSeconds: input.durationSeconds ?? null,
+      checksumSha256: input.checksumSha256,
+      visibility: MediaAssetVisibility.private,
+      status: MediaAssetStatus.ready,
+      source: MediaAssetSource.ai_output,
+      moderationStatus: MediaAssetModerationStatus.unreviewed,
+      workspaceId: job.workspaceId ?? null,
+      createdByUserId: job.userId,
+      metadata: metadata as Prisma.InputJsonValue,
+    };
+
+    try {
+      const asset = await this.prisma.mediaAsset.create({
+        data,
+        select: { id: true },
+      });
+      return asset.id;
+    } catch (err) {
+      if (!isUniqueConstraintError(err)) throw err;
+      const asset = await this.prisma.mediaAsset.findFirst({
+        where: {
+          storageProvider,
+          bucket: input.bucket,
+          objectKey: input.objectKey,
+          deletedAt: null,
+        },
+        select: { id: true },
+      });
+      if (asset) return asset.id;
+      throw err;
+    }
   }
 
   async listForUser(options: AiJobListOptions): Promise<AiJob[]> {
@@ -411,7 +744,34 @@ export class AiGenerationRepository {
    */
   private outputsInclude(includeDeleted: boolean | undefined) {
     return {
-      where: includeDeleted ? undefined : { deletedAt: null },
+      where: includeDeleted
+        ? undefined
+        : {
+            deletedAt: null,
+            OR: [
+              { assetId: null },
+              {
+                asset: {
+                  is: {
+                    deletedAt: null,
+                    status: MediaAssetStatus.ready,
+                    moderationStatus: {
+                      not: MediaAssetModerationStatus.blocked,
+                    },
+                  },
+                },
+              },
+            ],
+          },
+      include: {
+        asset: {
+          select: {
+            status: true,
+            moderationStatus: true,
+            deletedAt: true,
+          },
+        },
+      },
       orderBy: { outputIndex: 'asc' as const },
     };
   }
@@ -426,12 +786,13 @@ export class AiGenerationRepository {
       provider: row.provider,
       modelId: row.modelId,
       deployment: row.deployment,
+      canonicalModelId: row.canonicalModelId,
+      providerBindingId: row.providerBindingId,
       schemaVersion: row.schemaVersion,
       workspaceId: row.workspaceId,
       projectId: row.projectId,
       documentId: row.documentId,
       documentBlockId: row.documentBlockId,
-      siteRegion: row.siteRegion,
       sourceSurface: row.sourceSurface,
       status: row.status as AiJobStatus,
       stage: row.stage as AiJobStage,
@@ -440,6 +801,16 @@ export class AiGenerationRepository {
       routingSnapshot:
         (row.routingSnapshot as AiRoutingSnapshot | null) ?? undefined,
       prompt: row.prompt,
+      promptDocument:
+        (row.promptDocument as AiJob['promptDocument'] | null) ?? undefined,
+      promptDisplayText: row.promptDisplayText ?? undefined,
+      promptSearchText: row.promptSearchText ?? undefined,
+      compiledPrompt: row.compiledPrompt ?? undefined,
+      referenceSnapshot:
+        (row.referenceSnapshot as AiJob['referenceSnapshot'] | null) ??
+        undefined,
+      styleSnapshot:
+        (row.styleSnapshot as AiJob['styleSnapshot'] | null) ?? undefined,
       idempotencyKey: row.idempotencyKey,
       providerJobId: row.providerJobId ?? undefined,
       outputs: row.outputs.map((o) => this.outputToDomain(o)),
@@ -468,17 +839,24 @@ export class AiGenerationRepository {
     };
   }
 
-  private outputToDomain(row: AiJobOutputRow): AiJobOutput {
+  private outputToDomain(row: AiJobOutputWithAssetRow): AiJobOutput {
     return {
       id: row.id,
+      assetId: row.assetId ?? undefined,
       type: row.type,
       url: row.url,
       storagePath: row.storagePath,
+      contentHash: row.contentHash ?? undefined,
       width: row.width ?? undefined,
       height: row.height ?? undefined,
       durationSeconds: row.durationSeconds ?? undefined,
       mimeType: row.mimeType ?? undefined,
       bytes: row.bytes ?? undefined,
+      seed: row.seed ?? undefined,
+      safetyFlags:
+        (row.safetyFlags as Record<string, unknown> | null) ?? undefined,
+      provenance:
+        (row.provenance as Record<string, unknown> | null) ?? undefined,
       createdAt: row.createdAt.toISOString(),
     };
   }
@@ -494,17 +872,30 @@ export class AiGenerationRepository {
       provider: job.provider,
       modelId: job.modelId,
       deployment: job.deployment,
+      canonicalModelId: job.canonicalModelId ?? null,
+      providerBindingId: job.providerBindingId ?? null,
       schemaVersion: job.schemaVersion,
       workspaceId: job.workspaceId ?? null,
       projectId: job.projectId ?? null,
       documentId: job.documentId ?? null,
       documentBlockId: job.documentBlockId ?? null,
-      siteRegion: job.siteRegion ?? null,
       sourceSurface: job.sourceSurface ?? null,
       status: job.status,
       stage: job.stage,
       queueName: job.queueName,
       prompt: job.prompt,
+      promptDocument:
+        (job.promptDocument as Prisma.InputJsonValue | undefined) ??
+        Prisma.DbNull,
+      promptDisplayText: job.promptDisplayText ?? null,
+      promptSearchText: job.promptSearchText ?? null,
+      compiledPrompt: job.compiledPrompt ?? null,
+      referenceSnapshot:
+        (job.referenceSnapshot as Prisma.InputJsonValue | undefined) ??
+        Prisma.DbNull,
+      styleSnapshot:
+        (job.styleSnapshot as Prisma.InputJsonValue | undefined) ??
+        Prisma.DbNull,
       idempotencyKey: job.idempotencyKey,
       input: job.input as Prisma.InputJsonValue,
       normalizedInput: job.normalizedInput as Prisma.InputJsonValue,
@@ -570,6 +961,9 @@ export class AiGenerationRepository {
       if (
         key === 'input' ||
         key === 'normalizedInput' ||
+        key === 'promptDocument' ||
+        key === 'referenceSnapshot' ||
+        key === 'styleSnapshot' ||
         key === 'entitlementSnapshot' ||
         key === 'routingSnapshot' ||
         key === 'logs' ||
@@ -589,6 +983,45 @@ export class AiGenerationRepository {
     return out;
   }
 
+  private toAttemptRow(
+    job: Pick<AiJob, 'id' | 'attempt'>,
+    input: RecordAiJobAttemptInput,
+  ): Prisma.AiJobAttemptUncheckedUpdateInput {
+    void job;
+    const out: Prisma.AiJobAttemptUncheckedUpdateInput = {
+      status: input.status,
+    };
+    setIfPresent(out, 'providerStatus', input.providerStatus);
+    setIfPresent(out, 'providerRequestId', input.providerRequestId);
+    setIfPresent(out, 'providerEndpoint', input.providerEndpoint);
+    setIfPresent(out, 'queuePosition', input.queuePosition);
+    setJsonIfPresent(out, 'providerRequest', input.providerRequest);
+    setJsonIfPresent(
+      out,
+      'providerRequestHeaders',
+      input.providerRequestHeaders,
+    );
+    setJsonIfPresent(out, 'providerResponse', input.providerResponse);
+    setJsonIfPresent(
+      out,
+      'providerResponseHeaders',
+      input.providerResponseHeaders,
+    );
+    setJsonIfPresent(out, 'providerLogs', input.providerLogs);
+    setJsonIfPresent(out, 'costAccounting', input.costAccounting);
+    setJsonIfPresent(out, 'pricingSnapshot', input.pricingSnapshot);
+    setJsonIfPresent(out, 'profitAccounting', input.profitAccounting);
+    setJsonIfPresent(out, 'timing', input.timing);
+    setJsonIfPresent(out, 'rawStatus', input.rawStatus);
+    setJsonIfPresent(out, 'error', input.error);
+    setIfPresent(out, 'runDurationMs', input.runDurationMs);
+    setDateIfPresent(out, 'submittedAt', input.submittedAt);
+    setDateIfPresent(out, 'executionStartedAt', input.executionStartedAt);
+    setDateIfPresent(out, 'firstByteAt', input.firstByteAt);
+    setDateIfPresent(out, 'completedAt', input.completedAt);
+    return out;
+  }
+
   private async replaceOutputs(
     jobId: string,
     outputs: AiJobOutput[],
@@ -604,15 +1037,24 @@ export class AiGenerationRepository {
               data: outputs.map((o, idx) => ({
                 id: o.id || newShortId(),
                 jobId,
+                assetId: o.assetId ?? null,
                 type: o.type,
                 url: o.url,
                 storagePath: o.storagePath,
+                contentHash: o.contentHash ?? null,
                 width: o.width ?? null,
                 height: o.height ?? null,
                 durationSeconds: o.durationSeconds ?? null,
                 mimeType: o.mimeType ?? null,
                 bytes: o.bytes ?? null,
                 outputIndex: idx,
+                seed: o.seed ?? null,
+                safetyFlags:
+                  (o.safetyFlags as Prisma.InputJsonValue | undefined) ??
+                  Prisma.DbNull,
+                provenance:
+                  (o.provenance as Prisma.InputJsonValue | undefined) ??
+                  Prisma.DbNull,
                 createdAt: new Date(o.createdAt),
               })),
             }),
@@ -622,6 +1064,74 @@ export class AiGenerationRepository {
   }
 }
 
+function setIfPresent(
+  out: Record<string, unknown>,
+  key: string,
+  value: unknown,
+): void {
+  if (value === undefined) return;
+  out[key] = value;
+}
+
+function setDateIfPresent(
+  out: Record<string, unknown>,
+  key: string,
+  value: string | null | undefined,
+): void {
+  if (value === undefined) return;
+  out[key] = value ? new Date(value) : null;
+}
+
+function setJsonIfPresent(
+  out: Record<string, unknown>,
+  key: string,
+  value: unknown,
+): void {
+  if (value === undefined) return;
+  out[key] = value === null ? Prisma.DbNull : (value as Prisma.InputJsonValue);
+}
+
+function jsonRecordOrNull(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : null;
+}
+
+function stringRecordOrNull(value: unknown): Record<string, string> | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  const out: Record<string, string> = {};
+  for (const [key, item] of Object.entries(value)) {
+    if (typeof item === 'string') out[key] = item;
+  }
+  return out;
+}
+
 // Re-export Prisma row types so other repo-adjacent code can use them
 // without import gymnastics.
-export type { AiJobAttemptRow, AiEventOutboxRow, AiJobRow, AiJobOutputRow };
+function parseDateOrNow(value: string | null | undefined): Date {
+  if (!value) return new Date();
+  const time = Date.parse(value);
+  if (!Number.isFinite(time)) return new Date();
+  return new Date(time);
+}
+
+function elapsedMsFromIso(start: string | undefined, end: Date): number | null {
+  if (!start) return null;
+  const startMs = Date.parse(start);
+  if (!Number.isFinite(startMs)) return null;
+  return Math.max(0, end.getTime() - startMs);
+}
+
+function isUniqueConstraintError(err: unknown): boolean {
+  return (
+    err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002'
+  );
+}
+
+export type {
+  AiJobAttemptRow,
+  AiEventOutboxRow,
+  AiJobRow,
+  AiJobOutputRow,
+  AiProviderTraceEventRow,
+};

@@ -23,10 +23,13 @@
 import * as React from "react";
 import {
   type ColumnDef,
+  type ExpandedState,
+  type Row,
   type RowData,
   type SortingState,
   flexRender,
   getCoreRowModel,
+  getExpandedRowModel,
   getPaginationRowModel,
   getSortedRowModel,
   useReactTable,
@@ -70,6 +73,10 @@ export interface DataTableProps<TData> {
   pageSize?: number;
   /** Stable row id (defaults to `id` field if present). */
   getRowId?: (row: TData, index: number) => string;
+  /** Render an inline sub-row (spanning all columns) under an expanded row. Presence enables expansion. */
+  renderExpanded?: (row: TData) => React.ReactNode;
+  /** Whether a given row can expand. Defaults to () => true when renderExpanded is set. */
+  getRowCanExpand?: (row: TData) => boolean;
   className?: string;
 }
 
@@ -81,17 +88,29 @@ export function DataTable<TData>({
   emptyLabel = "暂无数据",
   pageSize,
   getRowId,
+  renderExpanded,
+  getRowCanExpand,
   className,
 }: DataTableProps<TData>) {
   const [sorting, setSorting] = React.useState<SortingState>([]);
+  const [expanded, setExpanded] = React.useState<ExpandedState>({});
 
   const table = useReactTable({
     data,
     columns,
-    state: { sorting },
+    state: { sorting, expanded },
     onSortingChange: setSorting,
+    onExpandedChange: setExpanded,
     getCoreRowModel: getCoreRowModel(),
     getSortedRowModel: getSortedRowModel(),
+    ...(renderExpanded
+      ? {
+          getExpandedRowModel: getExpandedRowModel(),
+          getRowCanExpand: getRowCanExpand
+            ? (row: Row<TData>) => getRowCanExpand(row.original)
+            : () => true,
+        }
+      : {}),
     ...(pageSize
       ? {
           getPaginationRowModel: getPaginationRowModel(),
@@ -193,23 +212,35 @@ export function DataTable<TData>({
               </TableRow>
             ) : (
               rows.map((row) => (
-                <TableRow key={row.id} className="group transition hover:bg-slate-50/60">
-                  {row.getVisibleCells().map((cell) => {
-                    const pinned = cell.column.columnDef.meta?.pin === "right";
-                    return (
+                <React.Fragment key={row.id}>
+                  <TableRow className="group transition hover:bg-slate-50/60">
+                    {row.getVisibleCells().map((cell) => {
+                      const pinned = cell.column.columnDef.meta?.pin === "right";
+                      return (
+                        <TableCell
+                          key={cell.id}
+                          className={cn(
+                            "border-b border-slate-100 px-3 py-3 align-top text-sm text-slate-700",
+                            cell.column.columnDef.meta?.cellClassName,
+                            pinned && cn(PINNED_CELL, "group-hover:bg-slate-50")
+                          )}
+                        >
+                          {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                        </TableCell>
+                      );
+                    })}
+                  </TableRow>
+                  {renderExpanded && row.getIsExpanded() ? (
+                    <TableRow className="hover:bg-transparent">
                       <TableCell
-                        key={cell.id}
-                        className={cn(
-                          "border-b border-slate-100 px-3 py-3 align-top text-sm text-slate-700",
-                          cell.column.columnDef.meta?.cellClassName,
-                          pinned && cn(PINNED_CELL, "group-hover:bg-slate-50")
-                        )}
+                        colSpan={colCount}
+                        className="border-b border-slate-100 bg-slate-50/40 p-0"
                       >
-                        {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                        {renderExpanded(row.original)}
                       </TableCell>
-                    );
-                  })}
-                </TableRow>
+                    </TableRow>
+                  ) : null}
+                </React.Fragment>
               ))
             )}
           </TableBody>

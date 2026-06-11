@@ -56,6 +56,10 @@ export interface VoiceOptionItem {
   voiceName?: string;
   voiceDescription?: string;
   voicePath?: string;
+  /** The voice's own model/serviceCode. Present when voices are fetched
+   *  via `voiceType=all` so a voice picked in "All" mode can resolve back
+   *  to its real model rather than the "all" sentinel. */
+  model?: string;
   [key: string]: unknown;
 }
 

@@ -2,7 +2,7 @@ import { cookies } from "next/headers";
 import {
   ADMIN_SESSION_COOKIE,
   adminApiUrl,
-  cookieHeader,
+  adminAuthHeaders,
   parseAdminEnvelope,
 } from "@/lib/admin-api";
 import type { AdminCertificatesData } from "@/components/admin/certificates/types";
@@ -17,11 +17,12 @@ export async function fetchAdminCertificates(
 ): Promise<AdminCertificatesLoadResult> {
   const cookieStore = await cookies();
   const sessionToken = cookieStore.get(ADMIN_SESSION_COOKIE)?.value;
-  if (!sessionToken) return { data: null, error: "后台登录已失效，请重新登录。" };
+  const headers = adminAuthHeaders(sessionToken);
+  if (!headers) return { data: null, error: "后台登录已失效，请重新登录。" };
 
   try {
     const response = await fetch(adminApiUrl(`/certificates${toSearch(searchParams)}`), {
-      headers: cookieHeader(sessionToken),
+      headers,
       cache: "no-store",
     });
     return { data: await parseAdminEnvelope<AdminCertificatesData>(response), error: null };

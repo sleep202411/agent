@@ -3,15 +3,17 @@ import { z } from 'zod';
 export const CheckoutPaymentProviderSchema = z.enum([
   'airwallex',
   'wechat_pay',
+  'alipay',
 ]);
 export const AdminPaymentProviderSchema = z.enum([
   'airwallex',
   'wechat_pay',
+  'alipay',
   'manual',
   'internal',
 ]);
 export const BillingProductTypeSchema = z.enum([
-  'bubble_pack',
+  'compute_point_pack',
   'community_point_pack',
   'membership_plan',
   'team_membership_plan',
@@ -58,7 +60,18 @@ export const BillingReconciliationStatusSchema = z.enum([
 ]);
 export const BillingPriceIntervalSchema = z.enum(['one_time', 'month', 'year']);
 export const BillingSubjectTypeSchema = z.enum(['user', 'workspace']);
-export const WalletCurrencyTypeSchema = z.enum(['bubble', 'community_point']);
+export const WalletCurrencyTypeSchema = z.enum([
+  'compute_point',
+  'community_point',
+]);
+export const WalletBalanceKindSchema = z.enum(['consumable', 'withdrawable']);
+export const AdminWalletCreditGrantTypeSchema = z.enum([
+  'admin_adjustment',
+  'check_in_reward',
+  'campaign_reward',
+  'system_grant',
+  'other',
+]);
 export const BillingProviderBindingStatusSchema = z.enum([
   'active',
   'inactive',
@@ -125,6 +138,70 @@ export const CreateCustomRechargeSchema = z.object({
 });
 export type CreateCustomRechargeInput = z.infer<
   typeof CreateCustomRechargeSchema
+>;
+
+export const CreateComputePointTopupSchema = z.object({
+  priceId: z.string().uuid(),
+  provider: CheckoutPaymentProviderSchema.optional(),
+  promotionCode: z.string().trim().min(3).max(64).optional(),
+  idempotencyKey: z.string().trim().min(8).max(160),
+  successUrl: z.string().trim().url().max(2048),
+  backUrl: z.string().trim().url().max(2048),
+});
+export type CreateComputePointTopupInput = z.infer<
+  typeof CreateComputePointTopupSchema
+>;
+
+export const ListWalletLedgerQuerySchema = z.object({
+  currency: WalletCurrencyTypeSchema.default('compute_point'),
+  balanceKind: WalletBalanceKindSchema.default('consumable'),
+  limit: z.coerce.number().int().min(1).max(100).default(20),
+});
+export type ListWalletLedgerQuery = z.infer<typeof ListWalletLedgerQuerySchema>;
+
+export const BillingWalletAccountParamsSchema = z.object({
+  accountId: z.string().uuid(),
+});
+export type BillingWalletAccountParams = z.infer<
+  typeof BillingWalletAccountParamsSchema
+>;
+
+export const CreateAdminWalletAdjustmentSchema = z
+  .object({
+    amount: z.coerce
+      .bigint()
+      .refine((value) => value !== 0n, 'Adjustment amount cannot be zero.'),
+    grantType: AdminWalletCreditGrantTypeSchema.default('admin_adjustment'),
+    expiresAt: z.coerce.date().nullable().optional(),
+    reason: z.string().trim().min(6).max(1000),
+    idempotencyKey: z.string().trim().min(8).max(180),
+    metadata: z.record(z.string(), z.unknown()).default({}),
+  })
+  .superRefine((value, ctx) => {
+    if (value.amount < 0n && value.grantType !== 'admin_adjustment') {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['grantType'],
+        message: 'Negative adjustments must use admin_adjustment.',
+      });
+    }
+    if (value.amount < 0n && value.expiresAt) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['expiresAt'],
+        message: 'Negative adjustments cannot set expiry.',
+      });
+    }
+    if (value.expiresAt && value.expiresAt <= new Date()) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['expiresAt'],
+        message: 'Expiry must be in the future.',
+      });
+    }
+  });
+export type CreateAdminWalletAdjustmentInput = z.infer<
+  typeof CreateAdminWalletAdjustmentSchema
 >;
 
 export const ListAdminBillingPricesQuerySchema = z.object({

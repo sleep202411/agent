@@ -1,4 +1,9 @@
 import { Injectable, Logger } from '@nestjs/common';
+import {
+  describeUnknown,
+  requiredScalarString,
+  scalarString,
+} from '../common/values';
 
 type HeadersLike = Record<string, string | string[] | undefined>;
 type WorkspaceRecord = Record<string, unknown>;
@@ -248,7 +253,7 @@ export class WorkspaceService {
         },
       ).catch((err) => {
         this.logger.warn(
-          `[context] /api/user/world/list/episode failed: ${err.message}`,
+          `[context] /api/user/world/list/episode failed: ${describeUnknown(err)}`,
         );
         return { list: [] };
       }),
@@ -256,7 +261,7 @@ export class WorkspaceService {
         ? this.getWorldAssetSummary(headers, worldId, 'character').catch(
             (err) => {
               this.logger.warn(
-                `[context] character summary failed: ${err.message}`,
+                `[context] character summary failed: ${describeUnknown(err)}`,
               );
               return {
                 type: 'character' as const,
@@ -274,7 +279,9 @@ export class WorkspaceService {
           }),
       worldId
         ? this.getWorldAssetSummary(headers, worldId, 'scene').catch((err) => {
-            this.logger.warn(`[context] scene summary failed: ${err.message}`);
+            this.logger.warn(
+              `[context] scene summary failed: ${describeUnknown(err)}`,
+            );
             return {
               type: 'scene' as const,
               total: 0,
@@ -290,7 +297,9 @@ export class WorkspaceService {
           }),
       worldId
         ? this.getWorldAssetSummary(headers, worldId, 'prop').catch((err) => {
-            this.logger.warn(`[context] prop summary failed: ${err.message}`);
+            this.logger.warn(
+              `[context] prop summary failed: ${describeUnknown(err)}`,
+            );
             return {
               type: 'prop' as const,
               total: 0,
@@ -307,7 +316,7 @@ export class WorkspaceService {
       episodeId
         ? this.getStoryboardSummary(headers, episodeId).catch((err) => {
             this.logger.warn(
-              `[context] storyboard summary failed: ${err.message}`,
+              `[context] storyboard summary failed: ${describeUnknown(err)}`,
             );
             return {
               episodeId,
@@ -749,9 +758,9 @@ export class WorkspaceService {
       data: { productId: projectId, page: 1, pageSize: 999 },
     });
     return (result?.list ?? []).map((ep) => ({
-      id: String(ep.id),
-      projectId: String(ep.projectId ?? projectId),
-      title: String(ep.title ?? ''),
+      id: requiredScalarString(ep.id),
+      projectId: scalarString(ep.projectId) ?? projectId,
+      title: requiredScalarString(ep.title),
       sort: Number(ep.sort ?? 0),
       introduction: (ep.introduction as string) ?? '',
       videoLength: Number(ep.videoLength ?? 0),

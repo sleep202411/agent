@@ -1,23 +1,14 @@
 FROM node:22-alpine AS base
 
-# ─── Stage 1: Prune monorepo ──────────────────────────────
-FROM base AS pruner
-RUN npm install -g turbo@^2
-WORKDIR /app
-COPY . .
-RUN turbo prune admin-ui --docker
-
-# ─── Stage 2: Install dependencies ───────────────────────
-FROM base AS deps
-WORKDIR /app
-COPY --from=pruner /app/out/json/ .
-RUN npm ci --ignore-scripts
-
-# ─── Stage 3: Build ──────────────────────────────────────
+# ─── Stage 1: Install + build (full monorepo) ─────────────
+# Deliberately NOT turbo-pruned: pruning rewrites the lockfile layout and the
+# tailwind v4 / Next resolution then breaks ("no valid target file" /
+# "default-transpiled-packages.json not found") — see apps/studio/Dockerfile.
+# The runner ships only the standalone output, so image size is unaffected.
 FROM base AS builder
 WORKDIR /app
-COPY --from=deps /app/ ./
-COPY --from=pruner /app/out/full/ .
+COPY . .
+RUN npm ci --ignore-scripts
 
 ARG NEXT_PUBLIC_ADMIN_UI_BASE_PATH
 ARG ADMIN_GLOBAL_API_BASE_URL=http://fizzdragon-server:3001/admin

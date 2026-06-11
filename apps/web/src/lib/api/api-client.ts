@@ -96,6 +96,18 @@ export class ApiRequestError extends Error {
  */
 const CONTENT_RE = /^\/(user|project|vedio|personal)(\/|$)/;
 const STUDIO_RE = /^\/(api|anon)(\/|$)/;
+const WORKSPACE_HEADER = "X-Fizz-Workspace-Id";
+
+let activeWorkspaceId: string | null = null;
+
+export function setApiWorkspaceId(workspaceId: string | null | undefined) {
+  const normalized = workspaceId?.trim();
+  activeWorkspaceId = normalized || null;
+}
+
+export function getApiWorkspaceId(): string | null {
+  return activeWorkspaceId;
+}
 
 function applyApiPrefix(path: string): string {
   if (path.startsWith("http")) return path;
@@ -119,6 +131,12 @@ function buildUrl(path: string, params?: ApiRequestConfig["params"]): string {
 
   const qs = new URLSearchParams(entries.map(([k, v]) => [k, String(v)])).toString();
   return `${base}?${qs}`;
+}
+
+function workspaceHeaders(path: string): Record<string, string> {
+  if (!activeWorkspaceId) return {};
+  if (!path.startsWith("/aurora/")) return {};
+  return { [WORKSPACE_HEADER]: activeWorkspaceId };
 }
 
 function getCookieLocale(): Locale | null {
@@ -178,6 +196,7 @@ async function request<T>(method: string, path: string, config: ApiRequestConfig
     headers: {
       "Content-Type": defaultContentType,
       "accept-language": getAcceptLanguage(),
+      ...workspaceHeaders(path),
       ...customHeaders,
     },
     credentials: "include",
@@ -293,6 +312,7 @@ async function upload<T>(
       credentials: "include",
       headers: {
         "accept-language": getAcceptLanguage(),
+        ...workspaceHeaders(path),
         ...(customHeaders as Record<string, string>),
       },
       body: formData,

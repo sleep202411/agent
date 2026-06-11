@@ -38,5 +38,26 @@ export function adminSiteByKey(key: AdminSiteKey): AdminSiteOption {
 // pass the AdminSiteOption down as a prop (as the login page already does).
 export function currentAdminSite(): AdminSiteOption {
   const key: AdminSiteKey = process.env.ADMIN_SITE === "cn" ? "cn" : "global";
-  return adminSiteByKey(key);
+  const site = adminSiteByKey(key);
+  if (!isLocalAdminApiBase()) return site;
+  return {
+    ...site,
+    label: `${site.label} Local`,
+    domain: "localhost",
+    databaseLabel: "本地开发数据库",
+  };
+}
+
+function isLocalAdminApiBase(): boolean {
+  if (process.env.NODE_ENV === "production") return false;
+  const base =
+    process.env.ADMIN_API_BASE_URL ??
+    process.env.ADMIN_GLOBAL_API_BASE_URL ??
+    "http://localhost:4399/admin";
+  try {
+    const parsed = new URL(base);
+    return ["localhost", "127.0.0.1", "::1", "[::1]"].includes(parsed.hostname);
+  } catch {
+    return false;
+  }
 }

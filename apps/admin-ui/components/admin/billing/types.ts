@@ -2,7 +2,7 @@
 // Moved AS-IS from components/admin/admin-billing-panel.tsx during the P2
 // per-page split. The monolith keeps its own copies until Stage 2 deletes it.
 
-export type PaymentProvider = "airwallex" | "wechat_pay" | "manual" | "internal";
+export type PaymentProvider = "airwallex" | "wechat_pay" | "alipay" | "manual" | "internal";
 export type BindingStatus = "active" | "inactive" | "sync_pending" | "sync_failed";
 export type BillingPromotionStatus = "draft" | "active" | "paused" | "archived";
 export type BillingPromotionDurationType = "once" | "forever" | "repeating";
@@ -41,6 +41,17 @@ export type BillingReconciliationItemStatus =
   | "missing_provider"
   | "ignored";
 export type PaymentProviderEventStatus = "received" | "processed" | "ignored" | "failed";
+export type WalletCreditGrantType =
+  | "purchase_topup"
+  | "membership_included"
+  | "check_in_reward"
+  | "campaign_reward"
+  | "admin_adjustment"
+  | "refund_return"
+  | "migration"
+  | "system_grant"
+  | "other";
+export type WalletCreditGrantStatus = "active" | "exhausted" | "expired" | "reversed" | "voided";
 
 export type BillingProviderBinding = {
   id: string;
@@ -337,7 +348,53 @@ export type WalletLedgerEntryRow = {
   sourceId: string | null;
   idempotencyKey: string;
   description: string | null;
+  creditAllocations: WalletCreditAllocationRow[];
   createdAt: string;
+};
+
+export type WalletCreditAllocationRow = {
+  id: string;
+  grantId: string;
+  grantType: WalletCreditGrantType;
+  grantStatus: WalletCreditGrantStatus;
+  amount: string;
+  availableDelta: string;
+  heldDelta: string;
+  consumedDelta: string;
+  expiredDelta: string;
+  reversedDelta: string;
+  validFrom: string;
+  expiresAt: string | null;
+  sourceType: string;
+  sourceId: string | null;
+};
+
+export type WalletCreditGrantRow = {
+  id: string;
+  accountId: string;
+  transactionId: string | null;
+  grantType: WalletCreditGrantType;
+  status: WalletCreditGrantStatus;
+  totalAmount: string;
+  availableAmount: string;
+  heldAmount: string;
+  consumedAmount: string;
+  expiredAmount: string;
+  reversedAmount: string;
+  priority: number;
+  validFrom: string;
+  expiresAt: string | null;
+  sourceType: string;
+  sourceId: string | null;
+  metadata: Record<string, unknown>;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type AdminWalletAccountDetailData = {
+  account: WalletAccountRow;
+  entries: WalletLedgerEntryRow[];
+  grants: WalletCreditGrantRow[];
 };
 
 export type BillingLedgerAccountRow = {

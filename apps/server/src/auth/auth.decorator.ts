@@ -3,7 +3,7 @@ import {
   ExecutionContext,
   SetMetadata,
 } from '@nestjs/common';
-import type { AuthUser } from './auth.types';
+import type { AuthenticatedRequest, AuthUser } from './auth.types';
 
 /**
  * Parameter decorator to extract the authenticated user from the request.
@@ -14,7 +14,7 @@ import type { AuthUser } from './auth.types';
  */
 export const CurrentUser = createParamDecorator(
   (_data: unknown, ctx: ExecutionContext): AuthUser => {
-    const request = ctx.switchToHttp().getRequest();
+    const request = ctx.switchToHttp().getRequest<AuthenticatedRequest>();
     return request.user;
   },
 );
@@ -43,7 +43,9 @@ export const Public = () => SetMetadata(IS_PUBLIC_KEY, true);
  */
 export const ViewerCookie = createParamDecorator(
   (_data: unknown, ctx: ExecutionContext): string => {
-    const request = ctx.switchToHttp().getRequest();
-    return (request as { rawCookie?: string }).rawCookie ?? '';
+    const request = ctx
+      .switchToHttp()
+      .getRequest<Partial<AuthenticatedRequest>>();
+    return request.rawCookie ?? '';
   },
 );

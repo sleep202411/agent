@@ -4,13 +4,24 @@ import { useState } from "react";
 import Link from "next/link";
 import { IconArrowUpRight, IconExternalLink } from "@tabler/icons-react";
 import { toast } from "sonner";
+import { cn } from "@/lib/utils";
 import { useTranslations } from "@/src/i18n/i18n";
 import { articleHref, formatDate } from "../_data/format";
 import type { NewsItem } from "../_data/types";
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-export function NewsList({ articles }: { articles: NewsItem[] }) {
+export function NewsList({
+  articles,
+  categories = [],
+  activeCategory,
+}: {
+  articles: NewsItem[];
+  /** Localized pill list. Empty = no category bar. */
+  categories?: { slug: string; label: string }[];
+  /** Active category slug; undefined = the "All" / main feed. */
+  activeCategory?: string;
+}) {
   const t = useTranslations("news");
   const [email, setEmail] = useState("");
 
@@ -28,18 +39,40 @@ export function NewsList({ articles }: { articles: NewsItem[] }) {
   const featured = articles[0];
   const stacked = articles.slice(1, 4);
   const rest = articles.slice(4);
+  const activeLabel = activeCategory
+    ? (categories.find((c) => c.slug === activeCategory)?.label ?? activeCategory)
+    : null;
 
   return (
     <div className="min-h-screen bg-background">
       <div className="mx-auto max-w-[1200px] px-5 py-12 md:px-8 md:py-20">
         {/* Hero */}
         <header className="mx-auto max-w-2xl text-center">
-          <h1 className="text-3xl font-bold tracking-tight text-foreground md:text-5xl">
-            {t("title")}
-          </h1>
-          <p className="mx-auto mt-4 max-w-lg text-sm leading-relaxed text-muted-foreground md:text-base">
-            {t("subtitle")}
-          </p>
+          {activeLabel ? (
+            <>
+              <Link
+                href="/news"
+                className="inline-flex items-center gap-1 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground"
+              >
+                ← {t("title")}
+              </Link>
+              <h1 className="mt-3 text-3xl font-bold tracking-tight text-foreground md:text-5xl">
+                {activeLabel}
+              </h1>
+              <p className="mx-auto mt-4 max-w-lg text-sm leading-relaxed text-muted-foreground md:text-base">
+                {t("categorySubtitle", { category: activeLabel })}
+              </p>
+            </>
+          ) : (
+            <>
+              <h1 className="text-3xl font-bold tracking-tight text-foreground md:text-5xl">
+                {t("title")}
+              </h1>
+              <p className="mx-auto mt-4 max-w-lg text-sm leading-relaxed text-muted-foreground md:text-base">
+                {t("subtitle")}
+              </p>
+            </>
+          )}
           <form
             onSubmit={handleSubscribe}
             className="mx-auto mt-8 flex w-full max-w-md flex-col gap-2 sm:flex-row"
@@ -62,6 +95,24 @@ export function NewsList({ articles }: { articles: NewsItem[] }) {
             {t("subscribeSocialProof")}
           </p>
         </header>
+
+        {/* Category pills — link-driven so each category has a shareable URL */}
+        {categories.length > 0 && (
+          <nav className="mt-10 flex flex-wrap items-center justify-center gap-2">
+            <CategoryPill href="/news" active={!activeCategory}>
+              {t("categoryAll")}
+            </CategoryPill>
+            {categories.map((c) => (
+              <CategoryPill
+                key={c.slug}
+                href={`/news/category/${c.slug}`}
+                active={activeCategory === c.slug}
+              >
+                {c.label}
+              </CategoryPill>
+            ))}
+          </nav>
+        )}
 
         {articles.length === 0 ? (
           <div className="mt-20 text-center text-sm text-muted-foreground">{t("empty")}</div>
@@ -95,6 +146,33 @@ export function NewsList({ articles }: { articles: NewsItem[] }) {
         )}
       </div>
     </div>
+  );
+}
+
+// ─── Category pill ────────────────────────────────────
+
+function CategoryPill({
+  href,
+  active,
+  children,
+}: {
+  href: string;
+  active: boolean;
+  children: React.ReactNode;
+}) {
+  return (
+    <Link
+      href={href}
+      aria-current={active ? "page" : undefined}
+      className={cn(
+        "rounded-full border px-4 py-1.5 text-sm font-medium transition-colors",
+        active
+          ? "border-transparent bg-foreground text-background"
+          : "border-border bg-secondary/40 text-muted-foreground hover:border-foreground/20 hover:text-foreground"
+      )}
+    >
+      {children}
+    </Link>
   );
 }
 

@@ -1,3 +1,5 @@
+import type { Request } from 'express';
+
 /**
  * Authenticated user info attached to request by AuthGuard.
  *

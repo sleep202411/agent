@@ -6,6 +6,7 @@ import { AssistantModule } from './assistant/assistant.module';
 import { AuthModule, AuthGuard } from './auth';
 import { BillingModule } from './billing';
 import { CertificatesModule } from './certificates/certificates.module';
+import { AlertingModule } from './common/alerting';
 import { RegionModule } from './common/region';
 import { ThrottleModule } from './common/throttle/throttle.module';
 import { ConversationsModule } from './conversations/conversations.module';
@@ -17,6 +18,7 @@ import { OrdersModule } from './orders/orders.module';
 import { DbModule } from './infra/db/db.module';
 import { HealthModule } from './infra/health/health.module';
 import { IpCommerceModule } from './ip-commerce';
+import { MediaModule } from './media/media.module';
 import { RealtimeModule } from './infra/realtime/realtime.module';
 import { RedisModule } from './infra/redis/redis.module';
 import { NotificationModule } from './notification';
@@ -30,6 +32,7 @@ import { WorkspacesModule } from './workspaces';
     // Infra modules first — global, others can inject PrismaService / REDIS.
     DbModule,
     RedisModule,
+    AlertingModule,
     AuthModule,
     AdminAuthModule,
     // Region wires CountryMiddleware globally before any controller runs.
@@ -48,6 +51,7 @@ import { WorkspacesModule } from './workspaces';
     IpCommerceModule,
     DocumentsModule,
     CertificatesModule,
+    MediaModule,
     CrewsModule,
     EpisodesModule,
     CreatorServicesModule,

@@ -19,11 +19,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { PrismaService } from '../infra/db/db.module';
-import {
-  assertAllowedCurrency,
-  toSmallestUnit,
-  type CurrencyCode,
-} from '../common/currency';
+import { assertAllowedCurrency, toSmallestUnit } from '../common/currency';
 import type { CreatePositionInput, UpdatePositionInput } from './dto';
 import { newCrewDomainId } from './id';
 import { toPositionDTO } from './mappers';
@@ -116,7 +112,7 @@ export class PositionsService {
   async create(crewId: string, ownerId: string, input: CreatePositionInput) {
     await this.assertOwner(crewId, ownerId);
     assertAllowedCurrency(input.salary?.currency, 'salary.currency');
-    const ccy = (input.salary?.currency ?? null) as CurrencyCode | null;
+    const ccy = input.salary?.currency ?? null;
     const row = await this.prisma.crewPosition.create({
       data: {
         id: newCrewDomainId(),

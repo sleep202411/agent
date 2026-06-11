@@ -1,43 +1,47 @@
 import { NativeTabs } from "expo-router/unstable-native-tabs";
 
 import { Colors } from "@/constants/theme";
+import { useTranslations } from "@/i18n";
 
 export default function AppTabs() {
   const colors = Colors.dark;
+  // Reactive translator so the native tab labels update on language switch.
+  const t = useTranslations();
 
   return (
     <NativeTabs
       backgroundColor={colors.background}
+      tintColor={colors.brand}
       disableTransparentOnScrollEdge
       indicatorColor={colors.backgroundElement}
-      labelStyle={{ selected: { color: colors.text } }}
+      labelStyle={{ selected: { color: colors.brand } }}
     >
       <NativeTabs.Trigger name="index">
-        <NativeTabs.Trigger.Label>Home</NativeTabs.Trigger.Label>
+        <NativeTabs.Trigger.Label>{t("tabs.ip")}</NativeTabs.Trigger.Label>
         <NativeTabs.Trigger.Icon
-          md={{ default: "home", selected: "home_filled" }}
-          sf={{ default: "house", selected: "house.fill" }}
+          md={{ default: "movie", selected: "movie" }}
+          sf={{ default: "film.stack", selected: "film.stack.fill" }}
         />
       </NativeTabs.Trigger>
 
-      <NativeTabs.Trigger name="explore">
-        <NativeTabs.Trigger.Label>Projects</NativeTabs.Trigger.Label>
+      <NativeTabs.Trigger name="crews">
+        <NativeTabs.Trigger.Label>{t("tabs.crews")}</NativeTabs.Trigger.Label>
         <NativeTabs.Trigger.Icon
-          md={{ default: "folder", selected: "folder" }}
-          sf={{ default: "folder", selected: "folder.fill" }}
+          md={{ default: "group", selected: "group" }}
+          sf={{ default: "person.2", selected: "person.2.fill" }}
         />
       </NativeTabs.Trigger>
 
-      <NativeTabs.Trigger name="create">
-        <NativeTabs.Trigger.Label>Create</NativeTabs.Trigger.Label>
+      <NativeTabs.Trigger name="news">
+        <NativeTabs.Trigger.Label>{t("tabs.news")}</NativeTabs.Trigger.Label>
         <NativeTabs.Trigger.Icon
-          md={{ default: "add_box", selected: "add_box" }}
-          sf={{ default: "plus.square", selected: "plus.square.fill" }}
+          md={{ default: "feed", selected: "feed" }}
+          sf={{ default: "newspaper", selected: "newspaper.fill" }}
         />
       </NativeTabs.Trigger>
 
       <NativeTabs.Trigger name="mine">
-        <NativeTabs.Trigger.Label>Mine</NativeTabs.Trigger.Label>
+        <NativeTabs.Trigger.Label>{t("tabs.mine")}</NativeTabs.Trigger.Label>
         <NativeTabs.Trigger.Icon
           md={{ default: "person", selected: "person" }}
           sf={{ default: "person", selected: "person.fill" }}

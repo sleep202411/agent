@@ -1,8 +1,8 @@
 "use client";
 
 import { useEffect, useCallback, useRef, useState } from "react";
-import { Controller, useForm } from "react-hook-form";
-import { zodResolver } from "@hookform/resolvers/zod";
+import Image from "next/image";
+import { Controller, useForm, useWatch } from "react-hook-form";
 import { z } from "zod";
 import { IconCamera, IconLoader2 } from "@tabler/icons-react";
 import { useTranslations } from "@/src/i18n/i18n";
@@ -12,6 +12,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Field, FieldLabel, FieldError, FieldGroup } from "@/components/ui/field";
 import { backendApi } from "@/src/lib/api";
+import { typedZodResolver } from "@/src/lib/forms/typed-zod-resolver";
 import { uploadWorkspaceFile, buildOssUrl } from "@/src/lib/uploads/workspace-upload";
 import { PanelLayout } from "./panel-layout";
 import { useAppSelector } from "@/src/store";
@@ -51,7 +52,7 @@ export function EditWorldPanel({ onClose }: { onClose: () => void }) {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const form = useForm<WorldFormValues>({
-    resolver: zodResolver(worldSchema),
+    resolver: typedZodResolver<WorldFormValues>(worldSchema),
     defaultValues: {
       name: "",
       description: "",
@@ -89,7 +90,7 @@ export function EditWorldPanel({ onClose }: { onClose: () => void }) {
         setUploading(false);
       }
     },
-    [form]
+    [form, tc]
   );
 
   const onSubmit = async (values: WorldFormValues) => {
@@ -124,7 +125,7 @@ export function EditWorldPanel({ onClose }: { onClose: () => void }) {
     }
   };
 
-  const bannerPath = form.watch("bannerPath");
+  const bannerPath = useWatch({ control: form.control, name: "bannerPath" });
   const bannerSrc = buildOssUrl(bannerPath);
 
   return (
@@ -163,7 +164,14 @@ export function EditWorldPanel({ onClose }: { onClose: () => void }) {
         disabled={uploading}
       >
         {bannerSrc ? (
-          <img src={bannerSrc} alt="" className="aspect-video w-full object-cover" />
+          <Image
+            src={bannerSrc}
+            alt=""
+            width={960}
+            height={540}
+            className="aspect-video w-full object-cover"
+            unoptimized
+          />
         ) : (
           <div className="flex aspect-video w-full items-center justify-center bg-muted/30">
             <span className="text-xs text-muted-foreground">{t("clickUploadCover")}</span>

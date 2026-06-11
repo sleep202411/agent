@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   Injectable,
   NotFoundException,
   ServiceUnavailableException,
@@ -79,6 +80,7 @@ import type {
   ResolveAdminIpReportInput,
   SubmitCreatorIpReviewInput,
   UploadCreatorIpMediaQuery,
+  UploadCreatorIpMediaInput,
   UpdateCreatorIpAssetsInput,
   UpdateAdminIpTaxonomyTermInput,
   UpdateCreatorIpContributorInput,
@@ -103,9 +105,30 @@ const IP_COMMERCE_DETAIL_MOCK_ID = '00000000-0000-4000-8000-000000000001';
 const PUBLIC_LOCALIZATION_STATUSES: IpLocalizationStatus[] = [
   IpLocalizationStatus.published,
 ];
+
+// (a)-policy: content (localization / episode) created or edited on a
+// publicly-live IP (status `published`) goes live immediately instead of being
+// reset to `draft` — editing a published IP no longer hides it / its episodes.
+// On a not-yet-published IP, content still defaults to draft (pre-publish).
+// NOTE: this relaxes the admin re-review gate for published IPs; revisit if UGC
+// moderation is enforced.
+function contentLocalizationStatus(
+  ipStatus: IpPublicationStatus,
+): IpLocalizationStatus {
+  return ipStatus === IpPublicationStatus.published
+    ? IpLocalizationStatus.published
+    : IpLocalizationStatus.draft;
+}
+function contentEpisodeStatus(
+  ipStatus: IpPublicationStatus,
+): IpPublicationStatus {
+  return ipStatus === IpPublicationStatus.published
+    ? IpPublicationStatus.published
+    : IpPublicationStatus.draft;
+}
 const IP_MEDIA_UPLOAD_LIMITS: Record<MediaAssetKind, number> = {
   [MediaAssetKind.image]: 20 * 1024 * 1024,
-  [MediaAssetKind.video]: 256 * 1024 * 1024,
+  [MediaAssetKind.video]: 2 * 1024 * 1024 * 1024,
   [MediaAssetKind.audio]: 64 * 1024 * 1024,
   [MediaAssetKind.document]: 20 * 1024 * 1024,
   [MediaAssetKind.other]: 20 * 1024 * 1024,
@@ -767,9 +790,13 @@ export class IpCommerceService {
     return this.listAdminDiscovery({ placementKey: input.placementKey });
   }
 
-  async listPublicDiscovery(query: ListPublicIpDiscoveryQuery) {
+  async listPublicDiscovery(
+    query: ListPublicIpDiscoveryQuery,
+    user?: AuthUser,
+  ) {
     const locale = normalizeLocale(query.locale);
     const now = new Date();
+    const viewerBlockWhere = await this.viewerBlockWhere(user);
     const rows = await this.prisma.ipDiscoveryRecommendation.findMany({
       where: {
         placementKey: query.placementKey as IpDiscoveryPlacementKey,
@@ -784,6 +811,7 @@ export class IpCommerceService {
           status: IpPublicationStatus.published,
           listingVisibility: IpListingVisibility.public,
           deletedAt: null,
+          ...viewerBlockWhere,
         },
       },
       include: publicIpDiscoveryInclude,
@@ -1732,7 +1760,7 @@ export class IpCommerceService {
           create: {
             ipId: ip.id,
             locale: sourceLocale,
-            status: IpLocalizationStatus.draft,
+            status: contentLocalizationStatus(ip.status),
             title: title ?? sourceCopy?.title ?? ip.id,
             summary: summary ?? sourceCopy?.summary ?? title ?? ip.id,
             description:
@@ -1744,9 +1772,11 @@ export class IpCommerceService {
             ...(title !== undefined ? { title } : {}),
             ...(summary !== undefined ? { summary } : {}),
             ...(description !== undefined ? { description } : {}),
-            ...(sourceCopy?.status === IpLocalizationStatus.published
-              ? { status: IpLocalizationStatus.draft }
-              : {}),
+            ...(ip.status === IpPublicationStatus.published
+              ? { status: IpLocalizationStatus.published }
+              : sourceCopy?.status === IpLocalizationStatus.published
+                ? { status: IpLocalizationStatus.draft }
+                : {}),
           },
         });
       }
@@ -1838,80 +1868,69 @@ export class IpCommerceService {
     return { ip: creatorIpDetailDto(updated, ip.sourceLocale) };
   }
 
+  /**
+   * Associate an already-confirmed MediaAsset with an IP.
+   *
+   * The bytes are uploaded direct-to-storage by the client via the stateless
+   * SAS pipeline (`/aurora/media/upload-url` → PUT → `/aurora/media/confirm`),
+   * which is what mints the active MediaAsset. This endpoint does NOT proxy
+   * the file — it only references an asset the caller just confirmed (so 2GB
+   * episode videos never hit the nginx body limit). The public return shape
+   * `{ asset, ipAsset }` is preserved so the episode-create flow that consumes
+   * `asset.id` as videoAssetId/coverAssetId is unchanged.
+   */
   async uploadCreatorIpMedia(
     user: AuthUser,
     ipId: string,
     query: UploadCreatorIpMediaQuery,
-    file:
-      | {
-          buffer: Buffer;
-          originalname: string;
-          mimetype: string;
-          size: number;
-        }
-      | undefined,
+    body: UploadCreatorIpMediaInput,
   ) {
     const ip = await this.findCreatorIpForMutation(user, ipId);
-    if (!file?.buffer?.byteLength) {
-      throw new BadRequestException({
-        code: 'IP_MEDIA_FILE_REQUIRED',
-        msg: 'Missing upload file.',
-      });
-    }
 
     const kind = query.kind as MediaAssetKind;
-    this.assertUploadMatchesKind(file, kind);
+
+    const mediaAsset = await this.prisma.mediaAsset.findFirst({
+      where: { id: body.mediaAssetId, deletedAt: null },
+    });
+    if (!mediaAsset) {
+      throw new NotFoundException({
+        code: 'IP_MEDIA_ASSET_NOT_FOUND',
+        msg: 'Media asset not found.',
+      });
+    }
+    // Must be an asset THIS user just confirmed via /aurora/media/confirm —
+    // confirm stamps createdByUserId with the authed user.
+    if (mediaAsset.createdByUserId !== user.userId) {
+      throw new ForbiddenException({
+        code: 'IP_MEDIA_ASSET_FORBIDDEN',
+        msg: 'You do not own this media asset.',
+      });
+    }
+    // The confirmed asset's kind must match what this IP slot expects
+    // (cover ⇒ image, trailer/episode media ⇒ video, …).
+    if (mediaAsset.kind !== kind) {
+      throw new BadRequestException({
+        code: 'IP_MEDIA_KIND_MISMATCH',
+        msg: `Media asset is not a ${kind}.`,
+      });
+    }
+    // Defence-in-depth: the SAS pipeline already caps per-kind size, but
+    // re-assert against the IP per-kind cap on the HEAD-verified size.
     const limit = IP_MEDIA_UPLOAD_LIMITS[kind];
-    if (file.size > limit) {
+    if (mediaAsset.sizeBytes !== null && mediaAsset.sizeBytes > BigInt(limit)) {
       throw new BadRequestException({
         code: 'IP_MEDIA_FILE_TOO_LARGE',
         msg: `File is too large for ${kind}.`,
       });
     }
 
-    const now = new Date();
-    const objectKey = buildIpMediaObjectKey({
-      ipId: ip.id,
-      userId: user.userId,
-      purpose: query.purpose,
-      filename: file.originalname,
-      now,
-    });
-
-    let uploaded: Awaited<ReturnType<OutputStorageService['upload']>>;
-    try {
-      uploaded = await this.outputStorage.upload({
-        body: file.buffer,
-        key: objectKey,
-        contentType: file.mimetype || 'application/octet-stream',
-        filename: sanitizeFilename(file.originalname),
-      });
-    } catch (err) {
-      throw new ServiceUnavailableException({
-        code: 'IP_MEDIA_STORAGE_UNAVAILABLE',
-        msg:
-          err instanceof Error && err.message
-            ? err.message
-            : 'Media storage is unavailable.',
-      });
-    }
-
     const { asset, ipAsset } = await this.prisma.$transaction(async (tx) => {
-      const mediaAsset = await tx.mediaAsset.create({
-        data: {
-          kind,
-          storageProvider: MediaStorageProvider.azure_blob,
-          bucket: azureBlobContainerName(),
-          region: azureBlobRegion(),
-          objectKey: uploaded.storagePath,
-          contentType: file.mimetype || 'application/octet-stream',
-          sizeBytes: BigInt(uploaded.bytes),
-          checksumSha256: createHash('sha256')
-            .update(file.buffer)
-            .digest('hex'),
-          visibility: MediaAssetVisibility.public,
-          status: MediaAssetStatus.ready,
-        },
+      // IP media is public-facing (covers/trailers/episode video resolve on
+      // read). Confirm mints assets `private`; promote to `public` here to
+      // preserve the prior display behavior. This is NOT the paywall.
+      const publishedAsset = await tx.mediaAsset.update({
+        where: { id: mediaAsset.id },
+        data: { visibility: MediaAssetVisibility.public },
       });
 
       const libraryAsset =
@@ -1919,16 +1938,16 @@ export class IpCommerceService {
           ? await tx.ipAsset.create({
               data: {
                 ipId: ip.id,
-                mediaAssetId: mediaAsset.id,
+                mediaAssetId: publishedAsset.id,
                 purpose: IpAssetPurpose.source_material,
-                title: sanitizeFilename(file.originalname),
+                title: deriveAssetTitle(publishedAsset.objectKey),
                 createdById: user.userId,
               },
               include: { mediaAsset: true },
             })
           : null;
 
-      return { asset: mediaAsset, ipAsset: libraryAsset };
+      return { asset: publishedAsset, ipAsset: libraryAsset };
     });
 
     return {
@@ -2032,7 +2051,7 @@ export class IpCommerceService {
             (maxEpisode._max.sortOrder != null
               ? maxEpisode._max.sortOrder + 1000
               : episodeNo * 1000),
-          status: IpPublicationStatus.draft,
+          status: contentEpisodeStatus(ip.status),
           durationSeconds: input.durationSeconds,
           isFreePreview: input.isFreePreview ?? false,
           coverAssetId,
@@ -2042,7 +2061,7 @@ export class IpCommerceService {
           localizations: {
             create: {
               locale: ip.sourceLocale,
-              status: IpLocalizationStatus.draft,
+              status: contentLocalizationStatus(ip.status),
               title: input.title,
               summary: input.summary?.trim() || null,
               description: input.summary?.trim() || null,
@@ -2147,7 +2166,7 @@ export class IpCommerceService {
           create: {
             episodeId: episode.id,
             locale: ip.sourceLocale,
-            status: IpLocalizationStatus.draft,
+            status: contentLocalizationStatus(ip.status),
             title: title ?? sourceCopy?.title ?? `Episode ${episode.episodeNo}`,
             summary: summary ?? sourceCopy?.summary ?? null,
             description:
@@ -2160,9 +2179,11 @@ export class IpCommerceService {
             ...(summary !== undefined
               ? { summary, description: summary || null }
               : {}),
-            ...(sourceCopy?.status === IpLocalizationStatus.published
-              ? { status: IpLocalizationStatus.draft }
-              : {}),
+            ...(ip.status === IpPublicationStatus.published
+              ? { status: IpLocalizationStatus.published }
+              : sourceCopy?.status === IpLocalizationStatus.published
+                ? { status: IpLocalizationStatus.draft }
+                : {}),
           },
         });
       }
@@ -4032,6 +4053,7 @@ export class IpCommerceService {
         id: true,
         sourceLocale: true,
         version: true,
+        status: true,
       },
     });
     if (!ip) {
@@ -7299,28 +7321,6 @@ function resolveAssetPublicUrlSafe(asset: {
   }
 }
 
-function buildIpMediaObjectKey(input: {
-  ipId: string;
-  userId: string;
-  purpose: string;
-  filename: string;
-  now: Date;
-}) {
-  const yyyy = String(input.now.getUTCFullYear());
-  const mm = String(input.now.getUTCMonth() + 1).padStart(2, '0');
-  const dd = String(input.now.getUTCDate()).padStart(2, '0');
-  return [
-    'ip-commerce',
-    yyyy,
-    mm,
-    dd,
-    sanitizePathSegment(input.userId),
-    sanitizePathSegment(input.ipId),
-    sanitizePathSegment(input.purpose),
-    `${randomUUID()}-${sanitizeFilename(input.filename)}`,
-  ].join('/');
-}
-
 function sanitizeFilename(value: string) {
   const clean = value
     .trim()
@@ -7331,13 +7331,20 @@ function sanitizeFilename(value: string) {
   return clean || 'upload.bin';
 }
 
-function sanitizePathSegment(value: string) {
-  const clean = value
-    .trim()
-    .replace(/[^a-zA-Z0-9._-]/g, '-')
-    .replace(/-+/g, '-')
-    .replace(/^-|-$/g, '');
-  return clean || 'unknown';
+/**
+ * The source-material ipAsset title was previously the uploaded filename. The
+ * file no longer reaches this server, so derive a stable title from the
+ * server-decided storage key's basename (UUID prefix stripped where present),
+ * falling back to a neutral label.
+ */
+function deriveAssetTitle(objectKey: string | null): string {
+  if (!objectKey) return 'Source material';
+  const base = objectKey.split('/').pop() ?? '';
+  const stripped = base.replace(
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}-/i,
+    '',
+  );
+  return sanitizeFilename(stripped || base) || 'Source material';
 }
 
 function azureBlobContainerName() {

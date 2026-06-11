@@ -2,7 +2,7 @@ import { cookies } from "next/headers";
 import {
   ADMIN_SESSION_COOKIE,
   adminApiUrl,
-  cookieHeader,
+  adminAuthHeaders,
   parseAdminEnvelope,
 } from "@/lib/admin-api";
 import type { AdminRolesData, AdminSessionsData } from "@/components/admin/users/types";
@@ -18,11 +18,12 @@ async function fetchResource<T>(
 ): Promise<AdminUsersLoadResult<T>> {
   const cookieStore = await cookies();
   const sessionToken = cookieStore.get(ADMIN_SESSION_COOKIE)?.value;
-  if (!sessionToken) return { data: null, error: "后台登录已失效，请重新登录。" };
+  const headers = adminAuthHeaders(sessionToken);
+  if (!headers) return { data: null, error: "后台登录已失效，请重新登录。" };
 
   try {
     const response = await fetch(adminApiUrl(path), {
-      headers: cookieHeader(sessionToken),
+      headers,
       cache: "no-store",
     });
     return { data: await parseAdminEnvelope<T>(response), error: null };

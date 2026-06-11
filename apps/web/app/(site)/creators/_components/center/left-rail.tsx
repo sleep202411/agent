@@ -21,6 +21,7 @@
  * concern in practice.
  */
 import { useState } from "react";
+import { encodeUserId } from "@/src/lib/user-id-codec";
 import {
   IconBriefcase,
   IconCertificate,
@@ -83,13 +84,15 @@ export function CreatorLeftRail({ creator, isOwner, onEditProfile }: CreatorLeft
     <aside className="space-y-4 lg:self-start">
       <RailCard title={t("info.heading")}>
         <div className="space-y-2.5 text-xs">
-          <InfoRow label={t("info.userId")} value={String(creator.id ?? "—")} />
+          <InfoRow
+            label={t("info.userId")}
+            value={creator.id != null ? encodeUserId(creator.id) : "—"}
+          />
           <InfoRow
             label={t("info.kyc")}
             value={creator.contact ? t("info.kycVerified") : t("info.kycPending")}
           />
           {joined ? <InfoRow label={t("info.joined")} value={joined} /> : null}
-          {creator.contact ? <InfoRow label={t("info.contact")} value={creator.contact} /> : null}
         </div>
       </RailCard>
 

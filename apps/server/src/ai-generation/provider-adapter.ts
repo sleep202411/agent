@@ -57,9 +57,58 @@ export interface RawProviderOutput {
   safetyFlags?: Record<string, unknown>;
 }
 
+export interface ProviderTraceEvent {
+  eventType: string;
+  occurredAt?: string | null;
+  offsetMs?: number | null;
+  durationMs?: number | null;
+  source:
+    | 'internal'
+    | 'provider_queue'
+    | 'provider_platform'
+    | 'provider_header'
+    | 'provider_response';
+  confidence: 'exact' | 'observed' | 'inferred';
+  title?: string | null;
+  description?: string | null;
+  payload?: Record<string, unknown> | null;
+  idempotencyKey?: string | null;
+}
+
+export interface ProviderTimingSnapshot {
+  submittedAt?: string | null;
+  executionStartedAt?: string | null;
+  completedAt?: string | null;
+  durationMs?: number | null;
+  statusCode?: number | null;
+}
+
+export interface ProviderAsyncOperationContext {
+  providerEndpoint?: string | null;
+  providerRequestId?: string | null;
+  providerRequest?: Record<string, unknown> | null;
+  providerResponse?: unknown;
+  providerResponseHeaders?: Record<string, string> | null;
+  rawStatus?: unknown;
+}
+
 export type StartResult =
   /** Sync provider — bytes are already here, worker proceeds to OSS. */
-  | { kind: 'completed'; outputs: RawProviderOutput[] }
+  | {
+      kind: 'completed';
+      outputs: RawProviderOutput[];
+      providerRequestId?: string;
+      providerEndpoint?: string;
+      providerStatus?: number | null;
+      providerRequest?: Record<string, unknown>;
+      providerResponse?: unknown;
+      providerResponseHeaders?: Record<string, string>;
+      costAccounting?: Record<string, unknown> | null;
+      pricingSnapshot?: Record<string, unknown> | null;
+      providerTiming?: ProviderTimingSnapshot | null;
+      providerDiagnostics?: Record<string, unknown> | null;
+      providerTraceEvents?: ProviderTraceEvent[];
+    }
   /** Async provider — worker stores `providerJobId`, schedules a poll
    *  (and/or waits for a webhook). */
   | {
@@ -67,12 +116,62 @@ export type StartResult =
       providerJobId: string;
       /** Optional first poll delay; defaults to adapter discretion. */
       initialPollDelayMs?: number;
+      providerRequestId?: string;
+      providerEndpoint?: string;
+      providerRequest?: Record<string, unknown>;
+      providerResponse?: unknown;
+      providerResponseHeaders?: Record<string, string>;
+      costAccounting?: Record<string, unknown> | null;
+      pricingSnapshot?: Record<string, unknown> | null;
+      submittedAt?: string;
+      queuePosition?: number | null;
+      providerDiagnostics?: Record<string, unknown> | null;
+      providerTraceEvents?: ProviderTraceEvent[];
     };
 
 export type PollResult =
-  | { kind: 'pending'; progress?: number; stageHint?: string }
-  | { kind: 'completed'; outputs: RawProviderOutput[] }
-  | { kind: 'failed'; error: AiJobError };
+  | {
+      kind: 'pending';
+      progress?: number;
+      stageHint?: string;
+      providerRequestId?: string;
+      providerEndpoint?: string;
+      queuePosition?: number | null;
+      rawStatus?: unknown;
+      providerLogs?: unknown;
+      providerDiagnostics?: Record<string, unknown> | null;
+      providerTraceEvents?: ProviderTraceEvent[];
+    }
+  | {
+      kind: 'completed';
+      outputs: RawProviderOutput[];
+      providerRequestId?: string;
+      providerEndpoint?: string;
+      providerStatus?: number | null;
+      rawStatus?: unknown;
+      providerResponse?: unknown;
+      providerResponseHeaders?: Record<string, string>;
+      providerLogs?: unknown;
+      costAccounting?: Record<string, unknown> | null;
+      pricingSnapshot?: Record<string, unknown> | null;
+      providerTiming?: ProviderTimingSnapshot | null;
+      providerDiagnostics?: Record<string, unknown> | null;
+      providerTraceEvents?: ProviderTraceEvent[];
+    }
+  | {
+      kind: 'failed';
+      error: AiJobError;
+      providerRequestId?: string;
+      providerEndpoint?: string;
+      providerStatus?: number | null;
+      rawStatus?: unknown;
+      providerResponse?: unknown;
+      providerResponseHeaders?: Record<string, string>;
+      providerLogs?: unknown;
+      providerTiming?: ProviderTimingSnapshot | null;
+      providerDiagnostics?: Record<string, unknown> | null;
+      providerTraceEvents?: ProviderTraceEvent[];
+    };
 
 /**
  * Parsed webhook envelope. Adapter verifies signature against the
@@ -130,8 +229,12 @@ export interface ProviderAdapter {
     ctx: ProviderGenerationContext,
   ): Promise<StartResult>;
 
-  /** Required for async providers; omit for sync. */
-  pollStatus?(providerJobId: string): Promise<PollResult>;
+  /** Required for async providers; omit for sync. Adapters
+   *  authenticate the status call with their own env-configured key. */
+  pollStatus?(
+    providerJobId: string,
+    ctx?: ProviderAsyncOperationContext,
+  ): Promise<PollResult>;
 
   /** Required for webhook-based providers; omit for poll-only or sync. */
   parseWebhook?(headers: Record<string, string>, body: unknown): WebhookResult;
@@ -140,9 +243,13 @@ export interface ProviderAdapter {
    * Best-effort provider-side cancellation for async jobs. The caller
    * must still mark the local DB row cancelled even when this fails;
    * provider cancellation is a cost-control / cleanup optimization,
-   * not the source of truth for user-visible state.
+   * not the source of truth for user-visible state. Adapters
+   * authenticate the cancel call with their own env-configured key.
    */
-  cancelGeneration?(providerJobId: string): Promise<void>;
+  cancelGeneration?(
+    providerJobId: string,
+    ctx?: ProviderAsyncOperationContext,
+  ): Promise<void>;
 
   /**
    * Translate a provider-native error (thrown by SDK / HTTP layer)

@@ -8,10 +8,7 @@ import {
   Post,
   Put,
   Query,
-  UploadedFile,
-  UseInterceptors,
 } from '@nestjs/common';
-import { FileInterceptor } from '@nestjs/platform-express';
 import { CurrentUser, Public, type AuthUser } from '../auth';
 import { ZodValidationPipe } from '../common/zod.pipe';
 import {
@@ -27,6 +24,7 @@ import {
   UpdateCreatorIpEpisodeSchema,
   SubmitCreatorIpReviewSchema,
   UploadCreatorIpMediaQuerySchema,
+  UploadCreatorIpMediaBodySchema,
   IpAccessQuerySchema,
   IpAssetParamsSchema,
   IpContributorParamsSchema,
@@ -55,6 +53,7 @@ import {
   type IpContributorParams,
   type SubmitCreatorIpReviewInput,
   type UploadCreatorIpMediaQuery,
+  type UploadCreatorIpMediaInput,
   type UpdateCreatorIpAssetsInput,
   type UpdateCreatorIpContributorInput,
   type UpdateCreatorIpEpisodeInput,
@@ -73,15 +72,6 @@ import {
   type UpsertIpUserBlockInput,
 } from './dto';
 import { IpCommerceService } from './ip-commerce.service';
-
-const IP_MEDIA_UPLOAD_MAX_BYTES = 256 * 1024 * 1024;
-
-type UploadedIpMediaFile = {
-  buffer: Buffer;
-  originalname: string;
-  mimetype: string;
-  size: number;
-};
 
 @Controller('ip-commerce')
 export class IpCommerceController {
@@ -102,12 +92,13 @@ export class IpCommerceController {
   @Public()
   @Get('discovery')
   async listDiscovery(
+    @CurrentUser() user: AuthUser | undefined,
     @Query(new ZodValidationPipe(ListPublicIpDiscoveryQuerySchema))
     query: ListPublicIpDiscoveryQuery,
   ) {
     return {
       code: 200,
-      data: await this.ipCommerce.listPublicDiscovery(query),
+      data: await this.ipCommerce.listPublicDiscovery(query, user),
     };
   }
 
@@ -229,19 +220,19 @@ export class IpCommerceController {
     };
   }
 
+  // Associates an already-confirmed MediaAsset (uploaded direct-to-storage
+  // via /aurora/media/upload-url → PUT → /aurora/media/confirm) with the IP.
+  // No file streams through the server, so large episode video/cover uploads
+  // no longer hit the nginx body limit.
   @Post('me/ips/:ipId/media')
-  @UseInterceptors(
-    FileInterceptor('file', {
-      limits: { fileSize: IP_MEDIA_UPLOAD_MAX_BYTES },
-    }),
-  )
   async uploadMyIpMedia(
     @CurrentUser() user: AuthUser,
     @Param(new ZodValidationPipe(IpParamsSchema))
     params: IpParams,
     @Query(new ZodValidationPipe(UploadCreatorIpMediaQuerySchema))
     query: UploadCreatorIpMediaQuery,
-    @UploadedFile() file: UploadedIpMediaFile | undefined,
+    @Body(new ZodValidationPipe(UploadCreatorIpMediaBodySchema))
+    body: UploadCreatorIpMediaInput,
   ) {
     return {
       code: 200,
@@ -249,7 +240,7 @@ export class IpCommerceController {
         user,
         params.ipId,
         query,
-        file,
+        body,
       ),
     };
   }

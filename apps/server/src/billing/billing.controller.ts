@@ -18,12 +18,16 @@ import { BillingService } from './billing.service';
 import {
   BillingOrderParamsSchema,
   CreateBillingCheckoutSchema,
+  CreateComputePointTopupSchema,
   CreateCustomRechargeSchema,
   ListBillingPricesQuerySchema,
+  ListWalletLedgerQuerySchema,
   type BillingOrderParams,
   type CreateBillingCheckoutInput,
+  type CreateComputePointTopupInput,
   type CreateCustomRechargeInput,
   type ListBillingPricesQuery,
+  type ListWalletLedgerQuery,
 } from './dto';
 
 type RawBodyRequest = Request & { rawBody?: Buffer };
@@ -38,6 +42,27 @@ export class BillingController {
     query: ListBillingPricesQuery,
   ) {
     return { code: 200, data: await this.billing.listPrices(query) };
+  }
+
+  @Get('compute-topup-packages')
+  async listComputePointTopupPackages() {
+    return {
+      code: 200,
+      data: await this.billing.listComputePointTopupPackages(),
+    };
+  }
+
+  @Get('wallet-ledger')
+  async listWalletLedger(
+    @CurrentUser() user: AuthUser,
+    @Headers('x-fizz-workspace-id') workspaceId: string | undefined,
+    @Query(new ZodValidationPipe(ListWalletLedgerQuerySchema))
+    query: ListWalletLedgerQuery,
+  ) {
+    return {
+      code: 200,
+      data: await this.billing.listWalletLedger(user, query, workspaceId),
+    };
   }
 
   @Post('checkout')
@@ -62,6 +87,19 @@ export class BillingController {
     return {
       code: 200,
       data: await this.billing.createCustomRecharge(user, body, country),
+    };
+  }
+
+  @Post('compute-topup')
+  async createComputePointTopup(
+    @CurrentUser() user: AuthUser,
+    @Country() country: CountryCode,
+    @Body(new ZodValidationPipe(CreateComputePointTopupSchema))
+    body: CreateComputePointTopupInput,
+  ) {
+    return {
+      code: 200,
+      data: await this.billing.createComputePointTopup(user, body, country),
     };
   }
 

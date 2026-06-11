@@ -1,0 +1,69 @@
+{{- if .Values.studio.enabled -}}
+{{- $component := "studio" -}}
+{{- $ctx := merge (dict "component" $component) . -}}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "fizzdragon.componentName" $ctx }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "fizzdragon.componentLabels" $ctx | nindent 4 }}
+spec:
+  replicas: {{ .Values.studio.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "fizzdragon.componentSelector" $ctx | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "fizzdragon.componentLabels" $ctx | nindent 8 }}
+    spec:
+      # No Key Vault volume / workload identity: the studio holds no secrets —
+      # auth is the satoken cookie and all backend access goes through the
+      # per-host /aurora ingress straight to the server.
+      containers:
+        - name: {{ $component }}
+          image: "{{ .Values.image.registry }}/{{ .Values.studio.image.repository }}:{{ .Values.studio.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.studio.containerPort }}
+          env:
+            {{- include "fizzdragon.componentEnv" .Values.studio | nindent 12 }}
+          resources:
+            {{- toYaml .Values.studio.resources | nindent 12 }}
+          readinessProbe:
+            httpGet: { path: /canvas, port: http }
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: { path: /canvas, port: http }
+            initialDelaySeconds: 30
+            periodSeconds: 30
+      {{- with .Values.studio.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.studio.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "fizzdragon.componentName" $ctx }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "fizzdragon.componentLabels" $ctx | nindent 4 }}
+spec:
+  type: ClusterIP
+  ports:
+    - port: {{ .Values.studio.containerPort }}
+      targetPort: http
+      protocol: TCP
+      name: http
+  selector:
+    {{- include "fizzdragon.componentSelector" $ctx | nindent 4 }}
+{{- end }}

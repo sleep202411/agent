@@ -207,6 +207,7 @@ export const taskSlice = createSlice({
           id: event.taskId,
           type: event.type,
           status: event.status,
+          source: "server",
           input: {},
           output: event.output,
           error: event.error,

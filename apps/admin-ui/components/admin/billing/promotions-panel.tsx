@@ -38,14 +38,18 @@ import type {
   BillingPromotionStatus,
 } from "./types";
 
+type BillingSiteKey = "global" | "cn";
+
 const emptyPromotions: AdminBillingPromotionsData = { items: [] };
 
 export function BillingPromotionsPanel({
+  siteKey,
   siteLabel,
   databaseLabel,
   initialPromotions,
   initialError,
 }: {
+  siteKey: BillingSiteKey;
   siteLabel: string;
   databaseLabel: string;
   initialPromotions: AdminBillingPromotionsData | null;
@@ -93,6 +97,14 @@ export function BillingPromotionsPanel({
     const appliesProductType = stringField(form, "appliesProductType");
     const maxRedemptions = stringField(form, "maxRedemptions");
     const maxRedemptionsPerUser = stringField(form, "maxRedemptionsPerUser");
+    const metadata =
+      appliesProductType === "compute_point_pack"
+        ? {
+            surface: "fizzstudio_compute_topup",
+            cell: siteKey,
+            providerCouponRequired: true,
+          }
+        : undefined;
     try {
       await mutateEnvelope("/api/admin/billing/promotions", {
         code: stringField(form, "code"),
@@ -104,6 +116,7 @@ export function BillingPromotionsPanel({
         appliesProductType: appliesProductType || undefined,
         maxRedemptions: maxRedemptions ? Number(maxRedemptions) : undefined,
         maxRedemptionsPerUser: maxRedemptionsPerUser ? Number(maxRedemptionsPerUser) : undefined,
+        metadata,
         providerBindings: provider
           ? [
               {
@@ -173,6 +186,7 @@ export function BillingPromotionsPanel({
         onCreatePromotion={handleCreatePromotion}
         onPromotionStatus={handlePromotionStatus}
         onSyncBinding={handleSyncPromotionBinding}
+        siteKey={siteKey}
       />
     </div>
   );
@@ -191,6 +205,7 @@ function PromotionsView({
   onCreatePromotion,
   onPromotionStatus,
   onSyncBinding,
+  siteKey,
 }: {
   promotions: BillingPromotionRow[];
   status: string;
@@ -204,6 +219,7 @@ function PromotionsView({
   onCreatePromotion: (event: React.FormEvent<HTMLFormElement>) => void;
   onPromotionStatus: (promotionId: string, status: BillingPromotionStatus) => void;
   onSyncBinding: (bindingId: string) => void;
+  siteKey: BillingSiteKey;
 }) {
   const columns = useMemo<ColumnDef<BillingPromotionRow, unknown>[]>(
     () => [
@@ -379,6 +395,9 @@ function PromotionsView({
               <option value="wechat_pay" title={providerHelp("wechat_pay")}>
                 微信支付
               </option>
+              <option value="alipay" title={providerHelp("alipay")}>
+                支付宝
+              </option>
               <option value="manual" title={providerHelp("manual")}>
                 线下确认
               </option>
@@ -399,7 +418,7 @@ function PromotionsView({
           className="rounded-none border-0"
         />
       </section>
-      <CreatePromotionForm loading={loading} onSubmit={onCreatePromotion} />
+      <CreatePromotionForm loading={loading} onSubmit={onCreatePromotion} siteKey={siteKey} />
     </div>
   );
 }
@@ -407,17 +426,32 @@ function PromotionsView({
 function CreatePromotionForm({
   loading,
   onSubmit,
+  siteKey,
 }: {
   loading: boolean;
   onSubmit: (event: React.FormEvent<HTMLFormElement>) => void;
+  siteKey: BillingSiteKey;
 }) {
+  const [appliesProductType, setAppliesProductType] = useState("compute_point_pack");
+  const defaultProvider = siteKey === "cn" ? "wechat_pay" : "airwallex";
+  const [provider, setProvider] = useState(defaultProvider);
+
+  function handleProductTypeChange(value: string) {
+    setAppliesProductType(value);
+    if (value === "compute_point_pack") {
+      setProvider(defaultProvider);
+      return;
+    }
+    if (!provider) setProvider(defaultProvider);
+  }
+
   return (
     <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-[0_1px_2px_rgba(15,23,42,0.04)]">
       <div className="flex items-center justify-between gap-3">
         <div>
           <h3 className="text-sm font-semibold text-slate-950">新建促销券</h3>
           <p className="mt-1 text-[12px] text-slate-500">
-            当前只开放百分比折扣；100% 可作为免费兑换券，固定法币抵扣暂不提供运营入口。
+            算力积分付费促销必须同步到支付供应商；100% 可作为零元内部兑换券。
           </p>
         </div>
         <IconTicket className="size-4 text-slate-400" />
@@ -448,9 +482,13 @@ function CreatePromotionForm({
           <TextInput name="percentOff" required inputMode="decimal" placeholder="100" />
         </FormLabel>
         <FormLabel label="适用类型" help="限制兑换码只能用于某类商品；留空表示全部商品可用。">
-          <Select name="appliesProductType" defaultValue="">
+          <Select
+            name="appliesProductType"
+            value={appliesProductType}
+            onChange={handleProductTypeChange}
+          >
             <option value="">全部商品</option>
-            <option value="bubble_pack" title={productTypeHelp("bubble_pack")}>
+            <option value="compute_point_pack" title={productTypeHelp("compute_point_pack")}>
               算力积分
             </option>
             <option value="community_point_pack" title={productTypeHelp("community_point_pack")}>
@@ -474,21 +512,29 @@ function CreatePromotionForm({
         </div>
         <FormLabel
           label="供应商"
-          help="付费折扣同步到 Airwallex/微信；内部免费兑换码选择无需供应商。"
+          help="算力积分付费订单使用 Hosted Checkout，优惠码必须绑定并同步到支付供应商；只有 100% 零元兑换券可不绑定供应商。"
         >
-          <Select name="provider" defaultValue="airwallex">
-            <option value="">无需供应商</option>
+          <Select name="provider" value={provider} onChange={setProvider}>
+            <option value="">仅零元内部兑换</option>
             <option value="airwallex" title={providerHelp("airwallex")}>
               Airwallex
             </option>
             <option value="wechat_pay" title={providerHelp("wechat_pay")}>
               微信支付
             </option>
+            <option value="alipay" title={providerHelp("alipay")}>
+              支付宝
+            </option>
             <option value="manual" title={providerHelp("manual")}>
               线下确认
             </option>
           </Select>
         </FormLabel>
+        <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-[12px] leading-5 text-slate-600">
+          {appliesProductType === "compute_point_pack"
+            ? `算力积分促销券需先同步为 ${siteKey === "cn" ? "微信/支付宝" : "Airwallex"} coupon；支付失败会自动释放预占核销次数。`
+            : `非算力商品如需付费折扣，应选择 ${siteKey === "cn" ? "微信支付" : "Airwallex"} 并完成供应商优惠券同步。`}
+        </div>
         <TextInput name="description" placeholder="内部备注，可选" />
         <Button type="submit" disabled={loading}>
           <IconPlus className="size-3.5" />

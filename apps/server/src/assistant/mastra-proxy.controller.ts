@@ -31,6 +31,7 @@ import { AgentStreamService } from './chat/agent-stream.service';
 import { mastraFetch } from './mastra-fetch';
 import { AgentStateService } from './chat/agent-state.service';
 import { EntityEventsService } from './chat/entity-events.service';
+import { describeUnknown, scalarString } from '../common/values';
 
 type MastraChatBody = {
   projectId?: string;
@@ -134,12 +135,8 @@ export class MastraProxyController {
     const context = {
       userId: user.userId,
       projectId: body.projectId,
-      worldId: body.workspaceContext?.worldId
-        ? String(body.workspaceContext.worldId)
-        : undefined,
-      episodeId: body.workspaceContext?.episodeId
-        ? String(body.workspaceContext.episodeId)
-        : undefined,
+      worldId: scalarString(body.workspaceContext?.worldId),
+      episodeId: scalarString(body.workspaceContext?.episodeId),
       activeTab:
         typeof body.workspaceContext?.activeTab === 'string'
           ? body.workspaceContext.activeTab
@@ -275,7 +272,7 @@ export class MastraProxyController {
         if (Array.isArray(parts)) {
           const last = parts[parts.length - 1];
           if (last && last.type === 'text' && typeof last.text === 'string') {
-            last.text = `${last.text as string}${markerText}`;
+            last.text = `${last.text}${markerText}`;
           } else {
             parts.push({ type: 'text', text: markerText.trimStart() });
           }
@@ -334,9 +331,8 @@ export class MastraProxyController {
       `POST /assistant/submit-message-to-agent → ${upstream} userId=${user.userId} project=${body.projectId} messages=${sanitizedMessages.length} (raw=${messages.length})`,
     );
 
-    const cookie = (req.headers.cookie as string | undefined) ?? '';
-    const acceptLanguage =
-      (req.headers['accept-language'] as string | undefined) ?? 'zh-CN';
+    const cookie = req.headers.cookie ?? '';
+    const acceptLanguage = req.headers['accept-language'] ?? 'zh-CN';
 
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
@@ -473,7 +469,7 @@ export class MastraProxyController {
       })
       .catch((err) => {
         this.logger.warn(
-          `agentStream.consume failed project=${body.projectId}: ${err instanceof Error ? err.message : err}`,
+          `agentStream.consume failed project=${body.projectId}: ${describeUnknown(err)}`,
         );
       })
       .finally(() => {
@@ -494,10 +490,7 @@ export class MastraProxyController {
   // they coexist with the legacy SSE pipe above.
 
   @Get('conversation/:projectId/messages')
-  async listMessageIds(
-    @Param('projectId') projectId: string,
-    @CurrentUser() _user: AuthUser,
-  ) {
+  async listMessageIds(@Param('projectId') projectId: string) {
     const messageIds = await this.store.getMessageIds(projectId);
     const agentState = await this.store.getAgentState(projectId);
     return { projectId, messageIds, agentState };
@@ -531,7 +524,6 @@ export class MastraProxyController {
           size?: number;
         }
       | undefined,
-    @CurrentUser() _user: AuthUser,
   ) {
     if (!file || !file.buffer || file.buffer.length === 0) {
       throw new HttpException(
@@ -567,7 +559,6 @@ export class MastraProxyController {
   @Post('get-messages')
   async getMessages(
     @Body() body: { projectId?: string; messageIds?: unknown },
-    @CurrentUser() _user: AuthUser,
   ) {
     if (!body.projectId || !Array.isArray(body.messageIds)) {
       throw new HttpException(
@@ -642,9 +633,8 @@ export class MastraProxyController {
     const { body, originalMessages, confirmProjectParams, user, req, res } =
       args;
     const projectId = body.projectId!;
-    const cookie = req.headers.cookie as string | undefined;
-    const acceptLanguage =
-      (req.headers['accept-language'] as string | undefined) ?? 'zh-CN';
+    const cookie = req.headers.cookie;
+    const acceptLanguage = req.headers['accept-language'] ?? 'zh-CN';
 
     // See handleConfirmWorkflowShortCircuit — running→idle guarantees a
     // state transition, without this the final idle gets dedup'd and the
@@ -655,7 +645,7 @@ export class MastraProxyController {
       await this.persistInboundMessages(projectId, originalMessages);
     } catch (err) {
       this.logger.warn(
-        `persistInboundMessages (params short-circuit) failed project=${projectId}: ${err instanceof Error ? err.message : err}`,
+        `persistInboundMessages (params short-circuit) failed project=${projectId}: ${describeUnknown(err)}`,
       );
     }
 
@@ -672,9 +662,8 @@ export class MastraProxyController {
         projectId,
       );
       projectName = typeof current.name === 'string' ? current.name : '';
-      const worldIdForSave = body.workspaceContext?.worldId
-        ? String(body.workspaceContext.worldId)
-        : current.worldId;
+      const worldIdForSave =
+        scalarString(body.workspaceContext?.worldId) ?? current.worldId;
       await this.workspace.updateProject(javaHeaders, {
         id: projectId,
         worldId: worldIdForSave,
@@ -711,12 +700,8 @@ export class MastraProxyController {
     const agentContext = {
       userId: user.userId,
       projectId,
-      worldId: body.workspaceContext?.worldId
-        ? String(body.workspaceContext.worldId)
-        : undefined,
-      episodeId: body.workspaceContext?.episodeId
-        ? String(body.workspaceContext.episodeId)
-        : undefined,
+      worldId: scalarString(body.workspaceContext?.worldId),
+      episodeId: scalarString(body.workspaceContext?.episodeId),
       locale:
         typeof body.workspaceContext?.locale === 'string'
           ? body.workspaceContext.locale

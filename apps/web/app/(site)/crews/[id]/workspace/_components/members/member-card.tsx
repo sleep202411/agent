@@ -13,6 +13,7 @@
  */
 
 import Link from "next/link";
+import { encodeUserId } from "@/src/lib/user-id-codec";
 import {
   IconCalendar,
   IconCoin,
@@ -137,7 +138,7 @@ export function MemberCard({
       {/* Footer: actions */}
       <div className="mt-auto flex items-center justify-between border-t border-border/40 pt-2">
         <Link
-          href={`/creators/${member.userId}`}
+          href={`/creators/${encodeUserId(member.userId)}`}
           className="inline-flex items-center gap-1 text-[11px] text-primary hover:underline"
         >
           {t("memberViewProfile")}

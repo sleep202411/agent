@@ -18,6 +18,7 @@ import {
 } from '@nestjs/common';
 import type { Request } from 'express';
 import { CurrentUser, type AuthUser } from '../../auth';
+import { requiredScalarString, scalarString } from '../../common/values';
 import { mastraFetch } from '../mastra-fetch';
 
 type JsonBody = Record<string, unknown>;
@@ -49,12 +50,11 @@ export class WorkflowProxyController {
   ): Record<string, string> {
     const headers: Record<string, string> = {
       Accept: 'application/json',
-      'accept-language':
-        (req.headers['accept-language'] as string | undefined) ?? 'zh-CN',
+      'accept-language': req.headers['accept-language'] ?? 'zh-CN',
       'x-storyos-context': JSON.stringify(context),
     };
     if (hasBody) headers['Content-Type'] = 'application/json';
-    const cookie = req.headers.cookie as string | undefined;
+    const cookie = req.headers.cookie;
     if (cookie) headers.cookie = cookie;
     return headers;
   }
@@ -65,13 +65,9 @@ export class WorkflowProxyController {
   ): ContextHeader {
     return {
       userId: user.userId,
-      projectId: String(workspaceContext?.projectId ?? ''),
-      worldId: workspaceContext?.worldId
-        ? String(workspaceContext.worldId)
-        : undefined,
-      episodeId: workspaceContext?.episodeId
-        ? String(workspaceContext.episodeId)
-        : undefined,
+      projectId: requiredScalarString(workspaceContext?.projectId),
+      worldId: scalarString(workspaceContext?.worldId),
+      episodeId: scalarString(workspaceContext?.episodeId),
       locale:
         typeof workspaceContext?.locale === 'string'
           ? workspaceContext.locale
@@ -131,15 +127,15 @@ export class WorkflowProxyController {
     @CurrentUser() user: AuthUser,
     @Req() req: Request,
   ) {
-    const projectId = String(body.projectId ?? '');
-    const workflowName = String(body.workflowName ?? '');
+    const projectId = requiredScalarString(body.projectId);
+    const workflowName = requiredScalarString(body.workflowName);
     if (!projectId || !workflowName) {
       throw new HttpException(
         'projectId and workflowName required',
         HttpStatus.BAD_REQUEST,
       );
     }
-    const worldId = body.worldId ? String(body.worldId) : undefined;
+    const worldId = scalarString(body.worldId);
     const context = this.buildContext(user, { projectId, worldId });
     return this.forward('/workflow/start', {
       method: 'POST',
@@ -160,7 +156,7 @@ export class WorkflowProxyController {
     @CurrentUser() user: AuthUser,
     @Req() req: Request,
   ) {
-    const projectId = String(body.projectId ?? '');
+    const projectId = requiredScalarString(body.projectId);
     if (!projectId)
       throw new HttpException('projectId required', HttpStatus.BAD_REQUEST);
     const context = this.buildContext(user, { projectId });
@@ -183,7 +179,7 @@ export class WorkflowProxyController {
     @CurrentUser() user: AuthUser,
     @Req() req: Request,
   ) {
-    const projectId = String(body.projectId ?? '');
+    const projectId = requiredScalarString(body.projectId);
     if (!projectId)
       throw new HttpException('projectId required', HttpStatus.BAD_REQUEST);
     const context = this.buildContext(user, { projectId });
@@ -208,11 +204,9 @@ export class WorkflowProxyController {
     @CurrentUser() user: AuthUser,
     @Req() req: Request,
   ) {
-    const projectId = String(body?.projectId ?? '');
+    const projectId = requiredScalarString(body?.projectId);
     const runIds = Array.isArray(body?.runIds)
-      ? (body.runIds.filter(
-          (r): r is string => typeof r === 'string',
-        ) as string[])
+      ? body.runIds.filter((r): r is string => typeof r === 'string')
       : [];
     const context = this.buildContext(
       user,
@@ -238,7 +232,7 @@ export class WorkflowProxyController {
     @CurrentUser() user: AuthUser,
     @Req() req: Request,
   ) {
-    const projectId = String(body?.projectId ?? '');
+    const projectId = requiredScalarString(body?.projectId);
     if (!projectId)
       throw new HttpException('projectId required', HttpStatus.BAD_REQUEST);
     const context = this.buildContext(user, { projectId });
@@ -280,7 +274,10 @@ export class WorkflowProxyController {
     @Req() req: Request,
     @CurrentUser() user: AuthUser,
   ) {
-    const projectId = String(req.query?.projectId ?? '');
+    const rawProjectId = req.query?.projectId;
+    const projectId = Array.isArray(rawProjectId)
+      ? (scalarString(rawProjectId[0]) ?? '')
+      : requiredScalarString(rawProjectId);
     if (!projectId)
       throw new HttpException(
         'projectId query param required',

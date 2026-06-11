@@ -10,7 +10,6 @@ import {
   HttpStatus,
   Post,
 } from '@nestjs/common';
-import { CurrentUser, type AuthUser } from '../../auth';
 import { MessageStoreService } from './message-store.service';
 import { AgentStateService } from './agent-state.service';
 
@@ -50,10 +49,7 @@ export class ChatController {
    * Returns the full message payloads for the requested ids.
    */
   @Post('get-messages')
-  async getMessages(
-    @Body() body: GetMessagesBody,
-    @CurrentUser() _user: AuthUser,
-  ) {
+  async getMessages(@Body() body: GetMessagesBody) {
     const conversationId = pickConversationId(body);
     if (!conversationId) {
       throw new HttpException(
@@ -81,7 +77,7 @@ export class ChatController {
    * their local cache before subscribing to the WS.
    */
   @Post('list-messages')
-  async listMessages(@Body() body: ListBody, @CurrentUser() _user: AuthUser) {
+  async listMessages(@Body() body: ListBody) {
     const conversationId = pickConversationId(body);
     if (!conversationId) {
       throw new HttpException(
@@ -112,10 +108,7 @@ export class ChatController {
    * WS clients see a hash mismatch on the next heartbeat and resync.
    */
   @Post('clear-conversation')
-  async clearConversation(
-    @Body() body: ListBody,
-    @CurrentUser() _user: AuthUser,
-  ) {
+  async clearConversation(@Body() body: ListBody) {
     const conversationId = pickConversationId(body);
     if (!conversationId) {
       throw new HttpException(

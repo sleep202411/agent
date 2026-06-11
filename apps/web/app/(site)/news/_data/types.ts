@@ -33,4 +33,6 @@ export interface NewsItem {
   /** Stable slug, only used by static articles. */
   slug?: string;
   author?: string;
+  /** Category slug for static articles (see _data/categories.ts). Live items: undefined. */
+  category?: string;
 }

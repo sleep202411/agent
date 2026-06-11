@@ -2,6 +2,7 @@ import type {
   AiBillingPolicy,
   AiGenerationMode,
   AiInputSchema,
+  AiJsonValue,
   AiJobType,
   AiModelFamily,
   AiOutputSchema,
@@ -15,6 +16,14 @@ export interface FalModelRuntimeConfig {
   type: AiJobType;
   family: AiModelFamily;
   generationModes: AiGenerationMode[];
+  /**
+   * Per-mode submit endpoints for multi-endpoint models (e.g. seedance 2.0
+   * splits text/image/reference-to-video across 3 fal endpoints). Built from
+   * each active binding's OWN supportedModes in priority/weight/endpointId
+   * order (first binding wins per mode). Every sibling runtime of a canonical
+   * carries the SAME map so poll-time lookups behave identically.
+   */
+  modeEndpoints?: Partial<Record<AiGenerationMode, string>>;
   name: string;
   description: string;
   enabled: boolean;
@@ -28,6 +37,7 @@ export interface FalModelRuntimeConfig {
   };
   queuePolicy: AiQueuePolicy;
   billingPolicy: AiBillingPolicy;
+  parameterPolicy?: AiJsonValue;
   inputSchema: AiInputSchema;
   outputSchema: AiOutputSchema;
   providerInputMap: Record<string, FalProviderFieldBinding>;
@@ -41,6 +51,7 @@ export interface FalProviderFieldBinding {
     | 'identity'
     | 'omitAuto'
     | 'mediaUrl'
+    | 'mediaFirstUrl'
     | 'mediaArrayToUrls'
     | 'secondsToInteger';
   omitIfEmpty?: boolean;
@@ -50,6 +61,7 @@ export interface FalProviderFieldBinding {
 export interface FalSubmitResponse {
   request_id?: string;
   requestId?: string;
+  queue_position?: number;
   status_url?: string;
   response_url?: string;
   cancel_url?: string;
@@ -60,6 +72,9 @@ export interface FalStatusResponse {
   queue_position?: number;
   logs?: Array<{ message?: string; level?: string; timestamp?: string }>;
   response_url?: string;
+  metrics?: Record<string, unknown>;
+  error?: string;
+  error_type?: string;
 }
 
 export interface FalMediaObject {
@@ -70,4 +85,35 @@ export interface FalMediaObject {
   width?: number;
   height?: number;
   duration?: number;
+}
+
+export interface FalPricingItem {
+  endpoint_id?: string;
+  unit_price?: number;
+  unit?: string;
+  currency?: string;
+}
+
+export interface FalPricingResponse {
+  prices?: FalPricingItem[];
+  next_cursor?: string | null;
+  has_more?: boolean;
+}
+
+export interface FalRequestListItem {
+  request_id?: string;
+  endpoint_id?: string;
+  started_at?: string;
+  sent_at?: string;
+  ended_at?: string;
+  status_code?: number;
+  duration?: number;
+  json_input?: unknown;
+  json_output?: unknown;
+}
+
+export interface FalRequestListResponse {
+  items?: FalRequestListItem[];
+  next_cursor?: string | null;
+  has_more?: boolean;
 }

@@ -3,6 +3,8 @@ import {
   Prisma,
   WalletAccountStatus,
   WalletBalanceKind,
+  WalletCreditGrantStatus,
+  WalletCreditGrantType,
   WalletCurrencyType,
   WalletLedgerEntryType,
   WalletOwnerType,
@@ -15,7 +17,7 @@ import { PrismaService } from '../infra/db/db.module';
 
 const DEFAULT_WALLET_ACCOUNTS = [
   {
-    currency: WalletCurrencyType.bubble,
+    currency: WalletCurrencyType.compute_point,
     balanceKind: WalletBalanceKind.consumable,
   },
   {
@@ -43,12 +45,20 @@ export interface PostWalletEntryInput {
   projectId?: string | null;
   description?: string | null;
   metadata?: Record<string, unknown>;
+  creditGrant?: {
+    grantType: WalletCreditGrantType;
+    validFrom?: Date | null;
+    expiresAt?: Date | null;
+    priority?: number | null;
+    metadata?: Record<string, unknown>;
+  };
 }
 
 export interface PostedWalletEntry {
   transaction: WalletTransaction;
   entry: WalletLedgerEntry;
   account: WalletAccount;
+  deduped: boolean;
 }
 
 @Injectable()
@@ -106,6 +116,7 @@ export class WalletLedgerService {
           transaction: existing,
           entry: existing.entries[0],
           account,
+          deduped: true,
         };
       }
 
@@ -162,6 +173,25 @@ export class WalletLedgerService {
         },
       });
 
+      if (isCreditGrantBackedAccount(account)) {
+        if (input.availableDelta > 0n && input.heldDelta === 0n) {
+          await createCreditGrantTx(tx, {
+            account,
+            transaction,
+            entry,
+            input,
+          });
+        } else if (input.availableDelta < 0n && input.heldDelta === 0n) {
+          await consumeAvailableGrantsTx(tx, {
+            accountId: account.id,
+            transactionId: transaction.id,
+            ledgerEntryId: entry.id,
+            amount: -input.availableDelta,
+            entryType: input.entryType,
+          });
+        }
+      }
+
       const updated = await tx.walletAccount.update({
         where: { id: account.id },
         data: {
@@ -171,7 +201,238 @@ export class WalletLedgerService {
         },
       });
 
-      return { transaction, entry, account: updated };
+      return { transaction, entry, account: updated, deduped: false };
     });
   }
+}
+
+type WalletTx = Prisma.TransactionClient;
+
+async function createCreditGrantTx(
+  tx: WalletTx,
+  args: {
+    account: WalletAccount;
+    transaction: WalletTransaction;
+    entry: WalletLedgerEntry;
+    input: PostWalletEntryInput;
+  },
+) {
+  const grant = args.input.creditGrant;
+  const grantType = grant?.grantType ?? inferCreditGrantType(args.input);
+  const validFrom = grant?.validFrom ?? new Date();
+  const expiresAt = grant?.expiresAt ?? null;
+  const amount = args.input.availableDelta;
+
+  if (amount <= 0n) return;
+  if (expiresAt && expiresAt <= validFrom) {
+    throw new ConflictException({
+      code: 'WALLET_GRANT_EXPIRES_BEFORE_START',
+      msg: 'Wallet credit grant expiry must be after its start time.',
+    });
+  }
+
+  const creditGrant = await tx.walletCreditGrant.create({
+    data: {
+      accountId: args.account.id,
+      transactionId: args.transaction.id,
+      grantType,
+      status: WalletCreditGrantStatus.active,
+      totalAmount: amount,
+      availableAmount: amount,
+      heldAmount: 0n,
+      consumedAmount: 0n,
+      expiredAmount: 0n,
+      reversedAmount: 0n,
+      priority: grant?.priority ?? defaultGrantPriority(grantType, expiresAt),
+      validFrom,
+      expiresAt,
+      sourceType: args.input.sourceType,
+      sourceId: args.input.sourceId ?? null,
+      metadata: {
+        ...(args.input.metadata ?? {}),
+        ...(grant?.metadata ?? {}),
+        walletTransactionId: args.transaction.id,
+        walletLedgerEntryId: args.entry.id,
+      } as Prisma.InputJsonValue,
+    },
+  });
+
+  await tx.walletCreditAllocation.create({
+    data: {
+      grantId: creditGrant.id,
+      transactionId: args.transaction.id,
+      ledgerEntryId: args.entry.id,
+      amount,
+      availableDelta: amount,
+      heldDelta: 0n,
+      consumedDelta: 0n,
+      expiredDelta: 0n,
+      reversedDelta: 0n,
+    },
+  });
+}
+
+async function consumeAvailableGrantsTx(
+  tx: WalletTx,
+  args: {
+    accountId: string;
+    transactionId: string;
+    ledgerEntryId: string;
+    amount: bigint;
+    entryType: WalletLedgerEntryType;
+  },
+) {
+  let remaining = args.amount;
+  const now = new Date();
+  const grants = await tx.walletCreditGrant.findMany({
+    where: {
+      accountId: args.accountId,
+      status: WalletCreditGrantStatus.active,
+      availableAmount: { gt: 0n },
+      validFrom: { lte: now },
+      OR: [{ expiresAt: null }, { expiresAt: { gt: now } }],
+    },
+    orderBy: [
+      { expiresAt: { sort: 'asc', nulls: 'last' } },
+      { priority: 'asc' },
+      { createdAt: 'asc' },
+      { id: 'asc' },
+    ],
+  });
+
+  for (const grant of grants) {
+    if (remaining <= 0n) break;
+    const take =
+      grant.availableAmount < remaining ? grant.availableAmount : remaining;
+    const nextAvailable = grant.availableAmount - take;
+    const reversedDelta = shouldReverseGrant(args.entryType) ? take : 0n;
+    const consumedDelta = shouldReverseGrant(args.entryType) ? 0n : take;
+    const nextConsumed = grant.consumedAmount + consumedDelta;
+    const nextReversed = grant.reversedAmount + reversedDelta;
+
+    await tx.walletCreditGrant.update({
+      where: { id: grant.id },
+      data: {
+        availableAmount: nextAvailable,
+        consumedAmount: nextConsumed,
+        reversedAmount: nextReversed,
+        status: grantStatusAfter({
+          totalAmount: grant.totalAmount,
+          availableAmount: nextAvailable,
+          heldAmount: grant.heldAmount,
+          consumedAmount: nextConsumed,
+          expiredAmount: grant.expiredAmount,
+          reversedAmount: nextReversed,
+        }),
+      },
+    });
+    await tx.walletCreditAllocation.create({
+      data: {
+        grantId: grant.id,
+        transactionId: args.transactionId,
+        ledgerEntryId: args.ledgerEntryId,
+        amount: take,
+        availableDelta: -take,
+        heldDelta: 0n,
+        consumedDelta,
+        expiredDelta: 0n,
+        reversedDelta,
+      },
+    });
+    remaining -= take;
+  }
+
+  if (remaining > 0n) {
+    throw new ConflictException({
+      code: 'INSUFFICIENT_UNEXPIRED_WALLET_GRANTS',
+      msg: 'Wallet balance is unavailable because usable credit grants are insufficient.',
+      requiredAmount: args.amount.toString(),
+      remainingAmount: remaining.toString(),
+    });
+  }
+}
+
+function isCreditGrantBackedAccount(account: WalletAccount): boolean {
+  return (
+    account.currency === WalletCurrencyType.compute_point &&
+    account.balanceKind === WalletBalanceKind.consumable
+  );
+}
+
+function inferCreditGrantType(
+  input: PostWalletEntryInput,
+): WalletCreditGrantType {
+  if (input.sourceType === 'billing_order') {
+    const grantType = grantTypeFromMetadata(input.metadata);
+    return grantType ?? WalletCreditGrantType.purchase_topup;
+  }
+  if (input.sourceType.includes('check_in')) {
+    return WalletCreditGrantType.check_in_reward;
+  }
+  if (
+    input.sourceType.includes('campaign') ||
+    input.sourceType.includes('promotion') ||
+    input.sourceType.includes('activity')
+  ) {
+    return WalletCreditGrantType.campaign_reward;
+  }
+  if (
+    input.sourceType.includes('admin') ||
+    input.sourceType.includes('adjustment') ||
+    input.entryType === WalletLedgerEntryType.adjustment
+  ) {
+    return WalletCreditGrantType.admin_adjustment;
+  }
+  if (input.entryType === WalletLedgerEntryType.refund) {
+    return WalletCreditGrantType.refund_return;
+  }
+  return WalletCreditGrantType.system_grant;
+}
+
+function grantTypeFromMetadata(
+  metadata?: Record<string, unknown>,
+): WalletCreditGrantType | null {
+  const value = metadata?.grantType;
+  return typeof value === 'string' && value in WalletCreditGrantType
+    ? (value as WalletCreditGrantType)
+    : null;
+}
+
+function defaultGrantPriority(
+  grantType: WalletCreditGrantType,
+  expiresAt: Date | null,
+): number {
+  if (expiresAt) return 10;
+  if (grantType === WalletCreditGrantType.membership_included) return 20;
+  if (grantType === WalletCreditGrantType.check_in_reward) return 30;
+  if (grantType === WalletCreditGrantType.campaign_reward) return 40;
+  if (grantType === WalletCreditGrantType.admin_adjustment) return 80;
+  if (grantType === WalletCreditGrantType.purchase_topup) return 100;
+  return 120;
+}
+
+function shouldReverseGrant(entryType: WalletLedgerEntryType): boolean {
+  return (
+    entryType === WalletLedgerEntryType.refund ||
+    entryType === WalletLedgerEntryType.adjustment ||
+    entryType === WalletLedgerEntryType.transfer_out
+  );
+}
+
+function grantStatusAfter(input: {
+  totalAmount: bigint;
+  availableAmount: bigint;
+  heldAmount: bigint;
+  consumedAmount: bigint;
+  expiredAmount: bigint;
+  reversedAmount: bigint;
+}): WalletCreditGrantStatus {
+  if (input.availableAmount > 0n || input.heldAmount > 0n) {
+    return WalletCreditGrantStatus.active;
+  }
+  if (input.expiredAmount > 0n) return WalletCreditGrantStatus.expired;
+  if (input.reversedAmount === input.totalAmount) {
+    return WalletCreditGrantStatus.reversed;
+  }
+  return WalletCreditGrantStatus.exhausted;
 }

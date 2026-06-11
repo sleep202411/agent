@@ -53,12 +53,11 @@ export class AssetsProxyController {
   ): Record<string, string> {
     const headers: Record<string, string> = {
       Accept: 'application/json',
-      'accept-language':
-        (req.headers['accept-language'] as string | undefined) ?? 'zh-CN',
+      'accept-language': req.headers['accept-language'] ?? 'zh-CN',
       'x-storyos-context': JSON.stringify(context),
     };
     if (hasBody) headers['Content-Type'] = 'application/json';
-    const cookie = req.headers.cookie as string | undefined;
+    const cookie = req.headers.cookie;
     if (cookie) headers.cookie = cookie;
     return headers;
   }

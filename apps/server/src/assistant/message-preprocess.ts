@@ -32,7 +32,6 @@ function getRedis(): Redis {
   const url = process.env.REDIS_URL;
   redisClient = url ? new Redis(url) : new Redis();
   redisClient.on('error', (err) => {
-    // eslint-disable-next-line no-console
     console.error('[message-preprocess redis]', err?.message ?? err);
   });
   return redisClient;

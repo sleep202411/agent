@@ -21,6 +21,10 @@ npx turbo dev --filter=server
 npm run db:migrate -w server
 ```
 
+`db:migrate` 和 `db:studio` 带本地数据库守卫，只允许
+`DATABASE_URL` 指向 `localhost` / `127.0.0.1` / `::1`。如果本机 `.env`
+误指向共享库或线上库，命令会在连接数据库前直接退出。
+
 共享环境 / 生产环境：
 
 ```bash
@@ -88,6 +92,19 @@ ADMIN_BOOTSTRAP_REQUIRE_MFA=true
 登录链路包含登录失败风控：短时间内多次失败会记录 `admin_login_attempts`
 并临时锁定账号；启用 MFA 的账号首次登录会返回 TOTP 绑定 challenge，验证成功后才创建
 `admin_sessions`。后台审计查询接口挂在 `/admin/audit`，受 `audit.read` 权限保护。
+
+本地开发可免登录访问 Admin API，方便调试管理台页面和控制平面接口。该旁路只在
+以下条件同时满足时启用：
+
+- `NODE_ENV !== "production"`；
+- `ADMIN_DEV_AUTH_BYPASS !== "false"`；
+- `DATABASE_URL` 使用 `postgresql:` / `postgres:` 且 host 是
+  `localhost` / `127.0.0.1` / `::1`。
+
+旁路会生成一个仅存在于请求上下文里的 super admin actor，不写入数据库，也不会创建
+`admin_sessions`。本地需要验证真实登录、MFA、锁定、审计时，设置
+`ADMIN_DEV_AUTH_BYPASS=false`。可选 `ADMIN_DEV_AUTH_EMAIL` 和
+`ADMIN_DEV_AUTH_NAME` 用于调整本地显示身份。
 
 ## AI Generation 架构（生产态）
 

@@ -53,7 +53,13 @@ export class FoundrySchemaRegistry {
     }
 
     if (models.length > 0) return this.sortModels(models);
-    if (!this.catalog.isConfigured()) return this.schemaFactory.seedModels();
+    // No self-emitted seed fallback. The runtime catalog is canonical-
+    // model-driven (see AiCanonicalCatalogService): Foundry only
+    // contributes models when a real AiProviderModelBinding with
+    // provider='microsoft-foundry' points at a canonical. Emitting a
+    // hardcoded gpt-image-2/sora-2 here used to duplicate the PG
+    // canonical in the picker and could shadow a real fal binding at
+    // routing time, so it is intentionally removed.
     return [];
   }
 
