@@ -23,7 +23,6 @@ import {
 import "@xyflow/react/dist/style.css";
 import {
   IconArrowLeft,
-  IconBolt,
   IconCloudUpload,
   IconLayoutGrid,
   IconMaximize,
@@ -45,6 +44,7 @@ import {
   type StoredCanvasNode,
 } from "@/lib/canvas-store";
 import { cn } from "@/lib/utils";
+import { CreditsBadge } from "@/app/_components/credits-badge";
 import { AssetLibrary, ASSET_DRAG_MIME } from "./asset-library";
 import { AddNodeMenu, type AddNodeAction } from "./add-node-menu";
 import { ToolbarButton, FLOATING_PANEL } from "./node-toolbar";
@@ -804,10 +804,7 @@ function CanvasInner({ projectId }: { projectId: string }) {
           />
         </div>
 
-        <div className="absolute top-4 right-4 z-20 flex h-9 items-center gap-1.5 rounded-full bg-popover/90 px-3.5 text-sm font-medium shadow-md backdrop-blur-xl">
-          <IconBolt className="size-4 text-white/85" stroke={1.8} />
-          <span className="tabular-nums">Credits</span>
-        </div>
+        <CreditsBadge className="absolute top-4 right-4 z-20 flex h-9 items-center gap-1.5 rounded-full bg-popover/90 px-3.5 text-sm font-medium tabular-nums shadow-md backdrop-blur-xl" />
         <input
           ref={fileInputRef}
           type="file"

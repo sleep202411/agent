@@ -18,8 +18,8 @@ async function getComputeWalletBalance(): Promise<bigint> {
   );
 }
 
-/** Compute-credits balance pill for the studio header. */
-export function CreditsBadge() {
+/** Compute-credits balance pill (header + canvas chrome). */
+export function CreditsBadge({ className }: { className?: string }) {
   const { data } = useQuery({
     queryKey: ["fizzstudio", "compute-billing", "balance"],
     queryFn: getComputeWalletBalance,
@@ -31,7 +31,10 @@ export function CreditsBadge() {
   return (
     <span
       title="Compute credits"
-      className="flex h-9 items-center gap-1.5 rounded-full bg-white/[0.06] px-3.5 text-sm font-medium tabular-nums"
+      className={
+        className ??
+        "flex h-9 items-center gap-1.5 rounded-full bg-white/[0.06] px-3.5 text-sm font-medium tabular-nums"
+      }
     >
       <IconBolt className="size-4 text-white/85" stroke={1.8} />
       {data != null ? data.toLocaleString() : "—"}

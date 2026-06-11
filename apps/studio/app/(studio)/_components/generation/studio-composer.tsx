@@ -322,7 +322,9 @@ export function StudioComposer({
               aria-label="Create"
               disabled={!canSubmit}
               onClick={onSubmit}
-              className="flex h-9 items-center gap-1.5 rounded-full bg-primary px-4 text-sm font-semibold text-primary-foreground transition-opacity hover:opacity-90 disabled:opacity-40"
+              // Brand red as the hero CTA — sanctioned case-by-case accent
+              // (DESIGN.md rule 3), applied locally, never a token.
+              className="flex h-9 items-center gap-1.5 rounded-full bg-[#E52227] px-4 text-sm font-semibold text-white shadow-lg shadow-[#E52227]/25 transition-colors hover:bg-[#c91e22] disabled:opacity-40"
             >
               {submitting ? (
                 <IconLoader2 className="size-4 animate-spin" stroke={2} />
