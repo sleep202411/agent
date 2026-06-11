@@ -40,7 +40,7 @@ import {
   type StoredCanvasNode,
 } from "@/lib/canvas-store";
 import { AssetLibrary, ASSET_DRAG_MIME } from "./asset-library";
-import { AddNodeMenu, type AddNodeAction, type ConnectFilter } from "./add-node-menu";
+import { AddNodeMenu, type AddNodeAction } from "./add-node-menu";
 import { CanvasConnectionLine } from "./connection-line";
 import { GradientEdge } from "./gradient-edge";
 import { handleColor } from "./port-colors";
@@ -61,12 +61,6 @@ export type CanvasNode = ImageNodeType | NoteNodeType | GenerationNodeType;
 
 const nodeTypes = { image: ImageNode, note: NoteNode, prompt: PromptNode, video: VideoNode };
 const edgeTypes = { gradient: GradientEdge };
-
-// Which node-menu items make sense after dragging a wire from this handle.
-// Dragging from a card's "+" input → offer an image source to feed it.
-function filterForHandle(handleId: string | null): ConnectFilter | undefined {
-  return handleId === "input" ? "image" : undefined;
-}
 
 // Zoom/pan tuning proven in apps/web's storyboard canvas.
 const MIN_ZOOM = 0.16;
@@ -784,7 +778,6 @@ function CanvasInner({ projectId }: { projectId: string }) {
           <AddNodeMenu
             left={addMenu.left}
             top={addMenu.top}
-            filter={addMenu.pending ? filterForHandle(addMenu.pending.handleId) : undefined}
             onAction={(action: AddNodeAction) => {
               if (action === "upload") {
                 pendingUploadFlowPos.current = addMenu.flow;
