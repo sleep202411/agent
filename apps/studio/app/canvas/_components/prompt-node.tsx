@@ -85,10 +85,9 @@ function PromptNodeComponent({ id, data, selected }: NodeProps<PromptNodeType>) 
         </div>
       </div>
 
-      {/* Typed ports */}
-      <Port type="target" id="prompt" side="left" top={64} label="Prompt" required />
-      <Port type="target" id="reference" side="left" top={100} label="Reference Image" />
-      <Port type="source" id="image" side="right" top={64} label="Image" />
+      {/* Output ports — every generation card can emit image and video. */}
+      <Port type="source" id="image" side="right" top={48} label="Image" />
+      <Port type="source" id="video" side="right" top={84} label="Video" />
     </div>
   );
 }
