@@ -108,6 +108,7 @@ function GenerationCard({
   id,
   data,
   selected,
+  dragging,
   modality,
 }: NodeProps<GenerationNodeType> & { modality: GenerationModality }) {
   const { updateNodeData } = useReactFlow();
@@ -181,7 +182,7 @@ function GenerationCard({
 
   return (
     <div className="relative">
-      <CanvasNodeToolbar nodeId={id} visible={(selected ?? false) && panel === null} />
+      <CanvasNodeToolbar nodeId={id} visible={(selected ?? false) && panel === null && !dragging} />
 
       {/* Header: node name left, model used right. */}
       <div className="flex items-center justify-between px-1 pb-1.5 text-xs">
@@ -266,7 +267,7 @@ function GenerationCard({
       {/* Card-specific composer — slides up below the card while selected.
           Outer wrapper animates in; inner is counter-scaled by 1/zoom so it
           stays a constant, readable screen size. */}
-      {selected && (
+      {selected && !dragging && (
         <div className="absolute top-full left-1/2 z-10 mt-3 duration-200 animate-in fade-in-0 slide-in-from-bottom-3">
           <div
             className="nodrag w-[600px] rounded-3xl bg-white/[0.05] p-4 backdrop-blur-3xl backdrop-saturate-200 shadow-[0_24px_80px_rgba(0,0,0,0.5),inset_0_1px_0_rgba(255,255,255,0.16)]"
