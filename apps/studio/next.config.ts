@@ -10,6 +10,8 @@ const AURORA_TARGET = process.env.AURORA_PROXY_TARGET ?? "https://studio.fizzdra
 const STRIP_PREFIX = process.env.AURORA_STRIP_PREFIX === "1";
 
 const nextConfig: NextConfig = {
+  // Self-contained server bundle for the Docker runner stage.
+  output: "standalone",
   async rewrites() {
     return [
       {

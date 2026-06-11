@@ -51,16 +51,16 @@ ingress:
       rewriteTarget: "" # no path rewrite, serve full Next.js app
       adminUi: true
     - name: studio
-      # New dedicated subdomain for art-studio. Testing-phase: serves the
-      # full web app (same as main host) so we can browser-verify the AKS
-      # stack via real DNS + real cert without touching fizzstudio's DNS.
-      # Production-phase: add rewriteTarget: "/art-studio/$1" once Next.js
-      # i18n routing is adjusted.
+      # Dedicated subdomain for the standalone FizzStudio app (apps/studio).
+      # The host was never publicly used while it pointed at the web app, so
+      # flipping the backend is migration-free. /aurora/* still routes to the
+      # server via the per-host aurora ingress.
       host: studio.fizzdragon.com
       secretName: fizzdragon-studio-tls
       certManager: ""
       rewriteTarget: ""
       adminUi: false
+      service: studio
 # ---------------------------------------------------------------------------
 # Shared environment (non-secret config) injected into every app pod
 # that needs it. Secrets live in Key Vault, see secretProviderClass below.
@@ -143,7 +143,7 @@ web:
   replicaCount: 1
   image:
     repository: fizzdragon-web
-    tag: 8b3f157baac2b2712f99019c3bf29995069f1e7c
+    tag: 18a6e0fc2a6bbed54f2e345f9d4e20be3e4e1f53
   containerPort: 3000
   env:
     SERVER_URL: http://fizzdragon-server:3001
@@ -157,6 +157,30 @@ web:
       operator: Equal
       value: worker
       effect: NoSchedule
+
+# ---------------------------------------------------------------------------
+# studio — the standalone FizzStudio app (apps/studio) on
+# studio.fizzdragon.com. No secrets: backend access is the per-host /aurora
+# ingress (browser-side) with the satoken cookie; the in-cluster rewrite
+# below only covers SSR-side fetches.
+# ---------------------------------------------------------------------------
+studio:
+  enabled: true
+  replicaCount: 1
+  image:
+    repository: fizzdragon-studio
+    tag: 18a6e0fc2a6bbed54f2e345f9d4e20be3e4e1f53
+  containerPort: 3000
+  env:
+    AURORA_PROXY_TARGET: http://fizzdragon-server:3001
+    AURORA_STRIP_PREFIX: "1"
+  resources:
+    requests: {cpu: 100m, memory: 256Mi}
+    limits: {cpu: 1000m, memory: 1Gi}
+  nodeSelector:
+    pool: worker
+  tolerations: []
+
 # ---------------------------------------------------------------------------
 # admin-ui — internal operations console. Public host is temporary:
 # https://fizzstudio.fizzdragon.com/admin
@@ -167,7 +191,7 @@ adminUi:
   replicaCount: 1
   image:
     repository: fizzdragon-admin-ui
-    tag: 696a4de883060d345e421435d730442c0c6af439
+    tag: 18a6e0fc2a6bbed54f2e345f9d4e20be3e4e1f53
   containerPort: 3000
   readinessPath: /admin/login
   livenessPath: /admin/login
@@ -205,7 +229,7 @@ server:
   migrateOnStart: true
   image:
     repository: fizzdragon-server
-    tag: 8b3f157baac2b2712f99019c3bf29995069f1e7c
+    tag: 18a6e0fc2a6bbed54f2e345f9d4e20be3e4e1f53
   containerPort: 3001
   env:
     PORT: "3001"
