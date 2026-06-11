@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { ImagesEmptyState } from "./_components/empty-state";
+import { ImageStudio } from "./_components/image-studio";
 
 export const metadata: Metadata = {
   title: "Image · FizzStudio",
@@ -11,7 +11,7 @@ export default function ImagesPage() {
       <h1 className="text-xl font-semibold">Image</h1>
       <p className="mt-1 text-sm text-muted-foreground">Generate images with AI models.</p>
 
-      <ImagesEmptyState />
+      <ImageStudio />
     </main>
   );
 }

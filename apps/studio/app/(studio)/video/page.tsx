@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { VideoEmptyState } from "./_components/empty-state";
+import { VideoStudio } from "./_components/video-studio";
 
 export const metadata: Metadata = {
   title: "Video · FizzStudio",
@@ -11,7 +11,7 @@ export default function VideoPage() {
       <h1 className="text-xl font-semibold">Video</h1>
       <p className="mt-1 text-sm text-muted-foreground">Generate videos with AI models.</p>
 
-      <VideoEmptyState />
+      <VideoStudio />
     </main>
   );
 }

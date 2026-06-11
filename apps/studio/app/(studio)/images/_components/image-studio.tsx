@@ -1,0 +1,256 @@
+"use client";
+
+import { useEffect, useMemo, useState } from "react";
+import {
+  buildPromptDocument,
+  compactFizzAiInput,
+  defaultSettingsForModel,
+  estimateModelSellPoints,
+  filterFizzAiInput,
+  referenceFieldsForMode,
+  type FizzAiModel,
+  type FizzAiReferenceBinding,
+  type ModelSettings,
+} from "@/app/canvas/_lib/generation-api";
+import { useAiCatalog, usableModelsByModality } from "@/app/canvas/_lib/use-ai-catalog";
+import { StudioComposer } from "@/app/(studio)/_components/generation/studio-composer";
+import {
+  useGenerationFeed,
+  type FeedJob,
+} from "@/app/(studio)/_components/generation/use-generation-feed";
+import { useReferenceUploads } from "@/app/(studio)/_components/generation/use-reference-uploads";
+import {
+  aspectRatioFromInput,
+  FailedTile,
+  FeedEmptyState,
+  FeedLoadingState,
+  ImageResultTile,
+  Masonry,
+  PendingTile,
+} from "@/app/(studio)/_components/generation/feed-tiles";
+import {
+  ResultLightbox,
+  type LightboxItem,
+} from "@/app/(studio)/_components/generation/result-lightbox";
+
+/**
+ * Image studio: create-and-browse on one surface — bottom-docked composer
+ * over a masonry history feed with in-feed progress placeholders.
+ */
+export function ImageStudio() {
+  const { data: catalog } = useAiCatalog();
+  const feed = useGenerationFeed("image", "fizzstudio-image-studio");
+  const uploads = useReferenceUploads();
+
+  const [prompt, setPrompt] = useState("");
+  const [model, setModel] = useState<FizzAiModel | undefined>(undefined);
+  const [settings, setSettings] = useState<ModelSettings>({});
+  const [submitting, setSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
+  const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
+
+  // Auto-select the first usable model with its schema defaults.
+  useEffect(() => {
+    if (model || !catalog) return;
+    const first = usableModelsByModality(catalog, "image")[0];
+    if (first) {
+      setModel(first);
+      setSettings(defaultSettingsForModel(first));
+    }
+  }, [catalog, model]);
+
+  const onSelectModel = (selected: FizzAiModel) => {
+    setModel(selected);
+    setSettings(defaultSettingsForModel(selected));
+  };
+
+  // Reference uploads are offered when the model can edit from images.
+  const referenceFields = useMemo(
+    () =>
+      model?.generationModes?.includes("image_to_image")
+        ? referenceFieldsForMode(model, "image_to_image")
+        : [],
+    [model]
+  );
+  const activeFieldNames = useMemo(
+    () => new Set(referenceFields.map((field) => field.field)),
+    [referenceFields]
+  );
+  const activeUploads = useMemo(
+    () => uploads.items.filter((item) => activeFieldNames.has(item.field)),
+    [uploads.items, activeFieldNames]
+  );
+
+  const cost = useMemo(() => {
+    if (!model) return null;
+    const estimate = estimateModelSellPoints(model, {
+      quality: typeof settings.quality === "string" ? settings.quality : undefined,
+      resolution: typeof settings.resolution === "string" ? settings.resolution : undefined,
+      numOutputs: typeof settings.numOutputs === "number" ? settings.numOutputs : 1,
+      referenceImageCount: activeUploads.length,
+    });
+    return estimate?.sellPoints ?? null;
+  }, [model, settings, activeUploads.length]);
+
+  const uploadsPending = activeUploads.some((item) => item.uploading);
+  const canSubmit = Boolean(model && prompt.trim()) && !submitting && !uploadsPending;
+
+  const submit = async () => {
+    if (!model || !canSubmit) return;
+    setSubmitting(true);
+    setSubmitError(null);
+    const ready = activeUploads.filter((item) => item.url);
+    const bindings: FizzAiReferenceBinding[] = ready.map((item, order) => ({
+      refId: item.id,
+      kind: item.kind,
+      label: item.label,
+      order,
+      url: item.url,
+      assetId: item.mediaAssetId,
+    }));
+    const referenceInput =
+      ready.length > 0
+        ? {
+            referenceImages: ready.map((item) => ({
+              url: item.url!,
+              refId: item.id,
+              label: item.label,
+              assetId: item.mediaAssetId,
+            })),
+          }
+        : {};
+    const input = compactFizzAiInput(
+      filterFizzAiInput(model, { ...settings, ...referenceInput, prompt })
+    );
+    const result = await feed.submit({
+      prompt,
+      modelId: model.id,
+      schemaVersion: model.schemaVersion,
+      input,
+      promptDocument: buildPromptDocument(prompt, bindings),
+      referenceBindings: bindings.length ? bindings : undefined,
+    });
+    setSubmitting(false);
+    if (!result.ok) setSubmitError(result.error ?? "Generation failed");
+  };
+
+  // Flattened lightbox items: every completed output, history order.
+  const lightboxItems = useMemo<LightboxItem[]>(
+    () =>
+      feed.jobs.flatMap((job) =>
+        job.status === "done"
+          ? job.outputs
+              .filter((output) => output.type === "image")
+              .map((output, index) => ({ key: `${job.localId}:${index}`, job, output }))
+          : []
+      ),
+    [feed.jobs]
+  );
+  const openLightbox = (key: string) =>
+    setLightboxIndex(
+      Math.max(
+        0,
+        lightboxItems.findIndex((item) => item.key === key)
+      )
+    );
+
+  const modelName = (modelId: string) =>
+    catalog?.models.find((m) => m.id === modelId)?.name ?? modelId;
+
+  const isFailed = (job: FeedJob) =>
+    job.status === "failed" ||
+    job.status === "cancelled" ||
+    (job.status === "done" && job.outputs.length === 0);
+
+  return (
+    <>
+      <section className="mt-6 pb-56">
+        <div className="flex items-baseline justify-between">
+          <h2 className="text-sm font-medium text-white/80">Generation history</h2>
+          <p className="text-xs text-muted-foreground">
+            {feed.hasActiveJobs
+              ? "Live — updating while jobs run"
+              : "Your image generations in this workspace"}
+          </p>
+        </div>
+
+        <div className="mt-4">
+          {feed.historyLoading && feed.jobs.length === 0 ? (
+            <FeedLoadingState />
+          ) : feed.jobs.length === 0 ? (
+            <FeedEmptyState
+              message="No image jobs yet"
+              hint="Write a prompt and create an image. Queue, progress, and results appear here."
+            />
+          ) : (
+            <Masonry>
+              {feed.jobs.map((job) => {
+                if (job.status === "done" && job.outputs.length > 0) {
+                  return job.outputs
+                    .filter((output) => output.type === "image")
+                    .map((output, index) => (
+                      <ImageResultTile
+                        key={`${job.localId}:${index}`}
+                        job={job}
+                        output={output}
+                        index={index}
+                        total={job.outputs.length}
+                        onOpen={() => openLightbox(`${job.localId}:${index}`)}
+                      />
+                    ));
+                }
+                const ratio = aspectRatioFromInput(job.input, "1 / 1");
+                if (isFailed(job)) {
+                  return (
+                    <FailedTile
+                      key={job.localId}
+                      job={job}
+                      ratio={ratio}
+                      onRetry={() =>
+                        void feed.retry(
+                          job,
+                          model ? { schemaVersion: model.schemaVersion } : undefined
+                        )
+                      }
+                    />
+                  );
+                }
+                return <PendingTile key={job.localId} job={job} ratio={ratio} />;
+              })}
+            </Masonry>
+          )}
+        </div>
+      </section>
+
+      <StudioComposer
+        modality="image"
+        catalog={catalog}
+        prompt={prompt}
+        onPromptChange={setPrompt}
+        model={model}
+        onSelectModel={onSelectModel}
+        settings={settings}
+        onSettingsChange={setSettings}
+        referenceFields={referenceFields}
+        referenceItems={activeUploads}
+        onAddReferences={(field, files) => uploads.addFiles(field.field, field.kind, files)}
+        onRemoveReference={uploads.remove}
+        cost={cost}
+        canSubmit={canSubmit}
+        submitting={submitting}
+        error={submitError}
+        onSubmit={() => void submit()}
+      />
+
+      {lightboxIndex != null && lightboxItems[lightboxIndex] && (
+        <ResultLightbox
+          items={lightboxItems}
+          index={lightboxIndex}
+          modelName={modelName}
+          onNavigate={setLightboxIndex}
+          onClose={() => setLightboxIndex(null)}
+        />
+      )}
+    </>
+  );
+}
