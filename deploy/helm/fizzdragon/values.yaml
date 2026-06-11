@@ -179,7 +179,11 @@ studio:
     limits: {cpu: 1000m, memory: 1Gi}
   nodeSelector:
     pool: worker
-  tolerations: []
+  tolerations:
+    - key: workload
+      operator: Equal
+      value: worker
+      effect: NoSchedule
 
 # ---------------------------------------------------------------------------
 # admin-ui — internal operations console. Public host is temporary:
