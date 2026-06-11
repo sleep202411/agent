@@ -204,6 +204,32 @@ export type CreateAdminWalletAdjustmentInput = z.infer<
   typeof CreateAdminWalletAdjustmentSchema
 >;
 
+export const CreateAdminUserWalletCreditSchema = z
+  .object({
+    userId: z.string().trim().min(1).max(64),
+    idFormat: z.enum(['public', 'raw']).default('public'),
+    currency: WalletCurrencyTypeSchema.default('community_point'),
+    balanceKind: z.literal('consumable').default('consumable'),
+    amount: z.coerce.bigint().min(1n),
+    grantType: AdminWalletCreditGrantTypeSchema.default('admin_adjustment'),
+    expiresAt: z.coerce.date().nullable().optional(),
+    reason: z.string().trim().min(6).max(1000),
+    idempotencyKey: z.string().trim().min(8).max(180),
+    metadata: z.record(z.string(), z.unknown()).default({}),
+  })
+  .superRefine((value, ctx) => {
+    if (value.expiresAt && value.expiresAt <= new Date()) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['expiresAt'],
+        message: 'Expiry must be in the future.',
+      });
+    }
+  });
+export type CreateAdminUserWalletCreditInput = z.infer<
+  typeof CreateAdminUserWalletCreditSchema
+>;
+
 export const ListAdminBillingPricesQuerySchema = z.object({
   productType: BillingProductTypeSchema.optional(),
   provider: AdminPaymentProviderSchema.optional(),

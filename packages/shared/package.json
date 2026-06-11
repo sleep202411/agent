@@ -57,6 +57,10 @@
     "./users": {
       "types": "./dist/users.d.ts",
       "default": "./dist/users.js"
+    },
+    "./user-id-codec": {
+      "types": "./dist/user-id-codec.d.ts",
+      "default": "./dist/user-id-codec.js"
     }
   },
   "scripts": {
