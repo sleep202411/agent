@@ -36,6 +36,9 @@ export function useCreatePanorama() {
         "image_to_image";
       const field = referenceFieldsForMode(model, mode)[0]?.field ?? "referenceImages";
       const source = getNode(sourceNodeId);
+      // Expand the SOURCE scene into a panorama: drive the model with the
+      // source's own prompt when it has one, not a hand-written instruction.
+      const sourcePrompt = (source?.data as { prompt?: string } | undefined)?.prompt?.trim();
       const nodeId = crypto.randomUUID();
       const edgeId = crypto.randomUUID();
       addNodes({
@@ -47,7 +50,7 @@ export function useCreatePanorama() {
           modelId: model.id,
           modelName: model.name,
           mode,
-          prompt: "equirectangular 360 degree panorama",
+          prompt: sourcePrompt || "a 360 degree panorama scene",
           references: {
             [field]: [{ id: edgeId, edgeId, sourceNodeId, url: sourceUrl, kind: "image" }],
           },

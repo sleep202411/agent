@@ -21,10 +21,21 @@ import {
 type GenNodeData = {
   prompt?: string;
   modelId?: string;
+  mode?: string;
   settings?: Record<string, string | number | boolean>;
   references?: Record<string, { url: string }[]>;
   generation?: GenerationState;
 };
+
+/** An equirectangular (~2:1) image output is a panorama. */
+function isPanoramaOutput(out: { type: string; width?: number; height?: number } | undefined) {
+  return (
+    out?.type === "image" &&
+    !!out.width &&
+    !!out.height &&
+    Math.abs(out.width / out.height - 2) < 0.15
+  );
+}
 
 type GenerationContextValue = { submit: (nodeId: string) => void };
 
@@ -51,7 +62,7 @@ export function CanvasGenerationProvider({
   catalog: FizzAiCatalog | undefined;
   children: React.ReactNode;
 }) {
-  const { getNode, updateNodeData, setNodes } = useReactFlow();
+  const { getNode, getNodes, updateNodeData, setNodes, setEdges } = useReactFlow();
 
   const patch = useCallback(
     (nodeId: string, generation: GenerationState) => updateNodeData(nodeId, { generation }),
@@ -64,18 +75,48 @@ export function CanvasGenerationProvider({
       onEvent: (event) => {
         if (event.kind !== "ai_job_update") return;
         const job = event.job;
-        setNodes((nodes) =>
-          nodes.map((node) => {
-            const data = node.data as GenNodeData;
-            if (
-              (node.type === "prompt" || node.type === "video") &&
-              data.generation?.jobId === job.id
-            ) {
-              return { ...node, data: { ...data, generation: generationStateFromJob(job) } };
-            }
-            return node;
-          })
+        const out = job.outputs?.[0];
+
+        // Find the node this job belongs to (sync read) so we can decide whether
+        // to convert it to a panorama node + drop its now-danging input wire.
+        const match = getNodes().find(
+          (n) =>
+            (n.type === "prompt" || n.type === "video") &&
+            (n.data as GenNodeData).generation?.jobId === job.id
         );
+        const matchData = match?.data as GenNodeData | undefined;
+        const isPanoCard =
+          !!matchData &&
+          (matchData.mode === "image_to_panorama" ||
+            /hunyuan|panorama|world/i.test(matchData.modelId ?? ""));
+        // A finished panorama card becomes a panorama node: a live inline 360
+        // view (three.js), no composer — same as a dropped panorama asset.
+        const convert =
+          !!match &&
+          generationStatusFromRaw(job.status) === "done" &&
+          isPanoCard &&
+          isPanoramaOutput(out) &&
+          !!out?.url;
+
+        if (match) {
+          setNodes((nodes) =>
+            nodes.map((node) => {
+              if (node.id !== match.id) return node;
+              if (convert) {
+                return {
+                  ...node,
+                  type: "panorama",
+                  data: { src: out!.url, label: matchData?.prompt },
+                };
+              }
+              return {
+                ...node,
+                data: { ...node.data, generation: generationStateFromJob(job) },
+              };
+            })
+          );
+          if (convert) setEdges((edges) => edges.filter((edge) => edge.target !== match.id));
+        }
         // A finished job's outputs join the project's persistent asset library
         // (deduped by id, so repeated pushes are harmless).
         if (generationStatusFromRaw(job.status) === "done" && job.outputs?.length) {
@@ -88,6 +129,7 @@ export function CanvasGenerationProvider({
               url: output.url,
               width: output.width,
               height: output.height,
+              panorama: isPanoramaOutput(output),
               prompt: job.prompt,
               createdAt: Date.now(),
             }))

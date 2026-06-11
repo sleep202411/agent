@@ -52,6 +52,7 @@ import { CanvasConnectionLine } from "./connection-line";
 import { GradientEdge } from "./gradient-edge";
 import { handleColor } from "./port-colors";
 import { ImageNode, type ImageNodeType } from "./image-node";
+import { PanoramaNode, type PanoramaNodeType } from "./panorama-node";
 import { NoteNode, type NoteNodeType } from "./note-node";
 import {
   PromptNode,
@@ -64,9 +65,15 @@ import { CanvasGenerationProvider } from "@/app/canvas/_lib/use-canvas-generatio
 import { defaultMode, referenceFieldsForMode } from "@/app/canvas/_lib/generation-api";
 import type { CardReference, CardReferences } from "./reference-stack";
 
-export type CanvasNode = ImageNodeType | NoteNodeType | GenerationNodeType;
+export type CanvasNode = ImageNodeType | PanoramaNodeType | NoteNodeType | GenerationNodeType;
 
-const nodeTypes = { image: ImageNode, note: NoteNode, prompt: PromptNode, video: VideoNode };
+const nodeTypes = {
+  image: ImageNode,
+  panorama: PanoramaNode,
+  note: NoteNode,
+  prompt: PromptNode,
+  video: VideoNode,
+};
 const edgeTypes = { gradient: GradientEdge };
 
 // Zoom/pan tuning proven in apps/web's storyboard canvas.
@@ -164,11 +171,11 @@ function toStoredNodes(nodes: CanvasNode[]): StoredCanvasNode[] {
     if (node.type === "note") {
       return { id: node.id, position: node.position, kind: "note" as const, text: node.data.text };
     }
-    if (node.type === "image") {
+    if (node.type === "image" || node.type === "panorama") {
       return {
         id: node.id,
         position: node.position,
-        kind: "image" as const,
+        kind: node.type,
         imageId: node.data.imageId || undefined,
         // Blob-backed src is a per-session object URL — only persist a durable url.
         src: node.data.imageId ? undefined : node.data.src,
@@ -250,7 +257,7 @@ function CanvasInner({ projectId }: { projectId: string }) {
           });
           continue;
         }
-        if (stored.kind !== "image") continue;
+        if (stored.kind !== "image" && stored.kind !== "panorama") continue;
         let src = stored.src;
         if (stored.imageId) {
           const blob = await getImage(stored.imageId);
@@ -259,7 +266,7 @@ function CanvasInner({ projectId }: { projectId: string }) {
         if (!src) continue;
         restored.push({
           id: stored.id,
-          type: "image",
+          type: stored.kind,
           position: stored.position,
           data: { src, imageId: stored.imageId ?? "", label: stored.label },
         });
@@ -320,7 +327,8 @@ function CanvasInner({ projectId }: { projectId: string }) {
       if (!nodeId) return undefined;
       const node = getNode(nodeId);
       if (!node) return undefined;
-      if (node.type === "image" || node.type === "prompt") return "image";
+      if (node.type === "image" || node.type === "panorama" || node.type === "prompt")
+        return "image";
       if (node.type === "video") return "video";
       return undefined;
     },
@@ -334,7 +342,8 @@ function CanvasInner({ projectId }: { projectId: string }) {
       if (!nodeId) return undefined;
       const node = getNode(nodeId);
       if (!node) return undefined;
-      if (node.type === "image") return (node.data as { src?: string }).src;
+      if (node.type === "image" || node.type === "panorama")
+        return (node.data as { src?: string }).src;
       if (node.type === "prompt" || node.type === "video") {
         return (node.data as GenerationNodeData).generation?.outputs?.[0]?.url;
       }
@@ -562,7 +571,7 @@ function CanvasInner({ projectId }: { projectId: string }) {
       if (!src) return;
       addNode({
         id: crypto.randomUUID(),
-        type: "image",
+        type: asset.panorama ? "panorama" : "image",
         position:
           position ?? screenToFlowPosition({ x: window.innerWidth / 2, y: window.innerHeight / 2 }),
         data: { src, imageId, label: asset.prompt },

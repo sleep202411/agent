@@ -25,19 +25,35 @@ const AXES: { v: THREE.Vector3; color: string; label: string }[] = [
 
 const BASE_FOV = 75;
 
+/** WebGL textures need CORS; remote outputs are served through the same-origin
+ *  image proxy. Local blob: object URLs load directly. */
+function texturedSrc(src: string): string {
+  return /^https?:/i.test(src) ? `/api/img?url=${encodeURIComponent(src)}` : src;
+}
+
 /**
- * Equirectangular 360°/720° panorama viewer (three.js). The image is mapped to
- * the inside of a sphere with the camera at its center; drag looks around (with
- * inertia), scroll zooms. A bottom-right gizmo shows the X/Y/Z orientation plus
- * a yaw / pitch / zoom readout. Rendered through a portal so the canvas
- * transform can't clip it.
+ * Inline equirectangular panorama renderer (three.js): the image on the inside
+ * of a sphere, camera at center, drag-with-inertia to look around, scroll to
+ * zoom. Sizes itself to its parent — embed it in a node, or fill a fullscreen
+ * shell. `overlay` adds the X/Y/Z orientation gizmo + yaw/pitch/zoom readout.
  */
-export function PanoramaViewer({ src, onClose }: { src: string; onClose: () => void }) {
+export function PanoramaCanvas({
+  src,
+  overlay = false,
+  onLoad,
+  className,
+}: {
+  src: string;
+  overlay?: boolean;
+  onLoad?: (dims: { w: number; h: number }) => void;
+  className?: string;
+}) {
   const mountRef = useRef<HTMLDivElement>(null);
   const gizmoRef = useRef<HTMLCanvasElement>(null);
   const readoutRef = useRef<HTMLDivElement>(null);
   const [loading, setLoading] = useState(true);
-  const [dims, setDims] = useState<{ w: number; h: number } | null>(null);
+  const onLoadRef = useRef(onLoad);
+  onLoadRef.current = onLoad;
 
   useEffect(() => {
     const mount = mountRef.current;
@@ -50,18 +66,16 @@ export function PanoramaViewer({ src, onClose }: { src: string; onClose: () => v
     mount.appendChild(renderer.domElement);
     renderer.domElement.className = "size-full cursor-grab touch-none active:cursor-grabbing";
 
-    // Sphere with the texture on the inside.
     const geometry = new THREE.SphereGeometry(500, 64, 40);
     geometry.scale(-1, 1, 1);
     const material = new THREE.MeshBasicMaterial();
-    const mesh = new THREE.Mesh(geometry, material);
-    scene.add(mesh);
+    scene.add(new THREE.Mesh(geometry, material));
 
-    new THREE.TextureLoader().setCrossOrigin("anonymous").load(src, (texture) => {
+    new THREE.TextureLoader().setCrossOrigin("anonymous").load(texturedSrc(src), (texture) => {
       texture.colorSpace = THREE.SRGBColorSpace;
       material.map = texture;
       material.needsUpdate = true;
-      setDims({ w: texture.image.width, h: texture.image.height });
+      onLoadRef.current?.({ w: texture.image.width, h: texture.image.height });
       setLoading(false);
     });
 
@@ -72,14 +86,15 @@ export function PanoramaViewer({ src, onClose }: { src: string; onClose: () => v
     let dragging = false;
 
     const resize = () => {
-      const w = mount.clientWidth;
-      const h = mount.clientHeight;
+      const w = mount.clientWidth || 1;
+      const h = mount.clientHeight || 1;
       camera.aspect = w / h;
       camera.updateProjectionMatrix();
       renderer.setSize(w, h);
     };
     resize();
-    window.addEventListener("resize", resize);
+    const ro = new ResizeObserver(resize);
+    ro.observe(mount);
 
     const target = new THREE.Vector3();
     const forward = new THREE.Vector3();
@@ -104,7 +119,6 @@ export function PanoramaViewer({ src, onClose }: { src: string; onClose: () => v
       camera.lookAt(target);
       renderer.render(scene, camera);
 
-      // Orientation gizmo + readout.
       if (gizmo) {
         forward.copy(target).normalize();
         right.crossVectors(forward, worldUp).normalize();
@@ -162,20 +176,15 @@ export function PanoramaViewer({ src, onClose }: { src: string; onClose: () => v
       camera.fov = Math.max(30, Math.min(90, camera.fov + (e.deltaY > 0 ? 2 : -2)));
       camera.updateProjectionMatrix();
     };
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
-    };
     const el = renderer.domElement;
     el.addEventListener("pointerdown", onDown);
     el.addEventListener("pointermove", onMove);
     el.addEventListener("pointerup", onUp);
     el.addEventListener("wheel", onWheel, { passive: false });
-    window.addEventListener("keydown", onKey);
 
     return () => {
       cancelAnimationFrame(raf);
-      window.removeEventListener("resize", resize);
-      window.removeEventListener("keydown", onKey);
+      ro.disconnect();
       el.removeEventListener("pointerdown", onDown);
       el.removeEventListener("pointermove", onMove);
       el.removeEventListener("pointerup", onUp);
@@ -186,19 +195,45 @@ export function PanoramaViewer({ src, onClose }: { src: string; onClose: () => v
       renderer.dispose();
       el.remove();
     };
-  }, [src, onClose]);
+  }, [src]);
+
+  return (
+    <div className={className}>
+      <div ref={mountRef} className="size-full" />
+      {loading && (
+        <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
+          <IconLoader2 className="size-6 animate-spin text-white/60" stroke={1.8} />
+        </div>
+      )}
+      {overlay && (
+        <div className="pointer-events-none absolute right-4 bottom-4 flex flex-col items-center gap-1 rounded-lg border border-white/10 bg-black/50 p-1.5 shadow-lg backdrop-blur-sm">
+          <canvas ref={gizmoRef} width={60} height={60} className="size-[60px]" />
+          <div
+            ref={readoutRef}
+            className="text-[10px] whitespace-nowrap text-white/70 tabular-nums"
+          />
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** Fullscreen panorama viewer: the inline canvas in a portal shell. */
+export function PanoramaViewer({ src, onClose }: { src: string; onClose: () => void }) {
+  const [dims, setDims] = useState<{ w: number; h: number } | null>(null);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
 
   return createPortal(
     <div className="fixed inset-0 z-[100] bg-black">
-      <div ref={mountRef} className="size-full" />
+      <PanoramaCanvas src={src} overlay onLoad={setDims} className="absolute inset-0" />
 
-      {loading && (
-        <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
-          <IconLoader2 className="size-8 animate-spin text-white/60" stroke={1.8} />
-        </div>
-      )}
-
-      {/* Title */}
       <div className="pointer-events-none absolute top-5 left-5 flex items-center gap-2 text-sm text-white/85">
         <Icon720 className="size-4" />
         <span>720° Panorama</span>
@@ -209,7 +244,6 @@ export function PanoramaViewer({ src, onClose }: { src: string; onClose: () => v
         )}
       </div>
 
-      {/* Exit */}
       <button
         type="button"
         aria-label="Exit"
@@ -218,15 +252,6 @@ export function PanoramaViewer({ src, onClose }: { src: string; onClose: () => v
       >
         <IconLogout className="size-5" stroke={1.8} />
       </button>
-
-      {/* Orientation gizmo + readout */}
-      <div className="pointer-events-none absolute right-5 bottom-5 flex flex-col items-center gap-1 rounded-lg border border-white/10 bg-black/50 p-1.5 shadow-lg backdrop-blur-sm">
-        <canvas ref={gizmoRef} width={60} height={60} className="size-[60px]" />
-        <div
-          ref={readoutRef}
-          className="text-[10px] whitespace-nowrap text-white/70 tabular-nums"
-        />
-      </div>
     </div>,
     document.body
   );

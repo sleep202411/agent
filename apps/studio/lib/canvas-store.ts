@@ -41,6 +41,8 @@ export type ProjectAsset = {
   width?: number;
   height?: number;
   prompt?: string;
+  /** Equirectangular 360° panorama — rendered/placed as a panorama, not a flat image. */
+  panorama?: boolean;
   createdAt: number;
 };
 
@@ -83,6 +85,8 @@ export type StoredCanvasNode =
   // An image node is blob-backed (uploads: `imageId`) or url-backed
   // (a generated asset dropped onto the canvas: durable `src`).
   | (StoredNodeBase & { kind: "image"; imageId?: string; src?: string; label?: string })
+  // A panorama node — an equirectangular image rendered as a 360 view.
+  | (StoredNodeBase & { kind: "panorama"; imageId?: string; src?: string; label?: string })
   | (StoredNodeBase & { kind: "note"; text: string })
   | (StoredNodeBase & { kind: "prompt" } & StoredGenFields)
   | (StoredNodeBase & { kind: "video" } & StoredGenFields);

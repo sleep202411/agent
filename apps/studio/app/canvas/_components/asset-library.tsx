@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { IconPhoto, IconSearch, IconX } from "@tabler/icons-react";
 import { cn } from "@/lib/utils";
 import { getImage, listProjectAssets, type ProjectAsset } from "@/lib/canvas-store";
+import { Icon720 } from "./panorama-viewer";
 
 /** dataTransfer type carrying a dragged library asset to the canvas. */
 export const ASSET_DRAG_MIME = "application/x-fizz-asset";
@@ -70,6 +71,11 @@ function AssetThumb({ asset }: { asset: ProjectAsset }) {
         <div className="flex size-full items-center justify-center">
           <IconPhoto className="size-5 text-white/25" stroke={1.5} />
         </div>
+      )}
+      {asset.panorama && (
+        <span className="pointer-events-none absolute top-1 left-1 flex items-center gap-0.5 rounded bg-black/55 px-1 py-0.5 text-[9px] font-medium text-white/90 backdrop-blur-sm">
+          <Icon720 className="size-2.5" /> 720°
+        </span>
       )}
     </div>
   );
@@ -169,7 +175,7 @@ export function AssetLibrary({
           </p>
         </div>
       ) : (
-        <div className="grid grid-cols-2 gap-2 overflow-y-auto p-4">
+        <div className="grid auto-rows-max grid-cols-2 gap-2 overflow-y-auto p-4">
           {filtered.map((asset) => (
             <AssetThumb key={asset.id} asset={asset} />
           ))}
