@@ -1,5 +1,7 @@
 "use client";
 
+import type { GenerationState } from "@/app/canvas/_lib/generation-api";
+
 /**
  * Local persistence for studio projects (IndexedDB).
  *
@@ -40,6 +42,10 @@ type StoredGenFields = {
   modelName?: string;
   mode?: string;
   settings?: StoredGenSettings;
+  // Job state survives reload so completed cards re-show their outputs (the
+  // output URLs are durable storage, not blobs). A job still in flight at
+  // reload re-attaches via the realtime subscription by its persisted jobId.
+  generation?: GenerationState;
   // `references` are intentionally NOT persisted: they hold object URLs that
   // die on reload. Durable reference storage lands with SAS upload (the same
   // confirm-on-upload pipeline used for media), not local blobs.

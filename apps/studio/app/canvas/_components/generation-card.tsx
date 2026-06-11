@@ -4,8 +4,10 @@ import { memo, useEffect, useMemo, useRef, useState } from "react";
 import { useReactFlow, useStore, type Node, type NodeProps } from "@xyflow/react";
 import {
   IconAdjustments,
+  IconAlertTriangle,
   IconArrowUp,
   IconChevronDown,
+  IconLoader2,
   IconPhoto,
   IconVideo,
   IconWand,
@@ -14,12 +16,14 @@ import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { useDismiss } from "@/lib/use-dismiss";
 import { useAiCatalog } from "@/app/canvas/_lib/use-ai-catalog";
+import { useGeneration } from "@/app/canvas/_lib/use-canvas-generation";
 import {
   defaultMode,
   defaultSettingsForModel,
   modeLabel,
   referenceFieldsForMode,
   type FizzAiModel,
+  type GenerationState,
   type ModelSettings,
 } from "@/app/canvas/_lib/generation-api";
 import { CanvasNodeToolbar } from "./node-toolbar";
@@ -47,6 +51,7 @@ export type GenerationNodeData = {
   mode?: string;
   settings?: ModelSettings;
   references?: CardReferences;
+  generation?: GenerationState;
 };
 export type GenerationNodeType = Node<GenerationNodeData, "prompt" | "video">;
 
@@ -65,6 +70,7 @@ function GenerationCard({
 }: NodeProps<GenerationNodeType> & { modality: GenerationModality }) {
   const { updateNodeData } = useReactFlow();
   const { data: catalog } = useAiCatalog();
+  const { submit } = useGeneration();
   const [panel, setPanel] = useState<"model" | "settings" | "mode" | null>(null);
   // Keep the composer at a constant screen size (don't shrink/grow with zoom).
   const zoom = useStore((s) => s.transform[2]);
@@ -72,6 +78,8 @@ function GenerationCard({
 
   const descriptor = MODALITY[modality];
   const Icon = descriptor.icon;
+  const generation = data.generation;
+  const busy = generation?.status === "queued" || generation?.status === "generating";
 
   const model = useMemo(
     () => catalog?.models.find((m) => m.id === data.modelId),
@@ -137,15 +145,49 @@ function GenerationCard({
           selected && "ring-2 ring-ring"
         )}
       >
-        {/* Result display area */}
+        {/* Result display area — shows the produced media or the job state. */}
         <div
           className={cn(
-            "flex flex-col items-center justify-center gap-3 bg-muted",
+            "flex flex-col items-center justify-center gap-3 overflow-hidden bg-muted",
             descriptor.aspect
           )}
         >
-          <Icon className="size-7 text-white/30" stroke={1.5} />
-          <p className="text-sm text-white/45">Results will appear here.</p>
+          {generation?.status === "done" && generation.outputs?.[0] ? (
+            generation.outputs[0].type === "video" ? (
+              <video
+                src={generation.outputs[0].url}
+                controls
+                loop
+                className="size-full object-contain"
+              />
+            ) : (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={generation.outputs[0].url}
+                alt={data.prompt ?? "Result"}
+                className="size-full object-contain"
+              />
+            )
+          ) : busy ? (
+            <>
+              <IconLoader2 className="size-7 animate-spin text-white/50" stroke={1.8} />
+              <p className="text-sm text-white/45">
+                {generation?.status === "queued" ? "Queued…" : "Generating…"}
+              </p>
+            </>
+          ) : generation?.status === "failed" ? (
+            <>
+              <IconAlertTriangle className="size-7 text-destructive" stroke={1.6} />
+              <p className="px-5 text-center text-sm text-white/55">
+                {generation.error ?? "Generation failed"}
+              </p>
+            </>
+          ) : (
+            <>
+              <Icon className="size-7 text-white/30" stroke={1.5} />
+              <p className="text-sm text-white/45">Results will appear here.</p>
+            </>
+          )}
         </div>
       </div>
 
@@ -250,10 +292,15 @@ function GenerationCard({
               <button
                 type="button"
                 aria-label="Generate"
-                onClick={() => comingSoon("Generation")}
-                className="flex size-8 items-center justify-center rounded-full bg-white/[0.1] text-white/80 transition-colors hover:bg-white/[0.18] hover:text-white"
+                disabled={busy}
+                onClick={() => submit(id)}
+                className="flex size-8 items-center justify-center rounded-full bg-white/[0.1] text-white/80 transition-colors hover:bg-white/[0.18] hover:text-white disabled:opacity-50"
               >
-                <IconArrowUp className="size-4" stroke={2} />
+                {busy ? (
+                  <IconLoader2 className="size-4 animate-spin" stroke={2} />
+                ) : (
+                  <IconArrowUp className="size-4" stroke={2} />
+                )}
               </button>
             </div>
           </div>

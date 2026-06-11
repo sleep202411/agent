@@ -214,8 +214,10 @@ export type FizzAiSourceSurface = "fizzstudio-canvas" | "fizzstudio-image-studio
 export interface FizzAiSubmitJobInput {
   context: {
     workspaceId?: string;
-    projectId: string;
-    documentId: string;
+    // projectId/documentId are validated for access on submit — only send them
+    // once projects are server-backed entities. A local canvas id 404s.
+    projectId?: string;
+    documentId?: string;
     documentBlockId: string;
     sourceSurface: FizzAiSourceSurface;
   };
@@ -245,6 +247,32 @@ export function generationStatusFromRaw(status: string | null | undefined): Fizz
 
 export function isTerminalGenerationStatus(status: FizzAiGenerationStatus): boolean {
   return status === "done" || status === "failed" || status === "cancelled";
+}
+
+/** A generation card's live job state — the canvas-local projection of a job. */
+export interface GenerationState {
+  jobId?: string;
+  status: FizzAiGenerationStatus;
+  progress?: number;
+  outputs?: { type: FizzAiJobType; url: string }[];
+  error?: string;
+}
+
+/** Project an Ai job update / job view into a card's generation state. */
+export function generationStateFromJob(job: {
+  id: string;
+  status: string;
+  progress?: number | null;
+  outputs?: Array<{ type: FizzAiJobType; url: string }>;
+  error?: { userMessage?: string; message?: string };
+}): GenerationState {
+  return {
+    jobId: job.id,
+    status: generationStatusFromRaw(job.status),
+    progress: job.progress ?? undefined,
+    outputs: job.outputs?.map((output) => ({ type: output.type, url: output.url })),
+    error: job.error?.userMessage || job.error?.message,
+  };
 }
 
 export function errorMessageFromJob(job: FizzAiJobView, fallback: string): string {

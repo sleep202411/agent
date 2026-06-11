@@ -37,6 +37,8 @@ import { handleColor } from "./port-colors";
 import { ImageNode, type ImageNodeType } from "./image-node";
 import { NoteNode, type NoteNodeType } from "./note-node";
 import { PromptNode, VideoNode, type GenerationNodeType } from "./generation-card";
+import { useAiCatalog } from "@/app/canvas/_lib/use-ai-catalog";
+import { CanvasGenerationProvider } from "@/app/canvas/_lib/use-canvas-generation";
 
 export type CanvasNode = ImageNodeType | NoteNodeType | GenerationNodeType;
 
@@ -182,11 +184,13 @@ function toStoredNodes(nodes: CanvasNode[]): StoredCanvasNode[] {
       modelName: node.data.modelName,
       mode: node.data.mode,
       settings: node.data.settings,
+      generation: node.data.generation,
     };
   });
 }
 
 function CanvasInner({ projectId }: { projectId: string }) {
+  const { data: catalog } = useAiCatalog();
   const [nodes, setNodes, onNodesChange] = useNodesState<CanvasNode>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
   const [projectName, setProjectName] = useState("Untitled canvas");
@@ -240,6 +244,7 @@ function CanvasInner({ projectId }: { projectId: string }) {
               modelName: stored.modelName,
               mode: stored.mode,
               settings: stored.settings,
+              generation: stored.generation,
             },
           });
           continue;
@@ -495,185 +500,187 @@ function CanvasInner({ projectId }: { projectId: string }) {
   );
 
   return (
-    <div
-      ref={containerRef}
-      className="relative h-full"
-      onDragOver={onDragOver}
-      onDrop={onDrop}
-      onDoubleClick={onDoubleClick}
-    >
-      <ReactFlow
-        nodes={nodes}
-        edges={edges}
-        onNodesChange={onNodesChange}
-        onEdgesChange={onEdgesChange}
-        onConnect={onConnect}
-        onConnectStart={onConnectStart}
-        onConnectEnd={onConnectEnd}
-        edgesReconnectable
-        onReconnectStart={onReconnectStart}
-        onReconnect={onReconnect}
-        onReconnectEnd={onReconnectEnd}
-        isValidConnection={isValidConnection}
-        connectionRadius={38}
-        nodeTypes={nodeTypes}
-        edgeTypes={edgeTypes}
-        connectionLineComponent={CanvasConnectionLine}
-        colorMode="dark"
-        minZoom={MIN_ZOOM}
-        maxZoom={MAX_ZOOM}
-        panOnScroll
-        panOnScrollMode={PanOnScrollMode.Free}
-        zoomOnScroll={false}
-        zoomOnPinch
-        zoomOnDoubleClick={false}
-        deleteKeyCode={["Backspace", "Delete"]}
-        onPaneClick={() => {
-          if (Date.now() - lastConnectEndAt.current < 250) return;
-          setAddMenu(null);
-        }}
-        onMoveStart={() => setAddMenu(null)}
-        className="!bg-[oklch(0.105_0_0)]"
+    <CanvasGenerationProvider catalog={catalog}>
+      <div
+        ref={containerRef}
+        className="relative h-full"
+        onDragOver={onDragOver}
+        onDrop={onDrop}
+        onDoubleClick={onDoubleClick}
       >
-        <Background
-          variant={BackgroundVariant.Dots}
-          gap={24}
-          size={1.5}
-          color="rgb(255 255 255 / 0.07)"
-        />
-      </ReactFlow>
-
-      <div className="absolute top-4 left-4 z-20 flex items-center gap-1">
-        <Link
-          href="/canvas"
-          aria-label="Back to projects"
-          className="flex size-9 items-center justify-center rounded-full bg-popover/90 shadow-md backdrop-blur-xl transition-colors hover:bg-accent"
+        <ReactFlow
+          nodes={nodes}
+          edges={edges}
+          onNodesChange={onNodesChange}
+          onEdgesChange={onEdgesChange}
+          onConnect={onConnect}
+          onConnectStart={onConnectStart}
+          onConnectEnd={onConnectEnd}
+          edgesReconnectable
+          onReconnectStart={onReconnectStart}
+          onReconnect={onReconnect}
+          onReconnectEnd={onReconnectEnd}
+          isValidConnection={isValidConnection}
+          connectionRadius={38}
+          nodeTypes={nodeTypes}
+          edgeTypes={edgeTypes}
+          connectionLineComponent={CanvasConnectionLine}
+          colorMode="dark"
+          minZoom={MIN_ZOOM}
+          maxZoom={MAX_ZOOM}
+          panOnScroll
+          panOnScrollMode={PanOnScrollMode.Free}
+          zoomOnScroll={false}
+          zoomOnPinch
+          zoomOnDoubleClick={false}
+          deleteKeyCode={["Backspace", "Delete"]}
+          onPaneClick={() => {
+            if (Date.now() - lastConnectEndAt.current < 250) return;
+            setAddMenu(null);
+          }}
+          onMoveStart={() => setAddMenu(null)}
+          className="!bg-[oklch(0.105_0_0)]"
         >
-          <IconArrowLeft className="size-4" />
-        </Link>
-        <input
-          value={projectName}
-          aria-label="Project name"
-          placeholder="Untitled"
-          onChange={(event) => setProjectName(event.target.value)}
-          onBlur={() => {
-            const trimmed = projectName.trim();
-            if (trimmed) setProjectName(trimmed);
-            void renameProject(projectId, trimmed);
-          }}
-          onKeyDown={(event) => {
-            if (event.key === "Enter") event.currentTarget.blur();
-          }}
-          className="field-sizing-content h-9 min-w-[80px] max-w-[280px] rounded-full bg-popover/90 px-3.5 text-sm font-medium shadow-md backdrop-blur-xl outline-none transition-colors hover:bg-accent focus:bg-accent"
-        />
-      </div>
-
-      <button
-        type="button"
-        onClick={() => fileInputRef.current?.click()}
-        className="absolute top-4 right-4 z-20 flex h-9 items-center gap-2 rounded-full bg-popover/90 px-3.5 text-sm font-medium shadow-md backdrop-blur-xl transition-colors hover:bg-accent"
-      >
-        <IconUpload className="size-4" stroke={1.8} />
-        Upload
-      </button>
-      <input
-        ref={fileInputRef}
-        type="file"
-        accept="image/*"
-        multiple
-        hidden
-        onChange={onPickFiles}
-      />
-
-      <ZoomControls />
-
-      {/* Persistent pending wire from the source handle to the open menu, so the
-          dragged connection stays visually anchored while choosing a node. */}
-      {addMenu?.wire && (
-        <svg className="pointer-events-none absolute inset-0 z-20 size-full overflow-visible">
-          <defs>
-            <linearGradient
-              id="pending-wire-grad"
-              gradientUnits="userSpaceOnUse"
-              x1={addMenu.wire.x1}
-              y1={addMenu.wire.y1}
-              x2={addMenu.wire.x2}
-              y2={addMenu.wire.y2}
-            >
-              <stop offset="0%" stopColor={addMenu.wire.color} stopOpacity={1} />
-              <stop offset="55%" stopColor={addMenu.wire.color} stopOpacity={0.5} />
-              <stop offset="100%" stopColor={addMenu.wire.color} stopOpacity={0.05} />
-            </linearGradient>
-          </defs>
-          <path
-            d={`M ${addMenu.wire.x1} ${addMenu.wire.y1} C ${
-              addMenu.wire.x1 + (addMenu.wire.x2 - addMenu.wire.x1) * 0.5
-            } ${addMenu.wire.y1}, ${
-              addMenu.wire.x2 - (addMenu.wire.x2 - addMenu.wire.x1) * 0.5
-            } ${addMenu.wire.y2}, ${addMenu.wire.x2} ${addMenu.wire.y2}`}
-            fill="none"
-            stroke="url(#pending-wire-grad)"
-            strokeWidth={2}
-            strokeLinecap="round"
+          <Background
+            variant={BackgroundVariant.Dots}
+            gap={24}
+            size={1.5}
+            color="rgb(255 255 255 / 0.07)"
           />
-        </svg>
-      )}
+        </ReactFlow>
 
-      {addMenu && (
-        <AddNodeMenu
-          left={addMenu.left}
-          top={addMenu.top}
-          filter={addMenu.pending ? filterForHandle(addMenu.pending.handleId) : undefined}
-          onAction={(action: AddNodeAction) => {
-            if (action === "upload") {
-              pendingUploadFlowPos.current = addMenu.flow;
-              pendingUploadConnection.current = addMenu.pending ?? null;
-              setAddMenu(null);
-              fileInputRef.current?.click();
-              return;
-            }
-            const id = crypto.randomUUID();
-            const nodeType =
-              action === "generate-image"
-                ? ("prompt" as const)
-                : action === "generate-video"
-                  ? ("video" as const)
-                  : ("note" as const);
-            if (nodeType === "prompt") {
-              const count = nodes.filter((node) => node.type === "prompt").length;
-              addNode({
-                id,
-                type: "prompt",
-                position: addMenu.flow,
-                data: { prompt: "", name: `Image ${count + 1}` },
-              });
-            } else if (nodeType === "video") {
-              const count = nodes.filter((node) => node.type === "video").length;
-              addNode({
-                id,
-                type: "video",
-                position: addMenu.flow,
-                data: { prompt: "", name: `Video ${count + 1}` },
-              });
-            } else {
-              addNode({ id, type: "note", position: addMenu.flow, data: { text: "" } });
-            }
-            if (addMenu.pending) {
-              const edge = edgeForPending(addMenu.pending, id, nodeType);
-              if (edge) addEdgeUnique(edge);
-            }
-          }}
-        />
-      )}
-
-      {nodes.length === 0 && !addMenu && (
-        <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
-          <p className="text-sm text-muted-foreground">
-            Double-click to add a node, or describe what to create below
-          </p>
+        <div className="absolute top-4 left-4 z-20 flex items-center gap-1">
+          <Link
+            href="/canvas"
+            aria-label="Back to projects"
+            className="flex size-9 items-center justify-center rounded-full bg-popover/90 shadow-md backdrop-blur-xl transition-colors hover:bg-accent"
+          >
+            <IconArrowLeft className="size-4" />
+          </Link>
+          <input
+            value={projectName}
+            aria-label="Project name"
+            placeholder="Untitled"
+            onChange={(event) => setProjectName(event.target.value)}
+            onBlur={() => {
+              const trimmed = projectName.trim();
+              if (trimmed) setProjectName(trimmed);
+              void renameProject(projectId, trimmed);
+            }}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") event.currentTarget.blur();
+            }}
+            className="field-sizing-content h-9 min-w-[80px] max-w-[280px] rounded-full bg-popover/90 px-3.5 text-sm font-medium shadow-md backdrop-blur-xl outline-none transition-colors hover:bg-accent focus:bg-accent"
+          />
         </div>
-      )}
-    </div>
+
+        <button
+          type="button"
+          onClick={() => fileInputRef.current?.click()}
+          className="absolute top-4 right-4 z-20 flex h-9 items-center gap-2 rounded-full bg-popover/90 px-3.5 text-sm font-medium shadow-md backdrop-blur-xl transition-colors hover:bg-accent"
+        >
+          <IconUpload className="size-4" stroke={1.8} />
+          Upload
+        </button>
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="image/*"
+          multiple
+          hidden
+          onChange={onPickFiles}
+        />
+
+        <ZoomControls />
+
+        {/* Persistent pending wire from the source handle to the open menu, so the
+          dragged connection stays visually anchored while choosing a node. */}
+        {addMenu?.wire && (
+          <svg className="pointer-events-none absolute inset-0 z-20 size-full overflow-visible">
+            <defs>
+              <linearGradient
+                id="pending-wire-grad"
+                gradientUnits="userSpaceOnUse"
+                x1={addMenu.wire.x1}
+                y1={addMenu.wire.y1}
+                x2={addMenu.wire.x2}
+                y2={addMenu.wire.y2}
+              >
+                <stop offset="0%" stopColor={addMenu.wire.color} stopOpacity={1} />
+                <stop offset="55%" stopColor={addMenu.wire.color} stopOpacity={0.5} />
+                <stop offset="100%" stopColor={addMenu.wire.color} stopOpacity={0.05} />
+              </linearGradient>
+            </defs>
+            <path
+              d={`M ${addMenu.wire.x1} ${addMenu.wire.y1} C ${
+                addMenu.wire.x1 + (addMenu.wire.x2 - addMenu.wire.x1) * 0.5
+              } ${addMenu.wire.y1}, ${
+                addMenu.wire.x2 - (addMenu.wire.x2 - addMenu.wire.x1) * 0.5
+              } ${addMenu.wire.y2}, ${addMenu.wire.x2} ${addMenu.wire.y2}`}
+              fill="none"
+              stroke="url(#pending-wire-grad)"
+              strokeWidth={2}
+              strokeLinecap="round"
+            />
+          </svg>
+        )}
+
+        {addMenu && (
+          <AddNodeMenu
+            left={addMenu.left}
+            top={addMenu.top}
+            filter={addMenu.pending ? filterForHandle(addMenu.pending.handleId) : undefined}
+            onAction={(action: AddNodeAction) => {
+              if (action === "upload") {
+                pendingUploadFlowPos.current = addMenu.flow;
+                pendingUploadConnection.current = addMenu.pending ?? null;
+                setAddMenu(null);
+                fileInputRef.current?.click();
+                return;
+              }
+              const id = crypto.randomUUID();
+              const nodeType =
+                action === "generate-image"
+                  ? ("prompt" as const)
+                  : action === "generate-video"
+                    ? ("video" as const)
+                    : ("note" as const);
+              if (nodeType === "prompt") {
+                const count = nodes.filter((node) => node.type === "prompt").length;
+                addNode({
+                  id,
+                  type: "prompt",
+                  position: addMenu.flow,
+                  data: { prompt: "", name: `Image ${count + 1}` },
+                });
+              } else if (nodeType === "video") {
+                const count = nodes.filter((node) => node.type === "video").length;
+                addNode({
+                  id,
+                  type: "video",
+                  position: addMenu.flow,
+                  data: { prompt: "", name: `Video ${count + 1}` },
+                });
+              } else {
+                addNode({ id, type: "note", position: addMenu.flow, data: { text: "" } });
+              }
+              if (addMenu.pending) {
+                const edge = edgeForPending(addMenu.pending, id, nodeType);
+                if (edge) addEdgeUnique(edge);
+              }
+            }}
+          />
+        )}
+
+        {nodes.length === 0 && !addMenu && (
+          <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
+            <p className="text-sm text-muted-foreground">
+              Double-click to add a node, or describe what to create below
+            </p>
+          </div>
+        )}
+      </div>
+    </CanvasGenerationProvider>
   );
 }
 
