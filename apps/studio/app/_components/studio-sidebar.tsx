@@ -99,7 +99,7 @@ export function StudioSidebar() {
   const items: RailItem[] = [
     { label: "Home", href: "/", icon: IconHome },
     { label: "Projects", href: "/projects", icon: IconFolders },
-    { label: "Canvas", href: "/canvas", icon: IconArtboard, disabled: true },
+    { label: "Canvas", href: "/canvas", icon: IconArtboard },
     // Plural to match the web app's /fizzstudio/images so that page ports 1:1.
     { label: "Image", href: "/images", icon: IconPhoto },
     { label: "Video", href: "/video", icon: IconVideo },
