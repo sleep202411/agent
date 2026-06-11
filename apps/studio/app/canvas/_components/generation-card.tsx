@@ -38,7 +38,7 @@ import { ModeMenu } from "./mode-menu";
 import { ModelPicker } from "./model-picker";
 import { ModelSettings as ModelSettingsPanel } from "./model-settings";
 import { ReferenceStack, type CardReferences } from "./reference-stack";
-import { Port } from "./ports";
+import { PortPlus } from "./ports";
 
 /**
  * One generation card for both image and video — the card is a display
@@ -68,11 +68,6 @@ const MODALITY = {
 } as const;
 
 const comingSoon = (label: string) => toast.info(`${label} · Coming soon`);
-
-/** "referenceImages" -> "Reference Images", "startFrame" -> "Start Frame". */
-function referenceFieldLabel(field: string): string {
-  return field.replace(/([a-z])([A-Z])/g, "$1 $2").replace(/^./, (c) => c.toUpperCase());
-}
 
 /**
  * CSS aspect-ratio for the result area so the card matches its content: actual
@@ -384,23 +379,10 @@ function GenerationCard({
         </div>
       )}
 
-      {/* Reference input ports — one per the active mode's reference field, so a
-          source node (or another card's output) can be wired in. */}
-      {refFields.map((field, index) => (
-        <Port
-          key={field.field}
-          type="target"
-          id={field.field}
-          side="left"
-          top={48 + index * 34}
-          label={referenceFieldLabel(field.field)}
-          dataType={field.kind}
-        />
-      ))}
-
-      {/* Output ports — every generation card can emit image and video. */}
-      <Port type="source" id="image" side="right" top={48} label="Image" />
-      <Port type="source" id="video" side="right" top={84} label="Video" />
+      {/* One "+" input on the left (only when the mode takes references), one
+          "+" output on the right. Wiring routes by media kind. */}
+      {refFields.length > 0 && <PortPlus type="target" id="input" side="left" />}
+      <PortPlus type="source" id="output" side="right" />
     </div>
   );
 }

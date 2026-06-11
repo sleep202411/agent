@@ -4,7 +4,6 @@ import { memo } from "react";
 import { useReactFlow, type Node, type NodeProps } from "@xyflow/react";
 import { cn } from "@/lib/utils";
 import { CanvasNodeToolbar } from "./node-toolbar";
-import { Port } from "./ports";
 
 export type NoteNodeType = Node<{ text: string }, "note">;
 
@@ -19,7 +18,6 @@ function NoteNodeComponent({ id, data, selected }: NodeProps<NoteNodeType>) {
       )}
     >
       <CanvasNodeToolbar nodeId={id} visible={selected ?? false} />
-      <Port type="source" id="text" side="right" top={24} label="Text" />
       <textarea
         value={data.text}
         onChange={(event) => updateNodeData(id, { text: event.target.value })}

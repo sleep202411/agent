@@ -55,7 +55,7 @@ import {
 import { useAiCatalog } from "@/app/canvas/_lib/use-ai-catalog";
 import { CanvasGenerationProvider } from "@/app/canvas/_lib/use-canvas-generation";
 import { defaultMode, referenceFieldsForMode } from "@/app/canvas/_lib/generation-api";
-import type { CardReference } from "./reference-stack";
+import type { CardReference, CardReferences } from "./reference-stack";
 
 export type CanvasNode = ImageNodeType | NoteNodeType | GenerationNodeType;
 
@@ -63,11 +63,9 @@ const nodeTypes = { image: ImageNode, note: NoteNode, prompt: PromptNode, video:
 const edgeTypes = { gradient: GradientEdge };
 
 // Which node-menu items make sense after dragging a wire from this handle.
+// Dragging from a card's "+" input → offer an image source to feed it.
 function filterForHandle(handleId: string | null): ConnectFilter | undefined {
-  if (handleId === "image" || handleId === "reference") return "image";
-  if (handleId === "text" || handleId === "prompt") return "text";
-  if (handleId === "video") return "video";
-  return undefined;
+  return handleId === "input" ? "image" : undefined;
 }
 
 // Zoom/pan tuning proven in apps/web's storyboard canvas.
@@ -291,23 +289,24 @@ function CanvasInner({ projectId }: { projectId: string }) {
 
   // The media kind a generation card's reference field accepts (undefined if the
   // target isn't a card, or the handle isn't one of its current-mode ref fields).
-  const referenceFieldKind = useCallback(
-    (nodeId: string | null | undefined, fieldName: string | null | undefined) => {
-      if (!nodeId || !fieldName) return undefined;
+  // The output kind a node exposes — "image" for image nodes, the card's
+  // modality for a generation card (image card → image, video card → video).
+  const sourceOutputKind = useCallback(
+    (nodeId: string | null | undefined): "image" | "video" | undefined => {
+      if (!nodeId) return undefined;
       const node = getNode(nodeId);
-      if (!node || (node.type !== "prompt" && node.type !== "video")) return undefined;
-      const data = node.data as GenerationNodeData;
-      const model = catalog?.models.find((m) => m.id === data.modelId);
-      const mode = data.mode ?? defaultMode(model);
-      return referenceFieldsForMode(model, mode).find((f) => f.field === fieldName)?.kind;
+      if (!node) return undefined;
+      if (node.type === "image" || node.type === "prompt") return "image";
+      if (node.type === "video") return "video";
+      return undefined;
     },
-    [getNode, catalog]
+    [getNode]
   );
 
   // The media URL a source node exposes — an image node's src, or another
   // generation card's produced output (enables card→card chaining).
   const sourceMediaUrl = useCallback(
-    (nodeId: string | null) => {
+    (nodeId: string | null | undefined) => {
       if (!nodeId) return undefined;
       const node = getNode(nodeId);
       if (!node) return undefined;
@@ -320,107 +319,107 @@ function CanvasInner({ projectId }: { projectId: string }) {
     [getNode]
   );
 
-  // Only a kind-matching wire into a card's reference field is valid.
-  const isValidConnection = useCallback<IsValidConnection<Edge>>(
-    (connection) => {
-      const kind = referenceFieldKind(connection.target, connection.targetHandle);
-      return Boolean(kind) && connection.sourceHandle === kind;
-    },
-    [referenceFieldKind]
-  );
-
-  // A card's first reference field accepting `kind` (for wiring onto its body).
-  const firstReferenceFieldOf = useCallback(
-    (cardId: string, kind: string) => {
+  // The card's first current-mode reference field accepting `kind` with room
+  // left — the single "+" input fans an incoming wire out to the right field.
+  const routeReferenceField = useCallback(
+    (cardId: string | null | undefined, kind: string) => {
+      if (!cardId) return undefined;
       const node = getNode(cardId);
       if (!node || (node.type !== "prompt" && node.type !== "video")) return undefined;
       const data = node.data as GenerationNodeData;
       const model = catalog?.models.find((m) => m.id === data.modelId);
       const mode = data.mode ?? defaultMode(model);
-      return referenceFieldsForMode(model, mode).find((f) => f.kind === kind)?.field;
+      const refs = data.references ?? {};
+      return referenceFieldsForMode(model, mode).find(
+        (f) => f.kind === kind && (refs[f.field]?.length ?? 0) < f.maxItems
+      )?.field;
     },
     [getNode, catalog]
+  );
+
+  // A wire into a card's "+" input is valid when the source's output kind maps
+  // to one of the card's reference fields with room left.
+  const isValidConnection = useCallback<IsValidConnection<Edge>>(
+    (connection) => {
+      if (connection.targetHandle !== "input") return false;
+      const kind = sourceOutputKind(connection.source);
+      return Boolean(kind && routeReferenceField(connection.target, kind));
+    },
+    [sourceOutputKind, routeReferenceField]
   );
 
   // The valid connection (if any) when a node is spawned/hit from a dragged wire.
   const connectionForPending = useCallback(
     (pending: PendingConnection, otherNodeId: string, otherNodeType: string): Connection | null => {
-      // Dragged from a card's reference INPUT toward an image source.
+      // Dragged from a card's "+" input → an image source feeds it.
       if (pending.handleType === "target" && otherNodeType === "image") {
         return {
           source: otherNodeId,
-          sourceHandle: "image",
+          sourceHandle: "output",
           target: pending.nodeId,
-          targetHandle: pending.handleId,
+          targetHandle: "input",
         };
       }
-      // Dragged from a source OUTPUT into a card's matching reference field
-      // (only an existing card with a model has one — fresh cards don't).
+      // Dragged from a "+" output into a card that accepts this kind.
       if (
         pending.handleType === "source" &&
         (otherNodeType === "prompt" || otherNodeType === "video")
       ) {
-        const kind =
-          pending.handleId === "video"
-            ? "video"
-            : pending.handleId === "image"
-              ? "image"
-              : undefined;
-        const field = kind ? firstReferenceFieldOf(otherNodeId, kind) : undefined;
-        if (field) {
+        const kind = sourceOutputKind(pending.nodeId);
+        if (kind && routeReferenceField(otherNodeId, kind)) {
           return {
             source: pending.nodeId,
-            sourceHandle: pending.handleId,
+            sourceHandle: "output",
             target: otherNodeId,
-            targetHandle: field,
+            targetHandle: "input",
           };
         }
       }
       return null;
     },
-    [firstReferenceFieldOf]
+    [sourceOutputKind, routeReferenceField]
   );
 
   const onConnect = useCallback(
     (connection: Connection) => {
       const edge: Edge = { id: crypto.randomUUID(), type: "gradient", ...connection };
       setEdges((eds) => addEdge(edge, eds));
-      // Wiring a source into a reference field binds it as that field's reference.
-      const kind = referenceFieldKind(connection.target, connection.targetHandle);
-      const url = kind ? sourceMediaUrl(connection.source) : undefined;
-      if (kind && url && connection.target && connection.targetHandle) {
-        const field = connection.targetHandle;
-        const reference: CardReference = {
-          id: edge.id,
-          edgeId: edge.id,
-          sourceNodeId: connection.source ?? undefined,
-          url,
-          kind,
-        };
-        updateNodeData(connection.target, (node) => {
-          const refs = (node.data as GenerationNodeData).references ?? {};
-          const list = (refs[field] ?? []).filter((r) => r.edgeId !== edge.id);
-          return { references: { ...refs, [field]: [...list, reference] } };
-        });
-      }
+      // A wire into the "+" input binds the source as a reference, routed to the
+      // first matching-kind field with room.
+      if (connection.targetHandle !== "input" || !connection.target) return;
+      const kind = sourceOutputKind(connection.source);
+      const field = kind ? routeReferenceField(connection.target, kind) : undefined;
+      const url = sourceMediaUrl(connection.source);
+      if (!kind || !field || !url) return;
+      const reference: CardReference = {
+        id: edge.id,
+        edgeId: edge.id,
+        sourceNodeId: connection.source ?? undefined,
+        url,
+        kind,
+      };
+      updateNodeData(connection.target, (node) => {
+        const refs = (node.data as GenerationNodeData).references ?? {};
+        const list = (refs[field] ?? []).filter((r) => r.edgeId !== edge.id);
+        return { references: { ...refs, [field]: [...list, reference] } };
+      });
     },
-    [setEdges, referenceFieldKind, sourceMediaUrl, updateNodeData]
+    [setEdges, sourceOutputKind, routeReferenceField, sourceMediaUrl, updateNodeData]
   );
 
-  // Deleting a wire drops the reference it bound.
+  // Deleting a wire drops the reference it bound. The field isn't on the edge
+  // (the single "+" input fans out), so search every field by edge id.
   const onEdgesDelete = useCallback(
     (deleted: Edge[]) => {
       for (const edge of deleted) {
-        if (!edge.target || !edge.targetHandle) continue;
-        const field = edge.targetHandle;
+        if (!edge.target) continue;
         updateNodeData(edge.target, (node) => {
           const refs = (node.data as GenerationNodeData).references ?? {};
-          return {
-            references: {
-              ...refs,
-              [field]: (refs[field] ?? []).filter((r) => r.edgeId !== edge.id),
-            },
-          };
+          const next: CardReferences = {};
+          for (const [field, list] of Object.entries(refs)) {
+            next[field] = list.filter((r) => r.edgeId !== edge.id);
+          }
+          return { references: next };
         });
       }
     },

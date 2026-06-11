@@ -5,7 +5,7 @@ import type { Node, NodeProps } from "@xyflow/react";
 import { IconDownload } from "@tabler/icons-react";
 import { cn } from "@/lib/utils";
 import { CanvasNodeToolbar, ToolbarButton } from "./node-toolbar";
-import { Port } from "./ports";
+import { PortPlus } from "./ports";
 
 export type ImageNodeType = Node<{ src: string; imageId: string; label?: string }, "image">;
 
@@ -26,7 +26,7 @@ function ImageNodeComponent({ id, data, selected }: NodeProps<ImageNodeType>) {
         selected && "ring-2 ring-ring"
       )}
     >
-      <Port type="source" id="image" side="right" top={32} label="Image" />
+      <PortPlus type="source" id="output" side="right" />
       <CanvasNodeToolbar nodeId={id} visible={selected ?? false}>
         <ToolbarButton label="Download" onClick={onDownload}>
           <IconDownload className="size-4" stroke={1.8} />
