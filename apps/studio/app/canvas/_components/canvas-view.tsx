@@ -281,8 +281,6 @@ function CanvasInner({ projectId }: { projectId: string }) {
     };
   }, []);
 
-  // The media kind a generation card's reference field accepts (undefined if the
-  // target isn't a card, or the handle isn't one of its current-mode ref fields).
   // The output kind a node exposes — "image" for image nodes, the card's
   // modality for a generation card (image card → image, video card → video).
   const sourceOutputKind = useCallback(
@@ -313,36 +311,44 @@ function CanvasInner({ projectId }: { projectId: string }) {
     [getNode]
   );
 
-  // The card's first current-mode reference field accepting `kind` with room
-  // left — the single "+" input fans an incoming wire out to the right field.
+  // Where an incoming wire of `kind` should bind on a card: a field in the
+  // current mode if one fits, else the first mode that accepts the kind — so
+  // wiring an image into a video card auto-switches it to image-to-video and
+  // drops the image straight into that mode's reference.
   const routeReferenceField = useCallback(
-    (cardId: string | null | undefined, kind: string) => {
+    (
+      cardId: string | null | undefined,
+      kind: string
+    ): { mode?: string; field: string } | undefined => {
       if (!cardId) return undefined;
       const node = getNode(cardId);
       if (!node || (node.type !== "prompt" && node.type !== "video")) return undefined;
       const data = node.data as GenerationNodeData;
       const model = catalog?.models.find((m) => m.id === data.modelId);
-      const mode = data.mode ?? defaultMode(model);
+      if (!model) return undefined;
+      const currentMode = data.mode ?? defaultMode(model);
       const refs = data.references ?? {};
-      return referenceFieldsForMode(model, mode).find(
+      const inCurrent = referenceFieldsForMode(model, currentMode).find(
         (f) => f.kind === kind && (refs[f.field]?.length ?? 0) < f.maxItems
-      )?.field;
+      );
+      if (inCurrent) return { field: inCurrent.field };
+      for (const m of model.generationModes ?? []) {
+        const f = referenceFieldsForMode(model, m).find((ff) => ff.kind === kind);
+        if (f) return { mode: m, field: f.field };
+      }
+      return undefined;
     },
     [getNode, catalog]
   );
 
-  // A wire into a card's "+" input is valid when the source's output kind maps
-  // to one of the card's reference fields with room left.
+  // Simple model: any card's output can wire into any card's input. React Flow
+  // only allows source→target, so this is output→input — just block self-loops.
   const isValidConnection = useCallback<IsValidConnection<Edge>>(
-    (connection) => {
-      if (connection.targetHandle !== "input") return false;
-      const kind = sourceOutputKind(connection.source);
-      return Boolean(kind && routeReferenceField(connection.target, kind));
-    },
-    [sourceOutputKind, routeReferenceField]
+    (connection) => connection.targetHandle === "input" && connection.source !== connection.target,
+    []
   );
 
-  // The valid connection (if any) when a node is spawned/hit from a dragged wire.
+  // The connection (if any) when a node is spawned/hit from a dragged wire.
   const connectionForPending = useCallback(
     (pending: PendingConnection, otherNodeId: string, otherNodeType: string): Connection | null => {
       // Dragged from a card's "+" input → an image source feeds it.
@@ -354,37 +360,35 @@ function CanvasInner({ projectId }: { projectId: string }) {
           targetHandle: "input",
         };
       }
-      // Dragged from a "+" output into a card that accepts this kind.
+      // Dragged from a "+" output → into any card.
       if (
         pending.handleType === "source" &&
         (otherNodeType === "prompt" || otherNodeType === "video")
       ) {
-        const kind = sourceOutputKind(pending.nodeId);
-        if (kind && routeReferenceField(otherNodeId, kind)) {
-          return {
-            source: pending.nodeId,
-            sourceHandle: "output",
-            target: otherNodeId,
-            targetHandle: "input",
-          };
-        }
+        return {
+          source: pending.nodeId,
+          sourceHandle: "output",
+          target: otherNodeId,
+          targetHandle: "input",
+        };
       }
       return null;
     },
-    [sourceOutputKind, routeReferenceField]
+    []
   );
 
   const onConnect = useCallback(
     (connection: Connection) => {
       const edge: Edge = { id: crypto.randomUUID(), type: "gradient", ...connection };
       setEdges((eds) => addEdge(edge, eds));
-      // A wire into the "+" input binds the source as a reference, routed to the
-      // first matching-kind field with room.
+      // Bind the source as a reference where it fits (auto-switching the card's
+      // mode if needed — e.g. an image into a video card → image-to-video). If
+      // the card can't take this kind at all, the wire stands but binds nothing.
       if (connection.targetHandle !== "input" || !connection.target) return;
       const kind = sourceOutputKind(connection.source);
-      const field = kind ? routeReferenceField(connection.target, kind) : undefined;
+      const routed = kind ? routeReferenceField(connection.target, kind) : undefined;
       const url = sourceMediaUrl(connection.source);
-      if (!kind || !field || !url) return;
+      if (!kind || !routed || !url) return;
       const reference: CardReference = {
         id: edge.id,
         edgeId: edge.id,
@@ -394,8 +398,12 @@ function CanvasInner({ projectId }: { projectId: string }) {
       };
       updateNodeData(connection.target, (node) => {
         const refs = (node.data as GenerationNodeData).references ?? {};
-        const list = (refs[field] ?? []).filter((r) => r.edgeId !== edge.id);
-        return { references: { ...refs, [field]: [...list, reference] } };
+        const list = (refs[routed.field] ?? []).filter((r) => r.edgeId !== edge.id);
+        const patch: Partial<GenerationNodeData> = {
+          references: { ...refs, [routed.field]: [...list, reference] },
+        };
+        if (routed.mode) patch.mode = routed.mode;
+        return patch;
       });
     },
     [setEdges, sourceOutputKind, routeReferenceField, sourceMediaUrl, updateNodeData]

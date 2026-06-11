@@ -1,13 +1,7 @@
 "use client";
 
 import { memo, useEffect, useMemo, useRef, useState } from "react";
-import {
-  useReactFlow,
-  useStore,
-  useUpdateNodeInternals,
-  type Node,
-  type NodeProps,
-} from "@xyflow/react";
+import { useReactFlow, useStore, type Node, type NodeProps } from "@xyflow/react";
 import {
   IconAdjustments,
   IconAlertTriangle,
@@ -87,6 +81,28 @@ function resultAspectRatio(
   return modality === "video" ? "16 / 9" : "1 / 1";
 }
 
+/**
+ * Result-area video preview: plays on hover, pauses on leave. Muted so the
+ * hover-triggered play() isn't blocked by the autoplay policy; native controls
+ * stay for scrub / fullscreen / unmute.
+ */
+function HoverPreviewVideo({ src, className }: { src: string; className?: string }) {
+  const ref = useRef<HTMLVideoElement>(null);
+  return (
+    <video
+      ref={ref}
+      src={src}
+      loop
+      muted
+      playsInline
+      controls
+      onMouseEnter={() => void ref.current?.play().catch(() => {})}
+      onMouseLeave={() => ref.current?.pause()}
+      className={className}
+    />
+  );
+}
+
 /** Live ETA countdown (whole seconds) while a job runs. */
 function useCountdown(seconds: number | undefined, active: boolean): number | null {
   const [remaining, setRemaining] = useState<number | null>(null);
@@ -140,10 +156,6 @@ function GenerationCard({
   const mode = data.mode ?? defaultMode(model);
   const modes = model?.generationModes ?? [];
   const refFields = useMemo(() => referenceFieldsForMode(model, mode), [model, mode]);
-
-  // Reference input handles change with the mode — re-measure them in React Flow.
-  const updateNodeInternals = useUpdateNodeInternals();
-  useEffect(() => updateNodeInternals(id), [id, refFields, updateNodeInternals]);
 
   // Revoke object URLs this card created when it unmounts (blobs would leak).
   const createdUrls = useRef<string[]>([]);
@@ -207,10 +219,8 @@ function GenerationCard({
         >
           {generation?.status === "done" && generation.outputs?.[0] ? (
             generation.outputs[0].type === "video" ? (
-              <video
+              <HoverPreviewVideo
                 src={generation.outputs[0].url}
-                controls
-                loop
                 className="size-full object-contain"
               />
             ) : (
@@ -380,9 +390,9 @@ function GenerationCard({
         </div>
       )}
 
-      {/* One "+" input on the left (only when the mode takes references), one
-          "+" output on the right. Wiring routes by media kind. */}
-      {refFields.length > 0 && <PortPlus type="target" id="input" side="left" />}
+      {/* Every card connects on both sides: "+" input on the left, "+" output on
+          the right. Any card can wire into any other. */}
+      <PortPlus type="target" id="input" side="left" />
       <PortPlus type="source" id="output" side="right" />
     </div>
   );
