@@ -18,9 +18,11 @@ For any meaningful UI work:
 | ------------------------------------------------------------ | ------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
 | User-facing web, marketing, AI Lab, creator studio           | `apps/web/DESIGN.md`      | Replicate-inspired FizzDragon web experience. Warm editorial surfaces, model discovery, creator workflows, and public/product UI.            |
 | Internal admin, AI Model Ops, billing, quota, routing, audit | `apps/admin-ui/DESIGN.md` | Together AI / Cohere-inspired operations console. High-density configuration, tables, filters, forms, auditability, and site-aware controls. |
+| Standalone AI creative studio (image / video / audio)        | `apps/studio/DESIGN.md`   | Dark-only, monochrome, borderless studio in the imagine.art genre. Frosted chrome, white primary, brand red only as deliberate accent.       |
 
 Do not apply the web design language to admin surfaces. Do not apply the
-admin console language to public creator surfaces.
+admin console language to public creator surfaces. The studio's dark-only
+language likewise stays inside `apps/studio`.
 
 ## Shared Brand
 

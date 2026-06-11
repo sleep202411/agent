@@ -2,6 +2,10 @@ import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono, Inter } from "next/font/google";
 import "./globals.css";
 import { cn } from "@/lib/utils";
+import { StudioHeader } from "@/app/_components/studio-header";
+import { StudioSidebar } from "@/app/_components/studio-sidebar";
+import { Toaster } from "@/components/ui/sonner";
+import { TooltipProvider } from "@/components/ui/tooltip";
 
 const inter = Inter({ subsets: ["latin"], variable: "--font-sans" });
 
@@ -40,7 +44,16 @@ export default function RootLayout({
         inter.variable
       )}
     >
-      <body className="min-h-full flex flex-col">{children}</body>
+      <body className="min-h-full flex flex-col">
+        <TooltipProvider delayDuration={200}>
+          <StudioSidebar />
+          <div className="flex min-w-0 flex-1 flex-col lg:pl-[104px]">
+            <StudioHeader />
+            {children}
+          </div>
+        </TooltipProvider>
+        <Toaster />
+      </body>
     </html>
   );
 }
