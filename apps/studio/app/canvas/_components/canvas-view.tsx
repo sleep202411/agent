@@ -39,7 +39,7 @@ import {
   type ProjectAsset,
   type StoredCanvasNode,
 } from "@/lib/canvas-store";
-import { AssetLibrary } from "./asset-library";
+import { AssetLibrary, ASSET_DRAG_MIME } from "./asset-library";
 import { AddNodeMenu, type AddNodeAction, type ConnectFilter } from "./add-node-menu";
 import { CanvasConnectionLine } from "./connection-line";
 import { GradientEdge } from "./gradient-edge";
@@ -458,9 +458,10 @@ function CanvasInner({ projectId }: { projectId: string }) {
     [setNodes]
   );
 
-  // Drop a library asset onto the canvas as an image node at the viewport center.
+  // Place a library asset on the canvas as an image node — at `position` when
+  // dragged-and-dropped, else the viewport center (click-to-add).
   const addAssetToCanvas = useCallback(
-    async (asset: ProjectAsset) => {
+    async (asset: ProjectAsset, position?: { x: number; y: number }) => {
       if (asset.kind !== "image") {
         toast.info("Video assets · coming soon");
         return;
@@ -478,10 +479,10 @@ function CanvasInner({ projectId }: { projectId: string }) {
       addNode({
         id: crypto.randomUUID(),
         type: "image",
-        position: screenToFlowPosition({ x: window.innerWidth / 2, y: window.innerHeight / 2 }),
+        position:
+          position ?? screenToFlowPosition({ x: window.innerWidth / 2, y: window.innerHeight / 2 }),
         data: { src, imageId, label: asset.prompt },
       });
-      setAssetsOpen(false);
     },
     [addNode, screenToFlowPosition]
   );
@@ -494,13 +495,24 @@ function CanvasInner({ projectId }: { projectId: string }) {
   const onDrop = useCallback(
     (event: React.DragEvent) => {
       event.preventDefault();
+      const dropPosition = screenToFlowPosition({ x: event.clientX, y: event.clientY });
+      // A library asset dragged onto the canvas lands where it's dropped.
+      const assetData = event.dataTransfer.getData(ASSET_DRAG_MIME);
+      if (assetData) {
+        try {
+          void addAssetToCanvas(JSON.parse(assetData) as ProjectAsset, dropPosition);
+        } catch {
+          // ignore a malformed payload
+        }
+        return;
+      }
       const files = Array.from(event.dataTransfer.files).filter((file) =>
         file.type.startsWith("image/")
       );
       if (files.length === 0) return;
-      void addImageFiles(files, screenToFlowPosition({ x: event.clientX, y: event.clientY }));
+      void addImageFiles(files, dropPosition);
     },
-    [addImageFiles, screenToFlowPosition]
+    [addImageFiles, screenToFlowPosition, addAssetToCanvas]
   );
 
   const onPickFiles = useCallback(

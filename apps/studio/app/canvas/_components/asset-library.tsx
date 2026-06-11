@@ -5,6 +5,9 @@ import { IconPhoto, IconSearch, IconX } from "@tabler/icons-react";
 import { cn } from "@/lib/utils";
 import { getImage, listProjectAssets, type ProjectAsset } from "@/lib/canvas-store";
 
+/** dataTransfer type carrying a dragged library asset to the canvas. */
+export const ASSET_DRAG_MIME = "application/x-fizz-asset";
+
 type AssetTab = "generated" | "uploaded";
 
 const TABS: { id: AssetTab; label: string }[] = [
@@ -39,8 +42,13 @@ function AssetThumb({ asset, onPick }: { asset: ProjectAsset; onPick: (a: Projec
     <button
       type="button"
       title={asset.prompt ?? undefined}
+      draggable
+      onDragStart={(event) => {
+        event.dataTransfer.setData(ASSET_DRAG_MIME, JSON.stringify(asset));
+        event.dataTransfer.effectAllowed = "copy";
+      }}
       onClick={() => onPick(asset)}
-      className="group relative aspect-square overflow-hidden rounded-lg bg-white/[0.04] transition-colors hover:bg-white/[0.08]"
+      className="group relative aspect-square cursor-grab overflow-hidden rounded-lg bg-white/[0.04] transition-colors hover:bg-white/[0.08] active:cursor-grabbing"
     >
       {src ? (
         asset.kind === "video" ? (
