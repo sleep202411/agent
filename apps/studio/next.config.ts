@@ -9,6 +9,10 @@ import type { NextConfig } from "next";
 const AURORA_TARGET = process.env.AURORA_PROXY_TARGET ?? "https://studio.fizzdragon.com";
 const STRIP_PREFIX = process.env.AURORA_STRIP_PREFIX === "1";
 
+// Java content backend — owns auth (/user/email/login, /user/login,
+// /user/query/user/info, /user/logout). Same prefix contract as apps/web.
+const JAVA_CONTENT = process.env.JAVA_CONTENT_URL ?? "https://fizzdragon.com/content";
+
 const nextConfig: NextConfig = {
   // Self-contained server bundle for the Docker runner stage.
   output: "standalone",
@@ -17,6 +21,10 @@ const nextConfig: NextConfig = {
       {
         source: "/aurora/:path*",
         destination: STRIP_PREFIX ? `${AURORA_TARGET}/:path*` : `${AURORA_TARGET}/aurora/:path*`,
+      },
+      {
+        source: "/user/:path*",
+        destination: `${JAVA_CONTENT}/user/:path*`,
       },
     ];
   },

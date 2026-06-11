@@ -7,6 +7,10 @@
 # Cluster-level identifiers (must match cluster-bootstrap)
 # ---------------------------------------------------------------------------
 azure:
+  # Master switch for the Azure-specific layer (Key Vault CSI projection +
+  # Workload Identity SA/labels). false on non-Azure clusters (CN/ACK), where
+  # the projected Secrets are instead created out-of-band via kubectl.
+  enabled: true
   tenantId: 04aa24ae-21ea-447d-b33e-a9b6bfeda97a
   keyVault:
     name: kv-fizzdragon-com
@@ -61,6 +65,18 @@ ingress:
       rewriteTarget: ""
       adminUi: false
       service: studio
+    - name: admin-fd
+      # Dedicated admin host, moved off the legacy Java box (47.84.16.145) to
+      # AKS on 2026-06-11. `adminUiOnly` renders ONLY the admin-ui ingress
+      # (no web/aurora on this host); app-root bounces / → /admin. TLS is
+      # auto-issued + auto-renewed by cert-manager via Let's Encrypt (unlike
+      # the main/studio hosts which still serve hand-uploaded DigiCerts).
+      host: admin.fizzdragon.com
+      secretName: admin-fizzdragon-tls
+      certManager: letsencrypt-prod
+      rewriteTarget: ""
+      adminUi: true
+      adminUiOnly: true
 # ---------------------------------------------------------------------------
 # Shared environment (non-secret config) injected into every app pod
 # that needs it. Secrets live in Key Vault, see secretProviderClass below.
@@ -169,7 +185,7 @@ studio:
   replicaCount: 1
   image:
     repository: fizzdragon-studio
-    tag: 18a6e0fc2a6bbed54f2e345f9d4e20be3e4e1f53
+    tag: b2a91afcf29746fc2c1c0973fb46f51b6dd5bbca
   containerPort: 3000
   env:
     AURORA_PROXY_TARGET: http://fizzdragon-server:3001
@@ -336,6 +352,8 @@ agentWorker:
     maxReplicas: 6 # 6 × WORKER_CONCURRENCY 15 = 90 ≈ ECS baseline.
     cooldownPeriod: 600 # 10 min before scaling down, matches docker-compose memory behaviour.
     pollingInterval: 15
+    # Azure managed Redis is TLS-only (6380); Aliyun community Redis is plaintext 6379.
+    enableTLS: "true"
     # BullMQ queue list watched by the redis scaler.
     # Names mirror QUEUE_NAME / IMAGE_QUEUE_NAME in apps/agent/src/mastra/workflows/engine/.
     queues:

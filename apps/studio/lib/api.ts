@@ -90,6 +90,10 @@ async function request<T>(method: string, path: string, config: ApiRequestConfig
     } catch {
       /* ignore */
     }
+    if (response.status === 401 && typeof window !== "undefined") {
+      // Session missing/expired — let the auth provider raise the login dialog.
+      window.dispatchEvent(new CustomEvent("fizz:unauthorized"));
+    }
     throw new ApiRequestError(`HTTP_${response.status}`, message, response.status, rawBody);
   }
 
