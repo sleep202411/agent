@@ -346,7 +346,14 @@ function WalletView({
           setDetail(nextDetail);
           onAccountUpdated(nextDetail);
         }}
-        onClose={() => setSelectedAccountId(null)}
+        onClose={() => {
+          // Clear the loaded detail too — `account` derives from
+          // `detail?.account ?? selectedAccountId`, so leaving the detail in
+          // place keeps `open` true and the dialog can never close.
+          setSelectedAccountId(null);
+          setDetail(null);
+          setDetailError(null);
+        }}
       />
     </div>
   );
