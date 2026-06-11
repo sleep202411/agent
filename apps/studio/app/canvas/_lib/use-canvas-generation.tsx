@@ -3,6 +3,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo } from "react";
 import { useReactFlow } from "@xyflow/react";
 import { toast } from "sonner";
+import { addProjectAssets } from "@/lib/canvas-store";
 import { openAssetsRealtime } from "./assets-realtime";
 import {
   compactFizzAiInput,
@@ -41,9 +42,11 @@ export function useGeneration(): GenerationContextValue {
  * `submit(nodeId)` via context.
  */
 export function CanvasGenerationProvider({
+  projectId,
   catalog,
   children,
 }: {
+  projectId: string;
   catalog: FizzAiCatalog | undefined;
   children: React.ReactNode;
 }) {
@@ -72,10 +75,27 @@ export function CanvasGenerationProvider({
             return node;
           })
         );
+        // A finished job's outputs join the project's persistent asset library
+        // (deduped by id, so repeated pushes are harmless).
+        if (generationStatusFromRaw(job.status) === "done" && job.outputs?.length) {
+          void addProjectAssets(
+            projectId,
+            job.outputs.map((output, index) => ({
+              id: output.id ?? `${job.id}:${index}`,
+              kind: output.type,
+              source: "generated" as const,
+              url: output.url,
+              width: output.width,
+              height: output.height,
+              prompt: job.prompt,
+              createdAt: Date.now(),
+            }))
+          );
+        }
       },
     });
     return () => client.close();
-  }, [setNodes]);
+  }, [setNodes, projectId]);
 
   const submit = useCallback(
     async (nodeId: string) => {

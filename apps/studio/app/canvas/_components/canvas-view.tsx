@@ -21,15 +21,25 @@ import {
   type OnConnectStart,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
-import { IconArrowLeft, IconMaximize, IconMinus, IconPlus, IconUpload } from "@tabler/icons-react";
 import {
+  IconArrowLeft,
+  IconLayoutGrid,
+  IconMaximize,
+  IconMinus,
+  IconPlus,
+  IconUpload,
+} from "@tabler/icons-react";
+import { toast } from "sonner";
+import {
+  ensureProject,
   getImage,
-  getProject,
   putImage,
   renameProject,
   saveProjectContent,
+  type ProjectAsset,
   type StoredCanvasNode,
 } from "@/lib/canvas-store";
+import { AssetLibrary } from "./asset-library";
 import { AddNodeMenu, type AddNodeAction, type ConnectFilter } from "./add-node-menu";
 import { CanvasConnectionLine } from "./connection-line";
 import { GradientEdge } from "./gradient-edge";
@@ -169,7 +179,9 @@ function toStoredNodes(nodes: CanvasNode[]): StoredCanvasNode[] {
         id: node.id,
         position: node.position,
         kind: "image" as const,
-        imageId: node.data.imageId,
+        imageId: node.data.imageId || undefined,
+        // Blob-backed src is a per-session object URL — only persist a durable url.
+        src: node.data.imageId ? undefined : node.data.src,
         label: node.data.label,
       };
     }
@@ -195,6 +207,7 @@ function CanvasInner({ projectId }: { projectId: string }) {
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
   const [projectName, setProjectName] = useState("Untitled canvas");
   const [addMenu, setAddMenu] = useState<AddMenuState | null>(null);
+  const [assetsOpen, setAssetsOpen] = useState(false);
   const { screenToFlowPosition, fitView, getNodes } = useReactFlow();
   const loadedRef = useRef(false);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -209,12 +222,8 @@ function CanvasInner({ projectId }: { projectId: string }) {
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      const project = await getProject(projectId);
+      const project = await ensureProject(projectId);
       if (cancelled) return;
-      if (!project) {
-        loadedRef.current = true;
-        return;
-      }
       setProjectName(project.name);
       const restored: CanvasNode[] = [];
       for (const stored of project.nodes) {
@@ -250,13 +259,17 @@ function CanvasInner({ projectId }: { projectId: string }) {
           continue;
         }
         if (stored.kind !== "image") continue;
-        const blob = await getImage(stored.imageId);
-        if (!blob) continue;
+        let src = stored.src;
+        if (stored.imageId) {
+          const blob = await getImage(stored.imageId);
+          if (blob) src = URL.createObjectURL(blob);
+        }
+        if (!src) continue;
         restored.push({
           id: stored.id,
           type: "image",
           position: stored.position,
-          data: { src: URL.createObjectURL(blob), imageId: stored.imageId, label: stored.label },
+          data: { src, imageId: stored.imageId ?? "", label: stored.label },
         });
       }
       if (cancelled) return;
@@ -360,6 +373,34 @@ function CanvasInner({ projectId }: { projectId: string }) {
       setAddMenu(null);
     },
     [setNodes]
+  );
+
+  // Drop a library asset onto the canvas as an image node at the viewport center.
+  const addAssetToCanvas = useCallback(
+    async (asset: ProjectAsset) => {
+      if (asset.kind !== "image") {
+        toast.info("Video assets · coming soon");
+        return;
+      }
+      let src = asset.url;
+      let imageId = "";
+      if (!src && asset.imageId) {
+        const blob = await getImage(asset.imageId);
+        if (blob) {
+          src = URL.createObjectURL(blob);
+          imageId = asset.imageId;
+        }
+      }
+      if (!src) return;
+      addNode({
+        id: crypto.randomUUID(),
+        type: "image",
+        position: screenToFlowPosition({ x: window.innerWidth / 2, y: window.innerHeight / 2 }),
+        data: { src, imageId, label: asset.prompt },
+      });
+      setAssetsOpen(false);
+    },
+    [addNode, screenToFlowPosition]
   );
 
   const onDragOver = useCallback((event: React.DragEvent) => {
@@ -500,7 +541,7 @@ function CanvasInner({ projectId }: { projectId: string }) {
   );
 
   return (
-    <CanvasGenerationProvider catalog={catalog}>
+    <CanvasGenerationProvider projectId={projectId} catalog={catalog}>
       <div
         ref={containerRef}
         className="relative h-full"
@@ -592,6 +633,26 @@ function CanvasInner({ projectId }: { projectId: string }) {
         />
 
         <ZoomControls />
+
+        {/* Left rail (root-sidebar style) — opens the project's asset library. */}
+        {!assetsOpen && (
+          <div className="absolute top-1/2 left-4 z-20 flex -translate-y-1/2 flex-col gap-1 rounded-2xl bg-popover/90 p-1.5 shadow-md backdrop-blur-xl">
+            <button
+              type="button"
+              aria-label="Open assets"
+              onClick={() => setAssetsOpen(true)}
+              className="flex size-9 items-center justify-center rounded-xl text-white/70 transition-colors hover:bg-white/[0.08] hover:text-white"
+            >
+              <IconLayoutGrid className="size-5" stroke={1.7} />
+            </button>
+          </div>
+        )}
+        <AssetLibrary
+          projectId={projectId}
+          open={assetsOpen}
+          onClose={() => setAssetsOpen(false)}
+          onPick={addAssetToCanvas}
+        />
 
         {/* Persistent pending wire from the source handle to the open menu, so the
           dragged connection stays visually anchored while choosing a node. */}

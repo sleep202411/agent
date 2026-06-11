@@ -27,6 +27,23 @@ export type ProjectMeta = {
   updatedAt: number;
 };
 
+/**
+ * A project's library asset — a persistent inventory entry that survives
+ * deleting the card it came from. Generated assets carry a durable storage
+ * `url`; uploaded assets carry a local blob `imageId`.
+ */
+export type ProjectAsset = {
+  id: string;
+  kind: "image" | "video";
+  source: "generated" | "uploaded";
+  url?: string;
+  imageId?: string;
+  width?: number;
+  height?: number;
+  prompt?: string;
+  createdAt: number;
+};
+
 type StoredNodeBase = {
   id: string;
   position: { x: number; y: number };
@@ -52,7 +69,9 @@ type StoredGenFields = {
 };
 
 export type StoredCanvasNode =
-  | (StoredNodeBase & { kind: "image"; imageId: string; label?: string })
+  // An image node is blob-backed (uploads: `imageId`) or url-backed
+  // (a generated asset dropped onto the canvas: durable `src`).
+  | (StoredNodeBase & { kind: "image"; imageId?: string; src?: string; label?: string })
   | (StoredNodeBase & { kind: "note"; text: string })
   | (StoredNodeBase & { kind: "prompt" } & StoredGenFields)
   | (StoredNodeBase & { kind: "video" } & StoredGenFields);
@@ -65,10 +84,11 @@ export type StoredCanvasEdge = {
   targetHandle?: string | null;
 };
 
-/** A project plus its canvas-mode content. */
+/** A project plus its canvas-mode content and its persistent asset library. */
 export type ProjectRecord = ProjectMeta & {
   nodes: StoredCanvasNode[];
   edges?: StoredCanvasEdge[];
+  assets?: ProjectAsset[];
 };
 
 const DB_NAME = "fizzstudio-canvas";
@@ -141,6 +161,21 @@ export async function getProject(id: string): Promise<ProjectRecord | undefined>
   return record ? normalizeMeta(record) : undefined;
 }
 
+/** Load a project, creating an empty one at this id if it doesn't exist yet. */
+export async function ensureProject(id: string): Promise<ProjectRecord> {
+  const existing = await getProject(id);
+  if (existing) return existing;
+  const record: ProjectRecord = {
+    id,
+    name: "Untitled canvas",
+    mode: "canvas",
+    updatedAt: Date.now(),
+    nodes: [],
+  };
+  await run("projects", "readwrite", (s) => s.put(record));
+  return record;
+}
+
 export async function saveProjectContent(
   id: string,
   nodes: StoredCanvasNode[],
@@ -151,6 +186,41 @@ export async function saveProjectContent(
   await run("projects", "readwrite", (s) =>
     s.put({ ...existing, nodes, edges, updatedAt: Date.now() })
   );
+}
+
+export async function listProjectAssets(id: string): Promise<ProjectAsset[]> {
+  const project = await getProject(id);
+  return (project?.assets ?? []).slice().sort((a, b) => b.createdAt - a.createdAt);
+}
+
+export async function addProjectAssets(
+  id: string,
+  assets: ProjectAsset[]
+): Promise<ProjectAsset[]> {
+  const existing = await getProject(id);
+  if (!existing) return [];
+  const have = new Set((existing.assets ?? []).map((a) => a.id));
+  const fresh = assets.filter((a) => !have.has(a.id));
+  if (fresh.length === 0) return existing.assets ?? [];
+  const next = [...(existing.assets ?? []), ...fresh];
+  await run("projects", "readwrite", (s) => s.put({ ...existing, assets: next }));
+  return next;
+}
+
+export async function deleteProjectAsset(id: string, assetId: string): Promise<void> {
+  const existing = await getProject(id);
+  if (!existing) return;
+  const asset = (existing.assets ?? []).find((a) => a.id === assetId);
+  await run("projects", "readwrite", (s) =>
+    s.put({ ...existing, assets: (existing.assets ?? []).filter((a) => a.id !== assetId) })
+  );
+  // GC an uploaded asset's blob if no canvas node still references it.
+  if (
+    asset?.imageId &&
+    !existing.nodes.some((n) => n.kind === "image" && n.imageId === asset.imageId)
+  ) {
+    await run("images", "readwrite", (s) => s.delete(asset.imageId!));
+  }
 }
 
 export async function renameProject(id: string, name: string): Promise<void> {
@@ -170,13 +240,15 @@ export async function duplicateProject(id: string): Promise<ProjectMeta | undefi
   // would delete blobs the other still references.
   const remap = new Map<string, string>();
   for (const node of source.nodes) {
-    if (node.kind === "image" && !remap.has(node.imageId)) {
+    if (node.kind === "image" && node.imageId && !remap.has(node.imageId)) {
       const blob = await getImage(node.imageId);
       if (blob) remap.set(node.imageId, await putImage(blob));
     }
   }
   const nodes = source.nodes.map((node) =>
-    node.kind === "image" ? { ...node, imageId: remap.get(node.imageId) ?? node.imageId } : node
+    node.kind === "image" && node.imageId
+      ? { ...node, imageId: remap.get(node.imageId) ?? node.imageId }
+      : node
   );
   const record: ProjectRecord = {
     id: crypto.randomUUID(),
@@ -196,7 +268,11 @@ export async function deleteProject(id: string): Promise<void> {
   await run("projects", "readwrite", (s) => s.delete(id));
   if (!existing) return;
   const imageIds = [
-    ...new Set(existing.nodes.flatMap((node) => (node.kind === "image" ? [node.imageId] : []))),
+    ...new Set(
+      existing.nodes.flatMap((node) =>
+        node.kind === "image" && node.imageId ? [node.imageId] : []
+      )
+    ),
   ];
   await Promise.all(
     imageIds.map((imageId) => run("images", "readwrite", (s) => s.delete(imageId)))
