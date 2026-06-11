@@ -41,6 +41,7 @@ import {
   CreateAdminBillingPriceSchema,
   CreateAdminBillingPromotionSchema,
   CreateAdminBillingRefundSchema,
+  CreateAdminUserWalletCreditSchema,
   CreateAdminWalletAdjustmentSchema,
   IgnoreAdminBillingProviderEventSchema,
   QuoteAdminBillingRefundSchema,
@@ -56,6 +57,7 @@ import {
   type CreateAdminBillingPriceInput,
   type CreateAdminBillingPromotionInput,
   type CreateAdminBillingRefundInput,
+  type CreateAdminUserWalletCreditInput,
   type CreateAdminWalletAdjustmentInput,
   type IgnoreAdminBillingProviderEventInput,
   type ListAdminBillingLedgerJournalsQuery,
@@ -102,6 +104,37 @@ export class BillingAdminController {
       code: 200,
       data: await this.billing.getAdminWalletAccountDetail(params.accountId),
     };
+  }
+
+  @RequireAdminPermissions(ADMIN_PERMISSION_KEYS.BillingWrite)
+  @Post('wallets/user-credits')
+  async createUserWalletCredit(
+    @CurrentAdmin() admin: AdminActor,
+    @Body(new ZodValidationPipe(CreateAdminUserWalletCreditSchema))
+    body: CreateAdminUserWalletCreditInput,
+    @Req() request: Request,
+  ) {
+    const data = await this.billing.createAdminUserWalletCredit(admin.id, body);
+    await this.audit(
+      admin,
+      request,
+      'admin.billing.wallet.user_credit',
+      'wallet_account',
+      data.account.id,
+      {
+        inputUserId: body.userId,
+        idFormat: body.idFormat,
+        resolvedUserId: data.account.ownerId,
+        amount: body.amount.toString(),
+        currency: body.currency,
+        balanceKind: body.balanceKind,
+        grantType: body.grantType,
+        expiresAt: body.expiresAt?.toISOString() ?? null,
+        reason: body.reason,
+        idempotencyKey: body.idempotencyKey,
+      },
+    );
+    return { code: 200, data };
   }
 
   @RequireAdminPermissions(ADMIN_PERMISSION_KEYS.BillingWrite)

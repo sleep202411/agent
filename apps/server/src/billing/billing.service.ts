@@ -51,6 +51,7 @@ import {
   COMPUTE_POINT_EXPLICIT_ADMIN_PRICING,
   COMPUTE_POINT_FIAT_CURRENCY,
   COMPUTE_POINTS_PER_USD_CENT,
+  decodeUserId,
 } from '@repo/shared';
 import { createHash, randomUUID } from 'crypto';
 import type { AuthUser } from '../auth';
@@ -65,6 +66,7 @@ import type {
   CreateAdminBillingPriceInput,
   CreateAdminBillingPromotionInput,
   CreateAdminBillingRefundInput,
+  CreateAdminUserWalletCreditInput,
   CreateAdminWalletAdjustmentInput,
   ListAdminBillingOrdersQuery,
   ListAdminBillingProviderEventsQuery,
@@ -735,12 +737,15 @@ export class BillingService {
       });
     }
     if (
-      account.currency !== WalletCurrencyType.compute_point ||
+      !(
+        account.currency === WalletCurrencyType.compute_point ||
+        account.currency === WalletCurrencyType.community_point
+      ) ||
       account.balanceKind !== WalletBalanceKind.consumable
     ) {
       throw new ConflictException({
         code: 'ADMIN_WALLET_ADJUSTMENT_UNSUPPORTED_ACCOUNT',
-        msg: 'Admin credit adjustments currently support compute-point consumable wallets only.',
+        msg: 'Admin credit adjustments currently support consumable compute/community point wallets only.',
       });
     }
 
@@ -762,11 +767,12 @@ export class BillingService {
           : null,
       description: input.reason,
       reason: isPositive
-        ? 'admin_compute_point_credit'
-        : 'admin_compute_point_debit',
+        ? `admin_${account.currency}_credit`
+        : `admin_${account.currency}_debit`,
       metadata: {
         ...input.metadata,
         adminId,
+        walletCurrency: account.currency,
         reason: input.reason,
         grantType: input.grantType,
         rawIdempotencyKey: input.idempotencyKey,
@@ -784,6 +790,57 @@ export class BillingService {
     });
 
     return this.getAdminWalletAccountDetail(account.id);
+  }
+
+  async createAdminUserWalletCredit(
+    adminId: string,
+    input: CreateAdminUserWalletCreditInput,
+  ) {
+    const inputUserId = input.userId.trim();
+    const resolvedUserId =
+      input.idFormat === 'raw' ? inputUserId : decodeUserId(inputUserId);
+    if (!/^\d{1,18}$/.test(resolvedUserId)) {
+      throw new BadRequestException({
+        code: 'INVALID_USER_ID',
+        msg: 'User id must resolve to a numeric Java user id.',
+      });
+    }
+
+    const account = await this.prisma.walletAccount.upsert({
+      where: {
+        ownerType_ownerId_currency_balanceKind: {
+          ownerType: WalletOwnerType.user,
+          ownerId: resolvedUserId,
+          currency: input.currency as WalletCurrencyType,
+          balanceKind: WalletBalanceKind.consumable,
+        },
+      },
+      create: {
+        ownerType: WalletOwnerType.user,
+        ownerId: resolvedUserId,
+        currency: input.currency as WalletCurrencyType,
+        balanceKind: WalletBalanceKind.consumable,
+        status: WalletAccountStatus.active,
+      },
+      update: {},
+    });
+
+    return this.createAdminWalletAdjustment(adminId, account.id, {
+      amount: input.amount,
+      grantType: input.grantType,
+      expiresAt: input.expiresAt,
+      reason: input.reason,
+      idempotencyKey: input.idempotencyKey,
+      metadata: {
+        ...input.metadata,
+        inputUserId,
+        idFormat: input.idFormat,
+        resolvedUserId,
+        inputWasDecoded:
+          input.idFormat !== 'raw' && inputUserId !== resolvedUserId,
+        balanceKind: input.balanceKind,
+      },
+    });
   }
 
   private adminWalletAccountDto(

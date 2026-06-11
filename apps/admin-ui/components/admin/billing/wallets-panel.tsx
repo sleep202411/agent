@@ -5,7 +5,7 @@
 // wallet ledger + credit grant engine as billing and AI generation.
 
 import { useCallback, useMemo, useState } from "react";
-import { IconAdjustments, IconRefresh } from "@tabler/icons-react";
+import { IconAdjustments, IconGift, IconRefresh } from "@tabler/icons-react";
 import { Button } from "@/components/ui/button";
 import { DataTable, type ColumnDef } from "@/components/ui/data-table";
 import { cn } from "@/lib/utils";
@@ -98,22 +98,26 @@ export function BillingWalletsPanel({
           recentOrders={overview.recentOrders}
           loading={loading}
           onAccountUpdated={(detail) =>
-            setOverview((current) =>
-              current
-                ? {
-                    ...current,
-                    walletAccounts: current.walletAccounts.map((account) =>
+            setOverview((current) => {
+              if (!current) return current;
+              const hasAccount = current.walletAccounts.some(
+                (account) => account.id === detail.account.id
+              );
+              return {
+                ...current,
+                walletAccounts: hasAccount
+                  ? current.walletAccounts.map((account) =>
                       account.id === detail.account.id ? detail.account : account
-                    ),
-                    walletLedgerEntries: [
-                      ...detail.entries.slice(0, 12),
-                      ...current.walletLedgerEntries.filter(
-                        (entry) => entry.accountId !== detail.account.id
-                      ),
-                    ].slice(0, 12),
-                  }
-                : current
-            )
+                    )
+                  : [detail.account, ...current.walletAccounts].slice(0, 50),
+                walletLedgerEntries: [
+                  ...detail.entries.slice(0, 12),
+                  ...current.walletLedgerEntries.filter(
+                    (entry) => entry.accountId !== detail.account.id
+                  ),
+                ].slice(0, 12),
+              };
+            })
           }
         />
       ) : null}
@@ -255,85 +259,89 @@ function WalletView({
   );
 
   return (
-    <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
-      <section className="rounded-xl border border-slate-200 bg-white shadow-[0_1px_2px_rgba(15,23,42,0.04)]">
-        <div className="border-b border-slate-200 p-4">
-          <h3 className="text-sm font-semibold text-slate-950">钱包账户余额</h3>
-          <p className="mt-1 text-[12px] text-slate-500">
-            每行是一个用户或工作区的钱包账户；点击查看可打开余额详情和真实流水。
-          </p>
-        </div>
-        <DataTable
-          columns={columns}
-          data={accounts}
-          loading={loading}
-          minWidth={940}
-          pageSize={20}
-          emptyLabel="暂无钱包账户"
-          className="rounded-none border-0"
-        />
-      </section>
+    <div className="space-y-4">
+      <DirectUserCreditPanel onCredited={onAccountUpdated} />
 
-      <div className="space-y-4">
-        <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-[0_1px_2px_rgba(15,23,42,0.04)]">
-          <h3 className="text-sm font-semibold text-slate-950">最近钱包流水</h3>
-          <p className="mt-1 text-[12px] leading-5 text-slate-500">
-            最近已记账的 wallet ledger entry，不包含仅初始化的空账户。
-          </p>
-          <div className="mt-3 space-y-2">
-            {entries.slice(0, 6).map((entry) => (
-              <div key={entry.id} className="rounded-lg border border-slate-200 px-3 py-2">
-                <div className="flex items-center justify-between gap-2">
-                  <div className="min-w-0">
-                    <p className="truncate text-[12px] font-semibold text-slate-950">
-                      {walletEntryTypeLabel(entry.entryType)} · {currencyLabel(entry.currency)}
-                    </p>
-                    <p className="truncate text-[11px] text-slate-500">
-                      {entry.ownerType}:{entry.ownerId}
-                    </p>
-                  </div>
-                  <span className="text-[12px] font-semibold text-slate-950">
-                    {formatSignedInteger(entry.availableDelta)}
-                  </span>
-                </div>
-                <p className="mt-1 text-[11px] text-slate-500">{formatDate(entry.createdAt)}</p>
-              </div>
-            ))}
-            {!entries.length ? (
-              <div className="rounded-lg border border-dashed border-slate-200 px-3 py-6 text-center text-[12px] text-slate-500">
-                暂无钱包流水
-              </div>
-            ) : null}
+      <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
+        <section className="rounded-xl border border-slate-200 bg-white shadow-[0_1px_2px_rgba(15,23,42,0.04)]">
+          <div className="border-b border-slate-200 p-4">
+            <h3 className="text-sm font-semibold text-slate-950">钱包账户余额</h3>
+            <p className="mt-1 text-[12px] text-slate-500">
+              每行是一个用户或工作区的钱包账户；点击查看可打开余额详情和真实流水。
+            </p>
           </div>
+          <DataTable
+            columns={columns}
+            data={accounts}
+            loading={loading}
+            minWidth={940}
+            pageSize={20}
+            emptyLabel="暂无钱包账户"
+            className="rounded-none border-0"
+          />
         </section>
 
-        <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-[0_1px_2px_rgba(15,23,42,0.04)]">
-          <h3 className="text-sm font-semibold text-slate-950">7 日账单状态</h3>
-          <div className="mt-4 grid gap-2">
-            <Metric label="已履约订单" value={metrics.fulfilledOrders7d} />
-            <Metric label="失败订单" value={metrics.failedOrders7d} tone="risk" />
-            <Metric label="支付失败事件" value={metrics.paymentFailures7d} tone="risk" />
-          </div>
-          <div className="mt-4 border-t border-slate-200 pt-4">
-            <p className="text-[12px] font-semibold text-slate-500">最近订单</p>
+        <div className="space-y-4">
+          <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-[0_1px_2px_rgba(15,23,42,0.04)]">
+            <h3 className="text-sm font-semibold text-slate-950">最近钱包流水</h3>
+            <p className="mt-1 text-[12px] leading-5 text-slate-500">
+              最近已记账的 wallet ledger entry，不包含仅初始化的空账户。
+            </p>
             <div className="mt-3 space-y-2">
-              {recentOrders.slice(0, 5).map((order) => (
-                <div key={order.id} className="rounded-lg border border-slate-200 px-3 py-2">
+              {entries.slice(0, 6).map((entry) => (
+                <div key={entry.id} className="rounded-lg border border-slate-200 px-3 py-2">
                   <div className="flex items-center justify-between gap-2">
-                    <p className="truncate text-[12px] font-medium text-slate-950">
-                      {order.item.name}
-                    </p>
-                    <OrderStatusPill status={order.status} />
+                    <div className="min-w-0">
+                      <p className="truncate text-[12px] font-semibold text-slate-950">
+                        {walletEntryTypeLabel(entry.entryType)} · {currencyLabel(entry.currency)}
+                      </p>
+                      <p className="truncate text-[11px] text-slate-500">
+                        {entry.ownerType}:{entry.ownerId}
+                      </p>
+                    </div>
+                    <span className="text-[12px] font-semibold text-slate-950">
+                      {formatSignedInteger(entry.availableDelta)}
+                    </span>
                   </div>
-                  <p className="mt-1 text-[11px] text-slate-500">
-                    {formatMoneyMinor(order.amountMinor, order.currency)} ·{" "}
-                    {formatDate(order.createdAt)}
-                  </p>
+                  <p className="mt-1 text-[11px] text-slate-500">{formatDate(entry.createdAt)}</p>
                 </div>
               ))}
+              {!entries.length ? (
+                <div className="rounded-lg border border-dashed border-slate-200 px-3 py-6 text-center text-[12px] text-slate-500">
+                  暂无钱包流水
+                </div>
+              ) : null}
             </div>
-          </div>
-        </section>
+          </section>
+
+          <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-[0_1px_2px_rgba(15,23,42,0.04)]">
+            <h3 className="text-sm font-semibold text-slate-950">7 日账单状态</h3>
+            <div className="mt-4 grid gap-2">
+              <Metric label="已履约订单" value={metrics.fulfilledOrders7d} />
+              <Metric label="失败订单" value={metrics.failedOrders7d} tone="risk" />
+              <Metric label="支付失败事件" value={metrics.paymentFailures7d} tone="risk" />
+            </div>
+            <div className="mt-4 border-t border-slate-200 pt-4">
+              <p className="text-[12px] font-semibold text-slate-500">最近订单</p>
+              <div className="mt-3 space-y-2">
+                {recentOrders.slice(0, 5).map((order) => (
+                  <div key={order.id} className="rounded-lg border border-slate-200 px-3 py-2">
+                    <div className="flex items-center justify-between gap-2">
+                      <p className="truncate text-[12px] font-medium text-slate-950">
+                        {order.item.name}
+                      </p>
+                      <OrderStatusPill status={order.status} />
+                    </div>
+                    <p className="mt-1 text-[11px] text-slate-500">
+                      {formatMoneyMinor(order.amountMinor, order.currency)} ·{" "}
+                      {formatDate(order.createdAt)}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </section>
+        </div>
       </div>
 
       <WalletAccountDetailDialog
@@ -356,6 +364,152 @@ function WalletView({
         }}
       />
     </div>
+  );
+}
+
+function DirectUserCreditPanel({
+  onCredited,
+}: {
+  onCredited: (detail: AdminWalletAccountDetailData) => void;
+}) {
+  const [userId, setUserId] = useState("");
+  const [idFormat, setIdFormat] = useState("public");
+  const [currency, setCurrency] = useState("community_point");
+  const [amount, setAmount] = useState("");
+  const [grantType, setGrantType] = useState("admin_adjustment");
+  const [expiresAt, setExpiresAt] = useState("");
+  const [reason, setReason] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [lastDetail, setLastDetail] = useState<AdminWalletAccountDetailData | null>(null);
+  const parsedAmount = parsePositiveAmount(amount);
+  const canExpire = currency === "compute_point";
+  const canSubmit = Boolean(userId.trim() && parsedAmount !== null && reason.trim() && !submitting);
+
+  async function submitCredit() {
+    if (!canSubmit || parsedAmount === null) return;
+    setSubmitting(true);
+    setError(null);
+    try {
+      const nextDetail = await mutateEnvelope<AdminWalletAccountDetailData>(
+        "/api/admin/billing/wallets/user-credits",
+        {
+          userId: userId.trim(),
+          idFormat,
+          currency,
+          balanceKind: "consumable",
+          amount: parsedAmount.toString(),
+          grantType,
+          expiresAt: canExpire && expiresAt ? new Date(expiresAt).toISOString() : null,
+          reason,
+          idempotencyKey: globalThis.crypto?.randomUUID?.() ?? `${Date.now()}:${userId.trim()}`,
+        }
+      );
+      setUserId("");
+      setIdFormat("public");
+      setAmount("");
+      setGrantType("admin_adjustment");
+      setExpiresAt("");
+      setReason("");
+      setLastDetail(nextDetail);
+      onCredited(nextDetail);
+    } catch (err) {
+      setError(toErrorMessage(err));
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <section className="rounded-xl border border-slate-200 bg-white shadow-[0_1px_2px_rgba(15,23,42,0.04)]">
+      <div className="flex items-start justify-between gap-3 border-b border-slate-200 p-4">
+        <div>
+          <h3 className="text-sm font-semibold text-slate-950">按 User ID 发放积分</h3>
+          <p className="mt-1 text-[12px] text-slate-500">
+            默认按 web 展示的公开 ID 解码；真实 Java userId 请切换 ID 类型。
+          </p>
+        </div>
+        <IconGift className="mt-0.5 size-4 text-slate-400" />
+      </div>
+      <div className="grid gap-3 p-4">
+        <div className="grid gap-3 lg:grid-cols-[minmax(160px,1fr)_140px_160px_140px_170px_minmax(180px,1fr)]">
+          <FormLabel label="User ID">
+            <TextInput
+              value={userId}
+              inputMode="numeric"
+              placeholder="Public ID 或真实 ID"
+              onChange={(event) => setUserId(event.target.value)}
+            />
+          </FormLabel>
+          <FormLabel label="ID 类型">
+            <Select value={idFormat} onChange={setIdFormat} title="ID 类型">
+              <option value="public">Web 公开 ID</option>
+              <option value="raw">真实 Java ID</option>
+            </Select>
+          </FormLabel>
+          <FormLabel label="积分类型">
+            <Select value={currency} onChange={setCurrency} title="积分类型">
+              <option value="community_point">社区积分</option>
+              <option value="compute_point">算力积分</option>
+            </Select>
+          </FormLabel>
+          <FormLabel label="发放数量">
+            <TextInput
+              value={amount}
+              inputMode="numeric"
+              placeholder="例如 100"
+              onChange={(event) => setAmount(event.target.value)}
+            />
+          </FormLabel>
+          <FormLabel label="来源类型">
+            <Select value={grantType} onChange={setGrantType} title="来源类型">
+              <option value="admin_adjustment">管理员调整</option>
+              <option value="campaign_reward">活动奖励</option>
+              <option value="check_in_reward">签到奖励</option>
+              <option value="system_grant">系统赠送</option>
+              <option value="other">其他</option>
+            </Select>
+          </FormLabel>
+          <FormLabel label="审计原因">
+            <TextInput
+              value={reason}
+              placeholder="例如 用户补偿、活动发放"
+              onChange={(event) => setReason(event.target.value)}
+            />
+          </FormLabel>
+        </div>
+        <div className="grid gap-3 md:grid-cols-[220px_minmax(0,1fr)_auto]">
+          <FormLabel label="过期时间" help="仅算力积分使用有效期；社区积分当前只调整钱包余额。">
+            <TextInput
+              type="datetime-local"
+              value={expiresAt}
+              disabled={!canExpire}
+              onChange={(event) => setExpiresAt(event.target.value)}
+            />
+          </FormLabel>
+          <div className="flex min-h-9 items-end">
+            {lastDetail ? (
+              <p className="truncate text-[12px] text-slate-500">
+                最近写入：{lastDetail.account.ownerId} ·{" "}
+                {currencyLabel(lastDetail.account.currency)} · 余额{" "}
+                {formatInteger(lastDetail.account.availableBalance)}
+              </p>
+            ) : null}
+          </div>
+          <div className="flex items-end justify-end">
+            <Button
+              type="button"
+              size="sm"
+              disabled={!canSubmit}
+              onClick={() => void submitCredit()}
+            >
+              {submitting ? "提交中" : "发放积分"}
+            </Button>
+          </div>
+        </div>
+        {error ? <ErrorBanner message={error} /> : null}
+      </div>
+    </section>
   );
 }
 
@@ -384,9 +538,10 @@ function WalletAccountDetailDialog({
   const [adjustError, setAdjustError] = useState<string | null>(null);
   const parsedAmount = parseAdjustmentAmount(amount);
   const isPositiveAdjustment = parsedAmount !== null && parsedAmount > BigInt(0);
+  const canExpire = isPositiveAdjustment && account?.currency === "compute_point";
   const canAdjust =
     Boolean(account) &&
-    account?.currency === "compute_point" &&
+    (account?.currency === "compute_point" || account?.currency === "community_point") &&
     account?.balanceKind === "consumable" &&
     account?.status === "active";
 
@@ -560,8 +715,7 @@ function WalletAccountDetailDialog({
         {
           amount: parsedAmount.toString(),
           grantType: parsedAmount > BigInt(0) ? grantType : "admin_adjustment",
-          expiresAt:
-            parsedAmount > BigInt(0) && expiresAt ? new Date(expiresAt).toISOString() : null,
+          expiresAt: canExpire && expiresAt ? new Date(expiresAt).toISOString() : null,
           reason,
           idempotencyKey: globalThis.crypto?.randomUUID?.() ?? `${Date.now()}:${account.id}`,
         }
@@ -622,7 +776,7 @@ function WalletAccountDetailDialog({
               <div>
                 <h4 className="text-sm font-semibold text-slate-950">人工调整</h4>
                 <p className="mt-0.5 text-[11px] text-slate-500">
-                  正数发放新批次，负数按可用批次冲回；必须填写审计原因。
+                  正数增加可用余额，负数冲回可用余额；算力积分会同步维护批次。
                 </p>
               </div>
               <IconAdjustments className="mt-0.5 size-4 text-slate-400" />
@@ -660,7 +814,7 @@ function WalletAccountDetailDialog({
                       <TextInput
                         type="datetime-local"
                         value={expiresAt}
-                        disabled={!isPositiveAdjustment}
+                        disabled={!canExpire}
                         onChange={(event) => setExpiresAt(event.target.value)}
                       />
                     </FormLabel>
@@ -686,7 +840,7 @@ function WalletAccountDetailDialog({
                 </>
               ) : (
                 <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-3 text-[12px] text-slate-500">
-                  仅 active 的算力积分可消费账户支持人工调整。
+                  仅 active 的可消费积分账户支持人工调整。
                 </div>
               )}
             </div>
@@ -716,4 +870,9 @@ function parseAdjustmentAmount(value: string): bigint | null {
   if (!/^-?\d+$/.test(trimmed)) return null;
   const amount = BigInt(trimmed);
   return amount === BigInt(0) ? null : amount;
+}
+
+function parsePositiveAmount(value: string): bigint | null {
+  const amount = parseAdjustmentAmount(value);
+  return amount !== null && amount > BigInt(0) ? amount : null;
 }
