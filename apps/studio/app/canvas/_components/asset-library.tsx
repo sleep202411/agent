@@ -50,10 +50,21 @@ function AssetThumb({ asset }: { asset: ProjectAsset }) {
     >
       {src ? (
         asset.kind === "video" ? (
-          <video src={src} muted playsInline className="size-full object-cover" />
+          <video
+            src={src}
+            muted
+            playsInline
+            draggable={false}
+            className="pointer-events-none size-full object-cover"
+          />
         ) : (
           // eslint-disable-next-line @next/next/no-img-element
-          <img src={src} alt={asset.prompt ?? "Asset"} className="size-full object-cover" />
+          <img
+            src={src}
+            alt={asset.prompt ?? "Asset"}
+            draggable={false}
+            className="pointer-events-none size-full object-cover"
+          />
         )
       ) : (
         <div className="flex size-full items-center justify-center">
