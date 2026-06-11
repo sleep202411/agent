@@ -9,6 +9,7 @@ import {
   IconChevronDown,
   IconLoader2,
   IconPhoto,
+  IconRefresh,
   IconVideo,
   IconWand,
 } from "@tabler/icons-react";
@@ -56,11 +57,46 @@ export type GenerationNodeData = {
 export type GenerationNodeType = Node<GenerationNodeData, "prompt" | "video">;
 
 const MODALITY = {
-  image: { icon: IconPhoto, label: "Image", aspect: "aspect-square" },
-  video: { icon: IconVideo, label: "Video", aspect: "aspect-video" },
+  image: { icon: IconPhoto, label: "Image" },
+  video: { icon: IconVideo, label: "Video" },
 } as const;
 
 const comingSoon = (label: string) => toast.info(`${label} · Coming soon`);
+
+/**
+ * CSS aspect-ratio for the result area so the card matches its content: actual
+ * output dimensions win; otherwise the selected size token (e.g. "3:4") shapes
+ * the placeholder; otherwise the modality default.
+ */
+function resultAspectRatio(
+  modality: GenerationModality,
+  settings: ModelSettings,
+  generation: GenerationState | undefined
+): string {
+  const output = generation?.outputs?.[0];
+  if (output?.width && output?.height) return `${output.width} / ${output.height}`;
+  const token = String(settings.imageSize ?? settings.aspectRatio ?? settings.size ?? "");
+  const match = token.match(/(\d+)\s*[:x]\s*(\d+)/);
+  if (match) return `${match[1]} / ${match[2]}`;
+  return modality === "video" ? "16 / 9" : "1 / 1";
+}
+
+/** Live ETA countdown (whole seconds) while a job runs. */
+function useCountdown(seconds: number | undefined, active: boolean): number | null {
+  const [remaining, setRemaining] = useState<number | null>(null);
+  useEffect(() => {
+    if (!active || seconds == null) {
+      setRemaining(null);
+      return;
+    }
+    const end = Date.now() + seconds * 1000;
+    const tick = () => setRemaining(Math.max(0, Math.ceil((end - Date.now()) / 1000)));
+    tick();
+    const timer = setInterval(tick, 1000);
+    return () => clearInterval(timer);
+  }, [seconds, active]);
+  return remaining;
+}
 
 function GenerationCard({
   id,
@@ -79,13 +115,20 @@ function GenerationCard({
   const descriptor = MODALITY[modality];
   const Icon = descriptor.icon;
   const generation = data.generation;
+  const settings = data.settings ?? {};
   const busy = generation?.status === "queued" || generation?.status === "generating";
+  const eta = useCountdown(generation?.etaSeconds, generation?.status === "generating");
+  const progressPct =
+    generation?.progress != null
+      ? Math.round(
+          (generation.progress <= 1 ? generation.progress : generation.progress / 100) * 100
+        )
+      : null;
 
   const model = useMemo(
     () => catalog?.models.find((m) => m.id === data.modelId),
     [catalog, data.modelId]
   );
-  const settings = data.settings ?? {};
   const references = data.references ?? {};
   const mode = data.mode ?? defaultMode(model);
   const modes = model?.generationModes ?? [];
@@ -145,12 +188,11 @@ function GenerationCard({
           selected && "ring-2 ring-ring"
         )}
       >
-        {/* Result display area — shows the produced media or the job state. */}
+        {/* Result display area — content-aware aspect ratio; shows the produced
+            media or the live job state (queued / generating+ETA / failed). */}
         <div
-          className={cn(
-            "flex flex-col items-center justify-center gap-3 overflow-hidden bg-muted",
-            descriptor.aspect
-          )}
+          className="relative flex flex-col items-center justify-center gap-3 overflow-hidden bg-muted"
+          style={{ aspectRatio: resultAspectRatio(modality, settings, generation) }}
         >
           {generation?.status === "done" && generation.outputs?.[0] ? (
             generation.outputs[0].type === "video" ? (
@@ -171,9 +213,21 @@ function GenerationCard({
           ) : busy ? (
             <>
               <IconLoader2 className="size-7 animate-spin text-white/50" stroke={1.8} />
-              <p className="text-sm text-white/45">
-                {generation?.status === "queued" ? "Queued…" : "Generating…"}
+              <p className="text-sm text-white/55">
+                {generation?.status === "queued"
+                  ? generation.queuePosition != null
+                    ? `Queued · #${generation.queuePosition}`
+                    : "Queued…"
+                  : eta != null
+                    ? `Generating · ~${eta}s`
+                    : "Generating…"}
               </p>
+              {progressPct != null && (
+                <div
+                  className="absolute bottom-0 left-0 h-0.5 bg-white/70 transition-[width] duration-500"
+                  style={{ width: `${Math.min(100, Math.max(0, progressPct))}%` }}
+                />
+              )}
             </>
           ) : generation?.status === "failed" ? (
             <>
@@ -181,6 +235,14 @@ function GenerationCard({
               <p className="px-5 text-center text-sm text-white/55">
                 {generation.error ?? "Generation failed"}
               </p>
+              <button
+                type="button"
+                onClick={() => submit(id)}
+                className="flex items-center gap-1.5 rounded-full bg-white/[0.1] px-3 py-1 text-xs font-medium text-white/80 transition-colors hover:bg-white/[0.16] hover:text-white"
+              >
+                <IconRefresh className="size-3.5" stroke={1.8} />
+                Retry
+              </button>
             </>
           ) : (
             <>

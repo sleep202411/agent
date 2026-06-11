@@ -116,6 +116,8 @@ export function CanvasGenerationProvider({
           jobId: response.request_id,
           status: generationStatusFromRaw(response.status),
           progress: response.progress ?? undefined,
+          queuePosition: response.queue_position ?? undefined,
+          etaSeconds: response.estimated_total_seconds ?? undefined,
         });
       } catch (error) {
         const message = normalizeFizzAiError(error, "Generation failed");

@@ -254,23 +254,34 @@ export interface GenerationState {
   jobId?: string;
   status: FizzAiGenerationStatus;
   progress?: number;
-  outputs?: { type: FizzAiJobType; url: string }[];
+  queuePosition?: number;
+  etaSeconds?: number;
+  outputs?: { type: FizzAiJobType; url: string; width?: number; height?: number }[];
   error?: string;
 }
 
-/** Project an Ai job update / job view into a card's generation state. */
+/** Project an Ai job update / job view / submit response into a card's state. */
 export function generationStateFromJob(job: {
   id: string;
   status: string;
   progress?: number | null;
-  outputs?: Array<{ type: FizzAiJobType; url: string }>;
+  queuePosition?: number | null;
+  estimatedTotalSeconds?: number | null;
+  outputs?: Array<{ type: FizzAiJobType; url: string; width?: number; height?: number }>;
   error?: { userMessage?: string; message?: string };
 }): GenerationState {
   return {
     jobId: job.id,
     status: generationStatusFromRaw(job.status),
     progress: job.progress ?? undefined,
-    outputs: job.outputs?.map((output) => ({ type: output.type, url: output.url })),
+    queuePosition: job.queuePosition ?? undefined,
+    etaSeconds: job.estimatedTotalSeconds ?? undefined,
+    outputs: job.outputs?.map((output) => ({
+      type: output.type,
+      url: output.url,
+      width: output.width,
+      height: output.height,
+    })),
     error: job.error?.userMessage || job.error?.message,
   };
 }
