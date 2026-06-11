@@ -1,17 +1,10 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { IconLoader2, IconX } from "@tabler/icons-react";
+import * as THREE from "three";
+import { IconLoader2, IconLogout } from "@tabler/icons-react";
 
-/**
- * Zero-dependency 360°/720° panorama viewer. Renders an equirectangular image
- * onto a full-viewport canvas via a fragment-shader raycaster (no geometry, no
- * three.js): each pixel casts a ray from the camera, rotates it by the current
- * yaw/pitch, and samples the equirectangular texture. Drag to look around,
- * scroll to zoom. Rendered through a portal so the canvas transform can't clip
- * it to fullscreen.
- */
 /** The 720° panorama glyph (provided by design). */
 export function Icon720({ className }: { className?: string }) {
   return (
@@ -24,172 +17,216 @@ export function Icon720({ className }: { className?: string }) {
   );
 }
 
-const VERT = `attribute vec2 aPos; void main(){ gl_Position = vec4(aPos, 0.0, 1.0); }`;
+const AXES: { v: THREE.Vector3; color: string; label: string }[] = [
+  { v: new THREE.Vector3(1, 0, 0), color: "#ff5a5a", label: "X" },
+  { v: new THREE.Vector3(0, 1, 0), color: "#5ad17a", label: "Y" },
+  { v: new THREE.Vector3(0, 0, 1), color: "#5a9dff", label: "Z" },
+];
 
-const FRAG = `
-precision highp float;
-uniform sampler2D uTex;
-uniform vec2 uRes;
-uniform float uYaw;
-uniform float uPitch;
-uniform float uFov;
-const float PI = 3.14159265359;
-void main(){
-  vec2 uv = (gl_FragCoord.xy / uRes) * 2.0 - 1.0;
-  float aspect = uRes.x / uRes.y;
-  float t = tan(uFov * 0.5);
-  vec3 dir = normalize(vec3(uv.x * t * aspect, uv.y * t, -1.0));
-  float cp = cos(uPitch), sp = sin(uPitch);
-  dir = vec3(dir.x, dir.y * cp - dir.z * sp, dir.y * sp + dir.z * cp);
-  float cy = cos(uYaw), sy = sin(uYaw);
-  dir = vec3(dir.x * cy + dir.z * sy, dir.y, -dir.x * sy + dir.z * cy);
-  float lon = atan(dir.x, -dir.z);
-  float lat = asin(clamp(dir.y, -1.0, 1.0));
-  vec2 st = vec2(lon / (2.0 * PI) + 0.5, 0.5 - lat / PI);
-  gl_FragColor = texture2D(uTex, st);
-}`;
+const BASE_FOV = 75;
 
-function compile(gl: WebGLRenderingContext, type: number, src: string) {
-  const shader = gl.createShader(type)!;
-  gl.shaderSource(shader, src);
-  gl.compileShader(shader);
-  return shader;
-}
-
+/**
+ * Equirectangular 360°/720° panorama viewer (three.js). The image is mapped to
+ * the inside of a sphere with the camera at its center; drag looks around (with
+ * inertia), scroll zooms. A bottom-right gizmo shows the X/Y/Z orientation plus
+ * a yaw / pitch / zoom readout. Rendered through a portal so the canvas
+ * transform can't clip it.
+ */
 export function PanoramaViewer({ src, onClose }: { src: string; onClose: () => void }) {
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-  const loadingRef = useRef<HTMLDivElement>(null);
+  const mountRef = useRef<HTMLDivElement>(null);
+  const gizmoRef = useRef<HTMLCanvasElement>(null);
+  const readoutRef = useRef<HTMLDivElement>(null);
+  const [loading, setLoading] = useState(true);
+  const [dims, setDims] = useState<{ w: number; h: number } | null>(null);
 
   useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const gl = canvas.getContext("webgl");
-    if (!gl) return;
+    const mount = mountRef.current;
+    if (!mount) return;
 
-    const program = gl.createProgram()!;
-    gl.attachShader(program, compile(gl, gl.VERTEX_SHADER, VERT));
-    gl.attachShader(program, compile(gl, gl.FRAGMENT_SHADER, FRAG));
-    gl.linkProgram(program);
-    gl.useProgram(program);
+    const scene = new THREE.Scene();
+    const camera = new THREE.PerspectiveCamera(BASE_FOV, 1, 0.1, 1100);
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+    mount.appendChild(renderer.domElement);
+    renderer.domElement.className = "size-full cursor-grab touch-none active:cursor-grabbing";
 
-    const buffer = gl.createBuffer();
-    gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
-    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 3, -1, -1, 3]), gl.STATIC_DRAW);
-    const aPos = gl.getAttribLocation(program, "aPos");
-    gl.enableVertexAttribArray(aPos);
-    gl.vertexAttribPointer(aPos, 2, gl.FLOAT, false, 0, 0);
+    // Sphere with the texture on the inside.
+    const geometry = new THREE.SphereGeometry(500, 64, 40);
+    geometry.scale(-1, 1, 1);
+    const material = new THREE.MeshBasicMaterial();
+    const mesh = new THREE.Mesh(geometry, material);
+    scene.add(mesh);
 
-    const uRes = gl.getUniformLocation(program, "uRes");
-    const uYaw = gl.getUniformLocation(program, "uYaw");
-    const uPitch = gl.getUniformLocation(program, "uPitch");
-    const uFov = gl.getUniformLocation(program, "uFov");
+    new THREE.TextureLoader().setCrossOrigin("anonymous").load(src, (texture) => {
+      texture.colorSpace = THREE.SRGBColorSpace;
+      material.map = texture;
+      material.needsUpdate = true;
+      setDims({ w: texture.image.width, h: texture.image.height });
+      setLoading(false);
+    });
 
-    const state = { yaw: 0, pitch: 0, fov: 1.2, ready: false };
-    let raf = 0;
-    let disposed = false;
+    let lon = 0;
+    let lat = 0;
+    let velLon = 0;
+    let velLat = 0;
+    let dragging = false;
 
     const resize = () => {
-      const dpr = Math.min(window.devicePixelRatio || 1, 2);
-      canvas.width = Math.floor(window.innerWidth * dpr);
-      canvas.height = Math.floor(window.innerHeight * dpr);
-      gl.viewport(0, 0, canvas.width, canvas.height);
+      const w = mount.clientWidth;
+      const h = mount.clientHeight;
+      camera.aspect = w / h;
+      camera.updateProjectionMatrix();
+      renderer.setSize(w, h);
     };
     resize();
     window.addEventListener("resize", resize);
 
-    const texture = gl.createTexture();
-    const image = new Image();
-    image.crossOrigin = "anonymous";
-    image.onload = () => {
-      if (disposed) return;
-      gl.bindTexture(gl.TEXTURE_2D, texture);
-      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, image);
-      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
-      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
-      state.ready = true;
-      if (loadingRef.current) loadingRef.current.style.display = "none";
-    };
-    image.src = src;
+    const target = new THREE.Vector3();
+    const forward = new THREE.Vector3();
+    const right = new THREE.Vector3();
+    const up = new THREE.Vector3();
+    const worldUp = new THREE.Vector3(0, 1, 0);
+    const gizmo = gizmoRef.current?.getContext("2d") ?? null;
 
-    const render = () => {
-      if (disposed) return;
-      if (state.ready) {
-        gl.uniform2f(uRes, canvas.width, canvas.height);
-        gl.uniform1f(uYaw, state.yaw);
-        gl.uniform1f(uPitch, state.pitch);
-        gl.uniform1f(uFov, state.fov);
-        gl.drawArrays(gl.TRIANGLES, 0, 3);
+    let raf = 0;
+    const animate = () => {
+      raf = requestAnimationFrame(animate);
+      if (!dragging) {
+        lon += velLon;
+        lat += velLat;
+        velLon *= 0.94;
+        velLat *= 0.94;
       }
-      raf = requestAnimationFrame(render);
-    };
-    render();
+      lat = Math.max(-85, Math.min(85, lat));
+      const phi = THREE.MathUtils.degToRad(90 - lat);
+      const theta = THREE.MathUtils.degToRad(lon);
+      target.set(Math.sin(phi) * Math.cos(theta), Math.cos(phi), Math.sin(phi) * Math.sin(theta));
+      camera.lookAt(target);
+      renderer.render(scene, camera);
 
-    let dragging = false;
-    let lastX = 0;
-    let lastY = 0;
+      // Orientation gizmo + readout.
+      if (gizmo) {
+        forward.copy(target).normalize();
+        right.crossVectors(forward, worldUp).normalize();
+        up.crossVectors(right, forward).normalize();
+        const c = 30;
+        const r = 22;
+        gizmo.clearRect(0, 0, 60, 60);
+        const drawn = AXES.map((a) => ({
+          a,
+          x: c + a.v.dot(right) * r,
+          y: c - a.v.dot(up) * r,
+          depth: a.v.dot(forward),
+        })).sort((p, q) => p.depth - q.depth);
+        for (const p of drawn) {
+          gizmo.globalAlpha = p.depth >= 0 ? 1 : 0.35;
+          gizmo.strokeStyle = p.a.color;
+          gizmo.lineWidth = 1.5;
+          gizmo.beginPath();
+          gizmo.moveTo(c, c);
+          gizmo.lineTo(p.x, p.y);
+          gizmo.stroke();
+          gizmo.fillStyle = p.a.color;
+          gizmo.font = "8px sans-serif";
+          gizmo.fillText(p.a.label, p.x - 2, p.y + 3);
+        }
+        gizmo.globalAlpha = 1;
+      }
+      if (readoutRef.current) {
+        const yaw = ((Math.round(lon) % 360) + 360) % 360;
+        const zoom = (BASE_FOV / camera.fov).toFixed(2);
+        readoutRef.current.textContent = `H ${yaw}° · V ${Math.round(lat)}°  ·  ${Math.round(camera.fov)}° ${zoom}×`;
+      }
+    };
+    animate();
+
     const onDown = (e: PointerEvent) => {
       dragging = true;
-      lastX = e.clientX;
-      lastY = e.clientY;
+      velLon = 0;
+      velLat = 0;
+      (e.target as Element).setPointerCapture?.(e.pointerId);
     };
     const onMove = (e: PointerEvent) => {
       if (!dragging) return;
-      state.yaw -= ((e.clientX - lastX) / window.innerWidth) * state.fov * 2;
-      state.pitch += ((e.clientY - lastY) / window.innerHeight) * state.fov * 2;
-      state.pitch = Math.max(-1.5, Math.min(1.5, state.pitch));
-      lastX = e.clientX;
-      lastY = e.clientY;
+      const speed = 0.1 * (camera.fov / BASE_FOV);
+      velLon = -e.movementX * speed;
+      velLat = e.movementY * speed;
+      lon += velLon;
+      lat += velLat;
     };
     const onUp = () => {
       dragging = false;
     };
     const onWheel = (e: WheelEvent) => {
       e.preventDefault();
-      state.fov = Math.max(0.4, Math.min(2.4, state.fov + (e.deltaY > 0 ? 0.1 : -0.1)));
+      camera.fov = Math.max(30, Math.min(90, camera.fov + (e.deltaY > 0 ? 2 : -2)));
+      camera.updateProjectionMatrix();
     };
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") onClose();
     };
-    canvas.addEventListener("pointerdown", onDown);
-    window.addEventListener("pointermove", onMove);
-    window.addEventListener("pointerup", onUp);
-    canvas.addEventListener("wheel", onWheel, { passive: false });
+    const el = renderer.domElement;
+    el.addEventListener("pointerdown", onDown);
+    el.addEventListener("pointermove", onMove);
+    el.addEventListener("pointerup", onUp);
+    el.addEventListener("wheel", onWheel, { passive: false });
     window.addEventListener("keydown", onKey);
 
     return () => {
-      disposed = true;
       cancelAnimationFrame(raf);
       window.removeEventListener("resize", resize);
-      canvas.removeEventListener("pointerdown", onDown);
-      window.removeEventListener("pointermove", onMove);
-      window.removeEventListener("pointerup", onUp);
-      canvas.removeEventListener("wheel", onWheel);
       window.removeEventListener("keydown", onKey);
+      el.removeEventListener("pointerdown", onDown);
+      el.removeEventListener("pointermove", onMove);
+      el.removeEventListener("pointerup", onUp);
+      el.removeEventListener("wheel", onWheel);
+      geometry.dispose();
+      material.map?.dispose();
+      material.dispose();
+      renderer.dispose();
+      el.remove();
     };
   }, [src, onClose]);
 
   return createPortal(
     <div className="fixed inset-0 z-[100] bg-black">
-      <canvas ref={canvasRef} className="size-full cursor-grab touch-none active:cursor-grabbing" />
-      <div
-        ref={loadingRef}
-        className="pointer-events-none absolute inset-0 flex items-center justify-center"
-      >
-        <IconLoader2 className="size-8 animate-spin text-white/60" stroke={1.8} />
+      <div ref={mountRef} className="size-full" />
+
+      {loading && (
+        <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
+          <IconLoader2 className="size-8 animate-spin text-white/60" stroke={1.8} />
+        </div>
+      )}
+
+      {/* Title */}
+      <div className="pointer-events-none absolute top-5 left-5 flex items-center gap-2 text-sm text-white/85">
+        <Icon720 className="size-4" />
+        <span>720° Panorama</span>
+        {dims && (
+          <span className="text-white/45 tabular-nums">
+            {dims.w}×{dims.h}
+          </span>
+        )}
       </div>
-      <div className="pointer-events-none absolute bottom-6 left-1/2 -translate-x-1/2 rounded-full bg-white/10 px-4 py-2 text-xs text-white/70 backdrop-blur-md">
-        Drag to look around · scroll to zoom
-      </div>
+
+      {/* Exit */}
       <button
         type="button"
-        aria-label="Close"
+        aria-label="Exit"
         onClick={onClose}
-        className="absolute top-5 right-5 flex size-10 items-center justify-center rounded-full bg-white/10 text-white/80 backdrop-blur-md transition-colors hover:bg-white/20 hover:text-white"
+        className="absolute top-5 right-5 flex size-10 items-center justify-center rounded-xl bg-white/10 text-white/80 backdrop-blur-md transition-colors hover:bg-white/20 hover:text-white"
       >
-        <IconX className="size-5" stroke={1.8} />
+        <IconLogout className="size-5" stroke={1.8} />
       </button>
+
+      {/* Orientation gizmo + readout */}
+      <div className="pointer-events-none absolute right-5 bottom-5 flex flex-col items-center gap-1 rounded-lg border border-white/10 bg-black/50 p-1.5 shadow-lg backdrop-blur-sm">
+        <canvas ref={gizmoRef} width={60} height={60} className="size-[60px]" />
+        <div
+          ref={readoutRef}
+          className="text-[10px] whitespace-nowrap text-white/70 tabular-nums"
+        />
+      </div>
     </div>,
     document.body
   );
