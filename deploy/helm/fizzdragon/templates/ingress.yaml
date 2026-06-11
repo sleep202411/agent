@@ -1,6 +1,7 @@
 {{- if .Values.ingress.enabled }}
 {{- range .Values.ingress.entries }}
 {{- $entry := . }}
+{{- if not $entry.adminUiOnly }}
 ---
 apiVersion: networking.k8s.io/v1
 kind: Ingress
@@ -87,6 +88,7 @@ spec:
                 name: {{ $.Release.Name }}-server
                 port:
                   number: {{ $.Values.server.containerPort }}
+{{- end }}
 {{- if and $.Values.adminUi.enabled $.Values.adminUi.ingress.enabled (ne $entry.adminUi false) }}
 ---
 apiVersion: networking.k8s.io/v1
@@ -102,6 +104,10 @@ metadata:
     nginx.ingress.kubernetes.io/proxy-send-timeout: "300"
     nginx.ingress.kubernetes.io/proxy-connect-timeout: "2"
     nginx.ingress.kubernetes.io/use-regex: "true"
+    {{- if $entry.adminUiOnly }}
+    # Dedicated admin host (no web app at root): bounce / → the admin base path.
+    nginx.ingress.kubernetes.io/app-root: {{ $.Values.adminUi.env.NEXT_PUBLIC_ADMIN_UI_BASE_PATH | default "/admin" | quote }}
+    {{- end }}
     {{- if $.Values.adminUi.ingress.allowedCidrs }}
     nginx.ingress.kubernetes.io/whitelist-source-range: {{ join "," $.Values.adminUi.ingress.allowedCidrs | quote }}
     {{- end }}
