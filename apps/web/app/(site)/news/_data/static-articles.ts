@@ -100,7 +100,7 @@ export function getStaticArticles(rawLang: string): NewsItem[] {
       title: file.title,
       info: file.summary,
       cover: meta.cover,
-      createTime: new Date(Date.now() - meta.daysAgo * 86_400_000).toISOString(),
+      createTime: new Date(meta.publishedAt).toISOString(),
       isExternal: false,
       body: file.body,
       slug: meta.slug,
