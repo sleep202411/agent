@@ -106,6 +106,21 @@
   }
 }
 
+/* Pointer cursor on anything clickable. Unlayered (not @layer base) so it wins
+   over Tailwind's preflight — v4 dropped the button `cursor: pointer` default. */
+button:not(:disabled),
+[role="button"]:not([aria-disabled="true"]),
+[role="switch"],
+[role="tab"],
+label[for],
+a[href] {
+  cursor: pointer;
+}
+button:disabled,
+[aria-disabled="true"] {
+  cursor: not-allowed;
+}
+
 /*
  * React Flow canvas interaction polish.
  * Handle/edge affordances are functional connector states (DESIGN.md rule 4:

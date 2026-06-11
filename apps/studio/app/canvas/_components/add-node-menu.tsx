@@ -106,10 +106,12 @@ export function AddNodeMenu({
   left,
   top,
   filter,
+  state = "open",
   onAction,
 }: {
   left: number;
   top: number;
+  state?: "open" | "closed";
   /** When the menu was opened by dragging a wire, only nodes that accept that
    *  port's type are shown (imagine.art behavior). */
   filter?: ConnectFilter;
@@ -139,7 +141,8 @@ export function AddNodeMenu({
 
   return (
     <div
-      className="absolute z-30 flex w-[372px] flex-col rounded-2xl bg-popover/95 shadow-xl backdrop-blur-xl"
+      data-state={state}
+      className="absolute z-30 flex w-[372px] origin-top flex-col rounded-2xl bg-popover/95 shadow-xl backdrop-blur-xl duration-150 data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95"
       style={{ left, top }}
       // Double-clicking inside the menu must not re-trigger the canvas handler.
       onDoubleClick={(event) => event.stopPropagation()}

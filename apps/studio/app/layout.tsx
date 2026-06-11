@@ -4,6 +4,7 @@ import "./globals.css";
 import { cn } from "@/lib/utils";
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { Providers } from "@/app/providers";
 
 const inter = Inter({ subsets: ["latin"], variable: "--font-sans" });
 
@@ -43,7 +44,9 @@ export default function RootLayout({
       )}
     >
       <body className="min-h-full flex flex-col">
-        <TooltipProvider delayDuration={200}>{children}</TooltipProvider>
+        <Providers>
+          <TooltipProvider delayDuration={200}>{children}</TooltipProvider>
+        </Providers>
         <Toaster />
       </body>
     </html>

@@ -35,10 +35,9 @@ import { GradientEdge } from "./gradient-edge";
 import { handleColor } from "./port-colors";
 import { ImageNode, type ImageNodeType } from "./image-node";
 import { NoteNode, type NoteNodeType } from "./note-node";
-import { PromptNode, type PromptNodeType } from "./prompt-node";
-import { VideoNode, type VideoNodeType } from "./video-node";
+import { PromptNode, VideoNode, type GenerationNodeType } from "./generation-card";
 
-export type CanvasNode = ImageNodeType | NoteNodeType | PromptNodeType | VideoNodeType;
+export type CanvasNode = ImageNodeType | NoteNodeType | GenerationNodeType;
 
 const nodeTypes = { image: ImageNode, note: NoteNode, prompt: PromptNode, video: VideoNode };
 const edgeTypes = { gradient: GradientEdge };
@@ -162,30 +161,26 @@ function toStoredNodes(nodes: CanvasNode[]): StoredCanvasNode[] {
     if (node.type === "note") {
       return { id: node.id, position: node.position, kind: "note" as const, text: node.data.text };
     }
-    if (node.type === "prompt") {
+    if (node.type === "image") {
       return {
         id: node.id,
         position: node.position,
-        kind: "prompt" as const,
-        prompt: node.data.prompt,
-        name: node.data.name,
+        kind: "image" as const,
+        imageId: node.data.imageId,
+        label: node.data.label,
       };
     }
-    if (node.type === "video") {
-      return {
-        id: node.id,
-        position: node.position,
-        kind: "video" as const,
-        prompt: node.data.prompt,
-        name: node.data.name,
-      };
-    }
+    // Generation cards (`prompt` | `video`).
     return {
       id: node.id,
       position: node.position,
-      kind: "image" as const,
-      imageId: node.data.imageId,
-      label: node.data.label,
+      kind: node.type,
+      name: node.data.name,
+      prompt: node.data.prompt,
+      modelId: node.data.modelId,
+      modelName: node.data.modelName,
+      mode: node.data.mode,
+      settings: node.data.settings,
     };
   });
 }
@@ -229,21 +224,22 @@ function CanvasInner({ projectId }: { projectId: string }) {
           });
           continue;
         }
-        if (kind === "prompt" && stored.kind === "prompt") {
+        if (
+          (kind === "prompt" || kind === "video") &&
+          (stored.kind === "prompt" || stored.kind === "video")
+        ) {
           restored.push({
             id: stored.id,
-            type: "prompt",
+            type: stored.kind,
             position: stored.position,
-            data: { prompt: stored.prompt, name: stored.name },
-          });
-          continue;
-        }
-        if (kind === "video" && stored.kind === "video") {
-          restored.push({
-            id: stored.id,
-            type: "video",
-            position: stored.position,
-            data: { prompt: stored.prompt, name: stored.name },
+            data: {
+              name: stored.name,
+              prompt: stored.prompt,
+              modelId: stored.modelId,
+              modelName: stored.modelName,
+              mode: stored.mode,
+              settings: stored.settings,
+            },
           });
           continue;
         }
@@ -259,7 +255,13 @@ function CanvasInner({ projectId }: { projectId: string }) {
       }
       if (cancelled) return;
       setNodes(restored);
-      setEdges((project.edges ?? []).map((edge) => ({ ...edge, type: "gradient" })));
+      // Drop edges that point at input handles removed from the generation
+      // nodes (they can no longer bind, and React Flow warns on each).
+      setEdges(
+        (project.edges ?? [])
+          .filter((edge) => edge.targetHandle !== "prompt" && edge.targetHandle !== "reference")
+          .map((edge) => ({ ...edge, type: "gradient" }))
+      );
       loadedRef.current = true;
       if (restored.length > 0) {
         setTimeout(() => fitView({ padding: 0.3 }), 60);
@@ -343,7 +345,12 @@ function CanvasInner({ projectId }: { projectId: string }) {
 
   const addNode = useCallback(
     (node: CanvasNode) => {
-      setNodes((prev) => [...prev, node]);
+      // Select the new node (and deselect the rest) so generation cards reveal
+      // their composer immediately on create.
+      setNodes((prev) => [
+        ...prev.map((n) => (n.selected ? { ...n, selected: false } : n)),
+        { ...node, selected: true },
+      ]);
       setAddMenu(null);
     },
     [setNodes]
@@ -645,7 +652,7 @@ function CanvasInner({ projectId }: { projectId: string }) {
       {nodes.length === 0 && !addMenu && (
         <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
           <p className="text-sm text-muted-foreground">
-            Double-click to add a node, or drop images anywhere
+            Double-click to add a node, or describe what to create below
           </p>
         </div>
       )}

@@ -34,16 +34,26 @@ stricter than the shared rules, this file wins inside `apps/studio`.
    | `border`     | `white / 8%`       | hairlines (see rule 4)    |
    | `input`      | `white / 12%`      | filled control surfaces   |
 
+   **Canvas elevation tiers.** The canvas surface is darker than the page
+   (`oklch(0.105)`), so floating panels need extra lightness to read — on
+   near-black, drop shadows are invisible (nothing is darker), so separation
+   is carried by the tone step alone. Layering on the canvas:
+   canvas `0.105` → card `0.175` → floating composer `oklch(0.22)` →
+   panels opened over the composer (model picker / settings) `oklch(0.24)`.
+   All zero-chroma; no borders.
+
    Two deliberate exceptions, both for **functional color that encodes data,
    not decoration**:
    - `destructive` keeps standard shadcn chroma — error semantics need color.
    - **Canvas connectors** (port handles, their labels, and the edges between
      them) are colored by data type: text/prompt = blue `#5b9dff`, image =
-     amber `#e0a45c` (see `app/canvas/_components/port-colors.ts`). Edges are
-     gradient-stroked between their two endpoint colors. This is the same
-     category as chart colors — it carries meaning. Node surfaces stay
-     monochrome; only the wires are colored.
-     Neither exception is brand red, and neither may be used as a generic accent.
+     amber `#e0a45c`, video = brand red `#E52227` (see
+     `app/canvas/_components/port-colors.ts`). Edges are gradient-stroked
+     between their two endpoint colors. This is the same category as chart
+     colors — it carries meaning. Node surfaces stay monochrome; only the
+     wires are colored. The video connector is the one sanctioned, deliberate
+     use of brand red as a functional accent (rule 3) — it is still not a
+     token and never tints a surface.
 
 3. **Brand red is not a token.** The FizzDragon red `#E52227`
    (`oklch(0.5914 0.225 26.83)`) must never enter the global token set or
@@ -70,6 +80,13 @@ stricter than the shared rules, this file wins inside `apps/studio`.
 
 5. **English-only UI strings.** No Chinese (or other non-English) string
    literals in TSX. i18n, if ever added, starts from English source.
+
+6. **Pointer cursor on anything clickable.** Tailwind v4's preflight resets
+   `<button>` to `cursor: default`; a global base rule in `globals.css`
+   restores `cursor: pointer` for buttons, `[role="button"]`,
+   `[role="switch"]`, `label[for]`, and `a[href]` (and `not-allowed` for
+   disabled). Don't sprinkle `cursor-pointer` per element — the global rule
+   covers it.
 
 ## Component system
 

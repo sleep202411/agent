@@ -7,7 +7,7 @@
 export const PORT_COLOR = {
   text: "#5b9dff", // text / prompt ports
   image: "#e0a45c", // image ports
-  video: "#5dd6a0", // video ports
+  video: "#E52227", // video ports (brand red)
 } as const;
 
 export type PortDataType = keyof typeof PORT_COLOR;

@@ -19,11 +19,26 @@ type StoredNodeBase = {
   position: { x: number; y: number };
 };
 
+/** Schema-keyed model settings bag (matches the generation input shape). */
+export type StoredGenSettings = Record<string, string | number | boolean>;
+
+type StoredGenFields = {
+  name?: string;
+  prompt?: string;
+  modelId?: string;
+  modelName?: string;
+  mode?: string;
+  settings?: StoredGenSettings;
+  // `references` are intentionally NOT persisted: they hold object URLs that
+  // die on reload. Durable reference storage lands with SAS upload (the same
+  // confirm-on-upload pipeline used for media), not local blobs.
+};
+
 export type StoredCanvasNode =
   | (StoredNodeBase & { kind: "image"; imageId: string; label?: string })
   | (StoredNodeBase & { kind: "note"; text: string })
-  | (StoredNodeBase & { kind: "prompt"; prompt: string; name?: string })
-  | (StoredNodeBase & { kind: "video"; prompt: string; name?: string });
+  | (StoredNodeBase & { kind: "prompt" } & StoredGenFields)
+  | (StoredNodeBase & { kind: "video" } & StoredGenFields);
 
 export type StoredCanvasEdge = {
   id: string;
