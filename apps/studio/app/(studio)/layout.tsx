@@ -9,11 +9,11 @@ import { StudioSidebar } from "@/app/_components/studio-sidebar";
 export default function StudioLayout({ children }: { children: React.ReactNode }) {
   return (
     <>
+      {/* Header spans the full viewport width (logo at the browser edge);
+          only the page content offsets for the nav rail. */}
+      <StudioHeader />
       <StudioSidebar />
-      <div className="flex min-w-0 flex-1 flex-col lg:pl-[104px]">
-        <StudioHeader />
-        {children}
-      </div>
+      <div className="flex min-w-0 flex-1 flex-col lg:pl-[104px]">{children}</div>
     </>
   );
 }
