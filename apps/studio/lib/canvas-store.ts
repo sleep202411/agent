@@ -1,16 +1,27 @@
 "use client";
 
 /**
- * Local persistence for canvas projects (IndexedDB).
- * Frontend-only by design for now — swap the internals for API calls when
- * the backend lands; the function signatures are the contract.
- * Images are stored as Blobs (object URLs die on reload; data URLs blow
- * the localStorage quota).
+ * Local persistence for studio projects (IndexedDB).
+ *
+ * A *project* is the durable entity; `mode` is how it is edited. Today the only
+ * mode is "canvas" (the node graph), but the entity is mode-agnostic so future
+ * editing modes are just a different view over the same project — no data
+ * model change. These function signatures are the contract: the internals can
+ * swap to a server `/aurora/projects` API later — and, when team real-time
+ * collaboration lands (WS / Ably), to a synced backend — without touching
+ * callers. Keep this module's surface granular and side-effect-free so that
+ * swap stays an implementation detail.
+ *
+ * Images are stored as Blobs (object URLs die on reload; data URLs blow the
+ * localStorage quota).
  */
 
-export type CanvasProjectMeta = {
+export type ProjectMode = "canvas";
+
+export type ProjectMeta = {
   id: string;
   name: string;
+  mode: ProjectMode;
   updatedAt: number;
 };
 
@@ -48,7 +59,8 @@ export type StoredCanvasEdge = {
   targetHandle?: string | null;
 };
 
-export type CanvasProjectRecord = CanvasProjectMeta & {
+/** A project plus its canvas-mode content. */
+export type ProjectRecord = ProjectMeta & {
   nodes: StoredCanvasNode[];
   edges?: StoredCanvasEdge[];
 };
@@ -90,24 +102,37 @@ async function run<T>(
   }
 }
 
-export async function listProjects(): Promise<CanvasProjectMeta[]> {
-  const all = await run<CanvasProjectRecord[]>("projects", "readonly", (s) => s.getAll());
-  return all.map(({ nodes: _nodes, ...meta }) => meta).sort((a, b) => b.updatedAt - a.updatedAt);
+/** Records written before `mode` existed default to the canvas mode. */
+function normalizeMeta<T extends { mode?: ProjectMode }>(record: T): T & { mode: ProjectMode } {
+  return { ...record, mode: record.mode ?? "canvas" };
 }
 
-export async function createProject(): Promise<CanvasProjectMeta> {
-  const record: CanvasProjectRecord = {
+export async function listProjects(): Promise<ProjectMeta[]> {
+  const all = await run<ProjectRecord[]>("projects", "readonly", (s) => s.getAll());
+  return all
+    .map(({ nodes: _nodes, edges: _edges, ...meta }) => normalizeMeta(meta))
+    .sort((a, b) => b.updatedAt - a.updatedAt);
+}
+
+export async function createProject(opts?: {
+  name?: string;
+  mode?: ProjectMode;
+}): Promise<ProjectMeta> {
+  const record: ProjectRecord = {
     id: crypto.randomUUID(),
-    name: "Untitled canvas",
+    name: opts?.name?.trim() || "Untitled canvas",
+    mode: opts?.mode ?? "canvas",
     updatedAt: Date.now(),
     nodes: [],
   };
   await run("projects", "readwrite", (s) => s.put(record));
-  return record;
+  const { nodes: _nodes, edges: _edges, ...meta } = record;
+  return meta;
 }
 
-export async function getProject(id: string): Promise<CanvasProjectRecord | undefined> {
-  return run("projects", "readonly", (s) => s.get(id));
+export async function getProject(id: string): Promise<ProjectRecord | undefined> {
+  const record = await run<ProjectRecord | undefined>("projects", "readonly", (s) => s.get(id));
+  return record ? normalizeMeta(record) : undefined;
 }
 
 export async function saveProjectContent(
@@ -120,6 +145,44 @@ export async function saveProjectContent(
   await run("projects", "readwrite", (s) =>
     s.put({ ...existing, nodes, edges, updatedAt: Date.now() })
   );
+}
+
+export async function renameProject(id: string, name: string): Promise<void> {
+  const existing = await getProject(id);
+  if (!existing) return;
+  const next = name.trim();
+  if (!next || next === existing.name) return;
+  await run("projects", "readwrite", (s) =>
+    s.put({ ...existing, name: next, updatedAt: Date.now() })
+  );
+}
+
+export async function duplicateProject(id: string): Promise<ProjectMeta | undefined> {
+  const source = await getProject(id);
+  if (!source) return undefined;
+  // Copy image blobs so the clone owns its own — otherwise deleting one project
+  // would delete blobs the other still references.
+  const remap = new Map<string, string>();
+  for (const node of source.nodes) {
+    if (node.kind === "image" && !remap.has(node.imageId)) {
+      const blob = await getImage(node.imageId);
+      if (blob) remap.set(node.imageId, await putImage(blob));
+    }
+  }
+  const nodes = source.nodes.map((node) =>
+    node.kind === "image" ? { ...node, imageId: remap.get(node.imageId) ?? node.imageId } : node
+  );
+  const record: ProjectRecord = {
+    id: crypto.randomUUID(),
+    name: `${source.name} copy`,
+    mode: source.mode,
+    updatedAt: Date.now(),
+    nodes,
+    edges: source.edges,
+  };
+  await run("projects", "readwrite", (s) => s.put(record));
+  const { nodes: _nodes, edges: _edges, ...meta } = record;
+  return meta;
 }
 
 export async function deleteProject(id: string): Promise<void> {

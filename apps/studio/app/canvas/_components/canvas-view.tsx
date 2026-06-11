@@ -26,6 +26,7 @@ import {
   getImage,
   getProject,
   putImage,
+  renameProject,
   saveProjectContent,
   type StoredCanvasNode,
 } from "@/lib/canvas-store";
@@ -542,14 +543,30 @@ function CanvasInner({ projectId }: { projectId: string }) {
         />
       </ReactFlow>
 
-      <Link
-        href="/canvas"
-        aria-label="Back to canvas projects"
-        className="absolute top-4 left-4 z-20 flex h-9 items-center gap-2 rounded-full bg-popover/90 pr-3.5 pl-2.5 text-sm font-medium shadow-md backdrop-blur-xl transition-colors hover:bg-accent"
-      >
-        <IconArrowLeft className="size-4" />
-        {projectName}
-      </Link>
+      <div className="absolute top-4 left-4 z-20 flex items-center gap-1">
+        <Link
+          href="/canvas"
+          aria-label="Back to projects"
+          className="flex size-9 items-center justify-center rounded-full bg-popover/90 shadow-md backdrop-blur-xl transition-colors hover:bg-accent"
+        >
+          <IconArrowLeft className="size-4" />
+        </Link>
+        <input
+          value={projectName}
+          aria-label="Project name"
+          placeholder="Untitled"
+          onChange={(event) => setProjectName(event.target.value)}
+          onBlur={() => {
+            const trimmed = projectName.trim();
+            if (trimmed) setProjectName(trimmed);
+            void renameProject(projectId, trimmed);
+          }}
+          onKeyDown={(event) => {
+            if (event.key === "Enter") event.currentTarget.blur();
+          }}
+          className="field-sizing-content h-9 min-w-[80px] max-w-[280px] rounded-full bg-popover/90 px-3.5 text-sm font-medium shadow-md backdrop-blur-xl outline-none transition-colors hover:bg-accent focus:bg-accent"
+        />
+      </div>
 
       <button
         type="button"

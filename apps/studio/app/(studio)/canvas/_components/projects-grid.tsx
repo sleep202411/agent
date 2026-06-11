@@ -3,14 +3,38 @@
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { IconArtboard, IconPlus, IconTrash } from "@tabler/icons-react";
+import {
+  IconArtboard,
+  IconDotsVertical,
+  IconPencil,
+  IconPlus,
+  IconTrash,
+} from "@tabler/icons-react";
 import { toast } from "sonner";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import {
   createProject,
   deleteProject,
   listProjects,
-  type CanvasProjectMeta,
+  renameProject,
+  type ProjectMeta,
 } from "@/lib/canvas-store";
 
 function timeAgo(timestamp: number): string {
@@ -25,7 +49,10 @@ function timeAgo(timestamp: number): string {
 
 export function CanvasProjectsGrid() {
   const router = useRouter();
-  const [projects, setProjects] = useState<CanvasProjectMeta[] | null>(null);
+  const [projects, setProjects] = useState<ProjectMeta[] | null>(null);
+  const [renaming, setRenaming] = useState<ProjectMeta | null>(null);
+  const [renameValue, setRenameValue] = useState("");
+  const [deleting, setDeleting] = useState<ProjectMeta | null>(null);
 
   const refresh = useCallback(async () => {
     setProjects(await listProjects());
@@ -40,78 +67,146 @@ export function CanvasProjectsGrid() {
     router.push(`/canvas/${project.id}`);
   }, [router]);
 
-  const onDelete = useCallback(
-    async (event: React.MouseEvent, id: string) => {
-      event.preventDefault();
-      event.stopPropagation();
-      await deleteProject(id);
+  const confirmDelete = useCallback(async () => {
+    if (deleting) {
+      await deleteProject(deleting.id);
       await refresh();
-      toast.info("Canvas deleted");
-    },
-    [refresh]
-  );
+      toast.info("Project deleted");
+    }
+    setDeleting(null);
+  }, [deleting, refresh]);
+
+  const submitRename = useCallback(async () => {
+    if (renaming) {
+      await renameProject(renaming.id, renameValue);
+      await refresh();
+    }
+    setRenaming(null);
+  }, [renaming, renameValue, refresh]);
 
   return (
-    <div className="mt-6 grid grid-cols-[repeat(auto-fill,minmax(240px,1fr))] gap-4">
-      <button
-        type="button"
-        onClick={onCreate}
-        className="group rounded-xl bg-card p-2.5 text-left transition-colors hover:bg-accent"
-      >
-        <div className="flex aspect-video items-center justify-center rounded-lg bg-muted">
-          <IconPlus
-            className="size-8 text-white/40 transition-colors group-hover:text-white/70"
-            stroke={1.5}
-          />
-        </div>
-        <div className="px-1.5 pt-3 pb-1.5">
-          <div className="text-sm font-medium">New canvas</div>
-          <div className="mt-0.5 text-xs text-muted-foreground">Start an empty board</div>
-        </div>
-      </button>
+    <>
+      <div className="mt-6 grid grid-cols-[repeat(auto-fill,minmax(240px,1fr))] gap-4">
+        <button
+          type="button"
+          onClick={onCreate}
+          className="group rounded-xl bg-card p-2.5 text-left transition-colors hover:bg-accent"
+        >
+          <div className="flex aspect-video items-center justify-center rounded-lg bg-muted">
+            <IconPlus
+              className="size-8 text-white/40 transition-colors group-hover:text-white/70"
+              stroke={1.5}
+            />
+          </div>
+          <div className="px-1.5 pt-3 pb-1.5">
+            <div className="text-sm font-medium">New canvas</div>
+            <div className="mt-0.5 text-xs text-muted-foreground">Start an empty board</div>
+          </div>
+        </button>
 
-      {projects === null ? (
-        <>
-          {[0, 1].map((key) => (
-            <div key={key} className="rounded-xl bg-card p-2.5">
-              <Skeleton className="aspect-video rounded-lg" />
-              <div className="px-1.5 pt-3 pb-1.5">
-                <Skeleton className="h-4 w-28" />
-                <Skeleton className="mt-1.5 h-3 w-20" />
+        {projects === null ? (
+          <>
+            {[0, 1].map((key) => (
+              <div key={key} className="rounded-xl bg-card p-2.5">
+                <Skeleton className="aspect-video rounded-lg" />
+                <div className="px-1.5 pt-3 pb-1.5">
+                  <Skeleton className="h-4 w-28" />
+                  <Skeleton className="mt-1.5 h-3 w-20" />
+                </div>
               </div>
-            </div>
-          ))}
-        </>
-      ) : (
-        projects.map((project) => (
-          <Link
-            key={project.id}
-            href={`/canvas/${project.id}`}
-            className="group relative rounded-xl bg-card p-2.5 transition-colors hover:bg-accent"
-          >
-            <div className="flex aspect-video items-center justify-center rounded-lg bg-muted">
-              <IconArtboard
-                className="size-8 text-white/25 transition-colors group-hover:text-white/40"
-                stroke={1.5}
-              />
-            </div>
-            <div className="px-1.5 pt-3 pb-1.5">
-              <div className="truncate text-sm font-medium">{project.name}</div>
-              <div className="mt-0.5 text-xs text-muted-foreground">
-                {timeAgo(project.updatedAt)}
-              </div>
-            </div>
-            <button
-              type="button"
-              aria-label="Delete canvas"
-              onClick={(event) => void onDelete(event, project.id)}
-              className="absolute top-4 right-4 flex size-8 items-center justify-center rounded-full bg-popover/90 text-white/70 opacity-0 shadow-md backdrop-blur-xl transition-opacity hover:text-white group-hover:opacity-100"
+            ))}
+          </>
+        ) : (
+          projects.map((project) => (
+            <Link
+              key={project.id}
+              href={`/canvas/${project.id}`}
+              className="group relative rounded-xl bg-card p-2.5 transition-colors hover:bg-accent"
             >
-              <IconTrash className="size-4" stroke={1.8} />
-            </button>
-          </Link>
-        ))
-      )}
-    </div>
+              <div className="flex aspect-video items-center justify-center rounded-lg bg-muted">
+                <IconArtboard
+                  className="size-8 text-white/25 transition-colors group-hover:text-white/40"
+                  stroke={1.5}
+                />
+              </div>
+              <div className="px-1.5 pt-3 pb-1.5">
+                <div className="truncate text-sm font-medium">{project.name}</div>
+                <div className="mt-0.5 text-xs text-muted-foreground">
+                  {timeAgo(project.updatedAt)}
+                </div>
+              </div>
+
+              <DropdownMenu>
+                <DropdownMenuTrigger
+                  aria-label="Project actions"
+                  onClick={(event) => event.preventDefault()}
+                  className="absolute top-4 right-4 flex size-8 items-center justify-center rounded-full bg-popover/90 text-white/70 opacity-0 shadow-md backdrop-blur-xl transition-opacity outline-none hover:text-white group-hover:opacity-100 data-[state=open]:opacity-100"
+                >
+                  <IconDotsVertical className="size-4" stroke={1.8} />
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" onClick={(event) => event.preventDefault()}>
+                  <DropdownMenuItem
+                    onSelect={() => {
+                      setRenameValue(project.name);
+                      setRenaming(project);
+                    }}
+                  >
+                    <IconPencil className="size-4" stroke={1.8} />
+                    Rename
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem variant="destructive" onSelect={() => setDeleting(project)}>
+                    <IconTrash className="size-4" stroke={1.8} />
+                    Delete
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </Link>
+          ))
+        )}
+      </div>
+
+      <Dialog open={renaming !== null} onOpenChange={(open) => !open && setRenaming(null)}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Rename project</DialogTitle>
+          </DialogHeader>
+          <Input
+            value={renameValue}
+            autoFocus
+            onChange={(event) => setRenameValue(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") void submitRename();
+            }}
+          />
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setRenaming(null)}>
+              Cancel
+            </Button>
+            <Button onClick={() => void submitRename()}>Rename</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={deleting !== null} onOpenChange={(open) => !open && setDeleting(null)}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Delete project?</DialogTitle>
+            <DialogDescription>
+              &ldquo;{deleting?.name}&rdquo; and everything on it will be permanently deleted. This
+              can&rsquo;t be undone.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setDeleting(null)}>
+              Cancel
+            </Button>
+            <Button variant="destructive" onClick={() => void confirmDelete()}>
+              Delete
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
   );
 }
