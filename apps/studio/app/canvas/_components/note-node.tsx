@@ -11,12 +11,7 @@ function NoteNodeComponent({ id, data, selected }: NodeProps<NoteNodeType>) {
   const { updateNodeData } = useReactFlow();
 
   return (
-    <div
-      className={cn(
-        "relative w-60 rounded-xl bg-muted p-3 shadow-md",
-        selected && "ring-2 ring-ring"
-      )}
-    >
+    <div className={cn("relative w-60 rounded-xl bg-muted p-3", selected && "ring-2 ring-ring")}>
       <CanvasNodeToolbar nodeId={id} visible={selected ?? false} />
       <textarea
         value={data.text}

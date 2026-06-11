@@ -7,7 +7,6 @@ import {
   IconBrandOpenai,
   IconBrandTiktok,
   IconCube,
-  IconDiamond,
   IconSearch,
   IconSparkles,
   type Icon,
@@ -117,7 +116,7 @@ export function ModelPicker({
                 <span className="min-w-0 flex-1 truncate text-sm font-medium">{model.name}</span>
                 {cost != null && (
                   <span className="flex shrink-0 items-center gap-1 text-xs text-muted-foreground">
-                    <IconDiamond className="size-3.5" stroke={1.8} />
+                    <IconBolt className="size-3.5" stroke={1.8} />
                     {cost}
                   </span>
                 )}

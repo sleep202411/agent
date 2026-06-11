@@ -23,11 +23,16 @@ import {
 import "@xyflow/react/dist/style.css";
 import {
   IconArrowLeft,
+  IconBolt,
+  IconCloudUpload,
   IconLayoutGrid,
   IconMaximize,
   IconMinus,
+  IconNote,
+  IconPhoto,
   IconPlus,
-  IconUpload,
+  IconVideo,
+  type Icon,
 } from "@tabler/icons-react";
 import { toast } from "sonner";
 import {
@@ -112,6 +117,32 @@ function ZoomControls() {
       >
         <IconMaximize className="size-4" stroke={1.8} />
       </button>
+    </div>
+  );
+}
+
+const DOCK_ITEMS: { action: AddNodeAction; label: string; Icon: Icon }[] = [
+  { action: "upload", label: "Upload", Icon: IconCloudUpload },
+  { action: "generate-image", label: "Image", Icon: IconPhoto },
+  { action: "generate-video", label: "Video", Icon: IconVideo },
+  { action: "note", label: "Note", Icon: IconNote },
+];
+
+/** Bottom dock: one click adds a node of a supported kind to the canvas. */
+function NodeDock({ onAdd }: { onAdd: (action: AddNodeAction) => void }) {
+  return (
+    <div className="absolute bottom-5 left-1/2 z-20 flex -translate-x-1/2 items-center gap-0.5 rounded-2xl bg-popover/90 p-1.5 shadow-md backdrop-blur-xl">
+      {DOCK_ITEMS.map(({ action, label, Icon }) => (
+        <button
+          key={action}
+          type="button"
+          onClick={() => onAdd(action)}
+          className="flex items-center gap-2 rounded-xl px-3 py-2 text-sm font-medium text-white/75 transition-colors hover:bg-white/[0.08] hover:text-white"
+        >
+          <Icon className="size-4.5" stroke={1.7} />
+          {label}
+        </button>
+      ))}
     </div>
   );
 }
@@ -459,6 +490,57 @@ function CanvasInner({ projectId }: { projectId: string }) {
     [setNodes]
   );
 
+  // Create a node of the chosen kind at `flow`; optionally wire it to a pending
+  // dragged connection. Shared by the double-click menu and the bottom dock.
+  const addNodeOfType = useCallback(
+    (action: AddNodeAction, flow: { x: number; y: number }, pending?: PendingConnection | null) => {
+      if (action === "upload") {
+        pendingUploadFlowPos.current = flow;
+        pendingUploadConnection.current = pending ?? null;
+        fileInputRef.current?.click();
+        return;
+      }
+      const id = crypto.randomUUID();
+      const nodeType =
+        action === "generate-image" ? "prompt" : action === "generate-video" ? "video" : "note";
+      if (nodeType === "prompt") {
+        const count = nodes.filter((node) => node.type === "prompt").length;
+        addNode({
+          id,
+          type: "prompt",
+          position: flow,
+          data: { prompt: "", name: `Image ${count + 1}` },
+        });
+      } else if (nodeType === "video") {
+        const count = nodes.filter((node) => node.type === "video").length;
+        addNode({
+          id,
+          type: "video",
+          position: flow,
+          data: { prompt: "", name: `Video ${count + 1}` },
+        });
+      } else {
+        addNode({ id, type: "note", position: flow, data: { text: "" } });
+      }
+      if (pending) {
+        const connection = connectionForPending(pending, id, nodeType);
+        if (connection) onConnect(connection);
+      }
+    },
+    [nodes, addNode, connectionForPending, onConnect]
+  );
+
+  // Bottom-dock add: drop the node at the viewport center, nudged per node count
+  // so repeated adds don't land exactly on top of each other.
+  const addNodeFromDock = useCallback(
+    (action: AddNodeAction) => {
+      const center = screenToFlowPosition({ x: window.innerWidth / 2, y: window.innerHeight / 2 });
+      const nudge = (nodes.length % 6) * 26;
+      addNodeOfType(action, { x: center.x + nudge, y: center.y + nudge });
+    },
+    [screenToFlowPosition, nodes.length, addNodeOfType]
+  );
+
   // Place a library asset on the canvas as an image node — at `position` when
   // dragged-and-dropped, else the viewport center (click-to-add).
   const addAssetToCanvas = useCallback(
@@ -712,14 +794,10 @@ function CanvasInner({ projectId }: { projectId: string }) {
           />
         </div>
 
-        <button
-          type="button"
-          onClick={() => fileInputRef.current?.click()}
-          className="absolute top-4 right-4 z-20 flex h-9 items-center gap-2 rounded-full bg-popover/90 px-3.5 text-sm font-medium shadow-md backdrop-blur-xl transition-colors hover:bg-accent"
-        >
-          <IconUpload className="size-4" stroke={1.8} />
-          Upload
-        </button>
+        <div className="absolute top-4 right-4 z-20 flex h-9 items-center gap-1.5 rounded-full bg-popover/90 px-3.5 text-sm font-medium shadow-md backdrop-blur-xl">
+          <IconBolt className="size-4 text-white/85" stroke={1.8} />
+          <span className="tabular-nums">Credits</span>
+        </div>
         <input
           ref={fileInputRef}
           type="file"
@@ -730,6 +808,7 @@ function CanvasInner({ projectId }: { projectId: string }) {
         />
 
         <ZoomControls />
+        <NodeDock onAdd={addNodeFromDock} />
 
         {/* Left rail (root-sidebar style) — opens the project's asset library. */}
         {!assetsOpen && (
@@ -787,43 +866,8 @@ function CanvasInner({ projectId }: { projectId: string }) {
             left={addMenu.left}
             top={addMenu.top}
             onAction={(action: AddNodeAction) => {
-              if (action === "upload") {
-                pendingUploadFlowPos.current = addMenu.flow;
-                pendingUploadConnection.current = addMenu.pending ?? null;
-                setAddMenu(null);
-                fileInputRef.current?.click();
-                return;
-              }
-              const id = crypto.randomUUID();
-              const nodeType =
-                action === "generate-image"
-                  ? ("prompt" as const)
-                  : action === "generate-video"
-                    ? ("video" as const)
-                    : ("note" as const);
-              if (nodeType === "prompt") {
-                const count = nodes.filter((node) => node.type === "prompt").length;
-                addNode({
-                  id,
-                  type: "prompt",
-                  position: addMenu.flow,
-                  data: { prompt: "", name: `Image ${count + 1}` },
-                });
-              } else if (nodeType === "video") {
-                const count = nodes.filter((node) => node.type === "video").length;
-                addNode({
-                  id,
-                  type: "video",
-                  position: addMenu.flow,
-                  data: { prompt: "", name: `Video ${count + 1}` },
-                });
-              } else {
-                addNode({ id, type: "note", position: addMenu.flow, data: { text: "" } });
-              }
-              if (addMenu.pending) {
-                const connection = connectionForPending(addMenu.pending, id, nodeType);
-                if (connection) onConnect(connection);
-              }
+              addNodeOfType(action, addMenu.flow, addMenu.pending);
+              setAddMenu(null);
             }}
           />
         )}

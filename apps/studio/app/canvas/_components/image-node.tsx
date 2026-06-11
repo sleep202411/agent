@@ -20,12 +20,7 @@ function ImageNodeComponent({ id, data, selected }: NodeProps<ImageNodeType>) {
   }, [data.label, data.src]);
 
   return (
-    <div
-      className={cn(
-        "relative rounded-xl bg-card shadow-md transition-shadow",
-        selected && "ring-2 ring-ring"
-      )}
-    >
+    <div className={cn("relative rounded-xl bg-card", selected && "ring-2 ring-ring")}>
       <PortPlus type="source" id="output" side="right" />
       <CanvasNodeToolbar nodeId={id} visible={selected ?? false}>
         <ToolbarButton label="Download" onClick={onDownload}>

@@ -207,7 +207,7 @@ function GenerationCard({
 
       <div
         className={cn(
-          "w-[360px] overflow-hidden rounded-2xl bg-card shadow-xl shadow-black/40",
+          "w-[360px] overflow-hidden rounded-2xl bg-card",
           selected && "ring-2 ring-ring"
         )}
       >

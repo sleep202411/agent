@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { IconChevronDown, IconMinus, IconPlus } from "@tabler/icons-react";
+import { IconBolt, IconChevronDown, IconMinus, IconPlus } from "@tabler/icons-react";
 import { cn } from "@/lib/utils";
 import {
   estimateModelSellPoints,
@@ -270,7 +270,12 @@ export function ModelSettings({
     <div className="nodrag nowheel absolute bottom-full left-0 z-50 mb-2 max-h-[460px] w-[440px] origin-bottom overflow-y-auto rounded-2xl bg-[oklch(0.24_0_0)] p-4 shadow-2xl shadow-black/60 backdrop-blur-xl duration-150 animate-in fade-in-0 zoom-in-95">
       <div className="flex items-center justify-between">
         <span className="text-base font-semibold">{model?.name ?? "Settings"}</span>
-        {cost != null && <span className="text-xs text-muted-foreground">{cost} points</span>}
+        {cost != null && (
+          <span className="flex items-center gap-1 text-xs text-muted-foreground">
+            <IconBolt className="size-3.5" stroke={1.8} />
+            {cost}
+          </span>
+        )}
       </div>
 
       {!model && <p className="mt-3 text-sm text-muted-foreground">Select a model to configure.</p>}
