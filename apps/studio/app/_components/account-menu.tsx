@@ -11,6 +11,7 @@ import {
   IconUserCircle,
 } from "@tabler/icons-react";
 import { toast } from "sonner";
+import { useAuth } from "./auth-provider";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -19,8 +20,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 
-/** Placeholder identity/credits until auth and billing are wired up. */
-const USER = { name: "Isaac", email: "isaac@fizzdragon.com", credits: 100 };
+const FALLBACK_CREDITS = 0;
 
 const comingSoon = (label: string) => toast.info(`${label} · Coming soon`);
 
@@ -37,6 +37,23 @@ function PillButton({ label, onClick }: { label: string; onClick: () => void }) 
 }
 
 export function AccountMenu() {
+  const { user, signIn, signOut } = useAuth();
+
+  // Signed out → a Sign in button instead of the avatar menu.
+  if (!user && !process.env.NEXT_PUBLIC_DEV_SATOKEN) {
+    return (
+      <button
+        type="button"
+        onClick={signIn}
+        className="flex h-9 items-center rounded-full bg-primary px-4 text-sm font-semibold text-primary-foreground transition-opacity hover:opacity-90"
+      >
+        Sign in
+      </button>
+    );
+  }
+
+  const name = user?.nickName || user?.email || user?.phone || "Account";
+  const contact = user?.email || user?.phone || "";
   return (
     <DropdownMenu>
       <DropdownMenuTrigger
@@ -49,12 +66,21 @@ export function AccountMenu() {
       <DropdownMenuContent align="end" sideOffset={8} className="w-80 p-3">
         {/* Identity */}
         <div className="flex items-center gap-3 p-1">
-          <span className="flex size-10 shrink-0 items-center justify-center rounded-full bg-secondary text-sm font-semibold">
-            {USER.name[0]}
-          </span>
+          {user?.avatar ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={user.avatar}
+              alt={name}
+              className="size-10 shrink-0 rounded-full object-cover"
+            />
+          ) : (
+            <span className="flex size-10 shrink-0 items-center justify-center rounded-full bg-secondary text-sm font-semibold">
+              {name[0]?.toUpperCase()}
+            </span>
+          )}
           <span className="flex min-w-0 flex-1 flex-col">
-            <span className="truncate text-sm font-medium">{USER.name}</span>
-            <span className="truncate text-xs text-muted-foreground">{USER.email}</span>
+            <span className="truncate text-sm font-medium">{name}</span>
+            <span className="truncate text-xs text-muted-foreground">{contact}</span>
           </span>
           <Link
             href="/settings"
@@ -79,7 +105,7 @@ export function AccountMenu() {
         {/* Credits */}
         <div className="flex items-center gap-2 p-1">
           <IconSparkles className="size-4.5" stroke={1.8} />
-          <span className="text-lg font-semibold">{USER.credits}</span>
+          <span className="text-lg font-semibold">{FALLBACK_CREDITS}</span>
           <span className="text-sm text-muted-foreground">Credits Left</span>
           <IconInfoCircle className="size-4 text-muted-foreground" stroke={1.8} />
         </div>
@@ -105,7 +131,7 @@ export function AccountMenu() {
           </Link>
         </DropdownMenuItem>
         <DropdownMenuItem
-          onSelect={() => comingSoon("Logout")}
+          onSelect={() => void signOut()}
           className="gap-2.5 rounded-lg p-2 text-sm"
         >
           <IconLogout className="size-4.5" stroke={1.8} />
