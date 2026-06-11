@@ -331,6 +331,24 @@ export const FLUX_2_PRO_PARAMETER_POLICY = {
   seed: { enabled: true, minimum: 0, maximum: 2_147_483_647 },
 } as const satisfies Prisma.InputJsonObject;
 
+// Hunyuan World — image→panorama. ONE reference image (bound as a single
+// `image_url`, not the `image_urls` array) + prompt → a 2:1 equirectangular
+// panorama. Reached via the studio's 720° panorama action, not the picker.
+export const HUNYUAN_WORLD_PARAMETER_POLICY = {
+  parameterMode: 'provider_intersection',
+  providerFamily: 'hunyuan',
+  defaultVariations: 1,
+  variationOptions: [1],
+  referenceImages: {
+    enabled: true,
+    min: 1,
+    max: 1,
+    single: true,
+    maskSupported: false,
+  },
+  seed: { enabled: false },
+} as const satisfies Prisma.InputJsonObject;
+
 export const FLUX_2_FLEX_PARAMETER_POLICY = {
   parameterMode: 'provider_intersection',
   providerFamily: 'flux-2',
@@ -648,6 +666,25 @@ export const FLUX_2_PRO_PRODUCT_PRICING: AiProductPricingPolicy = {
   },
   referenceImageSurchargePoints: 10,
   extraReferenceImagePoints: 5,
+  maskSurchargePoints: 0,
+  minimumPoints: 1,
+  roundTo: 1,
+};
+
+export const HUNYUAN_WORLD_PRODUCT_PRICING: AiProductPricingPolicy = {
+  mode: 'parameter_matrix',
+  version: 'hunyuan-world-points-v1-2026-06-11',
+  currency: 'COMPUTE_POINTS',
+  defaultOutputCount: 1,
+  minOutputCount: 1,
+  maxOutputCount: 1,
+  defaultResolution: '1K',
+  defaultQuality: 'standard',
+  resolutionOptions: ['1K'],
+  qualityOptions: ['standard'],
+  matrix: { '1K': { standard: 40 } },
+  referenceImageSurchargePoints: 0,
+  extraReferenceImagePoints: 0,
   maskSurchargePoints: 0,
   minimumPoints: 1,
   roundTo: 1,

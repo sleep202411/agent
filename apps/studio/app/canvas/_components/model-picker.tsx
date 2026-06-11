@@ -59,7 +59,10 @@ export function ModelPicker({
   const [query, setQuery] = useState("");
 
   const models = useMemo(() => {
-    const all = catalog ? usableModelsByModality(catalog, modality) : [];
+    // Panorama models are reached via the 720° action, not the general picker.
+    const all = (catalog ? usableModelsByModality(catalog, modality) : []).filter(
+      (m) => !m.generationModes?.includes("image_to_panorama") && !/hunyuan|panorama/i.test(m.id)
+    );
     const q = query.trim().toLowerCase();
     return q ? all.filter((m) => m.name.toLowerCase().includes(q)) : all;
   }, [catalog, modality, query]);

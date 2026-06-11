@@ -206,6 +206,17 @@ function transformValue(value: unknown, transform = 'identity'): unknown {
       .filter((item): item is string => typeof item === 'string' && !!item);
     return urls.length > 0 ? urls : undefined;
   }
+  // First url of a (possibly single-element) reference array → a single
+  // `image_url` string, for models that take one reference image (hunyuan).
+  if (transform === 'mediaFirstUrl') {
+    const first = Array.isArray(value) ? value[0] : value;
+    if (typeof first === 'string') return first.trim() ? first : undefined;
+    if (first && typeof first === 'object' && 'url' in first) {
+      const url = (first as { url?: unknown }).url;
+      return typeof url === 'string' && url.trim() ? url : undefined;
+    }
+    return undefined;
+  }
   if (transform === 'secondsToInteger') {
     const number = Number(value);
     return Number.isFinite(number) ? Math.floor(number) : undefined;

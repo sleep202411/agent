@@ -105,6 +105,8 @@ function referencePolicy(policy: AiJsonValue | undefined): {
   min: number;
   max: number;
   maskSupported: boolean;
+  /** Model takes ONE reference image as a single `image_url` (e.g. hunyuan). */
+  single: boolean;
 } {
   const value = recordValue(recordValue(policy)?.referenceImages);
   return {
@@ -118,6 +120,7 @@ function referencePolicy(policy: AiJsonValue | undefined): {
         ? Math.max(0, value.max)
         : 4,
     maskSupported: value?.maskSupported !== false,
+    single: value?.single === true,
   };
 }
 
@@ -486,7 +489,7 @@ function inputSchemaFor(
       type: 'array',
       title: 'Reference images',
       minItems: reference.min,
-      maxItems: reference.max,
+      maxItems: reference.single ? 1 : reference.max,
       items: {
         type: 'object',
         properties: {
@@ -501,11 +504,20 @@ function inputSchemaFor(
         order: 40,
         importance: 'primary',
       },
-      'x-provider': { parameter: 'image_urls', transform: 'mediaArrayToUrls' },
+      // One-image models bind a single `image_url`; multi-image models bind the
+      // `image_urls` array (and route to the provider's /edit endpoint).
+      'x-provider': reference.single
+        ? { parameter: 'image_url', transform: 'mediaFirstUrl' }
+        : { parameter: 'image_urls', transform: 'mediaArrayToUrls' },
     };
   }
 
-  if (imageToImage && reference.enabled && reference.maskSupported) {
+  if (
+    imageToImage &&
+    reference.enabled &&
+    reference.maskSupported &&
+    !reference.single
+  ) {
     properties.maskImage = {
       type: 'object',
       title: 'Mask image',

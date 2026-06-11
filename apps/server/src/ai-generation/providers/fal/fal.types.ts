@@ -51,6 +51,7 @@ export interface FalProviderFieldBinding {
     | 'identity'
     | 'omitAuto'
     | 'mediaUrl'
+    | 'mediaFirstUrl'
     | 'mediaArrayToUrls'
     | 'secondsToInteger';
   omitIfEmpty?: boolean;

@@ -147,6 +147,7 @@ export interface FoundryProviderFieldBinding {
     | "identity"
     | "omitAuto"
     | "mediaUrl"
+    | "mediaFirstUrl"
     | "mediaArrayToUrls"
     | "mediaArrayToOpenAIImageInput"
     | "uriArrayToFiles"
