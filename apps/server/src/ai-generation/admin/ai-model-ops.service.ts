@@ -558,7 +558,7 @@ export class AiModelOpsService {
           where: { deletedAt: null },
           orderBy: { outputIndex: 'asc' },
           take: 4,
-          include: { asset: true },
+          select: { id: true, type: true, url: true, outputIndex: true },
         },
         costLedger: {
           orderBy: { createdAt: 'desc' },
