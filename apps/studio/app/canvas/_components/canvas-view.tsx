@@ -89,51 +89,6 @@ type AddMenuState = {
   wire?: { x1: number; y1: number; x2: number; y2: number; color: string };
 };
 
-function newEdge(connection: Connection): Edge {
-  return { id: crypto.randomUUID(), type: "gradient", ...connection };
-}
-
-/**
- * The edge to create when a node is spawned from a dragged-out connection.
- * Forward drags (from an output) wire into the new node's matching input;
- * backward drags (from an input) wire the new node's output into it.
- */
-function edgeForPending(
-  pending: PendingConnection,
-  newNodeId: string,
-  newNodeType: "prompt" | "note" | "image" | "video"
-): Edge | null {
-  if (pending.handleType === "source") {
-    if (newNodeType !== "prompt" && newNodeType !== "video") return null;
-    const targetHandle =
-      pending.handleId === "text" ? "prompt" : pending.handleId === "image" ? "reference" : null;
-    if (!targetHandle) return null;
-    return newEdge({
-      source: pending.nodeId,
-      sourceHandle: pending.handleId,
-      target: newNodeId,
-      targetHandle,
-    });
-  }
-  if (pending.handleId === "prompt" && newNodeType === "note") {
-    return newEdge({
-      source: newNodeId,
-      sourceHandle: "text",
-      target: pending.nodeId,
-      targetHandle: "prompt",
-    });
-  }
-  if (pending.handleId === "reference" && (newNodeType === "image" || newNodeType === "prompt")) {
-    return newEdge({
-      source: newNodeId,
-      sourceHandle: "image",
-      target: pending.nodeId,
-      targetHandle: "reference",
-    });
-  }
-  return null;
-}
-
 function ZoomControls() {
   const { zoom } = useViewport();
   const { zoomIn, zoomOut, fitView } = useReactFlow();
@@ -374,6 +329,58 @@ function CanvasInner({ projectId }: { projectId: string }) {
     [referenceFieldKind]
   );
 
+  // A card's first reference field accepting `kind` (for wiring onto its body).
+  const firstReferenceFieldOf = useCallback(
+    (cardId: string, kind: string) => {
+      const node = getNode(cardId);
+      if (!node || (node.type !== "prompt" && node.type !== "video")) return undefined;
+      const data = node.data as GenerationNodeData;
+      const model = catalog?.models.find((m) => m.id === data.modelId);
+      const mode = data.mode ?? defaultMode(model);
+      return referenceFieldsForMode(model, mode).find((f) => f.kind === kind)?.field;
+    },
+    [getNode, catalog]
+  );
+
+  // The valid connection (if any) when a node is spawned/hit from a dragged wire.
+  const connectionForPending = useCallback(
+    (pending: PendingConnection, otherNodeId: string, otherNodeType: string): Connection | null => {
+      // Dragged from a card's reference INPUT toward an image source.
+      if (pending.handleType === "target" && otherNodeType === "image") {
+        return {
+          source: otherNodeId,
+          sourceHandle: "image",
+          target: pending.nodeId,
+          targetHandle: pending.handleId,
+        };
+      }
+      // Dragged from a source OUTPUT into a card's matching reference field
+      // (only an existing card with a model has one — fresh cards don't).
+      if (
+        pending.handleType === "source" &&
+        (otherNodeType === "prompt" || otherNodeType === "video")
+      ) {
+        const kind =
+          pending.handleId === "video"
+            ? "video"
+            : pending.handleId === "image"
+              ? "image"
+              : undefined;
+        const field = kind ? firstReferenceFieldOf(otherNodeId, kind) : undefined;
+        if (field) {
+          return {
+            source: pending.nodeId,
+            sourceHandle: pending.handleId,
+            target: otherNodeId,
+            targetHandle: field,
+          };
+        }
+      }
+      return null;
+    },
+    [firstReferenceFieldOf]
+  );
+
   const onConnect = useCallback(
     (connection: Connection) => {
       const edge: Edge = { id: crypto.randomUUID(), type: "gradient", ...connection };
@@ -418,23 +425,6 @@ function CanvasInner({ projectId }: { projectId: string }) {
       }
     },
     [updateNodeData]
-  );
-
-  const addEdgeUnique = useCallback(
-    (edge: Edge) => {
-      setEdges((eds) =>
-        eds.some(
-          (e) =>
-            e.source === edge.source &&
-            e.target === edge.target &&
-            e.sourceHandle === edge.sourceHandle &&
-            e.targetHandle === edge.targetHandle
-        )
-          ? eds
-          : [...eds, edge]
-      );
-    },
-    [setEdges]
   );
 
   const addImageFiles = useCallback(
@@ -528,11 +518,11 @@ function CanvasInner({ projectId }: { projectId: string }) {
       pendingUploadConnection.current = null;
       void addImageFiles(files, base).then(([firstId]) => {
         if (!pending || !firstId) return;
-        const edge = edgeForPending(pending, firstId, "image");
-        if (edge) addEdgeUnique(edge);
+        const connection = connectionForPending(pending, firstId, "image");
+        if (connection) onConnect(connection);
       });
     },
-    [addImageFiles, screenToFlowPosition, setEdges]
+    [addImageFiles, screenToFlowPosition, connectionForPending, onConnect]
   );
 
   // Dropping a dragged connection on empty canvas opens the node menu;
@@ -575,8 +565,8 @@ function CanvasInner({ projectId }: { projectId: string }) {
           hit.type === "image" ||
           hit.type === "video")
       ) {
-        const edge = edgeForPending(pending, hit.id, hit.type);
-        if (edge) addEdgeUnique(edge);
+        const connection = connectionForPending(pending, hit.id, hit.type);
+        if (connection) onConnect(connection);
         return;
       }
 
@@ -594,7 +584,7 @@ function CanvasInner({ projectId }: { projectId: string }) {
           : undefined,
       });
     },
-    [screenToFlowPosition, getNodes, addEdgeUnique]
+    [screenToFlowPosition, getNodes, connectionForPending, onConnect]
   );
 
   // Reconnectable edges: drag an edge end to re-route it, drop on empty canvas to delete it.
@@ -820,8 +810,8 @@ function CanvasInner({ projectId }: { projectId: string }) {
                 addNode({ id, type: "note", position: addMenu.flow, data: { text: "" } });
               }
               if (addMenu.pending) {
-                const edge = edgeForPending(addMenu.pending, id, nodeType);
-                if (edge) addEdgeUnique(edge);
+                const connection = connectionForPending(addMenu.pending, id, nodeType);
+                if (connection) onConnect(connection);
               }
             }}
           />
