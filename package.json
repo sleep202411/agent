@@ -30,6 +30,7 @@
     "packages/*"
   ],
   "dependencies": {
-    "@ai-sdk/alibaba": "^1.0.14"
+    "@ai-sdk/alibaba": "^1.0.14",
+    "@xyflow/react": "^12.11.0"
   }
 }
