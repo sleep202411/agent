@@ -34,9 +34,16 @@ stricter than the shared rules, this file wins inside `apps/studio`.
    | `border`     | `white / 8%`       | hairlines (see rule 4)    |
    | `input`      | `white / 12%`      | filled control surfaces   |
 
-   The one deliberate exception is `destructive`, which keeps standard
-   shadcn chroma — error semantics need color. It is not brand red and
-   must not be used as an accent.
+   Two deliberate exceptions, both for **functional color that encodes data,
+   not decoration**:
+   - `destructive` keeps standard shadcn chroma — error semantics need color.
+   - **Canvas connectors** (port handles, their labels, and the edges between
+     them) are colored by data type: text/prompt = blue `#5b9dff`, image =
+     amber `#e0a45c` (see `app/canvas/_components/port-colors.ts`). Edges are
+     gradient-stroked between their two endpoint colors. This is the same
+     category as chart colors — it carries meaning. Node surfaces stay
+     monochrome; only the wires are colored.
+     Neither exception is brand red, and neither may be used as a generic accent.
 
 3. **Brand red is not a token.** The FizzDragon red `#E52227`
    (`oklch(0.5914 0.225 26.83)`) must never enter the global token set or

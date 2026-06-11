@@ -105,3 +105,42 @@
     @apply font-sans;
   }
 }
+
+/*
+ * React Flow canvas interaction polish.
+ * Handle/edge affordances are functional connector states (DESIGN.md rule 4:
+ * port circles and focus-style highlights, not decoration).
+ */
+.react-flow__handle {
+  transition:
+    scale 120ms ease,
+    background-color 120ms ease,
+    border-color 120ms ease;
+}
+.react-flow__handle:hover,
+.react-flow__handle.connecting,
+.react-flow__handle.connectingfrom,
+.react-flow__handle.connectingto {
+  scale: 1.5;
+}
+.react-flow__handle.valid {
+  scale: 1.5;
+}
+/* Flash the inner dot white when it is a valid drop target. */
+.react-flow__handle.valid > span {
+  border-color: oklch(0.985 0 0) !important;
+  background: oklch(0.985 0 0) !important;
+}
+/*
+ * Edge stroke is a per-edge gradient (see GradientEdge) — do NOT override
+ * `stroke` here or it kills the gradient. Convey hover/selected via opacity
+ * and width only.
+ */
+.react-flow__edge-path {
+  transition:
+    opacity 150ms ease,
+    stroke-width 150ms ease;
+}
+.react-flow__edge:hover .react-flow__edge-path {
+  opacity: 1;
+}
