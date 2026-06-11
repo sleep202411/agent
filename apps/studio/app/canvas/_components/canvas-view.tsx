@@ -747,7 +747,6 @@ function CanvasInner({ projectId }: { projectId: string }) {
           projectId={projectId}
           open={assetsOpen}
           onClose={() => setAssetsOpen(false)}
-          onPick={addAssetToCanvas}
         />
 
         {/* Persistent pending wire from the source handle to the open menu, so the

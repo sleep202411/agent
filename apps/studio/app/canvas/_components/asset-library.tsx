@@ -36,18 +36,16 @@ function useAssetSrc(asset: ProjectAsset): string | undefined {
   return asset.url ?? blobUrl;
 }
 
-function AssetThumb({ asset, onPick }: { asset: ProjectAsset; onPick: (a: ProjectAsset) => void }) {
+function AssetThumb({ asset }: { asset: ProjectAsset }) {
   const src = useAssetSrc(asset);
   return (
-    <button
-      type="button"
+    <div
       title={asset.prompt ?? undefined}
       draggable
       onDragStart={(event) => {
         event.dataTransfer.setData(ASSET_DRAG_MIME, JSON.stringify(asset));
         event.dataTransfer.effectAllowed = "copy";
       }}
-      onClick={() => onPick(asset)}
       className="group relative aspect-square cursor-grab overflow-hidden rounded-lg bg-white/[0.04] transition-colors hover:bg-white/[0.08] active:cursor-grabbing"
     >
       {src ? (
@@ -62,25 +60,23 @@ function AssetThumb({ asset, onPick }: { asset: ProjectAsset; onPick: (a: Projec
           <IconPhoto className="size-5 text-white/25" stroke={1.5} />
         </div>
       )}
-    </button>
+    </div>
   );
 }
 
 /**
  * The project's persistent asset library — a slide-in drawer (imagine.art-style)
  * over the canvas. "My Creations" = generated outputs; "Uploaded" = dropped/
- * uploaded media. Picking an asset hands it back to the canvas.
+ * uploaded media. Drag an asset out onto the canvas to place it.
  */
 export function AssetLibrary({
   projectId,
   open,
   onClose,
-  onPick,
 }: {
   projectId: string;
   open: boolean;
   onClose: () => void;
-  onPick: (asset: ProjectAsset) => void;
 }) {
   const [assets, setAssets] = useState<ProjectAsset[]>([]);
   const [tab, setTab] = useState<AssetTab>("generated");
@@ -164,7 +160,7 @@ export function AssetLibrary({
       ) : (
         <div className="grid grid-cols-2 gap-2 overflow-y-auto p-4">
           {filtered.map((asset) => (
-            <AssetThumb key={asset.id} asset={asset} onPick={onPick} />
+            <AssetThumb key={asset.id} asset={asset} />
           ))}
         </div>
       )}
