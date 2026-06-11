@@ -5,7 +5,6 @@ import { usePathname } from "next/navigation";
 import type { ComponentType } from "react";
 import {
   IconArtboard,
-  IconFolders,
   IconHome,
   IconPhoto,
   IconSettings,
@@ -97,8 +96,7 @@ export function StudioSidebar() {
   // Primary nav — the studio workspaces. `canvas` and `audio` are not built yet,
   // so they render disabled with a "coming soon" tooltip instead of navigating.
   const items: RailItem[] = [
-    { label: "Home", href: "/", icon: IconHome },
-    { label: "Projects", href: "/projects", icon: IconFolders },
+    { label: "Home", href: "/", icon: IconHome, disabled: true },
     { label: "Canvas", href: "/canvas", icon: IconArtboard },
     // Plural to match the web app's /fizzstudio/images so that page ports 1:1.
     { label: "Image", href: "/images", icon: IconPhoto },
