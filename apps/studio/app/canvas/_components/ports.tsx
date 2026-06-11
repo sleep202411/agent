@@ -1,7 +1,7 @@
 "use client";
 
 import { Handle, Position } from "@xyflow/react";
-import { handleColor } from "./port-colors";
+import { colorForType, handleColor, type PortDataType } from "./port-colors";
 
 /**
  * A typed connection port with its label floating outside the node card
@@ -18,6 +18,7 @@ export function Port({
   side,
   top,
   label,
+  dataType,
   required = false,
 }: {
   type: "source" | "target";
@@ -25,9 +26,11 @@ export function Port({
   side: "left" | "right";
   top: number;
   label: string;
+  /** Override the id-based color (reference input ports color by media kind). */
+  dataType?: PortDataType;
   required?: boolean;
 }) {
-  const color = handleColor(id);
+  const color = dataType ? colorForType(dataType) : handleColor(id);
   return (
     <>
       <Handle

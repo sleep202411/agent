@@ -22,6 +22,7 @@ type GenNodeData = {
   prompt?: string;
   modelId?: string;
   settings?: Record<string, string | number | boolean>;
+  references?: Record<string, { url: string }[]>;
   generation?: GenerationState;
 };
 
@@ -112,8 +113,23 @@ export function CanvasGenerationProvider({
         return;
       }
 
+      // Map wired/uploaded references into their schema fields. Only real
+      // (http) URLs go to the backend — blob object URLs can't be fetched yet
+      // (they wait on SAS upload), so they're dropped here.
+      const properties = model.input_schema?.properties ?? {};
+      const referenceInput: Record<string, unknown> = {};
+      for (const [field, list] of Object.entries(data.references ?? {})) {
+        const urls = list.map((r) => r.url).filter((u) => /^https?:/i.test(u));
+        if (urls.length === 0) continue;
+        referenceInput[field] = properties[field]?.type === "array" ? urls : urls[0];
+      }
+
       const input = compactFizzAiInput(
-        filterFizzAiInput(model, { ...(data.settings ?? {}), prompt: data.prompt })
+        filterFizzAiInput(model, {
+          ...(data.settings ?? {}),
+          ...referenceInput,
+          prompt: data.prompt,
+        })
       );
 
       patch(nodeId, { status: "queued" });

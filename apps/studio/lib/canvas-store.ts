@@ -63,9 +63,20 @@ type StoredGenFields = {
   // output URLs are durable storage, not blobs). A job still in flight at
   // reload re-attaches via the realtime subscription by its persisted jobId.
   generation?: GenerationState;
-  // `references` are intentionally NOT persisted: they hold object URLs that
-  // die on reload. Durable reference storage lands with SAS upload (the same
-  // confirm-on-upload pipeline used for media), not local blobs.
+  // References with a durable http URL (wired-in nodes, generated outputs)
+  // persist; blob object URLs are filtered out at save time (they die on
+  // reload, and wait on SAS upload to become submittable).
+  references?: Record<
+    string,
+    Array<{
+      id: string;
+      url: string;
+      kind: string;
+      name?: string;
+      edgeId?: string;
+      sourceNodeId?: string;
+    }>
+  >;
 };
 
 export type StoredCanvasNode =

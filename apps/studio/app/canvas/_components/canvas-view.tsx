@@ -46,9 +46,16 @@ import { GradientEdge } from "./gradient-edge";
 import { handleColor } from "./port-colors";
 import { ImageNode, type ImageNodeType } from "./image-node";
 import { NoteNode, type NoteNodeType } from "./note-node";
-import { PromptNode, VideoNode, type GenerationNodeType } from "./generation-card";
+import {
+  PromptNode,
+  VideoNode,
+  type GenerationNodeData,
+  type GenerationNodeType,
+} from "./generation-card";
 import { useAiCatalog } from "@/app/canvas/_lib/use-ai-catalog";
 import { CanvasGenerationProvider } from "@/app/canvas/_lib/use-canvas-generation";
+import { defaultMode, referenceFieldsForMode } from "@/app/canvas/_lib/generation-api";
+import type { CardReference } from "./reference-stack";
 
 export type CanvasNode = ImageNodeType | NoteNodeType | GenerationNodeType;
 
@@ -66,13 +73,6 @@ function filterForHandle(handleId: string | null): ConnectFilter | undefined {
 // Zoom/pan tuning proven in apps/web's storyboard canvas.
 const MIN_ZOOM = 0.16;
 const MAX_ZOOM = 2.4;
-
-// Typed connections: text feeds prompts, images feed references (imagine.art model).
-const isValidConnection: IsValidConnection<Edge> = (connection) => {
-  if (connection.targetHandle === "prompt") return connection.sourceHandle === "text";
-  if (connection.targetHandle === "reference") return connection.sourceHandle === "image";
-  return true;
-};
 
 type PendingConnection = {
   nodeId: string;
@@ -169,6 +169,17 @@ function ZoomControls() {
   );
 }
 
+/** Keep only references with a durable http URL (drop session blob URLs). */
+function persistableReferences(references: GenerationNodeData["references"]) {
+  if (!references) return undefined;
+  const out: Record<string, CardReference[]> = {};
+  for (const [field, list] of Object.entries(references)) {
+    const keep = list.filter((r) => /^https?:/i.test(r.url));
+    if (keep.length) out[field] = keep;
+  }
+  return Object.keys(out).length > 0 ? out : undefined;
+}
+
 function toStoredNodes(nodes: CanvasNode[]): StoredCanvasNode[] {
   return nodes.map((node) => {
     if (node.type === "note") {
@@ -197,6 +208,7 @@ function toStoredNodes(nodes: CanvasNode[]): StoredCanvasNode[] {
       mode: node.data.mode,
       settings: node.data.settings,
       generation: node.data.generation,
+      references: persistableReferences(node.data.references),
     };
   });
 }
@@ -208,7 +220,7 @@ function CanvasInner({ projectId }: { projectId: string }) {
   const [projectName, setProjectName] = useState("Untitled canvas");
   const [addMenu, setAddMenu] = useState<AddMenuState | null>(null);
   const [assetsOpen, setAssetsOpen] = useState(false);
-  const { screenToFlowPosition, fitView, getNodes } = useReactFlow();
+  const { screenToFlowPosition, fitView, getNodes, getNode, updateNodeData } = useReactFlow();
   const loadedRef = useRef(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -254,6 +266,7 @@ function CanvasInner({ projectId }: { projectId: string }) {
               mode: stored.mode,
               settings: stored.settings,
               generation: stored.generation,
+              references: stored.references as GenerationNodeData["references"],
             },
           });
           continue;
@@ -321,10 +334,90 @@ function CanvasInner({ projectId }: { projectId: string }) {
     };
   }, []);
 
+  // The media kind a generation card's reference field accepts (undefined if the
+  // target isn't a card, or the handle isn't one of its current-mode ref fields).
+  const referenceFieldKind = useCallback(
+    (nodeId: string | null | undefined, fieldName: string | null | undefined) => {
+      if (!nodeId || !fieldName) return undefined;
+      const node = getNode(nodeId);
+      if (!node || (node.type !== "prompt" && node.type !== "video")) return undefined;
+      const data = node.data as GenerationNodeData;
+      const model = catalog?.models.find((m) => m.id === data.modelId);
+      const mode = data.mode ?? defaultMode(model);
+      return referenceFieldsForMode(model, mode).find((f) => f.field === fieldName)?.kind;
+    },
+    [getNode, catalog]
+  );
+
+  // The media URL a source node exposes — an image node's src, or another
+  // generation card's produced output (enables card→card chaining).
+  const sourceMediaUrl = useCallback(
+    (nodeId: string | null) => {
+      if (!nodeId) return undefined;
+      const node = getNode(nodeId);
+      if (!node) return undefined;
+      if (node.type === "image") return (node.data as { src?: string }).src;
+      if (node.type === "prompt" || node.type === "video") {
+        return (node.data as GenerationNodeData).generation?.outputs?.[0]?.url;
+      }
+      return undefined;
+    },
+    [getNode]
+  );
+
+  // Only a kind-matching wire into a card's reference field is valid.
+  const isValidConnection = useCallback<IsValidConnection<Edge>>(
+    (connection) => {
+      const kind = referenceFieldKind(connection.target, connection.targetHandle);
+      return Boolean(kind) && connection.sourceHandle === kind;
+    },
+    [referenceFieldKind]
+  );
+
   const onConnect = useCallback(
-    (connection: Connection) =>
-      setEdges((eds) => addEdge({ ...connection, type: "gradient" }, eds)),
-    [setEdges]
+    (connection: Connection) => {
+      const edge: Edge = { id: crypto.randomUUID(), type: "gradient", ...connection };
+      setEdges((eds) => addEdge(edge, eds));
+      // Wiring a source into a reference field binds it as that field's reference.
+      const kind = referenceFieldKind(connection.target, connection.targetHandle);
+      const url = kind ? sourceMediaUrl(connection.source) : undefined;
+      if (kind && url && connection.target && connection.targetHandle) {
+        const field = connection.targetHandle;
+        const reference: CardReference = {
+          id: edge.id,
+          edgeId: edge.id,
+          sourceNodeId: connection.source ?? undefined,
+          url,
+          kind,
+        };
+        updateNodeData(connection.target, (node) => {
+          const refs = (node.data as GenerationNodeData).references ?? {};
+          const list = (refs[field] ?? []).filter((r) => r.edgeId !== edge.id);
+          return { references: { ...refs, [field]: [...list, reference] } };
+        });
+      }
+    },
+    [setEdges, referenceFieldKind, sourceMediaUrl, updateNodeData]
+  );
+
+  // Deleting a wire drops the reference it bound.
+  const onEdgesDelete = useCallback(
+    (deleted: Edge[]) => {
+      for (const edge of deleted) {
+        if (!edge.target || !edge.targetHandle) continue;
+        const field = edge.targetHandle;
+        updateNodeData(edge.target, (node) => {
+          const refs = (node.data as GenerationNodeData).references ?? {};
+          return {
+            references: {
+              ...refs,
+              [field]: (refs[field] ?? []).filter((r) => r.edgeId !== edge.id),
+            },
+          };
+        });
+      }
+    },
+    [updateNodeData]
   );
 
   const addEdgeUnique = useCallback(
@@ -554,6 +647,7 @@ function CanvasInner({ projectId }: { projectId: string }) {
           edges={edges}
           onNodesChange={onNodesChange}
           onEdgesChange={onEdgesChange}
+          onEdgesDelete={onEdgesDelete}
           onConnect={onConnect}
           onConnectStart={onConnectStart}
           onConnectEnd={onConnectEnd}

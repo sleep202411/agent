@@ -5,6 +5,7 @@ import {
   IconMusic,
   IconMusicPlus,
   IconPhotoPlus,
+  IconPlugConnected,
   IconVideoPlus,
   IconX,
   type Icon,
@@ -19,6 +20,9 @@ export type CardReference = {
   url: string;
   name?: string;
   kind: FizzAiReferenceKind;
+  /** Present when the reference came from a wired source node (vs an upload). */
+  edgeId?: string;
+  sourceNodeId?: string;
 };
 
 export type CardReferences = Record<string, CardReference[]>;
@@ -73,14 +77,24 @@ function ReferenceField({
               </span>
             </div>
           )}
-          <button
-            type="button"
-            aria-label="Remove"
-            onClick={() => onRemove(ref.id)}
-            className="absolute top-0.5 right-0.5 flex size-4 items-center justify-center rounded-full bg-black/60 text-white opacity-0 transition-opacity hover:bg-black/80 group-hover:opacity-100"
-          >
-            <IconX className="size-3" stroke={2.2} />
-          </button>
+          {ref.edgeId ? (
+            // Wired in from a source node — remove by disconnecting the wire.
+            <span
+              title="Linked from a connected node"
+              className="absolute top-0.5 right-0.5 flex size-4 items-center justify-center rounded-full bg-black/55 text-white/80"
+            >
+              <IconPlugConnected className="size-2.5" stroke={2} />
+            </span>
+          ) : (
+            <button
+              type="button"
+              aria-label="Remove"
+              onClick={() => onRemove(ref.id)}
+              className="absolute top-0.5 right-0.5 flex size-4 items-center justify-center rounded-full bg-black/60 text-white opacity-0 transition-opacity hover:bg-black/80 group-hover:opacity-100"
+            >
+              <IconX className="size-3" stroke={2.2} />
+            </button>
+          )}
         </div>
       ))}
 

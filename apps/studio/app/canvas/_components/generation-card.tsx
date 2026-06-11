@@ -1,7 +1,13 @@
 "use client";
 
 import { memo, useEffect, useMemo, useRef, useState } from "react";
-import { useReactFlow, useStore, type Node, type NodeProps } from "@xyflow/react";
+import {
+  useReactFlow,
+  useStore,
+  useUpdateNodeInternals,
+  type Node,
+  type NodeProps,
+} from "@xyflow/react";
 import {
   IconAdjustments,
   IconAlertTriangle,
@@ -62,6 +68,11 @@ const MODALITY = {
 } as const;
 
 const comingSoon = (label: string) => toast.info(`${label} · Coming soon`);
+
+/** "referenceImages" -> "Reference Images", "startFrame" -> "Start Frame". */
+function referenceFieldLabel(field: string): string {
+  return field.replace(/([a-z])([A-Z])/g, "$1 $2").replace(/^./, (c) => c.toUpperCase());
+}
 
 /**
  * CSS aspect-ratio for the result area so the card matches its content: actual
@@ -133,6 +144,10 @@ function GenerationCard({
   const mode = data.mode ?? defaultMode(model);
   const modes = model?.generationModes ?? [];
   const refFields = useMemo(() => referenceFieldsForMode(model, mode), [model, mode]);
+
+  // Reference input handles change with the mode — re-measure them in React Flow.
+  const updateNodeInternals = useUpdateNodeInternals();
+  useEffect(() => updateNodeInternals(id), [id, refFields, updateNodeInternals]);
 
   // Revoke object URLs this card created when it unmounts (blobs would leak).
   const createdUrls = useRef<string[]>([]);
@@ -368,6 +383,20 @@ function GenerationCard({
           </div>
         </div>
       )}
+
+      {/* Reference input ports — one per the active mode's reference field, so a
+          source node (or another card's output) can be wired in. */}
+      {refFields.map((field, index) => (
+        <Port
+          key={field.field}
+          type="target"
+          id={field.field}
+          side="left"
+          top={48 + index * 34}
+          label={referenceFieldLabel(field.field)}
+          dataType={field.kind}
+        />
+      ))}
 
       {/* Output ports — every generation card can emit image and video. */}
       <Port type="source" id="image" side="right" top={48} label="Image" />
