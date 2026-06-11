@@ -2,15 +2,23 @@
 
 import { useCallback } from "react";
 import { NodeToolbar, Position, useReactFlow } from "@xyflow/react";
-import { IconCopy, IconTrash } from "@tabler/icons-react";
+import { IconTrash } from "@tabler/icons-react";
+import { cn } from "@/lib/utils";
 
+/** Floating panel surface for the dock and node toolbars — sits clearly above
+ *  the canvas (lighter than the canvas bg) with a frosted blur. */
+export const FLOATING_PANEL = "bg-[oklch(0.205_0_0)]/95 shadow-lg shadow-black/40 backdrop-blur-xl";
+
+/** Icon-only action button with a hover tooltip. */
 export function ToolbarButton({
   label,
   onClick,
+  variant = "default",
   children,
 }: {
   label: string;
   onClick: () => void;
+  variant?: "default" | "danger";
   children: React.ReactNode;
 }) {
   return (
@@ -18,14 +26,22 @@ export function ToolbarButton({
       type="button"
       aria-label={label}
       onClick={onClick}
-      className="flex size-8 items-center justify-center rounded-full text-white/70 transition-colors hover:bg-white/[0.08] hover:text-white"
+      className={cn(
+        "group/tb relative flex size-8 items-center justify-center rounded-full transition-colors",
+        variant === "danger"
+          ? "text-white/70 hover:bg-red-500/15 hover:text-red-400"
+          : "text-white/70 hover:bg-white/[0.1] hover:text-white"
+      )}
     >
       {children}
+      <span className="pointer-events-none absolute -top-8 left-1/2 z-10 -translate-x-1/2 rounded-md bg-foreground px-2 py-1 text-xs font-medium whitespace-nowrap text-background opacity-0 shadow-md transition-opacity duration-150 group-hover/tb:opacity-100">
+        {label}
+      </span>
     </button>
   );
 }
 
-/** Standard duplicate/delete toolbar above a selected node; `children` prepends extra actions. */
+/** Toolbar above a selected node: `children` actions, then a built-in Delete. */
 export function CanvasNodeToolbar({
   nodeId,
   visible,
@@ -35,18 +51,7 @@ export function CanvasNodeToolbar({
   visible: boolean;
   children?: React.ReactNode;
 }) {
-  const { addNodes, deleteElements, getNode } = useReactFlow();
-
-  const onDuplicate = useCallback(() => {
-    const node = getNode(nodeId);
-    if (!node) return;
-    addNodes({
-      ...node,
-      id: crypto.randomUUID(),
-      position: { x: node.position.x + 32, y: node.position.y + 32 },
-      selected: false,
-    });
-  }, [addNodes, getNode, nodeId]);
+  const { deleteElements } = useReactFlow();
 
   const onDelete = useCallback(() => {
     void deleteElements({ nodes: [{ id: nodeId }] });
@@ -57,13 +62,10 @@ export function CanvasNodeToolbar({
       isVisible={visible}
       position={Position.Top}
       offset={10}
-      className="flex items-center gap-0.5 rounded-full bg-popover/90 p-1 shadow-md backdrop-blur-xl"
+      className={cn("flex items-center gap-0.5 rounded-full p-1", FLOATING_PANEL)}
     >
       {children}
-      <ToolbarButton label="Duplicate" onClick={onDuplicate}>
-        <IconCopy className="size-4" stroke={1.8} />
-      </ToolbarButton>
-      <ToolbarButton label="Delete" onClick={onDelete}>
+      <ToolbarButton label="Delete" variant="danger" onClick={onDelete}>
         <IconTrash className="size-4" stroke={1.8} />
       </ToolbarButton>
     </NodeToolbar>

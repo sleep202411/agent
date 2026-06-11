@@ -44,8 +44,10 @@ import {
   type ProjectAsset,
   type StoredCanvasNode,
 } from "@/lib/canvas-store";
+import { cn } from "@/lib/utils";
 import { AssetLibrary, ASSET_DRAG_MIME } from "./asset-library";
 import { AddNodeMenu, type AddNodeAction } from "./add-node-menu";
+import { ToolbarButton, FLOATING_PANEL } from "./node-toolbar";
 import { CanvasConnectionLine } from "./connection-line";
 import { GradientEdge } from "./gradient-edge";
 import { handleColor } from "./port-colors";
@@ -131,17 +133,16 @@ const DOCK_ITEMS: { action: AddNodeAction; label: string; Icon: Icon }[] = [
 /** Bottom dock: one click adds a node of a supported kind to the canvas. */
 function NodeDock({ onAdd }: { onAdd: (action: AddNodeAction) => void }) {
   return (
-    <div className="absolute bottom-5 left-1/2 z-20 flex -translate-x-1/2 items-center gap-0.5 rounded-2xl bg-popover/90 p-1.5 shadow-md backdrop-blur-xl">
+    <div
+      className={cn(
+        "absolute bottom-5 left-1/2 z-20 flex -translate-x-1/2 items-center gap-0.5 rounded-2xl p-1.5",
+        FLOATING_PANEL
+      )}
+    >
       {DOCK_ITEMS.map(({ action, label, Icon }) => (
-        <button
-          key={action}
-          type="button"
-          onClick={() => onAdd(action)}
-          className="flex items-center gap-2 rounded-xl px-3 py-2 text-sm font-medium text-white/75 transition-colors hover:bg-white/[0.08] hover:text-white"
-        >
-          <Icon className="size-4.5" stroke={1.7} />
-          {label}
-        </button>
+        <ToolbarButton key={action} label={label} onClick={() => onAdd(action)}>
+          <Icon className="size-5" stroke={1.7} />
+        </ToolbarButton>
       ))}
     </div>
   );

@@ -7,7 +7,9 @@ import {
   IconAlertTriangle,
   IconArrowUp,
   IconChevronDown,
+  IconDownload,
   IconLoader2,
+  IconPencil,
   IconPhoto,
   IconRefresh,
   IconVideo,
@@ -27,7 +29,7 @@ import {
   type GenerationState,
   type ModelSettings,
 } from "@/app/canvas/_lib/generation-api";
-import { CanvasNodeToolbar } from "./node-toolbar";
+import { CanvasNodeToolbar, ToolbarButton } from "./node-toolbar";
 import { ModeMenu } from "./mode-menu";
 import { ModelPicker } from "./model-picker";
 import { ModelSettings as ModelSettingsPanel } from "./model-settings";
@@ -131,6 +133,7 @@ function GenerationCard({
   const { data: catalog } = useAiCatalog();
   const { submit } = useGeneration();
   const [panel, setPanel] = useState<"model" | "settings" | "mode" | null>(null);
+  const [renaming, setRenaming] = useState(false);
   // Keep the composer at a constant screen size (don't shrink/grow with zoom).
   const zoom = useStore((s) => s.transform[2]);
   useDismiss(panel !== null, () => setPanel(null));
@@ -192,15 +195,57 @@ function GenerationCard({
       settings: { ...defaultSettingsForModel(selected), ...settings },
     });
 
+  const output = generation?.outputs?.[0];
+  const onDownload = async () => {
+    if (!output?.url) return;
+    const ext = output.type === "video" ? "mp4" : "png";
+    try {
+      const blob = await (await fetch(output.url)).blob();
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = `${data.name ?? "result"}.${ext}`;
+      anchor.click();
+      URL.revokeObjectURL(url);
+    } catch {
+      window.open(output.url, "_blank");
+    }
+  };
+
   return (
     <div className="relative">
-      <CanvasNodeToolbar nodeId={id} visible={(selected ?? false) && panel === null && !dragging} />
+      <CanvasNodeToolbar nodeId={id} visible={(selected ?? false) && panel === null && !dragging}>
+        {output && (
+          <ToolbarButton label="Download" onClick={onDownload}>
+            <IconDownload className="size-4" stroke={1.8} />
+          </ToolbarButton>
+        )}
+        <ToolbarButton label="Rename" onClick={() => setRenaming(true)}>
+          <IconPencil className="size-4" stroke={1.8} />
+        </ToolbarButton>
+      </CanvasNodeToolbar>
 
       {/* Header: node name left, model used right. */}
       <div className="flex items-center justify-between px-1 pb-1.5 text-xs">
         <span className="flex items-center gap-1.5 text-white/80">
           <Icon className="size-3.5" stroke={1.8} />
-          {data.name ?? descriptor.label}
+          {renaming ? (
+            <input
+              autoFocus
+              defaultValue={data.name ?? descriptor.label}
+              onBlur={(event) => {
+                updateNodeData(id, { name: event.target.value.trim() || descriptor.label });
+                setRenaming(false);
+              }}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") event.currentTarget.blur();
+                else if (event.key === "Escape") setRenaming(false);
+              }}
+              className="nodrag w-28 bg-transparent text-white/80 outline-none"
+            />
+          ) : (
+            (data.name ?? descriptor.label)
+          )}
         </span>
         <span className="text-muted-foreground">{data.modelName ?? "Auto"}</span>
       </div>
