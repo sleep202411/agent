@@ -78,6 +78,7 @@ export function ResultLightbox({
   const { job, output } = item;
   const isVideo = output.type === "video";
   const ratio = reducedRatio(output.width, output.height);
+  const src = output.accessUrl ?? output.url;
 
   const copyPrompt = async () => {
     try {
@@ -91,7 +92,7 @@ export function ResultLightbox({
 
   const download = async () => {
     try {
-      const blob = await (await fetch(output.url)).blob();
+      const blob = await (await fetch(src)).blob();
       const url = URL.createObjectURL(blob);
       const anchor = document.createElement("a");
       anchor.href = url;
@@ -99,7 +100,7 @@ export function ResultLightbox({
       anchor.click();
       URL.revokeObjectURL(url);
     } catch {
-      window.open(output.url, "_blank");
+      window.open(src, "_blank");
     }
   };
 
@@ -110,7 +111,7 @@ export function ResultLightbox({
         {isVideo ? (
           <video
             key={item.key}
-            src={output.url}
+            src={src}
             controls
             autoPlay
             playsInline
@@ -119,7 +120,7 @@ export function ResultLightbox({
         ) : (
           // eslint-disable-next-line @next/next/no-img-element
           <img
-            src={output.url}
+            src={src}
             alt={job.prompt}
             className="max-h-full max-w-full rounded-lg object-contain"
           />

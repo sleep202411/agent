@@ -43,7 +43,10 @@ export function useReferenceUploads() {
   const [items, setItems] = useState<ReferenceUpload[]>([]);
   const aborts = useRef(new Map<string, AbortController>());
   const itemsRef = useRef(items);
-  itemsRef.current = items;
+
+  useEffect(() => {
+    itemsRef.current = items;
+  }, [items]);
 
   // Revoke every preview URL on unmount.
   useEffect(

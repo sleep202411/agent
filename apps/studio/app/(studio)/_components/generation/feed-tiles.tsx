@@ -40,15 +40,21 @@ function stageLabel(stage: string, status: string): string {
 
 /** Live ETA countdown — ticks once a second while the job runs. */
 function useEtaCountdown(etaSeconds: number | null, createdAtMs: number, active: boolean) {
-  const [, force] = useState(0);
+  const [remaining, setRemaining] = useState<number | null>(null);
   useEffect(() => {
     if (!active || etaSeconds == null) return;
-    const timer = setInterval(() => force((n) => n + 1), 1000);
-    return () => clearInterval(timer);
-  }, [active, etaSeconds]);
+    const tick = () => {
+      setRemaining(Math.max(0, Math.ceil(etaSeconds - (Date.now() - createdAtMs) / 1000)));
+    };
+    const first = window.setTimeout(tick, 0);
+    const timer = window.setInterval(tick, 1000);
+    return () => {
+      window.clearTimeout(first);
+      window.clearInterval(timer);
+    };
+  }, [active, createdAtMs, etaSeconds]);
   if (!active || etaSeconds == null) return null;
-  const remaining = Math.ceil(etaSeconds - (Date.now() - createdAtMs) / 1000);
-  return remaining > 0 ? remaining : null;
+  return remaining != null && remaining > 0 ? remaining : null;
 }
 
 function formatSeconds(total: number): string {
@@ -189,6 +195,7 @@ export function ImageResultTile({
   total: number;
   onOpen: () => void;
 }) {
+  const src = output.accessUrl ?? output.url;
   const ratio =
     output.width && output.height
       ? `${output.width} / ${output.height}`
@@ -202,7 +209,7 @@ export function ImageResultTile({
     >
       {/* eslint-disable-next-line @next/next/no-img-element */}
       <img
-        src={output.url}
+        src={src}
         alt={job.prompt}
         loading="lazy"
         className="size-full object-cover transition-transform duration-300 group-hover:scale-[1.025]"
@@ -214,7 +221,7 @@ export function ImageResultTile({
           aria-label="Download"
           onClick={(event) => {
             event.stopPropagation();
-            void downloadOutput(output.url, `${job.prompt.slice(0, 40) || "image"}.png`);
+            void downloadOutput(src, `${job.prompt.slice(0, 40) || "image"}.png`);
           }}
           className="flex size-8 items-center justify-center rounded-full bg-black/55 text-white/85 backdrop-blur-sm transition-colors hover:bg-black/75 hover:text-white"
         >
@@ -235,6 +242,7 @@ export function VideoResultTile({
   onOpen: () => void;
 }) {
   const videoRef = useRef<HTMLVideoElement>(null);
+  const src = output.accessUrl ?? output.url;
   return (
     <div
       className="group relative aspect-video cursor-pointer overflow-hidden rounded-xl bg-card"
@@ -250,7 +258,7 @@ export function VideoResultTile({
     >
       <video
         ref={videoRef}
-        src={output.url}
+        src={src}
         muted
         loop
         playsInline
@@ -287,7 +295,7 @@ export function VideoResultTile({
           aria-label="Download"
           onClick={(event) => {
             event.stopPropagation();
-            void downloadOutput(output.url, `${job.prompt.slice(0, 40) || "video"}.mp4`);
+            void downloadOutput(src, `${job.prompt.slice(0, 40) || "video"}.mp4`);
           }}
           className="flex size-8 items-center justify-center rounded-full bg-black/55 text-white/85 backdrop-blur-sm transition-colors hover:bg-black/75 hover:text-white"
         >

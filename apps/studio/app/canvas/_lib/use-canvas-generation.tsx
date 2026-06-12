@@ -1,10 +1,12 @@
 "use client";
 
 import { createContext, useCallback, useContext, useEffect, useMemo } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { useReactFlow } from "@xyflow/react";
 import { toast } from "sonner";
 import { addProjectAssets } from "@/lib/canvas-store";
 import { openAssetsRealtime } from "./assets-realtime";
+import { computeWalletBalanceQueryKey } from "@/app/_components/credits-badge";
 import {
   compactFizzAiInput,
   filterFizzAiInput,
@@ -63,6 +65,7 @@ export function CanvasGenerationProvider({
   children: React.ReactNode;
 }) {
   const { getNode, getNodes, updateNodeData, setNodes, setEdges } = useReactFlow();
+  const queryClient = useQueryClient();
 
   const patch = useCallback(
     (nodeId: string, generation: GenerationState) => updateNodeData(nodeId, { generation }),
@@ -103,10 +106,11 @@ export function CanvasGenerationProvider({
             nodes.map((node) => {
               if (node.id !== match.id) return node;
               if (convert) {
+                const src = out!.accessUrl ?? out!.url;
                 return {
                   ...node,
                   type: "panorama",
-                  data: { src: out!.url, label: matchData?.prompt },
+                  data: { src, label: matchData?.prompt },
                 };
               }
               return {
@@ -126,7 +130,7 @@ export function CanvasGenerationProvider({
               id: output.id ?? `${job.id}:${index}`,
               kind: output.type,
               source: "generated" as const,
-              url: output.url,
+              url: output.accessUrl ?? output.url,
               width: output.width,
               height: output.height,
               panorama: isPanoramaOutput(output),
@@ -135,10 +139,13 @@ export function CanvasGenerationProvider({
             }))
           );
         }
+        if (["completed", "failed", "cancelled", "canceled", "expired"].includes(job.status)) {
+          void queryClient.invalidateQueries({ queryKey: computeWalletBalanceQueryKey });
+        }
       },
     });
     return () => client.close();
-  }, [setNodes, projectId]);
+  }, [queryClient, setEdges, setNodes, getNodes, projectId]);
 
   const submit = useCallback(
     async (nodeId: string) => {
@@ -174,7 +181,11 @@ export function CanvasGenerationProvider({
         })
       );
 
-      patch(nodeId, { status: "queued" });
+      patch(nodeId, {
+        ...(data.generation ?? { status: "submitting" }),
+        status: "submitting",
+        error: undefined,
+      });
       try {
         const response = await submitFizzAiJob({
           // Only the block binds the job to its card. The canvas project is
@@ -197,13 +208,14 @@ export function CanvasGenerationProvider({
           queuePosition: response.queue_position ?? undefined,
           etaSeconds: response.estimated_total_seconds ?? undefined,
         });
+        void queryClient.invalidateQueries({ queryKey: computeWalletBalanceQueryKey });
       } catch (error) {
         const message = normalizeFizzAiError(error, "Generation failed");
         patch(nodeId, { status: "failed", error: message });
         toast.error(message);
       }
     },
-    [getNode, catalog, patch]
+    [getNode, catalog, patch, queryClient]
   );
 
   const value = useMemo<GenerationContextValue>(

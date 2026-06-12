@@ -36,7 +36,6 @@ import type {
   AiModelDefinition,
   AiModelPresetDefinition,
   AiProvider,
-  AiRequiredPlan,
   AiRoutingSnapshot,
   AiSubmitJobBody,
 } from './types';
@@ -127,6 +126,17 @@ export class AiGenerationRoutingService {
       queuePolicy.queueName,
       model.type,
     );
+    const perSubjectQueued = normalizeNullableLimit(
+      args.entitlement.limits.queuedJobs,
+    );
+    const perSubjectRunning = normalizeNullableLimit(
+      args.entitlement.limits.concurrentJobs,
+    );
+    const perTypeRunning = normalizeRequiredLimit(queuePolicy.perUserRunning);
+    const legacyPerUserRunning =
+      minNullableLimit(perSubjectRunning, perTypeRunning) ?? 1_000_000_000;
+    const legacyPerUserQueued =
+      perSubjectQueued ?? normalizeRequiredLimit(queuePolicy.perUserQueued);
     const maxProviderRuntimeSeconds = applyProviderRuntimeLimit(
       queuePolicy?.maxProviderRuntimeSeconds ??
         (model.type === 'video' ? 45 * 60 : 10 * 60),
@@ -134,10 +144,7 @@ export class AiGenerationRoutingService {
     );
     const requiredPlan = this.entitlements.requiredPlan(
       configuredRoute?.requiredPlan ??
-        (model.entitlement_policy?.requiredPlan as
-          | AiRequiredPlan
-          | null
-          | undefined) ??
+        model.entitlement_policy?.requiredPlan ??
         model.entitlement.requiredPlan,
     );
     const quotaCost =
@@ -209,10 +216,14 @@ export class AiGenerationRoutingService {
             queuePriority: args.entitlement.limits.queuePriority,
           },
           concurrency: {
+            subject: args.entitlement.subject,
             queueName,
             globalConcurrency: queuePolicy.globalConcurrency,
-            perUserRunning: queuePolicy.perUserRunning,
-            perUserQueued: queuePolicy.perUserQueued,
+            perUserRunning: legacyPerUserRunning,
+            perUserQueued: legacyPerUserQueued,
+            perSubjectQueued,
+            perSubjectRunning,
+            perTypeRunning,
           },
           runtime: {
             maxProviderRuntimeSeconds,
@@ -400,6 +411,30 @@ function numberInput(value: unknown): number | undefined {
   return typeof value === 'number' && Number.isFinite(value)
     ? value
     : undefined;
+}
+
+function normalizeRequiredLimit(value: unknown): number {
+  if (typeof value === 'number' && Number.isFinite(value) && value > 0) {
+    return Math.floor(value);
+  }
+  return 1;
+}
+
+function normalizeNullableLimit(value: unknown): number | null {
+  if (value === null) return null;
+  if (typeof value === 'number' && Number.isFinite(value) && value >= 0) {
+    return Math.floor(value);
+  }
+  return null;
+}
+
+function minNullableLimit(
+  left: number | null,
+  right: number | null,
+): number | null {
+  if (left == null) return right;
+  if (right == null) return left;
+  return Math.min(left, right);
 }
 
 function durationInput(value: unknown): string | number | undefined {

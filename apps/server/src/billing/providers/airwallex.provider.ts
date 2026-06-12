@@ -70,6 +70,15 @@ interface AirwallexPaymentIntentResponse {
 @Injectable()
 export class AirwallexProvider implements PaymentProviderAdapter {
   readonly provider = PaymentProvider.airwallex;
+  readonly capabilities = {
+    hostedCheckout: true,
+    subscriptionCheckout: true,
+    paymentIntent: true,
+    priceSync: true,
+    couponSync: true,
+    refund: true,
+    webhookVerification: true,
+  };
   private readonly logger = new Logger(AirwallexProvider.name);
   private token: AirwallexToken | null = null;
 

@@ -113,16 +113,17 @@ function HoverPreviewVideo({ src, className }: { src: string; className?: string
 function useCountdown(seconds: number | undefined, active: boolean): number | null {
   const [remaining, setRemaining] = useState<number | null>(null);
   useEffect(() => {
-    if (!active || seconds == null) {
-      setRemaining(null);
-      return;
-    }
+    if (!active || seconds == null) return;
     const end = Date.now() + seconds * 1000;
     const tick = () => setRemaining(Math.max(0, Math.ceil((end - Date.now()) / 1000)));
-    tick();
-    const timer = setInterval(tick, 1000);
-    return () => clearInterval(timer);
+    const first = window.setTimeout(tick, 0);
+    const timer = window.setInterval(tick, 1000);
+    return () => {
+      window.clearTimeout(first);
+      window.clearInterval(timer);
+    };
   }, [seconds, active]);
+  if (!active || seconds == null) return null;
   return remaining;
 }
 
@@ -149,7 +150,10 @@ function GenerationCard({
   const Icon = descriptor.icon;
   const generation = data.generation;
   const settings = data.settings ?? {};
-  const busy = generation?.status === "queued" || generation?.status === "generating";
+  const busy =
+    generation?.status === "submitting" ||
+    generation?.status === "queued" ||
+    generation?.status === "generating";
   const eta = useCountdown(generation?.etaSeconds, generation?.status === "generating");
   const progressPct =
     generation?.progress != null
@@ -309,13 +313,15 @@ function GenerationCard({
             <>
               <IconLoader2 className="size-7 animate-spin text-white/50" stroke={1.8} />
               <p className="text-sm text-white/55">
-                {generation?.status === "queued"
-                  ? generation.queuePosition != null
-                    ? `Queued · #${generation.queuePosition}`
-                    : "Queued…"
-                  : eta != null
-                    ? `Generating · ~${eta}s`
-                    : "Generating…"}
+                {generation?.status === "submitting"
+                  ? "Submitting…"
+                  : generation?.status === "queued"
+                    ? generation.queuePosition != null
+                      ? `Queued · #${generation.queuePosition}`
+                      : "Queued…"
+                    : eta != null
+                      ? `Generating · ~${eta}s`
+                      : "Generating…"}
               </p>
               {progressPct != null && (
                 <div

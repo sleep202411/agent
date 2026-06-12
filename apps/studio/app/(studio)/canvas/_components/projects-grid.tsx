@@ -59,7 +59,13 @@ export function CanvasProjectsGrid() {
   }, []);
 
   useEffect(() => {
-    void refresh();
+    let cancelled = false;
+    queueMicrotask(() => {
+      if (!cancelled) void refresh();
+    });
+    return () => {
+      cancelled = true;
+    };
   }, [refresh]);
 
   const onCreate = useCallback(async () => {

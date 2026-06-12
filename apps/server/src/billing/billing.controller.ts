@@ -20,12 +20,14 @@ import {
   CreateBillingCheckoutSchema,
   CreateComputePointTopupSchema,
   CreateCustomRechargeSchema,
+  ListMembershipPlansQuerySchema,
   ListBillingPricesQuerySchema,
   ListWalletLedgerQuerySchema,
   type BillingOrderParams,
   type CreateBillingCheckoutInput,
   type CreateComputePointTopupInput,
   type CreateCustomRechargeInput,
+  type ListMembershipPlansQuery,
   type ListBillingPricesQuery,
   type ListWalletLedgerQuery,
 } from './dto';
@@ -49,6 +51,18 @@ export class BillingController {
     return {
       code: 200,
       data: await this.billing.listComputePointTopupPackages(),
+    };
+  }
+
+  @Public()
+  @Get('membership-plans')
+  async listMembershipPlans(
+    @Query(new ZodValidationPipe(ListMembershipPlansQuerySchema))
+    query: ListMembershipPlansQuery,
+  ) {
+    return {
+      code: 200,
+      data: await this.billing.listMembershipPlans(query),
     };
   }
 

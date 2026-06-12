@@ -19,8 +19,10 @@ export function toAiJobEvent(job: AiJob): AssetEvent {
       input: job.normalizedInput,
       outputs: job.outputs.map((o) => ({
         id: o.id,
+        assetId: o.assetId,
         type: o.type,
         url: o.url,
+        accessUrl: o.accessUrl,
         width: o.width,
         height: o.height,
         mimeType: o.mimeType,

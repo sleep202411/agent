@@ -6,6 +6,28 @@ export interface ResolvableMediaAsset {
   region: string | null;
   objectKey: string | null;
   externalUrl: string | null;
+  placements?: ResolvableMediaObjectPlacement[];
+  variants?: ResolvableMediaAssetVariant[];
+}
+
+export interface ResolvableMediaAssetVariant {
+  variantKey: string;
+  status?: string;
+  deletedAt?: Date | null;
+  placements?: ResolvableMediaObjectPlacement[];
+}
+
+export interface ResolvableMediaObjectPlacement {
+  storageProvider: string;
+  bucket: string | null;
+  region: string | null;
+  objectKey: string | null;
+  externalUrl: string | null;
+  publicBaseUrl?: string | null;
+  role?: string;
+  status?: string;
+  priority?: number;
+  deletedAt?: Date | null;
 }
 
 /**
@@ -18,6 +40,9 @@ export interface ResolvableMediaAsset {
 @Injectable()
 export class MediaAssetUrlResolverService {
   resolve(asset: ResolvableMediaAsset): string {
+    const placement = pickPlacement(asset.placements);
+    if (placement) return this.resolvePlacement(placement);
+
     if (asset.storageProvider === 'external_url') {
       if (!asset.externalUrl) {
         throw new Error('external_url media asset is missing externalUrl');
@@ -45,6 +70,61 @@ export class MediaAssetUrlResolverService {
       default:
         throw new Error(
           `unsupported media storage provider: ${asset.storageProvider}`,
+        );
+    }
+  }
+
+  resolveVariant(asset: ResolvableMediaAsset, variantKey = 'original'): string {
+    const variant = asset.variants?.find(
+      (candidate) =>
+        candidate.variantKey === variantKey &&
+        candidate.status !== 'deleted' &&
+        candidate.status !== 'blocked' &&
+        !candidate.deletedAt,
+    );
+    const placement = pickPlacement(variant?.placements);
+    if (placement) return this.resolvePlacement(placement);
+    if (variantKey === 'original') return this.resolve(asset);
+    throw new Error(`media asset variant "${variantKey}" is not resolvable`);
+  }
+
+  resolvePlacement(placement: ResolvableMediaObjectPlacement): string {
+    if (placement.storageProvider === 'external_url') {
+      if (!placement.externalUrl) {
+        throw new Error('external_url media placement is missing externalUrl');
+      }
+      return placement.externalUrl;
+    }
+
+    if (!placement.bucket || !placement.objectKey) {
+      throw new Error(
+        `media placement ${placement.storageProvider} is missing bucket/objectKey`,
+      );
+    }
+
+    const publicBaseUrl = cleanBaseUrl(placement.publicBaseUrl);
+    if (publicBaseUrl) {
+      return `${publicBaseUrl}/${encodePath(placement.objectKey)}`;
+    }
+
+    switch (placement.storageProvider) {
+      case 'azure_blob':
+        return this.azureBlobUrl(placement.bucket, placement.objectKey);
+      case 'aliyun_oss':
+        return this.aliyunOssUrl(
+          placement.bucket,
+          placement.objectKey,
+          placement.region,
+        );
+      case 's3_compatible':
+        return this.s3CompatibleUrl(
+          placement.bucket,
+          placement.objectKey,
+          placement.region,
+        );
+      default:
+        throw new Error(
+          `unsupported media storage provider: ${placement.storageProvider}`,
         );
     }
   }
@@ -110,7 +190,21 @@ export class MediaAssetUrlResolverService {
   }
 }
 
-function cleanBaseUrl(value: string | undefined): string | null {
+function pickPlacement(
+  placements: ResolvableMediaObjectPlacement[] | undefined,
+): ResolvableMediaObjectPlacement | null {
+  const active = (placements ?? [])
+    .filter(
+      (placement) =>
+        !placement.deletedAt &&
+        (placement.status == null || placement.status === 'active') &&
+        (placement.role == null || placement.role === 'primary'),
+    )
+    .sort((a, b) => (a.priority ?? 100) - (b.priority ?? 100));
+  return active[0] ?? null;
+}
+
+function cleanBaseUrl(value: string | null | undefined): string | null {
   const trimmed = value?.trim().replace(/\/+$/, '');
   return trimmed || null;
 }

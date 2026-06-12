@@ -11,12 +11,14 @@ import {
   BillingRefundStatus,
   BillingOrderStatus,
   BillingOrderType,
+  BillingMembershipPlanStatus,
   BillingPriceInterval,
   BillingPromotionDurationType,
   BillingPromotionRedemptionStatus,
   BillingPromotionStatus,
   BillingProductType,
   BillingSubjectType,
+  BillingSubscriptionCycleStatus,
   BillingSubscriptionStatus,
   EntitlementGrantStatus,
   PaymentIntentKind,
@@ -35,6 +37,7 @@ import {
   WorkspaceBillingMode,
   WorkspaceMemberRole,
   type BillingOrder,
+  type BillingMembershipPlan,
   type BillingPaymentIntent,
   type BillingPaymentProviderEvent,
   type BillingPrice,
@@ -45,6 +48,7 @@ import {
   type BillingPromotion,
   type BillingPromotionProviderBinding,
   type BillingRefund,
+  type BillingSubscription,
   type WalletAccount,
 } from '@prisma/client';
 import {
@@ -64,6 +68,7 @@ import type {
   CreateComputePointTopupInput,
   CreateCustomRechargeInput,
   CreateAdminBillingPriceInput,
+  CreateAdminMembershipPlanInput,
   CreateAdminBillingPromotionInput,
   CreateAdminBillingRefundInput,
   CreateAdminUserWalletCreditInput,
@@ -71,11 +76,14 @@ import type {
   ListAdminBillingOrdersQuery,
   ListAdminBillingProviderEventsQuery,
   ListAdminBillingPricesQuery,
+  ListAdminMembershipPlansQuery,
   ListAdminBillingPromotionsQuery,
   ListAdminBillingRefundsQuery,
+  ListMembershipPlansQuery,
   ListBillingPricesQuery,
   ListWalletLedgerQuery,
   QuoteAdminBillingRefundInput,
+  UpdateAdminMembershipPlanInput,
   UpdateAdminBillingPriceInput,
   UpdateAdminBillingPromotionInput,
   UpsertAdminBillingProviderBindingInput,
@@ -228,6 +236,17 @@ type AdminWalletLedgerEntryWithRelations = Prisma.WalletLedgerEntryGetPayload<{
     };
   };
 }>;
+type MembershipPlanPriceRow = BillingPrice & {
+  item: BillingCatalogItem;
+  providerBindings: BillingProviderPriceBinding[];
+};
+type AdminMembershipPlanPriceRow = MembershipPlanPriceRow & {
+  _count: { orders: number; subscriptions: number };
+};
+type SubscriptionRenewalMatch = {
+  orderId: string;
+  paymentIntentId: string;
+};
 
 @Injectable()
 export class BillingService {
@@ -471,6 +490,232 @@ export class BillingService {
       WorkspaceMemberRole.billing,
     );
     return { ownerType: WalletOwnerType.workspace, ownerId: workspace.id };
+  }
+
+  async listMembershipPlans(query: ListMembershipPlansQuery) {
+    const provider =
+      (query.provider as PaymentProvider | undefined) ??
+      this.providerRegistry.defaultProviderForRuntime();
+    const requireProviderBinding = shouldRequireProviderBoundCatalog();
+    const providerBindingWhere: Prisma.BillingProviderPriceBindingWhereInput = {
+      provider,
+      status: BillingProviderBindingStatus.active,
+      archivedAt: null,
+    };
+    const plans = await this.prisma.billingMembershipPlan.findMany({
+      where: {
+        productType: query.productType as BillingProductType | undefined,
+        subjectType: query.subjectType as BillingSubjectType | undefined,
+        status: BillingMembershipPlanStatus.active,
+        archivedAt: null,
+      },
+      orderBy: [{ subjectType: 'asc' }, { rank: 'asc' }, { createdAt: 'asc' }],
+    });
+    const planKeys = plans.map((plan) => plan.planKey);
+    const prices =
+      planKeys.length === 0
+        ? []
+        : await this.prisma.billingPrice.findMany({
+            where: {
+              grantsPlanKey: { in: planKeys },
+              currency: query.currency,
+              isActive: true,
+              archivedAt: null,
+              item: {
+                isActive: true,
+                archivedAt: null,
+                productType: query.productType as
+                  | BillingProductType
+                  | undefined,
+              },
+              ...(requireProviderBinding
+                ? { providerBindings: { some: providerBindingWhere } }
+                : {}),
+            },
+            include: {
+              item: true,
+              providerBindings: {
+                where: requireProviderBinding
+                  ? providerBindingWhere
+                  : { archivedAt: null },
+                orderBy: { createdAt: 'asc' },
+              },
+            },
+            orderBy: [
+              { interval: 'asc' },
+              { amountMinor: 'asc' },
+              { createdAt: 'asc' },
+            ],
+          });
+
+    const pricesByPlan = groupPricesByPlanKey(prices);
+    return {
+      provider,
+      plans: plans.map((plan) =>
+        this.membershipPlanDto(plan, pricesByPlan.get(plan.planKey) ?? []),
+      ),
+    };
+  }
+
+  async listAdminMembershipPlans(query: ListAdminMembershipPlansQuery) {
+    const plans = await this.prisma.billingMembershipPlan.findMany({
+      where: {
+        productType: query.productType as BillingProductType | undefined,
+        subjectType: query.subjectType as BillingSubjectType | undefined,
+        status: query.status as BillingMembershipPlanStatus | undefined,
+        archivedAt: query.includeArchived ? undefined : null,
+      },
+      orderBy: [{ subjectType: 'asc' }, { rank: 'asc' }, { createdAt: 'asc' }],
+      take: 200,
+    });
+    const planKeys = plans.map((plan) => plan.planKey);
+    const prices =
+      planKeys.length === 0
+        ? []
+        : await this.prisma.billingPrice.findMany({
+            where: { grantsPlanKey: { in: planKeys } },
+            include: {
+              item: true,
+              providerBindings: {
+                where: query.includeArchived ? undefined : { archivedAt: null },
+                orderBy: [{ provider: 'asc' }, { createdAt: 'desc' }],
+              },
+              _count: { select: { orders: true, subscriptions: true } },
+            },
+            orderBy: [
+              { currency: 'asc' },
+              { interval: 'asc' },
+              { amountMinor: 'asc' },
+            ],
+          });
+    const pricesByPlan = groupPricesByPlanKey(prices);
+    return {
+      items: plans.map((plan) =>
+        this.adminMembershipPlanDto(
+          plan,
+          pricesByPlan.get(plan.planKey) as
+            | AdminMembershipPlanPriceRow[]
+            | undefined,
+        ),
+      ),
+    };
+  }
+
+  async createAdminMembershipPlan(
+    adminId: string,
+    input: CreateAdminMembershipPlanInput,
+  ) {
+    const plan = await this.prisma.billingMembershipPlan.create({
+      data: {
+        planKey: input.planKey,
+        productType: input.productType as BillingProductType,
+        subjectType: input.subjectType as BillingSubjectType,
+        status: input.status as BillingMembershipPlanStatus,
+        rank: input.rank,
+        name: input.name,
+        description: input.description ?? null,
+        includedComputeCredits: input.includedComputeCredits,
+        includedSeats: input.includedSeats,
+        maxSeats: input.maxSeats ?? null,
+        seatOverageAllowed: input.seatOverageAllowed,
+        topupDiscountBps: input.topupDiscountBps,
+        billingIntervalDefault:
+          (input.billingIntervalDefault as BillingPriceInterval | undefined) ??
+          null,
+        featureFlags: (input.featureFlags ?? {}) as Prisma.InputJsonValue,
+        limits: (input.limits ?? {}) as Prisma.InputJsonValue,
+        marketing: (input.marketing ?? {}) as Prisma.InputJsonValue,
+        metadata: (input.metadata ?? {}) as Prisma.InputJsonValue,
+        createdById: adminId,
+      },
+    });
+    return this.adminMembershipPlanDto(plan, []);
+  }
+
+  async updateAdminMembershipPlan(
+    planId: string,
+    adminId: string,
+    input: UpdateAdminMembershipPlanInput,
+  ) {
+    const existing = await this.prisma.billingMembershipPlan.findUnique({
+      where: { id: planId },
+    });
+    if (!existing) {
+      throw new NotFoundException({
+        code: 'BILLING_MEMBERSHIP_PLAN_NOT_FOUND',
+        msg: 'Membership plan not found.',
+      });
+    }
+    const nextProductType =
+      (input.productType as BillingProductType | undefined) ??
+      existing.productType;
+    const nextSubjectType =
+      (input.subjectType as BillingSubjectType | undefined) ??
+      existing.subjectType;
+    assertMembershipPlanShape(nextProductType, nextSubjectType);
+    const nextIncludedSeats = input.includedSeats ?? existing.includedSeats;
+    const nextMaxSeats =
+      input.maxSeats === undefined ? existing.maxSeats : input.maxSeats;
+    if (nextMaxSeats != null && nextMaxSeats < nextIncludedSeats) {
+      throw new BadRequestException({
+        code: 'BILLING_MEMBERSHIP_PLAN_SEATS_INVALID',
+        msg: 'Maximum seats cannot be below included seats.',
+      });
+    }
+    const archivedAt =
+      input.status === undefined
+        ? undefined
+        : input.status === 'archived'
+          ? new Date()
+          : null;
+
+    const plan = await this.prisma.billingMembershipPlan.update({
+      where: { id: planId },
+      data: {
+        productType: input.productType as BillingProductType | undefined,
+        subjectType: input.subjectType as BillingSubjectType | undefined,
+        status: input.status as BillingMembershipPlanStatus | undefined,
+        rank: input.rank,
+        name: input.name,
+        description:
+          input.description === undefined ? undefined : input.description,
+        includedComputeCredits: input.includedComputeCredits,
+        includedSeats: input.includedSeats,
+        maxSeats: input.maxSeats === undefined ? undefined : input.maxSeats,
+        seatOverageAllowed: input.seatOverageAllowed,
+        topupDiscountBps: input.topupDiscountBps,
+        billingIntervalDefault:
+          input.billingIntervalDefault === undefined
+            ? undefined
+            : (input.billingIntervalDefault as BillingPriceInterval),
+        featureFlags: input.featureFlags
+          ? (input.featureFlags as Prisma.InputJsonValue)
+          : undefined,
+        limits: input.limits
+          ? (input.limits as Prisma.InputJsonValue)
+          : undefined,
+        marketing: input.marketing
+          ? (input.marketing as Prisma.InputJsonValue)
+          : undefined,
+        metadata: input.metadata
+          ? (input.metadata as Prisma.InputJsonValue)
+          : undefined,
+        archivedAt,
+        updatedById: adminId,
+      },
+    });
+    const prices = await this.prisma.billingPrice.findMany({
+      where: { grantsPlanKey: plan.planKey },
+      include: {
+        item: true,
+        providerBindings: {
+          where: { archivedAt: null },
+          orderBy: [{ provider: 'asc' }, { createdAt: 'desc' }],
+        },
+        _count: { select: { orders: true, subscriptions: true } },
+      },
+    });
+    return this.adminMembershipPlanDto(plan, prices);
   }
 
   async getAdminOverview() {
@@ -988,6 +1233,12 @@ export class BillingService {
     const priceMetadata = normalizeAdminPriceMetadata(input);
     const itemCode = input.itemCode ?? buildBillingItemCode(input);
     return this.prisma.$transaction(async (tx) => {
+      if (
+        input.productType === 'membership_plan' ||
+        input.productType === 'team_membership_plan'
+      ) {
+        await this.requireMembershipPlanForPriceTx(tx, input);
+      }
       const item = await tx.billingCatalogItem.upsert({
         where: { code: itemCode },
         create: {
@@ -1767,6 +2018,30 @@ export class BillingService {
       },
     });
     if (existingOrder) {
+      // A reused key must carry the SAME billing intent — otherwise the caller
+      // would silently get back an order for a different price/promotion/
+      // subject. Mirrors the compute top-up guard.
+      const existingMetadata = isRecord(existingOrder.metadata)
+        ? existingOrder.metadata
+        : {};
+      const existingPromotionCode = stringAt(existingMetadata, [
+        'promotion',
+        'code',
+      ]);
+      const requestedPromotionCode = input.promotionCode
+        ? input.promotionCode.trim().toUpperCase()
+        : null;
+      if (
+        existingOrder.priceId !== input.priceId ||
+        existingOrder.quantity !== input.quantity ||
+        existingOrder.workspaceId !== (input.workspaceId ?? null) ||
+        existingPromotionCode !== requestedPromotionCode
+      ) {
+        throw new ConflictException({
+          code: 'BILLING_IDEMPOTENCY_KEY_REUSED',
+          msg: 'Idempotency key was already used for a different billing intent.',
+        });
+      }
       return {
         order: this.orderDto(existingOrder),
         paymentIntent: existingOrder.paymentIntents[0]
@@ -2663,13 +2938,22 @@ export class BillingService {
         const eventType =
           providerEvent.eventType || eventTypeFromPayload(payload);
         const refundMatch = isRefundEvent(eventType)
-          ? await this.matchRefund(tx, payload)
+          ? await this.matchRefund(tx, providerEvent.provider, payload)
           : null;
         const match = refundMatch
           ? null
-          : await this.matchPaymentIntent(tx, payload);
+          : await this.matchPaymentIntent(tx, providerEvent.provider, payload);
+        const renewalMatch =
+          !match && !refundMatch
+            ? await this.tryApplySubscriptionRenewalEvent(
+                tx,
+                providerEvent,
+                eventType,
+                payload,
+              )
+            : null;
 
-        if (!match && !refundMatch) {
+        if (!match && !refundMatch && !renewalMatch) {
           return tx.billingPaymentProviderEvent.update({
             where: { id: providerEvent.id },
             data: {
@@ -2686,8 +2970,16 @@ export class BillingService {
         await tx.billingPaymentProviderEvent.update({
           where: { id: providerEvent.id },
           data: {
-            orderId: refundMatch?.orderId ?? match?.orderId ?? null,
-            paymentIntentId: refundMatch?.paymentIntentId ?? match?.id ?? null,
+            orderId:
+              refundMatch?.orderId ??
+              match?.orderId ??
+              renewalMatch?.orderId ??
+              null,
+            paymentIntentId:
+              refundMatch?.paymentIntentId ??
+              match?.id ??
+              renewalMatch?.paymentIntentId ??
+              null,
             refundId: refundMatch?.id ?? null,
             status: PaymentProviderEventStatus.received,
             error: null,
@@ -2834,6 +3126,190 @@ export class BillingService {
       });
       await this.voidReservedPromotionsForOrderTx(tx, intent.orderId);
     }
+  }
+
+  private async tryApplySubscriptionRenewalEvent(
+    tx: Prisma.TransactionClient,
+    providerEvent: BillingPaymentProviderEvent,
+    eventType: string,
+    payload: Record<string, unknown>,
+  ): Promise<SubscriptionRenewalMatch | null> {
+    const providerStatus = stringAt(payload, ['data', 'status']);
+    if (!isPaymentSucceededEvent(eventType, providerStatus)) return null;
+
+    const providerSubscriptionId =
+      stringAt(payload, ['data', 'subscription_id']) ??
+      stringAt(payload, ['data', 'subscription', 'id']);
+    if (!providerSubscriptionId) return null;
+
+    const subscription = await tx.billingSubscription.findFirst({
+      where: {
+        provider: providerEvent.provider,
+        providerSubscriptionId,
+      },
+      include: {
+        price: {
+          include: { item: true },
+        },
+      },
+    });
+    if (!subscription) return null;
+    if (!subscription.price.grantsPlanKey) return null;
+    if (subscription.price.interval === BillingPriceInterval.one_time) {
+      return null;
+    }
+
+    const providerInvoiceId =
+      providerInvoiceIdFromPayload(payload, eventType) ??
+      providerEvent.providerEventId;
+    const providerPaymentIntentId = providerPaymentIntentIdFromPayload(
+      payload,
+      eventType,
+    );
+    const paidAmount = providerPaidAmountMinorFromPayload(payload);
+    if (paidAmount !== null && paidAmount > subscription.price.amountMinor) {
+      throw new ConflictException({
+        code: 'BILLING_PROVIDER_AMOUNT_EXCEEDS_SUBSCRIPTION_PRICE',
+        msg: 'Provider renewal amount exceeds the subscription price.',
+      });
+    }
+    const providerCurrency = providerCurrencyFromPayload(payload);
+    if (providerCurrency && providerCurrency !== subscription.price.currency) {
+      throw new ConflictException({
+        code: 'BILLING_PROVIDER_CURRENCY_MISMATCH',
+        msg: 'Provider renewal currency does not match the subscription price currency.',
+      });
+    }
+
+    const amountMinor = paidAmount ?? subscription.price.amountMinor;
+    const idempotencyKey = subscriptionRenewalIdempotencyKey({
+      provider: providerEvent.provider,
+      providerSubscriptionId,
+      providerInvoiceId,
+    });
+    const now = new Date();
+    let order = await tx.billingOrder.findUnique({
+      where: {
+        userId_idempotencyKey: {
+          userId: subscription.userId,
+          idempotencyKey,
+        },
+      },
+      include: {
+        price: true,
+        paymentIntents: {
+          orderBy: { createdAt: 'desc' },
+          take: 1,
+        },
+      },
+    });
+
+    if (!order) {
+      const subtotalAmountMinor = subscription.price.amountMinor;
+      order = await tx.billingOrder.create({
+        data: {
+          orderNo: createOrderNo(),
+          idempotencyKey,
+          userId: subscription.userId,
+          workspaceId: subscription.workspaceId,
+          subjectType: subscription.subjectType,
+          subjectId: subscription.subjectId,
+          orderType: BillingOrderType.subscription_checkout,
+          status: BillingOrderStatus.pending_payment,
+          itemId: subscription.price.itemId,
+          priceId: subscription.priceId,
+          providerBindingId: null,
+          provider: providerEvent.provider,
+          currency: subscription.price.currency,
+          subtotalAmountMinor,
+          discountAmountMinor: subtotalAmountMinor - amountMinor,
+          amountMinor,
+          quantity: 1,
+          grantsWalletAmount: subscription.price.grantsWalletAmount,
+          grantsWalletCurrency: subscription.price.grantsWalletCurrency,
+          grantsWalletBalanceKind: subscription.price.grantsWalletBalanceKind,
+          description: subscription.price.item.name,
+          metadata: {
+            subscriptionRenewal: {
+              providerEventId: providerEvent.id,
+              providerNativeEventId: providerEvent.providerEventId,
+              providerSubscriptionId,
+              providerInvoiceId,
+              previousSubscriptionId: subscription.id,
+            },
+          },
+        },
+        include: {
+          price: true,
+          paymentIntents: {
+            orderBy: { createdAt: 'desc' },
+            take: 1,
+          },
+        },
+      });
+    }
+
+    let intent = order.paymentIntents[0] ?? null;
+    if (intent) {
+      intent = await tx.billingPaymentIntent.update({
+        where: { id: intent.id },
+        data: {
+          status: PaymentIntentStatus.succeeded,
+          providerStatus: providerStatus ?? eventType,
+          providerPayload: payload as Prisma.InputJsonValue,
+          providerPaymentIntentId:
+            providerPaymentIntentId ?? intent.providerPaymentIntentId,
+          providerCustomerId:
+            stringAt(payload, ['data', 'billing_customer_id']) ??
+            stringAt(payload, ['data', 'customer_id']) ??
+            intent.providerCustomerId,
+          providerSubscriptionId,
+          providerInvoiceId,
+          amountMinor: order.amountMinor,
+          completedAt: intent.completedAt ?? now,
+        },
+      });
+    } else {
+      intent = await tx.billingPaymentIntent.create({
+        data: {
+          orderId: order.id,
+          provider: providerEvent.provider,
+          kind: PaymentIntentKind.external_redirect,
+          status: PaymentIntentStatus.succeeded,
+          requestId: randomUUID(),
+          providerPaymentIntentId,
+          providerCustomerId:
+            stringAt(payload, ['data', 'billing_customer_id']) ??
+            stringAt(payload, ['data', 'customer_id']) ??
+            subscription.providerCustomerId,
+          providerSubscriptionId,
+          providerInvoiceId,
+          currency: order.currency,
+          amountMinor: order.amountMinor,
+          providerStatus: providerStatus ?? eventType,
+          providerPayload: payload as Prisma.InputJsonValue,
+          completedAt: now,
+        },
+      });
+    }
+
+    await this.reconcileProviderPaidAmountTx(tx, order, intent, payload);
+    await this.upsertSubscriptionFromProviderEvent(
+      tx,
+      order,
+      providerSubscriptionId,
+      payload,
+      now,
+    );
+    await this.markOrderPaidAndFulfill(
+      tx,
+      order,
+      now,
+      intent,
+      providerEvent.id,
+      payload,
+    );
+    return { orderId: order.id, paymentIntentId: intent.id };
   }
 
   private async applyProviderRefundEvent(
@@ -4207,7 +4683,20 @@ export class BillingService {
       );
     }
     let entitlementGrantId: string | null = null;
+    let subscription: BillingSubscription | null = null;
+    let membershipPlan: BillingMembershipPlan | null = null;
+    let membershipPeriod: { startsAt: Date; endsAt: Date | null } | null = null;
     if (current.price.grantsPlanKey) {
+      membershipPlan = await this.activeMembershipPlanForKeyTx(
+        tx,
+        current.price.grantsPlanKey,
+      );
+      membershipPeriod = await this.membershipPeriodForOrderTx(
+        tx,
+        current,
+        now,
+        paymentIntent,
+      );
       const grant = await tx.entitlementGrant.upsert({
         where: {
           sourceType_sourceId: {
@@ -4222,20 +4711,51 @@ export class BillingService {
           status: EntitlementGrantStatus.active,
           sourceType: 'billing_order',
           sourceId: current.id,
-          startsAt: now,
-          endsAt: grantEndsAt(now, current.price.grantDurationDays),
+          startsAt: membershipPeriod.startsAt,
+          endsAt: membershipPeriod.endsAt,
           metadata: {
             orderNo: current.orderNo,
             priceId: current.priceId,
+            planId: membershipPlan.id,
+            planKey: membershipPlan.planKey,
           },
         },
         update: {
           status: EntitlementGrantStatus.active,
-          startsAt: now,
-          endsAt: grantEndsAt(now, current.price.grantDurationDays),
+          startsAt: membershipPeriod.startsAt,
+          endsAt: membershipPeriod.endsAt,
+          metadata: {
+            orderNo: current.orderNo,
+            priceId: current.priceId,
+            planId: membershipPlan.id,
+            planKey: membershipPlan.planKey,
+          },
         },
       });
       entitlementGrantId = grant.id;
+      walletTransactionId =
+        (await this.creditMembershipIncludedCreditsForOrderTx(
+          tx,
+          current,
+          membershipPlan,
+          membershipPeriod,
+        )) ?? walletTransactionId;
+      subscription = await this.findSubscriptionForOrderTx(
+        tx,
+        current,
+        paymentIntent,
+      );
+      if (subscription) {
+        await this.upsertSubscriptionCycleForOrderTx(tx, {
+          subscription,
+          order: current,
+          plan: membershipPlan,
+          entitlementGrantId,
+          walletTransactionId,
+          period: membershipPeriod,
+          now,
+        });
+      }
     }
 
     if (current.amountMinor > 0n) {
@@ -4274,18 +4794,33 @@ export class BillingService {
     payload: Record<string, unknown>,
     now: Date,
   ): Promise<void> {
+    const plan = order.price.grantsPlanKey
+      ? await this.activeMembershipPlanForKeyTx(tx, order.price.grantsPlanKey)
+      : null;
     const currentPeriodStart =
       dateAt(payload, ['data', 'current_period_start']) ??
       dateAt(payload, ['data', 'period_start']);
     const currentPeriodEnd =
       dateAt(payload, ['data', 'current_period_end']) ??
       dateAt(payload, ['data', 'period_end']);
+    const periodStart = currentPeriodStart ?? order.paidAt ?? now;
+    const periodEnd =
+      currentPeriodEnd ??
+      periodEndForPrice(
+        periodStart,
+        order.price.interval,
+        order.price.grantDurationDays,
+      );
     const existing = await tx.billingSubscription.findFirst({
       where: {
         provider: order.provider,
         providerSubscriptionId,
       },
     });
+    const existingMetadata =
+      existing?.metadata && isRecord(existing.metadata)
+        ? existing.metadata
+        : {};
     const data = {
       userId: order.userId,
       workspaceId: order.workspaceId,
@@ -4293,24 +4828,303 @@ export class BillingService {
       subjectId: order.subjectId,
       provider: order.provider,
       providerSubscriptionId,
+      providerCustomerId:
+        stringAt(payload, ['data', 'billing_customer_id']) ??
+        stringAt(payload, ['data', 'customer_id']) ??
+        null,
       status: BillingSubscriptionStatus.active,
       priceId: order.priceId,
       planKey: order.price.grantsPlanKey,
-      currentPeriodStart: currentPeriodStart ?? now,
-      currentPeriodEnd,
+      latestOrderId: order.id,
+      currentPeriodStart: periodStart,
+      currentPeriodEnd: periodEnd,
+      startedAt: existing?.startedAt ?? periodStart,
+      endedAt: null,
+      planPolicySnapshot: plan
+        ? (membershipPlanSnapshot(plan) as Prisma.InputJsonValue)
+        : {},
       metadata: {
-        initialOrderId: order.id,
-        initialOrderNo: order.orderNo,
+        ...existingMetadata,
+        initialOrderId:
+          stringAt(existingMetadata, ['initialOrderId']) ?? order.id,
+        initialOrderNo:
+          stringAt(existingMetadata, ['initialOrderNo']) ?? order.orderNo,
+        latestOrderId: order.id,
+        latestOrderNo: order.orderNo,
       },
     };
     if (existing) {
       await tx.billingSubscription.update({
         where: { id: existing.id },
-        data,
+        data: { ...data, version: { increment: 1 } },
       });
       return;
     }
     await tx.billingSubscription.create({ data });
+  }
+
+  private async activeMembershipPlanForKeyTx(
+    tx: Prisma.TransactionClient,
+    planKey: string,
+  ): Promise<BillingMembershipPlan> {
+    const plan = await tx.billingMembershipPlan.findUnique({
+      where: { planKey },
+    });
+    if (!plan || plan.archivedAt) {
+      throw new ConflictException({
+        code: 'BILLING_MEMBERSHIP_PLAN_NOT_CONFIGURED',
+        msg: `Membership plan "${planKey}" is not configured.`,
+      });
+    }
+    if (plan.status !== BillingMembershipPlanStatus.active) {
+      throw new ConflictException({
+        code: 'BILLING_MEMBERSHIP_PLAN_NOT_ACTIVE',
+        msg: `Membership plan "${planKey}" is not active.`,
+      });
+    }
+    return plan;
+  }
+
+  private async membershipPeriodForOrderTx(
+    tx: Prisma.TransactionClient,
+    order: OrderWithPrice,
+    now: Date,
+    paymentIntent?: BillingPaymentIntent | null,
+  ): Promise<{ startsAt: Date; endsAt: Date | null }> {
+    const subscription = await this.findSubscriptionForOrderTx(
+      tx,
+      order,
+      paymentIntent,
+    );
+    if (subscription) {
+      const startsAt = subscription.currentPeriodStart ?? now;
+      return {
+        startsAt,
+        endsAt:
+          subscription.currentPeriodEnd ??
+          periodEndForPrice(
+            startsAt,
+            order.price.interval,
+            order.price.grantDurationDays,
+          ),
+      };
+    }
+    return {
+      startsAt: now,
+      endsAt: periodEndForPrice(
+        now,
+        order.price.interval,
+        order.price.grantDurationDays,
+      ),
+    };
+  }
+
+  private async findSubscriptionForOrderTx(
+    tx: Prisma.TransactionClient,
+    order: OrderWithPrice,
+    paymentIntent?: BillingPaymentIntent | null,
+  ): Promise<BillingSubscription | null> {
+    const providerSubscriptionId = paymentIntent?.providerSubscriptionId;
+    if (providerSubscriptionId) {
+      const subscription = await tx.billingSubscription.findFirst({
+        where: { provider: order.provider, providerSubscriptionId },
+      });
+      if (subscription) return subscription;
+    }
+    return tx.billingSubscription.findFirst({
+      where: {
+        latestOrderId: order.id,
+        subjectType: order.subjectType,
+        subjectId: order.subjectId,
+      },
+    });
+  }
+
+  private async creditMembershipIncludedCreditsForOrderTx(
+    tx: Prisma.TransactionClient,
+    order: OrderWithPrice,
+    plan: BillingMembershipPlan,
+    period: { startsAt: Date; endsAt: Date | null },
+  ): Promise<string | null> {
+    if (plan.includedComputeCredits <= 0n) return null;
+    const ownerType =
+      order.subjectType === BillingSubjectType.workspace
+        ? WalletOwnerType.workspace
+        : WalletOwnerType.user;
+    const account = await tx.walletAccount.upsert({
+      where: {
+        ownerType_ownerId_currency_balanceKind: {
+          ownerType,
+          ownerId: order.subjectId,
+          currency: WalletCurrencyType.compute_point,
+          balanceKind: WalletBalanceKind.consumable,
+        },
+      },
+      create: {
+        ownerType,
+        ownerId: order.subjectId,
+        currency: WalletCurrencyType.compute_point,
+        balanceKind: WalletBalanceKind.consumable,
+        status: WalletAccountStatus.active,
+      },
+      update: {},
+    });
+    const idempotencyKey = `billing_order:${order.id}:membership_included:compute_point`;
+    const existing = await tx.walletTransaction.findUnique({
+      where: { idempotencyKey },
+    });
+    if (existing) return existing.id;
+
+    await tx.$executeRaw`
+      SELECT pg_advisory_xact_lock(hashtext(${`wallet:account:${account.id}`})::bigint)
+    `;
+    const lockedAccount = await tx.walletAccount.findUniqueOrThrow({
+      where: { id: account.id },
+    });
+    if (lockedAccount.status !== WalletAccountStatus.active) {
+      throw new ConflictException({
+        code: 'WALLET_ACCOUNT_NOT_ACTIVE',
+        msg: 'Wallet account is not active.',
+      });
+    }
+
+    const amount = plan.includedComputeCredits;
+    const nextAvailable = lockedAccount.availableBalance + amount;
+    const transaction = await tx.walletTransaction.create({
+      data: {
+        status: WalletTransactionStatus.posted,
+        sourceType: 'billing_order',
+        sourceId: order.id,
+        idempotencyKey,
+        actorUserId: order.userId,
+        workspaceId: order.workspaceId,
+        description: `Membership included compute credits from order ${order.orderNo}`,
+        metadata: {
+          orderNo: order.orderNo,
+          priceId: order.priceId,
+          planId: plan.id,
+          planKey: plan.planKey,
+          grantType: WalletCreditGrantType.membership_included,
+          periodStart: period.startsAt.toISOString(),
+          periodEnd: period.endsAt?.toISOString() ?? null,
+        },
+      },
+    });
+    const entry = await tx.walletLedgerEntry.create({
+      data: {
+        transactionId: transaction.id,
+        accountId: lockedAccount.id,
+        entryType: WalletLedgerEntryType.credit,
+        currency: lockedAccount.currency,
+        balanceKind: lockedAccount.balanceKind,
+        amount,
+        availableDelta: amount,
+        heldDelta: 0n,
+        availableBalanceAfter: nextAvailable,
+        heldBalanceAfter: lockedAccount.heldBalance,
+        reason: 'membership_compute_point_included',
+      },
+    });
+    const creditGrant = await tx.walletCreditGrant.create({
+      data: {
+        accountId: lockedAccount.id,
+        transactionId: transaction.id,
+        grantType: WalletCreditGrantType.membership_included,
+        status: WalletCreditGrantStatus.active,
+        totalAmount: amount,
+        availableAmount: amount,
+        heldAmount: 0n,
+        consumedAmount: 0n,
+        expiredAmount: 0n,
+        reversedAmount: 0n,
+        priority: defaultGrantPriority(
+          WalletCreditGrantType.membership_included,
+          period.endsAt,
+        ),
+        validFrom: period.startsAt,
+        expiresAt: period.endsAt,
+        sourceType: 'billing_order',
+        sourceId: order.id,
+        metadata: {
+          orderNo: order.orderNo,
+          planId: plan.id,
+          planKey: plan.planKey,
+          periodStart: period.startsAt.toISOString(),
+          periodEnd: period.endsAt?.toISOString() ?? null,
+        },
+      },
+    });
+    await tx.walletCreditAllocation.create({
+      data: {
+        grantId: creditGrant.id,
+        transactionId: transaction.id,
+        ledgerEntryId: entry.id,
+        amount,
+        availableDelta: amount,
+        heldDelta: 0n,
+        consumedDelta: 0n,
+        expiredDelta: 0n,
+        reversedDelta: 0n,
+      },
+    });
+    await tx.walletAccount.update({
+      where: { id: lockedAccount.id },
+      data: {
+        availableBalance: nextAvailable,
+        heldBalance: lockedAccount.heldBalance,
+        version: { increment: 1 },
+      },
+    });
+    return transaction.id;
+  }
+
+  private async upsertSubscriptionCycleForOrderTx(
+    tx: Prisma.TransactionClient,
+    input: {
+      subscription: BillingSubscription;
+      order: OrderWithPrice;
+      plan: BillingMembershipPlan;
+      entitlementGrantId: string | null;
+      walletTransactionId: string | null;
+      period: { startsAt: Date; endsAt: Date | null };
+      now: Date;
+    },
+  ): Promise<void> {
+    await tx.$executeRaw`
+      SELECT pg_advisory_xact_lock(hashtext(${`billing:subscription:${input.subscription.id}`})::bigint)
+    `;
+    const idempotencyKey = `billing_subscription_cycle:${input.subscription.id}:order:${input.order.id}`;
+    const existing = await tx.billingSubscriptionCycle.findUnique({
+      where: { idempotencyKey },
+    });
+    if (existing) return;
+    const last = await tx.billingSubscriptionCycle.findFirst({
+      where: { subscriptionId: input.subscription.id },
+      orderBy: { cycleNo: 'desc' },
+      select: { cycleNo: true },
+    });
+    await tx.billingSubscriptionCycle.create({
+      data: {
+        subscriptionId: input.subscription.id,
+        orderId: input.order.id,
+        entitlementGrantId: input.entitlementGrantId,
+        walletTransactionId: input.walletTransactionId,
+        cycleNo: (last?.cycleNo ?? 0) + 1,
+        status: BillingSubscriptionCycleStatus.fulfilled,
+        periodStart: input.period.startsAt,
+        periodEnd: input.period.endsAt,
+        includedComputeCredits: input.plan.includedComputeCredits,
+        creditGrantExpiresAt: input.period.endsAt,
+        idempotencyKey,
+        metadata: {
+          orderNo: input.order.orderNo,
+          planId: input.plan.id,
+          planKey: input.plan.planKey,
+          planSnapshot: membershipPlanSnapshot(input.plan),
+        },
+        fulfilledAt: input.now,
+      },
+    });
   }
 
   private async reconcileProviderPaidAmountTx(
@@ -4524,6 +5338,7 @@ export class BillingService {
 
   private async matchPaymentIntent(
     tx: Prisma.TransactionClient,
+    provider: PaymentProvider,
     payload: Record<string, unknown>,
   ): Promise<BillingPaymentIntent | null> {
     const providerCheckoutId =
@@ -4558,7 +5373,7 @@ export class BillingService {
 
     return tx.billingPaymentIntent.findFirst({
       where: {
-        provider: PaymentProvider.airwallex,
+        provider,
         OR: or,
       },
       orderBy: { createdAt: 'desc' },
@@ -4567,6 +5382,7 @@ export class BillingService {
 
   private async matchRefund(
     tx: Prisma.TransactionClient,
+    provider: PaymentProvider,
     payload: Record<string, unknown>,
   ): Promise<BillingRefund | null> {
     const eventType = eventTypeFromPayload(payload);
@@ -4591,7 +5407,7 @@ export class BillingService {
 
     return tx.billingRefund.findFirst({
       where: {
-        provider: PaymentProvider.airwallex,
+        provider,
         OR: or,
       },
       orderBy: { createdAt: 'desc' },
@@ -4717,6 +5533,72 @@ export class BillingService {
     return this.adminProviderEventDto(event);
   }
 
+  private membershipPlanDto(
+    plan: BillingMembershipPlan,
+    prices: MembershipPlanPriceRow[],
+  ) {
+    return {
+      id: plan.id,
+      planKey: plan.planKey,
+      productType: plan.productType,
+      subjectType: plan.subjectType,
+      status: plan.status,
+      rank: plan.rank,
+      name: plan.name,
+      description: plan.description,
+      includedComputeCredits: plan.includedComputeCredits.toString(),
+      includedSeats: plan.includedSeats,
+      maxSeats: plan.maxSeats,
+      seatOverageAllowed: plan.seatOverageAllowed,
+      topupDiscountBps: plan.topupDiscountBps,
+      billingIntervalDefault: plan.billingIntervalDefault,
+      featureFlags: plan.featureFlags,
+      limits: plan.limits,
+      marketing: plan.marketing,
+      metadata: plan.metadata,
+      prices: prices.map((price) =>
+        this.priceDto(
+          price,
+          price.providerBindings[0]?.provider ??
+            this.providerRegistry.defaultProviderForRuntime(),
+        ),
+      ),
+      updatedAt: plan.updatedAt.toISOString(),
+    };
+  }
+
+  private adminMembershipPlanDto(
+    plan: BillingMembershipPlan,
+    prices: AdminMembershipPlanPriceRow[] = [],
+  ) {
+    return {
+      id: plan.id,
+      planKey: plan.planKey,
+      productType: plan.productType,
+      subjectType: plan.subjectType,
+      status: plan.status,
+      rank: plan.rank,
+      name: plan.name,
+      description: plan.description,
+      includedComputeCredits: plan.includedComputeCredits.toString(),
+      includedSeats: plan.includedSeats,
+      maxSeats: plan.maxSeats,
+      seatOverageAllowed: plan.seatOverageAllowed,
+      topupDiscountBps: plan.topupDiscountBps,
+      billingIntervalDefault: plan.billingIntervalDefault,
+      featureFlags: plan.featureFlags,
+      limits: plan.limits,
+      marketing: plan.marketing,
+      metadata: plan.metadata,
+      createdById: plan.createdById,
+      updatedById: plan.updatedById,
+      archivedAt: plan.archivedAt?.toISOString() ?? null,
+      prices: prices.map((price) => this.adminPriceDto(price)),
+      createdAt: plan.createdAt.toISOString(),
+      updatedAt: plan.updatedAt.toISOString(),
+    };
+  }
+
   private adminPriceDto(
     price: BillingPrice & {
       item: BillingCatalogItem;
@@ -4759,6 +5641,40 @@ export class BillingService {
       },
       updatedAt: price.updatedAt.toISOString(),
     };
+  }
+
+  private async requireMembershipPlanForPriceTx(
+    tx: Prisma.TransactionClient,
+    input: CreateAdminBillingPriceInput,
+  ): Promise<BillingMembershipPlan> {
+    if (!input.grantsPlanKey) {
+      throw new BadRequestException({
+        code: 'BILLING_MEMBERSHIP_PRICE_PLAN_REQUIRED',
+        msg: 'Membership prices must reference a membership plan key.',
+      });
+    }
+    const plan = await tx.billingMembershipPlan.findUnique({
+      where: { planKey: input.grantsPlanKey },
+    });
+    if (!plan || plan.archivedAt) {
+      throw new BadRequestException({
+        code: 'BILLING_MEMBERSHIP_PLAN_NOT_FOUND',
+        msg: `Membership plan "${input.grantsPlanKey}" does not exist or is archived.`,
+      });
+    }
+    if (plan.productType !== input.productType) {
+      throw new BadRequestException({
+        code: 'BILLING_MEMBERSHIP_PLAN_PRODUCT_MISMATCH',
+        msg: 'Membership price product type must match the referenced plan.',
+      });
+    }
+    if (plan.subjectType !== input.subjectType) {
+      throw new BadRequestException({
+        code: 'BILLING_MEMBERSHIP_PLAN_SUBJECT_MISMATCH',
+        msg: 'Membership price subject type must match the referenced plan.',
+      });
+    }
+    return plan;
   }
 
   private adminPromotionDto(promotion: PromotionWithBindings) {
@@ -5325,6 +6241,18 @@ function assertComputePointPromotionProviderAllowed(
   }
 }
 
+function shouldRequireProviderBoundCatalog(): boolean {
+  const explicit =
+    process.env.BILLING_REQUIRE_PROVIDER_BOUND_CATALOG?.trim().toLowerCase();
+  if (explicit === 'true' || explicit === '1' || explicit === 'yes') {
+    return true;
+  }
+  if (explicit === 'false' || explicit === '0' || explicit === 'no') {
+    return false;
+  }
+  return process.env.NODE_ENV === 'production';
+}
+
 function normalizeAdminPriceMetadata(
   input: CreateAdminBillingPriceInput,
 ): Record<string, unknown> {
@@ -5409,6 +6337,43 @@ function normalizeAdminPriceMetadata(
   };
 }
 
+function groupPricesByPlanKey<T extends { grantsPlanKey: string | null }>(
+  prices: T[],
+): Map<string, T[]> {
+  const grouped = new Map<string, T[]>();
+  for (const price of prices) {
+    if (!price.grantsPlanKey) continue;
+    const list = grouped.get(price.grantsPlanKey) ?? [];
+    list.push(price);
+    grouped.set(price.grantsPlanKey, list);
+  }
+  return grouped;
+}
+
+function assertMembershipPlanShape(
+  productType: BillingProductType,
+  subjectType: BillingSubjectType,
+): void {
+  if (
+    productType === BillingProductType.membership_plan &&
+    subjectType !== BillingSubjectType.user
+  ) {
+    throw new BadRequestException({
+      code: 'BILLING_MEMBERSHIP_PLAN_SUBJECT_INVALID',
+      msg: 'Individual membership plans must use user subject type.',
+    });
+  }
+  if (
+    productType === BillingProductType.team_membership_plan &&
+    subjectType !== BillingSubjectType.workspace
+  ) {
+    throw new BadRequestException({
+      code: 'BILLING_MEMBERSHIP_PLAN_SUBJECT_INVALID',
+      msg: 'Team membership plans must use workspace subject type.',
+    });
+  }
+}
+
 function assertMetadataMatches(
   metadata: Record<string, unknown>,
   key: string,
@@ -5450,6 +6415,59 @@ function eventTypeFromPayload(payload: Record<string, unknown>) {
     stringAt(payload, ['event_type']) ??
     'unknown'
   );
+}
+
+function providerInvoiceIdFromPayload(
+  payload: Record<string, unknown>,
+  eventType = eventTypeFromPayload(payload),
+): string | null {
+  return (
+    stringAt(payload, ['data', 'invoice_id']) ??
+    stringAt(payload, ['data', 'invoice', 'id']) ??
+    (eventType.startsWith('invoice.')
+      ? stringAt(payload, ['data', 'id'])
+      : null)
+  );
+}
+
+function providerPaymentIntentIdFromPayload(
+  payload: Record<string, unknown>,
+  eventType = eventTypeFromPayload(payload),
+): string | null {
+  return (
+    stringAt(payload, ['data', 'payment_intent_id']) ??
+    stringAt(payload, ['data', 'payment_intent', 'id']) ??
+    (eventType.startsWith('payment_intent.')
+      ? stringAt(payload, ['data', 'id'])
+      : null)
+  );
+}
+
+function providerCurrencyFromPayload(
+  payload: Record<string, unknown>,
+): string | null {
+  const value =
+    stringAt(payload, ['data', 'currency']) ??
+    stringAt(payload, ['data', 'invoice', 'currency']);
+  return value ? value.toUpperCase() : null;
+}
+
+function subscriptionRenewalIdempotencyKey(input: {
+  provider: PaymentProvider;
+  providerSubscriptionId: string;
+  providerInvoiceId: string;
+}): string {
+  const digest = createHash('sha256')
+    .update(
+      [
+        'subscription_renewal',
+        input.provider,
+        input.providerSubscriptionId,
+        input.providerInvoiceId,
+      ].join(':'),
+    )
+    .digest('hex');
+  return `sub_renewal:${digest}`;
 }
 
 function providerPayloadRecord(
@@ -5660,6 +6678,50 @@ function walletCreditGrantStatusAfter(input: {
     return WalletCreditGrantStatus.reversed;
   }
   return WalletCreditGrantStatus.exhausted;
+}
+
+function membershipPlanSnapshot(plan: BillingMembershipPlan) {
+  return {
+    id: plan.id,
+    planKey: plan.planKey,
+    productType: plan.productType,
+    subjectType: plan.subjectType,
+    status: plan.status,
+    rank: plan.rank,
+    name: plan.name,
+    includedComputeCredits: plan.includedComputeCredits.toString(),
+    includedSeats: plan.includedSeats,
+    maxSeats: plan.maxSeats,
+    seatOverageAllowed: plan.seatOverageAllowed,
+    topupDiscountBps: plan.topupDiscountBps,
+    billingIntervalDefault: plan.billingIntervalDefault,
+    featureFlags: plan.featureFlags,
+    limits: plan.limits,
+    marketing: plan.marketing,
+  };
+}
+
+function periodEndForPrice(
+  startsAt: Date,
+  interval: BillingPriceInterval,
+  grantDurationDays?: number | null,
+): Date | null {
+  if (grantDurationDays) {
+    return new Date(
+      startsAt.getTime() + grantDurationDays * 24 * 60 * 60 * 1000,
+    );
+  }
+  if (interval === BillingPriceInterval.month) {
+    const next = new Date(startsAt);
+    next.setUTCMonth(next.getUTCMonth() + 1);
+    return next;
+  }
+  if (interval === BillingPriceInterval.year) {
+    const next = new Date(startsAt);
+    next.setUTCFullYear(next.getUTCFullYear() + 1);
+    return next;
+  }
+  return null;
 }
 
 function grantEndsAt(now: Date, days: number | null): Date | null {

@@ -3,7 +3,12 @@
 import { useEffect, useMemo, useState } from "react";
 import { IconPhoto, IconSearch, IconX } from "@tabler/icons-react";
 import { cn } from "@/lib/utils";
-import { getImage, listProjectAssets, type ProjectAsset } from "@/lib/canvas-store";
+import {
+  getImage,
+  listProjectAssets,
+  onProjectAssetsChanged,
+  type ProjectAsset,
+} from "@/lib/canvas-store";
 import { Icon720 } from "./panorama-viewer";
 
 /** dataTransfer type carrying a dragged library asset to the canvas. */
@@ -15,6 +20,7 @@ const TABS: { id: AssetTab; label: string }[] = [
   { id: "generated", label: "My Creations" },
   { id: "uploaded", label: "Uploaded" },
 ];
+const ASSET_RECONCILE_INTERVAL_MS = 30_000;
 
 /** Resolves an uploaded asset's blob to an object URL; generated assets use their url. */
 function useAssetSrc(asset: ProjectAsset): string | undefined {
@@ -99,16 +105,20 @@ export function AssetLibrary({
   const [tab, setTab] = useState<AssetTab>("generated");
   const [query, setQuery] = useState("");
 
-  // Load on open + poll while open so freshly generated assets show up live.
+  // Load on open, update from project-asset events, then reconcile occasionally.
   useEffect(() => {
     if (!open) return;
     let cancelled = false;
     const load = () =>
       void listProjectAssets(projectId).then((next) => !cancelled && setAssets(next));
     load();
-    const timer = setInterval(load, 2500);
+    const unsubscribe = onProjectAssetsChanged((event) => {
+      if (event.projectId === projectId) load();
+    });
+    const timer = setInterval(load, ASSET_RECONCILE_INTERVAL_MS);
     return () => {
       cancelled = true;
+      unsubscribe();
       clearInterval(timer);
     };
   }, [open, projectId]);

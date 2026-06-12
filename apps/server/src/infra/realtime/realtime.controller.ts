@@ -4,25 +4,26 @@
  * string; it negotiates a short-lived JWT here and uses that JWT to
  * connect to Azure directly.
  */
-import { Controller, Headers, Logger, Post } from '@nestjs/common';
+import { Controller, Headers, Inject, Logger, Post } from '@nestjs/common';
 import { WorkspaceMemberRole } from '@prisma/client';
 import { CurrentUser } from '../../auth';
 import type { AuthUser } from '../../auth';
 import { WorkspacePermissionService } from '../../workspaces';
-import { WebPubSubService } from './web-pubsub.service';
+import { REALTIME_PROVIDER, type RealtimeProvider } from './realtime-provider';
 
 @Controller('realtime')
 export class RealtimeController {
   private readonly logger = new Logger(RealtimeController.name);
 
   constructor(
-    private readonly webPubSub: WebPubSubService,
+    @Inject(REALTIME_PROVIDER)
+    private readonly realtime: RealtimeProvider,
     private readonly workspacePermissions: WorkspacePermissionService,
   ) {}
 
   @Post('negotiate/entity')
   async negotiateEntity(@CurrentUser() user: AuthUser) {
-    const access = await this.webPubSub.issueEntityClientAccess(user.userId);
+    const access = await this.realtime.issueEntityClientAccess(user.userId);
     if (!access) {
       return {
         code: 503,
@@ -48,7 +49,7 @@ export class RealtimeController {
         WorkspaceMemberRole.viewer,
       );
     }
-    const access = await this.webPubSub.issueAssetsClientAccess(
+    const access = await this.realtime.issueAssetsClientAccess(
       user.userId,
       workspaceId,
     );

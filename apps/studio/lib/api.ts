@@ -1,10 +1,9 @@
 /**
  * Minimal API client for the NestJS backend (`/aurora/*`).
  *
- * Same-origin: in production studio.fizzdragon.com proxies `/aurora/*` to the
- * server and the satoken cookie rides along (credentials: "include"). In local
- * dev there is no cookie, so a `NEXT_PUBLIC_DEV_SATOKEN` is sent as a Bearer
- * token (the server's AuthGuard accepts `Authorization: Bearer <satoken>`).
+ * Same-origin: studio proxies `/aurora/*` to the server and the satoken
+ * cookie rides along (credentials: "include") — in local dev the cookie comes
+ * from signing in through the global login dialog.
  *
  * Mirrors the slice of `apps/web/src/lib/api` that the generation client uses:
  * `api.get<T>` / `api.post<T>` returning the unwrapped `{ code, data }` payload,
@@ -33,8 +32,6 @@ export interface ApiRequestConfig extends Omit<RequestInit, "body"> {
   raw?: boolean;
 }
 
-const DEV_TOKEN = process.env.NEXT_PUBLIC_DEV_SATOKEN;
-
 function buildUrl(path: string, params?: ApiRequestConfig["params"]): string {
   if (!params) return path;
   const usp = new URLSearchParams();
@@ -52,7 +49,6 @@ async function request<T>(method: string, path: string, config: ApiRequestConfig
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
     "accept-language": "en-US",
-    ...(DEV_TOKEN ? { Authorization: `Bearer ${DEV_TOKEN}` } : {}),
     ...(customHeaders as Record<string, string>),
   };
 

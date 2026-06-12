@@ -23,15 +23,20 @@
  */
 import { hostname } from 'os';
 import {
+  Inject,
   Injectable,
   Logger,
   type OnApplicationBootstrap,
   type OnModuleDestroy,
 } from '@nestjs/common';
+import type { AssetEvent } from '@repo/shared';
 import { Prisma } from '@prisma/client';
 import { newShortId } from '../common/id';
 import { PrismaService } from '../infra/db/db.module';
-import { WebPubSubService } from '../infra/realtime/web-pubsub.service';
+import {
+  REALTIME_PROVIDER,
+  type RealtimeProvider,
+} from '../infra/realtime/realtime-provider';
 import { toAiJobEvent } from './job-event';
 import type { AiJob } from './types';
 
@@ -60,7 +65,8 @@ export class AiGenerationOutboxService
 
   constructor(
     private readonly prisma: PrismaService,
-    private readonly webPubSub: WebPubSubService,
+    @Inject(REALTIME_PROVIDER)
+    private readonly realtime: RealtimeProvider,
   ) {}
 
   /**
@@ -156,11 +162,9 @@ export class AiGenerationOutboxService
       });
 
       for (const row of rows) {
-        const payload = row.payload as unknown as Parameters<
-          WebPubSubService['publishAssetEvent']
-        >[1];
+        const payload = row.payload as unknown as AssetEvent;
         try {
-          await this.webPubSub.publishAssetEvent(row.userId, payload);
+          await this.realtime.publishAssetEvent(row.userId, payload);
           await this.prisma.aiEventOutbox.update({
             where: { id: row.id },
             data: {
@@ -209,7 +213,7 @@ export class AiGenerationOutboxService
     payload: ReturnType<typeof toAiJobEvent>,
   ): Promise<void> {
     try {
-      await this.webPubSub.publishAssetEvent(userId, payload);
+      await this.realtime.publishAssetEvent(userId, payload);
       await this.prisma.aiEventOutbox.update({
         where: { id: rowId },
         data: { dispatchedAt: new Date(), attempt: 1 },

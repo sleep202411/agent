@@ -215,10 +215,7 @@ export class AiModelPresetRegistryService {
             : undefined),
       requiredPlan:
         route.requiredPlan ??
-        (primary?.entitlement_policy?.requiredPlan as
-          | AiRequiredPlan
-          | null
-          | undefined) ??
+        primary?.entitlement_policy?.requiredPlan ??
         primary?.entitlement.requiredPlan ??
         null,
       campaignId: route.campaignId,

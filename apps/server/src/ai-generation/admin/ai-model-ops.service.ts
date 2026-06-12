@@ -8,6 +8,11 @@ import {
   MediaAssetModerationStatus,
   MediaAssetSource,
   MediaAssetStatus,
+  MediaModerationActionStatus,
+  MediaModerationActionType,
+  MediaModerationCaseStatus,
+  MediaModerationSeverity,
+  MediaObjectPlacementStatus,
   Prisma,
 } from '@prisma/client';
 import { PrismaService } from '../../infra/db/db.module';
@@ -32,6 +37,50 @@ import type {
   UpdateProviderEndpointInput,
   UpdateProviderBindingInput,
 } from './ai-model-ops.dto';
+
+const ADMIN_MEDIA_ASSET_INCLUDE = {
+  placements: {
+    where: { deletedAt: null },
+    orderBy: [{ role: 'asc' }, { priority: 'asc' }, { createdAt: 'asc' }],
+  },
+  variants: {
+    where: { deletedAt: null },
+    orderBy: [{ kind: 'asc' }, { variantKey: 'asc' }],
+    include: {
+      placements: {
+        where: { deletedAt: null },
+        orderBy: [{ role: 'asc' }, { priority: 'asc' }, { createdAt: 'asc' }],
+      },
+    },
+  },
+  aiJobOutputs: {
+    where: { deletedAt: null },
+    orderBy: { outputIndex: 'asc' },
+    take: 4,
+    include: {
+      job: {
+        select: {
+          id: true,
+          prompt: true,
+          provider: true,
+          modelId: true,
+          deployment: true,
+          status: true,
+          stage: true,
+          userId: true,
+          workspaceId: true,
+          createdAt: true,
+          canonicalModel: {
+            select: { id: true, slug: true, displayName: true },
+          },
+          providerBinding: {
+            select: { id: true, endpointId: true, provider: true },
+          },
+        },
+      },
+    },
+  },
+} satisfies Prisma.MediaAssetInclude;
 
 @Injectable()
 export class AiModelOpsService {
@@ -582,35 +631,7 @@ export class AiModelOpsService {
       },
       orderBy: { createdAt: 'desc' },
       take: query.limit,
-      include: {
-        aiJobOutputs: {
-          where: { deletedAt: null },
-          orderBy: { outputIndex: 'asc' },
-          take: 4,
-          include: {
-            job: {
-              select: {
-                id: true,
-                prompt: true,
-                provider: true,
-                modelId: true,
-                deployment: true,
-                status: true,
-                stage: true,
-                userId: true,
-                workspaceId: true,
-                createdAt: true,
-                canonicalModel: {
-                  select: { id: true, slug: true, displayName: true },
-                },
-                providerBinding: {
-                  select: { id: true, endpointId: true, provider: true },
-                },
-              },
-            },
-          },
-        },
-      },
+      include: ADMIN_MEDIA_ASSET_INCLUDE,
     });
     return {
       items: items.map((asset) => serializeMediaAsset(asset, this.assetUrls)),
@@ -624,51 +645,110 @@ export class AiModelOpsService {
   ) {
     const existing = await this.prisma.mediaAsset.findFirst({
       where: { id: assetId, deletedAt: null },
-      select: { id: true },
+      select: { id: true, moderationStatus: true },
     });
     if (!existing) throw new NotFoundException('资产不存在或已删除。');
 
-    const asset = await this.prisma.mediaAsset.update({
-      where: { id: assetId },
-      data: {
-        moderationStatus: input.moderationStatus,
-        moderationReason: input.reason ?? null,
-        moderatedByAdminId: adminId,
-        moderatedAt: new Date(),
-        status:
-          input.moderationStatus === MediaAssetModerationStatus.blocked
-            ? MediaAssetStatus.ready
-            : undefined,
-      },
-      include: {
-        aiJobOutputs: {
-          where: { deletedAt: null },
-          orderBy: { outputIndex: 'asc' },
-          take: 4,
-          include: {
-            job: {
-              select: {
-                id: true,
-                prompt: true,
-                provider: true,
-                modelId: true,
-                deployment: true,
-                status: true,
-                stage: true,
-                userId: true,
-                workspaceId: true,
-                createdAt: true,
-                canonicalModel: {
-                  select: { id: true, slug: true, displayName: true },
-                },
-                providerBinding: {
-                  select: { id: true, endpointId: true, provider: true },
-                },
-              },
-            },
+    const now = new Date();
+    const asset = await this.prisma.$transaction(async (tx) => {
+      const updated = await tx.mediaAsset.update({
+        where: { id: assetId },
+        data: {
+          moderationStatus: input.moderationStatus,
+          moderationReason: input.reason ?? null,
+          moderatedByAdminId: adminId,
+          moderatedAt: now,
+          status: MediaAssetStatus.ready,
+        },
+        include: ADMIN_MEDIA_ASSET_INCLUDE,
+      });
+
+      const moderationCase = await tx.mediaModerationCase.create({
+        data: {
+          assetId,
+          status: MediaModerationCaseStatus.actioned,
+          severity: moderationSeverityFor(input.moderationStatus),
+          reasonCode: `manual_${input.moderationStatus}`,
+          reason: input.reason ?? null,
+          openedByAdminId: adminId,
+          assignedAdminId: adminId,
+          resolutionSummary: `Manual moderation status changed from ${existing.moderationStatus} to ${input.moderationStatus}.`,
+          openedAt: now,
+          resolvedAt: now,
+          metadata: {
+            previousStatus: existing.moderationStatus,
+            nextStatus: input.moderationStatus,
           },
         },
-      },
+        select: { id: true },
+      });
+
+      await tx.mediaModerationAction.create({
+        data: {
+          caseId: moderationCase.id,
+          assetId,
+          actionType: moderationActionFor(input.moderationStatus),
+          status: MediaModerationActionStatus.completed,
+          reason: input.reason ?? null,
+          actorAdminId: adminId,
+          completedAt: now,
+          metadata: {
+            previousStatus: existing.moderationStatus,
+            nextStatus: input.moderationStatus,
+          },
+        },
+      });
+
+      if (input.moderationStatus === MediaAssetModerationStatus.blocked) {
+        const purgeTargets = await tx.mediaObjectPlacement.findMany({
+          where: {
+            assetId,
+            deletedAt: null,
+            status: {
+              notIn: [
+                MediaObjectPlacementStatus.purged,
+                MediaObjectPlacementStatus.deleted,
+              ],
+            },
+            OR: [
+              { cdnProvider: { not: null } },
+              { cdnCacheKey: { not: null } },
+              { publicBaseUrl: { not: null } },
+            ],
+          },
+          select: { id: true, cdnProvider: true, cdnCacheKey: true },
+        });
+        if (purgeTargets.length > 0) {
+          await tx.mediaObjectPlacement.updateMany({
+            where: { id: { in: purgeTargets.map((target) => target.id) } },
+            data: { status: MediaObjectPlacementStatus.purging },
+          });
+          await tx.mediaModerationAction.createMany({
+            data: purgeTargets.map((target) => ({
+              caseId: moderationCase.id,
+              assetId,
+              placementId: target.id,
+              actionType: MediaModerationActionType.purge_cdn,
+              status: MediaModerationActionStatus.pending,
+              reason: input.reason ?? null,
+              actorAdminId: adminId,
+              idempotencyKey: `media-cdn-purge:${assetId}:${target.id}:${now.getTime()}`,
+              provider: target.cdnProvider,
+              metadata: {
+                cdnCacheKey: target.cdnCacheKey,
+                source: 'manual_moderation_block',
+              },
+            })),
+          });
+        }
+      } else {
+        await tx.mediaObjectPlacement.updateMany({
+          where: { assetId, status: MediaObjectPlacementStatus.purging },
+          data: { status: MediaObjectPlacementStatus.active, purgedAt: null },
+        });
+      }
+
+      return updated;
     });
     return serializeMediaAsset(asset, this.assetUrls);
   }
@@ -1157,6 +1237,62 @@ function serializeMediaAsset(
     metadata: unknown;
     createdAt: Date;
     updatedAt: Date;
+    placements: Array<{
+      id: string;
+      role: string;
+      status: string;
+      storageProvider: string;
+      bucket: string | null;
+      region: string | null;
+      objectKey: string | null;
+      externalUrl: string | null;
+      publicBaseUrl: string | null;
+      cdnProvider: string | null;
+      cdnCacheKey: string | null;
+      priority: number;
+      metadata: unknown;
+      lastVerifiedAt: Date | null;
+      purgedAt: Date | null;
+      createdAt: Date;
+      updatedAt: Date;
+      deletedAt: Date | null;
+    }>;
+    variants: Array<{
+      id: string;
+      variantKey: string;
+      kind: string;
+      status: string;
+      contentType: string;
+      sizeBytes: bigint | null;
+      width: number | null;
+      height: number | null;
+      durationSeconds: number | null;
+      checksumSha256: string | null;
+      metadata: unknown;
+      createdAt: Date;
+      updatedAt: Date;
+      deletedAt: Date | null;
+      placements: Array<{
+        id: string;
+        role: string;
+        status: string;
+        storageProvider: string;
+        bucket: string | null;
+        region: string | null;
+        objectKey: string | null;
+        externalUrl: string | null;
+        publicBaseUrl: string | null;
+        cdnProvider: string | null;
+        cdnCacheKey: string | null;
+        priority: number;
+        metadata: unknown;
+        lastVerifiedAt: Date | null;
+        purgedAt: Date | null;
+        createdAt: Date;
+        updatedAt: Date;
+        deletedAt: Date | null;
+      }>;
+    }>;
     aiJobOutputs: Array<{
       id: string;
       outputIndex: number;
@@ -1196,6 +1332,25 @@ function serializeMediaAsset(
     ...asset,
     url: resolvedUrl,
     sizeBytes: asset.sizeBytes?.toString() ?? null,
+    placements: asset.placements.map((placement) =>
+      serializePlacement(placement, assetUrls),
+    ),
+    variants: asset.variants.map((variant) => ({
+      ...variant,
+      url: safeResolve(() =>
+        assetUrls.resolveVariant(
+          {
+            ...asset,
+            variants: [variant],
+          },
+          variant.variantKey,
+        ),
+      ),
+      sizeBytes: variant.sizeBytes?.toString() ?? null,
+      placements: variant.placements.map((placement) =>
+        serializePlacement(placement, assetUrls),
+      ),
+    })),
     aiJobOutputs: asset.aiJobOutputs.map((output) => ({
       id: output.id,
       outputIndex: output.outputIndex,
@@ -1208,6 +1363,65 @@ function serializeMediaAsset(
       },
     })),
   };
+}
+
+function moderationSeverityFor(
+  status: MediaAssetModerationStatus,
+): MediaModerationSeverity {
+  switch (status) {
+    case MediaAssetModerationStatus.blocked:
+      return MediaModerationSeverity.critical;
+    case MediaAssetModerationStatus.flagged:
+      return MediaModerationSeverity.high;
+    case MediaAssetModerationStatus.approved:
+      return MediaModerationSeverity.low;
+    case MediaAssetModerationStatus.unreviewed:
+    default:
+      return MediaModerationSeverity.medium;
+  }
+}
+
+function moderationActionFor(
+  status: MediaAssetModerationStatus,
+): MediaModerationActionType {
+  switch (status) {
+    case MediaAssetModerationStatus.approved:
+      return MediaModerationActionType.approve;
+    case MediaAssetModerationStatus.flagged:
+      return MediaModerationActionType.flag;
+    case MediaAssetModerationStatus.blocked:
+      return MediaModerationActionType.takedown;
+    case MediaAssetModerationStatus.unreviewed:
+    default:
+      return MediaModerationActionType.restore;
+  }
+}
+
+function serializePlacement(
+  placement: {
+    sizeBytes?: never;
+    storageProvider: string;
+    bucket: string | null;
+    region: string | null;
+    objectKey: string | null;
+    externalUrl: string | null;
+    publicBaseUrl: string | null;
+    [key: string]: unknown;
+  },
+  assetUrls: MediaAssetUrlResolverService,
+) {
+  return {
+    ...placement,
+    url: safeResolve(() => assetUrls.resolvePlacement(placement)),
+  };
+}
+
+function safeResolve(resolve: () => string): string | null {
+  try {
+    return resolve();
+  } catch {
+    return null;
+  }
 }
 
 function serializeCostLedger(

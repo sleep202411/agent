@@ -99,8 +99,10 @@ export interface FizzAiCatalog {
 
 export interface FizzAiJobOutput {
   id: string;
+  assetId?: string;
   type: FizzAiJobType;
   url: string;
+  accessUrl?: string;
   storagePath?: string;
   width?: number;
   height?: number;
@@ -235,7 +237,13 @@ export interface FizzAiSubmitJobInput {
  * Terminal-aware status buckets shared by every generation surface. Mirrors the
  * canvas-local helper so feature surfaces don't each re-derive the mapping.
  */
-export type FizzAiGenerationStatus = "queued" | "generating" | "done" | "failed" | "cancelled";
+export type FizzAiGenerationStatus =
+  | "submitting"
+  | "queued"
+  | "generating"
+  | "done"
+  | "failed"
+  | "cancelled";
 
 export function generationStatusFromRaw(status: string | null | undefined): FizzAiGenerationStatus {
   if (status === "completed") return "done";
@@ -257,7 +265,13 @@ export interface GenerationState {
   progress?: number;
   queuePosition?: number;
   etaSeconds?: number;
-  outputs?: { type: FizzAiJobType; url: string; width?: number; height?: number }[];
+  outputs?: {
+    type: FizzAiJobType;
+    url: string;
+    accessUrl?: string;
+    width?: number;
+    height?: number;
+  }[];
   error?: string;
 }
 
@@ -268,7 +282,13 @@ export function generationStateFromJob(job: {
   progress?: number | null;
   queuePosition?: number | null;
   estimatedTotalSeconds?: number | null;
-  outputs?: Array<{ type: FizzAiJobType; url: string; width?: number; height?: number }>;
+  outputs?: Array<{
+    type: FizzAiJobType;
+    url: string;
+    accessUrl?: string;
+    width?: number;
+    height?: number;
+  }>;
   error?: { userMessage?: string; message?: string };
 }): GenerationState {
   return {
@@ -279,7 +299,8 @@ export function generationStateFromJob(job: {
     etaSeconds: job.estimatedTotalSeconds ?? undefined,
     outputs: job.outputs?.map((output) => ({
       type: output.type,
-      url: output.url,
+      url: output.accessUrl ?? output.url,
+      accessUrl: output.accessUrl,
       width: output.width,
       height: output.height,
     })),
@@ -951,10 +972,12 @@ export async function getFizzAiJob(id: string): Promise<FizzAiJobView> {
 
 export async function listFizzAiJobs(input: {
   limit?: number;
+  sourceSurface?: string;
   type?: FizzAiJobType;
 }): Promise<FizzAiJobListResponse> {
   const params = new URLSearchParams();
   if (input.limit) params.set("limit", String(input.limit));
+  if (input.sourceSurface) params.set("sourceSurface", input.sourceSurface);
   if (input.type) params.set("type", input.type);
   const query = params.toString();
   return api.get<FizzAiJobListResponse>(`/aurora/ai/jobs${query ? `?${query}` : ""}`, {

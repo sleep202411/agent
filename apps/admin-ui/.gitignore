@@ -34,13 +34,11 @@ yarn-debug.log*
 yarn-error.log*
 .pnpm-debug.log*
 
-# env files
+# env files — only the example is tracked; real configs (incl. .env.local)
+# stay out of git. The tracked-env negations in the ROOT .gitignore are a
+# deliberate per-app allowlist and admin-ui is not on it.
 .env*
 !.env.example
-!.env.local
-!.env.staging
-!.env.production.cn
-!.env.production.com
 
 # vercel
 .vercel

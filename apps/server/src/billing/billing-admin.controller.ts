@@ -26,6 +26,7 @@ import { BillingLedgerService } from './billing-ledger.service';
 import { BillingService } from './billing.service';
 import {
   ListAdminBillingLedgerJournalsQuerySchema,
+  ListAdminMembershipPlansQuerySchema,
   ListAdminBillingOrdersQuerySchema,
   ListAdminBillingProviderEventsQuerySchema,
   ListAdminBillingPricesQuerySchema,
@@ -34,10 +35,12 @@ import {
   ListAdminBillingReconciliationRunsQuerySchema,
   ListAdminBillingSettlementsQuerySchema,
   BillingPriceParamsSchema,
+  BillingMembershipPlanParamsSchema,
   BillingWalletAccountParamsSchema,
   BillingProviderEventParamsSchema,
   BillingProviderBindingParamsSchema,
   BillingPromotionParamsSchema,
+  CreateAdminMembershipPlanSchema,
   CreateAdminBillingPriceSchema,
   CreateAdminBillingPromotionSchema,
   CreateAdminBillingRefundSchema,
@@ -45,21 +48,25 @@ import {
   CreateAdminWalletAdjustmentSchema,
   IgnoreAdminBillingProviderEventSchema,
   QuoteAdminBillingRefundSchema,
+  UpdateAdminMembershipPlanSchema,
   UpdateAdminBillingPriceSchema,
   UpdateAdminBillingPromotionSchema,
   UpsertAdminBillingProviderBindingSchema,
   UpsertAdminBillingPromotionProviderBindingSchema,
   type BillingPriceParams,
+  type BillingMembershipPlanParams,
   type BillingWalletAccountParams,
   type BillingProviderEventParams,
   type BillingProviderBindingParams,
   type BillingPromotionParams,
+  type CreateAdminMembershipPlanInput,
   type CreateAdminBillingPriceInput,
   type CreateAdminBillingPromotionInput,
   type CreateAdminBillingRefundInput,
   type CreateAdminUserWalletCreditInput,
   type CreateAdminWalletAdjustmentInput,
   type IgnoreAdminBillingProviderEventInput,
+  type ListAdminMembershipPlansQuery,
   type ListAdminBillingLedgerJournalsQuery,
   type ListAdminBillingOrdersQuery,
   type ListAdminBillingProviderEventsQuery,
@@ -69,6 +76,7 @@ import {
   type ListAdminBillingReconciliationRunsQuery,
   type ListAdminBillingSettlementsQuery,
   type QuoteAdminBillingRefundInput,
+  type UpdateAdminMembershipPlanInput,
   type UpdateAdminBillingPriceInput,
   type UpdateAdminBillingPromotionInput,
   type UpsertAdminBillingProviderBindingInput,
@@ -179,6 +187,69 @@ export class BillingAdminController {
       code: 200,
       data: await this.billing.listAdminPrices(query),
     };
+  }
+
+  @RequireAdminPermissions(ADMIN_PERMISSION_KEYS.BillingRead)
+  @Get('membership-plans')
+  async listMembershipPlans(
+    @Query(new ZodValidationPipe(ListAdminMembershipPlansQuerySchema))
+    query: ListAdminMembershipPlansQuery,
+  ) {
+    return {
+      code: 200,
+      data: await this.billing.listAdminMembershipPlans(query),
+    };
+  }
+
+  @RequireAdminPermissions(ADMIN_PERMISSION_KEYS.BillingWrite)
+  @Post('membership-plans')
+  async createMembershipPlan(
+    @CurrentAdmin() admin: AdminActor,
+    @Body(new ZodValidationPipe(CreateAdminMembershipPlanSchema))
+    body: CreateAdminMembershipPlanInput,
+    @Req() request: Request,
+  ) {
+    const data = await this.billing.createAdminMembershipPlan(admin.id, body);
+    await this.audit(
+      admin,
+      request,
+      'admin.billing.membership_plan.create',
+      'billing_membership_plan',
+      data.id,
+      {
+        planKey: body.planKey,
+        productType: body.productType,
+        subjectType: body.subjectType,
+        rank: body.rank,
+      },
+    );
+    return { code: 200, data };
+  }
+
+  @RequireAdminPermissions(ADMIN_PERMISSION_KEYS.BillingWrite)
+  @Patch('membership-plans/:planId')
+  async updateMembershipPlan(
+    @CurrentAdmin() admin: AdminActor,
+    @Param(new ZodValidationPipe(BillingMembershipPlanParamsSchema))
+    params: BillingMembershipPlanParams,
+    @Body(new ZodValidationPipe(UpdateAdminMembershipPlanSchema))
+    body: UpdateAdminMembershipPlanInput,
+    @Req() request: Request,
+  ) {
+    const data = await this.billing.updateAdminMembershipPlan(
+      params.planId,
+      admin.id,
+      body,
+    );
+    await this.audit(
+      admin,
+      request,
+      'admin.billing.membership_plan.update',
+      'billing_membership_plan',
+      params.planId,
+      body,
+    );
+    return { code: 200, data };
   }
 
   @RequireAdminPermissions(ADMIN_PERMISSION_KEYS.BillingWrite)

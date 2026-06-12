@@ -35,6 +35,7 @@ import {
   ResultLightbox,
   type LightboxItem,
 } from "@/app/(studio)/_components/generation/result-lightbox";
+import { useComputeWalletBalance } from "@/app/_components/credits-badge";
 
 /** Single-value frame fields (startFrame/endFrame) vs array reference fields. */
 const SINGLE_FIELDS = new Set(["startFrame", "firstFrame", "endFrame", "lastFrame"]);
@@ -77,6 +78,7 @@ function modeInputsSatisfied(
 export function VideoStudio() {
   const { data: catalog } = useAiCatalog();
   const feed = useGenerationFeed("video", "fizzstudio-video-studio");
+  const { data: wallet } = useComputeWalletBalance();
   const uploads = useReferenceUploads();
 
   const [prompt, setPrompt] = useState("");
@@ -90,11 +92,17 @@ export function VideoStudio() {
   useEffect(() => {
     if (model || !catalog) return;
     const first = usableModelsByModality(catalog, "video")[0];
-    if (first) {
+    if (!first) return;
+    let cancelled = false;
+    queueMicrotask(() => {
+      if (cancelled) return;
       setModel(first);
       setSettings(defaultSettingsForModel(first));
       setMode(defaultVideoMode(first));
-    }
+    });
+    return () => {
+      cancelled = true;
+    };
   }, [catalog, model]);
 
   const onSelectModel = (selected: FizzAiModel) => {
@@ -141,6 +149,11 @@ export function VideoStudio() {
     if (!model || !canSubmit) return;
     setSubmitting(true);
     setSubmitError(null);
+    if (cost != null && wallet && wallet.available < BigInt(Math.ceil(cost))) {
+      setSubmitError("Not enough compute credits. Add credits to continue.");
+      setSubmitting(false);
+      return;
+    }
 
     // Map ready uploads into their schema fields: frames are single values,
     // reference sets are arrays; filterFizzAiInput drops undeclared fields.

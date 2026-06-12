@@ -35,8 +35,10 @@ export interface AiJobUpdatePayload {
   input?: Record<string, unknown>;
   outputs: Array<{
     id: string;
+    assetId?: string;
     type: "image" | "video";
     url: string;
+    accessUrl?: string;
     width?: number;
     height?: number;
     mimeType?: string;

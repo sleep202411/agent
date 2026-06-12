@@ -25,11 +25,63 @@ export interface BillingPackage {
   isActive: boolean;
 }
 
+export interface MembershipPrice extends BillingPackage {
+  provider: string;
+  availableProviders: Array<{
+    provider: string;
+    status: string;
+    providerMode: string | null;
+  }>;
+  interval: "one_time" | "month" | "year" | string;
+  subjectType: "user" | "workspace" | string;
+  grantsPlanKey: string | null;
+  grantDurationDays: number | null;
+  metadata: Record<string, unknown>;
+}
+
+export interface MembershipPlan {
+  id: string;
+  planKey: string;
+  productType: "membership_plan" | "team_membership_plan";
+  subjectType: "user" | "workspace";
+  status: string;
+  rank: number;
+  name: string;
+  description: string | null;
+  includedComputeCredits: string;
+  includedSeats: number;
+  maxSeats: number | null;
+  seatOverageAllowed: boolean;
+  topupDiscountBps: number;
+  billingIntervalDefault: "one_time" | "month" | "year" | null;
+  featureFlags: Record<string, unknown>;
+  limits: Record<string, unknown>;
+  marketing: Record<string, unknown>;
+  metadata: Record<string, unknown>;
+  prices: MembershipPrice[];
+  updatedAt: string;
+}
+
 /** List active `community_point_pack` packages for the given fiat currency. */
 export function listCommunityPointPackages(currency: string) {
   return api.get<{ provider: string; prices: BillingPackage[] }>("/aurora/billing/prices", {
     params: { productType: "community_point_pack", currency },
   });
+}
+
+export function listMembershipPlans(input?: {
+  productType?: "membership_plan" | "team_membership_plan";
+  currency?: string;
+}) {
+  return api.get<{ provider: string; plans: MembershipPlan[] }>(
+    "/aurora/billing/membership-plans",
+    {
+      params: {
+        ...(input?.productType ? { productType: input.productType } : {}),
+        ...(input?.currency ? { currency: input.currency } : {}),
+      },
+    }
+  );
 }
 
 export interface CreateBillingCheckoutInput {
@@ -39,6 +91,7 @@ export interface CreateBillingCheckoutInput {
   successUrl: string;
   backUrl: string;
   promotionCode?: string;
+  workspaceId?: string;
 }
 
 export interface BillingCheckoutResult {

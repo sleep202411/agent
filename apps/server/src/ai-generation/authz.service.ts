@@ -14,9 +14,7 @@ function parseDeniedPlans(): Set<EntitlementPlanKey> {
     raw
       .split(',')
       .map((plan) => plan.trim().toLowerCase())
-      .filter((plan): plan is EntitlementPlanKey =>
-        ['free', 'creator', 'pro', 'studio', 'enterprise'].includes(plan),
-      ),
+      .filter((plan): plan is EntitlementPlanKey => Boolean(plan)),
   );
 }
 

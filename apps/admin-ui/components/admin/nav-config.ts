@@ -72,8 +72,13 @@ export const GLOBAL_NAV: GlobalNavEntry[] = [
     icon: IconPlugConnected,
     permission: "ai_model_ops.read",
   },
-  // 媒体资产 (/media) is hidden from nav until the module is built — the page is
-  // still a ModulePlaceholder, so we don't surface it as a top-level module yet.
+  {
+    key: "/media",
+    href: "/media",
+    label: "媒体资产",
+    icon: IconPhoto,
+    permission: "media.read",
+  },
   {
     key: "/certificates",
     href: "/certificates",
@@ -117,6 +122,12 @@ export const MODULE_NAV: Record<string, ModuleNavGroup[]> = {
           href: "/billing/catalog",
           label: "套餐商品",
           icon: IconPackage,
+          permission: "billing.read",
+        },
+        {
+          href: "/billing/memberships",
+          label: "会员计划",
+          icon: IconUsersGroup,
           permission: "billing.read",
         },
         {

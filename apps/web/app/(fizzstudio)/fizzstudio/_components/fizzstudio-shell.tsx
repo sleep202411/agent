@@ -3,6 +3,7 @@
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import Image from "next/image";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import {
   IconBell,
   IconCrown,
@@ -134,10 +135,23 @@ function StudioHeader({
   onSwitchWorkspace: (id: string) => void;
 }) {
   const t = useTranslations("fizzStudio");
+  const searchParams = useSearchParams();
+  const upgradeParam = searchParams.get("upgrade");
   const [upgradeOpen, setUpgradeOpen] = useState(false);
   // Chat/notifications/search have no backing feature yet — surface that
   // honestly instead of rendering live-looking dead buttons.
   const comingSoon = (label: string) => toast.info(t("shell.comingSoon", { label }));
+
+  useEffect(() => {
+    if (upgradeParam !== "1") return;
+    let cancelled = false;
+    queueMicrotask(() => {
+      if (!cancelled) setUpgradeOpen(true);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [upgradeParam]);
 
   if (variant === "enterprise") {
     return (

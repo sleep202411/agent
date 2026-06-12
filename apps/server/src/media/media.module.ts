@@ -1,6 +1,16 @@
 import { Module } from '@nestjs/common';
+import { AdminAuthModule } from '../admin-auth';
 import { AuthModule } from '../auth';
 import { StorageModule } from '../infra/storage/storage.module';
+import { WorkspacesModule } from '../workspaces';
+import { AdminMediaController } from './admin-media.controller';
+import { AdminMediaService } from './admin-media.service';
+import { CdnPurgeProvider } from './cdn-purge.provider';
+import { CdnPurgeWorkerService } from './cdn-purge-worker.service';
+import { MediaAccessController } from './media-access.controller';
+import { MediaAccessService } from './media-access.service';
+import { MediaProcessingService } from './media-processing.service';
+import { MediaProcessingWorkerService } from './media-processing-worker.service';
 import { MediaUploadController } from './media-upload.controller';
 import { MediaUploadService } from './media-upload.service';
 
@@ -18,9 +28,21 @@ import { MediaUploadService } from './media-upload.service';
  * module's scope.
  */
 @Module({
-  imports: [AuthModule, StorageModule],
-  controllers: [MediaUploadController],
-  providers: [MediaUploadService],
-  exports: [MediaUploadService],
+  imports: [AdminAuthModule, AuthModule, StorageModule, WorkspacesModule],
+  controllers: [
+    MediaUploadController,
+    MediaAccessController,
+    AdminMediaController,
+  ],
+  providers: [
+    MediaUploadService,
+    MediaAccessService,
+    AdminMediaService,
+    MediaProcessingService,
+    MediaProcessingWorkerService,
+    CdnPurgeProvider,
+    CdnPurgeWorkerService,
+  ],
+  exports: [MediaUploadService, MediaAccessService, MediaProcessingService],
 })
 export class MediaModule {}

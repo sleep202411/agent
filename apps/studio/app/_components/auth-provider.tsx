@@ -42,16 +42,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     retry: false,
   });
 
-  // In local dev the api client authenticates with NEXT_PUBLIC_DEV_SATOKEN
-  // and there is no Java to log into — keep the dialog out of the way.
-  const devToken = Boolean(process.env.NEXT_PUBLIC_DEV_SATOKEN);
-
   useEffect(() => {
-    if (devToken) return;
     const onUnauthorized = () => setDialogOpen(true);
     window.addEventListener("fizz:unauthorized", onUnauthorized);
     return () => window.removeEventListener("fizz:unauthorized", onUnauthorized);
-  }, [devToken]);
+  }, []);
 
   const signIn = useCallback(() => setDialogOpen(true), []);
 

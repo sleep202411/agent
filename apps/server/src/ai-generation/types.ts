@@ -137,10 +137,18 @@ export interface AiRoutingPolicySnapshot {
     queuePriority: number;
   };
   concurrency: {
+    subject: EntitlementSnapshot['subject'];
     queueName: AiQueueName;
     globalConcurrency: number;
+    /** Legacy/effective same-type user cap kept for old consumers. */
     perUserRunning: number;
     perUserQueued: number;
+    /** Entitlement-subject backlog cap. `null` means unlimited/contractual. */
+    perSubjectQueued: number | null;
+    /** Entitlement-subject global running cap. `null` means unlimited/contractual. */
+    perSubjectRunning: number | null;
+    /** Model/type running cap for this subject. `null` means unlimited. */
+    perTypeRunning: number | null;
   };
   runtime: {
     maxProviderRuntimeSeconds: number;
@@ -292,6 +300,7 @@ export interface AiJobOutput {
   assetId?: string;
   type: AiJobType;
   url: string;
+  accessUrl?: string;
   storagePath: string;
   contentHash?: string;
   width?: number;
@@ -436,6 +445,7 @@ export interface AiJobListQuery {
   workspaceId?: string;
   projectId?: string;
   documentId?: string;
+  sourceSurface?: string;
   type?: AiJobType;
   limit?: string;
   cursor?: string;

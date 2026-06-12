@@ -22,6 +22,7 @@ import {
   type Node,
   type NodeChange,
   type NodeTypes,
+  type OnNodeDrag,
   type Position,
   type Viewport,
 } from "@xyflow/react";
@@ -1550,13 +1551,13 @@ function CanvasInner({ doc }: { doc: FizzDocument }) {
     [canvasBounds, nodes, onNodesChange, setNodePosition, setNodes, viewportState, zoom]
   );
 
-  const handleNodeDragStart = useCallback((_: React.MouseEvent, node: CanvasNode) => {
+  const handleNodeDragStart = useCallback<OnNodeDrag<CanvasNode>>((_, node) => {
     dragEndRef.current = null;
     setDraggingNodeId(node.id);
     setAlignmentGuide(null);
   }, []);
 
-  const handleNodeDragStop = useCallback((_: React.MouseEvent, node: CanvasNode) => {
+  const handleNodeDragStop = useCallback<OnNodeDrag<CanvasNode>>((_, node) => {
     dragEndRef.current = { at: performance.now(), nodeId: node.id };
     setDraggingNodeId(null);
     setAlignmentGuide(null);

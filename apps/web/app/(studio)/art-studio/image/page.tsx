@@ -752,13 +752,19 @@ function readOptions(
 // payload, so this page adapts that claim into the new AI model protocol.
 const PLAN_RANK: Record<string, number> = {
   FREE: 0,
-  CREATOR: 1,
-  PRO: 2,
-  STUDIO: 3,
-  ENTERPRISE: 4,
-  VIP1: 1,
-  VIP2: 2,
-  VIP3: 3,
+  BASIC: 10,
+  CREATOR: 10,
+  STANDARD: 20,
+  PRO: 30,
+  STUDIO: 40,
+  ENTERPRISE: 90,
+  TEAM_ULTIMATE: 110,
+  TEAM_CREATOR: 120,
+  TEAM_SCALE: 130,
+  TEAM_ENTERPRISE: 190,
+  VIP1: 10,
+  VIP2: 20,
+  VIP3: 30,
 };
 function planRank(level: string | null | undefined): number {
   if (!level) return 0;

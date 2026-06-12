@@ -13,6 +13,7 @@
     "start:debug": "PORT=4399 nest start --debug --watch",
     "start:prod": "PORT=4399 node dist/main",
     "admin:create-user": "tsx scripts/admin-create-user.ts",
+    "media:backfill-original-placements": "tsx scripts/backfill-media-original-placements.ts",
     "seed:ai-image": "tsx prisma/seed/seed.ts",
     "lint": "eslint \"{src,scripts,apps,libs,test}/**/*.ts\" --fix",
     "test": "jest",

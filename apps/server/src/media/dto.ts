@@ -89,3 +89,24 @@ export interface ConfirmUploadResponseDto {
   /** Browser/provider-fetchable URL resolved from the durable MediaAsset row. */
   url: string;
 }
+
+export const MediaAssetAccessParamsSchema = z.object({
+  assetId: z.string().uuid(),
+});
+export type MediaAssetAccessParamsDto = z.infer<
+  typeof MediaAssetAccessParamsSchema
+>;
+
+export const MediaAssetAccessQuerySchema = z.object({
+  variantKey: z.string().trim().min(1).max(80).default('original'),
+});
+export type MediaAssetAccessQueryDto = z.infer<
+  typeof MediaAssetAccessQuerySchema
+>;
+
+export interface MediaAssetAccessResponseDto {
+  assetId: string;
+  variantKey: string;
+  url: string;
+  expiresAt: string | null;
+}

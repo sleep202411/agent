@@ -598,7 +598,11 @@ function VideoStudioSurface({ workspaceId }: { workspaceId: string }) {
       }
       setHistoryLoading(true);
       try {
-        const response = await listFizzAiJobs({ limit: HISTORY_LIMIT, type: "video" });
+        const response = await listFizzAiJobs({
+          limit: HISTORY_LIMIT,
+          sourceSurface: "fizzstudio-video-studio",
+          type: "video",
+        });
         if (historyRequestSeqRef.current !== requestSeq) return;
         const incoming = response.jobs.map((job) => jobViewToVideoJob(job, t));
         setJobs((prev) =>
@@ -642,6 +646,7 @@ function VideoStudioSurface({ workspaceId }: { workspaceId: string }) {
       if (event.kind !== "ai_job_update") return;
       const job = event.job;
       if (job.type !== "video") return;
+      if (job.sourceSurface !== "fizzstudio-video-studio") return;
       mergeJob(jobUpdateToVideoJob(job, t));
       if (isTerminalGenerationStatus(generationStatusFromRaw(job.status))) {
         dispatch(touchCredits());

@@ -29,7 +29,9 @@ spec:
         {{- include "fizzdragon.componentLabels" $ctx | nindent 8 }}
         {{- include "fizzdragon.workloadIdentityLabels" . | nindent 8 }}
     spec:
+      {{- if .Values.azure.enabled }}
       serviceAccountName: {{ .Values.azure.workloadIdentity.serviceAccountName }}
+      {{- end }}
       containers:
         - name: {{ $component }}
           image: "{{ .Values.image.registry }}/{{ .Values.agentWorker.image.repository }}:{{ .Values.agentWorker.image.tag }}"
@@ -41,12 +43,15 @@ spec:
           envFrom:
             - secretRef:
                 name: {{ .Values.secrets.projectedName }}
+          {{- if .Values.azure.enabled }}
           volumeMounts:
             - name: kv-secrets
               mountPath: /mnt/secrets
               readOnly: true
+          {{- end }}
           resources:
             {{- toYaml .Values.agentWorker.resources | nindent 12 }}
+      {{- if .Values.azure.enabled }}
       volumes:
         - name: kv-secrets
           csi:
@@ -54,6 +59,7 @@ spec:
             readOnly: true
             volumeAttributes:
               secretProviderClass: {{ .Release.Name }}-kv
+      {{- end }}
       {{- with .Values.agentWorker.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}
@@ -84,8 +90,9 @@ spec:
       metadata:
         listName: {{ . }}
         listLength: "5"
-        # Managed Azure Cache for Redis is TLS-only on port 6380.
-        enableTLS: "true"
+        # Azure managed Redis is TLS-only (6380); Aliyun community Redis is
+        # plaintext 6379 — toggled per environment via values.
+        enableTLS: {{ $.Values.agentWorker.keda.enableTLS | default "true" | quote }}
       authenticationRef:
         name: {{ $.Release.Name }}-redis-auth
     {{- end }}

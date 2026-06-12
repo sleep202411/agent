@@ -53,7 +53,10 @@ export function PanoramaCanvas({
   const readoutRef = useRef<HTMLDivElement>(null);
   const [loading, setLoading] = useState(true);
   const onLoadRef = useRef(onLoad);
-  onLoadRef.current = onLoad;
+
+  useEffect(() => {
+    onLoadRef.current = onLoad;
+  }, [onLoad]);
 
   useEffect(() => {
     const mount = mountRef.current;
