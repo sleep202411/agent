@@ -7,8 +7,10 @@ import { AdminMediaController } from './admin-media.controller';
 import { AdminMediaService } from './admin-media.service';
 import { CdnPurgeProvider } from './cdn-purge.provider';
 import { CdnPurgeWorkerService } from './cdn-purge-worker.service';
+import { MediaTakedownWorkerService } from './media-takedown-worker.service';
 import { MediaAccessController } from './media-access.controller';
 import { MediaAccessService } from './media-access.service';
+import { MediaModerationAdminService } from './media-moderation-admin.service';
 import { MediaProcessingService } from './media-processing.service';
 import { MediaProcessingWorkerService } from './media-processing-worker.service';
 import { MediaUploadController } from './media-upload.controller';
@@ -38,11 +40,18 @@ import { MediaUploadService } from './media-upload.service';
     MediaUploadService,
     MediaAccessService,
     AdminMediaService,
+    MediaModerationAdminService,
     MediaProcessingService,
     MediaProcessingWorkerService,
     CdnPurgeProvider,
     CdnPurgeWorkerService,
+    MediaTakedownWorkerService,
   ],
-  exports: [MediaUploadService, MediaAccessService, MediaProcessingService],
+  exports: [
+    MediaUploadService,
+    MediaAccessService,
+    MediaModerationAdminService,
+    MediaProcessingService,
+  ],
 })
 export class MediaModule {}

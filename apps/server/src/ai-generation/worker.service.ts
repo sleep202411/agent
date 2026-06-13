@@ -1007,6 +1007,11 @@ export class AiGenerationWorkerService
       return;
     }
 
+    // Reference media lives on public storage URLs (the moderation takedown
+    // mechanism makes blocked objects unreachable at the storage layer), so the
+    // normalized input is passed to the provider as-is — no per-request signing.
+    const providerInput = job.normalizedInput;
+
     const gate = await this.providerCapacity.reserveForProviderSubmit(job);
     if (!gate.ok) {
       await this.deferForProviderCapacity(job, gate);
@@ -1014,15 +1019,11 @@ export class AiGenerationWorkerService
     }
 
     try {
-      const result = await adapter.startGeneration(
-        modelId,
-        job.normalizedInput,
-        {
-          jobId: job.id,
-          userId: job.userId,
-          publicBaseUrl: process.env.PUBLIC_BASE_URL,
-        },
-      );
+      const result = await adapter.startGeneration(modelId, providerInput, {
+        jobId: job.id,
+        userId: job.userId,
+        publicBaseUrl: process.env.PUBLIC_BASE_URL,
+      });
 
       if (result.kind === 'completed') {
         // Sync provider (Azure Foundry image): bytes are here, go

@@ -266,6 +266,7 @@ export interface GenerationState {
   queuePosition?: number;
   etaSeconds?: number;
   outputs?: {
+    assetId?: string;
     type: FizzAiJobType;
     url: string;
     accessUrl?: string;
@@ -283,6 +284,7 @@ export function generationStateFromJob(job: {
   queuePosition?: number | null;
   estimatedTotalSeconds?: number | null;
   outputs?: Array<{
+    assetId?: string;
     type: FizzAiJobType;
     url: string;
     accessUrl?: string;
@@ -298,6 +300,7 @@ export function generationStateFromJob(job: {
     queuePosition: job.queuePosition ?? undefined,
     etaSeconds: job.estimatedTotalSeconds ?? undefined,
     outputs: job.outputs?.map((output) => ({
+      assetId: output.assetId,
       type: output.type,
       url: output.accessUrl ?? output.url,
       accessUrl: output.accessUrl,

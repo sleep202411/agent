@@ -729,7 +729,7 @@ function AssetUploadField({
   const [localPreviewUrl, setLocalPreviewUrl] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
-  const previewUrl = localPreviewUrl ?? (isRenderableAssetUrl(value) ? value : null);
+  const previewUrl = localPreviewUrl ?? adminRenderableMediaUrl(value);
 
   useEffect(() => {
     return () => {
@@ -757,7 +757,10 @@ function AssetUploadField({
         body: form,
       });
       if (!data.asset) throw new Error("上传失败");
-      onChange({ assetId: data.asset.id, url: data.asset.url ?? "" });
+      onChange({
+        assetId: data.asset.id,
+        url: adminMediaContentUrl(data.asset.id) ?? data.asset.url ?? "",
+      });
     } catch (err) {
       setUploadError(toErrorMessage(err));
       setLocalPreviewUrl(null);
@@ -929,6 +932,21 @@ function IpCombobox({
 
 function isRenderableAssetUrl(value: string) {
   return /^(blob:|data:|https?:\/\/|\/)/.test(value);
+}
+
+function adminRenderableMediaUrl(value: string) {
+  if (!value) return null;
+  const mediaMatch = value.match(/^\/aurora\/media\/assets\/([^/]+)\/content(?:\?(.*))?$/u);
+  if (mediaMatch?.[1]) {
+    const query = mediaMatch[2] ? `?${mediaMatch[2]}` : "?variantKey=original";
+    return `/api/admin/media/assets/${encodeURIComponent(decodeURIComponent(mediaMatch[1]))}/content${query}`;
+  }
+  return isRenderableAssetUrl(value) ? value : null;
+}
+
+function adminMediaContentUrl(assetId: string | null | undefined) {
+  if (!assetId) return null;
+  return `/api/admin/media/assets/${encodeURIComponent(assetId)}/content?variantKey=original`;
 }
 
 function FormSection({

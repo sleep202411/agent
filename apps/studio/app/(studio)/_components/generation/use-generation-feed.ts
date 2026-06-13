@@ -90,6 +90,23 @@ function mergeIntoList(list: FeedJob[], incoming: FeedJob): FeedJob[] {
   return next;
 }
 
+function outputMatchesAsset(output: FizzAiJobOutput, assetId: string): boolean {
+  return output.assetId === assetId || output.id === assetId;
+}
+
+function removeMediaAssetFromList(list: FeedJob[], assetId: string): FeedJob[] {
+  return list.map((row) => {
+    if (!row.outputs.some((output) => outputMatchesAsset(output, assetId))) return row;
+    const outputs = row.outputs.filter((output) => !outputMatchesAsset(output, assetId));
+    return {
+      ...row,
+      outputs,
+      status: outputs.length > 0 ? row.status : "failed",
+      error: outputs.length > 0 ? row.error : "This asset is no longer available.",
+    };
+  });
+}
+
 export interface SubmitFeedJob {
   prompt: string;
   modelId: string;
@@ -149,6 +166,14 @@ export function useGenerationFeed(type: FizzAiJobType, sourceSurface: string) {
       },
       onDisconnected: () => setRealtimeConnected(false),
       onEvent: (event) => {
+        if (event.kind === "media_asset_moderation_changed") {
+          if (event.action === "blocked") {
+            setJobs((prev) => removeMediaAssetFromList(prev, event.assetId));
+            return;
+          }
+          void reconcileHistory();
+          return;
+        }
         if (event.kind !== "ai_job_update") return;
         const job = event.job as unknown as FizzAiJobView;
         if (job.type !== type) return;

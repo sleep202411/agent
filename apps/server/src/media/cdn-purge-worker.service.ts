@@ -1,4 +1,3 @@
-import { hostname } from 'os';
 import {
   Injectable,
   Logger,
@@ -9,29 +8,25 @@ import {
   MediaModerationActionStatus,
   MediaModerationActionType,
   MediaObjectPlacementStatus,
-  Prisma,
   type MediaModerationAction,
   type MediaObjectPlacement,
 } from '@prisma/client';
 import { PrismaService } from '../infra/db/db.module';
 import { MediaAssetUrlResolverService } from '../infra/storage/media-asset-url-resolver.service';
 import { CdnPurgeProvider } from './cdn-purge.provider';
+import {
+  MEDIA_ACTION_MAX_ATTEMPTS as MAX_ATTEMPTS,
+  MEDIA_ACTION_POD_ID as POD_ID,
+  errorText,
+  isJsonObject,
+  mediaActionBackoffMs,
+  mergeJson,
+  positiveInt,
+} from './media-action-queue.util';
 
 const DEFAULT_INTERVAL_MS = 15_000;
 const DEFAULT_BATCH_SIZE = 25;
 const LOCK_TTL_MS = 2 * 60_000;
-const MAX_ATTEMPTS = 8;
-const BACKOFFS_MS = [
-  5_000,
-  30_000,
-  2 * 60_000,
-  10 * 60_000,
-  30 * 60_000,
-  2 * 60 * 60_000,
-  6 * 60 * 60_000,
-  24 * 60 * 60_000,
-];
-const POD_ID = `${hostname()}-${process.pid}`;
 
 type PurgeActionRow = MediaModerationAction & {
   placement: MediaObjectPlacement | null;
@@ -156,9 +151,22 @@ export class CdnPurgeWorkerService
         url: this.resolvePlacementUrl(row.placement),
         placement: row.placement,
       });
-      await this.prisma.$transaction([
-        this.prisma.mediaModerationAction.update({
-          where: { id: row.id },
+      await this.prisma.$transaction(async (tx) => {
+        // Guard the terminal write: if a concurrent moderation decision
+        // cancelled this action (or another pod stole an expired lock), the
+        // update affects 0 rows and we must NOT flip the placement to purged —
+        // otherwise a just-restored placement flaps back to purged.
+        const res = await tx.mediaModerationAction.updateMany({
+          where: {
+            id: row.id,
+            lockedBy: POD_ID,
+            status: {
+              in: [
+                MediaModerationActionStatus.pending,
+                MediaModerationActionStatus.failed,
+              ],
+            },
+          },
           data: {
             status: MediaModerationActionStatus.completed,
             attempt: row.attempt + 1,
@@ -175,15 +183,16 @@ export class CdnPurgeWorkerService
             lockedBy: null,
             deadAt: null,
           },
-        }),
-        this.prisma.mediaObjectPlacement.update({
+        });
+        if (res.count === 0 || !row.placement) return;
+        await tx.mediaObjectPlacement.update({
           where: { id: row.placement.id },
           data: {
             status: MediaObjectPlacementStatus.purged,
             purgedAt: now,
           },
-        }),
-      ]);
+        });
+      });
     } catch (err) {
       await this.fail(row, errorText(err));
     }
@@ -193,11 +202,20 @@ export class CdnPurgeWorkerService
     const now = new Date();
     const nextAttempt = row.attempt + 1;
     const isDead = nextAttempt >= MAX_ATTEMPTS;
-    const backoff = BACKOFFS_MS[Math.min(row.attempt, BACKOFFS_MS.length - 1)];
+    const backoff = mediaActionBackoffMs(row.attempt);
 
-    const updates: Prisma.PrismaPromise<unknown>[] = [
-      this.prisma.mediaModerationAction.update({
-        where: { id: row.id },
+    await this.prisma.$transaction(async (tx) => {
+      const res = await tx.mediaModerationAction.updateMany({
+        where: {
+          id: row.id,
+          lockedBy: POD_ID,
+          status: {
+            in: [
+              MediaModerationActionStatus.pending,
+              MediaModerationActionStatus.failed,
+            ],
+          },
+        },
         data: {
           status: MediaModerationActionStatus.failed,
           attempt: nextAttempt,
@@ -209,17 +227,15 @@ export class CdnPurgeWorkerService
           lockedBy: null,
           deadAt: isDead ? now : null,
         },
-      }),
-    ];
-    if (isDead && row.placement) {
-      updates.push(
-        this.prisma.mediaObjectPlacement.update({
+      });
+      if (res.count === 0) return;
+      if (isDead && row.placement) {
+        await tx.mediaObjectPlacement.update({
           where: { id: row.placement.id },
           data: { status: MediaObjectPlacementStatus.failed },
-        }),
-      );
-    }
-    await this.prisma.$transaction(updates);
+        });
+      }
+    });
     this.logger.warn(
       `CDN purge failed action=${row.id} attempt=${nextAttempt}/${MAX_ATTEMPTS}${isDead ? ' [DLQ]' : ''}: ${message}`,
     );
@@ -248,27 +264,4 @@ function cacheKeyFor(row: PurgeActionRow): string | null {
     row.placement?.objectKey ??
     null
   );
-}
-
-function mergeJson(
-  current: Prisma.JsonValue,
-  patch: Record<string, unknown>,
-): Prisma.InputJsonObject {
-  return {
-    ...(isJsonObject(current) ? current : {}),
-    ...patch,
-  } as Prisma.InputJsonObject;
-}
-
-function isJsonObject(value: Prisma.JsonValue): value is Prisma.JsonObject {
-  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
-}
-
-function positiveInt(value: string | undefined, fallback: number): number {
-  const parsed = Number(value);
-  return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback;
-}
-
-function errorText(err: unknown): string {
-  return err instanceof Error ? err.message : String(err);
 }

@@ -3,13 +3,15 @@ import {
   Controller,
   Get,
   Param,
+  Patch,
   Post,
   Query,
   Req,
+  Res,
   UseGuards,
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
-import type { Request } from 'express';
+import type { Request, Response } from 'express';
 import {
   ADMIN_PERMISSION_KEYS,
   AdminAuthGuard,
@@ -29,6 +31,7 @@ import {
   ListAdminMediaAssetsQuerySchema,
   ListAdminMediaModerationActionsQuerySchema,
   ListAdminMediaProcessingJobsQuerySchema,
+  UpdateAdminMediaAssetModerationSchema,
   type AdminMediaActionParams,
   type AdminMediaAssetParams,
   type AdminMediaProcessingJobParams,
@@ -36,8 +39,14 @@ import {
   type ListAdminMediaAssetsQuery,
   type ListAdminMediaModerationActionsQuery,
   type ListAdminMediaProcessingJobsQuery,
+  type UpdateAdminMediaAssetModerationInput,
 } from './admin-media.dto';
 import { AdminMediaService } from './admin-media.service';
+import {
+  MediaAssetAccessQuerySchema,
+  type MediaAssetAccessQueryDto,
+} from './dto';
+import { MediaAccessService } from './media-access.service';
 
 @Public()
 @UseGuards(AdminAuthGuard, AdminPermissionGuard)
@@ -45,6 +54,7 @@ import { AdminMediaService } from './admin-media.service';
 export class AdminMediaController {
   constructor(
     private readonly media: AdminMediaService,
+    private readonly mediaAccess: MediaAccessService,
     private readonly adminAuth: AdminAuthService,
   ) {}
 
@@ -64,6 +74,58 @@ export class AdminMediaController {
   }
 
   @RequireAdminPermissions(ADMIN_PERMISSION_KEYS.MediaRead)
+  @Get('assets/:assetId/access')
+  async issueAssetAccessUrl(
+    @CurrentAdmin() admin: AdminActor,
+    @Param(new ZodValidationPipe(AdminMediaAssetParamsSchema))
+    params: AdminMediaAssetParams,
+    @Query(new ZodValidationPipe(MediaAssetAccessQuerySchema))
+    query: MediaAssetAccessQueryDto,
+    @Req() request: Request,
+  ) {
+    const data = await this.mediaAccess.issueAdminAccessUrl(
+      params.assetId,
+      query,
+    );
+    await this.audit(
+      admin,
+      request,
+      'admin.media.asset.access_url',
+      'media_asset',
+      params.assetId,
+      { placementId: query.placementId, variantKey: query.variantKey },
+    );
+    return { code: 200, data };
+  }
+
+  @RequireAdminPermissions(ADMIN_PERMISSION_KEYS.MediaRead)
+  @Get('assets/:assetId/content')
+  async redirectToAssetContent(
+    @CurrentAdmin() admin: AdminActor,
+    @Param(new ZodValidationPipe(AdminMediaAssetParamsSchema))
+    params: AdminMediaAssetParams,
+    @Query(new ZodValidationPipe(MediaAssetAccessQuerySchema))
+    query: MediaAssetAccessQueryDto,
+    @Req() request: Request,
+    @Res() response: Response,
+  ) {
+    const access = await this.mediaAccess.issueAdminAccessUrl(
+      params.assetId,
+      query,
+    );
+    await this.audit(
+      admin,
+      request,
+      'admin.media.asset.content_redirect',
+      'media_asset',
+      params.assetId,
+      { placementId: query.placementId, variantKey: query.variantKey },
+    );
+    response.setHeader('cache-control', 'private, no-store');
+    return response.redirect(302, access.url);
+  }
+
+  @RequireAdminPermissions(ADMIN_PERMISSION_KEYS.MediaRead)
   @Get('moderation-actions')
   async listModerationActions(
     @Query(new ZodValidationPipe(ListAdminMediaModerationActionsQuerySchema))
@@ -72,7 +134,36 @@ export class AdminMediaController {
     return { code: 200, data: await this.media.listModerationActions(query) };
   }
 
-  @RequireAdminPermissions(ADMIN_PERMISSION_KEYS.AiModelOpsWrite)
+  @RequireAdminPermissions(ADMIN_PERMISSION_KEYS.MediaWrite)
+  @Patch('assets/:assetId/moderation')
+  async updateAssetModeration(
+    @CurrentAdmin() admin: AdminActor,
+    @Param(new ZodValidationPipe(AdminMediaAssetParamsSchema))
+    params: AdminMediaAssetParams,
+    @Body(new ZodValidationPipe(UpdateAdminMediaAssetModerationSchema))
+    body: UpdateAdminMediaAssetModerationInput,
+    @Req() request: Request,
+  ) {
+    const data = await this.media.updateAssetModeration(
+      params.assetId,
+      admin.id,
+      body,
+    );
+    await this.audit(
+      admin,
+      request,
+      'admin.media.asset.moderation_update',
+      'media_asset',
+      params.assetId,
+      {
+        moderationStatus: body.moderationStatus,
+        reason: body.reason,
+      },
+    );
+    return { code: 200, data };
+  }
+
+  @RequireAdminPermissions(ADMIN_PERMISSION_KEYS.MediaWrite)
   @Post('moderation-actions/:actionId/retry')
   async retryModerationAction(
     @CurrentAdmin() admin: AdminActor,
@@ -101,7 +192,7 @@ export class AdminMediaController {
     return { code: 200, data: await this.media.listProcessingJobs(query) };
   }
 
-  @RequireAdminPermissions(ADMIN_PERMISSION_KEYS.AiModelOpsWrite)
+  @RequireAdminPermissions(ADMIN_PERMISSION_KEYS.MediaWrite)
   @Post('assets/:assetId/processing-jobs')
   async createProcessingJob(
     @CurrentAdmin() admin: AdminActor,
@@ -127,7 +218,7 @@ export class AdminMediaController {
     return { code: 200, data };
   }
 
-  @RequireAdminPermissions(ADMIN_PERMISSION_KEYS.AiModelOpsWrite)
+  @RequireAdminPermissions(ADMIN_PERMISSION_KEYS.MediaWrite)
   @Post('processing-jobs/:jobId/retry')
   async retryProcessingJob(
     @CurrentAdmin() admin: AdminActor,

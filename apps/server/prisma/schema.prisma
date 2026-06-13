@@ -3508,6 +3508,9 @@ enum AiOutboxEventType {
   /// Job lifecycle change (status/stage/queuePosition update). The
   /// payload mirrors the Web PubSub `ai_job_update` shape.
   job_update
+  /// Media asset moderation changed. Payload is a
+  /// `media_asset_moderation_changed` asset event.
+  media_asset_moderation_changed
 }
 
 enum AiControlPlaneStatus {
@@ -4015,7 +4018,7 @@ model AiProviderEvent {
 // dispatcher instances coexist without double-publishing.
 model AiEventOutbox {
   id            String            @id
-  jobId         String            @map("job_id") @db.Uuid
+  jobId         String?           @map("job_id") @db.Uuid
   userId        String            @map("user_id")
   eventType     AiOutboxEventType @map("event_type")
   payload       Json
@@ -4035,7 +4038,7 @@ model AiEventOutbox {
   deadAt        DateTime?         @map("dead_at") @db.Timestamptz(6)
   createdAt     DateTime          @default(now()) @map("created_at") @db.Timestamptz(6)
 
-  job AiJob @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  job AiJob? @relation(fields: [jobId], references: [id], onDelete: Cascade)
 
   /// Pending-events scan: dispatched_at NULL AND dead_at NULL AND
   /// (nextAttemptAt NULL OR nextAttemptAt <= now()) AND lock free.

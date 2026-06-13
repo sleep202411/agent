@@ -21,6 +21,10 @@ export async function POST(request: NextRequest, context: RouteContext) {
   return forward(request, context, "POST");
 }
 
+export async function PATCH(request: NextRequest, context: RouteContext) {
+  return forward(request, context, "PATCH");
+}
+
 async function forward(request: NextRequest, context: RouteContext, method: string) {
   try {
     const path = await adminMediaPath(context);
@@ -31,11 +35,16 @@ async function forward(request: NextRequest, context: RouteContext, method: stri
       headers: adminForwardHeaders(request, { json: method !== "GET" }),
       body: method === "GET" ? undefined : await request.text(),
       cache: "no-store",
+      redirect: isMediaContentPath(path) ? "manual" : "follow",
     });
     return relayAdminResponse(upstream);
   } catch {
     return adminUnavailableResponse();
   }
+}
+
+function isMediaContentPath(path: string) {
+  return /^\/media\/assets\/[^/]+\/content$/u.test(path);
 }
 
 async function adminMediaPath(context: RouteContext) {

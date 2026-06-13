@@ -23,7 +23,7 @@ export interface OutputStorageUpload {
 }
 
 export interface OutputStorageResult {
-  /** Publicly fetchable URL. May include a SAS token if container is private. */
+  /** Storage-side URL returned by the provider SDK. Never expose this to clients. */
   url: string;
   /** Storage-side key the blob lives under, echoed back for the DB row. */
   storagePath: string;
@@ -75,8 +75,8 @@ export interface CreateUploadUrlInput {
  * `provider`/`bucket`/`region` are first-class because the SERVICE (not
  * the controller) is the only thing that knows which impl was selected
  * and where it writes. The controller persists these verbatim onto the
- * `MediaAsset` row so {@link MediaAssetUrlResolverService} can later
- * materialize a read URL with zero provider knowledge in the caller.
+ * `MediaAsset` row so the media access service can later mint a controlled
+ * signed read URL with zero provider knowledge in the caller.
  */
 export interface CreateUploadUrlResult {
   /** Fully-signed write URL the browser PUTs bytes to. */
@@ -112,8 +112,8 @@ export interface CreateUploadUrlResult {
  *
  * `provider`/`bucket`/`region` are the placement of the concrete impl that
  * answered the HEAD (the region factory's selection). The confirm step
- * persists them onto MediaAsset so {@link MediaAssetUrlResolverService}
- * can later materialize a read URL with zero provider knowledge in the
+ * persists them onto MediaAsset so the media access service can later
+ * mint a controlled signed read URL with zero provider knowledge in the
  * caller — without re-minting anything just to learn where the blob lives.
  */
 export interface HeadObjectResult {
@@ -128,6 +128,72 @@ export interface HeadObjectResult {
   bucket?: string;
   /** Provider region in read-resolver form — persisted to MediaAsset.region. */
   region?: string | null;
+}
+
+export interface CreateReadUrlInput {
+  /** Provider bucket/container recorded on the MediaAsset/Placement row. */
+  bucket: string;
+  /** Stable object key inside the bucket/container. */
+  storageKey: string;
+  /**
+   * Bare provider region (e.g. `cn-hangzhou`). Required for OSS so a legacy
+   * object outside the cell-default region is signed against the right
+   * endpoint; ignored by Azure (the account host carries the region).
+   */
+  region?: string | null;
+  /**
+   * Response cache policy for this signed read. This intentionally overrides
+   * object-level immutable cache headers so moderation takedowns are not
+   * defeated by a stale browser/CDN response.
+   */
+  cacheControl?: string | null;
+  /** Optional response content type hint for providers that support it. */
+  contentType?: string | null;
+  /** Optional browser download/display filename. */
+  filename?: string | null;
+  /** TTL in seconds. Defaults are provider-side and intentionally short. */
+  expiresInSeconds?: number;
+}
+
+export interface CreateReadUrlResult {
+  /** Fully signed, read-only URL. */
+  url: string;
+  provider: StorageProviderId;
+  bucket: string;
+  storageKey: string;
+  expiresAt: string;
+}
+
+/** A single physical stored object — the unit a moderation takedown acts on. */
+export interface StorageObjectRef {
+  /** Azure container / OSS bucket the object currently lives in. */
+  bucket: string;
+  /** Object key inside that bucket/container. */
+  storageKey: string;
+  /**
+   * Bare provider region (e.g. `cn-hangzhou`) persisted on the asset/placement.
+   * Required for OSS so a legacy object in a non-default region is signed
+   * against the correct regional endpoint; ignored by Azure (the account host
+   * carries the region).
+   */
+  region?: string | null;
+}
+
+/**
+ * Result of {@link OutputStorageService.restrictObject} /
+ * {@link OutputStorageService.restoreObject}.
+ *
+ * `bucket`/`storageKey` are where the object lives AFTER the operation:
+ * - OSS flips the object ACL in place → location is UNCHANGED, `relocated:false`.
+ * - Azure has no per-blob ACL → the object is server-side copied to a private
+ *   quarantine container and the source deleted → location CHANGES,
+ *   `relocated:true`. The caller persists the new location so admin evidence
+ *   reads and a later restore can find the object.
+ */
+export interface RestrictObjectResult {
+  bucket: string;
+  storageKey: string;
+  relocated: boolean;
 }
 
 export abstract class OutputStorageService {
@@ -145,6 +211,14 @@ export abstract class OutputStorageService {
     input: CreateUploadUrlInput,
   ): Promise<CreateUploadUrlResult>;
   /**
+   * Mint a short-lived, read-only URL. Product surfaces should call this only
+   * after domain access checks have passed; storage providers do not know
+   * about users, workspaces, moderation, or entitlements.
+   */
+  abstract createReadUrl(
+    input: CreateReadUrlInput,
+  ): Promise<CreateReadUrlResult>;
+  /**
    * HEAD a blob to confirm it ACTUALLY EXISTS and read its real
    * `sizeBytes` + `contentType` straight from storage. Backs the
    * `POST /aurora/media/confirm` step: storage is the source of truth, so
@@ -156,4 +230,25 @@ export abstract class OutputStorageService {
    * unconfigured, so a missing-creds fault is never mistaken for a 404.
    */
   abstract headObject(key: string): Promise<HeadObjectResult>;
+  /**
+   * Make a single stored object unreachable via its public URL — the physical
+   * half of a moderation takedown (the DB/DTO half is the moderation status
+   * gate). OSS flips the object ACL to private; Azure copies the blob into a
+   * private quarantine container and deletes the source (no per-blob ACL).
+   *
+   * MUST be idempotent: re-running on an already-restricted object resolves
+   * cleanly (so the action queue can retry safely). Throws
+   * ServiceUnavailableException when the impl is unconfigured.
+   */
+  abstract restrictObject(ref: StorageObjectRef): Promise<RestrictObjectResult>;
+  /**
+   * Reverse {@link restrictObject}. `current` is where the object lives now
+   * (the quarantine location for Azure, unchanged for OSS); `original` is the
+   * public location to restore it to (used by Azure to copy back; ignored by
+   * OSS, which flips the ACL in place). MUST be idempotent.
+   */
+  abstract restoreObject(
+    current: StorageObjectRef,
+    original: StorageObjectRef,
+  ): Promise<RestrictObjectResult>;
 }

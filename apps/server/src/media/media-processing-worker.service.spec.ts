@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-unsafe-assignment -- asserting on untyped jest mock payloads */
 import {
   MediaAssetKind,
   MediaAssetModerationStatus,

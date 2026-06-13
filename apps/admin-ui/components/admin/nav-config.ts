@@ -3,6 +3,7 @@ import {
   IconBook2,
   IconCertificate,
   IconChecklist,
+  IconCloud,
   IconCoins,
   IconCreditCard,
   IconDashboard,
@@ -19,6 +20,7 @@ import {
   IconReportMoney,
   IconScale,
   IconShieldLock,
+  IconSettingsAutomation,
   IconTags,
   IconTicket,
   IconUserCog,
@@ -107,7 +109,7 @@ export const GLOBAL_NAV: GlobalNavEntry[] = [
  * Secondary (module) nav, keyed by module prefix.
  *
  * Only modules that have multi-page secondary nav appear here; a module that is
- * absent renders NO second rail (dashboard `/`, media, users, audit, account).
+ * absent renders NO second rail (dashboard `/`, audit, account).
  *
  * P2 decision — `/billing`: now a multi-page sub-app with a second rail. The
  * `/billing` index redirects to `/billing/catalog`; the overview metrics are
@@ -288,6 +290,37 @@ export const MODULE_NAV: Record<string, ModuleNavGroup[]> = {
           label: "统一模型",
           icon: IconDatabaseSearch,
           permission: "ai_model_ops.read",
+        },
+      ],
+    },
+  ],
+  "/media": [
+    {
+      label: "媒体治理",
+      items: [
+        {
+          href: "/media/overview",
+          label: "总览",
+          icon: IconDashboard,
+          permission: "media.read",
+        },
+        {
+          href: "/media/assets",
+          label: "资产索引",
+          icon: IconPhoto,
+          permission: "media.read",
+        },
+        {
+          href: "/media/moderation",
+          label: "审核 / CDN",
+          icon: IconCloud,
+          permission: "media.read",
+        },
+        {
+          href: "/media/processing",
+          label: "处理任务",
+          icon: IconSettingsAutomation,
+          permission: "media.read",
         },
       ],
     },

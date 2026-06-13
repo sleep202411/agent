@@ -1,8 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
-import type {
-  MediaObjectPlacement,
-  MediaStorageProvider,
-} from '@prisma/client';
+import type { MediaObjectPlacement } from '@prisma/client';
 
 export interface CdnPurgeInput {
   actionId: string;
@@ -120,7 +117,7 @@ function toPayload(input: CdnPurgeInput): Record<string, unknown> {
       assetId: input.placement.assetId,
       variantId: input.placement.variantId,
       role: input.placement.role,
-      storageProvider: input.placement.storageProvider as MediaStorageProvider,
+      storageProvider: input.placement.storageProvider,
       bucket: input.placement.bucket,
       region: input.placement.region,
       objectKey: input.placement.objectKey,

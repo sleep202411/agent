@@ -12,6 +12,7 @@ export const ADMIN_PERMISSION_KEYS = {
   AiModelOpsWrite: 'ai_model_ops.write',
   WorkspaceRead: 'workspace.read',
   MediaRead: 'media.read',
+  MediaWrite: 'media.write',
   CertificateRead: 'certificate.read',
   CertificateManage: 'certificate.manage',
 } as const;
@@ -71,6 +72,10 @@ export const ADMIN_PERMISSION_CATALOG = [
     description: '查看媒体资产和上传记录',
   },
   {
+    key: ADMIN_PERMISSION_KEYS.MediaWrite,
+    description: '处理媒体资产审核、下架、恢复和 CDN 清理任务',
+  },
+  {
     key: ADMIN_PERMISSION_KEYS.CertificateRead,
     description: '查看用户证书记录',
   },
@@ -107,6 +112,7 @@ export const ADMIN_ROLE_CATALOG: Array<{
       ADMIN_PERMISSION_KEYS.AiModelOpsWrite,
       ADMIN_PERMISSION_KEYS.WorkspaceRead,
       ADMIN_PERMISSION_KEYS.MediaRead,
+      ADMIN_PERMISSION_KEYS.MediaWrite,
       ADMIN_PERMISSION_KEYS.CertificateRead,
       ADMIN_PERMISSION_KEYS.CertificateManage,
     ],
@@ -122,6 +128,7 @@ export const ADMIN_ROLE_CATALOG: Array<{
       ADMIN_PERMISSION_KEYS.AiModelOpsRead,
       ADMIN_PERMISSION_KEYS.WorkspaceRead,
       ADMIN_PERMISSION_KEYS.MediaRead,
+      ADMIN_PERMISSION_KEYS.MediaWrite,
       ADMIN_PERMISSION_KEYS.CertificateRead,
     ],
   },

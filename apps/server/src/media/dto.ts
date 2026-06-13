@@ -99,6 +99,7 @@ export type MediaAssetAccessParamsDto = z.infer<
 
 export const MediaAssetAccessQuerySchema = z.object({
   variantKey: z.string().trim().min(1).max(80).default('original'),
+  placementId: z.string().uuid().optional(),
 });
 export type MediaAssetAccessQueryDto = z.infer<
   typeof MediaAssetAccessQuerySchema
@@ -107,6 +108,7 @@ export type MediaAssetAccessQueryDto = z.infer<
 export interface MediaAssetAccessResponseDto {
   assetId: string;
   variantKey: string;
+  placementId?: string;
   url: string;
   expiresAt: string | null;
 }

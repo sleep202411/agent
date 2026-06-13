@@ -6,6 +6,9 @@ export interface ResolvableMediaAsset {
   region: string | null;
   objectKey: string | null;
   externalUrl: string | null;
+  status?: string | null;
+  moderationStatus?: string | null;
+  deletedAt?: Date | null;
   placements?: ResolvableMediaObjectPlacement[];
   variants?: ResolvableMediaAssetVariant[];
 }
@@ -40,6 +43,8 @@ export interface ResolvableMediaObjectPlacement {
 @Injectable()
 export class MediaAssetUrlResolverService {
   resolve(asset: ResolvableMediaAsset): string {
+    assertAssetCanResolveUrl(asset);
+
     const placement = pickPlacement(asset.placements);
     if (placement) return this.resolvePlacement(placement);
 
@@ -75,6 +80,8 @@ export class MediaAssetUrlResolverService {
   }
 
   resolveVariant(asset: ResolvableMediaAsset, variantKey = 'original'): string {
+    assertAssetCanResolveUrl(asset);
+
     const variant = asset.variants?.find(
       (candidate) =>
         candidate.variantKey === variantKey &&
@@ -187,6 +194,15 @@ export class MediaAssetUrlResolverService {
       );
     }
     return `https://${bucket}.s3.${region}.amazonaws.com/${encodePath(objectKey)}`;
+  }
+}
+
+function assertAssetCanResolveUrl(asset: ResolvableMediaAsset): void {
+  if (asset.deletedAt || asset.status === 'deleted') {
+    throw new Error('media asset is deleted');
+  }
+  if (asset.moderationStatus === 'blocked') {
+    throw new Error('media asset is blocked');
   }
 }
 

@@ -38,6 +38,8 @@ export type AdminMediaPlacement = {
   updatedAt: string;
 };
 
+export type AdminMediaModerationStatus = "approved" | "blocked" | "flagged" | "unreviewed";
+
 export type AdminMediaAsset = {
   id: string;
   kind: string;
@@ -54,7 +56,7 @@ export type AdminMediaAsset = {
   durationSeconds: number | null;
   visibility: string;
   status: string;
-  moderationStatus: string;
+  moderationStatus: AdminMediaModerationStatus;
   moderationReason: string | null;
   createdByUserId: string | null;
   workspaceId: string | null;
@@ -79,6 +81,15 @@ export type AdminMediaAsset = {
     projectId: string | null;
     aiJobId: string | null;
     lastObservedAt: string;
+  }>;
+  moderationCases: Array<{
+    id: string;
+    status: string;
+    severity: string;
+    reasonCode: string;
+    reason: string | null;
+    openedAt: string;
+    resolvedAt: string | null;
   }>;
   moderationActions: Array<{
     id: string;
@@ -186,28 +197,71 @@ export type AdminMediaInitialData = {
   error: string | null;
 };
 
-export async function fetchAdminMediaInitial(): Promise<AdminMediaInitialData> {
-  const [overview, assets, moderationActions, processingJobs] = await Promise.all([
-    fetchAdminMediaResource<AdminMediaOverview>("/media/overview", "媒体资产总览加载失败。"),
-    fetchAdminMediaResource<{ items: AdminMediaAsset[] }>(
-      "/media/assets?limit=40",
+export type AdminMediaView = "assets" | "moderation" | "overview" | "processing";
+
+const EMPTY_MEDIA_DATA: AdminMediaInitialData = {
+  overview: null,
+  assets: null,
+  moderationActions: null,
+  processingJobs: null,
+  error: null,
+};
+
+export async function fetchAdminMediaInitial(
+  view: AdminMediaView = "overview"
+): Promise<AdminMediaInitialData> {
+  if (view === "overview") {
+    const [overview, assets, moderationActions, processingJobs] = await Promise.all([
+      fetchAdminMediaResource<AdminMediaOverview>("/media/overview", "媒体资产总览加载失败。"),
+      fetchAdminMediaResource<{ items: AdminMediaAsset[] }>(
+        "/media/assets?limit=12",
+        "媒体资产加载失败。"
+      ),
+      fetchAdminMediaResource<{ items: AdminMediaModerationAction[] }>(
+        "/media/moderation-actions?actionType=purge_cdn&limit=12",
+        "CDN Purge 队列加载失败。"
+      ),
+      fetchAdminMediaResource<{ items: AdminMediaProcessingJob[] }>(
+        "/media/processing-jobs?limit=12",
+        "媒体处理任务加载失败。"
+      ),
+    ]);
+    return {
+      overview: overview.data,
+      assets: assets.data,
+      moderationActions: moderationActions.data,
+      processingJobs: processingJobs.data,
+      error: overview.error ?? assets.error ?? moderationActions.error ?? processingJobs.error,
+    };
+  }
+
+  if (view === "assets") {
+    const assets = await fetchAdminMediaResource<{ items: AdminMediaAsset[] }>(
+      "/media/assets?limit=80",
       "媒体资产加载失败。"
-    ),
-    fetchAdminMediaResource<{ items: AdminMediaModerationAction[] }>(
-      "/media/moderation-actions?actionType=purge_cdn&limit=40",
-      "CDN Purge 队列加载失败。"
-    ),
-    fetchAdminMediaResource<{ items: AdminMediaProcessingJob[] }>(
-      "/media/processing-jobs?limit=40",
-      "媒体处理任务加载失败。"
-    ),
-  ]);
+    );
+    return { ...EMPTY_MEDIA_DATA, assets: assets.data, error: assets.error };
+  }
+
+  if (view === "moderation") {
+    const moderationActions = await fetchAdminMediaResource<{
+      items: AdminMediaModerationAction[];
+    }>("/media/moderation-actions?actionType=purge_cdn&limit=80", "CDN Purge 队列加载失败。");
+    return {
+      ...EMPTY_MEDIA_DATA,
+      moderationActions: moderationActions.data,
+      error: moderationActions.error,
+    };
+  }
+
+  const processingJobs = await fetchAdminMediaResource<{ items: AdminMediaProcessingJob[] }>(
+    "/media/processing-jobs?limit=80",
+    "媒体处理任务加载失败。"
+  );
   return {
-    overview: overview.data,
-    assets: assets.data,
-    moderationActions: moderationActions.data,
+    ...EMPTY_MEDIA_DATA,
     processingJobs: processingJobs.data,
-    error: overview.error ?? assets.error ?? moderationActions.error ?? processingJobs.error,
+    error: processingJobs.error,
   };
 }
 

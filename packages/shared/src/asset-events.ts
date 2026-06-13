@@ -12,8 +12,8 @@
  *   - Hub:   `assets`
  *   - Group: `assets-user:{userId}` (one per user, covers all tabs)
  *
- * Today only `ai_job_update` exists. New event kinds get added here
- * as their producers come online.
+ * Event kinds are durable product events, not provider callbacks.
+ * Clients should merge them idempotently by the entity `updatedAt` / `ts`.
  */
 
 export interface AiJobUpdatePayload {
@@ -56,13 +56,28 @@ export interface AiJobUpdatePayload {
   completedAt?: string;
 }
 
-export type AssetEvent = {
-  kind: "ai_job_update";
-  /** Full latest job view — clients can replace their cached copy. */
-  job: AiJobUpdatePayload;
-  /** Server ms timestamp; useful for ignoring out-of-order pushes. */
-  ts: number;
-};
+export type AssetEvent =
+  | {
+      kind: "ai_job_update";
+      /** Full latest job view — clients can replace their cached copy. */
+      job: AiJobUpdatePayload;
+      /** Server ms timestamp; useful for ignoring out-of-order pushes. */
+      ts: number;
+    }
+  | {
+      kind: "media_asset_moderation_changed";
+      /** Logical media asset identity; clients should remove or restore cached usages by this id. */
+      assetId: string;
+      workspaceId?: string | null;
+      projectIds?: string[];
+      sourceSurface?: string | null;
+      status: string;
+      moderationStatus: "unreviewed" | "approved" | "flagged" | "blocked";
+      moderationReason?: string | null;
+      action: "approved" | "flagged" | "blocked" | "restored";
+      updatedAt: string;
+      ts: number;
+    };
 
 /** Azure Web PubSub group name for a user's asset events. */
 export function assetsUserGroup(userId: string): string {

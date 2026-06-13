@@ -34,6 +34,8 @@ export type ProjectMeta = {
  */
 export type ProjectAsset = {
   id: string;
+  /** Server media asset id. Present for generated assets and server-backed uploads. */
+  mediaAssetId?: string;
   kind: "image" | "video";
   source: "generated" | "uploaded";
   url?: string;
@@ -84,9 +86,21 @@ type StoredGenFields = {
 export type StoredCanvasNode =
   // An image node is blob-backed (uploads: `imageId`) or url-backed
   // (a generated asset dropped onto the canvas: durable `src`).
-  | (StoredNodeBase & { kind: "image"; imageId?: string; src?: string; label?: string })
+  | (StoredNodeBase & {
+      kind: "image";
+      imageId?: string;
+      mediaAssetId?: string;
+      src?: string;
+      label?: string;
+    })
   // A panorama node — an equirectangular image rendered as a 360 view.
-  | (StoredNodeBase & { kind: "panorama"; imageId?: string; src?: string; label?: string })
+  | (StoredNodeBase & {
+      kind: "panorama";
+      imageId?: string;
+      mediaAssetId?: string;
+      src?: string;
+      label?: string;
+    })
   | (StoredNodeBase & { kind: "note"; text: string })
   | (StoredNodeBase & { kind: "prompt" } & StoredGenFields)
   | (StoredNodeBase & { kind: "video" } & StoredGenFields);
@@ -283,9 +297,48 @@ export async function deleteProjectAsset(id: string, assetId: string): Promise<v
   if (removed) notifyProjectAssetsChanged(id);
   // GC an uploaded asset's blob if no canvas node still references it.
   const imageId = removed?.imageId;
-  if (after && imageId && !after.nodes.some((n) => n.kind === "image" && n.imageId === imageId)) {
+  if (
+    after &&
+    imageId &&
+    !after.nodes.some((n) => (n.kind === "image" || n.kind === "panorama") && n.imageId === imageId)
+  ) {
     await run("images", "readwrite", (s) => s.delete(imageId));
   }
+}
+
+export async function deleteProjectAssetsByMediaAssetId(
+  id: string,
+  mediaAssetId: string
+): Promise<void> {
+  const removed: ProjectAsset[] = [];
+  const after = await updateProject(id, (record) => {
+    const assets = record.assets ?? [];
+    const nextAssets = assets.filter((asset) => {
+      const match = asset.mediaAssetId === mediaAssetId || asset.id === mediaAssetId;
+      if (match) removed.push(asset);
+      return !match;
+    });
+    if (nextAssets.length === assets.length) return record;
+    return { ...record, assets: nextAssets, updatedAt: Date.now() };
+  });
+  if (removed.length === 0) return;
+  notifyProjectAssetsChanged(id);
+
+  const imageIds = [
+    ...new Set(removed.map((asset) => asset.imageId).filter((value): value is string => !!value)),
+  ];
+  if (!after || imageIds.length === 0) return;
+  await Promise.all(
+    imageIds
+      .filter(
+        (imageId) =>
+          !after.nodes.some(
+            (node) =>
+              (node.kind === "image" || node.kind === "panorama") && node.imageId === imageId
+          )
+      )
+      .map((imageId) => run("images", "readwrite", (s) => s.delete(imageId)))
+  );
 }
 
 export async function renameProject(id: string, name: string): Promise<void> {
@@ -303,13 +356,17 @@ export async function duplicateProject(id: string): Promise<ProjectMeta | undefi
   // would delete blobs the other still references.
   const remap = new Map<string, string>();
   for (const node of source.nodes) {
-    if (node.kind === "image" && node.imageId && !remap.has(node.imageId)) {
+    if (
+      (node.kind === "image" || node.kind === "panorama") &&
+      node.imageId &&
+      !remap.has(node.imageId)
+    ) {
       const blob = await getImage(node.imageId);
       if (blob) remap.set(node.imageId, await putImage(blob));
     }
   }
   const nodes = source.nodes.map((node) =>
-    node.kind === "image" && node.imageId
+    (node.kind === "image" || node.kind === "panorama") && node.imageId
       ? { ...node, imageId: remap.get(node.imageId) ?? node.imageId }
       : node
   );
@@ -333,7 +390,7 @@ export async function deleteProject(id: string): Promise<void> {
   const imageIds = [
     ...new Set(
       existing.nodes.flatMap((node) =>
-        node.kind === "image" && node.imageId ? [node.imageId] : []
+        (node.kind === "image" || node.kind === "panorama") && node.imageId ? [node.imageId] : []
       )
     ),
   ];

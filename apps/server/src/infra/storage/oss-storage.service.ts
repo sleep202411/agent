@@ -28,20 +28,33 @@ import {
 import OSS from 'ali-oss';
 import {
   OutputStorageService,
+  type CreateReadUrlInput,
+  type CreateReadUrlResult,
   type CreateUploadUrlInput,
   type CreateUploadUrlResult,
   type HeadObjectResult,
   type OutputStorageResult,
   type OutputStorageUpload,
+  type RestrictObjectResult,
+  type StorageObjectRef,
 } from './storage.types';
 
 const DEFAULT_UPLOAD_URL_TTL_SECONDS = 900;
+const DEFAULT_READ_URL_TTL_SECONDS = 300;
+/**
+ * ali-oss accepts the object ACL `default` (revert to inheriting the bucket
+ * ACL), but `@types/ali-oss`'s `ACLType` union omits it. Cast once, here.
+ */
+const OSS_ACL_INHERIT_BUCKET = 'default' as unknown as OSS.ACLType;
 
 @Injectable()
 export class AliyunOssStorageService extends OutputStorageService {
   private readonly logger = new Logger(AliyunOssStorageService.name);
   private readonly client: OSS | null;
   private readonly bucket: string;
+  private readonly rawRegion: string;
+  private readonly accessKeyId: string;
+  private readonly accessKeySecret: string;
   /** Bare region form (`cn-hangzhou`) for MediaAsset.region — see file
    *  header. NOT the SDK's `oss-cn-hangzhou` form. */
   private readonly region: string | null;
@@ -54,6 +67,9 @@ export class AliyunOssStorageService extends OutputStorageService {
     const accessKeySecret = (process.env.OSS_ACCESS_KEY_SECRET ?? '').trim();
 
     this.bucket = bucket;
+    this.rawRegion = rawRegion;
+    this.accessKeyId = accessKeyId;
+    this.accessKeySecret = accessKeySecret;
     // Strip the leading `oss-` so the persisted region matches what the
     // read resolver re-prefixes (`oss-${region}`). `oss-cn-hangzhou` →
     // `cn-hangzhou`; a bare `cn-hangzhou` passes through unchanged.
@@ -85,7 +101,9 @@ export class AliyunOssStorageService extends OutputStorageService {
     const result = await this.client.put(input.key, input.body, {
       headers: {
         'Content-Type': input.contentType,
-        // Gallery outputs are immutable per key — cache hard at the edge.
+        // Content-addressed keys → immutable bytes; cache aggressively.
+        // Takedown invalidates blocked objects at the storage layer + CDN purge,
+        // not via cache headers.
         'Cache-Control': 'public, max-age=31536000, immutable',
         ...(input.filename
           ? { 'Content-Disposition': `inline; filename="${input.filename}"` }
@@ -133,6 +151,29 @@ export class AliyunOssStorageService extends OutputStorageService {
     };
   }
 
+  async createReadUrl(input: CreateReadUrlInput): Promise<CreateReadUrlResult> {
+    if (!this.client) {
+      throw new ServiceUnavailableException(
+        'aliyun_oss storage is not configured',
+      );
+    }
+    const ttl = input.expiresInSeconds ?? DEFAULT_READ_URL_TTL_SECONDS;
+    const client = this.clientForBucket(input.bucket, input.region);
+    const url = await client.signatureUrlV4(
+      'GET',
+      ttl,
+      responseOptionsForRead(input),
+      input.storageKey,
+    );
+    return {
+      url,
+      provider: 'aliyun_oss',
+      bucket: input.bucket,
+      storageKey: input.storageKey,
+      expiresAt: new Date(Date.now() + ttl * 1000).toISOString(),
+    };
+  }
+
   async headObject(key: string): Promise<HeadObjectResult> {
     if (!this.client) {
       throw new ServiceUnavailableException(
@@ -172,6 +213,35 @@ export class AliyunOssStorageService extends OutputStorageService {
     }
   }
 
+  async restrictObject(ref: StorageObjectRef): Promise<RestrictObjectResult> {
+    // OSS supports per-object ACL: flip to `private` so the bucket's
+    // public-read no longer applies. In place — location is unchanged.
+    // Idempotent: setting an already-private object private is a no-op.
+    await this.clientForBucket(ref.bucket, ref.region).putACL(
+      ref.storageKey,
+      'private',
+    );
+    return { bucket: ref.bucket, storageKey: ref.storageKey, relocated: false };
+  }
+
+  // OSS flips ACL in place and never relocates, so the abstract method's
+  // `original` argument is unused here — the impl simply omits it.
+  async restoreObject(
+    current: StorageObjectRef,
+  ): Promise<RestrictObjectResult> {
+    // `default` makes the object inherit the bucket ACL again (public-read for
+    // a public bucket).
+    await this.clientForBucket(current.bucket, current.region).putACL(
+      current.storageKey,
+      OSS_ACL_INHERIT_BUCKET,
+    );
+    return {
+      bucket: current.bucket,
+      storageKey: current.storageKey,
+      relocated: false,
+    };
+  }
+
   async isHealthy(): Promise<boolean> {
     if (!this.client) return false;
     try {
@@ -184,6 +254,55 @@ export class AliyunOssStorageService extends OutputStorageService {
       return false;
     }
   }
+
+  private clientForBucket(bucket: string, region?: string | null): OSS {
+    // The object's own region (bare form, e.g. `cn-hangzhou`) wins so a legacy
+    // object outside the cell-default region is signed against the right
+    // endpoint. SDK wants the `oss-` prefix form. Fall back to the configured
+    // region for same-region objects (and reuse the cached client then).
+    const sdkRegion = region ? `oss-${region.replace(/^oss-/, '')}` : null;
+    if (
+      this.client &&
+      bucket === this.bucket &&
+      (!sdkRegion || sdkRegion === this.rawRegion)
+    ) {
+      return this.client;
+    }
+    if (!this.accessKeyId || !this.accessKeySecret) {
+      throw new ServiceUnavailableException(
+        'aliyun_oss storage is not configured',
+      );
+    }
+    const effectiveRegion = sdkRegion || this.rawRegion;
+    if (!effectiveRegion) {
+      throw new ServiceUnavailableException(
+        'aliyun_oss storage is not configured',
+      );
+    }
+    return new OSS({
+      region: effectiveRegion,
+      bucket,
+      accessKeyId: this.accessKeyId,
+      accessKeySecret: this.accessKeySecret,
+      secure: true,
+      authorizationV4: true,
+    });
+  }
+}
+
+function responseOptionsForRead(input: CreateReadUrlInput) {
+  const queries: Record<string, string> = {};
+  if (input.cacheControl) {
+    queries['response-cache-control'] = input.cacheControl;
+  }
+  if (input.contentType) {
+    queries['response-content-type'] = input.contentType;
+  }
+  if (input.filename) {
+    queries['response-content-disposition'] =
+      `inline; filename="${input.filename}"`;
+  }
+  return Object.keys(queries).length > 0 ? { queries } : undefined;
 }
 
 /**

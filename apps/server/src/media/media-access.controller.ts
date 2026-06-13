@@ -1,6 +1,6 @@
 import { Controller, Get, Param, Query, Res } from '@nestjs/common';
 import type { Response } from 'express';
-import { CurrentUser } from '../auth';
+import { CurrentUser, Public } from '../auth';
 import type { AuthUser } from '../auth';
 import { ZodValidationPipe } from '../common/zod.pipe';
 import {
@@ -16,28 +16,30 @@ import { MediaAccessService } from './media-access.service';
 export class MediaAccessController {
   constructor(private readonly svc: MediaAccessService) {}
 
+  @Public()
   @Get(':assetId/access')
   async issueAccessUrl(
-    @CurrentUser() user: AuthUser,
+    @CurrentUser() user: AuthUser | undefined,
     @Param(new ZodValidationPipe(MediaAssetAccessParamsSchema))
     params: MediaAssetAccessParamsDto,
     @Query(new ZodValidationPipe(MediaAssetAccessQuerySchema))
     query: MediaAssetAccessQueryDto,
   ): Promise<MediaAssetAccessResponseDto> {
-    return this.svc.issueAccessUrl(user.userId, params.assetId, query);
+    return this.svc.issueBrowserAccessUrl(user?.userId, params.assetId, query);
   }
 
+  @Public()
   @Get(':assetId/content')
   async redirectToContent(
-    @CurrentUser() user: AuthUser,
+    @CurrentUser() user: AuthUser | undefined,
     @Param(new ZodValidationPipe(MediaAssetAccessParamsSchema))
     params: MediaAssetAccessParamsDto,
     @Query(new ZodValidationPipe(MediaAssetAccessQuerySchema))
     query: MediaAssetAccessQueryDto,
     @Res() response: Response,
   ) {
-    const access = await this.svc.issueAccessUrl(
-      user.userId,
+    const access = await this.svc.issueBrowserAccessUrl(
+      user?.userId,
       params.assetId,
       query,
     );

@@ -30,7 +30,7 @@ import {
   type OnModuleDestroy,
 } from '@nestjs/common';
 import type { AssetEvent } from '@repo/shared';
-import { Prisma } from '@prisma/client';
+import { AiOutboxEventType, Prisma } from '@prisma/client';
 import { newShortId } from '../common/id';
 import { PrismaService } from '../infra/db/db.module';
 import {
@@ -77,15 +77,11 @@ export class AiGenerationOutboxService
    */
   async record(job: AiJob): Promise<void> {
     const event = toAiJobEvent(job);
-    const row = await this.prisma.aiEventOutbox.create({
-      data: {
-        id: newShortId(),
-        jobId: job.id,
-        userId: job.userId,
-        eventType: 'job_update',
-        payload: event as unknown as Prisma.InputJsonValue,
-        attempt: 0,
-      },
+    const row = await enqueueAssetEventOutbox(this.prisma, {
+      jobId: job.id,
+      userId: job.userId,
+      eventType: AiOutboxEventType.job_update,
+      payload: event,
     });
     // Optimistic publish — don't await, don't fail the caller if
     // Web PubSub is down. Dispatcher cleans up.
@@ -210,7 +206,7 @@ export class AiGenerationOutboxService
   private async tryDispatch(
     rowId: string,
     userId: string,
-    payload: ReturnType<typeof toAiJobEvent>,
+    payload: AssetEvent,
   ): Promise<void> {
     try {
       await this.realtime.publishAssetEvent(userId, payload);
@@ -240,6 +236,27 @@ export class AiGenerationOutboxService
       this.logger.warn(`outbox gc failed: ${errorText(err)}`);
     }
   }
+}
+
+export async function enqueueAssetEventOutbox(
+  tx: PrismaService | Prisma.TransactionClient,
+  input: {
+    userId: string;
+    eventType: AiOutboxEventType;
+    payload: AssetEvent;
+    jobId?: string | null;
+  },
+) {
+  return tx.aiEventOutbox.create({
+    data: {
+      id: newShortId(),
+      jobId: input.jobId ?? null,
+      userId: input.userId,
+      eventType: input.eventType,
+      payload: input.payload as unknown as Prisma.InputJsonValue,
+      attempt: 0,
+    },
+  });
 }
 
 function errorText(err: unknown): string {

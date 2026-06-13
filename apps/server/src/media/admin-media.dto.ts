@@ -74,6 +74,14 @@ export const AdminMediaAssetParamsSchema = z.object({
 });
 export type AdminMediaAssetParams = z.infer<typeof AdminMediaAssetParamsSchema>;
 
+export const UpdateAdminMediaAssetModerationSchema = z.object({
+  moderationStatus: z.enum(['unreviewed', 'approved', 'flagged', 'blocked']),
+  reason: z.string().trim().max(2000).nullable().optional(),
+});
+export type UpdateAdminMediaAssetModerationInput = z.infer<
+  typeof UpdateAdminMediaAssetModerationSchema
+>;
+
 export const AdminMediaActionParamsSchema = z.object({
   actionId: z.string().uuid(),
 });

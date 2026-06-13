@@ -11,11 +11,13 @@ import {
   MediaProcessingService,
   type EnqueueMediaProcessingJobInput,
 } from './media-processing.service';
+import { MediaModerationAdminService } from './media-moderation-admin.service';
 import type {
   CreateAdminMediaProcessingJobInput,
   ListAdminMediaAssetsQuery,
   ListAdminMediaModerationActionsQuery,
   ListAdminMediaProcessingJobsQuery,
+  UpdateAdminMediaAssetModerationInput,
 } from './admin-media.dto';
 
 const ADMIN_MEDIA_ASSET_INCLUDE = {
@@ -57,6 +59,7 @@ export class AdminMediaService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly processing: MediaProcessingService,
+    private readonly moderation: MediaModerationAdminService,
   ) {}
 
   async overview() {
@@ -135,7 +138,9 @@ export class AdminMediaService {
       take: query.limit,
       include: ADMIN_MEDIA_ASSET_INCLUDE,
     });
-    return { items: items.map(serializeMediaAsset) };
+    return {
+      items: items.map((asset) => serializeMediaAsset(asset)),
+    };
   }
 
   async listModerationActions(query: ListAdminMediaModerationActionsQuery) {
@@ -211,6 +216,20 @@ export class AdminMediaService {
         : []),
     ]);
     return serializeModerationAction(action);
+  }
+
+  async updateAssetModeration(
+    assetId: string,
+    adminId: string,
+    input: UpdateAdminMediaAssetModerationInput,
+  ) {
+    await this.moderation.updateAssetModeration(assetId, adminId, input);
+    const asset = await this.prisma.mediaAsset.findFirst({
+      where: { id: assetId, deletedAt: null },
+      include: ADMIN_MEDIA_ASSET_INCLUDE,
+    });
+    if (!asset) throw new NotFoundException('媒体资产不存在。');
+    return serializeMediaAsset(asset);
   }
 
   async listProcessingJobs(query: ListAdminMediaProcessingJobsQuery) {
@@ -404,7 +423,9 @@ function serializeModerationAction(
   };
 }
 
-type SerializableProcessingJob = Prisma.MediaProcessingJobGetPayload<{}> & {
+type SerializableProcessingJob = Prisma.MediaProcessingJobGetPayload<
+  Record<string, never>
+> & {
   asset?: {
     id: string;
     kind: string;

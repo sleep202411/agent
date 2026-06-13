@@ -1058,12 +1058,15 @@ export class AiGenerationRepository {
   }
 
   private outputToDomain(row: AiJobOutputWithAssetRow): AiJobOutput {
+    const accessUrl = row.assetId ? mediaContentUrl(row.assetId) : undefined;
     return {
       id: row.id,
       assetId: row.assetId ?? undefined,
       type: row.type,
+      // Public direct storage URL. Blocked objects are made unreachable at the
+      // storage layer by the moderation takedown, so no per-read indirection.
       url: row.url,
-      accessUrl: row.assetId ? mediaContentUrl(row.assetId) : undefined,
+      accessUrl,
       storagePath: row.storagePath,
       contentHash: row.contentHash ?? undefined,
       width: row.width ?? undefined,

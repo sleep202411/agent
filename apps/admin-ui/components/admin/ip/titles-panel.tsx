@@ -776,7 +776,7 @@ function IpDetailDrawer({
                       </div>
                       {item.asset?.url ? (
                         <a
-                          href={item.asset.url}
+                          href={adminRenderableMediaUrl(item.asset.url) ?? item.asset.url}
                           target="_blank"
                           rel="noreferrer"
                           className="shrink-0 rounded-lg border border-slate-200 px-2.5 py-1 text-[12px] font-medium text-slate-700 hover:bg-slate-50"
@@ -997,4 +997,11 @@ function DetailCell({ label, value }: { label: string; value: string }) {
       <p className="mt-1 text-sm font-medium text-slate-950">{value}</p>
     </div>
   );
+}
+
+function adminRenderableMediaUrl(value: string) {
+  const mediaMatch = value.match(/^\/aurora\/media\/assets\/([^/]+)\/content(?:\?(.*))?$/u);
+  if (!mediaMatch?.[1]) return null;
+  const query = mediaMatch[2] ? `?${mediaMatch[2]}` : "?variantKey=original";
+  return `/api/admin/media/assets/${encodeURIComponent(decodeURIComponent(mediaMatch[1]))}/content${query}`;
 }

@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-unsafe-assignment -- jest objectContaining matchers are typed any */
 import {
   MediaModerationActionStatus,
   MediaModerationActionType,
@@ -58,19 +59,31 @@ describe('CdnPurgeWorkerService', () => {
       placement,
       ...rowOverrides,
     };
+    // Both claim-lock and the guarded terminal write go through updateMany.
+    const actionUpdateMany = jest.fn().mockResolvedValue({ count: 1 });
+    const placementUpdate = jest.fn().mockResolvedValue(placement);
     const prisma = {
       mediaModerationAction: {
         findMany: jest
           .fn()
           .mockResolvedValueOnce([{ id: row.id }])
           .mockResolvedValueOnce([row]),
-        updateMany: jest.fn().mockResolvedValue({ count: 1 }),
-        update: jest.fn().mockResolvedValue(row),
+        updateMany: actionUpdateMany,
       },
       mediaObjectPlacement: {
-        update: jest.fn().mockResolvedValue(placement),
+        update: placementUpdate,
       },
-      $transaction: jest.fn((ops: Array<Promise<unknown>>) => Promise.all(ops)),
+      // complete()/fail() run inside a callback transaction; the tx exposes the
+      // same mocks (an explicit literal, not `prisma`, to avoid a self-reference
+      // that would erase the object's inferred type).
+      $transaction: jest.fn((cb: (tx: unknown) => unknown) =>
+        Promise.resolve(
+          cb({
+            mediaModerationAction: { updateMany: actionUpdateMany },
+            mediaObjectPlacement: { update: placementUpdate },
+          }),
+        ),
+      ),
     };
     const assetUrls = {
       resolvePlacement: jest
@@ -104,9 +117,9 @@ describe('CdnPurgeWorkerService', () => {
         url: 'https://cdn.example.com/media/example.png',
       }),
     );
-    expect(prisma.mediaModerationAction.update).toHaveBeenCalledWith(
+    expect(prisma.mediaModerationAction.updateMany).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: { id: row.id },
+        where: expect.objectContaining({ id: row.id }),
         data: expect.objectContaining({
           status: MediaModerationActionStatus.completed,
           providerTaskId: 'provider-task-1',
@@ -130,9 +143,9 @@ describe('CdnPurgeWorkerService', () => {
 
     await service.drainOnce();
 
-    expect(prisma.mediaModerationAction.update).toHaveBeenCalledWith(
+    expect(prisma.mediaModerationAction.updateMany).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: { id: row.id },
+        where: expect.objectContaining({ id: row.id }),
         data: expect.objectContaining({
           status: MediaModerationActionStatus.failed,
           attempt: 1,
@@ -152,9 +165,9 @@ describe('CdnPurgeWorkerService', () => {
 
     await service.drainOnce();
 
-    expect(prisma.mediaModerationAction.update).toHaveBeenCalledWith(
+    expect(prisma.mediaModerationAction.updateMany).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: { id: row.id },
+        where: expect.objectContaining({ id: row.id }),
         data: expect.objectContaining({
           attempt: 8,
           deadAt: expect.any(Date),
