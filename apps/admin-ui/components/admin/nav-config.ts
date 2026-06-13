@@ -25,6 +25,7 @@ import {
   IconTicket,
   IconUserCog,
   IconUsersGroup,
+  IconUserSearch,
   IconVersions,
   IconWallet,
 } from "@tabler/icons-react";
@@ -87,6 +88,13 @@ export const GLOBAL_NAV: GlobalNavEntry[] = [
     label: "证书管理",
     icon: IconCertificate,
     permission: "certificate.read",
+  },
+  {
+    key: "/members",
+    href: "/members",
+    label: "用户管理",
+    icon: IconUserSearch,
+    permission: "user.read",
   },
   {
     key: "/users",
@@ -321,6 +329,25 @@ export const MODULE_NAV: Record<string, ModuleNavGroup[]> = {
           label: "处理任务",
           icon: IconSettingsAutomation,
           permission: "media.read",
+        },
+      ],
+    },
+  ],
+  "/members": [
+    {
+      label: "用户运营",
+      items: [
+        {
+          href: "/members/directory",
+          label: "用户列表",
+          icon: IconUserSearch,
+          permission: "user.read",
+        },
+        {
+          href: "/members/points",
+          label: "积分流水",
+          icon: IconReceipt2,
+          permission: "user.read",
         },
       ],
     },
