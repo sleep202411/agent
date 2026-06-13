@@ -32,6 +32,17 @@ import {
 } from "@/src/store/slices/assistantSlice";
 import { ensureSession, closeSession } from "@/src/lib/assistant/chat-session";
 import { Button } from "@/components/ui/button";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 
 import { quickActionsByAgent } from "./constants";
 import { MessageBubble } from "./message-bubble";
@@ -53,6 +64,7 @@ interface AiAssistantPanelProps {
 
 export function AiAssistantPanel({ onClose }: AiAssistantPanelProps) {
   const t = useTranslations("ai");
+  const tCommon = useTranslations("common");
   const dispatch = useAppDispatch();
   const projectId = useAppSelector((state) => state.project.currentProjectId);
 
@@ -231,17 +243,31 @@ export function AiAssistantPanel({ onClose }: AiAssistantPanelProps) {
         title={t("title")}
         actions={
           hasMeaningfulMessages ? (
-            <Button
-              variant="ghost"
-              color="muted"
-              size="icon-xs"
-              onClick={() => {
-                if (projectId) dispatch(newConversation(projectId));
-              }}
-              title={t("newConversation")}
-            >
-              <IconMessagePlus className="size-3.5" />
-            </Button>
+            <AlertDialog>
+              <AlertDialogTrigger asChild>
+                <Button variant="ghost" color="muted" size="icon-xs" title={t("newConversation")}>
+                  <IconMessagePlus className="size-3.5" />
+                </Button>
+              </AlertDialogTrigger>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>{t("newConversationConfirmTitle")}</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    {t("newConversationConfirmDescription")}
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel>{tCommon("cancel")}</AlertDialogCancel>
+                  <AlertDialogAction
+                    onClick={() => {
+                      if (projectId) dispatch(newConversation(projectId));
+                    }}
+                  >
+                    {t("newConversationConfirmAction")}
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
           ) : null
         }
         onClose={onClose}
