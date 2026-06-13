@@ -15,6 +15,8 @@ export const ADMIN_PERMISSION_KEYS = {
   MediaWrite: 'media.write',
   CertificateRead: 'certificate.read',
   CertificateManage: 'certificate.manage',
+  UserRead: 'user.read',
+  UserWrite: 'user.write',
 } as const;
 
 export const ADMIN_ROLE_KEYS = {
@@ -83,6 +85,14 @@ export const ADMIN_PERMISSION_CATALOG = [
     key: ADMIN_PERMISSION_KEYS.CertificateManage,
     description: '签发、修改、吊销和删除用户证书',
   },
+  {
+    key: ADMIN_PERMISSION_KEYS.UserRead,
+    description: '查看终端用户资料、余额和积分流水',
+  },
+  {
+    key: ADMIN_PERMISSION_KEYS.UserWrite,
+    description: '给终端用户加 / 扣积分等人工运营操作',
+  },
 ] as const;
 
 export const ADMIN_ROLE_CATALOG: Array<{
@@ -115,6 +125,8 @@ export const ADMIN_ROLE_CATALOG: Array<{
       ADMIN_PERMISSION_KEYS.MediaWrite,
       ADMIN_PERMISSION_KEYS.CertificateRead,
       ADMIN_PERMISSION_KEYS.CertificateManage,
+      ADMIN_PERMISSION_KEYS.UserRead,
+      ADMIN_PERMISSION_KEYS.UserWrite,
     ],
   },
   {
@@ -130,6 +142,7 @@ export const ADMIN_ROLE_CATALOG: Array<{
       ADMIN_PERMISSION_KEYS.MediaRead,
       ADMIN_PERMISSION_KEYS.MediaWrite,
       ADMIN_PERMISSION_KEYS.CertificateRead,
+      ADMIN_PERMISSION_KEYS.UserRead,
     ],
   },
 ];
