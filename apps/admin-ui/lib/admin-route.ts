@@ -27,11 +27,17 @@ export function adminUrlForRequest(_request: NextRequest, path: string) {
 }
 
 export async function relayAdminResponse(upstream: Response): Promise<Response> {
+  const headers: Record<string, string> = {
+    "content-type": upstream.headers.get("content-type") ?? "application/json",
+  };
+  const location = upstream.headers.get("location");
+  if (location) headers.location = location;
+  const cacheControl = upstream.headers.get("cache-control");
+  if (cacheControl) headers["cache-control"] = cacheControl;
+
   const response = new Response(await upstream.text(), {
     status: upstream.status,
-    headers: {
-      "content-type": upstream.headers.get("content-type") ?? "application/json",
-    },
+    headers,
   });
   const setCookie = upstream.headers.get("set-cookie");
   if (setCookie) response.headers.append("set-cookie", scopeAdminCookie(setCookie));

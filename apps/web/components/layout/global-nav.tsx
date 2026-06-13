@@ -20,6 +20,7 @@ import { useTranslations, useLocale, setLanguage } from "@/src/i18n/i18n";
 import { setCurrentLocale, localizePath, stripLocalePrefix } from "@/src/i18n/locale-url";
 import { LOCALE_OPTIONS, type Locale } from "@/src/i18n/config";
 import { getStudioHref } from "@/src/lib/region/cell";
+import { encodeUserId } from "@/src/lib/user-id-codec";
 import {
   IconBook2,
   IconCheck,
@@ -466,7 +467,7 @@ function SecretAccountMenu({
   const [copied, setCopied] = useState(false);
 
   const displayName = user.nickname || user.email || commonT("personalAccount");
-  const accountId = user.id;
+  const accountId = encodeUserId(user.id);
   const accountIdLabel =
     accountId.length > 12 ? `${accountId.slice(0, 6)}...${accountId.slice(-4)}` : accountId;
 

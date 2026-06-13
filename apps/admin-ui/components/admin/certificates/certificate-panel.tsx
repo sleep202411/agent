@@ -151,7 +151,7 @@ export function CertificatesPanel({
       certNo: "",
       issuedAt: isoToLocalInput(row.issuedAt),
       imageAssetId: row.imageAssetId,
-      imageUrl: row.imageUrl ?? "",
+      imageUrl: adminMediaContentUrl(row.imageAssetId) ?? row.imageUrl ?? "",
     });
     setFormError(null);
     setSheetOpen(true);
@@ -365,7 +365,7 @@ export function CertificatesPanel({
                   <tr key={row.id} className="group hover:bg-slate-50/60">
                     <Td>
                       <div className="flex items-center gap-3">
-                        <CertThumb url={row.imageUrl} />
+                        <CertThumb url={adminMediaContentUrl(row.imageAssetId) ?? row.imageUrl} />
                         <div className="min-w-0">
                           <p className="max-w-[280px] truncate text-sm font-medium text-slate-950">
                             {row.title}
@@ -681,7 +681,10 @@ function CertificateImageField({
         { method: "POST", body: form }
       );
       if (!data.asset) throw new Error("上传失败");
-      onChange({ assetId: data.asset.id, url: data.asset.url ?? "" });
+      onChange({
+        assetId: data.asset.id,
+        url: adminMediaContentUrl(data.asset.id) ?? data.asset.url ?? "",
+      });
     } catch (err) {
       setUploadError(toErrorMessage(err));
       setLocalPreview(null);
@@ -764,6 +767,11 @@ function CertThumb({ url }: { url: string | null }) {
       <img src={url} alt="" className="size-full object-cover" />
     </div>
   );
+}
+
+function adminMediaContentUrl(assetId: string | null | undefined) {
+  if (!assetId) return null;
+  return `/api/admin/media/assets/${encodeURIComponent(assetId)}/content?variantKey=original`;
 }
 
 function Th({ children, className }: { children: React.ReactNode; className?: string }) {

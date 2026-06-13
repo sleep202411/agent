@@ -42,7 +42,7 @@ stricter than the shared rules, this file wins inside `apps/studio`.
    panels opened over the composer (model picker / settings) `oklch(0.24)`.
    All zero-chroma; no borders.
 
-   Two deliberate exceptions, both for **functional color that encodes data,
+   Three deliberate exceptions, all for **functional color that encodes data,
    not decoration**:
    - `destructive` keeps standard shadcn chroma — error semantics need color.
    - **Canvas connectors** (port handles, their labels, and the edges between
@@ -54,6 +54,19 @@ stricter than the shared rules, this file wins inside `apps/studio`.
      wires are colored. The video connector is the one sanctioned, deliberate
      use of brand red as a functional accent (rule 3) — it is still not a
      token and never tints a surface.
+   - **Commerce accents** (subscription / pricing surfaces only, decided
+     2026-06-12 against the imagine.art reference): plan tiers are encoded
+     with accents kept sparse — lower tiers stay neutral, blue `#3a86ff`
+     marks the recommended (Popular) tier, brand red `#E52227` crowns the
+     top tier; yellow `#ffbe0b` marks billing-interval savings chips.
+     Accents appear as the card's tinted gradient wash, ribbon frame,
+     discount chips, strikethrough prices, credit counts, check icons, and
+     the glowing CTA — purchase-intent surfaces are the one place the
+     monochrome rule yields to conversion, and the one sanctioned surface
+     where brand red tints a card (an explicit rule-3 decision: the brand
+     pushes the plan we recommend). These are hardcoded in
+     `app/_components/subscription-dialog.tsx`, are NOT tokens, and must
+     not leak into general chrome.
 
 3. **Brand red is not a token.** The FizzDragon red `#E52227`
    (`oklch(0.5914 0.225 26.83)`) must never enter the global token set or

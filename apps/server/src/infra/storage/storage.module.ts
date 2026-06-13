@@ -3,6 +3,8 @@ import { CURRENT_CELL } from '../../common/region/current-cell';
 import { AzureBlobStorageService } from './azure-blob-storage.service';
 import { AliyunOssStorageService } from './oss-storage.service';
 import { MediaAssetUrlResolverService } from './media-asset-url-resolver.service';
+import { MediaStorageAccessService } from './media-storage-access.service';
+import { StorageProviderRegistry } from './storage-provider-registry.service';
 import { OutputStorageService } from './storage.types';
 
 /**
@@ -37,7 +39,14 @@ import { OutputStorageService } from './storage.types';
       inject: [AzureBlobStorageService, AliyunOssStorageService],
     },
     MediaAssetUrlResolverService,
+    MediaStorageAccessService,
+    StorageProviderRegistry,
   ],
-  exports: [OutputStorageService, MediaAssetUrlResolverService],
+  exports: [
+    OutputStorageService,
+    MediaAssetUrlResolverService,
+    MediaStorageAccessService,
+    StorageProviderRegistry,
+  ],
 })
 export class StorageModule {}

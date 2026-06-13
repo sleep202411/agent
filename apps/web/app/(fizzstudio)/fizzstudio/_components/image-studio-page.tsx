@@ -339,6 +339,7 @@ function ImageStudioSurface({
       try {
         const response = await listFizzAiJobs({
           limit: HISTORY_LIMIT,
+          sourceSurface: "fizzstudio-image-studio",
           type: modality,
         });
         if (historyRequestSeqRef.current !== requestSeq) return;
@@ -379,13 +380,14 @@ function ImageStudioSurface({
       if (event.kind !== "ai_job_update") return;
       const job = event.job;
       if (job.type !== modality) return;
+      if (job.sourceSurface !== "fizzstudio-image-studio") return;
       mergeJob(jobUpdateToResultJob(job, t));
       if (isTerminalGenerationStatus(generationStatusFromRaw(job.status))) {
         dispatch(touchCredits());
         refreshComputeBilling();
       }
     },
-    [dispatch, mergeJob, refreshComputeBilling, t]
+    [dispatch, mergeJob, modality, refreshComputeBilling, t]
   );
 
   useEffect(() => {

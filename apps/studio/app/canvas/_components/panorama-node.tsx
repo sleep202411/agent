@@ -8,7 +8,10 @@ import { CanvasNodeToolbar, ToolbarButton } from "./node-toolbar";
 import { Icon720, PanoramaCanvas, PanoramaViewer } from "./panorama-viewer";
 import { PortPlus } from "./ports";
 
-export type PanoramaNodeType = Node<{ src: string; imageId?: string; label?: string }, "panorama">;
+export type PanoramaNodeType = Node<
+  { src: string; imageId?: string; mediaAssetId?: string; label?: string },
+  "panorama"
+>;
 
 /** A panorama asset on the canvas — renders the equirectangular image as a live
  *  inline 360 view (drag to look around), with a fullscreen 720° viewer. The

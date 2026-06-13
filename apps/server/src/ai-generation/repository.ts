@@ -16,6 +16,8 @@ import {
   MediaAssetModerationStatus,
   MediaAssetSource,
   MediaAssetStatus,
+  MediaAssetUsageRole,
+  MediaAssetUsageSurface,
   MediaAssetVisibility,
   MediaStorageProvider,
   Prisma,
@@ -30,6 +32,7 @@ import type {
 } from '@prisma/client';
 import { PrismaService } from '../infra/db/db.module';
 import { newShortId } from '../common/id';
+import { ensureOriginalMediaPlacement } from '../infra/storage/media-asset-placement';
 import type { StorageProviderId } from '../infra/storage/storage.types';
 import type {
   AiEtaConfidence,
@@ -50,6 +53,7 @@ export interface AiJobListOptions {
   workspaceId?: string;
   projectId?: string;
   documentId?: string;
+  sourceSurface?: string;
   includeCollaboratorJobs?: boolean;
   type?: AiJobType;
   limit?: number;
@@ -58,7 +62,6 @@ export interface AiJobListOptions {
 export type ReserveQueuedJobResult =
   | { kind: 'existing'; job: AiJob }
   | { kind: 'queued_limit'; limit: number }
-  | { kind: 'running_limit'; limit: number; type: AiJobType }
   | {
       kind: 'campaign_limit';
       campaignId: string;
@@ -73,8 +76,8 @@ export interface ReserveQueuedJobOptions {
   idempotencyKey: string;
   queueName: AiJob['queueName'];
   type: AiJobType;
-  perUserQueued: number;
-  perUserRunning: number;
+  limitSubject: AiJobLimitSubject;
+  perSubjectQueued: number | null;
   campaignLimit?: {
     campaignId: string;
     perUserLimit?: number;
@@ -82,6 +85,31 @@ export interface ReserveQueuedJobOptions {
   };
   beforeCreate?: (tx: Prisma.TransactionClient, job: AiJob) => Promise<void>;
   buildJob: (queuePosition: number) => AiJob;
+}
+
+export interface AiJobLimitSubject {
+  type: 'user' | 'workspace';
+  id: string;
+}
+
+export type ClaimQueuedJobResult =
+  | { kind: 'claimed'; job: AiJob; repositioned: AiJob[] }
+  | { kind: 'missing' }
+  | { kind: 'not_queued'; job: AiJob }
+  | {
+      kind: 'running_limit';
+      scope: 'subject' | 'type';
+      limit: number;
+      running: number;
+      type: AiJobType;
+    };
+
+export interface ClaimQueuedJobOptions {
+  jobId: string;
+  limitSubject: AiJobLimitSubject;
+  perSubjectRunning: number | null;
+  perTypeRunning: number | null;
+  now: string;
 }
 
 export interface RecordAiJobAttemptInput {
@@ -212,6 +240,17 @@ export class AiGenerationRepository {
     return row ? this.toDomain(row) : null;
   }
 
+  private async findByIdWith(
+    client: DbClient,
+    id: string,
+  ): Promise<AiJob | null> {
+    const row = await client.aiJob.findFirst({
+      where: { id, deletedAt: null },
+      include: { outputs: this.outputsInclude(false) },
+    });
+    return row ? this.toDomain(row) : null;
+  }
+
   async findByIdempotency(
     userId: string,
     modelId: string,
@@ -228,21 +267,18 @@ export class AiGenerationRepository {
   }
 
   /**
-   * Atomically reserves a queue slot for one user.
-   *
-   * Submit concurrency cannot rely on "read active jobs, then insert"
-   * outside a transaction: two browser tabs with different idempotency
-   * keys can both observe zero active jobs and overrun per-user limits.
-   * A user-scoped Postgres advisory transaction lock serializes that
-   * critical section while staying pod-safe.
+   * Atomically reserves one queued backlog slot for the entitlement subject.
+   * Running concurrency is claimed later by workers so submissions can wait
+   * instead of being rejected just because the current plan is busy.
    */
   async reserveQueuedJob(
     options: ReserveQueuedJobOptions,
   ): Promise<ReserveQueuedJobResult> {
     return this.prisma.$transaction(async (tx) => {
-      await tx.$executeRaw`
-        SELECT pg_advisory_xact_lock(hashtext(${`ai-generation:user:${options.userId}`})::bigint)
-      `;
+      await this.lockKeysWith(tx, [
+        `ai-generation:user:${options.userId}`,
+        limitSubjectLockKey(options.limitSubject),
+      ]);
 
       const existing = await this.findByIdempotencyWith(
         tx,
@@ -291,24 +327,16 @@ export class AiGenerationRepository {
         }
       }
 
-      const active = await this.activeForUserWith(tx, options.userId);
-      const activeSameType = active.filter((job) => job.type === options.type);
+      const active = await this.activeForSubjectWith(tx, options.limitSubject);
       const queuedTotal = active.filter(
         (job) => job.status === 'in_queue',
       ).length;
-      const runningSameType = activeSameType.filter(
-        (job) => job.status === 'in_progress',
-      ).length;
 
-      if (queuedTotal >= options.perUserQueued) {
-        return { kind: 'queued_limit', limit: options.perUserQueued };
-      }
-      if (runningSameType >= options.perUserRunning) {
-        return {
-          kind: 'running_limit',
-          limit: options.perUserRunning,
-          type: options.type,
-        };
+      if (
+        options.perSubjectQueued != null &&
+        queuedTotal >= options.perSubjectQueued
+      ) {
+        return { kind: 'queued_limit', limit: options.perSubjectQueued };
       }
 
       const queuePosition = (
@@ -322,6 +350,83 @@ export class AiGenerationRepository {
         options.queueName,
       );
       return { kind: 'created', job, repositioned };
+    });
+  }
+
+  async claimQueuedJob(
+    options: ClaimQueuedJobOptions,
+  ): Promise<ClaimQueuedJobResult> {
+    return this.prisma.$transaction(async (tx) => {
+      await this.lockKeysWith(tx, [limitSubjectLockKey(options.limitSubject)]);
+
+      const row = await tx.aiJob.findFirst({
+        where: { id: options.jobId, deletedAt: null },
+        include: { outputs: this.outputsInclude(false) },
+      });
+      if (!row) return { kind: 'missing' };
+
+      const job = this.toDomain(row);
+      if (job.status !== 'in_queue') return { kind: 'not_queued', job };
+
+      const active = await this.activeForSubjectWith(tx, options.limitSubject);
+      const running = active.filter(
+        (candidate) =>
+          candidate.id !== job.id && candidate.status === 'in_progress',
+      );
+      const runningSameType = running.filter(
+        (candidate) => candidate.type === job.type,
+      );
+
+      if (
+        options.perSubjectRunning != null &&
+        running.length >= options.perSubjectRunning
+      ) {
+        return {
+          kind: 'running_limit',
+          scope: 'subject',
+          limit: options.perSubjectRunning,
+          running: running.length,
+          type: job.type,
+        };
+      }
+      if (
+        options.perTypeRunning != null &&
+        runningSameType.length >= options.perTypeRunning
+      ) {
+        return {
+          kind: 'running_limit',
+          scope: 'type',
+          limit: options.perTypeRunning,
+          running: runningSameType.length,
+          type: job.type,
+        };
+      }
+
+      const data = this.patchToRow({
+        status: 'in_progress',
+        stage: 'calling_provider',
+        startedAt: options.now,
+        queuePosition: null,
+        progress: 0,
+        logs: [
+          ...job.logs,
+          {
+            time: options.now,
+            stage: 'calling_provider',
+            message: 'Picked up by worker.',
+          },
+        ],
+      });
+      await tx.aiJob.update({
+        where: { id: job.id },
+        data: { ...data, version: { increment: 1 } },
+      });
+      const claimed = (await this.findByIdWith(tx, job.id)) ?? job;
+      const repositioned = await this.recomputeQueuePositionsWith(
+        tx,
+        job.queueName,
+      );
+      return { kind: 'claimed', job: claimed, repositioned };
     });
   }
 
@@ -554,7 +659,7 @@ export class AiGenerationRepository {
     input: CreateAiOutputAssetInput,
   ): Promise<string> {
     const storageProvider = input.storageProvider as MediaStorageProvider;
-    const metadata = {
+    const metadata: Prisma.InputJsonObject = {
       aiJobId: job.id,
       provider: job.provider,
       modelId: job.modelId,
@@ -562,8 +667,8 @@ export class AiGenerationRepository {
       canonicalModelId: job.canonicalModelId,
       providerBindingId: job.providerBindingId,
       outputIndex: input.outputIndex,
-      safetyFlags: input.safetyFlags ?? null,
-    } satisfies Record<string, unknown>;
+      safetyFlags: (input.safetyFlags ?? null) as Prisma.InputJsonValue | null,
+    };
 
     const existing = await this.prisma.mediaAsset.findFirst({
       where: {
@@ -572,9 +677,41 @@ export class AiGenerationRepository {
         objectKey: input.objectKey,
         deletedAt: null,
       },
-      select: { id: true },
+      select: {
+        id: true,
+        storageProvider: true,
+        bucket: true,
+        region: true,
+        objectKey: true,
+        externalUrl: true,
+        contentType: true,
+        sizeBytes: true,
+        width: true,
+        height: true,
+        durationSeconds: true,
+        checksumSha256: true,
+      },
     });
-    if (existing) return existing.id;
+    if (existing) {
+      await this.prisma.$transaction((tx) =>
+        ensureOriginalMediaPlacement(tx, {
+          assetId: existing.id,
+          storageProvider: existing.storageProvider,
+          bucket: existing.bucket,
+          region: existing.region,
+          objectKey: existing.objectKey,
+          externalUrl: existing.externalUrl,
+          contentType: existing.contentType,
+          sizeBytes: existing.sizeBytes,
+          width: existing.width,
+          height: existing.height,
+          durationSeconds: existing.durationSeconds,
+          checksumSha256: existing.checksumSha256,
+          metadata,
+        }),
+      );
+      return existing.id;
+    }
 
     const data: Prisma.MediaAssetUncheckedCreateInput = {
       kind:
@@ -600,9 +737,27 @@ export class AiGenerationRepository {
     };
 
     try {
-      const asset = await this.prisma.mediaAsset.create({
-        data,
-        select: { id: true },
+      const asset = await this.prisma.$transaction(async (tx) => {
+        const created = await tx.mediaAsset.create({
+          data,
+          select: { id: true },
+        });
+        await ensureOriginalMediaPlacement(tx, {
+          assetId: created.id,
+          storageProvider,
+          bucket: input.bucket,
+          region: input.region,
+          objectKey: input.objectKey,
+          externalUrl: null,
+          contentType: input.contentType,
+          sizeBytes: input.sizeBytes,
+          width: input.width ?? null,
+          height: input.height ?? null,
+          durationSeconds: input.durationSeconds ?? null,
+          checksumSha256: input.checksumSha256,
+          metadata,
+        });
+        return created;
       });
       return asset.id;
     } catch (err) {
@@ -614,9 +769,41 @@ export class AiGenerationRepository {
           objectKey: input.objectKey,
           deletedAt: null,
         },
-        select: { id: true },
+        select: {
+          id: true,
+          storageProvider: true,
+          bucket: true,
+          region: true,
+          objectKey: true,
+          externalUrl: true,
+          contentType: true,
+          sizeBytes: true,
+          width: true,
+          height: true,
+          durationSeconds: true,
+          checksumSha256: true,
+        },
       });
-      if (asset) return asset.id;
+      if (asset) {
+        await this.prisma.$transaction((tx) =>
+          ensureOriginalMediaPlacement(tx, {
+            assetId: asset.id,
+            storageProvider: asset.storageProvider,
+            bucket: asset.bucket,
+            region: asset.region,
+            objectKey: asset.objectKey,
+            externalUrl: asset.externalUrl,
+            contentType: asset.contentType,
+            sizeBytes: asset.sizeBytes,
+            width: asset.width,
+            height: asset.height,
+            durationSeconds: asset.durationSeconds,
+            checksumSha256: asset.checksumSha256,
+            metadata,
+          }),
+        );
+        return asset.id;
+      }
       throw err;
     }
   }
@@ -630,6 +817,9 @@ export class AiGenerationRepository {
         ...(options.workspaceId ? { workspaceId: options.workspaceId } : {}),
         ...(options.projectId ? { projectId: options.projectId } : {}),
         ...(options.documentId ? { documentId: options.documentId } : {}),
+        ...(options.sourceSurface
+          ? { sourceSurface: options.sourceSurface }
+          : {}),
         ...(options.type ? { type: options.type } : {}),
       },
       orderBy: { createdAt: 'desc' },
@@ -656,6 +846,34 @@ export class AiGenerationRepository {
       include: { outputs: this.outputsInclude(false) },
     });
     return rows.map((r) => this.toDomain(r));
+  }
+
+  private async activeForSubjectWith(
+    client: DbClient,
+    subject: AiJobLimitSubject,
+  ): Promise<AiJob[]> {
+    const rows = await client.aiJob.findMany({
+      where: {
+        deletedAt: null,
+        status: { notIn: ['completed', 'failed', 'cancelled', 'expired'] },
+        ...(subject.type === 'workspace'
+          ? { workspaceId: subject.id }
+          : { userId: subject.id }),
+      },
+      include: { outputs: this.outputsInclude(false) },
+    });
+    return rows.map((r) => this.toDomain(r));
+  }
+
+  private async lockKeysWith(
+    client: Prisma.TransactionClient,
+    keys: string[],
+  ): Promise<void> {
+    for (const key of [...new Set(keys)].sort()) {
+      await client.$executeRaw`
+        SELECT pg_advisory_xact_lock(hashtext(${key})::bigint)
+      `;
+    }
   }
 
   private countAcceptedCampaignJobsWith(
@@ -840,11 +1058,15 @@ export class AiGenerationRepository {
   }
 
   private outputToDomain(row: AiJobOutputWithAssetRow): AiJobOutput {
+    const accessUrl = row.assetId ? mediaContentUrl(row.assetId) : undefined;
     return {
       id: row.id,
       assetId: row.assetId ?? undefined,
       type: row.type,
+      // Public direct storage URL. Blocked objects are made unreachable at the
+      // storage layer by the moderation takedown, so no per-read indirection.
       url: row.url,
+      accessUrl,
       storagePath: row.storagePath,
       contentHash: row.contentHash ?? undefined,
       width: row.width ?? undefined,
@@ -1029,39 +1251,102 @@ export class AiGenerationRepository {
     // Two-step: delete + insert in a transaction. Prisma doesn't have
     // a true "replace child collection" primitive, so we do it
     // atomically to avoid a partial state if the worker crashes mid-write.
-    await this.prisma.$transaction([
-      this.prisma.aiJobOutput.deleteMany({ where: { jobId } }),
-      ...(outputs.length > 0
-        ? [
-            this.prisma.aiJobOutput.createMany({
-              data: outputs.map((o, idx) => ({
-                id: o.id || newShortId(),
-                jobId,
-                assetId: o.assetId ?? null,
-                type: o.type,
-                url: o.url,
-                storagePath: o.storagePath,
-                contentHash: o.contentHash ?? null,
-                width: o.width ?? null,
-                height: o.height ?? null,
-                durationSeconds: o.durationSeconds ?? null,
-                mimeType: o.mimeType ?? null,
-                bytes: o.bytes ?? null,
-                outputIndex: idx,
-                seed: o.seed ?? null,
-                safetyFlags:
-                  (o.safetyFlags as Prisma.InputJsonValue | undefined) ??
-                  Prisma.DbNull,
-                provenance:
-                  (o.provenance as Prisma.InputJsonValue | undefined) ??
-                  Prisma.DbNull,
-                createdAt: new Date(o.createdAt),
-              })),
-            }),
-          ]
-        : []),
-    ]);
+    await this.prisma.$transaction(async (tx) => {
+      const job = await tx.aiJob.findUnique({
+        where: { id: jobId },
+        select: {
+          userId: true,
+          workspaceId: true,
+          projectId: true,
+          sourceSurface: true,
+        },
+      });
+      const outputRows = outputs.map((o, idx) => ({
+        id: o.id || newShortId(),
+        jobId,
+        assetId: o.assetId ?? null,
+        type: o.type,
+        url: o.url,
+        storagePath: o.storagePath,
+        contentHash: o.contentHash ?? null,
+        width: o.width ?? null,
+        height: o.height ?? null,
+        durationSeconds: o.durationSeconds ?? null,
+        mimeType: o.mimeType ?? null,
+        bytes: o.bytes ?? null,
+        outputIndex: idx,
+        seed: o.seed ?? null,
+        safetyFlags:
+          (o.safetyFlags as Prisma.InputJsonValue | undefined) ?? Prisma.DbNull,
+        provenance:
+          (o.provenance as Prisma.InputJsonValue | undefined) ?? Prisma.DbNull,
+        createdAt: new Date(o.createdAt),
+      }));
+      const assetIds = [
+        ...new Set(
+          outputRows
+            .map((row) => row.assetId)
+            .filter((assetId): assetId is string => Boolean(assetId)),
+        ),
+      ];
+      const variants =
+        assetIds.length > 0
+          ? await tx.mediaAssetVariant.findMany({
+              where: { assetId: { in: assetIds }, variantKey: 'original' },
+              select: { id: true, assetId: true },
+            })
+          : [];
+      const variantByAssetId = new Map(
+        variants.map((variant) => [variant.assetId, variant.id]),
+      );
+
+      await tx.mediaAssetUsage.deleteMany({
+        where: {
+          aiJobId: jobId,
+          role: MediaAssetUsageRole.output,
+        },
+      });
+      await tx.aiJobOutput.deleteMany({ where: { jobId } });
+      if (outputRows.length > 0) {
+        await tx.aiJobOutput.createMany({ data: outputRows });
+      }
+      const usageRows = outputRows
+        .filter((row) => row.assetId)
+        .map((row) => ({
+          assetId: row.assetId!,
+          variantId: variantByAssetId.get(row.assetId!) ?? null,
+          userId: job?.userId ?? null,
+          workspaceId: job?.workspaceId ?? null,
+          projectId: job?.projectId ?? null,
+          aiJobId: jobId,
+          aiJobOutputId: row.id,
+          surface: usageSurfaceForSourceSurface(job?.sourceSurface),
+          sourceSurface: job?.sourceSurface ?? null,
+          role: MediaAssetUsageRole.output,
+          idempotencyKey: `ai-output:${jobId}:${row.id}`,
+          metadata: {
+            outputIndex: row.outputIndex,
+            type: row.type,
+            contentHash: row.contentHash,
+          } satisfies Prisma.InputJsonObject,
+        }));
+      if (usageRows.length > 0) {
+        await tx.mediaAssetUsage.createMany({ data: usageRows });
+      }
+    });
   }
+}
+
+function mediaContentUrl(assetId: string): string {
+  return `/aurora/media/assets/${encodeURIComponent(assetId)}/content?variantKey=original`;
+}
+
+function usageSurfaceForSourceSurface(
+  sourceSurface: string | null | undefined,
+): MediaAssetUsageSurface {
+  if (sourceSurface?.includes('canvas')) return MediaAssetUsageSurface.canvas;
+  if (sourceSurface?.includes('project')) return MediaAssetUsageSurface.project;
+  return MediaAssetUsageSurface.standalone_generation;
 }
 
 function setIfPresent(
@@ -1126,6 +1411,10 @@ function isUniqueConstraintError(err: unknown): boolean {
   return (
     err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002'
   );
+}
+
+function limitSubjectLockKey(subject: AiJobLimitSubject): string {
+  return `ai-generation:limit:${subject.type}:${subject.id}`;
 }
 
 export type {

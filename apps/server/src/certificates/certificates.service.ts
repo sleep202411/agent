@@ -464,14 +464,23 @@ export class CertificatesService {
 
   private resolveAssetUrl(
     asset: {
+      id: string;
       storageProvider: string;
       bucket: string | null;
       region: string | null;
       objectKey: string | null;
       externalUrl: string | null;
+      status?: string;
+      deletedAt?: Date | null;
+      moderationStatus?: string;
     } | null,
   ): string | null {
     if (!asset) return null;
+    // Moderation/status gate runs BEFORE any URL is built so a blocked or
+    // deleted external_url asset never leaks its externalUrl.
+    if (asset.deletedAt) return null;
+    if (asset.status && asset.status !== MediaAssetStatus.ready) return null;
+    if (asset.moderationStatus === 'blocked') return null;
     try {
       return this.assetUrls.resolve(asset);
     } catch {

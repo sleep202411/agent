@@ -31,6 +31,28 @@ const QUEUE_INTERVAL = 1000;
 const API_PATH_IMAGE = "/api/ai/image/generate/basic";
 const API_PATH_IMAGE_EDIT = "/api/ai/image/edit/wan";
 
+/**
+ * Strip control characters (newline / carriage-return / tab / other
+ * C0 chars) from a prompt before it goes to the Java image backend.
+ *
+ * The Java `/api/ai/image/*` handlers hand-build the JSON body sent to
+ * fal (gpt-image-2) by string concatenation and do NOT escape control
+ * characters, so a raw `\n` from a multi-line prompt produces invalid
+ * JSON and fal rejects it with `json_invalid` ("Invalid control
+ * character at") before the model ever runs. Image/video models treat
+ * a newline and a space identically, so collapsing them to a single
+ * space is lossless for generation while sidestepping the backend bug.
+ *
+ * This is a client-side stopgap scoped to the image-gen path only — the
+ * real fix is to make the Java side serialize its request body properly.
+ */
+function sanitizePrompt(s: string | undefined | null): string {
+  return (s ?? "")
+    .replace(/[\u0000-\u001f]/g, " ")
+    .replace(/ {2,}/g, " ")
+    .trim();
+}
+
 // ─── Timer Management ──────────────────────────────────
 
 let processorTimer: ReturnType<typeof setInterval> | null = null;
@@ -78,12 +100,16 @@ async function executeTask(taskId: string) {
     const isEdit = input.mode === "edit";
     const endpoint = input.endpoint ?? (isEdit ? API_PATH_IMAGE_EDIT : API_PATH_IMAGE);
 
+    // Newlines/control chars break the Java backend's hand-built JSON to
+    // fal — strip them here before the request leaves the client.
+    const prompt = sanitizePrompt(input.prompt);
+
     const response = isEdit
       ? await backendApi.post<string | string[]>(endpoint, {
           data: {
             shotId: input.shotId,
             shotColumnId: input.shotColumnId,
-            prompt: input.prompt,
+            prompt,
             images: input.images ?? [],
             model: input.model || undefined,
             size: input.size || undefined,
@@ -97,7 +123,7 @@ async function executeTask(taskId: string) {
           data: {
             shotId: input.shotId,
             shotColumnId: input.shotColumnId,
-            prompt: input.prompt,
+            prompt,
             referenceImageUrl: input.referenceImageUrl || undefined,
             model: input.model || undefined,
             size: input.size || undefined,

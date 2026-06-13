@@ -1,3 +1,4 @@
+import { ServiceUnavailableException } from '@nestjs/common';
 import type { PaymentProvider } from '@prisma/client';
 
 export interface ProviderCheckoutLineItem {
@@ -110,8 +111,19 @@ export interface CreateProviderRefundResult {
   raw: Record<string, unknown>;
 }
 
+export interface PaymentProviderCapabilities {
+  hostedCheckout: boolean;
+  subscriptionCheckout: boolean;
+  paymentIntent: boolean;
+  priceSync: boolean;
+  couponSync: boolean;
+  refund: boolean;
+  webhookVerification: boolean;
+}
+
 export interface PaymentProviderAdapter {
   readonly provider: PaymentProvider;
+  readonly capabilities: PaymentProviderCapabilities;
   createHostedCheckout(
     input: CreateHostedCheckoutInput,
   ): Promise<HostedCheckoutResult>;
@@ -136,4 +148,51 @@ export interface PaymentProviderAdapter {
     signature?: string | string[];
     testSecret?: string | string[];
   }): ProviderWebhookVerification;
+}
+
+const unsupportedCapabilities: PaymentProviderCapabilities = {
+  hostedCheckout: false,
+  subscriptionCheckout: false,
+  paymentIntent: false,
+  priceSync: false,
+  couponSync: false,
+  refund: false,
+  webhookVerification: false,
+};
+
+export class UnsupportedPaymentProvider implements PaymentProviderAdapter {
+  readonly capabilities = unsupportedCapabilities;
+
+  constructor(readonly provider: PaymentProvider) {}
+
+  createHostedCheckout(): Promise<HostedCheckoutResult> {
+    return Promise.reject(this.unavailable('hosted checkout'));
+  }
+
+  createPaymentIntent(): Promise<CreatePaymentIntentResult> {
+    return Promise.reject(this.unavailable('payment intent'));
+  }
+
+  syncPrice(): Promise<SyncProviderPriceResult> {
+    return Promise.reject(this.unavailable('price sync'));
+  }
+
+  syncCoupon(): Promise<SyncProviderCouponResult> {
+    return Promise.reject(this.unavailable('coupon sync'));
+  }
+
+  createRefund(): Promise<CreateProviderRefundResult> {
+    return Promise.reject(this.unavailable('refund'));
+  }
+
+  verifyWebhook(): ProviderWebhookVerification {
+    throw this.unavailable('webhook verification');
+  }
+
+  private unavailable(capability: string): ServiceUnavailableException {
+    return new ServiceUnavailableException({
+      code: 'PAYMENT_PROVIDER_NOT_CONFIGURED',
+      msg: `Payment provider "${this.provider}" does not support ${capability} in this deployment yet.`,
+    });
+  }
 }

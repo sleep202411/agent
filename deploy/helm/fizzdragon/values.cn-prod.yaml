@@ -1,0 +1,142 @@
+# ============================================================================
+# CN production — ACK cluster `fizzdragon-cn` (cn-hangzhou, account 5941…8385).
+# Layered on top of values.yaml:  helm upgrade -f values.yaml -f values.cn-prod.yaml
+#
+# Azure layer is OFF here. The projected Secrets (`fizzdragon-secrets`,
+# `fizzdragon-server-secrets`) are created out-of-band with kubectl from the
+# prod-cn .env — same trust model as the out-of-band TLS Secrets on AKS.
+# The stack shares NOTHING with the Java backend: dedicated VPC
+# (vpc-bp1yeuzyrd2zjlfb7vcro), own RDS PG (pgm-1ud5k5e8ed864ld6), own Redis
+# (r-1udd94dcf121a354). Java is reached only as a public HTTPS API.
+# ============================================================================
+azure:
+  enabled: false
+
+image:
+  # ACR EE instance `fizzdragon` (cri-9fw21oj7s91k326l) via the VPC endpoint
+  # (vpc-bp1yeuzyrd2zjlfb7vcro is linked; PrivateZone resolves this domain to
+  # an in-VPC IP). The VPC path is REQUIRED, not an optimization: this intl
+  # account is a post-2025-03 "new OSS user", so the registry's blob redirects
+  # to the backing bucket's default public OSS endpoint are policy-blocked
+  # (PublicEndpointForbidden) — only internal-endpoint pulls work.
+  # Pushes from dev machines use the PUBLIC domain (fizzdragon-registry.…)
+  # which still needs the endpoint IP ACL.
+  # Pull auth: `acr-pull` docker-registry Secret on the default SA
+  # (fixed password via ResetLoginPassword).
+  registry: fizzdragon-registry-vpc.cn-hangzhou.cr.aliyuncs.com/fizzdragon
+  pullPolicy: IfNotPresent
+
+ingress:
+  enabled: true
+  className: nginx
+  entries:
+    # Validation host, live since day 1. The production host entry below is
+    # commented until DNS cutover — adding it earlier just makes cert-manager
+    # fail HTTP-01 (DNS still points at the old stack) and back off for hours.
+    - name: test
+      host: cn-ack.fizzspace.cn
+      secretName: fizzdragon-cn-test-tls
+      certManager: letsencrypt-prod
+      rewriteTarget: ""
+      adminUi: false # admin-ui disabled on CN v1 (build broken at HEAD)
+    # Uncomment at cutover (after lowering the fizzdragon.fizzspace.cn TTL):
+    # - name: main
+    #   host: fizzdragon.fizzspace.cn
+    #   secretName: fizzdragon-cn-tls
+    #   certManager: letsencrypt-prod
+    #   rewriteTarget: ""
+    #   adminUi: true
+
+sharedEnv:
+  # Existing Java endpoints, kept as-is per user decision 2026-06-10.
+  # NOTE for cutover planning: if fizzdragon.fizzspace.cn DNS later points at
+  # this cluster, these URLs route back through whatever serves that host —
+  # revisit then.
+  JAVA_STUDIO_URL: https://fizzdragon.fizzspace.cn/studio
+  JAVA_CONTENT_URL: https://fizzdragon.fizzspace.cn/content
+  # CN DashScope endpoint (not the -intl one). Matches prod-cn .env.
+  ALIBABA_BASE_URL: https://dashscope.aliyuncs.com/compatible-mode/v1
+  # Mirrors prod-cn .env: deepseek providers, model names from code defaults.
+  STORYOS_ROUTER_PROVIDER: deepseek
+  STORYOS_ROUTER_MODEL: null
+  STORYOS_PERSONA_PROVIDER: deepseek
+  STORYOS_PERSONA_MODEL: null
+  # Azure-only entries from base values — removed on CN.
+  AZURE_OPENAI_BASE_URL: null
+  AZURE_FOUNDRY_PROJECT_ENDPOINT: null
+  AZURE_OPENAI_API_VERSION: null
+  AZURE_BLOB_CONTAINER: null
+  FOUNDRY_MODEL_ALLOWLIST: null
+  FOUNDRY_EXECUTION_ENABLED: null
+
+# Same projected Secret names as .com so templates stay identical; contents
+# come from kubectl, not Key Vault. The `kv:` fields are unused when
+# azure.enabled=false — the `env:` list documents the expected keys.
+serverSecrets:
+  projectedName: fizzdragon-server-secrets
+  mapping:
+    # CN v1: no Airwallex (billing not enabled on CN yet).
+    - kv: admin-mfa-secret-key
+      env: ADMIN_MFA_SECRET_KEY
+
+web:
+  replicaCount: 1
+  image:
+    tag: set-at-deploy
+  # Single untainted node — drop the .com pool selector/taints.
+  nodeSelector: null
+  tolerations: null
+
+adminUi:
+  # Disabled for CN v1: admin-ui fails `next build --webpack` at current
+  # develop HEAD (same reason its .com image tag is pinned to an older
+  # commit). Re-enable once the build is fixed.
+  enabled: false
+  replicaCount: 1
+  image:
+    tag: set-at-deploy
+  env:
+    ADMIN_SITE: cn
+  nodeSelector: null
+  tolerations: null
+
+server:
+  replicaCount: 1
+  image:
+    tag: set-at-deploy
+  env:
+    NEXT_PUBLIC_SITE_REGION: cn
+    # Mirrors prod-cn .env (2026-06-10).
+    AI_PROVIDER: deepseek
+    DISABLE_CONTENT_MODERATION: "true"
+    BILLING_ALLOWED_RETURN_ORIGINS: "https://fizzdragon.fizzspace.cn"
+    # No payment provider wired on CN yet.
+    PAYMENT_PROVIDER: null
+    AIRWALLEX_API_BASE_URL: null
+  nodeSelector: null
+  tolerations: null
+
+agent:
+  replicaCount: 1
+  image:
+    tag: set-at-deploy
+  nodeSelector: null
+  tolerations: null
+
+agentWorker:
+  replicaCount: 1
+  image:
+    tag: set-at-deploy
+  env:
+    # Mirrors prod-cn .env (2026-06-10): same throughput as the compose stack.
+    WORKER_CONCURRENCY: "8"
+    IMAGE_WORKER_CONCURRENCY: "1"
+    STORYBOARD_GENERATE_CONCURRENCY: "6"
+  nodeSelector: null
+  tolerations: null
+  keda:
+    enabled: true
+    minReplicas: 1
+    maxReplicas: 2
+    # Aliyun community Redis is plaintext :6379.
+    enableTLS: "false"

@@ -23,15 +23,20 @@
  */
 import { hostname } from 'os';
 import {
+  Inject,
   Injectable,
   Logger,
   type OnApplicationBootstrap,
   type OnModuleDestroy,
 } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
+import type { AssetEvent } from '@repo/shared';
+import { AiOutboxEventType, Prisma } from '@prisma/client';
 import { newShortId } from '../common/id';
 import { PrismaService } from '../infra/db/db.module';
-import { WebPubSubService } from '../infra/realtime/web-pubsub.service';
+import {
+  REALTIME_PROVIDER,
+  type RealtimeProvider,
+} from '../infra/realtime/realtime-provider';
 import { toAiJobEvent } from './job-event';
 import type { AiJob } from './types';
 
@@ -60,7 +65,8 @@ export class AiGenerationOutboxService
 
   constructor(
     private readonly prisma: PrismaService,
-    private readonly webPubSub: WebPubSubService,
+    @Inject(REALTIME_PROVIDER)
+    private readonly realtime: RealtimeProvider,
   ) {}
 
   /**
@@ -71,15 +77,11 @@ export class AiGenerationOutboxService
    */
   async record(job: AiJob): Promise<void> {
     const event = toAiJobEvent(job);
-    const row = await this.prisma.aiEventOutbox.create({
-      data: {
-        id: newShortId(),
-        jobId: job.id,
-        userId: job.userId,
-        eventType: 'job_update',
-        payload: event as unknown as Prisma.InputJsonValue,
-        attempt: 0,
-      },
+    const row = await enqueueAssetEventOutbox(this.prisma, {
+      jobId: job.id,
+      userId: job.userId,
+      eventType: AiOutboxEventType.job_update,
+      payload: event,
     });
     // Optimistic publish — don't await, don't fail the caller if
     // Web PubSub is down. Dispatcher cleans up.
@@ -156,11 +158,9 @@ export class AiGenerationOutboxService
       });
 
       for (const row of rows) {
-        const payload = row.payload as unknown as Parameters<
-          WebPubSubService['publishAssetEvent']
-        >[1];
+        const payload = row.payload as unknown as AssetEvent;
         try {
-          await this.webPubSub.publishAssetEvent(row.userId, payload);
+          await this.realtime.publishAssetEvent(row.userId, payload);
           await this.prisma.aiEventOutbox.update({
             where: { id: row.id },
             data: {
@@ -206,10 +206,10 @@ export class AiGenerationOutboxService
   private async tryDispatch(
     rowId: string,
     userId: string,
-    payload: ReturnType<typeof toAiJobEvent>,
+    payload: AssetEvent,
   ): Promise<void> {
     try {
-      await this.webPubSub.publishAssetEvent(userId, payload);
+      await this.realtime.publishAssetEvent(userId, payload);
       await this.prisma.aiEventOutbox.update({
         where: { id: rowId },
         data: { dispatchedAt: new Date(), attempt: 1 },
@@ -236,6 +236,27 @@ export class AiGenerationOutboxService
       this.logger.warn(`outbox gc failed: ${errorText(err)}`);
     }
   }
+}
+
+export async function enqueueAssetEventOutbox(
+  tx: PrismaService | Prisma.TransactionClient,
+  input: {
+    userId: string;
+    eventType: AiOutboxEventType;
+    payload: AssetEvent;
+    jobId?: string | null;
+  },
+) {
+  return tx.aiEventOutbox.create({
+    data: {
+      id: newShortId(),
+      jobId: input.jobId ?? null,
+      userId: input.userId,
+      eventType: input.eventType,
+      payload: input.payload as unknown as Prisma.InputJsonValue,
+      attempt: 0,
+    },
+  });
 }
 
 function errorText(err: unknown): string {

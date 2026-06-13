@@ -51,6 +51,7 @@ import {
 import { AiGenerationQueueService } from './queue.service';
 import {
   AiGenerationRepository,
+  type AiJobLimitSubject,
   type RecordAiJobAttemptInput,
 } from './repository';
 import type { AiJob, AiJobError, AiJobOutput } from './types';
@@ -90,6 +91,10 @@ const DRAIN_POLL_MS = 500;
 const ASYNC_PROVIDER_POLL_DELAY_MS = Math.max(
   1_000,
   Number(process.env.AI_ASYNC_PROVIDER_POLL_DELAY_MS ?? 5_000),
+);
+const ENTITLEMENT_CONCURRENCY_RETRY_DELAY_MS = Math.max(
+  1_000,
+  Number(process.env.AI_ENTITLEMENT_CONCURRENCY_RETRY_DELAY_MS ?? 3_000),
 );
 
 @Injectable()
@@ -349,22 +354,27 @@ export class AiGenerationWorkerService
 
   private async claim(job: AiJob): Promise<AiJob | null> {
     const now = new Date().toISOString();
-    const next = await this.store.update(job.id, {
-      status: 'in_progress',
-      stage: 'calling_provider',
-      startedAt: now,
-      queuePosition: null,
-      progress: 0,
-      logs: [
-        ...job.logs,
-        {
-          time: now,
-          stage: 'calling_provider',
-          message: 'Picked up by worker.',
-        },
-      ],
+    const result = await this.store.claimQueuedJob({
+      jobId: job.id,
+      limitSubject: this.concurrencySubjectFor(job),
+      perSubjectRunning: this.perSubjectRunningFor(job),
+      perTypeRunning: this.perTypeRunningFor(job),
+      now,
     });
-    if (!next) return null;
+
+    if (result.kind === 'missing') return null;
+    if (result.kind === 'not_queued') {
+      this.logger.warn(
+        `Skipping job ${job.id}: DB status is ${result.job.status}, expected IN_QUEUE.`,
+      );
+      return null;
+    }
+    if (result.kind === 'running_limit') {
+      await this.deferForEntitlementConcurrency(job, result);
+      return null;
+    }
+
+    const next = result.job;
     await this.recordTraceSafe(next, {
       eventType: 'worker_started',
       occurredAt: now,
@@ -378,18 +388,128 @@ export class AiGenerationWorkerService
         attempt: job.attempt,
       },
     });
-    const repositioned = await this.store.recomputeQueuePositions(
-      job.queueName,
-    );
     this.emit(next);
     // Notify the rest of the queue that they moved up. The claimed
     // job already got its own emit() above; skip it here to avoid a
     // duplicate push in the same tick.
-    for (const moved of repositioned) {
+    for (const moved of result.repositioned) {
       if (moved.id === next.id) continue;
       this.emit(moved);
     }
     return next;
+  }
+
+  private concurrencySubjectFor(job: AiJob): AiJobLimitSubject {
+    const subject =
+      job.routingSnapshot?.policy.concurrency.subject ??
+      job.entitlementSnapshot?.subject;
+    if (subject?.type === 'workspace' && (subject.id || job.workspaceId)) {
+      return { type: 'workspace', id: subject.id || job.workspaceId! };
+    }
+    return { type: 'user', id: job.userId };
+  }
+
+  private perSubjectRunningFor(job: AiJob): number | null {
+    const concurrency = job.routingSnapshot?.policy.concurrency as
+      | {
+          perSubjectRunning?: number | null;
+          perUserRunning?: number | null;
+        }
+      | undefined;
+    if (
+      concurrency &&
+      Object.prototype.hasOwnProperty.call(concurrency, 'perSubjectRunning')
+    ) {
+      return concurrency.perSubjectRunning ?? null;
+    }
+    const entitlementLimit = job.entitlementSnapshot?.limits.concurrentJobs;
+    if (entitlementLimit !== undefined) return entitlementLimit;
+    return concurrency?.perUserRunning ?? null;
+  }
+
+  private perTypeRunningFor(job: AiJob): number | null {
+    const concurrency = job.routingSnapshot?.policy.concurrency as
+      | {
+          perTypeRunning?: number | null;
+          perUserRunning?: number | null;
+        }
+      | undefined;
+    if (
+      concurrency &&
+      Object.prototype.hasOwnProperty.call(concurrency, 'perTypeRunning')
+    ) {
+      return concurrency.perTypeRunning ?? null;
+    }
+    return concurrency?.perUserRunning ?? null;
+  }
+
+  private async deferForEntitlementConcurrency(
+    job: AiJob,
+    gate: Extract<
+      Awaited<ReturnType<AiGenerationRepository['claimQueuedJob']>>,
+      { kind: 'running_limit' }
+    >,
+  ): Promise<void> {
+    const now = new Date().toISOString();
+    const delayMs = ENTITLEMENT_CONCURRENCY_RETRY_DELAY_MS;
+    const retryAt = new Date(Date.now() + delayMs).toISOString();
+    const scope =
+      gate.scope === 'subject'
+        ? 'your plan concurrency'
+        : `${gate.type} generation concurrency`;
+
+    await this.recordTraceSafe(job, {
+      eventType: 'entitlement_concurrency_wait',
+      occurredAt: now,
+      source: 'internal',
+      confidence: 'exact',
+      title: 'Entitlement concurrency wait',
+      description: `Waiting because ${scope} is full.`,
+      idempotencyKey: `ai_trace:${job.id}:entitlement_concurrency_wait:${job.attempt}:${Date.now()}`,
+      payload: {
+        scope: gate.scope,
+        type: gate.type,
+        running: gate.running,
+        limit: gate.limit,
+        retryAfterMs: delayMs,
+        retryAt,
+      },
+    });
+
+    const updated = await this.store.update(job.id, {
+      status: 'in_queue',
+      stage: 'queued',
+      queuedAt: retryAt,
+      progress: null,
+      queuePosition: null,
+      logs: [
+        ...job.logs,
+        {
+          time: now,
+          stage: 'queued',
+          message: `Generation concurrency is full; retrying in ${Math.max(1, Math.round(delayMs / 1000))}s.`,
+        },
+      ],
+    });
+
+    if (!updated) return;
+    await this.queueService.enqueue(
+      job.queueName,
+      job.id,
+      delayMs,
+      this.queuePriorityFor(job),
+    );
+    const repositioned = await this.store.recomputeQueuePositions(
+      job.queueName,
+    );
+    this.emit(updated);
+    for (const moved of repositioned) {
+      if (moved.id === updated.id) continue;
+      this.emit(moved);
+    }
+    this.logger.log(
+      `job ${job.id} deferred ${Math.round(delayMs / 1000)}s for entitlement ${gate.scope} concurrency (${gate.running}/${gate.limit})`,
+    );
   }
 
   private async pollJob(job: AiJob): Promise<void> {
@@ -887,6 +1007,11 @@ export class AiGenerationWorkerService
       return;
     }
 
+    // Reference media lives on public storage URLs (the moderation takedown
+    // mechanism makes blocked objects unreachable at the storage layer), so the
+    // normalized input is passed to the provider as-is — no per-request signing.
+    const providerInput = job.normalizedInput;
+
     const gate = await this.providerCapacity.reserveForProviderSubmit(job);
     if (!gate.ok) {
       await this.deferForProviderCapacity(job, gate);
@@ -894,15 +1019,11 @@ export class AiGenerationWorkerService
     }
 
     try {
-      const result = await adapter.startGeneration(
-        modelId,
-        job.normalizedInput,
-        {
-          jobId: job.id,
-          userId: job.userId,
-          publicBaseUrl: process.env.PUBLIC_BASE_URL,
-        },
-      );
+      const result = await adapter.startGeneration(modelId, providerInput, {
+        jobId: job.id,
+        userId: job.userId,
+        publicBaseUrl: process.env.PUBLIC_BASE_URL,
+      });
 
       if (result.kind === 'completed') {
         // Sync provider (Azure Foundry image): bytes are here, go

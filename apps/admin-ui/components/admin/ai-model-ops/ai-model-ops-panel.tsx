@@ -1937,12 +1937,13 @@ function AssetsPanel({
         header: "资产",
         cell: ({ row }) => {
           const asset = row.original;
+          const previewUrl = mediaAssetPreviewUrl(asset);
           return (
             <div className="flex items-center gap-3">
               <div className="flex size-14 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-slate-200 bg-slate-50">
-                {asset.kind === "image" && asset.url ? (
+                {asset.kind === "image" && previewUrl ? (
                   // eslint-disable-next-line @next/next/no-img-element
-                  <img src={asset.url} alt="" className="size-full object-cover" />
+                  <img src={previewUrl} alt="" className="size-full object-cover" />
                 ) : (
                   <IconPhoto className="size-5 text-slate-400" />
                 )}
@@ -3352,36 +3353,59 @@ function JobOutputsEvidence({ outputs }: { outputs: AdminAiJobDetail["outputs"] 
         Outputs
       </div>
       <div className="grid gap-3 p-3 sm:grid-cols-2 lg:grid-cols-4">
-        {outputs.map((output) => (
-          <a
-            key={output.id}
-            href={output.url}
-            target="_blank"
-            rel="noreferrer"
-            className="overflow-hidden rounded-lg border border-slate-200 bg-slate-50"
-          >
-            <div className="aspect-square bg-white">
-              {/* eslint-disable-next-line @next/next/no-img-element -- provider outputs can be arbitrary external URLs. */}
-              <img src={output.url} alt="" className="size-full object-cover" />
-            </div>
-            <div className="px-2 py-1.5 font-mono text-[11px] text-slate-500">
-              <div className="flex items-center justify-between gap-2">
-                <span>
-                  #{output.outputIndex} · {output.type}
-                </span>
-                {output.asset ? (
-                  <AssetModerationPill status={output.asset.moderationStatus} />
+        {outputs.map((output) => {
+          const previewUrl = jobOutputPreviewUrl(output);
+          return (
+            <a
+              key={output.id}
+              href={previewUrl ?? "#"}
+              target={previewUrl ? "_blank" : undefined}
+              rel={previewUrl ? "noreferrer" : undefined}
+              aria-disabled={!previewUrl}
+              className="overflow-hidden rounded-lg border border-slate-200 bg-slate-50"
+            >
+              <div className="grid aspect-square place-items-center bg-white">
+                {previewUrl ? (
+                  // eslint-disable-next-line @next/next/no-img-element -- admin evidence uses controlled URLs for asset-backed outputs.
+                  <img src={previewUrl} alt="" className="size-full object-cover" />
+                ) : (
+                  <IconPhoto className="size-6 text-slate-400" />
+                )}
+              </div>
+              <div className="px-2 py-1.5 font-mono text-[11px] text-slate-500">
+                <div className="flex items-center justify-between gap-2">
+                  <span>
+                    #{output.outputIndex} · {output.type}
+                  </span>
+                  {output.asset ? (
+                    <AssetModerationPill status={output.asset.moderationStatus} />
+                  ) : null}
+                </div>
+                {output.assetId ? (
+                  <p className="mt-1 truncate text-slate-400">asset · {output.assetId}</p>
                 ) : null}
               </div>
-              {output.assetId ? (
-                <p className="mt-1 truncate text-slate-400">asset · {output.assetId}</p>
-              ) : null}
-            </div>
-          </a>
-        ))}
+            </a>
+          );
+        })}
       </div>
     </section>
   );
+}
+
+function mediaAssetPreviewUrl(asset: AdminAiMediaAsset) {
+  if (asset.status !== "ready") return null;
+  if (asset.kind !== "image" && asset.kind !== "video" && asset.kind !== "audio") return null;
+  return adminMediaContentUrl(asset.id);
+}
+
+function jobOutputPreviewUrl(output: AdminAiJobDetail["outputs"][number]) {
+  if (output.assetId) return adminMediaContentUrl(output.assetId);
+  return typeof output.url === "string" && output.url.trim() ? output.url : null;
+}
+
+function adminMediaContentUrl(assetId: string) {
+  return `/api/admin/media/assets/${encodeURIComponent(assetId)}/content?variantKey=original`;
 }
 
 function SectionTitle({

@@ -591,14 +591,19 @@ export class IpCommerceService {
     const ip = await client.ip.findUnique({
       where: { id: ipId },
       select: {
-        coverAsset: { select: { status: true, deletedAt: true } },
+        coverAsset: {
+          select: { status: true, deletedAt: true, moderationStatus: true },
+        },
         localizations: { select: { title: true } },
       },
     });
     const cover = ip?.coverAsset;
     return {
       ipCoverReady: Boolean(
-        cover && cover.status === MediaAssetStatus.ready && !cover.deletedAt,
+        cover &&
+        cover.status === MediaAssetStatus.ready &&
+        !cover.deletedAt &&
+        cover.moderationStatus !== 'blocked',
       ),
       ipHasTitle: Boolean(
         ip?.localizations.some((l) => l.title && l.title.trim()),
@@ -5470,6 +5475,7 @@ const discoveryAssetSelect = {
   kind: true,
   status: true,
   deletedAt: true,
+  moderationStatus: true,
   storageProvider: true,
   bucket: true,
   region: true,
@@ -5575,11 +5581,17 @@ function isPublicDiscoveryRenderable(row: PublicIpDiscoveryRow) {
   if (row.placementKey !== IpDiscoveryPlacementKey.ip_plaza_hero) return true;
   const image = row.imageAsset;
   const imageReady =
-    image && image.status === MediaAssetStatus.ready && !image.deletedAt;
+    image &&
+    image.status === MediaAssetStatus.ready &&
+    !image.deletedAt &&
+    image.moderationStatus !== 'blocked';
   // Fall back to the IP's native cover when no curated hero image is set.
   const ipCover = row.ip?.coverAsset;
   const ipCoverReady = Boolean(
-    ipCover && ipCover.status === MediaAssetStatus.ready && !ipCover.deletedAt,
+    ipCover &&
+    ipCover.status === MediaAssetStatus.ready &&
+    !ipCover.deletedAt &&
+    ipCover.moderationStatus !== 'blocked',
   );
   // A published IP always carries a localized title, so the title falls back to
   // the IP's own; a curated title is optional.
@@ -7246,6 +7258,9 @@ function assetDto(
     objectKey: string | null;
     externalUrl: string | null;
     contentType: string;
+    status?: string;
+    deletedAt?: Date | null;
+    moderationStatus?: string;
     width: number | null;
     height: number | null;
     durationSeconds: number | null;
@@ -7274,8 +7289,19 @@ function resolveAssetPublicUrlSafe(asset: {
   region: string | null;
   objectKey: string | null;
   externalUrl: string | null;
+  status?: string;
+  deletedAt?: Date | null;
+  moderationStatus?: string;
 }) {
   try {
+    // Moderation/status gate runs BEFORE any URL is built (incl. the
+    // external_url passthrough) so a blocked/deleted asset never leaks a URL.
+    // For storage-backed objects physical takedown is the real enforcement,
+    // but external_url assets have no object we control — the gate is the
+    // only thing keeping a blocked externalUrl from leaking.
+    if (asset.deletedAt) return null;
+    if (asset.status && asset.status !== MediaAssetStatus.ready) return null;
+    if (asset.moderationStatus === 'blocked') return null;
     if (asset.storageProvider === MediaStorageProvider.external_url) {
       return asset.externalUrl ?? null;
     }

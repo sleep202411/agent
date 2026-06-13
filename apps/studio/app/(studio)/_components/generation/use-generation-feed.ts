@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import {
   getFizzAiJob,
   generationIdempotencyKey,
@@ -17,12 +18,13 @@ import {
   type FizzAiSubmitJobInput,
 } from "@/app/canvas/_lib/generation-api";
 import { openAssetsRealtime } from "@/app/canvas/_lib/assets-realtime";
+import { computeWalletBalanceQueryKey } from "@/app/_components/credits-badge";
 
-/** One row of the create-and-browse feed (optimistic local row or server job). */
+/** One row of the create-and-browse feed. Rows are inserted after server accept. */
 export interface FeedJob {
-  /** Stable client key — survives the optimistic→server transition. */
+  /** Stable React key; server jobs use the server request id. */
   localId: string;
-  /** Server job id; empty until the submit response lands. */
+  /** Server job id. */
   jobId: string;
   status: FizzAiGenerationStatus;
   stage: string;
@@ -38,7 +40,8 @@ export interface FeedJob {
 }
 
 const HISTORY_LIMIT = 60;
-const POLL_INTERVAL_MS = 2500;
+const CONNECTED_RECONCILE_INTERVAL_MS = 20_000;
+const DISCONNECTED_FALLBACK_INTERVAL_MS = 5_000;
 
 function jobToFeedJob(job: FizzAiJobView): FeedJob {
   return {
@@ -58,17 +61,10 @@ function jobToFeedJob(job: FizzAiJobView): FeedJob {
   };
 }
 
-/** Optimistic local row (just submitted) vs an incoming server row of the
- *  same generation: match by jobId, else by prompt + freshness window. */
 function sameLogicalJob(a: FeedJob, b: FeedJob): boolean {
   if (a.jobId && b.jobId) return a.jobId === b.jobId;
   if (a.localId === b.localId) return true;
-  return (
-    !isTerminalGenerationStatus(a.status) &&
-    !isTerminalGenerationStatus(b.status) &&
-    a.prompt === b.prompt &&
-    Math.abs(a.createdAtMs - b.createdAtMs) < 5 * 60_000
-  );
+  return false;
 }
 
 function mergeRow(existing: FeedJob, incoming: FeedJob): FeedJob {
@@ -94,6 +90,23 @@ function mergeIntoList(list: FeedJob[], incoming: FeedJob): FeedJob[] {
   return next;
 }
 
+function outputMatchesAsset(output: FizzAiJobOutput, assetId: string): boolean {
+  return output.assetId === assetId || output.id === assetId;
+}
+
+function removeMediaAssetFromList(list: FeedJob[], assetId: string): FeedJob[] {
+  return list.map((row) => {
+    if (!row.outputs.some((output) => outputMatchesAsset(output, assetId))) return row;
+    const outputs = row.outputs.filter((output) => !outputMatchesAsset(output, assetId));
+    return {
+      ...row,
+      outputs,
+      status: outputs.length > 0 ? row.status : "failed",
+      error: outputs.length > 0 ? row.error : "This asset is no longer available.",
+    };
+  });
+}
+
 export interface SubmitFeedJob {
   prompt: string;
   modelId: string;
@@ -104,20 +117,22 @@ export interface SubmitFeedJob {
 }
 
 /**
- * The create-and-browse feed for one modality: history (server jobs) + live
- * rows, kept current by realtime push, a polling backstop for in-flight jobs,
- * and a visibility-refocus reconcile. Submit prepends an optimistic row.
+ * The create-and-browse feed for one modality: scoped history (server jobs) +
+ * realtime pushes, plus low-frequency reconciliation for missed updates.
  */
 export function useGenerationFeed(type: FizzAiJobType, sourceSurface: string) {
+  const queryClient = useQueryClient();
   const [jobs, setJobs] = useState<FeedJob[]>([]);
   const [historyLoading, setHistoryLoading] = useState(true);
+  const [realtimeConnected, setRealtimeConnected] = useState(false);
   const historySeq = useRef(0);
   const pollInFlight = useRef(false);
+  const activeIdsRef = useRef<string[]>([]);
 
   const reconcileHistory = useCallback(async () => {
     const seq = ++historySeq.current;
     try {
-      const response = await listFizzAiJobs({ limit: HISTORY_LIMIT, type });
+      const response = await listFizzAiJobs({ limit: HISTORY_LIMIT, sourceSurface, type });
       if (seq !== historySeq.current) return;
       setJobs((prev) => {
         let next = prev;
@@ -129,25 +144,48 @@ export function useGenerationFeed(type: FizzAiJobType, sourceSurface: string) {
     } finally {
       if (seq === historySeq.current) setHistoryLoading(false);
     }
-  }, [type]);
+  }, [sourceSurface, type]);
 
   // Initial history load.
   useEffect(() => {
-    void reconcileHistory();
+    let cancelled = false;
+    queueMicrotask(() => {
+      if (!cancelled) void reconcileHistory();
+    });
+    return () => {
+      cancelled = true;
+    };
   }, [reconcileHistory]);
 
   // Realtime: ai_job_update pushes for this modality merge into the feed.
   useEffect(() => {
     const client = openAssetsRealtime({
+      onConnected: () => {
+        setRealtimeConnected(true);
+        void reconcileHistory();
+      },
+      onDisconnected: () => setRealtimeConnected(false),
       onEvent: (event) => {
+        if (event.kind === "media_asset_moderation_changed") {
+          if (event.action === "blocked") {
+            setJobs((prev) => removeMediaAssetFromList(prev, event.assetId));
+            return;
+          }
+          void reconcileHistory();
+          return;
+        }
         if (event.kind !== "ai_job_update") return;
         const job = event.job as unknown as FizzAiJobView;
         if (job.type !== type) return;
+        if (job.sourceSurface !== sourceSurface) return;
+        if (isTerminalGenerationStatus(generationStatusFromRaw(job.status))) {
+          void queryClient.invalidateQueries({ queryKey: computeWalletBalanceQueryKey });
+        }
         setJobs((prev) => mergeIntoList(prev, jobToFeedJob(job)));
       },
     });
     return () => client.close();
-  }, [type]);
+  }, [queryClient, reconcileHistory, sourceSurface, type]);
 
   // Polling backstop for non-terminal jobs (covers missed pushes).
   const activeIds = useMemo(
@@ -160,9 +198,14 @@ export function useGenerationFeed(type: FizzAiJobType, sourceSurface: string) {
     [jobs]
   );
   useEffect(() => {
+    activeIdsRef.current = activeIds ? activeIds.split(",") : [];
+  }, [activeIds]);
+
+  useEffect(() => {
     if (!activeIds) return;
-    const ids = activeIds.split(",");
-    const timer = setInterval(async () => {
+    const poll = async () => {
+      const ids = activeIdsRef.current;
+      if (ids.length === 0) return;
       if (pollInFlight.current) return;
       pollInFlight.current = true;
       try {
@@ -179,9 +222,13 @@ export function useGenerationFeed(type: FizzAiJobType, sourceSurface: string) {
       } finally {
         pollInFlight.current = false;
       }
-    }, POLL_INTERVAL_MS);
+    };
+    const timer = setInterval(
+      () => void poll(),
+      realtimeConnected ? CONNECTED_RECONCILE_INTERVAL_MS : DISCONNECTED_FALLBACK_INTERVAL_MS
+    );
     return () => clearInterval(timer);
-  }, [activeIds]);
+  }, [activeIds, realtimeConnected]);
 
   // Tab refocus → reconcile (catches anything missed while hidden).
   useEffect(() => {
@@ -196,28 +243,12 @@ export function useGenerationFeed(type: FizzAiJobType, sourceSurface: string) {
     setJobs((prev) => prev.map((row) => (row.localId === localId ? { ...row, ...patch } : row)));
   }, []);
 
-  /** Submit a generation: optimistic row first, then the server request. */
+  /** Submit a generation; insert a card only after the server accepts it. */
   const submit = useCallback(
-    async (params: SubmitFeedJob): Promise<{ ok: boolean; error?: string }> => {
-      const localId = crypto.randomUUID();
-      const optimistic: FeedJob = {
-        localId,
-        jobId: "",
-        status: "queued",
-        stage: "submitting",
-        progress: null,
-        queuePosition: null,
-        etaSeconds: null,
-        prompt: params.prompt,
-        modelId: params.modelId,
-        input: params.input,
-        outputs: [],
-        createdAtMs: Date.now(),
-      };
-      setJobs((prev) => [optimistic, ...prev]);
+    async (params: SubmitFeedJob): Promise<{ ok: boolean; error?: string; jobId?: string }> => {
       try {
         const response = await submitFizzAiJob({
-          context: { documentBlockId: localId, sourceSurface },
+          context: { documentBlockId: crypto.randomUUID(), sourceSurface },
           idempotencyKey: generationIdempotencyKey(sourceSurface),
           input: params.input,
           promptDocument: params.promptDocument,
@@ -226,57 +257,58 @@ export function useGenerationFeed(type: FizzAiJobType, sourceSurface: string) {
           schemaVersion: params.schemaVersion,
         });
         const raw = generationStatusFromRaw(response.status);
-        patchRow(localId, {
-          jobId: response.request_id,
-          // A too-fast "done" is coerced until a poll confirms real outputs.
-          status: raw === "done" ? "generating" : raw,
-          stage: response.stage ?? "queued",
-          progress: response.progress ?? null,
-          queuePosition: response.queue_position ?? null,
-          etaSeconds: response.estimated_total_seconds ?? null,
-        });
-        return { ok: true };
+        setJobs((prev) =>
+          mergeIntoList(prev, {
+            localId: response.request_id,
+            jobId: response.request_id,
+            // A too-fast "done" is coerced until a poll confirms real outputs.
+            status: raw === "done" ? "generating" : raw,
+            stage: response.stage ?? "queued",
+            progress: response.progress ?? null,
+            queuePosition: response.queue_position ?? null,
+            etaSeconds: response.estimated_total_seconds ?? null,
+            prompt: params.prompt,
+            modelId: params.modelId,
+            input: params.input,
+            outputs: [],
+            createdAtMs: Date.now(),
+          })
+        );
+        void queryClient.invalidateQueries({ queryKey: computeWalletBalanceQueryKey });
+        return { ok: true, jobId: response.request_id };
       } catch (error) {
         const message = normalizeFizzAiError(error, "Generation failed");
-        patchRow(localId, { status: "failed", error: message });
         return { ok: false, error: message };
       }
     },
-    [sourceSurface, patchRow]
+    [queryClient, sourceSurface]
   );
 
   /** Retry a failed row: server-side when it has a jobId, else resubmit. */
   const retry = useCallback(
     async (row: FeedJob, modelMeta?: { schemaVersion: string }) => {
-      setJobs((prev) => prev.filter((r) => r.localId !== row.localId));
       if (row.jobId) {
-        const localId = crypto.randomUUID();
-        setJobs((prev) => [
-          {
-            ...row,
-            localId,
-            jobId: "",
-            status: "queued",
-            stage: "submitting",
-            progress: null,
-            queuePosition: null,
-            etaSeconds: null,
-            outputs: [],
-            error: undefined,
-            createdAtMs: Date.now(),
-          },
-          ...prev,
-        ]);
         try {
           const response = await retryFizzAiJob(row.jobId);
-          patchRow(localId, {
-            jobId: response.request_id,
-            status: generationStatusFromRaw(response.status),
-            stage: response.stage ?? "queued",
-          });
+          setJobs((prev) => prev.filter((r) => r.localId !== row.localId));
+          setJobs((prev) =>
+            mergeIntoList(prev, {
+              ...row,
+              localId: response.request_id,
+              jobId: response.request_id,
+              status: generationStatusFromRaw(response.status),
+              stage: response.stage ?? "queued",
+              progress: response.progress ?? null,
+              queuePosition: response.queue_position ?? null,
+              etaSeconds: response.estimated_total_seconds ?? null,
+              outputs: [],
+              error: undefined,
+              createdAtMs: Date.now(),
+            })
+          );
+          void queryClient.invalidateQueries({ queryKey: computeWalletBalanceQueryKey });
         } catch (error) {
-          patchRow(localId, {
-            status: "failed",
+          patchRow(row.localId, {
             error: normalizeFizzAiError(error, "Retry failed"),
           });
         }
@@ -292,7 +324,7 @@ export function useGenerationFeed(type: FizzAiJobType, sourceSurface: string) {
         });
       }
     },
-    [patchRow, submit]
+    [patchRow, queryClient, submit]
   );
 
   const hasActiveJobs = useMemo(

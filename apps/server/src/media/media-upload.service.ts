@@ -41,12 +41,14 @@ import {
 import { randomUUID } from 'node:crypto';
 import {
   MediaAssetKind,
+  MediaAssetSource,
   MediaAssetStatus,
   MediaAssetVisibility,
   MediaStorageProvider,
 } from '@prisma/client';
 import { PrismaService } from '../infra/db/db.module';
 import { CURRENT_CELL } from '../common/region/current-cell';
+import { ensureOriginalMediaPlacement } from '../infra/storage/media-asset-placement';
 import {
   OutputStorageService,
   type HeadObjectResult,
@@ -309,9 +311,32 @@ export class MediaUploadService {
         region: true,
         objectKey: true,
         externalUrl: true,
+        contentType: true,
+        sizeBytes: true,
+        width: true,
+        height: true,
+        durationSeconds: true,
+        checksumSha256: true,
       },
     });
     if (existing) {
+      await this.prisma.$transaction((tx) =>
+        ensureOriginalMediaPlacement(tx, {
+          assetId: existing.id,
+          storageProvider: existing.storageProvider,
+          bucket: existing.bucket,
+          region: existing.region,
+          objectKey: existing.objectKey,
+          externalUrl: existing.externalUrl,
+          contentType: existing.contentType,
+          sizeBytes: existing.sizeBytes,
+          width: existing.width,
+          height: existing.height,
+          durationSeconds: existing.durationSeconds,
+          checksumSha256: existing.checksumSha256,
+          metadata: { source: 'direct_upload', uploadKind: input.kind },
+        }),
+      );
       return {
         mediaAssetId: existing.id,
         storageKey,
@@ -361,34 +386,59 @@ export class MediaUploadService {
     // 5. Write the ACTIVE asset. sizeBytes + contentType come from the HEAD
     //    (storage truth), never the client. createdByUserId + status power
     //    the future quota query and lifecycle.
-    const asset = await this.prisma.mediaAsset.create({
-      data: {
-        kind: policy.assetKind,
-        storageProvider: provider,
-        bucket: head.bucket ?? null,
-        region: head.region ?? null,
-        objectKey: storageKey,
-        contentType: head.contentType ?? input.contentType,
-        sizeBytes: head.sizeBytes != null ? BigInt(head.sizeBytes) : null,
-        // Direct-to-storage uploads are private until a save links them to
-        // a public feature row; the read-side resolves URLs from identity
-        // regardless of this flag, so this is just intent.
-        visibility: MediaAssetVisibility.private,
-        // `ready` is this schema's ACTIVE/usable state (what certificates +
-        // ip-commerce write and what the read side gates on). The asset is
-        // born active here — the old `uploading` pre-create state, the only
-        // thing that ever produced orphans, is no longer written at all.
-        status: MediaAssetStatus.ready,
-        createdByUserId: userId,
-      },
-      select: {
-        id: true,
-        storageProvider: true,
-        bucket: true,
-        region: true,
-        objectKey: true,
-        externalUrl: true,
-      },
+    const asset = await this.prisma.$transaction(async (tx) => {
+      const created = await tx.mediaAsset.create({
+        data: {
+          kind: policy.assetKind,
+          storageProvider: provider,
+          bucket: head.bucket ?? null,
+          region: head.region ?? null,
+          objectKey: storageKey,
+          contentType: head.contentType ?? input.contentType,
+          sizeBytes: head.sizeBytes != null ? BigInt(head.sizeBytes) : null,
+          // Direct-to-storage uploads are private until a save links them to
+          // a public feature row; the read-side resolves URLs from identity
+          // regardless of this flag, so this is just intent.
+          visibility: MediaAssetVisibility.private,
+          // `ready` is this schema's ACTIVE/usable state (what certificates +
+          // ip-commerce write and what the read side gates on). The asset is
+          // born active here — the old `uploading` pre-create state, the only
+          // thing that ever produced orphans, is no longer written at all.
+          status: MediaAssetStatus.ready,
+          source: MediaAssetSource.user_upload,
+          createdByUserId: userId,
+        },
+        select: {
+          id: true,
+          storageProvider: true,
+          bucket: true,
+          region: true,
+          objectKey: true,
+          externalUrl: true,
+          contentType: true,
+          sizeBytes: true,
+          width: true,
+          height: true,
+          durationSeconds: true,
+          checksumSha256: true,
+        },
+      });
+      await ensureOriginalMediaPlacement(tx, {
+        assetId: created.id,
+        storageProvider: created.storageProvider,
+        bucket: created.bucket,
+        region: created.region,
+        objectKey: created.objectKey,
+        externalUrl: created.externalUrl,
+        contentType: created.contentType,
+        sizeBytes: created.sizeBytes,
+        width: created.width,
+        height: created.height,
+        durationSeconds: created.durationSeconds,
+        checksumSha256: created.checksumSha256,
+        metadata: { source: 'direct_upload', uploadKind: input.kind },
+      });
+      return created;
     });
 
     return {

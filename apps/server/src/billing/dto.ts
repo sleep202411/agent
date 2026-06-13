@@ -95,6 +95,12 @@ export const BillingProviderEventStatusSchema = z.enum([
   'ignored',
   'failed',
 ]);
+export const BillingMembershipPlanStatusSchema = z.enum([
+  'draft',
+  'active',
+  'paused',
+  'archived',
+]);
 
 export const ListBillingPricesQuerySchema = z.object({
   productType: BillingProductTypeSchema.optional(),
@@ -208,12 +214,12 @@ export const CreateAdminUserWalletCreditSchema = z
   .object({
     userId: z.string().trim().min(1).max(64),
     idFormat: z.enum(['public', 'raw']).default('public'),
-    currency: WalletCurrencyTypeSchema.default('community_point'),
+    currency: z.literal('compute_point').default('compute_point'),
     balanceKind: z.literal('consumable').default('consumable'),
     amount: z.coerce.bigint().min(1n),
     grantType: AdminWalletCreditGrantTypeSchema.default('admin_adjustment'),
     expiresAt: z.coerce.date().nullable().optional(),
-    reason: z.string().trim().min(6).max(1000),
+    reason: z.string().trim().min(1).max(1000),
     idempotencyKey: z.string().trim().min(8).max(180),
     metadata: z.record(z.string(), z.unknown()).default({}),
   })
@@ -246,6 +252,149 @@ export type ListAdminBillingPricesQuery = z.infer<
 >;
 
 const MetadataSchema = z.record(z.string(), z.unknown()).default({});
+const PlanKeySchema = z
+  .string()
+  .trim()
+  .min(2)
+  .max(64)
+  .transform((value) => value.toLowerCase())
+  .refine(
+    (value) => /^[a-z][a-z0-9_]{1,63}$/.test(value),
+    'Plan key must be lowercase snake_case and start with a letter.',
+  );
+
+export const ListMembershipPlansQuerySchema = z.object({
+  productType: z.enum(['membership_plan', 'team_membership_plan']).optional(),
+  subjectType: BillingSubjectTypeSchema.optional(),
+  provider: CheckoutPaymentProviderSchema.optional(),
+  currency: z
+    .string()
+    .trim()
+    .length(3)
+    .transform((value) => value.toUpperCase())
+    .optional(),
+});
+export type ListMembershipPlansQuery = z.infer<
+  typeof ListMembershipPlansQuerySchema
+>;
+
+export const ListAdminMembershipPlansQuerySchema = z.object({
+  productType: z.enum(['membership_plan', 'team_membership_plan']).optional(),
+  subjectType: BillingSubjectTypeSchema.optional(),
+  status: BillingMembershipPlanStatusSchema.optional(),
+  includeArchived: z.coerce.boolean().default(false),
+});
+export type ListAdminMembershipPlansQuery = z.infer<
+  typeof ListAdminMembershipPlansQuerySchema
+>;
+
+const MembershipPlanShape = {
+  planKey: PlanKeySchema,
+  productType: z.enum(['membership_plan', 'team_membership_plan']),
+  subjectType: BillingSubjectTypeSchema,
+  status: BillingMembershipPlanStatusSchema.default('draft'),
+  rank: z.coerce.number().int().min(0).max(100),
+  name: z.string().trim().min(2).max(160),
+  description: z.string().trim().max(4000).optional(),
+  includedComputeCredits: z.coerce.bigint().min(0n).default(0n),
+  includedSeats: z.coerce.number().int().min(1).max(100000).default(1),
+  maxSeats: z.coerce.number().int().min(1).max(100000).nullable().optional(),
+  seatOverageAllowed: z.coerce.boolean().default(false),
+  topupDiscountBps: z.coerce.number().int().min(0).max(10000).default(0),
+  billingIntervalDefault: BillingPriceIntervalSchema.optional(),
+  featureFlags: MetadataSchema.optional(),
+  limits: MetadataSchema.optional(),
+  marketing: MetadataSchema.optional(),
+  metadata: MetadataSchema.optional(),
+} satisfies z.ZodRawShape;
+
+const MembershipPlanObjectSchema = z.object(MembershipPlanShape);
+
+const MembershipPlanBaseSchema = MembershipPlanObjectSchema.superRefine(
+  (value, ctx) => {
+    if (
+      value.productType === 'membership_plan' &&
+      value.subjectType !== 'user'
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['subjectType'],
+        message: 'Individual membership plans must use user subject type.',
+      });
+    }
+    if (
+      value.productType === 'team_membership_plan' &&
+      value.subjectType !== 'workspace'
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['subjectType'],
+        message: 'Team membership plans must use workspace subject type.',
+      });
+    }
+    if (value.maxSeats != null && value.maxSeats < value.includedSeats) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['maxSeats'],
+        message: 'Maximum seats cannot be below included seats.',
+      });
+    }
+  },
+);
+
+export const CreateAdminMembershipPlanSchema = MembershipPlanBaseSchema;
+export type CreateAdminMembershipPlanInput = z.infer<
+  typeof CreateAdminMembershipPlanSchema
+>;
+
+export const UpdateAdminMembershipPlanSchema =
+  MembershipPlanObjectSchema.partial()
+    .omit({ planKey: true })
+    .superRefine((value, ctx) => {
+      if (
+        value.productType === 'membership_plan' &&
+        value.subjectType &&
+        value.subjectType !== 'user'
+      ) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['subjectType'],
+          message: 'Individual membership plans must use user subject type.',
+        });
+      }
+      if (
+        value.productType === 'team_membership_plan' &&
+        value.subjectType &&
+        value.subjectType !== 'workspace'
+      ) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['subjectType'],
+          message: 'Team membership plans must use workspace subject type.',
+        });
+      }
+      if (
+        value.maxSeats != null &&
+        value.includedSeats != null &&
+        value.maxSeats < value.includedSeats
+      ) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['maxSeats'],
+          message: 'Maximum seats cannot be below included seats.',
+        });
+      }
+    });
+export type UpdateAdminMembershipPlanInput = z.infer<
+  typeof UpdateAdminMembershipPlanSchema
+>;
+
+export const BillingMembershipPlanParamsSchema = z.object({
+  planId: z.string().uuid(),
+});
+export type BillingMembershipPlanParams = z.infer<
+  typeof BillingMembershipPlanParamsSchema
+>;
 
 const ProviderBindingInputSchema = z.object({
   provider: AdminPaymentProviderSchema,
@@ -303,7 +452,38 @@ export const CreateAdminBillingPriceSchema = z
         code: z.ZodIssueCode.custom,
         path: ['grantsPlanKey'],
         message:
-          'A price cannot grant wallet balance and membership at the same time.',
+          'Membership included credits are configured on the membership plan, not on the price.',
+      });
+    }
+    if (
+      (value.productType === 'membership_plan' ||
+        value.productType === 'team_membership_plan') &&
+      !value.grantsPlanKey
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['grantsPlanKey'],
+        message: 'Membership prices must grant a plan key.',
+      });
+    }
+    if (
+      value.productType === 'membership_plan' &&
+      value.subjectType !== 'user'
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['subjectType'],
+        message: 'Individual membership prices must grant to user subjects.',
+      });
+    }
+    if (
+      value.productType === 'team_membership_plan' &&
+      value.subjectType !== 'workspace'
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['subjectType'],
+        message: 'Team membership prices must grant to workspace subjects.',
       });
     }
   });

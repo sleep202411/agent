@@ -157,6 +157,10 @@ serverSecrets:
       env: AIRWALLEX_WEBHOOK_SECRET
     - kv: admin-mfa-secret-key
       env: ADMIN_MFA_SECRET_KEY
+    - kv: legacy-mysql-user
+      env: LEGACY_MYSQL_USER
+    - kv: legacy-mysql-password
+      env: LEGACY_MYSQL_PASSWORD
 # ---------------------------------------------------------------------------
 # web — Next.js front-of-stack. Public via Ingress.
 # ---------------------------------------------------------------------------
@@ -165,7 +169,7 @@ web:
   replicaCount: 1
   image:
     repository: fizzdragon-web
-    tag: 18a6e0fc2a6bbed54f2e345f9d4e20be3e4e1f53
+    tag: 52cab3be85832bbc0f3637e43c43f3b0d7f30f91
   containerPort: 3000
   env:
     SERVER_URL: http://fizzdragon-server:3001
@@ -217,7 +221,7 @@ adminUi:
   replicaCount: 1
   image:
     repository: fizzdragon-admin-ui
-    tag: 18a6e0fc2a6bbed54f2e345f9d4e20be3e4e1f53
+    tag: 52cab3be85832bbc0f3637e43c43f3b0d7f30f91
   containerPort: 3000
   readinessPath: /admin/login
   livenessPath: /admin/login
@@ -255,7 +259,7 @@ server:
   migrateOnStart: true
   image:
     repository: fizzdragon-server
-    tag: 18a6e0fc2a6bbed54f2e345f9d4e20be3e4e1f53
+    tag: 52cab3be85832bbc0f3637e43c43f3b0d7f30f91
   containerPort: 3001
   env:
     FAL_ENABLED: "true"
@@ -274,6 +278,15 @@ server:
     # allowlist, so it must be listed here. localhost:9527 is for local testing
     # against prod — remove once recharge is validated.
     BILLING_ALLOWED_RETURN_ORIGINS: "https://fizzstudio.fizzdragon.com,https://fizzdragon.com,http://localhost:9527"
+    # Legacy Java MySQL bridge (用户管理 / legacy points). Cross-cloud: this
+    # Azure-AKS server reaches the Alibaba Singapore PolarDB over its PUBLIC
+    # endpoint; the AKS egress IP (20.247.195.70) is whitelisted in the
+    # `aks_com_prod` group on cluster pc-gs5p5dvjj5twh7w86. USER/PASSWORD come
+    # from Key Vault via serverSecrets below.
+    LEGACY_MYSQL_ENABLED: "true"
+    LEGACY_MYSQL_HOST: fizzdragon-sg.rwlb.singapore.rds.aliyuncs.com
+    LEGACY_MYSQL_PORT: "3306"
+    LEGACY_MYSQL_DATABASE: fizzdragon_client
   resources:
     requests: {cpu: 100m, memory: 256Mi}
     limits: {cpu: 1000m, memory: 1Gi}

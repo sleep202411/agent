@@ -5,6 +5,7 @@
 export type PaymentProvider = "airwallex" | "wechat_pay" | "alipay" | "manual" | "internal";
 export type BindingStatus = "active" | "inactive" | "sync_pending" | "sync_failed";
 export type BillingPromotionStatus = "draft" | "active" | "paused" | "archived";
+export type BillingMembershipPlanStatus = "draft" | "active" | "paused" | "archived";
 export type BillingPromotionDurationType = "once" | "forever" | "repeating";
 export type BillingOrderStatus =
   | "draft"
@@ -95,6 +96,33 @@ export type BillingPriceRow = {
   archivedAt: string | null;
   providerBindings: BillingProviderBinding[];
   counts: { orders: number; subscriptions: number };
+  updatedAt: string;
+};
+
+export type BillingMembershipPlanRow = {
+  id: string;
+  planKey: string;
+  productType: "membership_plan" | "team_membership_plan";
+  subjectType: "user" | "workspace";
+  status: BillingMembershipPlanStatus;
+  rank: number;
+  name: string;
+  description: string | null;
+  includedComputeCredits: string;
+  includedSeats: number;
+  maxSeats: number | null;
+  seatOverageAllowed: boolean;
+  topupDiscountBps: number;
+  billingIntervalDefault: string | null;
+  featureFlags: Record<string, unknown>;
+  limits: Record<string, unknown>;
+  marketing: Record<string, unknown>;
+  metadata: Record<string, unknown>;
+  createdById: string | null;
+  updatedById: string | null;
+  archivedAt: string | null;
+  prices: BillingPriceRow[];
+  createdAt: string;
   updatedAt: string;
 };
 
@@ -572,6 +600,10 @@ export type AdminBillingPricesData = {
   items: BillingPriceRow[];
 };
 
+export type AdminBillingMembershipPlansData = {
+  items: BillingMembershipPlanRow[];
+};
+
 export type AdminBillingPromotionsData = {
   items: BillingPromotionRow[];
 };
@@ -620,6 +652,8 @@ export type AdminBillingReconciliationRunsData = {
 // Empty-state fallbacks so a failed initial server fetch still renders the
 // page chrome. Moved AS-IS from admin-billing-panel.tsx.
 export const emptyPrices: AdminBillingPricesData = { items: [] };
+
+export const emptyMembershipPlans: AdminBillingMembershipPlansData = { items: [] };
 
 export const emptyLedgerOverview: AdminBillingLedgerOverviewData = {
   generatedAt: new Date(0).toISOString(),

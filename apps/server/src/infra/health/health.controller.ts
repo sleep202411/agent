@@ -21,6 +21,7 @@ import {
 import type { Response } from 'express';
 import type Redis from 'ioredis';
 import { Public } from '../../auth';
+import { CURRENT_CELL } from '../../common/region/current-cell';
 import { PrismaService } from '../db/db.module';
 import { REDIS } from '../redis/redis.module';
 import { OutputStorageService } from '../storage/storage.types';
@@ -54,18 +55,30 @@ export class HealthController {
       this.probeDb(),
       this.probeRedis(),
     ]);
+    // Azure Web PubSub and Foundry are com-cell infrastructure. The cn cell
+    // does realtime through the in-process WS gateways (WebPubSubService
+    // no-ops without a connection string) and runs no Foundry provider, so
+    // gating readiness on them there would 503 a perfectly healthy pod.
+    const azureCell = CURRENT_CELL !== 'cn';
     const checks: ReadinessProbe[] = [
       {
         name: 'web_pubsub',
-        ok: Boolean(process.env.AZURE_WEB_PUBSUB_CONNECTION_STRING),
-        detail: 'AZURE_WEB_PUBSUB_CONNECTION_STRING required for realtime',
+        ok: azureCell
+          ? Boolean(process.env.AZURE_WEB_PUBSUB_CONNECTION_STRING)
+          : true,
+        detail: azureCell
+          ? 'AZURE_WEB_PUBSUB_CONNECTION_STRING required for realtime'
+          : 'not used on the cn cell (in-process WS gateways)',
       },
       {
         name: 'foundry_provider',
-        ok:
-          Boolean(process.env.AZURE_OPENAI_API_KEY) &&
-          Boolean(process.env.AZURE_OPENAI_BASE_URL),
-        detail: 'AZURE_OPENAI_API_KEY / AZURE_OPENAI_BASE_URL required',
+        ok: azureCell
+          ? Boolean(process.env.AZURE_OPENAI_API_KEY) &&
+            Boolean(process.env.AZURE_OPENAI_BASE_URL)
+          : true,
+        detail: azureCell
+          ? 'AZURE_OPENAI_API_KEY / AZURE_OPENAI_BASE_URL required'
+          : 'foundry is not a cn-cell provider',
       },
       {
         name: 'output_storage',

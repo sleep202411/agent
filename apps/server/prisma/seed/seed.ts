@@ -14,6 +14,7 @@ import {
   seedAiImageCatalog,
   seedAiVideoCatalog,
 } from './ai-catalog/seed-catalog';
+import { seedMembershipPlans } from './membership-plans';
 
 async function main(): Promise<void> {
   const prisma = buildPrisma();
@@ -21,6 +22,7 @@ async function main(): Promise<void> {
   try {
     await seedAiImageCatalog(prisma);
     await seedAiVideoCatalog(prisma);
+    await seedMembershipPlans(prisma);
   } finally {
     await prisma.$disconnect();
   }

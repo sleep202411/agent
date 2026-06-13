@@ -57,8 +57,18 @@ export class AuthGuard implements CanActivate {
       context.getClass(),
     ]);
 
-    // Dev mode: skip auth, attach mock user (only allowed in non-production)
+    // Dev mode still prefers a real browser session when one exists. This lets
+    // local studio/admin flows exercise the same user-scoped wallet data as
+    // production, while retaining the dev fallback when Java auth is unavailable.
     if (process.env.AUTH_DISABLED === 'true') {
+      if (cookie) {
+        const user = await this.authService.validateToken(cookie);
+        if (user) {
+          request.user = user;
+          request.rawCookie = cookie;
+          return true;
+        }
+      }
       request.user = DEV_USER;
       request.rawCookie = cookie ?? '';
       return true;

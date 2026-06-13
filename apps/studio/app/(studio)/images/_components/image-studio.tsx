@@ -32,6 +32,7 @@ import {
   ResultLightbox,
   type LightboxItem,
 } from "@/app/(studio)/_components/generation/result-lightbox";
+import { useComputeWalletBalance } from "@/app/_components/credits-badge";
 
 /**
  * Image studio: create-and-browse on one surface — bottom-docked composer
@@ -40,6 +41,7 @@ import {
 export function ImageStudio() {
   const { data: catalog } = useAiCatalog();
   const feed = useGenerationFeed("image", "fizzstudio-image-studio");
+  const { data: wallet } = useComputeWalletBalance();
   const uploads = useReferenceUploads();
 
   const [prompt, setPrompt] = useState("");
@@ -53,10 +55,16 @@ export function ImageStudio() {
   useEffect(() => {
     if (model || !catalog) return;
     const first = usableModelsByModality(catalog, "image")[0];
-    if (first) {
+    if (!first) return;
+    let cancelled = false;
+    queueMicrotask(() => {
+      if (cancelled) return;
       setModel(first);
       setSettings(defaultSettingsForModel(first));
-    }
+    });
+    return () => {
+      cancelled = true;
+    };
   }, [catalog, model]);
 
   const onSelectModel = (selected: FizzAiModel) => {
@@ -99,6 +107,11 @@ export function ImageStudio() {
     if (!model || !canSubmit) return;
     setSubmitting(true);
     setSubmitError(null);
+    if (cost != null && wallet && wallet.available < BigInt(Math.ceil(cost))) {
+      setSubmitError("Not enough compute credits. Add credits to continue.");
+      setSubmitting(false);
+      return;
+    }
     const ready = activeUploads.filter((item) => item.url);
     const bindings: FizzAiReferenceBinding[] = ready.map((item, order) => ({
       refId: item.id,

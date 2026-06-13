@@ -342,6 +342,19 @@ enum BillingSubscriptionStatus {
   expired
 }
 
+enum BillingMembershipPlanStatus {
+  draft
+  active
+  paused
+  archived
+}
+
+enum BillingSubscriptionCycleStatus {
+  pending
+  fulfilled
+  voided
+}
+
 enum BillingLedgerAllocationTarget {
   /// Allocate fulfilled customer funds to wallet liability because the user
   /// received consumable platform balance.
@@ -749,16 +762,17 @@ model Workspace {
   updatedAt        DateTime             @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
   deletedAt        DateTime?            @map("deleted_at") @db.Timestamptz(6)
 
-  members       WorkspaceMember[]
-  invites       WorkspaceInvite[]
-  projects      PlatformProject[]
-  auditLogs     PlatformAuditLog[]
-  projectAssets ProjectAsset[]
-  aiJobs        AiJob[]
-  mediaAssets   MediaAsset[]
-  documents     PlatformDocument[]
-  billingOrders BillingOrder[]
-  subscriptions BillingSubscription[]
+  members          WorkspaceMember[]
+  invites          WorkspaceInvite[]
+  projects         PlatformProject[]
+  auditLogs        PlatformAuditLog[]
+  projectAssets    ProjectAsset[]
+  aiJobs           AiJob[]
+  mediaAssets      MediaAsset[]
+  mediaAssetUsages MediaAssetUsage[]
+  documents        PlatformDocument[]
+  billingOrders    BillingOrder[]
+  subscriptions    BillingSubscription[]
 
   /// Active personal uniqueness is enforced by partial unique SQL:
   /// (owner_user_id) WHERE type='personal' AND deleted_at IS NULL.
@@ -830,12 +844,13 @@ model PlatformProject {
   updatedAt    DateTime              @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
   deletedAt    DateTime?             @map("deleted_at") @db.Timestamptz(6)
 
-  workspace Workspace          @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  members   ProjectMember[]
-  assets    ProjectAsset[]
-  auditLogs PlatformAuditLog[]
-  aiJobs    AiJob[]
-  documents PlatformDocument[]
+  workspace        Workspace          @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  members          ProjectMember[]
+  assets           ProjectAsset[]
+  auditLogs        PlatformAuditLog[]
+  aiJobs           AiJob[]
+  mediaAssetUsages MediaAssetUsage[]
+  documents        PlatformDocument[]
 
   /// Active slug uniqueness is enforced by partial unique SQL:
   /// (workspace_id, slug) WHERE slug IS NOT NULL AND deleted_at IS NULL.
@@ -1088,12 +1103,13 @@ model WalletTransaction {
   postedAt       DateTime?               @default(now()) @map("posted_at") @db.Timestamptz(6)
   voidedAt       DateTime?               @map("voided_at") @db.Timestamptz(6)
 
-  entries                WalletLedgerEntry[]
-  creditGrants           WalletCreditGrant[]
-  creditAllocations      WalletCreditAllocation[]
-  ipPurchaseOrders       IpPurchaseOrder[]
-  billingRefunds         BillingRefund[]
-  ipRevenueLedgerEntries IpRevenueLedgerEntry[]
+  entries                   WalletLedgerEntry[]
+  creditGrants              WalletCreditGrant[]
+  creditAllocations         WalletCreditAllocation[]
+  billingSubscriptionCycles BillingSubscriptionCycle[]
+  ipPurchaseOrders          IpPurchaseOrder[]
+  billingRefunds            BillingRefund[]
+  ipRevenueLedgerEntries    IpRevenueLedgerEntry[]
 
   @@unique([idempotencyKey], map: "wallet_transactions_idempotency_key_unique")
   @@index([sourceType, sourceId], map: "wallet_transactions_source_idx")
@@ -1179,6 +1195,37 @@ model WalletCreditAllocation {
   @@index([transactionId], map: "wallet_credit_allocations_transaction_idx")
   @@index([ledgerEntryId], map: "wallet_credit_allocations_ledger_entry_idx")
   @@map("wallet_credit_allocations")
+}
+
+model BillingMembershipPlan {
+  id                     String                      @id @default(uuid(7)) @db.Uuid
+  planKey                String                      @map("plan_key") @db.VarChar(64)
+  productType            BillingProductType          @map("product_type")
+  subjectType            BillingSubjectType          @map("subject_type")
+  status                 BillingMembershipPlanStatus @default(draft)
+  rank                   Int
+  name                   String                      @db.VarChar(160)
+  description            String?                     @db.Text
+  includedComputeCredits BigInt                      @default(0) @map("included_compute_credits")
+  includedSeats          Int                         @default(1) @map("included_seats")
+  maxSeats               Int?                        @map("max_seats")
+  seatOverageAllowed     Boolean                     @default(false) @map("seat_overage_allowed")
+  topupDiscountBps       Int                         @default(0) @map("topup_discount_bps")
+  billingIntervalDefault BillingPriceInterval?       @map("billing_interval_default")
+  featureFlags           Json                        @default("{}") @map("feature_flags") @db.JsonB
+  limits                 Json                        @default("{}") @db.JsonB
+  marketing              Json                        @default("{}") @db.JsonB
+  metadata               Json                        @default("{}") @db.JsonB
+  createdById            String?                     @map("created_by_id") @db.VarChar(64)
+  updatedById            String?                     @map("updated_by_id") @db.VarChar(64)
+  createdAt              DateTime                    @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt              DateTime                    @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  archivedAt             DateTime?                   @map("archived_at") @db.Timestamptz(6)
+
+  @@unique([planKey], map: "billing_membership_plans_plan_key_unique")
+  @@index([productType, status, rank], map: "billing_membership_plans_product_status_rank_idx")
+  @@index([subjectType, status, rank], map: "billing_membership_plans_subject_status_rank_idx")
+  @@map("billing_membership_plans")
 }
 
 model BillingCatalogItem {
@@ -1425,6 +1472,7 @@ model BillingOrder {
   refunds              BillingRefund[]
   ledgerJournals       BillingLedgerJournal[]
   promotionRedemptions BillingPromotionRedemption[]
+  subscriptionCycles   BillingSubscriptionCycle[]
 
   @@unique([orderNo], map: "billing_orders_order_no_unique")
   @@unique([userId, idempotencyKey], map: "billing_orders_user_idempotency_unique")
@@ -1622,25 +1670,67 @@ model BillingSubscription {
   subjectId              String                    @map("subject_id") @db.VarChar(64)
   provider               PaymentProvider
   providerSubscriptionId String?                   @map("provider_subscription_id") @db.VarChar(128)
+  providerCustomerId     String?                   @map("provider_customer_id") @db.VarChar(128)
   status                 BillingSubscriptionStatus @default(incomplete)
   priceId                String                    @map("price_id") @db.Uuid
   planKey                String?                   @map("plan_key") @db.VarChar(64)
+  latestOrderId          String?                   @map("latest_order_id") @db.Uuid
   currentPeriodStart     DateTime?                 @map("current_period_start") @db.Timestamptz(6)
   currentPeriodEnd       DateTime?                 @map("current_period_end") @db.Timestamptz(6)
   cancelAtPeriodEnd      Boolean                   @default(false) @map("cancel_at_period_end")
+  startedAt              DateTime?                 @map("started_at") @db.Timestamptz(6)
+  endedAt                DateTime?                 @map("ended_at") @db.Timestamptz(6)
+  planPolicySnapshot     Json                      @default("{}") @map("plan_policy_snapshot") @db.JsonB
   metadata               Json                      @default("{}") @db.JsonB
+  version                Int                       @default(0)
   createdAt              DateTime                  @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt              DateTime                  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
   canceledAt             DateTime?                 @map("canceled_at") @db.Timestamptz(6)
 
-  workspace Workspace?   @relation(fields: [workspaceId], references: [id], onDelete: SetNull)
-  price     BillingPrice @relation(fields: [priceId], references: [id], onDelete: Restrict)
+  workspace Workspace?                 @relation(fields: [workspaceId], references: [id], onDelete: SetNull)
+  price     BillingPrice               @relation(fields: [priceId], references: [id], onDelete: Restrict)
+  cycles    BillingSubscriptionCycle[]
 
   /// Provider subscription uniqueness is enforced by partial unique SQL:
   /// (provider, provider_subscription_id) WHERE provider_subscription_id IS NOT NULL.
   @@index([subjectType, subjectId, status], map: "billing_subscriptions_subject_status_idx")
   @@index([userId, status, updatedAt(sort: Desc)], map: "billing_subscriptions_user_status_idx")
+  @@index([provider, providerCustomerId], map: "billing_subscriptions_provider_customer_idx")
+  @@index([latestOrderId], map: "billing_subscriptions_latest_order_idx")
   @@map("billing_subscriptions")
+}
+
+model BillingSubscriptionCycle {
+  id                     String                         @id @default(uuid(7)) @db.Uuid
+  subscriptionId         String                         @map("subscription_id") @db.Uuid
+  orderId                String?                        @map("order_id") @db.Uuid
+  entitlementGrantId     String?                        @map("entitlement_grant_id") @db.Uuid
+  walletTransactionId    String?                        @map("wallet_transaction_id") @db.Uuid
+  cycleNo                Int                            @map("cycle_no")
+  status                 BillingSubscriptionCycleStatus @default(pending)
+  periodStart            DateTime                       @map("period_start") @db.Timestamptz(6)
+  periodEnd              DateTime?                      @map("period_end") @db.Timestamptz(6)
+  includedComputeCredits BigInt                         @default(0) @map("included_compute_credits")
+  creditGrantExpiresAt   DateTime?                      @map("credit_grant_expires_at") @db.Timestamptz(6)
+  idempotencyKey         String                         @map("idempotency_key") @db.VarChar(180)
+  metadata               Json                           @default("{}") @db.JsonB
+  createdAt              DateTime                       @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt              DateTime                       @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  fulfilledAt            DateTime?                      @map("fulfilled_at") @db.Timestamptz(6)
+  voidedAt               DateTime?                      @map("voided_at") @db.Timestamptz(6)
+
+  subscription      BillingSubscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+  order             BillingOrder?       @relation(fields: [orderId], references: [id], onDelete: SetNull)
+  entitlementGrant  EntitlementGrant?   @relation(fields: [entitlementGrantId], references: [id], onDelete: SetNull)
+  walletTransaction WalletTransaction?  @relation(fields: [walletTransactionId], references: [id], onDelete: SetNull)
+
+  @@unique([idempotencyKey], map: "billing_subscription_cycles_idempotency_unique")
+  @@unique([subscriptionId, cycleNo], map: "billing_subscription_cycles_subscription_cycle_unique")
+  @@index([subscriptionId, status, periodStart], map: "billing_subscription_cycles_subscription_status_idx")
+  @@index([orderId], map: "billing_subscription_cycles_order_idx")
+  @@index([entitlementGrantId], map: "billing_subscription_cycles_entitlement_idx")
+  @@index([walletTransactionId], map: "billing_subscription_cycles_wallet_tx_idx")
+  @@map("billing_subscription_cycles")
 }
 
 model BillingLedgerAccount {
@@ -1834,7 +1924,8 @@ model EntitlementGrant {
   updatedAt   DateTime               @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
   revokedAt   DateTime?              @map("revoked_at") @db.Timestamptz(6)
 
-  billingRefunds BillingRefund[]
+  billingRefunds     BillingRefund[]
+  subscriptionCycles BillingSubscriptionCycle[]
 
   @@unique([sourceType, sourceId], map: "entitlement_grants_source_unique")
   @@index([subjectType, subjectId, status, endsAt], map: "entitlement_grants_subject_status_idx")
@@ -3417,6 +3508,9 @@ enum AiOutboxEventType {
   /// Job lifecycle change (status/stage/queuePosition update). The
   /// payload mirrors the Web PubSub `ai_job_update` shape.
   job_update
+  /// Media asset moderation changed. Payload is a
+  /// `media_asset_moderation_changed` asset event.
+  media_asset_moderation_changed
 }
 
 enum AiControlPlaneStatus {
@@ -3724,16 +3818,17 @@ model AiJob {
   /// raw Prisma callers must do the same.
   deletedAt             DateTime?   @map("deleted_at") @db.Timestamptz(6)
 
-  outputs         AiJobOutput[]
-  attempts        AiJobAttempt[]
-  events          AiEventOutbox[]
-  costLedger      AiCostLedgerEntry[]
-  traceEvents     AiProviderTraceEvent[]
-  canonicalModel  AiCanonicalModel?       @relation(fields: [canonicalModelId], references: [id], onDelete: SetNull)
-  providerBinding AiProviderModelBinding? @relation(fields: [providerBindingId], references: [id], onDelete: SetNull)
-  workspace       Workspace?              @relation(fields: [workspaceId], references: [id])
-  project         PlatformProject?        @relation(fields: [projectId], references: [id])
-  document        PlatformDocument?       @relation(fields: [documentId, workspaceId], references: [id, workspaceId], onDelete: NoAction)
+  outputs          AiJobOutput[]
+  attempts         AiJobAttempt[]
+  events           AiEventOutbox[]
+  costLedger       AiCostLedgerEntry[]
+  traceEvents      AiProviderTraceEvent[]
+  mediaAssetUsages MediaAssetUsage[]
+  canonicalModel   AiCanonicalModel?       @relation(fields: [canonicalModelId], references: [id], onDelete: SetNull)
+  providerBinding  AiProviderModelBinding? @relation(fields: [providerBindingId], references: [id], onDelete: SetNull)
+  workspace        Workspace?              @relation(fields: [workspaceId], references: [id])
+  project          PlatformProject?        @relation(fields: [projectId], references: [id])
+  document         PlatformDocument?       @relation(fields: [documentId, workspaceId], references: [id, workspaceId], onDelete: NoAction)
 
   /// Active-row idempotency is enforced by a partial unique index in
   /// migration SQL: (user_id, model_id, idempotency_key) WHERE deleted_at IS NULL.
@@ -3785,8 +3880,9 @@ model AiJobOutput {
   /// generated even after the user hides a gallery item.
   deletedAt       DateTime? @map("deleted_at") @db.Timestamptz(6)
 
-  job   AiJob       @relation(fields: [jobId], references: [id], onDelete: Cascade)
-  asset MediaAsset? @relation(fields: [assetId], references: [id], onDelete: SetNull)
+  job              AiJob             @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  asset            MediaAsset?       @relation(fields: [assetId], references: [id], onDelete: SetNull)
+  mediaAssetUsages MediaAssetUsage[]
 
   @@unique([jobId, outputIndex], name: "uniq_job_output_index", map: "ai_outputs_job_index_unique")
   @@index([jobId], map: "ai_outputs_job_idx")
@@ -3922,7 +4018,7 @@ model AiProviderEvent {
 // dispatcher instances coexist without double-publishing.
 model AiEventOutbox {
   id            String            @id
-  jobId         String            @map("job_id") @db.Uuid
+  jobId         String?           @map("job_id") @db.Uuid
   userId        String            @map("user_id")
   eventType     AiOutboxEventType @map("event_type")
   payload       Json
@@ -3942,7 +4038,7 @@ model AiEventOutbox {
   deadAt        DateTime?         @map("dead_at") @db.Timestamptz(6)
   createdAt     DateTime          @default(now()) @map("created_at") @db.Timestamptz(6)
 
-  job AiJob @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  job AiJob? @relation(fields: [jobId], references: [id], onDelete: Cascade)
 
   /// Pending-events scan: dispatched_at NULL AND dead_at NULL AND
   /// (nextAttemptAt NULL OR nextAttemptAt <= now()) AND lock free.
@@ -4452,6 +4548,119 @@ enum MediaAssetModerationStatus {
   blocked
 }
 
+enum MediaAssetVariantKind {
+  original
+  thumbnail
+  poster
+  preview
+  stream
+  transcode
+  waveform
+  transcript
+  other
+}
+
+enum MediaAssetVariantStatus {
+  pending
+  processing
+  ready
+  failed
+  blocked
+  deleted
+}
+
+enum MediaObjectPlacementRole {
+  primary
+  replica
+  cache
+  archive
+}
+
+enum MediaObjectPlacementStatus {
+  active
+  warming
+  failed
+  purging
+  purged
+  deleted
+}
+
+enum MediaModerationCaseStatus {
+  open
+  actioned
+  dismissed
+  escalated
+  closed
+}
+
+enum MediaModerationSeverity {
+  low
+  medium
+  high
+  critical
+}
+
+enum MediaModerationActionType {
+  approve
+  flag
+  block
+  unblock
+  takedown
+  restore
+  restrict_visibility
+  purge_cdn
+  delete_object
+}
+
+enum MediaModerationActionStatus {
+  pending
+  completed
+  failed
+  cancelled
+}
+
+enum MediaProcessingJobType {
+  thumbnail
+  poster
+  transcode
+  hls_stream
+  waveform
+  metadata_probe
+  moderation_scan
+  backfill_original_placement
+}
+
+enum MediaProcessingJobStatus {
+  pending
+  processing
+  completed
+  failed
+  cancelled
+  dead
+}
+
+enum MediaAssetUsageSurface {
+  standalone_generation
+  canvas
+  project
+  ip_library
+  certificate
+  admin
+  system
+}
+
+enum MediaAssetUsageRole {
+  output
+  reference
+  cover
+  thumbnail
+  trailer
+  evidence
+  avatar
+  attachment
+  other
+}
+
 model MediaAsset {
   id                 String                     @id @default(uuid(7)) @db.Uuid
   kind               MediaAssetKind
@@ -4508,6 +4717,12 @@ model MediaAsset {
   ipDiscoveryMobileImages IpDiscoveryRecommendation[] @relation("IpDiscoveryMobileImageAsset")
   ipDiscoveryTrailerMedia IpDiscoveryRecommendation[] @relation("IpDiscoveryTrailerMediaAsset")
   ipReportEvidence        IpContentReport[]           @relation("IpReportEvidenceAsset")
+  variants                MediaAssetVariant[]
+  placements              MediaObjectPlacement[]
+  usages                  MediaAssetUsage[]
+  moderationCases         MediaModerationCase[]
+  moderationActions       MediaModerationAction[]
+  processingJobs          MediaProcessingJob[]
 
   @@index([storageProvider, bucket, objectKey], map: "media_assets_storage_lookup_idx")
   @@index([workspaceId, source, createdAt(sort: Desc)], map: "media_assets_workspace_source_recent_idx")
@@ -4519,6 +4734,208 @@ model MediaAsset {
   /// kind-led index above can't serve it.
   @@index([status, createdAt], map: "media_assets_status_created_idx")
   @@map("media_assets")
+}
+
+model MediaAssetVariant {
+  id              String                  @id @default(uuid(7)) @db.Uuid
+  assetId         String                  @map("asset_id") @db.Uuid
+  /// Stable product key, e.g. original, thumb_320w, poster_720p, hls_1080p.
+  /// Do not encode provider or bucket here; storage placement is below.
+  variantKey      String                  @map("variant_key") @db.VarChar(80)
+  kind            MediaAssetVariantKind
+  status          MediaAssetVariantStatus @default(pending)
+  contentType     String                  @default("application/octet-stream") @map("content_type") @db.VarChar(128)
+  sizeBytes       BigInt?                 @map("size_bytes")
+  width           Int?
+  height          Int?
+  durationSeconds Int?                    @map("duration_seconds")
+  checksumSha256  String?                 @map("checksum_sha256") @db.VarChar(64)
+  metadata        Json                    @default("{}") @db.JsonB
+  createdAt       DateTime                @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt       DateTime                @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  deletedAt       DateTime?               @map("deleted_at") @db.Timestamptz(6)
+
+  asset             MediaAsset              @relation(fields: [assetId], references: [id], onDelete: Cascade)
+  placements        MediaObjectPlacement[]
+  usages            MediaAssetUsage[]
+  moderationActions MediaModerationAction[]
+  processingJobs    MediaProcessingJob[]    @relation("MediaProcessingSourceVariant")
+
+  @@unique([assetId, variantKey], map: "media_asset_variants_asset_key_unique")
+  @@index([assetId, kind, status], map: "media_asset_variants_asset_kind_status_idx")
+  @@index([kind, status, createdAt(sort: Desc)], map: "media_asset_variants_kind_status_recent_idx")
+  @@map("media_asset_variants")
+}
+
+model MediaAssetUsage {
+  id             String                 @id @default(uuid(7)) @db.Uuid
+  assetId        String                 @map("asset_id") @db.Uuid
+  variantId      String?                @map("variant_id") @db.Uuid
+  userId         String?                @map("user_id") @db.VarChar(64)
+  workspaceId    String?                @map("workspace_id") @db.Uuid
+  projectId      String?                @map("project_id") @db.Uuid
+  aiJobId        String?                @map("ai_job_id") @db.Uuid
+  aiJobOutputId  String?                @map("ai_job_output_id")
+  surface        MediaAssetUsageSurface
+  sourceSurface  String?                @map("source_surface") @db.VarChar(64)
+  role           MediaAssetUsageRole
+  idempotencyKey String?                @map("idempotency_key") @db.VarChar(180)
+  metadata       Json                   @default("{}") @db.JsonB
+  createdAt      DateTime               @default(now()) @map("created_at") @db.Timestamptz(6)
+  lastObservedAt DateTime               @default(now()) @map("last_observed_at") @db.Timestamptz(6)
+  deletedAt      DateTime?              @map("deleted_at") @db.Timestamptz(6)
+
+  asset       MediaAsset         @relation(fields: [assetId], references: [id], onDelete: Cascade)
+  variant     MediaAssetVariant? @relation(fields: [variantId], references: [id], onDelete: SetNull)
+  workspace   Workspace?         @relation(fields: [workspaceId], references: [id], onDelete: SetNull)
+  project     PlatformProject?   @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  aiJob       AiJob?             @relation(fields: [aiJobId], references: [id], onDelete: Cascade)
+  aiJobOutput AiJobOutput?       @relation(fields: [aiJobOutputId], references: [id], onDelete: Cascade)
+
+  @@unique([idempotencyKey], map: "media_asset_usages_idempotency_unique")
+  @@index([assetId, surface, role, createdAt(sort: Desc)], map: "media_asset_usages_asset_surface_idx")
+  @@index([workspaceId, surface, createdAt(sort: Desc)], map: "media_asset_usages_workspace_surface_idx")
+  @@index([projectId, surface, createdAt(sort: Desc)], map: "media_asset_usages_project_surface_idx")
+  @@index([aiJobId, role], map: "media_asset_usages_ai_job_idx")
+  @@index([aiJobOutputId], map: "media_asset_usages_ai_output_idx")
+  @@index([deletedAt], map: "media_asset_usages_deleted_idx")
+  @@map("media_asset_usages")
+}
+
+model MediaObjectPlacement {
+  id              String                     @id @default(uuid(7)) @db.Uuid
+  assetId         String                     @map("asset_id") @db.Uuid
+  variantId       String?                    @map("variant_id") @db.Uuid
+  role            MediaObjectPlacementRole   @default(primary)
+  status          MediaObjectPlacementStatus @default(active)
+  storageProvider MediaStorageProvider       @map("storage_provider")
+  bucket          String?                    @db.VarChar(128)
+  region          String?                    @db.VarChar(64)
+  objectKey       String?                    @map("object_key") @db.VarChar(1024)
+  externalUrl     String?                    @map("external_url") @db.VarChar(2048)
+  publicBaseUrl   String?                    @map("public_base_url") @db.VarChar(512)
+  cdnProvider     String?                    @map("cdn_provider") @db.VarChar(64)
+  cdnCacheKey     String?                    @map("cdn_cache_key") @db.VarChar(1024)
+  priority        Int                        @default(100)
+  metadata        Json                       @default("{}") @db.JsonB
+  lastVerifiedAt  DateTime?                  @map("last_verified_at") @db.Timestamptz(6)
+  purgedAt        DateTime?                  @map("purged_at") @db.Timestamptz(6)
+  createdAt       DateTime                   @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt       DateTime                   @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  deletedAt       DateTime?                  @map("deleted_at") @db.Timestamptz(6)
+
+  asset             MediaAsset              @relation(fields: [assetId], references: [id], onDelete: Cascade)
+  variant           MediaAssetVariant?      @relation(fields: [variantId], references: [id], onDelete: Cascade)
+  moderationActions MediaModerationAction[]
+
+  @@unique([variantId, role, storageProvider, bucket, objectKey], map: "media_object_placements_variant_storage_unique")
+  @@index([assetId, role, status, priority], map: "media_object_placements_asset_role_lookup_idx")
+  @@index([variantId, role, status, priority], map: "media_object_placements_variant_role_lookup_idx")
+  @@index([storageProvider, bucket, objectKey], map: "media_object_placements_storage_lookup_idx")
+  @@index([status, updatedAt], map: "media_object_placements_status_updated_idx")
+  @@map("media_object_placements")
+}
+
+model MediaModerationCase {
+  id                String                    @id @default(uuid(7)) @db.Uuid
+  assetId           String                    @map("asset_id") @db.Uuid
+  status            MediaModerationCaseStatus @default(open)
+  severity          MediaModerationSeverity   @default(medium)
+  reasonCode        String                    @map("reason_code") @db.VarChar(80)
+  reason            String?                   @db.Text
+  reporterUserId    String?                   @map("reporter_user_id") @db.VarChar(64)
+  openedByAdminId   String?                   @map("opened_by_admin_id") @db.VarChar(64)
+  assignedAdminId   String?                   @map("assigned_admin_id") @db.VarChar(64)
+  resolutionSummary String?                   @map("resolution_summary") @db.Text
+  metadata          Json                      @default("{}") @db.JsonB
+  openedAt          DateTime                  @default(now()) @map("opened_at") @db.Timestamptz(6)
+  resolvedAt        DateTime?                 @map("resolved_at") @db.Timestamptz(6)
+  createdAt         DateTime                  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt         DateTime                  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  asset   MediaAsset              @relation(fields: [assetId], references: [id], onDelete: Cascade)
+  actions MediaModerationAction[]
+
+  @@index([assetId, status, openedAt(sort: Desc)], map: "media_moderation_cases_asset_status_idx")
+  @@index([status, severity, openedAt(sort: Desc)], map: "media_moderation_cases_queue_idx")
+  @@index([reporterUserId, openedAt(sort: Desc)], map: "media_moderation_cases_reporter_idx")
+  @@map("media_moderation_cases")
+}
+
+model MediaModerationAction {
+  id             String                      @id @default(uuid(7)) @db.Uuid
+  caseId         String?                     @map("case_id") @db.Uuid
+  assetId        String                      @map("asset_id") @db.Uuid
+  variantId      String?                     @map("variant_id") @db.Uuid
+  placementId    String?                     @map("placement_id") @db.Uuid
+  actionType     MediaModerationActionType   @map("action_type")
+  status         MediaModerationActionStatus @default(pending)
+  reason         String?                     @db.Text
+  actorAdminId   String?                     @map("actor_admin_id") @db.VarChar(64)
+  idempotencyKey String?                     @map("idempotency_key") @db.VarChar(180)
+  provider       String?                     @db.VarChar(64)
+  providerTaskId String?                     @map("provider_task_id") @db.VarChar(180)
+  errorMessage   String?                     @map("error_message") @db.Text
+  metadata       Json                        @default("{}") @db.JsonB
+  attempt        Int                         @default(0)
+  nextAttemptAt  DateTime?                   @map("next_attempt_at") @db.Timestamptz(6)
+  lockedAt       DateTime?                   @map("locked_at") @db.Timestamptz(6)
+  lockedBy       String?                     @map("locked_by") @db.VarChar(128)
+  lastAttemptAt  DateTime?                   @map("last_attempt_at") @db.Timestamptz(6)
+  deadAt         DateTime?                   @map("dead_at") @db.Timestamptz(6)
+  createdAt      DateTime                    @default(now()) @map("created_at") @db.Timestamptz(6)
+  completedAt    DateTime?                   @map("completed_at") @db.Timestamptz(6)
+  failedAt       DateTime?                   @map("failed_at") @db.Timestamptz(6)
+
+  case      MediaModerationCase?  @relation(fields: [caseId], references: [id], onDelete: SetNull)
+  asset     MediaAsset            @relation(fields: [assetId], references: [id], onDelete: Cascade)
+  variant   MediaAssetVariant?    @relation(fields: [variantId], references: [id], onDelete: SetNull)
+  placement MediaObjectPlacement? @relation(fields: [placementId], references: [id], onDelete: SetNull)
+
+  @@unique([idempotencyKey], map: "media_moderation_actions_idempotency_unique")
+  @@index([assetId, createdAt(sort: Desc)], map: "media_moderation_actions_asset_recent_idx")
+  @@index([caseId, createdAt(sort: Desc)], map: "media_moderation_actions_case_recent_idx")
+  @@index([status, actionType, createdAt], map: "media_moderation_actions_status_type_idx")
+  @@index([status, actionType, nextAttemptAt], map: "media_moderation_actions_retry_idx")
+  @@index([lockedAt], map: "media_moderation_actions_lock_idx")
+  @@index([deadAt], map: "media_moderation_actions_dlq_idx")
+  @@index([placementId, actionType, status], map: "media_moderation_actions_placement_idx")
+  @@map("media_moderation_actions")
+}
+
+model MediaProcessingJob {
+  id               String                   @id @default(uuid(7)) @db.Uuid
+  assetId          String                   @map("asset_id") @db.Uuid
+  sourceVariantId  String?                  @map("source_variant_id") @db.Uuid
+  jobType          MediaProcessingJobType   @map("job_type")
+  status           MediaProcessingJobStatus @default(pending)
+  priority         Int                      @default(100)
+  attempt          Int                      @default(0)
+  maxAttempts      Int                      @default(8) @map("max_attempts")
+  idempotencyKey   String?                  @map("idempotency_key") @db.VarChar(180)
+  input            Json                     @default("{}") @db.JsonB
+  output           Json                     @default("{}") @db.JsonB
+  errorMessage     String?                  @map("error_message") @db.Text
+  lockedAt         DateTime?                @map("locked_at") @db.Timestamptz(6)
+  lockedBy         String?                  @map("locked_by") @db.VarChar(128)
+  nextAttemptAt    DateTime?                @map("next_attempt_at") @db.Timestamptz(6)
+  startedAt        DateTime?                @map("started_at") @db.Timestamptz(6)
+  completedAt      DateTime?                @map("completed_at") @db.Timestamptz(6)
+  failedAt         DateTime?                @map("failed_at") @db.Timestamptz(6)
+  deadAt           DateTime?                @map("dead_at") @db.Timestamptz(6)
+  createdByAdminId String?                  @map("created_by_admin_id") @db.VarChar(64)
+  createdAt        DateTime                 @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt        DateTime                 @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  asset         MediaAsset         @relation(fields: [assetId], references: [id], onDelete: Cascade)
+  sourceVariant MediaAssetVariant? @relation("MediaProcessingSourceVariant", fields: [sourceVariantId], references: [id], onDelete: SetNull)
+
+  @@unique([idempotencyKey], map: "media_processing_jobs_idempotency_unique")
+  @@index([assetId, jobType, status], map: "media_processing_jobs_asset_type_status_idx")
+  @@index([status, nextAttemptAt, priority, createdAt], map: "media_processing_jobs_claim_idx")
+  @@index([lockedAt], map: "media_processing_jobs_lock_idx")
+  @@index([deadAt], map: "media_processing_jobs_dlq_idx")
+  @@map("media_processing_jobs")
 }
 
 // ─────────────────────────────────────────────────────────────

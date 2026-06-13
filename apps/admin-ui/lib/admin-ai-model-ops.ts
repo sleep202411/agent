@@ -160,7 +160,7 @@ export type AdminAiJobListItem = {
   outputs: Array<{
     id: string;
     type: string;
-    url: string;
+    url: string | null;
     outputIndex: number;
     assetId?: string | null;
     asset?: {

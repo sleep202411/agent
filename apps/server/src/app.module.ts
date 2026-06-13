@@ -17,6 +17,8 @@ import { EpisodesModule } from './crews/episodes/episodes.module';
 import { OrdersModule } from './orders/orders.module';
 import { DbModule } from './infra/db/db.module';
 import { HealthModule } from './infra/health/health.module';
+import { LegacyMysqlModule } from './infra/legacy-mysql';
+import { LegacyPointsModule } from './legacy-points/legacy-points.module';
 import { IpCommerceModule } from './ip-commerce';
 import { MediaModule } from './media/media.module';
 import { RealtimeModule } from './infra/realtime/realtime.module';
@@ -32,6 +34,11 @@ import { WorkspacesModule } from './workspaces';
     // Infra modules first — global, others can inject PrismaService / REDIS.
     DbModule,
     RedisModule,
+    // Legacy Java MySQL bridge — anchored here so its boot-time ping /
+    // fail-fast runs even before a feature consumes it. Dormant unless
+    // LEGACY_MYSQL_ENABLED=true. NOT global: feature modules that need
+    // it import LegacyMysqlModule explicitly to inject LegacyMysqlService.
+    LegacyMysqlModule,
     AlertingModule,
     AuthModule,
     AdminAuthModule,
@@ -48,6 +55,7 @@ import { WorkspacesModule } from './workspaces';
     UsersModule,
     WorkspacesModule,
     BillingModule,
+    LegacyPointsModule,
     IpCommerceModule,
     DocumentsModule,
     CertificatesModule,

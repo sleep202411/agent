@@ -590,14 +590,9 @@ export function RefundQuotePanel({ quote }: { quote: BillingRefundQuoteData | nu
 
 export async function requestEnvelope<T>(url: string): Promise<T> {
   const response = await fetch(adminUiApiPath(url), { cache: "no-store" });
-  const payload = (await response.json().catch(() => null)) as {
-    code?: number;
-    msg?: string;
-    message?: string;
-    data?: T;
-  } | null;
+  const payload = (await response.json().catch(() => null)) as AdminApiPayload<T> | null;
   if (!response.ok || payload?.code !== 200) {
-    throw new Error(payload?.msg ?? payload?.message ?? `请求失败：${response.status}`);
+    throw new Error(adminApiErrorMessage(payload, response.status));
   }
   return payload.data as T;
 }
@@ -612,16 +607,31 @@ export async function mutateEnvelope<T = unknown>(
     headers: { "content-type": "application/json" },
     body: JSON.stringify(body),
   });
-  const payload = (await response.json().catch(() => null)) as {
-    code?: number;
-    msg?: string;
-    message?: string;
-    data?: T;
-  } | null;
+  const payload = (await response.json().catch(() => null)) as AdminApiPayload<T> | null;
   if (!response.ok || payload?.code !== 200) {
-    throw new Error(payload?.msg ?? payload?.message ?? `请求失败：${response.status}`);
+    throw new Error(adminApiErrorMessage(payload, response.status));
   }
   return payload.data as T;
+}
+
+type AdminApiPayload<T> = {
+  code?: number;
+  msg?: string;
+  message?: string;
+  data?: T;
+  issues?: Array<{ path?: string; message?: string; code?: string }>;
+};
+
+function adminApiErrorMessage(payload: AdminApiPayload<unknown> | null, status: number) {
+  const base = payload?.msg ?? payload?.message ?? `请求失败：${status}`;
+  if (!payload?.issues?.length) return base;
+  const details = payload.issues
+    .map((issue) => {
+      const path = issue.path ? `${issue.path}: ` : "";
+      return `${path}${issue.message ?? issue.code ?? "invalid"}`;
+    })
+    .join("；");
+  return `${base}：${details}`;
 }
 
 // ---------------------------------------------------------------------------

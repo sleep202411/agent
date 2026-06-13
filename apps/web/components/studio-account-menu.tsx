@@ -29,6 +29,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
 import { backendApi, type Paginated } from "@/src/lib/api";
+import { encodeUserId } from "@/src/lib/user-id-codec";
 import { useLocale, useTranslations } from "@/src/i18n/i18n";
 import { localizePath } from "@/src/i18n/locale-url";
 import type { Locale } from "@/src/i18n/config";
@@ -135,6 +136,11 @@ export function StudioAccountMenu({
   const paidMember = isPaidMember(level);
   const membershipLabel = paidMember ? level : tc("accountMenuFreeUser");
   const displayCredits = Number.isFinite(credits) ? credits : 0;
+  const publicUserId = encodeUserId(user?.id);
+  const publicUserIdLabel =
+    publicUserId.length > 12
+      ? `${publicUserId.slice(0, 6)}...${publicUserId.slice(-4)}`
+      : publicUserId;
 
   const refreshCredits = useCallback(async () => {
     dispatch(setCreditsLoading(true));
@@ -175,10 +181,10 @@ export function StudioAccountMenu({
   const assetsHref = localizePath("/fizzstudio", locale);
 
   const copyUserId = async () => {
-    if (!user?.id) return;
+    if (!publicUserId) return;
     try {
-      await navigator.clipboard.writeText(user.id);
-      toast.success(tc("accountMenuUuidCopied"));
+      await navigator.clipboard.writeText(publicUserId);
+      toast.success(tc("accountMenuPublicIdCopied"));
     } catch {
       toast.error(tc("copyFailed"));
     }
@@ -191,13 +197,18 @@ export function StudioAccountMenu({
     void refreshCredits();
   };
 
+  const openUpgradeDialog = () => {
+    setOpen(false);
+    window.requestAnimationFrame(() => setUpgradeOpen(true));
+  };
+
   return (
     <>
       <div className={cn("flex items-center gap-1.5", className)}>
         {showStoreButton ? (
           <button
             type="button"
-            onClick={() => setUpgradeOpen(true)}
+            onClick={openUpgradeDialog}
             className="hidden h-9 items-center gap-2 rounded-xl border border-white/[0.1] bg-[#222225]/88 px-3 text-sm font-semibold text-cyan-300 shadow-[inset_0_1px_0_rgba(255,255,255,0.08)] transition-colors hover:border-cyan-300/30 hover:bg-[#292a2e] hover:text-cyan-200 md:inline-flex"
           >
             <IconWallet className="size-4" />
@@ -279,7 +290,9 @@ export function StudioAccountMenu({
                         onClick={copyUserId}
                         className="inline-flex min-w-0 items-center gap-1 transition-colors hover:text-white/70"
                       >
-                        <span>{tc("accountMenuUuid")}</span>
+                        <span>
+                          {tc("accountMenuPublicId")} {publicUserIdLabel}
+                        </span>
                         <IconCopy className="size-3.5 shrink-0" />
                       </button>
                       <span className="h-3 w-px bg-white/14" aria-hidden />
@@ -316,7 +329,7 @@ export function StudioAccountMenu({
                   </div>
                   <button
                     type="button"
-                    onClick={() => setUpgradeOpen(true)}
+                    onClick={openUpgradeDialog}
                     className="rounded-full bg-black/72 px-4 py-2 text-sm font-semibold text-[#ffe8b0] transition-colors hover:bg-black"
                   >
                     {paidMember ? tc("accountMenuRenewMember") : tc("accountMenuOpenMember")}
@@ -324,7 +337,7 @@ export function StudioAccountMenu({
                 </div>
                 <button
                   type="button"
-                  onClick={() => setUpgradeOpen(true)}
+                  onClick={openUpgradeDialog}
                   className="flex w-full items-center justify-between bg-white/[0.055] px-4 py-2.5 text-left text-sm text-white/60 transition-colors hover:bg-white/[0.08] hover:text-white/78"
                 >
                   <span className="truncate">{tc("accountMenuBenefit")}</span>

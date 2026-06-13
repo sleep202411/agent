@@ -100,4 +100,6 @@ const LOCAL_DEV_ADMIN_PERMISSIONS = [
   "media.read",
   "certificate.read",
   "certificate.manage",
+  "user.read",
+  "user.write",
 ];

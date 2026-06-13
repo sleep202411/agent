@@ -818,10 +818,12 @@ export async function getFizzAiJob(id: string): Promise<FizzAiJobView> {
 
 export async function listFizzAiJobs(input: {
   limit?: number;
+  sourceSurface?: string;
   type?: FizzAiJobType;
 }): Promise<FizzAiJobListResponse> {
   const params = new URLSearchParams();
   if (input.limit) params.set("limit", String(input.limit));
+  if (input.sourceSurface) params.set("sourceSurface", input.sourceSurface);
   if (input.type) params.set("type", input.type);
   const query = params.toString();
   return api.get<FizzAiJobListResponse>(`/aurora/ai/jobs${query ? `?${query}` : ""}`, {

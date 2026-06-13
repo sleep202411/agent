@@ -37,6 +37,9 @@ coverage
 .vercel
 
 # Build Outputs
+# Next.js build/trace output — also catches the stray root .next/ left by
+# running next from the repo root.
+.next/
 .output
 out/
 build

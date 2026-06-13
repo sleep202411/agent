@@ -137,6 +137,7 @@ export function StudioComposer({
   const [panel, setPanel] = useState<"model" | "settings" | "mode" | null>(null);
   const [mentionActive, setMentionActive] = useState(0);
   const [mentionOpen, setMentionOpen] = useState(false);
+  const [mentionQuery, setMentionQuery] = useState("");
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   useDismiss(panel !== null, () => setPanel(null));
 
@@ -151,16 +152,21 @@ export function StudioComposer({
     if (!el) return null;
     return mentionRange(prompt, el.selectionStart ?? prompt.length);
   };
+  const updateMentionState = (value: string, caret: number) => {
+    const range = mentionRange(value, caret);
+    setMentionOpen(Boolean(range));
+    setMentionActive(0);
+    setMentionQuery(range?.query.toLowerCase() ?? "");
+  };
   const mentionOptions = useMemo(() => {
     if (!mentionOpen) return [];
-    const el = textareaRef.current;
-    const range = el ? mentionRange(prompt, el.selectionStart ?? prompt.length) : null;
-    if (!range) return [];
-    const q = range.query.toLowerCase();
     return mentionables.filter(
-      (item) => !q || item.label.toLowerCase().includes(q) || item.name.toLowerCase().includes(q)
+      (item) =>
+        !mentionQuery ||
+        item.label.toLowerCase().includes(mentionQuery) ||
+        item.name.toLowerCase().includes(mentionQuery)
     );
-  }, [mentionOpen, prompt, mentionables]);
+  }, [mentionOpen, mentionQuery, mentionables]);
 
   const insertMention = (item: ReferenceUpload) => {
     const el = textareaRef.current;
@@ -229,11 +235,17 @@ export function StudioComposer({
             placeholder="Describe what you want to create…"
             onChange={(event) => {
               onPromptChange(event.target.value);
-              const el = event.target;
-              const range = mentionRange(el.value, el.selectionStart ?? el.value.length);
-              setMentionOpen(Boolean(range));
-              setMentionActive(0);
+              updateMentionState(
+                event.target.value,
+                event.target.selectionStart ?? event.target.value.length
+              );
             }}
+            onSelect={(event) =>
+              updateMentionState(
+                event.currentTarget.value,
+                event.currentTarget.selectionStart ?? event.currentTarget.value.length
+              )
+            }
             onKeyDown={onKeyDown}
             onBlur={() => setTimeout(() => setMentionOpen(false), 120)}
             className={cn(

@@ -110,7 +110,7 @@ export class AiGenerationService {
     // assembled from its primary active provider binding (no provider fan-out,
     // no provider-merge). We only stamp per-user access on top.
     const models = await this.catalog.listModels();
-    const entitlement = this.entitlements.resolveForUser(user);
+    const entitlement = await this.entitlements.resolveForUser(user);
     return models.map((model) => {
       const access = this.authz.decideModelAccess(entitlement, model);
       return {
@@ -142,7 +142,7 @@ export class AiGenerationService {
   ): Promise<AiSubmitResponse> {
     const now = new Date().toISOString();
     const context = await this.resolveJobContext(user, body, workspaceHeaderId);
-    const entitlement = this.entitlements.resolveForUser(user, {
+    const entitlement = await this.entitlements.resolveForUser(user, {
       workspaceId: context.workspaceId,
       now,
     });
@@ -207,6 +207,8 @@ export class AiGenerationService {
     // audit-friendly across DB, queues, logs, and provider evidence.
     const id = newUuidV7();
     const queueName = snapshot.policy.concurrency.queueName;
+    const limitSubject =
+      snapshot.policy.concurrency.subject ?? entitlement.subject;
     const reservation: ReserveQueuedJobResult =
       await this.store.reserveQueuedJob({
         userId: user.userId,
@@ -214,8 +216,8 @@ export class AiGenerationService {
         idempotencyKey,
         queueName,
         type: model.type,
-        perUserQueued: snapshot.policy.concurrency.perUserQueued,
-        perUserRunning: snapshot.policy.concurrency.perUserRunning,
+        limitSubject,
+        perSubjectQueued: snapshot.policy.concurrency.perSubjectQueued,
         campaignLimit: this.campaignLimitFor(snapshot),
         beforeCreate: (tx, job) =>
           this.billingWallet.reserveForJobInTransaction({
@@ -291,12 +293,6 @@ export class AiGenerationService {
       throw new ConflictException({
         code: 'QUEUE_LIMIT_EXCEEDED',
         msg: `You can queue up to ${reservation.limit} generation task(s).`,
-      });
-    }
-    if (reservation.kind === 'running_limit') {
-      throw new ConflictException({
-        code: 'RATE_LIMITED',
-        msg: `You can run up to ${reservation.limit} ${reservation.type} generation task(s) at once.`,
       });
     }
     if (reservation.kind === 'campaign_limit') {
@@ -395,11 +391,15 @@ export class AiGenerationService {
   ) {
     const limit = query.limit ? Number(query.limit) : 50;
     const scope = await this.resolveListScope(user, query, workspaceHeaderId);
+    const sourceSurface = query.sourceSurface
+      ? this.normalizeSourceSurface(query.sourceSurface)
+      : undefined;
     const jobs = await this.store.listForUser({
       userId: user.userId,
       workspaceId: scope.workspaceId,
       projectId: scope.projectId,
       documentId: scope.documentId,
+      sourceSurface,
       includeCollaboratorJobs: Boolean(scope.projectId || scope.documentId),
       type: query.type,
       limit: Number.isFinite(limit) ? limit : 50,

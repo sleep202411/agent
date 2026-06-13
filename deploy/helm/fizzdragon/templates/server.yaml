@@ -20,7 +20,9 @@ spec:
         {{- include "fizzdragon.componentLabels" $ctx | nindent 8 }}
         {{- include "fizzdragon.workloadIdentityLabels" . | nindent 8 }}
     spec:
+      {{- if .Values.azure.enabled }}
       serviceAccountName: {{ .Values.azure.workloadIdentity.serviceAccountName }}
+      {{- end }}
       {{- if .Values.server.migrateOnStart }}
       initContainers:
         - name: db-migrate
@@ -37,6 +39,7 @@ spec:
             - secretRef:
                 name: {{ .Values.serverSecrets.projectedName }}
             {{- end }}
+          {{- if .Values.azure.enabled }}
           volumeMounts:
             - name: kv-secrets
               mountPath: /mnt/secrets
@@ -46,6 +49,7 @@ spec:
               mountPath: /mnt/server-secrets
               readOnly: true
             {{- end }}
+          {{- end }}
           resources:
             {{- toYaml .Values.server.resources | nindent 12 }}
       {{- end }}
@@ -66,6 +70,7 @@ spec:
             - secretRef:
                 name: {{ .Values.serverSecrets.projectedName }}
             {{- end }}
+          {{- if .Values.azure.enabled }}
           volumeMounts:
             - name: kv-secrets
               mountPath: /mnt/secrets
@@ -75,6 +80,7 @@ spec:
               mountPath: /mnt/server-secrets
               readOnly: true
             {{- end }}
+          {{- end }}
           resources:
             {{- toYaml .Values.server.resources | nindent 12 }}
           readinessProbe:
@@ -93,6 +99,7 @@ spec:
             periodSeconds: 30
             timeoutSeconds: 5
             failureThreshold: 3
+      {{- if .Values.azure.enabled }}
       volumes:
         - name: kv-secrets
           csi:
@@ -108,6 +115,7 @@ spec:
             volumeAttributes:
               secretProviderClass: {{ .Release.Name }}-server-kv
         {{- end }}
+      {{- end }}
       {{- with .Values.server.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}

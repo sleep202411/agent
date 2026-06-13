@@ -9,7 +9,10 @@ import { CanvasNodeToolbar, ToolbarButton } from "./node-toolbar";
 import { Icon720 } from "./panorama-viewer";
 import { PortPlus } from "./ports";
 
-export type ImageNodeType = Node<{ src: string; imageId: string; label?: string }, "image">;
+export type ImageNodeType = Node<
+  { src: string; imageId: string; mediaAssetId?: string; label?: string },
+  "image"
+>;
 
 export const IMAGE_NODE_WIDTH = 280;
 

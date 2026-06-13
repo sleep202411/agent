@@ -23,12 +23,9 @@ interface NegotiateResponse {
   message?: string;
 }
 
-const DEV_TOKEN = process.env.NEXT_PUBLIC_DEV_SATOKEN;
-
 async function negotiate(workspaceId?: string): Promise<string> {
   const headers: Record<string, string> = {};
   if (workspaceId) headers["X-Fizz-Workspace-Id"] = workspaceId;
-  if (DEV_TOKEN) headers.Authorization = `Bearer ${DEV_TOKEN}`;
   const res = await fetch("/aurora/realtime/negotiate/assets", {
     credentials: "include",
     headers,

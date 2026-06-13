@@ -20,7 +20,9 @@ spec:
         {{- include "fizzdragon.componentLabels" $ctx | nindent 8 }}
         {{- include "fizzdragon.workloadIdentityLabels" . | nindent 8 }}
     spec:
+      {{- if .Values.azure.enabled }}
       serviceAccountName: {{ .Values.azure.workloadIdentity.serviceAccountName }}
+      {{- end }}
       containers:
         - name: {{ $component }}
           image: "{{ .Values.image.registry }}/{{ .Values.web.image.repository }}:{{ .Values.web.image.tag }}"
@@ -34,10 +36,12 @@ spec:
           envFrom:
             - secretRef:
                 name: {{ .Values.secrets.projectedName }}
+          {{- if .Values.azure.enabled }}
           volumeMounts:
             - name: kv-secrets
               mountPath: /mnt/secrets
               readOnly: true
+          {{- end }}
           resources:
             {{- toYaml .Values.web.resources | nindent 12 }}
           readinessProbe:
@@ -48,6 +52,7 @@ spec:
             httpGet: { path: /, port: http }
             initialDelaySeconds: 30
             periodSeconds: 30
+      {{- if .Values.azure.enabled }}
       volumes:
         - name: kv-secrets
           csi:
@@ -55,6 +60,7 @@ spec:
             readOnly: true
             volumeAttributes:
               secretProviderClass: {{ .Release.Name }}-kv
+      {{- end }}
       {{- with .Values.web.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}

@@ -1,10 +1,12 @@
 import type { Metadata, Viewport } from "next";
+import { headers } from "next/headers";
 import { Geist, Geist_Mono, Inter } from "next/font/google";
 import "./globals.css";
 import { cn } from "@/lib/utils";
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { Providers } from "@/app/providers";
+import { RegionProvider } from "@/app/_components/region-provider";
 
 const inter = Inter({ subsets: ["latin"], variable: "--font-sans" });
 
@@ -27,11 +29,14 @@ export const viewport: Viewport = {
   colorScheme: "dark",
 };
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  const headerBag = await headers();
+  const country = detectCountry(headerBag);
+
   return (
     <html
       lang="en"
@@ -45,10 +50,20 @@ export default function RootLayout({
     >
       <body className="min-h-full flex flex-col">
         <Providers>
-          <TooltipProvider delayDuration={200}>{children}</TooltipProvider>
+          <RegionProvider country={country}>
+            <TooltipProvider delayDuration={200}>{children}</TooltipProvider>
+          </RegionProvider>
         </Providers>
         <Toaster />
       </body>
     </html>
   );
+}
+
+function detectCountry(headers: Headers) {
+  const fromProxy = headers.get("x-country");
+  if (fromProxy) return fromProxy.toUpperCase();
+  const fromCloudflare = headers.get("cf-ipcountry");
+  if (fromCloudflare && fromCloudflare !== "XX") return fromCloudflare.toUpperCase();
+  return "US";
 }

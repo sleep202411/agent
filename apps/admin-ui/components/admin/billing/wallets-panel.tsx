@@ -374,7 +374,6 @@ function DirectUserCreditPanel({
 }) {
   const [userId, setUserId] = useState("");
   const [idFormat, setIdFormat] = useState("public");
-  const [currency, setCurrency] = useState("community_point");
   const [amount, setAmount] = useState("");
   const [grantType, setGrantType] = useState("admin_adjustment");
   const [expiresAt, setExpiresAt] = useState("");
@@ -383,7 +382,6 @@ function DirectUserCreditPanel({
   const [error, setError] = useState<string | null>(null);
   const [lastDetail, setLastDetail] = useState<AdminWalletAccountDetailData | null>(null);
   const parsedAmount = parsePositiveAmount(amount);
-  const canExpire = currency === "compute_point";
   const canSubmit = Boolean(userId.trim() && parsedAmount !== null && reason.trim() && !submitting);
 
   async function submitCredit() {
@@ -396,13 +394,13 @@ function DirectUserCreditPanel({
         {
           userId: userId.trim(),
           idFormat,
-          currency,
+          currency: "compute_point",
           balanceKind: "consumable",
           amount: parsedAmount.toString(),
           grantType,
-          expiresAt: canExpire && expiresAt ? new Date(expiresAt).toISOString() : null,
           reason,
           idempotencyKey: globalThis.crypto?.randomUUID?.() ?? `${Date.now()}:${userId.trim()}`,
+          ...(expiresAt ? { expiresAt: new Date(expiresAt).toISOString() } : {}),
         }
       );
       setUserId("");
@@ -424,15 +422,15 @@ function DirectUserCreditPanel({
     <section className="rounded-xl border border-slate-200 bg-white shadow-[0_1px_2px_rgba(15,23,42,0.04)]">
       <div className="flex items-start justify-between gap-3 border-b border-slate-200 p-4">
         <div>
-          <h3 className="text-sm font-semibold text-slate-950">按 User ID 发放积分</h3>
+          <h3 className="text-sm font-semibold text-slate-950">按 User ID 发放算力积分</h3>
           <p className="mt-1 text-[12px] text-slate-500">
-            默认按 web 展示的公开 ID 解码；真实 Java userId 请切换 ID 类型。
+            默认按 web 展示的公开 ID 解码；真实 Java userId 请切换 ID 类型。此入口只发放算力积分。
           </p>
         </div>
         <IconGift className="mt-0.5 size-4 text-slate-400" />
       </div>
       <div className="grid gap-3 p-4">
-        <div className="grid gap-3 lg:grid-cols-[minmax(160px,1fr)_140px_160px_140px_170px_minmax(180px,1fr)]">
+        <div className="grid gap-3 lg:grid-cols-[minmax(160px,1fr)_140px_140px_170px_minmax(180px,1fr)]">
           <FormLabel label="User ID">
             <TextInput
               value={userId}
@@ -445,12 +443,6 @@ function DirectUserCreditPanel({
             <Select value={idFormat} onChange={setIdFormat} title="ID 类型">
               <option value="public">Web 公开 ID</option>
               <option value="raw">真实 Java ID</option>
-            </Select>
-          </FormLabel>
-          <FormLabel label="积分类型">
-            <Select value={currency} onChange={setCurrency} title="积分类型">
-              <option value="community_point">社区积分</option>
-              <option value="compute_point">算力积分</option>
             </Select>
           </FormLabel>
           <FormLabel label="发放数量">
@@ -479,11 +471,10 @@ function DirectUserCreditPanel({
           </FormLabel>
         </div>
         <div className="grid gap-3 md:grid-cols-[220px_minmax(0,1fr)_auto]">
-          <FormLabel label="过期时间" help="仅算力积分使用有效期；社区积分当前只调整钱包余额。">
+          <FormLabel label="过期时间" help="可选；不填则不过期。">
             <TextInput
               type="datetime-local"
               value={expiresAt}
-              disabled={!canExpire}
               onChange={(event) => setExpiresAt(event.target.value)}
             />
           </FormLabel>

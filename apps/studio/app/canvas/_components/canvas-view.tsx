@@ -177,6 +177,7 @@ function toStoredNodes(nodes: CanvasNode[]): StoredCanvasNode[] {
         position: node.position,
         kind: node.type,
         imageId: node.data.imageId || undefined,
+        mediaAssetId: node.data.mediaAssetId,
         // Blob-backed src is a per-session object URL — only persist a durable url.
         src: node.data.imageId ? undefined : node.data.src,
         label: node.data.label,
@@ -268,7 +269,12 @@ function CanvasInner({ projectId }: { projectId: string }) {
           id: stored.id,
           type: stored.kind,
           position: stored.position,
-          data: { src, imageId: stored.imageId ?? "", label: stored.label },
+          data: {
+            src,
+            imageId: stored.imageId ?? "",
+            mediaAssetId: stored.mediaAssetId,
+            label: stored.label,
+          },
         });
       }
       if (cancelled) return;
@@ -574,7 +580,7 @@ function CanvasInner({ projectId }: { projectId: string }) {
         type: asset.panorama ? "panorama" : "image",
         position:
           position ?? screenToFlowPosition({ x: window.innerWidth / 2, y: window.innerHeight / 2 }),
-        data: { src, imageId, label: asset.prompt },
+        data: { src, imageId, mediaAssetId: asset.mediaAssetId, label: asset.prompt },
       });
     },
     [addNode, screenToFlowPosition]

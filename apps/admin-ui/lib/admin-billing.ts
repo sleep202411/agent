@@ -9,6 +9,7 @@ import { currentAdminSite } from "@/lib/admin-sites";
 import type {
   AdminBillingLedgerJournalsData,
   AdminBillingLedgerOverviewData,
+  AdminBillingMembershipPlansData,
   AdminBillingOrdersData,
   AdminBillingOverviewData,
   AdminBillingPricesData,
@@ -36,6 +37,15 @@ export async function fetchAdminBillingPrices(
   return fetchAdminBillingResource(
     `/billing/prices${toSearch(searchParams)}`,
     "商品价格数据加载失败。"
+  );
+}
+
+export async function fetchAdminBillingMembershipPlans(
+  searchParams?: Record<string, string | undefined>
+): Promise<AdminBillingLoadResult<AdminBillingMembershipPlansData>> {
+  return fetchAdminBillingResource(
+    `/billing/membership-plans${toSearch(searchParams)}`,
+    "会员计划数据加载失败。"
   );
 }
 

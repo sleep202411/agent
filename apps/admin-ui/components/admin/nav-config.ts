@@ -3,6 +3,7 @@ import {
   IconBook2,
   IconCertificate,
   IconChecklist,
+  IconCloud,
   IconCoins,
   IconCreditCard,
   IconDashboard,
@@ -19,10 +20,12 @@ import {
   IconReportMoney,
   IconScale,
   IconShieldLock,
+  IconSettingsAutomation,
   IconTags,
   IconTicket,
   IconUserCog,
   IconUsersGroup,
+  IconUserSearch,
   IconVersions,
   IconWallet,
 } from "@tabler/icons-react";
@@ -72,14 +75,26 @@ export const GLOBAL_NAV: GlobalNavEntry[] = [
     icon: IconPlugConnected,
     permission: "ai_model_ops.read",
   },
-  // 媒体资产 (/media) is hidden from nav until the module is built — the page is
-  // still a ModulePlaceholder, so we don't surface it as a top-level module yet.
+  {
+    key: "/media",
+    href: "/media",
+    label: "媒体资产",
+    icon: IconPhoto,
+    permission: "media.read",
+  },
   {
     key: "/certificates",
     href: "/certificates",
     label: "证书管理",
     icon: IconCertificate,
     permission: "certificate.read",
+  },
+  {
+    key: "/members",
+    href: "/members",
+    label: "用户管理",
+    icon: IconUserSearch,
+    permission: "user.read",
   },
   {
     key: "/users",
@@ -102,7 +117,7 @@ export const GLOBAL_NAV: GlobalNavEntry[] = [
  * Secondary (module) nav, keyed by module prefix.
  *
  * Only modules that have multi-page secondary nav appear here; a module that is
- * absent renders NO second rail (dashboard `/`, media, users, audit, account).
+ * absent renders NO second rail (dashboard `/`, audit, account).
  *
  * P2 decision — `/billing`: now a multi-page sub-app with a second rail. The
  * `/billing` index redirects to `/billing/catalog`; the overview metrics are
@@ -117,6 +132,12 @@ export const MODULE_NAV: Record<string, ModuleNavGroup[]> = {
           href: "/billing/catalog",
           label: "套餐商品",
           icon: IconPackage,
+          permission: "billing.read",
+        },
+        {
+          href: "/billing/memberships",
+          label: "会员计划",
+          icon: IconUsersGroup,
           permission: "billing.read",
         },
         {
@@ -277,6 +298,56 @@ export const MODULE_NAV: Record<string, ModuleNavGroup[]> = {
           label: "统一模型",
           icon: IconDatabaseSearch,
           permission: "ai_model_ops.read",
+        },
+      ],
+    },
+  ],
+  "/media": [
+    {
+      label: "媒体治理",
+      items: [
+        {
+          href: "/media/overview",
+          label: "总览",
+          icon: IconDashboard,
+          permission: "media.read",
+        },
+        {
+          href: "/media/assets",
+          label: "资产索引",
+          icon: IconPhoto,
+          permission: "media.read",
+        },
+        {
+          href: "/media/moderation",
+          label: "审核 / CDN",
+          icon: IconCloud,
+          permission: "media.read",
+        },
+        {
+          href: "/media/processing",
+          label: "处理任务",
+          icon: IconSettingsAutomation,
+          permission: "media.read",
+        },
+      ],
+    },
+  ],
+  "/members": [
+    {
+      label: "用户运营",
+      items: [
+        {
+          href: "/members/directory",
+          label: "用户列表",
+          icon: IconUserSearch,
+          permission: "user.read",
+        },
+        {
+          href: "/members/points",
+          label: "积分流水",
+          icon: IconReceipt2,
+          permission: "user.read",
         },
       ],
     },

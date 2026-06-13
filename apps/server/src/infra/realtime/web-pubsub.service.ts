@@ -20,6 +20,10 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { WebPubSubServiceClient } from '@azure/web-pubsub';
 import { ASSETS_HUB, assetsUserGroup, type AssetEvent } from '@repo/shared';
+import type {
+  RealtimeClientAccess,
+  RealtimeProvider,
+} from './realtime-provider';
 
 const HUB_ENTITY = 'entity';
 const TOKEN_TTL_MINUTES = 60;
@@ -27,7 +31,7 @@ const TOKEN_TTL_MINUTES = 60;
 export type RealtimeHub = 'entity' | 'chat' | 'assets';
 
 @Injectable()
-export class WebPubSubService {
+export class WebPubSubService implements RealtimeProvider {
   private readonly logger = new Logger(WebPubSubService.name);
   private readonly clients = new Map<RealtimeHub, WebPubSubServiceClient>();
   private readonly connectionString: string | null;
@@ -59,11 +63,9 @@ export class WebPubSubService {
    * + the roles it can take (send/join). Auth happens here once; no
    * per-message round trip to our server.
    */
-  async issueEntityClientAccess(userId: string): Promise<{
-    url: string;
-    accessToken: string;
-    expiresAt: number;
-  } | null> {
+  async issueEntityClientAccess(
+    userId: string,
+  ): Promise<RealtimeClientAccess | null> {
     const client = this.clientFor(HUB_ENTITY);
     if (!client) return null;
     const group = userGroup(userId);
@@ -114,11 +116,7 @@ export class WebPubSubService {
   async issueAssetsClientAccess(
     userId: string,
     workspaceId?: string,
-  ): Promise<{
-    url: string;
-    accessToken: string;
-    expiresAt: number;
-  } | null> {
+  ): Promise<RealtimeClientAccess | null> {
     const client = this.clientFor(ASSETS_HUB);
     if (!client) return null;
     const group = workspaceId
@@ -155,6 +153,7 @@ export class WebPubSubService {
       this.logger.warn(
         `publishAssetEvent failed groups=${groups.join(',')} userId=${userId} kind=${event.kind}: ${msg}`,
       );
+      throw err;
     }
   }
 }

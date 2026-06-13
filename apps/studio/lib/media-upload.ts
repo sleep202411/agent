@@ -1,7 +1,7 @@
 /**
  * Direct-to-storage media upload (SAS signed-URL pipeline) — studio port of
- * apps/web/src/lib/media-upload.ts, adapted to the studio api auth (satoken
- * cookie in prod, `NEXT_PUBLIC_DEV_SATOKEN` Bearer in local dev).
+ * apps/web/src/lib/media-upload.ts, adapted to the studio api auth (the
+ * satoken cookie, set by the global login dialog).
  *
  * Three steps, stateless + confirm:
  *   1. `POST /aurora/media/upload-url` — stateless; server decides the
@@ -15,13 +15,10 @@
 const UPLOAD_URL_ENDPOINT = "/aurora/media/upload-url";
 const CONFIRM_ENDPOINT = "/aurora/media/confirm";
 
-const DEV_TOKEN = process.env.NEXT_PUBLIC_DEV_SATOKEN;
-
 function jsonHeaders(): Record<string, string> {
   return {
     "Content-Type": "application/json",
     "accept-language": "en-US",
-    ...(DEV_TOKEN ? { Authorization: `Bearer ${DEV_TOKEN}` } : {}),
   };
 }
 

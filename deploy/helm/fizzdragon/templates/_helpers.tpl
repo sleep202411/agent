@@ -48,7 +48,9 @@ app.kubernetes.io/component: {{ .component }}
 {{- end }}
 {{- end -}}
 
-{{/* Workload Identity pod labels. */}}
+{{/* Workload Identity pod labels — empty when the Azure layer is off (CN/ACK). */}}
 {{- define "fizzdragon.workloadIdentityLabels" -}}
+{{- if .Values.azure.enabled }}
 azure.workload.identity/use: "true"
+{{- end }}
 {{- end -}}

@@ -1702,10 +1702,9 @@ function requiredPlanFor(preset: AiLabPreset | null, model: AiLabModel | null): 
 function productPlanFromClaim(value: string | null | undefined): string {
   const normalized = value?.trim().toLowerCase();
   if (!normalized) return "free";
-  if (normalized === "vip1" || normalized === "creator") return "creator";
-  if (normalized === "vip2" || normalized === "pro") return "pro";
-  if (normalized === "vip3" || normalized === "studio") return "studio";
-  if (normalized === "enterprise") return "enterprise";
+  if (normalized === "vip1" || normalized === "creator") return "basic";
+  if (normalized === "vip2") return "standard";
+  if (normalized === "vip3") return "pro";
   return normalized;
 }
 
@@ -1714,10 +1713,16 @@ function planRank(plan: string | null | undefined): number {
   const normalized = productPlanFromClaim(plan);
   const ranks: Record<string, number> = {
     free: 0,
-    creator: 1,
-    pro: 2,
-    studio: 3,
-    enterprise: 4,
+    basic: 10,
+    creator: 10,
+    standard: 20,
+    pro: 30,
+    studio: 40,
+    enterprise: 90,
+    team_ultimate: 110,
+    team_creator: 120,
+    team_scale: 130,
+    team_enterprise: 190,
   };
   return ranks[normalized] ?? 0;
 }
@@ -1727,10 +1732,15 @@ function planLabel(plan: string | null | undefined, t?: TFn): string {
   const translated = t?.(`plan.${normalized}`);
   if (translated && translated !== `aiLab.plan.${normalized}`) return translated;
   if (normalized === "free") return "Free";
-  if (normalized === "creator") return "Creator";
+  if (normalized === "basic" || normalized === "creator") return "Basic";
+  if (normalized === "standard") return "Standard";
   if (normalized === "pro") return "Pro";
   if (normalized === "studio") return "Studio";
   if (normalized === "enterprise") return "Enterprise";
+  if (normalized === "team_ultimate") return "Teams Ultimate";
+  if (normalized === "team_creator") return "Teams Creator";
+  if (normalized === "team_scale") return "Teams Scale";
+  if (normalized === "team_enterprise") return "Enterprise Team";
   return normalized;
 }
 
