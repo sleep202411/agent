@@ -223,7 +223,8 @@ export function MemberDirectoryPanel() {
         initialIdentifier={grantIdentifier}
         onClose={() => setGrantOpen(false)}
         onGranted={() => {
-          setGrantOpen(false);
+          // Keep the dialog open on its success view; just refresh the
+          // list behind it so the granted user's balance updates.
           void load(activeQuery, page);
         }}
       />
