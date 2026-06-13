@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useTranslations } from "@/src/i18n/i18n";
+import { useLocale, useTranslations } from "@/src/i18n/i18n";
 import { IconCheck, IconCircleCheckFilled, IconLoader2 } from "@tabler/icons-react";
 import QRCode from "qrcode";
 import { Button } from "@/components/ui/button";
@@ -91,6 +91,7 @@ export function CreditsRechargeDialog({
   kind = "studio",
 }: CreditsRechargeDialogProps) {
   const t = useTranslations("payment");
+  const locale = useLocale();
   const config = KIND_CONFIG[kind];
 
   const [packages, setPackages] = useState<CreditsPackage[]>([]);
@@ -193,8 +194,11 @@ export function CreditsRechargeDialog({
             data: {
               productId: selectedPackage.id,
               productType: config.productType,
-              // successUrl: `${window.location.origin}${window.location.pathname}?payment=success`,
-              // cancelUrl: `${window.location.origin}${window.location.pathname}?payment=cancelled`,
+              // Send the real result page; Java appends `?order_id=<orderNo>`.
+              // Must be query-less (Java hardcodes `?order_id=`, so a query
+              // here would produce a double `?`). Without this, Java falls
+              // back to the dead legacy `pages/payment/result` path → 404.
+              successUrl: `${window.location.origin}/${locale}/payment/result`,
             },
           }
         );
@@ -220,7 +224,7 @@ export function CreditsRechargeDialog({
     } finally {
       setPaying(false);
     }
-  }, [selectedPackage, onSuccess, config.productType, config.wechatType, t]);
+  }, [selectedPackage, onSuccess, config.productType, config.wechatType, t, locale]);
 
   const handleAlreadyPaid = useCallback(async () => {
     if (!orderNo) return;
