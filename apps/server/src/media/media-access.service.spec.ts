@@ -353,3 +353,81 @@ describe('MediaAccessService', () => {
     );
   });
 });
+
+describe('MediaAccessService pre-broadcast moderation gate', () => {
+  const KEY = 'MEDIA_REQUIRE_MODERATION_APPROVAL';
+  const ASSET_ID = '11111111-1111-7111-9111-111111111111';
+  const saved = process.env[KEY];
+  afterEach(() => {
+    if (saved === undefined) delete process.env[KEY];
+    else process.env[KEY] = saved;
+  });
+
+  function makeService(asset: Record<string, unknown>) {
+    return new MediaAccessService(
+      {
+        mediaAsset: { findFirst: jest.fn().mockResolvedValue(asset) },
+      } as never,
+      {
+        createReadUrl: jest.fn().mockResolvedValue({
+          url: 'https://blob.example.com/x.png?sig=read',
+          expiresAt: '2026-06-12T12:00:00.000Z',
+        }),
+      } as never,
+      { requireWorkspaceRole: jest.fn() } as never,
+    );
+  }
+
+  const pendingPublic = () =>
+    readyAsset({
+      visibility: MediaAssetVisibility.public,
+      moderationStatus: MediaAssetModerationStatus.unreviewed,
+      createdByUserId: 'owner',
+    });
+
+  it('withholds an unreviewed asset from a peer when approval is required', async () => {
+    process.env[KEY] = 'true';
+    await expect(
+      makeService(pendingPublic()).issueBrowserAccessUrl('peer', ASSET_ID, {
+        variantKey: 'original',
+      }),
+    ).rejects.toBeInstanceOf(ForbiddenException);
+  });
+
+  it('still serves the owner their own pending asset', async () => {
+    process.env[KEY] = 'true';
+    await expect(
+      makeService(pendingPublic()).issueBrowserAccessUrl('owner', ASSET_ID, {
+        variantKey: 'original',
+      }),
+    ).resolves.toMatchObject({
+      url: 'https://blob.example.com/x.png?sig=read',
+    });
+  });
+
+  it('serves a peer once the asset is approved', async () => {
+    process.env[KEY] = 'true';
+    await expect(
+      makeService(
+        readyAsset({
+          visibility: MediaAssetVisibility.public,
+          moderationStatus: MediaAssetModerationStatus.approved,
+          createdByUserId: 'owner',
+        }),
+      ).issueBrowserAccessUrl('peer', ASSET_ID, { variantKey: 'original' }),
+    ).resolves.toMatchObject({
+      url: 'https://blob.example.com/x.png?sig=read',
+    });
+  });
+
+  it('does not gate at all when approval is not required (default)', async () => {
+    delete process.env[KEY];
+    await expect(
+      makeService(pendingPublic()).issueBrowserAccessUrl('peer', ASSET_ID, {
+        variantKey: 'original',
+      }),
+    ).resolves.toMatchObject({
+      url: 'https://blob.example.com/x.png?sig=read',
+    });
+  });
+});

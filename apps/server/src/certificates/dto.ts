@@ -31,7 +31,7 @@ export interface VerifiedCertificateDTO {
   certNo: string;
   title: string;
   issuer: string;
-  imageUrl: string;
+  imageUrl: string | null;
   issuedAt: string;
   revokedAt: string | null;
   revokedReason: string | null;
@@ -51,7 +51,7 @@ export interface UserCertificateDTO {
   description: string | null;
   program: string | null;
   issuer: string;
-  imageUrl: string;
+  imageUrl: string | null;
   issuedAt: string;
   validUntil: string | null;
 }

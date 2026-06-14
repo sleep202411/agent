@@ -685,7 +685,7 @@ export function createBailianModelConfig(
       `${humanizeEndpoint(args.endpointId)} via Alibaba Model Studio.`,
     enabled: args.enabled,
     disabledReason: args.disabledReason,
-    requiredPlan: (args.requiredPlan as AiRequiredPlan | null) ?? null,
+    requiredPlan: args.requiredPlan ?? null,
     queue: {
       queueName: args.queueName,
       globalConcurrency: args.globalConcurrency,

@@ -38,6 +38,9 @@ interface CertificateRow {
   region: string | null;
   object_key: string | null;
   external_url: string | null;
+  status: string;
+  moderation_status: string;
+  deleted_at: Date | null;
   issued_at: Date;
   revoked_at: Date | null;
   revoked_reason: string | null;
@@ -71,6 +74,9 @@ export class CertificatesService {
         asset.region,
         asset.object_key,
         asset.external_url,
+        asset.status,
+        asset.moderation_status,
+        asset.deleted_at,
         cert.issued_at,
         cert.revoked_at,
         cert.revoked_reason
@@ -112,6 +118,9 @@ export class CertificatesService {
         asset.region,
         asset.object_key,
         asset.external_url,
+        asset.status,
+        asset.moderation_status,
+        asset.deleted_at,
         cert.issued_at,
         cert.revoked_at,
         cert.revoked_reason
@@ -149,12 +158,15 @@ export class CertificatesService {
       certNo: row.cert_no,
       title: row.title,
       issuer: row.issuer,
-      imageUrl: this.assetUrls.resolve({
+      imageUrl: this.assetUrls.resolvePublicUrl({
         storageProvider: row.storage_provider,
         bucket: row.bucket,
         region: row.region,
         objectKey: row.object_key,
         externalUrl: row.external_url,
+        status: row.status,
+        moderationStatus: row.moderation_status,
+        deletedAt: row.deleted_at,
       }),
       issuedAt: row.issued_at.toISOString(),
       revokedAt: row.revoked_at?.toISOString() ?? null,
@@ -470,22 +482,15 @@ export class CertificatesService {
       region: string | null;
       objectKey: string | null;
       externalUrl: string | null;
-      status?: string;
-      deletedAt?: Date | null;
-      moderationStatus?: string;
+      status: string | null;
+      deletedAt: Date | null;
+      moderationStatus: string | null;
     } | null,
   ): string | null {
     if (!asset) return null;
-    // Moderation/status gate runs BEFORE any URL is built so a blocked or
-    // deleted external_url asset never leaks its externalUrl.
-    if (asset.deletedAt) return null;
-    if (asset.status && asset.status !== MediaAssetStatus.ready) return null;
-    if (asset.moderationStatus === 'blocked') return null;
-    try {
-      return this.assetUrls.resolve(asset);
-    } catch {
-      return null;
-    }
+    // Single source of truth — gate (deleted / not-ready / blocked / external)
+    // and URL build, null-safe.
+    return this.assetUrls.resolvePublicUrl(asset);
   }
 }
 

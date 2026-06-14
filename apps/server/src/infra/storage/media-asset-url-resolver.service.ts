@@ -20,6 +20,26 @@ export interface ResolvableMediaAssetVariant {
   placements?: ResolvableMediaObjectPlacement[];
 }
 
+/**
+ * Input to {@link MediaAssetUrlResolverService.resolvePublicUrl}. The three
+ * moderation-gate fields (`status`, `moderationStatus`, `deletedAt`) are
+ * REQUIRED — not optional — so a caller that forgets to SELECT them fails to
+ * compile rather than silently emitting a blocked/deleted asset's URL.
+ */
+export interface GatedMediaAsset {
+  id?: string;
+  storageProvider: string;
+  bucket: string | null;
+  region: string | null;
+  objectKey: string | null;
+  externalUrl: string | null;
+  status: string | null;
+  moderationStatus: string | null;
+  deletedAt: Date | null;
+  placements?: ResolvableMediaObjectPlacement[];
+  variants?: ResolvableMediaAssetVariant[];
+}
+
 export interface ResolvableMediaObjectPlacement {
   storageProvider: string;
   bucket: string | null;
@@ -76,6 +96,27 @@ export class MediaAssetUrlResolverService {
         throw new Error(
           `unsupported media storage provider: ${asset.storageProvider}`,
         );
+    }
+  }
+
+  /**
+   * The single entry point for emitting a media asset's PUBLIC direct URL in a
+   * DTO. Returns null — never throws — when the asset must not be served:
+   * deleted, not yet `ready`, moderation-`blocked`, or unresolvable (missing
+   * bucket/key/region/config). This is the ONLY gate for `external_url` assets
+   * (no object to physically take down), so the moderation block here is
+   * load-bearing. Every product DTO that exposes an asset URL must go through
+   * this; the required gate fields on {@link GatedMediaAsset} make a forgotten
+   * SELECT a compile error.
+   */
+  resolvePublicUrl(asset: GatedMediaAsset): string | null {
+    if (asset.deletedAt || asset.status === 'deleted') return null;
+    if (asset.status != null && asset.status !== 'ready') return null;
+    if (asset.moderationStatus === 'blocked') return null;
+    try {
+      return this.resolve(asset);
+    } catch {
+      return null;
     }
   }
 
@@ -195,6 +236,19 @@ export class MediaAssetUrlResolverService {
     }
     return `https://${bucket}.s3.${region}.amazonaws.com/${encodePath(objectKey)}`;
   }
+}
+
+/**
+ * Module-level access to {@link MediaAssetUrlResolverService.resolvePublicUrl}
+ * for callers that are plain functions (DTO mappers) and cannot inject the
+ * service. The resolver is stateless (no constructor dependencies; reads only
+ * env + its argument), so a shared instance is safe and keeps URL construction
+ * a single source of truth — DTO mappers must NOT re-implement it.
+ */
+let sharedResolver: MediaAssetUrlResolverService | null = null;
+export function resolveMediaPublicUrl(asset: GatedMediaAsset): string | null {
+  sharedResolver ??= new MediaAssetUrlResolverService();
+  return sharedResolver.resolvePublicUrl(asset);
 }
 
 function assertAssetCanResolveUrl(asset: ResolvableMediaAsset): void {

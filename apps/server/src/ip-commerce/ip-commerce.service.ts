@@ -51,6 +51,7 @@ import type { AuthUser } from '../auth';
 import { computeRevenueSplit } from './revenue-split';
 import { PrismaService } from '../infra/db/db.module';
 import { OutputStorageService } from '../infra/storage/storage.types';
+import { resolveMediaPublicUrl } from '../infra/storage/media-asset-url-resolver.service';
 import { WalletLedgerService } from '../workspaces';
 import type {
   CreateIpDraftInput,
@@ -7258,9 +7259,12 @@ function assetDto(
     objectKey: string | null;
     externalUrl: string | null;
     contentType: string;
-    status?: string;
-    deletedAt?: Date | null;
-    moderationStatus?: string;
+    // Required moderation-gate fields — a narrowed select that omits any of
+    // these is a compile error (see GatedMediaAsset), closing the whole class
+    // of "forgot to select moderationStatus → blocked asset leaks" bugs.
+    status: string | null;
+    deletedAt: Date | null;
+    moderationStatus: string | null;
     width: number | null;
     height: number | null;
     durationSeconds: number | null;
@@ -7275,76 +7279,13 @@ function assetDto(
     region: asset.region,
     objectKey: asset.objectKey,
     externalUrl: asset.externalUrl,
-    url: resolveAssetPublicUrlSafe(asset),
+    // Single source of truth for "asset → public URL or null" (gate + build).
+    url: resolveMediaPublicUrl(asset),
     contentType: asset.contentType,
     width: asset.width,
     height: asset.height,
     durationSeconds: asset.durationSeconds,
   };
-}
-
-function resolveAssetPublicUrlSafe(asset: {
-  storageProvider: string;
-  bucket: string | null;
-  region: string | null;
-  objectKey: string | null;
-  externalUrl: string | null;
-  status?: string;
-  deletedAt?: Date | null;
-  moderationStatus?: string;
-}) {
-  try {
-    // Moderation/status gate runs BEFORE any URL is built (incl. the
-    // external_url passthrough) so a blocked/deleted asset never leaks a URL.
-    // For storage-backed objects physical takedown is the real enforcement,
-    // but external_url assets have no object we control — the gate is the
-    // only thing keeping a blocked externalUrl from leaking.
-    if (asset.deletedAt) return null;
-    if (asset.status && asset.status !== MediaAssetStatus.ready) return null;
-    if (asset.moderationStatus === 'blocked') return null;
-    if (asset.storageProvider === MediaStorageProvider.external_url) {
-      return asset.externalUrl ?? null;
-    }
-    if (!asset.bucket || !asset.objectKey) return null;
-    if (asset.storageProvider === MediaStorageProvider.azure_blob) {
-      const base =
-        cleanBaseUrl(process.env.MEDIA_PUBLIC_BASE_URL_AZURE_BLOB) ??
-        cleanBaseUrl(process.env.AZURE_BLOB_PUBLIC_BASE_URL);
-      if (base) {
-        return `${base}/${encodePath(asset.bucket)}/${encodePath(asset.objectKey)}`;
-      }
-      const account =
-        cleanSegment(process.env.AZURE_BLOB_ACCOUNT_NAME) ??
-        accountNameFromConnectionString(
-          process.env.AZURE_BLOB_CONNECTION_STRING,
-        );
-      if (!account) return null;
-      return `https://${account}.blob.core.windows.net/${encodePath(asset.bucket)}/${encodePath(
-        asset.objectKey,
-      )}`;
-    }
-    if (asset.storageProvider === MediaStorageProvider.aliyun_oss) {
-      const base = cleanBaseUrl(process.env.MEDIA_PUBLIC_BASE_URL_ALIYUN_OSS);
-      if (base) return `${base}/${encodePath(asset.objectKey)}`;
-      if (!asset.region) return null;
-      return `https://${asset.bucket}.oss-${asset.region}.aliyuncs.com/${encodePath(
-        asset.objectKey,
-      )}`;
-    }
-    if (asset.storageProvider === MediaStorageProvider.s3_compatible) {
-      const base = cleanBaseUrl(
-        process.env.MEDIA_PUBLIC_BASE_URL_S3_COMPATIBLE,
-      );
-      if (base) return `${base}/${encodePath(asset.objectKey)}`;
-      if (!asset.region) return null;
-      return `https://${asset.bucket}.s3.${asset.region}.amazonaws.com/${encodePath(
-        asset.objectKey,
-      )}`;
-    }
-    return null;
-  } catch {
-    return null;
-  }
 }
 
 function sanitizeFilename(value: string) {
@@ -7387,29 +7328,9 @@ function azureBlobRegion() {
   );
 }
 
-function cleanBaseUrl(value: string | undefined): string | null {
-  const trimmed = value?.trim().replace(/\/+$/, '');
-  return trimmed || null;
-}
-
 function cleanSegment(value: string | undefined): string | null {
   const trimmed = value?.trim();
   return trimmed || null;
-}
-
-function accountNameFromConnectionString(
-  value: string | undefined,
-): string | null {
-  if (!value) return null;
-  const match = value.match(/(?:^|;)AccountName=([^;]+)/);
-  return match?.[1] ?? null;
-}
-
-function encodePath(path: string) {
-  return path
-    .split('/')
-    .map((segment) => encodeURIComponent(segment))
-    .join('/');
 }
 
 function userBlockDto(block: {

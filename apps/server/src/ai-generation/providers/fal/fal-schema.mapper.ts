@@ -995,7 +995,7 @@ export function createFalModelConfig(
       args.description ?? `${humanizeEndpoint(args.endpointId)} via fal.ai.`,
     enabled: args.enabled,
     disabledReason: args.disabledReason,
-    requiredPlan: (args.requiredPlan as AiRequiredPlan | null) ?? null,
+    requiredPlan: args.requiredPlan ?? null,
     queue: {
       queueName: args.queueName,
       globalConcurrency: args.globalConcurrency,
