@@ -98,6 +98,9 @@ export function StoryboardCardFieldDialog({
             value={String(textValue)}
             height={140}
             onSave={(nextValue) => void persistTextCell(shotId, columnId, nextValue)}
+            onAutoSave={(nextValue) =>
+              void persistTextCell(shotId, columnId, nextValue, { silent: true })
+            }
           />
         );
     }

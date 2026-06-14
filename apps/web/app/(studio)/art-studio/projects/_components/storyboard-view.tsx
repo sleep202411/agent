@@ -55,25 +55,35 @@ import {
   type ShotValue,
 } from "@/src/store/slices/projectSlice";
 
-async function persistPlainTextCell(shotId: string, shotColumnId: string, value: string) {
-  const currentRows = selectCurrentInstance(store.getState()).rows;
-  store.dispatch(
-    setRows(
-      currentRows.map((row) => {
-        if (row.shotId !== shotId) return row;
+async function persistPlainTextCell(
+  shotId: string,
+  shotColumnId: string,
+  value: string,
+  // `silent` = network-only (no Redux write). The debounced autosave uses it
+  // so an optimistic store update can't re-render the contenteditable mid-edit
+  // and reset the caret. The blur save runs non-silent.
+  options?: { silent?: boolean }
+) {
+  if (!options?.silent) {
+    const currentRows = selectCurrentInstance(store.getState()).rows;
+    store.dispatch(
+      setRows(
+        currentRows.map((row) => {
+          if (row.shotId !== shotId) return row;
 
-        const values = [...(row.shotValues ?? [])];
-        const index = values.findIndex((item) => item.shotColumnId === shotColumnId);
-        if (index >= 0) {
-          values[index] = { ...values[index], value };
-        } else {
-          values.push({ shotColumnId, value });
-        }
+          const values = [...(row.shotValues ?? [])];
+          const index = values.findIndex((item) => item.shotColumnId === shotColumnId);
+          if (index >= 0) {
+            values[index] = { ...values[index], value };
+          } else {
+            values.push({ shotColumnId, value });
+          }
 
-        return { ...row, shotValues: values };
-      })
-    )
-  );
+          return { ...row, shotValues: values };
+        })
+      )
+    );
+  }
 
   try {
     await backendApi.post("/api/user/shotValue/input", {
@@ -254,6 +264,9 @@ function StoryboardCell({
           value={textValue}
           height={120}
           onSave={(nextValue) => void persistPlainTextCell(shotId, columnId, nextValue)}
+          onAutoSave={(nextValue) =>
+            void persistPlainTextCell(shotId, columnId, nextValue, { silent: true })
+          }
         />
       );
   }

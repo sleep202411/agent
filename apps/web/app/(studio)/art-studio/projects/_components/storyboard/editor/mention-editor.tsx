@@ -28,6 +28,8 @@ export interface MentionEditorProps {
   value: string;
   editing: boolean;
   onSave: (value: string) => void;
+  /** Fires on every content edit (for debounced autosave). Not blur-gated. */
+  onAutoSave?: (value: string) => void;
   onStartEdit: () => void;
   onStopEdit: () => void;
   placeholder?: string;
@@ -45,6 +47,7 @@ export function MentionEditor({
   value,
   editing,
   onSave,
+  onAutoSave,
   onStartEdit,
   onStopEdit,
   placeholder,
@@ -65,6 +68,10 @@ export function MentionEditor({
   const editingChipNodePosRef = useRef<number | null>(null);
   const mentionTriggerFromRef = useRef<number | null>(null);
   const committedValueRef = useRef(value);
+  // Latest onAutoSave in a ref so the (once-created) editor onUpdate closure
+  // always calls the current callback without re-creating the editor.
+  const onAutoSaveRef = useRef(onAutoSave);
+  onAutoSaveRef.current = onAutoSave;
   const searchAssetsRef = useRef<((query: string) => Promise<void>) | null>(null);
   const searchTimerRef = useRef<number | null>(null);
   const positionRafRef = useRef<number | null>(null);
@@ -605,6 +612,9 @@ export function MentionEditor({
       if (suppressUpdateRef.current) return;
       const text = instance.getText();
       setIsEmpty(!text.trim());
+      // Autosave on every real user edit (suppressed during programmatic
+      // setContent above). Debounce/throttle is handled by the consumer.
+      onAutoSaveRef.current?.(serializeEditorHtml(instance.getHTML(), showAvatar));
     },
   });
 
