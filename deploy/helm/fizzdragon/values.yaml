@@ -161,6 +161,10 @@ serverSecrets:
       env: LEGACY_MYSQL_USER
     - kv: legacy-mysql-password
       env: LEGACY_MYSQL_PASSWORD
+    # HMAC token-signing secret for the self-hosted realtime WS plane
+    # (REALTIME_TRANSPORT=self-hosted).
+    - kv: realtime-ws-secret
+      env: REALTIME_WS_SECRET
 # ---------------------------------------------------------------------------
 # web — Next.js front-of-stack. Public via Ingress.
 # ---------------------------------------------------------------------------
@@ -259,7 +263,7 @@ server:
   migrateOnStart: true
   image:
     repository: fizzdragon-server
-    tag: 52cab3be85832bbc0f3637e43c43f3b0d7f30f91
+    tag: 128ca4a8287a3e4b8ccb17edbdbc89a3661a0e7c
   containerPort: 3001
   env:
     FAL_ENABLED: "true"
@@ -269,6 +273,8 @@ server:
     AI_PROVIDER: alibaba
     # REDIS_URL comes from KV via projected `fizzdragon-secrets` (envFrom).
     MASTRA_URL: http://fizzdragon-agent:4111
+    # Unified self-hosted realtime for ALL cells. Rollback: set back to `web-pubsub`.
+    REALTIME_TRANSPORT: self-hosted
     DISABLE_CONTENT_MODERATION: "false"
     AUTH_DISABLED: "false"
     PAYMENT_PROVIDER: airwallex
