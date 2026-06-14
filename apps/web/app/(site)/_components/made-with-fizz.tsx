@@ -79,7 +79,9 @@ export function MadeWithFizz() {
 }
 
 function Card({ item, locale }: { item: IpCommerceDiscoveryItem; locale: Locale }) {
-  const cover = assetUrl(item.image);
+  // Placement banner if curated, else fall back to the IP's own cover (the
+  // ip_plaza_hero items often have no dedicated banner image).
+  const cover = assetUrl(item.image) || assetUrl(item.ipCard?.coverAsset);
   const title = item.title || item.ip?.title || "";
   return (
     <Link
