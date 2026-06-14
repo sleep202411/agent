@@ -8,6 +8,7 @@ import {
   PanOnScrollMode,
   ReactFlow,
   ReactFlowProvider,
+  SelectionMode,
   useReactFlow,
   useViewport,
   type Connection,
@@ -44,7 +45,7 @@ import { useCanvasDocument } from "@/lib/collab/use-canvas-document";
 import { useCanvasDoc, type CanvasUser } from "@/lib/collab/use-canvas-doc";
 import { useCanvasGraph } from "@/lib/collab/use-canvas-graph";
 import { CanvasGraphProvider } from "@/lib/collab/canvas-graph-context";
-import type { CanvasNodeShape } from "@/lib/collab/canvas-doc";
+import type { CanvasEdgeShape, CanvasNodeShape } from "@/lib/collab/canvas-doc";
 import { CollabAvatars, CollabCursors } from "./collab-presence";
 import { CanvasComments } from "./canvas-comments";
 import { CanvasHistory } from "./canvas-history";
@@ -143,6 +144,78 @@ function computeTidyLayout(
     x += colWidth + COL_GAP;
   }
   return positions;
+}
+
+const PASTE_OFFSET = 32;
+
+type CanvasClipboard = { nodes: CanvasNodeShape[]; edges: CanvasEdgeShape[] };
+
+/** React Flow node → the doc's plain CanvasNodeShape (carrying measured size). */
+function toNodeShape(node: Node): CanvasNodeShape {
+  return {
+    id: node.id,
+    type: node.type ?? "default",
+    position: node.position,
+    data: (node.data ?? {}) as Record<string, unknown>,
+    width: node.measured?.width,
+    height: node.measured?.height,
+  };
+}
+
+/** Remap a card's wired references onto cloned edge/source ids; drop refs whose wire wasn't copied. */
+function remapReferences(
+  data: Record<string, unknown>,
+  nodeIds: Map<string, string>,
+  edgeIds: Map<string, string>
+): Record<string, unknown> {
+  const refs = (data as GenerationNodeData).references;
+  if (!refs) return data;
+  const next: CardReferences = {};
+  for (const [field, list] of Object.entries(refs)) {
+    const remapped = list
+      .filter((ref) => !ref.edgeId || edgeIds.has(ref.edgeId))
+      .map((ref) => {
+        const edgeId = ref.edgeId ? edgeIds.get(ref.edgeId) : undefined;
+        return {
+          ...ref,
+          id: edgeId ?? crypto.randomUUID(),
+          edgeId,
+          sourceNodeId: ref.sourceNodeId
+            ? (nodeIds.get(ref.sourceNodeId) ?? ref.sourceNodeId)
+            : undefined,
+        };
+      });
+    if (remapped.length > 0) next[field] = remapped;
+  }
+  return { ...data, references: next };
+}
+
+/** Clone nodes + internal edges with fresh ids and offset positions (paste / duplicate). */
+function cloneForPaste(
+  nodes: CanvasNodeShape[],
+  edges: CanvasEdgeShape[],
+  offset: number
+): CanvasClipboard {
+  const nodeIds = new Map<string, string>();
+  for (const node of nodes) nodeIds.set(node.id, crypto.randomUUID());
+  const edgeIds = new Map<string, string>();
+  for (const edge of edges) edgeIds.set(edge.id, crypto.randomUUID());
+
+  return {
+    nodes: nodes.map((node) => ({
+      ...node,
+      id: nodeIds.get(node.id) ?? crypto.randomUUID(),
+      position: { x: node.position.x + offset, y: node.position.y + offset },
+      data: remapReferences(node.data, nodeIds, edgeIds),
+    })),
+    edges: edges.map((edge) => ({
+      id: edgeIds.get(edge.id) ?? crypto.randomUUID(),
+      source: nodeIds.get(edge.source) ?? edge.source,
+      target: nodeIds.get(edge.target) ?? edge.target,
+      sourceHandle: edge.sourceHandle ?? null,
+      targetHandle: edge.targetHandle ?? null,
+    })),
+  };
 }
 
 type PendingConnection = {
@@ -290,6 +363,7 @@ function CanvasInner({ projectId }: { projectId: string }) {
     onEdgesChange,
     addNode: graphAddNode,
     addEdge: graphAddEdge,
+    addNodesAndEdges: graphAddNodesAndEdges,
     patchNodeData,
     removeEdge: graphRemoveEdge,
     selectNodes,
@@ -315,6 +389,7 @@ function CanvasInner({ projectId }: { projectId: string }) {
   const connectStartRef = useRef<{ x: number; y: number; color: string } | null>(null);
   const fittedRef = useRef(false);
   const lastCursorAt = useRef(0);
+  const clipboard = useRef<CanvasClipboard | null>(null);
 
   // Fit the view once, after the first sync brings the graph in.
   useEffect(() => {
@@ -595,8 +670,47 @@ function CanvasInner({ projectId }: { projectId: string }) {
     [screenToFlowPosition, nodes.length, addNodeOfType]
   );
 
-  // Keyboard: undo/redo + single-key add-node shortcuts (U/I/V/N). Ignored while
-  // typing in an input/textarea/contentEditable so it never eats real text.
+  // The current selection as a clonable {nodes, internal edges} bundle.
+  const collectSelection = useCallback((): CanvasClipboard | null => {
+    const selected = getNodes().filter((node) => node.selected);
+    if (selected.length === 0) return null;
+    const ids = new Set(selected.map((node) => node.id));
+    const internalEdges = edges
+      .filter((edge) => ids.has(edge.source) && ids.has(edge.target))
+      .map((edge) => ({
+        id: edge.id,
+        source: edge.source,
+        target: edge.target,
+        sourceHandle: edge.sourceHandle ?? null,
+        targetHandle: edge.targetHandle ?? null,
+      }));
+    return { nodes: selected.map(toNodeShape), edges: internalEdges };
+  }, [getNodes, edges]);
+
+  const copySelection = useCallback(() => {
+    const selection = collectSelection();
+    if (selection) clipboard.current = selection;
+  }, [collectSelection]);
+
+  // Place a clone (paste / duplicate) and leave it selected, ready to move.
+  const placeClone = useCallback(
+    (source: CanvasClipboard | null) => {
+      if (!source || source.nodes.length === 0) return;
+      const clone = cloneForPaste(source.nodes, source.edges, PASTE_OFFSET);
+      graphAddNodesAndEdges(clone.nodes, clone.edges);
+      selectNodes(clone.nodes.map((node) => node.id));
+    },
+    [graphAddNodesAndEdges, selectNodes]
+  );
+
+  const pasteClipboard = useCallback(() => placeClone(clipboard.current), [placeClone]);
+  const duplicateSelection = useCallback(
+    () => placeClone(collectSelection()),
+    [placeClone, collectSelection]
+  );
+
+  // Keyboard: undo/redo, copy/paste/duplicate, and single-key add-node shortcuts
+  // (U/I/V/N). Ignored while typing in an input/textarea/contentEditable.
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       const target = event.target as HTMLElement | null;
@@ -620,7 +734,22 @@ function CanvasInner({ projectId }: { projectId: string }) {
         redo();
         return;
       }
-      if (mod || event.altKey) return; // leave other shortcuts alone (e.g. Ctrl+V)
+      if (mod && event.key.toLowerCase() === "c") {
+        event.preventDefault();
+        copySelection();
+        return;
+      }
+      if (mod && event.key.toLowerCase() === "v") {
+        event.preventDefault();
+        pasteClipboard();
+        return;
+      }
+      if (mod && event.key.toLowerCase() === "d") {
+        event.preventDefault();
+        duplicateSelection();
+        return;
+      }
+      if (mod || event.altKey) return; // leave other shortcuts alone
       const action: AddNodeAction | null =
         event.key === "u" || event.key === "U"
           ? "upload"
@@ -638,7 +767,7 @@ function CanvasInner({ projectId }: { projectId: string }) {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [undo, redo, addNodeFromDock]);
+  }, [undo, redo, addNodeFromDock, copySelection, pasteClipboard, duplicateSelection]);
 
   // Place a library asset on the canvas as an image node — at `position` when
   // dragged-and-dropped, else the viewport center (click-to-add).
@@ -882,6 +1011,9 @@ function CanvasInner({ projectId }: { projectId: string }) {
             maxZoom={MAX_ZOOM}
             snapToGrid={snapToGrid}
             snapGrid={[GRID_SIZE, GRID_SIZE]}
+            selectionOnDrag
+            selectionMode={SelectionMode.Partial}
+            panOnDrag={[1, 2]}
             panOnScroll
             panOnScrollMode={PanOnScrollMode.Free}
             zoomOnScroll={false}
@@ -914,9 +1046,11 @@ function CanvasInner({ projectId }: { projectId: string }) {
                 zoomable
                 position="bottom-right"
                 className="!right-4 !bottom-[68px] !m-0 overflow-hidden rounded-xl border border-white/10 shadow-md"
-                bgColor="rgba(20,20,20,0.92)"
-                maskColor="rgba(0,0,0,0.55)"
-                nodeColor="rgba(255,255,255,0.35)"
+                bgColor="rgb(17 17 17)"
+                maskColor="rgba(0,0,0,0.35)"
+                maskStrokeColor="rgba(255,255,255,0.35)"
+                maskStrokeWidth={2}
+                nodeColor="rgba(255,255,255,0.5)"
                 nodeStrokeWidth={0}
               />
             )}
