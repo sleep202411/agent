@@ -5,7 +5,7 @@ import { ImageStudio } from "./images/_components/image-studio";
 
 export default function HomePage() {
   return (
-    <main className="w-full px-4 py-8 sm:px-6">
+    <main className="w-full px-4 py-0 sm:px-6">
       <HomeHero />
 
       <RecentProjects />
