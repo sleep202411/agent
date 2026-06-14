@@ -718,35 +718,6 @@ export function isFizzAiModelUsable(model: FizzAiModel): boolean {
   return model.enabled && model.access?.allowed !== false;
 }
 
-export function pickFizzAiModel(
-  catalog: FizzAiCatalog,
-  type: FizzAiJobType,
-  preferredModes: FizzAiGenerationMode[]
-): FizzAiModel | null {
-  const candidates = catalog.models.filter(
-    (model) => model.type === type && isFizzAiModelUsable(model)
-  );
-  if (candidates.length === 0) return null;
-
-  for (const mode of preferredModes) {
-    const byMode = candidates.find((model) => model.generationModes?.includes(mode));
-    if (byMode) return byMode;
-
-    const byCapability = candidates.find((model) => {
-      if (mode === "text_to_image") return model.capabilities?.textToImage;
-      if (mode === "image_to_image") return model.capabilities?.imageToImage;
-      if (mode === "text_to_video") return model.capabilities?.textToVideo;
-      if (mode === "image_to_video" || mode === "first_last_frame_to_video") {
-        return model.capabilities?.imageToVideo;
-      }
-      return false;
-    });
-    if (byCapability) return byCapability;
-  }
-
-  return candidates[0] ?? null;
-}
-
 export function filterFizzAiInput(
   model: FizzAiModel,
   values: Record<string, unknown>

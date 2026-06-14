@@ -84,6 +84,7 @@ export class WebPubSubService implements RealtimeProvider {
       url: token.url,
       accessToken: token.token,
       expiresAt,
+      transport: 'web-pubsub',
     };
   }
 
@@ -129,7 +130,12 @@ export class WebPubSubService implements RealtimeProvider {
       roles: [`webpubsub.joinLeaveGroup.${group}`],
       expirationTimeInMinutes: TOKEN_TTL_MINUTES,
     });
-    return { url: token.url, accessToken: token.token, expiresAt };
+    return {
+      url: token.url,
+      accessToken: token.token,
+      expiresAt,
+      transport: 'web-pubsub',
+    };
   }
 
   /**

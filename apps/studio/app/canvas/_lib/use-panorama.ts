@@ -3,6 +3,7 @@
 import { useCallback } from "react";
 import { useReactFlow } from "@xyflow/react";
 import { toast } from "sonner";
+import { useCanvasGraphContext } from "@/lib/collab/canvas-graph-context";
 import { useAiCatalog } from "./use-ai-catalog";
 import { referenceFieldsForMode, type FizzAiCatalog, type FizzAiModel } from "./generation-api";
 
@@ -20,7 +21,8 @@ export function findPanoramaModel(catalog: FizzAiCatalog | undefined): FizzAiMod
  * auto-submit on mount. Returns false (with a toast) if no panorama model exists.
  */
 export function useCreatePanorama() {
-  const { getNode, addNodes, addEdges } = useReactFlow();
+  const { getNode } = useReactFlow();
+  const graph = useCanvasGraphContext();
   const { data: catalog } = useAiCatalog();
 
   return useCallback(
@@ -41,7 +43,7 @@ export function useCreatePanorama() {
       const sourcePrompt = (source?.data as { prompt?: string } | undefined)?.prompt?.trim();
       const nodeId = crypto.randomUUID();
       const edgeId = crypto.randomUUID();
-      addNodes({
+      graph.addNode({
         id: nodeId,
         type: "prompt",
         position: source ? { x: source.position.x + 440, y: source.position.y } : { x: 0, y: 0 },
@@ -57,9 +59,8 @@ export function useCreatePanorama() {
           autoSubmit: true,
         },
       });
-      addEdges({
+      graph.addEdge({
         id: edgeId,
-        type: "gradient",
         source: sourceNodeId,
         sourceHandle: "output",
         target: nodeId,
@@ -67,6 +68,6 @@ export function useCreatePanorama() {
       });
       return true;
     },
-    [getNode, addNodes, addEdges, catalog]
+    [getNode, graph, catalog]
   );
 }

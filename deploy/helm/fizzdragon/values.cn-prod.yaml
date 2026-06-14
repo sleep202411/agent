@@ -78,6 +78,12 @@ serverSecrets:
     # CN v1: no Airwallex (billing not enabled on CN yet).
     - kv: admin-mfa-secret-key
       env: ADMIN_MFA_SECRET_KEY
+    # Token-signing secret for the self-hosted realtime WS plane
+    # (REALTIME_TRANSPORT=self-hosted). Web PubSub is unavailable on CN, so the
+    # in-cluster /ws/realtime gateway mints + verifies HMAC tokens with this.
+    # Must be present in the out-of-band fizzdragon-server-secrets (kubectl).
+    - kv: realtime-ws-secret
+      env: REALTIME_WS_SECRET
 
 web:
   replicaCount: 1
@@ -113,6 +119,11 @@ server:
     # No payment provider wired on CN yet.
     PAYMENT_PROVIDER: null
     AIRWALLEX_API_BASE_URL: null
+    # Azure Web PubSub doesn't serve CN, so realtime asset/entity pushes use the
+    # in-cluster self-hosted WS plane (/aurora/ws/realtime, fanned out via Redis).
+    # Requires REALTIME_WS_SECRET (see serverSecrets above). Routed through the
+    # existing /aurora/* ingress — nginx upgrades WS on that path automatically.
+    REALTIME_TRANSPORT: self-hosted
   nodeSelector: null
   tolerations: null
 

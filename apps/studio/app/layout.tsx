@@ -7,6 +7,7 @@ import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { Providers } from "@/app/providers";
 import { RegionProvider } from "@/app/_components/region-provider";
+import { BetaNotice } from "@/app/_components/beta-notice";
 
 const inter = Inter({ subsets: ["latin"], variable: "--font-sans" });
 
@@ -53,6 +54,7 @@ export default async function RootLayout({
           <RegionProvider country={country}>
             <TooltipProvider delayDuration={200}>{children}</TooltipProvider>
           </RegionProvider>
+          <BetaNotice />
         </Providers>
         <Toaster />
       </body>

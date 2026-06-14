@@ -1,0 +1,111 @@
+"use client";
+
+import { useEffect, useMemo, useRef, useState } from "react";
+import type * as Y from "yjs";
+import { useAuth } from "@/app/_components/auth-provider";
+import { useProjectContext } from "@/app/project/_components/project-context";
+import { useModeDocument } from "@/lib/collab/use-mode-document";
+import { useCollabDoc } from "@/lib/collab/use-collab-doc";
+import { TEXT_DOC_ROOT_SCHEMA } from "@/lib/collab/protocol";
+import { toCollabUser } from "@/lib/collab/collab-user";
+
+/** Transaction origin marking this client's own keystrokes (skipped on observe). */
+const LOCAL_EDIT = Symbol("brief-local-edit");
+
+/**
+ * Apply the minimal prefix/suffix diff of `oldStr`→`next` onto a Y.Text under
+ * `origin` — so a local keystroke edits only the changed span (concurrent peer
+ * edits merge) instead of replacing the whole body.
+ */
+function applyTextDiff(ytext: Y.Text, oldStr: string, next: string, origin: unknown): void {
+  if (oldStr === next) return;
+  let start = 0;
+  const minLen = Math.min(oldStr.length, next.length);
+  while (start < minLen && oldStr[start] === next[start]) start += 1;
+  let oldEnd = oldStr.length;
+  let nextEnd = next.length;
+  while (oldEnd > start && nextEnd > start && oldStr[oldEnd - 1] === next[nextEnd - 1]) {
+    oldEnd -= 1;
+    nextEnd -= 1;
+  }
+  const removed = oldEnd - start;
+  const inserted = next.slice(start, nextEnd);
+  ytext.doc?.transact(() => {
+    if (removed > 0) ytext.delete(start, removed);
+    if (inserted) ytext.insert(start, inserted);
+  }, origin);
+}
+
+/**
+ * Brief mode editor — a collaborative plain-text document over a Y.Text body.
+ * Proves the multi-mode collab spine end to end: a second root schema + a second
+ * document type, sharing the canvas's provider / sync / autosave machinery.
+ * (Rich text + @mentions are deferred; this is the text-mode foundation.)
+ */
+export function BriefEditor() {
+  const { projectId } = useProjectContext();
+  const { user } = useAuth();
+  const collabUser = useMemo(() => toCollabUser(user), [user]);
+  const { documentId, status: docStatus } = useModeDocument(projectId, "brief");
+  const { doc, status: connStatus } = useCollabDoc(documentId, collabUser, TEXT_DOC_ROOT_SCHEMA);
+
+  const [value, setValue] = useState("");
+  const ytextRef = useRef<Y.Text | null>(null);
+
+  useEffect(() => {
+    if (!doc) {
+      ytextRef.current = null;
+      return;
+    }
+    const ytext = doc.getText("content");
+    ytextRef.current = ytext;
+    /* eslint-disable-next-line react-hooks/set-state-in-effect */
+    setValue(ytext.toString());
+    const observer = (_event: Y.YTextEvent, tx: Y.Transaction) => {
+      // Our own edit is already in the textarea; re-syncing would move the caret.
+      if (tx.origin === LOCAL_EDIT) return;
+      setValue(ytext.toString());
+    };
+    ytext.observe(observer);
+    return () => ytext.unobserve(observer);
+  }, [doc]);
+
+  const onChange = (next: string) => {
+    const ytext = ytextRef.current;
+    // Diff against `value` (what the user sees), NOT ytext.toString() — the
+    // Y.Text may already hold a remote edit not yet rendered, and diffing
+    // against it would delete that remote content. Diffing the rendered baseline
+    // yields just this keystroke, which the CRDT merges with the remote edit.
+    if (ytext) applyTextDiff(ytext, value, next, LOCAL_EDIT);
+    setValue(next);
+  };
+
+  if (docStatus === "error") {
+    return (
+      <div className="flex h-full items-center justify-center">
+        <p className="text-sm text-muted-foreground">
+          Couldn&apos;t open this document — check the link or your access.
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="relative h-full">
+      <div className="mx-auto h-full w-full max-w-3xl px-6 pt-20 pb-10">
+        <textarea
+          value={value}
+          onChange={(event) => onChange(event.target.value)}
+          placeholder="Write the brief…"
+          disabled={!doc}
+          className="h-full w-full resize-none bg-transparent text-[15px] leading-relaxed text-white/90 outline-none placeholder:text-muted-foreground"
+        />
+      </div>
+      {doc && connStatus !== "synced" && (
+        <span className="pointer-events-none absolute right-6 bottom-4 text-xs text-muted-foreground">
+          {connStatus === "offline" ? "Offline — changes saved locally" : "Connecting…"}
+        </span>
+      )}
+    </div>
+  );
+}

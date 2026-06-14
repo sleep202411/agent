@@ -1,7 +1,7 @@
 "use client";
 
 import { memo, useEffect, useMemo, useRef, useState } from "react";
-import { useReactFlow, useStore, type Node, type NodeProps } from "@xyflow/react";
+import { useStore, type Node, type NodeProps } from "@xyflow/react";
 import {
   IconAdjustments,
   IconAlertTriangle,
@@ -13,14 +13,14 @@ import {
   IconPhoto,
   IconRefresh,
   IconVideo,
-  IconWand,
+  IconX,
 } from "@tabler/icons-react";
-import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { useDismiss } from "@/lib/use-dismiss";
 import { useAiCatalog } from "@/app/canvas/_lib/use-ai-catalog";
 import { useGeneration } from "@/app/canvas/_lib/use-canvas-generation";
 import { useCreatePanorama } from "@/app/canvas/_lib/use-panorama";
+import { useCanvasGraphContext } from "@/lib/collab/canvas-graph-context";
 import {
   defaultMode,
   defaultSettingsForModel,
@@ -66,8 +66,6 @@ const MODALITY = {
   image: { icon: IconPhoto, label: "Image" },
   video: { icon: IconVideo, label: "Video" },
 } as const;
-
-const comingSoon = (label: string) => toast.info(`${label} · Coming soon`);
 
 /**
  * CSS aspect-ratio for the result area so the card matches its content: actual
@@ -134,9 +132,9 @@ function GenerationCard({
   dragging,
   modality,
 }: NodeProps<GenerationNodeType> & { modality: GenerationModality }) {
-  const { updateNodeData } = useReactFlow();
+  const { patchNodeData } = useCanvasGraphContext();
   const { data: catalog } = useAiCatalog();
-  const { submit } = useGeneration();
+  const { submit, cancel } = useGeneration();
   const createPanorama = useCreatePanorama();
   const autoSubmittedRef = useRef(false);
   const [panel, setPanel] = useState<"model" | "settings" | "mode" | null>(null);
@@ -178,9 +176,9 @@ function GenerationCard({
     if (data.autoSubmit && !autoSubmittedRef.current && model) {
       autoSubmittedRef.current = true;
       submit(id);
-      updateNodeData(id, { autoSubmit: false });
+      patchNodeData(id, { autoSubmit: false });
     }
-  }, [data.autoSubmit, model, id, submit, updateNodeData]);
+  }, [data.autoSubmit, model, id, submit, patchNodeData]);
 
   // Revoke object URLs this card created when it unmounts (blobs would leak).
   const createdUrls = useRef<string[]>([]);
@@ -193,14 +191,14 @@ function GenerationCard({
       createdUrls.current.push(url);
       return { id: crypto.randomUUID(), url, name: file.name, kind };
     });
-    updateNodeData(id, (node) => {
+    patchNodeData(id, (node) => {
       const refs: CardReferences = (node.data as GenerationNodeData).references ?? {};
       return { references: { ...refs, [field]: [...(refs[field] ?? []), ...added] } };
     });
   };
 
   const removeReference = (field: string, refId: string) =>
-    updateNodeData(id, (node) => {
+    patchNodeData(id, (node) => {
       const refs: CardReferences = (node.data as GenerationNodeData).references ?? {};
       const removed = (refs[field] ?? []).find((r) => r.id === refId);
       if (removed) URL.revokeObjectURL(removed.url);
@@ -210,7 +208,7 @@ function GenerationCard({
     });
 
   const onSelectModel = (selected: FizzAiModel) =>
-    updateNodeData(id, {
+    patchNodeData(id, {
       modelId: selected.id,
       modelName: selected.name,
       mode: defaultMode(selected),
@@ -267,7 +265,7 @@ function GenerationCard({
               autoFocus
               defaultValue={data.name ?? descriptor.label}
               onBlur={(event) => {
-                updateNodeData(id, { name: event.target.value.trim() || descriptor.label });
+                patchNodeData(id, { name: event.target.value.trim() || descriptor.label });
                 setRenaming(false);
               }}
               onKeyDown={(event) => {
@@ -280,7 +278,7 @@ function GenerationCard({
             (data.name ?? descriptor.label)
           )}
         </span>
-        <span className="text-muted-foreground">{data.modelName ?? "Auto"}</span>
+        <span className="text-muted-foreground">{data.modelName ?? "Select model"}</span>
       </div>
 
       <div
@@ -376,7 +374,7 @@ function GenerationCard({
             )}
             <textarea
               value={data.prompt ?? ""}
-              onChange={(event) => updateNodeData(id, { prompt: event.target.value })}
+              onChange={(event) => patchNodeData(id, { prompt: event.target.value })}
               placeholder="Write your prompt.."
               rows={3}
               autoFocus
@@ -398,7 +396,7 @@ function GenerationCard({
                     <ModeMenu
                       modes={modes}
                       value={mode}
-                      onSelect={(mo) => updateNodeData(id, { mode: mo })}
+                      onSelect={(mo) => patchNodeData(id, { mode: mo })}
                       onClose={() => setPanel(null)}
                     />
                   )}
@@ -411,7 +409,7 @@ function GenerationCard({
                   onClick={() => setPanel((p) => (p === "model" ? null : "model"))}
                   className="flex h-8 items-center rounded-full bg-white/[0.06] px-3 text-xs font-medium transition-colors hover:bg-white/[0.1]"
                 >
-                  {data.modelName ?? "Auto"}
+                  {data.modelName ?? "Select model"}
                 </button>
                 {panel === "model" && (
                   <ModelPicker
@@ -438,7 +436,7 @@ function GenerationCard({
                   <ModelSettingsPanel
                     model={model}
                     settings={settings}
-                    onChange={(next) => updateNodeData(id, { settings: next })}
+                    onChange={(next) => patchNodeData(id, { settings: next })}
                   />
                 )}
               </div>
@@ -446,21 +444,12 @@ function GenerationCard({
               <div className="flex-1" />
               <button
                 type="button"
-                aria-label="Enhance prompt"
-                onClick={() => comingSoon("Prompt enhance")}
-                className="flex size-8 items-center justify-center rounded-full text-white/50 transition-colors hover:bg-white/[0.06] hover:text-white"
-              >
-                <IconWand className="size-4" stroke={1.8} />
-              </button>
-              <button
-                type="button"
-                aria-label="Generate"
-                disabled={busy}
-                onClick={() => submit(id)}
-                className="flex size-8 items-center justify-center rounded-full bg-white/[0.1] text-white/80 transition-colors hover:bg-white/[0.18] hover:text-white disabled:opacity-50"
+                aria-label={busy ? "Cancel generation" : "Generate"}
+                onClick={() => (busy ? cancel(id) : submit(id))}
+                className="flex size-8 items-center justify-center rounded-full bg-white/[0.1] text-white/80 transition-colors hover:bg-white/[0.18] hover:text-white"
               >
                 {busy ? (
-                  <IconLoader2 className="size-4 animate-spin" stroke={2} />
+                  <IconX className="size-4" stroke={2} />
                 ) : (
                   <IconArrowUp className="size-4" stroke={2} />
                 )}

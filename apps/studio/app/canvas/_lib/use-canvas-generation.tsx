@@ -4,10 +4,12 @@ import { createContext, useCallback, useContext, useEffect, useMemo } from "reac
 import { useQueryClient } from "@tanstack/react-query";
 import { useReactFlow } from "@xyflow/react";
 import { toast } from "sonner";
-import { addProjectAssets, deleteProjectAssetsByMediaAssetId } from "@/lib/canvas-store";
+import type { CanvasAsset } from "@/lib/collab/canvas-doc";
+import { useCanvasGraphContext } from "@/lib/collab/canvas-graph-context";
 import { openAssetsRealtime } from "./assets-realtime";
 import { computeWalletBalanceQueryKey } from "@/app/_components/credits-badge";
 import {
+  cancelFizzAiJob,
   compactFizzAiInput,
   filterFizzAiInput,
   generationIdempotencyKey,
@@ -69,13 +71,16 @@ function removeReferencesFromSources(
   return changed ? next : references;
 }
 
-type GenerationContextValue = { submit: (nodeId: string) => void };
+type GenerationContextValue = {
+  submit: (nodeId: string) => void;
+  cancel: (nodeId: string) => void;
+};
 
 const GenerationContext = createContext<GenerationContextValue | null>(null);
 
-/** Cards call this to submit themselves; no-ops outside a provider. */
+/** Cards call this to submit / cancel themselves; no-ops outside a provider. */
 export function useGeneration(): GenerationContextValue {
-  return useContext(GenerationContext) ?? { submit: () => {} };
+  return useContext(GenerationContext) ?? { submit: () => {}, cancel: () => {} };
 }
 
 /**
@@ -86,20 +91,19 @@ export function useGeneration(): GenerationContextValue {
  * `submit(nodeId)` via context.
  */
 export function CanvasGenerationProvider({
-  projectId,
   catalog,
   children,
 }: {
-  projectId: string;
   catalog: FizzAiCatalog | undefined;
   children: React.ReactNode;
 }) {
-  const { getNode, getNodes, updateNodeData, setNodes, setEdges } = useReactFlow();
+  const { getNode, getNodes } = useReactFlow();
+  const graph = useCanvasGraphContext();
   const queryClient = useQueryClient();
 
   const patch = useCallback(
-    (nodeId: string, generation: GenerationState) => updateNodeData(nodeId, { generation }),
-    [updateNodeData]
+    (nodeId: string, generation: GenerationState) => graph.patchNodeData(nodeId, { generation }),
+    [graph]
   );
 
   // Realtime: route job updates back to their card by jobId.
@@ -132,30 +136,33 @@ export function CanvasGenerationProvider({
             ...placedNodeIds,
             ...blockedOutputSourceNodeIds,
           ]);
-          void deleteProjectAssetsByMediaAssetId(projectId, event.assetId);
-          setNodes((nodes) =>
-            nodes.flatMap((node) => {
-              if (placedNodeIds.has(node.id)) return [];
-              if (node.type !== "prompt" && node.type !== "video") return node;
-              const data = node.data as GenNodeData;
-              const generation = removeMediaAssetFromGeneration(data.generation, event.assetId);
-              const references = removeReferencesFromSources(
-                data.references,
-                blockedReferenceSources
-              );
-              if (generation === data.generation && references === data.references) return node;
-              return [{ ...node, data: { ...node.data, generation, references } }];
-            })
-          );
-          if (blockedReferenceSources.size > 0) {
-            setEdges((edges) =>
-              edges.filter(
-                (edge) =>
-                  !placedNodeIds.has(edge.source) &&
-                  !placedNodeIds.has(edge.target) &&
-                  !blockedReferenceSources.has(edge.source)
-              )
+          graph.removeAssetsByMediaAssetId(event.assetId);
+          for (const node of currentNodes) {
+            if (placedNodeIds.has(node.id)) {
+              graph.removeNode(node.id);
+              continue;
+            }
+            if (node.type !== "prompt" && node.type !== "video") continue;
+            const data = node.data as GenNodeData;
+            const generation = removeMediaAssetFromGeneration(data.generation, event.assetId);
+            const references = removeReferencesFromSources(
+              data.references,
+              blockedReferenceSources
             );
+            if (generation !== data.generation || references !== data.references) {
+              graph.patchNodeData(node.id, { generation, references });
+            }
+          }
+          if (blockedReferenceSources.size > 0) {
+            for (const edge of graph.edges) {
+              if (
+                placedNodeIds.has(edge.source) ||
+                placedNodeIds.has(edge.target) ||
+                blockedReferenceSources.has(edge.source)
+              ) {
+                graph.removeEdge(edge.id);
+              }
+            }
           }
           return;
         }
@@ -185,42 +192,49 @@ export function CanvasGenerationProvider({
           !!out?.url;
 
         if (match) {
-          setNodes((nodes) =>
-            nodes.map((node) => {
-              if (node.id !== match.id) return node;
-              if (convert) {
-                const src = out!.accessUrl ?? out!.url;
-                return {
-                  ...node,
-                  type: "panorama",
-                  data: { src, mediaAssetId: out?.assetId, label: matchData?.prompt },
-                };
-              }
-              return {
-                ...node,
-                data: { ...node.data, generation: generationStateFromJob(job) },
-              };
-            })
-          );
-          if (convert) setEdges((edges) => edges.filter((edge) => edge.target !== match.id));
+          if (convert) {
+            // A finished panorama card becomes a panorama node: remove + re-add
+            // with the same id (preserves position/selection), and drop the now-
+            // dangling input wire.
+            const src = out!.accessUrl ?? out!.url;
+            graph.removeNode(match.id);
+            graph.addNode({
+              id: match.id,
+              type: "panorama",
+              position: match.position,
+              data: { src, mediaAssetId: out?.assetId, label: matchData?.prompt },
+            });
+            for (const edge of graph.edges) {
+              if (edge.target === match.id) graph.removeEdge(edge.id);
+            }
+          } else {
+            graph.patchNodeData(match.id, {
+              generation: generationStateFromJob(job),
+            });
+          }
         }
         // A finished job's outputs join the project's persistent asset library
         // (deduped by id, so repeated pushes are harmless).
         if (generationStatusFromRaw(job.status) === "done" && job.outputs?.length) {
-          void addProjectAssets(
-            projectId,
-            job.outputs.map((output, index) => ({
-              id: output.id ?? `${job.id}:${index}`,
-              mediaAssetId: output.assetId,
-              kind: output.type,
-              source: "generated" as const,
-              url: output.accessUrl ?? output.url,
-              width: output.width,
-              height: output.height,
-              panorama: isPanoramaOutput(output),
-              prompt: job.prompt,
-              createdAt: Date.now(),
-            }))
+          graph.addAssets(
+            job.outputs
+              .map((output, index): CanvasAsset | null => {
+                const url = output.accessUrl ?? output.url;
+                if (!url) return null; // never put a urless asset in the shared library
+                return {
+                  id: output.id ?? `${job.id}:${index}`,
+                  mediaAssetId: output.assetId,
+                  kind: output.type === "video" ? "video" : "image",
+                  source: "generated",
+                  url,
+                  width: output.width,
+                  height: output.height,
+                  panorama: isPanoramaOutput(output),
+                  prompt: job.prompt,
+                  createdAt: Date.now(),
+                };
+              })
+              .filter((asset): asset is CanvasAsset => asset !== null)
           );
         }
         if (["completed", "failed", "cancelled", "canceled", "expired"].includes(job.status)) {
@@ -229,7 +243,7 @@ export function CanvasGenerationProvider({
       },
     });
     return () => client.close();
-  }, [queryClient, setEdges, setNodes, getNodes, projectId]);
+  }, [queryClient, graph, getNodes]);
 
   const submit = useCallback(
     async (nodeId: string) => {
@@ -302,9 +316,26 @@ export function CanvasGenerationProvider({
     [getNode, catalog, patch, queryClient]
   );
 
+  const cancel = useCallback(
+    async (nodeId: string) => {
+      const node = getNode(nodeId);
+      if (!node) return;
+      const generation = (node.data as GenNodeData).generation;
+      if (!generation?.jobId) return;
+      // Optimistically drop out of the busy state; the realtime update confirms.
+      patch(nodeId, { ...generation, status: "cancelled" });
+      try {
+        await cancelFizzAiJob(generation.jobId);
+      } catch {
+        // Best-effort — the job may already be terminal server-side.
+      }
+    },
+    [getNode, patch]
+  );
+
   const value = useMemo<GenerationContextValue>(
-    () => ({ submit: (id) => void submit(id) }),
-    [submit]
+    () => ({ submit: (id) => void submit(id), cancel: (id) => void cancel(id) }),
+    [submit, cancel]
   );
 
   return <GenerationContext.Provider value={value}>{children}</GenerationContext.Provider>;

@@ -107,6 +107,7 @@ enum PlatformDocumentType {
   asset_board
   course_outline
   gig_requirement
+  canvas
 }
 
 enum PlatformDocumentStatus {
@@ -875,6 +876,12 @@ model PlatformDocument {
   contentSnapshot      Json                   @default("{}") @map("content_snapshot") @db.JsonB
   crdtState            Bytes?                 @map("crdt_state")
   currentSequence      Int                    @default(0) @map("current_sequence")
+  /// Sequence covered by the compacted `crdtState` snapshot. New clients load
+  /// `crdtState` then replay only operations with sequence > snapshotSequence,
+  /// so first-load is O(snapshot + recent ops) instead of O(all ops).
+  snapshotSequence     Int                    @default(0) @map("snapshot_sequence")
+  /// When the warm-room last compacted `crdtState` from the op-log.
+  lastCompactedAt      DateTime?              @map("last_compacted_at") @db.Timestamptz(6)
   currentVersionId     String?                @map("current_version_id") @db.Uuid
   createdById          String                 @map("created_by_id") @db.VarChar(64)
   updatedById          String?                @map("updated_by_id") @db.VarChar(64)

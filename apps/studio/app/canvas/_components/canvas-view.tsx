@@ -1,30 +1,32 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
-import Link from "next/link";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  addEdge,
-  reconnectEdge,
   Background,
   BackgroundVariant,
+  MiniMap,
   PanOnScrollMode,
   ReactFlow,
   ReactFlowProvider,
-  useEdgesState,
-  useNodesState,
   useReactFlow,
   useViewport,
   type Connection,
   type Edge,
   type FinalConnectionState,
   type IsValidConnection,
+  type Node,
   type OnConnectStart,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import {
-  IconArrowLeft,
+  IconApps,
+  IconArrowBackUp,
+  IconArrowForwardUp,
   IconCloudUpload,
+  IconHistory,
   IconLayoutGrid,
+  IconMagnet,
+  IconMap,
   IconMaximize,
   IconMinus,
   IconNote,
@@ -34,15 +36,18 @@ import {
   type Icon,
 } from "@tabler/icons-react";
 import { toast } from "sonner";
-import {
-  ensureProject,
-  getImage,
-  putImage,
-  renameProject,
-  saveProjectContent,
-  type ProjectAsset,
-  type StoredCanvasNode,
-} from "@/lib/canvas-store";
+import type { CanvasAsset } from "@/lib/collab/canvas-doc";
+import { uploadFileViaSignedUrl } from "@/lib/media-upload";
+import type { AuthUser } from "@/lib/auth";
+import { useAuth } from "@/app/_components/auth-provider";
+import { useCanvasDocument } from "@/lib/collab/use-canvas-document";
+import { useCanvasDoc, type CanvasUser } from "@/lib/collab/use-canvas-doc";
+import { useCanvasGraph } from "@/lib/collab/use-canvas-graph";
+import { CanvasGraphProvider } from "@/lib/collab/canvas-graph-context";
+import type { CanvasNodeShape } from "@/lib/collab/canvas-doc";
+import { CollabAvatars, CollabCursors } from "./collab-presence";
+import { CanvasComments } from "./canvas-comments";
+import { CanvasHistory } from "./canvas-history";
 import { cn } from "@/lib/utils";
 import { CreditsBadge } from "@/app/_components/credits-badge";
 import { AssetLibrary, ASSET_DRAG_MIME } from "./asset-library";
@@ -79,6 +84,66 @@ const edgeTypes = { gradient: GradientEdge };
 // Zoom/pan tuning proven in apps/web's storyboard canvas.
 const MIN_ZOOM = 0.16;
 const MAX_ZOOM = 2.4;
+/** Grid step for snap-to-grid (matches the visible dot grid). */
+const GRID_SIZE = 24;
+
+/**
+ * "Tidy canvas" — a dependency-free layered layout. Nodes flow left→right by
+ * longest-path depth from a source (matching wire direction image→card→output),
+ * stacked top→bottom within each column. Returns the new positions to commit.
+ */
+function computeTidyLayout(
+  nodes: Node[],
+  edges: Edge[]
+): { id: string; position: { x: number; y: number } }[] {
+  if (nodes.length === 0) return [];
+  const ids = new Set(nodes.map((n) => n.id));
+  const validEdges = edges.filter((e) => ids.has(e.source) && ids.has(e.target));
+  // Longest-path depth via bounded relaxation — O(N·E); every node gets a depth
+  // (sources/isolated stay 0), and a cycle's depth growth is capped at N passes
+  // so it terminates and still places every node (no Kahn negative-indegree bug).
+  const depth = new Map(nodes.map((n) => [n.id, 0]));
+  for (let pass = 0; pass < nodes.length; pass += 1) {
+    let changed = false;
+    for (const e of validEdges) {
+      const next = (depth.get(e.source) ?? 0) + 1;
+      if (next > (depth.get(e.target) ?? 0)) {
+        depth.set(e.target, next);
+        changed = true;
+      }
+    }
+    if (!changed) break;
+  }
+  const columns = new Map<number, Node[]>();
+  for (const n of nodes) {
+    const d = depth.get(n.id) ?? 0;
+    const col = columns.get(d) ?? [];
+    col.push(n);
+    columns.set(d, col);
+  }
+  const COL_GAP = 80;
+  const ROW_GAP = 48;
+  const sizeOf = (n: Node) => ({
+    width: n.measured?.width ?? 280,
+    height: n.measured?.height ?? 200,
+  });
+  const positions: { id: string; position: { x: number; y: number } }[] = [];
+  let x = 0;
+  for (const d of [...columns.keys()].sort((a, b) => a - b)) {
+    const col = columns.get(d) ?? [];
+    const colWidth = Math.max(...col.map((n) => sizeOf(n).width));
+    let y = 0;
+    for (const n of col) {
+      positions.push({
+        id: n.id,
+        position: { x: Math.round(x), y: Math.round(y) },
+      });
+      y += sizeOf(n).height + ROW_GAP;
+    }
+    x += colWidth + COL_GAP;
+  }
+  return positions;
+}
 
 type PendingConnection = {
   nodeId: string;
@@ -95,15 +160,50 @@ type AddMenuState = {
   wire?: { x1: number; y1: number; x2: number; y2: number; color: string };
 };
 
-function ZoomControls() {
+function ZoomControls({
+  onTidy,
+  snapToGrid,
+  onToggleSnap,
+  minimapOpen,
+  onToggleMinimap,
+}: {
+  onTidy: () => void;
+  snapToGrid: boolean;
+  onToggleSnap: () => void;
+  minimapOpen: boolean;
+  onToggleMinimap: () => void;
+}) {
   const { zoom } = useViewport();
   const { zoomIn, zoomOut, fitView } = useReactFlow();
 
   const controlClass =
     "flex size-8 items-center justify-center rounded-full text-white/70 transition-colors hover:bg-white/[0.08] hover:text-white";
+  const toggleClass = (active: boolean) => cn(controlClass, active && "bg-white/[0.12] text-white");
 
   return (
     <div className="absolute right-4 bottom-4 z-20 flex items-center gap-0.5 rounded-full bg-popover/90 p-1 shadow-md backdrop-blur-xl">
+      <button type="button" aria-label="Tidy canvas" className={controlClass} onClick={onTidy}>
+        <IconApps className="size-4" stroke={1.8} />
+      </button>
+      <button
+        type="button"
+        aria-label="Toggle minimap"
+        aria-pressed={minimapOpen}
+        className={toggleClass(minimapOpen)}
+        onClick={onToggleMinimap}
+      >
+        <IconMap className="size-4" stroke={1.8} />
+      </button>
+      <button
+        type="button"
+        aria-label="Snap to grid"
+        aria-pressed={snapToGrid}
+        className={toggleClass(snapToGrid)}
+        onClick={onToggleSnap}
+      >
+        <IconMagnet className="size-4" stroke={1.8} />
+      </button>
+      <span className="mx-0.5 h-4 w-px bg-white/10" />
       <button
         type="button"
         aria-label="Zoom out"
@@ -155,60 +255,57 @@ function NodeDock({ onAdd }: { onAdd: (action: AddNodeAction) => void }) {
   );
 }
 
-/** Keep only references with a durable http URL (drop session blob URLs). */
-function persistableReferences(references: GenerationNodeData["references"]) {
-  if (!references) return undefined;
-  const out: Record<string, CardReference[]> = {};
-  for (const [field, list] of Object.entries(references)) {
-    const keep = list.filter((r) => /^https?:/i.test(r.url));
-    if (keep.length) out[field] = keep;
-  }
-  return Object.keys(out).length > 0 ? out : undefined;
+/** Map the signed-in user to the collaborative cursor / avatar identity. */
+function toCanvasUser(user: AuthUser | null): CanvasUser | null {
+  if (!user) return null;
+  const id = String(user.id ?? "anon");
+  return {
+    id,
+    name: user.nickName?.trim() || "Guest",
+    color: cursorColor(id),
+    avatarUrl: user.avatar,
+  };
 }
 
-function toStoredNodes(nodes: CanvasNode[]): StoredCanvasNode[] {
-  return nodes.map((node) => {
-    if (node.type === "note") {
-      return { id: node.id, position: node.position, kind: "note" as const, text: node.data.text };
-    }
-    if (node.type === "image" || node.type === "panorama") {
-      return {
-        id: node.id,
-        position: node.position,
-        kind: node.type,
-        imageId: node.data.imageId || undefined,
-        mediaAssetId: node.data.mediaAssetId,
-        // Blob-backed src is a per-session object URL — only persist a durable url.
-        src: node.data.imageId ? undefined : node.data.src,
-        label: node.data.label,
-      };
-    }
-    // Generation cards (`prompt` | `video`).
-    return {
-      id: node.id,
-      position: node.position,
-      kind: node.type,
-      name: node.data.name,
-      prompt: node.data.prompt,
-      modelId: node.data.modelId,
-      modelName: node.data.modelName,
-      mode: node.data.mode,
-      settings: node.data.settings,
-      generation: node.data.generation,
-      references: persistableReferences(node.data.references),
-    };
-  });
+/** Deterministic, evenly-spread cursor color from a stable seed. */
+function cursorColor(seed: string): string {
+  let hash = 0;
+  for (let i = 0; i < seed.length; i += 1) {
+    hash = (hash * 31 + seed.charCodeAt(i)) >>> 0;
+  }
+  return `hsl(${hash % 360} 70% 60%)`;
 }
 
 function CanvasInner({ projectId }: { projectId: string }) {
   const { data: catalog } = useAiCatalog();
-  const [nodes, setNodes, onNodesChange] = useNodesState<CanvasNode>([]);
-  const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
-  const [projectName, setProjectName] = useState("Untitled canvas");
+  const { user } = useAuth();
+  const canvasUser = useMemo(() => toCanvasUser(user), [user]);
+  const { documentId, document: canvasDocRef, status: docStatus } = useCanvasDocument(projectId);
+  const { doc, awareness, provider, status: connStatus } = useCanvasDoc(documentId, canvasUser);
+  const graph = useCanvasGraph(doc, awareness);
+  const {
+    nodes,
+    edges,
+    onNodesChange,
+    onEdgesChange,
+    addNode: graphAddNode,
+    addEdge: graphAddEdge,
+    patchNodeData,
+    removeEdge: graphRemoveEdge,
+    selectNodes,
+    restoreFromUpdate,
+    addAssets: graphAddAssets,
+    canUndo,
+    canRedo,
+    undo,
+    redo,
+  } = graph;
   const [addMenu, setAddMenu] = useState<AddMenuState | null>(null);
   const [assetsOpen, setAssetsOpen] = useState(false);
-  const { screenToFlowPosition, fitView, getNodes, getNode, updateNodeData } = useReactFlow();
-  const loadedRef = useRef(false);
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [snapToGrid, setSnapToGrid] = useState(false);
+  const [minimapOpen, setMinimapOpen] = useState(false);
+  const { screenToFlowPosition, fitView, getNodes, getNode } = useReactFlow();
   const containerRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const pendingUploadFlowPos = useRef<{ x: number; y: number } | null>(null);
@@ -216,104 +313,18 @@ function CanvasInner({ projectId }: { projectId: string }) {
   const reconnectDone = useRef(true);
   const lastConnectEndAt = useRef(0);
   const connectStartRef = useRef<{ x: number; y: number; color: string } | null>(null);
+  const fittedRef = useRef(false);
+  const lastCursorAt = useRef(0);
 
-  // Restore the project from local storage.
+  // Fit the view once, after the first sync brings the graph in.
   useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      const project = await ensureProject(projectId);
-      if (cancelled) return;
-      setProjectName(project.name);
-      const restored: CanvasNode[] = [];
-      for (const stored of project.nodes) {
-        // Records written before node kinds existed are image nodes.
-        const kind = stored.kind ?? "image";
-        if (kind === "note" && stored.kind === "note") {
-          restored.push({
-            id: stored.id,
-            type: "note",
-            position: stored.position,
-            data: { text: stored.text },
-          });
-          continue;
-        }
-        if (
-          (kind === "prompt" || kind === "video") &&
-          (stored.kind === "prompt" || stored.kind === "video")
-        ) {
-          restored.push({
-            id: stored.id,
-            type: stored.kind,
-            position: stored.position,
-            data: {
-              name: stored.name,
-              prompt: stored.prompt,
-              modelId: stored.modelId,
-              modelName: stored.modelName,
-              mode: stored.mode,
-              settings: stored.settings,
-              generation: stored.generation,
-              references: stored.references as GenerationNodeData["references"],
-            },
-          });
-          continue;
-        }
-        if (stored.kind !== "image" && stored.kind !== "panorama") continue;
-        let src = stored.src;
-        if (stored.imageId) {
-          const blob = await getImage(stored.imageId);
-          if (blob) src = URL.createObjectURL(blob);
-        }
-        if (!src) continue;
-        restored.push({
-          id: stored.id,
-          type: stored.kind,
-          position: stored.position,
-          data: {
-            src,
-            imageId: stored.imageId ?? "",
-            mediaAssetId: stored.mediaAssetId,
-            label: stored.label,
-          },
-        });
-      }
-      if (cancelled) return;
-      setNodes(restored);
-      // Drop edges that point at input handles removed from the generation
-      // nodes (they can no longer bind, and React Flow warns on each).
-      setEdges(
-        (project.edges ?? [])
-          .filter((edge) => edge.targetHandle !== "prompt" && edge.targetHandle !== "reference")
-          .map((edge) => ({ ...edge, type: "gradient" }))
-      );
-      loadedRef.current = true;
-      if (restored.length > 0) {
-        setTimeout(() => fitView({ padding: 0.3 }), 60);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [projectId, setNodes, setEdges, fitView]);
-
-  // Persist layout/content changes, debounced.
-  useEffect(() => {
-    if (!loadedRef.current) return;
-    const handle = setTimeout(() => {
-      void saveProjectContent(
-        projectId,
-        toStoredNodes(nodes),
-        edges.map(({ id, source, target, sourceHandle, targetHandle }) => ({
-          id,
-          source,
-          target,
-          sourceHandle,
-          targetHandle,
-        }))
-      );
-    }, 600);
+    if (fittedRef.current || connStatus !== "synced" || nodes.length === 0) {
+      return;
+    }
+    fittedRef.current = true;
+    const handle = setTimeout(() => fitView({ padding: 0.3 }), 60);
     return () => clearTimeout(handle);
-  }, [nodes, edges, projectId]);
+  }, [connStatus, nodes.length, fitView]);
 
   const onConnectStart = useCallback<OnConnectStart>((event, params) => {
     const rect = containerRef.current?.getBoundingClientRect();
@@ -426,8 +437,14 @@ function CanvasInner({ projectId }: { projectId: string }) {
 
   const onConnect = useCallback(
     (connection: Connection) => {
-      const edge: Edge = { id: crypto.randomUUID(), type: "gradient", ...connection };
-      setEdges((eds) => addEdge(edge, eds));
+      const edgeId = crypto.randomUUID();
+      graphAddEdge({
+        id: edgeId,
+        source: connection.source,
+        target: connection.target,
+        sourceHandle: connection.sourceHandle,
+        targetHandle: connection.targetHandle,
+      });
       // Bind the source as a reference where it fits (auto-switching the card's
       // mode if needed — e.g. an image into a video card → image-to-video). If
       // the card can't take this kind at all, the wire stands but binds nothing.
@@ -437,15 +454,15 @@ function CanvasInner({ projectId }: { projectId: string }) {
       const url = sourceMediaUrl(connection.source);
       if (!kind || !routed || !url) return;
       const reference: CardReference = {
-        id: edge.id,
-        edgeId: edge.id,
+        id: edgeId,
+        edgeId: edgeId,
         sourceNodeId: connection.source ?? undefined,
         url,
         kind,
       };
-      updateNodeData(connection.target, (node) => {
+      patchNodeData(connection.target, (node) => {
         const refs = (node.data as GenerationNodeData).references ?? {};
-        const list = (refs[routed.field] ?? []).filter((r) => r.edgeId !== edge.id);
+        const list = (refs[routed.field] ?? []).filter((r) => r.edgeId !== edgeId);
         const patch: Partial<GenerationNodeData> = {
           references: { ...refs, [routed.field]: [...list, reference] },
         };
@@ -453,7 +470,7 @@ function CanvasInner({ projectId }: { projectId: string }) {
         return patch;
       });
     },
-    [setEdges, sourceOutputKind, routeReferenceField, sourceMediaUrl, updateNodeData]
+    [graphAddEdge, sourceOutputKind, routeReferenceField, sourceMediaUrl, patchNodeData]
   );
 
   // Deleting a wire drops the reference it bound. The field isn't on the edge
@@ -462,7 +479,7 @@ function CanvasInner({ projectId }: { projectId: string }) {
     (deleted: Edge[]) => {
       for (const edge of deleted) {
         if (!edge.target) continue;
-        updateNodeData(edge.target, (node) => {
+        patchNodeData(edge.target, (node) => {
           const refs = (node.data as GenerationNodeData).references ?? {};
           const next: CardReferences = {};
           for (const [field, list] of Object.entries(refs)) {
@@ -472,38 +489,59 @@ function CanvasInner({ projectId }: { projectId: string }) {
         });
       }
     },
-    [updateNodeData]
+    [patchNodeData]
   );
 
   const addImageFiles = useCallback(
     async (files: File[], base: { x: number; y: number }) => {
-      const additions: CanvasNode[] = [];
+      // Upload to durable storage so peers can resolve the image — never put a
+      // session blob: URL into the shared doc.
+      const ids: string[] = [];
       for (const [index, file] of files.entries()) {
-        const imageId = await putImage(file);
-        additions.push({
-          id: crypto.randomUUID(),
-          type: "image",
-          position: { x: base.x + index * 32, y: base.y + index * 32 },
-          data: { src: URL.createObjectURL(file), imageId, label: file.name },
-        });
+        try {
+          const uploaded = await uploadFileViaSignedUrl(file, {
+            kind: "ai_reference_image",
+          });
+          const id = crypto.randomUUID();
+          graphAddNode({
+            id,
+            type: "image",
+            position: { x: base.x + index * 32, y: base.y + index * 32 },
+            data: {
+              src: uploaded.url,
+              mediaAssetId: uploaded.mediaAssetId,
+              label: file.name,
+            },
+          });
+          // Also register it in the shared library (Uploaded tab), synced to peers.
+          graphAddAssets([
+            {
+              id: crypto.randomUUID(),
+              mediaAssetId: uploaded.mediaAssetId,
+              kind: "image",
+              source: "uploaded",
+              url: uploaded.url,
+              createdAt: Date.now(),
+            },
+          ]);
+          ids.push(id);
+        } catch {
+          toast.error(`Couldn't upload ${file.name}`);
+        }
       }
-      setNodes((prev) => [...prev, ...additions]);
-      return additions.map((node) => node.id);
+      return ids;
     },
-    [setNodes]
+    [graphAddNode, graphAddAssets]
   );
 
   const addNode = useCallback(
-    (node: CanvasNode) => {
-      // Select the new node (and deselect the rest) so generation cards reveal
-      // their composer immediately on create.
-      setNodes((prev) => [
-        ...prev.map((n) => (n.selected ? { ...n, selected: false } : n)),
-        { ...node, selected: true },
-      ]);
+    (node: CanvasNodeShape) => {
+      graphAddNode(node);
+      // Select the new node so generation cards reveal their composer at once.
+      selectNodes([node.id]);
       setAddMenu(null);
     },
-    [setNodes]
+    [graphAddNode, selectNodes]
   );
 
   // Create a node of the chosen kind at `flow`; optionally wire it to a pending
@@ -557,30 +595,66 @@ function CanvasInner({ projectId }: { projectId: string }) {
     [screenToFlowPosition, nodes.length, addNodeOfType]
   );
 
+  // Keyboard: undo/redo + single-key add-node shortcuts (U/I/V/N). Ignored while
+  // typing in an input/textarea/contentEditable so it never eats real text.
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement | null;
+      if (
+        target &&
+        (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable)
+      ) {
+        return;
+      }
+      // Don't act behind an open modal (e.g. the beta notice).
+      if (document.querySelector('[role="dialog"]')) return;
+      const mod = event.metaKey || event.ctrlKey;
+      if (mod && event.key.toLowerCase() === "z") {
+        event.preventDefault();
+        if (event.shiftKey) redo();
+        else undo();
+        return;
+      }
+      if (mod && event.key.toLowerCase() === "y") {
+        event.preventDefault();
+        redo();
+        return;
+      }
+      if (mod || event.altKey) return; // leave other shortcuts alone (e.g. Ctrl+V)
+      const action: AddNodeAction | null =
+        event.key === "u" || event.key === "U"
+          ? "upload"
+          : event.key === "i" || event.key === "I"
+            ? "generate-image"
+            : event.key === "v" || event.key === "V"
+              ? "generate-video"
+              : event.key === "n" || event.key === "N"
+                ? "note"
+                : null;
+      if (action) {
+        event.preventDefault();
+        addNodeFromDock(action);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [undo, redo, addNodeFromDock]);
+
   // Place a library asset on the canvas as an image node — at `position` when
   // dragged-and-dropped, else the viewport center (click-to-add).
   const addAssetToCanvas = useCallback(
-    async (asset: ProjectAsset, position?: { x: number; y: number }) => {
+    (asset: CanvasAsset, position?: { x: number; y: number }) => {
       if (asset.kind !== "image") {
         toast.info("Video assets · coming soon");
         return;
       }
-      let src = asset.url;
-      let imageId = "";
-      if (!src && asset.imageId) {
-        const blob = await getImage(asset.imageId);
-        if (blob) {
-          src = URL.createObjectURL(blob);
-          imageId = asset.imageId;
-        }
-      }
-      if (!src) return;
+      if (!asset.url) return;
       addNode({
         id: crypto.randomUUID(),
         type: asset.panorama ? "panorama" : "image",
         position:
           position ?? screenToFlowPosition({ x: window.innerWidth / 2, y: window.innerHeight / 2 }),
-        data: { src, imageId, mediaAssetId: asset.mediaAssetId, label: asset.prompt },
+        data: { src: asset.url, mediaAssetId: asset.mediaAssetId, label: asset.prompt },
       });
     },
     [addNode, screenToFlowPosition]
@@ -599,7 +673,7 @@ function CanvasInner({ projectId }: { projectId: string }) {
       const assetData = event.dataTransfer.getData(ASSET_DRAG_MIME);
       if (assetData) {
         try {
-          void addAssetToCanvas(JSON.parse(assetData) as ProjectAsset, dropPosition);
+          addAssetToCanvas(JSON.parse(assetData) as CanvasAsset, dropPosition);
         } catch {
           // ignore a malformed payload
         }
@@ -705,19 +779,58 @@ function CanvasInner({ projectId }: { projectId: string }) {
   const onReconnect = useCallback(
     (oldEdge: Edge, connection: Connection) => {
       reconnectDone.current = true;
-      setEdges((eds) => reconnectEdge(oldEdge, connection, eds));
+      // addEdge upserts by id → the edge keeps its id but rebinds endpoints.
+      graphAddEdge({
+        id: oldEdge.id,
+        source: connection.source,
+        target: connection.target,
+        sourceHandle: connection.sourceHandle,
+        targetHandle: connection.targetHandle,
+      });
     },
-    [setEdges]
+    [graphAddEdge]
   );
   const onReconnectEnd = useCallback(
     (_event: unknown, edge: Edge) => {
       if (!reconnectDone.current) {
-        setEdges((eds) => eds.filter((candidate) => candidate.id !== edge.id));
+        graphRemoveEdge(edge.id);
       }
       reconnectDone.current = true;
     },
-    [setEdges]
+    [graphRemoveEdge]
   );
+
+  // Broadcast this client's live cursor (in flow coords) to peers, throttled.
+  const onPointerMove = useCallback(
+    (event: React.PointerEvent) => {
+      if (!awareness) return;
+      const now = Date.now();
+      if (now - lastCursorAt.current < 45) return;
+      lastCursorAt.current = now;
+      const pos = screenToFlowPosition({ x: event.clientX, y: event.clientY });
+      awareness.setLocalStateField("cursor", pos);
+    },
+    [awareness, screenToFlowPosition]
+  );
+  // Tidy canvas — auto-arrange nodes into a clean left→right layered layout,
+  // committed as one transaction (synced + undoable), then fit the view.
+  const tidyCanvas = useCallback(() => {
+    const positions = computeTidyLayout(getNodes(), edges);
+    if (positions.length === 0) return;
+    onNodesChange(
+      positions.map((p) => ({
+        type: "position" as const,
+        id: p.id,
+        position: p.position,
+        dragging: false,
+      }))
+    );
+    setTimeout(() => fitView({ padding: 0.3, duration: 300 }), 60);
+  }, [getNodes, edges, onNodesChange, fitView]);
+
+  const onPointerLeave = useCallback(() => {
+    awareness?.setLocalStateField("cursor", null);
+  }, [awareness]);
 
   // Double-click on empty canvas opens the add-node menu (imagine.art pattern).
   const onDoubleClick = useCallback(
@@ -735,165 +848,237 @@ function CanvasInner({ projectId }: { projectId: string }) {
   );
 
   return (
-    <CanvasGenerationProvider projectId={projectId} catalog={catalog}>
-      <div
-        ref={containerRef}
-        className="relative h-full"
-        onDragOver={onDragOver}
-        onDrop={onDrop}
-        onDoubleClick={onDoubleClick}
-      >
-        <ReactFlow
-          nodes={nodes}
-          edges={edges}
-          onNodesChange={onNodesChange}
-          onEdgesChange={onEdgesChange}
-          onEdgesDelete={onEdgesDelete}
-          onConnect={onConnect}
-          onConnectStart={onConnectStart}
-          onConnectEnd={onConnectEnd}
-          edgesReconnectable
-          onReconnectStart={onReconnectStart}
-          onReconnect={onReconnect}
-          onReconnectEnd={onReconnectEnd}
-          isValidConnection={isValidConnection}
-          connectionRadius={38}
-          nodeTypes={nodeTypes}
-          edgeTypes={edgeTypes}
-          connectionLineComponent={CanvasConnectionLine}
-          colorMode="dark"
-          minZoom={MIN_ZOOM}
-          maxZoom={MAX_ZOOM}
-          panOnScroll
-          panOnScrollMode={PanOnScrollMode.Free}
-          zoomOnScroll={false}
-          zoomOnPinch
-          zoomOnDoubleClick={false}
-          deleteKeyCode={["Backspace", "Delete"]}
-          onPaneClick={() => {
-            if (Date.now() - lastConnectEndAt.current < 250) return;
-            setAddMenu(null);
-          }}
-          onMoveStart={() => setAddMenu(null)}
-          className="!bg-[oklch(0.105_0_0)]"
+    <CanvasGraphProvider value={graph}>
+      <CanvasGenerationProvider catalog={catalog}>
+        <div
+          ref={containerRef}
+          className="relative h-full"
+          onDragOver={onDragOver}
+          onDrop={onDrop}
+          onDoubleClick={onDoubleClick}
+          onPointerMove={onPointerMove}
+          onPointerLeave={onPointerLeave}
         >
-          <Background
-            variant={BackgroundVariant.Dots}
-            gap={24}
-            size={1.5}
-            color="rgb(255 255 255 / 0.07)"
-          />
-        </ReactFlow>
-
-        <div className="absolute top-4 left-4 z-20 flex items-center gap-1">
-          <Link
-            href="/canvas"
-            aria-label="Back to projects"
-            className="flex size-9 items-center justify-center rounded-full bg-popover/90 shadow-md backdrop-blur-xl transition-colors hover:bg-accent"
-          >
-            <IconArrowLeft className="size-4" />
-          </Link>
-          <input
-            value={projectName}
-            aria-label="Project name"
-            placeholder="Untitled"
-            onChange={(event) => setProjectName(event.target.value)}
-            onBlur={() => {
-              const trimmed = projectName.trim();
-              if (trimmed) setProjectName(trimmed);
-              void renameProject(projectId, trimmed);
-            }}
-            onKeyDown={(event) => {
-              if (event.key === "Enter") event.currentTarget.blur();
-            }}
-            className="field-sizing-content h-9 min-w-[80px] max-w-[280px] rounded-full bg-popover/90 px-3.5 text-sm font-medium shadow-md backdrop-blur-xl outline-none transition-colors hover:bg-accent focus:bg-accent"
-          />
-        </div>
-
-        <CreditsBadge className="absolute top-4 right-4 z-20 flex h-9 items-center gap-1.5 rounded-full bg-popover/90 px-3.5 text-sm font-medium tabular-nums shadow-md backdrop-blur-xl" />
-        <input
-          ref={fileInputRef}
-          type="file"
-          accept="image/*"
-          multiple
-          hidden
-          onChange={onPickFiles}
-        />
-
-        <ZoomControls />
-        <NodeDock onAdd={addNodeFromDock} />
-
-        {/* Left rail (root-sidebar style) — opens the project's asset library. */}
-        {!assetsOpen && (
-          <div className="absolute top-1/2 left-4 z-20 flex -translate-y-1/2 flex-col gap-1 rounded-2xl bg-popover/90 p-1.5 shadow-md backdrop-blur-xl">
-            <button
-              type="button"
-              aria-label="Open assets"
-              onClick={() => setAssetsOpen(true)}
-              className="flex size-9 items-center justify-center rounded-xl text-white/70 transition-colors hover:bg-white/[0.08] hover:text-white"
-            >
-              <IconLayoutGrid className="size-5" stroke={1.7} />
-            </button>
-          </div>
-        )}
-        <AssetLibrary
-          projectId={projectId}
-          open={assetsOpen}
-          onClose={() => setAssetsOpen(false)}
-        />
-
-        {/* Persistent pending wire from the source handle to the open menu, so the
-          dragged connection stays visually anchored while choosing a node. */}
-        {addMenu?.wire && (
-          <svg className="pointer-events-none absolute inset-0 z-20 size-full overflow-visible">
-            <defs>
-              <linearGradient
-                id="pending-wire-grad"
-                gradientUnits="userSpaceOnUse"
-                x1={addMenu.wire.x1}
-                y1={addMenu.wire.y1}
-                x2={addMenu.wire.x2}
-                y2={addMenu.wire.y2}
-              >
-                <stop offset="0%" stopColor={addMenu.wire.color} stopOpacity={1} />
-                <stop offset="55%" stopColor={addMenu.wire.color} stopOpacity={0.5} />
-                <stop offset="100%" stopColor={addMenu.wire.color} stopOpacity={0.05} />
-              </linearGradient>
-            </defs>
-            <path
-              d={`M ${addMenu.wire.x1} ${addMenu.wire.y1} C ${
-                addMenu.wire.x1 + (addMenu.wire.x2 - addMenu.wire.x1) * 0.5
-              } ${addMenu.wire.y1}, ${
-                addMenu.wire.x2 - (addMenu.wire.x2 - addMenu.wire.x1) * 0.5
-              } ${addMenu.wire.y2}, ${addMenu.wire.x2} ${addMenu.wire.y2}`}
-              fill="none"
-              stroke="url(#pending-wire-grad)"
-              strokeWidth={2}
-              strokeLinecap="round"
-            />
-          </svg>
-        )}
-
-        {addMenu && (
-          <AddNodeMenu
-            left={addMenu.left}
-            top={addMenu.top}
-            onAction={(action: AddNodeAction) => {
-              addNodeOfType(action, addMenu.flow, addMenu.pending);
+          <ReactFlow
+            nodes={nodes}
+            edges={edges}
+            onNodesChange={onNodesChange}
+            onEdgesChange={onEdgesChange}
+            onEdgesDelete={onEdgesDelete}
+            onConnect={onConnect}
+            onConnectStart={onConnectStart}
+            onConnectEnd={onConnectEnd}
+            edgesReconnectable
+            onReconnectStart={onReconnectStart}
+            onReconnect={onReconnect}
+            onReconnectEnd={onReconnectEnd}
+            isValidConnection={isValidConnection}
+            connectionRadius={38}
+            nodeTypes={nodeTypes}
+            edgeTypes={edgeTypes}
+            connectionLineComponent={CanvasConnectionLine}
+            colorMode="dark"
+            minZoom={MIN_ZOOM}
+            maxZoom={MAX_ZOOM}
+            snapToGrid={snapToGrid}
+            snapGrid={[GRID_SIZE, GRID_SIZE]}
+            panOnScroll
+            panOnScrollMode={PanOnScrollMode.Free}
+            zoomOnScroll={false}
+            zoomOnPinch
+            zoomOnDoubleClick={false}
+            deleteKeyCode={["Backspace", "Delete"]}
+            onPaneClick={() => {
+              if (Date.now() - lastConnectEndAt.current < 250) return;
               setAddMenu(null);
             }}
-          />
-        )}
+            onMoveStart={() => setAddMenu(null)}
+            className="!bg-[oklch(0.105_0_0)]"
+          >
+            <Background
+              variant={BackgroundVariant.Dots}
+              gap={24}
+              size={1.5}
+              color="rgb(255 255 255 / 0.07)"
+            />
+            <CollabCursors awareness={awareness} localClientId={doc?.clientID} />
+            <CanvasComments
+              documentId={documentId}
+              provider={provider}
+              nodes={nodes}
+              currentUserId={canvasUser?.id}
+            />
+            {minimapOpen && (
+              <MiniMap
+                pannable
+                zoomable
+                position="bottom-right"
+                className="!right-4 !bottom-[68px] !m-0 overflow-hidden rounded-xl border border-white/10 shadow-md"
+                bgColor="rgba(20,20,20,0.92)"
+                maskColor="rgba(0,0,0,0.55)"
+                nodeColor="rgba(255,255,255,0.35)"
+                nodeStrokeWidth={0}
+              />
+            )}
+          </ReactFlow>
 
-        {nodes.length === 0 && !addMenu && (
-          <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
-            <p className="text-sm text-muted-foreground">
-              Double-click to add a node, or describe what to create below
-            </p>
+          {/* Back / project name / mode switcher live in the project shell;
+            this cluster holds the canvas-specific + presence controls. */}
+          <div className="absolute top-4 right-4 z-20 flex items-center gap-2">
+            {connStatus !== "synced" && (
+              <span className="flex h-9 items-center gap-1.5 rounded-full bg-popover/90 px-3 text-xs font-medium text-white/70 shadow-md backdrop-blur-xl">
+                <span
+                  className={cn(
+                    "size-1.5 rounded-full",
+                    connStatus === "offline" ? "bg-red-400" : "animate-pulse bg-white/60"
+                  )}
+                />
+                {connStatus === "offline" ? "Offline" : "Connecting…"}
+              </span>
+            )}
+            <button
+              type="button"
+              aria-label="Version history"
+              onClick={() => setHistoryOpen((open) => !open)}
+              className={cn(
+                "flex size-9 items-center justify-center rounded-full shadow-md backdrop-blur-xl transition-colors",
+                historyOpen
+                  ? "bg-accent text-white"
+                  : "bg-popover/90 text-white/80 hover:bg-accent hover:text-white"
+              )}
+            >
+              <IconHistory className="size-4" stroke={1.8} />
+            </button>
+            <CollabAvatars awareness={awareness} localClientId={doc?.clientID} />
+            <CreditsBadge className="flex h-9 items-center gap-1.5 rounded-full bg-popover/90 px-3.5 text-sm font-medium tabular-nums shadow-md backdrop-blur-xl" />
           </div>
-        )}
-      </div>
-    </CanvasGenerationProvider>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/*"
+            multiple
+            hidden
+            onChange={onPickFiles}
+          />
+
+          <ZoomControls
+            onTidy={tidyCanvas}
+            snapToGrid={snapToGrid}
+            onToggleSnap={() => setSnapToGrid((v) => !v)}
+            minimapOpen={minimapOpen}
+            onToggleMinimap={() => setMinimapOpen((v) => !v)}
+          />
+          <NodeDock onAdd={addNodeFromDock} />
+
+          {/* Undo / redo (Ctrl+Z / Ctrl+Shift+Z). */}
+          <div className="absolute bottom-4 left-4 z-20 flex items-center gap-0.5 rounded-full bg-popover/90 p-1 shadow-md backdrop-blur-xl">
+            <button
+              type="button"
+              aria-label="Undo"
+              disabled={!canUndo}
+              onClick={() => undo()}
+              className="flex size-8 items-center justify-center rounded-full text-white/70 transition-colors hover:bg-white/[0.08] hover:text-white disabled:opacity-30 disabled:hover:bg-transparent"
+            >
+              <IconArrowBackUp className="size-4" stroke={1.8} />
+            </button>
+            <button
+              type="button"
+              aria-label="Redo"
+              disabled={!canRedo}
+              onClick={() => redo()}
+              className="flex size-8 items-center justify-center rounded-full text-white/70 transition-colors hover:bg-white/[0.08] hover:text-white disabled:opacity-30 disabled:hover:bg-transparent"
+            >
+              <IconArrowForwardUp className="size-4" stroke={1.8} />
+            </button>
+          </div>
+
+          {/* Left rail (root-sidebar style) — opens the project's asset library. */}
+          {!assetsOpen && (
+            <div className="absolute top-1/2 left-4 z-20 flex -translate-y-1/2 flex-col gap-1 rounded-2xl bg-popover/90 p-1.5 shadow-md backdrop-blur-xl">
+              <button
+                type="button"
+                aria-label="Open assets"
+                onClick={() => setAssetsOpen(true)}
+                className="flex size-9 items-center justify-center rounded-xl text-white/70 transition-colors hover:bg-white/[0.08] hover:text-white"
+              >
+                <IconLayoutGrid className="size-5" stroke={1.7} />
+              </button>
+            </div>
+          )}
+          <AssetLibrary open={assetsOpen} onClose={() => setAssetsOpen(false)} />
+
+          {historyOpen && (
+            <CanvasHistory
+              documentId={documentId}
+              provider={provider}
+              doc={doc}
+              restoreFromUpdate={restoreFromUpdate}
+              currentVersionId={canvasDocRef?.currentVersionId}
+              onClose={() => setHistoryOpen(false)}
+            />
+          )}
+
+          {/* Persistent pending wire from the source handle to the open menu, so the
+          dragged connection stays visually anchored while choosing a node. */}
+          {addMenu?.wire && (
+            <svg className="pointer-events-none absolute inset-0 z-20 size-full overflow-visible">
+              <defs>
+                <linearGradient
+                  id="pending-wire-grad"
+                  gradientUnits="userSpaceOnUse"
+                  x1={addMenu.wire.x1}
+                  y1={addMenu.wire.y1}
+                  x2={addMenu.wire.x2}
+                  y2={addMenu.wire.y2}
+                >
+                  <stop offset="0%" stopColor={addMenu.wire.color} stopOpacity={1} />
+                  <stop offset="55%" stopColor={addMenu.wire.color} stopOpacity={0.5} />
+                  <stop offset="100%" stopColor={addMenu.wire.color} stopOpacity={0.05} />
+                </linearGradient>
+              </defs>
+              <path
+                d={`M ${addMenu.wire.x1} ${addMenu.wire.y1} C ${
+                  addMenu.wire.x1 + (addMenu.wire.x2 - addMenu.wire.x1) * 0.5
+                } ${addMenu.wire.y1}, ${
+                  addMenu.wire.x2 - (addMenu.wire.x2 - addMenu.wire.x1) * 0.5
+                } ${addMenu.wire.y2}, ${addMenu.wire.x2} ${addMenu.wire.y2}`}
+                fill="none"
+                stroke="url(#pending-wire-grad)"
+                strokeWidth={2}
+                strokeLinecap="round"
+              />
+            </svg>
+          )}
+
+          {addMenu && (
+            <AddNodeMenu
+              left={addMenu.left}
+              top={addMenu.top}
+              onAction={(action: AddNodeAction) => {
+                addNodeOfType(action, addMenu.flow, addMenu.pending);
+                setAddMenu(null);
+              }}
+            />
+          )}
+
+          {docStatus === "error" && (
+            <div className="absolute inset-0 z-30 flex items-center justify-center bg-background/60 backdrop-blur-sm">
+              <p className="text-sm text-muted-foreground">
+                Couldn&apos;t open this canvas — check the link or your access.
+              </p>
+            </div>
+          )}
+
+          {docStatus !== "error" && nodes.length === 0 && !addMenu && (
+            <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
+              <p className="text-sm text-muted-foreground">
+                Double-click to add a node, or describe what to create below
+              </p>
+            </div>
+          )}
+        </div>
+      </CanvasGenerationProvider>
+    </CanvasGraphProvider>
   );
 }
 

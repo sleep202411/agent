@@ -18,9 +18,12 @@ import {
   CreateDocumentVersionSchema,
   DocumentParamsSchema,
   DocumentThreadParamsSchema,
+  DocumentVersionParamsSchema,
   ListDocumentOperationsQuerySchema,
   ListProjectDocumentsQuerySchema,
+  ProjectDocumentEnsureParamsSchema,
   ProjectDocumentsParamsSchema,
+  RestoreDocumentVersionSchema,
   UpdateDocumentSchema,
   UpsertDocumentPresenceSchema,
   type AddCommentInput,
@@ -30,9 +33,12 @@ import {
   type CreateDocumentVersionInput,
   type DocumentParams,
   type DocumentThreadParams,
+  type DocumentVersionParams,
   type ListDocumentOperationsQuery,
   type ListProjectDocumentsQuery,
+  type ProjectDocumentEnsureParams,
   type ProjectDocumentsParams,
+  type RestoreDocumentVersionInput,
   type UpdateDocumentInput,
   type UpsertDocumentPresenceInput,
 } from './dto';
@@ -91,6 +97,28 @@ export class DocumentsController {
       data: await this.documents.ensurePrimaryStoryboard(
         user,
         params.projectId,
+      ),
+    };
+  }
+
+  /**
+   * Idempotent bootstrap for a project's primary document of a given mode
+   * (canvas / storyboard / timeline / …). Returns the detail DTO (incl.
+   * crdtStateBase64 + snapshotSequence) so a CRDT client can rebuild and then
+   * replay operations after the snapshot horizon. POST — has a write side effect.
+   */
+  @Post('projects/:projectId/documents/:type/ensure')
+  async ensurePrimaryDocument(
+    @CurrentUser() user: AuthUser,
+    @Param(new ZodValidationPipe(ProjectDocumentEnsureParamsSchema))
+    params: ProjectDocumentEnsureParams,
+  ) {
+    return {
+      code: 200,
+      data: await this.documents.ensurePrimaryDocument(
+        user,
+        params.projectId,
+        params.type,
       ),
     };
   }
@@ -166,6 +194,25 @@ export class DocumentsController {
     return {
       code: 200,
       data: await this.documents.listVersions(user, params.documentId),
+    };
+  }
+
+  @Post('documents/:documentId/versions/:versionId/restore')
+  async restoreVersion(
+    @CurrentUser() user: AuthUser,
+    @Param(new ZodValidationPipe(DocumentVersionParamsSchema))
+    params: DocumentVersionParams,
+    @Body(new ZodValidationPipe(RestoreDocumentVersionSchema))
+    body: RestoreDocumentVersionInput,
+  ) {
+    return {
+      code: 200,
+      data: await this.documents.restoreVersion(
+        user,
+        params.documentId,
+        params.versionId,
+        body,
+      ),
     };
   }
 

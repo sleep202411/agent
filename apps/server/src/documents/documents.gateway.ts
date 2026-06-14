@@ -13,11 +13,19 @@
  *   { event: "sync_request", data: { afterSequence?: number, limit?: number } }
  *   { event: "operation", data: AppendDocumentOperationInput }
  *   { event: "presence", data: UpsertDocumentPresenceInput }
+ *   { event: "awareness", data: { update: base64 } }  // y-protocols awareness
  *   { event: "ping" }
  *
  * Outgoing frames:
  *   document_snapshot, operations_sync, document_operation,
- *   presence_update, presence_left, heartbeat, error, terminate.
+ *   presence_update, presence_left, awareness, awareness_state,
+ *   awareness_request, heartbeat, error, terminate.
+ *
+ * Awareness (ephemeral): live cursors + the active-user set behind the avatar
+ * group. Clients send a y-protocols awareness update; the server relays it to
+ * peers (Redis fan-out), bootstraps new clients via `awareness_state`, asks
+ * peers to re-announce via `awareness_request`, and drops a socket's cursors
+ * instantly on disconnect. Never persisted.
  */
 import {
   OnGatewayConnection,
@@ -39,6 +47,7 @@ import {
   UpsertDocumentPresenceSchema,
 } from './dto';
 import { DocumentsService } from './documents.service';
+import { DocumentAwarenessRegistry, REMOTE_ORIGIN } from './document-awareness';
 
 const REDIS_CHANNEL_PATTERN = 'document:events:*';
 const REDIS_CHANNEL_PREFIX = 'document:events:';
@@ -54,12 +63,18 @@ type TrackedSocket = WebSocket & {
   __user?: AuthUser;
   __lastActivity?: number;
   __zombieCheck?: NodeJS.Timeout;
+  /** Awareness client-ids introduced over this socket (cleared on disconnect). */
+  __controlledIds?: Set<number>;
 };
+
+type AwarenessFrameData = { update?: unknown };
 
 type IncomingFrame =
   | { event: 'sync_request'; data?: { afterSequence?: number; limit?: number } }
   | { event: 'operation'; data?: unknown }
   | { event: 'presence'; data?: unknown }
+  | { event: 'awareness'; data?: AwarenessFrameData }
+  | { event: 'app_event'; data?: unknown }
   | { event: 'ping'; data?: unknown };
 
 type RedisDocumentEvent =
@@ -75,6 +90,27 @@ type RedisDocumentEvent =
     }
   | {
       event: 'presence_left';
+      originSocketId?: string;
+      data: unknown;
+    }
+  | {
+      // Ephemeral cursor/selection/identity relayed to peers; data carries a
+      // base64 y-protocols awareness update.
+      event: 'awareness';
+      originSocketId?: string;
+      data: { update: string };
+    }
+  | {
+      // Asks already-connected peers to re-broadcast their awareness so a newly
+      // joined client (possibly on another pod) sees existing cursors at once.
+      event: 'awareness_request';
+      originSocketId?: string;
+      data: Record<string, never>;
+    }
+  | {
+      // Generic ephemeral app-level signal relayed to peers (e.g. a
+      // "comments changed → refetch" nudge). The server does not interpret it.
+      event: 'app_event';
       originSocketId?: string;
       data: unknown;
     };
@@ -97,6 +133,7 @@ export class DocumentsGateway
   private heartbeatTimer?: NodeJS.Timeout;
 
   private readonly socketsByDocument = new Map<string, Set<TrackedSocket>>();
+  private readonly awareness = new DocumentAwarenessRegistry();
 
   constructor(
     private readonly authService: AuthService,
@@ -127,6 +164,13 @@ export class DocumentsGateway
       } catch {
         this.logger.warn(`malformed payload on ${channel}`);
         return;
+      }
+
+      // Keep this pod's awareness cache current with peers on other pods so a
+      // newly connecting local client can be bootstrapped with their cursors.
+      if (parsed.event === 'awareness') {
+        const update = this.decodeBase64(parsed.data.update);
+        if (update) this.awareness.apply(documentId, update, REMOTE_ORIGIN);
       }
 
       this.broadcastFrame(documentId, parsed.event, parsed.data, {
@@ -172,7 +216,9 @@ export class DocumentsGateway
       client.__documentId = documentId;
       client.__user = user;
       client.__lastActivity = Date.now();
+      client.__controlledIds = new Set<number>();
       this.addSubscriber(documentId, client);
+      this.awareness.acquire(documentId);
 
       client.__zombieCheck = setInterval(() => {
         const last = client.__lastActivity ?? 0;
@@ -192,12 +238,24 @@ export class DocumentsGateway
         document: syncState.document,
       });
       this.send(client, 'operations_sync', {
-        afterSequence,
+        // The replay floor may be lifted to the compaction horizon; when
+        // resync is required the client rebuilds from the snapshot's crdtState
+        // (carried in document_snapshot) before applying these operations.
+        afterSequence: syncState.resync.fromSequence,
         operations: syncState.operations,
+        resync: syncState.resync.required,
       });
       this.send(client, 'presence_state', {
         presences: syncState.presences,
       });
+      // Bootstrap the new client with current cursors/avatars known to this pod,
+      // then ask all peers (any pod) to re-announce so cross-pod state fills in.
+      const awarenessSnapshot = this.awareness.encodeStates(documentId);
+      if (awarenessSnapshot) {
+        this.send(client, 'awareness_state', {
+          update: this.encodeBase64(awarenessSnapshot),
+        });
+      }
       this.sendHeartbeat(client);
 
       const presence = await this.documents.upsertPresence(user, documentId, {
@@ -209,6 +267,11 @@ export class DocumentsGateway
         event: 'presence_update',
         originSocketId: socketId,
         data: presence.presence,
+      });
+      await this.publish(documentId, {
+        event: 'awareness_request',
+        originSocketId: socketId,
+        data: {},
       });
 
       this.logger.log(
@@ -236,6 +299,22 @@ export class DocumentsGateway
         subs.delete(client);
         if (subs.size === 0) this.socketsByDocument.delete(documentId);
       }
+
+      // Drop this socket's cursors immediately (don't wait for the client-side
+      // awareness timeout) and fan the removal to peers, then release the room.
+      const controlled = client.__controlledIds;
+      if (controlled && controlled.size > 0) {
+        const removal = this.awareness.removeClients(documentId, [
+          ...controlled,
+        ]);
+        if (removal) {
+          void this.publish(documentId, {
+            event: 'awareness',
+            data: { update: this.encodeBase64(removal) },
+          });
+        }
+      }
+      this.awareness.release(documentId);
     }
 
     if (documentId && socketId && user) {
@@ -266,6 +345,7 @@ export class DocumentsGateway
 
   async onModuleDestroy() {
     if (this.heartbeatTimer) clearInterval(this.heartbeatTimer);
+    this.awareness.destroyAll();
     try {
       await this.redisSubscriber?.quit();
       await this.redisPublisher?.quit();
@@ -328,6 +408,21 @@ export class DocumentsGateway
         return;
       }
 
+      if (frame.event === 'awareness') {
+        await this.handleAwareness(client, documentId, socketId, frame.data);
+        return;
+      }
+
+      if (frame.event === 'app_event') {
+        // Opaque ephemeral signal — relay to peers (echo-suppressed), no persist.
+        await this.publish(documentId, {
+          event: 'app_event',
+          originSocketId: socketId,
+          data: frame.data,
+        });
+        return;
+      }
+
       this.send(client, 'error', {
         code: 'UNKNOWN_EVENT',
         message: `Unsupported event: ${(frame as { event?: string }).event}`,
@@ -354,14 +449,16 @@ export class DocumentsGateway
     data: IncomingFrame['data'],
   ) {
     const query = ListDocumentOperationsQuerySchema.parse(data ?? {});
-    const { operations } = await this.documents.listOperations(
+    const { operations, resync } = await this.documents.getOperationSyncWindow(
       user,
       documentId,
-      query,
+      query.afterSequence,
+      query.limit,
     );
     this.send(client, 'operations_sync', {
-      afterSequence: query.afterSequence,
+      afterSequence: resync.fromSequence,
       operations,
+      resync: resync.required,
     });
   }
 
@@ -407,6 +504,31 @@ export class DocumentsGateway
       event: 'presence_update',
       originSocketId: socketId,
       data: presence,
+    });
+  }
+
+  private async handleAwareness(
+    client: TrackedSocket,
+    documentId: string,
+    socketId: string,
+    data: AwarenessFrameData | undefined,
+  ) {
+    const update = this.decodeBase64(data?.update);
+    if (!update) {
+      this.send(client, 'error', {
+        code: 'INVALID_AWARENESS',
+        message: 'awareness frame requires a base64 `update`.',
+      });
+      return;
+    }
+    // Apply locally first (origin = socket) so the controlled-id bookkeeping is
+    // recorded synchronously, then fan the raw update out. Peers (incl. this pod
+    // via Redis) apply it; the sender is echo-suppressed by originSocketId.
+    this.awareness.apply(documentId, update, client);
+    await this.publish(documentId, {
+      event: 'awareness',
+      originSocketId: socketId,
+      data: { update: this.encodeBase64(update) },
     });
   }
 
@@ -524,6 +646,20 @@ export class DocumentsGateway
       client.close(code, reason);
     } catch {
       /* socket already closed */
+    }
+  }
+
+  private encodeBase64(bytes: Uint8Array): string {
+    return Buffer.from(bytes).toString('base64');
+  }
+
+  private decodeBase64(value: unknown): Uint8Array | null {
+    if (typeof value !== 'string' || value.length === 0) return null;
+    try {
+      const buf = Buffer.from(value, 'base64');
+      return buf.byteLength > 0 ? new Uint8Array(buf) : null;
+    } catch {
+      return null;
     }
   }
 

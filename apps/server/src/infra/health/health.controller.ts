@@ -55,20 +55,28 @@ export class HealthController {
       this.probeDb(),
       this.probeRedis(),
     ]);
-    // Azure Web PubSub and Foundry are com-cell infrastructure. The cn cell
-    // does realtime through the in-process WS gateways (WebPubSubService
-    // no-ops without a connection string) and runs no Foundry provider, so
-    // gating readiness on them there would 503 a perfectly healthy pod.
+    // Realtime readiness validates whichever transport is selected. The
+    // self-hosted WS plane (any cell) needs its token-signing secret; Azure Web
+    // PubSub (the default on azure cells) needs its connection string. Foundry
+    // is com-cell infrastructure; gating the cn cell on it would 503 a healthy
+    // pod, so it stays cell-scoped.
     const azureCell = CURRENT_CELL !== 'cn';
+    const selfHostedRealtime =
+      (process.env.REALTIME_TRANSPORT ?? 'web-pubsub').trim().toLowerCase() ===
+      'self-hosted';
     const checks: ReadinessProbe[] = [
       {
-        name: 'web_pubsub',
-        ok: azureCell
-          ? Boolean(process.env.AZURE_WEB_PUBSUB_CONNECTION_STRING)
-          : true,
-        detail: azureCell
-          ? 'AZURE_WEB_PUBSUB_CONNECTION_STRING required for realtime'
-          : 'not used on the cn cell (in-process WS gateways)',
+        name: 'realtime',
+        ok: selfHostedRealtime
+          ? Boolean(process.env.REALTIME_WS_SECRET)
+          : azureCell
+            ? Boolean(process.env.AZURE_WEB_PUBSUB_CONNECTION_STRING)
+            : true,
+        detail: selfHostedRealtime
+          ? 'REALTIME_WS_SECRET required for the self-hosted realtime WS plane'
+          : azureCell
+            ? 'AZURE_WEB_PUBSUB_CONNECTION_STRING required for realtime'
+            : 'not used on the cn cell (in-process WS gateways)',
       },
       {
         name: 'foundry_provider',

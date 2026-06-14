@@ -32,13 +32,15 @@ import {
 import {
   createProject,
   deleteProject,
+  ensurePersonalWorkspace,
   listProjects,
   renameProject,
-  type ProjectMeta,
-} from "@/lib/canvas-store";
+  type ProjectRef,
+} from "@/lib/collab/projects-api";
 
-function timeAgo(timestamp: number): string {
-  const seconds = Math.max(0, Math.floor((Date.now() - timestamp) / 1000));
+function timeAgo(input: string | number): string {
+  const ms = typeof input === "number" ? input : Date.parse(input);
+  const seconds = Math.max(0, Math.floor((Date.now() - ms) / 1000));
   if (seconds < 60) return "Edited just now";
   const minutes = Math.floor(seconds / 60);
   if (minutes < 60) return `Edited ${minutes}m ago`;
@@ -49,19 +51,25 @@ function timeAgo(timestamp: number): string {
 
 export function CanvasProjectsGrid() {
   const router = useRouter();
-  const [projects, setProjects] = useState<ProjectMeta[] | null>(null);
-  const [renaming, setRenaming] = useState<ProjectMeta | null>(null);
+  const [workspaceId, setWorkspaceId] = useState<string | null>(null);
+  const [projects, setProjects] = useState<ProjectRef[] | null>(null);
+  const [renaming, setRenaming] = useState<ProjectRef | null>(null);
   const [renameValue, setRenameValue] = useState("");
-  const [deleting, setDeleting] = useState<ProjectMeta | null>(null);
+  const [deleting, setDeleting] = useState<ProjectRef | null>(null);
 
   const refresh = useCallback(async () => {
-    setProjects(await listProjects());
+    const workspace = await ensurePersonalWorkspace();
+    setWorkspaceId(workspace.id);
+    setProjects(await listProjects(workspace.id));
   }, []);
 
   useEffect(() => {
     let cancelled = false;
     queueMicrotask(() => {
-      if (!cancelled) void refresh();
+      if (cancelled) return;
+      void refresh().catch(() => {
+        if (!cancelled) setProjects([]);
+      });
     });
     return () => {
       cancelled = true;
@@ -69,9 +77,14 @@ export function CanvasProjectsGrid() {
   }, [refresh]);
 
   const onCreate = useCallback(async () => {
-    const project = await createProject();
-    router.push(`/canvas/${project.id}`);
-  }, [router]);
+    try {
+      const ws = workspaceId ?? (await ensurePersonalWorkspace()).id;
+      const project = await createProject(ws, { name: "Untitled canvas" });
+      router.push(`/project/${project.id}`);
+    } catch {
+      toast.error("Couldn't create the canvas");
+    }
+  }, [router, workspaceId]);
 
   const confirmDelete = useCallback(async () => {
     if (deleting) {
@@ -83,8 +96,8 @@ export function CanvasProjectsGrid() {
   }, [deleting, refresh]);
 
   const submitRename = useCallback(async () => {
-    if (renaming) {
-      await renameProject(renaming.id, renameValue);
+    if (renaming && renameValue.trim()) {
+      await renameProject(renaming.id, renameValue.trim());
       await refresh();
     }
     setRenaming(null);
@@ -126,7 +139,7 @@ export function CanvasProjectsGrid() {
           projects.map((project) => (
             <Link
               key={project.id}
-              href={`/canvas/${project.id}`}
+              href={`/project/${project.id}`}
               className="group relative rounded-xl bg-card p-2.5 transition-colors hover:bg-accent"
             >
               <div className="flex aspect-video items-center justify-center rounded-lg bg-muted">

@@ -1,15 +1,16 @@
 "use client";
 
 import { memo } from "react";
-import { useReactFlow, type Node, type NodeProps } from "@xyflow/react";
+import { type Node, type NodeProps } from "@xyflow/react";
 import { IconNote } from "@tabler/icons-react";
 import { cn } from "@/lib/utils";
+import { useCanvasGraphContext } from "@/lib/collab/canvas-graph-context";
 import { CanvasNodeToolbar } from "./node-toolbar";
 
 export type NoteNodeType = Node<{ text: string }, "note">;
 
 function NoteNodeComponent({ id, data, selected }: NodeProps<NoteNodeType>) {
-  const { updateNodeData } = useReactFlow();
+  const { patchNodeData } = useCanvasGraphContext();
 
   return (
     <div className="relative w-60">
@@ -24,7 +25,7 @@ function NoteNodeComponent({ id, data, selected }: NodeProps<NoteNodeType>) {
       <div className={cn("rounded-xl bg-muted p-3", selected && "ring-2 ring-ring")}>
         <textarea
           value={data.text}
-          onChange={(event) => updateNodeData(id, { text: event.target.value })}
+          onChange={(event) => patchNodeData(id, { text: event.target.value })}
           placeholder="Write a note…"
           rows={4}
           className="nodrag block w-full resize-none bg-transparent text-sm outline-none placeholder:text-muted-foreground"

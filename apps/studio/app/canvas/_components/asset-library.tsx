@@ -1,14 +1,10 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { IconPhoto, IconSearch, IconX } from "@tabler/icons-react";
 import { cn } from "@/lib/utils";
-import {
-  getImage,
-  listProjectAssets,
-  onProjectAssetsChanged,
-  type ProjectAsset,
-} from "@/lib/canvas-store";
+import { useCanvasGraphContext } from "@/lib/collab/canvas-graph-context";
+import type { CanvasAsset } from "@/lib/collab/canvas-doc";
 import { Icon720 } from "./panorama-viewer";
 
 /** dataTransfer type carrying a dragged library asset to the canvas. */
@@ -20,31 +16,8 @@ const TABS: { id: AssetTab; label: string }[] = [
   { id: "generated", label: "My Creations" },
   { id: "uploaded", label: "Uploaded" },
 ];
-const ASSET_RECONCILE_INTERVAL_MS = 30_000;
 
-/** Resolves an uploaded asset's blob to an object URL; generated assets use their url. */
-function useAssetSrc(asset: ProjectAsset): string | undefined {
-  const [blobUrl, setBlobUrl] = useState<string>();
-  useEffect(() => {
-    if (asset.url || !asset.imageId) return;
-    let revoked = false;
-    let created: string | undefined;
-    void getImage(asset.imageId).then((blob) => {
-      if (blob && !revoked) {
-        created = URL.createObjectURL(blob);
-        setBlobUrl(created);
-      }
-    });
-    return () => {
-      revoked = true;
-      if (created) URL.revokeObjectURL(created);
-    };
-  }, [asset.url, asset.imageId]);
-  return asset.url ?? blobUrl;
-}
-
-function AssetThumb({ asset }: { asset: ProjectAsset }) {
-  const src = useAssetSrc(asset);
+function AssetThumb({ asset }: { asset: CanvasAsset }) {
   return (
     <div
       title={asset.prompt ?? undefined}
@@ -55,28 +28,22 @@ function AssetThumb({ asset }: { asset: ProjectAsset }) {
       }}
       className="group relative aspect-square cursor-grab overflow-hidden rounded-lg bg-white/[0.04] transition-colors hover:bg-white/[0.08] active:cursor-grabbing"
     >
-      {src ? (
-        asset.kind === "video" ? (
-          <video
-            src={src}
-            muted
-            playsInline
-            draggable={false}
-            className="pointer-events-none size-full object-cover"
-          />
-        ) : (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
-            src={src}
-            alt={asset.prompt ?? "Asset"}
-            draggable={false}
-            className="pointer-events-none size-full object-cover"
-          />
-        )
+      {asset.kind === "video" ? (
+        <video
+          src={asset.url}
+          muted
+          playsInline
+          draggable={false}
+          className="pointer-events-none size-full object-cover"
+        />
       ) : (
-        <div className="flex size-full items-center justify-center">
-          <IconPhoto className="size-5 text-white/25" stroke={1.5} />
-        </div>
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          src={asset.url}
+          alt={asset.prompt ?? "Asset"}
+          draggable={false}
+          className="pointer-events-none size-full object-cover"
+        />
       )}
       {asset.panorama && (
         <span className="pointer-events-none absolute top-1 left-1 flex items-center gap-0.5 rounded bg-black/55 px-1 py-0.5 text-[9px] font-medium text-white/90 backdrop-blur-sm">
@@ -89,39 +56,14 @@ function AssetThumb({ asset }: { asset: ProjectAsset }) {
 
 /**
  * The project's persistent asset library — a slide-in drawer (imagine.art-style)
- * over the canvas. "My Creations" = generated outputs; "Uploaded" = dropped/
- * uploaded media. Drag an asset out onto the canvas to place it.
+ * over the canvas. "My Creations" = generated outputs; "Uploaded" = uploaded
+ * media. The library lives in the synced canvas doc, so every collaborator sees
+ * the same assets. Drag an asset out onto the canvas to place it.
  */
-export function AssetLibrary({
-  projectId,
-  open,
-  onClose,
-}: {
-  projectId: string;
-  open: boolean;
-  onClose: () => void;
-}) {
-  const [assets, setAssets] = useState<ProjectAsset[]>([]);
+export function AssetLibrary({ open, onClose }: { open: boolean; onClose: () => void }) {
+  const { assets } = useCanvasGraphContext();
   const [tab, setTab] = useState<AssetTab>("generated");
   const [query, setQuery] = useState("");
-
-  // Load on open, update from project-asset events, then reconcile occasionally.
-  useEffect(() => {
-    if (!open) return;
-    let cancelled = false;
-    const load = () =>
-      void listProjectAssets(projectId).then((next) => !cancelled && setAssets(next));
-    load();
-    const unsubscribe = onProjectAssetsChanged((event) => {
-      if (event.projectId === projectId) load();
-    });
-    const timer = setInterval(load, ASSET_RECONCILE_INTERVAL_MS);
-    return () => {
-      cancelled = true;
-      unsubscribe();
-      clearInterval(timer);
-    };
-  }, [open, projectId]);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
