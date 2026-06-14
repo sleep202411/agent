@@ -24,13 +24,10 @@ import type { Locale } from "@/src/i18n/config";
 
 // Primary backdrop — a single looping, muted UI-showcase clip (webm with an
 // mp4 fallback); the poster covers the moment before playback and is the
-// fallback if autoplay is blocked.
-//
-// Served from apps/web/public for now. The production convention is the OSS
-// static CDN (static.fizzspace.cn/static/pc) — upload hero.webm / hero.mp4 /
-// hero-poster.jpg there via `/content/public/upload/static?dir=pc` and point
-// these at the CDN URLs to keep binaries out of git.
-const HERO_POSTER = "/hero-poster.jpg";
+// fallback if autoplay is blocked. Hosted on Azure Blob (public `static`
+// container) so the binaries stay out of git.
+const HERO_CDN = "https://fizzdragonblob.blob.core.windows.net/static";
+const HERO_POSTER = `${HERO_CDN}/hero-poster.jpg`;
 
 export function Hero() {
   const locale = useLocale() as Locale;
@@ -73,12 +70,12 @@ export function Hero() {
         aria-hidden="true"
         className="absolute inset-0 size-full object-cover"
       >
-        <source src="/hero.webm" type="video/webm" />
-        <source src="/hero.mp4" type="video/mp4" />
+        <source src={`${HERO_CDN}/hero.webm`} type="video/webm" />
+        <source src={`${HERO_CDN}/hero.mp4`} type="video/mp4" />
       </video>
 
       {/* Soundtrack — separate looping track, opt-in via the button. */}
-      <audio ref={audioRef} src="/hero-audio.mp3" loop preload="none" />
+      <audio ref={audioRef} src={`${HERO_CDN}/hero-audio.mp3`} loop preload="none" />
 
       {/* Sound toggle */}
       <button

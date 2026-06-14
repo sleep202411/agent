@@ -11,6 +11,8 @@ import { IconVolume, IconVolumeOff } from "@tabler/icons-react";
  */
 
 const REDUCED_MOTION_QUERY = "(prefers-reduced-motion: reduce)";
+// Hero assets on Azure Blob (public `static` container) — kept out of git.
+const HERO_CDN = "https://fizzdragonblob.blob.core.windows.net/static";
 
 function usePrefersReducedMotion() {
   return useSyncExternalStore(
@@ -47,7 +49,7 @@ export function HeroVideo() {
     <div className="absolute inset-0">
       {reduce ? (
         // eslint-disable-next-line @next/next/no-img-element
-        <img src="/hero-poster.jpg" alt="" className="size-full object-cover" />
+        <img src={`${HERO_CDN}/hero-poster.jpg`} alt="" className="size-full object-cover" />
       ) : (
         <video
           autoPlay
@@ -55,17 +57,17 @@ export function HeroVideo() {
           loop
           playsInline
           preload="metadata"
-          poster="/hero-poster.jpg"
+          poster={`${HERO_CDN}/hero-poster.jpg`}
           aria-hidden="true"
           className="size-full object-cover"
         >
-          <source src="/hero.webm" type="video/webm" />
-          <source src="/hero.mp4" type="video/mp4" />
+          <source src={`${HERO_CDN}/hero.webm`} type="video/webm" />
+          <source src={`${HERO_CDN}/hero.mp4`} type="video/mp4" />
         </video>
       )}
 
       {/* Soundtrack — separate looping track, opt-in via the button. */}
-      <audio ref={audioRef} src="/hero-audio.mp3" loop preload="none" />
+      <audio ref={audioRef} src={`${HERO_CDN}/hero-audio.mp3`} loop preload="none" />
 
       {/* Legibility scrim — darker toward the left where the hero text sits. */}
       <div className="pointer-events-none absolute inset-0 bg-gradient-to-r from-black/85 via-black/55 to-black/20" />
