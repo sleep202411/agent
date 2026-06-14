@@ -214,7 +214,7 @@ export function StudioComposer({
 
   return (
     <div className="pointer-events-none fixed inset-x-4 bottom-5 z-40 lg:left-[104px]">
-      <div className="pointer-events-auto mx-auto w-full max-w-[760px] rounded-3xl bg-[oklch(0.22_0_0)]/95 p-4 shadow-2xl shadow-black/50 backdrop-blur-2xl">
+      <div className="pointer-events-auto mx-auto w-full max-w-[760px] rounded-3xl bg-[oklch(0.22_0_0_/_0.92)] p-4 shadow-[0_24px_70px_-12px_rgba(0,0,0,0.7),inset_0_1px_0_rgba(255,255,255,0.12)] backdrop-blur-2xl backdrop-saturate-150">
         {/* Prompt + fanned references */}
         <div className="relative">
           {showReferences && (

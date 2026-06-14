@@ -38,7 +38,16 @@ import { useComputeWalletBalance } from "@/app/_components/credits-badge";
  * Image studio: create-and-browse on one surface — bottom-docked composer
  * over a masonry history feed with in-feed progress placeholders.
  */
-export function ImageStudio() {
+export function ImageStudio({
+  heading = "Generation history",
+  subheading = "Your image generations in this workspace",
+  showFeed = true,
+}: {
+  heading?: string;
+  subheading?: string;
+  /** Hide the generation feed to render only the create composer (e.g. home). */
+  showFeed?: boolean;
+} = {}) {
   const { data: catalog } = useAiCatalog();
   const feed = useGenerationFeed("image", "fizzstudio-image-studio");
   const { data: wallet } = useComputeWalletBalance();
@@ -177,63 +186,63 @@ export function ImageStudio() {
 
   return (
     <>
-      <section className="mt-6 pb-56">
-        <div className="flex items-baseline justify-between">
-          <h2 className="text-sm font-medium text-white/80">Generation history</h2>
-          <p className="text-xs text-muted-foreground">
-            {feed.hasActiveJobs
-              ? "Live — updating while jobs run"
-              : "Your image generations in this workspace"}
-          </p>
-        </div>
+      {showFeed && (
+        <section className="mt-6 pb-56">
+          <div className="flex items-baseline justify-between">
+            <h2 className="text-sm font-medium text-white/80">{heading}</h2>
+            <p className="text-xs text-muted-foreground">
+              {feed.hasActiveJobs ? "Live — updating while jobs run" : subheading}
+            </p>
+          </div>
 
-        <div className="mt-4">
-          {feed.historyLoading && feed.jobs.length === 0 ? (
-            <FeedLoadingState />
-          ) : feed.jobs.length === 0 ? (
-            <FeedEmptyState
-              message="No image jobs yet"
-              hint="Write a prompt and create an image. Queue, progress, and results appear here."
-            />
-          ) : (
-            <Masonry>
-              {feed.jobs.map((job) => {
-                if (job.status === "done" && job.outputs.length > 0) {
-                  return job.outputs
-                    .filter((output) => output.type === "image")
-                    .map((output, index) => (
-                      <ImageResultTile
-                        key={`${job.localId}:${index}`}
+          <div className="mt-4">
+            {feed.historyLoading && feed.jobs.length === 0 ? (
+              <FeedLoadingState />
+            ) : feed.jobs.length === 0 ? (
+              <FeedEmptyState
+                message="No image jobs yet"
+                hint="Write a prompt and create an image. Queue, progress, and results appear here."
+              />
+            ) : (
+              <Masonry>
+                {feed.jobs.map((job) => {
+                  if (job.status === "done" && job.outputs.length > 0) {
+                    return job.outputs
+                      .filter((output) => output.type === "image")
+                      .map((output, index) => (
+                        <ImageResultTile
+                          key={`${job.localId}:${index}`}
+                          job={job}
+                          output={output}
+                          index={index}
+                          total={job.outputs.length}
+                          onOpen={() => openLightbox(`${job.localId}:${index}`)}
+                        />
+                      ));
+                  }
+                  const ratio = aspectRatioFromInput(job.input, "1 / 1");
+                  if (isFailed(job)) {
+                    return (
+                      <FailedTile
+                        key={job.localId}
                         job={job}
-                        output={output}
-                        index={index}
-                        total={job.outputs.length}
-                        onOpen={() => openLightbox(`${job.localId}:${index}`)}
+                        ratio={ratio}
+                        onRetry={() =>
+                          void feed.retry(
+                            job,
+                            model ? { schemaVersion: model.schemaVersion } : undefined
+                          )
+                        }
                       />
-                    ));
-                }
-                const ratio = aspectRatioFromInput(job.input, "1 / 1");
-                if (isFailed(job)) {
-                  return (
-                    <FailedTile
-                      key={job.localId}
-                      job={job}
-                      ratio={ratio}
-                      onRetry={() =>
-                        void feed.retry(
-                          job,
-                          model ? { schemaVersion: model.schemaVersion } : undefined
-                        )
-                      }
-                    />
-                  );
-                }
-                return <PendingTile key={job.localId} job={job} ratio={ratio} />;
-              })}
-            </Masonry>
-          )}
-        </div>
-      </section>
+                    );
+                  }
+                  return <PendingTile key={job.localId} job={job} ratio={ratio} />;
+                })}
+              </Masonry>
+            )}
+          </div>
+        </section>
+      )}
 
       <StudioComposer
         modality="image"
