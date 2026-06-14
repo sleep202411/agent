@@ -1955,7 +1955,7 @@
     "subtitle": "AI 原生電影工作室的故事、訪談與公告。",
     "subscribePlaceholder": "輸入你的電郵",
     "subscribe": "訂閱",
-    "subscribeSocialProof": "已有 120 萬 + 資深觀眾、投資人、創作者、院校等機構訂閱。",
+    "subscribeSocialProof": "已有 {total} 萬 + 資深觀眾、投資人、創作者、院校等機構訂閱。",
     "tSubscribed": "訂閱成功！我們會把更新發送到 {email}。",
     "tInvalidEmail": "請輸入有效的電郵",
     "recent": "最新文章",
@@ -4993,11 +4993,11 @@
   "home": {
     "hero": {
       "statusPill": "Happy Horse · 現已上線",
-      "headlineLine1": "故事從這裡開始。",
-      "headlineLine2": "團隊把它做出來。",
-      "subtitle": "工具幫你做，夥伴助你成，觀眾已經在等。",
-      "primaryCta": "故事開啟",
-      "secondaryCta": "加入創作"
+      "headlineLine1": "全宇宙最精彩的",
+      "headlineLine2": "AI故事劇集",
+      "subtitle": "集結全球各路創作高手，融匯歷史、文學、漫畫、哲學、英雄與傳說，打造風靡全球的走心爆款——超越模版，後勁極大。",
+      "primaryCta": "開始觀看",
+      "secondaryCta": "開始創作"
     },
     "madeWithFizz": {
       "eyebrow": "用 FizzDragon 製作",

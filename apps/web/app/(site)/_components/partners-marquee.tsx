@@ -2,7 +2,7 @@
 
 /**
  * Homepage "Trusted by" / "Featured in" partner-logo wall — patterned
- * after the shadcnblocks `logos24` block: two opposing-direction
+ * after the shadcnblocks `logos24` block: three opposing-direction
  * marquee lanes, hover-pause, gradient-mask edge fades.
  *
  * Logo files live at `public/logos/<slug>.svg|png`. Drop new files in
@@ -131,13 +131,12 @@ const PARTNERS: Partner[] = [
 export function PartnersMarquee() {
   const t = useTranslations("home");
 
-  // Split the 29-item list into two roughly-equal lanes so each
-  // marquee row carries about half the logos. Even-indexed → top,
-  // odd-indexed → bottom — interleaving keeps grouping density
-  // similar between rows even though the source list is grouped
-  // by category.
-  const lanes: Partner[][] = [[], []];
-  PARTNERS.forEach((p, i) => lanes[i % 2]!.push(p));
+  // Split the list into three roughly-equal lanes so each marquee row
+  // carries about a third of the logos. Round-robin by index keeps
+  // grouping density similar between rows even though the source list
+  // is grouped by category.
+  const lanes: Partner[][] = [[], [], []];
+  PARTNERS.forEach((p, i) => lanes[i % 3]!.push(p));
 
   return (
     <section className="relative border-t border-border/40 py-32">
@@ -166,6 +165,7 @@ export function PartnersMarquee() {
       >
         <MarqueeRow partners={lanes[0]!} duration={60} reverse={false} />
         <MarqueeRow partners={lanes[1]!} duration={75} reverse={true} />
+        <MarqueeRow partners={lanes[2]!} duration={68} reverse={false} />
       </div>
     </section>
   );
