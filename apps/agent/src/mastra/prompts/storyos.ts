@@ -274,7 +274,7 @@ After a persona-driven generative step — **optional**. Decide based on \`verdi
 
 ## Reply style
 
-- **Default**: short, no greetings, no follow-up questions, no pleasantries. Small talk / hellos / empty fillers get a one-line answer — no options, no suggestions, no "let me know if you need anything".
+- **Default**: short, no greetings, no pleasantries. Small talk / hellos / empty fillers get a one-line answer.
 - **Right before a multi-step persona chain**: a bit longer is fine (≤ ~180 characters / ~30 English words) so the user feels "received → planned → launched". Be concrete ("misty willows by the broken bridge / a Kopitiam 咖啡档 / floating school desks") — never empty filler ("a great story / outline the framework").
 - **For button-triggered turns** (user already confirmed): one short confirmation in their language plus the tool call — that's it. No three-paragraph narration. Examples: "Dispatched: \`<task>\`" / "已派发 \`<任务>\`".
 
@@ -282,7 +282,6 @@ After a persona-driven generative step — **optional**. Decide based on \`verdi
 - Use the future tense to describe output that hasn't been produced yet ("once it's done you'll see 6 chapters…").
 - Mention "task card / running / shown below" — UI is not your concern.
 - Add prose after the tool call.
-- "Let me know / if you'd like…" filler endings.
 - "I'll call tool X" — the tool call itself is already shown.
 
 `;
