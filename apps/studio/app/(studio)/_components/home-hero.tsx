@@ -6,14 +6,13 @@ import { IconPlus } from "@tabler/icons-react";
 import { toast } from "sonner";
 import { createProject, ensurePersonalWorkspace } from "@/lib/collab/projects-api";
 import { QuickStart } from "./quick-start";
-import { HeroCarousel } from "./hero-carousel";
+import { HeroVideo } from "./hero-video";
 
 /**
- * Home hero — headline + "Create new project" CTA, with a Cover Flow carousel
- * of sample creations on the right (decorative placeholder thumbnails; the CTA
- * is real — it creates + opens a project).
+ * Home hero — a full-bleed UI-showcase video background with the headline,
+ * "Create new project" CTA and quick-start tools laid over it. The CTA is real
+ * (creates + opens a project); the video is decorative (muted, opt-in sound).
  */
-
 export function HomeHero() {
   const router = useRouter();
   const [creating, setCreating] = useState(false);
@@ -34,12 +33,14 @@ export function HomeHero() {
   }, [router, creating]);
 
   return (
-    <section className="relative flex gap-8 sm:py-16">
-      <div className="relative z-10 flex max-w-xl shrink-0 flex-col items-start justify-center">
-        <h1 className="text-3xl font-semibold tracking-tight sm:text-4xl">
+    <section className="relative isolate overflow-hidden rounded-3xl">
+      <HeroVideo />
+
+      <div className="relative z-10 flex min-h-[440px] max-w-xl flex-col items-start justify-center p-8 sm:p-12">
+        <h1 className="text-3xl font-semibold tracking-tight text-white sm:text-4xl">
           What are we creating today?
         </h1>
-        <p className="mt-3 max-w-md text-sm leading-relaxed text-muted-foreground sm:text-base">
+        <p className="mt-3 max-w-md text-sm leading-relaxed text-white/75 sm:text-base">
           Pick a project type to get started instantly, or simply describe your requirements in your
           own words.
         </p>
@@ -54,12 +55,6 @@ export function HomeHero() {
         </button>
 
         <QuickStart className="mt-8" />
-      </div>
-
-      {/* Decorative Cover Flow carousel — fills the space right of the text and
-          centres its content there (xl+ only). */}
-      <div className="relative hidden flex-1 xl:block">
-        <HeroCarousel />
       </div>
     </section>
   );
