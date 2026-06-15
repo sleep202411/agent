@@ -32,11 +32,11 @@ import {
 import {
   createProject,
   deleteProject,
-  ensurePersonalWorkspace,
   listProjects,
   renameProject,
   type ProjectRef,
 } from "@/lib/collab/projects-api";
+import { useWorkspace } from "@/app/_components/workspace-context";
 
 function timeAgo(input: string | number): string {
   const ms = typeof input === "number" ? input : Date.parse(input);
@@ -51,35 +51,44 @@ function timeAgo(input: string | number): string {
 
 export function CanvasProjectsGrid() {
   const router = useRouter();
-  const [workspaceId, setWorkspaceId] = useState<string | null>(null);
+  const { activeWorkspace } = useWorkspace();
+  const workspaceId = activeWorkspace?.id ?? null;
   const [projects, setProjects] = useState<ProjectRef[] | null>(null);
   const [renaming, setRenaming] = useState<ProjectRef | null>(null);
   const [renameValue, setRenameValue] = useState("");
   const [deleting, setDeleting] = useState<ProjectRef | null>(null);
 
   const refresh = useCallback(async () => {
-    const workspace = await ensurePersonalWorkspace();
-    setWorkspaceId(workspace.id);
-    setProjects(await listProjects(workspace.id));
-  }, []);
+    if (!workspaceId) return;
+    setProjects(await listProjects(workspaceId));
+  }, [workspaceId]);
 
+  // Re-scope when the active workspace changes (switch teams → switch grid).
+  // setState is deferred via queueMicrotask so it isn't called synchronously in
+  // the effect body (cascading-render lint), matching the surface's prior pattern.
   useEffect(() => {
+    if (!workspaceId) return;
     let cancelled = false;
     queueMicrotask(() => {
       if (cancelled) return;
-      void refresh().catch(() => {
-        if (!cancelled) setProjects([]);
-      });
+      setProjects(null);
+      void listProjects(workspaceId)
+        .then((rows) => {
+          if (!cancelled) setProjects(rows);
+        })
+        .catch(() => {
+          if (!cancelled) setProjects([]);
+        });
     });
     return () => {
       cancelled = true;
     };
-  }, [refresh]);
+  }, [workspaceId]);
 
   const onCreate = useCallback(async () => {
+    if (!workspaceId) return;
     try {
-      const ws = workspaceId ?? (await ensurePersonalWorkspace()).id;
-      const project = await createProject(ws, { name: "Untitled canvas" });
+      const project = await createProject(workspaceId, { name: "Untitled canvas" });
       router.push(`/project/${project.id}`);
     } catch {
       toast.error("Couldn't create the canvas");

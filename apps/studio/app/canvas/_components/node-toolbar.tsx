@@ -4,6 +4,7 @@ import { useCallback } from "react";
 import { NodeToolbar, Position, useReactFlow } from "@xyflow/react";
 import { IconTrash } from "@tabler/icons-react";
 import { cn } from "@/lib/utils";
+import { useCanvasGraphContext } from "@/lib/collab/canvas-graph-context";
 
 /** Floating panel surface for the dock and node toolbars — sits clearly above
  *  the canvas (lighter than the canvas bg) with a frosted blur. */
@@ -52,14 +53,17 @@ export function CanvasNodeToolbar({
   children?: React.ReactNode;
 }) {
   const { deleteElements } = useReactFlow();
+  const { canEdit } = useCanvasGraphContext();
 
   const onDelete = useCallback(() => {
     void deleteElements({ nodes: [{ id: nodeId }] });
   }, [deleteElements, nodeId]);
 
+  // Viewers never get node actions (delete + any children) — the graph mutators
+  // are no-ops for them anyway, but hide the affordance entirely.
   return (
     <NodeToolbar
-      isVisible={visible}
+      isVisible={visible && canEdit}
       position={Position.Top}
       offset={10}
       className={cn("flex items-center gap-0.5 rounded-full p-1", FLOATING_PANEL)}

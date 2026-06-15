@@ -16,6 +16,6 @@ import { DocumentsService } from './documents.service';
     DocumentCompactionService,
     DocumentAutosaveService,
   ],
-  exports: [DocumentsService],
+  exports: [DocumentsService, DocumentsGateway],
 })
 export class DocumentsModule {}

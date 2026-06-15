@@ -349,13 +349,13 @@ function cursorColor(seed: string): string {
   return `hsl(${hash % 360} 70% 60%)`;
 }
 
-function CanvasInner({ projectId }: { projectId: string }) {
+function CanvasInner({ projectId, canEdit }: { projectId: string; canEdit: boolean }) {
   const { data: catalog } = useAiCatalog();
   const { user } = useAuth();
   const canvasUser = useMemo(() => toCanvasUser(user), [user]);
   const { documentId, document: canvasDocRef, status: docStatus } = useCanvasDocument(projectId);
   const { doc, awareness, provider, status: connStatus } = useCanvasDoc(documentId, canvasUser);
-  const graph = useCanvasGraph(doc, awareness);
+  const graph = useCanvasGraph(doc, awareness, canEdit);
   const {
     nodes,
     edges,
@@ -997,7 +997,9 @@ function CanvasInner({ projectId }: { projectId: string }) {
             onConnect={onConnect}
             onConnectStart={onConnectStart}
             onConnectEnd={onConnectEnd}
-            edgesReconnectable
+            nodesDraggable={canEdit}
+            nodesConnectable={canEdit}
+            edgesReconnectable={canEdit}
             onReconnectStart={onReconnectStart}
             onReconnect={onReconnect}
             onReconnectEnd={onReconnectEnd}
@@ -1019,7 +1021,7 @@ function CanvasInner({ projectId }: { projectId: string }) {
             zoomOnScroll={false}
             zoomOnPinch
             zoomOnDoubleClick={false}
-            deleteKeyCode={["Backspace", "Delete"]}
+            deleteKeyCode={canEdit ? ["Backspace", "Delete"] : null}
             onPaneClick={() => {
               if (Date.now() - lastConnectEndAt.current < 250) return;
               setAddMenu(null);
@@ -1070,19 +1072,21 @@ function CanvasInner({ projectId }: { projectId: string }) {
                 {connStatus === "offline" ? "Offline" : "Connecting…"}
               </span>
             )}
-            <button
-              type="button"
-              aria-label="Version history"
-              onClick={() => setHistoryOpen((open) => !open)}
-              className={cn(
-                "flex size-9 items-center justify-center rounded-full shadow-md backdrop-blur-xl transition-colors",
-                historyOpen
-                  ? "bg-accent text-white"
-                  : "bg-popover/90 text-white/80 hover:bg-accent hover:text-white"
-              )}
-            >
-              <IconHistory className="size-4" stroke={1.8} />
-            </button>
+            {canEdit && (
+              <button
+                type="button"
+                aria-label="Version history"
+                onClick={() => setHistoryOpen((open) => !open)}
+                className={cn(
+                  "flex size-9 items-center justify-center rounded-full shadow-md backdrop-blur-xl transition-colors",
+                  historyOpen
+                    ? "bg-accent text-white"
+                    : "bg-popover/90 text-white/80 hover:bg-accent hover:text-white"
+                )}
+              >
+                <IconHistory className="size-4" stroke={1.8} />
+              </button>
+            )}
             <CollabAvatars awareness={awareness} localClientId={doc?.clientID} />
             <CreditsBadge className="flex h-9 items-center gap-1.5 rounded-full bg-popover/90 px-3.5 text-sm font-medium tabular-nums shadow-md backdrop-blur-xl" />
           </div>
@@ -1102,29 +1106,31 @@ function CanvasInner({ projectId }: { projectId: string }) {
             minimapOpen={minimapOpen}
             onToggleMinimap={() => setMinimapOpen((v) => !v)}
           />
-          <NodeDock onAdd={addNodeFromDock} />
+          {canEdit && <NodeDock onAdd={addNodeFromDock} />}
 
           {/* Undo / redo (Ctrl+Z / Ctrl+Shift+Z). */}
-          <div className="absolute bottom-4 left-4 z-20 flex items-center gap-0.5 rounded-full bg-popover/90 p-1 shadow-md backdrop-blur-xl">
-            <button
-              type="button"
-              aria-label="Undo"
-              disabled={!canUndo}
-              onClick={() => undo()}
-              className="flex size-8 items-center justify-center rounded-full text-white/70 transition-colors hover:bg-white/[0.08] hover:text-white disabled:opacity-30 disabled:hover:bg-transparent"
-            >
-              <IconArrowBackUp className="size-4" stroke={1.8} />
-            </button>
-            <button
-              type="button"
-              aria-label="Redo"
-              disabled={!canRedo}
-              onClick={() => redo()}
-              className="flex size-8 items-center justify-center rounded-full text-white/70 transition-colors hover:bg-white/[0.08] hover:text-white disabled:opacity-30 disabled:hover:bg-transparent"
-            >
-              <IconArrowForwardUp className="size-4" stroke={1.8} />
-            </button>
-          </div>
+          {canEdit && (
+            <div className="absolute bottom-4 left-4 z-20 flex items-center gap-0.5 rounded-full bg-popover/90 p-1 shadow-md backdrop-blur-xl">
+              <button
+                type="button"
+                aria-label="Undo"
+                disabled={!canUndo}
+                onClick={() => undo()}
+                className="flex size-8 items-center justify-center rounded-full text-white/70 transition-colors hover:bg-white/[0.08] hover:text-white disabled:opacity-30 disabled:hover:bg-transparent"
+              >
+                <IconArrowBackUp className="size-4" stroke={1.8} />
+              </button>
+              <button
+                type="button"
+                aria-label="Redo"
+                disabled={!canRedo}
+                onClick={() => redo()}
+                className="flex size-8 items-center justify-center rounded-full text-white/70 transition-colors hover:bg-white/[0.08] hover:text-white disabled:opacity-30 disabled:hover:bg-transparent"
+              >
+                <IconArrowForwardUp className="size-4" stroke={1.8} />
+              </button>
+            </div>
+          )}
 
           {/* Left rail (root-sidebar style) — opens the project's asset library. */}
           {!assetsOpen && (
@@ -1206,7 +1212,9 @@ function CanvasInner({ projectId }: { projectId: string }) {
           {docStatus !== "error" && nodes.length === 0 && !addMenu && (
             <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
               <p className="text-sm text-muted-foreground">
-                Double-click to add a node, or describe what to create below
+                {canEdit
+                  ? "Double-click to add a node, or describe what to create below"
+                  : "This canvas is empty."}
               </p>
             </div>
           )}
@@ -1216,10 +1224,16 @@ function CanvasInner({ projectId }: { projectId: string }) {
   );
 }
 
-export function CanvasView({ projectId }: { projectId: string }) {
+export function CanvasView({
+  projectId,
+  canEdit = true,
+}: {
+  projectId: string;
+  canEdit?: boolean;
+}) {
   return (
     <ReactFlowProvider>
-      <CanvasInner projectId={projectId} />
+      <CanvasInner projectId={projectId} canEdit={canEdit} />
     </ReactFlowProvider>
   );
 }

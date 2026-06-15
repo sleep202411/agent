@@ -3,12 +3,13 @@
 import { use, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { IconArrowLeft } from "@tabler/icons-react";
+import { IconArrowLeft, IconEye, IconUsers } from "@tabler/icons-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { ProjectProvider } from "@/app/project/_components/project-context";
+import { ShareDialog } from "@/app/_components/share-dialog";
 import { MODE_ORDER, getMode } from "@/app/project/_modes/registry";
-import { getProject, renameProject } from "@/lib/collab/projects-api";
+import { getProject, renameProject, type ProjectRole } from "@/lib/collab/projects-api";
 
 /**
  * Project workspace shell — owns the project identity + chrome (back, editable
@@ -30,13 +31,17 @@ export default function ProjectLayout({
   // text typed before it resolved; `committedRef` holds the last good name so an
   // empty entry or a failed rename reverts cleanly. The input never remounts.
   const [name, setName] = useState("");
+  const [role, setRole] = useState<ProjectRole | null>(null);
+  const [shareOpen, setShareOpen] = useState(false);
   const dirtyRef = useRef(false);
   const committedRef = useRef("");
   useEffect(() => {
     let cancelled = false;
     getProject(projectId)
       .then((project) => {
-        if (cancelled || dirtyRef.current) return;
+        if (cancelled) return;
+        setRole(project.role ?? null);
+        if (dirtyRef.current) return;
         committedRef.current = project.name;
         setName(project.name);
       })
@@ -48,7 +53,11 @@ export default function ProjectLayout({
     };
   }, [projectId]);
 
+  const canEdit = role == null ? true : role !== "viewer";
+  const canManage = role === "owner" || role === "admin";
+
   const commitName = (next: string) => {
+    if (!canEdit) return; // viewers can't rename (server rejects too)
     const trimmed = next.trim();
     if (!trimmed) {
       setName(committedRef.current); // reject empty; restore the last good name
@@ -69,7 +78,7 @@ export default function ProjectLayout({
   };
 
   return (
-    <ProjectProvider projectId={projectId}>
+    <ProjectProvider projectId={projectId} role={role}>
       <div className="relative h-dvh">
         {children}
 
@@ -86,7 +95,9 @@ export default function ProjectLayout({
             value={name}
             aria-label="Project name"
             placeholder="Untitled"
+            readOnly={!canEdit}
             onChange={(event) => {
+              if (!canEdit) return;
               dirtyRef.current = true;
               setName(event.target.value);
             }}
@@ -94,9 +105,38 @@ export default function ProjectLayout({
             onKeyDown={(event) => {
               if (event.key === "Enter") event.currentTarget.blur();
             }}
-            className="field-sizing-content h-9 min-w-[80px] max-w-[280px] rounded-full bg-popover/90 px-3.5 text-sm font-medium shadow-md backdrop-blur-xl outline-none transition-colors hover:bg-accent focus:bg-accent"
+            className="field-sizing-content h-9 min-w-[80px] max-w-[280px] rounded-full bg-popover/90 px-3.5 text-sm font-medium shadow-md backdrop-blur-xl outline-none transition-colors read-only:cursor-default read-only:hover:bg-popover/90 hover:bg-accent focus:bg-accent"
           />
         </div>
+
+        {/* Share + view-only state (top-right). */}
+        <div className="absolute top-4 right-4 z-30 flex items-center gap-2">
+          {role === "viewer" && (
+            <span className="flex h-9 items-center gap-1.5 rounded-full bg-popover/90 px-3.5 text-xs font-medium text-white/70 shadow-md backdrop-blur-xl">
+              <IconEye className="size-4" stroke={1.8} />
+              View only
+            </span>
+          )}
+          {canManage && (
+            <button
+              type="button"
+              onClick={() => setShareOpen(true)}
+              className="flex h-9 items-center gap-1.5 rounded-full bg-popover/90 px-3.5 text-sm font-medium shadow-md backdrop-blur-xl transition-colors hover:bg-accent"
+            >
+              <IconUsers className="size-4" stroke={1.8} />
+              Share
+            </button>
+          )}
+        </div>
+
+        {canManage && (
+          <ShareDialog
+            scope={{ kind: "project", id: projectId, name: name || "this project" }}
+            canManage={canManage}
+            open={shareOpen}
+            onOpenChange={setShareOpen}
+          />
+        )}
 
         {/* Mode switcher (top-center). */}
         <div className="absolute top-4 left-1/2 z-30 flex -translate-x-1/2 items-center gap-0.5 rounded-full bg-popover/90 p-1 shadow-md backdrop-blur-xl">

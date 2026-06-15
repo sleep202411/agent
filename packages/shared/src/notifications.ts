@@ -29,17 +29,25 @@ export const NOTIFICATION_TYPES = [
   "crew.episode.submission_rejected",
   "crew.episode.approved",
   "crew.episode.revenue_set",
+  // Sharing (studio team collaboration — workspace + project membership)
+  "workspace.member.added",
+  "workspace.member.removed",
+  "workspace.invite.received",
+  "project.member.added",
+  "project.member.removed",
+  "project.invite.received",
   // System (placeholder — wire as needed)
   "system.account.notice",
 ] as const;
 
 export type NotificationType = (typeof NOTIFICATION_TYPES)[number];
 
-/** Category prefix — used by inbox filter tabs ("All / Unread / Crew / System"). */
-export type NotificationCategory = "crew" | "system";
+/** Category prefix — used by inbox filter tabs ("All / Unread / Crew / Sharing / System"). */
+export type NotificationCategory = "crew" | "sharing" | "system";
 
 export function notificationCategory(type: string): NotificationCategory {
   if (type.startsWith("crew.")) return "crew";
+  if (type.startsWith("workspace.") || type.startsWith("project.")) return "sharing";
   return "system";
 }
 

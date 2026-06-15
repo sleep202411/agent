@@ -1,0 +1,341 @@
+/**
+ * Workspace invite links — create / list / revoke / accept. A link is a
+ * shareable bearer secret: only `sha256(token)` is stored (`tokenHash`); the
+ * raw token is returned exactly once at creation and never persisted. Anyone
+ * with the link can join the team at the link's role until it is revoked or
+ * expires (multi-use, the Figma/Notion "anyone with the link" model — distinct
+ * from the targeted add-by-account path in WorkspaceMembersService).
+ *
+ * Accept is idempotent per user: joining twice is a no-op (the partial-unique
+ * active-membership index + an existence check guard the race). Expiry is lazy
+ * (no sweeper) — a pending link past `expiresAt` reads as expired and is
+ * persisted as such on the next touch. Personal workspaces are never shareable.
+ */
+import {
+  BadRequestException,
+  ForbiddenException,
+  GoneException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
+import {
+  WorkspaceInviteStatus,
+  WorkspaceMemberRole,
+  WorkspaceMemberStatus,
+  WorkspaceStatus,
+  WorkspaceType,
+} from '@prisma/client';
+import type { AuthUser } from '../auth';
+import { PrismaService } from '../infra/db/db.module';
+import {
+  PlatformAuditLogService,
+  WorkspacePermissionService,
+} from '../workspaces';
+import type { CreateInviteInput, AssignableRole } from './dto';
+import { generateInviteToken } from './invite-token';
+import {
+  toWorkspaceInviteDTO,
+  type InvitePreviewDTO,
+  type ShareInviteDTO,
+} from './mappers';
+import { effectiveInviteStatus, isUniqueViolation } from './util';
+
+const ROLE_MAP: Record<AssignableRole, WorkspaceMemberRole> = {
+  admin: WorkspaceMemberRole.admin,
+  editor: WorkspaceMemberRole.editor,
+  viewer: WorkspaceMemberRole.viewer,
+};
+
+const MS_PER_DAY = 24 * 60 * 60 * 1000;
+
+@Injectable()
+export class WorkspaceInvitesService {
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly permissions: WorkspacePermissionService,
+    private readonly audit: PlatformAuditLogService,
+  ) {}
+
+  /** Create a shareable link. Returns the raw token once — caller builds the URL. */
+  async create(workspaceId: string, actor: AuthUser, input: CreateInviteInput) {
+    const workspace = await this.requireWorkspace(workspaceId);
+    await this.permissions.requireWorkspaceRole(
+      actor.userId,
+      workspaceId,
+      WorkspaceMemberRole.admin,
+    );
+    if (workspace.type === WorkspaceType.personal) {
+      throw new BadRequestException({
+        code: 'PERSONAL_WORKSPACE_NOT_SHAREABLE',
+        msg: 'Create a team workspace to invite members.',
+      });
+    }
+
+    const role = ROLE_MAP[input.role];
+    const { token, tokenHash } = generateInviteToken();
+    const expiresAt = new Date(Date.now() + input.expiresInDays * MS_PER_DAY);
+    const invite = await this.prisma.workspaceInvite.create({
+      data: {
+        workspaceId,
+        role,
+        tokenHash,
+        status: WorkspaceInviteStatus.pending,
+        invitedById: actor.userId,
+        expiresAt,
+      },
+    });
+    await this.audit.record({
+      workspaceId,
+      actorUserId: actor.userId,
+      action: 'workspace.invite.created',
+      entityType: 'workspace_invite',
+      entityId: invite.id,
+      after: { role, expiresAt: expiresAt.toISOString() },
+    });
+    return {
+      inviteId: invite.id,
+      token,
+      role: invite.role,
+      expiresAt: invite.expiresAt.toISOString(),
+    };
+  }
+
+  /** Admin view of active links (effective status, never the token). */
+  async list(workspaceId: string, actor: AuthUser): Promise<ShareInviteDTO[]> {
+    await this.permissions.requireWorkspaceRole(
+      actor.userId,
+      workspaceId,
+      WorkspaceMemberRole.admin,
+    );
+    const invites = await this.prisma.workspaceInvite.findMany({
+      where: { workspaceId, status: WorkspaceInviteStatus.pending },
+      orderBy: { createdAt: 'desc' },
+    });
+    return invites.map((i) => ({
+      ...toWorkspaceInviteDTO(i),
+      status: effectiveInviteStatus(i),
+    }));
+  }
+
+  async revoke(
+    workspaceId: string,
+    actor: AuthUser,
+    inviteId: string,
+  ): Promise<void> {
+    await this.permissions.requireWorkspaceRole(
+      actor.userId,
+      workspaceId,
+      WorkspaceMemberRole.admin,
+    );
+    const invite = await this.prisma.workspaceInvite.findFirst({
+      where: {
+        id: inviteId,
+        workspaceId,
+        status: WorkspaceInviteStatus.pending,
+      },
+    });
+    if (!invite) {
+      throw new NotFoundException({
+        code: 'INVITE_NOT_FOUND',
+        msg: 'Invite not found or already closed.',
+      });
+    }
+    await this.prisma.workspaceInvite.update({
+      where: { id: inviteId },
+      data: { status: WorkspaceInviteStatus.revoked, revokedAt: new Date() },
+    });
+    await this.audit.record({
+      workspaceId,
+      actorUserId: actor.userId,
+      action: 'workspace.invite.revoked',
+      entityType: 'workspace_invite',
+      entityId: inviteId,
+    });
+  }
+
+  /** Scope-agnostic resolver used by InvitesController (any status). */
+  findByHash(tokenHash: string) {
+    return this.prisma.workspaceInvite.findUnique({ where: { tokenHash } });
+  }
+
+  async preview(
+    invite: NonNullable<Awaited<ReturnType<this['findByHash']>>>,
+  ): Promise<InvitePreviewDTO> {
+    const workspace = await this.prisma.workspace.findFirst({
+      where: { id: invite.workspaceId, deletedAt: null },
+      select: { name: true },
+    });
+    return {
+      scope: 'workspace',
+      targetName: workspace?.name ?? 'a team',
+      role: invite.role,
+      status: effectiveInviteStatus(invite),
+      expiresAt: invite.expiresAt.toISOString(),
+    };
+  }
+
+  /** Join the workspace via the link. Idempotent per user; 410 if not usable. */
+  async accept(
+    invite: NonNullable<Awaited<ReturnType<this['findByHash']>>>,
+    user: AuthUser,
+  ): Promise<{ scope: 'workspace'; workspaceId: string; targetName: string }> {
+    const workspace = await this.requireWorkspace(invite.workspaceId);
+
+    // The caller's row may be stale (a revoke could have landed since lookup);
+    // re-read fresh, then re-validate under a row lock below.
+    const current = await this.prisma.workspaceInvite.findUnique({
+      where: { id: invite.id },
+    });
+    if (!current) {
+      throw new NotFoundException({
+        code: 'INVITE_NOT_FOUND',
+        msg: 'This invite link is invalid.',
+      });
+    }
+    await this.assertUsable(current);
+
+    let created = false;
+    try {
+      await this.prisma.$transaction(async (tx) => {
+        // Lock the invite row so a concurrent revoke/expiry cannot slip between
+        // the status check and the membership insert (TOCTOU).
+        const locked = await tx.$queryRaw<
+          { status: WorkspaceInviteStatus; expires_at: Date }[]
+        >`SELECT status, expires_at FROM workspace_invites WHERE id = ${invite.id}::uuid FOR UPDATE`;
+        const row = locked[0];
+        if (
+          !row ||
+          row.status !== WorkspaceInviteStatus.pending ||
+          row.expires_at.getTime() <= Date.now()
+        ) {
+          throw new GoneException({
+            code: 'INVITE_NOT_ACTIVE',
+            msg: 'This invite link is no longer active.',
+          });
+        }
+
+        const active = await tx.workspaceMember.findFirst({
+          where: {
+            workspaceId: invite.workspaceId,
+            userId: user.userId,
+            removedAt: null,
+          },
+          select: { id: true },
+        });
+        if (active) return; // already a member — idempotent no-op
+
+        // A previously-removed member must not silently rejoin via an open link
+        // (offboarding bypass); an admin re-adds them by account explicitly.
+        const removed = await tx.workspaceMember.findFirst({
+          where: {
+            workspaceId: invite.workspaceId,
+            userId: user.userId,
+            removedAt: { not: null },
+          },
+          select: { id: true },
+        });
+        if (removed) {
+          throw new ForbiddenException({
+            code: 'REMOVED_CANNOT_REJOIN',
+            msg: 'You were removed from this team. Ask an admin to re-invite you.',
+          });
+        }
+
+        await tx.workspaceMember.create({
+          data: {
+            workspaceId: invite.workspaceId,
+            userId: user.userId,
+            role: current.role,
+            status: WorkspaceMemberStatus.active,
+            seatAssigned: true,
+            invitedById: current.invitedById,
+            joinedAt: new Date(),
+          },
+        });
+        // Stamp last-accepted; the link stays pending (multi-use) until revoke/expiry.
+        await tx.workspaceInvite.update({
+          where: { id: invite.id },
+          data: { acceptedAt: new Date() },
+        });
+        created = true;
+      });
+    } catch (err) {
+      // Raced a concurrent accept by the same user — they're a member now.
+      if (!isUniqueViolation(err)) throw err;
+    }
+
+    // Record the accept regardless of whether this call created the row or
+    // raced/no-op'd, so concurrent accepts aren't a forensics gap.
+    await this.audit.record({
+      workspaceId: invite.workspaceId,
+      actorUserId: user.userId,
+      action: 'workspace.invite.accepted',
+      entityType: 'workspace_invite',
+      entityId: invite.id,
+      after: { userId: user.userId, role: current.role, created },
+    });
+
+    return {
+      scope: 'workspace',
+      workspaceId: invite.workspaceId,
+      targetName: workspace.name,
+    };
+  }
+
+  /**
+   * Fast-path 410 for a link that is already closed (revoked / expired /
+   * accepted), persisting lazy expiry. The locked re-check in accept() is the
+   * race-safe backstop; this avoids opening a transaction for the common case.
+   */
+  private async assertUsable(invite: {
+    id: string;
+    status: WorkspaceInviteStatus;
+    expiresAt: Date;
+  }): Promise<void> {
+    const status = effectiveInviteStatus(invite);
+    if (status === WorkspaceInviteStatus.revoked) {
+      throw new GoneException({
+        code: 'INVITE_REVOKED',
+        msg: 'This invite link has been revoked.',
+      });
+    }
+    if (status === 'expired') {
+      if (invite.status === WorkspaceInviteStatus.pending) {
+        await this.prisma.workspaceInvite
+          .update({
+            where: { id: invite.id },
+            data: { status: WorkspaceInviteStatus.expired },
+          })
+          .catch(() => undefined);
+      }
+      throw new GoneException({
+        code: 'INVITE_EXPIRED',
+        msg: 'This invite link has expired.',
+      });
+    }
+    if (status === WorkspaceInviteStatus.accepted) {
+      throw new GoneException({
+        code: 'INVITE_NOT_ACTIVE',
+        msg: 'This invite link is no longer active.',
+      });
+    }
+  }
+
+  private async requireWorkspace(workspaceId: string) {
+    const ws = await this.prisma.workspace.findFirst({
+      where: {
+        id: workspaceId,
+        deletedAt: null,
+        status: WorkspaceStatus.active,
+      },
+      select: { id: true, name: true, type: true },
+    });
+    if (!ws) {
+      throw new NotFoundException({
+        code: 'WORKSPACE_NOT_FOUND',
+        msg: 'Workspace not found.',
+      });
+    }
+    return ws;
+  }
+}

@@ -10,7 +10,7 @@ import { CanvasNodeToolbar } from "./node-toolbar";
 export type NoteNodeType = Node<{ text: string }, "note">;
 
 function NoteNodeComponent({ id, data, selected }: NodeProps<NoteNodeType>) {
-  const { patchNodeData } = useCanvasGraphContext();
+  const { patchNodeData, canEdit } = useCanvasGraphContext();
 
   return (
     <div className="relative w-60">
@@ -26,8 +26,9 @@ function NoteNodeComponent({ id, data, selected }: NodeProps<NoteNodeType>) {
         <textarea
           value={data.text}
           onChange={(event) => patchNodeData(id, { text: event.target.value })}
-          placeholder="Write a note…"
+          placeholder={canEdit ? "Write a note…" : ""}
           rows={4}
+          readOnly={!canEdit}
           className="nodrag block w-full resize-none bg-transparent text-sm outline-none placeholder:text-muted-foreground"
         />
       </div>

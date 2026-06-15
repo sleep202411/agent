@@ -26,6 +26,7 @@ import { RedisModule } from './infra/redis/redis.module';
 import { NotificationModule } from './notification';
 import { QuotaModule } from './quota/quota.module';
 import { SparkModule } from './spark/spark.module';
+import { SharingModule } from './sharing/sharing.module';
 import { UsersModule } from './users/users.module';
 import { WorkspacesModule } from './workspaces';
 
@@ -54,6 +55,7 @@ import { WorkspacesModule } from './workspaces';
     QuotaModule,
     UsersModule,
     WorkspacesModule,
+    SharingModule,
     BillingModule,
     LegacyPointsModule,
     IpCommerceModule,

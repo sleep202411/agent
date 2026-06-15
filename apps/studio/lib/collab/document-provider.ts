@@ -38,6 +38,15 @@ const BASE_RECONNECT_DELAY_MS = 1_000;
 const MAX_RECONNECT_DELAY_MS = 15_000;
 const DEFAULT_WS_PATH = "/aurora/ws/documents";
 
+/**
+ * Absolute WS base for local dev. Next.js dev `rewrites()` only proxy HTTP, NOT
+ * WebSocket upgrades, so the same-origin `/aurora/ws/documents` can't reach the
+ * backend through the dev server. Point this straight at the backend gateway
+ * (e.g. `ws://localhost:4399/ws/documents`). Unset in prod, where the ingress
+ * upgrades the same-origin WS — so prod behaviour is unchanged.
+ */
+const WS_ABSOLUTE_BASE = process.env.NEXT_PUBLIC_AURORA_WS_BASE;
+
 export type ConnectionStatus = "connecting" | "synced" | "offline";
 
 export interface DocumentProviderOptions {
@@ -45,7 +54,11 @@ export interface DocumentProviderOptions {
   rootSchema: RootSchema;
   /** Awareness identity (name / color / avatar) advertised to peers. */
   localUser?: Record<string, unknown>;
-  /** Override the WS path (defaults to same-origin `/aurora/ws/documents`). */
+  /**
+   * Override the WS endpoint. Defaults to same-origin `/aurora/ws/documents`.
+   * May be a relative path, or a full absolute `ws(s)://` URL (takes priority,
+   * for pointing at a backend that the dev proxy can't WS-upgrade to).
+   */
   wsPath?: string;
 }
 
@@ -57,6 +70,8 @@ export class DocumentProvider {
   private readonly idb: IndexeddbPersistence;
   private ws: WebSocket | null = null;
   private destroyed = false;
+  /** Set when the server revokes access — suppresses the reconnect loop. */
+  private accessRevoked = false;
   private hasSynced = false;
   private lastAckedSequence = 0;
   private reconnectAttempt = 0;
@@ -154,6 +169,8 @@ export class DocumentProvider {
       if (this.ws === socket) this.ws = null;
       if (this.destroyed) return;
       this.setStatus("offline");
+      // A revoked socket would only fail the next handshake — don't loop.
+      if (this.accessRevoked) return;
       this.scheduleReconnect();
     };
     socket.onerror = () => {
@@ -162,12 +179,25 @@ export class DocumentProvider {
   }
 
   private buildWsUrl(): string {
-    const path = this.options.wsPath ?? DEFAULT_WS_PATH;
-    const origin = window.location.origin.replace(/^http/, "ws");
     const params = new URLSearchParams({
       documentId: this.options.documentId,
       afterSequence: String(this.lastAckedSequence),
     });
+    // An absolute ws(s):// endpoint (explicit option, then env) wins — needed
+    // in local dev where the Next proxy can't upgrade a same-origin WS.
+    const explicit = this.options.wsPath;
+    const absolute =
+      explicit && /^wss?:\/\//.test(explicit)
+        ? explicit
+        : WS_ABSOLUTE_BASE && /^wss?:\/\//.test(WS_ABSOLUTE_BASE)
+          ? WS_ABSOLUTE_BASE
+          : null;
+    if (absolute) {
+      const sep = absolute.includes("?") ? "&" : "?";
+      return `${absolute}${sep}${params.toString()}`;
+    }
+    const path = explicit ?? DEFAULT_WS_PATH;
+    const origin = window.location.origin.replace(/^http/, "ws");
     return `${origin}${path}?${params.toString()}`;
   }
 
@@ -249,11 +279,17 @@ export class DocumentProvider {
       case "app_event":
         for (const listener of this.appEventListeners) listener(frame.data);
         break;
+      case "terminate":
+        // Access revoked (member removed) — stop reconnecting; the removal
+        // toast comes from the notifications channel.
+        if (frame.data.reason === "access_revoked" || frame.data.reason === "unauthorized") {
+          this.accessRevoked = true;
+        }
+        break;
       case "heartbeat":
       case "presence_state":
       case "presence_update":
       case "presence_left":
-      case "terminate":
       case "error":
         break;
     }

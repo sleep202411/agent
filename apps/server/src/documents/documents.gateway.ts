@@ -35,12 +35,14 @@ import {
   WebSocketServer,
 } from '@nestjs/websockets';
 import { Logger, OnModuleDestroy } from '@nestjs/common';
+import { ProjectMemberRole } from '@prisma/client';
 import Redis from 'ioredis';
 import type { IncomingMessage } from 'http';
 import type { RawData, Server, WebSocket } from 'ws';
 import type { AuthUser } from '../auth';
 import { AuthService } from '../auth/auth.service';
 import { newShortId } from '../common/id';
+import { WorkspacePermissionService } from '../workspaces';
 import {
   AppendDocumentOperationSchema,
   ListDocumentOperationsQuerySchema,
@@ -113,6 +115,13 @@ type RedisDocumentEvent =
       event: 'app_event';
       originSocketId?: string;
       data: unknown;
+    }
+  | {
+      // Access-revocation control signal (member removed). Every pod re-checks
+      // the named user's access to this document and closes their sockets iff
+      // access is genuinely gone — never broadcast to other clients.
+      event: 'revoke';
+      data: { userId: string };
     };
 
 @WebSocketGateway({ path: '/ws/documents' })
@@ -138,6 +147,7 @@ export class DocumentsGateway
   constructor(
     private readonly authService: AuthService,
     private readonly documents: DocumentsService,
+    private readonly permissions: WorkspacePermissionService,
   ) {}
 
   afterInit() {
@@ -163,6 +173,13 @@ export class DocumentsGateway
         parsed = JSON.parse(raw) as RedisDocumentEvent;
       } catch {
         this.logger.warn(`malformed payload on ${channel}`);
+        return;
+      }
+
+      // Access-revocation is a control signal, not a peer broadcast: re-check
+      // the user locally and close their sockets iff access is gone.
+      if (parsed.event === 'revoke') {
+        void this.handleRevoke(documentId, parsed.data.userId);
         return;
       }
 
@@ -358,6 +375,69 @@ export class DocumentsGateway
     }
   }
 
+  /**
+   * Force-disconnect a user from a set of documents after their membership was
+   * removed (reuses the document Redis fan-out so the kick reaches whichever
+   * pod holds their sockets). Each pod re-authorizes the user per document and
+   * closes only sockets whose access is genuinely gone — a no-op when the user
+   * still has access via the other layer (direct project grant vs. workspace
+   * fallback). Writes are already blocked server-side; this drops stale readers.
+   */
+  async revokeUserFromDocuments(
+    documentIds: string[],
+    userId: string,
+  ): Promise<void> {
+    if (documentIds.length === 0) return;
+    for (const documentId of documentIds) {
+      if (!this.redisPublisher) {
+        void this.handleRevoke(documentId, userId);
+        continue;
+      }
+      const payload = JSON.stringify({
+        event: 'revoke',
+        data: { userId },
+      } satisfies RedisDocumentEvent);
+      try {
+        await this.redisPublisher.publish(
+          `${REDIS_CHANNEL_PREFIX}${documentId}`,
+          payload,
+        );
+      } catch (err) {
+        this.logger.warn(
+          `redis publish (revoke) failed for document ${documentId}: ${
+            err instanceof Error ? err.message : String(err)
+          }`,
+        );
+        void this.handleRevoke(documentId, userId);
+      }
+    }
+  }
+
+  private async handleRevoke(documentId: string, userId: string) {
+    const subs = this.socketsByDocument.get(documentId);
+    if (!subs || subs.size === 0) return;
+    const targets = [...subs].filter((s) => s.__user?.userId === userId);
+    if (targets.length === 0) return;
+
+    let stillAllowed = true;
+    try {
+      await this.permissions.requireDocumentRole(
+        userId,
+        documentId,
+        ProjectMemberRole.viewer,
+      );
+    } catch {
+      stillAllowed = false;
+    }
+    if (stillAllowed) return;
+
+    for (const sock of targets)
+      this.close(sock, CLOSE_NORMAL, 'access_revoked');
+    this.logger.log(
+      `ws revoked userId=${userId} documentId=${documentId} sockets=${targets.length}`,
+    );
+  }
+
   private async handleClientFrame(client: TrackedSocket, raw: RawData) {
     const documentId = client.__documentId;
     const socketId = client.__socketId;
@@ -541,7 +621,10 @@ export class DocumentsGateway
     set.add(sock);
   }
 
-  private async publish(documentId: string, event: RedisDocumentEvent) {
+  private async publish(
+    documentId: string,
+    event: Exclude<RedisDocumentEvent, { event: 'revoke' }>,
+  ) {
     const payload = JSON.stringify(event);
     try {
       await this.redisPublisher.publish(
@@ -620,6 +703,20 @@ export class DocumentsGateway
 
   private async authenticateFromCookie(cookie: string | undefined) {
     if (process.env.AUTH_DISABLED === 'true') {
+      // Mirror the HTTP auth guard (auth.guard.ts): honor a real session
+      // cookie when present so the WS user matches the HTTP user (and thus
+      // the documents they own); only fall back to the dev user when there
+      // is no/invalid cookie. Without this, HTTP authenticates as the real
+      // logged-in user but the WS is always `dev`, so every document the
+      // real user owns is Forbidden on connect (canvas stuck "Offline").
+      if (cookie) {
+        try {
+          const user = await this.authService.validateToken(cookie);
+          if (user) return user;
+        } catch {
+          /* fall through to the dev user */
+        }
+      }
       return {
         userId: 'dev',
         userName: 'dev',

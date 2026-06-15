@@ -43,7 +43,7 @@ function applyTextDiff(ytext: Y.Text, oldStr: string, next: string, origin: unkn
  * (Rich text + @mentions are deferred; this is the text-mode foundation.)
  */
 export function BriefEditor() {
-  const { projectId } = useProjectContext();
+  const { projectId, canEdit } = useProjectContext();
   const { user } = useAuth();
   const collabUser = useMemo(() => toCollabUser(user), [user]);
   const { documentId, status: docStatus } = useModeDocument(projectId, "brief");
@@ -71,6 +71,7 @@ export function BriefEditor() {
   }, [doc]);
 
   const onChange = (next: string) => {
+    if (!canEdit) return; // viewers are read-only (server rejects writes too)
     const ytext = ytextRef.current;
     // Diff against `value` (what the user sees), NOT ytext.toString() — the
     // Y.Text may already hold a remote edit not yet rendered, and diffing
@@ -96,7 +97,8 @@ export function BriefEditor() {
         <textarea
           value={value}
           onChange={(event) => onChange(event.target.value)}
-          placeholder="Write the brief…"
+          placeholder={canEdit ? "Write the brief…" : ""}
+          readOnly={!canEdit}
           disabled={!doc}
           className="h-full w-full resize-none bg-transparent text-[15px] leading-relaxed text-white/90 outline-none placeholder:text-muted-foreground"
         />

@@ -132,7 +132,7 @@ function GenerationCard({
   dragging,
   modality,
 }: NodeProps<GenerationNodeType> & { modality: GenerationModality }) {
-  const { patchNodeData } = useCanvasGraphContext();
+  const { patchNodeData, canEdit } = useCanvasGraphContext();
   const { data: catalog } = useAiCatalog();
   const { submit, cancel } = useGeneration();
   const createPanorama = useCreatePanorama();
@@ -355,7 +355,7 @@ function GenerationCard({
       {/* Card-specific composer — slides up below the card while selected.
           Outer wrapper animates in; inner is counter-scaled by 1/zoom so it
           stays a constant, readable screen size. */}
-      {selected && !dragging && !isPanorama && (
+      {canEdit && selected && !dragging && !isPanorama && (
         <div className="absolute top-full left-1/2 z-10 mt-3 duration-200 animate-in fade-in-0 slide-in-from-bottom-3">
           <div
             className="nodrag w-[600px] rounded-3xl bg-white/[0.05] p-4 backdrop-blur-3xl backdrop-saturate-200 shadow-[0_24px_80px_rgba(0,0,0,0.5),inset_0_1px_0_rgba(255,255,255,0.16)]"

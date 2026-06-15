@@ -9,11 +9,26 @@ import { api } from "@/lib/api";
  * envelope unwrapped by `api`).
  */
 
+export type WorkspaceRole = "owner" | "admin" | "billing" | "editor" | "viewer";
+
 export interface WorkspaceRef {
   id: string;
   name: string;
+  type: "personal" | "team";
+  /** The current user's role in this workspace. */
+  role?: WorkspaceRole;
+  /** Team icon URL (preset or uploaded); null falls back to a letter avatar. */
+  avatarUrl?: string | null;
   defaultProjectId: string | null;
 }
+
+export interface CreateTeamWorkspaceInput {
+  name: string;
+  description?: string;
+  avatarUrl?: string;
+}
+
+export type ProjectRole = "owner" | "admin" | "editor" | "viewer";
 
 export interface ProjectRef {
   id: string;
@@ -21,6 +36,8 @@ export interface ProjectRef {
   name: string;
   status: "active" | "archived";
   visibility: "private" | "workspace" | "public";
+  /** The caller's effective role (present on getProject; gates the UI). */
+  role?: ProjectRole;
   updatedAt: string;
 }
 
@@ -50,6 +67,36 @@ export interface CreateProjectInput {
 export async function ensurePersonalWorkspace(): Promise<WorkspaceRef> {
   const data = await api.post<{ workspace: WorkspaceRef }>("/aurora/workspaces/personal/ensure");
   return data.workspace;
+}
+
+/** Every workspace the user belongs to (personal + teams), with their role. */
+export async function listWorkspaces(): Promise<WorkspaceRef[]> {
+  const data = await api.get<{ workspaces: WorkspaceRef[] }>("/aurora/workspaces");
+  return data.workspaces;
+}
+
+/** Create a shared team workspace (the user becomes its owner). */
+export async function createTeamWorkspace(input: CreateTeamWorkspaceInput): Promise<WorkspaceRef> {
+  const data = await api.post<{ workspace: WorkspaceRef }>("/aurora/workspaces/team", {
+    data: input,
+  });
+  return data.workspace;
+}
+
+/** Rename / edit a workspace (team rename, etc.). Returns the updated ref. */
+export async function updateWorkspace(
+  workspaceId: string,
+  input: { name?: string; description?: string | null }
+): Promise<WorkspaceRef> {
+  const data = await api.patch<{ workspace: WorkspaceRef }>(`/aurora/workspaces/${workspaceId}`, {
+    data: input,
+  });
+  return data.workspace;
+}
+
+/** Soft-delete a team workspace (owner only). */
+export async function deleteWorkspace(workspaceId: string): Promise<void> {
+  await api.delete(`/aurora/workspaces/${workspaceId}`, { data: {} });
 }
 
 export async function listProjects(workspaceId: string): Promise<ProjectRef[]> {

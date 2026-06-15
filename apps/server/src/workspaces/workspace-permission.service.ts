@@ -32,6 +32,23 @@ const PROJECT_ROLE_RANK: Record<ProjectMemberRole, number> = {
   [ProjectMemberRole.viewer]: 10,
 };
 
+/**
+ * Maps a workspace role onto the effective project role it grants via the
+ * `requireProjectRole` fallback (by the rank gates that fallback applies):
+ * admin-capable (>=admin) → admin, edit-capable (>=editor, incl. billing) →
+ * editor, else viewer.
+ */
+const WORKSPACE_TO_PROJECT_ROLE: Record<
+  WorkspaceMemberRole,
+  ProjectMemberRole
+> = {
+  [WorkspaceMemberRole.owner]: ProjectMemberRole.owner,
+  [WorkspaceMemberRole.admin]: ProjectMemberRole.admin,
+  [WorkspaceMemberRole.billing]: ProjectMemberRole.editor,
+  [WorkspaceMemberRole.editor]: ProjectMemberRole.editor,
+  [WorkspaceMemberRole.viewer]: ProjectMemberRole.viewer,
+};
+
 @Injectable()
 export class WorkspacePermissionService {
   constructor(private readonly prisma: PrismaService) {}
@@ -116,6 +133,40 @@ export class WorkspacePermissionService {
       requiredWorkspaceRole,
     );
     return project;
+  }
+
+  /**
+   * The caller's effective ProjectMemberRole for a project: their direct
+   * ProjectMember role if any, else their WorkspaceMember role mapped onto the
+   * project ladder (the same fallback `requireProjectRole` grants by). Returns
+   * null when the user has neither. Read-only — surfaced to clients so they can
+   * gate (e.g. viewer read-only); the server remains the source of truth.
+   */
+  async resolveEffectiveProjectRole(
+    userId: string,
+    project: PlatformProject,
+  ): Promise<ProjectMemberRole | null> {
+    const projectMember = await this.prisma.projectMember.findFirst({
+      where: {
+        projectId: project.id,
+        userId,
+        status: ProjectMemberStatus.active,
+        removedAt: null,
+      },
+    });
+    if (projectMember) return projectMember.role;
+
+    const workspaceMember = await this.prisma.workspaceMember.findFirst({
+      where: {
+        workspaceId: project.workspaceId,
+        userId,
+        status: WorkspaceMemberStatus.active,
+        removedAt: null,
+        workspace: { status: WorkspaceStatus.active, deletedAt: null },
+      },
+    });
+    if (!workspaceMember) return null;
+    return WORKSPACE_TO_PROJECT_ROLE[workspaceMember.role];
   }
 
   async requireDocumentRole(
