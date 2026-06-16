@@ -47,12 +47,15 @@ import { useCanvasGraph } from "@/lib/collab/use-canvas-graph";
 import { CanvasGraphProvider } from "@/lib/collab/canvas-graph-context";
 import type { CanvasEdgeShape, CanvasNodeShape } from "@/lib/collab/canvas-doc";
 import { CollabAvatars, CollabCursors } from "./collab-presence";
-import { CanvasComments } from "./canvas-comments";
+import { CommentsLayer, CommentsProvider } from "./canvas-comments";
 import { CanvasHistory } from "./canvas-history";
 import { cn } from "@/lib/utils";
 import { CreditsBadge } from "@/app/_components/credits-badge";
 import { AssetLibrary, ASSET_DRAG_MIME } from "./asset-library";
 import { AddNodeMenu, type AddNodeAction } from "./add-node-menu";
+import { CanvasEmptyState } from "./canvas-empty-state";
+import { useApplyPreset } from "@/app/canvas/_lib/use-apply-preset";
+import { WORKFLOW_PRESETS } from "@/app/canvas/_lib/workflow-presets";
 import { ToolbarButton, FLOATING_PANEL } from "./node-toolbar";
 import { CanvasConnectionLine } from "./connection-line";
 import { GradientEdge } from "./gradient-edge";
@@ -68,7 +71,7 @@ import {
 } from "./generation-card";
 import { useAiCatalog } from "@/app/canvas/_lib/use-ai-catalog";
 import { CanvasGenerationProvider } from "@/app/canvas/_lib/use-canvas-generation";
-import { defaultMode, referenceFieldsForMode } from "@/app/canvas/_lib/generation-api";
+import { routeReferenceField as routeReferenceFieldFor } from "@/app/canvas/_lib/reference-routing";
 import type { CardReference, CardReferences } from "./reference-stack";
 
 export type CanvasNode = ImageNodeType | PanoramaNodeType | NoteNodeType | GenerationNodeType;
@@ -254,7 +257,7 @@ function ZoomControls({
   const toggleClass = (active: boolean) => cn(controlClass, active && "bg-white/[0.12] text-white");
 
   return (
-    <div className="absolute right-4 bottom-4 z-20 flex items-center gap-0.5 rounded-full bg-popover/90 p-1 shadow-md backdrop-blur-xl">
+    <div className="absolute bottom-4 left-4 z-20 flex h-[42px] items-center gap-0.5 rounded-full bg-popover/90 px-2 shadow-md backdrop-blur-xl">
       <button type="button" aria-label="Tidy canvas" className={controlClass} onClick={onTidy}>
         <IconApps className="size-4" stroke={1.8} />
       </button>
@@ -315,12 +318,17 @@ function NodeDock({ onAdd }: { onAdd: (action: AddNodeAction) => void }) {
   return (
     <div
       className={cn(
-        "absolute bottom-5 left-1/2 z-20 flex -translate-x-1/2 items-center gap-0.5 rounded-2xl p-1.5",
+        "absolute bottom-5 left-1/2 z-20 flex h-[48px] -translate-x-1/2 items-center gap-1 rounded-2xl px-2.5",
         FLOATING_PANEL
       )}
     >
       {DOCK_ITEMS.map(({ action, label, Icon }) => (
-        <ToolbarButton key={action} label={label} onClick={() => onAdd(action)}>
+        <ToolbarButton
+          key={action}
+          label={label}
+          className="size-10 text-white"
+          onClick={() => onAdd(action)}
+        >
           <Icon className="size-5" stroke={1.7} />
         </ToolbarButton>
       ))}
@@ -458,18 +466,7 @@ function CanvasInner({ projectId, canEdit }: { projectId: string; canEdit: boole
       if (!node || (node.type !== "prompt" && node.type !== "video")) return undefined;
       const data = node.data as GenerationNodeData;
       const model = catalog?.models.find((m) => m.id === data.modelId);
-      if (!model) return undefined;
-      const currentMode = data.mode ?? defaultMode(model);
-      const refs = data.references ?? {};
-      const inCurrent = referenceFieldsForMode(model, currentMode).find(
-        (f) => f.kind === kind && (refs[f.field]?.length ?? 0) < f.maxItems
-      );
-      if (inCurrent) return { field: inCurrent.field };
-      for (const m of model.generationModes ?? []) {
-        const f = referenceFieldsForMode(model, m).find((ff) => ff.kind === kind);
-        if (f) return { mode: m, field: f.field };
-      }
-      return undefined;
+      return routeReferenceFieldFor(model, data.mode, data.references, kind);
     },
     [getNode, catalog]
   );
@@ -976,250 +973,267 @@ function CanvasInner({ projectId, canEdit }: { projectId: string; canEdit: boole
     [screenToFlowPosition]
   );
 
+  // Empty-state "Click to add a node": open the add menu near the canvas center.
+  const applyPreset = useApplyPreset(graph);
+  const openAddMenuAtCenter = useCallback(() => {
+    const rect = containerRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    setAddMenu({
+      left: Math.max(8, Math.min(rect.width / 2 - 194, rect.width - 388)),
+      top: Math.max(8, Math.min(rect.height / 2 - 120, rect.height - 520)),
+      flow: screenToFlowPosition({ x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 }),
+    });
+  }, [screenToFlowPosition]);
+
   return (
     <CanvasGraphProvider value={graph}>
-      <CanvasGenerationProvider catalog={catalog}>
-        <div
-          ref={containerRef}
-          className="relative h-full"
-          onDragOver={onDragOver}
-          onDrop={onDrop}
-          onDoubleClick={onDoubleClick}
-          onPointerMove={onPointerMove}
-          onPointerLeave={onPointerLeave}
-        >
-          <ReactFlow
-            nodes={nodes}
-            edges={edges}
-            onNodesChange={onNodesChange}
-            onEdgesChange={onEdgesChange}
-            onEdgesDelete={onEdgesDelete}
-            onConnect={onConnect}
-            onConnectStart={onConnectStart}
-            onConnectEnd={onConnectEnd}
-            nodesDraggable={canEdit}
-            nodesConnectable={canEdit}
-            edgesReconnectable={canEdit}
-            onReconnectStart={onReconnectStart}
-            onReconnect={onReconnect}
-            onReconnectEnd={onReconnectEnd}
-            isValidConnection={isValidConnection}
-            connectionRadius={38}
-            nodeTypes={nodeTypes}
-            edgeTypes={edgeTypes}
-            connectionLineComponent={CanvasConnectionLine}
-            colorMode="dark"
-            minZoom={MIN_ZOOM}
-            maxZoom={MAX_ZOOM}
-            snapToGrid={snapToGrid}
-            snapGrid={[GRID_SIZE, GRID_SIZE]}
-            selectionOnDrag
-            selectionMode={SelectionMode.Partial}
-            panOnDrag={[1, 2]}
-            panOnScroll
-            panOnScrollMode={PanOnScrollMode.Free}
-            zoomOnScroll={false}
-            zoomOnPinch
-            zoomOnDoubleClick={false}
-            deleteKeyCode={canEdit ? ["Backspace", "Delete"] : null}
-            onPaneClick={() => {
-              if (Date.now() - lastConnectEndAt.current < 250) return;
-              setAddMenu(null);
-            }}
-            onMoveStart={() => setAddMenu(null)}
-            className="!bg-[oklch(0.105_0_0)]"
+      <CommentsProvider documentId={documentId} provider={provider} currentUserId={canvasUser?.id}>
+        <CanvasGenerationProvider catalog={catalog}>
+          <div
+            ref={containerRef}
+            className="relative h-full"
+            onDragOver={onDragOver}
+            onDrop={onDrop}
+            onDoubleClick={onDoubleClick}
+            onPointerMove={onPointerMove}
+            onPointerLeave={onPointerLeave}
           >
-            <Background
-              variant={BackgroundVariant.Dots}
-              gap={24}
-              size={1.5}
-              color="rgb(255 255 255 / 0.07)"
-            />
-            <CollabCursors awareness={awareness} localClientId={doc?.clientID} />
-            <CanvasComments
-              documentId={documentId}
-              provider={provider}
+            <ReactFlow
               nodes={nodes}
-              currentUserId={canvasUser?.id}
-            />
-            {minimapOpen && (
-              <MiniMap
-                pannable
-                zoomable
-                position="bottom-right"
-                className="!right-4 !bottom-[68px] !m-0 overflow-hidden rounded-xl border border-white/10 shadow-md"
-                bgColor="rgb(17 17 17)"
-                maskColor="rgba(0,0,0,0.35)"
-                maskStrokeColor="rgba(255,255,255,0.35)"
-                maskStrokeWidth={2}
-                nodeColor="rgba(255,255,255,0.5)"
-                nodeStrokeWidth={0}
-              />
-            )}
-          </ReactFlow>
-
-          {/* Back / project name / mode switcher live in the project shell;
-            this cluster holds the canvas-specific + presence controls. */}
-          <div className="absolute top-4 right-4 z-20 flex items-center gap-2">
-            {connStatus !== "synced" && (
-              <span className="flex h-9 items-center gap-1.5 rounded-full bg-popover/90 px-3 text-xs font-medium text-white/70 shadow-md backdrop-blur-xl">
-                <span
-                  className={cn(
-                    "size-1.5 rounded-full",
-                    connStatus === "offline" ? "bg-red-400" : "animate-pulse bg-white/60"
-                  )}
-                />
-                {connStatus === "offline" ? "Offline" : "Connecting…"}
-              </span>
-            )}
-            {canEdit && (
-              <button
-                type="button"
-                aria-label="Version history"
-                onClick={() => setHistoryOpen((open) => !open)}
-                className={cn(
-                  "flex size-9 items-center justify-center rounded-full shadow-md backdrop-blur-xl transition-colors",
-                  historyOpen
-                    ? "bg-accent text-white"
-                    : "bg-popover/90 text-white/80 hover:bg-accent hover:text-white"
-                )}
-              >
-                <IconHistory className="size-4" stroke={1.8} />
-              </button>
-            )}
-            <CollabAvatars awareness={awareness} localClientId={doc?.clientID} />
-            <CreditsBadge className="flex h-9 items-center gap-1.5 rounded-full bg-popover/90 px-3.5 text-sm font-medium tabular-nums shadow-md backdrop-blur-xl" />
-          </div>
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept="image/*"
-            multiple
-            hidden
-            onChange={onPickFiles}
-          />
-
-          <ZoomControls
-            onTidy={tidyCanvas}
-            snapToGrid={snapToGrid}
-            onToggleSnap={() => setSnapToGrid((v) => !v)}
-            minimapOpen={minimapOpen}
-            onToggleMinimap={() => setMinimapOpen((v) => !v)}
-          />
-          {canEdit && <NodeDock onAdd={addNodeFromDock} />}
-
-          {/* Undo / redo (Ctrl+Z / Ctrl+Shift+Z). */}
-          {canEdit && (
-            <div className="absolute bottom-4 left-4 z-20 flex items-center gap-0.5 rounded-full bg-popover/90 p-1 shadow-md backdrop-blur-xl">
-              <button
-                type="button"
-                aria-label="Undo"
-                disabled={!canUndo}
-                onClick={() => undo()}
-                className="flex size-8 items-center justify-center rounded-full text-white/70 transition-colors hover:bg-white/[0.08] hover:text-white disabled:opacity-30 disabled:hover:bg-transparent"
-              >
-                <IconArrowBackUp className="size-4" stroke={1.8} />
-              </button>
-              <button
-                type="button"
-                aria-label="Redo"
-                disabled={!canRedo}
-                onClick={() => redo()}
-                className="flex size-8 items-center justify-center rounded-full text-white/70 transition-colors hover:bg-white/[0.08] hover:text-white disabled:opacity-30 disabled:hover:bg-transparent"
-              >
-                <IconArrowForwardUp className="size-4" stroke={1.8} />
-              </button>
-            </div>
-          )}
-
-          {/* Left rail (root-sidebar style) — opens the project's asset library. */}
-          {!assetsOpen && (
-            <div className="absolute top-1/2 left-4 z-20 flex -translate-y-1/2 flex-col gap-1 rounded-2xl bg-popover/90 p-1.5 shadow-md backdrop-blur-xl">
-              <button
-                type="button"
-                aria-label="Open assets"
-                onClick={() => setAssetsOpen(true)}
-                className="flex size-9 items-center justify-center rounded-xl text-white/70 transition-colors hover:bg-white/[0.08] hover:text-white"
-              >
-                <IconLayoutGrid className="size-5" stroke={1.7} />
-              </button>
-            </div>
-          )}
-          <AssetLibrary open={assetsOpen} onClose={() => setAssetsOpen(false)} />
-
-          {historyOpen && (
-            <CanvasHistory
-              documentId={documentId}
-              provider={provider}
-              doc={doc}
-              restoreFromUpdate={restoreFromUpdate}
-              currentVersionId={canvasDocRef?.currentVersionId}
-              onClose={() => setHistoryOpen(false)}
-            />
-          )}
-
-          {/* Persistent pending wire from the source handle to the open menu, so the
-          dragged connection stays visually anchored while choosing a node. */}
-          {addMenu?.wire && (
-            <svg className="pointer-events-none absolute inset-0 z-20 size-full overflow-visible">
-              <defs>
-                <linearGradient
-                  id="pending-wire-grad"
-                  gradientUnits="userSpaceOnUse"
-                  x1={addMenu.wire.x1}
-                  y1={addMenu.wire.y1}
-                  x2={addMenu.wire.x2}
-                  y2={addMenu.wire.y2}
-                >
-                  <stop offset="0%" stopColor={addMenu.wire.color} stopOpacity={1} />
-                  <stop offset="55%" stopColor={addMenu.wire.color} stopOpacity={0.5} />
-                  <stop offset="100%" stopColor={addMenu.wire.color} stopOpacity={0.05} />
-                </linearGradient>
-              </defs>
-              <path
-                d={`M ${addMenu.wire.x1} ${addMenu.wire.y1} C ${
-                  addMenu.wire.x1 + (addMenu.wire.x2 - addMenu.wire.x1) * 0.5
-                } ${addMenu.wire.y1}, ${
-                  addMenu.wire.x2 - (addMenu.wire.x2 - addMenu.wire.x1) * 0.5
-                } ${addMenu.wire.y2}, ${addMenu.wire.x2} ${addMenu.wire.y2}`}
-                fill="none"
-                stroke="url(#pending-wire-grad)"
-                strokeWidth={2}
-                strokeLinecap="round"
-              />
-            </svg>
-          )}
-
-          {addMenu && (
-            <AddNodeMenu
-              left={addMenu.left}
-              top={addMenu.top}
-              onAction={(action: AddNodeAction) => {
-                addNodeOfType(action, addMenu.flow, addMenu.pending);
+              edges={edges}
+              onNodesChange={onNodesChange}
+              onEdgesChange={onEdgesChange}
+              onEdgesDelete={onEdgesDelete}
+              onConnect={onConnect}
+              onConnectStart={onConnectStart}
+              onConnectEnd={onConnectEnd}
+              nodesDraggable={canEdit}
+              nodesConnectable={canEdit}
+              edgesReconnectable={canEdit}
+              onReconnectStart={onReconnectStart}
+              onReconnect={onReconnect}
+              onReconnectEnd={onReconnectEnd}
+              isValidConnection={isValidConnection}
+              connectionRadius={38}
+              nodeTypes={nodeTypes}
+              edgeTypes={edgeTypes}
+              connectionLineComponent={CanvasConnectionLine}
+              colorMode="dark"
+              proOptions={{ hideAttribution: true }}
+              minZoom={MIN_ZOOM}
+              maxZoom={MAX_ZOOM}
+              snapToGrid={snapToGrid}
+              snapGrid={[GRID_SIZE, GRID_SIZE]}
+              selectionOnDrag
+              selectionMode={SelectionMode.Partial}
+              panOnDrag={[1, 2]}
+              panOnScroll
+              panOnScrollMode={PanOnScrollMode.Free}
+              zoomOnScroll={false}
+              zoomOnPinch
+              zoomOnDoubleClick={false}
+              deleteKeyCode={canEdit ? ["Backspace", "Delete"] : null}
+              onPaneClick={() => {
+                if (Date.now() - lastConnectEndAt.current < 250) return;
                 setAddMenu(null);
               }}
+              onMoveStart={() => setAddMenu(null)}
+              style={{ backgroundColor: "#0a0a0a" }}
+            >
+              <Background
+                variant={BackgroundVariant.Dots}
+                gap={20}
+                size={1.5}
+                bgColor="#0a0a0a"
+                color="rgb(255 255 255 / 0.12)"
+              />
+              <CollabCursors awareness={awareness} localClientId={doc?.clientID} />
+              <CommentsLayer nodes={nodes} />
+              {minimapOpen && (
+                <MiniMap
+                  pannable
+                  zoomable
+                  position="bottom-right"
+                  className="!right-4 !bottom-[68px] !m-0 overflow-hidden rounded-xl border border-white/10 shadow-md"
+                  bgColor="rgb(17 17 17)"
+                  maskColor="rgba(0,0,0,0.35)"
+                  maskStrokeColor="rgba(255,255,255,0.35)"
+                  maskStrokeWidth={2}
+                  nodeColor="rgba(255,255,255,0.5)"
+                  nodeStrokeWidth={0}
+                />
+              )}
+            </ReactFlow>
+
+            {/* Back / project name / mode switcher live in the project shell;
+            this cluster holds the canvas-specific + presence controls. */}
+            <div className="absolute top-4 right-4 z-20 flex items-center gap-2">
+              {connStatus !== "synced" && (
+                <span className="flex h-9 items-center gap-1.5 rounded-full bg-popover/90 px-3 text-xs font-medium text-white/70 shadow-md backdrop-blur-xl">
+                  <span
+                    className={cn(
+                      "size-1.5 rounded-full",
+                      connStatus === "offline" ? "bg-red-400" : "animate-pulse bg-white/60"
+                    )}
+                  />
+                  {connStatus === "offline" ? "Offline" : "Connecting…"}
+                </span>
+              )}
+              {canEdit && (
+                <button
+                  type="button"
+                  aria-label="Version history"
+                  onClick={() => setHistoryOpen((open) => !open)}
+                  className={cn(
+                    "flex size-9 items-center justify-center rounded-full shadow-md backdrop-blur-xl transition-colors",
+                    historyOpen
+                      ? "bg-accent text-white"
+                      : "bg-popover/90 text-white/80 hover:bg-accent hover:text-white"
+                  )}
+                >
+                  <IconHistory className="size-4" stroke={1.8} />
+                </button>
+              )}
+              <CollabAvatars awareness={awareness} localClientId={doc?.clientID} />
+              <CreditsBadge className="flex h-9 items-center gap-1.5 rounded-full bg-popover/90 px-3.5 text-sm font-medium tabular-nums shadow-md backdrop-blur-xl" />
+            </div>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/*"
+              multiple
+              hidden
+              onChange={onPickFiles}
             />
-          )}
 
-          {docStatus === "error" && (
-            <div className="absolute inset-0 z-30 flex items-center justify-center bg-background/60 backdrop-blur-sm">
-              <p className="text-sm text-muted-foreground">
-                Couldn&apos;t open this canvas — check the link or your access.
-              </p>
-            </div>
-          )}
+            <ZoomControls
+              onTidy={tidyCanvas}
+              snapToGrid={snapToGrid}
+              onToggleSnap={() => setSnapToGrid((v) => !v)}
+              minimapOpen={minimapOpen}
+              onToggleMinimap={() => setMinimapOpen((v) => !v)}
+            />
+            {canEdit && <NodeDock onAdd={addNodeFromDock} />}
 
-          {docStatus !== "error" && nodes.length === 0 && !addMenu && (
-            <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
-              <p className="text-sm text-muted-foreground">
-                {canEdit
-                  ? "Double-click to add a node, or describe what to create below"
-                  : "This canvas is empty."}
-              </p>
-            </div>
-          )}
-        </div>
-      </CanvasGenerationProvider>
+            {/* Undo / redo (Ctrl+Z / Ctrl+Shift+Z). */}
+            {canEdit && (
+              <div className="absolute right-4 bottom-4 z-20 flex items-center gap-0.5 rounded-full bg-popover/90 p-1 shadow-md backdrop-blur-xl">
+                <button
+                  type="button"
+                  aria-label="Undo"
+                  disabled={!canUndo}
+                  onClick={() => undo()}
+                  className="flex size-8 items-center justify-center rounded-full text-white/70 transition-colors hover:bg-white/[0.08] hover:text-white disabled:opacity-30 disabled:hover:bg-transparent"
+                >
+                  <IconArrowBackUp className="size-4" stroke={1.8} />
+                </button>
+                <button
+                  type="button"
+                  aria-label="Redo"
+                  disabled={!canRedo}
+                  onClick={() => redo()}
+                  className="flex size-8 items-center justify-center rounded-full text-white/70 transition-colors hover:bg-white/[0.08] hover:text-white disabled:opacity-30 disabled:hover:bg-transparent"
+                >
+                  <IconArrowForwardUp className="size-4" stroke={1.8} />
+                </button>
+              </div>
+            )}
+
+            {/* Left rail (root-sidebar style) — opens the project's asset library. */}
+            {!assetsOpen && (
+              <div className="absolute top-1/2 left-4 z-20 flex -translate-y-1/2 flex-col gap-1 rounded-2xl bg-popover/90 p-1.5 shadow-md backdrop-blur-xl">
+                <button
+                  type="button"
+                  aria-label="Open assets"
+                  onClick={() => setAssetsOpen(true)}
+                  className="flex size-9 items-center justify-center rounded-xl text-white/70 transition-colors hover:bg-white/[0.08] hover:text-white"
+                >
+                  <IconLayoutGrid className="size-5" stroke={1.7} />
+                </button>
+              </div>
+            )}
+            <AssetLibrary open={assetsOpen} onClose={() => setAssetsOpen(false)} />
+
+            {historyOpen && (
+              <CanvasHistory
+                documentId={documentId}
+                provider={provider}
+                doc={doc}
+                restoreFromUpdate={restoreFromUpdate}
+                currentVersionId={canvasDocRef?.currentVersionId}
+                onClose={() => setHistoryOpen(false)}
+              />
+            )}
+
+            {/* Persistent pending wire from the source handle to the open menu, so the
+          dragged connection stays visually anchored while choosing a node. */}
+            {addMenu?.wire && (
+              <svg className="pointer-events-none absolute inset-0 z-20 size-full overflow-visible">
+                <defs>
+                  <linearGradient
+                    id="pending-wire-grad"
+                    gradientUnits="userSpaceOnUse"
+                    x1={addMenu.wire.x1}
+                    y1={addMenu.wire.y1}
+                    x2={addMenu.wire.x2}
+                    y2={addMenu.wire.y2}
+                  >
+                    <stop offset="0%" stopColor={addMenu.wire.color} stopOpacity={1} />
+                    <stop offset="55%" stopColor={addMenu.wire.color} stopOpacity={0.5} />
+                    <stop offset="100%" stopColor={addMenu.wire.color} stopOpacity={0.05} />
+                  </linearGradient>
+                </defs>
+                <path
+                  d={`M ${addMenu.wire.x1} ${addMenu.wire.y1} C ${
+                    addMenu.wire.x1 + (addMenu.wire.x2 - addMenu.wire.x1) * 0.5
+                  } ${addMenu.wire.y1}, ${
+                    addMenu.wire.x2 - (addMenu.wire.x2 - addMenu.wire.x1) * 0.5
+                  } ${addMenu.wire.y2}, ${addMenu.wire.x2} ${addMenu.wire.y2}`}
+                  fill="none"
+                  stroke="url(#pending-wire-grad)"
+                  strokeWidth={2}
+                  strokeLinecap="round"
+                />
+              </svg>
+            )}
+
+            {addMenu && (
+              <AddNodeMenu
+                left={addMenu.left}
+                top={addMenu.top}
+                onAction={(action: AddNodeAction) => {
+                  addNodeOfType(action, addMenu.flow, addMenu.pending);
+                  setAddMenu(null);
+                }}
+              />
+            )}
+
+            {docStatus === "error" && (
+              <div className="absolute inset-0 z-30 flex items-center justify-center bg-background/60 backdrop-blur-sm">
+                <p className="text-sm text-muted-foreground">
+                  Couldn&apos;t open this canvas — check the link or your access.
+                </p>
+              </div>
+            )}
+
+            {docStatus !== "error" &&
+              nodes.length === 0 &&
+              !addMenu &&
+              (canEdit ? (
+                <CanvasEmptyState
+                  presets={WORKFLOW_PRESETS}
+                  catalogReady={Boolean(catalog && catalog.models.length > 0)}
+                  onAddNode={openAddMenuAtCenter}
+                  onApplyPreset={applyPreset}
+                />
+              ) : (
+                <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
+                  <p className="text-sm text-muted-foreground">This canvas is empty.</p>
+                </div>
+              ))}
+          </div>
+        </CanvasGenerationProvider>
+      </CommentsProvider>
     </CanvasGraphProvider>
   );
 }

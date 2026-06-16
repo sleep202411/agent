@@ -9,6 +9,7 @@
     "lint": "eslint"
   },
   "dependencies": {
+    "@airwallex/components-sdk": "^1.32.0",
     "@azure/web-pubsub-client": "^1.0.4",
     "@repo/shared": "*",
     "@tabler/icons-react": "^3.44.0",

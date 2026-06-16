@@ -2,19 +2,13 @@
 
 import { useState } from "react";
 import { ViewportPortal, type Node } from "@xyflow/react";
-import { IconCheck, IconMessage, IconMessagePlus, IconSend, IconX } from "@tabler/icons-react";
+import { IconCheck, IconMessage, IconSend, IconX } from "@tabler/icons-react";
 import { cn } from "@/lib/utils";
 import { useDocumentComments } from "@/lib/collab/use-comments";
 import type { CommentThreadDto } from "@/lib/collab/comments-api";
 import type { DocumentProvider } from "@/lib/collab/document-provider";
 import { FLOATING_PANEL } from "./node-toolbar";
-
-interface CanvasCommentsProps {
-  documentId: string | null;
-  provider: DocumentProvider | null;
-  nodes: Node[];
-  currentUserId?: string;
-}
+import { CommentsContext, useComments, type CommentsContextValue } from "./comments-context";
 
 function relativeTime(iso: string): string {
   const seconds = Math.max(0, Math.floor((Date.now() - Date.parse(iso)) / 1000));
@@ -27,16 +21,22 @@ function relativeTime(iso: string): string {
 }
 
 /**
- * Per-node comments: a pin on every node that has an open thread (and a
- * "+comment" pin on the selected node), opening a thread panel with the
- * conversation, a reply box, and resolve. Real-time via {@link useDocumentComments}.
+ * Owns the per-document comment threads + which node's thread is open, and
+ * exposes them via context so the node action bar can open/add a comment
+ * (the "+comment" affordance lives in the toolbar now, not a floating pin).
+ * Render {@link CommentsLayer} inside ReactFlow for the pins + thread panel.
  */
-export function CanvasComments({
+export function CommentsProvider({
   documentId,
   provider,
-  nodes,
   currentUserId,
-}: CanvasCommentsProps) {
+  children,
+}: {
+  documentId: string | null;
+  provider: DocumentProvider | null;
+  currentUserId?: string;
+  children: React.ReactNode;
+}) {
   const { threads, createThread, reply, resolve } = useDocumentComments(documentId, provider);
   const [activeNodeId, setActiveNodeId] = useState<string | null>(null);
 
@@ -44,72 +44,76 @@ export function CanvasComments({
   const threadByNode = new Map<string, CommentThreadDto>();
   for (const thread of threads) {
     if (thread.status !== "open" || !thread.blockId) continue;
-    if (!threadByNode.has(thread.blockId)) {
-      threadByNode.set(thread.blockId, thread);
-    }
+    if (!threadByNode.has(thread.blockId)) threadByNode.set(thread.blockId, thread);
   }
 
-  const selected = nodes.filter((node) => node.selected);
-  const pinNodeIds = new Set<string>(threadByNode.keys());
-  if (selected.length === 1) pinNodeIds.add(selected[0].id);
-
-  const activeNode = activeNodeId ? (nodes.find((node) => node.id === activeNodeId) ?? null) : null;
-  const activeThread = activeNodeId ? (threadByNode.get(activeNodeId) ?? null) : null;
+  const value: CommentsContextValue = {
+    activeNodeId,
+    toggle: (nodeId) => setActiveNodeId((cur) => (cur === nodeId ? null : nodeId)),
+    close: () => setActiveNodeId(null),
+    threadByNode,
+    commentCount: (nodeId) => threadByNode.get(nodeId)?.comments.length ?? 0,
+  };
 
   return (
-    <>
-      <ViewportPortal>
-        {[...pinNodeIds].map((nodeId) => {
-          const node = nodes.find((n) => n.id === nodeId);
-          if (!node) return null;
-          const thread = threadByNode.get(nodeId);
-          const count = thread?.comments.length ?? 0;
-          const width = node.measured?.width ?? 0;
-          const isActive = nodeId === activeNodeId;
-          return (
-            <button
-              key={nodeId}
-              type="button"
-              onClick={() => setActiveNodeId(isActive ? null : nodeId)}
-              style={{
-                // Anchor just outside the node's top-right corner — clears the
-                // header's model chip, the mid-height handles, and the centered
-                // selection toolbar across every node type.
-                transform: `translate(${node.position.x + width + 8}px, ${node.position.y}px)`,
-              }}
-              className={cn(
-                "pointer-events-auto absolute top-0 left-0 z-[900] flex h-7 items-center gap-1 rounded-full px-2 text-xs font-medium shadow-md backdrop-blur-xl transition-colors",
-                count > 0
-                  ? "bg-popover/90 text-white hover:bg-accent"
-                  : "bg-popover/80 text-white/70 hover:bg-accent hover:text-white",
-                isActive && "bg-accent text-white"
-              )}
-            >
-              {count > 0 ? (
-                <>
-                  <IconMessage className="size-3.5" stroke={1.8} />
-                  <span className="tabular-nums">{count}</span>
-                </>
-              ) : (
-                <IconMessagePlus className="size-3.5" stroke={1.8} />
-              )}
-            </button>
-          );
-        })}
-      </ViewportPortal>
-
-      {activeNode && (
+    <CommentsContext.Provider value={value}>
+      {children}
+      {activeNodeId && (
         <ThreadPanel
-          key={activeNode.id}
-          thread={activeThread}
+          key={activeNodeId}
+          thread={threadByNode.get(activeNodeId) ?? null}
           currentUserId={currentUserId}
           onClose={() => setActiveNodeId(null)}
-          onCreate={(body) => createThread({ blockId: activeNode.id, body })}
-          onReply={(body) => (activeThread ? reply(activeThread.id, body) : Promise.resolve())}
-          onResolve={() => (activeThread ? resolve(activeThread.id) : Promise.resolve())}
+          onCreate={(body) => createThread({ blockId: activeNodeId, body })}
+          onReply={(body) => {
+            const thread = threadByNode.get(activeNodeId);
+            return thread ? reply(thread.id, body) : Promise.resolve();
+          }}
+          onResolve={() => {
+            const thread = threadByNode.get(activeNodeId);
+            return thread ? resolve(thread.id) : Promise.resolve();
+          }}
         />
       )}
-    </>
+    </CommentsContext.Provider>
+  );
+}
+
+/**
+ * Pins for nodes that have an open thread — rendered inside ReactFlow's
+ * viewport so they track pan/zoom. The "+comment" action for the selected node
+ * is in the node toolbar; a node's pin hides while it's selected so the two
+ * don't double up.
+ */
+export function CommentsLayer({ nodes }: { nodes: Node[] }) {
+  const { threadByNode, activeNodeId, toggle, commentCount } = useComments();
+  return (
+    <ViewportPortal>
+      {[...threadByNode.keys()].map((nodeId) => {
+        const node = nodes.find((n) => n.id === nodeId);
+        if (!node || node.selected) return null; // selected → toolbar handles it
+        const count = commentCount(nodeId);
+        const width = node.measured?.width ?? 0;
+        const isActive = nodeId === activeNodeId;
+        return (
+          <button
+            key={nodeId}
+            type="button"
+            onClick={() => toggle(nodeId)}
+            style={{
+              transform: `translate(${node.position.x + width + 8}px, ${node.position.y}px)`,
+            }}
+            className={cn(
+              "pointer-events-auto absolute top-0 left-0 z-[900] flex h-7 items-center gap-1 rounded-full px-2 text-xs font-medium shadow-md backdrop-blur-xl transition-colors",
+              isActive ? "bg-accent text-white" : "bg-popover/90 text-white hover:bg-accent"
+            )}
+          >
+            <IconMessage className="size-3.5" stroke={1.8} />
+            <span className="tabular-nums">{count}</span>
+          </button>
+        );
+      })}
+    </ViewportPortal>
   );
 }
 
@@ -124,9 +128,9 @@ function ThreadPanel({
   thread: CommentThreadDto | null;
   currentUserId?: string;
   onClose: () => void;
-  onCreate: (body: string) => Promise<void>;
-  onReply: (body: string) => Promise<void>;
-  onResolve: () => Promise<void>;
+  onCreate: (body: string) => Promise<unknown>;
+  onReply: (body: string) => Promise<unknown>;
+  onResolve: () => Promise<unknown>;
 }) {
   const [draft, setDraft] = useState("");
   const [busy, setBusy] = useState(false);

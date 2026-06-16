@@ -6,6 +6,7 @@ import {
   IconAdjustments,
   IconAlertTriangle,
   IconArrowUp,
+  IconBolt,
   IconChevronDown,
   IconDownload,
   IconLoader2,
@@ -17,13 +18,14 @@ import {
 } from "@tabler/icons-react";
 import { cn } from "@/lib/utils";
 import { useDismiss } from "@/lib/use-dismiss";
-import { useAiCatalog } from "@/app/canvas/_lib/use-ai-catalog";
+import { useAiCatalog, usableModelsByModality } from "@/app/canvas/_lib/use-ai-catalog";
 import { useGeneration } from "@/app/canvas/_lib/use-canvas-generation";
 import { useCreatePanorama } from "@/app/canvas/_lib/use-panorama";
 import { useCanvasGraphContext } from "@/lib/collab/canvas-graph-context";
 import {
   defaultMode,
   defaultSettingsForModel,
+  estimateModelSellPoints,
   modeLabel,
   referenceFieldsForMode,
   type FizzAiModel,
@@ -132,8 +134,11 @@ function GenerationCard({
   dragging,
   modality,
 }: NodeProps<GenerationNodeType> & { modality: GenerationModality }) {
-  const { patchNodeData, canEdit } = useCanvasGraphContext();
+  const { patchNodeData, canEdit, nodes } = useCanvasGraphContext();
   const { data: catalog } = useAiCatalog();
+  // Composer is click-triggered: it opens for a sole selected node only, so a
+  // marquee / select-all doesn't pop every card's prompt at once.
+  const soleSelected = nodes.filter((n) => n.selected).length === 1;
   const { submit, cancel } = useGeneration();
   const createPanorama = useCreatePanorama();
   const autoSubmittedRef = useRef(false);
@@ -147,7 +152,7 @@ function GenerationCard({
   const descriptor = MODALITY[modality];
   const Icon = descriptor.icon;
   const generation = data.generation;
-  const settings = data.settings ?? {};
+  const settings = useMemo(() => data.settings ?? {}, [data.settings]);
   const busy =
     generation?.status === "submitting" ||
     generation?.status === "queued" ||
@@ -164,10 +169,33 @@ function GenerationCard({
     () => catalog?.models.find((m) => m.id === data.modelId),
     [catalog, data.modelId]
   );
-  const references = data.references ?? {};
+  const references = useMemo(() => data.references ?? {}, [data.references]);
   const mode = data.mode ?? defaultMode(model);
   const modes = model?.generationModes ?? [];
   const refFields = useMemo(() => referenceFieldsForMode(model, mode), [model, mode]);
+
+  // Live compute-point estimate for the current model + settings + wired/uploaded
+  // references — mirrors the model-settings panel and the standalone studio
+  // composer so the same run is priced identically everywhere. Null when the
+  // model has no pricing policy.
+  const cost = useMemo(() => {
+    if (!model) return null;
+    const referenceImageCount = refFields.reduce(
+      (n, ff) => n + (references[ff.field]?.length ?? 0),
+      0
+    );
+    return (
+      estimateModelSellPoints(model, {
+        numOutputs: Number(settings.numOutputs ?? settings.n ?? 1) || 1,
+        resolution: settings.resolution != null ? String(settings.resolution) : undefined,
+        quality: settings.quality != null ? String(settings.quality) : undefined,
+        duration: settings.duration != null ? String(settings.duration) : undefined,
+        durationSeconds:
+          typeof settings.durationSeconds === "number" ? settings.durationSeconds : undefined,
+        referenceImageCount: referenceImageCount || undefined,
+      })?.sellPoints ?? null
+    );
+  }, [model, settings, refFields, references]);
   const isPanorama =
     mode === "image_to_panorama" || /hunyuan|panorama|world/i.test(model?.id ?? "");
 
@@ -215,6 +243,22 @@ function GenerationCard({
       settings: { ...defaultSettingsForModel(selected), ...settings },
     });
 
+  // Default to the first usable model when none is picked yet, so a card is
+  // generation-ready without forcing a manual selection. Only the editor writes
+  // it (viewers are read-only); idempotent — the `data.modelId` guard stops it
+  // re-firing, and concurrent editors converge on the same default.
+  useEffect(() => {
+    if (data.modelId || !canEdit || !catalog) return;
+    const def = usableModelsByModality(catalog, modality)[0];
+    if (!def) return;
+    patchNodeData(id, {
+      modelId: def.id,
+      modelName: def.name,
+      mode: defaultMode(def),
+      settings: defaultSettingsForModel(def),
+    });
+  }, [data.modelId, canEdit, catalog, modality, id, patchNodeData]);
+
   const output = generation?.outputs?.[0];
   const onDownload = async () => {
     if (!output?.url) return;
@@ -256,37 +300,38 @@ function GenerationCard({
       </CanvasNodeToolbar>
       {pano && output && <PanoramaViewer src={output.url} onClose={() => setPano(false)} />}
 
-      {/* Header: node name left, model used right. */}
-      <div className="flex items-center justify-between px-1 pb-1.5 text-xs">
-        <span className="flex items-center gap-1.5 text-white/80">
-          <Icon className="size-3.5" stroke={1.8} />
-          {renaming ? (
-            <input
-              autoFocus
-              defaultValue={data.name ?? descriptor.label}
-              onBlur={(event) => {
-                patchNodeData(id, { name: event.target.value.trim() || descriptor.label });
-                setRenaming(false);
-              }}
-              onKeyDown={(event) => {
-                if (event.key === "Enter") event.currentTarget.blur();
-                else if (event.key === "Escape") setRenaming(false);
-              }}
-              className="nodrag w-28 bg-transparent text-white/80 outline-none"
-            />
-          ) : (
-            (data.name ?? descriptor.label)
-          )}
-        </span>
-        <span className="text-muted-foreground">{data.modelName ?? "Select model"}</span>
-      </div>
-
       <div
         className={cn(
           "w-[360px] overflow-hidden rounded-2xl bg-card",
           selected && "ring-2 ring-ring"
         )}
       >
+        {/* Header: node name left, model used right — a lighter frosted strip
+            distinct from the preview well below. */}
+        <div className="flex items-center justify-between gap-2 bg-white/[0.12] px-3 py-2 text-xs">
+          <span className="flex min-w-0 items-center gap-1.5 text-white/80">
+            <Icon className="size-3.5 shrink-0" stroke={1.8} />
+            {renaming ? (
+              <input
+                autoFocus
+                defaultValue={data.name ?? descriptor.label}
+                onBlur={(event) => {
+                  patchNodeData(id, { name: event.target.value.trim() || descriptor.label });
+                  setRenaming(false);
+                }}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") event.currentTarget.blur();
+                  else if (event.key === "Escape") setRenaming(false);
+                }}
+                className="nodrag w-28 bg-transparent text-white/80 outline-none"
+              />
+            ) : (
+              <span className="truncate">{data.name ?? descriptor.label}</span>
+            )}
+          </span>
+          <span className="shrink-0 text-muted-foreground">{data.modelName ?? "Select model"}</span>
+        </div>
+
         {/* Result display area — content-aware aspect ratio; shows the produced
             media or the live job state (queued / generating+ETA / failed). */}
         <div
@@ -355,7 +400,7 @@ function GenerationCard({
       {/* Card-specific composer — slides up below the card while selected.
           Outer wrapper animates in; inner is counter-scaled by 1/zoom so it
           stays a constant, readable screen size. */}
-      {canEdit && selected && !dragging && !isPanorama && (
+      {canEdit && selected && soleSelected && !dragging && !isPanorama && (
         <div className="absolute top-full left-1/2 z-10 mt-3 duration-200 animate-in fade-in-0 slide-in-from-bottom-3">
           <div
             className="nodrag w-[600px] rounded-3xl bg-white/[0.05] p-4 backdrop-blur-3xl backdrop-saturate-200 shadow-[0_24px_80px_rgba(0,0,0,0.5),inset_0_1px_0_rgba(255,255,255,0.16)]"
@@ -441,19 +486,28 @@ function GenerationCard({
                 )}
               </div>
 
-              <div className="flex-1" />
-              <button
-                type="button"
-                aria-label={busy ? "Cancel generation" : "Generate"}
-                onClick={() => (busy ? cancel(id) : submit(id))}
-                className="flex size-8 items-center justify-center rounded-full bg-white/[0.1] text-white/80 transition-colors hover:bg-white/[0.18] hover:text-white"
-              >
-                {busy ? (
-                  <IconX className="size-4" stroke={2} />
-                ) : (
-                  <IconArrowUp className="size-4" stroke={2} />
+              <div className="ml-auto flex items-center gap-3">
+                {cost != null && (
+                  <span className="flex items-center gap-1 text-xs text-muted-foreground tabular-nums">
+                    <IconBolt className="size-3.5" stroke={1.8} />
+                    {cost}
+                  </span>
                 )}
-              </button>
+                <button
+                  type="button"
+                  aria-label={busy ? "Cancel generation" : "Generate"}
+                  onClick={() => (busy ? cancel(id) : submit(id))}
+                  // Brand red as the hero CTA — sanctioned case-by-case accent
+                  // (DESIGN.md rule 3), applied locally, never a token.
+                  className="flex size-8 items-center justify-center rounded-full bg-[#E52227] text-white shadow-lg shadow-[#E52227]/25 transition-colors hover:bg-[#c91e22]"
+                >
+                  {busy ? (
+                    <IconX className="size-4" stroke={2} />
+                  ) : (
+                    <IconArrowUp className="size-4" stroke={2} />
+                  )}
+                </button>
+              </div>
             </div>
           </div>
         </div>

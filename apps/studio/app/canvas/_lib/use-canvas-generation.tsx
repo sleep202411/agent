@@ -1,12 +1,13 @@
 "use client";
 
-import { createContext, useCallback, useContext, useEffect, useMemo } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useReactFlow } from "@xyflow/react";
 import { toast } from "sonner";
 import type { CanvasAsset } from "@/lib/collab/canvas-doc";
 import { useCanvasGraphContext } from "@/lib/collab/canvas-graph-context";
 import { openAssetsRealtime } from "./assets-realtime";
+import { outputKindForType, routeReferenceField } from "./reference-routing";
 import { computeWalletBalanceQueryKey } from "@/app/_components/credits-badge";
 import {
   cancelFizzAiJob,
@@ -100,6 +101,12 @@ export function CanvasGenerationProvider({
   const { getNode, getNodes } = useReactFlow();
   const graph = useCanvasGraphContext();
   const queryClient = useQueryClient();
+  // Latest catalog without re-subscribing the realtime loop on catalog load
+  // (the completion back-fill reads it to resolve downstream models).
+  const catalogRef = useRef(catalog);
+  useEffect(() => {
+    catalogRef.current = catalog;
+  }, [catalog]);
 
   const patch = useCallback(
     (nodeId: string, generation: GenerationState) => graph.patchNodeData(nodeId, { generation }),
@@ -211,6 +218,46 @@ export function CanvasGenerationProvider({
             graph.patchNodeData(match.id, {
               generation: generationStateFromJob(job),
             });
+            // Back-fill downstream references. A card wired to this node BEFORE
+            // it had an output (a preset, or wire-then-generate) binds nothing at
+            // connect time. Now that an output exists, push its URL into every
+            // card wired from this node — mirroring onConnect's binding so the
+            // wire is functional, not just drawn.
+            const doneUrl =
+              generationStatusFromRaw(job.status) === "done" ? (out?.accessUrl ?? out?.url) : null;
+            const kind = outputKindForType(out?.type);
+            if (doneUrl && kind) {
+              const allNodes = getNodes();
+              for (const edge of graph.edges) {
+                if (edge.source !== match.id || !edge.target) continue;
+                const target = allNodes.find((n) => n.id === edge.target);
+                if (!target || (target.type !== "prompt" && target.type !== "video")) continue;
+                const edgeId = edge.id;
+                // Resolve model + field INSIDE the patch from the node's CURRENT
+                // data, so a card wired from multiple sources (or re-modelled
+                // meanwhile) routes against fresh state, not a stale snapshot.
+                // Mirrors onConnect (keeps existing refs; sets mode on a switch).
+                graph.patchNodeData(edge.target, (node) => {
+                  const tdata = node.data as GenNodeData;
+                  const model = catalogRef.current?.models.find((m) => m.id === tdata.modelId);
+                  const routed = routeReferenceField(model, tdata.mode, tdata.references, kind);
+                  if (!routed) return {};
+                  const refs = tdata.references ?? {};
+                  const list = (refs[routed.field] ?? []).filter((r) => r.edgeId !== edgeId);
+                  const patch: Record<string, unknown> = {
+                    references: {
+                      ...refs,
+                      [routed.field]: [
+                        ...list,
+                        { id: edgeId, edgeId, sourceNodeId: match.id, url: doneUrl, kind },
+                      ],
+                    },
+                  };
+                  if (routed.mode) patch.mode = routed.mode;
+                  return patch;
+                });
+              }
+            }
           }
         }
         // A finished job's outputs join the project's persistent asset library

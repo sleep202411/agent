@@ -2,9 +2,10 @@
 
 import { useCallback } from "react";
 import { NodeToolbar, Position, useReactFlow } from "@xyflow/react";
-import { IconTrash } from "@tabler/icons-react";
+import { IconMessage, IconMessagePlus, IconTrash } from "@tabler/icons-react";
 import { cn } from "@/lib/utils";
 import { useCanvasGraphContext } from "@/lib/collab/canvas-graph-context";
+import { useComments } from "./comments-context";
 
 /** Floating panel surface for the dock and node toolbars — sits clearly above
  *  the canvas (lighter than the canvas bg) with a frosted blur. */
@@ -15,11 +16,14 @@ export function ToolbarButton({
   label,
   onClick,
   variant = "default",
+  className,
   children,
 }: {
   label: string;
   onClick: () => void;
   variant?: "default" | "danger";
+  /** Override sizing (e.g. a larger dock button); merged over the size-8 default. */
+  className?: string;
   children: React.ReactNode;
 }) {
   return (
@@ -31,7 +35,8 @@ export function ToolbarButton({
         "group/tb relative flex size-8 items-center justify-center rounded-full transition-colors",
         variant === "danger"
           ? "text-white/70 hover:bg-red-500/15 hover:text-red-400"
-          : "text-white/70 hover:bg-white/[0.1] hover:text-white"
+          : "text-white/70 hover:bg-white/[0.1] hover:text-white",
+        className
       )}
     >
       {children}
@@ -42,7 +47,11 @@ export function ToolbarButton({
   );
 }
 
-/** Toolbar above a selected node: `children` actions, then a built-in Delete. */
+/**
+ * Actions bar above the single selected node: `children` actions + Delete
+ * (editor-only) and an always-available Comment. Shown only for a sole
+ * selection — a marquee / multi-select doesn't pop a bar on every node.
+ */
 export function CanvasNodeToolbar({
   nodeId,
   visible,
@@ -53,24 +62,34 @@ export function CanvasNodeToolbar({
   children?: React.ReactNode;
 }) {
   const { deleteElements } = useReactFlow();
-  const { canEdit } = useCanvasGraphContext();
+  const { canEdit, nodes } = useCanvasGraphContext();
+  const { toggle, commentCount } = useComments();
+  const soleSelected = nodes.filter((n) => n.selected).length === 1;
+  const count = commentCount(nodeId);
 
   const onDelete = useCallback(() => {
     void deleteElements({ nodes: [{ id: nodeId }] });
   }, [deleteElements, nodeId]);
 
-  // Viewers never get node actions (delete + any children) — the graph mutators
-  // are no-ops for them anyway, but hide the affordance entirely.
   return (
     <NodeToolbar
-      isVisible={visible && canEdit}
+      isVisible={visible && soleSelected}
       position={Position.Top}
       offset={10}
-      className={cn("flex items-center gap-0.5 rounded-full p-1", FLOATING_PANEL)}
+      className={cn("flex h-12 items-center gap-0.5 rounded-full px-2", FLOATING_PANEL)}
     >
-      {children}
-      <ToolbarButton label="Delete" variant="danger" onClick={onDelete}>
-        <IconTrash className="size-4" stroke={1.8} />
+      {canEdit && children}
+      {canEdit && (
+        <ToolbarButton label="Delete" variant="danger" onClick={onDelete}>
+          <IconTrash className="size-4" stroke={1.8} />
+        </ToolbarButton>
+      )}
+      <ToolbarButton label="Comment" onClick={() => toggle(nodeId)}>
+        {count > 0 ? (
+          <IconMessage className="size-4" stroke={1.8} />
+        ) : (
+          <IconMessagePlus className="size-4" stroke={1.8} />
+        )}
       </ToolbarButton>
     </NodeToolbar>
   );
