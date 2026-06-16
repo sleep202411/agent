@@ -42,6 +42,10 @@ function normalizeServiceRequest(
   request: Record<string, unknown>,
   rawInput: Record<string, unknown>,
 ): void {
+  if (config.service === 'video-synthesis') {
+    normalizeVideoRequest(request, rawInput);
+    return;
+  }
   if (
     config.service !== 'image-generation' &&
     config.service !== 'multimodal-generation'
@@ -74,6 +78,54 @@ function normalizeServiceRequest(
   if (parameters) {
     const size = providerSize(rawInput, config);
     if (size) parameters.size = size;
+  }
+}
+
+/**
+ * Reshape a Wan-family video request to the DashScope video-synthesis contract:
+ *  - image inputs ride in `input.media` as typed-role MediaItems, NOT a flat
+ *    `input.img_url`: { type: 'first_frame'|'last_frame', url }. start frame =>
+ *    first_frame (i2v); + end frame => last_frame (first-last-frame to video).
+ *  - aspect ratio is `parameters.ratio` and ONLY valid for text-to-video; for
+ *    image-driven modes the output ratio is derived from the input frame, so we
+ *    drop it. (The schema emits `aspect_ratio`; Wan uses `ratio`.)
+ */
+function normalizeVideoRequest(
+  request: Record<string, unknown>,
+  rawInput: Record<string, unknown>,
+): void {
+  const input = request.input as Record<string, unknown>;
+  const startUrl = mediaUrl(rawInput.startFrame);
+  const endUrl = mediaUrl(rawInput.endFrame);
+  // Omni-reference (参考生视频): the `references` array is already mapped to
+  // input.media (typed reference_image/reference_video items) by the generic
+  // providerInputMap loop — leave it intact and don't treat this as i2v.
+  const hasReferences =
+    Array.isArray(rawInput.references) && rawInput.references.length > 0;
+  delete input.img_url;
+
+  if (startUrl && !hasReferences) {
+    const media: Array<Record<string, string>> = [
+      { type: 'first_frame', url: startUrl },
+    ];
+    if (endUrl) media.push({ type: 'last_frame', url: endUrl });
+    input.media = media;
+  }
+
+  const parameters = request.parameters as Record<string, unknown> | undefined;
+  if (parameters) {
+    const aspect = parameters.aspect_ratio;
+    delete parameters.aspect_ratio;
+    // text-to-video only: image-driven and reference modes derive the output
+    // ratio from their input media.
+    if (
+      !startUrl &&
+      !hasReferences &&
+      typeof aspect === 'string' &&
+      aspect.trim()
+    ) {
+      parameters.ratio = aspect.trim();
+    }
   }
 }
 

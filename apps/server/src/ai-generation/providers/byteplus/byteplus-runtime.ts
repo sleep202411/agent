@@ -103,6 +103,58 @@ export function createBytePlusImageRuntimeConfig(
   };
 }
 
+/**
+ * Async video runtime (Seedance on ModelArk). Same config shape as the image
+ * runtime but type/family 'video', a video input/output schema, and the video
+ * queue. The adapter branches on `type` to use the async task submit→poll path.
+ */
+export function createBytePlusVideoRuntimeConfig(
+  args: CreateBytePlusImageRuntimeArgs,
+): BytePlusImageRuntimeConfig {
+  const queuePolicy: AiQueuePolicy = {
+    queueName: args.queueName,
+    globalConcurrency: args.globalConcurrency,
+    perUserRunning: args.perUserRunning,
+    perUserQueued: args.perUserQueued,
+    priority: 0,
+    maxProviderRuntimeSeconds: 30 * 60,
+    maxQueueWaitSeconds: 30 * 60,
+    retryPolicy: {
+      maxAttempts: 3,
+      retryableCodes: ['PROVIDER_429', 'PROVIDER_5XX', 'PROVIDER_TIMEOUT'],
+      backoffMs: [2_000, 10_000, 30_000],
+    },
+  };
+
+  return {
+    provider: args.provider,
+    endpointId: args.endpointId,
+    type: 'video',
+    family: 'video',
+    generationModes: args.generationModes,
+    name: args.name,
+    description: args.description,
+    enabled: args.enabled,
+    disabledReason: args.disabledReason,
+    requiredPlan: args.requiredPlan,
+    queue: {
+      queueName: args.queueName,
+      globalConcurrency: args.globalConcurrency,
+      perUserRunning: args.perUserRunning,
+      perUserQueued: args.perUserQueued,
+    },
+    queuePolicy,
+    billingPolicy: args.billingPolicy,
+    parameterPolicy: args.parameterPolicy,
+    inputSchema: videoInputSchemaFor(
+      args.generationModes,
+      args.parameterPolicy,
+    ),
+    outputSchema: videoOutputSchemaFor(),
+    documentation: documentationFor(args.endpointId),
+  };
+}
+
 export function toBytePlusImageModelDefinition(args: {
   config: BytePlusImageRuntimeConfig;
   modelId: string;
@@ -110,7 +162,9 @@ export function toBytePlusImageModelDefinition(args: {
   ops: AiModelDefinition['ops'];
 }): AiModelDefinition {
   const { config } = args;
+  const isVideo = config.type === 'video';
   const capabilityMatrix = capabilityMatrixFor(
+    config.type,
     config.generationModes,
     config.inputSchema,
   );
@@ -128,7 +182,7 @@ export function toBytePlusImageModelDefinition(args: {
     source: args.source,
     family: config.family,
     generationModes: config.generationModes,
-    capability: 'image_generation',
+    capability: isVideo ? 'video_generation' : 'image_generation',
     type: config.type,
     name: config.name,
     description: config.description,
@@ -166,7 +220,9 @@ export function toBytePlusImageModelDefinition(args: {
     observability: {
       requestId: { jobField: 'providerJobId' },
       logging: {
-        events: ['byteplus.images.generations'],
+        events: [
+          isVideo ? 'byteplus.contents.tasks' : 'byteplus.images.generations',
+        ],
         redactInputFields: [],
         redactProviderFields: ['Authorization'],
       },
@@ -178,13 +234,21 @@ export function toBytePlusImageModelDefinition(args: {
         },
       ],
     },
-    capabilities: {
-      textToImage: config.generationModes.includes('text_to_image'),
-      imageToImage: config.generationModes.includes('image_to_image'),
-      supportsSeed: false,
-      supportsCancel: false,
-      maxOutputs: 1,
-    },
+    capabilities: isVideo
+      ? {
+          textToVideo: config.generationModes.includes('text_to_video'),
+          imageToVideo: config.generationModes.includes('image_to_video'),
+          supportsSeed: true,
+          supportsCancel: true,
+          maxOutputs: 1,
+        }
+      : {
+          textToImage: config.generationModes.includes('text_to_image'),
+          imageToImage: config.generationModes.includes('image_to_image'),
+          supportsSeed: false,
+          supportsCancel: false,
+          maxOutputs: 1,
+        },
     queue: config.queue,
     queue_policy: config.queuePolicy,
     entitlement: { requiredPlan: config.requiredPlan },
@@ -346,22 +410,245 @@ function outputSchemaFor(): AiOutputSchema {
   };
 }
 
+/** Object-frame image input (start/end frame), shaped like the fal field. */
+function imageFrameProperty(
+  title: string,
+  order: number,
+): AiInputSchema['properties'][string] {
+  return {
+    type: 'object',
+    title,
+    properties: { url: { type: 'string', format: 'uri', title: 'URL' } },
+    required: ['url'],
+    additionalProperties: true,
+    'x-ui': {
+      control: 'image_upload',
+      group: 'references',
+      order,
+      importance: 'primary',
+    },
+  };
+}
+
+/**
+ * Seedance video input schema. Field NAMES mirror the fal Seedance schema
+ * (`startFrame`/`endFrame`/`referenceImages`/`resolution`/`aspectRatio`/
+ * `duration`) on purpose: when BytePlus is the primary binding of a co-bound
+ * canonical, the studio renders THIS schema and submit-time routing keys on
+ * these names, so a fal fallback (e.g. for reference videos/audios, which
+ * BytePlus does not take) reads the exact same input keys.
+ */
+function videoInputSchemaFor(
+  generationModes: AiGenerationMode[],
+  parameterPolicy?: AiJsonValue,
+): AiInputSchema {
+  const imageToVideo = generationModes.includes('image_to_video');
+  const firstLastFrame = generationModes.includes('first_last_frame_to_video');
+  const multimodal = generationModes.includes('multimodal_to_video');
+  const resolutionOptions = stringArrayFromPolicy(
+    parameterPolicy,
+    'resolutionOptions',
+  );
+  const durationOptions = stringArrayFromPolicy(
+    parameterPolicy,
+    'durationOptions',
+  );
+  const aspectOptions = stringArrayFromPolicy(
+    parameterPolicy,
+    'supportedAspectRatios',
+  );
+
+  const properties: AiInputSchema['properties'] = {
+    prompt: {
+      type: 'string',
+      title: 'Prompt',
+      minLength: 1,
+      maxLength: 4000,
+      'x-ui': {
+        control: 'textarea',
+        group: 'prompt',
+        order: 10,
+        rows: 4,
+        importance: 'primary',
+      },
+    },
+  };
+
+  // i2v first frame and flf2v start frame share `startFrame` (matches fal).
+  if (imageToVideo || firstLastFrame) {
+    properties.startFrame = imageFrameProperty('Start frame', 20);
+  }
+  if (firstLastFrame) {
+    properties.endFrame = imageFrameProperty('End frame', 21);
+  }
+  // Omni reference (multimodal_to_video): BytePlus content[] supports
+  // role:reference_image, so we expose IMAGE references only. Reference
+  // videos/audios are fal-only and route there (see isRouteRelevantField);
+  // they are intentionally absent from this schema rather than declared and
+  // silently dropped.
+  const maxReferenceImages = referenceImageMax(parameterPolicy);
+  if (multimodal && maxReferenceImages > 0) {
+    properties.referenceImages = {
+      type: 'array',
+      title: 'Reference images',
+      minItems: 0,
+      maxItems: maxReferenceImages,
+      items: {
+        type: 'object',
+        properties: { url: { type: 'string', format: 'uri', title: 'URL' } },
+        required: ['url'],
+        additionalProperties: true,
+      },
+      'x-ui': {
+        control: 'image_upload',
+        group: 'references',
+        order: 22,
+        importance: 'primary',
+        accept: 'image/jpeg,image/png,image/webp',
+      },
+    };
+  }
+
+  properties.resolution = {
+    type: 'string',
+    title: 'Resolution',
+    default: stringFromPolicy(parameterPolicy, 'defaultResolution') ?? '720p',
+    enum: resolutionOptions.length > 0 ? resolutionOptions : ['480p', '720p'],
+    'x-ui': {
+      control: 'segmented',
+      group: 'settings',
+      order: 30,
+      importance: 'secondary',
+    },
+  };
+  properties.aspectRatio = {
+    type: 'string',
+    title: 'Aspect ratio',
+    default: stringFromPolicy(parameterPolicy, 'defaultAspectRatio') ?? '16:9',
+    enum: aspectOptions.length > 0 ? aspectOptions : ['16:9', '9:16', '1:1'],
+    'x-ui': {
+      control: 'segmented',
+      group: 'settings',
+      order: 40,
+      importance: 'secondary',
+    },
+  };
+  // Duration mirrors fal: a STRING enum (incl. 'auto') when the policy declares
+  // durationOptions — this is the exact field the per-second billing reads, so
+  // emitting `duration` (not `durationSeconds`) keeps the charge consistent
+  // across providers. Falls back to an integer slider for video models whose
+  // policy has no duration enum.
+  if (durationOptions.length > 0) {
+    properties.duration = {
+      type: 'string',
+      title: 'Duration',
+      default:
+        stringFromPolicy(parameterPolicy, 'defaultDurationSeconds') ??
+        durationOptions[0],
+      enum: durationOptions,
+      'x-ui': {
+        control: 'select',
+        group: 'settings',
+        order: 50,
+        importance: 'secondary',
+      },
+    };
+  } else {
+    properties.durationSeconds = {
+      type: 'integer',
+      title: 'Duration',
+      default: numberFromPolicy(parameterPolicy, 'defaultDurationSeconds') ?? 5,
+      minimum: numberFromPolicy(parameterPolicy, 'minDurationSeconds') ?? 3,
+      maximum: numberFromPolicy(parameterPolicy, 'maxDurationSeconds') ?? 12,
+      'x-ui': {
+        control: 'slider',
+        group: 'settings',
+        order: 50,
+        unit: 's',
+        importance: 'secondary',
+      },
+    };
+  }
+  properties.seed = {
+    type: 'integer',
+    title: 'Seed',
+    minimum: 0,
+    maximum: 2147483647,
+    'x-ui': {
+      control: 'stepper',
+      group: 'advanced',
+      order: 60,
+      importance: 'secondary',
+    },
+  };
+
+  return {
+    type: 'object',
+    properties,
+    required: ['prompt'],
+    additionalProperties: false,
+    'x-ui': {
+      groups: [
+        { id: 'prompt', title: 'Prompt', order: 10 },
+        { id: 'references', title: 'References', order: 20 },
+        { id: 'settings', title: 'Settings', order: 30 },
+        {
+          id: 'advanced',
+          title: 'Advanced',
+          order: 90,
+          collapsible: true,
+          defaultCollapsed: true,
+        },
+      ],
+    },
+  };
+}
+
+function videoOutputSchemaFor(): AiOutputSchema {
+  return {
+    type: 'object',
+    properties: {
+      outputs: {
+        type: 'array',
+        items: {
+          type: 'object',
+          properties: {
+            url: { type: 'string', format: 'uri', title: 'URL' },
+            mimeType: { type: 'string', title: 'MIME type' },
+            durationSeconds: { type: 'number', title: 'Duration (s)' },
+          },
+          required: ['url'],
+          additionalProperties: true,
+        },
+        'x-output': { control: 'video_player', order: 10 },
+      },
+    },
+    required: ['outputs'],
+    additionalProperties: true,
+  };
+}
+
 function capabilityMatrixFor(
+  type: AiJobType,
   generationModes: AiGenerationMode[],
   inputSchema: AiInputSchema,
 ): AiCapabilityMatrix {
+  const isVideo = type === 'video';
+  const hasImageInput = isVideo
+    ? generationModes.includes('image_to_video') ||
+      generationModes.includes('first_last_frame_to_video') ||
+      generationModes.includes('multimodal_to_video')
+    : generationModes.includes('image_to_image');
   return {
     source: 'internal',
-    inputModalities: generationModes.includes('image_to_image')
-      ? ['text', 'image']
-      : ['text'],
-    outputModalities: ['image'],
+    inputModalities: hasImageInput ? ['text', 'image'] : ['text'],
+    outputModalities: isVideo ? ['video'] : ['image'],
     generationModes,
     supportedParameters: Object.keys(inputSchema.properties),
     unsupportedParameters: [],
     features: {
-      cancel: false,
-      providerQueue: false,
+      cancel: isVideo,
+      providerQueue: isVideo,
       providerUrlOutput: true,
     },
     limits: {
@@ -405,6 +692,24 @@ function stringFromPolicy(
 ): string | undefined {
   const value = recordValue(policy)?.[key];
   return typeof value === 'string' && value.trim() ? value : undefined;
+}
+
+function numberFromPolicy(
+  policy: AiJsonValue | undefined,
+  key: string,
+): number | undefined {
+  const value = recordValue(policy)?.[key];
+  return typeof value === 'number' && Number.isFinite(value)
+    ? value
+    : undefined;
+}
+
+/** Max omni-reference IMAGES from `referenceInputs.images.max` (0 if absent). */
+function referenceImageMax(policy: AiJsonValue | undefined): number {
+  const references = recordValue(recordValue(policy)?.referenceInputs);
+  const images = recordValue(references?.images);
+  const max = images?.max;
+  return typeof max === 'number' && Number.isFinite(max) && max > 0 ? max : 0;
 }
 
 function referencePolicy(policy: AiJsonValue | undefined): {

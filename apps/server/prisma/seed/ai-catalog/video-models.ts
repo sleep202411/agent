@@ -10,11 +10,19 @@
 import type { AiGenerationMode } from '@repo/shared';
 
 import {
+  HAPPYHORSE_VIDEO_PARAMETER_POLICY,
+  HAPPYHORSE_VIDEO_PRODUCT_PRICING,
   SEEDANCE_2_0_FAST_PRODUCT_PRICING,
   SEEDANCE_2_0_PARAMETER_POLICY,
   SEEDANCE_2_0_PRODUCT_PRICING,
+  WAN_2_7_VIDEO_PARAMETER_POLICY,
+  WAN_2_7_VIDEO_PRODUCT_PRICING,
 } from './defaults';
-import type { ImageModelSeed, ProviderEntry } from './image-models';
+import {
+  bailianVideoCatalogSnapshot,
+  type ImageModelSeed,
+  type ProviderEntry,
+} from './image-models';
 
 /** Video ContainerModel seed — structurally identical to ImageModelSeed. */
 export type VideoModelSeed = ImageModelSeed;
@@ -75,6 +83,22 @@ function seedanceProviders(prefix: string): ProviderEntry[] {
 
 const SEEDANCE_MODES: AiGenerationMode[] = [T2V, I2V, FLF2V, MM2V];
 
+/**
+ * BytePlus ModelArk official Seedance 2.0 binding, co-bound onto the Seedance
+ * canonical as the PRIMARY provider (priority 50 < fal's 100). Because the
+ * canonical catalog assembles the public model from the lowest-priority ENABLED
+ * binding, this serves BytePlus's schema when BYTEPLUS_MODELARK_ENABLED is set
+ * and transparently falls back to fal (priority 100) when it is not. Covers all
+ * four modes; reference videos/audios (fal-only) route to fal at submit time.
+ */
+const bytePlusSeedanceProvider: ProviderEntry = {
+  provider: 'byteplus-modelark',
+  endpointId: 'dreamina-seedance-2-0-260128',
+  modes: SEEDANCE_MODES,
+  requestTimeoutSeconds: 1800,
+  priority: 50,
+};
+
 export const VIDEO_MODELS: VideoModelSeed[] = [
   {
     slug: 'seedance-2-0',
@@ -90,8 +114,11 @@ export const VIDEO_MODELS: VideoModelSeed[] = [
     group: 'video',
     sortOrder: 10,
     recommended: true,
-    providers: seedanceProviders('bytedance/seedance-2.0'),
-    providerAliases: ['bytedance/seedance-2.0'],
+    providers: [
+      bytePlusSeedanceProvider,
+      ...seedanceProviders('bytedance/seedance-2.0'),
+    ],
+    providerAliases: ['bytedance/seedance-2.0', 'dreamina-seedance-2-0-260128'],
   },
   {
     slug: 'seedance-2-0-fast',
@@ -109,5 +136,146 @@ export const VIDEO_MODELS: VideoModelSeed[] = [
     recommended: false,
     providers: seedanceProviders('bytedance/seedance-2.0/fast'),
     providerAliases: ['bytedance/seedance-2.0/fast'],
+  },
+  {
+    slug: 'wan-2-7',
+    displayName: 'Wan 2.7',
+    family: 'wan',
+    description:
+      'Alibaba Tongyi Wanxiang 2.7 video — text-to-video and image-to-video (with first/last-frame control), on Alibaba Model Studio. Native 720P/1080P, 2–15s.',
+    // One canonical, three upstream model ids. wan2.7-t2v serves text_to_video;
+    // wan2.7-i2v serves image_to_video AND first_last_frame_to_video (via its
+    // input.media first_frame/last_frame roles); wan2.7-r2v serves the omni
+    // reference (参考生视频) multimodal_to_video mode. The Bailian catalog merges
+    // the bindings into one model with a per-mode endpoint map.
+    modes: [T2V, I2V, FLF2V, MM2V],
+    tier: 'vip',
+    // Display floor ≈ maxSeconds(15) × 720P points(20).
+    cost: 300,
+    parameterPolicy: WAN_2_7_VIDEO_PARAMETER_POLICY,
+    productPricing: WAN_2_7_VIDEO_PRODUCT_PRICING,
+    group: 'video',
+    sortOrder: 30,
+    recommended: false,
+    providers: [
+      {
+        provider: 'aliyun-bailian',
+        endpointId: 'wan2.7-i2v',
+        modes: [I2V, FLF2V],
+        requestTimeoutSeconds: 600,
+        priority: 100,
+        catalogSnapshot: bailianVideoCatalogSnapshot({
+          model: 'wan2.7-i2v',
+          // Provider-cost tracking only (per second). ESTIMATE (wan2.6 intl
+          // proxy ~$0.10/720P–$0.15/1080P ≈ ¥0.7–1.07/s); user pricing is the
+          // productPricing above. Pending finance sign-off.
+          cnRmbPerSecond: 0.7,
+          globalRmbPerSecond: 0.7,
+          docsUrl:
+            'https://www.alibabacloud.com/help/en/model-studio/image-to-video-general-api-reference',
+        }),
+      },
+      {
+        provider: 'aliyun-bailian',
+        endpointId: 'wan2.7-t2v',
+        modes: [T2V],
+        requestTimeoutSeconds: 600,
+        priority: 100,
+        catalogSnapshot: bailianVideoCatalogSnapshot({
+          model: 'wan2.7-t2v',
+          cnRmbPerSecond: 0.7,
+          globalRmbPerSecond: 0.7,
+          docsUrl:
+            'https://help.aliyun.com/zh/model-studio/text-to-video-api-reference',
+        }),
+      },
+      {
+        provider: 'aliyun-bailian',
+        endpointId: 'wan2.7-r2v',
+        modes: [MM2V],
+        requestTimeoutSeconds: 600,
+        priority: 100,
+        catalogSnapshot: bailianVideoCatalogSnapshot({
+          model: 'wan2.7-r2v',
+          cnRmbPerSecond: 0.7,
+          globalRmbPerSecond: 0.7,
+          docsUrl:
+            'https://help.aliyun.com/zh/model-studio/video-reference-api-reference',
+        }),
+      },
+    ],
+    providerAliases: ['wan2.7-i2v', 'wan2.7-t2v', 'wan2.7-r2v'],
+  },
+  {
+    slug: 'happyhorse-1-0',
+    displayName: 'HappyHorse 1.0',
+    family: 'wan',
+    description:
+      'Alibaba HappyHorse 1.0 video — top-ranked text-to-video / image-to-video / omni-reference with native synced audio and multi-language lip-sync. 720P/1080P, 2–15s.',
+    // One canonical, three upstream model ids: happyhorse-1.0-t2v (text),
+    // happyhorse-1.0-i2v (first frame), happyhorse-1.0-r2v (reference images).
+    // No first-last-frame (i2v is first-frame only) and no video edit on this
+    // account. The Bailian catalog merges the bindings with a per-mode endpoint
+    // map.
+    modes: [T2V, I2V, MM2V],
+    tier: 'vip',
+    // Display floor ≈ maxSeconds(15) × 720P points(20).
+    cost: 300,
+    parameterPolicy: HAPPYHORSE_VIDEO_PARAMETER_POLICY,
+    productPricing: HAPPYHORSE_VIDEO_PRODUCT_PRICING,
+    group: 'video',
+    sortOrder: 25,
+    recommended: false,
+    providers: [
+      {
+        provider: 'aliyun-bailian',
+        endpointId: 'happyhorse-1.0-t2v',
+        modes: [T2V],
+        requestTimeoutSeconds: 900,
+        priority: 100,
+        catalogSnapshot: bailianVideoCatalogSnapshot({
+          model: 'happyhorse-1.0-t2v',
+          // Provider-cost per-second ESTIMATE pending finance; user price is the
+          // productPricing above.
+          cnRmbPerSecond: 0.7,
+          globalRmbPerSecond: 0.7,
+          docsUrl:
+            'https://www.alibabacloud.com/help/en/model-studio/happyhorse-text-to-video-api-reference',
+        }),
+      },
+      {
+        provider: 'aliyun-bailian',
+        endpointId: 'happyhorse-1.0-i2v',
+        modes: [I2V],
+        requestTimeoutSeconds: 900,
+        priority: 100,
+        catalogSnapshot: bailianVideoCatalogSnapshot({
+          model: 'happyhorse-1.0-i2v',
+          cnRmbPerSecond: 0.7,
+          globalRmbPerSecond: 0.7,
+          docsUrl:
+            'https://www.alibabacloud.com/help/en/model-studio/happyhorse-image-to-video-api-reference',
+        }),
+      },
+      {
+        provider: 'aliyun-bailian',
+        endpointId: 'happyhorse-1.0-r2v',
+        modes: [MM2V],
+        requestTimeoutSeconds: 900,
+        priority: 100,
+        catalogSnapshot: bailianVideoCatalogSnapshot({
+          model: 'happyhorse-1.0-r2v',
+          cnRmbPerSecond: 0.7,
+          globalRmbPerSecond: 0.7,
+          docsUrl:
+            'https://www.alibabacloud.com/help/en/model-studio/happyhorse-reference-to-video-api-reference',
+        }),
+      },
+    ],
+    providerAliases: [
+      'happyhorse-1.0-t2v',
+      'happyhorse-1.0-i2v',
+      'happyhorse-1.0-r2v',
+    ],
   },
 ];

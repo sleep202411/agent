@@ -292,6 +292,38 @@ function bailianCatalogSnapshot(args: {
   };
 }
 
+/**
+ * Bailian VIDEO binding snapshot — routes the runtime to the async DashScope
+ * video-synthesis service (`service: 'video-synthesis'`, `callMode: 'async'`),
+ * unlike the image helper which targets multimodal-generation. Pricing here is
+ * provider-cost tracking (per second), separate from the user-facing
+ * productPricing on the canonical.
+ */
+export function bailianVideoCatalogSnapshot(args: {
+  model: string;
+  cnRmbPerSecond: number;
+  globalRmbPerSecond: number;
+  docsUrl: string;
+}): Prisma.InputJsonObject {
+  return {
+    service: 'video-synthesis',
+    callMode: 'async',
+    pricing: {
+      source: 'aliyun_model_studio_official_pricing',
+      unit: 'second',
+      currency: 'CNY',
+      unitPriceByMarket: {
+        cn: args.cnRmbPerSecond,
+        global: args.globalRmbPerSecond,
+      },
+      defaultMarket: 'global',
+      defaultUnitPrice: args.globalRmbPerSecond,
+    },
+    docs: [{ title: 'Alibaba Model Studio API reference', url: args.docsUrl }],
+    model: args.model,
+  };
+}
+
 function falCatalogSnapshot(args: {
   model: string;
   usdPerImage?: number;

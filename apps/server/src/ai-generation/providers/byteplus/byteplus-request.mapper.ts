@@ -1,5 +1,84 @@
 import type { BytePlusImageRuntimeConfig } from './byteplus-runtime';
 
+/**
+ * BytePlus ModelArk video task body (content-generation tasks API): a `content`
+ * array of typed parts (text prompt + role-tagged images) plus top-level
+ * generation params. Covers all four Seedance generation modes:
+ *  - text_to_video           → text only
+ *  - image_to_video          → text + first_frame
+ *  - first_last_frame_to_..  → text + first_frame + last_frame
+ *  - multimodal_to_video     → text + N reference_image (omni reference)
+ * Reference videos/audios are fal-only and never reach this mapper (routing
+ * sends those requests to fal — see isRouteRelevantField).
+ */
+export function mapBytePlusVideoProviderRequest(
+  config: BytePlusImageRuntimeConfig,
+  input: Record<string, unknown>,
+): Record<string, unknown> {
+  const content: Array<Record<string, unknown>> = [
+    { type: 'text', text: stringValue(input.prompt) },
+  ];
+  const startUrl = mediaUrl(input.startFrame);
+  if (startUrl) {
+    content.push({
+      type: 'image_url',
+      image_url: { url: startUrl },
+      role: 'first_frame',
+    });
+  }
+  const endUrl = mediaUrl(input.endFrame);
+  if (endUrl) {
+    content.push({
+      type: 'image_url',
+      image_url: { url: endUrl },
+      role: 'last_frame',
+    });
+  }
+  for (const url of referenceImageUrls(input.referenceImages)) {
+    content.push({
+      type: 'image_url',
+      image_url: { url },
+      role: 'reference_image',
+    });
+  }
+
+  const body: Record<string, unknown> = {
+    model: config.endpointId,
+    content,
+    watermark: false,
+  };
+  if (typeof input.resolution === 'string' && input.resolution) {
+    body.resolution = input.resolution;
+  }
+  // Aspect ratio: 'auto' means "derive from input / model default" — BytePlus
+  // has no explicit 'auto' value, so omit and let it default.
+  if (
+    typeof input.aspectRatio === 'string' &&
+    input.aspectRatio &&
+    input.aspectRatio !== 'auto'
+  ) {
+    body.ratio = input.aspectRatio;
+  }
+  // Duration is the string-enum `duration` field (matches fal + the per-second
+  // billing source); fall back to the legacy numeric `durationSeconds`. A
+  // non-numeric value ('auto') is omitted so BytePlus picks its own length.
+  const duration = Number(input.duration ?? input.durationSeconds);
+  if (Number.isInteger(duration) && duration > 0) body.duration = duration;
+  const seed = Number(input.seed);
+  if (Number.isInteger(seed) && seed >= 0) body.seed = seed;
+
+  return body;
+}
+
+function mediaUrl(value: unknown): string | undefined {
+  if (typeof value === 'string' && value.trim()) return value.trim();
+  if (value && typeof value === 'object') {
+    const url = (value as { url?: unknown }).url;
+    if (typeof url === 'string' && url.trim()) return url.trim();
+  }
+  return undefined;
+}
+
 export function mapBytePlusProviderRequest(
   config: BytePlusImageRuntimeConfig,
   input: Record<string, unknown>,
@@ -26,7 +105,7 @@ function stringValue(value: unknown): string {
 }
 
 function sizeFor(imageSize: unknown, resolution: unknown): string {
-  const aspect = aspectRatio(String(imageSize || '1:1')) ?? 1;
+  const aspect = aspectRatio(stringValue(imageSize) || '1:1') ?? 1;
   const maxLongEdge =
     resolution === '4K'
       ? 4096
