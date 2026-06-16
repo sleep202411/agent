@@ -109,25 +109,70 @@ export class AuthService {
   async validateToken(cookie: string): Promise<AuthUser | null> {
     if (!cookie) return null;
 
-    // Check cache first
+    // Check cache first (keyed by the full incoming cookie header).
     const cached = this.cache.get(cookie);
     if (cached && cached.expiresAt > Date.now()) {
       return cached.user;
     }
 
+    // A browser can carry MULTIPLE `satoken` cookies for fizzdragon.com — the
+    // fresh one from the current login PLUS a stale host-only one left over
+    // from the legacy iframe/uni-app flow. Header order isn't reliable, so we
+    // can't assume the first one is the live session: validate EACH distinct
+    // satoken against Java and accept the first that resolves a user. (The WS
+    // gateways sidestep this via an explicit query satoken; the HTTP path has
+    // no such hint, hence try-each.) Falls back to the whole cookie when there
+    // is no satoken at all (token carried under a different name).
+    const satokenValues = [
+      ...new Set(
+        [...cookie.matchAll(/(?:^|;\s*)satoken=([^;]+)/g)].map((m) => m[1]),
+      ),
+    ];
+    const candidates: Array<{ cookie: string; hint: string }> =
+      satokenValues.length > 0
+        ? satokenValues.map((value) => ({
+            cookie: `satoken=${value}`,
+            hint: value.slice(0, 8),
+          }))
+        : [{ cookie, hint: '(none)' }];
+
+    for (const candidate of candidates) {
+      const user = await this.validateSatoken(candidate.cookie, candidate.hint);
+      if (!user) continue;
+      // Evict oldest if cache is full
+      if (this.cache.size >= AuthService.CACHE_MAX_SIZE) {
+        const first = this.cache.keys().next();
+        if (!first.done) this.cache.delete(first.value);
+      }
+      this.cache.set(cookie, {
+        user,
+        expiresAt: Date.now() + AuthService.CACHE_TTL_MS,
+      });
+      if (satokenValues.length > 1) {
+        this.logger.log(
+          `Auth validated via 1 of ${satokenValues.length} satoken candidates (stale-cookie skip) token=${candidate.hint}`,
+        );
+      }
+      return user;
+    }
+    return null;
+  }
+
+  /**
+   * Validate ONE `satoken=<value>` cookie against Java and map it to an
+   * AuthUser. Returns null on any failure (HTTP error, "not logged in",
+   * missing userId). Pure per-token check — caching is the caller's job.
+   */
+  private async validateSatoken(
+    satokenCookie: string,
+    tokenHint: string,
+  ): Promise<AuthUser | null> {
     try {
       const baseUrl = process.env.JAVA_CONTENT_URL?.replace(/\/$/, '');
       if (!baseUrl) {
         this.logger.error('JAVA_CONTENT_URL not configured');
         return null;
       }
-
-      // Extract only the satoken cookie — Java chokes on unrelated cookies
-      const satokenMatch = cookie.match(/(?:^|;\s*)satoken=([^;]+)/);
-      const satokenCookie = satokenMatch
-        ? `satoken=${satokenMatch[1]}`
-        : cookie;
-      const tokenHint = satokenMatch?.[1].slice(0, 8) ?? '(none)';
       // Use https module instead of fetch — Node.js undici fetch
       // does not reliably forward cookie headers in all environments.
       const url = `${baseUrl}/user/query/user/info`;
@@ -168,17 +213,6 @@ export class AuthService {
         );
         return null;
       }
-
-      // Cache the result
-      // Evict oldest if cache is full
-      if (this.cache.size >= AuthService.CACHE_MAX_SIZE) {
-        const first = this.cache.keys().next();
-        if (!first.done) this.cache.delete(first.value);
-      }
-      this.cache.set(cookie, {
-        user,
-        expiresAt: Date.now() + AuthService.CACHE_TTL_MS,
-      });
 
       this.logger.log(
         `Auth validated: userId=${user.userId} name=${user.nickName ?? user.userName ?? '?'} token=${tokenHint}`,
