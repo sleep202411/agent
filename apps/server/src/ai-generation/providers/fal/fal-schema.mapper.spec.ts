@@ -1,6 +1,8 @@
 import { createFalModelConfig, toAiModelDefinition } from './fal-schema.mapper';
 import { mapFalProviderRequest } from './fal-request.mapper';
 import {
+  BRIA_EXPAND_PARAMETER_POLICY,
+  BRIA_EXPAND_PRODUCT_PRICING,
   BRIA_RMBG_PARAMETER_POLICY,
   BRIA_RMBG_PRODUCT_PRICING,
   ICLIGHT_RELIGHT_PARAMETER_POLICY,
@@ -68,6 +70,16 @@ const multiAngleConfig = () =>
     generationModes: ['multi_angle'],
     parameterPolicy: QWEN_MULTI_ANGLE_PARAMETER_POLICY,
     billing: { productPricing: QWEN_MULTI_ANGLE_PRODUCT_PRICING },
+  });
+
+const expandConfig = () =>
+  createFalModelConfig({
+    ...baseArgs,
+    endpointId: 'fal-ai/bria/expand',
+    type: 'image',
+    generationModes: ['outpainting'],
+    parameterPolicy: BRIA_EXPAND_PARAMETER_POLICY,
+    billing: { productPricing: BRIA_EXPAND_PRODUCT_PRICING },
   });
 
 describe('fal-schema.mapper — upscale (pure transform) mode', () => {
@@ -297,6 +309,84 @@ describe('fal-schema.mapper — multi_angle (camera-orbit op)', () => {
       'vertical_angle',
       'zoom',
       'additional_prompt',
+    ]) {
+      expect(def.capability_matrix.supportedParameters).toContain(p);
+    }
+  });
+});
+
+describe('fal-schema.mapper — outpainting (expand)', () => {
+  it('exposes an OPTIONAL prompt (present but not required) + the geometry params', () => {
+    const { inputSchema } = expandConfig();
+
+    expect(inputSchema.properties.prompt).toBeDefined();
+    // Optional — Bria expand runs prompt-less, so it must NOT be required.
+    expect(inputSchema.required).toEqual([]);
+    expect(inputSchema.properties.canvasSize).toMatchObject({ type: 'array' });
+    expect(inputSchema.properties.originalImageSize).toMatchObject({
+      type: 'array',
+    });
+    expect(inputSchema.properties.originalImageLocation).toMatchObject({
+      type: 'array',
+    });
+  });
+
+  it('binds geometry + single source image to the bria params', () => {
+    const { providerInputMap } = expandConfig();
+    expect(providerInputMap.referenceImages).toEqual({
+      parameter: 'image_url',
+      transform: 'mediaFirstUrl',
+    });
+    expect(providerInputMap.canvasSize).toMatchObject({
+      parameter: 'canvas_size',
+    });
+    expect(providerInputMap.originalImageSize).toMatchObject({
+      parameter: 'original_image_size',
+    });
+    expect(providerInputMap.originalImageLocation).toMatchObject({
+      parameter: 'original_image_location',
+    });
+    expect(providerInputMap.prompt).toMatchObject({ parameter: 'prompt' });
+  });
+
+  it('maps geometry arrays + prompt straight to the wire', () => {
+    const config = expandConfig();
+    const body = mapFalProviderRequest(config, {
+      referenceImages: [{ url: 'https://example.com/x.png' }],
+      canvasSize: [1820, 1024],
+      originalImageSize: [1024, 1024],
+      originalImageLocation: [398, 0],
+      prompt: 'extend the beach and sky',
+    });
+    expect(body).toEqual({
+      image_url: 'https://example.com/x.png',
+      canvas_size: [1820, 1024],
+      original_image_size: [1024, 1024],
+      original_image_location: [398, 0],
+      prompt: 'extend the beach and sky',
+    });
+  });
+
+  it('omits the prompt when empty (optional)', () => {
+    const config = expandConfig();
+    const body = mapFalProviderRequest(config, {
+      referenceImages: [{ url: 'https://example.com/x.png' }],
+      canvasSize: [1820, 1024],
+      originalImageSize: [1024, 1024],
+      originalImageLocation: [398, 0],
+      prompt: '',
+    });
+    expect(body.prompt).toBeUndefined();
+    expect(body.canvas_size).toEqual([1820, 1024]);
+  });
+
+  it('advertises the geometry params + text-and-image input', () => {
+    const def = toAiModelDefinition(expandConfig());
+    expect(def.capability_matrix.inputModalities).toEqual(['text', 'image']);
+    for (const p of [
+      'canvas_size',
+      'original_image_size',
+      'original_image_location',
     ]) {
       expect(def.capability_matrix.supportedParameters).toContain(p);
     }

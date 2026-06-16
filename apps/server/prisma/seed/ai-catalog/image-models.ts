@@ -47,6 +47,8 @@ import {
   SEEDREAM_4_PRODUCT_PRICING,
   SEEDREAM_5_LITE_PARAMETER_POLICY,
   SEEDREAM_5_LITE_PRODUCT_PRICING,
+  BRIA_EXPAND_PARAMETER_POLICY,
+  BRIA_EXPAND_PRODUCT_PRICING,
   BRIA_RMBG_PARAMETER_POLICY,
   BRIA_RMBG_PRODUCT_PRICING,
   ICLIGHT_RELIGHT_PARAMETER_POLICY,
@@ -135,6 +137,7 @@ const UPSCALE: AiGenerationMode = 'upscale';
 const REMOVE_BG: AiGenerationMode = 'remove_background';
 const RELIGHT: AiGenerationMode = 'relight';
 const MULTI_ANGLE: AiGenerationMode = 'multi_angle';
+const OUTPAINT: AiGenerationMode = 'outpainting';
 
 const PROVIDER_IMAGE_OUTPUT_SCHEMA = {
   type: 'object',
@@ -638,6 +641,39 @@ export const IMAGE_MODELS: ImageModelSeed[] = [
       },
     ],
     providerAliases: ['fal/fal-ai/qwen-image-edit-2511-multiple-angles'],
+  },
+  {
+    slug: 'bria-expand',
+    displayName: 'Expand',
+    family: 'image-transform',
+    description:
+      'Bria image expand (outpainting) — grows the canvas and generatively fills the new area. Reached via the studio Expand action, not the model picker.',
+    modes: [OUTPAINT],
+    tier: 'vip',
+    cost: 15,
+    parameterPolicy: BRIA_EXPAND_PARAMETER_POLICY,
+    productPricing: BRIA_EXPAND_PRODUCT_PRICING,
+    group: 'tools',
+    sortOrder: 214,
+    providers: [
+      {
+        provider: 'fal-ai',
+        endpointId: 'fal-ai/bria/expand',
+        modes: [OUTPAINT],
+        priority: 10,
+        weight: 100,
+        providerOutputSchema: PROVIDER_IMAGE_OUTPUT_SCHEMA,
+        catalogSnapshot: falCatalogSnapshot({
+          model: 'fal-ai/bria/expand',
+          usdPerImage: 0.04,
+          docsUrl: 'https://fal.ai/models/fal-ai/bria/expand/api',
+        }),
+        maxConcurrentRequests: 4,
+        requestTimeoutSeconds: 600,
+        failureThreshold: 3,
+      },
+    ],
+    providerAliases: ['fal/fal-ai/bria/expand'],
   },
   {
     slug: 'flux-2-flex',

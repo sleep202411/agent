@@ -273,9 +273,17 @@ export function ModelSettings({
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const fields = useMemo(() => schemaFields(model), [model]);
   const sizeField = fields.find(isSizeField);
-  const rest = fields.filter((f) => !isSizeField(f));
+  // `hidden`-control fields are data-only (driven by a bespoke editor, e.g.
+  // expand's canvas geometry) — never rendered in the generic settings panel.
+  const rest = fields.filter((f) => !isSizeField(f) && f.control !== "hidden");
   const basicFields = rest.filter((f) => f.group !== "advanced");
   const advancedFields = rest.filter((f) => f.group === "advanced");
+  // Generic controls take scalars; tuple-valued settings (expand geometry) are
+  // never shown here, so coerce them away to satisfy the value type.
+  const scalar = (name: string): string | number | boolean | undefined => {
+    const v = settings[name];
+    return Array.isArray(v) ? undefined : v;
+  };
 
   const cost = useMemo(() => {
     if (!model) return null;
@@ -326,7 +334,7 @@ export function ModelSettings({
         <div key={field.name} className="mt-4">
           <Field
             field={field}
-            value={settings[field.name] ?? field.default}
+            value={scalar(field.name) ?? field.default}
             set={(v) => set(field.name, v)}
           />
         </div>
@@ -355,7 +363,7 @@ export function ModelSettings({
                 <Field
                   key={field.name}
                   field={field}
-                  value={settings[field.name] ?? field.default}
+                  value={scalar(field.name) ?? field.default}
                   set={(v) => set(field.name, v)}
                 />
               ))}

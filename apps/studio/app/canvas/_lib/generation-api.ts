@@ -344,6 +344,13 @@ export function hasSchemaProperty(model: FizzAiModel | undefined, key: string): 
   return Boolean(model?.input_schema?.properties?.[key]);
 }
 
+/** Whether the model's schema REQUIRES a prompt (vs merely accepting one). Some
+ *  ops expose an optional prompt (e.g. expand/outpainting), so presence alone
+ *  must not force the user to type one. */
+export function promptRequired(model: FizzAiModel | undefined): boolean {
+  return Boolean(model?.input_schema?.required?.includes("prompt"));
+}
+
 /** String-enum options for a schema field (e.g. `imageSize`), or `null` if absent. */
 export function enumOptions(model: FizzAiModel, key: string): string[] | null {
   const prop = schemaProperty(model, key);
@@ -603,6 +610,7 @@ const OPERATION_ONLY_MODES: readonly string[] = [
   "remove_background",
   "relight",
   "multi_angle",
+  "outpainting",
 ];
 
 /** A model backing only canvas operations (Upscale / Remove BG / 720°) — every
@@ -651,12 +659,13 @@ export function referenceFieldsForMode(
   }
   if (mode === "inpainting") return pick("referenceImages", "maskImage");
   // Single-image operations (upscale / remove background / relight /
-  // multi-angle) bind exactly one input image.
+  // multi-angle / expand) bind exactly one input image.
   if (
     mode === "upscale" ||
     mode === "remove_background" ||
     mode === "relight" ||
-    mode === "multi_angle"
+    mode === "multi_angle" ||
+    mode === "outpainting"
   ) {
     const explicit = pick("referenceImages");
     return explicit.length ? explicit : all.filter((f) => f.kind === "image").slice(0, 1);
@@ -695,7 +704,9 @@ export interface SchemaFieldDescriptor {
 }
 
 /** A flat field→value bag — exactly the shape the submit input expects. */
-export type ModelSettings = Record<string, string | number | boolean>;
+// Most controls are scalars; a few ops carry small numeric tuples (e.g. expand's
+// canvas_size / original placement) that the request mapper passes through as-is.
+export type ModelSettings = Record<string, string | number | boolean | number[]>;
 
 function inferControl(prop: FizzAiSchemaProperty): SchemaControl {
   if (Array.isArray(prop.enum) && prop.enum.length > 0) return "segmented";

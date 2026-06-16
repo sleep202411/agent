@@ -16,7 +16,7 @@ import {
   generationIdempotencyKey,
   generationStateFromJob,
   generationStatusFromRaw,
-  hasSchemaProperty,
+  promptRequired,
   normalizeFizzAiError,
   submitFizzAiJob,
   type FizzAiCatalog,
@@ -301,9 +301,10 @@ export function CanvasGenerationProvider({
         toast.error("Choose a model first");
         return;
       }
-      // Pure transform ops (e.g. upscale) declare no prompt in their schema —
-      // only require one when the model actually takes a prompt.
-      if (hasSchemaProperty(model, "prompt") && !data.prompt?.trim()) {
+      // Only block when the model's schema REQUIRES a prompt. Pure transforms
+      // (upscale) declare none; ops with an optional prompt (expand) must still
+      // run prompt-less.
+      if (promptRequired(model) && !data.prompt?.trim()) {
         toast.error("Write a prompt first");
         return;
       }

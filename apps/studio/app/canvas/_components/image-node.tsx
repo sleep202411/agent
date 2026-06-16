@@ -4,18 +4,20 @@ import { memo, useCallback, useState } from "react";
 import type { Node, NodeProps } from "@xyflow/react";
 import {
   IconAlertTriangle,
+  IconArrowsDiagonal,
   IconArrowsMaximize,
+  IconBackground,
   IconBulb,
   IconDownload,
   IconLoader2,
   IconRefresh,
   IconRotate3d,
-  IconScissors,
   IconUpload,
 } from "@tabler/icons-react";
 import { cn } from "@/lib/utils";
 import { CanvasNodeToolbar, ToolbarButton } from "./node-toolbar";
 import {
+  EXPAND_OP,
   MULTI_ANGLE_OP,
   OperationConfirmBar,
   PANORAMA_OP,
@@ -26,6 +28,7 @@ import {
   type OperationDef,
 } from "./operation-confirm-bar";
 import { MultiAngleEditor } from "./multi-angle-editor";
+import { ExpandEditor } from "./expand-editor";
 import { Icon720 } from "./panorama-viewer";
 import { PortPlus } from "./ports";
 import { useRetryUpload, useUploadEntry } from "./upload-state-context";
@@ -76,7 +79,7 @@ function ImageNodeComponent({ id, data, selected }: NodeProps<ImageNodeType>) {
                 <IconArrowsMaximize className="size-4" stroke={1.8} />
               </ToolbarButton>
               <ToolbarButton label="Remove BG" onClick={() => setPendingOp(REMOVE_BG_OP)}>
-                <IconScissors className="size-4" stroke={1.8} />
+                <IconBackground className="size-4" stroke={1.8} />
               </ToolbarButton>
               <ToolbarButton
                 label="Relight"
@@ -86,6 +89,9 @@ function ImageNodeComponent({ id, data, selected }: NodeProps<ImageNodeType>) {
               </ToolbarButton>
               <ToolbarButton label="Multi-Angle" onClick={() => setPendingOp(MULTI_ANGLE_OP)}>
                 <IconRotate3d className="size-4" stroke={1.8} />
+              </ToolbarButton>
+              <ToolbarButton label="Expand" onClick={() => setPendingOp(EXPAND_OP)}>
+                <IconArrowsDiagonal className="size-4" stroke={1.8} />
               </ToolbarButton>
               <ToolbarButton label="Generate Panorama" onClick={() => setPendingOp(PANORAMA_OP)}>
                 <Icon720 className="size-4" />
@@ -144,6 +150,8 @@ function ImageNodeComponent({ id, data, selected }: NodeProps<ImageNodeType>) {
           sourceUrl={data.src}
           onClose={() => setPendingOp(null)}
         />
+      ) : pendingOp?.editor === "expand" ? (
+        <ExpandEditor sourceNodeId={id} sourceUrl={data.src} onClose={() => setPendingOp(null)} />
       ) : pendingOp ? (
         <OperationConfirmBar
           op={pendingOp}

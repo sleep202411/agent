@@ -90,7 +90,7 @@ export interface OperationDef {
   composed?: boolean;
   /** Ops with a bespoke editor surface (instead of the inline confirm bar);
    *  the toolbar renders the named editor overlay under the source node. */
-  editor?: "multiAngle";
+  editor?: "multiAngle" | "expand";
 }
 
 /** Output-count selector for the confirm bar — a synthetic enum field (1–4)
@@ -133,6 +133,14 @@ export const MULTI_ANGLE_OP: OperationDef = {
   resolveMode: () => "multi_angle",
   // Camera orbit/tilt/zoom → a bespoke editor surface (sphere + sliders).
   editor: "multiAngle",
+};
+
+export const EXPAND_OP: OperationDef = {
+  name: "Expand",
+  findModel: (catalog) => catalog?.models.find((m) => m.generationModes?.includes("outpainting")),
+  resolveMode: () => "outpainting",
+  // Drag-frame canvas expansion → a bespoke editor surface.
+  editor: "expand",
 };
 
 /**

@@ -427,6 +427,26 @@ export const QWEN_MULTI_ANGLE_PARAMETER_POLICY = {
   seed: { enabled: false },
 } as const satisfies Prisma.InputJsonObject;
 
+// Bria expand (outpainting): grows the canvas around a single source image and
+// generatively fills the new area. No required prompt (an optional one steers
+// the fill). The studio's bespoke Expand editor produces the geometry
+// (canvas_size + original placement), emitted by the mapper's outpainting
+// branch. fal-ai/bria/expand requires image_url + canvas_size.
+export const BRIA_EXPAND_PARAMETER_POLICY = {
+  parameterMode: 'provider_intersection',
+  providerFamily: 'bria-expand',
+  defaultVariations: 1,
+  variationOptions: [1],
+  referenceImages: {
+    enabled: true,
+    min: 1,
+    max: 1,
+    single: true,
+    maskSupported: false,
+  },
+  seed: { enabled: false },
+} as const satisfies Prisma.InputJsonObject;
+
 export const FLUX_2_FLEX_PARAMETER_POLICY = {
   parameterMode: 'provider_intersection',
   providerFamily: 'flux-2',
@@ -837,6 +857,25 @@ export const QWEN_MULTI_ANGLE_PRODUCT_PRICING: AiProductPricingPolicy = {
   resolutionOptions: ['1K'],
   qualityOptions: ['standard'],
   matrix: { '1K': { standard: 18 } },
+  referenceImageSurchargePoints: 0,
+  extraReferenceImagePoints: 0,
+  maskSurchargePoints: 0,
+  minimumPoints: 1,
+  roundTo: 1,
+};
+
+export const BRIA_EXPAND_PRODUCT_PRICING: AiProductPricingPolicy = {
+  mode: 'parameter_matrix',
+  version: 'bria-expand-points-v1-2026-06-16',
+  currency: 'COMPUTE_POINTS',
+  defaultOutputCount: 1,
+  minOutputCount: 1,
+  maxOutputCount: 1,
+  defaultResolution: '1K',
+  defaultQuality: 'standard',
+  resolutionOptions: ['1K'],
+  qualityOptions: ['standard'],
+  matrix: { '1K': { standard: 15 } },
   referenceImageSurchargePoints: 0,
   extraReferenceImagePoints: 0,
   maskSurchargePoints: 0,

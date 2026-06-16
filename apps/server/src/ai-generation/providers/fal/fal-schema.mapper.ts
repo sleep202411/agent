@@ -231,6 +231,10 @@ function inputSchemaFor(
   // camera viewpoint. No required prompt; its controls are orbit/tilt/zoom +
   // an optional additional prompt, emitted by the multi_angle branch below.
   const multiAngle = generationModes.includes('multi_angle');
+  // Expand / outpainting (bria): grows the canvas around a single image and
+  // fills the new area. Optional prompt; the geometry (canvas_size + original
+  // placement) comes from the studio's bespoke Expand editor.
+  const outpainting = generationModes.includes('outpainting');
   const nanoBanana = isNanoBananaEndpoint(endpointId);
   // Reference-image limits come straight from the canonical parameterPolicy —
   // the seed encodes each provider's real cap (e.g. seedream's documented max
@@ -239,9 +243,10 @@ function inputSchemaFor(
   const reference = referencePolicy(parameterPolicy);
 
   const properties: AiInputSchema['properties'] = {};
-  // Pure transform ops (upscale / remove background) and multi-angle take no
-  // main prompt. (Relight does; multi-angle's optional one is emitted below.)
-  if (!pureTransform && !multiAngle) {
+  // Pure transform ops, multi-angle, and expand take no main (required) prompt
+  // here. (Relight requires one; multi-angle + expand emit their own optional
+  // prompt in their branches below.)
+  if (!pureTransform && !multiAngle && !outpainting) {
     properties.prompt = {
       type: 'string',
       title: 'Prompt',
@@ -265,7 +270,8 @@ function inputSchemaFor(
     (imageMode || imageToImage) &&
     !pureTransform &&
     !relight &&
-    !multiAngle
+    !multiAngle &&
+    !outpainting
   ) {
     const aspectOptions = stringArrayFromPolicy(
       parameterPolicy,
@@ -511,13 +517,15 @@ function inputSchemaFor(
   }
 
   if (
-    (imageToImage || pureTransform || relight || multiAngle) &&
+    (imageToImage || pureTransform || relight || multiAngle || outpainting) &&
     reference.enabled
   ) {
     properties.referenceImages = {
       type: 'array',
       title:
-        pureTransform || relight || multiAngle ? 'Image' : 'Reference images',
+        pureTransform || relight || multiAngle || outpainting
+          ? 'Image'
+          : 'Reference images',
       minItems: reference.min,
       maxItems: reference.single ? 1 : reference.max,
       items: {
@@ -712,6 +720,68 @@ function inputSchemaFor(
         'x-provider': { parameter: 'num_images', omitIfDefault: true },
       };
     }
+  }
+
+  // Expand / outpainting (bria): an optional steer prompt + the geometry the
+  // studio's Expand editor computes (final canvas size + where the original
+  // sits inside it). The geometry params are data-only (the custom editor is
+  // the UI), so they carry just their x-provider bindings.
+  if (outpainting) {
+    properties.prompt = {
+      type: 'string',
+      title: 'Prompt',
+      maxLength: 2000,
+      'x-ui': {
+        control: 'textarea',
+        group: 'prompt',
+        order: 10,
+        rows: 2,
+        importance: 'secondary',
+      },
+      'x-provider': { parameter: 'prompt', omitIfEmpty: true },
+    };
+    properties.canvasSize = {
+      type: 'array',
+      title: 'Canvas size',
+      items: { type: 'integer' },
+      minItems: 2,
+      maxItems: 2,
+      'x-ui': {
+        control: 'hidden',
+        group: 'settings',
+        order: 40,
+        importance: 'advanced',
+      },
+      'x-provider': { parameter: 'canvas_size' },
+    };
+    properties.originalImageSize = {
+      type: 'array',
+      title: 'Original size',
+      items: { type: 'integer' },
+      minItems: 2,
+      maxItems: 2,
+      'x-ui': {
+        control: 'hidden',
+        group: 'settings',
+        order: 41,
+        importance: 'advanced',
+      },
+      'x-provider': { parameter: 'original_image_size' },
+    };
+    properties.originalImageLocation = {
+      type: 'array',
+      title: 'Original location',
+      items: { type: 'integer' },
+      minItems: 2,
+      maxItems: 2,
+      'x-ui': {
+        control: 'hidden',
+        group: 'settings',
+        order: 42,
+        importance: 'advanced',
+      },
+      'x-provider': { parameter: 'original_image_location' },
+    };
   }
 
   if (
@@ -1042,7 +1112,7 @@ function inputSchemaFor(
     // Ops with no main prompt property (pure transforms + multi-angle) must not
     // list it as required — that would be an invalid schema (required field
     // absent from properties). Relight keeps the required prompt.
-    required: pureTransform || multiAngle ? [] : ['prompt'],
+    required: pureTransform || multiAngle || outpainting ? [] : ['prompt'],
     additionalProperties: false,
     'x-ui': {
       groups: [
@@ -1105,6 +1175,7 @@ function capabilityMatrixFor(
   const imageInput =
     imageOnly ||
     relight ||
+    generationModes.includes('outpainting') ||
     generationModes.some((mode) => mode.includes('image_to'));
   return {
     source: 'internal',
@@ -1140,6 +1211,10 @@ function capabilityMatrixFor(
       // Multi-angle adds the camera controls + an optional refine prompt.
       ...(generationModes.includes('multi_angle')
         ? ['horizontal_angle', 'vertical_angle', 'zoom', 'additional_prompt']
+        : []),
+      // Expand adds the canvas geometry params.
+      ...(generationModes.includes('outpainting')
+        ? ['canvas_size', 'original_image_size', 'original_image_location']
         : []),
     ],
     unsupportedParameters: [],

@@ -12,11 +12,12 @@ import {
   IconDownload,
   IconLoader2,
   IconPencil,
+  IconArrowsDiagonal,
+  IconBackground,
   IconBulb,
   IconPhoto,
   IconRefresh,
   IconRotate3d,
-  IconScissors,
   IconVideo,
   IconX,
 } from "@tabler/icons-react";
@@ -28,6 +29,7 @@ import { useDismiss } from "@/lib/use-dismiss";
 import { useAiCatalog, usableModelsByModality } from "@/app/canvas/_lib/use-ai-catalog";
 import { useGeneration } from "@/app/canvas/_lib/use-canvas-generation";
 import {
+  EXPAND_OP,
   MULTI_ANGLE_OP,
   OperationConfirmBar,
   PANORAMA_OP,
@@ -38,6 +40,7 @@ import {
   type OperationDef,
 } from "./operation-confirm-bar";
 import { MultiAngleEditor } from "./multi-angle-editor";
+import { ExpandEditor } from "./expand-editor";
 import { useCanvasGraphContext } from "@/lib/collab/canvas-graph-context";
 import {
   defaultMode,
@@ -387,7 +390,7 @@ function GenerationCard({
                 <IconArrowsMaximize className="size-4" stroke={1.8} />
               </ToolbarButton>
               <ToolbarButton label="Remove BG" onClick={() => setPendingOp(REMOVE_BG_OP)}>
-                <IconScissors className="size-4" stroke={1.8} />
+                <IconBackground className="size-4" stroke={1.8} />
               </ToolbarButton>
               <ToolbarButton
                 label="Relight"
@@ -397,6 +400,9 @@ function GenerationCard({
               </ToolbarButton>
               <ToolbarButton label="Multi-Angle" onClick={() => setPendingOp(MULTI_ANGLE_OP)}>
                 <IconRotate3d className="size-4" stroke={1.8} />
+              </ToolbarButton>
+              <ToolbarButton label="Expand" onClick={() => setPendingOp(EXPAND_OP)}>
+                <IconArrowsDiagonal className="size-4" stroke={1.8} />
               </ToolbarButton>
               <ToolbarButton label="Generate Panorama" onClick={() => setPendingOp(PANORAMA_OP)}>
                 <Icon720 className="size-4" />
@@ -458,9 +464,13 @@ function GenerationCard({
                 src={generation.outputs[0].url}
                 className="size-full object-contain"
               />
-            ) : (data.locked || data.modelLocked) && compareBeforeUrl ? (
-              // Operation result (upscale / remove-bg / relight): before/after
-              // comparison slider — drag the handle to compare input vs output.
+            ) : (data.locked || data.modelLocked) &&
+              compareBeforeUrl &&
+              data.mode !== "outpainting" ? (
+              // Operation result (upscale / remove-bg / relight / multi-angle):
+              // before/after comparison slider — drag to compare input vs
+              // output. Skipped for expand: the output is a larger canvas, so an
+              // overlaid slider misaligns rather than compares.
               <ReactCompareSlider
                 className="size-full"
                 itemOne={
@@ -547,6 +557,12 @@ function GenerationCard({
       {pendingOp && output?.url ? (
         pendingOp.editor === "multiAngle" ? (
           <MultiAngleEditor
+            sourceNodeId={id}
+            sourceUrl={output.url}
+            onClose={() => setPendingOp(null)}
+          />
+        ) : pendingOp.editor === "expand" ? (
+          <ExpandEditor
             sourceNodeId={id}
             sourceUrl={output.url}
             onClose={() => setPendingOp(null)}
