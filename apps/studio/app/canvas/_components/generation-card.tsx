@@ -44,10 +44,12 @@ import {
 import { MultiAngleEditor } from "./multi-angle-editor";
 import { ExpandEditor } from "./expand-editor";
 import { MotionEditor } from "./motion-editor";
+import { PromptTextarea } from "./prompt-textarea";
 import { useCanvasGraphContext } from "@/lib/collab/canvas-graph-context";
 import {
   defaultMode,
   defaultSettingsForModel,
+  mergeCompatibleSettings,
   estimateModelSellPoints,
   hasSchemaProperty,
   modeLabel,
@@ -221,12 +223,6 @@ function GenerationCard({
     generation?.status === "queued" ||
     generation?.status === "generating";
   const eta = useCountdown(generation?.etaSeconds, generation?.status === "generating");
-  const progressPct =
-    generation?.progress != null
-      ? Math.round(
-          (generation.progress <= 1 ? generation.progress : generation.progress / 100) * 100
-        )
-      : null;
 
   const model = useMemo(
     () => catalog?.models.find((m) => m.id === data.modelId),
@@ -357,7 +353,10 @@ function GenerationCard({
       modelId: selected.id,
       modelName: selected.name,
       mode: defaultMode(selected),
-      settings: { ...defaultSettingsForModel(selected), ...settings },
+      // Re-base onto the new model's defaults, keeping only prior values still
+      // valid for it — a stale value (e.g. Seedance "720p" vs Wan "720P") would
+      // otherwise make the request unroutable for the new model.
+      settings: mergeCompatibleSettings(selected, settings),
     });
 
   // Default to the first usable model when none is picked yet, so a card is
@@ -542,12 +541,6 @@ function GenerationCard({
                       ? `Generating · ~${eta}s`
                       : "Generating…"}
               </p>
-              {progressPct != null && (
-                <div
-                  className="absolute bottom-0 left-0 h-0.5 bg-white/70 transition-[width] duration-500"
-                  style={{ width: `${Math.min(100, Math.max(0, progressPct))}%` }}
-                />
-              )}
             </>
           ) : generation?.status === "failed" ? (
             <>
@@ -635,9 +628,9 @@ function GenerationCard({
               {/* Pure transform ops (e.g. upscale) declare no prompt in their
                 schema — hide the textarea so the composer is just the op + send. */}
               {(!model || hasSchemaProperty(model, "prompt")) && (
-                <textarea
+                <PromptTextarea
                   value={data.prompt ?? ""}
-                  onChange={(event) => patchNodeData(id, { prompt: event.target.value })}
+                  onCommit={(prompt) => patchNodeData(id, { prompt })}
                   placeholder={promptPlaceholder(mode)}
                   rows={3}
                   autoFocus

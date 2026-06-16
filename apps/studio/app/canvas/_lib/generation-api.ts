@@ -772,6 +772,31 @@ export function defaultSettingsForModel(model: FizzAiModel | undefined): ModelSe
   return out;
 }
 
+/**
+ * Re-base a card's settings onto a newly-selected model: start from the new
+ * model's defaults, then KEEP each prior scalar value only if it's still valid
+ * for the new model (same field, and in its enum when it has one). Prevents a
+ * stale value from a previous model (e.g. Seedance's `resolution: "720p"` vs
+ * Wan's `"720P"`, or `aspect: "auto"`) from carrying over and making the request
+ * unroutable for the new model.
+ */
+export function mergeCompatibleSettings(
+  model: FizzAiModel | undefined,
+  prev: ModelSettings
+): ModelSettings {
+  const next = defaultSettingsForModel(model);
+  for (const field of schemaFields(model)) {
+    const value = prev[field.name];
+    if (value === undefined || Array.isArray(value)) continue;
+    if (field.enum && field.enum.length > 0) {
+      if (field.enum.map(String).includes(String(value))) next[field.name] = value;
+    } else {
+      next[field.name] = value;
+    }
+  }
+  return next;
+}
+
 export function isFizzAiModelUsable(model: FizzAiModel): boolean {
   return model.enabled && model.access?.allowed !== false;
 }
@@ -785,7 +810,19 @@ export function filterFizzAiInput(
 
   const next: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(values)) {
-    if (key in properties) next[key] = value;
+    const prop = properties[key];
+    if (!prop) continue; // not a parameter this model accepts
+    // Drop a value that violates the model's enum (e.g. a `resolution` left over
+    // from a previously-selected model) — sending it makes the request
+    // unroutable; omitting it lets the provider fall back to its default.
+    if (
+      Array.isArray(prop.enum) &&
+      (typeof value === "string" || typeof value === "number") &&
+      !prop.enum.map((v) => String(v)).includes(String(value))
+    ) {
+      continue;
+    }
+    next[key] = value;
   }
   return next;
 }
