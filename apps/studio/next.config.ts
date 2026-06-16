@@ -11,7 +11,7 @@ const STRIP_PREFIX = process.env.AURORA_STRIP_PREFIX === "1";
 
 // Java content backend — owns auth (/user/email/login, /user/login,
 // /user/query/user/info, /user/logout). Same prefix contract as apps/web.
-const JAVA_CONTENT = process.env.JAVA_CONTENT_URL ?? "https://fizzdragon.com/content";
+const JAVA_CONTENT = process.env.JAVA_CONTENT_URL ?? "https://java.fizzdragon.com/content";
 
 const nextConfig: NextConfig = {
   // Self-contained server bundle for the Docker runner stage.
