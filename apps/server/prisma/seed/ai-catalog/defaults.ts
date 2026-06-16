@@ -1133,6 +1133,45 @@ export const SEEDANCE_2_0_FAST_PRODUCT_PRICING: AiProductPricingPolicy = {
 // duration 2–15s, t2v ratio ∈ {16:9,9:16,1:1,4:3,3:4}; i2v derives ratio from
 // the input frame. The Bailian video schema reads these keys (resolution/aspect
 // options + min/max/default duration).
+// Kling v1 standard image-to-video — the ONLY Kling tier with the motion brush
+// (dynamic masks: a painted region + a trajectory of points, + an optional
+// static mask). Lower quality than v2.1 but the trajectory control is the
+// point. Source image → image_url (start frame); duration 5/10 s; required
+// prompt. The studio Motion editor produces dynamic_masks (emitted by the
+// mapper's motionBrush branch). No resolution/aspect knobs on this endpoint.
+export const KLING_MOTION_PARAMETER_POLICY = {
+  parameterMode: 'provider_intersection',
+  providerFamily: 'kling',
+  defaultDurationSeconds: '5',
+  durationOptions: ['5', '10'],
+  startFrame: { enabled: true },
+  motionBrush: { enabled: true },
+  seed: { enabled: false },
+} as const satisfies Prisma.InputJsonObject;
+
+// Kling v1 standard i2v — per-second points. ESTIMATE anchored on fal's Kling
+// standard tier (~$0.06/s) at a 2.0× margin → ~12 pts/s; no resolution param,
+// so a single nominal key. DB-editable via the catalog ops flow.
+export const KLING_MOTION_PRODUCT_PRICING: AiProductPricingPolicy = {
+  mode: 'per_second_matrix',
+  version: 'kling-v1-motion-points-v1-2026-06-16',
+  currency: 'COMPUTE_POINTS',
+  defaultOutputCount: 1,
+  minOutputCount: 1,
+  maxOutputCount: 1,
+  defaultResolution: '720p',
+  pointsPerSecond: { '720p': 12 },
+  minSeconds: 5,
+  maxSeconds: 10,
+  defaultSeconds: 5,
+  autoQuoteSeconds: 10,
+  referenceImageSurchargePoints: 0,
+  extraReferenceImagePoints: 0,
+  maskSurchargePoints: 0,
+  minimumPoints: 1,
+  roundTo: 1,
+};
+
 export const WAN_2_7_VIDEO_PARAMETER_POLICY = {
   parameterMode: 'provider_union',
   providerFamily: 'wan',

@@ -128,6 +128,11 @@ function seedEnabled(policy: AiJsonValue | undefined): boolean {
   return recordValue(recordValue(policy)?.seed)?.enabled === true;
 }
 
+/** Kling motion-brush capability (dynamic masks + trajectories). */
+function motionBrushEnabled(policy: AiJsonValue | undefined): boolean {
+  return recordValue(recordValue(policy)?.motionBrush)?.enabled === true;
+}
+
 function booleanFromPolicy(value: unknown, key: string): boolean | undefined {
   const flag = recordValue(value)?.[key];
   return typeof flag === 'boolean' ? flag : undefined;
@@ -781,6 +786,52 @@ function inputSchemaFor(
         importance: 'advanced',
       },
       'x-provider': { parameter: 'original_image_location' },
+    };
+  }
+
+  // Motion brush (Kling i2v): dynamic masks — a painted region (mask_url) + a
+  // trajectory of {x,y} points it follows — plus an optional static mask.
+  // Produced by the studio Motion editor; data-only params passed straight
+  // through to the provider.
+  if (motionBrushEnabled(parameterPolicy)) {
+    properties.dynamicMasks = {
+      type: 'array',
+      title: 'Motion',
+      items: {
+        type: 'object',
+        properties: {
+          mask_url: { type: 'string', format: 'uri' },
+          trajectories: {
+            type: 'array',
+            items: {
+              type: 'object',
+              properties: {
+                x: { type: 'integer' },
+                y: { type: 'integer' },
+              },
+            },
+          },
+        },
+      },
+      'x-ui': {
+        control: 'hidden',
+        group: 'settings',
+        order: 50,
+        importance: 'advanced',
+      },
+      'x-provider': { parameter: 'dynamic_masks', omitIfEmpty: true },
+    };
+    properties.staticMaskUrl = {
+      type: 'string',
+      title: 'Static mask',
+      format: 'uri',
+      'x-ui': {
+        control: 'hidden',
+        group: 'settings',
+        order: 51,
+        importance: 'advanced',
+      },
+      'x-provider': { parameter: 'static_mask_url', omitIfEmpty: true },
     };
   }
 

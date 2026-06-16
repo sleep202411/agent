@@ -159,3 +159,45 @@ button:disabled,
 .react-flow__edge:hover .react-flow__edge-path {
   opacity: 1;
 }
+
+/* "Flowing-light" generating border: a bright beam travels around the card edge
+   while a job runs. A masked conic gradient drawn into the border ring, rotated
+   via an animated custom property. */
+@property --beam-angle {
+  syntax: "<angle>";
+  inherits: false;
+  initial-value: 0deg;
+}
+@keyframes beam-spin {
+  to {
+    --beam-angle: 360deg;
+  }
+}
+.generating-beam::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  border-radius: inherit;
+  padding: 1.5px;
+  background: conic-gradient(
+    from var(--beam-angle),
+    transparent 0deg,
+    transparent 230deg,
+    rgba(229, 34, 39, 0.85) 310deg,
+    #ffffff 338deg,
+    transparent 360deg
+  );
+  -webkit-mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  animation: beam-spin 2.2s linear infinite;
+  pointer-events: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  .generating-beam::before {
+    animation: none;
+  }
+}

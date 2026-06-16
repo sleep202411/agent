@@ -7,6 +7,8 @@ import {
   BRIA_RMBG_PRODUCT_PRICING,
   ICLIGHT_RELIGHT_PARAMETER_POLICY,
   ICLIGHT_RELIGHT_PRODUCT_PRICING,
+  KLING_MOTION_PARAMETER_POLICY,
+  KLING_MOTION_PRODUCT_PRICING,
   QWEN_MULTI_ANGLE_PARAMETER_POLICY,
   QWEN_MULTI_ANGLE_PRODUCT_PRICING,
   TOPAZ_UPSCALE_PARAMETER_POLICY,
@@ -80,6 +82,17 @@ const expandConfig = () =>
     generationModes: ['outpainting'],
     parameterPolicy: BRIA_EXPAND_PARAMETER_POLICY,
     billing: { productPricing: BRIA_EXPAND_PRODUCT_PRICING },
+  });
+
+const klingMotionConfig = () =>
+  createFalModelConfig({
+    ...baseArgs,
+    endpointId: 'fal-ai/kling-video/v1/standard/image-to-video',
+    type: 'video',
+    queueName: 'ai-video-generation',
+    generationModes: ['image_to_video'],
+    parameterPolicy: KLING_MOTION_PARAMETER_POLICY,
+    billing: { productPricing: KLING_MOTION_PRODUCT_PRICING },
   });
 
 describe('fal-schema.mapper — upscale (pure transform) mode', () => {
@@ -390,6 +403,66 @@ describe('fal-schema.mapper — outpainting (expand)', () => {
     ]) {
       expect(def.capability_matrix.supportedParameters).toContain(p);
     }
+  });
+});
+
+describe('fal-schema.mapper — kling motion-brush i2v', () => {
+  it('requires a prompt, binds the start frame, and exposes the motion params', () => {
+    const { inputSchema } = klingMotionConfig();
+
+    // Kling i2v requires a prompt.
+    expect(inputSchema.properties.prompt).toBeDefined();
+    expect(inputSchema.required).toContain('prompt');
+    // Start frame → image_url; motion-brush dynamic masks; duration 5/10.
+    expect(inputSchema.properties.startFrame).toBeDefined();
+    expect(inputSchema.properties.dynamicMasks).toMatchObject({
+      type: 'array',
+    });
+    expect(inputSchema.properties.staticMaskUrl).toBeDefined();
+    expect(inputSchema.properties.duration).toMatchObject({
+      enum: ['5', '10'],
+    });
+  });
+
+  it('binds start frame → image_url and dynamic masks → dynamic_masks', () => {
+    const { providerInputMap } = klingMotionConfig();
+    expect(providerInputMap.startFrame).toMatchObject({
+      parameter: 'image_url',
+    });
+    expect(providerInputMap.dynamicMasks).toMatchObject({
+      parameter: 'dynamic_masks',
+    });
+    expect(providerInputMap.staticMaskUrl).toMatchObject({
+      parameter: 'static_mask_url',
+    });
+  });
+
+  it('passes the dynamic_masks structure straight to the wire', () => {
+    const config = klingMotionConfig();
+    const masks = [
+      {
+        mask_url: 'https://example.com/mask.png',
+        trajectories: [
+          { x: 10, y: 20 },
+          { x: 30, y: 40 },
+        ],
+      },
+    ];
+    const body = mapFalProviderRequest(config, {
+      startFrame: { url: 'https://example.com/start.png' },
+      prompt: 'the boar walks left',
+      dynamicMasks: masks,
+      duration: '5',
+    });
+    expect(body.image_url).toBe('https://example.com/start.png');
+    expect(body.prompt).toBe('the boar walks left');
+    expect(body.dynamic_masks).toEqual(masks);
+    expect(body.duration).toBe('5');
+  });
+
+  it('reports text+image input in the capability matrix', () => {
+    const def = toAiModelDefinition(klingMotionConfig());
+    expect(def.capability_matrix.inputModalities).toEqual(['text', 'image']);
   });
 });
 

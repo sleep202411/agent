@@ -90,7 +90,7 @@ export interface OperationDef {
   composed?: boolean;
   /** Ops with a bespoke editor surface (instead of the inline confirm bar);
    *  the toolbar renders the named editor overlay under the source node. */
-  editor?: "multiAngle" | "expand";
+  editor?: "multiAngle" | "expand" | "motion";
 }
 
 /** Output-count selector for the confirm bar — a synthetic enum field (1–4)
@@ -141,6 +141,17 @@ export const EXPAND_OP: OperationDef = {
   resolveMode: () => "outpainting",
   // Drag-frame canvas expansion → a bespoke editor surface.
   editor: "expand",
+};
+
+export const MOTION_OP: OperationDef = {
+  name: "Motion",
+  // The motion-brush model is the one exposing the dynamicMasks param (Kling
+  // i2v) — a capability find, so it doesn't collide with other i2v models.
+  findModel: (catalog) =>
+    catalog?.models.find((m) => Boolean(m.input_schema?.properties?.dynamicMasks)),
+  resolveMode: () => "image_to_video",
+  // Paint a region + draw a path → a bespoke motion editor (video result).
+  editor: "motion",
 };
 
 /**
@@ -211,6 +222,8 @@ export function useSpawnOperationResult() {
       sourceNodeId: string;
       sourceUrl: string;
       settings: ModelSettings;
+      /** User-typed prompt (e.g. motion); falls back to op.buildPrompt(). */
+      prompt?: string;
     }) => {
       const { op, model, sourceNodeId, sourceUrl, settings } = params;
       const mode = op.resolveMode(model);
@@ -218,10 +231,11 @@ export function useSpawnOperationResult() {
       const source = getNode(sourceNodeId);
       const nodeId = crypto.randomUUID();
       const edgeId = crypto.randomUUID();
-      const prompt = op.buildPrompt?.();
+      const prompt = params.prompt ?? op.buildPrompt?.();
       graph.addNode({
         id: nodeId,
-        type: "prompt",
+        // Video ops (e.g. Kling motion i2v) spawn a video result node.
+        type: model.type === "video" ? "video" : "prompt",
         position: source ? { x: source.position.x + 440, y: source.position.y } : { x: 0, y: 0 },
         data: {
           name: op.name,

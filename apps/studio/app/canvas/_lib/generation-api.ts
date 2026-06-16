@@ -613,10 +613,12 @@ const OPERATION_ONLY_MODES: readonly string[] = [
   "outpainting",
 ];
 
-/** A model backing only canvas operations (Upscale / Remove BG / 720°) — every
- *  mode it offers is operation-only, so it's reached from the image toolbar, not
- *  the model picker. */
+/** A model backing only canvas operations (Upscale / Remove BG / 720° / Motion)
+ *  — reached from an image toolbar action, not the general model picker. True
+ *  when every mode it offers is operation-only, or it exposes a bespoke-editor
+ *  param (e.g. the Kling motion brush's `dynamicMasks`). */
 export function isOperationOnlyModel(model: FizzAiModel): boolean {
+  if (model.input_schema?.properties?.dynamicMasks) return true;
   const modes = model.generationModes ?? [];
   return modes.length > 0 && modes.every((m) => OPERATION_ONLY_MODES.includes(m));
 }
@@ -704,9 +706,11 @@ export interface SchemaFieldDescriptor {
 }
 
 /** A flat field→value bag — exactly the shape the submit input expects. */
-// Most controls are scalars; a few ops carry small numeric tuples (e.g. expand's
-// canvas_size / original placement) that the request mapper passes through as-is.
-export type ModelSettings = Record<string, string | number | boolean | number[]>;
+// Most controls are scalars; a few ops carry structured values the request
+// mapper passes through as-is — numeric tuples (expand's canvas_size) and object
+// arrays (the motion brush's dynamic_masks). The generic settings panel coerces
+// non-scalars away, so they only ride along for bespoke editors.
+export type ModelSettings = Record<string, string | number | boolean | unknown[]>;
 
 function inferControl(prop: FizzAiSchemaProperty): SchemaControl {
   if (Array.isArray(prop.enum) && prop.enum.length > 0) return "segmented";

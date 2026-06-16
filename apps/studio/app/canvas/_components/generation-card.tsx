@@ -18,6 +18,7 @@ import {
   IconPhoto,
   IconRefresh,
   IconRotate3d,
+  IconRoute,
   IconVideo,
   IconX,
 } from "@tabler/icons-react";
@@ -30,6 +31,7 @@ import { useAiCatalog, usableModelsByModality } from "@/app/canvas/_lib/use-ai-c
 import { useGeneration } from "@/app/canvas/_lib/use-canvas-generation";
 import {
   EXPAND_OP,
+  MOTION_OP,
   MULTI_ANGLE_OP,
   OperationConfirmBar,
   PANORAMA_OP,
@@ -41,6 +43,7 @@ import {
 } from "./operation-confirm-bar";
 import { MultiAngleEditor } from "./multi-angle-editor";
 import { ExpandEditor } from "./expand-editor";
+import { MotionEditor } from "./motion-editor";
 import { useCanvasGraphContext } from "@/lib/collab/canvas-graph-context";
 import {
   defaultMode,
@@ -125,7 +128,17 @@ function resultAspectRatio(
  * hover-triggered play() isn't blocked by the autoplay policy; native controls
  * stay for scrub / fullscreen / unmute.
  */
-function HoverPreviewVideo({ src, className }: { src: string; className?: string }) {
+function HoverPreviewVideo({
+  src,
+  className,
+  onLoadedRatio,
+}: {
+  src: string;
+  className?: string;
+  /** Reports the video's intrinsic aspect (e.g. "1080 / 1920") once known, so
+   *  the card can hug the clip's real shape instead of a default well. */
+  onLoadedRatio?: (ratio: string) => void;
+}) {
   const ref = useRef<HTMLVideoElement>(null);
   return (
     <video
@@ -135,6 +148,10 @@ function HoverPreviewVideo({ src, className }: { src: string; className?: string
       muted
       playsInline
       controls
+      onLoadedMetadata={() => {
+        const v = ref.current;
+        if (v?.videoWidth && v.videoHeight) onLoadedRatio?.(`${v.videoWidth} / ${v.videoHeight}`);
+      }}
       onMouseEnter={() => void ref.current?.play().catch(() => {})}
       onMouseLeave={() => ref.current?.pause()}
       className={className}
@@ -404,6 +421,9 @@ function GenerationCard({
               <ToolbarButton label="Expand" onClick={() => setPendingOp(EXPAND_OP)}>
                 <IconArrowsDiagonal className="size-4" stroke={1.8} />
               </ToolbarButton>
+              <ToolbarButton label="Motion" onClick={() => setPendingOp(MOTION_OP)}>
+                <IconRoute className="size-4" stroke={1.8} />
+              </ToolbarButton>
               <ToolbarButton label="Generate Panorama" onClick={() => setPendingOp(PANORAMA_OP)}>
                 <Icon720 className="size-4" />
               </ToolbarButton>
@@ -422,8 +442,9 @@ function GenerationCard({
 
       <div
         className={cn(
-          "w-[360px] overflow-hidden rounded-2xl bg-card",
-          selected && "ring-2 ring-ring"
+          "relative w-[360px] overflow-hidden rounded-2xl bg-card",
+          selected && "ring-2 ring-ring",
+          busy && "generating-beam"
         )}
       >
         {/* Header: node name left, model used right — a lighter frosted strip
@@ -462,6 +483,7 @@ function GenerationCard({
             generation.outputs[0].type === "video" ? (
               <HoverPreviewVideo
                 src={generation.outputs[0].url}
+                onLoadedRatio={setLoadedRatio}
                 className="size-full object-contain"
               />
             ) : (data.locked || data.modelLocked) &&
@@ -541,6 +563,11 @@ function GenerationCard({
                 <IconRefresh className="size-3.5" stroke={1.8} />
                 Retry
               </button>
+              {generation.jobId && (
+                <span className="select-text font-mono text-[10px] text-white/30">
+                  {generation.jobId}
+                </span>
+              )}
             </>
           ) : (
             <>
@@ -563,6 +590,12 @@ function GenerationCard({
           />
         ) : pendingOp.editor === "expand" ? (
           <ExpandEditor
+            sourceNodeId={id}
+            sourceUrl={output.url}
+            onClose={() => setPendingOp(null)}
+          />
+        ) : pendingOp.editor === "motion" ? (
+          <MotionEditor
             sourceNodeId={id}
             sourceUrl={output.url}
             onClose={() => setPendingOp(null)}

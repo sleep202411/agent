@@ -134,7 +134,7 @@ export function MultiAngleEditor({
       className="absolute top-full left-1/2 z-10 mt-3 duration-200 animate-in fade-in-0 slide-in-from-bottom-3"
       style={{ transform: `translateX(-50%) scale(${1 / zoom})`, transformOrigin: "top center" }}
     >
-      <div className="nodrag nowheel w-[640px] rounded-3xl bg-white/[0.05] p-4 backdrop-blur-3xl backdrop-saturate-200 shadow-[0_24px_80px_rgba(0,0,0,0.5),inset_0_1px_0_rgba(255,255,255,0.16)]">
+      <div className="nodrag nowheel w-[640px] rounded-3xl bg-[oklch(0.2_0_0/0.92)] p-4 backdrop-blur-2xl shadow-[0_24px_80px_rgba(0,0,0,0.5),inset_0_1px_0_rgba(255,255,255,0.12)]">
         <div className="mb-3 flex items-center justify-between">
           <span className="text-base font-semibold">Multi-Angle</span>
           <button

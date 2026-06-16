@@ -12,12 +12,14 @@ import {
   IconLoader2,
   IconRefresh,
   IconRotate3d,
+  IconRoute,
   IconUpload,
 } from "@tabler/icons-react";
 import { cn } from "@/lib/utils";
 import { CanvasNodeToolbar, ToolbarButton } from "./node-toolbar";
 import {
   EXPAND_OP,
+  MOTION_OP,
   MULTI_ANGLE_OP,
   OperationConfirmBar,
   PANORAMA_OP,
@@ -29,6 +31,7 @@ import {
 } from "./operation-confirm-bar";
 import { MultiAngleEditor } from "./multi-angle-editor";
 import { ExpandEditor } from "./expand-editor";
+import { MotionEditor } from "./motion-editor";
 import { Icon720 } from "./panorama-viewer";
 import { PortPlus } from "./ports";
 import { useRetryUpload, useUploadEntry } from "./upload-state-context";
@@ -93,6 +96,9 @@ function ImageNodeComponent({ id, data, selected }: NodeProps<ImageNodeType>) {
               <ToolbarButton label="Expand" onClick={() => setPendingOp(EXPAND_OP)}>
                 <IconArrowsDiagonal className="size-4" stroke={1.8} />
               </ToolbarButton>
+              <ToolbarButton label="Motion" onClick={() => setPendingOp(MOTION_OP)}>
+                <IconRoute className="size-4" stroke={1.8} />
+              </ToolbarButton>
               <ToolbarButton label="Generate Panorama" onClick={() => setPendingOp(PANORAMA_OP)}>
                 <Icon720 className="size-4" />
               </ToolbarButton>
@@ -152,6 +158,8 @@ function ImageNodeComponent({ id, data, selected }: NodeProps<ImageNodeType>) {
         />
       ) : pendingOp?.editor === "expand" ? (
         <ExpandEditor sourceNodeId={id} sourceUrl={data.src} onClose={() => setPendingOp(null)} />
+      ) : pendingOp?.editor === "motion" ? (
+        <MotionEditor sourceNodeId={id} sourceUrl={data.src} onClose={() => setPendingOp(null)} />
       ) : pendingOp ? (
         <OperationConfirmBar
           op={pendingOp}

@@ -118,6 +118,14 @@ export class AiGenerationValidatorService {
         );
       }
       case 'object': {
+        // A bare URL string for a media {url} object field (e.g. an i2v
+        // startFrame) is wrapped — mirrors the array-item path above, so
+        // single-object reference fields accept the same shape array fields do.
+        if (typeof raw === 'string' && field.properties?.url) {
+          const url = raw.trim();
+          this.assertUri(url, key);
+          return this.normalizeObject(field, { url });
+        }
         if (!this.isRecord(raw)) {
           throw this.validationError(
             `${this.fieldTitle(field, key)} must be an object.`,

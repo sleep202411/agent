@@ -12,6 +12,8 @@ import type { AiGenerationMode } from '@repo/shared';
 import {
   HAPPYHORSE_VIDEO_PARAMETER_POLICY,
   HAPPYHORSE_VIDEO_PRODUCT_PRICING,
+  KLING_MOTION_PARAMETER_POLICY,
+  KLING_MOTION_PRODUCT_PRICING,
   SEEDANCE_2_0_FAST_PRODUCT_PRICING,
   SEEDANCE_2_0_PARAMETER_POLICY,
   SEEDANCE_2_0_PRODUCT_PRICING,
@@ -277,5 +279,32 @@ export const VIDEO_MODELS: VideoModelSeed[] = [
       'happyhorse-1.0-i2v',
       'happyhorse-1.0-r2v',
     ],
+  },
+  {
+    slug: 'kling-motion',
+    displayName: 'Kling Motion',
+    family: 'kling',
+    description:
+      'Kling v1 image-to-video with the motion brush — paint a region and draw a path, and that region follows the trajectory. The only Kling tier with trajectory control. Reached via the studio Motion action.',
+    modes: [I2V],
+    tier: 'vip',
+    // Display floor ≈ maxSeconds(10) × 720p points(12).
+    cost: 120,
+    parameterPolicy: KLING_MOTION_PARAMETER_POLICY,
+    productPricing: KLING_MOTION_PRODUCT_PRICING,
+    group: 'video',
+    sortOrder: 40,
+    recommended: false,
+    providers: [
+      {
+        provider: 'fal-ai',
+        endpointId: 'fal-ai/kling-video/v1/standard/image-to-video',
+        modes: [I2V],
+        providerOutputSchema: PROVIDER_VIDEO_OUTPUT_SCHEMA,
+        requestTimeoutSeconds: 1800,
+        priority: 100,
+      },
+    ],
+    providerAliases: ['fal/fal-ai/kling-video/v1/standard/image-to-video'],
   },
 ];
