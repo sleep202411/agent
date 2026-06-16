@@ -47,6 +47,10 @@ import {
   SEEDREAM_4_PRODUCT_PRICING,
   SEEDREAM_5_LITE_PARAMETER_POLICY,
   SEEDREAM_5_LITE_PRODUCT_PRICING,
+  BRIA_RMBG_PARAMETER_POLICY,
+  BRIA_RMBG_PRODUCT_PRICING,
+  ICLIGHT_RELIGHT_PARAMETER_POLICY,
+  ICLIGHT_RELIGHT_PRODUCT_PRICING,
   TOPAZ_UPSCALE_PARAMETER_POLICY,
   TOPAZ_UPSCALE_PRODUCT_PRICING,
   WAN_IMAGE_27_PARAMETER_POLICY,
@@ -126,6 +130,8 @@ const T2I: AiGenerationMode = 'text_to_image';
 const I2I: AiGenerationMode = 'image_to_image';
 const INPAINT: AiGenerationMode = 'inpainting';
 const UPSCALE: AiGenerationMode = 'upscale';
+const REMOVE_BG: AiGenerationMode = 'remove_background';
+const RELIGHT: AiGenerationMode = 'relight';
 
 const PROVIDER_IMAGE_OUTPUT_SCHEMA = {
   type: 'object',
@@ -529,6 +535,72 @@ export const IMAGE_MODELS: ImageModelSeed[] = [
       },
     ],
     providerAliases: ['fal/fal-ai/topaz/upscale/image'],
+  },
+  {
+    slug: 'bria-rmbg',
+    displayName: 'Remove Background',
+    family: 'image-transform',
+    description:
+      'Bria background removal — mattes the subject out to a transparent image. Reached via the studio Remove BG action, not the model picker.',
+    modes: [REMOVE_BG],
+    tier: 'vip',
+    cost: 10,
+    parameterPolicy: BRIA_RMBG_PARAMETER_POLICY,
+    productPricing: BRIA_RMBG_PRODUCT_PRICING,
+    group: 'tools',
+    sortOrder: 211,
+    providers: [
+      {
+        provider: 'fal-ai',
+        endpointId: 'fal-ai/bria/background/remove',
+        modes: [REMOVE_BG],
+        priority: 10,
+        weight: 100,
+        providerOutputSchema: PROVIDER_IMAGE_OUTPUT_SCHEMA,
+        catalogSnapshot: falCatalogSnapshot({
+          model: 'fal-ai/bria/background/remove',
+          usdPerImage: 0.04,
+          docsUrl: 'https://fal.ai/models/fal-ai/bria/background/remove/api',
+        }),
+        maxConcurrentRequests: 4,
+        requestTimeoutSeconds: 600,
+        failureThreshold: 3,
+      },
+    ],
+    providerAliases: ['fal/fal-ai/bria/background/remove'],
+  },
+  {
+    slug: 'iclight-relight',
+    displayName: 'Relight',
+    family: 'image-transform',
+    description:
+      'IC-Light V2 relighting — re-lights the subject to match a described scene/lighting. Reached via the studio Relight action, not the model picker.',
+    modes: [RELIGHT],
+    tier: 'vip',
+    cost: 20,
+    parameterPolicy: ICLIGHT_RELIGHT_PARAMETER_POLICY,
+    productPricing: ICLIGHT_RELIGHT_PRODUCT_PRICING,
+    group: 'tools',
+    sortOrder: 212,
+    providers: [
+      {
+        provider: 'fal-ai',
+        endpointId: 'fal-ai/iclight-v2',
+        modes: [RELIGHT],
+        priority: 10,
+        weight: 100,
+        providerOutputSchema: PROVIDER_IMAGE_OUTPUT_SCHEMA,
+        catalogSnapshot: falCatalogSnapshot({
+          model: 'fal-ai/iclight-v2',
+          usdPerImage: 0.05,
+          docsUrl: 'https://fal.ai/models/fal-ai/iclight-v2/api',
+        }),
+        maxConcurrentRequests: 4,
+        requestTimeoutSeconds: 600,
+        failureThreshold: 3,
+      },
+    ],
+    providerAliases: ['fal/fal-ai/iclight-v2'],
   },
   {
     slug: 'flux-2-flex',

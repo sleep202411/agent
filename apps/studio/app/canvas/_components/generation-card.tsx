@@ -5,14 +5,17 @@ import { useStore, type Node, type NodeProps } from "@xyflow/react";
 import {
   IconAdjustments,
   IconAlertTriangle,
+  IconArrowsMaximize,
   IconArrowUp,
   IconBolt,
   IconChevronDown,
   IconDownload,
   IconLoader2,
   IconPencil,
+  IconBulb,
   IconPhoto,
   IconRefresh,
+  IconScissors,
   IconVideo,
   IconX,
 } from "@tabler/icons-react";
@@ -23,7 +26,15 @@ import { isUploadAbort, uploadFileViaSignedUrl } from "@/lib/media-upload";
 import { useDismiss } from "@/lib/use-dismiss";
 import { useAiCatalog, usableModelsByModality } from "@/app/canvas/_lib/use-ai-catalog";
 import { useGeneration } from "@/app/canvas/_lib/use-canvas-generation";
-import { OperationConfirmBar, PANORAMA_OP, type OperationDef } from "./operation-confirm-bar";
+import {
+  OperationConfirmBar,
+  PANORAMA_OP,
+  RELIGHT_OP,
+  REMOVE_BG_OP,
+  UPSCALE_OP,
+  useSpawnComposedOperation,
+  type OperationDef,
+} from "./operation-confirm-bar";
 import { useCanvasGraphContext } from "@/lib/collab/canvas-graph-context";
 import {
   defaultMode,
@@ -71,6 +82,12 @@ export type GenerationNodeData = {
    * pickers (switching them would contradict the operation the card represents).
    */
   locked?: boolean;
+  /**
+   * Model-locked card (spawned from a prompt-driven op like Relight): the model
+   * + mode pickers are hidden (fixed by the op), but the composer stays open so
+   * the user can write the prompt + tune settings before generating.
+   */
+  modelLocked?: boolean;
 };
 export type GenerationNodeType = Node<GenerationNodeData, "prompt" | "video">;
 
@@ -137,6 +154,15 @@ function useCountdown(seconds: number | undefined, active: boolean): number | nu
   return remaining;
 }
 
+/** Mode-specific prompt hints — generic "Write your prompt.." gives no guidance
+ *  for ops where the prompt has a particular job (e.g. relight = the lighting). */
+const PROMPT_PLACEHOLDERS: Record<string, string> = {
+  relight: "Describe the lighting, e.g. “warm sunset light from the left”",
+};
+function promptPlaceholder(mode: string | undefined): string {
+  return (mode && PROMPT_PLACEHOLDERS[mode]) || "Write your prompt..";
+}
+
 function GenerationCard({
   id,
   data,
@@ -150,6 +176,7 @@ function GenerationCard({
   // marquee / select-all doesn't pop every card's prompt at once.
   const soleSelected = nodes.filter((n) => n.selected).length === 1;
   const { submit, cancel } = useGeneration();
+  const spawnComposedOp = useSpawnComposedOperation();
   const [pendingOp, setPendingOp] = useState<OperationDef | null>(null);
   const autoSubmittedRef = useRef(false);
   const [panel, setPanel] = useState<"model" | "settings" | "mode" | null>(null);
@@ -352,9 +379,23 @@ function GenerationCard({
               <Icon720 className="size-4" />
             </ToolbarButton>
           ) : (
-            <ToolbarButton label="Generate Panorama" onClick={() => setPendingOp(PANORAMA_OP)}>
-              <Icon720 className="size-4" />
-            </ToolbarButton>
+            <>
+              <ToolbarButton label="Upscale" onClick={() => setPendingOp(UPSCALE_OP)}>
+                <IconArrowsMaximize className="size-4" stroke={1.8} />
+              </ToolbarButton>
+              <ToolbarButton label="Remove BG" onClick={() => setPendingOp(REMOVE_BG_OP)}>
+                <IconScissors className="size-4" stroke={1.8} />
+              </ToolbarButton>
+              <ToolbarButton
+                label="Relight"
+                onClick={() => output?.url && spawnComposedOp(RELIGHT_OP, id, output.url)}
+              >
+                <IconBulb className="size-4" stroke={1.8} />
+              </ToolbarButton>
+              <ToolbarButton label="Generate Panorama" onClick={() => setPendingOp(PANORAMA_OP)}>
+                <Icon720 className="size-4" />
+              </ToolbarButton>
+            </>
           ))}
         {output && (
           <ToolbarButton label="Download" onClick={onDownload}>
@@ -411,9 +452,9 @@ function GenerationCard({
                 src={generation.outputs[0].url}
                 className="size-full object-contain"
               />
-            ) : data.locked && compareBeforeUrl ? (
-              // Operation result (e.g. upscale): before/after comparison slider —
-              // drag the handle to compare the input vs the produced image.
+            ) : (data.locked || data.modelLocked) && compareBeforeUrl ? (
+              // Operation result (upscale / remove-bg / relight): before/after
+              // comparison slider — drag the handle to compare input vs output.
               <ReactCompareSlider
                 className="size-full"
                 itemOne={
@@ -534,15 +575,16 @@ function GenerationCard({
                 <textarea
                   value={data.prompt ?? ""}
                   onChange={(event) => patchNodeData(id, { prompt: event.target.value })}
-                  placeholder="Write your prompt.."
+                  placeholder={promptPlaceholder(mode)}
                   rows={3}
                   autoFocus
                   className="block w-full resize-none bg-transparent text-sm outline-none placeholder:text-muted-foreground"
                 />
               )}
               <div className="flex items-center gap-2 pt-2">
-                {/* Mode pill — hidden on operation-locked cards (op fixes the mode). */}
-                {!data.locked && modes.length > 1 && (
+                {/* Mode pill — hidden on operation-locked / model-locked cards
+                  (the op fixes the mode). */}
+                {!data.locked && !data.modelLocked && modes.length > 1 && (
                   <div className="relative" data-popover-zone>
                     <button
                       type="button"
@@ -562,10 +604,10 @@ function GenerationCard({
                     )}
                   </div>
                 )}
-                {/* Model pill — hidden on operation-locked cards (op fixes the
-                  model; switching it would contradict the operation + bring back
-                  mode/prompt). The header still shows the model name. */}
-                {!data.locked && (
+                {/* Model pill — hidden on operation-locked / model-locked cards
+                  (op fixes the model; switching it would contradict the
+                  operation + bring back mode/prompt). Header still shows it. */}
+                {!data.locked && !data.modelLocked && (
                   <div className="relative" data-popover-zone>
                     <button
                       type="button"

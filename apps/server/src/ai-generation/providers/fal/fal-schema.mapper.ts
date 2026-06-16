@@ -216,8 +216,17 @@ function inputSchemaFor(
   const firstLastFrame = generationModes.includes('first_last_frame_to_video');
   const imageToVideo = generationModes.includes('image_to_video');
   const imageToImage = generationModes.includes('image_to_image');
-  // Single-image transform op: one input image → one output image, no prompt.
+  // Single-image transform ops: one input image → one output image, no prompt
+  // and none of the generation controls. Each may still add its own narrow
+  // param (upscale → factor); background removal adds none.
   const upscale = generationModes.includes('upscale');
+  const removeBackground = generationModes.includes('remove_background');
+  const pureTransform = upscale || removeBackground;
+  // Relight (IC-Light) is a single-image op that DOES take a prompt, so it is
+  // not a pure transform — it keeps the prompt but takes a curated control set
+  // (preset size + output count + light direction) instead of the generic
+  // aspect/resolution controls.
+  const relight = generationModes.includes('relight');
   const nanoBanana = isNanoBananaEndpoint(endpointId);
   // Reference-image limits come straight from the canonical parameterPolicy —
   // the seed encodes each provider's real cap (e.g. seedream's documented max
@@ -226,8 +235,8 @@ function inputSchemaFor(
   const reference = referencePolicy(parameterPolicy);
 
   const properties: AiInputSchema['properties'] = {};
-  // Pure transform ops (upscale) take no prompt.
-  if (!upscale) {
+  // Pure transform ops (upscale / remove background) take no prompt.
+  if (!pureTransform) {
     properties.prompt = {
       type: 'string',
       title: 'Prompt',
@@ -244,10 +253,10 @@ function inputSchemaFor(
     };
   }
 
-  // Pure transform ops (upscale) take none of the generation controls
+  // Pure transform ops take none of the generation controls
   // (aspect / resolution / quality / output-count / negative prompt) — only
   // their own input image + op param, added below.
-  if ((imageMode || imageToImage) && !upscale) {
+  if ((imageMode || imageToImage) && !pureTransform && !relight) {
     const aspectOptions = stringArrayFromPolicy(
       parameterPolicy,
       'supportedAspectRatios',
@@ -491,10 +500,10 @@ function inputSchemaFor(
     }
   }
 
-  if ((imageToImage || upscale) && reference.enabled) {
+  if ((imageToImage || pureTransform || relight) && reference.enabled) {
     properties.referenceImages = {
       type: 'array',
-      title: upscale ? 'Image' : 'Reference images',
+      title: pureTransform || relight ? 'Image' : 'Reference images',
       minItems: reference.min,
       maxItems: reference.single ? 1 : reference.max,
       items: {
@@ -535,6 +544,71 @@ function inputSchemaFor(
       },
       'x-provider': { parameter: 'upscale_factor' },
     };
+  }
+
+  // Relight (IC-Light): a curated control set instead of the generic aspect/
+  // resolution block — a preset output size, a coarse light direction, and an
+  // output count. The prompt (required) is emitted above by the !pureTransform
+  // branch; the single source image by the reference block above.
+  if (relight) {
+    properties.imageSize = {
+      type: 'string',
+      title: 'Image size',
+      default: 'square_hd',
+      enum: [
+        'square_hd',
+        'square',
+        'portrait_4_3',
+        'portrait_16_9',
+        'landscape_4_3',
+        'landscape_16_9',
+      ],
+      'x-ui': {
+        control: 'select',
+        group: 'settings',
+        order: 20,
+        importance: 'secondary',
+      },
+      'x-provider': { parameter: 'image_size' },
+    };
+    properties.initialLatent = {
+      type: 'string',
+      title: 'Light direction',
+      default: 'None',
+      enum: ['None', 'Left', 'Right', 'Top', 'Bottom'],
+      'x-ui': {
+        control: 'segmented',
+        group: 'settings',
+        order: 22,
+        importance: 'primary',
+      },
+      'x-provider': { parameter: 'initial_latent', omitIfDefault: true },
+    };
+    const variationOptions = numberArrayFromPolicy(
+      parameterPolicy,
+      'variationOptions',
+    );
+    const maxVariations =
+      variationOptions.length > 0 ? Math.max(...variationOptions) : 4;
+    if (maxVariations > 1) {
+      properties.numOutputs = {
+        type: 'integer',
+        title: 'Outputs',
+        default:
+          typeof recordValue(parameterPolicy)?.defaultVariations === 'number'
+            ? (recordValue(parameterPolicy)?.defaultVariations as number)
+            : 1,
+        minimum: 1,
+        maximum: maxVariations,
+        'x-ui': {
+          control: 'stepper',
+          group: 'settings',
+          order: 30,
+          importance: 'secondary',
+        },
+        'x-provider': { parameter: 'num_images', omitIfDefault: true },
+      };
+    }
   }
 
   if (
@@ -862,10 +936,10 @@ function inputSchemaFor(
   return {
     type: 'object',
     properties,
-    // Upscale omits the prompt property entirely (see the `!upscale` gate
-    // above), so it must not be listed as required — that would be an invalid
-    // schema (required field absent from properties).
-    required: upscale ? [] : ['prompt'],
+    // Pure transforms omit the prompt property entirely (see the
+    // `!pureTransform` gate above), so it must not be listed as required —
+    // that would be an invalid schema (required field absent from properties).
+    required: pureTransform ? [] : ['prompt'],
     additionalProperties: false,
     'x-ui': {
       groups: [
@@ -917,10 +991,23 @@ function capabilityMatrixFor(
   type: AiJobType,
   generationModes: AiGenerationMode[],
 ): AiCapabilityMatrix {
+  // Pure transforms (upscale / remove background) take an image and NO prompt,
+  // so their input is image-only — the `image_to` substring check below would
+  // otherwise mis-tag them as text input. Relight takes an image AND a prompt.
+  const pureTransform =
+    generationModes.includes('upscale') ||
+    generationModes.includes('remove_background');
+  const relight = generationModes.includes('relight');
+  const imageInput =
+    pureTransform ||
+    relight ||
+    generationModes.some((mode) => mode.includes('image_to'));
   return {
     source: 'internal',
-    inputModalities: generationModes.some((mode) => mode.includes('image_to'))
-      ? ['text', 'image']
+    inputModalities: imageInput
+      ? pureTransform
+        ? ['image']
+        : ['text', 'image']
       : ['text'],
     outputModalities: [type],
     generationModes,
@@ -944,6 +1031,8 @@ function capabilityMatrixFor(
       // Only present when an upscale binding adds the `upscaleFactor` control
       // (maps to the provider's `upscale_factor`).
       ...(generationModes.includes('upscale') ? ['upscale_factor'] : []),
+      // Relight adds the coarse light-direction control (initial_latent).
+      ...(relight ? ['initial_latent'] : []),
     ],
     unsupportedParameters: [],
     features: {

@@ -5,9 +5,11 @@ import type { Node, NodeProps } from "@xyflow/react";
 import {
   IconAlertTriangle,
   IconArrowsMaximize,
+  IconBulb,
   IconDownload,
   IconLoader2,
   IconRefresh,
+  IconScissors,
   IconUpload,
 } from "@tabler/icons-react";
 import { cn } from "@/lib/utils";
@@ -15,7 +17,10 @@ import { CanvasNodeToolbar, ToolbarButton } from "./node-toolbar";
 import {
   OperationConfirmBar,
   PANORAMA_OP,
+  RELIGHT_OP,
+  REMOVE_BG_OP,
   UPSCALE_OP,
+  useSpawnComposedOperation,
   type OperationDef,
 } from "./operation-confirm-bar";
 import { Icon720 } from "./panorama-viewer";
@@ -33,6 +38,7 @@ function ImageNodeComponent({ id, data, selected }: NodeProps<ImageNodeType>) {
   // Pending operation invoked from the toolbar (Upscale / 720°): shows a confirm
   // bar under THIS node; running it creates the result node.
   const [pendingOp, setPendingOp] = useState<OperationDef | null>(null);
+  const spawnComposedOp = useSpawnComposedOperation();
   const upload = useUploadEntry(id);
   const retryUpload = useRetryUpload();
   const uploading = upload?.status === "uploading";
@@ -65,6 +71,15 @@ function ImageNodeComponent({ id, data, selected }: NodeProps<ImageNodeType>) {
             <>
               <ToolbarButton label="Upscale" onClick={() => setPendingOp(UPSCALE_OP)}>
                 <IconArrowsMaximize className="size-4" stroke={1.8} />
+              </ToolbarButton>
+              <ToolbarButton label="Remove BG" onClick={() => setPendingOp(REMOVE_BG_OP)}>
+                <IconScissors className="size-4" stroke={1.8} />
+              </ToolbarButton>
+              <ToolbarButton
+                label="Relight"
+                onClick={() => spawnComposedOp(RELIGHT_OP, id, data.src)}
+              >
+                <IconBulb className="size-4" stroke={1.8} />
               </ToolbarButton>
               <ToolbarButton label="Generate Panorama" onClick={() => setPendingOp(PANORAMA_OP)}>
                 <Icon720 className="size-4" />

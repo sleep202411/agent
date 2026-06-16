@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { useReactFlow, useStore } from "@xyflow/react";
 import { IconArrowUp, IconBolt, IconChevronDown, IconX } from "@tabler/icons-react";
 import { toast } from "sonner";
@@ -85,6 +85,9 @@ export interface OperationDef {
   resolveMode: (model: FizzAiModel) => string;
   /** Optional fixed prompt (e.g. panorama); transforms like upscale have none. */
   buildPrompt?: () => string | undefined;
+  /** Prompt-driven ops (e.g. relight) skip the confirm bar and spawn an
+   *  editable, model-locked card so the user can compose the prompt. */
+  composed?: boolean;
 }
 
 /** Output-count selector for the confirm bar — a synthetic enum field (1–4)
@@ -105,6 +108,74 @@ export const UPSCALE_OP: OperationDef = {
   findModel: (catalog) => catalog?.models.find((m) => m.generationModes?.includes("upscale")),
   resolveMode: () => "upscale",
 };
+
+export const REMOVE_BG_OP: OperationDef = {
+  name: "Remove BG",
+  findModel: (catalog) =>
+    catalog?.models.find((m) => m.generationModes?.includes("remove_background")),
+  resolveMode: () => "remove_background",
+};
+
+export const RELIGHT_OP: OperationDef = {
+  name: "Relight",
+  findModel: (catalog) => catalog?.models.find((m) => m.generationModes?.includes("relight")),
+  resolveMode: () => "relight",
+  // Relight needs a user prompt → spawn an editable card, not the confirm bar.
+  composed: true,
+};
+
+/**
+ * Spawn a prompt-driven operation (e.g. Relight) as an editable, model-locked
+ * card wired from the source image, then select it so its composer opens. The
+ * model + mode are fixed (the card's pickers are hidden) but the prompt and
+ * settings stay editable — the user composes, then generates. Mirrors the
+ * confirm bar's node creation minus the auto-submit/locked result behaviour.
+ */
+export function useSpawnComposedOperation() {
+  const { data: catalog } = useAiCatalog();
+  const graph = useCanvasGraphContext();
+  const { getNode } = useReactFlow();
+  return useCallback(
+    (op: OperationDef, sourceNodeId: string, sourceUrl: string) => {
+      const model = op.findModel(catalog);
+      if (!model) {
+        toast.error(`No ${op.name.toLowerCase()} model in the catalog yet`);
+        return;
+      }
+      const mode = op.resolveMode(model);
+      const field = referenceFieldsForMode(model, mode)[0]?.field ?? "referenceImages";
+      const source = getNode(sourceNodeId);
+      const nodeId = crypto.randomUUID();
+      const edgeId = crypto.randomUUID();
+      graph.addNode({
+        id: nodeId,
+        type: "prompt",
+        position: source ? { x: source.position.x + 440, y: source.position.y } : { x: 0, y: 0 },
+        data: {
+          name: op.name,
+          modelId: model.id,
+          modelName: model.name,
+          mode,
+          // Model + mode are fixed (pickers hidden) but the composer stays open.
+          modelLocked: true,
+          settings: defaultSettingsForModel(model),
+          references: {
+            [field]: [{ id: edgeId, edgeId, sourceNodeId, url: sourceUrl, kind: "image" as const }],
+          },
+        },
+      });
+      graph.addEdge({
+        id: edgeId,
+        source: sourceNodeId,
+        sourceHandle: "output",
+        target: nodeId,
+        targetHandle: "input",
+      });
+      graph.selectNodes([nodeId]);
+    },
+    [catalog, graph, getNode]
+  );
+}
 
 export const PANORAMA_OP: OperationDef = {
   name: "Panorama",
@@ -208,51 +279,57 @@ export function OperationConfirmBar({
       className="absolute top-full left-1/2 z-10 mt-3 duration-200 animate-in fade-in-0 slide-in-from-bottom-3"
       style={{ transform: `translateX(-50%) scale(${1 / zoom})`, transformOrigin: "top center" }}
     >
-      {/* Compact pill, same language as the node action toolbar above the card. */}
+      {/* Fixed-min-width pill, same language as the node action toolbar above
+        the card. Cancel + name + params sit left (flex-1); credits + Run sit
+        right. Content stays on a single line. */}
       <div
         className={cn(
-          "nodrag flex h-11 w-fit items-center gap-1 rounded-full px-2",
+          "nodrag flex h-11 min-w-[380px] items-center gap-2 whitespace-nowrap rounded-full px-2",
           FLOATING_PANEL
         )}
       >
-        <button
-          type="button"
-          aria-label="Cancel"
-          onClick={onClose}
-          className="flex size-8 items-center justify-center rounded-full text-white/60 transition-colors hover:bg-white/[0.1] hover:text-white"
-        >
-          <IconX className="size-4" stroke={2} />
-        </button>
-        <span className="px-1 text-xs font-medium text-white/80">{op.name}</span>
-        {fields.map((f) => (
-          <ParamPill
-            key={f.name}
-            field={f}
-            value={settings[f.name] as string | number | undefined}
-            onChange={(next) => setOverrides((o) => ({ ...o, [f.name]: next }))}
-          />
-        ))}
-        {allowsMultiple && (
-          <ParamPill
-            field={COUNT_FIELD}
-            value={(settings.numOutputs as number | undefined) ?? 1}
-            onChange={(next) => setOverrides((o) => ({ ...o, numOutputs: next }))}
-          />
-        )}
-        {cost != null && (
-          <span className="flex items-center gap-1 px-1.5 text-sm text-white/70 tabular-nums">
-            <IconBolt className="size-4" stroke={1.8} />
-            {cost}
-          </span>
-        )}
-        <button
-          type="button"
-          aria-label="Run"
-          onClick={onRun}
-          className="flex size-8 items-center justify-center rounded-full bg-[#E52227] text-white shadow-md shadow-[#E52227]/25 transition-colors hover:bg-[#c91e22]"
-        >
-          <IconArrowUp className="size-4" stroke={2} />
-        </button>
+        <div className="flex flex-1 items-center gap-1">
+          <button
+            type="button"
+            aria-label="Cancel"
+            onClick={onClose}
+            className="flex size-8 items-center justify-center rounded-full text-white/60 transition-colors hover:bg-white/[0.1] hover:text-white"
+          >
+            <IconX className="size-4" stroke={2} />
+          </button>
+          <span className="px-1 text-xs font-medium text-white/80">{op.name}</span>
+          {fields.map((f) => (
+            <ParamPill
+              key={f.name}
+              field={f}
+              value={settings[f.name] as string | number | undefined}
+              onChange={(next) => setOverrides((o) => ({ ...o, [f.name]: next }))}
+            />
+          ))}
+          {allowsMultiple && (
+            <ParamPill
+              field={COUNT_FIELD}
+              value={(settings.numOutputs as number | undefined) ?? 1}
+              onChange={(next) => setOverrides((o) => ({ ...o, numOutputs: next }))}
+            />
+          )}
+        </div>
+        <div className="flex items-center gap-1">
+          {cost != null && (
+            <span className="flex items-center gap-1 px-1.5 text-sm text-white/70 tabular-nums">
+              <IconBolt className="size-4" stroke={1.8} />
+              {cost}
+            </span>
+          )}
+          <button
+            type="button"
+            aria-label="Run"
+            onClick={onRun}
+            className="flex size-8 items-center justify-center rounded-full bg-[#E52227] text-white shadow-md shadow-[#E52227]/25 transition-colors hover:bg-[#c91e22]"
+          >
+            <IconArrowUp className="size-4" stroke={2} />
+          </button>
+        </div>
       </div>
     </div>
   );

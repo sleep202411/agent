@@ -268,6 +268,8 @@ export type FoundryGenerationMode =
   | "inpainting"
   | "outpainting"
   | "upscale"
+  | "remove_background"
+  | "relight"
   | "reference_image_generation"
   | "text_to_video"
   | "image_to_video"

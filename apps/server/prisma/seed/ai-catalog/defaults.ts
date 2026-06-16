@@ -367,6 +367,46 @@ export const TOPAZ_UPSCALE_PARAMETER_POLICY = {
   seed: { enabled: false },
 } as const satisfies Prisma.InputJsonObject;
 
+// Bria background removal: one input image → the same image with the background
+// matted out (transparent). No prompt and no generation controls — the only
+// input is the source image (emitted by the fal-schema mapper's pure-transform
+// path). fal-ai/bria/background/remove takes just `image_url`.
+export const BRIA_RMBG_PARAMETER_POLICY = {
+  parameterMode: 'provider_intersection',
+  providerFamily: 'bria',
+  defaultVariations: 1,
+  variationOptions: [1],
+  referenceImages: {
+    enabled: true,
+    min: 1,
+    max: 1,
+    single: true,
+    maskSupported: false,
+  },
+  seed: { enabled: false },
+} as const satisfies Prisma.InputJsonObject;
+
+// IC-Light V2 relight: a prompt-driven relighting op over a single source
+// image. Unlike upscale/remove-bg it DOES take a prompt (describing the target
+// lighting/scene) — so it is NOT a pure transform; it spawns an editable card.
+// Its only op-specific control is the coarse light direction (initial_latent),
+// emitted by the fal-schema mapper's `relight` branch alongside a preset output
+// size + output count. fal-ai/iclight-v2 requires prompt + image_url.
+export const ICLIGHT_RELIGHT_PARAMETER_POLICY = {
+  parameterMode: 'provider_intersection',
+  providerFamily: 'iclight',
+  defaultVariations: 1,
+  variationOptions: [1, 2, 3, 4],
+  referenceImages: {
+    enabled: true,
+    min: 1,
+    max: 1,
+    single: true,
+    maskSupported: false,
+  },
+  seed: { enabled: false },
+} as const satisfies Prisma.InputJsonObject;
+
 export const FLUX_2_FLEX_PARAMETER_POLICY = {
   parameterMode: 'provider_intersection',
   providerFamily: 'flux-2',
@@ -720,6 +760,44 @@ export const TOPAZ_UPSCALE_PRODUCT_PRICING: AiProductPricingPolicy = {
   resolutionOptions: ['1K'],
   qualityOptions: ['standard'],
   matrix: { '1K': { standard: 15 } },
+  referenceImageSurchargePoints: 0,
+  extraReferenceImagePoints: 0,
+  maskSurchargePoints: 0,
+  minimumPoints: 1,
+  roundTo: 1,
+};
+
+export const BRIA_RMBG_PRODUCT_PRICING: AiProductPricingPolicy = {
+  mode: 'parameter_matrix',
+  version: 'bria-rmbg-points-v1-2026-06-16',
+  currency: 'COMPUTE_POINTS',
+  defaultOutputCount: 1,
+  minOutputCount: 1,
+  maxOutputCount: 1,
+  defaultResolution: '1K',
+  defaultQuality: 'standard',
+  resolutionOptions: ['1K'],
+  qualityOptions: ['standard'],
+  matrix: { '1K': { standard: 10 } },
+  referenceImageSurchargePoints: 0,
+  extraReferenceImagePoints: 0,
+  maskSurchargePoints: 0,
+  minimumPoints: 1,
+  roundTo: 1,
+};
+
+export const ICLIGHT_RELIGHT_PRODUCT_PRICING: AiProductPricingPolicy = {
+  mode: 'parameter_matrix',
+  version: 'iclight-relight-points-v1-2026-06-16',
+  currency: 'COMPUTE_POINTS',
+  defaultOutputCount: 1,
+  minOutputCount: 1,
+  maxOutputCount: 4,
+  defaultResolution: '1K',
+  defaultQuality: 'standard',
+  resolutionOptions: ['1K'],
+  qualityOptions: ['standard'],
+  matrix: { '1K': { standard: 20 } },
   referenceImageSurchargePoints: 0,
   extraReferenceImagePoints: 0,
   maskSurchargePoints: 0,

@@ -17,12 +17,30 @@ function isSizeField(field: SchemaFieldDescriptor) {
   return SIZE_FIELDS.has(field.name) && (field.enum?.length ?? 0) > 0;
 }
 
-/** Outlined rounded rect drawn in the aspect ratio token's proportion. */
-function AspectGlyph({ token }: { token: string }) {
+/** fal "ImageSize" preset tokens → a human label + aspect proportion (w:h).
+ *  Without this the raw provider tokens ("square_hd", "portrait_4_3") leak into
+ *  the UI and every glyph collapses to a generic square. */
+const SIZE_PRESETS: Record<string, { label: string; w: number; h: number }> = {
+  square_hd: { label: "Square HD", w: 1, h: 1 },
+  square: { label: "Square", w: 1, h: 1 },
+  portrait_4_3: { label: "Portrait 4:3", w: 3, h: 4 },
+  portrait_16_9: { label: "Portrait 16:9", w: 9, h: 16 },
+  landscape_4_3: { label: "Landscape 4:3", w: 4, h: 3 },
+  landscape_16_9: { label: "Landscape 16:9", w: 16, h: 9 },
+};
+
+/** Resolve a size token to its display label + aspect. Ratio tokens ("16:9",
+ *  "3x4") are parsed directly; unknown tokens are shown verbatim as a square. */
+function sizeTokenInfo(token: string): { label: string; w: number; h: number } {
+  const preset = SIZE_PRESETS[token];
+  if (preset) return preset;
   const m = token.match(/(\d+)\s*[:x]\s*(\d+)/);
-  if (!m) return <span className="size-4 rounded-[4px] border-2 border-white/55" aria-hidden />;
-  const w = Number(m[1]);
-  const h = Number(m[2]);
+  if (m) return { label: token.replace(/\s*x\s*/i, ":"), w: Number(m[1]), h: Number(m[2]) };
+  return { label: token, w: 1, h: 1 };
+}
+
+/** Outlined rounded rect drawn in the given aspect proportion. */
+function AspectGlyph({ w, h }: { w: number; h: number }) {
   const max = 18;
   const width = w >= h ? max : Math.round(max * (w / h));
   const height = h >= w ? max : Math.round(max * (h / w));
@@ -44,10 +62,16 @@ function SizeGrid({
   value: string;
   onChange: (v: string) => void;
 }) {
+  const items = (field.enum ?? []).map((raw) => {
+    const token = String(raw);
+    return { token, ...sizeTokenInfo(token) };
+  });
+  // Long labels (preset names like "Landscape 16:9") need wider cells than the
+  // short ratio tokens ("16:9"), so drop to 3 columns when any label is long.
+  const wide = items.some((it) => it.label.length > 6);
   return (
-    <div className="grid grid-cols-5 gap-2">
-      {(field.enum ?? []).map((raw) => {
-        const token = String(raw);
+    <div className={cn("grid gap-2", wide ? "grid-cols-3" : "grid-cols-5")}>
+      {items.map(({ token, label, w, h }) => {
         const selected = value === token;
         return (
           <button
@@ -62,9 +86,9 @@ function SizeGrid({
             )}
           >
             <span className="flex h-5 items-center">
-              <AspectGlyph token={token} />
+              <AspectGlyph w={w} h={h} />
             </span>
-            <span className="text-[11px] text-muted-foreground">{token}</span>
+            <span className="whitespace-nowrap text-[11px] text-muted-foreground">{label}</span>
           </button>
         );
       })}

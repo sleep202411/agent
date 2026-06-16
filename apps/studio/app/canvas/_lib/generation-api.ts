@@ -13,6 +13,8 @@ export type FizzAiGenerationMode =
   | "inpainting"
   | "multimodal_to_video"
   | "outpainting"
+  | "relight"
+  | "remove_background"
   | "text_to_image"
   | "text_to_video"
   | "upscale"
@@ -570,6 +572,8 @@ const MODE_LABELS: Record<string, string> = {
   inpainting: "Inpaint",
   outpainting: "Expand",
   upscale: "Upscale",
+  remove_background: "Remove BG",
+  relight: "Relight",
 };
 
 /** Human label for a generation mode id (e.g. `multimodal_to_video`). */
@@ -587,6 +591,23 @@ export function modeLabel(mode: string): string {
 export function defaultMode(model: FizzAiModel | undefined): string | undefined {
   const modes = model?.generationModes ?? [];
   return modes.find((m) => m.startsWith("text_to_")) ?? modes[0];
+}
+
+/** Modes reached via a dedicated canvas action (a toolbar button on an image),
+ *  never the general model picker. */
+const OPERATION_ONLY_MODES: readonly string[] = [
+  "image_to_panorama",
+  "upscale",
+  "remove_background",
+  "relight",
+];
+
+/** A model backing only canvas operations (Upscale / Remove BG / 720°) — every
+ *  mode it offers is operation-only, so it's reached from the image toolbar, not
+ *  the model picker. */
+export function isOperationOnlyModel(model: FizzAiModel): boolean {
+  const modes = model.generationModes ?? [];
+  return modes.length > 0 && modes.every((m) => OPERATION_ONLY_MODES.includes(m));
 }
 
 /**
@@ -626,8 +647,9 @@ export function referenceFieldsForMode(
     return explicit.length ? explicit : nonFrames.filter((f) => !/audio/i.test(f.field));
   }
   if (mode === "inpainting") return pick("referenceImages", "maskImage");
-  // Pure single-image transforms (upscale) bind exactly one input image.
-  if (mode === "upscale") {
+  // Single-image operations (upscale / remove background / relight) bind exactly
+  // one input image.
+  if (mode === "upscale" || mode === "remove_background" || mode === "relight") {
     const explicit = pick("referenceImages");
     return explicit.length ? explicit : all.filter((f) => f.kind === "image").slice(0, 1);
   }

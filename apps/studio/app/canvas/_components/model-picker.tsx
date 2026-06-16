@@ -14,6 +14,7 @@ import {
 import { cn } from "@/lib/utils";
 import {
   cheapestSellPoints,
+  isOperationOnlyModel,
   type FizzAiCatalog,
   type FizzAiModel,
 } from "@/app/canvas/_lib/generation-api";
@@ -59,9 +60,10 @@ export function ModelPicker({
   const [query, setQuery] = useState("");
 
   const models = useMemo(() => {
-    // Panorama models are reached via the 720° action, not the general picker.
+    // Operation-only models (Upscale / Remove BG / 720°) are reached via their
+    // image-toolbar actions, not the general picker.
     const all = (catalog ? usableModelsByModality(catalog, modality) : []).filter(
-      (m) => !m.generationModes?.includes("image_to_panorama") && !/hunyuan|panorama/i.test(m.id)
+      (m) => !isOperationOnlyModel(m) && !/hunyuan|panorama/i.test(m.id)
     );
     const q = query.trim().toLowerCase();
     return q ? all.filter((m) => m.name.toLowerCase().includes(q)) : all;
