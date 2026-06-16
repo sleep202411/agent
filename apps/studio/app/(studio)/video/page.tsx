@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { WorkspaceRemount } from "@/app/_components/workspace-remount";
 import { VideoStudio } from "./_components/video-studio";
 
 export const metadata: Metadata = {
@@ -11,7 +12,9 @@ export default function VideoPage() {
       <h1 className="text-xl font-semibold">Video</h1>
       <p className="mt-1 text-sm text-muted-foreground">Generate videos with AI models.</p>
 
-      <VideoStudio />
+      <WorkspaceRemount>
+        <VideoStudio />
+      </WorkspaceRemount>
     </main>
   );
 }

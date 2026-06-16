@@ -1,7 +1,8 @@
 "use client";
 
-import { createContext, useCallback, useContext, useMemo, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { setApiWorkspaceId } from "@/lib/api";
 import {
   createTeamWorkspace,
   ensurePersonalWorkspace,
@@ -38,6 +39,17 @@ export function useWorkspace(): WorkspaceContextValue {
   return value;
 }
 
+/**
+ * Active workspace id WITHOUT throwing if no provider is mounted. The
+ * {@link WorkspaceProvider} is app-wide (app/providers.tsx), so this returns the
+ * active workspace on every authenticated surface (the canvas included); it
+ * returns null only on pre-provider / SSR first paint, where the server falls
+ * back to the caller's personal-workspace pot.
+ */
+export function useActiveWorkspaceId(): string | null {
+  return useContext(WorkspaceContext)?.activeWorkspace?.id ?? null;
+}
+
 export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
   const queryClient = useQueryClient();
 
@@ -72,6 +84,12 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
       workspaces[0]
     );
   }, [workspaces, activeId]);
+
+  // Scope every /aurora request (reads + AI-generation spend) to the active
+  // workspace, so compute_point spend and the displayed balance stay in lockstep.
+  useEffect(() => {
+    setApiWorkspaceId(activeWorkspace?.id ?? null);
+  }, [activeWorkspace?.id]);
 
   const setActiveWorkspaceId = useCallback((id: string) => {
     setActiveId(id);

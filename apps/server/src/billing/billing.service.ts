@@ -34,7 +34,7 @@ import {
   WalletLedgerEntryType,
   WalletOwnerType,
   WalletTransactionStatus,
-  WorkspaceBillingMode,
+  WorkspaceType,
   WorkspaceMemberRole,
   type BillingOrder,
   type BillingMembershipPlan,
@@ -359,7 +359,11 @@ export class BillingService {
     query: ListWalletLedgerQuery,
     workspaceId?: string | null,
   ) {
-    const scope = await this.walletLedgerScope(user, workspaceId);
+    const scope = await this.walletLedgerScope(
+      user,
+      query.currency as WalletCurrencyType,
+      workspaceId,
+    );
     const accounts = await this.prisma.walletAccount.findMany({
       where: {
         ownerType: scope.ownerType,
@@ -459,37 +463,45 @@ export class BillingService {
 
   private async walletLedgerScope(
     user: AuthUser,
+    currency: WalletCurrencyType,
     workspaceId?: string | null,
   ): Promise<{ ownerType: WalletOwnerType; ownerId: string }> {
-    if (!workspaceId) {
+    // community_point is the creator economy — always owned by the user, never a
+    // workspace, regardless of the active workspace header.
+    if (currency !== WalletCurrencyType.compute_point) {
       return { ownerType: WalletOwnerType.user, ownerId: user.userId };
     }
 
-    const membership = await this.permissions.requireWorkspaceRole(
-      user.userId,
-      workspaceId,
-      WorkspaceMemberRole.viewer,
-    );
-    const workspace = await this.prisma.workspace.findUnique({
-      where: { id: membership.workspaceId, deletedAt: null },
-      select: { id: true, billingMode: true },
+    // compute_point is uniformly workspace-owned: every member may READ a
+    // workspace's balance (viewer); with no workspace in context, fall back to the
+    // caller's personal-workspace pot. Recharge stays billing-role gated at its own
+    // call site (resolveTopupSubject).
+    if (workspaceId) {
+      const membership = await this.permissions.requireWorkspaceRole(
+        user.userId,
+        workspaceId,
+        WorkspaceMemberRole.viewer,
+      );
+      return {
+        ownerType: WalletOwnerType.workspace,
+        ownerId: membership.workspaceId,
+      };
+    }
+
+    const personal = await this.prisma.workspace.findFirst({
+      where: {
+        ownerUserId: user.userId,
+        type: WorkspaceType.personal,
+        deletedAt: null,
+      },
+      select: { id: true },
     });
-    if (!workspace) {
-      throw new NotFoundException({
-        code: 'WORKSPACE_NOT_FOUND',
-        msg: 'Workspace not found.',
-      });
+    if (personal) {
+      return { ownerType: WalletOwnerType.workspace, ownerId: personal.id };
     }
-    if (workspace.billingMode !== WorkspaceBillingMode.workspace_pool) {
-      return { ownerType: WalletOwnerType.user, ownerId: user.userId };
-    }
-
-    await this.permissions.requireWorkspaceRole(
-      user.userId,
-      workspace.id,
-      WorkspaceMemberRole.billing,
-    );
-    return { ownerType: WalletOwnerType.workspace, ownerId: workspace.id };
+    // No personal workspace yet → no compute pot; an owner that yields an empty
+    // balance rather than throwing.
+    return { ownerType: WalletOwnerType.user, ownerId: user.userId };
   }
 
   async listMembershipPlans(query: ListMembershipPlansQuery) {
@@ -1051,19 +1063,44 @@ export class BillingService {
       });
     }
 
+    // compute_point is workspace-owned, so an admin compute grant lands in the
+    // user's personal-workspace pot (the wallet they read from + spend); only
+    // community_point stays user-owned.
+    const currency = input.currency as WalletCurrencyType;
+    let owner: { ownerType: WalletOwnerType; ownerId: string };
+    if (currency === WalletCurrencyType.compute_point) {
+      const personal = await this.prisma.workspace.findFirst({
+        where: {
+          ownerUserId: resolvedUserId,
+          type: WorkspaceType.personal,
+          deletedAt: null,
+        },
+        select: { id: true },
+      });
+      if (!personal) {
+        throw new ConflictException({
+          code: 'PERSONAL_WORKSPACE_MISSING',
+          msg: 'User has no personal workspace yet; cannot grant compute points.',
+        });
+      }
+      owner = { ownerType: WalletOwnerType.workspace, ownerId: personal.id };
+    } else {
+      owner = { ownerType: WalletOwnerType.user, ownerId: resolvedUserId };
+    }
+
     const account = await this.prisma.walletAccount.upsert({
       where: {
         ownerType_ownerId_currency_balanceKind: {
-          ownerType: WalletOwnerType.user,
-          ownerId: resolvedUserId,
-          currency: input.currency as WalletCurrencyType,
+          ownerType: owner.ownerType,
+          ownerId: owner.ownerId,
+          currency,
           balanceKind: WalletBalanceKind.consumable,
         },
       },
       create: {
-        ownerType: WalletOwnerType.user,
-        ownerId: resolvedUserId,
-        currency: input.currency as WalletCurrencyType,
+        ownerType: owner.ownerType,
+        ownerId: owner.ownerId,
+        currency,
         balanceKind: WalletBalanceKind.consumable,
         status: WalletAccountStatus.active,
       },
@@ -2078,6 +2115,18 @@ export class BillingService {
         msg: 'Billing price not found.',
       });
     }
+    // Wallet top-up packs have dedicated endpoints (/compute-topup,
+    // /recharge-custom) that resolve the workspace owner + exchange rate; routing
+    // them through the generic checkout would bypass that. Keep the split clean.
+    if (
+      price.item.productType === BillingProductType.compute_point_pack ||
+      price.item.productType === BillingProductType.community_point_pack
+    ) {
+      throw new BadRequestException({
+        code: 'BILLING_PRICE_NOT_CHECKOUTABLE',
+        msg: 'Use the dedicated top-up endpoint for credit packs.',
+      });
+    }
     const subject = await this.resolveCheckoutSubject(user, price, input);
     const quantity = input.quantity;
     const subtotalAmountMinor = price.amountMinor * BigInt(quantity);
@@ -2320,6 +2369,11 @@ export class BillingService {
       });
     }
 
+    // Direct the credit at the caller's wallet, or a team's shared wallet when a
+    // workspaceId is supplied (billing role required). The pack price stays a
+    // user-subject SKU; the fulfillment routes the grant off order.subjectType.
+    const subject = await this.resolveTopupSubject(user, input.workspaceId);
+
     const existingOrder = await this.prisma.billingOrder.findUnique({
       where: {
         userId_idempotencyKey: {
@@ -2345,7 +2399,8 @@ export class BillingService {
       if (
         existingOrder.orderType !== BillingOrderType.compute_point_topup ||
         existingOrder.priceId !== input.priceId ||
-        existingPromotionCode !== requestedPromotionCode
+        existingPromotionCode !== requestedPromotionCode ||
+        (existingOrder.workspaceId ?? null) !== subject.workspaceId
       ) {
         throw new ConflictException({
           code: 'BILLING_IDEMPOTENCY_KEY_REUSED',
@@ -2399,8 +2454,8 @@ export class BillingService {
     const requestId = randomUUID();
     const orderNo = createOrderNo();
     const subtotalAmountMinor = price.amountMinor;
-    const { order, promotionReservation } = await this.prisma.$transaction(
-      async (tx) => {
+    const txResult = await this.prisma
+      .$transaction(async (tx) => {
         const promotionReservation = input.promotionCode
           ? await this.reserveCheckoutPromotionTx(tx, {
               userId: user.userId,
@@ -2432,9 +2487,9 @@ export class BillingService {
             orderNo,
             idempotencyKey: input.idempotencyKey,
             userId: user.userId,
-            workspaceId: null,
-            subjectType: BillingSubjectType.user,
-            subjectId: user.userId,
+            workspaceId: subject.workspaceId,
+            subjectType: subject.subjectType,
+            subjectId: subject.subjectId,
             orderType: BillingOrderType.compute_point_topup,
             status: BillingOrderStatus.pending_payment,
             itemId: price.itemId,
@@ -2512,14 +2567,30 @@ export class BillingService {
           });
         }
         return { order, promotionReservation };
-      },
-    );
+      })
+      // Lost the (userId, idempotencyKey) race with a concurrent first-time
+      // request: the order now exists, so replay through the idempotency branch
+      // above instead of surfacing the raw unique-constraint violation.
+      .catch((error) => {
+        if (isUniqueConstraintViolation(error)) return null;
+        throw error;
+      });
+    if (txResult === null) {
+      return this.replayExistingOrder(
+        user.userId,
+        input.idempotencyKey,
+        country,
+        sdkEnv,
+      );
+    }
+    const { order, promotionReservation } = txResult;
 
-    if (order.amountMinor === 0n) {
+    if (order.amountMinor === 0n || devSkipPaymentEnabled()) {
       await this.prisma.$transaction((tx) =>
         this.markOrderPaidAndFulfill(tx, order, new Date(), null, null, {
           internalPromotionCheckout: true,
           promotionCode: promotionReservation?.promotion.code ?? null,
+          devSkipPayment: order.amountMinor > 0n,
         }),
       );
       const fulfilledOrder = await this.prisma.billingOrder.findUniqueOrThrow({
@@ -2631,6 +2702,25 @@ export class BillingService {
     const sdkEnv = airwallexSdkEnv();
     const country = (shopperCountry || 'US').toUpperCase();
 
+    // The arbitrary-amount recharge funds either the community wallet (default,
+    // user-only) or the compute wallet (which may target a team workspace). Each
+    // currency has its own hidden anchor SKU + order type; the workspace is only
+    // honored for compute (community recharge stays personal).
+    const isCompute = input.currency === WalletCurrencyType.compute_point;
+    const anchorCode = isCompute
+      ? COMPUTE_RECHARGE_ITEM_CODE
+      : CUSTOM_RECHARGE_ITEM_CODE;
+    const orderType = isCompute
+      ? BillingOrderType.compute_point_topup
+      : BillingOrderType.community_point_topup;
+    const subject = isCompute
+      ? await this.resolveTopupSubject(user, input.workspaceId)
+      : {
+          subjectType: BillingSubjectType.user,
+          subjectId: user.userId,
+          workspaceId: null as string | null,
+        };
+
     // Idempotency: a repeated (userId, idempotencyKey) returns the prior order +
     // intent instead of minting a second payable order — mirrors createCheckout.
     const existingOrder = await this.prisma.billingOrder.findUnique({
@@ -2645,6 +2735,15 @@ export class BillingService {
       },
     });
     if (existingOrder) {
+      if (
+        existingOrder.orderType !== orderType ||
+        (existingOrder.workspaceId ?? null) !== subject.workspaceId
+      ) {
+        throw new ConflictException({
+          code: 'BILLING_IDEMPOTENCY_KEY_REUSED',
+          msg: 'Idempotency key was already used for a different billing intent.',
+        });
+      }
       return {
         order: this.orderDto(existingOrder),
         paymentIntent: existingOrder.paymentIntents[0]
@@ -2666,6 +2765,28 @@ export class BillingService {
       });
     }
 
+    // Compute recharge obeys the same per-cell policy as the fixed packs. The
+    // arbitrary-amount path relies on a fixed USD-cent anchor ratio, so cells that
+    // price compute points by explicit admin pricing (e.g. CN/CNY) have no ratio
+    // for an ad-hoc amount — reject and steer to the fixed packs. Also constrain
+    // the provider to the cell's allow-list (community recharge keeps its prior,
+    // provider-agnostic behavior).
+    if (isCompute) {
+      const policy = computePointTopupPolicy();
+      if (policy.rateMode === COMPUTE_POINT_EXPLICIT_ADMIN_PRICING) {
+        throw new ServiceUnavailableException({
+          code: 'BILLING_COMPUTE_CUSTOM_RECHARGE_UNAVAILABLE',
+          msg: 'Custom-amount compute recharge is not available in this deployment. Use a fixed credit pack.',
+        });
+      }
+      if (!policy.providers.includes(provider)) {
+        throw new ServiceUnavailableException({
+          code: 'BILLING_COMPUTE_TOPUP_PROVIDER_UNSUPPORTED',
+          msg: `Compute point recharge in this deployment supports ${policy.providers.join(', ')} only.`,
+        });
+      }
+    }
+
     // The hidden anchor SKU carries only the points-per-$1 ratio + wallet currency
     // for ledger routing. It has no provider binding, so it never appears in the
     // public listing and is reached only here.
@@ -2674,7 +2795,7 @@ export class BillingService {
         isActive: true,
         archivedAt: null,
         item: {
-          code: CUSTOM_RECHARGE_ITEM_CODE,
+          code: anchorCode,
           isActive: true,
           archivedAt: null,
         },
@@ -2696,44 +2817,83 @@ export class BillingService {
     const requestId = randomUUID();
     const orderNo = createOrderNo();
 
-    const order = await this.prisma.billingOrder.create({
-      data: {
-        orderNo,
-        idempotencyKey: input.idempotencyKey,
-        userId: user.userId,
-        workspaceId: null,
-        subjectType: BillingSubjectType.user,
-        subjectId: user.userId,
-        orderType: BillingOrderType.community_point_topup,
-        status: BillingOrderStatus.pending_payment,
-        itemId: anchor.itemId,
-        priceId: anchor.id,
-        providerBindingId: null,
-        provider,
-        currency: anchor.currency,
-        subtotalAmountMinor: amountMinor,
-        discountAmountMinor: 0n,
-        amountMinor,
-        quantity: 1,
-        grantsWalletAmount: grantSnapshot,
-        grantsWalletCurrency: anchor.grantsWalletCurrency,
-        grantsWalletBalanceKind:
-          anchor.grantsWalletBalanceKind ?? WalletBalanceKind.consumable,
-        description: anchor.item.name,
-        expiresAt: new Date(Date.now() + 60 * 60 * 1000),
-        metadata: {
-          checkout: {
-            successUrl: input.successUrl,
-            backUrl: input.backUrl,
-          },
-          customRecharge: {
-            amountDollars: input.amountDollars,
-            shopperCountry: country,
+    const order = await this.prisma.billingOrder
+      .create({
+        data: {
+          orderNo,
+          idempotencyKey: input.idempotencyKey,
+          userId: user.userId,
+          workspaceId: subject.workspaceId,
+          subjectType: subject.subjectType,
+          subjectId: subject.subjectId,
+          orderType,
+          status: BillingOrderStatus.pending_payment,
+          itemId: anchor.itemId,
+          priceId: anchor.id,
+          providerBindingId: null,
+          provider,
+          currency: anchor.currency,
+          subtotalAmountMinor: amountMinor,
+          discountAmountMinor: 0n,
+          amountMinor,
+          quantity: 1,
+          grantsWalletAmount: grantSnapshot,
+          grantsWalletCurrency: anchor.grantsWalletCurrency,
+          grantsWalletBalanceKind:
+            anchor.grantsWalletBalanceKind ?? WalletBalanceKind.consumable,
+          description: anchor.item.name,
+          expiresAt: new Date(Date.now() + 60 * 60 * 1000),
+          metadata: {
+            checkout: {
+              successUrl: input.successUrl,
+              backUrl: input.backUrl,
+            },
+            customRecharge: {
+              amountDollars: input.amountDollars,
+              currency: input.currency,
+              shopperCountry: country,
+            },
           },
         },
-      },
-      include: { price: true },
-    });
+        include: { price: true },
+      })
+      // Lost the (userId, idempotencyKey) race with a concurrent first-time
+      // request: the order now exists, so replay through the idempotency branch
+      // above instead of surfacing the raw unique-constraint violation.
+      .catch((error) => {
+        if (isUniqueConstraintViolation(error)) return null;
+        throw error;
+      });
+    if (order === null) {
+      return this.replayExistingOrder(
+        user.userId,
+        input.idempotencyKey,
+        country,
+        sdkEnv,
+      );
+    }
+
+    // Dev-only: fulfill internally so the recharge → credit loop works without a
+    // live payment provider. Disabled in production (fails closed).
+    if (devSkipPaymentEnabled()) {
+      await this.prisma.$transaction((tx) =>
+        this.markOrderPaidAndFulfill(tx, order, new Date(), null, null, {
+          devSkipPayment: true,
+        }),
+      );
+      const fulfilledOrder = await this.prisma.billingOrder.findUniqueOrThrow({
+        where: { id: order.id },
+        include: {
+          paymentIntents: { orderBy: { createdAt: 'desc' }, take: 1 },
+        },
+      });
+      return {
+        order: this.orderDto(fulfilledOrder),
+        paymentIntent: null,
+        shopperCountry: country,
+        env: sdkEnv,
+      };
+    }
 
     let intent: CreatePaymentIntentResult;
     try {
@@ -3800,20 +3960,60 @@ export class BillingService {
     };
   }
 
+  /**
+   * Resolve the wallet account owner for an order's credit / refund-reversal.
+   * compute_point is workspace-owned, so a user-subject order (individual
+   * membership, legacy top-up, or a compute pack bought via generic checkout)
+   * credits/reverses the buyer's PERSONAL-workspace pot — the wallet they read
+   * from and spend — never a dead user-owned account. community_point stays
+   * user-owned. A workspace-subject order uses its workspace directly. Single
+   * chokepoint so every fulfillment/refund path stays consistent with
+   * resolvePayerTx / walletLedgerScope / resolveTopupSubject.
+   */
+  private async resolveOrderWalletOwnerTx(
+    tx: Prisma.TransactionClient,
+    order: { subjectType: BillingSubjectType; subjectId: string },
+    currency: WalletCurrencyType,
+  ): Promise<{ ownerType: WalletOwnerType; ownerId: string }> {
+    if (order.subjectType === BillingSubjectType.workspace) {
+      return { ownerType: WalletOwnerType.workspace, ownerId: order.subjectId };
+    }
+    if (currency === WalletCurrencyType.compute_point) {
+      // user-subject order → subjectId is the buyer's userId.
+      const personal = await tx.workspace.findFirst({
+        where: {
+          ownerUserId: order.subjectId,
+          type: WorkspaceType.personal,
+          deletedAt: null,
+        },
+        select: { id: true },
+      });
+      if (personal) {
+        return { ownerType: WalletOwnerType.workspace, ownerId: personal.id };
+      }
+      throw new ConflictException({
+        code: 'PERSONAL_WORKSPACE_MISSING',
+        msg: 'Cannot place compute credit: the order owner has no personal workspace.',
+      });
+    }
+    return { ownerType: WalletOwnerType.user, ownerId: order.subjectId };
+  }
+
   private async findWalletAccountForOrderTx(
     tx: Prisma.TransactionClient,
     order: RefundPolicyOrder,
     walletCurrency: WalletCurrencyType,
   ): Promise<WalletAccount | null> {
-    const ownerType =
-      order.subjectType === BillingSubjectType.workspace
-        ? WalletOwnerType.workspace
-        : WalletOwnerType.user;
+    const owner = await this.resolveOrderWalletOwnerTx(
+      tx,
+      order,
+      walletCurrency,
+    );
     return tx.walletAccount.findUnique({
       where: {
         ownerType_ownerId_currency_balanceKind: {
-          ownerType,
-          ownerId: order.subjectId,
+          ownerType: owner.ownerType,
+          ownerId: owner.ownerId,
           currency: walletCurrency,
           balanceKind: WalletBalanceKind.consumable,
         },
@@ -4013,15 +4213,16 @@ export class BillingService {
         msg: 'Wallet refund reversal requires a wallet currency.',
       });
     }
-    const ownerType =
-      input.order.subjectType === BillingSubjectType.workspace
-        ? WalletOwnerType.workspace
-        : WalletOwnerType.user;
+    const owner = await this.resolveOrderWalletOwnerTx(
+      tx,
+      input.order,
+      walletCurrency,
+    );
     const account = await tx.walletAccount.findUnique({
       where: {
         ownerType_ownerId_currency_balanceKind: {
-          ownerType,
-          ownerId: input.order.subjectId,
+          ownerType: owner.ownerType,
+          ownerId: owner.ownerId,
           currency: walletCurrency,
           balanceKind,
         },
@@ -4261,15 +4462,16 @@ export class BillingService {
     const order = await tx.billingOrder.findUniqueOrThrow({
       where: { id: refund.orderId },
     });
-    const ownerType =
-      order.subjectType === BillingSubjectType.workspace
-        ? WalletOwnerType.workspace
-        : WalletOwnerType.user;
+    const owner = await this.resolveOrderWalletOwnerTx(
+      tx,
+      order,
+      refund.walletReversalCurrency,
+    );
     const account = await tx.walletAccount.findUniqueOrThrow({
       where: {
         ownerType_ownerId_currency_balanceKind: {
-          ownerType,
-          ownerId: order.subjectId,
+          ownerType: owner.ownerType,
+          ownerId: owner.ownerId,
           currency: refund.walletReversalCurrency,
           balanceKind: WalletBalanceKind.consumable,
         },
@@ -4947,22 +5149,26 @@ export class BillingService {
     period: { startsAt: Date; endsAt: Date | null },
   ): Promise<string | null> {
     if (plan.includedComputeCredits <= 0n) return null;
-    const ownerType =
-      order.subjectType === BillingSubjectType.workspace
-        ? WalletOwnerType.workspace
-        : WalletOwnerType.user;
+    // compute_point is workspace-owned: an individual (user-subject) membership's
+    // included credits land in the buyer's personal-workspace pot, not a dead
+    // user-owned account.
+    const owner = await this.resolveOrderWalletOwnerTx(
+      tx,
+      order,
+      WalletCurrencyType.compute_point,
+    );
     const account = await tx.walletAccount.upsert({
       where: {
         ownerType_ownerId_currency_balanceKind: {
-          ownerType,
-          ownerId: order.subjectId,
+          ownerType: owner.ownerType,
+          ownerId: owner.ownerId,
           currency: WalletCurrencyType.compute_point,
           balanceKind: WalletBalanceKind.consumable,
         },
       },
       create: {
-        ownerType,
-        ownerId: order.subjectId,
+        ownerType: owner.ownerType,
+        ownerId: owner.ownerId,
         currency: WalletCurrencyType.compute_point,
         balanceKind: WalletBalanceKind.consumable,
         status: WalletAccountStatus.active,
@@ -5199,23 +5405,26 @@ export class BillingService {
     if (!grantCurrency || !grantPerUnit) {
       return null;
     }
-    const ownerType =
-      order.subjectType === BillingSubjectType.workspace
-        ? WalletOwnerType.workspace
-        : WalletOwnerType.user;
+    // Route compute_point grants to the workspace pot (the buyer's personal
+    // workspace for a user-subject order); community_point stays user-owned.
+    const owner = await this.resolveOrderWalletOwnerTx(
+      tx,
+      order,
+      grantCurrency,
+    );
 
     const account = await tx.walletAccount.upsert({
       where: {
         ownerType_ownerId_currency_balanceKind: {
-          ownerType,
-          ownerId: order.subjectId,
+          ownerType: owner.ownerType,
+          ownerId: owner.ownerId,
           currency: grantCurrency,
           balanceKind: grantBalanceKind,
         },
       },
       create: {
-        ownerType,
-        ownerId: order.subjectId,
+        ownerType: owner.ownerType,
+        ownerId: owner.ownerId,
         currency: grantCurrency,
         balanceKind: grantBalanceKind,
         status: WalletAccountStatus.active,
@@ -5446,6 +5655,87 @@ export class BillingService {
       subjectType: BillingSubjectType.user,
       subjectId: user.userId,
       workspaceId: null,
+    };
+  }
+
+  /**
+   * Resolve the wallet owner for a top-up / recharge order. Unlike
+   * {@link resolveCheckoutSubject} this is driven by the REQUEST (an optional
+   * workspaceId), not the price subject — a compute_point pack is a user-subject
+   * catalog SKU that can fund either the caller's own wallet or, when a
+   * workspaceId is supplied, a team's shared wallet. Crediting a team requires
+   * the billing role; the fulfillment path keys the wallet credit off the
+   * resulting order.subjectType.
+   */
+  private async resolveTopupSubject(
+    user: AuthUser,
+    workspaceId: string | null | undefined,
+  ): Promise<{
+    subjectType: BillingSubjectType;
+    subjectId: string;
+    workspaceId: string | null;
+  }> {
+    // compute_point is uniformly workspace-owned, so every top-up funds a
+    // workspace pot — the one its members read from and spend against. An explicit
+    // workspace requires the billing role; with none, fund the caller's own
+    // personal-workspace pot (they own it, so no extra gate). The fulfillment
+    // routes the grant off order.subjectType === workspace.
+    if (workspaceId) {
+      await this.permissions.requireWorkspaceRole(
+        user.userId,
+        workspaceId,
+        WorkspaceMemberRole.billing,
+      );
+      return {
+        subjectType: BillingSubjectType.workspace,
+        subjectId: workspaceId,
+        workspaceId,
+      };
+    }
+    const personal = await this.prisma.workspace.findFirst({
+      where: {
+        ownerUserId: user.userId,
+        type: WorkspaceType.personal,
+        deletedAt: null,
+      },
+      select: { id: true },
+    });
+    if (!personal) {
+      throw new ConflictException({
+        code: 'PERSONAL_WORKSPACE_MISSING',
+        msg: 'No personal workspace to fund. Open the studio once to initialize it.',
+      });
+    }
+    return {
+      subjectType: BillingSubjectType.workspace,
+      subjectId: personal.id,
+      workspaceId: personal.id,
+    };
+  }
+
+  /**
+   * Return the existing order + latest payment intent for an idempotency key —
+   * the replay shape shared by the top-up / recharge entry points when a
+   * concurrent first-time request won the (userId, idempotencyKey) race. Kept
+   * non-recursive so the callers' return types stay inferable.
+   */
+  private async replayExistingOrder(
+    userId: string,
+    idempotencyKey: string,
+    shopperCountry: string,
+    env: 'demo' | 'prod',
+  ) {
+    const existing = await this.prisma.billingOrder.findUniqueOrThrow({
+      where: { userId_idempotencyKey: { userId, idempotencyKey } },
+      include: { paymentIntents: { orderBy: { createdAt: 'desc' }, take: 1 } },
+    });
+    return {
+      order: this.orderDto(existing),
+      paymentIntent: existing.paymentIntents[0]
+        ? this.paymentIntentDto(existing.paymentIntents[0])
+        : null,
+      shopperCountry,
+      env,
     };
   }
 
@@ -6764,6 +7054,34 @@ function sanitizeCodeToken(value: string): string {
 // Seeded by the billing_order_grant_snapshot migration; has no provider binding so
 // it never surfaces in the public price listing.
 const CUSTOM_RECHARGE_ITEM_CODE = 'COMMUNITY_POINT_CUSTOM_RECHARGE';
+const COMPUTE_RECHARGE_ITEM_CODE = 'COMPUTE_POINT_CUSTOM_RECHARGE';
+
+/**
+ * True for a Prisma unique-constraint violation (P2002) — used to turn the race
+ * where two concurrent first-time requests share an idempotency key into a clean
+ * replay: the loser's insert violates userId_idempotencyKey, after which the row
+ * provably exists, so re-entering the method hits the idempotency replay branch.
+ */
+function isUniqueConstraintViolation(error: unknown): boolean {
+  return (
+    error instanceof Prisma.PrismaClientKnownRequestError &&
+    error.code === 'P2002'
+  );
+}
+
+/**
+ * Dev-only escape hatch: when set (and NOT in production), a top-up / recharge
+ * order is fulfilled INTERNALLY instead of going to the payment provider — so the
+ * full recharge → credit → balance loop is exercisable locally without Airwallex.
+ * Fails CLOSED in production: NODE_ENV==='production' disables it regardless of the
+ * flag, so it can never skip a real charge in prod.
+ */
+function devSkipPaymentEnabled(): boolean {
+  return (
+    process.env.NODE_ENV !== 'production' &&
+    /^(true|1|yes)$/i.test(process.env.BILLING_DEV_SKIP_PAYMENT ?? '')
+  );
+}
 
 // The browser Airwallex SDK env must match the server's API base (demo <-> demo,
 // prod <-> prod) or the client_secret won't validate at redirect. Derive it from
@@ -6884,6 +7202,8 @@ function allowedReturnOrigins(): Set<string> {
     origins.add('http://127.0.0.1:9527');
     origins.add('http://localhost:3000');
     origins.add('http://127.0.0.1:3000');
+    origins.add('http://localhost:9540');
+    origins.add('http://127.0.0.1:9540');
   }
   return origins;
 }

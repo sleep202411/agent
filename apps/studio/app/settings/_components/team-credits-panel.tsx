@@ -1,0 +1,232 @@
+"use client";
+
+import { useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { IconBolt, IconLoader2 } from "@tabler/icons-react";
+import { toast } from "sonner";
+import { cn } from "@/lib/utils";
+import { ApiRequestError } from "@/lib/api";
+import {
+  computeWalletBalanceQueryKey,
+  useComputeWalletBalance,
+} from "@/app/_components/credits-badge";
+import { type WorkspaceRef } from "@/lib/collab/projects-api";
+import {
+  createComputeCustomRecharge,
+  createComputeTopup,
+  listComputeTopupPackages,
+  redirectToComputePayment,
+  type ComputeTopupPrice,
+} from "@/lib/billing";
+import { FIELD_CONTROL } from "@/components/ui/field";
+import { Panel } from "./settings-ui";
+
+const errMsg = (e: unknown, fallback: string) =>
+  e instanceof ApiRequestError ? e.message : e instanceof Error ? e.message : fallback;
+
+const usd = (amountMinor: string) => {
+  const cents = Number(amountMinor);
+  return Number.isFinite(cents) ? `$${(cents / 100).toLocaleString()}` : "—";
+};
+const points = (value: string | null) => {
+  const n = Number(value ?? 0);
+  return Number.isFinite(n) ? n.toLocaleString() : "0";
+};
+
+const CAN_MANAGE_BILLING = new Set(["owner", "admin", "billing"]);
+
+/**
+ * Compute-credit panel for the active workspace. Every workspace — personal or
+ * team — is its own credit pot: the balance shown and the wallet recharged are
+ * always this workspace's pot. Personal: the owner funds their own; team:
+ * billing-role members fund the shared pot. Recharge via fixed packs or a custom
+ * USD amount. Brand-red is used only on the hero recharge CTA.
+ */
+export function TeamCreditsPanel({ ws }: { ws: WorkspaceRef }) {
+  const isTeam = ws.type === "team";
+  const canManageBilling = Boolean(ws.role && CAN_MANAGE_BILLING.has(ws.role));
+  // A personal workspace is funded by its owner; a team requires the billing role.
+  const canRecharge = !isTeam || canManageBilling;
+
+  const { data: balance } = useComputeWalletBalance();
+
+  return (
+    <Panel
+      title={isTeam ? "Team credits" : "Credits"}
+      icon={<IconBolt className="size-4 text-muted-foreground" />}
+    >
+      <div className="flex flex-col gap-5">
+        <div className="flex items-end justify-between gap-4">
+          <div>
+            <div className="text-sm text-muted-foreground">
+              {isTeam ? "Shared team balance" : "Available balance"}
+            </div>
+            <div className="mt-1 flex items-center gap-1.5 text-3xl font-semibold tabular-nums">
+              <IconBolt className="size-6 text-white/85" stroke={1.8} />
+              {balance ? balance.available.toLocaleString() : "—"}
+            </div>
+            {balance && balance.held > BigInt(0) && (
+              <div className="mt-0.5 text-xs text-muted-foreground">
+                {balance.held.toLocaleString()} reserved by running jobs
+              </div>
+            )}
+          </div>
+        </div>
+
+        {canRecharge ? (
+          <RechargeControls workspaceId={ws.id} />
+        ) : (
+          <p className="text-sm text-muted-foreground">
+            Only billing admins can top up this team&rsquo;s credits.
+          </p>
+        )}
+      </div>
+    </Panel>
+  );
+}
+
+function RechargeControls({ workspaceId }: { workspaceId: string }) {
+  const queryClient = useQueryClient();
+  const [amount, setAmount] = useState("50");
+  const [pendingId, setPendingId] = useState<string | null>(null);
+
+  const { data: catalog } = useQuery({
+    queryKey: ["compute-topup-packages"] as const,
+    queryFn: listComputeTopupPackages,
+    staleTime: 5 * 60_000,
+  });
+
+  const urls = () => {
+    const base = typeof window !== "undefined" ? `${window.location.origin}/settings/billing` : "";
+    return { successUrl: base, backUrl: base };
+  };
+
+  const afterStart = async (
+    result: Awaited<ReturnType<typeof createComputeTopup>>,
+    label: string
+  ) => {
+    const outcome = await redirectToComputePayment(result, urls());
+    if (outcome === "fulfilled") {
+      void queryClient.invalidateQueries({ queryKey: computeWalletBalanceQueryKey });
+      toast.success(`${label} added`);
+    }
+    // "redirecting" → the browser is navigating to the provider; nothing to do.
+  };
+
+  const packMut = useMutation({
+    mutationFn: (price: ComputeTopupPrice) =>
+      createComputeTopup({
+        priceId: price.id,
+        workspaceId,
+        idempotencyKey: crypto.randomUUID(),
+        ...urls(),
+      }),
+    onSuccess: (result, price) => afterStart(result, `${points(price.grantsWalletAmount)} credits`),
+    onError: (e) => toast.error(errMsg(e, "Couldn't start the top-up")),
+    onSettled: () => setPendingId(null),
+  });
+
+  const customMut = useMutation({
+    mutationFn: () =>
+      createComputeCustomRecharge({
+        amountDollars: Number(amount),
+        workspaceId,
+        idempotencyKey: crypto.randomUUID(),
+        ...urls(),
+      }),
+    onSuccess: (result) => afterStart(result, "Credits"),
+    onError: (e) => toast.error(errMsg(e, "Couldn't start the recharge")),
+  });
+
+  const amountNum = Number(amount);
+  const amountValid = Number.isInteger(amountNum) && amountNum >= 10 && amountNum <= 5000;
+  const busy = packMut.isPending || customMut.isPending;
+  const packs = catalog?.prices ?? [];
+
+  return (
+    <div className="flex flex-col gap-4">
+      {packs.length > 0 && (
+        <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+          {packs.map((price) => {
+            const pending = packMut.isPending && pendingId === price.id;
+            return (
+              <button
+                key={price.id}
+                type="button"
+                disabled={busy}
+                onClick={() => {
+                  setPendingId(price.id);
+                  packMut.mutate(price);
+                }}
+                className="flex flex-col items-start gap-1 rounded-xl bg-secondary px-4 py-3 text-left transition-colors hover:bg-accent disabled:opacity-50"
+              >
+                <span className="flex items-center gap-1 text-base font-semibold tabular-nums">
+                  <IconBolt className="size-4 text-white/85" stroke={1.8} />
+                  {points(price.grantsWalletAmount)}
+                  {pending && <IconLoader2 className="size-3.5 animate-spin" />}
+                </span>
+                <span className="text-xs text-muted-foreground">{usd(price.amountMinor)}</span>
+              </button>
+            );
+          })}
+        </div>
+      )}
+
+      <div className="flex flex-wrap gap-2">
+        {[10, 50, 100, 500].map((v) => (
+          <button
+            key={v}
+            type="button"
+            disabled={busy}
+            onClick={() => setAmount(String(v))}
+            className={cn(
+              "rounded-lg px-3 py-1.5 text-sm tabular-nums transition-colors disabled:opacity-50",
+              amountNum === v ? "bg-white text-background" : "bg-secondary hover:bg-accent"
+            )}
+          >
+            ${v}
+          </button>
+        ))}
+      </div>
+
+      <div className="flex items-end gap-2">
+        <label className="flex flex-1 flex-col gap-1.5">
+          <span className="text-xs text-muted-foreground">Amount (USD, $10–$5,000)</span>
+          <div className="relative">
+            <span className="pointer-events-none absolute top-1/2 left-3.5 -translate-y-1/2 text-muted-foreground">
+              $
+            </span>
+            <input
+              type="number"
+              inputMode="numeric"
+              min={10}
+              max={5000}
+              value={amount}
+              onChange={(e) => setAmount(e.target.value)}
+              placeholder="50"
+              className={cn(FIELD_CONTROL, "w-full pl-7 tabular-nums")}
+            />
+          </div>
+        </label>
+        <button
+          type="button"
+          disabled={!amountValid || busy}
+          onClick={() => customMut.mutate()}
+          // Brand red as the hero CTA — sanctioned case-by-case accent (DESIGN.md
+          // rule 3), applied locally, never a token.
+          className="flex h-11 items-center gap-1.5 rounded-xl bg-[#E52227] px-5 text-sm font-semibold text-white shadow-lg shadow-[#E52227]/25 transition-colors hover:bg-[#c91e22] disabled:opacity-40"
+        >
+          {customMut.isPending ? (
+            <IconLoader2 className="size-4 animate-spin" />
+          ) : (
+            <IconBolt className="size-4" stroke={1.9} />
+          )}
+          Recharge
+        </button>
+      </div>
+      <p className="text-xs text-muted-foreground">
+        Secure checkout via Airwallex. 1 credit = 1¢ USD.
+      </p>
+    </div>
+  );
+}

@@ -1,16 +1,17 @@
 "use client";
 
 import { useState } from "react";
-import { IconCreditCard, IconReceipt } from "@tabler/icons-react";
+import { IconReceipt } from "@tabler/icons-react";
 import { Button } from "@/components/ui/button";
 import { useWorkspace } from "@/app/_components/workspace-context";
 import { SubscriptionDialog } from "@/app/_components/subscription-dialog";
-import { EmptyState, PageHeader, Panel, TeamBadge } from "../_components/settings-ui";
+import { PageHeader, Panel, TeamBadge } from "../_components/settings-ui";
+import { TeamCreditsPanel } from "../_components/team-credits-panel";
 
 /**
- * Plan & Billing — team-level plans/credit pools have no backend yet, so that
- * section renders an honest empty state. Per-user subscription + credit packs
- * are real (the subscription dialog), surfaced here as the wired actions.
+ * Plan & Billing — the compute-credit balance + recharge (and, for teams, the
+ * shared-pool toggle) are real and wired via {@link TeamCreditsPanel}. Per-user
+ * membership plans remain in the subscription dialog.
  */
 export default function BillingSettingsPage() {
   const { activeWorkspace: ws } = useWorkspace();
@@ -21,16 +22,10 @@ export default function BillingSettingsPage() {
       <PageHeader
         title="Plan & Billing"
         badge={ws ? <TeamBadge label={ws.type === "personal" ? "Personal" : "Team"} /> : undefined}
-        subtitle="Manage your subscription and credits."
+        subtitle="Manage your credits and subscription."
       />
 
-      <Panel title="Team plan" icon={<IconCreditCard className="size-4 text-muted-foreground" />}>
-        <EmptyState
-          icon={<IconCreditCard className="size-5" />}
-          title="Team plans aren't available yet"
-          body="Shared team plans and a team credit pool are coming. For now, manage your personal subscription and credits below."
-        />
-      </Panel>
+      {ws && <TeamCreditsPanel ws={ws} />}
 
       <Panel
         title="Your subscription"

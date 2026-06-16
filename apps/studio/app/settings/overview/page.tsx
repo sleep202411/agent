@@ -3,12 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import {
-  IconAlertTriangle,
-  IconCreditCard,
-  IconDeviceFloppy,
-  IconUsers,
-} from "@tabler/icons-react";
+import { IconAlertTriangle, IconBolt, IconDeviceFloppy, IconUsers } from "@tabler/icons-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -23,9 +18,10 @@ import {
 import { Skeleton } from "@/components/ui/skeleton";
 import { ApiRequestError } from "@/lib/api";
 import { useWorkspace } from "@/app/_components/workspace-context";
+import { useComputeWalletBalance } from "@/app/_components/credits-badge";
 import { listWorkspaceMembers } from "@/lib/collab/sharing-api";
 import { deleteWorkspace, updateWorkspace, type WorkspaceRef } from "@/lib/collab/projects-api";
-import { EmptyState, LetterAvatar, PageHeader, Panel, TeamBadge } from "../_components/settings-ui";
+import { LetterAvatar, PageHeader, Panel, TeamBadge } from "../_components/settings-ui";
 
 const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 const errMsg = (e: unknown, fallback: string) =>
@@ -70,16 +66,7 @@ export default function OverviewSettingsPage() {
 
       {isTeam && <MembersPanel ws={ws} canManage={canManage} />}
 
-      <Panel
-        title="Team credits"
-        icon={<IconCreditCard className="size-4 text-muted-foreground" />}
-      >
-        <EmptyState
-          icon={<IconCreditCard className="size-5" />}
-          title="Team credits aren't available yet"
-          body="A shared team credit pool is coming. For now, credits are per-account — see Plan & Billing."
-        />
-      </Panel>
+      <CreditsSummaryPanel isTeam={isTeam} />
 
       {isTeam && isOwner && <DangerZone ws={ws} />}
     </main>
@@ -170,6 +157,37 @@ function MembersPanel({ ws, canManage }: { ws: WorkspaceRef; canManage: boolean 
             Manage access
           </Button>
         </div>
+      </div>
+    </Panel>
+  );
+}
+
+function CreditsSummaryPanel({ isTeam }: { isTeam: boolean }) {
+  const router = useRouter();
+  const { data: balance } = useComputeWalletBalance();
+
+  return (
+    <Panel
+      title={isTeam ? "Team credits" : "Credits"}
+      icon={<IconBolt className="size-4 text-muted-foreground" />}
+    >
+      <div className="flex items-center justify-between gap-4">
+        <div>
+          <div className="flex items-center gap-1.5 text-2xl font-semibold tabular-nums">
+            <IconBolt className="size-5 text-white/85" stroke={1.8} />
+            {balance ? balance.available.toLocaleString() : "—"}
+          </div>
+          <div className="mt-0.5 text-xs text-muted-foreground">
+            {isTeam ? "Shared team balance · all members draw from this pool" : "Available credits"}
+          </div>
+        </div>
+        <Button
+          variant="secondary"
+          className="shrink-0"
+          onClick={() => router.push("/settings/billing")}
+        >
+          Manage credits
+        </Button>
       </div>
     </Panel>
   );

@@ -47,11 +47,6 @@ enum WorkspaceStatus {
   archived
 }
 
-enum WorkspaceBillingMode {
-  member_pays
-  workspace_pool
-}
-
 enum WorkspaceMemberRole {
   owner
   admin
@@ -752,7 +747,6 @@ model Workspace {
   id               String               @id @default(uuid(7)) @db.Uuid
   type             WorkspaceType
   status           WorkspaceStatus      @default(active)
-  billingMode      WorkspaceBillingMode @default(member_pays) @map("billing_mode")
   name             String               @db.VarChar(120)
   slug             String?              @db.VarChar(80)
   avatarUrl        String?              @map("avatar_url") @db.VarChar(512)

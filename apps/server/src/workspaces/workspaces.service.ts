@@ -509,7 +509,6 @@ export class WorkspacesService {
     return {
       id: workspace.id,
       type: workspace.type,
-      billingMode: workspace.billingMode,
       status: workspace.status,
       name: workspace.name,
       slug: workspace.slug,

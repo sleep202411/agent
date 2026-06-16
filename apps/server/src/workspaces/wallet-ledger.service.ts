@@ -15,11 +15,17 @@ import {
 } from '@prisma/client';
 import { PrismaService } from '../infra/db/db.module';
 
-const DEFAULT_WALLET_ACCOUNTS = [
+// compute_point is workspace-owned (the workspace you work in is the pot);
+// community_point — the creator economy — is user-owned. Each owner type
+// provisions only the accounts that apply to it, so there are no orphan pots.
+const WORKSPACE_WALLET_ACCOUNTS = [
   {
     currency: WalletCurrencyType.compute_point,
     balanceKind: WalletBalanceKind.consumable,
   },
+] as const;
+
+const USER_WALLET_ACCOUNTS = [
   {
     currency: WalletCurrencyType.community_point,
     balanceKind: WalletBalanceKind.consumable,
@@ -69,8 +75,12 @@ export class WalletLedgerService {
     ownerType: WalletOwnerType,
     ownerId: string,
   ): Promise<WalletAccount[]> {
+    const specs =
+      ownerType === WalletOwnerType.workspace
+        ? WORKSPACE_WALLET_ACCOUNTS
+        : USER_WALLET_ACCOUNTS;
     const accounts: WalletAccount[] = [];
-    for (const accountSpec of DEFAULT_WALLET_ACCOUNTS) {
+    for (const accountSpec of specs) {
       accounts.push(
         await this.prisma.walletAccount.upsert({
           where: {
