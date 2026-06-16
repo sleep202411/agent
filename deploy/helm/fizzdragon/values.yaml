@@ -82,8 +82,8 @@ ingress:
 # that needs it. Secrets live in Key Vault, see secretProviderClass below.
 # ---------------------------------------------------------------------------
 sharedEnv:
-  JAVA_STUDIO_URL: https://fizzdragon.com/studio
-  JAVA_CONTENT_URL: https://fizzdragon.com/content
+  JAVA_STUDIO_URL: https://java.fizzdragon.com/studio
+  JAVA_CONTENT_URL: https://java.fizzdragon.com/content
   ALIBABA_BASE_URL: https://dashscope-intl.aliyuncs.com/compatible-mode/v1
   AZURE_OPENAI_BASE_URL: https://fizzdragon-ai-foundry.openai.azure.com/openai/v1
   AZURE_FOUNDRY_PROJECT_ENDPOINT: https://fizzdragon-ai-foundry.services.ai.azure.com/api/projects/fizzdragon-tools
@@ -173,7 +173,7 @@ web:
   replicaCount: 1
   image:
     repository: fizzdragon-web
-    tag: 4d63459d02a8911d80f7337fe5cf342d1fb0a225
+    tag: java-domain-6c3ffe43
   containerPort: 3000
   env:
     SERVER_URL: http://fizzdragon-server:3001
