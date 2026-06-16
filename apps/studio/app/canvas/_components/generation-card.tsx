@@ -16,16 +16,20 @@ import {
   IconVideo,
   IconX,
 } from "@tabler/icons-react";
+import { toast } from "sonner";
+import { ReactCompareSlider } from "react-compare-slider";
 import { cn } from "@/lib/utils";
+import { isUploadAbort, uploadFileViaSignedUrl } from "@/lib/media-upload";
 import { useDismiss } from "@/lib/use-dismiss";
 import { useAiCatalog, usableModelsByModality } from "@/app/canvas/_lib/use-ai-catalog";
 import { useGeneration } from "@/app/canvas/_lib/use-canvas-generation";
-import { useCreatePanorama } from "@/app/canvas/_lib/use-panorama";
+import { OperationConfirmBar, PANORAMA_OP, type OperationDef } from "./operation-confirm-bar";
 import { useCanvasGraphContext } from "@/lib/collab/canvas-graph-context";
 import {
   defaultMode,
   defaultSettingsForModel,
   estimateModelSellPoints,
+  hasSchemaProperty,
   modeLabel,
   referenceFieldsForMode,
   type FizzAiModel,
@@ -37,7 +41,7 @@ import { Icon720, PanoramaViewer } from "./panorama-viewer";
 import { ModeMenu } from "./mode-menu";
 import { ModelPicker } from "./model-picker";
 import { ModelSettings as ModelSettingsPanel } from "./model-settings";
-import { ReferenceStack, type CardReferences } from "./reference-stack";
+import { ReferenceStack, type CardReference, type CardReferences } from "./reference-stack";
 import { PortPlus } from "./ports";
 
 /**
@@ -61,6 +65,12 @@ export type GenerationNodeData = {
   generation?: GenerationState;
   /** Set when a node is spawned to auto-run once on mount (e.g. panorama). */
   autoSubmit?: boolean;
+  /**
+   * Operation-locked card (spawned from a specific op like Upscale): its model +
+   * mode are fixed by the operation, so the composer hides the model + mode
+   * pickers (switching them would contradict the operation the card represents).
+   */
+  locked?: boolean;
 };
 export type GenerationNodeType = Node<GenerationNodeData, "prompt" | "video">;
 
@@ -140,11 +150,14 @@ function GenerationCard({
   // marquee / select-all doesn't pop every card's prompt at once.
   const soleSelected = nodes.filter((n) => n.selected).length === 1;
   const { submit, cancel } = useGeneration();
-  const createPanorama = useCreatePanorama();
+  const [pendingOp, setPendingOp] = useState<OperationDef | null>(null);
   const autoSubmittedRef = useRef(false);
   const [panel, setPanel] = useState<"model" | "settings" | "mode" | null>(null);
   const [renaming, setRenaming] = useState(false);
   const [pano, setPano] = useState(false);
+  // Actual rendered-output aspect ratio (e.g. Topaz upscale returns no width/
+  // height metadata) so the card hugs its content instead of the size default.
+  const [loadedRatio, setLoadedRatio] = useState<string | null>(null);
   // Keep the composer at a constant screen size (don't shrink/grow with zoom).
   const zoom = useStore((s) => s.transform[2]);
   useDismiss(panel !== null, () => setPanel(null));
@@ -170,6 +183,28 @@ function GenerationCard({
     [catalog, data.modelId]
   );
   const references = useMemo(() => data.references ?? {}, [data.references]);
+  // First bound input image — the "before" for an op's before/after comparison.
+  const compareBeforeUrl = useMemo(() => {
+    for (const list of Object.values(references)) {
+      const hit = (list ?? []).find((r) => r.kind === "image" && /^https?:/i.test(r.url));
+      if (hit) return hit.url;
+    }
+    return null;
+  }, [references]);
+  // Optimistic, LOCAL-only reference chips still streaming to storage (blob
+  // preview + spinner) — never written to the doc; on confirm the durable URL
+  // is patched into `references` and the pending chip is dropped.
+  const [pendingRefs, setPendingRefs] = useState<CardReferences>({});
+  const referencesForDisplay = useMemo<CardReferences>(() => {
+    const fields = Object.keys(pendingRefs);
+    if (fields.length === 0) return references;
+    const merged: CardReferences = { ...references };
+    for (const field of fields) {
+      const pend = pendingRefs[field] ?? [];
+      if (pend.length) merged[field] = [...(references[field] ?? []), ...pend];
+    }
+    return merged;
+  }, [references, pendingRefs]);
   const mode = data.mode ?? defaultMode(model);
   const modes = model?.generationModes ?? [];
   const refFields = useMemo(() => referenceFieldsForMode(model, mode), [model, mode]);
@@ -212,17 +247,49 @@ function GenerationCard({
   const createdUrls = useRef<string[]>([]);
   useEffect(() => () => createdUrls.current.forEach((url) => URL.revokeObjectURL(url)), []);
 
+  const dropPending = (field: string, refId: string) =>
+    setPendingRefs((prev) => ({
+      ...prev,
+      [field]: (prev[field] ?? []).filter((r) => r.id !== refId),
+    }));
+
   const addReferences = (field: string, files: File[]) => {
     const kind = refFields.find((f) => f.field === field)?.kind ?? "image";
-    const added = files.map((file) => {
-      const url = URL.createObjectURL(file);
-      createdUrls.current.push(url);
-      return { id: crypto.randomUUID(), url, name: file.name, kind };
-    });
-    patchNodeData(id, (node) => {
-      const refs: CardReferences = (node.data as GenerationNodeData).references ?? {};
-      return { references: { ...refs, [field]: [...(refs[field] ?? []), ...added] } };
-    });
+    for (const file of files) {
+      const refId = crypto.randomUUID();
+      const objectUrl = URL.createObjectURL(file);
+      createdUrls.current.push(objectUrl);
+      // Show an optimistic local chip immediately; upload in the background.
+      setPendingRefs((prev) => ({
+        ...prev,
+        [field]: [
+          ...(prev[field] ?? []),
+          { id: refId, url: objectUrl, name: file.name, kind, uploading: true },
+        ],
+      }));
+      uploadFileViaSignedUrl(file, { kind: "ai_reference_image" })
+        .then((uploaded) => {
+          // Persist the DURABLE url (never the blob:) into the doc, drop the chip.
+          patchNodeData(id, (node) => {
+            const refs: CardReferences = (node.data as GenerationNodeData).references ?? {};
+            return {
+              references: {
+                ...refs,
+                [field]: [
+                  ...(refs[field] ?? []),
+                  { id: refId, url: uploaded.url, name: file.name, kind },
+                ],
+              },
+            };
+          });
+          dropPending(field, refId);
+        })
+        .catch((err) => {
+          dropPending(field, refId);
+          URL.revokeObjectURL(objectUrl);
+          if (!isUploadAbort(err)) toast.error(`Couldn't upload ${file.name}`);
+        });
+    }
   };
 
   const removeReference = (field: string, refId: string) =>
@@ -285,7 +352,7 @@ function GenerationCard({
               <Icon720 className="size-4" />
             </ToolbarButton>
           ) : (
-            <ToolbarButton label="Generate Panorama" onClick={() => createPanorama(id, output.url)}>
+            <ToolbarButton label="Generate Panorama" onClick={() => setPendingOp(PANORAMA_OP)}>
               <Icon720 className="size-4" />
             </ToolbarButton>
           ))}
@@ -336,7 +403,7 @@ function GenerationCard({
             media or the live job state (queued / generating+ETA / failed). */}
         <div
           className="relative flex flex-col items-center justify-center gap-3 overflow-hidden bg-muted"
-          style={{ aspectRatio: resultAspectRatio(modality, settings, generation) }}
+          style={{ aspectRatio: loadedRatio ?? resultAspectRatio(modality, settings, generation) }}
         >
           {generation?.status === "done" && generation.outputs?.[0] ? (
             generation.outputs[0].type === "video" ? (
@@ -344,11 +411,41 @@ function GenerationCard({
                 src={generation.outputs[0].url}
                 className="size-full object-contain"
               />
+            ) : data.locked && compareBeforeUrl ? (
+              // Operation result (e.g. upscale): before/after comparison slider —
+              // drag the handle to compare the input vs the produced image.
+              <ReactCompareSlider
+                className="size-full"
+                itemOne={
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={compareBeforeUrl} alt="Before" className="size-full object-contain" />
+                }
+                itemTwo={
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={generation.outputs[0].url}
+                    alt="After"
+                    onLoad={(e) => {
+                      const t = e.currentTarget;
+                      if (t.naturalWidth && t.naturalHeight) {
+                        setLoadedRatio(`${t.naturalWidth} / ${t.naturalHeight}`);
+                      }
+                    }}
+                    className="size-full object-contain"
+                  />
+                }
+              />
             ) : (
               // eslint-disable-next-line @next/next/no-img-element
               <img
                 src={generation.outputs[0].url}
                 alt={data.prompt ?? "Result"}
+                onLoad={(e) => {
+                  const t = e.currentTarget;
+                  if (t.naturalWidth && t.naturalHeight) {
+                    setLoadedRatio(`${t.naturalWidth} / ${t.naturalHeight}`);
+                  }
+                }}
                 className="size-full object-contain"
               />
             )
@@ -400,123 +497,145 @@ function GenerationCard({
       {/* Card-specific composer — slides up below the card while selected.
           Outer wrapper animates in; inner is counter-scaled by 1/zoom so it
           stays a constant, readable screen size. */}
-      {canEdit && selected && soleSelected && !dragging && !isPanorama && (
-        <div className="absolute top-full left-1/2 z-10 mt-3 duration-200 animate-in fade-in-0 slide-in-from-bottom-3">
-          <div
-            className="nodrag w-[600px] rounded-3xl bg-white/[0.05] p-4 backdrop-blur-3xl backdrop-saturate-200 shadow-[0_24px_80px_rgba(0,0,0,0.5),inset_0_1px_0_rgba(255,255,255,0.16)]"
-            style={{
-              transform: `translateX(-50%) scale(${1 / zoom})`,
-              transformOrigin: "top center",
-            }}
-          >
-            {refFields.length > 0 && (
-              <ReferenceStack
-                fields={refFields}
-                references={references}
-                onAdd={addReferences}
-                onRemove={removeReference}
-              />
-            )}
-            <textarea
-              value={data.prompt ?? ""}
-              onChange={(event) => patchNodeData(id, { prompt: event.target.value })}
-              placeholder="Write your prompt.."
-              rows={3}
-              autoFocus
-              className="block w-full resize-none bg-transparent text-sm outline-none placeholder:text-muted-foreground"
-            />
-            <div className="flex items-center gap-2 pt-2">
-              {/* Mode pill */}
-              {modes.length > 1 && (
+      {pendingOp && output?.url && (
+        <OperationConfirmBar
+          op={pendingOp}
+          sourceNodeId={id}
+          sourceUrl={output.url}
+          onClose={() => setPendingOp(null)}
+        />
+      )}
+      {canEdit &&
+        selected &&
+        soleSelected &&
+        !dragging &&
+        !isPanorama &&
+        !data.locked &&
+        !pendingOp && (
+          <div className="absolute top-full left-1/2 z-10 mt-3 duration-200 animate-in fade-in-0 slide-in-from-bottom-3">
+            <div
+              className="nodrag w-[600px] rounded-3xl bg-white/[0.05] p-4 backdrop-blur-3xl backdrop-saturate-200 shadow-[0_24px_80px_rgba(0,0,0,0.5),inset_0_1px_0_rgba(255,255,255,0.16)]"
+              style={{
+                transform: `translateX(-50%) scale(${1 / zoom})`,
+                transformOrigin: "top center",
+              }}
+            >
+              {refFields.length > 0 && (
+                <ReferenceStack
+                  fields={refFields}
+                  references={referencesForDisplay}
+                  onAdd={addReferences}
+                  onRemove={removeReference}
+                />
+              )}
+              {/* Pure transform ops (e.g. upscale) declare no prompt in their
+                schema — hide the textarea so the composer is just the op + send. */}
+              {(!model || hasSchemaProperty(model, "prompt")) && (
+                <textarea
+                  value={data.prompt ?? ""}
+                  onChange={(event) => patchNodeData(id, { prompt: event.target.value })}
+                  placeholder="Write your prompt.."
+                  rows={3}
+                  autoFocus
+                  className="block w-full resize-none bg-transparent text-sm outline-none placeholder:text-muted-foreground"
+                />
+              )}
+              <div className="flex items-center gap-2 pt-2">
+                {/* Mode pill — hidden on operation-locked cards (op fixes the mode). */}
+                {!data.locked && modes.length > 1 && (
+                  <div className="relative" data-popover-zone>
+                    <button
+                      type="button"
+                      onClick={() => setPanel((p) => (p === "mode" ? null : "mode"))}
+                      className="flex h-8 items-center gap-1 rounded-full bg-white/[0.06] px-3 text-xs font-medium transition-colors hover:bg-white/[0.1]"
+                    >
+                      {modeLabel(mode ?? "")}
+                      <IconChevronDown className="size-3.5 text-muted-foreground" stroke={1.8} />
+                    </button>
+                    {panel === "mode" && (
+                      <ModeMenu
+                        modes={modes}
+                        value={mode}
+                        onSelect={(mo) => patchNodeData(id, { mode: mo })}
+                        onClose={() => setPanel(null)}
+                      />
+                    )}
+                  </div>
+                )}
+                {/* Model pill — hidden on operation-locked cards (op fixes the
+                  model; switching it would contradict the operation + bring back
+                  mode/prompt). The header still shows the model name. */}
+                {!data.locked && (
+                  <div className="relative" data-popover-zone>
+                    <button
+                      type="button"
+                      onClick={() => setPanel((p) => (p === "model" ? null : "model"))}
+                      className="flex h-8 items-center rounded-full bg-white/[0.06] px-3 text-xs font-medium transition-colors hover:bg-white/[0.1]"
+                    >
+                      {data.modelName ?? "Select model"}
+                    </button>
+                    {panel === "model" && (
+                      <ModelPicker
+                        catalog={catalog}
+                        modality={modality}
+                        selectedId={data.modelId}
+                        onSelect={onSelectModel}
+                        onClose={() => setPanel(null)}
+                      />
+                    )}
+                  </div>
+                )}
+
+                {/* Schema-driven settings pill */}
                 <div className="relative" data-popover-zone>
                   <button
                     type="button"
-                    onClick={() => setPanel((p) => (p === "mode" ? null : "mode"))}
-                    className="flex h-8 items-center gap-1 rounded-full bg-white/[0.06] px-3 text-xs font-medium transition-colors hover:bg-white/[0.1]"
+                    onClick={() => setPanel((p) => (p === "settings" ? null : "settings"))}
+                    className="flex size-8 items-center justify-center rounded-full bg-white/[0.06] transition-colors hover:bg-white/[0.1]"
+                    aria-label="Settings"
                   >
-                    {modeLabel(mode ?? "")}
-                    <IconChevronDown className="size-3.5 text-muted-foreground" stroke={1.8} />
+                    <IconAdjustments className="size-4" stroke={1.8} />
                   </button>
-                  {panel === "mode" && (
-                    <ModeMenu
-                      modes={modes}
-                      value={mode}
-                      onSelect={(mo) => patchNodeData(id, { mode: mo })}
-                      onClose={() => setPanel(null)}
+                  {panel === "settings" && (
+                    <ModelSettingsPanel
+                      model={model}
+                      settings={settings}
+                      onChange={(next) => patchNodeData(id, { settings: next })}
                     />
                   )}
                 </div>
-              )}
-              {/* Model pill */}
-              <div className="relative" data-popover-zone>
-                <button
-                  type="button"
-                  onClick={() => setPanel((p) => (p === "model" ? null : "model"))}
-                  className="flex h-8 items-center rounded-full bg-white/[0.06] px-3 text-xs font-medium transition-colors hover:bg-white/[0.1]"
-                >
-                  {data.modelName ?? "Select model"}
-                </button>
-                {panel === "model" && (
-                  <ModelPicker
-                    catalog={catalog}
-                    modality={modality}
-                    selectedId={data.modelId}
-                    onSelect={onSelectModel}
-                    onClose={() => setPanel(null)}
-                  />
-                )}
-              </div>
 
-              {/* Schema-driven settings pill */}
-              <div className="relative" data-popover-zone>
-                <button
-                  type="button"
-                  onClick={() => setPanel((p) => (p === "settings" ? null : "settings"))}
-                  className="flex size-8 items-center justify-center rounded-full bg-white/[0.06] transition-colors hover:bg-white/[0.1]"
-                  aria-label="Settings"
-                >
-                  <IconAdjustments className="size-4" stroke={1.8} />
-                </button>
-                {panel === "settings" && (
-                  <ModelSettingsPanel
-                    model={model}
-                    settings={settings}
-                    onChange={(next) => patchNodeData(id, { settings: next })}
-                  />
-                )}
-              </div>
-
-              <div className="ml-auto flex items-center gap-3">
-                {cost != null && (
-                  <span className="flex items-center gap-1 text-xs text-muted-foreground tabular-nums">
-                    <IconBolt className="size-3.5" stroke={1.8} />
-                    {cost}
-                  </span>
-                )}
-                <button
-                  type="button"
-                  aria-label={busy ? "Cancel generation" : "Generate"}
-                  onClick={() => (busy ? cancel(id) : submit(id))}
-                  // Brand red as the hero CTA — sanctioned case-by-case accent
-                  // (DESIGN.md rule 3), applied locally, never a token.
-                  className="flex size-8 items-center justify-center rounded-full bg-[#E52227] text-white shadow-lg shadow-[#E52227]/25 transition-colors hover:bg-[#c91e22]"
-                >
-                  {busy ? (
-                    <IconX className="size-4" stroke={2} />
-                  ) : (
-                    <IconArrowUp className="size-4" stroke={2} />
+                <div className="ml-auto flex items-center gap-3">
+                  {cost != null && (
+                    <span className="flex items-center gap-1 text-xs text-muted-foreground tabular-nums">
+                      <IconBolt className="size-3.5" stroke={1.8} />
+                      {cost}
+                    </span>
                   )}
-                </button>
+                  <button
+                    type="button"
+                    aria-label={busy ? "Cancel generation" : "Generate"}
+                    onClick={() => (busy ? cancel(id) : submit(id))}
+                    // Brand red as the hero CTA — sanctioned case-by-case accent
+                    // (DESIGN.md rule 3), applied locally, never a token.
+                    className="flex size-8 items-center justify-center rounded-full bg-[#E52227] text-white shadow-lg shadow-[#E52227]/25 transition-colors hover:bg-[#c91e22]"
+                  >
+                    {busy ? (
+                      <IconX className="size-4" stroke={2} />
+                    ) : (
+                      <IconArrowUp className="size-4" stroke={2} />
+                    )}
+                  </button>
+                </div>
               </div>
             </div>
           </div>
-        </div>
-      )}
+        )}
 
       {/* Every card connects on both sides: "+" input on the left, "+" output on
-          the right. Any card can wire into any other. */}
+          the right. The output port is tinted by the card's output kind. */}
       <PortPlus type="target" id="input" side="left" />
-      <PortPlus type="source" id="output" side="right" />
+      <PortPlus type="source" id="output" side="right" dataType={modality} />
     </div>
   );
 }

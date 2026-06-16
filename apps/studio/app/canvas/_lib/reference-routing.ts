@@ -19,6 +19,22 @@ export function outputKindForType(type: string | undefined): "image" | "video" |
 }
 
 /**
+ * Capability check: does this model accept a reference of `kind` in ANY of its
+ * generation modes? Unlike {@link routeReferenceField} this ignores current
+ * slot fullness — it answers "could a wire of this type ever bind here", which
+ * the add-node menu gates on (a video can never feed an image-only model).
+ */
+export function modelAcceptsKind(model: FizzAiModel | undefined, kind: string): boolean {
+  if (!model) return false;
+  for (const mode of model.generationModes ?? []) {
+    if (referenceFieldsForMode(model, mode).some((f) => f.kind === kind)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
  * Choose the reference field on a target generation card for an incoming
  * `kind`, switching the card's mode when the current mode has no free slot for
  * it (mirrors how dropping an image into a text-to-video card flips it to

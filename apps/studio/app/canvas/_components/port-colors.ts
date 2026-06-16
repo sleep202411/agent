@@ -34,3 +34,21 @@ export function handleColor(handleId: string | null | undefined): string {
   if (!handleId) return NEUTRAL;
   return colorForType(HANDLE_TYPE[handleId]);
 }
+
+/**
+ * A node's OUTPUT data type by node type (image/panorama/prompt emit images;
+ * video emits video). Handles carry the generic ids "input"/"output", so edges
+ * derive their type color from the source NODE's type via this map.
+ */
+const NODE_OUTPUT_TYPE: Record<string, PortDataType> = {
+  image: "image",
+  panorama: "image",
+  prompt: "image",
+  video: "video",
+};
+
+export function outputTypeForNodeType(
+  nodeType: string | null | undefined
+): PortDataType | undefined {
+  return nodeType ? NODE_OUTPUT_TYPE[nodeType] : undefined;
+}

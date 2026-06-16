@@ -38,7 +38,7 @@ import {
 } from "@tabler/icons-react";
 import { toast } from "sonner";
 import type { CanvasAsset } from "@/lib/collab/canvas-doc";
-import { uploadFileViaSignedUrl } from "@/lib/media-upload";
+import { isUploadAbort, uploadFileViaSignedUrl } from "@/lib/media-upload";
 import type { AuthUser } from "@/lib/auth";
 import { useAuth } from "@/app/_components/auth-provider";
 import { useCanvasDocument } from "@/lib/collab/use-canvas-document";
@@ -48,6 +48,11 @@ import { CanvasGraphProvider } from "@/lib/collab/canvas-graph-context";
 import type { CanvasEdgeShape, CanvasNodeShape } from "@/lib/collab/canvas-doc";
 import { CollabAvatars, CollabCursors } from "./collab-presence";
 import { CommentsLayer, CommentsProvider } from "./canvas-comments";
+import {
+  UploadStateContext,
+  createUploadStateStore,
+  type UploadStateStore,
+} from "./upload-state-context";
 import { CanvasHistory } from "./canvas-history";
 import { cn } from "@/lib/utils";
 import { CreditsBadge } from "@/app/_components/credits-badge";
@@ -71,7 +76,10 @@ import {
 } from "./generation-card";
 import { useAiCatalog } from "@/app/canvas/_lib/use-ai-catalog";
 import { CanvasGenerationProvider } from "@/app/canvas/_lib/use-canvas-generation";
-import { routeReferenceField as routeReferenceFieldFor } from "@/app/canvas/_lib/reference-routing";
+import {
+  modelAcceptsKind,
+  routeReferenceField as routeReferenceFieldFor,
+} from "@/app/canvas/_lib/reference-routing";
 import type { CardReference, CardReferences } from "./reference-stack";
 
 export type CanvasNode = ImageNodeType | PanoramaNodeType | NoteNodeType | GenerationNodeType;
@@ -84,6 +92,14 @@ const nodeTypes = {
   video: VideoNode,
 };
 const edgeTypes = { gradient: GradientEdge };
+
+// Which source output kinds each generator can consume — image generation takes
+// image references only; video generation takes image (i2v) or video (ref/edit).
+// Drives the add-node menu gating: a video source greys out image generation.
+const GEN_ACCEPTS: Record<"generate-image" | "generate-video", readonly ("image" | "video")[]> = {
+  "generate-image": ["image"],
+  "generate-video": ["image", "video"],
+};
 
 // Zoom/pan tuning proven in apps/web's storyboard canvas.
 const MIN_ZOOM = 0.16;
@@ -374,6 +390,8 @@ function CanvasInner({ projectId, canEdit }: { projectId: string; canEdit: boole
     addNodesAndEdges: graphAddNodesAndEdges,
     patchNodeData,
     removeEdge: graphRemoveEdge,
+    addLocalNode,
+    promoteLocalNode,
     selectNodes,
     restoreFromUpdate,
     addAssets: graphAddAssets,
@@ -471,18 +489,37 @@ function CanvasInner({ projectId, canEdit }: { projectId: string; canEdit: boole
     [getNode, catalog]
   );
 
-  // Simple model: any card's output can wire into any card's input. React Flow
-  // only allows source→target, so this is output→input — just block self-loops.
+  // Typed dataflow: a wire is valid only if the source's output kind can bind to
+  // a reference slot on the target card (in some mode). This is the same routing
+  // `onConnect` uses, so a valid wire is GUARANTEED to bind — no silent no-ops —
+  // and type-incompatible wires are rejected mid-drag (e.g. a video into an
+  // image-generation card, which has no video input).
+  const canConnect = useCallback(
+    (source: string | null | undefined, target: string | null | undefined) => {
+      if (!source || !target || source === target) return false;
+      // Catalog still loading: stay permissive (output→input) so first-paint
+      // wiring isn't blocked; type-safety engages once the models resolve.
+      if (!catalog) return true;
+      const kind = sourceOutputKind(source);
+      return Boolean(kind && routeReferenceField(target, kind));
+    },
+    [catalog, sourceOutputKind, routeReferenceField]
+  );
+
+  // React Flow only allows source→target, so this is output→input. Beyond that,
+  // the connection must be type-compatible (see canConnect).
   const isValidConnection = useCallback<IsValidConnection<Edge>>(
-    (connection) => connection.targetHandle === "input" && connection.source !== connection.target,
-    []
+    (connection) =>
+      connection.targetHandle === "input" && canConnect(connection.source, connection.target),
+    [canConnect]
   );
 
   // The connection (if any) when a node is spawned/hit from a dragged wire.
   const connectionForPending = useCallback(
-    (pending: PendingConnection, otherNodeId: string, otherNodeType: string): Connection | null => {
-      // Dragged from a card's "+" input → an image source feeds it.
-      if (pending.handleType === "target" && otherNodeType === "image") {
+    (pending: PendingConnection, otherNodeId: string): Connection | null => {
+      // Dragged from a card's "+" input → a source feeds it. Only wire if the
+      // source's output kind is type-compatible with this card.
+      if (pending.handleType === "target" && canConnect(otherNodeId, pending.nodeId)) {
         return {
           source: otherNodeId,
           sourceHandle: "output",
@@ -490,11 +527,8 @@ function CanvasInner({ projectId, canEdit }: { projectId: string; canEdit: boole
           targetHandle: "input",
         };
       }
-      // Dragged from a "+" output → into any card.
-      if (
-        pending.handleType === "source" &&
-        (otherNodeType === "prompt" || otherNodeType === "video")
-      ) {
+      // Dragged from a "+" output → into a card that can consume this output.
+      if (pending.handleType === "source" && canConnect(pending.nodeId, otherNodeId)) {
         return {
           source: pending.nodeId,
           sourceHandle: "output",
@@ -504,7 +538,71 @@ function CanvasInner({ projectId, canEdit }: { projectId: string; canEdit: boole
       }
       return null;
     },
-    []
+    [canConnect]
+  );
+
+  // Add-node menu gating for a wire dragged onto empty canvas: grey out the
+  // generators that can't take part in this connection (the screenshot's
+  // "引用该节点生成" — image generation is disabled when the source is a video).
+  const menuDisabledActions = useMemo<ReadonlySet<AddNodeAction>>(() => {
+    const disabled = new Set<AddNodeAction>();
+    const pending = addMenu?.pending;
+    if (!pending) return disabled;
+    if (pending.handleType === "source") {
+      // The dragged source feeds whatever we create — disable generators that
+      // can't consume its output kind (a video can't feed image generation).
+      const kind = sourceOutputKind(pending.nodeId);
+      if (kind) {
+        if (!GEN_ACCEPTS["generate-image"].includes(kind)) disabled.add("generate-image");
+        if (!GEN_ACCEPTS["generate-video"].includes(kind)) disabled.add("generate-video");
+      }
+    } else {
+      // Dragged from a card's "+" input — the new node FEEDS this card. Disable
+      // generators whose output kind this card's model can't accept.
+      const node = getNode(pending.nodeId);
+      const model = node
+        ? catalog?.models.find((m) => m.id === (node.data as GenerationNodeData).modelId)
+        : undefined;
+      if (!modelAcceptsKind(model, "image")) disabled.add("generate-image");
+      if (!modelAcceptsKind(model, "video")) disabled.add("generate-video");
+    }
+    return disabled;
+  }, [addMenu, sourceOutputKind, getNode, catalog]);
+
+  // Bind an edge's source as a reference on the target card, where it fits
+  // (auto-switching the card's mode if needed — e.g. an image into a video card
+  // → image-to-video). No-op if the source isn't a resolvable media output yet
+  // (ungenerated card), the target has no model yet, or the card can't take the
+  // kind. Idempotent: re-binding the same edgeId replaces in place.
+  const bindEdgeReference = useCallback(
+    (edgeId: string, source: string | null, target: string | null) => {
+      if (!source || !target) return;
+      const kind = sourceOutputKind(source);
+      const url = sourceMediaUrl(source);
+      const routed = kind ? routeReferenceField(target, kind) : undefined;
+      // Never bind a session-local blob: URL into the shared doc — it's
+      // meaningless to peers and breaks on reload (the panorama-blob bug class).
+      // A still-uploading source resolves to a blob: here; the reconciler
+      // re-binds the durable URL once the upload promotes the node.
+      if (!kind || !url || url.startsWith("blob:") || !routed) return;
+      const reference: CardReference = {
+        id: edgeId,
+        edgeId,
+        sourceNodeId: source,
+        url,
+        kind,
+      };
+      patchNodeData(target, (node) => {
+        const refs = (node.data as GenerationNodeData).references ?? {};
+        const list = (refs[routed.field] ?? []).filter((r) => r.edgeId !== edgeId);
+        const patch: Partial<GenerationNodeData> = {
+          references: { ...refs, [routed.field]: [...list, reference] },
+        };
+        if (routed.mode) patch.mode = routed.mode;
+        return patch;
+      });
+    },
+    [sourceOutputKind, sourceMediaUrl, routeReferenceField, patchNodeData]
   );
 
   const onConnect = useCallback(
@@ -517,33 +615,58 @@ function CanvasInner({ projectId, canEdit }: { projectId: string; canEdit: boole
         sourceHandle: connection.sourceHandle,
         targetHandle: connection.targetHandle,
       });
-      // Bind the source as a reference where it fits (auto-switching the card's
-      // mode if needed — e.g. an image into a video card → image-to-video). If
-      // the card can't take this kind at all, the wire stands but binds nothing.
-      if (connection.targetHandle !== "input" || !connection.target) return;
-      const kind = sourceOutputKind(connection.source);
-      const routed = kind ? routeReferenceField(connection.target, kind) : undefined;
-      const url = sourceMediaUrl(connection.source);
-      if (!kind || !routed || !url) return;
-      const reference: CardReference = {
-        id: edgeId,
-        edgeId: edgeId,
-        sourceNodeId: connection.source ?? undefined,
-        url,
-        kind,
-      };
-      patchNodeData(connection.target, (node) => {
-        const refs = (node.data as GenerationNodeData).references ?? {};
-        const list = (refs[routed.field] ?? []).filter((r) => r.edgeId !== edgeId);
-        const patch: Partial<GenerationNodeData> = {
-          references: { ...refs, [routed.field]: [...list, reference] },
-        };
-        if (routed.mode) patch.mode = routed.mode;
-        return patch;
-      });
+      if (connection.targetHandle === "input") {
+        bindEdgeReference(edgeId, connection.source, connection.target);
+      }
     },
-    [graphAddEdge, sourceOutputKind, routeReferenceField, sourceMediaUrl, patchNodeData]
+    [graphAddEdge, bindEdgeReference]
   );
+
+  // Reference reconciler: an edge into a card's input ALWAYS means "this source
+  // is a reference of the card" (wired refs can only be removed by deleting the
+  // wire — see reference-stack). onConnect binds at draw time, but that misses
+  // timing windows — a freshly-created card whose model resolves a tick later,
+  // or a source card that finishes generating after the wire was drawn. So
+  // back-fill any edge whose reference isn't bound yet once its inputs resolve.
+  // Idempotent + convergent: bound edges are skipped, so this settles in one pass.
+  useEffect(() => {
+    if (!catalog) return;
+    for (const edge of edges) {
+      const target = getNode(edge.target);
+      if (!target || (target.type !== "prompt" && target.type !== "video")) {
+        continue;
+      }
+      const refs = (target.data as GenerationNodeData).references ?? {};
+      let boundField: string | undefined;
+      let boundUrl: string | undefined;
+      for (const [field, list] of Object.entries(refs)) {
+        const hit = (list ?? []).find((r) => r.edgeId === edge.id);
+        if (hit) {
+          boundField = field;
+          boundUrl = hit.url;
+          break;
+        }
+      }
+      if (boundField === undefined) {
+        // Not yet bound — bind the source as a reference once its inputs resolve.
+        bindEdgeReference(edge.id, edge.source, edge.target);
+        continue;
+      }
+      // Already bound — keep the reference's URL in sync with the source's
+      // current output, so a "live" wire reflects an upstream re-generation
+      // instead of pinning the first output forever (in place; no re-routing).
+      // Ignore a transient blob: (a still-uploading source) — never sync it in.
+      const url = sourceMediaUrl(edge.source);
+      if (url && !url.startsWith("blob:") && url !== boundUrl) {
+        const field = boundField;
+        patchNodeData(edge.target, (node) => {
+          const r = (node.data as GenerationNodeData).references ?? {};
+          const list = (r[field] ?? []).map((x) => (x.edgeId === edge.id ? { ...x, url } : x));
+          return { references: { ...r, [field]: list } };
+        });
+      }
+    }
+  }, [edges, nodes, catalog, getNode, bindEdgeReference, sourceMediaUrl, patchNodeData]);
 
   // Deleting a wire drops the reference it bound. The field isn't on the edge
   // (the single "+" input fans out), so search every field by edge id.
@@ -564,28 +687,34 @@ function CanvasInner({ projectId, canEdit }: { projectId: string; canEdit: boole
     [patchNodeData]
   );
 
-  const addImageFiles = useCallback(
-    async (files: File[], base: { x: number; y: number }) => {
-      // Upload to durable storage so peers can resolve the image — never put a
-      // session blob: URL into the shared doc.
-      const ids: string[] = [];
-      for (const [index, file] of files.entries()) {
-        try {
-          const uploaded = await uploadFileViaSignedUrl(file, {
-            kind: "ai_reference_image",
+  // Transient state for in-flight optimistic uploads (blob preview / progress /
+  // abort), keyed by node id and kept OUT of the shared doc — see
+  // upload-state-context. Created once; its identity is stable.
+  const uploadStoreRef = useRef<UploadStateStore | null>(null);
+  if (!uploadStoreRef.current) uploadStoreRef.current = createUploadStateStore();
+  const uploadStore = uploadStoreRef.current;
+  // Wires whose binding must wait for the durable URL (set by the file-input
+  // path; run on upload confirm). Keyed by the uploaded node id.
+  const pendingWires = useRef<Map<string, () => void>>(new Map());
+
+  // Upload one file in the background and settle its node: on confirm, promote
+  // the local-only node into the shared doc with the DURABLE url (peers see it
+  // now) + register it in the library; on failure, mark it for retry.
+  const runUpload = useCallback(
+    (id: string, file: File) => {
+      const signal = uploadStore.get(id)?.controller.signal;
+      uploadFileViaSignedUrl(file, {
+        kind: "ai_reference_image",
+        signal,
+        onProgress: (percent) => uploadStore.patchProgress(id, percent),
+      })
+        .then((uploaded) => {
+          promoteLocalNode(id, {
+            src: uploaded.url,
+            mediaAssetId: uploaded.mediaAssetId,
+            label: file.name,
           });
-          const id = crypto.randomUUID();
-          graphAddNode({
-            id,
-            type: "image",
-            position: { x: base.x + index * 32, y: base.y + index * 32 },
-            data: {
-              src: uploaded.url,
-              mediaAssetId: uploaded.mediaAssetId,
-              label: file.name,
-            },
-          });
-          // Also register it in the shared library (Uploaded tab), synced to peers.
+          // Register in the shared library (Uploaded tab), synced to peers.
           graphAddAssets([
             {
               id: crypto.randomUUID(),
@@ -596,15 +725,99 @@ function CanvasInner({ projectId, canEdit }: { projectId: string; canEdit: boole
               createdAt: Date.now(),
             },
           ]);
-          ids.push(id);
-        } catch {
-          toast.error(`Couldn't upload ${file.name}`);
-        }
-      }
+          uploadStore.succeed(id);
+          // Bind any wire that was waiting for this node's durable URL.
+          const wire = pendingWires.current.get(id);
+          if (wire) {
+            pendingWires.current.delete(id);
+            wire();
+          }
+        })
+        .catch((err) => {
+          // Deleted mid-upload → cancel() already aborted + cleaned up; stay quiet.
+          if (isUploadAbort(err)) return;
+          uploadStore.markFailed(id, err instanceof Error ? err.message : "Upload failed");
+        });
+    },
+    [uploadStore, promoteLocalNode, graphAddAssets]
+  );
+
+  const addImageFiles = useCallback(
+    (files: File[], base: { x: number; y: number }): string[] => {
+      // Optimistic: render each image immediately from a local blob (this client
+      // only — never a blob: URL in the shared doc), then upload in the
+      // background and promote to the durable URL on confirm.
+      const ids: string[] = [];
+      files.forEach((file, index) => {
+        const id = crypto.randomUUID();
+        const objectUrl = URL.createObjectURL(file);
+        addLocalNode({
+          id,
+          type: "image",
+          position: { x: base.x + index * 32, y: base.y + index * 32 },
+          data: { src: objectUrl, label: file.name },
+        });
+        uploadStore.begin(id, {
+          status: "uploading",
+          progress: 0,
+          objectUrl,
+          file,
+          controller: new AbortController(),
+        });
+        runUpload(id, file);
+        ids.push(id);
+      });
       return ids;
     },
-    [graphAddNode, graphAddAssets]
+    [addLocalNode, uploadStore, runUpload]
   );
+
+  // Retry a failed upload in place, reusing the same File + blob preview.
+  const retryUpload = useCallback(
+    (id: string) => {
+      const entry = uploadStore.get(id);
+      if (!entry) return;
+      uploadStore.begin(id, {
+        ...entry,
+        status: "uploading",
+        progress: 0,
+        error: undefined,
+        controller: new AbortController(),
+      });
+      runUpload(id, entry.file);
+    },
+    [uploadStore, runUpload]
+  );
+
+  const uploadContextValue = useMemo(
+    () => ({ store: uploadStore, retry: retryUpload }),
+    [uploadStore, retryUpload]
+  );
+
+  // Abort + revoke an image node's upload when it's deleted mid-flight.
+  const onNodesDelete = useCallback(
+    (deleted: Node[]) => {
+      for (const node of deleted) {
+        if (uploadStore.get(node.id)) {
+          pendingWires.current.delete(node.id);
+          uploadStore.cancel(node.id);
+        }
+      }
+    },
+    [uploadStore]
+  );
+
+  // Switching projects swaps `doc` in place, but an in-flight upload's async
+  // completion still closes over the OLD doc — promoting into it would write to
+  // the wrong (disposed) document and leak the blob. So when the doc changes (or
+  // the canvas unmounts), abort + revoke every pending upload and drop deferred
+  // wires; the aborts reject with AbortError, which runUpload's catch ignores.
+  useEffect(() => {
+    return () => {
+      uploadStore.cancelAll();
+      pendingWires.current.clear();
+    };
+  }, [doc, uploadStore]);
 
   const addNode = useCallback(
     (node: CanvasNodeShape) => {
@@ -648,12 +861,22 @@ function CanvasInner({ projectId, canEdit }: { projectId: string; canEdit: boole
       } else {
         addNode({ id, type: "note", position: flow, data: { text: "" } });
       }
-      if (pending) {
-        const connection = connectionForPending(pending, id, nodeType);
-        if (connection) onConnect(connection);
+      // Wire the dragged pending connection to the freshly-created card. The new
+      // node isn't in React Flow's store yet (and has no resolved model), so the
+      // canConnect/getNode path can't validate it — but the add-node menu has
+      // ALREADY gated incompatible actions (menuDisabledActions), so the chosen
+      // generator is type-compatible. Build the edge directly by wire direction;
+      // onConnect binds the reference once the card's model + source output
+      // resolve. (Note/upload don't wire here.)
+      if (pending && (nodeType === "prompt" || nodeType === "video")) {
+        const connection: Connection =
+          pending.handleType === "source"
+            ? { source: pending.nodeId, sourceHandle: "output", target: id, targetHandle: "input" }
+            : { source: id, sourceHandle: "output", target: pending.nodeId, targetHandle: "input" };
+        onConnect(connection);
       }
     },
-    [nodes, addNode, connectionForPending, onConnect]
+    [nodes, addNode, onConnect]
   );
 
   // Bottom-dock add: drop the node at the viewport center, nudged per node count
@@ -827,11 +1050,16 @@ function CanvasInner({ projectId, canEdit }: { projectId: string; canEdit: boole
       pendingUploadFlowPos.current = null;
       const pending = pendingUploadConnection.current;
       pendingUploadConnection.current = null;
-      void addImageFiles(files, base).then(([firstId]) => {
-        if (!pending || !firstId) return;
-        const connection = connectionForPending(pending, firstId, "image");
-        if (connection) onConnect(connection);
-      });
+      const [firstId] = addImageFiles(files, base);
+      // The wire can only bind once the durable URL exists — binding reads
+      // node.data.src, and a blob: would poison the CRDT reference (the panorama
+      // bug class). Defer it to upload-confirm via the pending-wires map.
+      if (pending && firstId) {
+        pendingWires.current.set(firstId, () => {
+          const connection = connectionForPending(pending, firstId);
+          if (connection) onConnect(connection);
+        });
+      }
     },
     [addImageFiles, screenToFlowPosition, connectionForPending, onConnect]
   );
@@ -876,7 +1104,7 @@ function CanvasInner({ projectId, canEdit }: { projectId: string; canEdit: boole
           hit.type === "image" ||
           hit.type === "video")
       ) {
-        const connection = connectionForPending(pending, hit.id, hit.type);
+        const connection = connectionForPending(pending, hit.id);
         if (connection) onConnect(connection);
         return;
       }
@@ -989,249 +1217,253 @@ function CanvasInner({ projectId, canEdit }: { projectId: string; canEdit: boole
     <CanvasGraphProvider value={graph}>
       <CommentsProvider documentId={documentId} provider={provider} currentUserId={canvasUser?.id}>
         <CanvasGenerationProvider catalog={catalog}>
-          <div
-            ref={containerRef}
-            className="relative h-full"
-            onDragOver={onDragOver}
-            onDrop={onDrop}
-            onDoubleClick={onDoubleClick}
-            onPointerMove={onPointerMove}
-            onPointerLeave={onPointerLeave}
-          >
-            <ReactFlow
-              nodes={nodes}
-              edges={edges}
-              onNodesChange={onNodesChange}
-              onEdgesChange={onEdgesChange}
-              onEdgesDelete={onEdgesDelete}
-              onConnect={onConnect}
-              onConnectStart={onConnectStart}
-              onConnectEnd={onConnectEnd}
-              nodesDraggable={canEdit}
-              nodesConnectable={canEdit}
-              edgesReconnectable={canEdit}
-              onReconnectStart={onReconnectStart}
-              onReconnect={onReconnect}
-              onReconnectEnd={onReconnectEnd}
-              isValidConnection={isValidConnection}
-              connectionRadius={38}
-              nodeTypes={nodeTypes}
-              edgeTypes={edgeTypes}
-              connectionLineComponent={CanvasConnectionLine}
-              colorMode="dark"
-              proOptions={{ hideAttribution: true }}
-              minZoom={MIN_ZOOM}
-              maxZoom={MAX_ZOOM}
-              snapToGrid={snapToGrid}
-              snapGrid={[GRID_SIZE, GRID_SIZE]}
-              selectionOnDrag
-              selectionMode={SelectionMode.Partial}
-              panOnDrag={[1, 2]}
-              panOnScroll
-              panOnScrollMode={PanOnScrollMode.Free}
-              zoomOnScroll={false}
-              zoomOnPinch
-              zoomOnDoubleClick={false}
-              deleteKeyCode={canEdit ? ["Backspace", "Delete"] : null}
-              onPaneClick={() => {
-                if (Date.now() - lastConnectEndAt.current < 250) return;
-                setAddMenu(null);
-              }}
-              onMoveStart={() => setAddMenu(null)}
-              style={{ backgroundColor: "#0a0a0a" }}
+          <UploadStateContext.Provider value={uploadContextValue}>
+            <div
+              ref={containerRef}
+              className="relative h-full"
+              onDragOver={onDragOver}
+              onDrop={onDrop}
+              onDoubleClick={onDoubleClick}
+              onPointerMove={onPointerMove}
+              onPointerLeave={onPointerLeave}
             >
-              <Background
-                variant={BackgroundVariant.Dots}
-                gap={20}
-                size={1.5}
-                bgColor="#0a0a0a"
-                color="rgb(255 255 255 / 0.12)"
-              />
-              <CollabCursors awareness={awareness} localClientId={doc?.clientID} />
-              <CommentsLayer nodes={nodes} />
-              {minimapOpen && (
-                <MiniMap
-                  pannable
-                  zoomable
-                  position="bottom-right"
-                  className="!right-4 !bottom-[68px] !m-0 overflow-hidden rounded-xl border border-white/10 shadow-md"
-                  bgColor="rgb(17 17 17)"
-                  maskColor="rgba(0,0,0,0.35)"
-                  maskStrokeColor="rgba(255,255,255,0.35)"
-                  maskStrokeWidth={2}
-                  nodeColor="rgba(255,255,255,0.5)"
-                  nodeStrokeWidth={0}
-                />
-              )}
-            </ReactFlow>
-
-            {/* Back / project name / mode switcher live in the project shell;
-            this cluster holds the canvas-specific + presence controls. */}
-            <div className="absolute top-4 right-4 z-20 flex items-center gap-2">
-              {connStatus !== "synced" && (
-                <span className="flex h-9 items-center gap-1.5 rounded-full bg-popover/90 px-3 text-xs font-medium text-white/70 shadow-md backdrop-blur-xl">
-                  <span
-                    className={cn(
-                      "size-1.5 rounded-full",
-                      connStatus === "offline" ? "bg-red-400" : "animate-pulse bg-white/60"
-                    )}
-                  />
-                  {connStatus === "offline" ? "Offline" : "Connecting…"}
-                </span>
-              )}
-              {canEdit && (
-                <button
-                  type="button"
-                  aria-label="Version history"
-                  onClick={() => setHistoryOpen((open) => !open)}
-                  className={cn(
-                    "flex size-9 items-center justify-center rounded-full shadow-md backdrop-blur-xl transition-colors",
-                    historyOpen
-                      ? "bg-accent text-white"
-                      : "bg-popover/90 text-white/80 hover:bg-accent hover:text-white"
-                  )}
-                >
-                  <IconHistory className="size-4" stroke={1.8} />
-                </button>
-              )}
-              <CollabAvatars awareness={awareness} localClientId={doc?.clientID} />
-              <CreditsBadge className="flex h-9 items-center gap-1.5 rounded-full bg-popover/90 px-3.5 text-sm font-medium tabular-nums shadow-md backdrop-blur-xl" />
-            </div>
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept="image/*"
-              multiple
-              hidden
-              onChange={onPickFiles}
-            />
-
-            <ZoomControls
-              onTidy={tidyCanvas}
-              snapToGrid={snapToGrid}
-              onToggleSnap={() => setSnapToGrid((v) => !v)}
-              minimapOpen={minimapOpen}
-              onToggleMinimap={() => setMinimapOpen((v) => !v)}
-            />
-            {canEdit && <NodeDock onAdd={addNodeFromDock} />}
-
-            {/* Undo / redo (Ctrl+Z / Ctrl+Shift+Z). */}
-            {canEdit && (
-              <div className="absolute right-4 bottom-4 z-20 flex items-center gap-0.5 rounded-full bg-popover/90 p-1 shadow-md backdrop-blur-xl">
-                <button
-                  type="button"
-                  aria-label="Undo"
-                  disabled={!canUndo}
-                  onClick={() => undo()}
-                  className="flex size-8 items-center justify-center rounded-full text-white/70 transition-colors hover:bg-white/[0.08] hover:text-white disabled:opacity-30 disabled:hover:bg-transparent"
-                >
-                  <IconArrowBackUp className="size-4" stroke={1.8} />
-                </button>
-                <button
-                  type="button"
-                  aria-label="Redo"
-                  disabled={!canRedo}
-                  onClick={() => redo()}
-                  className="flex size-8 items-center justify-center rounded-full text-white/70 transition-colors hover:bg-white/[0.08] hover:text-white disabled:opacity-30 disabled:hover:bg-transparent"
-                >
-                  <IconArrowForwardUp className="size-4" stroke={1.8} />
-                </button>
-              </div>
-            )}
-
-            {/* Left rail (root-sidebar style) — opens the project's asset library. */}
-            {!assetsOpen && (
-              <div className="absolute top-1/2 left-4 z-20 flex -translate-y-1/2 flex-col gap-1 rounded-2xl bg-popover/90 p-1.5 shadow-md backdrop-blur-xl">
-                <button
-                  type="button"
-                  aria-label="Open assets"
-                  onClick={() => setAssetsOpen(true)}
-                  className="flex size-9 items-center justify-center rounded-xl text-white/70 transition-colors hover:bg-white/[0.08] hover:text-white"
-                >
-                  <IconLayoutGrid className="size-5" stroke={1.7} />
-                </button>
-              </div>
-            )}
-            <AssetLibrary open={assetsOpen} onClose={() => setAssetsOpen(false)} />
-
-            {historyOpen && (
-              <CanvasHistory
-                documentId={documentId}
-                provider={provider}
-                doc={doc}
-                restoreFromUpdate={restoreFromUpdate}
-                currentVersionId={canvasDocRef?.currentVersionId}
-                onClose={() => setHistoryOpen(false)}
-              />
-            )}
-
-            {/* Persistent pending wire from the source handle to the open menu, so the
-          dragged connection stays visually anchored while choosing a node. */}
-            {addMenu?.wire && (
-              <svg className="pointer-events-none absolute inset-0 z-20 size-full overflow-visible">
-                <defs>
-                  <linearGradient
-                    id="pending-wire-grad"
-                    gradientUnits="userSpaceOnUse"
-                    x1={addMenu.wire.x1}
-                    y1={addMenu.wire.y1}
-                    x2={addMenu.wire.x2}
-                    y2={addMenu.wire.y2}
-                  >
-                    <stop offset="0%" stopColor={addMenu.wire.color} stopOpacity={1} />
-                    <stop offset="55%" stopColor={addMenu.wire.color} stopOpacity={0.5} />
-                    <stop offset="100%" stopColor={addMenu.wire.color} stopOpacity={0.05} />
-                  </linearGradient>
-                </defs>
-                <path
-                  d={`M ${addMenu.wire.x1} ${addMenu.wire.y1} C ${
-                    addMenu.wire.x1 + (addMenu.wire.x2 - addMenu.wire.x1) * 0.5
-                  } ${addMenu.wire.y1}, ${
-                    addMenu.wire.x2 - (addMenu.wire.x2 - addMenu.wire.x1) * 0.5
-                  } ${addMenu.wire.y2}, ${addMenu.wire.x2} ${addMenu.wire.y2}`}
-                  fill="none"
-                  stroke="url(#pending-wire-grad)"
-                  strokeWidth={2}
-                  strokeLinecap="round"
-                />
-              </svg>
-            )}
-
-            {addMenu && (
-              <AddNodeMenu
-                left={addMenu.left}
-                top={addMenu.top}
-                onAction={(action: AddNodeAction) => {
-                  addNodeOfType(action, addMenu.flow, addMenu.pending);
+              <ReactFlow
+                nodes={nodes}
+                edges={edges}
+                onNodesChange={onNodesChange}
+                onNodesDelete={onNodesDelete}
+                onEdgesChange={onEdgesChange}
+                onEdgesDelete={onEdgesDelete}
+                onConnect={onConnect}
+                onConnectStart={onConnectStart}
+                onConnectEnd={onConnectEnd}
+                nodesDraggable={canEdit}
+                nodesConnectable={canEdit}
+                edgesReconnectable={canEdit}
+                onReconnectStart={onReconnectStart}
+                onReconnect={onReconnect}
+                onReconnectEnd={onReconnectEnd}
+                isValidConnection={isValidConnection}
+                connectionRadius={38}
+                nodeTypes={nodeTypes}
+                edgeTypes={edgeTypes}
+                connectionLineComponent={CanvasConnectionLine}
+                colorMode="dark"
+                proOptions={{ hideAttribution: true }}
+                minZoom={MIN_ZOOM}
+                maxZoom={MAX_ZOOM}
+                snapToGrid={snapToGrid}
+                snapGrid={[GRID_SIZE, GRID_SIZE]}
+                selectionOnDrag
+                selectionMode={SelectionMode.Partial}
+                panOnDrag={[1, 2]}
+                panOnScroll
+                panOnScrollMode={PanOnScrollMode.Free}
+                zoomOnScroll={false}
+                zoomOnPinch
+                zoomOnDoubleClick={false}
+                deleteKeyCode={canEdit ? ["Backspace", "Delete"] : null}
+                onPaneClick={() => {
+                  if (Date.now() - lastConnectEndAt.current < 250) return;
                   setAddMenu(null);
                 }}
-              />
-            )}
-
-            {docStatus === "error" && (
-              <div className="absolute inset-0 z-30 flex items-center justify-center bg-background/60 backdrop-blur-sm">
-                <p className="text-sm text-muted-foreground">
-                  Couldn&apos;t open this canvas — check the link or your access.
-                </p>
-              </div>
-            )}
-
-            {docStatus !== "error" &&
-              nodes.length === 0 &&
-              !addMenu &&
-              (canEdit ? (
-                <CanvasEmptyState
-                  presets={WORKFLOW_PRESETS}
-                  catalogReady={Boolean(catalog && catalog.models.length > 0)}
-                  onAddNode={openAddMenuAtCenter}
-                  onApplyPreset={applyPreset}
+                onMoveStart={() => setAddMenu(null)}
+                style={{ backgroundColor: "#0a0a0a" }}
+              >
+                <Background
+                  variant={BackgroundVariant.Dots}
+                  gap={20}
+                  size={1.5}
+                  bgColor="#0a0a0a"
+                  color="rgb(255 255 255 / 0.12)"
                 />
-              ) : (
-                <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
-                  <p className="text-sm text-muted-foreground">This canvas is empty.</p>
+                <CollabCursors awareness={awareness} localClientId={doc?.clientID} />
+                <CommentsLayer nodes={nodes} />
+                {minimapOpen && (
+                  <MiniMap
+                    pannable
+                    zoomable
+                    position="bottom-right"
+                    className="!right-4 !bottom-[68px] !m-0 overflow-hidden rounded-xl border border-white/10 shadow-md"
+                    bgColor="rgb(17 17 17)"
+                    maskColor="rgba(0,0,0,0.35)"
+                    maskStrokeColor="rgba(255,255,255,0.35)"
+                    maskStrokeWidth={2}
+                    nodeColor="rgba(255,255,255,0.5)"
+                    nodeStrokeWidth={0}
+                  />
+                )}
+              </ReactFlow>
+
+              {/* Back / project name / mode switcher live in the project shell;
+            this cluster holds the canvas-specific + presence controls. */}
+              <div className="absolute top-4 right-4 z-20 flex items-center gap-2">
+                {connStatus !== "synced" && (
+                  <span className="flex h-9 items-center gap-1.5 rounded-full bg-popover/90 px-3 text-xs font-medium text-white/70 shadow-md backdrop-blur-xl">
+                    <span
+                      className={cn(
+                        "size-1.5 rounded-full",
+                        connStatus === "offline" ? "bg-red-400" : "animate-pulse bg-white/60"
+                      )}
+                    />
+                    {connStatus === "offline" ? "Offline" : "Connecting…"}
+                  </span>
+                )}
+                {canEdit && (
+                  <button
+                    type="button"
+                    aria-label="Version history"
+                    onClick={() => setHistoryOpen((open) => !open)}
+                    className={cn(
+                      "flex size-9 items-center justify-center rounded-full shadow-md backdrop-blur-xl transition-colors",
+                      historyOpen
+                        ? "bg-accent text-white"
+                        : "bg-popover/90 text-white/80 hover:bg-accent hover:text-white"
+                    )}
+                  >
+                    <IconHistory className="size-4" stroke={1.8} />
+                  </button>
+                )}
+                <CollabAvatars awareness={awareness} localClientId={doc?.clientID} />
+                <CreditsBadge className="flex h-9 items-center gap-1.5 rounded-full bg-popover/90 px-3.5 text-sm font-medium tabular-nums shadow-md backdrop-blur-xl" />
+              </div>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/*"
+                multiple
+                hidden
+                onChange={onPickFiles}
+              />
+
+              <ZoomControls
+                onTidy={tidyCanvas}
+                snapToGrid={snapToGrid}
+                onToggleSnap={() => setSnapToGrid((v) => !v)}
+                minimapOpen={minimapOpen}
+                onToggleMinimap={() => setMinimapOpen((v) => !v)}
+              />
+              {canEdit && <NodeDock onAdd={addNodeFromDock} />}
+
+              {/* Undo / redo (Ctrl+Z / Ctrl+Shift+Z). */}
+              {canEdit && (
+                <div className="absolute right-4 bottom-4 z-20 flex items-center gap-0.5 rounded-full bg-popover/90 p-1 shadow-md backdrop-blur-xl">
+                  <button
+                    type="button"
+                    aria-label="Undo"
+                    disabled={!canUndo}
+                    onClick={() => undo()}
+                    className="flex size-8 items-center justify-center rounded-full text-white/70 transition-colors hover:bg-white/[0.08] hover:text-white disabled:opacity-30 disabled:hover:bg-transparent"
+                  >
+                    <IconArrowBackUp className="size-4" stroke={1.8} />
+                  </button>
+                  <button
+                    type="button"
+                    aria-label="Redo"
+                    disabled={!canRedo}
+                    onClick={() => redo()}
+                    className="flex size-8 items-center justify-center rounded-full text-white/70 transition-colors hover:bg-white/[0.08] hover:text-white disabled:opacity-30 disabled:hover:bg-transparent"
+                  >
+                    <IconArrowForwardUp className="size-4" stroke={1.8} />
+                  </button>
                 </div>
-              ))}
-          </div>
+              )}
+
+              {/* Left rail (root-sidebar style) — opens the project's asset library. */}
+              {!assetsOpen && (
+                <div className="absolute top-1/2 left-4 z-20 flex -translate-y-1/2 flex-col gap-1 rounded-2xl bg-popover/90 p-1.5 shadow-md backdrop-blur-xl">
+                  <button
+                    type="button"
+                    aria-label="Open assets"
+                    onClick={() => setAssetsOpen(true)}
+                    className="flex size-9 items-center justify-center rounded-xl text-white/70 transition-colors hover:bg-white/[0.08] hover:text-white"
+                  >
+                    <IconLayoutGrid className="size-5" stroke={1.7} />
+                  </button>
+                </div>
+              )}
+              <AssetLibrary open={assetsOpen} onClose={() => setAssetsOpen(false)} />
+
+              {historyOpen && (
+                <CanvasHistory
+                  documentId={documentId}
+                  provider={provider}
+                  doc={doc}
+                  restoreFromUpdate={restoreFromUpdate}
+                  currentVersionId={canvasDocRef?.currentVersionId}
+                  onClose={() => setHistoryOpen(false)}
+                />
+              )}
+
+              {/* Persistent pending wire from the source handle to the open menu, so the
+          dragged connection stays visually anchored while choosing a node. */}
+              {addMenu?.wire && (
+                <svg className="pointer-events-none absolute inset-0 z-20 size-full overflow-visible">
+                  <defs>
+                    <linearGradient
+                      id="pending-wire-grad"
+                      gradientUnits="userSpaceOnUse"
+                      x1={addMenu.wire.x1}
+                      y1={addMenu.wire.y1}
+                      x2={addMenu.wire.x2}
+                      y2={addMenu.wire.y2}
+                    >
+                      <stop offset="0%" stopColor={addMenu.wire.color} stopOpacity={1} />
+                      <stop offset="55%" stopColor={addMenu.wire.color} stopOpacity={0.5} />
+                      <stop offset="100%" stopColor={addMenu.wire.color} stopOpacity={0.05} />
+                    </linearGradient>
+                  </defs>
+                  <path
+                    d={`M ${addMenu.wire.x1} ${addMenu.wire.y1} C ${
+                      addMenu.wire.x1 + (addMenu.wire.x2 - addMenu.wire.x1) * 0.5
+                    } ${addMenu.wire.y1}, ${
+                      addMenu.wire.x2 - (addMenu.wire.x2 - addMenu.wire.x1) * 0.5
+                    } ${addMenu.wire.y2}, ${addMenu.wire.x2} ${addMenu.wire.y2}`}
+                    fill="none"
+                    stroke="url(#pending-wire-grad)"
+                    strokeWidth={2}
+                    strokeLinecap="round"
+                  />
+                </svg>
+              )}
+
+              {addMenu && (
+                <AddNodeMenu
+                  left={addMenu.left}
+                  top={addMenu.top}
+                  disabledActions={menuDisabledActions}
+                  onAction={(action: AddNodeAction) => {
+                    addNodeOfType(action, addMenu.flow, addMenu.pending);
+                    setAddMenu(null);
+                  }}
+                />
+              )}
+
+              {docStatus === "error" && (
+                <div className="absolute inset-0 z-30 flex items-center justify-center bg-background/60 backdrop-blur-sm">
+                  <p className="text-sm text-muted-foreground">
+                    Couldn&apos;t open this canvas — check the link or your access.
+                  </p>
+                </div>
+              )}
+
+              {docStatus !== "error" &&
+                nodes.length === 0 &&
+                !addMenu &&
+                (canEdit ? (
+                  <CanvasEmptyState
+                    presets={WORKFLOW_PRESETS}
+                    catalogReady={Boolean(catalog && catalog.models.length > 0)}
+                    onAddNode={openAddMenuAtCenter}
+                    onApplyPreset={applyPreset}
+                  />
+                ) : (
+                  <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
+                    <p className="text-sm text-muted-foreground">This canvas is empty.</p>
+                  </div>
+                ))}
+            </div>
+          </UploadStateContext.Provider>
         </CanvasGenerationProvider>
       </CommentsProvider>
     </CanvasGraphProvider>

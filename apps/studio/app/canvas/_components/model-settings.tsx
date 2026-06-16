@@ -46,7 +46,8 @@ function SizeGrid({
 }) {
   return (
     <div className="grid grid-cols-5 gap-2">
-      {(field.enum ?? []).map((token) => {
+      {(field.enum ?? []).map((raw) => {
+        const token = String(raw);
         const selected = value === token;
         return (
           <button
@@ -76,20 +77,20 @@ function Segmented({
   value,
   onChange,
 }: {
-  options: string[];
-  value: string;
-  onChange: (v: string) => void;
+  options: (string | number)[];
+  value: string | number | undefined;
+  onChange: (v: string | number) => void;
 }) {
   return (
     <div className="flex flex-wrap gap-1.5">
       {options.map((opt) => (
         <button
-          key={opt}
+          key={String(opt)}
           type="button"
           onClick={() => onChange(opt)}
           className={cn(
             "rounded-full px-3 py-1 text-xs font-medium transition-colors",
-            value === opt
+            String(value) === String(opt)
               ? "bg-white/[0.12] text-foreground"
               : "bg-white/[0.05] text-muted-foreground hover:text-foreground"
           )}
@@ -132,7 +133,11 @@ function Field({
 
       {(field.control === "segmented" || field.control === "radio" || field.control === "select") &&
         field.enum && (
-          <Segmented options={field.enum} value={String(value ?? "")} onChange={(v) => set(v)} />
+          <Segmented
+            options={field.enum}
+            value={typeof value === "boolean" ? undefined : value}
+            onChange={(v) => set(v)}
+          />
         )}
 
       {field.control === "slider" && (

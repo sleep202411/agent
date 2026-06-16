@@ -1,26 +1,27 @@
 "use client";
 
-import { BaseEdge, getBezierPath, type EdgeProps } from "@xyflow/react";
-import { handleColor } from "./port-colors";
+import { BaseEdge, getBezierPath, useStore, type EdgeProps } from "@xyflow/react";
+import { colorForType, outputTypeForNodeType } from "./port-colors";
 
 /**
- * Edge whose stroke is a linear gradient interpolating between the source
- * port color and the target port color — so a connection visually states the
- * types it bridges (imagine.art pattern). `userSpaceOnUse` ties the gradient
- * to the actual path coordinates so it stays correct as nodes move.
+ * Edge tinted by the SOURCE node's output-type color, fading toward neutral at
+ * the (multi-type) target input — so a connection visually states the type it
+ * carries (imagine.art pattern). Handles use generic "input"/"output" ids, so
+ * the type is read from the source NODE's type via the store. `userSpaceOnUse`
+ * ties the gradient to the path so it stays correct as nodes move.
  */
 export function GradientEdge({
   id,
+  source,
   sourceX,
   sourceY,
   targetX,
   targetY,
   sourcePosition,
   targetPosition,
-  sourceHandleId,
-  targetHandleId,
   selected,
 }: EdgeProps) {
+  const sourceType = useStore((s) => s.nodeLookup.get(source)?.type);
   const [path] = getBezierPath({
     sourceX,
     sourceY,
@@ -30,8 +31,8 @@ export function GradientEdge({
     targetPosition,
   });
   const gradientId = `edge-grad-${id}`;
-  const from = handleColor(sourceHandleId);
-  const to = handleColor(targetHandleId);
+  const from = colorForType(outputTypeForNodeType(sourceType));
+  const to = "rgb(255 255 255 / 0.4)";
 
   return (
     <>

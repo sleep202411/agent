@@ -47,6 +47,8 @@ import {
   SEEDREAM_4_PRODUCT_PRICING,
   SEEDREAM_5_LITE_PARAMETER_POLICY,
   SEEDREAM_5_LITE_PRODUCT_PRICING,
+  TOPAZ_UPSCALE_PARAMETER_POLICY,
+  TOPAZ_UPSCALE_PRODUCT_PRICING,
   WAN_IMAGE_27_PARAMETER_POLICY,
   WAN_IMAGE_27_PRODUCT_PRICING,
   WAN_IMAGE_27_PRO_PARAMETER_POLICY,
@@ -123,6 +125,7 @@ export interface ImageModelSeed {
 const T2I: AiGenerationMode = 'text_to_image';
 const I2I: AiGenerationMode = 'image_to_image';
 const INPAINT: AiGenerationMode = 'inpainting';
+const UPSCALE: AiGenerationMode = 'upscale';
 
 const PROVIDER_IMAGE_OUTPUT_SCHEMA = {
   type: 'object',
@@ -493,6 +496,39 @@ export const IMAGE_MODELS: ImageModelSeed[] = [
       },
     ],
     providerAliases: ['fal/fal-ai/hunyuan_world'],
+  },
+  {
+    slug: 'topaz-upscale',
+    displayName: 'Topaz Upscale',
+    family: 'image-transform',
+    description:
+      'Topaz image upscaler — increases resolution with detail recovery. Reached via the studio Upscale action, not the model picker.',
+    modes: [UPSCALE],
+    tier: 'vip',
+    cost: 15,
+    parameterPolicy: TOPAZ_UPSCALE_PARAMETER_POLICY,
+    productPricing: TOPAZ_UPSCALE_PRODUCT_PRICING,
+    group: 'tools',
+    sortOrder: 210,
+    providers: [
+      {
+        provider: 'fal-ai',
+        endpointId: 'fal-ai/topaz/upscale/image',
+        modes: [UPSCALE],
+        priority: 10,
+        weight: 100,
+        providerOutputSchema: PROVIDER_IMAGE_OUTPUT_SCHEMA,
+        catalogSnapshot: falCatalogSnapshot({
+          model: 'fal-ai/topaz/upscale/image',
+          usdPerImage: 0.05,
+          docsUrl: 'https://fal.ai/models/fal-ai/topaz/upscale/image/api',
+        }),
+        maxConcurrentRequests: 4,
+        requestTimeoutSeconds: 600,
+        failureThreshold: 3,
+      },
+    ],
+    providerAliases: ['fal/fal-ai/topaz/upscale/image'],
   },
   {
     slug: 'flux-2-flex',

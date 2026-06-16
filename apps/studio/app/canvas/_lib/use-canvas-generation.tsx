@@ -16,6 +16,7 @@ import {
   generationIdempotencyKey,
   generationStateFromJob,
   generationStatusFromRaw,
+  hasSchemaProperty,
   normalizeFizzAiError,
   submitFizzAiJob,
   type FizzAiCatalog,
@@ -201,8 +202,9 @@ export function CanvasGenerationProvider({
         if (match) {
           if (convert) {
             // A finished panorama card becomes a panorama node: remove + re-add
-            // with the same id (preserves position/selection), and drop the now-
-            // dangling input wire.
+            // with the same id (preserves position/selection + the input wire —
+            // the panorama node now has an input handle, so the source→panorama
+            // wire stays as provenance instead of being dropped).
             const src = out!.accessUrl ?? out!.url;
             graph.removeNode(match.id);
             graph.addNode({
@@ -211,9 +213,6 @@ export function CanvasGenerationProvider({
               position: match.position,
               data: { src, mediaAssetId: out?.assetId, label: matchData?.prompt },
             });
-            for (const edge of graph.edges) {
-              if (edge.target === match.id) graph.removeEdge(edge.id);
-            }
           } else {
             graph.patchNodeData(match.id, {
               generation: generationStateFromJob(job),
@@ -302,7 +301,9 @@ export function CanvasGenerationProvider({
         toast.error("Choose a model first");
         return;
       }
-      if (!data.prompt?.trim()) {
+      // Pure transform ops (e.g. upscale) declare no prompt in their schema —
+      // only require one when the model actually takes a prompt.
+      if (hasSchemaProperty(model, "prompt") && !data.prompt?.trim()) {
         toast.error("Write a prompt first");
         return;
       }

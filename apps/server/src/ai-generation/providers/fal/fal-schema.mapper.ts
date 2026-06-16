@@ -216,6 +216,8 @@ function inputSchemaFor(
   const firstLastFrame = generationModes.includes('first_last_frame_to_video');
   const imageToVideo = generationModes.includes('image_to_video');
   const imageToImage = generationModes.includes('image_to_image');
+  // Single-image transform op: one input image → one output image, no prompt.
+  const upscale = generationModes.includes('upscale');
   const nanoBanana = isNanoBananaEndpoint(endpointId);
   // Reference-image limits come straight from the canonical parameterPolicy —
   // the seed encodes each provider's real cap (e.g. seedream's documented max
@@ -223,8 +225,10 @@ function inputSchemaFor(
   // hardcoded per-endpoint clamps live here anymore.
   const reference = referencePolicy(parameterPolicy);
 
-  const properties: AiInputSchema['properties'] = {
-    prompt: {
+  const properties: AiInputSchema['properties'] = {};
+  // Pure transform ops (upscale) take no prompt.
+  if (!upscale) {
+    properties.prompt = {
       type: 'string',
       title: 'Prompt',
       minLength: 1,
@@ -237,10 +241,13 @@ function inputSchemaFor(
         importance: 'primary',
       },
       'x-provider': { parameter: 'prompt' },
-    },
-  };
+    };
+  }
 
-  if (imageMode || imageToImage) {
+  // Pure transform ops (upscale) take none of the generation controls
+  // (aspect / resolution / quality / output-count / negative prompt) — only
+  // their own input image + op param, added below.
+  if ((imageMode || imageToImage) && !upscale) {
     const aspectOptions = stringArrayFromPolicy(
       parameterPolicy,
       'supportedAspectRatios',
@@ -484,10 +491,10 @@ function inputSchemaFor(
     }
   }
 
-  if (imageToImage && reference.enabled) {
+  if ((imageToImage || upscale) && reference.enabled) {
     properties.referenceImages = {
       type: 'array',
-      title: 'Reference images',
+      title: upscale ? 'Image' : 'Reference images',
       minItems: reference.min,
       maxItems: reference.single ? 1 : reference.max,
       items: {
@@ -509,6 +516,24 @@ function inputSchemaFor(
       'x-provider': reference.single
         ? { parameter: 'image_url', transform: 'mediaFirstUrl' }
         : { parameter: 'image_urls', transform: 'mediaArrayToUrls' },
+    };
+  }
+
+  // Upscale factor — the only user-facing control for the upscale op.
+  if (upscale) {
+    properties.upscaleFactor = {
+      type: 'integer',
+      title: 'Scale',
+      enum: [2, 4],
+      default: 2,
+      'x-ui': {
+        control: 'segmented',
+        group: 'parameters',
+        order: 30,
+        importance: 'primary',
+        unit: '×',
+      },
+      'x-provider': { parameter: 'upscale_factor' },
     };
   }
 
@@ -837,7 +862,10 @@ function inputSchemaFor(
   return {
     type: 'object',
     properties,
-    required: ['prompt'],
+    // Upscale omits the prompt property entirely (see the `!upscale` gate
+    // above), so it must not be listed as required — that would be an invalid
+    // schema (required field absent from properties).
+    required: upscale ? [] : ['prompt'],
     additionalProperties: false,
     'x-ui': {
       groups: [
@@ -913,6 +941,9 @@ function capabilityMatrixFor(
       'aspect_ratio',
       'generate_audio',
       'seed',
+      // Only present when an upscale binding adds the `upscaleFactor` control
+      // (maps to the provider's `upscale_factor`).
+      ...(generationModes.includes('upscale') ? ['upscale_factor'] : []),
     ],
     unsupportedParameters: [],
     features: {

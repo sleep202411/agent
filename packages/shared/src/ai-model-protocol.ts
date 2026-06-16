@@ -69,6 +69,7 @@ export type AiGenerationMode =
   | "image_to_image"
   | "inpainting"
   | "outpainting"
+  | "upscale"
   | "reference_image_generation"
   | "text_to_video"
   | "image_to_video"

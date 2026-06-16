@@ -349,6 +349,24 @@ export const HUNYUAN_WORLD_PARAMETER_POLICY = {
   seed: { enabled: false },
 } as const satisfies Prisma.InputJsonObject;
 
+// Topaz upscale: one input image → larger image. No prompt and none of the
+// generation controls — the only user-facing param is the upscale factor
+// (emitted by the fal-schema mapper's `upscale` branch).
+export const TOPAZ_UPSCALE_PARAMETER_POLICY = {
+  parameterMode: 'provider_intersection',
+  providerFamily: 'topaz',
+  defaultVariations: 1,
+  variationOptions: [1],
+  referenceImages: {
+    enabled: true,
+    min: 1,
+    max: 1,
+    single: true,
+    maskSupported: false,
+  },
+  seed: { enabled: false },
+} as const satisfies Prisma.InputJsonObject;
+
 export const FLUX_2_FLEX_PARAMETER_POLICY = {
   parameterMode: 'provider_intersection',
   providerFamily: 'flux-2',
@@ -683,6 +701,25 @@ export const HUNYUAN_WORLD_PRODUCT_PRICING: AiProductPricingPolicy = {
   resolutionOptions: ['1K'],
   qualityOptions: ['standard'],
   matrix: { '1K': { standard: 40 } },
+  referenceImageSurchargePoints: 0,
+  extraReferenceImagePoints: 0,
+  maskSurchargePoints: 0,
+  minimumPoints: 1,
+  roundTo: 1,
+};
+
+export const TOPAZ_UPSCALE_PRODUCT_PRICING: AiProductPricingPolicy = {
+  mode: 'parameter_matrix',
+  version: 'topaz-upscale-points-v1-2026-06-16',
+  currency: 'COMPUTE_POINTS',
+  defaultOutputCount: 1,
+  minOutputCount: 1,
+  maxOutputCount: 1,
+  defaultResolution: '1K',
+  defaultQuality: 'standard',
+  resolutionOptions: ['1K'],
+  qualityOptions: ['standard'],
+  matrix: { '1K': { standard: 15 } },
   referenceImageSurchargePoints: 0,
   extraReferenceImagePoints: 0,
   maskSurchargePoints: 0,

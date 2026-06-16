@@ -2,6 +2,7 @@
 
 import { useRef } from "react";
 import {
+  IconLoader2,
   IconMusic,
   IconMusicPlus,
   IconPhotoPlus,
@@ -23,6 +24,9 @@ export type CardReference = {
   /** Present when the reference came from a wired source node (vs an upload). */
   edgeId?: string;
   sourceNodeId?: string;
+  /** Transient: an uploaded reference still streaming to storage (local blob
+   *  preview, NOT yet persisted to the doc). Shown with a spinner, no remove. */
+  uploading?: boolean;
 };
 
 export type CardReferences = Record<string, CardReference[]>;
@@ -77,7 +81,12 @@ function ReferenceField({
               </span>
             </div>
           )}
-          {ref.edgeId ? (
+          {ref.uploading ? (
+            // Still uploading to storage — spinner, no remove until it lands.
+            <span className="absolute inset-0 flex items-center justify-center bg-black/45">
+              <IconLoader2 className="size-5 animate-spin text-white/70" stroke={1.8} />
+            </span>
+          ) : ref.edgeId ? (
             // Wired in from a source node — remove by disconnecting the wire.
             <span
               title="Linked from a connected node"

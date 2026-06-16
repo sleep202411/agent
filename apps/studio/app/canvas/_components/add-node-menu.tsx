@@ -27,11 +27,18 @@ export function AddNodeMenu({
   top,
   state = "open",
   onAction,
+  disabledActions,
 }: {
   left: number;
   top: number;
   state?: "open" | "closed";
   onAction: (action: AddNodeAction) => void;
+  /**
+   * Actions that can't accept the dragged source's output type — shown greyed
+   * and non-clickable (e.g. a video source disables image generation, since an
+   * image model has no video input).
+   */
+  disabledActions?: ReadonlySet<AddNodeAction>;
 }) {
   const [query, setQuery] = useState("");
 
@@ -66,12 +73,16 @@ export function AddNodeMenu({
         )}
         {items.map((item) => {
           const ItemIcon = item.icon;
+          const disabled = disabledActions?.has(item.action) ?? false;
           return (
             <button
               key={item.label}
               type="button"
-              onClick={() => onAction(item.action)}
-              className="flex w-full items-center gap-3 rounded-xl p-2 text-left transition-colors hover:bg-white/[0.06]"
+              disabled={disabled}
+              onClick={disabled ? undefined : () => onAction(item.action)}
+              className={`flex w-full items-center gap-3 rounded-xl p-2 text-left transition-colors ${
+                disabled ? "cursor-not-allowed opacity-40" : "hover:bg-white/[0.06]"
+              }`}
             >
               <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-white/[0.06]">
                 <ItemIcon className="size-4.5 text-white/80" stroke={1.7} />

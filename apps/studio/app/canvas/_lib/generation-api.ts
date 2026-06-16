@@ -10,9 +10,12 @@ export type FizzAiGenerationMode =
   | "image_to_image"
   | "image_to_panorama"
   | "image_to_video"
+  | "inpainting"
   | "multimodal_to_video"
+  | "outpainting"
   | "text_to_image"
   | "text_to_video"
+  | "upscale"
   | "video_to_video";
 
 /** Media kind of a reference upload — mirrors the catalog's `x-ui.mediaKind`. */
@@ -565,6 +568,8 @@ const MODE_LABELS: Record<string, string> = {
   first_last_frame_to_video: "First & Last Frame",
   multimodal_to_video: "Omni Reference",
   inpainting: "Inpaint",
+  outpainting: "Expand",
+  upscale: "Upscale",
 };
 
 /** Human label for a generation mode id (e.g. `multimodal_to_video`). */
@@ -621,6 +626,11 @@ export function referenceFieldsForMode(
     return explicit.length ? explicit : nonFrames.filter((f) => !/audio/i.test(f.field));
   }
   if (mode === "inpainting") return pick("referenceImages", "maskImage");
+  // Pure single-image transforms (upscale) bind exactly one input image.
+  if (mode === "upscale") {
+    const explicit = pick("referenceImages");
+    return explicit.length ? explicit : all.filter((f) => f.kind === "image").slice(0, 1);
+  }
   return all;
 }
 
@@ -646,7 +656,7 @@ export interface SchemaFieldDescriptor {
   group: string;
   order: number;
   type: string;
-  enum: string[] | null;
+  enum: (string | number)[] | null;
   default: string | number | boolean | undefined;
   min?: number;
   max?: number;
@@ -686,7 +696,10 @@ export function schemaFields(model: FizzAiModel | undefined): SchemaFieldDescrip
       order: typeof ui.order === "number" ? ui.order : 999,
       type: prop.type ?? "string",
       enum: Array.isArray(prop.enum)
-        ? prop.enum.filter((value): value is string => typeof value === "string")
+        ? prop.enum.filter(
+            (value): value is string | number =>
+              typeof value === "string" || typeof value === "number"
+          )
         : null,
       default: prop.default as string | number | boolean | undefined,
       min: typeof prop.minimum === "number" ? prop.minimum : undefined,

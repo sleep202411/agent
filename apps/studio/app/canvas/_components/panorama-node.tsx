@@ -2,7 +2,7 @@
 
 import { memo, useState } from "react";
 import type { Node, NodeProps } from "@xyflow/react";
-import { IconDownload } from "@tabler/icons-react";
+import { IconDownload, IconX } from "@tabler/icons-react";
 import { cn } from "@/lib/utils";
 import { CanvasNodeToolbar, ToolbarButton } from "./node-toolbar";
 import { Icon720, PanoramaCanvas, PanoramaViewer } from "./panorama-viewer";
@@ -19,6 +19,9 @@ export type PanoramaNodeType = Node<
  *  around instead of moving the node. */
 function PanoramaNodeComponent({ id, data, selected }: NodeProps<PanoramaNodeType>) {
   const [full, setFull] = useState(false);
+  // Default to a STATIC preview — the live 360 canvas captures drag/scroll, so
+  // entering it must be opt-in (else hovering the card hijacks the canvas).
+  const [entered, setEntered] = useState(false);
 
   const onDownload = () => {
     const anchor = document.createElement("a");
@@ -44,11 +47,56 @@ function PanoramaNodeComponent({ id, data, selected }: NodeProps<PanoramaNodeTyp
         720° Panorama
       </div>
 
-      <PortPlus type="source" id="output" side="right" />
+      {/* Input port: keeps the wire from the source image (provenance). */}
+      <PortPlus type="target" id="input" side="left" />
+      <PortPlus type="source" id="output" side="right" dataType="image" />
       <div className={cn("overflow-hidden rounded-xl bg-card", selected && "ring-2 ring-ring")}>
-        {/* nodrag/nowheel: drag looks around, scroll zooms — don't pan the canvas. */}
-        <div className="nodrag nowheel relative aspect-[2/1] w-full bg-black">
-          <PanoramaCanvas src={data.src} className="absolute inset-0" />
+        <div
+          className={cn(
+            "relative aspect-[2/1] w-full bg-black",
+            // Only the LIVE view captures drag/scroll (look around / zoom); the
+            // static preview leaves the node draggable like any other.
+            entered && "nodrag nowheel"
+          )}
+        >
+          {entered ? (
+            <>
+              <PanoramaCanvas src={data.src} className="absolute inset-0" />
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setEntered(false);
+                }}
+                className="nodrag absolute top-2 right-2 flex items-center gap-1 rounded-full bg-black/60 px-2.5 py-1 text-xs font-medium text-white/90 transition-colors hover:bg-black/80"
+              >
+                <IconX className="size-3.5" stroke={2} />
+                Exit
+              </button>
+            </>
+          ) : (
+            <>
+              {/* Static equirectangular preview — no capture. */}
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={data.src}
+                alt={data.label ?? "Panorama"}
+                draggable={false}
+                className="absolute inset-0 size-full object-cover select-none"
+              />
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setEntered(true);
+                }}
+                className="nodrag absolute inset-0 m-auto flex h-9 w-fit items-center gap-1.5 rounded-full bg-black/55 px-4 text-sm font-medium text-white transition-colors hover:bg-black/75"
+              >
+                <Icon720 className="size-4" />
+                Enter panorama
+              </button>
+            </>
+          )}
         </div>
       </div>
 
