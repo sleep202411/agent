@@ -11,6 +11,7 @@ export type FizzAiGenerationMode =
   | "image_to_panorama"
   | "image_to_video"
   | "inpainting"
+  | "multi_angle"
   | "multimodal_to_video"
   | "outpainting"
   | "relight"
@@ -574,6 +575,7 @@ const MODE_LABELS: Record<string, string> = {
   upscale: "Upscale",
   remove_background: "Remove BG",
   relight: "Relight",
+  multi_angle: "Multi-Angle",
 };
 
 /** Human label for a generation mode id (e.g. `multimodal_to_video`). */
@@ -600,6 +602,7 @@ const OPERATION_ONLY_MODES: readonly string[] = [
   "upscale",
   "remove_background",
   "relight",
+  "multi_angle",
 ];
 
 /** A model backing only canvas operations (Upscale / Remove BG / 720°) — every
@@ -647,9 +650,14 @@ export function referenceFieldsForMode(
     return explicit.length ? explicit : nonFrames.filter((f) => !/audio/i.test(f.field));
   }
   if (mode === "inpainting") return pick("referenceImages", "maskImage");
-  // Single-image operations (upscale / remove background / relight) bind exactly
-  // one input image.
-  if (mode === "upscale" || mode === "remove_background" || mode === "relight") {
+  // Single-image operations (upscale / remove background / relight /
+  // multi-angle) bind exactly one input image.
+  if (
+    mode === "upscale" ||
+    mode === "remove_background" ||
+    mode === "relight" ||
+    mode === "multi_angle"
+  ) {
     const explicit = pick("referenceImages");
     return explicit.length ? explicit : all.filter((f) => f.kind === "image").slice(0, 1);
   }

@@ -51,6 +51,8 @@ import {
   BRIA_RMBG_PRODUCT_PRICING,
   ICLIGHT_RELIGHT_PARAMETER_POLICY,
   ICLIGHT_RELIGHT_PRODUCT_PRICING,
+  QWEN_MULTI_ANGLE_PARAMETER_POLICY,
+  QWEN_MULTI_ANGLE_PRODUCT_PRICING,
   TOPAZ_UPSCALE_PARAMETER_POLICY,
   TOPAZ_UPSCALE_PRODUCT_PRICING,
   WAN_IMAGE_27_PARAMETER_POLICY,
@@ -132,6 +134,7 @@ const INPAINT: AiGenerationMode = 'inpainting';
 const UPSCALE: AiGenerationMode = 'upscale';
 const REMOVE_BG: AiGenerationMode = 'remove_background';
 const RELIGHT: AiGenerationMode = 'relight';
+const MULTI_ANGLE: AiGenerationMode = 'multi_angle';
 
 const PROVIDER_IMAGE_OUTPUT_SCHEMA = {
   type: 'object',
@@ -601,6 +604,40 @@ export const IMAGE_MODELS: ImageModelSeed[] = [
       },
     ],
     providerAliases: ['fal/fal-ai/iclight-v2'],
+  },
+  {
+    slug: 'qwen-multi-angle',
+    displayName: 'Multi-Angle',
+    family: 'image-transform',
+    description:
+      'Qwen multiple-angles — re-shoots the subject from a new camera viewpoint (orbit / tilt / zoom). Reached via the studio Multi-Angle action, not the model picker.',
+    modes: [MULTI_ANGLE],
+    tier: 'vip',
+    cost: 18,
+    parameterPolicy: QWEN_MULTI_ANGLE_PARAMETER_POLICY,
+    productPricing: QWEN_MULTI_ANGLE_PRODUCT_PRICING,
+    group: 'tools',
+    sortOrder: 213,
+    providers: [
+      {
+        provider: 'fal-ai',
+        endpointId: 'fal-ai/qwen-image-edit-2511-multiple-angles',
+        modes: [MULTI_ANGLE],
+        priority: 10,
+        weight: 100,
+        providerOutputSchema: PROVIDER_IMAGE_OUTPUT_SCHEMA,
+        catalogSnapshot: falCatalogSnapshot({
+          model: 'fal-ai/qwen-image-edit-2511-multiple-angles',
+          usdPerImage: 0.04,
+          docsUrl:
+            'https://fal.ai/models/fal-ai/qwen-image-edit-2511-multiple-angles/api',
+        }),
+        maxConcurrentRequests: 4,
+        requestTimeoutSeconds: 600,
+        failureThreshold: 3,
+      },
+    ],
+    providerAliases: ['fal/fal-ai/qwen-image-edit-2511-multiple-angles'],
   },
   {
     slug: 'flux-2-flex',

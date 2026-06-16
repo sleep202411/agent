@@ -9,12 +9,14 @@ import {
   IconDownload,
   IconLoader2,
   IconRefresh,
+  IconRotate3d,
   IconScissors,
   IconUpload,
 } from "@tabler/icons-react";
 import { cn } from "@/lib/utils";
 import { CanvasNodeToolbar, ToolbarButton } from "./node-toolbar";
 import {
+  MULTI_ANGLE_OP,
   OperationConfirmBar,
   PANORAMA_OP,
   RELIGHT_OP,
@@ -23,6 +25,7 @@ import {
   useSpawnComposedOperation,
   type OperationDef,
 } from "./operation-confirm-bar";
+import { MultiAngleEditor } from "./multi-angle-editor";
 import { Icon720 } from "./panorama-viewer";
 import { PortPlus } from "./ports";
 import { useRetryUpload, useUploadEntry } from "./upload-state-context";
@@ -81,6 +84,9 @@ function ImageNodeComponent({ id, data, selected }: NodeProps<ImageNodeType>) {
               >
                 <IconBulb className="size-4" stroke={1.8} />
               </ToolbarButton>
+              <ToolbarButton label="Multi-Angle" onClick={() => setPendingOp(MULTI_ANGLE_OP)}>
+                <IconRotate3d className="size-4" stroke={1.8} />
+              </ToolbarButton>
               <ToolbarButton label="Generate Panorama" onClick={() => setPendingOp(PANORAMA_OP)}>
                 <Icon720 className="size-4" />
               </ToolbarButton>
@@ -132,14 +138,20 @@ function ImageNodeComponent({ id, data, selected }: NodeProps<ImageNodeType>) {
         )}
       </div>
 
-      {pendingOp && (
+      {pendingOp?.editor === "multiAngle" ? (
+        <MultiAngleEditor
+          sourceNodeId={id}
+          sourceUrl={data.src}
+          onClose={() => setPendingOp(null)}
+        />
+      ) : pendingOp ? (
         <OperationConfirmBar
           op={pendingOp}
           sourceNodeId={id}
           sourceUrl={data.src}
           onClose={() => setPendingOp(null)}
         />
-      )}
+      ) : null}
     </div>
   );
 }

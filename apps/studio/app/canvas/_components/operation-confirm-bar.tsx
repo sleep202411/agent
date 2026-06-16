@@ -88,6 +88,9 @@ export interface OperationDef {
   /** Prompt-driven ops (e.g. relight) skip the confirm bar and spawn an
    *  editable, model-locked card so the user can compose the prompt. */
   composed?: boolean;
+  /** Ops with a bespoke editor surface (instead of the inline confirm bar);
+   *  the toolbar renders the named editor overlay under the source node. */
+  editor?: "multiAngle";
 }
 
 /** Output-count selector for the confirm bar — a synthetic enum field (1–4)
@@ -122,6 +125,14 @@ export const RELIGHT_OP: OperationDef = {
   resolveMode: () => "relight",
   // Relight needs a user prompt → spawn an editable card, not the confirm bar.
   composed: true,
+};
+
+export const MULTI_ANGLE_OP: OperationDef = {
+  name: "Multi-Angle",
+  findModel: (catalog) => catalog?.models.find((m) => m.generationModes?.includes("multi_angle")),
+  resolveMode: () => "multi_angle",
+  // Camera orbit/tilt/zoom → a bespoke editor surface (sphere + sliders).
+  editor: "multiAngle",
 };
 
 /**
@@ -177,6 +188,59 @@ export function useSpawnComposedOperation() {
   );
 }
 
+/**
+ * Spawn an operation RESULT card: a locked, auto-submitting prompt node wired
+ * from the source image with the given settings (model + mode fixed). Shared by
+ * the confirm bar (Run) and the Multi-Angle editor (Generate).
+ */
+export function useSpawnOperationResult() {
+  const graph = useCanvasGraphContext();
+  const { getNode } = useReactFlow();
+  return useCallback(
+    (params: {
+      op: OperationDef;
+      model: FizzAiModel;
+      sourceNodeId: string;
+      sourceUrl: string;
+      settings: ModelSettings;
+    }) => {
+      const { op, model, sourceNodeId, sourceUrl, settings } = params;
+      const mode = op.resolveMode(model);
+      const field = referenceFieldsForMode(model, mode)[0]?.field ?? "referenceImages";
+      const source = getNode(sourceNodeId);
+      const nodeId = crypto.randomUUID();
+      const edgeId = crypto.randomUUID();
+      const prompt = op.buildPrompt?.();
+      graph.addNode({
+        id: nodeId,
+        type: "prompt",
+        position: source ? { x: source.position.x + 440, y: source.position.y } : { x: 0, y: 0 },
+        data: {
+          name: op.name,
+          modelId: model.id,
+          modelName: model.name,
+          mode,
+          locked: true,
+          settings,
+          ...(prompt ? { prompt } : {}),
+          references: {
+            [field]: [{ id: edgeId, edgeId, sourceNodeId, url: sourceUrl, kind: "image" as const }],
+          },
+          autoSubmit: true,
+        },
+      });
+      graph.addEdge({
+        id: edgeId,
+        source: sourceNodeId,
+        sourceHandle: "output",
+        target: nodeId,
+        targetHandle: "input",
+      });
+    },
+    [graph, getNode]
+  );
+}
+
 export const PANORAMA_OP: OperationDef = {
   name: "Panorama",
   findModel: (catalog) => findPanoramaModel(catalog),
@@ -205,8 +269,7 @@ export function OperationConfirmBar({
   onClose: () => void;
 }) {
   const { data: catalog } = useAiCatalog();
-  const graph = useCanvasGraphContext();
-  const { getNode } = useReactFlow();
+  const spawnResult = useSpawnOperationResult();
   const zoom = useStore((s) => s.transform[2]);
   const model = useMemo(() => op.findModel(catalog), [op, catalog]);
   const [overrides, setOverrides] = useState<ModelSettings>({});
@@ -240,37 +303,7 @@ export function OperationConfirmBar({
       toast.error(`No ${op.name.toLowerCase()} model in the catalog yet`);
       return;
     }
-    const mode = op.resolveMode(model);
-    const field = referenceFieldsForMode(model, mode)[0]?.field ?? "referenceImages";
-    const source = getNode(sourceNodeId);
-    const nodeId = crypto.randomUUID();
-    const edgeId = crypto.randomUUID();
-    const prompt = op.buildPrompt?.();
-    graph.addNode({
-      id: nodeId,
-      type: "prompt",
-      position: source ? { x: source.position.x + 440, y: source.position.y } : { x: 0, y: 0 },
-      data: {
-        name: op.name,
-        modelId: model.id,
-        modelName: model.name,
-        mode,
-        locked: true,
-        settings,
-        ...(prompt ? { prompt } : {}),
-        references: {
-          [field]: [{ id: edgeId, edgeId, sourceNodeId, url: sourceUrl, kind: "image" as const }],
-        },
-        autoSubmit: true,
-      },
-    });
-    graph.addEdge({
-      id: edgeId,
-      source: sourceNodeId,
-      sourceHandle: "output",
-      target: nodeId,
-      targetHandle: "input",
-    });
+    spawnResult({ op, model, sourceNodeId, sourceUrl, settings });
     onClose();
   };
 

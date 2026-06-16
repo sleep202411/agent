@@ -5,6 +5,8 @@ import {
   BRIA_RMBG_PRODUCT_PRICING,
   ICLIGHT_RELIGHT_PARAMETER_POLICY,
   ICLIGHT_RELIGHT_PRODUCT_PRICING,
+  QWEN_MULTI_ANGLE_PARAMETER_POLICY,
+  QWEN_MULTI_ANGLE_PRODUCT_PRICING,
   TOPAZ_UPSCALE_PARAMETER_POLICY,
   TOPAZ_UPSCALE_PRODUCT_PRICING,
 } from '../../../../prisma/seed/ai-catalog/defaults';
@@ -56,6 +58,16 @@ const relightConfig = () =>
     generationModes: ['relight'],
     parameterPolicy: ICLIGHT_RELIGHT_PARAMETER_POLICY,
     billing: { productPricing: ICLIGHT_RELIGHT_PRODUCT_PRICING },
+  });
+
+const multiAngleConfig = () =>
+  createFalModelConfig({
+    ...baseArgs,
+    endpointId: 'fal-ai/qwen-image-edit-2511-multiple-angles',
+    type: 'image',
+    generationModes: ['multi_angle'],
+    parameterPolicy: QWEN_MULTI_ANGLE_PARAMETER_POLICY,
+    billing: { productPricing: QWEN_MULTI_ANGLE_PRODUCT_PRICING },
   });
 
 describe('fal-schema.mapper — upscale (pure transform) mode', () => {
@@ -204,6 +216,90 @@ describe('fal-schema.mapper — relight (prompt-driven single-image op)', () => 
       'initial_latent',
     );
     expect(def.capability_matrix.inputModalities).toEqual(['text', 'image']);
+  });
+});
+
+describe('fal-schema.mapper — multi_angle (camera-orbit op)', () => {
+  it('takes no main prompt and exposes the camera controls', () => {
+    const { inputSchema } = multiAngleConfig();
+
+    // No required main prompt (an optional additionalPrompt may refine it).
+    expect(inputSchema.properties.prompt).toBeUndefined();
+    expect(inputSchema.required).toEqual([]);
+    expect(inputSchema.properties.horizontalAngle).toMatchObject({
+      minimum: 0,
+      maximum: 360,
+      default: 0,
+    });
+    expect(inputSchema.properties.verticalAngle).toMatchObject({
+      minimum: -30,
+      maximum: 90,
+    });
+    expect(inputSchema.properties.zoom).toMatchObject({ default: 5 });
+    expect(inputSchema.properties.additionalPrompt).toBeDefined();
+    // Not other ops' controls.
+    expect(inputSchema.properties.upscaleFactor).toBeUndefined();
+    expect(inputSchema.properties.initialLatent).toBeUndefined();
+    expect(inputSchema.properties.resolution).toBeUndefined();
+  });
+
+  it('binds the source to image_urls (array) + the camera params', () => {
+    const { providerInputMap } = multiAngleConfig();
+    // The endpoint requires image_urls (array), so it is NOT single.
+    expect(providerInputMap.referenceImages).toEqual({
+      parameter: 'image_urls',
+      transform: 'mediaArrayToUrls',
+    });
+    expect(providerInputMap.horizontalAngle).toMatchObject({
+      parameter: 'horizontal_angle',
+    });
+    expect(providerInputMap.verticalAngle).toMatchObject({
+      parameter: 'vertical_angle',
+    });
+    expect(providerInputMap.zoom).toMatchObject({ parameter: 'zoom' });
+    expect(providerInputMap.additionalPrompt).toMatchObject({
+      parameter: 'additional_prompt',
+    });
+  });
+
+  it('maps non-default angles to the wire (defaults omitted)', () => {
+    const config = multiAngleConfig();
+    const body = mapFalProviderRequest(config, {
+      referenceImages: [{ url: 'https://example.com/hero.png' }],
+      horizontalAngle: 90,
+      verticalAngle: 30,
+      zoom: 10,
+    });
+    expect(body).toEqual({
+      image_urls: ['https://example.com/hero.png'],
+      horizontal_angle: 90,
+      vertical_angle: 30,
+      zoom: 10,
+    });
+  });
+
+  it('omits camera params at their fal defaults (front / eye-level / medium)', () => {
+    const config = multiAngleConfig();
+    const body = mapFalProviderRequest(config, {
+      referenceImages: [{ url: 'https://example.com/hero.png' }],
+      horizontalAngle: 0,
+      verticalAngle: 0,
+      zoom: 5,
+    });
+    expect(body).toEqual({ image_urls: ['https://example.com/hero.png'] });
+  });
+
+  it('advertises the camera params + image-only input in the capability matrix', () => {
+    const def = toAiModelDefinition(multiAngleConfig());
+    expect(def.capability_matrix.inputModalities).toEqual(['image']);
+    for (const p of [
+      'horizontal_angle',
+      'vertical_angle',
+      'zoom',
+      'additional_prompt',
+    ]) {
+      expect(def.capability_matrix.supportedParameters).toContain(p);
+    }
   });
 });
 

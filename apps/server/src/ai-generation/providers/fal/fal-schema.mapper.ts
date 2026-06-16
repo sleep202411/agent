@@ -227,6 +227,10 @@ function inputSchemaFor(
   // (preset size + output count + light direction) instead of the generic
   // aspect/resolution controls.
   const relight = generationModes.includes('relight');
+  // Multi-angle (qwen multiple-angles): re-shoots a single image from a new
+  // camera viewpoint. No required prompt; its controls are orbit/tilt/zoom +
+  // an optional additional prompt, emitted by the multi_angle branch below.
+  const multiAngle = generationModes.includes('multi_angle');
   const nanoBanana = isNanoBananaEndpoint(endpointId);
   // Reference-image limits come straight from the canonical parameterPolicy —
   // the seed encodes each provider's real cap (e.g. seedream's documented max
@@ -235,8 +239,9 @@ function inputSchemaFor(
   const reference = referencePolicy(parameterPolicy);
 
   const properties: AiInputSchema['properties'] = {};
-  // Pure transform ops (upscale / remove background) take no prompt.
-  if (!pureTransform) {
+  // Pure transform ops (upscale / remove background) and multi-angle take no
+  // main prompt. (Relight does; multi-angle's optional one is emitted below.)
+  if (!pureTransform && !multiAngle) {
     properties.prompt = {
       type: 'string',
       title: 'Prompt',
@@ -256,7 +261,12 @@ function inputSchemaFor(
   // Pure transform ops take none of the generation controls
   // (aspect / resolution / quality / output-count / negative prompt) — only
   // their own input image + op param, added below.
-  if ((imageMode || imageToImage) && !pureTransform && !relight) {
+  if (
+    (imageMode || imageToImage) &&
+    !pureTransform &&
+    !relight &&
+    !multiAngle
+  ) {
     const aspectOptions = stringArrayFromPolicy(
       parameterPolicy,
       'supportedAspectRatios',
@@ -500,10 +510,14 @@ function inputSchemaFor(
     }
   }
 
-  if ((imageToImage || pureTransform || relight) && reference.enabled) {
+  if (
+    (imageToImage || pureTransform || relight || multiAngle) &&
+    reference.enabled
+  ) {
     properties.referenceImages = {
       type: 'array',
-      title: pureTransform || relight ? 'Image' : 'Reference images',
+      title:
+        pureTransform || relight || multiAngle ? 'Image' : 'Reference images',
       minItems: reference.min,
       maxItems: reference.single ? 1 : reference.max,
       items: {
@@ -583,6 +597,95 @@ function inputSchemaFor(
         importance: 'primary',
       },
       'x-provider': { parameter: 'initial_latent', omitIfDefault: true },
+    };
+    const variationOptions = numberArrayFromPolicy(
+      parameterPolicy,
+      'variationOptions',
+    );
+    const maxVariations =
+      variationOptions.length > 0 ? Math.max(...variationOptions) : 4;
+    if (maxVariations > 1) {
+      properties.numOutputs = {
+        type: 'integer',
+        title: 'Outputs',
+        default:
+          typeof recordValue(parameterPolicy)?.defaultVariations === 'number'
+            ? (recordValue(parameterPolicy)?.defaultVariations as number)
+            : 1,
+        minimum: 1,
+        maximum: maxVariations,
+        'x-ui': {
+          control: 'stepper',
+          group: 'settings',
+          order: 30,
+          importance: 'secondary',
+        },
+        'x-provider': { parameter: 'num_images', omitIfDefault: true },
+      };
+    }
+  }
+
+  // Multi-angle (qwen multiple-angles): orbit / tilt / shot-size zoom + an
+  // optional refine prompt + output count. The studio renders a custom
+  // Multi-Angle editor (orbit sphere + sliders); these x-provider bindings are
+  // what actually drive the fal request. fal defaults: angles 0, zoom 5.
+  if (multiAngle) {
+    properties.horizontalAngle = {
+      type: 'number',
+      title: 'Horizontal orbit',
+      default: 0,
+      minimum: 0,
+      maximum: 360,
+      'x-ui': {
+        control: 'slider',
+        group: 'settings',
+        order: 20,
+        importance: 'primary',
+        unit: '°',
+      },
+      'x-provider': { parameter: 'horizontal_angle', omitIfDefault: true },
+    };
+    properties.verticalAngle = {
+      type: 'number',
+      title: 'Vertical tilt',
+      default: 0,
+      minimum: -30,
+      maximum: 90,
+      'x-ui': {
+        control: 'slider',
+        group: 'settings',
+        order: 22,
+        importance: 'primary',
+        unit: '°',
+      },
+      'x-provider': { parameter: 'vertical_angle', omitIfDefault: true },
+    };
+    properties.zoom = {
+      type: 'number',
+      title: 'Shot size',
+      default: 5,
+      minimum: 0,
+      maximum: 10,
+      'x-ui': {
+        control: 'slider',
+        group: 'settings',
+        order: 24,
+        importance: 'primary',
+      },
+      'x-provider': { parameter: 'zoom', omitIfDefault: true },
+    };
+    properties.additionalPrompt = {
+      type: 'string',
+      title: 'Prompt',
+      maxLength: 2000,
+      'x-ui': {
+        control: 'textarea',
+        group: 'settings',
+        order: 26,
+        rows: 2,
+        importance: 'secondary',
+      },
+      'x-provider': { parameter: 'additional_prompt', omitIfEmpty: true },
     };
     const variationOptions = numberArrayFromPolicy(
       parameterPolicy,
@@ -936,10 +1039,10 @@ function inputSchemaFor(
   return {
     type: 'object',
     properties,
-    // Pure transforms omit the prompt property entirely (see the
-    // `!pureTransform` gate above), so it must not be listed as required —
-    // that would be an invalid schema (required field absent from properties).
-    required: pureTransform ? [] : ['prompt'],
+    // Ops with no main prompt property (pure transforms + multi-angle) must not
+    // list it as required — that would be an invalid schema (required field
+    // absent from properties). Relight keeps the required prompt.
+    required: pureTransform || multiAngle ? [] : ['prompt'],
     additionalProperties: false,
     'x-ui': {
       groups: [
@@ -991,21 +1094,22 @@ function capabilityMatrixFor(
   type: AiJobType,
   generationModes: AiGenerationMode[],
 ): AiCapabilityMatrix {
-  // Pure transforms (upscale / remove background) take an image and NO prompt,
-  // so their input is image-only — the `image_to` substring check below would
-  // otherwise mis-tag them as text input. Relight takes an image AND a prompt.
-  const pureTransform =
+  // Ops that take an image and NO required prompt are image-only — the
+  // `image_to` substring check below would otherwise mis-tag them as text
+  // input. Relight + image_to_* take an image AND a prompt.
+  const imageOnly =
     generationModes.includes('upscale') ||
-    generationModes.includes('remove_background');
+    generationModes.includes('remove_background') ||
+    generationModes.includes('multi_angle');
   const relight = generationModes.includes('relight');
   const imageInput =
-    pureTransform ||
+    imageOnly ||
     relight ||
     generationModes.some((mode) => mode.includes('image_to'));
   return {
     source: 'internal',
     inputModalities: imageInput
-      ? pureTransform
+      ? imageOnly
         ? ['image']
         : ['text', 'image']
       : ['text'],
@@ -1033,6 +1137,10 @@ function capabilityMatrixFor(
       ...(generationModes.includes('upscale') ? ['upscale_factor'] : []),
       // Relight adds the coarse light-direction control (initial_latent).
       ...(relight ? ['initial_latent'] : []),
+      // Multi-angle adds the camera controls + an optional refine prompt.
+      ...(generationModes.includes('multi_angle')
+        ? ['horizontal_angle', 'vertical_angle', 'zoom', 'additional_prompt']
+        : []),
     ],
     unsupportedParameters: [],
     features: {

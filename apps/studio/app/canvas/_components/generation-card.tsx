@@ -15,6 +15,7 @@ import {
   IconBulb,
   IconPhoto,
   IconRefresh,
+  IconRotate3d,
   IconScissors,
   IconVideo,
   IconX,
@@ -27,6 +28,7 @@ import { useDismiss } from "@/lib/use-dismiss";
 import { useAiCatalog, usableModelsByModality } from "@/app/canvas/_lib/use-ai-catalog";
 import { useGeneration } from "@/app/canvas/_lib/use-canvas-generation";
 import {
+  MULTI_ANGLE_OP,
   OperationConfirmBar,
   PANORAMA_OP,
   RELIGHT_OP,
@@ -35,6 +37,7 @@ import {
   useSpawnComposedOperation,
   type OperationDef,
 } from "./operation-confirm-bar";
+import { MultiAngleEditor } from "./multi-angle-editor";
 import { useCanvasGraphContext } from "@/lib/collab/canvas-graph-context";
 import {
   defaultMode,
@@ -392,6 +395,9 @@ function GenerationCard({
               >
                 <IconBulb className="size-4" stroke={1.8} />
               </ToolbarButton>
+              <ToolbarButton label="Multi-Angle" onClick={() => setPendingOp(MULTI_ANGLE_OP)}>
+                <IconRotate3d className="size-4" stroke={1.8} />
+              </ToolbarButton>
               <ToolbarButton label="Generate Panorama" onClick={() => setPendingOp(PANORAMA_OP)}>
                 <Icon720 className="size-4" />
               </ToolbarButton>
@@ -538,14 +544,22 @@ function GenerationCard({
       {/* Card-specific composer — slides up below the card while selected.
           Outer wrapper animates in; inner is counter-scaled by 1/zoom so it
           stays a constant, readable screen size. */}
-      {pendingOp && output?.url && (
-        <OperationConfirmBar
-          op={pendingOp}
-          sourceNodeId={id}
-          sourceUrl={output.url}
-          onClose={() => setPendingOp(null)}
-        />
-      )}
+      {pendingOp && output?.url ? (
+        pendingOp.editor === "multiAngle" ? (
+          <MultiAngleEditor
+            sourceNodeId={id}
+            sourceUrl={output.url}
+            onClose={() => setPendingOp(null)}
+          />
+        ) : (
+          <OperationConfirmBar
+            op={pendingOp}
+            sourceNodeId={id}
+            sourceUrl={output.url}
+            onClose={() => setPendingOp(null)}
+          />
+        )
+      ) : null}
       {canEdit &&
         selected &&
         soleSelected &&

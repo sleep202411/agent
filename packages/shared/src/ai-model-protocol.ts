@@ -72,6 +72,7 @@ export type AiGenerationMode =
   | "upscale"
   | "remove_background"
   | "relight"
+  | "multi_angle"
   | "reference_image_generation"
   | "text_to_video"
   | "image_to_video"

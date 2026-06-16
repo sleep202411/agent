@@ -407,6 +407,26 @@ export const ICLIGHT_RELIGHT_PARAMETER_POLICY = {
   seed: { enabled: false },
 } as const satisfies Prisma.InputJsonObject;
 
+// Qwen multiple-angles: re-shoot a single source image from a new camera
+// viewpoint. No prompt is required (an optional additional_prompt may refine
+// it). Controls = horizontal orbit / vertical tilt / shot-size zoom, emitted by
+// the fal-schema mapper's `multi_angle` branch. The endpoint takes image_urls
+// (array), so referenceImages is non-single (binds image_urls).
+export const QWEN_MULTI_ANGLE_PARAMETER_POLICY = {
+  parameterMode: 'provider_intersection',
+  providerFamily: 'qwen-multi-angle',
+  defaultVariations: 1,
+  variationOptions: [1, 2, 3, 4],
+  referenceImages: {
+    enabled: true,
+    min: 1,
+    max: 1,
+    single: false,
+    maskSupported: false,
+  },
+  seed: { enabled: false },
+} as const satisfies Prisma.InputJsonObject;
+
 export const FLUX_2_FLEX_PARAMETER_POLICY = {
   parameterMode: 'provider_intersection',
   providerFamily: 'flux-2',
@@ -798,6 +818,25 @@ export const ICLIGHT_RELIGHT_PRODUCT_PRICING: AiProductPricingPolicy = {
   resolutionOptions: ['1K'],
   qualityOptions: ['standard'],
   matrix: { '1K': { standard: 20 } },
+  referenceImageSurchargePoints: 0,
+  extraReferenceImagePoints: 0,
+  maskSurchargePoints: 0,
+  minimumPoints: 1,
+  roundTo: 1,
+};
+
+export const QWEN_MULTI_ANGLE_PRODUCT_PRICING: AiProductPricingPolicy = {
+  mode: 'parameter_matrix',
+  version: 'qwen-multi-angle-points-v1-2026-06-16',
+  currency: 'COMPUTE_POINTS',
+  defaultOutputCount: 1,
+  minOutputCount: 1,
+  maxOutputCount: 4,
+  defaultResolution: '1K',
+  defaultQuality: 'standard',
+  resolutionOptions: ['1K'],
+  qualityOptions: ['standard'],
+  matrix: { '1K': { standard: 18 } },
   referenceImageSurchargePoints: 0,
   extraReferenceImagePoints: 0,
   maskSurchargePoints: 0,
