@@ -173,7 +173,7 @@ web:
   replicaCount: 1
   image:
     repository: fizzdragon-web
-    tag: huiyuan-64a499f2
+    tag: shot-autosave-3370e689
   containerPort: 3000
   env:
     SERVER_URL: http://fizzdragon-server:3001
