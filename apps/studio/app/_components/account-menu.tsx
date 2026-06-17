@@ -18,7 +18,6 @@ import { toast } from "sonner";
 import { useAuth } from "./auth-provider";
 import { useComputeWalletBalance } from "./credits-badge";
 import { SubscriptionDialog } from "./subscription-dialog";
-import { LocaleSwitcher } from "./locale-switcher";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -195,7 +194,6 @@ export function AccountMenu() {
               {t("settings")}
             </Link>
           </DropdownMenuItem>
-          <LocaleSwitcher />
           <DropdownMenuItem
             onSelect={() => void signOut()}
             className="gap-2.5 rounded-lg p-2 text-sm"

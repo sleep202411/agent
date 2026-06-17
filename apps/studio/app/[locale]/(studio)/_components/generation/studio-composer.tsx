@@ -12,12 +12,12 @@ import {
 import { cn } from "@/lib/utils";
 import { useDismiss } from "@/lib/use-dismiss";
 import {
-  modeLabel,
   type FizzAiCatalog,
   type FizzAiModel,
   type FizzAiReferenceFieldConstraints,
   type ModelSettings as ModelSettingsBag,
 } from "@/app/[locale]/canvas/_lib/generation-api";
+import { useModeLabel } from "@/app/[locale]/canvas/_lib/use-labels";
 import { ModelPicker } from "@/app/[locale]/canvas/_components/model-picker";
 import { ModelSettings as ModelSettingsPanel } from "@/app/[locale]/canvas/_components/model-settings";
 import { ModeMenu } from "@/app/[locale]/canvas/_components/mode-menu";
@@ -76,6 +76,7 @@ export function StudioComposer({
 }) {
   const t = useTranslations("generation");
   const tc = useTranslations("common");
+  const ml = useModeLabel();
   const [panel, setPanel] = useState<"model" | "settings" | "mode" | null>(null);
   const [mentionActive, setMentionActive] = useState(0);
   const [mentionOpen, setMentionOpen] = useState(false);
@@ -222,7 +223,7 @@ export function StudioComposer({
                 onClick={() => setPanel((p) => (p === "mode" ? null : "mode"))}
                 className="flex h-8 items-center gap-1 rounded-full bg-white/[0.06] px-3 text-xs font-medium transition-colors hover:bg-white/[0.1]"
               >
-                {mode ? modeLabel(mode) : t("mode")}
+                {mode ? ml(mode) : t("mode")}
                 <IconChevronDown className="size-3.5 text-muted-foreground" stroke={2} />
               </button>
               {panel === "mode" && (

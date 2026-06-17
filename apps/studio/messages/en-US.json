@@ -756,5 +756,30 @@
     "joinTitle": "Join {name}",
     "joinBody": "You've been invited to collaborate on this {scope} as {role}.",
     "acceptInvitation": "Accept invitation"
+  },
+  "modes": {
+    "text_to_image": "Text to Image",
+    "text_to_video": "Text to Video",
+    "image_to_image": "Image to Image",
+    "image_to_panorama": "Panorama",
+    "image_to_video": "Image to Video",
+    "video_to_video": "Video to Video",
+    "first_last_frame_to_video": "First & Last Frame",
+    "multimodal_to_video": "Omni Reference",
+    "inpainting": "Inpaint",
+    "outpainting": "Expand",
+    "upscale": "Upscale",
+    "remove_background": "Remove BG",
+    "relight": "Relight",
+    "multi_angle": "Multi-Angle"
+  },
+  "operations": {
+    "upscale": "Upscale",
+    "removeBackground": "Remove BG",
+    "relight": "Relight",
+    "multiAngle": "Multi-Angle",
+    "expand": "Expand",
+    "motion": "Motion",
+    "panorama": "Panorama"
   }
 }

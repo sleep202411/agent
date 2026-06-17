@@ -2,7 +2,7 @@
 
 import { IconCheck } from "@tabler/icons-react";
 import { cn } from "@/lib/utils";
-import { modeLabel } from "@/app/[locale]/canvas/_lib/generation-api";
+import { useModeLabel } from "@/app/[locale]/canvas/_lib/use-labels";
 
 /** Compact dropdown for the card's generation mode, opened from the mode pill. */
 export function ModeMenu({
@@ -16,6 +16,7 @@ export function ModeMenu({
   onSelect: (mode: string) => void;
   onClose: () => void;
 }) {
+  const ml = useModeLabel();
   return (
     <div className="nodrag nowheel absolute bottom-full left-0 z-50 mb-2 w-56 origin-bottom overflow-hidden rounded-2xl bg-[oklch(0.24_0_0)] p-1.5 shadow-2xl shadow-black/60 backdrop-blur-xl duration-150 animate-in fade-in-0 zoom-in-95">
       {modes.map((mode) => (
@@ -31,7 +32,7 @@ export function ModeMenu({
             mode === value ? "text-foreground" : "text-muted-foreground"
           )}
         >
-          {modeLabel(mode)}
+          {ml(mode)}
           {mode === value && <IconCheck className="size-4" stroke={2} />}
         </button>
       ))}

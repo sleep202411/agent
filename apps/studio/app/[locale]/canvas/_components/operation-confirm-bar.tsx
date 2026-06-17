@@ -78,8 +78,9 @@ export function ParamPill({
 
 /** A canvas operation that runs on a source image (Upscale, 720° Panorama, …). */
 export interface OperationDef {
-  /** Result-card display name (canonical English; stored as the node name). */
-  name: string;
+  /** Stable operation key (matches the `operations` i18n namespace); stored on
+   *  the result node as `opType` and translated at render — never baked. */
+  opType: string;
   /** Translation key (under the canvasOps namespace) for the op's UI label. */
   labelKey: string;
   /** Resolve the catalog model that backs this op (region/availability aware). */
@@ -109,14 +110,14 @@ const COUNT_FIELD: SchemaFieldDescriptor = {
 };
 
 export const UPSCALE_OP: OperationDef = {
-  name: "Upscale",
+  opType: "upscale",
   labelKey: "opUpscale",
   findModel: (catalog) => catalog?.models.find((m) => m.generationModes?.includes("upscale")),
   resolveMode: () => "upscale",
 };
 
 export const REMOVE_BG_OP: OperationDef = {
-  name: "Remove BG",
+  opType: "removeBackground",
   labelKey: "opRemoveBg",
   findModel: (catalog) =>
     catalog?.models.find((m) => m.generationModes?.includes("remove_background")),
@@ -124,7 +125,7 @@ export const REMOVE_BG_OP: OperationDef = {
 };
 
 export const RELIGHT_OP: OperationDef = {
-  name: "Relight",
+  opType: "relight",
   labelKey: "opRelight",
   findModel: (catalog) => catalog?.models.find((m) => m.generationModes?.includes("relight")),
   resolveMode: () => "relight",
@@ -133,7 +134,7 @@ export const RELIGHT_OP: OperationDef = {
 };
 
 export const MULTI_ANGLE_OP: OperationDef = {
-  name: "Multi-Angle",
+  opType: "multiAngle",
   labelKey: "opMultiAngle",
   findModel: (catalog) => catalog?.models.find((m) => m.generationModes?.includes("multi_angle")),
   resolveMode: () => "multi_angle",
@@ -142,7 +143,7 @@ export const MULTI_ANGLE_OP: OperationDef = {
 };
 
 export const EXPAND_OP: OperationDef = {
-  name: "Expand",
+  opType: "expand",
   labelKey: "opExpand",
   findModel: (catalog) => catalog?.models.find((m) => m.generationModes?.includes("outpainting")),
   resolveMode: () => "outpainting",
@@ -151,7 +152,7 @@ export const EXPAND_OP: OperationDef = {
 };
 
 export const MOTION_OP: OperationDef = {
-  name: "Motion",
+  opType: "motion",
   labelKey: "opMotion",
   // The motion-brush model is the one exposing the dynamicMasks param (Kling
   // i2v) — a capability find, so it doesn't collide with other i2v models.
@@ -191,7 +192,7 @@ export function useSpawnComposedOperation() {
         type: "prompt",
         position: source ? { x: source.position.x + 440, y: source.position.y } : { x: 0, y: 0 },
         data: {
-          name: op.name,
+          opType: op.opType,
           modelId: model.id,
           modelName: model.name,
           mode,
@@ -247,7 +248,7 @@ export function useSpawnOperationResult() {
         type: model.type === "video" ? "video" : "prompt",
         position: source ? { x: source.position.x + 440, y: source.position.y } : { x: 0, y: 0 },
         data: {
-          name: op.name,
+          opType: op.opType,
           modelId: model.id,
           modelName: model.name,
           mode,
@@ -273,7 +274,7 @@ export function useSpawnOperationResult() {
 }
 
 export const PANORAMA_OP: OperationDef = {
-  name: "Panorama",
+  opType: "panorama",
   labelKey: "opPanorama",
   findModel: (catalog) => findPanoramaModel(catalog),
   resolveMode: (model) =>

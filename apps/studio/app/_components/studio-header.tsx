@@ -5,6 +5,7 @@ import { Link } from "@/i18n/navigation";
 import { useTranslations } from "next-intl";
 import { AccountMenu } from "./account-menu";
 import { CreditsBadge } from "./credits-badge";
+import { LocaleSwitcher } from "./locale-switcher";
 import { WorkspaceSwitcher } from "./workspace-switcher";
 
 /** Full-viewport-width top bar — spans edge to edge, above the nav rail. */
@@ -31,6 +32,7 @@ export function StudioHeader() {
         <div className="flex shrink-0 items-center gap-3">
           <CreditsBadge />
           <WorkspaceSwitcher />
+          <LocaleSwitcher />
           <AccountMenu />
         </div>
       </div>

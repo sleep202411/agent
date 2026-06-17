@@ -54,12 +54,12 @@ import {
   mergeCompatibleSettings,
   estimateModelSellPoints,
   hasSchemaProperty,
-  modeLabel,
   referenceFieldsForMode,
   type FizzAiModel,
   type GenerationState,
   type ModelSettings,
 } from "@/app/[locale]/canvas/_lib/generation-api";
+import { useModeLabel, useOperationLabel } from "@/app/[locale]/canvas/_lib/use-labels";
 import { CanvasNodeToolbar, ToolbarButton } from "./node-toolbar";
 import { Icon720, PanoramaViewer } from "./panorama-viewer";
 import { ModeMenu } from "./mode-menu";
@@ -80,6 +80,10 @@ export type GenerationModality = "image" | "video";
 
 export type GenerationNodeData = {
   name?: string;
+  /** Stable operation key (e.g. "upscale") for operation-result nodes — the
+   *  title is translated from this at render so we never bake a locale into the
+   *  CRDT. `name` (if set) is a user-chosen override and wins. */
+  opType?: string;
   prompt?: string;
   modelId?: string;
   modelName?: string;
@@ -200,6 +204,8 @@ function GenerationCard({
 }: NodeProps<GenerationNodeType> & { modality: GenerationModality }) {
   const t = useTranslations("canvasOps");
   const tc = useTranslations("common");
+  const ml = useModeLabel();
+  const ol = useOperationLabel();
   const { patchNodeData, canEdit, nodes } = useCanvasGraphContext();
   const { data: catalog } = useAiCatalog();
   // Composer is click-triggered: it opens for a sole selected node only, so a
@@ -222,6 +228,10 @@ function GenerationCard({
   const descriptor = MODALITY[modality];
   const Icon = descriptor.icon;
   const modalityLabel = modality === "video" ? t("modalityVideo") : t("modalityImage");
+  // Node title: a user-set name wins; else the translated operation label (for
+  // op-result nodes); else the modality default. Never bakes a locale into the doc.
+  const opTitle = ol(data.opType);
+  const displayTitle = data.name ?? opTitle ?? modalityLabel;
   const generation = data.generation;
   const settings = useMemo(() => data.settings ?? {}, [data.settings]);
   const busy =
@@ -411,7 +421,7 @@ function GenerationCard({
       const url = URL.createObjectURL(blob);
       const anchor = document.createElement("a");
       anchor.href = url;
-      anchor.download = `${data.name ?? "result"}.${ext}`;
+      anchor.download = `${data.name ?? data.opType ?? "result"}.${ext}`;
       anchor.click();
       URL.revokeObjectURL(url);
     } catch {
@@ -484,9 +494,11 @@ function GenerationCard({
             {renaming ? (
               <input
                 autoFocus
-                defaultValue={data.name ?? modalityLabel}
+                defaultValue={displayTitle}
                 onBlur={(event) => {
-                  patchNodeData(id, { name: event.target.value.trim() || modalityLabel });
+                  // Clear → undefined so the title falls back to the dynamic
+                  // (translated) label instead of baking text into the doc.
+                  patchNodeData(id, { name: event.target.value.trim() || undefined });
                   setRenaming(false);
                 }}
                 onKeyDown={(event) => {
@@ -496,7 +508,7 @@ function GenerationCard({
                 className="nodrag w-28 bg-transparent text-white/80 outline-none"
               />
             ) : (
-              <span className="truncate">{data.name ?? modalityLabel}</span>
+              <span className="truncate">{displayTitle}</span>
             )}
           </span>
           <span className="shrink-0 text-muted-foreground">
@@ -684,7 +696,7 @@ function GenerationCard({
                       onClick={() => setPanel((p) => (p === "mode" ? null : "mode"))}
                       className="flex h-8 items-center gap-1 rounded-full bg-white/[0.06] px-3 text-xs font-medium transition-colors hover:bg-white/[0.1]"
                     >
-                      {modeLabel(mode ?? "")}
+                      {ml(mode ?? "")}
                       <IconChevronDown className="size-3.5 text-muted-foreground" stroke={1.8} />
                     </button>
                     {panel === "mode" && (

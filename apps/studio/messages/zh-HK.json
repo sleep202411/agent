@@ -756,5 +756,30 @@
     "joinTitle": "加入 {name}",
     "joinBody": "您已獲邀以 {role} 身分協作此{scope}。",
     "acceptInvitation": "接受邀請"
+  },
+  "modes": {
+    "text_to_image": "文生圖",
+    "text_to_video": "文生影片",
+    "image_to_image": "圖生圖",
+    "image_to_panorama": "全景圖",
+    "image_to_video": "圖生影片",
+    "video_to_video": "影片生影片",
+    "first_last_frame_to_video": "首尾格",
+    "multimodal_to_video": "全能參考",
+    "inpainting": "局部重繪",
+    "outpainting": "擴圖",
+    "upscale": "高清放大",
+    "remove_background": "移除背景",
+    "relight": "重新打光",
+    "multi_angle": "多角度"
+  },
+  "operations": {
+    "upscale": "高清放大",
+    "removeBackground": "移除背景",
+    "relight": "重新打光",
+    "multiAngle": "多角度",
+    "expand": "擴圖",
+    "motion": "運動",
+    "panorama": "全景圖"
   }
 }
