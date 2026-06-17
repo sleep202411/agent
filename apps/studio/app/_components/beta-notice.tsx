@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useTranslations } from "next-intl";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -19,6 +20,7 @@ const ACK_KEY = "fizzstudio-beta-ack-v1";
  * remembered per browser so it doesn't nag. Mounted app-wide (grid + editor).
  */
 export function BetaNotice() {
+  const t = useTranslations("shell");
   const [open, setOpen] = useState(false);
 
   useEffect(() => {
@@ -48,15 +50,11 @@ export function BetaNotice() {
     >
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>FizzStudio is in beta</DialogTitle>
-          <DialogDescription>
-            This is an early beta, so your work may be lost or reset without notice. When using the
-            canvas and image / video generation, please download or back up anything important as
-            you create it.
-          </DialogDescription>
+          <DialogTitle>{t("beta.title")}</DialogTitle>
+          <DialogDescription>{t("beta.description")}</DialogDescription>
         </DialogHeader>
         <DialogFooter>
-          <Button onClick={acknowledge}>I understand</Button>
+          <Button onClick={acknowledge}>{t("beta.acknowledge")}</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter } from "@/i18n/navigation";
+import { useTranslations } from "next-intl";
 import { useQueryClient, type QueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { useAuth } from "./auth-provider";
@@ -24,19 +25,20 @@ export function NotificationsListener() {
   const userId = useAuth().user?.id;
   const queryClient = useQueryClient();
   const router = useRouter();
+  const t = useTranslations("shell");
 
   useEffect(() => {
     if (!userId) return;
     const socket = new NotificationsSocket();
     const unsubscribe = socket.subscribe((n) =>
-      handleNotification(n, queryClient, (href) => router.push(href))
+      handleNotification(n, queryClient, (href) => router.push(href), t("notifications.view"))
     );
     socket.connect();
     return () => {
       unsubscribe();
       socket.destroy();
     };
-  }, [userId, queryClient, router]);
+  }, [userId, queryClient, router, t]);
 
   return null;
 }
@@ -44,7 +46,8 @@ export function NotificationsListener() {
 function handleNotification(
   n: StudioNotification,
   queryClient: QueryClient,
-  navigate: (href: string) => void
+  navigate: (href: string) => void,
+  viewLabel: string
 ) {
   if (n.type.startsWith("workspace.") || n.type.startsWith("project.")) {
     void queryClient.invalidateQueries({ queryKey: WORKSPACES_QUERY_KEY });
@@ -57,7 +60,7 @@ function handleNotification(
   const deeplink = typeof n.meta?.deeplink === "string" ? n.meta.deeplink : undefined;
   const options = {
     description: n.body,
-    ...(deeplink ? { action: { label: "View", onClick: () => navigate(deeplink) } } : {}),
+    ...(deeplink ? { action: { label: viewLabel, onClick: () => navigate(deeplink) } } : {}),
   };
   if (n.type.endsWith(".removed")) toast.warning(n.title, options);
   else toast.success(n.title, options);

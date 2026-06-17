@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import Link from "next/link";
+import { useTranslations } from "next-intl";
+import { Link } from "@/i18n/navigation";
 import {
   IconBolt,
   IconCopy,
@@ -17,6 +18,7 @@ import { toast } from "sonner";
 import { useAuth } from "./auth-provider";
 import { useComputeWalletBalance } from "./credits-badge";
 import { SubscriptionDialog } from "./subscription-dialog";
+import { LocaleSwitcher } from "./locale-switcher";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -24,8 +26,6 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-
-const comingSoon = (label: string) => toast.info(`${label} · Coming soon`);
 
 function PillButton({ label, onClick }: { label: string; onClick: () => void }) {
   return (
@@ -40,9 +40,11 @@ function PillButton({ label, onClick }: { label: string; onClick: () => void }) 
 }
 
 export function AccountMenu() {
+  const t = useTranslations("account");
   const { user, signIn, signOut } = useAuth();
   const { data: computeCredits } = useComputeWalletBalance(Boolean(user));
   const [menuOpen, setMenuOpen] = useState(false);
+  const comingSoon = (label: string) => toast.info(t("comingSoon", { label }));
   const [subscriptionOpen, setSubscriptionOpen] = useState(false);
   const openSubscription = () => {
     setMenuOpen(false);
@@ -65,14 +67,14 @@ export function AccountMenu() {
           onClick={signIn}
           className="flex h-9 items-center rounded-full bg-primary px-4 text-sm font-semibold text-primary-foreground transition-opacity hover:opacity-90"
         >
-          Sign in
+          {t("signIn")}
         </button>
         <SubscriptionDialog open={subscriptionOpen} onOpenChange={setSubscriptionOpen} />
       </>
     );
   }
 
-  const name = user?.nickName || user?.email || user?.phone || "Account";
+  const name = user?.nickName || user?.email || user?.phone || t("account");
   const contact = user?.email || user?.phone || "";
   const publicUserId = encodeUserId(user?.id);
 
@@ -80,9 +82,9 @@ export function AccountMenu() {
     if (!publicUserId) return;
     try {
       await navigator.clipboard.writeText(publicUserId);
-      toast.success("Public ID copied");
+      toast.success(t("publicIdCopied"));
     } catch {
-      toast.error("Could not copy Public ID");
+      toast.error(t("publicIdCopyFailed"));
     }
   };
 
@@ -90,7 +92,7 @@ export function AccountMenu() {
     <>
       <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
         <DropdownMenuTrigger
-          aria-label="Account"
+          aria-label={t("account")}
           className="flex size-9 items-center justify-center rounded-full bg-secondary text-white/80 transition-colors outline-none hover:bg-accent hover:text-white focus-visible:ring-2 focus-visible:ring-ring/50 data-[state=open]:bg-accent data-[state=open]:text-white"
         >
           <IconUser className="size-5" stroke={1.8} />
@@ -122,14 +124,14 @@ export function AccountMenu() {
                   onClick={copyPublicUserId}
                   className="mt-0.5 inline-flex max-w-full items-center gap-1 text-left text-xs text-muted-foreground transition-colors hover:text-foreground"
                 >
-                  <span className="truncate">Public ID {publicUserId}</span>
+                  <span className="truncate">{t("publicId", { id: publicUserId })}</span>
                   <IconCopy className="size-3 shrink-0" stroke={1.8} />
                 </button>
               ) : null}
             </span>
             <Link
               href="/settings"
-              aria-label="Settings"
+              aria-label={t("settings")}
               className="flex size-9 shrink-0 items-center justify-center rounded-full bg-white/[0.06] text-white/70 transition-colors hover:bg-white/[0.1] hover:text-white"
             >
               <IconSettings className="size-4.5" stroke={1.8} />
@@ -138,11 +140,11 @@ export function AccountMenu() {
 
           <button
             type="button"
-            onClick={() => comingSoon("My Profile")}
+            onClick={() => comingSoon(t("myProfile"))}
             className="mt-2 flex h-10 w-full items-center justify-center gap-2 rounded-full bg-white/[0.06] text-sm font-medium transition-colors hover:bg-white/[0.1]"
           >
             <IconUserCircle className="size-4.5" stroke={1.8} />
-            My Profile
+            {t("myProfile")}
           </button>
 
           <DropdownMenuSeparator className="my-3" />
@@ -154,18 +156,18 @@ export function AccountMenu() {
               <span className="text-lg font-semibold tabular-nums">
                 {computeCredits != null ? computeCredits.available.toLocaleString() : "—"}
               </span>
-              <span className="text-sm text-muted-foreground">Available compute credits</span>
+              <span className="text-sm text-muted-foreground">{t("availableCredits")}</span>
               <IconInfoCircle className="size-4 text-muted-foreground" stroke={1.8} />
             </div>
             <div className="mt-2 grid grid-cols-2 gap-2 text-xs">
               <div className="rounded-xl bg-white/[0.05] px-3 py-2">
-                <span className="block text-muted-foreground">Held</span>
+                <span className="block text-muted-foreground">{t("held")}</span>
                 <span className="mt-1 block font-semibold tabular-nums text-white/85">
                   {computeCredits != null ? computeCredits.held.toLocaleString() : "—"}
                 </span>
               </div>
               <div className="rounded-xl bg-white/[0.05] px-3 py-2">
-                <span className="block text-muted-foreground">Total</span>
+                <span className="block text-muted-foreground">{t("total")}</span>
                 <span className="mt-1 block font-semibold tabular-nums text-white/85">
                   {computeCredits != null ? computeCredits.total.toLocaleString() : "—"}
                 </span>
@@ -173,8 +175,11 @@ export function AccountMenu() {
             </div>
           </div>
           <div className="mt-2 flex items-center gap-2">
-            <PillButton label="Upgrade" onClick={openSubscription} />
-            <PillButton label="Usage Analytics" onClick={() => comingSoon("Usage Analytics")} />
+            <PillButton label={t("upgrade")} onClick={openSubscription} />
+            <PillButton
+              label={t("usageAnalytics")}
+              onClick={() => comingSoon(t("usageAnalytics"))}
+            />
           </div>
 
           <DropdownMenuSeparator className="my-3" />
@@ -182,28 +187,33 @@ export function AccountMenu() {
           {/* Menu — no Theme row: this app is dark-only by design. */}
           <DropdownMenuItem onSelect={openSubscription} className="gap-2.5 rounded-lg p-2 text-sm">
             <IconReceipt className="size-4.5" stroke={1.8} />
-            Billing &amp; Subscription
+            {t("billing")}
           </DropdownMenuItem>
           <DropdownMenuItem className="gap-2.5 rounded-lg p-2 text-sm">
             <Link href="/settings" className="flex flex-1 items-center gap-2.5">
               <IconSettings className="size-4.5" stroke={1.8} />
-              Settings
+              {t("settings")}
             </Link>
           </DropdownMenuItem>
+          <LocaleSwitcher />
           <DropdownMenuItem
             onSelect={() => void signOut()}
             className="gap-2.5 rounded-lg p-2 text-sm"
           >
             <IconLogout className="size-4.5" stroke={1.8} />
-            Logout
+            {t("logout")}
           </DropdownMenuItem>
 
           <DropdownMenuSeparator className="my-3" />
 
           {/* Footer links */}
           <div className="flex items-center justify-between px-1 pb-1">
-            {["Terms", "Privacy", "Blogs"].map((label, i) => (
-              <span key={label} className="flex flex-1 items-center justify-center">
+            {[
+              { key: "terms", label: t("terms") },
+              { key: "privacy", label: t("privacy") },
+              { key: "blogs", label: t("blogs") },
+            ].map(({ key, label }, i) => (
+              <span key={key} className="flex flex-1 items-center justify-center">
                 {i > 0 && <span className="mr-auto h-3.5 w-px bg-border" aria-hidden />}
                 <button
                   type="button"

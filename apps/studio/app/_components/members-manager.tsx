@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { useTranslations } from "next-intl";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   IconCheck,
@@ -40,15 +41,11 @@ import {
 } from "@/lib/collab/sharing-api";
 
 const ROLES: AssignableRole[] = ["admin", "editor", "viewer"];
-const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 const errMsg = (e: unknown, fallback: string) =>
   e instanceof ApiRequestError ? e.message : fallback;
 
-function expiryLabel(expiresAt: string): string {
-  const days = Math.ceil((new Date(expiresAt).getTime() - Date.now()) / 86_400_000);
-  if (days <= 0) return "Expired";
-  if (days === 1) return "Expires in 1 day";
-  return `Expires in ${days} days`;
+function expiryDays(expiresAt: string): number {
+  return Math.ceil((new Date(expiresAt).getTime() - Date.now()) / 86_400_000);
 }
 
 async function copyToClipboard(text: string): Promise<boolean> {
@@ -71,6 +68,10 @@ async function copyToClipboard(text: string): Promise<boolean> {
  * no borders).
  */
 export function MembersManager({ scope, canManage }: { scope: ShareScope; canManage: boolean }) {
+  const t = useTranslations("workspace");
+  const tc = useTranslations("common");
+  const roleLabel = (r: string) =>
+    t(`roles.${r}` as "roles.admin" | "roles.editor" | "roles.viewer");
   const queryClient = useQueryClient();
   const membersKey = ["share-members", scope.kind, scope.id] as const;
   const { data: members, isLoading } = useQuery({
@@ -88,20 +89,20 @@ export function MembersManager({ scope, canManage }: { scope: ShareScope; canMan
     onSuccess: (m) => {
       setAccount("");
       void invalidate();
-      toast.success(`Added ${m.nickname ?? "member"}`);
+      toast.success(t("addedMember", { name: m.nickname ?? t("memberFallback") }));
     },
-    onError: (e) => toast.error(errMsg(e, "Couldn't add member")),
+    onError: (e) => toast.error(errMsg(e, t("addMemberFailed"))),
   });
   const roleMut = useMutation({
     mutationFn: (v: { memberId: string; nextRole: AssignableRole }) =>
       updateMemberRole(scope, v.memberId, v.nextRole),
     onSuccess: () => void invalidate(),
-    onError: (e) => toast.error(errMsg(e, "Couldn't change role")),
+    onError: (e) => toast.error(errMsg(e, t("changeRoleFailed"))),
   });
   const removeMut = useMutation({
     mutationFn: (memberId: string) => removeMember(scope, memberId),
     onSuccess: () => void invalidate(),
-    onError: (e) => toast.error(errMsg(e, "Couldn't remove member")),
+    onError: (e) => toast.error(errMsg(e, t("removeMemberFailed"))),
   });
 
   // ── Invite links ──────────────────────────────────────────────────────────
@@ -121,18 +122,18 @@ export function MembersManager({ scope, canManage }: { scope: ShareScope; canMan
       setCreated(inv);
       void invalidateInvites();
       const copied = await copyToClipboard(inviteUrl(inv.token));
-      toast.success(copied ? "Invite link copied to clipboard" : "Invite link created");
+      toast.success(copied ? t("inviteLinkCopied") : t("inviteLinkCreated"));
     },
-    onError: (e) => toast.error(errMsg(e, "Couldn't create invite link")),
+    onError: (e) => toast.error(errMsg(e, t("createInviteFailed"))),
   });
   const revokeLinkMut = useMutation({
     mutationFn: (inviteId: string) => revokeInvite(scope, inviteId),
     onSuccess: (_data, inviteId) => {
       if (created?.inviteId === inviteId) setCreated(null);
       void invalidateInvites();
-      toast.success("Invite link revoked");
+      toast.success(t("inviteLinkRevoked"));
     },
-    onError: (e) => toast.error(errMsg(e, "Couldn't revoke link")),
+    onError: (e) => toast.error(errMsg(e, t("revokeLinkFailed"))),
   });
 
   const filtered = useMemo(() => {
@@ -156,7 +157,7 @@ export function MembersManager({ scope, canManage }: { scope: ShareScope; canMan
           }}
         >
           <Input
-            placeholder="Add by email or phone"
+            placeholder={t("addByEmailOrPhone")}
             value={account}
             onChange={(event) => setAccount(event.target.value)}
             className="flex-1"
@@ -165,17 +166,17 @@ export function MembersManager({ scope, canManage }: { scope: ShareScope; canMan
             value={role}
             onChange={(event) => setRole(event.target.value as AssignableRole)}
             className="h-9 rounded-md bg-input/30 px-2 text-sm text-foreground outline-none"
-            aria-label="Role"
+            aria-label={t("role")}
           >
             {ROLES.map((r) => (
               <option key={r} value={r}>
-                {cap(r)}
+                {roleLabel(r)}
               </option>
             ))}
           </select>
           <Button type="submit" disabled={!account.trim() || addMut.isPending}>
             <IconUserPlus className="size-4" />
-            Add
+            {t("add")}
           </Button>
         </form>
       )}
@@ -184,7 +185,7 @@ export function MembersManager({ scope, canManage }: { scope: ShareScope; canMan
         <div className="relative">
           <IconSearch className="absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" />
           <Input
-            placeholder="Search members"
+            placeholder={t("searchMembers")}
             value={search}
             onChange={(event) => setSearch(event.target.value)}
             className="pl-8"
@@ -200,7 +201,9 @@ export function MembersManager({ scope, canManage }: { scope: ShareScope; canMan
             ))}
           </>
         ) : filtered.length === 0 ? (
-          <p className="px-1.5 py-6 text-center text-sm text-muted-foreground">No members found.</p>
+          <p className="px-1.5 py-6 text-center text-sm text-muted-foreground">
+            {t("noMembersFound")}
+          </p>
         ) : (
           filtered.map((member) => (
             <div key={member.memberId} className="flex items-center gap-3 rounded-lg px-1.5 py-1.5">
@@ -208,14 +211,16 @@ export function MembersManager({ scope, canManage }: { scope: ShareScope; canMan
               <div className="flex min-w-0 flex-1 flex-col">
                 <span className="truncate text-sm text-foreground">
                   {member.nickname ?? member.userId}
-                  {member.isSelf && <span className="text-muted-foreground"> (you)</span>}
+                  {member.isSelf && (
+                    <span className="text-muted-foreground"> {t("youSuffix")}</span>
+                  )}
                 </span>
-                <span className="text-xs capitalize text-muted-foreground">{member.role}</span>
+                <span className="text-xs text-muted-foreground">{roleLabel(member.role)}</span>
               </div>
               {canManage && !member.isOwner && !member.isSelf ? (
                 <DropdownMenu>
                   <DropdownMenuTrigger
-                    aria-label="Member actions"
+                    aria-label={t("memberActions")}
                     className="flex size-7 items-center justify-center rounded-md text-white/55 outline-none transition-colors hover:bg-white/[0.08] hover:text-white"
                   >
                     <IconDotsVertical className="size-4" />
@@ -227,7 +232,7 @@ export function MembersManager({ scope, canManage }: { scope: ShareScope; canMan
                         onSelect={() => roleMut.mutate({ memberId: member.memberId, nextRole: r })}
                       >
                         <IconCheck className={`size-4 ${member.role === r ? "" : "opacity-0"}`} />
-                        {cap(r)}
+                        {roleLabel(r)}
                       </DropdownMenuItem>
                     ))}
                     <DropdownMenuSeparator />
@@ -236,12 +241,14 @@ export function MembersManager({ scope, canManage }: { scope: ShareScope; canMan
                       onSelect={() => removeMut.mutate(member.memberId)}
                     >
                       <IconTrash className="size-4" />
-                      Remove
+                      {tc("remove")}
                     </DropdownMenuItem>
                   </DropdownMenuContent>
                 </DropdownMenu>
               ) : (
-                member.isOwner && <span className="text-xs text-muted-foreground">Owner</span>
+                member.isOwner && (
+                  <span className="text-xs text-muted-foreground">{t("roles.owner")}</span>
+                )
               )}
             </div>
           ))
@@ -254,12 +261,12 @@ export function MembersManager({ scope, canManage }: { scope: ShareScope; canMan
           <div>
             <div className="flex items-center gap-2 text-sm font-medium">
               <IconLink className="size-4 text-muted-foreground" />
-              Invite link
+              {t("inviteLink")}
             </div>
             <p className="mt-0.5 text-xs text-muted-foreground">
-              Anyone with the link can join{" "}
-              {scope.kind === "workspace" ? "this team" : "this project"} at the role you pick,
-              until you revoke it.
+              {t("inviteLinkHint", {
+                scope: scope.kind === "workspace" ? t("thisTeam") : t("thisProject"),
+              })}
             </p>
           </div>
 
@@ -274,12 +281,12 @@ export function MembersManager({ scope, canManage }: { scope: ShareScope; canMan
                 variant="secondary"
                 onClick={async () => {
                   const ok = await copyToClipboard(inviteUrl(created.token));
-                  if (ok) toast.success("Copied");
-                  else toast.error("Couldn't copy");
+                  if (ok) toast.success(tc("copied"));
+                  else toast.error(t("copyFailed"));
                 }}
               >
                 <IconCopy className="size-4" />
-                Copy
+                {tc("copy")}
               </Button>
             </div>
           )}
@@ -289,11 +296,11 @@ export function MembersManager({ scope, canManage }: { scope: ShareScope; canMan
               value={linkRole}
               onChange={(event) => setLinkRole(event.target.value as AssignableRole)}
               className="h-9 rounded-md bg-input/30 px-2 text-sm text-foreground outline-none"
-              aria-label="Invite link role"
+              aria-label={t("inviteLinkRole")}
             >
               {ROLES.map((r) => (
                 <option key={r} value={r}>
-                  {cap(r)}
+                  {roleLabel(r)}
                 </option>
               ))}
             </select>
@@ -304,7 +311,7 @@ export function MembersManager({ scope, canManage }: { scope: ShareScope; canMan
               onClick={() => createLinkMut.mutate()}
             >
               <IconLink className="size-4" />
-              Create link
+              {t("createLink")}
             </Button>
           </div>
 
@@ -319,16 +326,21 @@ export function MembersManager({ scope, canManage }: { scope: ShareScope; canMan
                     <IconLink className="size-4" />
                   </span>
                   <div className="flex min-w-0 flex-1 flex-col">
-                    <span className="truncate text-sm text-foreground">{cap(inv.role)} link</span>
+                    <span className="truncate text-sm text-foreground">
+                      {t("roleLink", { role: roleLabel(inv.role) })}
+                    </span>
                     <span className="text-xs text-muted-foreground">
-                      {expiryLabel(inv.expiresAt)}
+                      {(() => {
+                        const days = expiryDays(inv.expiresAt);
+                        return days <= 0 ? t("expired") : t("expiresInDays", { days });
+                      })()}
                     </span>
                   </div>
                   <button
                     type="button"
                     onClick={() => revokeLinkMut.mutate(inv.inviteId)}
                     className="flex size-7 items-center justify-center rounded-md text-white/55 outline-none transition-colors hover:bg-white/[0.08] hover:text-white"
-                    aria-label="Revoke link"
+                    aria-label={t("revokeLink")}
                   >
                     <IconTrash className="size-4" />
                   </button>

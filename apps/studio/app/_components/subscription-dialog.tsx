@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { useTranslations } from "next-intl";
 import {
   IconArrowRight,
   IconBolt,
@@ -67,48 +68,18 @@ function accentForPlan(plan: MembershipPlan, index: number): PlanAccent | null {
 
 const EMPTY_PLANS: MembershipPlan[] = [];
 
-const FAQ_ITEMS: { question: string; answer: string }[] = [
-  {
-    question: "What are compute credits?",
-    answer:
-      "Compute credits are the currency for AI generation in FizzStudio. Every image, video, and audio job deducts credits based on the model, resolution, and output count — the exact cost is shown next to Generate before you submit.",
-  },
-  {
-    question: "What happens if my generation fails?",
-    answer:
-      "Credits are refunded automatically when a generation fails for good. You only pay for jobs that produce output.",
-  },
-  {
-    question: "Do unused credits roll over?",
-    answer:
-      "Credits included with your plan refresh each billing cycle and follow the plan rules shown at checkout. Top-up credits stay in your wallet until you spend them.",
-  },
-  {
-    question: "Can I use FizzStudio for free?",
-    answer:
-      "Yes. Free accounts include daily generation quotas so you can try the studio. Upgrade when you need more volume, private generations, or faster queues.",
-  },
-  {
-    question: "What is the difference between a subscription and credit top-ups?",
-    answer:
-      "A subscription grants a recurring credit allowance plus plan perks like queue priority, higher concurrency, and support. Top-ups are one-time credit purchases — and paid plans get a discount on them.",
-  },
-  {
-    question: "How do team plans share credits?",
-    answer:
-      "Team plans pool credits in a shared workspace wallet that every seat draws from, so the whole team works against one balance.",
-  },
-  {
-    question: "How do I cancel or change my plan?",
-    answer:
-      "Manage your subscription from the account menu under Billing & Subscription. Plan changes take effect at the end of the current billing cycle.",
-  },
-  {
-    question: "Can I use my generations commercially?",
-    answer:
-      "Paid plans include commercial use of your generated outputs, subject to the Terms of Service.",
-  },
-];
+// FAQ copy lives in the "billing" message namespace under faq.<key>.question
+// and faq.<key>.answer; this array only fixes the display order.
+const FAQ_KEYS = [
+  "computeCredits",
+  "generationFails",
+  "rollover",
+  "freeTier",
+  "subscriptionVsTopups",
+  "teamShareCredits",
+  "cancelOrChange",
+  "commercialUse",
+] as const;
 
 function rgba(hex: string, alpha: number) {
   const value = hex.replace("#", "");
@@ -125,6 +96,8 @@ export function SubscriptionDialog({
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }) {
+  const t = useTranslations("billing");
+  const tc = useTranslations("common");
   const country = useCountry();
   const currency = membershipCurrencyForCountry(country);
   const { user, signIn } = useAuth();
@@ -187,7 +160,7 @@ export function SubscriptionDialog({
       })
       .catch((error) => {
         if (cancelled) return;
-        const message = error instanceof Error ? error.message : "Membership plans failed to load";
+        const message = error instanceof Error ? error.message : t("toast.plansLoadFailed");
         setPlansResult({ key: plansKey, plans: [], error: message });
         toast.error(message);
       });
@@ -207,7 +180,7 @@ export function SubscriptionDialog({
         return;
       }
       if (price.subjectType === "workspace") {
-        toast.error("Team checkout requires the workspace API to be wired in this Studio app");
+        toast.error(t("toast.teamCheckoutUnavailable"));
         return;
       }
 
@@ -222,23 +195,23 @@ export function SubscriptionDialog({
           backUrl: `${baseUrl}?payment=cancelled`,
         });
         if (result.order.status === "fulfilled" && !result.paymentIntent) {
-          toast.success("Membership activated");
+          toast.success(t("toast.membershipActivated"));
           onOpenChange(false);
           return;
         }
         const checkoutUrl = result.paymentIntent?.checkoutUrl;
         if (!checkoutUrl) {
-          toast.error("Payment checkout URL was not returned");
+          toast.error(t("toast.checkoutUrlMissing"));
           return;
         }
         window.location.href = checkoutUrl;
       } catch (error) {
-        toast.error(error instanceof Error ? error.message : "Payment failed");
+        toast.error(error instanceof Error ? error.message : t("toast.paymentFailed"));
       } finally {
         setPayingPriceId(null);
       }
     },
-    [onOpenChange, signIn, signedIn]
+    [onOpenChange, signIn, signedIn, t]
   );
 
   // Resume the checkout a signed-out visitor started: once login lands the
@@ -262,12 +235,12 @@ export function SubscriptionDialog({
     <div
       role="dialog"
       aria-modal="true"
-      aria-label="Choose your FizzStudio plan"
+      aria-label={t("dialogLabel")}
       className="fixed left-0 top-0 z-50 h-[100dvh] w-screen overflow-hidden bg-background text-foreground"
     >
       <button
         type="button"
-        aria-label="Close subscription dialog"
+        aria-label={t("closeDialog")}
         onClick={() => onOpenChange(false)}
         className="fixed right-4 top-4 z-20 flex size-11 items-center justify-center rounded-full bg-popover text-muted-foreground shadow-2xl transition-colors hover:bg-secondary hover:text-foreground sm:right-6 sm:top-6"
       >
@@ -278,10 +251,10 @@ export function SubscriptionDialog({
         <div className="flex min-h-full w-full flex-col">
           <header className="flex flex-col items-center gap-3 pb-8 pt-14 text-center sm:pt-12">
             <h1 className="text-3xl font-bold uppercase tracking-tight sm:text-4xl">
-              Pick your plan
+              {t("header.title")}
             </h1>
             <p className="max-w-2xl text-base leading-7 text-muted-foreground sm:text-lg">
-              Upgrade for more compute credits, faster queues, and pro features
+              {t("header.subtitle")}
             </p>
             <Tabs
               className="mt-3"
@@ -290,10 +263,10 @@ export function SubscriptionDialog({
             >
               <TabsList>
                 <TabsTrigger value="month" className="px-2.5">
-                  Monthly
+                  {t("interval.monthly")}
                 </TabsTrigger>
                 <TabsTrigger value="year" className="px-2.5">
-                  Yearly
+                  {t("interval.yearly")}
                   <span
                     className="rounded-full px-1.5 py-px text-[10px] font-bold text-black/85"
                     style={{
@@ -315,7 +288,7 @@ export function SubscriptionDialog({
               <TabsList>
                 <TabsTrigger value="membership_plan" className="px-2.5">
                   <IconCrown stroke={1.9} />
-                  Individual
+                  {t("productType.individual")}
                 </TabsTrigger>
                 {/* Teams checkout isn't wired yet (workspace API). Honest UI:
                     disabled + "Coming soon", as a real focusable button so
@@ -329,10 +302,10 @@ export function SubscriptionDialog({
                       className="inline-flex h-[calc(100%-1px)] cursor-not-allowed items-center justify-center gap-1.5 whitespace-nowrap rounded-md px-2.5 py-0.5 text-xs font-medium text-muted-foreground/60 [&_svg]:size-3.5 [&_svg]:shrink-0"
                     >
                       <IconUsersGroup stroke={1.9} />
-                      Teams
+                      {t("productType.teams")}
                     </button>
                   </TooltipTrigger>
-                  <TooltipContent sideOffset={6}>Coming soon</TooltipContent>
+                  <TooltipContent sideOffset={6}>{t("comingSoon")}</TooltipContent>
                 </Tooltip>
               </TabsList>
             </Tabs>
@@ -344,20 +317,17 @@ export function SubscriptionDialog({
             <div className="flex min-h-[380px] items-center justify-center rounded-3xl bg-card p-8 text-center shadow-2xl">
               <div className="max-w-md">
                 <p className="text-lg font-semibold">
-                  {errorMessage
-                    ? "Membership plans could not load"
-                    : "No membership plans available"}
+                  {errorMessage ? t("empty.errorTitle") : t("empty.title")}
                 </p>
                 <p className="mt-2 text-sm leading-6 text-muted-foreground">
-                  {errorMessage ||
-                    "Create membership plans and local prices in Admin Billing first. Airwallex provider bindings are not required for local preview."}
+                  {errorMessage || t("empty.description")}
                 </p>
                 <button
                   type="button"
                   onClick={() => setReloadKey((value) => value + 1)}
                   className="mt-5 inline-flex h-11 items-center justify-center rounded-full bg-primary px-5 text-sm font-semibold text-primary-foreground transition-opacity hover:opacity-90"
                 >
-                  Retry
+                  {tc("retry")}
                 </button>
               </div>
             </div>
@@ -393,12 +363,9 @@ export function SubscriptionDialog({
           <footer className="mt-auto flex flex-col gap-3 py-5 text-xs leading-5 text-muted-foreground sm:flex-row sm:items-center sm:justify-between">
             <div className="flex items-center gap-2">
               <IconShieldCheck className="size-4" stroke={1.9} />
-              <span>Secure checkout. Currency is selected from your request region.</span>
+              <span>{t("footer.secureCheckout")}</span>
             </div>
-            <p className="max-w-3xl">
-              Subscription benefits renew by billing cycle; included compute credits are issued
-              after successful payment and follow the plan rules shown at checkout.
-            </p>
+            <p className="max-w-3xl">{t("footer.disclaimer")}</p>
           </footer>
         </div>
       </div>
@@ -422,8 +389,9 @@ function PlanCard({
   interval: BillingInterval;
   onSubscribe: () => void;
 }) {
+  const t = useTranslations("billing");
   const badge = stringField(plan.marketing, "badge");
-  const featureItems = membershipFeatureItems(plan);
+  const featureItems = membershipFeatureItems(plan, t);
   const originalAmount = price ? originalAmountMinor(price) : null;
   const hasOriginal =
     price && originalAmount ? BigInt(originalAmount) > BigInt(price.amountMinor) : false;
@@ -490,7 +458,7 @@ function PlanCard({
                 ) : null}
               </div>
               <p className="mt-2 min-h-12 text-sm leading-6 text-muted-foreground">
-                {plan.description || "Membership access for AI creative workflows."}
+                {plan.description || t("plan.defaultDescription")}
               </p>
             </div>
           </div>
@@ -512,13 +480,15 @@ function PlanCard({
                   {formatMoneyMinor(price.amountMinor, price.currency)}
                 </span>
                 <span className="pb-1 text-sm font-medium text-muted-foreground">
-                  {intervalLabel(price.interval || interval)}
+                  {intervalLabel(price.interval || interval, t)}
                 </span>
               </div>
             ) : (
               <div>
-                <span className="text-5xl font-bold leading-none tracking-tight">Custom</span>
-                <p className="mt-2 text-sm text-muted-foreground">Contact for pricing</p>
+                <span className="text-5xl font-bold leading-none tracking-tight">
+                  {t("plan.custom")}
+                </span>
+                <p className="mt-2 text-sm text-muted-foreground">{t("plan.contactForPricing")}</p>
               </div>
             )}
           </div>
@@ -544,7 +514,7 @@ function PlanCard({
                     : undefined
                 }
               >
-                {paying ? <IconLoader2 className="size-5 animate-spin" /> : "Get Started"}
+                {paying ? <IconLoader2 className="size-5 animate-spin" /> : t("plan.getStarted")}
                 {!paying ? <IconArrowRight className="size-4" stroke={2.2} /> : null}
               </button>
             ) : (
@@ -552,7 +522,7 @@ function PlanCard({
                 href="mailto:business@fizzdragon.com"
                 className="flex h-12 w-full items-center justify-center gap-2 rounded-2xl bg-primary text-base font-semibold text-primary-foreground transition-opacity hover:opacity-90"
               >
-                Contact Sales
+                {t("plan.contactSales")}
                 <IconArrowRight className="size-4" stroke={2.2} />
               </a>
             )}
@@ -563,17 +533,19 @@ function PlanCard({
             <div className="flex items-center justify-between gap-4 py-4">
               <div className="flex items-center gap-2 text-sm font-medium">
                 <IconBolt className="size-4" stroke={1.9} style={{ color: accent?.base }} />
-                <span>Included in plan</span>
+                <span>{t("plan.includedInPlan")}</span>
               </div>
               <span className="text-sm font-bold" style={{ color: accent?.base }}>
                 {price
-                  ? `${formatInteger(plan.includedComputeCredits)} compute credits`
-                  : "Custom credits amount"}
+                  ? t("plan.computeCreditsAmount", {
+                      amount: formatInteger(plan.includedComputeCredits),
+                    })
+                  : t("plan.customCreditsAmount")}
               </span>
             </div>
             <p className="text-xs font-medium text-muted-foreground">
-              {plan.includedSeats} seats
-              {plan.maxSeats ? ` · up to ${plan.maxSeats}` : ""}
+              {t("plan.seats", { count: plan.includedSeats })}
+              {plan.maxSeats ? t("plan.seatsUpTo", { max: plan.maxSeats }) : ""}
             </p>
             <div className="mt-4 h-px bg-border" />
           </div>
@@ -600,27 +572,26 @@ function PlanCard({
 }
 
 function FaqSection() {
+  const t = useTranslations("billing");
   const [openIndex, setOpenIndex] = useState<number | null>(0);
   return (
     <section className="mx-auto mt-14 w-full max-w-6xl pb-12">
       <div className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_minmax(0,2fr)]">
         <h2 className="text-4xl font-semibold leading-[1.1] tracking-tight sm:text-5xl">
-          Your questions,
-          <br />
-          answered
+          {t.rich("faq.heading", { br: () => <br /> })}
         </h2>
         <div>
-          {FAQ_ITEMS.map((item, index) => {
+          {FAQ_KEYS.map((key, index) => {
             const open = openIndex === index;
             return (
-              <div key={item.question}>
+              <div key={key}>
                 <button
                   type="button"
                   aria-expanded={open}
                   onClick={() => setOpenIndex(open ? null : index)}
                   className="flex w-full items-center justify-between gap-4 py-5 text-left"
                 >
-                  <span className="text-base font-medium">{item.question}</span>
+                  <span className="text-base font-medium">{t(`faq.${key}.question`)}</span>
                   <span className="flex size-8 shrink-0 items-center justify-center rounded-full bg-secondary text-muted-foreground">
                     <IconChevronRight
                       className={cn(
@@ -639,7 +610,7 @@ function FaqSection() {
                 >
                   <div className="overflow-hidden">
                     <p className="pb-5 pr-12 text-sm leading-7 text-muted-foreground">
-                      {item.answer}
+                      {t(`faq.${key}.answer`)}
                     </p>
                   </div>
                 </div>
@@ -704,27 +675,32 @@ function formatInteger(value: string | number) {
   return new Intl.NumberFormat().format(Number(value));
 }
 
-function intervalLabel(interval: string) {
-  if (interval === "month") return "/month";
-  if (interval === "year") return "/year";
-  return "one-time";
+// Translator handle from useTranslations("billing"); helpers receive it so
+// they can stay module-level while emitting localized copy.
+type BillingTranslator = ReturnType<typeof useTranslations<"billing">>;
+
+function intervalLabel(interval: string, t: BillingTranslator) {
+  if (interval === "month") return t("plan.perMonth");
+  if (interval === "year") return t("plan.perYear");
+  return t("plan.oneTime");
 }
 
-function membershipFeatureItems(plan: MembershipPlan) {
+function membershipFeatureItems(plan: MembershipPlan, t: BillingTranslator) {
   const items: string[] = [];
   const flags = plan.featureFlags ?? {};
   const limits = plan.limits ?? {};
   const images = numberField(limits, "approximateImagesPerMonth");
   const concurrentJobs = numberField(limits, "concurrentJobs");
   const queuedJobs = numberField(limits, "queuedJobs");
-  if (images !== null) items.push(`Up to ${formatInteger(images)} image generations per month`);
-  if (flags.privateGenerations) items.push("Private generations");
-  if (flags.advancedWorkflows) items.push("Advanced workflows");
-  if (flags.prioritySupport) items.push("Priority support");
-  if (flags.sharedCredits) items.push("Shared team credits");
-  if (concurrentJobs !== null) items.push(`${concurrentJobs} concurrent jobs`);
-  if (queuedJobs !== null) items.push(`${queuedJobs} queued jobs`);
-  if (plan.topupDiscountBps > 0) items.push(`${plan.topupDiscountBps / 100}% off credit top-ups`);
+  if (images !== null) items.push(t("features.imagesPerMonth", { count: formatInteger(images) }));
+  if (flags.privateGenerations) items.push(t("features.privateGenerations"));
+  if (flags.advancedWorkflows) items.push(t("features.advancedWorkflows"));
+  if (flags.prioritySupport) items.push(t("features.prioritySupport"));
+  if (flags.sharedCredits) items.push(t("features.sharedCredits"));
+  if (concurrentJobs !== null) items.push(t("features.concurrentJobs", { count: concurrentJobs }));
+  if (queuedJobs !== null) items.push(t("features.queuedJobs", { count: queuedJobs }));
+  if (plan.topupDiscountBps > 0)
+    items.push(t("features.topupDiscount", { percent: plan.topupDiscountBps / 100 }));
   return items.slice(0, 6);
 }
 

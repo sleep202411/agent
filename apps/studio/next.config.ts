@@ -1,4 +1,9 @@
 import type { NextConfig } from "next";
+import createNextIntlPlugin from "next-intl/plugin";
+
+// next-intl (no URL routing) — resolves locale per request from the
+// NEXT_LOCALE cookie / Accept-Language. See i18n/request.ts.
+const withNextIntl = createNextIntlPlugin("./i18n/request.ts");
 
 // Where to proxy `/aurora/*` (the NestJS backend).
 //  - Prod (default): studio.fizzdragon.com, which keeps the `/aurora` prefix
@@ -30,4 +35,4 @@ const nextConfig: NextConfig = {
   },
 };
 
-export default nextConfig;
+export default withNextIntl(nextConfig);

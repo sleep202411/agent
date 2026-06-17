@@ -1,6 +1,7 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
+import { useTranslations } from "next-intl";
 import { IconBolt } from "@tabler/icons-react";
 import { api } from "@/lib/api";
 import { useActiveWorkspaceId } from "@/app/_components/workspace-context";
@@ -72,11 +73,16 @@ export function useComputeWalletBalance(enabled = true) {
 
 /** Compute-credits balance pill (header + canvas chrome). */
 export function CreditsBadge({ className }: { className?: string }) {
+  const t = useTranslations("shell");
   const { data } = useComputeWalletBalance();
   const title =
     data != null
-      ? `Compute credits · available ${data.available.toLocaleString()} · held ${data.held.toLocaleString()} · total ${data.total.toLocaleString()}`
-      : "Compute credits";
+      ? t("credits.tooltipDetailed", {
+          available: data.available.toLocaleString(),
+          held: data.held.toLocaleString(),
+          total: data.total.toLocaleString(),
+        })
+      : t("credits.tooltip");
 
   return (
     <span

@@ -1,7 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { useTranslations } from "next-intl";
+import { useRouter } from "@/i18n/navigation";
 import { IconChevronDown, IconPlus, IconUpload, IconUserPlus, IconX } from "@tabler/icons-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
@@ -28,7 +29,6 @@ import { Field, FIELD_BUTTON, FIELD_CONTROL, FIELD_CONTROL_TEXTAREA } from "@/co
 import type { WorkspaceRef } from "@/lib/collab/projects-api";
 import { useWorkspace } from "./workspace-context";
 
-const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 const canManage = (ws: WorkspaceRef) => ws.role === "owner" || ws.role === "admin";
 
 /** Preset team icons shipped as static assets (no upload backend needed). */
@@ -56,6 +56,17 @@ function WsAvatar({ ws, size }: { ws: WorkspaceRef; size: string }) {
 }
 
 export function WorkspaceSwitcher() {
+  const t = useTranslations("workspace");
+  const tc = useTranslations("common");
+  const roleLabel = (r: string) =>
+    t(
+      `roles.${r}` as
+        | "roles.owner"
+        | "roles.admin"
+        | "roles.editor"
+        | "roles.viewer"
+        | "roles.member"
+    );
   const router = useRouter();
   const { workspaces, activeWorkspace, setActiveWorkspaceId, createTeam } = useWorkspace();
   const [creating, setCreating] = useState(false);
@@ -86,9 +97,9 @@ export function WorkspaceSwitcher() {
           : undefined;
       await createTeam(name, teamDescription, avatarUrl);
       resetCreate();
-      toast.success(`Team "${name}" created`);
+      toast.success(t("teamCreated", { name }));
     } catch {
-      toast.error("Couldn't create the team");
+      toast.error(t("createTeamFailed"));
     } finally {
       setBusy(false);
     }
@@ -104,7 +115,9 @@ export function WorkspaceSwitcher() {
         </DropdownMenuTrigger>
 
         <DropdownMenuContent align="end" sideOffset={8} className="w-80">
-          <DropdownMenuLabel className="text-muted-foreground">Switch Teams</DropdownMenuLabel>
+          <DropdownMenuLabel className="text-muted-foreground">
+            {t("switchTeams")}
+          </DropdownMenuLabel>
 
           {workspaces.map((ws) => (
             <DropdownMenuItem
@@ -118,11 +131,12 @@ export function WorkspaceSwitcher() {
                 <span className="truncate text-sm font-medium text-foreground">
                   {ws.name}
                   {ws.id === activeWorkspace.id && (
-                    <span className="text-muted-foreground"> ·&nbsp;current</span>
+                    <span className="text-muted-foreground"> ·&nbsp;{t("current")}</span>
                   )}
                 </span>
                 <span className="text-xs text-muted-foreground">
-                  {cap(ws.role ?? "member")} · {ws.type === "team" ? "Team" : "Personal"}
+                  {roleLabel(ws.role ?? "member")} ·{" "}
+                  {ws.type === "team" ? t("teamType") : t("personalType")}
                 </span>
               </span>
               {ws.type === "team" && canManage(ws) && (
@@ -137,7 +151,7 @@ export function WorkspaceSwitcher() {
                   className="flex h-7 shrink-0 items-center gap-1 rounded-full bg-white/[0.06] px-2.5 text-xs font-medium text-white/70 transition-colors hover:bg-white/[0.1] hover:text-white"
                 >
                   <IconUserPlus className="size-3.5" />
-                  Invite
+                  {t("invite")}
                 </button>
               )}
             </DropdownMenuItem>
@@ -150,7 +164,7 @@ export function WorkspaceSwitcher() {
             className="gap-2 rounded-lg p-2 text-sm"
           >
             <IconPlus className="size-4" />
-            Create team
+            {t("createTeam")}
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
@@ -165,7 +179,7 @@ export function WorkspaceSwitcher() {
           <DialogClose asChild>
             <button
               type="button"
-              aria-label="Close"
+              aria-label={tc("close")}
               className="absolute top-5 right-5 flex size-9 items-center justify-center rounded-full text-muted-foreground outline-none transition-colors hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50"
             >
               <IconX className="size-5" stroke={2} />
@@ -173,7 +187,7 @@ export function WorkspaceSwitcher() {
           </DialogClose>
 
           <DialogHeader className="px-6 pt-6 pb-4">
-            <DialogTitle className="text-2xl">Create Team</DialogTitle>
+            <DialogTitle className="text-2xl">{t("createTeamTitle")}</DialogTitle>
           </DialogHeader>
 
           <div className="grid gap-6 px-6 pb-2 sm:grid-cols-2">
@@ -190,12 +204,10 @@ export function WorkspaceSwitcher() {
                 aria-hidden
               />
               <h2 className="relative text-2xl font-semibold leading-tight">
-                Collaborate in
-                <br />
-                real-time.
+                {t("collaborateRealtime")}
               </h2>
               <div className="relative flex items-center gap-2 self-start rounded-full bg-card/90 px-2.5 py-1.5 backdrop-blur-xl">
-                <span className="text-xs font-medium">My Team</span>
+                <span className="text-xs font-medium">{t("myTeam")}</span>
                 <div className="flex -space-x-1.5">
                   {["aurora", "ocean", "magenta"].map((id) => (
                     // eslint-disable-next-line @next/next/no-img-element -- bundled preset
@@ -210,16 +222,13 @@ export function WorkspaceSwitcher() {
 
             {/* Form */}
             <div className="flex flex-col gap-4">
-              <p className="text-sm text-muted-foreground">
-                Teams are collaborative spaces for working with colleagues, managing projects, and
-                organizing resources.
-              </p>
+              <p className="text-sm text-muted-foreground">{t("createTeamDescription")}</p>
 
-              <Field label="Team Name" htmlFor="team-name">
+              <Field label={t("teamName")} htmlFor="team-name">
                 <Input
                   id="team-name"
                   autoFocus
-                  placeholder="e.g. Marketing Design"
+                  placeholder={t("teamNamePlaceholder")}
                   value={teamName}
                   maxLength={120}
                   className={FIELD_CONTROL}
@@ -230,10 +239,10 @@ export function WorkspaceSwitcher() {
                 />
               </Field>
 
-              <Field label="Description" htmlFor="team-description" hint="(optional)">
+              <Field label={t("description")} htmlFor="team-description" hint={t("optional")}>
                 <Textarea
                   id="team-description"
-                  placeholder="What is this team about?"
+                  placeholder={t("teamDescriptionPlaceholder")}
                   value={teamDescription}
                   maxLength={500}
                   rows={3}
@@ -243,14 +252,14 @@ export function WorkspaceSwitcher() {
               </Field>
 
               <div className="space-y-2">
-                <span className="text-sm font-medium">Team Icon</span>
+                <span className="text-sm font-medium">{t("teamIcon")}</span>
                 <div className="flex flex-wrap items-center gap-2">
                   {/* Upload needs the storage backend (deferred) — honest disabled. */}
                   <button
                     type="button"
                     disabled
-                    title="Upload your own — coming soon"
-                    aria-label="Upload your own icon (coming soon)"
+                    title={t("uploadComingSoon")}
+                    aria-label={t("uploadIconComingSoon")}
                     className="flex size-11 cursor-not-allowed items-center justify-center rounded-full bg-input/30 text-muted-foreground opacity-50"
                   >
                     <IconUpload className="size-4" stroke={1.8} />
@@ -259,7 +268,7 @@ export function WorkspaceSwitcher() {
                     <button
                       key={id}
                       type="button"
-                      aria-label={`${id} icon`}
+                      aria-label={t("presetIconLabel", { name: id })}
                       aria-pressed={teamIcon === id}
                       onClick={() => setTeamIcon(id)}
                       className={cn(
@@ -280,14 +289,14 @@ export function WorkspaceSwitcher() {
 
           <DialogFooter className="px-6 pt-2 pb-6">
             <Button variant="ghost" className={FIELD_BUTTON} onClick={resetCreate}>
-              Cancel
+              {tc("cancel")}
             </Button>
             <Button
               className={FIELD_BUTTON}
               onClick={() => void onCreateTeam()}
               disabled={!teamName.trim() || busy}
             >
-              Create team
+              {t("createTeam")}
             </Button>
           </DialogFooter>
         </DialogContent>
