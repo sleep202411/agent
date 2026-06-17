@@ -18,6 +18,7 @@
  *   - Membership check: NOT cached — owner adds/removes shift truth.
  */
 import { Inject, Injectable, Logger } from '@nestjs/common';
+import { resolveUserAvatar } from './avatar';
 import Redis from 'ioredis';
 import { createHash } from 'crypto';
 import type { LookupUserDTO } from '@repo/shared/users';
@@ -44,6 +45,40 @@ export class UsersService {
     private readonly javaLookup: JavaUserLookupService,
     @Inject(REDIS) private readonly redis: Redis,
   ) {}
+
+  /**
+   * The CURRENT user's profile for the studio shell: proxies Java
+   * `/user/query/user/info` (cookie-forwarded) and resolves the avatar to a
+   * final, ready-to-use URL (custom image, else a deterministic DiceBear face)
+   * so clients don't each re-implement host-prefixing + the fallback. Null when
+   * not logged in.
+   */
+  async me(cookie: string): Promise<{
+    id: string;
+    nickName: string | null;
+    email: string | null;
+    phone: string | null;
+    avatar: string;
+  } | null> {
+    const info = await this.javaLookup.findCurrentUser(cookie);
+    if (!info || info.id == null) return null;
+    const str = (v: unknown): string | null =>
+      typeof v === 'string' && v.trim()
+        ? v
+        : typeof v === 'number'
+          ? String(v)
+          : null;
+    const rawAvatar =
+      (typeof info.headImg === 'string' ? info.headImg : null) ??
+      (typeof info.avatar === 'string' ? info.avatar : null);
+    return {
+      id: String(info.id),
+      nickName: str(info.nickName) ?? str(info.userName) ?? str(info.name),
+      email: str(info.email),
+      phone: str(info.phone),
+      avatar: await resolveUserAvatar(rawAvatar, String(info.id)),
+    };
+  }
 
   /**
    * Look up a single user by their Java user id. Returns the safe

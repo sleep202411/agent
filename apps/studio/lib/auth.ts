@@ -59,31 +59,29 @@ export async function login(identifier: string, password: string): Promise<void>
 /** Current session's user, or null when not signed in. */
 export async function getAuthUser(): Promise<AuthUser | null> {
   try {
-    const response = await fetch("/user/query/user/info", {
+    // Through the Nest BFF (not Java directly) so the avatar comes back as a
+    // final, ready-to-use URL (resolved custom image, else a DiceBear face) —
+    // user-info + avatar resolution is unified server-side.
+    const response = await fetch("/aurora/users/me", {
       credentials: "include",
       headers: { "accept-language": "en-US" },
     });
-    const json: {
-      code?: number | string;
-      info?: {
-        id?: string | number;
-        nickName?: string;
-        userName?: string;
-        name?: string;
-        email?: string;
-        phone?: string;
-        avatar?: string;
-        headImg?: string;
-      };
-    } = await response.json();
-    if (Number(json.code) !== 200 || !json.info) return null;
-    const info = json.info;
+    if (!response.ok) return null;
+    const body = (await response.json()) as Record<string, unknown> | null;
+    const data = (body && typeof body === "object" && "data" in body ? body.data : body) as {
+      id?: string | number;
+      nickName?: string | null;
+      email?: string | null;
+      phone?: string | null;
+      avatar?: string | null;
+    } | null;
+    if (!data || data.id == null) return null;
     return {
-      id: info.id,
-      nickName: info.nickName || info.userName || info.name,
-      email: info.email,
-      phone: info.phone,
-      avatar: info.avatar || info.headImg,
+      id: data.id,
+      nickName: data.nickName ?? undefined,
+      email: data.email ?? undefined,
+      phone: data.phone ?? undefined,
+      avatar: data.avatar ?? undefined,
     };
   } catch {
     return null;

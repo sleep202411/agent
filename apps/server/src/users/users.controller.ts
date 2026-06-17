@@ -49,6 +49,12 @@ export class UsersController {
     private readonly rateLimit: RateLimitService,
   ) {}
 
+  /** Current signed-in user's profile with a final (resolved) avatar URL. */
+  @Get('me')
+  async me(@ViewerCookie() cookie: string) {
+    return this.svc.me(cookie);
+  }
+
   @Get('lookup')
   async lookup(
     @CurrentUser() viewer: AuthUser,

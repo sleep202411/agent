@@ -35,6 +35,8 @@
     "@ai-sdk/alibaba": "^1.0.17",
     "@azure/storage-blob": "^12.31.0",
     "@azure/web-pubsub": "^1.2.0",
+    "@dicebear/collection": "9.4.2",
+    "@dicebear/core": "9.4.2",
     "@nestjs/common": "^11.0.1",
     "@nestjs/config": "^4.0.3",
     "@nestjs/core": "^11.0.1",
