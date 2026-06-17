@@ -340,6 +340,15 @@ export function buildImagePromptContext(
 ) {
   const shotValues = row.shotValues ?? [];
   const imagePromptCell = shotValues.find((item) => item.presetColumnKey === "image_prompt");
+  // Resolve the save-target column id from the COLUMN definition, not the
+  // per-shot cell: an empty shot comes back with `shotValues: null`, so the
+  // cell doesn't exist yet. persistTextCell upserts via /shotValue/input, so a
+  // valid column id is enough to create the cell on first autosave.
+  const imagePromptColumnId = String(
+    imagePromptCell?.shotColumnId ??
+      columns.find((item) => item.presetColumnKey === "image_prompt")?.id ??
+      ""
+  );
 
   if (imagePromptCell) {
     const content = getShotPromptContent(imagePromptCell, columns, imagePromptCell.shotColumnId);
@@ -347,7 +356,7 @@ export function buildImagePromptContext(
       return {
         prompt: content,
         referenceFields: [] as string[],
-        imagePromptColumnId: String(imagePromptCell.shotColumnId ?? ""),
+        imagePromptColumnId,
       };
     }
   }
@@ -372,9 +381,7 @@ export function buildImagePromptContext(
     return {
       prompt: promptParts.join(", "),
       referenceFields,
-      imagePromptColumnId: imagePromptCell?.shotColumnId
-        ? String(imagePromptCell.shotColumnId)
-        : "",
+      imagePromptColumnId,
     };
   }
 
@@ -414,7 +421,7 @@ export function buildImagePromptContext(
   return {
     prompt: promptParts.join(", "),
     referenceFields,
-    imagePromptColumnId: imagePromptCell?.shotColumnId ? String(imagePromptCell.shotColumnId) : "",
+    imagePromptColumnId,
   };
 }
 
