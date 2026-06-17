@@ -102,7 +102,7 @@ export function CanvasGenerationProvider({
   children: React.ReactNode;
 }) {
   const t = useTranslations("canvasOps");
-  const { getNode, getNodes } = useReactFlow();
+  const { getNodes } = useReactFlow();
   const graph = useCanvasGraphContext();
   const queryClient = useQueryClient();
   // Latest catalog without re-subscribing the realtime loop on catalog load
@@ -300,7 +300,9 @@ export function CanvasGenerationProvider({
 
   const submit = useCallback(
     async (nodeId: string) => {
-      const node = getNode(nodeId);
+      // Read source-of-truth from the doc (synchronous) so a card created/edited
+      // earlier in the same turn is found even before React Flow's store catches up.
+      const node = graph.getNode(nodeId);
       if (!node) return;
       const data = node.data as GenNodeData;
       const model = catalog?.models.find((m) => m.id === data.modelId);
@@ -369,12 +371,12 @@ export function CanvasGenerationProvider({
         toast.error(message);
       }
     },
-    [getNode, catalog, patch, queryClient, t]
+    [graph, catalog, patch, queryClient, t]
   );
 
   const cancel = useCallback(
     async (nodeId: string) => {
-      const node = getNode(nodeId);
+      const node = graph.getNode(nodeId);
       if (!node) return;
       const generation = (node.data as GenNodeData).generation;
       if (!generation?.jobId) return;
@@ -386,7 +388,7 @@ export function CanvasGenerationProvider({
         // Best-effort — the job may already be terminal server-side.
       }
     },
-    [getNode, patch]
+    [graph, patch]
   );
 
   const value = useMemo<GenerationContextValue>(

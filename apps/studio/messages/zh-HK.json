@@ -781,5 +781,25 @@
     "expand": "擴圖",
     "motion": "運動",
     "panorama": "全景圖"
+  },
+  "copilot": {
+    "title": "副駕",
+    "open": "開啟副駕",
+    "close": "關閉",
+    "send": "傳送",
+    "stop": "停止",
+    "placeholder": "問我任何關於這個專案的問題…",
+    "empty": "向副駕提問你的畫布、規劃要做甚麼，或了解工作室怎麼用。",
+    "thinking": "思考中…",
+    "error": "出錯了。",
+    "retry": "重試",
+    "you": "你",
+    "acting": "正在操作畫布…",
+    "acted": "已更新畫布",
+    "confirm": "確認",
+    "cancel": "取消",
+    "confirmRun": "執行這次生成？將消耗工作區算力積分。",
+    "confirmRemoveNode": "從畫布刪除這個節點？",
+    "confirmRemoveEdge": "刪除這條連線？"
   }
 }

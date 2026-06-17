@@ -26,6 +26,7 @@ import {
   IconArrowForwardUp,
   IconCloudUpload,
   IconHistory,
+  IconSparkles,
   IconLayoutGrid,
   IconMagnet,
   IconMap,
@@ -56,6 +57,7 @@ import {
 } from "./upload-state-context";
 import { CanvasHistory } from "./canvas-history";
 import { cn } from "@/lib/utils";
+import { CopilotPanel } from "./copilot/copilot-panel";
 import { CreditsBadge } from "@/app/_components/credits-badge";
 import { AssetLibrary, ASSET_DRAG_MIME } from "./asset-library";
 import { AddNodeMenu, type AddNodeAction } from "./add-node-menu";
@@ -81,7 +83,13 @@ import {
   modelAcceptsKind,
   routeReferenceField as routeReferenceFieldFor,
 } from "@/app/[locale]/canvas/_lib/reference-routing";
-import type { CardReference, CardReferences } from "./reference-stack";
+import type { CardReferences } from "./reference-stack";
+import {
+  bindEdgeReference as wiringBindEdgeReference,
+  sourceMediaUrl as wiringSourceMediaUrl,
+  sourceOutputKind as wiringSourceOutputKind,
+  stripEdgeRef,
+} from "@/app/[locale]/canvas/_lib/canvas-wiring";
 
 export type CanvasNode = ImageNodeType | PanoramaNodeType | NoteNodeType | GenerationNodeType;
 
@@ -387,6 +395,7 @@ function cursorColor(seed: string): string {
 
 function CanvasInner({ projectId, canEdit }: { projectId: string; canEdit: boolean }) {
   const t = useTranslations("canvas");
+  const tCopilot = useTranslations("copilot");
   const { data: catalog } = useAiCatalog();
   const { user } = useAuth();
   const guestName = t("guest");
@@ -417,6 +426,7 @@ function CanvasInner({ projectId, canEdit }: { projectId: string; canEdit: boole
   const [addMenu, setAddMenu] = useState<AddMenuState | null>(null);
   const [assetsOpen, setAssetsOpen] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
+  const [copilotOpen, setCopilotOpen] = useState(false);
   const [snapToGrid, setSnapToGrid] = useState(false);
   const [minimapOpen, setMinimapOpen] = useState(false);
   const { screenToFlowPosition, fitView, getNodes, getNode } = useReactFlow();
@@ -455,32 +465,16 @@ function CanvasInner({ projectId, canEdit }: { projectId: string; canEdit: boole
   // The output kind a node exposes — "image" for image nodes, the card's
   // modality for a generation card (image card → image, video card → video).
   const sourceOutputKind = useCallback(
-    (nodeId: string | null | undefined): "image" | "video" | undefined => {
-      if (!nodeId) return undefined;
-      const node = getNode(nodeId);
-      if (!node) return undefined;
-      if (node.type === "image" || node.type === "panorama" || node.type === "prompt")
-        return "image";
-      if (node.type === "video") return "video";
-      return undefined;
-    },
+    (nodeId: string | null | undefined): "image" | "video" | undefined =>
+      nodeId ? wiringSourceOutputKind(getNode, nodeId) : undefined,
     [getNode]
   );
 
   // The media URL a source node exposes — an image node's src, or another
   // generation card's produced output (enables card→card chaining).
   const sourceMediaUrl = useCallback(
-    (nodeId: string | null | undefined) => {
-      if (!nodeId) return undefined;
-      const node = getNode(nodeId);
-      if (!node) return undefined;
-      if (node.type === "image" || node.type === "panorama")
-        return (node.data as { src?: string }).src;
-      if (node.type === "prompt" || node.type === "video") {
-        return (node.data as GenerationNodeData).generation?.outputs?.[0]?.url;
-      }
-      return undefined;
-    },
+    (nodeId: string | null | undefined) =>
+      nodeId ? wiringSourceMediaUrl(getNode, nodeId) : undefined,
     [getNode]
   );
 
@@ -591,32 +585,18 @@ function CanvasInner({ projectId, canEdit }: { projectId: string; canEdit: boole
   const bindEdgeReference = useCallback(
     (edgeId: string, source: string | null, target: string | null) => {
       if (!source || !target) return;
-      const kind = sourceOutputKind(source);
-      const url = sourceMediaUrl(source);
-      const routed = kind ? routeReferenceField(target, kind) : undefined;
-      // Never bind a session-local blob: URL into the shared doc — it's
-      // meaningless to peers and breaks on reload (the panorama-blob bug class).
-      // A still-uploading source resolves to a blob: here; the reconciler
-      // re-binds the durable URL once the upload promotes the node.
-      if (!kind || !url || url.startsWith("blob:") || !routed) return;
-      const reference: CardReference = {
-        id: edgeId,
+      // Single source of truth: the same routing/binding the copilot uses. Pass
+      // stable mutator refs (not the whole `graph`, whose object identity churns
+      // each render) so this callback — and the reconciler that depends on it —
+      // stays referentially stable.
+      wiringBindEdgeReference(
+        { getNode, catalog, graph: { addEdge: graphAddEdge, patchNodeData } },
         edgeId,
-        sourceNodeId: source,
-        url,
-        kind,
-      };
-      patchNodeData(target, (node) => {
-        const refs = (node.data as GenerationNodeData).references ?? {};
-        const list = (refs[routed.field] ?? []).filter((r) => r.edgeId !== edgeId);
-        const patch: Partial<GenerationNodeData> = {
-          references: { ...refs, [routed.field]: [...list, reference] },
-        };
-        if (routed.mode) patch.mode = routed.mode;
-        return patch;
-      });
+        source,
+        target
+      );
     },
-    [sourceOutputKind, sourceMediaUrl, routeReferenceField, patchNodeData]
+    [getNode, catalog, graphAddEdge, patchNodeData]
   );
 
   const onConnect = useCallback(
@@ -686,16 +666,9 @@ function CanvasInner({ projectId, canEdit }: { projectId: string; canEdit: boole
   // (the single "+" input fans out), so search every field by edge id.
   const onEdgesDelete = useCallback(
     (deleted: Edge[]) => {
+      // Single source of truth: the same ref-strip the copilot's remove_edge uses.
       for (const edge of deleted) {
-        if (!edge.target) continue;
-        patchNodeData(edge.target, (node) => {
-          const refs = (node.data as GenerationNodeData).references ?? {};
-          const next: CardReferences = {};
-          for (const [field, list] of Object.entries(refs)) {
-            next[field] = list.filter((r) => r.edgeId !== edge.id);
-          }
-          return { references: next };
-        });
+        if (edge.target) stripEdgeRef(patchNodeData, edge.target, edge.id);
       }
     },
     [patchNodeData]
@@ -1311,7 +1284,25 @@ function CanvasInner({ projectId, canEdit }: { projectId: string; canEdit: boole
 
               {/* Back / project name / mode switcher live in the project shell;
             this cluster holds the canvas-specific + presence controls. */}
-              <div className="absolute top-4 right-4 z-20 flex items-center gap-2">
+              <div
+                className={cn(
+                  "absolute top-4 z-20 flex items-center gap-2 transition-[right]",
+                  copilotOpen ? "right-[396px]" : "right-4"
+                )}
+              >
+                <button
+                  type="button"
+                  aria-label={tCopilot("open")}
+                  onClick={() => setCopilotOpen((open) => !open)}
+                  className={cn(
+                    "flex size-9 items-center justify-center rounded-full shadow-md backdrop-blur-xl transition-colors",
+                    copilotOpen
+                      ? "bg-accent text-white"
+                      : "bg-popover/90 text-white/80 hover:bg-accent hover:text-white"
+                  )}
+                >
+                  <IconSparkles className="size-4" stroke={1.8} />
+                </button>
                 {connStatus !== "synced" && (
                   <span className="flex h-9 items-center gap-1.5 rounded-full bg-popover/90 px-3 text-xs font-medium text-white/70 shadow-md backdrop-blur-xl">
                     <span
@@ -1397,6 +1388,13 @@ function CanvasInner({ projectId, canEdit }: { projectId: string; canEdit: boole
                 </div>
               )}
               <AssetLibrary open={assetsOpen} onClose={() => setAssetsOpen(false)} />
+
+              <CopilotPanel
+                projectId={projectId}
+                mode="canvas"
+                open={copilotOpen}
+                onClose={() => setCopilotOpen(false)}
+              />
 
               {historyOpen && (
                 <CanvasHistory

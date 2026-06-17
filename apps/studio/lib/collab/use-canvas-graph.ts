@@ -54,6 +54,12 @@ const EDGE_TYPE = "gradient";
 export interface CanvasGraph {
   nodes: Node[];
   edges: Edge[];
+  /**
+   * Read a node's current shape straight from the Yjs doc (or a local-only
+   * overlay). Unlike `nodes` (render-derived, a commit behind), this reflects a
+   * write immediately — safe to read a node right after addNode/patchNodeData.
+   */
+  getNode: (id: string) => CanvasNodeShape | null;
   onNodesChange: (changes: NodeChange[]) => void;
   onEdgesChange: (changes: EdgeChange[]) => void;
   addNode: (node: CanvasNodeShape) => void;
@@ -735,12 +741,27 @@ export function useCanvasGraph(
   // local selection, but every doc-writing mutator is a no-op (the server
   // rejects writes regardless; this keeps the client from even trying + drives
   // the disabled-UI affordances). onNodesChange/onEdgesChange stay live because
+  // Synchronous node read straight from the Yjs doc (or local-only overlay) —
+  // unlike `nodes` (render-derived, a commit behind), this reflects a write
+  // immediately, so a caller can read a node right after addNode/patchNodeData.
+  const getNode = useCallback(
+    (id: string): CanvasNodeShape | null => {
+      const local = localOnlyNodes.current.get(id);
+      if (local) return local;
+      if (!doc) return null;
+      const yn = nodesMap(doc).get(id);
+      return yn instanceof Y.Map ? readNode(yn) : null;
+    },
+    [doc]
+  );
+
   // they also own ephemeral overlay state (selection/measure) — their *commits*
   // are gated internally above.
   if (!canEdit) {
     return {
       nodes,
       edges,
+      getNode,
       onNodesChange,
       onEdgesChange,
       addNode: noop,
@@ -768,6 +789,7 @@ export function useCanvasGraph(
   return {
     nodes,
     edges,
+    getNode,
     onNodesChange,
     onEdgesChange,
     addNode,

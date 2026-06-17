@@ -781,5 +781,25 @@
     "expand": "Expand",
     "motion": "Motion",
     "panorama": "Panorama"
+  },
+  "copilot": {
+    "title": "Copilot",
+    "open": "Open copilot",
+    "close": "Close",
+    "send": "Send",
+    "stop": "Stop",
+    "placeholder": "Ask anything about your project…",
+    "empty": "Ask about your canvas, plan what to build, or how the studio works.",
+    "thinking": "Thinking…",
+    "error": "Something went wrong.",
+    "retry": "Retry",
+    "you": "You",
+    "acting": "Working on the canvas…",
+    "acted": "Updated the canvas",
+    "confirm": "Confirm",
+    "cancel": "Cancel",
+    "confirmRun": "Run this generation? It will use your workspace credits.",
+    "confirmRemoveNode": "Delete this node from the canvas?",
+    "confirmRemoveEdge": "Delete this connection?"
   }
 }

@@ -781,5 +781,25 @@
     "expand": "扩图",
     "motion": "运动",
     "panorama": "全景图"
+  },
+  "copilot": {
+    "title": "副驾",
+    "open": "打开副驾",
+    "close": "关闭",
+    "send": "发送",
+    "stop": "停止",
+    "placeholder": "问我任何关于这个项目的问题…",
+    "empty": "向副驾提问你的画布、规划要做什么，或了解工作室怎么用。",
+    "thinking": "思考中…",
+    "error": "出错了。",
+    "retry": "重试",
+    "you": "你",
+    "acting": "正在操作画布…",
+    "acted": "已更新画布",
+    "confirm": "确认",
+    "cancel": "取消",
+    "confirmRun": "运行这次生成？将消耗工作区算力积分。",
+    "confirmRemoveNode": "从画布删除这个节点？",
+    "confirmRemoveEdge": "删除这条连线？"
   }
 }

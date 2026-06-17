@@ -10,6 +10,7 @@ import { AlertingModule } from './common/alerting';
 import { RegionModule } from './common/region';
 import { ThrottleModule } from './common/throttle/throttle.module';
 import { ConversationsModule } from './conversations/conversations.module';
+import { CopilotModule } from './copilot/copilot.module';
 import { CrewsModule } from './crews/crews.module';
 import { CreatorServicesModule } from './creator-services/creator-services.module';
 import { DocumentsModule } from './documents';
@@ -48,6 +49,7 @@ import { WorkspacesModule } from './workspaces';
     // ThrottleModule is Global — provides RateLimitService to any consumer.
     ThrottleModule,
     AssistantModule,
+    CopilotModule,
     SparkModule,
     AiGenerationModule,
     RealtimeModule,
