@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { MentionMenu, mentionRange, type MentionItem } from "@/lib/prompt-mentions";
 
 /**
  * IME-safe prompt textarea. The card's prompt lives in the Yjs doc, so a plain
@@ -10,18 +11,30 @@ import { useEffect, useRef, useState } from "react";
  * textarea to LOCAL state instead: it commits to the doc on input when idle and
  * on composition end, never resets mid-composition, and reflects external
  * edits (collab / reset) only while unfocused so it can't clobber live typing.
+ *
+ * When `mentions` are supplied, typing `@` opens a picker of the attached
+ * references and inserts a `@Image1`-style token (imagine.art-style targeting).
+ * The picker is suppressed mid-composition so it never interferes with IME.
  */
 export function PromptTextarea({
   value,
   onCommit,
+  mentions,
   ...rest
 }: {
   value: string;
   onCommit: (next: string) => void;
+  mentions?: MentionItem[];
 } & Omit<React.TextareaHTMLAttributes<HTMLTextAreaElement>, "value" | "onChange">) {
   const [draft, setDraft] = useState(value);
   const composing = useRef(false);
   const focused = useRef(false);
+  const ref = useRef<HTMLTextAreaElement>(null);
+
+  const mentionsOn = !!mentions && mentions.length > 0;
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState("");
+  const [active, setActive] = useState(0);
 
   // Reflect external changes (a peer's edit, a reset) only when the field is
   // idle — never while the user is typing or mid-composition.
@@ -29,31 +42,109 @@ export function PromptTextarea({
     if (!composing.current && !focused.current) setDraft(value);
   }, [value]);
 
+  const options = useMemo(() => {
+    if (!open || !mentions) return [];
+    const q = query.toLowerCase();
+    return mentions.filter(
+      (m) => !q || m.label.toLowerCase().includes(q) || m.name?.toLowerCase().includes(q)
+    );
+  }, [open, query, mentions]);
+
+  function refreshMention(text: string, caret: number) {
+    if (!mentionsOn || composing.current) {
+      setOpen(false);
+      return;
+    }
+    const range = mentionRange(text, caret);
+    setOpen(Boolean(range));
+    setActive(0);
+    setQuery(range?.query ?? "");
+  }
+
+  function insertMention(item: MentionItem) {
+    const el = ref.current;
+    const caret = el?.selectionStart ?? draft.length;
+    const range = mentionRange(draft, caret);
+    if (!range) return;
+    const before = draft.slice(0, range.start);
+    const after = draft.slice(caret);
+    const next = `${before}@${item.label} ${after}`;
+    setDraft(next);
+    onCommit(next);
+    setOpen(false);
+    requestAnimationFrame(() => {
+      el?.focus();
+      const pos = before.length + item.label.length + 2;
+      el?.setSelectionRange(pos, pos);
+    });
+  }
+
   return (
-    <textarea
-      {...rest}
-      value={draft}
-      onChange={(e) => {
-        setDraft(e.target.value);
-        if (!composing.current) onCommit(e.target.value);
-      }}
-      onCompositionStart={() => {
-        composing.current = true;
-      }}
-      onCompositionEnd={(e) => {
-        composing.current = false;
-        setDraft(e.currentTarget.value);
-        onCommit(e.currentTarget.value);
-      }}
-      onFocus={(e) => {
-        focused.current = true;
-        rest.onFocus?.(e);
-      }}
-      onBlur={(e) => {
-        focused.current = false;
-        setDraft(value);
-        rest.onBlur?.(e);
-      }}
-    />
+    <div className="relative">
+      <textarea
+        {...rest}
+        ref={ref}
+        value={draft}
+        onChange={(e) => {
+          setDraft(e.target.value);
+          if (!composing.current) onCommit(e.target.value);
+          refreshMention(e.target.value, e.target.selectionStart ?? e.target.value.length);
+        }}
+        onSelect={(e) => refreshMention(e.currentTarget.value, e.currentTarget.selectionStart ?? 0)}
+        onKeyDown={(e) => {
+          if (mentionsOn && open && options.length > 0) {
+            if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+              e.preventDefault();
+              setActive(
+                (i) => (i + (e.key === "ArrowDown" ? 1 : -1) + options.length) % options.length
+              );
+              return;
+            }
+            if (e.key === "Enter") {
+              e.preventDefault();
+              insertMention(options[active]);
+              return;
+            }
+            if (e.key === "Escape") {
+              e.stopPropagation();
+              setOpen(false);
+              return;
+            }
+          }
+          rest.onKeyDown?.(e);
+        }}
+        onCompositionStart={() => {
+          composing.current = true;
+        }}
+        onCompositionEnd={(e) => {
+          composing.current = false;
+          setDraft(e.currentTarget.value);
+          onCommit(e.currentTarget.value);
+          refreshMention(
+            e.currentTarget.value,
+            e.currentTarget.selectionStart ?? e.currentTarget.value.length
+          );
+        }}
+        onFocus={(e) => {
+          focused.current = true;
+          rest.onFocus?.(e);
+        }}
+        onBlur={(e) => {
+          focused.current = false;
+          setDraft(value);
+          // Delay so a mention pick (mousedown) lands before the menu closes.
+          setTimeout(() => setOpen(false), 120);
+          rest.onBlur?.(e);
+        }}
+      />
+      {mentionsOn && open && (
+        <MentionMenu
+          options={options}
+          active={active}
+          onPick={insertMention}
+          className="top-full left-0 mt-1"
+        />
+      )}
+    </div>
   );
 }

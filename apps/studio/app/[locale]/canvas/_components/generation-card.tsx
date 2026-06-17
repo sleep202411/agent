@@ -46,6 +46,7 @@ import { MultiAngleEditor } from "./multi-angle-editor";
 import { ExpandEditor } from "./expand-editor";
 import { MotionEditor } from "./motion-editor";
 import { PromptTextarea } from "./prompt-textarea";
+import { mentionLabel, type MentionItem } from "@/lib/prompt-mentions";
 import { useCanvasGraphContext } from "@/lib/collab/canvas-graph-context";
 import {
   defaultMode,
@@ -256,6 +257,27 @@ function GenerationCard({
     }
     return merged;
   }, [references, pendingRefs]);
+  // Attached references the prompt can cite with `@` — labeled per kind
+  // (Image1, Video1, …) in the same scheme as the studio composer. Still-
+  // uploading items are skipped (no stable target yet).
+  const mentionItems = useMemo<MentionItem[]>(() => {
+    const counts: Record<CardReference["kind"], number> = { image: 0, video: 0, audio: 0 };
+    const items: MentionItem[] = [];
+    for (const list of Object.values(referencesForDisplay)) {
+      for (const ref of list) {
+        if (ref.uploading) continue;
+        counts[ref.kind] += 1;
+        items.push({
+          id: ref.id,
+          label: mentionLabel(ref.kind, counts[ref.kind]),
+          name: ref.name,
+          kind: ref.kind,
+          previewUrl: ref.url,
+        });
+      }
+    }
+    return items;
+  }, [referencesForDisplay]);
   const mode = data.mode ?? defaultMode(model);
   const modes = model?.generationModes ?? [];
   const refFields = useMemo(() => referenceFieldsForMode(model, mode), [model, mode]);
@@ -645,6 +667,7 @@ function GenerationCard({
                 <PromptTextarea
                   value={data.prompt ?? ""}
                   onCommit={(prompt) => patchNodeData(id, { prompt })}
+                  mentions={mentionItems}
                   placeholder={t(promptPlaceholderKey(mode))}
                   rows={3}
                   autoFocus

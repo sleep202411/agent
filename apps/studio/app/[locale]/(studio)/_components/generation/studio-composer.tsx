@@ -8,7 +8,6 @@ import {
   IconBolt,
   IconChevronDown,
   IconLoader2,
-  IconMusic,
 } from "@tabler/icons-react";
 import { cn } from "@/lib/utils";
 import { useDismiss } from "@/lib/use-dismiss";
@@ -24,68 +23,7 @@ import { ModelSettings as ModelSettingsPanel } from "@/app/[locale]/canvas/_comp
 import { ModeMenu } from "@/app/[locale]/canvas/_components/mode-menu";
 import { ReferenceFan } from "./reference-fan";
 import type { ReferenceUpload } from "./use-reference-uploads";
-
-/** `@` mention range in the prompt (open menu while typing a query). */
-function mentionRange(value: string, caret: number): { start: number; query: string } | null {
-  const at = value.lastIndexOf("@", caret - 1);
-  if (at === -1) return null;
-  if (at > 0 && !/[\s.,;:!?(（"'“”]/.test(value[at - 1])) return null;
-  const query = value.slice(at + 1, caret);
-  if (query.length > 32 || /[\n@]/.test(query)) return null;
-  return { start: at, query };
-}
-
-function MentionMenu({
-  options,
-  active,
-  onPick,
-}: {
-  options: ReferenceUpload[];
-  active: number;
-  onPick: (item: ReferenceUpload) => void;
-}) {
-  const t = useTranslations("generation");
-  return (
-    <div className="absolute top-9 left-0 z-50 w-64 rounded-2xl bg-[oklch(0.24_0_0)] p-1.5 shadow-2xl shadow-black/60 backdrop-blur-xl duration-150 animate-in fade-in-0 zoom-in-95">
-      {options.length === 0 ? (
-        <p className="px-3 py-2 text-xs text-muted-foreground">{t("uploadReferenceFirst")}</p>
-      ) : (
-        options.map((item, index) => (
-          <button
-            key={item.id}
-            type="button"
-            // Mousedown so the pick wins over the textarea blur.
-            onMouseDown={(event) => {
-              event.preventDefault();
-              onPick(item);
-            }}
-            className={cn(
-              "flex w-full items-center gap-2.5 rounded-xl px-2 py-1.5 text-left transition-colors",
-              index === active ? "bg-white/[0.08]" : "hover:bg-white/[0.06]"
-            )}
-          >
-            <span className="size-8 shrink-0 overflow-hidden rounded-md bg-muted">
-              {item.kind === "audio" ? (
-                <span className="flex size-full items-center justify-center">
-                  <IconMusic className="size-3.5 text-white/70" stroke={1.7} />
-                </span>
-              ) : item.kind === "video" ? (
-                <video src={item.previewUrl} muted playsInline className="size-full object-cover" />
-              ) : (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img src={item.previewUrl} alt={item.label} className="size-full object-cover" />
-              )}
-            </span>
-            <span className="min-w-0">
-              <span className="block text-xs font-semibold">@{item.label}</span>
-              <span className="block truncate text-[11px] text-muted-foreground">{item.name}</span>
-            </span>
-          </button>
-        ))
-      )}
-    </div>
-  );
-}
+import { MentionMenu, mentionRange, type MentionItem } from "@/lib/prompt-mentions";
 
 /**
  * Bottom-docked composer for the image / video studio pages: prompt as the
@@ -172,7 +110,7 @@ export function StudioComposer({
     );
   }, [mentionOpen, mentionQuery, mentionables]);
 
-  const insertMention = (item: ReferenceUpload) => {
+  const insertMention = (item: MentionItem) => {
     const el = textareaRef.current;
     const range = currentMention();
     if (!el || !range) return;
@@ -263,7 +201,12 @@ export function StudioComposer({
               className={cn("absolute", showReferences ? "left-[150px]" : "left-0")}
               data-popover-zone
             >
-              <MentionMenu options={mentionOptions} active={mentionActive} onPick={insertMention} />
+              <MentionMenu
+                options={mentionOptions}
+                active={mentionActive}
+                onPick={insertMention}
+                className="top-9 left-0"
+              />
             </div>
           )}
         </div>
