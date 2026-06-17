@@ -173,7 +173,7 @@ web:
   replicaCount: 1
   image:
     repository: fizzdragon-web
-    tag: java-domain-6c3ffe43
+    tag: huiyuan-64a499f2
   containerPort: 3000
   env:
     SERVER_URL: http://fizzdragon-server:3001
