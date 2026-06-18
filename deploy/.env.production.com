@@ -8,8 +8,8 @@ WEB_PORT=3000
 SERVER_PORT=3001
 
 # Server env
-JAVA_STUDIO_URL=https://fizzdragon.com/studio
-JAVA_CONTENT_URL=https://fizzdragon.com/content
+JAVA_STUDIO_URL=https://java.fizzdragon.com/studio
+JAVA_CONTENT_URL=https://java.fizzdragon.com/content
 # --- DeepSeek (active — same config as staging, proven end-to-end) ---
 AI_PROVIDER=deepseek
 DEEPSEEK_API_KEY=sk-1abd1c91f73347d0be88f93ea7d079fa

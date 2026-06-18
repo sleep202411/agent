@@ -279,15 +279,21 @@ export function buildImagePromptContext(
 ) {
   const shotValues = row.shotValues ?? [];
   const imagePromptCell = shotValues.find((item) => item.presetColumnKey === "image_prompt");
+  // Resolve from the COLUMN definition, not the per-shot cell — empty shots
+  // return `shotValues: null`, so the cell may not exist yet; persistTextCell
+  // upserts via /shotValue/input, so a valid column id creates it on save.
+  const imagePromptColumnId = String(
+    imagePromptCell?.shotColumnId ??
+      columns.find((item) => item.presetColumnKey === "image_prompt")?.id ??
+      ""
+  );
 
   const directPrompt = getPromptContent(imagePromptCell);
   if (directPrompt) {
     return {
       prompt: directPrompt,
       referenceFields: [] as string[],
-      imagePromptColumnId: imagePromptCell?.shotColumnId
-        ? String(imagePromptCell.shotColumnId)
-        : "",
+      imagePromptColumnId,
     };
   }
 
@@ -310,9 +316,7 @@ export function buildImagePromptContext(
     return {
       prompt: promptParts.join(", "),
       referenceFields,
-      imagePromptColumnId: imagePromptCell?.shotColumnId
-        ? String(imagePromptCell.shotColumnId)
-        : "",
+      imagePromptColumnId,
     };
   }
 
@@ -339,7 +343,7 @@ export function buildImagePromptContext(
   return {
     prompt: promptParts.join(", "),
     referenceFields,
-    imagePromptColumnId: imagePromptCell?.shotColumnId ? String(imagePromptCell.shotColumnId) : "",
+    imagePromptColumnId,
   };
 }
 

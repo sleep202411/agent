@@ -137,8 +137,15 @@ export type CreateBillingCheckoutInput = z.infer<
 // the amount is the input, not a catalog selection.
 export const CreateCustomRechargeSchema = z.object({
   amountDollars: z.coerce.number().int().min(10).max(5000),
+  // Which wallet the recharge funds. Defaults to community_point for backward
+  // compatibility with the existing user recharge; compute_point funds the
+  // AI-generation wallet and may target a team workspace.
+  currency: WalletCurrencyTypeSchema.default('community_point'),
   provider: CheckoutPaymentProviderSchema.optional(),
   idempotencyKey: z.string().trim().min(8).max(160),
+  // When set, fund the workspace's wallet instead of the caller's own (requires
+  // the billing role on that workspace). Only honored for compute_point.
+  workspaceId: z.string().uuid().optional(),
   successUrl: z.string().trim().url().max(2048),
   backUrl: z.string().trim().url().max(2048),
 });
@@ -151,6 +158,10 @@ export const CreateComputePointTopupSchema = z.object({
   provider: CheckoutPaymentProviderSchema.optional(),
   promotionCode: z.string().trim().min(3).max(64).optional(),
   idempotencyKey: z.string().trim().min(8).max(160),
+  // When set, fund the workspace's compute_point wallet instead of the caller's
+  // own (requires the billing role on that workspace). The pack price stays a
+  // user-subject catalog SKU; only the order's subject is directed at the team.
+  workspaceId: z.string().uuid().optional(),
   successUrl: z.string().trim().url().max(2048),
   backUrl: z.string().trim().url().max(2048),
 });

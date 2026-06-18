@@ -7,7 +7,7 @@ import type {
   PollResult,
   StartResult,
 } from '../../provider-adapter';
-import type { AiJobError } from '../../types';
+import type { AiGenerationMode, AiJobError } from '../../types';
 import { BailianCatalogService } from './bailian-catalog.service';
 import { BailianClient } from './bailian-client';
 import { BailianConfigService } from './bailian-config.service';
@@ -56,6 +56,12 @@ export class BailianProviderAdapter implements ProviderAdapter {
     void ctx;
     const runtime = await this.requireRuntime(modelId);
     const payload = mapBailianProviderRequest(runtime, input);
+    // Multi-binding video canonicals (e.g. Wan 2.7) route per mode to a distinct
+    // upstream model id. Resolve it from the runtime's mode->endpoint map and
+    // override the request body's `model` so the right endpoint is called; the
+    // resolved endpoint is what we encode into providerJobId for poll/cancel.
+    const endpoint = this.resolveSubmitEndpoint(runtime, input);
+    if (endpoint !== runtime.endpointId) payload.model = endpoint;
     if (runtime.callMode === 'sync') {
       return this.generateSync(runtime, payload);
     }
@@ -84,10 +90,10 @@ export class BailianProviderAdapter implements ProviderAdapter {
     }
     return {
       kind: 'pending',
-      providerJobId: this.encodeProviderJobId(runtime.endpointId, taskId),
+      providerJobId: this.encodeProviderJobId(endpoint, taskId),
       initialPollDelayMs: this.configService.config.pollDelayMs,
       providerRequestId: response.request_id,
-      providerEndpoint: runtime.endpointId,
+      providerEndpoint: endpoint,
       providerRequest: payload,
       providerResponse: response,
       submittedAt: new Date().toISOString(),
@@ -203,6 +209,23 @@ export class BailianProviderAdapter implements ProviderAdapter {
 
   mapError(err: unknown): AiJobError {
     return mapBailianUnknownError(err);
+  }
+
+  /**
+   * Resolve the upstream endpoint (model id) to submit to. For multi-binding
+   * video canonicals the mode is derived from the input shape (start/end
+   * frame) and mapped to the per-mode endpoint; single-binding models always
+   * use their lone endpoint.
+   */
+  private resolveSubmitEndpoint(
+    runtime: BailianModelRuntimeConfig,
+    input: Record<string, unknown>,
+  ): string {
+    if (runtime.type === 'video' && runtime.modeEndpoints) {
+      const mode = videoGenerationModeFromInput(input);
+      return runtime.modeEndpoints[mode] ?? runtime.endpointId;
+    }
+    return runtime.endpointId;
   }
 
   private async requireRuntime(
@@ -365,6 +388,39 @@ export class BailianProviderAdapter implements ProviderAdapter {
       createdAt: new Date().toISOString(),
     };
   }
+}
+
+/**
+ * Infer the video generation mode from the raw studio input shape. Mirrors the
+ * fal adapter's payload-shape inference, but keyed on the studio field names
+ * (startFrame/endFrame) since Bailian assembles its media[] downstream.
+ */
+export function videoGenerationModeFromInput(
+  input: Record<string, unknown>,
+): AiGenerationMode {
+  const hasFrame = (value: unknown): boolean => {
+    if (typeof value === 'string') return value.trim().length > 0;
+    if (value && typeof value === 'object') {
+      const url = (value as { url?: unknown }).url;
+      return typeof url === 'string' && url.trim().length > 0;
+    }
+    return false;
+  };
+  const hasStart = hasFrame(input.startFrame);
+  // Omni-reference (参考生视频): a non-empty `references` array routes to the
+  // reference-to-video endpoint regardless of any start frame.
+  if (Array.isArray(input.references) && input.references.length > 0) {
+    return 'multimodal_to_video';
+  }
+  // First-last-frame requires a FIRST frame; a lone end frame is meaningless, so
+  // it does not classify as flf2v. This keeps dispatch consistent with the
+  // request mapper, which only assembles input.media when a start frame is
+  // present (a lone end frame is otherwise dropped → endpoint/payload disagree).
+  if (hasStart && hasFrame(input.endFrame)) {
+    return 'first_last_frame_to_video';
+  }
+  if (hasStart) return 'image_to_video';
+  return 'text_to_video';
 }
 
 function readPath(value: unknown, path: string): unknown {

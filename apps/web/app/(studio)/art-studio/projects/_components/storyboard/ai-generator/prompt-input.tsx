@@ -26,6 +26,8 @@ interface PromptInputProps {
   onImageModeChange?: (mode: string) => void;
   prompt: string;
   onPromptChange: (v: string) => void;
+  /** Fires on every prompt edit (not just blur) — for debounced autosave. */
+  onAutoSavePrompt?: (v: string) => void;
   prefixPrompt: string;
   onPrefixChange: (v: string) => void;
   suffixPrompt: string;
@@ -64,6 +66,7 @@ export function PromptInput({
   onImageModeChange,
   prompt,
   onPromptChange,
+  onAutoSavePrompt,
   prefixPrompt,
   onPrefixChange,
   suffixPrompt,
@@ -143,6 +146,7 @@ export function PromptInput({
         <RichMentionEditor
           value={prompt}
           onChange={onPromptChange}
+          onAutoSave={onAutoSavePrompt}
           placeholder={t("promptEditorPlaceholder")}
           mentionTypes={["character", "scene", "prop"]}
           minHeight={48}

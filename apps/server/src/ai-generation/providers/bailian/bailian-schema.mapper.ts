@@ -11,7 +11,6 @@ import type {
   AiOutputSchema,
   AiQueueName,
   AiQueuePolicy,
-  AiRequiredPlan,
 } from '../../types';
 import type {
   BailianModelRuntimeConfig,
@@ -185,7 +184,8 @@ function inputSchemaFor(
   if (
     type !== 'image' &&
     (generationModes.includes('image_to_image') ||
-      generationModes.includes('image_to_video'))
+      generationModes.includes('image_to_video') ||
+      generationModes.includes('first_last_frame_to_video'))
   ) {
     properties.startFrame = providerProperty({
       type: 'object',
@@ -201,6 +201,8 @@ function inputSchemaFor(
         order: 30,
         importance: 'primary',
       },
+      // Video models reshape this into input.media[{type:'first_frame'}] in the
+      // request mapper; image-to-image still reads it as a flat img_url.
       'x-provider': {
         section: 'input',
         parameter: 'img_url',
@@ -211,9 +213,46 @@ function inputSchemaFor(
   }
 
   if (
+    type === 'video' &&
+    generationModes.includes('first_last_frame_to_video')
+  ) {
+    // End frame for first-last-frame-to-video; the request mapper appends it to
+    // input.media as { type: 'last_frame' }. No x-provider: handled there.
+    properties.endFrame = providerProperty({
+      type: 'object',
+      title: 'End frame',
+      properties: {
+        url: { type: 'string', format: 'uri', title: 'URL' },
+      },
+      required: ['url'],
+      additionalProperties: true,
+      'x-ui': {
+        control: 'image_upload',
+        group: 'references',
+        order: 31,
+        importance: 'primary',
+      },
+    });
+  }
+
+  if (
     generationModes.includes('multimodal_to_video') ||
     generationModes.includes('video_to_video')
   ) {
+    // Reference item types are policy-driven: each r2v endpoint accepts a
+    // different subset (e.g. happyhorse-1.0-r2v takes ONLY reference_image,
+    // wan2.7-r2v takes reference_image/reference_video), so advertising a type
+    // the endpoint rejects would let the client submit a request the provider
+    // bounces with an opaque error. Falls back to the full set for any v2v model
+    // whose policy doesn't pin the list.
+    const policyReferenceTypes = stringArrayFromPolicy(
+      parameterPolicy,
+      'referenceTypes',
+    );
+    const referenceTypes =
+      policyReferenceTypes.length > 0
+        ? policyReferenceTypes
+        : ['reference_image', 'reference_video', 'reference_audio'];
     properties.references = providerProperty({
       type: 'array',
       title: 'References',
@@ -225,7 +264,8 @@ function inputSchemaFor(
           type: {
             type: 'string',
             title: 'Type',
-            enum: ['reference_image', 'reference_video', 'reference_audio'],
+            default: referenceTypes[0],
+            enum: referenceTypes,
           },
           url: { type: 'string', format: 'uri', title: 'URL' },
           referenceVoice: {
@@ -403,12 +443,29 @@ function inputSchemaFor(
   }
 
   if (type === 'video') {
+    // Policy-driven (falls back to the legacy fixed grid when a model declares
+    // no parameterPolicy). duration + resolution are ALWAYS sent (no
+    // omitIfDefault): both drive per-second billing and the provider's own
+    // defaults differ from ours, so omitting a "default" pick would let the
+    // provider run a different length/resolution than we quoted and charged.
+    const videoDurationDefault =
+      numberFromPolicy(policy, 'defaultDurationSeconds') ?? 5;
+    const videoDurationMin =
+      numberFromPolicy(policy, 'minDurationSeconds') ?? 3;
+    const videoDurationMax =
+      numberFromPolicy(policy, 'maxDurationSeconds') ?? 10;
+    const videoResolutionOptions =
+      resolutionOptions.length > 0
+        ? resolutionOptions
+        : ['480P', '720P', '1080P'];
+    const videoAspectOptions =
+      aspectOptions.length > 0 ? aspectOptions : ['16:9', '9:16', '1:1'];
     properties.durationSeconds = providerProperty({
       type: 'integer',
       title: 'Duration',
-      default: 5,
-      minimum: 3,
-      maximum: 10,
+      default: videoDurationDefault,
+      minimum: videoDurationMin,
+      maximum: videoDurationMax,
       'x-ui': {
         control: 'slider',
         group: 'settings',
@@ -420,14 +477,15 @@ function inputSchemaFor(
         section: 'parameters',
         parameter: 'duration',
         transform: 'secondsToInteger',
-        omitIfDefault: true,
       },
     });
     properties.resolution = providerProperty({
       type: 'string',
       title: 'Resolution',
-      default: '720P',
-      enum: ['480P', '720P', '1080P'],
+      default:
+        stringFromPolicy(parameterPolicy, 'defaultResolution') ??
+        videoResolutionOptions[0],
+      enum: videoResolutionOptions,
       'x-ui': {
         control: 'segmented',
         group: 'settings',
@@ -437,20 +495,24 @@ function inputSchemaFor(
       'x-provider': {
         section: 'parameters',
         parameter: 'resolution',
-        omitIfDefault: true,
       },
     });
     properties.aspectRatio = providerProperty({
       type: 'string',
       title: 'Aspect ratio',
-      default: '16:9',
-      enum: ['16:9', '9:16', '1:1'],
+      default:
+        stringFromPolicy(parameterPolicy, 'defaultAspectRatio') ??
+        videoAspectOptions[0],
+      enum: videoAspectOptions,
       'x-ui': {
         control: 'segmented',
         group: 'settings',
         order: 60,
         importance: 'secondary',
       },
+      // Mapped to `parameters.ratio` for text-to-video (dropped for image-driven
+      // modes) by the request mapper. omitIfDefault: the provider's own default
+      // ratio matches ours, so a default pick can be safely elided.
       'x-provider': {
         section: 'parameters',
         parameter: 'aspect_ratio',
@@ -685,7 +747,7 @@ export function createBailianModelConfig(
       `${humanizeEndpoint(args.endpointId)} via Alibaba Model Studio.`,
     enabled: args.enabled,
     disabledReason: args.disabledReason,
-    requiredPlan: (args.requiredPlan as AiRequiredPlan | null) ?? null,
+    requiredPlan: args.requiredPlan ?? null,
     queue: {
       queueName: args.queueName,
       globalConcurrency: args.globalConcurrency,

@@ -1955,7 +1955,7 @@
     "subtitle": "Stories, interviews and announcements from the AI-native film studio.",
     "subscribePlaceholder": "Enter your email",
     "subscribe": "Subscribe",
-    "subscribeSocialProof": "1,200,000 super viewers, investors, creators, schools, and other institutions have subscribed.",
+    "subscribeSocialProof": "{total} super viewers, investors, creators, schools, and other institutions have subscribed.",
     "tSubscribed": "Subscribed! We'll send updates to {email}.",
     "tInvalidEmail": "Please enter a valid email",
     "recent": "Recent blog posts",
@@ -4993,11 +4993,11 @@
   "home": {
     "hero": {
       "statusPill": "Happy Horse · now available",
-      "headlineLine1": "Stories start here.",
-      "headlineLine2": "Crews ship them.",
-      "subtitle": "Tools to make it. Crews to back it. An audience already waiting.",
-      "primaryCta": "Begin a story",
-      "secondaryCta": "Join the work"
+      "headlineLine1": "The universe's most exciting",
+      "headlineLine2": "AI story series",
+      "subtitle": "Bringing together world-class creators from every corner of the globe to fuse history, literature, comics, philosophy, heroes, and legends into heart-driven global hits—beyond templates, unstoppable staying power.",
+      "primaryCta": "Start watching",
+      "secondaryCta": "Start creating"
     },
     "madeWithFizz": {
       "eyebrow": "Made with FizzDragon",
@@ -5237,7 +5237,25 @@
     "partners": {
       "eyebrow": "Partners & Press",
       "title": "Backed, broadcast, and built with",
-      "subtitle": "Accelerators, publishers, broadcasters, and studios collaborating with FizzDragon to bring AI-assisted storytelling to global audiences."
+      "subtitle": "Accelerators, publishers, broadcasters, and studios collaborating with FizzDragon to bring AI-assisted storytelling to global audiences.",
+      "highlights": {
+        "nvidia": {
+          "title": "NVIDIA Inception",
+          "body": "Global startup program"
+        },
+        "microsoft": {
+          "title": "Microsoft for Startups",
+          "body": "Global AI accelerator"
+        },
+        "alibaba": {
+          "title": "Alibaba JUMPSTARTER",
+          "body": "2025 Top 30"
+        },
+        "sgtech": {
+          "title": "SGTech Awards",
+          "body": "2026 Award winner"
+        }
+      }
     }
   },
   "aiLab": {

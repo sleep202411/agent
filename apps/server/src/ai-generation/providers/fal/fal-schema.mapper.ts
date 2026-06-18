@@ -128,6 +128,11 @@ function seedEnabled(policy: AiJsonValue | undefined): boolean {
   return recordValue(recordValue(policy)?.seed)?.enabled === true;
 }
 
+/** Kling motion-brush capability (dynamic masks + trajectories). */
+function motionBrushEnabled(policy: AiJsonValue | undefined): boolean {
+  return recordValue(recordValue(policy)?.motionBrush)?.enabled === true;
+}
+
 function booleanFromPolicy(value: unknown, key: string): boolean | undefined {
   const flag = recordValue(value)?.[key];
   return typeof flag === 'boolean' ? flag : undefined;
@@ -216,6 +221,25 @@ function inputSchemaFor(
   const firstLastFrame = generationModes.includes('first_last_frame_to_video');
   const imageToVideo = generationModes.includes('image_to_video');
   const imageToImage = generationModes.includes('image_to_image');
+  // Single-image transform ops: one input image → one output image, no prompt
+  // and none of the generation controls. Each may still add its own narrow
+  // param (upscale → factor); background removal adds none.
+  const upscale = generationModes.includes('upscale');
+  const removeBackground = generationModes.includes('remove_background');
+  const pureTransform = upscale || removeBackground;
+  // Relight (IC-Light) is a single-image op that DOES take a prompt, so it is
+  // not a pure transform — it keeps the prompt but takes a curated control set
+  // (preset size + output count + light direction) instead of the generic
+  // aspect/resolution controls.
+  const relight = generationModes.includes('relight');
+  // Multi-angle (qwen multiple-angles): re-shoots a single image from a new
+  // camera viewpoint. No required prompt; its controls are orbit/tilt/zoom +
+  // an optional additional prompt, emitted by the multi_angle branch below.
+  const multiAngle = generationModes.includes('multi_angle');
+  // Expand / outpainting (bria): grows the canvas around a single image and
+  // fills the new area. Optional prompt; the geometry (canvas_size + original
+  // placement) comes from the studio's bespoke Expand editor.
+  const outpainting = generationModes.includes('outpainting');
   const nanoBanana = isNanoBananaEndpoint(endpointId);
   // Reference-image limits come straight from the canonical parameterPolicy —
   // the seed encodes each provider's real cap (e.g. seedream's documented max
@@ -223,8 +247,12 @@ function inputSchemaFor(
   // hardcoded per-endpoint clamps live here anymore.
   const reference = referencePolicy(parameterPolicy);
 
-  const properties: AiInputSchema['properties'] = {
-    prompt: {
+  const properties: AiInputSchema['properties'] = {};
+  // Pure transform ops, multi-angle, and expand take no main (required) prompt
+  // here. (Relight requires one; multi-angle + expand emit their own optional
+  // prompt in their branches below.)
+  if (!pureTransform && !multiAngle && !outpainting) {
+    properties.prompt = {
       type: 'string',
       title: 'Prompt',
       minLength: 1,
@@ -237,10 +265,19 @@ function inputSchemaFor(
         importance: 'primary',
       },
       'x-provider': { parameter: 'prompt' },
-    },
-  };
+    };
+  }
 
-  if (imageMode || imageToImage) {
+  // Pure transform ops take none of the generation controls
+  // (aspect / resolution / quality / output-count / negative prompt) — only
+  // their own input image + op param, added below.
+  if (
+    (imageMode || imageToImage) &&
+    !pureTransform &&
+    !relight &&
+    !multiAngle &&
+    !outpainting
+  ) {
     const aspectOptions = stringArrayFromPolicy(
       parameterPolicy,
       'supportedAspectRatios',
@@ -484,10 +521,16 @@ function inputSchemaFor(
     }
   }
 
-  if (imageToImage && reference.enabled) {
+  if (
+    (imageToImage || pureTransform || relight || multiAngle || outpainting) &&
+    reference.enabled
+  ) {
     properties.referenceImages = {
       type: 'array',
-      title: 'Reference images',
+      title:
+        pureTransform || relight || multiAngle || outpainting
+          ? 'Image'
+          : 'Reference images',
       minItems: reference.min,
       maxItems: reference.single ? 1 : reference.max,
       items: {
@@ -509,6 +552,286 @@ function inputSchemaFor(
       'x-provider': reference.single
         ? { parameter: 'image_url', transform: 'mediaFirstUrl' }
         : { parameter: 'image_urls', transform: 'mediaArrayToUrls' },
+    };
+  }
+
+  // Upscale factor — the only user-facing control for the upscale op.
+  if (upscale) {
+    properties.upscaleFactor = {
+      type: 'integer',
+      title: 'Scale',
+      enum: [2, 4],
+      default: 2,
+      'x-ui': {
+        control: 'segmented',
+        group: 'parameters',
+        order: 30,
+        importance: 'primary',
+        unit: '×',
+      },
+      'x-provider': { parameter: 'upscale_factor' },
+    };
+  }
+
+  // Relight (IC-Light): a curated control set instead of the generic aspect/
+  // resolution block — a preset output size, a coarse light direction, and an
+  // output count. The prompt (required) is emitted above by the !pureTransform
+  // branch; the single source image by the reference block above.
+  if (relight) {
+    properties.imageSize = {
+      type: 'string',
+      title: 'Image size',
+      default: 'square_hd',
+      enum: [
+        'square_hd',
+        'square',
+        'portrait_4_3',
+        'portrait_16_9',
+        'landscape_4_3',
+        'landscape_16_9',
+      ],
+      'x-ui': {
+        control: 'select',
+        group: 'settings',
+        order: 20,
+        importance: 'secondary',
+      },
+      'x-provider': { parameter: 'image_size' },
+    };
+    properties.initialLatent = {
+      type: 'string',
+      title: 'Light direction',
+      default: 'None',
+      enum: ['None', 'Left', 'Right', 'Top', 'Bottom'],
+      'x-ui': {
+        control: 'segmented',
+        group: 'settings',
+        order: 22,
+        importance: 'primary',
+      },
+      'x-provider': { parameter: 'initial_latent', omitIfDefault: true },
+    };
+    const variationOptions = numberArrayFromPolicy(
+      parameterPolicy,
+      'variationOptions',
+    );
+    const maxVariations =
+      variationOptions.length > 0 ? Math.max(...variationOptions) : 4;
+    if (maxVariations > 1) {
+      properties.numOutputs = {
+        type: 'integer',
+        title: 'Outputs',
+        default:
+          typeof recordValue(parameterPolicy)?.defaultVariations === 'number'
+            ? (recordValue(parameterPolicy)?.defaultVariations as number)
+            : 1,
+        minimum: 1,
+        maximum: maxVariations,
+        'x-ui': {
+          control: 'stepper',
+          group: 'settings',
+          order: 30,
+          importance: 'secondary',
+        },
+        'x-provider': { parameter: 'num_images', omitIfDefault: true },
+      };
+    }
+  }
+
+  // Multi-angle (qwen multiple-angles): orbit / tilt / shot-size zoom + an
+  // optional refine prompt + output count. The studio renders a custom
+  // Multi-Angle editor (orbit sphere + sliders); these x-provider bindings are
+  // what actually drive the fal request. fal defaults: angles 0, zoom 5.
+  if (multiAngle) {
+    properties.horizontalAngle = {
+      type: 'number',
+      title: 'Horizontal orbit',
+      default: 0,
+      minimum: 0,
+      maximum: 360,
+      'x-ui': {
+        control: 'slider',
+        group: 'settings',
+        order: 20,
+        importance: 'primary',
+        unit: '°',
+      },
+      'x-provider': { parameter: 'horizontal_angle', omitIfDefault: true },
+    };
+    properties.verticalAngle = {
+      type: 'number',
+      title: 'Vertical tilt',
+      default: 0,
+      minimum: -30,
+      maximum: 90,
+      'x-ui': {
+        control: 'slider',
+        group: 'settings',
+        order: 22,
+        importance: 'primary',
+        unit: '°',
+      },
+      'x-provider': { parameter: 'vertical_angle', omitIfDefault: true },
+    };
+    properties.zoom = {
+      type: 'number',
+      title: 'Shot size',
+      default: 5,
+      minimum: 0,
+      maximum: 10,
+      'x-ui': {
+        control: 'slider',
+        group: 'settings',
+        order: 24,
+        importance: 'primary',
+      },
+      'x-provider': { parameter: 'zoom', omitIfDefault: true },
+    };
+    properties.additionalPrompt = {
+      type: 'string',
+      title: 'Prompt',
+      maxLength: 2000,
+      'x-ui': {
+        control: 'textarea',
+        group: 'settings',
+        order: 26,
+        rows: 2,
+        importance: 'secondary',
+      },
+      'x-provider': { parameter: 'additional_prompt', omitIfEmpty: true },
+    };
+    const variationOptions = numberArrayFromPolicy(
+      parameterPolicy,
+      'variationOptions',
+    );
+    const maxVariations =
+      variationOptions.length > 0 ? Math.max(...variationOptions) : 4;
+    if (maxVariations > 1) {
+      properties.numOutputs = {
+        type: 'integer',
+        title: 'Outputs',
+        default:
+          typeof recordValue(parameterPolicy)?.defaultVariations === 'number'
+            ? (recordValue(parameterPolicy)?.defaultVariations as number)
+            : 1,
+        minimum: 1,
+        maximum: maxVariations,
+        'x-ui': {
+          control: 'stepper',
+          group: 'settings',
+          order: 30,
+          importance: 'secondary',
+        },
+        'x-provider': { parameter: 'num_images', omitIfDefault: true },
+      };
+    }
+  }
+
+  // Expand / outpainting (bria): an optional steer prompt + the geometry the
+  // studio's Expand editor computes (final canvas size + where the original
+  // sits inside it). The geometry params are data-only (the custom editor is
+  // the UI), so they carry just their x-provider bindings.
+  if (outpainting) {
+    properties.prompt = {
+      type: 'string',
+      title: 'Prompt',
+      maxLength: 2000,
+      'x-ui': {
+        control: 'textarea',
+        group: 'prompt',
+        order: 10,
+        rows: 2,
+        importance: 'secondary',
+      },
+      'x-provider': { parameter: 'prompt', omitIfEmpty: true },
+    };
+    properties.canvasSize = {
+      type: 'array',
+      title: 'Canvas size',
+      items: { type: 'integer' },
+      minItems: 2,
+      maxItems: 2,
+      'x-ui': {
+        control: 'hidden',
+        group: 'settings',
+        order: 40,
+        importance: 'advanced',
+      },
+      'x-provider': { parameter: 'canvas_size' },
+    };
+    properties.originalImageSize = {
+      type: 'array',
+      title: 'Original size',
+      items: { type: 'integer' },
+      minItems: 2,
+      maxItems: 2,
+      'x-ui': {
+        control: 'hidden',
+        group: 'settings',
+        order: 41,
+        importance: 'advanced',
+      },
+      'x-provider': { parameter: 'original_image_size' },
+    };
+    properties.originalImageLocation = {
+      type: 'array',
+      title: 'Original location',
+      items: { type: 'integer' },
+      minItems: 2,
+      maxItems: 2,
+      'x-ui': {
+        control: 'hidden',
+        group: 'settings',
+        order: 42,
+        importance: 'advanced',
+      },
+      'x-provider': { parameter: 'original_image_location' },
+    };
+  }
+
+  // Motion brush (Kling i2v): dynamic masks — a painted region (mask_url) + a
+  // trajectory of {x,y} points it follows — plus an optional static mask.
+  // Produced by the studio Motion editor; data-only params passed straight
+  // through to the provider.
+  if (motionBrushEnabled(parameterPolicy)) {
+    properties.dynamicMasks = {
+      type: 'array',
+      title: 'Motion',
+      items: {
+        type: 'object',
+        properties: {
+          mask_url: { type: 'string', format: 'uri' },
+          trajectories: {
+            type: 'array',
+            items: {
+              type: 'object',
+              properties: {
+                x: { type: 'integer' },
+                y: { type: 'integer' },
+              },
+            },
+          },
+        },
+      },
+      'x-ui': {
+        control: 'hidden',
+        group: 'settings',
+        order: 50,
+        importance: 'advanced',
+      },
+      'x-provider': { parameter: 'dynamic_masks', omitIfEmpty: true },
+    };
+    properties.staticMaskUrl = {
+      type: 'string',
+      title: 'Static mask',
+      format: 'uri',
+      'x-ui': {
+        control: 'hidden',
+        group: 'settings',
+        order: 51,
+        importance: 'advanced',
+      },
+      'x-provider': { parameter: 'static_mask_url', omitIfEmpty: true },
     };
   }
 
@@ -837,7 +1160,10 @@ function inputSchemaFor(
   return {
     type: 'object',
     properties,
-    required: ['prompt'],
+    // Ops with no main prompt property (pure transforms + multi-angle) must not
+    // list it as required — that would be an invalid schema (required field
+    // absent from properties). Relight keeps the required prompt.
+    required: pureTransform || multiAngle || outpainting ? [] : ['prompt'],
     additionalProperties: false,
     'x-ui': {
       groups: [
@@ -889,10 +1215,25 @@ function capabilityMatrixFor(
   type: AiJobType,
   generationModes: AiGenerationMode[],
 ): AiCapabilityMatrix {
+  // Ops that take an image and NO required prompt are image-only — the
+  // `image_to` substring check below would otherwise mis-tag them as text
+  // input. Relight + image_to_* take an image AND a prompt.
+  const imageOnly =
+    generationModes.includes('upscale') ||
+    generationModes.includes('remove_background') ||
+    generationModes.includes('multi_angle');
+  const relight = generationModes.includes('relight');
+  const imageInput =
+    imageOnly ||
+    relight ||
+    generationModes.includes('outpainting') ||
+    generationModes.some((mode) => mode.includes('image_to'));
   return {
     source: 'internal',
-    inputModalities: generationModes.some((mode) => mode.includes('image_to'))
-      ? ['text', 'image']
+    inputModalities: imageInput
+      ? imageOnly
+        ? ['image']
+        : ['text', 'image']
       : ['text'],
     outputModalities: [type],
     generationModes,
@@ -913,6 +1254,19 @@ function capabilityMatrixFor(
       'aspect_ratio',
       'generate_audio',
       'seed',
+      // Only present when an upscale binding adds the `upscaleFactor` control
+      // (maps to the provider's `upscale_factor`).
+      ...(generationModes.includes('upscale') ? ['upscale_factor'] : []),
+      // Relight adds the coarse light-direction control (initial_latent).
+      ...(relight ? ['initial_latent'] : []),
+      // Multi-angle adds the camera controls + an optional refine prompt.
+      ...(generationModes.includes('multi_angle')
+        ? ['horizontal_angle', 'vertical_angle', 'zoom', 'additional_prompt']
+        : []),
+      // Expand adds the canvas geometry params.
+      ...(generationModes.includes('outpainting')
+        ? ['canvas_size', 'original_image_size', 'original_image_location']
+        : []),
     ],
     unsupportedParameters: [],
     features: {
@@ -995,7 +1349,7 @@ export function createFalModelConfig(
       args.description ?? `${humanizeEndpoint(args.endpointId)} via fal.ai.`,
     enabled: args.enabled,
     disabledReason: args.disabledReason,
-    requiredPlan: (args.requiredPlan as AiRequiredPlan | null) ?? null,
+    requiredPlan: args.requiredPlan ?? null,
     queue: {
       queueName: args.queueName,
       globalConcurrency: args.globalConcurrency,

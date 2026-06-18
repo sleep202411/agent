@@ -1,4 +1,9 @@
 import type { NextConfig } from "next";
+import createNextIntlPlugin from "next-intl/plugin";
+
+// next-intl (no URL routing) — resolves locale per request from the
+// NEXT_LOCALE cookie / Accept-Language. See i18n/request.ts.
+const withNextIntl = createNextIntlPlugin("./i18n/request.ts");
 
 // Where to proxy `/aurora/*` (the NestJS backend).
 //  - Prod (default): studio.fizzdragon.com, which keeps the `/aurora` prefix
@@ -11,7 +16,7 @@ const STRIP_PREFIX = process.env.AURORA_STRIP_PREFIX === "1";
 
 // Java content backend — owns auth (/user/email/login, /user/login,
 // /user/query/user/info, /user/logout). Same prefix contract as apps/web.
-const JAVA_CONTENT = process.env.JAVA_CONTENT_URL ?? "https://fizzdragon.com/content";
+const JAVA_CONTENT = process.env.JAVA_CONTENT_URL ?? "https://java.fizzdragon.com/content";
 
 const nextConfig: NextConfig = {
   // Self-contained server bundle for the Docker runner stage.
@@ -30,4 +35,4 @@ const nextConfig: NextConfig = {
   },
 };
 
-export default nextConfig;
+export default withNextIntl(nextConfig);

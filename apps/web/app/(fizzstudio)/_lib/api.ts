@@ -14,13 +14,11 @@ import { api } from "@/src/lib/api";
 
 export type WorkspaceType = "personal" | "team";
 export type WorkspaceStatus = "active" | "suspended" | "archived";
-export type WorkspaceBillingMode = "member_pays" | "workspace_pool";
 export type WorkspaceMemberRole = "owner" | "admin" | "editor" | "viewer" | "billing";
 
 export interface FizzWorkspace {
   id: string;
   type: WorkspaceType;
-  billingMode: WorkspaceBillingMode;
   status: WorkspaceStatus;
   name: string;
   slug: string | null;

@@ -168,6 +168,54 @@ export class JavaUserLookupService {
   }
 
   /**
+   * Resolve the CURRENT user's full profile via Java `/user/query/user/info`
+   * (GET, sa-token cookie auth). Returns the raw `info` object (id, nickName,
+   * email, phone, avatar, headImg, …) or null when not logged in / not found.
+   */
+  async findCurrentUser(
+    cookie: string,
+  ): Promise<Record<string, unknown> | null> {
+    const url = `${JAVA_CONTENT_URL}/user/query/user/info`;
+    const controller = new AbortController();
+    const timeout = setTimeout(
+      () => controller.abort(),
+      JAVA_REQUEST_TIMEOUT_MS,
+    );
+    let envelope: JavaEnvelope;
+    try {
+      const res = await fetch(url, {
+        method: 'GET',
+        headers: {
+          Accept: 'application/json',
+          ...(cookie ? { Cookie: cookie } : {}),
+        },
+        signal: controller.signal,
+      });
+      if (res.status === 404) return null;
+      if (!res.ok) {
+        this.logger.warn(`Java ${url} returned HTTP ${res.status}`);
+        throw new ServiceUnavailableException({
+          message: 'User info service unavailable',
+          upstream: 'java',
+        });
+      }
+      envelope = (await res.json()) as JavaEnvelope;
+    } catch (err) {
+      if (err instanceof ServiceUnavailableException) throw err;
+      const msg = err instanceof Error ? err.message : String(err);
+      this.logger.error(`Java current-user lookup failed: ${msg} (${url})`);
+      throw new ServiceUnavailableException({
+        message: 'User info service unavailable',
+        upstream: 'java',
+      });
+    } finally {
+      clearTimeout(timeout);
+    }
+    if (Number(envelope.code) !== 200 || envelope.info == null) return null;
+    return envelope.info as unknown as Record<string, unknown>;
+  }
+
+  /**
    * Resolve a single userId to a public profile via Java
    * `/user/other/user/info?UserId=…`. Cookie auth required (sa-token);
    * cross-user disclosure is limited to `{ userId, nickname, avatar }`

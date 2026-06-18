@@ -5,11 +5,26 @@ import Link from "next/link";
 import { IconArrowUpRight, IconExternalLink } from "@tabler/icons-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
-import { useTranslations } from "@/src/i18n/i18n";
+import { useLocale, useTranslations } from "@/src/i18n/i18n";
 import { articleHref, formatDate } from "../_data/format";
 import type { NewsItem } from "../_data/types";
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+// Subscriber social-proof figure ticks up ~1万 (10,000) each month from a
+// June-2026 base of 120万, so it stays fresh without manual edits. Chinese
+// locales read it in 万 ("121"); others get the full number ("1,210,000").
+const SUBSCRIBER_BASE_WAN = 120;
+const SUBSCRIBER_ANCHOR = { year: 2026, month: 6 };
+
+function subscriberCountLabel(locale: string): string {
+  const now = new Date();
+  const months =
+    (now.getFullYear() - SUBSCRIBER_ANCHOR.year) * 12 +
+    (now.getMonth() + 1 - SUBSCRIBER_ANCHOR.month);
+  const wan = SUBSCRIBER_BASE_WAN + Math.max(0, months);
+  return locale.startsWith("zh") ? String(wan) : (wan * 10_000).toLocaleString("en-US");
+}
 
 export function NewsList({
   articles,
@@ -23,6 +38,8 @@ export function NewsList({
   activeCategory?: string;
 }) {
   const t = useTranslations("news");
+  const locale = useLocale();
+  const subscriberCount = subscriberCountLabel(locale);
   const [email, setEmail] = useState("");
 
   const handleSubscribe = (e: React.FormEvent) => {
@@ -92,7 +109,7 @@ export function NewsList({
             </button>
           </form>
           <p className="mx-auto mt-3 max-w-md text-xs text-muted-foreground/70">
-            {t("subscribeSocialProof")}
+            {t("subscribeSocialProof", { total: subscriberCount })}
           </p>
         </header>
 

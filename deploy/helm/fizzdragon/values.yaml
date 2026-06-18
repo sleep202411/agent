@@ -161,8 +161,11 @@ serverSecrets:
       env: LEGACY_MYSQL_USER
     - kv: legacy-mysql-password
       env: LEGACY_MYSQL_PASSWORD
+    - kv: agnes-api-key
+      env: AGNES_API_KEY
     # HMAC token-signing secret for the self-hosted realtime WS plane
-    # (REALTIME_TRANSPORT=self-hosted).
+    # (REALTIME_TRANSPORT=self-hosted). PREREQUISITE: create the `realtime-ws-secret`
+    # secret in Key Vault BEFORE deploying — the CSI projection fails if absent.
     - kv: realtime-ws-secret
       env: REALTIME_WS_SECRET
 # ---------------------------------------------------------------------------
@@ -199,7 +202,7 @@ studio:
   replicaCount: 1
   image:
     repository: fizzdragon-studio
-    tag: fd1470fd99eedc8f7f9228527076745f55e314e0
+    tag: d618188d59ac-agnes-i2i-search-20260618152341
   containerPort: 3000
   env:
     AURORA_PROXY_TARGET: http://fizzdragon-server:3001
@@ -263,7 +266,7 @@ server:
   migrateOnStart: true
   image:
     repository: fizzdragon-server
-    tag: 0f8a0f7b-satoken-hotfix
+    tag: d618188d59ac-agnes-i2i-search-20260618152341
   containerPort: 3001
   env:
     FAL_ENABLED: "true"
@@ -273,7 +276,10 @@ server:
     AI_PROVIDER: alibaba
     # REDIS_URL comes from KV via projected `fizzdragon-secrets` (envFrom).
     MASTRA_URL: http://fizzdragon-agent:4111
-    # Unified self-hosted realtime for ALL cells. Rollback: set back to `web-pubsub`.
+    # Unified self-hosted realtime for ALL cells (collab already self-hosts; this
+    # moves asset/job pushes off Azure Web PubSub too, so there is no CN/COM
+    # transport split). Requires REALTIME_WS_SECRET (serverSecrets below).
+    # Rollback: set back to `web-pubsub` (Azure WP provider is still registered).
     REALTIME_TRANSPORT: self-hosted
     DISABLE_CONTENT_MODERATION: "false"
     AUTH_DISABLED: "false"

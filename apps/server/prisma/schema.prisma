@@ -47,11 +47,6 @@ enum WorkspaceStatus {
   archived
 }
 
-enum WorkspaceBillingMode {
-  member_pays
-  workspace_pool
-}
-
 enum WorkspaceMemberRole {
   owner
   admin
@@ -92,6 +87,13 @@ enum ProjectMemberStatus {
   removed
 }
 
+enum ProjectInviteStatus {
+  pending
+  accepted
+  revoked
+  expired
+}
+
 enum ProjectVisibility {
   private
   workspace
@@ -107,6 +109,7 @@ enum PlatformDocumentType {
   asset_board
   course_outline
   gig_requirement
+  canvas
 }
 
 enum PlatformDocumentStatus {
@@ -744,7 +747,6 @@ model Workspace {
   id               String               @id @default(uuid(7)) @db.Uuid
   type             WorkspaceType
   status           WorkspaceStatus      @default(active)
-  billingMode      WorkspaceBillingMode @default(member_pays) @map("billing_mode")
   name             String               @db.VarChar(120)
   slug             String?              @db.VarChar(80)
   avatarUrl        String?              @map("avatar_url") @db.VarChar(512)
@@ -846,6 +848,7 @@ model PlatformProject {
 
   workspace        Workspace          @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   members          ProjectMember[]
+  invites          ProjectInvite[]
   assets           ProjectAsset[]
   auditLogs        PlatformAuditLog[]
   aiJobs           AiJob[]
@@ -875,6 +878,12 @@ model PlatformDocument {
   contentSnapshot      Json                   @default("{}") @map("content_snapshot") @db.JsonB
   crdtState            Bytes?                 @map("crdt_state")
   currentSequence      Int                    @default(0) @map("current_sequence")
+  /// Sequence covered by the compacted `crdtState` snapshot. New clients load
+  /// `crdtState` then replay only operations with sequence > snapshotSequence,
+  /// so first-load is O(snapshot + recent ops) instead of O(all ops).
+  snapshotSequence     Int                    @default(0) @map("snapshot_sequence")
+  /// When the warm-room last compacted `crdtState` from the op-log.
+  lastCompactedAt      DateTime?              @map("last_compacted_at") @db.Timestamptz(6)
   currentVersionId     String?                @map("current_version_id") @db.Uuid
   createdById          String                 @map("created_by_id") @db.VarChar(64)
   updatedById          String?                @map("updated_by_id") @db.VarChar(64)
@@ -1026,6 +1035,32 @@ model ProjectMember {
   @@index([userId, status], map: "project_members_by_user_idx")
   @@index([projectId, status, role], map: "project_members_by_project_idx")
   @@map("project_members")
+}
+
+/// Project-scoped invite (mirrors WorkspaceInvite, ProjectMemberRole, no
+/// billing). Supports invite-by-account (inviteeUserId) and invite-by-link
+/// (tokenHash). Pending-target partial uniques give server-side idempotency.
+model ProjectInvite {
+  id            String              @id @default(uuid(7)) @db.Uuid
+  projectId     String              @map("project_id") @db.Uuid
+  inviteeUserId String?             @map("invitee_user_id") @db.VarChar(64)
+  inviteeEmail  String?             @map("invitee_email") @db.VarChar(320)
+  role          ProjectMemberRole
+  tokenHash     String              @map("token_hash") @db.VarChar(128)
+  status        ProjectInviteStatus @default(pending)
+  invitedById   String              @map("invited_by_id") @db.VarChar(64)
+  acceptedAt    DateTime?           @map("accepted_at") @db.Timestamptz(6)
+  revokedAt     DateTime?           @map("revoked_at") @db.Timestamptz(6)
+  expiresAt     DateTime            @map("expires_at") @db.Timestamptz(6)
+  createdAt     DateTime            @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  project PlatformProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@unique([tokenHash], map: "project_invites_token_hash_unique")
+  @@index([projectId, status, createdAt(sort: Desc)], map: "project_invites_by_project_idx")
+  @@index([inviteeUserId, status], map: "project_invites_by_user_idx")
+  @@index([inviteeEmail, status], map: "project_invites_by_email_idx")
+  @@map("project_invites")
 }
 
 model ProjectAsset {

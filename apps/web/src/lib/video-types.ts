@@ -130,6 +130,9 @@ export interface AiVideoGeneratorDialogProps {
   onCollect?: (item: { id: string; url?: string; storagePath?: string }) => void;
   onSetPreferred?: (item: { id: string; url?: string; storagePath?: string }) => void;
   onGeneratePrompt?: (prompt: string) => void;
+  /** Debounced autosave of the main prompt (persists to the video-prompt
+   *  cell). Fires on edit, not just on Generate. */
+  onAutoSavePrompt?: (prompt: string) => void;
   onGeneratingChange?: (isGenerating: boolean) => void;
   onGenerateSuccess?: () => void;
   onPrevShot?: () => void;

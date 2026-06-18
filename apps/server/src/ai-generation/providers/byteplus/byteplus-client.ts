@@ -16,6 +16,25 @@ export interface BytePlusImageGenerationResponse {
   [key: string]: unknown;
 }
 
+/**
+ * BytePlus ModelArk async video task (content-generation tasks API). Create
+ * returns only `{ id }`; the polled task carries `status` and, on success,
+ * `content.video_url`.
+ */
+export interface BytePlusVideoTaskResponse {
+  id?: string;
+  model?: string;
+  status?: string; // queued | running | succeeded | failed | cancelled | expired
+  content?: { video_url?: string; [key: string]: unknown };
+  usage?: Record<string, unknown>;
+  duration?: number;
+  resolution?: string;
+  ratio?: string;
+  seed?: number;
+  error?: { code?: string; message?: string } | null;
+  [key: string]: unknown;
+}
+
 export interface BytePlusJsonResponse<T> {
   body: T;
   headers: Record<string, string>;
@@ -32,6 +51,42 @@ export class BytePlusClient {
       method: 'POST',
       body: JSON.stringify(body),
     });
+  }
+
+  /** Submit an async video task → `{ id: 'cgt-...' }`. */
+  async createVideoTask(
+    config: BytePlusProviderConfig,
+    body: Record<string, unknown>,
+  ): Promise<BytePlusJsonResponse<BytePlusVideoTaskResponse>> {
+    return this.requestJson(
+      config,
+      `${config.apiBaseUrl}/contents/generations/tasks`,
+      { method: 'POST', body: JSON.stringify(body) },
+    );
+  }
+
+  /** Poll a video task by id. */
+  async getVideoTask(
+    config: BytePlusProviderConfig,
+    taskId: string,
+  ): Promise<BytePlusJsonResponse<BytePlusVideoTaskResponse>> {
+    return this.requestJson(
+      config,
+      `${config.apiBaseUrl}/contents/generations/tasks/${encodeURIComponent(taskId)}`,
+      { method: 'GET' },
+    );
+  }
+
+  /** Best-effort provider-side cancel of a video task. */
+  async cancelVideoTask(
+    config: BytePlusProviderConfig,
+    taskId: string,
+  ): Promise<void> {
+    await this.requestJson(
+      config,
+      `${config.apiBaseUrl}/contents/generations/tasks/${encodeURIComponent(taskId)}`,
+      { method: 'DELETE' },
+    );
   }
 
   private async requestJson<T>(

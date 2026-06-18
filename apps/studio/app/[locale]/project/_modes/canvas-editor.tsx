@@ -1,0 +1,10 @@
+"use client";
+
+import { CanvasView } from "@/app/[locale]/canvas/_components/canvas-view";
+import { useProjectContext } from "@/app/[locale]/project/_components/project-context";
+
+/** Canvas mode editor — the immersive board, resolved for the active project. */
+export function CanvasEditor() {
+  const { projectId, canEdit } = useProjectContext();
+  return <CanvasView projectId={projectId} canEdit={canEdit} />;
+}

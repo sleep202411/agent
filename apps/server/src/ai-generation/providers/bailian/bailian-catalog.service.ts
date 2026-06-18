@@ -75,6 +75,27 @@ export class BailianCatalogService {
     const runtimeByModelId = new Map<string, BailianModelRuntimeConfig>();
     const runtimeByEndpointId = new Map<string, BailianModelRuntimeConfig>();
     const dbRuntimes = await this.dbRuntimeConfigs();
+
+    // Register EVERY active binding's endpoint BEFORE the catalog dedupe so
+    // poll/cancel can resolve any endpoint a job was actually submitted to
+    // (multi-binding models route per mode at submit; the real endpoint is
+    // encoded in providerJobId). First entry wins: rows are already in
+    // priority/weight/endpointId order.
+    for (const entry of dbRuntimes) {
+      if (!runtimeByEndpointId.has(entry.runtime.endpointId)) {
+        runtimeByEndpointId.set(entry.runtime.endpointId, entry.runtime);
+      }
+      if (!runtimeByModelId.has(entry.runtime.endpointId)) {
+        runtimeByModelId.set(entry.runtime.endpointId, entry.runtime);
+      }
+      if (!runtimeByModelId.has(`bailian/${entry.runtime.endpointId}`)) {
+        runtimeByModelId.set(
+          `bailian/${entry.runtime.endpointId}`,
+          entry.runtime,
+        );
+      }
+    }
+
     const runtimeEntries = this.dedupeRuntimeEntries(dbRuntimes);
     const models = runtimeEntries.map((entry) => {
       const model = {
@@ -130,8 +151,36 @@ export class BailianCatalogService {
       orderBy: [{ priority: 'asc' }, { weight: 'desc' }, { endpointId: 'asc' }],
     });
 
+    // Multi-binding canonicals (e.g. Wan 2.7: wan2.7-t2v + wan2.7-i2v under one
+    // canonical) split their modes across one binding per upstream model id.
+    // The catalog assembles a single entry per canonical, so advertise the
+    // UNION of modes across all of a canonical's active bindings and build a
+    // mode -> endpointId routing map (first binding wins per mode, falling out
+    // of the priority/weight/endpointId ordering). Single-binding models get a
+    // union-of-one and a one-entry map — identical to their prior behaviour.
+    const modesByCanonical = new Map<string, Set<AiGenerationMode>>();
+    const modeEndpointsByCanonical = new Map<
+      string,
+      Partial<Record<AiGenerationMode, string>>
+    >();
+    for (const row of rows) {
+      const set =
+        modesByCanonical.get(row.canonicalModelId) ??
+        new Set<AiGenerationMode>();
+      const modeEndpoints =
+        modeEndpointsByCanonical.get(row.canonicalModelId) ?? {};
+      for (const mode of stringArray(row.supportedModes)) {
+        set.add(mode);
+        modeEndpoints[mode] ??= row.endpointId;
+      }
+      modesByCanonical.set(row.canonicalModelId, set);
+      modeEndpointsByCanonical.set(row.canonicalModelId, modeEndpoints);
+    }
+
     return rows.map((row) => {
-      const generationModes = stringArray(row.supportedModes);
+      const generationModes = Array.from(
+        modesByCanonical.get(row.canonicalModelId) ?? [],
+      );
       const type = row.modality as AiJobType;
       const catalog = recordValue(row.catalogSnapshot);
       const service = bailianServiceFromCatalog(catalog, type);
@@ -174,6 +223,11 @@ export class BailianCatalogService {
         catalogSnapshot: row.catalogSnapshot as AiJsonValue,
         providerPricing: providerPricingFromCatalog(catalog, config.region),
       });
+      // Every sibling runtime of a canonical carries the SAME map, so a
+      // poll-time lookup via any endpointId routes identically to submit-time.
+      runtime.modeEndpoints = modeEndpointsByCanonical.get(
+        row.canonicalModelId,
+      );
       return {
         runtime,
         modelId: row.canonicalModel.slug,

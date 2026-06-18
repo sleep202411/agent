@@ -1,33 +1,63 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
-import type { ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useTranslations } from "@/src/i18n/i18n";
 import {
-  IconArrowRight,
-  IconBolt,
   IconCheck,
   IconCircleCheckFilled,
   IconCrown,
+  IconDiamond,
   IconLoader2,
-  IconReceipt,
-  IconShieldCheck,
-  IconUsersGroup,
   IconX,
 } from "@tabler/icons-react";
-import { toast } from "sonner";
+import QRCode from "qrcode";
+import { Button } from "@/components/ui/button";
+import LightRays from "@/components/ui/light-rays";
+import { backendApi } from "@/src/lib/api";
 import { cn } from "@/lib/utils";
-import { getApiWorkspaceId } from "@/src/lib/api";
-import {
-  createBillingCheckout,
-  listMembershipPlans,
-  type MembershipPlan,
-  type MembershipPrice,
-} from "@/src/lib/billing/api";
-import { useCountry } from "@/src/lib/region/provider";
-import { useTranslations } from "@/src/i18n/i18n";
+import { siteConfig } from "@/src/config/site";
 
-type ProductType = "membership_plan" | "team_membership_plan";
-type BillingInterval = "month" | "year";
+// ── Types ───────────────────────────────────────────────────
+
+interface VipPackage {
+  id: number;
+  packageName: string;
+  price: number;
+  durationDays: number;
+  description?: string;
+  rights?: string;
+  integralDiscountRate?: number;
+  status: string | number;
+  sortOrder: number;
+}
+
+interface ParsedRights {
+  score?: number;
+  integralDiscount?: number;
+}
+
+function parseRights(rights?: string): ParsedRights {
+  if (!rights) return {};
+  try {
+    const obj = JSON.parse(rights) as Record<string, unknown>;
+    const score = typeof obj.score === "number" ? obj.score : undefined;
+    const integralDiscount =
+      typeof obj.integral_discount === "number" ? obj.integral_discount : undefined;
+    return { score, integralDiscount };
+  } catch {
+    return {};
+  }
+}
+
+interface RechargeResult {
+  orderNo: string;
+  url: string;
+}
+interface OrderStatus {
+  status: number;
+}
+
+type Step = "select" | "payment" | "success";
 
 export interface UpgradeDialogProps {
   open: boolean;
@@ -35,534 +65,476 @@ export interface UpgradeDialogProps {
   onSuccess?: () => void;
 }
 
+// ── Component ───────────────────────────────────────────────
+
 export function UpgradeDialog({ open, onOpenChange, onSuccess }: UpgradeDialogProps) {
   const t = useTranslations("payment");
-  const country = useCountry();
-  const currency = membershipCurrencyForCountry(country);
-  const [productType, setProductType] = useState<ProductType>("membership_plan");
-  const [billingInterval, setBillingInterval] = useState<BillingInterval>("month");
-  const [plans, setPlans] = useState<MembershipPlan[]>([]);
-  const [selectedPlanKey, setSelectedPlanKey] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [payingPriceId, setPayingPriceId] = useState<string | null>(null);
 
-  const selectedPlan = useMemo(
-    () => plans.find((plan) => plan.planKey === selectedPlanKey) ?? plans[0] ?? null,
-    [plans, selectedPlanKey]
+  const [packages, setPackages] = useState<VipPackage[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [step, setStep] = useState<Step>("select");
+  const [selectedId, setSelectedId] = useState<number | null>(null);
+  const [currency, setCurrency] = useState(siteConfig.defaultCurrency);
+  const [qrUrl, setQrUrl] = useState("");
+  const [orderNo, setOrderNo] = useState("");
+  const [paying, setPaying] = useState(false);
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const selectedPackage = useMemo(
+    () => packages.find((p) => p.id === selectedId) ?? null,
+    [selectedId, packages]
   );
 
-  useEffect(() => {
-    if (!open) return;
-    const previousOverflow = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") onOpenChange(false);
-    };
-    window.addEventListener("keydown", handleKeyDown);
-    return () => {
-      document.body.style.overflow = previousOverflow;
-      window.removeEventListener("keydown", handleKeyDown);
-    };
-  }, [onOpenChange, open]);
+  type BenefitGroup = { title?: string; items: string[] };
 
-  useEffect(() => {
-    if (!open) return;
-    let cancelled = false;
-    queueMicrotask(() => {
-      if (!cancelled) setLoading(true);
-    });
-    listMembershipPlans({ productType, currency })
-      .then((result) => {
-        if (cancelled) return;
-        const activePlans = result.plans
-          .filter((plan) => plan.status === "active")
-          .sort((a, b) => a.rank - b.rank);
-        setPlans(activePlans);
-        setSelectedPlanKey((current) =>
-          current && activePlans.some((plan) => plan.planKey === current)
-            ? current
-            : (activePlans[0]?.planKey ?? null)
-        );
-      })
-      .catch((err) => {
-        if (cancelled) return;
-        setPlans([]);
-        toast.error(err instanceof Error ? err.message : t("membership.loadFailed"));
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
+  const planNames: Record<string, string> = {
+    VIP1: t("plans.basic"),
+    VIP2: t("plans.standard"),
+    VIP3: t("plans.pro"),
+  };
+
+  const planExtras: Record<
+    string,
+    {
+      addCourse: boolean;
+      output: { images: number; videos: number; tmin: number; tmax: number; agents: number };
+      storyos: string[];
+    }
+  > = {
+    VIP1: {
+      addCourse: false,
+      output: { images: 100, videos: 30, tmin: 6, tmax: 7, agents: 180 },
+      storyos: [
+        t("benefits.storyosCore"),
+        t("benefits.storyosMessages", { count: 100 }),
+        t("benefits.storyosRetention", { days: 15 }),
+      ],
+    },
+    VIP2: {
+      addCourse: true,
+      output: { images: 200, videos: 60, tmin: 12, tmax: 14, agents: 360 },
+      storyos: [
+        t("benefits.storyosFull"),
+        t("benefits.storyosUnlimited"),
+        t("benefits.storyosMessages", { count: 200 }),
+        t("benefits.storyosRetention", { days: 15 }),
+      ],
+    },
+    VIP3: {
+      addCourse: true,
+      output: { images: 300, videos: 120, tmin: 24, tmax: 28, agents: 720 },
+      storyos: [
+        t("benefits.storyosFull"),
+        t("benefits.storyosUnlimited"),
+        t("benefits.storyosMessages", { count: 500 }),
+        t("benefits.storyosRetention", { days: 15 }),
+        t("benefits.storyosPriority"),
+      ],
+    },
+  };
+
+  const displayName = (name: string) => planNames[name] || name;
+  const displayPrice = (amount: number | string) => {
+    const num = Number(amount);
+    return siteConfig.region === "cn" ? (num / 100).toFixed(2) : num.toFixed(2);
+  };
+
+  const getBenefits = (pkg: VipPackage): BenefitGroup[] => {
+    const rights = parseRights(pkg.rights);
+    const score = rights.score ?? 0;
+    const discountRate = rights.integralDiscount ?? pkg.integralDiscountRate;
+    const showDiscount = typeof discountRate === "number" && discountRate > 0 && discountRate < 100;
+    const extras = planExtras[pkg.packageName];
+
+    const creditsItems = [t("benefits.bonusCredits", { value: score.toLocaleString() })];
+    if (showDiscount) {
+      creditsItems.push(
+        t("benefits.creditDiscount", {
+          percent: 100 - discountRate,
+          discount: discountRate / 10,
+        })
+      );
+    }
+    if (extras?.addCourse) {
+      creditsItems.push(t("benefits.freeCourses"));
+    }
+
+    const groups: BenefitGroup[] = [{ items: creditsItems }];
+    if (extras) {
+      groups.push({
+        title: t("benefits.outputTitle"),
+        items: [
+          t("benefits.outputImagesVideos", {
+            images: extras.output.images,
+            videos: extras.output.videos,
+          }),
+          t("benefits.outputTime", { min: extras.output.tmin, max: extras.output.tmax }),
+          t("benefits.outputAgents", { count: extras.output.agents }),
+        ],
       });
-    return () => {
-      cancelled = true;
-    };
-  }, [currency, open, productType, t]);
+      groups.push({ title: "StoryOS", items: extras.storyos });
+    }
+    return groups;
+  };
+  const currencySymbol = siteConfig.currencies.find((c) => c.code === currency)?.symbol ?? "$";
 
-  const handlePay = useCallback(
-    async (plan: MembershipPlan, price: MembershipPrice | null) => {
-      if (!price) return;
-      const workspaceId = getApiWorkspaceId();
-      if (price.subjectType === "workspace" && !workspaceId) {
-        toast.error(t("membership.workspaceRequired"));
-        return;
+  const bestValueId = useMemo(() => {
+    if (packages.length < 2) return packages[0]?.id ?? null;
+    return packages[1].id;
+  }, [packages]);
+
+  // ── Fetch ───────────────────────────────────────────────
+
+  useEffect(() => {
+    if (!open) return;
+    setLoading(true);
+    setSelectedId(null);
+    backendApi
+      .post<VipPackage[]>("/api/payment/query/vip/package", { data: { currency } })
+      .then((res) => {
+        const list = (res ?? [])
+          .filter((p) => p.status === 1 || p.status === "ACTIVE")
+          .sort((a, b) => a.sortOrder - b.sortOrder);
+        setPackages(list);
+        if (list.length > 0) {
+          setSelectedId(list[Math.min(1, list.length - 1)].id);
+        }
+      })
+      .catch(() => setPackages([]))
+      .finally(() => setLoading(false));
+  }, [open, currency]);
+
+  useEffect(() => {
+    if (!open) {
+      setStep("select");
+      setQrUrl("");
+      setOrderNo("");
+      setPaying(false);
+      if (pollRef.current) {
+        clearInterval(pollRef.current);
+        pollRef.current = null;
       }
-      setSelectedPlanKey(plan.planKey);
-      setPayingPriceId(price.id);
-      try {
-        const baseUrl = `${window.location.origin}${window.location.pathname}`;
-        const result = await createBillingCheckout({
-          priceId: price.id,
-          idempotencyKey: `membership:${price.id}:${crypto.randomUUID()}`,
-          quantity: 1,
-          workspaceId: price.subjectType === "workspace" ? (workspaceId ?? undefined) : undefined,
-          successUrl: `${baseUrl}?payment=success`,
-          backUrl: `${baseUrl}?payment=cancelled`,
-        });
-        if (result.order.status === "fulfilled" && !result.paymentIntent) {
-          toast.success(t("paymentSuccess"));
-          onSuccess?.();
-          onOpenChange(false);
-          return;
-        }
-        const checkoutUrl = result.paymentIntent?.checkoutUrl;
-        if (!checkoutUrl) {
-          toast.error(t("paymentNoCheckoutUrl"));
-          return;
-        }
-        if (window.self !== window.top) {
-          window.parent.postMessage({ type: "navigateToPayment", url: checkoutUrl }, "*");
-        } else {
-          window.location.href = checkoutUrl;
-        }
-      } catch (err) {
-        toast.error(err instanceof Error ? err.message : t("paymentFailed"));
-      } finally {
-        setPayingPriceId(null);
+    }
+  }, [open]);
+
+  useEffect(
+    () => () => {
+      if (pollRef.current) {
+        clearInterval(pollRef.current);
+        pollRef.current = null;
       }
     },
-    [onOpenChange, onSuccess, t]
+    []
   );
+
+  // ── Payment ─────────────────────────────────────────────
+
+  const handlePay = useCallback(async () => {
+    if (!selectedPackage) return;
+    setPaying(true);
+    try {
+      if (siteConfig.region === "cn") {
+        // WeChat Pay: show QR code
+        const result = await backendApi.post<RechargeResult>("/api/payment/wechat/recharge", {
+          data: { packageId: selectedPackage.id, type: 2 },
+        });
+        const qrDataUrl = await QRCode.toDataURL(result.url, { width: 256, margin: 2 });
+        setQrUrl(qrDataUrl);
+        setOrderNo(result.orderNo);
+        setStep("payment");
+        if (pollRef.current) clearInterval(pollRef.current);
+        pollRef.current = setInterval(async () => {
+          try {
+            const s = await backendApi.get<OrderStatus>(
+              `/api/payment/order/status/${result.orderNo}`
+            );
+            if (s.status === 1) {
+              if (pollRef.current) {
+                clearInterval(pollRef.current);
+                pollRef.current = null;
+              }
+              setStep("success");
+              onSuccess?.();
+            }
+          } catch {
+            /* ignore */
+          }
+        }, 3000);
+      } else {
+        // Airwallex: redirect to payment page
+        const result = await backendApi.post<{ checkoutUrl: string; orderNo: string }>(
+          "/api/payment/order/create",
+          {
+            data: {
+              productId: selectedPackage.id,
+              productType: 2, // "vip",
+              // successUrl: `${window.location.origin}${window.location.pathname}?payment=success`,
+              // cancelUrl: `${window.location.origin}${window.location.pathname}?payment=cancelled`,
+            },
+          }
+        );
+        if (result.checkoutUrl) {
+          if (window.self !== window.top) {
+            window.parent.postMessage({ type: "navigateToPayment", url: result.checkoutUrl }, "*");
+          } else {
+            window.location.href = result.checkoutUrl;
+          }
+        }
+      }
+    } catch (e) {
+      console.error("[UpgradeDialog]", e);
+    } finally {
+      setPaying(false);
+    }
+  }, [selectedPackage, onSuccess]);
+
+  const handleAlreadyPaid = useCallback(async () => {
+    if (!orderNo) return;
+    try {
+      const s = await backendApi.get<OrderStatus>(`/api/payment/order/status/${orderNo}`);
+      if (s.status === 1) {
+        if (pollRef.current) {
+          clearInterval(pollRef.current);
+          pollRef.current = null;
+        }
+        setStep("success");
+        onSuccess?.();
+      }
+    } catch {
+      /* ignore */
+    }
+  }, [orderNo, onSuccess]);
 
   if (!open) return null;
 
   return (
-    <div
-      role="dialog"
-      aria-modal="true"
-      aria-label={t("membership.headline")}
-      className="fixed inset-0 z-[90] overflow-hidden bg-[#050505] text-white"
-    >
-      <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-[#E52227]" />
-      <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(180deg,#151515_0%,#070707_42%,#030303_100%)]" />
-      <div className="pointer-events-none absolute inset-0 opacity-[0.14] [background-image:linear-gradient(rgba(255,255,255,0.08)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.08)_1px,transparent_1px)] [background-size:48px_48px]" />
+    <div className="fixed inset-0 z-50 bg-background">
+      {/* Light rays background */}
+      <div className="absolute inset-0">
+        <LightRays
+          raysOrigin="top-center"
+          raysColor="#ffffff"
+          raysSpeed={1}
+          lightSpread={0.5}
+          rayLength={3}
+          fadeDistance={1}
+          saturation={1}
+          followMouse
+          mouseInfluence={0.1}
+          className="h-full w-full"
+        />
+      </div>
 
+      {/* Close */}
       <button
         type="button"
         onClick={() => onOpenChange(false)}
-        className="fixed right-4 top-4 z-30 flex size-11 items-center justify-center rounded-full border border-white/12 bg-white/[0.06] text-white/72 backdrop-blur-md transition-colors hover:bg-white/12 hover:text-white sm:right-6 sm:top-6"
-        aria-label={t("close")}
+        className="fixed right-3 top-3 z-20 flex size-10 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-muted hover:text-foreground sm:right-6 sm:top-6"
       >
         <IconX className="size-5" />
       </button>
 
-      <div className="relative z-10 h-full overflow-y-auto px-4 py-6 sm:px-6 lg:px-8">
-        <div className="mx-auto flex min-h-full w-full max-w-[1500px] flex-col">
-          <header className="flex flex-col gap-5 pb-8 pt-12 sm:pt-10 lg:flex-row lg:items-end lg:justify-between">
-            <div className="max-w-3xl">
-              <div className="mb-5 inline-flex items-center gap-2 rounded-full border border-white/12 bg-white/[0.06] px-3 py-1.5 text-xs font-semibold text-white/70">
-                <IconCrown className="size-4 text-[#E52227]" />
-                <span>{t("membership.subscriptionLabel")}</span>
-              </div>
-              <h1 className="text-4xl font-black leading-none sm:text-5xl lg:text-6xl">
-                {t("membership.headline")}
-              </h1>
-              <p className="mt-4 max-w-2xl text-base leading-7 text-white/58 sm:text-lg">
-                {t("membership.subheadline")}
-              </p>
-            </div>
-
-            <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap lg:justify-end">
-              <div className="inline-flex w-fit items-center gap-2 rounded-full border border-white/12 bg-white/[0.06] px-3 py-2 text-sm font-semibold text-white/72">
-                <IconReceipt className="size-4" />
-                {t("membership.currencyNote", { currency })}
-              </div>
-              <a
-                href="mailto:business@fizzdragon.com"
-                className="inline-flex w-fit items-center gap-2 rounded-full border border-white/12 bg-white text-sm font-bold text-black transition-colors hover:bg-white/90 px-4 py-2"
-              >
-                {t("membership.contactSales")}
-                <IconArrowRight className="size-4" />
-              </a>
-            </div>
-          </header>
-
-          <div className="mb-7 flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-            <SegmentGroup label={t("membership.planAudience")}>
-              <SegmentButton
-                active={productType === "membership_plan"}
-                onClick={() => setProductType("membership_plan")}
-              >
-                <IconCrown className="size-4" />
-                {t("membership.individual")}
-              </SegmentButton>
-              <SegmentButton
-                active={productType === "team_membership_plan"}
-                onClick={() => setProductType("team_membership_plan")}
-              >
-                <IconUsersGroup className="size-4" />
-                {t("membership.teams")}
-              </SegmentButton>
-            </SegmentGroup>
-
-            <SegmentGroup label={t("membership.billingCycle")}>
-              <SmallSegmentButton
-                active={billingInterval === "month"}
-                onClick={() => setBillingInterval("month")}
-              >
-                {t("membership.monthly")}
-              </SmallSegmentButton>
-              <SmallSegmentButton
-                active={billingInterval === "year"}
-                onClick={() => setBillingInterval("year")}
-              >
-                {t("membership.yearly")}
-                <span className="ml-2 rounded-full bg-[#E52227] px-2 py-0.5 text-[11px] font-black text-white">
-                  {t("membership.annualSavings")}
-                </span>
-              </SmallSegmentButton>
-            </SegmentGroup>
-          </div>
-
-          {loading ? (
-            <LoadingPlans />
-          ) : plans.length === 0 ? (
-            <div className="flex min-h-[360px] items-center justify-center rounded-2xl border border-white/12 bg-white/[0.04] p-8 text-center">
-              <div className="max-w-md">
-                <p className="text-lg font-black">{t("membership.emptyTitle")}</p>
-                <p className="mt-2 text-sm leading-6 text-white/56">{t("membership.emptyBody")}</p>
-              </div>
-            </div>
-          ) : (
-            <div className="grid flex-1 grid-cols-1 gap-4 pb-8 md:grid-cols-2 xl:grid-cols-4 2xl:grid-cols-5">
-              {plans.map((plan) => {
-                const price = priceForInterval(plan, billingInterval) ?? plan.prices[0] ?? null;
-                return (
-                  <PlanCard
-                    key={plan.id}
-                    plan={plan}
-                    price={price}
-                    interval={billingInterval}
-                    selected={selectedPlan?.planKey === plan.planKey}
-                    paying={payingPriceId === price?.id}
-                    onSelect={() => setSelectedPlanKey(plan.planKey)}
-                    onSubscribe={() => void handlePay(plan, price)}
-                  />
-                );
-              })}
-            </div>
-          )}
-
-          <footer className="mt-auto flex flex-col gap-3 border-t border-white/10 py-5 text-xs leading-5 text-white/45 sm:flex-row sm:items-center sm:justify-between">
-            <div className="flex items-center gap-2">
-              <IconShieldCheck className="size-4 text-white/60" />
-              <span>{t("membership.secureCheckout")}</span>
-            </div>
-            <p className="max-w-3xl">{t("disclaimer")}</p>
-          </footer>
+      {/* Content */}
+      <div className="absolute inset-0 z-10 flex flex-col items-center overflow-y-auto px-6 py-20 sm:px-8 sm:py-16">
+        {/* Header */}
+        <div className="mb-3 inline-flex items-center justify-center rounded-full bg-white/10 p-3">
+          <IconCrown className="size-8 text-white" />
         </div>
-      </div>
-    </div>
-  );
-}
-
-function PlanCard({
-  plan,
-  price,
-  selected,
-  paying,
-  interval,
-  onSelect,
-  onSubscribe,
-}: {
-  plan: MembershipPlan;
-  price: MembershipPrice | null;
-  selected: boolean;
-  paying: boolean;
-  interval: BillingInterval;
-  onSelect: () => void;
-  onSubscribe: () => void;
-}) {
-  const t = useTranslations("payment");
-  const badge = stringField(plan.marketing, "badge");
-  const audience = stringField(plan.marketing, "audience");
-  const featureItems = membershipFeatureItems(plan, t);
-  const originalAmount = price ? originalAmountMinor(price) : null;
-  const hasOriginal = price && originalAmount && BigInt(originalAmount) > BigInt(price.amountMinor);
-  const isFeatured = Boolean(badge) || selected;
-
-  return (
-    <article
-      onClick={onSelect}
-      className={cn(
-        "relative flex min-h-[560px] cursor-pointer flex-col overflow-hidden rounded-2xl border bg-[#111] p-5 transition-colors",
-        isFeatured
-          ? "border-[#E52227]/70 bg-[#180b0c]"
-          : "border-white/12 bg-white/[0.045] hover:border-white/24",
-        selected && "shadow-[0_0_0_1px_rgba(229,34,39,0.55)]"
-      )}
-    >
-      {badge ? (
-        <div className="absolute inset-x-0 top-0 flex h-9 items-center justify-center bg-[#E52227] px-3 text-xs font-black uppercase text-white">
-          {badge}
-        </div>
-      ) : null}
-
-      <div className={cn("flex items-start justify-between gap-3", badge ? "pt-9" : "")}>
-        <div className="min-w-0">
-          <p className="text-2xl font-black leading-tight">{plan.name}</p>
-          <p className="mt-2 min-h-12 text-sm leading-6 text-white/52">
-            {plan.description || audience || t("membership.defaultDescription")}
-          </p>
-        </div>
-        {selected ? <IconCircleCheckFilled className="size-6 shrink-0 text-[#E52227]" /> : null}
-      </div>
-
-      <div className="mt-6">
-        {price ? (
-          <div className="flex flex-wrap items-end gap-x-3 gap-y-1">
-            {hasOriginal ? (
-              <span className="pb-1 text-2xl font-black text-white/35 line-through">
-                {formatMoneyMinor(originalAmount, price.currency)}
-              </span>
-            ) : null}
-            <span className="text-5xl font-black leading-none">
-              {formatMoneyMinor(price.amountMinor, price.currency)}
-            </span>
-            <span className="pb-1 text-sm font-semibold text-white/45">
-              {intervalLabel(price.interval || interval, t)}
-            </span>
-          </div>
-        ) : (
-          <div>
-            <span className="text-5xl font-black leading-none">{t("membership.customPrice")}</span>
-            <p className="mt-2 text-sm text-white/45">{t("membership.priceUnavailable")}</p>
-          </div>
-        )}
-      </div>
-
-      <div className="mt-6 border-y border-white/10 py-4">
-        <div className="flex items-center justify-between gap-4">
-          <div className="flex items-center gap-2 text-sm font-bold text-white/82">
-            <IconBolt className="size-4 text-[#E52227]" />
-            <span>{t("membership.includedInPlan")}</span>
-          </div>
-          <span className="text-sm font-black">
-            {formatInteger(plan.includedComputeCredits)} {t("membership.computeCredits")}
-          </span>
-        </div>
-        <p className="mt-2 text-xs font-semibold text-white/45">
-          {plan.includedSeats} {t("membership.seats")}
-          {plan.maxSeats ? ` · ${t("membership.maxSeats", { count: plan.maxSeats })}` : ""}
+        <h1 className="mb-2 text-2xl font-bold sm:text-3xl">{t("upgrade")}</h1>
+        <p className="mb-6 max-w-md px-4 text-center text-sm text-muted-foreground sm:text-base">
+          {t("unlockMore")}
         </p>
-      </div>
 
-      <ul className="mt-5 space-y-3">
-        {featureItems.map((item) => (
-          <li key={item} className="flex items-start gap-2 text-sm leading-5 text-white/70">
-            <IconCheck className="mt-0.5 size-4 shrink-0 text-white" />
-            <span>{item}</span>
-          </li>
-        ))}
-      </ul>
+        {/* Currency switcher (only for global with multiple currencies) */}
+        {siteConfig.currencies.length > 1 && (
+          <div className="mb-10 flex items-center justify-center gap-1 rounded-full border border-white/10 bg-white/[0.04] p-1">
+            {siteConfig.currencies.map((c) => (
+              <button
+                key={c.code}
+                type="button"
+                onClick={() => setCurrency(c.code)}
+                className={cn(
+                  "rounded-full px-4 py-1.5 text-sm font-medium transition-all",
+                  currency === c.code
+                    ? "bg-white/10 text-foreground"
+                    : "text-muted-foreground hover:text-foreground"
+                )}
+              >
+                {c.symbol} {c.code}
+              </button>
+            ))}
+          </div>
+        )}
 
-      <div className="mt-auto pt-6">
-        {price ? (
-          <button
-            type="button"
-            onClick={(event) => {
-              event.stopPropagation();
-              onSubscribe();
-            }}
-            disabled={paying}
-            className={cn(
-              "flex h-12 w-full items-center justify-center gap-2 rounded-full text-base font-black transition-colors disabled:pointer-events-none disabled:opacity-60",
-              isFeatured
-                ? "bg-[#E52227] text-white hover:bg-[#f33a3f]"
-                : "bg-white text-black hover:bg-white/90"
+        {step === "select" && (
+          <>
+            {loading ? (
+              <div className="flex h-48 items-center justify-center">
+                <IconLoader2 className="size-6 animate-spin text-muted-foreground" />
+              </div>
+            ) : (
+              <div className="grid w-full max-w-4xl grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
+                {packages.map((pkg) => {
+                  const isSelected = selectedId === pkg.id;
+                  const isBest = bestValueId === pkg.id;
+                  const benefits = getBenefits(pkg);
+                  return (
+                    <div
+                      key={pkg.id}
+                      onClick={() => setSelectedId(pkg.id)}
+                      className={cn(
+                        "relative flex cursor-pointer flex-col rounded-2xl border p-6 text-left backdrop-blur-sm transition-all",
+                        isSelected
+                          ? "border-white/40 bg-white/5 shadow-lg shadow-white/5"
+                          : "border-white/10 bg-white/[0.02] hover:border-white/20"
+                      )}
+                    >
+                      {isBest && (
+                        <span className="absolute -top-3 left-1/2 -translate-x-1/2 rounded-full bg-white px-3 py-1 text-xs font-semibold text-black">
+                          {t("popular")}
+                        </span>
+                      )}
+
+                      {/* Name */}
+                      <div className="text-lg font-bold">{displayName(pkg.packageName)}</div>
+                      <div className="mt-1 text-xs text-muted-foreground">
+                        {pkg.description || `${pkg.durationDays} ${t("days")}`}
+                      </div>
+
+                      {/* Price */}
+                      <div className="mt-4 mb-1">
+                        <span className="text-3xl font-bold">
+                          <span className="text-lg font-normal text-muted-foreground">
+                            {currencySymbol}
+                          </span>
+                          {displayPrice(pkg.price)}
+                        </span>
+                        {pkg.durationDays >= 30 && (
+                          <span className="ml-1 text-sm text-muted-foreground">
+                            /{t("perMonth").replace("/", "")}
+                          </span>
+                        )}
+                      </div>
+                      <div className="mb-5 text-xs text-muted-foreground/60">
+                        {pkg.durationDays >= 30
+                          ? t("billingPeriod", { days: pkg.durationDays, unit: t("days") })
+                          : `${pkg.durationDays} ${t("days")}`}
+                      </div>
+
+                      {/* Subscribe button */}
+                      <div className="mb-6">
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setSelectedId(pkg.id);
+                            if (isSelected) void handlePay();
+                          }}
+                          disabled={isSelected && paying}
+                          className={cn(
+                            "w-full rounded-full py-2.5 text-center text-sm font-medium transition-colors",
+                            isSelected
+                              ? "bg-primary text-primary-foreground hover:bg-primary-hover"
+                              : "bg-white/10 text-white hover:bg-white/15"
+                          )}
+                        >
+                          {isSelected && paying ? (
+                            <IconLoader2 className="mx-auto size-4 animate-spin" />
+                          ) : isSelected ? (
+                            siteConfig.region === "cn" ? (
+                              t("wechatPay")
+                            ) : (
+                              t("payNow")
+                            )
+                          ) : (
+                            t("selectPlan")
+                          )}
+                        </button>
+                      </div>
+
+                      {/* Benefits — top-aligned across cards (no mt-auto)
+                          so the first benefit row sits right under the
+                          subscribe button on every card. The grid container
+                          already stretches all cards to the same height. */}
+                      <div className="space-y-4">
+                        {benefits.map((group, gi) => (
+                          <div key={gi}>
+                            {group.title && (
+                              <div className="mb-2 flex items-center gap-1.5">
+                                <span className="text-[11px] font-semibold uppercase tracking-wider text-primary/80">
+                                  {group.title}
+                                </span>
+                                <div className="flex-1 border-t border-white/8" />
+                              </div>
+                            )}
+                            <ul className="space-y-2">
+                              {group.items.map((b, i) => (
+                                <li
+                                  key={i}
+                                  className="flex items-start gap-2 text-sm text-muted-foreground"
+                                >
+                                  <IconCheck className="mt-0.5 size-4 shrink-0 text-white" />
+                                  <span>{b}</span>
+                                </li>
+                              ))}
+                            </ul>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
             )}
-          >
-            {paying ? <IconLoader2 className="size-5 animate-spin" /> : t("membership.getStarted")}
-            {!paying ? <IconArrowRight className="size-4" /> : null}
-          </button>
-        ) : (
-          <a
-            href="mailto:business@fizzdragon.com"
-            onClick={(event) => event.stopPropagation()}
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-white text-base font-black text-black transition-colors hover:bg-white/90"
-          >
-            {t("membership.contactSales")}
-            <IconArrowRight className="size-4" />
-          </a>
+
+            {/* Disclaimer */}
+            <p className="mt-10 max-w-2xl text-center text-xs leading-relaxed text-muted-foreground/40">
+              {t("disclaimer")}
+            </p>
+          </>
+        )}
+
+        {step === "payment" && (
+          <div className="flex flex-col items-center">
+            <h2 className="mb-2 text-xl font-semibold">{t("wechatPay")}</h2>
+            <p className="mb-8 text-sm text-muted-foreground">{t("scanToPay")}</p>
+            <div className="mb-8 rounded-2xl bg-white p-5">
+              <img src={qrUrl} alt="QR" className="size-56" />
+            </div>
+            <div className="flex gap-3">
+              <Button
+                variant="outline"
+                color="muted"
+                onClick={() => {
+                  if (pollRef.current) {
+                    clearInterval(pollRef.current);
+                    pollRef.current = null;
+                  }
+                  setQrUrl("");
+                  setOrderNo("");
+                  setStep("select");
+                }}
+              >
+                {t("changePlan")}
+              </Button>
+              <Button variant="soft" onClick={() => void handleAlreadyPaid()}>
+                {t("alreadyPaid")}
+              </Button>
+            </div>
+          </div>
+        )}
+
+        {step === "success" && (
+          <div className="flex flex-col items-center">
+            <div className="mb-5 flex size-20 items-center justify-center rounded-full bg-white/10">
+              <IconCircleCheckFilled className="size-12 text-white" />
+            </div>
+            <h2 className="mb-2 text-xl font-semibold">{t("paymentSuccess")}</h2>
+            <p className="mb-8 text-sm text-muted-foreground">{t("paymentSuccessDesc")}</p>
+            <Button onClick={() => onOpenChange(false)}>{t("close")}</Button>
+          </div>
         )}
       </div>
-    </article>
-  );
-}
-
-function LoadingPlans() {
-  return (
-    <div className="grid flex-1 grid-cols-1 gap-4 pb-8 md:grid-cols-2 xl:grid-cols-4">
-      {Array.from({ length: 4 }).map((_, index) => (
-        <div
-          key={index}
-          className="min-h-[520px] animate-pulse rounded-2xl border border-white/10 bg-white/[0.045] p-5"
-        >
-          <div className="h-7 w-36 rounded-full bg-white/10" />
-          <div className="mt-4 h-4 w-full rounded-full bg-white/8" />
-          <div className="mt-2 h-4 w-3/4 rounded-full bg-white/8" />
-          <div className="mt-8 h-12 w-44 rounded-full bg-white/10" />
-          <div className="mt-8 space-y-3">
-            <div className="h-4 rounded-full bg-white/8" />
-            <div className="h-4 rounded-full bg-white/8" />
-            <div className="h-4 w-2/3 rounded-full bg-white/8" />
-          </div>
-        </div>
-      ))}
     </div>
   );
-}
-
-function SegmentGroup({ label, children }: { label: string; children: ReactNode }) {
-  return (
-    <div className="flex w-fit flex-col gap-2">
-      <span className="px-1 text-xs font-bold uppercase text-white/38">{label}</span>
-      <div className="flex items-center rounded-full border border-white/12 bg-white/[0.06] p-1">
-        {children}
-      </div>
-    </div>
-  );
-}
-
-function SegmentButton({
-  active,
-  onClick,
-  children,
-}: {
-  active: boolean;
-  onClick: () => void;
-  children: ReactNode;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={cn(
-        "inline-flex h-11 items-center gap-2 rounded-full px-4 text-sm font-black transition-colors",
-        active ? "bg-white text-black" : "text-white/54 hover:text-white"
-      )}
-    >
-      {children}
-    </button>
-  );
-}
-
-function SmallSegmentButton({
-  active,
-  onClick,
-  children,
-}: {
-  active: boolean;
-  onClick: () => void;
-  children: ReactNode;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={cn(
-        "inline-flex h-11 items-center rounded-full px-4 text-sm font-black transition-colors",
-        active ? "bg-white text-black" : "text-white/54 hover:text-white"
-      )}
-    >
-      {children}
-    </button>
-  );
-}
-
-function membershipCurrencyForCountry(country: string) {
-  return country.toUpperCase() === "SG" ? "SGD" : "USD";
-}
-
-function priceForInterval(plan: MembershipPlan, interval: BillingInterval) {
-  return plan.prices.find((price) => price.interval === interval) ?? null;
-}
-
-function originalAmountMinor(price: MembershipPrice) {
-  const value = price.metadata?.originalAmountMinor;
-  return typeof value === "string" && /^\d+$/.test(value) ? value : null;
-}
-
-function formatMoneyMinor(amountMinor: string | null, currency: string) {
-  if (!amountMinor) return "";
-  const cents = Number(BigInt(amountMinor));
-  const amount = cents / 100;
-  return new Intl.NumberFormat(undefined, {
-    style: "currency",
-    currency,
-    maximumFractionDigits: Number.isInteger(amount) ? 0 : 2,
-  }).format(amount);
-}
-
-function formatInteger(value: string | number) {
-  return new Intl.NumberFormat().format(Number(value));
-}
-
-function intervalLabel(interval: string, t: ReturnType<typeof useTranslations>) {
-  if (interval === "month") return t("membership.perMonth");
-  if (interval === "year") return t("membership.perYear");
-  return t("membership.oneTime");
-}
-
-function membershipFeatureItems(plan: MembershipPlan, t: ReturnType<typeof useTranslations>) {
-  const items: string[] = [];
-  const flags = plan.featureFlags ?? {};
-  const limits = plan.limits ?? {};
-  const approximateImagesPerMonth = numberField(limits, "approximateImagesPerMonth");
-  const concurrentJobs = numberField(limits, "concurrentJobs");
-  const queuedJobs = numberField(limits, "queuedJobs");
-  if (approximateImagesPerMonth !== null) {
-    items.push(
-      t("membership.approxImages", {
-        count: approximateImagesPerMonth,
-      })
-    );
-  }
-  if (flags.privateGenerations) items.push(t("membership.privateGenerations"));
-  if (flags.advancedWorkflows) items.push(t("membership.advancedWorkflows"));
-  if (flags.prioritySupport) items.push(t("membership.prioritySupport"));
-  if (flags.sharedCredits) items.push(t("membership.sharedCredits"));
-  if (concurrentJobs !== null) {
-    items.push(t("membership.concurrentJobs", { count: concurrentJobs }));
-  }
-  if (queuedJobs !== null) {
-    items.push(t("membership.queuedJobs", { count: queuedJobs }));
-  }
-  if (plan.topupDiscountBps > 0) {
-    items.push(
-      t("benefits.creditDiscount", {
-        percent: plan.topupDiscountBps / 100,
-        discount: (10000 - plan.topupDiscountBps) / 1000,
-      })
-    );
-  }
-  return items.slice(0, 6);
-}
-
-function stringField(record: Record<string, unknown>, key: string) {
-  const value = record[key];
-  return typeof value === "string" && value.trim() ? value : null;
-}
-
-function numberField(record: Record<string, unknown>, key: string) {
-  const value = record[key];
-  return typeof value === "number" && Number.isFinite(value) ? value : null;
 }

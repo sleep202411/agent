@@ -10,6 +10,8 @@ import type { ReferenceMediaItem } from "./mention-popover";
 interface RichMentionEditorProps {
   value: string;
   onChange: (value: string) => void;
+  /** Fires on every content edit (for debounced autosave). Not blur-gated. */
+  onAutoSave?: (value: string) => void;
   editing?: boolean;
   onStartEdit?: () => void;
   onStopEdit?: () => void;
@@ -33,6 +35,7 @@ interface RichMentionEditorProps {
 export function RichMentionEditor({
   value,
   onChange,
+  onAutoSave,
   editing = true,
   onStartEdit,
   onStopEdit,
@@ -99,6 +102,7 @@ export function RichMentionEditor({
         value={value}
         editing={editing}
         onSave={onChange}
+        onAutoSave={onAutoSave}
         onStartEdit={handleStartEdit}
         onStopEdit={handleStopEdit}
         placeholder={placeholder}

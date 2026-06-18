@@ -258,6 +258,20 @@ function LiftedImageDialog({
     [promptContext.imagePromptColumnId, shotId]
   );
 
+  // Debounced autosave from the dialog. Silent (network-only): no toast spam
+  // while typing and no store churn. Allows empty so clearing the prompt sticks.
+  const handleAutoSavePrompt = useCallback(
+    (prompt: string) => {
+      const imagePromptColumnId = promptContext.imagePromptColumnId;
+      if (!imagePromptColumnId) return;
+      void persistTextCell(shotId, imagePromptColumnId, prompt.trim(), {
+        richText: true,
+        silent: true,
+      });
+    },
+    [promptContext.imagePromptColumnId, shotId]
+  );
+
   return (
     <AiImageGeneratorDialog
       open
@@ -275,6 +289,7 @@ function LiftedImageDialog({
       onCollect={handleCollect}
       onSetPreferred={handleSetPreferred}
       onGeneratePrompt={handleGeneratePrompt}
+      onAutoSavePrompt={handleAutoSavePrompt}
       onPrevShot={onPrevShot}
       onNextShot={onNextShot}
     />
@@ -330,6 +345,19 @@ function LiftedVideoDialog({
     [promptContext.videoPromptColumnId, shotId]
   );
 
+  // Debounced autosave from the dialog (silent: network-only). Allows empty.
+  const handleAutoSavePrompt = useCallback(
+    (prompt: string) => {
+      const videoPromptColumnId = promptContext.videoPromptColumnId;
+      if (!videoPromptColumnId) return;
+      void persistTextCell(shotId, videoPromptColumnId, prompt.trim(), {
+        richText: true,
+        silent: true,
+      });
+    },
+    [promptContext.videoPromptColumnId, shotId]
+  );
+
   return (
     <AiVideoGeneratorDialog
       open
@@ -347,6 +375,7 @@ function LiftedVideoDialog({
       onCollect={handleCollect}
       onSetPreferred={handleSetPreferred}
       onGeneratePrompt={handleGeneratePrompt}
+      onAutoSavePrompt={handleAutoSavePrompt}
       onPrevShot={onPrevShot}
       onNextShot={onNextShot}
     />

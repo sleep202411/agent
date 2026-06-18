@@ -1,0 +1,175 @@
+"use client";
+
+import { use, useState } from "react";
+import { useTranslations } from "next-intl";
+import { useRouter } from "@/i18n/navigation";
+import { useMutation, useQuery } from "@tanstack/react-query";
+import { IconAlertTriangle, IconLink, IconLoader2, IconUsers } from "@tabler/icons-react";
+import { toast } from "sonner";
+import { Button } from "@/components/ui/button";
+import { ApiRequestError } from "@/lib/api";
+import { useAuth } from "@/app/_components/auth-provider";
+import { ACTIVE_WORKSPACE_STORAGE_KEY } from "@/app/_components/workspace-context";
+import {
+  acceptInvite,
+  previewInvite,
+  type AcceptedInvite,
+  type InvitePreview,
+} from "@/lib/collab/sharing-api";
+
+const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
+
+/**
+ * Invite-link landing — sign in (if needed) → preview the team/project → accept
+ * → route into the workspace. Lives outside the (studio) group, so it owns its
+ * own minimal centered shell. The server is the source of truth for whether the
+ * link is usable; this only renders the resolved state.
+ */
+export default function InviteAcceptPage({ params }: { params: Promise<{ token: string }> }) {
+  const { token } = use(params);
+  const t = useTranslations("invite");
+  const router = useRouter();
+  const { user, loading: authLoading, signIn } = useAuth();
+
+  const previewQ = useQuery<InvitePreview, ApiRequestError>({
+    queryKey: ["invite-preview", token],
+    queryFn: () => previewInvite(token),
+    retry: false,
+  });
+
+  const [joining, setJoining] = useState(false);
+  const acceptMut = useMutation({
+    mutationFn: () => acceptInvite(token),
+    onSuccess: (result: AcceptedInvite) => {
+      setJoining(true); // keep the button busy through navigation
+      toast.success(result.scope === "workspace" ? t("joinedTeam") : t("joinedProject"));
+      if (result.scope === "workspace") {
+        try {
+          localStorage.setItem(ACTIVE_WORKSPACE_STORAGE_KEY, result.workspaceId);
+        } catch {
+          /* ignore */
+        }
+        router.replace("/canvas");
+      } else {
+        router.replace(`/project/${result.projectId}`);
+      }
+    },
+    onError: (e) => toast.error(e instanceof ApiRequestError ? e.message : t("acceptFailed")),
+  });
+
+  return (
+    <main className="flex min-h-dvh items-center justify-center px-4">
+      <div className="w-full max-w-sm">
+        <div className="mb-6 flex items-center justify-center gap-2 text-sm font-semibold tracking-tight text-muted-foreground">
+          <IconLink className="size-4" />
+          FizzStudio
+        </div>
+
+        <div className="rounded-2xl bg-card p-6">{renderBody()}</div>
+      </div>
+    </main>
+  );
+
+  function renderBody() {
+    if (authLoading || previewQ.isLoading) {
+      return (
+        <div className="flex flex-col items-center gap-3 py-6 text-muted-foreground">
+          <IconLoader2 className="size-6 animate-spin" />
+          <p className="text-sm">{t("loading")}</p>
+        </div>
+      );
+    }
+
+    if (previewQ.isError) {
+      // Not signed in → the api client already raised the login dialog.
+      if (!user) {
+        return (
+          <Shell
+            icon={<IconUsers className="size-6" />}
+            title={t("signInTitle")}
+            body={t("signInBody")}
+          >
+            <Button className="w-full" onClick={signIn}>
+              {t("signIn")}
+            </Button>
+          </Shell>
+        );
+      }
+      return (
+        <Shell
+          icon={<IconAlertTriangle className="size-6" />}
+          title={t("unavailableTitle")}
+          body={t("invalidBody")}
+        >
+          <Button variant="secondary" className="w-full" onClick={() => router.replace("/canvas")}>
+            {t("goToFizzStudio")}
+          </Button>
+        </Shell>
+      );
+    }
+
+    const preview = previewQ.data;
+    if (!preview) return null;
+
+    if (preview.status !== "pending") {
+      const copy =
+        preview.status === "revoked"
+          ? t("revokedBody")
+          : preview.status === "expired"
+            ? t("expiredBody")
+            : t("inactiveBody");
+      return (
+        <Shell
+          icon={<IconAlertTriangle className="size-6" />}
+          title={t("unavailableTitle")}
+          body={copy}
+        >
+          <Button variant="secondary" className="w-full" onClick={() => router.replace("/canvas")}>
+            {t("goToFizzStudio")}
+          </Button>
+        </Shell>
+      );
+    }
+
+    const scopeWord = preview.scope === "workspace" ? t("scopeTeam") : t("scopeProject");
+    return (
+      <Shell
+        icon={<IconUsers className="size-6" />}
+        title={t("joinTitle", { name: preview.targetName })}
+        body={t("joinBody", { scope: scopeWord, role: cap(preview.role) })}
+      >
+        <Button
+          className="w-full"
+          disabled={acceptMut.isPending || joining}
+          onClick={() => acceptMut.mutate()}
+        >
+          {acceptMut.isPending || joining ? <IconLoader2 className="size-4 animate-spin" /> : null}
+          {t("acceptInvitation")}
+        </Button>
+      </Shell>
+    );
+  }
+}
+
+function Shell({
+  icon,
+  title,
+  body,
+  children,
+}: {
+  icon: React.ReactNode;
+  title: string;
+  body: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="flex flex-col items-center text-center">
+      <span className="flex size-12 items-center justify-center rounded-full bg-secondary text-foreground">
+        {icon}
+      </span>
+      <h1 className="mt-4 text-lg font-semibold">{title}</h1>
+      <p className="mt-1 text-sm text-muted-foreground">{body}</p>
+      <div className="mt-5 w-full">{children}</div>
+    </div>
+  );
+}

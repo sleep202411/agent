@@ -10,6 +10,7 @@ import { AlertingModule } from './common/alerting';
 import { RegionModule } from './common/region';
 import { ThrottleModule } from './common/throttle/throttle.module';
 import { ConversationsModule } from './conversations/conversations.module';
+import { CopilotModule } from './copilot/copilot.module';
 import { CrewsModule } from './crews/crews.module';
 import { CreatorServicesModule } from './creator-services/creator-services.module';
 import { DocumentsModule } from './documents';
@@ -26,6 +27,7 @@ import { RedisModule } from './infra/redis/redis.module';
 import { NotificationModule } from './notification';
 import { QuotaModule } from './quota/quota.module';
 import { SparkModule } from './spark/spark.module';
+import { SharingModule } from './sharing/sharing.module';
 import { UsersModule } from './users/users.module';
 import { WorkspacesModule } from './workspaces';
 
@@ -47,6 +49,7 @@ import { WorkspacesModule } from './workspaces';
     // ThrottleModule is Global — provides RateLimitService to any consumer.
     ThrottleModule,
     AssistantModule,
+    CopilotModule,
     SparkModule,
     AiGenerationModule,
     RealtimeModule,
@@ -54,6 +57,7 @@ import { WorkspacesModule } from './workspaces';
     QuotaModule,
     UsersModule,
     WorkspacesModule,
+    SharingModule,
     BillingModule,
     LegacyPointsModule,
     IpCommerceModule,

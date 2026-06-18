@@ -115,6 +115,33 @@ through i18n. Translations land in the same PR.
 - Commit message style: `<type>(<scope>): <short>` body free-form. See
   `git log --oneline` for examples.
 
+### Engineering standards (the bar for non-trivial work)
+
+- **Build for the target state — no hedged half-measures.** Don't ship
+  "MVP / demo / placeholder for now" or backwards-compat fallbacks by
+  default. When existing code or schema is wrong for the target, refactor
+  it head-on instead of working around it.
+- **Senior architect + engineer quality.** Optimize for stability,
+  fluidity, scalability, **decoupling**, and robustness — not just
+  "it runs". Provide extremely smooth UX.
+- **Required config fails loud.** A must-set env var (secret / credential
+  / region selector) gets NO silent low default — fail at boot/readiness
+  when it's missing. Operational _tuning_ knobs may keep sensible defaults.
+- **Slow, steady, meticulous.** Work from the real current code (read it;
+  don't guess from memory). Land changes in independently-verifiable units
+  (tsc + lint + tests). For correctness-critical, browser-untestable, or
+  intricate logic, run an adversarial review before building on it.
+- **UI is full-fidelity.** Match reference designs completely; the only
+  acceptable omission is NOT faking UI for a backend that doesn't exist
+  yet. Follow the app's `DESIGN.md` (studio = dark, zero-chroma monochrome,
+  no decorative orbs, brand red only as a deliberate accent).
+- **Never touch the production / remote database in local dev** without
+  explicit instruction. The local Postgres (`localhost:5433`) is yours to
+  modify freely — migrate / seed / reset it as needed; a remote or prod DB
+  is off-limits unless the user says so.
+- **Don't commit or merge unprompted** (see Git above) — finish, then
+  wait for review.
+
 ### Cross-package imports
 
 `@repo/shared` is the only cross-cutting package most apps need. Its

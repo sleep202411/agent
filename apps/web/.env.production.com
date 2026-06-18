@@ -3,8 +3,8 @@
 # studio.fizzdragon.com
 
 # ============ Java Backend ============
-JAVA_CONTENT_URL=https://fizzdragon.com/content
-JAVA_STUDIO_URL=https://fizzdragon.com/studio
+JAVA_CONTENT_URL=https://java.fizzdragon.com/content
+JAVA_STUDIO_URL=https://java.fizzdragon.com/studio
 
 # ============ NestJS Server ============
 SERVER_URL=http://localhost:3001

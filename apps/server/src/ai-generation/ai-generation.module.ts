@@ -39,6 +39,10 @@ import { BytePlusCatalogService } from './providers/byteplus/byteplus-catalog.se
 import { BytePlusClient } from './providers/byteplus/byteplus-client';
 import { BytePlusConfigService } from './providers/byteplus/byteplus-config.service';
 import { BytePlusProviderAdapter } from './providers/byteplus/byteplus-provider.adapter';
+import { AgnesCatalogService } from './providers/agnes/agnes-catalog.service';
+import { AgnesClient } from './providers/agnes/agnes-client';
+import { AgnesConfigService } from './providers/agnes/agnes-config.service';
+import { AgnesProviderAdapter } from './providers/agnes/agnes-provider.adapter';
 import { AiGenerationQueueService } from './queue.service';
 import { AiGenerationRepository } from './repository';
 import { AiGenerationRoutingService } from './routing.service';
@@ -104,6 +108,12 @@ import { AiGenerationWorkerService } from './worker.service';
     BytePlusCatalogService,
     BytePlusClient,
     BytePlusProviderAdapter,
+
+    // Provider: Agnes AI
+    AgnesConfigService,
+    AgnesCatalogService,
+    AgnesClient,
+    AgnesProviderAdapter,
   ],
   exports: [],
 })
@@ -121,6 +131,7 @@ export class AiGenerationModule implements OnModuleInit {
     private readonly bailian: BailianProviderAdapter,
     private readonly replicate: ReplicateProviderAdapter,
     private readonly bytePlus: BytePlusProviderAdapter,
+    private readonly agnes: AgnesProviderAdapter,
   ) {}
 
   onModuleInit(): void {
@@ -129,5 +140,6 @@ export class AiGenerationModule implements OnModuleInit {
     this.registry.register(this.bailian);
     this.registry.register(this.replicate);
     this.registry.register(this.bytePlus);
+    this.registry.register(this.agnes);
   }
 }

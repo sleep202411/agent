@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import type {
   AiModelDefinition,
+  PollResult,
   ProviderAdapter,
   ProviderGenerationContext,
   ProviderTimingSnapshot,
@@ -13,13 +14,18 @@ import { BytePlusCatalogService } from './byteplus-catalog.service';
 import {
   BytePlusClient,
   type BytePlusImageGenerationResponse,
+  type BytePlusVideoTaskResponse,
 } from './byteplus-client';
 import { BytePlusConfigService } from './byteplus-config.service';
 import {
   bytePlusError,
   mapBytePlusUnknownError,
 } from './byteplus-error.mapper';
-import { mapBytePlusProviderRequest } from './byteplus-request.mapper';
+import type { BytePlusImageRuntimeConfig } from './byteplus-runtime';
+import {
+  mapBytePlusProviderRequest,
+  mapBytePlusVideoProviderRequest,
+} from './byteplus-request.mapper';
 
 @Injectable()
 export class BytePlusProviderAdapter implements ProviderAdapter {
@@ -52,6 +58,9 @@ export class BytePlusProviderAdapter implements ProviderAdapter {
     ctx: ProviderGenerationContext,
   ): Promise<StartResult> {
     const runtime = await this.requireRuntime(modelId);
+    if (runtime.type === 'video') {
+      return this.startVideoGeneration(runtime, input);
+    }
     const payload = mapBytePlusProviderRequest(runtime, input);
     const submittedAt = new Date().toISOString();
     const startedAtMs = Date.now();
@@ -134,6 +143,93 @@ export class BytePlusProviderAdapter implements ProviderAdapter {
         ),
       ],
     };
+  }
+
+  private async startVideoGeneration(
+    runtime: BytePlusImageRuntimeConfig,
+    input: Record<string, unknown>,
+  ): Promise<StartResult> {
+    const payload = mapBytePlusVideoProviderRequest(runtime, input);
+    const submittedAt = new Date().toISOString();
+    const response = await this.client.createVideoTask(
+      this.configService.config,
+      payload,
+    );
+    const taskId = response.body.id;
+    if (!taskId) {
+      throw bytePlusError(
+        'UNKNOWN',
+        `BytePlus ModelArk video task create did not return an id for ${runtime.endpointId}`,
+        'The generation provider did not accept the request. Please try again.',
+        response.body,
+      );
+    }
+    return {
+      kind: 'pending',
+      providerJobId: encodeProviderJobId(runtime.endpointId, taskId),
+      providerRequestId: taskId,
+      providerEndpoint: runtime.endpointId,
+      providerRequest: payload,
+      providerResponse: response.body,
+      submittedAt,
+      queuePosition: null,
+    };
+  }
+
+  async pollStatus(providerJobId: string): Promise<PollResult> {
+    const { endpointId, taskId } = decodeProviderJobId(providerJobId);
+    const runtime = await this.requireRuntime(endpointId);
+    const { body } = await this.client.getVideoTask(
+      this.configService.config,
+      taskId,
+    );
+    const status = String(body.status ?? '').toLowerCase();
+
+    if (status === 'succeeded') {
+      const outputs = collectVideoOutputs(runtime, body);
+      const providerCost = resolveVideoCost(runtime.endpointId, taskId, body);
+      return {
+        kind: 'completed',
+        outputs,
+        providerRequestId: taskId,
+        providerEndpoint: runtime.endpointId,
+        rawStatus: body,
+        providerResponse: body,
+        costAccounting: providerCost.costAccounting,
+        pricingSnapshot: providerCost.pricingSnapshot,
+      };
+    }
+
+    if (
+      status === 'failed' ||
+      status === 'cancelled' ||
+      status === 'canceled' ||
+      status === 'expired'
+    ) {
+      return {
+        kind: 'failed',
+        error: videoErrorFromTask(runtime, body),
+        providerRequestId: taskId,
+        providerEndpoint: runtime.endpointId,
+        rawStatus: body,
+      };
+    }
+
+    return {
+      kind: 'pending',
+      progress: status === 'running' ? 0.55 : 0.2,
+      providerRequestId: taskId,
+      providerEndpoint: runtime.endpointId,
+      queuePosition: null,
+      rawStatus: body,
+      stageHint: `BytePlus ModelArk task ${status || 'pending'}`,
+    };
+  }
+
+  async cancelGeneration(providerJobId: string): Promise<void> {
+    const { taskId } = decodeProviderJobId(providerJobId);
+    // Best-effort provider-side cancel; the local DB row is the source of truth.
+    await this.client.cancelVideoTask(this.configService.config, taskId);
   }
 
   mapError(err: unknown): AiJobError {
@@ -333,4 +429,119 @@ function extFromMime(mimeType: string): string {
   if (mimeType === 'image/jpeg') return 'jpg';
   if (mimeType === 'image/webp') return 'webp';
   return 'png';
+}
+
+function encodeProviderJobId(endpointId: string, taskId: string): string {
+  return `${endpointId}::${taskId}`;
+}
+
+function decodeProviderJobId(providerJobId: string): {
+  endpointId: string;
+  taskId: string;
+} {
+  const [endpointId, taskId] = providerJobId.split('::');
+  if (!endpointId || !taskId) {
+    throw bytePlusError(
+      'UNKNOWN',
+      `Invalid BytePlus ModelArk providerJobId: ${providerJobId}`,
+    );
+  }
+  return { endpointId, taskId };
+}
+
+function collectVideoOutputs(
+  runtime: BytePlusImageRuntimeConfig,
+  body: BytePlusVideoTaskResponse,
+): RawProviderOutput[] {
+  const url = body.content?.video_url;
+  if (typeof url === 'string' && url.trim()) {
+    return [
+      {
+        index: 0,
+        type: 'video',
+        providerUrl: url.trim(),
+        mimeType: 'video/mp4',
+        ext: 'mp4',
+        durationSeconds:
+          typeof body.duration === 'number' ? body.duration : undefined,
+      },
+    ];
+  }
+  throw bytePlusError(
+    'UNKNOWN',
+    `BytePlus ModelArk video task for ${runtime.endpointId} returned no video_url`,
+    'The generation provider returned no output. Please try again.',
+    body,
+  );
+}
+
+// Per-second provider cost (USD). ESTIMATE pending finance confirmation
+// (apidog cites ~$0.66 / 5s 1080p ≈ $0.13/s); user-facing charge is the
+// canonical productPricing, this is provider-cost tracking only.
+function videoUnitPriceUsdPerSecond(endpointId: string): number | null {
+  if (endpointId.startsWith('dreamina-seedance-2-0')) return 0.13;
+  if (endpointId.startsWith('seedance-1-5-pro')) return 0.13;
+  if (endpointId.startsWith('seedance-1-0-pro')) return 0.1;
+  return null;
+}
+
+function resolveVideoCost(
+  endpointId: string,
+  taskId: string,
+  body: BytePlusVideoTaskResponse,
+): {
+  costAccounting: Record<string, unknown> | null;
+  pricingSnapshot: Record<string, unknown> | null;
+} {
+  const perSecond = videoUnitPriceUsdPerSecond(endpointId);
+  const duration =
+    typeof body.duration === 'number' && body.duration > 0
+      ? body.duration
+      : null;
+  if (perSecond == null || duration == null) {
+    return { costAccounting: null, pricingSnapshot: null };
+  }
+  const capturedAt = new Date().toISOString();
+  const providerCost = roundProviderCost(perSecond * duration);
+  return {
+    costAccounting: {
+      provider: 'byteplus-modelark',
+      source: 'byteplus_modelark_official_pricing',
+      endpointId,
+      requestId: taskId,
+      billableUnits: duration,
+      unitPrice: perSecond,
+      unit: 'video_second',
+      currency: 'USD',
+      providerCost,
+      providerCostUsd: providerCost,
+      capturedAt,
+    },
+    pricingSnapshot: {
+      provider: 'byteplus-modelark',
+      source: 'byteplus_modelark_official_pricing',
+      endpointId,
+      unitPrice: perSecond,
+      unit: 'video_second',
+      currency: 'USD',
+      capturedAt,
+      pricingVersion: 'seedance-video-usd-second-v1-2026-06-16',
+      usage: body.usage ?? null,
+    },
+  };
+}
+
+function videoErrorFromTask(
+  runtime: BytePlusImageRuntimeConfig,
+  body: BytePlusVideoTaskResponse,
+): AiJobError {
+  const detail = body.error?.message ?? JSON.stringify(body).slice(0, 500);
+  return {
+    code: 'UNKNOWN',
+    message: `BytePlus ModelArk video task failed for ${runtime.endpointId}: ${detail}`,
+    userMessage: 'Generation failed. Please try again.',
+    raw: body,
+    retryable: true,
+    createdAt: new Date().toISOString(),
+  };
 }

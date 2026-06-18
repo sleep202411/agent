@@ -330,7 +330,11 @@ export class WorkspacesService {
       projectId,
       ProjectMemberRole.viewer,
     );
-    return { project: this.projectDto(project) };
+    const role = await this.permissions.resolveEffectiveProjectRole(
+      user.userId,
+      project,
+    );
+    return { project: this.projectDto(project, role) };
   }
 
   async updateProject(
@@ -505,7 +509,6 @@ export class WorkspacesService {
     return {
       id: workspace.id,
       type: workspace.type,
-      billingMode: workspace.billingMode,
       status: workspace.status,
       name: workspace.name,
       slug: workspace.slug,
@@ -521,7 +524,10 @@ export class WorkspacesService {
     };
   }
 
-  private projectDto(project: PlatformProject) {
+  private projectDto(
+    project: PlatformProject,
+    role?: ProjectMemberRole | null,
+  ) {
     return {
       id: project.id,
       workspaceId: project.workspaceId,
@@ -534,6 +540,9 @@ export class WorkspacesService {
       coverAssetId: project.coverAssetId,
       createdById: project.createdById,
       updatedById: project.updatedById,
+      // The caller's effective role (direct project role, else workspace
+      // fallback). Lets the client gate edit affordances; server enforces.
+      role: role ?? undefined,
       version: project.version,
       createdAt: project.createdAt.toISOString(),
       updatedAt: project.updatedAt.toISOString(),

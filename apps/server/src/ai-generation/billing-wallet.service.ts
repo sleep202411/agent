@@ -12,7 +12,7 @@ import {
   WalletLedgerEntryType,
   WalletOwnerType,
   WalletTransactionStatus,
-  WorkspaceBillingMode,
+  WorkspaceType,
   type WalletAccount,
   type WalletCreditGrant,
 } from '@prisma/client';
@@ -304,18 +304,41 @@ async function resolvePayerTx(
   tx: WalletTx,
   job: ChargeableJob,
 ): Promise<Payer> {
+  // compute_point is uniformly workspace-owned: a job always charges the pot of
+  // the workspace it ran in. job.workspaceId is set for every job at create time
+  // (the server resolves the personal workspace when no team is in context), so
+  // the workspace branch is the live path. billingScope stays as metadata-only
+  // analytics: team workspaces read 'workspace_team', personal reads 'user'.
   if (job.workspaceId) {
     const workspace = await tx.workspace.findUnique({
       where: { id: job.workspaceId },
-      select: { id: true, billingMode: true },
+      select: { id: true, type: true },
     });
-    if (workspace?.billingMode === WorkspaceBillingMode.workspace_pool) {
+    if (workspace) {
       return {
         ownerType: WalletOwnerType.workspace,
         ownerId: workspace.id,
-        billingScope: 'workspace_team',
+        billingScope:
+          workspace.type === WorkspaceType.team ? 'workspace_team' : 'user',
       };
     }
+  }
+  // Defensive fallback (unreachable in normal flow): no workspace on the job →
+  // charge the user's personal-workspace pot if it exists.
+  const personal = await tx.workspace.findFirst({
+    where: {
+      ownerUserId: job.userId,
+      type: WorkspaceType.personal,
+      deletedAt: null,
+    },
+    select: { id: true },
+  });
+  if (personal) {
+    return {
+      ownerType: WalletOwnerType.workspace,
+      ownerId: personal.id,
+      billingScope: 'user',
+    };
   }
   return {
     ownerType: WalletOwnerType.user,

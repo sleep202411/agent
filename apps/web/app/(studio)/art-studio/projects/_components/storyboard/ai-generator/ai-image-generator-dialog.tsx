@@ -26,6 +26,7 @@ import { MediaPreviewModal } from "@/components/media/media-preview-modal";
 import type { ToolbarAction } from "@/components/ui/floating-toolbar";
 import { MediaPreviewPanel } from "./media-preview-panel";
 import { PromptInput } from "./prompt-input";
+import { usePromptAutosave } from "./use-prompt-autosave";
 import {
   ReferenceMapProvider,
   type ReferenceMap,
@@ -70,6 +71,9 @@ interface AiImageGeneratorDialogProps {
   onCollect?: (item: ResultItem) => void;
   onSetPreferred?: (item: ResultItem) => void;
   onGeneratePrompt?: (prompt: string) => void;
+  /** Debounced autosave of the main prompt (persists to the image-prompt
+   *  cell). Fires on edit, not just on Generate. */
+  onAutoSavePrompt?: (prompt: string) => void;
   onPrevShot?: () => void;
   onNextShot?: () => void;
 }
@@ -88,6 +92,7 @@ export function AiImageGeneratorDialog({
   onCollect,
   onSetPreferred,
   onGeneratePrompt,
+  onAutoSavePrompt,
   onPrevShot,
   onNextShot,
 }: AiImageGeneratorDialogProps) {
@@ -149,6 +154,14 @@ export function AiImageGeneratorDialog({
     setSuffixPrompt(value);
     saveEpisodePrompts(prefixPrompt, value);
   };
+
+  // Debounced autosave of the main prompt → image-prompt cell. Flush on close.
+  const { schedule: scheduleSavePrompt, flush: flushPrompt } = usePromptAutosave((value) =>
+    onAutoSavePrompt?.(value)
+  );
+  useEffect(() => {
+    if (!open) flushPrompt();
+  }, [open, flushPrompt]);
 
   const key = `${shotId}_${shotColumnId}`;
   const inst = useAppSelector((s) => selectCurrentInstance(s).aiImageForm.instances[key]);
@@ -606,7 +619,9 @@ export function AiImageGeneratorDialog({
             onPromptChange={(value) => {
               handleUpdateForm({ prompt: value });
               syncMentionRefs(value);
+              scheduleSavePrompt(value);
             }}
+            onAutoSavePrompt={scheduleSavePrompt}
             prefixPrompt={prefixPrompt}
             onPrefixChange={handlePrefixChange}
             suffixPrompt={suffixPrompt}

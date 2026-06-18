@@ -16,6 +16,10 @@ import {
 import { PrismaService } from '../infra/db/db.module';
 import { MediaStorageAccessService } from '../infra/storage/media-storage-access.service';
 import { WorkspacePermissionService } from '../workspaces';
+import {
+  isPeerViewable,
+  requireModerationApproval,
+} from './media-moderation-policy';
 import type {
   MediaAssetAccessQueryDto,
   MediaAssetAccessResponseDto,
@@ -87,6 +91,23 @@ export class MediaAccessService {
       throw new NotFoundException({
         code: 'MEDIA_ASSET_NOT_READY',
         message: 'Media asset is not ready.',
+      });
+    }
+
+    // Pre-broadcast moderation gate: when approval is required, peers (anyone who
+    // is not the asset's owner) cannot view it until moderation approves it. The
+    // owner always sees their own pending asset. No-op unless the policy is on.
+    const isOwner = userId != null && asset.createdByUserId === userId;
+    if (
+      !isPeerViewable(
+        asset.moderationStatus,
+        isOwner,
+        requireModerationApproval(),
+      )
+    ) {
+      throw new ForbiddenException({
+        code: 'MEDIA_ASSET_PENDING_MODERATION',
+        message: 'Media asset is awaiting moderation approval.',
       });
     }
 

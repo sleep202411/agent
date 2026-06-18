@@ -5,16 +5,18 @@ import {
   applyProviderConcurrencyLimit,
   providerCapacityFromRow,
 } from '../../provider-capacity';
-import { AI_QUEUE_IMAGE } from '../../queue';
+import { AI_QUEUE_IMAGE, AI_QUEUE_VIDEO } from '../../queue';
 import type {
   AiBillingPolicy,
   AiGenerationMode,
+  AiJobType,
   AiJsonValue,
   AiRequiredPlan,
 } from '../../types';
 import type { AiModelDefinition } from '../../types';
 import {
   createBytePlusImageRuntimeConfig,
+  createBytePlusVideoRuntimeConfig,
   toBytePlusImageModelDefinition,
   type BytePlusImageRuntimeConfig,
 } from './byteplus-runtime';
@@ -127,11 +129,16 @@ export class BytePlusCatalogService {
 
     return rows.map((row) => {
       const generationModes = stringArray(row.supportedModes);
+      const type = row.modality as AiJobType;
+      const isVideo = type === 'video';
       const providerCapacity = providerCapacityFromRow(row.providerEndpoint);
       const canonicalGlobalConcurrency =
         numberFromPolicy(row.canonicalModel.queuePolicy, 'globalConcurrency') ??
         12;
-      const runtime = createBytePlusImageRuntimeConfig({
+      const createRuntime = isVideo
+        ? createBytePlusVideoRuntimeConfig
+        : createBytePlusImageRuntimeConfig;
+      const runtime = createRuntime({
         provider: 'byteplus-modelark',
         endpointId: row.endpointId,
         name: row.canonicalModel.displayName,
@@ -146,14 +153,14 @@ export class BytePlusCatalogService {
         disabledReason: config.enabled
           ? (row.disabledReason ?? undefined)
           : 'BytePlus ModelArk provider is not enabled for this environment.',
-        queueName: AI_QUEUE_IMAGE,
+        queueName: isVideo ? AI_QUEUE_VIDEO : AI_QUEUE_IMAGE,
         globalConcurrency: applyProviderConcurrencyLimit(
           canonicalGlobalConcurrency,
           providerCapacity,
         ),
         perUserRunning:
           numberFromPolicy(row.canonicalModel.queuePolicy, 'perUserRunning') ??
-          2,
+          (isVideo ? 1 : 2),
         perUserQueued:
           numberFromPolicy(row.canonicalModel.queuePolicy, 'perUserQueued') ??
           10,

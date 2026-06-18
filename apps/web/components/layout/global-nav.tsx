@@ -9,6 +9,7 @@ import { gsap } from "gsap";
 import { CommunityCreditsChip } from "@/components/layout/community-credits-chip";
 import { BellButton } from "@/components/notifications/bell-button";
 import { UserAvatar } from "@/components/user-avatar";
+import { ShinyText } from "@/components/ui/shiny-text";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -260,7 +261,7 @@ export function GlobalNav() {
             onClick={(e) => onNavClick(e, ctaItem)}
             className={navCx("fd-secret-glass-content fd-secret-cta")}
           >
-            <span>{ctaItem.label}</span>
+            <ShinyText text={ctaItem.label} color="#ffffff" shineColor="#ff3d42" speed={2.5} yoyo />
           </Link>
         </span>
 

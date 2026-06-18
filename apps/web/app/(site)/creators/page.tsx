@@ -55,7 +55,6 @@ export default function CreatorsPage() {
   const { data, isLoading, fetchNextPage, hasNextPage, isFetchingNextPage } = active;
 
   const creators = data?.list ?? [];
-  const total = data?.total ?? creators.length;
   const showQr = isQrActive();
 
   const sentinelRef = useRef<HTMLDivElement>(null);
@@ -81,11 +80,7 @@ export default function CreatorsPage() {
         eyebrow={{ icon: IconSparkles, label: t("plaza"), meta: t("eyebrowMeta") }}
         title={{ plain: t("heroTitle"), accent: t("heroTitleAccent") }}
         subtitle={t("heroSubtitle")}
-        stats={{
-          items: [{ value: total, label: t("openCountSuffix") }],
-          cap: t("openCountCap"),
-          dotted: true,
-        }}
+        stats={{ items: [], cap: t("openCountCap") }}
         rightSlot={
           <>
             {showQr && (

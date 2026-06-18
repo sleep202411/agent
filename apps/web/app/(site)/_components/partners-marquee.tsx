@@ -2,7 +2,7 @@
 
 /**
  * Homepage "Trusted by" / "Featured in" partner-logo wall — patterned
- * after the shadcnblocks `logos24` block: two opposing-direction
+ * after the shadcnblocks `logos24` block: three opposing-direction
  * marquee lanes, hover-pause, gradient-mask edge fades.
  *
  * Logo files live at `public/logos/<slug>.svg|png`. Drop new files in
@@ -39,6 +39,17 @@ interface Partner {
    *  the brand colour. */
   mono?: boolean;
 }
+
+type Highlight = Pick<Partner, "slug" | "ext"> & {
+  key: "nvidia" | "microsoft" | "alibaba" | "sgtech";
+};
+
+const HIGHLIGHTS: Highlight[] = [
+  { key: "nvidia", slug: "nvidia-inception", ext: "svg" },
+  { key: "microsoft", slug: "microsoft", ext: "svg" },
+  { key: "alibaba", slug: "alibaba", ext: "svg" },
+  { key: "sgtech", slug: "sgtech", ext: "png" },
+];
 
 /**
  * Partners across tech / IP / other. Order is the legacy marketing
@@ -131,13 +142,12 @@ const PARTNERS: Partner[] = [
 export function PartnersMarquee() {
   const t = useTranslations("home");
 
-  // Split the 29-item list into two roughly-equal lanes so each
-  // marquee row carries about half the logos. Even-indexed → top,
-  // odd-indexed → bottom — interleaving keeps grouping density
-  // similar between rows even though the source list is grouped
-  // by category.
-  const lanes: Partner[][] = [[], []];
-  PARTNERS.forEach((p, i) => lanes[i % 2]!.push(p));
+  // Split the list into three roughly-equal lanes so each marquee row
+  // carries about a third of the logos. Round-robin by index keeps
+  // grouping density similar between rows even though the source list
+  // is grouped by category.
+  const lanes: Partner[][] = [[], [], []];
+  PARTNERS.forEach((p, i) => lanes[i % 3]!.push(p));
 
   return (
     <section className="relative border-t border-border/40 py-32">
@@ -154,11 +164,17 @@ export function PartnersMarquee() {
         <p className="mx-auto mt-5 max-w-2xl text-balance text-base text-muted-foreground sm:text-lg">
           {t("partners.subtitle")}
         </p>
+
+        <div className="mx-auto mt-12 grid max-w-5xl gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          {HIGHLIGHTS.map((item) => (
+            <HighlightCard key={item.key} item={item} />
+          ))}
+        </div>
       </div>
 
       <div
         className={cn(
-          "relative mt-16 flex w-full flex-col gap-6",
+          "relative mt-14 flex w-full flex-col gap-6",
           // Edge fade — masks the marquee tails so logos slide off
           // smoothly into the page background.
           "[mask-image:linear-gradient(to_right,transparent,black_8%,black_92%,transparent)]"
@@ -166,8 +182,33 @@ export function PartnersMarquee() {
       >
         <MarqueeRow partners={lanes[0]!} duration={60} reverse={false} />
         <MarqueeRow partners={lanes[1]!} duration={75} reverse={true} />
+        <MarqueeRow partners={lanes[2]!} duration={68} reverse={false} />
       </div>
     </section>
+  );
+}
+
+function HighlightCard({ item }: { item: Highlight }) {
+  const t = useTranslations("home");
+  const title = t(`partners.highlights.${item.key}.title`);
+  const body = t(`partners.highlights.${item.key}.body`);
+
+  return (
+    <article className="group flex min-h-[136px] flex-col items-center justify-center rounded-2xl border border-border/50 bg-card/55 p-4 text-center backdrop-blur-sm transition-colors hover:border-border hover:bg-card/75">
+      <div className="flex h-10 items-center justify-center">
+        <span className="inline-flex h-9 w-[150px] max-w-full items-center justify-center rounded-lg bg-white px-3 py-2 shadow-sm">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={`/logos/${item.slug}.${item.ext}`}
+            alt={title}
+            className="max-h-full max-w-full object-contain"
+            loading="lazy"
+          />
+        </span>
+      </div>
+      <h3 className="mt-5 max-w-full truncate text-sm font-semibold text-foreground">{title}</h3>
+      <p className="mt-1 max-w-full truncate text-sm text-muted-foreground">{body}</p>
+    </article>
   );
 }
 

@@ -1,0 +1,948 @@
+{
+  "common": {
+    "save": "Save",
+    "cancel": "Cancel",
+    "delete": "Delete",
+    "remove": "Remove",
+    "close": "Close",
+    "confirm": "Confirm",
+    "create": "Create",
+    "edit": "Edit",
+    "done": "Done",
+    "retry": "Retry",
+    "loading": "Loading…",
+    "error": "Something went wrong",
+    "back": "Back",
+    "next": "Next",
+    "copy": "Copy",
+    "copied": "Copied"
+  },
+  "localeSwitcher": {
+    "label": "Language"
+  },
+  "account": {
+    "signIn": "Sign in",
+    "account": "Account",
+    "myProfile": "My Profile",
+    "publicId": "Public ID {id}",
+    "publicIdCopied": "Public ID copied",
+    "publicIdCopyFailed": "Could not copy Public ID",
+    "availableCredits": "Available compute credits",
+    "held": "Held",
+    "total": "Total",
+    "upgrade": "Upgrade",
+    "usageAnalytics": "Usage Analytics",
+    "billing": "Billing & Subscription",
+    "settings": "Settings",
+    "logout": "Logout",
+    "comingSoon": "{label} · Coming soon",
+    "terms": "Terms",
+    "privacy": "Privacy",
+    "blogs": "Blogs"
+  },
+  "home": {
+    "untitledProject": "Untitled project",
+    "createNewProject": "Create new project",
+    "createProjectLoading": "Creating…",
+    "createProjectError": "Couldn't create the project",
+    "hero": {
+      "headline": "What are we creating today?",
+      "subhead": "Pick a project type to get started instantly, or simply describe your requirements in your own words.",
+      "muteSoundtrack": "Mute soundtrack",
+      "playSoundtrack": "Play soundtrack"
+    },
+    "quickStart": {
+      "image": "Image",
+      "video": "Video",
+      "audio": "Audio",
+      "canvas": "Canvas",
+      "soon": "Soon"
+    },
+    "gallery": {
+      "title": "Gallery",
+      "optionsAction": "Options",
+      "saveAction": "Save"
+    },
+    "recent": {
+      "title": "Recent Projects",
+      "showAll": "Show All",
+      "you": "You",
+      "projectActions": "Project actions",
+      "rename": "Rename",
+      "renameDialogTitle": "Rename project",
+      "deleteDialogTitle": "Delete project?",
+      "deleteDialogDescription": "“{name}” and everything in it will be permanently deleted. This can't be undone.",
+      "projectDeleted": "Project deleted",
+      "timeAgo": {
+        "justNow": "just now",
+        "minutes": "{count, plural, one {# minute ago} other {# minutes ago}}",
+        "hours": "{count, plural, one {# hour ago} other {# hours ago}}",
+        "days": "{count, plural, one {# day ago} other {# days ago}}"
+      }
+    }
+  },
+  "generation": {
+    "time": {
+      "justNow": "Just now",
+      "minutesAgo": "{minutes}m ago",
+      "hoursAgo": "{hours}h ago",
+      "daysAgo": "{days}d ago"
+    },
+    "stage": {
+      "preparing": "Preparing",
+      "queued": "Queued",
+      "finalizing": "Finalizing",
+      "generating": "Generating"
+    },
+    "duration": {
+      "seconds": "{seconds}s",
+      "minutesSeconds": "{minutes}m {seconds}s"
+    },
+    "queuePosition": "Queue #{position}",
+    "etaApprox": "~{duration}",
+    "failed": "Failed",
+    "generationFailed": "Generation failed",
+    "download": "Download",
+    "fullscreen": "Fullscreen",
+    "previous": "Previous",
+    "createdAt": "Created {time}",
+    "prompt": "Prompt",
+    "details": "Details",
+    "resolution": "Resolution",
+    "ratio": "Ratio",
+    "durationLabel": "Duration",
+    "model": "Model",
+    "addReference": "Add reference",
+    "removeReference": "Remove {label}",
+    "uploadReferenceFirst": "Upload a reference first.",
+    "promptPlaceholder": "Describe what you want to create…",
+    "mode": "Mode",
+    "chooseModel": "Choose model",
+    "settings": "Settings"
+  },
+  "studioModes": {
+    "feed": {
+      "startCreatingWith": "Start creating with",
+      "heading": "Generation history",
+      "live": "Live — updating while jobs run"
+    },
+    "error": {
+      "insufficientCredits": "Not enough compute credits. Add credits to continue.",
+      "generationFailed": "Generation failed"
+    },
+    "image": {
+      "metaTitle": "Image · FizzStudio",
+      "title": "Image",
+      "subtitle": "Generate images with AI models.",
+      "feedSubheading": "Your image generations in this workspace",
+      "emptyTitle": "No image jobs yet",
+      "emptyHint": "Write a prompt and create an image. Queue, progress, and results appear here."
+    },
+    "video": {
+      "metaTitle": "Video · FizzStudio",
+      "title": "Video",
+      "subtitle": "Generate videos with AI models.",
+      "feedSubheading": "Your video generations in this workspace",
+      "emptyTitle": "No video jobs yet",
+      "emptyHint": "Write a prompt and create a video. Queue, progress, and results appear here.",
+      "modeInput": {
+        "needStartImage": "Add a start image first.",
+        "needFirstLastFrame": "Add both the first and the last frame.",
+        "needVisualWithAudio": "Add an image or video reference with the audio."
+      }
+    },
+    "audio": {
+      "metaTitle": "Audio · FizzStudio",
+      "title": "Audio",
+      "subtitle": "Design voice, music, and sound cues for your scenes."
+    },
+    "projects": {
+      "metaTitle": "Projects · FizzStudio",
+      "title": "Projects",
+      "subtitle": "Organize your generations into projects."
+    },
+    "canvas": {
+      "metaTitle": "Canvas · FizzStudio",
+      "title": "Canvas",
+      "subtitle": "Infinite boards for generating and arranging images."
+    }
+  },
+  "audioStudio": {
+    "modes": {
+      "voice": "Voice",
+      "music": "Music",
+      "sfx": "SFX"
+    },
+    "modeDescriptions": {
+      "voice": "Dialogue and narration",
+      "music": "Score and mood",
+      "sfx": "Hits and ambience"
+    },
+    "panel": {
+      "title": "Audio mode"
+    },
+    "composer": {
+      "placeholders": {
+        "voice": "Write the line, accent, tone, and pace…",
+        "music": "Describe the genre, mood, instruments, and arc…",
+        "sfx": "Describe the sound, distance, motion, and texture…"
+      },
+      "voice": "Voice",
+      "style": "Style",
+      "duration": "Length",
+      "format": "Format",
+      "instrumental": "Instrumental",
+      "createAria": "Create audio",
+      "comingSoonToast": "Audio generation is not connected yet."
+    },
+    "voices": {
+      "narrator": "Narrator",
+      "warm": "Warm",
+      "young": "Young"
+    },
+    "styles": {
+      "natural": "Natural",
+      "cinematic": "Cinematic",
+      "bright": "Bright"
+    },
+    "durations": {
+      "short": "15s",
+      "medium": "30s",
+      "long": "60s"
+    },
+    "formats": {
+      "mp3": "MP3",
+      "wav": "WAV"
+    },
+    "preview": {
+      "heading": "Audio workspace",
+      "subheading": "Waveforms, prompts, playback, and actions are ready for the job feed.",
+      "outputLabel": "Output",
+      "status": "Preview",
+      "voice": {
+        "title": "Narration take",
+        "prompt": "Calm Mandarin narrator, cinematic pacing, close-mic studio tone.",
+        "duration": "0:18"
+      },
+      "music": {
+        "title": "Scene score",
+        "prompt": "Warm synth pulses, restrained drums, hopeful lift in the final bar.",
+        "duration": "0:45"
+      },
+      "sfx": {
+        "title": "Sound cue",
+        "prompt": "Small energy crackle, glassy tail, fast left-to-right movement.",
+        "duration": "0:06"
+      }
+    },
+    "actions": {
+      "play": "Play",
+      "download": "Download",
+      "reuse": "Reuse prompt",
+      "regenerate": "Regenerate"
+    }
+  },
+  "projects": {
+    "newCanvas": "New canvas",
+    "createCanvasLoading": "Creating…",
+    "startEmptyBoard": "Start an empty board",
+    "untitledCanvas": "Untitled canvas",
+    "createCanvasFailed": "Couldn't create the canvas",
+    "projectDeleted": "Project deleted",
+    "projectActions": "Project actions",
+    "rename": "Rename",
+    "renameProject": "Rename project",
+    "deleteProjectTitle": "Delete project?",
+    "deleteProjectDescription": "“{name}” and everything on it will be permanently deleted. This can’t be undone.",
+    "editedJustNow": "Edited just now",
+    "editedMinutesAgo": "Edited {count}m ago",
+    "editedHoursAgo": "Edited {count}h ago",
+    "editedDaysAgo": "Edited {count}d ago",
+    "noProjectsYet": "No projects yet",
+    "noProjectsDescription": "Projects keep related generations together. Create one to organize your work.",
+    "projectsComingSoon": "Projects · Coming soon",
+    "newProject": "New project"
+  },
+  "shell": {
+    "beta": {
+      "title": "FizzStudio is in beta",
+      "description": "This is an early beta, so your work may be lost or reset without notice. When using the canvas and image / video generation, please download or back up anything important as you create it.",
+      "acknowledge": "I understand"
+    },
+    "credits": {
+      "tooltip": "Compute credits",
+      "tooltipDetailed": "Compute credits · available {available} · held {held} · total {total}",
+      "manage": "Manage compute credits"
+    },
+    "header": {
+      "homeAriaLabel": "FizzStudio home"
+    },
+    "nav": {
+      "home": "Home",
+      "canvas": "Canvas",
+      "image": "Image",
+      "video": "Video",
+      "audio": "Audio",
+      "settings": "Settings",
+      "studioNavigation": "Studio navigation",
+      "main": "Main",
+      "comingSoonLabel": "{label} · Coming soon"
+    },
+    "notifications": {
+      "view": "View"
+    },
+    "share": {
+      "title": "Share “{name}”",
+      "descriptionWorkspace": "Members can collaborate on every project in this team.",
+      "descriptionProject": "Members can collaborate on this project."
+    }
+  },
+  "auth": {
+    "welcomeTitle": "Welcome to FizzStudio",
+    "welcomeSubtitle": "Sign in with your FizzDragon account",
+    "identifierLabel": "Email or phone",
+    "identifierPlaceholder": "you@example.com",
+    "passwordLabel": "Password",
+    "signIn": "Sign in",
+    "signInFailed": "Sign in failed",
+    "noAccount": "No account yet? Create one on <link>fizzdragon.com</link> first.",
+    "heroPrompt": "A cinematic portrait in avant-garde fashion, sculptural crimson fabric, a luminous origami dragon perched on her shoulder, dramatic studio lighting",
+    "heroCaption": "Generated with FizzStudio · GPT Image 2"
+  },
+  "workspace": {
+    "roles": {
+      "owner": "Owner",
+      "admin": "Admin",
+      "billing": "Billing",
+      "editor": "Editor",
+      "viewer": "Viewer",
+      "member": "Member"
+    },
+    "add": "Add",
+    "role": "Role",
+    "addByEmailOrPhone": "Add by email or phone",
+    "searchMembers": "Search members",
+    "noMembersFound": "No members found.",
+    "youSuffix": "(you)",
+    "memberActions": "Member actions",
+    "memberFallback": "member",
+    "addedMember": "Added {name}",
+    "addMemberFailed": "Couldn't add member",
+    "changeRoleFailed": "Couldn't change role",
+    "removeMemberFailed": "Couldn't remove member",
+    "inviteLink": "Invite link",
+    "inviteLinkHint": "Anyone with the link can join {scope} at the role you pick, until you revoke it.",
+    "thisTeam": "this team",
+    "thisProject": "this project",
+    "inviteLinkRole": "Invite link role",
+    "createLink": "Create link",
+    "roleLink": "{role} link",
+    "revokeLink": "Revoke link",
+    "expired": "Expired",
+    "expiresInDays": "{days, plural, one {Expires in # day} other {Expires in # days}}",
+    "copyFailed": "Couldn't copy",
+    "inviteLinkCopied": "Invite link copied to clipboard",
+    "inviteLinkCreated": "Invite link created",
+    "createInviteFailed": "Couldn't create invite link",
+    "inviteLinkRevoked": "Invite link revoked",
+    "revokeLinkFailed": "Couldn't revoke link",
+    "switchTeams": "Switch Teams",
+    "current": "current",
+    "teamType": "Team",
+    "personalType": "Personal",
+    "invite": "Invite",
+    "createTeam": "Create team",
+    "createTeamTitle": "Create Team",
+    "collaborateRealtime": "Collaborate in real-time.",
+    "myTeam": "My Team",
+    "createTeamDescription": "Teams are collaborative spaces for working with colleagues, managing projects, and organizing resources.",
+    "teamName": "Team Name",
+    "teamNamePlaceholder": "e.g. Marketing Design",
+    "description": "Description",
+    "optional": "(optional)",
+    "teamDescriptionPlaceholder": "What is this team about?",
+    "teamIcon": "Team Icon",
+    "uploadComingSoon": "Upload your own — coming soon",
+    "uploadIconComingSoon": "Upload your own icon (coming soon)",
+    "presetIconLabel": "{name} icon",
+    "teamCreated": "Team \"{name}\" created",
+    "createTeamFailed": "Couldn't create the team"
+  },
+  "billing": {
+    "dialogLabel": "Choose your FizzStudio plan",
+    "closeDialog": "Close subscription dialog",
+    "comingSoon": "Coming soon",
+    "header": {
+      "title": "Pick your plan",
+      "subtitle": "Upgrade for more compute credits, faster queues, and pro features"
+    },
+    "interval": {
+      "monthly": "Monthly",
+      "yearly": "Yearly"
+    },
+    "productType": {
+      "individual": "Individual",
+      "teams": "Teams"
+    },
+    "empty": {
+      "errorTitle": "Membership plans could not load",
+      "title": "No membership plans available",
+      "description": "Create membership plans and local prices in Admin Billing first. Airwallex provider bindings are not required for local preview."
+    },
+    "footer": {
+      "secureCheckout": "Secure checkout. Currency is selected from your request region.",
+      "disclaimer": "Subscription benefits renew by billing cycle; included compute credits are issued after successful payment and follow the plan rules shown at checkout."
+    },
+    "plan": {
+      "defaultDescription": "Membership access for AI creative workflows.",
+      "custom": "Custom",
+      "contactForPricing": "Contact for pricing",
+      "getStarted": "Get Started",
+      "contactSales": "Contact Sales",
+      "includedInPlan": "Included in plan",
+      "computeCreditsAmount": "{amount} compute credits",
+      "customCreditsAmount": "Custom compute credit amount",
+      "seats": "{count, plural, one {# seat} other {# seats}}",
+      "seatsUpTo": " · up to {max}",
+      "perMonth": "/month",
+      "perYear": "/year",
+      "oneTime": "one-time"
+    },
+    "features": {
+      "imagesPerMonth": "Up to {count} image generations per month",
+      "privateGenerations": "Private generations",
+      "advancedWorkflows": "Advanced workflows",
+      "prioritySupport": "Priority support",
+      "sharedCredits": "Shared team compute credits",
+      "concurrentJobs": "{count, plural, one {# concurrent job} other {# concurrent jobs}}",
+      "queuedJobs": "{count, plural, one {# queued job} other {# queued jobs}}",
+      "topupDiscount": "{percent}% off compute credit top-ups"
+    },
+    "toast": {
+      "plansLoadFailed": "Membership plans failed to load",
+      "teamCheckoutUnavailable": "Team checkout requires the workspace API to be wired in this Studio app",
+      "membershipActivated": "Membership activated",
+      "checkoutUrlMissing": "Payment checkout URL was not returned",
+      "paymentFailed": "Payment failed"
+    },
+    "faq": {
+      "heading": "Your questions,<br></br>answered",
+      "computeCredits": {
+        "question": "What are compute credits?",
+        "answer": "Compute credits are the currency for AI generation in FizzStudio. Every image, video, and audio job deducts credits based on the model, resolution, and output count — the exact cost is shown next to Generate before you submit."
+      },
+      "generationFails": {
+        "question": "What happens if my generation fails?",
+        "answer": "Compute credits are refunded automatically when a generation fails for good. You only pay for jobs that produce output."
+      },
+      "rollover": {
+        "question": "Do unused compute credits roll over?",
+        "answer": "Compute credits included with your plan refresh each billing cycle and follow the plan rules shown at checkout. Top-up compute credits stay in your wallet until you spend them."
+      },
+      "freeTier": {
+        "question": "Can I use FizzStudio for free?",
+        "answer": "Yes. Free accounts include daily generation quotas so you can try the studio. Upgrade when you need more volume, private generations, or faster queues."
+      },
+      "subscriptionVsTopups": {
+        "question": "What is the difference between a subscription and compute credit top-ups?",
+        "answer": "A subscription grants a recurring compute credit allowance plus plan perks like queue priority, higher concurrency, and support. Top-ups are one-time compute credit purchases — and paid plans get a discount on them."
+      },
+      "teamShareCredits": {
+        "question": "How do team plans share compute credits?",
+        "answer": "Team plans pool compute credits in a shared workspace wallet that every seat draws from, so the whole team works against one balance."
+      },
+      "cancelOrChange": {
+        "question": "How do I cancel or change my plan?",
+        "answer": "Manage your subscription from the account menu under Billing & Subscription. Plan changes take effect at the end of the current billing cycle."
+      },
+      "commercialUse": {
+        "question": "Can I use my generations commercially?",
+        "answer": "Paid plans include commercial use of your generated outputs, subject to the Terms of Service."
+      }
+    }
+  },
+  "canvas": {
+    "tidyCanvas": "Tidy canvas",
+    "toggleMinimap": "Toggle minimap",
+    "snapToGrid": "Snap to grid",
+    "zoomOut": "Zoom out",
+    "zoomIn": "Zoom in",
+    "zoomToFit": "Zoom to fit",
+    "dock": {
+      "upload": "Upload",
+      "image": "Image",
+      "video": "Video",
+      "note": "Note"
+    },
+    "guest": "Guest",
+    "uploadFailed": "Upload failed",
+    "imageCardName": "Image {index}",
+    "videoCardName": "Video {index}",
+    "videoAssetsComingSoon": "Video assets · coming soon",
+    "offline": "Offline",
+    "connecting": "Connecting…",
+    "versionHistory": "Version history",
+    "openAssets": "Open assets",
+    "undo": "Undo",
+    "redo": "Redo",
+    "openError": "Couldn't open this canvas — check the link or your access.",
+    "emptyReadOnly": "This canvas is empty."
+  },
+  "canvasControls": {
+    "comment": "Comment",
+    "loadingModels": "Loading models…",
+    "addNode": {
+      "upload": "Upload",
+      "image": "Image",
+      "video": "Video",
+      "note": "Note",
+      "searchPlaceholder": "Search nodes",
+      "noMatches": "No matching nodes"
+    },
+    "emptyState": {
+      "clickToAdd": "Click to add a node",
+      "or": "Or"
+    },
+    "modelPicker": {
+      "searchPlaceholder": "Search models",
+      "heading": "Models",
+      "searchResults": "Search results",
+      "featuredModels": "Popular",
+      "allModels": "All models",
+      "noModels": "No models",
+      "signInToLoad": "Sign in to load models",
+      "taglines": {
+        "fastLowCostImage": "Makes fast low-cost images",
+        "fastBalancedImage": "Makes fast balanced images",
+        "fastDraftImage": "Makes quick draft images",
+        "flagshipImage": "Makes flagship quality images",
+        "highQualityImage": "Makes stable high-quality images",
+        "photorealImage": "Makes realistic marketing images",
+        "textClearImage": "Makes clear text images",
+        "balancedImage": "Makes balanced clear images",
+        "creativeImage": "Makes flexible creative images",
+        "fastLowCostVideo": "Makes fast low-cost videos",
+        "fastBalancedVideo": "Makes fast stable videos",
+        "cinematicVideo": "Makes cinematic videos with audio",
+        "stableMotionVideo": "Makes stable motion videos",
+        "creativeVideo": "Makes flexible creative videos"
+      }
+    },
+    "sizePresets": {
+      "squareHd": "Square HD",
+      "square": "Square",
+      "portrait43": "Portrait 4:3",
+      "portrait169": "Portrait 16:9",
+      "landscape43": "Landscape 4:3",
+      "landscape169": "Landscape 16:9"
+    },
+    "stepper": {
+      "decrease": "Decrease",
+      "increase": "Increase"
+    },
+    "settings": {
+      "title": "Settings",
+      "selectModel": "Select a model to configure.",
+      "advanced": "Advanced Settings"
+    }
+  },
+  "canvasNodes": {
+    "image": {
+      "title": "Image",
+      "alt": "Canvas image",
+      "upscale": "Upscale",
+      "removeBg": "Remove BG",
+      "relight": "Relight",
+      "multiAngle": "Multi-Angle",
+      "expand": "Expand",
+      "motion": "Motion",
+      "generatePanorama": "Generate Panorama",
+      "download": "Download",
+      "uploading": "Uploading · {progress}%",
+      "uploadFailed": "Upload failed"
+    },
+    "note": {
+      "title": "Note",
+      "placeholder": "Write a note…"
+    },
+    "panorama": {
+      "title": "720° Panorama",
+      "alt": "Panorama",
+      "view720": "720° View",
+      "download": "Download",
+      "enter": "Enter panorama",
+      "exit": "Exit"
+    },
+    "reference": {
+      "alt": "Reference",
+      "audio": "Audio",
+      "linkedFromNode": "Linked from a connected node",
+      "add": "Add {field}"
+    },
+    "asset": {
+      "title": "Assets",
+      "alt": "Asset",
+      "close": "Close assets",
+      "searchPlaceholder": "Search assets",
+      "tab": {
+        "myCreations": "My Creations",
+        "uploaded": "Uploaded"
+      },
+      "empty": {
+        "title": "No assets yet",
+        "generated": "Generations in this project show up here.",
+        "uploaded": "Media you upload to this project shows up here."
+      }
+    }
+  },
+  "canvasOps": {
+    "modalityImage": "Image",
+    "modalityVideo": "Video",
+    "selectModel": "Select model",
+    "settings": "Settings",
+    "generate": "Generate",
+    "cancelGeneration": "Cancel generation",
+    "run": "Run",
+    "count": "Count",
+    "download": "Download",
+    "rename": "Rename",
+    "view720": "720° View",
+    "before": "Before",
+    "after": "After",
+    "result": "Result",
+    "resultsPlaceholder": "Results will appear here.",
+    "generationFailed": "Generation failed",
+    "assetUnavailable": "This asset is no longer available.",
+    "chooseModelFirst": "Choose a model first",
+    "writePromptFirst": "Write a prompt first",
+    "uploadFailed": "Couldn't upload {name}",
+    "noModelForOp": "No {op} model in the catalog yet",
+    "promptPlaceholderDefault": "Write your prompt..",
+    "promptPlaceholderRelight": "Describe the lighting, e.g. “warm sunset light from the left”",
+    "statusSubmitting": "Submitting…",
+    "statusQueued": "Queued…",
+    "statusQueuedPosition": "Queued · #{position}",
+    "statusGenerating": "Generating…",
+    "statusGeneratingEta": "Generating · ~{eta}s",
+    "opUpscale": "Upscale",
+    "opRemoveBg": "Remove BG",
+    "opRelight": "Relight",
+    "opMultiAngle": "Multi-Angle",
+    "opExpand": "Expand",
+    "opMotion": "Motion",
+    "opGeneratePanorama": "Generate Panorama",
+    "opPanorama": "Panorama"
+  },
+  "canvasEditors": {
+    "reset": "Reset",
+    "generate": "Generate",
+    "expand": {
+      "title": "Expand",
+      "presetOriginal": "Original",
+      "dragHint": "Drag the frame to expand.",
+      "promptPlaceholder": "Optional: describe what fills the new space..",
+      "noModel": "No expand model in the catalog yet",
+      "dragOutwardFirst": "Drag the frame outward to expand first"
+    },
+    "motion": {
+      "title": "Motion",
+      "size": "Size",
+      "clearPath": "Clear path",
+      "instruction": "Brush the region that should move, then draw the path it follows.",
+      "promptPlaceholder": "Describe the motion, e.g. “the boar walks to the left”",
+      "length": "Length",
+      "seconds": "{count}s",
+      "noModel": "No motion model in the catalog yet",
+      "maskPrepareFailed": "Couldn't prepare the motion mask",
+      "tools": {
+        "region": {
+          "label": "Region",
+          "hint": "Paint the part of the image that should move"
+        },
+        "erase": {
+          "label": "Erase",
+          "hint": "Remove from the painted region"
+        },
+        "path": {
+          "label": "Path",
+          "hint": "Draw the path that region follows"
+        }
+      },
+      "missing": {
+        "tooSmall": "Image is too small (min {min}×{min})",
+        "brushRegion": "Brush the region that should move",
+        "drawPath": "Draw the motion path",
+        "addPrompt": "Add a prompt"
+      }
+    },
+    "multiAngle": {
+      "title": "Multi-Angle",
+      "horizontalOrbit": "Horizontal orbit",
+      "verticalTilt": "Vertical tilt",
+      "shotSize": "Shot size",
+      "prompt": "Prompt",
+      "promptPlaceholder": "Optional: refine the new view..",
+      "noModel": "No multi-angle model in the catalog yet",
+      "presets": {
+        "front": "Front",
+        "threeQuarter": "Three-quarter",
+        "right": "Right",
+        "back": "Back",
+        "left": "Left",
+        "lowAngle": "Low angle",
+        "topDown": "Top-down"
+      },
+      "shotSizes": {
+        "wide": "Wide",
+        "medium": "Medium",
+        "closeUp": "Close-up"
+      }
+    }
+  },
+  "canvasCollab": {
+    "time": {
+      "justNow": "just now",
+      "minutes": "{count}m",
+      "hours": "{count}h",
+      "days": "{count}d",
+      "minutesAgo": "{count}m ago",
+      "hoursAgo": "{count}h ago",
+      "daysAgo": "{count}d ago"
+    },
+    "comments": {
+      "title": "Comments",
+      "newComment": "New comment",
+      "resolveThread": "Resolve thread",
+      "you": "You",
+      "teammate": "Teammate",
+      "replyPlaceholder": "Reply…",
+      "addPlaceholder": "Add a comment…",
+      "send": "Send"
+    },
+    "history": {
+      "title": "Version history",
+      "namePlaceholder": "Name this checkpoint…",
+      "saveCheckpoint": "Save checkpoint",
+      "empty": "No checkpoints yet. Save one to capture this canvas.",
+      "versionNumber": "Version {number}",
+      "current": "current",
+      "restore": "Restore",
+      "restoreThisVersion": "Restore this version"
+    },
+    "source": {
+      "saved": "Saved",
+      "auto": "Auto",
+      "ai": "AI",
+      "import": "Import"
+    }
+  },
+  "settings": {
+    "goBack": "Go back",
+    "settings": "Settings",
+    "account": "Account",
+    "accountSubtitle": "Your profile and compute credits.",
+    "groupProfile": "Profile",
+    "groupTeamsSettings": "Teams Settings",
+    "navOverview": "Overview",
+    "navMembers": "Members",
+    "navAnalytics": "Analytics",
+    "navBilling": "Plan & Billing",
+    "role": {
+      "owner": "Owner",
+      "admin": "Admin",
+      "billing": "Billing",
+      "editor": "Editor",
+      "viewer": "Viewer"
+    },
+    "personal": "Personal",
+    "team": "Team",
+    "signIn": "Sign in",
+    "signOut": "Sign out",
+    "signInToManageAccount": "Sign in to manage your account.",
+    "publicId": "Public ID {id}",
+    "publicIdCopied": "Public ID copied",
+    "publicIdCopyFailed": "Could not copy Public ID",
+    "computeCredits": "Compute credits",
+    "available": "Available",
+    "held": "Held",
+    "total": "Total",
+    "upgrade": "Upgrade",
+    "credits": "Compute credits",
+    "teamCredits": "Team compute credits",
+    "availableBalance": "Available balance",
+    "sharedTeamBalance": "Shared team balance",
+    "reservedByRunningJobs": "{amount} reserved by running jobs",
+    "onlyBillingAdminsCanTopUp": "Only billing admins can top up this team’s compute credits.",
+    "creditsAdded": "{amount} compute credits added",
+    "creditsAddedGeneric": "Compute credits added",
+    "couldntStartTopUp": "Couldn’t start the top-up",
+    "couldntStartRecharge": "Couldn’t start the recharge",
+    "amountUsdRange": "Amount (USD, $10–$5,000)",
+    "estimatedCredits": "Estimated compute credits",
+    "recharge": "Recharge",
+    "secureCheckoutNote": "Secure checkout via Airwallex. 1 compute credit = 1¢ USD.",
+    "usageAnalytics": "Usage Analytics",
+    "usageAnalyticsSubtitle": "A summary of compute credit usage for this workspace.",
+    "noUsageDataYet": "No usage data yet",
+    "usageAnalyticsComingSoon": "Usage data will appear after generations or compute credit activity.",
+    "usageAnalyticsLoadFailed": "Usage data could not load. Refresh the page or try again later.",
+    "recentJobsWindow": "Recent {count} jobs",
+    "recentLedgerWindow": "Recent {count} ledger entries",
+    "totalJobs": "Total jobs",
+    "creditsIn": "Compute credits in",
+    "creditsOut": "Compute credits out",
+    "creditsUsage": "Compute credits usage",
+    "modelsUsage": "Models usage",
+    "creditsSummary": "Compute credits summary",
+    "modelJobs": "{count, plural, one {# job} other {# jobs}}",
+    "modelCreditsUsed": "{credits} used",
+    "noCreditLedgerYet": "Recharge or run a generation to create compute credit ledger entries.",
+    "noGenerationHistoryYet": "Run image or video generations in this workspace to build usage history.",
+    "generations": "Generations",
+    "colCompleted": "Completed",
+    "colModel": "Model",
+    "colFeature": "Feature",
+    "colStatus": "Status",
+    "colCredits": "Compute credits",
+    "noGenerationsYet": "No generations yet.",
+    "feature": {
+      "image": "Image",
+      "video": "Video",
+      "unknown": "Generation"
+    },
+    "jobStatus": {
+      "submitting": "Submitting",
+      "queued": "Queued",
+      "generating": "Generating",
+      "done": "Done",
+      "failed": "Failed",
+      "cancelled": "Cancelled"
+    },
+    "ledgerReason": {
+      "ai_job_hold": "Generation hold",
+      "ai_job_settle": "Generation charge",
+      "ai_job_release": "Generation release",
+      "compute_point_expired": "Expired compute credits",
+      "membership_compute_point_included": "Membership compute credits"
+    },
+    "ledgerEntry": {
+      "credit": "Compute credits added",
+      "debit": "Compute credits spent",
+      "hold": "Compute credits held",
+      "release": "Compute credits released",
+      "settle": "Compute credits settled",
+      "refund": "Compute credits refunded",
+      "expire": "Compute credits expired",
+      "adjustment": "Compute credits adjusted",
+      "transfer_in": "Compute credits transferred in",
+      "transfer_out": "Compute credits transferred out"
+    },
+    "planAndBilling": "Plan & Billing",
+    "billingSubtitle": "Manage your compute credits and subscription.",
+    "yourSubscription": "Your subscription",
+    "subscriptionDescription": "Manage your personal plan, buy compute credit packs, and view pricing.",
+    "managePlan": "Manage plan",
+    "members": "Members",
+    "membersSubtitle": "Members of “{name}” can collaborate on every project in this team.",
+    "membersAreForTeams": "Members are for teams",
+    "membersAreForTeamsBody": "Create a team from the workspace switcher, then invite people to collaborate on every project in it.",
+    "overview": "Overview",
+    "teamName": "Team name",
+    "workspaceName": "Workspace name",
+    "workspaceNameUpdated": "Workspace name updated",
+    "couldntUpdateName": "Couldn’t update name",
+    "teamMembers": "Team members",
+    "teamMembersWithCount": "Team members ({count})",
+    "noMembersYet": "No members yet.",
+    "inviteMembers": "Invite members",
+    "manageAccess": "Manage access",
+    "sharedTeamBalancePool": "Shared team balance · all members draw from this pool",
+    "availableCredits": "Available compute credits",
+    "manageCredits": "Manage compute credits",
+    "dangerZone": "Danger zone",
+    "dangerZoneDescription": "Delete this team and remove access for all members. This cannot be undone.",
+    "deleteTeam": "Delete team",
+    "teamDeleted": "Deleted “{name}”",
+    "couldntDeleteTeam": "Couldn’t delete team",
+    "deleteTeamConfirmTitle": "Delete “{name}”?",
+    "deleteTeamConfirmBody": "All members lose access and the team’s projects are archived. This cannot be undone."
+  },
+  "project": {
+    "renameFailed": "Couldn't rename the project",
+    "backToProjects": "Back to projects",
+    "projectName": "Project name",
+    "untitled": "Untitled",
+    "viewOnly": "View only",
+    "share": "Share",
+    "thisProject": "this project",
+    "documentOpenError": "Couldn't open this document — check the link or your access.",
+    "briefPlaceholder": "Write the brief…",
+    "offlineSaved": "Offline — changes saved locally",
+    "connecting": "Connecting…"
+  },
+  "invite": {
+    "loading": "Loading invitation…",
+    "joinedTeam": "Joined team",
+    "joinedProject": "Joined project",
+    "acceptFailed": "Couldn't accept invite",
+    "signInTitle": "Sign in to continue",
+    "signInBody": "Sign in to view this invitation and join.",
+    "signIn": "Sign in",
+    "unavailableTitle": "Invite unavailable",
+    "invalidBody": "This invite link is invalid or no longer exists.",
+    "revokedBody": "This invite link has been revoked.",
+    "expiredBody": "This invite link has expired.",
+    "inactiveBody": "This invite link is no longer active.",
+    "goToFizzStudio": "Go to FizzStudio",
+    "scopeTeam": "team",
+    "scopeProject": "project",
+    "joinTitle": "Join {name}",
+    "joinBody": "You've been invited to collaborate on this {scope} as {role}.",
+    "acceptInvitation": "Accept invitation"
+  },
+  "modes": {
+    "text_to_image": "Text to Image",
+    "text_to_video": "Text to Video",
+    "image_to_image": "Image to Image",
+    "image_to_panorama": "Panorama",
+    "image_to_video": "Image to Video",
+    "video_to_video": "Video to Video",
+    "first_last_frame_to_video": "First & Last Frame",
+    "multimodal_to_video": "Omni Reference",
+    "inpainting": "Inpaint",
+    "outpainting": "Expand",
+    "upscale": "Upscale",
+    "remove_background": "Remove BG",
+    "relight": "Relight",
+    "multi_angle": "Multi-Angle"
+  },
+  "operations": {
+    "upscale": "Upscale",
+    "removeBackground": "Remove BG",
+    "relight": "Relight",
+    "multiAngle": "Multi-Angle",
+    "expand": "Expand",
+    "motion": "Motion",
+    "panorama": "Panorama"
+  },
+  "copilot": {
+    "title": "Copilot",
+    "open": "Open copilot",
+    "close": "Close",
+    "send": "Send",
+    "stop": "Stop",
+    "placeholder": "Ask anything about your project…",
+    "empty": "Ask about your canvas, plan what to build, or how the studio works.",
+    "thinking": "Thinking…",
+    "error": "Something went wrong.",
+    "retry": "Retry",
+    "you": "You",
+    "acting": "Working on the canvas…",
+    "acted": "Updated the canvas",
+    "confirm": "Confirm",
+    "cancel": "Cancel",
+    "confirmRun": "Run this generation? It will use your workspace compute credits.",
+    "confirmRemoveNode": "Delete this node from the canvas?",
+    "confirmRemoveEdge": "Delete this connection?"
+  }
+}

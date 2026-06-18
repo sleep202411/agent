@@ -4,7 +4,8 @@
  * One clean entry per canonical model — NO policy boilerplate here (that lives
  * in `defaults.ts` and is merged by `seed-catalog.ts`). The `providers` array
  * lists ONLY provider entries that map to a reconciled `AiProviderAccount`
- * (`fal-ai`, `aliyun-bailian`, `microsoft-foundry`, `replicate`); each entry
+ * (`fal-ai`, `aliyun-bailian`, `microsoft-foundry`, `replicate`,
+ * `agnes-ai`); each entry
  * seeds an `AiProviderEndpoint` + a runtime-valid
  * `AiProviderModelBinding`. A model whose only upstream providers have no
  * reconciled account (e.g. midjourney, raw minimax) carries `providers: []`
@@ -41,12 +42,24 @@ import {
   QWEN_IMAGE_20_PRODUCT_PRICING,
   QWEN_IMAGE_20_PRO_PARAMETER_POLICY,
   QWEN_IMAGE_20_PRO_PRODUCT_PRICING,
+  QUICK_IMAGE_PARAMETER_POLICY,
+  QUICK_IMAGE_PRODUCT_PRICING,
   SEEDREAM_45_PARAMETER_POLICY,
   SEEDREAM_45_PRODUCT_PRICING,
   SEEDREAM_4_PARAMETER_POLICY,
   SEEDREAM_4_PRODUCT_PRICING,
   SEEDREAM_5_LITE_PARAMETER_POLICY,
   SEEDREAM_5_LITE_PRODUCT_PRICING,
+  BRIA_EXPAND_PARAMETER_POLICY,
+  BRIA_EXPAND_PRODUCT_PRICING,
+  BRIA_RMBG_PARAMETER_POLICY,
+  BRIA_RMBG_PRODUCT_PRICING,
+  ICLIGHT_RELIGHT_PARAMETER_POLICY,
+  ICLIGHT_RELIGHT_PRODUCT_PRICING,
+  QWEN_MULTI_ANGLE_PARAMETER_POLICY,
+  QWEN_MULTI_ANGLE_PRODUCT_PRICING,
+  TOPAZ_UPSCALE_PARAMETER_POLICY,
+  TOPAZ_UPSCALE_PRODUCT_PRICING,
   WAN_IMAGE_27_PARAMETER_POLICY,
   WAN_IMAGE_27_PRODUCT_PRICING,
   WAN_IMAGE_27_PRO_PARAMETER_POLICY,
@@ -60,7 +73,8 @@ export type ProviderKey =
   | 'byteplus-modelark'
   | 'aliyun-bailian'
   | 'microsoft-foundry'
-  | 'replicate';
+  | 'replicate'
+  | 'agnes-ai';
 
 /**
  * A provider that backs a canonical model and HAS a reconciled account.
@@ -123,6 +137,11 @@ export interface ImageModelSeed {
 const T2I: AiGenerationMode = 'text_to_image';
 const I2I: AiGenerationMode = 'image_to_image';
 const INPAINT: AiGenerationMode = 'inpainting';
+const UPSCALE: AiGenerationMode = 'upscale';
+const REMOVE_BG: AiGenerationMode = 'remove_background';
+const RELIGHT: AiGenerationMode = 'relight';
+const MULTI_ANGLE: AiGenerationMode = 'multi_angle';
+const OUTPAINT: AiGenerationMode = 'outpainting';
 
 const PROVIDER_IMAGE_OUTPUT_SCHEMA = {
   type: 'object',
@@ -286,6 +305,38 @@ function bailianCatalogSnapshot(args: {
       },
       defaultMarket: 'global',
       defaultUnitPrice: args.globalRmbPerImage,
+    },
+    docs: [{ title: 'Alibaba Model Studio API reference', url: args.docsUrl }],
+    model: args.model,
+  };
+}
+
+/**
+ * Bailian VIDEO binding snapshot — routes the runtime to the async DashScope
+ * video-synthesis service (`service: 'video-synthesis'`, `callMode: 'async'`),
+ * unlike the image helper which targets multimodal-generation. Pricing here is
+ * provider-cost tracking (per second), separate from the user-facing
+ * productPricing on the canonical.
+ */
+export function bailianVideoCatalogSnapshot(args: {
+  model: string;
+  cnRmbPerSecond: number;
+  globalRmbPerSecond: number;
+  docsUrl: string;
+}): Prisma.InputJsonObject {
+  return {
+    service: 'video-synthesis',
+    callMode: 'async',
+    pricing: {
+      source: 'aliyun_model_studio_official_pricing',
+      unit: 'second',
+      currency: 'CNY',
+      unitPriceByMarket: {
+        cn: args.cnRmbPerSecond,
+        global: args.globalRmbPerSecond,
+      },
+      defaultMarket: 'global',
+      defaultUnitPrice: args.globalRmbPerSecond,
     },
     docs: [{ title: 'Alibaba Model Studio API reference', url: args.docsUrl }],
     model: args.model,
@@ -461,6 +512,172 @@ export const IMAGE_MODELS: ImageModelSeed[] = [
       },
     ],
     providerAliases: ['fal/fal-ai/hunyuan_world'],
+  },
+  {
+    slug: 'topaz-upscale',
+    displayName: 'Topaz Upscale',
+    family: 'image-transform',
+    description:
+      'Topaz image upscaler — increases resolution with detail recovery. Reached via the studio Upscale action, not the model picker.',
+    modes: [UPSCALE],
+    tier: 'vip',
+    cost: 15,
+    parameterPolicy: TOPAZ_UPSCALE_PARAMETER_POLICY,
+    productPricing: TOPAZ_UPSCALE_PRODUCT_PRICING,
+    group: 'tools',
+    sortOrder: 210,
+    providers: [
+      {
+        provider: 'fal-ai',
+        endpointId: 'fal-ai/topaz/upscale/image',
+        modes: [UPSCALE],
+        priority: 10,
+        weight: 100,
+        providerOutputSchema: PROVIDER_IMAGE_OUTPUT_SCHEMA,
+        catalogSnapshot: falCatalogSnapshot({
+          model: 'fal-ai/topaz/upscale/image',
+          usdPerImage: 0.05,
+          docsUrl: 'https://fal.ai/models/fal-ai/topaz/upscale/image/api',
+        }),
+        maxConcurrentRequests: 4,
+        requestTimeoutSeconds: 600,
+        failureThreshold: 3,
+      },
+    ],
+    providerAliases: ['fal/fal-ai/topaz/upscale/image'],
+  },
+  {
+    slug: 'bria-rmbg',
+    displayName: 'Remove Background',
+    family: 'image-transform',
+    description:
+      'Bria background removal — mattes the subject out to a transparent image. Reached via the studio Remove BG action, not the model picker.',
+    modes: [REMOVE_BG],
+    tier: 'vip',
+    cost: 10,
+    parameterPolicy: BRIA_RMBG_PARAMETER_POLICY,
+    productPricing: BRIA_RMBG_PRODUCT_PRICING,
+    group: 'tools',
+    sortOrder: 211,
+    providers: [
+      {
+        provider: 'fal-ai',
+        endpointId: 'fal-ai/bria/background/remove',
+        modes: [REMOVE_BG],
+        priority: 10,
+        weight: 100,
+        providerOutputSchema: PROVIDER_IMAGE_OUTPUT_SCHEMA,
+        catalogSnapshot: falCatalogSnapshot({
+          model: 'fal-ai/bria/background/remove',
+          usdPerImage: 0.04,
+          docsUrl: 'https://fal.ai/models/fal-ai/bria/background/remove/api',
+        }),
+        maxConcurrentRequests: 4,
+        requestTimeoutSeconds: 600,
+        failureThreshold: 3,
+      },
+    ],
+    providerAliases: ['fal/fal-ai/bria/background/remove'],
+  },
+  {
+    slug: 'iclight-relight',
+    displayName: 'Relight',
+    family: 'image-transform',
+    description:
+      'IC-Light V2 relighting — re-lights the subject to match a described scene/lighting. Reached via the studio Relight action, not the model picker.',
+    modes: [RELIGHT],
+    tier: 'vip',
+    cost: 20,
+    parameterPolicy: ICLIGHT_RELIGHT_PARAMETER_POLICY,
+    productPricing: ICLIGHT_RELIGHT_PRODUCT_PRICING,
+    group: 'tools',
+    sortOrder: 212,
+    providers: [
+      {
+        provider: 'fal-ai',
+        endpointId: 'fal-ai/iclight-v2',
+        modes: [RELIGHT],
+        priority: 10,
+        weight: 100,
+        providerOutputSchema: PROVIDER_IMAGE_OUTPUT_SCHEMA,
+        catalogSnapshot: falCatalogSnapshot({
+          model: 'fal-ai/iclight-v2',
+          usdPerImage: 0.05,
+          docsUrl: 'https://fal.ai/models/fal-ai/iclight-v2/api',
+        }),
+        maxConcurrentRequests: 4,
+        requestTimeoutSeconds: 600,
+        failureThreshold: 3,
+      },
+    ],
+    providerAliases: ['fal/fal-ai/iclight-v2'],
+  },
+  {
+    slug: 'qwen-multi-angle',
+    displayName: 'Multi-Angle',
+    family: 'image-transform',
+    description:
+      'Qwen multiple-angles — re-shoots the subject from a new camera viewpoint (orbit / tilt / zoom). Reached via the studio Multi-Angle action, not the model picker.',
+    modes: [MULTI_ANGLE],
+    tier: 'vip',
+    cost: 18,
+    parameterPolicy: QWEN_MULTI_ANGLE_PARAMETER_POLICY,
+    productPricing: QWEN_MULTI_ANGLE_PRODUCT_PRICING,
+    group: 'tools',
+    sortOrder: 213,
+    providers: [
+      {
+        provider: 'fal-ai',
+        endpointId: 'fal-ai/qwen-image-edit-2511-multiple-angles',
+        modes: [MULTI_ANGLE],
+        priority: 10,
+        weight: 100,
+        providerOutputSchema: PROVIDER_IMAGE_OUTPUT_SCHEMA,
+        catalogSnapshot: falCatalogSnapshot({
+          model: 'fal-ai/qwen-image-edit-2511-multiple-angles',
+          usdPerImage: 0.04,
+          docsUrl:
+            'https://fal.ai/models/fal-ai/qwen-image-edit-2511-multiple-angles/api',
+        }),
+        maxConcurrentRequests: 4,
+        requestTimeoutSeconds: 600,
+        failureThreshold: 3,
+      },
+    ],
+    providerAliases: ['fal/fal-ai/qwen-image-edit-2511-multiple-angles'],
+  },
+  {
+    slug: 'bria-expand',
+    displayName: 'Expand',
+    family: 'image-transform',
+    description:
+      'Bria image expand (outpainting) — grows the canvas and generatively fills the new area. Reached via the studio Expand action, not the model picker.',
+    modes: [OUTPAINT],
+    tier: 'vip',
+    cost: 15,
+    parameterPolicy: BRIA_EXPAND_PARAMETER_POLICY,
+    productPricing: BRIA_EXPAND_PRODUCT_PRICING,
+    group: 'tools',
+    sortOrder: 214,
+    providers: [
+      {
+        provider: 'fal-ai',
+        endpointId: 'fal-ai/bria/expand',
+        modes: [OUTPAINT],
+        priority: 10,
+        weight: 100,
+        providerOutputSchema: PROVIDER_IMAGE_OUTPUT_SCHEMA,
+        catalogSnapshot: falCatalogSnapshot({
+          model: 'fal-ai/bria/expand',
+          usdPerImage: 0.04,
+          docsUrl: 'https://fal.ai/models/fal-ai/bria/expand/api',
+        }),
+        maxConcurrentRequests: 4,
+        requestTimeoutSeconds: 600,
+        failureThreshold: 3,
+      },
+    ],
+    providerAliases: ['fal/fal-ai/bria/expand'],
   },
   {
     slug: 'flux-2-flex',
@@ -899,6 +1116,45 @@ export const IMAGE_MODELS: ImageModelSeed[] = [
       },
     ],
     providerAliases: ['fal/fal-ai/nano-banana', 'replicate/google/nano-banana'],
+  },
+  {
+    slug: 'quick-image-1-0',
+    displayName: 'Agnes Image 2.1 Flash',
+    family: 'quick-image',
+    description:
+      'Agnes AI lightweight image model for text-to-image and single-reference image editing.',
+    modes: [T2I, I2I],
+    tier: 'vip',
+    cost: 6,
+    parameterPolicy: QUICK_IMAGE_PARAMETER_POLICY,
+    productPricing: QUICK_IMAGE_PRODUCT_PRICING,
+    group: 'recommended',
+    sortOrder: 65,
+    recommended: false,
+    providers: [
+      {
+        provider: 'agnes-ai',
+        endpointId: 'agnes-image-2.1-flash',
+        modes: [T2I, I2I],
+        priority: 100,
+        maxConcurrentRequests: 1,
+        maxRequestsPerMinute: 20,
+        requestTimeoutSeconds: 300,
+        cooldownSeconds: 30,
+        failureThreshold: 3,
+        catalogSnapshot: {
+          docs: [
+            {
+              title: 'Agnes Image 2.1 Flash',
+              url: 'https://agnes-ai.com/doc/agnes-image-21-flash',
+            },
+          ],
+          model: 'agnes-image-2.1-flash',
+          pricing: { source: 'provider_account' },
+        },
+      },
+    ],
+    providerAliases: ['agnes/agnes-image-2.1-flash'],
   },
   {
     slug: 'nano-banana-2',

@@ -188,7 +188,7 @@ export function PlazaHero({
           ) : null}
 
           {/* Stats row */}
-          {stats && stats.items.length > 0 ? (
+          {stats && (stats.items.length > 0 || stats.cap) ? (
             <div className="mt-5 flex flex-wrap items-center gap-x-5 gap-y-2 text-sm text-muted-foreground">
               {stats.items.map((item, i) => (
                 <div key={i} className="flex items-center gap-2">

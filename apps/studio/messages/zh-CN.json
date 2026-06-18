@@ -1,0 +1,948 @@
+{
+  "common": {
+    "save": "保存",
+    "cancel": "取消",
+    "delete": "删除",
+    "remove": "移除",
+    "close": "关闭",
+    "confirm": "确认",
+    "create": "创建",
+    "edit": "编辑",
+    "done": "完成",
+    "retry": "重试",
+    "loading": "加载中…",
+    "error": "出错了",
+    "back": "返回",
+    "next": "下一步",
+    "copy": "复制",
+    "copied": "已复制"
+  },
+  "localeSwitcher": {
+    "label": "语言"
+  },
+  "account": {
+    "signIn": "登录",
+    "account": "账户",
+    "myProfile": "个人主页",
+    "publicId": "公开 ID {id}",
+    "publicIdCopied": "已复制公开 ID",
+    "publicIdCopyFailed": "无法复制公开 ID",
+    "availableCredits": "可用算力积分",
+    "held": "冻结",
+    "total": "总计",
+    "upgrade": "升级",
+    "usageAnalytics": "使用分析",
+    "billing": "账单与订阅",
+    "settings": "设置",
+    "logout": "退出登录",
+    "comingSoon": "{label} · 即将推出",
+    "terms": "服务条款",
+    "privacy": "隐私政策",
+    "blogs": "博客"
+  },
+  "home": {
+    "untitledProject": "未命名项目",
+    "createNewProject": "新建项目",
+    "createProjectLoading": "创建中…",
+    "createProjectError": "无法创建项目",
+    "hero": {
+      "headline": "今天我们要创作什么？",
+      "subhead": "选择一种项目类型即刻开始，或直接用你自己的话描述需求。",
+      "muteSoundtrack": "静音背景音乐",
+      "playSoundtrack": "播放背景音乐"
+    },
+    "quickStart": {
+      "image": "图像",
+      "video": "视频",
+      "audio": "音频",
+      "canvas": "画布",
+      "soon": "即将推出"
+    },
+    "gallery": {
+      "title": "作品库",
+      "optionsAction": "更多操作",
+      "saveAction": "收藏"
+    },
+    "recent": {
+      "title": "最近项目",
+      "showAll": "查看全部",
+      "you": "你",
+      "projectActions": "项目操作",
+      "rename": "重命名",
+      "renameDialogTitle": "重命名项目",
+      "deleteDialogTitle": "删除项目？",
+      "deleteDialogDescription": "“{name}”及其全部内容将被永久删除，此操作无法撤销。",
+      "projectDeleted": "项目已删除",
+      "timeAgo": {
+        "justNow": "刚刚",
+        "minutes": "{count, plural, other {# 分钟前}}",
+        "hours": "{count, plural, other {# 小时前}}",
+        "days": "{count, plural, other {# 天前}}"
+      }
+    }
+  },
+  "generation": {
+    "time": {
+      "justNow": "刚刚",
+      "minutesAgo": "{minutes} 分钟前",
+      "hoursAgo": "{hours} 小时前",
+      "daysAgo": "{days} 天前"
+    },
+    "stage": {
+      "preparing": "准备中",
+      "queued": "排队中",
+      "finalizing": "收尾中",
+      "generating": "生成中"
+    },
+    "duration": {
+      "seconds": "{seconds} 秒",
+      "minutesSeconds": "{minutes} 分 {seconds} 秒"
+    },
+    "queuePosition": "队列 #{position}",
+    "etaApprox": "约 {duration}",
+    "failed": "失败",
+    "generationFailed": "生成失败",
+    "download": "下载",
+    "fullscreen": "全屏",
+    "previous": "上一个",
+    "createdAt": "创建于 {time}",
+    "prompt": "提示词",
+    "details": "详情",
+    "resolution": "分辨率",
+    "ratio": "比例",
+    "durationLabel": "时长",
+    "model": "模型",
+    "addReference": "添加参考",
+    "removeReference": "移除 {label}",
+    "uploadReferenceFirst": "请先上传一个参考。",
+    "promptPlaceholder": "描述你想创作的内容…",
+    "mode": "模式",
+    "chooseModel": "选择模型",
+    "settings": "设置"
+  },
+  "studioModes": {
+    "feed": {
+      "startCreatingWith": "开始创作",
+      "heading": "生成历史",
+      "live": "实时 — 任务运行时持续更新"
+    },
+    "error": {
+      "insufficientCredits": "算力积分不足。请充值后继续。",
+      "generationFailed": "生成失败"
+    },
+    "image": {
+      "metaTitle": "图像 · FizzStudio",
+      "title": "图像",
+      "subtitle": "使用 AI 模型生成图像。",
+      "feedSubheading": "你在此工作区的图像生成记录",
+      "emptyTitle": "暂无图像任务",
+      "emptyHint": "输入提示词并生成图像。队列、进度和结果将显示在这里。"
+    },
+    "video": {
+      "metaTitle": "视频 · FizzStudio",
+      "title": "视频",
+      "subtitle": "使用 AI 模型生成视频。",
+      "feedSubheading": "你在此工作区的视频生成记录",
+      "emptyTitle": "暂无视频任务",
+      "emptyHint": "输入提示词并生成视频。队列、进度和结果将显示在这里。",
+      "modeInput": {
+        "needStartImage": "请先添加起始图像。",
+        "needFirstLastFrame": "请同时添加首帧和尾帧。",
+        "needVisualWithAudio": "请在音频之外添加一张图像或一段视频参考。"
+      }
+    },
+    "audio": {
+      "metaTitle": "音频 · FizzStudio",
+      "title": "音频",
+      "subtitle": "为分镜设计人声、配乐和音效。"
+    },
+    "projects": {
+      "metaTitle": "项目 · FizzStudio",
+      "title": "项目",
+      "subtitle": "将你的生成内容整理成项目。"
+    },
+    "canvas": {
+      "metaTitle": "画布 · FizzStudio",
+      "title": "画布",
+      "subtitle": "用于生成和排布图像的无限画布。"
+    }
+  },
+  "audioStudio": {
+    "modes": {
+      "voice": "人声",
+      "music": "音乐",
+      "sfx": "音效"
+    },
+    "modeDescriptions": {
+      "voice": "旁白与对白",
+      "music": "配乐与情绪",
+      "sfx": "动作与环境声"
+    },
+    "panel": {
+      "title": "音频模式"
+    },
+    "composer": {
+      "placeholders": {
+        "voice": "写下台词、口音、语气和节奏…",
+        "music": "描述风格、情绪、乐器和起伏…",
+        "sfx": "描述声音、距离、运动和质感…"
+      },
+      "voice": "音色",
+      "style": "风格",
+      "duration": "时长",
+      "format": "格式",
+      "instrumental": "纯音乐",
+      "createAria": "创建音频",
+      "comingSoonToast": "音频生成尚未接入。"
+    },
+    "voices": {
+      "narrator": "旁白",
+      "warm": "温暖",
+      "young": "年轻"
+    },
+    "styles": {
+      "natural": "自然",
+      "cinematic": "电影感",
+      "bright": "明亮"
+    },
+    "durations": {
+      "short": "15 秒",
+      "medium": "30 秒",
+      "long": "60 秒"
+    },
+    "formats": {
+      "mp3": "MP3",
+      "wav": "WAV"
+    },
+    "preview": {
+      "heading": "音频工作台",
+      "subheading": "波形、提示词、播放和操作会进入生成记录。",
+      "outputLabel": "输出",
+      "status": "预览",
+      "voice": {
+        "title": "旁白片段",
+        "prompt": "冷静的中文旁白，电影节奏，近距离录音棚质感。",
+        "duration": "0:18"
+      },
+      "music": {
+        "title": "场景配乐",
+        "prompt": "温暖合成器脉冲，克制鼓点，结尾有希望感上扬。",
+        "duration": "0:45"
+      },
+      "sfx": {
+        "title": "音效提示",
+        "prompt": "细小能量噼啪声，玻璃质感尾音，从左到右快速移动。",
+        "duration": "0:06"
+      }
+    },
+    "actions": {
+      "play": "播放",
+      "download": "下载",
+      "reuse": "复用提示词",
+      "regenerate": "重新生成"
+    }
+  },
+  "projects": {
+    "newCanvas": "新建画布",
+    "createCanvasLoading": "创建中…",
+    "startEmptyBoard": "从空白画板开始",
+    "untitledCanvas": "未命名画布",
+    "createCanvasFailed": "无法创建画布",
+    "projectDeleted": "项目已删除",
+    "projectActions": "项目操作",
+    "rename": "重命名",
+    "renameProject": "重命名项目",
+    "deleteProjectTitle": "删除项目？",
+    "deleteProjectDescription": "“{name}” 及其包含的所有内容将被永久删除，此操作无法撤销。",
+    "editedJustNow": "刚刚编辑",
+    "editedMinutesAgo": "{count} 分钟前编辑",
+    "editedHoursAgo": "{count} 小时前编辑",
+    "editedDaysAgo": "{count} 天前编辑",
+    "noProjectsYet": "暂无项目",
+    "noProjectsDescription": "项目可将相关生成内容归集在一起。创建一个来整理你的作品。",
+    "projectsComingSoon": "项目 · 敬请期待",
+    "newProject": "新建项目"
+  },
+  "shell": {
+    "beta": {
+      "title": "FizzStudio 正在测试中",
+      "description": "这是早期测试版，你的作品可能会在没有提示的情况下丢失或被重置。在使用画布以及图像 / 视频生成功能时，请在创作过程中及时下载或备份重要内容。",
+      "acknowledge": "我知道了"
+    },
+    "credits": {
+      "tooltip": "算力积分",
+      "tooltipDetailed": "算力积分 · 可用 {available} · 冻结 {held} · 总计 {total}",
+      "manage": "管理算力积分"
+    },
+    "header": {
+      "homeAriaLabel": "FizzStudio 首页"
+    },
+    "nav": {
+      "home": "首页",
+      "canvas": "画布",
+      "image": "图像",
+      "video": "视频",
+      "audio": "音频",
+      "settings": "设置",
+      "studioNavigation": "工作室导航",
+      "main": "主导航",
+      "comingSoonLabel": "{label} · 即将推出"
+    },
+    "notifications": {
+      "view": "查看"
+    },
+    "share": {
+      "title": "分享“{name}”",
+      "descriptionWorkspace": "成员可以协作处理该团队中的所有项目。",
+      "descriptionProject": "成员可以协作处理该项目。"
+    }
+  },
+  "auth": {
+    "welcomeTitle": "欢迎使用 FizzStudio",
+    "welcomeSubtitle": "使用你的 FizzDragon 账号登录",
+    "identifierLabel": "邮箱或手机号",
+    "identifierPlaceholder": "you@example.com",
+    "passwordLabel": "密码",
+    "signIn": "登录",
+    "signInFailed": "登录失败",
+    "noAccount": "还没有账号？请先前往 <link>fizzdragon.com</link> 注册。",
+    "heroPrompt": "一幅充满电影感的前卫时尚肖像，雕塑般的绯红织物，一只发光的折纸巨龙栖息在她的肩头，戏剧化的影棚灯光",
+    "heroCaption": "由 FizzStudio 生成 · GPT Image 2"
+  },
+  "workspace": {
+    "roles": {
+      "owner": "所有者",
+      "admin": "管理员",
+      "billing": "账单管理员",
+      "editor": "编辑者",
+      "viewer": "查看者",
+      "member": "成员"
+    },
+    "add": "添加",
+    "role": "角色",
+    "addByEmailOrPhone": "通过邮箱或手机号添加",
+    "searchMembers": "搜索成员",
+    "noMembersFound": "未找到成员。",
+    "youSuffix": "(你)",
+    "memberActions": "成员操作",
+    "memberFallback": "成员",
+    "addedMember": "已添加 {name}",
+    "addMemberFailed": "无法添加成员",
+    "changeRoleFailed": "无法更改角色",
+    "removeMemberFailed": "无法移除成员",
+    "inviteLink": "邀请链接",
+    "inviteLinkHint": "在你撤销之前，任何持有链接的人都可以以你选择的角色加入{scope}。",
+    "thisTeam": "此团队",
+    "thisProject": "此项目",
+    "inviteLinkRole": "邀请链接角色",
+    "createLink": "创建链接",
+    "roleLink": "{role}链接",
+    "revokeLink": "撤销链接",
+    "expired": "已过期",
+    "expiresInDays": "{days, plural, other {# 天后过期}}",
+    "copyFailed": "无法复制",
+    "inviteLinkCopied": "邀请链接已复制到剪贴板",
+    "inviteLinkCreated": "邀请链接已创建",
+    "createInviteFailed": "无法创建邀请链接",
+    "inviteLinkRevoked": "邀请链接已撤销",
+    "revokeLinkFailed": "无法撤销链接",
+    "switchTeams": "切换团队",
+    "current": "当前",
+    "teamType": "团队",
+    "personalType": "个人",
+    "invite": "邀请",
+    "createTeam": "创建团队",
+    "createTeamTitle": "创建团队",
+    "collaborateRealtime": "实时协作。",
+    "myTeam": "我的团队",
+    "createTeamDescription": "团队是与同事协作、管理项目和整理资源的协作空间。",
+    "teamName": "团队名称",
+    "teamNamePlaceholder": "例如：营销设计",
+    "description": "描述",
+    "optional": "（可选）",
+    "teamDescriptionPlaceholder": "这个团队是关于什么的？",
+    "teamIcon": "团队图标",
+    "uploadComingSoon": "上传自定义图标——即将推出",
+    "uploadIconComingSoon": "上传你自己的图标（即将推出）",
+    "presetIconLabel": "{name} 图标",
+    "teamCreated": "团队“{name}”已创建",
+    "createTeamFailed": "无法创建团队"
+  },
+  "billing": {
+    "dialogLabel": "选择你的 FizzStudio 方案",
+    "closeDialog": "关闭订阅弹窗",
+    "comingSoon": "敬请期待",
+    "header": {
+      "title": "选择你的方案",
+      "subtitle": "升级以获得更多算力积分、更快队列和专业功能"
+    },
+    "interval": {
+      "monthly": "按月",
+      "yearly": "按年"
+    },
+    "productType": {
+      "individual": "个人",
+      "teams": "团队"
+    },
+    "empty": {
+      "errorTitle": "会员方案加载失败",
+      "title": "暂无可用会员方案",
+      "description": "请先在 Admin Billing 中创建会员方案和本地价格。本地预览无需配置 Airwallex 提供商绑定。"
+    },
+    "footer": {
+      "secureCheckout": "安全结算。货币将根据你的请求所在区域自动选择。",
+      "disclaimer": "订阅权益按计费周期续期；所含算力积分在付款成功后发放，并遵循结算页所示的方案规则。"
+    },
+    "plan": {
+      "defaultDescription": "面向 AI 创意工作流的会员权限。",
+      "custom": "定制",
+      "contactForPricing": "联系获取报价",
+      "getStarted": "立即开始",
+      "contactSales": "联系销售",
+      "includedInPlan": "方案包含",
+      "computeCreditsAmount": "{amount} 算力积分",
+      "customCreditsAmount": "定制算力积分额度",
+      "seats": "{count, plural, other {# 个席位}}",
+      "seatsUpTo": " · 最多 {max} 个",
+      "perMonth": "/月",
+      "perYear": "/年",
+      "oneTime": "一次性"
+    },
+    "features": {
+      "imagesPerMonth": "每月最多 {count} 次图像生成",
+      "privateGenerations": "私密生成",
+      "advancedWorkflows": "高级工作流",
+      "prioritySupport": "优先支持",
+      "sharedCredits": "团队共享算力积分",
+      "concurrentJobs": "{count, plural, other {# 个并发任务}}",
+      "queuedJobs": "{count, plural, other {# 个排队任务}}",
+      "topupDiscount": "充值算力积分 {percent}% 折扣"
+    },
+    "toast": {
+      "plansLoadFailed": "会员方案加载失败",
+      "teamCheckoutUnavailable": "团队结算需要在此 Studio 应用中接入工作空间 API",
+      "membershipActivated": "会员已激活",
+      "checkoutUrlMissing": "未返回支付结算链接",
+      "paymentFailed": "支付失败"
+    },
+    "faq": {
+      "heading": "你的疑问，<br></br>这里解答",
+      "computeCredits": {
+        "question": "什么是算力积分？",
+        "answer": "算力积分是 FizzStudio 中 AI 生成的通用货币。每次图像、视频和音频任务都会根据模型、分辨率和输出数量扣除算力积分——提交前会在“生成”按钮旁显示确切费用。"
+      },
+      "generationFails": {
+        "question": "如果生成失败会怎样？",
+        "answer": "当生成确实失败时，算力积分会自动退回。你只需为产出结果的任务付费。"
+      },
+      "rollover": {
+        "question": "未使用的算力积分会结转吗？",
+        "answer": "方案所含算力积分会在每个计费周期刷新，并遵循结算页所示的方案规则。充值算力积分则会一直保留在你的钱包中，直到用完为止。"
+      },
+      "freeTier": {
+        "question": "我可以免费使用 FizzStudio 吗？",
+        "answer": "可以。免费账户包含每日生成配额，让你体验工作室。当你需要更大用量、私密生成或更快队列时再升级即可。"
+      },
+      "subscriptionVsTopups": {
+        "question": "订阅与算力积分充值有什么区别？",
+        "answer": "订阅会提供周期性的算力积分额度，外加队列优先、更高并发和支持等方案权益。充值是一次性购买算力积分——且付费方案在充值时享有折扣。"
+      },
+      "teamShareCredits": {
+        "question": "团队方案如何共享算力积分？",
+        "answer": "团队方案将算力积分汇集到共享的工作空间钱包中，每个席位都从中扣除，因此整个团队使用同一个余额。"
+      },
+      "cancelOrChange": {
+        "question": "如何取消或变更我的方案？",
+        "answer": "在账户菜单的“账单与订阅”中管理你的订阅。方案变更将在当前计费周期结束时生效。"
+      },
+      "commercialUse": {
+        "question": "我可以将生成内容用于商业用途吗？",
+        "answer": "付费方案允许将你的生成结果用于商业用途，但须遵守服务条款。"
+      }
+    }
+  },
+  "canvas": {
+    "tidyCanvas": "整理画布",
+    "toggleMinimap": "切换缩略图",
+    "snapToGrid": "对齐网格",
+    "zoomOut": "缩小",
+    "zoomIn": "放大",
+    "zoomToFit": "适应窗口",
+    "dock": {
+      "upload": "上传",
+      "image": "图像",
+      "video": "视频",
+      "note": "便签"
+    },
+    "guest": "访客",
+    "uploadFailed": "上传失败",
+    "imageCardName": "图像 {index}",
+    "videoCardName": "视频 {index}",
+    "videoAssetsComingSoon": "视频素材 · 即将推出",
+    "offline": "离线",
+    "connecting": "连接中…",
+    "versionHistory": "版本历史",
+    "openAssets": "打开素材库",
+    "undo": "撤销",
+    "redo": "重做",
+    "openError": "无法打开此画布 — 请检查链接或你的访问权限。",
+    "emptyReadOnly": "此画布为空。"
+  },
+  "canvasControls": {
+    "comment": "评论",
+    "loadingModels": "正在加载模型…",
+    "addNode": {
+      "upload": "上传",
+      "image": "图像",
+      "video": "视频",
+      "note": "便签",
+      "searchPlaceholder": "搜索节点",
+      "noMatches": "没有匹配的节点"
+    },
+    "emptyState": {
+      "clickToAdd": "点击添加节点",
+      "or": "或"
+    },
+    "modelPicker": {
+      "searchPlaceholder": "搜索模型",
+      "heading": "模型",
+      "searchResults": "搜索结果",
+      "featuredModels": "热门",
+      "allModels": "全部模型",
+      "noModels": "暂无模型",
+      "signInToLoad": "登录以加载模型",
+      "taglines": {
+        "fastLowCostImage": "快速便宜出图",
+        "fastBalancedImage": "高速稳定出图",
+        "fastDraftImage": "快速草稿出图",
+        "flagshipImage": "旗舰高质出图",
+        "highQualityImage": "高质稳定出图",
+        "photorealImage": "写实营销出图",
+        "textClearImage": "文字清晰出图",
+        "balancedImage": "均衡清晰出图",
+        "creativeImage": "创意灵活出图",
+        "fastLowCostVideo": "快速便宜成片",
+        "fastBalancedVideo": "高速稳定成片",
+        "cinematicVideo": "音画电影成片",
+        "stableMotionVideo": "动作稳定成片",
+        "creativeVideo": "创意灵活成片"
+      }
+    },
+    "sizePresets": {
+      "squareHd": "正方形 HD",
+      "square": "正方形",
+      "portrait43": "竖版 4:3",
+      "portrait169": "竖版 16:9",
+      "landscape43": "横版 4:3",
+      "landscape169": "横版 16:9"
+    },
+    "stepper": {
+      "decrease": "减少",
+      "increase": "增加"
+    },
+    "settings": {
+      "title": "设置",
+      "selectModel": "请选择要配置的模型。",
+      "advanced": "高级设置"
+    }
+  },
+  "canvasNodes": {
+    "image": {
+      "title": "图片",
+      "alt": "画布图片",
+      "upscale": "高清放大",
+      "removeBg": "移除背景",
+      "relight": "重打光",
+      "multiAngle": "多角度",
+      "expand": "扩展画面",
+      "motion": "运动",
+      "generatePanorama": "生成全景图",
+      "download": "下载",
+      "uploading": "上传中 · {progress}%",
+      "uploadFailed": "上传失败"
+    },
+    "note": {
+      "title": "便签",
+      "placeholder": "写点备注…"
+    },
+    "panorama": {
+      "title": "720° 全景图",
+      "alt": "全景图",
+      "view720": "720° 查看",
+      "download": "下载",
+      "enter": "进入全景",
+      "exit": "退出"
+    },
+    "reference": {
+      "alt": "参考",
+      "audio": "音频",
+      "linkedFromNode": "来自已连接的节点",
+      "add": "添加{field}"
+    },
+    "asset": {
+      "title": "素材",
+      "alt": "素材",
+      "close": "关闭素材库",
+      "searchPlaceholder": "搜索素材",
+      "tab": {
+        "myCreations": "我的创作",
+        "uploaded": "已上传"
+      },
+      "empty": {
+        "title": "暂无素材",
+        "generated": "该项目中的生成结果会显示在这里。",
+        "uploaded": "你上传到该项目的媒体会显示在这里。"
+      }
+    }
+  },
+  "canvasOps": {
+    "modalityImage": "图像",
+    "modalityVideo": "视频",
+    "selectModel": "选择模型",
+    "settings": "设置",
+    "generate": "生成",
+    "cancelGeneration": "取消生成",
+    "run": "运行",
+    "count": "数量",
+    "download": "下载",
+    "rename": "重命名",
+    "view720": "720° 全景查看",
+    "before": "处理前",
+    "after": "处理后",
+    "result": "结果",
+    "resultsPlaceholder": "生成结果将显示在这里。",
+    "generationFailed": "生成失败",
+    "assetUnavailable": "此素材已不可用。",
+    "chooseModelFirst": "请先选择模型",
+    "writePromptFirst": "请先输入提示词",
+    "uploadFailed": "无法上传 {name}",
+    "noModelForOp": "目录中暂无可用的{op}模型",
+    "promptPlaceholderDefault": "输入提示词……",
+    "promptPlaceholderRelight": "描述光照效果，例如“从左侧打来的温暖夕阳光”",
+    "statusSubmitting": "提交中……",
+    "statusQueued": "排队中……",
+    "statusQueuedPosition": "排队中 · 第 {position} 位",
+    "statusGenerating": "生成中……",
+    "statusGeneratingEta": "生成中 · 约 {eta} 秒",
+    "opUpscale": "高清放大",
+    "opRemoveBg": "去除背景",
+    "opRelight": "重新打光",
+    "opMultiAngle": "多角度",
+    "opExpand": "扩展画面",
+    "opMotion": "运动",
+    "opGeneratePanorama": "生成全景",
+    "opPanorama": "全景"
+  },
+  "canvasEditors": {
+    "reset": "重置",
+    "generate": "生成",
+    "expand": {
+      "title": "扩展",
+      "presetOriginal": "原始",
+      "dragHint": "拖动边框进行扩展。",
+      "promptPlaceholder": "可选：描述新区域要填充的内容..",
+      "noModel": "目录中暂无扩展模型",
+      "dragOutwardFirst": "请先向外拖动边框进行扩展"
+    },
+    "motion": {
+      "title": "运动",
+      "size": "大小",
+      "clearPath": "清除路径",
+      "instruction": "涂抹需要运动的区域，然后绘制其运动路径。",
+      "promptPlaceholder": "描述运动，例如“野猪向左走”",
+      "length": "时长",
+      "seconds": "{count}秒",
+      "noModel": "目录中暂无运动模型",
+      "maskPrepareFailed": "无法准备运动遮罩",
+      "tools": {
+        "region": {
+          "label": "区域",
+          "hint": "涂抹图像中需要运动的部分"
+        },
+        "erase": {
+          "label": "擦除",
+          "hint": "从已涂抹的区域中移除"
+        },
+        "path": {
+          "label": "路径",
+          "hint": "绘制该区域跟随的路径"
+        }
+      },
+      "missing": {
+        "tooSmall": "图片太小（最小 {min}×{min}）",
+        "brushRegion": "涂抹需要运动的区域",
+        "drawPath": "绘制运动路径",
+        "addPrompt": "添加提示词"
+      }
+    },
+    "multiAngle": {
+      "title": "多角度",
+      "horizontalOrbit": "水平环绕",
+      "verticalTilt": "垂直俯仰",
+      "shotSize": "景别",
+      "prompt": "提示词",
+      "promptPlaceholder": "可选：优化新视角..",
+      "noModel": "目录中暂无多角度模型",
+      "presets": {
+        "front": "正面",
+        "threeQuarter": "四分之三侧",
+        "right": "右侧",
+        "back": "背面",
+        "left": "左侧",
+        "lowAngle": "低角度",
+        "topDown": "俯视"
+      },
+      "shotSizes": {
+        "wide": "远景",
+        "medium": "中景",
+        "closeUp": "特写"
+      }
+    }
+  },
+  "canvasCollab": {
+    "time": {
+      "justNow": "刚刚",
+      "minutes": "{count}分钟",
+      "hours": "{count}小时",
+      "days": "{count}天",
+      "minutesAgo": "{count}分钟前",
+      "hoursAgo": "{count}小时前",
+      "daysAgo": "{count}天前"
+    },
+    "comments": {
+      "title": "评论",
+      "newComment": "新建评论",
+      "resolveThread": "标记为已解决",
+      "you": "你",
+      "teammate": "队友",
+      "replyPlaceholder": "回复…",
+      "addPlaceholder": "添加评论…",
+      "send": "发送"
+    },
+    "history": {
+      "title": "版本历史",
+      "namePlaceholder": "为此检查点命名…",
+      "saveCheckpoint": "保存检查点",
+      "empty": "暂无检查点。保存一个以记录当前画布。",
+      "versionNumber": "版本 {number}",
+      "current": "当前",
+      "restore": "恢复",
+      "restoreThisVersion": "恢复到此版本"
+    },
+    "source": {
+      "saved": "已保存",
+      "auto": "自动",
+      "ai": "AI",
+      "import": "导入"
+    }
+  },
+  "settings": {
+    "goBack": "返回",
+    "settings": "设置",
+    "account": "账户",
+    "accountSubtitle": "你的个人资料与算力积分。",
+    "groupProfile": "个人资料",
+    "groupTeamsSettings": "团队设置",
+    "navOverview": "概览",
+    "navMembers": "成员",
+    "navAnalytics": "分析",
+    "navBilling": "套餐与账单",
+    "role": {
+      "owner": "所有者",
+      "admin": "管理员",
+      "billing": "账单管理员",
+      "editor": "编辑者",
+      "viewer": "查看者"
+    },
+    "personal": "个人",
+    "team": "团队",
+    "signIn": "登录",
+    "signOut": "退出登录",
+    "signInToManageAccount": "登录以管理你的账户。",
+    "publicId": "公开 ID {id}",
+    "publicIdCopied": "已复制公开 ID",
+    "publicIdCopyFailed": "无法复制公开 ID",
+    "computeCredits": "算力积分",
+    "available": "可用",
+    "held": "冻结",
+    "total": "总计",
+    "upgrade": "升级",
+    "credits": "算力积分",
+    "teamCredits": "团队算力积分",
+    "availableBalance": "可用余额",
+    "sharedTeamBalance": "团队共享余额",
+    "reservedByRunningJobs": "{amount} 已被运行中的任务占用",
+    "onlyBillingAdminsCanTopUp": "只有账单管理员可以为该团队充值算力积分。",
+    "creditsAdded": "已添加 {amount} 算力积分",
+    "creditsAddedGeneric": "已添加算力积分",
+    "couldntStartTopUp": "无法发起充值",
+    "couldntStartRecharge": "无法发起充值",
+    "amountUsdRange": "金额（美元，$10–$5,000）",
+    "estimatedCredits": "预计到账",
+    "recharge": "充值",
+    "secureCheckoutNote": "通过 Airwallex 安全结账。1 算力积分 = 1 美分。",
+    "usageAnalytics": "用量分析",
+    "usageAnalyticsSubtitle": "该工作区算力积分用量概要。",
+    "noUsageDataYet": "暂无用量数据",
+    "usageAnalyticsComingSoon": "产生生成任务或算力积分流水后，用量数据会显示在这里。",
+    "usageAnalyticsLoadFailed": "用量数据加载失败。请刷新页面或稍后重试。",
+    "recentJobsWindow": "最近 {count} 个任务",
+    "recentLedgerWindow": "最近 {count} 条流水",
+    "totalJobs": "任务总数",
+    "creditsIn": "算力积分入账",
+    "creditsOut": "算力积分支出",
+    "creditsUsage": "算力积分用量",
+    "modelsUsage": "模型用量",
+    "creditsSummary": "算力积分汇总",
+    "modelJobs": "{count} 个任务",
+    "modelCreditsUsed": "已用 {credits}",
+    "noCreditLedgerYet": "充值或运行生成后，这里会显示算力积分流水。",
+    "noGenerationHistoryYet": "在此工作区运行图像或视频生成后，这里会显示用量记录。",
+    "generations": "生成记录",
+    "colCompleted": "完成时间",
+    "colModel": "模型",
+    "colFeature": "功能",
+    "colStatus": "状态",
+    "colCredits": "算力积分",
+    "noGenerationsYet": "暂无生成记录。",
+    "feature": {
+      "image": "图像",
+      "video": "视频",
+      "unknown": "生成"
+    },
+    "jobStatus": {
+      "submitting": "提交中",
+      "queued": "排队中",
+      "generating": "生成中",
+      "done": "完成",
+      "failed": "失败",
+      "cancelled": "已取消"
+    },
+    "ledgerReason": {
+      "ai_job_hold": "生成预扣",
+      "ai_job_settle": "生成扣费",
+      "ai_job_release": "生成释放",
+      "compute_point_expired": "算力积分过期",
+      "membership_compute_point_included": "会员算力积分"
+    },
+    "ledgerEntry": {
+      "credit": "算力积分入账",
+      "debit": "算力积分支出",
+      "hold": "算力积分预扣",
+      "release": "算力积分释放",
+      "settle": "算力积分结算",
+      "refund": "算力积分退款",
+      "expire": "算力积分过期",
+      "adjustment": "算力积分调整",
+      "transfer_in": "算力积分转入",
+      "transfer_out": "算力积分转出"
+    },
+    "planAndBilling": "套餐与账单",
+    "billingSubtitle": "管理你的算力积分与订阅。",
+    "yourSubscription": "你的订阅",
+    "subscriptionDescription": "管理个人套餐、购买算力积分包并查看定价。",
+    "managePlan": "管理套餐",
+    "members": "成员",
+    "membersSubtitle": "“{name}”的成员可以协作处理该团队的每个项目。",
+    "membersAreForTeams": "成员功能面向团队",
+    "membersAreForTeamsBody": "在工作区切换器中创建团队，然后邀请他人协作处理团队中的每个项目。",
+    "overview": "概览",
+    "teamName": "团队名称",
+    "workspaceName": "工作区名称",
+    "workspaceNameUpdated": "工作区名称已更新",
+    "couldntUpdateName": "无法更新名称",
+    "teamMembers": "团队成员",
+    "teamMembersWithCount": "团队成员（{count}）",
+    "noMembersYet": "暂无成员。",
+    "inviteMembers": "邀请成员",
+    "manageAccess": "管理访问权限",
+    "sharedTeamBalancePool": "团队共享余额 · 所有成员从此池中扣减",
+    "availableCredits": "可用算力积分",
+    "manageCredits": "管理算力积分",
+    "dangerZone": "危险操作",
+    "dangerZoneDescription": "删除该团队并移除所有成员的访问权限。此操作无法撤销。",
+    "deleteTeam": "删除团队",
+    "teamDeleted": "已删除“{name}”",
+    "couldntDeleteTeam": "无法删除团队",
+    "deleteTeamConfirmTitle": "删除“{name}”？",
+    "deleteTeamConfirmBody": "所有成员将失去访问权限，团队的项目将被归档。此操作无法撤销。"
+  },
+  "project": {
+    "renameFailed": "无法重命名项目",
+    "backToProjects": "返回项目列表",
+    "projectName": "项目名称",
+    "untitled": "未命名",
+    "viewOnly": "仅查看",
+    "share": "分享",
+    "thisProject": "此项目",
+    "documentOpenError": "无法打开此文档——请检查链接或你的访问权限。",
+    "briefPlaceholder": "撰写简介…",
+    "offlineSaved": "离线——更改已保存到本地",
+    "connecting": "连接中…"
+  },
+  "invite": {
+    "loading": "正在加载邀请…",
+    "joinedTeam": "已加入团队",
+    "joinedProject": "已加入项目",
+    "acceptFailed": "无法接受邀请",
+    "signInTitle": "请先登录",
+    "signInBody": "登录后即可查看并加入此邀请。",
+    "signIn": "登录",
+    "unavailableTitle": "邀请不可用",
+    "invalidBody": "此邀请链接无效或已不存在。",
+    "revokedBody": "此邀请链接已被撤销。",
+    "expiredBody": "此邀请链接已过期。",
+    "inactiveBody": "此邀请链接已失效。",
+    "goToFizzStudio": "前往 FizzStudio",
+    "scopeTeam": "团队",
+    "scopeProject": "项目",
+    "joinTitle": "加入 {name}",
+    "joinBody": "您已受邀以 {role} 身份协作此{scope}。",
+    "acceptInvitation": "接受邀请"
+  },
+  "modes": {
+    "text_to_image": "文生图",
+    "text_to_video": "文生视频",
+    "image_to_image": "图生图",
+    "image_to_panorama": "全景图",
+    "image_to_video": "图生视频",
+    "video_to_video": "视频生视频",
+    "first_last_frame_to_video": "首尾帧",
+    "multimodal_to_video": "全能参考",
+    "inpainting": "局部重绘",
+    "outpainting": "扩图",
+    "upscale": "高清放大",
+    "remove_background": "移除背景",
+    "relight": "重新打光",
+    "multi_angle": "多角度"
+  },
+  "operations": {
+    "upscale": "高清放大",
+    "removeBackground": "移除背景",
+    "relight": "重新打光",
+    "multiAngle": "多角度",
+    "expand": "扩图",
+    "motion": "运动",
+    "panorama": "全景图"
+  },
+  "copilot": {
+    "title": "副驾",
+    "open": "打开副驾",
+    "close": "关闭",
+    "send": "发送",
+    "stop": "停止",
+    "placeholder": "问我任何关于这个项目的问题…",
+    "empty": "向副驾提问你的画布、规划要做什么，或了解工作室怎么用。",
+    "thinking": "思考中…",
+    "error": "出错了。",
+    "retry": "重试",
+    "you": "你",
+    "acting": "正在操作画布…",
+    "acted": "已更新画布",
+    "confirm": "确认",
+    "cancel": "取消",
+    "confirmRun": "运行这次生成？将消耗工作区算力积分。",
+    "confirmRemoveNode": "从画布删除这个节点？",
+    "confirmRemoveEdge": "删除这条连线？"
+  }
+}

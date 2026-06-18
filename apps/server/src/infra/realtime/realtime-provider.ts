@@ -2,10 +2,20 @@ import type { AssetEvent } from '@repo/shared';
 
 export const REALTIME_PROVIDER = Symbol('REALTIME_PROVIDER');
 
+/** Which client SDK/transport the `url` + `accessToken` are meant for. */
+export type RealtimeTransport = 'web-pubsub' | 'self-hosted';
+
 export interface RealtimeClientAccess {
+  /**
+   * For `web-pubsub`: an absolute Azure client URL. For `self-hosted`: the WS
+   * endpoint, either absolute (ws/wss) or a same-origin path the client prefixes
+   * with its own origin. `accessToken` is passed as the `?token=` query param.
+   */
   url: string;
   accessToken: string;
   expiresAt: number;
+  /** Lets the client pick the matching transport adapter. */
+  transport: RealtimeTransport;
 }
 
 export interface RealtimeProvider {

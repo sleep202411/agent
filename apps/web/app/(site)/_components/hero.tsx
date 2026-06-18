@@ -11,64 +11,56 @@
  */
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useRef, useState } from "react";
 import { motion } from "motion/react";
-import { IconArrowRight } from "@tabler/icons-react";
+import { IconArrowRight, IconVolume, IconVolumeOff } from "@tabler/icons-react";
 import { BlurText } from "@/components/ui/blur-text";
 import { ShinyText } from "@/components/ui/shiny-text";
 import { StarBorder } from "@/components/ui/star-border";
 import { Noise } from "@/components/ui/noise";
-import { GradualBlur } from "@/components/ui/gradual-blur";
 import { useLocale, useTranslations } from "@/src/i18n/i18n";
 import { localizePath } from "@/src/i18n/locale-url";
 import type { Locale } from "@/src/i18n/config";
 
-// Primary backdrop — looping muted videos served from the OSS static
-// CDN (same bucket as HERO_POSTER). The pool is randomized on mount;
-// until the random pick lands the <video> shows the poster so the
-// section is never blank. The poster also serves as the fallback if
-// autoplay is blocked. To swap a clip: re-upload to the same path via
-// the `/content/public/upload/static` endpoint with `dir=pc`.
-const HERO_VIDEOS = [
-  "https://static.fizzspace.cn/static/pc/hero-bg-1.mp4",
-  "https://static.fizzspace.cn/static/pc/hero-bg-2.mp4",
-] as const;
-const HERO_POSTER =
-  "https://static.fizzspace.cn/static/pc/ChatGPT%20Image%202026%E5%B9%B44%E6%9C%8827%E6%97%A5%2012_25_56.png";
+// Primary backdrop — a single looping, muted UI-showcase clip (webm with an
+// mp4 fallback); the poster covers the moment before playback and is the
+// fallback if autoplay is blocked. Hosted on Azure Blob (public `static`
+// container) so the binaries stay out of git.
+const HERO_CDN = "https://fizzdragonblob.blob.core.windows.net/static";
+const HERO_POSTER = `${HERO_CDN}/hero-poster.jpg`;
 
 export function Hero() {
   const locale = useLocale() as Locale;
   const t = useTranslations("home");
-  // CTA story (2026-05-21 product call):
-  //   primary   "故事开启" → /ips    — IP plaza is the canonical "story
-  //                                    begins" surface (browsing or
-  //                                    authoring an IP is the front door
-  //                                    of a story). Public, no auth gate.
-  //   secondary "加入创作" → /crews  — Crew Hall is the "join the work"
-  //                                    surface. Also public; the actual
-  //                                    join action prompts login when
-  //                                    the user is anonymous.
-  // /art-studio used to be the primary CTA; it's now reached as a
-  // second-step click from inside an IP detail or a crew workspace,
-  // because it's a workbench (empty without context).
+  // CTAs:
+  //   primary   (hero.primaryCta)   → /ips         — browse the story library.
+  //   secondary (hero.secondaryCta) → /art-studio  — jump into the studio.
   const primaryCtaHref = localizePath("/ips", locale);
-  const secondaryCtaHref = localizePath("/crews", locale);
+  const secondaryCtaHref = localizePath("/art-studio", locale);
 
-  // Pick the video on mount only — server-rendered HTML omits `src` so
-  // the SSR/CSR markup stays identical (no hydration mismatch). The
-  // poster covers the moment between hydration and the effect firing.
-  const [videoSrc, setVideoSrc] = useState<string | undefined>(undefined);
-  useEffect(() => {
-    setVideoSrc(HERO_VIDEOS[Math.floor(Math.random() * HERO_VIDEOS.length)]);
-  }, []);
+  // Optional soundtrack for the backdrop video — muted autoplay is mandatory,
+  // so sound is opt-in via the toggle.
+  const audioRef = useRef<HTMLAudioElement>(null);
+  const [soundOn, setSoundOn] = useState(false);
+  const toggleSound = () => {
+    const audio = audioRef.current;
+    if (!audio) return;
+    if (soundOn) {
+      audio.pause();
+      setSoundOn(false);
+    } else {
+      void audio
+        .play()
+        .then(() => setSoundOn(true))
+        .catch(() => {});
+    }
+  };
 
   return (
     <section className="relative h-screen min-h-[680px] overflow-hidden">
       {/* Backdrop — looping silent video. autoPlay+muted+playsInline are
           required together for autoplay on iOS Safari + Chrome data-saver. */}
       <video
-        key={videoSrc ?? "poster"}
-        src={videoSrc}
         poster={HERO_POSTER}
         autoPlay
         muted
@@ -77,26 +69,32 @@ export function Hero() {
         preload="auto"
         aria-hidden="true"
         className="absolute inset-0 size-full object-cover"
-      />
+      >
+        <source src={`${HERO_CDN}/hero.webm`} type="video/webm" />
+        <source src={`${HERO_CDN}/hero.mp4`} type="video/mp4" />
+      </video>
 
-      {/* Legibility layers — top dim + radial vignette. The bottom edge is
-          handled by <GradualBlur position="bottom"> below, which gives the
-          backdrop a real progressive blur instead of just a darkening fade. */}
+      {/* Soundtrack — separate looping track, opt-in via the button. */}
+      <audio ref={audioRef} src={`${HERO_CDN}/hero-audio.mp3`} loop preload="none" />
+
+      {/* Sound toggle */}
+      <button
+        type="button"
+        onClick={toggleSound}
+        aria-label={soundOn ? "Mute soundtrack" : "Play soundtrack"}
+        className="absolute right-8 bottom-8 z-30 flex size-11 items-center justify-center rounded-full border border-white/15 bg-white/[0.06] text-white/90 backdrop-blur transition-colors hover:border-white/25 hover:bg-white/[0.12]"
+      >
+        {soundOn ? (
+          <IconVolume className="size-5" stroke={1.8} />
+        ) : (
+          <IconVolumeOff className="size-5" stroke={1.8} />
+        )}
+      </button>
+
+      {/* Legibility layers — top dim + radial vignette + a soft bottom fade
+          into the next section. */}
       <div className="absolute inset-0 bg-gradient-to-b from-background/30 via-transparent to-background/60" />
       <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,transparent_25%,rgba(0,0,0,0.55)_85%)]" />
-
-      {/* Bottom-edge gradient blur — backdrop image fades into mist before
-          handing off to the next section. divCount=8 keeps the gradient
-          smooth, exponential ramp so the very-bottom is properly blurred. */}
-      <GradualBlur
-        position="bottom"
-        height="14rem"
-        strength={2.5}
-        divCount={8}
-        exponential
-        curve="ease-out"
-        zIndex={1}
-      />
 
       {/* Film-grain overlay — subtle cinema feel, ~0.5KB JS keeps a 1024×1024
           canvas regenerating noise every other frame. patternAlpha low so
@@ -136,14 +134,17 @@ export function Hero() {
             stepDuration={0.4}
             className="justify-center"
           />
-          <BlurText
-            text={t("hero.headlineLine2")}
-            animateBy="words"
-            direction="top"
-            delay={120}
-            stepDuration={0.4}
-            className="justify-center bg-gradient-to-r from-violet-300 via-fuchsia-200 to-amber-200 bg-clip-text text-transparent"
-          />
+          {/* Gradient line — rendered as one element (not BlurText) so the
+              text is a direct child and `bg-clip-text` actually fills it; the
+              per-word span approach would clip the gradient to nothing. */}
+          <motion.div
+            initial={{ opacity: 0, y: -20, filter: "blur(10px)" }}
+            animate={{ opacity: 1, y: 0, filter: "blur(0px)" }}
+            transition={{ duration: 0.6, delay: 0.45 }}
+            className="bg-gradient-to-r from-[#ff5257] via-[#e52227] to-[#cc1f23] bg-clip-text text-transparent"
+          >
+            {t("hero.headlineLine2")}
+          </motion.div>
         </div>
 
         {/* 3. Subtitle — wider container, larger type, generous leading. */}

@@ -42,13 +42,44 @@ function buildUrl(path: string, params?: ApiRequestConfig["params"]): string {
   return qs ? `${path}${path.includes("?") ? "&" : "?"}${qs}` : path;
 }
 
+/**
+ * Active workspace id attached to every request as `x-fizz-workspace-id`, so the
+ * whole studio (reads AND AI-generation spend) is scoped to the workspace the
+ * user is in. Set by WorkspaceProvider on switch. compute_point is
+ * workspace-owned server-side, so this header decides which pot a generation
+ * draws from and which balance the badge shows — keeping them in lockstep.
+ *
+ * `undefined` = not yet set by the provider → fall back to the persisted
+ * selection so even first-paint / off-shell requests are correctly scoped;
+ * `null` = explicitly cleared (e.g. signed out).
+ */
+// Mirrors ACTIVE_WORKSPACE_STORAGE_KEY in workspace-context.tsx (kept inline to
+// avoid a circular import through the api client).
+const PERSISTED_WORKSPACE_KEY = "fizz:active-workspace";
+let activeWorkspaceId: string | null | undefined = undefined;
+export function setApiWorkspaceId(id: string | null): void {
+  activeWorkspaceId = id;
+}
+function resolveWorkspaceId(): string | null {
+  if (activeWorkspaceId !== undefined) return activeWorkspaceId;
+  if (typeof window === "undefined") return null;
+  try {
+    return localStorage.getItem(PERSISTED_WORKSPACE_KEY);
+  } catch {
+    return null;
+  }
+}
+
 async function request<T>(method: string, path: string, config: ApiRequestConfig = {}): Promise<T> {
   const { params, data, timeout = 30_000, raw, headers: customHeaders, ...rest } = config;
   const url = buildUrl(path, params);
 
+  const workspaceId = resolveWorkspaceId();
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
     "accept-language": "en-US",
+    // Default workspace scope; an explicit per-call header still wins.
+    ...(workspaceId ? { "x-fizz-workspace-id": workspaceId } : {}),
     ...(customHeaders as Record<string, string>),
   };
 
@@ -111,4 +142,8 @@ async function request<T>(method: string, path: string, config: ApiRequestConfig
 export const api = {
   get: <T = unknown>(path: string, config?: ApiRequestConfig) => request<T>("GET", path, config),
   post: <T = unknown>(path: string, config?: ApiRequestConfig) => request<T>("POST", path, config),
+  patch: <T = unknown>(path: string, config?: ApiRequestConfig) =>
+    request<T>("PATCH", path, config),
+  delete: <T = unknown>(path: string, config?: ApiRequestConfig) =>
+    request<T>("DELETE", path, config),
 };

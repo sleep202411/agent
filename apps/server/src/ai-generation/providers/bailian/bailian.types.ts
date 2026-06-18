@@ -41,6 +41,14 @@ export interface BailianModelRuntimeConfig {
   type: AiJobType;
   family: AiModelFamily;
   generationModes: AiGenerationMode[];
+  /**
+   * Per-mode endpoint routing for multi-binding canonicals (e.g. Wan 2.7:
+   * text_to_video -> wan2.7-t2v, image_to_video/first_last_frame_to_video ->
+   * wan2.7-i2v). Every sibling runtime of a canonical carries the SAME map, so
+   * submit-time and poll-time endpoint resolution agree. Absent for
+   * single-binding models (the lone endpoint is always used).
+   */
+  modeEndpoints?: Partial<Record<AiGenerationMode, string>>;
   name: string;
   description: string;
   enabled: boolean;

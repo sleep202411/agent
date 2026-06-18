@@ -7,6 +7,7 @@ import {
   PlatformDocumentCommentStatus,
   PlatformDocumentOperationType,
   PlatformDocumentStatus,
+  PlatformDocumentType,
   PlatformDocumentVersionSource,
   ProjectMemberRole,
   type PlatformDocument,
@@ -21,6 +22,8 @@ import type { AuthUser } from '../auth';
 import { PrismaService } from '../infra/db/db.module';
 import { PlatformAuditLogService } from '../workspaces/audit-log.service';
 import { WorkspacePermissionService } from '../workspaces';
+import { DocumentCompactionService } from './document-compaction.service';
+import { resolveSyncWindow } from './document-sync';
 import type {
   AddCommentInput,
   AppendDocumentOperationInput,
@@ -29,6 +32,7 @@ import type {
   CreateDocumentVersionInput,
   ListDocumentOperationsQuery,
   ListProjectDocumentsQuery,
+  RestoreDocumentVersionInput,
   UpdateDocumentInput,
   UpsertDocumentPresenceInput,
 } from './dto';
@@ -39,6 +43,7 @@ export class DocumentsService {
     private readonly prisma: PrismaService,
     private readonly permissions: WorkspacePermissionService,
     private readonly audit: PlatformAuditLogService,
+    private readonly compaction: DocumentCompactionService,
   ) {}
 
   async listProjectDocuments(
@@ -123,13 +128,18 @@ export class DocumentsService {
   }
 
   /**
-   * Idempotent — returns the project's primary storyboard document,
-   * creating it if absent. "Documents" are an internal concept; the user
-   * just enters a project and lands on its storyboard (with view-mode
-   * switching). One storyboard doc per project, lazily created on first
-   * open. Concurrency-safe via a pg advisory lock keyed on the project.
+   * Idempotent — returns the project's primary document of a given mode
+   * (`type`), creating it if absent. This is the multi-mode ensure-on-open
+   * primitive: a project=entity has at most one primary document per mode
+   * (canvas / storyboard / timeline / script …), lazily created when the
+   * user first opens that mode. Concurrency-safe via a pg advisory lock
+   * keyed on (project, type).
    */
-  async ensurePrimaryStoryboard(user: AuthUser, projectId: string) {
+  async ensurePrimaryDocument(
+    user: AuthUser,
+    projectId: string,
+    type: PlatformDocumentType,
+  ) {
     const project = await this.permissions.requireProjectRole(
       user.userId,
       projectId,
@@ -139,7 +149,7 @@ export class DocumentsService {
     const existing = await this.prisma.platformDocument.findFirst({
       where: {
         projectId,
-        type: 'storyboard',
+        type,
         deletedAt: null,
         status: PlatformDocumentStatus.active,
       },
@@ -151,13 +161,13 @@ export class DocumentsService {
 
     const document = await this.prisma.$transaction(async (tx) => {
       await tx.$executeRaw`
-        SELECT pg_advisory_xact_lock(hashtext(${`document:primary-storyboard:${projectId}`})::bigint)
+        SELECT pg_advisory_xact_lock(hashtext(${`document:primary-${type}:${projectId}`})::bigint)
       `;
       // Re-check inside the lock to avoid a race creating two docs.
       const found = await tx.platformDocument.findFirst({
         where: {
           projectId,
-          type: 'storyboard',
+          type,
           deletedAt: null,
           status: PlatformDocumentStatus.active,
         },
@@ -169,7 +179,7 @@ export class DocumentsService {
         data: {
           workspaceId: project.workspaceId,
           projectId,
-          type: 'storyboard',
+          type,
           title: project.name,
           createdById: user.userId,
         },
@@ -184,7 +194,7 @@ export class DocumentsService {
           source: PlatformDocumentVersionSource.system,
           snapshot: created.contentSnapshot as Prisma.InputJsonValue,
           createdById: user.userId,
-          metadata: { reason: 'initial_storyboard' },
+          metadata: { reason: `initial_${type}` },
         },
       });
       return tx.platformDocument.update({
@@ -204,6 +214,15 @@ export class DocumentsService {
     });
 
     return { document: this.documentDto(document, { detail: true }) };
+  }
+
+  /** Back-compat wrapper for the existing storyboard ensure route. */
+  async ensurePrimaryStoryboard(user: AuthUser, projectId: string) {
+    return this.ensurePrimaryDocument(
+      user,
+      projectId,
+      PlatformDocumentType.storyboard,
+    );
   }
 
   async getDocument(user: AuthUser, documentId: string) {
@@ -299,21 +318,55 @@ export class DocumentsService {
     return { operations: operations.map((op) => this.operationDto(op)) };
   }
 
+  /**
+   * Operations a (re)connecting client must replay, resolved against the
+   * compaction horizon. When the client is behind the horizon, `resync.required`
+   * is true and it must rebuild from the document's crdtState (carried in the
+   * detail DTO) before applying these operations. See {@link resolveSyncWindow}.
+   */
+  async getOperationSyncWindow(
+    user: AuthUser,
+    documentId: string,
+    afterSequence: number,
+    limit: number,
+  ) {
+    const document = await this.permissions.requireDocumentRole(
+      user.userId,
+      documentId,
+      ProjectMemberRole.viewer,
+    );
+    const window = resolveSyncWindow(afterSequence, document.snapshotSequence);
+    const operations = await this.prisma.platformDocumentOperation.findMany({
+      where: { documentId, sequence: { gt: window.fromSequence } },
+      orderBy: { sequence: 'asc' },
+      take: Math.min(Math.max(limit, 1), 1000),
+    });
+    return {
+      operations: operations.map((op) => this.operationDto(op)),
+      resync: {
+        required: window.resyncRequired,
+        fromSequence: window.fromSequence,
+      },
+    };
+  }
+
   async getSyncState(
     user: AuthUser,
     documentId: string,
     afterSequence = 0,
     limit = 500,
   ) {
-    const [{ document }, { operations }, { presences }] = await Promise.all([
+    const [{ document }, sync, { presences }] = await Promise.all([
       this.getDocument(user, documentId),
-      this.listOperations(user, documentId, {
-        afterSequence,
-        limit: Math.min(Math.max(limit, 1), 1000),
-      }),
+      this.getOperationSyncWindow(user, documentId, afterSequence, limit),
       this.listPresence(user, documentId),
     ]);
-    return { document, operations, presences };
+    return {
+      document,
+      operations: sync.operations,
+      presences,
+      resync: sync.resync,
+    };
   }
 
   async appendOperation(
@@ -327,7 +380,21 @@ export class DocumentsService {
       ProjectMemberRole.editor,
     );
 
-    const operation = await this.prisma.$transaction(async (tx) => {
+    const operationType = input.operationType as PlatformDocumentOperationType;
+    // Two collaboration models share this op log:
+    //  • patch/snapshot — NOT a CRDT. The client ships the authoritative
+    //    materialized view, persisted inline so the next reader sees it at once,
+    //    guarded by optimistic concurrency on baseSequence.
+    //  • yjs_update — a CRDT. Updates are commutative (no baseSequence guard);
+    //    contentSnapshot and crdtState are derived server-side from the merged op
+    //    stream by DocumentCompactionService (the sole crdtState writer) and are
+    //    NEVER trusted from the client nor written per-op on the hot path.
+    const isCrdt = operationType === PlatformDocumentOperationType.yjs_update;
+
+    const result = await this.prisma.$transaction(async (tx) => {
+      // Serialize sequence assignment per document. The body is intentionally
+      // tiny (find + small op insert + counter bump) so the lock is held
+      // briefly; the expensive merge happens off the hot path in compaction.
       await tx.$executeRaw`
         SELECT pg_advisory_xact_lock(hashtext(${`platform-document:${documentId}`})::bigint)
       `;
@@ -350,12 +417,11 @@ export class DocumentsService {
         const existing = await tx.platformDocumentOperation.findFirst({
           where: { documentId, idempotencyKey: input.idempotencyKey },
         });
-        if (existing) return existing;
+        if (existing) return { operation: existing, scheduleCompaction: false };
       }
 
-      const operationType =
-        input.operationType as PlatformDocumentOperationType;
       if (
+        !isCrdt &&
         (operationType === PlatformDocumentOperationType.patch ||
           operationType === PlatformDocumentOperationType.snapshot) &&
         input.baseSequence != null &&
@@ -387,28 +453,34 @@ export class DocumentsService {
         },
       });
 
+      const materializedContent = isCrdt
+        ? undefined
+        : (input.materializedContent ?? input.snapshot);
+
       await tx.platformDocument.update({
         where: { id: documentId },
         data: {
           currentSequence: sequence,
+          // Only non-CRDT docs persist a client-materialized snapshot inline.
+          // CRDT docs leave contentSnapshot/crdtState to compaction.
           contentSnapshot:
-            (input.materializedContent ?? input.snapshot) === undefined
+            materializedContent === undefined
               ? undefined
-              : ((input.materializedContent ?? input.snapshot) as
-                  | Prisma.InputJsonValue
-                  | undefined),
-          crdtState: input.yjsUpdateBase64
-            ? Buffer.from(input.yjsUpdateBase64, 'base64')
-            : undefined,
+              : (materializedContent as Prisma.InputJsonValue),
           updatedById: user.userId,
           version: { increment: 1 },
         },
       });
 
-      return created;
+      return { operation: created, scheduleCompaction: isCrdt };
     });
 
-    return { operation: this.operationDto(operation) };
+    if (result.scheduleCompaction) {
+      // Off the hot path: fold the new op into crdtState + contentSnapshot.
+      this.compaction.schedule(documentId);
+    }
+
+    return { operation: this.operationDto(result.operation) };
   }
 
   async createVersion(
@@ -483,6 +555,128 @@ export class DocumentsService {
       take: 100,
     });
     return { versions: versions.map((version) => this.versionDto(version)) };
+  }
+
+  /**
+   * Restore a document to a prior version. This is the server's half of restore:
+   * it stamps a reversible "before restore" safety checkpoint from the caller's
+   * exact pre-restore state and points `currentVersionId` at the target. The
+   * actual content revert is computed + applied CLIENT-side (a delete-missing +
+   * set-target diff against the live Y.Doc) and streams as a normal `yjs_update`
+   * operation, so every collaborator converges through the existing fan-out with
+   * no special-casing. The restore is a convergent overlay (CRDT semantics): an
+   * un-synced concurrent peer edit survives via LWW — the safety checkpoint is
+   * the reversibility handle.
+   */
+  async restoreVersion(
+    user: AuthUser,
+    documentId: string,
+    versionId: string,
+    input: RestoreDocumentVersionInput,
+  ) {
+    await this.permissions.requireDocumentRole(
+      user.userId,
+      documentId,
+      ProjectMemberRole.editor,
+    );
+
+    // The caller normally supplies its exact live state for the safety
+    // checkpoint. If it doesn't, fold any un-compacted op tail into crdtState
+    // first so the fallback (document.crdtState) captures the true latest state
+    // rather than a snapshot behind the compaction horizon.
+    if (!input.currentCrdtStateBase64) {
+      await this.compaction.flush(documentId);
+    }
+
+    const { target, checkpoint, previousVersionId, workspaceId, projectId } =
+      await this.prisma.$transaction(async (tx) => {
+        await tx.$executeRaw`
+          SELECT pg_advisory_xact_lock(hashtext(${`platform-document:${documentId}`})::bigint)
+        `;
+        const document = await tx.platformDocument.findFirst({
+          where: { id: documentId, deletedAt: null },
+        });
+        if (!document) {
+          throw new NotFoundException({
+            code: 'DOCUMENT_NOT_FOUND',
+            msg: 'Document not found.',
+          });
+        }
+        const target = await tx.platformDocumentVersion.findFirst({
+          where: { id: versionId, documentId },
+        });
+        if (!target) {
+          throw new NotFoundException({
+            code: 'DOCUMENT_VERSION_NOT_FOUND',
+            msg: 'Version not found.',
+          });
+        }
+        const last = await tx.platformDocumentVersion.findFirst({
+          where: { documentId },
+          orderBy: { versionNumber: 'desc' },
+        });
+        const checkpoint = await tx.platformDocumentVersion.create({
+          data: {
+            documentId,
+            versionNumber: (last?.versionNumber ?? 0) + 1,
+            schemaVersion: document.schemaVersion,
+            sequence: document.currentSequence,
+            title: document.title,
+            label: input.label ?? `Before restore to v${target.versionNumber}`,
+            source: PlatformDocumentVersionSource.system,
+            sourceId: target.id,
+            // The caller's exact pre-restore state — what the user was looking
+            // at — so this checkpoint reverts restore faithfully.
+            snapshot:
+              (input.currentSnapshot as Prisma.InputJsonValue | undefined) ??
+              (document.contentSnapshot as Prisma.InputJsonValue),
+            crdtState: input.currentCrdtStateBase64
+              ? Buffer.from(input.currentCrdtStateBase64, 'base64')
+              : document.crdtState,
+            metadata: {
+              reason: 'pre_restore_checkpoint',
+              restoredFromVersionId: target.id,
+              restoredFromVersionNumber: target.versionNumber,
+            },
+            createdById: user.userId,
+          },
+        });
+        await tx.platformDocument.update({
+          where: { id: documentId },
+          data: {
+            currentVersionId: target.id,
+            updatedById: user.userId,
+            version: { increment: 1 },
+          },
+        });
+        return {
+          target,
+          checkpoint,
+          previousVersionId: document.currentVersionId,
+          workspaceId: document.workspaceId,
+          projectId: document.projectId,
+        };
+      });
+
+    await this.audit.record({
+      workspaceId,
+      projectId,
+      actorUserId: user.userId,
+      action: 'document.version.restored',
+      entityType: 'document',
+      entityId: documentId,
+      before: { currentVersionId: previousVersionId },
+      after: {
+        restoredFromVersionId: target.id,
+        restoredFromVersionNumber: target.versionNumber,
+        checkpointVersionId: checkpoint.id,
+      },
+    });
+
+    return {
+      target: this.versionDto(target),
+      checkpoint: this.versionDto(checkpoint),
+    };
   }
 
   async upsertPresence(
@@ -698,9 +892,19 @@ export class DocumentsService {
       collaborationDialect: document.collaborationDialect,
       collaborationRoomId: document.collaborationRoomId,
       currentSequence: document.currentSequence,
+      // The op sequence already folded into crdtState — a CRDT client bootstraps
+      // by loading crdtState then replaying operations after this sequence.
+      snapshotSequence: document.snapshotSequence,
       currentVersionId: document.currentVersionId,
       version: document.version,
       contentSnapshot: opts?.detail ? document.contentSnapshot : undefined,
+      // Compacted CRDT state (detail only — omitted from list payloads and null
+      // for non-CRDT documents like the storyboard).
+      crdtStateBase64:
+        opts?.detail && document.crdtState
+          ? Buffer.from(document.crdtState).toString('base64')
+          : undefined,
+      lastCompactedAt: document.lastCompactedAt?.toISOString() ?? null,
       createdById: document.createdById,
       updatedById: document.updatedById,
       createdAt: document.createdAt.toISOString(),

@@ -69,6 +69,7 @@ export type FoundryCatalogSource =
   | 'byteplus-config'
   | 'bailian-config'
   | 'replicate-config'
+  | 'agnes-config'
   | 'seed-fallback';
 
 export type AiJobStatus =
