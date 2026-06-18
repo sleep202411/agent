@@ -1,12 +1,13 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslations } from "next-intl";
 import { Link } from "@/i18n/navigation";
 import { useRouter } from "@/i18n/navigation";
 import {
   IconArtboard,
   IconDotsVertical,
+  IconLoader2,
   IconPencil,
   IconPlus,
   IconTrash,
@@ -60,6 +61,8 @@ export function CanvasProjectsGrid() {
   const [renaming, setRenaming] = useState<ProjectRef | null>(null);
   const [renameValue, setRenameValue] = useState("");
   const [deleting, setDeleting] = useState<ProjectRef | null>(null);
+  const creatingRef = useRef(false);
+  const [creating, setCreating] = useState(false);
 
   const refresh = useCallback(async () => {
     if (!workspaceId) return;
@@ -90,10 +93,15 @@ export function CanvasProjectsGrid() {
 
   const onCreate = useCallback(async () => {
     if (!workspaceId) return;
+    if (creatingRef.current) return;
+    creatingRef.current = true;
+    setCreating(true);
     try {
       const project = await createProject(workspaceId, { name: t("untitledCanvas") });
       router.push(`/project/${project.id}`);
     } catch {
+      creatingRef.current = false;
+      setCreating(false);
       toast.error(t("createCanvasFailed"));
     }
   }, [router, workspaceId, t]);
@@ -121,16 +129,24 @@ export function CanvasProjectsGrid() {
         <button
           type="button"
           onClick={onCreate}
-          className="group rounded-xl bg-card p-2.5 text-left transition-colors hover:bg-accent"
+          disabled={creating || !workspaceId}
+          aria-busy={creating}
+          className="group rounded-xl bg-card p-2.5 text-left transition-colors hover:bg-accent disabled:hover:bg-card"
         >
           <div className="flex aspect-video items-center justify-center rounded-lg bg-muted">
-            <IconPlus
-              className="size-8 text-white/40 transition-colors group-hover:text-white/70"
-              stroke={1.5}
-            />
+            {creating ? (
+              <IconLoader2 className="size-8 animate-spin text-white/70" stroke={1.5} />
+            ) : (
+              <IconPlus
+                className="size-8 text-white/40 transition-colors group-hover:text-white/70 group-disabled:text-white/30"
+                stroke={1.5}
+              />
+            )}
           </div>
           <div className="px-1.5 pt-3 pb-1.5">
-            <div className="text-sm font-medium">{t("newCanvas")}</div>
+            <div className="text-sm font-medium">
+              {creating ? t("createCanvasLoading") : t("newCanvas")}
+            </div>
             <div className="mt-0.5 text-xs text-muted-foreground">{t("startEmptyBoard")}</div>
           </div>
         </button>

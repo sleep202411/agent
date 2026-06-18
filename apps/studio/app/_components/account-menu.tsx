@@ -41,7 +41,7 @@ function PillButton({ label, onClick }: { label: string; onClick: () => void }) 
 export function AccountMenu() {
   const t = useTranslations("account");
   const router = useRouter();
-  const { user, signIn, signOut } = useAuth();
+  const { user, loading, signIn, signOut } = useAuth();
   const { data: computeCredits } = useComputeWalletBalance(Boolean(user));
   const [menuOpen, setMenuOpen] = useState(false);
   const comingSoon = (label: string) => toast.info(t("comingSoon", { label }));
@@ -61,6 +61,10 @@ export function AccountMenu() {
     const frame = window.requestAnimationFrame(() => setSubscriptionOpen(true));
     return () => window.cancelAnimationFrame(frame);
   }, []);
+
+  if (loading) {
+    return <div className="size-9 animate-pulse rounded-full bg-white/[0.06]" />;
+  }
 
   // Signed out → a Sign in button instead of the avatar menu.
   if (!user) {

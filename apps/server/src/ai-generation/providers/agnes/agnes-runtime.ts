@@ -15,7 +15,7 @@ import type {
   FoundryCatalogSource,
 } from '../../types';
 
-export const AGNES_SCHEMA_VERSION = '2026-06-18';
+export const AGNES_SCHEMA_VERSION = '2026-06-18.2';
 
 export interface AgnesRuntimeConfig {
   provider: 'agnes-ai';
@@ -100,8 +100,8 @@ export function createAgnesRuntimeConfig(
     billingPolicy: args.billingPolicy,
     parameterPolicy: args.parameterPolicy,
     inputSchema: isVideo
-      ? videoInputSchemaFor(args.parameterPolicy)
-      : imageInputSchemaFor(args.parameterPolicy),
+      ? videoInputSchemaFor(args.parameterPolicy, args.generationModes)
+      : imageInputSchemaFor(args.parameterPolicy, args.generationModes),
     outputSchema: isVideo ? videoOutputSchemaFor() : imageOutputSchemaFor(),
     documentation: documentationFor(args.endpointId),
   };
@@ -184,14 +184,18 @@ export function toAgnesModelDefinition(args: {
     capabilities: isVideo
       ? {
           textToVideo: config.generationModes.includes('text_to_video'),
-          imageToVideo: false,
+          imageToVideo:
+            config.generationModes.includes('image_to_video') ||
+            config.generationModes.includes('multimodal_to_video'),
           supportsSeed: false,
           supportsCancel: false,
           maxOutputs: 1,
         }
       : {
           textToImage: config.generationModes.includes('text_to_image'),
-          imageToImage: false,
+          imageToImage:
+            config.generationModes.includes('image_to_image') ||
+            config.generationModes.includes('multimodal_to_image'),
           supportsSeed: false,
           supportsCancel: false,
           maxOutputs: 1,
@@ -221,49 +225,89 @@ export function toAgnesModelDefinition(args: {
   };
 }
 
-function imageInputSchemaFor(parameterPolicy?: AiJsonValue): AiInputSchema {
+function imageInputSchemaFor(
+  parameterPolicy: AiJsonValue | undefined,
+  generationModes: AiGenerationMode[],
+): AiInputSchema {
   const aspectOptions = stringArrayFromPolicy(
     parameterPolicy,
     'supportedAspectRatios',
   );
-  return {
-    type: 'object',
-    properties: {
-      prompt: {
-        type: 'string',
-        title: 'Prompt',
-        minLength: 1,
-        maxLength: 4000,
-        'x-ui': {
-          control: 'textarea',
-          group: 'prompt',
-          order: 10,
-          rows: 5,
-          importance: 'primary',
-        },
-      },
-      imageSize: {
-        type: 'string',
-        title: 'Image size',
-        default:
-          stringFromPolicy(parameterPolicy, 'defaultAspectRatio') ?? '1:1',
-        enum:
-          aspectOptions.length > 0
-            ? aspectOptions
-            : ['1:1', '4:3', '3:4', '16:9', '9:16'],
-        'x-ui': {
-          control: 'select',
-          group: 'settings',
-          order: 20,
-          importance: 'secondary',
-        },
+  const properties: AiInputSchema['properties'] = {
+    prompt: {
+      type: 'string',
+      title: 'Prompt',
+      minLength: 1,
+      maxLength: 4000,
+      'x-ui': {
+        control: 'textarea',
+        group: 'prompt',
+        order: 10,
+        rows: 5,
+        importance: 'primary',
       },
     },
+  };
+  const maxReferenceImages = referenceImageMax(parameterPolicy);
+  if (
+    (generationModes.includes('image_to_image') ||
+      generationModes.includes('multimodal_to_image')) &&
+    maxReferenceImages > 0
+  ) {
+    properties.referenceImages = {
+      type: 'array',
+      title: 'Reference images',
+      minItems: 0,
+      maxItems: maxReferenceImages,
+      items: {
+        type: 'object',
+        properties: {
+          url: { type: 'string', format: 'uri', title: 'URL' },
+        },
+        required: ['url'],
+        additionalProperties: true,
+      },
+      'x-ui': {
+        control: 'image_upload',
+        group: 'references',
+        order: 20,
+        importance: 'primary',
+        accept: 'image/jpeg,image/png,image/webp',
+        ...({
+          mediaKind: 'image',
+          promptRefPrefix: '@Image',
+        } as Record<string, unknown>),
+      } as AiInputSchema['properties'][string]['x-ui'],
+      'x-provider': {
+        parameter: 'extra_body.image',
+        transform: 'mediaArrayToUrls',
+      },
+    };
+  }
+  properties.imageSize = {
+    type: 'string',
+    title: 'Image size',
+    default: stringFromPolicy(parameterPolicy, 'defaultAspectRatio') ?? '1:1',
+    enum:
+      aspectOptions.length > 0
+        ? aspectOptions
+        : ['1:1', '4:3', '3:4', '16:9', '9:16'],
+    'x-ui': {
+      control: 'select',
+      group: 'settings',
+      order: 30,
+      importance: 'secondary',
+    },
+  };
+  return {
+    type: 'object',
+    properties,
     required: ['prompt'],
     additionalProperties: false,
     'x-ui': {
       groups: [
         { id: 'prompt', title: 'Prompt', order: 10 },
+        { id: 'references', title: 'References', order: 20 },
         { id: 'settings', title: 'Settings', order: 30 },
         {
           id: 'advanced',
@@ -277,7 +321,10 @@ function imageInputSchemaFor(parameterPolicy?: AiJsonValue): AiInputSchema {
   };
 }
 
-function videoInputSchemaFor(parameterPolicy?: AiJsonValue): AiInputSchema {
+function videoInputSchemaFor(
+  parameterPolicy: AiJsonValue | undefined,
+  generationModes: AiGenerationMode[],
+): AiInputSchema {
   const resolutionOptions = stringArrayFromPolicy(
     parameterPolicy,
     'resolutionOptions',
@@ -290,71 +337,103 @@ function videoInputSchemaFor(parameterPolicy?: AiJsonValue): AiInputSchema {
     parameterPolicy,
     'supportedAspectRatios',
   );
+  const properties: AiInputSchema['properties'] = {
+    prompt: {
+      type: 'string',
+      title: 'Prompt',
+      minLength: 1,
+      maxLength: 4000,
+      'x-ui': {
+        control: 'textarea',
+        group: 'prompt',
+        order: 10,
+        rows: 4,
+        importance: 'primary',
+      },
+    },
+  };
+
+  const maxReferenceImages = referenceImageMax(parameterPolicy);
+  if (
+    generationModes.includes('multimodal_to_video') &&
+    maxReferenceImages > 0
+  ) {
+    properties.referenceImages = {
+      type: 'array',
+      title: 'Reference images',
+      minItems: 0,
+      maxItems: maxReferenceImages,
+      items: {
+        type: 'object',
+        properties: { url: { type: 'string', format: 'uri', title: 'URL' } },
+        required: ['url'],
+        additionalProperties: true,
+      },
+      'x-ui': {
+        control: 'image_upload',
+        group: 'references',
+        order: 20,
+        importance: 'primary',
+        accept: 'image/jpeg,image/png,image/webp',
+        ...({
+          mediaKind: 'image',
+          promptRefPrefix: '@Image',
+        } as Record<string, unknown>),
+      } as AiInputSchema['properties'][string]['x-ui'],
+      'x-provider': {
+        parameter: 'extra_body.image',
+        transform: 'mediaArrayToUrls',
+      },
+    };
+  }
+
+  properties.resolution = {
+    type: 'string',
+    title: 'Resolution',
+    default: stringFromPolicy(parameterPolicy, 'defaultResolution') ?? '480p',
+    enum: resolutionOptions.length > 0 ? resolutionOptions : ['480p', '720p'],
+    'x-ui': {
+      control: 'segmented',
+      group: 'settings',
+      order: 30,
+      importance: 'secondary',
+    },
+  };
+  properties.aspectRatio = {
+    type: 'string',
+    title: 'Aspect ratio',
+    default: stringFromPolicy(parameterPolicy, 'defaultAspectRatio') ?? '16:9',
+    enum:
+      aspectOptions.length > 0
+        ? aspectOptions
+        : ['16:9', '9:16', '1:1', '4:3', '3:4'],
+    'x-ui': {
+      control: 'segmented',
+      group: 'settings',
+      order: 40,
+      importance: 'secondary',
+    },
+  };
+  properties.duration = {
+    type: 'string',
+    title: 'Duration',
+    default: stringFromPolicy(parameterPolicy, 'defaultDurationSeconds') ?? '5',
+    enum:
+      durationOptions.length > 0
+        ? durationOptions
+        : ['4', '5', '6', '8', '10', '12', '15'],
+    'x-ui': {
+      control: 'select',
+      group: 'settings',
+      order: 50,
+      importance: 'secondary',
+      unit: 's',
+    },
+  };
 
   return {
     type: 'object',
-    properties: {
-      prompt: {
-        type: 'string',
-        title: 'Prompt',
-        minLength: 1,
-        maxLength: 4000,
-        'x-ui': {
-          control: 'textarea',
-          group: 'prompt',
-          order: 10,
-          rows: 4,
-          importance: 'primary',
-        },
-      },
-      resolution: {
-        type: 'string',
-        title: 'Resolution',
-        default:
-          stringFromPolicy(parameterPolicy, 'defaultResolution') ?? '480p',
-        enum:
-          resolutionOptions.length > 0 ? resolutionOptions : ['480p', '720p'],
-        'x-ui': {
-          control: 'segmented',
-          group: 'settings',
-          order: 30,
-          importance: 'secondary',
-        },
-      },
-      aspectRatio: {
-        type: 'string',
-        title: 'Aspect ratio',
-        default:
-          stringFromPolicy(parameterPolicy, 'defaultAspectRatio') ?? '16:9',
-        enum:
-          aspectOptions.length > 0
-            ? aspectOptions
-            : ['16:9', '9:16', '1:1', '4:3', '3:4'],
-        'x-ui': {
-          control: 'segmented',
-          group: 'settings',
-          order: 40,
-          importance: 'secondary',
-        },
-      },
-      duration: {
-        type: 'string',
-        title: 'Duration',
-        default:
-          stringFromPolicy(parameterPolicy, 'defaultDurationSeconds') ?? '5',
-        enum:
-          durationOptions.length > 0
-            ? durationOptions
-            : ['4', '5', '6', '8', '10', '12', '15'],
-        'x-ui': {
-          control: 'select',
-          group: 'settings',
-          order: 50,
-          importance: 'secondary',
-          unit: 's',
-        },
-      },
-    },
+    properties,
     required: ['prompt'],
     additionalProperties: false,
     'x-ui': {
@@ -428,9 +507,18 @@ function capabilityMatrixFor(
   inputSchema: AiInputSchema,
 ): AiCapabilityMatrix {
   const isVideo = type === 'video';
+  const inputModalities: AiCapabilityMatrix['inputModalities'] = ['text'];
+  if (
+    generationModes.includes('image_to_image') ||
+    generationModes.includes('multimodal_to_image') ||
+    generationModes.includes('image_to_video') ||
+    generationModes.includes('multimodal_to_video')
+  ) {
+    inputModalities.push('image');
+  }
   return {
     source: 'internal',
-    inputModalities: ['text'],
+    inputModalities,
     outputModalities: isVideo ? ['video'] : ['image'],
     generationModes,
     supportedParameters: Object.keys(inputSchema.properties),
@@ -453,10 +541,23 @@ function documentationFor(
   return [
     {
       title: `Agnes AI ${endpointId}`,
-      url: 'https://apihub.agnes-ai.com',
+      url:
+        endpointId === 'agnes-video-v2.0'
+          ? 'https://agnes-ai.com/doc/agnes-video-v20'
+          : endpointId === 'agnes-image-2.1-flash'
+            ? 'https://agnes-ai.com/doc/agnes-image-21-flash'
+            : 'https://apihub.agnes-ai.com',
       scope: 'api_reference',
     },
   ];
+}
+
+function referenceImageMax(policy?: AiJsonValue): number {
+  const value = recordValue(recordValue(policy)?.referenceImages);
+  if (!value || value.enabled === false) return 0;
+  const max = Number(value.max);
+  if (Number.isInteger(max) && max > 0) return max;
+  return 9;
 }
 
 function recordValue(value: unknown): Record<string, unknown> | null {

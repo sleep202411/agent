@@ -12,32 +12,21 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 
-/** Bump the suffix to re-surface the notice after a material change. */
-const ACK_KEY = "fizzstudio-beta-ack-v1";
-
 /**
- * One-time beta / data-loss notice, shown on first entry to the studio and
- * remembered per browser so it doesn't nag. Mounted app-wide (grid + editor).
+ * Beta / data-loss notice, shown on every fresh Studio entry. Mounted app-wide
+ * (grid + editor); the locale layout is reused across in-app navigation, so it
+ * won't re-open repeatedly while moving between Studio pages.
  */
 export function BetaNotice() {
   const t = useTranslations("shell");
   const [open, setOpen] = useState(false);
 
   useEffect(() => {
-    try {
-      /* eslint-disable-next-line react-hooks/set-state-in-effect */
-      if (!localStorage.getItem(ACK_KEY)) setOpen(true);
-    } catch {
-      setOpen(true); // storage blocked — show it (can't persist the ack)
-    }
+    /* eslint-disable-next-line react-hooks/set-state-in-effect */
+    setOpen(true);
   }, []);
 
   const acknowledge = () => {
-    try {
-      localStorage.setItem(ACK_KEY, "1");
-    } catch {
-      /* storage unavailable — the notice may reappear next visit */
-    }
     setOpen(false);
   };
 

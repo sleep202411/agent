@@ -13,11 +13,22 @@ function mapImageRequest(
   config: AgnesRuntimeConfig,
   input: Record<string, unknown>,
 ): Record<string, unknown> {
-  return {
+  const body: Record<string, unknown> = {
     model: config.endpointId,
     prompt: stringValue(input.prompt),
     size: imageSize(input.imageSize),
+    extra_body: {
+      response_format: 'url',
+    },
   };
+  const images = referenceImageUrls(input.referenceImages);
+  if (images.length > 0) {
+    body.extra_body = {
+      response_format: 'url',
+      image: images,
+    };
+  }
+  return body;
 }
 
 function mapVideoRequest(
@@ -29,18 +40,45 @@ function mapVideoRequest(
     input.aspectRatio,
   );
   const frameRate = 24;
-  return {
+
+  const body: Record<string, unknown> = {
     model: config.endpointId,
     prompt: stringValue(input.prompt),
-    width,
-    height,
     num_frames: frameCount(durationSeconds(input), frameRate),
     frame_rate: frameRate,
   };
+  const images = referenceImageUrls(input.referenceImages);
+  if (images.length === 1) {
+    body.image = images[0];
+  } else if (images.length > 1) {
+    body.extra_body = { image: images };
+  } else {
+    body.width = width;
+    body.height = height;
+  }
+  return body;
 }
 
 function stringValue(value: unknown): string {
   return typeof value === 'string' ? value : '';
+}
+
+function mediaUrl(value: unknown): string | undefined {
+  if (typeof value === 'string' && value.trim()) return value.trim();
+  if (value && typeof value === 'object') {
+    const url = (value as { url?: unknown }).url;
+    if (typeof url === 'string' && url.trim()) return url.trim();
+  }
+  return undefined;
+}
+
+function referenceImageUrls(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map(mediaUrl)
+    .filter(
+      (item): item is string => typeof item === 'string' && item.length > 0,
+    );
 }
 
 function imageSize(value: unknown): string {

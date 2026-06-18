@@ -1122,8 +1122,8 @@ export const IMAGE_MODELS: ImageModelSeed[] = [
     displayName: 'Agnes Image 2.1 Flash',
     family: 'quick-image',
     description:
-      'Agnes AI lightweight text-to-image model for draft visuals and local generation tests.',
-    modes: [T2I],
+      'Agnes AI lightweight image model for text-to-image and single-reference image editing.',
+    modes: [T2I, I2I],
     tier: 'vip',
     cost: 6,
     parameterPolicy: QUICK_IMAGE_PARAMETER_POLICY,
@@ -1135,7 +1135,7 @@ export const IMAGE_MODELS: ImageModelSeed[] = [
       {
         provider: 'agnes-ai',
         endpointId: 'agnes-image-2.1-flash',
-        modes: [T2I],
+        modes: [T2I, I2I],
         priority: 100,
         maxConcurrentRequests: 1,
         maxRequestsPerMinute: 20,
@@ -1143,7 +1143,12 @@ export const IMAGE_MODELS: ImageModelSeed[] = [
         cooldownSeconds: 30,
         failureThreshold: 3,
         catalogSnapshot: {
-          docs: [{ title: 'Agnes AI API', url: 'https://apihub.agnes-ai.com' }],
+          docs: [
+            {
+              title: 'Agnes Image 2.1 Flash',
+              url: 'https://agnes-ai.com/doc/agnes-image-21-flash',
+            },
+          ],
           model: 'agnes-image-2.1-flash',
           pricing: { source: 'provider_account' },
         },

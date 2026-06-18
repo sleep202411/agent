@@ -109,8 +109,8 @@ export const VIDEO_MODELS: VideoModelSeed[] = [
     displayName: 'Agnes Video 2.0',
     family: 'quick-video',
     description:
-      'Agnes AI lightweight text-to-video model for draft motion clips and local generation tests.',
-    modes: [T2V],
+      'Agnes AI lightweight text-to-video and multi-image-to-video model for draft motion clips and local generation tests.',
+    modes: [T2V, MM2V],
     tier: 'vip',
     // Default 5s × 480p points(6).
     cost: 30,
@@ -123,7 +123,7 @@ export const VIDEO_MODELS: VideoModelSeed[] = [
       {
         provider: 'agnes-ai',
         endpointId: 'agnes-video-v2.0',
-        modes: [T2V],
+        modes: [T2V, MM2V],
         requestTimeoutSeconds: 1800,
         maxConcurrentRequests: 1,
         maxRequestsPerMinute: 20,
@@ -131,7 +131,12 @@ export const VIDEO_MODELS: VideoModelSeed[] = [
         failureThreshold: 3,
         priority: 100,
         catalogSnapshot: {
-          docs: [{ title: 'Agnes AI API', url: 'https://apihub.agnes-ai.com' }],
+          docs: [
+            {
+              title: 'Agnes Video V2.0 API',
+              url: 'https://agnes-ai.com/doc/agnes-video-v20',
+            },
+          ],
           model: 'agnes-video-v2.0',
           polling: { endpoint: '/agnesapi?video_id={video_id}' },
           pricing: { source: 'provider_account' },

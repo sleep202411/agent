@@ -92,6 +92,18 @@ function modelTaglineKey(model: FizzAiModel): ModelTaglineKey {
   );
 }
 
+function modelSearchRank(model: FizzAiModel, query: string): number {
+  const q = query.trim().toLowerCase();
+  if (!q) return 0;
+  const name = model.name.toLowerCase();
+  const words = name.split(/[^a-z0-9]+/).filter(Boolean);
+
+  if (name.startsWith(q)) return 0;
+  if (words.some((word) => word.startsWith(q))) return 1;
+  if (name.includes(q)) return 2;
+  return Number.POSITIVE_INFINITY;
+}
+
 type ModelSection = {
   id: string;
   title: string;
@@ -127,7 +139,17 @@ export function ModelPicker({
       (m) => !isOperationOnlyModel(m) && !/hunyuan|panorama/i.test(m.id)
     );
     const q = query.trim().toLowerCase();
-    const filtered = q ? all.filter((m) => m.name.toLowerCase().includes(q)) : all;
+    const filtered = q
+      ? all
+          .map((model, index) => ({
+            model,
+            index,
+            rank: modelSearchRank(model, q),
+          }))
+          .filter((item) => Number.isFinite(item.rank))
+          .sort((a, b) => a.rank - b.rank || a.index - b.index)
+          .map((item) => item.model)
+      : all;
     if (q) {
       return [
         {

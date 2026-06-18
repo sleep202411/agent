@@ -43,6 +43,7 @@
   "home": {
     "untitledProject": "未命名項目",
     "createNewProject": "新增項目",
+    "createProjectLoading": "建立中…",
     "createProjectError": "無法建立項目",
     "hero": {
       "headline": "今天我們要創作甚麼？",
@@ -243,6 +244,7 @@
   },
   "projects": {
     "newCanvas": "新增畫布",
+    "createCanvasLoading": "建立中…",
     "startEmptyBoard": "由空白畫板開始",
     "untitledCanvas": "未命名畫布",
     "createCanvasFailed": "無法建立畫布",

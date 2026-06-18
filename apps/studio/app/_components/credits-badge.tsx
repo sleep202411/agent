@@ -7,6 +7,7 @@ import { api } from "@/lib/api";
 import { useActiveWorkspaceId } from "@/app/_components/workspace-context";
 import { Link } from "@/i18n/navigation";
 import { cn } from "@/lib/utils";
+import { useAuth } from "./auth-provider";
 
 interface WalletLedgerData {
   accounts?: Array<{
@@ -60,6 +61,7 @@ async function getComputeWalletBalance(
 }
 
 export function useComputeWalletBalance(enabled = true) {
+  const { user } = useAuth();
   // Scopes to the active workspace's compute pot (workspace-owned); null only on
   // first paint before the app-wide provider resolves, where it reads personal.
   const workspaceId = useActiveWorkspaceId();
@@ -69,7 +71,7 @@ export function useComputeWalletBalance(enabled = true) {
     staleTime: 20_000,
     refetchInterval: 60_000,
     refetchOnWindowFocus: true,
-    enabled,
+    enabled: enabled && Boolean(user),
   });
 }
 

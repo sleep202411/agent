@@ -43,6 +43,7 @@
   "home": {
     "untitledProject": "Untitled project",
     "createNewProject": "Create new project",
+    "createProjectLoading": "Creating…",
     "createProjectError": "Couldn't create the project",
     "hero": {
       "headline": "What are we creating today?",
@@ -243,6 +244,7 @@
   },
   "projects": {
     "newCanvas": "New canvas",
+    "createCanvasLoading": "Creating…",
     "startEmptyBoard": "Start an empty board",
     "untitledCanvas": "Untitled canvas",
     "createCanvasFailed": "Couldn't create the canvas",

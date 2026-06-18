@@ -162,6 +162,12 @@ export const QUICK_IMAGE_PARAMETER_POLICY = {
   supportedAspectRatios: ['1:1', '4:3', '3:4', '16:9', '9:16', '3:2', '2:3'],
   defaultVariations: 1,
   variationOptions: [1],
+  referenceImages: {
+    enabled: true,
+    min: 0,
+    max: 1,
+    maskSupported: false,
+  },
   seed: { enabled: false },
 } as const satisfies Prisma.InputJsonObject;
 
@@ -1109,6 +1115,12 @@ export const QUICK_VIDEO_PARAMETER_POLICY = {
   durationOptions: ['4', '5', '6', '8', '10', '12', '15'],
   defaultAspectRatio: '16:9',
   supportedAspectRatios: ['16:9', '9:16', '1:1', '4:3', '3:4'],
+  referenceImages: {
+    enabled: true,
+    min: 0,
+    max: 9,
+    maskSupported: false,
+  },
   seed: { enabled: false },
 } as const satisfies Prisma.InputJsonObject;
 

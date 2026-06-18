@@ -1,12 +1,13 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslations } from "next-intl";
 import { Link } from "@/i18n/navigation";
 import { useRouter } from "@/i18n/navigation";
 import {
   IconArtboard,
   IconDotsVertical,
+  IconLoader2,
   IconPencil,
   IconPlus,
   IconTrash,
@@ -109,6 +110,8 @@ export function RecentProjects() {
   const [renaming, setRenaming] = useState<ProjectRef | null>(null);
   const [renameValue, setRenameValue] = useState("");
   const [deleting, setDeleting] = useState<ProjectRef | null>(null);
+  const creatingRef = useRef(false);
+  const [creating, setCreating] = useState(false);
 
   const refresh = useCallback(async () => {
     const workspace = await ensurePersonalWorkspace();
@@ -130,11 +133,16 @@ export function RecentProjects() {
   }, [refresh]);
 
   const onCreate = useCallback(async () => {
+    if (creatingRef.current) return;
+    creatingRef.current = true;
+    setCreating(true);
     try {
       const ws = workspaceId ?? (await ensurePersonalWorkspace()).id;
       const project = await createProject(ws, { name: t("untitledProject") });
       router.push(`/project/${project.id}`);
     } catch {
+      creatingRef.current = false;
+      setCreating(false);
       toast.error(t("createProjectError"));
     }
   }, [router, workspaceId, t]);
@@ -174,12 +182,20 @@ export function RecentProjects() {
         <button
           type="button"
           onClick={onCreate}
-          className="group flex min-h-[140px] flex-col items-center justify-center gap-3 rounded-2xl bg-card transition-all hover:-translate-y-0.5 hover:bg-accent hover:shadow-lg hover:shadow-black/20"
+          disabled={creating}
+          aria-busy={creating}
+          className="group flex min-h-[140px] flex-col items-center justify-center gap-3 rounded-2xl bg-card transition-all hover:-translate-y-0.5 hover:bg-accent hover:shadow-lg hover:shadow-black/20 disabled:hover:translate-y-0 disabled:hover:bg-card disabled:hover:shadow-none"
         >
-          <span className="flex size-11 items-center justify-center rounded-full bg-white text-black transition-transform group-hover:scale-105">
-            <IconPlus className="size-5" stroke={2} />
+          <span className="flex size-11 items-center justify-center rounded-full bg-white text-black transition-transform group-hover:scale-105 group-disabled:scale-100">
+            {creating ? (
+              <IconLoader2 className="size-5 animate-spin" stroke={2} />
+            ) : (
+              <IconPlus className="size-5" stroke={2} />
+            )}
           </span>
-          <span className="text-sm font-medium">{t("createNewProject")}</span>
+          <span className="text-sm font-medium">
+            {creating ? t("createProjectLoading") : t("createNewProject")}
+          </span>
         </button>
 
         {projects === null ? (

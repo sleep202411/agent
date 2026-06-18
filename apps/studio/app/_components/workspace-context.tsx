@@ -9,6 +9,7 @@ import {
   listWorkspaces,
   type WorkspaceRef,
 } from "@/lib/collab/projects-api";
+import { useAuth } from "./auth-provider";
 
 /**
  * Active-workspace context. Lists every workspace the user belongs to
@@ -21,6 +22,7 @@ const STORAGE_KEY = "fizz:active-workspace";
 /** Exposed so the invite-accept flow can preselect the just-joined team. */
 export const ACTIVE_WORKSPACE_STORAGE_KEY = STORAGE_KEY;
 export const WORKSPACES_QUERY_KEY = ["fizzstudio", "workspaces"] as const;
+const EMPTY_WORKSPACES: WorkspaceRef[] = [];
 
 interface WorkspaceContextValue {
   workspaces: WorkspaceRef[];
@@ -52,17 +54,21 @@ export function useActiveWorkspaceId(): string | null {
 
 export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
   const queryClient = useQueryClient();
+  const { user, loading: authLoading } = useAuth();
+  const userKey = user?.id == null ? "anonymous" : String(user.id);
 
-  const { data: workspaces = [], isLoading } = useQuery({
-    queryKey: WORKSPACES_QUERY_KEY,
+  const { data: loadedWorkspaces = EMPTY_WORKSPACES, isLoading } = useQuery({
+    queryKey: [...WORKSPACES_QUERY_KEY, userKey] as const,
     // Ensure the personal workspace exists, then list all memberships.
     queryFn: async () => {
       await ensurePersonalWorkspace();
       return listWorkspaces();
     },
+    enabled: Boolean(user),
     staleTime: 60_000,
     retry: false,
   });
+  const workspaces = user ? loadedWorkspaces : EMPTY_WORKSPACES;
 
   // Hydrate the persisted selection lazily (client-only; SSR returns null, and
   // the active workspace is derived from the async-loaded list so there's no
@@ -126,9 +132,18 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
       setActiveWorkspaceId,
       createTeam,
       refresh,
-      loading: isLoading,
+      loading: authLoading || (Boolean(user) && isLoading),
     }),
-    [workspaces, activeWorkspace, setActiveWorkspaceId, createTeam, refresh, isLoading]
+    [
+      workspaces,
+      activeWorkspace,
+      setActiveWorkspaceId,
+      createTeam,
+      refresh,
+      authLoading,
+      user,
+      isLoading,
+    ]
   );
 
   return <WorkspaceContext.Provider value={value}>{children}</WorkspaceContext.Provider>;

@@ -11,10 +11,12 @@ FROM node:22-alpine AS base
 FROM base AS builder
 WORKDIR /app
 COPY . .
+RUN rm -f apps/studio/.env.local apps/studio/.env.development.local apps/studio/.env.production.local
 RUN npm ci --ignore-scripts
 
-# No build args: the studio inlines no NEXT_PUBLIC_* config in production
-# (NEXT_PUBLIC_DEV_SATOKEN is local-dev only and must never be baked in).
+# No build args: the studio inlines no NEXT_PUBLIC_* config in production.
+# Developer-local Next env files are removed above so localhost WS/auth values
+# cannot be baked into the standalone server or client bundle.
 ENV NODE_OPTIONS="--max-old-space-size=4096"
 RUN npx turbo run build --filter=studio
 
