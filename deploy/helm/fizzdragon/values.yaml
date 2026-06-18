@@ -161,6 +161,8 @@ serverSecrets:
       env: LEGACY_MYSQL_USER
     - kv: legacy-mysql-password
       env: LEGACY_MYSQL_PASSWORD
+    - kv: agnes-api-key
+      env: AGNES_API_KEY
     # HMAC token-signing secret for the self-hosted realtime WS plane
     # (REALTIME_TRANSPORT=self-hosted). PREREQUISITE: create the `realtime-ws-secret`
     # secret in Key Vault BEFORE deploying — the CSI projection fails if absent.
@@ -200,7 +202,7 @@ studio:
   replicaCount: 1
   image:
     repository: fizzdragon-studio
-    tag: b2a91afcf29746fc2c1c0973fb46f51b6dd5bbca
+    tag: d618188d59ac-agnes-i2i-search-20260618152341
   containerPort: 3000
   env:
     AURORA_PROXY_TARGET: http://fizzdragon-server:3001
@@ -264,7 +266,7 @@ server:
   migrateOnStart: true
   image:
     repository: fizzdragon-server
-    tag: 52cab3be85832bbc0f3637e43c43f3b0d7f30f91
+    tag: d618188d59ac-agnes-i2i-search-20260618152341
   containerPort: 3001
   env:
     FAL_ENABLED: "true"
