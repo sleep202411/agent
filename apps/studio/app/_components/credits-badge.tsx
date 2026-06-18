@@ -5,6 +5,8 @@ import { useTranslations } from "next-intl";
 import { IconBolt } from "@tabler/icons-react";
 import { api } from "@/lib/api";
 import { useActiveWorkspaceId } from "@/app/_components/workspace-context";
+import { Link } from "@/i18n/navigation";
+import { cn } from "@/lib/utils";
 
 interface WalletLedgerData {
   accounts?: Array<{
@@ -85,15 +87,18 @@ export function CreditsBadge({ className }: { className?: string }) {
       : t("credits.tooltip");
 
   return (
-    <span
+    <Link
+      href="/settings/billing"
+      aria-label={t("credits.manage")}
       title={title}
-      className={
+      className={cn(
         className ??
-        "flex h-9 items-center gap-1.5 rounded-full bg-white/[0.06] px-3.5 text-sm font-medium tabular-nums"
-      }
+          "flex h-9 items-center gap-1.5 rounded-full bg-white/[0.06] px-3.5 text-sm font-medium tabular-nums",
+        "transition-colors hover:bg-white/[0.1] focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
+      )}
     >
       <IconBolt className="size-4 text-white/85" stroke={1.8} />
       {data != null ? data.available.toLocaleString() : "—"}
-    </span>
+    </Link>
   );
 }

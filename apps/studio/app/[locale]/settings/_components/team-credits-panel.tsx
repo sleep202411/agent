@@ -142,6 +142,7 @@ function RechargeControls({ workspaceId }: { workspaceId: string }) {
 
   const amountNum = Number(amount);
   const amountValid = Number.isInteger(amountNum) && amountNum >= 10 && amountNum <= 5000;
+  const estimatedCredits = amountValid ? amountNum * 100 : null;
   const busy = packMut.isPending || customMut.isPending;
   const packs = catalog?.prices ?? [];
 
@@ -210,6 +211,18 @@ function RechargeControls({ workspaceId }: { workspaceId: string }) {
             />
           </div>
         </label>
+        <div className="hidden min-w-44 rounded-xl bg-white/[0.05] px-4 py-2.5 sm:block">
+          <span className="block text-xs text-muted-foreground">{t("estimatedCredits")}</span>
+          <span className="mt-1 flex items-center gap-1 text-base font-semibold tabular-nums">
+            <IconBolt className="size-4 text-white/85" stroke={1.8} />
+            {estimatedCredits != null ? estimatedCredits.toLocaleString() : "—"}
+            {estimatedCredits != null && (
+              <span className="text-xs font-medium text-muted-foreground tabular-nums">
+                {t("credits")}
+              </span>
+            )}
+          </span>
+        </div>
         <button
           type="button"
           disabled={!amountValid || busy}
@@ -225,6 +238,18 @@ function RechargeControls({ workspaceId }: { workspaceId: string }) {
           )}
           {t("recharge")}
         </button>
+      </div>
+      <div className="rounded-xl bg-white/[0.05] px-4 py-2.5 sm:hidden">
+        <span className="text-xs text-muted-foreground">{t("estimatedCredits")}</span>
+        <span className="mt-1 flex items-center gap-1 text-base font-semibold tabular-nums">
+          <IconBolt className="size-4 text-white/85" stroke={1.8} />
+          {estimatedCredits != null ? estimatedCredits.toLocaleString() : "—"}
+          {estimatedCredits != null && (
+            <span className="text-xs font-medium text-muted-foreground tabular-nums">
+              {t("credits")}
+            </span>
+          )}
+        </span>
       </div>
       <p className="text-xs text-muted-foreground">{t("secureCheckoutNote")}</p>
     </div>

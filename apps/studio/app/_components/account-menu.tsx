@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useTranslations } from "next-intl";
-import { Link } from "@/i18n/navigation";
+import { Link, useRouter } from "@/i18n/navigation";
 import {
   IconBolt,
   IconCopy,
@@ -40,6 +40,7 @@ function PillButton({ label, onClick }: { label: string; onClick: () => void }) 
 
 export function AccountMenu() {
   const t = useTranslations("account");
+  const router = useRouter();
   const { user, signIn, signOut } = useAuth();
   const { data: computeCredits } = useComputeWalletBalance(Boolean(user));
   const [menuOpen, setMenuOpen] = useState(false);
@@ -48,6 +49,10 @@ export function AccountMenu() {
   const openSubscription = () => {
     setMenuOpen(false);
     window.requestAnimationFrame(() => setSubscriptionOpen(true));
+  };
+  const openUsageAnalytics = () => {
+    setMenuOpen(false);
+    router.push("/settings/analytics");
   };
 
   useEffect(() => {
@@ -180,10 +185,7 @@ export function AccountMenu() {
           </div>
           <div className="mt-2 flex items-center gap-2">
             <PillButton label={t("upgrade")} onClick={openSubscription} />
-            <PillButton
-              label={t("usageAnalytics")}
-              onClick={() => comingSoon(t("usageAnalytics"))}
-            />
+            <PillButton label={t("usageAnalytics")} onClick={openUsageAnalytics} />
           </div>
 
           <DropdownMenuSeparator className="my-3" />

@@ -2,7 +2,6 @@
 
 import { estimateProductModelPoints, type AiProductPricingPolicy } from "@repo/shared";
 import { api } from "@/lib/api";
-import { ApiRequestError } from "@/lib/api";
 
 export type FizzAiJobType = "image" | "video";
 export type FizzAiGenerationMode =
@@ -93,6 +92,16 @@ export interface FizzAiModel {
   parameter_policy?: Record<string, unknown>;
   billing_policy?: {
     productPricing?: AiProductPricingPolicy;
+  };
+  ui_policy?: {
+    defaultMode?: "simple" | "advanced";
+    advancedVisible?: boolean;
+    showProviderName?: boolean;
+    showCostEstimate?: boolean;
+    showQueueEstimate?: boolean;
+    group?: string;
+    recommended?: boolean;
+    sortOrder?: number;
   };
 }
 
@@ -933,7 +942,7 @@ export function cheapestSellPoints(model: FizzAiModel | undefined): number | nul
 }
 
 /** Surface a 429 quota rejection as the shared upgrade dialog, then rethrow. */
-function emitUpgradeOn429(_err: unknown): void {
+function emitUpgradeOn429(): void {
   // Upgrade dialog is fizzstudio-only; no-op in studio.
 }
 
@@ -953,7 +962,7 @@ export async function submitFizzAiJob(input: FizzAiSubmitJobInput): Promise<Fizz
       },
     });
   } catch (err) {
-    emitUpgradeOn429(err);
+    emitUpgradeOn429();
     throw err;
   }
 }
@@ -969,7 +978,7 @@ export async function retryFizzAiJob(id: string): Promise<FizzAiSubmitResponse> 
       timeout: 30_000,
     });
   } catch (err) {
-    emitUpgradeOn429(err);
+    emitUpgradeOn429();
     throw err;
   }
 }

@@ -96,8 +96,8 @@ export function StudioSidebar() {
   const t = useTranslations("shell");
   const pathname = usePathname() ?? "/";
 
-  // Primary nav — the studio workspaces. `canvas` and `audio` are not built yet,
-  // so they render disabled with a "coming soon" tooltip instead of navigating.
+  // Primary nav — the studio workspaces. Audio has a UI shell for review, but
+  // generation is not connected yet, so keep its public entry disabled.
   const items: RailItem[] = [
     { label: t("nav.home"), href: "/", icon: IconHome },
     { label: t("nav.canvas"), href: "/canvas", icon: IconArtboard },

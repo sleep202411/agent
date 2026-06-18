@@ -14,6 +14,8 @@ import {
   HAPPYHORSE_VIDEO_PRODUCT_PRICING,
   KLING_MOTION_PARAMETER_POLICY,
   KLING_MOTION_PRODUCT_PRICING,
+  QUICK_VIDEO_PARAMETER_POLICY,
+  QUICK_VIDEO_PRODUCT_PRICING,
   SEEDANCE_2_0_FAST_PRODUCT_PRICING,
   SEEDANCE_2_0_PARAMETER_POLICY,
   SEEDANCE_2_0_PRODUCT_PRICING,
@@ -102,6 +104,42 @@ const bytePlusSeedanceProvider: ProviderEntry = {
 };
 
 export const VIDEO_MODELS: VideoModelSeed[] = [
+  {
+    slug: 'quick-video-1-0',
+    displayName: 'Agnes Video 2.0',
+    family: 'quick-video',
+    description:
+      'Agnes AI lightweight text-to-video model for draft motion clips and local generation tests.',
+    modes: [T2V],
+    tier: 'vip',
+    // Default 5s × 480p points(6).
+    cost: 30,
+    parameterPolicy: QUICK_VIDEO_PARAMETER_POLICY,
+    productPricing: QUICK_VIDEO_PRODUCT_PRICING,
+    group: 'video',
+    sortOrder: 8,
+    recommended: false,
+    providers: [
+      {
+        provider: 'agnes-ai',
+        endpointId: 'agnes-video-v2.0',
+        modes: [T2V],
+        requestTimeoutSeconds: 1800,
+        maxConcurrentRequests: 1,
+        maxRequestsPerMinute: 20,
+        cooldownSeconds: 60,
+        failureThreshold: 3,
+        priority: 100,
+        catalogSnapshot: {
+          docs: [{ title: 'Agnes AI API', url: 'https://apihub.agnes-ai.com' }],
+          model: 'agnes-video-v2.0',
+          polling: { endpoint: '/agnesapi?video_id={video_id}' },
+          pricing: { source: 'provider_account' },
+        },
+      },
+    ],
+    providerAliases: ['agnes/agnes-video-v2.0'],
+  },
   {
     slug: 'seedance-2-0',
     displayName: 'Seedance 2.0',

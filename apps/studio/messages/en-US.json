@@ -121,6 +121,7 @@
   },
   "studioModes": {
     "feed": {
+      "startCreatingWith": "Start creating with",
       "heading": "Generation history",
       "live": "Live — updating while jobs run"
     },
@@ -149,6 +150,11 @@
         "needVisualWithAudio": "Add an image or video reference with the audio."
       }
     },
+    "audio": {
+      "metaTitle": "Audio · FizzStudio",
+      "title": "Audio",
+      "subtitle": "Design voice, music, and sound cues for your scenes."
+    },
     "projects": {
       "metaTitle": "Projects · FizzStudio",
       "title": "Projects",
@@ -158,6 +164,81 @@
       "metaTitle": "Canvas · FizzStudio",
       "title": "Canvas",
       "subtitle": "Infinite boards for generating and arranging images."
+    }
+  },
+  "audioStudio": {
+    "modes": {
+      "voice": "Voice",
+      "music": "Music",
+      "sfx": "SFX"
+    },
+    "modeDescriptions": {
+      "voice": "Dialogue and narration",
+      "music": "Score and mood",
+      "sfx": "Hits and ambience"
+    },
+    "panel": {
+      "title": "Audio mode"
+    },
+    "composer": {
+      "placeholders": {
+        "voice": "Write the line, accent, tone, and pace…",
+        "music": "Describe the genre, mood, instruments, and arc…",
+        "sfx": "Describe the sound, distance, motion, and texture…"
+      },
+      "voice": "Voice",
+      "style": "Style",
+      "duration": "Length",
+      "format": "Format",
+      "instrumental": "Instrumental",
+      "createAria": "Create audio",
+      "comingSoonToast": "Audio generation is not connected yet."
+    },
+    "voices": {
+      "narrator": "Narrator",
+      "warm": "Warm",
+      "young": "Young"
+    },
+    "styles": {
+      "natural": "Natural",
+      "cinematic": "Cinematic",
+      "bright": "Bright"
+    },
+    "durations": {
+      "short": "15s",
+      "medium": "30s",
+      "long": "60s"
+    },
+    "formats": {
+      "mp3": "MP3",
+      "wav": "WAV"
+    },
+    "preview": {
+      "heading": "Audio workspace",
+      "subheading": "Waveforms, prompts, playback, and actions are ready for the job feed.",
+      "outputLabel": "Output",
+      "status": "Preview",
+      "voice": {
+        "title": "Narration take",
+        "prompt": "Calm Mandarin narrator, cinematic pacing, close-mic studio tone.",
+        "duration": "0:18"
+      },
+      "music": {
+        "title": "Scene score",
+        "prompt": "Warm synth pulses, restrained drums, hopeful lift in the final bar.",
+        "duration": "0:45"
+      },
+      "sfx": {
+        "title": "Sound cue",
+        "prompt": "Small energy crackle, glassy tail, fast left-to-right movement.",
+        "duration": "0:06"
+      }
+    },
+    "actions": {
+      "play": "Play",
+      "download": "Download",
+      "reuse": "Reuse prompt",
+      "regenerate": "Regenerate"
     }
   },
   "projects": {
@@ -188,7 +269,8 @@
     },
     "credits": {
       "tooltip": "Compute credits",
-      "tooltipDetailed": "Compute credits · available {available} · held {held} · total {total}"
+      "tooltipDetailed": "Compute credits · available {available} · held {held} · total {total}",
+      "manage": "Manage compute credits"
     },
     "header": {
       "homeAriaLabel": "FizzStudio home"
@@ -317,7 +399,7 @@
       "contactSales": "Contact Sales",
       "includedInPlan": "Included in plan",
       "computeCreditsAmount": "{amount} compute credits",
-      "customCreditsAmount": "Custom credits amount",
+      "customCreditsAmount": "Custom compute credit amount",
       "seats": "{count, plural, one {# seat} other {# seats}}",
       "seatsUpTo": " · up to {max}",
       "perMonth": "/month",
@@ -329,10 +411,10 @@
       "privateGenerations": "Private generations",
       "advancedWorkflows": "Advanced workflows",
       "prioritySupport": "Priority support",
-      "sharedCredits": "Shared team credits",
+      "sharedCredits": "Shared team compute credits",
       "concurrentJobs": "{count, plural, one {# concurrent job} other {# concurrent jobs}}",
       "queuedJobs": "{count, plural, one {# queued job} other {# queued jobs}}",
-      "topupDiscount": "{percent}% off credit top-ups"
+      "topupDiscount": "{percent}% off compute credit top-ups"
     },
     "toast": {
       "plansLoadFailed": "Membership plans failed to load",
@@ -349,23 +431,23 @@
       },
       "generationFails": {
         "question": "What happens if my generation fails?",
-        "answer": "Credits are refunded automatically when a generation fails for good. You only pay for jobs that produce output."
+        "answer": "Compute credits are refunded automatically when a generation fails for good. You only pay for jobs that produce output."
       },
       "rollover": {
-        "question": "Do unused credits roll over?",
-        "answer": "Credits included with your plan refresh each billing cycle and follow the plan rules shown at checkout. Top-up credits stay in your wallet until you spend them."
+        "question": "Do unused compute credits roll over?",
+        "answer": "Compute credits included with your plan refresh each billing cycle and follow the plan rules shown at checkout. Top-up compute credits stay in your wallet until you spend them."
       },
       "freeTier": {
         "question": "Can I use FizzStudio for free?",
         "answer": "Yes. Free accounts include daily generation quotas so you can try the studio. Upgrade when you need more volume, private generations, or faster queues."
       },
       "subscriptionVsTopups": {
-        "question": "What is the difference between a subscription and credit top-ups?",
-        "answer": "A subscription grants a recurring credit allowance plus plan perks like queue priority, higher concurrency, and support. Top-ups are one-time credit purchases — and paid plans get a discount on them."
+        "question": "What is the difference between a subscription and compute credit top-ups?",
+        "answer": "A subscription grants a recurring compute credit allowance plus plan perks like queue priority, higher concurrency, and support. Top-ups are one-time compute credit purchases — and paid plans get a discount on them."
       },
       "teamShareCredits": {
-        "question": "How do team plans share credits?",
-        "answer": "Team plans pool credits in a shared workspace wallet that every seat draws from, so the whole team works against one balance."
+        "question": "How do team plans share compute credits?",
+        "answer": "Team plans pool compute credits in a shared workspace wallet that every seat draws from, so the whole team works against one balance."
       },
       "cancelOrChange": {
         "question": "How do I cancel or change my plan?",
@@ -422,8 +504,27 @@
     "modelPicker": {
       "searchPlaceholder": "Search models",
       "heading": "Models",
+      "searchResults": "Search results",
+      "featuredModels": "Popular",
+      "allModels": "All models",
       "noModels": "No models",
-      "signInToLoad": "Sign in to load models"
+      "signInToLoad": "Sign in to load models",
+      "taglines": {
+        "fastLowCostImage": "Makes fast low-cost images",
+        "fastBalancedImage": "Makes fast balanced images",
+        "fastDraftImage": "Makes quick draft images",
+        "flagshipImage": "Makes flagship quality images",
+        "highQualityImage": "Makes stable high-quality images",
+        "photorealImage": "Makes realistic marketing images",
+        "textClearImage": "Makes clear text images",
+        "balancedImage": "Makes balanced clear images",
+        "creativeImage": "Makes flexible creative images",
+        "fastLowCostVideo": "Makes fast low-cost videos",
+        "fastBalancedVideo": "Makes fast stable videos",
+        "cinematicVideo": "Makes cinematic videos with audio",
+        "stableMotionVideo": "Makes stable motion videos",
+        "creativeVideo": "Makes flexible creative videos"
+      }
     },
     "sizePresets": {
       "squareHd": "Square HD",
@@ -664,40 +765,80 @@
     "held": "Held",
     "total": "Total",
     "upgrade": "Upgrade",
-    "credits": "Credits",
-    "teamCredits": "Team credits",
+    "credits": "Compute credits",
+    "teamCredits": "Team compute credits",
     "availableBalance": "Available balance",
     "sharedTeamBalance": "Shared team balance",
     "reservedByRunningJobs": "{amount} reserved by running jobs",
-    "onlyBillingAdminsCanTopUp": "Only billing admins can top up this team’s credits.",
-    "creditsAdded": "{amount} credits added",
-    "creditsAddedGeneric": "Credits added",
+    "onlyBillingAdminsCanTopUp": "Only billing admins can top up this team’s compute credits.",
+    "creditsAdded": "{amount} compute credits added",
+    "creditsAddedGeneric": "Compute credits added",
     "couldntStartTopUp": "Couldn’t start the top-up",
     "couldntStartRecharge": "Couldn’t start the recharge",
     "amountUsdRange": "Amount (USD, $10–$5,000)",
+    "estimatedCredits": "Estimated compute credits",
     "recharge": "Recharge",
-    "secureCheckoutNote": "Secure checkout via Airwallex. 1 credit = 1¢ USD.",
+    "secureCheckoutNote": "Secure checkout via Airwallex. 1 compute credit = 1¢ USD.",
     "usageAnalytics": "Usage Analytics",
-    "usageAnalyticsSubtitle": "A summary of credits usage for this workspace.",
+    "usageAnalyticsSubtitle": "A summary of compute credit usage for this workspace.",
     "noUsageDataYet": "No usage data yet",
-    "usageAnalyticsComingSoon": "Team usage analytics will appear here once the team usage feed is wired up.",
+    "usageAnalyticsComingSoon": "Usage data will appear after generations or compute credit activity.",
+    "usageAnalyticsLoadFailed": "Usage data could not load. Refresh the page or try again later.",
+    "recentJobsWindow": "Recent {count} jobs",
+    "recentLedgerWindow": "Recent {count} ledger entries",
     "totalJobs": "Total jobs",
-    "creditsIn": "Credits in",
-    "creditsOut": "Credits out",
-    "creditsUsage": "Credits usage",
+    "creditsIn": "Compute credits in",
+    "creditsOut": "Compute credits out",
+    "creditsUsage": "Compute credits usage",
     "modelsUsage": "Models usage",
-    "creditsSummary": "Credits summary",
+    "creditsSummary": "Compute credits summary",
+    "modelJobs": "{count, plural, one {# job} other {# jobs}}",
+    "modelCreditsUsed": "{credits} used",
+    "noCreditLedgerYet": "Recharge or run a generation to create compute credit ledger entries.",
+    "noGenerationHistoryYet": "Run image or video generations in this workspace to build usage history.",
     "generations": "Generations",
     "colCompleted": "Completed",
     "colModel": "Model",
     "colFeature": "Feature",
     "colStatus": "Status",
-    "colCredits": "Credits",
+    "colCredits": "Compute credits",
     "noGenerationsYet": "No generations yet.",
+    "feature": {
+      "image": "Image",
+      "video": "Video",
+      "unknown": "Generation"
+    },
+    "jobStatus": {
+      "submitting": "Submitting",
+      "queued": "Queued",
+      "generating": "Generating",
+      "done": "Done",
+      "failed": "Failed",
+      "cancelled": "Cancelled"
+    },
+    "ledgerReason": {
+      "ai_job_hold": "Generation hold",
+      "ai_job_settle": "Generation charge",
+      "ai_job_release": "Generation release",
+      "compute_point_expired": "Expired compute credits",
+      "membership_compute_point_included": "Membership compute credits"
+    },
+    "ledgerEntry": {
+      "credit": "Compute credits added",
+      "debit": "Compute credits spent",
+      "hold": "Compute credits held",
+      "release": "Compute credits released",
+      "settle": "Compute credits settled",
+      "refund": "Compute credits refunded",
+      "expire": "Compute credits expired",
+      "adjustment": "Compute credits adjusted",
+      "transfer_in": "Compute credits transferred in",
+      "transfer_out": "Compute credits transferred out"
+    },
     "planAndBilling": "Plan & Billing",
-    "billingSubtitle": "Manage your credits and subscription.",
+    "billingSubtitle": "Manage your compute credits and subscription.",
     "yourSubscription": "Your subscription",
-    "subscriptionDescription": "Manage your personal plan, buy credit packs, and view pricing.",
+    "subscriptionDescription": "Manage your personal plan, buy compute credit packs, and view pricing.",
     "managePlan": "Manage plan",
     "members": "Members",
     "membersSubtitle": "Members of “{name}” can collaborate on every project in this team.",
@@ -714,8 +855,8 @@
     "inviteMembers": "Invite members",
     "manageAccess": "Manage access",
     "sharedTeamBalancePool": "Shared team balance · all members draw from this pool",
-    "availableCredits": "Available credits",
-    "manageCredits": "Manage credits",
+    "availableCredits": "Available compute credits",
+    "manageCredits": "Manage compute credits",
     "dangerZone": "Danger zone",
     "dangerZoneDescription": "Delete this team and remove access for all members. This cannot be undone.",
     "deleteTeam": "Delete team",
@@ -798,7 +939,7 @@
     "acted": "Updated the canvas",
     "confirm": "Confirm",
     "cancel": "Cancel",
-    "confirmRun": "Run this generation? It will use your workspace credits.",
+    "confirmRun": "Run this generation? It will use your workspace compute credits.",
     "confirmRemoveNode": "Delete this node from the canvas?",
     "confirmRemoveEdge": "Delete this connection?"
   }

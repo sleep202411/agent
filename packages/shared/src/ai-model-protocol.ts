@@ -118,6 +118,7 @@ export const AI_PROVIDER_KEYS = [
   "aliyun-bailian",
   "microsoft-foundry",
   "replicate",
+  "agnes-ai",
 ] as const;
 export type AiProviderKey = (typeof AI_PROVIDER_KEYS)[number];
 
@@ -128,6 +129,7 @@ export const AI_PROVIDER_LABELS: Record<AiProviderKey, string> = {
   "aliyun-bailian": "百炼",
   "microsoft-foundry": "Azure Foundry",
   replicate: "Replicate",
+  "agnes-ai": "Agnes AI",
 };
 
 export interface AiBillingPolicy {
@@ -189,6 +191,9 @@ export interface AiModelUiPolicy {
   showProviderName?: boolean;
   showCostEstimate?: boolean;
   showQueueEstimate?: boolean;
+  group?: string;
+  recommended?: boolean;
+  sortOrder?: number;
 }
 
 export interface AiModelDefinition {

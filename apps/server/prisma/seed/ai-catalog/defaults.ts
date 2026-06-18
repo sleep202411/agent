@@ -155,6 +155,16 @@ export const NANO_BANANA_PRO_PARAMETER_POLICY = {
   replicateFallbackModel: { enabled: false },
 } as const satisfies Prisma.InputJsonObject;
 
+export const QUICK_IMAGE_PARAMETER_POLICY = {
+  parameterMode: 'provider_intersection',
+  providerFamily: 'quick-image',
+  defaultAspectRatio: '1:1',
+  supportedAspectRatios: ['1:1', '4:3', '3:4', '16:9', '9:16', '3:2', '2:3'],
+  defaultVariations: 1,
+  variationOptions: [1],
+  seed: { enabled: false },
+} as const satisfies Prisma.InputJsonObject;
+
 const SEEDREAM_BASE_ASPECT_RATIOS = [
   '1:1',
   '4:3',
@@ -672,6 +682,21 @@ export const NANO_BANANA_PRO_PRODUCT_PRICING: AiProductPricingPolicy = {
   roundTo: 1,
 };
 
+export const QUICK_IMAGE_PRODUCT_PRICING: AiProductPricingPolicy = {
+  mode: 'fixed_per_output',
+  version: 'quick-image-points-v1-2026-06-18',
+  currency: 'COMPUTE_POINTS',
+  defaultOutputCount: 1,
+  minOutputCount: 1,
+  maxOutputCount: 1,
+  pointsPerOutput: 6,
+  referenceImageSurchargePoints: 0,
+  extraReferenceImagePoints: 0,
+  maskSurchargePoints: 0,
+  minimumPoints: 1,
+  roundTo: 1,
+};
+
 export const WAN_IMAGE_27_PRO_PRODUCT_PRICING: AiProductPricingPolicy = {
   mode: 'parameter_matrix',
   version: 'wan-image-2-7-pro-points-v1-2026-06-09',
@@ -1075,6 +1100,18 @@ export const SEEDANCE_2_0_PARAMETER_POLICY = {
   seed: { enabled: true, minimum: 0, maximum: 2147483647 },
 } as const satisfies Prisma.InputJsonObject;
 
+export const QUICK_VIDEO_PARAMETER_POLICY = {
+  parameterMode: 'provider_intersection',
+  providerFamily: 'quick-video',
+  defaultResolution: '480p',
+  resolutionOptions: ['480p', '720p'],
+  defaultDurationSeconds: '5',
+  durationOptions: ['4', '5', '6', '8', '10', '12', '15'],
+  defaultAspectRatio: '16:9',
+  supportedAspectRatios: ['16:9', '9:16', '1:1', '4:3', '3:4'],
+  seed: { enabled: false },
+} as const satisfies Prisma.InputJsonObject;
+
 // Per-second pricing matching fal's `video_seconds` billing. Points =
 // ceil(fal USD/s × 2.0 margin × 100) (积分 ≡ US cent): 720p $0.3034/s → 61,
 // 480p ≈ $0.185/s → 37. Duration 4–15 s; 'auto' quotes at the 15 s ceiling so
@@ -1110,6 +1147,26 @@ export const SEEDANCE_2_0_FAST_PRODUCT_PRICING: AiProductPricingPolicy = {
   maxOutputCount: 1,
   defaultResolution: '720p',
   pointsPerSecond: { '480p': 30, '720p': 49 },
+  minSeconds: 4,
+  maxSeconds: 15,
+  defaultSeconds: 5,
+  autoQuoteSeconds: 15,
+  referenceImageSurchargePoints: 0,
+  extraReferenceImagePoints: 0,
+  maskSurchargePoints: 0,
+  minimumPoints: 1,
+  roundTo: 1,
+};
+
+export const QUICK_VIDEO_PRODUCT_PRICING: AiProductPricingPolicy = {
+  mode: 'per_second_matrix',
+  version: 'quick-video-points-v1-2026-06-18',
+  currency: 'COMPUTE_POINTS',
+  defaultOutputCount: 1,
+  minOutputCount: 1,
+  maxOutputCount: 1,
+  defaultResolution: '480p',
+  pointsPerSecond: { '480p': 6, '720p': 8 },
   minSeconds: 4,
   maxSeconds: 15,
   defaultSeconds: 5,
@@ -1374,6 +1431,7 @@ export function buildUiPolicy(args: {
   sortOrder: number;
 }): Prisma.InputJsonObject {
   return {
+    defaultMode: 'simple',
     group: args.group,
     recommended: args.recommended,
     sortOrder: args.sortOrder,

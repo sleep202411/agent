@@ -4,7 +4,6 @@ import { useEffect, useRef, useState } from "react";
 import { useTranslations } from "next-intl";
 import {
   IconAlertTriangle,
-  IconClock,
   IconDownload,
   IconLoader2,
   IconMaximize,
@@ -325,14 +324,25 @@ export function FeedLoadingState() {
   );
 }
 
-export function FeedEmptyState({ message, hint }: { message: string; hint: string }) {
+export function FeedEmptyState({
+  message,
+  hint,
+  modelName,
+}: {
+  message: string;
+  hint: string;
+  /** Currently-selected model — highlighted in the hero, tracks the selection. */
+  modelName?: string;
+}) {
   return (
-    <div className="flex min-h-[260px] flex-col items-center justify-center gap-2 text-center">
-      <span className="flex size-14 items-center justify-center rounded-full bg-muted">
-        <IconClock className="size-6 text-white/30" stroke={1.5} />
-      </span>
-      <p className="mt-2 text-sm font-medium text-white/75">{message}</p>
-      <p className="max-w-xs text-xs text-muted-foreground">{hint}</p>
+    <div className="flex min-h-[340px] flex-col items-center justify-center gap-3 px-6 text-center">
+      <h2 className="text-3xl font-extrabold uppercase leading-[1.05] tracking-tight sm:text-4xl">
+        <span className="block text-foreground">{message}</span>
+        {modelName ? <span className="mt-1 block text-[#E52227]">{modelName}</span> : null}
+      </h2>
+      <p className="mt-1 max-w-md text-sm leading-relaxed text-muted-foreground sm:text-base">
+        {hint}
+      </p>
     </div>
   );
 }

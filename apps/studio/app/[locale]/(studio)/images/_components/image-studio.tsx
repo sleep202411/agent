@@ -203,7 +203,11 @@ export function ImageStudio({
             {feed.historyLoading && feed.jobs.length === 0 ? (
               <FeedLoadingState />
             ) : feed.jobs.length === 0 ? (
-              <FeedEmptyState message={t("image.emptyTitle")} hint={t("image.emptyHint")} />
+              <FeedEmptyState
+                message={t("feed.startCreatingWith")}
+                hint={t("image.emptyHint")}
+                modelName={model?.name}
+              />
             ) : (
               <Masonry>
                 {feed.jobs.map((job) => {

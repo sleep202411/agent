@@ -19,7 +19,11 @@ import {
 } from "@/app/[locale]/canvas/_lib/generation-api";
 import { useModeLabel } from "@/app/[locale]/canvas/_lib/use-labels";
 import { ModelPicker } from "@/app/[locale]/canvas/_components/model-picker";
-import { ModelSettings as ModelSettingsPanel } from "@/app/[locale]/canvas/_components/model-settings";
+import {
+  hasRenderableModelSettings,
+  ModelSettings as ModelSettingsPanel,
+} from "@/app/[locale]/canvas/_components/model-settings";
+import { ComposerQuickSettings } from "@/app/[locale]/canvas/_components/composer-quick-settings";
 import { ModeMenu } from "@/app/[locale]/canvas/_components/mode-menu";
 import { ReferenceFan } from "./reference-fan";
 import type { ReferenceUpload } from "./use-reference-uploads";
@@ -85,6 +89,7 @@ export function StudioComposer({
   useDismiss(panel !== null, () => setPanel(null));
 
   const showReferences = referenceFields.length > 0;
+  const showSettingsButton = useMemo(() => hasRenderableModelSettings(model, true), [model]);
   const mentionables = useMemo(
     () => referenceItems.filter((item) => !item.uploading && !item.error),
     [referenceItems]
@@ -157,7 +162,7 @@ export function StudioComposer({
 
   return (
     <div className="pointer-events-none fixed inset-x-4 bottom-5 z-40 lg:left-[104px]">
-      <div className="pointer-events-auto mx-auto w-full max-w-[760px] rounded-3xl bg-[oklch(0.22_0_0_/_0.92)] p-4 shadow-[0_24px_70px_-12px_rgba(0,0,0,0.7),inset_0_1px_0_rgba(255,255,255,0.12)] backdrop-blur-2xl backdrop-saturate-150">
+      <div className="pointer-events-auto mx-auto w-full max-w-[1120px] rounded-3xl bg-[oklch(0.22_0_0_/_0.92)] p-4 shadow-[0_24px_70px_-12px_rgba(0,0,0,0.7),inset_0_1px_0_rgba(255,255,255,0.12)] backdrop-blur-2xl backdrop-saturate-150">
         {/* Prompt + fanned references */}
         <div className="relative">
           {showReferences && (
@@ -241,7 +246,7 @@ export function StudioComposer({
             <button
               type="button"
               onClick={() => setPanel((p) => (p === "model" ? null : "model"))}
-              className="flex h-8 items-center rounded-full bg-white/[0.06] px-3 text-xs font-medium transition-colors hover:bg-white/[0.1]"
+              className="flex h-10 items-center rounded-xl bg-white/[0.08] px-3 text-sm font-medium transition-colors hover:bg-white/[0.12]"
             >
               {model?.name ?? t("chooseModel")}
             </button>
@@ -256,19 +261,28 @@ export function StudioComposer({
             )}
           </div>
 
-          <div className="relative" data-popover-zone>
-            <button
-              type="button"
-              aria-label={t("settings")}
-              onClick={() => setPanel((p) => (p === "settings" ? null : "settings"))}
-              className="flex size-8 items-center justify-center rounded-full bg-white/[0.06] text-white/70 transition-colors hover:bg-white/[0.1] hover:text-white"
-            >
-              <IconAdjustments className="size-4" stroke={1.8} />
-            </button>
-            {panel === "settings" && (
-              <ModelSettingsPanel model={model} settings={settings} onChange={onSettingsChange} />
-            )}
-          </div>
+          <ComposerQuickSettings model={model} settings={settings} onChange={onSettingsChange} />
+
+          {showSettingsButton && (
+            <div className="relative" data-popover-zone>
+              <button
+                type="button"
+                aria-label={t("settings")}
+                onClick={() => setPanel((p) => (p === "settings" ? null : "settings"))}
+                className="flex size-10 items-center justify-center rounded-xl bg-white/[0.08] text-white/70 transition-colors hover:bg-white/[0.12] hover:text-white"
+              >
+                <IconAdjustments className="size-4.5" stroke={1.8} />
+              </button>
+              {panel === "settings" && (
+                <ModelSettingsPanel
+                  model={model}
+                  settings={settings}
+                  onChange={onSettingsChange}
+                  hideQuickFields
+                />
+              )}
+            </div>
+          )}
 
           <div className="ml-auto flex items-center gap-3">
             {cost != null && (

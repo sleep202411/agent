@@ -27,7 +27,7 @@
     "publicId": "公開 ID {id}",
     "publicIdCopied": "已複製公開 ID",
     "publicIdCopyFailed": "無法複製公開 ID",
-    "availableCredits": "可用算力點數",
+    "availableCredits": "可用算力積分",
     "held": "凍結",
     "total": "總計",
     "upgrade": "升級",
@@ -121,11 +121,12 @@
   },
   "studioModes": {
     "feed": {
+      "startCreatingWith": "開始創作",
       "heading": "生成記錄",
       "live": "即時 — 任務運行時持續更新"
     },
     "error": {
-      "insufficientCredits": "算力點數不足。請充值後繼續。",
+      "insufficientCredits": "算力積分不足。請充值後繼續。",
       "generationFailed": "生成失敗"
     },
     "image": {
@@ -149,6 +150,11 @@
         "needVisualWithAudio": "請在音訊以外添加一張圖像或一段影片參考。"
       }
     },
+    "audio": {
+      "metaTitle": "音訊 · FizzStudio",
+      "title": "音訊",
+      "subtitle": "為分鏡設計人聲、配樂和音效。"
+    },
     "projects": {
       "metaTitle": "項目 · FizzStudio",
       "title": "項目",
@@ -158,6 +164,81 @@
       "metaTitle": "畫布 · FizzStudio",
       "title": "畫布",
       "subtitle": "用於生成和排布圖像的無限畫布。"
+    }
+  },
+  "audioStudio": {
+    "modes": {
+      "voice": "人聲",
+      "music": "音樂",
+      "sfx": "音效"
+    },
+    "modeDescriptions": {
+      "voice": "旁白與對白",
+      "music": "配樂與情緒",
+      "sfx": "動作與環境聲"
+    },
+    "panel": {
+      "title": "音訊模式"
+    },
+    "composer": {
+      "placeholders": {
+        "voice": "寫下台詞、口音、語氣和節奏…",
+        "music": "描述風格、情緒、樂器和起伏…",
+        "sfx": "描述聲音、距離、動作和質感…"
+      },
+      "voice": "音色",
+      "style": "風格",
+      "duration": "時長",
+      "format": "格式",
+      "instrumental": "純音樂",
+      "createAria": "建立音訊",
+      "comingSoonToast": "音訊生成尚未接入。"
+    },
+    "voices": {
+      "narrator": "旁白",
+      "warm": "溫暖",
+      "young": "年輕"
+    },
+    "styles": {
+      "natural": "自然",
+      "cinematic": "電影感",
+      "bright": "明亮"
+    },
+    "durations": {
+      "short": "15 秒",
+      "medium": "30 秒",
+      "long": "60 秒"
+    },
+    "formats": {
+      "mp3": "MP3",
+      "wav": "WAV"
+    },
+    "preview": {
+      "heading": "音訊工作台",
+      "subheading": "波形、提示詞、播放和操作會進入生成記錄。",
+      "outputLabel": "輸出",
+      "status": "預覽",
+      "voice": {
+        "title": "旁白片段",
+        "prompt": "冷靜的中文旁白，電影節奏，近距離錄音室質感。",
+        "duration": "0:18"
+      },
+      "music": {
+        "title": "場景配樂",
+        "prompt": "溫暖合成器脈衝，克制鼓點，結尾有希望感上揚。",
+        "duration": "0:45"
+      },
+      "sfx": {
+        "title": "音效提示",
+        "prompt": "細小能量噼啪聲，玻璃質感尾音，由左至右快速移動。",
+        "duration": "0:06"
+      }
+    },
+    "actions": {
+      "play": "播放",
+      "download": "下載",
+      "reuse": "複用提示詞",
+      "regenerate": "重新生成"
     }
   },
   "projects": {
@@ -187,8 +268,9 @@
       "acknowledge": "我明白了"
     },
     "credits": {
-      "tooltip": "運算點數",
-      "tooltipDetailed": "運算點數 · 可用 {available} · 凍結 {held} · 總計 {total}"
+      "tooltip": "算力積分",
+      "tooltipDetailed": "算力積分 · 可用 {available} · 凍結 {held} · 總計 {total}",
+      "manage": "管理算力積分"
     },
     "header": {
       "homeAriaLabel": "FizzStudio 首頁"
@@ -290,7 +372,7 @@
     "comingSoon": "敬請期待",
     "header": {
       "title": "選擇你的方案",
-      "subtitle": "升級以獲得更多運算點數、更快佇列及專業功能"
+      "subtitle": "升級以獲得更多算力積分、更快佇列及專業功能"
     },
     "interval": {
       "monthly": "按月",
@@ -307,7 +389,7 @@
     },
     "footer": {
       "secureCheckout": "安全結算。貨幣會根據你的請求所在地區自動選擇。",
-      "disclaimer": "訂閱權益按計費週期續期；所含運算點數會在付款成功後發放，並依照結算頁所示的方案規則。"
+      "disclaimer": "訂閱權益按計費週期續期；所含算力積分會在付款成功後發放，並依照結算頁所示的方案規則。"
     },
     "plan": {
       "defaultDescription": "供 AI 創意工作流程使用的會員權限。",
@@ -316,8 +398,8 @@
       "getStarted": "立即開始",
       "contactSales": "聯絡銷售",
       "includedInPlan": "方案包含",
-      "computeCreditsAmount": "{amount} 運算點數",
-      "customCreditsAmount": "客製點數額度",
+      "computeCreditsAmount": "{amount} 算力積分",
+      "customCreditsAmount": "客製算力積分額度",
       "seats": "{count, plural, other {# 個席位}}",
       "seatsUpTo": " · 最多 {max} 個",
       "perMonth": "/月",
@@ -329,10 +411,10 @@
       "privateGenerations": "私密生成",
       "advancedWorkflows": "進階工作流程",
       "prioritySupport": "優先支援",
-      "sharedCredits": "團隊共享點數",
+      "sharedCredits": "團隊共享算力積分",
       "concurrentJobs": "{count, plural, other {# 個並行任務}}",
       "queuedJobs": "{count, plural, other {# 個排隊任務}}",
-      "topupDiscount": "增值點數 {percent}% 折扣"
+      "topupDiscount": "增值算力積分 {percent}% 折扣"
     },
     "toast": {
       "plansLoadFailed": "會員方案載入失敗",
@@ -344,28 +426,28 @@
     "faq": {
       "heading": "你的疑問，<br></br>這裡解答",
       "computeCredits": {
-        "question": "甚麼是運算點數？",
-        "answer": "運算點數是 FizzStudio 中 AI 生成的通用貨幣。每次圖像、影片及音訊任務都會根據模型、解析度及輸出數量扣除點數——提交前會在「生成」按鈕旁顯示確實費用。"
+        "question": "甚麼是算力積分？",
+        "answer": "算力積分是 FizzStudio 中 AI 生成的通用貨幣。每次圖像、影片及音訊任務都會根據模型、解析度及輸出數量扣除算力積分——提交前會在「生成」按鈕旁顯示確實費用。"
       },
       "generationFails": {
         "question": "如果生成失敗會怎樣？",
-        "answer": "當生成確實失敗時，點數會自動退回。你只需為產出結果的任務付費。"
+        "answer": "當生成確實失敗時，算力積分會自動退回。你只需為產出結果的任務付費。"
       },
       "rollover": {
-        "question": "未使用的點數會結轉嗎？",
-        "answer": "方案所含點數會在每個計費週期刷新，並依照結算頁所示的方案規則。增值點數則會一直保留在你的錢包中，直到用完為止。"
+        "question": "未使用的算力積分會結轉嗎？",
+        "answer": "方案所含算力積分會在每個計費週期刷新，並依照結算頁所示的方案規則。增值算力積分則會一直保留在你的錢包中，直到用完為止。"
       },
       "freeTier": {
         "question": "我可以免費使用 FizzStudio 嗎？",
         "answer": "可以。免費帳戶包含每日生成配額，讓你體驗工作室。當你需要更大用量、私密生成或更快佇列時再升級即可。"
       },
       "subscriptionVsTopups": {
-        "question": "訂閱與點數增值有甚麼分別？",
-        "answer": "訂閱會提供週期性的點數額度，並附帶佇列優先、更高並行及支援等方案權益。增值是一次性購買點數——而付費方案在增值時享有折扣。"
+        "question": "訂閱與算力積分增值有甚麼分別？",
+        "answer": "訂閱會提供週期性的算力積分額度，並附帶佇列優先、更高並行及支援等方案權益。增值是一次性購買算力積分——而付費方案在增值時享有折扣。"
       },
       "teamShareCredits": {
-        "question": "團隊方案如何共享點數？",
-        "answer": "團隊方案會將點數匯集到共享的工作空間錢包，每個席位都從中扣除，因此整個團隊使用同一個結餘。"
+        "question": "團隊方案如何共享算力積分？",
+        "answer": "團隊方案會將算力積分匯集到共享的工作空間錢包，每個席位都從中扣除，因此整個團隊使用同一個結餘。"
       },
       "cancelOrChange": {
         "question": "如何取消或變更我的方案？",
@@ -422,8 +504,27 @@
     "modelPicker": {
       "searchPlaceholder": "搜尋模型",
       "heading": "模型",
+      "searchResults": "搜尋結果",
+      "featuredModels": "熱門",
+      "allModels": "全部模型",
       "noModels": "暫無模型",
-      "signInToLoad": "登入以載入模型"
+      "signInToLoad": "登入以載入模型",
+      "taglines": {
+        "fastLowCostImage": "快速便宜出圖",
+        "fastBalancedImage": "高速穩定出圖",
+        "fastDraftImage": "快速草稿出圖",
+        "flagshipImage": "旗艦高質出圖",
+        "highQualityImage": "高質穩定出圖",
+        "photorealImage": "寫實行銷出圖",
+        "textClearImage": "文字清晰出圖",
+        "balancedImage": "均衡清晰出圖",
+        "creativeImage": "創意靈活出圖",
+        "fastLowCostVideo": "快速便宜成片",
+        "fastBalancedVideo": "高速穩定成片",
+        "cinematicVideo": "音畫電影成片",
+        "stableMotionVideo": "動作穩定成片",
+        "creativeVideo": "創意靈活成片"
+      }
     },
     "sizePresets": {
       "squareHd": "正方形 HD",
@@ -637,7 +738,7 @@
     "goBack": "返回",
     "settings": "設定",
     "account": "帳戶",
-    "accountSubtitle": "你的個人資料與運算點數。",
+    "accountSubtitle": "你的個人資料與算力積分。",
     "groupProfile": "個人資料",
     "groupTeamsSettings": "團隊設定",
     "navOverview": "概覽",
@@ -659,45 +760,85 @@
     "publicId": "公開 ID {id}",
     "publicIdCopied": "已複製公開 ID",
     "publicIdCopyFailed": "無法複製公開 ID",
-    "computeCredits": "運算點數",
+    "computeCredits": "算力積分",
     "available": "可用",
     "held": "凍結",
     "total": "總計",
     "upgrade": "升級",
-    "credits": "點數",
-    "teamCredits": "團隊點數",
+    "credits": "算力積分",
+    "teamCredits": "團隊算力積分",
     "availableBalance": "可用餘額",
     "sharedTeamBalance": "團隊共用餘額",
     "reservedByRunningJobs": "{amount} 已被執行中的工作佔用",
-    "onlyBillingAdminsCanTopUp": "只有帳單管理員可以為此團隊增值點數。",
-    "creditsAdded": "已新增 {amount} 點數",
-    "creditsAddedGeneric": "已新增點數",
+    "onlyBillingAdminsCanTopUp": "只有帳單管理員可以為此團隊增值算力積分。",
+    "creditsAdded": "已新增 {amount} 算力積分",
+    "creditsAddedGeneric": "已新增算力積分",
     "couldntStartTopUp": "無法開始增值",
     "couldntStartRecharge": "無法開始增值",
     "amountUsdRange": "金額（美元，$10–$5,000）",
+    "estimatedCredits": "預計到帳",
     "recharge": "增值",
-    "secureCheckoutNote": "透過 Airwallex 安全結帳。1 點數 = 1 美仙。",
+    "secureCheckoutNote": "透過 Airwallex 安全結帳。1 算力積分 = 1 美仙。",
     "usageAnalytics": "用量分析",
-    "usageAnalyticsSubtitle": "此工作區點數用量摘要。",
+    "usageAnalyticsSubtitle": "此工作區算力積分用量摘要。",
     "noUsageDataYet": "暫無用量數據",
-    "usageAnalyticsComingSoon": "團隊用量資料接通後，團隊用量分析將顯示於此。",
+    "usageAnalyticsComingSoon": "產生生成工作或算力積分流水後，用量數據會顯示在這裡。",
+    "usageAnalyticsLoadFailed": "用量數據載入失敗。請重新整理頁面或稍後再試。",
+    "recentJobsWindow": "最近 {count} 個工作",
+    "recentLedgerWindow": "最近 {count} 條流水",
     "totalJobs": "工作總數",
-    "creditsIn": "點數入帳",
-    "creditsOut": "點數支出",
-    "creditsUsage": "點數用量",
+    "creditsIn": "算力積分入帳",
+    "creditsOut": "算力積分支出",
+    "creditsUsage": "算力積分用量",
     "modelsUsage": "模型用量",
-    "creditsSummary": "點數摘要",
+    "creditsSummary": "算力積分摘要",
+    "modelJobs": "{count} 個工作",
+    "modelCreditsUsed": "已用 {credits}",
+    "noCreditLedgerYet": "增值或執行生成後，這裡會顯示算力積分流水。",
+    "noGenerationHistoryYet": "在此工作區執行圖像或影片生成後，這裡會顯示用量記錄。",
     "generations": "生成紀錄",
     "colCompleted": "完成時間",
     "colModel": "模型",
     "colFeature": "功能",
     "colStatus": "狀態",
-    "colCredits": "點數",
+    "colCredits": "算力積分",
     "noGenerationsYet": "暫無生成紀錄。",
+    "feature": {
+      "image": "圖像",
+      "video": "影片",
+      "unknown": "生成"
+    },
+    "jobStatus": {
+      "submitting": "提交中",
+      "queued": "排隊中",
+      "generating": "生成中",
+      "done": "完成",
+      "failed": "失敗",
+      "cancelled": "已取消"
+    },
+    "ledgerReason": {
+      "ai_job_hold": "生成預扣",
+      "ai_job_settle": "生成扣費",
+      "ai_job_release": "生成釋放",
+      "compute_point_expired": "算力積分過期",
+      "membership_compute_point_included": "會員算力積分"
+    },
+    "ledgerEntry": {
+      "credit": "算力積分入帳",
+      "debit": "算力積分支出",
+      "hold": "算力積分預扣",
+      "release": "算力積分釋放",
+      "settle": "算力積分結算",
+      "refund": "算力積分退款",
+      "expire": "算力積分過期",
+      "adjustment": "算力積分調整",
+      "transfer_in": "算力積分轉入",
+      "transfer_out": "算力積分轉出"
+    },
     "planAndBilling": "方案與帳單",
-    "billingSubtitle": "管理你的點數與訂閱。",
+    "billingSubtitle": "管理你的算力積分與訂閱。",
     "yourSubscription": "你的訂閱",
-    "subscriptionDescription": "管理個人方案、購買點數包並查看定價。",
+    "subscriptionDescription": "管理個人方案、購買算力積分包並查看定價。",
     "managePlan": "管理方案",
     "members": "成員",
     "membersSubtitle": "「{name}」的成員可以協作處理此團隊的每個專案。",
@@ -714,8 +855,8 @@
     "inviteMembers": "邀請成員",
     "manageAccess": "管理存取權限",
     "sharedTeamBalancePool": "團隊共用餘額 · 所有成員從此池中扣減",
-    "availableCredits": "可用點數",
-    "manageCredits": "管理點數",
+    "availableCredits": "可用算力積分",
+    "manageCredits": "管理算力積分",
     "dangerZone": "危險操作",
     "dangerZoneDescription": "刪除此團隊並移除所有成員的存取權限。此操作無法復原。",
     "deleteTeam": "刪除團隊",

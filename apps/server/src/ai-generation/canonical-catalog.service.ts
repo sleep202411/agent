@@ -41,6 +41,7 @@ import { FalCatalogService } from './providers/fal/fal-catalog.service';
 import { BailianCatalogService } from './providers/bailian/bailian-catalog.service';
 import { ReplicateCatalogService } from './providers/replicate/replicate-catalog.service';
 import { BytePlusCatalogService } from './providers/byteplus/byteplus-catalog.service';
+import { AgnesCatalogService } from './providers/agnes/agnes-catalog.service';
 import type { AiModelDefinition } from './types';
 
 /**
@@ -69,12 +70,14 @@ export class AiCanonicalCatalogService {
     private readonly bailian: BailianCatalogService,
     private readonly replicate: ReplicateCatalogService,
     private readonly bytePlus: BytePlusCatalogService,
+    private readonly agnes: AgnesCatalogService,
   ) {
     this.catalogByProvider = {
       'fal-ai': this.fal,
       'byteplus-modelark': this.bytePlus,
       'aliyun-bailian': this.bailian,
       replicate: this.replicate,
+      'agnes-ai': this.agnes,
     };
   }
 
@@ -145,7 +148,7 @@ export class AiCanonicalCatalogService {
       const model = candidates.find((item) => item.enabled) ?? candidates[0];
       if (model) {
         models.push({
-          model,
+          model: withCanonicalUiPolicy(model, canonical.uiPolicy),
           sortOrder: uiSortOrder(canonical.uiPolicy),
           slug: canonical.slug,
         });
@@ -162,12 +165,41 @@ export class AiCanonicalCatalogService {
   }
 }
 
+function withCanonicalUiPolicy(
+  model: AiModelDefinition,
+  canonicalUiPolicy: unknown,
+): AiModelDefinition {
+  const canonical = recordValue(canonicalUiPolicy);
+  if (!canonical) return model;
+  const defaultMode = model.ui_policy?.defaultMode ?? 'simple';
+  return {
+    ...model,
+    ui_policy: {
+      ...(model.ui_policy ?? {}),
+      ...(typeof canonical.group === 'string'
+        ? { group: canonical.group }
+        : {}),
+      ...(typeof canonical.recommended === 'boolean'
+        ? { recommended: canonical.recommended }
+        : {}),
+      ...(typeof canonical.sortOrder === 'number' &&
+      Number.isFinite(canonical.sortOrder)
+        ? { sortOrder: canonical.sortOrder }
+        : {}),
+      defaultMode,
+    },
+  };
+}
+
 function uiSortOrder(value: unknown): number {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) {
-    return Number.MAX_SAFE_INTEGER;
-  }
-  const raw = (value as Record<string, unknown>).sortOrder;
+  const raw = recordValue(value)?.sortOrder;
   return typeof raw === 'number' && Number.isFinite(raw)
     ? raw
     : Number.MAX_SAFE_INTEGER;
+}
+
+function recordValue(value: unknown): Record<string, unknown> | null {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : null;
 }

@@ -14,8 +14,42 @@ import {
 
 const SIZE_FIELDS = new Set(["imageSize", "size", "aspectRatio", "aspect_ratio"]);
 
-function isSizeField(field: SchemaFieldDescriptor) {
+export function isSizeField(field: SchemaFieldDescriptor) {
   return SIZE_FIELDS.has(field.name) && (field.enum?.length ?? 0) > 0;
+}
+
+const OUTPUT_FIELDS = new Set([
+  "numOutputs",
+  "num_outputs",
+  "n",
+  "numImages",
+  "num_images",
+  "outputs",
+]);
+const ENUM_QUICK_FIELDS = new Set(["resolution", "quality"]);
+
+export function isOutputField(field: SchemaFieldDescriptor) {
+  return OUTPUT_FIELDS.has(field.name);
+}
+
+/** Common fields worth surfacing inline on the composer (size / resolution /
+ *  quality / outputs). The full settings panel drops these when chips are shown
+ *  (hideQuickFields) so it only carries the long tail. */
+export function isQuickSettingField(field: SchemaFieldDescriptor) {
+  return (
+    isSizeField(field) ||
+    isOutputField(field) ||
+    (ENUM_QUICK_FIELDS.has(field.name) && (field.enum?.length ?? 0) > 0)
+  );
+}
+
+export function hasRenderableModelSettings(
+  model: FizzAiModel | undefined,
+  hideQuickFields = false
+) {
+  return schemaFields(model).some(
+    (field) => field.control !== "hidden" && !(hideQuickFields && isQuickSettingField(field))
+  );
 }
 
 /** fal "ImageSize" preset tokens → a translatable label key + aspect
@@ -36,7 +70,7 @@ const SIZE_PRESETS: Record<string, { labelKey: string; w: number; h: number }> =
  *  translation key (`labelKey`); ratio tokens ("16:9", "3x4") are parsed
  *  directly into a verbatim `label`; unknown tokens are shown verbatim as a
  *  square. */
-function sizeTokenInfo(
+export function sizeTokenInfo(
   token: string
 ): { labelKey: string; w: number; h: number } | { label: string; w: number; h: number } {
   const preset = SIZE_PRESETS[token];
@@ -47,7 +81,7 @@ function sizeTokenInfo(
 }
 
 /** Outlined rounded rect drawn in the given aspect proportion. */
-function AspectGlyph({ w, h }: { w: number; h: number }) {
+export function AspectGlyph({ w, h }: { w: number; h: number }) {
   const max = 18;
   const width = w >= h ? max : Math.round(max * (w / h));
   const height = h >= w ? max : Math.round(max * (h / w));
@@ -60,7 +94,7 @@ function AspectGlyph({ w, h }: { w: number; h: number }) {
   );
 }
 
-function SizeGrid({
+export function SizeGrid({
   field,
   value,
   onChange,
@@ -136,7 +170,7 @@ function Segmented({
   );
 }
 
-function fieldLabel(field: SchemaFieldDescriptor) {
+export function fieldLabel(field: SchemaFieldDescriptor) {
   return (
     field.title ??
     field.name.replace(/([a-z])([A-Z])/g, "$1 $2").replace(/^./, (c) => c.toUpperCase())
@@ -144,7 +178,7 @@ function fieldLabel(field: SchemaFieldDescriptor) {
 }
 
 /** Renders one schema field by its `x-ui` control type. */
-function Field({
+export function Field({
   field,
   value,
   set,
@@ -276,18 +310,24 @@ export function ModelSettings({
   model,
   settings,
   onChange,
+  hideQuickFields = false,
 }: {
   model: FizzAiModel | undefined;
   settings: ModelSettings;
   onChange: (next: ModelSettings) => void;
+  /** Drop fields surfaced as composer quick-setting chips, so this panel only
+   *  shows the long tail (avoids duplicating size/resolution/quality/outputs). */
+  hideQuickFields?: boolean;
 }) {
   const t = useTranslations("canvasControls");
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const fields = useMemo(() => schemaFields(model), [model]);
-  const sizeField = fields.find(isSizeField);
+  const sizeField = hideQuickFields ? undefined : fields.find(isSizeField);
   // `hidden`-control fields are data-only (driven by a bespoke editor, e.g.
   // expand's canvas geometry) — never rendered in the generic settings panel.
-  const rest = fields.filter((f) => !isSizeField(f) && f.control !== "hidden");
+  const rest = fields.filter(
+    (f) => !isSizeField(f) && f.control !== "hidden" && !(hideQuickFields && isQuickSettingField(f))
+  );
   const basicFields = rest.filter((f) => f.group !== "advanced");
   const advancedFields = rest.filter((f) => f.group === "advanced");
   // Generic controls take scalars; tuple-valued settings (expand geometry) are
@@ -316,7 +356,7 @@ export function ModelSettings({
     onChange({ ...settings, [name]: value });
 
   return (
-    <div className="nodrag nowheel absolute bottom-full left-0 z-50 mb-2 max-h-[460px] w-[440px] origin-bottom overflow-y-auto rounded-2xl bg-[oklch(0.24_0_0)] p-4 shadow-2xl shadow-black/60 backdrop-blur-xl duration-150 animate-in fade-in-0 zoom-in-95">
+    <div className="nodrag nowheel absolute bottom-full left-0 z-50 mb-2 max-h-[460px] w-[440px] origin-bottom overflow-y-auto rounded-2xl border border-white/[0.06] bg-[oklch(0.235_0_0_/_0.95)] p-4 shadow-2xl shadow-black/60 backdrop-blur-2xl duration-150 animate-in fade-in-0 zoom-in-95">
       <div className="flex items-center justify-between">
         <span className="text-base font-semibold">{model?.name ?? t("settings.title")}</span>
         {cost != null && (

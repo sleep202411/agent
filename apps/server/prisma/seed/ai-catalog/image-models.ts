@@ -4,7 +4,8 @@
  * One clean entry per canonical model — NO policy boilerplate here (that lives
  * in `defaults.ts` and is merged by `seed-catalog.ts`). The `providers` array
  * lists ONLY provider entries that map to a reconciled `AiProviderAccount`
- * (`fal-ai`, `aliyun-bailian`, `microsoft-foundry`, `replicate`); each entry
+ * (`fal-ai`, `aliyun-bailian`, `microsoft-foundry`, `replicate`,
+ * `agnes-ai`); each entry
  * seeds an `AiProviderEndpoint` + a runtime-valid
  * `AiProviderModelBinding`. A model whose only upstream providers have no
  * reconciled account (e.g. midjourney, raw minimax) carries `providers: []`
@@ -41,6 +42,8 @@ import {
   QWEN_IMAGE_20_PRODUCT_PRICING,
   QWEN_IMAGE_20_PRO_PARAMETER_POLICY,
   QWEN_IMAGE_20_PRO_PRODUCT_PRICING,
+  QUICK_IMAGE_PARAMETER_POLICY,
+  QUICK_IMAGE_PRODUCT_PRICING,
   SEEDREAM_45_PARAMETER_POLICY,
   SEEDREAM_45_PRODUCT_PRICING,
   SEEDREAM_4_PARAMETER_POLICY,
@@ -70,7 +73,8 @@ export type ProviderKey =
   | 'byteplus-modelark'
   | 'aliyun-bailian'
   | 'microsoft-foundry'
-  | 'replicate';
+  | 'replicate'
+  | 'agnes-ai';
 
 /**
  * A provider that backs a canonical model and HAS a reconciled account.
@@ -1112,6 +1116,40 @@ export const IMAGE_MODELS: ImageModelSeed[] = [
       },
     ],
     providerAliases: ['fal/fal-ai/nano-banana', 'replicate/google/nano-banana'],
+  },
+  {
+    slug: 'quick-image-1-0',
+    displayName: 'Agnes Image 2.1 Flash',
+    family: 'quick-image',
+    description:
+      'Agnes AI lightweight text-to-image model for draft visuals and local generation tests.',
+    modes: [T2I],
+    tier: 'vip',
+    cost: 6,
+    parameterPolicy: QUICK_IMAGE_PARAMETER_POLICY,
+    productPricing: QUICK_IMAGE_PRODUCT_PRICING,
+    group: 'recommended',
+    sortOrder: 65,
+    recommended: false,
+    providers: [
+      {
+        provider: 'agnes-ai',
+        endpointId: 'agnes-image-2.1-flash',
+        modes: [T2I],
+        priority: 100,
+        maxConcurrentRequests: 1,
+        maxRequestsPerMinute: 20,
+        requestTimeoutSeconds: 300,
+        cooldownSeconds: 30,
+        failureThreshold: 3,
+        catalogSnapshot: {
+          docs: [{ title: 'Agnes AI API', url: 'https://apihub.agnes-ai.com' }],
+          model: 'agnes-image-2.1-flash',
+          pricing: { source: 'provider_account' },
+        },
+      },
+    ],
+    providerAliases: ['agnes/agnes-image-2.1-flash'],
   },
   {
     slug: 'nano-banana-2',

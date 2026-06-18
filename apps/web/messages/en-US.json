@@ -5237,7 +5237,25 @@
     "partners": {
       "eyebrow": "Partners & Press",
       "title": "Backed, broadcast, and built with",
-      "subtitle": "Accelerators, publishers, broadcasters, and studios collaborating with FizzDragon to bring AI-assisted storytelling to global audiences."
+      "subtitle": "Accelerators, publishers, broadcasters, and studios collaborating with FizzDragon to bring AI-assisted storytelling to global audiences.",
+      "highlights": {
+        "nvidia": {
+          "title": "NVIDIA Inception",
+          "body": "Global startup program"
+        },
+        "microsoft": {
+          "title": "Microsoft for Startups",
+          "body": "Global AI accelerator"
+        },
+        "alibaba": {
+          "title": "Alibaba JUMPSTARTER",
+          "body": "2025 Top 30"
+        },
+        "sgtech": {
+          "title": "SGTech Awards",
+          "body": "2026 Award winner"
+        }
+      }
     }
   },
   "aiLab": {

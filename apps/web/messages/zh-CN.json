@@ -5237,7 +5237,25 @@
     "partners": {
       "eyebrow": "合作伙伴 & 媒体报道",
       "title": "携手前行，被全球看见",
-      "subtitle": "加速器、出版方、电视台与制作公司，与 FizzDragon 一同把 AI 辅助创作带给全球观众。"
+      "subtitle": "加速器、出版方、电视台与制作公司，与 FizzDragon 一同把 AI 辅助创作带给全球观众。",
+      "highlights": {
+        "nvidia": {
+          "title": "NVIDIA Inception",
+          "body": "全球初创计划"
+        },
+        "microsoft": {
+          "title": "Microsoft for Startups",
+          "body": "全球 AI 企业加速器"
+        },
+        "alibaba": {
+          "title": "Alibaba JUMPSTARTER",
+          "body": "2025 Top 30"
+        },
+        "sgtech": {
+          "title": "SGTech Awards",
+          "body": "2026 获奖团队"
+        }
+      }
     }
   },
   "aiLab": {

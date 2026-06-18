@@ -238,7 +238,11 @@ export function VideoStudio() {
           {feed.historyLoading && feed.jobs.length === 0 ? (
             <FeedLoadingState />
           ) : feed.jobs.length === 0 ? (
-            <FeedEmptyState message={t("video.emptyTitle")} hint={t("video.emptyHint")} />
+            <FeedEmptyState
+              message={t("feed.startCreatingWith")}
+              hint={t("video.emptyHint")}
+              modelName={model?.name}
+            />
           ) : (
             <VideoGrid>
               {feed.jobs.map((job) => {

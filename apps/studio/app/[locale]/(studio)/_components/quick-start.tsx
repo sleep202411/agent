@@ -13,9 +13,8 @@ import type { ComponentType } from "react";
 import { cn } from "@/lib/utils";
 
 /**
- * Quick-start tools — a compact launcher row (sits under the hero CTA). Each tile
- * is a real destination; Audio is honestly marked "Soon" (no UI yet, matching the
- * sidebar) rather than dead-linked. Monochrome by design (see DESIGN.md).
+ * Quick-start tools — a compact launcher row (sits under the hero CTA).
+ * Monochrome by design (see DESIGN.md).
  */
 interface Tool {
   labelKey: string;
