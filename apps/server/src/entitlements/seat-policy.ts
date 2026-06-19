@@ -37,16 +37,16 @@ export type SeatAdmission =
     };
 
 /**
- * Default for a team workspace with NO active team plan: a small free allowance
- * (3 seats including the owner), after which inviting more members requires a
- * paid team plan. This is the monetization gate — the single product knob for
- * the free-team seat allowance. Set to 1 for an owner-only strict gate, or
- * higher for a gentler funnel.
+ * Default for a team workspace with NO active team plan: owner-only. A team
+ * workspace only ever exists by buying a team plan, so this applies AFTER a plan
+ * lapses — the owner keeps their seat and must re-subscribe to add members again
+ * (existing members are grandfathered; enforcement is add-time only). The single
+ * product knob for the no-plan seat allowance.
  */
 export const DEFAULT_TEAM_SEAT_POLICY: SeatPolicy = {
   planKey: 'free',
-  includedSeats: 3,
-  maxSeats: 3,
+  includedSeats: 1,
+  maxSeats: 1,
   seatOverageAllowed: false,
 };
 

@@ -27,9 +27,9 @@ describe('decideSeatAdmission', () => {
     }
   });
 
-  it('free-team default (3 seats incl. owner): allows up to 3, blocks the 4th', () => {
-    expect(decideSeatAdmission(DEFAULT_TEAM_SEAT_POLICY, 2).kind).toBe('allow');
-    expect(decideSeatAdmission(DEFAULT_TEAM_SEAT_POLICY, 3).kind).toBe('block');
+  it('no-plan default (owner-only): allows the owner, blocks a second member', () => {
+    expect(decideSeatAdmission(DEFAULT_TEAM_SEAT_POLICY, 0).kind).toBe('allow');
+    expect(decideSeatAdmission(DEFAULT_TEAM_SEAT_POLICY, 1).kind).toBe('block');
   });
 
   it('allows free overage when seatOverageAllowed and no price is set', () => {
