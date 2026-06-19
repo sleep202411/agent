@@ -420,7 +420,7 @@
     },
     "toast": {
       "plansLoadFailed": "會員方案載入失敗",
-      "teamCheckoutUnavailable": "團隊結算需要在此 Studio 應用程式中接入工作空間 API",
+      "teamWorkspaceRequired": "切換到或建立一個團隊工作空間以購買團隊方案。",
       "membershipActivated": "會員已啟用",
       "checkoutUrlMissing": "未回傳付款結算連結",
       "paymentFailed": "付款失敗"

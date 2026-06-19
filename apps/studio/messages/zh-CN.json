@@ -420,7 +420,7 @@
     },
     "toast": {
       "plansLoadFailed": "会员方案加载失败",
-      "teamCheckoutUnavailable": "团队结算需要在此 Studio 应用中接入工作空间 API",
+      "teamWorkspaceRequired": "切换到或创建一个团队工作空间以购买团队套餐。",
       "membershipActivated": "会员已激活",
       "checkoutUrlMissing": "未返回支付结算链接",
       "paymentFailed": "支付失败"

@@ -420,7 +420,7 @@
     },
     "toast": {
       "plansLoadFailed": "Membership plans failed to load",
-      "teamCheckoutUnavailable": "Team checkout requires the workspace API to be wired in this Studio app",
+      "teamWorkspaceRequired": "Switch to or create a team workspace to buy a team plan.",
       "membershipActivated": "Membership activated",
       "checkoutUrlMissing": "Payment checkout URL was not returned",
       "paymentFailed": "Payment failed"
