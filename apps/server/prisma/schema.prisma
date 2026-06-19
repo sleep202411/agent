@@ -3936,7 +3936,9 @@ model AiJobAttempt {
   attemptNumber           Int             @map("attempt_number")
   status                  AiAttemptStatus
   providerStatus          Int?            @map("provider_status")
-  providerRequestId       String?         @map("provider_request_id") @db.VarChar(180)
+  // Text, not VarChar: some providers (Agnes video) return a long, length-
+  // unbounded provider request id (`video_id`, ~174 chars) we store verbatim.
+  providerRequestId       String?         @map("provider_request_id") @db.Text
   providerEndpoint        String?         @map("provider_endpoint") @db.VarChar(180)
   queuePosition           Int?            @map("queue_position")
   /// Full request body sent to the provider (after adapter mapping).
@@ -3988,7 +3990,9 @@ model AiProviderTraceEvent {
   attemptId         String?  @map("attempt_id")
   provider          String   @db.VarChar(64)
   endpointId        String?  @map("endpoint_id") @db.VarChar(180)
-  providerRequestId String?  @map("provider_request_id") @db.VarChar(180)
+  // Text, not VarChar: mirrors AiJobAttempt.providerRequestId — a long,
+  // length-unbounded provider request id (Agnes `video_id`) is stored verbatim.
+  providerRequestId String?  @map("provider_request_id") @db.Text
   eventType         String   @map("event_type") @db.VarChar(64)
   source            String   @db.VarChar(64)
   confidence        String   @db.VarChar(24)
