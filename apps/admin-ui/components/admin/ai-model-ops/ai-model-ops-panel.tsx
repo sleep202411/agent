@@ -1782,9 +1782,20 @@ function JobsPanel({
         cell: ({ row }) => {
           const item = row.original;
           return (
-            <div>
-              <p className="font-mono text-[12px] font-medium text-slate-950">{item.id}</p>
-              <p className="mt-0.5 font-mono text-[12px] text-slate-500">
+            // Cap + truncate: some providers (e.g. Agnes video) return very long
+            // provider job ids that would otherwise blow out the table width. The
+            // full value stays accessible on hover and in the detail drawer.
+            <div className="min-w-0 max-w-[420px]">
+              <p
+                className="truncate font-mono text-[12px] font-medium text-slate-950"
+                title={item.id}
+              >
+                {item.id}
+              </p>
+              <p
+                className="mt-0.5 truncate font-mono text-[12px] text-slate-500"
+                title={item.providerJobId ?? undefined}
+              >
                 {item.providerJobId
                   ? `Provider job ID · ${item.providerJobId}`
                   : "Provider job ID -"}
