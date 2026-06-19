@@ -1,9 +1,17 @@
 "use client";
 
-import { createContext, useCallback, useContext, useEffect, useMemo, useRef } from "react";
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { useTranslations } from "next-intl";
 import { useQueryClient } from "@tanstack/react-query";
-import { useReactFlow } from "@xyflow/react";
+import { useReactFlow, useStore } from "@xyflow/react";
 import { toast } from "sonner";
 import type { CanvasAsset } from "@/lib/collab/canvas-doc";
 import { useCanvasGraphContext } from "@/lib/collab/canvas-graph-context";
@@ -17,12 +25,19 @@ import {
   generationIdempotencyKey,
   generationStateFromJob,
   generationStatusFromRaw,
+  getFizzAiJob,
+  isTerminalGenerationStatus,
   promptRequired,
   normalizeFizzAiError,
   submitFizzAiJob,
   type FizzAiCatalog,
+  type FizzAiJobView,
   type GenerationState,
 } from "./generation-api";
+
+/** Reconcile cadence while a card is running — slower when realtime is healthy. */
+const CONNECTED_RECONCILE_INTERVAL_MS = 20_000;
+const DISCONNECTED_FALLBACK_INTERVAL_MS = 5_000;
 
 /** Minimal shape this orchestrator reads off a generation node's data. */
 type GenNodeData = {
@@ -117,9 +132,173 @@ export function CanvasGenerationProvider({
     [graph]
   );
 
-  // Realtime: route job updates back to their card by jobId.
+  const [realtimeConnected, setRealtimeConnected] = useState(false);
+  const reconcileSeq = useRef(0);
+
+  /**
+   * Apply one job update to the card whose `generation.jobId` matches. Shared by
+   * the realtime push and the reconciler so both converge on identical behavior
+   * (panorama conversion, downstream reference back-fill, asset library, wallet
+   * refresh). A card that already reached a terminal state is never regressed,
+   * so a slow reconcile fetch can't overwrite a newer realtime completion.
+   */
+  const applyJobUpdate = useCallback(
+    (job: FizzAiJobView) => {
+      const out = job.outputs?.[0];
+      const incoming = generationStatusFromRaw(job.status);
+
+      // Find the node this job belongs to (sync read) so we can decide whether
+      // to convert it to a panorama node + drop its now-dangling input wire.
+      const match = getNodes().find(
+        (n) =>
+          (n.type === "prompt" || n.type === "video") &&
+          (n.data as GenNodeData).generation?.jobId === job.id
+      );
+      const matchData = match?.data as GenNodeData | undefined;
+
+      // Never downgrade a card that already settled into a terminal state.
+      if (
+        match &&
+        matchData?.generation &&
+        isTerminalGenerationStatus(matchData.generation.status) &&
+        !isTerminalGenerationStatus(incoming)
+      ) {
+        return;
+      }
+
+      const isPanoCard =
+        !!matchData &&
+        (matchData.mode === "image_to_panorama" ||
+          /hunyuan|panorama|world/i.test(matchData.modelId ?? ""));
+      // A finished panorama card becomes a panorama node: a live inline 360
+      // view (three.js), no composer — same as a dropped panorama asset.
+      const convert =
+        !!match && incoming === "done" && isPanoCard && isPanoramaOutput(out) && !!out?.url;
+
+      if (match) {
+        if (convert) {
+          // Remove + re-add with the same id (preserves position/selection + the
+          // input wire — the panorama node has an input handle, so the
+          // source→panorama wire stays as provenance instead of being dropped).
+          const src = out!.accessUrl ?? out!.url;
+          graph.removeNode(match.id);
+          graph.addNode({
+            id: match.id,
+            type: "panorama",
+            position: match.position,
+            data: { src, mediaAssetId: out?.assetId, label: matchData?.prompt },
+          });
+        } else {
+          graph.patchNodeData(match.id, {
+            generation: generationStateFromJob(job),
+          });
+          // Back-fill downstream references. A card wired to this node BEFORE it
+          // had an output (a preset, or wire-then-generate) binds nothing at
+          // connect time. Now that an output exists, push its URL into every card
+          // wired from this node — mirroring onConnect's binding so the wire is
+          // functional, not just drawn.
+          const doneUrl = incoming === "done" ? (out?.accessUrl ?? out?.url) : null;
+          const kind = outputKindForType(out?.type);
+          if (doneUrl && kind) {
+            const allNodes = getNodes();
+            for (const edge of graph.edges) {
+              if (edge.source !== match.id || !edge.target) continue;
+              const target = allNodes.find((n) => n.id === edge.target);
+              if (!target || (target.type !== "prompt" && target.type !== "video")) continue;
+              const edgeId = edge.id;
+              // Resolve model + field INSIDE the patch from the node's CURRENT
+              // data, so a card wired from multiple sources (or re-modelled
+              // meanwhile) routes against fresh state, not a stale snapshot.
+              graph.patchNodeData(edge.target, (node) => {
+                const tdata = node.data as GenNodeData;
+                const model = catalogRef.current?.models.find((m) => m.id === tdata.modelId);
+                const routed = routeReferenceField(model, tdata.mode, tdata.references, kind);
+                if (!routed) return {};
+                const refs = tdata.references ?? {};
+                const list = (refs[routed.field] ?? []).filter((r) => r.edgeId !== edgeId);
+                const patch: Record<string, unknown> = {
+                  references: {
+                    ...refs,
+                    [routed.field]: [
+                      ...list,
+                      { id: edgeId, edgeId, sourceNodeId: match.id, url: doneUrl, kind },
+                    ],
+                  },
+                };
+                if (routed.mode) patch.mode = routed.mode;
+                return patch;
+              });
+            }
+          }
+        }
+      }
+
+      // A finished job's outputs join the project's persistent asset library
+      // (deduped by id, so repeated pushes are harmless).
+      if (incoming === "done" && job.outputs?.length) {
+        graph.addAssets(
+          job.outputs
+            .map((output, index): CanvasAsset | null => {
+              const url = output.accessUrl ?? output.url;
+              if (!url) return null; // never put a urless asset in the shared library
+              return {
+                id: output.id ?? `${job.id}:${index}`,
+                mediaAssetId: output.assetId,
+                kind: output.type === "video" ? "video" : "image",
+                source: "generated",
+                url,
+                width: output.width,
+                height: output.height,
+                panorama: isPanoramaOutput(output),
+                prompt: job.prompt,
+                createdAt: Date.now(),
+              };
+            })
+            .filter((asset): asset is CanvasAsset => asset !== null)
+        );
+      }
+      if (["completed", "failed", "cancelled", "canceled", "expired"].includes(job.status)) {
+        void queryClient.invalidateQueries({ queryKey: computeWalletBalanceQueryKey });
+      }
+    },
+    [getNodes, graph, queryClient]
+  );
+
+  /**
+   * Catch-up reconciler: fetch the authoritative status of every card still in a
+   * non-terminal state and apply it. Covers updates missed while the realtime
+   * channel was down (a closed/backgrounded tab overnight) — the canvas persists
+   * `generation` in the doc, so without this a missed completion spins forever.
+   * Mirrors the studio feed's reconcile.
+   */
+  const reconcile = useCallback(async () => {
+    const seq = ++reconcileSeq.current;
+    const ids = [
+      ...new Set(
+        getNodes()
+          .filter((n) => n.type === "prompt" || n.type === "video")
+          .map((n) => (n.data as GenNodeData).generation)
+          .filter((g): g is GenerationState => !!g?.jobId && !isTerminalGenerationStatus(g.status))
+          .map((g) => g.jobId as string)
+      ),
+    ];
+    if (ids.length === 0) return;
+    const results = await Promise.allSettled(ids.map((id) => getFizzAiJob(id)));
+    if (seq !== reconcileSeq.current) return; // a newer reconcile superseded this one
+    for (const result of results) {
+      if (result.status === "fulfilled") applyJobUpdate(result.value);
+    }
+  }, [getNodes, applyJobUpdate]);
+
+  // Realtime: route job updates back to their card by jobId; reconcile on
+  // (re)connect so a reconnect after sleep/disconnect back-fills missed updates.
   useEffect(() => {
     const client = openAssetsRealtime({
+      onConnected: () => {
+        setRealtimeConnected(true);
+        void reconcile();
+      },
+      onDisconnected: () => setRealtimeConnected(false),
       onEvent: (event) => {
         if (event.kind === "media_asset_moderation_changed") {
           if (event.action !== "blocked") return;
@@ -182,121 +361,45 @@ export function CanvasGenerationProvider({
           return;
         }
         if (event.kind !== "ai_job_update") return;
-        const job = event.job;
-        const out = job.outputs?.[0];
-
-        // Find the node this job belongs to (sync read) so we can decide whether
-        // to convert it to a panorama node + drop its now-danging input wire.
-        const match = getNodes().find(
-          (n) =>
-            (n.type === "prompt" || n.type === "video") &&
-            (n.data as GenNodeData).generation?.jobId === job.id
-        );
-        const matchData = match?.data as GenNodeData | undefined;
-        const isPanoCard =
-          !!matchData &&
-          (matchData.mode === "image_to_panorama" ||
-            /hunyuan|panorama|world/i.test(matchData.modelId ?? ""));
-        // A finished panorama card becomes a panorama node: a live inline 360
-        // view (three.js), no composer — same as a dropped panorama asset.
-        const convert =
-          !!match &&
-          generationStatusFromRaw(job.status) === "done" &&
-          isPanoCard &&
-          isPanoramaOutput(out) &&
-          !!out?.url;
-
-        if (match) {
-          if (convert) {
-            // A finished panorama card becomes a panorama node: remove + re-add
-            // with the same id (preserves position/selection + the input wire —
-            // the panorama node now has an input handle, so the source→panorama
-            // wire stays as provenance instead of being dropped).
-            const src = out!.accessUrl ?? out!.url;
-            graph.removeNode(match.id);
-            graph.addNode({
-              id: match.id,
-              type: "panorama",
-              position: match.position,
-              data: { src, mediaAssetId: out?.assetId, label: matchData?.prompt },
-            });
-          } else {
-            graph.patchNodeData(match.id, {
-              generation: generationStateFromJob(job),
-            });
-            // Back-fill downstream references. A card wired to this node BEFORE
-            // it had an output (a preset, or wire-then-generate) binds nothing at
-            // connect time. Now that an output exists, push its URL into every
-            // card wired from this node — mirroring onConnect's binding so the
-            // wire is functional, not just drawn.
-            const doneUrl =
-              generationStatusFromRaw(job.status) === "done" ? (out?.accessUrl ?? out?.url) : null;
-            const kind = outputKindForType(out?.type);
-            if (doneUrl && kind) {
-              const allNodes = getNodes();
-              for (const edge of graph.edges) {
-                if (edge.source !== match.id || !edge.target) continue;
-                const target = allNodes.find((n) => n.id === edge.target);
-                if (!target || (target.type !== "prompt" && target.type !== "video")) continue;
-                const edgeId = edge.id;
-                // Resolve model + field INSIDE the patch from the node's CURRENT
-                // data, so a card wired from multiple sources (or re-modelled
-                // meanwhile) routes against fresh state, not a stale snapshot.
-                // Mirrors onConnect (keeps existing refs; sets mode on a switch).
-                graph.patchNodeData(edge.target, (node) => {
-                  const tdata = node.data as GenNodeData;
-                  const model = catalogRef.current?.models.find((m) => m.id === tdata.modelId);
-                  const routed = routeReferenceField(model, tdata.mode, tdata.references, kind);
-                  if (!routed) return {};
-                  const refs = tdata.references ?? {};
-                  const list = (refs[routed.field] ?? []).filter((r) => r.edgeId !== edgeId);
-                  const patch: Record<string, unknown> = {
-                    references: {
-                      ...refs,
-                      [routed.field]: [
-                        ...list,
-                        { id: edgeId, edgeId, sourceNodeId: match.id, url: doneUrl, kind },
-                      ],
-                    },
-                  };
-                  if (routed.mode) patch.mode = routed.mode;
-                  return patch;
-                });
-              }
-            }
-          }
-        }
-        // A finished job's outputs join the project's persistent asset library
-        // (deduped by id, so repeated pushes are harmless).
-        if (generationStatusFromRaw(job.status) === "done" && job.outputs?.length) {
-          graph.addAssets(
-            job.outputs
-              .map((output, index): CanvasAsset | null => {
-                const url = output.accessUrl ?? output.url;
-                if (!url) return null; // never put a urless asset in the shared library
-                return {
-                  id: output.id ?? `${job.id}:${index}`,
-                  mediaAssetId: output.assetId,
-                  kind: output.type === "video" ? "video" : "image",
-                  source: "generated",
-                  url,
-                  width: output.width,
-                  height: output.height,
-                  panorama: isPanoramaOutput(output),
-                  prompt: job.prompt,
-                  createdAt: Date.now(),
-                };
-              })
-              .filter((asset): asset is CanvasAsset => asset !== null)
-          );
-        }
-        if (["completed", "failed", "cancelled", "canceled", "expired"].includes(job.status)) {
-          void queryClient.invalidateQueries({ queryKey: computeWalletBalanceQueryKey });
-        }
+        applyJobUpdate(event.job as unknown as FizzAiJobView);
       },
     });
     return () => client.close();
-  }, [queryClient, graph, getNodes, t]);
+  }, [applyJobUpdate, reconcile, graph, getNodes, t]);
+
+  // Non-terminal job ids on the canvas, reactive to doc hydration + node edits.
+  const activeJobIds = useStore((s) => {
+    const ids: string[] = [];
+    s.nodeLookup.forEach((n) => {
+      if (n.type !== "prompt" && n.type !== "video") return;
+      const generation = (n.data as GenNodeData).generation;
+      if (generation?.jobId && !isTerminalGenerationStatus(generation.status)) {
+        ids.push(generation.jobId);
+      }
+    });
+    return ids.sort().join(",");
+  });
+
+  // Reconcile the instant an active card appears (e.g. after the doc hydrates
+  // from IndexedDB on load), then poll as a backstop while any card runs.
+  useEffect(() => {
+    if (!activeJobIds) return;
+    void reconcile();
+    const timer = window.setInterval(
+      () => void reconcile(),
+      realtimeConnected ? CONNECTED_RECONCILE_INTERVAL_MS : DISCONNECTED_FALLBACK_INTERVAL_MS
+    );
+    return () => window.clearInterval(timer);
+  }, [activeJobIds, realtimeConnected, reconcile]);
+
+  // Tab refocus → reconcile (catches anything missed while the tab was hidden).
+  useEffect(() => {
+    const onVisible = () => {
+      if (document.visibilityState === "visible") void reconcile();
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => document.removeEventListener("visibilitychange", onVisible);
+  }, [reconcile]);
 
   const submit = useCallback(
     async (nodeId: string) => {
