@@ -10,6 +10,7 @@ import {
   IconLoader2,
 } from "@tabler/icons-react";
 import { cn } from "@/lib/utils";
+import { GlassRim } from "@/components/ui/glass-rim";
 import { useDismiss } from "@/lib/use-dismiss";
 import {
   type FizzAiCatalog,
@@ -56,6 +57,7 @@ export function StudioComposer({
   submitting,
   error,
   onSubmit,
+  docked = true,
 }: {
   modality: "image" | "video";
   catalog: FizzAiCatalog | undefined;
@@ -77,6 +79,8 @@ export function StudioComposer({
   submitting: boolean;
   error?: string | null;
   onSubmit: () => void;
+  /** Bottom-docked (feed pages) vs in-flow (e.g. the home hero). */
+  docked?: boolean;
 }) {
   const t = useTranslations("generation");
   const tc = useTranslations("common");
@@ -160,156 +164,173 @@ export function StudioComposer({
     }
   };
 
-  return (
-    <div className="pointer-events-none fixed inset-x-4 bottom-5 z-40 lg:left-[104px]">
-      <div className="pointer-events-auto mx-auto w-full max-w-[1120px] rounded-3xl bg-[oklch(0.22_0_0_/_0.92)] p-4 shadow-[0_24px_70px_-12px_rgba(0,0,0,0.7),inset_0_1px_0_rgba(255,255,255,0.12)] backdrop-blur-2xl backdrop-saturate-150">
-        {/* Prompt + fanned references */}
-        <div className="relative">
-          {showReferences && (
-            <div className="absolute top-0 left-0 z-10">
-              <ReferenceFan
-                fields={referenceFields}
-                items={referenceItems}
-                onAdd={onAddReferences}
-                onRemove={onRemoveReference}
-              />
-            </div>
+  const shell = (
+    <div className="pointer-events-auto relative mx-auto w-full max-w-[1120px] rounded-3xl bg-[oklch(0.22_0_0_/_0.92)] p-4 shadow-[0_24px_70px_-12px_rgba(0,0,0,0.7)] backdrop-blur-2xl backdrop-saturate-150">
+      {/* signature glass rim-light (DESIGN.md §3.2) */}
+      <GlassRim />
+      {/* Prompt + fanned references */}
+      <div className="relative">
+        {showReferences && (
+          <div className="absolute top-0 left-0 z-10">
+            <ReferenceFan
+              fields={referenceFields}
+              items={referenceItems}
+              onAdd={onAddReferences}
+              onRemove={onRemoveReference}
+            />
+          </div>
+        )}
+        <textarea
+          ref={textareaRef}
+          value={prompt}
+          maxLength={800}
+          rows={3}
+          placeholder={t("promptPlaceholder")}
+          onChange={(event) => {
+            onPromptChange(event.target.value);
+            updateMentionState(
+              event.target.value,
+              event.target.selectionStart ?? event.target.value.length
+            );
+          }}
+          onSelect={(event) =>
+            updateMentionState(
+              event.currentTarget.value,
+              event.currentTarget.selectionStart ?? event.currentTarget.value.length
+            )
+          }
+          onKeyDown={onKeyDown}
+          onBlur={() => setTimeout(() => setMentionOpen(false), 120)}
+          className={cn(
+            "block max-h-40 w-full resize-none bg-transparent text-sm leading-6 outline-none placeholder:text-muted-foreground",
+            showReferences && "min-h-[80px] pl-[150px]",
+            showReferences && referenceItems.length > 1 && "pl-[190px]"
           )}
-          <textarea
-            ref={textareaRef}
-            value={prompt}
-            maxLength={800}
-            rows={3}
-            placeholder={t("promptPlaceholder")}
-            onChange={(event) => {
-              onPromptChange(event.target.value);
-              updateMentionState(
-                event.target.value,
-                event.target.selectionStart ?? event.target.value.length
-              );
-            }}
-            onSelect={(event) =>
-              updateMentionState(
-                event.currentTarget.value,
-                event.currentTarget.selectionStart ?? event.currentTarget.value.length
-              )
-            }
-            onKeyDown={onKeyDown}
-            onBlur={() => setTimeout(() => setMentionOpen(false), 120)}
-            className={cn(
-              "block max-h-40 w-full resize-none bg-transparent text-sm leading-6 outline-none placeholder:text-muted-foreground",
-              showReferences && "min-h-[80px] pl-[150px]",
-              showReferences && referenceItems.length > 1 && "pl-[190px]"
-            )}
-          />
-          {mentionOpen && (
-            <div
-              className={cn("absolute", showReferences ? "left-[150px]" : "left-0")}
-              data-popover-zone
-            >
-              <MentionMenu
-                options={mentionOptions}
-                active={mentionActive}
-                onPick={insertMention}
-                className="top-9 left-0"
-              />
-            </div>
-          )}
-        </div>
+        />
+        {mentionOpen && (
+          <div
+            className={cn("absolute", showReferences ? "left-[150px]" : "left-0")}
+            data-popover-zone
+          >
+            <MentionMenu
+              options={mentionOptions}
+              active={mentionActive}
+              onPick={insertMention}
+              className="top-9 left-0"
+            />
+          </div>
+        )}
+      </div>
 
-        {error && <p className="mt-1.5 text-xs text-destructive">{error}</p>}
+      {error && <p className="mt-1.5 text-xs text-destructive">{error}</p>}
 
-        {/* Controls row */}
-        <div className="mt-3 flex items-center gap-1.5">
-          {modes.length > 1 && onSelectMode && (
-            <div className="relative" data-popover-zone>
-              <button
-                type="button"
-                onClick={() => setPanel((p) => (p === "mode" ? null : "mode"))}
-                className="flex h-8 items-center gap-1 rounded-full bg-white/[0.06] px-3 text-xs font-medium transition-colors hover:bg-white/[0.1]"
-              >
-                {mode ? ml(mode) : t("mode")}
-                <IconChevronDown className="size-3.5 text-muted-foreground" stroke={2} />
-              </button>
-              {panel === "mode" && (
-                <ModeMenu
-                  modes={modes}
-                  value={mode}
-                  onSelect={(m) => onSelectMode(m)}
-                  onClose={() => setPanel(null)}
-                />
-              )}
-            </div>
-          )}
-
+      {/* Controls row */}
+      <div className="mt-3 flex items-center gap-1.5">
+        {/* Mode pill: always shown when the model exposes a mode (so the
+              current mode is visible); interactive only when there's >1. */}
+        {modes.length >= 1 && mode && (
           <div className="relative" data-popover-zone>
             <button
               type="button"
-              onClick={() => setPanel((p) => (p === "model" ? null : "model"))}
-              className="flex h-10 items-center rounded-xl bg-white/[0.08] px-3 text-sm font-medium transition-colors hover:bg-white/[0.12]"
+              onClick={
+                modes.length > 1 && onSelectMode
+                  ? () => setPanel((p) => (p === "mode" ? null : "mode"))
+                  : undefined
+              }
+              className={cn(
+                "flex h-10 items-center gap-1 rounded-xl bg-white/[0.08] px-3 text-sm font-medium transition-colors",
+                modes.length > 1 ? "hover:bg-white/[0.12]" : "cursor-default"
+              )}
             >
-              {model?.name ?? t("chooseModel")}
+              {ml(mode)}
+              {modes.length > 1 ? (
+                <IconChevronDown className="size-3.5 text-muted-foreground" stroke={2} />
+              ) : null}
             </button>
-            {panel === "model" && (
-              <ModelPicker
-                catalog={catalog}
-                modality={modality}
-                selectedId={model?.id}
-                onSelect={onSelectModel}
+            {panel === "mode" && modes.length > 1 && onSelectMode && (
+              <ModeMenu
+                modes={modes}
+                value={mode}
+                onSelect={(m) => onSelectMode(m)}
                 onClose={() => setPanel(null)}
               />
             )}
           </div>
+        )}
 
-          <ComposerQuickSettings model={model} settings={settings} onChange={onSettingsChange} />
-
-          {showSettingsButton && (
-            <div className="relative" data-popover-zone>
-              <button
-                type="button"
-                aria-label={t("settings")}
-                onClick={() => setPanel((p) => (p === "settings" ? null : "settings"))}
-                className="flex size-10 items-center justify-center rounded-xl bg-white/[0.08] text-white/70 transition-colors hover:bg-white/[0.12] hover:text-white"
-              >
-                <IconAdjustments className="size-4.5" stroke={1.8} />
-              </button>
-              {panel === "settings" && (
-                <ModelSettingsPanel
-                  model={model}
-                  settings={settings}
-                  onChange={onSettingsChange}
-                  hideQuickFields
-                />
-              )}
-            </div>
+        <div className="relative" data-popover-zone>
+          <button
+            type="button"
+            onClick={() => setPanel((p) => (p === "model" ? null : "model"))}
+            className="flex h-10 items-center rounded-xl bg-white/[0.08] px-3 text-sm font-medium transition-colors hover:bg-white/[0.12]"
+          >
+            {model?.name ?? t("chooseModel")}
+          </button>
+          {panel === "model" && (
+            <ModelPicker
+              catalog={catalog}
+              modality={modality}
+              selectedId={model?.id}
+              onSelect={onSelectModel}
+              onClose={() => setPanel(null)}
+            />
           )}
+        </div>
 
-          <div className="ml-auto flex items-center gap-3">
-            {cost != null && (
-              <span className="flex items-center gap-1 text-xs text-muted-foreground tabular-nums">
-                <IconBolt className="size-3.5" stroke={1.8} />
-                {cost}
-              </span>
-            )}
+        <ComposerQuickSettings model={model} settings={settings} onChange={onSettingsChange} />
+
+        {showSettingsButton && (
+          <div className="relative" data-popover-zone>
             <button
               type="button"
-              aria-label={tc("create")}
-              disabled={!canSubmit}
-              onClick={onSubmit}
-              // Brand red as the hero CTA — sanctioned case-by-case accent
-              // (DESIGN.md rule 3), applied locally, never a token.
-              className="flex h-9 items-center gap-1.5 rounded-full bg-[#E52227] px-4 text-sm font-semibold text-white shadow-lg shadow-[#E52227]/25 transition-colors hover:bg-[#c91e22] disabled:opacity-40"
+              aria-label={t("settings")}
+              onClick={() => setPanel((p) => (p === "settings" ? null : "settings"))}
+              className="flex size-10 items-center justify-center rounded-xl bg-white/[0.08] text-white/70 transition-colors hover:bg-white/[0.12] hover:text-white"
             >
-              {submitting ? (
-                <IconLoader2 className="size-4 animate-spin" stroke={2} />
-              ) : (
-                <IconArrowUp className="size-4" stroke={2.2} />
-              )}
-              {tc("create")}
+              <IconAdjustments className="size-4.5" stroke={1.8} />
             </button>
+            {panel === "settings" && (
+              <ModelSettingsPanel
+                model={model}
+                settings={settings}
+                onChange={onSettingsChange}
+                hideQuickFields
+              />
+            )}
           </div>
+        )}
+
+        <div className="ml-auto flex items-center gap-3">
+          {cost != null && (
+            <span className="flex items-center gap-1 text-xs text-muted-foreground tabular-nums">
+              <IconBolt className="size-3.5" stroke={1.8} />
+              {cost}
+            </span>
+          )}
+          <button
+            type="button"
+            aria-label={tc("create")}
+            disabled={!canSubmit}
+            onClick={onSubmit}
+            // Brand red as the hero CTA — sanctioned case-by-case accent
+            // (DESIGN.md rule 3), applied locally, never a token.
+            className="flex h-9 items-center gap-1.5 rounded-full bg-[#E52227] px-4 text-sm font-semibold text-white shadow-lg shadow-[#E52227]/25 transition-colors hover:bg-[#c91e22] disabled:opacity-40"
+          >
+            {submitting ? (
+              <IconLoader2 className="size-4 animate-spin" stroke={2} />
+            ) : (
+              <IconArrowUp className="size-4" stroke={2.2} />
+            )}
+            {tc("create")}
+          </button>
         </div>
       </div>
     </div>
+  );
+
+  return docked ? (
+    <div className="pointer-events-none fixed inset-x-4 bottom-5 z-40 lg:left-[104px]">{shell}</div>
+  ) : (
+    shell
   );
 }

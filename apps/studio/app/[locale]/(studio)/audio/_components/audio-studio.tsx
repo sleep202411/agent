@@ -19,6 +19,9 @@ import {
   type IconProps,
 } from "@tabler/icons-react";
 import type { ComponentType, FormEvent } from "react";
+import { Button } from "@/components/ui/button";
+import { FrostedPanel } from "@/components/ui/frosted-panel";
+import { SectionHeading } from "@/components/ui/section-heading";
 import { cn } from "@/lib/utils";
 
 type AudioMode = "voice" | "music" | "sfx";
@@ -156,7 +159,7 @@ function AudioWaveform({
     <div
       aria-hidden="true"
       className={cn(
-        "flex h-24 items-center gap-1 overflow-hidden rounded-2xl border border-white/[0.06] bg-black/20 px-4",
+        "flex h-24 items-center gap-1 overflow-hidden rounded-2xl bg-black/20 px-4",
         compact && "h-16 rounded-xl px-3"
       )}
     >
@@ -165,7 +168,7 @@ function AudioWaveform({
           key={`${seed}-${index}`}
           className={cn(
             "w-1 shrink-0 rounded-full bg-white/18",
-            index < activeCount && "bg-[#ff3b3b]"
+            index < activeCount && "bg-[#E52227]"
           )}
           style={{ height }}
         />
@@ -191,59 +194,60 @@ function PreviewCard({ card, active }: { card: (typeof PREVIEW_CARDS)[number]; a
   const Icon = card.icon;
 
   return (
-    <article
-      className={cn(
-        "rounded-3xl border border-white/[0.06] bg-white/[0.035] p-4 shadow-[0_18px_70px_rgba(0,0,0,0.26)] transition-colors",
-        active && "border-white/15 bg-white/[0.07]"
-      )}
-    >
-      <div className="flex items-start justify-between gap-4">
-        <div className="flex min-w-0 items-center gap-3">
+    <div className="group flex flex-col gap-2.5">
+      {/* Media tile: waveform visual + mode glyph + status overlay. The
+          rim-light ring + tone-lift (active → neutral lift) replace the old
+          hard border; the label lives BELOW the tile per the TileCard idiom. */}
+      <FrostedPanel
+        className={cn("p-4 transition-colors", active && "bg-white/[0.07] ring-white/[0.12]")}
+      >
+        <div className="flex items-start justify-between gap-4">
           <div
             className={cn(
               "flex size-12 shrink-0 items-center justify-center rounded-2xl bg-white/[0.06] text-white/70",
-              active && "bg-[#ff3b3b]/14 text-white"
+              active && "bg-white/[0.12] text-white"
             )}
           >
             <Icon className="size-5" stroke={1.8} />
           </div>
-          <div className="min-w-0">
-            <h2 className="truncate text-base font-semibold text-white">{t(card.titleKey)}</h2>
-            <p className="mt-0.5 text-xs text-white/45">
-              {t(`modes.${card.mode}`)} · {t(card.durationKey)}
-            </p>
+          <span className="rounded-full bg-white/[0.06] px-2.5 py-1 text-[11px] font-medium text-white/55">
+            {t("preview.status")}
+          </span>
+        </div>
+
+        <div className="mt-4">
+          <AudioWaveform seed={card.seed} progress={card.progress} />
+        </div>
+
+        <p className="mt-4 line-clamp-2 min-h-10 text-sm leading-5 text-white/55">
+          {t(card.promptKey)}
+        </p>
+
+        <div className="mt-4 flex items-center justify-between gap-3">
+          <button
+            type="button"
+            className="inline-flex h-10 items-center gap-2 rounded-full bg-white text-sm font-semibold text-black transition-colors hover:bg-white/90"
+          >
+            <span className="flex size-10 items-center justify-center rounded-full">
+              <IconPlayerPlay className="size-4 fill-current" stroke={1.8} />
+            </span>
+            <span className="pr-4">{t("actions.play")}</span>
+          </button>
+          <div className="flex items-center gap-2">
+            <IconButton label={t("actions.download")} icon={IconDownload} />
+            <IconButton label={t("actions.reuse")} icon={IconCopy} />
+            <IconButton label={t("actions.regenerate")} icon={IconRefresh} />
           </div>
         </div>
-        <span className="rounded-full border border-white/[0.08] px-2.5 py-1 text-[11px] font-medium text-white/55">
-          {t("preview.status")}
-        </span>
-      </div>
+      </FrostedPanel>
 
-      <div className="mt-4">
-        <AudioWaveform seed={card.seed} progress={card.progress} />
-      </div>
-
-      <p className="mt-4 line-clamp-2 min-h-10 text-sm leading-5 text-white/55">
-        {t(card.promptKey)}
-      </p>
-
-      <div className="mt-4 flex items-center justify-between gap-3">
-        <button
-          type="button"
-          className="inline-flex h-10 items-center gap-2 rounded-full bg-white text-sm font-semibold text-black transition-colors hover:bg-white/90"
-        >
-          <span className="flex size-10 items-center justify-center rounded-full">
-            <IconPlayerPlay className="size-4 fill-current" stroke={1.8} />
-          </span>
-          <span className="pr-4">{t("actions.play")}</span>
-        </button>
-        <div className="flex items-center gap-2">
-          <IconButton label={t("actions.download")} icon={IconDownload} />
-          <IconButton label={t("actions.reuse")} icon={IconCopy} />
-          <IconButton label={t("actions.regenerate")} icon={IconRefresh} />
+      <div>
+        <div className="truncate text-sm font-medium text-white">{t(card.titleKey)}</div>
+        <div className="mt-0.5 text-xs text-muted-foreground">
+          {t(`modes.${card.mode}`)} · {t(card.durationKey)}
         </div>
       </div>
-    </article>
+    </div>
   );
 }
 
@@ -322,26 +326,26 @@ export function AudioStudio() {
   return (
     <>
       <section className="mt-8 grid gap-4 xl:grid-cols-[minmax(0,1fr)_320px]">
-        <div className="rounded-4xl border border-white/[0.06] bg-white/[0.025] p-4 sm:p-5">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <p className="text-sm font-semibold text-white">{t("preview.heading")}</p>
-              <p className="mt-1 text-sm text-white/45">{t("preview.subheading")}</p>
-            </div>
-            <span className="inline-flex items-center gap-2 rounded-full bg-white/[0.06] px-3 py-1.5 text-xs font-medium text-white/55">
-              <IconVolume className="size-4" stroke={1.8} />
-              {t("preview.outputLabel")}
-            </span>
-          </div>
+        <FrostedPanel className="rounded-4xl bg-white/[0.025] p-4 sm:p-5">
+          <SectionHeading
+            title={t("preview.heading")}
+            subtitle={t("preview.subheading")}
+            action={
+              <span className="inline-flex items-center gap-2 rounded-full bg-white/[0.06] px-3 py-1.5 text-xs font-medium text-white/55">
+                <IconVolume className="size-4" stroke={1.8} />
+                {t("preview.outputLabel")}
+              </span>
+            }
+          />
 
           <div className="mt-5 grid gap-3 lg:grid-cols-3">
             {previewCards.map((card) => (
               <PreviewCard key={card.key} card={card} active={card.mode === mode} />
             ))}
           </div>
-        </div>
+        </FrostedPanel>
 
-        <aside className="rounded-4xl border border-white/[0.06] bg-white/[0.035] p-4">
+        <FrostedPanel className="rounded-4xl p-4">
           <div className="flex items-center gap-3">
             <div className="flex size-11 items-center justify-center rounded-2xl bg-white/[0.06] text-white/70">
               <IconSparkles className="size-5" stroke={1.8} />
@@ -369,7 +373,7 @@ export function AudioStudio() {
                   <span
                     className={cn(
                       "flex size-10 shrink-0 items-center justify-center rounded-xl bg-white/[0.06] text-white/55",
-                      active && "bg-[#ff3b3b]/14 text-white"
+                      active && "bg-white/[0.12] text-white"
                     )}
                   >
                     <Icon className="size-5" stroke={1.8} />
@@ -386,19 +390,19 @@ export function AudioStudio() {
               );
             })}
           </div>
-        </aside>
+        </FrostedPanel>
       </section>
 
       <form
         onSubmit={handleSubmit}
         className="pointer-events-none fixed inset-x-4 bottom-5 z-40 lg:left-[104px]"
       >
-        <div className="pointer-events-auto mx-auto w-full max-w-[1120px] rounded-4xl border border-white/[0.08] bg-[oklch(0.18_0_0_/_0.94)] p-3 shadow-[0_28px_90px_rgba(0,0,0,0.55)] backdrop-blur-2xl">
+        <div className="pointer-events-auto mx-auto w-full max-w-[1120px] rounded-4xl bg-[oklch(0.18_0_0_/_0.94)] p-3 shadow-[0_28px_90px_rgba(0,0,0,0.55)] ring-1 ring-white/[0.08] backdrop-blur-2xl">
           <textarea
             value={prompt}
             onChange={(event) => setPrompt(event.target.value)}
             placeholder={t(activeMode.placeholderKey)}
-            className="min-h-22 w-full resize-none rounded-3xl border border-transparent bg-white/[0.035] px-4 py-3 text-base leading-6 text-white outline-none transition-colors placeholder:text-white/32 focus:border-white/[0.1] focus:bg-white/[0.055]"
+            className="min-h-22 w-full resize-none rounded-3xl border border-transparent bg-white/[0.035] px-4 py-3 text-base leading-6 text-white outline-none transition-colors placeholder:text-white/32 focus:bg-white/[0.055] focus:ring-1 focus:ring-white/[0.08]"
           />
 
           <div className="mt-3 flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
@@ -466,13 +470,14 @@ export function AudioStudio() {
                 <IconBolt className="size-4" stroke={1.8} />
                 {activeMode.credits}
               </span>
-              <button
+              <Button
                 type="submit"
+                variant="primary-cta"
                 aria-label={t("composer.createAria")}
-                className="flex size-12 items-center justify-center rounded-full bg-[#ff3b3b] text-white shadow-[0_14px_35px_rgba(255,59,59,0.28)] transition-colors hover:bg-[#ff5050]"
+                className="size-12 rounded-full shadow-[0_14px_35px_rgba(0,0,0,0.45)] [&_svg:not([class*='size-'])]:size-5"
               >
                 <IconArrowUp className="size-5" stroke={2} />
-              </button>
+              </Button>
             </div>
           </div>
         </div>

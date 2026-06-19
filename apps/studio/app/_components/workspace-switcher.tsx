@@ -26,6 +26,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Field, FIELD_BUTTON, FIELD_CONTROL, FIELD_CONTROL_TEXTAREA } from "@/components/ui/field";
+import { GlassRim } from "@/components/ui/glass-rim";
 import type { WorkspaceRef } from "@/lib/collab/projects-api";
 import { useWorkspace } from "./workspace-context";
 
@@ -108,7 +109,8 @@ export function WorkspaceSwitcher() {
   return (
     <>
       <DropdownMenu>
-        <DropdownMenuTrigger className="flex h-10 items-center gap-2 rounded-full bg-white/[0.06] py-1 pr-3 pl-1.5 transition-colors outline-none hover:bg-white/[0.1] focus-visible:ring-2 focus-visible:ring-ring/50 data-[state=open]:bg-white/[0.1]">
+        <DropdownMenuTrigger className="relative flex h-10 items-center gap-2 rounded-full bg-white/[0.06] py-1 pr-3 pl-1.5 backdrop-blur-md backdrop-saturate-150 transition-colors outline-none hover:bg-white/[0.1] focus-visible:ring-2 focus-visible:ring-ring/50 data-[state=open]:bg-white/[0.1]">
+          <GlassRim />
           <WsAvatar ws={activeWorkspace} size="size-7" />
           <span className="max-w-[12rem] truncate text-sm font-medium">{activeWorkspace.name}</span>
           <IconChevronDown className="size-4 text-white/55" stroke={2} />

@@ -10,6 +10,11 @@ const buttonVariants = cva(
     variants: {
       variant: {
         default: "bg-primary text-primary-foreground hover:bg-primary/80",
+        // Brand-red primary CTA (Generate / Create / Upgrade …). Brand red is an
+        // inline accent, never a token, per DESIGN.md — this variant is the single
+        // sanctioned place it lives in the component layer.
+        "primary-cta":
+          "bg-[#E52227] text-white hover:bg-[#c91e22] focus-visible:border-[#E52227] focus-visible:ring-[#E52227]/30",
         outline:
           "border-border hover:bg-input/50 hover:text-foreground aria-expanded:bg-muted aria-expanded:text-foreground dark:bg-input/30",
         secondary:

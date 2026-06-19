@@ -8,6 +8,11 @@ monochrome, borderless "AI studio" interface in the imagine.art genre.
 Read `../../DESIGN.md` first for shared brand rules. Where this file is
 stricter than the shared rules, this file wins inside `apps/studio`.
 
+The home / app-shell visual language — frosted panels, the rim-light edge,
+mask-icon glyphs, sliding indicators, the Mono/Red accent presets, and full
+component anatomy — is specced in `app/[locale]/_pollo/DESIGN.md`; the rules
+below are the binding constraints it must honor.
+
 ## Non-negotiables
 
 1. **Dark-only.** There is no light theme and no theme switching.
@@ -18,6 +23,10 @@ stricter than the shared rules, this file wins inside `apps/studio`.
      App code must NOT write new `dark:` variants — they are dead weight here.
    - `color-scheme: dark` is declared on `:root`; `viewport.colorScheme`
      is `"dark"`. Never install `next-themes`.
+   - **Accent preset** (Mono / Red) is the one sanctioned user choice (signed
+     off 2026-06-19): it swaps ONLY the primary-CTA accent (white ↔ brand red),
+     never surfaces, and is NOT light/dark switching — still dark-only, still no
+     `next-themes`. See `app/[locale]/_pollo/DESIGN.md` §2.
 
 2. **Monochrome surfaces, zero chroma.** Every surface token is pure
    neutral (OKLCH chroma `0`). The approved scale:
@@ -72,8 +81,13 @@ stricter than the shared rules, this file wins inside `apps/studio`.
    (`oklch(0.5914 0.225 26.83)`) must never enter the global token set or
    tint neutral surfaces — a red-washed UI has been explicitly rejected.
    Red is reserved for rare, deliberate, case-by-case accents (e.g. a hero
-   CTA), applied locally and only with an explicit decision. Generated
-   imagery is the only saturated content by default.
+   CTA), applied locally and only with an explicit decision. The **Red accent
+   preset** is the one _systematic_ sanctioned use (signed off 2026-06-19):
+   brand red fills every primary ACTION BUTTON (Generate / Start for Free / Try
+   Now / Send / Blank-Canvas +); it still never joins the neutral token set and
+   never tints a surface or active-state fill — only the CTA. The Mono preset
+   keeps CTAs white (`primary`). Generated imagery is the only saturated content
+   by default.
 
 4. **No borders. Anywhere.** shadcn's default border-everywhere look has
    been explicitly rejected, including hairlines on chrome and floating
@@ -89,6 +103,13 @@ stricter than the shared rules, this file wins inside `apps/studio`.
      (`focus-visible:ring-*`), internal **separators**
      (`h-px bg-border` dividers between rows), and variants whose _name_
      is the border (`outline` button/badge).
+   - The **frosted rim-light** (signed off 2026-06-19) is a sanctioned soft
+     edge — NOT an outline: a low-alpha gradient hairline masked to a 0.5–1.5px
+     ring (`mask-composite: exclude`; see `_pollo/glyphs.tsx` `GradientRing`)
+     that catches light on the edge of a **frosted / elevated** surface
+     (composer panel, rail, active tab). White — or neutral in active states —
+     at ≤10–55% alpha, frosted surfaces only, never solid / full-opacity, never
+     on flat chrome.
    - No gradient/blurred "orb" backgrounds.
 
 5. **English-only UI strings.** No Chinese (or other non-English) string
@@ -122,12 +143,18 @@ stricter than the shared rules, this file wins inside `apps/studio`.
 
 ## Layout
 
-- **Left icon rail**: a floating 56px pill fixed 24px from the viewport
-  edge, vertically centered, grouped nav + detached settings button —
-  style ported from the web `(fizzstudio)` rail
-  (`app/_components/studio-sidebar.tsx`). Content offsets with
-  `lg:pl-[104px]` (24 gap + 56 pill + 24 gap); the rail hides below `lg`
-  (mobile chrome TBD).
+- **One navigation everywhere: the floating 56px icon rail** (signed off
+  2026-06-19; the earlier "context-split" with a labeled home sidebar was
+  dropped — not enough top-level menus to warrant it). A pill fixed 24px from
+  the viewport edge, vertically centered, grouped nav + detached settings;
+  ported from the web `(fizzstudio)` rail (`app/_components/studio-sidebar.tsx`);
+  content offsets `lg:pl-[104px]` (24 gap + 56 pill + 24 gap); hides below `lg`
+  (mobile chrome TBD). **The home (`app/[locale]/page.tsx`) uses this same rail**
+  — it just adds its own promo banner + auth-aware header (brand wordmark at the
+  header's left edge, since the rail has no logo) + footer around the content.
+- **Fill the shell.** The main content column FILLS its width — no page-level
+  centered max-width. Only a focused text input (composer, chat) gets a centered
+  cap (~1200px); galleries / grids / cards fill. (See `_pollo/DESIGN.md` §1.3, §4.)
 - Genre conventions to follow as surfaces are built (2026 AI-studio
   research): prompt bar as the hero element with parameters in popovers /
   inline chips; create-and-browse on one surface (masonry feed of past

@@ -6,6 +6,7 @@ import { IconBolt, IconCopy, IconLogout } from "@tabler/icons-react";
 import { encodeUserId } from "@repo/shared";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { FrostedPanel } from "@/components/ui/frosted-panel";
 import { useAuth } from "@/app/_components/auth-provider";
 import { useComputeWalletBalance } from "@/app/_components/credits-badge";
 import { SubscriptionDialog } from "@/app/_components/subscription-dialog";
@@ -26,12 +27,12 @@ export default function AccountSettingsPage() {
     return (
       <main className="mx-auto w-full max-w-3xl px-6 py-8">
         <PageHeader title={t("account")} />
-        <div className="mt-6 rounded-2xl bg-card p-10 text-center">
+        <FrostedPanel className="mt-6 p-10 text-center">
           <p className="text-sm text-muted-foreground">{t("signInToManageAccount")}</p>
           <Button className="mt-4" onClick={signIn}>
             {t("signIn")}
           </Button>
-        </div>
+        </FrostedPanel>
       </main>
     );
   }
@@ -110,11 +111,11 @@ export default function AccountSettingsPage() {
 
 function CreditStat({ label, value }: { label: string; value: bigint | undefined }) {
   return (
-    <div className="rounded-xl bg-white/[0.05] px-4 py-3">
+    <FrostedPanel className="px-4 py-3">
       <div className="text-xs text-muted-foreground">{label}</div>
       <div className="mt-1 text-lg font-semibold tabular-nums">
         {value != null ? value.toLocaleString() : "—"}
       </div>
-    </div>
+    </FrostedPanel>
   );
 }

@@ -7,6 +7,7 @@ import { api } from "@/lib/api";
 import { useActiveWorkspaceId } from "@/app/_components/workspace-context";
 import { Link } from "@/i18n/navigation";
 import { cn } from "@/lib/utils";
+import { GlassRim } from "@/components/ui/glass-rim";
 import { useAuth } from "./auth-provider";
 
 interface WalletLedgerData {
@@ -96,9 +97,10 @@ export function CreditsBadge({ className }: { className?: string }) {
       className={cn(
         className ??
           "flex h-9 items-center gap-1.5 rounded-full bg-white/[0.06] px-3.5 text-sm font-medium tabular-nums",
-        "transition-colors hover:bg-white/[0.1] focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
+        "relative backdrop-blur-md backdrop-saturate-150 transition-colors hover:bg-white/[0.1] focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
       )}
     >
+      <GlassRim />
       <IconBolt className="size-4 text-white/85" stroke={1.8} />
       {data != null ? data.available.toLocaleString() : "—"}
     </Link>
