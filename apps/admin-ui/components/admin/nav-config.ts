@@ -12,6 +12,7 @@ import {
   IconFileAnalytics,
   IconFlag,
   IconLayoutCards,
+  IconNews,
   IconPackage,
   IconPhoto,
   IconPlugConnected,
@@ -82,6 +83,9 @@ export const GLOBAL_NAV: GlobalNavEntry[] = [
     icon: IconPhoto,
     permission: "media.read",
   },
+  // TODO: gate behind "news.read" once the permission is registered in the role
+  // system. Left ungated for now so the new module is visible while it's built.
+  { key: "/news", href: "/news", label: "新闻资讯", icon: IconNews },
   {
     key: "/certificates",
     href: "/certificates",
