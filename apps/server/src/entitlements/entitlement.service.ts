@@ -5,6 +5,7 @@ import {
   EntitlementGrantStatus,
   type BillingMembershipPlan,
   type EntitlementGrant,
+  type Prisma,
 } from '@prisma/client';
 import type { AuthUser } from '../auth';
 import { PrismaService } from '../infra/db/db.module';
@@ -16,6 +17,7 @@ import {
   type EntitlementSnapshot,
   type KnownEntitlementPlanKey,
 } from './entitlement.types';
+import { DEFAULT_TEAM_SEAT_POLICY, type SeatPolicy } from './seat-policy';
 
 const PLAN_CONFIG = {
   free: {
@@ -311,6 +313,53 @@ export class EntitlementService {
         queuePriority: config.queuePriority,
         ...config.limits,
       },
+    };
+  }
+
+  /**
+   * Resolve a workspace's seat policy from its OWN active team plan — NOT the
+   * caller's personal plan (seats belong to the workspace subscription). Falls
+   * back to the owner-only default when there's no active team plan. The most
+   * generous active plan wins to be safe across upgrade/overlap windows.
+   */
+  async resolveWorkspaceSeatPolicy(
+    workspaceId: string,
+    opts?: { now?: string; tx?: Prisma.TransactionClient },
+  ): Promise<SeatPolicy> {
+    // Read on the caller's transaction when given, so seat enforcement resolves
+    // the policy and counts members against the SAME locked snapshot.
+    const db = opts?.tx ?? this.prisma;
+    const nowDate = parseNow(opts?.now);
+    const grants = await db.entitlementGrant.findMany({
+      where: {
+        subjectType: BillingSubjectType.workspace,
+        subjectId: workspaceId,
+        status: EntitlementGrantStatus.active,
+        startsAt: { lte: nowDate },
+        OR: [{ endsAt: null }, { endsAt: { gt: nowDate } }],
+      },
+      orderBy: [{ startsAt: 'desc' }, { createdAt: 'desc' }],
+      take: 5,
+    });
+    if (grants.length === 0) return DEFAULT_TEAM_SEAT_POLICY;
+
+    const plans = await db.billingMembershipPlan.findMany({
+      where: {
+        planKey: { in: grants.map((g) => g.planKey) },
+        status: BillingMembershipPlanStatus.active,
+        archivedAt: null,
+      },
+    });
+    if (plans.length === 0) return DEFAULT_TEAM_SEAT_POLICY;
+
+    const best = plans.reduce((a, b) =>
+      b.includedSeats > a.includedSeats ? b : a,
+    );
+    return {
+      planKey: best.planKey,
+      includedSeats: best.includedSeats,
+      maxSeats: best.maxSeats,
+      seatOverageAllowed: best.seatOverageAllowed,
     };
   }
 
