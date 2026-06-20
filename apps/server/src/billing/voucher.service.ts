@@ -22,6 +22,7 @@ import {
 import type { AuthUser } from '../auth';
 import { PrismaService } from '../infra/db/db.module';
 import { WalletLedgerService } from '../workspaces';
+import { promoCreditExpiresAt } from './credit-policy';
 import type {
   GenerateVouchersInput,
   ListVouchersQuery,
@@ -271,7 +272,7 @@ export class VoucherService {
       },
       creditGrant: {
         grantType: WalletCreditGrantType.campaign_reward,
-        expiresAt: null,
+        expiresAt: promoCreditExpiresAt(),
         metadata: { voucherId: voucher.id, voucherCode: voucher.code },
       },
     });

@@ -232,8 +232,15 @@ export class InternalPointsService {
           balanceKind: WalletBalanceKind.consumable,
         },
       },
+      select: { id: true },
+    });
+    if (!account) return 0n;
+    // Honest balance: drop any lapsed grants first.
+    await this.walletLedger.expireLapsedGrants(account.id);
+    const fresh = await this.prisma.walletAccount.findUnique({
+      where: { id: account.id },
       select: { availableBalance: true },
     });
-    return account?.availableBalance ?? 0n;
+    return fresh?.availableBalance ?? 0n;
   }
 }

@@ -364,15 +364,31 @@ export class BillingService {
       query.currency as WalletCurrencyType,
       workspaceId,
     );
-    const accounts = await this.prisma.walletAccount.findMany({
-      where: {
-        ownerType: scope.ownerType,
-        ownerId: scope.ownerId,
-        currency: query.currency as WalletCurrencyType,
-        balanceKind: query.balanceKind as WalletBalanceKind,
-      },
+    const accountWhere = {
+      ownerType: scope.ownerType,
+      ownerId: scope.ownerId,
+      currency: query.currency as WalletCurrencyType,
+      balanceKind: query.balanceKind as WalletBalanceKind,
+    };
+    let accounts = await this.prisma.walletAccount.findMany({
+      where: accountWhere,
       orderBy: [{ createdAt: 'asc' }],
     });
+    // Sweep lapsed credit grants so the displayed balance is honest (the spend
+    // path already refuses expired grants; this reflects expiry on the balance).
+    let swept = false;
+    for (const account of accounts) {
+      const { expired } = await this.walletLedger.expireLapsedGrants(
+        account.id,
+      );
+      if (expired > 0n) swept = true;
+    }
+    if (swept) {
+      accounts = await this.prisma.walletAccount.findMany({
+        where: accountWhere,
+        orderBy: [{ createdAt: 'asc' }],
+      });
+    }
     if (accounts.length === 0) {
       return {
         accounts: [],

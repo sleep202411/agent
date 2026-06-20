@@ -18,6 +18,7 @@ import {
 import type { AuthUser } from '../auth';
 import { PrismaService } from '../infra/db/db.module';
 import { WalletLedgerService } from '../workspaces';
+import { promoCreditExpiresAt } from './credit-policy';
 import type { UpdateCheckInConfigInput } from './dto';
 
 const CONFIG_KEY = 'default';
@@ -245,7 +246,7 @@ export class CheckInService {
       metadata: { checkInId: record.id, streakDay: record.streakDay },
       creditGrant: {
         grantType: WalletCreditGrantType.check_in_reward,
-        expiresAt: null,
+        expiresAt: promoCreditExpiresAt(),
         metadata: { checkInId: record.id, streakDay: record.streakDay },
       },
     });
