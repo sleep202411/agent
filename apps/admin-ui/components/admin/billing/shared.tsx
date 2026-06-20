@@ -920,7 +920,13 @@ export function reconciliationItemStatusLabel(value: string) {
 }
 
 export function promotionDiscountLabel(promotion: BillingPromotionRow) {
-  return `${promotion.percentOffBps / 100}%`;
+  if (promotion.amountOffMinor != null) {
+    return `-${formatMoneyMinor(
+      String(promotion.amountOffMinor),
+      promotion.amountOffCurrency ?? "USD"
+    )}`;
+  }
+  return `${(promotion.percentOffBps ?? 0) / 100}%`;
 }
 
 export function promotionScopeLabel(promotion: BillingPromotionRow) {
@@ -940,7 +946,7 @@ export function promotionScopeLabel(promotion: BillingPromotionRow) {
 }
 
 export function isInternalFreePromotion(promotion: BillingPromotionRow) {
-  return promotion.percentOffBps === 10000;
+  return promotion.percentOffBps != null && promotion.percentOffBps >= 10000;
 }
 
 export function grantLabel(price: BillingPriceRow) {

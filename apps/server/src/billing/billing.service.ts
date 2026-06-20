@@ -1535,7 +1535,9 @@ export class BillingService {
         name: input.name,
         description: input.description ?? null,
         status: input.status as BillingPromotionStatus,
-        percentOffBps: input.percentOffBps,
+        percentOffBps: input.percentOffBps ?? null,
+        amountOffMinor: input.amountOffMinor ?? null,
+        amountOffCurrency: input.amountOffCurrency ?? null,
         durationType: input.durationType as BillingPromotionDurationType,
         durationCount: input.durationCount ?? null,
         durationUnit: input.durationUnit ?? null,
@@ -1701,7 +1703,9 @@ export class BillingService {
         active:
           binding.promotion.status === BillingPromotionStatus.active &&
           !binding.promotion.archivedAt,
-        percentOffBps: binding.promotion.percentOffBps,
+        percentOffBps: binding.promotion.percentOffBps ?? undefined,
+        amountOffMinor: binding.promotion.amountOffMinor,
+        amountOffCurrency: binding.promotion.amountOffCurrency,
         durationType: binding.promotion.durationType,
         durationCount: binding.promotion.durationCount,
         durationUnit: binding.promotion.durationUnit,
@@ -4743,6 +4747,16 @@ export class BillingService {
       });
     }
     if (
+      promotion.amountOffMinor !== null &&
+      promotion.amountOffCurrency &&
+      promotion.amountOffCurrency !== input.price.currency
+    ) {
+      throw new BadRequestException({
+        code: 'BILLING_PROMOTION_CURRENCY_MISMATCH',
+        msg: 'Promotion code is not valid for this currency.',
+      });
+    }
+    if (
       promotion.maxRedemptions !== null &&
       promotion.redemptionCount >= promotion.maxRedemptions
     ) {
@@ -5975,6 +5989,8 @@ export class BillingService {
       description: promotion.description,
       status: promotion.status,
       percentOffBps: promotion.percentOffBps,
+      amountOffMinor: promotion.amountOffMinor,
+      amountOffCurrency: promotion.amountOffCurrency,
       durationType: promotion.durationType,
       durationCount: promotion.durationCount,
       durationUnit: promotion.durationUnit,
@@ -6246,7 +6262,12 @@ function calculatePromotionDiscount(
   promotion: BillingPromotion,
   subtotalAmountMinor: bigint,
 ): bigint {
-  const percentOffBps = BigInt(promotion.percentOffBps);
+  // Fixed-amount: capped at the subtotal (currency match is enforced upstream).
+  if (promotion.amountOffMinor != null) {
+    const amountOff = BigInt(promotion.amountOffMinor);
+    return amountOff > subtotalAmountMinor ? subtotalAmountMinor : amountOff;
+  }
+  const percentOffBps = BigInt(promotion.percentOffBps ?? 0);
   const discountAmountMinor = (subtotalAmountMinor * percentOffBps) / 10000n;
   if (discountAmountMinor > subtotalAmountMinor) {
     return subtotalAmountMinor;
@@ -6502,7 +6523,7 @@ function assertAdminPromotionProviderPolicy(
     );
   }
 
-  if (input.percentOffBps >= 10000) {
+  if ((input.percentOffBps ?? 0) >= 10000) {
     return;
   }
 

@@ -1399,7 +1399,12 @@ model BillingPromotion {
   status                BillingPromotionStatus       @default(draft)
   /// Percentage discount in basis points. 10000 means 100% off and can power
   /// free redemption codes while preserving order + fulfillment + ledger traceability.
-  percentOffBps         Int                          @map("percent_off_bps")
+  /// Exactly one of percentOffBps / amountOffMinor is set (DB CHECK + DTO refine).
+  percentOffBps         Int?                         @map("percent_off_bps")
+  /// Fixed-amount discount in minor units (e.g. cents). Requires amountOffCurrency;
+  /// only applies to orders in that currency. Mutually exclusive with percentOffBps.
+  amountOffMinor        Int?                         @map("amount_off_minor")
+  amountOffCurrency     String?                      @map("amount_off_currency") @db.VarChar(3)
   durationType          BillingPromotionDurationType @default(once) @map("duration_type")
   durationCount         Int?                         @map("duration_count")
   durationUnit          String?                      @map("duration_unit") @db.VarChar(16)

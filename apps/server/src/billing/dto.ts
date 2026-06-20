@@ -552,7 +552,9 @@ export const CreateAdminBillingPromotionSchema = z
     name: z.string().trim().min(2).max(160),
     description: z.string().trim().max(2000).optional(),
     status: BillingPromotionStatusSchema.default('draft'),
-    percentOffBps: z.coerce.number().int().min(1).max(10000),
+    percentOffBps: z.coerce.number().int().min(1).max(10000).optional(),
+    amountOffMinor: z.coerce.number().int().min(1).optional(),
+    amountOffCurrency: z.enum(['USD', 'SGD', 'CNY']).optional(),
     durationType: BillingPromotionDurationTypeSchema.default('once'),
     durationCount: z.coerce.number().int().min(1).max(120).optional(),
     durationUnit: z.enum(['day', 'week', 'month', 'year']).optional(),
@@ -577,6 +579,22 @@ export const CreateAdminBillingPromotionSchema = z
       .default([]),
   })
   .superRefine((value, ctx) => {
+    const hasPercent = value.percentOffBps != null;
+    const hasAmount = value.amountOffMinor != null;
+    if (hasPercent === hasAmount) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['percentOffBps'],
+        message: 'Provide exactly one of percentOffBps or amountOffMinor.',
+      });
+    }
+    if (hasAmount && !value.amountOffCurrency) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['amountOffCurrency'],
+        message: 'Fixed-amount promotions require a currency.',
+      });
+    }
     if (
       value.durationType === 'repeating' &&
       (!value.durationCount || !value.durationUnit)

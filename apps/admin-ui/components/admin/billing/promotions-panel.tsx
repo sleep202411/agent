@@ -109,7 +109,10 @@ export function BillingPromotionsPanel({
     const formEl = event.currentTarget;
     const form = new FormData(formEl);
     const provider = stringField(form, "provider");
+    const discountType = stringField(form, "discountType") || "percent";
     const percentOff = stringField(form, "percentOff");
+    const amountOff = stringField(form, "amountOff");
+    const amountOffCurrency = stringField(form, "amountOffCurrency");
     const appliesProductType = stringField(form, "appliesProductType");
     const maxRedemptions = stringField(form, "maxRedemptions");
     const maxRedemptionsPerUser = stringField(form, "maxRedemptionsPerUser");
@@ -132,7 +135,13 @@ export function BillingPromotionsPanel({
         name: stringField(form, "name"),
         description: stringField(form, "description") || undefined,
         status: stringField(form, "status"),
-        percentOffBps: percentOff ? Math.round(Number(percentOff) * 100) : undefined,
+        percentOffBps:
+          discountType === "percent" && percentOff
+            ? Math.round(Number(percentOff) * 100)
+            : undefined,
+        amountOffMinor:
+          discountType === "amount" && amountOff ? Math.round(Number(amountOff) * 100) : undefined,
+        amountOffCurrency: discountType === "amount" ? amountOffCurrency || undefined : undefined,
         durationType,
         durationCount:
           durationType === "repeating" && durationCount ? Number(durationCount) : undefined,
@@ -494,7 +503,9 @@ function CreatePromotionForm({
 }) {
   const [appliesProductType, setAppliesProductType] = useState("compute_point_pack");
   const [durationType, setDurationType] = useState("once");
+  const [discountType, setDiscountType] = useState("percent");
   const defaultProvider = siteKey === "cn" ? "wechat_pay" : "airwallex";
+  const defaultCurrency = siteKey === "cn" ? "CNY" : "USD";
   const [provider, setProvider] = useState(defaultProvider);
 
   function handleProductTypeChange(value: string) {
@@ -537,11 +548,35 @@ function CreatePromotionForm({
           <TextInput name="name" required placeholder="新用户促销" />
         </FormLabel>
         <FormLabel
-          label="折扣百分比"
-          help="输入 100 表示 100% off，可作为免费兑换券；输入 20 表示减免订单金额的 20%。"
+          label="折扣类型"
+          help="百分比=按订单比例减免；定额=固定金额减免（需指定币种，仅对该币种订单生效）。"
         >
-          <TextInput name="percentOff" required inputMode="decimal" placeholder="100" />
+          <Select name="discountType" value={discountType} onChange={setDiscountType}>
+            <option value="percent">百分比</option>
+            <option value="amount">定额减免</option>
+          </Select>
         </FormLabel>
+        {discountType === "percent" ? (
+          <FormLabel
+            label="折扣百分比"
+            help="输入 100 表示 100% off，可作为免费兑换券；输入 20 表示减免订单金额的 20%。"
+          >
+            <TextInput name="percentOff" required inputMode="decimal" placeholder="100" />
+          </FormLabel>
+        ) : (
+          <div className="grid grid-cols-2 gap-2">
+            <FormLabel label="减免金额" help="固定减免金额，按币种单位（例如 10 = 10 美元/元）。">
+              <TextInput name="amountOff" required inputMode="decimal" placeholder="10" />
+            </FormLabel>
+            <FormLabel label="币种" help="定额券只对该币种的订单生效。">
+              <Select name="amountOffCurrency" defaultValue={defaultCurrency}>
+                <option value="USD">USD 美元</option>
+                <option value="SGD">SGD 新元</option>
+                <option value="CNY">CNY 人民币</option>
+              </Select>
+            </FormLabel>
+          </div>
+        )}
         <FormLabel label="适用类型" help="限制兑换码只能用于某类商品；留空表示全部商品可用。">
           <Select
             name="appliesProductType"
@@ -714,7 +749,7 @@ function PromotionEditDialog({
         className="grid gap-3"
       >
         <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-[12px] leading-5 text-slate-600">
-          折扣 {promotion.percentOffBps / 100}% · {promotionScopeLabel(promotion)} ·{" "}
+          折扣 {promotionDiscountLabel(promotion)} · {promotionScopeLabel(promotion)} ·{" "}
           {promotion.durationType}（创建后不可更改）
         </div>
         <FormLabel label="名称" help="后台运营识别用名称。">

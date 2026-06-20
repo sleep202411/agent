@@ -142,7 +142,9 @@ export type BillingPromotionRow = {
   name: string;
   description: string | null;
   status: BillingPromotionStatus;
-  percentOffBps: number;
+  percentOffBps: number | null;
+  amountOffMinor: number | null;
+  amountOffCurrency: string | null;
   durationType: BillingPromotionDurationType;
   durationCount: number | null;
   durationUnit: string | null;
