@@ -5,6 +5,7 @@ import { AiGenerationModule } from './ai-generation/ai-generation.module';
 import { AssistantModule } from './assistant/assistant.module';
 import { AuthModule, AuthGuard } from './auth';
 import { BillingModule } from './billing';
+import { InternalModule } from './internal/internal.module';
 import { CertificatesModule } from './certificates/certificates.module';
 import { AlertingModule } from './common/alerting';
 import { RegionModule } from './common/region';
@@ -59,6 +60,7 @@ import { WorkspacesModule } from './workspaces';
     WorkspacesModule,
     SharingModule,
     BillingModule,
+    InternalModule,
     LegacyPointsModule,
     IpCommerceModule,
     DocumentsModule,

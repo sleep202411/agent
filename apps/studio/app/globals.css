@@ -60,7 +60,10 @@
  */
 :root {
   color-scheme: dark;
-  --background: oklch(0.178 0 0);
+  /* Page bg = the design-spec pageBg (DESIGN.md §2), matching the home (THEME.pageBg).
+     Was 0.178 (a lighter, out-of-spec ladder) which made studio pages read lighter
+     than the home. This is the darkest tier; surfaces (card/popover/secondary) lift above it. */
+  --background: oklch(0.13 0 0);
   --foreground: oklch(0.985 0 0);
   --card: oklch(0.215 0 0);
   --card-foreground: oklch(0.985 0 0);

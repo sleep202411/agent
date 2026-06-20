@@ -224,6 +224,23 @@ export class AzureBlobStorageService extends OutputStorageService {
     }
   }
 
+  // The SAS write-URL (createUploadUrl) can't set the blob's Cache-Control, so
+  // SAS-uploaded objects land without it and Front Door won't cache them. Set it
+  // after the bytes land. setHTTPHeaders REPLACES all blob HTTP headers, so
+  // re-assert Content-Type (no Content-Disposition is set on these uploads).
+  override async setCacheControl(
+    key: string,
+    cacheControl: string,
+    contentType?: string | null,
+  ): Promise<void> {
+    if (!this.client) return;
+    const block = this.client.getBlockBlobClient(key);
+    await block.setHTTPHeaders({
+      blobCacheControl: cacheControl,
+      ...(contentType ? { blobContentType: contentType } : {}),
+    });
+  }
+
   async restrictObject(ref: StorageObjectRef): Promise<RestrictObjectResult> {
     if (!this.service) {
       throw new ServiceUnavailableException(

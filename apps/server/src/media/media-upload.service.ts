@@ -373,6 +373,23 @@ export class MediaUploadService {
       });
     }
 
+    // 3b. Set Cache-Control so Front Door + browsers cache this object (the SAS
+    //     direct-upload path doesn't set it on the blob). Keys are content-
+    //     addressed → immutable. Best-effort: never block confirm on it.
+    try {
+      await this.storage.setCacheControl(
+        storageKey,
+        'public, max-age=31536000, immutable',
+        head.contentType ?? input.contentType,
+      );
+    } catch (err) {
+      this.logger.warn(
+        `confirmUpload setCacheControl failed key=${storageKey}: ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+      );
+    }
+
     // 4. Resolve the durable provider enum from the impl's own placement.
     const providerId = head.provider;
     const provider = providerId ? PROVIDER_TO_PRISMA[providerId] : undefined;

@@ -3,6 +3,7 @@ import {
   ConflictException,
   ForbiddenException,
   Injectable,
+  Logger,
   NotFoundException,
   ServiceUnavailableException,
 } from '@nestjs/common';
@@ -96,6 +97,7 @@ import type {
   HostedCheckoutResult,
 } from './providers/payment-provider';
 import { BillingLedgerService } from './billing-ledger.service';
+import { ReferralService } from './referral.service';
 
 type PriceWithItem = BillingPrice & { item: BillingCatalogItem };
 type PriceWithProviderBindings = PriceWithItem & {
@@ -250,12 +252,15 @@ type SubscriptionRenewalMatch = {
 
 @Injectable()
 export class BillingService {
+  private readonly logger = new Logger(BillingService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly providerRegistry: PaymentProviderRegistry,
     private readonly permissions: WorkspacePermissionService,
     private readonly walletLedger: WalletLedgerService,
     private readonly ledger: BillingLedgerService,
+    private readonly referrals: ReferralService,
   ) {}
 
   async listPrices(query: ListBillingPricesQuery) {
@@ -359,20 +364,47 @@ export class BillingService {
     query: ListWalletLedgerQuery,
     workspaceId?: string | null,
   ) {
+    // Lazy-qualify the viewer's referral so a referral bonus earned by their first
+    // paid order lands on this very balance refresh. Never let it break the read.
+    try {
+      await this.referrals.qualifyForReferee(String(user.userId));
+    } catch (err) {
+      this.logger.warn(
+        `referral qualify-on-read failed for user ${user.userId}: ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+      );
+    }
     const scope = await this.walletLedgerScope(
       user,
       query.currency as WalletCurrencyType,
       workspaceId,
     );
-    const accounts = await this.prisma.walletAccount.findMany({
-      where: {
-        ownerType: scope.ownerType,
-        ownerId: scope.ownerId,
-        currency: query.currency as WalletCurrencyType,
-        balanceKind: query.balanceKind as WalletBalanceKind,
-      },
+    const accountWhere = {
+      ownerType: scope.ownerType,
+      ownerId: scope.ownerId,
+      currency: query.currency as WalletCurrencyType,
+      balanceKind: query.balanceKind as WalletBalanceKind,
+    };
+    let accounts = await this.prisma.walletAccount.findMany({
+      where: accountWhere,
       orderBy: [{ createdAt: 'asc' }],
     });
+    // Sweep lapsed credit grants so the displayed balance is honest (the spend
+    // path already refuses expired grants; this reflects expiry on the balance).
+    let swept = false;
+    for (const account of accounts) {
+      const { expired } = await this.walletLedger.expireLapsedGrants(
+        account.id,
+      );
+      if (expired > 0n) swept = true;
+    }
+    if (swept) {
+      accounts = await this.prisma.walletAccount.findMany({
+        where: accountWhere,
+        orderBy: [{ createdAt: 'asc' }],
+      });
+    }
     if (accounts.length === 0) {
       return {
         accounts: [],
@@ -405,7 +437,25 @@ export class BillingService {
       take: query.limit,
     });
 
+    // The next credit grant to expire (for surfacing "X credits expire on DATE").
+    const nextExpiringGrant = await this.prisma.walletCreditGrant.findFirst({
+      where: {
+        accountId: { in: accounts.map((account) => account.id) },
+        status: WalletCreditGrantStatus.active,
+        availableAmount: { gt: 0n },
+        expiresAt: { not: null },
+      },
+      orderBy: { expiresAt: 'asc' },
+      select: { availableAmount: true, expiresAt: true },
+    });
+
     return {
+      nextExpiry: nextExpiringGrant
+        ? {
+            amount: nextExpiringGrant.availableAmount.toString(),
+            expiresAt: nextExpiringGrant.expiresAt!.toISOString(),
+          }
+        : null,
       accounts: accounts.map((account) => ({
         id: account.id,
         ownerType: account.ownerType,
@@ -1261,6 +1311,7 @@ export class BillingService {
           orders: price._count.orders,
           subscriptions: price._count.subscriptions,
         },
+        metadata: price.metadata,
         updatedAt: price.updatedAt.toISOString(),
       })),
     };
@@ -1535,7 +1586,9 @@ export class BillingService {
         name: input.name,
         description: input.description ?? null,
         status: input.status as BillingPromotionStatus,
-        percentOffBps: input.percentOffBps,
+        percentOffBps: input.percentOffBps ?? null,
+        amountOffMinor: input.amountOffMinor ?? null,
+        amountOffCurrency: input.amountOffCurrency ?? null,
         durationType: input.durationType as BillingPromotionDurationType,
         durationCount: input.durationCount ?? null,
         durationUnit: input.durationUnit ?? null,
@@ -1701,7 +1754,9 @@ export class BillingService {
         active:
           binding.promotion.status === BillingPromotionStatus.active &&
           !binding.promotion.archivedAt,
-        percentOffBps: binding.promotion.percentOffBps,
+        percentOffBps: binding.promotion.percentOffBps ?? undefined,
+        amountOffMinor: binding.promotion.amountOffMinor,
+        amountOffCurrency: binding.promotion.amountOffCurrency,
         durationType: binding.promotion.durationType,
         durationCount: binding.promotion.durationCount,
         durationUnit: binding.promotion.durationUnit,
@@ -4743,6 +4798,16 @@ export class BillingService {
       });
     }
     if (
+      promotion.amountOffMinor !== null &&
+      promotion.amountOffCurrency &&
+      promotion.amountOffCurrency !== input.price.currency
+    ) {
+      throw new BadRequestException({
+        code: 'BILLING_PROMOTION_CURRENCY_MISMATCH',
+        msg: 'Promotion code is not valid for this currency.',
+      });
+    }
+    if (
       promotion.maxRedemptions !== null &&
       promotion.redemptionCount >= promotion.maxRedemptions
     ) {
@@ -5929,6 +5994,7 @@ export class BillingService {
         orders: price._count.orders,
         subscriptions: price._count.subscriptions,
       },
+      metadata: price.metadata,
       updatedAt: price.updatedAt.toISOString(),
     };
   }
@@ -5975,6 +6041,8 @@ export class BillingService {
       description: promotion.description,
       status: promotion.status,
       percentOffBps: promotion.percentOffBps,
+      amountOffMinor: promotion.amountOffMinor,
+      amountOffCurrency: promotion.amountOffCurrency,
       durationType: promotion.durationType,
       durationCount: promotion.durationCount,
       durationUnit: promotion.durationUnit,
@@ -6246,7 +6314,12 @@ function calculatePromotionDiscount(
   promotion: BillingPromotion,
   subtotalAmountMinor: bigint,
 ): bigint {
-  const percentOffBps = BigInt(promotion.percentOffBps);
+  // Fixed-amount: capped at the subtotal (currency match is enforced upstream).
+  if (promotion.amountOffMinor != null) {
+    const amountOff = BigInt(promotion.amountOffMinor);
+    return amountOff > subtotalAmountMinor ? subtotalAmountMinor : amountOff;
+  }
+  const percentOffBps = BigInt(promotion.percentOffBps ?? 0);
   const discountAmountMinor = (subtotalAmountMinor * percentOffBps) / 10000n;
   if (discountAmountMinor > subtotalAmountMinor) {
     return subtotalAmountMinor;
@@ -6502,7 +6575,7 @@ function assertAdminPromotionProviderPolicy(
     );
   }
 
-  if (input.percentOffBps >= 10000) {
+  if ((input.percentOffBps ?? 0) >= 10000) {
     return;
   }
 

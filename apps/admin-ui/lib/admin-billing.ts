@@ -14,6 +14,11 @@ import type {
   AdminBillingOverviewData,
   AdminBillingPricesData,
   AdminBillingPromotionsData,
+  AdminBillingVouchersData,
+  AdminBillingCampaignsData,
+  CheckInConfigData,
+  ReferralConfigData,
+  AdminBillingReferralsData,
   AdminBillingProviderEventsData,
   AdminBillingReconciliationRunsData,
   AdminBillingRefundsData,
@@ -55,6 +60,45 @@ export async function fetchAdminBillingPromotions(
   return fetchAdminBillingResource(
     `/billing/promotions${toSearch(searchParams)}`,
     "促销优惠数据加载失败。"
+  );
+}
+
+export async function fetchAdminBillingVouchers(
+  searchParams?: Record<string, string | undefined>
+): Promise<AdminBillingLoadResult<AdminBillingVouchersData>> {
+  return fetchAdminBillingResource(
+    `/billing/vouchers${toSearch(searchParams)}`,
+    "兑换券数据加载失败。"
+  );
+}
+
+export async function fetchAdminBillingCreditCampaigns(
+  searchParams?: Record<string, string | undefined>
+): Promise<AdminBillingLoadResult<AdminBillingCampaignsData>> {
+  return fetchAdminBillingResource(
+    `/billing/credit-campaigns${toSearch(searchParams)}`,
+    "活动数据加载失败。"
+  );
+}
+
+export async function fetchAdminCheckInConfig(): Promise<
+  AdminBillingLoadResult<CheckInConfigData>
+> {
+  return fetchAdminBillingResource(`/billing/check-in/config`, "签到配置加载失败。");
+}
+
+export async function fetchAdminReferralConfig(): Promise<
+  AdminBillingLoadResult<ReferralConfigData>
+> {
+  return fetchAdminBillingResource(`/billing/referral/config`, "推荐配置加载失败。");
+}
+
+export async function fetchAdminReferrals(
+  searchParams?: Record<string, string | undefined>
+): Promise<AdminBillingLoadResult<AdminBillingReferralsData>> {
+  return fetchAdminBillingResource(
+    `/billing/referrals${toSearch(searchParams)}`,
+    "推荐记录加载失败。"
   );
 }
 

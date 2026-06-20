@@ -25,11 +25,13 @@ import {
 } from '@prisma/client';
 import type { AuthUser } from '../auth';
 import { DocumentsGateway } from '../documents/documents.gateway';
+import { EntitlementService } from '../entitlements/entitlement.service';
 import { PrismaService } from '../infra/db/db.module';
 import { NotificationService } from '../notification';
 import { UsersService } from '../users/users.service';
 import { PlatformAuditLogService } from '../workspaces';
 import { WorkspacePermissionService } from '../workspaces';
+import { acquireSeatLock, assertSeatAvailable } from './seat-guard';
 import type {
   AddMemberInput,
   AssignableRole,
@@ -53,6 +55,7 @@ export class WorkspaceMembersService {
     private readonly permissions: WorkspacePermissionService,
     private readonly audit: PlatformAuditLogService,
     private readonly docs: DocumentsGateway,
+    private readonly entitlements: EntitlementService,
   ) {}
 
   async list(workspaceId: string, viewer: AuthUser, cookie: string) {
@@ -123,6 +126,10 @@ export class WorkspaceMembersService {
     const role = ROLE_MAP[input.role];
     try {
       const member = await this.prisma.$transaction(async (tx) => {
+        // Seat lock first, then assert (policy + count resolved on this tx so
+        // they share one locked snapshot — see seat-guard).
+        await acquireSeatLock(tx, workspaceId);
+        await assertSeatAvailable(tx, workspaceId, this.entitlements);
         const m = await tx.workspaceMember.create({
           data: {
             workspaceId,

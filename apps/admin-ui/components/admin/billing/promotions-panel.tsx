@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/button";
 import { DataTable, type ColumnDef } from "@/components/ui/data-table";
 import { cn } from "@/lib/utils";
 import {
+  AdminDialog,
   ColumnHeader,
   ErrorBanner,
   FormLabel,
@@ -42,6 +43,17 @@ type BillingSiteKey = "global" | "cn";
 
 const emptyPromotions: AdminBillingPromotionsData = { items: [] };
 
+/** ISO timestamp -> a `datetime-local` input value in the operator's local tz. */
+function toDatetimeLocal(iso: string | null): string {
+  if (!iso) return "";
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return "";
+  const pad = (value: number) => String(value).padStart(2, "0");
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(
+    date.getHours()
+  )}:${pad(date.getMinutes())}`;
+}
+
 export function BillingPromotionsPanel({
   siteKey,
   siteLabel,
@@ -61,6 +73,7 @@ export function BillingPromotionsPanel({
   const [promotionQuery, setPromotionQuery] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(initialError ?? null);
+  const [editing, setEditing] = useState<BillingPromotionRow | null>(null);
 
   function promotionQueryString() {
     const params = new URLSearchParams();
@@ -91,12 +104,23 @@ export function BillingPromotionsPanel({
     event.preventDefault();
     setLoading(true);
     setError(null);
-    const form = new FormData(event.currentTarget);
+    // Capture the form element NOW: React nulls event.currentTarget after the
+    // handler's sync phase, so reading it after the await below would throw.
+    const formEl = event.currentTarget;
+    const form = new FormData(formEl);
     const provider = stringField(form, "provider");
+    const discountType = stringField(form, "discountType") || "percent";
     const percentOff = stringField(form, "percentOff");
+    const amountOff = stringField(form, "amountOff");
+    const amountOffCurrency = stringField(form, "amountOffCurrency");
     const appliesProductType = stringField(form, "appliesProductType");
     const maxRedemptions = stringField(form, "maxRedemptions");
     const maxRedemptionsPerUser = stringField(form, "maxRedemptionsPerUser");
+    const durationType = stringField(form, "durationType") || "once";
+    const durationCount = stringField(form, "durationCount");
+    const durationUnit = stringField(form, "durationUnit");
+    const startsAt = stringField(form, "startsAt");
+    const endsAt = stringField(form, "endsAt");
     const metadata =
       appliesProductType === "compute_point_pack"
         ? {
@@ -111,8 +135,19 @@ export function BillingPromotionsPanel({
         name: stringField(form, "name"),
         description: stringField(form, "description") || undefined,
         status: stringField(form, "status"),
-        percentOffBps: percentOff ? Math.round(Number(percentOff) * 100) : undefined,
-        durationType: "once",
+        percentOffBps:
+          discountType === "percent" && percentOff
+            ? Math.round(Number(percentOff) * 100)
+            : undefined,
+        amountOffMinor:
+          discountType === "amount" && amountOff ? Math.round(Number(amountOff) * 100) : undefined,
+        amountOffCurrency: discountType === "amount" ? amountOffCurrency || undefined : undefined,
+        durationType,
+        durationCount:
+          durationType === "repeating" && durationCount ? Number(durationCount) : undefined,
+        durationUnit: durationType === "repeating" && durationUnit ? durationUnit : undefined,
+        startsAt: startsAt || undefined,
+        endsAt: endsAt || undefined,
         appliesProductType: appliesProductType || undefined,
         maxRedemptions: maxRedemptions ? Number(maxRedemptions) : undefined,
         maxRedemptionsPerUser: maxRedemptionsPerUser ? Number(maxRedemptionsPerUser) : undefined,
@@ -126,7 +161,7 @@ export function BillingPromotionsPanel({
             ]
           : [],
       });
-      event.currentTarget.reset();
+      formEl.reset();
       await refreshPromotions();
     } catch (err) {
       setError(toErrorMessage(err));
@@ -140,6 +175,20 @@ export function BillingPromotionsPanel({
     setError(null);
     try {
       await mutateEnvelope(`/api/admin/billing/promotions/${promotionId}`, { status }, "PATCH");
+      await refreshPromotions();
+    } catch (err) {
+      setError(toErrorMessage(err));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleUpdatePromotion(promotionId: string, payload: Record<string, unknown>) {
+    setLoading(true);
+    setError(null);
+    try {
+      await mutateEnvelope(`/api/admin/billing/promotions/${promotionId}`, payload, "PATCH");
+      setEditing(null);
       await refreshPromotions();
     } catch (err) {
       setError(toErrorMessage(err));
@@ -185,9 +234,19 @@ export function BillingPromotionsPanel({
         onRefresh={refreshPromotions}
         onCreatePromotion={handleCreatePromotion}
         onPromotionStatus={handlePromotionStatus}
+        onEdit={setEditing}
         onSyncBinding={handleSyncPromotionBinding}
         siteKey={siteKey}
       />
+      {editing ? (
+        <PromotionEditDialog
+          key={editing.id}
+          promotion={editing}
+          loading={loading}
+          onClose={() => setEditing(null)}
+          onSubmit={handleUpdatePromotion}
+        />
+      ) : null}
     </div>
   );
 }
@@ -204,6 +263,7 @@ function PromotionsView({
   onRefresh,
   onCreatePromotion,
   onPromotionStatus,
+  onEdit,
   onSyncBinding,
   siteKey,
 }: {
@@ -218,6 +278,7 @@ function PromotionsView({
   onRefresh: () => void;
   onCreatePromotion: (event: React.FormEvent<HTMLFormElement>) => void;
   onPromotionStatus: (promotionId: string, status: BillingPromotionStatus) => void;
+  onEdit: (promotion: BillingPromotionRow) => void;
   onSyncBinding: (bindingId: string) => void;
   siteKey: BillingSiteKey;
 }) {
@@ -338,6 +399,14 @@ function PromotionsView({
               <Button
                 variant="outline"
                 size="sm"
+                disabled={loading}
+                onClick={() => onEdit(promotion)}
+              >
+                编辑
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
                 disabled={loading || promotion.status === "active"}
                 onClick={() => onPromotionStatus(promotion.id, "active")}
               >
@@ -356,8 +425,8 @@ function PromotionsView({
         },
       },
     ],
-    // onPromotionStatus / onSyncBinding are render-stable closures used only in
-    // onClick; the column defs only need to rebuild when loading toggles.
+    // onPromotionStatus / onEdit / onSyncBinding are render-stable closures used
+    // only in onClick; the column defs only need to rebuild when loading toggles.
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [loading]
   );
@@ -433,7 +502,10 @@ function CreatePromotionForm({
   siteKey: BillingSiteKey;
 }) {
   const [appliesProductType, setAppliesProductType] = useState("compute_point_pack");
+  const [durationType, setDurationType] = useState("once");
+  const [discountType, setDiscountType] = useState("percent");
   const defaultProvider = siteKey === "cn" ? "wechat_pay" : "airwallex";
+  const defaultCurrency = siteKey === "cn" ? "CNY" : "USD";
   const [provider, setProvider] = useState(defaultProvider);
 
   function handleProductTypeChange(value: string) {
@@ -476,11 +548,35 @@ function CreatePromotionForm({
           <TextInput name="name" required placeholder="新用户促销" />
         </FormLabel>
         <FormLabel
-          label="折扣百分比"
-          help="输入 100 表示 100% off，可作为免费兑换券；输入 20 表示减免订单金额的 20%。"
+          label="折扣类型"
+          help="百分比=按订单比例减免；定额=固定金额减免（需指定币种，仅对该币种订单生效）。"
         >
-          <TextInput name="percentOff" required inputMode="decimal" placeholder="100" />
+          <Select name="discountType" value={discountType} onChange={setDiscountType}>
+            <option value="percent">百分比</option>
+            <option value="amount">定额减免</option>
+          </Select>
         </FormLabel>
+        {discountType === "percent" ? (
+          <FormLabel
+            label="折扣百分比"
+            help="输入 100 表示 100% off，可作为免费兑换券；输入 20 表示减免订单金额的 20%。"
+          >
+            <TextInput name="percentOff" required inputMode="decimal" placeholder="100" />
+          </FormLabel>
+        ) : (
+          <div className="grid grid-cols-2 gap-2">
+            <FormLabel label="减免金额" help="固定减免金额，按币种单位（例如 10 = 10 美元/元）。">
+              <TextInput name="amountOff" required inputMode="decimal" placeholder="10" />
+            </FormLabel>
+            <FormLabel label="币种" help="定额券只对该币种的订单生效。">
+              <Select name="amountOffCurrency" defaultValue={defaultCurrency}>
+                <option value="USD">USD 美元</option>
+                <option value="SGD">SGD 新元</option>
+                <option value="CNY">CNY 人民币</option>
+              </Select>
+            </FormLabel>
+          </div>
+        )}
         <FormLabel label="适用类型" help="限制兑换码只能用于某类商品；留空表示全部商品可用。">
           <Select
             name="appliesProductType"
@@ -502,6 +598,39 @@ function CreatePromotionForm({
             </option>
           </Select>
         </FormLabel>
+        <FormLabel
+          label="时长类型"
+          help="一次性=单次抵扣；长期=持续有效；按周期重复=订阅按周期重复抵扣（需填周期数与单位）。"
+        >
+          <Select name="durationType" value={durationType} onChange={setDurationType}>
+            <option value="once">一次性</option>
+            <option value="forever">长期</option>
+            <option value="repeating">按周期重复</option>
+          </Select>
+        </FormLabel>
+        {durationType === "repeating" ? (
+          <div className="grid grid-cols-2 gap-2">
+            <FormLabel label="周期数" help="重复抵扣的周期数量，例如 3。">
+              <TextInput name="durationCount" inputMode="numeric" placeholder="3" />
+            </FormLabel>
+            <FormLabel label="周期单位" help="重复周期的时间单位。">
+              <Select name="durationUnit" defaultValue="month">
+                <option value="day">天</option>
+                <option value="week">周</option>
+                <option value="month">月</option>
+                <option value="year">年</option>
+              </Select>
+            </FormLabel>
+          </div>
+        ) : null}
+        <div className="grid grid-cols-2 gap-2">
+          <FormLabel label="生效时间" help="留空表示立即生效；按运营本地时区填写。">
+            <TextInput name="startsAt" type="datetime-local" />
+          </FormLabel>
+          <FormLabel label="结束时间" help="留空表示长期有效；结束后券码在结算时自动失效。">
+            <TextInput name="endsAt" type="datetime-local" />
+          </FormLabel>
+        </div>
         <div className="grid grid-cols-2 gap-2">
           <FormLabel label="总次数" help="全站最大核销次数。为空表示不限总次数。">
             <TextInput name="maxRedemptions" inputMode="numeric" placeholder="可选" />
@@ -542,5 +671,140 @@ function CreatePromotionForm({
         </Button>
       </form>
     </section>
+  );
+}
+
+// Edit an existing promotion. Only the fields the server's UpdateAdminBillingPromotion
+// DTO accepts are editable — discount %, code, and scope are write-once (changing a
+// live coupon's value/scope after issuance is unsafe), so they're shown read-only.
+function PromotionEditDialog({
+  promotion,
+  loading,
+  onClose,
+  onSubmit,
+}: {
+  promotion: BillingPromotionRow;
+  loading: boolean;
+  onClose: () => void;
+  onSubmit: (promotionId: string, payload: Record<string, unknown>) => void;
+}) {
+  const [name, setName] = useState(promotion.name);
+  const [description, setDescription] = useState(promotion.description ?? "");
+  const [status, setStatus] = useState<string>(promotion.status);
+  const [startsAt, setStartsAt] = useState(toDatetimeLocal(promotion.startsAt));
+  const [endsAt, setEndsAt] = useState(toDatetimeLocal(promotion.endsAt));
+  const [maxRedemptions, setMaxRedemptions] = useState(
+    promotion.maxRedemptions != null ? String(promotion.maxRedemptions) : ""
+  );
+  const [maxRedemptionsPerUser, setMaxRedemptionsPerUser] = useState(
+    promotion.maxRedemptionsPerUser != null ? String(promotion.maxRedemptionsPerUser) : ""
+  );
+
+  function buildPayload(): Record<string, unknown> {
+    return {
+      name: name.trim(),
+      description: description.trim() ? description.trim() : null,
+      status,
+      startsAt: startsAt ? new Date(startsAt).toISOString() : null,
+      endsAt: endsAt ? new Date(endsAt).toISOString() : null,
+      maxRedemptions: maxRedemptions ? Number(maxRedemptions) : null,
+      maxRedemptionsPerUser: maxRedemptionsPerUser ? Number(maxRedemptionsPerUser) : null,
+    };
+  }
+
+  return (
+    <AdminDialog
+      open
+      title={`编辑促销券 · ${promotion.code}`}
+      description="可调整名称、状态、生效窗口与核销上限。折扣比例与适用范围创建后不可更改。"
+      onClose={onClose}
+      footer={
+        <>
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={loading || !!promotion.archivedAt}
+            onClick={() => onSubmit(promotion.id, { archived: true })}
+          >
+            归档
+          </Button>
+          <Button variant="outline" size="sm" disabled={loading} onClick={onClose}>
+            取消
+          </Button>
+          <Button
+            size="sm"
+            disabled={loading}
+            onClick={() => onSubmit(promotion.id, buildPayload())}
+          >
+            保存
+          </Button>
+        </>
+      }
+    >
+      <form
+        onSubmit={(event) => {
+          event.preventDefault();
+          onSubmit(promotion.id, buildPayload());
+        }}
+        className="grid gap-3"
+      >
+        <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-[12px] leading-5 text-slate-600">
+          折扣 {promotionDiscountLabel(promotion)} · {promotionScopeLabel(promotion)} ·{" "}
+          {promotion.durationType}（创建后不可更改）
+        </div>
+        <FormLabel label="名称" help="后台运营识别用名称。">
+          <TextInput value={name} onChange={(event) => setName(event.target.value)} required />
+        </FormLabel>
+        <FormLabel label="状态" help="草稿不可用；启用后可核销；暂停保留历史但不允许新订单使用。">
+          <Select value={status} onChange={setStatus}>
+            <option value="draft">草稿</option>
+            <option value="active">启用</option>
+            <option value="paused">暂停</option>
+          </Select>
+        </FormLabel>
+        <div className="grid grid-cols-2 gap-2">
+          <FormLabel label="生效时间" help="留空表示立即生效。">
+            <TextInput
+              type="datetime-local"
+              value={startsAt}
+              onChange={(event) => setStartsAt(event.target.value)}
+            />
+          </FormLabel>
+          <FormLabel label="结束时间" help="留空表示长期有效。">
+            <TextInput
+              type="datetime-local"
+              value={endsAt}
+              onChange={(event) => setEndsAt(event.target.value)}
+            />
+          </FormLabel>
+        </div>
+        <div className="grid grid-cols-2 gap-2">
+          <FormLabel label="总次数" help="全站最大核销次数；留空表示不限。">
+            <TextInput
+              inputMode="numeric"
+              value={maxRedemptions}
+              onChange={(event) => setMaxRedemptions(event.target.value)}
+              placeholder="∞"
+            />
+          </FormLabel>
+          <FormLabel label="单用户" help="单个用户最多核销次数；留空表示不限。">
+            <TextInput
+              inputMode="numeric"
+              value={maxRedemptionsPerUser}
+              onChange={(event) => setMaxRedemptionsPerUser(event.target.value)}
+              placeholder="∞"
+            />
+          </FormLabel>
+        </div>
+        <FormLabel label="备注">
+          <TextInput
+            value={description}
+            onChange={(event) => setDescription(event.target.value)}
+            placeholder="内部备注，可选"
+          />
+        </FormLabel>
+        <button type="submit" className="hidden" aria-hidden tabIndex={-1} />
+      </form>
+    </AdminDialog>
   );
 }

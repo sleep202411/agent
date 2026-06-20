@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { getTranslations } from "next-intl/server";
+import { SectionHeading } from "@/components/ui/section-heading";
 import { CanvasProjectsGrid } from "./_components/projects-grid";
 
 export async function generateMetadata(): Promise<Metadata> {
@@ -10,9 +11,8 @@ export async function generateMetadata(): Promise<Metadata> {
 export default async function CanvasProjectsPage() {
   const t = await getTranslations("studioModes");
   return (
-    <main className="mx-auto w-full px-4 py-8 sm:px-6">
-      <h1 className="text-xl font-semibold">{t("canvas.title")}</h1>
-      <p className="mt-1 text-sm text-muted-foreground">{t("canvas.subtitle")}</p>
+    <main className="w-full px-6 py-8">
+      <SectionHeading as="h1" title={t("canvas.title")} subtitle={t("canvas.subtitle")} />
       <CanvasProjectsGrid />
     </main>
   );

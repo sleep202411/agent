@@ -25,6 +25,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { GlassRim } from "@/components/ui/glass-rim";
 
 function PillButton({ label, onClick }: { label: string; onClick: () => void }) {
   return (
@@ -101,7 +102,7 @@ export function AccountMenu() {
       <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
         <DropdownMenuTrigger
           aria-label={t("account")}
-          className="flex size-9 items-center justify-center overflow-hidden rounded-full bg-secondary text-white/80 transition-colors outline-none hover:bg-accent hover:text-white focus-visible:ring-2 focus-visible:ring-ring/50 data-[state=open]:bg-accent data-[state=open]:text-white"
+          className="relative flex size-9 items-center justify-center overflow-hidden rounded-full bg-secondary text-white/80 transition-colors outline-none hover:bg-accent hover:text-white focus-visible:ring-2 focus-visible:ring-ring/50 data-[state=open]:bg-accent data-[state=open]:text-white"
         >
           {user?.avatar ? (
             // eslint-disable-next-line @next/next/no-img-element
@@ -109,6 +110,7 @@ export function AccountMenu() {
           ) : (
             <IconUser className="size-5" stroke={1.8} />
           )}
+          <GlassRim />
         </DropdownMenuTrigger>
 
         <DropdownMenuContent align="end" sideOffset={8} className="w-80 p-3">

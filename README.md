@@ -6,22 +6,22 @@ Turborepo monorepo for FizzDragon Studio — AI-powered video content creation p
 
 ```
 apps/
-  web/            TanStack Start + Vite 前端（Studio + 主站）
-  server/         NestJS 后端（AI Agent + Assistant）
+  web/            主站 + Studio 入口（Next.js）
+  studio/         FizzStudio 画布应用（Next.js）
+  admin-ui/       内部运营后台（Next.js，中文）
+  server/         NestJS 后端（AI 生成 / Agent / Java 代理 / billing）
+  agent/          StoryOS 多智能体（Mastra）
+  mobile/         移动端（Expo / React Native）
 packages/
-  ui/             共享 UI 组件
-  eslint-config/  ESLint 配置
+  shared/             跨应用共享代码
+  ui/                 共享 UI 组件
+  eslint-config/      ESLint 配置
   typescript-config/  TypeScript 配置
 deploy/
-  docker-compose.yml       通用 Docker Compose
-  .env.production.com      生产 COM 环境变量
-  .env.production.cn       生产 CN 环境变量
-  .env.staging             测试环境变量
-  .env.local               本地环境变量
-  nginx/                   Nginx 配置
-  auto-update.sh           Podman 主机的自动滚动脚本（auto-deploy）
-  AUTO_DEPLOY.md           Pull-based 自动部署架构 + 一次性主机配置
-  DEPLOY.md                部署指南
+  helm/              Helm chart（ArgoCD 渲染部署 .com → AKS）
+  argocd/            ArgoCD Application 声明
+  deploy-com-aks.sh  .com 部署脚本（az acr build → bump values → ArgoCD）
+  docker-compose.yml · auto-update.sh · nginx/   ← 旧 ECS/podman 方案（legacy，待 CN→Aliyun 时清理）
 ```
 
 ## Getting Started
@@ -79,62 +79,41 @@ npx turbo build --filter=web
 npx turbo build --filter=server
 ```
 
-## Docker Deployment
+## Deployment
 
-部署架构（pull-based 自动滚动）：[`deploy/AUTO_DEPLOY.md`](deploy/AUTO_DEPLOY.md)
-日常构建 / 部署细节：[`deploy/DEPLOY.md`](deploy/DEPLOY.md)
+### `.com`（国际）— AKS + ArgoCD + `deploy-com-aks.sh`
 
-简版日常流程：
-
-- **staging**：push 到 `develop` → CI 自动构建 → 5 分钟内自动滚动
-- **prod-cn / prod-com**：GitHub Actions 手动 dispatch `Build & Push (production)` →
-  CI 构建 → 5 分钟内自动滚动（CI 不 SSH 任何服务器）
-
-详见 [`AUTO_DEPLOY.md`](deploy/AUTO_DEPLOY.md)。
-
-### 快速构建
+生产 `.com` 跑在 **Azure AKS**，用 **ArgoCD**（GitOps）部署：**git 是唯一真相**，
+ArgoCD 持续把集群对齐成 `main` 分支 `deploy/helm/fizzdragon/values.yaml` 里声明的镜像 tag。
 
 ```bash
-# 加载环境变量
-source apps/web/.env.production.com
+# 1) 把要上线的代码合到 main（ArgoCD 盯 main）
+git checkout main && git merge develop && git push
 
-# 构建镜像（Mac 需要 --platform linux/amd64）
-docker build --platform linux/amd64 -t fizzdragon-web-com \
-  --build-arg VITE_OSS_BASE_URL=$VITE_OSS_BASE_URL \
-  --build-arg SERVER_URL=$SERVER_URL \
-  --build-arg JAVA_STUDIO_URL=$JAVA_STUDIO_URL \
-  --build-arg JAVA_CONTENT_URL=$JAVA_CONTENT_URL \
-  -f apps/web/Dockerfile .
-
-docker build --platform linux/amd64 -t fizzdragon-server-com \
-  -f apps/server/Dockerfile .
-
-# 导出
-docker save fizzdragon-web-com fizzdragon-server-com | gzip > fizzdragon-com.tar.gz
+# 2) 在 main 上构建 + 上线
+deploy/deploy-com-aks.sh web server     # 只部指定服务（外科手术式）
+deploy/deploy-com-aks.sh all            # 全部：web studio admin-ui server agent
 ```
 
-### 服务器部署
+`deploy-com-aks.sh` 做的事：`az acr build` 用**不可变 git-sha** 打镜像 → push ACR →
+改 `values.yaml` 的 tag → commit/push → **ArgoCD 自动同步部署**。
 
-```bash
-# 上传到服务器
-scp fizzdragon-com.tar.gz deploy/docker-compose.yml deploy/.env.production.com root@<IP>:/opt/fizzdragon/platform/
+> ⚠️ **只 merge 到 main 不会部署**——ArgoCD 看的是 values.yaml 的镜像 tag，不是代码提交。
+> 必须跑 `deploy-com-aks.sh`（它改 tag），ArgoCD 才会动。
+>
+> ⚠️ **不要 `kubectl set image` / `helm upgrade` 直推**——ArgoCD `selfHeal` 会在几分钟内
+> 还原。部署只走 `deploy-com-aks.sh`（git 路径）。Helm 是底座（ArgoCD 渲染它），不手动 upgrade。
 
-# 服务器上启动
-cd /opt/fizzdragon/platform
-docker load < fizzdragon-com.tar.gz
-docker compose --env-file .env.production.com up -d
-```
+- 镜像仓库：ACR `acrfizzdragoncom.azurecr.io`
+- 集群：`aks-fizzdragon-com`（southeastasia），namespace `fizzdragon-com`
+- ArgoCD app：`fizzdragon-com`（auto-sync + prune + selfHeal）
+- 回滚：把 `values.yaml` 的 tag 改回上一个 good sha 并 push（ArgoCD 收敛），或 `git revert` 那次 bump
 
-### 多环境
+### `.cn`（中国）— 待迁 Aliyun
 
-使用同一个 `docker-compose.yml`，通过 `--env-file` 切换环境：
-
-```bash
-docker compose --env-file .env.production.com up -d   # COM 生产
-docker compose --env-file .env.production.cn up -d     # CN 生产
-docker compose --env-file .env.staging up -d           # 测试
-docker compose --env-file .env.local up -d             # 本地
-```
+CN 侧后续部署到 **Aliyun**（独立于 .com 的 AKS）。当前 `deploy/` 下的
+`docker-compose.yml` / `auto-update.sh` / `nginx/` 是**旧 ECS/podman 方案（已停用）**，
+待 CN→Aliyun 落地时一并清理 / 替换。
 
 ## Architecture
 
@@ -152,17 +131,203 @@ User → Nginx (443/HTTPS)
 ## Branch Strategy
 
 ```
-main              ← Production, merge via PR only
+main       ← 生产（.com prod）；合入后用 deploy-com-aks.sh 部署
   ↑
-develop           ← Staging, daily development
-  ↑
-feature/*         ← Feature branches, PR to develop
-hotfix/*          ← Hotfixes, PR to main + develop
+develop    ← 默认工作分支，日常直接在此提交（单人开发）
 ```
 
-### 开发流程
+### 开发 / 上线流程
 
-1. 从 develop 创建 feature 分支
-2. 开发完成后 PR to develop
-3. CI 通过后 merge 到 develop
-4. 验证没问题后，develop merge 到 main（部署 production）
+1. 日常在 `develop` 直接提交。
+2. 上线：`develop` → `main`。
+3. 在 `main` 上跑 `deploy/deploy-com-aks.sh`（构建 + 改 tag + push）→ ArgoCD 自动部署。
+
+> `main` = 生产；ArgoCD 盯 `main` 的 helm values。光合并不触发部署，必须跑 deploy 脚本——详见 [Deployment](#deployment)。
+
+---
+
+## fizzdragon.com → Azure Front Door 切换（进行中）
+
+> 范围：**仅国际侧 `.com`**。中国侧（`fizzdragon.fizzspace.cn` / 阿里云）本轮**完全不动**。
+> 原则：**只加不改**——新东西全部并行新建，老记录保留兜底；唯一"改现有记录"的是最后
+> 一步 apex 的 A/CNAME 翻转，且可秒级回滚（保留 ECS）。
+
+### 0. 已定决策
+
+- 媒体子域：**`media.fizzdragon.com`**（`cdn` / `images` 已被遗留占用，不复用）。
+- 本轮范围：**media + apex 一起**接入 Azure Front Door（Standard/Premium）。
+- 边缘证书：**首选 Front Door 托管证书**（apex 免费托管 + 自动续）。
+  **兜底/回源用已验证的通配符**：阿里云 CAS(qccsnj) 的 `*.fizzdragon.com`，SAN 含裸 apex
+  （`DNS:*.fizzdragon.com, DNS:fizzdragon.com`），链 WoTrus→Sectigo→USERTrust（受信，
+  `openssl verify` OK），到期 **2026-12-01**；本地 `/Users/isaac/workspace/fizzdragon/ssl/
+25080420_fizzdragon.com_nginx/{fizzdragon.com.pem,fizzdragon.com.key}`，key 已验证匹配。
+  → 万一 FD 给 apex 签托管证书卡验证，把这张当 BYOC 传 Key Vault 顶上；FD→AKS 回源那段也用它。
+  **续签成本 0**：上 FD 托管后这张到期自然退役（或换 cert-manager+LE 免费自动续）。
+- CN 不碰；大陆用户走 `.cn`（本轮不评估大陆经 FD 的体验，后续可单独实测）。
+
+### 1. 目标架构
+
+```
+境外用户
+  └─ Azure Front Door (Std/Premium)  [边缘: WAF + TLS 终止 + 缓存]
+       ├─ 域: fizzdragon.com / www.fizzdragon.com
+       │    ├─ /content/*  /studio/*  → 源: Java 后端 (java.fizzdragon.com)  [直透·不缓存]
+       │    ├─ /aurora/*              → 源: AKS server                       [直透·不缓存]
+       │    └─ /* (默认)              → 源: AKS web 应用                     [可缓存静态、HTML 不缓存]
+       └─ 域: media.fizzdragon.com    → 源: Azure Blob (fizzdragonblob)      [长 TTL·immutable]
+
+实时(.com): 客户端 negotiate 后直连 *.webpubsub.azure.com —— 不经过 Front Door，无需配置。
+```
+
+关键点：FD 用**路径路由 + 多源**自己做分流，所以 AKS ingress **不需要**再把 `/content`
+`/studio` 反代回 Java（避免"Java 回环"问题）。AKS 只当 `/aurora` 和 `/` 的源。
+
+### 2. 变量（执行前填好）
+
+```bash
+SUBSCRIPTION="<azure-subscription-id>"
+RG="<resource-group>"                      # FD 所在资源组
+FD_PROFILE="fizzdragon-com-afd"            # Front Door profile 名
+AKS_ORIGIN_HOST="20.198.160.91"            # AKS 公网 LB（/aurora、/ 的源）
+AKS_NS="fizzdragon-com"
+BLOB_ORIGIN="fizzdragonblob.blob.core.windows.net"   # 媒体源（按实际容器/端点核实）
+JAVA_ORIGIN="java.fizzdragon.com"          # /content /studio 的源（现 47.237.115.136）
+APEX="fizzdragon.com"
+```
+
+> ⚠️ 上面 IP/host/容器名以**线上实测为准**：`az aks show`、`kubectl get svc -n $AKS_NS`、
+> Blob 端点在 portal 里确认（是否启用 static website / 公共容器）。
+
+### 3. 缓存 / 路由策略表（最容易出事，先定死）
+
+| 路径 / 域                              | 源         | 缓存                   | 备注                                     |
+| -------------------------------------- | ---------- | ---------------------- | ---------------------------------------- |
+| `media.*` 公共图片/免费视频            | Blob       | **长 TTL + immutable** | key 内容寻址、不可变，可永久缓存         |
+| `media.*` 付费/签名视频(SAS)           | Blob       | **禁缓存(no-store)**   | SAS ~5min,缓存命中会变 403;或直接绕过 FD |
+| `/aurora/*`                            | AKS server | **禁缓存·直透**        | API + SSE + negotiate                    |
+| `/aurora/copilot/stream`、Produce 流   | AKS server | **禁缓存·禁缓冲**      | 长 SSE,见 §7 超时坑                      |
+| `/content/*` `/studio/*`               | Java       | **禁缓存·直透**        | 保留 cookie/header,手机硬编码靠这两条    |
+| `/` HTML / 应用入口                    | AKS web    | 不缓存或短 TTL         | 避免 ChunkLoad 类问题                    |
+| `/_next/static/*` 等带 hash 的前端资源 | AKS web    | 长 TTL                 | 文件名带 hash,可长缓存                   |
+
+**铁律**：任何带 `Set-Cookie` / `Authorization` / `satoken` 的响应,FD 不得缓存、不得改写
+cookie（否则 WS negotiate / 登录态出问题）。
+
+### 4. 执行阶段
+
+#### P0 — 前置
+
+1. 确认 AKS 全 pod healthy,`/health` 从 `20.198.160.91` 可应答。
+2. 选 FD 档：**Premium**（要 WAF 托管规则 + Private Link 回源）或 **Standard**（够用、便宜）。
+   本轮建议 Standard 起步,WAF 之后加。
+3. 决定 origin 回源 TLS：FD→Blob 用 Blob 端点 HTTPS;FD→AKS 用 `20.198.160.91` HTTPS,
+   origin host header 设为 `fizzdragon.com`,AKS ingress 需有 apex host 规则（见 P3）。
+
+#### P1 — 建 Front Door + 媒体源（纯增量,零影响）
+
+```bash
+az afd profile create -g $RG --profile-name $FD_PROFILE --sku Standard_AzureFrontDoor
+# media 端点
+az afd endpoint create -g $RG --profile-name $FD_PROFILE --endpoint-name media --enabled-state Enabled
+az afd origin-group create -g $RG --profile-name $FD_PROFILE --origin-group-name og-blob \
+  --probe-path / --probe-protocol Https --probe-request-type HEAD --probe-interval-in-seconds 120 \
+  --sample-size 4 --successful-samples-required 3 --additional-latency-in-milliseconds 50
+az afd origin create -g $RG --profile-name $FD_PROFILE --origin-group-name og-blob \
+  --origin-name blob --host-name $BLOB_ORIGIN --origin-host-header $BLOB_ORIGIN \
+  --https-port 443 --priority 1 --weight 1000 --enabled-state Enabled
+az afd route create -g $RG --profile-name $FD_PROFILE --endpoint-name media \
+  --route-name media-all --origin-group og-blob --supported-protocols Https \
+  --https-redirect Enabled --forwarding-protocol HttpsOnly --link-to-default-domain Enabled
+```
+
+此时 FD 默认域 `media-xxx.z01.azurefd.net` 可访问,但 `media.fizzdragon.com` 还没指过去,
+**线上零变化**。
+
+#### P2 — 媒体自定义域 + DNS（增量）+ 切 env
+
+1. 加自定义域 + FD 托管证书：
+
+```bash
+az afd custom-domain create -g $RG --profile-name $FD_PROFILE \
+  --custom-domain-name media-fizzdragon-com --host-name media.fizzdragon.com \
+  --minimum-tls-version TLS12 --certificate-type ManagedCertificate
+# 关联到 media 路由
+az afd route update -g $RG --profile-name $FD_PROFILE --endpoint-name media \
+  --route-name media-all --custom-domains media-fizzdragon-com
+```
+
+2. **DNS（qccsnj profile,新增,不动现有）**：按 FD 提示加
+   - `media` CNAME → `media-xxx.z01.azurefd.net`
+   - `_dnsauth.media`（或 FD 给的）TXT → 域名归属校验值
+3. `curl -I https://media.fizzdragon.com/<某public对象>` 验证命中 Blob + 200。
+4. 缓存规则：给 media 路由配 Rule Set——公共对象长 TTL,响应含 `Cache-Control: private`
+   的一律 bypass。
+5. **切 env（与 FD 就绪同步）**：
+   ```
+   MEDIA_PUBLIC_BASE_URL_AZURE_BLOB = https://media.fizzdragon.com
+   ```
+   切完所有新返回的图片/视频 URL 走 FD;**老 `cdn`/`images`/`*-sg` 全留着,旧 URL 仍可用**。
+6. **下架流程补一步 CDN purge**（`az afd endpoint purge`）,否则边缘还吐已下架内容。
+
+#### P3 — apex/www 接入 Front Door（路由 + 证书,still 不切 DNS）
+
+1. apex 端点 + 三个源组：
+
+```bash
+az afd endpoint create -g $RG --profile-name $FD_PROFILE --endpoint-name web --enabled-state Enabled
+# 源组: AKS (server + web 复用同一 LB,用路由分 /aurora vs /)；Java 单独源组
+az afd origin-group create ... --origin-group-name og-aks   # host 20.198.160.91
+az afd origin-group create ... --origin-group-name og-java  # host java.fizzdragon.com
+# 路由（按 §3 表）: /content* /studio* → og-java; /aurora* → og-aks(no-cache); /* → og-aks(web)
+```
+
+2. AKS ingress 加 **apex host 规则**（`deploy/helm/fizzdragon/values.yaml` 的 `ingress.entries`
+   加 `fizzdragon.com`,`/`→web、`/aurora`→server）,这样 FD 以 host header `fizzdragon.com`
+   回源能命中。
+3. 加自定义域 `fizzdragon.com` + `www.fizzdragon.com`,**FD 托管证书**（apex 免费托管）。
+4. www → 301 到 apex 的规则。
+5. 用 FD 默认域 + host 改写**预演**：`curl --resolve fizzdragon.com:443:<FD-IP> https://fizzdragon.com/...`
+   把 `/`、`/aurora/*`、`/content`、`/studio`、SSE、negotiate 全过一遍,**还没切 DNS**。
+
+#### P4 — apex DNS 翻转（唯一"改现有记录",可回滚）
+
+1. （可选但推荐）**大陆/多地实测** FD 端点可达 + 延迟可接受。
+2. DNS（qccsnj）：`@` 和 `www` 从 `47.84.16.145` → 指向 FD（CNAME flattening / FD 提供的
+   apex 接入方式;Alidns 用 显性 CNAME 到 FD 端点,apex 用 别名/隐性方式按 FD 文档）。TTL 保持 600s。
+3. **保留 ECS `47.84.16.145` 不下线**,出问题立刻把 A/CNAME 回退。
+4. 观察 24–48h（错误率、登录态、WS negotiate、SSE、手机 global 版真机跑一遍）再考虑退役 ECS。
+
+### 5. 验证清单（每阶段）
+
+- [ ] `curl -I https://media.fizzdragon.com/<public>` → 200 + 命中 Blob + 长 `Cache-Control`
+- [ ] 签名/SAS 媒体 → `private, no-store`,FD **未**缓存
+- [ ] `https://fizzdragon.com/` → 200,HTTP/2,证书有效（FD 托管,SAN 含 apex）
+- [ ] `/aurora/*` 正常 + 无缓存;negotiate 返回 `*.webpubsub.azure.com` 直连 URL
+- [ ] `/content` `/studio` → Java,cookie 正常
+- [ ] SSE `/aurora/copilot/stream` 不被 FD 4 分钟超时切断（见 §7）
+- [ ] 手机 global 版：登录 + 生成 + 看图/视频 全通
+- [ ] `www` → 301 → apex
+
+### 6. 回滚
+
+- 媒体：把 env `MEDIA_PUBLIC_BASE_URL_AZURE_BLOB` 改回原值（或置空）→ 立即回到原媒体源。
+- apex：DNS 回退到 `47.84.16.145`（ECS 仍在跑）→ 600s 内恢复。
+
+### 7. 必须现场核实 / 已知坑
+
+1. **FD 源响应超时上限 240s（4 分钟）**,而 `/aurora/copilot/stream` + Produce 可跑 30+ 分钟。
+   FD 对流式是"字节间空闲"计时,所以 **SSE 必须在 <240s 内有心跳/注释帧**才不会被切;
+   否则把这些长流路径**单独路由绕过 FD 直连 AKS**。**切前必测。**
+2. **WS 空闲超时**：`.com` 实时已走 Web PubSub 直连、不过 FD,所以这条本轮基本无忧;
+   只剩 negotiate 是普通 HTTP。
+3. **origin 回源 TLS**：FD→AKS 那一段要有效证书。FD 用户侧证书由 FD 托管;FD→origin 可用
+   AKS 现有具名证书 + origin host header,或 origin 走 HTTP（内网信任时）——二选一,核实。
+4. **Blob 公共访问**：确认媒体容器是公共读（公共对象走直连 URL 的前提),签名对象才走 SAS。
+5. **大陆**：本轮不评估;若日后要管大陆经 FD 的体验,单独实测,别和本轮混。
+
+### 8. 不在本轮（明确排除）
+
+- CN（`.cn` / 阿里云 / 备案）一切。
+- 遗留媒体子域 `cdn` / `images` / `*-sg`、散落后端（`vpn`/`aigc`/`api`/`business`…）、
+  WordPress/Mailchimp 记录——**全部保留不动**,确认彻底无流量后再单独退役。
+- `static/avatar/banner.fizzspace.cn` 在 `apps/web` 的 43 处硬编码——单独排期。

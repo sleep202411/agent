@@ -30,13 +30,82 @@ import {
   type ListMembershipPlansQuery,
   type ListBillingPricesQuery,
   type ListWalletLedgerQuery,
+  RedeemVoucherSchema,
+  type RedeemVoucherInput,
+  CreditCampaignParamsSchema,
+  type CreditCampaignParams,
+  BindReferralSchema,
+  type BindReferralInput,
 } from './dto';
+import { VoucherService } from './voucher.service';
+import { CampaignService } from './campaign.service';
+import { CheckInService } from './check-in.service';
+import { ReferralService } from './referral.service';
 
 type RawBodyRequest = Request & { rawBody?: Buffer };
 
 @Controller('billing')
 export class BillingController {
-  constructor(private readonly billing: BillingService) {}
+  constructor(
+    private readonly billing: BillingService,
+    private readonly vouchers: VoucherService,
+    private readonly campaigns: CampaignService,
+    private readonly checkIn: CheckInService,
+    private readonly referrals: ReferralService,
+  ) {}
+
+  @Get('referral/me')
+  async myReferral(@CurrentUser() user: AuthUser) {
+    return { code: 200, data: await this.referrals.getMyReferral(user) };
+  }
+
+  @Post('referral/bind')
+  async bindReferral(
+    @CurrentUser() user: AuthUser,
+    @Body(new ZodValidationPipe(BindReferralSchema))
+    body: BindReferralInput,
+  ) {
+    return { code: 200, data: await this.referrals.bindReferral(user, body) };
+  }
+
+  @Get('check-in/status')
+  async checkInStatus(@CurrentUser() user: AuthUser) {
+    return { code: 200, data: await this.checkIn.getStatus(user) };
+  }
+
+  @Post('check-in')
+  async dailyCheckIn(@CurrentUser() user: AuthUser) {
+    return { code: 200, data: await this.checkIn.checkIn(user) };
+  }
+
+  @Post('vouchers/redeem')
+  async redeemVoucher(
+    @CurrentUser() user: AuthUser,
+    @Body(new ZodValidationPipe(RedeemVoucherSchema))
+    body: RedeemVoucherInput,
+  ) {
+    return { code: 200, data: await this.vouchers.redeemVoucher(user, body) };
+  }
+
+  @Get('campaigns/active')
+  async listActiveCampaigns(@CurrentUser() user: AuthUser) {
+    return {
+      code: 200,
+      data: await this.campaigns.listActiveCampaignsForUser(user),
+    };
+  }
+
+  @Post('campaigns/:campaignId/claim')
+  async claimCampaign(
+    @CurrentUser() user: AuthUser,
+    @Param(new ZodValidationPipe(CreditCampaignParamsSchema))
+    params: CreditCampaignParams,
+  ) {
+    return {
+      code: 200,
+      data: await this.campaigns.claimCampaign(user, params.campaignId),
+    };
+  }
 
   @Get('prices')
   async listPrices(

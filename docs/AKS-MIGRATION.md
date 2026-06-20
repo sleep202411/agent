@@ -1,5 +1,10 @@
 # AKS Migration (`.com` only)
 
+> ⚠️ **历史迁移记录（2026-05）。** 迁移已完成；**当前部署方式以根 `README.md` 的
+> _Deployment_ 一节为准**（AKS + ArgoCD + `deploy/deploy-com-aks.sh`）。本文引用的
+> GitHub Actions 构建 workflow（`build-com-aks` / `build-staging` / `build-prod`）**已废弃删除**，
+> 改为本地 `az acr build` 经 deploy 脚本部署。下文保留作迁移过程参考。
+
 > Live working document. Updated as we go. Source of truth for resuming the
 > migration mid-stream — anyone (or any future session) should be able to read
 > this and pick up where we left off.

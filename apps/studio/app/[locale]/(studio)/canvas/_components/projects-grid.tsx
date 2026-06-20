@@ -16,6 +16,7 @@ import { toast } from "sonner";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { TileCard } from "@/components/ui/tile-card";
 import {
   Dialog,
   DialogContent,
@@ -125,38 +126,37 @@ export function CanvasProjectsGrid() {
 
   return (
     <>
-      <div className="mt-6 grid grid-cols-[repeat(auto-fill,minmax(240px,1fr))] gap-4">
+      <div className="mt-6 grid grid-cols-[repeat(auto-fill,minmax(240px,1fr))] gap-5">
+        {/* New canvas — soft tile + label below; the brand-red "+" is the
+            sanctioned primary CTA (DESIGN.md §2). */}
         <button
           type="button"
           onClick={onCreate}
           disabled={creating || !workspaceId}
           aria-busy={creating}
-          className="group rounded-xl bg-card p-2.5 text-left transition-colors hover:bg-accent disabled:hover:bg-card"
+          className="group block text-left outline-none disabled:cursor-not-allowed disabled:opacity-50"
         >
-          <div className="flex aspect-video items-center justify-center rounded-lg bg-muted">
-            {creating ? (
-              <IconLoader2 className="size-8 animate-spin text-white/70" stroke={1.5} />
-            ) : (
-              <IconPlus
-                className="size-8 text-white/40 transition-colors group-hover:text-white/70 group-disabled:text-white/30"
-                stroke={1.5}
-              />
-            )}
-          </div>
-          <div className="px-1.5 pt-3 pb-1.5">
-            <div className="text-sm font-medium">
-              {creating ? t("createCanvasLoading") : t("newCanvas")}
-            </div>
-            <div className="mt-0.5 text-xs text-muted-foreground">{t("startEmptyBoard")}</div>
-          </div>
+          <TileCard
+            title={creating ? t("createCanvasLoading") : t("newCanvas")}
+            meta={t("startEmptyBoard")}
+            media={
+              creating ? (
+                <IconLoader2 className="size-8 animate-spin text-white/70" stroke={1.5} />
+              ) : (
+                <span className="grid size-12 place-items-center rounded-full bg-[#E52227] text-white shadow-lg shadow-[#E52227]/25 transition group-hover:brightness-110">
+                  <IconPlus className="size-6" stroke={2} />
+                </span>
+              )
+            }
+          />
         </button>
 
         {projects === null ? (
           <>
             {[0, 1].map((key) => (
-              <div key={key} className="rounded-xl bg-card p-2.5">
-                <Skeleton className="aspect-video rounded-lg" />
-                <div className="px-1.5 pt-3 pb-1.5">
+              <div key={key} className="flex flex-col gap-2.5">
+                <Skeleton className="aspect-video rounded-2xl" />
+                <div>
                   <Skeleton className="h-4 w-28" />
                   <Skeleton className="mt-1.5 h-3 w-20" />
                 </div>
@@ -168,46 +168,45 @@ export function CanvasProjectsGrid() {
             <Link
               key={project.id}
               href={`/project/${project.id}`}
-              className="group relative rounded-xl bg-card p-2.5 transition-colors hover:bg-accent"
+              className="group block outline-none"
             >
-              <div className="flex aspect-video items-center justify-center rounded-lg bg-muted">
-                <IconArtboard
-                  className="size-8 text-white/25 transition-colors group-hover:text-white/40"
-                  stroke={1.5}
-                />
-              </div>
-              <div className="px-1.5 pt-3 pb-1.5">
-                <div className="truncate text-sm font-medium">{project.name}</div>
-                <div className="mt-0.5 text-xs text-muted-foreground">
-                  {timeAgo(project.updatedAt, t)}
-                </div>
-              </div>
-
-              <DropdownMenu>
-                <DropdownMenuTrigger
-                  aria-label={t("projectActions")}
-                  onClick={(event) => event.preventDefault()}
-                  className="absolute top-4 right-4 flex size-8 items-center justify-center rounded-full bg-popover/90 text-white/70 opacity-0 shadow-md backdrop-blur-xl transition-opacity outline-none hover:text-white group-hover:opacity-100 data-[state=open]:opacity-100"
-                >
-                  <IconDotsVertical className="size-4" stroke={1.8} />
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" onClick={(event) => event.preventDefault()}>
-                  <DropdownMenuItem
-                    onSelect={() => {
-                      setRenameValue(project.name);
-                      setRenaming(project);
-                    }}
-                  >
-                    <IconPencil className="size-4" stroke={1.8} />
-                    {t("rename")}
-                  </DropdownMenuItem>
-                  <DropdownMenuSeparator />
-                  <DropdownMenuItem variant="destructive" onSelect={() => setDeleting(project)}>
-                    <IconTrash className="size-4" stroke={1.8} />
-                    {tc("delete")}
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
+              <TileCard
+                title={project.name}
+                meta={timeAgo(project.updatedAt, t)}
+                media={
+                  <IconArtboard
+                    className="size-9 text-white/20 transition-colors group-hover:text-white/35"
+                    stroke={1.5}
+                  />
+                }
+                overlay={
+                  <DropdownMenu>
+                    <DropdownMenuTrigger
+                      aria-label={t("projectActions")}
+                      onClick={(event) => event.preventDefault()}
+                      className="absolute top-2 right-2 flex size-8 items-center justify-center rounded-full bg-black/50 text-white/70 opacity-0 shadow-md backdrop-blur-xl transition-opacity outline-none hover:text-white group-hover:opacity-100 data-[state=open]:opacity-100"
+                    >
+                      <IconDotsVertical className="size-4" stroke={1.8} />
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end" onClick={(event) => event.preventDefault()}>
+                      <DropdownMenuItem
+                        onSelect={() => {
+                          setRenameValue(project.name);
+                          setRenaming(project);
+                        }}
+                      >
+                        <IconPencil className="size-4" stroke={1.8} />
+                        {t("rename")}
+                      </DropdownMenuItem>
+                      <DropdownMenuSeparator />
+                      <DropdownMenuItem variant="destructive" onSelect={() => setDeleting(project)}>
+                        <IconTrash className="size-4" stroke={1.8} />
+                        {tc("delete")}
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                }
+              />
             </Link>
           ))
         )}

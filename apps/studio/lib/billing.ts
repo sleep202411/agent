@@ -69,6 +69,124 @@ export function createBillingCheckout(input: CreateBillingCheckoutInput) {
   return api.post<BillingCheckoutResult>("/aurora/billing/checkout", { data: input });
 }
 
+export interface RedeemVoucherResult {
+  granted: {
+    grantType: "compute_credits";
+    currency: string;
+    amount: string;
+    workspaceId: string;
+  };
+  alreadyRedeemed: boolean;
+}
+
+/**
+ * Redeem a 兑换券 / gift code for compute credits. The server credits the active
+ * user's personal-workspace pot and is idempotent (a retry never double-credits).
+ */
+export function redeemVoucher(code: string) {
+  return api.post<RedeemVoucherResult>("/aurora/billing/vouchers/redeem", {
+    data: { code },
+  });
+}
+
+export interface CheckInStatus {
+  enabled: boolean;
+  rewards: number[];
+  checkedInToday: boolean;
+  streak: number;
+  nextStreakDay: number;
+  nextReward: number;
+  todayReward: number;
+}
+
+/** Today's daily check-in status + the streak reward cycle. */
+export function getCheckInStatus() {
+  return api.get<CheckInStatus>("/aurora/billing/check-in/status");
+}
+
+export interface CheckInResult {
+  granted: RedeemVoucherResult["granted"];
+  streakDay: number;
+  alreadyCheckedIn: boolean;
+}
+
+/** Claim today's check-in (once per day; idempotent server-side). */
+export function dailyCheckIn() {
+  return api.post<CheckInResult>("/aurora/billing/check-in", { data: {} });
+}
+
+export interface ActiveCampaign {
+  id: string;
+  name: string;
+  description: string | null;
+  computeCreditAmount: number;
+  endsAt: string | null;
+  claimed: boolean;
+}
+
+/** Active, in-window free-credits campaigns + whether the caller already claimed. */
+export function listActiveCampaigns() {
+  return api.get<{ items: ActiveCampaign[] }>("/aurora/billing/campaigns/active");
+}
+
+export interface CampaignClaimResult {
+  granted: RedeemVoucherResult["granted"];
+  alreadyClaimed: boolean;
+}
+
+/** Claim a campaign's free credits (once per user; idempotent server-side). */
+export function claimCampaign(campaignId: string) {
+  return api.post<CampaignClaimResult>(`/aurora/billing/campaigns/${campaignId}/claim`, {
+    data: {},
+  });
+}
+
+// ────────────────────────────── Referrals ──────────────────────────────────
+// Invite a friend: both sides earn compute credits once the invitee makes their
+// first paid order. Rewards are snapshotted at bind time and credited lazily +
+// idempotently (qualification is re-checked whenever the user views this data).
+
+export type ReferralRewardStatus = "pending" | "rewarded" | "void";
+
+export interface ReferralInvitee {
+  refereeUserId: string;
+  status: ReferralRewardStatus;
+  reward: number;
+  createdAt: string;
+  rewardedAt: string | null;
+}
+
+export interface MyReferral {
+  code: string;
+  enabled: boolean;
+  referrerReward: number;
+  refereeReward: number;
+  /** The caller's own record as an invitee, if they have redeemed a code. */
+  redeemed: {
+    code: string;
+    status: ReferralRewardStatus;
+    reward: number;
+  } | null;
+  stats: {
+    invited: number;
+    rewarded: number;
+    creditsEarned: number;
+  };
+  invitees: ReferralInvitee[];
+}
+
+/** The caller's referral code, invitees, stats. Re-qualifies pending rewards. */
+export function getMyReferral() {
+  return api.get<MyReferral>("/aurora/billing/referral/me");
+}
+
+/** Redeem someone's referral code (once per user; not self; not re-referred). */
+export function bindReferralCode(code: string) {
+  return api.post<{ bound: boolean }>("/aurora/billing/referral/bind", {
+    data: { code },
+  });
+}
+
 // ───────────────────────── Compute-point recharge ──────────────────────────
 // Funds a compute_point (AI-generation) wallet — the caller's own, or a team's
 // shared pool when `workspaceId` is supplied (the server requires the billing

@@ -1,9 +1,12 @@
 import { cn } from "@/lib/utils";
+import { SectionHeading } from "@/components/ui/section-heading";
+import { FrostedPanel } from "@/components/ui/frosted-panel";
 
 /**
  * Shared primitives for the standalone Settings surface. Dark, monochrome,
- * borderless per DESIGN.md — separation by tone step (background → card →
- * secondary), never outlines.
+ * borderless per DESIGN.md — separation comes from the frosted rim-light
+ * (FrostedPanel) and tone steps, never outlines. The page header builds on the
+ * shared SectionHeading; panels/stat tiles build on the shared FrostedPanel.
  */
 
 export function PageHeader({
@@ -18,28 +21,33 @@ export function PageHeader({
   actions?: React.ReactNode;
 }) {
   return (
-    <div className="flex items-start justify-between gap-4">
-      <div className="min-w-0">
-        <div className="flex items-center gap-2">
-          <h1 className="text-xl font-semibold">{title}</h1>
-          {badge}
-        </div>
-        {subtitle && <p className="mt-1 text-sm text-muted-foreground">{subtitle}</p>}
-      </div>
-      {actions && <div className="flex shrink-0 items-center gap-2">{actions}</div>}
-    </div>
+    <SectionHeading
+      as="h1"
+      title={
+        badge ? (
+          <span className="flex items-center gap-2">
+            {title}
+            {badge}
+          </span>
+        ) : (
+          title
+        )
+      }
+      subtitle={subtitle}
+      action={actions}
+    />
   );
 }
 
 export function TeamBadge({ label }: { label: string }) {
   return (
-    <span className="rounded-full bg-secondary px-2 py-0.5 text-xs font-medium text-muted-foreground">
+    <span className="rounded-full bg-white/[0.06] px-2 py-0.5 text-xs font-medium text-muted-foreground">
       {label}
     </span>
   );
 }
 
-/** A titled card panel (the workhorse section container). */
+/** A titled section panel (the workhorse container) — a borderless FrostedPanel. */
 export function Panel({
   title,
   icon,
@@ -56,7 +64,7 @@ export function Panel({
   bodyClassName?: string;
 }) {
   return (
-    <section className={cn("rounded-2xl bg-card", className)}>
+    <FrostedPanel className={className}>
       {title && (
         <div className="flex items-center justify-between gap-3 px-5 pt-4 pb-2">
           <div className="flex items-center gap-2 text-sm font-medium">
@@ -67,7 +75,7 @@ export function Panel({
         </div>
       )}
       <div className={cn("px-5 pb-5", title ? "pt-1" : "pt-5", bodyClassName)}>{children}</div>
-    </section>
+    </FrostedPanel>
   );
 }
 
@@ -83,7 +91,7 @@ export function EmptyState({
 }) {
   return (
     <div className="flex flex-col items-center gap-2 px-6 py-10 text-center">
-      <span className="flex size-10 items-center justify-center rounded-full bg-secondary text-muted-foreground">
+      <span className="flex size-10 items-center justify-center rounded-full bg-white/[0.06] text-muted-foreground">
         {icon}
       </span>
       <p className="text-sm font-medium">{title}</p>
@@ -102,17 +110,17 @@ export function StatCard({
   hint?: string;
 }) {
   return (
-    <div className="rounded-2xl bg-card px-5 py-4">
+    <FrostedPanel className="px-5 py-4">
       <div className="text-sm text-muted-foreground">{label}</div>
       <div className="mt-1 text-2xl font-semibold tabular-nums">{value}</div>
       {hint && <div className="mt-0.5 text-xs text-muted-foreground">{hint}</div>}
-    </div>
+    </FrostedPanel>
   );
 }
 
-/** Inset hairline divider — the one permitted border (per DESIGN.md rule 4). */
+/** Inset divider — a low-alpha tone step, not a hard border (DESIGN.md rule 4). */
 export function RowDivider() {
-  return <div className="mx-5 h-px bg-border" />;
+  return <div className="mx-5 h-px bg-white/[0.06]" />;
 }
 
 /** Workspace/account avatar: the image when `src` is set, else an initial letter. */
@@ -136,7 +144,7 @@ export function LetterAvatar({
   return (
     <span
       className={cn(
-        "flex shrink-0 items-center justify-center rounded-full bg-secondary text-xs font-semibold",
+        "flex shrink-0 items-center justify-center rounded-full bg-white/[0.08] text-xs font-semibold",
         size,
         className
       )}

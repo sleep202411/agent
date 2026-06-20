@@ -50,6 +50,12 @@ import { emptyPrices } from "./types";
 
 type BillingSiteKey = "global" | "cn";
 
+/** The display "compare-at" / 原价 (minor units) a price card strikes through. */
+function originalAmountMinorOf(price: BillingPriceRow): string | null {
+  const value = price.metadata?.originalAmountMinor;
+  return typeof value === "string" && /^\d+$/.test(value) ? value : null;
+}
+
 export function BillingCatalogPanel({
   siteKey,
   siteLabel,
@@ -69,6 +75,7 @@ export function BillingCatalogPanel({
   const [createPriceDialogOpen, setCreatePriceDialogOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(initialError ?? null);
+  const [editingPrice, setEditingPrice] = useState<BillingPriceRow | null>(null);
 
   function priceQueryString() {
     const params = new URLSearchParams();
@@ -108,6 +115,7 @@ export function BillingCatalogPanel({
     const productType = stringField(form, "productType");
     const currency = stringField(form, "currency").toUpperCase();
     const amountMinor = stringField(form, "amountMinor");
+    const originalAmountMinor = stringField(form, "originalAmountMinor");
     const computeTopupMetadata =
       productType === "compute_point_pack"
         ? {
@@ -117,6 +125,12 @@ export function BillingCatalogPanel({
             entrySurface: "fizzstudio_compute_topup",
           }
         : undefined;
+    // Merge the display compare-at into priceMetadata (the studio strikes through
+    // metadata.originalAmountMinor); send undefined when nothing to set.
+    const priceMetadata = {
+      ...(computeTopupMetadata ?? {}),
+      ...(originalAmountMinor ? { originalAmountMinor } : {}),
+    };
     try {
       await mutateEnvelope("/api/admin/billing/prices", {
         itemCode: buildBillingItemCode({
@@ -137,7 +151,7 @@ export function BillingCatalogPanel({
         grantsWalletAmount: walletCurrency && walletAmount ? walletAmount : undefined,
         grantsPlanKey: planKey || undefined,
         grantDurationDays: grantDurationDays ? Number(grantDurationDays) : undefined,
-        priceMetadata: computeTopupMetadata,
+        priceMetadata: Object.keys(priceMetadata).length ? priceMetadata : undefined,
         providerBindings: provider
           ? [
               {
@@ -149,6 +163,29 @@ export function BillingCatalogPanel({
       });
       formElement.reset();
       setCreatePriceDialogOpen(false);
+      await refreshPrices();
+    } catch (err) {
+      setError(toErrorMessage(err));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  // Set / clear the display compare-at (原价) on an existing price. Sends the
+  // FULL merged metadata (updateAdminPrice replaces it) so other keys survive.
+  async function handleUpdatePriceCompareAt(price: BillingPriceRow, originalAmountMinor: string) {
+    setLoading(true);
+    setError(null);
+    const nextMetadata: Record<string, unknown> = { ...price.metadata };
+    if (originalAmountMinor) nextMetadata.originalAmountMinor = originalAmountMinor;
+    else delete nextMetadata.originalAmountMinor;
+    try {
+      await mutateEnvelope(
+        `/api/admin/billing/prices/${price.id}`,
+        { priceMetadata: nextMetadata },
+        "PATCH"
+      );
+      setEditingPrice(null);
       await refreshPrices();
     } catch (err) {
       setError(toErrorMessage(err));
@@ -195,10 +232,73 @@ export function BillingCatalogPanel({
         onCreateDialogOpenChange={setCreatePriceDialogOpen}
         onRefresh={() => void refreshPrices()}
         onCreatePrice={handleCreatePrice}
+        onEditPrice={setEditingPrice}
         onSyncBinding={handleSyncPriceBinding}
         siteKey={siteKey}
       />
+      {editingPrice ? (
+        <PriceCompareAtDialog
+          key={editingPrice.id}
+          price={editingPrice}
+          loading={loading}
+          onClose={() => setEditingPrice(null)}
+          onSubmit={handleUpdatePriceCompareAt}
+        />
+      ) : null}
     </div>
+  );
+}
+
+// Edit the display compare-at (原价) of an existing price. The real charge
+// (amountMinor) is immutable here — only the strike-through merchandising metadata.
+function PriceCompareAtDialog({
+  price,
+  loading,
+  onClose,
+  onSubmit,
+}: {
+  price: BillingPriceRow;
+  loading: boolean;
+  onClose: () => void;
+  onSubmit: (price: BillingPriceRow, originalAmountMinor: string) => void;
+}) {
+  const [value, setValue] = useState(originalAmountMinorOf(price) ?? "");
+
+  return (
+    <AdminDialog
+      open
+      title={`编辑原价 · ${price.name}`}
+      description="设置商城展示的划线原价（最小单位，与售价同单位）。清空则不显示折扣。售价本身不在此修改。"
+      onClose={onClose}
+      footer={
+        <>
+          <Button variant="outline" size="sm" disabled={loading} onClick={onClose}>
+            取消
+          </Button>
+          <Button size="sm" disabled={loading} onClick={() => onSubmit(price, value.trim())}>
+            保存
+          </Button>
+        </>
+      }
+    >
+      <div className="grid gap-3">
+        <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-[12px] leading-5 text-slate-600">
+          售价 {formatMoneyMinor(price.amountMinor, price.currency)}（{price.currency}
+          ，不可在此修改）
+        </div>
+        <FormLabel
+          label="原价 minor（划线价）"
+          help="留空表示不显示折扣。例如售价 2700、原价 3000 显示 -10%。"
+        >
+          <TextInput
+            inputMode="numeric"
+            value={value}
+            onChange={(event) => setValue(event.target.value)}
+            placeholder="可选"
+          />
+        </FormLabel>
+      </div>
+    </AdminDialog>
   );
 }
 
@@ -213,6 +313,7 @@ function CatalogView({
   onCreateDialogOpenChange,
   onRefresh,
   onCreatePrice,
+  onEditPrice,
   onSyncBinding,
   siteKey,
 }: {
@@ -226,6 +327,7 @@ function CatalogView({
   onCreateDialogOpenChange: (open: boolean) => void;
   onRefresh: () => void;
   onCreatePrice: (event: React.FormEvent<HTMLFormElement>) => void;
+  onEditPrice: (price: BillingPriceRow) => void;
   onSyncBinding: (bindingId: string) => void;
   siteKey: BillingSiteKey;
 }) {
@@ -254,9 +356,16 @@ function CatalogView({
           const price = row.original;
           return (
             <>
-              <p className="text-sm font-semibold text-slate-950">
-                {formatMoneyMinor(price.amountMinor, price.currency)}
-              </p>
+              <div className="flex items-baseline gap-1.5">
+                <p className="text-sm font-semibold text-slate-950">
+                  {formatMoneyMinor(price.amountMinor, price.currency)}
+                </p>
+                {originalAmountMinorOf(price) ? (
+                  <span className="text-[12px] text-slate-400 line-through">
+                    {formatMoneyMinor(originalAmountMinorOf(price)!, price.currency)}
+                  </span>
+                ) : null}
+              </div>
               <p className="text-[12px] text-slate-500">
                 {intervalLabel(price.interval)} · {price.subjectType}
               </p>
@@ -333,9 +442,20 @@ function CatalogView({
           );
         },
       },
+      {
+        id: "actions",
+        header: "操作",
+        enableSorting: false,
+        meta: { pin: "right" },
+        cell: ({ row }) => (
+          <Button variant="outline" size="sm" onClick={() => onEditPrice(row.original)}>
+            原价
+          </Button>
+        ),
+      },
     ],
-    // onSyncBinding is a render-stable closure used only in an onClick; the
-    // column defs never need to rebuild for it.
+    // onSyncBinding / onEditPrice are render-stable closures used only in onClick;
+    // the column defs never need to rebuild for them.
     // eslint-disable-next-line react-hooks/exhaustive-deps
     []
   );
@@ -580,6 +700,12 @@ function CreatePriceForm({
           />
         </FormLabel>
       </div>
+      <FormLabel
+        label="原价 minor（划线价，可选）"
+        help="商城展示的划线原价，最小单位（与金额 minor 同单位）。留空则不显示折扣；例如售价 2700、原价 3000 显示 -10%。"
+      >
+        <TextInput name="originalAmountMinor" inputMode="numeric" placeholder="可选" />
+      </FormLabel>
       <div className="grid grid-cols-2 gap-2">
         <FormLabel label="周期" help="一次性适用于积分包；月付/年付适用于会员订阅价格。">
           <Select name="interval" value={priceInterval} onChange={setPriceInterval}>

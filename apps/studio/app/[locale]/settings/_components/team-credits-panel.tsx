@@ -20,6 +20,8 @@ import {
   type ComputeTopupPrice,
 } from "@/lib/billing";
 import { FIELD_CONTROL } from "@/components/ui/field";
+import { Button } from "@/components/ui/button";
+import { FrostedPanel } from "@/components/ui/frosted-panel";
 import { Panel } from "./settings-ui";
 
 const errMsg = (e: unknown, fallback: string) =>
@@ -70,6 +72,14 @@ export function TeamCreditsPanel({ ws }: { ws: WorkspaceRef }) {
             {balance && balance.held > BigInt(0) && (
               <div className="mt-0.5 text-xs text-muted-foreground">
                 {t("reservedByRunningJobs", { amount: balance.held.toLocaleString() })}
+              </div>
+            )}
+            {balance?.nextExpiry && (
+              <div className="mt-0.5 text-xs text-amber-300/80">
+                {t("creditsExpireOn", {
+                  amount: balance.nextExpiry.amount.toLocaleString(),
+                  date: new Date(balance.nextExpiry.expiresAt).toLocaleDateString(),
+                })}
               </div>
             )}
           </div>
@@ -211,7 +221,7 @@ function RechargeControls({ workspaceId }: { workspaceId: string }) {
             />
           </div>
         </label>
-        <div className="hidden min-w-44 rounded-xl bg-white/[0.05] px-4 py-2.5 sm:block">
+        <FrostedPanel className="hidden min-w-44 px-4 py-2.5 sm:block">
           <span className="block text-xs text-muted-foreground">{t("estimatedCredits")}</span>
           <span className="mt-1 flex items-center gap-1 text-base font-semibold tabular-nums">
             <IconBolt className="size-4 text-white/85" stroke={1.8} />
@@ -222,14 +232,15 @@ function RechargeControls({ workspaceId }: { workspaceId: string }) {
               </span>
             )}
           </span>
-        </div>
-        <button
+        </FrostedPanel>
+        {/* Brand-red hero CTA via the sanctioned primary-cta Button variant
+            (DESIGN.md rule 3) — kept at hero size with the red glow shadow. */}
+        <Button
           type="button"
+          variant="primary-cta"
           disabled={!amountValid || busy}
           onClick={() => customMut.mutate()}
-          // Brand red as the hero CTA — sanctioned case-by-case accent (DESIGN.md
-          // rule 3), applied locally, never a token.
-          className="flex h-11 items-center gap-1.5 rounded-xl bg-[#E52227] px-5 text-sm font-semibold text-white shadow-lg shadow-[#E52227]/25 transition-colors hover:bg-[#c91e22] disabled:opacity-40"
+          className="h-11 gap-1.5 rounded-xl px-5 text-sm font-semibold shadow-lg shadow-[#E52227]/25 disabled:opacity-40"
         >
           {customMut.isPending ? (
             <IconLoader2 className="size-4 animate-spin" />
@@ -237,9 +248,9 @@ function RechargeControls({ workspaceId }: { workspaceId: string }) {
             <IconBolt className="size-4" stroke={1.9} />
           )}
           {t("recharge")}
-        </button>
+        </Button>
       </div>
-      <div className="rounded-xl bg-white/[0.05] px-4 py-2.5 sm:hidden">
+      <FrostedPanel className="px-4 py-2.5 sm:hidden">
         <span className="text-xs text-muted-foreground">{t("estimatedCredits")}</span>
         <span className="mt-1 flex items-center gap-1 text-base font-semibold tabular-nums">
           <IconBolt className="size-4 text-white/85" stroke={1.8} />
@@ -250,7 +261,7 @@ function RechargeControls({ workspaceId }: { workspaceId: string }) {
             </span>
           )}
         </span>
-      </div>
+      </FrostedPanel>
       <p className="text-xs text-muted-foreground">{t("secureCheckoutNote")}</p>
     </div>
   );

@@ -12,6 +12,7 @@ import {
   IconVideo,
 } from "@tabler/icons-react";
 import { Skeleton } from "@/components/ui/skeleton";
+import { FrostedPanel } from "@/components/ui/frosted-panel";
 import { api } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { useWorkspace } from "@/app/_components/workspace-context";
@@ -295,8 +296,8 @@ export default function AnalyticsSettingsPage() {
                 <span>{t("colStatus")}</span>
                 <span className="text-right">{t("colCredits")}</span>
               </div>
-              <div className="h-px bg-border" />
-              <div className="divide-y divide-border/70">
+              <div className="h-px bg-white/[0.06]" />
+              <div className="divide-y divide-white/[0.06]">
                 {jobRows.slice(0, 18).map((job) => (
                   <GenerationRow key={job.id} job={job} credits={settled.get(job.id)} />
                 ))}
@@ -325,7 +326,7 @@ function CreditDeltaCard({
   tone: "in" | "out";
 }) {
   return (
-    <div className="rounded-xl bg-white/[0.05] px-4 py-3">
+    <FrostedPanel className="px-4 py-3">
       <div className="text-xs text-muted-foreground">{label}</div>
       <div
         className={cn(
@@ -336,7 +337,7 @@ function CreditDeltaCard({
         <IconBolt className="size-4" stroke={1.8} />
         {formatBigint(value)}
       </div>
-    </div>
+    </FrostedPanel>
   );
 }
 

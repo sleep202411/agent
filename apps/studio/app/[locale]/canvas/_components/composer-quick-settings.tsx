@@ -11,7 +11,7 @@
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslations } from "next-intl";
-import { IconChevronDown } from "@tabler/icons-react";
+import { IconClock } from "@tabler/icons-react";
 import { cn } from "@/lib/utils";
 import {
   schemaFields,
@@ -42,14 +42,14 @@ export function ComposerQuickSettings({
   className?: string;
 }) {
   const t = useTranslations("canvasControls");
-  const [open, setOpen] = useState<string | null>(null);
+  const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 
-  // Close the open popover on an outside click.
+  // Close the popover on an outside click.
   useEffect(() => {
     if (!open) return;
     const onDown = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(null);
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
     };
     document.addEventListener("mousedown", onDown);
     return () => document.removeEventListener("mousedown", onDown);
@@ -66,11 +66,12 @@ export function ComposerQuickSettings({
 
   if (!model) return null;
   const fields = schemaFields(model);
-  // Order: size first, then the rest in schema order (resolution / quality / outputs).
+  // Order matches pollo: duration / resolution / quality / outputs first, then
+  // the size (aspect-ratio) grid last.
   const sizeField = fields.find(isSizeField);
   const quick = [
-    sizeField,
     ...fields.filter((f) => !isSizeField(f) && isQuickSettingField(f)),
+    sizeField,
   ].filter((f): f is SchemaFieldDescriptor => Boolean(f));
   if (quick.length === 0) return null;
 
@@ -91,57 +92,62 @@ export function ComposerQuickSettings({
       return <span>×{n}</span>;
     }
     const v = scalar(field.name) ?? field.default ?? field.enum?.[0];
-    return <span className="whitespace-nowrap">{String(v ?? "")}</span>;
+    const isDuration = /duration/i.test(field.name);
+    return (
+      <span className="flex items-center gap-1 whitespace-nowrap">
+        {isDuration ? <IconClock className="size-3.5 opacity-70" stroke={1.8} /> : null}
+        {String(v ?? "")}
+      </span>
+    );
   };
 
+  // pollo-style: ONE summary pill (params split by hairline dividers) that opens
+  // ONE combined popover with every quick setting as a labeled section — not a
+  // separate popover per chip.
   return (
-    <div ref={ref} className={cn("flex items-center gap-1.5", className)}>
-      {quick.map((field) => {
-        const isOpen = open === field.name;
-        return (
-          <div key={field.name} className="relative shrink-0">
-            <button
-              type="button"
-              aria-label={fieldLabel(field)}
-              onClick={() => setOpen(isOpen ? null : field.name)}
-              className={cn(
-                "flex h-10 items-center gap-1.5 rounded-xl px-3 text-sm font-medium text-foreground transition-colors",
-                isOpen ? "bg-white/[0.14]" : "bg-white/[0.08] hover:bg-white/[0.12]"
-              )}
-            >
-              {chipLabel(field)}
-              <IconChevronDown className="size-3.5 opacity-70" stroke={2} />
-            </button>
-            {isOpen && (
-              <div className="nodrag nowheel absolute bottom-full left-0 z-50 mb-2 w-[300px] origin-bottom-left rounded-2xl border border-white/[0.06] bg-[oklch(0.235_0_0_/_0.95)] p-3 shadow-2xl shadow-black/60 backdrop-blur-2xl duration-150 animate-in fade-in-0 zoom-in-95">
-                {isSizeField(field) ? (
-                  <>
-                    <div className="mb-2 text-sm text-muted-foreground">{fieldLabel(field)}</div>
-                    <SizeGrid
-                      field={field}
-                      value={String(scalar(field.name) ?? field.default ?? field.enum?.[0] ?? "")}
-                      onChange={(v) => {
-                        set(field.name, v);
-                        setOpen(null);
-                      }}
-                    />
-                  </>
-                ) : (
-                  <Field
+    <div ref={ref} className={cn("relative shrink-0", className)}>
+      <button
+        type="button"
+        aria-label="Generation settings"
+        onClick={() => setOpen((o) => !o)}
+        className={cn(
+          "flex h-10 items-center rounded-xl px-2.5 text-sm font-medium text-foreground transition-colors",
+          open ? "bg-white/[0.14]" : "bg-white/[0.08] hover:bg-white/[0.12]"
+        )}
+      >
+        {quick.map((field, i) => (
+          <span key={field.name} className="flex items-center">
+            {i > 0 ? <span aria-hidden className="mx-1.5 h-3.5 w-px bg-white/15" /> : null}
+            {chipLabel(field)}
+          </span>
+        ))}
+      </button>
+
+      {open && (
+        <div className="nodrag nowheel absolute bottom-full left-0 z-50 mb-2 w-[320px] origin-bottom-left rounded-2xl border border-white/[0.06] bg-[oklch(0.235_0_0_/_0.95)] p-4 shadow-2xl shadow-black/60 backdrop-blur-2xl duration-150 animate-in fade-in-0 zoom-in-95">
+          {quick.map((field, i) => (
+            <div key={field.name} className={i > 0 ? "mt-4" : ""}>
+              {isSizeField(field) ? (
+                <>
+                  {/* SizeGrid has no built-in label; the others self-label. */}
+                  <div className="mb-2 text-sm text-muted-foreground">{fieldLabel(field)}</div>
+                  <SizeGrid
                     field={field}
-                    value={scalar(field.name) ?? field.default}
-                    set={(v) => {
-                      set(field.name, v);
-                      // Enum picks are one-shot → close; the stepper stays open.
-                      if (!isOutputField(field)) setOpen(null);
-                    }}
+                    value={String(scalar(field.name) ?? field.default ?? field.enum?.[0] ?? "")}
+                    onChange={(v) => set(field.name, v)}
                   />
-                )}
-              </div>
-            )}
-          </div>
-        );
-      })}
+                </>
+              ) : (
+                <Field
+                  field={field}
+                  value={scalar(field.name) ?? field.default}
+                  set={(v) => set(field.name, v)}
+                />
+              )}
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

@@ -96,6 +96,7 @@ export type BillingPriceRow = {
   archivedAt: string | null;
   providerBindings: BillingProviderBinding[];
   counts: { orders: number; subscriptions: number };
+  metadata: Record<string, unknown>;
   updatedAt: string;
 };
 
@@ -142,7 +143,9 @@ export type BillingPromotionRow = {
   name: string;
   description: string | null;
   status: BillingPromotionStatus;
-  percentOffBps: number;
+  percentOffBps: number | null;
+  amountOffMinor: number | null;
+  amountOffCurrency: string | null;
   durationType: BillingPromotionDurationType;
   durationCount: number | null;
   durationUnit: string | null;
@@ -606,6 +609,92 @@ export type AdminBillingMembershipPlansData = {
 
 export type AdminBillingPromotionsData = {
   items: BillingPromotionRow[];
+};
+
+export type VoucherStatus = "active" | "redeemed" | "void" | "expired";
+export type VoucherGrantType = "compute_credits";
+
+export type VoucherRow = {
+  id: string;
+  code: string;
+  batchId: string | null;
+  grantType: VoucherGrantType;
+  computeCreditAmount: number | null;
+  status: VoucherStatus;
+  expiresAt: string | null;
+  redeemedByUserId: string | null;
+  redeemedWorkspaceId: string | null;
+  redeemedAt: string | null;
+  note: string | null;
+  createdAt: string;
+};
+
+export type AdminBillingVouchersData = {
+  items: VoucherRow[];
+};
+
+export type GenerateVouchersResult = {
+  batchId: string;
+  count: number;
+  vouchers: VoucherRow[];
+};
+
+export type CreditCampaignStatus = "draft" | "active" | "paused" | "ended";
+
+export type CreditCampaignRow = {
+  id: string;
+  name: string;
+  description: string | null;
+  computeCreditAmount: number;
+  status: CreditCampaignStatus;
+  startsAt: string | null;
+  endsAt: string | null;
+  maxClaims: number | null;
+  claimCount: number;
+  note: string | null;
+  createdAt: string;
+};
+
+export type AdminBillingCampaignsData = {
+  items: CreditCampaignRow[];
+};
+
+export type CheckInConfigData = {
+  enabled: boolean;
+  rewards: number[];
+  configured: boolean;
+  updatedAt: string | null;
+};
+
+export type ReferralConfigData = {
+  enabled: boolean;
+  referrerReward: number;
+  refereeReward: number;
+  configured: boolean;
+  updatedAt: string | null;
+};
+
+export type ReferralStatus = "pending" | "rewarded" | "void";
+
+export type ReferralRow = {
+  id: string;
+  referrerUserId: string;
+  refereeUserId: string;
+  code: string;
+  status: ReferralStatus;
+  referrerReward: number;
+  refereeReward: number;
+  rewardedAt: string | null;
+  createdAt: string;
+};
+
+export type AdminBillingReferralsData = {
+  items: ReferralRow[];
+  total: number;
+  stats: {
+    rewardedCount: number;
+    creditsPaid: number;
+  };
 };
 
 export type AdminBillingOrdersData = {

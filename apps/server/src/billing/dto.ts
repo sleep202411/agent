@@ -552,7 +552,9 @@ export const CreateAdminBillingPromotionSchema = z
     name: z.string().trim().min(2).max(160),
     description: z.string().trim().max(2000).optional(),
     status: BillingPromotionStatusSchema.default('draft'),
-    percentOffBps: z.coerce.number().int().min(1).max(10000),
+    percentOffBps: z.coerce.number().int().min(1).max(10000).optional(),
+    amountOffMinor: z.coerce.number().int().min(1).optional(),
+    amountOffCurrency: z.enum(['USD', 'SGD', 'CNY']).optional(),
     durationType: BillingPromotionDurationTypeSchema.default('once'),
     durationCount: z.coerce.number().int().min(1).max(120).optional(),
     durationUnit: z.enum(['day', 'week', 'month', 'year']).optional(),
@@ -577,6 +579,22 @@ export const CreateAdminBillingPromotionSchema = z
       .default([]),
   })
   .superRefine((value, ctx) => {
+    const hasPercent = value.percentOffBps != null;
+    const hasAmount = value.amountOffMinor != null;
+    if (hasPercent === hasAmount) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['percentOffBps'],
+        message: 'Provide exactly one of percentOffBps or amountOffMinor.',
+      });
+    }
+    if (hasAmount && !value.amountOffCurrency) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['amountOffCurrency'],
+        message: 'Fixed-amount promotions require a currency.',
+      });
+    }
     if (
       value.durationType === 'repeating' &&
       (!value.durationCount || !value.durationUnit)
@@ -630,6 +648,128 @@ export const UpsertAdminBillingPromotionProviderBindingSchema = z.object({
 export type UpsertAdminBillingPromotionProviderBindingInput = z.infer<
   typeof UpsertAdminBillingPromotionProviderBindingSchema
 >;
+
+// --- Vouchers (兑换券 / redemption codes) ----------------------------------
+
+export const GenerateVouchersSchema = z
+  .object({
+    count: z.coerce.number().int().min(1).max(1000),
+    grantType: z.enum(['compute_credits']).default('compute_credits'),
+    computeCreditAmount: z.coerce.number().int().min(1).optional(),
+    expiresAt: z.coerce.date().optional(),
+    codePrefix: z
+      .string()
+      .trim()
+      .min(1)
+      .max(12)
+      .regex(/^[A-Za-z0-9]+$/, 'Prefix must be alphanumeric.')
+      .optional(),
+    note: z.string().trim().max(500).optional(),
+  })
+  .superRefine((value, ctx) => {
+    if (value.grantType === 'compute_credits' && !value.computeCreditAmount) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['computeCreditAmount'],
+        message: 'Compute-credit vouchers require a credit amount.',
+      });
+    }
+  });
+export type GenerateVouchersInput = z.infer<typeof GenerateVouchersSchema>;
+
+export const ListVouchersQuerySchema = z.object({
+  status: z.enum(['active', 'redeemed', 'void', 'expired']).optional(),
+  batchId: z.string().uuid().optional(),
+  q: z.string().trim().max(64).optional(),
+});
+export type ListVouchersQuery = z.infer<typeof ListVouchersQuerySchema>;
+
+export const RedeemVoucherSchema = z.object({
+  code: z.string().trim().min(3).max(40),
+});
+export type RedeemVoucherInput = z.infer<typeof RedeemVoucherSchema>;
+
+// --- Credit campaigns (claimable free-credits giveaway) -------------------
+
+export const CreateCreditCampaignSchema = z
+  .object({
+    name: z.string().trim().min(2).max(160),
+    description: z.string().trim().max(2000).optional(),
+    computeCreditAmount: z.coerce.number().int().min(1),
+    status: z.enum(['draft', 'active', 'paused', 'ended']).default('draft'),
+    startsAt: z.coerce.date().optional(),
+    endsAt: z.coerce.date().optional(),
+    maxClaims: z.coerce.number().int().min(1).optional(),
+    note: z.string().trim().max(500).optional(),
+  })
+  .superRefine((value, ctx) => {
+    if (value.startsAt && value.endsAt && value.endsAt <= value.startsAt) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['endsAt'],
+        message: 'Campaign end time must be after start time.',
+      });
+    }
+  });
+export type CreateCreditCampaignInput = z.infer<
+  typeof CreateCreditCampaignSchema
+>;
+
+export const ListCreditCampaignsQuerySchema = z.object({
+  status: z.enum(['draft', 'active', 'paused', 'ended']).optional(),
+});
+export type ListCreditCampaignsQuery = z.infer<
+  typeof ListCreditCampaignsQuerySchema
+>;
+
+export const UpdateCreditCampaignStatusSchema = z.object({
+  status: z.enum(['draft', 'active', 'paused', 'ended']),
+});
+export type UpdateCreditCampaignStatusInput = z.infer<
+  typeof UpdateCreditCampaignStatusSchema
+>;
+
+export const CreditCampaignParamsSchema = z.object({
+  campaignId: z.string().uuid(),
+});
+export type CreditCampaignParams = z.infer<typeof CreditCampaignParamsSchema>;
+
+// --- Daily check-in (每日签到) --------------------------------------------
+
+export const UpdateCheckInConfigSchema = z.object({
+  enabled: z.coerce.boolean(),
+  /** The streak reward cycle (credits by day); a 1-length cycle = flat reward. */
+  rewards: z
+    .array(z.coerce.number().int().min(1).max(1_000_000))
+    .min(1)
+    .max(31),
+});
+export type UpdateCheckInConfigInput = z.infer<
+  typeof UpdateCheckInConfigSchema
+>;
+
+// --- Referrals (推荐有礼) ---------------------------------------------------
+
+export const UpdateReferralConfigSchema = z.object({
+  enabled: z.coerce.boolean(),
+  /** Credits granted to the inviter when an invitee makes their first paid order. */
+  referrerReward: z.coerce.number().int().min(0).max(1_000_000),
+  /** Credits granted to the invitee on that same qualifying purchase. */
+  refereeReward: z.coerce.number().int().min(0).max(1_000_000),
+});
+export type UpdateReferralConfigInput = z.infer<
+  typeof UpdateReferralConfigSchema
+>;
+
+export const BindReferralSchema = z.object({
+  code: z.string().trim().min(4).max(32),
+});
+export type BindReferralInput = z.infer<typeof BindReferralSchema>;
+
+export const ListReferralsQuerySchema = z.object({
+  status: z.enum(['pending', 'rewarded', 'void']).optional(),
+});
+export type ListReferralsQuery = z.infer<typeof ListReferralsQuerySchema>;
 
 export const ListAdminBillingOrdersQuerySchema = z.object({
   q: z.string().trim().min(1).max(120).optional(),

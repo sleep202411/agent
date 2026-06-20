@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { ConflictException, Injectable } from '@nestjs/common';
 import {
   Prisma,
@@ -113,6 +114,11 @@ export class WalletLedgerService {
       });
     }
 
+    // Sweep lapsed grants first so the denormalized balance is honest before the
+    // admission check (a stale-inflated balance would admit a spend the FIFO
+    // consume then can't fulfill). No-op + cheap when nothing has lapsed.
+    await this.expireLapsedGrants(input.accountId);
+
     return this.prisma.$transaction(async (tx) => {
       const existing = await tx.walletTransaction.findUnique({
         where: { idempotencyKey: input.idempotencyKey },
@@ -212,6 +218,112 @@ export class WalletLedgerService {
       });
 
       return { transaction, entry, account: updated, deduped: false };
+    });
+  }
+
+  /**
+   * Sweep lapsed credit grants for an account: any active grant past its
+   * expiresAt with availableAmount > 0 is expired — an `expire` ledger entry is
+   * posted, the grant's remaining available moves to expiredAmount, and the
+   * account's denormalized availableBalance is decremented to match. This is
+   * what makes credit expiry real on the balance (the spend path already refuses
+   * expired grants). Idempotent (a re-run finds nothing), advisory-locked, and
+   * cheap: a pre-check means reads never write unless something actually lapsed.
+   */
+  async expireLapsedGrants(accountId: string): Promise<{ expired: bigint }> {
+    const now = new Date();
+    const pending = await this.prisma.walletCreditGrant.findFirst({
+      where: {
+        accountId,
+        status: WalletCreditGrantStatus.active,
+        availableAmount: { gt: 0n },
+        expiresAt: { not: null, lte: now },
+      },
+      select: { id: true },
+    });
+    if (!pending) return { expired: 0n };
+
+    return this.prisma.$transaction(async (tx) => {
+      await tx.$executeRaw`
+        SELECT pg_advisory_xact_lock(hashtext(${`wallet:account:${accountId}`})::bigint)
+      `;
+      const grants = await tx.walletCreditGrant.findMany({
+        where: {
+          accountId,
+          status: WalletCreditGrantStatus.active,
+          availableAmount: { gt: 0n },
+          expiresAt: { not: null, lte: now },
+        },
+        orderBy: { id: 'asc' },
+      });
+      if (grants.length === 0) return { expired: 0n };
+
+      const account = await tx.walletAccount.findUniqueOrThrow({
+        where: { id: accountId },
+      });
+      const transaction = await tx.walletTransaction.create({
+        data: {
+          status: WalletTransactionStatus.posted,
+          sourceType: 'credit_expiry',
+          sourceId: accountId,
+          idempotencyKey: `credit_expiry:${accountId}:${randomUUID()}`,
+          workspaceId:
+            account.ownerType === WalletOwnerType.workspace
+              ? account.ownerId
+              : null,
+          description: 'Credit grant expiry sweep',
+          metadata: {},
+        },
+      });
+
+      let running = account.availableBalance;
+      let total = 0n;
+      for (const grant of grants) {
+        const amount = grant.availableAmount;
+        running -= amount;
+        total += amount;
+        const entry = await tx.walletLedgerEntry.create({
+          data: {
+            transactionId: transaction.id,
+            accountId,
+            entryType: WalletLedgerEntryType.expire,
+            currency: account.currency,
+            balanceKind: account.balanceKind,
+            amount,
+            availableDelta: -amount,
+            heldDelta: 0n,
+            availableBalanceAfter: running,
+            heldBalanceAfter: account.heldBalance,
+            reason: 'credit_grant_expired',
+          },
+        });
+        await tx.walletCreditAllocation.create({
+          data: {
+            grantId: grant.id,
+            transactionId: transaction.id,
+            ledgerEntryId: entry.id,
+            amount,
+            availableDelta: -amount,
+            heldDelta: 0n,
+            consumedDelta: 0n,
+            expiredDelta: amount,
+            reversedDelta: 0n,
+          },
+        });
+        await tx.walletCreditGrant.update({
+          where: { id: grant.id },
+          data: {
+            availableAmount: 0n,
+            expiredAmount: grant.expiredAmount + amount,
+            status: WalletCreditGrantStatus.expired,
+          },
+        });
+      }
+      await tx.walletAccount.update({
+        where: { id: accountId },
+        data: { availableBalance: running, version: { increment: 1 } },
+      });
+      return { expired: total };
     });
   }
 }

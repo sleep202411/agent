@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { getTranslations } from "next-intl/server";
+import { SectionHeading } from "@/components/ui/section-heading";
 import { WorkspaceRemount } from "@/app/_components/workspace-remount";
 import { ImageStudio } from "./_components/image-studio";
 
@@ -11,9 +12,8 @@ export async function generateMetadata(): Promise<Metadata> {
 export default async function ImagesPage() {
   const t = await getTranslations("studioModes");
   return (
-    <main className="mx-auto w-full px-4 py-8 sm:px-6">
-      <h1 className="text-xl font-semibold">{t("image.title")}</h1>
-      <p className="mt-1 text-sm text-muted-foreground">{t("image.subtitle")}</p>
+    <main className="w-full px-6 py-8">
+      <SectionHeading as="h1" title={t("image.title")} subtitle={t("image.subtitle")} />
 
       <WorkspaceRemount>
         <ImageStudio />

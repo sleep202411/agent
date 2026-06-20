@@ -26,6 +26,7 @@ import {
   WorkspaceType,
 } from '@prisma/client';
 import type { AuthUser } from '../auth';
+import { EntitlementService } from '../entitlements/entitlement.service';
 import { PrismaService } from '../infra/db/db.module';
 import {
   PlatformAuditLogService,
@@ -33,6 +34,7 @@ import {
 } from '../workspaces';
 import type { CreateInviteInput, AssignableRole } from './dto';
 import { generateInviteToken } from './invite-token';
+import { acquireSeatLock, assertSeatAvailable } from './seat-guard';
 import {
   toWorkspaceInviteDTO,
   type InvitePreviewDTO,
@@ -54,6 +56,7 @@ export class WorkspaceInvitesService {
     private readonly prisma: PrismaService,
     private readonly permissions: WorkspacePermissionService,
     private readonly audit: PlatformAuditLogService,
+    private readonly entitlements: EntitlementService,
   ) {}
 
   /** Create a shareable link. Returns the raw token once — caller builds the URL. */
@@ -197,6 +200,11 @@ export class WorkspaceInvitesService {
     let created = false;
     try {
       await this.prisma.$transaction(async (tx) => {
+        // Seat advisory lock FIRST — before any row FOR UPDATE — so the
+        // per-workspace lock order is identical to the admin add path (no
+        // deadlock). The seat assertion itself runs only once we know a new
+        // member row will be created (after the no-op / removed checks).
+        await acquireSeatLock(tx, invite.workspaceId);
         // Lock the invite row so a concurrent revoke/expiry cannot slip between
         // the status check and the membership insert (TOCTOU).
         const locked = await tx.$queryRaw<
@@ -240,6 +248,11 @@ export class WorkspaceInvitesService {
             msg: 'You were removed from this team. Ask an admin to re-invite you.',
           });
         }
+
+        // A genuinely new member occupies a seat — assert the plan's limit.
+        // The advisory lock is already held (top of txn); this resolves the
+        // policy + counts members on this same locked transaction.
+        await assertSeatAvailable(tx, invite.workspaceId, this.entitlements);
 
         await tx.workspaceMember.create({
           data: {

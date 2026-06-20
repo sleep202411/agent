@@ -22,10 +22,10 @@ import {
   type MembershipPrice,
 } from "@/lib/billing";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 import { useAuth } from "./auth-provider";
 import { useCountry } from "./region-provider";
+import { useWorkspace } from "./workspace-context";
 
 type ProductType = "membership_plan" | "team_membership_plan";
 type BillingInterval = "month" | "year";
@@ -101,6 +101,7 @@ export function SubscriptionDialog({
   const country = useCountry();
   const currency = membershipCurrencyForCountry(country);
   const { user, signIn } = useAuth();
+  const { activeWorkspace } = useWorkspace();
   const signedIn = Boolean(user);
   const [productType, setProductType] = useState<ProductType>("membership_plan");
   const [billingInterval, setBillingInterval] = useState<BillingInterval>("month");
@@ -179,8 +180,12 @@ export function SubscriptionDialog({
         signIn();
         return;
       }
-      if (price.subjectType === "workspace") {
-        toast.error(t("toast.teamCheckoutUnavailable"));
+      // Team plans are workspace-scoped: they attach to the active TEAM
+      // workspace (create-then-upgrade, Vercel-style). A personal workspace
+      // can't hold a team plan, so steer the user to create/switch first.
+      const isTeamPrice = price.subjectType === "workspace";
+      if (isTeamPrice && activeWorkspace?.type !== "team") {
+        toast.error(t("toast.teamWorkspaceRequired"));
         return;
       }
 
@@ -191,6 +196,7 @@ export function SubscriptionDialog({
           priceId: price.id,
           idempotencyKey: `studio-membership:${price.id}:${crypto.randomUUID()}`,
           quantity: 1,
+          workspaceId: isTeamPrice ? activeWorkspace?.id : undefined,
           successUrl: `${baseUrl}?payment=success`,
           backUrl: `${baseUrl}?payment=cancelled`,
         });
@@ -211,7 +217,7 @@ export function SubscriptionDialog({
         setPayingPriceId(null);
       }
     },
-    [onOpenChange, signIn, signedIn, t]
+    [activeWorkspace, onOpenChange, signIn, signedIn, t]
   );
 
   // Resume the checkout a signed-out visitor started: once login lands the
@@ -290,23 +296,10 @@ export function SubscriptionDialog({
                   <IconCrown stroke={1.9} />
                   {t("productType.individual")}
                 </TabsTrigger>
-                {/* Teams checkout isn't wired yet (workspace API). Honest UI:
-                    disabled + "Coming soon", as a real focusable button so
-                    keyboard/SR users still reach the tooltip. */}
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <button
-                      type="button"
-                      aria-disabled="true"
-                      onClick={(event) => event.preventDefault()}
-                      className="inline-flex h-[calc(100%-1px)] cursor-not-allowed items-center justify-center gap-1.5 whitespace-nowrap rounded-md px-2.5 py-0.5 text-xs font-medium text-muted-foreground/60 [&_svg]:size-3.5 [&_svg]:shrink-0"
-                    >
-                      <IconUsersGroup stroke={1.9} />
-                      {t("productType.teams")}
-                    </button>
-                  </TooltipTrigger>
-                  <TooltipContent sideOffset={6}>{t("comingSoon")}</TooltipContent>
-                </Tooltip>
+                <TabsTrigger value="team_membership_plan" className="px-2.5">
+                  <IconUsersGroup stroke={1.9} />
+                  {t("productType.teams")}
+                </TabsTrigger>
               </TabsList>
             </Tabs>
           </div>

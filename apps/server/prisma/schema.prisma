@@ -1399,7 +1399,12 @@ model BillingPromotion {
   status                BillingPromotionStatus       @default(draft)
   /// Percentage discount in basis points. 10000 means 100% off and can power
   /// free redemption codes while preserving order + fulfillment + ledger traceability.
-  percentOffBps         Int                          @map("percent_off_bps")
+  /// Exactly one of percentOffBps / amountOffMinor is set (DB CHECK + DTO refine).
+  percentOffBps         Int?                         @map("percent_off_bps")
+  /// Fixed-amount discount in minor units (e.g. cents). Requires amountOffCurrency;
+  /// only applies to orders in that currency. Mutually exclusive with percentOffBps.
+  amountOffMinor        Int?                         @map("amount_off_minor")
+  amountOffCurrency     String?                      @map("amount_off_currency") @db.VarChar(3)
   durationType          BillingPromotionDurationType @default(once) @map("duration_type")
   durationCount         Int?                         @map("duration_count")
   durationUnit          String?                      @map("duration_unit") @db.VarChar(16)
@@ -1429,6 +1434,200 @@ model BillingPromotion {
   @@index([appliesItemId, status], map: "billing_promotions_item_idx")
   @@index([appliesPriceId, status], map: "billing_promotions_price_idx")
   @@map("billing_promotions")
+}
+
+enum VoucherStatus {
+  active
+  redeemed
+  void
+  expired
+}
+
+enum VoucherGrantType {
+  /// Grants compute_point credits to the redeemer's personal-workspace wallet.
+  compute_credits
+  // membership — future: grant an EntitlementGrant for a plan (additive).
+}
+
+/// Redemption voucher (兑换券 / gift code / 卡密). DISTINCT from BillingPromotion:
+/// a voucher is redeemed for a DIRECT grant (credits/membership), it does not
+/// discount an order. Redeem is atomic + idempotent: the active->redeemed flip is
+/// a row-locked conditional update (no double-redeem) and the wallet credit is
+/// keyed by voucher id (no double-credit; same-user re-redeem recovers a crash).
+model Voucher {
+  id        String           @id @default(uuid(7)) @db.Uuid
+  /// The redemption code the user enters. Stored uppercased; globally unique.
+  code      String           @unique(map: "vouchers_code_unique") @db.VarChar(40)
+  /// Groups codes minted together (one admin generate call).
+  batchId   String?          @map("batch_id") @db.Uuid
+  grantType VoucherGrantType @default(compute_credits) @map("grant_type")
+  /// compute_credits: number of compute_point to grant (1 credit = 1¢). Required
+  /// for grantType=compute_credits (DB CHECK).
+  computeCreditAmount  Int?          @map("compute_credit_amount")
+  status               VoucherStatus @default(active)
+  expiresAt            DateTime?     @map("expires_at") @db.Timestamptz(6)
+  redeemedByUserId     String?       @map("redeemed_by_user_id") @db.VarChar(64)
+  redeemedWorkspaceId  String?       @map("redeemed_workspace_id") @db.Uuid
+  redeemedAt           DateTime?     @map("redeemed_at") @db.Timestamptz(6)
+  note                 String?       @db.Text
+  createdById          String        @map("created_by_id") @db.VarChar(64)
+  createdAt            DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt            DateTime      @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@index([batchId], map: "vouchers_batch_idx")
+  @@index([status, expiresAt], map: "vouchers_status_idx")
+  @@index([redeemedByUserId], map: "vouchers_redeemer_idx")
+  @@map("vouchers")
+}
+
+enum CreditCampaignStatus {
+  draft
+  active
+  paused
+  ended
+}
+
+/// A claimable free-credits campaign (date-windowed giveaway). Distinct from a
+/// Voucher (a single code → one grant): here ANY eligible user can claim once
+/// during the window. Claim is financial-grade: one claim per user is enforced by
+/// the CreditCampaignClaim unique index, the budget cap by an atomic conditional
+/// increment, and the wallet credit is idempotent (keyed by the claim id).
+model CreditCampaign {
+  id                  String               @id @default(uuid(7)) @db.Uuid
+  name                String               @db.VarChar(160)
+  description         String?              @db.Text
+  /// compute_point credits granted per claim (1 credit = 1¢).
+  computeCreditAmount Int                  @map("compute_credit_amount")
+  status              CreditCampaignStatus @default(draft)
+  startsAt            DateTime?            @map("starts_at") @db.Timestamptz(6)
+  endsAt              DateTime?            @map("ends_at") @db.Timestamptz(6)
+  /// Total budget: max claims across all users (null = unlimited).
+  maxClaims           Int?                 @map("max_claims")
+  claimCount          Int                  @default(0) @map("claim_count")
+  note                String?              @db.Text
+  createdById         String               @map("created_by_id") @db.VarChar(64)
+  createdAt           DateTime             @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt           DateTime             @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  claims CreditCampaignClaim[]
+
+  @@index([status, startsAt, endsAt], map: "credit_campaigns_effective_idx")
+  @@map("credit_campaigns")
+}
+
+model CreditCampaignClaim {
+  id          String   @id @default(uuid(7)) @db.Uuid
+  campaignId  String   @map("campaign_id") @db.Uuid
+  userId      String   @map("user_id") @db.VarChar(64)
+  workspaceId String   @map("workspace_id") @db.Uuid
+  amount      Int
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  campaign CreditCampaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+
+  @@unique([campaignId, userId], map: "credit_campaign_claims_user_unique")
+  @@index([userId], map: "credit_campaign_claims_user_idx")
+  @@map("credit_campaign_claims")
+}
+
+/// Daily check-in (每日签到) config — a single admin-editable row (key="default").
+/// `rewards` is the streak reward cycle by day: day N of a streak grants
+/// rewards[(N-1) % rewards.length]. A flat reward is just a 1-length cycle.
+model CheckInConfig {
+  id          String   @id @default(uuid(7)) @db.Uuid
+  key         String   @unique @default("default")
+  enabled     Boolean  @default(false)
+  rewards     Int[]
+  updatedById String?  @map("updated_by_id") @db.VarChar(64)
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@map("check_in_configs")
+}
+
+/// One row per user per day. The unique index makes a day's check-in atomic
+/// (a double check-in hits it). streakDay = consecutive-day count; amount = the
+/// compute_point credited (idempotent, keyed by this row id).
+model DailyCheckIn {
+  id          String   @id @default(uuid(7)) @db.Uuid
+  userId      String   @map("user_id") @db.VarChar(64)
+  checkInDate DateTime @map("check_in_date") @db.Date
+  streakDay   Int      @map("streak_day")
+  amount      Int
+  workspaceId String   @map("workspace_id") @db.Uuid
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@unique([userId, checkInDate], map: "daily_check_ins_user_date_unique")
+  @@index([userId], map: "daily_check_ins_user_idx")
+  @@map("daily_check_ins")
+}
+
+/// Marks a Java legacy-points user as migrated to the PG compute_point wallet.
+/// Lazy + per-user: Java calls /internal/points/migrate (e.g. on login) with the
+/// user's current Java balance; we ingest it once (unique userId + idempotent
+/// credit) and Java flips its own routing flag so that user's future deduct/grant
+/// go to PG. `migratedBalance` records the ingested amount for audit.
+model PointsMigration {
+  id              String   @id @default(uuid(7)) @db.Uuid
+  userId          String   @unique @map("user_id") @db.VarChar(64)
+  migratedBalance Int      @map("migrated_balance")
+  workspaceId     String   @map("workspace_id") @db.Uuid
+  migratedAt      DateTime @default(now()) @map("migrated_at") @db.Timestamptz(6)
+
+  @@map("points_migrations")
+}
+
+enum ReferralStatus {
+  pending
+  rewarded
+  void
+}
+
+/// Referral program config — single admin-editable row (key="default").
+model ReferralConfig {
+  id             String   @id @default(uuid(7)) @db.Uuid
+  key            String   @unique @default("default")
+  enabled        Boolean  @default(false)
+  /// Credits granted to the inviter when a referee qualifies.
+  referrerReward Int      @default(0) @map("referrer_reward")
+  /// Credits granted to the new user when they qualify.
+  refereeReward  Int      @default(0) @map("referee_reward")
+  updatedById    String?  @map("updated_by_id") @db.VarChar(64)
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@map("referral_configs")
+}
+
+/// A user's own referral code (the one they share). One per user.
+model ReferralCode {
+  id        String   @id @default(uuid(7)) @db.Uuid
+  userId    String   @unique @map("user_id") @db.VarChar(64)
+  code      String   @unique @db.VarChar(32)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@map("referral_codes")
+}
+
+/// A referral relationship: refereeUserId was invited by referrerUserId. A user
+/// is referred at most once (refereeUserId unique). Rewards (both sides, the
+/// amounts snapshotted at bind time) are granted once the referee qualifies — a
+/// real paid order — checked lazily + idempotently (status pending->rewarded).
+model Referral {
+  id             String         @id @default(uuid(7)) @db.Uuid
+  referrerUserId String         @map("referrer_user_id") @db.VarChar(64)
+  refereeUserId  String         @unique @map("referee_user_id") @db.VarChar(64)
+  code           String         @db.VarChar(32)
+  status         ReferralStatus @default(pending)
+  referrerReward Int            @default(0) @map("referrer_reward")
+  refereeReward  Int            @default(0) @map("referee_reward")
+  qualifiedAt    DateTime?      @map("qualified_at") @db.Timestamptz(6)
+  rewardedAt     DateTime?      @map("rewarded_at") @db.Timestamptz(6)
+  createdAt      DateTime       @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@index([referrerUserId], map: "referrals_referrer_idx")
+  @@index([status], map: "referrals_status_idx")
+  @@map("referrals")
 }
 
 model BillingPromotionProviderBinding {
@@ -3936,7 +4135,9 @@ model AiJobAttempt {
   attemptNumber           Int             @map("attempt_number")
   status                  AiAttemptStatus
   providerStatus          Int?            @map("provider_status")
-  providerRequestId       String?         @map("provider_request_id") @db.VarChar(180)
+  // Text, not VarChar: some providers (Agnes video) return a long, length-
+  // unbounded provider request id (`video_id`, ~174 chars) we store verbatim.
+  providerRequestId       String?         @map("provider_request_id") @db.Text
   providerEndpoint        String?         @map("provider_endpoint") @db.VarChar(180)
   queuePosition           Int?            @map("queue_position")
   /// Full request body sent to the provider (after adapter mapping).
@@ -3988,7 +4189,9 @@ model AiProviderTraceEvent {
   attemptId         String?  @map("attempt_id")
   provider          String   @db.VarChar(64)
   endpointId        String?  @map("endpoint_id") @db.VarChar(180)
-  providerRequestId String?  @map("provider_request_id") @db.VarChar(180)
+  // Text, not VarChar: mirrors AiJobAttempt.providerRequestId — a long,
+  // length-unbounded provider request id (Agnes `video_id`) is stored verbatim.
+  providerRequestId String?  @map("provider_request_id") @db.Text
   eventType         String   @map("event_type") @db.VarChar(64)
   source            String   @db.VarChar(64)
   confidence        String   @db.VarChar(24)

@@ -8,6 +8,10 @@
 **/.cache
 **/dist
 **/coverage
+# apps/mobile is an Expo app — never built as a Docker service image, but its
+# ios/android native dirs (Pods/.gradle/build) are ~2.8GB and bloated every
+# service's upload context. Exclude wholesale.
+apps/mobile
 .git
 .github
 .claude

@@ -283,8 +283,21 @@ export class AirwallexProvider implements PaymentProviderAdapter {
       active: input.active,
       name: input.name,
       description: input.description ?? undefined,
-      discount_model: 'PERCENTAGE',
-      percentage_off: input.percentOffBps / 100,
+      // Absolute (fixed-amount) vs percentage coupon. The ABSOLUTE field shape
+      // follows Airwallex's coupons API; verify against the live API before prod
+      // reliance — a mismatch surfaces as a visible binding sync_error, not silent.
+      ...(input.amountOffMinor != null
+        ? {
+            discount_model: 'ABSOLUTE',
+            fixed_amount_discount: {
+              amount: input.amountOffMinor / 100,
+              currency: input.amountOffCurrency,
+            },
+          }
+        : {
+            discount_model: 'PERCENTAGE',
+            percentage_off: (input.percentOffBps ?? 0) / 100,
+          }),
       duration_type:
         input.durationType === 'forever'
           ? 'INDEFINITELY'

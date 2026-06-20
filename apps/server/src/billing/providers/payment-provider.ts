@@ -62,7 +62,11 @@ export interface SyncProviderCouponInput {
   name: string;
   description?: string | null;
   active: boolean;
-  percentOffBps: number;
+  /** Percentage discount (bps). Set this OR amountOffMinor, not both. */
+  percentOffBps?: number | null;
+  /** Fixed-amount discount in minor units + its currency (mutually exclusive with percentOffBps). */
+  amountOffMinor?: number | null;
+  amountOffCurrency?: string | null;
   durationType: 'once' | 'forever' | 'repeating';
   durationCount?: number | null;
   durationUnit?: string | null;
