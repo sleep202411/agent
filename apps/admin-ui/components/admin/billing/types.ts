@@ -96,6 +96,7 @@ export type BillingPriceRow = {
   archivedAt: string | null;
   providerBindings: BillingProviderBinding[];
   counts: { orders: number; subscriptions: number };
+  metadata: Record<string, unknown>;
   updatedAt: string;
 };
 

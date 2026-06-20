@@ -1261,6 +1261,7 @@ export class BillingService {
           orders: price._count.orders,
           subscriptions: price._count.subscriptions,
         },
+        metadata: price.metadata,
         updatedAt: price.updatedAt.toISOString(),
       })),
     };
@@ -5943,6 +5944,7 @@ export class BillingService {
         orders: price._count.orders,
         subscriptions: price._count.subscriptions,
       },
+      metadata: price.metadata,
       updatedAt: price.updatedAt.toISOString(),
     };
   }
