@@ -274,6 +274,9 @@ server:
     BYTEPLUS_MODELARK_ENABLED: "true"
     PORT: "3001"
     AI_PROVIDER: alibaba
+    # 公共媒体经 Front Door CDN 出（media.fizzdragon.com → FD → Blob）。
+    # 删除/置空即回退为直连 blob（媒体 URL 由 server 读取时拼接）。
+    MEDIA_PUBLIC_BASE_URL_AZURE_BLOB: https://media.fizzdragon.com
     # REDIS_URL comes from KV via projected `fizzdragon-secrets` (envFrom).
     MASTRA_URL: http://fizzdragon-agent:4111
     # Unified self-hosted realtime for ALL cells (collab already self-hosts; this
