@@ -21,7 +21,7 @@ import { WalletLedgerService } from '../workspaces';
 import type { UpdateCheckInConfigInput } from './dto';
 
 const CONFIG_KEY = 'default';
-const DEFAULT_REWARDS = [10, 10, 10, 10, 10, 10, 50];
+const DEFAULT_REWARDS = [100, 188, 288, 388, 488, 588, 888];
 const MS_PER_DAY = 86_400_000;
 
 function isUniqueViolation(err: unknown): boolean {

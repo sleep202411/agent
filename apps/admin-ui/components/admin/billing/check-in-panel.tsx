@@ -103,12 +103,12 @@ export function BillingCheckInPanel({
           </FormLabel>
           <FormLabel
             label="奖励周期（算力积分）"
-            help="逗号分隔的一组正整数，按连续签到天数循环。例如 10,10,10,10,10,10,50 表示前 6 天各 10、第 7 天 50，之后循环。"
+            help="逗号分隔的一组正整数，按连续签到天数循环。例如 100,188,288,388,488,588,888 表示连续 7 天递增、第 7 天 888，之后循环。"
           >
             <TextInput
               value={rewardsText}
               onChange={(event) => setRewardsText(event.target.value)}
-              placeholder="10,10,10,10,10,10,50"
+              placeholder="100,188,288,388,488,588,888"
             />
           </FormLabel>
           {parsed.length ? (
