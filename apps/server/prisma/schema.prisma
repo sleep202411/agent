@@ -1577,59 +1577,6 @@ model PointsMigration {
   @@map("points_migrations")
 }
 
-enum ReferralStatus {
-  pending
-  rewarded
-  void
-}
-
-/// Referral program config — single admin-editable row (key="default").
-model ReferralConfig {
-  id             String   @id @default(uuid(7)) @db.Uuid
-  key            String   @unique @default("default")
-  enabled        Boolean  @default(false)
-  /// Credits granted to the inviter when a referee qualifies.
-  referrerReward Int      @default(0) @map("referrer_reward")
-  /// Credits granted to the new user when they qualify.
-  refereeReward  Int      @default(0) @map("referee_reward")
-  updatedById    String?  @map("updated_by_id") @db.VarChar(64)
-  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt      DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
-
-  @@map("referral_configs")
-}
-
-/// A user's own referral code (the one they share). One per user.
-model ReferralCode {
-  id        String   @id @default(uuid(7)) @db.Uuid
-  userId    String   @unique @map("user_id") @db.VarChar(64)
-  code      String   @unique @db.VarChar(32)
-  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
-
-  @@map("referral_codes")
-}
-
-/// A referral relationship: refereeUserId was invited by referrerUserId. A user
-/// is referred at most once (refereeUserId unique). Rewards (both sides, the
-/// amounts snapshotted at bind time) are granted once the referee qualifies — a
-/// real paid order — checked lazily + idempotently (status pending->rewarded).
-model Referral {
-  id             String         @id @default(uuid(7)) @db.Uuid
-  referrerUserId String         @map("referrer_user_id") @db.VarChar(64)
-  refereeUserId  String         @unique @map("referee_user_id") @db.VarChar(64)
-  code           String         @db.VarChar(32)
-  status         ReferralStatus @default(pending)
-  referrerReward Int            @default(0) @map("referrer_reward")
-  refereeReward  Int            @default(0) @map("referee_reward")
-  qualifiedAt    DateTime?      @map("qualified_at") @db.Timestamptz(6)
-  rewardedAt     DateTime?      @map("rewarded_at") @db.Timestamptz(6)
-  createdAt      DateTime       @default(now()) @map("created_at") @db.Timestamptz(6)
-
-  @@index([referrerUserId], map: "referrals_referrer_idx")
-  @@index([status], map: "referrals_status_idx")
-  @@map("referrals")
-}
-
 model BillingPromotionProviderBinding {
   id               String                       @id @default(uuid(7)) @db.Uuid
   promotionId      String                       @map("promotion_id") @db.Uuid

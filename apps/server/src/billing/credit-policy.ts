@@ -1,8 +1,8 @@
 /**
  * Validity policy for compute_point credit grants (积分有效期). Decided 2026-06-20:
  *
- *   - Promotional / free credits (check-in, campaign, voucher, referral,
- *     registration bonus) expire `PROMO_CREDIT_VALIDITY_DAYS` after grant.
+ *   - Promotional / free credits (check-in, campaign, voucher, registration
+ *     bonus) expire `PROMO_CREDIT_VALIDITY_DAYS` after grant.
  *   - Membership-included credits expire at the billing period end (set by the
  *     membership fulfillment to period.endsAt — NOT here).
  *   - Paid top-ups and migrated legacy balances never expire (expiresAt = null).
