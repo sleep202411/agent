@@ -8,6 +8,7 @@ import { BillingService } from './billing.service';
 import { PaymentProviderRegistry } from './payment-provider-registry.service';
 import { AirwallexProvider } from './providers/airwallex.provider';
 import { VoucherService } from './voucher.service';
+import { CampaignService } from './campaign.service';
 
 @Module({
   imports: [AdminAuthModule, WorkspacesModule],
@@ -18,6 +19,7 @@ import { VoucherService } from './voucher.service';
     PaymentProviderRegistry,
     AirwallexProvider,
     VoucherService,
+    CampaignService,
   ],
   exports: [BillingService],
 })

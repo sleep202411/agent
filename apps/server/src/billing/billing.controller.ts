@@ -32,8 +32,11 @@ import {
   type ListWalletLedgerQuery,
   RedeemVoucherSchema,
   type RedeemVoucherInput,
+  CreditCampaignParamsSchema,
+  type CreditCampaignParams,
 } from './dto';
 import { VoucherService } from './voucher.service';
+import { CampaignService } from './campaign.service';
 
 type RawBodyRequest = Request & { rawBody?: Buffer };
 
@@ -42,6 +45,7 @@ export class BillingController {
   constructor(
     private readonly billing: BillingService,
     private readonly vouchers: VoucherService,
+    private readonly campaigns: CampaignService,
   ) {}
 
   @Post('vouchers/redeem')
@@ -51,6 +55,26 @@ export class BillingController {
     body: RedeemVoucherInput,
   ) {
     return { code: 200, data: await this.vouchers.redeemVoucher(user, body) };
+  }
+
+  @Get('campaigns/active')
+  async listActiveCampaigns(@CurrentUser() user: AuthUser) {
+    return {
+      code: 200,
+      data: await this.campaigns.listActiveCampaignsForUser(user),
+    };
+  }
+
+  @Post('campaigns/:campaignId/claim')
+  async claimCampaign(
+    @CurrentUser() user: AuthUser,
+    @Param(new ZodValidationPipe(CreditCampaignParamsSchema))
+    params: CreditCampaignParams,
+  ) {
+    return {
+      code: 200,
+      data: await this.campaigns.claimCampaign(user, params.campaignId),
+    };
   }
 
   @Get('prices')

@@ -689,6 +689,51 @@ export const RedeemVoucherSchema = z.object({
 });
 export type RedeemVoucherInput = z.infer<typeof RedeemVoucherSchema>;
 
+// --- Credit campaigns (claimable free-credits giveaway) -------------------
+
+export const CreateCreditCampaignSchema = z
+  .object({
+    name: z.string().trim().min(2).max(160),
+    description: z.string().trim().max(2000).optional(),
+    computeCreditAmount: z.coerce.number().int().min(1),
+    status: z.enum(['draft', 'active', 'paused', 'ended']).default('draft'),
+    startsAt: z.coerce.date().optional(),
+    endsAt: z.coerce.date().optional(),
+    maxClaims: z.coerce.number().int().min(1).optional(),
+    note: z.string().trim().max(500).optional(),
+  })
+  .superRefine((value, ctx) => {
+    if (value.startsAt && value.endsAt && value.endsAt <= value.startsAt) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['endsAt'],
+        message: 'Campaign end time must be after start time.',
+      });
+    }
+  });
+export type CreateCreditCampaignInput = z.infer<
+  typeof CreateCreditCampaignSchema
+>;
+
+export const ListCreditCampaignsQuerySchema = z.object({
+  status: z.enum(['draft', 'active', 'paused', 'ended']).optional(),
+});
+export type ListCreditCampaignsQuery = z.infer<
+  typeof ListCreditCampaignsQuerySchema
+>;
+
+export const UpdateCreditCampaignStatusSchema = z.object({
+  status: z.enum(['draft', 'active', 'paused', 'ended']),
+});
+export type UpdateCreditCampaignStatusInput = z.infer<
+  typeof UpdateCreditCampaignStatusSchema
+>;
+
+export const CreditCampaignParamsSchema = z.object({
+  campaignId: z.string().uuid(),
+});
+export type CreditCampaignParams = z.infer<typeof CreditCampaignParamsSchema>;
+
 export const ListAdminBillingOrdersQuerySchema = z.object({
   q: z.string().trim().min(1).max(120).optional(),
   status: BillingOrderStatusSchema.optional(),

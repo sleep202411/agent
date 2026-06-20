@@ -1480,6 +1480,56 @@ model Voucher {
   @@map("vouchers")
 }
 
+enum CreditCampaignStatus {
+  draft
+  active
+  paused
+  ended
+}
+
+/// A claimable free-credits campaign (date-windowed giveaway). Distinct from a
+/// Voucher (a single code → one grant): here ANY eligible user can claim once
+/// during the window. Claim is financial-grade: one claim per user is enforced by
+/// the CreditCampaignClaim unique index, the budget cap by an atomic conditional
+/// increment, and the wallet credit is idempotent (keyed by the claim id).
+model CreditCampaign {
+  id                  String               @id @default(uuid(7)) @db.Uuid
+  name                String               @db.VarChar(160)
+  description         String?              @db.Text
+  /// compute_point credits granted per claim (1 credit = 1¢).
+  computeCreditAmount Int                  @map("compute_credit_amount")
+  status              CreditCampaignStatus @default(draft)
+  startsAt            DateTime?            @map("starts_at") @db.Timestamptz(6)
+  endsAt              DateTime?            @map("ends_at") @db.Timestamptz(6)
+  /// Total budget: max claims across all users (null = unlimited).
+  maxClaims           Int?                 @map("max_claims")
+  claimCount          Int                  @default(0) @map("claim_count")
+  note                String?              @db.Text
+  createdById         String               @map("created_by_id") @db.VarChar(64)
+  createdAt           DateTime             @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt           DateTime             @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  claims CreditCampaignClaim[]
+
+  @@index([status, startsAt, endsAt], map: "credit_campaigns_effective_idx")
+  @@map("credit_campaigns")
+}
+
+model CreditCampaignClaim {
+  id          String   @id @default(uuid(7)) @db.Uuid
+  campaignId  String   @map("campaign_id") @db.Uuid
+  userId      String   @map("user_id") @db.VarChar(64)
+  workspaceId String   @map("workspace_id") @db.Uuid
+  amount      Int
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  campaign CreditCampaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+
+  @@unique([campaignId, userId], map: "credit_campaign_claims_user_unique")
+  @@index([userId], map: "credit_campaign_claims_user_idx")
+  @@map("credit_campaign_claims")
+}
+
 model BillingPromotionProviderBinding {
   id               String                       @id @default(uuid(7)) @db.Uuid
   promotionId      String                       @map("promotion_id") @db.Uuid

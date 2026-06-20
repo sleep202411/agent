@@ -55,6 +55,10 @@ import {
   UpsertAdminBillingPromotionProviderBindingSchema,
   GenerateVouchersSchema,
   ListVouchersQuerySchema,
+  CreateCreditCampaignSchema,
+  ListCreditCampaignsQuerySchema,
+  UpdateCreditCampaignStatusSchema,
+  CreditCampaignParamsSchema,
   type BillingPriceParams,
   type BillingMembershipPlanParams,
   type BillingWalletAccountParams,
@@ -85,8 +89,13 @@ import {
   type UpsertAdminBillingPromotionProviderBindingInput,
   type GenerateVouchersInput,
   type ListVouchersQuery,
+  type CreateCreditCampaignInput,
+  type ListCreditCampaignsQuery,
+  type UpdateCreditCampaignStatusInput,
+  type CreditCampaignParams,
 } from './dto';
 import { VoucherService } from './voucher.service';
+import { CampaignService } from './campaign.service';
 
 @Public()
 @UseGuards(AdminAuthGuard, AdminPermissionGuard)
@@ -97,6 +106,7 @@ export class BillingAdminController {
     private readonly ledger: BillingLedgerService,
     private readonly adminAuth: AdminAuthService,
     private readonly vouchers: VoucherService,
+    private readonly campaigns: CampaignService,
   ) {}
 
   @RequireAdminPermissions(ADMIN_PERMISSION_KEYS.BillingRead)
@@ -390,6 +400,64 @@ export class BillingAdminController {
         grantType: body.grantType,
         computeCreditAmount: body.computeCreditAmount,
       },
+    );
+    return { code: 200, data };
+  }
+
+  @RequireAdminPermissions(ADMIN_PERMISSION_KEYS.BillingRead)
+  @Get('credit-campaigns')
+  async listCreditCampaigns(
+    @Query(new ZodValidationPipe(ListCreditCampaignsQuerySchema))
+    query: ListCreditCampaignsQuery,
+  ) {
+    return { code: 200, data: await this.campaigns.listCampaigns(query) };
+  }
+
+  @RequireAdminPermissions(ADMIN_PERMISSION_KEYS.BillingWrite)
+  @Post('credit-campaigns')
+  async createCreditCampaign(
+    @CurrentAdmin() admin: AdminActor,
+    @Body(new ZodValidationPipe(CreateCreditCampaignSchema))
+    body: CreateCreditCampaignInput,
+    @Req() request: Request,
+  ) {
+    const data = await this.campaigns.createCampaign(admin.id, body);
+    await this.audit(
+      admin,
+      request,
+      'admin.billing.credit_campaign.create',
+      'credit_campaign',
+      data.id,
+      {
+        name: body.name,
+        computeCreditAmount: body.computeCreditAmount,
+        maxClaims: body.maxClaims,
+      },
+    );
+    return { code: 200, data };
+  }
+
+  @RequireAdminPermissions(ADMIN_PERMISSION_KEYS.BillingWrite)
+  @Patch('credit-campaigns/:campaignId')
+  async updateCreditCampaignStatus(
+    @CurrentAdmin() admin: AdminActor,
+    @Param(new ZodValidationPipe(CreditCampaignParamsSchema))
+    params: CreditCampaignParams,
+    @Body(new ZodValidationPipe(UpdateCreditCampaignStatusSchema))
+    body: UpdateCreditCampaignStatusInput,
+    @Req() request: Request,
+  ) {
+    const data = await this.campaigns.updateCampaignStatus(
+      params.campaignId,
+      body.status,
+    );
+    await this.audit(
+      admin,
+      request,
+      'admin.billing.credit_campaign.update',
+      'credit_campaign',
+      params.campaignId,
+      body,
     );
     return { code: 200, data };
   }
