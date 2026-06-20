@@ -32,13 +32,17 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
 # 服务 → "镜像名:Dockerfile:values路径(逗号分隔多个)"
-declare -A SVC=(
-  [web]="fizzdragon-web:apps/web/Dockerfile:.web"
-  [studio]="fizzdragon-studio:apps/studio/Dockerfile:.studio"
-  [admin-ui]="fizzdragon-admin-ui:apps/admin-ui/Dockerfile:.adminUi"
-  [server]="fizzdragon-server:apps/server/Dockerfile:.server"
-  [agent]="fizzdragon-agent:apps/agent/Dockerfile:.agent,.agentWorker"
-)
+# 用 case 函数而非 declare -A:macOS 自带 /bin/bash 是 3.2,不支持关联数组。
+svc_spec() {
+  case "$1" in
+    web)      echo "fizzdragon-web:apps/web/Dockerfile:.web" ;;
+    studio)   echo "fizzdragon-studio:apps/studio/Dockerfile:.studio" ;;
+    admin-ui) echo "fizzdragon-admin-ui:apps/admin-ui/Dockerfile:.adminUi" ;;
+    server)   echo "fizzdragon-server:apps/server/Dockerfile:.server" ;;
+    agent)    echo "fizzdragon-agent:apps/agent/Dockerfile:.agent,.agentWorker" ;;
+    *)        return 1 ;;
+  esac
+}
 
 # --- args -----------------------------------------------------------------
 if [ "$#" -eq 0 ]; then
@@ -51,7 +55,7 @@ else
   SERVICES=("$@")
 fi
 for s in "${SERVICES[@]}"; do
-  [ -n "${SVC[$s]:-}" ] || { echo "未知服务: $s" >&2; exit 2; }
+  svc_spec "$s" >/dev/null || { echo "未知服务: $s" >&2; exit 2; }
 done
 
 # --- guards ---------------------------------------------------------------
@@ -108,14 +112,14 @@ bump_tag() {  # $1=镜像名(repository)  $2=新tag
 }
 
 for s in "${SERVICES[@]}"; do
-  IFS=":" read -r image dockerfile _paths <<< "${SVC[$s]}"
+  IFS=":" read -r image dockerfile _paths <<< "$(svc_spec "$s")"
   build_one "$s" "$image" "$dockerfile"
 done
 
 # --- bump values.yaml (只动本次构建的服务) --------------------------------
 echo "▶ 更新 $VALUES 的 tag → $SHA"
 for s in "${SERVICES[@]}"; do
-  IFS=":" read -r image _dockerfile _paths <<< "${SVC[$s]}"
+  IFS=":" read -r image _dockerfile _paths <<< "$(svc_spec "$s")"
   bump_tag "$image" "$SHA"
 done
 git --no-pager diff -- "$VALUES" || true
