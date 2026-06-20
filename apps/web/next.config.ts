@@ -13,6 +13,13 @@ if (!JAVA_STUDIO_URL || !JAVA_CONTENT_URL) {
 const nextConfig: NextConfig = {
   output: "standalone",
   reactStrictMode: true,
+  // Let the edge (Azure Front Door) handle compression, not the Next.js
+  // server. When BOTH compress, AFD relays/caches the app's gzip over
+  // HTTP/2 and the browser hits net::ERR_HTTP2_PROTOCOL_ERROR — every
+  // CSS/JS chunk stalls (pending) and the page renders blank. Direct
+  // origin (no AFD) and HTTP/1.1 are unaffected, which is the giveaway.
+  // Origin now sends plain bytes; AFD compresses (brotli) + caches once.
+  compress: false,
   allowedDevOrigins: ["127.0.0.1"],
   // Required to support PostHog trailing slash API requests via the /ingest proxy.
   skipTrailingSlashRedirect: true,
