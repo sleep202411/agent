@@ -10,6 +10,7 @@ import { AirwallexProvider } from './providers/airwallex.provider';
 import { VoucherService } from './voucher.service';
 import { CampaignService } from './campaign.service';
 import { CheckInService } from './check-in.service';
+import { ReferralService } from './referral.service';
 
 @Module({
   imports: [AdminAuthModule, WorkspacesModule],
@@ -22,6 +23,7 @@ import { CheckInService } from './check-in.service';
     VoucherService,
     CampaignService,
     CheckInService,
+    ReferralService,
   ],
   exports: [BillingService],
 })

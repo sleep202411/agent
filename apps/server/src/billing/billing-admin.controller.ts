@@ -60,6 +60,8 @@ import {
   UpdateCreditCampaignStatusSchema,
   CreditCampaignParamsSchema,
   UpdateCheckInConfigSchema,
+  UpdateReferralConfigSchema,
+  ListReferralsQuerySchema,
   type BillingPriceParams,
   type BillingMembershipPlanParams,
   type BillingWalletAccountParams,
@@ -95,10 +97,13 @@ import {
   type UpdateCreditCampaignStatusInput,
   type CreditCampaignParams,
   type UpdateCheckInConfigInput,
+  type UpdateReferralConfigInput,
+  type ListReferralsQuery,
 } from './dto';
 import { VoucherService } from './voucher.service';
 import { CampaignService } from './campaign.service';
 import { CheckInService } from './check-in.service';
+import { ReferralService } from './referral.service';
 
 @Public()
 @UseGuards(AdminAuthGuard, AdminPermissionGuard)
@@ -111,6 +116,7 @@ export class BillingAdminController {
     private readonly vouchers: VoucherService,
     private readonly campaigns: CampaignService,
     private readonly checkIn: CheckInService,
+    private readonly referrals: ReferralService,
   ) {}
 
   @RequireAdminPermissions(ADMIN_PERMISSION_KEYS.BillingRead)
@@ -490,6 +496,45 @@ export class BillingAdminController {
       { enabled: body.enabled, rewards: body.rewards },
     );
     return { code: 200, data };
+  }
+
+  @RequireAdminPermissions(ADMIN_PERMISSION_KEYS.BillingRead)
+  @Get('referral/config')
+  async getReferralConfig() {
+    return { code: 200, data: await this.referrals.getConfig() };
+  }
+
+  @RequireAdminPermissions(ADMIN_PERMISSION_KEYS.BillingWrite)
+  @Patch('referral/config')
+  async updateReferralConfig(
+    @CurrentAdmin() admin: AdminActor,
+    @Body(new ZodValidationPipe(UpdateReferralConfigSchema))
+    body: UpdateReferralConfigInput,
+    @Req() request: Request,
+  ) {
+    const data = await this.referrals.updateConfig(admin.id, body);
+    await this.audit(
+      admin,
+      request,
+      'admin.billing.referral.config',
+      'referral_config',
+      'default',
+      {
+        enabled: body.enabled,
+        referrerReward: body.referrerReward,
+        refereeReward: body.refereeReward,
+      },
+    );
+    return { code: 200, data };
+  }
+
+  @RequireAdminPermissions(ADMIN_PERMISSION_KEYS.BillingRead)
+  @Get('referrals')
+  async listReferrals(
+    @Query(new ZodValidationPipe(ListReferralsQuerySchema))
+    query: ListReferralsQuery,
+  ) {
+    return { code: 200, data: await this.referrals.listReferrals(query) };
   }
 
   @RequireAdminPermissions(ADMIN_PERMISSION_KEYS.BillingWrite)

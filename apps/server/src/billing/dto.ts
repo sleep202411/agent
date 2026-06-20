@@ -748,6 +748,29 @@ export type UpdateCheckInConfigInput = z.infer<
   typeof UpdateCheckInConfigSchema
 >;
 
+// --- Referrals (推荐有礼) ---------------------------------------------------
+
+export const UpdateReferralConfigSchema = z.object({
+  enabled: z.coerce.boolean(),
+  /** Credits granted to the inviter when an invitee makes their first paid order. */
+  referrerReward: z.coerce.number().int().min(0).max(1_000_000),
+  /** Credits granted to the invitee on that same qualifying purchase. */
+  refereeReward: z.coerce.number().int().min(0).max(1_000_000),
+});
+export type UpdateReferralConfigInput = z.infer<
+  typeof UpdateReferralConfigSchema
+>;
+
+export const BindReferralSchema = z.object({
+  code: z.string().trim().min(4).max(32),
+});
+export type BindReferralInput = z.infer<typeof BindReferralSchema>;
+
+export const ListReferralsQuerySchema = z.object({
+  status: z.enum(['pending', 'rewarded', 'void']).optional(),
+});
+export type ListReferralsQuery = z.infer<typeof ListReferralsQuerySchema>;
+
 export const ListAdminBillingOrdersQuerySchema = z.object({
   q: z.string().trim().min(1).max(120).optional(),
   status: BillingOrderStatusSchema.optional(),

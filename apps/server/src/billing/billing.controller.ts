@@ -34,10 +34,13 @@ import {
   type RedeemVoucherInput,
   CreditCampaignParamsSchema,
   type CreditCampaignParams,
+  BindReferralSchema,
+  type BindReferralInput,
 } from './dto';
 import { VoucherService } from './voucher.service';
 import { CampaignService } from './campaign.service';
 import { CheckInService } from './check-in.service';
+import { ReferralService } from './referral.service';
 
 type RawBodyRequest = Request & { rawBody?: Buffer };
 
@@ -48,7 +51,22 @@ export class BillingController {
     private readonly vouchers: VoucherService,
     private readonly campaigns: CampaignService,
     private readonly checkIn: CheckInService,
+    private readonly referrals: ReferralService,
   ) {}
+
+  @Get('referral/me')
+  async myReferral(@CurrentUser() user: AuthUser) {
+    return { code: 200, data: await this.referrals.getMyReferral(user) };
+  }
+
+  @Post('referral/bind')
+  async bindReferral(
+    @CurrentUser() user: AuthUser,
+    @Body(new ZodValidationPipe(BindReferralSchema))
+    body: BindReferralInput,
+  ) {
+    return { code: 200, data: await this.referrals.bindReferral(user, body) };
+  }
 
   @Get('check-in/status')
   async checkInStatus(@CurrentUser() user: AuthUser) {

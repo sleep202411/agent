@@ -3,6 +3,7 @@ import {
   ConflictException,
   ForbiddenException,
   Injectable,
+  Logger,
   NotFoundException,
   ServiceUnavailableException,
 } from '@nestjs/common';
@@ -96,6 +97,7 @@ import type {
   HostedCheckoutResult,
 } from './providers/payment-provider';
 import { BillingLedgerService } from './billing-ledger.service';
+import { ReferralService } from './referral.service';
 
 type PriceWithItem = BillingPrice & { item: BillingCatalogItem };
 type PriceWithProviderBindings = PriceWithItem & {
@@ -250,12 +252,15 @@ type SubscriptionRenewalMatch = {
 
 @Injectable()
 export class BillingService {
+  private readonly logger = new Logger(BillingService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly providerRegistry: PaymentProviderRegistry,
     private readonly permissions: WorkspacePermissionService,
     private readonly walletLedger: WalletLedgerService,
     private readonly ledger: BillingLedgerService,
+    private readonly referrals: ReferralService,
   ) {}
 
   async listPrices(query: ListBillingPricesQuery) {
@@ -359,6 +364,17 @@ export class BillingService {
     query: ListWalletLedgerQuery,
     workspaceId?: string | null,
   ) {
+    // Lazy-qualify the viewer's referral so a referral bonus earned by their first
+    // paid order lands on this very balance refresh. Never let it break the read.
+    try {
+      await this.referrals.qualifyForReferee(String(user.userId));
+    } catch (err) {
+      this.logger.warn(
+        `referral qualify-on-read failed for user ${user.userId}: ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+      );
+    }
     const scope = await this.walletLedgerScope(
       user,
       query.currency as WalletCurrencyType,

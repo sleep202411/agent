@@ -27,7 +27,9 @@ import {
   IconSettingsAutomation,
   IconTags,
   IconTicket,
+  IconTrendingUp,
   IconUserCog,
+  IconUserPlus,
   IconUsersGroup,
   IconUserSearch,
   IconVersions,
@@ -70,6 +72,13 @@ export const GLOBAL_NAV: GlobalNavEntry[] = [
     href: "/billing",
     label: "计费财务",
     icon: IconCoins,
+    permission: "billing.read",
+  },
+  {
+    key: "/growth",
+    href: "/growth",
+    label: "增长运营",
+    icon: IconTrendingUp,
     permission: "billing.read",
   },
   {
@@ -133,7 +142,7 @@ export const GLOBAL_NAV: GlobalNavEntry[] = [
 export const MODULE_NAV: Record<string, ModuleNavGroup[]> = {
   "/billing": [
     {
-      label: "商品促销",
+      label: "商品计划",
       items: [
         {
           href: "/billing/catalog",
@@ -145,30 +154,6 @@ export const MODULE_NAV: Record<string, ModuleNavGroup[]> = {
           href: "/billing/memberships",
           label: "会员计划",
           icon: IconUsersGroup,
-          permission: "billing.read",
-        },
-        {
-          href: "/billing/promotions",
-          label: "促销优惠",
-          icon: IconTicket,
-          permission: "billing.read",
-        },
-        {
-          href: "/billing/vouchers",
-          label: "兑换券",
-          icon: IconGift,
-          permission: "billing.read",
-        },
-        {
-          href: "/billing/campaigns",
-          label: "免费活动",
-          icon: IconConfetti,
-          permission: "billing.read",
-        },
-        {
-          href: "/billing/check-in",
-          label: "每日签到",
-          icon: IconCalendarCheck,
           permission: "billing.read",
         },
       ],
@@ -233,6 +218,48 @@ export const MODULE_NAV: Record<string, ModuleNavGroup[]> = {
           href: "/billing/bindings",
           label: "渠道绑定",
           icon: IconPlugConnected,
+          permission: "billing.read",
+        },
+      ],
+    },
+  ],
+  "/growth": [
+    {
+      label: "营销活动",
+      items: [
+        {
+          href: "/growth/promotions",
+          label: "促销优惠",
+          icon: IconTicket,
+          permission: "billing.read",
+        },
+        {
+          href: "/growth/vouchers",
+          label: "兑换券",
+          icon: IconGift,
+          permission: "billing.read",
+        },
+        {
+          href: "/growth/campaigns",
+          label: "免费活动",
+          icon: IconConfetti,
+          permission: "billing.read",
+        },
+      ],
+    },
+    {
+      label: "用户增长",
+      items: [
+        {
+          href: "/growth/check-in",
+          label: "每日签到",
+          icon: IconCalendarCheck,
+          permission: "billing.read",
+        },
+        {
+          href: "/growth/referral",
+          label: "推荐有礼",
+          icon: IconUserPlus,
           permission: "billing.read",
         },
       ],

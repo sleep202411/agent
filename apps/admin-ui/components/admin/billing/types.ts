@@ -666,6 +666,37 @@ export type CheckInConfigData = {
   updatedAt: string | null;
 };
 
+export type ReferralConfigData = {
+  enabled: boolean;
+  referrerReward: number;
+  refereeReward: number;
+  configured: boolean;
+  updatedAt: string | null;
+};
+
+export type ReferralStatus = "pending" | "rewarded" | "void";
+
+export type ReferralRow = {
+  id: string;
+  referrerUserId: string;
+  refereeUserId: string;
+  code: string;
+  status: ReferralStatus;
+  referrerReward: number;
+  refereeReward: number;
+  rewardedAt: string | null;
+  createdAt: string;
+};
+
+export type AdminBillingReferralsData = {
+  items: ReferralRow[];
+  total: number;
+  stats: {
+    rewardedCount: number;
+    creditsPaid: number;
+  };
+};
+
 export type AdminBillingOrdersData = {
   items: BillingOrderRow[];
   nextCursor: string | null;
