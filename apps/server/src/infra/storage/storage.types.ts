@@ -231,6 +231,25 @@ export abstract class OutputStorageService {
    */
   abstract headObject(key: string): Promise<HeadObjectResult>;
   /**
+   * Best-effort: set the stored object's `Cache-Control` so Front Door + the
+   * browser cache it. Object keys are content-addressed (uuid + hash) → the
+   * bytes are immutable, so public media is cached aggressively. The SAS
+   * direct-upload path does NOT set this on the blob, so confirmUpload calls
+   * this after the bytes land.
+   *
+   * Default is a no-op — only providers whose direct-upload path leaves the
+   * stored object without Cache-Control override it (Azure Blob does; OSS
+   * already sets it on its own `upload()`). MUST NOT throw — a failure here
+   * must never break confirmUpload; callers wrap it defensively too.
+   */
+  async setCacheControl(
+    _key: string,
+    _cacheControl: string,
+    _contentType?: string | null,
+  ): Promise<void> {
+    // no-op default; impls override where the upload path doesn't set it.
+  }
+  /**
    * Make a single stored object unreachable via its public URL — the physical
    * half of a moderation takedown (the DB/DTO half is the moderation status
    * gate). OSS flips the object ACL to private; Azure copies the blob into a
