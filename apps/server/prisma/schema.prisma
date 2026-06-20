@@ -1530,6 +1530,38 @@ model CreditCampaignClaim {
   @@map("credit_campaign_claims")
 }
 
+/// Daily check-in (每日签到) config — a single admin-editable row (key="default").
+/// `rewards` is the streak reward cycle by day: day N of a streak grants
+/// rewards[(N-1) % rewards.length]. A flat reward is just a 1-length cycle.
+model CheckInConfig {
+  id          String   @id @default(uuid(7)) @db.Uuid
+  key         String   @unique @default("default")
+  enabled     Boolean  @default(false)
+  rewards     Int[]
+  updatedById String?  @map("updated_by_id") @db.VarChar(64)
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@map("check_in_configs")
+}
+
+/// One row per user per day. The unique index makes a day's check-in atomic
+/// (a double check-in hits it). streakDay = consecutive-day count; amount = the
+/// compute_point credited (idempotent, keyed by this row id).
+model DailyCheckIn {
+  id          String   @id @default(uuid(7)) @db.Uuid
+  userId      String   @map("user_id") @db.VarChar(64)
+  checkInDate DateTime @map("check_in_date") @db.Date
+  streakDay   Int      @map("streak_day")
+  amount      Int
+  workspaceId String   @map("workspace_id") @db.Uuid
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@unique([userId, checkInDate], map: "daily_check_ins_user_date_unique")
+  @@index([userId], map: "daily_check_ins_user_idx")
+  @@map("daily_check_ins")
+}
+
 model BillingPromotionProviderBinding {
   id               String                       @id @default(uuid(7)) @db.Uuid
   promotionId      String                       @map("promotion_id") @db.Uuid

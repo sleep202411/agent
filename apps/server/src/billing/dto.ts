@@ -734,6 +734,20 @@ export const CreditCampaignParamsSchema = z.object({
 });
 export type CreditCampaignParams = z.infer<typeof CreditCampaignParamsSchema>;
 
+// --- Daily check-in (每日签到) --------------------------------------------
+
+export const UpdateCheckInConfigSchema = z.object({
+  enabled: z.coerce.boolean(),
+  /** The streak reward cycle (credits by day); a 1-length cycle = flat reward. */
+  rewards: z
+    .array(z.coerce.number().int().min(1).max(1_000_000))
+    .min(1)
+    .max(31),
+});
+export type UpdateCheckInConfigInput = z.infer<
+  typeof UpdateCheckInConfigSchema
+>;
+
 export const ListAdminBillingOrdersQuerySchema = z.object({
   q: z.string().trim().min(1).max(120).optional(),
   status: BillingOrderStatusSchema.optional(),

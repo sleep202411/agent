@@ -59,6 +59,7 @@ import {
   ListCreditCampaignsQuerySchema,
   UpdateCreditCampaignStatusSchema,
   CreditCampaignParamsSchema,
+  UpdateCheckInConfigSchema,
   type BillingPriceParams,
   type BillingMembershipPlanParams,
   type BillingWalletAccountParams,
@@ -93,9 +94,11 @@ import {
   type ListCreditCampaignsQuery,
   type UpdateCreditCampaignStatusInput,
   type CreditCampaignParams,
+  type UpdateCheckInConfigInput,
 } from './dto';
 import { VoucherService } from './voucher.service';
 import { CampaignService } from './campaign.service';
+import { CheckInService } from './check-in.service';
 
 @Public()
 @UseGuards(AdminAuthGuard, AdminPermissionGuard)
@@ -107,6 +110,7 @@ export class BillingAdminController {
     private readonly adminAuth: AdminAuthService,
     private readonly vouchers: VoucherService,
     private readonly campaigns: CampaignService,
+    private readonly checkIn: CheckInService,
   ) {}
 
   @RequireAdminPermissions(ADMIN_PERMISSION_KEYS.BillingRead)
@@ -458,6 +462,32 @@ export class BillingAdminController {
       'credit_campaign',
       params.campaignId,
       body,
+    );
+    return { code: 200, data };
+  }
+
+  @RequireAdminPermissions(ADMIN_PERMISSION_KEYS.BillingRead)
+  @Get('check-in/config')
+  async getCheckInConfig() {
+    return { code: 200, data: await this.checkIn.getConfig() };
+  }
+
+  @RequireAdminPermissions(ADMIN_PERMISSION_KEYS.BillingWrite)
+  @Patch('check-in/config')
+  async updateCheckInConfig(
+    @CurrentAdmin() admin: AdminActor,
+    @Body(new ZodValidationPipe(UpdateCheckInConfigSchema))
+    body: UpdateCheckInConfigInput,
+    @Req() request: Request,
+  ) {
+    const data = await this.checkIn.updateConfig(admin.id, body);
+    await this.audit(
+      admin,
+      request,
+      'admin.billing.check_in.config',
+      'check_in_config',
+      'default',
+      { enabled: body.enabled, rewards: body.rewards },
     );
     return { code: 200, data };
   }

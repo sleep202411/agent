@@ -37,6 +37,7 @@ import {
 } from './dto';
 import { VoucherService } from './voucher.service';
 import { CampaignService } from './campaign.service';
+import { CheckInService } from './check-in.service';
 
 type RawBodyRequest = Request & { rawBody?: Buffer };
 
@@ -46,7 +47,18 @@ export class BillingController {
     private readonly billing: BillingService,
     private readonly vouchers: VoucherService,
     private readonly campaigns: CampaignService,
+    private readonly checkIn: CheckInService,
   ) {}
+
+  @Get('check-in/status')
+  async checkInStatus(@CurrentUser() user: AuthUser) {
+    return { code: 200, data: await this.checkIn.getStatus(user) };
+  }
+
+  @Post('check-in')
+  async dailyCheckIn(@CurrentUser() user: AuthUser) {
+    return { code: 200, data: await this.checkIn.checkIn(user) };
+  }
 
   @Post('vouchers/redeem')
   async redeemVoucher(
