@@ -12,6 +12,14 @@
 # ios/android native dirs (Pods/.gradle/build) are ~2.8GB and bloated every
 # service's upload context. Exclude wholesale.
 apps/mobile
+# glob-anchored so az acr build's UPLOAD packer honors them (it skips the
+# literal root-anchored `apps/mobile` during upload, only at Docker-build time)
+# — these are the ~2.8GB of regenerable native build artifacts.
+**/.gradle
+**/Pods
+**/.cxx
+**/android/build
+**/android/app/build
 .git
 .github
 .claude

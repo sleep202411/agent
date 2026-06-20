@@ -98,7 +98,7 @@ build_one() {
     --image "${image}:${SHA}" \
     --file "$dockerfile" \
     --platform linux/amd64 \
-    "${args[@]}" \
+    ${args[@]+"${args[@]}"} \
     .
 }
 
