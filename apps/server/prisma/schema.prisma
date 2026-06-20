@@ -1562,6 +1562,21 @@ model DailyCheckIn {
   @@map("daily_check_ins")
 }
 
+/// Marks a Java legacy-points user as migrated to the PG compute_point wallet.
+/// Lazy + per-user: Java calls /internal/points/migrate (e.g. on login) with the
+/// user's current Java balance; we ingest it once (unique userId + idempotent
+/// credit) and Java flips its own routing flag so that user's future deduct/grant
+/// go to PG. `migratedBalance` records the ingested amount for audit.
+model PointsMigration {
+  id              String   @id @default(uuid(7)) @db.Uuid
+  userId          String   @unique @map("user_id") @db.VarChar(64)
+  migratedBalance Int      @map("migrated_balance")
+  workspaceId     String   @map("workspace_id") @db.Uuid
+  migratedAt      DateTime @default(now()) @map("migrated_at") @db.Timestamptz(6)
+
+  @@map("points_migrations")
+}
+
 model BillingPromotionProviderBinding {
   id               String                       @id @default(uuid(7)) @db.Uuid
   promotionId      String                       @map("promotion_id") @db.Uuid
