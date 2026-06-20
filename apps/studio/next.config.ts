@@ -21,6 +21,10 @@ const JAVA_CONTENT = process.env.JAVA_CONTENT_URL ?? "https://java.fizzdragon.co
 const nextConfig: NextConfig = {
   // Self-contained server bundle for the Docker runner stage.
   output: "standalone",
+  // Let Azure Front Door compress at the edge, not the Next server. App-level
+  // gzip + AFD over HTTP/2 double-compresses → net::ERR_HTTP2_PROTOCOL_ERROR
+  // (CSS/JS chunks stall, blank page). Required before putting studio behind FD.
+  compress: false,
   async rewrites() {
     return [
       {
