@@ -7,6 +7,7 @@ import { BillingLedgerService } from './billing-ledger.service';
 import { BillingService } from './billing.service';
 import { PaymentProviderRegistry } from './payment-provider-registry.service';
 import { AirwallexProvider } from './providers/airwallex.provider';
+import { VoucherService } from './voucher.service';
 
 @Module({
   imports: [AdminAuthModule, WorkspacesModule],
@@ -16,6 +17,7 @@ import { AirwallexProvider } from './providers/airwallex.provider';
     BillingLedgerService,
     PaymentProviderRegistry,
     AirwallexProvider,
+    VoucherService,
   ],
   exports: [BillingService],
 })

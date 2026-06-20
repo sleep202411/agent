@@ -1436,6 +1436,50 @@ model BillingPromotion {
   @@map("billing_promotions")
 }
 
+enum VoucherStatus {
+  active
+  redeemed
+  void
+  expired
+}
+
+enum VoucherGrantType {
+  /// Grants compute_point credits to the redeemer's personal-workspace wallet.
+  compute_credits
+  // membership — future: grant an EntitlementGrant for a plan (additive).
+}
+
+/// Redemption voucher (兑换券 / gift code / 卡密). DISTINCT from BillingPromotion:
+/// a voucher is redeemed for a DIRECT grant (credits/membership), it does not
+/// discount an order. Redeem is atomic + idempotent: the active->redeemed flip is
+/// a row-locked conditional update (no double-redeem) and the wallet credit is
+/// keyed by voucher id (no double-credit; same-user re-redeem recovers a crash).
+model Voucher {
+  id        String           @id @default(uuid(7)) @db.Uuid
+  /// The redemption code the user enters. Stored uppercased; globally unique.
+  code      String           @unique(map: "vouchers_code_unique") @db.VarChar(40)
+  /// Groups codes minted together (one admin generate call).
+  batchId   String?          @map("batch_id") @db.Uuid
+  grantType VoucherGrantType @default(compute_credits) @map("grant_type")
+  /// compute_credits: number of compute_point to grant (1 credit = 1¢). Required
+  /// for grantType=compute_credits (DB CHECK).
+  computeCreditAmount  Int?          @map("compute_credit_amount")
+  status               VoucherStatus @default(active)
+  expiresAt            DateTime?     @map("expires_at") @db.Timestamptz(6)
+  redeemedByUserId     String?       @map("redeemed_by_user_id") @db.VarChar(64)
+  redeemedWorkspaceId  String?       @map("redeemed_workspace_id") @db.Uuid
+  redeemedAt           DateTime?     @map("redeemed_at") @db.Timestamptz(6)
+  note                 String?       @db.Text
+  createdById          String        @map("created_by_id") @db.VarChar(64)
+  createdAt            DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt            DateTime      @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@index([batchId], map: "vouchers_batch_idx")
+  @@index([status, expiresAt], map: "vouchers_status_idx")
+  @@index([redeemedByUserId], map: "vouchers_redeemer_idx")
+  @@map("vouchers")
+}
+
 model BillingPromotionProviderBinding {
   id               String                       @id @default(uuid(7)) @db.Uuid
   promotionId      String                       @map("promotion_id") @db.Uuid

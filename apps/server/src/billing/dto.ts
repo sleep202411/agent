@@ -649,6 +649,46 @@ export type UpsertAdminBillingPromotionProviderBindingInput = z.infer<
   typeof UpsertAdminBillingPromotionProviderBindingSchema
 >;
 
+// --- Vouchers (兑换券 / redemption codes) ----------------------------------
+
+export const GenerateVouchersSchema = z
+  .object({
+    count: z.coerce.number().int().min(1).max(1000),
+    grantType: z.enum(['compute_credits']).default('compute_credits'),
+    computeCreditAmount: z.coerce.number().int().min(1).optional(),
+    expiresAt: z.coerce.date().optional(),
+    codePrefix: z
+      .string()
+      .trim()
+      .min(1)
+      .max(12)
+      .regex(/^[A-Za-z0-9]+$/, 'Prefix must be alphanumeric.')
+      .optional(),
+    note: z.string().trim().max(500).optional(),
+  })
+  .superRefine((value, ctx) => {
+    if (value.grantType === 'compute_credits' && !value.computeCreditAmount) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['computeCreditAmount'],
+        message: 'Compute-credit vouchers require a credit amount.',
+      });
+    }
+  });
+export type GenerateVouchersInput = z.infer<typeof GenerateVouchersSchema>;
+
+export const ListVouchersQuerySchema = z.object({
+  status: z.enum(['active', 'redeemed', 'void', 'expired']).optional(),
+  batchId: z.string().uuid().optional(),
+  q: z.string().trim().max(64).optional(),
+});
+export type ListVouchersQuery = z.infer<typeof ListVouchersQuerySchema>;
+
+export const RedeemVoucherSchema = z.object({
+  code: z.string().trim().min(3).max(40),
+});
+export type RedeemVoucherInput = z.infer<typeof RedeemVoucherSchema>;
+
 export const ListAdminBillingOrdersQuerySchema = z.object({
   q: z.string().trim().min(1).max(120).optional(),
   status: BillingOrderStatusSchema.optional(),

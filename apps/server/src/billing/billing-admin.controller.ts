@@ -53,6 +53,8 @@ import {
   UpdateAdminBillingPromotionSchema,
   UpsertAdminBillingProviderBindingSchema,
   UpsertAdminBillingPromotionProviderBindingSchema,
+  GenerateVouchersSchema,
+  ListVouchersQuerySchema,
   type BillingPriceParams,
   type BillingMembershipPlanParams,
   type BillingWalletAccountParams,
@@ -81,7 +83,10 @@ import {
   type UpdateAdminBillingPromotionInput,
   type UpsertAdminBillingProviderBindingInput,
   type UpsertAdminBillingPromotionProviderBindingInput,
+  type GenerateVouchersInput,
+  type ListVouchersQuery,
 } from './dto';
+import { VoucherService } from './voucher.service';
 
 @Public()
 @UseGuards(AdminAuthGuard, AdminPermissionGuard)
@@ -91,6 +96,7 @@ export class BillingAdminController {
     private readonly billing: BillingService,
     private readonly ledger: BillingLedgerService,
     private readonly adminAuth: AdminAuthService,
+    private readonly vouchers: VoucherService,
   ) {}
 
   @RequireAdminPermissions(ADMIN_PERMISSION_KEYS.BillingRead)
@@ -353,6 +359,39 @@ export class BillingAdminController {
       code: 200,
       data: await this.billing.listAdminPromotions(query),
     };
+  }
+
+  @RequireAdminPermissions(ADMIN_PERMISSION_KEYS.BillingRead)
+  @Get('vouchers')
+  async listVouchers(
+    @Query(new ZodValidationPipe(ListVouchersQuerySchema))
+    query: ListVouchersQuery,
+  ) {
+    return { code: 200, data: await this.vouchers.listVouchers(query) };
+  }
+
+  @RequireAdminPermissions(ADMIN_PERMISSION_KEYS.BillingWrite)
+  @Post('vouchers')
+  async generateVouchers(
+    @CurrentAdmin() admin: AdminActor,
+    @Body(new ZodValidationPipe(GenerateVouchersSchema))
+    body: GenerateVouchersInput,
+    @Req() request: Request,
+  ) {
+    const data = await this.vouchers.generateVouchers(admin.id, body);
+    await this.audit(
+      admin,
+      request,
+      'admin.billing.voucher.generate',
+      'voucher_batch',
+      data.batchId,
+      {
+        count: data.count,
+        grantType: body.grantType,
+        computeCreditAmount: body.computeCreditAmount,
+      },
+    );
+    return { code: 200, data };
   }
 
   @RequireAdminPermissions(ADMIN_PERMISSION_KEYS.BillingWrite)

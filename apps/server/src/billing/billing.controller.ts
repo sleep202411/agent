@@ -30,13 +30,28 @@ import {
   type ListMembershipPlansQuery,
   type ListBillingPricesQuery,
   type ListWalletLedgerQuery,
+  RedeemVoucherSchema,
+  type RedeemVoucherInput,
 } from './dto';
+import { VoucherService } from './voucher.service';
 
 type RawBodyRequest = Request & { rawBody?: Buffer };
 
 @Controller('billing')
 export class BillingController {
-  constructor(private readonly billing: BillingService) {}
+  constructor(
+    private readonly billing: BillingService,
+    private readonly vouchers: VoucherService,
+  ) {}
+
+  @Post('vouchers/redeem')
+  async redeemVoucher(
+    @CurrentUser() user: AuthUser,
+    @Body(new ZodValidationPipe(RedeemVoucherSchema))
+    body: RedeemVoucherInput,
+  ) {
+    return { code: 200, data: await this.vouchers.redeemVoucher(user, body) };
+  }
 
   @Get('prices')
   async listPrices(
