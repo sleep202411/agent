@@ -89,6 +89,32 @@ export function redeemVoucher(code: string) {
   });
 }
 
+export interface ActiveCampaign {
+  id: string;
+  name: string;
+  description: string | null;
+  computeCreditAmount: number;
+  endsAt: string | null;
+  claimed: boolean;
+}
+
+/** Active, in-window free-credits campaigns + whether the caller already claimed. */
+export function listActiveCampaigns() {
+  return api.get<{ items: ActiveCampaign[] }>("/aurora/billing/campaigns/active");
+}
+
+export interface CampaignClaimResult {
+  granted: RedeemVoucherResult["granted"];
+  alreadyClaimed: boolean;
+}
+
+/** Claim a campaign's free credits (once per user; idempotent server-side). */
+export function claimCampaign(campaignId: string) {
+  return api.post<CampaignClaimResult>(`/aurora/billing/campaigns/${campaignId}/claim`, {
+    data: {},
+  });
+}
+
 // ───────────────────────── Compute-point recharge ──────────────────────────
 // Funds a compute_point (AI-generation) wallet — the caller's own, or a team's
 // shared pool when `workspaceId` is supplied (the server requires the billing

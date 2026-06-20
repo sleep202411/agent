@@ -639,6 +639,26 @@ export type GenerateVouchersResult = {
   vouchers: VoucherRow[];
 };
 
+export type CreditCampaignStatus = "draft" | "active" | "paused" | "ended";
+
+export type CreditCampaignRow = {
+  id: string;
+  name: string;
+  description: string | null;
+  computeCreditAmount: number;
+  status: CreditCampaignStatus;
+  startsAt: string | null;
+  endsAt: string | null;
+  maxClaims: number | null;
+  claimCount: number;
+  note: string | null;
+  createdAt: string;
+};
+
+export type AdminBillingCampaignsData = {
+  items: CreditCampaignRow[];
+};
+
 export type AdminBillingOrdersData = {
   items: BillingOrderRow[];
   nextCursor: string | null;

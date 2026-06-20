@@ -9,6 +9,7 @@ import { SubscriptionDialog } from "@/app/_components/subscription-dialog";
 import { PageHeader, Panel, TeamBadge } from "../_components/settings-ui";
 import { TeamCreditsPanel } from "../_components/team-credits-panel";
 import { RedeemVoucherPanel } from "../_components/redeem-voucher-panel";
+import { CampaignsPanel } from "../_components/campaigns-panel";
 
 /**
  * Plan & Billing — the compute-credit balance + recharge (and, for teams, the
@@ -31,6 +32,8 @@ export default function BillingSettingsPage() {
       />
 
       {ws && <TeamCreditsPanel ws={ws} />}
+
+      <CampaignsPanel />
 
       <RedeemVoucherPanel />
 

@@ -15,6 +15,7 @@ import type {
   AdminBillingPricesData,
   AdminBillingPromotionsData,
   AdminBillingVouchersData,
+  AdminBillingCampaignsData,
   AdminBillingProviderEventsData,
   AdminBillingReconciliationRunsData,
   AdminBillingRefundsData,
@@ -65,6 +66,15 @@ export async function fetchAdminBillingVouchers(
   return fetchAdminBillingResource(
     `/billing/vouchers${toSearch(searchParams)}`,
     "兑换券数据加载失败。"
+  );
+}
+
+export async function fetchAdminBillingCreditCampaigns(
+  searchParams?: Record<string, string | undefined>
+): Promise<AdminBillingLoadResult<AdminBillingCampaignsData>> {
+  return fetchAdminBillingResource(
+    `/billing/credit-campaigns${toSearch(searchParams)}`,
+    "活动数据加载失败。"
   );
 }
 

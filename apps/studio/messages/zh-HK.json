@@ -851,6 +851,15 @@
       "alreadyRedeemed": "此兌換碼已使用",
       "error": "無法兌換此碼"
     },
+    "campaigns": {
+      "title": "免費領取",
+      "amount": "{amount} 算力積分",
+      "claim": "領取",
+      "claimed": "已領取",
+      "success": "已到帳 {amount} 算力積分",
+      "alreadyClaimed": "你已領取過此活動",
+      "error": "無法領取此活動"
+    },
     "members": "成員",
     "membersSubtitle": "「{name}」的成員可以協作處理此團隊的每個專案。",
     "membersAreForTeams": "成員功能適用於團隊",
