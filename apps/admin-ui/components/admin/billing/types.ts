@@ -610,6 +610,34 @@ export type AdminBillingPromotionsData = {
   items: BillingPromotionRow[];
 };
 
+export type VoucherStatus = "active" | "redeemed" | "void" | "expired";
+export type VoucherGrantType = "compute_credits";
+
+export type VoucherRow = {
+  id: string;
+  code: string;
+  batchId: string | null;
+  grantType: VoucherGrantType;
+  computeCreditAmount: number | null;
+  status: VoucherStatus;
+  expiresAt: string | null;
+  redeemedByUserId: string | null;
+  redeemedWorkspaceId: string | null;
+  redeemedAt: string | null;
+  note: string | null;
+  createdAt: string;
+};
+
+export type AdminBillingVouchersData = {
+  items: VoucherRow[];
+};
+
+export type GenerateVouchersResult = {
+  batchId: string;
+  count: number;
+  vouchers: VoucherRow[];
+};
+
 export type AdminBillingOrdersData = {
   items: BillingOrderRow[];
   nextCursor: string | null;

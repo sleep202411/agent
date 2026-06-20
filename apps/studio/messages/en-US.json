@@ -842,6 +842,15 @@
     "yourSubscription": "Your subscription",
     "subscriptionDescription": "Manage your personal plan, buy compute credit packs, and view pricing.",
     "managePlan": "Manage plan",
+    "redeemCode": {
+      "title": "Redeem a code",
+      "subtitle": "Have a gift or campaign code? Redeem it for compute credits.",
+      "placeholder": "Enter your code",
+      "button": "Redeem",
+      "success": "{amount} credits added to your wallet",
+      "alreadyRedeemed": "This code was already redeemed",
+      "error": "Could not redeem this code"
+    },
     "members": "Members",
     "membersSubtitle": "Members of “{name}” can collaborate on every project in this team.",
     "membersAreForTeams": "Members are for teams",

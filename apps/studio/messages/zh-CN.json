@@ -842,6 +842,15 @@
     "yourSubscription": "你的订阅",
     "subscriptionDescription": "管理个人套餐、购买算力积分包并查看定价。",
     "managePlan": "管理套餐",
+    "redeemCode": {
+      "title": "兑换码",
+      "subtitle": "有礼品码或活动码？兑换为算力积分。",
+      "placeholder": "输入兑换码",
+      "button": "兑换",
+      "success": "已到账 {amount} 算力积分",
+      "alreadyRedeemed": "该兑换码已使用",
+      "error": "无法兑换该码"
+    },
     "members": "成员",
     "membersSubtitle": "“{name}”的成员可以协作处理该团队的每个项目。",
     "membersAreForTeams": "成员功能面向团队",

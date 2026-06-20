@@ -69,6 +69,26 @@ export function createBillingCheckout(input: CreateBillingCheckoutInput) {
   return api.post<BillingCheckoutResult>("/aurora/billing/checkout", { data: input });
 }
 
+export interface RedeemVoucherResult {
+  granted: {
+    grantType: "compute_credits";
+    currency: string;
+    amount: string;
+    workspaceId: string;
+  };
+  alreadyRedeemed: boolean;
+}
+
+/**
+ * Redeem a 兑换券 / gift code for compute credits. The server credits the active
+ * user's personal-workspace pot and is idempotent (a retry never double-credits).
+ */
+export function redeemVoucher(code: string) {
+  return api.post<RedeemVoucherResult>("/aurora/billing/vouchers/redeem", {
+    data: { code },
+  });
+}
+
 // ───────────────────────── Compute-point recharge ──────────────────────────
 // Funds a compute_point (AI-generation) wallet — the caller's own, or a team's
 // shared pool when `workspaceId` is supplied (the server requires the billing

@@ -842,6 +842,15 @@
     "yourSubscription": "你的訂閱",
     "subscriptionDescription": "管理個人方案、購買算力積分包並查看定價。",
     "managePlan": "管理方案",
+    "redeemCode": {
+      "title": "兌換碼",
+      "subtitle": "有禮品碼或活動碼？兌換為算力積分。",
+      "placeholder": "輸入兌換碼",
+      "button": "兌換",
+      "success": "已到帳 {amount} 算力積分",
+      "alreadyRedeemed": "此兌換碼已使用",
+      "error": "無法兌換此碼"
+    },
     "members": "成員",
     "membersSubtitle": "「{name}」的成員可以協作處理此團隊的每個專案。",
     "membersAreForTeams": "成員功能適用於團隊",
