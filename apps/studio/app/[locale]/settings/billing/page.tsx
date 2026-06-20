@@ -10,6 +10,7 @@ import { PageHeader, Panel, TeamBadge } from "../_components/settings-ui";
 import { TeamCreditsPanel } from "../_components/team-credits-panel";
 import { RedeemVoucherPanel } from "../_components/redeem-voucher-panel";
 import { CampaignsPanel } from "../_components/campaigns-panel";
+import { CheckInCard } from "../_components/check-in-card";
 
 /**
  * Plan & Billing — the compute-credit balance + recharge (and, for teams, the
@@ -32,6 +33,8 @@ export default function BillingSettingsPage() {
       />
 
       {ws && <TeamCreditsPanel ws={ws} />}
+
+      <CheckInCard />
 
       <CampaignsPanel />
 

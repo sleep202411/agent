@@ -860,6 +860,17 @@
       "alreadyClaimed": "You've already claimed this",
       "error": "Could not claim this campaign"
     },
+    "checkIn": {
+      "title": "Daily check-in",
+      "streak": "{days}-day streak",
+      "start": "Check in to start a streak",
+      "day": "Day {n}",
+      "claim": "Check in +{amount}",
+      "doneToday": "Checked in today",
+      "success": "{amount} credits added — see you tomorrow!",
+      "alreadyToday": "You've already checked in today",
+      "error": "Could not check in"
+    },
     "members": "Members",
     "membersSubtitle": "Members of “{name}” can collaborate on every project in this team.",
     "membersAreForTeams": "Members are for teams",

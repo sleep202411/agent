@@ -20,6 +20,7 @@ import { Composer } from "./_pollo/composer";
 import { THEMES } from "./_pollo/theme";
 import { Footer, HeaderBar, TopBanner } from "./_home/chrome";
 import { ExploreMore, Models, RecentProjects } from "./_home/sections";
+import { CheckInCard } from "./settings/_components/check-in-card";
 
 const THEME = THEMES.red;
 
@@ -44,6 +45,11 @@ export default function HomePage() {
       <main className="lg:pl-[104px]">
         <div className="px-6 pt-10">
           <Composer theme={THEME} />
+        </div>
+        <div className="px-6 pt-8">
+          <div className="mx-auto max-w-3xl">
+            <CheckInCard compact />
+          </div>
         </div>
         <RecentProjects theme={THEME} />
         <Models theme={THEME} />

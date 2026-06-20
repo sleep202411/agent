@@ -89,6 +89,32 @@ export function redeemVoucher(code: string) {
   });
 }
 
+export interface CheckInStatus {
+  enabled: boolean;
+  rewards: number[];
+  checkedInToday: boolean;
+  streak: number;
+  nextStreakDay: number;
+  nextReward: number;
+  todayReward: number;
+}
+
+/** Today's daily check-in status + the streak reward cycle. */
+export function getCheckInStatus() {
+  return api.get<CheckInStatus>("/aurora/billing/check-in/status");
+}
+
+export interface CheckInResult {
+  granted: RedeemVoucherResult["granted"];
+  streakDay: number;
+  alreadyCheckedIn: boolean;
+}
+
+/** Claim today's check-in (once per day; idempotent server-side). */
+export function dailyCheckIn() {
+  return api.post<CheckInResult>("/aurora/billing/check-in", { data: {} });
+}
+
 export interface ActiveCampaign {
   id: string;
   name: string;

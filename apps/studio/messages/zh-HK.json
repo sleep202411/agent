@@ -860,6 +860,17 @@
       "alreadyClaimed": "你已領取過此活動",
       "error": "無法領取此活動"
     },
+    "checkIn": {
+      "title": "每日簽到",
+      "streak": "已連續簽到 {days} 天",
+      "start": "簽到開啟連續獎勵",
+      "day": "第{n}天",
+      "claim": "簽到 +{amount}",
+      "doneToday": "今日已簽到",
+      "success": "已到帳 {amount} 算力積分，明天再來！",
+      "alreadyToday": "你今天已經簽到過了",
+      "error": "簽到失敗"
+    },
     "members": "成員",
     "membersSubtitle": "「{name}」的成員可以協作處理此團隊的每個專案。",
     "membersAreForTeams": "成員功能適用於團隊",

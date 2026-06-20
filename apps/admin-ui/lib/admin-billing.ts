@@ -16,6 +16,7 @@ import type {
   AdminBillingPromotionsData,
   AdminBillingVouchersData,
   AdminBillingCampaignsData,
+  CheckInConfigData,
   AdminBillingProviderEventsData,
   AdminBillingReconciliationRunsData,
   AdminBillingRefundsData,
@@ -76,6 +77,12 @@ export async function fetchAdminBillingCreditCampaigns(
     `/billing/credit-campaigns${toSearch(searchParams)}`,
     "活动数据加载失败。"
   );
+}
+
+export async function fetchAdminCheckInConfig(): Promise<
+  AdminBillingLoadResult<CheckInConfigData>
+> {
+  return fetchAdminBillingResource(`/billing/check-in/config`, "签到配置加载失败。");
 }
 
 export async function fetchAdminBillingOrders(

@@ -659,6 +659,13 @@ export type AdminBillingCampaignsData = {
   items: CreditCampaignRow[];
 };
 
+export type CheckInConfigData = {
+  enabled: boolean;
+  rewards: number[];
+  configured: boolean;
+  updatedAt: string | null;
+};
+
 export type AdminBillingOrdersData = {
   items: BillingOrderRow[];
   nextCursor: string | null;

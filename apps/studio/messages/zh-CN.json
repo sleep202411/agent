@@ -860,6 +860,17 @@
       "alreadyClaimed": "你已领取过该活动",
       "error": "无法领取该活动"
     },
+    "checkIn": {
+      "title": "每日签到",
+      "streak": "已连续签到 {days} 天",
+      "start": "签到开启连续奖励",
+      "day": "第{n}天",
+      "claim": "签到 +{amount}",
+      "doneToday": "今日已签到",
+      "success": "已到账 {amount} 算力积分，明天再来！",
+      "alreadyToday": "你今天已经签到过了",
+      "error": "签到失败"
+    },
     "members": "成员",
     "membersSubtitle": "“{name}”的成员可以协作处理该团队的每个项目。",
     "membersAreForTeams": "成员功能面向团队",
