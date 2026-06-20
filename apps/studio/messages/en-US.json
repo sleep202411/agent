@@ -772,6 +772,7 @@
     "availableBalance": "Available balance",
     "sharedTeamBalance": "Shared team balance",
     "reservedByRunningJobs": "{amount} reserved by running jobs",
+    "creditsExpireOn": "{amount} credits expire on {date}",
     "onlyBillingAdminsCanTopUp": "Only billing admins can top up this team’s compute credits.",
     "creditsAdded": "{amount} compute credits added",
     "creditsAddedGeneric": "Compute credits added",

@@ -772,6 +772,7 @@
     "availableBalance": "可用余额",
     "sharedTeamBalance": "团队共享余额",
     "reservedByRunningJobs": "{amount} 已被运行中的任务占用",
+    "creditsExpireOn": "{amount} 积分将于 {date} 过期",
     "onlyBillingAdminsCanTopUp": "只有账单管理员可以为该团队充值算力积分。",
     "creditsAdded": "已添加 {amount} 算力积分",
     "creditsAddedGeneric": "已添加算力积分",

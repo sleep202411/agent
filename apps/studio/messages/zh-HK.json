@@ -772,6 +772,7 @@
     "availableBalance": "可用餘額",
     "sharedTeamBalance": "團隊共用餘額",
     "reservedByRunningJobs": "{amount} 已被執行中的工作佔用",
+    "creditsExpireOn": "{amount} 積分將於 {date} 過期",
     "onlyBillingAdminsCanTopUp": "只有帳單管理員可以為此團隊增值算力積分。",
     "creditsAdded": "已新增 {amount} 算力積分",
     "creditsAddedGeneric": "已新增算力積分",

@@ -74,6 +74,14 @@ export function TeamCreditsPanel({ ws }: { ws: WorkspaceRef }) {
                 {t("reservedByRunningJobs", { amount: balance.held.toLocaleString() })}
               </div>
             )}
+            {balance?.nextExpiry && (
+              <div className="mt-0.5 text-xs text-amber-300/80">
+                {t("creditsExpireOn", {
+                  amount: balance.nextExpiry.amount.toLocaleString(),
+                  date: new Date(balance.nextExpiry.expiresAt).toLocaleDateString(),
+                })}
+              </div>
+            )}
           </div>
         </div>
 

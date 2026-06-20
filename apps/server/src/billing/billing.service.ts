@@ -421,7 +421,25 @@ export class BillingService {
       take: query.limit,
     });
 
+    // The next credit grant to expire (for surfacing "X credits expire on DATE").
+    const nextExpiringGrant = await this.prisma.walletCreditGrant.findFirst({
+      where: {
+        accountId: { in: accounts.map((account) => account.id) },
+        status: WalletCreditGrantStatus.active,
+        availableAmount: { gt: 0n },
+        expiresAt: { not: null },
+      },
+      orderBy: { expiresAt: 'asc' },
+      select: { availableAmount: true, expiresAt: true },
+    });
+
     return {
+      nextExpiry: nextExpiringGrant
+        ? {
+            amount: nextExpiringGrant.availableAmount.toString(),
+            expiresAt: nextExpiringGrant.expiresAt!.toISOString(),
+          }
+        : null,
       accounts: accounts.map((account) => ({
         id: account.id,
         ownerType: account.ownerType,

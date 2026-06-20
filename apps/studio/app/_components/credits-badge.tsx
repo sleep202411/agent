@@ -16,12 +16,15 @@ interface WalletLedgerData {
     availableBalance: string;
     heldBalance?: string;
   }>;
+  nextExpiry?: { amount: string; expiresAt: string } | null;
 }
 
 export interface ComputeWalletBalance {
   available: bigint;
   held: bigint;
   total: bigint;
+  /** The next credit grant to expire, for surfacing "X credits expire on DATE". */
+  nextExpiry: { amount: bigint; expiresAt: string } | null;
 }
 
 export const computeWalletBalanceQueryKey = ["fizzstudio", "compute-billing", "balance"] as const;
@@ -58,7 +61,14 @@ async function getComputeWalletBalance(
     (sum, account) => sum + bigintFromString(account.heldBalance),
     BigInt(0)
   );
-  return { available, held, total: available + held };
+  const nextExpiry =
+    data.nextExpiry && /^\d+$/.test(data.nextExpiry.amount)
+      ? {
+          amount: BigInt(data.nextExpiry.amount),
+          expiresAt: data.nextExpiry.expiresAt,
+        }
+      : null;
+  return { available, held, total: available + held, nextExpiry };
 }
 
 export function useComputeWalletBalance(enabled = true) {
