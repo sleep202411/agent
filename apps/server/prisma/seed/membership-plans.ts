@@ -358,6 +358,41 @@ const teamPlans: MembershipPlanSeed[] = [
   },
 ];
 
+// Community membership (社区会员) — a SEPARATE axis from the studio/VIP plans:
+// it grants no compute credits/tiers; its value is member-free IP viewing + IP
+// purchase discounts + exclusive content/badge, enforced in ip-commerce by
+// planKey === 'community_membership' (never by rank). See docs/community-membership.md.
+const communityPlans: MembershipPlanSeed[] = [
+  {
+    planKey: 'community_membership',
+    productType: BillingProductType.community_membership_plan,
+    subjectType: BillingSubjectType.user,
+    status: BillingMembershipPlanStatus.active,
+    rank: 10,
+    name: 'Community Membership',
+    description:
+      'Watch member-free IPs for free and get member discounts on paid IPs.',
+    includedComputeCredits: 0n,
+    includedSeats: 1,
+    maxSeats: 1,
+    seatOverageAllowed: false,
+    topupDiscountBps: 0,
+    featureFlags: {
+      communityMemberFreeViewing: true,
+      ipPurchaseDiscount: true,
+      exclusiveContent: true,
+      memberBadge: true,
+    },
+    limits: {},
+    marketing: {
+      audience: 'Community viewers & supporters',
+      badge: null,
+      order: 10,
+    },
+    metadata: { source: PLAN_SEED_SOURCE },
+  },
+];
+
 const defaultUsdPrices = [
   {
     planKey: 'basic',
@@ -408,10 +443,19 @@ const defaultUsdPrices = [
     annualMinor: 399000n,
     annualOriginalMinor: 564000n,
   },
+  {
+    // 9.99/mo base; annual = 10 months (2 free). Admin discounts ride on top via
+    // BillingPromotion (no bespoke discount field).
+    planKey: 'community_membership',
+    monthlyAutoRenewMinor: 999n,
+    monthlyOriginalMinor: 999n,
+    annualMinor: 9990n,
+    annualOriginalMinor: 11988n,
+  },
 ] as const;
 
 export async function seedMembershipPlans(prisma: PrismaClient) {
-  const plans = [...individualPlans, ...teamPlans];
+  const plans = [...individualPlans, ...teamPlans, ...communityPlans];
   for (const plan of plans) {
     await prisma.billingMembershipPlan.upsert({
       where: { planKey: plan.planKey },

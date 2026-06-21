@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import {
   BillingMembershipPlanStatus,
   BillingSubjectType,
+  BillingSubscriptionStatus,
   EntitlementGrantStatus,
   type BillingMembershipPlan,
   type EntitlementGrant,
@@ -18,6 +19,13 @@ import {
   type KnownEntitlementPlanKey,
 } from './entitlement.types';
 import { DEFAULT_TEAM_SEAT_POLICY, type SeatPolicy } from './seat-policy';
+
+/**
+ * Plan key for the community membership (社区会员) — a SEPARATE access axis from
+ * the studio/VIP compute tiers. Gate community/IP features on this plan key,
+ * never on the compute-tier `rank` (avoids cross-contaminating studio gates).
+ */
+export const COMMUNITY_MEMBERSHIP_PLAN_KEY = 'community_membership';
 
 const PLAN_CONFIG = {
   free: {
@@ -390,6 +398,56 @@ export class EntitlementService {
   queuePriorityFor(entitlement: EntitlementSnapshot | null | undefined) {
     if (!entitlement) return PLAN_CONFIG.free.queuePriority;
     return configForKnownPlan(entitlement.planKey).queuePriority;
+  }
+
+  /**
+   * Whether a user holds an active community membership (社区会员). A SEPARATE
+   * axis from the studio/VIP compute tiers resolved by resolveForUser — callers
+   * gate community/IP features on THIS, never on `rank`.
+   *
+   * Primary signal: an active EntitlementGrant for the community plan. Grace
+   * fallback: a paid BillingSubscription whose current period hasn't ended yet
+   * (active or past_due) — so a brief renewal-webhook delay never silently
+   * downgrades a paying member into being charged points / denied member-free.
+   */
+  async isActiveCommunityMember(
+    user: AuthUser,
+    opts?: { now?: string },
+  ): Promise<{ member: boolean; expiresAt: Date | null }> {
+    const nowDate = parseNow(opts?.now);
+
+    const grant = await this.prisma.entitlementGrant.findFirst({
+      where: {
+        subjectType: BillingSubjectType.user,
+        subjectId: user.userId,
+        planKey: COMMUNITY_MEMBERSHIP_PLAN_KEY,
+        status: EntitlementGrantStatus.active,
+        startsAt: { lte: nowDate },
+        OR: [{ endsAt: null }, { endsAt: { gt: nowDate } }],
+      },
+      orderBy: [{ endsAt: 'desc' }],
+    });
+    if (grant) return { member: true, expiresAt: grant.endsAt ?? null };
+
+    // Grace: paid period still open but the renewal grant hasn't landed yet.
+    const sub = await this.prisma.billingSubscription.findFirst({
+      where: {
+        subjectType: BillingSubjectType.user,
+        subjectId: user.userId,
+        planKey: COMMUNITY_MEMBERSHIP_PLAN_KEY,
+        status: {
+          in: [
+            BillingSubscriptionStatus.active,
+            BillingSubscriptionStatus.past_due,
+          ],
+        },
+        currentPeriodEnd: { gt: nowDate },
+      },
+      orderBy: [{ currentPeriodEnd: 'desc' }],
+    });
+    if (sub) return { member: true, expiresAt: sub.currentPeriodEnd ?? null };
+
+    return { member: false, expiresAt: null };
   }
 
   private async findBestActiveGrant(input: {
