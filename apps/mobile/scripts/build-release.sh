@@ -1,0 +1,145 @@
+#!/usr/bin/env bash
+# ============================================================================
+# FizzDragon mobile — one-command production release builds.
+#
+#   ./scripts/build-release.sh <region> <platform>
+#     region   = global | cn | all
+#     platform = ios | android | all
+#
+# Produces signed, store-ready artifacts in $FD_OUT_DIR named
+#   FizzDragon-<version>-<build>-<variant>.{aab,apk,ipa}
+# where variant ∈ {global, cn-ios, cn-huawei, cn-xiaomi}.
+#
+# Signing secrets + material paths come from a GITIGNORED env file
+# (apps/mobile/.env.release.local — see .env.release.example). No secret lives
+# in the repo. Android release signing is injected by the
+# `withAndroidReleaseSigning` config plugin during prebuild (so the keystore is
+# wired via FIZZDRAGON_UPLOAD_* gradle props, passed below per region).
+#
+# Version + build number come from app.config.js (single source of truth).
+# CN Android is DUAL-package: 华为 = cn.fizzdragon, 小米 = cn.feiteng.fizzspace
+# (软著 bound to the feiteng package; do NOT merge — see app/signing/README.md).
+# ============================================================================
+set -euo pipefail
+
+MOBILE_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+cd "$MOBILE_DIR"
+
+# ── load signing/material config (gitignored) ──
+ENV_FILE="$MOBILE_DIR/.env.release.local"
+[ -f "$ENV_FILE" ] || {
+  echo "FATAL: $ENV_FILE not found. Copy .env.release.example and fill it in." >&2
+  exit 1
+}
+set -a; # shellcheck disable=SC1090
+source "$ENV_FILE"; set +a
+
+: "${FD_OUT_DIR:?set FD_OUT_DIR}"
+export ANDROID_HOME="${FD_ANDROID_SDK:-$HOME/Library/Android/sdk}"
+export ANDROID_SDK_ROOT="$ANDROID_HOME"
+export PATH="$ANDROID_HOME/platform-tools:$ANDROID_HOME/cmdline-tools/latest/bin:$PATH"
+mkdir -p "$FD_OUT_DIR"
+
+REGION="${1:?usage: build-release.sh <global|cn|all> <ios|android|all>}"
+PLATFORM="${2:?usage: build-release.sh <global|cn|all> <ios|android|all>}"
+
+VER="$(node -p "require('./app.config.js')({config:{}}).version")"
+BUILD="$(node -p "require('./app.config.js')({config:{}}).ios.buildNumber")"
+echo "==> FizzDragon $VER (build $BUILD) — region=$REGION platform=$PLATFORM"
+
+APKSIGNER="$(ls "$ANDROID_HOME"/build-tools/*/apksigner 2>/dev/null | sort -V | tail -1 || true)"
+RESULT=""
+
+# prebuild for a region/platform with the full identifier env exported so the
+# JS-embed step (which re-reads app.config) also sees the region — else it
+# defaults to global and the app ships the wrong (.com) API config.
+prebuild() { # region platform androidPackage
+  local region="$1" platform="$2" pkg="$3"
+  export APP_VARIANT=production FD_APP_REGION="$region"
+  export FD_GLOBAL_IOS_BUNDLE_IDENTIFIER="${FD_GLOBAL_IOS_BUNDLE_IDENTIFIER:-com.fizzdragon.app}"
+  export FD_GLOBAL_ANDROID_PACKAGE="${FD_GLOBAL_ANDROID_PACKAGE:-com.fizzdragon}"
+  export FD_CN_IOS_BUNDLE_IDENTIFIER="${FD_CN_IOS_BUNDLE_IDENTIFIER:-cn.fizzspaceapp}"
+  # the per-build android package (cn has two; global has one)
+  [ "$region" = cn ] && export FD_CN_ANDROID_PACKAGE="$pkg" || export FD_GLOBAL_ANDROID_PACKAGE="$pkg"
+  echo "  [$(date +%T)] prebuild $region/$platform pkg=$pkg"
+  npx expo prebuild --platform "$platform" --clean --no-install >/tmp/fd-prebuild-$region-$platform.log 2>&1
+}
+
+build_android() { # variant region package keystore storepass alias keypass task ext gradleOut
+  local variant="$1" region="$2" pkg="$3" ks="$4" sp="$5" al="$6" kp="$7" task="$8" ext="$9" gout="${10}"
+  prebuild "$region" android "$pkg"
+  echo "  [$(date +%T)] gradlew $task ($variant)"
+  ( cd android && ./gradlew "$task" --no-daemon \
+      -PFIZZDRAGON_UPLOAD_STORE_FILE="$ks" -PFIZZDRAGON_UPLOAD_STORE_PASSWORD="$sp" \
+      -PFIZZDRAGON_UPLOAD_KEY_ALIAS="$al" -PFIZZDRAGON_UPLOAD_KEY_PASSWORD="$kp" \
+    ) >/tmp/fd-gradle-$variant.log 2>&1
+  local out="$FD_OUT_DIR/FizzDragon-$VER-$BUILD-$variant.$ext"
+  cp "android/$gout" "$out"
+  local md5; md5="$("$APKSIGNER" verify --print-certs "$out" 2>/dev/null | grep -i 'MD5' | grep -oE '[a-f0-9]{32}' || echo '?')"
+  RESULT="$RESULT\n  ✓ $variant ($pkg) sig=$md5 → $(basename "$out")"
+}
+
+build_ios() { # variant region bundleId signStyle team profileOrEmpty
+  local variant="$1" region="$2" bundle="$3" style="$4" team="$5" profile="${6:-}"
+  prebuild "$region" ios "$bundle"   # pkg arg unused for ios but harmless
+  echo "  [$(date +%T)] pod install ($variant)"
+  ( cd ios && pod install ) >/tmp/fd-pod-$variant.log 2>&1
+  local arch="/tmp/FizzDragon-$variant.xcarchive"
+  echo "  [$(date +%T)] xcodebuild archive ($variant, $style)"
+  local signArgs=(CODE_SIGN_STYLE="$style" DEVELOPMENT_TEAM="$team")
+  [ "$style" = Manual ] && signArgs+=(PROVISIONING_PROFILE_SPECIFIER="$profile" "CODE_SIGN_IDENTITY=Apple Distribution")
+  xcodebuild -workspace ios/FizzDragon.xcworkspace -scheme FizzDragon -configuration Release \
+    -archivePath "$arch" -destination 'generic/platform=iOS' archive \
+    -allowProvisioningUpdates "${signArgs[@]}" >/tmp/fd-xcarchive-$variant.log 2>&1
+  local plist="/tmp/fd-export-$variant.plist"
+  if [ "$style" = Manual ]; then
+    cat > "$plist" <<PLIST
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+<key>method</key><string>app-store-connect</string>
+<key>teamID</key><string>$team</string>
+<key>signingStyle</key><string>manual</string>
+<key>provisioningProfiles</key><dict><key>$bundle</key><string>$profile</string></dict>
+<key>signingCertificate</key><string>Apple Distribution</string>
+<key>uploadSymbols</key><true/>
+</dict></plist>
+PLIST
+  else
+    cat > "$plist" <<PLIST
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+<key>method</key><string>app-store-connect</string>
+<key>teamID</key><string>$team</string>
+<key>signingStyle</key><string>automatic</string>
+<key>uploadSymbols</key><true/>
+</dict></plist>
+PLIST
+  fi
+  echo "  [$(date +%T)] export ipa ($variant)"
+  xcodebuild -exportArchive -archivePath "$arch" -exportPath "/tmp/fd-ipa-$variant" \
+    -exportOptionsPlist "$plist" -allowProvisioningUpdates >/tmp/fd-xcexport-$variant.log 2>&1
+  local out="$FD_OUT_DIR/FizzDragon-$VER-$BUILD-$variant.ipa"
+  cp /tmp/fd-ipa-$variant/*.ipa "$out"
+  RESULT="$RESULT\n  ✓ $variant ($bundle) → $(basename "$out")"
+}
+
+run_global_android() { build_android global global "${FD_GLOBAL_ANDROID_PACKAGE:-com.fizzdragon}" "$FD_GP_KEYSTORE" "$FD_GP_STORE_PASS" "$FD_GP_KEY_ALIAS" "$FD_GP_KEY_PASS" bundleRelease aab app/build/outputs/bundle/release/app-release.aab; }
+run_cn_android()     {
+  build_android cn-huawei cn "${FD_CN_HUAWEI_PACKAGE:-cn.fizzdragon}"        "$FD_CN_KEYSTORE" "$FD_CN_STORE_PASS" "$FD_CN_KEY_ALIAS" "$FD_CN_KEY_PASS" assembleRelease apk app/build/outputs/apk/release/app-release.apk
+  build_android cn-xiaomi cn "${FD_CN_XIAOMI_PACKAGE:-cn.feiteng.fizzspace}" "$FD_CN_KEYSTORE" "$FD_CN_STORE_PASS" "$FD_CN_KEY_ALIAS" "$FD_CN_KEY_PASS" assembleRelease apk app/build/outputs/apk/release/app-release.apk
+}
+run_global_ios() { build_ios global  global "${FD_GLOBAL_IOS_BUNDLE_IDENTIFIER:-com.fizzdragon.app}" Manual    "$FD_IOS_GLOBAL_TEAM" "$FD_IOS_GLOBAL_PROFILE"; }
+run_cn_ios()     { build_ios cn-ios  cn     "${FD_CN_IOS_BUNDLE_IDENTIFIER:-cn.fizzspaceapp}"        Automatic "$FD_IOS_CN_TEAM"; }
+
+want() { [ "$REGION" = all ] || [ "$REGION" = "$1" ]; }
+wantp() { [ "$PLATFORM" = all ] || [ "$PLATFORM" = "$1" ]; }
+
+want global && wantp android && run_global_android
+want global && wantp ios     && run_global_ios
+want cn     && wantp android && run_cn_android
+want cn     && wantp ios     && run_cn_ios
+
+echo -e "\n==> DONE @ $(date +%T):$RESULT"
+echo "    output: $FD_OUT_DIR"

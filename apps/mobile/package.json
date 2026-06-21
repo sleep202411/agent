@@ -51,7 +51,10 @@
     "android": "node ./scripts/expo-workspace.js start --android",
     "ios": "node ./scripts/expo-workspace.js start --ios",
     "web": "node ./scripts/expo-workspace.js start --web",
-    "lint": "node ./scripts/expo-workspace.js lint"
+    "lint": "node ./scripts/expo-workspace.js lint",
+    "build:release": "bash ./scripts/build-release.sh",
+    "build:release:cn": "bash ./scripts/build-release.sh cn all",
+    "build:release:global": "bash ./scripts/build-release.sh global all"
   },
   "private": true
 }
