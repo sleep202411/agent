@@ -52,6 +52,7 @@ import { computeRevenueSplit } from './revenue-split';
 import { PrismaService } from '../infra/db/db.module';
 import { OutputStorageService } from '../infra/storage/storage.types';
 import { resolveMediaPublicUrl } from '../infra/storage/media-asset-url-resolver.service';
+import { LegacyCnVideoResolverService } from './legacy-cn-video.service';
 import { WalletLedgerService } from '../workspaces';
 import type {
   CreateIpDraftInput,
@@ -375,6 +376,7 @@ export class IpCommerceService {
     private readonly prisma: PrismaService,
     private readonly walletLedger: WalletLedgerService,
     private readonly outputStorage: OutputStorageService,
+    private readonly legacyCnVideo: LegacyCnVideoResolverService,
   ) {}
 
   /**
@@ -3356,7 +3358,11 @@ export class IpCommerceService {
           .filter(Boolean) as string[],
       ),
     };
-    return { ip: ipDto(ip, query.locale, mediaAccess) };
+    const dto = ipDto(ip, query.locale, mediaAccess);
+    // Legacy CN IPs store video external_urls on the image CDN (banner.fizzspace.cn,
+    // 404 for videos); mint the real signed video URL via Java getLink at read time.
+    await this.legacyCnVideo.resolveDtoVideos(dto);
+    return { ip: dto };
   }
 
   async getIpAccess(
