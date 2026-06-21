@@ -21,6 +21,8 @@ import {
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { CommunityRechargeDialog } from "@/components/payment/community-recharge-dialog";
+import { CommunityMembershipDialog } from "@/components/payment/community-membership-dialog";
+import { useMembershipPreview } from "@/src/hooks/use-membership-preview";
 import { VideoPlayer } from "@/components/media/video-player";
 import { UserAvatar, resolveUserAvatarUrl } from "@/components/user-avatar";
 import { useUserDisplays } from "@/app/(site)/crews/_hooks/use-users";
@@ -102,6 +104,7 @@ export function IpPublicDetail({ ipId }: IpPublicDetailProps) {
   const locale = useLocale() as Locale;
   const router = useRouter();
   const t = useTranslations("newIpDetail");
+  const tPay = useTranslations("payment");
   const statusT = useTranslations("newIpWorkbench");
   const { user, isLoading: userLoading } = useCurrentUser();
   const publicQuery = useIpCommerceIp(ipId, { locale });
@@ -111,6 +114,9 @@ export function IpPublicDetail({ ipId }: IpPublicDetailProps) {
   const [selectedEpisodeId, setSelectedEpisodeId] = useState<string | null>(null);
   const [reportOpen, setReportOpen] = useState(false);
   const [rechargeOpen, setRechargeOpen] = useState(false);
+  const [membershipOpen, setMembershipOpen] = useState(false);
+  // Preview-gated until membership benefits (Phases 2–5) ship.
+  const membershipPreview = useMembershipPreview();
 
   const detailIp = publicQuery.data?.ip
     ? normalizePublicIp(publicQuery.data.ip)
@@ -390,6 +396,16 @@ export function IpPublicDetail({ ipId }: IpPublicDetailProps) {
                 }}
               />
 
+              {membershipPreview && activeAccessCode === "locked" && (
+                <button
+                  type="button"
+                  onClick={() => setMembershipOpen(true)}
+                  className="mt-3 flex w-full items-center justify-center gap-1.5 rounded-lg border border-primary/30 bg-primary/[0.06] px-3 py-2.5 text-sm font-medium text-primary transition-colors hover:bg-primary/10"
+                >
+                  {tPay("communityMembershipTitle")}
+                </button>
+              )}
+
               <div className="mt-3 rounded-lg bg-secondary/80 p-3">
                 <div className="flex flex-wrap items-center gap-2 text-[13px] font-semibold text-foreground">
                   <span>
@@ -453,6 +469,13 @@ export function IpPublicDetail({ ipId }: IpPublicDetailProps) {
           // Return the refetch promise so the dialog awaits the balance refresh
           // and owns the success/processing toast (avoids a duplicate toast).
           onSuccess={() => walletQuery.refetch().then(() => {})}
+        />
+        <CommunityMembershipDialog
+          open={membershipOpen}
+          onOpenChange={setMembershipOpen}
+          onSuccess={() =>
+            Promise.all([walletQuery.refetch(), accessQuery.refetch()]).then(() => {})
+          }
         />
       </main>
     </div>

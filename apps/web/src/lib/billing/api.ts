@@ -42,7 +42,7 @@ export interface MembershipPrice extends BillingPackage {
 export interface MembershipPlan {
   id: string;
   planKey: string;
-  productType: "membership_plan" | "team_membership_plan";
+  productType: "membership_plan" | "team_membership_plan" | "community_membership_plan";
   subjectType: "user" | "workspace";
   status: string;
   rank: number;
@@ -70,7 +70,7 @@ export function listCommunityPointPackages(currency: string) {
 }
 
 export function listMembershipPlans(input?: {
-  productType?: "membership_plan" | "team_membership_plan";
+  productType?: "membership_plan" | "team_membership_plan" | "community_membership_plan";
   currency?: string;
 }) {
   return api.get<{ provider: string; plans: MembershipPlan[] }>(

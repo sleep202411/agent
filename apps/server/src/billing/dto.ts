@@ -275,7 +275,13 @@ const PlanKeySchema = z
   );
 
 export const ListMembershipPlansQuerySchema = z.object({
-  productType: z.enum(['membership_plan', 'team_membership_plan']).optional(),
+  productType: z
+    .enum([
+      'membership_plan',
+      'team_membership_plan',
+      'community_membership_plan',
+    ])
+    .optional(),
   subjectType: BillingSubjectTypeSchema.optional(),
   provider: CheckoutPaymentProviderSchema.optional(),
   currency: z
@@ -290,7 +296,13 @@ export type ListMembershipPlansQuery = z.infer<
 >;
 
 export const ListAdminMembershipPlansQuerySchema = z.object({
-  productType: z.enum(['membership_plan', 'team_membership_plan']).optional(),
+  productType: z
+    .enum([
+      'membership_plan',
+      'team_membership_plan',
+      'community_membership_plan',
+    ])
+    .optional(),
   subjectType: BillingSubjectTypeSchema.optional(),
   status: BillingMembershipPlanStatusSchema.optional(),
   includeArchived: z.coerce.boolean().default(false),
