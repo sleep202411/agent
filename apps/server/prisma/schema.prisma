@@ -229,6 +229,9 @@ enum BillingProductType {
   membership_plan
   /// Workspace or team membership entitlement.
   team_membership_plan
+  /// Individual community membership (社区会员): member-free IP viewing + IP
+  /// purchase discounts. A separate access axis from membership_plan (studio/VIP).
+  community_membership_plan
 }
 
 enum BillingPriceInterval {
@@ -744,25 +747,25 @@ enum IpUserBlockTargetType {
 }
 
 model Workspace {
-  id               String               @id @default(uuid(7)) @db.Uuid
+  id               String          @id @default(uuid(7)) @db.Uuid
   type             WorkspaceType
-  status           WorkspaceStatus      @default(active)
-  name             String               @db.VarChar(120)
-  slug             String?              @db.VarChar(80)
-  avatarUrl        String?              @map("avatar_url") @db.VarChar(512)
-  description      String?              @db.VarChar(500)
+  status           WorkspaceStatus @default(active)
+  name             String          @db.VarChar(120)
+  slug             String?         @db.VarChar(80)
+  avatarUrl        String?         @map("avatar_url") @db.VarChar(512)
+  description      String?         @db.VarChar(500)
   /// External authenticated user id. For personal workspaces this is
   /// the owning user; for team workspaces this is the creator/admin who
   /// initialized the team. No FK to external user tables.
-  ownerUserId      String               @map("owner_user_id") @db.VarChar(64)
-  createdById      String               @map("created_by_id") @db.VarChar(64)
-  defaultProjectId String?              @map("default_project_id") @db.Uuid
-  version          Int                  @default(0)
-  suspendedAt      DateTime?            @map("suspended_at") @db.Timestamptz(6)
-  archivedAt       DateTime?            @map("archived_at") @db.Timestamptz(6)
-  createdAt        DateTime             @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt        DateTime             @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
-  deletedAt        DateTime?            @map("deleted_at") @db.Timestamptz(6)
+  ownerUserId      String          @map("owner_user_id") @db.VarChar(64)
+  createdById      String          @map("created_by_id") @db.VarChar(64)
+  defaultProjectId String?         @map("default_project_id") @db.Uuid
+  version          Int             @default(0)
+  suspendedAt      DateTime?       @map("suspended_at") @db.Timestamptz(6)
+  archivedAt       DateTime?       @map("archived_at") @db.Timestamptz(6)
+  createdAt        DateTime        @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt        DateTime        @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  deletedAt        DateTime?       @map("deleted_at") @db.Timestamptz(6)
 
   members          WorkspaceMember[]
   invites          WorkspaceInvite[]
@@ -1455,24 +1458,24 @@ enum VoucherGrantType {
 /// a row-locked conditional update (no double-redeem) and the wallet credit is
 /// keyed by voucher id (no double-credit; same-user re-redeem recovers a crash).
 model Voucher {
-  id        String           @id @default(uuid(7)) @db.Uuid
+  id                  String           @id @default(uuid(7)) @db.Uuid
   /// The redemption code the user enters. Stored uppercased; globally unique.
-  code      String           @unique(map: "vouchers_code_unique") @db.VarChar(40)
+  code                String           @unique(map: "vouchers_code_unique") @db.VarChar(40)
   /// Groups codes minted together (one admin generate call).
-  batchId   String?          @map("batch_id") @db.Uuid
-  grantType VoucherGrantType @default(compute_credits) @map("grant_type")
+  batchId             String?          @map("batch_id") @db.Uuid
+  grantType           VoucherGrantType @default(compute_credits) @map("grant_type")
   /// compute_credits: number of compute_point to grant (1 credit = 1¢). Required
   /// for grantType=compute_credits (DB CHECK).
-  computeCreditAmount  Int?          @map("compute_credit_amount")
-  status               VoucherStatus @default(active)
-  expiresAt            DateTime?     @map("expires_at") @db.Timestamptz(6)
-  redeemedByUserId     String?       @map("redeemed_by_user_id") @db.VarChar(64)
-  redeemedWorkspaceId  String?       @map("redeemed_workspace_id") @db.Uuid
-  redeemedAt           DateTime?     @map("redeemed_at") @db.Timestamptz(6)
-  note                 String?       @db.Text
-  createdById          String        @map("created_by_id") @db.VarChar(64)
-  createdAt            DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt            DateTime      @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  computeCreditAmount Int?             @map("compute_credit_amount")
+  status              VoucherStatus    @default(active)
+  expiresAt           DateTime?        @map("expires_at") @db.Timestamptz(6)
+  redeemedByUserId    String?          @map("redeemed_by_user_id") @db.VarChar(64)
+  redeemedWorkspaceId String?          @map("redeemed_workspace_id") @db.Uuid
+  redeemedAt          DateTime?        @map("redeemed_at") @db.Timestamptz(6)
+  note                String?          @db.Text
+  createdById         String           @map("created_by_id") @db.VarChar(64)
+  createdAt           DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt           DateTime         @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   @@index([batchId], map: "vouchers_batch_idx")
   @@index([status, expiresAt], map: "vouchers_status_idx")
@@ -2373,6 +2376,32 @@ model SupportedLocale {
   @@map("supported_locales")
 }
 
+/// Creator-chosen access policy for an IP's paid content.
+enum IpAccessMode {
+  /// Default: unlock by paying the price rule in community points.
+  points_priced
+  /// Active community members unlock free; non-members still pay the price rule.
+  member_free
+}
+
+/// Where a creator-revenue ledger entry came from. Makes new payout sources
+/// (e.g. licensing) purely additive — add a value + a service that reuses the
+/// same generalized credit path; no other schema change.
+enum IpRevenueSourceType {
+  /// Per-sale revenue share at point of purchase (existing behavior).
+  ip_sale
+  /// Monthly community-membership subscription-pool distribution.
+  member_pool
+  /// FUTURE: Netflix-style licensing/featuring deal.
+  licensing
+}
+
+enum MemberPoolBatchStatus {
+  computing
+  posted
+  voided
+}
+
 model Ip {
   id                     String              @id @default(uuid(7)) @db.Uuid
   status                 IpPublicationStatus @default(draft)
@@ -2390,6 +2419,13 @@ model Ip {
   /// (0..10000) of each sale that goes to the creator pool. NULL inherits the
   /// global default (ip_commerce_settings key `ip.creator_revenue_share_bps`).
   creatorRevenueShareBps Int?                @map("creator_revenue_share_bps")
+  /// Creator-chosen access policy. `member_free` lets active community members
+  /// unlock this IP's content for free; non-members still pay the price rule.
+  accessMode             IpAccessMode        @default(points_priced) @map("access_mode")
+  /// Per-IP override (basis points, 0..10000) of the creator earn-share counted
+  /// for this IP when distributing the monthly member pool. NULL inherits the
+  /// global default (ip_commerce_settings key `ip.member_free_bps`).
+  memberFreeBps          Int?                @map("member_free_bps")
   version                Int                 @default(0)
   scheduledAt            DateTime?           @map("scheduled_at") @db.Timestamptz(6)
   publishedAt            DateTime?           @map("published_at") @db.Timestamptz(6)
@@ -2751,30 +2787,34 @@ model IpTranslationJob {
 }
 
 model IpPriceRule {
-  id              String             @id @default(uuid(7)) @db.Uuid
-  ipId            String             @map("ip_id") @db.Uuid
-  episodeId       String?            @map("episode_id") @db.Uuid
-  campaignId      String?            @map("campaign_id") @db.Uuid
-  targetType      IpTargetType       @map("target_type")
-  status          IpPriceRuleStatus  @default(draft)
+  id                String             @id @default(uuid(7)) @db.Uuid
+  ipId              String             @map("ip_id") @db.Uuid
+  episodeId         String?            @map("episode_id") @db.Uuid
+  campaignId        String?            @map("campaign_id") @db.Uuid
+  targetType        IpTargetType       @map("target_type")
+  status            IpPriceRuleStatus  @default(draft)
   /// IP content purchases are always priced in community points. Compute
   /// points are reserved for AI generation workloads and are blocked by a DB
   /// check constraint in the matching migration.
-  currency        WalletCurrencyType @default(community_point)
-  amount          BigInt
-  originalAmount  BigInt?            @map("original_amount")
-  priority        Int                @default(0)
-  startsAt        DateTime?          @map("starts_at") @db.Timestamptz(6)
-  endsAt          DateTime?          @map("ends_at") @db.Timestamptz(6)
-  unlocksAt       DateTime?          @map("unlocks_at") @db.Timestamptz(6)
-  maxPerUser      Int?               @map("max_per_user")
-  refundPolicyKey String?            @map("refund_policy_key") @db.VarChar(64)
-  metadata        Json               @default("{}") @db.JsonB
-  createdById     String             @map("created_by_id") @db.VarChar(64)
-  updatedById     String?            @map("updated_by_id") @db.VarChar(64)
-  createdAt       DateTime           @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt       DateTime           @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
-  archivedAt      DateTime?          @map("archived_at") @db.Timestamptz(6)
+  currency          WalletCurrencyType @default(community_point)
+  amount            BigInt
+  originalAmount    BigInt?            @map("original_amount")
+  /// Discount (basis points, 0..10000) applied to this rule's `amount` for
+  /// active community members. NULL inherits the global default
+  /// (ip_commerce_settings key `ip.member_discount_bps`); 0 disables.
+  memberDiscountBps Int?               @map("member_discount_bps")
+  priority          Int                @default(0)
+  startsAt          DateTime?          @map("starts_at") @db.Timestamptz(6)
+  endsAt            DateTime?          @map("ends_at") @db.Timestamptz(6)
+  unlocksAt         DateTime?          @map("unlocks_at") @db.Timestamptz(6)
+  maxPerUser        Int?               @map("max_per_user")
+  refundPolicyKey   String?            @map("refund_policy_key") @db.VarChar(64)
+  metadata          Json               @default("{}") @db.JsonB
+  createdById       String             @map("created_by_id") @db.VarChar(64)
+  updatedById       String?            @map("updated_by_id") @db.VarChar(64)
+  createdAt         DateTime           @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt         DateTime           @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  archivedAt        DateTime?          @map("archived_at") @db.Timestamptz(6)
 
   ip                Ip                   @relation(fields: [ipId], references: [id], onDelete: Cascade)
   episode           IpEpisode?           @relation(fields: [episodeId], references: [id], onDelete: Cascade)
@@ -2944,10 +2984,16 @@ model IpRevenueLedgerEntry {
   userId              String                   @map("user_id") @db.VarChar(64)
   ipId                String                   @map("ip_id") @db.Uuid
   episodeId           String?                  @map("episode_id") @db.Uuid
-  orderId             String                   @map("order_id") @db.Uuid
+  /// Nullable: ip_sale rows are order-scoped; member_pool/licensing rows are not.
+  orderId             String?                  @map("order_id") @db.Uuid
   walletTransactionId String?                  @map("wallet_transaction_id") @db.Uuid
   entryType           IpRevenueLedgerEntryType @default(revenue_share) @map("entry_type")
   status              IpRevenueLedgerStatus    @default(posted)
+  /// Where this earning came from. ip_sale = per-sale revenue share (existing);
+  /// member_pool = monthly community-membership pool; licensing = FUTURE deal.
+  sourceType          IpRevenueSourceType      @default(ip_sale) @map("source_type")
+  /// Set for member_pool rows (the settlement batch id); NULL for sales.
+  settlementBatchId   String?                  @map("settlement_batch_id") @db.Uuid
   currency            WalletCurrencyType       @default(community_point)
   balanceKind         WalletBalanceKind        @default(withdrawable) @map("balance_kind")
   /// Credited amount in community-point minor units. Positive for revenue_share.
@@ -2963,7 +3009,7 @@ model IpRevenueLedgerEntry {
   voidedAt            DateTime?                @map("voided_at") @db.Timestamptz(6)
 
   ip                Ip                 @relation(fields: [ipId], references: [id], onDelete: Cascade)
-  order             IpPurchaseOrder    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  order             IpPurchaseOrder?   @relation(fields: [orderId], references: [id], onDelete: Cascade)
   walletTransaction WalletTransaction? @relation(fields: [walletTransactionId], references: [id], onDelete: SetNull)
 
   /// One credit row per beneficiary per order per entry type — durable
@@ -2972,6 +3018,8 @@ model IpRevenueLedgerEntry {
   @@index([userId, status, createdAt(sort: Desc)], map: "ip_revenue_ledger_user_recent_idx")
   @@index([ipId, status, createdAt(sort: Desc)], map: "ip_revenue_ledger_ip_recent_idx")
   @@index([orderId], map: "ip_revenue_ledger_order_idx")
+  @@index([sourceType, status, createdAt(sort: Desc)], map: "ip_revenue_ledger_source_idx")
+  @@index([settlementBatchId], map: "ip_revenue_ledger_settlement_batch_idx")
   @@map("ip_revenue_ledger_entries")
 }
 
@@ -2988,6 +3036,57 @@ model IpCommerceSetting {
 
   @@unique([key], map: "ip_commerce_settings_key_unique")
   @@map("ip_commerce_settings")
+}
+
+/// Pool-weight ledger for the community-membership creator-revenue pool. One
+/// weighted row per member per episode per settlement month (dedup via unique).
+/// Decoupled from access: a member is granted access once, but their monthly
+/// views drive that month's pool share. Immutable settlement input (snapshot
+/// fields, no FK) so re-settlement is reproducible.
+model MemberViewEvent {
+  id               String   @id @default(uuid(7)) @db.Uuid
+  /// Viewer (community member) platform user id.
+  userId           String   @map("user_id") @db.VarChar(64)
+  ipId             String   @map("ip_id") @db.Uuid
+  /// A view is always of an episode (FizzDragon IP content lives in episodes).
+  episodeId        String   @map("episode_id") @db.Uuid
+  /// IP owner snapshot — the pool beneficiary for this view.
+  ownerUserId      String   @map("owner_user_id") @db.VarChar(64)
+  /// The member_free_grant entitlement that authorized this view (audit).
+  entitlementId    String?  @map("entitlement_id") @db.Uuid
+  /// Settlement month snapshot, 'YYYY-MM', stamped at write time.
+  settlementPeriod String   @map("settlement_period") @db.VarChar(7)
+  /// NULL until the period is settled; set to the batch id on settlement.
+  settledBatchId   String?  @map("settled_batch_id") @db.Uuid
+  metadata         Json     @default("{}") @db.JsonB
+  viewedAt         DateTime @default(now()) @map("viewed_at") @db.Timestamptz(6)
+
+  @@unique([userId, episodeId, settlementPeriod], map: "member_view_events_user_episode_period_unique")
+  @@index([settlementPeriod, settledBatchId], map: "member_view_events_period_settled_idx")
+  @@index([ownerUserId, settlementPeriod], map: "member_view_events_owner_period_idx")
+  @@map("member_view_events")
+}
+
+/// Audit envelope for one monthly community-membership pool settlement run.
+/// The pool amount is supplied per run (admin/cron); distribution credits land
+/// in IpRevenueLedgerEntry rows with sourceType=member_pool + settlementBatchId.
+model MemberPoolSettlementBatch {
+  id               String                @id @default(uuid(7)) @db.Uuid
+  /// Settlement month 'YYYY-MM'.
+  period           String                @map("period") @db.VarChar(7)
+  /// Subscription-revenue pool for the month, in community-point minor units.
+  poolAmount       BigInt                @map("pool_amount")
+  /// Sum of qualifying view weights distributed across beneficiaries.
+  totalWeight      BigInt                @default(0) @map("total_weight")
+  beneficiaryCount Int                   @default(0) @map("beneficiary_count")
+  status           MemberPoolBatchStatus @default(computing)
+  metadata         Json                  @default("{}") @db.JsonB
+  startedAt        DateTime              @default(now()) @map("started_at") @db.Timestamptz(6)
+  postedAt         DateTime?             @map("posted_at") @db.Timestamptz(6)
+
+  @@unique([period], map: "member_pool_settlement_batches_period_unique")
+  @@index([status, startedAt(sort: Desc)], map: "member_pool_settlement_batches_status_idx")
+  @@map("member_pool_settlement_batches")
 }
 
 model IpReferralLink {
