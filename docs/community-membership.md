@@ -95,3 +95,15 @@ membership-status webhook latency (subscription grace fallback) · rank collisio
 · member-free revoke-on-lapse without earnings clawback · no fake UI (pool/console only after Phase 5).
 
 Full integration map + per-file hooks: workflow run `wf_389e857b-d76` (transcript).
+
+## Phase 2 implementation map (member discount — money path, do carefully + test)
+
+Verified read of `apps/server/src/ip-commerce/`:
+
+- **DI**: `ip-commerce.module.ts` imports `[AdminAuthModule, StorageModule, WorkspacesModule]` — add the module that exports `EntitlementService` (`entitlements.module.ts` `exports: [EntitlementService]`). Inject in `IpCommerceService` constructor (svc:375-380).
+- **Setting getter**: mirror `getCreatorRevenueShareDefaultBps()` (svc:387-405) → add `IP_MEMBER_DISCOUNT_SETTING_KEY='ip.member_discount_bps'`, default `2000`, a `memberDiscountDefaultCache` field, `getMemberDiscountDefaultBps()`; also bust it in `updateAdminIpCommerceSetting` (svc:1207 busts the revenue-share cache).
+- **`resolvePriceRuleTx`** (svc:4374): add `isMember` param. After resolving the rule, if isMember: `bps = rule.memberDiscountBps ?? defaultMemberDiscountBps`; `chargeAmount = amount - floor(amount*bps/10000)`. Return `{ priceRule, chargeAmount, memberDiscountBps: bps }` (do NOT mutate the Prisma row; keep `priceRule.amount` = list for the snapshot).
+- **`purchaseContent`** (svc:~3708): resolve `isMember = (await entitlements.isActiveCommunityMember(user)).member`; pass to resolvePriceRuleTx. Then thread `chargeAmount` (NOT `priceRule.amount`) into: order `totalAmount` (svc:3859), `debitCommunityPointTx` amount (svc:3885), and the **downstream creator-revenue credit** (below svc:3919 — VERIFY it reads `order.totalAmount`, not `priceRule.amount`). `order.priceAmount`=list, `order.discountAmount`=list−charge (+ existing campaign discount), metadata += `{memberDiscountApplied,memberDiscountBps}`. Creator earns from the **discounted** total (design).
+- **Display** (`getIpAccess` svc:3368 / `getPublicIp` svc:3292, via `selectActivePrice` svc:6969): resolve isMember + return the member-effective price so the UI shows the discounted price (no client-side math).
+- **Tests (required)**: vitest for the discount math — floor, bps 0/10000 bounds, charge = list−discount, creator share computed off charge, non-member unaffected.
+- **Invariant**: list `priceRule.amount` is for snapshot/audit; the single source of the _charged_ number is `chargeAmount`, used identically for order total + debit + creator credit (no divergence).
