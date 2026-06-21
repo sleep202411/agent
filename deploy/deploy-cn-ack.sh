@@ -43,14 +43,26 @@ sed -i'' -e "s#^NEXT_PUBLIC_PARENT_ORIGIN=.*#NEXT_PUBLIC_PARENT_ORIGIN=$LIVE_ORI
 tar -czf /tmp/cn-src.tar.gz -C "$TMP" .
 SZ=$(stat -f%z /tmp/cn-src.tar.gz 2>/dev/null || stat -c%s /tmp/cn-src.tar.gz)
 
-echo "==> [3/6] sync source to ECS (byte-exact, cross-border)"
-for i in $(seq 1 8); do
-  $SCP /tmp/cn-src.tar.gz root@$ECS_IP:/root/src.tar.gz 2>/dev/null || true
-  R=$($SSH root@$ECS_IP "stat -c%s /root/src.tar.gz 2>/dev/null" 2>/dev/null || true)
-  [ "$R" = "$SZ" ] && { echo "  synced ($SZ bytes)"; break; }
-  echo "  attempt $i: $R/$SZ — retry"
+echo "==> [3/6] sync source to ECS (chunked, cross-border)"
+# The cross-border link reliably transfers small files but HANGS on a single
+# ~16MB scp. So split into 4MB chunks, scp each with per-chunk retry, then
+# reassemble + verify the byte count on the far side.
+CHUNK_DIR="$TMP/chunks"; mkdir -p "$CHUNK_DIR"
+( cd "$CHUNK_DIR" && split -b 4m /tmp/cn-src.tar.gz part- )
+$SSH root@$ECS_IP "rm -rf /root/src-chunks && mkdir -p /root/src-chunks"
+for f in "$CHUNK_DIR"/part-*; do
+  name=$(basename "$f"); want=$(stat -f%z "$f" 2>/dev/null || stat -c%s "$f")
+  for i in $(seq 1 6); do
+    $SCP "$f" root@$ECS_IP:/root/src-chunks/"$name" 2>/dev/null || true
+    got=$($SSH root@$ECS_IP "stat -c%s /root/src-chunks/$name 2>/dev/null" 2>/dev/null || true)
+    [ "$got" = "$want" ] && break
+    echo "  $name attempt $i: $got/$want — retry"
+  done
+  [ "$got" = "$want" ] || { echo "FATAL: chunk $name failed"; exit 1; }
 done
-[ "$R" = "$SZ" ] || { echo "FATAL: source sync incomplete"; exit 1; }
+$SSH root@$ECS_IP "cat /root/src-chunks/part-* > /root/src.tar.gz && rm -rf /root/src-chunks"
+R=$($SSH root@$ECS_IP "stat -c%s /root/src.tar.gz 2>/dev/null" 2>/dev/null || true)
+[ "$R" = "$SZ" ] && echo "  synced ($SZ bytes)" || { echo "FATAL: reassembled size $R != $SZ"; exit 1; }
 
 echo "==> [4/6] in-region build + push to CN ACR"
 $SCP ~/.fizzdragon-cn/acr-username.txt root@$ECS_IP:/root/.acr_user
