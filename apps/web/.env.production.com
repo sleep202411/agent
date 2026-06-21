@@ -30,3 +30,8 @@ NEXT_PUBLIC_API_STUDIO_PREFIX=/studio
 # token here without touching code.
 NEXT_PUBLIC_POSTHOG_PROJECT_TOKEN=phc_uLyf9JuzSEg9iu4aMtFQDBHYfQB5LZDU5wjP5JoivfBQ
 NEXT_PUBLIC_POSTHOG_HOST=https://us.i.posthog.com
+
+# AppLovin AXON web pixel (ad-conversion tracking). Public key, like the
+# PostHog token. .com only — CN gets none (AppLovin has no China presence, and
+# the pixel is region-gated in src/lib/axon.ts).
+NEXT_PUBLIC_AXON_PIXEL_KEY=d34d9c48-8032-4b5e-a28a-2fa3082efb73

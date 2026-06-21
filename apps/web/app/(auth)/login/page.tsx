@@ -13,6 +13,7 @@ import type { Locale } from "@/src/i18n/config";
 import posthog from "posthog-js";
 import { ApiRequestError } from "@/src/lib/api";
 import { emailLogin, phoneLogin } from "@/src/lib/auth/api";
+import { axonLogin } from "@/src/lib/axon";
 import { AuthSection, isPhoneIdentifier } from "../_components/auth-section";
 import { PasswordInput } from "../_components/password-input";
 import { AgreementCheckbox } from "../_components/agreement-checkbox";
@@ -53,6 +54,7 @@ export default function LoginPage() {
       posthog.capture("user_logged_in", {
         method: isPhoneIdentifier(trimmedId) ? "phone" : "email",
       });
+      axonLogin({ user_id: userId, email: result.user?.email?.toLowerCase() });
       handleAuthSuccess("login", result);
     } catch (err) {
       const message = err instanceof ApiRequestError ? err.message : t("loginError");

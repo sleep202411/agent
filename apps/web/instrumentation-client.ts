@@ -18,6 +18,11 @@
  * `posthog.identify()` calls (login / register) materialise a Person.
  */
 import posthog from "posthog-js";
+import { loadAxonPixel } from "@/src/lib/axon";
+
+// AppLovin AXON ad-conversion pixel. No-op on the CN build / when the pixel key
+// is unset. Independent of PostHog (product analytics). See src/lib/axon.ts.
+loadAxonPixel();
 
 posthog.init(process.env.NEXT_PUBLIC_POSTHOG_PROJECT_TOKEN!, {
   api_host: "/ingest",

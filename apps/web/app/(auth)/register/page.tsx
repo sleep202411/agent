@@ -14,6 +14,7 @@ import type { Locale } from "@/src/i18n/config";
 import posthog from "posthog-js";
 import { ApiRequestError } from "@/src/lib/api";
 import { emailRegister, phoneRegister, sendEmailCode, sendPhoneCode } from "@/src/lib/auth/api";
+import { axonSignUp } from "@/src/lib/axon";
 import { AuthSection, isPhoneIdentifier } from "../_components/auth-section";
 import { PasswordInput } from "../_components/password-input";
 import { SendCodeButton } from "../_components/send-code-button";
@@ -108,6 +109,10 @@ export default function RegisterPage() {
       posthog.capture("user_registered", {
         method: isPhoneIdentifier(trimmedId) ? "phone" : "email",
         has_referral_code: Boolean(recommendationCode.trim()),
+      });
+      axonSignUp(isPhoneIdentifier(trimmedId) ? "phone" : "email", {
+        user_id: userId,
+        email: result.user?.email?.toLowerCase(),
       });
       handleAuthSuccess("register", result);
     } catch (err) {

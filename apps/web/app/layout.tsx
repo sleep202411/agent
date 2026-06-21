@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { headers } from "next/headers";
 import { dehydrate } from "@tanstack/react-query";
 import NextTopLoader from "nextjs-toploader";
+import { AxonRouteTracker } from "@/components/analytics/axon-route-tracker";
 import { RootLayoutClient } from "@/app/root-layout-client";
 import { getServerQueryClient } from "@/src/lib/react-query/server";
 import { fetchUserInfoServerSide } from "@/src/lib/auth/server-user";
@@ -120,6 +121,7 @@ export default async function RootLayout({
           showSpinner={false}
           shadow="0 0 10px rgba(245,158,11,0.4)"
         />
+        <AxonRouteTracker />
         <RegionProvider country={country}>
           <RootLayoutClient initialLocale={locale} dehydratedState={dehydratedState}>
             {children}

@@ -1,10 +1,12 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { IconCircleCheck, IconCircleX, IconLoader2 } from "@tabler/icons-react";
 import { useTranslations } from "@/src/i18n/i18n";
 import { backendApi } from "@/src/lib/api";
+import { useCurrentUser } from "@/src/hooks/use-user";
+import { axonPurchase } from "@/src/lib/axon";
 
 type PaymentStatus = "loading" | "success" | "failed";
 
@@ -22,6 +24,8 @@ export default function PaymentResultPage() {
   const orderNo = searchParams?.get("order_id") ?? searchParams?.get("orderNo") ?? "";
   const [status, setStatus] = useState<PaymentStatus>("loading");
   const [order, setOrder] = useState<OrderStatusResponse | null>(null);
+  const { user } = useCurrentUser();
+  const purchaseFiredRef = useRef(false);
 
   useEffect(() => {
     if (!orderNo) {
@@ -65,6 +69,25 @@ export default function PaymentResultPage() {
 
     void poll();
   }, [orderNo]);
+
+  // Fire the AppLovin `purchase` conversion exactly once, when the order
+  // confirms. No-op on the CN build / when the pixel key is unset (axon.ts).
+  useEffect(() => {
+    if (status !== "success" || purchaseFiredRef.current) return;
+    purchaseFiredRef.current = true;
+    const transactionId = order?.orderNo ?? orderNo;
+    const value = order?.amount ?? 0;
+    const currency = order?.currency ?? "USD";
+    axonPurchase({
+      transactionId,
+      value,
+      currency,
+      items: [{ item_id: transactionId, item_name: "FizzDragon order", price: value, quantity: 1 }],
+      userData: user
+        ? { user_id: user.id, email: user.email ? user.email.toLowerCase() : undefined }
+        : undefined,
+    });
+  }, [status, order, orderNo, user]);
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-background p-6">

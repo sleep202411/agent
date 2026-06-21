@@ -40,4 +40,10 @@ export const env = {
    * are logged in on the apex will hit the studio host as anonymous.
    */
   STUDIO_HOST: process.env.NEXT_PUBLIC_STUDIO_HOST ?? "",
+  /**
+   * AppLovin AXON web-pixel event key. Optional — when set (and the build is
+   * not CN), the ad-conversion pixel loads. See `src/lib/axon.ts`. AppLovin has
+   * no China presence, so this stays empty on the .cn build.
+   */
+  AXON_PIXEL_KEY: process.env.NEXT_PUBLIC_AXON_PIXEL_KEY ?? "",
 } as const;
