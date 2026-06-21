@@ -17,6 +17,7 @@ import {
   CreateCreatorIpEpisodeSchema,
   CreateIpContentReportSchema,
   CreateIpPurchaseSchema,
+  RecordMemberViewSchema,
   CreatorRevenueQuerySchema,
   UpdateCreatorIpContributorSchema,
   UpdateCreatorIpProfileSchema,
@@ -48,6 +49,7 @@ import {
   type CreateCreatorIpEpisodeInput,
   type CreateIpContentReportInput,
   type CreateIpPurchaseInput,
+  type RecordMemberViewInput,
   type CreatorRevenueQuery,
   type IpAssetParams,
   type IpContributorParams,
@@ -545,6 +547,18 @@ export class IpCommerceController {
     return {
       code: 200,
       data: await this.ipCommerce.purchaseContent(user, body),
+    };
+  }
+
+  @Post('member-views')
+  async recordMemberView(
+    @CurrentUser() user: AuthUser,
+    @Body(new ZodValidationPipe(RecordMemberViewSchema))
+    body: RecordMemberViewInput,
+  ) {
+    return {
+      code: 200,
+      data: await this.ipCommerce.recordMemberView(user, body),
     };
   }
 

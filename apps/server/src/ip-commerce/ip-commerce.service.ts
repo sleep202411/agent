@@ -54,6 +54,7 @@ import {
   clampBps,
   computeRevenueSplit,
 } from './revenue-split';
+import { formatSettlementPeriod } from './member-pool';
 import { PrismaService } from '../infra/db/db.module';
 import { OutputStorageService } from '../infra/storage/storage.types';
 import { resolveMediaPublicUrl } from '../infra/storage/media-asset-url-resolver.service';
@@ -70,6 +71,7 @@ import type {
   CreateAdminIpTaxonomyTermInput,
   CreateAdminIpDiscoveryInput,
   CreateIpContentReportInput,
+  RecordMemberViewInput,
   CreateIpPurchaseInput,
   GrantAdminIpEntitlementInput,
   IpAccessQuery,
@@ -4100,6 +4102,81 @@ export class IpCommerceService {
         entitlements: fulfilled.entitlements.map(entitlementDto),
       };
     });
+  }
+
+  /**
+   * Record a community member's view of a member-free episode for the monthly
+   * revenue pool (Phase 5 settles by view weight). Idempotent per
+   * (member, episode, settlementPeriod) — re-views in the same month no-op.
+   * Returns recorded:false (NOT an error) for views that are not pool-eligible:
+   * non-member viewer, non-member-free IP, owner-less IP, or content the member
+   * has not unlocked — so the signal counts only genuine, authorized views.
+   */
+  async recordMemberView(user: AuthUser, input: RecordMemberViewInput) {
+    const now = new Date();
+    const episode = await this.prisma.ipEpisode.findFirst({
+      where: { id: input.episodeId, ipId: input.ipId, deletedAt: null },
+      select: {
+        id: true,
+        ip: { select: { id: true, createdById: true, accessMode: true } },
+      },
+    });
+    if (!episode) {
+      throw new NotFoundException({
+        code: 'IP_EPISODE_NOT_FOUND',
+        msg: 'IP episode not found.',
+      });
+    }
+    if (episode.ip.accessMode !== IpAccessMode.member_free) {
+      return { recorded: false, reason: 'not_member_free' as const };
+    }
+    if (!episode.ip.createdById) {
+      return { recorded: false, reason: 'no_owner' as const };
+    }
+    const membership = await this.entitlements.isActiveCommunityMember(user, {
+      now: now.toISOString(),
+    });
+    if (!membership.member) {
+      return { recorded: false, reason: 'not_member' as const };
+    }
+    // Count only authorized views: the member must hold an active member_free_grant
+    // for this IP (the same entitlement that gates the media).
+    const entitlement = await this.prisma.ipContentEntitlement.findFirst({
+      where: {
+        userId: user.userId,
+        ipId: input.ipId,
+        sourceType: 'member_free_grant',
+        status: IpEntitlementStatus.active,
+        startsAt: { lte: now },
+        ...currentOrPendingEntitlementWhere(now),
+      },
+      select: { id: true },
+    });
+    if (!entitlement) {
+      return { recorded: false, reason: 'not_unlocked' as const };
+    }
+    const settlementPeriod = formatSettlementPeriod(now);
+    await this.prisma.memberViewEvent.upsert({
+      where: {
+        userId_episodeId_settlementPeriod: {
+          userId: user.userId,
+          episodeId: input.episodeId,
+          settlementPeriod,
+        },
+      },
+      create: {
+        userId: user.userId,
+        ipId: input.ipId,
+        episodeId: input.episodeId,
+        ownerUserId: episode.ip.createdById,
+        entitlementId: entitlement.id,
+        settlementPeriod,
+        viewedAt: now,
+      },
+      // Idempotent: the first view of the month sets the weight; re-views no-op.
+      update: {},
+    });
+    return { recorded: true, settlementPeriod };
   }
 
   async reportContent(user: AuthUser, input: CreateIpContentReportInput) {

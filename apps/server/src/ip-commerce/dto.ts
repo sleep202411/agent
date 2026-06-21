@@ -958,6 +958,12 @@ export const CreateIpPurchaseSchema = z
   });
 export type CreateIpPurchaseInput = z.infer<typeof CreateIpPurchaseSchema>;
 
+export const RecordMemberViewSchema = z.object({
+  ipId: z.string().uuid(),
+  episodeId: z.string().uuid(),
+});
+export type RecordMemberViewInput = z.infer<typeof RecordMemberViewSchema>;
+
 export const CreateIpContentReportSchema = z
   .object({
     targetType: z.enum(['ip', 'episode']),
