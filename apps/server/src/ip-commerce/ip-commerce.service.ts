@@ -48,12 +48,17 @@ import {
 } from '@prisma/client';
 import { createHash, randomUUID } from 'crypto';
 import type { AuthUser } from '../auth';
-import { computeRevenueSplit } from './revenue-split';
+import {
+  applyMemberDiscount,
+  clampBps,
+  computeRevenueSplit,
+} from './revenue-split';
 import { PrismaService } from '../infra/db/db.module';
 import { OutputStorageService } from '../infra/storage/storage.types';
 import { resolveMediaPublicUrl } from '../infra/storage/media-asset-url-resolver.service';
 import { LegacyCnVideoResolverService } from './legacy-cn-video.service';
 import { WalletLedgerService } from '../workspaces';
+import { EntitlementService } from '../entitlements';
 import type {
   CreateIpDraftInput,
   CreateCreatorIpContributorInput,
@@ -144,6 +149,12 @@ const IP_CREATOR_REVENUE_SHARE_SETTING_KEY = 'ip.creator_revenue_share_bps';
 const IP_CREATOR_REVENUE_SHARE_DEFAULT_BPS = 5000;
 /// In-process TTL (ms) for the cached default share — busted on admin write.
 const IP_CREATOR_REVENUE_SHARE_CACHE_TTL_MS = 30_000;
+
+const IP_MEMBER_DISCOUNT_SETTING_KEY = 'ip.member_discount_bps';
+/// Hard fallback if the settings row is ever missing (20% community-member discount).
+const IP_MEMBER_DISCOUNT_DEFAULT_BPS = 2000;
+/// In-process TTL (ms) for the cached default member discount — busted on admin write.
+const IP_MEMBER_DISCOUNT_CACHE_TTL_MS = 30_000;
 
 const taxonomyAssignmentInclude = {
   term: {
@@ -371,12 +382,14 @@ type CommerceEntitlementWithRefs = Prisma.IpContentEntitlementGetPayload<{
 export class IpCommerceService {
   /// Cached platform-default creator revenue share (see TTL above).
   private revenueShareDefaultCache: { bps: number; at: number } | null = null;
+  private memberDiscountDefaultCache: { bps: number; at: number } | null = null;
 
   constructor(
     private readonly prisma: PrismaService,
     private readonly walletLedger: WalletLedgerService,
     private readonly outputStorage: OutputStorageService,
     private readonly legacyCnVideo: LegacyCnVideoResolverService,
+    private readonly entitlements: EntitlementService,
   ) {}
 
   /**
@@ -401,6 +414,28 @@ export class IpCommerceService {
         ? Math.trunc(raw)
         : IP_CREATOR_REVENUE_SHARE_DEFAULT_BPS;
     this.revenueShareDefaultCache = { bps, at: Date.now() };
+    return bps;
+  }
+
+  /**
+   * Platform-default community-member discount (bps) for points-priced IPs,
+   * cached like the creator-share default. Falls back to the seeded default if
+   * the row is missing.
+   */
+  private async getMemberDiscountDefaultBps(): Promise<number> {
+    const cached = this.memberDiscountDefaultCache;
+    if (cached && Date.now() - cached.at < IP_MEMBER_DISCOUNT_CACHE_TTL_MS) {
+      return cached.bps;
+    }
+    const row = await this.prisma.ipCommerceSetting.findUnique({
+      where: { key: IP_MEMBER_DISCOUNT_SETTING_KEY },
+    });
+    const raw = row?.valueInt != null ? Number(row.valueInt) : NaN;
+    const bps =
+      Number.isFinite(raw) && raw >= 0 && raw <= 10000
+        ? Math.trunc(raw)
+        : IP_MEMBER_DISCOUNT_DEFAULT_BPS;
+    this.memberDiscountDefaultCache = { bps, at: Date.now() };
     return bps;
   }
 
@@ -1205,6 +1240,9 @@ export class IpCommerceService {
     });
     if (key === IP_CREATOR_REVENUE_SHARE_SETTING_KEY) {
       this.revenueShareDefaultCache = null;
+    }
+    if (key === IP_MEMBER_DISCOUNT_SETTING_KEY) {
+      this.memberDiscountDefaultCache = null;
     }
     return {
       key: row.key,
@@ -3709,6 +3747,12 @@ export class IpCommerceService {
     const now = new Date();
     const defaultRevenueShareBps =
       await this.getCreatorRevenueShareDefaultBps();
+    // Membership status resolved once, before the tx — drives the member discount.
+    const isMember = (
+      await this.entitlements.isActiveCommunityMember(user, {
+        now: now.toISOString(),
+      })
+    ).member;
 
     return this.prisma.$transaction(async (tx) => {
       await tx.$executeRaw`
@@ -3807,13 +3851,15 @@ export class IpCommerceService {
         };
       }
 
-      const priceRule = await this.resolvePriceRuleTx(tx, {
-        ipId: input.ipId,
-        episodeId: input.episodeId ?? null,
-        targetType: input.targetType,
-        priceRuleId: input.priceRuleId,
-        now,
-      });
+      const { priceRule, chargeAmount, memberDiscountBps } =
+        await this.resolvePriceRuleTx(tx, {
+          ipId: input.ipId,
+          episodeId: input.episodeId ?? null,
+          targetType: input.targetType,
+          priceRuleId: input.priceRuleId,
+          isMember,
+          now,
+        });
       await this.assertMaxPerUserTx(tx, priceRule, user.userId);
 
       const referralLink = input.referralCode
@@ -3852,11 +3898,12 @@ export class IpCommerceService {
           currency: priceRule.currency,
           priceAmount: priceRule.amount,
           discountAmount:
-            priceRule.originalAmount &&
+            (priceRule.originalAmount &&
             priceRule.originalAmount > priceRule.amount
               ? priceRule.originalAmount - priceRule.amount
-              : 0n,
-          totalAmount: priceRule.amount,
+              : 0n) +
+            (priceRule.amount - chargeAmount),
+          totalAmount: chargeAmount,
           priceSnapshot: priceSnapshot(priceRule) as Prisma.InputJsonValue,
           idempotencyKey: input.idempotencyKey,
           metadata: {
@@ -3874,15 +3921,23 @@ export class IpCommerceService {
                   locale: episodeCopy?.meta.locale ?? ip.sourceLocale,
                 }
               : null,
+            memberDiscount:
+              memberDiscountBps > 0
+                ? {
+                    bps: memberDiscountBps,
+                    listAmount: priceRule.amount.toString(),
+                    chargeAmount: chargeAmount.toString(),
+                  }
+                : null,
           },
         },
       });
 
       const walletTransaction =
-        priceRule.amount > 0n
+        chargeAmount > 0n
           ? await debitCommunityPointTx(tx, {
               userId: user.userId,
-              amount: priceRule.amount,
+              amount: chargeAmount,
               orderId: order.id,
               orderNo: order.orderNo,
             })
@@ -3934,7 +3989,7 @@ export class IpCommerceService {
 
       // Credit the creator pool to contributors' withdrawable wallets, atomic
       // with the buyer debit above. Free unlocks (amount 0) earn nothing.
-      if (priceRule.amount > 0n && ip.createdById) {
+      if (chargeAmount > 0n && ip.createdById) {
         await creditCreatorRevenueTx(tx, {
           order: {
             id: order.id,
@@ -4378,6 +4433,7 @@ export class IpCommerceService {
       episodeId: string | null;
       targetType: IpTargetType;
       priceRuleId?: string;
+      isMember: boolean;
       now: Date;
     },
   ) {
@@ -4423,7 +4479,20 @@ export class IpCommerceService {
         msg: 'No active price rule is available for this IP content.',
       });
     }
-    return priceRule;
+
+    // Community-member discount, applied AFTER rule selection (no member-specific
+    // rule variant). bps from the rule (NULL inherits the platform default; 0
+    // disables). `chargeAmount` is the single source of the charged number; the
+    // list `priceRule.amount` is kept verbatim for the price snapshot / audit.
+    let memberDiscountBps = 0;
+    if (input.isMember && priceRule.amount > 0n) {
+      const ruleBps = priceRule.memberDiscountBps;
+      memberDiscountBps =
+        ruleBps != null ? ruleBps : await this.getMemberDiscountDefaultBps();
+    }
+    const clampedBps = clampBps(memberDiscountBps);
+    const chargeAmount = applyMemberDiscount(priceRule.amount, clampedBps);
+    return { priceRule, chargeAmount, memberDiscountBps: clampedBps };
   }
 
   private async assertMaxPerUserTx(

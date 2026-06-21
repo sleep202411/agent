@@ -42,6 +42,21 @@ export function clampBps(value: number | null | undefined): number {
   return v;
 }
 
+/**
+ * Community-member discount on a points-priced amount. Floor semantics match the
+ * revenue split (`discount = floor(amount * bps / 10000)`), so the charged amount
+ * is always an integer in `[0, amount]`. bps is clamped to 0..10000 (0 = no
+ * discount, 10000 = free). The list `amount` is unchanged by the caller — this is
+ * the single source of the *charged* number.
+ */
+export function applyMemberDiscount(amount: bigint, bps: number): bigint {
+  if (amount <= 0n) return 0n;
+  const clamped = clampBps(bps);
+  if (clamped <= 0) return amount;
+  const discount = (amount * BigInt(clamped)) / BPS_DENOM;
+  return amount - discount;
+}
+
 export function computeRevenueSplit(input: {
   totalAmount: bigint;
   shareBps: number;

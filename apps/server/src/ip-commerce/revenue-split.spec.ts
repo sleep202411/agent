@@ -1,6 +1,37 @@
-import { computeRevenueSplit } from './revenue-split';
+import { applyMemberDiscount, computeRevenueSplit } from './revenue-split';
 
 const OWNER = 'owner-1';
+
+describe('applyMemberDiscount', () => {
+  it('no discount (bps 0) → charges the list amount', () => {
+    expect(applyMemberDiscount(100n, 0)).toBe(100n);
+  });
+  it('20% off, floor semantics', () => {
+    expect(applyMemberDiscount(100n, 2000)).toBe(80n);
+    // floor(99 * 2000 / 10000) = floor(19.8) = 19 → 99 - 19 = 80
+    expect(applyMemberDiscount(99n, 2000)).toBe(80n);
+  });
+  it('100% off (bps 10000) → free', () => {
+    expect(applyMemberDiscount(100n, 10000)).toBe(0n);
+  });
+  it('clamps out-of-range / fractional bps', () => {
+    expect(applyMemberDiscount(100n, -5)).toBe(100n);
+    expect(applyMemberDiscount(100n, 20000)).toBe(0n);
+    // trunc(1.9) = 1 → floor(100 * 1 / 10000) = 0 → 100
+    expect(applyMemberDiscount(100n, 1.9)).toBe(100n);
+  });
+  it('zero list amount → 0', () => {
+    expect(applyMemberDiscount(0n, 2000)).toBe(0n);
+  });
+  it('charged amount always in [0, amount]', () => {
+    for (const amt of [1n, 7n, 50n, 333n, 100000n]) {
+      for (const bps of [0, 1, 2000, 5000, 9999, 10000]) {
+        const c = applyMemberDiscount(amt, bps);
+        expect(c >= 0n && c <= amt).toBe(true);
+      }
+    }
+  });
+});
 
 function sum(amts: bigint[]): bigint {
   return amts.reduce((a, b) => a + b, 0n);
