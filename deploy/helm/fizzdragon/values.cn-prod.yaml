@@ -39,6 +39,23 @@ ingress:
       certManager: letsencrypt-prod
       rewriteTarget: ""
       adminUi: false # admin-ui disabled on CN v1 (build broken at HEAD)
+    # Live CN platform host (fizzdragon.fizzspace.cn stays = Java until freed).
+    - name: studio-cn
+      host: fizzstudio.fizzspace.cn
+      secretName: fizzdragon-cn-studio-tls
+      certManager: letsencrypt-prod
+      rewriteTarget: ""
+      adminUi: false
+    # Dedicated admin console host (mirrors .com's admin.fizzdragon.com).
+    # adminUiOnly → no web/aurora on this host; served at ROOT (basePath "")
+    # via adminUi.env.NEXT_PUBLIC_ADMIN_UI_BASE_PATH="/" + adminUi.ingress.path="/".
+    - name: admin-cn
+      host: admin.fizzspace.cn
+      secretName: admin-fizzspace-cn-tls
+      certManager: letsencrypt-prod
+      rewriteTarget: ""
+      adminUi: true
+      adminUiOnly: true
     # Uncomment at cutover (after lowering the fizzdragon.fizzspace.cn TTL):
     # - name: main
     #   host: fizzdragon.fizzspace.cn
@@ -94,17 +111,31 @@ web:
   tolerations: null
 
 adminUi:
-  # Disabled for CN v1: admin-ui fails `next build --webpack` at current
-  # develop HEAD (same reason its .com image tag is pinned to an older
-  # commit). Re-enable once the build is fixed.
-  enabled: false
+  # Enabled on its own host admin.fizzspace.cn (ingress entry `admin-cn`,
+  # adminUiOnly). Served at ROOT: base path "/" → Next.js basePath "" and the
+  # chart's app-root annotation becomes a no-op; ingress.path + readiness move
+  # off /admin to /. (admin-ui builds fine at main — the old HEAD-break is gone.)
+  enabled: true
   replicaCount: 1
   image:
     tag: set-at-deploy
+  readinessPath: /login
+  livenessPath: /login
+  ingress:
+    enabled: true
+    path: /
   env:
     ADMIN_SITE: cn
+    NEXT_PUBLIC_ADMIN_UI_BASE_PATH: "/"
   nodeSelector: null
   tolerations: null
+
+studio:
+  # Disabled on CN v1: apps/studio (standalone canvas) is not part of the CN
+  # platform go-live. Base values default it on with a .com-pinned image tag +
+  # pool:worker nodeSelector that the single untainted CN node can't satisfy —
+  # leaving it on would create an unschedulable/ImagePullBackOff pod.
+  enabled: false
 
 server:
   replicaCount: 1
@@ -115,7 +146,9 @@ server:
     # Mirrors prod-cn .env (2026-06-10).
     AI_PROVIDER: deepseek
     DISABLE_CONTENT_MODERATION: "true"
-    BILLING_ALLOWED_RETURN_ORIGINS: "https://fizzdragon.fizzspace.cn"
+    # Live CN host is fizzstudio.fizzspace.cn (fizzdragon.fizzspace.cn stays = Java
+    # until the Java team frees it). billing.service auto-includes fizzdragon.fizzspace.cn.
+    BILLING_ALLOWED_RETURN_ORIGINS: "https://fizzstudio.fizzspace.cn"
     # No payment provider wired on CN yet.
     PAYMENT_PROVIDER: null
     AIRWALLEX_API_BASE_URL: null
@@ -124,6 +157,18 @@ server:
     # Requires REALTIME_WS_SECRET (see serverSecrets above). Routed through the
     # existing /aurora/* ingress — nginx upgrades WS on that path automatically.
     REALTIME_TRANSPORT: self-hosted
+    # Legacy Java MySQL bridge: base values point it at the .com SG RDS with KV
+    # creds + LEGACY_MYSQL_ENABLED=true. CN has no such creds wired (admin-ui is
+    # off, so the bridge is unused) → keep it dormant or the server crashes at boot.
+    LEGACY_MYSQL_ENABLED: "false"
+    LEGACY_MYSQL_HOST: null
+    LEGACY_MYSQL_DATABASE: null
+    # Bootstrap admin for admin.fizzspace.cn (created at server start by
+    # ensureBootstrapAdmin). Password is in fizzdragon-server-secrets
+    # (ADMIN_BOOTSTRAP_PASSWORD). MFA off for first login — change password +
+    # enable MFA from the console after. REQUIRE_MFA stays false until then.
+    ADMIN_BOOTSTRAP_EMAIL: "505421473@qq.com"
+    ADMIN_BOOTSTRAP_REQUIRE_MFA: "false"
   nodeSelector: null
   tolerations: null
 

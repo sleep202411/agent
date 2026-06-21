@@ -104,8 +104,10 @@ metadata:
     nginx.ingress.kubernetes.io/proxy-send-timeout: "300"
     nginx.ingress.kubernetes.io/proxy-connect-timeout: "2"
     nginx.ingress.kubernetes.io/use-regex: "true"
-    {{- if $entry.adminUiOnly }}
+    {{- if and $entry.adminUiOnly (ne ($.Values.adminUi.env.NEXT_PUBLIC_ADMIN_UI_BASE_PATH | default "/admin") "/") }}
     # Dedicated admin host (no web app at root): bounce / → the admin base path.
+    # Skipped when the base path is "/" (admin served at root) — an app-root of
+    # "/" would redirect / → / infinitely (ERR_TOO_MANY_REDIRECTS).
     nginx.ingress.kubernetes.io/app-root: {{ $.Values.adminUi.env.NEXT_PUBLIC_ADMIN_UI_BASE_PATH | default "/admin" | quote }}
     {{- end }}
     {{- if $.Values.adminUi.ingress.allowedCidrs }}

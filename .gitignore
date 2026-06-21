@@ -82,3 +82,4 @@ playwright-report/
 /image*.jpg
 /*-preview.html
 tmp/
+apps/server/outputs/
