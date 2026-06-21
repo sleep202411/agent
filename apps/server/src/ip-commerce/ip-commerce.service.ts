@@ -3433,6 +3433,18 @@ export class IpCommerceService {
         ? ip.episodes.filter((episode) => requestedEpisodeIds.has(episode.id))
         : ip.episodes;
 
+    const isMember = user
+      ? (
+          await this.entitlements.isActiveCommunityMember(user, {
+            now: now.toISOString(),
+          })
+        ).member
+      : false;
+    // Resolve the platform default once; per-rule bps still overrides in the dto.
+    const memberCtx = isMember
+      ? { defaultBps: await this.getMemberDiscountDefaultBps() }
+      : undefined;
+
     const ipPrice = selectActivePrice(
       ip.priceRules.filter((rule) => rule.targetType === IpTargetType.ip),
       now,
@@ -3494,6 +3506,7 @@ export class IpCommerceService {
 
     return {
       authenticated: Boolean(user),
+      member: isMember,
       wallet: communityPointAccount
         ? {
             currency: communityPointAccount.currency,
@@ -3513,7 +3526,7 @@ export class IpCommerceService {
             : ipPrice
               ? 'locked'
               : 'free',
-        price: ipPrice ? priceRuleDto(ipPrice) : null,
+        price: ipPrice ? priceRuleDto(ipPrice, memberCtx) : null,
       },
       episodes: episodes.map((episode) => {
         const episodePrice = selectActivePrice(episode.priceRules, now);
@@ -3540,7 +3553,7 @@ export class IpCommerceService {
           episodeNo: episode.episodeNo,
           owned,
           access,
-          price: episodePrice ? priceRuleDto(episodePrice) : null,
+          price: episodePrice ? priceRuleDto(episodePrice, memberCtx) : null,
         };
       }),
       entitlements: entitlements.map(entitlementDto),
@@ -7062,24 +7075,41 @@ function selectActivePrice<
   );
 }
 
-function priceRuleDto(rule: {
-  id: string;
-  targetType: IpTargetType;
-  currency: WalletCurrencyType;
-  amount: bigint;
-  originalAmount: bigint | null;
-  campaignId: string | null;
-  startsAt: Date | null;
-  endsAt: Date | null;
-  unlocksAt: Date | null;
-  maxPerUser: number | null;
-}) {
+function priceRuleDto(
+  rule: {
+    id: string;
+    targetType: IpTargetType;
+    currency: WalletCurrencyType;
+    amount: bigint;
+    originalAmount: bigint | null;
+    memberDiscountBps?: number | null;
+    campaignId: string | null;
+    startsAt: Date | null;
+    endsAt: Date | null;
+    unlocksAt: Date | null;
+    maxPerUser: number | null;
+  },
+  // Supplied only for a community-member viewer — surfaces the discounted price
+  // the member would actually be charged. Omitted = no member fields (the default
+  // for every public / non-member caller, keeping their output unchanged).
+  memberCtx?: { defaultBps: number },
+) {
+  const effectiveMemberBps =
+    memberCtx && rule.amount > 0n
+      ? clampBps(rule.memberDiscountBps ?? memberCtx.defaultBps)
+      : 0;
+  const memberAmount =
+    effectiveMemberBps > 0
+      ? applyMemberDiscount(rule.amount, effectiveMemberBps)
+      : null;
   return {
     id: rule.id,
     targetType: rule.targetType,
     currency: rule.currency,
     amount: rule.amount.toString(),
     originalAmount: rule.originalAmount?.toString() ?? null,
+    memberAmount: memberAmount?.toString() ?? null,
+    memberDiscountBps: memberAmount != null ? effectiveMemberBps : null,
     campaignId: rule.campaignId,
     startsAt: rule.startsAt?.toISOString() ?? null,
     endsAt: rule.endsAt?.toISOString() ?? null,

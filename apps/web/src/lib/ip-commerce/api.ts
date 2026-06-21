@@ -46,6 +46,10 @@ export interface IpCommercePriceRule {
   currency: "community_point";
   amount: string;
   originalAmount: string | null;
+  // Community-member discounted price + effective bps, present only on the
+  // auth'd access response (getIpAccess) for a member viewer; null otherwise.
+  memberAmount?: string | null;
+  memberDiscountBps?: number | null;
   campaignId: string | null;
   startsAt: string | null;
   endsAt: string | null;
@@ -211,6 +215,8 @@ export interface IpCommerceWalletAccount {
 
 export interface IpAccess {
   authenticated: boolean;
+  /** True when the viewer is an active community member (drives member pricing). */
+  member: boolean;
   wallet: {
     currency: "community_point";
     balanceKind: "consumable";

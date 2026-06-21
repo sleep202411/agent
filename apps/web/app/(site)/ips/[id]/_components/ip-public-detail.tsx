@@ -175,6 +175,8 @@ export function IpPublicDetail({ ipId }: IpPublicDetailProps) {
   const activePrice = activeAccess?.price ?? selectedEpisode?.price ?? detailIp.price;
   const activeAccessCode: IpCommerceAccess =
     activeAccess?.access ?? (detailIp.previewMode || !activePrice ? "owned" : "locked");
+  // Active members already get member pricing — don't upsell them the membership.
+  const viewerIsMember = accessQuery.data?.member ?? false;
   const pendingUnlockAt = getPendingUnlockAt(
     accessQuery.data?.entitlements ?? [],
     selectedEpisode
@@ -396,7 +398,7 @@ export function IpPublicDetail({ ipId }: IpPublicDetailProps) {
                 }}
               />
 
-              {membershipPreview && activeAccessCode === "locked" && (
+              {membershipPreview && !viewerIsMember && activeAccessCode === "locked" && (
                 <button
                   type="button"
                   onClick={() => setMembershipOpen(true)}
@@ -1354,7 +1356,9 @@ function formatDuration(seconds: number | null | undefined, t: Translate) {
 }
 
 function formatPrice(rule: IpCommercePriceRule, locale: Locale, t: Translate) {
-  const amount = formatIntegerAmount(rule.amount, locale);
+  // Show the member-effective price when the server resolved one (member viewer),
+  // so the displayed number matches what the member is actually charged.
+  const amount = formatIntegerAmount(rule.memberAmount ?? rule.amount, locale);
   const unit = t("units.communityPoint");
   return t("priceValue", { amount, unit });
 }
