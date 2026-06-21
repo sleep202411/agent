@@ -89,7 +89,7 @@ build_one() {
       args+=(--build-arg "SERVER_URL=http://fizzdragon-server:3001")
       ;;
     admin-ui)
-      args+=(--build-arg "NEXT_PUBLIC_ADMIN_UI_BASE_PATH=/admin")
+      args+=(--build-arg "NEXT_PUBLIC_ADMIN_UI_BASE_PATH=/")
       ;;
     # studio / server / agent: 无 build-arg（运行时读 env）
   esac

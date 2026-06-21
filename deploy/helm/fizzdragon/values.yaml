@@ -68,7 +68,7 @@ ingress:
     - name: admin-fd
       # Dedicated admin host, moved off the legacy Java box (47.84.16.145) to
       # AKS on 2026-06-11. `adminUiOnly` renders ONLY the admin-ui ingress
-      # (no web/aurora on this host); app-root bounces / → /admin. TLS is
+      # (no web/aurora on this host); served at ROOT (basePath "/"). TLS is
       # auto-issued + auto-renewed by cert-manager via Let's Encrypt (unlike
       # the main/studio hosts which still serve hand-uploaded DigiCerts).
       host: admin.fizzdragon.com
@@ -230,11 +230,11 @@ adminUi:
     repository: fizzdragon-admin-ui
     tag: 2159ba94487dea81fe3c02796d5504c5b2d1d0c2
   containerPort: 3000
-  readinessPath: /admin/login
-  livenessPath: /admin/login
+  readinessPath: /login
+  livenessPath: /login
   ingress:
     enabled: true
-    path: /admin(/|$)(.*)
+    path: /
     # No IP allowlist — admin is gated by login + MFA. The operator egress IP
     # rotates (VPN pool: e.g. 148.197.248.23 / 80.239.216.133 seen seconds apart),
     # so a single-CIDR lock isn't workable. To re-restrict, set this to a stable
@@ -243,7 +243,7 @@ adminUi:
   env:
     PORT: "3000"
     HOSTNAME: "0.0.0.0"
-    NEXT_PUBLIC_ADMIN_UI_BASE_PATH: /admin
+    NEXT_PUBLIC_ADMIN_UI_BASE_PATH: /
     ADMIN_SITE: global
     ADMIN_GLOBAL_API_BASE_URL: http://fizzdragon-server:3001/admin
     ADMIN_API_BASE_URL: http://fizzdragon-server:3001/admin
