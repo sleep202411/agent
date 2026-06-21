@@ -13,8 +13,12 @@ rm -rf /root/src && mkdir -p /root/src
 tar -xzf /root/src.tar.gz -C /root/src
 cd /root/src || { echo "FATAL: no source"; exit 1; }
 [ -f apps/web/.env.production.cn ] || { echo "FATAL: bad source tree"; exit 1; }
-# CN npm registry mirror — registry.npmjs.org times out from CN ECS (ETIMEDOUT).
-printf "registry=https://registry.npmmirror.com\nfetch-retries=5\nfetch-retry-mintimeout=20000\nfetch-timeout=120000\n" > /root/src/.npmrc
+# IMPORTANT: do NOT write a root .npmrc here. A root .npmrc makes
+# `turbo prune --docker` (used by apps/server/Dockerfile) drop package-lock.json
+# from out/json/, so `npm ci` fails with EUSAGE. registry.npmjs.org is reachable
+# from cn-hangzhou ECS (npm's built-in fetch-retries cover transient blips); if a
+# mirror is ever required, set it per-Dockerfile (npm ci --registry=...), never
+# via a context-root .npmrc.
 
 echo "$(cat /root/.acr_token)" | docker login "$REG" -u "$(cat /root/.acr_user)" --password-stdin \
   || { echo "FATAL: ACR login"; exit 1; }
