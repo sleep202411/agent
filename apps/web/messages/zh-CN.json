@@ -1738,6 +1738,8 @@
       "pendingUnlockBody": "订单已履约，正片会在解锁时间自动开放。",
       "readyToWatch": "可直接观看",
       "needUnlock": "需要解锁",
+      "memberFreeWatch": "免费观看（会员）",
+      "memberJoinToWatch": "开通会员免费看",
       "walletChecking": "正在读取社区积分余额...",
       "walletLine": "可用余额 {balance}",
       "shortBalanceLine": "还差 {amount} 才能解锁。",

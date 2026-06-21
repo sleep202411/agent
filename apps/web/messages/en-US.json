@@ -1738,6 +1738,8 @@
       "pendingUnlockBody": "Your order is fulfilled. Full access opens automatically at the unlock time.",
       "readyToWatch": "Ready to watch",
       "needUnlock": "Unlock required",
+      "memberFreeWatch": "Watch free (member)",
+      "memberJoinToWatch": "Join to watch free",
       "walletChecking": "Checking community point balance...",
       "walletLine": "Available balance {balance}",
       "shortBalanceLine": "Need {amount} more to unlock.",

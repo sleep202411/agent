@@ -373,6 +373,23 @@ export function IpPublicDetail({ ipId }: IpPublicDetailProps) {
                 purchasePending={purchase.isPending}
                 pendingUnlockAt={pendingUnlockAt}
                 onRecharge={() => setRechargeOpen(true)}
+                onSubscribeMembership={() => setMembershipOpen(true)}
+                onMemberFreeUnlock={async () => {
+                  if (purchase.isPending || !user) return;
+                  try {
+                    // Member-free: a zero-cost unlock of the whole IP (no priceRuleId);
+                    // the server grants a member_free_grant entitlement.
+                    await purchase.mutateAsync({
+                      ipId: detailIp.id,
+                      targetType: "ip",
+                      idempotencyKey: crypto.randomUUID(),
+                    });
+                    toast.success(t("commerce.purchaseSuccess"));
+                  } catch (err) {
+                    const msg = err instanceof Error ? err.message : "";
+                    toast.error(msg || t("commerce.purchaseFailed"));
+                  }
+                }}
                 onPurchase={async () => {
                   if (!activePrice || purchase.isPending || !user) return;
                   const purchaseTarget = resolvePurchaseTarget(activePrice, selectedEpisode);
@@ -1047,6 +1064,8 @@ function PurchasePanel({
   pendingUnlockAt,
   onRecharge,
   onPurchase,
+  onMemberFreeUnlock,
+  onSubscribeMembership,
 }: {
   ip: DetailIp;
   selectedEpisode: IpCommerceEpisode | null;
@@ -1062,6 +1081,8 @@ function PurchasePanel({
   pendingUnlockAt?: string | null;
   onRecharge: () => void;
   onPurchase: () => Promise<void>;
+  onMemberFreeUnlock: () => Promise<void>;
+  onSubscribeMembership: () => void;
 }) {
   if (ip.previewMode) {
     return (
@@ -1144,6 +1165,19 @@ function PurchasePanel({
         <Button type="button" size="sm" onClick={onRecharge}>
           <IconWallet className="size-4" />
           {t("commerce.topUpToUnlock")}
+        </Button>
+      ) : access === "member_free" ? (
+        <Button
+          type="button"
+          size="sm"
+          disabled={accessLoading || purchasePending}
+          onClick={() => void onMemberFreeUnlock()}
+        >
+          {purchasePending ? t("commerce.purchasing") : t("commerce.memberFreeWatch")}
+        </Button>
+      ) : access === "member_locked" ? (
+        <Button type="button" size="sm" onClick={onSubscribeMembership}>
+          {t("commerce.memberJoinToWatch")}
         </Button>
       ) : price ? (
         <Button

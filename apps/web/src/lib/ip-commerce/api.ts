@@ -12,7 +12,11 @@ export type IpCommerceAccess =
   | "pending_unlock_episode"
   | "owned"
   | "owned_ip"
-  | "owned_episode";
+  | "owned_episode"
+  // Member-free IPs (accessMode=member_free): a member can watch for free
+  // (not yet unlocked); a non-member must join to watch.
+  | "member_free"
+  | "member_locked";
 
 export interface IpCommerceAsset {
   id: string;
@@ -227,7 +231,10 @@ export interface IpAccess {
   ip: {
     id: string;
     owned: boolean;
-    access: Extract<IpCommerceAccess, "free" | "locked" | "owned" | "pending_unlock">;
+    access: Extract<
+      IpCommerceAccess,
+      "free" | "locked" | "owned" | "pending_unlock" | "member_free" | "member_locked"
+    >;
     price: IpCommercePriceRule | null;
   };
   episodes: Array<{
