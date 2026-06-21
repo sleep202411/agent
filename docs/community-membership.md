@@ -107,3 +107,19 @@ Verified read of `apps/server/src/ip-commerce/`:
 - **Display** (`getIpAccess` svc:3368 / `getPublicIp` svc:3292, via `selectActivePrice` svc:6969): resolve isMember + return the member-effective price so the UI shows the discounted price (no client-side math).
 - **Tests (required)**: vitest for the discount math — floor, bps 0/10000 bounds, charge = list−discount, creator share computed off charge, non-member unaffected.
 - **Invariant**: list `priceRule.amount` is for snapshot/audit; the single source of the _charged_ number is `chargeAmount`, used identically for order total + debit + creator credit (no divergence).
+
+## Phase 2 status — DONE
+
+2a charge (27390e32, tested) + 2b display (29990ff6). Deferred polish: explicit "会员价 + 划线原价" savings badge (member already sees + pays the discounted number via `formatPrice`).
+
+## Phase 3 implementation map (member-free viewing — access control, researched)
+
+Verified: schema `Ip.accessMode IpAccessMode` (enum `IpAccessMode` schema:2380, default points_priced) + `Ip.memberFreeBps` (svc must import `IpAccessMode`). `IpContentEntitlement`: `sourceType VarChar64`, `sourceId VarChar128`, `sourceOrderId String?` (nullable → member-free passes null), `endsAt DateTime?`, `@@unique([sourceType, sourceId])`. `isActiveCommunityMember` already returns `{member, expiresAt}`.
+
+- **Decision**: member-free access = an idempotent `member_free_grant` `IpContentEntitlement` (reuses the existing entitlement + media-gating path — no new computed-access path, no GET side-effects). Triggered by a **free unlock** through `purchaseContent` (same UX as a points unlock). `endsAt = membership.expiresAt` so access lapses with membership. Deterministic `sourceId = member_free:{userId}:{targetType}:{episodeId??ipId}` → idempotent re-unlock extends on renewal. **Known wart**: on renewal the member re-unlocks (one free click); lazy-extend-on-read is a deferred enhancement.
+- **purchaseContent**: capture full `membership` ({member, expiresAt}); branch BEFORE `resolvePriceRuleTx` (after the existing-entitlement check ~svc:3808): `if (ip.accessMode === member_free)` → non-member ⇒ `ForbiddenException IP_MEMBER_ONLY`; member ⇒ upsert `member_free_grant` entitlement (sourceOrderId null, startsAt now, endsAt membership.expiresAt, metadata{memberFree:true}) + `ensureCollectionItemTx` + return free grant (order null). **Zero debit, NO `creditCreatorRevenueTx`** (the pool compensates in P5).
+- **getIpAccess** (ip + episode access): when `ip.accessMode === member_free && !owned && !pending` ⇒ `isMember ? 'member_free' : 'member_locked'`. Both the ip block (svc:3509) + the episode block (svc:3523).
+- **getPublicIp**: surface `accessMode` (public detail shows "member free"; price null).
+- **Web**: `IpCommerceAccess` union += `'member_free' | 'member_locked'`; `IpCommerceIp` += `accessMode`; IP-detail PurchasePanel → member: "免费观看(会员)" unlock (purchaseContent targetType=ip); non-member: reuse the membership dialog CTA. Media/play gating already works via the entitlement once unlocked.
+- **Test**: extend `ip-commerce.service.spec` purchaseContent harness — member → free grant (no debit, no revenue, endsAt=expiry); non-member → 403; idempotent re-unlock.
+- Suggested split: **3a** server (branch + access states + test), **3b** web (states + CTA).

@@ -7,6 +7,7 @@ import {
   ServiceUnavailableException,
 } from '@nestjs/common';
 import {
+  IpAccessMode,
   IpCampaignStatus,
   IpAgeRating,
   IpAssetPurpose,
@@ -3523,9 +3524,13 @@ export class IpCommerceService {
           ? 'owned'
           : pendingIpEntitlement
             ? 'pending_unlock'
-            : ipPrice
-              ? 'locked'
-              : 'free',
+            : ip.accessMode === IpAccessMode.member_free
+              ? isMember
+                ? 'member_free'
+                : 'member_locked'
+              : ipPrice
+                ? 'locked'
+                : 'free',
         price: ipPrice ? priceRuleDto(ipPrice, memberCtx) : null,
       },
       episodes: episodes.map((episode) => {
@@ -3543,11 +3548,15 @@ export class IpCommerceService {
               ? pendingIpEntitlement
                 ? 'pending_unlock_ip'
                 : 'pending_unlock_episode'
-              : episodePrice
-                ? 'locked'
-                : ipPrice
-                  ? 'locked_bundle'
-                  : 'free';
+              : ip.accessMode === IpAccessMode.member_free
+                ? isMember
+                  ? 'member_free'
+                  : 'member_locked'
+                : episodePrice
+                  ? 'locked'
+                  : ipPrice
+                    ? 'locked_bundle'
+                    : 'free';
         return {
           id: episode.id,
           episodeNo: episode.episodeNo,
@@ -3760,12 +3769,12 @@ export class IpCommerceService {
     const now = new Date();
     const defaultRevenueShareBps =
       await this.getCreatorRevenueShareDefaultBps();
-    // Membership status resolved once, before the tx — drives the member discount.
-    const isMember = (
-      await this.entitlements.isActiveCommunityMember(user, {
-        now: now.toISOString(),
-      })
-    ).member;
+    // Membership status resolved once, before the tx — drives the member discount
+    // and the member-free unlock (expiresAt bounds the free grant).
+    const membership = await this.entitlements.isActiveCommunityMember(user, {
+      now: now.toISOString(),
+    });
+    const isMember = membership.member;
 
     return this.prisma.$transaction(async (tx) => {
       await tx.$executeRaw`
@@ -3861,6 +3870,59 @@ export class IpCommerceService {
           alreadyOwned: true,
           order: null,
           entitlements: [entitlementDto(existingEntitlement)],
+        };
+      }
+
+      // Member-free viewing: an active community member unlocks the whole IP for
+      // free (the creator is compensated from the monthly member pool at settlement,
+      // not at point of sale). Reuses the entitlement + media-gating path; access
+      // ends with the membership period, and an idempotent re-unlock (deterministic
+      // sourceId) extends it on renewal. v1 is IP-level only (member_free = the
+      // whole IP is free to members); paid episodes inside a member-free IP are not
+      // supported yet.
+      if (
+        ip.accessMode === IpAccessMode.member_free &&
+        input.targetType === IpTargetType.ip
+      ) {
+        if (!isMember) {
+          throw new ForbiddenException({
+            code: 'IP_MEMBER_ONLY',
+            msg: 'This work is free for community members. Join to watch.',
+          });
+        }
+        const memberFreeSourceId = `member_free:${user.userId}:ip:${ip.id}`;
+        const memberFreeEntitlement = await tx.ipContentEntitlement.upsert({
+          where: {
+            sourceType_sourceId: {
+              sourceType: 'member_free_grant',
+              sourceId: memberFreeSourceId,
+            },
+          },
+          create: {
+            userId: user.userId,
+            ipId: ip.id,
+            episodeId: null,
+            targetType: IpTargetType.ip,
+            status: IpEntitlementStatus.active,
+            sourceType: 'member_free_grant',
+            sourceId: memberFreeSourceId,
+            sourceOrderId: null,
+            startsAt: now,
+            endsAt: membership.expiresAt,
+            metadata: { memberFree: true },
+          },
+          update: {
+            status: IpEntitlementStatus.active,
+            startsAt: now,
+            endsAt: membership.expiresAt,
+          },
+        });
+        await ensureCollectionItemTx(tx, user.userId, memberFreeEntitlement);
+        return {
+          alreadyProcessed: false,
+          alreadyOwned: false,
+          order: null,
+          entitlements: [entitlementDto(memberFreeEntitlement)],
         };
       }
 
