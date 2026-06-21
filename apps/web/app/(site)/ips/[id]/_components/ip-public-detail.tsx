@@ -41,6 +41,7 @@ import { useLocale, useTranslations } from "@/src/i18n/i18n";
 import { localizePath } from "@/src/i18n/locale-url";
 import { useCurrentUser } from "@/src/hooks/use-user";
 import { ApiRequestError } from "@/src/lib/api";
+import { recordMemberView } from "@/src/lib/ip-commerce/api";
 import type {
   IpCommerceAsset,
   IpCommerceAccess,
@@ -302,6 +303,17 @@ export function IpPublicDetail({ ipId }: IpPublicDetailProps) {
               videoUrl={mediaTrailerUrl}
               locked={Boolean(selectedEpisode && !canWatchSelected)}
               lockedLabel={lockedMediaLabel}
+              onFirstPlay={() => {
+                // Member-view signal for the revenue pool: only when a member
+                // plays the full media of a selected episode (not the trailer).
+                // The server filters to genuine member-free views + dedupes monthly.
+                if (viewerIsMember && selectedEpisode && !isTrailerSelected && canWatchSelected) {
+                  void recordMemberView({
+                    ipId: detailIp.id,
+                    episodeId: selectedEpisode.id,
+                  }).catch(() => {});
+                }
+              }}
               t={t}
             />
 
@@ -578,6 +590,7 @@ function MediaFrame({
   videoUrl,
   locked,
   lockedLabel,
+  onFirstPlay,
   t,
 }: {
   title: string;
@@ -585,12 +598,18 @@ function MediaFrame({
   videoUrl?: string;
   locked?: boolean;
   lockedLabel?: string;
+  onFirstPlay?: () => void;
   t: Translate;
 }) {
   return (
     <div className="relative aspect-video w-full overflow-hidden rounded-xl bg-secondary">
       {videoUrl ? (
-        <VideoPlayer src={videoUrl} className="size-full" autoplay={false} />
+        <VideoPlayer
+          src={videoUrl}
+          className="size-full"
+          autoplay={false}
+          onFirstPlay={onFirstPlay}
+        />
       ) : posterUrl ? (
         <Image
           src={posterUrl}

@@ -1055,6 +1055,18 @@ export function purchaseIpContent(input: CreateIpPurchaseInput) {
   }>("/aurora/ip-commerce/purchases", { data: input });
 }
 
+/**
+ * Best-effort member-view signal for the monthly revenue pool. The server records
+ * only pool-eligible views (member-free IP + active member + held grant) and
+ * dedupes per (member, episode, month) — fire-and-forget on the client.
+ */
+export function recordMemberView(input: { ipId: string; episodeId: string }) {
+  return api.post<{ recorded: boolean; settlementPeriod?: string }>(
+    "/aurora/ip-commerce/member-views",
+    { data: input }
+  );
+}
+
 export function reportIpContent(input: CreateIpReportInput) {
   return api.post<{ report: { id: string; status: string } }>("/aurora/ip-commerce/reports", {
     data: input,

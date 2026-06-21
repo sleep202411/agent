@@ -11,11 +11,22 @@ interface VideoPlayerProps {
   type?: "video" | "audio";
   className?: string;
   autoplay?: boolean;
+  /** Fired once on the first play of the current src (e.g. a view signal). */
+  onFirstPlay?: () => void;
 }
 
-export function VideoPlayer({ src, type = "video", className, autoplay = true }: VideoPlayerProps) {
+export function VideoPlayer({
+  src,
+  type = "video",
+  className,
+  autoplay = true,
+  onFirstPlay,
+}: VideoPlayerProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const playerRef = useRef<Player | null>(null);
+  // Ref so a changing callback identity never re-creates the player.
+  const onFirstPlayRef = useRef(onFirstPlay);
+  onFirstPlayRef.current = onFirstPlay;
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -33,6 +44,13 @@ export function VideoPlayer({ src, type = "video", className, autoplay = true }:
       fluid: !isAudio,
       audioOnlyMode: isAudio,
       sources: [{ src, type: mimeType }],
+    });
+
+    let firstPlayFired = false;
+    playerRef.current.on("play", () => {
+      if (firstPlayFired) return;
+      firstPlayFired = true;
+      onFirstPlayRef.current?.();
     });
 
     return () => {
