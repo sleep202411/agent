@@ -254,6 +254,17 @@ export class EntitlementService {
       });
     }
 
+    // Grace: a paid studio subscription whose current period hasn't ended yet,
+    // but whose renewal EntitlementGrant hasn't landed (webhook lag at the period
+    // boundary). Keep the member on their plan rather than downgrading them
+    // mid-job. Community membership has its own grace in isActiveCommunityMember.
+    const grace = await this.findSubscriptionGraceSnapshot({
+      userId: user.userId,
+      workspaceId: options?.workspaceId ?? null,
+      now: nowDate,
+    });
+    if (grace) return grace;
+
     const sourcePlan = this.planFromAuthClaim(user.userLevel);
     const status = this.isExpired(user.expireTime) ? 'expired' : 'active';
     const planKey =
@@ -466,6 +477,68 @@ export class EntitlementService {
       return right.startsAt.getTime() - left.startsAt.getTime();
     });
     return grants[0] ?? null;
+  }
+
+  /**
+   * Build an entitlement snapshot from a paid studio subscription that is still
+   * within its current period but has no active grant (renewal-webhook lag). The
+   * most generous in-period subscription across the user + active workspace wins.
+   * Community membership is excluded (it has its own grace + axis).
+   */
+  private async findSubscriptionGraceSnapshot(input: {
+    userId: string;
+    workspaceId: string | null;
+    now: Date;
+  }): Promise<EntitlementSnapshot | null> {
+    const subjects: Prisma.BillingSubscriptionWhereInput[] = [
+      { subjectType: BillingSubjectType.user, subjectId: input.userId },
+    ];
+    if (input.workspaceId) {
+      subjects.push({
+        subjectType: BillingSubjectType.workspace,
+        subjectId: input.workspaceId,
+      });
+    }
+    const sub = await this.prisma.billingSubscription.findFirst({
+      where: {
+        OR: subjects,
+        planKey: { not: COMMUNITY_MEMBERSHIP_PLAN_KEY },
+        status: {
+          in: [
+            BillingSubscriptionStatus.active,
+            BillingSubscriptionStatus.past_due,
+          ],
+        },
+        currentPeriodEnd: { gt: input.now },
+      },
+      orderBy: [{ currentPeriodEnd: 'desc' }],
+    });
+    if (!sub?.planKey) return null;
+
+    const plan = await this.prisma.billingMembershipPlan.findFirst({
+      where: {
+        planKey: sub.planKey,
+        status: BillingMembershipPlanStatus.active,
+        archivedAt: null,
+      },
+    });
+    const planKey = this.normalizePlanKey(sub.planKey) || 'free';
+    const config = this.configForPlan(planKey, plan ?? null);
+    return {
+      version: ENTITLEMENT_POLICY_VERSION,
+      subject: { type: sub.subjectType, id: sub.subjectId },
+      planKey,
+      rank: plan?.rank ?? rankForPlanKey(planKey),
+      source: 'subscription_grace',
+      status: 'active',
+      effectiveAt: input.now.toISOString(),
+      expiresAt: sub.currentPeriodEnd?.toISOString() ?? null,
+      features: config.features,
+      limits: {
+        queuePriority: config.queuePriority,
+        ...config.limits,
+      },
+    };
   }
 
   private snapshotFromGrant(

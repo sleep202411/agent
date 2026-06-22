@@ -17,10 +17,16 @@ export class AiGenerationController {
   constructor(private readonly service: AiGenerationService) {}
 
   @Get('models')
-  async listModels(@CurrentUser() user: AuthUser) {
+  async listModels(
+    @CurrentUser() user: AuthUser,
+    @Headers('x-fizz-workspace-id') workspaceHeader?: string,
+  ) {
     return {
       code: 200,
-      data: await this.service.listCatalog(user),
+      data: await this.service.listCatalog(
+        user,
+        normalizeHeaderValue(workspaceHeader),
+      ),
     };
   }
 

@@ -104,13 +104,19 @@ export class AiGenerationService {
     }
   }
 
-  async listModels(user: AuthUser) {
+  async listModels(user: AuthUser, workspaceId?: string | null) {
     // Canonical-model-driven catalog: the control plane is the single
     // source of truth. One AiModelDefinition per active canonical model,
     // assembled from its primary active provider binding (no provider fan-out,
     // no provider-merge). We only stamp per-user access on top.
+    //
+    // Resolve entitlement WITH the active workspace so a team plan's models
+    // light up for members — without it, team grants never enter the candidate
+    // set and team-gated models read as locked even though submitJob allows them.
     const models = await this.catalog.listModels();
-    const entitlement = await this.entitlements.resolveForUser(user);
+    const entitlement = await this.entitlements.resolveForUser(user, {
+      workspaceId: workspaceId ?? null,
+    });
     return models.map((model) => {
       const access = this.authz.decideModelAccess(entitlement, model);
       return {
@@ -122,8 +128,11 @@ export class AiGenerationService {
     });
   }
 
-  async listCatalog(user: AuthUser): Promise<AiModelCatalogResponse> {
-    const models = await this.listModels(user);
+  async listCatalog(
+    user: AuthUser,
+    workspaceId?: string | null,
+  ): Promise<AiModelCatalogResponse> {
+    const models = await this.listModels(user, workspaceId);
     const presets = this.routing.listPresets(models);
     return {
       dialect: AI_MODEL_PROTOCOL_DIALECT,

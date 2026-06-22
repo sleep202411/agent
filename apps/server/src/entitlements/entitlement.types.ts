@@ -24,6 +24,7 @@ export type EntitlementSource =
   | 'auth_claim'
   | 'billing_membership_plan'
   | 'workspace_subscription'
+  | 'subscription_grace'
   | 'manual_override'
   | 'campaign';
 
