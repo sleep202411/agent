@@ -123,10 +123,17 @@ export class AirwallexProvider implements PaymentProviderAdapter {
       // customer + collection are handled by the hosted checkout itself (mode +
       // linked_payment_account_id above), so the invoice only needs the order
       // currency (the fiat charge currency carried on the line items).
-      // SUBSCRIPTION mode derives its invoice from the subscription, so skip it.
+      // SUBSCRIPTION mode derives its invoice from the subscription, but
+      // Airwallex still rejects the create call without a subscription_data
+      // object ("subscription_data must be provided for SUBSCRIPTION mode in
+      // checkout"). For an indefinite, auto-renewing membership we send it
+      // empty on purpose: `duration` would cap the number of billing cycles
+      // (the subscription would silently end), and `trial_ends_at` would add a
+      // free trial — neither is wanted. The recurring interval (month/year) is
+      // already encoded in the price's recurring config, not here.
       ...(input.mode === 'PAYMENT'
         ? { invoice_data: { currency: input.lineItems[0]?.currency } }
-        : {}),
+        : { subscription_data: {} }),
       ...(input.providerCouponId
         ? {
             discounts: [
