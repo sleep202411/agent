@@ -14,8 +14,8 @@
 // prices page (later stage) keeps a focused price-management surface; the
 // CreatePriceForm can move there then without changing this page's data flow.
 
-import { useMemo, useState } from "react";
-import { IconPlus, IconRefresh } from "@tabler/icons-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { IconCloudUpload, IconPlus, IconRefresh, IconSearch } from "@tabler/icons-react";
 import { Button } from "@/components/ui/button";
 import { DataTable, type ColumnDef } from "@/components/ui/data-table";
 import { cn } from "@/lib/utils";
@@ -38,7 +38,6 @@ import {
   providerHelp,
   ProviderBadge,
   requestEnvelope,
-  RiskText,
   Select,
   StatusPill,
   stringField,
@@ -72,6 +71,7 @@ export function BillingCatalogPanel({
   const [prices, setPrices] = useState(initialPrices ?? emptyPrices);
   const [priceProductType, setPriceProductType] = useState("");
   const [priceProvider, setPriceProvider] = useState("");
+  const [search, setSearch] = useState("");
   const [createPriceDialogOpen, setCreatePriceDialogOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(initialError ?? null);
@@ -100,6 +100,19 @@ export function BillingCatalogPanel({
       setLoading(false);
     }
   }
+
+  // Auto-apply server-side filters on change. SSR-provided initialPrices already
+  // populate the table, so skip the initial mount to avoid a redundant fetch.
+  const didMountRef = useRef(false);
+  useEffect(() => {
+    if (!didMountRef.current) {
+      didMountRef.current = true;
+      return;
+    }
+    void refreshPrices();
+    // refreshPrices is a render-stable closure that reads the latest filter state.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [priceProductType, priceProvider]);
 
   async function handleCreatePrice(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -207,6 +220,32 @@ export function BillingCatalogPanel({
     }
   }
 
+  async function handleSyncPending() {
+    setLoading(true);
+    setError(null);
+    try {
+      await mutateEnvelope("/api/admin/billing/provider-bindings/sync-pending", {});
+      await refreshPrices();
+    } catch (err) {
+      setError(toErrorMessage(err));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  // Count bindings currently in sync_pending across the loaded prices so the
+  // bulk-sync button can advertise how many rows it would touch.
+  const pendingBindingCount = useMemo(
+    () =>
+      prices.items.reduce(
+        (total, price) =>
+          total +
+          price.providerBindings.filter((binding) => binding.status === "sync_pending").length,
+        0
+      ),
+    [prices.items]
+  );
+
   return (
     <div className="space-y-4">
       <PageHeader
@@ -225,12 +264,16 @@ export function BillingCatalogPanel({
         prices={prices.items}
         productType={priceProductType}
         provider={priceProvider}
+        search={search}
+        pendingBindingCount={pendingBindingCount}
         loading={loading}
         createDialogOpen={createPriceDialogOpen}
         onProductTypeChange={setPriceProductType}
         onProviderChange={setPriceProvider}
+        onSearchChange={setSearch}
         onCreateDialogOpenChange={setCreatePriceDialogOpen}
         onRefresh={() => void refreshPrices()}
+        onSyncPending={() => void handleSyncPending()}
         onCreatePrice={handleCreatePrice}
         onEditPrice={setEditingPrice}
         onSyncBinding={handleSyncPriceBinding}
@@ -306,12 +349,16 @@ function CatalogView({
   prices,
   productType,
   provider,
+  search,
+  pendingBindingCount,
   loading,
   createDialogOpen,
   onProductTypeChange,
   onProviderChange,
+  onSearchChange,
   onCreateDialogOpenChange,
   onRefresh,
+  onSyncPending,
   onCreatePrice,
   onEditPrice,
   onSyncBinding,
@@ -320,17 +367,38 @@ function CatalogView({
   prices: BillingPriceRow[];
   productType: string;
   provider: string;
+  search: string;
+  pendingBindingCount: number;
   loading: boolean;
   createDialogOpen: boolean;
   onProductTypeChange: (value: string) => void;
   onProviderChange: (value: string) => void;
+  onSearchChange: (value: string) => void;
   onCreateDialogOpenChange: (open: boolean) => void;
   onRefresh: () => void;
+  onSyncPending: () => void;
   onCreatePrice: (event: React.FormEvent<HTMLFormElement>) => void;
   onEditPrice: (price: BillingPriceRow) => void;
   onSyncBinding: (bindingId: string) => void;
   siteKey: BillingSiteKey;
 }) {
+  // Debounce the free-text search so client-side filtering does not re-run on
+  // every keystroke; filter the already-loaded prices by name + code.
+  const [debouncedSearch, setDebouncedSearch] = useState(search);
+  useEffect(() => {
+    const handle = setTimeout(() => setDebouncedSearch(search), 250);
+    return () => clearTimeout(handle);
+  }, [search]);
+
+  const visiblePrices = useMemo(() => {
+    const query = debouncedSearch.trim().toLowerCase();
+    if (!query) return prices;
+    return prices.filter(
+      (price) =>
+        price.name.toLowerCase().includes(query) || price.code.toLowerCase().includes(query)
+    );
+  }, [prices, debouncedSearch]);
+
   const columns = useMemo<ColumnDef<BillingPriceRow, unknown>[]>(
     () => [
       {
@@ -408,7 +476,7 @@ function CatalogView({
               {price.providerBindings.map((binding) => (
                 <ProviderBadge key={binding.id} binding={binding} onSync={onSyncBinding} />
               ))}
-              {!price.providerBindings.length ? <RiskText>未配置渠道</RiskText> : null}
+              {!price.providerBindings.length ? <StatusPill tone="muted">未绑定</StatusPill> : null}
             </div>
           );
         },
@@ -468,60 +536,82 @@ function CatalogView({
             <div>
               <h3 className="text-sm font-semibold text-slate-950">商品目录与价格版本</h3>
               <p className="mt-1 text-[12px] text-slate-500">
-                社区积分、算力积分和会员套餐统一从内部价格出发。
+                社区积分、算力积分、个人会员、团队会员和社区会员统一从内部价格出发。
               </p>
             </div>
-            <div className="grid gap-2 sm:grid-cols-[180px_160px_auto_auto]">
-              <Select
-                value={productType}
-                onChange={onProductTypeChange}
-                title="按内部商品类型过滤；商品类型决定履约发放的是算力积分、社区积分还是会员权益。"
-              >
-                <option value="">全部商品类型</option>
-                <option
-                  value="community_point_pack"
-                  title={productTypeHelp("community_point_pack")}
-                >
-                  社区积分
-                </option>
-                <option value="compute_point_pack" title={productTypeHelp("compute_point_pack")}>
-                  算力积分
-                </option>
-                <option value="membership_plan" title={productTypeHelp("membership_plan")}>
-                  会员套餐
-                </option>
-                <option
-                  value="team_membership_plan"
-                  title={productTypeHelp("team_membership_plan")}
-                >
-                  团队会员
-                </option>
-              </Select>
-              <Select
-                value={provider}
-                onChange={onProviderChange}
-                title="支付或履约来源。线下确认不是兑换码，内部发放用于平台承担成本的零元订单。"
-              >
-                <option value="">全部渠道</option>
-                <option value="airwallex" title={providerHelp("airwallex")}>
-                  Airwallex
-                </option>
-                <option value="wechat_pay" title={providerHelp("wechat_pay")}>
-                  微信支付
-                </option>
-                <option value="alipay" title={providerHelp("alipay")}>
-                  支付宝
-                </option>
-                <option value="manual" title={providerHelp("manual")}>
-                  线下确认
-                </option>
-                <option value="internal" title={providerHelp("internal")}>
-                  内部发放
-                </option>
-              </Select>
+            <div className="flex flex-wrap items-center gap-2">
+              <div className="relative w-52">
+                <IconSearch className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-slate-400" />
+                <TextInput
+                  value={search}
+                  onChange={(event) => onSearchChange(event.target.value)}
+                  placeholder="搜索名称或编码"
+                  className="pl-8"
+                  aria-label="搜索商品名称或编码"
+                />
+              </div>
+              <div className="w-44">
+                <Select value={productType} onChange={onProductTypeChange}>
+                  <option value="">全部商品类型</option>
+                  <option
+                    value="community_point_pack"
+                    title={productTypeHelp("community_point_pack")}
+                  >
+                    社区积分
+                  </option>
+                  <option value="compute_point_pack" title={productTypeHelp("compute_point_pack")}>
+                    算力积分
+                  </option>
+                  <option value="membership_plan" title={productTypeHelp("membership_plan")}>
+                    个人会员
+                  </option>
+                  <option
+                    value="team_membership_plan"
+                    title={productTypeHelp("team_membership_plan")}
+                  >
+                    团队会员
+                  </option>
+                  <option
+                    value="community_membership_plan"
+                    title={productTypeHelp("community_membership_plan")}
+                  >
+                    社区会员
+                  </option>
+                </Select>
+              </div>
+              <div className="w-40">
+                <Select value={provider} onChange={onProviderChange}>
+                  <option value="">全部渠道</option>
+                  <option value="airwallex" title={providerHelp("airwallex")}>
+                    Airwallex
+                  </option>
+                  <option value="wechat_pay" title={providerHelp("wechat_pay")}>
+                    微信支付
+                  </option>
+                  <option value="alipay" title={providerHelp("alipay")}>
+                    支付宝
+                  </option>
+                  <option value="manual" title={providerHelp("manual")}>
+                    线下确认
+                  </option>
+                  <option value="internal" title={providerHelp("internal")}>
+                    内部发放
+                  </option>
+                </Select>
+              </div>
               <Button variant="outline" size="sm" onClick={onRefresh} disabled={loading}>
                 <IconRefresh className={cn("size-3.5", loading && "animate-spin")} />
-                应用
+                刷新
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={onSyncPending}
+                disabled={loading}
+                title="批量同步所有待处理的供应商绑定。"
+              >
+                <IconCloudUpload className="size-3.5" />
+                {pendingBindingCount > 0 ? `同步待处理 (${pendingBindingCount})` : "同步待处理"}
               </Button>
               <Button size="sm" onClick={() => onCreateDialogOpenChange(true)} disabled={loading}>
                 <IconPlus className="size-3.5" />
@@ -532,7 +622,7 @@ function CatalogView({
         </div>
         <DataTable
           columns={columns}
-          data={prices}
+          data={visiblePrices}
           loading={loading}
           minWidth={1120}
           pageSize={20}
@@ -665,10 +755,16 @@ function CreatePriceForm({
             算力积分
           </option>
           <option value="membership_plan" title={productTypeHelp("membership_plan")}>
-            会员套餐
+            个人会员
           </option>
           <option value="team_membership_plan" title={productTypeHelp("team_membership_plan")}>
             团队会员
+          </option>
+          <option
+            value="community_membership_plan"
+            title={productTypeHelp("community_membership_plan")}
+          >
+            社区会员
           </option>
         </Select>
       </FormLabel>

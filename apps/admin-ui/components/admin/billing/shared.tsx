@@ -759,6 +759,7 @@ export function buildBillingItemCode({
     compute_point_pack: "COMPUTE_POINT",
     membership_plan: "MEMBERSHIP",
     team_membership_plan: "TEAM_MEMBERSHIP",
+    community_membership_plan: "COMMUNITY_MEMBERSHIP",
   };
   const prefix = prefixes[productType] ?? "BILLING";
   const benefit = sanitizeCodeToken(walletAmount || planKey || "PACKAGE");
@@ -784,8 +785,9 @@ export function productTypeLabel(value: string) {
   const labels: Record<string, string> = {
     community_point_pack: "社区积分",
     compute_point_pack: "算力积分",
-    membership_plan: "会员",
+    membership_plan: "个人会员",
     team_membership_plan: "团队会员",
+    community_membership_plan: "社区会员",
   };
   return labels[value] ?? value;
 }
@@ -796,6 +798,7 @@ export function productTypeHelp(value: string) {
     compute_point_pack: "购买后发放算力积分，用于 AI 生成等平台能力消耗。",
     membership_plan: "购买后开通个人会员权益，可按月/年订阅或一次性购买。",
     team_membership_plan: "购买后开通工作区或团队会员权益。",
+    community_membership_plan: "购买后开通社区会员权益(会员免费观看 + 购买折扣)。",
   };
   return labels[value] ?? value;
 }
