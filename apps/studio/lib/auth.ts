@@ -90,8 +90,27 @@ export async function getAuthUser(): Promise<AuthUser | null> {
 
 export async function logout(): Promise<void> {
   try {
+    // Server-side: invalidate the satoken on Java's side (best-effort).
     await fetch("/user/logout", { credentials: "include" });
   } catch {
-    /* the cookie clear is best-effort */
+    /* server-side invalidation is best-effort */
+  }
+  // Client-side: the satoken cookie is now shared across subdomains
+  // (Domain=.fizzdragon.com) and is NOT HttpOnly (the legacy studio iframe reads
+  // it). Java's /user/logout doesn't reliably expire the shared-domain cookie,
+  // so without this the next /me refetch re-reads a live cookie and the user
+  // stays logged in. Clear both the host-only and the shared-apex variants.
+  clearSatokenCookie();
+}
+
+/** Expire the satoken cookie locally — host-only + the shared `.<apex>` domain. */
+function clearSatokenCookie(): void {
+  if (typeof document === "undefined") return;
+  const expire = "path=/; max-age=0; SameSite=Lax";
+  document.cookie = `satoken=; ${expire}`;
+  const parts = window.location.hostname.split(".");
+  if (parts.length >= 2) {
+    const apex = parts.slice(-2).join(".");
+    document.cookie = `satoken=; domain=.${apex}; ${expire}`;
   }
 }
