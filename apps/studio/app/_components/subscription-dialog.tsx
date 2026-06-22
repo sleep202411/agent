@@ -20,6 +20,8 @@ import {
   type MembershipPrice,
 } from "@/lib/billing";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { FrostedPanel } from "@/components/ui/frosted-panel";
+import { GlassRim } from "@/components/ui/glass-rim";
 import { cn } from "@/lib/utils";
 import { useAuth } from "./auth-provider";
 import { useCountry } from "./region-provider";
@@ -28,39 +30,28 @@ import { useWorkspace } from "./workspace-context";
 type BillingInterval = "month" | "year";
 
 /**
- * Commerce accent palette (see DESIGN.md "Commerce accents"). Functional
- * color that encodes plan tier on the subscription surface only — these are
- * deliberately NOT tokens and must not leak into general chrome.
+ * Commerce accent (see DESIGN.md "Commerce accents"). The base is monochrome
+ * AI glass; brand red is the single functional accent that crowns the one
+ * recommended tier on this purchase surface. Deliberately NOT a token — it
+ * must not leak into general chrome.
  */
 type PlanAccent = {
   base: string;
   deep: string;
 };
 
-/** Brand red crowns the top tier — sanctioned commerce use (rule 3). */
+/** Brand red crowns the recommended (Popular) tier — sanctioned commerce use (rule 3). */
 const ACCENT_RED: PlanAccent = { base: "#E52227", deep: "#a3161b" };
-/** Blue marks the recommended (Popular) tier. */
-const ACCENT_BLUE: PlanAccent = { base: "#3a86ff", deep: "#2b6bcb" };
-/** Billing-interval savings chip — distinct from any plan accent. */
-const ACCENT_YELLOW: PlanAccent = { base: "#ffbe0b", deep: "#e3a400" };
 
-const PLAN_ACCENTS: Record<string, PlanAccent | null> = {
-  basic: null,
-  standard: null,
-  pro: ACCENT_BLUE,
-  studio: ACCENT_RED,
-  enterprise: null,
-  team_ultimate: null,
-  team_creator: ACCENT_BLUE,
-  team_scale: ACCENT_RED,
-  team_enterprise: null,
-};
+/** A red conic rim-light for the recommended card's glass edge. */
+const RED_RIM_GRADIENT = `conic-gradient(from 288deg, ${rgba(ACCENT_RED.base, 0.7)} 0%, ${rgba(ACCENT_RED.base, 0.2)} 42%, ${rgba(ACCENT_RED.base, 0)} 43%, ${rgba(ACCENT_RED.base, 0.25)} 48%, ${rgba(ACCENT_RED.base, 0)} 88%, ${rgba(ACCENT_RED.base, 0)} 90%, ${rgba(ACCENT_RED.base, 0.7)} 100%)`;
 
-const ACCENT_CYCLE: (PlanAccent | null)[] = [null, null, ACCENT_BLUE, ACCENT_RED];
-
-function accentForPlan(plan: MembershipPlan, index: number): PlanAccent | null {
-  if (plan.planKey in PLAN_ACCENTS) return PLAN_ACCENTS[plan.planKey];
-  return ACCENT_CYCLE[index % ACCENT_CYCLE.length];
+/**
+ * Only the recommended tier — the plan flagged `marketing.badge === "Popular"`
+ * — is crowned in brand red; every other tier stays neutral monochrome glass.
+ */
+function accentForPlan(plan: MembershipPlan): PlanAccent | null {
+  return stringField(plan.marketing, "badge") === "Popular" ? ACCENT_RED : null;
 }
 
 const EMPTY_PLANS: MembershipPlan[] = [];
@@ -283,9 +274,9 @@ export function SubscriptionDialog({
                 <TabsTrigger value="year" className="px-2.5">
                   {t("interval.yearly")}
                   <span
-                    className="rounded-full px-1.5 py-px text-[10px] font-bold text-black/85"
+                    className="rounded-full px-1.5 py-px text-[10px] font-bold text-white"
                     style={{
-                      background: `linear-gradient(90deg, ${ACCENT_YELLOW.deep}, ${ACCENT_YELLOW.base} 33%, ${ACCENT_YELLOW.base} 67%, ${ACCENT_YELLOW.deep})`,
+                      background: `linear-gradient(90deg, ${ACCENT_RED.deep}, ${ACCENT_RED.base} 33%, ${ACCENT_RED.base} 67%, ${ACCENT_RED.deep})`,
                     }}
                   >
                     -25%
@@ -323,14 +314,14 @@ export function SubscriptionDialog({
                   visiblePlans.length >= 4 ? "xl:grid-cols-4" : "xl:grid-cols-3"
                 )}
               >
-                {visiblePlans.map((plan, index) => {
+                {visiblePlans.map((plan) => {
                   const price = priceForInterval(plan, billingInterval) ?? plan.prices[0] ?? null;
                   return (
                     <PlanCard
                       key={plan.id}
                       plan={plan}
                       price={price}
-                      accent={accentForPlan(plan, index)}
+                      accent={accentForPlan(plan)}
                       interval={billingInterval}
                       paying={payingPriceId === price?.id}
                       onSubscribe={() => void subscribe(price)}
@@ -387,8 +378,8 @@ function PlanCard({
 
   return (
     <article className="flex flex-col">
-      {/* Ribbon cards sit inside a solid accent frame; plain cards reserve the
-          same 36px so all inner cards align across the row. */}
+      {/* The recommended tier wears a brand-red ribbon; plain cards reserve the
+          same 36px so all inner glass panels align across the row. */}
       {ribbon ? (
         <div
           className="flex h-9 shrink-0 items-center justify-center rounded-t-3xl text-xs font-bold uppercase tracking-[0.12em] text-white"
@@ -399,158 +390,160 @@ function PlanCard({
       ) : (
         <div className="h-9 shrink-0" />
       )}
-      <div
-        className={cn("flex flex-1 rounded-b-3xl", !ribbon && "rounded-t-3xl")}
-        style={ribbon ? { background: accent!.base, padding: "0 3px 3px" } : undefined}
+      <FrostedPanel
+        // The recommended card gets a custom red rim; others keep the default
+        // neutral white rim. Either way the surface is AI glass, not a flat box.
+        rim={!accent}
+        className={cn(
+          "flex min-h-[524px] flex-1 flex-col overflow-hidden rounded-3xl p-5 shadow-2xl",
+          ribbon && "rounded-t-none"
+        )}
       >
-        <div
-          className={cn(
-            "relative flex min-h-[524px] w-full flex-col overflow-hidden p-5 shadow-2xl",
-            ribbon ? "rounded-b-[19px] rounded-t-none" : "rounded-3xl",
-            accent ? "bg-[#121212]" : "bg-card"
-          )}
-        >
-          {accent ? (
+        {accent ? (
+          <>
+            {/* Brand-red wash over the glass + a red rim-light edge — restrained,
+                only the recommended tier is crowned. */}
             <div
-              className="pointer-events-none absolute inset-0"
+              className="pointer-events-none absolute inset-0 rounded-[inherit]"
               style={{
-                background: `linear-gradient(180deg, ${rgba(accent.base, 0.03)}, ${rgba(accent.base, 0.3)})`,
+                background: `linear-gradient(180deg, ${rgba(accent.base, 0.04)}, ${rgba(accent.base, 0.16)})`,
               }}
             />
-          ) : null}
+            <GlassRim gradient={RED_RIM_GRADIENT} width="1.5px" />
+          </>
+        ) : null}
 
-          <div className="relative flex items-start justify-between gap-3">
-            <div className="min-w-0">
-              <div className="flex items-center gap-2">
-                <p className="text-2xl font-semibold leading-tight tracking-tight">{plan.name}</p>
-                {discountPercent ? (
-                  <span
-                    className={cn(
-                      "rounded-full px-2 py-0.5 text-xs font-bold",
-                      accent ? "text-white" : "bg-primary text-primary-foreground"
-                    )}
-                    style={
-                      accent
-                        ? {
-                            background: `linear-gradient(90deg, ${accent.deep}, ${accent.base} 33%, ${accent.base} 67%, ${accent.deep})`,
-                          }
-                        : undefined
-                    }
-                  >
-                    -{discountPercent}%
-                  </span>
-                ) : null}
-              </div>
-              <p className="mt-2 min-h-12 text-sm leading-6 text-muted-foreground">
-                {plan.description || t("plan.defaultDescription")}
-              </p>
+        <div className="relative flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <div className="flex items-center gap-2">
+              <p className="text-2xl font-semibold leading-tight tracking-tight">{plan.name}</p>
+              {discountPercent ? (
+                <span
+                  className={cn(
+                    "rounded-full px-2 py-0.5 text-xs font-bold",
+                    accent ? "text-white" : "bg-primary text-primary-foreground"
+                  )}
+                  style={
+                    accent
+                      ? {
+                          background: `linear-gradient(90deg, ${accent.deep}, ${accent.base} 33%, ${accent.base} 67%, ${accent.deep})`,
+                        }
+                      : undefined
+                  }
+                >
+                  -{discountPercent}%
+                </span>
+              ) : null}
             </div>
+            <p className="mt-2 min-h-12 text-sm leading-6 text-muted-foreground">
+              {plan.description || t("plan.defaultDescription")}
+            </p>
           </div>
+        </div>
 
-          <div className="relative mt-6">
-            {price ? (
-              <div className="flex flex-wrap items-end gap-x-3 gap-y-1">
-                {hasOriginal ? (
-                  <span
-                    className="pb-1 text-xl font-bold line-through"
-                    style={{ color: accent ? accent.base : undefined }}
-                  >
-                    <span className={accent ? undefined : "text-muted-foreground"}>
-                      {formatMoneyMinor(originalAmount, price.currency)}
-                    </span>
+        <div className="relative mt-6">
+          {price ? (
+            <div className="flex flex-wrap items-end gap-x-3 gap-y-1">
+              {hasOriginal ? (
+                <span
+                  className="pb-1 text-xl font-bold line-through"
+                  style={{ color: accent ? accent.base : undefined }}
+                >
+                  <span className={accent ? undefined : "text-muted-foreground"}>
+                    {formatMoneyMinor(originalAmount, price.currency)}
                   </span>
-                ) : null}
-                <span className="bg-gradient-to-b from-white to-white/70 bg-clip-text text-5xl font-bold leading-none tracking-tight text-transparent">
-                  {formatMoneyMinor(price.amountMinor, price.currency)}
                 </span>
-                <span className="pb-1 text-sm font-medium text-muted-foreground">
-                  {intervalLabel(price.interval || interval, t)}
-                </span>
-              </div>
-            ) : (
-              <div>
-                <span className="text-5xl font-bold leading-none tracking-tight">
-                  {t("plan.custom")}
-                </span>
-                <p className="mt-2 text-sm text-muted-foreground">{t("plan.contactForPricing")}</p>
-              </div>
-            )}
-          </div>
-
-          <div className="relative mt-6">
-            {price ? (
-              <button
-                type="button"
-                onClick={onSubscribe}
-                disabled={paying}
-                className={cn(
-                  "flex h-12 w-full items-center justify-center gap-2 rounded-2xl text-base font-semibold transition-all hover:brightness-110 disabled:pointer-events-none disabled:opacity-60",
-                  accent
-                    ? "text-white"
-                    : "bg-primary text-primary-foreground hover:opacity-90 hover:brightness-100"
-                )}
-                style={
-                  accent
-                    ? {
-                        background: `radial-gradient(120% 140% at 50% 0%, ${accent.base} 0%, ${accent.base} 60%, ${accent.deep} 100%)`,
-                        boxShadow: `0 12px 24px ${rgba(accent.deep, 0.15)}, 0 2px 10px ${rgba(accent.base, 0.25)}`,
-                      }
-                    : undefined
-                }
-              >
-                {paying ? <IconLoader2 className="size-5 animate-spin" /> : t("plan.getStarted")}
-                {!paying ? <IconArrowRight className="size-4" stroke={2.2} /> : null}
-              </button>
-            ) : (
-              <a
-                href="mailto:business@fizzdragon.com"
-                className="flex h-12 w-full items-center justify-center gap-2 rounded-2xl bg-primary text-base font-semibold text-primary-foreground transition-opacity hover:opacity-90"
-              >
-                {t("plan.contactSales")}
-                <IconArrowRight className="size-4" stroke={2.2} />
-              </a>
-            )}
-          </div>
-
-          <div className="relative mt-2 py-4">
-            <div className="h-px bg-border" />
-            <div className="flex items-center justify-between gap-4 py-4">
-              <div className="flex items-center gap-2 text-sm font-medium">
-                <IconBolt className="size-4" stroke={1.9} style={{ color: accent?.base }} />
-                <span>{t("plan.includedInPlan")}</span>
-              </div>
-              <span className="text-sm font-bold" style={{ color: accent?.base }}>
-                {price
-                  ? t("plan.computeCreditsAmount", {
-                      amount: formatInteger(plan.includedComputeCredits),
-                    })
-                  : t("plan.customCreditsAmount")}
+              ) : null}
+              <span className="bg-gradient-to-b from-white to-white/70 bg-clip-text text-5xl font-bold leading-none tracking-tight text-transparent">
+                {formatMoneyMinor(price.amountMinor, price.currency)}
+              </span>
+              <span className="pb-1 text-sm font-medium text-muted-foreground">
+                {intervalLabel(price.interval || interval, t)}
               </span>
             </div>
-            <p className="text-xs font-medium text-muted-foreground">
-              {t("plan.seats", { count: plan.includedSeats })}
-              {plan.maxSeats ? t("plan.seatsUpTo", { max: plan.maxSeats }) : ""}
-            </p>
-            <div className="mt-4 h-px bg-border" />
-          </div>
-
-          <ul className="relative space-y-3 pb-1">
-            {featureItems.map((item) => (
-              <li
-                key={item}
-                className="flex items-start gap-2 text-sm leading-5 text-muted-foreground"
-              >
-                <IconCheck
-                  className={cn("mt-0.5 size-4 shrink-0", !accent && "text-foreground")}
-                  stroke={2}
-                  style={{ color: accent?.base }}
-                />
-                <span>{item}</span>
-              </li>
-            ))}
-          </ul>
+          ) : (
+            <div>
+              <span className="text-5xl font-bold leading-none tracking-tight">
+                {t("plan.custom")}
+              </span>
+              <p className="mt-2 text-sm text-muted-foreground">{t("plan.contactForPricing")}</p>
+            </div>
+          )}
         </div>
-      </div>
+
+        <div className="relative mt-6">
+          {price ? (
+            <button
+              type="button"
+              onClick={onSubscribe}
+              disabled={paying}
+              className={cn(
+                "flex h-12 w-full items-center justify-center gap-2 rounded-2xl text-base font-semibold transition-all hover:brightness-110 disabled:pointer-events-none disabled:opacity-60",
+                accent
+                  ? "text-white"
+                  : "bg-primary text-primary-foreground hover:opacity-90 hover:brightness-100"
+              )}
+              style={
+                accent
+                  ? {
+                      background: `radial-gradient(120% 140% at 50% 0%, ${accent.base} 0%, ${accent.base} 60%, ${accent.deep} 100%)`,
+                      boxShadow: `0 12px 24px ${rgba(accent.deep, 0.15)}, 0 2px 10px ${rgba(accent.base, 0.25)}`,
+                    }
+                  : undefined
+              }
+            >
+              {paying ? <IconLoader2 className="size-5 animate-spin" /> : t("plan.getStarted")}
+              {!paying ? <IconArrowRight className="size-4" stroke={2.2} /> : null}
+            </button>
+          ) : (
+            <a
+              href="mailto:business@fizzdragon.com"
+              className="flex h-12 w-full items-center justify-center gap-2 rounded-2xl bg-primary text-base font-semibold text-primary-foreground transition-opacity hover:opacity-90"
+            >
+              {t("plan.contactSales")}
+              <IconArrowRight className="size-4" stroke={2.2} />
+            </a>
+          )}
+        </div>
+
+        <div className="relative mt-2 py-4">
+          <div className="h-px bg-border" />
+          <div className="flex items-center justify-between gap-4 py-4">
+            <div className="flex items-center gap-2 text-sm font-medium">
+              <IconBolt className="size-4" stroke={1.9} style={{ color: accent?.base }} />
+              <span>{t("plan.includedInPlan")}</span>
+            </div>
+            <span className="text-sm font-bold" style={{ color: accent?.base }}>
+              {price
+                ? t("plan.computeCreditsAmount", {
+                    amount: formatInteger(plan.includedComputeCredits),
+                  })
+                : t("plan.customCreditsAmount")}
+            </span>
+          </div>
+          <p className="text-xs font-medium text-muted-foreground">
+            {t("plan.seats", { count: plan.includedSeats })}
+            {plan.maxSeats ? t("plan.seatsUpTo", { max: plan.maxSeats }) : ""}
+          </p>
+          <div className="mt-4 h-px bg-border" />
+        </div>
+
+        <ul className="relative space-y-3 pb-1">
+          {featureItems.map((item) => (
+            <li
+              key={item}
+              className="flex items-start gap-2 text-sm leading-5 text-muted-foreground"
+            >
+              <IconCheck
+                className={cn("mt-0.5 size-4 shrink-0", !accent && "text-foreground")}
+                stroke={2}
+                style={{ color: accent?.base }}
+              />
+              <span>{item}</span>
+            </li>
+          ))}
+        </ul>
+      </FrostedPanel>
     </article>
   );
 }
