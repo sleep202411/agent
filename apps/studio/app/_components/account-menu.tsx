@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useTranslations } from "next-intl";
-import { Link, useRouter } from "@/i18n/navigation";
+import { openSettings } from "@/lib/settings-hash";
 import {
   IconBolt,
   IconCopy,
@@ -41,7 +41,6 @@ function PillButton({ label, onClick }: { label: string; onClick: () => void }) 
 
 export function AccountMenu() {
   const t = useTranslations("account");
-  const router = useRouter();
   const { user, loading, signIn, signOut } = useAuth();
   const { data: computeCredits } = useComputeWalletBalance(Boolean(user));
   const [menuOpen, setMenuOpen] = useState(false);
@@ -53,7 +52,7 @@ export function AccountMenu() {
   };
   const openUsageAnalytics = () => {
     setMenuOpen(false);
-    router.push("/settings/analytics");
+    openSettings("analytics");
   };
 
   useEffect(() => {
@@ -144,13 +143,14 @@ export function AccountMenu() {
                 </button>
               ) : null}
             </span>
-            <Link
-              href="/settings"
+            <button
+              type="button"
+              onClick={() => openSettings("account")}
               aria-label={t("settings")}
               className="flex size-9 shrink-0 items-center justify-center rounded-full bg-white/[0.06] text-white/70 transition-colors hover:bg-white/[0.1] hover:text-white"
             >
               <IconSettings className="size-4.5" stroke={1.8} />
-            </Link>
+            </button>
           </div>
 
           <button
@@ -201,11 +201,12 @@ export function AccountMenu() {
             <IconReceipt className="size-4.5" stroke={1.8} />
             {t("billing")}
           </DropdownMenuItem>
-          <DropdownMenuItem className="gap-2.5 rounded-lg p-2 text-sm">
-            <Link href="/settings" className="flex flex-1 items-center gap-2.5">
-              <IconSettings className="size-4.5" stroke={1.8} />
-              {t("settings")}
-            </Link>
+          <DropdownMenuItem
+            onSelect={() => openSettings("account")}
+            className="gap-2.5 rounded-lg p-2 text-sm"
+          >
+            <IconSettings className="size-4.5" stroke={1.8} />
+            {t("settings")}
           </DropdownMenuItem>
           <DropdownMenuItem
             onSelect={() => void signOut()}

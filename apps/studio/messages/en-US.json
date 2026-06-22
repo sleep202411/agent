@@ -264,11 +264,6 @@
     "newProject": "New project"
   },
   "shell": {
-    "beta": {
-      "title": "FizzStudio is in beta",
-      "description": "This is an early beta, so your work may be lost or reset without notice. When using the canvas and image / video generation, please download or back up anything important as you create it.",
-      "acknowledge": "I understand"
-    },
     "credits": {
       "tooltip": "Compute credits",
       "tooltipDetailed": "Compute credits · available {available} · held {held} · total {total}",
@@ -739,8 +734,21 @@
     "groupTeamsSettings": "Teams Settings",
     "navOverview": "Overview",
     "navMembers": "Members",
+    "navUsage": "Usage",
     "navAnalytics": "Analytics",
     "navBilling": "Plan & Billing",
+    "usageTitle": "Usage",
+    "usageSubtitle": "Your plan, compute credits, and generation limits.",
+    "planLimits": "Plan limits",
+    "planLimitsHint": "Per-day caps and concurrency for AI generation on this plan.",
+    "limitConcurrentJobs": "Concurrent jobs",
+    "limitImageDaily": "Images / day",
+    "limitVideoDaily": "Videos / day",
+    "limitChatDaily": "Chats / day",
+    "limitQueuePriority": "Queue priority",
+    "limitUnlimited": "Unlimited",
+    "creditsRemaining": "{available} of {total} available",
+    "rechargeCredits": "Recharge",
     "role": {
       "owner": "Owner",
       "admin": "Admin",

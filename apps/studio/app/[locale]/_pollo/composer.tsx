@@ -43,6 +43,11 @@ const STUDIOS: Studio[] = [
 
 const VISIBLE_STUDIOS = STUDIOS.filter((s) => !s.hidden);
 
+// The mode switcher (Agent / Creative / Project) is hidden on the homepage for
+// now — the design is intentionally kept intact; flip this to `true` to restore
+// the pill tabs. With it hidden the page shows the default studio (index 0).
+const SHOW_STUDIO_TABS = false;
+
 export function Composer({ theme: t }: { theme: Theme }) {
   const [studioIdx, setStudioIdx] = useState(0);
   const studio = VISIBLE_STUDIOS[studioIdx];
@@ -70,60 +75,67 @@ export function Composer({ theme: t }: { theme: Theme }) {
         </span>
       </h1>
 
-      {/* studio tabs — Agent + Creative + Project (Marketing/Commerce hidden) */}
-      <div className="relative mt-9 flex w-fit items-center gap-1 rounded-full border border-white/[0.04] bg-white/[0.05] p-1">
-        {tabInd ? (
-          <span
-            aria-hidden
-            className="pointer-events-none absolute top-1 bottom-1 left-0 rounded-[32px]"
-            style={{
-              width: tabInd.width,
-              transform: `translateX(${tabInd.left}px)`,
-              boxShadow: t.tabGlow,
-              transition: `transform 0.3s ${EASE}, width 0.3s ${EASE}`,
-            }}
-          >
-            <GradientRing padding="1px" gradient={t.tabRing} />
-          </span>
-        ) : null}
-        {VISIBLE_STUDIOS.map((s, i) => {
-          const active = studioIdx === i;
-          const TabIcon = s.icon;
-          return (
-            <button
-              key={s.id}
-              ref={(el) => {
-                tabRefs.current[i] = el;
+      {/* studio tabs — Agent + Creative + Project (Marketing/Commerce hidden).
+          Whole switcher hidden via SHOW_STUDIO_TABS — design kept intact. */}
+      {SHOW_STUDIO_TABS && (
+        <div className="relative mt-9 flex w-fit items-center gap-1 rounded-full border border-white/[0.04] bg-white/[0.05] p-1">
+          {tabInd ? (
+            <span
+              aria-hidden
+              className="pointer-events-none absolute top-1 bottom-1 left-0 rounded-[32px]"
+              style={{
+                width: tabInd.width,
+                transform: `translateX(${tabInd.left}px)`,
+                boxShadow: t.tabGlow,
+                transition: `transform 0.3s ${EASE}, width 0.3s ${EASE}`,
               }}
-              type="button"
-              onClick={() => setStudioIdx(i)}
-              className={[
-                "relative z-10 flex h-10 items-center gap-2 rounded-[32px] px-5 text-[15px] transition-colors",
-                active ? "" : "text-white/55 hover:text-white/80",
-              ].join(" ")}
             >
-              <TabIcon
-                className="size-[18px]"
-                stroke={1.8}
-                style={active ? { color: t.activeIcon } : undefined}
-              />
-              {active ? (
-                <span
-                  className="bg-clip-text text-transparent"
-                  style={{ backgroundImage: t.accentText }}
-                >
-                  {s.label}
-                </span>
-              ) : (
-                s.label
-              )}
-            </button>
-          );
-        })}
-      </div>
+              <GradientRing padding="1px" gradient={t.tabRing} />
+            </span>
+          ) : null}
+          {VISIBLE_STUDIOS.map((s, i) => {
+            const active = studioIdx === i;
+            const TabIcon = s.icon;
+            return (
+              <button
+                key={s.id}
+                ref={(el) => {
+                  tabRefs.current[i] = el;
+                }}
+                type="button"
+                onClick={() => setStudioIdx(i)}
+                className={[
+                  "relative z-10 flex h-10 items-center gap-2 rounded-[32px] px-5 text-[15px] transition-colors",
+                  active ? "" : "text-white/55 hover:text-white/80",
+                ].join(" ")}
+              >
+                <TabIcon
+                  className="size-[18px]"
+                  stroke={1.8}
+                  style={active ? { color: t.activeIcon } : undefined}
+                />
+                {active ? (
+                  <span
+                    className="bg-clip-text text-transparent"
+                    style={{ backgroundImage: t.accentText }}
+                  >
+                    {s.label}
+                  </span>
+                ) : (
+                  s.label
+                )}
+              </button>
+            );
+          })}
+        </div>
+      )}
 
       {/* body — crossfades on tab switch */}
-      <div key={studioIdx} className="w-full" style={{ animation: `polloFade 0.3s ${EASE} both` }}>
+      <div
+        key={studioIdx}
+        className={SHOW_STUDIO_TABS ? "w-full" : "mt-9 w-full"}
+        style={{ animation: `polloFade 0.3s ${EASE} both` }}
+      >
         {studio.kind === "agent" ? (
           <AgentStudio theme={t} />
         ) : studio.kind === "project" ? (

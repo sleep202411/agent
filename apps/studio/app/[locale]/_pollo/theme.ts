@@ -47,7 +47,7 @@ export type Theme = {
 export const THEMES: Record<ThemeId, Theme> = {
   pollo: {
     label: "Pollo",
-    pageBg: "#0d0d12",
+    pageBg: "#0F0F0F",
     panelBg: "rgba(31,31,38,0.68)",
     railBg: "rgba(30,30,36,0.88)",
     popoverBg: "#161619",
@@ -75,7 +75,7 @@ export const THEMES: Record<ThemeId, Theme> = {
   },
   fizz: {
     label: "Mono",
-    pageBg: "oklch(0.13 0 0)",
+    pageBg: "oklch(0.17 0 0)",
     panelBg: "oklch(0.205 0 0 / 0.72)",
     railBg: "oklch(0.24 0 0 / 0.92)",
     popoverBg: "oklch(0.19 0 0)",
@@ -108,7 +108,7 @@ export const THEMES: Record<ThemeId, Theme> = {
   // button color (white → red). Active rings/fills/headline/icons stay neutral.
   red: {
     label: "Red",
-    pageBg: "oklch(0.13 0 0)",
+    pageBg: "oklch(0.17 0 0)",
     panelBg: "oklch(0.205 0 0 / 0.72)",
     railBg: "oklch(0.24 0 0 / 0.92)",
     popoverBg: "oklch(0.19 0 0)",

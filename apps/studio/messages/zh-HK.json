@@ -264,11 +264,6 @@
     "newProject": "新增項目"
   },
   "shell": {
-    "beta": {
-      "title": "FizzStudio 正在測試中",
-      "description": "這是早期測試版，你的作品可能會在沒有提示的情況下遺失或被重設。在使用畫布以及圖像 / 影片生成功能時，請於創作過程中及時下載或備份重要內容。",
-      "acknowledge": "我明白了"
-    },
     "credits": {
       "tooltip": "算力積分",
       "tooltipDetailed": "算力積分 · 可用 {available} · 凍結 {held} · 總計 {total}",
@@ -739,8 +734,21 @@
     "groupTeamsSettings": "團隊設定",
     "navOverview": "概覽",
     "navMembers": "成員",
+    "navUsage": "用量",
     "navAnalytics": "分析",
     "navBilling": "方案與帳單",
+    "usageTitle": "用量",
+    "usageSubtitle": "你的方案、算力積分與生成限額。",
+    "planLimits": "方案限額",
+    "planLimitsHint": "此方案下 AI 生成的每日上限與並發數。",
+    "limitConcurrentJobs": "並發任務",
+    "limitImageDaily": "每日圖片",
+    "limitVideoDaily": "每日影片",
+    "limitChatDaily": "每日對話",
+    "limitQueuePriority": "佇列優先級",
+    "limitUnlimited": "無限制",
+    "creditsRemaining": "可用 {available} / 共 {total}",
+    "rechargeCredits": "充值",
     "role": {
       "owner": "擁有者",
       "admin": "管理員",

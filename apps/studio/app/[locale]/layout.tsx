@@ -11,8 +11,9 @@ import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { Providers } from "@/app/providers";
 import { RegionProvider } from "@/app/_components/region-provider";
-import { BetaNotice } from "@/app/_components/beta-notice";
 import { NotificationsListener } from "@/app/_components/notifications-listener";
+import { RouteAuthGuard } from "@/app/_components/route-auth-guard";
+import { SettingsOverlay } from "./_components/settings-overlay";
 
 const inter = Inter({ subsets: ["latin"], variable: "--font-sans" });
 
@@ -70,8 +71,9 @@ export default async function LocaleLayout({
             <RegionProvider country={country}>
               <TooltipProvider delayDuration={200}>{children}</TooltipProvider>
             </RegionProvider>
+            <RouteAuthGuard />
+            <SettingsOverlay />
             <NotificationsListener />
-            <BetaNotice />
           </Providers>
           <Toaster />
         </NextIntlClientProvider>

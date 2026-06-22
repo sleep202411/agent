@@ -15,6 +15,7 @@ import { useState, type ReactNode } from "react";
 import { IconAdjustmentsHorizontal, IconChevronDown } from "@tabler/icons-react";
 import { useRouter } from "@/i18n/navigation";
 import { useDismiss } from "@/lib/use-dismiss";
+import { useAuth } from "@/app/_components/auth-provider";
 import { CONIC_BORDER, EASE, RAIL_STEP, type Theme } from "../_pollo/theme";
 import { G, Glyph, GradientRing } from "../_pollo/glyphs";
 import { useImageGeneration } from "../(studio)/_components/generation/use-image-generation";
@@ -111,11 +112,14 @@ export function CreativeComposer({ theme: t }: { theme: Theme }) {
 
 function ImagePanel({ theme: t }: { theme: Theme }) {
   const router = useRouter();
+  const { requireAuth } = useAuth();
   const gen = useImageGeneration();
-  const onGenerate = async () => {
-    const result = await gen.submit();
-    if (result.ok) router.push("/images");
-  };
+  // Public to browse, gated to run — prompt sign-in then resume on success.
+  const onGenerate = () =>
+    requireAuth(async () => {
+      const result = await gen.submit();
+      if (result.ok) router.push("/images");
+    });
   return (
     <CreativePanel
       theme={t}
@@ -142,11 +146,13 @@ function ImagePanel({ theme: t }: { theme: Theme }) {
 
 function VideoPanel({ theme: t }: { theme: Theme }) {
   const router = useRouter();
+  const { requireAuth } = useAuth();
   const gen = useVideoGeneration();
-  const onGenerate = async () => {
-    const result = await gen.submit();
-    if (result.ok) router.push("/video");
-  };
+  const onGenerate = () =>
+    requireAuth(async () => {
+      const result = await gen.submit();
+      if (result.ok) router.push("/video");
+    });
   return (
     <CreativePanel
       theme={t}

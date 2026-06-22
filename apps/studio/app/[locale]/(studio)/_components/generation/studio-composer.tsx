@@ -29,6 +29,7 @@ import { ModeMenu } from "@/app/[locale]/canvas/_components/mode-menu";
 import { ReferenceFan } from "./reference-fan";
 import type { ReferenceUpload } from "./use-reference-uploads";
 import { MentionMenu, mentionRange, type MentionItem } from "@/lib/prompt-mentions";
+import { useAuth } from "@/app/_components/auth-provider";
 
 /**
  * Bottom-docked composer for the image / video studio pages: prompt as the
@@ -91,6 +92,11 @@ export function StudioComposer({
   const [mentionQuery, setMentionQuery] = useState("");
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   useDismiss(panel !== null, () => setPanel(null));
+
+  const { requireAuth } = useAuth();
+  // Generation is public to browse but gated to run: prompt sign-in on submit
+  // when signed out, then resume the submit on success.
+  const gatedSubmit = () => requireAuth(onSubmit);
 
   const showReferences = referenceFields.length > 0;
   const showSettingsButton = useMemo(() => hasRenderableModelSettings(model, true), [model]);
@@ -160,7 +166,7 @@ export function StudioComposer({
     }
     if (event.key === "Enter" && (event.metaKey || event.ctrlKey) && canSubmit) {
       event.preventDefault();
-      onSubmit();
+      gatedSubmit();
     }
   };
 
@@ -311,7 +317,7 @@ export function StudioComposer({
             type="button"
             aria-label={tc("create")}
             disabled={!canSubmit}
-            onClick={onSubmit}
+            onClick={gatedSubmit}
             // Brand red as the hero CTA — sanctioned case-by-case accent
             // (DESIGN.md rule 3), applied locally, never a token.
             className="flex h-9 items-center gap-1.5 rounded-full bg-[#E52227] px-4 text-sm font-semibold text-white shadow-lg shadow-[#E52227]/25 transition-colors hover:bg-[#c91e22] disabled:opacity-40"

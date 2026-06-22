@@ -8,6 +8,7 @@ import {
   IconChartBar,
   IconChevronDown,
   IconCreditCard,
+  IconGauge,
   IconLayoutGrid,
   IconSettings,
   IconUsers,
@@ -32,6 +33,7 @@ function teamSubNav(isPersonal: boolean) {
     ...(isPersonal
       ? []
       : [{ href: "/settings/members", labelKey: "navMembers" as const, Icon: IconUsers }]),
+    { href: "/settings/usage", labelKey: "navUsage" as const, Icon: IconGauge },
     { href: "/settings/analytics", labelKey: "navAnalytics" as const, Icon: IconChartBar },
     { href: "/settings/billing", labelKey: "navBilling" as const, Icon: IconCreditCard },
   ];

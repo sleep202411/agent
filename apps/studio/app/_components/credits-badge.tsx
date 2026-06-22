@@ -5,7 +5,7 @@ import { useTranslations } from "next-intl";
 import { IconBolt } from "@tabler/icons-react";
 import { api } from "@/lib/api";
 import { useActiveWorkspaceId } from "@/app/_components/workspace-context";
-import { Link } from "@/i18n/navigation";
+import { openSettings } from "@/lib/settings-hash";
 import { cn } from "@/lib/utils";
 import { GlassRim } from "@/components/ui/glass-rim";
 import { useAuth } from "./auth-provider";
@@ -100,8 +100,9 @@ export function CreditsBadge({ className }: { className?: string }) {
       : t("credits.tooltip");
 
   return (
-    <Link
-      href="/settings/billing"
+    <button
+      type="button"
+      onClick={() => openSettings("billing")}
       aria-label={t("credits.manage")}
       title={title}
       className={cn(
@@ -113,6 +114,6 @@ export function CreditsBadge({ className }: { className?: string }) {
       <GlassRim />
       <IconBolt className="size-4 text-white/85" stroke={1.8} />
       {data != null ? data.available.toLocaleString() : "—"}
-    </Link>
+    </button>
   );
 }

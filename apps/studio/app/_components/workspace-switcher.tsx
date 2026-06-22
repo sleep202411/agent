@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useTranslations } from "next-intl";
-import { useRouter } from "@/i18n/navigation";
+import { openSettings } from "@/lib/settings-hash";
 import { IconChevronDown, IconPlus, IconUpload, IconUserPlus, IconX } from "@tabler/icons-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
@@ -68,7 +68,6 @@ export function WorkspaceSwitcher() {
         | "roles.viewer"
         | "roles.member"
     );
-  const router = useRouter();
   const { workspaces, activeWorkspace, setActiveWorkspaceId, createTeam } = useWorkspace();
   const [creating, setCreating] = useState(false);
   const [teamName, setTeamName] = useState("");
@@ -148,7 +147,7 @@ export function WorkspaceSwitcher() {
                     event.stopPropagation();
                     event.preventDefault();
                     setActiveWorkspaceId(ws.id);
-                    router.push("/settings/members");
+                    openSettings("members");
                   }}
                   className="flex h-7 shrink-0 items-center gap-1 rounded-full bg-white/[0.06] px-2.5 text-xs font-medium text-white/70 transition-colors hover:bg-white/[0.1] hover:text-white"
                 >

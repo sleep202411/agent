@@ -1,6 +1,7 @@
 "use client";
 
 import { Link } from "@/i18n/navigation";
+import { openSettings } from "@/lib/settings-hash";
 import { usePathname } from "@/i18n/navigation";
 import { useTranslations } from "next-intl";
 import type { ComponentType } from "react";
@@ -23,6 +24,8 @@ type RailItem = {
   icon: SidebarIcon;
   /** Coming-soon items render as a disabled, non-navigating control. */
   disabled?: boolean;
+  /** When set, the item is a button that runs this instead of navigating. */
+  onClick?: () => void;
 };
 
 /** Active when the path equals the target or is nested under it. */
@@ -74,6 +77,15 @@ function RailButton({
           >
             {icon}
           </button>
+        ) : item.onClick ? (
+          <button
+            type="button"
+            onClick={item.onClick}
+            aria-label={item.label}
+            className={buttonClassName}
+          >
+            {icon}
+          </button>
         ) : (
           <Link
             href={item.href}
@@ -109,8 +121,9 @@ export function StudioSidebar() {
 
   const settingsItem: RailItem = {
     label: t("nav.settings"),
-    href: "/settings",
+    href: "/settings/account",
     icon: IconSettings,
+    onClick: () => openSettings("account"),
   };
 
   return (

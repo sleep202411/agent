@@ -71,14 +71,27 @@ export function createBillingCheckout(input: CreateBillingCheckoutInput) {
 
 // ───────────────────────── Current plan + subscription ─────────────────────
 
+export interface EntitlementLimits {
+  queuePriority: number;
+  imageDaily: number;
+  videoDaily: number;
+  chatDaily: number;
+  workflowDaily: number;
+  uploadMB: number;
+  chatPerMinute: number;
+  /** null = contract-managed / unlimited. */
+  concurrentJobs: number | null;
+  queuedJobs: number | null;
+}
+
 export interface EntitlementSnapshot {
   planKey: string;
   rank: number;
   source: string;
   status: "active" | "expired" | string;
   expiresAt: string | null;
-  features: Record<string, unknown>;
-  limits: Record<string, unknown>;
+  features: Record<string, boolean>;
+  limits: EntitlementLimits;
 }
 
 export interface ActiveSubscription {
