@@ -90,6 +90,7 @@ export const BillingPromotionDurationTypeSchema = z.enum([
   'forever',
   'repeating',
 ]);
+export const BillingPromotionApplyModeSchema = z.enum(['code', 'automatic']);
 export const BillingProviderEventStatusSchema = z.enum([
   'received',
   'processed',
@@ -564,12 +565,15 @@ export type ListAdminBillingPromotionsQuery = z.infer<
 
 export const CreateAdminBillingPromotionSchema = z
   .object({
+    applyMode: BillingPromotionApplyModeSchema.default('code'),
+    // Required for code mode, omitted for automatic (enforced in superRefine).
     code: z
       .string()
       .trim()
       .min(3)
       .max(64)
-      .transform((value) => value.toUpperCase()),
+      .transform((value) => value.toUpperCase())
+      .optional(),
     name: z.string().trim().min(2).max(160),
     description: z.string().trim().max(2000).optional(),
     status: BillingPromotionStatusSchema.default('draft'),
@@ -600,6 +604,44 @@ export const CreateAdminBillingPromotionSchema = z
       .default([]),
   })
   .superRefine((value, ctx) => {
+    // Apply-mode invariants (mirror the DB CHECK constraints, surfaced early
+    // with actionable messages instead of a raw 23514).
+    if (value.applyMode === 'code' && !value.code) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['code'],
+        message: 'A coupon (code-mode) promotion requires a code.',
+      });
+    }
+    if (value.applyMode === 'automatic') {
+      if (value.code) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['code'],
+          message: 'An automatic sale must not have a code.',
+        });
+      }
+      const hasScope =
+        value.appliesPriceId != null ||
+        value.appliesItemId != null ||
+        value.appliesProductType != null;
+      if (!hasScope) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['appliesProductType'],
+          message:
+            'An automatic sale must be scoped to a price, product, or product type.',
+        });
+      }
+      if (value.maxRedemptionsPerUser != null) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['maxRedemptionsPerUser'],
+          message:
+            'Per-user redemption limits apply to coupons only, not automatic sales.',
+        });
+      }
+    }
     const hasPercent = value.percentOffBps != null;
     const hasAmount = value.amountOffMinor != null;
     if (hasPercent === hasAmount) {

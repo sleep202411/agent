@@ -302,6 +302,16 @@ enum BillingPromotionDurationType {
   repeating
 }
 
+/// How a promotion is applied at checkout.
+/// `code`      — user must enter the `code` (coupon / redemption code).
+/// `automatic` — no code; the best-matching active promotion scoped to the
+///               price is auto-applied (a sale / 促销活动价). Display surfaces
+///               render the list price struck through + the effective price.
+enum BillingPromotionApplyMode {
+  code
+  automatic
+}
+
 enum BillingPromotionRedemptionStatus {
   reserved
   applied
@@ -1394,9 +1404,16 @@ model BillingProviderPriceBinding {
 
 model BillingPromotion {
   id                    String                       @id @default(uuid(7)) @db.Uuid
+  /// How the promotion is applied — a user-entered `code`, or `automatic`
+  /// (a no-code sale auto-applied to a scoped price).
+  applyMode             BillingPromotionApplyMode    @default(code) @map("apply_mode")
   /// User-entered promotion or redemption code. This is separate from
   /// PaymentProvider; a free code still creates an order and fulfillment record.
-  code                  String                       @db.VarChar(64)
+  /// NULL for `automatic` promotions. The unique index is partial by virtue of
+  /// Postgres NULLS DISTINCT — many automatic rows (code NULL) coexist while
+  /// every non-null code stays unique. Mode/code coupling is a DB CHECK
+  /// (see migration): code-mode ⇒ code NOT NULL, automatic ⇒ code NULL.
+  code                  String?                      @db.VarChar(64)
   name                  String                       @db.VarChar(160)
   description           String?                      @db.Text
   status                BillingPromotionStatus       @default(draft)
@@ -1433,6 +1450,7 @@ model BillingPromotion {
 
   @@unique([code], map: "billing_promotions_code_unique")
   @@index([status, startsAt, endsAt], map: "billing_promotions_effective_idx")
+  @@index([applyMode, status, startsAt, endsAt], map: "billing_promotions_automatic_idx")
   @@index([appliesProductType, status], map: "billing_promotions_product_type_idx")
   @@index([appliesItemId, status], map: "billing_promotions_item_idx")
   @@index([appliesPriceId, status], map: "billing_promotions_price_idx")
@@ -1674,7 +1692,8 @@ model BillingPromotionRedemption {
   orderId             String?                          @map("order_id") @db.Uuid
   userId              String                           @map("user_id") @db.VarChar(64)
   /// Snapshot of BillingPromotion.code at reservation time for auditability.
-  codeSnapshot        String                           @map("code_snapshot") @db.VarChar(64)
+  /// NULL for automatic (no-code) promotions.
+  codeSnapshot        String?                          @map("code_snapshot") @db.VarChar(64)
   provider            PaymentProvider?
   providerDiscountId  String?                          @map("provider_discount_id") @db.VarChar(128)
   status              BillingPromotionRedemptionStatus @default(reserved)

@@ -139,7 +139,8 @@ export type BillingPromotionProviderBinding = {
 
 export type BillingPromotionRow = {
   id: string;
-  code: string;
+  applyMode: "code" | "automatic";
+  code: string | null;
   name: string;
   description: string | null;
   status: BillingPromotionStatus;

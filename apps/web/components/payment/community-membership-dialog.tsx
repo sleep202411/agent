@@ -24,7 +24,11 @@ import {
 import { cn } from "@/lib/utils";
 import { siteConfig } from "@/src/config/site";
 import { ApiRequestError } from "@/src/lib/api";
-import { createBillingCheckout, listMembershipPlans } from "@/src/lib/billing/api";
+import {
+  createBillingCheckout,
+  listMembershipPlans,
+  priceEffectiveAmountMinor,
+} from "@/src/lib/billing/api";
 
 // Module-level so the `?membership=success` return is handled once per page load
 // (the provider redirect back is a full page load), across all mounted instances.
@@ -182,7 +186,13 @@ export function CommunityMembershipDialog({
                 <IntervalCard
                   label={t("communityMembershipMonthly")}
                   unit={t("communityMembershipPerMonth")}
-                  price={`${currencySymbol}${fmtFiat(monthly.amountMinor)}`}
+                  price={`${currencySymbol}${fmtFiat(priceEffectiveAmountMinor(monthly))}`}
+                  originalPrice={
+                    monthly.activeDiscount
+                      ? `${currencySymbol}${fmtFiat(monthly.amountMinor)}`
+                      : undefined
+                  }
+                  badge={monthly.activeDiscount ? t("communityMembershipSaleBadge") : undefined}
                   selected={selected?.id === monthly.id}
                   onSelect={() => setSelectedPriceId(monthly.id)}
                 />
@@ -191,11 +201,18 @@ export function CommunityMembershipDialog({
                 <IntervalCard
                   label={t("communityMembershipYearly")}
                   unit={t("communityMembershipPerYear")}
-                  price={`${currencySymbol}${fmtFiat(yearly.amountMinor)}`}
-                  badge={
-                    yearlySavePercent > 0
-                      ? t("communityMembershipSave", { percent: yearlySavePercent })
+                  price={`${currencySymbol}${fmtFiat(priceEffectiveAmountMinor(yearly))}`}
+                  originalPrice={
+                    yearly.activeDiscount
+                      ? `${currencySymbol}${fmtFiat(yearly.amountMinor)}`
                       : undefined
+                  }
+                  badge={
+                    yearly.activeDiscount
+                      ? t("communityMembershipSaleBadge")
+                      : yearlySavePercent > 0
+                        ? t("communityMembershipSave", { percent: yearlySavePercent })
+                        : undefined
                   }
                   selected={selected?.id === yearly.id}
                   onSelect={() => setSelectedPriceId(yearly.id)}
@@ -211,7 +228,7 @@ export function CommunityMembershipDialog({
           >
             {paying && <IconLoader2 className="size-4 animate-spin" />}
             {t("communityMembershipSubscribe")}
-            {selected ? ` · ${currencySymbol}${fmtFiat(selected.amountMinor)}` : ""}
+            {selected ? ` · ${currencySymbol}${fmtFiat(priceEffectiveAmountMinor(selected))}` : ""}
           </Button>
         </div>
       </DialogContent>
@@ -223,6 +240,7 @@ function IntervalCard({
   label,
   unit,
   price,
+  originalPrice,
   badge,
   selected,
   onSelect,
@@ -230,6 +248,8 @@ function IntervalCard({
   label: string;
   unit: string;
   price: string;
+  /** List price shown struck-through when an automatic sale is active. */
+  originalPrice?: string;
   badge?: string;
   selected: boolean;
   onSelect: () => void;
@@ -253,6 +273,11 @@ function IntervalCard({
       <span className={cn("text-xs font-medium text-muted-foreground", badge && "mt-3")}>
         {label}
       </span>
+      {originalPrice && (
+        <span className="text-xs font-medium tabular-nums text-muted-foreground line-through">
+          {originalPrice}
+        </span>
+      )}
       <span className="text-xl font-bold leading-none tabular-nums text-foreground">{price}</span>
       <span className="text-[11px] text-muted-foreground">{unit}</span>
       {selected && (

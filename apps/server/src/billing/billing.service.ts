@@ -14,6 +14,7 @@ import {
   BillingOrderType,
   BillingMembershipPlanStatus,
   BillingPriceInterval,
+  BillingPromotionApplyMode,
   BillingPromotionDurationType,
   BillingPromotionRedemptionStatus,
   BillingPromotionStatus,
@@ -216,6 +217,20 @@ type CheckoutPromotionReservation = {
   promotion: BillingPromotion;
   discountAmountMinor: bigint;
   providerCouponId: string | null;
+};
+/**
+ * The automatic sale (促销活动价) currently in effect for a price, shaped for
+ * display. `amountMinor` on the price stays the list price; surfaces strike it
+ * through and show `effectiveAmountMinor`. Null when no automatic sale applies.
+ */
+type PriceActiveDiscountDto = {
+  promotionId: string;
+  name: string;
+  discountAmountMinor: string;
+  effectiveAmountMinor: string;
+  endsAt: string | null;
+  /** once = first cycle only · repeating(N) · forever (subscription cadence). */
+  recurring: BillingPromotionDurationType;
 };
 type AdminWalletLedgerEntryWithRelations = Prisma.WalletLedgerEntryGetPayload<{
   include: {
@@ -655,10 +670,36 @@ export class BillingService {
           });
 
     const pricesByPlan = groupPricesByPlanKey(prices);
+
+    // Resolve the automatic sale (促销活动价) in effect per price, in parallel,
+    // so the catalog returns struck list price + effective price uniformly.
+    const now = new Date();
+    const discountEntries = await Promise.all(
+      prices.map(async (price) => {
+        const priceProvider =
+          price.providerBindings[0]?.provider ??
+          this.providerRegistry.defaultProviderForRuntime();
+        return [
+          price.id,
+          await this.previewActiveDiscount(price, priceProvider, now),
+        ] as const;
+      }),
+    );
+    const discountByPriceId = new Map(
+      discountEntries.filter(
+        (entry): entry is readonly [string, PriceActiveDiscountDto] =>
+          entry[1] !== null,
+      ),
+    );
+
     return {
       provider,
       plans: plans.map((plan) =>
-        this.membershipPlanDto(plan, pricesByPlan.get(plan.planKey) ?? []),
+        this.membershipPlanDto(
+          plan,
+          pricesByPlan.get(plan.planKey) ?? [],
+          discountByPriceId,
+        ),
       ),
     };
   }
@@ -1671,7 +1712,8 @@ export class BillingService {
     assertAdminPromotionProviderPolicy(input);
     const promotion = await this.prisma.billingPromotion.create({
       data: {
-        code: input.code,
+        applyMode: input.applyMode as BillingPromotionApplyMode,
+        code: input.code ?? null,
         name: input.name,
         description: input.description ?? null,
         status: input.status as BillingPromotionStatus,
@@ -1852,7 +1894,10 @@ export class BillingService {
         expiresAt: binding.promotion.endsAt,
         metadata: {
           fizzdragon_promotion_id: binding.promotion.id,
-          fizzdragon_promotion_code: binding.promotion.code,
+          // Automatic (no-code) promotions have no code to record.
+          ...(binding.promotion.code
+            ? { fizzdragon_promotion_code: binding.promotion.code }
+            : {}),
         },
       });
       return this.prisma.billingPromotionProviderBinding.update({
@@ -2289,7 +2334,14 @@ export class BillingService {
               subtotalAmountMinor,
               now: new Date(),
             })
-          : null;
+          : // No code → auto-apply the best active automatic sale (or null).
+            // Code takes priority; discounts never stack (v1).
+            await this.resolveAutomaticPromotionTx(tx, {
+              provider,
+              price,
+              subtotalAmountMinor,
+              now: new Date(),
+            });
         const discountAmountMinor =
           promotionReservation?.discountAmountMinor ?? 0n;
         const amountMinor = subtotalAmountMinor - discountAmountMinor;
@@ -2609,7 +2661,14 @@ export class BillingService {
               subtotalAmountMinor,
               now: new Date(),
             })
-          : null;
+          : // No code → auto-apply the best active automatic sale (or null).
+            // Code takes priority; discounts never stack (v1).
+            await this.resolveAutomaticPromotionTx(tx, {
+              provider,
+              price,
+              subtotalAmountMinor,
+              now: new Date(),
+            });
         const discountAmountMinor =
           promotionReservation?.discountAmountMinor ?? 0n;
         const amountMinor = subtotalAmountMinor - discountAmountMinor;
@@ -4956,6 +5015,192 @@ export class BillingService {
     };
   }
 
+  /**
+   * Find the best-discount eligible AUTOMATIC promotion for a price WITHOUT
+   * locking or reserving — the shared selection used by both the checkout
+   * resolver (which then locks + reserves) and the read-only display preview
+   * (which renders the struck list price + effective price). `client` may be a
+   * transaction client or the base Prisma client.
+   *
+   * Eligibility skips (never throws): exhausted global cap, currency mismatch on
+   * a fixed-amount sale, non-positive discount, and — when an external charge
+   * remains — a missing provider coupon (so the displayed sale always equals the
+   * one checkout can actually apply). Best discount wins, ties broken by id.
+   */
+  private async findBestAutomaticPromotion(
+    client: Prisma.TransactionClient,
+    input: {
+      provider: PaymentProvider;
+      price: PriceWithProviderBindings;
+      subtotalAmountMinor: bigint;
+      now: Date;
+      requiresProviderCoupon?: boolean;
+    },
+  ): Promise<{
+    promotion: BillingPromotion & {
+      providerBindings: BillingPromotionProviderBinding[];
+    };
+    discountAmountMinor: bigint;
+  } | null> {
+    const { price, now } = input;
+    const requiresProviderCoupon = input.requiresProviderCoupon ?? true;
+
+    // Active, in-window automatic promotions scoped to this price. A scope field
+    // either matches the price's value or is null (broader scope).
+    const candidates = await client.billingPromotion.findMany({
+      where: {
+        applyMode: BillingPromotionApplyMode.automatic,
+        status: BillingPromotionStatus.active,
+        archivedAt: null,
+        AND: [
+          { OR: [{ startsAt: null }, { startsAt: { lte: now } }] },
+          { OR: [{ endsAt: null }, { endsAt: { gt: now } }] },
+          { OR: [{ appliesPriceId: null }, { appliesPriceId: price.id }] },
+          { OR: [{ appliesItemId: null }, { appliesItemId: price.itemId }] },
+          {
+            OR: [
+              { appliesProductType: null },
+              { appliesProductType: price.item.productType },
+            ],
+          },
+        ],
+      },
+      include: {
+        providerBindings: {
+          where: {
+            provider: input.provider,
+            status: BillingProviderBindingStatus.active,
+            archivedAt: null,
+          },
+          take: 1,
+        },
+      },
+    });
+
+    // Eligibility predicates that aren't a single SQL comparison: global cap
+    // (column-vs-column), currency match for fixed-amount, positive discount,
+    // and whether the discount can actually be charged through the provider.
+    const eligible = candidates
+      .filter(
+        (p) =>
+          p.maxRedemptions === null || p.redemptionCount < p.maxRedemptions,
+      )
+      .filter(
+        (p) =>
+          p.amountOffMinor === null ||
+          !p.amountOffCurrency ||
+          p.amountOffCurrency === price.currency,
+      )
+      .map((p) => ({
+        promotion: p,
+        discountAmountMinor: calculatePromotionDiscount(
+          p,
+          input.subtotalAmountMinor,
+        ),
+      }))
+      .filter((c) => c.discountAmountMinor > 0n)
+      .filter((c) => {
+        if (!requiresProviderCoupon) return true;
+        // A fully-free result needs no external charge → no coupon required.
+        if (input.subtotalAmountMinor - c.discountAmountMinor <= 0n)
+          return true;
+        return (
+          (c.promotion.providerBindings[0]?.providerCouponId ?? null) !== null
+        );
+      });
+
+    if (eligible.length === 0) return null;
+
+    // Best discount wins; deterministic id tie-break so concurrent checkouts
+    // never disagree on which sale applied.
+    eligible.sort((a, b) => {
+      if (a.discountAmountMinor !== b.discountAmountMinor) {
+        return a.discountAmountMinor > b.discountAmountMinor ? -1 : 1;
+      }
+      return a.promotion.id < b.promotion.id ? -1 : 1;
+    });
+    return eligible[0];
+  }
+
+  /**
+   * Resolve the best AUTOMATIC (no-code) promotion for a price at checkout — the
+   * 促销活动价 / sale path. Returns the SAME reservation shape as the code path
+   * so every downstream concern (order snapshot, redemption row, fulfillment,
+   * refund) is identical and mode-agnostic.
+   *
+   * Unlike the code path, ineligibility is NEVER an error here: a missing,
+   * expired, exhausted, currency-mismatched or provider-unsynced automatic sale
+   * simply means "no discount — charge the list price". A misconfigured sale
+   * must not break checkout for everyone; the loud guard for that lives at
+   * admin save time, not in the buyer's path.
+   */
+  private async resolveAutomaticPromotionTx(
+    tx: Prisma.TransactionClient,
+    input: {
+      provider: PaymentProvider;
+      price: PriceWithProviderBindings;
+      subtotalAmountMinor: bigint;
+      now: Date;
+      requiresProviderCoupon?: boolean;
+    },
+  ): Promise<CheckoutPromotionReservation | null> {
+    const { now } = input;
+    const requiresProviderCoupon = input.requiresProviderCoupon ?? true;
+
+    const best = await this.findBestAutomaticPromotion(tx, input);
+    if (!best) return null;
+    const chosenId = best.promotion.id;
+
+    // Serialize against concurrent redemptions of the same sale, then re-read
+    // and re-validate inside the lock. Any disqualification → no discount
+    // (graceful), mirroring the buyer-friendly contract above.
+    await tx.$executeRaw`
+      SELECT pg_advisory_xact_lock(hashtext(${`billing:promotion:${chosenId}`})::bigint)
+    `;
+    const fresh = await tx.billingPromotion.findUnique({
+      where: { id: chosenId },
+      include: {
+        providerBindings: {
+          where: {
+            provider: input.provider,
+            status: BillingProviderBindingStatus.active,
+            archivedAt: null,
+          },
+          take: 1,
+        },
+      },
+    });
+    if (
+      !fresh ||
+      fresh.status !== BillingPromotionStatus.active ||
+      fresh.archivedAt ||
+      (fresh.startsAt && fresh.startsAt > now) ||
+      (fresh.endsAt && fresh.endsAt <= now) ||
+      (fresh.maxRedemptions !== null &&
+        fresh.redemptionCount >= fresh.maxRedemptions)
+    ) {
+      return null;
+    }
+
+    const discountAmountMinor = calculatePromotionDiscount(
+      fresh,
+      input.subtotalAmountMinor,
+    );
+    if (discountAmountMinor <= 0n) return null;
+
+    const providerCouponId =
+      fresh.providerBindings[0]?.providerCouponId ?? null;
+    if (
+      requiresProviderCoupon &&
+      input.subtotalAmountMinor - discountAmountMinor > 0n &&
+      !providerCouponId
+    ) {
+      return null;
+    }
+
+    return { promotion: fresh, discountAmountMinor, providerCouponId };
+  }
+
   private async voidReservedPromotionsForOrderTx(
     tx: Prisma.TransactionClient,
     orderId: string,
@@ -5907,6 +6152,7 @@ export class BillingService {
   private priceDto(
     price: PriceWithProviderBindings,
     provider: PaymentProvider,
+    activeDiscount: PriceActiveDiscountDto | null = null,
   ) {
     return {
       id: price.id,
@@ -5922,7 +6168,10 @@ export class BillingService {
         providerMode: binding.providerMode,
       })),
       currency: price.currency,
+      // List price — the struck-through original when a sale is active.
       amountMinor: price.amountMinor.toString(),
+      // The automatic sale (促销活动价) currently applied, or null.
+      activeDiscount,
       interval: price.interval,
       subjectType: price.subjectType,
       grantsWalletCurrency: price.grantsWalletCurrency,
@@ -5932,6 +6181,39 @@ export class BillingService {
       grantDurationDays: price.grantDurationDays,
       isActive: price.isActive && price.item.isActive,
       metadata: price.metadata,
+    };
+  }
+
+  /**
+   * Read-only preview of the automatic sale in effect for a price, shaped for
+   * display. Uses the same selection as checkout (and the same
+   * requiresProviderCoupon filter) so the struck price a buyer sees is exactly
+   * the one checkout will apply.
+   */
+  private async previewActiveDiscount(
+    price: PriceWithProviderBindings,
+    provider: PaymentProvider,
+    now: Date,
+  ): Promise<PriceActiveDiscountDto | null> {
+    const best = await this.findBestAutomaticPromotion(this.prisma, {
+      provider,
+      price,
+      subtotalAmountMinor: price.amountMinor,
+      now,
+      requiresProviderCoupon: true,
+    });
+    if (!best) return null;
+    return {
+      promotionId: best.promotion.id,
+      name: best.promotion.name,
+      discountAmountMinor: best.discountAmountMinor.toString(),
+      effectiveAmountMinor: (
+        price.amountMinor - best.discountAmountMinor
+      ).toString(),
+      endsAt: best.promotion.endsAt
+        ? best.promotion.endsAt.toISOString()
+        : null,
+      recurring: best.promotion.durationType,
     };
   }
 
@@ -5980,6 +6262,7 @@ export class BillingService {
   private membershipPlanDto(
     plan: BillingMembershipPlan,
     prices: MembershipPlanPriceRow[],
+    discountByPriceId?: Map<string, PriceActiveDiscountDto>,
   ) {
     return {
       id: plan.id,
@@ -6005,6 +6288,7 @@ export class BillingService {
           price,
           price.providerBindings[0]?.provider ??
             this.providerRegistry.defaultProviderForRuntime(),
+          discountByPriceId?.get(price.id) ?? null,
         ),
       ),
       updatedAt: plan.updatedAt.toISOString(),
@@ -6125,6 +6409,7 @@ export class BillingService {
   private adminPromotionDto(promotion: PromotionWithBindings) {
     return {
       id: promotion.id,
+      applyMode: promotion.applyMode,
       code: promotion.code,
       name: promotion.name,
       description: promotion.description,

@@ -109,6 +109,7 @@ export function BillingPromotionsPanel({
     const formEl = event.currentTarget;
     const form = new FormData(formEl);
     const provider = stringField(form, "provider");
+    const applyMode = stringField(form, "applyMode") || "code";
     const discountType = stringField(form, "discountType") || "percent";
     const percentOff = stringField(form, "percentOff");
     const amountOff = stringField(form, "amountOff");
@@ -131,7 +132,9 @@ export function BillingPromotionsPanel({
         : undefined;
     try {
       await mutateEnvelope("/api/admin/billing/promotions", {
-        code: stringField(form, "code"),
+        applyMode,
+        // Automatic sales carry no code.
+        code: applyMode === "code" ? stringField(form, "code") : undefined,
         name: stringField(form, "name"),
         description: stringField(form, "description") || undefined,
         status: stringField(form, "status"),
@@ -150,7 +153,9 @@ export function BillingPromotionsPanel({
         endsAt: endsAt || undefined,
         appliesProductType: appliesProductType || undefined,
         maxRedemptions: maxRedemptions ? Number(maxRedemptions) : undefined,
-        maxRedemptionsPerUser: maxRedemptionsPerUser ? Number(maxRedemptionsPerUser) : undefined,
+        // Per-user limits are a coupon concept; automatic sales apply to everyone.
+        maxRedemptionsPerUser:
+          applyMode === "code" && maxRedemptionsPerUser ? Number(maxRedemptionsPerUser) : undefined,
         metadata,
         providerBindings: provider
           ? [
@@ -291,7 +296,15 @@ function PromotionsView({
           const promotion = row.original;
           return (
             <>
-              <p className="font-mono text-[12px] font-semibold text-slate-950">{promotion.code}</p>
+              {promotion.applyMode === "automatic" ? (
+                <span className="inline-flex items-center rounded-md bg-amber-50 px-1.5 py-0.5 text-[11px] font-semibold text-amber-700">
+                  自动促销
+                </span>
+              ) : (
+                <p className="font-mono text-[12px] font-semibold text-slate-950">
+                  {promotion.code}
+                </p>
+              )}
               <p className="mt-0.5 text-sm font-medium text-slate-800">{promotion.name}</p>
             </>
           );
@@ -501,9 +514,11 @@ function CreatePromotionForm({
   onSubmit: (event: React.FormEvent<HTMLFormElement>) => void;
   siteKey: BillingSiteKey;
 }) {
+  const [applyMode, setApplyMode] = useState("code");
   const [appliesProductType, setAppliesProductType] = useState("compute_point_pack");
   const [durationType, setDurationType] = useState("once");
   const [discountType, setDiscountType] = useState("percent");
+  const isAutomatic = applyMode === "automatic";
   const defaultProvider = siteKey === "cn" ? "wechat_pay" : "airwallex";
   const defaultCurrency = siteKey === "cn" ? "CNY" : "USD";
   const [provider, setProvider] = useState(defaultProvider);
@@ -529,13 +544,30 @@ function CreatePromotionForm({
         <IconTicket className="size-4 text-slate-400" />
       </div>
       <form onSubmit={onSubmit} className="mt-4 grid gap-3">
+        <FormLabel
+          label="生效方式"
+          help="优惠码=用户输入券码后生效；自动促销=无需券码，命中商品对所有人自动按促销价（前台显示划线原价 + 折后价），用于限时活动。"
+        >
+          <Select name="applyMode" value={applyMode} onChange={setApplyMode}>
+            <option value="code">优惠码</option>
+            <option value="automatic">自动促销（活动价）</option>
+          </Select>
+        </FormLabel>
         <div className="grid grid-cols-2 gap-2">
-          <FormLabel
-            label="券码"
-            help="用户可输入的优惠码/兑换码。它是促销规则，不是 payment provider。"
-          >
-            <TextInput name="code" required placeholder="WELCOME100" />
-          </FormLabel>
+          {isAutomatic ? (
+            <FormLabel label="券码" help="自动促销无需券码，对命中商品自动生效。">
+              <div className="flex h-9 items-center rounded-lg border border-dashed border-slate-200 px-3 text-[12px] text-slate-400">
+                自动促销 · 无券码
+              </div>
+            </FormLabel>
+          ) : (
+            <FormLabel
+              label="券码"
+              help="用户可输入的优惠码/兑换码。它是促销规则，不是 payment provider。"
+            >
+              <TextInput name="code" required placeholder="WELCOME100" />
+            </FormLabel>
+          )}
           <FormLabel label="状态" help="草稿不可用；启用后可核销；暂停保留历史但不允许新订单使用。">
             <Select name="status" defaultValue="draft">
               <option value="draft">草稿</option>
@@ -577,13 +609,20 @@ function CreatePromotionForm({
             </FormLabel>
           </div>
         )}
-        <FormLabel label="适用类型" help="限制兑换码只能用于某类商品；留空表示全部商品可用。">
+        <FormLabel
+          label="适用类型"
+          help={
+            isAutomatic
+              ? "自动促销必须限定到某类商品（或在下方按具体价格/商品细化）。"
+              : "限制兑换码只能用于某类商品；留空表示全部商品可用。"
+          }
+        >
           <Select
             name="appliesProductType"
             value={appliesProductType}
             onChange={handleProductTypeChange}
           >
-            <option value="">全部商品</option>
+            {!isAutomatic ? <option value="">全部商品</option> : null}
             <option value="compute_point_pack" title={productTypeHelp("compute_point_pack")}>
               算力积分
             </option>
@@ -595,6 +634,12 @@ function CreatePromotionForm({
             </option>
             <option value="team_membership_plan" title={productTypeHelp("team_membership_plan")}>
               团队会员
+            </option>
+            <option
+              value="community_membership_plan"
+              title={productTypeHelp("community_membership_plan")}
+            >
+              社区会员
             </option>
           </Select>
         </FormLabel>
@@ -635,9 +680,11 @@ function CreatePromotionForm({
           <FormLabel label="总次数" help="全站最大核销次数。为空表示不限总次数。">
             <TextInput name="maxRedemptions" inputMode="numeric" placeholder="可选" />
           </FormLabel>
-          <FormLabel label="单用户" help="单个用户最多核销次数。兑换码通常填 1。">
-            <TextInput name="maxRedemptionsPerUser" inputMode="numeric" placeholder="1" />
-          </FormLabel>
+          {isAutomatic ? null : (
+            <FormLabel label="单用户" help="单个用户最多核销次数。兑换码通常填 1。">
+              <TextInput name="maxRedemptionsPerUser" inputMode="numeric" placeholder="1" />
+            </FormLabel>
+          )}
         </div>
         <FormLabel
           label="供应商"
@@ -715,7 +762,7 @@ function PromotionEditDialog({
   return (
     <AdminDialog
       open
-      title={`编辑促销券 · ${promotion.code}`}
+      title={`编辑促销券 · ${promotion.code ?? promotion.name}`}
       description="可调整名称、状态、生效窗口与核销上限。折扣比例与适用范围创建后不可更改。"
       onClose={onClose}
       footer={

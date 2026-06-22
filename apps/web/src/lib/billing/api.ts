@@ -25,6 +25,32 @@ export interface BillingPackage {
   isActive: boolean;
 }
 
+/**
+ * The automatic sale (促销活动价) currently applied to a price, for display.
+ * `amountMinor` on the price stays the list price (struck through); show
+ * `effectiveAmountMinor` as the live price. Null when no sale is active.
+ */
+export interface PriceActiveDiscount {
+  promotionId: string;
+  name: string;
+  discountAmountMinor: string;
+  effectiveAmountMinor: string;
+  endsAt: string | null;
+  recurring: "once" | "repeating" | "forever";
+}
+
+/**
+ * The price actually charged: the automatic sale's effective price when a sale
+ * is active, else the list price. Shared so every surface (membership dialog, IP
+ * cards) shows and charges the same number.
+ */
+export function priceEffectiveAmountMinor(price: {
+  amountMinor: string;
+  activeDiscount: PriceActiveDiscount | null;
+}): string {
+  return price.activeDiscount?.effectiveAmountMinor ?? price.amountMinor;
+}
+
 export interface MembershipPrice extends BillingPackage {
   provider: string;
   availableProviders: Array<{
@@ -32,6 +58,8 @@ export interface MembershipPrice extends BillingPackage {
     status: string;
     providerMode: string | null;
   }>;
+  /** Active automatic sale, or null. */
+  activeDiscount: PriceActiveDiscount | null;
   interval: "one_time" | "month" | "year" | string;
   subjectType: "user" | "workspace" | string;
   grantsPlanKey: string | null;
