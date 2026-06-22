@@ -19,6 +19,9 @@ import {
   mutateEnvelope,
   PageHeader,
   productTypeLabel,
+  productFamily,
+  ProductFamilyTabs,
+  type ProductFamily,
   requestEnvelope,
   Select,
   StatusPill,
@@ -54,7 +57,8 @@ export function BillingMembershipsPanel({
   initialError?: string | null;
 }) {
   const [plans, setPlans] = useState(initialPlans ?? emptyMembershipPlans);
-  const [productType, setProductType] = useState("");
+  // Studio (个人 + 团队) vs 社区 — grouping by product family, not raw type.
+  const [family, setFamily] = useState<ProductFamily>("studio");
   const [status, setStatus] = useState("");
   const [createOpen, setCreateOpen] = useState(false);
   const [editingPlan, setEditingPlan] = useState<BillingMembershipPlanRow | null>(null);
@@ -63,7 +67,7 @@ export function BillingMembershipsPanel({
 
   function queryString() {
     const params = new URLSearchParams();
-    if (productType) params.set("productType", productType);
+    // Load all types; the family tab filters client-side.
     if (status) params.set("status", status);
     const query = params.toString();
     return query ? `?${query}` : "";
@@ -148,13 +152,11 @@ export function BillingMembershipsPanel({
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            <div className="w-40">
-              <Select value={productType} onChange={setProductType} title="商品类型">
-                <option value="">全部类型</option>
-                <option value="membership_plan">个人会员</option>
-                <option value="team_membership_plan">团队会员</option>
-              </Select>
-            </div>
+            <ProductFamilyTabs
+              value={family}
+              onChange={setFamily}
+              labels={{ studio: "Studio 会员", community: "社区会员" }}
+            />
             <div className="w-32">
               <Select value={status} onChange={setStatus} title="状态">
                 <option value="">全部状态</option>
@@ -180,7 +182,11 @@ export function BillingMembershipsPanel({
           </div>
         </div>
 
-        <MembershipPlansTable plans={plans.items} loading={loading} onEditPlan={setEditingPlan} />
+        <MembershipPlansTable
+          plans={plans.items.filter((plan) => productFamily(plan.productType) === family)}
+          loading={loading}
+          onEditPlan={setEditingPlan}
+        />
       </section>
 
       <AdminDialog

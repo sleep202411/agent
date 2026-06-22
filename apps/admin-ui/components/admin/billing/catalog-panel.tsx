@@ -35,6 +35,9 @@ import {
   PageHeader,
   productTypeHelp,
   productTypeLabel,
+  productFamily,
+  ProductFamilyTabs,
+  type ProductFamily,
   providerHelp,
   ProviderBadge,
   requestEnvelope,
@@ -69,7 +72,8 @@ export function BillingCatalogPanel({
   initialError?: string | null;
 }) {
   const [prices, setPrices] = useState(initialPrices ?? emptyPrices);
-  const [priceProductType, setPriceProductType] = useState("");
+  // Studio vs 社区 product family; the tab filters loaded prices client-side.
+  const [family, setFamily] = useState<ProductFamily>("studio");
   const [priceProvider, setPriceProvider] = useState("");
   const [search, setSearch] = useState("");
   const [createPriceDialogOpen, setCreatePriceDialogOpen] = useState(false);
@@ -79,7 +83,7 @@ export function BillingCatalogPanel({
 
   function priceQueryString() {
     const params = new URLSearchParams();
-    if (priceProductType) params.set("productType", priceProductType);
+    // Load all types; the family tab filters client-side.
     if (priceProvider) params.set("provider", priceProvider);
     const query = params.toString();
     return query ? `?${query}` : "";
@@ -112,7 +116,7 @@ export function BillingCatalogPanel({
     void refreshPrices();
     // refreshPrices is a render-stable closure that reads the latest filter state.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [priceProductType, priceProvider]);
+  }, [priceProvider]);
 
   async function handleCreatePrice(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -262,13 +266,13 @@ export function BillingCatalogPanel({
 
       <CatalogView
         prices={prices.items}
-        productType={priceProductType}
+        family={family}
         provider={priceProvider}
         search={search}
         pendingBindingCount={pendingBindingCount}
         loading={loading}
         createDialogOpen={createPriceDialogOpen}
-        onProductTypeChange={setPriceProductType}
+        onFamilyChange={setFamily}
         onProviderChange={setPriceProvider}
         onSearchChange={setSearch}
         onCreateDialogOpenChange={setCreatePriceDialogOpen}
@@ -347,13 +351,13 @@ function PriceCompareAtDialog({
 
 function CatalogView({
   prices,
-  productType,
+  family,
   provider,
   search,
   pendingBindingCount,
   loading,
   createDialogOpen,
-  onProductTypeChange,
+  onFamilyChange,
   onProviderChange,
   onSearchChange,
   onCreateDialogOpenChange,
@@ -365,13 +369,13 @@ function CatalogView({
   siteKey,
 }: {
   prices: BillingPriceRow[];
-  productType: string;
+  family: ProductFamily;
   provider: string;
   search: string;
   pendingBindingCount: number;
   loading: boolean;
   createDialogOpen: boolean;
-  onProductTypeChange: (value: string) => void;
+  onFamilyChange: (family: ProductFamily) => void;
   onProviderChange: (value: string) => void;
   onSearchChange: (value: string) => void;
   onCreateDialogOpenChange: (open: boolean) => void;
@@ -392,12 +396,12 @@ function CatalogView({
 
   const visiblePrices = useMemo(() => {
     const query = debouncedSearch.trim().toLowerCase();
-    if (!query) return prices;
-    return prices.filter(
-      (price) =>
-        price.name.toLowerCase().includes(query) || price.code.toLowerCase().includes(query)
-    );
-  }, [prices, debouncedSearch]);
+    return prices.filter((price) => {
+      if (productFamily(price.productType) !== family) return false;
+      if (!query) return true;
+      return price.name.toLowerCase().includes(query) || price.code.toLowerCase().includes(query);
+    });
+  }, [prices, debouncedSearch, family]);
 
   const columns = useMemo<ColumnDef<BillingPriceRow, unknown>[]>(
     () => [
@@ -550,35 +554,7 @@ function CatalogView({
                   aria-label="搜索商品名称或编码"
                 />
               </div>
-              <div className="w-44">
-                <Select value={productType} onChange={onProductTypeChange}>
-                  <option value="">全部商品类型</option>
-                  <option
-                    value="community_point_pack"
-                    title={productTypeHelp("community_point_pack")}
-                  >
-                    社区积分
-                  </option>
-                  <option value="compute_point_pack" title={productTypeHelp("compute_point_pack")}>
-                    算力积分
-                  </option>
-                  <option value="membership_plan" title={productTypeHelp("membership_plan")}>
-                    个人会员
-                  </option>
-                  <option
-                    value="team_membership_plan"
-                    title={productTypeHelp("team_membership_plan")}
-                  >
-                    团队会员
-                  </option>
-                  <option
-                    value="community_membership_plan"
-                    title={productTypeHelp("community_membership_plan")}
-                  >
-                    社区会员
-                  </option>
-                </Select>
-              </div>
+              <ProductFamilyTabs value={family} onChange={onFamilyChange} />
               <div className="w-40">
                 <Select value={provider} onChange={onProviderChange}>
                   <option value="">全部渠道</option>

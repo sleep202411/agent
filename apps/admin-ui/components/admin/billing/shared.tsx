@@ -792,6 +792,78 @@ export function productTypeLabel(value: string) {
   return labels[value] ?? value;
 }
 
+// ── Product family ────────────────────────────────────────────────────────
+// The billing catalog spans two distinct products. Individual + team are both
+// the **Studio** product at different scales (user vs workspace); the community
+// side is its own product. Grouping by family — not by raw productType — is the
+// organizing principle for the catalog + membership admin pages.
+export type ProductFamily = "studio" | "community";
+
+const PRODUCT_FAMILY: Record<string, ProductFamily> = {
+  compute_point_pack: "studio",
+  membership_plan: "studio",
+  team_membership_plan: "studio",
+  community_point_pack: "community",
+  community_membership_plan: "community",
+};
+
+export function productFamily(productType: string): ProductFamily | null {
+  return PRODUCT_FAMILY[productType] ?? null;
+}
+
+/** Tab definitions in display order; `label` is overridable per page. */
+export const PRODUCT_FAMILY_TABS: {
+  key: ProductFamily;
+  label: string;
+  productTypes: string[];
+}[] = [
+  {
+    key: "studio",
+    label: "Studio",
+    productTypes: ["compute_point_pack", "membership_plan", "team_membership_plan"],
+  },
+  {
+    key: "community",
+    label: "社区",
+    productTypes: ["community_point_pack", "community_membership_plan"],
+  },
+];
+
+/** Segmented tab bar that switches a page between the two product families. */
+export function ProductFamilyTabs({
+  value,
+  onChange,
+  labels,
+}: {
+  value: ProductFamily;
+  onChange: (family: ProductFamily) => void;
+  /** Per-page label overrides, e.g. { studio: "Studio 会员" }. */
+  labels?: Partial<Record<ProductFamily, string>>;
+}) {
+  return (
+    <div className="inline-flex items-center gap-1 rounded-lg bg-slate-100 p-0.5">
+      {PRODUCT_FAMILY_TABS.map((tab) => {
+        const active = tab.key === value;
+        return (
+          <button
+            key={tab.key}
+            type="button"
+            onClick={() => onChange(tab.key)}
+            className={cn(
+              "rounded-md px-3 py-1.5 text-[13px] font-medium transition-colors",
+              active
+                ? "bg-white text-slate-950 shadow-[0_1px_2px_rgba(15,23,42,0.08)]"
+                : "text-slate-500 hover:text-slate-800"
+            )}
+          >
+            {labels?.[tab.key] ?? tab.label}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
 export function productTypeHelp(value: string) {
   const labels: Record<string, string> = {
     community_point_pack: "购买后发放可消费社区积分；可提现社区积分只能来自创作者收入。",
