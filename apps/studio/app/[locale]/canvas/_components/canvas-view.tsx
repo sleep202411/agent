@@ -400,7 +400,7 @@ function CanvasInner({ projectId, canEdit }: { projectId: string; canEdit: boole
   const { user } = useAuth();
   const guestName = t("guest");
   const canvasUser = useMemo(() => toCanvasUser(user, guestName), [user, guestName]);
-  const { documentId, document: canvasDocRef, status: docStatus } = useCanvasDocument(projectId);
+  const { documentId, status: docStatus } = useCanvasDocument(projectId);
   const { doc, awareness, provider, status: connStatus } = useCanvasDoc(documentId, canvasUser);
   const graph = useCanvasGraph(doc, awareness, canEdit);
   const {
@@ -416,7 +416,6 @@ function CanvasInner({ projectId, canEdit }: { projectId: string; canEdit: boole
     addLocalNode,
     promoteLocalNode,
     selectNodes,
-    restoreFromUpdate,
     addAssets: graphAddAssets,
     canUndo,
     canRedo,
@@ -1317,7 +1316,7 @@ function CanvasInner({ projectId, canEdit }: { projectId: string; canEdit: boole
                 {canEdit && (
                   <button
                     type="button"
-                    aria-label={t("versionHistory")}
+                    aria-label={t("activityLog")}
                     onClick={() => setHistoryOpen((open) => !open)}
                     className={cn(
                       "flex size-9 items-center justify-center rounded-full shadow-md backdrop-blur-xl transition-colors",
@@ -1400,9 +1399,6 @@ function CanvasInner({ projectId, canEdit }: { projectId: string; canEdit: boole
                 <CanvasHistory
                   documentId={documentId}
                   provider={provider}
-                  doc={doc}
-                  restoreFromUpdate={restoreFromUpdate}
-                  currentVersionId={canvasDocRef?.currentVersionId}
                   onClose={() => setHistoryOpen(false)}
                 />
               )}

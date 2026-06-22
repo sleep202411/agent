@@ -481,12 +481,12 @@
     "videoAssetsComingSoon": "视频素材 · 即将推出",
     "offline": "离线",
     "connecting": "连接中…",
-    "versionHistory": "版本历史",
     "openAssets": "打开素材库",
     "undo": "撤销",
     "redo": "重做",
     "openError": "无法打开此画布 — 请检查链接或你的访问权限。",
-    "emptyReadOnly": "此画布为空。"
+    "emptyReadOnly": "此画布为空。",
+    "activityLog": "动态"
   },
   "canvasControls": {
     "comment": "评论",
@@ -719,21 +719,15 @@
       "addPlaceholder": "添加评论…",
       "send": "发送"
     },
-    "history": {
-      "title": "版本历史",
-      "namePlaceholder": "为此检查点命名…",
-      "saveCheckpoint": "保存检查点",
-      "empty": "暂无检查点。保存一个以记录当前画布。",
-      "versionNumber": "版本 {number}",
-      "current": "当前",
-      "restore": "恢复",
-      "restoreThisVersion": "恢复到此版本"
-    },
-    "source": {
-      "saved": "已保存",
-      "auto": "自动",
-      "ai": "AI",
-      "import": "导入"
+    "activity": {
+      "title": "动态",
+      "empty": "暂无动态",
+      "memberFallback": "成员",
+      "actions": {
+        "generated": "已生成",
+        "checkpoint": "保存了检查点",
+        "imported": "已导入"
+      }
     }
   },
   "settings": {

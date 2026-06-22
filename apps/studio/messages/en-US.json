@@ -481,12 +481,12 @@
     "videoAssetsComingSoon": "Video assets · coming soon",
     "offline": "Offline",
     "connecting": "Connecting…",
-    "versionHistory": "Version history",
     "openAssets": "Open assets",
     "undo": "Undo",
     "redo": "Redo",
     "openError": "Couldn't open this canvas — check the link or your access.",
-    "emptyReadOnly": "This canvas is empty."
+    "emptyReadOnly": "This canvas is empty.",
+    "activityLog": "Activity"
   },
   "canvasControls": {
     "comment": "Comment",
@@ -719,21 +719,15 @@
       "addPlaceholder": "Add a comment…",
       "send": "Send"
     },
-    "history": {
-      "title": "Version history",
-      "namePlaceholder": "Name this checkpoint…",
-      "saveCheckpoint": "Save checkpoint",
-      "empty": "No checkpoints yet. Save one to capture this canvas.",
-      "versionNumber": "Version {number}",
-      "current": "current",
-      "restore": "Restore",
-      "restoreThisVersion": "Restore this version"
-    },
-    "source": {
-      "saved": "Saved",
-      "auto": "Auto",
-      "ai": "AI",
-      "import": "Import"
+    "activity": {
+      "title": "Activity",
+      "empty": "No activity yet",
+      "memberFallback": "Member",
+      "actions": {
+        "generated": "Generated",
+        "checkpoint": "Saved a checkpoint",
+        "imported": "Imported"
+      }
     }
   },
   "settings": {

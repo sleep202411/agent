@@ -28,12 +28,6 @@ export const DocumentThreadParamsSchema = z.object({
 });
 export type DocumentThreadParams = z.infer<typeof DocumentThreadParamsSchema>;
 
-export const DocumentVersionParamsSchema = z.object({
-  documentId: z.string().uuid(),
-  versionId: z.string().uuid(),
-});
-export type DocumentVersionParams = z.infer<typeof DocumentVersionParamsSchema>;
-
 export const DocumentTypeSchema = z.enum([
   'brief',
   'script',
@@ -155,21 +149,6 @@ export const CreateDocumentVersionSchema = z.object({
 });
 export type CreateDocumentVersionInput = z.infer<
   typeof CreateDocumentVersionSchema
->;
-
-/**
- * Restore the document to a prior version. The client supplies its exact
- * pre-restore state so the server can stamp an accurate "before restore"
- * safety checkpoint; the actual content revert is applied client-side and
- * streamed as a normal CRDT operation so every collaborator converges.
- */
-export const RestoreDocumentVersionSchema = z.object({
-  label: z.string().trim().min(1).max(120).optional(),
-  currentCrdtStateBase64: z.string().trim().min(1).optional(),
-  currentSnapshot: OptionalJsonObjectSchema,
-});
-export type RestoreDocumentVersionInput = z.infer<
-  typeof RestoreDocumentVersionSchema
 >;
 
 export const UpsertDocumentPresenceSchema = z.object({

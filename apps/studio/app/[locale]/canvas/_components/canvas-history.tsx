@@ -1,30 +1,29 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo } from "react";
 import { useTranslations } from "next-intl";
-import * as Y from "yjs";
-import { IconDeviceFloppy, IconRestore, IconX } from "@tabler/icons-react";
+import { IconX } from "@tabler/icons-react";
 import { cn } from "@/lib/utils";
 import { useDocumentVersions } from "@/lib/collab/use-versions";
 import type { VersionDto, VersionSource } from "@/lib/collab/versions-api";
 import type { DocumentProvider } from "@/lib/collab/document-provider";
+import { useUsersByIds, type PublicUser } from "@/lib/users-api";
 import { FLOATING_PANEL } from "./node-toolbar";
 
 interface CanvasHistoryProps {
   documentId: string | null;
   provider: DocumentProvider | null;
-  doc: Y.Doc | null;
-  restoreFromUpdate: (targetBytes: Uint8Array | null) => void;
-  currentVersionId?: string | null;
   onClose: () => void;
 }
 
-const SOURCE_LABEL_KEY: Record<VersionSource, string> = {
-  manual: "source.saved",
-  system: "source.auto",
-  autosave: "source.auto",
-  ai: "source.ai",
-  import: "source.import",
+/** Sources surfaced in the activity feed; autosave + system are background noise. */
+const ACTIVITY_SOURCES: ReadonlySet<VersionSource> = new Set(["manual", "ai", "import"]);
+
+/** Friendly action label per surfaced source. */
+const ACTION_KEY: Record<"manual" | "ai" | "import", string> = {
+  ai: "activity.actions.generated",
+  manual: "activity.actions.checkpoint",
+  import: "activity.actions.imported",
 };
 
 function relativeTime(iso: string, t: ReturnType<typeof useTranslations>): string {
@@ -38,52 +37,21 @@ function relativeTime(iso: string, t: ReturnType<typeof useTranslations>): strin
 }
 
 /**
- * Version history: save named checkpoints and restore the canvas to any of them.
- * Restore stamps a reversible "before restore" checkpoint, then converges every
- * collaborator. Real-time list via {@link useDocumentVersions}.
+ * Canvas activity log — a read-only feed of when · who · what. Each entry is a
+ * surfaced document version (AI generation, manual checkpoint, import); autosave
+ * and system noise is filtered out. There is no restore: it is purely a record.
+ * Real-time list via {@link useDocumentVersions}; authors resolved by id.
  */
-export function CanvasHistory({
-  documentId,
-  provider,
-  doc,
-  restoreFromUpdate,
-  currentVersionId,
-  onClose,
-}: CanvasHistoryProps) {
+export function CanvasHistory({ documentId, provider, onClose }: CanvasHistoryProps) {
   const t = useTranslations("canvasCollab");
   const tc = useTranslations("common");
-  const {
-    versions,
-    loading,
-    currentVersionId: activeVersionId,
-    createCheckpoint,
-    restore,
-  } = useDocumentVersions(documentId, provider, doc, restoreFromUpdate, currentVersionId);
-  const [label, setLabel] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [confirmId, setConfirmId] = useState<string | null>(null);
+  const { versions, loading } = useDocumentVersions(documentId, provider);
 
-  const save = async () => {
-    if (busy) return;
-    setBusy(true);
-    try {
-      await createCheckpoint(label.trim() || undefined);
-      setLabel("");
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const doRestore = async (version: VersionDto) => {
-    if (busy) return;
-    setBusy(true);
-    try {
-      await restore(version);
-      setConfirmId(null);
-    } finally {
-      setBusy(false);
-    }
-  };
+  const entries = useMemo(
+    () => versions.filter((version) => ACTIVITY_SOURCES.has(version.source)),
+    [versions]
+  );
+  const authors = useUsersByIds(useMemo(() => entries.map((e) => e.createdById), [entries]));
 
   return (
     <div
@@ -93,7 +61,7 @@ export function CanvasHistory({
       )}
     >
       <div className="flex items-center justify-between px-3 py-2.5">
-        <span className="text-sm font-medium">{t("history.title")}</span>
+        <span className="text-sm font-medium">{t("activity.title")}</span>
         <button
           type="button"
           aria-label={tc("close")}
@@ -104,96 +72,69 @@ export function CanvasHistory({
         </button>
       </div>
 
-      <div className="flex items-center gap-1.5 px-2 pb-2">
-        <input
-          value={label}
-          placeholder={t("history.namePlaceholder")}
-          onChange={(event) => setLabel(event.target.value)}
-          onKeyDown={(event) => {
-            if (event.key === "Enter") void save();
-          }}
-          className="h-9 flex-1 rounded-xl bg-muted px-3 text-sm outline-none placeholder:text-muted-foreground"
-        />
-        <button
-          type="button"
-          aria-label={t("history.saveCheckpoint")}
-          disabled={busy}
-          onClick={() => void save()}
-          className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-white text-black transition-opacity hover:opacity-90 disabled:opacity-40"
-        >
-          <IconDeviceFloppy className="size-4" stroke={1.8} />
-        </button>
-      </div>
-
       <div className="flex flex-col overflow-y-auto px-1.5 pb-1.5">
-        {loading && versions.length === 0 ? (
+        {loading && entries.length === 0 ? (
           <p className="px-2 py-6 text-center text-xs text-muted-foreground">{tc("loading")}</p>
-        ) : versions.length === 0 ? (
+        ) : entries.length === 0 ? (
           <p className="px-2 py-6 text-center text-xs text-muted-foreground">
-            {t("history.empty")}
+            {t("activity.empty")}
           </p>
         ) : (
-          versions.map((version) => {
-            const isCurrent = version.id === activeVersionId;
-            const confirming = confirmId === version.id;
-            return (
-              <div
-                key={version.id}
-                className="group flex items-center gap-2 rounded-xl px-2 py-2 hover:bg-white/[0.05]"
-              >
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-1.5">
-                    <span className="truncate text-sm">
-                      {version.label ||
-                        t("history.versionNumber", { number: version.versionNumber })}
-                    </span>
-                    {isCurrent && (
-                      <span className="shrink-0 rounded-full bg-white/15 px-1.5 py-0.5 text-[10px] font-medium text-white/80">
-                        {t("history.current")}
-                      </span>
-                    )}
-                  </div>
-                  <div className="mt-0.5 flex items-center gap-1.5 text-xs text-muted-foreground">
-                    <span>{t(SOURCE_LABEL_KEY[version.source])}</span>
-                    <span>·</span>
-                    <span>{relativeTime(version.createdAt, t)}</span>
-                  </div>
-                </div>
-
-                {confirming ? (
-                  <div className="flex shrink-0 items-center gap-1">
-                    <button
-                      type="button"
-                      disabled={busy}
-                      onClick={() => void doRestore(version)}
-                      className="rounded-full bg-white px-2.5 py-1 text-xs font-medium text-black transition-opacity hover:opacity-90 disabled:opacity-40"
-                    >
-                      {t("history.restore")}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setConfirmId(null)}
-                      className="rounded-full px-2 py-1 text-xs text-white/60 transition-colors hover:text-white"
-                    >
-                      {tc("cancel")}
-                    </button>
-                  </div>
-                ) : (
-                  <button
-                    type="button"
-                    aria-label={t("history.restoreThisVersion")}
-                    disabled={isCurrent}
-                    onClick={() => setConfirmId(version.id)}
-                    className="flex size-7 shrink-0 items-center justify-center rounded-full text-white/50 opacity-0 transition-colors group-hover:opacity-100 hover:bg-white/[0.08] hover:text-white disabled:hidden"
-                  >
-                    <IconRestore className="size-4" stroke={1.8} />
-                  </button>
-                )}
-              </div>
-            );
-          })
+          entries.map((entry) => (
+            <ActivityRow
+              key={entry.id}
+              entry={entry}
+              author={authors.get(entry.createdById)}
+              t={t}
+            />
+          ))
         )}
       </div>
     </div>
+  );
+}
+
+function ActivityRow({
+  entry,
+  author,
+  t,
+}: {
+  entry: VersionDto;
+  author: PublicUser | undefined;
+  t: ReturnType<typeof useTranslations>;
+}) {
+  const name = author?.nickname?.trim() || t("activity.memberFallback");
+  // manual/ai/import are guaranteed by the ACTIVITY_SOURCES filter.
+  const action = t(ACTION_KEY[entry.source as "manual" | "ai" | "import"]);
+  const detail = entry.label?.trim() || entry.title?.trim() || null;
+
+  return (
+    <div className="flex items-center gap-2.5 rounded-xl px-2 py-2">
+      <AuthorAvatar author={author} name={name} />
+      <div className="min-w-0 flex-1">
+        <div className="truncate text-sm">
+          <span className="font-medium">{name}</span>
+          <span className="text-white/70"> {action}</span>
+          {detail && <span className="text-white/70"> · {detail}</span>}
+        </div>
+        <div className="mt-0.5 text-xs text-muted-foreground">
+          {relativeTime(entry.createdAt, t)}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function AuthorAvatar({ author, name }: { author: PublicUser | undefined; name: string }) {
+  if (author?.avatar) {
+    return (
+      // eslint-disable-next-line @next/next/no-img-element -- external avatar URL
+      <img src={author.avatar} alt="" className="size-7 shrink-0 rounded-full object-cover" />
+    );
+  }
+  return (
+    <span className="flex size-7 shrink-0 items-center justify-center rounded-full bg-secondary text-xs font-semibold">
+      {name.charAt(0).toUpperCase()}
+    </span>
   );
 }

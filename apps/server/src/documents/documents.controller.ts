@@ -18,12 +18,10 @@ import {
   CreateDocumentVersionSchema,
   DocumentParamsSchema,
   DocumentThreadParamsSchema,
-  DocumentVersionParamsSchema,
   ListDocumentOperationsQuerySchema,
   ListProjectDocumentsQuerySchema,
   ProjectDocumentEnsureParamsSchema,
   ProjectDocumentsParamsSchema,
-  RestoreDocumentVersionSchema,
   UpdateDocumentSchema,
   UpsertDocumentPresenceSchema,
   type AddCommentInput,
@@ -33,12 +31,10 @@ import {
   type CreateDocumentVersionInput,
   type DocumentParams,
   type DocumentThreadParams,
-  type DocumentVersionParams,
   type ListDocumentOperationsQuery,
   type ListProjectDocumentsQuery,
   type ProjectDocumentEnsureParams,
   type ProjectDocumentsParams,
-  type RestoreDocumentVersionInput,
   type UpdateDocumentInput,
   type UpsertDocumentPresenceInput,
 } from './dto';
@@ -194,25 +190,6 @@ export class DocumentsController {
     return {
       code: 200,
       data: await this.documents.listVersions(user, params.documentId),
-    };
-  }
-
-  @Post('documents/:documentId/versions/:versionId/restore')
-  async restoreVersion(
-    @CurrentUser() user: AuthUser,
-    @Param(new ZodValidationPipe(DocumentVersionParamsSchema))
-    params: DocumentVersionParams,
-    @Body(new ZodValidationPipe(RestoreDocumentVersionSchema))
-    body: RestoreDocumentVersionInput,
-  ) {
-    return {
-      code: 200,
-      data: await this.documents.restoreVersion(
-        user,
-        params.documentId,
-        params.versionId,
-        body,
-      ),
     };
   }
 

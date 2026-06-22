@@ -32,7 +32,6 @@ import type {
   CreateDocumentVersionInput,
   ListDocumentOperationsQuery,
   ListProjectDocumentsQuery,
-  RestoreDocumentVersionInput,
   UpdateDocumentInput,
   UpsertDocumentPresenceInput,
 } from './dto';
@@ -555,128 +554,6 @@ export class DocumentsService {
       take: 100,
     });
     return { versions: versions.map((version) => this.versionDto(version)) };
-  }
-
-  /**
-   * Restore a document to a prior version. This is the server's half of restore:
-   * it stamps a reversible "before restore" safety checkpoint from the caller's
-   * exact pre-restore state and points `currentVersionId` at the target. The
-   * actual content revert is computed + applied CLIENT-side (a delete-missing +
-   * set-target diff against the live Y.Doc) and streams as a normal `yjs_update`
-   * operation, so every collaborator converges through the existing fan-out with
-   * no special-casing. The restore is a convergent overlay (CRDT semantics): an
-   * un-synced concurrent peer edit survives via LWW — the safety checkpoint is
-   * the reversibility handle.
-   */
-  async restoreVersion(
-    user: AuthUser,
-    documentId: string,
-    versionId: string,
-    input: RestoreDocumentVersionInput,
-  ) {
-    await this.permissions.requireDocumentRole(
-      user.userId,
-      documentId,
-      ProjectMemberRole.editor,
-    );
-
-    // The caller normally supplies its exact live state for the safety
-    // checkpoint. If it doesn't, fold any un-compacted op tail into crdtState
-    // first so the fallback (document.crdtState) captures the true latest state
-    // rather than a snapshot behind the compaction horizon.
-    if (!input.currentCrdtStateBase64) {
-      await this.compaction.flush(documentId);
-    }
-
-    const { target, checkpoint, previousVersionId, workspaceId, projectId } =
-      await this.prisma.$transaction(async (tx) => {
-        await tx.$executeRaw`
-          SELECT pg_advisory_xact_lock(hashtext(${`platform-document:${documentId}`})::bigint)
-        `;
-        const document = await tx.platformDocument.findFirst({
-          where: { id: documentId, deletedAt: null },
-        });
-        if (!document) {
-          throw new NotFoundException({
-            code: 'DOCUMENT_NOT_FOUND',
-            msg: 'Document not found.',
-          });
-        }
-        const target = await tx.platformDocumentVersion.findFirst({
-          where: { id: versionId, documentId },
-        });
-        if (!target) {
-          throw new NotFoundException({
-            code: 'DOCUMENT_VERSION_NOT_FOUND',
-            msg: 'Version not found.',
-          });
-        }
-        const last = await tx.platformDocumentVersion.findFirst({
-          where: { documentId },
-          orderBy: { versionNumber: 'desc' },
-        });
-        const checkpoint = await tx.platformDocumentVersion.create({
-          data: {
-            documentId,
-            versionNumber: (last?.versionNumber ?? 0) + 1,
-            schemaVersion: document.schemaVersion,
-            sequence: document.currentSequence,
-            title: document.title,
-            label: input.label ?? `Before restore to v${target.versionNumber}`,
-            source: PlatformDocumentVersionSource.system,
-            sourceId: target.id,
-            // The caller's exact pre-restore state — what the user was looking
-            // at — so this checkpoint reverts restore faithfully.
-            snapshot:
-              (input.currentSnapshot as Prisma.InputJsonValue | undefined) ??
-              (document.contentSnapshot as Prisma.InputJsonValue),
-            crdtState: input.currentCrdtStateBase64
-              ? Buffer.from(input.currentCrdtStateBase64, 'base64')
-              : document.crdtState,
-            metadata: {
-              reason: 'pre_restore_checkpoint',
-              restoredFromVersionId: target.id,
-              restoredFromVersionNumber: target.versionNumber,
-            },
-            createdById: user.userId,
-          },
-        });
-        await tx.platformDocument.update({
-          where: { id: documentId },
-          data: {
-            currentVersionId: target.id,
-            updatedById: user.userId,
-            version: { increment: 1 },
-          },
-        });
-        return {
-          target,
-          checkpoint,
-          previousVersionId: document.currentVersionId,
-          workspaceId: document.workspaceId,
-          projectId: document.projectId,
-        };
-      });
-
-    await this.audit.record({
-      workspaceId,
-      projectId,
-      actorUserId: user.userId,
-      action: 'document.version.restored',
-      entityType: 'document',
-      entityId: documentId,
-      before: { currentVersionId: previousVersionId },
-      after: {
-        restoredFromVersionId: target.id,
-        restoredFromVersionNumber: target.versionNumber,
-        checkpointVersionId: checkpoint.id,
-      },
-    });
-
-    return {
-      target: this.versionDto(target),
-      checkpoint: this.versionDto(checkpoint),
-    };
   }
 
   async upsertPresence(

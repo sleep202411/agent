@@ -2,8 +2,9 @@ import { api } from "@/lib/api";
 
 /**
  * Document version checkpoints. Backed by the documents platform's version
- * routes (PlatformDocumentVersion) under `/aurora/documents/:id/versions`. A
- * version carries a full `crdtStateBase64` snapshot used to restore the canvas.
+ * routes (PlatformDocumentVersion) under `/aurora/documents/:id/versions`.
+ * Versions are still written (autosave + manual checkpoints) and are the
+ * source for the read-only canvas activity log.
  */
 
 export type VersionSource = "autosave" | "manual" | "import" | "ai" | "system";
@@ -32,13 +33,6 @@ export interface CreateCheckpointInput {
   snapshot?: Record<string, unknown>;
 }
 
-export interface RestoreVersionInput {
-  label?: string;
-  /** The caller's exact pre-restore state — stamped as a reversible checkpoint. */
-  currentCrdtStateBase64?: string;
-  currentSnapshot?: Record<string, unknown>;
-}
-
 export async function listDocumentVersions(documentId: string): Promise<VersionDto[]> {
   const data = await api.get<{ versions: VersionDto[] }>(
     `/aurora/documents/${documentId}/versions`
@@ -54,15 +48,4 @@ export async function createDocumentCheckpoint(
     data: input,
   });
   return data.version;
-}
-
-export async function restoreDocumentVersion(
-  documentId: string,
-  versionId: string,
-  input: RestoreVersionInput
-): Promise<{ target: VersionDto; checkpoint: VersionDto }> {
-  return api.post<{ target: VersionDto; checkpoint: VersionDto }>(
-    `/aurora/documents/${documentId}/versions/${versionId}/restore`,
-    { data: input }
-  );
 }
