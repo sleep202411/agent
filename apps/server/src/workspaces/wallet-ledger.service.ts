@@ -15,7 +15,6 @@ import {
   type WalletTransaction,
 } from '@prisma/client';
 import { PrismaService } from '../infra/db/db.module';
-import { settleMigratedDebt } from './wallet-debt';
 
 // compute_point is workspace-owned (the workspace you work in is the pot);
 // community_point — the creator economy — is user-owned. Each owner type
@@ -53,14 +52,6 @@ export interface PostWalletEntryInput {
   projectId?: string | null;
   description?: string | null;
   metadata?: Record<string, unknown>;
-  /** Allow the resulting availableBalance to go/stay negative. Honored ONLY
-   *  together with skipGrantBookkeeping (the migration baseline) — so a normal
-   *  grant-backed spend can never overdraw even if it sets this. The overdraft
-   *  guard stays fully intact for every real spend. */
-  allowNegativeBalance?: boolean;
-  /** Skip credit-grant bookkeeping for this entry (the migration baseline sets a
-   *  negative balance directly, with no grant to create or consume). */
-  skipGrantBookkeeping?: boolean;
   creditGrant?: {
     grantType: WalletCreditGrantType;
     validFrom?: Date | null;
@@ -161,17 +152,7 @@ export class WalletLedgerService {
 
       const nextAvailable = account.availableBalance + input.availableDelta;
       const nextHeld = account.heldBalance + input.heldDelta;
-      // A debit may never overdraw (push available below zero). The ONLY exception
-      // is the migration baseline, which declares BOTH allowNegativeBalance AND
-      // skipGrantBookkeeping — requiring both means a normal spend (which always
-      // does grant bookkeeping) can never overdraw, even if it set the flag. A
-      // credit that merely pays DOWN an existing negative balance is always fine.
-      const overdrawBypass =
-        input.allowNegativeBalance === true &&
-        input.skipGrantBookkeeping === true;
-      const overdrawsByDebit =
-        nextAvailable < 0n && input.availableDelta < 0n && !overdrawBypass;
-      if (overdrawsByDebit || nextHeld < 0n) {
+      if (nextAvailable < 0n || nextHeld < 0n) {
         throw new ConflictException({
           code: 'INSUFFICIENT_WALLET_BALANCE',
           msg: 'Wallet balance is insufficient.',
@@ -208,7 +189,7 @@ export class WalletLedgerService {
         },
       });
 
-      if (!input.skipGrantBookkeeping && isCreditGrantBackedAccount(account)) {
+      if (isCreditGrantBackedAccount(account)) {
         if (input.availableDelta > 0n && input.heldDelta === 0n) {
           await createCreditGrantTx(tx, {
             account,
@@ -372,34 +353,16 @@ async function createCreditGrantTx(
     });
   }
 
-  // If this credit lands on an overdrawn balance (a migrated legacy debt), settle
-  // the debt out of this grant up-front: `availableAmount` counts only the NET
-  // addition to the balance; the rest is booked as consumed. This keeps
-  // Σ(active grant.availableAmount) == availableBalance whenever the balance is ≥ 0,
-  // so FIFO consume + expiry never double-count the debt. Normal credits (balance
-  // ≥ 0) get debtSettled = 0 → identical to before.
-  const { debtSettled, availableAmount } = settleMigratedDebt(
-    args.account.availableBalance,
-    amount,
-  );
-
   const creditGrant = await tx.walletCreditGrant.create({
     data: {
       accountId: args.account.id,
       transactionId: args.transaction.id,
       grantType,
-      status: grantStatusAfter({
-        totalAmount: amount,
-        availableAmount,
-        heldAmount: 0n,
-        consumedAmount: debtSettled,
-        expiredAmount: 0n,
-        reversedAmount: 0n,
-      }),
+      status: WalletCreditGrantStatus.active,
       totalAmount: amount,
-      availableAmount,
+      availableAmount: amount,
       heldAmount: 0n,
-      consumedAmount: debtSettled,
+      consumedAmount: 0n,
       expiredAmount: 0n,
       reversedAmount: 0n,
       priority: grant?.priority ?? defaultGrantPriority(grantType, expiresAt),
@@ -422,9 +385,9 @@ async function createCreditGrantTx(
       transactionId: args.transaction.id,
       ledgerEntryId: args.entry.id,
       amount,
-      availableDelta: availableAmount,
+      availableDelta: amount,
       heldDelta: 0n,
-      consumedDelta: debtSettled,
+      consumedDelta: 0n,
       expiredDelta: 0n,
       reversedDelta: 0n,
     },
