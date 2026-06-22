@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useTranslations } from "next-intl";
 import {
@@ -8,10 +8,8 @@ import {
   IconBolt,
   IconCheck,
   IconChevronRight,
-  IconCrown,
   IconLoader2,
   IconShieldCheck,
-  IconUsersGroup,
   IconX,
 } from "@tabler/icons-react";
 import { toast } from "sonner";
@@ -27,7 +25,6 @@ import { useAuth } from "./auth-provider";
 import { useCountry } from "./region-provider";
 import { useWorkspace } from "./workspace-context";
 
-type ProductType = "membership_plan" | "team_membership_plan";
 type BillingInterval = "month" | "year";
 
 /**
@@ -101,9 +98,8 @@ export function SubscriptionDialog({
   const country = useCountry();
   const currency = membershipCurrencyForCountry(country);
   const { user, signIn } = useAuth();
-  const { activeWorkspace } = useWorkspace();
+  const { workspaces, activeWorkspace, createTeam } = useWorkspace();
   const signedIn = Boolean(user);
-  const [productType, setProductType] = useState<ProductType>("membership_plan");
   const [billingInterval, setBillingInterval] = useState<BillingInterval>("month");
   const [payingPriceId, setPayingPriceId] = useState<string | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
@@ -113,7 +109,7 @@ export function SubscriptionDialog({
 
   // Loading is derived: the latest fetch result carries the request key it
   // answered; a stale or absent key means the current tuple is still loading.
-  const plansKey = `${productType}:${currency}:${reloadKey}`;
+  const plansKey = `${currency}:${reloadKey}`;
   const [plansResult, setPlansResult] = useState<{
     key: string;
     plans: MembershipPlan[];
@@ -124,15 +120,10 @@ export function SubscriptionDialog({
   const plans = loaded?.plans ?? EMPTY_PLANS;
   const errorMessage = loaded?.error ?? null;
 
-  // Custom-priced (enterprise) plans are a teams-only sales motion; on the
-  // Individual tab they are hidden entirely.
-  const visiblePlans = useMemo(
-    () =>
-      productType === "team_membership_plan"
-        ? plans
-        : plans.filter((plan) => plan.prices.length > 0),
-    [plans, productType]
-  );
+  // The lineup is one combined list (individual + team tiers). Custom-priced
+  // plans (enterprise / team_enterprise) keep their prices-less rows so they
+  // render as the "Custom / Contact Sales" card, exactly as the Teams tab did.
+  const visiblePlans = plans;
 
   useEffect(() => {
     if (!open) return;
@@ -151,10 +142,16 @@ export function SubscriptionDialog({
   useEffect(() => {
     if (!open) return;
     let cancelled = false;
-    listMembershipPlans({ productType, currency })
-      .then((result) => {
+    // One combined lineup: load individual + team plans together, merge, keep
+    // active rows, and order by rank so the row reads basic → … → pro → team
+    // → enterprise / team_enterprise.
+    Promise.all([
+      listMembershipPlans({ productType: "membership_plan", currency }),
+      listMembershipPlans({ productType: "team_membership_plan", currency }),
+    ])
+      .then(([individual, team]) => {
         if (cancelled) return;
-        const activePlans = result.plans
+        const activePlans = [...individual.plans, ...team.plans]
           .filter((plan) => plan.status === "active")
           .sort((a, b) => a.rank - b.rank);
         setPlansResult({ key: plansKey, plans: activePlans, error: null });
@@ -168,7 +165,7 @@ export function SubscriptionDialog({
     return () => {
       cancelled = true;
     };
-  }, [currency, open, productType, plansKey]);
+  }, [currency, open, plansKey, t]);
 
   const subscribe = useCallback(
     async (price: MembershipPrice | null) => {
@@ -180,23 +177,35 @@ export function SubscriptionDialog({
         signIn();
         return;
       }
-      // Team plans are workspace-scoped: they attach to the active TEAM
-      // workspace (create-then-upgrade, Vercel-style). A personal workspace
-      // can't hold a team plan, so steer the user to create/switch first.
+      // Team plans are workspace-scoped: they attach to a TEAM workspace
+      // (create-then-upgrade, Vercel-style). Resolve one automatically — reuse
+      // the active team, else any team the user already has, else create one —
+      // so a personal-workspace user can buy a team plan without a detour.
       const isTeamPrice = price.subjectType === "workspace";
-      if (isTeamPrice && activeWorkspace?.type !== "team") {
-        toast.error(t("toast.teamWorkspaceRequired"));
-        return;
-      }
 
       setPayingPriceId(price.id);
       try {
+        let workspaceId: string | undefined;
+        if (isTeamPrice) {
+          if (activeWorkspace?.type === "team") {
+            workspaceId = activeWorkspace.id;
+          } else {
+            const existingTeam = workspaces.find((w) => w.type === "team");
+            if (existingTeam) {
+              workspaceId = existingTeam.id;
+            } else {
+              const defaultName = `${user?.nickName ?? user?.email ?? "My"}'s Team`;
+              const created = await createTeam(defaultName);
+              workspaceId = created.id;
+            }
+          }
+        }
         const baseUrl = `${window.location.origin}${window.location.pathname}`;
         const result = await createBillingCheckout({
           priceId: price.id,
           idempotencyKey: `studio-membership:${price.id}:${crypto.randomUUID()}`,
           quantity: 1,
-          workspaceId: isTeamPrice ? activeWorkspace?.id : undefined,
+          workspaceId,
           successUrl: `${baseUrl}?payment=success`,
           backUrl: `${baseUrl}?payment=cancelled`,
         });
@@ -217,7 +226,7 @@ export function SubscriptionDialog({
         setPayingPriceId(null);
       }
     },
-    [activeWorkspace, onOpenChange, signIn, signedIn, t]
+    [activeWorkspace, createTeam, onOpenChange, signIn, signedIn, t, user, workspaces]
   );
 
   // Resume the checkout a signed-out visitor started: once login lands the
@@ -285,24 +294,6 @@ export function SubscriptionDialog({
               </TabsList>
             </Tabs>
           </header>
-
-          <div className="mb-6 flex justify-center">
-            <Tabs
-              value={productType}
-              onValueChange={(value) => setProductType(value as ProductType)}
-            >
-              <TabsList>
-                <TabsTrigger value="membership_plan" className="px-2.5">
-                  <IconCrown stroke={1.9} />
-                  {t("productType.individual")}
-                </TabsTrigger>
-                <TabsTrigger value="team_membership_plan" className="px-2.5">
-                  <IconUsersGroup stroke={1.9} />
-                  {t("productType.teams")}
-                </TabsTrigger>
-              </TabsList>
-            </Tabs>
-          </div>
 
           {loading ? (
             <LoadingPlans />
