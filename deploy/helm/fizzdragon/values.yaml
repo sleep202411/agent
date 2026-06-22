@@ -168,6 +168,11 @@ serverSecrets:
     # secret in Key Vault BEFORE deploying — the CSI projection fails if absent.
     - kv: realtime-ws-secret
       env: REALTIME_WS_SECRET
+    # Java points-migration bridge shared secret (/internal/points x-service-token).
+    # PREREQUISITE: create `internal-service-token` in Key Vault BEFORE deploying —
+    # the CSI projection fails if absent. (Set in kv-fizzdragon-com 2026-06-22.)
+    - kv: internal-service-token
+      env: INTERNAL_SERVICE_TOKEN
 # ---------------------------------------------------------------------------
 # web — Next.js front-of-stack. Public via Ingress.
 # ---------------------------------------------------------------------------
