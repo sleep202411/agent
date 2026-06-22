@@ -62,20 +62,14 @@ export class InternalPointsService {
     // crash between marker-create and credit) credits exactly once; a different
     // balance on a later call dedupes to the first.
     let balance: bigint;
-    if (input.balance !== 0) {
+    if (input.balance > 0) {
       const account = await this.account(workspaceId);
-      const isCredit = input.balance > 0;
-      // amount is the positive magnitude (postEntry requires amount > 0);
-      // availableDelta carries the sign.
-      const magnitude = BigInt(isCredit ? input.balance : -input.balance);
-      const signed = BigInt(input.balance);
+      const amount = BigInt(input.balance);
       const posted = await this.walletLedger.postEntry({
         accountId: account.id,
-        entryType: isCredit
-          ? WalletLedgerEntryType.credit
-          : WalletLedgerEntryType.adjustment,
-        amount: magnitude,
-        availableDelta: signed,
+        entryType: WalletLedgerEntryType.credit,
+        amount,
+        availableDelta: amount,
         heldDelta: 0n,
         sourceType: 'points_migration',
         sourceId: userId,
@@ -83,27 +77,20 @@ export class InternalPointsService {
         actorUserId: userId,
         workspaceId,
         description: 'Legacy points migration',
-        reason: isCredit
-          ? 'legacy_points_migration'
-          : 'legacy_points_migration_debt',
+        reason: 'legacy_points_migration',
         metadata: { userId, migratedBalance: input.balance },
-        ...(isCredit
-          ? {
-              creditGrant: {
-                grantType: WalletCreditGrantType.migration,
-                expiresAt: null,
-                metadata: { userId },
-              },
-            }
-          : {
-              // Carry a legacy negative/overdrawn balance: set it directly, no
-              // grant. The next credit (recharge/grant) pays the debt down first.
-              allowNegativeBalance: true,
-              skipGrantBookkeeping: true,
-            }),
+        creditGrant: {
+          grantType: WalletCreditGrantType.migration,
+          expiresAt: null,
+          metadata: { userId },
+        },
       });
       balance = posted.account.availableBalance;
     } else {
+      // <= 0 (incl. a legacy negative/overdrawn balance): the debt is FORGIVEN —
+      // the new wallet starts at 0 (the DB enforces non-negative balances). The
+      // original (possibly negative) balance is kept in the migration marker
+      // (migratedBalance) for audit.
       balance = await this.availableBalance(workspaceId);
     }
 

@@ -5,8 +5,9 @@ const idempotencyKey = z.string().trim().min(1).max(180);
 const reason = z.string().trim().max(500).optional();
 
 /** Ingest a user's current Java balance into the PG wallet. Idempotent per user.
- *  `balance` may be negative — a legacy overdrawn balance is carried as a debt
- *  (the wallet goes negative; the next recharge/grant pays it down first). */
+ *  `balance` may be negative — a legacy overdrawn balance is FORGIVEN (the new
+ *  wallet starts at 0; the original is kept in the migration marker for audit).
+ *  The DB enforces non-negative wallet balances, so debt is not carried. */
 export const MigratePointsSchema = z.object({
   userId,
   balance: z.coerce.number().int(),
