@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useTranslations } from "next-intl";
 import {
@@ -16,6 +16,7 @@ import { FrostedPanel } from "@/components/ui/frosted-panel";
 import { api } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { useWorkspace } from "@/app/_components/workspace-context";
+import { listProjects, type ProjectRef } from "@/lib/collab/projects-api";
 import {
   generationStatusFromRaw,
   listFizzAiJobs,
@@ -41,10 +42,21 @@ interface WalletLedgerEntry {
   createdAt: string;
 }
 
+interface DailyUsagePoint {
+  date: string;
+  credits: string;
+}
+
+interface DailyUsageData {
+  days: DailyUsagePoint[];
+}
+
 const JOB_HISTORY_LIMIT = 100;
 const LEDGER_LIMIT = 100;
+const DAILY_USAGE_DAYS = 30;
 const EMPTY_LEDGER_ENTRIES: WalletLedgerEntry[] = [];
 const EMPTY_JOB_ROWS: FizzAiJobView[] = [];
+const EMPTY_PROJECTS: ProjectRef[] = [];
 
 function bigintFromString(value: string | null | undefined): bigint {
   if (!value || !/^-?\d+$/.test(value)) return BigInt(0);
@@ -71,6 +83,41 @@ function formatDateTime(value: string | undefined): string {
     hour: "2-digit",
     minute: "2-digit",
   }).format(date);
+}
+
+/** A local YYYY-MM-DD key for `date`, matching the server's day buckets. */
+function dayKey(date: Date): string {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, "0");
+  const d = String(date.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
+}
+
+/** A short axis label (month/day) for a YYYY-MM-DD key. */
+function formatDayLabel(key: string): string {
+  const date = new Date(`${key}T00:00:00`);
+  if (Number.isNaN(date.getTime())) return key;
+  return new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric" }).format(date);
+}
+
+/** Build the fixed window [today - (days - 1) … today], mapping credits per day (0 if absent). */
+function buildDailyAxis(
+  points: DailyUsagePoint[],
+  days: number
+): { key: string; credits: bigint }[] {
+  const byDay = new Map<string, bigint>();
+  for (const point of points) {
+    byDay.set(point.date, bigintFromString(point.credits));
+  }
+  const axis: { key: string; credits: bigint }[] = [];
+  const today = new Date();
+  for (let offset = days - 1; offset >= 0; offset--) {
+    const date = new Date(today);
+    date.setDate(today.getDate() - offset);
+    const key = dayKey(date);
+    axis.push({ key, credits: byDay.get(key) ?? BigInt(0) });
+  }
+  return axis;
 }
 
 function jobFeature(job: FizzAiJobView): FizzAiJobType | "unknown" {
@@ -144,6 +191,30 @@ export default function AnalyticsSettingsPage() {
   const t = useTranslations("settings");
   const { activeWorkspace: ws, loading } = useWorkspace();
   const { ledger, jobs } = useAnalyticsData(ws?.id);
+  const [selectedProjectId, setSelectedProjectId] = useState("");
+
+  const projectsQuery = useQuery({
+    queryKey: ["settings", "analytics", "projects", ws?.id],
+    enabled: Boolean(ws?.id),
+    queryFn: () => listProjects(ws!.id),
+    staleTime: 20_000,
+  });
+
+  const dailyUsage = useQuery({
+    queryKey: ["settings", "analytics", "daily-usage", ws?.id, selectedProjectId],
+    enabled: Boolean(ws?.id),
+    queryFn: () =>
+      api.get<DailyUsageData>("/aurora/billing/wallet-ledger/daily-usage", {
+        params: { days: DAILY_USAGE_DAYS, projectId: selectedProjectId || undefined },
+      }),
+    staleTime: 20_000,
+  });
+
+  const projects = projectsQuery.data ?? EMPTY_PROJECTS;
+  const dailyAxis = useMemo(
+    () => buildDailyAxis(dailyUsage.data?.days ?? [], DAILY_USAGE_DAYS),
+    [dailyUsage.data?.days]
+  );
 
   const entries = ledger.data?.entries ?? EMPTY_LEDGER_ENTRIES;
   const jobRows = jobs.data?.jobs ?? EMPTY_JOB_ROWS;
@@ -233,6 +304,31 @@ export default function AnalyticsSettingsPage() {
           <CreditDeltaCard label={t("creditsIn")} value={summary.creditsIn} tone="in" />
           <CreditDeltaCard label={t("creditsOut")} value={summary.creditsOut} tone="out" />
         </div>
+      </Panel>
+
+      <Panel
+        title={t("dailyUsage")}
+        icon={<IconChartBar className="size-4 text-muted-foreground" />}
+        action={
+          <select
+            value={selectedProjectId}
+            onChange={(event) => setSelectedProjectId(event.target.value)}
+            className="h-9 max-w-[200px] rounded-md bg-input/30 px-2 text-sm text-foreground outline-none"
+            aria-label={t("projectFilter")}
+          >
+            <option value="">{t("allProjects")}</option>
+            {projects.map((project) => (
+              <option key={project.id} value={project.id}>
+                {project.name}
+              </option>
+            ))}
+          </select>
+        }
+      >
+        <p className="mb-3 text-xs text-muted-foreground">
+          {t("dailyUsageWindow", { count: DAILY_USAGE_DAYS })}
+        </p>
+        <DailyUsageChart axis={dailyAxis} />
       </Panel>
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
@@ -361,6 +457,52 @@ function UsageBar({
       </div>
       <div className="mt-2 h-2 overflow-hidden rounded-full bg-white/[0.06]">
         <div className="h-full rounded-full bg-white/70" style={{ width }} />
+      </div>
+    </div>
+  );
+}
+
+/** Vertical daily-usage bars: credits (Y) per day (X), fixed window, hand-rolled. */
+function DailyUsageChart({ axis }: { axis: { key: string; credits: bigint }[] }) {
+  const t = useTranslations("settings");
+  const max = axis.reduce((m, d) => (d.credits > m ? d.credits : m), BigInt(0));
+
+  if (max === BigInt(0)) {
+    return (
+      <EmptyState
+        icon={<IconChartBar className="size-5" />}
+        title={t("noUsageDataYet")}
+        body={t("noDailyUsageYet")}
+      />
+    );
+  }
+
+  return (
+    <div>
+      <div className="flex h-44 items-end gap-1">
+        {axis.map((day) => {
+          // Percent of the tallest bar; bigint-safe ratio scaled by 1000.
+          const heightPct =
+            day.credits > BigInt(0)
+              ? Math.max(2, Number((day.credits * BigInt(1000)) / max) / 10)
+              : 0;
+          return (
+            <div key={day.key} className="flex h-full flex-1 items-end">
+              <div
+                className="w-full rounded-t-sm bg-white/70"
+                style={{ height: `${heightPct}%` }}
+                title={t("dailyUsageBarTitle", {
+                  date: formatDayLabel(day.key),
+                  credits: formatBigint(day.credits),
+                })}
+              />
+            </div>
+          );
+        })}
+      </div>
+      <div className="mt-2 flex justify-between text-xs text-muted-foreground">
+        <span>{formatDayLabel(axis[0]?.key ?? "")}</span>
+        <span>{formatDayLabel(axis[axis.length - 1]?.key ?? "")}</span>
       </div>
     </div>
   );

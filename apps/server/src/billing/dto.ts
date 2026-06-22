@@ -177,6 +177,14 @@ export const ListWalletLedgerQuerySchema = z.object({
 });
 export type ListWalletLedgerQuery = z.infer<typeof ListWalletLedgerQuerySchema>;
 
+export const WalletDailyUsageQuerySchema = z.object({
+  days: z.coerce.number().int().min(1).max(90).default(30),
+  projectId: z.string().uuid().optional(),
+  currency: z.string().default('compute_point'),
+  balanceKind: z.string().default('consumable'),
+});
+export type WalletDailyUsageQuery = z.infer<typeof WalletDailyUsageQuerySchema>;
+
 export const BillingWalletAccountParamsSchema = z.object({
   accountId: z.string().uuid(),
 });

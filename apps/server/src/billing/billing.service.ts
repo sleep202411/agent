@@ -83,6 +83,7 @@ import type {
   ListMembershipPlansQuery,
   ListBillingPricesQuery,
   ListWalletLedgerQuery,
+  WalletDailyUsageQuery,
   QuoteAdminBillingRefundInput,
   UpdateAdminMembershipPlanInput,
   UpdateAdminBillingPriceInput,
@@ -495,6 +496,62 @@ export class BillingService {
           createdAt: entry.createdAt.toISOString(),
         };
       }),
+    };
+  }
+
+  /**
+   * Daily compute-credit consumption (settle/debit magnitudes) for the
+   * workspace's wallet accounts, optionally scoped to a single project. Drives
+   * the studio analytics usage bar chart.
+   */
+  async walletDailyUsage(
+    user: AuthUser,
+    query: WalletDailyUsageQuery,
+    workspaceId?: string | null,
+  ) {
+    const scope = await this.walletLedgerScope(
+      user,
+      query.currency as WalletCurrencyType,
+      workspaceId,
+    );
+    const accounts = await this.prisma.walletAccount.findMany({
+      where: {
+        ownerType: scope.ownerType,
+        ownerId: scope.ownerId,
+        currency: query.currency as WalletCurrencyType,
+        balanceKind: query.balanceKind as WalletBalanceKind,
+      },
+    });
+    if (accounts.length === 0) {
+      return { days: [] };
+    }
+
+    const accountIds = accounts.map((a) => a.id);
+    const from = new Date(Date.now() - query.days * 24 * 60 * 60 * 1000);
+    const projectFilter = query.projectId
+      ? Prisma.sql`AND t.project_id = ${query.projectId}::uuid`
+      : Prisma.empty;
+    const rows = await this.prisma.$queryRaw<
+      Array<{ day: Date; credits: bigint }>
+    >(Prisma.sql`
+      SELECT (e.created_at AT TIME ZONE 'UTC')::date AS day, SUM(e.amount)::bigint AS credits
+      FROM wallet_ledger_entries e
+      JOIN wallet_transactions t ON t.id = e.transaction_id
+      WHERE e.account_id IN (${Prisma.join(accountIds)})
+        AND e.entry_type::text IN ('settle','debit')
+        AND e.created_at >= ${from}
+        ${projectFilter}
+      GROUP BY day
+      ORDER BY day ASC
+    `);
+    return {
+      days: rows.map((r) => ({
+        date:
+          r.day instanceof Date
+            ? r.day.toISOString().slice(0, 10)
+            : String(r.day).slice(0, 10),
+        credits: r.credits.toString(),
+      })),
     };
   }
 

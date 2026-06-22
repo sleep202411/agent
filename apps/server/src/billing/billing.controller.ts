@@ -23,6 +23,7 @@ import {
   ListMembershipPlansQuerySchema,
   ListBillingPricesQuerySchema,
   ListWalletLedgerQuerySchema,
+  WalletDailyUsageQuerySchema,
   type BillingOrderParams,
   type CreateBillingCheckoutInput,
   type CreateComputePointTopupInput,
@@ -30,6 +31,7 @@ import {
   type ListMembershipPlansQuery,
   type ListBillingPricesQuery,
   type ListWalletLedgerQuery,
+  type WalletDailyUsageQuery,
   RedeemVoucherSchema,
   type RedeemVoucherInput,
   CreditCampaignParamsSchema,
@@ -127,6 +129,19 @@ export class BillingController {
     return {
       code: 200,
       data: await this.billing.listWalletLedger(user, query, workspaceId),
+    };
+  }
+
+  @Get('wallet-ledger/daily-usage')
+  async walletDailyUsage(
+    @CurrentUser() user: AuthUser,
+    @Headers('x-fizz-workspace-id') workspaceId: string | undefined,
+    @Query(new ZodValidationPipe(WalletDailyUsageQuerySchema))
+    query: WalletDailyUsageQuery,
+  ) {
+    return {
+      code: 200,
+      data: await this.billing.walletDailyUsage(user, query, workspaceId),
     };
   }
 
