@@ -165,7 +165,10 @@ export async function signOut(options: { remote?: boolean } = {}) {
   await clearAuthSession();
 }
 
-setApiTokenProvider(() => state.session?.token?.tokenValue);
+setApiTokenProvider(() => {
+  const token = state.session?.token;
+  return token ? { name: token.tokenName, value: token.tokenValue } : undefined;
+});
 setUnauthorizedHandler(() => {
   void clearAuthSession();
 });

@@ -38,7 +38,7 @@ export class ApiRequestError extends Error {
   }
 }
 
-type TokenProvider = () => string | undefined;
+type TokenProvider = () => { name: string; value: string } | undefined;
 type UnauthorizedHandler = () => void | Promise<void>;
 
 const CONTENT_RE = /^\/(user|project|vedio|personal)(\/|$)/;
@@ -181,7 +181,10 @@ async function request<T>(method: string, path: string, config: ApiRequestConfig
   const headers: Record<string, string> = {
     "accept-language": appEnv.defaultLocale,
     lan: appEnv.defaultLocale,
-    Authorization: `Bearer ${token ?? ""}`,
+    // Java sa-token reads the token from a header named by its tokenName
+    // (e.g. `satoken`), NOT from `Authorization: Bearer`. Browsers get away
+    // with the cookie; on native we must send the named header explicitly.
+    ...(token ? { [token.name]: token.value } : {}),
     ...(isForm
       ? { "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8" }
       : data !== undefined

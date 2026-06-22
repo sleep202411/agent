@@ -94,7 +94,7 @@ export async function phoneLogin(params: { phone: string; pwd: string }) {
 
 export async function getCurrentUser(token?: AuthToken) {
   const envelope = await api.get<UserInfoEnvelope>("/user/query/user/info", {
-    headers: token ? { Authorization: `Bearer ${token.tokenValue}` } : undefined,
+    headers: token ? { [token.tokenName]: token.tokenValue } : undefined,
     raw: true,
   });
   const rawLevels = Array.isArray(envelope.level) ? envelope.level : [];
