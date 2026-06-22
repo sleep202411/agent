@@ -32,7 +32,6 @@ import { toast } from "sonner";
 import { useTranslations } from "@/src/i18n/i18n";
 import { useCommunityPointBalance } from "@/src/lib/ip-commerce";
 import { useCredits } from "@/src/hooks/use-user";
-import { useMembershipPreview } from "@/src/hooks/use-membership-preview";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { CommunityRechargeDialog } from "@/components/payment/community-recharge-dialog";
 import { CommunityMembershipDialog } from "@/components/payment/community-membership-dialog";
@@ -56,8 +55,6 @@ export function CommunityCreditsChip({ layout = "chip", className }: CommunityCr
   const { balance: communityBalance, refetch: refetchCommunity } = useCommunityPointBalance();
   const { data: creditsData } = useCredits();
   const studioBalance = Number.isFinite(Number(creditsData)) ? Number(creditsData) : 0;
-  // Preview-gated until membership benefits (Phases 2–5) ship.
-  const membershipPreview = useMembershipPreview();
 
   const scopeRef = useRef<HTMLDivElement>(null);
 
@@ -128,16 +125,14 @@ export function CommunityCreditsChip({ layout = "chip", className }: CommunityCr
             balance={communityBalance}
             onClick={openCommunityRecharge}
           />
-          {membershipPreview && (
-            <button
-              type="button"
-              onClick={openMembership}
-              className="flex w-full items-center gap-3 rounded-lg px-3 py-3 text-sm font-medium text-muted-foreground transition-colors hover:bg-foreground/5 hover:text-foreground"
-            >
-              <IconCrown className="size-4" />
-              {tp("communityMembershipTitle")}
-            </button>
-          )}
+          <button
+            type="button"
+            onClick={openMembership}
+            className="flex w-full items-center gap-3 rounded-lg px-3 py-3 text-sm font-medium text-muted-foreground transition-colors hover:bg-foreground/5 hover:text-foreground"
+          >
+            <IconCrown className="size-4" />
+            {tp("communityMembershipTitle")}
+          </button>
         </div>
         {dialogs}
       </>
@@ -214,13 +209,11 @@ export function CommunityCreditsChip({ layout = "chip", className }: CommunityCr
             </div>
 
             <div className="flex items-center justify-between border-t border-white/10 px-3 py-2">
-              {membershipPreview && (
-                <FooterAction
-                  icon={<IconCrown className="size-3.5" />}
-                  label={tp("communityMembershipTitle")}
-                  onClick={openMembership}
-                />
-              )}
+              <FooterAction
+                icon={<IconCrown className="size-3.5" />}
+                label={tp("communityMembershipTitle")}
+                onClick={openMembership}
+              />
               <FooterAction
                 icon={<IconReceipt2 className="size-3.5" />}
                 label={t("records")}

@@ -22,7 +22,6 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { CommunityRechargeDialog } from "@/components/payment/community-recharge-dialog";
 import { CommunityMembershipDialog } from "@/components/payment/community-membership-dialog";
-import { useMembershipPreview } from "@/src/hooks/use-membership-preview";
 import { VideoPlayer } from "@/components/media/video-player";
 import { UserAvatar, resolveUserAvatarUrl } from "@/components/user-avatar";
 import { useUserDisplays } from "@/app/(site)/crews/_hooks/use-users";
@@ -116,8 +115,6 @@ export function IpPublicDetail({ ipId }: IpPublicDetailProps) {
   const [reportOpen, setReportOpen] = useState(false);
   const [rechargeOpen, setRechargeOpen] = useState(false);
   const [membershipOpen, setMembershipOpen] = useState(false);
-  // Preview-gated until membership benefits (Phases 2–5) ship.
-  const membershipPreview = useMembershipPreview();
 
   const detailIp = publicQuery.data?.ip
     ? normalizePublicIp(publicQuery.data.ip)
@@ -427,7 +424,7 @@ export function IpPublicDetail({ ipId }: IpPublicDetailProps) {
                 }}
               />
 
-              {membershipPreview && !viewerIsMember && activeAccessCode === "locked" && (
+              {!viewerIsMember && activeAccessCode === "locked" && (
                 <button
                   type="button"
                   onClick={() => setMembershipOpen(true)}
