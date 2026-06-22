@@ -4,21 +4,13 @@
 >
 > 事实来源:`apps/server/src/internal/`(`internal-points.controller.ts` / `internal-points.service.ts` / `internal-points.dto.ts`)。
 
-## 线上地址与当前状态(务必先读)
+## 线上地址与当前状态
 
 **BASE_URL(已实测 2026-06-22)**
 
 - 国际 `.com`:`https://fizzdragon.com/aurora`
 - 国内 `.cn`:`https://fizzstudio.fizzspace.cn/aurora`(**不要用** `fizzdragon.fizzspace.cn` —— 仍是旧 / Java 栈,`/aurora/internal/*` 会 404)
 - 完整地址 = BASE_URL + 接口路径,例:`POST https://fizzdragon.com/aurora/internal/points/migrate`
-- 本地联调:`http://localhost:4399`(本地无 `/aurora` 前缀)
-
-> ⚠️ **必须带 `/aurora` 前缀** —— 这是我们 Nest 服务的网关前缀。漏掉会打到**别的后端**,到不了本接口:
->
-> - `/api/internal/points` → 命中 **Java**,返回 `{"msg":"Not logged in!","code":302}`(迷惑性很强,看起来像没登录)。
-> - 裸 `/internal/points`(无前缀)→ 命中**前端 Web**,返回 `307` 重定向到 `/en-US/...`。
->
-> ⚠️ **当前两边都返回 `503 INTERNAL_AUTH_NOT_CONFIGURED`** —— 生产尚未配置 `INTERNAL_SERVICE_TOKEN`。需运维:① 下发密钥(.com / .cn 两套环境一致)② 同步给 Java ③ 把 Java 固定出口公网 IP 加网关白名单。配好后即可调通。
 
 ## 对接策略(懒迁移,Java 驱动)
 
@@ -51,10 +43,10 @@
 { "userId": "10086", "balance": 1200 }
 ```
 
-| 字段      | 类型         | 说明                                          |
-| --------- | ------------ | --------------------------------------------- |
-| `userId`  | string(1–64) | 用户 ID                                       |
-| `balance` | int ≥ 0      | 该用户当前老库余额;`0` 时只建迁移标记、不充值 |
+| 字段      | 类型                     | 说明                                          |
+| --------- | ------------------------ | --------------------------------------------- |
+| `userId`  | string(1–64)             | 用户 ID                                       |
+| `balance` | int（可正可负，负=欠款） | 该用户当前老库余额;`0` 时只建迁移标记、不充值 |
 
 响应 `data`:
 
@@ -121,32 +113,30 @@ curl "https://fizzdragon.com/aurora/internal/points/balance?userId=10086" -H "x-
 
 ## 错误码
 
-| HTTP | code                           | 含义                                       |
-| ---- | ------------------------------ | ------------------------------------------ |
-| 400  | (参数校验)                     | 请求体 / 参数不合法(缺字段、类型错误等)    |
-| 401  | `INVALID_SERVICE_TOKEN`        | `x-service-token` 缺失或错误               |
-| 503  | `INTERNAL_AUTH_NOT_CONFIGURED` | 服务端未配置 `INTERNAL_SERVICE_TOKEN`      |
-| 409  | `PERSONAL_WORKSPACE_MISSING`   | 用户在新系统还没有「个人工作空间」(见注意) |
-| 409  | `INSUFFICIENT_WALLET_BALANCE`  | 扣减时余额不足                             |
+| HTTP | code                           | 含义                                    |
+| ---- | ------------------------------ | --------------------------------------- |
+| 400  | (参数校验)                     | 请求体 / 参数不合法(缺字段、类型错误等) |
+| 401  | `INVALID_SERVICE_TOKEN`        | `x-service-token` 缺失或错误            |
+| 503  | `INTERNAL_AUTH_NOT_CONFIGURED` | 服务端未配置 `INTERNAL_SERVICE_TOKEN`   |
+| 409  | `INSUFFICIENT_WALLET_BALANCE`  | 扣减时余额不足                          |
 
 ## 错误兼容与平滑迁移(重要)
 
-桥接接口是「尽力而为」的旁路。为保证迁移期丝滑,Java 侧务必对每类返回做**降级处理**,任一笔失败都**不阻塞用户、可回退老逻辑、可安全重试**:
+为保证迁移期丝滑,Java 侧务必对每类返回做**降级处理**,任一笔失败都**不阻塞用户、可回退老逻辑、可安全重试**:
 
 | 情况                                                | 建议处理                                                                                                              |
 | --------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
 | 网络超时 / 5xx / `503 INTERNAL_AUTH_NOT_CONFIGURED` | 视为「桥接暂不可用」:该用户**回退老逻辑**(继续用老 MySQL 扣 / 加),稍后重试迁移;不要因桥接失败拒绝用户操作。           |
 | `401 INVALID_SERVICE_TOKEN`                         | 配置问题:告警 + 回退,联系我们核对密钥。                                                                               |
-| `409 PERSONAL_WORKSPACE_MISSING`                    | 该用户新系统还没个人空间:**暂不迁移**(继续老逻辑),待其登录过新平台 / 我们补建空间后再迁。                             |
 | `409 INSUFFICIENT_WALLET_BALANCE`                   | 正常业务结果(余额不足):按业务提示用户,不算迁移失败。                                                                  |
 | 重试                                                | `migrate` 按 `userId` 幂等、`deduct` / `grant` 按 `idempotencyKey` 幂等,均可安全重试(`deduped=true` 表示未重复变动)。 |
 
 原则:**任一笔失败都应可回退老逻辑 + 可重试**,确保用户无感、不重复扣费、不丢账。
 
-## 注意事项 / 待确认
+## 注意事项
 
-- **前置条件**:接口要求该用户在新系统**已有个人工作空间**(积分钱包挂在工作空间上)。用过新平台 / studio 的用户天然具备;**纯老用户可能还没有** → 返回 `409 PERSONAL_WORKSPACE_MISSING`。**待确认**:是否在 `migrate` 时自动建空间,或仅对「已登录过新平台」的用户开放迁移。
-- **安全(公网调用)**:跨云走公网,安全依赖两层:① 全程 HTTPS;② `x-service-token` 共享密钥(服务端 timing-safe 比较,未配置则一律 503)。强烈建议再叠加:把 **Java 固定出口公网 IP 加网关 / WAF 白名单**并对该路径单独限流(请 Java 提供其固定出口 IP)。
-- **待我们 / 运维处理**:① `INTERNAL_SERVICE_TOKEN` 下发到 .com / .cn 生产并与 Java 对齐;② 配置 Java 出口 IP 白名单;③ 已确认 BASE_URL(见顶部)。
-- 钱包按用户「个人工作空间」记账;团队 / 工作空间共享额度是另一套,不在本桥接范围。
+- **个人工作空间自动创建**:`migrate` / `grant` / `deduct` 会按需自动为用户建好个人工作空间(钱包挂其上),**Java 侧无需任何前置**,也**不会再返回 `PERSONAL_WORKSPACE_MISSING`**。
+- **负余额(欠款)**:`migrate` 接受负 `balance`,**原样迁入**(钱包余额为负 = 欠款)。余额为负时**禁止消费**(`deduct` 会被拒),直到下次 `grant` / 充值把余额抵扣回 ≥ 0 —— 入账时**优先抵欠款**,记账一致、不重复计欠款。
+- **安全(公网调用)**:跨云走公网,依赖 ① 全程 HTTPS ② `x-service-token`(未配置则 503)。强烈建议把 **Java 固定出口公网 IP 加网关 / WAF 白名单** + 该路径单独限流(请 Java 提供出口 IP)。
+- **待我们 / 运维处理**:① `INTERNAL_SERVICE_TOKEN` 下发到 `.com` / `.cn` 生产并与 Java 对齐;② 配置 Java 出口 IP 白名单。
 - 迁移是**单向**的(老库 → 新库);新库这边的扣 / 加不回写老 MySQL。

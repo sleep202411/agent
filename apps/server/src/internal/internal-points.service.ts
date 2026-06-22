@@ -1,4 +1,4 @@
-import { ConflictException, Injectable } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import {
   Prisma,
   WalletAccountStatus,
@@ -11,7 +11,7 @@ import {
   type WalletAccount,
 } from '@prisma/client';
 import { PrismaService } from '../infra/db/db.module';
-import { WalletLedgerService } from '../workspaces';
+import { WalletLedgerService, WorkspacesService } from '../workspaces';
 import type {
   DeductPointsInput,
   GrantPointsInput,
@@ -36,6 +36,7 @@ export class InternalPointsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly walletLedger: WalletLedgerService,
+    private readonly workspaces: WorkspacesService,
   ) {}
 
   /** Ingest the user's Java balance into PG exactly once; idempotent per user. */
@@ -61,14 +62,20 @@ export class InternalPointsService {
     // crash between marker-create and credit) credits exactly once; a different
     // balance on a later call dedupes to the first.
     let balance: bigint;
-    if (input.balance > 0) {
+    if (input.balance !== 0) {
       const account = await this.account(workspaceId);
-      const amount = BigInt(input.balance);
+      const isCredit = input.balance > 0;
+      // amount is the positive magnitude (postEntry requires amount > 0);
+      // availableDelta carries the sign.
+      const magnitude = BigInt(isCredit ? input.balance : -input.balance);
+      const signed = BigInt(input.balance);
       const posted = await this.walletLedger.postEntry({
         accountId: account.id,
-        entryType: WalletLedgerEntryType.credit,
-        amount,
-        availableDelta: amount,
+        entryType: isCredit
+          ? WalletLedgerEntryType.credit
+          : WalletLedgerEntryType.adjustment,
+        amount: magnitude,
+        availableDelta: signed,
         heldDelta: 0n,
         sourceType: 'points_migration',
         sourceId: userId,
@@ -76,13 +83,24 @@ export class InternalPointsService {
         actorUserId: userId,
         workspaceId,
         description: 'Legacy points migration',
-        reason: 'legacy_points_migration',
+        reason: isCredit
+          ? 'legacy_points_migration'
+          : 'legacy_points_migration_debt',
         metadata: { userId, migratedBalance: input.balance },
-        creditGrant: {
-          grantType: WalletCreditGrantType.migration,
-          expiresAt: null,
-          metadata: { userId },
-        },
+        ...(isCredit
+          ? {
+              creditGrant: {
+                grantType: WalletCreditGrantType.migration,
+                expiresAt: null,
+                metadata: { userId },
+              },
+            }
+          : {
+              // Carry a legacy negative/overdrawn balance: set it directly, no
+              // grant. The next credit (recharge/grant) pays the debt down first.
+              allowNegativeBalance: true,
+              skipGrantBookkeeping: true,
+            }),
       });
       balance = posted.account.availableBalance;
     } else {
@@ -184,21 +202,12 @@ export class InternalPointsService {
   // --- helpers -------------------------------------------------------------
 
   private async personalWorkspaceId(userId: string): Promise<string> {
-    const ws = await this.prisma.workspace.findFirst({
-      where: {
-        ownerUserId: userId,
-        type: WorkspaceType.personal,
-        deletedAt: null,
-      },
-      select: { id: true },
-    });
-    if (!ws) {
-      throw new ConflictException({
-        code: 'PERSONAL_WORKSPACE_MISSING',
-        msg: 'User has no personal workspace yet.',
-      });
-    }
-    return ws.id;
+    // Auto-provision the personal workspace if missing — pure legacy users who've
+    // never used the new platform don't have one yet, and we don't want migration
+    // to fail on that. Idempotent + advisory-locked; reuses the canonical
+    // workspace + owner-member upsert.
+    const workspace = await this.workspaces.ensurePersonalWorkspace({ userId });
+    return workspace.id;
   }
 
   private async account(workspaceId: string): Promise<WalletAccount> {

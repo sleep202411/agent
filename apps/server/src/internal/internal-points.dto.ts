@@ -4,10 +4,12 @@ const userId = z.string().trim().min(1).max(64);
 const idempotencyKey = z.string().trim().min(1).max(180);
 const reason = z.string().trim().max(500).optional();
 
-/** Ingest a user's current Java balance into the PG wallet. Idempotent per user. */
+/** Ingest a user's current Java balance into the PG wallet. Idempotent per user.
+ *  `balance` may be negative — a legacy overdrawn balance is carried as a debt
+ *  (the wallet goes negative; the next recharge/grant pays it down first). */
 export const MigratePointsSchema = z.object({
   userId,
-  balance: z.coerce.number().int().min(0),
+  balance: z.coerce.number().int(),
 });
 export type MigratePointsInput = z.infer<typeof MigratePointsSchema>;
 
