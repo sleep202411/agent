@@ -1522,6 +1522,51 @@ export class BillingService {
     }
   }
 
+  /**
+   * Bulk-sync every pending/failed provider binding (idempotent). Run after a
+   * seed/deploy to create the Airwallex product/price objects + populate
+   * providerPriceId across the whole catalog in one call — no manual per-binding
+   * clicks. Re-runnable: active bindings are not in the filter, so only
+   * sync_pending/sync_failed are (re)attempted; one binding failing is recorded
+   * and never aborts the batch.
+   */
+  async syncPendingProviderBindings() {
+    const bindings = await this.prisma.billingProviderPriceBinding.findMany({
+      where: {
+        status: {
+          in: [
+            BillingProviderBindingStatus.sync_pending,
+            BillingProviderBindingStatus.sync_failed,
+          ],
+        },
+        archivedAt: null,
+      },
+      select: { id: true },
+      orderBy: { createdAt: 'asc' },
+    });
+    const failures: Array<{ bindingId: string; error: string }> = [];
+    let synced = 0;
+    for (const binding of bindings) {
+      try {
+        await this.syncAdminProviderBinding(binding.id);
+        synced += 1;
+      } catch (err) {
+        const error =
+          err instanceof Error ? err.message : 'Provider sync failed.';
+        this.logger.warn(
+          `Provider binding sync failed for ${binding.id}: ${error}`,
+        );
+        failures.push({ bindingId: binding.id, error });
+      }
+    }
+    return {
+      total: bindings.length,
+      synced,
+      failed: failures.length,
+      failures,
+    };
+  }
+
   async listAdminPromotions(query: ListAdminBillingPromotionsQuery) {
     const search = query.q?.trim();
     const rows = await this.prisma.billingPromotion.findMany({

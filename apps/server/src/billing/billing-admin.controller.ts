@@ -363,6 +363,24 @@ export class BillingAdminController {
     return { code: 200, data };
   }
 
+  @RequireAdminPermissions(ADMIN_PERMISSION_KEYS.BillingWrite)
+  @Post('provider-bindings/sync-pending')
+  async syncPendingProviderBindings(
+    @CurrentAdmin() admin: AdminActor,
+    @Req() request: Request,
+  ) {
+    const data = await this.billing.syncPendingProviderBindings();
+    await this.audit(
+      admin,
+      request,
+      'admin.billing.provider_binding.sync_pending',
+      'billing_provider_price_binding',
+      'bulk',
+      { total: data.total, synced: data.synced, failed: data.failed },
+    );
+    return { code: 200, data };
+  }
+
   @RequireAdminPermissions(ADMIN_PERMISSION_KEYS.BillingRead)
   @Get('promotions')
   async listPromotions(

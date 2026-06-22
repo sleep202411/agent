@@ -10,9 +10,7 @@ export const ENTITLEMENT_PLAN_RANK = {
   pro: 30,
   studio: 40,
   enterprise: 90,
-  team_ultimate: 110,
-  team_creator: 120,
-  team_scale: 130,
+  team: 110,
   team_enterprise: 190,
 } as const;
 

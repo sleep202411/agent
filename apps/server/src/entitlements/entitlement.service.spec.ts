@@ -74,7 +74,7 @@ describe('EntitlementService queue limits', () => {
             grant({
               subjectType: BillingSubjectType.workspace,
               subjectId: 'workspace-1',
-              planKey: 'team_creator',
+              planKey: 'team',
             }),
           ])
           .mockResolvedValueOnce([]),
@@ -82,7 +82,7 @@ describe('EntitlementService queue limits', () => {
       billingMembershipPlan: {
         findMany: jest.fn().mockResolvedValueOnce([
           plan({
-            planKey: 'team_creator',
+            planKey: 'team',
             subjectType: BillingSubjectType.workspace,
             rank: 120,
             featureFlags: { sharedCredits: true },

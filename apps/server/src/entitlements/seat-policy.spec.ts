@@ -5,7 +5,7 @@ import {
 } from './seat-policy';
 
 const policy = (overrides: Partial<SeatPolicy> = {}): SeatPolicy => ({
-  planKey: 'team_creator',
+  planKey: 'team',
   includedSeats: 3,
   maxSeats: 3,
   seatOverageAllowed: false,

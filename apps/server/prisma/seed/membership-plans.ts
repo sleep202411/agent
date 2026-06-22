@@ -2,7 +2,9 @@ import {
   BillingMembershipPlanStatus,
   BillingPriceInterval,
   BillingProductType,
+  BillingProviderBindingStatus,
   BillingSubjectType,
+  PaymentProvider,
   type Prisma,
   type PrismaClient,
 } from '@prisma/client';
@@ -38,7 +40,20 @@ type MembershipPriceSeed = {
 
 const PLAN_SEED_SOURCE = 'seed.membership_plans.v1';
 const PRICE_SEED_SOURCE = 'seed.membership_prices.v1';
+const BINDING_SEED_SOURCE = 'seed.provider_bindings.v1';
 const SGD_PER_USD = 1.2886;
+
+// Plans that existed in earlier seeds but are no longer offered. The seed
+// archives them (+ their prices + provider bindings) so they neither display
+// nor check out, without deleting historical rows. 2026-06-22: collapsed the
+// individual lineup to Basic/Standard/Pro (dropped Studio) and the team lineup
+// to a single self-serve Team tier (dropped Ultimate/Creator/Scale).
+const retiredPlanKeys = [
+  'studio',
+  'team_ultimate',
+  'team_creator',
+  'team_scale',
+];
 
 const individualPlans: MembershipPlanSeed[] = [
   {
@@ -147,42 +162,6 @@ const individualPlans: MembershipPlanSeed[] = [
     metadata: { source: PLAN_SEED_SOURCE },
   },
   {
-    planKey: 'studio',
-    productType: BillingProductType.membership_plan,
-    subjectType: BillingSubjectType.user,
-    status: BillingMembershipPlanStatus.active,
-    rank: 40,
-    name: 'Studio',
-    description: 'Individual studio plan for sustained production volume.',
-    includedComputeCredits: 18000n,
-    includedSeats: 1,
-    maxSeats: 1,
-    seatOverageAllowed: false,
-    topupDiscountBps: 1500,
-    featureFlags: {
-      storyOs: 'full',
-      privateGenerations: true,
-      commercialUse: true,
-      prioritySupport: true,
-      advancedWorkflows: true,
-    },
-    limits: {
-      queuePriority: 2,
-      concurrentJobs: 5,
-      queuedJobs: 16,
-      messagesPerConversation: 1000,
-      chatHistoryDays: 365,
-      approximateImagesPerMonth: 600,
-      approximateVideosPerMonth: 240,
-    },
-    marketing: {
-      audience: 'High-volume solo studios',
-      badge: 'New',
-      order: 40,
-    },
-    metadata: { source: PLAN_SEED_SOURCE },
-  },
-  {
     planKey: 'enterprise',
     productType: BillingProductType.membership_plan,
     subjectType: BillingSubjectType.user,
@@ -216,56 +195,30 @@ const individualPlans: MembershipPlanSeed[] = [
   },
 ];
 
+// Team membership is the 4th tier of the unified studio lineup, but stays a
+// workspace-subject plan (it grants a team workspace + shared compute pool +
+// seats + member management). A single self-serve Team tier + a sales-only
+// Enterprise Team tier.
 const teamPlans: MembershipPlanSeed[] = [
   {
-    planKey: 'team_ultimate',
+    planKey: 'team',
     productType: BillingProductType.team_membership_plan,
     subjectType: BillingSubjectType.workspace,
     status: BillingMembershipPlanStatus.active,
-    rank: 110,
-    name: 'Teams Ultimate',
+    rank: 40,
+    name: 'Team',
     description:
-      'Team plan for small creative partners standardizing workflows.',
-    includedComputeCredits: 16000n,
-    includedSeats: 6,
-    maxSeats: 6,
+      'Team workspace plan: shared compute credits, up to 8 seats, and member management.',
+    includedComputeCredits: 22500n,
+    includedSeats: 8,
+    maxSeats: 8,
     seatOverageAllowed: false,
     topupDiscountBps: 1000,
     featureFlags: {
+      storyOs: 'full',
       sharedCredits: true,
-      privateGenerations: true,
-      commercialUse: true,
-      prioritySupport: true,
-    },
-    limits: {
-      queuePriority: 3,
-      concurrentJobs: 6,
-      queuedJobs: 24,
-      approximateImagesPerMonth: 3200,
-      sharedWorkspaceStorageGb: 100,
-    },
-    marketing: {
-      audience: 'Creative partners',
-      badge: null,
-      order: 110,
-    },
-    metadata: { source: PLAN_SEED_SOURCE },
-  },
-  {
-    planKey: 'team_creator',
-    productType: BillingProductType.team_membership_plan,
-    subjectType: BillingSubjectType.workspace,
-    status: BillingMembershipPlanStatus.active,
-    rank: 120,
-    name: 'Teams Creator',
-    description: 'Team plan for agencies maximizing production throughput.',
-    includedComputeCredits: 100000n,
-    includedSeats: 20,
-    maxSeats: 20,
-    seatOverageAllowed: false,
-    topupDiscountBps: 1500,
-    featureFlags: {
-      sharedCredits: true,
+      teamWorkspace: true,
+      memberManagement: true,
       privateGenerations: true,
       commercialUse: true,
       prioritySupport: true,
@@ -273,50 +226,16 @@ const teamPlans: MembershipPlanSeed[] = [
     },
     limits: {
       queuePriority: 2,
-      concurrentJobs: 16,
-      queuedJobs: 64,
-      approximateImagesPerMonth: 20000,
+      concurrentJobs: 8,
+      queuedJobs: 32,
+      messagesPerConversation: 1000,
+      chatHistoryDays: 365,
       sharedWorkspaceStorageGb: 500,
     },
     marketing: {
-      audience: 'High-output agencies',
-      badge: null,
-      order: 120,
-    },
-    metadata: { source: PLAN_SEED_SOURCE },
-  },
-  {
-    planKey: 'team_scale',
-    productType: BillingProductType.team_membership_plan,
-    subjectType: BillingSubjectType.workspace,
-    status: BillingMembershipPlanStatus.active,
-    rank: 130,
-    name: 'Teams Scale',
-    description: 'Team plan for large teams institutionalizing AI production.',
-    includedComputeCredits: 215000n,
-    includedSeats: 40,
-    maxSeats: 40,
-    seatOverageAllowed: false,
-    topupDiscountBps: 2000,
-    featureFlags: {
-      sharedCredits: true,
-      privateGenerations: true,
-      commercialUse: true,
-      prioritySupport: true,
-      advancedWorkflows: true,
-      governanceControls: true,
-    },
-    limits: {
-      queuePriority: 1,
-      concurrentJobs: 32,
-      queuedJobs: 128,
-      approximateImagesPerMonth: 43000,
-      sharedWorkspaceStorageGb: 1000,
-    },
-    marketing: {
-      audience: 'Scaling agencies',
-      badge: 'Best for agencies',
-      order: 130,
+      audience: 'Teams & studios',
+      badge: 'Team',
+      order: 40,
     },
     metadata: { source: PLAN_SEED_SOURCE },
   },
@@ -416,32 +335,13 @@ const defaultUsdPrices = [
     annualOriginalMinor: 144000n,
   },
   {
-    planKey: 'studio',
-    monthlyAutoRenewMinor: 19900n,
-    monthlyOriginalMinor: 22000n,
-    annualMinor: 199000n,
-    annualOriginalMinor: 264000n,
-  },
-  {
-    planKey: 'team_ultimate',
-    monthlyAutoRenewMinor: 3900n,
-    monthlyOriginalMinor: 4700n,
-    annualMinor: 39000n,
-    annualOriginalMinor: 56400n,
-  },
-  {
-    planKey: 'team_creator',
-    monthlyAutoRenewMinor: 19900n,
-    monthlyOriginalMinor: 23400n,
-    annualMinor: 199000n,
-    annualOriginalMinor: 280800n,
-  },
-  {
-    planKey: 'team_scale',
-    monthlyAutoRenewMinor: 39900n,
-    monthlyOriginalMinor: 47000n,
-    annualMinor: 399000n,
-    annualOriginalMinor: 564000n,
+    // Team = single self-serve tier: $270/mo (list $300, auto-renew 0.9),
+    // $2,700/yr (annual = list $300 x 12 x 0.75). 8 seats, 22,500 shared credits.
+    planKey: 'team',
+    monthlyAutoRenewMinor: 27000n,
+    monthlyOriginalMinor: 30000n,
+    annualMinor: 270000n,
+    annualOriginalMinor: 360000n,
   },
   {
     // 9.99/mo base; annual = 10 months (2 free). Admin discounts ride on top via
@@ -488,6 +388,74 @@ export async function seedMembershipPlans(prisma: PrismaClient) {
   const planByKey = new Map(plans.map((plan) => [plan.planKey, plan]));
   for (const price of buildDefaultPriceSeeds(planByKey)) {
     await seedMembershipPrice(prisma, price);
+  }
+
+  // Order matters: archive retired plans/prices BEFORE seeding bindings so the
+  // binding pass never (re)binds a price that is on its way out.
+  await retireRemovedPlans(prisma);
+  await seedAirwallexProviderBindings(prisma);
+}
+
+// Archive plans removed from the lineup, plus their prices and provider
+// bindings. Idempotent: no-ops when the rows are absent (fresh DB) or already
+// archived. Never deletes — keeps historical rows for audit/refunds.
+async function retireRemovedPlans(prisma: PrismaClient) {
+  const now = new Date();
+  for (const planKey of retiredPlanKeys) {
+    await prisma.billingMembershipPlan.updateMany({
+      where: { planKey, archivedAt: null },
+      data: {
+        status: BillingMembershipPlanStatus.archived,
+        archivedAt: now,
+      },
+    });
+    const prices = await prisma.billingPrice.findMany({
+      where: { grantsPlanKey: planKey, archivedAt: null },
+      select: { id: true },
+    });
+    const priceIds = prices.map((price) => price.id);
+    if (priceIds.length === 0) continue;
+    await prisma.billingProviderPriceBinding.updateMany({
+      where: { priceId: { in: priceIds }, archivedAt: null },
+      data: { status: BillingProviderBindingStatus.inactive, archivedAt: now },
+    });
+    await prisma.billingPrice.updateMany({
+      where: { id: { in: priceIds } },
+      data: { isActive: false, archivedAt: now },
+    });
+  }
+}
+
+// Create a sync_pending Airwallex provider binding for every active, non-archived
+// USD price that requires one (skips SGD — .com is USD-only — and sales-only
+// plans, which have no seeded price). The actual Airwallex product/price objects
+// are created later by POST /admin/billing/provider-bindings/sync-pending, which
+// fills providerProductId/providerPriceId and flips status -> active. Idempotent:
+// never clobbers an existing (active/synced) binding.
+async function seedAirwallexProviderBindings(prisma: PrismaClient) {
+  const prices = await prisma.billingPrice.findMany({
+    where: { currency: 'USD', isActive: true, archivedAt: null },
+    select: { id: true, metadata: true },
+  });
+  for (const price of prices) {
+    const meta = price.metadata as { providerBindingRequired?: unknown } | null;
+    if (!meta || meta.providerBindingRequired !== true) continue;
+    const existing = await prisma.billingProviderPriceBinding.findFirst({
+      where: {
+        priceId: price.id,
+        provider: PaymentProvider.airwallex,
+        archivedAt: null,
+      },
+    });
+    if (existing) continue;
+    await prisma.billingProviderPriceBinding.create({
+      data: {
+        priceId: price.id,
+        provider: PaymentProvider.airwallex,
+        status: BillingProviderBindingStatus.sync_pending,
+        metadata: { source: BINDING_SEED_SOURCE },
+      },
+    });
   }
 }
 
