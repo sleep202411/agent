@@ -2,15 +2,14 @@
 
 import { useState } from "react";
 import { useTranslations } from "next-intl";
-import { IconReceipt } from "@tabler/icons-react";
-import { Button } from "@/components/ui/button";
 import { useWorkspace } from "@/app/_components/workspace-context";
 import { SubscriptionDialog } from "@/app/_components/subscription-dialog";
-import { PageHeader, Panel, TeamBadge } from "../_components/settings-ui";
+import { PageHeader, TeamBadge } from "../_components/settings-ui";
 import { TeamCreditsPanel } from "../_components/team-credits-panel";
 import { RedeemVoucherPanel } from "../_components/redeem-voucher-panel";
 import { CampaignsPanel } from "../_components/campaigns-panel";
 import { CheckInCard } from "../_components/check-in-card";
+import { CurrentPlanPanel } from "../_components/current-plan-panel";
 
 /**
  * Plan & Billing — the compute-credit balance + recharge (and, for teams, the
@@ -40,17 +39,7 @@ export default function BillingSettingsPage() {
 
       <RedeemVoucherPanel />
 
-      <Panel
-        title={t("yourSubscription")}
-        icon={<IconReceipt className="size-4 text-muted-foreground" />}
-      >
-        <div className="flex items-center justify-between gap-4">
-          <p className="text-sm text-muted-foreground">{t("subscriptionDescription")}</p>
-          <Button className="shrink-0" onClick={() => setSubscriptionOpen(true)}>
-            {t("managePlan")}
-          </Button>
-        </div>
-      </Panel>
+      <CurrentPlanPanel onManagePlan={() => setSubscriptionOpen(true)} />
 
       <SubscriptionDialog open={subscriptionOpen} onOpenChange={setSubscriptionOpen} />
     </main>

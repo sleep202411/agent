@@ -976,3 +976,10 @@ export const BillingOrderParamsSchema = z.object({
   orderId: z.string().uuid(),
 });
 export type BillingOrderParams = z.infer<typeof BillingOrderParamsSchema>;
+
+export const BillingSubscriptionParamsSchema = z.object({
+  id: z.string().uuid(),
+});
+export type BillingSubscriptionParams = z.infer<
+  typeof BillingSubscriptionParamsSchema
+>;

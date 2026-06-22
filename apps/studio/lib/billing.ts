@@ -69,6 +69,51 @@ export function createBillingCheckout(input: CreateBillingCheckoutInput) {
   return api.post<BillingCheckoutResult>("/aurora/billing/checkout", { data: input });
 }
 
+// ───────────────────────── Current plan + subscription ─────────────────────
+
+export interface EntitlementSnapshot {
+  planKey: string;
+  rank: number;
+  source: string;
+  status: "active" | "expired" | string;
+  expiresAt: string | null;
+  features: Record<string, unknown>;
+  limits: Record<string, unknown>;
+}
+
+export interface ActiveSubscription {
+  id: string;
+  status: "incomplete" | "active" | "past_due" | "canceled" | "expired" | string;
+  planKey: string | null;
+  productType: string;
+  subjectType: "user" | "workspace" | string;
+  currency: string;
+  amountMinor: string;
+  interval: "one_time" | "month" | "year" | string;
+  currentPeriodEnd: string | null;
+  cancelAtPeriodEnd: boolean;
+  canceledAt: string | null;
+  endedAt: string | null;
+}
+
+export interface MyEntitlement {
+  entitlement: EntitlementSnapshot;
+  /** The active Nest subscription backing the plan, or null (e.g. a legacy VIP). */
+  subscription: ActiveSubscription | null;
+}
+
+/** The caller's current plan + the subscription that backs it (for renew/cancel). */
+export function getMyEntitlement() {
+  return api.get<MyEntitlement>("/aurora/billing/entitlement/me");
+}
+
+/** Cancel a recurring subscription. Access continues until currentPeriodEnd. */
+export function cancelSubscription(subscriptionId: string) {
+  return api.post<ActiveSubscription>(`/aurora/billing/subscriptions/${subscriptionId}/cancel`, {
+    data: {},
+  });
+}
+
 export interface RedeemVoucherResult {
   granted: {
     grantType: "compute_credits";

@@ -115,9 +115,27 @@ export interface CreateProviderRefundResult {
   raw: Record<string, unknown>;
 }
 
+export interface CancelSubscriptionInput {
+  requestId: string;
+  providerSubscriptionId: string;
+  /**
+   * How the provider settles the current cycle's fees on cancellation.
+   * NONE = no refund, the member keeps the period they already paid for and the
+   * subscription stops renewing (our default "cancel at period end"). PRORATED /
+   * ALL refund unused time and are only used when paired with a money refund.
+   */
+  prorationBehavior: 'NONE' | 'PRORATED' | 'ALL';
+}
+
+export interface CancelSubscriptionResult {
+  providerStatus?: string | null;
+  raw: Record<string, unknown>;
+}
+
 export interface PaymentProviderCapabilities {
   hostedCheckout: boolean;
   subscriptionCheckout: boolean;
+  subscriptionCancel: boolean;
   paymentIntent: boolean;
   priceSync: boolean;
   couponSync: boolean;
@@ -146,6 +164,13 @@ export interface PaymentProviderAdapter {
   createRefund?(
     input: CreateProviderRefundInput,
   ): Promise<CreateProviderRefundResult>;
+  /**
+   * Cancel a recurring subscription so it stops renewing. Optional: only
+   * providers that sell subscriptions implement it.
+   */
+  cancelSubscription?(
+    input: CancelSubscriptionInput,
+  ): Promise<CancelSubscriptionResult>;
   verifyWebhook(input: {
     rawBody: Buffer;
     timestamp?: string | string[];
@@ -157,6 +182,7 @@ export interface PaymentProviderAdapter {
 const unsupportedCapabilities: PaymentProviderCapabilities = {
   hostedCheckout: false,
   subscriptionCheckout: false,
+  subscriptionCancel: false,
   paymentIntent: false,
   priceSync: false,
   couponSync: false,
@@ -187,6 +213,10 @@ export class UnsupportedPaymentProvider implements PaymentProviderAdapter {
 
   createRefund(): Promise<CreateProviderRefundResult> {
     return Promise.reject(this.unavailable('refund'));
+  }
+
+  cancelSubscription(): Promise<CancelSubscriptionResult> {
+    return Promise.reject(this.unavailable('subscription cancellation'));
   }
 
   verifyWebhook(): ProviderWebhookVerification {

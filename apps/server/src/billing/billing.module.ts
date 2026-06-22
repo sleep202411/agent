@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { AdminAuthModule } from '../admin-auth';
+import { EntitlementsModule } from '../entitlements';
 import { WorkspacesModule } from '../workspaces';
 import { BillingAdminController } from './billing-admin.controller';
 import { BillingController } from './billing.controller';
@@ -12,7 +13,7 @@ import { CampaignService } from './campaign.service';
 import { CheckInService } from './check-in.service';
 
 @Module({
-  imports: [AdminAuthModule, WorkspacesModule],
+  imports: [AdminAuthModule, WorkspacesModule, EntitlementsModule],
   controllers: [BillingController, BillingAdminController],
   providers: [
     BillingService,

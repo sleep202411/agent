@@ -7,6 +7,8 @@ import {
 import { PaymentProvider } from '@prisma/client';
 import { createHmac, randomUUID, timingSafeEqual } from 'crypto';
 import type {
+  CancelSubscriptionInput,
+  CancelSubscriptionResult,
   CreateHostedCheckoutInput,
   CreatePaymentIntentInput,
   CreatePaymentIntentResult,
@@ -60,6 +62,12 @@ interface AirwallexRefundResponse {
   [key: string]: unknown;
 }
 
+interface AirwallexSubscriptionResponse {
+  id?: string;
+  status?: string;
+  [key: string]: unknown;
+}
+
 interface AirwallexPaymentIntentResponse {
   id?: string;
   client_secret?: string;
@@ -73,6 +81,7 @@ export class AirwallexProvider implements PaymentProviderAdapter {
   readonly capabilities = {
     hostedCheckout: true,
     subscriptionCheckout: true,
+    subscriptionCancel: true,
     paymentIntent: true,
     priceSync: true,
     couponSync: true,
@@ -367,6 +376,30 @@ export class AirwallexProvider implements PaymentProviderAdapter {
       providerPaymentIntentId:
         refund.payment_intent_id ?? input.providerPaymentIntentId,
       raw: refund,
+    };
+  }
+
+  async cancelSubscription(
+    input: CancelSubscriptionInput,
+  ): Promise<CancelSubscriptionResult> {
+    const token = await this.getAccessToken();
+    // POST /api/v1/subscriptions/{id}/cancel — stops future renewals.
+    // proration_behavior NONE = no refund; the member keeps the period already
+    // paid for (covered by our EntitlementGrant.endsAt) and is not charged again.
+    const subscription = await this.request<AirwallexSubscriptionResponse>(
+      `/api/v1/subscriptions/${input.providerSubscriptionId}/cancel`,
+      {
+        method: 'POST',
+        token,
+        body: {
+          request_id: input.requestId,
+          proration_behavior: input.prorationBehavior,
+        },
+      },
+    );
+    return {
+      providerStatus: subscription.status ?? null,
+      raw: subscription,
     };
   }
 

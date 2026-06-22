@@ -17,6 +17,7 @@ import { ZodValidationPipe } from '../common/zod.pipe';
 import { BillingService } from './billing.service';
 import {
   BillingOrderParamsSchema,
+  BillingSubscriptionParamsSchema,
   CreateBillingCheckoutSchema,
   CreateComputePointTopupSchema,
   CreateCustomRechargeSchema,
@@ -25,6 +26,7 @@ import {
   ListWalletLedgerQuerySchema,
   WalletDailyUsageQuerySchema,
   type BillingOrderParams,
+  type BillingSubscriptionParams,
   type CreateBillingCheckoutInput,
   type CreateComputePointTopupInput,
   type CreateCustomRechargeInput,
@@ -192,6 +194,29 @@ export class BillingController {
     return {
       code: 200,
       data: await this.billing.getOrder(user, params.orderId),
+    };
+  }
+
+  @Post('subscriptions/:id/cancel')
+  async cancelSubscription(
+    @CurrentUser() user: AuthUser,
+    @Param(new ZodValidationPipe(BillingSubscriptionParamsSchema))
+    params: BillingSubscriptionParams,
+  ) {
+    return {
+      code: 200,
+      data: await this.billing.cancelSubscription(user, params.id),
+    };
+  }
+
+  @Get('entitlement/me')
+  async getMyEntitlement(
+    @CurrentUser() user: AuthUser,
+    @Headers('x-fizz-workspace-id') workspaceId: string | undefined,
+  ) {
+    return {
+      code: 200,
+      data: await this.billing.getMyEntitlement(user, workspaceId ?? null),
     };
   }
 

@@ -63,6 +63,7 @@ import { createHash, randomUUID } from 'crypto';
 import type { AuthUser } from '../auth';
 import { CURRENT_CELL } from '../common/region';
 import { PrismaService } from '../infra/db/db.module';
+import { EntitlementService } from '../entitlements/entitlement.service';
 import { WalletLedgerService } from '../workspaces';
 import { WorkspacePermissionService } from '../workspaces/workspace-permission.service';
 import type {
@@ -264,6 +265,9 @@ type SubscriptionRenewalMatch = {
   orderId: string;
   paymentIntentId: string;
 };
+type SubscriptionLifecycleMatch = {
+  subscriptionId: string;
+};
 
 @Injectable()
 export class BillingService {
@@ -275,6 +279,7 @@ export class BillingService {
     private readonly permissions: WorkspacePermissionService,
     private readonly walletLedger: WalletLedgerService,
     private readonly ledger: BillingLedgerService,
+    private readonly entitlements: EntitlementService,
   ) {}
 
   async listPrices(query: ListBillingPricesQuery) {
@@ -2225,6 +2230,27 @@ export class BillingService {
         providerResult,
       ),
     );
+
+    // Stop the recurring mandate at the provider (the refund returns the money;
+    // NONE proration avoids a double refund). Best-effort: the subscription is
+    // already marked canceled in our DB and renewal is guarded against canceled
+    // subscriptions, so a provider hiccup here cannot re-charge silently — but
+    // log it loudly for follow-up.
+    if (prepared.cancelProviderSubscriptionId && adapter.cancelSubscription) {
+      try {
+        await adapter.cancelSubscription({
+          requestId: randomUUID(),
+          providerSubscriptionId: prepared.cancelProviderSubscriptionId,
+          prorationBehavior: 'NONE',
+        });
+      } catch (err) {
+        this.logger.error(
+          `Refund ${prepared.refund.id}: provider subscription cancel failed for ${prepared.cancelProviderSubscriptionId}`,
+          err instanceof Error ? err.stack : String(err),
+        );
+      }
+    }
+
     return this.adminRefundDto(submitted);
   }
 
@@ -3154,6 +3180,149 @@ export class BillingService {
     };
   }
 
+  /**
+   * Cancel a recurring subscription. Stops the provider's renewal mandate (no
+   * refund — the member keeps the period already paid for, which their
+   * EntitlementGrant.endsAt already covers) and marks the subscription canceled.
+   * Idempotent: a subscription already canceled/expired returns its current
+   * state. The membership entitlement is NOT revoked here — access lapses
+   * naturally at endsAt. Use the refund path to revoke + reclaim immediately.
+   */
+  async cancelSubscription(user: AuthUser, subscriptionId: string) {
+    const subscription = await this.prisma.billingSubscription.findUnique({
+      where: { id: subscriptionId },
+      include: { price: { include: { item: true } } },
+    });
+    if (!subscription) {
+      throw new NotFoundException({
+        code: 'BILLING_SUBSCRIPTION_NOT_FOUND',
+        msg: 'Subscription not found.',
+      });
+    }
+
+    // Authz: workspace subscriptions need the workspace billing role (same as
+    // buying); personal subscriptions are cancelable only by their owner.
+    if (subscription.subjectType === BillingSubjectType.workspace) {
+      if (!subscription.workspaceId) {
+        throw new ConflictException({
+          code: 'BILLING_SUBSCRIPTION_WORKSPACE_MISSING',
+          msg: 'Workspace subscription has no workspace.',
+        });
+      }
+      await this.permissions.requireWorkspaceRole(
+        user.userId,
+        subscription.workspaceId,
+        WorkspaceMemberRole.billing,
+      );
+    } else if (subscription.userId !== user.userId) {
+      throw new ForbiddenException({
+        code: 'BILLING_SUBSCRIPTION_FORBIDDEN',
+        msg: 'You cannot cancel this subscription.',
+      });
+    }
+
+    if (
+      subscription.status === BillingSubscriptionStatus.canceled ||
+      subscription.status === BillingSubscriptionStatus.expired
+    ) {
+      return this.subscriptionDto(subscription);
+    }
+
+    // Stop the recurring mandate at the provider. NONE = no refund; the paid
+    // period stays valid. Skipped only if no provider subscription is on file.
+    if (subscription.providerSubscriptionId) {
+      const adapter = this.providerRegistry.get(subscription.provider);
+      if (!adapter.cancelSubscription) {
+        throw new ServiceUnavailableException({
+          code: 'BILLING_SUBSCRIPTION_CANCEL_UNSUPPORTED',
+          msg: `Provider "${subscription.provider}" cannot cancel subscriptions in this deployment.`,
+        });
+      }
+      await adapter.cancelSubscription({
+        requestId: randomUUID(),
+        providerSubscriptionId: subscription.providerSubscriptionId,
+        prorationBehavior: 'NONE',
+      });
+    }
+
+    const now = new Date();
+    const updated = await this.prisma.billingSubscription.update({
+      where: { id: subscription.id },
+      data: {
+        status: BillingSubscriptionStatus.canceled,
+        cancelAtPeriodEnd: true,
+        canceledAt: now,
+        endedAt: subscription.currentPeriodEnd ?? now,
+        version: { increment: 1 },
+      },
+      include: { price: { include: { item: true } } },
+    });
+    return this.subscriptionDto(updated);
+  }
+
+  /**
+   * The caller's own entitlement snapshot (current plan / features / limits)
+   * plus the active Nest subscription that backs it (for "renews on X" + the
+   * cancel affordance). subscription is null for Java-VIP / auth-claim plans
+   * that have no /aurora subscription — the UI then shows the plan with no
+   * cancel button, which is correct. Considers the caller's personal pot and
+   * the active workspace (header), so a team member sees the team subscription.
+   */
+  async getMyEntitlement(user: AuthUser, workspaceId?: string | null) {
+    const entitlement = await this.entitlements.resolveForUser(user, {
+      workspaceId: workspaceId ?? null,
+    });
+
+    const subjects: Prisma.BillingSubscriptionWhereInput[] = [
+      { subjectType: BillingSubjectType.user, subjectId: user.userId },
+    ];
+    if (workspaceId) {
+      subjects.push({
+        subjectType: BillingSubjectType.workspace,
+        subjectId: workspaceId,
+      });
+    }
+    const subscription = await this.prisma.billingSubscription.findFirst({
+      where: {
+        OR: subjects,
+        status: {
+          in: [
+            BillingSubscriptionStatus.active,
+            BillingSubscriptionStatus.past_due,
+          ],
+        },
+      },
+      orderBy: { updatedAt: 'desc' },
+      include: { price: { include: { item: true } } },
+    });
+
+    return {
+      entitlement,
+      subscription: subscription ? this.subscriptionDto(subscription) : null,
+    };
+  }
+
+  private subscriptionDto(
+    subscription: BillingSubscription & {
+      price: BillingPrice & { item: BillingCatalogItem };
+    },
+  ) {
+    return {
+      id: subscription.id,
+      status: subscription.status,
+      planKey: subscription.planKey,
+      productType: subscription.price.item.productType,
+      subjectType: subscription.subjectType,
+      currency: subscription.price.currency,
+      amountMinor: subscription.price.amountMinor.toString(),
+      interval: subscription.price.interval,
+      currentPeriodEnd: subscription.currentPeriodEnd?.toISOString() ?? null,
+      cancelAtPeriodEnd: subscription.cancelAtPeriodEnd,
+      canceledAt: subscription.canceledAt?.toISOString() ?? null,
+      endedAt: subscription.endedAt?.toISOString() ?? null,
+    };
+  }
+
   async getOrder(user: AuthUser, orderId: string) {
     const order = await this.prisma.billingOrder.findFirst({
       where: { id: orderId },
@@ -3315,8 +3484,17 @@ export class BillingService {
                 payload,
               )
             : null;
+        const lifecycleMatch =
+          !match && !refundMatch && !renewalMatch
+            ? await this.tryApplySubscriptionLifecycleEvent(
+                tx,
+                providerEvent,
+                eventType,
+                payload,
+              )
+            : null;
 
-        if (!match && !refundMatch && !renewalMatch) {
+        if (!match && !refundMatch && !renewalMatch && !lifecycleMatch) {
           return tx.billingPaymentProviderEvent.update({
             where: { id: providerEvent.id },
             data: {
@@ -3517,6 +3695,14 @@ export class BillingService {
       },
     });
     if (!subscription) return null;
+    // A canceled/expired subscription must never re-grant on a stray renewal
+    // webhook (e.g. a refund that stopped the mandate, or a provider race).
+    if (
+      subscription.status === BillingSubscriptionStatus.canceled ||
+      subscription.status === BillingSubscriptionStatus.expired
+    ) {
+      return null;
+    }
     if (!subscription.price.grantsPlanKey) return null;
     if (subscription.price.interval === BillingPriceInterval.one_time) {
       return null;
@@ -3673,6 +3859,60 @@ export class BillingService {
       payload,
     );
     return { orderId: order.id, paymentIntentId: intent.id };
+  }
+
+  /**
+   * Apply a terminal subscription-lifecycle event (subscription.cancelled /
+   * .expired / .deactivated). These carry no payment intent, so without this
+   * they fall through to 'ignored' and the BillingSubscription is stuck active
+   * forever — poisoning the renewal/grace paths and admin reporting. The
+   * membership EntitlementGrant is intentionally left alone (access lapses at
+   * endsAt); this only corrects the subscription's own state. Idempotent.
+   */
+  private async tryApplySubscriptionLifecycleEvent(
+    tx: Prisma.TransactionClient,
+    providerEvent: BillingPaymentProviderEvent,
+    eventType: string,
+    payload: Record<string, unknown>,
+  ): Promise<SubscriptionLifecycleMatch | null> {
+    const targetStatus = subscriptionLifecycleStatus(eventType);
+    if (!targetStatus) return null;
+
+    const providerSubscriptionId =
+      stringAt(payload, ['data', 'subscription_id']) ??
+      stringAt(payload, ['data', 'subscription', 'id']) ??
+      // For a subscription.* event the resource (data.id) IS the subscription.
+      stringAt(payload, ['data', 'id']);
+    if (!providerSubscriptionId) return null;
+
+    const subscription = await tx.billingSubscription.findFirst({
+      where: { provider: providerEvent.provider, providerSubscriptionId },
+    });
+    if (!subscription) return null;
+
+    // Already terminal → idempotent; still a MATCH so the event is not 'ignored'.
+    if (
+      subscription.status === BillingSubscriptionStatus.canceled ||
+      subscription.status === BillingSubscriptionStatus.expired
+    ) {
+      return { subscriptionId: subscription.id };
+    }
+
+    const now = new Date();
+    await tx.billingSubscription.update({
+      where: { id: subscription.id },
+      data: {
+        status: targetStatus,
+        cancelAtPeriodEnd: true,
+        canceledAt:
+          targetStatus === BillingSubscriptionStatus.canceled
+            ? (subscription.canceledAt ?? now)
+            : subscription.canceledAt,
+        endedAt: subscription.currentPeriodEnd ?? now,
+        version: { increment: 1 },
+      },
+    });
+    return { subscriptionId: subscription.id };
   }
 
   private async applyProviderRefundEvent(
@@ -4228,7 +4468,11 @@ export class BillingService {
     tx: Prisma.TransactionClient,
     adminId: string,
     input: CreateAdminBillingRefundInput,
-  ): Promise<{ refund: BillingRefund; providerPaymentIntentId: string }> {
+  ): Promise<{
+    refund: BillingRefund;
+    providerPaymentIntentId: string;
+    cancelProviderSubscriptionId: string | null;
+  }> {
     await tx.$executeRaw`
       SELECT pg_advisory_xact_lock(hashtext(${`billing:order:${input.orderId}`})::bigint)
     `;
@@ -4316,7 +4560,48 @@ export class BillingService {
       },
     });
 
-    return { refund: preparedRefund, providerPaymentIntentId };
+    // Refunding a membership must also STOP the recurring mandate, or Airwallex
+    // keeps charging and the next renewal webhook re-grants the just-refunded
+    // benefit. Mark our subscription canceled in-tx; the provider cancel call
+    // happens outside the tx (returned id below). Access ends now because the
+    // grant was just revoked, so this is an immediate cancel (not period-end).
+    let cancelProviderSubscriptionId: string | null = null;
+    if (order.price.grantsPlanKey) {
+      const subscription = await tx.billingSubscription.findFirst({
+        where: {
+          provider: refund.provider,
+          subjectType: order.subjectType,
+          subjectId: order.subjectId,
+          priceId: order.priceId,
+          status: {
+            notIn: [
+              BillingSubscriptionStatus.canceled,
+              BillingSubscriptionStatus.expired,
+            ],
+          },
+        },
+      });
+      if (subscription) {
+        const now = new Date();
+        await tx.billingSubscription.update({
+          where: { id: subscription.id },
+          data: {
+            status: BillingSubscriptionStatus.canceled,
+            cancelAtPeriodEnd: false,
+            canceledAt: now,
+            endedAt: now,
+            version: { increment: 1 },
+          },
+        });
+        cancelProviderSubscriptionId = subscription.providerSubscriptionId;
+      }
+    }
+
+    return {
+      refund: preparedRefund,
+      providerPaymentIntentId,
+      cancelProviderSubscriptionId,
+    };
   }
 
   private async reserveRefundBenefitsTx(
@@ -7301,6 +7586,29 @@ function isPaymentFailedEvent(
     normalizedStatus === 'CANCELED' ||
     normalizedStatus === 'EXPIRED'
   );
+}
+
+/**
+ * Terminal subscription-lifecycle events (no payment intent attached). Maps a
+ * standalone `subscription.*` event to the BillingSubscription status it should
+ * land in. Returns null for non-terminal subscription events (created/updated/
+ * activated) and for anything that isn't a subscription event.
+ */
+function subscriptionLifecycleStatus(
+  eventType: string,
+): BillingSubscriptionStatus | null {
+  if (!eventType.startsWith('subscription.')) return null;
+  if (
+    eventType === 'subscription.cancelled' ||
+    eventType === 'subscription.canceled' ||
+    eventType === 'subscription.deactivated'
+  ) {
+    return BillingSubscriptionStatus.canceled;
+  }
+  if (eventType === 'subscription.expired') {
+    return BillingSubscriptionStatus.expired;
+  }
+  return null;
 }
 
 function billingOrderGrantType(order: OrderWithPrice): WalletCreditGrantType {
