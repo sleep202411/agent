@@ -1,7 +1,6 @@
-# 新闻资讯模块 — 后端开发需求文档(交付 Java）
+# 新闻资讯模块 — Java后端开发需求文档
 
 > 状态:admin-ui 前端 **UI/UX 已完成**(列表 + 新建/编辑 + 多语言),当前由内存 mock 驱动(`news-store.ts`),后端接口待 Java 实现。
-> 事实来源(契约以此为准):`apps/admin-ui/components/admin/news/` —— `types.ts`(模型/枚举/规则)、`news-store.ts`(接口意图)、`news-editor.tsx`(字段/校验)、`news-list-page.tsx`(筛选/列/统计)。
 
 ## 1. 背景与目标
 
@@ -52,7 +51,7 @@
 
 admin-ui 当前用固定 5 个标签:`product`(产品动态)、`industry`(行业洞察)、`tutorial`(教程)、`event`(活动)、`press`(媒体报道)。Java 可做成**可维护的标签表**;**最低限度提供「标签列表」接口**即可(本期可先按这 5 个 seed)。
 
-## 3. 业务规则(务必实现)
+## 3. 业务规则
 
 1. **语言回退**:任何展示场景,某语言字段为空 → **回退主语言 `zh-CN`**。标题、封面均如此(见前端 `resolveTitle` / `primaryCover`:主语言空则取任一非空语言,再兜底)。
 2. **保存校验**:
@@ -89,12 +88,10 @@ admin-ui 当前用固定 5 个标签:`product`(产品动态)、`industry`(行业
 
 ## 6. 媒体
 
-- `coverUrl` / `videoUrl` 当前为「填地址」字符串。如需后台上传,**复用平台 SAS 直传**(与现有媒体一致),最终入库仍存 URL。
-- **本期最低要求**:接受并存储 URL 字符串即可。
+TODO
 
 ## 7. 通用约定
 
-- 时间字段统一 **ISO 8601 字符串(UTC)**。
 - 列表默认排序:管理端按 `updatedAt` 倒序、公开端按 `publishedAt` 倒序;分页 `pageSize` 默认 20。
 - **与 legacy `admin_web` 资讯表的迁移/映射**:旧 `cn`/`hk`/`en` → 新 `zh-CN`/`zh-HK`/`en-US`;若沿用旧表需补 locale 维度(或新建多语言子表),并补 `kind`/`status`/`offline`/`tag` 等新字段。请 Java 评估「扩展旧表」还是「新建表」。
 
