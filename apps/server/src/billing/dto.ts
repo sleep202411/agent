@@ -17,6 +17,7 @@ export const BillingProductTypeSchema = z.enum([
   'community_point_pack',
   'membership_plan',
   'team_membership_plan',
+  'community_membership_plan',
 ]);
 export const BillingOrderStatusSchema = z.enum([
   'draft',

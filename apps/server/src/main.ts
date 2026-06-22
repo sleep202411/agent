@@ -89,6 +89,23 @@ async function bootstrap() {
   app.use(urlencoded({ extended: true, limit: '10mb' }));
 
   app.enableCors({ origin: true, credentials: true });
+
+  // The whole API is dynamic + per-user/auth-scoped; never let a CDN cache it.
+  // The studio Front Door endpoint had cached /aurora/billing/membership-plans
+  // and served a stale catalog on studio.fizzdragon.com. This server serves only
+  // API (static assets live in the web/studio apps), so a blanket no-store is
+  // safe + CDN-correct; clients still cache via React Query.
+  app.use(
+    (
+      _req: unknown,
+      res: { setHeader(name: string, value: string): void },
+      next: () => void,
+    ) => {
+      res.setHeader('Cache-Control', 'no-store');
+      next();
+    },
+  );
+
   // Native `ws` adapter for @WebSocketGateway (platform-ws) — entity-
   // events / chat-events / notifications gateways use plain ws frames,
   // not socket.io.
