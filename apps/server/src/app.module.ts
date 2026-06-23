@@ -21,6 +21,7 @@ import { DbModule } from './infra/db/db.module';
 import { HealthModule } from './infra/health/health.module';
 import { LegacyMysqlModule } from './infra/legacy-mysql';
 import { LegacyPointsModule } from './legacy-points/legacy-points.module';
+import { LegacyProjectsModule } from './legacy-projects/legacy-projects.module';
 import { IpCommerceModule } from './ip-commerce';
 import { MediaModule } from './media/media.module';
 import { RealtimeModule } from './infra/realtime/realtime.module';
@@ -42,6 +43,7 @@ import { WorkspacesModule } from './workspaces';
     // LEGACY_MYSQL_ENABLED=true. NOT global: feature modules that need
     // it import LegacyMysqlModule explicitly to inject LegacyMysqlService.
     LegacyMysqlModule,
+    LegacyProjectsModule,
     AlertingModule,
     AuthModule,
     AdminAuthModule,

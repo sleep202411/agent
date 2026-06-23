@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { getTranslations } from "next-intl/server";
 import { SectionHeading } from "@/components/ui/section-heading";
-import { ProjectsEmptyState } from "./_components/empty-state";
+import { ProjectsList } from "./_components/projects-list";
 
 export async function generateMetadata(): Promise<Metadata> {
   const t = await getTranslations("studioModes");
@@ -13,7 +13,7 @@ export default async function ProjectsPage() {
   return (
     <main className="w-full px-6 py-8">
       <SectionHeading as="h1" title={t("projects.title")} subtitle={t("projects.subtitle")} />
-      <ProjectsEmptyState />
+      <ProjectsList />
     </main>
   );
 }
