@@ -232,7 +232,7 @@ module.exports = ({ config }) => {
       // Do NOT set ios.icon to the Expo `.icon` template — that ships the
       // blue Expo arrow (seen on the 2.0.0(60) internal build).
       bundleIdentifier: readIdentifier(appRegion, appVariant, "ios"),
-      buildNumber: "67",
+      buildNumber: "68",
       // iPhone-only: no iPad/universal build (UIDeviceFamily=[1]). The 1.0
       // rejection was reviewed on an iPad Air; we do not claim tablet support.
       supportsTablet: false,
@@ -242,7 +242,7 @@ module.exports = ({ config }) => {
     android: {
       ...config.android,
       package: readIdentifier(appRegion, appVariant, "android"),
-      versionCode: 67,
+      versionCode: 68,
       userInterfaceStyle: "dark",
       backgroundColor: THEME_COLORS.canvas,
       adaptiveIcon: {
