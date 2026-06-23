@@ -3,9 +3,9 @@
  * to our brand, assembled from the shared `_pollo/` system (theme + glyphs +
  * composer) and the home-only chrome/sections in `_home/`.
  *
- * Navigation is the app's shared `StudioSidebar`, while the home content uses
- * imagine.art's 241px desktop content offset so the enterprise/source gallery
- * grid and project rails match the reference geometry.
+ * Navigation is the app's shared `StudioSidebar` (56px icon rail) — the same rail
+ * the rest of the studio uses — so the home doesn't reserve space for
+ * imagine.art's expanded desktop sidebar.
  *
  * Accent: locked to the **Red** preset (brand red #E52227 on primary CTAs only —
  * Login / Generate / Upgrade / Try Now — neutral everywhere else). To change the
@@ -44,7 +44,7 @@ export default function HomePage() {
       {/* header + content float over the backdrop */}
       <div className="relative z-10">
         <HeaderBar theme={THEME} />
-        <main className="lg:pl-[241px]">
+        <main className="lg:pl-[104px]">
           <div className="px-6 pt-10">
             <Composer theme={THEME} />
           </div>

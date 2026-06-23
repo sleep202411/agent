@@ -184,7 +184,7 @@ export function RecentProjects({ theme: t }: { theme: Theme }) {
 
   return (
     <section className="pt-12">
-      <div className="mb-2 flex items-end justify-between px-4 sm:px-6 lg:px-12 xl:px-[60px] 2xl:px-[136px]">
+      <div className="mb-2 flex items-end justify-between px-6">
         <h2 className="text-[18px] font-medium leading-7 text-white/90">Recent Projects</h2>
         <Link
           href="/projects"
@@ -193,10 +193,10 @@ export function RecentProjects({ theme: t }: { theme: Theme }) {
           Show All
         </Link>
       </div>
-      <div className="relative lg:px-12 xl:px-[60px] 2xl:px-[136px]">
+      <div className="relative px-6">
         <div
           ref={scrollRef}
-          className="mx-4 flex gap-4 overflow-x-auto px-0 py-3 sm:mx-6 lg:mx-0 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+          className="flex gap-4 overflow-x-auto px-0 py-3 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
         >
           <CreateProjectCard creating={creating} onCreate={onCreate} />
           {cards.map((project) => (
