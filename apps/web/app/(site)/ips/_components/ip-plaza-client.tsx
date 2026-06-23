@@ -26,6 +26,7 @@ import {
   useIpCommerceDiscovery,
   useIpCommerceTaxonomyTerms,
 } from "@/src/lib/ip-commerce/hooks";
+import { REGIONS, regionLabel, regionUi } from "@/src/lib/regions";
 import { IPCinematicHero } from "./ip-cinematic-hero";
 import { IPPlazaCard } from "./ip-plaza-card";
 import { TVStream } from "./tv-stream";
@@ -41,6 +42,7 @@ export function IpPlazaClient() {
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const [selectedGenreCode, setSelectedGenreCode] = useState("");
   const [selectedTagCode, setSelectedTagCode] = useState("");
+  const [selectedRegion, setSelectedRegion] = useState("");
   const [createOpen, setCreateOpen] = useState(false);
   const [tvOpen, setTvOpen] = useState(false);
 
@@ -60,6 +62,7 @@ export function IpPlazaClient() {
   } = useInfiniteIpCommerceIps({
     genreCodes: selectedGenreCode ? [selectedGenreCode] : undefined,
     tagCodes: selectedTagCode ? [selectedTagCode] : undefined,
+    regions: selectedRegion ? [selectedRegion] : undefined,
     locale,
     limit: PAGE_SIZE,
   });
@@ -196,8 +199,23 @@ export function IpPlazaClient() {
           </div>
         </div>
 
-        {/* ── Row 2: genre pills (wrap, like the reference) ── */}
+        {/* ── Row 2: region dropdown + genre pills (wrap, like the reference) ── */}
         <div className="mb-8">
+          <div className="mb-4">
+            <select
+              value={selectedRegion}
+              onChange={(e) => setSelectedRegion(e.target.value)}
+              aria-label={regionUi("field", locale)}
+              className="h-10 rounded-full border border-white/15 bg-white/[0.03] px-4 text-sm font-medium text-foreground outline-none transition-colors hover:border-white/30 focus-visible:ring-2 focus-visible:ring-ring/40"
+            >
+              <option value="">{regionUi("all", locale)}</option>
+              {REGIONS.map((r) => (
+                <option key={r.code} value={r.code}>
+                  {regionLabel(r.code, locale)}
+                </option>
+              ))}
+            </select>
+          </div>
           <ul className="flex flex-wrap items-center gap-2.5">
             {categoryOptions.map((opt) => {
               const active = selectedGenreCode === opt.id;
@@ -291,6 +309,7 @@ export function IpPlazaClient() {
                 onClick={() => {
                   setSelectedGenreCode("");
                   setSelectedTagCode("");
+                  setSelectedRegion("");
                   setSearch("");
                 }}
                 className="mt-3 text-xs text-primary hover:underline"
@@ -361,6 +380,7 @@ function toPlazaProject(ip: IpCommerceIp, t: ReturnType<typeof useTranslations>)
     tags: ip.tags.length > 0 ? ip.tags : ip.genres,
     episodes: ip.episodes.length,
     eyebrow: primaryGenre || t("featured"),
+    region: ip.region ?? "",
   };
 }
 
@@ -386,6 +406,7 @@ function discoveryToPlazaProject(
     tags: base?.tags ?? [],
     episodes: base?.episodes ?? 0,
     eyebrow: item.eyebrow || base?.eyebrow || t("featured"),
+    region: base?.region ?? "",
   };
 }
 

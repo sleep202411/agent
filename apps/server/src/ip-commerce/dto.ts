@@ -125,9 +125,16 @@ export const SupportedIpLocaleSchema = z.enum(['en-US', 'zh-CN', 'zh-HK']);
 
 export const LocaleQuerySchema = SupportedIpLocaleSchema.optional();
 
+const RegionListFromQuerySchema = z.preprocess(
+  queryValueParts,
+  z.array(z.string().trim().toUpperCase().min(2).max(16)).max(20).default([]),
+);
+
 export const ListIpsQuerySchema = z.object({
   genreCodes: TaxonomyCodeListFromQuerySchema(8),
   tagCodes: TaxonomyCodeListFromQuerySchema(20),
+  // ISO-3166 alpha-2 codes or the 'GLOBAL' sentinel (scalar Ip.region filter).
+  regions: RegionListFromQuerySchema,
   locale: LocaleQuerySchema,
   cursor: z.string().uuid().optional(),
   limit: z.coerce.number().int().min(1).max(50).default(20),
@@ -329,6 +336,8 @@ export const CreateIpDraftSchema = z
     genreCodes: GenreCodesSchema,
     tagCodes: TagCodesSchema.default([]),
     sourceLocale: SupportedIpLocaleSchema,
+    // ISO-3166 alpha-2 or 'GLOBAL'. Optional; null = unspecified.
+    region: z.string().trim().toUpperCase().min(2).max(16).optional(),
   })
   .strict();
 export type CreateIpDraftInput = z.infer<typeof CreateIpDraftSchema>;

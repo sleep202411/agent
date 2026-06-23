@@ -123,6 +123,7 @@ export function useIpCommerceIps(params?: {
 export function useInfiniteIpCommerceIps(params?: {
   genreCodes?: string[];
   tagCodes?: string[];
+  regions?: string[];
   locale?: string;
   limit?: number;
 }) {

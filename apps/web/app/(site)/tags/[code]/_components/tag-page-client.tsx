@@ -273,6 +273,7 @@ function toPlazaProject(ip: IpCommerceIp, t: ReturnType<typeof useTranslations>)
     tags: ip.tags.length > 0 ? ip.tags : ip.genres,
     episodes: ip.episodes.length,
     eyebrow: primaryGenre || t("featured"),
+    region: ip.region ?? "",
   };
 }
 

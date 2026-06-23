@@ -6,6 +6,7 @@ import { useLocale, useTranslations } from "@/src/i18n/i18n";
 import { localizePath } from "@/src/i18n/locale-url";
 import type { Locale } from "@/src/i18n/config";
 import { UserAvatar, resolveUserAvatarUrl } from "@/components/user-avatar";
+import { regionLabel } from "@/src/lib/regions";
 import type { LookupUserDTO } from "@repo/shared/users";
 import type { PlazaProject } from "./plaza-types";
 
@@ -19,6 +20,7 @@ export function IPPlazaCard({
   const t = useTranslations("ip");
   const locale = useLocale() as Locale;
   const cat = project.genres[0] ?? "";
+  const regionName = regionLabel(project.region, locale);
   // The primary genre already shows as the image overlay (`cat`); drop it from
   // the badge row so single-genre IPs don't render the same label twice.
   const tags = project.tags.filter((tag) => tag !== cat).slice(0, 3);
@@ -46,6 +48,12 @@ export function IPPlazaCard({
         )}
 
         <div className="absolute inset-0 bg-linear-to-t from-black/70 via-black/15 to-transparent" />
+
+        {regionName && (
+          <span className="absolute left-2 top-2 rounded-full bg-black/55 px-2 py-0.5 text-[10px] font-medium text-white/90 backdrop-blur-sm">
+            {regionName}
+          </span>
+        )}
 
         {project.trailer && (
           <span className="absolute right-2 top-2 flex items-center gap-1 rounded-full bg-black/60 px-2 py-0.5 text-[10px] font-medium text-white backdrop-blur-sm">

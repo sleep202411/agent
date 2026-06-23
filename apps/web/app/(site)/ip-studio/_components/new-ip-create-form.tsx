@@ -31,6 +31,7 @@ import {
 import { useNewIpSparkAnalyze } from "@/app/(site)/ip-studio/_hooks/use-new-ip-spark";
 import { useCreateIpCommerceIp, useIpCommerceTaxonomyTerms } from "@/src/lib/ip-commerce/hooks";
 import type { IpTaxonomyTerm } from "@/src/lib/ip-commerce/api";
+import { REGIONS, regionLabel, regionUi } from "@/src/lib/regions";
 
 // Hero image lives on the shared static CDN (separate from the OSS
 // avatar / banner buckets we use for user-generated content).
@@ -89,6 +90,7 @@ export function NewIpCreateForm({ onClose }: NewIpCreateFormProps = {}) {
 
   const [name, setName] = useState("");
   const [genreCodes, setGenreCodes] = useState<string[]>([]);
+  const [region, setRegion] = useState("");
   const [description, setDescription] = useState("");
   const create = useCreateIpCommerceIp();
   const creating = create.isPending;
@@ -108,6 +110,7 @@ export function NewIpCreateForm({ onClose }: NewIpCreateFormProps = {}) {
   const resetForm = () => {
     setName("");
     setGenreCodes([]);
+    setRegion("");
     setDescription("");
     setAnalyzeStatus("idle");
     setAnalyzedFileName("");
@@ -209,6 +212,7 @@ export function NewIpCreateForm({ onClose }: NewIpCreateFormProps = {}) {
         genreCodes,
         sourceLocale: defaultSourceLocale,
         summary: description.trim() || undefined,
+        region: region || undefined,
       },
       {
         onSuccess: ({ ip }) => {
@@ -305,6 +309,22 @@ export function NewIpCreateForm({ onClose }: NewIpCreateFormProps = {}) {
             <FieldDescription>
               {t("taxonomyHelp", { count: genreCodes.length, max: 8 })}
             </FieldDescription>
+          </Field>
+
+          <Field>
+            <FieldLabel>{regionUi("field", defaultSourceLocale)}</FieldLabel>
+            <select
+              value={region}
+              onChange={(e) => setRegion(e.target.value)}
+              className="h-10 w-full rounded-lg border border-border bg-card px-3 text-sm text-foreground outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring/40"
+            >
+              <option value="">{regionUi("placeholder", defaultSourceLocale)}</option>
+              {REGIONS.map((r) => (
+                <option key={r.code} value={r.code}>
+                  {regionLabel(r.code, defaultSourceLocale)}
+                </option>
+              ))}
+            </select>
           </Field>
 
           <Field>

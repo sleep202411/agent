@@ -115,6 +115,8 @@ export interface IpCommerceIp {
   status: string;
   listingVisibility: string;
   ageRating: string;
+  /** ISO-3166 alpha-2 or 'GLOBAL'; null = unspecified. */
+  region: string | null;
   title: string;
   subtitle: string | null;
   summary: string;
@@ -494,6 +496,8 @@ export interface CreateIpDraftInput {
   genreCodes: string[];
   tagCodes?: string[];
   sourceLocale: string;
+  /** ISO-3166 alpha-2 or 'GLOBAL'. Optional. */
+  region?: string;
 }
 
 export interface UpdateIpProfileInput {
@@ -634,6 +638,7 @@ export interface UpsertIpBlockInput {
 export function listIpCommerceIps(params?: {
   genreCodes?: string[];
   tagCodes?: string[];
+  regions?: string[];
   locale?: string;
   cursor?: string;
   limit?: number;
@@ -643,6 +648,7 @@ export function listIpCommerceIps(params?: {
       ...params,
       genreCodes: params?.genreCodes?.join(","),
       tagCodes: params?.tagCodes?.join(","),
+      regions: params?.regions?.join(","),
     },
   });
 }

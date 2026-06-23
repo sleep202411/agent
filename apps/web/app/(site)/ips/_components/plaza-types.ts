@@ -13,4 +13,6 @@ export interface PlazaProject {
   tags: string[];
   episodes: number;
   eyebrow: string;
+  /** ISO-3166 alpha-2 or 'GLOBAL'; "" = unspecified. */
+  region: string;
 }

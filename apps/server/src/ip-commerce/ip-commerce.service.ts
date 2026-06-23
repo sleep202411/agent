@@ -1706,6 +1706,7 @@ export class IpCommerceService {
           status: IpPublicationStatus.draft,
           listingVisibility: IpListingVisibility.private,
           sourceLocale,
+          region: input.region ?? null,
           createdById: user.userId,
           localizations: {
             create: {
@@ -3161,6 +3162,7 @@ export class IpCommerceService {
           },
         },
         ...ipTaxonomyFilterWhere(query.genreCodes, query.tagCodes),
+        ...(query.regions.length ? { region: { in: query.regions } } : {}),
         ...viewerBlockWhere,
         ...(cursorDate
           ? {
@@ -6780,6 +6782,7 @@ function ipDto(
     status: title.status,
     listingVisibility: title.listingVisibility,
     ageRating: title.ageRating,
+    region: title.region ?? null,
     title: copy.value?.title ?? title.id,
     subtitle: copy.value?.subtitle ?? null,
     summary: copy.value?.summary ?? '',
