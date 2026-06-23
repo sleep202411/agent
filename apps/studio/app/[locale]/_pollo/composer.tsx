@@ -21,6 +21,7 @@ import { GradientRing } from "./glyphs";
 import { ProjectStudio } from "./project-studio";
 import { AgentStudio } from "./agent-studio";
 import { CreativeComposer } from "../_home/creative-composer";
+import { ToolRow } from "../_home/tool-row";
 
 type Studio = {
   id: string;
@@ -49,7 +50,13 @@ const VISIBLE_STUDIOS = STUDIOS.filter((s) => !s.hidden);
 const SHOW_STUDIO_TABS = false;
 
 export function Composer({ theme: t }: { theme: Theme }) {
-  const [studioIdx, setStudioIdx] = useState(0);
+  // Default to the Creative composer — the homepage's primary create surface.
+  const [studioIdx, setStudioIdx] = useState(() =>
+    Math.max(
+      0,
+      VISIBLE_STUDIOS.findIndex((s) => s.id === "creative")
+    )
+  );
   const studio = VISIBLE_STUDIOS[studioIdx];
 
   // sliding tab ring measured from the active tab button.
@@ -74,6 +81,9 @@ export function Composer({ theme: t }: { theme: Theme }) {
           Creators
         </span>
       </h1>
+      <p className="mt-3 text-center text-[15px] text-white/45">
+        Describe an idea and generate images or video in seconds.
+      </p>
 
       {/* studio tabs — Agent + Creative + Project (Marketing/Commerce hidden).
           Whole switcher hidden via SHOW_STUDIO_TABS — design kept intact. */}
@@ -144,6 +154,9 @@ export function Composer({ theme: t }: { theme: Theme }) {
           <CreativeComposer theme={t} />
         )}
       </div>
+
+      {/* tool shortcuts under the composer (create surface only) */}
+      {studio.kind === "compose" ? <ToolRow /> : null}
     </div>
   );
 }

@@ -10,77 +10,157 @@
  * follows the theme.
  */
 
-import { useRef } from "react";
-import { IconChevronLeft, IconChevronRight } from "@tabler/icons-react";
+import { useRef, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
+import {
+  IconArtboard,
+  IconChevronLeft,
+  IconChevronRight,
+  IconLoader2,
+  IconPlus,
+} from "@tabler/icons-react";
+import { toast } from "sonner";
+import { Link, useRouter } from "@/i18n/navigation";
+import { useWorkspace } from "@/app/_components/workspace-context";
+import { createProject, listProjects } from "@/lib/collab/projects-api";
 import type { Theme } from "../_pollo/theme";
 
 const CDN = "https://cdn.pollo.ai/prod/public/images/home";
 const MODEL_CDN = "https://videocdn.pollo.ai/web-cdn/pollo";
 
-function SectionHeading({ title, action }: { title: string; action?: string }) {
+function SectionHeading({
+  title,
+  action,
+  actionHref,
+}: {
+  title: string;
+  action?: string;
+  actionHref?: string;
+}) {
+  const cls = "flex items-center gap-1 text-[13px] text-white/55 transition hover:text-white/85";
+  const inner = (
+    <>
+      {action}
+      <IconChevronRight className="size-4" stroke={1.8} />
+    </>
+  );
   return (
     <div className="mb-5 flex items-center justify-between">
       <h2 className="text-[22px] font-semibold tracking-tight">{title}</h2>
       {action ? (
-        <button
-          type="button"
-          className="flex items-center gap-1 text-[13px] text-white/55 transition hover:text-white/85"
-        >
-          {action}
-          <IconChevronRight className="size-4" stroke={1.8} />
-        </button>
+        actionHref ? (
+          <Link href={actionHref} className={cls}>
+            {inner}
+          </Link>
+        ) : (
+          <button type="button" className={cls}>
+            {inner}
+          </button>
+        )
       ) : null}
     </div>
   );
 }
 
 // ---------------------------------------------------------------------------
-// Recent Projects (the user's recent work) — horizontal scroll ONLY, never
-// wraps; the ← / → arrows nudge the row. Placeholder data for now; wire to the
-// real local project store later (studio has project CRUD) — see follow-ups.
+// Recent Projects — the signed-in user's REAL projects (listProjects), with a
+// Create-new tile up front. Horizontal scroll only; the ← / → arrows nudge the
+// row. No fake asset/credit counts — ProjectRef doesn't carry them.
 // ---------------------------------------------------------------------------
-const RECENT_PROJECTS: { name: string; meta: string; thumb: string }[] = [
-  { name: "Sunset sneaker ad", meta: "Edited 2h ago", thumb: "/presets/marketing-ad.jpg" },
-  { name: "Couture trailer", meta: "Edited yesterday", thumb: "/presets/fashion-trailer.jpg" },
-  { name: "Weekend vlog intro", meta: "Edited 2 days ago", thumb: "/presets/youtube-vlog.jpg" },
-  { name: "Brand key visual", meta: "Edited 3 days ago", thumb: "/presets/brand-visuals.jpg" },
-  { name: "Product hero shots", meta: "Edited last week", thumb: "/presets/marketing-ad.jpg" },
-  { name: "Launch teaser", meta: "Edited last week", thumb: "/presets/fashion-trailer.jpg" },
-];
+function timeAgo(iso: string): string {
+  const seconds = Math.max(0, Math.floor((Date.now() - Date.parse(iso)) / 1000));
+  if (seconds < 60) return "just now";
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  if (days < 7) return `${days}d ago`;
+  const weeks = Math.floor(days / 7);
+  if (weeks < 5) return `${weeks}w ago`;
+  return `${Math.floor(days / 30)}mo ago`;
+}
 
 export function RecentProjects({ theme: t }: { theme: Theme }) {
+  const router = useRouter();
+  const { activeWorkspace } = useWorkspace();
+  const workspaceId = activeWorkspace?.id ?? null;
   const scrollRef = useRef<HTMLDivElement>(null);
   const nudge = (dir: 1 | -1) =>
     scrollRef.current?.scrollBy({ left: dir * 360, behavior: "smooth" });
+  const [creating, setCreating] = useState(false);
+
+  const { data: projects } = useQuery({
+    queryKey: ["home-recent-projects", workspaceId],
+    queryFn: () => listProjects(workspaceId!),
+    enabled: !!workspaceId,
+    staleTime: 30_000,
+  });
+
+  const onCreate = async () => {
+    if (!workspaceId || creating) return;
+    setCreating(true);
+    try {
+      const project = await createProject(workspaceId, { name: "Untitled project" });
+      router.push(`/project/${project.id}`);
+    } catch {
+      setCreating(false);
+      toast.error("Couldn't create the project. Please try again.");
+    }
+  };
+
+  // Recent Projects is the signed-in user's own work — nothing to show signed out.
+  if (!workspaceId) return null;
 
   return (
-    <section className="px-6 pt-12">
-      <SectionHeading title="Recent Projects" action="View all" />
+    <section className="px-6">
+      <SectionHeading title="Recent Projects" action="View all" actionHref="/projects" />
       <div className="relative">
         {/* flex (never wraps) + overflow-x: horizontal scroll only */}
         <div
           ref={scrollRef}
           className="flex gap-4 overflow-x-auto pb-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
         >
-          {RECENT_PROJECTS.map((p, i) => (
-            <button
-              key={i}
-              type="button"
-              className="group flex w-[300px] shrink-0 flex-col gap-2.5 text-left"
+          {/* Create new project — the sanctioned brand-red primary CTA (DESIGN.md §2) */}
+          <button
+            type="button"
+            onClick={onCreate}
+            disabled={creating}
+            aria-busy={creating}
+            className="group flex w-[300px] shrink-0 flex-col gap-2.5 text-left outline-none disabled:cursor-not-allowed"
+          >
+            <div className="grid aspect-video place-items-center rounded-2xl bg-white/[0.03] ring-1 ring-white/[0.08] transition group-hover:bg-white/[0.05]">
+              {creating ? (
+                <IconLoader2 className="size-8 animate-spin text-white/70" stroke={1.5} />
+              ) : (
+                <span className="grid size-12 place-items-center rounded-full bg-[#E52227] text-white shadow-lg shadow-[#E52227]/25 transition group-hover:brightness-110">
+                  <IconPlus className="size-6" stroke={2} />
+                </span>
+              )}
+            </div>
+            <div>
+              <div className="truncate text-[14px] font-medium">Create new project</div>
+              <div className="text-[12px] text-white/45">Start a blank project</div>
+            </div>
+          </button>
+
+          {projects?.map((p) => (
+            <Link
+              key={p.id}
+              href={`/project/${p.id}`}
+              className="group flex w-[300px] shrink-0 flex-col gap-2.5"
             >
-              <div className="aspect-video overflow-hidden rounded-2xl ring-1 ring-white/[0.08]">
-                <img
-                  src={p.thumb}
-                  alt={p.name}
-                  loading="lazy"
-                  className="size-full object-cover transition-transform duration-500 group-hover:scale-105"
+              <div className="grid aspect-video place-items-center overflow-hidden rounded-2xl bg-white/[0.03] ring-1 ring-white/[0.08] transition group-hover:bg-white/[0.05]">
+                <IconArtboard
+                  className="size-9 text-white/15 transition-colors group-hover:text-white/30"
+                  stroke={1.5}
                 />
               </div>
               <div>
                 <div className="truncate text-[14px] font-medium">{p.name}</div>
-                <div className="text-[12px] text-white/45">{p.meta}</div>
+                <div className="text-[12px] text-white/45">Edited {timeAgo(p.updatedAt)}</div>
               </div>
-            </button>
+            </Link>
           ))}
         </div>
         <button

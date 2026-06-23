@@ -1,6 +1,7 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { useTranslations } from "next-intl";
 import { StudioComposer } from "@/app/[locale]/(studio)/_components/generation/studio-composer";
 import { useImageGeneration } from "@/app/[locale]/(studio)/_components/generation/use-image-generation";
@@ -37,6 +38,20 @@ export function ImageStudio({
   const gen = useImageGeneration();
   const { catalog, feed, model } = gen;
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
+
+  // Pre-fill the prompt handed off from the home composer (`?prompt=`), once,
+  // then strip the param so a later refresh doesn't clobber the user's edits.
+  const searchParams = useSearchParams();
+  const setPrompt = gen.setPrompt;
+  useEffect(() => {
+    const handed = searchParams.get("prompt");
+    if (handed && handed.trim()) {
+      setPrompt(handed);
+      window.history.replaceState(null, "", window.location.pathname);
+    }
+    // run once on mount
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Flattened lightbox items: every completed output, history order.
   const lightboxItems = useMemo<LightboxItem[]>(
