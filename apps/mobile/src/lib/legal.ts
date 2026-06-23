@@ -9,8 +9,12 @@ import { appEnv } from "@/config";
  *    until the real deletion backend lands).
  */
 
+// CN legal pages are served by the ACK web at fizzstudio.fizzspace.cn — that is
+// where the app-store-required operator / ICP block on the privacy policy is
+// live. (fizzdragon.fizzspace.cn is an older nginx-fronted backend that still
+// serves a privacy page without that block.)
 const SITE_BASE =
-  appEnv.siteRegion === "cn" ? "https://fizzdragon.fizzspace.cn" : "https://fizzdragon.com";
+  appEnv.siteRegion === "cn" ? "https://fizzstudio.fizzspace.cn" : "https://fizzdragon.com";
 
 /** Hosted legal URL. CN stores require the Chinese policy; otherwise follow the app locale. */
 export function legalUrl(path: string, locale: string): string {
