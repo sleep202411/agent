@@ -66,7 +66,7 @@ export function HeaderBar() {
           </>
         ) : user ? (
           <>
-            <UpgradeSaleButton onClick={() => setPricingOpen(true)} />
+            <UpgradeButton onClick={() => setPricingOpen(true)} />
             <WorkspaceSwitcher
               triggerClassName="h-8 min-w-[220px] max-w-[260px] gap-1.5 rounded-[12px] border border-[#2C263D] bg-[#15151A]/80 py-1.5 pr-2.5 pl-1.5 hover:bg-[#1B1B22]/90 data-[state=open]:bg-[#1B1B22]/90"
               avatarSize="size-5"
@@ -91,7 +91,7 @@ export function HeaderBar() {
           </>
         ) : (
           <>
-            <UpgradeSaleButton onClick={() => setPricingOpen(true)} />
+            <UpgradeButton onClick={() => setPricingOpen(true)} />
             <button
               type="button"
               onClick={signIn}
@@ -108,18 +108,15 @@ export function HeaderBar() {
   );
 }
 
-function UpgradeSaleButton({ onClick }: { onClick: () => void }) {
+function UpgradeButton({ onClick }: { onClick: () => void }) {
   return (
     <button
       type="button"
       onClick={onClick}
-      className="relative flex h-8 items-center gap-1.5 rounded-[12px] bg-[#E52227] px-2.5 py-1.5 text-[14px] leading-5 font-medium text-white shadow-[0_0_18px_rgb(229_34_39/0.22)] transition hover:bg-[#c91e22]"
+      className="flex h-8 items-center gap-1.5 rounded-[12px] bg-[#E52227] px-2.5 py-1.5 text-[14px] leading-5 font-medium text-white shadow-[0_0_18px_rgb(229_34_39/0.22)] transition hover:bg-[#c91e22]"
     >
       <IconCrown className="size-4 text-white" stroke={2} />
       Upgrade
-      <span className="absolute top-[26px] left-1/2 -translate-x-1/2 rounded-full bg-[#111113] px-2.5 py-0 text-[13px] leading-5 font-bold text-white shadow-[0_8px_18px_rgb(229_34_39/0.2)] ring-1 ring-[#E52227]/40">
-        -50%
-      </span>
     </button>
   );
 }

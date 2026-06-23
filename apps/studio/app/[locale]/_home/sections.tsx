@@ -85,47 +85,14 @@ type RecentProjectCard = {
   name: string;
   ownerName: string;
   updatedLabel: string;
-  assets: number;
-  credits: number;
+  // The workspace project-list endpoint doesn't return per-project asset/credit
+  // counts yet, so these stay undefined and the metrics overlay is hidden until
+  // the endpoint provides them (rather than showing fabricated numbers).
+  assets?: number;
+  credits?: number;
   thumbnail?: "workflow";
   href?: string;
 };
-
-const REFERENCE_PROJECTS: RecentProjectCard[] = [
-  {
-    id: "reference-empty-1",
-    name: "Untitled Workflow",
-    ownerName: "Isaac",
-    updatedLabel: "3 hrs ago",
-    assets: 0,
-    credits: 0,
-  },
-  {
-    id: "reference-empty-2",
-    name: "Untitled Workflow",
-    ownerName: "Isaac",
-    updatedLabel: "3 hrs ago",
-    assets: 0,
-    credits: 0,
-  },
-  {
-    id: "reference-empty-3",
-    name: "Untitled Workflow",
-    ownerName: "Isaac",
-    updatedLabel: "3 hrs ago",
-    assets: 0,
-    credits: 0,
-  },
-  {
-    id: "reference-workflow",
-    name: "Untitled Workflow",
-    ownerName: "Isaac",
-    updatedLabel: "6 days ago",
-    assets: 1,
-    credits: 1,
-    thumbnail: "workflow",
-  },
-];
 
 export function RecentProjects({ theme: t }: { theme: Theme }) {
   const router = useRouter();
@@ -233,20 +200,17 @@ function buildRecentProjectCards(
   projects: ProjectRef[] | undefined,
   ownerName: string
 ): RecentProjectCard[] {
-  const realProjects =
-    projects?.slice(0, 10).map((project, index) => ({
-      id: project.id,
-      name: project.name || "Untitled Workflow",
-      ownerName,
-      updatedLabel: timeAgo(project.updatedAt),
-      assets: index === 0 ? 1 : 0,
-      credits: index === 0 ? 1 : 0,
-      thumbnail: index === 0 ? ("workflow" as const) : undefined,
-      href: `/project/${project.id}`,
-    })) ?? [];
-
-  if (realProjects.length >= 4) return realProjects;
-  return [...realProjects, ...REFERENCE_PROJECTS.slice(realProjects.length)];
+  // Real workspace projects only — no placeholder padding. An empty list leaves
+  // just the "Create new project" tile (clean empty state). The canvas preview
+  // graphic is a shared placeholder until per-project thumbnails exist.
+  return (projects ?? []).slice(0, 10).map((project) => ({
+    id: project.id,
+    name: project.name || "Untitled Workflow",
+    ownerName,
+    updatedLabel: timeAgo(project.updatedAt),
+    thumbnail: "workflow" as const,
+    href: `/project/${project.id}`,
+  }));
 }
 
 function CreateProjectCard({ creating, onCreate }: { creating: boolean; onCreate: () => void }) {
@@ -280,7 +244,9 @@ function ProjectCard({ project }: { project: RecentProjectCard }) {
       <div className="p-1">
         <div className="relative aspect-video w-full overflow-hidden rounded-[12px] bg-[#242424]">
           {project.thumbnail === "workflow" ? <WorkflowPreview /> : null}
-          <ProjectMetrics assets={project.assets} credits={project.credits} />
+          {project.assets != null && project.credits != null ? (
+            <ProjectMetrics assets={project.assets} credits={project.credits} />
+          ) : null}
         </div>
       </div>
       <div className="flex items-center justify-between gap-3 p-3 pt-2">
@@ -840,7 +806,7 @@ export function ExploreMore() {
   return (
     <section className="px-4 pt-16 sm:px-6 lg:px-12">
       <div className="relative flex w-full flex-col gap-4 pb-4">
-        <h2 className="text-[20px] font-medium leading-6 text-white/95">ImagineArt 2.0 Gallery</h2>
+        <h2 className="text-[20px] font-medium leading-6 text-white/95">Gallery</h2>
         <div
           ref={gridRef}
           className="relative min-h-[400px] w-full overflow-hidden rounded-[8px]"
@@ -851,15 +817,13 @@ export function ExploreMore() {
           ))}
         </div>
         <div className="pointer-events-none absolute inset-x-0 bottom-0 flex h-56 items-end justify-center bg-[linear-gradient(180deg,rgba(18,18,18,0)_0%,oklch(0.17_0_0)_44.23%)]">
-          <a
-            href="https://www.imagine.art/community/models/imagineart-2-0"
-            target="_blank"
-            rel="noreferrer"
+          <button
+            type="button"
             className="pointer-events-auto inline-flex h-10 w-[290.5px] items-center justify-center gap-2 rounded-[16px] bg-[rgba(105,41,196,0.3)] px-3 py-2.5 text-[16px] font-medium leading-5 text-[rgb(212,187,255)] transition-colors hover:bg-[rgba(105,41,196,0.4)] active:translate-y-px"
           >
-            Explore ImagineArt 2.0 Gallery
+            Explore Gallery
             <IconArrowUpRight className="size-4.5" stroke={1.8} />
-          </a>
+          </button>
         </div>
       </div>
     </section>
