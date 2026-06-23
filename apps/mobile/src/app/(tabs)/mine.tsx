@@ -188,25 +188,42 @@ export default function MineScreen() {
                     </ThemedText>
                   </View>
                 </Pressable>
-                <Pressable
-                  accessibilityLabel={t("mine.signOut")}
-                  accessibilityRole="button"
-                  hitSlop={10}
-                  onPress={() => void auth.signOut()}
-                  style={({ pressed }) => (pressed ? styles.pressed : null)}
-                >
-                  <View style={styles.iconButton}>
-                    <SymbolView
-                      name={{
-                        ios: "rectangle.portrait.and.arrow.right",
-                        android: "logout",
-                        web: "logout",
-                      }}
-                      size={18}
-                      tintColor="#FFFFFF"
-                    />
-                  </View>
-                </Pressable>
+                <View style={styles.headerActions}>
+                  <Pressable
+                    accessibilityLabel={t("settings.title")}
+                    accessibilityRole="button"
+                    hitSlop={10}
+                    onPress={() => router.push("/settings")}
+                    style={({ pressed }) => (pressed ? styles.pressed : null)}
+                  >
+                    <View style={styles.iconButton}>
+                      <SymbolView
+                        name={{ ios: "gearshape", android: "settings", web: "settings" }}
+                        size={18}
+                        tintColor="#FFFFFF"
+                      />
+                    </View>
+                  </Pressable>
+                  <Pressable
+                    accessibilityLabel={t("mine.signOut")}
+                    accessibilityRole="button"
+                    hitSlop={10}
+                    onPress={() => void auth.signOut()}
+                    style={({ pressed }) => (pressed ? styles.pressed : null)}
+                  >
+                    <View style={styles.iconButton}>
+                      <SymbolView
+                        name={{
+                          ios: "rectangle.portrait.and.arrow.right",
+                          android: "logout",
+                          web: "logout",
+                        }}
+                        size={18}
+                        tintColor="#FFFFFF"
+                      />
+                    </View>
+                  </Pressable>
+                </View>
               </View>
 
               <View style={styles.profileRow}>
@@ -345,6 +362,11 @@ const styles = StyleSheet.create({
     gap: Spacing.two,
     justifyContent: "flex-end",
     paddingHorizontal: Spacing.four,
+  },
+  headerActions: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: Spacing.two,
   },
   iconPill: {
     alignItems: "center",

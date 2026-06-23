@@ -6,6 +6,7 @@ import "@/global.css";
 import { AuthProvider } from "@/auth";
 import { initLocale } from "@/i18n";
 import { AnimatedSplashOverlay } from "@/components/animated-icon";
+import { ConsentGate } from "@/components/consent-gate";
 import { Colors } from "@/constants/theme";
 
 // Anchor deep links (e.g. a shared /ip/<id>) on top of the tab shell so the
@@ -39,9 +40,12 @@ export default function RootLayout() {
           <Stack.Screen name="login" />
           <Stack.Screen name="register" />
           <Stack.Screen name="forgot-password" />
+          <Stack.Screen name="settings" />
+          <Stack.Screen name="delete-account" />
           <Stack.Screen name="ip/[id]" options={detailHeader} />
           <Stack.Screen name="crew/[id]" options={detailHeader} />
         </Stack>
+        <ConsentGate />
       </AuthProvider>
     </ThemeProvider>
   );
