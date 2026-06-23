@@ -2427,6 +2427,7 @@ model Ip {
   listingVisibility      IpListingVisibility @default(private) @map("listing_visibility")
   ageRating              IpAgeRating         @default(general) @map("age_rating")
   sourceLocale           String              @default("zh-CN") @map("source_locale") @db.VarChar(16)
+  region                 String?             @map("region") @db.VarChar(16)
   copyrightOwner         String?             @map("copyright_owner") @db.VarChar(160)
   rightsSummary          Json                @default("{}") @map("rights_summary") @db.JsonB
   aiDisclosure           Json                @default("{}") @map("ai_disclosure") @db.JsonB
