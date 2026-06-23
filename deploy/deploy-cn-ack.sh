@@ -19,7 +19,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"; cd "$ROOT"
 TAG="${1:-$(git rev-parse --short HEAD)}"
 ECS_ID=i-bp11r90r4g91u39iimnx
-ECS_IP=115.29.229.152
+ECS_IP=""   # fetched live below — the pay-as-you-go public IP changes on StopCharging stop/start
 DEPLOY_KEY="${DEPLOY_KEY:-$HOME/.ssh/id_ed25519_github}"
 SSH="ssh -i $DEPLOY_KEY -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=30 -o ServerAliveInterval=10"
 SCP="scp -i $DEPLOY_KEY -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=30"
@@ -32,6 +32,15 @@ for i in $(seq 1 40); do
         | python3 -c "import sys,json;a=json.load(sys.stdin).get('InstanceStatuses',{}).get('InstanceStatus',[]);print(a[0]['Status'] if a else '?')")
   [ "$s" = "Running" ] && break; sleep 5
 done
+
+# Fetch the CURRENT public IP — it changes on every StopCharging stop/start
+# (pay-as-you-go IP, no EIP bound), so it must NOT be hardcoded.
+ECS_IP=$(aliyun ecs DescribeInstances --InstanceIds "['$ECS_ID']" --RegionId cn-hangzhou --profile default 2>/dev/null \
+  | python3 -c "import sys,json;print(json.load(sys.stdin)['Instances']['Instance'][0]['PublicIpAddress']['IpAddress'][0])")
+[ -n "$ECS_IP" ] || { echo "FATAL: could not resolve build ECS public IP" >&2; exit 1; }
+echo "  build ECS IP: $ECS_IP"
+# Give sshd a moment if the instance only just reached Running.
+for i in $(seq 1 12); do nc -z -G 5 "$ECS_IP" 22 2>/dev/null && break; sleep 5; done
 
 echo "==> [2/6] build secret-free source tarball @ $(git rev-parse --short HEAD)"
 TMP=$(mktemp -d); trap 'rm -rf "$TMP" /tmp/cn-src.tar.gz' EXIT
