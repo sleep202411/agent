@@ -4,7 +4,6 @@ import { useCallback, useEffect, useState } from "react";
 import { useTranslations } from "next-intl";
 import {
   IconChartBar,
-  IconChevronDown,
   IconCreditCard,
   IconGauge,
   IconLayoutGrid,
@@ -21,7 +20,6 @@ import {
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { useAuth } from "@/app/_components/auth-provider";
 import { useWorkspace } from "@/app/_components/workspace-context";
-import type { WorkspaceRef } from "@/lib/collab/projects-api";
 import { LetterAvatar } from "../settings/_components/settings-ui";
 import AccountSettingsPage from "../settings/account/page";
 import AnalyticsSettingsPage from "../settings/analytics/page";
@@ -71,9 +69,11 @@ export function SettingsOverlay() {
   useEffect(() => {
     if (!section || loading || user) return;
     const target = section;
-    close();
+    // Drop the hash URL (no setState — `open` is already false without a user,
+    // so the modal stays hidden); then prompt sign-in and reopen on success.
+    history.replaceState(null, "", window.location.pathname + window.location.search);
     requireAuth(() => openSettings(target));
-  }, [section, user, loading, requireAuth, close]);
+  }, [section, user, loading, requireAuth]);
 
   const open = section != null && !!user;
   const Content = open && section ? SECTIONS[section] : null;
@@ -109,14 +109,9 @@ function teamSubNav(isPersonal: boolean) {
 /** Hash-based mirror of SettingsSidebar — nav switches the hash, not the route. */
 function OverlaySidebar({ active }: { active: SettingsSection | null }) {
   const t = useTranslations("settings");
-  const { workspaces, activeWorkspace, setActiveWorkspaceId } = useWorkspace();
+  const { activeWorkspace } = useWorkspace();
   const { user } = useAuth();
   const accountName = user?.nickName || user?.email || user?.phone || t("account");
-
-  const selectWorkspace = (ws: WorkspaceRef) => {
-    setActiveWorkspaceId(ws.id);
-    openSettings("overview");
-  };
 
   return (
     <aside className="flex w-64 shrink-0 flex-col bg-card px-3 py-5">
@@ -136,55 +131,42 @@ function OverlaySidebar({ active }: { active: SettingsSection | null }) {
           </NavItem>
         </Group>
 
-        <Group title={t("groupTeamsSettings")}>
-          {workspaces.map((ws) => {
-            const isActive = activeWorkspace?.id === ws.id;
-            const subNav = teamSubNav(ws.type === "personal");
-            return (
-              <div key={ws.id} className="flex flex-col">
-                <button
-                  type="button"
-                  onClick={() => (isActive ? undefined : selectWorkspace(ws))}
-                  className={cn(
-                    "flex items-center gap-2 rounded-lg px-2 py-1.5 text-left text-sm transition-colors",
-                    isActive ? "bg-secondary" : "hover:bg-accent"
-                  )}
-                >
-                  <LetterAvatar name={ws.name} src={ws.avatarUrl} size="size-6" />
-                  <span className="flex min-w-0 flex-1 flex-col leading-tight">
-                    <span className="truncate font-medium">{ws.name}</span>
-                    {ws.role && (
-                      <span className="truncate text-xs text-muted-foreground">
-                        {t(`role.${ws.role}`)}
-                      </span>
-                    )}
+        {activeWorkspace ? (
+          <Group title={t("groupTeamsSettings")}>
+            {/* The workspace you entered from — shown, not switchable (keeps the
+                settings menu tidy; switch workspace from the app, not here). */}
+            <div className="flex items-center gap-2 px-2 py-1.5">
+              <LetterAvatar
+                name={activeWorkspace.name}
+                src={activeWorkspace.avatarUrl}
+                size="size-6"
+              />
+              <span className="flex min-w-0 flex-1 flex-col leading-tight">
+                <span className="truncate font-medium">{activeWorkspace.name}</span>
+                {activeWorkspace.role && (
+                  <span className="truncate text-xs text-muted-foreground">
+                    {t(`role.${activeWorkspace.role}`)}
                   </span>
-                  <IconChevronDown
-                    className={cn(
-                      "size-4 shrink-0 text-muted-foreground transition-transform",
-                      isActive ? "" : "-rotate-90"
-                    )}
-                  />
-                </button>
-
-                {isActive && (
-                  <div className="mt-1 ml-3 flex flex-col gap-0.5 pl-3">
-                    {subNav.map(({ section, labelKey, Icon }) => (
-                      <NavItem
-                        key={section}
-                        section={section}
-                        active={active === section}
-                        leading={<Icon className="size-4" stroke={1.8} />}
-                      >
-                        {t(labelKey)}
-                      </NavItem>
-                    ))}
-                  </div>
                 )}
-              </div>
-            );
-          })}
-        </Group>
+              </span>
+            </div>
+
+            <div className="mt-1 ml-3 flex flex-col gap-0.5 pl-3">
+              {teamSubNav(activeWorkspace.type === "personal").map(
+                ({ section, labelKey, Icon }) => (
+                  <NavItem
+                    key={section}
+                    section={section}
+                    active={active === section}
+                    leading={<Icon className="size-4" stroke={1.8} />}
+                  >
+                    {t(labelKey)}
+                  </NavItem>
+                )
+              )}
+            </div>
+          </Group>
+        ) : null}
       </nav>
     </aside>
   );

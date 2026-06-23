@@ -17,7 +17,6 @@ import {
   IconBrandYoutube,
   IconCrown,
   IconStarFilled,
-  IconX,
   type Icon,
 } from "@tabler/icons-react";
 import Image from "next/image";
@@ -37,33 +36,6 @@ const SOCIAL: Icon[] = [
   IconBrandYoutube,
   IconBrandDiscord,
 ];
-
-export function TopBanner({ theme: t }: { theme: Theme }) {
-  return (
-    <div className="relative flex h-[50px] w-full items-center justify-center gap-3 bg-white/[0.04] px-4 text-[14px]">
-      <span className="text-white/80">
-        Commerce Studio Live Now —— Enjoy{" "}
-        <span className="font-semibold" style={{ color: t.price }}>
-          20% Off!
-        </span>
-      </span>
-      <button
-        type="button"
-        className="rounded-full px-3.5 py-1 text-[13px] font-medium transition hover:brightness-110"
-        style={{ background: t.genBg, color: t.genText }}
-      >
-        Try Now
-      </button>
-      <button
-        type="button"
-        aria-label="Dismiss"
-        className="absolute right-4 text-white/40 transition hover:text-white/70"
-      >
-        <IconX className="size-4" stroke={1.8} />
-      </button>
-    </div>
-  );
-}
 
 export function HeaderBar({ theme: t }: { theme: Theme }) {
   // Real auth. Logged-in → workspace switcher + compute credits + a themed

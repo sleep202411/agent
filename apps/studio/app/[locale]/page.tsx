@@ -18,8 +18,9 @@
 import { StudioSidebar } from "@/app/_components/studio-sidebar";
 import { Composer } from "./_pollo/composer";
 import { THEMES } from "./_pollo/theme";
-import { Footer, HeaderBar, TopBanner } from "./_home/chrome";
+import { Footer, HeaderBar } from "./_home/chrome";
 import { ExploreMore, Models, RecentProjects } from "./_home/sections";
+import { GradientBackdrop } from "./_home/gradient-backdrop";
 import { CheckInCard } from "./settings/_components/check-in-card";
 
 const THEME = THEMES.red;
@@ -27,7 +28,7 @@ const THEME = THEMES.red;
 export default function HomePage() {
   return (
     <div
-      className="min-h-screen w-full text-white antialiased"
+      className="relative min-h-screen w-full text-white antialiased"
       style={{
         background: THEME.pageBg,
         fontFamily: '"Inter", system-ui, -apple-system, sans-serif',
@@ -35,27 +36,30 @@ export default function HomePage() {
     >
       <style>{`@keyframes polloFade{from{opacity:0;transform:translateY(3px)}to{opacity:1;transform:none}}`}</style>
 
-      <TopBanner theme={THEME} />
+      {/* subtle drifting monochrome gradient backdrop (hero area) */}
+      <GradientBackdrop />
 
       {/* shared icon rail (fixed, vertically centered, lg+ only) */}
       <StudioSidebar />
 
-      {/* full-width header (wordmark at the edge); content offsets for the rail */}
-      <HeaderBar theme={THEME} />
-      <main className="lg:pl-[104px]">
-        <div className="px-6 pt-10">
-          <Composer theme={THEME} />
-        </div>
-        <div className="px-6 pt-8">
-          <div className="mx-auto max-w-3xl">
-            <CheckInCard compact />
+      {/* header + content float over the backdrop */}
+      <div className="relative z-10">
+        <HeaderBar theme={THEME} />
+        <main className="lg:pl-[104px]">
+          <div className="px-6 pt-10">
+            <Composer theme={THEME} />
           </div>
-        </div>
-        <RecentProjects theme={THEME} />
-        <Models theme={THEME} />
-        <ExploreMore />
-        <Footer theme={THEME} />
-      </main>
+          <div className="px-6 pt-8">
+            <div className="mx-auto max-w-3xl">
+              <CheckInCard compact />
+            </div>
+          </div>
+          <RecentProjects theme={THEME} />
+          <Models theme={THEME} />
+          <ExploreMore />
+          <Footer theme={THEME} />
+        </main>
+      </div>
     </div>
   );
 }

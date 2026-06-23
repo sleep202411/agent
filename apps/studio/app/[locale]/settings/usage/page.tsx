@@ -79,7 +79,7 @@ export default function UsageSettingsPage() {
             {t("rechargeCredits")}
           </Button>
         </div>
-        {available != null && total != null && total > 0n && (
+        {available != null && total != null && Number(total) > 0 && (
           <UsageBar available={available} total={total} className="mt-3" />
         )}
       </Panel>
@@ -115,7 +115,8 @@ function UsageBar({
   total: bigint;
   className?: string;
 }) {
-  const pct = total > 0n ? Number((available * 1000n) / total) / 10 : 0;
+  const tot = Number(total);
+  const pct = tot > 0 ? (Number(available) / tot) * 100 : 0;
   return (
     <div className={`h-1.5 w-full overflow-hidden rounded-full bg-white/[0.08] ${className ?? ""}`}>
       <div
