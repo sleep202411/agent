@@ -32,9 +32,13 @@ const operatorInfo: Record<string, string> = {
 export default async function PrivacyPolicyPage() {
   const locale = (await headers()).get("x-locale") ?? "en-US";
   const doc = content[locale] ?? content["en-US"];
-  const body =
-    siteConfig.region === "cn"
-      ? `${operatorInfo[locale] ?? operatorInfo["zh-CN"]}\n${doc.body}`
-      : doc.body;
+  // CN/HK app stores require the policy to name the operator, ICP filing, and
+  // contact. Show it on the CN site AND always on the Chinese-language policies
+  // (what a CN-store reviewer reads) so the requirement doesn't silently depend
+  // on SITE_REGION being set on that deployment.
+  const showOperator = siteConfig.region === "cn" || locale === "zh-CN" || locale === "zh-HK";
+  const body = showOperator
+    ? `${operatorInfo[locale] ?? operatorInfo["zh-CN"]}\n${doc.body}`
+    : doc.body;
   return <LegalDocument title={doc.title} subtitle={doc.subtitle} content={body} />;
 }
