@@ -37,7 +37,15 @@ const TEAM_ICON_PRESETS = ["aurora", "sunset", "ocean", "lime", "magenta", "slat
 const presetUrl = (id: string) => `/team-icons/${id}.svg`;
 
 /** Workspace avatar — the team icon if set, else an initial-letter chip. */
-function WsAvatar({ ws, size }: { ws: WorkspaceRef; size: string }) {
+function WsAvatar({
+  ws,
+  size,
+  fallbackClassName,
+}: {
+  ws: WorkspaceRef;
+  size: string;
+  fallbackClassName?: string;
+}) {
   if (ws.avatarUrl) {
     return (
       // eslint-disable-next-line @next/next/no-img-element -- icon URL (preset/uploaded)
@@ -48,7 +56,8 @@ function WsAvatar({ ws, size }: { ws: WorkspaceRef; size: string }) {
     <span
       className={cn(
         "flex shrink-0 items-center justify-center rounded-full bg-secondary text-xs font-semibold",
-        size
+        size,
+        fallbackClassName
       )}
     >
       {ws.name[0]?.toUpperCase()}
@@ -56,7 +65,19 @@ function WsAvatar({ ws, size }: { ws: WorkspaceRef; size: string }) {
   );
 }
 
-export function WorkspaceSwitcher() {
+export function WorkspaceSwitcher({
+  triggerClassName,
+  avatarSize = "size-7",
+  avatarFallbackClassName,
+  nameClassName,
+  chevronClassName,
+}: {
+  triggerClassName?: string;
+  avatarSize?: string;
+  avatarFallbackClassName?: string;
+  nameClassName?: string;
+  chevronClassName?: string;
+} = {}) {
   const t = useTranslations("workspace");
   const tc = useTranslations("common");
   const roleLabel = (r: string) =>
@@ -108,11 +129,22 @@ export function WorkspaceSwitcher() {
   return (
     <>
       <DropdownMenu>
-        <DropdownMenuTrigger className="relative flex h-10 items-center gap-2 rounded-full bg-white/[0.06] py-1 pr-3 pl-1.5 backdrop-blur-md backdrop-saturate-150 transition-colors outline-none hover:bg-white/[0.1] focus-visible:ring-2 focus-visible:ring-ring/50 data-[state=open]:bg-white/[0.1]">
+        <DropdownMenuTrigger
+          className={cn(
+            "relative flex h-10 items-center gap-2 rounded-full bg-white/[0.06] py-1 pr-3 pl-1.5 backdrop-blur-md backdrop-saturate-150 transition-colors outline-none hover:bg-white/[0.1] focus-visible:ring-2 focus-visible:ring-ring/50 data-[state=open]:bg-white/[0.1]",
+            triggerClassName
+          )}
+        >
           <GlassRim />
-          <WsAvatar ws={activeWorkspace} size="size-7" />
-          <span className="max-w-[12rem] truncate text-sm font-medium">{activeWorkspace.name}</span>
-          <IconChevronDown className="size-4 text-white/55" stroke={2} />
+          <WsAvatar
+            ws={activeWorkspace}
+            size={avatarSize}
+            fallbackClassName={avatarFallbackClassName}
+          />
+          <span className={cn("max-w-[12rem] truncate text-sm font-medium", nameClassName)}>
+            {activeWorkspace.name}
+          </span>
+          <IconChevronDown className={cn("size-4 text-white/55", chevronClassName)} stroke={2} />
         </DropdownMenuTrigger>
 
         <DropdownMenuContent align="end" sideOffset={8} className="w-80">

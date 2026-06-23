@@ -20,7 +20,6 @@ import { THEMES } from "./_pollo/theme";
 import { Footer, HeaderBar } from "./_home/chrome";
 import { ExploreMore, Models, RecentProjects } from "./_home/sections";
 import { HeroCanvas } from "./_home/hero-canvas";
-import { CheckInCard } from "./settings/_components/check-in-card";
 
 const THEME = THEMES.red;
 
@@ -43,15 +42,10 @@ export default function HomePage() {
 
       {/* header + content float over the backdrop */}
       <div className="relative z-10">
-        <HeaderBar theme={THEME} />
+        <HeaderBar />
         <main className="lg:pl-[104px]">
-          <div className="px-6 pt-10">
+          <div className="px-6 pt-[220]">
             <Composer theme={THEME} />
-          </div>
-          <div className="px-6 pt-8">
-            <div className="mx-auto max-w-3xl">
-              <CheckInCard compact />
-            </div>
           </div>
           <RecentProjects theme={THEME} />
           <Models theme={THEME} />

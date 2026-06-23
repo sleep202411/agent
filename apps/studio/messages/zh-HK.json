@@ -298,10 +298,14 @@
     "identifierLabel": "電郵或電話號碼",
     "identifierPlaceholder": "you@example.com",
     "passwordLabel": "密碼",
+    "forgotPassword": "忘記密碼？",
     "signIn": "登入",
     "signInFailed": "登入失敗",
     "noAccount": "還沒有帳號？請先前往 <link>fizzdragon.com</link> 註冊。",
-    "heroPrompt": "一幅充滿電影感的前衛時尚肖像，雕塑般的緋紅織物，一隻發光的摺紙巨龍棲息在她的肩頭，戲劇化的影棚燈光",
+    "registerPrompt": "還沒有帳號？<register>註冊</register>",
+    "termsNotice": "繼續使用即表示你同意我們的 <terms>服務條款</terms>。",
+    "privacyNotice": "閱讀我們的 <privacy>私隱政策</privacy>。",
+    "heroPrompt": "一幅明亮青春的風景畫，陽光灑落的草地小徑，清新的藍天，柔和夏日光線，充滿開放感的創作氛圍",
     "heroCaption": "由 FizzStudio 生成 · GPT Image 2"
   },
   "workspace": {

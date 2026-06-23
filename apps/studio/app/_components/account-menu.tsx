@@ -18,6 +18,7 @@ import { toast } from "sonner";
 import { useAuth } from "./auth-provider";
 import { useComputeWalletBalance } from "./credits-badge";
 import { SubscriptionDialog } from "./subscription-dialog";
+import { cn } from "@/lib/utils";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -39,7 +40,13 @@ function PillButton({ label, onClick }: { label: string; onClick: () => void }) 
   );
 }
 
-export function AccountMenu() {
+export function AccountMenu({
+  triggerClassName,
+  fallback = "icon",
+}: {
+  triggerClassName?: string;
+  fallback?: "icon" | "initial";
+} = {}) {
   const t = useTranslations("account");
   const { user, loading, signIn, signOut } = useAuth();
   const { data: computeCredits } = useComputeWalletBalance(Boolean(user));
@@ -101,11 +108,16 @@ export function AccountMenu() {
       <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
         <DropdownMenuTrigger
           aria-label={t("account")}
-          className="relative flex size-9 items-center justify-center overflow-hidden rounded-full bg-secondary text-white/80 transition-colors outline-none hover:bg-accent hover:text-white focus-visible:ring-2 focus-visible:ring-ring/50 data-[state=open]:bg-accent data-[state=open]:text-white"
+          className={cn(
+            "relative flex size-9 items-center justify-center overflow-hidden rounded-full bg-secondary text-white/80 transition-colors outline-none hover:bg-accent hover:text-white focus-visible:ring-2 focus-visible:ring-ring/50 data-[state=open]:bg-accent data-[state=open]:text-white",
+            triggerClassName
+          )}
         >
           {user?.avatar ? (
             // eslint-disable-next-line @next/next/no-img-element
             <img src={user.avatar} alt={name} className="size-full object-cover" />
+          ) : fallback === "initial" ? (
+            <span className="text-[18px] font-semibold leading-none">{name[0]?.toUpperCase()}</span>
           ) : (
             <IconUser className="size-5" stroke={1.8} />
           )}

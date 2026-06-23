@@ -298,10 +298,14 @@
     "identifierLabel": "邮箱或手机号",
     "identifierPlaceholder": "you@example.com",
     "passwordLabel": "密码",
+    "forgotPassword": "忘记密码？",
     "signIn": "登录",
     "signInFailed": "登录失败",
     "noAccount": "还没有账号？请先前往 <link>fizzdragon.com</link> 注册。",
-    "heroPrompt": "一幅充满电影感的前卫时尚肖像，雕塑般的绯红织物，一只发光的折纸巨龙栖息在她的肩头，戏剧化的影棚灯光",
+    "registerPrompt": "还没有账号？<register>注册</register>",
+    "termsNotice": "继续使用即表示你同意我们的 <terms>服务条款</terms>。",
+    "privacyNotice": "阅读我们的 <privacy>隐私政策</privacy>。",
+    "heroPrompt": "一幅明亮青春的风景画，阳光洒落的草地小径，清新的蓝天，柔和夏日光线，充满开放感的创作氛围",
     "heroCaption": "由 FizzStudio 生成 · GPT Image 2"
   },
   "workspace": {

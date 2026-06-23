@@ -1,21 +1,20 @@
 "use client";
 
 /**
- * Home-page chrome: the top promo banner, the top-right header actions (with the
- * brand wordmark on the left, since the shared icon rail carries no logo), and
- * the footer. Navigation itself is the app's shared `StudioSidebar` (icon rail) —
- * we don't have pollo's ~15 menu items, so the home uses the same rail as the
- * rest of the app. Themed via the `theme` prop (CTA accent = t.genBg, promo
- * highlights = t.price).
+ * Home-page chrome: the top-right header actions (with the brand wordmark on
+ * the left, since the shared icon rail carries no logo), and the footer.
+ * Navigation itself is the app's shared `StudioSidebar` (icon rail).
  */
 
 import {
+  IconBell,
   IconBrandDiscord,
   IconBrandFacebook,
   IconBrandInstagram,
   IconBrandX,
   IconBrandYoutube,
   IconCrown,
+  IconMessageCircle,
   IconStarFilled,
   type Icon,
 } from "@tabler/icons-react";
@@ -24,10 +23,10 @@ import { useState } from "react";
 import { Link } from "@/i18n/navigation";
 import { useAuth } from "@/app/_components/auth-provider";
 import { AccountMenu } from "@/app/_components/account-menu";
-import { CreditsBadge } from "@/app/_components/credits-badge";
 import { SubscriptionDialog } from "@/app/_components/subscription-dialog";
 import { WorkspaceSwitcher } from "@/app/_components/workspace-switcher";
 import type { Theme } from "../_pollo/theme";
+import { toast } from "sonner";
 
 const SOCIAL: Icon[] = [
   IconBrandX,
@@ -37,19 +36,16 @@ const SOCIAL: Icon[] = [
   IconBrandDiscord,
 ];
 
-export function HeaderBar({ theme: t }: { theme: Theme }) {
-  // Real auth. Logged-in → workspace switcher + compute credits + a themed
-  // membership/Upgrade CTA + the account menu. Logged-out → a single themed
-  // Login CTA (one button, accent color) beside the Pricing link. The brand
-  // wordmark sits at the left edge (the icon rail has no logo).
+export function HeaderBar() {
+  // Real auth. Home mirrors the imagine.art account cluster: Upgrade,
+  // workspace, message, notification, avatar. Search + Contact Sales are
+  // intentionally omitted. Signed-out users keep a compact sign-in entry so the
+  // public home is still usable.
   const { user, loading, signIn } = useAuth();
   const [pricingOpen, setPricingOpen] = useState(false);
 
-  // The one shared accent CTA style — brand accent per the active theme preset.
-  const ctaStyle = { background: t.genBg, color: t.genText, boxShadow: t.genShadow };
-
   return (
-    <header className="flex h-16 items-center justify-between gap-4 px-6 text-[14px]">
+    <header className="flex h-16 items-center justify-between gap-4 overflow-visible px-6 text-[14px]">
       <Link href="/" aria-label="FizzDragon home" className="flex shrink-0 items-center">
         <Image
           src="/logo.png"
@@ -61,46 +57,47 @@ export function HeaderBar({ theme: t }: { theme: Theme }) {
         />
       </Link>
 
-      <div className="flex items-center gap-3">
+      <div className="flex items-center gap-2">
         {loading ? (
           <>
-            <div className="h-10 w-44 animate-pulse rounded-full bg-white/[0.06]" />
-            <div className="size-9 animate-pulse rounded-full bg-white/[0.06]" />
+            <div className="h-8 w-28 animate-pulse rounded-[12px] bg-white/[0.06]" />
+            <div className="h-8 w-52 animate-pulse rounded-[12px] bg-white/[0.06]" />
+            <div className="size-8 animate-pulse rounded-full bg-white/[0.06]" />
           </>
         ) : user ? (
           <>
-            {/* workspace — the active pot/team (workspace-owned compute) */}
-            <WorkspaceSwitcher />
-            {/* compute credits — matched to the h-10 controls beside it */}
-            <CreditsBadge className="flex h-10 items-center gap-1.5 rounded-full bg-white/[0.06] px-3.5 text-sm font-medium tabular-nums" />
-            {/* membership / upgrade — the accent CTA */}
-            <button
-              type="button"
-              onClick={() => setPricingOpen(true)}
-              className="flex h-10 items-center gap-1.5 rounded-full px-4 text-[13px] font-semibold transition hover:brightness-110"
-              style={ctaStyle}
-            >
-              <IconCrown className="size-4" stroke={1.8} />
-              Upgrade
-            </button>
-            <AccountMenu />
+            <UpgradeSaleButton onClick={() => setPricingOpen(true)} />
+            <WorkspaceSwitcher
+              triggerClassName="h-8 min-w-[220px] max-w-[260px] gap-1.5 rounded-[12px] border border-[#2C263D] bg-[#15151A]/80 py-1.5 pr-2.5 pl-1.5 hover:bg-[#1B1B22]/90 data-[state=open]:bg-[#1B1B22]/90"
+              avatarSize="size-5"
+              avatarFallbackClassName="bg-[#744717] text-[12px] text-white"
+              nameClassName="max-w-[170px] text-[14px] leading-5 font-medium text-white"
+              chevronClassName="size-4 text-white/65"
+            />
+            <HeaderIconButton
+              label="Messages"
+              Icon={IconMessageCircle}
+              onClick={() => toast.info("Messages are coming soon.")}
+            />
+            <HeaderIconButton
+              label="Notifications"
+              Icon={IconBell}
+              onClick={() => toast.info("Notifications are coming soon.")}
+            />
+            <AccountMenu
+              fallback="initial"
+              triggerClassName="size-8 bg-[#744717] text-white hover:bg-[#86531C] data-[state=open]:bg-[#86531C] [&_span]:text-[13px]"
+            />
           </>
         ) : (
           <>
-            <button
-              type="button"
-              onClick={() => setPricingOpen(true)}
-              className="text-white/70 transition hover:text-white"
-            >
-              Pricing
-            </button>
+            <UpgradeSaleButton onClick={() => setPricingOpen(true)} />
             <button
               type="button"
               onClick={signIn}
-              className="rounded-full px-5 py-2 text-[13px] font-semibold transition hover:brightness-110"
-              style={ctaStyle}
+              className="h-8 rounded-[12px] bg-white px-2.5 py-1.5 text-[14px] leading-5 font-medium text-black transition hover:bg-white/90"
             >
-              Login
+              Sign In
             </button>
           </>
         )}
@@ -108,6 +105,44 @@ export function HeaderBar({ theme: t }: { theme: Theme }) {
 
       <SubscriptionDialog open={pricingOpen} onOpenChange={setPricingOpen} />
     </header>
+  );
+}
+
+function UpgradeSaleButton({ onClick }: { onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="relative flex h-8 items-center gap-1.5 rounded-[12px] bg-[#E52227] px-2.5 py-1.5 text-[14px] leading-5 font-medium text-white shadow-[0_0_18px_rgb(229_34_39/0.22)] transition hover:bg-[#c91e22]"
+    >
+      <IconCrown className="size-4 text-white" stroke={2} />
+      Upgrade
+      <span className="absolute top-[26px] left-1/2 -translate-x-1/2 rounded-full bg-[#111113] px-2.5 py-0 text-[13px] leading-5 font-bold text-white shadow-[0_8px_18px_rgb(229_34_39/0.2)] ring-1 ring-[#E52227]/40">
+        -50%
+      </span>
+    </button>
+  );
+}
+
+function HeaderIconButton({
+  label,
+  Icon,
+  onClick,
+}: {
+  label: string;
+  Icon: Icon;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      aria-label={label}
+      title={label}
+      onClick={onClick}
+      className="grid size-8 place-items-center rounded-full text-white transition hover:bg-white/[0.06] hover:text-white focus-visible:ring-2 focus-visible:ring-white/20 focus-visible:outline-none"
+    >
+      <Icon className="size-5" stroke={1.7} />
+    </button>
   );
 }
 

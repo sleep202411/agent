@@ -298,10 +298,14 @@
     "identifierLabel": "Email or phone",
     "identifierPlaceholder": "you@example.com",
     "passwordLabel": "Password",
+    "forgotPassword": "Forgot password?",
     "signIn": "Sign in",
     "signInFailed": "Sign in failed",
     "noAccount": "No account yet? Create one on <link>fizzdragon.com</link> first.",
-    "heroPrompt": "A cinematic portrait in avant-garde fashion, sculptural crimson fabric, a luminous origami dragon perched on her shoulder, dramatic studio lighting",
+    "registerPrompt": "No account yet? <register>Sign up</register>",
+    "termsNotice": "By proceeding, you agree to our <terms>Terms of Service</terms>.",
+    "privacyNotice": "Read our <privacy>Privacy Policy</privacy>.",
+    "heroPrompt": "A bright youthful landscape painting, sunlit meadow paths, fresh blue sky, soft summer light, and an open-air creative atmosphere",
     "heroCaption": "Generated with FizzStudio · GPT Image 2"
   },
   "workspace": {

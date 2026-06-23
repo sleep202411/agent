@@ -21,7 +21,6 @@ import { GradientRing } from "./glyphs";
 import { ProjectStudio } from "./project-studio";
 import { AgentStudio } from "./agent-studio";
 import { CreativeComposer } from "../_home/creative-composer";
-import { ToolRow } from "../_home/tool-row";
 
 type Studio = {
   id: string;
@@ -143,7 +142,7 @@ export function Composer({ theme: t }: { theme: Theme }) {
       {/* body — crossfades on tab switch */}
       <div
         key={studioIdx}
-        className={SHOW_STUDIO_TABS ? "w-full" : "mt-9 w-full"}
+        className={SHOW_STUDIO_TABS ? "w-full" : "mt-6 w-full"}
         style={{ animation: `polloFade 0.3s ${EASE} both` }}
       >
         {studio.kind === "agent" ? (
@@ -154,9 +153,6 @@ export function Composer({ theme: t }: { theme: Theme }) {
           <CreativeComposer theme={t} />
         )}
       </div>
-
-      {/* tool shortcuts under the composer (create surface only) */}
-      {studio.kind === "compose" ? <ToolRow /> : null}
     </div>
   );
 }
