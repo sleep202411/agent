@@ -33,10 +33,11 @@ for i in $(seq 1 40); do
   [ "$s" = "Running" ] && break; sleep 5
 done
 
-# Fetch the CURRENT public IP — it changes on every StopCharging stop/start
-# (pay-as-you-go IP, no EIP bound), so it must NOT be hardcoded.
+# Resolve the build ECS public IP at runtime. Prefer the bound EIP (stable,
+# reported under EipAddress); fall back to the auto-assigned PublicIpAddress
+# (which changes on every StopCharging stop/start) if no EIP is attached.
 ECS_IP=$(aliyun ecs DescribeInstances --InstanceIds "['$ECS_ID']" --RegionId cn-hangzhou --profile default 2>/dev/null \
-  | python3 -c "import sys,json;print(json.load(sys.stdin)['Instances']['Instance'][0]['PublicIpAddress']['IpAddress'][0])")
+  | python3 -c "import sys,json;i=json.load(sys.stdin)['Instances']['Instance'][0];eip=i.get('EipAddress',{}).get('IpAddress','');pub=i.get('PublicIpAddress',{}).get('IpAddress',[]);print(eip or (pub[0] if pub else ''))")
 [ -n "$ECS_IP" ] || { echo "FATAL: could not resolve build ECS public IP" >&2; exit 1; }
 echo "  build ECS IP: $ECS_IP"
 # Give sshd a moment if the instance only just reached Running.
