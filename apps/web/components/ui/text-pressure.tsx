@@ -1,14 +1,12 @@
 "use client";
 
-/**
- * TextPressure — variable-font characters that bend (width / weight / italic /
- * alpha) toward the cursor. Ported from react-bits (MIT + Commons Clause).
- *
- * Loads Compressa VF by default; the variation axes only respond if the
- * declared font is a true variable font.
- */
+// Ported from React Bits — TextPressure (TypeScript + Tailwind variant).
+// Original: https://codepen.io/JuanFuentes/full/rgXKGQ
+// Variable font: Roboto Flex, loaded via the Google Fonts @import below.
+// (Only local adaptations vs the upstream source: "use client", a named export
+// for the footer import, and `FC` instead of `React.FC`.)
 
-import { useEffect, useRef, useState, useMemo, useCallback } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type FC } from "react";
 
 export interface TextPressureProps {
   text?: string;
@@ -49,10 +47,10 @@ const debounce = <Args extends unknown[]>(func: (...args: Args) => void, delay: 
   };
 };
 
-export function TextPressure({
+export const TextPressure: FC<TextPressureProps> = ({
   text = "Compressa",
-  fontFamily = "Compressa VF",
-  fontUrl = "https://res.cloudinary.com/dr6lvwubh/raw/upload/v1529908256/CompressaPRO-GX.woff2",
+  fontFamily = "Roboto Flex",
+  fontUrl = "https://fonts.googleapis.com/css2?family=Roboto+Flex:opsz,wdth,wght@8..144,25..151,100..1000&display=swap",
   width = true,
   weight = true,
   italic = true,
@@ -65,7 +63,7 @@ export function TextPressure({
   strokeWidth = 2,
   className = "",
   minFontSize = 24,
-}: TextPressureProps) {
+}) => {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const titleRef = useRef<HTMLHeadingElement | null>(null);
   const spansRef = useRef<(HTMLSpanElement | null)[]>([]);
@@ -185,16 +183,12 @@ export function TextPressure({
   const styleElement = useMemo(() => {
     return (
       <style>{`
-        @font-face {
-          font-family: '${fontFamily}';
-          src: url('${fontUrl}');
-          font-style: normal;
-        }
-        .text-pressure-stroke span {
+        @import url('${fontUrl}');
+        .stroke span {
           position: relative;
           color: ${textColor};
         }
-        .text-pressure-stroke span::after {
+        .stroke span::after {
           content: attr(data-char);
           position: absolute;
           left: 0;
@@ -206,16 +200,16 @@ export function TextPressure({
         }
       `}</style>
     );
-  }, [fontFamily, fontUrl, textColor, strokeColor, strokeWidth]);
+  }, [fontUrl, textColor, strokeColor, strokeWidth]);
 
   return (
-    <div ref={containerRef} className="relative size-full overflow-hidden bg-transparent">
+    <div ref={containerRef} className="relative h-full w-full overflow-hidden bg-transparent">
       {styleElement}
       <h1
         ref={titleRef}
-        className={`${className} ${flex ? "flex justify-between" : ""} ${
-          stroke ? "text-pressure-stroke" : ""
-        } text-center uppercase`}
+        className={`text-pressure-title ${className} ${
+          flex ? "flex justify-between" : ""
+        } ${stroke ? "stroke" : ""} text-center uppercase`}
         style={{
           fontFamily,
           fontSize,
@@ -242,6 +236,6 @@ export function TextPressure({
       </h1>
     </div>
   );
-}
+};
 
 export default TextPressure;
