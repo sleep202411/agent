@@ -1,10 +1,12 @@
 "use client";
 
-import { useQuery } from "@tanstack/react-query";
+import { useEffect } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslations } from "next-intl";
 import { IconBolt } from "@tabler/icons-react";
 import { api } from "@/lib/api";
 import { useActiveWorkspaceId } from "@/app/_components/workspace-context";
+import { getAssetsRealtimeKernel } from "@/app/[locale]/canvas/_lib/assets-realtime-kernel";
 import { openSettings } from "@/lib/settings-hash";
 import { cn } from "@/lib/utils";
 import { GlassRim } from "@/components/ui/glass-rim";
@@ -80,15 +82,43 @@ export function useComputeWalletBalance(enabled = true) {
     queryKey: computeWalletBalanceKey(workspaceId),
     queryFn: () => getComputeWalletBalance(workspaceId),
     staleTime: 20_000,
-    refetchInterval: 60_000,
+    // No interval poll: wallet_changed realtime pushes drive updates (see
+    // useWalletRealtime). refetchOnWindowFocus stays as a cheap missed-push backstop.
     refetchOnWindowFocus: true,
     enabled: enabled && Boolean(user),
   });
 }
 
+/**
+ * Subscribe to the shared realtime socket and refresh the active workspace's
+ * compute balance when the server pushes a `wallet_changed` — replaces the 60s
+ * poll. The balance updates on real change (including a teammate spending the
+ * shared pot), not on a timer.
+ */
+function useWalletRealtime() {
+  const { user } = useAuth();
+  const workspaceId = useActiveWorkspaceId();
+  const queryClient = useQueryClient();
+  useEffect(() => {
+    if (!user) return;
+    const sub = getAssetsRealtimeKernel({
+      workspaceId: workspaceId ?? undefined,
+    }).subscribe({
+      onEvent: (event) => {
+        if (event.kind !== "wallet_changed") return;
+        void queryClient.invalidateQueries({
+          queryKey: computeWalletBalanceKey(event.workspaceId),
+        });
+      },
+    });
+    return () => sub.close();
+  }, [user, workspaceId, queryClient]);
+}
+
 /** Compute-credits balance pill (header + canvas chrome). */
 export function CreditsBadge({ className }: { className?: string }) {
   const t = useTranslations("shell");
+  useWalletRealtime();
   const { data } = useComputeWalletBalance();
   const title =
     data != null

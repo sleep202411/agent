@@ -41,7 +41,7 @@ interface NegotiateResponse {
 async function negotiate(workspaceId?: string): Promise<NegotiateData> {
   const headers: Record<string, string> = {};
   if (workspaceId) headers["X-Fizz-Workspace-Id"] = workspaceId;
-  const res = await fetch("/aurora/realtime/negotiate/assets", {
+  const res = await fetch("/aurora/realtime/negotiate/realtime", {
     credentials: "include",
     headers,
     method: "POST",

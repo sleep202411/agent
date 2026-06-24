@@ -19,6 +19,7 @@ import {
 } from "@/app/[locale]/canvas/_lib/generation-api";
 import { getAssetsRealtimeKernel } from "@/app/[locale]/canvas/_lib/assets-realtime-kernel";
 import { computeWalletBalanceQueryKey } from "@/app/_components/credits-badge";
+import { useActiveWorkspaceId } from "@/app/_components/workspace-context";
 
 /** One row of the create-and-browse feed. Rows are inserted after server accept. */
 export interface FeedJob {
@@ -157,9 +158,13 @@ export function useGenerationFeed(type: FizzAiJobType, sourceSurface: string) {
     };
   }, [reconcileHistory]);
 
-  // Realtime: ai_job_update pushes for this modality merge into the feed.
+  // Realtime: ai_job_update pushes for this modality merge into the feed. One
+  // socket per active workspace (so it carries that workspace's wallet channel).
+  const workspaceId = useActiveWorkspaceId();
   useEffect(() => {
-    const client = getAssetsRealtimeKernel().subscribe({
+    const client = getAssetsRealtimeKernel({
+      workspaceId: workspaceId ?? undefined,
+    }).subscribe({
       onConnected: () => {
         setRealtimeConnected(true);
         void reconcileHistory();
@@ -185,7 +190,7 @@ export function useGenerationFeed(type: FizzAiJobType, sourceSurface: string) {
       },
     });
     return () => client.close();
-  }, [queryClient, reconcileHistory, sourceSurface, type]);
+  }, [queryClient, reconcileHistory, sourceSurface, type, workspaceId]);
 
   // Polling backstop for non-terminal jobs (covers missed pushes).
   const activeIds = useMemo(

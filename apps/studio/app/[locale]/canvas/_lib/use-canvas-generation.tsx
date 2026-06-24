@@ -18,6 +18,7 @@ import { useCanvasGraphContext } from "@/lib/collab/canvas-graph-context";
 import { getAssetsRealtimeKernel } from "./assets-realtime-kernel";
 import { outputKindForType, routeReferenceField } from "./reference-routing";
 import { computeWalletBalanceQueryKey } from "@/app/_components/credits-badge";
+import { useActiveWorkspaceId } from "@/app/_components/workspace-context";
 import {
   cancelFizzAiJob,
   compactFizzAiInput,
@@ -292,8 +293,12 @@ export function CanvasGenerationProvider({
 
   // Realtime: route job updates back to their card by jobId; reconcile on
   // (re)connect so a reconnect after sleep/disconnect back-fills missed updates.
+  // One socket per active workspace (carries that workspace's wallet channel).
+  const workspaceId = useActiveWorkspaceId();
   useEffect(() => {
-    const client = getAssetsRealtimeKernel().subscribe({
+    const client = getAssetsRealtimeKernel({
+      workspaceId: workspaceId ?? undefined,
+    }).subscribe({
       onConnected: () => {
         setRealtimeConnected(true);
         void reconcile();
@@ -365,7 +370,7 @@ export function CanvasGenerationProvider({
       },
     });
     return () => client.close();
-  }, [applyJobUpdate, reconcile, graph, getNodes, t]);
+  }, [applyJobUpdate, reconcile, graph, getNodes, t, workspaceId]);
 
   // Non-terminal job ids on the canvas, reactive to doc hydration + node edits.
   const activeJobIds = useStore((s) => {
