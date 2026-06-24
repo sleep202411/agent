@@ -265,7 +265,12 @@
     "noProjectsYet": "尚無項目",
     "noProjectsDescription": "項目可將相關生成內容歸納在一起。建立一個來整理你的作品。",
     "projectsComingSoon": "項目 · 敬請期待",
-    "newProject": "新增項目"
+    "newProject": "新增項目",
+    "projectCreated": "項目已建立",
+    "createProjectFailed": "建立項目失敗",
+    "projectRenamed": "已重新命名",
+    "renameFailed": "重新命名失敗",
+    "deleteFailed": "刪除失敗"
   },
   "shell": {
     "credits": {

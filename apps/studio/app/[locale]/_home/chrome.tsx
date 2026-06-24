@@ -7,14 +7,12 @@
  */
 
 import {
-  IconBell,
   IconBrandDiscord,
   IconBrandFacebook,
   IconBrandInstagram,
   IconBrandX,
   IconBrandYoutube,
   IconCrown,
-  IconMessageCircle,
   IconStarFilled,
   type Icon,
 } from "@tabler/icons-react";
@@ -26,7 +24,6 @@ import { AccountMenu } from "@/app/_components/account-menu";
 import { SubscriptionDialog } from "@/app/_components/subscription-dialog";
 import { WorkspaceSwitcher } from "@/app/_components/workspace-switcher";
 import type { Theme } from "../_pollo/theme";
-import { toast } from "sonner";
 
 const SOCIAL: Icon[] = [
   IconBrandX,
@@ -74,16 +71,6 @@ export function HeaderBar() {
               nameClassName="max-w-[170px] text-[14px] leading-5 font-medium text-white"
               chevronClassName="size-4 text-white/65"
             />
-            <HeaderIconButton
-              label="Messages"
-              Icon={IconMessageCircle}
-              onClick={() => toast.info("Messages are coming soon.")}
-            />
-            <HeaderIconButton
-              label="Notifications"
-              Icon={IconBell}
-              onClick={() => toast.info("Notifications are coming soon.")}
-            />
             <AccountMenu
               fallback="initial"
               triggerClassName="size-8 bg-[#744717] text-white hover:bg-[#86531C] data-[state=open]:bg-[#86531C] [&_span]:text-[13px]"
@@ -117,28 +104,6 @@ function UpgradeButton({ onClick }: { onClick: () => void }) {
     >
       <IconCrown className="size-4 text-white" stroke={2} />
       Upgrade
-    </button>
-  );
-}
-
-function HeaderIconButton({
-  label,
-  Icon,
-  onClick,
-}: {
-  label: string;
-  Icon: Icon;
-  onClick: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      aria-label={label}
-      title={label}
-      onClick={onClick}
-      className="grid size-8 place-items-center rounded-full text-white transition hover:bg-white/[0.06] hover:text-white focus-visible:ring-2 focus-visible:ring-white/20 focus-visible:outline-none"
-    >
-      <Icon className="size-5" stroke={1.7} />
     </button>
   );
 }

@@ -265,7 +265,12 @@
     "noProjectsYet": "暂无项目",
     "noProjectsDescription": "项目可将相关生成内容归集在一起。创建一个来整理你的作品。",
     "projectsComingSoon": "项目 · 敬请期待",
-    "newProject": "新建项目"
+    "newProject": "新建项目",
+    "projectCreated": "项目已创建",
+    "createProjectFailed": "创建项目失败",
+    "projectRenamed": "已重命名",
+    "renameFailed": "重命名失败",
+    "deleteFailed": "删除失败"
   },
   "shell": {
     "credits": {

@@ -18,6 +18,12 @@ const STRIP_PREFIX = process.env.AURORA_STRIP_PREFIX === "1";
 // /user/query/user/info, /user/logout). Same prefix contract as apps/web.
 const JAVA_CONTENT = process.env.JAVA_CONTENT_URL ?? "https://java.fizzdragon.com/content";
 
+// Java studio backend — owns the art-studio world/project APIs
+// (/api/user/world/*, /api/user/project/*). Same prefix contract as apps/web's
+// JAVA_STUDIO_URL. The `/api/img` Next route is a filesystem route, so the
+// array-form (afterFiles) rewrite below never shadows it.
+const JAVA_STUDIO = process.env.JAVA_STUDIO_URL ?? "https://java.fizzdragon.com/studio";
+
 const nextConfig: NextConfig = {
   // Self-contained server bundle for the Docker runner stage.
   output: "standalone",
@@ -34,6 +40,10 @@ const nextConfig: NextConfig = {
       {
         source: "/user/:path*",
         destination: `${JAVA_CONTENT}/user/:path*`,
+      },
+      {
+        source: "/api/:path*",
+        destination: `${JAVA_STUDIO}/api/:path*`,
       },
     ];
   },

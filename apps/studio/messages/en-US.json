@@ -265,7 +265,12 @@
     "noProjectsYet": "No projects yet",
     "noProjectsDescription": "Projects keep related generations together. Create one to organize your work.",
     "projectsComingSoon": "Projects · Coming soon",
-    "newProject": "New project"
+    "newProject": "New project",
+    "projectCreated": "Project created",
+    "createProjectFailed": "Couldn't create project",
+    "projectRenamed": "Project renamed",
+    "renameFailed": "Couldn't rename project",
+    "deleteFailed": "Couldn't delete project"
   },
   "shell": {
     "credits": {

@@ -1,5 +1,6 @@
 "use client";
 
+import type { ReactNode } from "react";
 import { IconPhoto } from "@tabler/icons-react";
 import { Link } from "@/i18n/navigation";
 import { cn } from "@/lib/utils";
@@ -24,6 +25,8 @@ export interface ProjectCardProps {
   metrics?: { assets: number; credits: number };
   className?: string;
   onMenuClick?: () => void;
+  /** When set, renders in the actions slot instead of the default ⋮ button (e.g. a dropdown menu). */
+  menu?: ReactNode;
 }
 
 export function ProjectCard({
@@ -36,6 +39,7 @@ export function ProjectCard({
   metrics,
   className,
   onMenuClick,
+  menu,
 }: ProjectCardProps) {
   const body = (
     <article className="group w-full cursor-pointer overflow-hidden rounded-[16px] border border-white/[0.075] bg-[#151515] shadow-[0_1px_0_rgba(255,255,255,0.03)_inset] transition hover:border-white/[0.13] hover:shadow-[0_8px_24px_rgba(0,0,0,0.22)]">
@@ -75,17 +79,19 @@ export function ProjectCard({
             ) : null}
           </div>
         </div>
-        <button
-          type="button"
-          aria-label="Project actions"
-          className="grid size-8 shrink-0 place-items-center rounded-full text-white/90 transition hover:bg-white/[0.08]"
-          onClick={(event) => {
-            event.preventDefault();
-            onMenuClick?.();
-          }}
-        >
-          <DotsIcon />
-        </button>
+        {menu ?? (
+          <button
+            type="button"
+            aria-label="Project actions"
+            className="grid size-8 shrink-0 place-items-center rounded-full text-white/90 transition hover:bg-white/[0.08]"
+            onClick={(event) => {
+              event.preventDefault();
+              onMenuClick?.();
+            }}
+          >
+            <DotsIcon />
+          </button>
+        )}
       </div>
     </article>
   );
