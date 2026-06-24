@@ -4,12 +4,21 @@
  * string; it negotiates a short-lived JWT here and uses that JWT to
  * connect to Azure directly.
  */
-import { Controller, Headers, Inject, Logger, Post } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Headers,
+  Inject,
+  Logger,
+  Post,
+  Query,
+} from '@nestjs/common';
 import { WorkspaceMemberRole } from '@prisma/client';
 import { CurrentUser } from '../../auth';
 import type { AuthUser } from '../../auth';
 import { WorkspacePermissionService } from '../../workspaces';
 import { REALTIME_PROVIDER, type RealtimeProvider } from './realtime-provider';
+import { RealtimeReplayService } from './realtime-replay.service';
 
 @Controller('realtime')
 export class RealtimeController {
@@ -19,6 +28,7 @@ export class RealtimeController {
     @Inject(REALTIME_PROVIDER)
     private readonly realtime: RealtimeProvider,
     private readonly workspacePermissions: WorkspacePermissionService,
+    private readonly replayService: RealtimeReplayService,
   ) {}
 
   @Post('negotiate/entity')
@@ -98,6 +108,29 @@ export class RealtimeController {
       code: 200,
       data: access,
     };
+  }
+
+  /**
+   * Catch-up: replay a channel's events after a sequence from the durable outbox
+   * (clients call this when they detect a per-channel seq gap, e.g. after a
+   * disconnect). Authorization = the same channel grant as negotiate (enforced in
+   * the service).
+   */
+  @Get('replay')
+  async replay(
+    @CurrentUser() user: AuthUser,
+    @Query('channel') channel?: string,
+    @Query('afterSeq') afterSeq?: string,
+  ) {
+    if (!channel) {
+      return { code: 400, message: 'channel_required' };
+    }
+    const after = Number(afterSeq ?? '0');
+    if (!Number.isFinite(after) || after < 0) {
+      return { code: 400, message: 'bad_after_seq' };
+    }
+    const data = await this.replayService.replay(user.userId, channel, after);
+    return { code: 200, data };
   }
 }
 

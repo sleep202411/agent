@@ -3,6 +3,7 @@ import { WorkspacesModule } from '../../workspaces';
 import { RealtimeController } from './realtime.controller';
 import { RealtimeGateway } from './realtime.gateway';
 import { REALTIME_PROVIDER, type RealtimeProvider } from './realtime-provider';
+import { RealtimeReplayService } from './realtime-replay.service';
 import { SelfHostedRealtimeService } from './self-hosted-realtime.service';
 import { WebPubSubService } from './web-pubsub.service';
 
@@ -38,6 +39,7 @@ function selectRealtimeProvider(
   providers: [
     WebPubSubService,
     SelfHostedRealtimeService,
+    RealtimeReplayService,
     RealtimeGateway,
     {
       provide: REALTIME_PROVIDER,
