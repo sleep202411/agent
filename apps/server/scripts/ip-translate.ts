@@ -12,12 +12,39 @@
  *   tsx scripts/ip-translate.ts [--write] [--limit N] [--locales en-US,zh-HK] [--source zh-CN] [--owner 15]
  */
 import { createHash } from 'node:crypto';
+import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { config as loadDotenv } from 'dotenv';
 import type { PrismaClient } from '@prisma/client';
 
 const repoRoot = resolve(__dirname, '../../..');
 loadDotenv({ path: resolve(repoRoot, 'apps/server/.env'), override: false });
+
+// The bulk-seeded catalogue uses deterministic IDs (seedUuid below mirrors
+// ip-bulk-seed.ts). `--seed-only` scopes translation to exactly those rows;
+// `--cleanup` removes machine translations that leaked onto non-seed IPs.
+function seedUuid(kind: string, key: string): string {
+  const h = createHash('sha1')
+    .update(`ip-bulk-seed:${kind}:${key}`)
+    .digest('hex');
+  const b = h.slice(0, 32).split('');
+  b[12] = '5';
+  b[16] = ((parseInt(b[16], 16) & 0x3) | 0x8).toString(16);
+  const s = b.join('');
+  return `${s.slice(0, 8)}-${s.slice(8, 12)}-${s.slice(12, 16)}-${s.slice(16, 20)}-${s.slice(20)}`;
+}
+
+function seedIpIds(): string[] {
+  const plan = JSON.parse(
+    readFileSync(
+      resolve(repoRoot, 'apps/server/outputs/ip-bulk-seed/plan.json'),
+      'utf-8',
+    ),
+  ) as { catalogNo: string | number }[];
+  return Array.from(
+    new Set(plan.map((r) => seedUuid('ip', String(r.catalogNo)))),
+  );
+}
 
 const PROVIDER = 'qwen';
 const LLM_BASE =
@@ -118,15 +145,71 @@ async function main() {
     .map((s) => s.trim())
     .filter(Boolean);
   const owner = arg('--owner');
+  const seedOnly = a.includes('--seed-only');
+  const cleanup = a.includes('--cleanup');
+  const seedIds = seedOnly || cleanup ? seedIpIds() : [];
 
   const { buildPrisma } = (await import('../src/infra/db/db.module')) as {
     buildPrisma: () => PrismaClient;
   };
   const prisma = buildPrisma();
 
+  if (a.includes('--assess')) {
+    const ids = seedIpIds();
+    const leak = await prisma.ipLocalization.count({
+      where: {
+        status: 'machine_translated',
+        translationProvider: PROVIDER,
+        ipId: { notIn: ids },
+      },
+    });
+    const seedRows = await prisma.ipLocalization.findMany({
+      where: {
+        status: 'machine_translated',
+        translationProvider: PROVIDER,
+        ipId: { in: ids },
+      },
+      select: { ipId: true },
+    });
+    const seedIpsDone = new Set(seedRows.map((r) => r.ipId)).size;
+    console.log(
+      `seed IPs=${ids.length}; seed IPs with ≥1 machine row=${seedIpsDone}; total seed machine rows=${seedRows.length}; NON-seed machine rows(leak)=${leak}`,
+    );
+    await prisma.$disconnect();
+    return;
+  }
+
+  if (cleanup) {
+    // Drop machine translations (this run's provider) that landed on IPs
+    // outside the bulk-seed set — undoes the earlier over-broad --owner run.
+    const stale = await prisma.ipLocalization.findMany({
+      where: {
+        status: 'machine_translated',
+        translationProvider: PROVIDER,
+        ipId: { notIn: seedIds },
+      },
+      select: { id: true, ipId: true, locale: true },
+    });
+    console.log(
+      `CLEANUP — ${stale.length} non-seed machine rows to delete (seed set=${seedIds.length})`,
+    );
+    if (write && stale.length) {
+      await prisma.ipLocalization.deleteMany({
+        where: { id: { in: stale.map((s) => s.id) } },
+      });
+      console.log(`  deleted ${stale.length}`);
+    } else if (!write) {
+      console.log('  (dry-run — pass --write to delete)');
+    }
+  }
+
   const ips = await prisma.ip.findMany({
     where: {
-      ...(owner ? { createdById: owner } : {}),
+      ...(seedOnly
+        ? { id: { in: seedIds } }
+        : owner
+          ? { createdById: owner }
+          : {}),
       localizations: { some: { locale: source } },
     },
     include: { localizations: true },
