@@ -55,6 +55,31 @@ interface Story {
 const BLOB =
   "https://fizzdragonblob.blob.core.windows.net/foundry-outputs/ip-bulk-seed/image/2026/06/23";
 const STORIES: Story[] = [
+  // IP-plaza hero IPs (flagship, curated via the ip_plaza_hero placement).
+  {
+    slug: "hero-trace-project",
+    cover:
+      "https://fizzdragonblob.blob.core.windows.net/foundry-outputs/ip-commerce/migrated/ad168289-d702-56cc-81ad-cdcdf7f3fb1a/cover/7d9a4e15-28bf-58be-a12d-79166ccd03de-ip_banner_1777822425157_4f8cc38bd127.jpg",
+    href: "/ips/ad168289-d702-56cc-81ad-cdcdf7f3fb1a",
+  },
+  {
+    slug: "hero-moon-sixpence",
+    cover:
+      "https://fizzdragonblob.blob.core.windows.net/foundry-outputs/ip-commerce/migrated/889a2bdc-fe9b-5120-bd6c-d48e6e480753/cover/f24f4610-cbcc-57ff-a0d9-ca8ce5968161-ip_banner_1778672138290_027863dc01ae.png",
+    href: "/ips/889a2bdc-fe9b-5120-bd6c-d48e6e480753",
+  },
+  {
+    slug: "hero-zheng-yi-sao",
+    cover:
+      "https://fizzdragonblob.blob.core.windows.net/foundry-outputs/ip-commerce/migrated/4158fbae-ad10-56af-ba65-113fb60d0fa4/cover/7c64ba9e-d3e5-55f6-a8f5-67fe05ce3d0a-ip_banner_1778132525296_d58cf0456a3f.jpg",
+    href: "/ips/4158fbae-ad10-56af-ba65-113fb60d0fa4",
+  },
+  {
+    slug: "hero-king-gesar",
+    cover:
+      "https://fizzdragonblob.blob.core.windows.net/foundry-outputs/ip-commerce/migrated/d69608b4-1b80-55c5-b9f2-3b86d8830008/cover/9e255aa1-8108-55f8-86d2-61972dfb1cf2-ip_banner_1779044901141_d65e9ed783a7.png",
+    href: "/ips/d69608b4-1b80-55c5-b9f2-3b86d8830008",
+  },
   // Live catalogue IPs (real cover + deep link to /ips/<id>).
   {
     slug: "seed-100",

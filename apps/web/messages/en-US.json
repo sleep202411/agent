@@ -5025,6 +5025,22 @@
       "comingSoon": "Coming soon",
       "byOwner": "by {name}",
       "stories": {
+        "hero-trace-project": {
+          "title": "火壤星洲 Trace Project",
+          "description": "Singaporean cleaner's son Ka Joon Lim, guided by childhood friend Hui Min, survives Mars selection betrayal and leads 62 abandoned astronauts to found the Starfire Covenant."
+        },
+        "hero-moon-sixpence": {
+          "title": "The Moon and Sixpence",
+          "description": "A century later, Maugham’s Strickland—abandoning family for art—comes alive in algorithmic motion."
+        },
+        "hero-zheng-yi-sao": {
+          "title": "Zheng Yi Sao 郑一嫂",
+          "description": "A Tanka woman, Zheng Yi Sao inherits her husband’s pirate fleet and becomes China’s most legendary female pirate."
+        },
+        "hero-king-gesar": {
+          "title": "少年格萨尔王 King Gesar",
+          "description": "Born in a cattle shed, forsaken by gods and kin—he carves his destiny from bone. The Epic of King Gesar."
+        },
         "seed-104": {
           "title": "Lunar Countdown",
           "description": "In Tainan, Chen Zhenyu—a 32-year-old university lecturer—wakes one morning to find his watch has leapt forward an entire lunar month—not because it’s broken, but because time itself has raced ahead for him, leaving the world a month behind."
@@ -5362,10 +5378,10 @@
         },
         "alibaba": {
           "title": "Alibaba JUMPSTARTER",
-          "body": "2025 Top 30"
+          "body": "2025 Top 30 / Top AI Application Award"
         },
         "sgtech": {
-          "title": "SGTech Awards",
+          "title": "SGTech Impact Award",
           "body": "2026 Award winner"
         }
       }

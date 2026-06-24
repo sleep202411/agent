@@ -5025,6 +5025,22 @@
       "inProduction": "制作中",
       "byOwner": "by {name}",
       "stories": {
+        "hero-trace-project": {
+          "title": "火壤星洲 Trace Project",
+          "description": "新加坡清洁工之子林家俊，在童年挚友慧敏引导下闯过火星选拔黑幕，率62名被弃宇航员缔造星火盟约。"
+        },
+        "hero-moon-sixpence": {
+          "title": "The Moon and Sixpence",
+          "description": "百年后，毛姆笔下抛弃家庭追寻艺术的斯特里克兰德，化作算法驱动的流动身影。"
+        },
+        "hero-zheng-yi-sao": {
+          "title": "Zheng Yi Sao 郑一嫂",
+          "description": "疍家女郑一嫂继承亡夫海盗集团，纵横南海，成中国史上最传奇女海盗。"
+        },
+        "hero-king-gesar": {
+          "title": "少年格萨尔王 King Gesar",
+          "description": "神弃之子，牛圈降生，以骨为刃劈开天地，在雪域孤身成军——格萨尔王史诗"
+        },
         "seed-104": {
           "title": "阴历倒数",
           "description": "台南，三十二岁的大学讲师陈贞宇某天早上发现，他的手表快了整整一个阴历月------不是指针走快了，而是他所处的时间确实比别人快了一个月"
@@ -5362,10 +5378,10 @@
         },
         "alibaba": {
           "title": "Alibaba JUMPSTARTER",
-          "body": "2025 Top 30"
+          "body": "2025 Top 30 / Top AI Application Award"
         },
         "sgtech": {
-          "title": "SGTech Awards",
+          "title": "SGTech Impact Award",
           "body": "2026 获奖团队"
         }
       }
