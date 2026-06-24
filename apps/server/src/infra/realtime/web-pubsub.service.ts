@@ -24,6 +24,7 @@ import type {
   RealtimeClientAccess,
   RealtimeProvider,
 } from './realtime-provider';
+import { walletWorkspaceChannel } from './realtime-groups';
 
 const HUB_ENTITY = 'entity';
 const TOKEN_TTL_MINUTES = 60;
@@ -139,14 +140,31 @@ export class WebPubSubService implements RealtimeProvider {
   }
 
   /**
-   * Legacy transport, being retired (P5) — it never serves the unified studio
-   * socket, so delegate to the assets grant.
+   * Legacy transport, being retired (P5). It never serves the unified studio
+   * socket on prod (both cells are self-hosted), but mirror the self-hosted grant
+   * for consistency: the user's asset stream + the active workspace's wallet channel.
    */
   async issueRealtimeClientAccess(
     userId: string,
     workspaceId?: string,
   ): Promise<RealtimeClientAccess | null> {
-    return this.issueAssetsClientAccess(userId, workspaceId);
+    const client = this.clientFor(ASSETS_HUB);
+    if (!client) return null;
+    const groups = [assetsUserGroup(userId)];
+    if (workspaceId) groups.push(walletWorkspaceChannel(workspaceId));
+    const expiresAt = Date.now() + TOKEN_TTL_MINUTES * 60_000;
+    const token = await client.getClientAccessToken({
+      userId,
+      groups,
+      roles: groups.map((g) => `webpubsub.joinLeaveGroup.${g}`),
+      expirationTimeInMinutes: TOKEN_TTL_MINUTES,
+    });
+    return {
+      url: token.url,
+      accessToken: token.token,
+      expiresAt,
+      transport: 'web-pubsub',
+    };
   }
 
   /**
@@ -156,11 +174,15 @@ export class WebPubSubService implements RealtimeProvider {
   async publishAssetEvent(userId: string, event: AssetEvent): Promise<void> {
     const client = this.clientFor(ASSETS_HUB);
     if (!client) return;
+    // Generalized events (P3) carry an explicit channel — route by it. Legacy
+    // events derive their groups from the event kind.
     const workspaceId =
       event.kind === 'ai_job_update' ? event.job.workspaceId : undefined;
-    const groups = workspaceId
-      ? [assetsWorkspaceGroup(workspaceId), assetsUserGroup(userId)]
-      : [assetsUserGroup(userId)];
+    const groups = event.channel
+      ? [event.channel]
+      : workspaceId
+        ? [assetsWorkspaceGroup(workspaceId), assetsUserGroup(userId)]
+        : [assetsUserGroup(userId)];
     try {
       for (const group of groups) {
         await client.group(group).sendToAll(event);

@@ -56,10 +56,15 @@ class AssetsRealtimeKernel {
   private readonly lastSeq = new Map<string, number>();
   /** Recent eventIds for idempotent dedup (a push overlapping a replay). Bounded. */
   private readonly seen = new Set<string>();
-  /** Channels with an in-flight catch-up (prevents concurrent replays). */
-  private readonly catchingUp = new Set<string>();
+  /** Per-channel serial processing chain — each event (incl. its catch-up replay)
+   *  fully completes before the next event for that channel, guaranteeing in-order,
+   *  gap-free delivery without a push racing the catch-up. */
+  private readonly chain = new Map<string, Promise<void>>();
 
-  constructor(private readonly options: AssetsRealtimeOptions) {}
+  constructor(
+    private readonly key: string,
+    private readonly options: AssetsRealtimeOptions
+  ) {}
 
   subscribe(handlers: AssetsRealtimeHandlers): { close: () => void } {
     this.subscribers.add(handlers);
@@ -90,7 +95,7 @@ class AssetsRealtimeKernel {
           this.connected = false;
           for (const sub of this.subscribers) sub.onDisconnected?.(reason);
         },
-        onEvent: (event) => void this.handleIncoming(event),
+        onEvent: (event) => this.handleIncoming(event),
       },
       this.options
     );
@@ -100,26 +105,36 @@ class AssetsRealtimeKernel {
    * Route an incoming event through per-channel sequence tracking: deliver
    * in-order events, drop duplicates/old ones (by seq + eventId), and on a gap
    * replay the missed events from the durable outbox before delivering. Events
-   * with no channel/seq (legacy job/media) pass straight through.
-   *
-   * Current consumers are state-derived (invalidate/replace), so the rare reorder
-   * of a push racing a catch-up is harmless; a strict-order per-channel queue is a
-   * future refinement for delta-applying consumers.
+   * with no channel/seq (legacy job/media) pass straight through. Per-channel
+   * processing is serialized via `chain`, so delivery is strictly in seq order
+   * even while a catch-up is in flight.
    */
-  private async handleIncoming(event: AssetEvent): Promise<void> {
+  private handleIncoming(event: AssetEvent): void {
     const channel = event.channel;
     const seq = typeof event.seq === "number" ? event.seq : undefined;
     if (!channel || seq === undefined) {
-      this.fanout(event);
+      this.fanout(event); // legacy / no seq — order is the socket's
       return;
     }
+    // Serialize per channel: chain each event after the previous so a push never
+    // races the catch-up it (or an earlier event) triggered. Delivery is strictly
+    // in seq order; .catch keeps one failure from stalling the chain.
+    const prev = this.chain.get(channel) ?? Promise.resolve();
+    const next = prev.then(() => this.process(event, channel, seq));
+    this.chain.set(
+      channel,
+      next.catch(() => {})
+    );
+  }
+
+  private async process(event: AssetEvent, channel: string, seq: number): Promise<void> {
     if (event.eventId && this.seen.has(event.eventId)) return;
     const last = this.lastSeq.get(channel);
-    if (last !== undefined && seq > last + 1 && !this.catchingUp.has(channel)) {
+    if (last !== undefined && seq > last + 1) {
       await this.catchUp(channel, last);
     }
     const seen = this.lastSeq.get(channel);
-    if (seen !== undefined && seq <= seen) return; // covered by the replay
+    if (seen !== undefined && seq <= seen) return; // already covered (push or replay)
     this.accept(event, channel, seq);
   }
 
@@ -134,9 +149,12 @@ class AssetsRealtimeKernel {
   }
 
   private async catchUp(channel: string, afterSeq: number): Promise<void> {
-    this.catchingUp.add(channel);
     try {
       let after = afterSeq;
+      // Bounded so a pathological backlog can't loop forever. Beyond the bound,
+      // state-derived consumers still converge — the next delivered event triggers
+      // their re-fetch of the canonical state. (A delta-applying consumer would
+      // need the §3 snapshot fallback here.)
       for (let page = 0; page < 50; page++) {
         const { events, hasMore } = await fetchReplay(channel, after);
         for (const ev of events) {
@@ -152,8 +170,6 @@ class AssetsRealtimeKernel {
       }
     } catch {
       // Swallow — the next push or the consumer's focus-refetch backstop recovers.
-    } finally {
-      this.catchingUp.delete(channel);
     }
   }
 
@@ -165,6 +181,10 @@ class AssetsRealtimeKernel {
     this.socket?.close();
     this.socket = null;
     this.connected = false;
+    // Drop the singleton so a later subscriber starts a fresh kernel (no leaked
+    // Map entry on workspace switch, no stale lastSeq). The consumer's own query
+    // re-syncs state on remount.
+    kernels.delete(this.key);
   }
 }
 
@@ -178,7 +198,7 @@ export function getAssetsRealtimeKernel(options: AssetsRealtimeOptions = {}): As
   const key = options.workspaceId ?? "__user__";
   let kernel = kernels.get(key);
   if (!kernel) {
-    kernel = new AssetsRealtimeKernel(options);
+    kernel = new AssetsRealtimeKernel(key, options);
     kernels.set(key, kernel);
   }
   return kernel;
