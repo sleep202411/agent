@@ -3,6 +3,7 @@
     "appName": "FizzDragon Studio",
     "loading": "Loading...",
     "comingSoon": "Coming soon",
+    "inProduction": "In production",
     "save": "Save",
     "submit": "Submit",
     "cancel": "Cancel",
@@ -5020,7 +5021,103 @@
       "title": "Stories already in production.",
       "subtitle": "IPs being built right now by the FizzDragon community. Click in to follow the process or back the project.",
       "viewAll": "View all",
-      "byOwner": "by {name}"
+      "enter": "Enter project",
+      "comingSoon": "Coming soon",
+      "byOwner": "by {name}",
+      "stories": {
+        "seed-104": {
+          "title": "Lunar Countdown",
+          "description": "In Tainan, Chen Zhenyu—a 32-year-old university lecturer—wakes one morning to find his watch has leapt forward an entire lunar month—not because it’s broken, but because time itself has raced ahead for him, leaving the world a month behind."
+        },
+        "seed-110": {
+          "title": "The Shuri Vault Secret",
+          "description": "Three days before Japan's 1879 annexation of the Ryukyu Kingdom, Zhao Xianyi—a humble scribe in the royal court—receives a key and a cryptic note: 'Go to the Seventh Vault beneath Shuri Castle. Retrieve the box. Tell no one—and say nothing.'"
+        },
+        "seed-100": {
+          "title": "Gulian's Deep Gaze",
+          "description": "In Fujian's Gulian Mountains, innkeeper A-Xiu uncovers 'Eye Stones' beneath the foundation of an old house she's restoring—stones etched with lifelike iris patterns that weep seawater at night."
+        },
+        "seed-102": {
+          "title": "The Reincarnation Convenience Store",
+          "description": "In Tokyo, Japan, 23-year-old convenience store night-shift clerk Makoto Kobayashi notices that every day at 3:03 a.m., the automatic door slides open—and a girl in a昭和-era school uniform steps in, buys a long-discontinued soda, and vanishes without a trace."
+        },
+        "seed-103": {
+          "title": "The Snow Maiden's Mirror: Hokkaido",
+          "description": "In Niseko, Hokkaido, Japan, 26-year-old ski instructor Yuki Aizawa finds an ancient bronze mirror atop a mountain—its surface reflects not her own face, but that of a woman in Meiji-era kimono, silently pointing toward an abandoned inn at the mountainside."
+        },
+        "seed-105": {
+          "title": "The Lighthouse Keeper's Final Watch",
+          "description": "In 1954, one year after the Korean War, married man Go Yong-jun applies for the most remote lighthouse keeper post on Jeju Island—not out of love for solitude, but because his father died on the rocks directly beneath that very lighthouse during the Jeju 4.3 Incident, gazing seaward in his final moments."
+        },
+        "seed-107": {
+          "title": "The Dream Top Master",
+          "description": "In the 40th year of the Wanli reign, Suzhou City harbored a mysterious figure known as the 'Dream Top Master'—a practitioner who placed a tiny spinning top into a client's palm; its direction and speed revealed the dreams that would come that night. The most skilled among them could even enter another's dreams—and steal something from within."
+        },
+        "seed-108": {
+          "title": "Voodoo Market at the Equator",
+          "description": "Lagos's Idumota Market—the largest 'voodoo materials' bazaar in West Africa—sells crocodile heads, human skulls, and desiccated animal organs: all legally traded as traditional medicine, rooted for centuries in Yoruba cosmology."
+        },
+        "seed-113": {
+          "title": "The Forget-Me-Not Shop",
+          "description": "Tucked away on Yongkang Street in Taipei, a nameless little shop—rumored to turn away strangers—specializes in buying memories people wish to forget: tell the owner the memory, drink a cup of specially brewed medicinal tea, and step outside with that memory erased from your neural pathways."
+        },
+        "seed-114": {
+          "title": "The Hibernation Protocol",
+          "description": "In 2041, a major industrial city in Northeast China launches 'The Hibernation Protocol'—a radical social experiment designed to address mass unemployment. In partnership with a biotech firm, the government offers citizens the option to voluntarily enter cryogenic stasis, pausing their lives until economic conditions improve."
+        },
+        "seed-117": {
+          "title": "The Reincarnated Hound of Kyoto",
+          "description": "In an old Kyoto residence, an Akita dog—bearing memories of its past life—reincarnates as a newborn in the same family on the 49th day after its master’s death, marking the traditional Japanese cycle of canine soul rebirth."
+        },
+        "seed-119": {
+          "title": "The Cube Mansion: Basement Level",
+          "description": "In Chengdu, Lu You, a 32-year-old urban surveyor, stumbles upon an uncharted space fourteen meters beneath the subway line during a routine inspection—its walls humming with electricity, its air thick with mystery, furnished with relics of another era, and anchored by a flickering black-and-white television, broadcasting something impossible."
+        },
+        "seed-120": {
+          "title": "Kafka in Beijing",
+          "description": "Beijing: On a Monday morning, 30-year-old programmer Liu Xiaodong wakes up to find he’s become a service ticket—not metaphorically, but literally."
+        },
+        "seed-121": {
+          "title": "Inverted City: Luoyang",
+          "description": "Chen, the night watchman at the Luoyang Ancient Tombs Museum, discovers that the Northern Wei 'Ascension to Immortality' mural breathes under moonlight—its pigments writhing."
+        },
+        "seed-124": {
+          "title": "Rashomon: Tin Shui Wai",
+          "description": "Tin Shui Wai—a place branded by the outside world as the 'City of Sorrows'"
+        },
+        "seed-126": {
+          "title": "The Carbon Epoch",
+          "description": "In 2047, Lin Xiaodong, a clerk at the Carbon Emissions Exchange, notices that Qingshi City’s carbon credits have followed a perfect straight line for three years."
+        },
+        "the-predator": {
+          "title": "The Predator",
+          "description": "A fading middle-aged boxer, torn between the ring and his family, gains a fleeting power to glimpse the future after a hospital error — and races to win back the people he loves."
+        },
+        "three-second-world": {
+          "title": "Three Seconds Later",
+          "description": "If the world had only three seconds left, what would you paint?"
+        },
+        "children-eighth-day": {
+          "title": "Children of the Eighth Day",
+          "description": "Born on the eighth day of a seven-day week — children who shouldn't exist."
+        },
+        "lunar-colony": {
+          "title": "Lunar Colony",
+          "description": "Humanity's first lunar colony wakes up alone after Earth goes silent."
+        },
+        "guizhou-fast-earth-core": {
+          "title": "Guizhou FAST: City at the Core",
+          "description": "Beneath China's FAST telescope lies a city burrowing toward the Earth's core."
+        },
+        "city-of-measuring-tapes": {
+          "title": "City of Measuring Tapes",
+          "description": "In a city where everything is measured, someone starts measuring freedom."
+        },
+        "twin-cities-hong-kong": {
+          "title": "Twin Cities Hong Kong",
+          "description": "A pre-dawn 'fault event' splits Hong Kong into two sealed worlds — one above, one below."
+        }
+      }
     },
     "pillars": {
       "eyebrow": "Three ways in",
