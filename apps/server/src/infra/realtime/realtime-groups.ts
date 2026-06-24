@@ -27,6 +27,26 @@ export function walletWorkspaceChannel(workspaceId: string): string {
   return `wallet:workspace:${workspaceId}`;
 }
 
+/** Per-user entitlement channel (a user's personal plan). */
+export function entitlementUserChannel(userId: string): string {
+  return `entitlement:user:${userId}`;
+}
+
+/** Per-workspace entitlement channel (a workspace/team plan). */
+export function entitlementWorkspaceChannel(workspaceId: string): string {
+  return `entitlement:workspace:${workspaceId}`;
+}
+
+/** Per-workspace team-membership channel (the member roster). */
+export function teamWorkspaceChannel(workspaceId: string): string {
+  return `team:workspace:${workspaceId}`;
+}
+
+/** Per-workspace project-list channel. */
+export function projectWorkspaceChannel(workspaceId: string): string {
+  return `project:workspace:${workspaceId}`;
+}
+
 /** Extract the group name from a `realtime:group:<group>` channel. */
 export function groupFromChannel(channel: string): string {
   return channel.slice(REALTIME_GROUP_CHANNEL_PREFIX.length);

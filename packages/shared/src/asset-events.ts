@@ -108,6 +108,34 @@ export type AssetEvent = (
       heldBalance: string;
       ts: number;
     }
+  | {
+      kind: "entitlement_changed";
+      /** Whose entitlement changed — a user's personal plan or a workspace plan. */
+      subjectType: "user" | "workspace";
+      subjectId: string;
+      planKey: string;
+      status: "active" | "revoked" | "expired";
+      startsAt?: string | null;
+      endsAt?: string | null;
+      action: "fulfilled" | "revoked" | "restored" | "expired";
+      ts: number;
+    }
+  | {
+      kind: "team_member_changed";
+      /** The workspace whose membership roster changed. */
+      workspaceId: string;
+      action: "added" | "removed" | "role_changed";
+      member: { id: string; userId: string; role: string; status?: string };
+      ts: number;
+    }
+  | {
+      kind: "project_changed";
+      /** The workspace that owns the project. */
+      workspaceId: string;
+      projectId: string;
+      action: "created" | "updated" | "archived";
+      ts: number;
+    }
 ) &
   RealtimeEnvelope;
 

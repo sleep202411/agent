@@ -22,7 +22,11 @@ import type {
 import {
   REALTIME_GROUP_CHANNEL_PREFIX,
   assetsWorkspaceGroup,
+  entitlementUserChannel,
+  entitlementWorkspaceChannel,
   entityUserGroup,
+  projectWorkspaceChannel,
+  teamWorkspaceChannel,
   walletWorkspaceChannel,
 } from './realtime-groups';
 import { signRealtimeToken } from './realtime-transport-token';
@@ -62,8 +66,15 @@ export class SelfHostedRealtimeService implements RealtimeProvider {
   ): Promise<RealtimeClientAccess | null> {
     // Always the user's own asset stream (jobs + media — the superset); plus the
     // active workspace's channels (wallet, …) when a workspace is in context.
-    const groups = [assetsUserGroup(userId)];
-    if (workspaceId) groups.push(walletWorkspaceChannel(workspaceId));
+    const groups = [assetsUserGroup(userId), entitlementUserChannel(userId)];
+    if (workspaceId) {
+      groups.push(
+        walletWorkspaceChannel(workspaceId),
+        entitlementWorkspaceChannel(workspaceId),
+        teamWorkspaceChannel(workspaceId),
+        projectWorkspaceChannel(workspaceId),
+      );
+    }
     return this.issue(userId, groups);
   }
 

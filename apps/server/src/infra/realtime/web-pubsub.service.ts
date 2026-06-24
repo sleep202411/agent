@@ -24,7 +24,13 @@ import type {
   RealtimeClientAccess,
   RealtimeProvider,
 } from './realtime-provider';
-import { walletWorkspaceChannel } from './realtime-groups';
+import {
+  entitlementUserChannel,
+  entitlementWorkspaceChannel,
+  projectWorkspaceChannel,
+  teamWorkspaceChannel,
+  walletWorkspaceChannel,
+} from './realtime-groups';
 
 const HUB_ENTITY = 'entity';
 const TOKEN_TTL_MINUTES = 60;
@@ -150,8 +156,15 @@ export class WebPubSubService implements RealtimeProvider {
   ): Promise<RealtimeClientAccess | null> {
     const client = this.clientFor(ASSETS_HUB);
     if (!client) return null;
-    const groups = [assetsUserGroup(userId)];
-    if (workspaceId) groups.push(walletWorkspaceChannel(workspaceId));
+    const groups = [assetsUserGroup(userId), entitlementUserChannel(userId)];
+    if (workspaceId) {
+      groups.push(
+        walletWorkspaceChannel(workspaceId),
+        entitlementWorkspaceChannel(workspaceId),
+        teamWorkspaceChannel(workspaceId),
+        projectWorkspaceChannel(workspaceId),
+      );
+    }
     const expiresAt = Date.now() + TOKEN_TTL_MINUTES * 60_000;
     const token = await client.getClientAccessToken({
       userId,

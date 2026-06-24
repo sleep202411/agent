@@ -19,9 +19,15 @@ const DEFAULT_LIMIT = 200;
 const MAX_LIMIT = 500;
 
 /** `<prefix>` → the trailing segment is a userId; only that user may replay. */
-const USER_SCOPED_PREFIXES = ['assets-user:', 'user:'];
+const USER_SCOPED_PREFIXES = ['assets-user:', 'user:', 'entitlement:user:'];
 /** `<prefix>` → the trailing segment is a workspaceId; members (viewer+) may replay. */
-const WORKSPACE_SCOPED_PREFIXES = ['wallet:workspace:', 'assets-workspace:'];
+const WORKSPACE_SCOPED_PREFIXES = [
+  'wallet:workspace:',
+  'assets-workspace:',
+  'entitlement:workspace:',
+  'team:workspace:',
+  'project:workspace:',
+];
 
 @Injectable()
 export class RealtimeReplayService {
