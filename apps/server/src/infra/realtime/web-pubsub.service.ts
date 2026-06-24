@@ -139,6 +139,17 @@ export class WebPubSubService implements RealtimeProvider {
   }
 
   /**
+   * Legacy transport, being retired (P5) — it never serves the unified studio
+   * socket, so delegate to the assets grant.
+   */
+  async issueRealtimeClientAccess(
+    userId: string,
+    workspaceId?: string,
+  ): Promise<RealtimeClientAccess | null> {
+    return this.issueAssetsClientAccess(userId, workspaceId);
+  }
+
+  /**
    * Publish an asset event. Workspace-owned events go to the workspace
    * group; unscoped events go to the user's group.
    */

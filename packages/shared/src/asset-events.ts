@@ -94,6 +94,20 @@ export type AssetEvent = (
       updatedAt: string;
       ts: number;
     }
+  | {
+      kind: "wallet_changed";
+      /** The workspace whose compute pot changed (the wallet account's ownerId). */
+      workspaceId: string;
+      /** e.g. "compute_point". */
+      currency: string;
+      /** e.g. "consumable". */
+      balanceKind: string;
+      /** New balances — stringified bigint for JSON safety. Clients may use these
+       * to update the cached balance directly, or simply refetch on the signal. */
+      availableBalance: string;
+      heldBalance: string;
+      ts: number;
+    }
 ) &
   RealtimeEnvelope;
 

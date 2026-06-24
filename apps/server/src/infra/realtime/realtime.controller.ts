@@ -64,6 +64,41 @@ export class RealtimeController {
       data: access,
     };
   }
+
+  /**
+   * Unified realtime-plane negotiate (P3) for the studio's single multiplexed
+   * socket: grants the user's asset stream plus, when a workspace is in context,
+   * that workspace's channels (wallet, …). Same workspace permission check as
+   * negotiate/assets. apps/web keeps using negotiate/assets.
+   */
+  @Post('negotiate/realtime')
+  async negotiateRealtime(
+    @CurrentUser() user: AuthUser,
+    @Headers('x-fizz-workspace-id') workspaceHeader?: string,
+  ) {
+    const workspaceId = normalizeHeaderValue(workspaceHeader);
+    if (workspaceId) {
+      await this.workspacePermissions.requireWorkspaceRole(
+        user.userId,
+        workspaceId,
+        WorkspaceMemberRole.viewer,
+      );
+    }
+    const access = await this.realtime.issueRealtimeClientAccess(
+      user.userId,
+      workspaceId,
+    );
+    if (!access) {
+      return {
+        code: 503,
+        message: 'realtime_unconfigured',
+      };
+    }
+    return {
+      code: 200,
+      data: access,
+    };
+  }
 }
 
 function normalizeHeaderValue(

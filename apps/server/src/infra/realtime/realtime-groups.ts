@@ -18,6 +18,15 @@ export function assetsWorkspaceGroup(workspaceId: string): string {
   return `assets-workspace:${workspaceId}`;
 }
 
+/**
+ * Per-workspace compute-wallet channel (P3). Compute credits are workspace-owned
+ * (the user's personal credits live in their personal workspace's pot), so the
+ * channel is keyed by the owning workspace id, not the user.
+ */
+export function walletWorkspaceChannel(workspaceId: string): string {
+  return `wallet:workspace:${workspaceId}`;
+}
+
 /** Extract the group name from a `realtime:group:<group>` channel. */
 export function groupFromChannel(channel: string): string {
   return channel.slice(REALTIME_GROUP_CHANNEL_PREFIX.length);

@@ -24,6 +24,16 @@ export interface RealtimeProvider {
     userId: string,
     workspaceId?: string,
   ): Promise<RealtimeClientAccess | null>;
+  /**
+   * Unified realtime-plane grant (P3): the user's own asset stream plus, when a
+   * workspace is in context, that workspace's channels (wallet, …). This is the
+   * grant the studio's single multiplexed socket uses; `issueAssetsClientAccess`
+   * stays for the legacy per-hub clients (apps/web).
+   */
+  issueRealtimeClientAccess(
+    userId: string,
+    workspaceId?: string,
+  ): Promise<RealtimeClientAccess | null>;
   publishEntityToUser(userId: string, payload: unknown): Promise<void>;
   publishAssetEvent(userId: string, event: AssetEvent): Promise<void>;
 }
