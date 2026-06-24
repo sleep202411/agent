@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { ConflictException, Injectable } from '@nestjs/common';
 import {
+  AiOutboxEventType,
   Prisma,
   WalletAccountStatus,
   WalletBalanceKind,
@@ -14,7 +15,10 @@ import {
   type WalletLedgerEntry,
   type WalletTransaction,
 } from '@prisma/client';
+import type { AssetEvent } from '@repo/shared';
 import { PrismaService } from '../infra/db/db.module';
+import { enqueueRealtimeEvent } from '../ai-generation/outbox.service';
+import { walletWorkspaceChannel } from '../infra/realtime/realtime-groups';
 
 // compute_point is workspace-owned (the workspace you work in is the pot);
 // community_point — the creator economy — is user-owned. Each owner type
@@ -216,6 +220,29 @@ export class WalletLedgerService {
           version: { increment: 1 },
         },
       });
+
+      // Realtime: push the new compute balance to the workspace's wallet channel
+      // (compute credits are workspace-owned) so clients reflect it without the
+      // 60s poll. Enqueued in THIS tx, so the event and the balance write commit
+      // atomically (no dual-write race). compute_point only for now; the user-
+      // owned community_point wallet has no studio channel yet.
+      if (updated.currency === WalletCurrencyType.compute_point) {
+        const walletEvent: AssetEvent = {
+          kind: 'wallet_changed',
+          workspaceId: updated.ownerId,
+          currency: updated.currency,
+          balanceKind: updated.balanceKind,
+          availableBalance: updated.availableBalance.toString(),
+          heldBalance: updated.heldBalance.toString(),
+          ts: Date.now(),
+        };
+        await enqueueRealtimeEvent(tx, {
+          channel: walletWorkspaceChannel(updated.ownerId),
+          eventType: AiOutboxEventType.wallet_changed,
+          payload: walletEvent as unknown as Prisma.InputJsonValue,
+          userId: input.actorUserId ?? updated.ownerId,
+        });
+      }
 
       return { transaction, entry, account: updated, deduped: false };
     });
