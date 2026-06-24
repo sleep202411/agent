@@ -87,7 +87,7 @@ export default function ProjectLayout({
         {/* Back + editable project name (top-left). */}
         <div className="absolute top-4 left-4 z-30 flex items-center gap-1">
           <Link
-            href="/canvas"
+            href="/projects"
             aria-label={t("backToProjects")}
             className="flex size-9 items-center justify-center rounded-full bg-popover/90 shadow-md backdrop-blur-xl transition-colors hover:bg-accent"
           >

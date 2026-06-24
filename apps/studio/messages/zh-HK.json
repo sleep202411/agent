@@ -159,7 +159,11 @@
     "projects": {
       "metaTitle": "項目 · FizzStudio",
       "title": "項目",
-      "subtitle": "將你的生成內容整理成項目。"
+      "subtitle": "將你的生成內容整理成項目。",
+      "canvasTitle": "畫布",
+      "canvasSubtitle": "從空白畫布開始創作，或繼續未完成的畫布。",
+      "historyTitle": "我的歷史項目",
+      "historySubtitle": "你過往整理成項目的生成內容。"
     },
     "canvas": {
       "metaTitle": "畫布 · FizzStudio",
@@ -274,7 +278,8 @@
     },
     "nav": {
       "home": "首頁",
-      "canvas": "畫布",
+      "creativeStudio": "Creative Studio",
+      "storyStudio": "Story Studio",
       "image": "圖像",
       "video": "影片",
       "audio": "音訊",
@@ -735,7 +740,7 @@
     "account": "帳戶",
     "accountSubtitle": "你的個人資料與算力積分。",
     "groupProfile": "個人資料",
-    "groupTeamsSettings": "團隊設定",
+    "groupTeamsSettings": "工作區設定",
     "navOverview": "概覽",
     "navMembers": "成員",
     "navUsage": "用量",

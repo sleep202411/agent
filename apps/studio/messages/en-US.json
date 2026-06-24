@@ -159,7 +159,11 @@
     "projects": {
       "metaTitle": "Projects · FizzStudio",
       "title": "Projects",
-      "subtitle": "Organize your generations into projects."
+      "subtitle": "Organize your generations into projects.",
+      "canvasTitle": "Canvas",
+      "canvasSubtitle": "Start from a blank canvas, or pick up where you left off.",
+      "historyTitle": "Project History",
+      "historySubtitle": "Your past generations, organized into projects."
     },
     "canvas": {
       "metaTitle": "Canvas · FizzStudio",
@@ -274,7 +278,8 @@
     },
     "nav": {
       "home": "Home",
-      "canvas": "Canvas",
+      "creativeStudio": "Creative Studio",
+      "storyStudio": "Story Studio",
       "image": "Image",
       "video": "Video",
       "audio": "Audio",
@@ -735,7 +740,7 @@
     "account": "Account",
     "accountSubtitle": "Your profile and compute credits.",
     "groupProfile": "Profile",
-    "groupTeamsSettings": "Teams Settings",
+    "groupTeamsSettings": "Workspace Settings",
     "navOverview": "Overview",
     "navMembers": "Members",
     "navUsage": "Usage",

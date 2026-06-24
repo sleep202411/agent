@@ -5,7 +5,6 @@ import { useTranslations } from "next-intl";
 import { Link } from "@/i18n/navigation";
 import { useRouter } from "@/i18n/navigation";
 import {
-  IconArtboard,
   IconDotsVertical,
   IconLoader2,
   IconPencil,
@@ -17,6 +16,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { TileCard } from "@/components/ui/tile-card";
+import { WorkflowPreview } from "@/components/project-card";
 import {
   Dialog,
   DialogContent,
@@ -173,12 +173,7 @@ export function CanvasProjectsGrid() {
               <TileCard
                 title={project.name}
                 meta={timeAgo(project.updatedAt, t)}
-                media={
-                  <IconArtboard
-                    className="size-9 text-white/20 transition-colors group-hover:text-white/35"
-                    stroke={1.5}
-                  />
-                }
+                media={<WorkflowPreview />}
                 overlay={
                   <DropdownMenu>
                     <DropdownMenuTrigger

@@ -28,6 +28,7 @@ import {
   IconHistory,
   IconSparkles,
   IconLayoutGrid,
+  IconLoader2,
   IconMagnet,
   IconMap,
   IconMaximize,
@@ -1213,6 +1214,11 @@ function CanvasInner({ projectId, canEdit }: { projectId: string; canEdit: boole
               onPointerMove={onPointerMove}
               onPointerLeave={onPointerLeave}
             >
+              {connStatus !== "synced" && nodes.length === 0 && (
+                <div className="absolute inset-0 z-50 grid place-items-center bg-[#0a0a0a]">
+                  <IconLoader2 className="size-7 animate-spin text-white/40" stroke={1.5} />
+                </div>
+              )}
               <ReactFlow
                 nodes={nodes}
                 edges={edges}

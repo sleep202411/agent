@@ -6,7 +6,8 @@ import { usePathname } from "@/i18n/navigation";
 import { useTranslations } from "next-intl";
 import type { ComponentType } from "react";
 import {
-  IconArtboard,
+  IconBook2,
+  IconLayoutGrid,
   IconHome,
   IconPhoto,
   IconSettings,
@@ -112,7 +113,9 @@ export function StudioSidebar() {
   // generation is not connected yet, so keep its public entry disabled.
   const items: RailItem[] = [
     { label: t("nav.home"), href: "/", icon: IconHome },
-    { label: t("nav.canvas"), href: "/canvas", icon: IconArtboard },
+    { label: t("nav.creativeStudio"), href: "/projects", icon: IconLayoutGrid },
+    // Story Studio has no route yet — keep the entry disabled (coming soon).
+    { label: t("nav.storyStudio"), href: "/story", icon: IconBook2, disabled: true },
     // Plural to match the web app's /fizzstudio/images so that page ports 1:1.
     { label: t("nav.image"), href: "/images", icon: IconPhoto },
     { label: t("nav.video"), href: "/video", icon: IconVideo },

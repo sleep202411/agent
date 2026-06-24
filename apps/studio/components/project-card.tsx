@@ -1,5 +1,6 @@
 "use client";
 
+import { IconPhoto } from "@tabler/icons-react";
 import { Link } from "@/i18n/navigation";
 import { cn } from "@/lib/utils";
 
@@ -50,7 +51,11 @@ export function ProjectCard({
             />
           ) : showWorkflowPreview ? (
             <WorkflowPreview />
-          ) : null}
+          ) : (
+            <div className="grid size-full place-items-center">
+              <IconPhoto className="size-9 text-white/20" stroke={1.5} />
+            </div>
+          )}
           {metrics ? <ProjectMetrics assets={metrics.assets} credits={metrics.credits} /> : null}
         </div>
       </div>
@@ -85,12 +90,20 @@ export function ProjectCard({
     </article>
   );
 
-  return href ? (
+  if (!href) return <div className={cn("block", className)}>{body}</div>;
+  // Cross-app links (legacy projects → apps/web) are absolute URLs; the
+  // localized next-intl Link is for in-studio routes only.
+  if (/^https?:\/\//.test(href)) {
+    return (
+      <a href={href} target="_blank" rel="noopener noreferrer" className={cn("block", className)}>
+        {body}
+      </a>
+    );
+  }
+  return (
     <Link href={href} className={cn("block", className)}>
       {body}
     </Link>
-  ) : (
-    <div className={cn("block", className)}>{body}</div>
   );
 }
 
@@ -124,7 +137,7 @@ function MetricPill({
   );
 }
 
-function WorkflowPreview() {
+export function WorkflowPreview() {
   return (
     <div className="relative h-full w-full overflow-hidden bg-[#242424]">
       <div className="absolute inset-0 opacity-[0.22] [background-image:radial-gradient(circle,rgba(255,255,255,0.35)_1px,transparent_1.4px)] [background-size:18px_18px]" />

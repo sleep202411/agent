@@ -1,12 +1,11 @@
 "use client";
 
 import { Link } from "@/i18n/navigation";
-import { usePathname, useRouter } from "@/i18n/navigation";
+import { usePathname } from "@/i18n/navigation";
 import { useTranslations } from "next-intl";
 import {
   IconArrowLeft,
   IconChartBar,
-  IconChevronDown,
   IconCreditCard,
   IconGauge,
   IconLayoutGrid,
@@ -16,7 +15,6 @@ import {
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/app/_components/auth-provider";
 import { useWorkspace } from "@/app/_components/workspace-context";
-import type { WorkspaceRef } from "@/lib/collab/projects-api";
 import { LetterAvatar } from "./settings-ui";
 
 /**
@@ -42,16 +40,10 @@ function teamSubNav(isPersonal: boolean) {
 export function SettingsSidebar() {
   const t = useTranslations("settings");
   const pathname = usePathname();
-  const router = useRouter();
-  const { workspaces, activeWorkspace, setActiveWorkspaceId } = useWorkspace();
+  const { activeWorkspace } = useWorkspace();
   const { user } = useAuth();
 
   const accountName = user?.nickName || user?.email || user?.phone || t("account");
-
-  const selectWorkspace = (ws: WorkspaceRef) => {
-    setActiveWorkspaceId(ws.id);
-    router.push("/settings/overview");
-  };
 
   return (
     <aside className="flex w-64 shrink-0 flex-col bg-card px-3 py-5">
@@ -79,55 +71,22 @@ export function SettingsSidebar() {
           </NavLink>
         </Group>
 
-        <Group title={t("groupTeamsSettings")}>
-          {workspaces.map((ws) => {
-            const isActive = activeWorkspace?.id === ws.id;
-            const subNav = teamSubNav(ws.type === "personal");
-            return (
-              <div key={ws.id} className="flex flex-col">
-                <button
-                  type="button"
-                  onClick={() => (isActive ? undefined : selectWorkspace(ws))}
-                  className={cn(
-                    "flex items-center gap-2 rounded-lg px-2 py-1.5 text-left text-sm transition-colors",
-                    isActive ? "bg-secondary" : "hover:bg-accent"
-                  )}
+        {activeWorkspace && (
+          <Group title={t("groupTeamsSettings")}>
+            <div className="flex flex-col gap-0.5">
+              {teamSubNav(activeWorkspace.type === "personal").map(({ href, labelKey, Icon }) => (
+                <NavLink
+                  key={href}
+                  href={href}
+                  active={pathname === href}
+                  leading={<Icon className="size-4" stroke={1.8} />}
                 >
-                  <LetterAvatar name={ws.name} src={ws.avatarUrl} size="size-6" />
-                  <span className="flex min-w-0 flex-1 flex-col leading-tight">
-                    <span className="truncate font-medium">{ws.name}</span>
-                    {ws.role && (
-                      <span className="truncate text-xs text-muted-foreground">
-                        {t(`role.${ws.role}`)}
-                      </span>
-                    )}
-                  </span>
-                  <IconChevronDown
-                    className={cn(
-                      "size-4 shrink-0 text-muted-foreground transition-transform",
-                      isActive ? "" : "-rotate-90"
-                    )}
-                  />
-                </button>
-
-                {isActive && (
-                  <div className="mt-1 ml-3 flex flex-col gap-0.5 pl-3">
-                    {subNav.map(({ href, labelKey, Icon }) => (
-                      <NavLink
-                        key={href}
-                        href={href}
-                        active={pathname === href}
-                        leading={<Icon className="size-4" stroke={1.8} />}
-                      >
-                        {t(labelKey)}
-                      </NavLink>
-                    ))}
-                  </div>
-                )}
-              </div>
-            );
-          })}
-        </Group>
+                  {t(labelKey)}
+                </NavLink>
+              ))}
+            </div>
+          </Group>
+        )}
       </nav>
     </aside>
   );

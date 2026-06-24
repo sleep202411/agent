@@ -1,12 +1,13 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { useTranslations } from "next-intl";
+import { useEffect, useState, useTransition } from "react";
+import { useLocale, useTranslations } from "next-intl";
 import { openSettings } from "@/lib/settings-hash";
 import {
   IconBolt,
   IconCopy,
   IconInfoCircle,
+  IconLanguage,
   IconLogout,
   IconReceipt,
   IconSettings,
@@ -23,10 +24,17 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
   DropdownMenuSeparator,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { GlassRim } from "@/components/ui/glass-rim";
+import { usePathname, useRouter } from "@/i18n/navigation";
+import { LOCALE_OPTIONS, isValidLocale } from "@/i18n/config";
 
 function PillButton({ label, onClick }: { label: string; onClick: () => void }) {
   return (
@@ -48,6 +56,15 @@ export function AccountMenu({
   fallback?: "icon" | "initial";
 } = {}) {
   const t = useTranslations("account");
+  const tLocale = useTranslations("localeSwitcher");
+  const locale = useLocale();
+  const router = useRouter();
+  const pathname = usePathname();
+  const [, startLocaleTransition] = useTransition();
+  const selectLocale = (next: string) => {
+    if (!isValidLocale(next) || next === locale) return;
+    startLocaleTransition(() => router.replace(pathname, { locale: next }));
+  };
   const { user, loading, signIn, signOut } = useAuth();
   const { data: computeCredits } = useComputeWalletBalance(Boolean(user));
   const [menuOpen, setMenuOpen] = useState(false);
@@ -220,6 +237,25 @@ export function AccountMenu({
             <IconSettings className="size-4.5" stroke={1.8} />
             {t("settings")}
           </DropdownMenuItem>
+          <DropdownMenuSub>
+            <DropdownMenuSubTrigger className="gap-2.5 rounded-lg p-2 text-sm">
+              <IconLanguage className="size-4.5" stroke={1.8} />
+              {tLocale("label")}
+            </DropdownMenuSubTrigger>
+            <DropdownMenuSubContent className="min-w-40 p-1.5">
+              <DropdownMenuRadioGroup value={locale} onValueChange={selectLocale}>
+                {LOCALE_OPTIONS.map((option) => (
+                  <DropdownMenuRadioItem
+                    key={option.value}
+                    value={option.value}
+                    className="rounded-lg text-sm"
+                  >
+                    {option.label}
+                  </DropdownMenuRadioItem>
+                ))}
+              </DropdownMenuRadioGroup>
+            </DropdownMenuSubContent>
+          </DropdownMenuSub>
           <DropdownMenuItem
             onSelect={() => void signOut()}
             className="gap-2.5 rounded-lg p-2 text-sm"
