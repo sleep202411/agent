@@ -18,6 +18,7 @@ import {
 } from '@prisma/client';
 import { createHash } from 'crypto';
 import { PrismaService } from '../infra/db/db.module';
+import { enqueueWalletChanged } from '../workspaces/wallet-realtime';
 import type { AiJob, AiRoutingSnapshot } from './types';
 
 type ChargeableJob = Pick<
@@ -171,7 +172,7 @@ export class AiGenerationBillingWalletService {
       amount,
     });
 
-    await tx.walletAccount.update({
+    const updated = await tx.walletAccount.update({
       where: { id: locked.id },
       data: {
         availableBalance: nextAvailable,
@@ -179,6 +180,8 @@ export class AiGenerationBillingWalletService {
         version: { increment: 1 },
       },
     });
+    // Realtime: the hold dropped available balance — reflect it without polling.
+    await enqueueWalletChanged(tx, updated);
   }
 
   async settleForJob(job: ChargeableJob): Promise<void> {
@@ -288,7 +291,7 @@ export class AiGenerationBillingWalletService {
         lots: outstanding.lots,
       });
 
-      await tx.walletAccount.update({
+      const updated = await tx.walletAccount.update({
         where: { id: account.id },
         data: {
           availableBalance: nextAvailable,
@@ -296,6 +299,8 @@ export class AiGenerationBillingWalletService {
           version: { increment: 1 },
         },
       });
+      // Realtime: settle/release changed the balance — push to the workspace.
+      await enqueueWalletChanged(tx, updated, job.userId);
     });
   }
 }
