@@ -15,7 +15,7 @@ import { useReactFlow, useStore } from "@xyflow/react";
 import { toast } from "sonner";
 import type { CanvasAsset } from "@/lib/collab/canvas-doc";
 import { useCanvasGraphContext } from "@/lib/collab/canvas-graph-context";
-import { openAssetsRealtime } from "./assets-realtime";
+import { getAssetsRealtimeKernel } from "./assets-realtime-kernel";
 import { outputKindForType, routeReferenceField } from "./reference-routing";
 import { computeWalletBalanceQueryKey } from "@/app/_components/credits-badge";
 import {
@@ -293,7 +293,7 @@ export function CanvasGenerationProvider({
   // Realtime: route job updates back to their card by jobId; reconcile on
   // (re)connect so a reconnect after sleep/disconnect back-fills missed updates.
   useEffect(() => {
-    const client = openAssetsRealtime({
+    const client = getAssetsRealtimeKernel().subscribe({
       onConnected: () => {
         setRealtimeConnected(true);
         void reconcile();

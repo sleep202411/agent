@@ -17,7 +17,7 @@ import {
   type FizzAiJobView,
   type FizzAiSubmitJobInput,
 } from "@/app/[locale]/canvas/_lib/generation-api";
-import { openAssetsRealtime } from "@/app/[locale]/canvas/_lib/assets-realtime";
+import { getAssetsRealtimeKernel } from "@/app/[locale]/canvas/_lib/assets-realtime-kernel";
 import { computeWalletBalanceQueryKey } from "@/app/_components/credits-badge";
 
 /** One row of the create-and-browse feed. Rows are inserted after server accept. */
@@ -159,7 +159,7 @@ export function useGenerationFeed(type: FizzAiJobType, sourceSurface: string) {
 
   // Realtime: ai_job_update pushes for this modality merge into the feed.
   useEffect(() => {
-    const client = openAssetsRealtime({
+    const client = getAssetsRealtimeKernel().subscribe({
       onConnected: () => {
         setRealtimeConnected(true);
         void reconcileHistory();
