@@ -5572,7 +5572,12 @@ function selectLocalization<T extends LocalizationBase>(
   const available = (localizations ?? []).filter(
     (item) =>
       !item.archivedAt &&
-      (!publicOnly || item.status === IpLocalizationStatus.published),
+      // Public reads serve human-published localizations and machine translations
+      // (the latter ranks below human via localizationRank, so a published locale
+      // always wins when both exist).
+      (!publicOnly ||
+        item.status === IpLocalizationStatus.published ||
+        item.status === IpLocalizationStatus.machine_translated),
   );
   const candidates = localeCandidates(requested, source);
   const selected =
