@@ -2711,7 +2711,7 @@ model IpLocalization {
   createdAt            DateTime             @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt            DateTime             @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  coverAssetId            String?          @map("cover_asset_id") @db.Uuid
+  coverAssetId String? @map("cover_asset_id") @db.Uuid
 
   ip                      Ip               @relation(fields: [ipId], references: [id], onDelete: Cascade)
   localeRef               SupportedLocale  @relation("IpLocalizationLocale", fields: [locale], references: [code], onDelete: Restrict)
@@ -3814,6 +3814,14 @@ enum AiOutboxEventType {
   /// Media asset moderation changed. Payload is a
   /// `media_asset_moderation_changed` asset event.
   media_asset_moderation_changed
+  /// Compute/community wallet balance changed (top-up / spend / refund / expiry).
+  wallet_changed
+  /// Plan / entitlement changed (upgrade, seat change, refund-revoke).
+  entitlement_changed
+  /// Workspace membership changed (member added / removed / role changed).
+  team_member_changed
+  /// Project changed (created / updated / archived / shared).
+  project_changed
 }
 
 enum AiControlPlaneStatus {
@@ -4345,6 +4353,15 @@ model AiEventOutbox {
   deadAt        DateTime?         @map("dead_at") @db.Timestamptz(6)
   createdAt     DateTime          @default(now()) @map("created_at") @db.Timestamptz(6)
 
+  /// Realtime envelope (P3, docs/studio-realtime-architecture.md §3): the channel
+  /// this event belongs to, a per-channel monotonic sequence (for client gap
+  /// detection + /replay catch-up), and a globally-unique id (idempotency key).
+  /// Nullable for backward-compat during rollout — the new emit path always sets
+  /// them; old in-flight rows drain without.
+  channel String?
+  seq     BigInt?
+  eventId String? @map("event_id")
+
   job AiJob? @relation(fields: [jobId], references: [id], onDelete: Cascade)
 
   /// Pending-events scan: dispatched_at NULL AND dead_at NULL AND
@@ -4356,7 +4373,21 @@ model AiEventOutbox {
   @@index([lockedAt], map: "ai_event_outbox_locked_idx")
   /// DLQ inspection.
   @@index([deadAt], map: "ai_event_outbox_dead_idx")
+  /// Replay catch-up: events for a channel after a given sequence.
+  @@index([channel, seq], map: "ai_event_outbox_channel_seq_idx")
   @@map("ai_event_outbox")
+}
+
+/// Per-channel monotonic sequence allocator for the realtime event plane (P3,
+/// docs/studio-realtime-architecture.md §3). `nextSeq` is advanced atomically
+/// (a single PG `INSERT ... ON CONFLICT DO UPDATE` — gap-free under concurrent
+/// writers) when an event is enqueued; see `enqueueRealtimeEvent`. One row per
+/// channel; per-channel locking keeps unrelated channels contention-free.
+model RealtimeSequenceCursor {
+  channel String @id
+  nextSeq BigInt @default(1) @map("next_seq")
+
+  @@map("realtime_sequence_cursor")
 }
 
 // ─────────────────────────────────────────────────────────────

@@ -259,6 +259,52 @@ export async function enqueueAssetEventOutbox(
   });
 }
 
+/**
+ * Generalized realtime event enqueue (P3, docs/studio-realtime-architecture.md
+ * §3). Allocates a per-channel monotonic `seq` (a single atomic PG upsert —
+ * gap-free under concurrent writers) plus a unique `eventId`, then writes the
+ * outbox row in the SAME transaction as the caller's mutation so the event and
+ * the state change commit atomically (no dual-write race). The dispatcher
+ * publishes it with the `{channel, seq, eventId}` envelope; clients use `seq`
+ * to detect gaps + `/replay`, and `eventId` to dedup.
+ */
+export async function enqueueRealtimeEvent(
+  tx: PrismaService | Prisma.TransactionClient,
+  input: {
+    channel: string;
+    eventType: AiOutboxEventType;
+    payload: Prisma.InputJsonValue;
+    userId: string;
+    jobId?: string | null;
+  },
+): Promise<{ eventId: string; seq: bigint }> {
+  // `next_seq` starts at 1; the first insert sets it to 2 and this event takes
+  // seq 1. Subsequent events increment atomically. ${channel} is parameterized.
+  const rows = await tx.$queryRaw<Array<{ next_seq: bigint }>>`
+    INSERT INTO "realtime_sequence_cursor" ("channel", "next_seq")
+    VALUES (${input.channel}, 2)
+    ON CONFLICT ("channel")
+    DO UPDATE SET "next_seq" = "realtime_sequence_cursor"."next_seq" + 1
+    RETURNING "next_seq"
+  `;
+  const seq = rows[0].next_seq - 1n;
+  const eventId = newShortId();
+  await tx.aiEventOutbox.create({
+    data: {
+      id: newShortId(),
+      channel: input.channel,
+      seq,
+      eventId,
+      jobId: input.jobId ?? null,
+      userId: input.userId,
+      eventType: input.eventType,
+      payload: input.payload,
+      attempt: 0,
+    },
+  });
+  return { eventId, seq };
+}
+
 function errorText(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
 }
