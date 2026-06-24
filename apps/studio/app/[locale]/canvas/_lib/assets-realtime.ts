@@ -3,14 +3,13 @@
 import type { AssetEvent } from "@repo/shared";
 
 /**
- * Asset realtime client — transport-pluggable.
+ * Asset realtime client — native WebSocket to the in-cluster `/ws/realtime`
+ * plane (self-hosted, identical on .com and .cn). `negotiate` mints a short-lived
+ * token; the socket reconnects with full-jitter exponential backoff and a circuit
+ * breaker so a dead connection never floods the negotiate endpoint.
  *
- * The negotiate endpoint reports which transport to use:
- *   - `web-pubsub`  → Azure Web PubSub (the .com cell). The Azure SDK is loaded
- *                     lazily so it is never bundled where it isn't used.
- *   - `self-hosted` → a native WebSocket to the in-cluster `/ws/realtime` plane
- *                     (the CN cell, where Web PubSub is unavailable).
- * Both deliver identical `AssetEvent` payloads, so callers are transport-blind.
+ * Azure Web PubSub was removed (docs/studio-realtime-architecture.md §12 P1): its
+ * client re-negotiated on every reconnect with no backoff — the flood root cause.
  */
 
 export interface AssetsRealtimeHandlers {
@@ -27,18 +26,15 @@ export interface AssetsRealtimeOptions {
   workspaceId?: string;
 }
 
-type RealtimeTransport = "web-pubsub" | "self-hosted";
-
 interface NegotiateData {
   url: string;
   accessToken: string;
   expiresAt: number;
-  transport: RealtimeTransport;
 }
 
 interface NegotiateResponse {
   code: number;
-  data?: Partial<NegotiateData>;
+  data?: Partial<NegotiateData> & { transport?: string };
   message?: string;
 }
 
@@ -55,12 +51,15 @@ async function negotiate(workspaceId?: string): Promise<NegotiateData> {
   if (body.code !== 200 || !body.data?.url || !body.data.accessToken) {
     throw new Error(`negotiate failed: ${body.message ?? "no url"}`);
   }
+  // Self-hosted is the only supported transport. Fail loud rather than silently
+  // falling back to the removed (flood-prone) Web PubSub path.
+  if (body.data.transport && body.data.transport !== "self-hosted") {
+    throw new Error(`negotiate returned unsupported transport: ${body.data.transport}`);
+  }
   return {
     url: body.data.url,
     accessToken: body.data.accessToken,
     expiresAt: body.data.expiresAt ?? 0,
-    // Default to web-pubsub for backward compatibility with older servers.
-    transport: body.data.transport ?? "web-pubsub",
   };
 }
 
@@ -83,10 +82,7 @@ export function openAssetsRealtime(
       return;
     }
     if (userClosed) return;
-    backend =
-      access.transport === "self-hosted"
-        ? openSelfHosted(access, options, handlers, isClosed)
-        : await openWebPubSub(options, handlers, isClosed);
+    backend = openSelfHosted(access, options, handlers, isClosed);
     if (userClosed) backend.close();
   })();
 
@@ -98,47 +94,13 @@ export function openAssetsRealtime(
   };
 }
 
-async function openWebPubSub(
-  options: AssetsRealtimeOptions,
-  handlers: AssetsRealtimeHandlers,
-  isClosed: () => boolean
-): Promise<AssetsRealtimeClient> {
-  const { WebPubSubClient } = await import("@azure/web-pubsub-client");
-
-  const client = new WebPubSubClient(
-    { getClientAccessUrl: async () => (await negotiate(options.workspaceId)).url },
-    { autoReconnect: true, autoRejoinGroups: true }
-  );
-
-  client.on("connected", () => {
-    if (!isClosed()) handlers.onConnected?.();
-  });
-  client.on("group-message", (msg) => {
-    const data = msg.message.data as AssetEvent | undefined;
-    if (!data || typeof data.kind !== "string") return;
-    handlers.onEvent?.(data);
-  });
-  client.on("disconnected", (event) => {
-    if (!isClosed()) {
-      handlers.onDisconnected?.(event.message?.message ?? "disconnected");
-    }
-  });
-
-  void client.start().catch((err) => {
-    if (!isClosed()) {
-      handlers.onDisconnected?.(err instanceof Error ? err.message : "start_failed");
-    }
-  });
-
-  return {
-    close() {
-      void client.stop();
-    },
-  };
-}
-
 const PING_INTERVAL_MS = 25_000;
 const MAX_RECONNECT_DELAY_MS = 15_000;
+// Circuit breaker: after this many consecutive failed (re)connects, back off to a
+// slow cooldown probe instead of hammering negotiate — a dead WS must never flood
+// the endpoint. The 5s poll backstop carries updates during cooldown.
+const MAX_RECONNECT_ATTEMPTS = 6;
+const COOLDOWN_MS = 60_000;
 
 function openSelfHosted(
   initial: NegotiateData,
@@ -172,7 +134,15 @@ function openSelfHosted(
   function scheduleReconnect() {
     if (stopped || isClosed()) return;
     attempt += 1;
-    const delay = Math.min(1_000 * 2 ** Math.min(attempt, 4), MAX_RECONNECT_DELAY_MS);
+    // Past the breaker threshold, stop hammering: probe at most once per cooldown.
+    // `attempt` resets to 0 on a successful open (onopen), closing the breaker.
+    const ceiling =
+      attempt > MAX_RECONNECT_ATTEMPTS
+        ? COOLDOWN_MS
+        : Math.min(1_000 * 2 ** Math.min(attempt, 4), MAX_RECONNECT_DELAY_MS);
+    // Full jitter — random in [0, ceiling] — so a mass disconnect doesn't produce
+    // a synchronized reconnect (and negotiate) herd.
+    const delay = Math.random() * ceiling;
     reconnectTimer = setTimeout(() => {
       void negotiate(options.workspaceId)
         .then((access) => {

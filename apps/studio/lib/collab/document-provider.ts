@@ -204,10 +204,13 @@ export class DocumentProvider {
   private scheduleReconnect(): void {
     if (this.destroyed || this.reconnectTimer) return;
     this.reconnectAttempt += 1;
-    const delay = Math.min(
+    const ceiling = Math.min(
       BASE_RECONNECT_DELAY_MS * 2 ** Math.min(this.reconnectAttempt, 4),
       MAX_RECONNECT_DELAY_MS
     );
+    // Full jitter — random in [0, ceiling] — so a mass disconnect (e.g. a pod
+    // restart dropping every socket) doesn't produce a synchronized reconnect herd.
+    const delay = Math.random() * ceiling;
     this.reconnectTimer = setTimeout(() => {
       this.reconnectTimer = null;
       this.connect();
