@@ -284,7 +284,7 @@ export function IpPlazaClient() {
             </div>
           ) : projects.length > 0 ? (
             <>
-              <div className="columns-2 gap-6 sm:columns-3 xl:columns-4 2xl:columns-5">
+              <div className="grid auto-rows-fr grid-cols-2 gap-6 sm:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5">
                 {projects.map((project) => (
                   <IPPlazaCard
                     key={project.id}

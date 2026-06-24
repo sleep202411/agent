@@ -2711,9 +2711,12 @@ model IpLocalization {
   createdAt            DateTime             @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt            DateTime             @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
 
+  coverAssetId            String?          @map("cover_asset_id") @db.Uuid
+
   ip                      Ip               @relation(fields: [ipId], references: [id], onDelete: Cascade)
   localeRef               SupportedLocale  @relation("IpLocalizationLocale", fields: [locale], references: [code], onDelete: Restrict)
   translatedFromLocaleRef SupportedLocale? @relation("IpLocalizationTranslatedFromLocale", fields: [translatedFromLocale], references: [code], onDelete: Restrict)
+  coverAsset              MediaAsset?      @relation("IpLocalizationCoverAsset", fields: [coverAssetId], references: [id], onDelete: SetNull)
 
   /// Public slug uniqueness is enforced by partial unique SQL:
   /// (locale, slug) WHERE slug IS NOT NULL AND archived_at IS NULL AND status = 'published'.
@@ -5012,6 +5015,7 @@ model MediaAsset {
   aiJobOutputs            AiJobOutput[]
   certificateImages       UserCertificate[]           @relation("UserCertificateImage")
   ipCovers                Ip[]                        @relation("IpCoverAsset")
+  ipLocalizationCovers    IpLocalization[]            @relation("IpLocalizationCoverAsset")
   ipTrailers              Ip[]                        @relation("IpTrailerAsset")
   ipEpisodeCovers         IpEpisode[]                 @relation("IpEpisodeCoverAsset")
   ipEpisodeMedia          IpEpisode[]                 @relation("IpEpisodeMediaAsset")

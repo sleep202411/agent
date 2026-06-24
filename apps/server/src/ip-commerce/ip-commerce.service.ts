@@ -186,6 +186,7 @@ const ipInclude = {
   localizations: {
     where: { archivedAt: null },
     orderBy: [{ locale: 'asc' }, { updatedAt: 'desc' }],
+    include: { coverAsset: true },
   },
   taxonomyAssignments: {
     orderBy: [{ displayOrder: 'asc' }, { createdAt: 'asc' }],
@@ -253,6 +254,7 @@ const adminIpInclude = {
   localizations: {
     where: { archivedAt: null },
     orderBy: [{ locale: 'asc' }, { updatedAt: 'desc' }],
+    include: { coverAsset: true },
   },
   taxonomyAssignments: {
     orderBy: [{ displayOrder: 'asc' }, { createdAt: 'asc' }],
@@ -5273,6 +5275,8 @@ type IpLocalizationLike = LocalizationBase & {
   subtitle: string | null;
   summary: string;
   description: string | null;
+  // Per-locale poster override; falls back to Ip.coverAsset when absent.
+  coverAsset?: Parameters<typeof assetDto>[0];
 };
 
 type TaxonomyTermLocalizationLike = {
@@ -6124,7 +6128,7 @@ function adminIpSummaryDto(
     sourceLocale: title.sourceLocale,
     ...taxonomy,
     version: title.version,
-    coverAsset: assetDto(title.coverAsset),
+    coverAsset: assetDto(copy.value?.coverAsset ?? title.coverAsset),
     trailerAsset: assetDto(title.trailerAsset),
     scheduledAt: title.scheduledAt?.toISOString() ?? null,
     publishedAt: title.publishedAt?.toISOString() ?? null,
@@ -6181,7 +6185,7 @@ function creatorIpSummaryDto(
     ageRating: title.ageRating,
     sourceLocale: title.sourceLocale,
     version: title.version,
-    coverAsset: assetDto(title.coverAsset),
+    coverAsset: assetDto(copy.value?.coverAsset ?? title.coverAsset),
     trailerAsset: assetDto(title.trailerAsset),
     createdAt: title.createdAt.toISOString(),
     updatedAt: title.updatedAt.toISOString(),
@@ -6808,7 +6812,7 @@ function ipDto(
     })),
     rightsSummary: title.rightsSummary,
     aiDisclosure: title.aiDisclosure,
-    coverAsset: assetDto(title.coverAsset),
+    coverAsset: assetDto(copy.value?.coverAsset ?? title.coverAsset),
     trailerAsset: assetDto(title.trailerAsset),
     publishedAt: title.publishedAt?.toISOString() ?? null,
     scheduledAt: title.scheduledAt?.toISOString() ?? null,

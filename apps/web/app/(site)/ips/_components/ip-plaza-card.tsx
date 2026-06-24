@@ -30,7 +30,7 @@ export function IPPlazaCard({
   return (
     <Link
       href={localizePath(`/ips/${project.id}`, locale)}
-      className="group mb-6 inline-block w-full break-inside-avoid overflow-hidden rounded-2xl hover:bg-muted/90 align-top transition-all hover:shadow-lg hover:shadow-black/20"
+      className="group flex h-full flex-col overflow-hidden rounded-2xl hover:bg-muted/90 transition-all hover:shadow-lg hover:shadow-black/20"
     >
       <div className="relative aspect-video w-full overflow-hidden bg-secondary">
         {project.cover ? (
@@ -70,7 +70,7 @@ export function IPPlazaCard({
         </div>
       </div>
 
-      <div className="space-y-3.5 p-4">
+      <div className="flex-1 space-y-3.5 p-4">
         {project.description && (
           <p className="line-clamp-2 text-[13px] leading-relaxed text-muted-foreground">
             {project.description}
