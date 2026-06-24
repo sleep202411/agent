@@ -482,7 +482,7 @@ function RecommendationDrawer({
         </SheetHeader>
 
         <TooltipProvider>
-          <div className="flex-1 space-y-5 overflow-y-auto px-4 pb-4">
+          <div className="min-w-0 flex-1 space-y-5 overflow-y-auto px-4 pb-4">
             <FormSection title="基础信息">
               <div className="grid gap-3 sm:grid-cols-2">
                 <Field
@@ -771,8 +771,8 @@ function AssetUploadField({
 
   return (
     <Field label={label} tooltip={tooltip}>
-      <div className="overflow-hidden rounded-lg border border-dashed border-slate-300 bg-slate-50">
-        <div className="relative flex h-32 items-center justify-center overflow-hidden bg-slate-100">
+      <div className="w-full overflow-hidden rounded-lg border border-dashed border-slate-300 bg-slate-50">
+        <div className="relative flex h-32 w-full items-center justify-center overflow-hidden bg-slate-100">
           {previewUrl && assetType === "image" ? (
             <img src={previewUrl} alt="" className="size-full object-cover" />
           ) : previewUrl && assetType === "video" ? (
