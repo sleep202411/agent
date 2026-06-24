@@ -31,6 +31,22 @@ interface ProjectRow extends RowDataPacket {
 
 const toIso = (v: Date | null) => (v ? new Date(v).toISOString() : null);
 
+// Legacy project covers are object keys in the Java OSS bucket (e.g.
+// `WORLD/20260129/x.jpg`, `history/img/72/.../y.jpeg`), public-read. Mirror
+// apps/web's resolveAssetUrl: pass through already-absolute URLs, else prefix
+// the OSS base. Env-overridable per region; defaults to the .com SG bucket.
+const OSS_BASE = (
+  process.env.LEGACY_OSS_BASE_URL ||
+  'https://fizzstudio-sg.oss-ap-southeast-1.aliyuncs.com'
+).replace(/\/+$/, '');
+
+function resolveCover(path: string | null): string | null {
+  const p = path?.trim();
+  if (!p) return null;
+  if (/^https?:\/\//i.test(p)) return p;
+  return `${OSS_BASE}/${p.replace(/^\/+/, '')}`;
+}
+
 @Injectable()
 export class LegacyProjectsService {
   constructor(private readonly legacy: LegacyMysqlService) {}
@@ -55,7 +71,7 @@ export class LegacyProjectsService {
     return rows.map((r) => ({
       id: r.id,
       name: r.name?.trim() || 'Untitled',
-      cover: r.image_path?.trim() || null,
+      cover: resolveCover(r.image_path),
       aspectRatio: r.aspect_ratio?.trim() || null,
       status: Number(r.status ?? 0),
       createdAt: toIso(r.create_time),
