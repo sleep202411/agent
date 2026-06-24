@@ -74,13 +74,20 @@ export function ProjectsList() {
     const name = createName.trim();
     if (!name || busy) return;
     setBusy(true);
+    // Open the tab synchronously inside the click gesture so the popup blocker
+    // doesn't kill it, then point it at the new project once the id comes back.
+    const win = window.open("", "_blank");
     try {
-      await createLegacyProject(name);
+      const { worldId, projectId } = await createLegacyProject(name);
       await refresh();
       setCreating(false);
       setCreateName("");
+      const url = `${webBase}/${locale}/projects/${projectId}?worldId=${encodeURIComponent(worldId)}`;
+      if (win) win.location.href = url;
+      else window.open(url, "_blank");
       toast.success(tp("projectCreated"));
     } catch {
+      win?.close();
       toast.error(tp("createProjectFailed"));
     } finally {
       setBusy(false);

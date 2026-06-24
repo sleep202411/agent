@@ -184,7 +184,18 @@ export function AccountMenu({
 
           <button
             type="button"
-            onClick={() => comingSoon(t("myProfile"))}
+            onClick={() => {
+              setMenuOpen(false);
+              if (!publicUserId) return;
+              // The public profile lives in apps/web (fizzdragon.com / .cn for zh-CN).
+              const base =
+                locale === "zh-CN" ? "https://fizzdragon.fizzspace.cn" : "https://fizzdragon.com";
+              window.open(
+                `${base}/${locale}/creators/${publicUserId}`,
+                "_blank",
+                "noopener,noreferrer"
+              );
+            }}
             className="mt-2 flex h-10 w-full items-center justify-center gap-2 rounded-full bg-white/[0.06] text-sm font-medium transition-colors hover:bg-white/[0.1]"
           >
             <IconUserCircle className="size-4.5" stroke={1.8} />

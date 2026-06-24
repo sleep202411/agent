@@ -272,25 +272,22 @@ const MODELS: {
   badges: { text: string; kind: "new" | "off" | "muted" }[];
 }[] = [
   {
+    name: "HappyHorse 1.1",
+    img: `${MODEL_CDN}/production/cm28rh3bi0000oh09cxvjkeky/image/1777279556897-394c84db-0a26-4b50-990b-8184addb63fa.svg`,
+    desc: "Sharper cinematic realism with tighter audio sync",
+    badges: [{ text: "New", kind: "new" }],
+  },
+  {
     name: "Seedance 2.0",
     img: `${MODEL_CDN}/production/cm3po9yyf0003oh0c2iyt8ajy/image/1754894158793-1e7ef687-c3c1-4f44-8b06-d044a8121f66.svg`,
     desc: "Fluid, cohesive multi-shot video outputs",
-    badges: [
-      { text: "New", kind: "new" },
-      { text: "50% OFF", kind: "off" },
-    ],
+    badges: [{ text: "New", kind: "new" }],
   },
   {
-    name: "Sora 2",
-    img: `${MODEL_CDN}/test/cm3pol28q0000ojuuyeo77e36/image/1759998830447-10c6484e-786d-4d05-a2c4-f0c929b1042b.svg`,
-    desc: "Realistic visuals & audio (supports face uploads)",
-    badges: [{ text: "Audio", kind: "muted" }],
-  },
-  {
-    name: "Veo 3",
-    img: `${MODEL_CDN}/production/cm3po9yyf0003oh0c2iyt8ajy/image/1753259785486-de7c53b0-9576-4d3e-a76a-a94fcac57bf1.svg`,
-    desc: "Realistic outputs with natural audio",
-    badges: [],
+    name: "Kling 2.5",
+    img: "",
+    desc: "Vivid motion with strong prompt adherence",
+    badges: [{ text: "New", kind: "new" }],
   },
   {
     name: "Veo 3.1",
@@ -299,13 +296,10 @@ const MODELS: {
     badges: [{ text: "Audio", kind: "muted" }],
   },
   {
-    name: "HappyHorse 1.0",
-    img: `${MODEL_CDN}/production/cm28rh3bi0000oh09cxvjkeky/image/1777279556897-394c84db-0a26-4b50-990b-8184addb63fa.svg`,
-    desc: "Cinematic realism with native audio-visual sync",
-    badges: [
-      { text: "New", kind: "new" },
-      { text: "80% OFF", kind: "off" },
-    ],
+    name: "Wan 2.7",
+    img: "",
+    desc: "Bilingual prompts & precise camera control",
+    badges: [{ text: "New", kind: "new" }],
   },
   {
     name: "Nano Banana 2",
@@ -339,7 +333,7 @@ const MODELS: {
 export function Models({ theme: t }: { theme: Theme }) {
   return (
     <section className="px-6 pt-16">
-      <SectionHeading title="Models" action="View more" />
+      <SectionHeading title="Models" />
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
         {MODELS.map((m) => (
           <button
@@ -348,12 +342,21 @@ export function Models({ theme: t }: { theme: Theme }) {
             className="group flex items-center gap-3 rounded-xl p-3 text-left transition hover:brightness-125"
             style={{ background: t.surface }}
           >
-            <img
-              src={m.img}
-              alt={m.name}
-              loading="lazy"
-              className="size-11 shrink-0 rounded-lg object-cover"
-            />
+            {m.img ? (
+              <img
+                src={m.img}
+                alt={m.name}
+                loading="lazy"
+                className="size-11 shrink-0 rounded-lg object-cover"
+              />
+            ) : (
+              <span
+                aria-hidden
+                className="grid size-11 shrink-0 place-items-center rounded-lg bg-white/[0.06] text-[17px] font-semibold text-white/85"
+              >
+                {m.name.charAt(0)}
+              </span>
+            )}
             <div className="min-w-0 flex-1">
               <div className="flex items-center gap-1.5">
                 <span className="truncate text-[14px] font-medium">{m.name}</span>
