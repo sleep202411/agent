@@ -158,9 +158,9 @@ export class AiGenerationOutboxService
       });
 
       for (const row of rows) {
-        const payload = row.payload as unknown as AssetEvent;
+        const event = toPublishedEvent(row);
         try {
-          await this.realtime.publishAssetEvent(row.userId, payload);
+          await this.realtime.publishAssetEvent(row.userId, event);
           await this.prisma.aiEventOutbox.update({
             where: { id: row.id },
             data: {
@@ -303,6 +303,27 @@ export async function enqueueRealtimeEvent(
     },
   });
   return { eventId, seq };
+}
+
+/**
+ * Stamp the realtime envelope (channel/seq/eventId) onto the stored payload at
+ * publish time. Legacy rows (no channel — e.g. the existing ai_job path) pass
+ * through unchanged, so their delivery is byte-for-byte as before.
+ */
+function toPublishedEvent(row: {
+  payload: Prisma.JsonValue;
+  channel: string | null;
+  seq: bigint | null;
+  eventId: string | null;
+}): AssetEvent {
+  const payload = row.payload as unknown as AssetEvent;
+  if (row.channel == null) return payload;
+  return {
+    ...payload,
+    channel: row.channel,
+    seq: row.seq != null ? Number(row.seq) : undefined,
+    eventId: row.eventId ?? undefined,
+  } as AssetEvent;
 }
 
 function errorText(err: unknown): string {

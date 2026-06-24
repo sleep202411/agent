@@ -56,7 +56,23 @@ export interface AiJobUpdatePayload {
   completedAt?: string;
 }
 
-export type AssetEvent =
+/**
+ * Realtime-plane envelope fields (P3, docs/studio-realtime-architecture.md §3),
+ * stamped onto every event the generalized outbox publishes. Optional on the
+ * wire for backward-compat: legacy in-flight events omit them and old clients
+ * ignore them. New clients use `seq` for gap detection + `/replay` catch-up and
+ * `eventId` for idempotent dedup.
+ */
+export interface RealtimeEnvelope {
+  /** Channel this event was published on, e.g. `job:<id>`, `wallet:user:<id>`. */
+  channel?: string;
+  /** Per-channel monotonic sequence. */
+  seq?: number;
+  /** Globally-unique event id (idempotency key). */
+  eventId?: string;
+}
+
+export type AssetEvent = (
   | {
       kind: "ai_job_update";
       /** Full latest job view — clients can replace their cached copy. */
@@ -77,7 +93,9 @@ export type AssetEvent =
       action: "approved" | "flagged" | "blocked" | "restored";
       updatedAt: string;
       ts: number;
-    };
+    }
+) &
+  RealtimeEnvelope;
 
 /** Azure Web PubSub group name for a user's asset events. */
 export function assetsUserGroup(userId: string): string {

@@ -63,6 +63,13 @@ export class SelfHostedRealtimeService implements RealtimeProvider {
   }
 
   async publishAssetEvent(userId: string, event: AssetEvent): Promise<void> {
+    // Generalized events (P3) carry an explicit channel — the channel IS the
+    // fan-out group the client's token grants, so route straight to it. Legacy
+    // ai_job/media events have no channel and keep the kind-derived routing.
+    if (event.channel) {
+      await this.publishToGroups([event.channel], event);
+      return;
+    }
     const workspaceId =
       event.kind === 'ai_job_update' ? event.job.workspaceId : undefined;
     // Send to both the workspace and the user group so a workspace-scoped client
