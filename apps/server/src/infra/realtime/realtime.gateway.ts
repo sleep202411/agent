@@ -157,6 +157,31 @@ export class RealtimeGateway
 
   async onModuleDestroy() {
     if (this.heartbeatTimer) clearInterval(this.heartbeatTimer);
+    // Graceful drain on rollout/scale-down: ask every client to reconnect (to a
+    // healthy pod) and close cleanly. The preStop sleep has already deregistered
+    // this pod from the Service, so the reconnect lands elsewhere; the close is a
+    // backstop (the client reconnects on close too). De-dupe — a socket can be in
+    // several groups. Avoids the abrupt mass-disconnect a SIGKILL would cause.
+    const drained = new Set<TrackedSocket>();
+    for (const subs of this.socketsByGroup.values()) {
+      for (const client of subs) {
+        if (drained.has(client)) continue;
+        drained.add(client);
+        try {
+          this.sendRaw(
+            client,
+            JSON.stringify({
+              event: 'reconnect',
+              data: { reason: 'draining' },
+            }),
+          );
+          client.close();
+        } catch {
+          /* already gone */
+        }
+      }
+    }
+    this.socketsByGroup.clear();
     try {
       await this.redisSubscriber?.quit();
     } catch (err) {

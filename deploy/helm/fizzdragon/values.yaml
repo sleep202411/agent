@@ -267,7 +267,14 @@ adminUi:
 # ---------------------------------------------------------------------------
 server:
   enabled: true
+  # HA is already provided by the out-of-band HPA (min 3 replicas) — the realtime
+  # plane is multi-pod, so this is just the pre-autoscale seed (ArgoCD ignores
+  # /spec/replicas drift; the HPA owns the live count). The PodDisruptionBudget
+  # (minAvailable: 1) keeps a node drain / rollout from ever dropping it to zero.
   replicaCount: 1
+  # Graceful drain window: the preStop sleep deregisters the pod from the Service,
+  # then the WS gateway closes sockets so clients reconnect to a healthy pod.
+  terminationGracePeriodSeconds: 45
   migrateOnStart: true
   image:
     repository: fizzdragon-server

@@ -20,6 +20,7 @@ spec:
         {{- include "fizzdragon.componentLabels" $ctx | nindent 8 }}
         {{- include "fizzdragon.workloadIdentityLabels" . | nindent 8 }}
     spec:
+      terminationGracePeriodSeconds: {{ .Values.server.terminationGracePeriodSeconds | default 30 }}
       {{- if .Values.azure.enabled }}
       serviceAccountName: {{ .Values.azure.workloadIdentity.serviceAccountName }}
       {{- end }}
@@ -99,6 +100,13 @@ spec:
             periodSeconds: 30
             timeoutSeconds: 5
             failureThreshold: 3
+          lifecycle:
+            preStop:
+              exec:
+                # Pause so the endpoints controller deregisters this pod from the
+                # Service before SIGTERM — new + in-flight connections drain to
+                # healthy pods; the WS gateway then closes sockets on shutdown.
+                command: ["sh", "-c", "sleep 8"]
       {{- if .Values.azure.enabled }}
       volumes:
         - name: kv-secrets
@@ -141,4 +149,18 @@ spec:
       name: http
   selector:
     {{- include "fizzdragon.componentSelector" $ctx | nindent 4 }}
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "fizzdragon.componentName" $ctx }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "fizzdragon.componentLabels" $ctx | nindent 4 }}
+spec:
+  # Keep >=1 server pod serving through voluntary disruptions (node drain, rollout).
+  minAvailable: 1
+  selector:
+    matchLabels:
+      {{- include "fizzdragon.componentSelector" $ctx | nindent 6 }}
 {{- end }}
