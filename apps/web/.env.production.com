@@ -12,6 +12,12 @@ SERVER_URL=http://localhost:3001
 # ============ Site Region ============
 NEXT_PUBLIC_SITE_REGION=global
 
+# ============ FizzStudio entry host ============
+# When set, the apps/web nav "FizzStudio" CTA points to https://${host}/{locale}
+# (the new standalone studio). Empty/unset → the legacy /{locale}/art-studio apex.
+# .com only — CN leaves this unset so it keeps art-studio.
+NEXT_PUBLIC_STUDIO_HOST=studio.fizzdragon.com
+
 # ============ OSS ============
 NEXT_PUBLIC_OSS_BASE_URL=https://fizzstudio-sg.oss-ap-southeast-1.aliyuncs.com
 NEXT_PUBLIC_USER_BASE_URL=https://user-aratar-sg.oss-ap-southeast-1.aliyuncs.com
