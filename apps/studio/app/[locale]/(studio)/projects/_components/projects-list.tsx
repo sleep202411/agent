@@ -133,7 +133,7 @@ export function ProjectsList() {
         title={t("projects.historyTitle")}
         subtitle={t("projects.historySubtitle")}
       />
-      <div className="mt-6 grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
+      <div className="mt-6 grid grid-cols-[repeat(auto-fill,minmax(240px,1fr))] gap-5">
         <button
           type="button"
           onClick={() => {
