@@ -32,6 +32,7 @@ import { UsersService } from '../users/users.service';
 import { PlatformAuditLogService } from '../workspaces';
 import { WorkspacePermissionService } from '../workspaces';
 import { acquireSeatLock, assertSeatAvailable } from './seat-guard';
+import { enqueueTeamMemberChanged } from './team-realtime';
 import type {
   AddMemberInput,
   AssignableRole,
@@ -152,6 +153,17 @@ export class WorkspaceMembersService {
           },
           tx,
         );
+        await enqueueTeamMemberChanged(tx, {
+          workspaceId,
+          action: 'added',
+          member: {
+            id: m.id,
+            userId: m.userId,
+            role: m.role,
+            status: m.status,
+          },
+          actorUserId: actor.userId,
+        });
         return m;
       });
       await this.audit.record({
@@ -200,9 +212,19 @@ export class WorkspaceMembersService {
         msg: 'The workspace owner role cannot be changed.',
       });
     }
-    const updated = await this.prisma.workspaceMember.update({
-      where: { id: memberId },
-      data: { role: ROLE_MAP[input.role] },
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const u = await tx.workspaceMember.update({
+        where: { id: memberId },
+        data: { role: ROLE_MAP[input.role] },
+      });
+      // Atomic with the role write so the roster push can't diverge from state.
+      await enqueueTeamMemberChanged(tx, {
+        workspaceId,
+        action: 'role_changed',
+        member: { id: u.id, userId: u.userId, role: u.role, status: u.status },
+        actorUserId: actor.userId,
+      });
+      return u;
     });
     await this.audit.record({
       workspaceId,
@@ -254,6 +276,12 @@ export class WorkspaceMembersService {
         },
         tx,
       );
+      await enqueueTeamMemberChanged(tx, {
+        workspaceId,
+        action: 'removed',
+        member: { id: member.id, userId: member.userId, role: member.role },
+        actorUserId: actor.userId,
+      });
     });
     await this.audit.record({
       workspaceId,

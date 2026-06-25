@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useTranslations } from "next-intl";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
@@ -25,6 +25,7 @@ import {
 import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ApiRequestError } from "@/lib/api";
+import { getAssetsRealtimeKernel } from "@/app/[locale]/canvas/_lib/assets-realtime-kernel";
 import {
   addMember,
   createInvite,
@@ -83,6 +84,22 @@ export function MembersManager({ scope, canManage }: { scope: ShareScope; canMan
   const [role, setRole] = useState<AssignableRole>("editor");
   const [search, setSearch] = useState("");
   const invalidate = () => queryClient.invalidateQueries({ queryKey: membersKey });
+
+  // Realtime: refresh the roster when membership changes server-side — including
+  // a change another admin made. Workspace scope only (project members differ).
+  useEffect(() => {
+    if (scope.kind !== "workspace") return;
+    const sub = getAssetsRealtimeKernel({ workspaceId: scope.id }).subscribe({
+      onEvent: (event) => {
+        if (event.kind === "team_member_changed" && event.workspaceId === scope.id) {
+          void queryClient.invalidateQueries({
+            queryKey: ["share-members", scope.kind, scope.id],
+          });
+        }
+      },
+    });
+    return () => sub.close();
+  }, [scope.kind, scope.id, queryClient]);
 
   const addMut = useMutation({
     mutationFn: () => addMember(scope, account.trim(), role),
