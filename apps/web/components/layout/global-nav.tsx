@@ -6,8 +6,6 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useGSAP } from "@gsap/react";
 import { gsap } from "gsap";
-import { useQuery } from "@tanstack/react-query";
-import { api } from "@/src/lib/api";
 import { CommunityCreditsChip } from "@/components/layout/community-credits-chip";
 import { BellButton } from "@/components/notifications/bell-button";
 import { UserAvatar } from "@/components/user-avatar";
@@ -73,18 +71,6 @@ export function GlobalNav() {
   const { user } = useCurrentUser();
   const logout = useLogout();
 
-  // The FizzStudio entry points to the new studio domain only once the user has
-  // migrated onto the PG compute_point wallet; otherwise it stays on the legacy
-  // art-studio. CN keeps art-studio regardless (STUDIO_HOST is unset there, so
-  // getStudioHref returns the apex path anyway).
-  const { data: migration } = useQuery({
-    queryKey: ["points", "migration-status"],
-    queryFn: () => api.get<{ migrated: boolean }>("/aurora/points/migration-status"),
-    enabled: !!user,
-    staleTime: 10 * 60 * 1000,
-  });
-  const studioMigrated = migration?.migrated ?? false;
-
   const headerRef = useRef<HTMLElement | null>(null);
   const navListRef = useRef<HTMLUListElement | null>(null);
   const navLinkRefs = useRef<Array<HTMLAnchorElement | null>>([]);
@@ -117,7 +103,7 @@ export function GlobalNav() {
 
   const ctaItem: NavItem = {
     href: "/art-studio",
-    linkHref: studioMigrated ? getStudioHref(locale) : undefined,
+    linkHref: getStudioHref(locale),
     label: t("fizzStudio"),
     requiresAuth: true,
   };
