@@ -181,7 +181,7 @@ export function CanvasGenerationProvider({
           // Remove + re-add with the same id (preserves position/selection + the
           // input wire — the panorama node has an input handle, so the
           // source→panorama wire stays as provenance instead of being dropped).
-          const src = out!.accessUrl ?? out!.url;
+          const src = out!.url ?? out!.accessUrl;
           graph.removeNode(match.id);
           graph.addNode({
             id: match.id,
@@ -198,7 +198,7 @@ export function CanvasGenerationProvider({
           // connect time. Now that an output exists, push its URL into every card
           // wired from this node — mirroring onConnect's binding so the wire is
           // functional, not just drawn.
-          const doneUrl = incoming === "done" ? (out?.accessUrl ?? out?.url) : null;
+          const doneUrl = incoming === "done" ? (out?.url ?? out?.accessUrl) : null;
           const kind = outputKindForType(out?.type);
           if (doneUrl && kind) {
             const allNodes = getNodes();
@@ -240,7 +240,7 @@ export function CanvasGenerationProvider({
         graph.addAssets(
           job.outputs
             .map((output, index): CanvasAsset | null => {
-              const url = output.accessUrl ?? output.url;
+              const url = output.url ?? output.accessUrl;
               if (!url) return null; // never put a urless asset in the shared library
               return {
                 id: output.id ?? `${job.id}:${index}`,

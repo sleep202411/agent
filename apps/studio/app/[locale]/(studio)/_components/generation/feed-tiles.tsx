@@ -204,7 +204,7 @@ export function ImageResultTile({
   onOpen: () => void;
 }) {
   const t = useTranslations("generation");
-  const src = output.accessUrl ?? output.url;
+  const src = output.url ?? output.accessUrl;
   const ratio =
     output.width && output.height
       ? `${output.width} / ${output.height}`
@@ -252,7 +252,7 @@ export function VideoResultTile({
 }) {
   const t = useTranslations("generation");
   const videoRef = useRef<HTMLVideoElement>(null);
-  const src = output.accessUrl ?? output.url;
+  const src = output.url ?? output.accessUrl;
   return (
     <div
       className="group relative aspect-video cursor-pointer overflow-hidden rounded-xl bg-card"

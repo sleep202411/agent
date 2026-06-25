@@ -317,7 +317,7 @@ export function generationStateFromJob(job: {
     outputs: job.outputs?.map((output) => ({
       assetId: output.assetId,
       type: output.type,
-      url: output.accessUrl ?? output.url,
+      url: output.url ?? output.accessUrl,
       accessUrl: output.accessUrl,
       width: output.width,
       height: output.height,

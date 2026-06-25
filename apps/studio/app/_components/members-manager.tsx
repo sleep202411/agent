@@ -164,7 +164,7 @@ export function MembersManager({ scope, canManage }: { scope: ShareScope; canMan
   }, [members, search]);
 
   return (
-    <div className="space-y-3">
+    <div className="min-w-0 space-y-3">
       {canManage && (
         <form
           className="flex items-center gap-2"
@@ -289,7 +289,7 @@ export function MembersManager({ scope, canManage }: { scope: ShareScope; canMan
 
           {created && (
             <div className="flex items-center gap-2 rounded-lg bg-input/30 px-2.5 py-1.5">
-              <code className="flex-1 truncate text-xs text-muted-foreground">
+              <code className="min-w-0 flex-1 truncate text-xs text-muted-foreground">
                 {inviteUrl(created.token)}
               </code>
               <Button
@@ -372,13 +372,19 @@ export function MembersManager({ scope, canManage }: { scope: ShareScope; canMan
 }
 
 function MemberAvatar({ member }: { member: SharingMember }) {
-  if (member.avatar) {
+  const [failed, setFailed] = useState(false);
+  const initial = (member.nickname ?? member.userId ?? "?").charAt(0).toUpperCase();
+  if (member.avatar && !failed) {
     return (
       // eslint-disable-next-line @next/next/no-img-element -- external avatar URL
-      <img src={member.avatar} alt="" className="size-8 shrink-0 rounded-full object-cover" />
+      <img
+        src={member.avatar}
+        alt=""
+        onError={() => setFailed(true)}
+        className="size-8 shrink-0 rounded-full object-cover"
+      />
     );
   }
-  const initial = (member.nickname ?? member.userId ?? "?").charAt(0).toUpperCase();
   return (
     <span className="flex size-8 shrink-0 items-center justify-center rounded-full bg-secondary text-xs font-semibold">
       {initial}

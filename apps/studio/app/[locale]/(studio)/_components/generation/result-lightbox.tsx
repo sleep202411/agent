@@ -81,7 +81,7 @@ export function ResultLightbox({
   const { job, output } = item;
   const isVideo = output.type === "video";
   const ratio = reducedRatio(output.width, output.height);
-  const src = output.accessUrl ?? output.url;
+  const src = output.url ?? output.accessUrl;
 
   const copyPrompt = async () => {
     try {
