@@ -37,7 +37,6 @@ import {
 } from "./generation-api";
 
 /** Reconcile cadence while a card is running — slower when realtime is healthy. */
-const CONNECTED_RECONCILE_INTERVAL_MS = 20_000;
 const DISCONNECTED_FALLBACK_INTERVAL_MS = 5_000;
 
 /** Minimal shape this orchestrator reads off a generation node's data. */
@@ -135,6 +134,7 @@ export function CanvasGenerationProvider({
 
   const [realtimeConnected, setRealtimeConnected] = useState(false);
   const reconcileSeq = useRef(0);
+  const staleUrlSweepDone = useRef(false);
 
   /**
    * Apply one job update to the card whose `generation.jobId` matches. Shared by
@@ -291,6 +291,36 @@ export function CanvasGenerationProvider({
     }
   }, [getNodes, applyJobUpdate]);
 
+  // One-time migration of legacy cards whose persisted output URL is a relative
+  // /content access path (captured before outputs carried a direct CDN URL). On
+  // the first connect we re-fetch those finished jobs once and re-apply them, so
+  // the server's now-resolved CDN URL replaces the redirect — then it's persisted
+  // in the doc and never swept again. Not a poll: guarded to run once, and only
+  // fires when such a stale card actually exists.
+  const sweepStaleUrls = useCallback(async () => {
+    if (staleUrlSweepDone.current) return;
+    const ids = [
+      ...new Set(
+        getNodes()
+          .filter((n) => n.type === "prompt" || n.type === "video")
+          .map((n) => (n.data as GenNodeData).generation)
+          .filter(
+            (g): g is GenerationState =>
+              !!g?.jobId &&
+              isTerminalGenerationStatus(g.status) &&
+              (g.outputs ?? []).some((o) => typeof o.url === "string" && o.url.startsWith("/"))
+          )
+          .map((g) => g.jobId as string)
+      ),
+    ];
+    if (ids.length === 0) return;
+    staleUrlSweepDone.current = true;
+    const results = await Promise.allSettled(ids.map((id) => getFizzAiJob(id)));
+    for (const result of results) {
+      if (result.status === "fulfilled") applyJobUpdate(result.value);
+    }
+  }, [getNodes, applyJobUpdate]);
+
   // Realtime: route job updates back to their card by jobId; reconcile on
   // (re)connect so a reconnect after sleep/disconnect back-fills missed updates.
   // One socket per active workspace (carries that workspace's wallet channel).
@@ -302,6 +332,7 @@ export function CanvasGenerationProvider({
       onConnected: () => {
         setRealtimeConnected(true);
         void reconcile();
+        void sweepStaleUrls();
       },
       onDisconnected: () => setRealtimeConnected(false),
       onEvent: (event) => {
@@ -370,7 +401,7 @@ export function CanvasGenerationProvider({
       },
     });
     return () => client.close();
-  }, [applyJobUpdate, reconcile, graph, getNodes, t, workspaceId]);
+  }, [applyJobUpdate, reconcile, sweepStaleUrls, graph, getNodes, t, workspaceId]);
 
   // Non-terminal job ids on the canvas, reactive to doc hydration + node edits.
   const activeJobIds = useStore((s) => {
@@ -386,14 +417,15 @@ export function CanvasGenerationProvider({
   });
 
   // Reconcile the instant an active card appears (e.g. after the doc hydrates
-  // from IndexedDB on load), then poll as a backstop while any card runs.
+  // from IndexedDB on load). While the realtime channel is live the socket
+  // delivers job updates — and reconcile-on-(re)connect + tab-refocus cover any
+  // gap — so we do NOT poll when connected. Only when the channel is down do we
+  // fall back to interval polling.
   useEffect(() => {
     if (!activeJobIds) return;
     void reconcile();
-    const timer = window.setInterval(
-      () => void reconcile(),
-      realtimeConnected ? CONNECTED_RECONCILE_INTERVAL_MS : DISCONNECTED_FALLBACK_INTERVAL_MS
-    );
+    if (realtimeConnected) return;
+    const timer = window.setInterval(() => void reconcile(), DISCONNECTED_FALLBACK_INTERVAL_MS);
     return () => window.clearInterval(timer);
   }, [activeJobIds, realtimeConnected, reconcile]);
 
