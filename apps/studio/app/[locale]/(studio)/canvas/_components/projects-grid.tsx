@@ -40,6 +40,7 @@ import {
   type ProjectRef,
 } from "@/lib/collab/projects-api";
 import { useWorkspace } from "@/app/_components/workspace-context";
+import { getAssetsRealtimeKernel } from "@/app/[locale]/canvas/_lib/assets-realtime-kernel";
 
 function timeAgo(input: string | number, t: ReturnType<typeof useTranslations>): string {
   const ms = typeof input === "number" ? input : Date.parse(input);
@@ -91,6 +92,20 @@ export function CanvasProjectsGrid() {
       cancelled = true;
     };
   }, [workspaceId]);
+
+  // Realtime: refresh the grid when a project is created/updated/archived in the
+  // active workspace — including a change a teammate made.
+  useEffect(() => {
+    if (!workspaceId) return;
+    const sub = getAssetsRealtimeKernel({ workspaceId }).subscribe({
+      onEvent: (event) => {
+        if (event.kind === "project_changed" && event.workspaceId === workspaceId) {
+          void refresh();
+        }
+      },
+    });
+    return () => sub.close();
+  }, [workspaceId, refresh]);
 
   const onCreate = useCallback(async () => {
     if (!workspaceId) return;

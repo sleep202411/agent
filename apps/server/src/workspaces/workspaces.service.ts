@@ -28,6 +28,7 @@ import type {
 } from './dto';
 import { WalletLedgerService } from './wallet-ledger.service';
 import { WorkspacePermissionService } from './workspace-permission.service';
+import { enqueueProjectChanged } from './project-realtime';
 
 @Injectable()
 export class WorkspacesService {
@@ -308,6 +309,12 @@ export class WorkspacesService {
         where: { id: workspaceId, defaultProjectId: null },
         data: { defaultProjectId: created.id },
       });
+      await enqueueProjectChanged(tx, {
+        workspaceId,
+        projectId: created.id,
+        action: 'created',
+        actorUserId: user.userId,
+      });
       return created;
     });
 
@@ -347,38 +354,47 @@ export class WorkspacesService {
       projectId,
       ProjectMemberRole.editor,
     );
-    const result = await this.prisma.platformProject.updateMany({
-      where: {
-        id: projectId,
-        deletedAt: null,
-        status: PlatformProjectStatus.active,
-        ...(input.expectedVersion == null
-          ? {}
-          : { version: input.expectedVersion }),
-      },
-      data: {
-        name: input.name,
-        slug: input.slug === undefined ? undefined : input.slug,
-        projectType: input.projectType,
-        visibility:
-          input.visibility === undefined
-            ? undefined
-            : (input.visibility as ProjectVisibility),
-        description:
-          input.description === undefined ? undefined : input.description,
-        updatedById: user.userId,
-        version: { increment: 1 },
-      },
-    });
-    if (result.count === 0) {
-      throw new ConflictException({
-        code: 'PROJECT_VERSION_CONFLICT',
-        msg: 'Project was modified by another request.',
+    const project = await this.prisma.$transaction(async (tx) => {
+      const result = await tx.platformProject.updateMany({
+        where: {
+          id: projectId,
+          deletedAt: null,
+          status: PlatformProjectStatus.active,
+          ...(input.expectedVersion == null
+            ? {}
+            : { version: input.expectedVersion }),
+        },
+        data: {
+          name: input.name,
+          slug: input.slug === undefined ? undefined : input.slug,
+          projectType: input.projectType,
+          visibility:
+            input.visibility === undefined
+              ? undefined
+              : (input.visibility as ProjectVisibility),
+          description:
+            input.description === undefined ? undefined : input.description,
+          updatedById: user.userId,
+          version: { increment: 1 },
+        },
       });
-    }
-
-    const project = await this.prisma.platformProject.findUniqueOrThrow({
-      where: { id: projectId },
+      if (result.count === 0) {
+        throw new ConflictException({
+          code: 'PROJECT_VERSION_CONFLICT',
+          msg: 'Project was modified by another request.',
+        });
+      }
+      const updated = await tx.platformProject.findUniqueOrThrow({
+        where: { id: projectId },
+      });
+      // Atomic with the update so the project-list push can't diverge from state.
+      await enqueueProjectChanged(tx, {
+        workspaceId: updated.workspaceId,
+        projectId,
+        action: 'updated',
+        actorUserId: user.userId,
+      });
+      return updated;
     });
     await this.audit.record({
       workspaceId: project.workspaceId,
@@ -482,6 +498,12 @@ export class WorkspacesService {
         data: { defaultProjectId: null },
       });
 
+      await enqueueProjectChanged(tx, {
+        workspaceId: before.workspaceId,
+        projectId,
+        action: 'archived',
+        actorUserId: user.userId,
+      });
       return updated;
     });
 
