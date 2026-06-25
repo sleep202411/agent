@@ -29,6 +29,7 @@ import type {
 import { WalletLedgerService } from './wallet-ledger.service';
 import { WorkspacePermissionService } from './workspace-permission.service';
 import { enqueueProjectChanged } from './project-realtime';
+import { RealtimeRevokeService } from '../infra/realtime/realtime-revoke.service';
 
 @Injectable()
 export class WorkspacesService {
@@ -37,6 +38,7 @@ export class WorkspacesService {
     private readonly wallets: WalletLedgerService,
     private readonly audit: PlatformAuditLogService,
     private readonly permissions: WorkspacePermissionService,
+    private readonly realtimeRevoke: RealtimeRevokeService,
   ) {}
 
   async listForUser(user: AuthUser) {
@@ -459,6 +461,9 @@ export class WorkspacesService {
       entityId: workspaceId,
       before: workspace,
     });
+    // Workspace is gone — kick EVERY member's live sockets off its channels now
+    // (no userId = all), so nobody keeps a realtime stream to a deleted workspace.
+    void this.realtimeRevoke.revokeWorkspaceAccess(workspaceId);
     return { deleted: true, workspaceId };
   }
 
