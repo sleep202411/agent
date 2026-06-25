@@ -18,6 +18,8 @@ export interface CollabDocHandle {
   doc: Y.Doc | null;
   awareness: Awareness | null;
   status: ConnectionStatus;
+  /** Realtime ping round-trip (ms); null when disconnected / not yet measured. */
+  rtt: number | null;
 }
 
 /**
@@ -34,6 +36,7 @@ export function useCollabDoc(
 ): CollabDocHandle {
   const [provider, setProvider] = useState<DocumentProvider | null>(null);
   const [status, setStatus] = useState<ConnectionStatus>("connecting");
+  const [rtt, setRtt] = useState<number | null>(null);
 
   useEffect(() => {
     // The provider is a browser-only, side-effectful resource (WebSocket +
@@ -47,10 +50,13 @@ export function useCollabDoc(
     const next = new DocumentProvider({ documentId, rootSchema });
     setProvider(next);
     setStatus(next.getStatus());
+    setRtt(next.getRtt());
     /* eslint-enable react-hooks/set-state-in-effect */
     const off = next.onStatus(setStatus);
+    const offRtt = next.onRtt(setRtt);
     return () => {
       off();
+      offRtt();
       next.destroy();
     };
     // rootSchema is a stable module constant per mode; documentId drives the
@@ -73,5 +79,6 @@ export function useCollabDoc(
     // Never report a live status when there is no provider (e.g. documentId null
     // or torn down) — the status state can lag behind the provider lifecycle.
     status: provider ? status : "offline",
+    rtt: provider ? rtt : null,
   };
 }

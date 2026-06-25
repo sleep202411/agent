@@ -81,6 +81,11 @@ export class DocumentProvider {
   private pendingUpdates: Uint8Array[] = [];
   private status: ConnectionStatus = "connecting";
   private readonly statusListeners = new Set<(s: ConnectionStatus) => void>();
+  // Round-trip latency of the app-level ping → heartbeat, for the connection
+  // signal. null = not measured yet / disconnected.
+  private lastPingSentAt = 0;
+  private rtt: number | null = null;
+  private readonly rttListeners = new Set<(rtt: number | null) => void>();
   private readonly appEventListeners = new Set<(data: unknown) => void>();
 
   constructor(options: DocumentProviderOptions) {
@@ -112,6 +117,20 @@ export class DocumentProvider {
   onStatus(listener: (status: ConnectionStatus) => void): () => void {
     this.statusListeners.add(listener);
     return () => this.statusListeners.delete(listener);
+  }
+
+  getRtt(): number | null {
+    return this.rtt;
+  }
+
+  onRtt(listener: (rtt: number | null) => void): () => void {
+    this.rttListeners.add(listener);
+    return () => this.rttListeners.delete(listener);
+  }
+
+  private setRtt(rtt: number | null): void {
+    this.rtt = rtt;
+    for (const listener of this.rttListeners) listener(rtt);
   }
 
   /** Update a field of this client's awareness state (e.g. `cursor`). */
@@ -232,9 +251,12 @@ export class DocumentProvider {
   }
 
   private startPing(): void {
-    this.pingTimer = setInterval(() => {
+    const ping = () => {
+      this.lastPingSentAt = Date.now();
       this.sendFrame({ event: "ping" });
-    }, PING_INTERVAL_MS);
+    };
+    ping(); // immediate, so the connection signal has a reading right away
+    this.pingTimer = setInterval(ping, PING_INTERVAL_MS);
   }
 
   private stopPing(): void {
@@ -290,6 +312,10 @@ export class DocumentProvider {
         }
         break;
       case "heartbeat":
+        // The gateway replies to our app-level ping with a heartbeat — measure
+        // the round trip for the connection signal.
+        if (this.lastPingSentAt > 0) this.setRtt(Date.now() - this.lastPingSentAt);
+        break;
       case "presence_state":
       case "presence_update":
       case "presence_left":
@@ -447,6 +473,9 @@ export class DocumentProvider {
   private setStatus(status: ConnectionStatus): void {
     if (this.status === status) return;
     this.status = status;
+    // A dropped/connecting socket has no meaningful latency; clear it so the
+    // signal reflects the outage instead of a stale reading.
+    if (status !== "synced") this.setRtt(null);
     for (const listener of this.statusListeners) listener(status);
   }
 }

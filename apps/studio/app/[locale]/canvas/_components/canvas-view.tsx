@@ -58,6 +58,7 @@ import {
   type UploadStateStore,
 } from "./upload-state-context";
 import { CanvasHistory } from "./canvas-history";
+import { ConnectionSignal } from "./connection-signal";
 import { cn } from "@/lib/utils";
 import { CopilotPanel } from "./copilot/copilot-panel";
 import { CreditsBadge } from "@/app/_components/credits-badge";
@@ -406,7 +407,13 @@ function CanvasInner({ projectId, canEdit }: { projectId: string; canEdit: boole
   const guestName = t("guest");
   const canvasUser = useMemo(() => toCanvasUser(user, guestName), [user, guestName]);
   const { documentId, status: docStatus } = useCanvasDocument(projectId);
-  const { doc, awareness, provider, status: connStatus } = useCanvasDoc(documentId, canvasUser);
+  const {
+    doc,
+    awareness,
+    provider,
+    status: connStatus,
+    rtt,
+  } = useCanvasDoc(documentId, canvasUser);
   const graph = useCanvasGraph(doc, awareness, canEdit);
   const {
     nodes,
@@ -1315,17 +1322,9 @@ function CanvasInner({ projectId, canEdit }: { projectId: string; canEdit: boole
                 >
                   <IconSparkles className="size-4" stroke={1.8} />
                 </button>
-                {connStatus !== "synced" && (
-                  <span className="flex h-9 items-center gap-1.5 rounded-full bg-popover/90 px-3 text-xs font-medium text-white/70 shadow-md backdrop-blur-xl">
-                    <span
-                      className={cn(
-                        "size-1.5 rounded-full",
-                        connStatus === "offline" ? "bg-red-400" : "animate-pulse bg-white/60"
-                      )}
-                    />
-                    {connStatus === "offline" ? t("offline") : t("connecting")}
-                  </span>
-                )}
+                <span className="flex h-9 items-center rounded-full bg-popover/90 px-3.5 shadow-md backdrop-blur-xl">
+                  <ConnectionSignal status={connStatus} rtt={rtt} />
+                </span>
                 {canEdit && (
                   <button
                     type="button"
