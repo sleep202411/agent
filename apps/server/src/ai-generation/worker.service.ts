@@ -28,6 +28,7 @@ import { createHash } from 'crypto';
 import { AlertingService, type AlertSeverity } from '../common/alerting';
 import { newShortId } from '../common/id';
 import { EntitlementService } from '../entitlements';
+import { DocumentsService } from '../documents/documents.service';
 import { OutputStorageService } from '../infra/storage/storage.types';
 import { AiGenerationBillingWalletService } from './billing-wallet.service';
 import { AiGenerationOutboxService } from './outbox.service';
@@ -115,6 +116,7 @@ export class AiGenerationWorkerService
     private readonly alerts: AlertingService,
     private readonly billingWallet: AiGenerationBillingWalletService,
     private readonly providerCapacity: ProviderCapacityRuntimeService,
+    private readonly documents: DocumentsService,
   ) {}
 
   private queuePriorityFor(job: AiJob): number {
@@ -1331,7 +1333,37 @@ export class AiGenerationWorkerService
         },
       });
       this.emit(completed);
+      await this.recordActivityVersionSafe(completed);
     }
+  }
+
+  /**
+   * Log an 'ai' activity entry on the canvas document so the activity feed shows
+   * "<user> generated <prompt>". Best-effort: the generation is already complete
+   * and emitted, so a failure here must never surface to the user.
+   */
+  private async recordActivityVersionSafe(job: AiJob): Promise<void> {
+    if (!job.documentId) return;
+    try {
+      await this.documents.createSystemVersion(job.documentId, {
+        source: 'ai',
+        label: this.activityLabel(job),
+        sourceId: job.id,
+        createdById: job.userId,
+      });
+    } catch (err) {
+      this.logger.warn(
+        `Activity version failed for job ${job.id}: ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+      );
+    }
+  }
+
+  private activityLabel(job: AiJob): string {
+    const text = (job.promptDisplayText ?? job.prompt ?? '').trim();
+    if (text) return text.length > 110 ? `${text.slice(0, 110)}…` : text;
+    return job.type;
   }
 
   private async handleFailure(job: AiJob, payload: AiJobError): Promise<void> {

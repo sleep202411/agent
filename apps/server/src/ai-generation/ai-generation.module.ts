@@ -5,6 +5,7 @@ import { StorageModule } from '../infra/storage/storage.module';
 import { EntitlementsModule } from '../entitlements';
 import { WorkspacesModule } from '../workspaces';
 import { MediaModule } from '../media/media.module';
+import { DocumentsModule } from '../documents/documents.module';
 import { AiModelOpsController } from './admin/ai-model-ops.controller';
 import { AiModelOpsService } from './admin/ai-model-ops.service';
 import { AiGenerationController } from './ai-generation.controller';
@@ -57,6 +58,7 @@ import { AiGenerationWorkerService } from './worker.service';
     EntitlementsModule,
     WorkspacesModule,
     MediaModule,
+    DocumentsModule,
   ],
   controllers: [AiGenerationController, AiModelOpsController],
   providers: [

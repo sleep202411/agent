@@ -542,6 +542,58 @@ export class DocumentsService {
     return { version: this.versionDto(version) };
   }
 
+  /**
+   * Append a system-authored version row WITHOUT an auth check — for trusted
+   * background producers (e.g. the AI worker logging an 'ai' activity entry).
+   * Lightweight: an empty snapshot + null crdtState (an activity marker is a
+   * who/when/what log entry, not a restore point) and it does NOT advance the
+   * document's currentVersionId. Returns the new version id, or null if the
+   * document is gone.
+   */
+  async createSystemVersion(
+    documentId: string,
+    input: {
+      source: PlatformDocumentVersionSource;
+      label?: string | null;
+      sourceId?: string | null;
+      createdById: string;
+    },
+  ): Promise<string | null> {
+    return this.prisma.$transaction(async (tx) => {
+      await tx.$executeRaw`
+        SELECT pg_advisory_xact_lock(hashtext(${`platform-document:${documentId}`})::bigint)
+      `;
+      const document = await tx.platformDocument.findFirst({
+        where: { id: documentId, deletedAt: null },
+        select: { schemaVersion: true, currentSequence: true, title: true },
+      });
+      if (!document) return null;
+      const last = await tx.platformDocumentVersion.findFirst({
+        where: { documentId },
+        orderBy: { versionNumber: 'desc' },
+        select: { versionNumber: true },
+      });
+      const created = await tx.platformDocumentVersion.create({
+        data: {
+          documentId,
+          versionNumber: (last?.versionNumber ?? 0) + 1,
+          schemaVersion: document.schemaVersion,
+          sequence: document.currentSequence,
+          title: document.title,
+          label: input.label?.slice(0, 120) ?? null,
+          source: input.source,
+          sourceId: input.sourceId ?? null,
+          snapshot: {},
+          crdtState: null,
+          metadata: {},
+          createdById: input.createdById,
+        },
+        select: { id: true },
+      });
+      return created.id;
+    });
+  }
+
   async listVersions(user: AuthUser, documentId: string) {
     await this.permissions.requireDocumentRole(
       user.userId,
