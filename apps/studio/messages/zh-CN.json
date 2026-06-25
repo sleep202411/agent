@@ -276,7 +276,8 @@
     "credits": {
       "tooltip": "算力积分",
       "tooltipDetailed": "算力积分 · 可用 {available} · 冻结 {held} · 总计 {total}",
-      "manage": "管理算力积分"
+      "manage": "管理算力积分",
+      "teamTag": "团队"
     },
     "header": {
       "homeAriaLabel": "FizzStudio 首页"

@@ -118,6 +118,9 @@ function useWalletRealtime() {
 /** Compute-credits balance pill (header + canvas chrome). */
 export function CreditsBadge({ className }: { className?: string }) {
   const t = useTranslations("shell");
+  // A team workspace spends the shared workspace pot; personal spends the
+  // personal pot. Tag only the team case so users know which wallet this is.
+  const workspaceId = useActiveWorkspaceId();
   useWalletRealtime();
   const { data } = useComputeWalletBalance();
   const title =
@@ -142,6 +145,11 @@ export function CreditsBadge({ className }: { className?: string }) {
       )}
     >
       <GlassRim />
+      {workspaceId && (
+        <span className="rounded-full bg-white/10 px-1.5 py-px text-[10px] font-medium leading-tight text-white/70">
+          {t("credits.teamTag")}
+        </span>
+      )}
       <IconBolt className="size-4 text-white/85" stroke={1.8} />
       {data != null ? data.available.toLocaleString() : "—"}
     </button>

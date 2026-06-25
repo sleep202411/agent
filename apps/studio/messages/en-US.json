@@ -276,7 +276,8 @@
     "credits": {
       "tooltip": "Compute credits",
       "tooltipDetailed": "Compute credits · available {available} · held {held} · total {total}",
-      "manage": "Manage compute credits"
+      "manage": "Manage compute credits",
+      "teamTag": "Team"
     },
     "header": {
       "homeAriaLabel": "FizzStudio home"

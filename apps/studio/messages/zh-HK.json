@@ -276,7 +276,8 @@
     "credits": {
       "tooltip": "算力積分",
       "tooltipDetailed": "算力積分 · 可用 {available} · 凍結 {held} · 總計 {total}",
-      "manage": "管理算力積分"
+      "manage": "管理算力積分",
+      "teamTag": "團隊"
     },
     "header": {
       "homeAriaLabel": "FizzStudio 首頁"
