@@ -178,7 +178,7 @@ One socket per endpoint, owned by a single kernel; React hooks subscribe to chan
   - **Do NOT use a wildcard `PSUBSCRIBE realtime:chan:*`** (today's code does): that is **O(events × pods)** — every pod receives every event for every channel and filters locally, which melts under high mutation rate at 10× load. The explicit per-channel model is **O(events × interested-pods)**.
   - For very high channel cardinality (e.g. one channel per canvas node), bound the subscription count with **hashed shards** `realtime:shard:<hash(channel) % K>` (K sized to keep per-pod subscriptions in the thousands); the gateway still filters to the exact channel locally. (`/ws/documents` already shards by document id — same pattern.)
 - **Redis is the only shared dependency → must be HA**:
-  - .com: Azure Cache for Redis **Standard/Premium (replicated, zone-redundant)** — not Basic C0 (today's SPOF). Premium for clustering if connection volume warrants.
+  - .com: Azure Cache for Redis **Standard/Premium (replicated, zone-redundant)** — not Basic C0 (the SPOF). **2026-06-25: upgraded Basic C0 → Standard C0** (master + replica, automatic failover, 99.9% SLA). This Redis is shared by the realtime gateway, documents collab, BullMQ, and sessions, so the whole platform gains the HA. Premium for zone-redundancy/clustering if volume warrants.
   - .cn: Aliyun Redis **master-replica (HA) instance**, not a single node.
 - **Graceful degradation if Redis is unreachable**:
   - Pods keep serving **local** subscribers (intra-pod fan-out still works).
@@ -211,7 +211,7 @@ One socket per endpoint, owned by a single kernel; React hooks subscribe to chan
 ## 8. Capacity & scaling
 
 - **Budget per pod**: target ≤ 8–10k concurrent WS / pod (Node single-process; validated by load test before committing the number). Each idle WS ≈ small heap + a registry entry.
-- **HPA** on: connection count (custom metric) + CPU; min 2 replicas in prod (eliminates the single-replica risk — today server defaults to 1). PodDisruptionBudget ≥ 1 to keep a pod during rollouts.
+- **HPA** already in prod: **min 3 / max 6** on CPU (so the server is multi-pod — NOT the single-replica SPOF this draft assumed; `values.yaml replicaCount: 1` is just the pre-autoscale seed, and ArgoCD ignores `/spec/replicas` so the HPA owns the live count). A **PodDisruptionBudget (minAvailable: 1)** was already present out-of-band; **P4.1 formalized it into the chart** + added a `preStop` drain delay and the **graceful gateway drain on SIGTERM** (`onModuleDestroy` sends each socket a `reconnect` frame + closes it). Future: HPA on a connection-count custom metric (CPU is a poor proxy for WS fan-out).
 - **Redis sizing**: pub/sub throughput = events/s × fan-out pods; well within Standard/Premium for expected load; monitor `instantaneous_ops_per_sec` + connected_clients headroom.
 - **Connection draining on rollout**: on `SIGTERM`, stop accepting, send `{type:"reconnect", reason:"draining"}` so clients reconnect to a healthy pod _before_ the socket dies. Requires `terminationGracePeriodSeconds: 45` + a `preStop` sleep on the Helm deployment to give the drain time (today neither is set — a rolling update hard-kills sockets).
 - **Dedicated dispatcher worker**: the outbox dispatcher runs as its **own deployment**, not inside the API pods (today it shares the API process) — so an API request storm cannot starve event dispatch (protects S4). It scales independently, has its own liveness alert, and a grace period to finish an in-flight batch.
