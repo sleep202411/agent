@@ -4,27 +4,21 @@
 
 /**
  * Homepage content sections: the source-style Recent Projects rail under the
- * composer, compact model rows, and the ImagineArt 2.0 Gallery masonry grid.
+ * composer, compact model rows, and the local seed prompt Gallery masonry grid.
  * Content imagery stays full-color; neutral product chrome follows the studio
  * theme.
  */
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import {
-  IconArrowUpRight,
-  IconBookmark,
-  IconChevronRight,
-  IconHeart,
-  IconLoader2,
-  IconPlus,
-} from "@tabler/icons-react";
+import { IconArrowUpRight, IconChevronRight, IconLoader2, IconPlus } from "@tabler/icons-react";
 import { toast } from "sonner";
 import { Link, useRouter } from "@/i18n/navigation";
 import { useAuth } from "@/app/_components/auth-provider";
 import { useWorkspace } from "@/app/_components/workspace-context";
 import { createProject, listProjects, type ProjectRef } from "@/lib/collab/projects-api";
 import { ProjectCard } from "@/components/project-card";
+import { SEED_GALLERY_ITEMS, type SeedGalleryItem } from "../_data/seed-gallery";
 import type { Theme } from "../_pollo/theme";
 
 const MODEL_CDN = "https://videocdn.pollo.ai/web-cdn/pollo";
@@ -252,16 +246,6 @@ function CreateProjectCard({ creating, onCreate }: { creating: boolean; onCreate
   );
 }
 
-function DotsIcon() {
-  return (
-    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-      <circle cx="5" cy="12" r="1.7" fill="currentColor" />
-      <circle cx="12" cy="12" r="1.7" fill="currentColor" />
-      <circle cx="19" cy="12" r="1.7" fill="currentColor" />
-    </svg>
-  );
-}
-
 // ---------------------------------------------------------------------------
 // Models (4-col grid of compact rows)
 // ---------------------------------------------------------------------------
@@ -386,245 +370,19 @@ export function Models({ theme: t }: { theme: Theme }) {
 }
 
 // ---------------------------------------------------------------------------
-// ImagineArt 2.0 Gallery — source homepage masonry grid.
+// Homepage prompt gallery — temporary seed data until real user records drive it.
 // ---------------------------------------------------------------------------
-type GalleryItem = {
-  title: string;
-  src: string;
-  avatar: string;
-  creator: string;
-  likes: number;
+type GalleryItem = SeedGalleryItem & {
   aspect: number;
+  src: string;
 };
 
 const GALLERY_GAP = 8;
-const GALLERY_ITEMS: GalleryItem[] = [
-  {
-    title: "Stylish Urban Portrait",
-    src: "https://asset.imagine.art/video/thumbnails/69c821a5-b495-4c1a-a098-030815ba42c5",
-    avatar:
-      "https://profile-image.cdn.imagine.art/profile-image/user/profile/imagine/3f0ea49b-d39a-49df-81cc-e243081516b2",
-    creator: "Naufil khan",
-    likes: 10,
-    aspect: 9 / 16,
-  },
-  {
-    title: "Fiery Rider",
-    src: "https://asset.imagine.art/video/thumbnails/baeffda8-f3b8-4eb5-b8a5-ddcf0545c51c",
-    avatar:
-      "https://profile-image.cdn.imagine.art/profile-image/user/profile/imagine/331a1a88-1430-4a57-9812-6fd92e1ddf39",
-    creator: "Rhys",
-    likes: 1,
-    aspect: 16 / 9,
-  },
-  {
-    title: "Nomadic Yak Rider",
-    src: "https://asset.imagine.art/video/thumbnails/16267eb7-2ee2-4f87-9bd1-a7316dacff27",
-    avatar:
-      "https://profile-image.cdn.imagine.art/profile-image/user/profile/imagine/751e31e8-7724-43af-a681-e659ec01741b",
-    creator: "Muzzi",
-    likes: 7,
-    aspect: 16 / 9,
-  },
-  {
-    title: "Abandoned Bus Portrait",
-    src: "https://asset.imagine.art/video/thumbnails/93f871f8-ee17-4239-83c6-92e1dd48777f",
-    avatar:
-      "https://profile-image.cdn.imagine.art/profile-image/user/profile/imagine/0ac0f247-2b65-43c3-ad6d-ea6a666896c5",
-    creator: "Galih digitalaii",
-    likes: 3,
-    aspect: 9 / 16,
-  },
-  {
-    title: "Cyberpunk Fashion",
-    src: "https://asset.imagine.art/video/thumbnails/86d56ea8-c6ed-49c9-825e-dc82d0122dea",
-    avatar:
-      "https://profile-image.cdn.imagine.art/profile-image/user/profile/imagine/dec1ed8b-abd2-454f-b0d4-97a0b80d4e10",
-    creator: "Max casu",
-    likes: 7,
-    aspect: 3 / 4,
-  },
-  {
-    title: "Burning Car",
-    src: "https://asset.imagine.art/video/thumbnails/93533410-f26b-4b28-a25d-6ebcd30dd63e",
-    avatar:
-      "https://profile-image.cdn.imagine.art/profile-image/user/profile/imagine/dec1ed8b-abd2-454f-b0d4-97a0b80d4e10",
-    creator: "Max casu",
-    likes: 7,
-    aspect: 3 / 4,
-  },
-  {
-    title: "Library Portrait",
-    src: "https://asset.imagine.art/video/thumbnails/a345527e-4fe5-4b96-b8e2-7e344217dc7a",
-    avatar:
-      "https://profile-image.cdn.imagine.art/profile-image/user/profile/imagine/4ce70175-d35f-4fdc-bcc0-7668010573a2",
-    creator: "The Lofe",
-    likes: 3,
-    aspect: 16 / 9,
-  },
-  {
-    title: "Night Fashion Portrait",
-    src: "https://asset.imagine.art/video/thumbnails/4dd9f84f-d190-4570-b3de-97ba5152cbde",
-    avatar:
-      "https://profile-image.cdn.imagine.art/profile-image/user/profile/imagine/4ce70175-d35f-4fdc-bcc0-7668010573a2",
-    creator: "The Lofe",
-    likes: 3,
-    aspect: 16 / 9,
-  },
-  {
-    title: "Elevator Fashion Portrait",
-    src: "https://asset.imagine.art/video/thumbnails/973072f1-1335-4eef-a365-bc734a127028",
-    avatar:
-      "https://profile-image.cdn.imagine.art/profile-image/user/profile/imagine/4ce70175-d35f-4fdc-bcc0-7668010573a2",
-    creator: "The Lofe",
-    likes: 3,
-    aspect: 16 / 9,
-  },
-  {
-    title: "Anime City Portrait",
-    src: "https://asset.imagine.art/video/thumbnails/e5387755-f00a-4042-a1c5-02f62feff69f",
-    avatar:
-      "https://profile-image.cdn.imagine.art/profile-image/user/profile/imagine/d075d51a-e96a-4ea0-ade5-7ad602e5d466",
-    creator: "Mahnoor Shahzad",
-    likes: 9,
-    aspect: 9 / 16,
-  },
-  {
-    title: "Desert Road Journey",
-    src: "https://asset.imagine.art/video/thumbnails/62928f29-27af-4905-9fda-854d5e41a97d",
-    avatar:
-      "https://profile-image.cdn.imagine.art/profile-image/user/profile/imagine/62aecaa7-773a-4ece-8a17-611d00fe932a",
-    creator: "Shamama",
-    likes: 4,
-    aspect: 1,
-  },
-  {
-    title: "Astronaut In Vortex",
-    src: "https://asset.imagine.art/video/thumbnails/bf67e452-cb3e-4dcf-853c-472fc6eead94",
-    avatar:
-      "https://profile-image.cdn.imagine.art/profile-image/user/profile/imagine/e3d32dc4-a07d-433c-9923-d03e83b42788",
-    creator: "Maha manzoor",
-    likes: 1,
-    aspect: 9 / 16,
-  },
-  {
-    title: "Child and Rhino",
-    src: "https://asset.imagine.art/video/thumbnails/3bff33c7-64cb-43b5-916a-23de071ec428",
-    avatar:
-      "https://profile-image.cdn.imagine.art/profile-image/user/profile/imagine/d7e5efe4-5843-4128-b105-f72054ed2548",
-    creator: "GeniArt",
-    likes: 7,
-    aspect: 3 / 2,
-  },
-  {
-    title: "Violinist's Storm",
-    src: "https://asset.imagine.art/video/thumbnails/67a307f2-a24a-4258-a9ea-64c0c2dde81d",
-    avatar:
-      "https://profile-image.cdn.imagine.art/profile-image/user/profile/imagine/dec1ed8b-abd2-454f-b0d4-97a0b80d4e10",
-    creator: "Max casu",
-    likes: 2,
-    aspect: 3 / 4,
-  },
-  {
-    title: "Intense Portrait",
-    src: "https://asset.imagine.art/video/thumbnails/66bcd3c6-3d08-4e56-b447-76ae02eba6f8",
-    avatar:
-      "https://profile-image.cdn.imagine.art/profile-image/user/profile/imagine/dec1ed8b-abd2-454f-b0d4-97a0b80d4e10",
-    creator: "Max casu",
-    likes: 4,
-    aspect: 3 / 4,
-  },
-  {
-    title: "Cyberpunk Samurai",
-    src: "https://asset.imagine.art/video/thumbnails/9d8bd933-0bc6-4dc3-a2ad-d79593c0c087",
-    avatar:
-      "https://profile-image.cdn.imagine.art/profile-image/user/profile/imagine/dec1ed8b-abd2-454f-b0d4-97a0b80d4e10",
-    creator: "Max casu",
-    likes: 6,
-    aspect: 3 / 4,
-  },
-  {
-    title: "Neon Night Portrait",
-    src: "https://asset.imagine.art/video/thumbnails/a53f4250-5df0-43e9-bebc-dc6b88f1b003",
-    avatar:
-      "https://profile-image.cdn.imagine.art/profile-image/user/profile/imagine/dec1ed8b-abd2-454f-b0d4-97a0b80d4e10",
-    creator: "Max casu",
-    likes: 0,
-    aspect: 3 / 4,
-  },
-  {
-    title: "Action Explosion",
-    src: "https://asset.imagine.art/video/thumbnails/7626f78f-ee98-4fb7-b207-fd1b5af20658",
-    avatar:
-      "https://profile-image.cdn.imagine.art/profile-image/user/profile/imagine/dec1ed8b-abd2-454f-b0d4-97a0b80d4e10",
-    creator: "Max casu",
-    likes: 3,
-    aspect: 3 / 4,
-  },
-  {
-    title: "Rainy Night Portrait",
-    src: "https://asset.imagine.art/video/thumbnails/ec06d2d9-f4b8-49ba-be7c-3599d00da9a7",
-    avatar:
-      "https://profile-image.cdn.imagine.art/profile-image/user/profile/imagine/dec1ed8b-abd2-454f-b0d4-97a0b80d4e10",
-    creator: "Max casu",
-    likes: 4,
-    aspect: 3 / 4,
-  },
-  {
-    title: "Surreal Fashion",
-    src: "https://asset.imagine.art/video/thumbnails/f36ac337-c9ae-4083-9da6-f152fdb62f5c",
-    avatar:
-      "https://profile-image.cdn.imagine.art/profile-image/user/profile/imagine/dec1ed8b-abd2-454f-b0d4-97a0b80d4e10",
-    creator: "Max casu",
-    likes: 7,
-    aspect: 3 / 4,
-  },
-  {
-    title: "Cyberpunk Astronaut",
-    src: "https://asset.imagine.art/video/thumbnails/c7ede114-3f7b-4a89-83d5-3ad5e2944663",
-    avatar:
-      "https://profile-image.cdn.imagine.art/profile-image/user/profile/imagine/dec1ed8b-abd2-454f-b0d4-97a0b80d4e10",
-    creator: "Max casu",
-    likes: 2,
-    aspect: 3 / 4,
-  },
-  {
-    title: "Custom Black Motorcycle",
-    src: "https://asset.imagine.art/video/thumbnails/f5f263e1-ff3e-43e0-a50b-8de1a5748184",
-    avatar:
-      "https://profile-image.cdn.imagine.art/profile-image/user/profile/imagine/7aa18011-e7a9-4af0-90cf-b1693771f6ab",
-    creator: "Muhammad Haris",
-    likes: 4,
-    aspect: 3 / 4,
-  },
-  {
-    title: "Cosmic Portrait",
-    src: "https://asset.imagine.art/video/thumbnails/a1f5e951-0b7e-4fdc-b90d-1940e2bbe6da",
-    avatar:
-      "https://profile-image.cdn.imagine.art/profile-image/user/profile/imagine/dec1ed8b-abd2-454f-b0d4-97a0b80d4e10",
-    creator: "Max casu",
-    likes: 4,
-    aspect: 3 / 4,
-  },
-  {
-    title: "Astronaut Skateboarding",
-    src: "https://asset.imagine.art/video/thumbnails/ddb895cd-bb85-43d4-8d62-814b0e7059ed",
-    avatar:
-      "https://profile-image.cdn.imagine.art/profile-image/user/profile/imagine/7aa18011-e7a9-4af0-90cf-b1693771f6ab",
-    creator: "Muhammad Haris",
-    likes: 4,
-    aspect: 3 / 4,
-  },
-  {
-    title: "Botanical Fashion Portrait",
-    src: "https://asset.imagine.art/video/thumbnails/58dd8c45-4a99-4cb4-8646-b469e3be6d2c",
-    avatar:
-      "https://profile-image.cdn.imagine.art/profile-image/user/profile/imagine/dec1ed8b-abd2-454f-b0d4-97a0b80d4e10",
-    creator: "Max casu",
-    likes: 5,
-    aspect: 3 / 4,
-  },
-];
+const GALLERY_ITEMS: GalleryItem[] = SEED_GALLERY_ITEMS.map((item) => ({
+  ...item,
+  src: item.imageUrl,
+  aspect: item.width / item.height,
+}));
 
 type GalleryPosition = {
   left: number;
@@ -656,7 +414,12 @@ export function ExploreMore() {
   return (
     <section className="px-4 pt-16 sm:px-6 lg:px-12">
       <div className="relative flex w-full flex-col gap-4 pb-4">
-        <h2 className="text-[20px] font-medium leading-6 text-white/95">Gallery</h2>
+        <div className="flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
+          <h2 className="text-[20px] font-medium leading-6 text-white/95">Gallery</h2>
+          <p className="text-[13px] leading-5 text-white/45">
+            {GALLERY_ITEMS.length} curated seed images with prompts and model metadata
+          </p>
+        </div>
         <div
           ref={gridRef}
           className="relative min-h-[400px] w-full overflow-hidden rounded-[8px]"
@@ -669,7 +432,7 @@ export function ExploreMore() {
         <div className="pointer-events-none absolute inset-x-0 bottom-0 flex h-56 items-end justify-center bg-[linear-gradient(180deg,rgba(18,18,18,0)_0%,oklch(0.17_0_0)_44.23%)]">
           <button
             type="button"
-            className="pointer-events-auto inline-flex h-10 w-[290.5px] items-center justify-center gap-2 rounded-[16px] bg-[rgba(105,41,196,0.3)] px-3 py-2.5 text-[16px] font-medium leading-5 text-[rgb(212,187,255)] transition-colors hover:bg-[rgba(105,41,196,0.4)] active:translate-y-px"
+            className="pointer-events-auto inline-flex h-10 w-[290.5px] items-center justify-center gap-2 rounded-[16px] bg-white/[0.09] px-3 py-2.5 text-[16px] font-medium leading-5 text-white/85 transition-colors hover:bg-white/[0.14] active:translate-y-px"
           >
             Explore Gallery
             <IconArrowUpRight className="size-4.5" stroke={1.8} />
@@ -697,30 +460,17 @@ function GalleryCard({ item, position }: { item: GalleryItem; position?: Gallery
     >
       <img src={item.src} alt={item.title} loading="lazy" className="size-full object-cover" />
       <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(180deg,rgba(0,0,0,0.4)_10.65%,rgba(0,0,0,0)_24.69%),linear-gradient(180deg,rgba(0,0,0,0)_82.1%,rgba(0,0,0,0.4)_100%)] opacity-0 transition-opacity duration-200 group-hover:opacity-100 group-focus-visible:opacity-100">
-        <div className="absolute inset-x-2 top-2 flex items-center justify-between">
-          <span className="pointer-events-auto grid size-7 place-items-center rounded-[10px] border border-white/10 bg-[#2d2d2d]/70 text-white/80 opacity-90 backdrop-blur-[6px]">
-            <DotsIcon />
+        <div className="absolute inset-x-2 top-2 flex items-center justify-between gap-2">
+          <span className="pointer-events-auto rounded-[10px] bg-[#2d2d2d]/70 px-2 py-1 text-[11px] font-medium uppercase tracking-[0.08em] text-white/80 opacity-90 backdrop-blur-[6px]">
+            {item.category}
           </span>
-          <span className="flex items-center gap-1.5">
-            <span className="pointer-events-auto grid size-7 place-items-center rounded-[10px] border border-white/10 bg-[#2d2d2d]/70 text-white/85 opacity-90 backdrop-blur-[6px]">
-              <IconBookmark className="size-4" stroke={1.7} />
-            </span>
-            <span className="pointer-events-auto flex h-7 items-center gap-1 rounded-[10px] border border-white/10 bg-[#2d2d2d]/70 px-2 text-[13px] font-medium leading-none text-white/90 opacity-90 backdrop-blur-[6px]">
-              {item.likes}
-              <IconHeart className="size-4" stroke={1.7} />
-            </span>
+          <span className="pointer-events-auto truncate rounded-[10px] bg-[#2d2d2d]/70 px-2 py-1 text-[11px] font-medium text-white/80 opacity-90 backdrop-blur-[6px]">
+            {item.model.name}
           </span>
         </div>
-        <div className="absolute inset-x-2 bottom-2 flex items-center gap-2">
-          <img
-            src={item.avatar}
-            alt="Owner profile image"
-            loading="lazy"
-            className="size-7 shrink-0 rounded-full object-cover"
-          />
-          <span className="truncate text-[18px] font-medium leading-6 text-white/80">
-            {item.creator}
-          </span>
+        <div className="absolute inset-x-2 bottom-2">
+          <h3 className="truncate text-[18px] font-medium leading-6 text-white/90">{item.title}</h3>
+          <p className="mt-1 line-clamp-2 text-[12px] leading-4 text-white/65">{item.prompt}</p>
         </div>
       </div>
     </button>
