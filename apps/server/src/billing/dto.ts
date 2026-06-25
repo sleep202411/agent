@@ -186,13 +186,6 @@ export const WalletDailyUsageQuerySchema = z.object({
 });
 export type WalletDailyUsageQuery = z.infer<typeof WalletDailyUsageQuerySchema>;
 
-export const BillingWalletAccountParamsSchema = z.object({
-  accountId: z.string().uuid(),
-});
-export type BillingWalletAccountParams = z.infer<
-  typeof BillingWalletAccountParamsSchema
->;
-
 export const CreateAdminWalletAdjustmentSchema = z
   .object({
     amount: z.coerce
