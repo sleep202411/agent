@@ -27,6 +27,7 @@ import type { IncomingMessage } from 'http';
 import type { RawData, WebSocket } from 'ws';
 import {
   REALTIME_GROUP_CHANNEL_PATTERN,
+  REALTIME_REVOKE_CHANNEL,
   groupFromChannel,
 } from './realtime-groups';
 import {
@@ -99,6 +100,15 @@ export class RealtimeGateway
       const subs = this.socketsByGroup.get(group);
       if (!subs || subs.size === 0) return;
       for (const sock of subs) this.sendRaw(sock, raw);
+    });
+
+    // Access revocation: close the named channels' live sockets now (so a removed
+    // member is kicked immediately, not at token expiry).
+    void this.redisSubscriber.subscribe(REALTIME_REVOKE_CHANNEL, (err) => {
+      if (err) this.logger.error(`revoke subscribe failed: ${err.message}`);
+    });
+    this.redisSubscriber.on('message', (channel, raw) => {
+      if (channel === REALTIME_REVOKE_CHANNEL) this.handleRevoke(raw);
     });
 
     this.heartbeatTimer = setInterval(
@@ -203,6 +213,42 @@ export class RealtimeGateway
       if (frame.event === 'ping') this.sendHeartbeat(client);
     } catch {
       /* ignore non-JSON keepalive noise */
+    }
+  }
+
+  /** Close the revoked channels' sockets (optionally just one user's). */
+  private handleRevoke(raw: string) {
+    let msg: { channels?: unknown; userId?: unknown };
+    try {
+      msg = JSON.parse(raw) as { channels?: unknown; userId?: unknown };
+    } catch {
+      return;
+    }
+    if (!Array.isArray(msg.channels)) return;
+    const userId = typeof msg.userId === 'string' ? msg.userId : undefined;
+    const closed = new Set<TrackedSocket>();
+    for (const channel of msg.channels) {
+      if (typeof channel !== 'string') continue;
+      const subs = this.socketsByGroup.get(channel);
+      if (!subs) continue;
+      // Snapshot — close() triggers handleDisconnect which mutates the set.
+      for (const sock of [...subs]) {
+        if (userId && sock.__userId !== userId) continue;
+        if (closed.has(sock)) continue;
+        closed.add(sock);
+        // Plain close (no 'terminate'): the client reconnects + re-negotiates; if
+        // it genuinely lost access, the negotiate now 403s for that workspace.
+        try {
+          sock.close(CLOSE_NORMAL, 'access_revoked');
+        } catch {
+          /* already gone */
+        }
+      }
+    }
+    if (closed.size > 0) {
+      this.logger.log(
+        `revoked ${closed.size} socket(s)${userId ? ` user=${userId}` : ''}`,
+      );
     }
   }
 

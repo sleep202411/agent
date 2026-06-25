@@ -33,6 +33,7 @@ import { PlatformAuditLogService } from '../workspaces';
 import { WorkspacePermissionService } from '../workspaces';
 import { acquireSeatLock, assertSeatAvailable } from './seat-guard';
 import { enqueueTeamMemberChanged } from './team-realtime';
+import { RealtimeRevokeService } from '../infra/realtime/realtime-revoke.service';
 import type {
   AddMemberInput,
   AssignableRole,
@@ -57,6 +58,7 @@ export class WorkspaceMembersService {
     private readonly audit: PlatformAuditLogService,
     private readonly docs: DocumentsGateway,
     private readonly entitlements: EntitlementService,
+    private readonly realtimeRevoke: RealtimeRevokeService,
   ) {}
 
   async list(workspaceId: string, viewer: AuthUser, cookie: string) {
@@ -291,6 +293,9 @@ export class WorkspaceMembersService {
       entityId: memberId,
       before: { userId: member.userId, role: member.role },
     });
+    // Kick the removed user's live sockets off the workspace channels NOW (don't
+    // wait for their token to expire). Best-effort; the token TTL is the backstop.
+    void this.realtimeRevoke.revokeWorkspaceAccess(workspaceId, member.userId);
 
     // Drop the user's live document sockets across this workspace (the gateway
     // re-checks per document and keeps any they still reach via a direct

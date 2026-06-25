@@ -4,6 +4,7 @@ import { DocumentsModule } from '../documents/documents.module';
 import { NotificationModule } from '../notification';
 import { UsersModule } from '../users/users.module';
 import { WorkspacesModule } from '../workspaces';
+import { RealtimeRevokeModule } from '../infra/realtime/realtime-revoke.module';
 import { InvitesController } from './invites.controller';
 import { ProjectInvitesController } from './project-invites.controller';
 import { ProjectInvitesService } from './project-invites.service';
@@ -31,6 +32,7 @@ import { WorkspaceMembersService } from './workspace-members.service';
     NotificationModule,
     UsersModule,
     WorkspacesModule,
+    RealtimeRevokeModule,
   ],
   controllers: [
     WorkspaceMembersController,

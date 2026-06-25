@@ -47,6 +47,28 @@ export function projectWorkspaceChannel(workspaceId: string): string {
   return `project:workspace:${workspaceId}`;
 }
 
+/**
+ * Redis channel for cross-pod access revocation. A producer publishes
+ * `{channels, userId?}`; every gateway pod closes the live sockets in those
+ * channels (filtered to `userId` when present) immediately — so a removed member
+ * is kicked now, not when their token happens to expire.
+ */
+export const REALTIME_REVOKE_CHANNEL = 'realtime:revoke';
+
+/**
+ * Every workspace-scoped channel a member holds. Closed for one user on removal,
+ * or for everyone on workspace deletion.
+ */
+export function workspaceRevokeChannels(workspaceId: string): string[] {
+  return [
+    assetsWorkspaceGroup(workspaceId),
+    walletWorkspaceChannel(workspaceId),
+    entitlementWorkspaceChannel(workspaceId),
+    teamWorkspaceChannel(workspaceId),
+    projectWorkspaceChannel(workspaceId),
+  ];
+}
+
 /** Extract the group name from a `realtime:group:<group>` channel. */
 export function groupFromChannel(channel: string): string {
   return channel.slice(REALTIME_GROUP_CHANNEL_PREFIX.length);
