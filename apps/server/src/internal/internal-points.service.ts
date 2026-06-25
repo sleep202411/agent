@@ -112,6 +112,16 @@ export class InternalPointsService {
     };
   }
 
+  /** Whether this user has already been migrated onto the PG compute_point
+   *  wallet (the points migration marker exists). Drives the studio entry point. */
+  async isMigrated(userId: string): Promise<boolean> {
+    const marker = await this.prisma.pointsMigration.findUnique({
+      where: { userId },
+      select: { userId: true },
+    });
+    return marker !== null;
+  }
+
   /** Direct spend from a migrated user's wallet (FIFO grant consumption). */
   async deduct(input: DeductPointsInput) {
     const workspaceId = await this.personalWorkspaceId(input.userId);
