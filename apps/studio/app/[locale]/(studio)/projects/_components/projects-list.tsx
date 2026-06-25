@@ -33,6 +33,7 @@ import {
   renameLegacyProject,
   type LegacyProject,
 } from "@/lib/legacy-projects";
+import { getWebBaseUrl } from "@/lib/web-base";
 
 /**
  * "My history projects" — the user's legacy art-studio projects. A "New project"
@@ -66,8 +67,8 @@ export function ProjectsList() {
 
   const items = data ?? [];
   const ownerName = user.nickName?.trim() || user.email || user.phone || "Me";
-  // Legacy projects live in apps/web (fizzdragon.com / .cn for zh-CN).
-  const webBase = locale === "zh-CN" ? "https://fizzdragon.fizzspace.cn" : "https://fizzdragon.com";
+  // Legacy projects live in apps/web; the domain follows the deployment, not the UI language.
+  const webBase = getWebBaseUrl();
   const refresh = () => queryClient.invalidateQueries({ queryKey });
 
   const submitCreate = async () => {

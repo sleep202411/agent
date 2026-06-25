@@ -20,6 +20,7 @@ import { useAuth } from "./auth-provider";
 import { useComputeWalletBalance } from "./credits-badge";
 import { SubscriptionDialog } from "./subscription-dialog";
 import { cn } from "@/lib/utils";
+import { buildWebHref, getWebBaseUrl, WEB_PATHS } from "@/lib/web-base";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -187,9 +188,8 @@ export function AccountMenu({
             onClick={() => {
               setMenuOpen(false);
               if (!publicUserId) return;
-              // The public profile lives in apps/web (fizzdragon.com / .cn for zh-CN).
-              const base =
-                locale === "zh-CN" ? "https://fizzdragon.fizzspace.cn" : "https://fizzdragon.com";
+              // The public profile lives in apps/web; the domain follows the deployment.
+              const base = getWebBaseUrl();
               window.open(
                 `${base}/${locale}/creators/${publicUserId}`,
                 "_blank",
@@ -277,22 +277,41 @@ export function AccountMenu({
 
           <DropdownMenuSeparator className="my-3" />
 
-          {/* Footer links */}
+          {/* Footer links — terms/privacy go to the main site; App is coming soon. */}
           <div className="flex items-center justify-between px-1 pb-1">
             {[
-              { key: "terms", label: t("terms") },
-              { key: "privacy", label: t("privacy") },
-              { key: "blogs", label: t("blogs") },
-            ].map(({ key, label }, i) => (
+              {
+                key: "terms",
+                label: t("terms"),
+                href: buildWebHref(locale, WEB_PATHS.terms),
+              },
+              {
+                key: "privacy",
+                label: t("privacy"),
+                href: buildWebHref(locale, WEB_PATHS.privacy),
+              },
+              { key: "app", label: t("app"), href: null },
+            ].map(({ key, label, href }, i) => (
               <span key={key} className="flex flex-1 items-center justify-center">
                 {i > 0 && <span className="mr-auto h-3.5 w-px bg-border" aria-hidden />}
-                <button
-                  type="button"
-                  onClick={() => comingSoon(label)}
-                  className="mx-auto text-xs font-medium text-muted-foreground transition-colors hover:text-foreground"
-                >
-                  {label}
-                </button>
+                {href ? (
+                  <a
+                    href={href}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="mx-auto text-xs font-medium text-muted-foreground transition-colors hover:text-foreground"
+                  >
+                    {label}
+                  </a>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => comingSoon(label)}
+                    className="mx-auto text-xs font-medium text-muted-foreground transition-colors hover:text-foreground"
+                  >
+                    {label}
+                  </button>
+                )}
               </span>
             ))}
           </div>

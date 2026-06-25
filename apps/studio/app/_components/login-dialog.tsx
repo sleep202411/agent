@@ -6,21 +6,7 @@ import Image from "next/image";
 import { useLocale, useTranslations } from "next-intl";
 import { IconLoader2, IconX } from "@tabler/icons-react";
 import { login } from "@/lib/auth";
-
-const WEB_PATHS = {
-  register: "/register",
-  forgotPassword: "/forgot-password",
-  terms: "/terms-of-service",
-  privacy: "/privacy-policy",
-} as const;
-
-function buildWebHref(locale: string, path: (typeof WEB_PATHS)[keyof typeof WEB_PATHS]) {
-  const safeLocale =
-    locale === "zh-CN" || locale === "zh-HK" || locale === "en-US" ? locale : "en-US";
-  const origin =
-    safeLocale === "zh-CN" ? "https://fizzdragon.fizzspace.cn" : "https://fizzdragon.com";
-  return `${origin}/${safeLocale}${path}`;
-}
+import { buildWebHref, WEB_PATHS } from "@/lib/web-base";
 
 /**
  * Global sign-in dialog (imagine.art layout): form panel + hero artwork.
