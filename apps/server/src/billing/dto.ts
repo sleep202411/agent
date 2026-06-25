@@ -237,7 +237,9 @@ export const CreateAdminUserWalletCreditSchema = z
     idFormat: z.enum(['public', 'raw']).default('public'),
     currency: z.literal('compute_point').default('compute_point'),
     balanceKind: z.literal('consumable').default('consumable'),
-    amount: z.coerce.bigint().min(1n),
+    amount: z.coerce
+      .bigint()
+      .refine((value) => value !== 0n, 'Amount cannot be zero.'),
     grantType: AdminWalletCreditGrantTypeSchema.default('admin_adjustment'),
     expiresAt: z.coerce.date().nullable().optional(),
     reason: z.string().trim().min(1).max(1000),
@@ -250,6 +252,15 @@ export const CreateAdminUserWalletCreditSchema = z
         code: z.ZodIssueCode.custom,
         path: ['expiresAt'],
         message: 'Expiry must be in the future.',
+      });
+    }
+    // Debits (negative) are only legitimate as an admin adjustment — mirrors the
+    // account-level adjustment guard, since this delegates to the same service.
+    if (value.amount < 0n && value.grantType !== 'admin_adjustment') {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['grantType'],
+        message: 'Only admin_adjustment may be negative.',
       });
     }
   });
