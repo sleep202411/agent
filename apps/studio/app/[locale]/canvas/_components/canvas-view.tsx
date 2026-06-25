@@ -1292,13 +1292,16 @@ function CanvasInner({ projectId, canEdit }: { projectId: string; canEdit: boole
               <div
                 className={cn(
                   "absolute top-4 z-20 flex items-center gap-2 transition-[right]",
-                  copilotOpen ? "right-[396px]" : "right-4"
+                  copilotOpen || historyOpen ? "right-[396px]" : "right-4"
                 )}
               >
                 <button
                   type="button"
                   aria-label={tCopilot("open")}
-                  onClick={() => setCopilotOpen((open) => !open)}
+                  onClick={() => {
+                    setHistoryOpen(false);
+                    setCopilotOpen((open) => !open);
+                  }}
                   className={cn(
                     "flex size-9 items-center justify-center rounded-full shadow-md backdrop-blur-xl transition-colors",
                     copilotOpen
@@ -1323,7 +1326,10 @@ function CanvasInner({ projectId, canEdit }: { projectId: string; canEdit: boole
                   <button
                     type="button"
                     aria-label={t("activityLog")}
-                    onClick={() => setHistoryOpen((open) => !open)}
+                    onClick={() => {
+                      setCopilotOpen(false);
+                      setHistoryOpen((open) => !open);
+                    }}
                     className={cn(
                       "flex size-9 items-center justify-center rounded-full shadow-md backdrop-blur-xl transition-colors",
                       historyOpen

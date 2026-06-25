@@ -2,13 +2,11 @@
 
 import { useMemo } from "react";
 import { useTranslations } from "next-intl";
-import { IconX } from "@tabler/icons-react";
-import { cn } from "@/lib/utils";
+import { IconHistory, IconX } from "@tabler/icons-react";
 import { useDocumentVersions } from "@/lib/collab/use-versions";
 import type { VersionDto, VersionSource } from "@/lib/collab/versions-api";
 import type { DocumentProvider } from "@/lib/collab/document-provider";
 import { useUsersByIds, type PublicUser } from "@/lib/users-api";
-import { FLOATING_PANEL } from "./node-toolbar";
 
 interface CanvasHistoryProps {
   documentId: string | null;
@@ -54,25 +52,22 @@ export function CanvasHistory({ documentId, provider, onClose }: CanvasHistoryPr
   const authors = useUsersByIds(useMemo(() => entries.map((e) => e.createdById), [entries]));
 
   return (
-    <div
-      className={cn(
-        "absolute top-16 left-4 z-30 flex max-h-[calc(100vh-6rem)] w-72 flex-col rounded-2xl",
-        FLOATING_PANEL
-      )}
-    >
-      <div className="flex items-center justify-between px-3 py-2.5">
-        <span className="text-sm font-medium">{t("activity.title")}</span>
+    <div className="absolute top-0 right-0 z-30 flex h-full w-[380px] flex-col bg-popover/95 shadow-2xl shadow-black/50 backdrop-blur-xl">
+      <div className="flex items-center gap-2 px-4 py-3">
+        <IconHistory className="size-4.5 text-white/80" stroke={1.8} />
+        <span className="flex-1 text-sm font-semibold text-foreground">{t("activity.title")}</span>
         <button
           type="button"
           aria-label={tc("close")}
           onClick={onClose}
-          className="flex size-7 items-center justify-center rounded-full text-white/60 transition-colors hover:bg-white/[0.08] hover:text-white"
+          className="flex size-8 items-center justify-center rounded-xl text-white/60 transition-colors hover:bg-white/[0.08] hover:text-white"
         >
-          <IconX className="size-4" stroke={1.8} />
+          <IconX className="size-4.5" stroke={1.8} />
         </button>
       </div>
+      <div className="h-px bg-white/10" />
 
-      <div className="flex flex-col overflow-y-auto px-1.5 pb-1.5">
+      <div className="flex-1 overflow-y-auto px-2 py-2">
         {loading && entries.length === 0 ? (
           <p className="px-2 py-6 text-center text-xs text-muted-foreground">{tc("loading")}</p>
         ) : entries.length === 0 ? (
