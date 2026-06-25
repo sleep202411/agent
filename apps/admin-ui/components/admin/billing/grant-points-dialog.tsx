@@ -1,11 +1,12 @@
 "use client";
 
-// GrantPointsDialog — 加 / 扣 Java 老系统积分(client_user.score_balance),
-// 装在 AdminDialog 里。由用户列表的头部「加积分」按钮(空标识符)和每行按钮
-// (预填该用户)共用。一个事务:锁行 → 写新余额 → 记 integral_record(详见
-// 后端 LegacyPointsService)。即时生效。
+// GrantPointsDialog — 给用户加 / 扣 **算力积分（compute_point）**，装在 AdminDialog 里。
+// 由用户列表的「加积分」按钮共用（头部空标识符、行内预填该用户）。
 //
-// 不拉积分流水(那已是独立的「积分流水」页);弹窗只做"查余额 → 加/扣分"。
+// 用户解析仍走 legacy 桥的查人接口（仅把手机号 / 邮箱解析成 userId + 显示加给谁）；实际
+// 加 / 扣调新的 compute_point 接口 POST /billing/wallets/user-credits（amount 为正数加分、
+// 负数扣分，服务端按 admin_adjustment 落到该用户个人 workspace 的算力池）。即时生效、写审计。
+// 单位是积分（1:1，不是金额）。
 
 import { useEffect, useState } from "react";
 import { IconCircleCheckFilled, IconSearch } from "@tabler/icons-react";
@@ -30,12 +31,18 @@ interface LegacyUser {
   userLevel: string | null;
 }
 
+// POST /billing/wallets/user-credits → admin wallet account detail. We only read
+// the resulting available balance, tolerant of the exact envelope nesting.
+interface CreditResponse {
+  account?: { availableBalance?: string };
+  availableBalance?: string;
+}
+
 export interface GrantResult {
   userId: string;
-  previousBalance: number;
   delta: number;
-  newBalance: number;
-  recordId: string;
+  /** New compute_point balance after the op, when the response surfaced it. */
+  newBalance: string | null;
 }
 
 export function GrantPointsDialog({
@@ -63,7 +70,9 @@ export function GrantPointsDialog({
   const parsedScore = Number(score);
   const scoreValid = Number.isInteger(parsedScore) && parsedScore !== 0;
   const canLookup = Boolean(identifier.trim()) && !looking;
-  const canSubmit = Boolean(identifier.trim()) && scoreValid && !submitting;
+  // The compute_point API takes a userId (resolve first) and requires a reason
+  // for the audit trail.
+  const canSubmit = Boolean(user) && scoreValid && Boolean(note.trim()) && !submitting;
 
   // Reset every time the dialog opens; auto-look-up when prefilled. When it
   // closes, clear so re-opening for a different user never shows stale data.
@@ -112,20 +121,27 @@ export function GrantPointsDialog({
   }
 
   async function submit() {
-    if (!canSubmit) return;
+    if (!canSubmit || !user) return;
     setSubmitting(true);
     setError(null);
     try {
-      const data = await mutateEnvelope<GrantResult>("/api/admin/legacy-points/grant", {
-        identifier: identifier.trim(),
-        score: parsedScore,
-        ...(note.trim() ? { note: note.trim() } : {}),
+      const data = await mutateEnvelope<CreditResponse>("/api/admin/billing/wallets/user-credits", {
+        userId: user.userId,
+        idFormat: "raw",
+        amount: parsedScore,
+        reason: note.trim(),
+        idempotencyKey: crypto.randomUUID(),
       });
-      setResult(data);
+      const newBalance = data?.account?.availableBalance ?? data?.availableBalance ?? null;
+      const grant: GrantResult = {
+        userId: user.userId,
+        delta: parsedScore,
+        newBalance,
+      };
+      setResult(grant);
       setScore("");
       setNote("");
-      await lookup(identifier); // refresh the in-dialog balance
-      onGranted?.(data);
+      onGranted?.(grant);
     } catch (err) {
       setError(toErrorMessage(err));
     } finally {
@@ -133,8 +149,7 @@ export function GrantPointsDialog({
     }
   }
 
-  // From the success view back to the form, keeping the looked-up user
-  // (whose balance was just refreshed) so a follow-up grant is one step away.
+  // From the success view back to the form for the same user — one step away.
   function grantAgain() {
     setResult(null);
     setScore("");
@@ -146,7 +161,7 @@ export function GrantPointsDialog({
     <AdminDialog
       open={open}
       title="加积分"
-      description="按手机号或邮箱给用户加 / 扣 Java 老系统积分（score_balance）。负数为扣分，即时生效并写入流水。"
+      description="按手机号或邮箱解析用户，给其加 / 扣算力积分（compute_point）。正数加、负数扣，即时生效并写入审计。"
       onClose={onClose}
       footer={
         result ? (
@@ -202,17 +217,12 @@ export function GrantPointsDialog({
                 {formatSignedInteger(String(result.delta))}
               </span>
             </div>
-            <div className="flex items-center justify-between px-4 py-2.5">
-              <span className="text-slate-500">余额</span>
-              <span className="text-slate-700">
-                {result.previousBalance} <span className="text-slate-400">→</span>{" "}
+            {result.newBalance != null ? (
+              <div className="flex items-center justify-between px-4 py-2.5">
+                <span className="text-slate-500">算力积分余额</span>
                 <span className="font-semibold text-slate-950">{result.newBalance}</span>
-              </span>
-            </div>
-            <div className="flex items-center justify-between px-4 py-2.5">
-              <span className="text-slate-500">流水号</span>
-              <span className="font-mono text-slate-700">#{result.recordId}</span>
-            </div>
+              </div>
+            ) : null}
           </div>
         </div>
       ) : (
@@ -252,14 +262,11 @@ export function GrantPointsDialog({
               <span>ID {user.userId}</span>
               {user.phone ? <span>手机 {user.phone}</span> : null}
               {user.email ? <span>邮箱 {user.email}</span> : null}
-              <span>
-                当前余额 <span className="font-semibold text-slate-950">{user.scoreBalance}</span>
-              </span>
               {user.userLevel ? <span>等级 {user.userLevel}</span> : null}
             </div>
           ) : null}
 
-          <FormLabel label="积分增减" help="正数加分，负数扣分。">
+          <FormLabel label="积分增减" help="正数加分，负数扣分（单位：算力积分）。">
             <TextInput
               value={score}
               inputMode="numeric"
@@ -268,10 +275,10 @@ export function GrantPointsDialog({
             />
           </FormLabel>
 
-          <FormLabel label="审计备注" help="可选；写入流水 remark。">
+          <FormLabel label="审计备注" help="必填；写入钱包流水 reason。">
             <TextInput
               value={note}
-              placeholder="例如 手机号用户无法支付，客服补分"
+              placeholder="例如 客服补偿、活动发放"
               onChange={(event) => setNote(event.target.value)}
             />
           </FormLabel>

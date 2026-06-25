@@ -8,10 +8,11 @@ import {
 
 export const dynamic = "force-dynamic";
 
-export async function GET(
-  request: NextRequest,
-  context: RouteContext<"/api/admin/users/[userId]/sessions">
-) {
+type RouteContext = {
+  params: Promise<{ userId: string }>;
+};
+
+export async function GET(request: NextRequest, context: RouteContext) {
   try {
     const { userId } = await context.params;
     const upstream = await fetch(adminUrlForRequest(request, `/users/${userId}/sessions`), {

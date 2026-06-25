@@ -8,10 +8,11 @@ import {
 
 export const dynamic = "force-dynamic";
 
-export async function POST(
-  request: NextRequest,
-  context: RouteContext<"/api/admin/users/[userId]/sessions/[sessionId]/revoke">
-) {
+type RouteContext = {
+  params: Promise<{ userId: string; sessionId: string }>;
+};
+
+export async function POST(request: NextRequest, context: RouteContext) {
   try {
     const { userId, sessionId } = await context.params;
     const upstream = await fetch(
