@@ -32,7 +32,6 @@ import {
   IconUsersGroup,
   IconUserSearch,
   IconVersions,
-  IconWallet,
 } from "@tabler/icons-react";
 
 export type NavIcon = typeof IconDashboard;
@@ -171,17 +170,6 @@ export const MODULE_NAV: Record<string, ModuleNavGroup[]> = {
           href: "/billing/refunds",
           label: "退款",
           icon: IconReceiptRefund,
-          permission: "billing.read",
-        },
-      ],
-    },
-    {
-      label: "钱包账户",
-      items: [
-        {
-          href: "/billing/wallets",
-          label: "用户钱包",
-          icon: IconWallet,
           permission: "billing.read",
         },
       ],
