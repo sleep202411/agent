@@ -31,6 +31,7 @@ import type {
   AiProviderTraceEvent as AiProviderTraceEventRow,
 } from '@prisma/client';
 import { PrismaService } from '../infra/db/db.module';
+import { MediaAssetUrlResolverService } from '../infra/storage/media-asset-url-resolver.service';
 import { newShortId } from '../common/id';
 import { ensureOriginalMediaPlacement } from '../infra/storage/media-asset-placement';
 import type { StorageProviderId } from '../infra/storage/storage.types';
@@ -213,6 +214,11 @@ type AiJobOutputAssetRow = {
   status: MediaAssetStatus;
   moderationStatus: MediaAssetModerationStatus;
   deletedAt: Date | null;
+  storageProvider: string;
+  bucket: string | null;
+  region: string | null;
+  objectKey: string | null;
+  externalUrl: string | null;
 };
 type AiJobOutputWithAssetRow = AiJobOutputRow & {
   asset: AiJobOutputAssetRow | null;
@@ -222,7 +228,10 @@ type DbClient = PrismaService | Prisma.TransactionClient;
 
 @Injectable()
 export class AiGenerationRepository {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly urlResolver: MediaAssetUrlResolverService,
+  ) {}
 
   /**
    * `findById` and friends hide soft-deleted rows by default. Pass
@@ -987,6 +996,14 @@ export class AiGenerationRepository {
             status: true,
             moderationStatus: true,
             deletedAt: true,
+            // Storage identity so outputToDomain can resolve the public CDN URL
+            // instead of trusting the possibly-stale/non-CDN url column captured
+            // at upload time.
+            storageProvider: true,
+            bucket: true,
+            region: true,
+            objectKey: true,
+            externalUrl: true,
           },
         },
       },
@@ -1063,9 +1080,14 @@ export class AiGenerationRepository {
       id: row.id,
       assetId: row.assetId ?? undefined,
       type: row.type,
-      // Public direct storage URL. Blocked objects are made unreachable at the
-      // storage layer by the moderation takedown, so no per-read indirection.
-      url: row.url,
+      // Public direct CDN URL, resolved from the asset's storage identity so a
+      // stale/non-CDN url column captured at upload time doesn't force clients
+      // onto the /content redirect; fall back to the stored url when there's no
+      // resolvable asset. Blocked objects are made unreachable at the storage
+      // layer by the moderation takedown, so no per-read indirection.
+      url:
+        (row.asset ? this.urlResolver.resolvePublicUrl(row.asset) : null) ??
+        row.url,
       accessUrl,
       storagePath: row.storagePath,
       contentHash: row.contentHash ?? undefined,

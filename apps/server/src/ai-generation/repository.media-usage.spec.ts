@@ -31,7 +31,12 @@ describe('AiGenerationRepository media usage', () => {
         Promise.resolve(callback(tx)),
       ),
     };
-    const repository = new AiGenerationRepository(prisma as never);
+    const repository = new AiGenerationRepository(
+      prisma as never,
+      {
+        resolvePublicUrl: () => null,
+      } as never,
+    );
 
     await (
       repository as unknown as {
