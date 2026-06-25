@@ -5,7 +5,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslations } from "next-intl";
 import { IconBolt } from "@tabler/icons-react";
 import { api } from "@/lib/api";
-import { useActiveWorkspaceId } from "@/app/_components/workspace-context";
+import { useActiveWorkspace, useActiveWorkspaceId } from "@/app/_components/workspace-context";
 import { getAssetsRealtimeKernel } from "@/app/[locale]/canvas/_lib/assets-realtime-kernel";
 import { openSettings } from "@/lib/settings-hash";
 import { cn } from "@/lib/utils";
@@ -119,8 +119,10 @@ function useWalletRealtime() {
 export function CreditsBadge({ className }: { className?: string }) {
   const t = useTranslations("shell");
   // A team workspace spends the shared workspace pot; personal spends the
-  // personal pot. Tag only the team case so users know which wallet this is.
-  const workspaceId = useActiveWorkspaceId();
+  // personal pot. Tag only a real TEAM workspace (the personal workspace also has
+  // an id, so gate on the type — not merely on having a workspace).
+  const activeWorkspace = useActiveWorkspace();
+  const isTeam = activeWorkspace?.type === "team";
   useWalletRealtime();
   const { data } = useComputeWalletBalance();
   const title =
@@ -145,7 +147,7 @@ export function CreditsBadge({ className }: { className?: string }) {
       )}
     >
       <GlassRim />
-      {workspaceId && (
+      {isTeam && (
         <span className="rounded-full bg-white/10 px-1.5 py-px text-[10px] font-medium leading-tight text-white/70">
           {t("credits.teamTag")}
         </span>

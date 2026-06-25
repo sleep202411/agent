@@ -52,6 +52,12 @@ export function useActiveWorkspaceId(): string | null {
   return useContext(WorkspaceContext)?.activeWorkspace?.id ?? null;
 }
 
+/** Active workspace (incl. its `type`) WITHOUT throwing when no provider is
+ *  mounted — lets chrome tell a personal pot from a team pot. */
+export function useActiveWorkspace(): WorkspaceRef | null {
+  return useContext(WorkspaceContext)?.activeWorkspace ?? null;
+}
+
 export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
   const queryClient = useQueryClient();
   const { user, loading: authLoading } = useAuth();
