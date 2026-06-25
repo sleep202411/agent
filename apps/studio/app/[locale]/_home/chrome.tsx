@@ -111,6 +111,7 @@ function UpgradeButton({ onClick }: { onClick: () => void }) {
 // ---------------------------------------------------------------------------
 // Footer
 // ---------------------------------------------------------------------------
+// eslint-disable-next-line @typescript-eslint/no-unused-vars -- link directory hidden for now; data retained
 const FOOTER_COLS: { title: string; links: string[] }[] = [
   {
     title: "Creative Tools",
@@ -202,24 +203,8 @@ const FOOTER_COLS: { title: string; links: string[] }[] = [
 export function Footer({ theme: t }: { theme: Theme }) {
   return (
     <footer className="mt-24 px-6 pt-12 pb-10">
-      <div className="grid grid-cols-2 gap-x-6 gap-y-10 sm:grid-cols-3 lg:grid-cols-5">
-        {FOOTER_COLS.map((col) => (
-          <div key={col.title} className="flex flex-col gap-3">
-            <div className="text-[14px] font-semibold text-white/90">{col.title}</div>
-            {col.links.map((l) => (
-              <button
-                key={l}
-                type="button"
-                className="text-left text-[13px] text-white/45 transition hover:text-white/80"
-              >
-                {l}
-              </button>
-            ))}
-          </div>
-        ))}
-      </div>
-
-      <div className="mt-12 flex flex-col gap-4 border-t border-white/[0.06] pt-6 md:flex-row md:items-center md:justify-between">
+      {/* Model/tool link directory hidden for now (FOOTER_COLS retained above). */}
+      <div className="flex flex-col gap-4 border-t border-white/[0.06] pt-6 md:flex-row md:items-center md:justify-between">
         <div className="flex items-center gap-4">
           <Image src="/logo.png" alt="FizzDragon" width={439} height={78} className="h-6 w-auto" />
           <span className="text-[13px] text-white/40">© 2026 FizzDragon. All rights reserved.</span>

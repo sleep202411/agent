@@ -11,7 +11,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { IconArrowUpRight, IconChevronRight, IconLoader2, IconPlus } from "@tabler/icons-react";
+import { IconChevronRight, IconLoader2, IconPlus } from "@tabler/icons-react";
 import { toast } from "sonner";
 import { Link, useRouter } from "@/i18n/navigation";
 import { useAuth } from "@/app/_components/auth-provider";
@@ -429,15 +429,8 @@ export function ExploreMore() {
             <GalleryCard key={item.src} item={item} position={positions[index]} />
           ))}
         </div>
-        <div className="pointer-events-none absolute inset-x-0 bottom-0 flex h-56 items-end justify-center bg-[linear-gradient(180deg,rgba(18,18,18,0)_0%,oklch(0.17_0_0)_44.23%)]">
-          <button
-            type="button"
-            className="pointer-events-auto inline-flex h-10 w-[290.5px] items-center justify-center gap-2 rounded-[16px] bg-white/[0.09] px-3 py-2.5 text-[16px] font-medium leading-5 text-white/85 transition-colors hover:bg-white/[0.14] active:translate-y-px"
-          >
-            Explore Gallery
-            <IconArrowUpRight className="size-4.5" stroke={1.8} />
-          </button>
-        </div>
+        {/* "Explore Gallery" button hidden for now — keep the gallery bottom fade. */}
+        <div className="pointer-events-none absolute inset-x-0 bottom-0 flex h-56 items-end justify-center bg-[linear-gradient(180deg,rgba(18,18,18,0)_0%,oklch(0.17_0_0)_44.23%)]" />
       </div>
     </section>
   );
