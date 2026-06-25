@@ -1,6 +1,6 @@
 "use client";
 
-import { use, useEffect, useRef, useState } from "react";
+import { use, useCallback, useEffect, useRef, useState } from "react";
 import { useTranslations } from "next-intl";
 import { Link } from "@/i18n/navigation";
 import { useParams } from "next/navigation";
@@ -57,6 +57,7 @@ export default function ProjectLayout({
 
   const canEdit = role == null ? true : role !== "viewer";
   const canManage = role === "owner" || role === "admin";
+  const openShare = useCallback(() => setShareOpen(true), []);
 
   const commitName = (next: string) => {
     if (!canEdit) return; // viewers can't rename (server rejects too)
@@ -80,7 +81,7 @@ export default function ProjectLayout({
   };
 
   return (
-    <ProjectProvider projectId={projectId} role={role}>
+    <ProjectProvider projectId={projectId} role={role} openShare={openShare}>
       <div className="relative h-dvh">
         {children}
 
@@ -119,10 +120,13 @@ export default function ProjectLayout({
               {t("viewOnly")}
             </span>
           )}
-          {canManage && (
+          {/* Canvas mode hosts Share inside the canvas toolbar cluster (so it
+              lines up with the AI/history controls and shifts with the side
+              panels); other modes host it here in the shell. */}
+          {canManage && activeMode !== "canvas" && (
             <button
               type="button"
-              onClick={() => setShareOpen(true)}
+              onClick={openShare}
               className="flex h-9 items-center gap-1.5 rounded-full bg-popover/90 px-3.5 text-sm font-medium shadow-md backdrop-blur-xl transition-colors hover:bg-accent"
             >
               <IconUsers className="size-4" stroke={1.8} />

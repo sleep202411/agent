@@ -12,6 +12,9 @@ interface ProjectContextValue {
   canEdit: boolean;
   /** Can manage sharing/members (owner/admin). */
   canManage: boolean;
+  /** Opens the project share/members dialog (owned by the project shell), so any
+   *  mode's own toolbar can host the Share button without owning the dialog. */
+  openShare: () => void;
 }
 
 const ProjectContext = createContext<ProjectContextValue | null>(null);
@@ -20,10 +23,12 @@ const ProjectContext = createContext<ProjectContextValue | null>(null);
 export function ProjectProvider({
   projectId,
   role,
+  openShare,
   children,
 }: {
   projectId: string;
   role: ProjectRole | null;
+  openShare: () => void;
   children: React.ReactNode;
 }) {
   const value = useMemo<ProjectContextValue>(() => {
@@ -31,8 +36,8 @@ export function ProjectProvider({
     // existing single-user flow isn't blocked; the server still enforces writes.
     const canEdit = role == null ? true : role !== "viewer";
     const canManage = role === "owner" || role === "admin";
-    return { projectId, role, canEdit, canManage };
-  }, [projectId, role]);
+    return { projectId, role, canEdit, canManage, openShare };
+  }, [projectId, role, openShare]);
 
   return <ProjectContext.Provider value={value}>{children}</ProjectContext.Provider>;
 }

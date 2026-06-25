@@ -27,6 +27,7 @@ import {
   IconCloudUpload,
   IconHistory,
   IconSparkles,
+  IconUsers,
   IconLayoutGrid,
   IconLoader2,
   IconMagnet,
@@ -60,6 +61,7 @@ import { CanvasHistory } from "./canvas-history";
 import { cn } from "@/lib/utils";
 import { CopilotPanel } from "./copilot/copilot-panel";
 import { CreditsBadge } from "@/app/_components/credits-badge";
+import { useProjectContext } from "@/app/[locale]/project/_components/project-context";
 import { AssetLibrary, ASSET_DRAG_MIME } from "./asset-library";
 import { AddNodeMenu, type AddNodeAction } from "./add-node-menu";
 import { CanvasEmptyState } from "./canvas-empty-state";
@@ -397,6 +399,8 @@ function cursorColor(seed: string): string {
 function CanvasInner({ projectId, canEdit }: { projectId: string; canEdit: boolean }) {
   const t = useTranslations("canvas");
   const tCopilot = useTranslations("copilot");
+  const tProject = useTranslations("project");
+  const { canManage, openShare } = useProjectContext();
   const { data: catalog } = useAiCatalog();
   const { user } = useAuth();
   const guestName = t("guest");
@@ -1338,6 +1342,17 @@ function CanvasInner({ projectId, canEdit }: { projectId: string; canEdit: boole
                     )}
                   >
                     <IconHistory className="size-4" stroke={1.8} />
+                  </button>
+                )}
+                {canManage && (
+                  <button
+                    type="button"
+                    onClick={openShare}
+                    aria-label={tProject("share")}
+                    className="flex h-9 items-center gap-1.5 rounded-full bg-popover/90 px-3.5 text-sm font-medium text-white/80 shadow-md backdrop-blur-xl transition-colors hover:bg-accent hover:text-white"
+                  >
+                    <IconUsers className="size-4" stroke={1.8} />
+                    {tProject("share")}
                   </button>
                 )}
                 <CollabAvatars awareness={awareness} localClientId={doc?.clientID} />
