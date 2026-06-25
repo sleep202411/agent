@@ -35,6 +35,7 @@ import {
 import type { CreateInviteInput, AssignableRole } from './dto';
 import { generateInviteToken } from './invite-token';
 import { acquireSeatLock, assertSeatAvailable } from './seat-guard';
+import { enqueueTeamMemberChanged } from './team-realtime';
 import {
   toWorkspaceInviteDTO,
   type InvitePreviewDTO,
@@ -254,7 +255,7 @@ export class WorkspaceInvitesService {
         // policy + counts members on this same locked transaction.
         await assertSeatAvailable(tx, invite.workspaceId, this.entitlements);
 
-        await tx.workspaceMember.create({
+        const m = await tx.workspaceMember.create({
           data: {
             workspaceId: invite.workspaceId,
             userId: user.userId,
@@ -269,6 +270,18 @@ export class WorkspaceInvitesService {
         await tx.workspaceInvite.update({
           where: { id: invite.id },
           data: { acceptedAt: new Date() },
+        });
+        // Realtime: same as add-by-account — teammates see the new member live.
+        await enqueueTeamMemberChanged(tx, {
+          workspaceId: invite.workspaceId,
+          action: 'added',
+          member: {
+            id: m.id,
+            userId: m.userId,
+            role: m.role,
+            status: m.status,
+          },
+          actorUserId: user.userId,
         });
         created = true;
       });
