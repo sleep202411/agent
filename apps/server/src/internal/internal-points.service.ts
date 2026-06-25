@@ -61,7 +61,13 @@ export class InternalPointsService {
     // Credit the ingested balance idempotently (keyed by user). A re-call (or a
     // crash between marker-create and credit) credits exactly once; a different
     // balance on a later call dedupes to the first.
+    // `alreadyMigrated` must reflect whether the migration CREDIT was already
+    // applied (the ledger is the source of truth), not merely whether the marker
+    // row exists — the two can drift (e.g. the marker is missing but the per-user
+    // credit is already in the ledger), which previously made this flag lie:
+    // alreadyMigrated=false while the balance was already the migrated one.
     let balance: bigint;
+    let alreadyMigrated = Boolean(existing);
     if (input.balance > 0) {
       const account = await this.account(workspaceId);
       const amount = BigInt(input.balance);
@@ -86,6 +92,10 @@ export class InternalPointsService {
         },
       });
       balance = posted.account.availableBalance;
+      // Credit already in the ledger => this user was already migrated, even if
+      // the marker row was missing. This also keeps the crash-recovery path
+      // honest: a marker with no prior credit reports alreadyMigrated=false here.
+      alreadyMigrated = posted.deduped;
     } else {
       // <= 0 (incl. a legacy negative/overdrawn balance): the debt is FORGIVEN —
       // the new wallet starts at 0 (the DB enforces non-negative balances). The
@@ -97,7 +107,7 @@ export class InternalPointsService {
     return {
       userId,
       workspaceId,
-      alreadyMigrated: Boolean(existing),
+      alreadyMigrated,
       balance: balance.toString(),
     };
   }
