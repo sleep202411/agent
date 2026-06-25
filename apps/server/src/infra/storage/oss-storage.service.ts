@@ -47,6 +47,15 @@ const DEFAULT_READ_URL_TTL_SECONDS = 300;
  */
 const OSS_ACL_INHERIT_BUCKET = 'default' as unknown as OSS.ACLType;
 
+// In-VPC deployments (e.g. ACK in the same region) MUST use the OSS internal
+// endpoint: this account blocks the public endpoint outright
+// (PublicEndpointForbidden — "use CNAME instead"). Public-internet contexts
+// (local dev) keep the default public endpoint. Gated by OSS_INTERNAL.
+const ossUseInternalEndpoint = (): boolean =>
+  ['1', 'true', 'yes', 'on'].includes(
+    (process.env.OSS_INTERNAL ?? '').trim().toLowerCase(),
+  );
+
 @Injectable()
 export class AliyunOssStorageService extends OutputStorageService {
   private readonly logger = new Logger(AliyunOssStorageService.name);
@@ -88,6 +97,7 @@ export class AliyunOssStorageService extends OutputStorageService {
       accessKeyId,
       accessKeySecret,
       secure: true,
+      internal: ossUseInternalEndpoint(),
       // V4 signing — matches the strict OSS encoding rules and eliminates
       // the SignatureDoesNotMatch family that the legacy path tripped on.
       authorizationV4: true,
@@ -285,6 +295,7 @@ export class AliyunOssStorageService extends OutputStorageService {
       accessKeyId: this.accessKeyId,
       accessKeySecret: this.accessKeySecret,
       secure: true,
+      internal: ossUseInternalEndpoint(),
       authorizationV4: true,
     });
   }

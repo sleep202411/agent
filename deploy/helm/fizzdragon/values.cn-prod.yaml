@@ -71,6 +71,13 @@ sharedEnv:
   # revisit then.
   JAVA_STUDIO_URL: https://fizzdragon.fizzspace.cn/studio
   JAVA_CONTENT_URL: https://fizzdragon.fizzspace.cn/content
+  # OSS media pipeline. This account blocks the OSS public endpoint
+  # (PublicEndpointForbidden), so server/worker uploads + reads use the OSS
+  # INTERNAL endpoint (pods run in the same VPC). Public serving goes through a
+  # CDN custom domain: media.fizzspace.cn → Aliyun CDN → fizzdragon-ai-outputs
+  # OSS origin. The resolver emits media.fizzspace.cn URLs via the base below.
+  OSS_INTERNAL: "true"
+  MEDIA_PUBLIC_BASE_URL_ALIYUN_OSS: https://media.fizzspace.cn
   # CN DashScope endpoint (not the -intl one). Matches prod-cn .env.
   ALIBABA_BASE_URL: https://dashscope.aliyuncs.com/compatible-mode/v1
   # Mirrors prod-cn .env: deepseek providers, model names from code defaults.
