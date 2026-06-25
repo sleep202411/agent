@@ -141,7 +141,7 @@ export function CanvasProjectsGrid() {
 
   return (
     <>
-      <div className="mt-6 grid grid-cols-[repeat(auto-fill,minmax(240px,1fr))] gap-5">
+      <div className="mt-6 grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
         {/* New canvas — soft tile + label below; the brand-red "+" is the
             sanctioned primary CTA (DESIGN.md §2). */}
         <button
