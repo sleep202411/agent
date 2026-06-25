@@ -53,6 +53,10 @@ const retiredPlanKeys = [
   'team_ultimate',
   'team_creator',
   'team_scale',
+  // Enterprise + Enterprise Team pulled from the lineup; archive (never delete)
+  // their plan + prices + provider bindings.
+  'enterprise',
+  'team_enterprise',
 ];
 
 const individualPlans: MembershipPlanSeed[] = [
@@ -161,38 +165,6 @@ const individualPlans: MembershipPlanSeed[] = [
     },
     metadata: { source: PLAN_SEED_SOURCE },
   },
-  {
-    planKey: 'enterprise',
-    productType: BillingProductType.membership_plan,
-    subjectType: BillingSubjectType.user,
-    status: BillingMembershipPlanStatus.active,
-    rank: 90,
-    name: 'Enterprise',
-    description: 'Custom individual enterprise agreement managed by sales.',
-    includedComputeCredits: 0n,
-    includedSeats: 1,
-    maxSeats: null,
-    seatOverageAllowed: true,
-    topupDiscountBps: 0,
-    featureFlags: {
-      customContract: true,
-      prioritySupport: true,
-      advancedWorkflows: true,
-    },
-    limits: {
-      queuePriority: 1,
-      concurrentJobs: null,
-      queuedJobs: null,
-      messagesPerConversation: null,
-      chatHistoryDays: null,
-    },
-    marketing: {
-      audience: 'Enterprise customers',
-      badge: 'Custom',
-      order: 90,
-    },
-    metadata: { source: PLAN_SEED_SOURCE, salesOnly: true },
-  },
 ];
 
 // Team membership is the 4th tier of the unified studio lineup, but stays a
@@ -238,42 +210,6 @@ const teamPlans: MembershipPlanSeed[] = [
       order: 40,
     },
     metadata: { source: PLAN_SEED_SOURCE },
-  },
-  {
-    planKey: 'team_enterprise',
-    productType: BillingProductType.team_membership_plan,
-    subjectType: BillingSubjectType.workspace,
-    status: BillingMembershipPlanStatus.active,
-    rank: 190,
-    name: 'Enterprise Team',
-    description: 'Custom team agreement for large organizations.',
-    includedComputeCredits: 0n,
-    includedSeats: 1,
-    maxSeats: null,
-    seatOverageAllowed: true,
-    topupDiscountBps: 0,
-    featureFlags: {
-      sharedCredits: true,
-      customContract: true,
-      privateGenerations: true,
-      commercialUse: true,
-      prioritySupport: true,
-      advancedWorkflows: true,
-      governanceControls: true,
-    },
-    limits: {
-      queuePriority: 1,
-      concurrentJobs: null,
-      queuedJobs: null,
-      approximateImagesPerMonth: null,
-      sharedWorkspaceStorageGb: null,
-    },
-    marketing: {
-      audience: 'Enterprise teams',
-      badge: 'Custom',
-      order: 190,
-    },
-    metadata: { source: PLAN_SEED_SOURCE, salesOnly: true },
   },
 ];
 
