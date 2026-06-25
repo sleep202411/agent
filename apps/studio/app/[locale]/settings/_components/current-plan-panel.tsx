@@ -1,12 +1,14 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslations } from "next-intl";
 import { IconReceipt } from "@tabler/icons-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { cancelSubscription, getMyEntitlement } from "@/lib/billing";
+import { getAssetsRealtimeKernel } from "@/app/[locale]/canvas/_lib/assets-realtime-kernel";
+import { useActiveWorkspaceId } from "@/app/_components/workspace-context";
 import { Panel } from "./settings-ui";
 
 export const myEntitlementQueryKey = ["billing", "my-entitlement"] as const;
@@ -28,6 +30,22 @@ export function CurrentPlanPanel({ onManagePlan }: { onManagePlan: () => void })
     queryFn: getMyEntitlement,
     staleTime: 30_000,
   });
+
+  // Realtime: refresh the plan when the entitlement changes server-side (order
+  // fulfilled, refund revoke/restore, expiry) — personal or workspace scope.
+  const workspaceId = useActiveWorkspaceId();
+  useEffect(() => {
+    const sub = getAssetsRealtimeKernel({
+      workspaceId: workspaceId ?? undefined,
+    }).subscribe({
+      onEvent: (event) => {
+        if (event.kind === "entitlement_changed") {
+          void queryClient.invalidateQueries({ queryKey: myEntitlementQueryKey });
+        }
+      },
+    });
+    return () => sub.close();
+  }, [workspaceId, queryClient]);
 
   const cancel = useMutation({
     mutationFn: (id: string) => cancelSubscription(id),

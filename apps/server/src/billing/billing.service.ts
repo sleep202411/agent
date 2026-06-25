@@ -66,6 +66,7 @@ import { PrismaService } from '../infra/db/db.module';
 import { EntitlementService } from '../entitlements/entitlement.service';
 import { WalletLedgerService } from '../workspaces';
 import { WorkspacePermissionService } from '../workspaces/workspace-permission.service';
+import { enqueueEntitlementChanged } from './entitlement-realtime';
 import type {
   CreateBillingCheckoutInput,
   CreateComputePointTopupInput,
@@ -4646,6 +4647,7 @@ export class BillingService {
           },
         },
       });
+      await enqueueEntitlementChanged(tx, grant, 'revoked');
       return { entitlementGrant: { connect: { id: grant.id } } };
     }
 
@@ -4922,7 +4924,7 @@ export class BillingService {
       await this.restoreWalletRefundReversalTx(tx, refund);
     }
     if (refund.entitlementGrantId) {
-      await tx.entitlementGrant.updateMany({
+      const restored = await tx.entitlementGrant.updateMany({
         where: {
           id: refund.entitlementGrantId,
           status: EntitlementGrantStatus.revoked,
@@ -4932,6 +4934,12 @@ export class BillingService {
           revokedAt: null,
         },
       });
+      if (restored.count > 0) {
+        const grant = await tx.entitlementGrant.findUnique({
+          where: { id: refund.entitlementGrantId },
+        });
+        if (grant) await enqueueEntitlementChanged(tx, grant, 'restored');
+      }
     }
   }
 
@@ -5619,6 +5627,7 @@ export class BillingService {
         },
       });
       entitlementGrantId = grant.id;
+      await enqueueEntitlementChanged(tx, grant, 'fulfilled');
       walletTransactionId =
         (await this.creditMembershipIncludedCreditsForOrderTx(
           tx,
