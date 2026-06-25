@@ -39,6 +39,9 @@ const HEARTBEAT_INTERVAL_MS = 30_000;
 const ZOMBIE_TIMEOUT_MS = 90_000;
 const CLOSE_POLICY = 1008;
 const CLOSE_NORMAL = 1000;
+/** Per-user concurrent socket cap (abuse / resource-exhaustion guard). The kernel
+ *  uses one socket per active workspace, so a normal user stays well under this. */
+const MAX_SOCKETS_PER_USER = 50;
 
 type TrackedSocket = WebSocket & {
   __userId?: string;
@@ -65,6 +68,8 @@ export class RealtimeGateway
 
   /** group → sockets currently joined to it (on this pod). */
   private readonly socketsByGroup = new Map<string, Set<TrackedSocket>>();
+  /** userId → open socket count on this pod (per-user connection cap). */
+  private readonly socketCountByUser = new Map<string, number>();
 
   afterInit() {
     const transport = (process.env.REALTIME_TRANSPORT ?? '')
@@ -133,6 +138,12 @@ export class RealtimeGateway
       this.close(client, CLOSE_POLICY, 'unauthorized');
       return;
     }
+    const open = this.socketCountByUser.get(payload.userId) ?? 0;
+    if (open >= MAX_SOCKETS_PER_USER) {
+      this.close(client, CLOSE_POLICY, 'too_many_connections');
+      return;
+    }
+    this.socketCountByUser.set(payload.userId, open + 1);
 
     client.__userId = payload.userId;
     client.__groups = payload.groups;
@@ -157,6 +168,12 @@ export class RealtimeGateway
 
   handleDisconnect(client: TrackedSocket) {
     if (client.__zombieCheck) clearInterval(client.__zombieCheck);
+    const uid = client.__userId;
+    if (uid) {
+      const next = (this.socketCountByUser.get(uid) ?? 1) - 1;
+      if (next <= 0) this.socketCountByUser.delete(uid);
+      else this.socketCountByUser.set(uid, next);
+    }
     for (const group of client.__groups ?? []) {
       const subs = this.socketsByGroup.get(group);
       if (!subs) continue;
