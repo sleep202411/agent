@@ -8,9 +8,8 @@
  * keeps event types open for extension without renaming the transport
  * (hub / group).
  *
- * Transport: Azure Web PubSub.
- *   - Hub:   `assets`
- *   - Group: `assets-user:{userId}` (one per user, covers all tabs)
+ * Transport: the self-hosted realtime plane (Azure Web PubSub was decommissioned
+ * in P5). Fan-out group: `assets-user:{userId}` (one per user, covers all tabs).
  *
  * Event kinds are durable product events, not provider callbacks.
  * Clients should merge them idempotently by the entity `updatedAt` / `ts`.
@@ -139,7 +138,7 @@ export type AssetEvent = (
 ) &
   RealtimeEnvelope;
 
-/** Azure Web PubSub group name for a user's asset events. */
+/** Fan-out group name for a user's asset events. */
 export function assetsUserGroup(userId: string): string {
   return `assets-user:${userId}`;
 }

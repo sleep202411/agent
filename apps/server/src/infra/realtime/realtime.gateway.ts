@@ -9,11 +9,10 @@
  * carries the authorized fan-out groups; the gateway trusts them after verifying
  * the HMAC signature — no per-connection DB round trip, mirroring Azure's JWT.
  * Messages arrive over Redis (`realtime:group:*`, published by the provider on
- * ANY pod) and are relayed verbatim to every socket in the group, so the same
- * payloads a Web PubSub client would receive reach a native-WS client.
+ * ANY pod) and are relayed verbatim to every socket in the group.
  *
- * Dormant unless REALTIME_TRANSPORT=self-hosted (no Redis connections opened on
- * web-pubsub deployments).
+ * Dormant unless REALTIME_TRANSPORT=self-hosted (no Redis connections opened
+ * otherwise — e.g. local dev, which falls back to the no-op provider).
  */
 import {
   OnGatewayConnection,

@@ -122,8 +122,6 @@ secrets:
       env: DASHSCOPE_API_KEY
     - kv: byteplus-modelark-api-key
       env: BYTEPLUS_MODELARK_API_KEY
-    - kv: realtime-conn-string
-      env: AZURE_WEB_PUBSUB_CONNECTION_STRING
     - kv: blob-conn-string
       env: AZURE_BLOB_CONNECTION_STRING
     - kv: db-conn-string
@@ -291,10 +289,11 @@ server:
     MEDIA_PUBLIC_BASE_URL_AZURE_BLOB: https://media.fizzdragon.com
     # REDIS_URL comes from KV via projected `fizzdragon-secrets` (envFrom).
     MASTRA_URL: http://fizzdragon-agent:4111
-    # Unified self-hosted realtime for ALL cells (collab already self-hosts; this
-    # moves asset/job pushes off Azure Web PubSub too, so there is no CN/COM
-    # transport split). Requires REALTIME_WS_SECRET (serverSecrets below).
-    # Rollback: set back to `web-pubsub` (Azure WP provider is still registered).
+    # Unified self-hosted realtime for ALL cells (collab already self-hosts; asset
+    # /job pushes moved off Azure Web PubSub too, so there is no CN/COM transport
+    # split). Requires REALTIME_WS_SECRET (serverSecrets below). Web PubSub was
+    # decommissioned (P5) — self-hosted is the only transport; any other value
+    # (e.g. unset) selects the no-op provider, so realtime stays off in local dev.
     REALTIME_TRANSPORT: self-hosted
     DISABLE_CONTENT_MODERATION: "false"
     AUTH_DISABLED: "false"

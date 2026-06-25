@@ -8,8 +8,9 @@
  * groups; the browser connects to the in-cluster {@link RealtimeGateway}
  * (`/ws/realtime`) with it; publishes go to Redis channels (`realtime:group:*`)
  * that every gateway pod pattern-subscribes to, so delivery is multi-pod without
- * sticky routing. Group naming + payloads are byte-for-byte the same as
- * WebPubSubService, so clients are transport-agnostic at the payload level.
+ * sticky routing. Group naming + payloads match the original Web PubSub wire
+ * contract (now decommissioned), so clients stayed compatible across the
+ * cut-over.
  */
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import type Redis from 'ioredis';

@@ -55,28 +55,22 @@ export class HealthController {
       this.probeDb(),
       this.probeRedis(),
     ]);
-    // Realtime readiness validates whichever transport is selected. The
-    // self-hosted WS plane (any cell) needs its token-signing secret; Azure Web
-    // PubSub (the default on azure cells) needs its connection string. Foundry
-    // is com-cell infrastructure; gating the cn cell on it would 503 a healthy
-    // pod, so it stays cell-scoped.
+    // Realtime readiness validates the self-hosted WS plane — the only transport
+    // now that Web PubSub is decommissioned (P5). When enabled it needs its
+    // token-signing secret; when disabled (local dev) realtime simply isn't
+    // gated. Foundry is com-cell infrastructure; gating the cn cell on it would
+    // 503 a healthy pod, so it stays cell-scoped.
     const azureCell = CURRENT_CELL !== 'cn';
     const selfHostedRealtime =
-      (process.env.REALTIME_TRANSPORT ?? 'web-pubsub').trim().toLowerCase() ===
+      (process.env.REALTIME_TRANSPORT ?? '').trim().toLowerCase() ===
       'self-hosted';
     const checks: ReadinessProbe[] = [
       {
         name: 'realtime',
-        ok: selfHostedRealtime
-          ? Boolean(process.env.REALTIME_WS_SECRET)
-          : azureCell
-            ? Boolean(process.env.AZURE_WEB_PUBSUB_CONNECTION_STRING)
-            : true,
+        ok: selfHostedRealtime ? Boolean(process.env.REALTIME_WS_SECRET) : true,
         detail: selfHostedRealtime
           ? 'REALTIME_WS_SECRET required for the self-hosted realtime WS plane'
-          : azureCell
-            ? 'AZURE_WEB_PUBSUB_CONNECTION_STRING required for realtime'
-            : 'not used on the cn cell (in-process WS gateways)',
+          : 'realtime disabled (REALTIME_TRANSPORT != self-hosted)',
       },
       {
         name: 'foundry_provider',

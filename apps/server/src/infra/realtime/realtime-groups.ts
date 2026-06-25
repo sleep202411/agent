@@ -1,19 +1,21 @@
 /**
  * Fan-out group names + Redis channel convention shared by the self-hosted
- * realtime provider (publisher) and gateway (subscriber). Group names mirror
- * WebPubSubService exactly so payloads/grouping are identical across transports.
+ * realtime provider (publisher) and gateway (subscriber). These names are the
+ * stable wire contract for channels/grouping (originally chosen to match the
+ * now-decommissioned Web PubSub groups, so clients stayed compatible across the
+ * cut-over).
  */
 
 /** Redis channel carrying messages for one fan-out group. */
 export const REALTIME_GROUP_CHANNEL_PREFIX = 'realtime:group:';
 export const REALTIME_GROUP_CHANNEL_PATTERN = 'realtime:group:*';
 
-/** Per-user entity-event group (matches WebPubSubService `user:{userId}`). */
+/** Per-user entity-event group — `user:{userId}`. */
 export function entityUserGroup(userId: string): string {
   return `user:${userId}`;
 }
 
-/** Per-workspace asset-event group (matches WebPubSubService). */
+/** Per-workspace asset-event group. */
 export function assetsWorkspaceGroup(workspaceId: string): string {
   return `assets-workspace:${workspaceId}`;
 }
