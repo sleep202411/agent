@@ -1,6 +1,7 @@
 "use client";
 
 import { cn } from "@/lib/utils";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 
 type Status = "synced" | "connecting" | "offline";
 
@@ -22,15 +23,23 @@ export function ConnectionSignal({
 }) {
   const { bars, color, title } = signal(status, rtt);
   return (
-    <span title={title} aria-label={title} className={cn("flex items-end gap-[3px]", className)}>
-      {[0, 1, 2, 3].map((i) => (
-        <span
-          key={i}
-          className={cn("w-[3px] rounded-full transition-colors", i < bars ? color : "bg-white/20")}
-          style={{ height: `${6 + i * 3}px` }}
-        />
-      ))}
-    </span>
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <span aria-label={title} className={cn("flex items-end gap-[3px]", className)}>
+          {[0, 1, 2, 3].map((i) => (
+            <span
+              key={i}
+              className={cn(
+                "w-[3px] rounded-full transition-colors",
+                i < bars ? color : "bg-white/20"
+              )}
+              style={{ height: `${6 + i * 3}px` }}
+            />
+          ))}
+        </span>
+      </TooltipTrigger>
+      <TooltipContent>{title}</TooltipContent>
+    </Tooltip>
   );
 }
 
