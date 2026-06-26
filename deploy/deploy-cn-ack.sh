@@ -27,7 +27,11 @@ ECS_ID=i-bp11r90r4g91u39iimnx
 ECS_IP=""   # fetched live below — the pay-as-you-go public IP changes on StopCharging stop/start
 DEPLOY_KEY="${DEPLOY_KEY:-$HOME/.ssh/id_ed25519_github}"
 SSH="ssh -i $DEPLOY_KEY -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=30 -o ServerAliveInterval=10"
-SCP="scp -i $DEPLOY_KEY -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=30"
+# ServerAliveInterval/CountMax: a cross-border scp connection can TCP-wedge
+# mid-transfer (connected but stalled). Without keepalive probes scp never
+# exits, so the per-chunk retry loop below never fires → indefinite hang. 10s ×
+# 3 missed = drop a wedged connection in ~30s so the retry kicks in.
+SCP="scp -i $DEPLOY_KEY -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=30 -o ServerAliveInterval=10 -o ServerAliveCountMax=3"
 LIVE_ORIGIN="https://fizzstudio.fizzspace.cn"   # baked PARENT_ORIGIN (CN live host)
 
 echo "==> [1/6] start build ECS"
