@@ -109,11 +109,36 @@ deploy/deploy-com-aks.sh all            # 全部：web studio admin-ui server ag
 - ArgoCD app：`fizzdragon-com`（auto-sync + prune + selfHeal）
 - 回滚：把 `values.yaml` 的 tag 改回上一个 good sha 并 push（ArgoCD 收敛），或 `git revert` 那次 bump
 
-### `.cn`（中国）— 待迁 Aliyun
+### `.cn`（中国）— Aliyun ACK + `deploy-cn-ack.sh`
 
-CN 侧后续部署到 **Aliyun**（独立于 .com 的 AKS）。当前 `deploy/` 下的
-`docker-compose.yml` / `auto-update.sh` / `nginx/` 是**旧 ECS/podman 方案（已停用）**，
-待 CN→Aliyun 落地时一并清理 / 替换。
+生产 `.cn` 跑在 **Aliyun ACK**（集群 `fizzdragon-cn`，cn-hangzhou，namespace `fizzdragon`），
+与 .com 的 AKS 完全独立（独立 VPC / RDS PG / Redis）；Java 仅作外部 HTTPS API 调用。
+
+```bash
+deploy/deploy-cn-ack.sh   # 在 in-region build ECS 构建 → push CN ACR → helm(-f values.yaml -f values.cn-prod.yaml)
+```
+
+- ⚠️ `admin-ui` 在 CN 构建会 BUILDFAIL → 脚本在 helm 前中止；手动 `helm upgrade` 只滚 server+web（绕开 admin-ui）即可。
+- ⚠️ **瓶颈**：源码跨境从本机 scp 到 build ECS 很慢（54MB 曾耗 ~30 分钟）。根治 = CN git 镜像让 ECS in-region 拉，或 ACR 托管构建。
+- 旧的 `deploy/docker-compose.yml` / `nginx/`（ECS/podman 方案）已停用。
+
+## Domains, DNS & TLS
+
+所有 `*.fizzspace.cn` 共用一张通配证（Aliyun CAS，**到期 2027-01-09**，手动跨账号续）。
+
+| 域名                      | 用途                                         | 证书 / 来源                        |
+| ------------------------- | -------------------------------------------- | ---------------------------------- |
+| `fizzstudio.fizzspace.cn` | .cn 主站（web）                              | LE（cert-manager / ACK）           |
+| `fizzdragon.fizzspace.cn` | 旧主域，2026-06-26 cutover 到 ACK            | 通配（secret `fizzdragon-cn-tls`） |
+| `java.fizzspace.cn`       | **Java 后端 API**（独立 ECS，Java 团队维护） | 通配（ECS nginx）                  |
+| `media.fizzspace.cn`      | 媒体读 CDN                                   | 通配                               |
+| `oss.fizzspace.cn`        | 浏览器签名直传 / 读 OSS                      | 通配                               |
+| `admin.fizzspace.cn`      | .cn 管理台                                   | LE（cert-manager）                 |
+| `fizzdragon.com`          | .com 主站                                    | DigiCert / Azure Front Door        |
+
+- **web 的 `JAVA_*_URL` 是构建期烘焙的**（`apps/web/.env.production.cn` → `next.config.ts` rewrites）——改后端代理目标必须**重建镜像**，改运行时 env 无效。
+- `fizzdragon.fizzspace.cn` 已从 Java ECS 挪到 ACK；**Java 后端仍在那台 ECS**，经 `java.fizzspace.cn` 调用，未下线。
+- 已发布的 mobile app 内置 `fizzdragon.fizzspace.cn/content|/studio`，靠 cutover 转发到 java；下个版本改成 `java.fizzspace.cn`。
 
 ## Architecture
 

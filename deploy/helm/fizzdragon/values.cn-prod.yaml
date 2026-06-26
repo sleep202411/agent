@@ -56,13 +56,19 @@ ingress:
       rewriteTarget: ""
       adminUi: true
       adminUiOnly: true
-    # Uncomment at cutover (after lowering the fizzdragon.fizzspace.cn TTL):
-    # - name: main
-    #   host: fizzdragon.fizzspace.cn
-    #   secretName: fizzdragon-cn-tls
-    #   certManager: letsencrypt-prod
-    #   rewriteTarget: ""
-    #   adminUi: true
+    # Cutover 2026-06-26: fizzdragon.fizzspace.cn DNS now points at this ACK LB
+    # (was the Java ECS, whose cert expired — broke web /content proxy AND the
+    # released mobile app, which calls https://fizzdragon.fizzspace.cn/content).
+    # Uses the *.fizzspace.cn wildcard via the pre-seeded fizzdragon-cn-tls
+    # Secret (certManager: "") — no HTTP-01 gap on cutover. adminUi OFF: the .cn
+    # admin is on admin.fizzspace.cn; a main admin-ui sub-ingress would collide
+    # with the web "/" path (same bug fixed on .com main-ingress).
+    - name: main
+      host: fizzdragon.fizzspace.cn
+      secretName: fizzdragon-cn-tls
+      certManager: ""
+      rewriteTarget: ""
+      adminUi: false
 
 sharedEnv:
   # Java backend moved to its OWN host java.fizzspace.cn (valid HTTPS) so
