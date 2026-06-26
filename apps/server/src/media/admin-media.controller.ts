@@ -2,6 +2,8 @@ import {
   Body,
   Controller,
   Get,
+  HttpCode,
+  HttpStatus,
   Param,
   Patch,
   Post,
@@ -43,10 +45,15 @@ import {
 } from './admin-media.dto';
 import { AdminMediaService } from './admin-media.service';
 import {
+  ConfirmUploadSchema,
+  CreateUploadUrlSchema,
   MediaAssetAccessQuerySchema,
+  type ConfirmUploadInputDto,
+  type CreateUploadUrlInputDto,
   type MediaAssetAccessQueryDto,
 } from './dto';
 import { MediaAccessService } from './media-access.service';
+import { MediaUploadService } from './media-upload.service';
 
 @Public()
 @UseGuards(AdminAuthGuard, AdminPermissionGuard)
@@ -56,7 +63,42 @@ export class AdminMediaController {
     private readonly media: AdminMediaService,
     private readonly mediaAccess: MediaAccessService,
     private readonly adminAuth: AdminAuthService,
+    private readonly mediaUpload: MediaUploadService,
   ) {}
+
+  /**
+   * Admin-scoped direct-to-storage upload — reuses the region-aware
+   * MediaUploadService (Azure on .com / OSS on .cn). The admin actor's id is
+   * the storage-key scope + ownership root. Used by admin-ui for 资讯 covers
+   * (kind `news_cover`); the returned `url` is written onto the Java news row.
+   */
+  @RequireAdminPermissions(ADMIN_PERMISSION_KEYS.MediaRead)
+  @Post('upload-url')
+  @HttpCode(HttpStatus.OK)
+  async createUploadUrl(
+    @CurrentAdmin() admin: AdminActor,
+    @Body(new ZodValidationPipe(CreateUploadUrlSchema))
+    body: CreateUploadUrlInputDto,
+  ) {
+    return {
+      code: 200,
+      data: await this.mediaUpload.createUploadUrl(admin.id, body),
+    };
+  }
+
+  @RequireAdminPermissions(ADMIN_PERMISSION_KEYS.MediaRead)
+  @Post('confirm')
+  @HttpCode(HttpStatus.OK)
+  async confirmUpload(
+    @CurrentAdmin() admin: AdminActor,
+    @Body(new ZodValidationPipe(ConfirmUploadSchema))
+    body: ConfirmUploadInputDto,
+  ) {
+    return {
+      code: 200,
+      data: await this.mediaUpload.confirmUpload(admin.id, body),
+    };
+  }
 
   @RequireAdminPermissions(ADMIN_PERMISSION_KEYS.MediaRead)
   @Get('overview')

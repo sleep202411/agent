@@ -131,6 +131,13 @@ const UPLOAD_KIND_POLICY: Record<UploadKind, UploadKindPolicy> = {
     ttlSeconds: 900,
     keySegment: 'ip-banner',
   },
+  news_cover: {
+    contentTypes: IMAGE_CONTENT_TYPES,
+    maxBytes: 20 * MiB,
+    assetKind: MediaAssetKind.image,
+    ttlSeconds: 900,
+    keySegment: 'news-cover',
+  },
   ai_reference_image: {
     contentTypes: IMAGE_CONTENT_TYPES,
     // 30 MiB matches the catalog's advertised x-ui maxFileSizeMb for

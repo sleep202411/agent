@@ -1,7 +1,7 @@
 "use client";
 
-import { useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { usePathname, useRouter } from "next/navigation";
 import { IconExternalLink, IconPhoto, IconPlus, IconSearch, IconTrash } from "@tabler/icons-react";
 import { Button } from "@/components/ui/button";
 import { DataTable, type ColumnDef } from "@/components/ui/data-table";
@@ -14,17 +14,20 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
-import { formatDateTime, Metric, PageHeader, StatusPill } from "./shared";
-import { deleteNews, listNews, listNewsTags } from "./news-store";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import { ErrorBanner, formatDateTime, Metric, PageHeader, StatusPill } from "./shared";
 import {
   isLocaleFilled,
   newsStatusLabel,
   newsStatusTone,
   NEWS_LOCALES,
   NEWS_PRIMARY_LOCALE,
+  resolveCoverUrl,
   type NewsArticle,
   type NewsStatus,
+  type NewsTag,
 } from "./types";
+import type { AdminNewsStats } from "@/lib/admin-news";
 
 const KIND_TABS = [
   { value: "all", label: "全部" },
@@ -38,53 +41,102 @@ type StatusFilter = "all" | NewsStatus;
 export function NewsListPage({
   siteLabel,
   databaseLabel,
+  items,
+  stats,
+  total,
+  tags,
+  loadError,
+  kind,
+  status,
+  q,
+  page,
+  pageSize,
 }: {
   siteLabel: string;
   databaseLabel: string;
+  items: NewsArticle[];
+  stats: AdminNewsStats | null;
+  total: number;
+  tags: NewsTag[];
+  loadError: string | null;
+  kind: KindFilter;
+  status: StatusFilter;
+  q: string;
+  page: number;
+  pageSize: number;
 }) {
   const router = useRouter();
-  const [items, setItems] = useState<NewsArticle[]>(() => listNews());
-  const tags = useMemo(() => listNewsTags(), []);
+  const pathname = usePathname();
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<NewsArticle | null>(null);
 
-  const [query, setQuery] = useState("");
-  const [kindFilter, setKindFilter] = useState<KindFilter>("all");
-  const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
+  // Keyword input is local (for debounce); the committed value lives in the URL (q).
+  // Sync to q on external changes (back/forward nav) via the guarded
+  // adjust-state-during-render pattern — not an effect (avoids a wasted commit).
+  const [searchInput, setSearchInput] = useState(q);
+  const [syncedQ, setSyncedQ] = useState(q);
+  if (q !== syncedQ) {
+    setSyncedQ(q);
+    setSearchInput(q);
+  }
 
   const tagLabel = (id: string) => tags.find((t) => t.id === id)?.label[NEWS_PRIMARY_LOCALE] ?? id;
 
   const metrics = useMemo(
-    () => ({
-      total: items.length,
-      published: items.filter((n) => n.status === "published").length,
-      draft: items.filter((n) => n.status === "draft").length,
-      incomplete: items.filter((n) => !isFullyTranslated(n)).length,
-    }),
-    [items]
+    () =>
+      stats ?? {
+        total: items.length,
+        published: items.filter((n) => n.status === "published").length,
+        draft: items.filter((n) => n.status === "draft").length,
+        incompleteTranslation: items.filter((n) => !isFullyTranslated(n)).length,
+      },
+    [items, stats]
   );
 
-  const filtered = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    return items.filter((article) => {
-      if (kindFilter !== "all" && article.kind !== kindFilter) return false;
-      if (statusFilter !== "all" && article.status !== statusFilter) return false;
-      if (!q) return true;
-      const haystack = [
-        article.author,
-        article.url,
-        ...NEWS_LOCALES.flatMap((l) => [
-          article.localized[l.code].title,
-          article.localized[l.code].summary,
-        ]),
-      ]
-        .join(" ")
-        .toLowerCase();
-      return haystack.includes(q);
-    });
-  }, [items, query, kindFilter, statusFilter]);
+  // Filters + pagination are server-driven via URL searchParams — the App Router
+  // re-runs the server component on push. No client-side filtering.
+  const pushFilters = useCallback(
+    (next: Partial<{ kind: string; status: string; q: string; page: string }>) => {
+      const params = new URLSearchParams();
+      const merged = {
+        kind: next.kind ?? kind,
+        status: next.status ?? status,
+        q: next.q ?? q,
+        page: next.page ?? "1",
+      };
+      if (merged.kind && merged.kind !== "all") params.set("kind", merged.kind);
+      if (merged.status && merged.status !== "all") params.set("status", merged.status);
+      if (merged.q) params.set("q", merged.q);
+      if (merged.page && merged.page !== "1") params.set("page", merged.page);
+      const queryString = params.toString();
+      router.push(queryString ? `${pathname}?${queryString}` : pathname);
+    },
+    [kind, status, q, pathname, router]
+  );
 
-  function remove(article: NewsArticle) {
-    deleteNews(article.id);
-    setItems(listNews().slice());
+  // Debounce keyword → URL (resets to page 1); skip when unchanged.
+  useEffect(() => {
+    if (searchInput === q) return;
+    const timer = setTimeout(() => pushFilters({ q: searchInput, page: "1" }), 400);
+    return () => clearTimeout(timer);
+  }, [searchInput, q, pushFilters]);
+
+  const pageCount = Math.max(1, Math.ceil(total / pageSize));
+
+  async function confirmDelete() {
+    if (!deleteTarget) return;
+    setActionError(null);
+    try {
+      const response = await fetch(`/api/admin/news/${deleteTarget.id}`, { method: "DELETE" });
+      if (!response.ok) {
+        const body = (await response.json().catch(() => null)) as { error?: string } | null;
+        throw new Error(body?.error ?? `删除失败：${response.status}`);
+      }
+      router.refresh();
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : "删除失败。");
+      throw error; // keep the ConfirmDialog open so the error banner stays visible
+    }
   }
 
   const columns = useMemo<ColumnDef<NewsArticle, unknown>[]>(
@@ -100,7 +152,7 @@ export function NewsListPage({
               <div className="grid size-12 shrink-0 place-items-center overflow-hidden rounded-lg border border-slate-200 bg-slate-50">
                 {cover ? (
                   // eslint-disable-next-line @next/next/no-img-element
-                  <img src={cover} alt="" className="size-full object-cover" />
+                  <img src={resolveCoverUrl(cover)} alt="" className="size-full object-cover" />
                 ) : (
                   <IconPhoto className="size-4 text-slate-300" />
                 )}
@@ -211,7 +263,7 @@ export function NewsListPage({
               type="button"
               variant="outline"
               size="sm"
-              onClick={() => remove(row.original)}
+              onClick={() => setDeleteTarget(row.original)}
               aria-label="删除"
             >
               <IconTrash className="size-3.5" />
@@ -237,14 +289,17 @@ export function NewsListPage({
         </Button>
       </PageHeader>
 
+      {loadError ? <ErrorBanner message={`资讯服务暂不可用：${loadError}`} /> : null}
+      {actionError ? <ErrorBanner message={actionError} /> : null}
+
       <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <Metric label="全部" value={metrics.total} />
         <Metric label="已发布" value={metrics.published} />
         <Metric label="草稿" value={metrics.draft} />
         <Metric
           label="缺翻译"
-          value={metrics.incomplete}
-          tone={metrics.incomplete > 0 ? "warn" : "default"}
+          value={metrics.incompleteTranslation}
+          tone={metrics.incompleteTranslation > 0 ? "warn" : "default"}
         />
       </section>
 
@@ -252,8 +307,8 @@ export function NewsListPage({
         <div className="relative w-full sm:max-w-xs">
           <IconSearch className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-slate-400" />
           <Input
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
+            value={searchInput}
+            onChange={(event) => setSearchInput(event.target.value)}
             placeholder="搜索标题、摘要、作者或链接"
             className="h-9 pl-8"
             aria-label="搜索资讯"
@@ -265,10 +320,10 @@ export function NewsListPage({
               <button
                 key={tab.value}
                 type="button"
-                onClick={() => setKindFilter(tab.value)}
+                onClick={() => pushFilters({ kind: tab.value, page: "1" })}
                 className={cn(
                   "rounded-md px-3 py-1 text-[13px] font-medium transition",
-                  kindFilter === tab.value
+                  kind === tab.value
                     ? "bg-slate-900 text-white"
                     : "text-slate-600 hover:text-slate-900"
                 )}
@@ -278,8 +333,8 @@ export function NewsListPage({
             ))}
           </div>
           <Select
-            value={statusFilter}
-            onValueChange={(value) => setStatusFilter(value as StatusFilter)}
+            value={status}
+            onValueChange={(value) => pushFilters({ status: value, page: "1" })}
           >
             <SelectTrigger className="h-9 w-[120px]" aria-label="状态筛选">
               <SelectValue />
@@ -296,12 +351,51 @@ export function NewsListPage({
 
       <DataTable
         columns={columns}
-        data={filtered}
+        data={items}
         minWidth={920}
-        pageSize={20}
-        emptyLabel={
-          query || kindFilter !== "all" || statusFilter !== "all" ? "没有匹配的资讯" : "暂无资讯"
+        emptyLabel={q || kind !== "all" || status !== "all" ? "没有匹配的资讯" : "暂无资讯"}
+      />
+
+      {total > pageSize ? (
+        <div className="flex items-center justify-between gap-3 text-[12px] text-slate-500">
+          <span>
+            第 {page} / {pageCount} 页 · 共 {total} 条
+          </span>
+          <div className="flex items-center gap-1.5">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              disabled={page <= 1}
+              onClick={() => pushFilters({ page: String(page - 1) })}
+            >
+              上一页
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              disabled={page >= pageCount}
+              onClick={() => pushFilters({ page: String(page + 1) })}
+            >
+              下一页
+            </Button>
+          </div>
+        </div>
+      ) : null}
+
+      <ConfirmDialog
+        open={deleteTarget !== null}
+        onOpenChange={(open) => {
+          if (!open) setDeleteTarget(null);
+        }}
+        title="删除资讯"
+        description={
+          deleteTarget ? `确定删除「${resolveTitle(deleteTarget)}」？此操作不可恢复。` : undefined
         }
+        confirmLabel="删除"
+        destructive
+        onConfirm={confirmDelete}
       />
     </div>
   );
