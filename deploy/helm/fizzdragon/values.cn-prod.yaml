@@ -78,6 +78,12 @@ sharedEnv:
   # OSS origin. The resolver emits media.fizzspace.cn URLs via the base below.
   OSS_INTERNAL: "true"
   MEDIA_PUBLIC_BASE_URL_ALIYUN_OSS: https://media.fizzspace.cn
+  # Browser-facing signed URLs (upload PUT + signed read GET): the OSS public
+  # endpoint is blocked and the internal endpoint is browser-unreachable, so
+  # these are signed against the direct-OSS custom domain CNAME bound to
+  # fizzdragon-ai-outputs (oss.fizzspace.cn, *.fizzspace.cn wildcard cert).
+  # Distinct from the read CDN above (media.fizzspace.cn, public unsigned GET).
+  OSS_PUBLIC_BASE_URL: https://oss.fizzspace.cn
   # CN DashScope endpoint (not the -intl one). Matches prod-cn .env.
   ALIBABA_BASE_URL: https://dashscope.aliyuncs.com/compatible-mode/v1
   # Mirrors prod-cn .env: deepseek providers, model names from code defaults.

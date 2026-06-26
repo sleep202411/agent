@@ -56,6 +56,15 @@ const ossUseInternalEndpoint = (): boolean =>
     (process.env.OSS_INTERNAL ?? '').trim().toLowerCase(),
   );
 
+// Browser-facing presigned URLs (upload PUT + signed read GET) must target a
+// host the BROWSER can reach. On an internal-endpoint cell (OSS_INTERNAL=true)
+// the internal host is VPC-only, so these are signed against a PUBLIC OSS
+// custom domain — a CNAME bound DIRECTLY to the bucket (NOT a read CDN) — given
+// by OSS_PUBLIC_BASE_URL, e.g. https://oss.fizzspace.cn. Unset on .com/local,
+// where the default endpoint is already public.
+const ossPublicCnameEndpoint = (): string =>
+  (process.env.OSS_PUBLIC_BASE_URL ?? '').trim();
+
 @Injectable()
 export class AliyunOssStorageService extends OutputStorageService {
   private readonly logger = new Logger(AliyunOssStorageService.name);
@@ -67,6 +76,11 @@ export class AliyunOssStorageService extends OutputStorageService {
   /** Bare region form (`cn-hangzhou`) for MediaAsset.region — see file
    *  header. NOT the SDK's `oss-cn-hangzhou` form. */
   private readonly region: string | null;
+  /** Browser-facing signer (upload PUT + signed read GET) bound to the public
+   *  OSS custom domain (OSS_PUBLIC_BASE_URL) so the minted URL host is
+   *  reachable from the browser. Null when unset (.com/local, where the default
+   *  endpoint is already public). See browserSigner(). */
+  private readonly publicSigner: OSS | null;
 
   constructor() {
     super();
@@ -89,6 +103,7 @@ export class AliyunOssStorageService extends OutputStorageService {
         'OSS_* env incomplete — AliyunOssStorageService is a no-op',
       );
       this.client = null;
+      this.publicSigner = null;
       return;
     }
     this.client = new OSS({
@@ -102,6 +117,24 @@ export class AliyunOssStorageService extends OutputStorageService {
       // the SignatureDoesNotMatch family that the legacy path tripped on.
       authorizationV4: true,
     });
+    // Browser-facing signer: bind the public OSS custom domain (cname:true) so
+    // presigned upload/read URLs point at a host the browser can reach. Region
+    // is KEPT — V4 derives the canonical sign-region from it; dropping it would
+    // yield SignatureDoesNotMatch. internal:false — never the in-VPC endpoint.
+    const publicEndpoint = ossPublicCnameEndpoint();
+    this.publicSigner = publicEndpoint
+      ? new OSS({
+          region: rawRegion,
+          bucket,
+          accessKeyId,
+          accessKeySecret,
+          endpoint: publicEndpoint,
+          cname: true,
+          secure: true,
+          internal: false,
+          authorizationV4: true,
+        })
+      : null;
   }
 
   async upload(input: OutputStorageUpload): Promise<OutputStorageResult> {
@@ -142,7 +175,7 @@ export class AliyunOssStorageService extends OutputStorageService {
     // V4 presigned PUT. Signing Content-Type means the browser MUST send
     // the identical value (uploads.ts already does). Region is persisted
     // in the bare form so the read resolver re-builds the host correctly.
-    const url = await this.client.signatureUrlV4(
+    const url = await this.browserSigner(this.bucket).signatureUrlV4(
       'PUT',
       ttl,
       { headers: { 'Content-Type': input.contentType } },
@@ -168,7 +201,7 @@ export class AliyunOssStorageService extends OutputStorageService {
       );
     }
     const ttl = input.expiresInSeconds ?? DEFAULT_READ_URL_TTL_SECONDS;
-    const client = this.clientForBucket(input.bucket, input.region);
+    const client = this.browserSigner(input.bucket, input.region);
     const url = await client.signatureUrlV4(
       'GET',
       ttl,
@@ -263,6 +296,25 @@ export class AliyunOssStorageService extends OutputStorageService {
       );
       return false;
     }
+  }
+
+  /** Client for BROWSER-facing presigned URLs (upload PUT, signed read GET).
+   *  Prefers the public-CNAME signer so the minted host is browser-reachable.
+   *  Fails loud on an internal-endpoint cell with no public CNAME configured —
+   *  an internal-host signed URL is a dead end for the browser, so don't mint
+   *  one. Off-internal (local/.com) the default client's host is already
+   *  public, so fall through to the per-bucket internal client. */
+  private browserSigner(bucket: string, region?: string | null): OSS {
+    if (this.publicSigner && bucket === this.bucket) {
+      return this.publicSigner;
+    }
+    if (ossUseInternalEndpoint()) {
+      throw new ServiceUnavailableException(
+        'OSS_PUBLIC_BASE_URL is required when OSS_INTERNAL=true — browser-' +
+          'facing signed URLs cannot use the in-VPC internal endpoint',
+      );
+    }
+    return this.clientForBucket(bucket, region);
   }
 
   private clientForBucket(bucket: string, region?: string | null): OSS {
