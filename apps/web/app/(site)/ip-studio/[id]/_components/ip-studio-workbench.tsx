@@ -272,6 +272,10 @@ function EditStyleHero({
   submitPending: boolean;
   onSubmitReview: () => void;
 }) {
+  // The readiness ring + "准备发布" CTA belong to the draft→submit→review flow.
+  // Once the IP is published/in-review they're moot (and a disabled "准备发布"
+  // contradicts the 已发布 status pill), so show them only while submittable.
+  const submittable = canSubmitForReview(ip.status);
   return (
     <div className="relative overflow-hidden border-b border-border bg-card">
       <div className="relative mx-auto flex max-w-6xl flex-col gap-6 px-4 py-8 sm:py-10 md:flex-row md:items-end md:justify-between">
@@ -299,7 +303,7 @@ function EditStyleHero({
         </div>
 
         <div className="flex shrink-0 flex-row flex-wrap items-center gap-2">
-          <ReadinessRing ip={ip} t={t} />
+          {submittable ? <ReadinessRing ip={ip} t={t} /> : null}
           <Button
             asChild
             size="sm"
@@ -312,19 +316,23 @@ function EditStyleHero({
               {t("preview")}
             </Link>
           </Button>
-          <Button
-            size="sm"
-            disabled={!canSubmitReview}
-            onClick={onSubmitReview}
-            className="min-w-[7.5rem] justify-center"
-          >
-            <IconRocket className="size-3.5" />
-            {submitPending ? t("reviewSubmit.submitting") : t("publish")}
-          </Button>
-          {reviewMissing.length > 0 ? (
-            <p className="basis-full text-right text-xs leading-5 text-muted-foreground">
-              {t("reviewSubmit.requirements", { items: reviewMissing.join("、") })}
-            </p>
+          {submittable ? (
+            <>
+              <Button
+                size="sm"
+                disabled={!canSubmitReview}
+                onClick={onSubmitReview}
+                className="min-w-[7.5rem] justify-center"
+              >
+                <IconRocket className="size-3.5" />
+                {submitPending ? t("reviewSubmit.submitting") : t("publish")}
+              </Button>
+              {reviewMissing.length > 0 ? (
+                <p className="basis-full text-right text-xs leading-5 text-muted-foreground">
+                  {t("reviewSubmit.requirements", { items: reviewMissing.join("、") })}
+                </p>
+              ) : null}
+            </>
           ) : null}
         </div>
       </div>
