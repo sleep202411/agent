@@ -53,7 +53,11 @@ ingress:
       secretName: fizzdragon-tls
       certManager: "" # empty = use pre-uploaded Secret, no cert-manager involvement
       rewriteTarget: "" # no path rewrite, serve full Next.js app
-      adminUi: true
+      # admin-ui lives on its dedicated host admin.fizzdragon.com (admin-fd entry).
+      # A redundant admin-ui sub-ingress here resolved to path "/" (shared global
+      # adminUi.ingress.path) and collided with this host's web "/" → the nginx
+      # admission webhook rejected it, blocking ArgoCD sync. Off here.
+      adminUi: false
     - name: studio
       # Dedicated subdomain for the standalone FizzStudio app (apps/studio).
       # The host was never publicly used while it pointed at the web app, so
