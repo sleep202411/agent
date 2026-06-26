@@ -834,7 +834,8 @@ function EpisodeUpsertDialog({
           ipId: ip.id,
           title: draft.title.trim(),
           summary: draft.summary.trim() || undefined,
-          episodeNo: nextEpisodeNo,
+          // episodeNo is assigned server-side (append-only); nextEpisodeNo is a
+          // UI hint only and is intentionally not sent.
           durationSeconds: draft.durationSeconds.trim()
             ? Number(draft.durationSeconds.trim())
             : undefined,

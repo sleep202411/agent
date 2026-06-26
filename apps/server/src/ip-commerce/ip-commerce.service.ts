@@ -2064,75 +2064,86 @@ export class IpCommerceService {
     const ip = await this.findCreatorIpForMutation(user, ipId);
     this.assertExpectedVersion(input.expectedVersion, ip.version);
 
-    const updated = await this.prisma.$transaction(async (tx) => {
-      const maxEpisode = await tx.ipEpisode.aggregate({
-        where: { ipId: ip.id },
-        _max: { episodeNo: true, sortOrder: true },
-      });
-      const episodeNo = input.episodeNo ?? (maxEpisode._max.episodeNo ?? 0) + 1;
-      const conflict = await tx.ipEpisode.findFirst({
-        where: { ipId: ip.id, episodeNo },
-        select: { id: true },
-      });
-      if (conflict) {
-        throw new BadRequestException({
-          code: 'IP_EPISODE_NUMBER_CONFLICT',
-          msg: 'This episode number already exists.',
-        });
-      }
+    // Read-max-then-insert can race a concurrent create onto the same number.
+    // The (ip_id, episode_no) unique index is the real guard; on a collision we
+    // recompute and retry a few times rather than surfacing a 500.
+    for (let attempt = 0; ; attempt += 1) {
+      try {
+        const updated = await this.prisma.$transaction(async (tx) => {
+          const maxEpisode = await tx.ipEpisode.aggregate({
+            where: { ipId: ip.id },
+            _max: { episodeNo: true, sortOrder: true },
+          });
+          // Append-only, server-authoritative numbering: one past the highest
+          // number ever used for this IP — including soft-deleted episodes,
+          // whose rows still occupy their (ip_id, episode_no) unique slot. So a
+          // deleted number is never reissued and a create can't collide with a
+          // tombstone. The client no longer supplies episodeNo.
+          const episodeNo = (maxEpisode._max.episodeNo ?? 0) + 1;
 
-      const coverAssetId = await this.resolveMediaAssetCreateTx(tx, {
-        assetId: input.coverAssetId,
-        kind: MediaAssetKind.image,
-      });
-      const mediaAssetId = await this.resolveMediaAssetCreateTx(tx, {
-        assetId: input.mediaAssetId,
-        kind: MediaAssetKind.video,
-      });
-      const trailerAssetId = await this.resolveMediaAssetCreateTx(tx, {
-        assetId: input.trailerAssetId,
-        kind: MediaAssetKind.video,
-      });
+          const coverAssetId = await this.resolveMediaAssetCreateTx(tx, {
+            assetId: input.coverAssetId,
+            kind: MediaAssetKind.image,
+          });
+          const mediaAssetId = await this.resolveMediaAssetCreateTx(tx, {
+            assetId: input.mediaAssetId,
+            kind: MediaAssetKind.video,
+          });
+          const trailerAssetId = await this.resolveMediaAssetCreateTx(tx, {
+            assetId: input.trailerAssetId,
+            kind: MediaAssetKind.video,
+          });
 
-      await tx.ipEpisode.create({
-        data: {
-          ipId: ip.id,
-          episodeNo,
-          sortOrder:
-            input.sortOrder ??
-            (maxEpisode._max.sortOrder != null
-              ? maxEpisode._max.sortOrder + 1000
-              : episodeNo * 1000),
-          status: contentEpisodeStatus(ip.status),
-          durationSeconds: input.durationSeconds,
-          isFreePreview: input.isFreePreview ?? false,
-          coverAssetId,
-          mediaAssetId,
-          trailerAssetId,
-          createdById: user.userId,
-          localizations: {
-            create: {
-              locale: ip.sourceLocale,
-              status: contentLocalizationStatus(ip.status),
-              title: input.title,
-              summary: input.summary?.trim() || null,
-              description: input.summary?.trim() || null,
+          await tx.ipEpisode.create({
+            data: {
+              ipId: ip.id,
+              episodeNo,
+              sortOrder:
+                input.sortOrder ??
+                (maxEpisode._max.sortOrder != null
+                  ? maxEpisode._max.sortOrder + 1000
+                  : episodeNo * 1000),
+              status: contentEpisodeStatus(ip.status),
+              durationSeconds: input.durationSeconds,
+              isFreePreview: input.isFreePreview ?? false,
+              coverAssetId,
+              mediaAssetId,
+              trailerAssetId,
+              createdById: user.userId,
+              localizations: {
+                create: {
+                  locale: ip.sourceLocale,
+                  status: contentLocalizationStatus(ip.status),
+                  title: input.title,
+                  summary: input.summary?.trim() || null,
+                  description: input.summary?.trim() || null,
+                },
+              },
             },
-          },
-        },
-      });
+          });
 
-      return tx.ip.update({
-        where: { id: ip.id },
-        data: {
-          updatedById: user.userId,
-          version: { increment: 1 },
-        },
-        include: adminIpInclude,
-      });
-    });
+          return tx.ip.update({
+            where: { id: ip.id },
+            data: {
+              updatedById: user.userId,
+              version: { increment: 1 },
+            },
+            include: adminIpInclude,
+          });
+        });
 
-    return { ip: creatorIpDetailDto(updated, ip.sourceLocale) };
+        return { ip: creatorIpDetailDto(updated, ip.sourceLocale) };
+      } catch (error) {
+        if (
+          attempt < 3 &&
+          error instanceof Prisma.PrismaClientKnownRequestError &&
+          error.code === 'P2002'
+        ) {
+          continue;
+        }
+        throw error;
+      }
+    }
   }
 
   async updateCreatorIpEpisode(

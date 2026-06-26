@@ -532,7 +532,7 @@ export interface CreateIpEpisodeInput {
   ipId: string;
   title: string;
   summary?: string;
-  episodeNo?: number;
+  // No episodeNo: the server assigns it (append-only). See createCreatorIpEpisode.
   sortOrder?: number;
   durationSeconds?: number;
   isFreePreview?: boolean;

@@ -421,7 +421,9 @@ export const CreateCreatorIpEpisodeSchema = z
   .object({
     title: z.string().trim().min(1).max(80),
     summary: z.string().trim().max(800).optional(),
-    episodeNo: z.number().int().positive().max(10_000).optional(),
+    // No episodeNo: numbering is server-authoritative (append-only) so a
+    // deleted number can never be reissued into the (ip_id, episode_no) unique
+    // slot it still holds. See createCreatorIpEpisode.
     sortOrder: z.number().int().min(0).max(1_000_000).optional(),
     durationSeconds: z.number().int().positive().max(86_400).optional(),
     isFreePreview: z.boolean().optional(),
