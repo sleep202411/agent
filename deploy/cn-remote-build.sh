@@ -55,4 +55,8 @@ build web apps/web/Dockerfile \
   --build-arg JAVA_STUDIO_URL="$JAVA_STUDIO_URL" \
   --build-arg JAVA_CONTENT_URL="$JAVA_CONTENT_URL"
 
+# Standalone canvas (apps/studio). NO build-args — studio bakes no NEXT_PUBLIC_*;
+# all host/backend config is runtime pod env (values studio.env).
+build studio apps/studio/Dockerfile
+
 echo "=== REMOTE BUILD DONE @ $(date +%T):${RESULT} ==="

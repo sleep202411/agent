@@ -69,6 +69,18 @@ ingress:
       certManager: ""
       rewriteTarget: ""
       adminUi: false
+    # Standalone FizzStudio canvas (apps/studio) on its own CN host. service:
+    # studio routes the host root to fizzdragon-studio; the chart auto-renders a
+    # sibling -aurora-ingress (studio.fizzspace.cn/aurora/* -> fizzdragon-server).
+    # Reuses the pre-seeded *.fizzspace.cn wildcard (fizzdragon-cn-tls,
+    # certManager "") like the `main` entry — no HTTP-01 gap.
+    - name: studio-app
+      host: studio.fizzspace.cn
+      secretName: fizzdragon-cn-tls
+      certManager: ""
+      rewriteTarget: ""
+      adminUi: false
+      service: studio
 
 sharedEnv:
   # Java backend moved to its OWN host java.fizzspace.cn (valid HTTPS) so
@@ -150,11 +162,24 @@ adminUi:
   tolerations: null
 
 studio:
-  # Disabled on CN v1: apps/studio (standalone canvas) is not part of the CN
-  # platform go-live. Base values default it on with a .com-pinned image tag +
-  # pool:worker nodeSelector that the single untainted CN node can't satisfy —
-  # leaving it on would create an unschedulable/ImagePullBackOff pod.
-  enabled: false
+  # Enabled on CN: standalone canvas at studio.fizzspace.cn (ingress entry
+  # `studio-app` below, service: studio). studio.yaml injects ONLY studio.env
+  # (NOT sharedEnv), so the CN Java URLs MUST be repeated here — else
+  # next.config.ts falls back to its java.fizzdragon.com / studio.fizzdragon.com
+  # code defaults and proxies /user (login) + /api (CRUD) + /aurora to .com.
+  enabled: true
+  replicaCount: 1
+  image:
+    tag: set-at-deploy
+  env:
+    AURORA_PROXY_TARGET: http://fizzdragon-server:3001
+    AURORA_STRIP_PREFIX: "1"
+    JAVA_CONTENT_URL: https://java.fizzspace.cn/content
+    JAVA_STUDIO_URL: https://java.fizzspace.cn/studio
+  # Single untainted CN node — drop the .com pool:worker selector/taints
+  # (base values.yaml) or the pod stays Pending/unschedulable.
+  nodeSelector: null
+  tolerations: null
 
 server:
   replicaCount: 1

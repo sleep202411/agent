@@ -18,6 +18,11 @@
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"; cd "$ROOT"
 TAG="${1:-$(git rev-parse --short HEAD)}"
+# ADMINUI_TAG: pin admin-ui's image independently of $TAG (default $TAG). Used to
+# hold admin-ui back without holding back the other services — e.g. while the CN
+# Java news API (java.fizzspace.cn/content/api/admin/news) isn't deployed yet, so
+# the HEAD admin-ui 资讯 module would 404. Drop the override once CN Java ships it.
+ADMINUI_TAG="${ADMINUI_TAG:-$TAG}"
 ECS_ID=i-bp11r90r4g91u39iimnx
 ECS_IP=""   # fetched live below — the pay-as-you-go public IP changes on StopCharging stop/start
 DEPLOY_KEY="${DEPLOY_KEY:-$HOME/.ssh/id_ed25519_github}"
@@ -88,7 +93,8 @@ helm upgrade fizzdragon "$ROOT/deploy/helm/fizzdragon" \
   -f "$ROOT/deploy/helm/fizzdragon/values.cn-prod.yaml" \
   --set web.image.tag="$TAG" --set server.image.tag="$TAG" \
   --set agent.image.tag="$TAG" --set agentWorker.image.tag="$TAG" \
-  --set adminUi.image.tag="$TAG" \
+  --set adminUi.image.tag="$ADMINUI_TAG" \
+  --set studio.image.tag="$TAG" \
   --force-conflicts --namespace fizzdragon
 kubectl rollout status deploy/fizzdragon-server -n fizzdragon --timeout=180s || true
 

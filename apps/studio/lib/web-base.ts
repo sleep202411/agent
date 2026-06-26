@@ -10,7 +10,11 @@
  */
 export function getWebBaseUrl(): string {
   if (typeof window !== "undefined") {
-    const host = window.location.hostname.replace(/^studio\./, "");
+    const h = window.location.hostname;
+    // CN: the web app for studio.fizzspace.cn lives at fizzstudio.fizzspace.cn
+    // (the live CN host), NOT the bare apex the generic `studio.`-strip yields.
+    if (h === "studio.fizzspace.cn") return "https://fizzstudio.fizzspace.cn";
+    const host = h.replace(/^studio\./, "");
     if (host.includes(".")) return `https://${host}`;
   }
   return "https://fizzdragon.com";
