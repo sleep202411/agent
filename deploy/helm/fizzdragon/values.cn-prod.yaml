@@ -65,12 +65,12 @@ ingress:
     #   adminUi: true
 
 sharedEnv:
-  # Existing Java endpoints, kept as-is per user decision 2026-06-10.
-  # NOTE for cutover planning: if fizzdragon.fizzspace.cn DNS later points at
-  # this cluster, these URLs route back through whatever serves that host —
-  # revisit then.
-  JAVA_STUDIO_URL: https://fizzdragon.fizzspace.cn/studio
-  JAVA_CONTENT_URL: https://fizzdragon.fizzspace.cn/content
+  # Java backend moved to its OWN host java.fizzspace.cn (valid HTTPS) so
+  # fizzdragon.fizzspace.cn can be cut over to THIS ACK cluster without our
+  # backend's Java calls looping back to ourselves. Cutover 2026-06-26. (The
+  # old fizzdragon.fizzspace.cn cert on the Java ECS had also expired.)
+  JAVA_STUDIO_URL: https://java.fizzspace.cn/studio
+  JAVA_CONTENT_URL: https://java.fizzspace.cn/content
   # OSS media pipeline. This account blocks the OSS public endpoint
   # (PublicEndpointForbidden), so server/worker uploads + reads use the OSS
   # INTERNAL endpoint (pods run in the same VPC). Public serving goes through a
