@@ -175,6 +175,17 @@ serverSecrets:
     # the CSI projection fails if absent. (Set in kv-fizzdragon-com 2026-06-22.)
     - kv: internal-service-token
       env: INTERNAL_SERVICE_TOKEN
+# admin-ui-only secret (least-privilege). The internet-facing ops console needs
+# exactly ONE secret — the Java 资讯 X-Admin-Api-Token — so it gets its OWN scoped
+# projection, NOT the shared fizzdragon-secrets (which holds DB/Redis/LLM/blob
+# creds — never pour those into a public-facing admin console).
+# PREREQUISITE: create `news-api-token` in Key Vault BEFORE deploying (CSI is
+# fail-closed). On non-Azure clusters (CN/ACK) azure.enabled=false → inert.
+adminUiSecrets:
+  projectedName: fizzdragon-adminui-secrets
+  mapping:
+    - kv: news-api-token
+      env: NEWS_API_TOKEN
 # ---------------------------------------------------------------------------
 # web — Next.js front-of-stack. Public via Ingress.
 # ---------------------------------------------------------------------------
@@ -254,6 +265,9 @@ adminUi:
     ADMIN_SITE: global
     ADMIN_GLOBAL_API_BASE_URL: http://fizzdragon-server:3001/admin
     ADMIN_API_BASE_URL: http://fizzdragon-server:3001/admin
+    # 资讯 (news) admin module → Java backend; the /content prefix is essential
+    # (apex without it 302s to a different Sa-Token service).
+    NEWS_API_BASE_URL: https://java.fizzdragon.com/content
   resources:
     requests: {cpu: 100m, memory: 256Mi}
     limits: {cpu: 1000m, memory: 1Gi}

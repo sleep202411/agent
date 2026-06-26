@@ -18,7 +18,11 @@ spec:
     metadata:
       labels:
         {{- include "fizzdragon.componentLabels" $ctx | nindent 8 }}
+        {{- include "fizzdragon.workloadIdentityLabels" . | nindent 8 }}
     spec:
+      {{- if and .Values.azure.enabled .Values.adminUiSecrets.mapping }}
+      serviceAccountName: {{ .Values.azure.workloadIdentity.serviceAccountName }}
+      {{- end }}
       containers:
         - name: admin-ui
           image: "{{ .Values.image.registry }}/{{ .Values.adminUi.image.repository }}:{{ .Values.adminUi.image.tag }}"
@@ -28,6 +32,15 @@ spec:
               containerPort: {{ .Values.adminUi.containerPort }}
           env:
             {{- include "fizzdragon.componentEnv" .Values.adminUi | nindent 12 }}
+          {{- if and .Values.azure.enabled .Values.adminUiSecrets.mapping }}
+          envFrom:
+            - secretRef:
+                name: {{ .Values.adminUiSecrets.projectedName }}
+          volumeMounts:
+            - name: adminui-kv-secrets
+              mountPath: /mnt/adminui-secrets
+              readOnly: true
+          {{- end }}
           resources:
             {{- toYaml .Values.adminUi.resources | nindent 12 }}
           readinessProbe:
@@ -46,6 +59,15 @@ spec:
             periodSeconds: 30
             timeoutSeconds: 5
             failureThreshold: 3
+      {{- if and .Values.azure.enabled .Values.adminUiSecrets.mapping }}
+      volumes:
+        - name: adminui-kv-secrets
+          csi:
+            driver: secrets-store.csi.k8s.io
+            readOnly: true
+            volumeAttributes:
+              secretProviderClass: {{ .Release.Name }}-adminui-kv
+      {{- end }}
       {{- with .Values.adminUi.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}
