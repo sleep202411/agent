@@ -2,6 +2,7 @@ import { SymbolView } from "expo-symbols";
 import { router } from "expo-router";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Pressable, ScrollView, StyleSheet, useWindowDimensions, View } from "react-native";
+import Carousel from "react-native-reanimated-carousel";
 
 import { TabScreen } from "@/components/tab-screen";
 import { ThemedText } from "@/components/themed-text";
@@ -23,6 +24,10 @@ import { useTheme } from "@/hooks/use-theme";
 import { type MessageKey, useTranslations } from "@/i18n";
 import { toHref } from "@/lib/navigation";
 
+// Featured banner height — single source for the carousel slot, the card style,
+// and the loading skeleton (so they can never drift apart).
+const FEATURED_HEIGHT = 200;
+
 function statusTagKey(status: IpStatus): {
   labelKey: MessageKey;
   tone: "info" | "neutral" | "warning";
@@ -38,12 +43,14 @@ function openIp(id: string) {
 
 export default function IpDiscoveryScreen() {
   const t = useTranslations();
+  const theme = useTheme();
   const { width } = useWindowDimensions();
   const featuredWidth = Math.min(width, MaxContentWidth) - Spacing.four * 2;
   const [discovery, setDiscovery] = useState<IpDiscovery>();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string>();
   const [genreIndex, setGenreIndex] = useState(0);
+  const [featuredIndex, setFeaturedIndex] = useState(0);
   // Bumped when a mutation elsewhere (e.g. blocking an IP) invalidates lists.
   const browseVersion = useBrowseVersion();
   const hasDataRef = useRef(false);
@@ -108,18 +115,41 @@ export default function IpDiscoveryScreen() {
       ) : (
         <>
           {featured.length ? (
-            <ScrollView
-              horizontal
-              pagingEnabled
-              showsHorizontalScrollIndicator={false}
-              snapToInterval={featuredWidth + Spacing.three}
-              decelerationRate="fast"
-              contentContainerStyle={styles.featuredRow}
-            >
-              {featured.map((ip) => (
-                <FeaturedCard key={ip.id} ip={ip} width={featuredWidth} />
-              ))}
-            </ScrollView>
+            <View>
+              <Carousel
+                width={featuredWidth}
+                height={FEATURED_HEIGHT}
+                data={featured}
+                loop={featured.length > 1}
+                autoPlay={featured.length > 1}
+                autoPlayInterval={4500}
+                scrollAnimationDuration={600}
+                mode="parallax"
+                modeConfig={{
+                  parallaxScrollingScale: 0.9,
+                  parallaxScrollingOffset: 50,
+                }}
+                onSnapToItem={setFeaturedIndex}
+                renderItem={({ item }) => <FeaturedCard ip={item} width={featuredWidth} />}
+              />
+              {featured.length > 1 ? (
+                <View style={styles.dotsRow}>
+                  {featured.map((ip, index) => (
+                    <View
+                      key={ip.id}
+                      style={[
+                        styles.dot,
+                        { backgroundColor: theme.border },
+                        index === featuredIndex && [
+                          styles.dotActive,
+                          { backgroundColor: theme.brand },
+                        ],
+                      ]}
+                    />
+                  ))}
+                </View>
+              ) : null}
+            </View>
           ) : null}
 
           {trending.length ? (
@@ -285,7 +315,7 @@ function IpRow({ ip }: { ip: IpSummary }) {
 function DiscoverySkeleton({ width }: { width: number }) {
   return (
     <>
-      <Skeleton width={width} height={200} radius={12} />
+      <Skeleton width={width} height={FEATURED_HEIGHT} radius={12} />
       <View style={styles.rankRow}>
         {[0, 1, 2].map((item) => (
           <View key={item} style={styles.rankCard}>
@@ -311,11 +341,8 @@ function DiscoverySkeleton({ width }: { width: number }) {
 }
 
 const styles = StyleSheet.create({
-  featuredRow: {
-    gap: Spacing.three,
-  },
   featuredCard: {
-    height: 200,
+    height: FEATURED_HEIGHT,
     borderRadius: 12,
     overflow: "hidden",
     justifyContent: "space-between",
@@ -417,5 +444,19 @@ const styles = StyleSheet.create({
   },
   pressed: {
     opacity: 0.82,
+  },
+  dotsRow: {
+    flexDirection: "row",
+    justifyContent: "center",
+    gap: Spacing.one,
+    marginTop: Spacing.two,
+  },
+  dot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+  },
+  dotActive: {
+    width: 16,
   },
 });
