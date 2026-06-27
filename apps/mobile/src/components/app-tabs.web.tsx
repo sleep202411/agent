@@ -1,52 +1,33 @@
-import { SymbolView } from "expo-symbols";
-import type { Href } from "expo-router";
 import { Tabs, TabList, TabTrigger, TabSlot, TabTriggerSlotProps } from "expo-router/ui";
-import { Pressable, StyleSheet } from "react-native";
+import { Pressable, StyleSheet, View } from "react-native";
 
+import { AppIcon, type AppIconName } from "./app-icon";
+import { appTabItems } from "./app-tab-items";
 import { ThemedText } from "./themed-text";
-import { ThemedView } from "./themed-view";
 
-import { MaxContentWidth, Spacing } from "@/constants/theme";
+import { Spacing } from "@/constants/theme";
 import { useTheme } from "@/hooks/use-theme";
 import { useTranslations } from "@/i18n";
 
-const tabItems = [
-  {
-    href: "/(tabs)",
-    labelKey: "tabs.ip",
-    name: "index",
-    symbol: { ios: "film.stack", android: "movie", web: "movie" },
-  },
-  {
-    href: "/crews",
-    labelKey: "tabs.crews",
-    name: "crews",
-    symbol: { ios: "person.2", android: "group", web: "group" },
-  },
-  {
-    href: "/news",
-    labelKey: "tabs.news",
-    name: "news",
-    symbol: { ios: "newspaper", android: "feed", web: "feed" },
-  },
-  {
-    href: "/mine",
-    labelKey: "tabs.mine",
-    name: "mine",
-    symbol: { ios: "person", android: "person", web: "person" },
-  },
-] as const;
-
 export default function AppTabs() {
   const t = useTranslations();
+  const theme = useTheme();
 
   return (
     <Tabs style={styles.shell}>
       <TabSlot style={styles.slot} />
-      <TabList style={styles.tabList}>
-        {tabItems.map((item) => (
-          <TabTrigger key={item.name} name={item.name} href={item.href as Href} asChild>
-            <TabButton symbol={item.symbol}>{t(item.labelKey)}</TabButton>
+      <TabList
+        style={[
+          styles.tabList,
+          {
+            borderColor: theme.border,
+            backgroundColor: theme.backgroundElement,
+          },
+        ]}
+      >
+        {appTabItems.map((item) => (
+          <TabTrigger key={item.name} name={item.name} href={item.href} asChild>
+            <TabButton icon={item.icon}>{t(item.labelKey)}</TabButton>
           </TabTrigger>
         ))}
       </TabList>
@@ -56,24 +37,28 @@ export default function AppTabs() {
 
 export function TabButton({
   children,
+  icon,
   isFocused,
-  symbol,
   ...props
-}: TabTriggerSlotProps & { symbol: (typeof tabItems)[number]["symbol"] }) {
+}: TabTriggerSlotProps & { icon: AppIconName }) {
   const theme = useTheme();
   const color = isFocused ? theme.brand : theme.textSecondary;
 
   return (
     <Pressable {...props} style={({ pressed }) => [styles.tabPressable, pressed && styles.pressed]}>
-      <ThemedView
-        type={isFocused ? "backgroundSelected" : "backgroundElement"}
-        style={styles.tabButtonView}
+      <View
+        style={[
+          styles.tabButtonView,
+          isFocused && {
+            backgroundColor: theme.backgroundSelected,
+          },
+        ]}
       >
-        <SymbolView name={symbol} size={18} tintColor={color} />
+        <AppIcon name={icon} size={22} color={color} strokeWidth={isFocused ? 2.4 : 2} />
         <ThemedText type="code" style={{ color }} numberOfLines={1}>
           {children}
         </ThemedText>
-      </ThemedView>
+      </View>
     </Pressable>
   );
 }
@@ -90,12 +75,14 @@ const styles = StyleSheet.create({
   tabList: {
     position: "absolute",
     bottom: Spacing.four,
-    width: "100%",
-    maxWidth: MaxContentWidth,
-    paddingHorizontal: Spacing.four,
+    left: Spacing.four,
+    right: Spacing.four,
+    padding: Spacing.one,
     flexDirection: "row",
-    gap: Spacing.two,
+    gap: Spacing.one,
     justifyContent: "center",
+    borderRadius: 999,
+    borderWidth: StyleSheet.hairlineWidth,
   },
   tabPressable: {
     flex: 1,
@@ -106,7 +93,7 @@ const styles = StyleSheet.create({
   tabButtonView: {
     minHeight: 54,
     paddingHorizontal: Spacing.two,
-    borderRadius: 8,
+    borderRadius: 999,
     alignItems: "center",
     justifyContent: "center",
     gap: Spacing.half,

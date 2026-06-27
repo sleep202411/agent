@@ -1,4 +1,3 @@
-import { Redirect } from "expo-router";
 import { StyleSheet } from "react-native";
 
 import { useAuth } from "@/auth";
@@ -12,7 +11,10 @@ export default function TabLayout() {
   const auth = useAuth();
   const t = useTranslations();
 
-  if (auth.status === "hydrating" || auth.status === "submitting") {
+  // Guest-first: the tab shell is browsable while signed out. Only block on the
+  // brief hydrate so we don't flash a signed-out state over a restored session;
+  // sign-in is deferred to the actions that actually need it.
+  if (auth.status === "hydrating") {
     return (
       <ThemedView style={styles.loadingScreen}>
         <ThemedText type="smallBold" themeColor="textSecondary">
@@ -20,10 +22,6 @@ export default function TabLayout() {
         </ThemedText>
       </ThemedView>
     );
-  }
-
-  if (auth.status !== "authenticated") {
-    return <Redirect href="/login" />;
   }
 
   return <AppTabs />;

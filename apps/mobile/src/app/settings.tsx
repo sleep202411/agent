@@ -2,6 +2,7 @@ import { Stack, useRouter } from "expo-router";
 import { SymbolView } from "expo-symbols";
 import { Pressable, ScrollView, StyleSheet, View } from "react-native";
 
+import { useAuthGate } from "@/auth";
 import { ThemedText } from "@/components/themed-text";
 import { Spacing } from "@/constants/theme";
 import { useTheme } from "@/hooks/use-theme";
@@ -13,6 +14,7 @@ export default function SettingsScreen() {
   const locale = useLocale();
   const theme = useTheme();
   const router = useRouter();
+  const authGate = useAuthGate();
 
   const rows: { key: string; label: string; onPress: () => void; danger?: boolean }[] = [
     {
@@ -29,7 +31,8 @@ export default function SettingsScreen() {
       key: "delete",
       label: t("settings.deleteAccount"),
       danger: true,
-      onPress: () => router.push("/delete-account"),
+      onPress: () =>
+        authGate.requireAuth({ onAuthenticated: () => router.push("/delete-account") }),
     },
   ];
 

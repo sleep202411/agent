@@ -1,5 +1,12 @@
 export { AuthProvider } from "./auth-provider";
+export {
+  cancelPendingAuthRequest,
+  completeAuthSheet,
+  openAuthSheet,
+  requireAuthenticated,
+} from "./auth-sheet";
 export { useAuth } from "./use-auth";
+export { useAuthGate } from "./use-auth-gate";
 export {
   clearAuthSession,
   hydrateAuthSession,

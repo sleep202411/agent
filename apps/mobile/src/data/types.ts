@@ -35,6 +35,14 @@ export interface IpSummary {
   genres: string[];
   /** Genre taxonomy codes (for filtering against the taxonomy). */
   genreCodes: string[];
+  /** ISO-3166 alpha-2 code or server sentinel such as "GLOBAL". */
+  regionCode?: string;
+  /** Locale-aware display label for `regionCode`. */
+  regionLabel?: string;
+  /** Non-genre taxonomy tags used as content-type labels. */
+  typeTags: string[];
+  /** Non-genre taxonomy tag codes (for filtering against the taxonomy). */
+  typeTagCodes: string[];
   year?: number;
   /** 0–10, one decimal. */
   rating?: number;
@@ -67,8 +75,15 @@ export interface IpDetail extends IpSummary {
   aiStatement?: string;
 }
 
-/** A genre taxonomy term (from Nest ip-commerce `/taxonomy?type=genre`). */
-export interface Genre {
+/** An IP taxonomy term (from Nest ip-commerce `/taxonomy`). */
+export interface TaxonomyTerm {
+  code: string;
+  label: string;
+}
+
+export type Genre = TaxonomyTerm;
+
+export interface Region {
   code: string;
   label: string;
 }
@@ -78,6 +93,16 @@ export interface IpDiscovery {
   trending: IpSummary[];
   updating: IpSummary[];
   genres: Genre[];
+  typeTags: TaxonomyTerm[];
+  regions: Region[];
+}
+
+export interface IpCatalogPage {
+  items: IpSummary[];
+  nextCursor: string | null;
+  genres: Genre[];
+  typeTags: TaxonomyTerm[];
+  regions: Region[];
 }
 
 export type CrewStatus = "recruiting" | "in-production" | "closed";
@@ -106,6 +131,59 @@ export interface CrewDetail extends CrewSummary {
   description: string;
   roles: CrewRoleOpening[];
   members: Person[];
+}
+
+export interface CreatorLevel {
+  id: string;
+  name: string;
+  iconUrl?: string;
+  description?: string;
+}
+
+export interface CreatorSummary {
+  id: string;
+  name: string;
+  avatarUrl?: string;
+  bannerUrl?: string;
+  bio?: string;
+  joinedAt?: string;
+  levels: CreatorLevel[];
+  primaryLevel?: string;
+  openToWork: boolean;
+}
+
+export interface CreatorServiceSummary {
+  id: string;
+  creatorId: string;
+  title: string;
+  summary: string;
+  coverUrl?: string;
+  category: string;
+  tags: string[];
+  startingPrice: number;
+  currency: string;
+  startingDeliveryDays: number;
+  packageCount: number;
+  publishedAt: string;
+}
+
+export interface CreatorServicePackage {
+  id: string;
+  tier: string;
+  title: string;
+  description: string;
+  price: number;
+  currency: string;
+  deliveryDays: number;
+  revisions: number;
+  scope: string[];
+}
+
+export interface CreatorServiceDetail extends CreatorServiceSummary {
+  packages: CreatorServicePackage[];
+  requirementQuestions: { id: string; prompt: string; helpText?: string; required: boolean }[];
+  status: string;
+  updatedAt: string;
 }
 
 export interface NewsArticle {

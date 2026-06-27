@@ -1,6 +1,6 @@
-import * as SecureStore from "expo-secure-store";
 import * as WebBrowser from "expo-web-browser";
 import { appEnv } from "@/config";
+import { getStoredString, setStoredString } from "@/lib/persistent-storage";
 
 /**
  * Hosted legal pages + the local compliance flags the CN app stores require:
@@ -31,17 +31,17 @@ const CONSENT_KEY = "fizz_privacy_consent_v1";
 const DELETION_KEY = "fizz_account_deletion_requested_v1";
 
 export async function hasPrivacyConsent(): Promise<boolean> {
-  return (await SecureStore.getItemAsync(CONSENT_KEY)) === "1";
+  return (await getStoredString(CONSENT_KEY)) === "1";
 }
 
 export async function setPrivacyConsent(): Promise<void> {
-  await SecureStore.setItemAsync(CONSENT_KEY, "1");
+  await setStoredString(CONSENT_KEY, "1");
 }
 
 export async function isAccountDeletionRequested(): Promise<boolean> {
-  return (await SecureStore.getItemAsync(DELETION_KEY)) === "1";
+  return (await getStoredString(DELETION_KEY)) === "1";
 }
 
 export async function markAccountDeletionRequested(): Promise<void> {
-  await SecureStore.setItemAsync(DELETION_KEY, "1");
+  await setStoredString(DELETION_KEY, "1");
 }

@@ -24,7 +24,8 @@ function getTargetUrl(request: Request, params: RouteParams) {
 
   const path = Array.isArray(params.path) ? params.path.join("/") : (params.path ?? "");
   const requestUrl = new URL(request.url);
-  const targetUrl = new URL(`/${path.replace(/^\/+/, "")}`, SERVICE_BASE_URL[params.service]);
+  const base = SERVICE_BASE_URL[params.service].replace(/\/+$/, "");
+  const targetUrl = new URL(`${base}/${path.replace(/^\/+/, "")}`);
   targetUrl.search = requestUrl.search;
 
   return targetUrl;

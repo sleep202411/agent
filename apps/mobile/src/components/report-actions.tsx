@@ -76,14 +76,6 @@ export function showContentActionsMenu(opts: {
   ]);
 }
 
-/** Sign-in gate for report/block actions. */
-export function promptSignIn(t: Translator, onSignIn: () => void) {
-  Alert.alert(t("report.signInRequiredTitle"), t("report.signInRequiredBody"), [
-    { text: t("report.cancel"), style: "cancel" },
-    { text: t("report.signInAction"), onPress: onSignIn },
-  ]);
-}
-
 /** Bottom-sheet reason picker — submits on row tap (same idiom as LanguageSheet). */
 export function ReportReasonSheet({
   visible,

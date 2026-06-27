@@ -1,4 +1,5 @@
 export { ChipRail } from "./chip-rail";
+export { CountryFlag } from "./country-flag";
 export { EmptyState } from "./empty-state";
 export { PosterImage } from "./poster-image";
 export { ScreenHeader, type ScreenHeaderAction } from "./screen-header";

@@ -1,4 +1,4 @@
-import { StyleSheet, View } from "react-native";
+import { StyleSheet, View, type StyleProp, type TextStyle, type ViewStyle } from "react-native";
 
 import { ThemedText } from "@/components/themed-text";
 import themeTokens from "@/config/theme-tokens.json";
@@ -8,7 +8,19 @@ export type TagTone = "neutral" | "brand" | "success" | "warning" | "info";
 
 const SEMANTIC = themeTokens.colors.semantic;
 
-export function Tag({ label, tone = "neutral" }: { label: string; tone?: TagTone }) {
+export function Tag({
+  label,
+  labelStyle,
+  numberOfLines = 1,
+  style,
+  tone = "neutral",
+}: {
+  label: string;
+  labelStyle?: StyleProp<TextStyle>;
+  numberOfLines?: number;
+  style?: StyleProp<ViewStyle>;
+  tone?: TagTone;
+}) {
   const theme = useTheme();
 
   const color =
@@ -25,8 +37,13 @@ export function Tag({ label, tone = "neutral" }: { label: string; tone?: TagTone
   const backgroundColor = tone === "neutral" ? "rgba(255,255,255,0.08)" : `${color}24`;
 
   return (
-    <View style={[styles.tag, { backgroundColor }]}>
-      <ThemedText type="code" style={[styles.label, { color }]}>
+    <View style={[styles.tag, { backgroundColor }, style]}>
+      <ThemedText
+        ellipsizeMode="tail"
+        numberOfLines={numberOfLines}
+        type="code"
+        style={[styles.label, { color }, labelStyle]}
+      >
         {label}
       </ThemedText>
     </View>
@@ -36,12 +53,14 @@ export function Tag({ label, tone = "neutral" }: { label: string; tone?: TagTone
 const styles = StyleSheet.create({
   tag: {
     height: 22,
+    maxWidth: "100%",
     paddingHorizontal: 8,
     borderRadius: 6,
     alignItems: "center",
     justifyContent: "center",
   },
   label: {
+    maxWidth: "100%",
     fontSize: 11,
     letterSpacing: 0.2,
   },

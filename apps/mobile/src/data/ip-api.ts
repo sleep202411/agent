@@ -12,7 +12,17 @@
 import { appEnv, resolveAssetUrl } from "@/config";
 import { api } from "@/lib/api-client";
 
-import type { Genre, IpDetail, IpDiscovery, IpEpisode, IpStatus, IpSummary, Person } from "./types";
+import type {
+  Genre,
+  IpDetail,
+  IpDiscovery,
+  IpEpisode,
+  IpStatus,
+  IpSummary,
+  Person,
+  Region,
+  TaxonomyTerm,
+} from "./types";
 
 type AssetDto = { url?: string | null; externalUrl?: string | null } | null | undefined;
 
@@ -41,9 +51,11 @@ type IpDto = {
   subtitle?: string | null;
   summary?: string | null;
   description?: string | null;
+  region?: string | null;
   genres?: string[];
   genreCodes?: string[];
   tags?: string[];
+  tagCodes?: string[];
   status?: string;
   listingVisibility?: string;
   publishedAt?: string | null;
@@ -86,8 +98,24 @@ function durationLabel(seconds?: number | null): string | undefined {
   return `${Math.max(1, Math.round(seconds / 60))}m`;
 }
 
+function normalizeRegionCode(region?: string | null): string | undefined {
+  const code = region?.trim().toUpperCase();
+  return code || undefined;
+}
+
+function regionLabel(code: string): string {
+  if (code === "GLOBAL") return "Global";
+  try {
+    const displayNames = new Intl.DisplayNames([locale()], { type: "region" });
+    return displayNames.of(code) ?? code;
+  } catch {
+    return code;
+  }
+}
+
 function mapSummary(dto: IpDto, featured = false): IpSummary {
   const cover = assetUrl(dto.coverAsset);
+  const regionCode = normalizeRegionCode(dto.region);
   return {
     id: dto.id,
     title: dto.title,
@@ -97,6 +125,10 @@ function mapSummary(dto: IpDto, featured = false): IpSummary {
     // Genres only (real taxonomy genres) — tags like competition labels are NOT genres.
     genres: (dto.genres ?? []).filter(Boolean),
     genreCodes: (dto.genreCodes ?? []).filter(Boolean),
+    regionCode,
+    regionLabel: regionCode ? regionLabel(regionCode) : undefined,
+    typeTags: (dto.tags ?? []).filter(Boolean),
+    typeTagCodes: (dto.tagCodes ?? []).filter(Boolean),
     year: dto.publishedAt ? new Date(dto.publishedAt).getFullYear() : undefined,
     rating: undefined,
     episodeCount: dto.episodes?.length || undefined,
@@ -158,12 +190,11 @@ function mapDetail(dto: IpDto): IpDetail {
 
 type TaxonomyResponse = { items?: { code?: string; label?: string }[] };
 
-/** Genre list from Nest ip-commerce taxonomy (`/aurora/ip-commerce/taxonomy?type=genre`). */
-async function fetchGenres(): Promise<Genre[]> {
+async function fetchTaxonomy(type: "genre" | "tag"): Promise<TaxonomyTerm[]> {
   try {
     const res = await api.get<TaxonomyResponse>("/ip-commerce/taxonomy", {
       ...AURORA,
-      params: { type: "genre", locale: locale() },
+      params: { type, locale: locale() },
     });
     return (res.items ?? [])
       .filter((term): term is { code: string; label: string } => !!term.code && !!term.label)
@@ -171,6 +202,28 @@ async function fetchGenres(): Promise<Genre[]> {
   } catch {
     return [];
   }
+}
+
+/** Genre list from Nest ip-commerce taxonomy (`/aurora/ip-commerce/taxonomy?type=genre`). */
+async function fetchGenres(): Promise<Genre[]> {
+  return fetchTaxonomy("genre");
+}
+
+/** Content-type label list from Nest ip-commerce taxonomy (`/aurora/ip-commerce/taxonomy?type=tag`). */
+async function fetchTypeTags(): Promise<TaxonomyTerm[]> {
+  return fetchTaxonomy("tag");
+}
+
+function regionsFromIps(ips: IpSummary[]): Region[] {
+  const regions = new Map<string, string>();
+  for (const ip of ips) {
+    if (ip.regionCode && ip.regionLabel) {
+      regions.set(ip.regionCode, ip.regionLabel);
+    }
+  }
+  return Array.from(regions, ([code, label]) => ({ code, label })).sort((a, b) =>
+    a.label.localeCompare(b.label, locale())
+  );
 }
 
 type ListResponse = { items?: IpDto[]; nextCursor?: string | null };
@@ -193,7 +246,7 @@ async function fetchPlacement(placementKey: string): Promise<IpSummary[]> {
 }
 
 export async function fetchIpDiscovery(): Promise<IpDiscovery> {
-  const [hero, forYou, list, genres] = await Promise.all([
+  const [hero, forYou, list, genres, typeTags] = await Promise.all([
     fetchPlacement("ip_plaza_hero"),
     fetchPlacement("ip_plaza_for_you"),
     api.get<ListResponse>("/ip-commerce/ips", {
@@ -201,13 +254,53 @@ export async function fetchIpDiscovery(): Promise<IpDiscovery> {
       params: { limit: 30, locale: locale() },
     }),
     fetchGenres(),
+    fetchTypeTags(),
   ]);
 
   const all = (list.items ?? []).map((dto) => mapSummary(dto));
   const featured = hero.length ? hero : all.slice(0, 3).map((ip) => ({ ...ip, featured: true }));
   const trending = forYou.length ? forYou : all.slice(0, 8);
 
-  return { featured, trending, updating: all, genres };
+  return { featured, trending, updating: all, genres, typeTags, regions: regionsFromIps(all) };
+}
+
+export async function fetchIpCatalogPage({
+  cursor,
+  genreCode,
+  limit = 50,
+  regionCode,
+  typeCode,
+}: {
+  cursor?: string | null;
+  genreCode?: string;
+  limit?: number;
+  regionCode?: string;
+  typeCode?: string;
+} = {}) {
+  const [list, genres, typeTags] = await Promise.all([
+    api.get<ListResponse>("/ip-commerce/ips", {
+      ...AURORA,
+      params: {
+        cursor: cursor ?? undefined,
+        genreCodes: genreCode,
+        limit,
+        locale: locale(),
+        regions: regionCode,
+        tagCodes: typeCode,
+      },
+    }),
+    fetchGenres(),
+    fetchTypeTags(),
+  ]);
+
+  const items = (list.items ?? []).map((dto) => mapSummary(dto));
+  return {
+    items,
+    nextCursor: list.nextCursor ?? null,
+    genres,
+    typeTags,
+    regions: regionsFromIps(items),
+  };
 }
 
 // Legacy default-avatar PNG baked into the user OSS bucket — treat as "no

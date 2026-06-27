@@ -17,18 +17,26 @@ export default function AppTabs() {
       labelStyle={{ selected: { color: colors.brand } }}
     >
       <NativeTabs.Trigger name="index">
-        <NativeTabs.Trigger.Label>{t("tabs.ip")}</NativeTabs.Trigger.Label>
+        <NativeTabs.Trigger.Label>{t("tabs.home")}</NativeTabs.Trigger.Label>
         <NativeTabs.Trigger.Icon
-          md={{ default: "movie", selected: "movie" }}
-          sf={{ default: "film.stack", selected: "film.stack.fill" }}
+          md={{ default: "home", selected: "home" }}
+          sf={{ default: "house", selected: "house.fill" }}
+        />
+      </NativeTabs.Trigger>
+
+      <NativeTabs.Trigger name="creators">
+        <NativeTabs.Trigger.Label>{t("tabs.creators")}</NativeTabs.Trigger.Label>
+        <NativeTabs.Trigger.Icon
+          md={{ default: "person", selected: "person" }}
+          sf={{ default: "person.crop.circle", selected: "person.crop.circle.fill" }}
         />
       </NativeTabs.Trigger>
 
       <NativeTabs.Trigger name="crews">
         <NativeTabs.Trigger.Label>{t("tabs.crews")}</NativeTabs.Trigger.Label>
         <NativeTabs.Trigger.Icon
-          md={{ default: "group", selected: "group" }}
-          sf={{ default: "person.2", selected: "person.2.fill" }}
+          md={{ default: "groups", selected: "groups" }}
+          sf={{ default: "person.3", selected: "person.3.fill" }}
         />
       </NativeTabs.Trigger>
 

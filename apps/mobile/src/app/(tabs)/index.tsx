@@ -6,7 +6,6 @@ import Carousel from "react-native-reanimated-carousel";
 
 import { TabScreen } from "@/components/tab-screen";
 import { ThemedText } from "@/components/themed-text";
-import { ThemedView } from "@/components/themed-view";
 import {
   ChipRail,
   EmptyState,
@@ -19,23 +18,14 @@ import {
 import { MaxContentWidth, Spacing } from "@/constants/theme";
 import { useBrowseVersion } from "@/data/browse-refresh";
 import { getIpDiscovery, type IpDiscovery } from "@/data/browse-service";
-import type { IpStatus, IpSummary } from "@/data/types";
+import type { IpSummary } from "@/data/types";
 import { useTheme } from "@/hooks/use-theme";
-import { type MessageKey, useTranslations } from "@/i18n";
+import { useTranslations } from "@/i18n";
 import { toHref } from "@/lib/navigation";
 
 // Featured banner height — single source for the carousel slot, the card style,
 // and the loading skeleton (so they can never drift apart).
 const FEATURED_HEIGHT = 200;
-
-function statusTagKey(status: IpStatus): {
-  labelKey: MessageKey;
-  tone: "info" | "neutral" | "warning";
-} {
-  if (status === "updating") return { labelKey: "home.statusUpdating", tone: "info" };
-  if (status === "upcoming") return { labelKey: "home.statusUpcoming", tone: "warning" };
-  return { labelKey: "home.statusCompleted", tone: "neutral" };
-}
 
 function openIp(id: string) {
   router.push(toHref(`/ip/${id}`));
@@ -46,6 +36,7 @@ export default function IpDiscoveryScreen() {
   const theme = useTheme();
   const { width } = useWindowDimensions();
   const featuredWidth = Math.min(width, MaxContentWidth) - Spacing.four * 2;
+  const cardWidth = Math.floor((featuredWidth - Spacing.three) / 2);
   const [discovery, setDiscovery] = useState<IpDiscovery>();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string>();
@@ -154,28 +145,28 @@ export default function IpDiscoveryScreen() {
 
           {trending.length ? (
             <View style={styles.section}>
-              <SectionHeader title={t("home.trendingTitle")} trailing={`${trending.length}`} />
+              <SectionHeader title={t("home.trendingTitle")} />
               <ScrollView
                 horizontal
                 showsHorizontalScrollIndicator={false}
-                contentContainerStyle={styles.rankRow}
+                contentContainerStyle={styles.rail}
               >
                 {trending.map((ip) => (
-                  <TrendingCard key={ip.id} ip={ip} />
+                  <IpGridCard key={ip.id} ip={ip} width={cardWidth} />
                 ))}
               </ScrollView>
             </View>
           ) : null}
 
           <View style={styles.section}>
-            <SectionHeader title={t("home.allIpsTitle")} trailing={`${allIps.length}`} />
+            <SectionHeader title={t("home.allIpsTitle")} />
             {genreChips.length > 1 ? (
               <ChipRail items={genreChips} activeIndex={genreIndex} onChange={setGenreIndex} />
             ) : null}
             {allIps.length ? (
-              <View style={styles.list}>
+              <View style={styles.grid}>
                 {allIps.map((ip) => (
-                  <IpRow key={ip.id} ip={ip} />
+                  <IpGridCard key={ip.id} ip={ip} width={cardWidth} />
                 ))}
               </View>
             ) : (
@@ -263,77 +254,50 @@ function FeaturedCard({ ip, width }: { ip: IpSummary; width: number }) {
   );
 }
 
-function TrendingCard({ ip }: { ip: IpSummary }) {
-  return (
-    <Pressable accessibilityRole="button" onPress={() => openIp(ip.id)} style={styles.rankCard}>
-      <PosterImage uri={ip.coverUrl} label={ip.title} style={styles.rankPoster} />
-      <ThemedText type="smallBold" numberOfLines={2}>
-        {ip.title}
-      </ThemedText>
-      <RatingRow rating={ip.rating} />
-    </Pressable>
-  );
-}
-
-function IpRow({ ip }: { ip: IpSummary }) {
-  const t = useTranslations();
-  const tag = statusTagKey(ip.status);
+function IpGridCard({ ip, width }: { ip: IpSummary; width: number }) {
+  const type = ip.genres[0] ?? ip.typeTags[0];
   return (
     <Pressable
       accessibilityRole="button"
       onPress={() => openIp(ip.id)}
-      style={({ pressed }) => pressed && styles.pressed}
+      style={({ pressed }) => [{ width, maxWidth: width }, pressed && styles.pressed]}
     >
-      <ThemedView type="backgroundElement" style={styles.ipRow}>
-        <PosterImage uri={ip.coverUrl} label={ip.title} style={styles.rowPoster} />
-        <View style={styles.rowCopy}>
-          <ThemedText type="smallBold" numberOfLines={1}>
-            {ip.title}
-          </ThemedText>
-          <View style={styles.rowMeta}>
-            {ip.year ? (
-              <ThemedText type="code" themeColor="textSecondary">
-                {ip.year}
-              </ThemedText>
-            ) : null}
-            {ip.episodeCount ? (
-              <ThemedText type="code" themeColor="textSecondary">
-                · {ip.episodeCount} {t("home.episodesSuffix")}
-              </ThemedText>
-            ) : null}
-            <Tag label={t(tag.labelKey)} tone={tag.tone} />
-          </View>
-          <ThemedText type="small" themeColor="textSecondary" numberOfLines={2}>
-            {ip.synopsis}
-          </ThemedText>
-        </View>
-      </ThemedView>
+      <PosterImage
+        uri={ip.backdropUrl ?? ip.coverUrl}
+        label={ip.title}
+        radius={10}
+        style={{ width, height: width * (9 / 16) }}
+      />
+      {/* Hard-cap the title at the card width (a number, not "100%") so a long
+          title wraps instead of reporting its single-line width to the flex row
+          and stretching the card past `width` — which collapses the 2-up grid. */}
+      <ThemedText
+        type="smallBold"
+        numberOfLines={2}
+        style={[styles.gridTitle, { maxWidth: width }]}
+      >
+        {ip.title}
+      </ThemedText>
+      <View style={styles.gridMeta}>
+        {ip.regionLabel ? <Tag label={ip.regionLabel} /> : null}
+        {type ? <Tag label={type} /> : null}
+      </View>
     </Pressable>
   );
 }
 
 function DiscoverySkeleton({ width }: { width: number }) {
+  const cardWidth = Math.floor((width - Spacing.three) / 2);
   return (
     <>
       <Skeleton width={width} height={FEATURED_HEIGHT} radius={12} />
-      <View style={styles.rankRow}>
-        {[0, 1, 2].map((item) => (
-          <View key={item} style={styles.rankCard}>
-            <Skeleton height={168} radius={8} />
+      <View style={styles.grid}>
+        {[0, 1, 2, 3].map((item) => (
+          <View key={item} style={{ width: cardWidth, gap: Spacing.two }}>
+            <Skeleton width={cardWidth} height={cardWidth * (9 / 16)} radius={10} />
             <Skeleton width="80%" height={14} />
+            <Skeleton width="50%" height={10} />
           </View>
-        ))}
-      </View>
-      <View style={styles.list}>
-        {[0, 1, 2].map((item) => (
-          <ThemedView key={item} type="backgroundElement" style={styles.ipRow}>
-            <Skeleton width={64} height={92} radius={8} />
-            <View style={styles.rowCopy}>
-              <Skeleton width="70%" height={16} />
-              <Skeleton width="40%" height={12} />
-              <Skeleton width="100%" height={32} />
-            </View>
-          </ThemedView>
         ))}
       </View>
     </>
@@ -407,40 +371,24 @@ const styles = StyleSheet.create({
   section: {
     gap: Spacing.three,
   },
-  rankRow: {
+  grid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: Spacing.three,
+  },
+  rail: {
     gap: Spacing.three,
     paddingRight: Spacing.four,
   },
-  rankCard: {
-    width: 116,
-    gap: Spacing.one,
+  gridTitle: {
+    marginTop: Spacing.two,
   },
-  rankPoster: {
-    width: 116,
-    height: 164,
-  },
-  list: {
-    gap: Spacing.two,
-  },
-  ipRow: {
-    borderRadius: 8,
-    padding: Spacing.three,
+  gridMeta: {
     flexDirection: "row",
-    gap: Spacing.three,
-  },
-  rowPoster: {
-    width: 64,
-    height: 92,
-  },
-  rowCopy: {
-    flex: 1,
-    minWidth: 0,
-    gap: Spacing.one,
-  },
-  rowMeta: {
-    flexDirection: "row",
+    flexWrap: "wrap",
     alignItems: "center",
-    gap: Spacing.one,
+    gap: 6,
+    marginTop: Spacing.two,
   },
   pressed: {
     opacity: 0.82,

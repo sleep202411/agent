@@ -1,13 +1,13 @@
 import * as Localization from "expo-localization";
-import * as SecureStore from "expo-secure-store";
 
 import { appEnv, type AppLocale } from "@/config";
+import { getStoredString, setStoredString } from "@/lib/persistent-storage";
 
 /**
  * Reactive locale store — mirrors the auth store pattern (external store +
  * useSyncExternalStore). The initial locale follows the device language
- * (synchronous, so first paint is correct); a user override persisted in
- * SecureStore takes over once `initLocale` resolves.
+ * (synchronous, so first paint is correct); a user override persisted through
+ * the app storage adapter takes over once `initLocale` resolves.
  */
 export const SUPPORTED_LOCALES: AppLocale[] = ["en-US", "zh-CN", "zh-HK"];
 const STORAGE_KEY = "fizzdragon.locale.override";
@@ -61,13 +61,13 @@ export function setLocale(locale: AppLocale): void {
   if (!SUPPORTED_LOCALES.includes(locale) || locale === currentLocale) return;
   currentLocale = locale;
   notify();
-  void SecureStore.setItemAsync(STORAGE_KEY, locale).catch(() => {});
+  void setStoredString(STORAGE_KEY, locale).catch(() => {});
 }
 
 /** Load a persisted override on app start; falls back to the device locale. */
 export async function initLocale(): Promise<void> {
   try {
-    const saved = await SecureStore.getItemAsync(STORAGE_KEY);
+    const saved = await getStoredString(STORAGE_KEY);
     if (saved && SUPPORTED_LOCALES.includes(saved as AppLocale) && saved !== currentLocale) {
       currentLocale = saved as AppLocale;
       notify();

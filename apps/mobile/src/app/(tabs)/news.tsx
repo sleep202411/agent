@@ -39,7 +39,7 @@ export default function NewsScreen() {
     return () => {
       alive = false;
     };
-  }, []);
+  }, [t]);
 
   const featured = articles[0];
   const rest = articles.slice(1);

@@ -1,6 +1,6 @@
 import { useRouter } from "expo-router";
 import { SymbolView } from "expo-symbols";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -124,7 +124,7 @@ export default function ForgotPasswordScreen() {
           contentContainerStyle={[
             styles.scrollContent,
             {
-              paddingTop: safeAreaInsets.top + Spacing.three,
+              paddingTop: safeAreaInsets.top + Spacing.two,
               paddingBottom: safeAreaInsets.bottom + Spacing.five,
               paddingLeft: Math.max(safeAreaInsets.left, Spacing.five),
               paddingRight: Math.max(safeAreaInsets.right, Spacing.five),

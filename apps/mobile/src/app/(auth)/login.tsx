@@ -16,7 +16,7 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { useAuth } from "@/auth";
+import { completeAuthSheet, useAuth } from "@/auth";
 import { LanguageSwitcher } from "@/components/language-switcher";
 import { appEnv } from "@/config";
 import { Colors, MaxContentWidth, Spacing } from "@/constants/theme";
@@ -49,9 +49,11 @@ export default function LoginScreen() {
   const hasCredentials = identifier.trim().length > 0 && password.length > 0;
   const canSubmit = hasCredentials && acceptedTerms && !isSubmitting;
 
+  // Login is a dismissible sheet over the guest's context — on success, close
+  // it and return them where they were rather than resetting to home.
   useEffect(() => {
     if (auth.status === "authenticated") {
-      router.replace("/");
+      completeAuthSheet(router);
     }
   }, [auth.status, router]);
 
@@ -87,7 +89,7 @@ export default function LoginScreen() {
     setLocalError(undefined);
     try {
       await auth.signIn({ identifier, password });
-      router.replace("/");
+      // The authenticated effect dismisses the sheet once state flips.
     } catch (error) {
       setLocalError(error instanceof Error ? error.message : t("login.signInFailed"));
     }
@@ -105,7 +107,9 @@ export default function LoginScreen() {
           contentContainerStyle={[
             styles.scrollContent,
             {
-              paddingTop: safeAreaInsets.top + Spacing.seven,
+              // Form sheet extends under the status bar at its top detent, so
+              // the safe-area top inset is still needed to clear it.
+              paddingTop: safeAreaInsets.top + Spacing.two,
               paddingBottom: safeAreaInsets.bottom + Spacing.five,
               paddingLeft: Math.max(safeAreaInsets.left, Spacing.five),
               paddingRight: Math.max(safeAreaInsets.right, Spacing.five),

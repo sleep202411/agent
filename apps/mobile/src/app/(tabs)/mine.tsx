@@ -5,7 +5,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Alert, FlatList, Pressable, StyleSheet, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { useAuth } from "@/auth";
+import { useAuth, useAuthGate } from "@/auth";
 import { LanguageSheet, LOCALE_NAMES } from "@/components/language-switcher";
 import { ThemedText } from "@/components/themed-text";
 import { appEnv, resolveAssetUrl } from "@/config";
@@ -42,27 +42,56 @@ const COLUMNS = 3;
 
 export default function MineScreen() {
   const auth = useAuth();
+  const authGate = useAuthGate();
   const theme = useTheme();
   const t = useTranslations();
   const locale = useLocale();
   const router = useRouter();
   const insets = useSafeAreaInsets();
 
+  const isAuthed = auth.status === "authenticated";
+  const authOwnerKey = isAuthed
+    ? String(
+        auth.user?.userId ??
+          auth.user?.id ??
+          auth.user?.email ??
+          auth.user?.phone ??
+          auth.session?.updatedAt ??
+          "authenticated"
+      )
+    : undefined;
+
   const [tab, setTab] = useState<TabKey>("works");
   const [languageOpen, setLanguageOpen] = useState(false);
   const [works, setWorks] = useState<MyWork[]>();
   const [ips, setIps] = useState<MyIp[]>();
   const [crews, setCrews] = useState<CrewSummary[]>();
+  const [loadedFor, setLoadedFor] = useState<string>();
 
   useEffect(() => {
+    // Personal collections are user-scoped — only fetch once signed in, so a
+    // guest never fires (and 401s) these requests.
+    if (!authOwnerKey) return;
     let active = true;
-    void fetchMyWorks().then((rows) => active && setWorks(rows));
-    void fetchMyIps().then((rows) => active && setIps(rows));
-    void fetchMyCrews().then((rows) => active && setCrews(rows));
+    void Promise.all([fetchMyWorks(), fetchMyIps(), fetchMyCrews()])
+      .then(([nextWorks, nextIps, nextCrews]) => {
+        if (!active) return;
+        setWorks(nextWorks);
+        setIps(nextIps);
+        setCrews(nextCrews);
+        setLoadedFor(authOwnerKey);
+      })
+      .catch(() => {
+        if (!active) return;
+        setWorks([]);
+        setIps([]);
+        setCrews([]);
+        setLoadedFor(authOwnerKey);
+      });
     return () => {
       active = false;
     };
-  }, []);
+  }, [authOwnerKey]);
 
   const displayName =
     auth.user?.nickName ??
@@ -81,9 +110,14 @@ export default function MineScreen() {
       ? resolveAssetUrl(rawAvatar, appEnv.assets.userBaseUrl)
       : undefined;
 
+  const hasCurrentUserData = Boolean(authOwnerKey && loadedFor === authOwnerKey);
+  const currentWorks = hasCurrentUserData ? works : undefined;
+  const currentIps = hasCurrentUserData ? ips : undefined;
+  const currentCrews = hasCurrentUserData ? crews : undefined;
+
   const tiles = useMemo<Tile[] | undefined>(() => {
     if (tab === "works") {
-      return works?.map((work) => ({
+      return currentWorks?.map((work) => ({
         id: work.id,
         title: work.title,
         coverUrl: work.coverUrl,
@@ -100,7 +134,7 @@ export default function MineScreen() {
     if (tab === "ips") {
       // Only published IPs open the public plaza detail; everything else is
       // not publicly resolvable yet, so explain instead of 404-ing.
-      return ips?.map((ip) => ({
+      return currentIps?.map((ip) => ({
         id: ip.id,
         title: ip.title,
         coverUrl: ip.coverUrl,
@@ -112,14 +146,14 @@ export default function MineScreen() {
             }),
       }));
     }
-    return crews?.map((crew) => ({
+    return currentCrews?.map((crew) => ({
       id: crew.id,
       title: crew.name,
       coverUrl: crew.coverUrl,
       subtitle: crew.openRoles > 0 ? `${crew.openRoles} ${t("mine.rolesOpen")}` : undefined,
       href: `/crew/${crew.id}`,
     }));
-  }, [tab, works, ips, crews, t]);
+  }, [tab, currentWorks, currentIps, currentCrews, t]);
 
   // Pad the last row with invisible spacers so 3-col rows stay left-aligned
   // (otherwise space-between/flex spreads a partial row).
@@ -142,6 +176,75 @@ export default function MineScreen() {
       : tab === "ips"
         ? t("mine.ipsEmpty")
         : t("mine.crewsEmpty");
+
+  if (!isAuthed) {
+    return (
+      <View
+        style={[
+          styles.root,
+          styles.guestRoot,
+          { backgroundColor: theme.background, paddingTop: insets.top + Spacing.eight },
+        ]}
+      >
+        <View style={[styles.guestAvatar, { backgroundColor: theme.backgroundElement }]}>
+          <SymbolView
+            name={{ ios: "person.crop.circle", android: "person", web: "person" }}
+            size={40}
+            tintColor={theme.textSecondary}
+          />
+        </View>
+        <View style={styles.guestCopy}>
+          <ThemedText type="subtitle" style={styles.guestTitle}>
+            {t("mine.guestTitle")}
+          </ThemedText>
+          <ThemedText type="small" themeColor="textSecondary" style={styles.guestBody}>
+            {t("mine.guestBody")}
+          </ThemedText>
+        </View>
+        <Pressable
+          accessibilityRole="button"
+          onPress={() => authGate.openLogin()}
+          style={({ pressed }) => [
+            styles.guestPrimary,
+            { backgroundColor: theme.brand },
+            pressed && styles.pressed,
+          ]}
+        >
+          <ThemedText type="smallBold" style={styles.guestPrimaryText}>
+            {t("login.signIn")}
+          </ThemedText>
+        </Pressable>
+        <Pressable
+          accessibilityRole="button"
+          onPress={() => authGate.openRegister()}
+          style={({ pressed }) => (pressed ? styles.pressed : null)}
+        >
+          <ThemedText type="small" themeColor="textSecondary">
+            {t("register.title")}
+          </ThemedText>
+        </Pressable>
+        <View style={styles.guestLanguage}>
+          <Pressable
+            accessibilityRole="button"
+            onPress={() => setLanguageOpen(true)}
+            style={({ pressed }) => (pressed ? styles.pressed : null)}
+          >
+            <View style={styles.iconPill}>
+              <SymbolView
+                name={{ ios: "globe", android: "language", web: "language" }}
+                size={15}
+                tintColor="#FFFFFF"
+              />
+              <ThemedText type="small" style={styles.iconPillText}>
+                {LOCALE_NAMES[locale]}
+              </ThemedText>
+            </View>
+          </Pressable>
+        </View>
+        <LanguageSheet visible={languageOpen} onClose={() => setLanguageOpen(false)} />
+      </View>
+    );
+  }
 
   return (
     <View style={[styles.root, { backgroundColor: theme.background }]}>
@@ -253,6 +356,37 @@ export default function MineScreen() {
               </View>
             </View>
 
+            <Pressable
+              accessibilityRole="button"
+              onPress={() => router.push("/referrals")}
+              style={({ pressed }) => [
+                styles.referralEntry,
+                { backgroundColor: theme.backgroundElement },
+                pressed && styles.pressed,
+              ]}
+            >
+              <View style={[styles.referralIcon, { backgroundColor: `${theme.brand}22` }]}>
+                <SymbolView
+                  name={{ ios: "gift", android: "redeem", web: "redeem" }}
+                  size={20}
+                  tintColor={theme.brand}
+                />
+              </View>
+              <View style={styles.referralCopy}>
+                <ThemedText type="smallBold" numberOfLines={1}>
+                  {t("referrals.title")}
+                </ThemedText>
+                <ThemedText type="small" themeColor="textSecondary" numberOfLines={1}>
+                  {t("referrals.mineEntryBody")}
+                </ThemedText>
+              </View>
+              <SymbolView
+                name={{ ios: "chevron.right", android: "chevron_right", web: "chevron_right" }}
+                size={15}
+                tintColor={theme.textSecondary}
+              />
+            </Pressable>
+
             {/* Tab bar */}
             <View style={[styles.tabBar, { borderBottomColor: theme.border }]}>
               {TABS.map((item) => {
@@ -350,6 +484,41 @@ const styles = StyleSheet.create({
   root: {
     flex: 1,
   },
+  guestRoot: {
+    alignItems: "center",
+    gap: Spacing.four,
+    paddingHorizontal: Spacing.six,
+  },
+  guestAvatar: {
+    alignItems: "center",
+    borderRadius: 999,
+    height: 88,
+    justifyContent: "center",
+    width: 88,
+  },
+  guestCopy: {
+    alignItems: "center",
+    gap: Spacing.two,
+  },
+  guestTitle: {
+    textAlign: "center",
+  },
+  guestBody: {
+    textAlign: "center",
+  },
+  guestPrimary: {
+    alignItems: "center",
+    borderRadius: 12,
+    marginTop: Spacing.two,
+    paddingHorizontal: Spacing.eight,
+    paddingVertical: Spacing.three,
+  },
+  guestPrimaryText: {
+    color: "#FFFFFF",
+  },
+  guestLanguage: {
+    marginTop: Spacing.four,
+  },
   header: {
     overflow: "hidden",
     paddingBottom: Spacing.four,
@@ -425,6 +594,27 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     gap: Spacing.five,
     paddingHorizontal: Spacing.four,
+  },
+  referralEntry: {
+    alignItems: "center",
+    borderRadius: 8,
+    flexDirection: "row",
+    gap: Spacing.three,
+    marginHorizontal: Spacing.four,
+    marginTop: Spacing.four,
+    padding: Spacing.three,
+  },
+  referralIcon: {
+    alignItems: "center",
+    borderRadius: 8,
+    height: 42,
+    justifyContent: "center",
+    width: 42,
+  },
+  referralCopy: {
+    flex: 1,
+    gap: Spacing.half,
+    minWidth: 0,
   },
   tabItem: {
     alignItems: "center",

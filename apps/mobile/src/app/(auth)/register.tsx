@@ -16,7 +16,7 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { sendVerificationCode, useAuth } from "@/auth";
+import { completeAuthSheet, sendVerificationCode, useAuth } from "@/auth";
 import { LanguageSwitcher } from "@/components/language-switcher";
 import { appEnv } from "@/config";
 import { Colors, MaxContentWidth, Spacing } from "@/constants/theme";
@@ -63,8 +63,11 @@ export default function RegisterScreen() {
     acceptedTerms &&
     !isSubmitting;
 
+  // Dismiss the auth sheet on success, returning the user to their context.
   useEffect(() => {
-    if (auth.status === "authenticated") router.replace("/");
+    if (auth.status === "authenticated") {
+      completeAuthSheet(router);
+    }
   }, [auth.status, router]);
 
   useEffect(() => {
@@ -117,7 +120,7 @@ export default function RegisterScreen() {
     setLocalError(undefined);
     try {
       await auth.register({ identifier: value, code: code.trim(), password });
-      router.replace("/");
+      // The authenticated effect dismisses the sheet once state flips.
     } catch (error) {
       setLocalError(error instanceof Error ? error.message : t("register.failed"));
     }
@@ -136,7 +139,7 @@ export default function RegisterScreen() {
           contentContainerStyle={[
             styles.scrollContent,
             {
-              paddingTop: safeAreaInsets.top + Spacing.three,
+              paddingTop: safeAreaInsets.top + Spacing.two,
               paddingBottom: safeAreaInsets.bottom + Spacing.five,
               paddingLeft: Math.max(safeAreaInsets.left, Spacing.five),
               paddingRight: Math.max(safeAreaInsets.right, Spacing.five),

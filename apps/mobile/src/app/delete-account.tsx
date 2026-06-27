@@ -2,6 +2,7 @@ import { Stack } from "expo-router";
 import { useEffect, useState } from "react";
 import { Alert, Pressable, ScrollView, StyleSheet, View } from "react-native";
 
+import { useAuthGate } from "@/auth";
 import { ThemedText } from "@/components/themed-text";
 import { Spacing } from "@/constants/theme";
 import { useTheme } from "@/hooks/use-theme";
@@ -11,6 +12,7 @@ import { isAccountDeletionRequested, markAccountDeletionRequested } from "@/lib/
 export default function DeleteAccountScreen() {
   const t = useTranslations();
   const theme = useTheme();
+  const authGate = useAuthGate();
   const [requested, setRequested] = useState(false);
   const [submitting, setSubmitting] = useState(false);
 
@@ -24,8 +26,7 @@ export default function DeleteAccountScreen() {
     t("deleteAccount.notice3"),
   ];
 
-  const submit = () => {
-    if (submitting) return;
+  const confirmDeletion = () => {
     Alert.alert(t("deleteAccount.confirmTitle"), t("deleteAccount.confirmMessage"), [
       { text: t("common.cancel"), style: "cancel" },
       {
@@ -43,6 +44,16 @@ export default function DeleteAccountScreen() {
         },
       },
     ]);
+  };
+
+  const submit = () => {
+    if (submitting) return;
+    if (!authGate.isAuthenticated) {
+      authGate.openLogin({ onAuthenticated: confirmDeletion });
+      return;
+    }
+
+    confirmDeletion();
   };
 
   return (

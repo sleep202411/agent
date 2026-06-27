@@ -1,11 +1,28 @@
 import { useEffect, useState } from "react";
-import { BackHandler, Modal, Platform, Pressable, StyleSheet, View } from "react-native";
+import {
+  BackHandler,
+  Modal,
+  Platform,
+  Pressable,
+  StyleSheet,
+  View,
+  type ViewStyle,
+} from "react-native";
 
 import { ThemedText } from "@/components/themed-text";
 import { Spacing } from "@/constants/theme";
 import { useTheme } from "@/hooks/use-theme";
 import { useLocale, useTranslations } from "@/i18n";
 import { hasPrivacyConsent, openLegal, setPrivacyConsent } from "@/lib/legal";
+
+const webFocusReset =
+  Platform.OS === "web"
+    ? ({
+        outlineColor: "transparent",
+        outlineStyle: "none",
+        outlineWidth: 0,
+      } as unknown as ViewStyle)
+    : null;
 
 /**
  * First-launch privacy/terms consent gate (CN app-store requirement). Shows once
@@ -60,7 +77,11 @@ export function ConsentGate() {
           <Pressable
             accessibilityRole="button"
             onPress={agree}
-            style={({ pressed }) => (pressed ? styles.pressed : null)}
+            style={({ pressed }) => [
+              styles.actionPressable,
+              webFocusReset,
+              pressed && styles.pressed,
+            ]}
           >
             <View style={[styles.agree, { backgroundColor: theme.brand }]}>
               <ThemedText style={styles.agreeText}>{t("consent.agree")}</ThemedText>
@@ -69,7 +90,11 @@ export function ConsentGate() {
           <Pressable
             accessibilityRole="button"
             onPress={refuse}
-            style={({ pressed }) => (pressed ? styles.pressed : null)}
+            style={({ pressed }) => [
+              styles.actionPressable,
+              webFocusReset,
+              pressed && styles.pressed,
+            ]}
           >
             <View style={styles.refuse}>
               <ThemedText themeColor="textSecondary">{t("consent.refuse")}</ThemedText>
@@ -86,9 +111,15 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: "rgba(0,0,0,0.6)",
     justifyContent: "center",
-    paddingHorizontal: Spacing.six,
+    alignItems: "center",
+    paddingHorizontal: Spacing.four,
   },
-  card: { borderRadius: 16, padding: Spacing.six },
+  card: {
+    borderRadius: 16,
+    maxWidth: 420,
+    padding: Spacing.five,
+    width: "100%",
+  },
   title: { fontSize: 17, textAlign: "center", marginBottom: Spacing.three },
   message: { fontSize: 14, lineHeight: 22, textAlign: "center" },
   links: {
@@ -99,10 +130,14 @@ const styles = StyleSheet.create({
   },
   link: { fontSize: 14, fontWeight: "600" },
   pressed: { opacity: 0.8 },
+  actionPressable: {
+    outlineColor: "transparent",
+    outlineWidth: 0,
+  },
   agree: {
     marginTop: Spacing.six,
     paddingVertical: Spacing.four,
-    borderRadius: 999,
+    borderRadius: 12,
     alignItems: "center",
   },
   agreeText: { color: "#FFFFFF", fontSize: 16, fontWeight: "600" },

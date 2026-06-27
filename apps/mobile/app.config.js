@@ -255,7 +255,7 @@ module.exports = ({ config }) => {
     },
     web: {
       bundler: "metro",
-      output: "static",
+      output: "server",
       favicon: "./assets/images/favicon.png",
       themeColor: THEME_COLORS.canvas,
       backgroundColor: THEME_COLORS.canvas,

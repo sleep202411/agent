@@ -4,10 +4,9 @@ import { useEffect, useState } from "react";
 import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { useAuth } from "@/auth";
+import { useAuthGate } from "@/auth";
 import {
   MoreActionsButton,
-  promptSignIn,
   ReportReasonSheet,
   showContentActionsMenu,
 } from "@/components/report-actions";
@@ -41,7 +40,7 @@ export default function CrewDetailScreen() {
   const theme = useTheme();
   const t = useTranslations();
   const router = useRouter();
-  const { status: authStatus } = useAuth();
+  const authGate = useAuthGate();
   const [crew, setCrew] = useState<CrewDetail>();
   const [loading, setLoading] = useState(true);
   const [reportOpen, setReportOpen] = useState(false);
@@ -88,8 +87,14 @@ export default function CrewDetailScreen() {
 
   const tag = crewStatusTag(crew.status, t);
 
-  // Report/block require a signed-in viewer (Nest rejects anonymous calls).
-  const requireSignIn = () => promptSignIn(t, () => router.push("/login"));
+  const showActions = () => {
+    showContentActionsMenu({
+      t,
+      blockLabel: t("crewDetail.blockAction"),
+      onReport: () => setReportOpen(true),
+      onBlock: confirmBlock,
+    });
+  };
 
   const submitBlock = async () => {
     try {
@@ -102,7 +107,7 @@ export default function CrewDetailScreen() {
       ]);
     } catch (error) {
       if (error instanceof ApiRequestError && error.status === 401) {
-        requireSignIn();
+        authGate.openLogin({ onAuthenticated: confirmBlock });
         return;
       }
       Alert.alert(t("crewDetail.blockFailed"));
@@ -129,7 +134,7 @@ export default function CrewDetailScreen() {
     } catch (error) {
       if (error instanceof ApiRequestError && error.status === 401) {
         setReportOpen(false);
-        requireSignIn();
+        authGate.openLogin({ onAuthenticated: () => setReportOpen(true) });
         return;
       }
       Alert.alert(t("report.failed"));
@@ -139,16 +144,7 @@ export default function CrewDetailScreen() {
   };
 
   const openActions = () => {
-    if (authStatus !== "authenticated") {
-      requireSignIn();
-      return;
-    }
-    showContentActionsMenu({
-      t,
-      blockLabel: t("crewDetail.blockAction"),
-      onReport: () => setReportOpen(true),
-      onBlock: confirmBlock,
-    });
+    authGate.requireAuth({ onAuthenticated: showActions });
   };
 
   return (

@@ -4,12 +4,11 @@ import { SymbolView } from "expo-symbols";
 import { useEffect, useRef, useState } from "react";
 import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { WebView } from "react-native-webview";
+import { useVideoPlayer, VideoView } from "expo-video";
 
-import { useAuth } from "@/auth";
+import { useAuthGate } from "@/auth";
 import {
   MoreActionsButton,
-  promptSignIn,
   ReportReasonSheet,
   showContentActionsMenu,
 } from "@/components/report-actions";
@@ -36,7 +35,7 @@ export default function IpDetailScreen() {
   const theme = useTheme();
   const t = useTranslations();
   const router = useRouter();
-  const { status: authStatus } = useAuth();
+  const authGate = useAuthGate();
   const scrollRef = useRef<ScrollView>(null);
   const [ip, setIp] = useState<IpDetail>();
   const [loading, setLoading] = useState(true);
@@ -90,16 +89,20 @@ export default function IpDetailScreen() {
     ip.episodeCount ? `${ip.episodeCount} ${t("ipDetail.episodesUnit")}` : undefined,
   ].filter(Boolean);
 
-  // Play the IP trailer if present, else the first episode that has a video.
-  const playUrl = ip.trailerUrl ?? ip.episodes.find((episode) => episode.videoUrl)?.videoUrl;
   const playVideo = (url?: string, title?: string) => {
     if (!url) return;
     setPlaying({ url, title: title ?? ip.title });
     scrollRef.current?.scrollTo({ y: 0, animated: true });
   };
 
-  // Report/block require a signed-in viewer (Nest rejects anonymous calls).
-  const requireSignIn = () => promptSignIn(t, () => router.push("/login"));
+  const showActions = () => {
+    showContentActionsMenu({
+      t,
+      blockLabel: t("ipDetail.blockAction"),
+      onReport: () => setReportOpen(true),
+      onBlock: confirmBlock,
+    });
+  };
 
   const submitBlock = async () => {
     try {
@@ -114,7 +117,7 @@ export default function IpDetailScreen() {
       // A 401 means the session expired mid-call (the global handler already
       // cleared it) — tell the user to sign back in, not "try again later".
       if (error instanceof ApiRequestError && error.status === 401) {
-        requireSignIn();
+        authGate.openLogin({ onAuthenticated: confirmBlock });
         return;
       }
       Alert.alert(t("ipDetail.blockFailed"));
@@ -141,7 +144,7 @@ export default function IpDetailScreen() {
     } catch (error) {
       if (error instanceof ApiRequestError && error.status === 401) {
         setReportOpen(false);
-        requireSignIn();
+        authGate.openLogin({ onAuthenticated: () => setReportOpen(true) });
         return;
       }
       Alert.alert(t("report.failed"));
@@ -151,16 +154,7 @@ export default function IpDetailScreen() {
   };
 
   const openActions = () => {
-    if (authStatus !== "authenticated") {
-      requireSignIn();
-      return;
-    }
-    showContentActionsMenu({
-      t,
-      blockLabel: t("ipDetail.blockAction"),
-      onReport: () => setReportOpen(true),
-      onBlock: confirmBlock,
-    });
+    authGate.requireAuth({ onAuthenticated: showActions });
   };
 
   return (
@@ -214,66 +208,74 @@ export default function IpDetailScreen() {
                 style={StyleSheet.absoluteFill}
               />
               <View style={styles.backdropScrim} />
-              <View style={styles.backdropCopy}>
-                <ThemedText type="subtitle" style={styles.title} numberOfLines={2}>
-                  {ip.title}
-                </ThemedText>
-                <View style={styles.metaRow}>
-                  {ip.rating != null ? (
-                    <View style={styles.ratingRow}>
-                      <SymbolView
-                        name={{ ios: "star.fill", android: "star", web: "star" }}
-                        size={12}
-                        tintColor={theme.brand}
-                      />
-                      <ThemedText type="code" style={{ color: theme.brand }}>
-                        {ip.rating.toFixed(1)}
-                      </ThemedText>
-                    </View>
-                  ) : null}
-                  <ThemedText type="code" themeColor="textSecondary">
-                    {metaParts.join("  ·  ")}
-                  </ThemedText>
-                  {/* Platform-wide AIGC label — all published IPs are AI-produced. */}
-                  <View style={[styles.aiBadge, { borderColor: theme.border }]}>
-                    <ThemedText type="code" themeColor="textSecondary">
-                      {t("ipDetail.aiBadge")}
-                    </ThemedText>
-                  </View>
-                </View>
-              </View>
             </>
           )}
         </View>
 
         <View style={styles.body}>
-          <View style={styles.actionRow}>
-            <Pressable
-              accessibilityRole="button"
-              disabled={!playUrl}
-              onPress={() => playVideo(playUrl, ip.title)}
-              style={[
-                styles.playButton,
-                { backgroundColor: playUrl ? theme.brand : theme.backgroundSelected },
-              ]}
-            >
-              <SymbolView
-                name={
-                  playUrl
-                    ? { ios: "play.fill", android: "play_arrow", web: "play_arrow" }
-                    : { ios: "clock", android: "schedule", web: "schedule" }
-                }
-                size={16}
-                tintColor={playUrl ? "#FFFFFF" : theme.textSecondary}
-              />
-              <ThemedText
-                type="smallBold"
-                style={{ color: playUrl ? "#FFFFFF" : theme.textSecondary }}
-              >
-                {playUrl ? t("ipDetail.play") : t("ipDetail.comingSoon")}
+          <View style={styles.titleBlock}>
+            <ThemedText type="subtitle" style={styles.title} numberOfLines={2}>
+              {ip.title}
+            </ThemedText>
+            <View style={styles.metaRow}>
+              {ip.rating != null ? (
+                <View style={styles.ratingRow}>
+                  <SymbolView
+                    name={{ ios: "star.fill", android: "star", web: "star" }}
+                    size={12}
+                    tintColor={theme.brand}
+                  />
+                  <ThemedText type="code" style={{ color: theme.brand }}>
+                    {ip.rating.toFixed(1)}
+                  </ThemedText>
+                </View>
+              ) : null}
+              <ThemedText type="code" themeColor="textSecondary">
+                {metaParts.join("  ·  ")}
               </ThemedText>
-            </Pressable>
+              {/* Platform-wide AIGC label — all published IPs are AI-produced. */}
+              <View style={[styles.aiBadge, { borderColor: theme.border }]}>
+                <ThemedText type="code" themeColor="textSecondary">
+                  {t("ipDetail.aiBadge")}
+                </ThemedText>
+              </View>
+            </View>
           </View>
+
+          {ip.episodes.length ? (
+            <View style={styles.section}>
+              <SectionHeader
+                title={t("ipDetail.episodesTitle")}
+                trailing={`${ip.episodeCount ?? ip.episodes.length} ${t("ipDetail.episodesTotal")}`}
+              />
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={styles.episodeRow}
+              >
+                {ip.trailerUrl ? (
+                  <MediaCard
+                    coverUrl={ip.coverUrl}
+                    label={t("ipDetail.trailer")}
+                    onPlay={() => playVideo(ip.trailerUrl, t("ipDetail.trailer"))}
+                  />
+                ) : null}
+                {ip.episodes.map((episode) => (
+                  <EpisodeCard
+                    key={episode.id}
+                    episode={episode}
+                    title={ip.title}
+                    onPlay={() =>
+                      playVideo(
+                        episode.videoUrl,
+                        `${t("ipDetail.episodePrefix")}${episode.index}${t("ipDetail.episodeSuffix")}`
+                      )
+                    }
+                  />
+                ))}
+              </ScrollView>
+            </View>
+          ) : null}
 
           {ip.roomCode ? (
             <ThemedView type="backgroundElement" style={styles.roomChip}>
@@ -312,52 +314,13 @@ export default function IpDetailScreen() {
             ))}
           </View>
 
-          {ip.episodes.length ? (
-            <View style={styles.section}>
-              <SectionHeader
-                title={t("ipDetail.episodesTitle")}
-                trailing={`${ip.episodeCount ?? ip.episodes.length} ${t("ipDetail.episodesTotal")}`}
-              />
-              <ScrollView
-                horizontal
-                showsHorizontalScrollIndicator={false}
-                contentContainerStyle={styles.episodeRow}
-              >
-                {ip.trailerUrl ? (
-                  <MediaCard
-                    coverUrl={ip.coverUrl}
-                    label={t("ipDetail.trailer")}
-                    onPlay={() => playVideo(ip.trailerUrl, t("ipDetail.trailer"))}
-                  />
-                ) : null}
-                {ip.episodes.map((episode) => (
-                  <EpisodeCard
-                    key={episode.id}
-                    episode={episode}
-                    title={ip.title}
-                    onPlay={() =>
-                      playVideo(
-                        episode.videoUrl,
-                        `${t("ipDetail.episodePrefix")}${episode.index}${t("ipDetail.episodeSuffix")}`
-                      )
-                    }
-                  />
-                ))}
-              </ScrollView>
-            </View>
-          ) : null}
-
           <View style={styles.section}>
             <SectionHeader title={t("ipDetail.castTitle")} />
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={styles.peopleRow}
-            >
+            <View style={styles.peopleGrid}>
               {[...ip.creators, ...ip.cast].map((person) => (
                 <PersonChip key={person.id} person={person} />
               ))}
-            </ScrollView>
+            </View>
           </View>
 
           <View style={styles.section}>
@@ -383,22 +346,17 @@ export default function IpDetailScreen() {
 }
 
 function InlineVideo({ url }: { url: string }) {
-  const safeUrl = url.replace(/"/g, "&quot;");
-  const html = `<!DOCTYPE html><html><head>
-<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
-<style>html,body{margin:0;height:100%;background:#000;overflow:hidden}video{width:100%;height:100%;object-fit:contain}</style>
-</head><body>
-<video src="${safeUrl}" controls autoplay playsinline webkit-playsinline preload="auto"></video>
-</body></html>`;
+  // Native player (expo-video) — autoplays, native controls incl. a fullscreen
+  // button; the parent box already insets below the status bar.
+  const player = useVideoPlayer(url, (instance) => {
+    instance.play();
+  });
   return (
-    <WebView
-      source={{ html }}
-      originWhitelist={["*"]}
+    <VideoView
       style={StyleSheet.absoluteFill}
-      allowsInlineMediaPlayback
-      mediaPlaybackRequiresUserAction={false}
-      allowsFullscreenVideo
-      javaScriptEnabled
+      player={player}
+      contentFit="contain"
+      nativeControls
     />
   );
 }
@@ -460,7 +418,20 @@ function EpisodeCard({
               tintColor="#FFFFFF"
             />
           </View>
-        ) : null}
+        ) : (
+          // No playable video = locked: the backend withholds the media URL for
+          // episodes this viewer hasn't unlocked.
+          <View style={styles.lockOverlay}>
+            <SymbolView
+              name={{ ios: "lock.fill", android: "lock", web: "lock" }}
+              size={16}
+              tintColor="#FFFFFF"
+            />
+            <ThemedText type="code" style={styles.lockText}>
+              {t("ipDetail.locked")}
+            </ThemedText>
+          </View>
+        )}
         {episode.free ? (
           <View style={styles.freeBadge}>
             <ThemedText type="code" style={styles.freeText}>
@@ -486,18 +457,13 @@ function PersonChip({ person }: { person: Person }) {
   // Real avatar if resolved, else a deterministic DiceBear face by id (web parity).
   const avatarUrl = person.avatarUrl ?? dicebearAvatarUrl(`user:${person.userId ?? person.id}`);
   return (
-    <View style={styles.personChip}>
+    <View style={[styles.personChip, { backgroundColor: theme.backgroundElement }]}>
       <View style={[styles.avatar, { backgroundColor: theme.backgroundSelected }]}>
         <Image source={{ uri: avatarUrl }} style={StyleSheet.absoluteFill} contentFit="cover" />
       </View>
-      <ThemedText type="code" numberOfLines={1} style={styles.personName}>
+      <ThemedText type="small" numberOfLines={2} style={styles.personName}>
         {person.name}
       </ThemedText>
-      {person.role ? (
-        <ThemedText type="code" themeColor="textSecondary" numberOfLines={1}>
-          {person.role}
-        </ThemedText>
-      ) : null}
     </View>
   );
 }
@@ -541,8 +507,7 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     paddingHorizontal: Spacing.four,
   },
-  backdropCopy: {
-    padding: Spacing.four,
+  titleBlock: {
     gap: Spacing.one,
   },
   title: {
@@ -568,22 +533,6 @@ const styles = StyleSheet.create({
   body: {
     padding: Spacing.four,
     gap: Spacing.five,
-  },
-  actionRow: {
-    flexDirection: "row",
-    gap: Spacing.two,
-  },
-  playButton: {
-    flex: 1,
-    height: 48,
-    borderRadius: 8,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: Spacing.one,
-  },
-  playText: {
-    color: "#FFFFFF",
   },
   secondaryButton: {
     height: 48,
@@ -654,14 +603,37 @@ const styles = StyleSheet.create({
     fontSize: 10,
     letterSpacing: 0.4,
   },
-  peopleRow: {
-    gap: Spacing.four,
-    paddingRight: Spacing.four,
+  lockOverlay: {
+    position: "absolute",
+    top: 0,
+    right: 0,
+    bottom: 0,
+    left: 0,
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 3,
+    borderRadius: 8,
+    backgroundColor: "rgba(7,8,12,0.5)",
+  },
+  lockText: {
+    color: "#FFFFFF",
+    fontSize: 10,
+    letterSpacing: 0.4,
+  },
+  peopleGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: Spacing.three,
   },
   personChip: {
-    width: AVATAR + 12,
+    flexBasis: "47%",
+    flexGrow: 1,
+    minWidth: 0,
+    flexDirection: "row",
     alignItems: "center",
-    gap: 4,
+    gap: Spacing.two,
+    borderRadius: AVATAR / 2,
+    paddingRight: Spacing.three,
   },
   avatar: {
     width: AVATAR,
@@ -672,7 +644,8 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   personName: {
-    color: undefined,
+    flex: 1,
+    minWidth: 0,
   },
   pressed: {
     opacity: 0.82,
