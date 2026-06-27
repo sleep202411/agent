@@ -29,6 +29,7 @@ import { RealtimeModule } from './infra/realtime/realtime.module';
 import { RedisModule } from './infra/redis/redis.module';
 import { NotificationModule } from './notification';
 import { QuotaModule } from './quota/quota.module';
+import { ReferralsModule } from './referrals/referrals.module';
 import { SparkModule } from './spark/spark.module';
 import { SharingModule } from './sharing/sharing.module';
 import { UsersModule } from './users/users.module';
@@ -73,6 +74,7 @@ import { WorkspacesModule } from './workspaces';
     CrewsModule,
     EpisodesModule,
     CreatorServicesModule,
+    ReferralsModule,
     ConversationsModule,
     OrdersModule,
     HealthModule,

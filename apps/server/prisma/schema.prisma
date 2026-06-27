@@ -5325,3 +5325,140 @@ model UserCertificate {
   @@index([issuedAt(sort: Desc)], map: "user_certificates_issued_idx")
   @@map("user_certificates")
 }
+
+// ─── Referral / invite-reward program ──────────────────────────────────
+// The "邀请奖励" surface. Self-contained on the Nest side: attribution is
+// CLAIMED by the invited user after signup (POST /aurora/referrals/claim),
+// so it needs no Java signup hook. External auth user ids ride as
+// VarChar(64) with FK not enforced (crew/services/cert convention). Money
+// is BigInt minor units (1/100 = 1 cent) to match the wallet ledger.
+
+enum ReferralAttributionStatus {
+  pending // claimed; awaiting the referee's qualifying action
+  qualified // referee completed the qualifying action
+  reversed // undone (refund / clawback)
+  voided // admin-cancelled / fraud
+}
+
+enum ReferralRewardKind {
+  referral // referrer earns per qualified referee
+  milestone // referrer hit an invitee-count tier
+  invitee // the invited user's welcome perk (earner = referee)
+}
+
+enum ReferralRewardStatus {
+  pending // created, referee not yet qualified
+  qualified // qualifying action done, reward firming up
+  accrued // credited, inside the hold window
+  reversed // clawed back
+  voided // admin-cancelled
+  paid_out // settled to the wallet
+}
+
+/// Admin-managed program config (one row per key — CheckInConfig style).
+/// Milestone tiers live in the child table.
+model ReferralProgram {
+  id                          String   @id @default(uuid(7)) @db.Uuid
+  key                         String   @unique @default("default")
+  enabled                     Boolean  @default(false)
+  currency                    String   @default("USD") @db.VarChar(3)
+  /// Referrer reward per qualified referee, minor units.
+  rewardPerReferralMinor      BigInt   @default(0) @map("reward_per_referral_minor")
+  /// What qualifies a referee: "signup" | "first_purchase".
+  qualifyEvent                String   @default("first_purchase") @map("qualify_event") @db.VarChar(32)
+  /// Days an accrued reward is held before it becomes payable.
+  holdDays                    Int      @default(0) @map("hold_days")
+  /// Cap on rewarded referees per referrer (0 = unlimited).
+  maxRewardedReferees         Int      @default(0) @map("max_rewarded_referees")
+  /// Anti-fraud: only attribute referees whose account is younger than this
+  /// many hours (0 = no limit).
+  refereeMaxAccountAgeHours   Int      @default(0) @map("referee_max_account_age_hours")
+  /// Welcome perk shown to the invited user.
+  inviteeBenefitTitle         String?  @map("invitee_benefit_title") @db.VarChar(120)
+  inviteeBenefitDetail        String?  @map("invitee_benefit_detail") @db.VarChar(400)
+  inviteeBenefitMinor         BigInt   @default(0) @map("invitee_benefit_minor")
+  inviteeBenefitExpiresInDays Int?     @map("invitee_benefit_expires_in_days")
+  createdById                 String?  @map("created_by_id") @db.VarChar(64)
+  updatedById                 String?  @map("updated_by_id") @db.VarChar(64)
+  createdAt                   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt                   DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  milestones ReferralMilestoneConfig[]
+
+  @@map("referral_programs")
+}
+
+/// Admin-editable milestone tiers: invite N referees → bonus reward.
+model ReferralMilestoneConfig {
+  id               String          @id @default(uuid(7)) @db.Uuid
+  programId        String          @map("program_id") @db.Uuid
+  program          ReferralProgram @relation(fields: [programId], references: [id], onDelete: Cascade)
+  inviteeThreshold Int             @map("invitee_threshold")
+  rewardMinor      BigInt          @map("reward_minor")
+  title            String          @db.VarChar(120)
+  detail           String          @db.VarChar(400)
+  rank             Int             @default(0)
+  archivedAt       DateTime?       @map("archived_at") @db.Timestamptz(6)
+  createdAt        DateTime        @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt        DateTime        @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@unique([programId, inviteeThreshold], map: "referral_milestone_program_threshold_unique")
+  @@index([programId, rank], map: "referral_milestone_program_rank_idx")
+  @@map("referral_milestone_configs")
+}
+
+/// One invite code per user per program.
+model ReferralInviteCode {
+  id         String   @id @default(uuid(7)) @db.Uuid
+  code       String   @unique @db.VarChar(32)
+  userId     String   @map("user_id") @db.VarChar(64)
+  programKey String   @default("default") @map("program_key") @db.VarChar(64)
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@unique([userId, programKey], map: "referral_code_user_program_unique")
+  @@map("referral_invite_codes")
+}
+
+/// Who referred whom — one attribution per referee, lifetime.
+model ReferralAttribution {
+  id             String                    @id @default(uuid(7)) @db.Uuid
+  programKey     String                    @default("default") @map("program_key") @db.VarChar(64)
+  referrerUserId String                    @map("referrer_user_id") @db.VarChar(64)
+  /// A user can be referred at most once, ever.
+  refereeUserId  String                    @unique @map("referee_user_id") @db.VarChar(64)
+  inviteCode     String                    @map("invite_code") @db.VarChar(32)
+  status         ReferralAttributionStatus @default(pending)
+  qualifiedAt    DateTime?                 @map("qualified_at") @db.Timestamptz(6)
+  createdAt      DateTime                  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime                  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@index([referrerUserId, status], map: "referral_attribution_referrer_idx")
+  @@map("referral_attributions")
+}
+
+/// A reward owed to a user (referrer per-referral / milestone, or referee perk).
+model ReferralReward {
+  id            String               @id @default(uuid(7)) @db.Uuid
+  programKey    String               @default("default") @map("program_key") @db.VarChar(64)
+  userId        String               @map("user_id") @db.VarChar(64)
+  kind          ReferralRewardKind
+  status        ReferralRewardStatus @default(pending)
+  amountMinor   BigInt               @map("amount_minor")
+  currency      String               @db.VarChar(3)
+  title         String               @db.VarChar(120)
+  subtitle      String?              @db.VarChar(200)
+  /// Source attribution (null for milestone rewards) — also the per-referral
+  /// idempotency key: at most one referral reward per attribution.
+  attributionId String?              @unique @map("attribution_id") @db.Uuid
+  /// Source milestone config (null for per-referral / invitee rewards).
+  milestoneId   String?              @map("milestone_id") @db.Uuid
+  /// When an accrued reward becomes payable (after the hold window).
+  availableAt   DateTime?            @map("available_at") @db.Timestamptz(6)
+  paidOutAt     DateTime?            @map("paid_out_at") @db.Timestamptz(6)
+  createdAt     DateTime             @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt     DateTime             @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@unique([userId, milestoneId], map: "referral_reward_user_milestone_unique")
+  @@index([userId, status, createdAt(sort: Desc)], map: "referral_reward_user_idx")
+  @@map("referral_rewards")
+}

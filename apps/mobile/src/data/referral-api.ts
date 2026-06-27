@@ -76,7 +76,8 @@ const EMPTY_REFERRAL_DASHBOARD: ReferralDashboard = {
 
 export async function fetchReferralDashboard(): Promise<ReferralDashboard> {
   try {
-    const dto = await api.get<ReferralDashboardDto>("/aurora/referrals/me", {
+    // auroraBaseUrl already ends in /aurora, so the path must NOT repeat it.
+    const dto = await api.get<ReferralDashboardDto>("/referrals/me", {
       service: "aurora",
     });
     return normalizeDashboard(dto);
@@ -86,6 +87,17 @@ export async function fetchReferralDashboard(): Promise<ReferralDashboard> {
     }
     throw error;
   }
+}
+
+/**
+ * Claim an invite code — the invited user attributes themselves as the referee.
+ * Idempotent server-side (one attribution per referee, for life).
+ */
+export async function claimReferral(code: string): Promise<{ status: string }> {
+  return api.post<{ status: string }>("/referrals/claim", {
+    service: "aurora",
+    data: { code },
+  });
 }
 
 function normalizeDashboard(dto: ReferralDashboardDto | null | undefined): ReferralDashboard {
