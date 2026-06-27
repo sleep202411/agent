@@ -26,12 +26,6 @@ type CreatorRowDto = {
   info?: CreatorInfoDto | null;
 };
 
-type CreatorListEnvelope = {
-  data?: CreatorRowDto[];
-  sum?: number;
-  total?: number;
-};
-
 type CreatorDetailEnvelope = {
   info?: CreatorInfoDto;
   level?: CreatorLevelDto[];
@@ -76,22 +70,58 @@ function mapCreator(row: CreatorRowDto): CreatorSummary | undefined {
   };
 }
 
-export async function fetchCreators(limit = 18): Promise<CreatorSummary[]> {
+export interface CreatorsPage {
+  creators: CreatorSummary[];
+  total: number;
+  /** Guest hit the public cap (50) and there are more behind a login. */
+  requiresLogin: boolean;
+}
+
+type CreatorsListDto = {
+  items?: {
+    id?: string | null;
+    name?: string | null;
+    /** Server-resolved: an absolute image URL or a DiceBear data URI. */
+    avatarUrl?: string | null;
+    openToWork?: boolean | null;
+  }[];
+  total?: number;
+  requiresLogin?: boolean;
+};
+
+/**
+ * Public creators directory — OUR Nest endpoint (`/aurora/creators`), which
+ * reads client_user directly + resolves avatars server-side (no Java HTTP, so
+ * no login wall). Guests see up to 50 then `requiresLogin`; a signed-in viewer
+ * gets the full window.
+ */
+export async function fetchCreators(limit = 50, offset = 0): Promise<CreatorsPage> {
   try {
-    const envelope = await api.postForm<CreatorListEnvelope>(
-      "/user/list/user/info",
-      { page: 1, pageSize: limit },
-      { raw: true, service: "content" }
-    );
-    const rows = Array.isArray(envelope.data) ? envelope.data : [];
-    const seen = new Set<string>();
-    return rows.map(mapCreator).filter((creator): creator is CreatorSummary => {
-      if (!creator || seen.has(creator.id)) return false;
-      seen.add(creator.id);
-      return true;
+    const res = await api.get<CreatorsListDto>("/creators", {
+      service: "aurora",
+      params: { limit, offset },
     });
+    const seen = new Set<string>();
+    const creators: CreatorSummary[] = [];
+    for (const item of res.items ?? []) {
+      const id = nonEmpty(item.id);
+      if (!id || seen.has(id)) continue;
+      seen.add(id);
+      creators.push({
+        id,
+        name: nonEmpty(item.name) ?? "Creator",
+        avatarUrl: nonEmpty(item.avatarUrl),
+        openToWork: item.openToWork === true,
+        levels: [],
+      });
+    }
+    return {
+      creators,
+      total: res.total ?? creators.length,
+      requiresLogin: res.requiresLogin === true,
+    };
   } catch {
-    return [];
+    return { creators: [], total: 0, requiresLogin: false };
   }
 }
 

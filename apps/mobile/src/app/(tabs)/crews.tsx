@@ -1,17 +1,14 @@
 import { router } from "expo-router";
-import { SymbolView } from "expo-symbols";
 import { useEffect, useRef, useState } from "react";
 import { Pressable, StyleSheet, View } from "react-native";
 
 import { TabScreen } from "@/components/tab-screen";
 import { ThemedText } from "@/components/themed-text";
-import { ThemedView } from "@/components/themed-view";
 import { EmptyState, PosterImage, ScreenHeader, Skeleton, Tag } from "@/components/ui";
 import { Spacing } from "@/constants/theme";
 import { useBrowseVersion } from "@/data/browse-refresh";
 import { getCrewFeed } from "@/data/browse-service";
 import type { CrewStatus, CrewSummary } from "@/data/types";
-import { useTheme } from "@/hooks/use-theme";
 import { type MessageKey, useTranslations } from "@/i18n";
 import { toHref } from "@/lib/navigation";
 
@@ -22,6 +19,12 @@ export function crewStatusTag(status: CrewStatus): {
   if (status === "recruiting") return { labelKey: "crews.statusRecruiting", tone: "success" };
   if (status === "in-production") return { labelKey: "crews.statusInProduction", tone: "info" };
   return { labelKey: "crews.statusClosed", tone: "neutral" };
+}
+
+function chunkPairs<T>(items: T[]): T[][] {
+  const rows: T[][] = [];
+  for (let i = 0; i < items.length; i += 2) rows.push(items.slice(i, i + 2));
+  return rows;
 }
 
 export default function CrewsScreen() {
@@ -65,12 +68,17 @@ export default function CrewsScreen() {
       <ScreenHeader title={t("crews.title")} />
 
       {loading ? (
-        <View style={styles.list}>
-          {[0, 1].map((item) => (
-            <View key={item} style={styles.skeletonCard}>
-              <Skeleton height={150} radius={8} />
-              <Skeleton width="60%" height={16} />
-              <Skeleton width="100%" height={28} />
+        <View style={styles.grid}>
+          {[0, 1].map((rowIndex) => (
+            <View key={rowIndex} style={styles.gridRow}>
+              {[0, 1].map((col) => (
+                <View key={col} style={styles.cardItem}>
+                  <View style={styles.card}>
+                    <Skeleton height={100} radius={12} />
+                    <Skeleton width="70%" height={14} />
+                  </View>
+                </View>
+              ))}
             </View>
           ))}
         </View>
@@ -81,9 +89,14 @@ export default function CrewsScreen() {
           symbol={{ ios: "exclamationmark.triangle", android: "warning", web: "warning" }}
         />
       ) : crews.length ? (
-        <View style={styles.list}>
-          {crews.map((crew) => (
-            <CrewCard key={crew.id} crew={crew} />
+        <View style={styles.grid}>
+          {chunkPairs(crews).map((row, rowIndex) => (
+            <View key={rowIndex} style={styles.gridRow}>
+              {row.map((crew) => (
+                <CrewCard key={crew.id} crew={crew} />
+              ))}
+              {row.length === 1 ? <View style={styles.cardItem} /> : null}
+            </View>
           ))}
         </View>
       ) : (
@@ -98,145 +111,61 @@ export default function CrewsScreen() {
 }
 
 function CrewCard({ crew }: { crew: CrewSummary }) {
-  const theme = useTheme();
   const t = useTranslations();
   const tag = crewStatusTag(crew.status);
+  const metaLabel =
+    crew.status === "recruiting" && crew.openRoles > 0
+      ? `${crew.openRoles} ${t("crews.rolesOpen")}`
+      : crew.memberCount
+        ? `${crew.memberCount} ${t("crews.members")}`
+        : undefined;
 
   return (
     <Pressable
       accessibilityRole="button"
       onPress={() => router.push(toHref(`/crew/${crew.id}`))}
-      style={({ pressed }) => pressed && styles.pressed}
+      style={styles.cardItem}
     >
-      <ThemedView type="backgroundElement" style={styles.card}>
-        <View style={styles.coverWrap}>
-          <PosterImage
-            uri={crew.coverUrl}
-            label={crew.name}
-            radius={0}
-            style={StyleSheet.absoluteFill}
-          />
-          <View style={styles.coverScrim} />
-          <View style={styles.coverTop}>
-            <Tag label={t(tag.labelKey)} tone={tag.tone} />
-            {crew.status === "recruiting" ? (
-              <View style={[styles.rolesPill, { backgroundColor: theme.brand }]}>
-                <ThemedText type="code" style={styles.rolesPillText}>
-                  {crew.openRoles} {t("crews.rolesOpen")}
-                </ThemedText>
-              </View>
-            ) : null}
-          </View>
-        </View>
-        <View style={styles.cardBody}>
-          <ThemedText type="smallBold" numberOfLines={1}>
+      {({ pressed }) => (
+        <View style={[styles.card, pressed && styles.pressed]}>
+          <PosterImage uri={crew.coverUrl} label={crew.name} radius={12} style={styles.cover} />
+          <ThemedText type="smallBold" numberOfLines={2}>
             {crew.name}
           </ThemedText>
-          {crew.tagline ? (
-            <ThemedText type="code" themeColor="textSecondary" numberOfLines={1}>
-              {crew.tagline}
-            </ThemedText>
-          ) : null}
-          <ThemedText type="small" themeColor="textSecondary" numberOfLines={2}>
-            {crew.summary}
-          </ThemedText>
-          <View style={styles.tagRow}>
-            {crew.roleTags.slice(0, 3).map((role) => (
-              <Tag key={role} label={role} />
-            ))}
-          </View>
-          <View style={styles.footer}>
-            {crew.location ? (
-              <View style={styles.metaItem}>
-                <SymbolView
-                  name={{ ios: "mappin", android: "place", web: "place" }}
-                  size={12}
-                  tintColor={theme.textSecondary}
-                />
-                <ThemedText type="code" themeColor="textSecondary">
-                  {crew.location}
-                </ThemedText>
-              </View>
-            ) : null}
-            {crew.memberCount ? (
-              <View style={styles.metaItem}>
-                <SymbolView
-                  name={{ ios: "person.2", android: "group", web: "group" }}
-                  size={12}
-                  tintColor={theme.textSecondary}
-                />
-                <ThemedText type="code" themeColor="textSecondary">
-                  {crew.memberCount} {t("crews.members")}
-                </ThemedText>
-              </View>
-            ) : null}
+          <View style={styles.metaRow}>
+            <Tag label={t(tag.labelKey)} tone={tag.tone} />
+            {metaLabel ? <Tag label={metaLabel} /> : null}
           </View>
         </View>
-      </ThemedView>
+      )}
     </Pressable>
   );
 }
 
 const styles = StyleSheet.create({
-  list: {
+  grid: {
+    gap: Spacing.four,
+  },
+  gridRow: {
+    flexDirection: "row",
     gap: Spacing.three,
   },
-  skeletonCard: {
-    gap: Spacing.two,
+  cardItem: {
+    flex: 1,
+    minWidth: 0,
   },
   card: {
-    borderRadius: 8,
-    overflow: "hidden",
+    gap: Spacing.one + 2,
   },
-  coverWrap: {
-    height: 150,
-    justifyContent: "flex-start",
+  cover: {
+    aspectRatio: 16 / 9,
+    width: "100%",
   },
-  coverScrim: {
-    position: "absolute",
-    top: 0,
-    right: 0,
-    bottom: 0,
-    left: 0,
-    backgroundColor: "rgba(7,8,12,0.28)",
-  },
-  coverTop: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    padding: Spacing.three,
-  },
-  rolesPill: {
-    height: 22,
-    paddingHorizontal: 8,
-    borderRadius: 6,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  rolesPillText: {
-    color: "#FFFFFF",
-    fontSize: 11,
-  },
-  cardBody: {
-    padding: Spacing.three,
-    gap: Spacing.one,
-  },
-  tagRow: {
+  metaRow: {
     flexDirection: "row",
     flexWrap: "wrap",
     gap: Spacing.one,
-    marginTop: Spacing.half,
-  },
-  footer: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: Spacing.four,
-    marginTop: Spacing.half,
-  },
-  metaItem: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 4,
+    minHeight: 22,
   },
   pressed: {
     opacity: 0.82,

@@ -1,7 +1,16 @@
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import { SymbolView } from "expo-symbols";
 import { useEffect, useState } from "react";
-import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, View } from "react-native";
+import {
+  ActionSheetIOS,
+  ActivityIndicator,
+  Alert,
+  Platform,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  View,
+} from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { useAuthGate } from "@/auth";
@@ -15,10 +24,16 @@ import { ThemedView } from "@/components/themed-view";
 import { EmptyState, PosterImage, SectionHeader, Tag } from "@/components/ui";
 import { Spacing } from "@/constants/theme";
 import { invalidateBrowse } from "@/data/browse-refresh";
-import { blockCrew, getCrewById, reportCrew, type IpReportReason } from "@/data/browse-service";
-import type { CrewDetail, CrewStatus, Person } from "@/data/types";
+import {
+  applyToCrewPosition,
+  blockCrew,
+  getCrewById,
+  reportCrew,
+  type IpReportReason,
+} from "@/data/browse-service";
+import type { CrewDetail, CrewRoleOpening, CrewStatus, Person } from "@/data/types";
 import { useTheme } from "@/hooks/use-theme";
-import { useTranslations } from "@/i18n";
+import { type MessageKey, useTranslations } from "@/i18n";
 import { ApiRequestError } from "@/lib/api-client";
 
 function crewStatusTag(
@@ -34,6 +49,14 @@ function crewStatusTag(
   return { label: t("crewDetail.statusClosed"), tone: "neutral" };
 }
 
+const EMPLOYMENT_LABELS: Record<string, MessageKey> = {
+  full_time: "crewDetail.employmentFullTime",
+  part_time: "crewDetail.employmentPartTime",
+  contract: "crewDetail.employmentContract",
+  freelance: "crewDetail.employmentFreelance",
+  project_based: "crewDetail.employmentProjectBased",
+};
+
 export default function CrewDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const insets = useSafeAreaInsets();
@@ -45,6 +68,7 @@ export default function CrewDetailScreen() {
   const [loading, setLoading] = useState(true);
   const [reportOpen, setReportOpen] = useState(false);
   const [reporting, setReporting] = useState(false);
+  const [applying, setApplying] = useState(false);
 
   useEffect(() => {
     let alive = true;
@@ -147,6 +171,69 @@ export default function CrewDetailScreen() {
     authGate.requireAuth({ onAuthenticated: showActions });
   };
 
+  const submitApply = async (positionId: string) => {
+    setApplying(true);
+    try {
+      await applyToCrewPosition(crew.id, positionId);
+      Alert.alert(t("crewDetail.applySubmittedTitle"), t("crewDetail.applySubmittedBody"));
+    } catch (error) {
+      if (error instanceof ApiRequestError && error.status === 401) {
+        authGate.openLogin({ onAuthenticated: () => void submitApply(positionId) });
+        return;
+      }
+      const detail = error instanceof ApiRequestError ? error.message : undefined;
+      Alert.alert(t("crewDetail.applyFailed"), detail);
+    } finally {
+      setApplying(false);
+    }
+  };
+
+  const roleMeta = (role: CrewRoleOpening) => {
+    const parts: string[] = [];
+    if (role.location) parts.push(role.location);
+    const key = role.employmentType ? EMPLOYMENT_LABELS[role.employmentType] : undefined;
+    if (key) parts.push(t(key));
+    return parts.join(" · ");
+  };
+
+  // Recruiting CTA: one open position applies directly (after a confirm),
+  // multiple → pick which position first.
+  const handleApply = () => {
+    authGate.requireAuth({
+      onAuthenticated: () => {
+        const roles = crew.roles;
+        if (roles.length === 0) return;
+        if (roles.length === 1) {
+          Alert.alert(t("crewDetail.applyConfirmTitle"), roles[0].title, [
+            { text: t("report.cancel"), style: "cancel" },
+            {
+              text: t("crewDetail.applyConfirmAction"),
+              onPress: () => void submitApply(roles[0].id),
+            },
+          ]);
+          return;
+        }
+        if (Platform.OS === "ios") {
+          ActionSheetIOS.showActionSheetWithOptions(
+            {
+              title: t("crewDetail.applyPickTitle"),
+              options: [t("report.cancel"), ...roles.map((role) => role.title)],
+              cancelButtonIndex: 0,
+            },
+            (index) => {
+              if (index > 0) void submitApply(roles[index - 1].id);
+            }
+          );
+          return;
+        }
+        Alert.alert(t("crewDetail.applyPickTitle"), undefined, [
+          ...roles.map((role) => ({ text: role.title, onPress: () => void submitApply(role.id) })),
+          { text: t("report.cancel"), style: "cancel" as const },
+        ]);
+      },
+    });
+  };
+
   return (
     <ThemedView style={styles.screen}>
       <Stack.Screen
@@ -219,29 +306,48 @@ export default function CrewDetailScreen() {
                 trailing={`${crew.openRoles} ${t("crewDetail.openSuffix")}`}
               />
               <ThemedView type="backgroundElement" style={styles.rolePanel}>
-                {crew.roles.map((role, index) => (
-                  <View
-                    key={role.id}
-                    style={[
-                      styles.roleRow,
-                      index < crew.roles.length - 1 && {
-                        borderBottomColor: theme.border,
-                        borderBottomWidth: 1,
-                      },
-                    ]}
-                  >
-                    <View style={styles.roleCopy}>
-                      <ThemedText type="smallBold">{role.title}</ThemedText>
-                      {role.note ? (
-                        <ThemedText type="code" themeColor="textSecondary">
-                          {role.note}
-                        </ThemedText>
-                      ) : null}
+                {crew.roles.map((role, index) => {
+                  const meta = roleMeta(role);
+                  return (
+                    <View
+                      key={role.id}
+                      style={[
+                        styles.roleRow,
+                        index < crew.roles.length - 1 && {
+                          borderBottomColor: theme.border,
+                          borderBottomWidth: 1,
+                        },
+                      ]}
+                    >
+                      <View style={styles.roleCopy}>
+                        <ThemedText type="smallBold">{role.title}</ThemedText>
+                        {meta ? (
+                          <ThemedText type="code" themeColor="textSecondary">
+                            {meta}
+                          </ThemedText>
+                        ) : null}
+                      </View>
+                      <Tag label={`${role.count} ${t("crewDetail.openSuffix")}`} tone="brand" />
                     </View>
-                    <Tag label={`${role.count} ${t("crewDetail.openSuffix")}`} tone="brand" />
-                  </View>
-                ))}
+                  );
+                })}
               </ThemedView>
+              <Pressable
+                accessibilityRole="button"
+                disabled={applying}
+                onPress={handleApply}
+                style={({ pressed }) => (pressed ? styles.pressed : null)}
+              >
+                <View style={[styles.applyButton, { backgroundColor: theme.brand }]}>
+                  {applying ? (
+                    <ActivityIndicator color="#FFFFFF" size="small" />
+                  ) : (
+                    <ThemedText type="smallBold" style={styles.applyText}>
+                      {t("crewDetail.applyButton")}
+                    </ThemedText>
+                  )}
+                </View>
+              </Pressable>
             </View>
           ) : null}
 
@@ -258,22 +364,6 @@ export default function CrewDetailScreen() {
                 ))}
               </ScrollView>
             </View>
-          ) : null}
-
-          {crew.status === "recruiting" ? (
-            <Pressable
-              accessibilityRole="button"
-              onPress={() => {}}
-              style={({ pressed }) => [
-                styles.applyButton,
-                { backgroundColor: theme.brand },
-                pressed && styles.pressed,
-              ]}
-            >
-              <ThemedText type="smallBold" style={styles.applyText}>
-                {t("crewDetail.applyButton")}
-              </ThemedText>
-            </Pressable>
           ) : null}
         </View>
       </ScrollView>
@@ -345,6 +435,14 @@ const styles = StyleSheet.create({
     gap: Spacing.three,
   },
   roleCopy: { flex: 1, minWidth: 0, gap: 2 },
+  applyButton: {
+    height: 50,
+    borderRadius: 10,
+    alignItems: "center",
+    justifyContent: "center",
+    marginTop: Spacing.three,
+  },
+  applyText: { color: "#FFFFFF" },
   membersRow: { gap: Spacing.four, paddingRight: Spacing.four },
   memberChip: { width: AVATAR + 12, alignItems: "center", gap: 4 },
   avatar: {
@@ -354,12 +452,5 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-  applyButton: {
-    height: 50,
-    borderRadius: 8,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  applyText: { color: "#FFFFFF" },
   pressed: { opacity: 0.82 },
 });

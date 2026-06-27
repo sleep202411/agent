@@ -36,7 +36,7 @@ export async function getMarketFeed({
 
   const services = serviceResult.status === "fulfilled" ? serviceResult.value : [];
   const crews = crewResult.status === "fulfilled" ? crewResult.value : [];
-  let creators = creatorResult.status === "fulfilled" ? creatorResult.value : [];
+  let creators = creatorResult.status === "fulfilled" ? creatorResult.value.creators : [];
 
   // The Java talent-market list can be auth-gated on some deployments. Public
   // creator-service listings still expose creator IDs; hydrate those public

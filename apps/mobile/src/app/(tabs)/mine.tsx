@@ -359,32 +359,30 @@ export default function MineScreen() {
             <Pressable
               accessibilityRole="button"
               onPress={() => router.push("/referrals")}
-              style={({ pressed }) => [
-                styles.referralEntry,
-                { backgroundColor: theme.backgroundElement },
-                pressed && styles.pressed,
-              ]}
+              style={({ pressed }) => (pressed ? styles.pressed : null)}
             >
-              <View style={[styles.referralIcon, { backgroundColor: `${theme.brand}22` }]}>
+              <View style={[styles.referralEntry, { backgroundColor: theme.backgroundElement }]}>
+                <View style={[styles.referralIcon, { backgroundColor: `${theme.brand}22` }]}>
+                  <SymbolView
+                    name={{ ios: "gift", android: "redeem", web: "redeem" }}
+                    size={20}
+                    tintColor={theme.brand}
+                  />
+                </View>
+                <View style={styles.referralCopy}>
+                  <ThemedText type="smallBold" numberOfLines={1}>
+                    {t("referrals.title")}
+                  </ThemedText>
+                  <ThemedText type="small" themeColor="textSecondary" numberOfLines={1}>
+                    {t("referrals.mineEntryBody")}
+                  </ThemedText>
+                </View>
                 <SymbolView
-                  name={{ ios: "gift", android: "redeem", web: "redeem" }}
-                  size={20}
-                  tintColor={theme.brand}
+                  name={{ ios: "chevron.right", android: "chevron_right", web: "chevron_right" }}
+                  size={15}
+                  tintColor={theme.textSecondary}
                 />
               </View>
-              <View style={styles.referralCopy}>
-                <ThemedText type="smallBold" numberOfLines={1}>
-                  {t("referrals.title")}
-                </ThemedText>
-                <ThemedText type="small" themeColor="textSecondary" numberOfLines={1}>
-                  {t("referrals.mineEntryBody")}
-                </ThemedText>
-              </View>
-              <SymbolView
-                name={{ ios: "chevron.right", android: "chevron_right", web: "chevron_right" }}
-                size={15}
-                tintColor={theme.textSecondary}
-              />
             </Pressable>
 
             {/* Tab bar */}

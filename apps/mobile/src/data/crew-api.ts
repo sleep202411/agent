@@ -75,7 +75,8 @@ async function fetchPositions(crewId: string): Promise<CrewRoleOpening[]> {
         id: position.id,
         title: prettyRole(position.positionType),
         count: position.targetCount ?? 1,
-        note: [position.location, position.employmentType].filter(Boolean).join(" · ") || undefined,
+        location: position.location ?? undefined,
+        employmentType: position.employmentType ?? undefined,
       }));
   } catch {
     return [];
@@ -87,7 +88,13 @@ export async function fetchCrewFeed(): Promise<CrewSummary[]> {
     ...AURORA,
     params: { limit: 30 },
   });
-  return (res.items ?? []).map(mapSummary);
+  const crews = (res.items ?? []).map(mapSummary);
+  // Requested display order: recruiting crews first. Stable sort keeps the
+  // backend's listedAt order within each group. (openPositionCount is a
+  // computed aggregate, not a column, so this can't be a DB orderBy.)
+  return crews.sort(
+    (a, b) => Number(b.status === "recruiting") - Number(a.status === "recruiting")
+  );
 }
 
 /** A user's publicly LISTED crews (visitor profile tab; @Public by-user route). */
@@ -144,4 +151,10 @@ export async function reportCrew(crewId: string, reason: IpReportReason): Promis
 /** Hide a crew for the signed-in viewer (auth'd; lists/detail filter it server-side). */
 export async function blockCrew(crewId: string): Promise<void> {
   await api.post(`/crews/${crewId}/blocks`, { ...AURORA });
+}
+
+/** Apply to a crew position (auth'd). Backend dedups one pending application
+ *  per position/user and notifies the crew owner; approval creates a member. */
+export async function applyToCrewPosition(crewId: string, positionId: string): Promise<void> {
+  await api.post(`/crews/${crewId}/positions/${positionId}/apply`, { ...AURORA, data: {} });
 }

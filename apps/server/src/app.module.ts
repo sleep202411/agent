@@ -20,6 +20,7 @@ import { OrdersModule } from './orders/orders.module';
 import { DbModule } from './infra/db/db.module';
 import { HealthModule } from './infra/health/health.module';
 import { LegacyMysqlModule } from './infra/legacy-mysql';
+import { LegacyCreatorsModule } from './legacy-creators/legacy-creators.module';
 import { LegacyPointsModule } from './legacy-points/legacy-points.module';
 import { LegacyProjectsModule } from './legacy-projects/legacy-projects.module';
 import { IpCommerceModule } from './ip-commerce';
@@ -44,6 +45,7 @@ import { WorkspacesModule } from './workspaces';
     // it import LegacyMysqlModule explicitly to inject LegacyMysqlService.
     LegacyMysqlModule,
     LegacyProjectsModule,
+    LegacyCreatorsModule,
     AlertingModule,
     AuthModule,
     AdminAuthModule,

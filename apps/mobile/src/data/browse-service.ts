@@ -5,7 +5,7 @@
  */
 import { fetchCrewById, fetchCrewFeed, fetchCrewsByUser } from "./crew-api";
 import { fetchCreatorServiceById, fetchCreatorServices } from "./creator-service-api";
-import { fetchCreatorById, fetchCreators } from "./creator-api";
+import { fetchCreatorById, fetchCreators, type CreatorsPage } from "./creator-api";
 import { fetchCreatorIps, fetchIpCatalogPage, fetchIpDetail, fetchIpDiscovery } from "./ip-api";
 import { fetchNewsFeed } from "./news-api";
 import type {
@@ -23,7 +23,7 @@ import type {
 
 export type { IpDiscovery } from "./types";
 export { blockIpContent, IP_REPORT_REASONS, reportIpContent, type IpReportReason } from "./ip-api";
-export { blockCrew, reportCrew } from "./crew-api";
+export { applyToCrewPosition, blockCrew, reportCrew } from "./crew-api";
 
 export async function getIpDiscovery(): Promise<IpDiscovery> {
   return fetchIpDiscovery();
@@ -47,8 +47,8 @@ export async function getCrewFeed(): Promise<CrewSummary[]> {
   return fetchCrewFeed();
 }
 
-export async function getCreators(limit?: number): Promise<CreatorSummary[]> {
-  return fetchCreators(limit);
+export async function getCreators(limit?: number, offset?: number): Promise<CreatorsPage> {
+  return fetchCreators(limit, offset);
 }
 
 export async function getCreatorById(id: string): Promise<CreatorSummary | undefined> {

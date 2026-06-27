@@ -111,7 +111,9 @@ export interface CrewRoleOpening {
   id: string;
   title: string;
   count: number;
-  note?: string;
+  location?: string;
+  /** Raw EmploymentType enum (full_time | part_time | contract | freelance | project_based). */
+  employmentType?: string;
 }
 
 export interface CrewSummary {
