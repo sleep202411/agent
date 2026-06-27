@@ -294,7 +294,7 @@ server:
   migrateOnStart: true
   image:
     repository: fizzdragon-server
-    tag: 513fc131ce6b098b0d040d8d965a910d2538c4b7
+    tag: 88c844a34168f54beab33308b04a7c3a900608ac
   containerPort: 3001
   env:
     FAL_ENABLED: "true"
