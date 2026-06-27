@@ -303,6 +303,19 @@ export async function fetchIpCatalogPage({
   };
 }
 
+/** A creator's published, publicly-listed IPs (Nest `creators/:id/ips`, @Public). */
+export async function fetchCreatorIps(creatorId: string, limit = 12): Promise<IpSummary[]> {
+  try {
+    const res = await api.get<ListResponse>(`/ip-commerce/creators/${creatorId}/ips`, {
+      ...AURORA,
+      params: { locale: locale(), limit },
+    });
+    return (res.items ?? []).map((dto) => mapSummary(dto));
+  } catch {
+    return [];
+  }
+}
+
 // Legacy default-avatar PNG baked into the user OSS bucket — treat as "no
 // avatar" so the initial fallback shows instead of the generic silhouette.
 const PLACEHOLDER_AVATAR_UUID = "d17b1d5e-282e-47e0-bd99-9a72477adf93";

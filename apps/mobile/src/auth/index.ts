@@ -4,9 +4,10 @@ export {
   completeAuthSheet,
   openAuthSheet,
   requireAuthenticated,
+  skipAuthSheet,
 } from "./auth-sheet";
 export { useAuth } from "./use-auth";
-export { useAuthGate } from "./use-auth-gate";
+export { useAuthGate, useLoginGateOnFocus } from "./use-auth-gate";
 export {
   clearAuthSession,
   hydrateAuthSession,

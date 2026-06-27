@@ -16,7 +16,7 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { completeAuthSheet, useAuth } from "@/auth";
+import { completeAuthSheet, skipAuthSheet, useAuth } from "@/auth";
 import { LanguageSwitcher } from "@/components/language-switcher";
 import { appEnv } from "@/config";
 import { Colors, MaxContentWidth, Spacing } from "@/constants/theme";
@@ -165,7 +165,7 @@ export default function LoginScreen() {
                   <Pressable
                     accessibilityRole="link"
                     hitSlop={8}
-                    onPress={() => router.push("/forgot-password")}
+                    onPress={() => router.replace("/forgot-password")}
                     style={({ pressed }) => pressedStyle(pressed)}
                   >
                     <Text style={styles.forgotLink}>{t("login.forgot")}</Text>
@@ -295,7 +295,7 @@ export default function LoginScreen() {
               <Pressable
                 accessibilityRole="button"
                 hitSlop={8}
-                onPress={() => router.push("/register")}
+                onPress={() => router.replace("/register")}
                 style={({ pressed }) => pressedStyle(pressed)}
               >
                 <Text style={styles.footerLink}>{t("login.createAccount")}</Text>
@@ -305,6 +305,24 @@ export default function LoginScreen() {
         </ScrollView>
       </KeyboardAvoidingView>
       <LanguageSwitcher style={[styles.langSwitch, { top: safeAreaInsets.top + Spacing.two }]} />
+      {/* Skip — login is presented, never forced; let guests browse first. */}
+      <Pressable
+        accessibilityLabel={t("login.skip")}
+        accessibilityRole="button"
+        hitSlop={10}
+        onPress={() => skipAuthSheet(router)}
+        style={({ pressed }) => [
+          styles.skipButton,
+          { top: safeAreaInsets.top + Spacing.two },
+          pressed && styles.pressed,
+        ]}
+      >
+        <SymbolView
+          name={{ ios: "xmark", android: "close", web: "close" }}
+          size={20}
+          tintColor={theme.textSecondary}
+        />
+      </Pressable>
     </View>
   );
 }
@@ -320,6 +338,15 @@ const styles = StyleSheet.create({
   langSwitch: {
     position: "absolute",
     right: Spacing.five,
+    zIndex: 10,
+  },
+  skipButton: {
+    alignItems: "center",
+    height: 40,
+    justifyContent: "center",
+    left: Spacing.four,
+    position: "absolute",
+    width: 40,
     zIndex: 10,
   },
   scrollContent: {

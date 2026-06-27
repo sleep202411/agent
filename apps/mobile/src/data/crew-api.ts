@@ -90,6 +90,19 @@ export async function fetchCrewFeed(): Promise<CrewSummary[]> {
   return (res.items ?? []).map(mapSummary);
 }
 
+/** A user's publicly LISTED crews (visitor profile tab; @Public by-user route). */
+export async function fetchCrewsByUser(userId: string): Promise<CrewSummary[]> {
+  try {
+    const res = await api.get<{ items?: CrewDto[] } | CrewDto[]>(`/crews/by-user/${userId}`, {
+      ...AURORA,
+    });
+    const list = Array.isArray(res) ? res : (res.items ?? []);
+    return list.map(mapSummary);
+  } catch {
+    return [];
+  }
+}
+
 export async function fetchCrewById(id: string): Promise<CrewDetail | undefined> {
   const [crew, roles] = await Promise.all([
     api.get<CrewDto>(`/crews/${id}`, { ...AURORA }).catch(() => undefined),

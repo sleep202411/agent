@@ -28,18 +28,6 @@ const detailHeader = {
   headerBackButtonDisplayMode: "minimal",
 } as const;
 
-// Auth is deferred, never blocking — the route group draws up as one native
-// bottom sheet over the guest's current context. Login / register / reset then
-// move inside that sheet instead of stacking separate modal surfaces.
-const authSheet = {
-  presentation: "formSheet" as const,
-  sheetAllowedDetents: [0.92],
-  sheetInitialDetentIndex: 0,
-  sheetGrabberVisible: true,
-  sheetCornerRadius: 24,
-  contentStyle: { backgroundColor: Colors.dark.background },
-};
-
 export default function RootLayout() {
   useEffect(() => {
     void initLocale();
@@ -54,7 +42,9 @@ export default function RootLayout() {
           <MobileAppFrame>
             <Stack screenOptions={{ headerShown: false }}>
               <Stack.Screen name="(tabs)" />
-              <Stack.Screen name="(auth)" options={authSheet} />
+              {/* Login / register / reset — a full-page route the gate pushes
+                  (or replaces) onto the stack; always skippable. */}
+              <Stack.Screen name="(auth)" />
               <Stack.Screen name="settings" />
               <Stack.Screen name="referrals" />
               <Stack.Screen name="delete-account" />

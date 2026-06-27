@@ -28,6 +28,7 @@ import { useTheme } from "@/hooks/use-theme";
 import { useTranslations } from "@/i18n";
 import { ApiRequestError } from "@/lib/api-client";
 import { dicebearAvatarUrl } from "@/lib/avatar";
+import { toHref } from "@/lib/navigation";
 
 export default function IpDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -455,16 +456,26 @@ function EpisodeCard({
 function PersonChip({ person }: { person: Person }) {
   const theme = useTheme();
   // Real avatar if resolved, else a deterministic DiceBear face by id (web parity).
+  const router = useRouter();
   const avatarUrl = person.avatarUrl ?? dicebearAvatarUrl(`user:${person.userId ?? person.id}`);
   return (
-    <View style={[styles.personChip, { backgroundColor: theme.backgroundElement }]}>
+    <Pressable
+      accessibilityRole="button"
+      disabled={!person.userId}
+      onPress={() => person.userId && router.push(toHref(`/creator/${person.userId}`))}
+      style={({ pressed }) => [
+        styles.personChip,
+        { backgroundColor: theme.backgroundElement },
+        pressed && { opacity: 0.78 },
+      ]}
+    >
       <View style={[styles.avatar, { backgroundColor: theme.backgroundSelected }]}>
         <Image source={{ uri: avatarUrl }} style={StyleSheet.absoluteFill} contentFit="cover" />
       </View>
       <ThemedText type="small" numberOfLines={2} style={styles.personName}>
         {person.name}
       </ThemedText>
-    </View>
+    </Pressable>
   );
 }
 

@@ -4,6 +4,8 @@ import { SymbolView } from "expo-symbols";
 import { useEffect, useRef, useState } from "react";
 import { Pressable, StyleSheet, View } from "react-native";
 
+import { useAuthGate, useLoginGateOnFocus } from "@/auth";
+import { AuthRequired } from "@/components/auth-required";
 import { TabScreen } from "@/components/tab-screen";
 import { ThemedText } from "@/components/themed-text";
 import { ThemedView } from "@/components/themed-view";
@@ -18,6 +20,9 @@ import { toHref } from "@/lib/navigation";
 
 export default function CreatorsScreen() {
   const t = useTranslations();
+  const { isAuthenticated } = useAuthGate();
+  // Guests get the global login sheet straight away — the list is login-only.
+  useLoginGateOnFocus();
   const [creators, setCreators] = useState<CreatorSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string>();
@@ -25,6 +30,13 @@ export default function CreatorsScreen() {
   const hasDataRef = useRef(false);
 
   useEffect(() => {
+    // The talent list endpoint requires a Java session; skip it for guests so
+    // we show the sign-in prompt instead of a 302-empty "no creators" state.
+    if (!isAuthenticated) {
+      // Guests render the sign-in prompt below; reset so a fresh login refetches.
+      hasDataRef.current = false;
+      return;
+    }
     let alive = true;
     async function load() {
       setLoading(hasDataRef.current === false);
@@ -49,13 +61,19 @@ export default function CreatorsScreen() {
     return () => {
       alive = false;
     };
-  }, [browseVersion, t]);
+  }, [isAuthenticated, browseVersion, t]);
 
   return (
     <TabScreen gap={Spacing.five}>
       <ScreenHeader title={t("creators.title")} />
 
-      {loading ? (
+      {!isAuthenticated ? (
+        <AuthRequired
+          title={t("creators.guestTitle")}
+          body={t("creators.guestBody")}
+          icon={{ ios: "person.2", android: "group", web: "group" }}
+        />
+      ) : loading ? (
         <View style={styles.list}>
           {[0, 1, 2, 3].map((item) => (
             <ThemedView key={item} type="backgroundElement" style={styles.card}>

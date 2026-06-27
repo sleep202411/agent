@@ -3,10 +3,10 @@
  * All live: IP + Crews on Nest (ip-commerce / crews via `/aurora`),
  * News on Java (`/content/project/list/newsad`).
  */
-import { fetchCrewById, fetchCrewFeed } from "./crew-api";
+import { fetchCrewById, fetchCrewFeed, fetchCrewsByUser } from "./crew-api";
 import { fetchCreatorServiceById, fetchCreatorServices } from "./creator-service-api";
 import { fetchCreatorById, fetchCreators } from "./creator-api";
-import { fetchIpCatalogPage, fetchIpDetail, fetchIpDiscovery } from "./ip-api";
+import { fetchCreatorIps, fetchIpCatalogPage, fetchIpDetail, fetchIpDiscovery } from "./ip-api";
 import { fetchNewsFeed } from "./news-api";
 import type {
   CreatorServiceDetail,
@@ -17,6 +17,7 @@ import type {
   IpCatalogPage,
   IpDetail,
   IpDiscovery,
+  IpSummary,
   NewsArticle,
 } from "./types";
 
@@ -67,6 +68,15 @@ export async function getCreatorServiceById(id: string): Promise<CreatorServiceD
 
 export async function getCrewById(id: string): Promise<CrewDetail | undefined> {
   return fetchCrewById(id);
+}
+
+export async function getCrewsByUser(userId: string): Promise<CrewSummary[]> {
+  return fetchCrewsByUser(userId);
+}
+
+/** A creator's published IPs (Nest `/ip-commerce/creators/:id/ips`, @Public). */
+export async function getCreatorIps(creatorId: string, limit = 12): Promise<IpSummary[]> {
+  return fetchCreatorIps(creatorId, limit);
 }
 
 export async function getNewsFeed(): Promise<NewsArticle[]> {

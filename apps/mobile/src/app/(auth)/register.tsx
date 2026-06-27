@@ -153,7 +153,7 @@ export default function RegisterScreen() {
               accessibilityLabel={t("register.back")}
               accessibilityRole="button"
               hitSlop={12}
-              onPress={() => router.back()}
+              onPress={() => router.replace("/login")}
               style={({ pressed }) => [styles.backButton, pressedStyle(pressed)]}
             >
               <SymbolView
@@ -396,7 +396,7 @@ export default function RegisterScreen() {
               <Pressable
                 accessibilityRole="link"
                 hitSlop={8}
-                onPress={() => router.back()}
+                onPress={() => router.replace("/login")}
                 style={({ pressed }) => pressedStyle(pressed)}
               >
                 <Text style={styles.footerLink}>{t("login.signIn")}</Text>

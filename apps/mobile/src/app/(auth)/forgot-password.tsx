@@ -138,7 +138,7 @@ export default function ForgotPasswordScreen() {
               accessibilityLabel={t("forgotPassword.back")}
               accessibilityRole="button"
               hitSlop={10}
-              onPress={() => router.back()}
+              onPress={() => router.replace("/login")}
               style={({ pressed }) => (pressed ? styles.pressed : null)}
             >
               <View style={styles.backButton}>

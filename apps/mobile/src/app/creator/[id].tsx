@@ -5,14 +5,26 @@ import { useEffect, useState } from "react";
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
+import { IpGrid } from "@/components/ip-grid";
 import { ThemedText } from "@/components/themed-text";
 import { ThemedView } from "@/components/themed-view";
 import { EmptyState, PosterImage, SectionHeader, Tag } from "@/components/ui";
 import { MaxContentWidth, Spacing } from "@/constants/theme";
-import { getCreatorById, getCreatorServices } from "@/data/browse-service";
-import type { CreatorServiceSummary, CreatorSummary } from "@/data/types";
+import {
+  getCreatorById,
+  getCreatorIps,
+  getCreatorServices,
+  getCrewsByUser,
+} from "@/data/browse-service";
+import type {
+  CreatorServiceSummary,
+  CreatorSummary,
+  CrewStatus,
+  CrewSummary,
+  IpSummary,
+} from "@/data/types";
 import { useTheme } from "@/hooks/use-theme";
-import { useLocale, useTranslations } from "@/i18n";
+import { type MessageKey, useLocale, useTranslations } from "@/i18n";
 import { formatServicePrice, serviceCategoryLabel } from "@/lib/creator-service-format";
 import { toHref } from "@/lib/navigation";
 
@@ -24,19 +36,25 @@ export default function CreatorDetailScreen() {
   const locale = useLocale();
   const [creator, setCreator] = useState<CreatorSummary>();
   const [services, setServices] = useState<CreatorServiceSummary[]>([]);
+  const [works, setWorks] = useState<IpSummary[]>([]);
+  const [crews, setCrews] = useState<CrewSummary[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     let alive = true;
     async function load() {
       setLoading(true);
-      const [creatorResult, servicesResult] = await Promise.allSettled([
+      const [creatorResult, servicesResult, worksResult, crewsResult] = await Promise.allSettled([
         getCreatorById(id),
         getCreatorServices(12, { creatorId: id }),
+        getCreatorIps(id),
+        getCrewsByUser(id),
       ]);
       if (!alive) return;
       setCreator(creatorResult.status === "fulfilled" ? creatorResult.value : undefined);
       setServices(servicesResult.status === "fulfilled" ? servicesResult.value : []);
+      setWorks(worksResult.status === "fulfilled" ? worksResult.value : []);
+      setCrews(crewsResult.status === "fulfilled" ? crewsResult.value : []);
       setLoading(false);
     }
     void load();
@@ -141,6 +159,28 @@ export default function CreatorDetailScreen() {
             </View>
           ) : null}
 
+          {works.length ? (
+            <View style={styles.section}>
+              <SectionHeader title={t("creatorDetail.worksTitle")} trailing={`${works.length}`} />
+              <IpGrid ips={works} />
+            </View>
+          ) : null}
+
+          {crews.length ? (
+            <View style={styles.section}>
+              <SectionHeader title={t("creatorDetail.crewsTitle")} trailing={`${crews.length}`} />
+              <View style={styles.serviceList}>
+                {crews.map((crew) => (
+                  <CreatorCrewRow
+                    key={crew.id}
+                    crew={crew}
+                    onPress={() => router.push(toHref(`/crew/${crew.id}`))}
+                  />
+                ))}
+              </View>
+            </View>
+          ) : null}
+
           <View style={styles.section}>
             <SectionHeader
               title={t("creatorDetail.servicesTitle")}
@@ -204,6 +244,50 @@ function CreatorServiceRow({
           <ThemedText type="code" style={{ color: theme.brand }}>
             {t("creatorService.fromPrice")} {formatServicePrice(service, locale)}
           </ThemedText>
+        </View>
+        <SymbolView
+          name={{ ios: "chevron.right", android: "chevron_right", web: "chevron_right" }}
+          size={14}
+          tintColor={theme.textSecondary}
+        />
+      </View>
+    </Pressable>
+  );
+}
+
+function crewTag(status: CrewStatus): {
+  labelKey: MessageKey;
+  tone: "success" | "info" | "neutral";
+} {
+  if (status === "recruiting") return { labelKey: "crews.statusRecruiting", tone: "success" };
+  if (status === "in-production") return { labelKey: "crews.statusInProduction", tone: "info" };
+  return { labelKey: "crews.statusClosed", tone: "neutral" };
+}
+
+function CreatorCrewRow({ crew, onPress }: { crew: CrewSummary; onPress: () => void }) {
+  const t = useTranslations();
+  const theme = useTheme();
+  const tag = crewTag(crew.status);
+  return (
+    <Pressable
+      accessibilityRole="button"
+      onPress={onPress}
+      style={({ pressed }) => pressed && styles.pressed}
+    >
+      <View style={[styles.serviceRow, { borderBottomColor: theme.border }]}>
+        <PosterImage uri={crew.coverUrl} label={crew.name} radius={8} style={styles.serviceThumb} />
+        <View style={styles.serviceCopy}>
+          <View style={styles.metaRow}>
+            <Tag label={t(tag.labelKey)} tone={tag.tone} />
+          </View>
+          <ThemedText type="smallBold" numberOfLines={1}>
+            {crew.name}
+          </ThemedText>
+          {crew.memberCount ? (
+            <ThemedText type="code" themeColor="textSecondary">
+              {crew.memberCount} {t("crews.members")}
+            </ThemedText>
+          ) : null}
         </View>
         <SymbolView
           name={{ ios: "chevron.right", android: "chevron_right", web: "chevron_right" }}

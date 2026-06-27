@@ -1,4 +1,5 @@
-import { useCallback, useMemo } from "react";
+import { useFocusEffect } from "expo-router";
+import { useCallback, useEffect, useMemo, useRef } from "react";
 
 import type { AuthSheetOptions } from "./auth-sheet";
 import { openAuthSheet, requireAuthenticated } from "./auth-sheet";
@@ -29,4 +30,27 @@ export function useAuthGate() {
     }),
     [auth.status, openLogin, openRegister, requireAuth]
   );
+}
+
+/**
+ * Login-only screens: present the global auth sheet the moment a guest focuses
+ * the screen, instead of making them tap through a CTA first. Guarded so a
+ * swipe-dismiss doesn't immediately re-pop; re-arms once a session ends.
+ */
+export function useLoginGateOnFocus(enabled = true) {
+  const auth = useAuth();
+  const promptedRef = useRef(false);
+
+  useFocusEffect(
+    useCallback(() => {
+      if (enabled && auth.status === "anonymous" && !promptedRef.current) {
+        promptedRef.current = true;
+        openAuthSheet({ mode: "login" });
+      }
+    }, [enabled, auth.status])
+  );
+
+  useEffect(() => {
+    if (auth.status === "authenticated") promptedRef.current = false;
+  }, [auth.status]);
 }
