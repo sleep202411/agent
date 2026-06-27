@@ -61,6 +61,9 @@ export function GrantPointsDialog({
   const [note, setNote] = useState("");
 
   const [user, setUser] = useState<LegacyUser | null>(null);
+  // Current compute_point balance for the resolved user (the thing this dialog
+  // grants). Read-only — fetched on lookup, refreshed after a grant.
+  const [balance, setBalance] = useState<string | null>(null);
   const [lookupDone, setLookupDone] = useState(false);
   const [looking, setLooking] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -105,12 +108,25 @@ export function GrantPointsDialog({
     setLooking(true);
     setError(null);
     setResult(null);
+    setBalance(null);
     try {
       const u = await requestEnvelope<LegacyUser | null>(
         `/api/admin/legacy-points/users/${encodeURIComponent(id)}`
       );
       setUser(u);
       setLookupDone(true);
+      if (u) {
+        // Best-effort current-balance read; a failure here must NOT block the
+        // grant flow (the user is already resolved), so swallow it.
+        try {
+          const bal = await requestEnvelope<{ availableBalance: string }>(
+            `/api/admin/billing/wallets/user-credits?userId=${encodeURIComponent(u.userId)}&idFormat=raw`
+          );
+          setBalance(bal?.availableBalance ?? null);
+        } catch {
+          setBalance(null);
+        }
+      }
     } catch (err) {
       setError(toErrorMessage(err));
       setUser(null);
@@ -133,6 +149,7 @@ export function GrantPointsDialog({
         idempotencyKey: crypto.randomUUID(),
       });
       const newBalance = data?.account?.availableBalance ?? data?.availableBalance ?? null;
+      if (newBalance != null) setBalance(newBalance);
       const grant: GrantResult = {
         userId: user.userId,
         delta: parsedScore,
@@ -263,6 +280,9 @@ export function GrantPointsDialog({
               {user.phone ? <span>手机 {user.phone}</span> : null}
               {user.email ? <span>邮箱 {user.email}</span> : null}
               {user.userLevel ? <span>等级 {user.userLevel}</span> : null}
+              <span>
+                当前算力积分 <span className="font-semibold text-slate-950">{balance ?? "—"}</span>
+              </span>
             </div>
           ) : null}
 

@@ -261,6 +261,17 @@ export type CreateAdminUserWalletCreditInput = z.infer<
   typeof CreateAdminUserWalletCreditSchema
 >;
 
+// Read-only balance lookup for the admin 加积分 dialog — resolve a userId to its
+// current compute_point wallet balance (no grant, no adjustment, no audit).
+export const GetAdminUserWalletCreditQuerySchema = z.object({
+  userId: z.string().trim().min(1).max(64),
+  idFormat: z.enum(['public', 'raw']).default('public'),
+  currency: z.literal('compute_point').default('compute_point'),
+});
+export type GetAdminUserWalletCreditQueryInput = z.infer<
+  typeof GetAdminUserWalletCreditQuerySchema
+>;
+
 export const ListAdminBillingPricesQuerySchema = z.object({
   productType: BillingProductTypeSchema.optional(),
   provider: AdminPaymentProviderSchema.optional(),

@@ -76,6 +76,7 @@ import type {
   CreateAdminBillingPromotionInput,
   CreateAdminBillingRefundInput,
   CreateAdminUserWalletCreditInput,
+  GetAdminUserWalletCreditQueryInput,
   CreateAdminWalletAdjustmentInput,
   ListAdminBillingOrdersQuery,
   ListAdminBillingProviderEventsQuery,
@@ -1264,6 +1265,66 @@ export class BillingService {
         balanceKind: input.balanceKind,
       },
     });
+  }
+
+  /**
+   * Read-only compute_point balance for a userId — powers the admin 加积分
+   * dialog's "current balance" line. Mirrors createAdminUserWalletCredit's
+   * resolution (compute_point lives in the user's personal-workspace pot) but
+   * does NOT upsert / adjust / audit: it only reads. Returns "0" + hasWallet
+   * false when the workspace or wallet doesn't exist yet.
+   */
+  async getAdminUserWalletBalance(input: GetAdminUserWalletCreditQueryInput) {
+    const inputUserId = input.userId.trim();
+    const resolvedUserId =
+      input.idFormat === 'raw' ? inputUserId : decodeUserId(inputUserId);
+    if (!/^\d{1,18}$/.test(resolvedUserId)) {
+      throw new BadRequestException({
+        code: 'INVALID_USER_ID',
+        msg: 'User id must resolve to a numeric Java user id.',
+      });
+    }
+
+    const currency = input.currency as WalletCurrencyType;
+    const balanceKind = WalletBalanceKind.consumable;
+    let owner: { ownerType: WalletOwnerType; ownerId: string } | null = null;
+    if (currency === WalletCurrencyType.compute_point) {
+      const personal = await this.prisma.workspace.findFirst({
+        where: {
+          ownerUserId: resolvedUserId,
+          type: WorkspaceType.personal,
+          deletedAt: null,
+        },
+        select: { id: true },
+      });
+      if (personal) {
+        owner = { ownerType: WalletOwnerType.workspace, ownerId: personal.id };
+      }
+    } else {
+      owner = { ownerType: WalletOwnerType.user, ownerId: resolvedUserId };
+    }
+
+    const account = owner
+      ? await this.prisma.walletAccount.findUnique({
+          where: {
+            ownerType_ownerId_currency_balanceKind: {
+              ownerType: owner.ownerType,
+              ownerId: owner.ownerId,
+              currency,
+              balanceKind,
+            },
+          },
+          select: { availableBalance: true },
+        })
+      : null;
+
+    return {
+      resolvedUserId,
+      currency,
+      balanceKind,
+      availableBalance: account ? account.availableBalance.toString() : '0',
+      hasWallet: Boolean(account),
+    };
   }
 
   private adminWalletAccountDto(

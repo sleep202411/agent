@@ -44,6 +44,7 @@ import {
   CreateAdminBillingPromotionSchema,
   CreateAdminBillingRefundSchema,
   CreateAdminUserWalletCreditSchema,
+  GetAdminUserWalletCreditQuerySchema,
   IgnoreAdminBillingProviderEventSchema,
   QuoteAdminBillingRefundSchema,
   UpdateAdminMembershipPlanSchema,
@@ -68,6 +69,7 @@ import {
   type CreateAdminBillingPromotionInput,
   type CreateAdminBillingRefundInput,
   type CreateAdminUserWalletCreditInput,
+  type GetAdminUserWalletCreditQueryInput,
   type IgnoreAdminBillingProviderEventInput,
   type ListAdminMembershipPlansQuery,
   type ListAdminBillingLedgerJournalsQuery,
@@ -147,6 +149,18 @@ export class BillingAdminController {
       },
     );
     return { code: 200, data };
+  }
+
+  @RequireAdminPermissions(ADMIN_PERMISSION_KEYS.BillingRead)
+  @Get('wallets/user-credits')
+  async getUserWalletCredit(
+    @Query(new ZodValidationPipe(GetAdminUserWalletCreditQuerySchema))
+    query: GetAdminUserWalletCreditQueryInput,
+  ) {
+    return {
+      code: 200,
+      data: await this.billing.getAdminUserWalletBalance(query),
+    };
   }
 
   @RequireAdminPermissions(ADMIN_PERMISSION_KEYS.BillingRead)
