@@ -64,6 +64,7 @@ import type { AuthUser } from '../auth';
 import { CURRENT_CELL } from '../common/region';
 import { PrismaService } from '../infra/db/db.module';
 import { EntitlementService } from '../entitlements/entitlement.service';
+import { ReferralsService } from '../referrals/referrals.service';
 import { WalletLedgerService } from '../workspaces';
 import { WorkspacePermissionService } from '../workspaces/workspace-permission.service';
 import { enqueueEntitlementChanged } from './entitlement-realtime';
@@ -282,6 +283,7 @@ export class BillingService {
     private readonly walletLedger: WalletLedgerService,
     private readonly ledger: BillingLedgerService,
     private readonly entitlements: EntitlementService,
+    private readonly referrals: ReferralsService,
   ) {}
 
   async listPrices(query: ListBillingPricesQuery) {
@@ -3507,8 +3509,10 @@ export class BillingService {
     eventId: string,
     options: { allowProcessedNoop?: boolean } = {},
   ): Promise<BillingPaymentProviderEvent> {
+    let accrueOrderId: string | null = null;
+    let reverseOrderId: string | null = null;
     try {
-      return await this.prisma.$transaction(async (tx) => {
+      const result = await this.prisma.$transaction(async (tx) => {
         await tx.$executeRaw`
           SELECT pg_advisory_xact_lock(hashtext(${`billing:provider_event:${eventId}`})::bigint)
         `;
@@ -3597,6 +3601,8 @@ export class BillingService {
             payload,
             providerEvent.id,
           );
+          // Captured for post-commit referral reversal (see below).
+          reverseOrderId = refundMatch.orderId;
         } else if (match) {
           await this.applyProviderEvent(
             tx,
@@ -3605,6 +3611,8 @@ export class BillingService {
             payload,
             providerEvent.id,
           );
+          // Captured for post-commit referral accrual (see below).
+          accrueOrderId = match.orderId;
         }
         return tx.billingPaymentProviderEvent.update({
           where: { id: providerEvent.id },
@@ -3615,6 +3623,27 @@ export class BillingService {
           },
         });
       });
+      // Best-effort referral accrual AFTER the billing tx commits — runs in its
+      // own transaction, so a referral failure can never roll back a paid order.
+      if (accrueOrderId) {
+        await this.referrals
+          .accrueForOrder(accrueOrderId)
+          .catch((e: unknown) =>
+            this.logger.error(
+              `referral accrual failed (order ${accrueOrderId}): ${e instanceof Error ? e.message : String(e)}`,
+            ),
+          );
+      }
+      if (reverseOrderId) {
+        await this.referrals
+          .reverseForOrder(reverseOrderId)
+          .catch((e: unknown) =>
+            this.logger.error(
+              `referral reversal failed (order ${reverseOrderId}): ${e instanceof Error ? e.message : String(e)}`,
+            ),
+          );
+      }
+      return result;
     } catch (err) {
       if (!isProviderEventAlreadyProcessedError(err)) {
         await this.markProviderEventFailed(eventId, err);

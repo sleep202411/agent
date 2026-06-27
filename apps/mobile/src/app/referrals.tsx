@@ -98,11 +98,14 @@ export default function ReferralsScreen() {
   );
 
   const shareInvite = async () => {
-    if (!dashboard?.inviteUrl) return;
+    const code = dashboard?.inviteCode;
+    if (!code) return;
+    const url = dashboard?.inviteUrl;
+    const message = `${t("referrals.shareMessageLine")} ${code}${url ? `\n${url}` : ""}`;
     await Share.share({
       title: t("referrals.shareTitle"),
-      message: dashboard.inviteUrl,
-      url: dashboard.inviteUrl,
+      message,
+      ...(url ? { url } : {}),
     });
   };
 
@@ -221,26 +224,38 @@ export default function ReferralsScreen() {
             <Stat label={t("referrals.invitees")} value={String(inviteeCount)} />
           </View>
 
+          <View style={[styles.divider, { backgroundColor: theme.border }]} />
+          <ThemedText type="code" themeColor="textSecondary">
+            {t("referrals.yourCode")}
+          </ThemedText>
+          <View style={[styles.codeBox, { borderColor: theme.border }]}>
+            <ThemedText style={styles.codeText} numberOfLines={1}>
+              {dashboard?.inviteCode ?? "········"}
+            </ThemedText>
+          </View>
           <Pressable
             accessibilityRole="button"
-            disabled={!dashboard?.inviteUrl}
+            disabled={!dashboard?.inviteCode}
             onPress={() => setShareOpen(true)}
-            style={({ pressed }) => [
-              styles.primaryButton,
-              {
-                backgroundColor: dashboard?.inviteUrl ? theme.brand : theme.backgroundSelected,
-              },
-              pressed && styles.pressed,
-            ]}
+            style={({ pressed }) => (pressed ? styles.pressed : null)}
           >
-            <SymbolView
-              name={{ ios: "square.and.arrow.up", android: "share", web: "share" }}
-              size={17}
-              tintColor="#FFFFFF"
-            />
-            <ThemedText type="smallBold" style={styles.primaryButtonText}>
-              {dashboard?.inviteUrl ? t("referrals.shareInvite") : t("referrals.shareUnavailable")}
-            </ThemedText>
+            <View
+              style={[
+                styles.primaryButton,
+                {
+                  backgroundColor: dashboard?.inviteCode ? theme.brand : theme.backgroundSelected,
+                },
+              ]}
+            >
+              <SymbolView
+                name={{ ios: "square.and.arrow.up", android: "share", web: "share" }}
+                size={17}
+                tintColor="#FFFFFF"
+              />
+              <ThemedText type="smallBold" style={styles.primaryButtonText}>
+                {t("referrals.shareInvite")}
+              </ThemedText>
+            </View>
           </Pressable>
         </View>
 
@@ -275,25 +290,7 @@ export default function ReferralsScreen() {
           </View>
         ) : null}
 
-        <Section title={t("referrals.inviteeBenefit")}>
-          <View style={[styles.benefit, { backgroundColor: theme.backgroundElement }]}>
-            <View style={[styles.benefitIcon, { backgroundColor: `${theme.brand}22` }]}>
-              <SymbolView
-                name={{ ios: "ticket", android: "confirmation_number", web: "confirmation_number" }}
-                size={22}
-                tintColor={theme.brand}
-              />
-            </View>
-            <View style={styles.benefitCopy}>
-              <ThemedText type="smallBold">
-                {dashboard?.inviteeBenefit.title ?? t("referrals.defaultBenefitTitle")}
-              </ThemedText>
-              <ThemedText type="small" themeColor="textSecondary">
-                {dashboard?.inviteeBenefit.detail ?? t("referrals.defaultBenefitDetail")}
-              </ThemedText>
-            </View>
-          </View>
-        </Section>
+        {/* 被邀请人福利 (invitee benefit) section hidden for now — per request. */}
 
         <Section title={t("referrals.registrationMilestone")}>
           <RegistrationMilestones inviteeCount={inviteeCount} milestones={milestones} />
@@ -333,6 +330,7 @@ export default function ReferralsScreen() {
 
       <ShareInviteSheet
         visible={shareOpen}
+        inviteCode={dashboard?.inviteCode ?? null}
         inviteUrl={dashboard?.inviteUrl ?? null}
         onClose={() => setShareOpen(false)}
         onShare={() => void shareInvite()}
@@ -507,27 +505,30 @@ function InviteFlowCard({
             {inviteCode ?? t("referrals.noInviteCode")}
           </ThemedText>
           <ThemedText type="small" themeColor="textSecondary" numberOfLines={1}>
-            {inviteUrl ?? t("referrals.inviteCodePending")}
+            {inviteUrl ?? t("referrals.inviteCodeHint")}
           </ThemedText>
         </View>
         <Pressable
           accessibilityRole="button"
-          disabled={!inviteUrl}
+          disabled={!inviteCode}
           onPress={onShare}
-          style={({ pressed }) => [
-            styles.copyButton,
-            { backgroundColor: inviteUrl ? theme.brand : theme.backgroundSelected },
-            pressed && styles.pressed,
-          ]}
+          style={({ pressed }) => (pressed ? styles.pressed : null)}
         >
-          <SymbolView
-            name={{ ios: "square.and.arrow.up", android: "share", web: "share" }}
-            size={15}
-            tintColor="#FFFFFF"
-          />
-          <ThemedText type="code" style={styles.copyButtonText}>
-            {t("referrals.nativeShare")}
-          </ThemedText>
+          <View
+            style={[
+              styles.copyButton,
+              { backgroundColor: inviteCode ? theme.brand : theme.backgroundSelected },
+            ]}
+          >
+            <SymbolView
+              name={{ ios: "square.and.arrow.up", android: "share", web: "share" }}
+              size={15}
+              tintColor="#FFFFFF"
+            />
+            <ThemedText type="code" style={styles.copyButtonText}>
+              {t("referrals.nativeShare")}
+            </ThemedText>
+          </View>
         </Pressable>
       </View>
     </View>
@@ -563,11 +564,13 @@ function RewardRow({ locale, reward }: { locale: string; reward: ReferralReward 
 }
 
 function ShareInviteSheet({
+  inviteCode,
   inviteUrl,
   onClose,
   onShare,
   visible,
 }: {
+  inviteCode: string | null;
   inviteUrl: string | null;
   onClose: () => void;
   onShare: () => void;
@@ -604,28 +607,36 @@ function ShareInviteSheet({
           {t("referrals.shareSheetBody")}
         </ThemedText>
         <View style={[styles.sheetLink, { borderColor: theme.border }]}>
-          <ThemedText type="small" numberOfLines={1}>
-            {inviteUrl ?? t("referrals.inviteCodePending")}
+          <ThemedText type="smallBold" numberOfLines={1}>
+            {inviteCode ?? t("referrals.noInviteCode")}
           </ThemedText>
+          {inviteUrl ? (
+            <ThemedText type="small" themeColor="textSecondary" numberOfLines={1}>
+              {inviteUrl}
+            </ThemedText>
+          ) : null}
         </View>
         <Pressable
           accessibilityRole="button"
-          disabled={!inviteUrl}
+          disabled={!inviteCode}
           onPress={onShare}
-          style={({ pressed }) => [
-            styles.primaryButton,
-            { backgroundColor: inviteUrl ? theme.brand : theme.backgroundSelected },
-            pressed && styles.pressed,
-          ]}
+          style={({ pressed }) => (pressed ? styles.pressed : null)}
         >
-          <SymbolView
-            name={{ ios: "square.and.arrow.up", android: "share", web: "share" }}
-            size={17}
-            tintColor="#FFFFFF"
-          />
-          <ThemedText type="smallBold" style={styles.primaryButtonText}>
-            {t("referrals.nativeShare")}
-          </ThemedText>
+          <View
+            style={[
+              styles.primaryButton,
+              { backgroundColor: inviteCode ? theme.brand : theme.backgroundSelected },
+            ]}
+          >
+            <SymbolView
+              name={{ ios: "square.and.arrow.up", android: "share", web: "share" }}
+              size={17}
+              tintColor="#FFFFFF"
+            />
+            <ThemedText type="smallBold" style={styles.primaryButtonText}>
+              {t("referrals.nativeShare")}
+            </ThemedText>
+          </View>
         </Pressable>
       </View>
     </Modal>
@@ -717,6 +728,19 @@ const styles = StyleSheet.create({
   },
   divider: {
     height: StyleSheet.hairlineWidth,
+  },
+  codeBox: {
+    alignItems: "center",
+    borderRadius: 10,
+    borderStyle: "dashed",
+    borderWidth: 1,
+    justifyContent: "center",
+    paddingVertical: Spacing.three,
+  },
+  codeText: {
+    fontSize: 26,
+    fontWeight: "700",
+    letterSpacing: 6,
   },
   statsRow: {
     flexDirection: "row",

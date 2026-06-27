@@ -4,7 +4,7 @@ import {
   Logger,
   NotFoundException,
 } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
+import { BillingOrderStatus, BillingOrderType, Prisma } from '@prisma/client';
 import { randomBytes } from 'crypto';
 import { PrismaService } from '../infra/db/db.module';
 import type {
@@ -19,6 +19,7 @@ const PROGRAM_KEY = 'default';
 const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 const CODE_LENGTH = 8;
 const CODE_MAX_ATTEMPTS = 5;
+const DAY_MS = 24 * 60 * 60 * 1000;
 
 const CURRENCY_SYMBOLS: Record<string, string> = {
   USD: '$',
@@ -47,9 +48,10 @@ const EMPTY_DASHBOARD: ReferralDashboardDTO = {
 @Injectable()
 export class ReferralsService {
   private readonly logger = new Logger(ReferralsService.name);
-  /** Optional invite-link base; unset → the client shares the bare code. */
+  /** Invite-link base — the apps/web origin. The shared link lands on /register
+   *  with the code prefilled (recommendationCode). .com default; CN overrides. */
   private readonly inviteBase = (
-    process.env.REFERRAL_INVITE_BASE_URL ?? ''
+    process.env.REFERRAL_INVITE_BASE_URL ?? 'https://fizzdragon.com'
   ).replace(/\/+$/, '');
 
   constructor(private readonly prisma: PrismaService) {}
@@ -57,6 +59,13 @@ export class ReferralsService {
   /** The signed-in user's dashboard. Returns the empty/unavailable shape when
    *  no active program exists, so the client renders a graceful "off" state. */
   async getDashboard(userId: string): Promise<ReferralDashboardDTO> {
+    // Lazy backstop: if this viewer is a referee who has since made their first
+    // purchase, qualify + accrue before rendering. Best-effort (never throws).
+    await this.qualifyRefereePurchase(userId).catch((e) =>
+      this.logger.warn(
+        `lazy qualify failed for ${userId}: ${e instanceof Error ? e.message : e}`,
+      ),
+    );
     const program = await this.prisma.referralProgram.findUnique({
       where: { key: PROGRAM_KEY },
       include: {
@@ -66,9 +75,12 @@ export class ReferralsService {
     if (!program || !program.enabled) return EMPTY_DASHBOARD;
 
     const code = await this.getOrCreateInviteCode(userId);
-    const [inviteeCount, rewards] = await Promise.all([
+    const [inviteeCount, qualifiedCount, rewards] = await Promise.all([
       this.prisma.referralAttribution.count({
         where: { referrerUserId: userId },
+      }),
+      this.prisma.referralAttribution.count({
+        where: { referrerUserId: userId, status: 'qualified' },
       }),
       this.prisma.referralReward.findMany({
         where: { userId },
@@ -77,11 +89,12 @@ export class ReferralsService {
       }),
     ]);
 
-    // First unmet tier is "active"; lower ones complete, higher ones locked.
+    // Milestone progress tracks QUALIFIED referees (matches accrual), not raw
+    // signups. First unmet tier is "active"; lower complete, higher locked.
     let activeAssigned = false;
     const milestones: ReferralMilestoneDTO[] = program.milestones.map((m) => {
       let status: ReferralMilestoneDTO['status'];
-      if (inviteeCount >= m.inviteeThreshold) {
+      if (qualifiedCount >= m.inviteeThreshold) {
         status = 'complete';
       } else if (!activeAssigned) {
         status = 'active';
@@ -101,7 +114,9 @@ export class ReferralsService {
     return {
       programAvailable: true,
       inviteCode: code,
-      inviteUrl: this.inviteBase ? `${this.inviteBase}/${code}` : null,
+      inviteUrl: this.inviteBase
+        ? `${this.inviteBase}/register?recommendationCode=${encodeURIComponent(code)}`
+        : null,
       currency: program.currency,
       totals: computeTotals(rewards, inviteeCount),
       inviteeBenefit: {
@@ -162,6 +177,219 @@ export class ReferralsService {
       }
       throw e;
     }
+  }
+
+  /**
+   * Billing hook — call AFTER the payment transaction commits (own tx,
+   * best-effort), so a referral bug can never roll back a paid order. Resolves
+   * the order's buyer and qualifies them if they were referred. Idempotent;
+   * safe to call for any matched order (non-paid / adjustments are ignored).
+   */
+  async accrueForOrder(orderId: string): Promise<void> {
+    const order = await this.prisma.billingOrder.findUnique({
+      where: { id: orderId },
+      select: { userId: true, status: true, orderType: true },
+    });
+    if (!order) return;
+    if (
+      order.status !== BillingOrderStatus.paid &&
+      order.status !== BillingOrderStatus.fulfilled
+    ) {
+      return;
+    }
+    if (order.orderType === BillingOrderType.manual_adjustment) return;
+    await this.qualifyRefereePurchase(order.userId);
+  }
+
+  /**
+   * Core qualify + reward accrual for a referee's first paid purchase. The
+   * whole accrual is ONE transaction, so partial states can't persist;
+   * idempotency comes from the pending→qualified guard (only the winner
+   * accrues) plus milestone existence checks. Also the lazy-read backstop.
+   */
+  async qualifyRefereePurchase(refereeUserId: string): Promise<void> {
+    const attribution = await this.prisma.referralAttribution.findUnique({
+      where: { refereeUserId },
+    });
+    if (!attribution || attribution.status !== 'pending') return;
+
+    const program = await this.prisma.referralProgram.findUnique({
+      where: { key: attribution.programKey },
+      include: { milestones: { where: { archivedAt: null } } },
+    });
+    if (!program || !program.enabled) return;
+    // This path qualifies on first purchase; 'signup' programs qualify at claim.
+    if (program.qualifyEvent !== 'first_purchase') return;
+
+    // Genuine new-user conversion: a paid purchase, and NONE before being
+    // referred (don't reward referring an already-paying customer).
+    const paidWhere = {
+      userId: refereeUserId,
+      status: {
+        in: [BillingOrderStatus.paid, BillingOrderStatus.fulfilled],
+      },
+      orderType: { not: BillingOrderType.manual_adjustment },
+    };
+    const [paidTotal, paidBefore] = await Promise.all([
+      this.prisma.billingOrder.count({ where: paidWhere }),
+      this.prisma.billingOrder.count({
+        where: { ...paidWhere, createdAt: { lt: attribution.createdAt } },
+      }),
+    ]);
+    if (paidTotal === 0 || paidBefore > 0) return;
+
+    const now = new Date();
+    const availableAt = new Date(now.getTime() + program.holdDays * DAY_MS);
+
+    await this.prisma.$transaction(async (tx) => {
+      // Atomic guard: only the winner of pending→qualified gets to accrue.
+      const claimed = await tx.referralAttribution.updateMany({
+        where: { id: attribution.id, status: 'pending' },
+        data: { status: 'qualified', qualifiedAt: now },
+      });
+      if (claimed.count === 0) return;
+
+      // 1) Referrer per-referral reward (respect the per-referrer cap).
+      if (program.rewardPerReferralMinor > 0n) {
+        const cap = program.maxRewardedReferees;
+        const within =
+          cap === 0 ||
+          (await tx.referralReward.count({
+            where: { userId: attribution.referrerUserId, kind: 'referral' },
+          })) < cap;
+        if (within) {
+          await tx.referralReward.create({
+            data: {
+              programKey: program.key,
+              userId: attribution.referrerUserId,
+              kind: 'referral',
+              status: 'accrued',
+              amountMinor: program.rewardPerReferralMinor,
+              currency: program.currency,
+              title: 'Referral reward',
+              subtitle: 'A friend joined and made their first purchase',
+              attributionId: attribution.id,
+              availableAt,
+            },
+          });
+        }
+      }
+
+      // 2) Invitee welcome perk (the referred user).
+      if (program.inviteeBenefitMinor > 0n) {
+        await tx.referralReward.create({
+          data: {
+            programKey: program.key,
+            userId: refereeUserId,
+            kind: 'invitee',
+            status: 'accrued',
+            amountMinor: program.inviteeBenefitMinor,
+            currency: program.currency,
+            title: program.inviteeBenefitTitle ?? 'Welcome bonus',
+            subtitle: program.inviteeBenefitDetail ?? undefined,
+            availableAt,
+          },
+        });
+      }
+
+      // 3) Milestone tiers newly reached. Existence-checked so a tier (which
+      //    persists once earned) is never granted twice across referees.
+      if (program.milestones.length) {
+        const qualifiedCount = await tx.referralAttribution.count({
+          where: {
+            referrerUserId: attribution.referrerUserId,
+            status: 'qualified',
+          },
+        });
+        const earned = new Set(
+          (
+            await tx.referralReward.findMany({
+              where: { userId: attribution.referrerUserId, kind: 'milestone' },
+              select: { milestoneId: true },
+            })
+          ).map((r) => r.milestoneId),
+        );
+        const newTiers = program.milestones
+          .filter(
+            (m) => qualifiedCount >= m.inviteeThreshold && !earned.has(m.id),
+          )
+          .map((m) => ({
+            programKey: program.key,
+            userId: attribution.referrerUserId,
+            kind: 'milestone' as const,
+            status: 'accrued' as const,
+            amountMinor: m.rewardMinor,
+            currency: program.currency,
+            title: m.title,
+            subtitle: m.detail,
+            milestoneId: m.id,
+            availableAt,
+          }));
+        if (newTiers.length) {
+          // skipDuplicates → ON CONFLICT DO NOTHING; a concurrent tier crossing
+          // can't P2002-poison this tx (which would roll back the whole accrual).
+          await tx.referralReward.createMany({
+            data: newTiers,
+            skipDuplicates: true,
+          });
+        }
+      }
+    });
+
+    this.logger.log(
+      `Referral qualified: referee=${refereeUserId} referrer=${attribution.referrerUserId}`,
+    );
+  }
+
+  /**
+   * Refund hook (post-commit, best-effort). When a referee FULLY refunds and no
+   * other paid order still backs their qualification, reverse the attribution +
+   * its still-accrued referral/invitee rewards so we never pay out for a
+   * refunded purchase. Already paid_out rewards are NOT clawed back here.
+   */
+  async reverseForOrder(orderId: string): Promise<void> {
+    const order = await this.prisma.billingOrder.findUnique({
+      where: { id: orderId },
+      select: { userId: true, status: true },
+    });
+    if (!order || order.status !== BillingOrderStatus.refunded) return;
+    // Keep the qualification if another paid purchase still backs it.
+    const stillPaid = await this.prisma.billingOrder.count({
+      where: {
+        userId: order.userId,
+        status: {
+          in: [BillingOrderStatus.paid, BillingOrderStatus.fulfilled],
+        },
+        orderType: { not: BillingOrderType.manual_adjustment },
+      },
+    });
+    if (stillPaid > 0) return;
+    const attribution = await this.prisma.referralAttribution.findUnique({
+      where: { refereeUserId: order.userId },
+    });
+    if (!attribution || attribution.status !== 'qualified') return;
+
+    await this.prisma.$transaction(async (tx) => {
+      const claimed = await tx.referralAttribution.updateMany({
+        where: { id: attribution.id, status: 'qualified' },
+        data: { status: 'reversed' },
+      });
+      if (claimed.count === 0) return;
+      // Reverse the referrer's per-referral reward (only while still accrued).
+      await tx.referralReward.updateMany({
+        where: { attributionId: attribution.id, status: 'accrued' },
+        data: { status: 'reversed' },
+      });
+      // Reverse the referee's invitee perk (only while still accrued).
+      await tx.referralReward.updateMany({
+        where: { userId: order.userId, kind: 'invitee', status: 'accrued' },
+        data: { status: 'reversed' },
+      });
+      // Milestone tiers are intentionally NOT reversed — a tier can still be
+      // backed by other qualified referees. Revisit if it becomes an issue.
+    });
+
+    this.logger.log(`Referral reversed (refund): referee=${order.userId}`);
   }
 
   /** Allocate (or fetch) the user's stable invite code, retrying on the rare
