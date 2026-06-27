@@ -317,9 +317,11 @@ export class ReferralsService {
             programKey: program.key,
             userId: attribution.referrerUserId,
             kind: 'milestone' as const,
+            payoutType: m.payoutType,
             status: 'accrued' as const,
             amountMinor: m.rewardMinor,
-            currency: program.currency,
+            days: m.payoutDays,
+            currency: m.payoutType === 'cash' ? program.currency : null,
             title: m.title,
             subtitle: m.detail,
             milestoneId: m.id,
@@ -422,13 +424,14 @@ export class ReferralsService {
 }
 
 function computeTotals(
-  rewards: { amountMinor: bigint; status: string }[],
+  rewards: { payoutType: string; amountMinor: bigint; status: string }[],
   inviteeCount: number,
 ) {
   let pending = 0n;
   let confirmed = 0n;
   let reversed = 0n;
   for (const r of rewards) {
+    if (r.payoutType !== 'cash') continue; // headline totals are cash-only
     if (r.status === 'pending' || r.status === 'qualified') {
       pending += r.amountMinor;
     } else if (r.status === 'accrued' || r.status === 'paid_out') {
@@ -449,8 +452,10 @@ function mapReward(r: {
   id: string;
   title: string;
   subtitle: string | null;
+  payoutType: string;
   amountMinor: bigint;
-  currency: string;
+  days: number;
+  currency: string | null;
   status: string;
   createdAt: Date;
   availableAt: Date | null;
@@ -459,7 +464,9 @@ function mapReward(r: {
     id: r.id,
     title: r.title,
     subtitle: r.subtitle ?? undefined,
+    payoutType: r.payoutType as ReferralRewardDTO['payoutType'],
     amountMinor: r.amountMinor.toString(),
+    days: r.days,
     currency: r.currency,
     status: r.status as ReferralRewardDTO['status'],
     createdAt: r.createdAt.toISOString(),

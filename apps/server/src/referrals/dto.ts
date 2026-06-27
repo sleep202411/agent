@@ -16,13 +16,25 @@ export type ReferralRewardStatus =
   | 'voided'
   | 'paid_out';
 
+export type ReferralPayoutType =
+  | 'cash'
+  | 'points_compute'
+  | 'points_community'
+  | 'membership_compute'
+  | 'membership_community'
+  | 'membership_both';
+
 export interface ReferralRewardDTO {
   id: string;
   title: string;
   subtitle?: string;
-  /** Minor units (1/100), as a string to survive JSON BigInt. */
+  payoutType: ReferralPayoutType;
+  /** Cash minor units OR point count, as a string (JSON BigInt safe). */
   amountMinor: string;
-  currency: string;
+  /** Membership reward days (0 for cash/points). */
+  days: number;
+  /** Cash currency; null for points / membership. */
+  currency: string | null;
   status: ReferralRewardStatus;
   createdAt: string;
   availableAt: string | null;

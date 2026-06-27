@@ -5352,7 +5352,18 @@ enum ReferralRewardStatus {
   accrued // credited, inside the hold window
   reversed // clawed back
   voided // admin-cancelled
-  paid_out // settled to the wallet
+  paid_out // settled / granted (membership/points credited or cash paid)
+}
+
+/// What a reward pays out — cash, points (compute/community), or membership
+/// days (compute/community/both). Drives the grant path at settlement.
+enum ReferralPayoutType {
+  cash
+  points_compute
+  points_community
+  membership_compute
+  membership_community
+  membership_both
 }
 
 /// Admin-managed program config (one row per key — CheckInConfig style).
@@ -5390,17 +5401,21 @@ model ReferralProgram {
 
 /// Admin-editable milestone tiers: invite N referees → bonus reward.
 model ReferralMilestoneConfig {
-  id               String          @id @default(uuid(7)) @db.Uuid
-  programId        String          @map("program_id") @db.Uuid
-  program          ReferralProgram @relation(fields: [programId], references: [id], onDelete: Cascade)
-  inviteeThreshold Int             @map("invitee_threshold")
-  rewardMinor      BigInt          @map("reward_minor")
-  title            String          @db.VarChar(120)
-  detail           String          @db.VarChar(400)
-  rank             Int             @default(0)
-  archivedAt       DateTime?       @map("archived_at") @db.Timestamptz(6)
-  createdAt        DateTime        @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt        DateTime        @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  id               String             @id @default(uuid(7)) @db.Uuid
+  programId        String             @map("program_id") @db.Uuid
+  program          ReferralProgram    @relation(fields: [programId], references: [id], onDelete: Cascade)
+  inviteeThreshold Int                @map("invitee_threshold")
+  payoutType       ReferralPayoutType @default(cash) @map("payout_type")
+  /// Cash minor units OR point count (per payoutType); 0 for membership tiers.
+  rewardMinor      BigInt             @map("reward_minor")
+  /// Membership reward duration in days; 0 for cash/points tiers.
+  payoutDays       Int                @default(0) @map("payout_days")
+  title            String             @db.VarChar(120)
+  detail           String             @db.VarChar(400)
+  rank             Int                @default(0)
+  archivedAt       DateTime?          @map("archived_at") @db.Timestamptz(6)
+  createdAt        DateTime           @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt        DateTime           @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   @@unique([programId, inviteeThreshold], map: "referral_milestone_program_threshold_unique")
   @@index([programId, rank], map: "referral_milestone_program_rank_idx")
@@ -5442,9 +5457,14 @@ model ReferralReward {
   programKey    String               @default("default") @map("program_key") @db.VarChar(64)
   userId        String               @map("user_id") @db.VarChar(64)
   kind          ReferralRewardKind
+  payoutType    ReferralPayoutType   @default(cash) @map("payout_type")
   status        ReferralRewardStatus @default(pending)
+  /// Cash minor units OR point count (per payoutType); 0 for membership.
   amountMinor   BigInt               @map("amount_minor")
-  currency      String               @db.VarChar(3)
+  /// Membership reward duration in days; 0 for cash/points.
+  days          Int                  @default(0)
+  /// Cash currency (null for points / membership rewards).
+  currency      String?              @db.VarChar(3)
   title         String               @db.VarChar(120)
   subtitle      String?              @db.VarChar(200)
   /// Source attribution (null for milestone rewards) — also the per-referral
