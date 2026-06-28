@@ -28,7 +28,9 @@ const theme = Colors.dark;
 const IS_CN = appEnv.siteRegion === "cn";
 const RESEND_SECONDS = 60;
 
-const SITE_BASE_URL = IS_CN ? "https://fizzdragon.fizzspace.cn" : "https://fizzdragon.com";
+// CN legal pages live under /zh-CN/; without it the site 307-redirects to
+// /en-US/ (English), which the CN app stores won't accept.
+const SITE_BASE_URL = IS_CN ? "https://fizzdragon.fizzspace.cn/zh-CN" : "https://fizzdragon.com";
 
 function pressedStyle(pressed: boolean) {
   return { opacity: pressed ? 0.7 : 1 };

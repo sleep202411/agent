@@ -26,8 +26,10 @@ type FieldName = "identifier" | "password";
 
 const theme = Colors.dark;
 
+// CN legal pages live under the /zh-CN/ locale prefix; without it the site
+// 307-redirects to /en-US/ (English), which the CN app stores won't accept.
 const SITE_BASE_URL =
-  appEnv.siteRegion === "cn" ? "https://fizzdragon.fizzspace.cn" : "https://fizzdragon.com";
+  appEnv.siteRegion === "cn" ? "https://fizzdragon.fizzspace.cn/zh-CN" : "https://fizzdragon.com";
 
 function pressedStyle(pressed: boolean) {
   return { opacity: pressed ? 0.7 : 1 };
