@@ -2,10 +2,10 @@ import { Image } from "expo-image";
 import { useRouter } from "expo-router";
 import { SymbolView } from "expo-symbols";
 import { useEffect, useMemo, useState } from "react";
-import { Alert, FlatList, Pressable, StyleSheet, View } from "react-native";
+import { ActivityIndicator, Alert, FlatList, Pressable, StyleSheet, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { useAuth, useAuthGate } from "@/auth";
+import { useAuth, useLoginGateOnFocus } from "@/auth";
 import { LanguageSheet, LOCALE_NAMES } from "@/components/language-switcher";
 import { ThemedText } from "@/components/themed-text";
 import { appEnv, resolveAssetUrl } from "@/config";
@@ -42,7 +42,8 @@ const COLUMNS = 3;
 
 export default function MineScreen() {
   const auth = useAuth();
-  const authGate = useAuthGate();
+  // Signed-out viewers get the login screen the moment this tab is focused.
+  useLoginGateOnFocus();
   const theme = useTheme();
   const t = useTranslations();
   const locale = useLocale();
@@ -178,70 +179,12 @@ export default function MineScreen() {
         : t("mine.crewsEmpty");
 
   if (!isAuthed) {
+    // Signed out → jump straight to login (useLoginGateOnFocus opens it on
+    // focus); no full-screen prompt. This spinner only covers the brief moment
+    // before / behind the login screen.
     return (
-      <View
-        style={[
-          styles.root,
-          styles.guestRoot,
-          { backgroundColor: theme.background, paddingTop: insets.top + Spacing.eight },
-        ]}
-      >
-        <View style={[styles.guestAvatar, { backgroundColor: theme.backgroundElement }]}>
-          <SymbolView
-            name={{ ios: "person.crop.circle", android: "person", web: "person" }}
-            size={40}
-            tintColor={theme.textSecondary}
-          />
-        </View>
-        <View style={styles.guestCopy}>
-          <ThemedText type="subtitle" style={styles.guestTitle}>
-            {t("mine.guestTitle")}
-          </ThemedText>
-          <ThemedText type="small" themeColor="textSecondary" style={styles.guestBody}>
-            {t("mine.guestBody")}
-          </ThemedText>
-        </View>
-        <Pressable
-          accessibilityRole="button"
-          onPress={() => authGate.openLogin()}
-          style={({ pressed }) => [
-            styles.guestPrimary,
-            { backgroundColor: theme.brand },
-            pressed && styles.pressed,
-          ]}
-        >
-          <ThemedText type="smallBold" style={styles.guestPrimaryText}>
-            {t("login.signIn")}
-          </ThemedText>
-        </Pressable>
-        <Pressable
-          accessibilityRole="button"
-          onPress={() => authGate.openRegister()}
-          style={({ pressed }) => (pressed ? styles.pressed : null)}
-        >
-          <ThemedText type="small" themeColor="textSecondary">
-            {t("register.title")}
-          </ThemedText>
-        </Pressable>
-        <View style={styles.guestLanguage}>
-          <Pressable
-            accessibilityRole="button"
-            onPress={() => setLanguageOpen(true)}
-            style={({ pressed }) => (pressed ? styles.pressed : null)}
-          >
-            <View style={styles.iconPill}>
-              <SymbolView
-                name={{ ios: "globe", android: "language", web: "language" }}
-                size={15}
-                tintColor="#FFFFFF"
-              />
-              <ThemedText type="small" style={styles.iconPillText}>
-                {LOCALE_NAMES[locale]}
-              </ThemedText>
-            </View>
-          </Pressable>
-        </View>
-        <LanguageSheet visible={languageOpen} onClose={() => setLanguageOpen(false)} />
+      <View style={[styles.root, styles.guestRoot, { backgroundColor: theme.background }]}>
+        <ActivityIndicator color={theme.textSecondary} />
       </View>
     );
   }
@@ -484,38 +427,7 @@ const styles = StyleSheet.create({
   },
   guestRoot: {
     alignItems: "center",
-    gap: Spacing.four,
-    paddingHorizontal: Spacing.six,
-  },
-  guestAvatar: {
-    alignItems: "center",
-    borderRadius: 999,
-    height: 88,
     justifyContent: "center",
-    width: 88,
-  },
-  guestCopy: {
-    alignItems: "center",
-    gap: Spacing.two,
-  },
-  guestTitle: {
-    textAlign: "center",
-  },
-  guestBody: {
-    textAlign: "center",
-  },
-  guestPrimary: {
-    alignItems: "center",
-    borderRadius: 12,
-    marginTop: Spacing.two,
-    paddingHorizontal: Spacing.eight,
-    paddingVertical: Spacing.three,
-  },
-  guestPrimaryText: {
-    color: "#FFFFFF",
-  },
-  guestLanguage: {
-    marginTop: Spacing.four,
   },
   header: {
     overflow: "hidden",

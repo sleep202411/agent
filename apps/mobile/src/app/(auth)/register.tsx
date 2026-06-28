@@ -22,7 +22,7 @@ import { appEnv } from "@/config";
 import { Colors, MaxContentWidth, Spacing } from "@/constants/theme";
 import { useTranslations } from "@/i18n";
 
-type FieldName = "identifier" | "code" | "password" | "confirmPassword";
+type FieldName = "identifier" | "code" | "password" | "confirmPassword" | "recommendationCode";
 
 const theme = Colors.dark;
 const IS_CN = appEnv.siteRegion === "cn";
@@ -47,6 +47,7 @@ export default function RegisterScreen() {
   const [code, setCode] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
+  const [recommendationCode, setRecommendationCode] = useState("");
   const [acceptedTerms, setAcceptedTerms] = useState(false);
   const [focusedField, setFocusedField] = useState<FieldName | undefined>();
   const [showPassword, setShowPassword] = useState(false);
@@ -119,7 +120,12 @@ export default function RegisterScreen() {
 
     setLocalError(undefined);
     try {
-      await auth.register({ identifier: value, code: code.trim(), password });
+      await auth.register({
+        identifier: value,
+        code: code.trim(),
+        password,
+        recommendationCode: recommendationCode.trim() || undefined,
+      });
       // The authenticated effect dismisses the sheet once state flips.
     } catch (error) {
       setLocalError(error instanceof Error ? error.message : t("register.failed"));
@@ -325,6 +331,34 @@ export default function RegisterScreen() {
                     style={styles.input}
                     textContentType="newPassword"
                     value={confirmPassword}
+                  />
+                </View>
+              </View>
+
+              {/* Referral code (optional) */}
+              <View style={styles.field}>
+                <Text style={styles.label}>{t("register.recommendationCode")}</Text>
+                <View
+                  style={[
+                    styles.inputShell,
+                    focusedField === "recommendationCode" && styles.inputShellFocused,
+                  ]}
+                >
+                  <TextInput
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                    onBlur={() => setFocusedField(undefined)}
+                    onChangeText={(value) => {
+                      setRecommendationCode(value);
+                      clearLocalError();
+                    }}
+                    onFocus={() => setFocusedField("recommendationCode")}
+                    onSubmitEditing={handleSubmit}
+                    placeholder={t("register.recommendationCodePlaceholder")}
+                    placeholderTextColor="rgba(255,255,255,0.34)"
+                    returnKeyType="done"
+                    style={styles.input}
+                    value={recommendationCode}
                   />
                 </View>
               </View>

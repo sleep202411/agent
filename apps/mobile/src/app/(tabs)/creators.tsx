@@ -4,7 +4,6 @@ import { useEffect, useRef, useState } from "react";
 import { Pressable, StyleSheet, View } from "react-native";
 
 import { useAuthGate } from "@/auth";
-import { AuthRequired } from "@/components/auth-required";
 import { TabScreen } from "@/components/tab-screen";
 import { ThemedText } from "@/components/themed-text";
 import { ThemedView } from "@/components/themed-view";
@@ -26,7 +25,7 @@ function chunkPairs<T>(items: T[]): T[][] {
 
 export default function CreatorsScreen() {
   const t = useTranslations();
-  const { isAuthenticated } = useAuthGate();
+  const { isAuthenticated, openLogin } = useAuthGate();
   const [creators, setCreators] = useState<CreatorSummary[]>([]);
   const [requiresLogin, setRequiresLogin] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -103,11 +102,13 @@ export default function CreatorsScreen() {
             ))}
           </View>
           {requiresLogin ? (
-            <AuthRequired
-              title={t("creators.moreTitle")}
-              body={t("creators.moreBody")}
-              icon={{ ios: "person.2", android: "group", web: "group" }}
-            />
+            <Pressable
+              accessibilityRole="button"
+              onPress={() => openLogin()}
+              style={({ pressed }) => [styles.seeMore, pressed && styles.pressed]}
+            >
+              <ThemedText type="smallBold">{t("creators.seeMore")}</ThemedText>
+            </Pressable>
           ) : null}
         </>
       ) : (
@@ -195,5 +196,14 @@ const styles = StyleSheet.create({
   },
   pressed: {
     opacity: 0.82,
+  },
+  seeMore: {
+    alignSelf: "center",
+    borderColor: "rgba(255,255,255,0.16)",
+    borderRadius: 999,
+    borderWidth: StyleSheet.hairlineWidth,
+    marginTop: Spacing.two,
+    paddingHorizontal: Spacing.five,
+    paddingVertical: Spacing.three,
   },
 });
