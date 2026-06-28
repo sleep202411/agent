@@ -165,7 +165,13 @@ export default function IpDetailScreen() {
   // The web uses locale-prefixed routes (e.g. /en-US/ips/<id>); the QR encodes
   // the region's public origin so a scan opens the work on the right site.
   const shareUrl = `${webBaseUrl}/${locale}/ips/${ip.id}`;
-  const creatorName = ip.creators[0]?.name;
+  const creator = ip.creators[0];
+  const creatorName = creator?.name;
+  // Real avatar if resolved, else a deterministic DiceBear face (same fallback
+  // as the cast/creator chips below).
+  const creatorAvatar = creator
+    ? (creator.avatarUrl ?? dicebearAvatarUrl(`user:${creator.userId ?? creator.id}`))
+    : undefined;
 
   return (
     <ThemedView style={styles.screen}>
@@ -212,14 +218,6 @@ export default function IpDetailScreen() {
         }}
       />
 
-      <ShareSheet
-        visible={shareOpen}
-        ip={ip}
-        creatorName={creatorName}
-        shareUrl={shareUrl}
-        brand={t("ipDetail.shareBrand")}
-        onClose={() => setShareOpen(false)}
-      />
       <ReportReasonSheet
         visible={reportOpen}
         submitting={reporting}
@@ -379,6 +377,18 @@ export default function IpDetailScreen() {
           </View>
         </View>
       </ScrollView>
+
+      {/* Last child so the in-tree overlay paints above the page content (and,
+          being in this stack screen's tree, above the native tab bar). */}
+      <ShareSheet
+        visible={shareOpen}
+        ip={ip}
+        creatorName={creatorName}
+        creatorAvatar={creatorAvatar}
+        shareUrl={shareUrl}
+        brand={t("ipDetail.shareBrand")}
+        onClose={() => setShareOpen(false)}
+      />
     </ThemedView>
   );
 }

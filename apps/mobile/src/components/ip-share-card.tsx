@@ -34,6 +34,8 @@ type ShareCardProps = {
   ip: IpDetail;
   /** Display name of the first creator (already resolved by the screen). */
   creatorName?: string;
+  /** Avatar URL of the first creator (real or dicebear fallback, resolved by the screen). */
+  creatorAvatar?: string;
   /** Absolute URL the QR code encodes (the IP's locale-prefixed web page). */
   shareUrl: string;
   /** Brand wordmark string (localized). */
@@ -51,7 +53,7 @@ type ShareCardProps = {
  * Postcard view. Expose the `ViewShot` ref to the caller for `captureRef`.
  */
 export const ShareCard = forwardRef<ViewShotRef, ShareCardProps>(function ShareCard(
-  { ip, creatorName, shareUrl, brand, onPosterReady },
+  { ip, creatorName, creatorAvatar, shareUrl, brand, onPosterReady },
   ref
 ) {
   const poster = ip.coverUrl ?? ip.backdropUrl;
@@ -90,9 +92,18 @@ export const ShareCard = forwardRef<ViewShotRef, ShareCardProps>(function ShareC
               {ip.title}
             </ThemedText>
             {creatorName ? (
-              <ThemedText type="smallBold" style={styles.creator} numberOfLines={1}>
-                {`@${creatorName}`}
-              </ThemedText>
+              <View style={styles.creatorRow}>
+                {creatorAvatar ? (
+                  <Image
+                    source={{ uri: creatorAvatar }}
+                    style={styles.creatorAvatar}
+                    contentFit="cover"
+                  />
+                ) : null}
+                <ThemedText type="smallBold" style={styles.creator} numberOfLines={1}>
+                  {`@${creatorName}`}
+                </ThemedText>
+              </View>
             ) : null}
             <ThemedText type="code" style={styles.brand}>
               {brand}
@@ -157,7 +168,19 @@ const styles = StyleSheet.create({
     lineHeight: 26,
     color: Colors.dark.text,
   },
+  creatorRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+  },
+  creatorAvatar: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    backgroundColor: Colors.dark.backgroundSelected,
+  },
   creator: {
+    flexShrink: 1,
     color: Colors.dark.brand,
   },
   brand: {

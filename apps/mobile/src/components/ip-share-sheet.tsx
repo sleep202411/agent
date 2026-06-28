@@ -16,12 +16,12 @@ import { useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
-  Modal,
   Pressable,
   StyleSheet,
   useWindowDimensions,
   View,
 } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { captureRef, type ViewShotRef } from "react-native-view-shot";
 
 import { ThemedText } from "@/components/themed-text";
@@ -39,6 +39,8 @@ type ShareSheetProps = {
   ip: IpDetail;
   /** Display name of the first creator (already resolved by the screen). */
   creatorName?: string;
+  /** Avatar URL of the first creator (real or dicebear fallback). */
+  creatorAvatar?: string;
   /** Absolute URL the QR code encodes (the IP's locale-prefixed web page). */
   shareUrl: string;
   /** Brand wordmark string (localized). */
@@ -50,11 +52,14 @@ export function ShareSheet({
   visible,
   ip,
   creatorName,
+  creatorAvatar,
   shareUrl,
   brand,
   onClose,
 }: ShareSheetProps) {
   const t = useTranslations();
+  const theme = useTheme();
+  const insets = useSafeAreaInsets();
   const { width, height } = useWindowDimensions();
 
   const cardRef = useRef<ViewShotRef>(null);
@@ -155,9 +160,20 @@ export function ShareSheet({
   const previewW = CARD_WIDTH * scale;
   const previewH = CARD_HEIGHT * scale;
 
+  // Rendered as an in-tree absolute-fill overlay (NOT an RN Modal): on iOS a JS
+  // Modal renders in a separate window that does NOT cover the native tab bar,
+  // so the bar would bleed through. The IP detail stack screen sits above the
+  // tab bar, so an in-tree overlay cleanly covers it.
+  if (!visible) return null;
+
   return (
-    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
-      <Pressable accessible={false} style={styles.backdrop} onPress={busy ? undefined : onClose}>
+    <View style={StyleSheet.absoluteFill}>
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={t("report.close")}
+        style={styles.backdrop}
+        onPress={busy ? undefined : onClose}
+      >
         <Pressable
           accessible={false}
           onAccessibilityEscape={onClose}
@@ -185,6 +201,7 @@ export function ShareSheet({
                 ref={cardRef}
                 ip={ip}
                 creatorName={creatorName}
+                creatorAvatar={creatorAvatar}
                 shareUrl={shareUrl}
                 brand={brand}
                 onPosterReady={markPosterReady}
@@ -192,40 +209,59 @@ export function ShareSheet({
             </View>
           </View>
 
-          <View style={styles.actions}>
-            <ActionButton
-              label={t("ipDetail.share")}
-              symbol={{ ios: "square.and.arrow.up", android: "share", web: "share" }}
-              busy={sharingState}
-              disabled={busy}
-              tone="primary"
-              onPress={() => void onShare()}
-            />
-            <ActionButton
-              label={t("ipDetail.download")}
-              symbol={{ ios: "arrow.down.to.line", android: "file_download", web: "file_download" }}
-              busy={savingState}
-              disabled={busy}
-              tone="secondary"
-              onPress={() => void onDownload()}
-            />
-          </View>
-
-          <Pressable
-            accessibilityLabel={t("report.close")}
-            accessibilityRole="button"
-            disabled={busy}
-            hitSlop={10}
-            onPress={onClose}
-            style={({ pressed }) => [styles.closeButton, pressed && styles.pressed]}
+          {/* Solid panel so the buttons read as obvious controls, not icons
+              floating on the dark backdrop. */}
+          <View
+            style={[
+              styles.panel,
+              {
+                backgroundColor: theme.backgroundElement,
+                borderColor: theme.border,
+                paddingBottom: Spacing.four + insets.bottom,
+              },
+            ]}
           >
-            <ThemedText type="smallBold" themeColor="textSecondary">
-              {t("report.close")}
-            </ThemedText>
-          </Pressable>
+            <View style={styles.actions}>
+              <ActionButton
+                label={t("ipDetail.share")}
+                symbol={{ ios: "square.and.arrow.up", android: "share", web: "share" }}
+                busy={sharingState}
+                disabled={busy}
+                tone="primary"
+                onPress={() => void onShare()}
+              />
+              <ActionButton
+                label={t("ipDetail.download")}
+                symbol={{
+                  ios: "arrow.down.to.line",
+                  android: "file_download",
+                  web: "file_download",
+                }}
+                busy={savingState}
+                disabled={busy}
+                tone="secondary"
+                onPress={() => void onDownload()}
+              />
+            </View>
+
+            <Pressable
+              accessibilityLabel={t("report.close")}
+              accessibilityRole="button"
+              disabled={busy}
+              onPress={onClose}
+              style={({ pressed }) => [
+                styles.closeButton,
+                { borderColor: theme.border },
+                pressed && styles.pressed,
+                busy && styles.actionDisabled,
+              ]}
+            >
+              <ThemedText type="smallBold">{t("report.close")}</ThemedText>
+            </Pressable>
+          </View>
         </Pressable>
       </Pressable>
-    </Modal>
+    </View>
   );
 }
 
@@ -246,7 +282,9 @@ function ActionButton({
 }) {
   const theme = useTheme();
   const primary = tone === "primary";
-  const bg = primary ? theme.brand : theme.backgroundElement;
+  // Primary = solid brand fill (white text). Secondary = lighter surface with a
+  // visible border so it reads as a distinct, tappable button (not near-black).
+  const bg = primary ? theme.brand : theme.backgroundSelected;
   const fg = primary ? "#FFFFFF" : theme.text;
   return (
     <Pressable
@@ -256,7 +294,7 @@ function ActionButton({
       onPress={onPress}
       style={({ pressed }) => [
         styles.actionButton,
-        { backgroundColor: bg },
+        { backgroundColor: bg, borderColor: primary ? bg : theme.border },
         pressed && styles.pressed,
         disabled && !busy && styles.actionDisabled,
       ]}
@@ -278,7 +316,7 @@ function ActionButton({
 const styles = StyleSheet.create({
   backdrop: {
     flex: 1,
-    backgroundColor: "rgba(0,0,0,0.82)",
+    backgroundColor: "rgba(0,0,0,0.88)",
     alignItems: "center",
     justifyContent: "center",
     padding: Spacing.five,
@@ -299,29 +337,37 @@ const styles = StyleSheet.create({
     top: "50%",
     left: "50%",
   },
+  panel: {
+    width: "100%",
+    maxWidth: 380,
+    borderRadius: 20,
+    borderWidth: StyleSheet.hairlineWidth,
+    padding: Spacing.four,
+    gap: Spacing.three,
+  },
   actions: {
     flexDirection: "row",
     gap: Spacing.three,
-    width: "100%",
-    maxWidth: 360,
   },
   actionButton: {
     flex: 1,
-    height: 48,
-    borderRadius: 12,
+    height: 52,
+    borderRadius: 14,
+    borderWidth: StyleSheet.hairlineWidth,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    gap: Spacing.one,
+    gap: Spacing.two,
   },
   actionDisabled: {
     opacity: 0.5,
   },
   closeButton: {
-    height: 32,
+    height: 48,
+    borderRadius: 14,
+    borderWidth: StyleSheet.hairlineWidth,
     alignItems: "center",
     justifyContent: "center",
-    paddingHorizontal: Spacing.four,
   },
   pressed: {
     opacity: 0.78,
