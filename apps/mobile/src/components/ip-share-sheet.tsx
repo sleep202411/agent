@@ -10,7 +10,6 @@
  * child's layout box, so `captureRef` still snapshots the card at full layout
  * size → upscaled by the device pixel ratio → a crisp full-res PNG.
  */
-import * as MediaLibrary from "expo-media-library";
 import * as Sharing from "expo-sharing";
 import { SymbolView, type SymbolViewProps } from "expo-symbols";
 import { useRef, useState } from "react";
@@ -129,6 +128,9 @@ export function ShareSheet({
     if (busy) return;
     setSavingState(true);
     try {
+      // Lazy-load the native module so a dev client not yet rebuilt with it
+      // still renders the modal + Share; only Download needs the native side.
+      const MediaLibrary = await import("expo-media-library");
       const permission = await MediaLibrary.requestPermissionsAsync();
       if (!permission.granted) {
         Alert.alert(t("ipDetail.savePermissionDenied"));
