@@ -1,13 +1,13 @@
 /**
- * Shareable "postcard" for an IP — a 9:16 image with the poster on top and an
- * info strip below (title, creator, QR code, FizzDragon wordmark). It renders
- * OFF-SCREEN behind a `ViewShot` ref so `captureRef` can rasterize it to a PNG
- * without it ever being visible; the screen then hands that file to the native
- * share sheet.
+ * Shareable "postcard" for an IP — the IP poster on top (full 16:9, shown in
+ * its natural landscape ratio) with an info strip below carrying the title,
+ * @creator, a QR code and the FizzDragon wordmark. Wrapped in a `ViewShot` ref
+ * so `captureRef` can rasterize it to a PNG for the share / download actions.
  *
- * The card is laid out at a FIXED logical size (CARD_WIDTH × CARD_HEIGHT). The
- * capture scales it up via the device pixel ratio, so the exported PNG is
- * crisp (~1080×1920 on a 3x screen) regardless of the logical size here.
+ * The card is NOT a fixed portrait ratio: its total height is poster height
+ * (width × 9/16) + the strip height, so a 16:9 cover displays fully with no
+ * crop. The capture upsizes the card via the device pixel ratio, so the
+ * exported PNG is crisp (e.g. ~1080-wide on a 3x screen) at the card's ratio.
  */
 import { Image } from "expo-image";
 import { forwardRef, useEffect } from "react";
@@ -19,11 +19,16 @@ import { ThemedText } from "@/components/themed-text";
 import { Colors } from "@/constants/theme";
 import type { IpDetail } from "@/data/types";
 
-/** Logical card size — a 9:16 postcard. The capture upsizes via pixelRatio. */
+/** Card width (logical). The capture upsizes via pixelRatio. */
 export const CARD_WIDTH = 360;
-export const CARD_HEIGHT = 640;
+/** Poster region — full width at the cover's natural 16:9 (landscape). */
+export const POSTER_HEIGHT = Math.round((CARD_WIDTH * 9) / 16);
+/** Info strip height (fixed) — fits two title lines + creator + wordmark. */
+export const STRIP_HEIGHT = 132;
+/** Total card height = poster + strip (NOT a forced portrait ratio). */
+export const CARD_HEIGHT = POSTER_HEIGHT + STRIP_HEIGHT;
 
-const QR_SIZE = 72;
+const QR_SIZE = 84;
 
 type ShareCardProps = {
   ip: IpDetail;
@@ -36,15 +41,14 @@ type ShareCardProps = {
   /**
    * Fired once the poster is ready to be captured — on `Image.onLoad` when a
    * poster URL exists, or immediately (on mount) when there's no poster and the
-   * fallback initial is shown. The screen gates `captureRef` on this so the
+   * fallback initial is shown. The caller gates `captureRef` on this so the
    * snapshot never has a blank poster.
    */
   onPosterReady?: () => void;
 };
 
 /**
- * Off-screen postcard. Wrap in a parent that positions it out of view; expose
- * the `ViewShot` ref to the caller for `captureRef`.
+ * Postcard view. Expose the `ViewShot` ref to the caller for `captureRef`.
  */
 export const ShareCard = forwardRef<ViewShotRef, ShareCardProps>(function ShareCard(
   { ip, creatorName, shareUrl, brand, onPosterReady },
@@ -53,7 +57,7 @@ export const ShareCard = forwardRef<ViewShotRef, ShareCardProps>(function ShareC
   const poster = ip.coverUrl ?? ip.backdropUrl;
 
   // No poster URL → the fallback initial is shown, so there's nothing to load:
-  // signal "ready" once on mount so the screen never waits forever.
+  // signal "ready" once on mount so the caller never waits forever.
   useEffect(() => {
     if (!poster) onPosterReady?.();
   }, [poster, onPosterReady]);
@@ -61,7 +65,7 @@ export const ShareCard = forwardRef<ViewShotRef, ShareCardProps>(function ShareC
   return (
     <ViewShot ref={ref} options={{ format: "png", quality: 1 }} style={styles.shot}>
       <View style={styles.card}>
-        {/* Poster — top ~70%, cover-fit, rounded top corners. */}
+        {/* Poster — full width at 16:9; a 16:9 cover fills it with no crop. */}
         <View style={styles.posterWrap}>
           {poster ? (
             <Image
@@ -79,7 +83,7 @@ export const ShareCard = forwardRef<ViewShotRef, ShareCardProps>(function ShareC
           )}
         </View>
 
-        {/* Info strip — bottom ~30%. */}
+        {/* Info strip — below the poster. */}
         <View style={styles.strip}>
           <View style={styles.stripText}>
             <ThemedText type="subtitle" style={styles.title} numberOfLines={2}>
@@ -104,11 +108,9 @@ export const ShareCard = forwardRef<ViewShotRef, ShareCardProps>(function ShareC
   );
 });
 
-const STRIP_HEIGHT = Math.round(CARD_HEIGHT * 0.3);
-
 const styles = StyleSheet.create({
   shot: {
-    // The ViewShot wrapper itself is sized to the card so the capture has no
+    // The ViewShot wrapper is sized to the card so the capture has no
     // transparent padding around it.
     width: CARD_WIDTH,
     height: CARD_HEIGHT,
@@ -121,7 +123,8 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.dark.background,
   },
   posterWrap: {
-    flex: 1,
+    width: CARD_WIDTH,
+    height: POSTER_HEIGHT,
     backgroundColor: Colors.dark.backgroundSelected,
   },
   posterFallback: {
@@ -130,8 +133,8 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.dark.backgroundSelected,
   },
   posterInitial: {
-    fontSize: 96,
-    lineHeight: 104,
+    fontSize: 72,
+    lineHeight: 80,
     opacity: 0.5,
     color: Colors.dark.text,
   },

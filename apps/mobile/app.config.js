@@ -266,6 +266,16 @@ module.exports = ({ config }) => {
       "expo-localization",
       "expo-sharing",
       [
+        "expo-media-library",
+        {
+          // Only the "save to Photos" permission is needed (share-card download);
+          // we never read the user's library, so request add-only access.
+          savePhotosPermission: "Allow $(PRODUCT_NAME) to save share images to your photos.",
+          photosPermission: "Allow $(PRODUCT_NAME) to save share images to your photos.",
+          isAccessMediaLocationEnabled: false,
+        },
+      ],
+      [
         "expo-status-bar",
         {
           style: "light",

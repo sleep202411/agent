@@ -413,5 +413,9 @@
   "ipDetail.shareBrand": "FizzDragon",
   "ipDetail.shareUnavailable": "Sharing isn't available on this device.",
   "ipDetail.shareFailed": "Couldn't create the share image. Please try again.",
+  "ipDetail.download": "Download",
+  "ipDetail.saveSuccess": "Saved to Photos",
+  "ipDetail.saveFailed": "Couldn't save the image. Please try again.",
+  "ipDetail.savePermissionDenied": "Allow photo access to save the image.",
   "report.close": "Close"
 }

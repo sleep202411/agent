@@ -413,5 +413,9 @@
   "ipDetail.shareBrand": "FizzDragon",
   "ipDetail.shareUnavailable": "当前设备不支持分享。",
   "ipDetail.shareFailed": "生成分享图片失败，请重试。",
+  "ipDetail.download": "下载",
+  "ipDetail.saveSuccess": "已保存到相册",
+  "ipDetail.saveFailed": "保存图片失败，请重试。",
+  "ipDetail.savePermissionDenied": "请允许访问相册以保存图片。",
   "report.close": "关闭"
 }
