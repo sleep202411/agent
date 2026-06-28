@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { AdminAuthModule } from '../admin-auth';
 import { EntitlementsModule } from '../entitlements';
+import { JavaIntegrationsModule } from '../integrations/java/integrations.module';
 import { LegacyMysqlModule } from '../infra/legacy-mysql';
 import { WorkspacesModule } from '../workspaces';
 import { ReferralsAdminController } from './referrals-admin.controller';
@@ -16,6 +17,7 @@ import { ReferralsService } from './referrals.service';
     EntitlementsModule,
     WorkspacesModule,
     AdminAuthModule,
+    JavaIntegrationsModule,
   ],
   controllers: [ReferralsController, ReferralsAdminController],
   providers: [ReferralsService],

@@ -108,17 +108,6 @@ export async function fetchReferralDashboard(): Promise<ReferralDashboard> {
   }
 }
 
-/**
- * Claim an invite code — the invited user attributes themselves as the referee.
- * Idempotent server-side (one attribution per referee, for life).
- */
-export async function claimReferral(code: string): Promise<{ status: string }> {
-  return api.post<{ status: string }>("/referrals/claim", {
-    service: "aurora",
-    data: { code },
-  });
-}
-
 /** Claim (领取) an accrued reward — the server grants it by type + marks paid_out. */
 export async function claimReferralReward(rewardId: string): Promise<{ status: string }> {
   return api.post<{ status: string }>(`/referrals/rewards/${rewardId}/claim`, {

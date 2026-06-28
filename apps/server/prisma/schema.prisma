@@ -5422,18 +5422,6 @@ model ReferralMilestoneConfig {
   @@map("referral_milestone_configs")
 }
 
-/// One invite code per user per program.
-model ReferralInviteCode {
-  id         String   @id @default(uuid(7)) @db.Uuid
-  code       String   @unique @db.VarChar(32)
-  userId     String   @map("user_id") @db.VarChar(64)
-  programKey String   @default("default") @map("program_key") @db.VarChar(64)
-  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
-
-  @@unique([userId, programKey], map: "referral_code_user_program_unique")
-  @@map("referral_invite_codes")
-}
-
 /// Who referred whom — one attribution per referee, lifetime.
 model ReferralAttribution {
   id             String                    @id @default(uuid(7)) @db.Uuid
@@ -5441,7 +5429,8 @@ model ReferralAttribution {
   referrerUserId String                    @map("referrer_user_id") @db.VarChar(64)
   /// A user can be referred at most once, ever.
   refereeUserId  String                    @unique @map("referee_user_id") @db.VarChar(64)
-  inviteCode     String                    @map("invite_code") @db.VarChar(32)
+  /// The referrer's Java recommendation_code that attributed this referee.
+  inviteCode     String                    @map("invite_code") @db.VarChar(50)
   status         ReferralAttributionStatus @default(pending)
   qualifiedAt    DateTime?                 @map("qualified_at") @db.Timestamptz(6)
   createdAt      DateTime                  @default(now()) @map("created_at") @db.Timestamptz(6)

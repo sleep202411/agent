@@ -216,6 +216,50 @@ export class JavaUserLookupService {
   }
 
   /**
+   * Resolve the CURRENT user's OWN referral code via Java
+   * `GET /user/recommendationcode` (sa-token cookie auth). Java mints it
+   * lazily on first call, so this endpoint — NOT a raw `client_user` read —
+   * is the canonical way to get it (most rows are still null). Best-effort:
+   * returns the trimmed code, or null when not logged in / unavailable, so a
+   * code-fetch hiccup never blocks the rest of the referral dashboard.
+   */
+  async findRecommendationCode(cookie: string): Promise<string | null> {
+    if (!cookie) return null;
+    const url = `${JAVA_CONTENT_URL}/user/recommendationcode`;
+    const controller = new AbortController();
+    const timeout = setTimeout(
+      () => controller.abort(),
+      JAVA_REQUEST_TIMEOUT_MS,
+    );
+    try {
+      const res = await fetch(url, {
+        method: 'GET',
+        headers: { Accept: 'application/json', Cookie: cookie },
+        signal: controller.signal,
+      });
+      if (!res.ok) {
+        this.logger.warn(`Java ${url} returned HTTP ${res.status}`);
+        return null;
+      }
+      const body = (await res.json()) as {
+        code?: number;
+        info?: unknown;
+        data?: unknown;
+      };
+      if (Number(body.code) !== 200) return null;
+      const raw = body.info ?? body.data;
+      const code = typeof raw === 'string' ? raw.trim() : '';
+      return code || null;
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      this.logger.warn(`Java recommendation-code lookup failed: ${msg}`);
+      return null;
+    } finally {
+      clearTimeout(timeout);
+    }
+  }
+
+  /**
    * Resolve a single userId to a public profile via Java
    * `/user/other/user/info?UserId=…`. Cookie auth required (sa-token);
    * cross-user disclosure is limited to `{ userId, nickname, avatar }`

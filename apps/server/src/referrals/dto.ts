@@ -1,11 +1,5 @@
 import { z } from 'zod';
 
-/** POST /aurora/referrals/claim — the invited user attributes themselves. */
-export const ClaimReferralSchema = z.object({
-  code: z.string().trim().min(1).max(32),
-});
-export type ClaimReferralInput = z.infer<typeof ClaimReferralSchema>;
-
 // ─── Admin config (PATCH program / CRUD milestones) ─────────────────────
 
 const PAYOUT_TYPES = [

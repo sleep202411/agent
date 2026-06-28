@@ -1,31 +1,21 @@
-import { Body, Controller, Get, Param, Post } from '@nestjs/common';
-import { CurrentUser, type AuthUser } from '../auth';
-import { ZodValidationPipe } from '../common/zod.pipe';
-import { ClaimReferralSchema, type ClaimReferralInput } from './dto';
+import { Controller, Get, Param, Post } from '@nestjs/common';
+import { CurrentUser, ViewerCookie, type AuthUser } from '../auth';
 import { ReferralsService } from './referrals.service';
 
 /**
- * /aurora/referrals — the "邀请奖励" surface. Both routes are authenticated:
- * the dashboard is per-user, and claim attributes the CURRENT user as the
- * referee (so it can't be spoofed for someone else).
+ * /aurora/referrals — the "邀请奖励" surface. All routes are authenticated +
+ * per-user. The dashboard fetches the user's own invite code from Java
+ * (forwarded cookie); reward claims grant to the CURRENT user only.
  */
 @Controller('referrals')
 export class ReferralsController {
   constructor(private readonly service: ReferralsService) {}
 
   @Get('me')
-  async me(@CurrentUser() user: AuthUser) {
-    return { code: 200, data: await this.service.getDashboard(user.userId) };
-  }
-
-  @Post('claim')
-  async claim(
-    @CurrentUser() user: AuthUser,
-    @Body(new ZodValidationPipe(ClaimReferralSchema)) body: ClaimReferralInput,
-  ) {
+  async me(@CurrentUser() user: AuthUser, @ViewerCookie() cookie: string) {
     return {
       code: 200,
-      data: await this.service.claim(user.userId, body.code),
+      data: await this.service.getDashboard(user.userId, cookie),
     };
   }
 

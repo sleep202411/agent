@@ -16,13 +16,13 @@ import {
   WalletLedgerEntryType,
   WalletOwnerType,
 } from '@prisma/client';
-import { randomBytes } from 'crypto';
 import { PrismaService } from '../infra/db/db.module';
 import { LegacyMysqlService } from '../infra/legacy-mysql/legacy-mysql.service';
 import {
   COMMUNITY_MEMBERSHIP_PLAN_KEY,
   EntitlementService,
 } from '../entitlements/entitlement.service';
+import { JavaUserLookupService } from '../integrations/java/user-lookup.service';
 import { WalletLedgerService, WorkspacesService } from '../workspaces';
 import type { RowDataPacket } from 'mysql2';
 import type {
@@ -38,10 +38,6 @@ import type {
 const PROGRAM_KEY = 'default';
 /** Entry compute-tier plan granted for "算力会员" referral rewards. */
 const COMPUTE_PLAN_KEY = 'basic';
-/** Unambiguous uppercase alphabet (no I/O/0/1). */
-const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-const CODE_LENGTH = 8;
-const CODE_MAX_ATTEMPTS = 5;
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 const EMPTY_DASHBOARD: ReferralDashboardDTO = {
@@ -75,11 +71,15 @@ export class ReferralsService {
     private readonly entitlements: EntitlementService,
     private readonly walletLedger: WalletLedgerService,
     private readonly workspaces: WorkspacesService,
+    private readonly javaUsers: JavaUserLookupService,
   ) {}
 
   /** The signed-in user's dashboard. Returns the empty/unavailable shape when
    *  no active program exists, so the client renders a graceful "off" state. */
-  async getDashboard(userId: string): Promise<ReferralDashboardDTO> {
+  async getDashboard(
+    userId: string,
+    viewerCookie?: string,
+  ): Promise<ReferralDashboardDTO> {
     // Lazy backstop: if this viewer is a referee who has since made their first
     // purchase, qualify + accrue before rendering. Best-effort (never throws).
     await this.qualifyRefereePurchase(userId).catch((e) =>
@@ -95,7 +95,13 @@ export class ReferralsService {
     });
     if (!program || !program.enabled) return EMPTY_DASHBOARD;
 
-    const code = await this.getOrCreateInviteCode(userId);
+    // The invite code IS the user's own Java recommendation_code, minted lazily
+    // by /user/recommendationcode — most rows are still null, so we hit the
+    // endpoint via the forwarded viewer cookie rather than reading the column.
+    // A null just hides the share UI; the rest of the dashboard still renders.
+    const code = viewerCookie
+      ? await this.javaUsers.findRecommendationCode(viewerCookie)
+      : null;
     const [inviteeCount, qualifiedCount, rewards] = await Promise.all([
       this.prisma.referralAttribution.count({
         where: { referrerUserId: userId },
@@ -139,9 +145,10 @@ export class ReferralsService {
     return {
       programAvailable: true,
       inviteCode: code,
-      inviteUrl: this.inviteBase
-        ? `${this.inviteBase}/register?recommendationCode=${encodeURIComponent(code)}`
-        : null,
+      inviteUrl:
+        code && this.inviteBase
+          ? `${this.inviteBase}/register?recommendationCode=${encodeURIComponent(code)}`
+          : null,
       currency: program.currency,
       totals: computeTotals(rewards, inviteeCount),
       inviteeBenefit: {
@@ -152,56 +159,6 @@ export class ReferralsService {
       milestones,
       rewards: rewards.map(mapReward),
     };
-  }
-
-  /** The invited user claims a code → one lifetime attribution. Idempotent:
-   *  re-claiming returns the existing attribution's status. Reward accrual on
-   *  qualification is a later phase; this only records who referred whom. */
-  async claim(
-    refereeUserId: string,
-    rawCode: string,
-  ): Promise<{ status: string }> {
-    const program = await this.prisma.referralProgram.findUnique({
-      where: { key: PROGRAM_KEY },
-    });
-    if (!program || !program.enabled) {
-      throw new BadRequestException('Referral program is not available');
-    }
-    const code = rawCode.trim().toUpperCase();
-    const invite = await this.prisma.referralInviteCode.findUnique({
-      where: { code },
-    });
-    if (!invite) throw new NotFoundException('Invalid invite code');
-    if (invite.userId === refereeUserId) {
-      throw new BadRequestException('You cannot use your own invite code');
-    }
-
-    const existing = await this.prisma.referralAttribution.findUnique({
-      where: { refereeUserId },
-    });
-    if (existing) return { status: existing.status };
-
-    try {
-      const created = await this.prisma.referralAttribution.create({
-        data: {
-          programKey: PROGRAM_KEY,
-          referrerUserId: invite.userId,
-          refereeUserId,
-          inviteCode: code,
-          status: 'pending',
-        },
-      });
-      return { status: created.status };
-    } catch (e) {
-      // Lost a race to attribute this referee — return the winner's status.
-      if (isUniqueViolation(e)) {
-        const now = await this.prisma.referralAttribution.findUnique({
-          where: { refereeUserId },
-        });
-        if (now) return { status: now.status };
-      }
-      throw e;
-    }
   }
 
   // ─── Admin config (reuses billing.read / billing.write permission) ──────
@@ -759,10 +716,11 @@ export class ReferralsService {
   }
 
   /**
-   * Lazily build a referee's attribution from Java's `recommendation_code`
-   * (captured at web /register) so attribution needs no client claim. Reads the
-   * referee's code via the legacy bridge, resolves the owning invite code, and
-   * records a pending attribution. Best-effort; no-ops on missing/unknown code.
+   * Lazily build a referee's attribution from Java's referral codes (captured
+   * at web /register), so attribution needs no client claim. The referee's
+   * `recommendation_code_source` is the code they entered = the referrer's own
+   * `recommendation_code`; we resolve the referrer by that and record a pending
+   * attribution. Best-effort; no-ops on missing / unknown / self code.
    */
   private async ensureAttribution(refereeUserId: string): Promise<void> {
     const existing = await this.prisma.referralAttribution.findUnique({
@@ -771,66 +729,42 @@ export class ReferralsService {
     });
     if (existing) return;
 
-    let rawCode: string | null = null;
+    let referrerUserId: string | null = null;
+    let sourceCode: string | null = null;
     try {
-      const row = await this.legacy.queryOne<
-        RowDataPacket & { recommendation_code: string | null }
-      >('SELECT recommendation_code FROM client_user WHERE id = ? LIMIT 1', [
-        refereeUserId,
+      const referee = await this.legacy.queryOne<
+        RowDataPacket & { recommendation_code_source: string | null }
+      >(
+        'SELECT recommendation_code_source FROM client_user WHERE id = ? LIMIT 1',
+        [refereeUserId],
+      );
+      sourceCode = referee?.recommendation_code_source?.trim() || null;
+      if (!sourceCode) return; // this user wasn't referred
+      const referrer = await this.legacy.queryOne<
+        RowDataPacket & { id: number | string }
+      >('SELECT id FROM client_user WHERE recommendation_code = ? LIMIT 1', [
+        sourceCode,
       ]);
-      rawCode = row?.recommendation_code?.trim() || null;
+      referrerUserId = referrer?.id != null ? String(referrer.id) : null;
     } catch {
-      return; // bridge unavailable — skip; the claim endpoint still works
+      return; // bridge unavailable — skip
     }
-    if (!rawCode) return;
-
-    const code = rawCode.toUpperCase();
-    const invite = await this.prisma.referralInviteCode.findUnique({
-      where: { code },
-    });
-    if (!invite || invite.userId === refereeUserId) return; // unknown / self
+    // Unknown code or a self-referral → nothing to attribute.
+    if (!referrerUserId || referrerUserId === refereeUserId) return;
 
     try {
       await this.prisma.referralAttribution.create({
         data: {
           programKey: PROGRAM_KEY,
-          referrerUserId: invite.userId,
+          referrerUserId,
           refereeUserId,
-          inviteCode: code,
+          inviteCode: sourceCode,
           status: 'pending',
         },
       });
     } catch (e) {
       if (!isUniqueViolation(e)) throw e; // raced another writer — fine
     }
-  }
-
-  /** Allocate (or fetch) the user's stable invite code, retrying on the rare
-   *  code collision and tolerating a concurrent allocation for the same user. */
-  private async getOrCreateInviteCode(userId: string): Promise<string> {
-    const existing = await this.prisma.referralInviteCode.findUnique({
-      where: { userId_programKey: { userId, programKey: PROGRAM_KEY } },
-    });
-    if (existing) return existing.code;
-
-    for (let attempt = 0; attempt < CODE_MAX_ATTEMPTS; attempt++) {
-      const code = generateCode();
-      try {
-        const created = await this.prisma.referralInviteCode.create({
-          data: { code, userId, programKey: PROGRAM_KEY },
-        });
-        return created.code;
-      } catch (e) {
-        if (!isUniqueViolation(e)) throw e;
-        // Either this user got a code concurrently, or the code collided.
-        const now = await this.prisma.referralInviteCode.findUnique({
-          where: { userId_programKey: { userId, programKey: PROGRAM_KEY } },
-        });
-        if (now) return now.code;
-      }
-    }
-    this.logger.error(`Exhausted invite-code attempts for user ${userId}`);
-    throw new Error('Could not allocate a referral invite code');
   }
 }
 
@@ -886,15 +820,6 @@ function mapReward(r: {
     createdAt: r.createdAt.toISOString(),
     availableAt: r.availableAt ? r.availableAt.toISOString() : null,
   };
-}
-
-function generateCode(): string {
-  const bytes = randomBytes(CODE_LENGTH);
-  let out = '';
-  for (let i = 0; i < CODE_LENGTH; i++) {
-    out += CODE_ALPHABET[bytes[i] % CODE_ALPHABET.length];
-  }
-  return out;
 }
 
 function isUniqueViolation(e: unknown): boolean {
