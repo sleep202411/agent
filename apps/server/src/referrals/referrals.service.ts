@@ -41,14 +41,6 @@ const CODE_LENGTH = 8;
 const CODE_MAX_ATTEMPTS = 5;
 const DAY_MS = 24 * 60 * 60 * 1000;
 
-const CURRENCY_SYMBOLS: Record<string, string> = {
-  USD: '$',
-  CNY: '¥',
-  HKD: 'HK$',
-  EUR: '€',
-  GBP: '£',
-};
-
 const EMPTY_DASHBOARD: ReferralDashboardDTO = {
   programAvailable: false,
   inviteCode: null,
@@ -133,7 +125,11 @@ export class ReferralsService {
         title: m.title,
         detail: m.detail,
         status,
-        rewardLabel: formatMoney(m.rewardMinor, program.currency),
+        inviteeThreshold: m.inviteeThreshold,
+        payoutType: m.payoutType,
+        amountMinor: m.rewardMinor.toString(),
+        days: m.payoutDays,
+        currency: m.payoutType === 'cash' ? program.currency : null,
       };
     });
 
@@ -770,13 +766,6 @@ function mapReward(r: {
     createdAt: r.createdAt.toISOString(),
     availableAt: r.availableAt ? r.availableAt.toISOString() : null,
   };
-}
-
-/** Minor units → a short display string (e.g. 1000 USD → "$10"). */
-function formatMoney(minor: bigint, currency: string): string {
-  const sym = CURRENCY_SYMBOLS[currency] ?? `${currency} `;
-  const major = Number(minor) / 100;
-  return `${sym}${Number.isInteger(major) ? major.toFixed(0) : major.toFixed(2)}`;
 }
 
 function generateCode(): string {

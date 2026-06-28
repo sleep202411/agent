@@ -20,16 +20,12 @@ import {
   claimReferralReward,
   fetchReferralDashboard,
   type ReferralDashboard,
+  type ReferralMilestone,
   type ReferralReward,
   type ReferralRewardStatus,
 } from "@/data/referral-api";
 import { useTheme } from "@/hooks/use-theme";
 import { useLocale, useTranslations, type MessageKey } from "@/i18n";
-
-type MilestoneView = {
-  invitees: number;
-  rewardLabel: string;
-};
 
 export default function ReferralsScreen() {
   const auth = useAuth();
@@ -87,16 +83,6 @@ export default function ReferralsScreen() {
   );
   const inviteeCount = dashboard?.totals.inviteeCount ?? 0;
   const isInitialLoading = !dashboard && !error;
-
-  const milestones: MilestoneView[] = useMemo(
-    () => [
-      { invitees: 1, rewardLabel: "+¥1" },
-      { invitees: 3, rewardLabel: "+¥5" },
-      { invitees: 5, rewardLabel: "+¥10" },
-      { invitees: 10, rewardLabel: "+¥30" },
-    ],
-    []
-  );
 
   const shareInvite = async () => {
     const code = dashboard?.inviteCode;
@@ -294,7 +280,11 @@ export default function ReferralsScreen() {
         {/* 被邀请人福利 (invitee benefit) section hidden for now — per request. */}
 
         <Section title={t("referrals.registrationMilestone")}>
-          <RegistrationMilestones inviteeCount={inviteeCount} milestones={milestones} />
+          <RegistrationMilestones
+            inviteeCount={inviteeCount}
+            milestones={dashboard?.milestones ?? []}
+            locale={locale}
+          />
         </Section>
 
         <Section title={t("referrals.inviteFlow")}>
@@ -382,21 +372,33 @@ function Stat({ label, value }: { label: string; value: string }) {
   );
 }
 
+function milestoneRewardLabel(m: ReferralMilestone, daysSuffix: string, locale: string): string {
+  if (m.payoutType.startsWith("membership")) return `${m.days}${daysSuffix}`;
+  if (m.payoutType.startsWith("points")) return `+${m.amountMinor}`;
+  return formatMoney(m.amountMinor, m.currency ?? "USD", locale, true);
+}
+
 function RegistrationMilestones({
   inviteeCount,
   milestones,
+  locale,
 }: {
   inviteeCount: number;
-  milestones: MilestoneView[];
+  milestones: ReferralMilestone[];
+  locale: string;
 }) {
   const theme = useTheme();
   const t = useTranslations();
-  const nextMilestone = milestones.find((milestone) => milestone.invitees > inviteeCount);
+  const daysSuffix = t("referrals.daysSuffix");
+  const nextMilestone = milestones.find((milestone) => milestone.inviteeThreshold > inviteeCount);
   const target =
-    nextMilestone?.invitees ?? milestones[milestones.length - 1]?.invitees ?? inviteeCount;
-  const remaining = Math.max((nextMilestone?.invitees ?? inviteeCount) - inviteeCount, 0);
+    nextMilestone?.inviteeThreshold ??
+    milestones[milestones.length - 1]?.inviteeThreshold ??
+    inviteeCount;
+  const remaining = Math.max((nextMilestone?.inviteeThreshold ?? inviteeCount) - inviteeCount, 0);
   const activeIndex = milestones.reduce(
-    (index, milestone, currentIndex) => (inviteeCount >= milestone.invitees ? currentIndex : index),
+    (index, milestone, currentIndex) =>
+      inviteeCount >= milestone.inviteeThreshold ? currentIndex : index,
     0
   );
   const progress = milestones.length > 1 ? activeIndex / (milestones.length - 1) : 0;
@@ -412,7 +414,7 @@ function RegistrationMilestones({
             {nextMilestone
               ? `${t("referrals.inviteMorePrefix")} ${remaining} ${t(
                   "referrals.inviteMoreSuffix"
-                )} ${nextMilestone.rewardLabel}`
+                )} ${milestoneRewardLabel(nextMilestone, daysSuffix, locale)}`
               : t("referrals.allMilestonesUnlocked")}
           </ThemedText>
         </View>
@@ -433,11 +435,11 @@ function RegistrationMilestones({
         />
         <View style={styles.milestoneNodes}>
           {milestones.map((milestone) => {
-            const complete = inviteeCount >= milestone.invitees;
-            const active = nextMilestone?.invitees === milestone.invitees;
+            const complete = inviteeCount >= milestone.inviteeThreshold;
+            const active = nextMilestone?.inviteeThreshold === milestone.inviteeThreshold;
             const color = complete ? theme.brand : active ? theme.text : theme.textSecondary;
             return (
-              <View key={milestone.invitees} style={styles.milestoneNodeWrap}>
+              <View key={milestone.inviteeThreshold} style={styles.milestoneNodeWrap}>
                 <View
                   style={[
                     styles.milestoneNode,
@@ -458,10 +460,10 @@ function RegistrationMilestones({
                   )}
                 </View>
                 <ThemedText type="code" style={{ color }} numberOfLines={1}>
-                  {`${milestone.invitees}${t("referrals.peopleUnit")}`}
+                  {`${milestone.inviteeThreshold}${t("referrals.peopleUnit")}`}
                 </ThemedText>
                 <ThemedText type="code" themeColor="textSecondary" numberOfLines={1}>
-                  {milestone.rewardLabel}
+                  {milestoneRewardLabel(milestone, daysSuffix, locale)}
                 </ThemedText>
               </View>
             );

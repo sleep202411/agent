@@ -38,7 +38,12 @@ export interface ReferralMilestone {
   title: string;
   detail: string;
   status: "complete" | "active" | "locked";
-  rewardLabel?: string;
+  /** Qualified-referee count that unlocks this tier. */
+  inviteeThreshold: number;
+  payoutType: ReferralPayoutType;
+  amountMinor: string;
+  days: number;
+  currency: string | null;
 }
 
 export interface ReferralDashboard {
@@ -158,7 +163,11 @@ function normalizeDashboard(dto: ReferralDashboardDto | null | undefined): Refer
             milestone.status === "locked"
               ? milestone.status
               : "locked",
-          rewardLabel: stringOrNull(milestone.rewardLabel) ?? undefined,
+          inviteeThreshold: numberOrZero(milestone.inviteeThreshold),
+          payoutType: isPayoutType(milestone.payoutType) ? milestone.payoutType : "cash",
+          amountMinor: amountString(milestone.amountMinor),
+          days: numberOrZero(milestone.days),
+          currency: currencyOrNull(milestone.currency),
         },
       ];
     }),

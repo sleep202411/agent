@@ -47,7 +47,14 @@ export interface ReferralMilestoneDTO {
   title: string;
   detail: string;
   status: 'complete' | 'active' | 'locked';
-  rewardLabel?: string;
+  /** Qualified-referee count that unlocks this tier. */
+  inviteeThreshold: number;
+  payoutType: ReferralPayoutType;
+  /** Cash minor units OR point count (per payoutType). */
+  amountMinor: string;
+  /** Membership reward days (0 for cash/points). */
+  days: number;
+  currency: string | null;
 }
 
 export interface ReferralDashboardDTO {
