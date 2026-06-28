@@ -1,14 +1,14 @@
 import { Image } from "expo-image";
 import { router } from "expo-router";
-import { useEffect, useRef, useState } from "react";
-import { Pressable, StyleSheet, View } from "react-native";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { FlatList, Platform, Pressable, RefreshControl, StyleSheet, View } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { useAuthGate } from "@/auth";
-import { TabScreen } from "@/components/tab-screen";
 import { ThemedText } from "@/components/themed-text";
 import { ThemedView } from "@/components/themed-view";
-import { EmptyState, ScreenHeader, Skeleton, Tag } from "@/components/ui";
-import { Spacing } from "@/constants/theme";
+import { EmptyState, ListFooter, ScreenHeader, Skeleton, Tag } from "@/components/ui";
+import { BottomTabInset, MaxContentWidth, Spacing } from "@/constants/theme";
 import { useBrowseVersion } from "@/data/browse-refresh";
 import { getCreators } from "@/data/browse-service";
 import type { CreatorSummary } from "@/data/types";
@@ -17,108 +17,197 @@ import { useTheme } from "@/hooks/use-theme";
 import { useTranslations } from "@/i18n";
 import { toHref } from "@/lib/navigation";
 
-function chunkPairs<T>(items: T[]): T[][] {
-  const rows: T[][] = [];
-  for (let i = 0; i < items.length; i += 2) rows.push(items.slice(i, i + 2));
-  return rows;
-}
+const PAGE_SIZE = 50;
 
 export default function CreatorsScreen() {
   const t = useTranslations();
+  const theme = useTheme();
+  const insets = useSafeAreaInsets();
   const { isAuthenticated, openLogin } = useAuthGate();
   const [creators, setCreators] = useState<CreatorSummary[]>([]);
+  const [total, setTotal] = useState(0);
   const [requiresLogin, setRequiresLogin] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string>();
   const browseVersion = useBrowseVersion();
   const hasDataRef = useRef(false);
+  const loadingMoreRef = useRef(false);
 
-  useEffect(() => {
+  const load = useCallback(async () => {
     // Public directory (our Nest endpoint reads client_user directly), so this
     // loads for guests too; re-fetch on sign-in to lift the 50-row guest cap.
-    let alive = true;
-    async function load() {
-      setLoading(hasDataRef.current === false);
-      setError(undefined);
-      try {
-        const page = await getCreators(50);
-        if (alive) {
-          hasDataRef.current = true;
-          setCreators(page.creators);
-          setRequiresLogin(page.requiresLogin);
-        }
-      } catch (loadError) {
-        if (alive && !hasDataRef.current) {
-          setError(
-            loadError instanceof Error ? loadError.message : t("creators.loadErrorFallback")
-          );
-        }
-      } finally {
-        if (alive) setLoading(false);
+    setLoading(hasDataRef.current === false);
+    setError(undefined);
+    try {
+      const page = await getCreators(PAGE_SIZE);
+      hasDataRef.current = true;
+      setCreators(page.creators);
+      setTotal(page.total);
+      setRequiresLogin(page.requiresLogin);
+    } catch (loadError) {
+      if (!hasDataRef.current) {
+        setError(loadError instanceof Error ? loadError.message : t("creators.loadErrorFallback"));
       }
+    } finally {
+      setLoading(false);
     }
-    void load();
+  }, [t]);
+
+  useEffect(() => {
+    let alive = true;
+    void (async () => {
+      // Ignore a stale resolution if auth/version changed mid-flight.
+      await load();
+      if (!alive) return;
+    })();
     return () => {
       alive = false;
     };
-  }, [isAuthenticated, browseVersion, t]);
+  }, [isAuthenticated, browseVersion, load]);
 
-  return (
-    <TabScreen gap={Spacing.five}>
-      <ScreenHeader title={t("creators.title")} />
+  // Authed users keep loading by offset until `total` is reached. Guests stop
+  // at the public cap and get the "Sign in to see more" button instead.
+  const canLoadMore = isAuthenticated && !requiresLogin && creators.length < total;
 
-      {loading ? (
-        <View style={styles.grid}>
-          {[0, 1].map((rowIndex) => (
-            <View key={rowIndex} style={styles.gridRow}>
-              {[0, 1].map((col) => (
-                <View key={col} style={styles.cardItem}>
-                  <ThemedView type="backgroundElement" style={styles.card}>
-                    <Skeleton width={72} height={72} radius={36} />
-                    <Skeleton width="60%" height={14} />
-                    <Skeleton width="42%" height={20} radius={6} />
-                  </ThemedView>
-                </View>
-              ))}
-            </View>
-          ))}
-        </View>
-      ) : error ? (
-        <EmptyState
-          title={t("creators.loadErrorTitle")}
-          detail={error}
-          symbol={{ ios: "exclamationmark.triangle", android: "warning", web: "warning" }}
-        />
-      ) : creators.length ? (
-        <>
+  const loadMore = useCallback(async () => {
+    if (!canLoadMore || loadingMoreRef.current) return;
+    loadingMoreRef.current = true;
+    setLoadingMore(true);
+    try {
+      const page = await getCreators(PAGE_SIZE, creators.length);
+      setCreators((current) => {
+        const seen = new Set(current.map((creator) => creator.id));
+        return [...current, ...page.creators.filter((creator) => !seen.has(creator.id))];
+      });
+      setTotal(page.total);
+      setRequiresLogin(page.requiresLogin);
+    } finally {
+      loadingMoreRef.current = false;
+      setLoadingMore(false);
+    }
+  }, [canLoadMore, creators.length]);
+
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      await load();
+    } finally {
+      setRefreshing(false);
+    }
+  }, [load]);
+
+  const topInset = Platform.OS === "web" ? insets.top + Spacing.four : Spacing.three;
+  const bottomInset = insets.bottom + BottomTabInset + Spacing.four;
+
+  if (loading) {
+    return (
+      <View style={[styles.screen, { backgroundColor: theme.background }]}>
+        <View
+          style={[
+            styles.stateContainer,
+            { paddingTop: topInset, paddingHorizontal: Math.max(insets.left, Spacing.four) },
+          ]}
+        >
+          <ScreenHeader title={t("creators.title")} />
           <View style={styles.grid}>
-            {chunkPairs(creators).map((row, rowIndex) => (
+            {[0, 1].map((rowIndex) => (
               <View key={rowIndex} style={styles.gridRow}>
-                {row.map((creator) => (
-                  <CreatorCard key={creator.id} creator={creator} />
+                {[0, 1].map((col) => (
+                  <View key={col} style={styles.cardItem}>
+                    <ThemedView type="backgroundElement" style={styles.card}>
+                      <Skeleton width={72} height={72} radius={36} />
+                      <Skeleton width="60%" height={14} />
+                      <Skeleton width="42%" height={20} radius={6} />
+                    </ThemedView>
+                  </View>
                 ))}
-                {row.length === 1 ? <View style={styles.cardItem} /> : null}
               </View>
             ))}
           </View>
-          {requiresLogin ? (
-            <Pressable
-              accessibilityRole="button"
-              onPress={() => openLogin()}
-              style={({ pressed }) => [styles.seeMore, pressed && styles.pressed]}
-            >
-              <ThemedText type="smallBold">{t("creators.seeMore")}</ThemedText>
-            </Pressable>
-          ) : null}
-        </>
-      ) : (
-        <EmptyState
-          title={t("creators.emptyTitle")}
-          detail={t("creators.emptyDetail")}
-          symbol={{ ios: "person.crop.circle", android: "person", web: "person" }}
-        />
-      )}
-    </TabScreen>
+        </View>
+      </View>
+    );
+  }
+
+  if (error) {
+    return (
+      <View style={[styles.screen, { backgroundColor: theme.background }]}>
+        <View
+          style={[
+            styles.stateContainer,
+            { paddingTop: topInset, paddingHorizontal: Math.max(insets.left, Spacing.four) },
+          ]}
+        >
+          <ScreenHeader title={t("creators.title")} />
+          <EmptyState
+            title={t("creators.loadErrorTitle")}
+            detail={error}
+            symbol={{ ios: "exclamationmark.triangle", android: "warning", web: "warning" }}
+          />
+        </View>
+      </View>
+    );
+  }
+
+  return (
+    <View style={[styles.screen, { backgroundColor: theme.background }]}>
+      <FlatList
+        data={creators}
+        keyExtractor={(item) => item.id}
+        numColumns={2}
+        columnWrapperStyle={styles.column}
+        showsVerticalScrollIndicator={false}
+        contentInsetAdjustmentBehavior="never"
+        contentContainerStyle={[
+          styles.listContent,
+          {
+            paddingTop: topInset,
+            paddingBottom: bottomInset,
+            paddingLeft: Math.max(insets.left, Spacing.four),
+            paddingRight: Math.max(insets.right, Spacing.four),
+          },
+        ]}
+        ListHeaderComponent={<ScreenHeader title={t("creators.title")} />}
+        ListHeaderComponentStyle={styles.listHeader}
+        ListEmptyComponent={
+          <EmptyState
+            title={t("creators.emptyTitle")}
+            detail={t("creators.emptyDetail")}
+            symbol={{ ios: "person.crop.circle", android: "person", web: "person" }}
+          />
+        }
+        ListFooterComponent={
+          <>
+            <ListFooter loading={loadingMore} />
+            {requiresLogin ? (
+              <Pressable
+                accessibilityRole="button"
+                onPress={() => openLogin()}
+                style={({ pressed }) => [styles.seeMore, pressed && styles.pressed]}
+              >
+                <ThemedText type="smallBold">{t("creators.seeMore")}</ThemedText>
+              </Pressable>
+            ) : null}
+          </>
+        }
+        onEndReached={() => void loadMore()}
+        onEndReachedThreshold={0.5}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={() => void onRefresh()}
+            tintColor={theme.textSecondary}
+          />
+        }
+        renderItem={({ item }) => (
+          <View style={styles.cardItem}>
+            <CreatorCard creator={item} />
+          </View>
+        )}
+      />
+    </View>
   );
 }
 
@@ -132,7 +221,7 @@ function CreatorCard({ creator }: { creator: CreatorSummary }) {
     <Pressable
       accessibilityRole="button"
       onPress={() => router.push(toHref(`/creator/${creator.id}`))}
-      style={styles.cardItem}
+      style={styles.cardPressable}
     >
       {({ pressed }) => (
         <ThemedView type="backgroundElement" style={[styles.card, pressed && styles.pressed]}>
@@ -156,6 +245,23 @@ function CreatorCard({ creator }: { creator: CreatorSummary }) {
 }
 
 const styles = StyleSheet.create({
+  screen: {
+    flex: 1,
+  },
+  stateContainer: {
+    width: "100%",
+    maxWidth: MaxContentWidth,
+    alignSelf: "center",
+    gap: Spacing.five,
+  },
+  listContent: {
+    width: "100%",
+    maxWidth: MaxContentWidth,
+    alignSelf: "center",
+  },
+  listHeader: {
+    marginBottom: Spacing.five,
+  },
   grid: {
     gap: Spacing.four,
   },
@@ -163,9 +269,16 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     gap: Spacing.three,
   },
+  column: {
+    gap: Spacing.three,
+    marginBottom: Spacing.four,
+  },
   cardItem: {
     flex: 1,
     minWidth: 0,
+  },
+  cardPressable: {
+    flex: 1,
   },
   card: {
     alignItems: "center",

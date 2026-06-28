@@ -1,24 +1,34 @@
 import { SymbolView } from "expo-symbols";
 import { router } from "expo-router";
-import { useEffect, useMemo, useRef, useState } from "react";
-import { Pressable, ScrollView, StyleSheet, useWindowDimensions, View } from "react-native";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  FlatList,
+  Platform,
+  Pressable,
+  RefreshControl,
+  ScrollView,
+  StyleSheet,
+  useWindowDimensions,
+  View,
+} from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Carousel from "react-native-reanimated-carousel";
 
-import { TabScreen } from "@/components/tab-screen";
 import { ThemedText } from "@/components/themed-text";
 import {
   ChipRail,
   EmptyState,
+  ListFooter,
   PosterImage,
   ScreenHeader,
   SectionHeader,
   Skeleton,
   Tag,
 } from "@/components/ui";
-import { MaxContentWidth, Spacing } from "@/constants/theme";
+import { BottomTabInset, MaxContentWidth, Spacing } from "@/constants/theme";
 import { useBrowseVersion } from "@/data/browse-refresh";
-import { getIpDiscovery, type IpDiscovery } from "@/data/browse-service";
-import type { IpSummary } from "@/data/types";
+import { getIpCatalogPage, getIpDiscovery, type IpDiscovery } from "@/data/browse-service";
+import type { Genre, IpSummary } from "@/data/types";
 import { useTheme } from "@/hooks/use-theme";
 import { useTranslations } from "@/i18n";
 import { toHref } from "@/lib/navigation";
@@ -26,6 +36,7 @@ import { toHref } from "@/lib/navigation";
 // Featured banner height — single source for the carousel slot, the card style,
 // and the loading skeleton (so they can never drift apart).
 const FEATURED_HEIGHT = 200;
+const PAGE_SIZE = 30;
 
 function openIp(id: string) {
   router.push(toHref(`/ip/${id}`));
@@ -34,151 +45,285 @@ function openIp(id: string) {
 export default function IpDiscoveryScreen() {
   const t = useTranslations();
   const theme = useTheme();
+  const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
   const featuredWidth = Math.min(width, MaxContentWidth) - Spacing.four * 2;
   const cardWidth = Math.floor((featuredWidth - Spacing.three) / 2);
+
+  // Featured carousel + trending rail come from the discovery placements.
   const [discovery, setDiscovery] = useState<IpDiscovery>();
+  // The "All IPs" grid is its own cursor-paginated catalog (infinite scroll).
+  const [gridIps, setGridIps] = useState<IpSummary[]>([]);
+  const [genres, setGenres] = useState<Genre[]>([]);
+  const [nextCursor, setNextCursor] = useState<string | null>(null);
+
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string>();
   const [genreIndex, setGenreIndex] = useState(0);
   const [featuredIndex, setFeaturedIndex] = useState(0);
   // Bumped when a mutation elsewhere (e.g. blocking an IP) invalidates lists.
   const browseVersion = useBrowseVersion();
   const hasDataRef = useRef(false);
-  // Genres come from the Nest taxonomy endpoint (not scraped from IP records).
-  const genreList = discovery?.genres ?? [];
-  const genreChips = [t("home.genreAll"), ...genreList.map((genre) => genre.label)];
-  const selectedGenreCode = genreIndex > 0 ? genreList[genreIndex - 1]?.code : undefined;
+  // Stops a fling from queuing a second page-2 fetch before the first resolves.
+  const loadingMoreRef = useRef(false);
+
+  const selectedGenreCode = genreIndex > 0 ? genres[genreIndex - 1]?.code : undefined;
   const activeGenreLabel =
-    genreIndex > 0 ? (genreList[genreIndex - 1]?.label ?? t("home.genreThis")) : t("home.genreAll");
+    genreIndex > 0 ? (genres[genreIndex - 1]?.label ?? t("home.genreThis")) : t("home.genreAll");
+  const genreChips = useMemo(
+    () => [t("home.genreAll"), ...genres.map((genre) => genre.label)],
+    [genres, t]
+  );
+
+  // First page of the grid for the active genre. Featured/trending come from
+  // discovery and are only refreshed on a full (re)load, not on genre switch.
+  const loadGridFirstPage = useCallback(async (genreCode: string | undefined) => {
+    const page = await getIpCatalogPage({ genreCode, limit: PAGE_SIZE });
+    setGridIps(page.items);
+    setNextCursor(page.nextCursor);
+    // The taxonomy list rides along with each catalog page.
+    if (page.genres.length) setGenres(page.genres);
+    return page;
+  }, []);
+
+  const load = useCallback(async () => {
+    // Skeleton only when there is nothing to show yet — refetches (locale
+    // switch, browse invalidation) swap the lists in place.
+    setLoading(hasDataRef.current === false);
+    setError(undefined);
+    try {
+      const [data] = await Promise.all([getIpDiscovery(), loadGridFirstPage(selectedGenreCode)]);
+      hasDataRef.current = true;
+      setDiscovery(data);
+      // Prefer the discovery taxonomy (full list) once it lands.
+      if (data.genres.length) setGenres(data.genres);
+    } catch (loadError) {
+      // A failed background refetch keeps the list we already have; the
+      // full-screen error is reserved for an empty first load.
+      if (!hasDataRef.current) {
+        setError(loadError instanceof Error ? loadError.message : t("home.loadError"));
+      }
+    } finally {
+      setLoading(false);
+    }
+  }, [loadGridFirstPage, selectedGenreCode, t]);
 
   useEffect(() => {
+    void load();
+    // `load` intentionally excluded: it closes over selectedGenreCode, but the
+    // genre switch is handled by its own effect below to avoid refetching the
+    // carousel + rail on every chip tap.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [browseVersion, t]);
+
+  // Genre switch → reload just the grid (keep the carousel + rail in place).
+  const didMountRef = useRef(false);
+  useEffect(() => {
+    if (!didMountRef.current) {
+      didMountRef.current = true;
+      return;
+    }
     let alive = true;
-    async function load() {
-      // Skeleton only when there is nothing to show yet — refetches (locale
-      // switch, browse invalidation) swap the list in place.
-      setLoading(hasDataRef.current === false);
-      setError(undefined);
+    async function swapGrid() {
       try {
-        const data = await getIpDiscovery();
-        if (alive) {
-          hasDataRef.current = true;
-          setDiscovery(data);
-        }
-      } catch (loadError) {
-        // A failed background refetch keeps the list we already have; the
-        // full-screen error is reserved for an empty first load.
-        if (alive && !hasDataRef.current) {
-          setError(loadError instanceof Error ? loadError.message : t("home.loadError"));
-        }
-      } finally {
-        if (alive) setLoading(false);
+        const page = await getIpCatalogPage({ genreCode: selectedGenreCode, limit: PAGE_SIZE });
+        if (!alive) return;
+        setGridIps(page.items);
+        setNextCursor(page.nextCursor);
+      } catch {
+        // Keep the current grid on a failed genre switch.
       }
     }
-    void load();
+    void swapGrid();
     return () => {
       alive = false;
     };
-  }, [t, browseVersion]);
+  }, [selectedGenreCode]);
+
+  const loadMore = useCallback(async () => {
+    if (!nextCursor || loadingMoreRef.current) return;
+    loadingMoreRef.current = true;
+    setLoadingMore(true);
+    try {
+      const page = await getIpCatalogPage({
+        cursor: nextCursor,
+        genreCode: selectedGenreCode,
+        limit: PAGE_SIZE,
+      });
+      setGridIps((current) => {
+        const seen = new Set(current.map((ip) => ip.id));
+        return [...current, ...page.items.filter((ip) => !seen.has(ip.id))];
+      });
+      setNextCursor(page.nextCursor);
+    } finally {
+      loadingMoreRef.current = false;
+      setLoadingMore(false);
+    }
+  }, [nextCursor, selectedGenreCode]);
+
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      await load();
+    } finally {
+      setRefreshing(false);
+    }
+  }, [load]);
 
   const featured = discovery?.featured ?? [];
   const trending = discovery?.trending ?? [];
-  const allIps = useMemo(
-    () =>
-      (discovery?.updating ?? []).filter(
-        (ip) => !selectedGenreCode || ip.genreCodes.includes(selectedGenreCode)
-      ),
-    [discovery, selectedGenreCode]
-  );
 
-  return (
-    <TabScreen gap={Spacing.five}>
+  const header = (
+    <View style={styles.headerStack}>
       <ScreenHeader title={t("home.title")} />
 
-      {loading ? (
-        <DiscoverySkeleton width={featuredWidth} />
-      ) : error ? (
-        <EmptyState
-          title={t("home.errorTitle")}
-          detail={error}
-          symbol={{ ios: "exclamationmark.triangle", android: "warning", web: "warning" }}
+      {featured.length ? (
+        <View>
+          <Carousel
+            width={featuredWidth}
+            height={FEATURED_HEIGHT}
+            data={featured}
+            loop={featured.length > 1}
+            autoPlay={featured.length > 1}
+            autoPlayInterval={4500}
+            scrollAnimationDuration={600}
+            mode="parallax"
+            modeConfig={{
+              parallaxScrollingScale: 0.9,
+              parallaxScrollingOffset: 50,
+            }}
+            onSnapToItem={setFeaturedIndex}
+            renderItem={({ item }) => <FeaturedCard ip={item} width={featuredWidth} />}
+          />
+          {featured.length > 1 ? (
+            <View style={styles.dotsRow}>
+              {featured.map((ip, index) => (
+                <View
+                  key={ip.id}
+                  style={[
+                    styles.dot,
+                    { backgroundColor: theme.border },
+                    index === featuredIndex && [styles.dotActive, { backgroundColor: theme.brand }],
+                  ]}
+                />
+              ))}
+            </View>
+          ) : null}
+        </View>
+      ) : null}
+
+      {trending.length ? (
+        <View style={styles.section}>
+          <SectionHeader title={t("home.trendingTitle")} />
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.rail}
+          >
+            {trending.map((ip) => (
+              <TrendingCard key={ip.id} ip={ip} width={cardWidth} />
+            ))}
+          </ScrollView>
+        </View>
+      ) : null}
+
+      <View style={styles.allHeader}>
+        <SectionHeader
+          title={t("home.allIpsTitle")}
+          trailing={t("home.seeAll")}
+          onPressTrailing={() => router.push("/ips")}
         />
-      ) : (
-        <>
-          {featured.length ? (
-            <View>
-              <Carousel
-                width={featuredWidth}
-                height={FEATURED_HEIGHT}
-                data={featured}
-                loop={featured.length > 1}
-                autoPlay={featured.length > 1}
-                autoPlayInterval={4500}
-                scrollAnimationDuration={600}
-                mode="parallax"
-                modeConfig={{
-                  parallaxScrollingScale: 0.9,
-                  parallaxScrollingOffset: 50,
-                }}
-                onSnapToItem={setFeaturedIndex}
-                renderItem={({ item }) => <FeaturedCard ip={item} width={featuredWidth} />}
-              />
-              {featured.length > 1 ? (
-                <View style={styles.dotsRow}>
-                  {featured.map((ip, index) => (
-                    <View
-                      key={ip.id}
-                      style={[
-                        styles.dot,
-                        { backgroundColor: theme.border },
-                        index === featuredIndex && [
-                          styles.dotActive,
-                          { backgroundColor: theme.brand },
-                        ],
-                      ]}
-                    />
-                  ))}
-                </View>
-              ) : null}
-            </View>
-          ) : null}
+        {genreChips.length > 1 ? (
+          <ChipRail items={genreChips} activeIndex={genreIndex} onChange={setGenreIndex} />
+        ) : null}
+      </View>
+    </View>
+  );
 
-          {trending.length ? (
-            <View style={styles.section}>
-              <SectionHeader title={t("home.trendingTitle")} />
-              <ScrollView
-                horizontal
-                showsHorizontalScrollIndicator={false}
-                contentContainerStyle={styles.rail}
-              >
-                {trending.map((ip) => (
-                  <IpGridCard key={ip.id} ip={ip} width={cardWidth} />
-                ))}
-              </ScrollView>
-            </View>
-          ) : null}
+  const topInset = Platform.OS === "web" ? insets.top + Spacing.four : Spacing.three;
+  const bottomInset = insets.bottom + BottomTabInset + Spacing.four;
 
-          <View style={styles.section}>
-            <SectionHeader title={t("home.allIpsTitle")} />
-            {genreChips.length > 1 ? (
-              <ChipRail items={genreChips} activeIndex={genreIndex} onChange={setGenreIndex} />
-            ) : null}
-            {allIps.length ? (
-              <View style={styles.grid}>
-                {allIps.map((ip) => (
-                  <IpGridCard key={ip.id} ip={ip} width={cardWidth} />
-                ))}
-              </View>
-            ) : (
-              <EmptyState
-                title={t("home.emptyTitle")}
-                detail={`${t("home.emptyDetailPrefix")}${activeGenreLabel}${t("home.emptyDetailSuffix")}`}
-              />
-            )}
+  if (loading) {
+    return (
+      <View style={[styles.screen, { backgroundColor: theme.background }]}>
+        <View
+          style={[
+            styles.stateContainer,
+            { paddingTop: topInset, paddingHorizontal: Math.max(insets.left, Spacing.four) },
+          ]}
+        >
+          <ScreenHeader title={t("home.title")} />
+          <DiscoverySkeleton width={featuredWidth} />
+        </View>
+      </View>
+    );
+  }
+
+  if (error) {
+    return (
+      <View style={[styles.screen, { backgroundColor: theme.background }]}>
+        <View
+          style={[
+            styles.stateContainer,
+            { paddingTop: topInset, paddingHorizontal: Math.max(insets.left, Spacing.four) },
+          ]}
+        >
+          <ScreenHeader title={t("home.title")} />
+          <EmptyState
+            title={t("home.errorTitle")}
+            detail={error}
+            symbol={{ ios: "exclamationmark.triangle", android: "warning", web: "warning" }}
+          />
+        </View>
+      </View>
+    );
+  }
+
+  return (
+    <View style={[styles.screen, { backgroundColor: theme.background }]}>
+      <FlatList
+        data={gridIps}
+        keyExtractor={(item) => item.id}
+        numColumns={2}
+        columnWrapperStyle={styles.column}
+        showsVerticalScrollIndicator={false}
+        contentInsetAdjustmentBehavior="never"
+        contentContainerStyle={[
+          styles.listContent,
+          {
+            paddingTop: topInset,
+            paddingBottom: bottomInset,
+            paddingLeft: Math.max(insets.left, Spacing.four),
+            paddingRight: Math.max(insets.right, Spacing.four),
+          },
+        ]}
+        ListHeaderComponent={header}
+        ListHeaderComponentStyle={styles.listHeader}
+        ListEmptyComponent={
+          <EmptyState
+            title={t("home.emptyTitle")}
+            detail={`${t("home.emptyDetailPrefix")}${activeGenreLabel}${t("home.emptyDetailSuffix")}`}
+          />
+        }
+        ListFooterComponent={<ListFooter loading={loadingMore} />}
+        onEndReached={() => void loadMore()}
+        onEndReachedThreshold={0.5}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={() => void onRefresh()}
+            tintColor={theme.textSecondary}
+          />
+        }
+        renderItem={({ item }) => (
+          <View style={styles.cardCell}>
+            <GridCard ip={item} />
           </View>
-        </>
-      )}
-    </TabScreen>
+        )}
+      />
+    </View>
   );
 }
 
@@ -254,7 +399,8 @@ function FeaturedCard({ ip, width }: { ip: IpSummary; width: number }) {
   );
 }
 
-function IpGridCard({ ip, width }: { ip: IpSummary; width: number }) {
+/** Fixed-width poster for the horizontal "For you" rail. */
+function TrendingCard({ ip, width }: { ip: IpSummary; width: number }) {
   const type = ip.genres[0] ?? ip.typeTags[0];
   return (
     <Pressable
@@ -268,14 +414,37 @@ function IpGridCard({ ip, width }: { ip: IpSummary; width: number }) {
         radius={10}
         style={{ width, height: width * (9 / 16) }}
       />
-      {/* Hard-cap the title at the card width (a number, not "100%") so a long
-          title wraps instead of reporting its single-line width to the flex row
-          and stretching the card past `width` — which collapses the 2-up grid. */}
       <ThemedText
         type="smallBold"
         numberOfLines={2}
         style={[styles.gridTitle, { maxWidth: width }]}
       >
+        {ip.title}
+      </ThemedText>
+      <View style={styles.gridMeta}>
+        {ip.regionLabel ? <Tag label={ip.regionLabel} /> : null}
+        {type ? <Tag label={type} /> : null}
+      </View>
+    </Pressable>
+  );
+}
+
+/** Flex poster card for a 2-column FlatList grid cell. */
+function GridCard({ ip }: { ip: IpSummary }) {
+  const type = ip.genres[0] ?? ip.typeTags[0];
+  return (
+    <Pressable
+      accessibilityRole="button"
+      onPress={() => openIp(ip.id)}
+      style={({ pressed }) => [styles.gridCard, pressed && styles.pressed]}
+    >
+      <PosterImage
+        uri={ip.backdropUrl ?? ip.coverUrl}
+        label={ip.title}
+        radius={10}
+        style={styles.gridCover}
+      />
+      <ThemedText type="smallBold" numberOfLines={2} style={styles.gridTitle}>
         {ip.title}
       </ThemedText>
       <View style={styles.gridMeta}>
@@ -305,6 +474,44 @@ function DiscoverySkeleton({ width }: { width: number }) {
 }
 
 const styles = StyleSheet.create({
+  screen: {
+    flex: 1,
+  },
+  stateContainer: {
+    width: "100%",
+    maxWidth: MaxContentWidth,
+    alignSelf: "center",
+    gap: Spacing.five,
+  },
+  listContent: {
+    width: "100%",
+    maxWidth: MaxContentWidth,
+    alignSelf: "center",
+  },
+  listHeader: {
+    marginBottom: Spacing.four,
+  },
+  headerStack: {
+    gap: Spacing.five,
+  },
+  allHeader: {
+    gap: Spacing.three,
+  },
+  column: {
+    gap: Spacing.three,
+  },
+  cardCell: {
+    flex: 1,
+    minWidth: 0,
+    marginBottom: Spacing.four,
+  },
+  gridCard: {
+    minWidth: 0,
+  },
+  gridCover: {
+    width: "100%",
+    aspectRatio: 16 / 9,
+  },
   featuredCard: {
     height: FEATURED_HEIGHT,
     borderRadius: 12,

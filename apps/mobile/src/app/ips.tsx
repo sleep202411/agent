@@ -1,12 +1,11 @@
 import { Stack, useLocalSearchParams } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Pressable, ScrollView, StyleSheet, View } from "react-native";
+import { FlatList, RefreshControl, StyleSheet, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { IpGrid } from "@/components/ip-grid";
-import { ThemedText } from "@/components/themed-text";
+import { IpGridCard } from "@/components/ip-grid";
 import { ThemedView } from "@/components/themed-view";
-import { ChipRail, EmptyState, ScreenHeader, Skeleton } from "@/components/ui";
+import { ChipRail, EmptyState, ListFooter, ScreenHeader, Skeleton } from "@/components/ui";
 import { MaxContentWidth, Spacing } from "@/constants/theme";
 import { useBrowseVersion } from "@/data/browse-refresh";
 import { getIpCatalogPage } from "@/data/browse-service";
@@ -30,6 +29,8 @@ function mergeRegions(current: Region[], next: Region[]): Region[] {
   return Array.from(map.values()).sort((a, b) => a.label.localeCompare(b.label));
 }
 
+const PAGE_SIZE = 50;
+
 export default function AllIpsScreen() {
   const params = useLocalSearchParams<Params>();
   const insets = useSafeAreaInsets();
@@ -52,8 +53,12 @@ export default function AllIpsScreen() {
   const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string>();
   const hasDataRef = useRef(false);
+  // Guards onEndReached from firing a second page-2 fetch before the first
+  // resolves (FlatList can call onEndReached repeatedly during a fling).
+  const loadingMoreRef = useRef(false);
 
   const loadFirstPage = useCallback(async () => {
     setLoading(hasDataRef.current === false);
@@ -61,7 +66,7 @@ export default function AllIpsScreen() {
     try {
       const page = await getIpCatalogPage({
         genreCode: selectedGenreCode,
-        limit: 50,
+        limit: PAGE_SIZE,
         regionCode: selectedRegionCode,
         typeCode: selectedTypeCode,
       });
@@ -107,14 +112,15 @@ export default function AllIpsScreen() {
     : 0;
   const hasActiveFilters = Boolean(selectedGenreCode || selectedRegionCode || selectedTypeCode);
 
-  async function loadMore() {
-    if (!nextCursor || loadingMore) return;
+  const loadMore = useCallback(async () => {
+    if (!nextCursor || loadingMoreRef.current) return;
+    loadingMoreRef.current = true;
     setLoadingMore(true);
     try {
       const page = await getIpCatalogPage({
         cursor: nextCursor,
         genreCode: selectedGenreCode,
-        limit: 50,
+        limit: PAGE_SIZE,
         regionCode: selectedRegionCode,
         typeCode: selectedTypeCode,
       });
@@ -127,9 +133,54 @@ export default function AllIpsScreen() {
       setTypeTags(page.typeTags);
       setRegions((current) => mergeRegions(current, page.regions));
     } finally {
+      loadingMoreRef.current = false;
       setLoadingMore(false);
     }
-  }
+  }, [nextCursor, selectedGenreCode, selectedRegionCode, selectedTypeCode]);
+
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      await loadFirstPage();
+    } finally {
+      setRefreshing(false);
+    }
+  }, [loadFirstPage]);
+
+  const header = (
+    <View style={styles.headerStack}>
+      <ScreenHeader title={t("ips.title")} />
+      <View style={styles.filterStack}>
+        {genreChips.length > 1 ? (
+          <ChipRail
+            items={genreChips}
+            activeIndex={genreIndex}
+            onChange={(index) =>
+              setSelectedGenreCode(index > 0 ? genres[index - 1]?.code : undefined)
+            }
+          />
+        ) : null}
+        {regionChips.length > 1 ? (
+          <ChipRail
+            items={regionChips}
+            activeIndex={regionIndex}
+            onChange={(index) =>
+              setSelectedRegionCode(index > 0 ? regions[index - 1]?.code : undefined)
+            }
+          />
+        ) : null}
+        {typeChips.length > 1 ? (
+          <ChipRail
+            items={typeChips}
+            activeIndex={typeIndex}
+            onChange={(index) =>
+              setSelectedTypeCode(index > 0 ? typeTags[index - 1]?.code : undefined)
+            }
+          />
+        ) : null}
+      </View>
+    </View>
+  );
 
   return (
     <ThemedView style={styles.screen}>
@@ -142,89 +193,73 @@ export default function AllIpsScreen() {
           headerTintColor: theme.text,
         }}
       />
-      <ScrollView
-        showsVerticalScrollIndicator={false}
-        contentInsetAdjustmentBehavior="never"
-        style={[styles.scroll, { backgroundColor: theme.background }]}
-        contentContainerStyle={[
-          styles.content,
-          {
-            paddingTop: insets.top + Spacing.seven,
-            paddingBottom: insets.bottom + Spacing.seven,
-            paddingLeft: Math.max(insets.left, Spacing.four),
-            paddingRight: Math.max(insets.right, Spacing.four),
-          },
-        ]}
-      >
-        <View style={styles.page}>
-          <ScreenHeader title={t("ips.title")} />
-
-          <View style={styles.filterStack}>
-            {genreChips.length > 1 ? (
-              <ChipRail
-                items={genreChips}
-                activeIndex={genreIndex}
-                onChange={(index) =>
-                  setSelectedGenreCode(index > 0 ? genres[index - 1]?.code : undefined)
-                }
-              />
-            ) : null}
-            {regionChips.length > 1 ? (
-              <ChipRail
-                items={regionChips}
-                activeIndex={regionIndex}
-                onChange={(index) =>
-                  setSelectedRegionCode(index > 0 ? regions[index - 1]?.code : undefined)
-                }
-              />
-            ) : null}
-            {typeChips.length > 1 ? (
-              <ChipRail
-                items={typeChips}
-                activeIndex={typeIndex}
-                onChange={(index) =>
-                  setSelectedTypeCode(index > 0 ? typeTags[index - 1]?.code : undefined)
-                }
-              />
-            ) : null}
-          </View>
-
-          {loading ? (
-            <CatalogSkeleton />
-          ) : error ? (
-            <EmptyState
-              title={t("ips.loadErrorTitle")}
-              detail={error}
-              symbol={{ ios: "exclamationmark.triangle", android: "warning", web: "warning" }}
-            />
-          ) : ips.length ? (
-            <>
-              <IpGrid ips={ips} />
-              {nextCursor ? (
-                <Pressable
-                  accessibilityRole="button"
-                  disabled={loadingMore}
-                  onPress={loadMore}
-                  style={({ pressed }) => [
-                    styles.moreButton,
-                    { backgroundColor: theme.backgroundElement },
-                    pressed && styles.pressed,
-                  ]}
-                >
-                  <ThemedText type="smallBold">
-                    {loadingMore ? t("ips.loadingMore") : t("ips.loadMore")}
-                  </ThemedText>
-                </Pressable>
-              ) : null}
-            </>
-          ) : (
+      {loading ? (
+        <View
+          style={[
+            styles.stateContainer,
+            { paddingTop: insets.top + Spacing.seven, paddingHorizontal: Spacing.four },
+          ]}
+        >
+          {header}
+          <CatalogSkeleton />
+        </View>
+      ) : error ? (
+        <View
+          style={[
+            styles.stateContainer,
+            { paddingTop: insets.top + Spacing.seven, paddingHorizontal: Spacing.four },
+          ]}
+        >
+          {header}
+          <EmptyState
+            title={t("ips.loadErrorTitle")}
+            detail={error}
+            symbol={{ ios: "exclamationmark.triangle", android: "warning", web: "warning" }}
+          />
+        </View>
+      ) : (
+        <FlatList
+          data={ips}
+          keyExtractor={(item) => item.id}
+          numColumns={2}
+          columnWrapperStyle={styles.column}
+          showsVerticalScrollIndicator={false}
+          contentInsetAdjustmentBehavior="never"
+          style={{ backgroundColor: theme.background }}
+          contentContainerStyle={[
+            styles.listContent,
+            {
+              paddingTop: insets.top + Spacing.seven,
+              paddingBottom: insets.bottom + Spacing.seven,
+              paddingLeft: Math.max(insets.left, Spacing.four),
+              paddingRight: Math.max(insets.right, Spacing.four),
+            },
+          ]}
+          ListHeaderComponent={header}
+          ListHeaderComponentStyle={styles.listHeader}
+          ListEmptyComponent={
             <EmptyState
               title={t("home.emptyTitle")}
               detail={hasActiveFilters ? t("home.emptyFilteredDetail") : t("ips.emptyDetail")}
             />
+          }
+          ListFooterComponent={<ListFooter loading={loadingMore} />}
+          onEndReached={() => void loadMore()}
+          onEndReachedThreshold={0.5}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={() => void onRefresh()}
+              tintColor={theme.textSecondary}
+            />
+          }
+          renderItem={({ item }) => (
+            <View style={styles.cardCell}>
+              <IpGridCard ip={item} />
+            </View>
           )}
-        </View>
-      </ScrollView>
+        />
+      )}
     </ThemedView>
   );
 }
@@ -251,25 +286,34 @@ const styles = StyleSheet.create({
   screen: {
     flex: 1,
   },
-  scroll: {
-    flex: 1,
-  },
-  content: {
-    alignItems: "center",
-  },
-  page: {
+  stateContainer: {
     width: "100%",
     maxWidth: MaxContentWidth,
+    alignSelf: "center",
     gap: Spacing.five,
+  },
+  listContent: {
+    width: "100%",
+    maxWidth: MaxContentWidth,
+    alignSelf: "center",
+  },
+  listHeader: {
+    marginBottom: Spacing.four,
+    gap: Spacing.five,
+  },
+  headerStack: {
+    gap: Spacing.five,
+  },
+  column: {
+    gap: Spacing.three,
+  },
+  cardCell: {
+    flex: 1,
+    minWidth: 0,
+    marginBottom: Spacing.four,
   },
   filterStack: {
     gap: Spacing.two,
-  },
-  moreButton: {
-    minHeight: 44,
-    borderRadius: 8,
-    alignItems: "center",
-    justifyContent: "center",
   },
   skeletonGrid: {
     gap: Spacing.four,
@@ -282,8 +326,5 @@ const styles = StyleSheet.create({
     flex: 1,
     minWidth: 0,
     gap: Spacing.one + 2,
-  },
-  pressed: {
-    opacity: 0.72,
   },
 });

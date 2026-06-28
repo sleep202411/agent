@@ -129,6 +129,11 @@ export interface CrewSummary {
   memberCount?: number;
 }
 
+export interface CrewFeedPage {
+  items: CrewSummary[];
+  nextCursor: string | null;
+}
+
 export interface CrewDetail extends CrewSummary {
   description: string;
   roles: CrewRoleOpening[];

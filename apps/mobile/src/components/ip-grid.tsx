@@ -28,7 +28,9 @@ export function IpGrid({ ips }: { ips: IpSummary[] }) {
       {chunkPairs(ips).map((row, rowIndex) => (
         <View key={rowIndex} style={styles.gridRow}>
           {row.map((ip) => (
-            <IpCard key={ip.id} ip={ip} />
+            <View key={ip.id} style={styles.cardItem}>
+              <IpGridCard ip={ip} />
+            </View>
           ))}
           {row.length === 1 ? <View style={styles.cardItem} /> : null}
         </View>
@@ -37,7 +39,9 @@ export function IpGrid({ ips }: { ips: IpSummary[] }) {
   );
 }
 
-function IpCard({ ip }: { ip: IpSummary }) {
+/** A single IP poster card. Self-contained so it can drop into a `numColumns`
+ * FlatList cell (Home / All IPs) or the chunked `IpGrid` rows. */
+export function IpGridCard({ ip }: { ip: IpSummary }) {
   const metaLabels = cardMetaLabels(ip);
   return (
     <Pressable

@@ -1,16 +1,19 @@
 import { router } from "expo-router";
-import { useEffect, useRef, useState } from "react";
-import { Pressable, StyleSheet, View } from "react-native";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { FlatList, Platform, Pressable, RefreshControl, StyleSheet, View } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { TabScreen } from "@/components/tab-screen";
 import { ThemedText } from "@/components/themed-text";
-import { EmptyState, PosterImage, ScreenHeader, Skeleton, Tag } from "@/components/ui";
-import { Spacing } from "@/constants/theme";
+import { EmptyState, ListFooter, PosterImage, ScreenHeader, Skeleton, Tag } from "@/components/ui";
+import { BottomTabInset, MaxContentWidth, Spacing } from "@/constants/theme";
 import { useBrowseVersion } from "@/data/browse-refresh";
-import { getCrewFeed } from "@/data/browse-service";
+import { getCrewFeedPage } from "@/data/browse-service";
 import type { CrewStatus, CrewSummary } from "@/data/types";
 import { type MessageKey, useTranslations } from "@/i18n";
+import { useTheme } from "@/hooks/use-theme";
 import { toHref } from "@/lib/navigation";
+
+const PAGE_SIZE = 30;
 
 export function crewStatusTag(status: CrewStatus): {
   labelKey: MessageKey;
@@ -21,92 +24,166 @@ export function crewStatusTag(status: CrewStatus): {
   return { labelKey: "crews.statusClosed", tone: "neutral" };
 }
 
-function chunkPairs<T>(items: T[]): T[][] {
-  const rows: T[][] = [];
-  for (let i = 0; i < items.length; i += 2) rows.push(items.slice(i, i + 2));
-  return rows;
-}
-
 export default function CrewsScreen() {
   const t = useTranslations();
+  const theme = useTheme();
+  const insets = useSafeAreaInsets();
   const [crews, setCrews] = useState<CrewSummary[]>([]);
+  const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string>();
   // Bumped when a mutation elsewhere (e.g. blocking a crew) invalidates lists.
   const browseVersion = useBrowseVersion();
   const hasDataRef = useRef(false);
+  const loadingMoreRef = useRef(false);
+
+  const load = useCallback(async () => {
+    // Skeleton only when there is nothing to show yet — refetches swap in place.
+    setLoading(hasDataRef.current === false);
+    setError(undefined);
+    try {
+      const page = await getCrewFeedPage({ limit: PAGE_SIZE });
+      hasDataRef.current = true;
+      setCrews(page.items);
+      setNextCursor(page.nextCursor);
+    } catch (loadError) {
+      // A failed background refetch keeps the list we already have.
+      if (!hasDataRef.current) {
+        setError(loadError instanceof Error ? loadError.message : t("crews.loadErrorFallback"));
+      }
+    } finally {
+      setLoading(false);
+    }
+  }, [t]);
 
   useEffect(() => {
-    let alive = true;
-    async function load() {
-      // Skeleton only when there is nothing to show yet — refetches swap in place.
-      setLoading(hasDataRef.current === false);
-      setError(undefined);
-      try {
-        const data = await getCrewFeed();
-        if (alive) {
-          hasDataRef.current = true;
-          setCrews(data);
-        }
-      } catch (loadError) {
-        // A failed background refetch keeps the list we already have.
-        if (alive && !hasDataRef.current) {
-          setError(loadError instanceof Error ? loadError.message : t("crews.loadErrorFallback"));
-        }
-      } finally {
-        if (alive) setLoading(false);
-      }
-    }
     void load();
-    return () => {
-      alive = false;
-    };
-  }, [t, browseVersion]);
+  }, [load, browseVersion]);
+
+  const loadMore = useCallback(async () => {
+    if (!nextCursor || loadingMoreRef.current) return;
+    loadingMoreRef.current = true;
+    setLoadingMore(true);
+    try {
+      const page = await getCrewFeedPage({ cursor: nextCursor, limit: PAGE_SIZE });
+      setCrews((current) => {
+        const seen = new Set(current.map((crew) => crew.id));
+        return [...current, ...page.items.filter((crew) => !seen.has(crew.id))];
+      });
+      setNextCursor(page.nextCursor);
+    } finally {
+      loadingMoreRef.current = false;
+      setLoadingMore(false);
+    }
+  }, [nextCursor]);
+
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      await load();
+    } finally {
+      setRefreshing(false);
+    }
+  }, [load]);
+
+  const topInset = Platform.OS === "web" ? insets.top + Spacing.four : Spacing.three;
+  const bottomInset = insets.bottom + BottomTabInset + Spacing.four;
+
+  if (loading) {
+    return (
+      <View style={[styles.screen, { backgroundColor: theme.background }]}>
+        <View
+          style={[
+            styles.stateContainer,
+            { paddingTop: topInset, paddingHorizontal: Math.max(insets.left, Spacing.four) },
+          ]}
+        >
+          <ScreenHeader title={t("crews.title")} />
+          <View style={styles.grid}>
+            {[0, 1].map((rowIndex) => (
+              <View key={rowIndex} style={styles.gridRow}>
+                {[0, 1].map((col) => (
+                  <View key={col} style={styles.cardItem}>
+                    <View style={styles.card}>
+                      <Skeleton height={100} radius={12} />
+                      <Skeleton width="70%" height={14} />
+                    </View>
+                  </View>
+                ))}
+              </View>
+            ))}
+          </View>
+        </View>
+      </View>
+    );
+  }
+
+  if (error) {
+    return (
+      <View style={[styles.screen, { backgroundColor: theme.background }]}>
+        <View
+          style={[
+            styles.stateContainer,
+            { paddingTop: topInset, paddingHorizontal: Math.max(insets.left, Spacing.four) },
+          ]}
+        >
+          <ScreenHeader title={t("crews.title")} />
+          <EmptyState
+            title={t("crews.loadErrorTitle")}
+            detail={error}
+            symbol={{ ios: "exclamationmark.triangle", android: "warning", web: "warning" }}
+          />
+        </View>
+      </View>
+    );
+  }
 
   return (
-    <TabScreen gap={Spacing.five}>
-      <ScreenHeader title={t("crews.title")} />
-
-      {loading ? (
-        <View style={styles.grid}>
-          {[0, 1].map((rowIndex) => (
-            <View key={rowIndex} style={styles.gridRow}>
-              {[0, 1].map((col) => (
-                <View key={col} style={styles.cardItem}>
-                  <View style={styles.card}>
-                    <Skeleton height={100} radius={12} />
-                    <Skeleton width="70%" height={14} />
-                  </View>
-                </View>
-              ))}
-            </View>
-          ))}
-        </View>
-      ) : error ? (
-        <EmptyState
-          title={t("crews.loadErrorTitle")}
-          detail={error}
-          symbol={{ ios: "exclamationmark.triangle", android: "warning", web: "warning" }}
-        />
-      ) : crews.length ? (
-        <View style={styles.grid}>
-          {chunkPairs(crews).map((row, rowIndex) => (
-            <View key={rowIndex} style={styles.gridRow}>
-              {row.map((crew) => (
-                <CrewCard key={crew.id} crew={crew} />
-              ))}
-              {row.length === 1 ? <View style={styles.cardItem} /> : null}
-            </View>
-          ))}
-        </View>
-      ) : (
-        <EmptyState
-          title={t("crews.emptyTitle")}
-          detail={t("crews.emptyDetail")}
-          symbol={{ ios: "person.2", android: "group", web: "group" }}
-        />
-      )}
-    </TabScreen>
+    <View style={[styles.screen, { backgroundColor: theme.background }]}>
+      <FlatList
+        data={crews}
+        keyExtractor={(item) => item.id}
+        numColumns={2}
+        columnWrapperStyle={styles.column}
+        showsVerticalScrollIndicator={false}
+        contentInsetAdjustmentBehavior="never"
+        contentContainerStyle={[
+          styles.listContent,
+          {
+            paddingTop: topInset,
+            paddingBottom: bottomInset,
+            paddingLeft: Math.max(insets.left, Spacing.four),
+            paddingRight: Math.max(insets.right, Spacing.four),
+          },
+        ]}
+        ListHeaderComponent={<ScreenHeader title={t("crews.title")} />}
+        ListHeaderComponentStyle={styles.listHeader}
+        ListEmptyComponent={
+          <EmptyState
+            title={t("crews.emptyTitle")}
+            detail={t("crews.emptyDetail")}
+            symbol={{ ios: "person.2", android: "group", web: "group" }}
+          />
+        }
+        ListFooterComponent={<ListFooter loading={loadingMore} />}
+        onEndReached={() => void loadMore()}
+        onEndReachedThreshold={0.5}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={() => void onRefresh()}
+            tintColor={theme.textSecondary}
+          />
+        }
+        renderItem={({ item }) => (
+          <View style={styles.cardItem}>
+            <CrewCard crew={item} />
+          </View>
+        )}
+      />
+    </View>
   );
 }
 
@@ -124,7 +201,7 @@ function CrewCard({ crew }: { crew: CrewSummary }) {
     <Pressable
       accessibilityRole="button"
       onPress={() => router.push(toHref(`/crew/${crew.id}`))}
-      style={styles.cardItem}
+      style={styles.cardPressable}
     >
       {({ pressed }) => (
         <View style={[styles.card, pressed && styles.pressed]}>
@@ -143,6 +220,23 @@ function CrewCard({ crew }: { crew: CrewSummary }) {
 }
 
 const styles = StyleSheet.create({
+  screen: {
+    flex: 1,
+  },
+  stateContainer: {
+    width: "100%",
+    maxWidth: MaxContentWidth,
+    alignSelf: "center",
+    gap: Spacing.five,
+  },
+  listContent: {
+    width: "100%",
+    maxWidth: MaxContentWidth,
+    alignSelf: "center",
+  },
+  listHeader: {
+    marginBottom: Spacing.five,
+  },
   grid: {
     gap: Spacing.four,
   },
@@ -150,9 +244,16 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     gap: Spacing.three,
   },
+  column: {
+    gap: Spacing.three,
+    marginBottom: Spacing.four,
+  },
   cardItem: {
     flex: 1,
     minWidth: 0,
+  },
+  cardPressable: {
+    flex: 1,
   },
   card: {
     gap: Spacing.one + 2,

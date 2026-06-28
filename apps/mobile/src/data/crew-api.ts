@@ -10,7 +10,7 @@ import { appEnv, resolveAssetUrl } from "@/config";
 import { api } from "@/lib/api-client";
 
 import type { IpReportReason } from "./ip-api";
-import type { CrewDetail, CrewRoleOpening, CrewStatus, CrewSummary } from "./types";
+import type { CrewDetail, CrewFeedPage, CrewRoleOpening, CrewStatus, CrewSummary } from "./types";
 
 const AURORA = { service: "aurora" } as const;
 
@@ -83,18 +83,35 @@ async function fetchPositions(crewId: string): Promise<CrewRoleOpening[]> {
   }
 }
 
-export async function fetchCrewFeed(): Promise<CrewSummary[]> {
+/**
+ * One page of the public crew feed (Nest `GET /aurora/crews`, cursor-based).
+ * `nextCursor` is the last crew id when more remain, else null.
+ *
+ * The recruiting-first ordering is applied PER PAGE only (a stable sort that
+ * keeps the backend's listedAt order within each group). Sorting across the
+ * accumulated, growing list would re-order earlier items when a later page
+ * arrives and make rows jump as the user scrolls, so we never do that —
+ * pages are appended in fetch order with each page internally sorted.
+ */
+export async function fetchCrewFeedPage({
+  cursor,
+  limit = 30,
+}: { cursor?: string | null; limit?: number } = {}): Promise<CrewFeedPage> {
   const res = await api.get<{ items?: CrewDto[]; nextCursor?: string | null }>("/crews", {
     ...AURORA,
-    params: { limit: 30 },
+    params: { cursor: cursor ?? undefined, limit },
   });
-  const crews = (res.items ?? []).map(mapSummary);
-  // Requested display order: recruiting crews first. Stable sort keeps the
-  // backend's listedAt order within each group. (openPositionCount is a
-  // computed aggregate, not a column, so this can't be a DB orderBy.)
-  return crews.sort(
-    (a, b) => Number(b.status === "recruiting") - Number(a.status === "recruiting")
-  );
+  const items = (res.items ?? [])
+    .map(mapSummary)
+    // Recruiting crews first within this page (openPositionCount is a computed
+    // aggregate, not a column, so it can't be a DB orderBy).
+    .sort((a, b) => Number(b.status === "recruiting") - Number(a.status === "recruiting"));
+  return { items, nextCursor: res.nextCursor ?? null };
+}
+
+export async function fetchCrewFeed(): Promise<CrewSummary[]> {
+  const page = await fetchCrewFeedPage({ limit: 30 });
+  return page.items;
 }
 
 /** A user's publicly LISTED crews (visitor profile tab; @Public by-user route). */

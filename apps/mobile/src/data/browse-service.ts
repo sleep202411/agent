@@ -3,7 +3,7 @@
  * All live: IP + Crews on Nest (ip-commerce / crews via `/aurora`),
  * News on Java (`/content/project/list/newsad`).
  */
-import { fetchCrewById, fetchCrewFeed, fetchCrewsByUser } from "./crew-api";
+import { fetchCrewById, fetchCrewFeed, fetchCrewFeedPage, fetchCrewsByUser } from "./crew-api";
 import { fetchCreatorServiceById, fetchCreatorServices } from "./creator-service-api";
 import { fetchCreatorById, fetchCreators, type CreatorsPage } from "./creator-api";
 import { fetchCreatorIps, fetchIpCatalogPage, fetchIpDetail, fetchIpDiscovery } from "./ip-api";
@@ -13,6 +13,7 @@ import type {
   CreatorServiceSummary,
   CreatorSummary,
   CrewDetail,
+  CrewFeedPage,
   CrewSummary,
   IpCatalogPage,
   IpDetail,
@@ -45,6 +46,13 @@ export async function getIpById(id: string): Promise<IpDetail | undefined> {
 
 export async function getCrewFeed(): Promise<CrewSummary[]> {
   return fetchCrewFeed();
+}
+
+export async function getCrewFeedPage(params?: {
+  cursor?: string | null;
+  limit?: number;
+}): Promise<CrewFeedPage> {
+  return fetchCrewFeedPage(params);
 }
 
 export async function getCreators(limit?: number, offset?: number): Promise<CreatorsPage> {
