@@ -1,11 +1,11 @@
 import { Image } from "expo-image";
-import { useRouter } from "expo-router";
+import { useFocusEffect, useRouter } from "expo-router";
 import { SymbolView } from "expo-symbols";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { ActivityIndicator, Alert, FlatList, Pressable, StyleSheet, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { useAuth, useLoginGateOnFocus } from "@/auth";
+import { openAuthSheet, useAuth } from "@/auth";
 import { LanguageSheet, LOCALE_NAMES } from "@/components/language-switcher";
 import { ThemedText } from "@/components/themed-text";
 import { appEnv, resolveAssetUrl } from "@/config";
@@ -43,7 +43,15 @@ const COLUMNS = 3;
 export default function MineScreen() {
   const auth = useAuth();
   // Signed-out viewers get the login screen the moment this tab is focused.
-  useLoginGateOnFocus();
+  // Open it as a REPLACE (not push) so dismissing returns to Home instead of a
+  // stuck empty Mine — and a re-tap re-opens it cleanly each time.
+  useFocusEffect(
+    useCallback(() => {
+      if (auth.status === "anonymous") {
+        openAuthSheet({ mode: "login", replace: true });
+      }
+    }, [auth.status])
+  );
   const theme = useTheme();
   const t = useTranslations();
   const locale = useLocale();
