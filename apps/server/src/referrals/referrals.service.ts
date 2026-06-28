@@ -7,6 +7,8 @@ import {
 import { BillingOrderStatus, BillingOrderType, Prisma } from '@prisma/client';
 import { randomBytes } from 'crypto';
 import { PrismaService } from '../infra/db/db.module';
+import { LegacyMysqlService } from '../infra/legacy-mysql/legacy-mysql.service';
+import type { RowDataPacket } from 'mysql2';
 import type {
   ReferralDashboardDTO,
   ReferralMilestoneDTO,
@@ -54,7 +56,10 @@ export class ReferralsService {
     process.env.REFERRAL_INVITE_BASE_URL ?? 'https://fizzdragon.com'
   ).replace(/\/+$/, '');
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly legacy: LegacyMysqlService,
+  ) {}
 
   /** The signed-in user's dashboard. Returns the empty/unavailable shape when
    *  no active program exists, so the client renders a graceful "off" state. */
@@ -208,6 +213,9 @@ export class ReferralsService {
    * accrues) plus milestone existence checks. Also the lazy-read backstop.
    */
   async qualifyRefereePurchase(refereeUserId: string): Promise<void> {
+    // Build the attribution from Java's recommendation_code (set at signup) if
+    // it isn't recorded Nest-side yet — no client claim needed.
+    await this.ensureAttribution(refereeUserId);
     const attribution = await this.prisma.referralAttribution.findUnique({
       where: { refereeUserId },
     });
@@ -392,6 +400,53 @@ export class ReferralsService {
     });
 
     this.logger.log(`Referral reversed (refund): referee=${order.userId}`);
+  }
+
+  /**
+   * Lazily build a referee's attribution from Java's `recommendation_code`
+   * (captured at web /register) so attribution needs no client claim. Reads the
+   * referee's code via the legacy bridge, resolves the owning invite code, and
+   * records a pending attribution. Best-effort; no-ops on missing/unknown code.
+   */
+  private async ensureAttribution(refereeUserId: string): Promise<void> {
+    const existing = await this.prisma.referralAttribution.findUnique({
+      where: { refereeUserId },
+      select: { id: true },
+    });
+    if (existing) return;
+
+    let rawCode: string | null = null;
+    try {
+      const row = await this.legacy.queryOne<
+        RowDataPacket & { recommendation_code: string | null }
+      >('SELECT recommendation_code FROM client_user WHERE id = ? LIMIT 1', [
+        refereeUserId,
+      ]);
+      rawCode = row?.recommendation_code?.trim() || null;
+    } catch {
+      return; // bridge unavailable — skip; the claim endpoint still works
+    }
+    if (!rawCode) return;
+
+    const code = rawCode.toUpperCase();
+    const invite = await this.prisma.referralInviteCode.findUnique({
+      where: { code },
+    });
+    if (!invite || invite.userId === refereeUserId) return; // unknown / self
+
+    try {
+      await this.prisma.referralAttribution.create({
+        data: {
+          programKey: PROGRAM_KEY,
+          referrerUserId: invite.userId,
+          refereeUserId,
+          inviteCode: code,
+          status: 'pending',
+        },
+      });
+    } catch (e) {
+      if (!isUniqueViolation(e)) throw e; // raced another writer — fine
+    }
   }
 
   /** Allocate (or fetch) the user's stable invite code, retrying on the rare
