@@ -409,5 +409,9 @@
   "ipDetail.aiBadge": "AI-generated",
   "ipDetail.rightsTitle": "Rights & AI disclosure",
   "ipDetail.aiNotice": "Contains AI-generated content.",
+  "ipDetail.share": "Share",
+  "ipDetail.shareBrand": "FizzDragon",
+  "ipDetail.shareUnavailable": "Sharing isn't available on this device.",
+  "ipDetail.shareFailed": "Couldn't create the share image. Please try again.",
   "report.close": "Close"
 }

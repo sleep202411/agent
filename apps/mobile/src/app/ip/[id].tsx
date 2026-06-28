@@ -1,12 +1,15 @@
 import { Image } from "expo-image";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
+import * as Sharing from "expo-sharing";
 import { SymbolView } from "expo-symbols";
 import { useEffect, useRef, useState } from "react";
 import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { captureRef, type ViewShotRef } from "react-native-view-shot";
 import { useVideoPlayer, VideoView } from "expo-video";
 
 import { useAuthGate } from "@/auth";
+import { ShareCard } from "@/components/ip-share-card";
 import {
   MoreActionsButton,
   ReportReasonSheet,
@@ -15,6 +18,7 @@ import {
 import { ThemedText } from "@/components/themed-text";
 import { ThemedView } from "@/components/themed-view";
 import { EmptyState, PosterImage, SectionHeader, Tag } from "@/components/ui";
+import { webBaseUrl } from "@/config";
 import { Spacing } from "@/constants/theme";
 import { invalidateBrowse } from "@/data/browse-refresh";
 import {
@@ -25,7 +29,7 @@ import {
 } from "@/data/browse-service";
 import type { IpDetail, IpEpisode, Person } from "@/data/types";
 import { useTheme } from "@/hooks/use-theme";
-import { useTranslations } from "@/i18n";
+import { useLocale, useTranslations } from "@/i18n";
 import { ApiRequestError } from "@/lib/api-client";
 import { dicebearAvatarUrl } from "@/lib/avatar";
 import { toHref } from "@/lib/navigation";
@@ -35,15 +39,23 @@ export default function IpDetailScreen() {
   const insets = useSafeAreaInsets();
   const theme = useTheme();
   const t = useTranslations();
+  const locale = useLocale();
   const router = useRouter();
   const authGate = useAuthGate();
   const scrollRef = useRef<ScrollView>(null);
+  const shareCardRef = useRef<ViewShotRef>(null);
+  // Whether the off-screen ShareCard's poster has loaded, plus any resolvers
+  // waiting on it. A ref (not state) so the capture path reads a live value and
+  // doesn't re-render the page when the poster loads.
+  const posterReadyRef = useRef(false);
+  const posterWaitersRef = useRef<Set<() => void>>(new Set());
   const [ip, setIp] = useState<IpDetail>();
   const [loading, setLoading] = useState(true);
   const [expanded, setExpanded] = useState(false);
   const [playing, setPlaying] = useState<{ url: string; title: string }>();
   const [reportOpen, setReportOpen] = useState(false);
   const [reporting, setReporting] = useState(false);
+  const [sharing, setSharing] = useState(false);
 
   useEffect(() => {
     let alive = true;
@@ -158,6 +170,70 @@ export default function IpDetailScreen() {
     authGate.requireAuth({ onAuthenticated: showActions });
   };
 
+  // The web uses locale-prefixed routes (e.g. /en-US/ips/<id>); the QR encodes
+  // the region's public origin so a scan opens the work on the right site.
+  const shareUrl = `${webBaseUrl}/${locale}/ips/${ip.id}`;
+  const creatorName = ip.creators[0]?.name;
+
+  // Called by the off-screen ShareCard when its poster has loaded (or has no
+  // image to load): flips the gate and releases anyone awaiting it.
+  const markPosterReady = () => {
+    posterReadyRef.current = true;
+    for (const resolve of posterWaitersRef.current) resolve();
+    posterWaitersRef.current.clear();
+  };
+
+  // Resolve once the poster is ready, or after a 2.5s fallback so a slow/broken
+  // image URL can't hang the share — we capture anyway after the timeout.
+  const waitForPoster = () =>
+    new Promise<void>((resolve) => {
+      if (posterReadyRef.current) {
+        resolve();
+        return;
+      }
+      let settled = false;
+      const done = () => {
+        if (settled) return;
+        settled = true;
+        posterWaitersRef.current.delete(done);
+        clearTimeout(timer);
+        resolve();
+      };
+      const timer = setTimeout(done, 2500);
+      posterWaitersRef.current.add(done);
+    });
+
+  const onShare = async () => {
+    if (sharing) return;
+    setSharing(true);
+    try {
+      // Wait for the off-screen poster to load (bounded by a timeout) so the
+      // captured PNG never has a blank poster on a fast/cold share-tap.
+      await waitForPoster();
+      // Give the off-screen card a frame to finish laying out before snapshot.
+      await new Promise((resolve) => requestAnimationFrame(() => resolve(null)));
+      const uri = await captureRef(shareCardRef, {
+        format: "png",
+        quality: 1,
+        result: "tmpfile",
+      });
+      if (!(await Sharing.isAvailableAsync())) {
+        Alert.alert(t("ipDetail.shareUnavailable"));
+        return;
+      }
+      await Sharing.shareAsync(uri, {
+        mimeType: "image/png",
+        dialogTitle: ip.title,
+        UTI: "public.png",
+      });
+    } catch (error) {
+      console.warn("[ip share] failed", error);
+      Alert.alert(t("ipDetail.shareFailed"));
+    } finally {
+      setSharing(false);
+    }
+  };
+
   return (
     <ThemedView style={styles.screen}>
       <Stack.Screen
@@ -180,9 +256,43 @@ export default function IpDetailScreen() {
                   />
                 </Pressable>
               )
-            : () => <MoreActionsButton label={t("report.moreActions")} onPress={openActions} />,
+            : () => (
+                <View style={styles.headerActions}>
+                  <Pressable
+                    accessibilityLabel={t("ipDetail.share")}
+                    accessibilityRole="button"
+                    hitSlop={10}
+                    disabled={sharing}
+                    onPress={() => void onShare()}
+                  >
+                    {sharing ? (
+                      <ActivityIndicator size="small" color="#FFFFFF" />
+                    ) : (
+                      <SymbolView
+                        name={{ ios: "square.and.arrow.up", android: "share", web: "share" }}
+                        size={20}
+                        tintColor="#FFFFFF"
+                      />
+                    )}
+                  </Pressable>
+                  <MoreActionsButton label={t("report.moreActions")} onPress={openActions} />
+                </View>
+              ),
         }}
       />
+
+      {/* Off-screen postcard captured for the share sheet. Kept mounted (not
+          visible) so `captureRef` can snapshot it on demand. */}
+      <View style={styles.offscreen} pointerEvents="none" collapsable={false}>
+        <ShareCard
+          ref={shareCardRef}
+          ip={ip}
+          creatorName={creatorName}
+          shareUrl={shareUrl}
+          brand={t("ipDetail.shareBrand")}
+          onPosterReady={markPosterReady}
+        />
+      </View>
       <ReportReasonSheet
         visible={reportOpen}
         submitting={reporting}
@@ -517,6 +627,17 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "space-between",
     paddingHorizontal: Spacing.four,
+  },
+  headerActions: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: Spacing.four,
+  },
+  offscreen: {
+    position: "absolute",
+    left: -9999,
+    top: 0,
+    opacity: 0,
   },
   titleBlock: {
     gap: Spacing.one,

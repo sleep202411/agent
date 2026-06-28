@@ -264,6 +264,7 @@ module.exports = ({ config }) => {
       "expo-router",
       "expo-image",
       "expo-localization",
+      "expo-sharing",
       [
         "expo-status-bar",
         {

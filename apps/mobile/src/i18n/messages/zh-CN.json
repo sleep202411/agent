@@ -409,5 +409,9 @@
   "ipDetail.aiBadge": "AI 生成",
   "ipDetail.rightsTitle": "版权与 AI 说明",
   "ipDetail.aiNotice": "本作品包含 AI 生成内容。",
+  "ipDetail.share": "分享",
+  "ipDetail.shareBrand": "FizzDragon",
+  "ipDetail.shareUnavailable": "当前设备不支持分享。",
+  "ipDetail.shareFailed": "生成分享图片失败，请重试。",
   "report.close": "关闭"
 }

@@ -58,6 +58,14 @@ export const appEnv: MobileAppEnv = {
 export const isChinaRegion = appEnv.appRegion === "cn";
 export const isProductionApp = appEnv.appVariant === "production";
 
+/**
+ * Public web origin for this build's region — used to build shareable links
+ * (e.g. the share-card QR target). Region is baked at build time via
+ * app.config.js / eas.json, so this is a static derivation, NOT runtime-switched.
+ */
+export const webBaseUrl =
+  appEnv.appRegion === "cn" ? "https://fizzdragon.fizzspace.cn" : "https://fizzdragon.com";
+
 export function resolveAssetUrl(path: string, baseUrl: string): string {
   if (!path) return "";
   if (/^https?:\/\//i.test(path)) return path;
