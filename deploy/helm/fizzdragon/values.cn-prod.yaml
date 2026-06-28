@@ -201,12 +201,14 @@ server:
     # Requires REALTIME_WS_SECRET (see serverSecrets above). Routed through the
     # existing /aurora/* ingress — nginx upgrades WS on that path automatically.
     REALTIME_TRANSPORT: self-hosted
-    # Legacy Java MySQL bridge: base values point it at the .com SG RDS with KV
-    # creds + LEGACY_MYSQL_ENABLED=true. CN has no such creds wired (admin-ui is
-    # off, so the bridge is unused) → keep it dormant or the server crashes at boot.
-    LEGACY_MYSQL_ENABLED: "false"
-    LEGACY_MYSQL_HOST: null
-    LEGACY_MYSQL_DATABASE: null
+    # Legacy Java MySQL bridge → CN Java PolarDB (READ-ONLY; /aurora/creators reads
+    # client_user). USER/PASSWORD come from fizzdragon-server-secrets. The PolarDB
+    # public endpoint must whitelist the ACK egress IP (whitelist group
+    # `ack_cn_server`); if that egress IP changes, re-add it (or set up VPC peering
+    # to the private endpoint pc-1ud0tty6lw28dgg34.mysql.polardb.rds.aliyuncs.com).
+    LEGACY_MYSQL_ENABLED: "true"
+    LEGACY_MYSQL_HOST: fizzdragon.mysql.polardb.rds.aliyuncs.com
+    LEGACY_MYSQL_DATABASE: fizzdragon_client
     # Bootstrap admin for admin.fizzspace.cn (created at server start by
     # ensureBootstrapAdmin). Password is in fizzdragon-server-secrets
     # (ADMIN_BOOTSTRAP_PASSWORD). MFA off for first login — change password +
