@@ -219,7 +219,7 @@ module.exports = ({ config }) => {
     ...config,
     name: getDisplayName(appRegion, appVariant),
     slug: readSlug(),
-    version: "2.0.1",
+    version: "2.0.2",
     orientation: "portrait",
     icon: "./assets/images/icon.png",
     scheme: getScheme(appRegion, appVariant),
