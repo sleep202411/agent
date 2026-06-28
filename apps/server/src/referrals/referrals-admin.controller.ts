@@ -7,6 +7,7 @@ import {
   Post,
   UseGuards,
 } from '@nestjs/common';
+import { Public } from '../auth';
 import {
   ADMIN_PERMISSION_KEYS,
   AdminAuthGuard,
@@ -31,6 +32,7 @@ import { ReferralsService } from './referrals.service';
  * permission scopes (referral rewards are billing-adjacent: they grant
  * membership / points / cash).
  */
+@Public()
 @UseGuards(AdminAuthGuard, AdminPermissionGuard)
 @Controller('admin/referrals')
 export class ReferralsAdminController {
