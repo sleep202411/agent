@@ -11,7 +11,7 @@
  * size → upscaled by the device pixel ratio → a crisp full-res PNG.
  */
 import * as Sharing from "expo-sharing";
-import { SymbolView, type SymbolViewProps } from "expo-symbols";
+import { SymbolView } from "expo-symbols";
 import { useRef, useState } from "react";
 import {
   ActivityIndicator,
@@ -31,8 +31,6 @@ import { useTheme } from "@/hooks/use-theme";
 import { useTranslations } from "@/i18n";
 
 import { CARD_HEIGHT, CARD_WIDTH, ShareCard } from "./ip-share-card";
-
-type SymbolName = SymbolViewProps["name"];
 
 type ShareSheetProps = {
   visible: boolean;
@@ -70,8 +68,7 @@ export function ShareSheet({
   // Per-action busy flags drive the button spinners; `busy` blocks both
   // buttons + scrim/close while either action is running.
   const [sharingState, setSharingState] = useState(false);
-  const [savingState, setSavingState] = useState(false);
-  const busy = sharingState || savingState;
+  const busy = sharingState;
 
   const markPosterReady = () => {
     posterReadyRef.current = true;
@@ -126,29 +123,6 @@ export function ShareSheet({
       Alert.alert(t("ipDetail.shareFailed"));
     } finally {
       setSharingState(false);
-    }
-  };
-
-  const onDownload = async () => {
-    if (busy) return;
-    setSavingState(true);
-    try {
-      // Lazy-load the native module so a dev client not yet rebuilt with it
-      // still renders the modal + Share; only Download needs the native side.
-      const MediaLibrary = await import("expo-media-library");
-      const permission = await MediaLibrary.requestPermissionsAsync();
-      if (!permission.granted) {
-        Alert.alert(t("ipDetail.savePermissionDenied"));
-        return;
-      }
-      const uri = await capture();
-      await MediaLibrary.saveToLibraryAsync(uri);
-      Alert.alert(t("ipDetail.saveSuccess"));
-    } catch (error) {
-      console.warn("[ip share] save failed", error);
-      Alert.alert(t("ipDetail.saveFailed"));
-    } finally {
-      setSavingState(false);
     }
   };
 
@@ -221,39 +195,43 @@ export function ShareSheet({
               },
             ]}
           >
-            <View style={styles.actions}>
-              <ActionButton
-                label={t("ipDetail.share")}
-                symbol={{ ios: "square.and.arrow.up", android: "share", web: "share" }}
-                busy={sharingState}
-                disabled={busy}
-                tone="primary"
-                onPress={() => void onShare()}
-              />
-              <ActionButton
-                label={t("ipDetail.download")}
-                symbol={{
-                  ios: "arrow.down.to.line",
-                  android: "file_download",
-                  web: "file_download",
-                }}
-                busy={savingState}
-                disabled={busy}
-                tone="secondary"
-                onPress={() => void onDownload()}
-              />
-            </View>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={t("ipDetail.share")}
+              disabled={busy}
+              onPress={() => void onShare()}
+              style={({ pressed }) => [
+                styles.shareButton,
+                { backgroundColor: theme.brand },
+                pressed && styles.pressed,
+                busy && styles.actionDisabled,
+              ]}
+            >
+              {busy ? (
+                <ActivityIndicator size="small" color="#FFFFFF" />
+              ) : (
+                <>
+                  <SymbolView
+                    name={{ ios: "square.and.arrow.up", android: "share", web: "share" }}
+                    size={18}
+                    tintColor="#FFFFFF"
+                  />
+                  <ThemedText type="smallBold" style={styles.shareLabel}>
+                    {t("ipDetail.share")}
+                  </ThemedText>
+                </>
+              )}
+            </Pressable>
 
             <Pressable
-              accessibilityLabel={t("report.close")}
               accessibilityRole="button"
+              accessibilityLabel={t("report.close")}
               disabled={busy}
               onPress={onClose}
               style={({ pressed }) => [
                 styles.closeButton,
                 { borderColor: theme.border },
                 pressed && styles.pressed,
-                busy && styles.actionDisabled,
               ]}
             >
               <ThemedText type="smallBold">{t("report.close")}</ThemedText>
@@ -262,54 +240,6 @@ export function ShareSheet({
         </Pressable>
       </Pressable>
     </View>
-  );
-}
-
-function ActionButton({
-  label,
-  symbol,
-  busy,
-  disabled,
-  tone,
-  onPress,
-}: {
-  label: string;
-  symbol: SymbolName;
-  busy: boolean;
-  disabled: boolean;
-  tone: "primary" | "secondary";
-  onPress: () => void;
-}) {
-  const theme = useTheme();
-  const primary = tone === "primary";
-  // Primary = solid brand fill (white text). Secondary = lighter surface with a
-  // visible border so it reads as a distinct, tappable button (not near-black).
-  const bg = primary ? theme.brand : theme.backgroundSelected;
-  const fg = primary ? "#FFFFFF" : theme.text;
-  return (
-    <Pressable
-      accessibilityLabel={label}
-      accessibilityRole="button"
-      disabled={disabled}
-      onPress={onPress}
-      style={({ pressed }) => [
-        styles.actionButton,
-        { backgroundColor: bg, borderColor: primary ? bg : theme.border },
-        pressed && styles.pressed,
-        disabled && !busy && styles.actionDisabled,
-      ]}
-    >
-      {busy ? (
-        <ActivityIndicator size="small" color={fg} />
-      ) : (
-        <>
-          <SymbolView name={symbol} size={18} tintColor={fg} />
-          <ThemedText type="smallBold" style={{ color: fg }}>
-            {label}
-          </ThemedText>
-        </>
-      )}
-    </Pressable>
   );
 }
 
@@ -345,19 +275,16 @@ const styles = StyleSheet.create({
     padding: Spacing.four,
     gap: Spacing.three,
   },
-  actions: {
-    flexDirection: "row",
-    gap: Spacing.three,
-  },
-  actionButton: {
-    flex: 1,
+  shareButton: {
     height: 52,
     borderRadius: 14,
-    borderWidth: StyleSheet.hairlineWidth,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
     gap: Spacing.two,
+  },
+  shareLabel: {
+    color: "#FFFFFF",
   },
   actionDisabled: {
     opacity: 0.5,
