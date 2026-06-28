@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Post } from '@nestjs/common';
+import { Body, Controller, Get, Param, Post } from '@nestjs/common';
 import { CurrentUser, type AuthUser } from '../auth';
 import { ZodValidationPipe } from '../common/zod.pipe';
 import { ClaimReferralSchema, type ClaimReferralInput } from './dto';
@@ -26,6 +26,15 @@ export class ReferralsController {
     return {
       code: 200,
       data: await this.service.claim(user.userId, body.code),
+    };
+  }
+
+  /** Claim (领取) an accrued reward → grant it by type, mark it paid_out. */
+  @Post('rewards/:id/claim')
+  async claimReward(@CurrentUser() user: AuthUser, @Param('id') id: string) {
+    return {
+      code: 200,
+      data: await this.service.claimReward(user.userId, id),
     };
   }
 }

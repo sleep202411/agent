@@ -419,6 +419,59 @@ export class EntitlementService {
     return { member: false, expiresAt: null };
   }
 
+  /**
+   * Grant complimentary membership time (referral / admin) WITHOUT a billing
+   * order. Idempotent on (sourceType, sourceId). STACKS: starts at the
+   * subject's latest active grant end for the plan (or now) + durationDays.
+   */
+  async grantComplimentary(input: {
+    subjectType: BillingSubjectType;
+    subjectId: string;
+    planKey: string;
+    durationDays: number;
+    sourceType: string;
+    sourceId: string;
+    metadata?: Record<string, unknown>;
+  }): Promise<EntitlementGrant> {
+    const now = new Date();
+    const latest = await this.prisma.entitlementGrant.findFirst({
+      where: {
+        subjectType: input.subjectType,
+        subjectId: input.subjectId,
+        planKey: input.planKey,
+        status: EntitlementGrantStatus.active,
+      },
+      orderBy: [{ endsAt: 'desc' }],
+      select: { endsAt: true },
+    });
+    const startsAt =
+      latest?.endsAt && latest.endsAt > now ? latest.endsAt : now;
+    const endsAt = new Date(
+      startsAt.getTime() + input.durationDays * 24 * 60 * 60 * 1000,
+    );
+    return this.prisma.entitlementGrant.upsert({
+      where: {
+        sourceType_sourceId: {
+          sourceType: input.sourceType,
+          sourceId: input.sourceId,
+        },
+      },
+      create: {
+        subjectType: input.subjectType,
+        subjectId: input.subjectId,
+        planKey: input.planKey,
+        status: EntitlementGrantStatus.active,
+        sourceType: input.sourceType,
+        sourceId: input.sourceId,
+        startsAt,
+        endsAt,
+        metadata: (input.metadata ?? {}) as Prisma.InputJsonValue,
+      },
+      // Idempotent: re-granting the same source is a no-op.
+      update: {},
+    });
+  }
+
   private async findBestActiveGrant(input: {
     userId: string;
     workspaceId: string | null;

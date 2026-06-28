@@ -4,10 +4,26 @@ import {
   Logger,
   NotFoundException,
 } from '@nestjs/common';
-import { BillingOrderStatus, BillingOrderType, Prisma } from '@prisma/client';
+import {
+  BillingOrderStatus,
+  BillingOrderType,
+  BillingSubjectType,
+  Prisma,
+  WalletAccountStatus,
+  WalletBalanceKind,
+  WalletCreditGrantType,
+  WalletCurrencyType,
+  WalletLedgerEntryType,
+  WalletOwnerType,
+} from '@prisma/client';
 import { randomBytes } from 'crypto';
 import { PrismaService } from '../infra/db/db.module';
 import { LegacyMysqlService } from '../infra/legacy-mysql/legacy-mysql.service';
+import {
+  COMMUNITY_MEMBERSHIP_PLAN_KEY,
+  EntitlementService,
+} from '../entitlements/entitlement.service';
+import { WalletLedgerService, WorkspacesService } from '../workspaces';
 import type { RowDataPacket } from 'mysql2';
 import type {
   ReferralDashboardDTO,
@@ -17,6 +33,8 @@ import type {
 
 /** Single-program install for now; the schema already keys by program. */
 const PROGRAM_KEY = 'default';
+/** Entry compute-tier plan granted for "算力会员" referral rewards. */
+const COMPUTE_PLAN_KEY = 'basic';
 /** Unambiguous uppercase alphabet (no I/O/0/1). */
 const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 const CODE_LENGTH = 8;
@@ -59,6 +77,9 @@ export class ReferralsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly legacy: LegacyMysqlService,
+    private readonly entitlements: EntitlementService,
+    private readonly walletLedger: WalletLedgerService,
+    private readonly workspaces: WorkspacesService,
   ) {}
 
   /** The signed-in user's dashboard. Returns the empty/unavailable shape when
@@ -403,6 +424,212 @@ export class ReferralsService {
   }
 
   /**
+   * Claim an accrued, out-of-hold reward → grant it by payout type and mark it
+   * paid_out. The grant runs FIRST (each path idempotent on the reward id), then
+   * the accrued→paid_out CAS — so a crash can't mark a reward paid without the
+   * grant, and a re-claim can't double-grant.
+   */
+  async claimReward(
+    userId: string,
+    rewardId: string,
+  ): Promise<{ status: string }> {
+    const reward = await this.prisma.referralReward.findUnique({
+      where: { id: rewardId },
+    });
+    if (!reward || reward.userId !== userId) {
+      throw new NotFoundException('Reward not found');
+    }
+    if (reward.status === 'paid_out') return { status: reward.status };
+    if (reward.status !== 'accrued') {
+      throw new BadRequestException('Reward is not claimable');
+    }
+    if (reward.availableAt && reward.availableAt.getTime() > Date.now()) {
+      throw new BadRequestException('Reward is still in its hold window');
+    }
+
+    await this.grantReward(reward);
+
+    await this.prisma.referralReward.updateMany({
+      where: { id: reward.id, status: 'accrued' },
+      data: { status: 'paid_out', paidOutAt: new Date() },
+    });
+    return { status: 'paid_out' };
+  }
+
+  /** Dispatch the actual grant by payout type. Each path is idempotent. */
+  private async grantReward(reward: {
+    id: string;
+    userId: string;
+    payoutType: string;
+    amountMinor: bigint;
+    days: number;
+  }): Promise<void> {
+    switch (reward.payoutType) {
+      case 'membership_compute':
+        await this.grantMembership(
+          reward.userId,
+          COMPUTE_PLAN_KEY,
+          reward.days,
+          reward.id,
+        );
+        break;
+      case 'membership_community':
+        await this.grantMembership(
+          reward.userId,
+          COMMUNITY_MEMBERSHIP_PLAN_KEY,
+          reward.days,
+          reward.id,
+        );
+        break;
+      case 'membership_both':
+        await this.grantMembership(
+          reward.userId,
+          COMPUTE_PLAN_KEY,
+          reward.days,
+          reward.id,
+        );
+        await this.grantMembership(
+          reward.userId,
+          COMMUNITY_MEMBERSHIP_PLAN_KEY,
+          reward.days,
+          reward.id,
+        );
+        break;
+      case 'points_compute':
+        await this.creditComputePoints(
+          reward.userId,
+          reward.amountMinor,
+          reward.id,
+        );
+        break;
+      case 'points_community':
+        await this.creditCommunityPoints(
+          reward.userId,
+          reward.amountMinor,
+          reward.id,
+          WalletBalanceKind.consumable,
+        );
+        break;
+      case 'cash':
+        // Cash → the WITHDRAWABLE community_point pool (积分 ≡ US cent). The
+        // cash-out (提现) from that pool is a separate, not-yet-built flow.
+        await this.creditCommunityPoints(
+          reward.userId,
+          reward.amountMinor,
+          reward.id,
+          WalletBalanceKind.withdrawable,
+        );
+        break;
+    }
+  }
+
+  private async grantMembership(
+    userId: string,
+    planKey: string,
+    days: number,
+    rewardId: string,
+  ): Promise<void> {
+    if (days <= 0) return;
+    await this.entitlements.grantComplimentary({
+      subjectType: BillingSubjectType.user,
+      subjectId: userId,
+      planKey,
+      durationDays: days,
+      sourceType: 'referral_reward',
+      sourceId: `${rewardId}:${planKey}`,
+      metadata: { rewardId },
+    });
+  }
+
+  private async creditComputePoints(
+    userId: string,
+    amount: bigint,
+    rewardId: string,
+  ): Promise<void> {
+    if (amount <= 0n) return;
+    const ws = await this.workspaces.ensurePersonalWorkspace({ userId });
+    const account = await this.prisma.walletAccount.upsert({
+      where: {
+        ownerType_ownerId_currency_balanceKind: {
+          ownerType: WalletOwnerType.workspace,
+          ownerId: ws.id,
+          currency: WalletCurrencyType.compute_point,
+          balanceKind: WalletBalanceKind.consumable,
+        },
+      },
+      create: {
+        ownerType: WalletOwnerType.workspace,
+        ownerId: ws.id,
+        currency: WalletCurrencyType.compute_point,
+        balanceKind: WalletBalanceKind.consumable,
+        status: WalletAccountStatus.active,
+      },
+      update: {},
+    });
+    await this.walletLedger.postEntry({
+      accountId: account.id,
+      entryType: WalletLedgerEntryType.credit,
+      amount,
+      availableDelta: amount,
+      heldDelta: 0n,
+      sourceType: 'referral_reward',
+      sourceId: rewardId,
+      idempotencyKey: `referral_reward:${rewardId}:compute`,
+      actorUserId: userId,
+      workspaceId: ws.id,
+      reason: 'referral_reward',
+      description: 'Referral reward — compute points',
+      metadata: { rewardId },
+      creditGrant: {
+        grantType: WalletCreditGrantType.system_grant,
+        expiresAt: null,
+        metadata: { rewardId },
+      },
+    });
+  }
+
+  private async creditCommunityPoints(
+    userId: string,
+    amount: bigint,
+    rewardId: string,
+    balanceKind: WalletBalanceKind,
+  ): Promise<void> {
+    if (amount <= 0n) return;
+    const account = await this.prisma.walletAccount.upsert({
+      where: {
+        ownerType_ownerId_currency_balanceKind: {
+          ownerType: WalletOwnerType.user,
+          ownerId: userId,
+          currency: WalletCurrencyType.community_point,
+          balanceKind,
+        },
+      },
+      create: {
+        ownerType: WalletOwnerType.user,
+        ownerId: userId,
+        currency: WalletCurrencyType.community_point,
+        balanceKind,
+        status: WalletAccountStatus.active,
+      },
+      update: {},
+    });
+    await this.walletLedger.postEntry({
+      accountId: account.id,
+      entryType: WalletLedgerEntryType.credit,
+      amount,
+      availableDelta: amount,
+      heldDelta: 0n,
+      sourceType: 'referral_reward',
+      sourceId: rewardId,
+      idempotencyKey: `referral_reward:${rewardId}:community:${balanceKind}`,
+      actorUserId: userId,
+      reason: 'referral_reward',
+      description: 'Referral reward — community points',
+      metadata: { rewardId },
+    });
+  }
+
+  /**
    * Lazily build a referee's attribution from Java's `recommendation_code`
    * (captured at web /register) so attribution needs no client claim. Reads the
    * referee's code via the legacy bridge, resolves the owning invite code, and
@@ -524,6 +751,9 @@ function mapReward(r: {
     days: r.days,
     currency: r.currency,
     status: r.status as ReferralRewardDTO['status'],
+    claimable:
+      r.status === 'accrued' &&
+      (!r.availableAt || r.availableAt.getTime() <= Date.now()),
     createdAt: r.createdAt.toISOString(),
     availableAt: r.availableAt ? r.availableAt.toISOString() : null,
   };

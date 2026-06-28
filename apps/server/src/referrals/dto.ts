@@ -36,6 +36,8 @@ export interface ReferralRewardDTO {
   /** Cash currency; null for points / membership. */
   currency: string | null;
   status: ReferralRewardStatus;
+  /** Accrued + out of the hold window → the user can tap 领取 (claim). */
+  claimable: boolean;
   createdAt: string;
   availableAt: string | null;
 }
