@@ -439,7 +439,7 @@ function RegistrationMilestones({
             const active = nextMilestone?.inviteeThreshold === milestone.inviteeThreshold;
             const color = complete ? theme.brand : active ? theme.text : theme.textSecondary;
             return (
-              <View key={milestone.inviteeThreshold} style={styles.milestoneNodeWrap}>
+              <View key={milestone.id} style={styles.milestoneNodeWrap}>
                 <View
                   style={[
                     styles.milestoneNode,
