@@ -25,7 +25,6 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { captureRef, type ViewShotRef } from "react-native-view-shot";
 
-import { ThemedText } from "@/components/themed-text";
 import { Spacing } from "@/constants/theme";
 import type { IpDetail } from "@/data/types";
 import { useTheme } from "@/hooks/use-theme";
@@ -184,18 +183,8 @@ export function ShareSheet({
             </View>
           </View>
 
-          {/* Solid panel so the buttons read as obvious controls, not icons
-              floating on the dark backdrop. */}
-          <View
-            style={[
-              styles.panel,
-              {
-                backgroundColor: theme.backgroundElement,
-                borderColor: theme.border,
-                paddingBottom: Spacing.four + insets.bottom,
-              },
-            ]}
-          >
+          {/* Transparent wrapper — just sizes + positions the Share button. */}
+          <View style={[styles.panel, { paddingBottom: insets.bottom }]}>
             <Pressable
               accessibilityRole="button"
               accessibilityLabel={t("ipDetail.share")}
@@ -227,20 +216,6 @@ export function ShareSheet({
                   </Text>
                 </>
               )}
-            </Pressable>
-
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel={t("report.close")}
-              disabled={busy}
-              onPress={onClose}
-              style={({ pressed }) => [
-                styles.closeButton,
-                { borderColor: theme.border },
-                pressed && styles.pressed,
-              ]}
-            >
-              <ThemedText type="smallBold">{t("report.close")}</ThemedText>
             </Pressable>
           </View>
         </Pressable>
@@ -276,33 +251,6 @@ const styles = StyleSheet.create({
   panel: {
     width: "100%",
     maxWidth: 380,
-    borderRadius: 20,
-    borderWidth: StyleSheet.hairlineWidth,
-    padding: Spacing.four,
-    gap: Spacing.three,
-  },
-  shareButton: {
-    height: 52,
-    borderRadius: 14,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: Spacing.two,
-  },
-  shareLabel: {
-    color: "#FFFFFF",
-  },
-  actionDisabled: {
-    opacity: 0.5,
-  },
-  closeButton: {
-    height: 48,
-    borderRadius: 14,
-    borderWidth: StyleSheet.hairlineWidth,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  pressed: {
-    opacity: 0.78,
+    paddingHorizontal: Spacing.four,
   },
 });
