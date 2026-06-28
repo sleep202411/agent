@@ -2,7 +2,7 @@
 -- fetched via GET /user/recommendationcode) instead of a self-minted code.
 -- Drop the redundant table — it has no foreign keys depending on it, and its
 -- two unique indexes drop with it.
-DROP TABLE "referral_invite_codes";
+DROP TABLE IF EXISTS "referral_invite_codes";
 
 -- ReferralAttribution.invite_code now stores the referrer's Java
 -- recommendation_code (for audit). Widen to match Java's varchar(50) so longer
