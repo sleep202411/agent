@@ -40,6 +40,20 @@ export ANDROID_SDK_ROOT="$ANDROID_HOME"
 export PATH="$ANDROID_HOME/platform-tools:$ANDROID_HOME/cmdline-tools/latest/bin:$PATH"
 mkdir -p "$FD_OUT_DIR"
 
+# ── monorepo hoisting guard ──
+# `expo` (and its bundled @expo/cli → @expo/router-server) hoists to the repo
+# root node_modules, but expo-router installs only under apps/mobile. During
+# `expo export:embed` (the gradle/xcode JS-bundle step) @expo/router-server does
+# a raw Node `require('expo-router/internal/routing')` from the root, which then
+# can't resolve expo-router → "Cannot find module" → the bundle step dies.
+# (`expo export` is unaffected: Metro resolves from the project root.) Symlink
+# expo-router at the repo root so that bare require resolves.
+ROOT_NM="$(cd "$MOBILE_DIR/../.." && pwd)/node_modules"
+if [ -d "$ROOT_NM" ] && [ ! -e "$ROOT_NM/expo-router" ]; then
+  ln -s ../apps/mobile/node_modules/expo-router "$ROOT_NM/expo-router"
+  echo "  [hoisting-guard] symlinked expo-router at repo root"
+fi
+
 REGION="${1:?usage: build-release.sh <global|cn|all> <ios|android|all>}"
 PLATFORM="${2:?usage: build-release.sh <global|cn|all> <ios|android|all>}"
 
