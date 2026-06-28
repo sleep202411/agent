@@ -18,6 +18,7 @@ import {
   Alert,
   Pressable,
   StyleSheet,
+  Text,
   useWindowDimensions,
   View,
 } from "react-native";
@@ -200,12 +201,16 @@ export function ShareSheet({
               accessibilityLabel={t("ipDetail.share")}
               disabled={busy}
               onPress={() => void onShare()}
-              style={({ pressed }) => [
-                styles.shareButton,
-                { backgroundColor: theme.brand },
-                pressed && styles.pressed,
-                busy && styles.actionDisabled,
-              ]}
+              style={{
+                height: 52,
+                borderRadius: 14,
+                backgroundColor: theme.brand,
+                flexDirection: "row",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: 8,
+                opacity: busy ? 0.5 : 1,
+              }}
             >
               {busy ? (
                 <ActivityIndicator size="small" color="#FFFFFF" />
@@ -215,10 +220,11 @@ export function ShareSheet({
                     name={{ ios: "square.and.arrow.up", android: "share", web: "share" }}
                     size={18}
                     tintColor="#FFFFFF"
+                    style={{ width: 18, height: 18 }}
                   />
-                  <ThemedText type="smallBold" style={styles.shareLabel}>
+                  <Text style={{ color: "#FFFFFF", fontSize: 15, fontWeight: "700" }}>
                     {t("ipDetail.share")}
-                  </ThemedText>
+                  </Text>
                 </>
               )}
             </Pressable>
