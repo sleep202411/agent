@@ -447,7 +447,13 @@ export class ReferralsService {
       throw new BadRequestException('Reward is still in its hold window');
     }
 
-    await this.grantReward(reward);
+    try {
+      await this.grantReward(reward);
+    } catch (e) {
+      // A concurrent claim won the grant's unique key — treat as already done
+      // and fall through to the status flip (the winner already granted).
+      if (!isUniqueViolation(e)) throw e;
+    }
 
     await this.prisma.referralReward.updateMany({
       where: { id: reward.id, status: 'accrued' },
@@ -463,6 +469,7 @@ export class ReferralsService {
     payoutType: string;
     amountMinor: bigint;
     days: number;
+    currency: string | null;
   }): Promise<void> {
     switch (reward.payoutType) {
       case 'membership_compute':
@@ -511,8 +518,14 @@ export class ReferralsService {
         );
         break;
       case 'cash':
-        // Cash → the WITHDRAWABLE community_point pool (积分 ≡ US cent). The
-        // cash-out (提现) from that pool is a separate, not-yet-built flow.
+        // Cash → the WITHDRAWABLE community_point pool where 积分 ≡ US cent, so
+        // ONLY a USD program maps 1:1. Fail loud on any other currency rather
+        // than mis-pay real money. (The 提现 cash-out is a separate TODO.)
+        if (reward.currency !== 'USD') {
+          throw new BadRequestException(
+            `Cash referral payout is USD-only for now (got ${reward.currency ?? 'null'})`,
+          );
+        }
         await this.creditCommunityPoints(
           reward.userId,
           reward.amountMinor,

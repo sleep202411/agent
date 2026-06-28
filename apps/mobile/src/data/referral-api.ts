@@ -8,13 +8,27 @@ export type ReferralRewardStatus =
   | "voided"
   | "paid_out";
 
+export type ReferralPayoutType =
+  | "cash"
+  | "points_compute"
+  | "points_community"
+  | "membership_compute"
+  | "membership_community"
+  | "membership_both";
+
 export interface ReferralReward {
   id: string;
   title: string;
   subtitle?: string;
+  payoutType: ReferralPayoutType;
+  /** Cash minor units OR point count (per payoutType). */
   amountMinor: string;
-  currency: string;
+  /** Membership reward days (0 for cash/points). */
+  days: number;
+  currency: string | null;
   status: ReferralRewardStatus;
+  /** Accrued + out of hold → show a 领取 button. */
+  claimable: boolean;
   createdAt?: string;
   availableAt?: string | null;
 }
@@ -100,6 +114,13 @@ export async function claimReferral(code: string): Promise<{ status: string }> {
   });
 }
 
+/** Claim (领取) an accrued reward — the server grants it by type + marks paid_out. */
+export async function claimReferralReward(rewardId: string): Promise<{ status: string }> {
+  return api.post<{ status: string }>(`/referrals/rewards/${rewardId}/claim`, {
+    service: "aurora",
+  });
+}
+
 function normalizeDashboard(dto: ReferralDashboardDto | null | undefined): ReferralDashboard {
   if (!dto) return EMPTY_REFERRAL_DASHBOARD;
 
@@ -143,16 +164,18 @@ function normalizeDashboard(dto: ReferralDashboardDto | null | undefined): Refer
     }),
     rewards: (dto.rewards ?? []).flatMap((reward, index) => {
       const title = stringOrNull(reward.title);
-      const currency = currencyOrNull(reward.currency ?? dto.currency);
-      if (!title || !currency) return [];
+      if (!title) return [];
       return [
         {
           id: stringOrNull(reward.id) ?? `reward-${index}`,
           title,
           subtitle: stringOrNull(reward.subtitle) ?? undefined,
+          payoutType: isPayoutType(reward.payoutType) ? reward.payoutType : "cash",
           amountMinor: amountString(reward.amountMinor),
-          currency,
+          days: numberOrZero(reward.days),
+          currency: currencyOrNull(reward.currency),
           status: isRewardStatus(reward.status) ? reward.status : "pending",
+          claimable: reward.claimable === true,
           createdAt: stringOrNull(reward.createdAt) ?? undefined,
           availableAt: stringOrNull(reward.availableAt),
         },
@@ -179,6 +202,17 @@ function amountString(value: unknown): string {
 
 function numberOrZero(value: unknown): number {
   return typeof value === "number" && Number.isFinite(value) ? value : 0;
+}
+
+function isPayoutType(value: unknown): value is ReferralPayoutType {
+  return (
+    value === "cash" ||
+    value === "points_compute" ||
+    value === "points_community" ||
+    value === "membership_compute" ||
+    value === "membership_community" ||
+    value === "membership_both"
+  );
 }
 
 function isRewardStatus(value: unknown): value is ReferralRewardStatus {

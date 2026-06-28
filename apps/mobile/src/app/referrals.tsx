@@ -17,6 +17,7 @@ import { useAuth, useAuthGate } from "@/auth";
 import { ThemedText } from "@/components/themed-text";
 import { Spacing } from "@/constants/theme";
 import {
+  claimReferralReward,
   fetchReferralDashboard,
   type ReferralDashboard,
   type ReferralReward,
@@ -310,7 +311,12 @@ export default function ReferralsScreen() {
         >
           {dashboard?.rewards.length ? (
             dashboard.rewards.map((reward) => (
-              <RewardRow key={reward.id} reward={reward} locale={locale} />
+              <RewardRow
+                key={reward.id}
+                reward={reward}
+                locale={locale}
+                onClaim={() => void refresh()}
+              />
             ))
           ) : (
             <View style={[styles.emptyRewards, { borderColor: theme.border }]}>
@@ -535,11 +541,36 @@ function InviteFlowCard({
   );
 }
 
-function RewardRow({ locale, reward }: { locale: string; reward: ReferralReward }) {
+function RewardRow({
+  locale,
+  reward,
+  onClaim,
+}: {
+  locale: string;
+  reward: ReferralReward;
+  onClaim: () => void;
+}) {
   const theme = useTheme();
   const t = useTranslations();
+  const [claiming, setClaiming] = useState(false);
   const color = statusColor(reward.status, theme.brand, theme.textSecondary);
   const status = t(statusLabelKey(reward.status));
+  const value = reward.payoutType.startsWith("membership")
+    ? `+${reward.days}${t("referrals.daysSuffix")}`
+    : reward.payoutType.startsWith("points")
+      ? `+${reward.amountMinor}`
+      : formatMoney(reward.amountMinor, reward.currency ?? "USD", locale, true);
+
+  const claim = async () => {
+    if (claiming) return;
+    setClaiming(true);
+    try {
+      await claimReferralReward(reward.id);
+      onClaim();
+    } catch {
+      setClaiming(false);
+    }
+  };
 
   return (
     <View style={[styles.rewardRow, { borderBottomColor: theme.border }]}>
@@ -553,11 +584,26 @@ function RewardRow({ locale, reward }: { locale: string; reward: ReferralReward 
       </View>
       <View style={styles.rewardAmount}>
         <ThemedText type="smallBold" style={{ color }} numberOfLines={1}>
-          {formatMoney(reward.amountMinor, reward.currency, locale, true)}
+          {value}
         </ThemedText>
-        <ThemedText type="code" style={{ color }} numberOfLines={1}>
-          {status}
-        </ThemedText>
+        {reward.claimable ? (
+          <Pressable
+            accessibilityRole="button"
+            disabled={claiming}
+            onPress={() => void claim()}
+            style={({ pressed }) => (pressed ? styles.pressed : null)}
+          >
+            <View style={[styles.claimButton, { backgroundColor: theme.brand }]}>
+              <ThemedText type="code" style={styles.claimText}>
+                {claiming ? t("referrals.claiming") : t("referrals.claim")}
+              </ThemedText>
+            </View>
+          </Pressable>
+        ) : (
+          <ThemedText type="code" style={{ color }} numberOfLines={1}>
+            {status}
+          </ThemedText>
+        )}
       </View>
     </View>
   );
@@ -918,6 +964,17 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     gap: Spacing.three,
     paddingVertical: Spacing.three,
+  },
+  claimButton: {
+    alignItems: "center",
+    borderRadius: 6,
+    justifyContent: "center",
+    minWidth: 56,
+    paddingHorizontal: Spacing.three,
+    paddingVertical: Spacing.one,
+  },
+  claimText: {
+    color: "#FFFFFF",
   },
   rewardCopy: {
     flex: 1,
