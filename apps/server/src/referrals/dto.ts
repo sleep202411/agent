@@ -6,6 +6,61 @@ export const ClaimReferralSchema = z.object({
 });
 export type ClaimReferralInput = z.infer<typeof ClaimReferralSchema>;
 
+// ─── Admin config (PATCH program / CRUD milestones) ─────────────────────
+
+const PAYOUT_TYPES = [
+  'cash',
+  'points_compute',
+  'points_community',
+  'membership_compute',
+  'membership_community',
+  'membership_both',
+] as const;
+
+/** PATCH /admin/referrals/program — tune the program. All fields optional. */
+export const UpdateReferralProgramSchema = z
+  .object({
+    enabled: z.boolean(),
+    currency: z
+      .string()
+      .trim()
+      .length(3)
+      .transform((v) => v.toUpperCase()),
+    qualifyEvent: z.enum(['signup', 'first_purchase']),
+    holdDays: z.number().int().min(0).max(365),
+    rewardPerReferralMinor: z.number().int().min(0),
+    maxRewardedReferees: z.number().int().min(0),
+    inviteeBenefitTitle: z.string().max(120).nullable(),
+    inviteeBenefitDetail: z.string().max(400).nullable(),
+    inviteeBenefitMinor: z.number().int().min(0),
+    inviteeBenefitExpiresInDays: z.number().int().min(0).nullable(),
+  })
+  .partial();
+export type UpdateReferralProgramInput = z.infer<
+  typeof UpdateReferralProgramSchema
+>;
+
+/** POST /admin/referrals/milestones — add a tier. */
+export const CreateReferralMilestoneSchema = z.object({
+  inviteeThreshold: z.number().int().min(1),
+  payoutType: z.enum(PAYOUT_TYPES),
+  rewardMinor: z.number().int().min(0).default(0),
+  payoutDays: z.number().int().min(0).max(3650).default(0),
+  title: z.string().trim().min(1).max(120),
+  detail: z.string().trim().max(400).default(''),
+  rank: z.number().int().default(0),
+});
+export type CreateReferralMilestoneInput = z.infer<
+  typeof CreateReferralMilestoneSchema
+>;
+
+/** PATCH /admin/referrals/milestones/:id — edit a tier. */
+export const UpdateReferralMilestoneSchema =
+  CreateReferralMilestoneSchema.partial();
+export type UpdateReferralMilestoneInput = z.infer<
+  typeof UpdateReferralMilestoneSchema
+>;
+
 // ─── Dashboard response (server-built; mirrors the mobile contract) ─────
 
 export type ReferralRewardStatus =

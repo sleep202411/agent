@@ -26,9 +26,12 @@ import {
 import { WalletLedgerService, WorkspacesService } from '../workspaces';
 import type { RowDataPacket } from 'mysql2';
 import type {
+  CreateReferralMilestoneInput,
   ReferralDashboardDTO,
   ReferralMilestoneDTO,
   ReferralRewardDTO,
+  UpdateReferralMilestoneInput,
+  UpdateReferralProgramInput,
 } from './dto';
 
 /** Single-program install for now; the schema already keys by program. */
@@ -199,6 +202,123 @@ export class ReferralsService {
       }
       throw e;
     }
+  }
+
+  // ─── Admin config (reuses billing.read / billing.write permission) ──────
+
+  /** Program config + ALL milestones (incl. archived) for the admin panel. */
+  async getAdminConfig() {
+    return this.loadAdminConfig();
+  }
+
+  async updateProgram(adminId: string, input: UpdateReferralProgramInput) {
+    const data: Prisma.ReferralProgramUpdateInput = { updatedById: adminId };
+    if (input.enabled !== undefined) data.enabled = input.enabled;
+    if (input.currency !== undefined) data.currency = input.currency;
+    if (input.qualifyEvent !== undefined) {
+      data.qualifyEvent = input.qualifyEvent;
+    }
+    if (input.holdDays !== undefined) data.holdDays = input.holdDays;
+    if (input.rewardPerReferralMinor !== undefined) {
+      data.rewardPerReferralMinor = BigInt(input.rewardPerReferralMinor);
+    }
+    if (input.maxRewardedReferees !== undefined) {
+      data.maxRewardedReferees = input.maxRewardedReferees;
+    }
+    if (input.inviteeBenefitTitle !== undefined) {
+      data.inviteeBenefitTitle = input.inviteeBenefitTitle;
+    }
+    if (input.inviteeBenefitDetail !== undefined) {
+      data.inviteeBenefitDetail = input.inviteeBenefitDetail;
+    }
+    if (input.inviteeBenefitMinor !== undefined) {
+      data.inviteeBenefitMinor = BigInt(input.inviteeBenefitMinor);
+    }
+    if (input.inviteeBenefitExpiresInDays !== undefined) {
+      data.inviteeBenefitExpiresInDays = input.inviteeBenefitExpiresInDays;
+    }
+    await this.prisma.referralProgram.update({
+      where: { key: PROGRAM_KEY },
+      data,
+    });
+    return this.loadAdminConfig();
+  }
+
+  async createMilestone(input: CreateReferralMilestoneInput) {
+    const program = await this.prisma.referralProgram.findUniqueOrThrow({
+      where: { key: PROGRAM_KEY },
+      select: { id: true },
+    });
+    await this.prisma.referralMilestoneConfig.create({
+      data: {
+        programId: program.id,
+        inviteeThreshold: input.inviteeThreshold,
+        payoutType: input.payoutType,
+        rewardMinor: BigInt(input.rewardMinor),
+        payoutDays: input.payoutDays,
+        title: input.title,
+        detail: input.detail,
+        rank: input.rank,
+      },
+    });
+    return this.loadAdminConfig();
+  }
+
+  async updateMilestone(id: string, input: UpdateReferralMilestoneInput) {
+    const data: Prisma.ReferralMilestoneConfigUpdateInput = {};
+    if (input.inviteeThreshold !== undefined) {
+      data.inviteeThreshold = input.inviteeThreshold;
+    }
+    if (input.payoutType !== undefined) data.payoutType = input.payoutType;
+    if (input.rewardMinor !== undefined) {
+      data.rewardMinor = BigInt(input.rewardMinor);
+    }
+    if (input.payoutDays !== undefined) data.payoutDays = input.payoutDays;
+    if (input.title !== undefined) data.title = input.title;
+    if (input.detail !== undefined) data.detail = input.detail;
+    if (input.rank !== undefined) data.rank = input.rank;
+    await this.prisma.referralMilestoneConfig.update({ where: { id }, data });
+    return this.loadAdminConfig();
+  }
+
+  async archiveMilestone(id: string) {
+    await this.prisma.referralMilestoneConfig.update({
+      where: { id },
+      data: { archivedAt: new Date() },
+    });
+    return this.loadAdminConfig();
+  }
+
+  private async loadAdminConfig() {
+    const program = await this.prisma.referralProgram.findUnique({
+      where: { key: PROGRAM_KEY },
+      include: { milestones: { orderBy: { rank: 'asc' } } },
+    });
+    if (!program) return null;
+    return {
+      key: program.key,
+      enabled: program.enabled,
+      currency: program.currency,
+      qualifyEvent: program.qualifyEvent,
+      holdDays: program.holdDays,
+      rewardPerReferralMinor: program.rewardPerReferralMinor.toString(),
+      maxRewardedReferees: program.maxRewardedReferees,
+      inviteeBenefitTitle: program.inviteeBenefitTitle,
+      inviteeBenefitDetail: program.inviteeBenefitDetail,
+      inviteeBenefitMinor: program.inviteeBenefitMinor.toString(),
+      inviteeBenefitExpiresInDays: program.inviteeBenefitExpiresInDays,
+      milestones: program.milestones.map((m) => ({
+        id: m.id,
+        inviteeThreshold: m.inviteeThreshold,
+        payoutType: m.payoutType,
+        rewardMinor: m.rewardMinor.toString(),
+        payoutDays: m.payoutDays,
+        title: m.title,
+        detail: m.detail,
+        rank: m.rank,
+        archivedAt: m.archivedAt ? m.archivedAt.toISOString() : null,
+      })),
+    };
   }
 
   /**
