@@ -24,6 +24,24 @@ import type {
   FalStatusResponse,
 } from './fal.types';
 
+// Seedream's image-to-image variant is a SIBLING of its text-to-image endpoint
+// (`fal-ai/bytedance/seedream/vX/edit`), NOT a child (`.../text-to-image/edit`).
+// So its edit endpoint replaces the trailing segment instead of appending one,
+// and the reverse maps that edit endpoint back to the text-to-image config key.
+// Every other fal model appends `/edit` to its base endpoint.
+const SEEDREAM_TEXT_TO_IMAGE_RE =
+  /^fal-ai\/bytedance\/seedream\/v(?:4(?:\.5)?|5\/lite)\/text-to-image$/;
+const SEEDREAM_EDIT_RE =
+  /^fal-ai\/bytedance\/seedream\/v(?:4(?:\.5)?|5\/lite)\/edit$/;
+
+/** Map a fal edit endpoint back to its text-to-image runtime config key. */
+function falEditEndpointToConfigKey(endpointId: string): string {
+  if (SEEDREAM_EDIT_RE.test(endpointId)) {
+    return endpointId.replace(/\/edit$/, '/text-to-image');
+  }
+  return endpointId.replace(/\/edit$/, '');
+}
+
 @Injectable()
 export class FalProviderAdapter implements ProviderAdapter {
   readonly provider = 'fal-ai';
@@ -266,7 +284,7 @@ export class FalProviderAdapter implements ProviderAdapter {
       (await this.catalog.getRuntimeConfig(modelIdOrEndpointId)) ??
       (modelIdOrEndpointId.endsWith('/edit')
         ? await this.catalog.getRuntimeConfig(
-            modelIdOrEndpointId.replace(/\/edit$/, ''),
+            falEditEndpointToConfigKey(modelIdOrEndpointId),
           )
         : null);
     if (!runtime) {
@@ -309,12 +327,9 @@ export class FalProviderAdapter implements ProviderAdapter {
       return `${runtime.endpointId}/edit`;
     }
 
-    if (
-      /^fal-ai\/bytedance\/seedream\/v(?:4(?:\.5)?|5\/lite)\/text-to-image$/.test(
-        runtime.endpointId,
-      )
-    ) {
-      return `${runtime.endpointId}/edit`;
+    if (SEEDREAM_TEXT_TO_IMAGE_RE.test(runtime.endpointId)) {
+      // Sibling, not child: `.../v4.5/text-to-image` -> `.../v4.5/edit`.
+      return runtime.endpointId.replace(/\/text-to-image$/, '/edit');
     }
 
     if (/^fal-ai\/flux-2-(?:pro|flex)$/.test(runtime.endpointId)) {

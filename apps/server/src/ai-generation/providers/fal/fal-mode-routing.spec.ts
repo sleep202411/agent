@@ -230,6 +230,123 @@ describe('FalProviderAdapter submit mode routing', () => {
   });
 });
 
+describe('FalProviderAdapter seedream image edit routing', () => {
+  // Seedream names its image-to-image variant as a SIBLING of text-to-image
+  // (`.../v4.5/edit`), not a child (`.../text-to-image/edit`). Regression for the
+  // 404 where the adapter appended `/edit` to the full text-to-image endpoint.
+  const SEEDREAM_T2I = 'fal-ai/bytedance/seedream/v4.5/text-to-image';
+  const SEEDREAM_EDIT = 'fal-ai/bytedance/seedream/v4.5/edit';
+
+  const runtime = {
+    endpointId: SEEDREAM_T2I,
+    type: 'image',
+    enabled: true,
+    inputSchema: { properties: { prompt: {}, referenceImages: {} } },
+    providerInputMap: {
+      prompt: { parameter: 'prompt' },
+      referenceImages: {
+        parameter: 'image_urls',
+        transform: 'mediaArrayToUrls',
+        omitIfEmpty: true,
+      },
+    },
+    parameterPolicy: { providerFamily: 'seedream' },
+  } as unknown as FalModelRuntimeConfig;
+
+  function buildAdapter() {
+    const submit = jest.fn().mockResolvedValue({ request_id: 'req-1' });
+    const configService = {
+      config: { enabled: true, pollDelayMs: 5_000 },
+    } as unknown as FalConfigService;
+    const catalog = {
+      getRuntimeConfig: jest.fn().mockResolvedValue(runtime),
+    } as unknown as FalCatalogService;
+    const client = { submit } as unknown as FalClient;
+    return {
+      adapter: new FalProviderAdapter(configService, catalog, client),
+      submit,
+    };
+  }
+
+  async function start(input: Record<string, unknown>) {
+    const { adapter, submit } = buildAdapter();
+    const result = await adapter.startGeneration(
+      'seedream-4-5',
+      input,
+      {} as ProviderGenerationContext,
+    );
+    if (result.kind !== 'pending') throw new Error('expected pending start');
+    return { result, submit };
+  }
+
+  it('routes a prompt-only payload to the text-to-image endpoint', async () => {
+    const { result, submit } = await start({ prompt: 'a quiet study' });
+    expect(submit).toHaveBeenCalledWith(
+      expect.anything(),
+      SEEDREAM_T2I,
+      expect.anything(),
+    );
+    expect(result.providerJobId).toBe(`${SEEDREAM_T2I}::req-1`);
+    expect(result.providerEndpoint).toBe(SEEDREAM_T2I);
+  });
+
+  it('routes reference images to the sibling /edit endpoint (not text-to-image/edit)', async () => {
+    const { result, submit } = await start({
+      prompt: 'edit the scene',
+      referenceImages: [{ url: 'https://example.com/ref.png' }],
+    });
+    expect(submit).toHaveBeenCalledWith(
+      expect.anything(),
+      SEEDREAM_EDIT,
+      expect.objectContaining({
+        image_urls: ['https://example.com/ref.png'],
+      }),
+    );
+    // The endpoint that 404'd before the fix.
+    expect(submit).not.toHaveBeenCalledWith(
+      expect.anything(),
+      `${SEEDREAM_T2I}/edit`,
+      expect.anything(),
+    );
+    expect(result.providerJobId).toBe(`${SEEDREAM_EDIT}::req-1`);
+    expect(result.providerEndpoint).toBe(SEEDREAM_EDIT);
+  });
+});
+
+describe('FalProviderAdapter edit-endpoint config reverse-map', () => {
+  it('resolves a seedream /edit endpoint back to its text-to-image config on poll', async () => {
+    const getRuntimeConfig = jest
+      .fn()
+      .mockImplementation((key: string) =>
+        key === 'fal-ai/bytedance/seedream/v4.5/text-to-image'
+          ? { endpointId: key, type: 'image', enabled: true }
+          : null,
+      );
+    const adapter = new FalProviderAdapter(
+      { config: { enabled: true } } as unknown as FalConfigService,
+      { getRuntimeConfig } as unknown as FalCatalogService,
+      {
+        status: jest
+          .fn()
+          .mockResolvedValue({ status: 'IN_PROGRESS', logs: [] }),
+      } as unknown as FalClient,
+    );
+
+    await adapter.pollGeneration(
+      'fal-ai/bytedance/seedream/v4.5/edit::req-1',
+      {} as never,
+    );
+
+    // First tries the edit endpoint, then falls back to the text-to-image key.
+    expect(getRuntimeConfig).toHaveBeenCalledWith(
+      'fal-ai/bytedance/seedream/v4.5/edit',
+    );
+    expect(getRuntimeConfig).toHaveBeenCalledWith(
+      'fal-ai/bytedance/seedream/v4.5/text-to-image',
+    );
+  });
+});
+
 describe('FalCatalogService multi-endpoint registration', () => {
   function seedanceRow(
     endpointId: string,

@@ -169,7 +169,8 @@ function normalizeFluxImageRequest(
 }
 
 function isSeedreamEndpoint(endpointId: string): boolean {
-  return /^fal-ai\/bytedance\/seedream\/v(?:4(?:\.5)?|5\/lite)\/text-to-image(?:\/edit)?$/.test(
+  // text-to-image base or its sibling edit endpoint (`.../vX/edit`).
+  return /^fal-ai\/bytedance\/seedream\/v(?:4(?:\.5)?|5\/lite)\/(?:text-to-image|edit)$/.test(
     endpointId,
   );
 }

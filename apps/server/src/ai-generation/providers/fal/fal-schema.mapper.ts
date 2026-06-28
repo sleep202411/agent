@@ -11,7 +11,6 @@ import type {
   AiOutputSchema,
   AiQueueName,
   AiQueuePolicy,
-  AiRequiredPlan,
 } from '../../types';
 import type {
   FalModelRuntimeConfig,
