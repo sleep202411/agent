@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { HLS_VARIANT_KEY } from './media-asset-placement';
 
 export interface ResolvableMediaAsset {
   storageProvider: string;
@@ -16,6 +17,7 @@ export interface ResolvableMediaAsset {
 export interface ResolvableMediaAssetVariant {
   variantKey: string;
   status?: string;
+  contentType?: string;
   deletedAt?: Date | null;
   placements?: ResolvableMediaObjectPlacement[];
 }
@@ -249,6 +251,40 @@ let sharedResolver: MediaAssetUrlResolverService | null = null;
 export function resolveMediaPublicUrl(asset: GatedMediaAsset): string | null {
   sharedResolver ??= new MediaAssetUrlResolverService();
   return sharedResolver.resolvePublicUrl(asset);
+}
+
+/**
+ * Resolve the PLAYABLE rendition URL for a media asset: prefer a ready ABR-HLS
+ * `stream` variant (`hls`), else the original. Applies the same moderation gate
+ * as {@link resolveMediaPublicUrl} (returns `url: null` when the asset must not
+ * be served). `contentType` is the HLS variant's type when serving HLS, else
+ * `null` — callers fall back to the asset's own contentType. A query that does
+ * not load `variants` (or an asset with no ready HLS) transparently yields the
+ * original, so this is safe to use everywhere `resolveMediaPublicUrl` was.
+ */
+export function resolveMediaPlaybackUrl(asset: GatedMediaAsset): {
+  url: string | null;
+  contentType: string | null;
+} {
+  sharedResolver ??= new MediaAssetUrlResolverService();
+  const original = sharedResolver.resolvePublicUrl(asset);
+  if (original == null) return { url: null, contentType: null };
+
+  const hls = asset.variants?.find(
+    (v) =>
+      v.variantKey === HLS_VARIANT_KEY && v.status === 'ready' && !v.deletedAt,
+  );
+  if (hls) {
+    try {
+      return {
+        url: sharedResolver.resolveVariant(asset, HLS_VARIANT_KEY),
+        contentType: hls.contentType ?? 'application/vnd.apple.mpegurl',
+      };
+    } catch {
+      // HLS variant unresolvable (e.g. missing placement) — keep the original.
+    }
+  }
+  return { url: original, contentType: null };
 }
 
 function assertAssetCanResolveUrl(asset: ResolvableMediaAsset): void {

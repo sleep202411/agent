@@ -50,10 +50,17 @@ export class MediaProcessingService {
     return this.prisma.mediaProcessingJob.upsert({
       where: { idempotencyKey: input.idempotencyKey },
       create: data,
+      // A re-enqueue is a fresh run: reset the retry budget (`attempt`) AND
+      // clear `output` (provider task state like `immTaskId`). Without this a
+      // previously dead-lettered job would re-poll its stale terminal task and
+      // dead-letter again on the first transient error — i.e. backfill / retry
+      // would be non-functional for stateful jobs (e.g. hls_stream).
       update: {
         status: MediaProcessingJobStatus.pending,
         priority: data.priority,
         input: data.input,
+        attempt: 0,
+        output: {},
         nextAttemptAt: null,
         lockedAt: null,
         lockedBy: null,
@@ -68,6 +75,9 @@ export class MediaProcessingService {
       where: { id: jobId },
       data: {
         status: MediaProcessingJobStatus.pending,
+        // Fresh run — see enqueueJob's update branch.
+        attempt: 0,
+        output: {},
         nextAttemptAt: null,
         lockedAt: null,
         lockedBy: null,
