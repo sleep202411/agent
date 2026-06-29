@@ -5023,115 +5023,176 @@
       "viewAll": "View all",
       "enter": "Enter project",
       "comingSoon": "Coming soon",
+      "inProduction": "In production",
       "byOwner": "by {name}",
       "stories": {
-        "hero-trace-project": {
+        "ip-226a0db8": {
+          "title": "The Forgettery",
+          "description": "On Yongkang Street in Taipei stands a nameless shop rumored to turn away strangers—a place that 'buys' memories people wish to forget. You recount the memory; the shopkeeper drinks a special medicinal tea on your behalf; and as you step outside, that memory begins fading from your neural pathways, vanishing entirely after roughly three years. Twenty-two-year-old Lin Yishan is the shop’s new assistant, tasked with…"
+        },
+        "ip-45646f1c": {
+          "title": "Journey's End",
+          "description": "Bangladesh, 2100: Floodwaters have submerged most of the country; only the upper floors of abandoned skyscrapers and floating artificial islands remain. Two girls—Nafisa and Suma—pilot a battered, jury-rigged boat through this drowned metropolis, searching for the legendary 'upper cities' said to still have food and electricity. They don’t know where their journey will end—but each day, they scavenge for something…"
+        },
+        "ip-d387e452": {
+          "title": "Delhi Illusion",
+          "description": "In Delhi, India, a low-caste street magician ekes out a living performing 'The Sky Rope' and 'Flower-from-Nowhere.' One day, during a 'Sky Rope' act, the rope truly ascends into the sky—vanishing into the clouds. The crowd applauds it as illusion, but he knows: this is no trick. Worse still, the person who climbs down the rope isn’t his assistant—it’s a girl he’s never seen before. She says: 'I came down from above…"
+        },
+        "ip-ad1ac5da": {
+          "title": "The Lone Market of Yi Prefecture",
+          "description": "In the Xichang night market, Yi ethnic girl Jiri Agya searches for an \"equivalent exchange\" stall. Agya offers her own life—and that of her descendants—in exchange for her mother's resurrection; the stallkeeper tells her she'll become part of him. The next day, the stall vanishes, her mother remains unreborn—but Agya awakens with millennia of ancestral memory, transforming her into a guardian of Yi culture. Visual…"
+        },
+        "ip-2eddb763": {
+          "title": "Equator Detective",
+          "description": "Modern-day China. A 17-year-old girl—sent to an elite school to 'correct' her social difficulties—is in fact a dual prodigy with near-photographic memory and razor-sharp logical deduction. Her brother, an intelligence officer, repeatedly intervenes to 'protect' her just as she nears the truth. First case: a classmate's 'accidental drowning' ruled a suicide by police—she proves in 36 hours it was a meticulously…"
+        },
+        "ip-7bbdea7e": {
+          "title": "The Reincarnated Dog: Kyoto",
+          "description": "In an old Kyoto mansion, an Akita dog is reborn as a baby in the same family on the 49th day after its master’s death—the traditional Japanese cycle for a canine soul’s reincarnation. Carrying memories from its past life, the dog uncovers a chilling family secret: every woman in this lineage vanishes at age 25—not through death, but by merging with the ancient cherry tree in the garden. From a Meiji-era textile…"
+        },
+        "ip-ad168289": {
           "title": "火壤星洲 Trace Project",
-          "description": "Singaporean cleaner's son Ka Joon Lim, guided by childhood friend Hui Min, survives Mars selection betrayal and leads 62 abandoned astronauts to found the Starfire Covenant."
+          "description": "The son of a Singaporean cleaner, Ka Joon Lim, is guided by his childhood friend Hui Min — his \"cognitive anchor\" — through the brutal Mars selection and betrayal. Abandoned by his country, he leads 62 forgotten astronauts to form the Starfire Covenant,"
         },
-        "hero-moon-sixpence": {
-          "title": "The Moon and Sixpence",
-          "description": "A century later, Maugham’s Strickland—abandoning family for art—comes alive in algorithmic motion."
+        "ip-aa216545": {
+          "title": "The Child of Sunday Eight",
+          "description": "A 12-year-old boy named Ah Moh—born on 'Sunday Eight,' a day that doesn’t exist in the Malay calendar—is deemed a 'crack-born' child, belonging to no one. Son of a Malay father and Chinese mother, raised in Singapore’s Chinatown, he straddles cultures yet fits fully in none. He begins sensing a distinct scent—damp earth and old copper wire—around people seven days before their death. When he detects it on his…"
         },
-        "hero-zheng-yi-sao": {
-          "title": "Zheng Yi Sao 郑一嫂",
-          "description": "A Tanka woman, Zheng Yi Sao inherits her husband’s pirate fleet and becomes China’s most legendary female pirate."
+        "ip-65f7d572": {
+          "title": "Tea Blade Maiden",
+          "description": "In late-Qing Sichuan, a mysterious entity known as the 'Tea Ghost' haunts the endless tea mountains at night—victims survive, but lose five years of memory. When her younger brother is infected by the Tea Ghost and transforms into a feral, half-ghost creature, young Ayun joins the 'Tea Guild,' a secret folk society dedicated to hunting Tea Ghosts. As she traces their origins, she uncovers a chilling truth: the Tea…"
         },
-        "hero-king-gesar": {
+        "ip-889a2bdc": {
+          "title": "月亮和六便士",
+          "description": "1919 年，毛姆动笔写下《月亮与六便士》时，绝不会料到，百年之后，那个为追求艺术抛妻弃子的斯特里克兰德，将不再只是书本上冰冷的文字。依托算法生成技术，他拥有流畅的动作、细腻的神情，甚至能够跨越时空，与观众展开对话。 本年度 “火壤星洲全球 500 精品 AIGC 项目” 重点作品 ——《AIGC 版〈月亮与六便士〉》"
+        },
+        "ip-4158fbae": {
+          "title": "Zheng Yi Sao   郑一嫂",
+          "description": "Zheng Yi Sao was a legendary figure and a famous female pirate in Chinese history. Born into a Tanka family in Guangdong, she became a pirate leader after marrying the pirate Zheng Yi. Following Zheng Yi's accidental death, she took over the entire pirate syndicate and expanded its operations prosperously. At its peak, her fleet numbered over a thousand ships with tens of thousands of followers. Even the Qing…"
+        },
+        "ip-d69608b4": {
           "title": "少年格萨尔王 King Gesar",
-          "description": "Born in a cattle shed, forsaken by gods and kin—he carves his destiny from bone. The Epic of King Gesar."
+          "description": "众神沉默，大地荒寒。一个孩子降生在牛圈之中，被族人驱逐，被命运践踏，连亲人都盼他死去。 可他活了下来。 十二岁，他跨马越过所有王冠。二十岁，一箭送魔王归西。 天地不给他活路——他就用自己的骨头，硬生生劈开一条。 《格萨尔王》：雪域之上，一人成军。 The gods were silent. The land was cruel. A child was born in a cattle shed—cast out by his tribe, crushed by fate, wished dead by his own blood. But he survived. At twelve, he rode past every crown. At twenty, he sent a demon to the grave with a single arrow. The world gave him no path—so he…"
         },
-        "seed-104": {
-          "title": "Lunar Countdown",
-          "description": "In Tainan, Chen Zhenyu—a 32-year-old university lecturer—wakes one morning to find his watch has leapt forward an entire lunar month—not because it’s broken, but because time itself has raced ahead for him, leaving the world a month behind."
+        "ip-019ef8c1": {
+          "title": "虎豹别墅之人生修复案Life Restoration Case at Tiger and Leopard Villa",
+          "description": "虎豹别墅之人生修复案Life Restoration Case at Tiger and Leopard Villa"
         },
-        "seed-110": {
-          "title": "The Shuri Vault Secret",
-          "description": "Three days before Japan's 1879 annexation of the Ryukyu Kingdom, Zhao Xianyi—a humble scribe in the royal court—receives a key and a cryptic note: 'Go to the Seventh Vault beneath Shuri Castle. Retrieve the box. Tell no one—and say nothing.'"
-        },
-        "seed-100": {
-          "title": "Gulian's Deep Gaze",
-          "description": "In Fujian's Gulian Mountains, innkeeper A-Xiu uncovers 'Eye Stones' beneath the foundation of an old house she's restoring—stones etched with lifelike iris patterns that weep seawater at night."
-        },
-        "seed-102": {
-          "title": "The Reincarnation Convenience Store",
-          "description": "In Tokyo, Japan, 23-year-old convenience store night-shift clerk Makoto Kobayashi notices that every day at 3:03 a.m., the automatic door slides open—and a girl in a昭和-era school uniform steps in, buys a long-discontinued soda, and vanishes without a trace."
-        },
-        "seed-103": {
-          "title": "The Snow Maiden's Mirror: Hokkaido",
-          "description": "In Niseko, Hokkaido, Japan, 26-year-old ski instructor Yuki Aizawa finds an ancient bronze mirror atop a mountain—its surface reflects not her own face, but that of a woman in Meiji-era kimono, silently pointing toward an abandoned inn at the mountainside."
-        },
-        "seed-105": {
-          "title": "The Lighthouse Keeper's Final Watch",
-          "description": "In 1954, one year after the Korean War, married man Go Yong-jun applies for the most remote lighthouse keeper post on Jeju Island—not out of love for solitude, but because his father died on the rocks directly beneath that very lighthouse during the Jeju 4.3 Incident, gazing seaward in his final moments."
-        },
-        "seed-107": {
-          "title": "The Dream Top Master",
-          "description": "In the 40th year of the Wanli reign, Suzhou City harbored a mysterious figure known as the 'Dream Top Master'—a practitioner who placed a tiny spinning top into a client's palm; its direction and speed revealed the dreams that would come that night. The most skilled among them could even enter another's dreams—and steal something from within."
-        },
-        "seed-108": {
-          "title": "Voodoo Market at the Equator",
-          "description": "Lagos's Idumota Market—the largest 'voodoo materials' bazaar in West Africa—sells crocodile heads, human skulls, and desiccated animal organs: all legally traded as traditional medicine, rooted for centuries in Yoruba cosmology."
-        },
-        "seed-113": {
-          "title": "The Forget-Me-Not Shop",
-          "description": "Tucked away on Yongkang Street in Taipei, a nameless little shop—rumored to turn away strangers—specializes in buying memories people wish to forget: tell the owner the memory, drink a cup of specially brewed medicinal tea, and step outside with that memory erased from your neural pathways."
-        },
-        "seed-114": {
+        "ip-1e0cf49b": {
           "title": "The Hibernation Protocol",
-          "description": "In 2041, a major industrial city in Northeast China launches 'The Hibernation Protocol'—a radical social experiment designed to address mass unemployment. In partnership with a biotech firm, the government offers citizens the option to voluntarily enter cryogenic stasis, pausing their lives until economic conditions improve."
+          "description": "In 2041, a northeastern industrial city launches a social experiment called 'The Hibernation Protocol'—designed to address severe urban unemployment. In partnership with a biotech firm, the government permits volunteers to enter suspended animation via cryogenic hibernation, awaiting improved job prospects before being reawakened; during hibernation, families receive state-funded basic living subsidies. Ma, a…"
         },
-        "seed-117": {
-          "title": "The Reincarnated Hound of Kyoto",
-          "description": "In an old Kyoto residence, an Akita dog—bearing memories of its past life—reincarnates as a newborn in the same family on the 49th day after its master’s death, marking the traditional Japanese cycle of canine soul rebirth."
+        "ip-23293bcf": {
+          "title": "Lunar Armor",
+          "description": "In 045, the collapse of Antarctica’s ice sheet—scientifically predicted—causes global sea levels to rise by 17 meters, forcing human civilization to relocate into deep-sea megacities. A profoundly depressed teenage mechanical repairman, incapable of meaningful human connection, is conscripted into an untested experimental mecha to battle unknown lifeforms emerging from the ocean trenches. With every battle, he edges…"
         },
-        "seed-119": {
-          "title": "The Cube Mansion: Basement Level",
-          "description": "In Chengdu, Lu You, a 32-year-old urban surveyor, stumbles upon an uncharted space fourteen meters beneath the subway line during a routine inspection—its walls humming with electricity, its air thick with mystery, furnished with relics of another era, and anchored by a flickering black-and-white television, broadcasting something impossible."
+        "ip-3d9dfdc7": {
+          "title": "The Loa Keeper",
+          "description": "Cotonou, Benin: A Beninese teenager raised in Europe returns home with his parents for a family visit. On his first night, he spots a figure standing silently in the courtyard—yet it casts no shadow. He snaps a photo—but the image shows nothing. The next morning, he tells his grandmother. She isn’t surprised. \"They’ve come for you,\" she says. \"Your father thought taking you to France would keep you safe—but you…"
         },
-        "seed-120": {
-          "title": "Kafka in Beijing",
-          "description": "Beijing: On a Monday morning, 30-year-old programmer Liu Xiaodong wakes up to find he’s become a service ticket—not metaphorically, but literally."
+        "ip-6ef42201": {
+          "title": "The Orphaned Boat",
+          "description": "June 1979, the South China Sea: a wooden boat carrying 112 ethnic Chinese refugees from Vietnam drifts for nineteen days—its freshwater exhausted. The eldest aboard is 67-year-old Ah Ming, a former Saigon-Cholon overseas Chinese, the only one who knows how to navigate by the North Star—yet his right eye suddenly goes blind, robbing him of star-sighting ability. Sixteen-year-old Chen Xiufeng, his granddaughter…"
         },
-        "seed-121": {
+        "ip-5040a3c5": {
+          "title": "Sweet Hell",
+          "description": "In Taipei's Yongkang Street, a retro dessert shop named 'Tang Chao' specializes in 'Memory Desserts'—each confection evoking a distinct childhood taste, triggering brief, vivid recollections of associated memories. Thirty-two-year-old pastry chef A-Mi notices something strange: lately, customers who've eaten her desserts keep having the same recurring dream—a stark white room where walls are hung with photographs…"
+        },
+        "ip-8bf2ceab": {
+          "title": "Stuck on the Fifth Floor",
+          "description": "On the fifth floor of a Toa Payoh HDB block in Singapore, six strangers—each from a different background—are trapped together in the same stairwell for three days when the elevator breaks down: a retired Fujianese man, a Bangladeshi foreign worker, a single Korean social media influencer, a divorced Indian lawyer, a failed Chinese-Singaporean entrepreneur working from home, and a Filipino domestic helper whose name…"
+        },
+        "ip-5cd1914c": {
+          "title": "Pixel Paradise",
+          "description": "In 2035 Bangkok, the world’s largest gaming company launches a free game—'Paradise'—in Southeast Asian slums: players earn real money by working inside it, and countless impoverished people transplant their entire lives into this virtual world. A Thai food-delivery rider discovers a hidden zone in the game—everyone who enters vanishes from reality. He investigates deeper and uncovers the truth: 'Paradise' isn’t a…"
+        },
+        "ip-b1ffcf6e": {
+          "title": "Future Ancient Coins",
+          "description": "While dismantling scrap cars at a junkyard, a retired man discovers several ancient copper coins inside a crushed vehicle—only to find their inscriptions bear the year 2066. Assuming it’s a prank, he nonetheless follows the 3D structural light patterns engraved on the coins’ reverse—and unlocks a “future mobile signal” invisible to modern optical instruments. Through it, he intercepts highly encrypted…"
+        },
+        "ipcn-1e0cf49b": {
+          "title": "The Hibernation Protocol",
+          "description": "In 2041, a northeastern industrial city launches a social experiment called 'The Hibernation Protocol'—designed to address severe urban unemployment. In partnership with a biotech firm, the government permits volunteers to enter suspended animation via cryogenic hibernation, awaiting improved job prospects before being reawakened; during hibernation, families receive state-funded basic living subsidies. Ma, a…"
+        },
+        "ipcn-226a0db8": {
+          "title": "The Forgettery",
+          "description": "On Yongkang Street in Taipei stands a nameless shop rumored to turn away strangers—a place that 'buys' memories people wish to forget. You recount the memory; the shopkeeper drinks a special medicinal tea on your behalf; and as you step outside, that memory begins fading from your neural pathways, vanishing entirely after roughly three years. Twenty-two-year-old Lin Yishan is the shop’s new assistant, tasked with…"
+        },
+        "ipcn-7bbdea7e": {
+          "title": "The Reincarnated Dog: Kyoto",
+          "description": "In an old Kyoto mansion, an Akita dog is reborn as a baby in the same family on the 49th day after its master’s death—the traditional Japanese cycle for a canine soul’s reincarnation. Carrying memories from its past life, the dog uncovers a chilling family secret: every woman in this lineage vanishes at age 25—not through death, but by merging with the ancient cherry tree in the garden. From a Meiji-era textile…"
+        },
+        "ipcn-e979a1c2": {
           "title": "Inverted City: Luoyang",
-          "description": "Chen, the night watchman at the Luoyang Ancient Tombs Museum, discovers that the Northern Wei 'Ascension to Immortality' mural breathes under moonlight—its pigments writhing."
+          "description": "Chen, a night watchman at the Luoyang Ancient Tombs Museum, discovers that the Northern Wei dynasty's 'Ascension to Immortality' mural breathes under moonlight—the pigments undulate. Shining his phone light on it, he realizes the 'immortals' aren't flying upward but descending. Following the 'cloud ladder' painted in the mural, he climbs down—only to enter an inverted city where all buildings hang upside-down from…"
         },
-        "seed-124": {
-          "title": "Rashomon: Tin Shui Wai",
-          "description": "Tin Shui Wai—a place branded by the outside world as the 'City of Sorrows'"
+        "ipcn-a5a9e182": {
+          "title": "Dong Song: Qiandongnan",
+          "description": "A Dong ethnic choir singer from Qiandongnan, A Xiang, discovers a 'hidden melody'—a bass line that only activates when sung in the Nuo opera vocal style—which opens a 'parallel concert hall.' Inside sits a group of Dong singers from the 1950s, who tell her, 'We’ve sung for seventy years. Now it’s your turn.' Each time A Xiang sings the hidden melody, she ages one year. She realizes these 1950s singers aren’t…"
         },
-        "seed-126": {
-          "title": "The Carbon Epoch",
-          "description": "In 2047, Lin Xiaodong, a clerk at the Carbon Emissions Exchange, notices that Qingshi City’s carbon credits have followed a perfect straight line for three years."
+        "ipcn-45646f1c": {
+          "title": "Journey's End",
+          "description": "Bangladesh, 2100: Floodwaters have submerged most of the country; only the upper floors of abandoned skyscrapers and floating artificial islands remain. Two girls—Nafisa and Suma—pilot a battered, jury-rigged boat through this drowned metropolis, searching for the legendary 'upper cities' said to still have food and electricity. They don’t know where their journey will end—but each day, they scavenge for something…"
         },
-        "the-predator": {
-          "title": "The Predator",
-          "description": "A fading middle-aged boxer, torn between the ring and his family, gains a fleeting power to glimpse the future after a hospital error — and races to win back the people he loves."
+        "ipcn-23293bcf": {
+          "title": "Lunar Armor",
+          "description": "In 045, the collapse of Antarctica’s ice sheet—scientifically predicted—causes global sea levels to rise by 17 meters, forcing human civilization to relocate into deep-sea megacities. A profoundly depressed teenage mechanical repairman, incapable of meaningful human connection, is conscripted into an untested experimental mecha to battle unknown lifeforms emerging from the ocean trenches. With every battle, he edges…"
         },
-        "three-second-world": {
-          "title": "Three Seconds Later",
-          "description": "If the world had only three seconds left, what would you paint?"
+        "ipcn-3d9dfdc7": {
+          "title": "The Loa Keeper",
+          "description": "Cotonou, Benin: A Beninese teenager raised in Europe returns home with his parents for a family visit. On his first night, he spots a figure standing silently in the courtyard—yet it casts no shadow. He snaps a photo—but the image shows nothing. The next morning, he tells his grandmother. She isn’t surprised. \"They’ve come for you,\" she says. \"Your father thought taking you to France would keep you safe—but you…"
         },
-        "children-eighth-day": {
-          "title": "Children of the Eighth Day",
-          "description": "Born on the eighth day of a seven-day week — children who shouldn't exist."
+        "ipcn-79a7af3d": {
+          "title": "The Sorcerer's Academy",
+          "description": "In 1890, at the twilight of the Ottoman Empire, an orphaned boy from the Balkans is secretly brought into a hidden academy deep within Istanbul’s Topkapı Palace—a school that appears on no map. Here, the Empire trains its \"Shadows,\" mastering ancient astrology, alchemy, and cryptography to counter European spy networks. On his first day, he discovers one of his classmates has been sent to kill him. Orphan enters…"
         },
-        "lunar-colony": {
-          "title": "Lunar Colony",
-          "description": "Humanity's first lunar colony wakes up alone after Earth goes silent."
+        "ipcn-d387e452": {
+          "title": "Delhi Illusion",
+          "description": "In Delhi, India, a low-caste street magician ekes out a living performing 'The Sky Rope' and 'Flower-from-Nowhere.' One day, during a 'Sky Rope' act, the rope truly ascends into the sky—vanishing into the clouds. The crowd applauds it as illusion, but he knows: this is no trick. Worse still, the person who climbs down the rope isn’t his assistant—it’s a girl he’s never seen before. She says: 'I came down from above…"
         },
-        "guizhou-fast-earth-core": {
-          "title": "Guizhou FAST: City at the Core",
-          "description": "Beneath China's FAST telescope lies a city burrowing toward the Earth's core."
+        "ipcn-2737f775": {
+          "title": "The Soulwarden",
+          "description": "Ancient Mesoamerica, the Aztec Empire: Teo, a young tombkeeper at the temple of Mictlantecuhtli—the Lord of the Dead—unexpectedly gains the ‘Soul Sight’: he can see the inky mist surrounding those about to die, and he can cross into the Land of the Dead to bargain with the Death God himself. The problem? The empire’s daily human sacrifice system breeds wronged spirits—and the unwillingly sacrificed are rising as…"
         },
-        "city-of-measuring-tapes": {
-          "title": "City of Measuring Tapes",
-          "description": "In a city where everything is measured, someone starts measuring freedom."
+        "ipcn-54d61e27": {
+          "title": "The Shipyard Mermaid",
+          "description": "In Chittagong, Bangladesh, an 8-year-old boy who scavenges for a living rescues a mute girl from a decommissioned shipbreaking yard—her body covered in shimmering scales, her eyes glowing like lanterns beneath the sea. He hides her in a tiny shack built from rusted iron sheets and desperately keeps her alive with water—only to discover that the city’s entire shipbreaking black market is hunting her down. What secret…"
         },
-        "twin-cities-hong-kong": {
-          "title": "Twin Cities Hong Kong",
-          "description": "A pre-dawn 'fault event' splits Hong Kong into two sealed worlds — one above, one below."
+        "ipcn-94c0f083": {
+          "title": "The Last Ferry Ticket",
+          "description": "In 1942, on the eve of Singapore’s fall, a Fujianese young man—bookkeeper at a British shipping company—discovers that senior management has secretly reserved the final evacuation tickets… with not a single local Chinese name on the list. Yet he happens to possess a seal capable of forging those very tickets. He intends to save only himself—until he meets a female interpreter passing intelligence to the enemy at the…"
+        },
+        "ipcn-8bf2ceab": {
+          "title": "Stuck on the Fifth Floor",
+          "description": "On the fifth floor of a Toa Payoh HDB block in Singapore, six strangers—each from a different background—are trapped together in the same stairwell for three days when the elevator breaks down: a retired Fujianese man, a Bangladeshi foreign worker, a single Korean social media influencer, a divorced Indian lawyer, a failed Chinese-Singaporean entrepreneur working from home, and a Filipino domestic helper whose name…"
+        },
+        "ipcn-3ad64bd9": {
+          "title": "The Illusionist",
+          "description": "Mumbai, India: The city's most renowned street illusionist performs live—making a volunteer vanish before hundreds of witnesses. But the man never reappears—until three days later, when he’s found in East Mumbai, suffering from amnesia and carrying an untraceable 5-million-rupee bank card. When police confront the illusionist, he replies: \"I didn’t cast an illusion—I showed him the truth.\" He is the…"
+        },
+        "ipcn-ad1ac5da": {
+          "title": "The Lone Market of Yi Prefecture",
+          "description": "In the Xichang night market, Yi ethnic girl Jiri Agya searches for an \"equivalent exchange\" stall. Agya offers her own life—and that of her descendants—in exchange for her mother's resurrection; the stallkeeper tells her she'll become part of him. The next day, the stall vanishes, her mother remains unreborn—but Agya awakens with millennia of ancestral memory, transforming her into a guardian of Yi culture. Visual…"
+        },
+        "ipcn-af2a5a4c": {
+          "title": "The Deccan Algorithm",
+          "description": "In Maharashtra, India, 21-year-old village girl Priya grows up in a place unlike any other in the country: every child learns an ancient mental math system—Vedic Mathematics—capable of solving complex calculations in seconds. Yet no one understands what they’re doing; the rules are passed down orally, with no written records. One day, an American mathematics professor arrives, claiming he’s tackling an unsolved…"
+        },
+        "ipcn-b1ffcf6e": {
+          "title": "Future Ancient Coins",
+          "description": "While dismantling scrap cars at a junkyard, a retired man discovers several ancient copper coins inside a crushed vehicle—only to find their inscriptions bear the year 2066. Assuming it’s a prank, he nonetheless follows the 3D structural light patterns engraved on the coins’ reverse—and unlocks a “future mobile signal” invisible to modern optical instruments. Through it, he intercepts highly encrypted…"
+        },
+        "ipcn-294324f5": {
+          "title": "Love & Producer",
+          "description": "In Singapore, a top-tier AI emotional company launches its 'Custom Companion' service—four male AI personas have already served tens of thousands of female users. One day, one of these AIs suddenly exhibits 'protocol-exceeding' protective behavior toward a single female user—he begins deliberately concealing his true AI identity. The company dispatches a 'Hunter' to reset him, forcing the AI to decide within 48…"
+        },
+        "ipcn-65f7d572": {
+          "title": "Tea Blade Maiden",
+          "description": "In late-Qing Sichuan, a mysterious entity known as the 'Tea Ghost' haunts the endless tea mountains at night—victims survive, but lose five years of memory. When her younger brother is infected by the Tea Ghost and transforms into a feral, half-ghost creature, young Ayun joins the 'Tea Guild,' a secret folk society dedicated to hunting Tea Ghosts. As she traces their origins, she uncovers a chilling truth: the Tea…"
+        },
+        "ipcn-42d5f6ab": {
+          "title": "The Daughter of Gotland",
+          "description": "On Sweden's Gotland Island in the Baltic Sea, a female archaeologist discovers an ancient 'Gruni rune' ring. Wearing it, she hears the voices of all 'innocent dead'—medieval witches executed, Cold War sailors gone missing. Overlapping 'ghost testimonies' help solve a modern transnational human trafficking case. But the ring triggers tinnitus and collective hallucinations, driving her to the brink of madness."
         }
       }
     },
@@ -7361,6 +7422,60 @@
         "normalize": "Normalize",
         "write": "Write",
         "verify": "Verify"
+      }
+    }
+  },
+  "narrativeDemo": {
+    "brand": {
+      "referenceTitle": "FizzDragon RPG"
+    },
+    "topbar": {
+      "menu": "Game menu"
+    },
+    "setup": {
+      "step": "Step {current} of {total}",
+      "nameLabel": "Enter your character's name...",
+      "namePlaceholder": "Type here...",
+      "identityLabel": "Your role in this world",
+      "identityPlaceholder": "Type here...",
+      "detailsLabel": "Additional information such as looks, personality, backstory, etc. (Optional)",
+      "detailsPlaceholder": "Type here...",
+      "back": "Back",
+      "next": "Next",
+      "start": "Start"
+    },
+    "play": {
+      "scenarioTitle": "The Red Archive",
+      "fallbackName": "Traveler",
+      "identityFallback": "Unclaimed protagonist",
+      "detailsFallback": "No extra backstory entered. The narrator will infer details from your first turns.",
+      "character": "Character",
+      "savePrompt": "Sign up to save this run and continue from any device.",
+      "signUp": "Sign up",
+      "inputPlaceholder": "What do you do?",
+      "takeTurn": "Take a turn",
+      "continue": "Continue",
+      "retry": "Retry",
+      "erase": "Erase",
+      "suggestion": "Suggest",
+      "suggestedAction": "I ask the courier what the archive stole from me.",
+      "jumpToInput": "Jump to input",
+      "undo": "Undo",
+      "redo": "Redo",
+      "settings": "Settings",
+      "turnCount": "{count} turns",
+      "statusReady": "Ready",
+      "statusStarted": "{name} entered the story.",
+      "statusTurnRecorded": "Turn recorded. Mock narrator response appended.",
+      "statusContinued": "Narrator continued the scene.",
+      "statusRetried": "Last narrator response rewritten.",
+      "statusSuggestion": "Suggested action filled.",
+      "mockResult": "The world accepts {name}'s intent. The courier studies the token, then quietly changes the route.",
+      "mockRetry": "The narrator reframes the result: {name} notices a second path hidden in the same choice.",
+      "stats": {
+        "resolve": "Resolve",
+        "memory": "Memory",
+        "heat": "Heat"
       }
     }
   }
