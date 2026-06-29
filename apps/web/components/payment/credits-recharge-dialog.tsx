@@ -13,6 +13,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { backendApi, ApiRequestError } from "@/src/lib/api";
+import { axonBeginCheckout } from "@/src/lib/axon";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { siteConfig } from "@/src/config/site";
@@ -157,6 +158,25 @@ export function CreditsRechargeDialog({
 
   const handlePay = useCallback(async () => {
     if (!selectedPackage) return;
+    // Fire the AppLovin `begin_checkout` conversion at pay initiation (before the
+    // WeChat QR / Airwallex redirect). CN region stores price ×100 → divide by
+    // 100 (mirrors `displayPrice`). No-op off .com (axon.ts).
+    const checkoutValue =
+      siteConfig.region === "cn"
+        ? Number(selectedPackage.discountPrice) / 100
+        : Number(selectedPackage.discountPrice);
+    axonBeginCheckout({
+      items: [
+        {
+          item_id: String(selectedPackage.id),
+          item_name: `${selectedPackage.integralAmount} ${kind} credits`,
+          price: checkoutValue,
+          quantity: 1,
+        },
+      ],
+      currency,
+      value: checkoutValue,
+    });
     setPaying(true);
     try {
       if (siteConfig.region === "cn") {
@@ -224,7 +244,16 @@ export function CreditsRechargeDialog({
     } finally {
       setPaying(false);
     }
-  }, [selectedPackage, onSuccess, config.productType, config.wechatType, t, locale]);
+  }, [
+    selectedPackage,
+    onSuccess,
+    config.productType,
+    config.wechatType,
+    t,
+    locale,
+    currency,
+    kind,
+  ]);
 
   const handleAlreadyPaid = useCallback(async () => {
     if (!orderNo) return;
