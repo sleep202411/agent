@@ -30,6 +30,7 @@ import type {
   ReferralDashboardDTO,
   ReferralMilestoneDTO,
   ReferralRewardDTO,
+  ReferralRewardItemDTO,
   UpdateReferralMilestoneInput,
   UpdateReferralProgramInput,
 } from './dto';
@@ -90,7 +91,11 @@ export class ReferralsService {
     const program = await this.prisma.referralProgram.findUnique({
       where: { key: PROGRAM_KEY },
       include: {
-        milestones: { where: { archivedAt: null }, orderBy: { rank: 'asc' } },
+        milestones: {
+          where: { archivedAt: null },
+          orderBy: { rank: 'asc' },
+          include: { items: { orderBy: { rank: 'asc' } } },
+        },
       },
     });
     if (!program || !program.enabled) return EMPTY_DASHBOARD;
@@ -113,6 +118,7 @@ export class ReferralsService {
         where: { userId },
         orderBy: { createdAt: 'desc' },
         take: 50,
+        include: { items: { orderBy: { rank: 'asc' } } },
       }),
     ]);
 
@@ -139,6 +145,7 @@ export class ReferralsService {
         amountMinor: m.rewardMinor.toString(),
         days: m.payoutDays,
         currency: m.payoutType === 'cash' ? program.currency : null,
+        items: m.items.length ? m.items.map(mapBundleItem) : undefined,
       };
     });
 
@@ -206,16 +213,31 @@ export class ReferralsService {
       where: { key: PROGRAM_KEY },
       select: { id: true },
     });
+    // The bundle (items) is the source of truth; mirror its primary item into
+    // the legacy payout columns so single-reward clients (shipped mobile) work.
+    const items = resolveTierItems(input);
+    if (!items?.length) {
+      throw new BadRequestException('Reward bundle is required');
+    }
+    const legacy = legacyColumnsFromItems(items);
     await this.prisma.referralMilestoneConfig.create({
       data: {
         programId: program.id,
         inviteeThreshold: input.inviteeThreshold,
-        payoutType: input.payoutType,
-        rewardMinor: BigInt(input.rewardMinor),
-        payoutDays: input.payoutDays,
+        payoutType: legacy.payoutType,
+        rewardMinor: legacy.rewardMinor,
+        payoutDays: legacy.payoutDays,
         title: input.title,
         detail: input.detail,
         rank: input.rank,
+        items: {
+          create: items.map((it) => ({
+            payoutType: it.payoutType,
+            amountMinor: it.amountMinor,
+            days: it.days,
+            rank: it.rank,
+          })),
+        },
       },
     });
     return this.loadAdminConfig();
@@ -226,14 +248,27 @@ export class ReferralsService {
     if (input.inviteeThreshold !== undefined) {
       data.inviteeThreshold = input.inviteeThreshold;
     }
-    if (input.payoutType !== undefined) data.payoutType = input.payoutType;
-    if (input.rewardMinor !== undefined) {
-      data.rewardMinor = BigInt(input.rewardMinor);
-    }
-    if (input.payoutDays !== undefined) data.payoutDays = input.payoutDays;
     if (input.title !== undefined) data.title = input.title;
     if (input.detail !== undefined) data.detail = input.detail;
     if (input.rank !== undefined) data.rank = input.rank;
+    // When the reward changed (new rewardItems[] or legacy payout fields),
+    // REPLACE the bundle and re-mirror the legacy payout columns from items[0].
+    const items = resolveTierItems(input);
+    if (items?.length) {
+      const legacy = legacyColumnsFromItems(items);
+      data.payoutType = legacy.payoutType;
+      data.rewardMinor = legacy.rewardMinor;
+      data.payoutDays = legacy.payoutDays;
+      data.items = {
+        deleteMany: {},
+        create: items.map((it) => ({
+          payoutType: it.payoutType,
+          amountMinor: it.amountMinor,
+          days: it.days,
+          rank: it.rank,
+        })),
+      };
+    }
     await this.prisma.referralMilestoneConfig.update({ where: { id }, data });
     return this.loadAdminConfig();
   }
@@ -249,7 +284,12 @@ export class ReferralsService {
   private async loadAdminConfig() {
     const program = await this.prisma.referralProgram.findUnique({
       where: { key: PROGRAM_KEY },
-      include: { milestones: { orderBy: { rank: 'asc' } } },
+      include: {
+        milestones: {
+          orderBy: { rank: 'asc' },
+          include: { items: { orderBy: { rank: 'asc' } } },
+        },
+      },
     });
     if (!program) return null;
     return {
@@ -274,6 +314,12 @@ export class ReferralsService {
         detail: m.detail,
         rank: m.rank,
         archivedAt: m.archivedAt ? m.archivedAt.toISOString() : null,
+        // The reward bundle the admin edits (one tier → many items).
+        rewardItems: m.items.map((it) => ({
+          kind: it.payoutType,
+          amountMinor: it.amountMinor.toString(),
+          days: it.days,
+        })),
       })),
     };
   }
@@ -317,7 +363,12 @@ export class ReferralsService {
 
     const program = await this.prisma.referralProgram.findUnique({
       where: { key: attribution.programKey },
-      include: { milestones: { where: { archivedAt: null } } },
+      include: {
+        milestones: {
+          where: { archivedAt: null },
+          include: { items: { orderBy: { rank: 'asc' } } },
+        },
+      },
     });
     if (!program || !program.enabled) return;
     // This path qualifies on first purchase; 'signup' programs qualify at claim.
@@ -372,6 +423,18 @@ export class ReferralsService {
               subtitle: 'A friend joined and made their first purchase',
               attributionId: attribution.id,
               availableAt,
+              // Snapshot as a one-item bundle so the grant path is uniform.
+              items: {
+                create: [
+                  {
+                    payoutType: 'cash',
+                    amountMinor: program.rewardPerReferralMinor,
+                    days: 0,
+                    currency: program.currency,
+                    rank: 0,
+                  },
+                ],
+              },
             },
           });
         }
@@ -390,6 +453,17 @@ export class ReferralsService {
             title: program.inviteeBenefitTitle ?? 'Welcome bonus',
             subtitle: program.inviteeBenefitDetail ?? undefined,
             availableAt,
+            items: {
+              create: [
+                {
+                  payoutType: 'cash',
+                  amountMinor: program.inviteeBenefitMinor,
+                  days: 0,
+                  currency: program.currency,
+                  rank: 0,
+                },
+              ],
+            },
           },
         });
       }
@@ -436,6 +510,53 @@ export class ReferralsService {
             data: newTiers,
             skipDuplicates: true,
           });
+          // Snapshot each tier's bundle onto its freshly-created reward row.
+          // Idempotent: only rewards without items yet get them, so a re-accrual
+          // (where skipDuplicates skipped the reward) won't double-insert.
+          const tierById = new Map(program.milestones.map((m) => [m.id, m]));
+          const created = await tx.referralReward.findMany({
+            where: {
+              userId: attribution.referrerUserId,
+              kind: 'milestone',
+              milestoneId: { in: newTiers.map((t) => t.milestoneId) },
+            },
+            select: {
+              id: true,
+              milestoneId: true,
+              _count: { select: { items: true } },
+            },
+          });
+          const itemRows: Prisma.ReferralRewardItemCreateManyInput[] = [];
+          for (const r of created) {
+            if (r._count.items > 0 || !r.milestoneId) continue;
+            const tier = tierById.get(r.milestoneId);
+            if (!tier) continue;
+            const items: BundleItem[] = tier.items.length
+              ? tier.items.map((it) => ({
+                  payoutType: it.payoutType as BundleItemKind,
+                  amountMinor: it.amountMinor,
+                  days: it.days,
+                  rank: it.rank,
+                }))
+              : expandLegacyToItems(
+                  tier.payoutType,
+                  tier.rewardMinor,
+                  tier.payoutDays,
+                );
+            for (const it of items) {
+              itemRows.push({
+                rewardId: r.id,
+                payoutType: it.payoutType,
+                amountMinor: it.amountMinor,
+                days: it.days,
+                currency: it.payoutType === 'cash' ? program.currency : null,
+                rank: it.rank,
+              });
+            }
+          }
+          if (itemRows.length) {
+            await tx.referralRewardItem.createMany({ data: itemRows });
+          }
         }
       }
     });
@@ -535,7 +656,12 @@ export class ReferralsService {
     return { status: 'paid_out' };
   }
 
-  /** Dispatch the actual grant by payout type. Each path is idempotent. */
+  /**
+   * Grant a reward by iterating its bundle items (each a single payout), with
+   * per-item idempotency (item.grantedAt) so a re-claim — or a crash partway
+   * through a multi-item bundle — only grants what's still pending. A reward
+   * with no items (legacy, pre-backfill) falls back to the flat payout columns.
+   */
   private async grantReward(reward: {
     id: string;
     userId: string;
@@ -544,49 +670,82 @@ export class ReferralsService {
     days: number;
     currency: string | null;
   }): Promise<void> {
-    switch (reward.payoutType) {
+    const items = await this.prisma.referralRewardItem.findMany({
+      where: { rewardId: reward.id },
+      orderBy: { rank: 'asc' },
+    });
+    if (items.length === 0) {
+      await this.grantSingle(
+        reward.userId,
+        reward.payoutType,
+        reward.amountMinor,
+        reward.days,
+        reward.currency,
+        reward.id,
+      );
+      return;
+    }
+    for (const item of items) {
+      if (item.grantedAt) continue;
+      await this.grantSingle(
+        reward.userId,
+        item.payoutType,
+        item.amountMinor,
+        item.days,
+        item.currency ?? reward.currency,
+        `${reward.id}:${item.id}`,
+      );
+      await this.prisma.referralRewardItem.updateMany({
+        where: { id: item.id, grantedAt: null },
+        data: { grantedAt: new Date() },
+      });
+    }
+  }
+
+  /** Grant ONE payout (single kind), idempotent on `idemId`. */
+  private async grantSingle(
+    userId: string,
+    payoutType: string,
+    amountMinor: bigint,
+    days: number,
+    currency: string | null,
+    idemId: string,
+  ): Promise<void> {
+    switch (payoutType) {
       case 'membership_compute':
-        await this.grantMembership(
-          reward.userId,
-          COMPUTE_PLAN_KEY,
-          reward.days,
-          reward.id,
-        );
+        await this.grantMembership(userId, COMPUTE_PLAN_KEY, days, idemId);
         break;
       case 'membership_community':
         await this.grantMembership(
-          reward.userId,
+          userId,
           COMMUNITY_MEMBERSHIP_PLAN_KEY,
-          reward.days,
-          reward.id,
+          days,
+          idemId,
         );
         break;
       case 'membership_both':
+        // Items never carry 'both'; only a legacy flat reward reaches here.
         await this.grantMembership(
-          reward.userId,
+          userId,
           COMPUTE_PLAN_KEY,
-          reward.days,
-          reward.id,
+          days,
+          `${idemId}:compute`,
         );
         await this.grantMembership(
-          reward.userId,
+          userId,
           COMMUNITY_MEMBERSHIP_PLAN_KEY,
-          reward.days,
-          reward.id,
+          days,
+          `${idemId}:community`,
         );
         break;
       case 'points_compute':
-        await this.creditComputePoints(
-          reward.userId,
-          reward.amountMinor,
-          reward.id,
-        );
+        await this.creditComputePoints(userId, amountMinor, idemId);
         break;
       case 'points_community':
         await this.creditCommunityPoints(
-          reward.userId,
-          reward.amountMinor,
-          reward.id,
+          userId,
+          amountMinor,
+          idemId,
           WalletBalanceKind.consumable,
         );
         break;
@@ -594,15 +753,15 @@ export class ReferralsService {
         // Cash → the WITHDRAWABLE community_point pool where 积分 ≡ US cent, so
         // ONLY a USD program maps 1:1. Fail loud on any other currency rather
         // than mis-pay real money. (The 提现 cash-out is a separate TODO.)
-        if (reward.currency !== 'USD') {
+        if (currency !== 'USD') {
           throw new BadRequestException(
-            `Cash referral payout is USD-only for now (got ${reward.currency ?? 'null'})`,
+            `Cash referral payout is USD-only for now (got ${currency ?? 'null'})`,
           );
         }
         await this.creditCommunityPoints(
-          reward.userId,
-          reward.amountMinor,
-          reward.id,
+          userId,
+          amountMinor,
+          idemId,
           WalletBalanceKind.withdrawable,
         );
         break;
@@ -804,6 +963,7 @@ function mapReward(r: {
   status: string;
   createdAt: Date;
   availableAt: Date | null;
+  items?: { payoutType: string; amountMinor: bigint; days: number }[];
 }): ReferralRewardDTO {
   return {
     id: r.id,
@@ -819,6 +979,20 @@ function mapReward(r: {
       (!r.availableAt || r.availableAt.getTime() <= Date.now()),
     createdAt: r.createdAt.toISOString(),
     availableAt: r.availableAt ? r.availableAt.toISOString() : null,
+    items: r.items?.length ? r.items.map(mapBundleItem) : undefined,
+  };
+}
+
+/** A bundle item row → its wire DTO (additive `items[]`). */
+function mapBundleItem(it: {
+  payoutType: string;
+  amountMinor: bigint;
+  days: number;
+}): ReferralRewardItemDTO {
+  return {
+    kind: it.payoutType as ReferralRewardItemDTO['kind'],
+    amountMinor: it.amountMinor.toString(),
+    days: it.days,
   };
 }
 
@@ -826,4 +1000,94 @@ function isUniqueViolation(e: unknown): boolean {
   return (
     e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2002'
   );
+}
+
+// ─── Reward bundle helpers ──────────────────────────────────────────────
+
+/** A single payout inside a bundle — never membership_both (that's two items). */
+type BundleItemKind =
+  | 'cash'
+  | 'points_compute'
+  | 'points_community'
+  | 'membership_compute'
+  | 'membership_community';
+
+interface BundleItem {
+  payoutType: BundleItemKind;
+  amountMinor: bigint;
+  days: number;
+  rank: number;
+}
+
+/** Normalize admin input (new `rewardItems[]` OR legacy
+ *  payoutType/rewardMinor/payoutDays) into a bundle. Legacy membership_both →
+ *  two items. Returns null when neither is provided (a partial update that
+ *  doesn't touch rewards). */
+function resolveTierItems(input: {
+  rewardItems?: { kind: BundleItemKind; amountMinor?: number; days?: number }[];
+  payoutType?: string;
+  rewardMinor?: number;
+  payoutDays?: number;
+}): BundleItem[] | null {
+  if (input.rewardItems?.length) {
+    return input.rewardItems.map((it, idx) => ({
+      payoutType: it.kind,
+      amountMinor: BigInt(it.amountMinor ?? 0),
+      days: it.days ?? 0,
+      rank: idx,
+    }));
+  }
+  if (input.payoutType) {
+    return expandLegacyToItems(
+      input.payoutType,
+      BigInt(input.rewardMinor ?? 0),
+      input.payoutDays ?? 0,
+    );
+  }
+  return null;
+}
+
+/** Expand a single legacy payout into bundle items; membership_both → two. */
+function expandLegacyToItems(
+  payoutType: string,
+  amountMinor: bigint,
+  days: number,
+): BundleItem[] {
+  if (payoutType === 'membership_both') {
+    return [
+      { payoutType: 'membership_compute', amountMinor: 0n, days, rank: 0 },
+      { payoutType: 'membership_community', amountMinor: 0n, days, rank: 1 },
+    ];
+  }
+  return [
+    { payoutType: payoutType as BundleItemKind, amountMinor, days, rank: 0 },
+  ];
+}
+
+/** Legacy single-reward columns mirrored from a bundle's PRIMARY item (items[0])
+ *  so the shipped mobile + headline totals keep working. A {compute,community}
+ *  membership pair collapses back to membership_both. */
+function legacyColumnsFromItems(items: BundleItem[]): {
+  payoutType:
+    | 'cash'
+    | 'points_compute'
+    | 'points_community'
+    | 'membership_compute'
+    | 'membership_community'
+    | 'membership_both';
+  rewardMinor: bigint;
+  payoutDays: number;
+} {
+  const kinds = new Set(items.map((i) => i.payoutType));
+  const bothMembership =
+    items.length === 2 &&
+    kinds.has('membership_compute') &&
+    kinds.has('membership_community');
+  const primary = items[0];
+  const isMembership = primary.payoutType.startsWith('membership');
+  return {
+    payoutType: bothMembership ? 'membership_both' : primary.payoutType,
+    rewardMinor: isMembership ? 0n : primary.amountMinor,
+    payoutDays: isMembership ? primary.days : 0,
+  };
 }

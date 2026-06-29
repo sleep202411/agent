@@ -13,15 +13,35 @@ export type PayoutType =
   | "membership_community"
   | "membership_both";
 
+// A single reward inside a tier's bundle — never membership_both (express that
+// as two items: membership_compute + membership_community).
+export type RewardItemKind =
+  | "cash"
+  | "points_compute"
+  | "points_community"
+  | "membership_compute"
+  | "membership_community";
+
+export type RewardItem = {
+  kind: RewardItemKind;
+  /** BigInt string; cash minor OR point count. Number() on submit. */
+  amountMinor: string;
+  /** Membership days (0 for cash/points). */
+  days: number;
+};
+
 export type ReferralQualifyEvent = "signup" | "first_purchase";
 
 export type ReferralMilestoneRow = {
   id: string;
   inviteeThreshold: number;
+  /** Legacy single-reward columns (mirror of the bundle's primary item). */
   payoutType: PayoutType;
   /** BigInt string; parse to Number for the form, send Number() on submit. */
   rewardMinor: string;
   payoutDays: number;
+  /** The full reward bundle (one tier → many items). */
+  rewardItems?: RewardItem[];
   title: string;
   detail: string;
   rank: number;

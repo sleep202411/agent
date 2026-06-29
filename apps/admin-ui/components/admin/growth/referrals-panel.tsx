@@ -18,6 +18,7 @@ import {
   IconPlus,
   IconRefresh,
   IconArchive,
+  IconTrash,
 } from "@tabler/icons-react";
 import { Button } from "@/components/ui/button";
 import { DataTable, type ColumnDef } from "@/components/ui/data-table";
@@ -35,27 +36,33 @@ import {
   stringField,
   toErrorMessage,
 } from "../billing/shared";
-import type { PayoutType, ReferralConfig, ReferralMilestoneRow } from "./referrals-types";
+import type {
+  PayoutType,
+  ReferralConfig,
+  ReferralMilestoneRow,
+  RewardItem,
+  RewardItemKind,
+} from "./referrals-types";
 
 const PAYOUT_TYPE_LABELS: Record<PayoutType, string> = {
   cash: "现金",
   points_compute: "算力积分",
   points_community: "社区积分",
-  membership_compute: "算力会员",
+  membership_compute: "studio 会员",
   membership_community: "社区会员",
-  membership_both: "双会员",
+  membership_both: "studio + 社区会员",
 };
 
-const PAYOUT_TYPES: PayoutType[] = [
-  "cash",
-  "points_compute",
-  "points_community",
+// A reward bundle item is one of the 5 single kinds (membership_both = two items).
+const REWARD_ITEM_KINDS: RewardItemKind[] = [
   "membership_compute",
   "membership_community",
-  "membership_both",
+  "points_compute",
+  "points_community",
+  "cash",
 ];
 
-/** payoutType 走会员天数（payoutDays）而不是 rewardMinor。 */
+/** Membership payouts use days (payoutDays/days) instead of an amount. */
 function isMembershipPayout(payoutType: PayoutType): boolean {
   return (
     payoutType === "membership_compute" ||
@@ -68,9 +75,23 @@ function payoutTypeLabel(value: PayoutType): string {
   return PAYOUT_TYPE_LABELS[value] ?? value;
 }
 
-/** rewardMinor 字段标签：现金按「分」、积分按「积分」。 */
+/** Amount field label: 现金按「分」、积分按「积分」。 */
 function rewardMinorLabel(payoutType: PayoutType): string {
   return payoutType === "cash" ? "现金(分)" : "积分";
+}
+
+/** One-line summary of a tier's reward bundle for the table. */
+function bundleSummary(milestone: ReferralMilestoneRow): string {
+  const items = milestone.rewardItems?.length ? milestone.rewardItems : null;
+  if (items) return items.map(itemSummary).join(" + ");
+  return isMembershipPayout(milestone.payoutType)
+    ? `${payoutTypeLabel(milestone.payoutType)} ${milestone.payoutDays}天`
+    : `${payoutTypeLabel(milestone.payoutType)} ${milestone.rewardMinor}`;
+}
+function itemSummary(it: RewardItem): string {
+  return isMembershipPayout(it.kind)
+    ? `${payoutTypeLabel(it.kind)} ${it.days}天`
+    : `${payoutTypeLabel(it.kind)} ${it.amountMinor}`;
 }
 
 export function ReferralsPanel({
@@ -188,7 +209,7 @@ export function ReferralsPanel({
           </>
         }
         title="邀请奖励"
-        description="老带新邀请奖励：被邀请人达标后给邀请人发放奖励；可叠加邀请里程碑阶梯奖励。"
+        description="老带新邀请奖励：被邀请人达标后给邀请人发放奖励；可配置邀请人数阶梯奖励包。"
       />
 
       {error ? <ErrorBanner message={error} /> : null}
@@ -219,14 +240,14 @@ export function ReferralsPanel({
       <section className="rounded-xl border border-slate-200 bg-white">
         <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 px-4 py-3">
           <div>
-            <h2 className="text-sm font-semibold text-slate-950">邀请里程碑</h2>
+            <h2 className="text-sm font-semibold text-slate-950">阶梯奖励</h2>
             <p className="mt-0.5 text-[12px] text-slate-500">
-              邀请人数达到门槛后额外发放的阶梯奖励，按 rank 排序展示。
+              邀请人数达到门槛后额外发放的阶梯奖励（每档可含多项），按 rank 排序展示。
             </p>
           </div>
           <Button size="sm" onClick={() => setCreateOpen(true)} disabled={loading}>
             <IconPlus className="size-4" />
-            新建里程碑
+            新建阶梯
           </Button>
         </div>
 
@@ -239,8 +260,8 @@ export function ReferralsPanel({
 
       <AdminDialog
         open={createOpen}
-        title="新建里程碑"
-        description="设置邀请人数门槛与达标后的奖励发放方式。"
+        title="新建阶梯奖励"
+        description="设置邀请人数门槛与达标后发放的奖励包（可含多项）。"
         onClose={() => setCreateOpen(false)}
       >
         <MilestoneForm mode="create" loading={loading} onSubmit={handleCreateMilestone} />
@@ -248,7 +269,7 @@ export function ReferralsPanel({
 
       <AdminDialog
         open={Boolean(editingMilestone)}
-        title="编辑里程碑"
+        title="编辑阶梯奖励"
         description="编辑只影响之后达标的奖励发放；历史已发放奖励保留原始审计记录。"
         onClose={() => setEditingMilestone(null)}
       >
@@ -395,7 +416,7 @@ function MilestonesTable({
       },
       {
         accessorKey: "title",
-        header: "里程碑",
+        header: "阶梯",
         enableSorting: false,
         cell: ({ row }) => {
           const milestone = row.original;
@@ -420,21 +441,13 @@ function MilestonesTable({
       },
       {
         id: "payout",
-        header: "奖励",
+        header: "奖励包",
         enableSorting: false,
-        cell: ({ row }) => {
-          const milestone = row.original;
-          return (
-            <>
-              <p className="text-sm text-slate-700">{payoutTypeLabel(milestone.payoutType)}</p>
-              <p className="text-[12px] text-slate-500">
-                {isMembershipPayout(milestone.payoutType)
-                  ? `${milestone.payoutDays} 天会员`
-                  : `${milestone.rewardMinor} ${rewardMinorLabel(milestone.payoutType)}`}
-              </p>
-            </>
-          );
-        },
+        cell: ({ row }) => (
+          <p className="max-w-md text-[13px] leading-5 text-slate-700">
+            {bundleSummary(row.original)}
+          </p>
+        ),
       },
       {
         accessorKey: "archivedAt",
@@ -468,7 +481,7 @@ function MilestonesTable({
       data={milestones}
       loading={loading}
       minWidth={900}
-      emptyLabel="暂无邀请里程碑"
+      emptyLabel="暂无阶梯奖励"
     />
   );
 }
@@ -486,8 +499,29 @@ function MilestoneForm({
   onSubmit: (event: React.FormEvent<HTMLFormElement>) => void;
   onArchive?: () => void;
 }) {
-  const [payoutType, setPayoutType] = useState<PayoutType>(milestone?.payoutType ?? "cash");
-  const membership = isMembershipPayout(payoutType);
+  const [items, setItems] = useState<RewardItem[]>(
+    milestone?.rewardItems?.length
+      ? milestone.rewardItems
+      : [
+          {
+            kind: (milestone?.payoutType && milestone.payoutType !== "membership_both"
+              ? milestone.payoutType
+              : "membership_compute") as RewardItemKind,
+            amountMinor: milestone?.rewardMinor ?? "0",
+            days: milestone?.payoutDays ?? 7,
+          },
+        ]
+  );
+
+  function patchItem(index: number, patch: Partial<RewardItem>) {
+    setItems((prev) => prev.map((it, i) => (i === index ? { ...it, ...patch } : it)));
+  }
+  function addItem() {
+    setItems((prev) => [...prev, { kind: "points_compute", amountMinor: "0", days: 0 }]);
+  }
+  function removeItem(index: number) {
+    setItems((prev) => (prev.length > 1 ? prev.filter((_, i) => i !== index) : prev));
+  }
 
   return (
     <form className="space-y-5" onSubmit={onSubmit}>
@@ -498,7 +532,7 @@ function MilestoneForm({
         <FormLabel label="Rank" help="排序值，越小越靠前。">
           <TextInput name="rank" type="number" min={0} defaultValue={milestone?.rank ?? 0} />
         </FormLabel>
-        <FormLabel label="邀请门槛" help="邀请人数达到该值后发放本里程碑奖励。">
+        <FormLabel label="邀请门槛" help="邀请人数达到该值后发放本阶梯奖励。">
           <TextInput
             name="inviteeThreshold"
             type="number"
@@ -507,41 +541,32 @@ function MilestoneForm({
             required
           />
         </FormLabel>
-        <FormLabel label="奖励类型">
-          <Select
-            name="payoutType"
-            value={payoutType}
-            onChange={(value) => setPayoutType(value as PayoutType)}
-          >
-            {PAYOUT_TYPES.map((type) => (
-              <option key={type} value={type}>
-                {payoutTypeLabel(type)}
-              </option>
-            ))}
-          </Select>
-        </FormLabel>
-        {membership ? (
-          <FormLabel label="会员天数" help="发放的会员有效期天数。">
-            <TextInput
-              name="payoutDays"
-              type="number"
-              min={0}
-              defaultValue={milestone?.payoutDays ?? 0}
+      </div>
+
+      <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-3">
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <p className="text-[12px] font-semibold text-slate-500">奖励包</p>
+            <p className="mt-0.5 text-[11px] text-slate-400">
+              达标后一次性发放以下全部奖励；可添加多项（如 studio 会员 + 社区积分）。
+            </p>
+          </div>
+          <Button type="button" variant="outline" size="sm" onClick={addItem}>
+            <IconPlus className="size-4" />
+            添加奖励
+          </Button>
+        </div>
+        <div className="mt-3 space-y-2">
+          {items.map((item, index) => (
+            <RewardItemRow
+              key={index}
+              item={item}
+              canRemove={items.length > 1}
+              onChange={(patch) => patchItem(index, patch)}
+              onRemove={() => removeItem(index)}
             />
-          </FormLabel>
-        ) : (
-          <FormLabel
-            label={rewardMinorLabel(payoutType)}
-            help="奖励金额，现金单位为分（积分 ≡ 美分）。"
-          >
-            <TextInput
-              name="rewardMinor"
-              type="number"
-              min={0}
-              defaultValue={milestone?.rewardMinor ?? "0"}
-            />
-          </FormLabel>
-        )}
+          ))}
+        </div>
       </div>
 
       <FormLabel label="说明">
@@ -551,6 +576,11 @@ function MilestoneForm({
           className="min-h-20 border-slate-200 bg-white text-sm"
         />
       </FormLabel>
+
+      {/* Serialized bundle → milestonePayload reads it from FormData. The item
+          inputs are controlled (no `name`) so the Select hidden-inputs don't
+          collide on duplicate names. */}
+      <input type="hidden" name="rewardItems" value={JSON.stringify(items)} readOnly />
 
       <div className="flex items-center justify-between gap-2 border-t border-slate-200 pt-4">
         {mode === "update" && onArchive && !milestone?.archivedAt ? (
@@ -562,10 +592,69 @@ function MilestoneForm({
           <span />
         )}
         <Button type="submit" disabled={loading}>
-          {mode === "create" ? "创建里程碑" : "保存修改"}
+          {mode === "create" ? "创建阶梯奖励" : "保存修改"}
         </Button>
       </div>
     </form>
+  );
+}
+
+function RewardItemRow({
+  item,
+  canRemove,
+  onChange,
+  onRemove,
+}: {
+  item: RewardItem;
+  canRemove: boolean;
+  onChange: (patch: Partial<RewardItem>) => void;
+  onRemove: () => void;
+}) {
+  const membership = isMembershipPayout(item.kind);
+  return (
+    <div className="flex flex-wrap items-end gap-2 rounded-md border border-slate-200 bg-white px-2.5 py-2">
+      <label className="grid min-w-[150px] flex-1 gap-1">
+        <span className="text-[11px] text-slate-400">类型</span>
+        <Select value={item.kind} onChange={(value) => onChange({ kind: value as RewardItemKind })}>
+          {REWARD_ITEM_KINDS.map((kind) => (
+            <option key={kind} value={kind}>
+              {payoutTypeLabel(kind)}
+            </option>
+          ))}
+        </Select>
+      </label>
+      <label className="grid min-w-[120px] flex-1 gap-1">
+        <span className="text-[11px] text-slate-400">
+          {membership ? "会员天数" : rewardMinorLabel(item.kind)}
+        </span>
+        {membership ? (
+          <TextInput
+            type="number"
+            min={0}
+            value={String(item.days)}
+            onChange={(event) => onChange({ days: Number(event.target.value || 0) })}
+          />
+        ) : (
+          <TextInput
+            type="number"
+            min={0}
+            value={item.amountMinor}
+            onChange={(event) => onChange({ amountMinor: event.target.value })}
+          />
+        )}
+      </label>
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        disabled={!canRemove}
+        onClick={onRemove}
+        title="移除该奖励"
+        aria-label="移除该奖励"
+      >
+        <IconTrash className="size-4" />
+      </Button>
+    </div>
   );
 }
 
@@ -587,15 +676,29 @@ function programPayload(form: FormData): Record<string, unknown> {
 }
 
 function milestonePayload(form: FormData): Record<string, unknown> {
-  const payoutType = stringField(form, "payoutType") as PayoutType;
-  const membership = isMembershipPayout(payoutType);
   return {
     inviteeThreshold: Number(stringField(form, "inviteeThreshold") || 1),
-    payoutType,
-    rewardMinor: membership ? 0 : Number(stringField(form, "rewardMinor") || 0),
-    payoutDays: membership ? Number(stringField(form, "payoutDays") || 0) : 0,
+    rewardItems: parseRewardItems(form),
     title: stringField(form, "title"),
     detail: stringField(form, "detail") || undefined,
     rank: Number(stringField(form, "rank") || 0),
   };
+}
+
+function parseRewardItems(
+  form: FormData
+): { kind: RewardItemKind; amountMinor: number; days: number }[] {
+  const raw = stringField(form, "rewardItems");
+  if (!raw) return [];
+  let parsed: RewardItem[];
+  try {
+    parsed = JSON.parse(raw) as RewardItem[];
+  } catch {
+    return [];
+  }
+  return parsed.map((it) => ({
+    kind: it.kind,
+    amountMinor: isMembershipPayout(it.kind) ? 0 : Number(it.amountMinor || 0),
+    days: isMembershipPayout(it.kind) ? Number(it.days || 0) : 0,
+  }));
 }
