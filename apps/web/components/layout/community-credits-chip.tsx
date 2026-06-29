@@ -6,7 +6,7 @@
  *
  *  - 算力积分 (compute credits)   — the studio currency spent on AI image /
  *                                   video generation. Balance via useCredits;
- *                                   top-up via CreditsRechargeDialog (studio).
+ *                                   shown read-only (top-up handled elsewhere).
  *  - 社区积分 (community credits)  — spent unlocking paid IP content; earned
  *                                   when a creator's work sells. Balance via
  *                                   useCommunityPointBalance; top-up via
@@ -35,7 +35,6 @@ import { useCredits } from "@/src/hooks/use-user";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { CommunityRechargeDialog } from "@/components/payment/community-recharge-dialog";
 import { CommunityMembershipDialog } from "@/components/payment/community-membership-dialog";
-import { CreditsRechargeDialog } from "@/components/payment/credits-recharge-dialog";
 import { cn } from "@/lib/utils";
 
 interface CommunityCreditsChipProps {
@@ -49,7 +48,6 @@ export function CommunityCreditsChip({ layout = "chip", className }: CommunityCr
   const tp = useTranslations("payment");
   const [open, setOpen] = useState(false);
   const [communityRechargeOpen, setCommunityRechargeOpen] = useState(false);
-  const [studioRechargeOpen, setStudioRechargeOpen] = useState(false);
   const [membershipOpen, setMembershipOpen] = useState(false);
 
   const { balance: communityBalance, refetch: refetchCommunity } = useCommunityPointBalance();
@@ -78,10 +76,6 @@ export function CommunityCreditsChip({ layout = "chip", className }: CommunityCr
     setOpen(false);
     setCommunityRechargeOpen(true);
   };
-  const openStudioRecharge = () => {
-    setOpen(false);
-    setStudioRechargeOpen(true);
-  };
   const openMembership = () => {
     setOpen(false);
     setMembershipOpen(true);
@@ -98,7 +92,6 @@ export function CommunityCreditsChip({ layout = "chip", className }: CommunityCr
         onOpenChange={setCommunityRechargeOpen}
         onSuccess={() => refetchCommunity().then(() => {})}
       />
-      <CreditsRechargeDialog open={studioRechargeOpen} onOpenChange={setStudioRechargeOpen} />
       <CommunityMembershipDialog
         open={membershipOpen}
         onOpenChange={setMembershipOpen}
@@ -117,7 +110,6 @@ export function CommunityCreditsChip({ layout = "chip", className }: CommunityCr
             icon={<IconBolt className="size-4" />}
             label={t("studioLabel")}
             balance={studioBalance}
-            onClick={openStudioRecharge}
           />
           <WalletRow
             icon={<IconCoins className="size-4" />}
@@ -193,8 +185,6 @@ export function CommunityCreditsChip({ layout = "chip", className }: CommunityCr
                 balance={studioBalance}
                 unit={t("unit")}
                 blurb={t("studioBlurb")}
-                rechargeLabel={t("recharge")}
-                onRecharge={openStudioRecharge}
               />
               <WalletCard
                 icon={<IconCoins className="size-4" />}
@@ -251,8 +241,8 @@ function WalletCard({
   unit: string;
   blurb: string;
   badge?: string;
-  rechargeLabel: string;
-  onRecharge: () => void;
+  rechargeLabel?: string;
+  onRecharge?: () => void;
 }) {
   return (
     <div
@@ -276,14 +266,16 @@ function WalletCard({
           </div>
           <p className="mt-1 text-[11px] leading-snug text-muted-foreground">{blurb}</p>
         </div>
-        <button
-          type="button"
-          onClick={onRecharge}
-          className="inline-flex shrink-0 items-center gap-1 rounded-lg bg-white/10 px-2.5 py-1.5 text-xs font-medium text-foreground ring-1 ring-white/15 backdrop-blur transition-colors hover:bg-white/20"
-        >
-          <IconRocket className="size-3.5" />
-          {rechargeLabel}
-        </button>
+        {onRecharge ? (
+          <button
+            type="button"
+            onClick={onRecharge}
+            className="inline-flex shrink-0 items-center gap-1 rounded-lg bg-white/10 px-2.5 py-1.5 text-xs font-medium text-foreground ring-1 ring-white/15 backdrop-blur transition-colors hover:bg-white/20"
+          >
+            <IconRocket className="size-3.5" />
+            {rechargeLabel}
+          </button>
+        ) : null}
       </div>
     </div>
   );
@@ -321,14 +313,10 @@ function WalletRow({
   label: string;
   balance: number | string;
   badge?: string;
-  onClick: () => void;
+  onClick?: () => void;
 }) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className="flex w-full items-center justify-between rounded-lg px-3 py-3 text-sm font-medium text-muted-foreground transition-colors hover:bg-foreground/5 hover:text-foreground"
-    >
+  const content = (
+    <>
       <span className="inline-flex items-center gap-3">
         {icon}
         {label}
@@ -337,6 +325,24 @@ function WalletRow({
         <span className="tabular-nums">{balance}</span>
         {badge ? <BetaBadge label={badge} /> : null}
       </span>
+    </>
+  );
+
+  if (!onClick) {
+    return (
+      <div className="flex w-full items-center justify-between rounded-lg px-3 py-3 text-sm font-medium text-muted-foreground">
+        {content}
+      </div>
+    );
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="flex w-full items-center justify-between rounded-lg px-3 py-3 text-sm font-medium text-muted-foreground transition-colors hover:bg-foreground/5 hover:text-foreground"
+    >
+      {content}
     </button>
   );
 }

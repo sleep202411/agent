@@ -5,7 +5,6 @@ import Link from "next/link";
 import {
   IconCredits,
   IconCrown,
-  IconCoin,
   IconSettings,
   IconLogout,
   IconRosetteDiscountCheckFilled,
@@ -21,7 +20,6 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { useLogout } from "@/src/hooks/use-logout";
-import { CreditsRechargeDialog } from "@/components/payment/credits-recharge-dialog";
 import { UpgradeDialog } from "@/components/payment/upgrade-dialog";
 import { useCredits, useCurrentUser, useUserInfo } from "@/src/hooks/use-user";
 import { useCertificationRoles, useMyCertifications } from "@/src/hooks/use-certification";
@@ -33,7 +31,6 @@ export function UserMenu() {
   const { user } = useCurrentUser();
 
   const [menuOpen, setMenuOpen] = useState(false);
-  const [rechargeOpen, setRechargeOpen] = useState(false);
   const [upgradeOpen, setUpgradeOpen] = useState(false);
   const { data: credits } = useCredits();
   const { data: userInfo } = useUserInfo();
@@ -142,19 +139,6 @@ export function UserMenu() {
                 <IconCrown className="size-3.5" />
                 {tc("upgrade")}
               </Button>
-              <Button
-                variant="outline"
-                color="muted"
-                size="sm"
-                className="flex-1"
-                onClick={() => {
-                  setMenuOpen(false);
-                  setRechargeOpen(true);
-                }}
-              >
-                <IconCoin className="size-3.5" />
-                {tc("rechargeCredits")}
-              </Button>
             </div>
           </div>
 
@@ -170,7 +154,6 @@ export function UserMenu() {
         </DropdownMenuContent>
       </DropdownMenu>
 
-      <CreditsRechargeDialog open={rechargeOpen} onOpenChange={setRechargeOpen} />
       <UpgradeDialog open={upgradeOpen} onOpenChange={setUpgradeOpen} />
     </>
   );
