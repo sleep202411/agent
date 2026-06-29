@@ -20,7 +20,6 @@ import {
 } from "@tabler/icons-react";
 import { toast } from "sonner";
 import { UserAvatar } from "@/components/user-avatar";
-import { CreditsRechargeDialog } from "@/components/payment/credits-recharge-dialog";
 import { UpgradeDialog } from "@/components/payment/upgrade-dialog";
 import {
   DropdownMenu,
@@ -123,7 +122,6 @@ export function StudioAccountMenu({
   const isIntegralRecordsLoading = useAppSelector((state) => state.user.isIntegralRecordsLoading);
   const [open, setOpen] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
-  const [rechargeOpen, setRechargeOpen] = useState(false);
   const [upgradeOpen, setUpgradeOpen] = useState(false);
 
   const raw = user?.raw;
@@ -370,14 +368,6 @@ export function StudioAccountMenu({
                   <div className="flex shrink-0 items-center gap-2 text-sm text-white/58">
                     <button
                       type="button"
-                      onClick={() => setRechargeOpen(true)}
-                      className="transition-colors hover:text-white"
-                    >
-                      {tc("rechargeCredits")}
-                    </button>
-                    <span className="h-4 w-px bg-white/14" aria-hidden />
-                    <button
-                      type="button"
                       onClick={() => comingSoon(tc("accountMenuSpendOrder"))}
                       className="transition-colors hover:text-white"
                     >
@@ -503,11 +493,6 @@ export function StudioAccountMenu({
       <UpgradeDialog
         open={upgradeOpen}
         onOpenChange={setUpgradeOpen}
-        onSuccess={handleSuccessPayment}
-      />
-      <CreditsRechargeDialog
-        open={rechargeOpen}
-        onOpenChange={setRechargeOpen}
         onSuccess={handleSuccessPayment}
       />
     </>

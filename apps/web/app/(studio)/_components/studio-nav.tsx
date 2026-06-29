@@ -8,20 +8,13 @@
  * it; the main-site `GlobalNav` stays on the marketing surface.
  *
  * Right-cluster order matches the spec:
- *   Language · Credits · Recharge · Membership · Avatar
+ *   Language · Membership · Avatar
  */
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import {
-  IconBolt,
-  IconCheck,
-  IconCrown,
-  IconLanguage,
-  IconPlus,
-  IconSparkles,
-} from "@tabler/icons-react";
+import { IconCheck, IconCrown, IconLanguage, IconSparkles } from "@tabler/icons-react";
 import { useTranslations, useLocale, setLanguage } from "@/src/i18n/i18n";
 import { setCurrentLocale, localizePath, stripLocalePrefix } from "@/src/i18n/locale-url";
 import { LOCALE_OPTIONS, type Locale } from "@/src/i18n/config";
@@ -33,9 +26,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { CreditsRechargeDialog } from "@/components/payment/credits-recharge-dialog";
 import { UpgradeDialog } from "@/components/payment/upgrade-dialog";
-import { useCredits } from "@/src/hooks/use-user";
 import { UserMenu } from "@/components/layout/user-menu";
 import { CreateWorldDialog } from "@/app/(studio)/art-studio/_components/create-world-dialog";
 import { cn } from "@/lib/utils";
@@ -47,10 +38,6 @@ export function StudioNav() {
   const router = useRouter();
   const pathname = usePathname() ?? "/";
 
-  const { data: credits } = useCredits();
-  const displayCredits = Number.isFinite(Number(credits)) ? Number(credits) : 0;
-
-  const [rechargeOpen, setRechargeOpen] = useState(false);
   const [upgradeOpen, setUpgradeOpen] = useState(false);
   // Mirrors the 一键成片 CTA from `project-header.tsx`. In the project
   // surface that button deep-links to `/projects/[id]/produce`, but here
@@ -152,28 +139,6 @@ export function StudioNav() {
             </DropdownMenuContent>
           </DropdownMenu>
 
-          {/* Credits + recharge — fused into a single liquid-glass
-              pill per design system (Persona amber is reserved for
-              crew-role attribution; can't be a brand UI accent). The
-              `+` is the visual cue that the pill is the recharge
-              entry; clicking anywhere on the pill opens the dialog. */}
-          <button
-            type="button"
-            onClick={() => setRechargeOpen(true)}
-            aria-label={t("recharge")}
-            className={cn(
-              "flex h-8 items-center gap-1.5 rounded-full px-3 text-xs font-medium",
-              "bg-white/[0.04] text-foreground ring-1 ring-inset ring-white/[0.08]",
-              "backdrop-blur-md transition-colors hover:bg-white/[0.08]"
-            )}
-          >
-            <IconBolt className="size-3.5 text-foreground/80" />
-            <span className="tabular-nums">{displayCredits}</span>
-            <span className="h-3 w-px bg-white/15" />
-            <IconPlus className="size-3 text-foreground/70" />
-            <span>{t("recharge")}</span>
-          </button>
-
           {/* Membership — liquid-glass premium CTA. Mirrors the
               GlobalNav Studio button pattern (DESIGN.md § "Surface —
               Glass" + the brand-forward CTA pattern):
@@ -219,7 +184,6 @@ export function StudioNav() {
         </div>
       </div>
 
-      <CreditsRechargeDialog open={rechargeOpen} onOpenChange={setRechargeOpen} />
       <UpgradeDialog open={upgradeOpen} onOpenChange={setUpgradeOpen} />
       <CreateWorldDialog open={createWorldOpen} onOpenChange={setCreateWorldOpen} />
     </header>
