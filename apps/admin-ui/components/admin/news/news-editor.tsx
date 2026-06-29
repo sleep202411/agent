@@ -294,18 +294,6 @@ export function NewsEditor({
               </Field>
             </div>
 
-            {form.kind === "external" ? (
-              <Field label="外链地址" hint="点击资讯卡片将在新标签页打开该链接">
-                <Input
-                  value={form.url}
-                  onChange={(event) => setForm((prev) => ({ ...prev, url: event.target.value }))}
-                  placeholder="https://example.com/article"
-                  className="h-9"
-                  inputMode="url"
-                />
-              </Field>
-            ) : null}
-
             <Field label="标签">
               <div className="flex flex-wrap items-center gap-1.5">
                 {tags.map((tag) => {
@@ -481,6 +469,18 @@ export function NewsEditor({
                   className="aspect-video w-full object-cover"
                 />
               </div>
+            ) : null}
+
+            {form.kind === "external" ? (
+              <Field label="外链地址" hint="点击资讯卡片将在新标签页打开该链接">
+                <Input
+                  value={form.url}
+                  onChange={(event) => setForm((prev) => ({ ...prev, url: event.target.value }))}
+                  placeholder="https://example.com/article"
+                  className="h-9"
+                  inputMode="url"
+                />
+              </Field>
             ) : null}
           </section>
         </div>
