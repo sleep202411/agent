@@ -246,7 +246,7 @@ adminUi:
   replicaCount: 1
   image:
     repository: fizzdragon-admin-ui
-    tag: 659309ed26061de0eb91d6a12ebf798902a2f033
+    tag: 96e73d104b80b85abf20a479bc9af728be72eae0
   containerPort: 3000
   readinessPath: /login
   livenessPath: /login
@@ -294,7 +294,7 @@ server:
   migrateOnStart: true
   image:
     repository: fizzdragon-server
-    tag: 4b46aeec9b9a97691f71d04ebe51fb43b4b53ca7
+    tag: 96e73d104b80b85abf20a479bc9af728be72eae0
   containerPort: 3001
   env:
     FAL_ENABLED: "true"
