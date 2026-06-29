@@ -1,9 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { IconCheck } from "@tabler/icons-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
+import { axonViewItem } from "@/src/lib/axon";
 
 /**
  * Membership pricing — Plus / Pro tiers with a monthly/annual toggle and a
@@ -86,6 +87,28 @@ function priceParts(plan: Plan, period: Period) {
 
 export function MembershipPlans() {
   const [period, setPeriod] = useState<Period>("monthly");
+
+  // Fire the AppLovin `view_item` conversion once on mount for the recommended
+  // plan (static prototype data; monthly list price, USD). No-op off .com (axon.ts).
+  const viewItemFiredRef = useRef(false);
+  useEffect(() => {
+    if (viewItemFiredRef.current) return;
+    viewItemFiredRef.current = true;
+    const recommended = PLANS.find((p) => p.recommended) ?? PLANS[0];
+    if (!recommended) return;
+    axonViewItem({
+      items: [
+        {
+          item_id: recommended.key,
+          item_name: recommended.name,
+          price: recommended.monthly,
+          quantity: 1,
+        },
+      ],
+      value: recommended.monthly,
+      currency: "USD",
+    });
+  }, []);
 
   const onChoose = (plan: Plan) =>
     toast.info(`${plan.name} checkout isn't wired yet — billing integration pending.`);

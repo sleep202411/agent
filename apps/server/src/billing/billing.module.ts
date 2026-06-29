@@ -7,6 +7,7 @@ import { BillingAdminController } from './billing-admin.controller';
 import { BillingController } from './billing.controller';
 import { BillingLedgerService } from './billing-ledger.service';
 import { BillingService } from './billing.service';
+import { AppLovinConversionService } from './applovin-conversion.service';
 import { PaymentProviderRegistry } from './payment-provider-registry.service';
 import { AirwallexProvider } from './providers/airwallex.provider';
 import { VoucherService } from './voucher.service';
@@ -23,6 +24,7 @@ import { CheckInService } from './check-in.service';
   controllers: [BillingController, BillingAdminController],
   providers: [
     BillingService,
+    AppLovinConversionService,
     BillingLedgerService,
     PaymentProviderRegistry,
     AirwallexProvider,

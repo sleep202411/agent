@@ -25,6 +25,13 @@ import { cn } from "@/lib/utils";
 import { siteConfig } from "@/src/config/site";
 import { ApiRequestError } from "@/src/lib/api";
 import {
+  axonAleid,
+  axonBeginCheckout,
+  axonFlushPendingPurchase,
+  axonStashPendingPurchase,
+  axonViewItem,
+} from "@/src/lib/axon";
+import {
   createBillingCheckout,
   listMembershipPlans,
   priceEffectiveAmountMinor,
@@ -33,6 +40,9 @@ import {
 // Module-level so the `?membership=success` return is handled once per page load
 // (the provider redirect back is a full page load), across all mounted instances.
 let returnClaimed = false;
+// sessionStorage key holding the pending purchase to fire the browser `purchase`
+// conversion (with the order id as dedupe_id) on the `?membership=success` return.
+const AXON_PENDING_PURCHASE_KEY = "axon_pending_purchase:membership";
 
 export interface CommunityMembershipDialogProps {
   open: boolean;
@@ -86,6 +96,25 @@ export function CommunityMembershipDialog({
   const currencySymbol = siteConfig.currencies.find((c) => c.code === currency)?.symbol ?? "$";
   const fmtFiat = (minor: number | string) => (Number(minor) / 100).toFixed(2);
 
+  // Fire the AppLovin `view_item` conversion once per dialog open, after the plan
+  // prices have loaded — the plan as the item, valued at the default-selected
+  // price's effective amount (cents → divide by 100). No-op off .com (axon.ts).
+  const viewItemFiredRef = useRef(false);
+  useEffect(() => {
+    if (!open) {
+      viewItemFiredRef.current = false;
+      return;
+    }
+    if (viewItemFiredRef.current || !plan || !selected) return;
+    viewItemFiredRef.current = true;
+    const value = Number(priceEffectiveAmountMinor(selected)) / 100;
+    axonViewItem({
+      items: [{ item_id: plan.id, item_name: plan.name, price: value, quantity: 1 }],
+      value,
+      currency: selected.currency,
+    });
+  }, [open, plan, selected]);
+
   // Handle the provider success return once per page load.
   useEffect(() => {
     if (returnClaimed) return;
@@ -98,6 +127,10 @@ export function CommunityMembershipDialog({
     const qs = params.toString();
     window.history.replaceState(null, "", `${window.location.pathname}${qs ? `?${qs}` : ""}`);
     if (outcome === "cancelled") return;
+    // Fire the AppLovin browser `purchase` conversion with the SAME dedupe_id as
+    // the server S2S report (the order id), so AppLovin merges the two (5-min
+    // window) instead of double-counting. No-op off .com / when nothing pending.
+    axonFlushPendingPurchase(AXON_PENDING_PURCHASE_KEY);
     const toastId = toast.loading(t("paymentProcessing"));
     void (async () => {
       try {
@@ -111,12 +144,31 @@ export function CommunityMembershipDialog({
 
   const handleSubscribe = async () => {
     if (!selected) return;
+    // Fire the AppLovin `begin_checkout` conversion at subscribe initiation
+    // (before the provider redirect). Effective price is in cents → divide by
+    // 100. No-op off .com (axon.ts).
+    {
+      const value = Number(priceEffectiveAmountMinor(selected)) / 100;
+      axonBeginCheckout({
+        items: [
+          {
+            item_id: selected.id,
+            item_name: plan?.name ?? "Community membership",
+            price: value,
+            quantity: 1,
+          },
+        ],
+        currency: selected.currency,
+        value,
+      });
+    }
     setPaying(true);
     const sig = `${selected.id}:${currency}`;
     if (idemKeyRef.current?.sig !== sig) {
       idemKeyRef.current = { sig, key: crypto.randomUUID() };
     }
     const base = `${window.location.origin}${window.location.pathname}`;
+    const aleid = axonAleid();
     try {
       const result = await createBillingCheckout({
         priceId: selected.id,
@@ -124,9 +176,27 @@ export function CommunityMembershipDialog({
         idempotencyKey: idemKeyRef.current.key,
         successUrl: `${base}?membership=success`,
         backUrl: `${base}?membership=cancelled`,
+        ...(aleid ? { attribution: { aleid } } : {}),
       });
       const url = result.paymentIntent?.checkoutUrl;
       if (url) {
+        // Stash the purchase so the `?membership=success` return fires the browser
+        // `purchase` event with the order id as dedupe_id (matches the S2S report).
+        const orderId = result.order.orderNo ?? result.order.id;
+        const value = Number(priceEffectiveAmountMinor(selected)) / 100;
+        axonStashPendingPurchase(AXON_PENDING_PURCHASE_KEY, {
+          transactionId: orderId,
+          value,
+          currency: selected.currency,
+          items: [
+            {
+              item_id: selected.id,
+              item_name: plan?.name ?? "Community membership",
+              price: value,
+              quantity: 1,
+            },
+          ],
+        });
         if (window.self !== window.top) {
           window.parent.postMessage({ type: "navigateToPayment", url }, "*");
         } else {

@@ -38,6 +38,7 @@ import {
   type RedeemVoucherInput,
   CreditCampaignParamsSchema,
   type CreditCampaignParams,
+  type BillingAttributionInput,
 } from './dto';
 import { VoucherService } from './voucher.service';
 import { CampaignService } from './campaign.service';
@@ -150,25 +151,42 @@ export class BillingController {
   @Post('checkout')
   async createCheckout(
     @CurrentUser() user: AuthUser,
+    @Req() req: Request,
+    @Country() country: CountryCode,
     @Body(new ZodValidationPipe(CreateBillingCheckoutSchema))
     body: CreateBillingCheckoutInput,
   ) {
     return {
       code: 200,
-      data: await this.billing.createCheckout(user, body),
+      data: await this.billing.createCheckout(user, {
+        ...body,
+        attribution: resolveBillingAttribution(body.attribution, req, country),
+      }),
     };
   }
 
   @Post('recharge-custom')
   async createCustomRecharge(
     @CurrentUser() user: AuthUser,
+    @Req() req: Request,
     @Country() country: CountryCode,
     @Body(new ZodValidationPipe(CreateCustomRechargeSchema))
     body: CreateCustomRechargeInput,
   ) {
     return {
       code: 200,
-      data: await this.billing.createCustomRecharge(user, body, country),
+      data: await this.billing.createCustomRecharge(
+        user,
+        {
+          ...body,
+          attribution: resolveBillingAttribution(
+            body.attribution,
+            req,
+            country,
+          ),
+        },
+        country,
+      ),
     };
   }
 
@@ -239,4 +257,35 @@ export class BillingController {
       }),
     };
   }
+}
+
+/**
+ * Resolve the optional AppLovin (Axon) attribution for a checkout/recharge,
+ * enriching the client-supplied `aleid` with the request's real client IP +
+ * user-agent and the resolved country (the browser can't see its own public IP,
+ * and a client-asserted one can't be trusted). Returns undefined when the client
+ * signalled no AppLovin context, so non-attributed flows store nothing. Pure +
+ * best-effort: only reads request headers, never throws.
+ */
+function resolveBillingAttribution(
+  attribution: BillingAttributionInput | undefined,
+  req: Request,
+  country: CountryCode,
+): BillingAttributionInput | undefined {
+  if (!attribution) return undefined;
+  const forwardedFor = req.header('x-forwarded-for')?.split(',')[0]?.trim();
+  const aleid = attribution.aleid?.trim() || undefined;
+  const clientIp =
+    attribution.clientIp?.trim() ||
+    forwardedFor ||
+    req.ip ||
+    req.socket.remoteAddress ||
+    undefined;
+  const clientUserAgent =
+    attribution.clientUserAgent?.trim() ||
+    req.header('user-agent') ||
+    undefined;
+  const countryCode = attribution.countryCode?.trim() || country || undefined;
+  if (!aleid && !clientIp && !clientUserAgent && !countryCode) return undefined;
+  return { aleid, clientUserAgent, clientIp, countryCode };
 }

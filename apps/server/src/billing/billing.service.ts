@@ -69,6 +69,7 @@ import { WalletLedgerService } from '../workspaces';
 import { WorkspacePermissionService } from '../workspaces/workspace-permission.service';
 import { enqueueEntitlementChanged } from './entitlement-realtime';
 import type {
+  BillingAttributionInput,
   CreateBillingCheckoutInput,
   CreateComputePointTopupInput,
   CreateCustomRechargeInput,
@@ -103,6 +104,7 @@ import type {
   HostedCheckoutResult,
 } from './providers/payment-provider';
 import { BillingLedgerService } from './billing-ledger.service';
+import { AppLovinConversionService } from './applovin-conversion.service';
 
 type PriceWithItem = BillingPrice & { item: BillingCatalogItem };
 type PriceWithProviderBindings = PriceWithItem & {
@@ -284,6 +286,7 @@ export class BillingService {
     private readonly ledger: BillingLedgerService,
     private readonly entitlements: EntitlementService,
     private readonly referrals: ReferralsService,
+    private readonly appLovinConversion: AppLovinConversionService,
   ) {}
 
   async listPrices(query: ListBillingPricesQuery) {
@@ -2493,6 +2496,11 @@ export class BillingService {
                     providerCouponId: promotionReservation.providerCouponId,
                   }
                 : null,
+              // AppLovin (Axon) ad-attribution, read back at payment success to
+              // build the S2S conversion report. Omitted when no attribution was
+              // supplied (no AppLovin context); purely additive — never affects
+              // pricing/fulfilment.
+              ...appLovinMetadataPatch(input.attribution),
             },
           },
           include: { price: true },
@@ -3146,6 +3154,10 @@ export class BillingService {
               currency: input.currency,
               shopperCountry: country,
             },
+            // AppLovin (Axon) ad-attribution, read back at payment success to
+            // build the S2S conversion report. Omitted when no attribution was
+            // supplied; purely additive — never affects pricing/fulfilment.
+            ...appLovinMetadataPatch(input.attribution),
           },
         },
         include: { price: true },
@@ -3643,6 +3655,15 @@ export class BillingService {
             ),
           );
       }
+      // Best-effort AppLovin (Axon) S2S purchase report — same post-commit
+      // placement + error-swallowing as referral accrual, firing on the exact
+      // same genuine-payment-success condition (a matched payment intent). The
+      // call never throws and runs outside the billing tx, so a tracking failure
+      // can never roll back a paid order. No-op unless the S2S token is set (the
+      // .com cell) and the order is a community purchase (filtered inside).
+      if (accrueOrderId) {
+        await this.reportAppLovinPurchase(accrueOrderId);
+      }
       return result;
     } catch (err) {
       if (!isProviderEventAlreadyProcessedError(err)) {
@@ -3666,6 +3687,57 @@ export class BillingService {
         },
       })
       .catch(() => undefined);
+  }
+
+  /**
+   * Best-effort AppLovin (Axon) server-to-server purchase report for a just-paid
+   * order. Runs post-commit, NEVER throws, and no-ops unless the S2S credentials
+   * are configured (the .com cell) AND the order is one of the community purchase
+   * flows this integration covers: community membership
+   * (`subscription_checkout` / `membership_purchase`) or a community-point
+   * recharge (`community_point_topup`). The order id is sent as both
+   * `transaction_id` and `dedupe_id` so AppLovin merges this with the browser
+   * pixel's purchase event carrying the same id (5-minute window). Attribution
+   * (aleid / ip / ua / country) is read back from the order's metadata, captured
+   * at checkout; its absence weakens matching but never blocks the report.
+   */
+  private async reportAppLovinPurchase(orderId: string): Promise<void> {
+    if (!this.appLovinConversion.isConfigured()) return;
+    try {
+      const order = await this.prisma.billingOrder.findUnique({
+        where: { id: orderId },
+      });
+      if (!order) return;
+      if (
+        order.orderType !== BillingOrderType.subscription_checkout &&
+        order.orderType !== BillingOrderType.membership_purchase &&
+        order.orderType !== BillingOrderType.community_point_topup
+      ) {
+        return;
+      }
+      const metadata = isRecord(order.metadata) ? order.metadata : {};
+      const appLovin = isRecord(metadata.appLovin) ? metadata.appLovin : {};
+      await this.appLovinConversion.reportWebPurchase({
+        orderId: order.orderNo ?? order.id,
+        currency: order.currency,
+        value: Number(order.amountMinor) / 100,
+        aleid: typeof appLovin.aleid === 'string' ? appLovin.aleid : undefined,
+        clientUserAgent:
+          typeof appLovin.userAgent === 'string'
+            ? appLovin.userAgent
+            : undefined,
+        clientIpAddress:
+          typeof appLovin.ip === 'string' ? appLovin.ip : undefined,
+        countryCode:
+          typeof appLovin.country === 'string' ? appLovin.country : undefined,
+        eventSourceUrl:
+          stringAt(metadata, ['checkout', 'successUrl']) ?? undefined,
+      });
+    } catch (e: unknown) {
+      this.logger.error(
+        `AppLovin S2S purchase report failed (order ${orderId}): ${e instanceof Error ? e.message : String(e)}`,
+      );
+    }
   }
 
   private async applyProviderEvent(
@@ -8029,6 +8101,22 @@ function dateAt(value: Record<string, unknown>, path: string[]): Date | null {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+// Build the `appLovin` node persisted on an order's metadata from the optional
+// checkout attribution. Returns a spreadable patch ({} when there's nothing to
+// store) so order creation stays a pure addition. The keys mirror what
+// reportAppLovinPurchase reads back (aleid / userAgent / ip / country).
+function appLovinMetadataPatch(
+  attribution: BillingAttributionInput | undefined,
+): { appLovin?: Record<string, string> } {
+  if (!attribution) return {};
+  const node: Record<string, string> = {};
+  if (attribution.aleid) node.aleid = attribution.aleid;
+  if (attribution.clientUserAgent) node.userAgent = attribution.clientUserAgent;
+  if (attribution.clientIp) node.ip = attribution.clientIp;
+  if (attribution.countryCode) node.country = attribution.countryCode;
+  return Object.keys(node).length > 0 ? { appLovin: node } : {};
 }
 
 function allowedReturnOrigins(): Set<string> {

@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, type ComponentType, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ComponentType, type ReactNode } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
@@ -40,6 +40,7 @@ import { useLocale, useTranslations } from "@/src/i18n/i18n";
 import { localizePath } from "@/src/i18n/locale-url";
 import { useCurrentUser } from "@/src/hooks/use-user";
 import { ApiRequestError } from "@/src/lib/api";
+import { axonViewItem } from "@/src/lib/axon";
 import { recordMemberView } from "@/src/lib/ip-commerce/api";
 import type {
   IpCommerceAsset,
@@ -140,6 +141,23 @@ export function IpPublicDetail({ ipId }: IpPublicDetailProps) {
   const removeCollection = useRemoveIpCommerceCollection();
   const reportContent = useReportIpContent();
   const blockContent = useBlockIpContent();
+
+  // Fire the AppLovin `view_item` conversion once per IP view, when the IP has
+  // loaded. No-op on the CN build / when the pixel key is unset (axon.ts). The
+  // price is community-point–denominated (whole points, not minor units).
+  const viewItemFiredRef = useRef(false);
+  useEffect(() => {
+    if (viewItemFiredRef.current || !detailIp) return;
+    viewItemFiredRef.current = true;
+    const priceAmount = detailIp.price ? parseIntegerAmount(detailIp.price.amount) : null;
+    axonViewItem({
+      items: [{ item_id: detailIp.id, item_name: detailIp.title }],
+      ...(priceAmount !== null ? { value: Number(priceAmount), currency: "community_point" } : {}),
+      userData: user
+        ? { user_id: user.id, email: user.email ? user.email.toLowerCase() : undefined }
+        : undefined,
+    });
+  }, [detailIp, user]);
 
   if (
     publicQuery.isLoading ||

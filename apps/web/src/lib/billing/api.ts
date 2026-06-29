@@ -112,6 +112,15 @@ export function listMembershipPlans(input?: {
   );
 }
 
+/**
+ * Optional AppLovin (Axon) ad-attribution. The client only knows the click id
+ * (`aleid`); the server backfills client IP / user-agent / country. Best-effort
+ * — its absence never affects checkout.
+ */
+export interface BillingAttribution {
+  aleid?: string;
+}
+
 export interface CreateBillingCheckoutInput {
   priceId: string;
   quantity?: number;
@@ -120,6 +129,7 @@ export interface CreateBillingCheckoutInput {
   backUrl: string;
   promotionCode?: string;
   workspaceId?: string;
+  attribution?: BillingAttribution;
 }
 
 export interface BillingCheckoutResult {
@@ -138,6 +148,7 @@ export interface CreateCustomRechargeInput {
   idempotencyKey: string;
   successUrl: string;
   backUrl: string;
+  attribution?: BillingAttribution;
 }
 
 /**

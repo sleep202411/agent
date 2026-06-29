@@ -119,6 +119,21 @@ export type ListBillingPricesQuery = z.infer<
   typeof ListBillingPricesQuerySchema
 >;
 
+// Optional AppLovin (Axon) ad-attribution captured browser-side and threaded
+// through checkout so the post-payment server-to-server conversion report can be
+// matched + deduplicated against the browser pixel's purchase event. Every field
+// is optional and best-effort — its absence never affects checkout. The client
+// only knows `aleid` (the AppLovin click id); the controller backfills
+// clientIp / clientUserAgent / countryCode from the request (the browser can't
+// see its own public IP, and a client-asserted IP can't be trusted).
+export const BillingAttributionSchema = z.object({
+  aleid: z.string().trim().max(256).optional(),
+  clientUserAgent: z.string().trim().max(1024).optional(),
+  clientIp: z.string().trim().max(64).optional(),
+  countryCode: z.string().trim().length(2).optional(),
+});
+export type BillingAttributionInput = z.infer<typeof BillingAttributionSchema>;
+
 export const CreateBillingCheckoutSchema = z.object({
   priceId: z.string().uuid(),
   provider: CheckoutPaymentProviderSchema.optional(),
@@ -128,6 +143,7 @@ export const CreateBillingCheckoutSchema = z.object({
   workspaceId: z.string().uuid().optional(),
   successUrl: z.string().trim().url().max(2048),
   backUrl: z.string().trim().url().max(2048),
+  attribution: BillingAttributionSchema.optional(),
 });
 export type CreateBillingCheckoutInput = z.infer<
   typeof CreateBillingCheckoutSchema
@@ -150,6 +166,7 @@ export const CreateCustomRechargeSchema = z.object({
   workspaceId: z.string().uuid().optional(),
   successUrl: z.string().trim().url().max(2048),
   backUrl: z.string().trim().url().max(2048),
+  attribution: BillingAttributionSchema.optional(),
 });
 export type CreateCustomRechargeInput = z.infer<
   typeof CreateCustomRechargeSchema

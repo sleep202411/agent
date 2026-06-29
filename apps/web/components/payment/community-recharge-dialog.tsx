@@ -39,6 +39,13 @@ import { cn } from "@/lib/utils";
 import { siteConfig } from "@/src/config/site";
 import { ApiRequestError } from "@/src/lib/api";
 import {
+  axonAleid,
+  axonBeginCheckout,
+  axonFlushPendingPurchase,
+  axonStashPendingPurchase,
+  axonViewItem,
+} from "@/src/lib/axon";
+import {
   createBillingCheckout,
   createCustomRecharge,
   listCommunityPointPackages,
@@ -60,6 +67,9 @@ const CUSTOM_CURRENCY = "USD";
 // processed by exactly one instance — see the return-handler effect below.
 let returnClaimed = false;
 const RECHARGE_PENDING_KEY = "community_recharge_pending";
+// sessionStorage key holding the pending purchase to fire the browser `purchase`
+// conversion (with the order id as dedupe_id) on the `?recharge=success` return.
+const AXON_PENDING_PURCHASE_KEY = "axon_pending_purchase:recharge";
 
 export interface CommunityRechargeDialogProps {
   open: boolean;
@@ -155,6 +165,30 @@ export function CommunityRechargeDialog({
     return null;
   })();
 
+  // Fire the AppLovin `view_item` conversion once per dialog open, after the
+  // preset packages have loaded — using the default-selected preset as the item
+  // (amountMinor is in cents → divide by 100). No-op off .com (axon.ts).
+  const viewItemFiredRef = useRef(false);
+  useEffect(() => {
+    if (!open) {
+      viewItemFiredRef.current = false;
+      return;
+    }
+    if (viewItemFiredRef.current || !selectedPreset) return;
+    viewItemFiredRef.current = true;
+    const value = Number(selectedPreset.amountMinor) / 100;
+    axonViewItem({
+      items: [
+        { item_id: selectedPreset.id, item_name: selectedPreset.name, price: value, quantity: 1 },
+      ],
+      value,
+      currency: selectedPreset.currency,
+      userData: user
+        ? { user_id: user.id, email: user.email ? user.email.toLowerCase() : undefined }
+        : undefined,
+    });
+  }, [open, selectedPreset, user]);
+
   // Handle the provider success/cancel return exactly once PER PAGE LOAD, across
   // ALL mounted instances. The site mounts a global wallet-chip dialog AND
   // page-level dialogs (e.g. the IP detail page) simultaneously; without a
@@ -194,6 +228,14 @@ export function CommunityRechargeDialog({
     // cover the lag, showing a processing state in between. On success clear the
     // pending flag; on failure keep it so a reload retries.
     cleanUrl();
+    // Fire the AppLovin browser `purchase` conversion with the SAME dedupe_id as
+    // the server S2S report (the order id), so AppLovin merges the two (5-min
+    // window). Only on the genuine provider return (`outcome === "success"`), not
+    // the pending-only reload that just retries the balance refresh. No-op off
+    // .com / when nothing is pending.
+    if (outcome === "success") {
+      axonFlushPendingPurchase(AXON_PENDING_PURCHASE_KEY);
+    }
     window.sessionStorage?.setItem(RECHARGE_PENDING_KEY, "1");
     const toastId = toast.loading(t("paymentProcessing"));
     void (async () => {
@@ -217,6 +259,36 @@ export function CommunityRechargeDialog({
   // is the derived `submit` trips react-hooks/preserve-manual-memoization.
   const handlePay = async () => {
     if (!submit) return;
+    // Fire the AppLovin `begin_checkout` conversion at pay initiation (before the
+    // provider redirect), for both the custom-amount and preset-package paths.
+    // No-op off .com (axon.ts). Custom is USD whole-dollars; preset totalMinor is
+    // cents → divide by 100.
+    {
+      const checkoutValue =
+        submit.kind === "custom" ? submit.dollars : Number(submit.totalMinor) / 100;
+      axonBeginCheckout({
+        items: [
+          submit.kind === "custom"
+            ? {
+                item_id: `custom:${submit.dollars}`,
+                item_name: "Community points (custom)",
+                price: checkoutValue,
+                quantity: 1,
+              }
+            : {
+                item_id: submit.priceId,
+                item_name: selectedPreset?.name ?? "Community points",
+                price: checkoutValue,
+                quantity: 1,
+              },
+        ],
+        currency,
+        value: checkoutValue,
+        userData: user
+          ? { user_id: user.id, email: user.email ? user.email.toLowerCase() : undefined }
+          : undefined,
+      });
+    }
     setPaying(true);
     // Fresh key whenever the intent differs from the last attempt, so switching
     // packages — or changing the custom amount — can never reuse a prior order.
@@ -230,6 +302,7 @@ export function CommunityRechargeDialog({
     const base = `${window.location.origin}${window.location.pathname}`;
     const successUrl = `${base}?recharge=success`;
     const backUrl = `${base}?recharge=cancelled`;
+    const aleid = axonAleid();
     try {
       if (submit.kind === "custom") {
         const result = await createCustomRecharge({
@@ -237,6 +310,7 @@ export function CommunityRechargeDialog({
           idempotencyKey: idemKeyRef.current.key,
           successUrl,
           backUrl,
+          ...(aleid ? { attribution: { aleid } } : {}),
         });
         const pi = result.paymentIntent;
         if (!pi?.providerPaymentIntentId || !pi.clientSecret) {
@@ -244,6 +318,21 @@ export function CommunityRechargeDialog({
           toast.error(t("paymentFailed"));
           return;
         }
+        // Stash the purchase so the `?recharge=success` return fires the browser
+        // `purchase` event with the order id as dedupe_id (matches the S2S report).
+        axonStashPendingPurchase(AXON_PENDING_PURCHASE_KEY, {
+          transactionId: result.order.orderNo ?? result.order.id,
+          value: submit.dollars,
+          currency: result.order.currency,
+          items: [
+            {
+              item_id: `custom:${submit.dollars}`,
+              item_name: "Community points (custom)",
+              price: submit.dollars,
+              quantity: 1,
+            },
+          ],
+        });
         // A Payment Intent has no hosted URL — launch the Airwallex page via the
         // browser SDK. It does a full-page redirect and returns to successUrl, so
         // the return handler above is reused verbatim. The SDK script loads from
@@ -275,9 +364,26 @@ export function CommunityRechargeDialog({
         idempotencyKey: idemKeyRef.current.key,
         successUrl,
         backUrl,
+        ...(aleid ? { attribution: { aleid } } : {}),
       });
       const url = result.paymentIntent?.checkoutUrl;
       if (url) {
+        // Stash the purchase so the `?recharge=success` return fires the browser
+        // `purchase` event with the order id as dedupe_id (matches the S2S report).
+        const presetValue = Number(submit.totalMinor) / 100;
+        axonStashPendingPurchase(AXON_PENDING_PURCHASE_KEY, {
+          transactionId: result.order.orderNo ?? result.order.id,
+          value: presetValue,
+          currency,
+          items: [
+            {
+              item_id: submit.priceId,
+              item_name: selectedPreset?.name ?? "Community points",
+              price: presetValue,
+              quantity: 1,
+            },
+          ],
+        });
         // Inside the legacy iframe wrapper, ask the shell to navigate the top
         // window; otherwise redirect this window to the hosted checkout.
         if (window.self !== window.top) {
