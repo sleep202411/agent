@@ -3,8 +3,6 @@
 import { usePathname, useRouter } from "next/navigation";
 import {
   IconCredits,
-  IconCrown,
-  IconCoin,
   IconLanguage,
   IconListDetails,
   IconLogout,
@@ -14,7 +12,6 @@ import { useTranslations, useLocale, setLanguage } from "@/src/i18n/i18n";
 import { setCurrentLocale, localizePath, stripLocalePrefix } from "@/src/i18n/locale-url";
 import { LOCALE_OPTIONS, type Locale } from "@/src/i18n/config";
 import { UserAvatar } from "@/components/user-avatar";
-import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -28,8 +25,6 @@ import { useLogout } from "@/src/hooks/use-logout";
 
 interface StudioUserMenuProps {
   credits?: number;
-  onUpgrade?: () => void;
-  onRecharge?: () => void;
   onTeam?: () => void;
   /** Opens the credits + integral-records popover that the project
    *  header already owns. Without this entry the records view was
@@ -38,13 +33,7 @@ interface StudioUserMenuProps {
   onIntegralRecords?: () => void;
 }
 
-export function StudioUserMenu({
-  credits,
-  onUpgrade,
-  onRecharge,
-  onTeam,
-  onIntegralRecords,
-}: StudioUserMenuProps) {
+export function StudioUserMenu({ credits, onTeam, onIntegralRecords }: StudioUserMenuProps) {
   const tc = useTranslations("common");
   const tn = useTranslations("nav");
   const logout = useLogout();
@@ -104,26 +93,10 @@ export function StudioUserMenu({
 
         {/* Credits */}
         <div className="px-4 py-3">
-          <div className="mb-3 flex items-center gap-2">
+          <div className="flex items-center gap-2">
             <IconCredits className="size-4 text-primary" />
             <span className="text-xl font-bold">{credits?.toLocaleString() ?? "—"}</span>
             <span className="text-xs text-muted-foreground">{tc("creditsLeft")}</span>
-          </div>
-          <div className="flex gap-2">
-            <Button size="sm" className="flex-1" onClick={onUpgrade}>
-              <IconCrown className="size-3.5" />
-              {tc("upgrade")}
-            </Button>
-            <Button
-              variant="outline"
-              color="muted"
-              size="sm"
-              className="flex-1"
-              onClick={onRecharge}
-            >
-              <IconCoin className="size-3.5" />
-              {tc("rechargeCredits")}
-            </Button>
           </div>
         </div>
 
