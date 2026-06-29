@@ -6,8 +6,6 @@ import {
   IconArrowLeft,
   IconChevronRight,
   IconCredits,
-  IconCrown,
-  IconPlus,
   IconRefresh,
   IconSparkles,
   IconUsers,
@@ -20,9 +18,7 @@ import { backendApi, type Paginated } from "@/src/lib/api";
 import type { IntegralRecord } from "@/src/types/workspace";
 import { ProjectMessagesPopover } from "@/app/(studio)/art-studio/projects/_components/project-messages-popover";
 import { ProjectTeamDialog } from "@/app/(studio)/art-studio/projects/_components/project-team-dialog";
-import { UpgradeDialog } from "@/components/payment/upgrade-dialog";
 import { StudioUserMenu } from "@/app/(studio)/art-studio/projects/_components/studio-user-menu";
-import { CreditsRechargeDialog } from "@/components/payment/credits-recharge-dialog";
 import { useAppSelector, useAppDispatch } from "@/src/store";
 import { localizedProjectWorkspaceHref } from "@/src/lib/studio-routes";
 import { setActiveTab, selectCurrentInstance } from "@/src/store/slices/projectSlice";
@@ -54,9 +50,7 @@ export function ProjectHeader({ projectName, isLoading }: ProjectHeaderProps) {
   const creditsVersion = useAppSelector((s) => s.user.creditsVersion);
 
   const [creditsOpen, setCreditsOpen] = useState(false);
-  const [rechargeOpen, setRechargeOpen] = useState(false);
   const [teamOpen, setTeamOpen] = useState(false);
-  const [upgradeOpen, setUpgradeOpen] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
 
   const displayCredits = useMemo(() => {
@@ -173,12 +167,9 @@ export function ProjectHeader({ projectName, isLoading }: ProjectHeaderProps) {
             </Button>
           ) : null}
 
-          {/* Credits + Recharge + Upgrade as one 3-segment pill. The
-              shared chip background reads as one control; each half
-              uses hover tint to signal interactivity. Recharge sits
-              between the read-only count and the loud upgrade CTA so
-              the natural left-to-right reading is "you have N credits
-              → top up → upgrade tier". */}
+          {/* Studio credits balance — read-only count that opens the records
+              popover. The recharge + upgrade entries were removed: studio
+              payments run through the deprecated Java endpoint. */}
           <div className="relative hidden xl:block">
             <div className="flex items-center overflow-hidden rounded-xl border border-border bg-background/60">
               <button
@@ -189,26 +180,6 @@ export function ProjectHeader({ projectName, isLoading }: ProjectHeaderProps) {
               >
                 <IconCredits className="size-4 text-primary" />
                 <span className="font-semibold">{isCreditsLoading ? "..." : displayCredits}</span>
-              </button>
-              <span className="h-5 w-px bg-border/70" aria-hidden />
-              <button
-                type="button"
-                data-tour-step="recharge"
-                onClick={() => setRechargeOpen(true)}
-                className="flex items-center gap-1 bg-amber-500/[0.1] px-3 py-2 text-sm font-medium text-amber-500 transition-colors hover:bg-amber-500/20"
-              >
-                <IconPlus className="size-3.5" />
-                {tc("rechargeCredits")}
-              </button>
-              <span className="h-5 w-px bg-border/70" aria-hidden />
-              <button
-                type="button"
-                data-tour-step="upgrade"
-                onClick={() => setUpgradeOpen(true)}
-                className="flex items-center gap-1 bg-red-500/[0.1] px-3 py-2 text-sm font-medium text-red-500 transition-colors hover:bg-red-500/20"
-              >
-                <IconCrown className="size-3.5" />
-                {tc("upgrade")}
               </button>
             </div>
           </div>
@@ -347,18 +318,6 @@ export function ProjectHeader({ projectName, isLoading }: ProjectHeaderProps) {
                   })}
                 </div>
               )}
-
-              <Button
-                size="sm"
-                className="mt-3 w-full"
-                onClick={() => {
-                  setCreditsOpen(false);
-                  setRechargeOpen(true);
-                }}
-              >
-                <IconCredits className="size-3.5" />
-                {tc("rechargeCredits")}
-              </Button>
             </div>
           ) : null}
 
@@ -380,8 +339,6 @@ export function ProjectHeader({ projectName, isLoading }: ProjectHeaderProps) {
 
           <StudioUserMenu
             credits={displayCredits}
-            onUpgrade={() => setUpgradeOpen(true)}
-            onRecharge={() => setRechargeOpen(true)}
             onTeam={() => setTeamOpen(true)}
             // Routes the dropdown entry into the same credits-records
             // popover the header's credits chip uses (line 255). One
@@ -392,12 +349,6 @@ export function ProjectHeader({ projectName, isLoading }: ProjectHeaderProps) {
       </header>
 
       <ProjectTeamDialog open={teamOpen} onOpenChange={setTeamOpen} project={project} />
-      <UpgradeDialog open={upgradeOpen} onOpenChange={setUpgradeOpen} />
-      <CreditsRechargeDialog
-        open={rechargeOpen}
-        onOpenChange={setRechargeOpen}
-        onSuccess={() => dispatch(setCreditsLoading(true))}
-      />
     </>
   );
 }
