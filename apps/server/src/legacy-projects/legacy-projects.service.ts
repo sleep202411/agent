@@ -1,13 +1,27 @@
-import { Injectable } from '@nestjs/common';
-import type { RowDataPacket } from 'mysql2';
-import { LegacyMysqlService } from '../infra/legacy-mysql/legacy-mysql.service';
+import {
+  Injectable,
+  Logger,
+  ServiceUnavailableException,
+} from '@nestjs/common';
+import {
+  JAVA_STUDIO_URL,
+  JAVA_REQUEST_TIMEOUT_MS,
+} from '../integrations/java/java-config';
 
 /**
- * Read the user's legacy Java projects straight from the MySQL `project` table
- * (DB `fizzdragon_client`) via the scoped legacy bridge — no round-trip through
- * the Java HTTP API. A project belongs to a user via `admin_user_id`; `enable`
- * (bit) is the soft-delete flag. `project.id` is a bigint beyond JS's safe
- * integer range, so it is CAST to CHAR and carried as a string end-to-end.
+ * Read the user's legacy Java projects via the Java studio HTTP API
+ * (`POST {JAVA_STUDIO_URL}/api/user/world/list/myproduct`), forwarding the
+ * viewer's sa-token cookie. This is the SAME endpoint the legacy art-studio
+ * frontend calls, so "my projects" follows Java's real ownership model —
+ * projects under the `world`s the viewer belongs to — NOT `project.admin_user_id`.
+ *
+ * (Earlier this read the MySQL `project` table directly and filtered by
+ * `admin_user_id = me`; that missed every project the viewer owns through a
+ * shared world but did not personally create, returning an empty list for
+ * collaborators. Switched to the Java endpoint 2026-06-29.)
+ *
+ * `id` is a Java snowflake bigint beyond JS's safe integer range, but Java
+ * already serializes it as a string, so it is carried through as-is.
  */
 export interface LegacyProject {
   id: string;
@@ -19,17 +33,37 @@ export interface LegacyProject {
   updatedAt: string | null;
 }
 
-interface ProjectRow extends RowDataPacket {
-  id: string;
-  name: string | null;
-  image_path: string | null;
-  aspect_ratio: string | null;
-  status: number | null;
-  create_time: Date | null;
-  update_time: Date | null;
+/** One row of Java's `myproduct` list (only the fields we map). */
+interface JavaMyProductItem {
+  id?: number | string;
+  name?: string | null;
+  imagePath?: string | null;
+  aspectRatio?: string | null;
+  status?: number | null;
+  createTime?: string | null;
+  updateTime?: string | null;
 }
 
-const toIso = (v: Date | null) => (v ? new Date(v).toISOString() : null);
+interface JavaMyProductEnvelope {
+  success?: boolean;
+  code?: string;
+  message?: string;
+  data?: {
+    page?: number;
+    totalCount?: number;
+    list?: JavaMyProductItem[];
+  } | null;
+}
+
+const MYPRODUCT_PATH = '/api/user/world/list/myproduct';
+
+// Java returns offset-bearing ISO timestamps (e.g. `2026-06-23T01:31:39+08:00`);
+// normalize to UTC `Z` to match the contract the frontend already consumes.
+const toIso = (v: string | null | undefined): string | null => {
+  if (!v) return null;
+  const d = new Date(v);
+  return Number.isNaN(d.getTime()) ? null : d.toISOString();
+};
 
 // Legacy project covers are object keys in the Java OSS bucket (e.g.
 // `WORLD/20260129/x.jpg`, `history/img/72/.../y.jpeg`), public-read. Mirror
@@ -40,7 +74,7 @@ const OSS_BASE = (
   'https://fizzstudio-sg.oss-ap-southeast-1.aliyuncs.com'
 ).replace(/\/+$/, '');
 
-function resolveCover(path: string | null): string | null {
+function resolveCover(path: string | null | undefined): string | null {
   const p = path?.trim();
   if (!p) return null;
   if (/^https?:\/\//i.test(p)) return p;
@@ -49,33 +83,84 @@ function resolveCover(path: string | null): string | null {
 
 @Injectable()
 export class LegacyProjectsService {
-  constructor(private readonly legacy: LegacyMysqlService) {}
+  private readonly logger = new Logger(LegacyProjectsService.name);
 
+  /**
+   * List the viewer's legacy projects. `cookie` is the viewer's raw cookie
+   * string (carries the sa-token the Java endpoint authenticates against);
+   * the global AuthGuard has already validated it before we get here.
+   *
+   * The frontend pages by limit/offset; Java pages by page/pageSize. Since the
+   * caller always uses a fixed page size, `page = floor(offset / pageSize) + 1`
+   * is an exact translation.
+   */
   async listMyProjects(
-    userId: string,
+    cookie: string,
     opts: { limit: number; offset: number },
   ): Promise<LegacyProject[]> {
-    // limit/offset are validated ints in the controller, so inlining them is
-    // injection-safe and sidesteps mysql2's quirky LIMIT-placeholder handling.
-    // Only `userId` (the untrusted-shaped value) rides as a bound parameter.
-    const limit = Math.min(100, Math.max(1, Math.trunc(opts.limit)));
+    const pageSize = Math.min(100, Math.max(1, Math.trunc(opts.limit)));
     const offset = Math.max(0, Math.trunc(opts.offset));
-    const rows = await this.legacy.query<ProjectRow>(
-      `SELECT CAST(id AS CHAR) AS id, name, image_path, aspect_ratio, status, create_time, update_time
-         FROM project
-        WHERE admin_user_id = ? AND enable = 1
-        ORDER BY update_time DESC
-        LIMIT ${limit} OFFSET ${offset}`,
-      [userId],
+    const page = Math.floor(offset / pageSize) + 1;
+
+    const url = `${JAVA_STUDIO_URL}${MYPRODUCT_PATH}`;
+    const controller = new AbortController();
+    const timeout = setTimeout(
+      () => controller.abort(),
+      JAVA_REQUEST_TIMEOUT_MS,
     );
-    return rows.map((r) => ({
-      id: r.id,
+
+    let envelope: JavaMyProductEnvelope;
+    try {
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: {
+          Accept: 'application/json',
+          'Content-Type': 'application/json',
+          ...(cookie ? { Cookie: cookie } : {}),
+        },
+        body: JSON.stringify({ page, pageSize }),
+        signal: controller.signal,
+      });
+      if (!res.ok) {
+        this.logger.warn(`Java ${MYPRODUCT_PATH} returned HTTP ${res.status}`);
+        throw new ServiceUnavailableException({
+          message: 'Legacy projects service unavailable',
+          upstream: 'java',
+        });
+      }
+      envelope = (await res.json()) as JavaMyProductEnvelope;
+    } catch (err) {
+      if (err instanceof ServiceUnavailableException) throw err;
+      const msg = err instanceof Error ? err.message : String(err);
+      this.logger.error(`Java myproduct fetch failed: ${msg} (${url})`);
+      throw new ServiceUnavailableException({
+        message: 'Legacy projects service unavailable',
+        upstream: 'java',
+      });
+    } finally {
+      clearTimeout(timeout);
+    }
+
+    if (envelope.success !== true) {
+      this.logger.warn(
+        `Java ${MYPRODUCT_PATH} non-success: code=${envelope.code} msg=${envelope.message}`,
+      );
+      throw new ServiceUnavailableException({
+        message: 'Legacy projects service error',
+        upstream: 'java',
+        upstreamCode: envelope.code,
+      });
+    }
+
+    const list = envelope.data?.list ?? [];
+    return list.map((r) => ({
+      id: String(r.id),
       name: r.name?.trim() || 'Untitled',
-      cover: resolveCover(r.image_path),
-      aspectRatio: r.aspect_ratio?.trim() || null,
+      cover: resolveCover(r.imagePath),
+      aspectRatio: r.aspectRatio?.trim() || null,
       status: Number(r.status ?? 0),
-      createdAt: toIso(r.create_time),
-      updatedAt: toIso(r.update_time),
+      createdAt: toIso(r.createTime),
+      updatedAt: toIso(r.updateTime),
     }));
   }
 }
