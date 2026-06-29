@@ -36,7 +36,14 @@ export function VideoPlayer({
     containerRef.current.appendChild(videoEl);
 
     const isAudio = type === "audio";
-    const mimeType = isAudio ? "audio/mpeg" : "video/mp4";
+    // HLS streams (ABR `master.m3u8`, e.g. CN IP episodes transcoded by IMM)
+    // MUST be advertised with an HLS MIME type so video.js's bundled VHS engine
+    // takes over. Labelling an .m3u8 as "video/mp4" leaves it on the native
+    // <video> tech, which only Safari/iOS can decode — Chrome/Android/WeChat
+    // play nothing. video.js only auto-derives the type from the extension when
+    // none is given, so we must set it explicitly here.
+    const isHls = !isAudio && /\.m3u8(?:[?#]|$)/i.test(src);
+    const mimeType = isAudio ? "audio/mpeg" : isHls ? "application/x-mpegURL" : "video/mp4";
 
     playerRef.current = videojs(videoEl, {
       controls: true,
