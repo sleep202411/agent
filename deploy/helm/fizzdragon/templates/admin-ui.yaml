@@ -32,10 +32,16 @@ spec:
               containerPort: {{ .Values.adminUi.containerPort }}
           env:
             {{- include "fizzdragon.componentEnv" .Values.adminUi | nindent 12 }}
-          {{- if and .Values.azure.enabled .Values.adminUiSecrets.mapping }}
+          {{- if .Values.adminUiSecrets.mapping }}
+          {{/* secret source differs per cell: Azure KV CSI on .com, an
+               out-of-band kubectl secret on .cn — same projectedName either way.
+               optional:true so a not-yet-created secret degrades gracefully. */}}
           envFrom:
             - secretRef:
                 name: {{ .Values.adminUiSecrets.projectedName }}
+                optional: true
+          {{- end }}
+          {{- if and .Values.azure.enabled .Values.adminUiSecrets.mapping }}
           volumeMounts:
             - name: adminui-kv-secrets
               mountPath: /mnt/adminui-secrets
