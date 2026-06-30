@@ -2,6 +2,7 @@
 
 > 状态: 需求草案。
 > 这份文档分成两部分:
+>
 > 1. 完整产品预期形态: 解释未来这套文字游戏系统应该如何工作。
 > 2. 当前阶段 Java 接口: 只描述目前建议 Java 先承接的最小运行时能力。
 
@@ -28,13 +29,13 @@ FizzDragon / 气泡龙的文字游戏系统包含两个核心场景:
 
 ## 2. 系统边界
 
-| 模块 | 主要职责 | 存储 |
-| --- | --- | --- |
-| Web Studio / 创作者侧 | 编辑草稿工程、画布、节点、角色、线索、资产、规则 | PG |
-| Web Player / 玩家侧 | 展示游玩 UI, 发送玩家输入, 展示 AI 输出和状态变化 | 浏览器状态 |
-| Web/Node 后端 | 发布创作者草稿, 生成运行时 JSON, 同步给 Java | PG |
-| Java Runtime | 玩家运行时, 处理 session、玩家输入、LLM 调用、状态推进 | MySQL |
-| LLM 服务 | 判断玩家输入、生成下一段剧情文本、返回结构化状态变化 | 外部模型服务 |
+| 模块                  | 主要职责                                               | 存储         |
+| --------------------- | ------------------------------------------------------ | ------------ |
+| Web Studio / 创作者侧 | 编辑草稿工程、画布、节点、角色、线索、资产、规则       | PG           |
+| Web Player / 玩家侧   | 展示游玩 UI, 发送玩家输入, 展示 AI 输出和状态变化      | 浏览器状态   |
+| Web/Node 后端         | 发布创作者草稿, 生成运行时 JSON, 同步给 Java           | PG           |
+| Java Runtime          | 玩家运行时, 处理 session、玩家输入、LLM 调用、状态推进 | MySQL        |
+| LLM 服务              | 判断玩家输入、生成下一段剧情文本、返回结构化状态变化   | 外部模型服务 |
 
 建议边界:
 
@@ -45,14 +46,14 @@ FizzDragon / 气泡龙的文字游戏系统包含两个核心场景:
 
 ## 3. 核心对象
 
-| 名称 | 含义 | 当前阶段说明 |
-| --- | --- | --- |
-| `userId` | 平台用户 ID, 可以是创作者或玩家 | 玩家身份直接复用 `userId` |
-| `projectId` | 创作者编辑态草稿工程 | 存在 Web/Node + PG, 玩家侧不直接使用 |
-| `storyId` | 已发布、可游玩的故事 | Java 根据它读取 `runtimeJson` |
-| `sessionId` | 某个玩家的一局临时游玩会话 | 当前阶段可以只存在 Java 内存 |
-| `turnId` | 一次玩家输入和 AI 输出的回合 ID | 当前阶段可以只作为日志 ID |
-| `versionId` | 某次发布版本 | 当前阶段不引入 |
+| 名称        | 含义                            | 当前阶段说明                         |
+| ----------- | ------------------------------- | ------------------------------------ |
+| `userId`    | 平台用户 ID, 可以是创作者或玩家 | 玩家身份直接复用 `userId`            |
+| `projectId` | 创作者编辑态草稿工程            | 存在 Web/Node + PG, 玩家侧不直接使用 |
+| `storyId`   | 已发布、可游玩的故事            | Java 根据它读取 `runtimeJson`        |
+| `sessionId` | 某个玩家的一局临时游玩会话      | 当前阶段可以只存在 Java 内存         |
+| `turnId`    | 一次玩家输入和 AI 输出的回合 ID | 当前阶段可以只作为日志 ID            |
+| `versionId` | 某次发布版本                    | 当前阶段不引入                       |
 
 关系:
 
@@ -142,34 +143,34 @@ storyId
 
 顶层字段:
 
-| 字段 | 类型 | 来源 | Java 是否存储 | 说明 |
-| --- | --- | --- | --- | --- |
-| `storyId` | string | Web/Node 发布时生成 | 是 | 已发布故事 ID。玩家开局和 session 都绑定它。 |
-| `sourceProjectId` | string | Web Studio 草稿工程 | 是 | 来源草稿 ID, 用于追踪发布来源。 |
-| `creatorUserId` | string | 平台用户系统 | 是 | 创作者用户 ID。 |
-| `schemaVersion` | string | Web/Node 发布逻辑 | 是 | payload schema 版本, 当前建议 `narrative-runtime-v1`。 |
-| `locale` | string | 发布语言 | 是 | 当前 `storyId` 的内容主语言。当前阶段可以先只支持 `zh-CN`。 |
-| `title` | string | 创作者填写 | 是 | 故事展示标题。 |
-| `summary` | string | 创作者填写或 AI 生成 | 是 | 故事简介, 用于展示。 |
-| `coverUrl` | string | 媒体资源 | 是 | 封面图 URL。 |
-| `visibility` | enum | 发布设置 | 是 | 建议取值: `private` / `public` / `unlisted`。 |
-| `runtimeJson` | object | Web/Node 从画布生成 | 是 | Java 玩家运行时核心配置。 |
+| 字段              | 类型   | 来源                 | Java 是否存储 | 说明                                                        |
+| ----------------- | ------ | -------------------- | ------------- | ----------------------------------------------------------- |
+| `storyId`         | string | Web/Node 发布时生成  | 是            | 已发布故事 ID。玩家开局和 session 都绑定它。                |
+| `sourceProjectId` | string | Web Studio 草稿工程  | 是            | 来源草稿 ID, 用于追踪发布来源。                             |
+| `creatorUserId`   | string | 平台用户系统         | 是            | 创作者用户 ID。                                             |
+| `schemaVersion`   | string | Web/Node 发布逻辑    | 是            | payload schema 版本, 当前建议 `narrative-runtime-v1`。      |
+| `locale`          | string | 发布语言             | 是            | 当前 `storyId` 的内容主语言。当前阶段可以先只支持 `zh-CN`。 |
+| `title`           | string | 创作者填写           | 是            | 故事展示标题。                                              |
+| `summary`         | string | 创作者填写或 AI 生成 | 是            | 故事简介, 用于展示。                                        |
+| `coverUrl`        | string | 媒体资源             | 是            | 封面图 URL。                                                |
+| `visibility`      | enum   | 发布设置             | 是            | 建议取值: `private` / `public` / `unlisted`。               |
+| `runtimeJson`     | object | Web/Node 从画布生成  | 是            | Java 玩家运行时核心配置。                                   |
 
 `runtimeJson` 字段:
 
-| 字段 | 类型 | 说明 |
-| --- | --- | --- |
-| `schemaVersion` | string | runtime JSON 的 schema 版本。 |
-| `entryPlotId` | string | 入口剧情节点 ID。 |
-| `storyBackground` | string | 故事背景。可用于 LLM system/context。 |
-| `secretTruth` | string | 可选。隐藏真相或最终谜底, 不应直接返回给前端。 |
-| `plots` | array | 剧情节点。 |
-| `choices` | array | 预设选项。 |
-| `clues` | array | 线索。 |
-| `characters` | array | 角色。 |
-| `assets` | array | 场景、图片、音乐、视频、道具等表现资产。 |
-| `rules` | array | 全局或局部规则。 |
-| `llmPolicy` | object | LLM 生成策略和输出约束。 |
+| 字段              | 类型   | 说明                                           |
+| ----------------- | ------ | ---------------------------------------------- |
+| `schemaVersion`   | string | runtime JSON 的 schema 版本。                  |
+| `entryPlotId`     | string | 入口剧情节点 ID。                              |
+| `storyBackground` | string | 故事背景。可用于 LLM system/context。          |
+| `secretTruth`     | string | 可选。隐藏真相或最终谜底, 不应直接返回给前端。 |
+| `plots`           | array  | 剧情节点。                                     |
+| `choices`         | array  | 预设选项。                                     |
+| `clues`           | array  | 线索。                                         |
+| `characters`      | array  | 角色。                                         |
+| `assets`          | array  | 场景、图片、音乐、视频、道具等表现资产。       |
+| `rules`           | array  | 全局或局部规则。                               |
+| `llmPolicy`       | object | LLM 生成策略和输出约束。                       |
 
 ## 7. 剧情节点模型
 
@@ -412,10 +413,10 @@ open_answer = 自由输入
 
 字段说明:
 
-| 字段 | 类型 | 说明 |
-| --- | --- | --- |
-| `storyId` | string | 玩家要开始游玩的已发布故事 ID。 |
-| `userId` | string | 当前登录用户 ID。当前阶段不单独引入 `playerId`。 |
+| 字段      | 类型   | 说明                                             |
+| --------- | ------ | ------------------------------------------------ |
+| `storyId` | string | 玩家要开始游玩的已发布故事 ID。                  |
+| `userId`  | string | 当前登录用户 ID。当前阶段不单独引入 `playerId`。 |
 
 说明:
 
@@ -568,20 +569,20 @@ sessionId -> RuntimeSessionState
 
 `narrative_story`
 
-| 字段 | 说明 |
-| --- | --- |
-| `story_id` | 主键 |
-| `source_project_id` | 来源创作者草稿 |
-| `creator_user_id` | 创作者 |
-| `schema_version` | runtime schema |
-| `locale` | 内容主语言 |
-| `title` | 展示标题 |
-| `summary` | 展示简介 |
-| `cover_url` | 封面 |
-| `visibility` | `private` / `public` / `unlisted` |
-| `runtime_json` | 完整不可变运行时 JSON |
-| `created_at` | 发布时间 |
-| `updated_at` | 元信息更新时间 |
+| 字段                | 说明                              |
+| ------------------- | --------------------------------- |
+| `story_id`          | 主键                              |
+| `source_project_id` | 来源创作者草稿                    |
+| `creator_user_id`   | 创作者                            |
+| `schema_version`    | runtime schema                    |
+| `locale`            | 内容主语言                        |
+| `title`             | 展示标题                          |
+| `summary`           | 展示简介                          |
+| `cover_url`         | 封面                              |
+| `visibility`        | `private` / `public` / `unlisted` |
+| `runtime_json`      | 完整不可变运行时 JSON             |
+| `created_at`        | 发布时间                          |
+| `updated_at`        | 元信息更新时间                    |
 
 ### 15.2 后续阶段: 玩家 session
 
@@ -589,16 +590,16 @@ sessionId -> RuntimeSessionState
 
 `narrative_player_session`
 
-| 字段 | 说明 |
-| --- | --- |
-| `session_id` | 主键 |
-| `story_id` | 绑定的故事 |
-| `user_id` | 当前玩家用户 |
-| `current_plot_id` | 当前剧情节点 |
-| `state_json` | 玩家状态 |
-| `status` | `active` / `completed` / `abandoned` |
-| `created_at` | 创建时间 |
-| `updated_at` | 更新时间 |
+| 字段              | 说明                                 |
+| ----------------- | ------------------------------------ |
+| `session_id`      | 主键                                 |
+| `story_id`        | 绑定的故事                           |
+| `user_id`         | 当前玩家用户                         |
+| `current_plot_id` | 当前剧情节点                         |
+| `state_json`      | 玩家状态                             |
+| `status`          | `active` / `completed` / `abandoned` |
+| `created_at`      | 创建时间                             |
+| `updated_at`      | 更新时间                             |
 
 ### 15.3 后续阶段: 回合记录
 
@@ -606,18 +607,18 @@ sessionId -> RuntimeSessionState
 
 `narrative_player_turn`
 
-| 字段 | 说明 |
-| --- | --- |
-| `turn_id` | 主键 |
-| `session_id` | session |
-| `client_turn_id` | 前端幂等 ID |
-| `input_type` | `open_answer` / `choice` |
-| `player_text` | 玩家输入文本 |
-| `choice_id` | 选择的预设选项 |
-| `assistant_text` | AI 输出 |
-| `state_patch_json` | 本回合状态变化 |
-| `llm_trace_id` | LLM 调用链路 ID |
-| `created_at` | 创建时间 |
+| 字段               | 说明                     |
+| ------------------ | ------------------------ |
+| `turn_id`          | 主键                     |
+| `session_id`       | session                  |
+| `client_turn_id`   | 前端幂等 ID              |
+| `input_type`       | `open_answer` / `choice` |
+| `player_text`      | 玩家输入文本             |
+| `choice_id`        | 选择的预设选项           |
+| `assistant_text`   | AI 输出                  |
+| `state_patch_json` | 本回合状态变化           |
+| `llm_trace_id`     | LLM 调用链路 ID          |
+| `created_at`       | 创建时间                 |
 
 ## 16. 当前阶段检查点
 
