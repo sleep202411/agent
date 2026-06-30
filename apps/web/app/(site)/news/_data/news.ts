@@ -8,20 +8,26 @@
  */
 
 import "server-only";
+import { env } from "@/src/env";
 import { getStaticArticles } from "./static-articles";
 import type { NewsItem } from "./types";
 
 const SUPPORTED_LANGS = new Set(["en-US", "zh-CN", "zh-HK"]);
 
-const CONTENT_BASE = (process.env.JAVA_CONTENT_URL ?? "https://fizzdragon.com/content").replace(
-  /\/+$/,
-  ""
-);
+/**
+ * Server-only required env. Which region's Java backend we read news from is
+ * critical config: a silent default would let a misconfigured cell (e.g. .cn)
+ * quietly read .com's data instead of failing. Fail loud — never default.
+ */
+function requireServerEnv(name: string): string {
+  const value = process.env[name]?.trim();
+  if (value) return value;
+  throw new Error(`Missing required environment variable: ${name}`);
+}
+
+const CONTENT_BASE = requireServerEnv("JAVA_CONTENT_URL").replace(/\/+$/, "");
 const UPSTREAM = `${CONTENT_BASE}/project/list/newsad`;
-const BANNER_HOST = (
-  process.env.NEXT_PUBLIC_BANNER_BASE_URL ??
-  "https://fizzdragon-banner-sg.oss-ap-southeast-1.aliyuncs.com"
-).replace(/\/+$/, "");
+const BANNER_HOST = env.BANNER_BASE_URL.replace(/\/+$/, "");
 
 interface UpstreamItem {
   id: number;
