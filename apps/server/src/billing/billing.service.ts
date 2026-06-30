@@ -2397,16 +2397,17 @@ export class BillingService {
         msg: 'Billing price not found.',
       });
     }
-    // Wallet top-up packs have dedicated endpoints (/compute-topup,
-    // /recharge-custom) that resolve the workspace owner + exchange rate; routing
-    // them through the generic checkout would bypass that. Keep the split clean.
-    if (
-      price.item.productType === BillingProductType.compute_point_pack ||
-      price.item.productType === BillingProductType.community_point_pack
-    ) {
+    // Compute-point packs have a dedicated endpoint (/compute-topup) that resolves
+    // the workspace owner + per-currency exchange rate; routing them through the
+    // generic checkout would bypass that, so keep them out. Community-point packs
+    // are user-scoped USD SKUs whose wallet grant is frozen straight from the price
+    // below (grantsWalletAmount/Kind) and fulfilled off that snapshot — they
+    // checkout normally here. This is the same path the existing community-point
+    // orders were created + fulfilled through before the over-broad guard.
+    if (price.item.productType === BillingProductType.compute_point_pack) {
       throw new BadRequestException({
         code: 'BILLING_PRICE_NOT_CHECKOUTABLE',
-        msg: 'Use the dedicated top-up endpoint for credit packs.',
+        msg: 'Use the dedicated /compute-topup endpoint for compute credit packs.',
       });
     }
     const subject = await this.resolveCheckoutSubject(user, price, input);
