@@ -37,7 +37,6 @@ type NewsFormState = {
   id: string | null;
   createdAt: string | null;
   kind: NewsKind;
-  url: string;
   author: string;
   status: NewsStatus;
   publishedAtLocal: string;
@@ -76,7 +75,9 @@ export function NewsEditor({
   const primaryContent = form.localized[NEWS_PRIMARY_LOCALE];
   const canSubmit =
     Boolean(primaryContent.title.trim()) &&
-    (form.kind === "external" ? Boolean(form.url.trim()) : Boolean(primaryContent.body.trim())) &&
+    (form.kind === "external"
+      ? Boolean(primaryContent.url.trim())
+      : Boolean(primaryContent.body.trim())) &&
     (form.status !== "published" || Boolean(form.publishedAtLocal));
 
   function setLocaleField(field: keyof NewsLocaleContent, value: string) {
@@ -157,7 +158,9 @@ export function NewsEditor({
         : localInputToIso(form.publishedAtLocal);
     const payload: AdminNewsSaveInput = {
       kind: form.kind,
-      url: form.kind === "external" ? form.url.trim() : "",
+      // External link is per-locale (localized.<locale>.url); keep the shared
+      // field as the primary-locale value for backward compatibility.
+      url: form.kind === "external" ? form.localized[NEWS_PRIMARY_LOCALE].url.trim() : "",
       author: form.author.trim(),
       status: form.status,
       tagIds: [...form.tagIds],
@@ -472,10 +475,10 @@ export function NewsEditor({
             ) : null}
 
             {form.kind === "external" ? (
-              <Field label="外链地址" hint="点击资讯卡片将在新标签页打开该链接">
+              <Field label="外链地址" hint="按语言分别填写；点击资讯卡片将在新标签页打开该链接">
                 <Input
-                  value={form.url}
-                  onChange={(event) => setForm((prev) => ({ ...prev, url: event.target.value }))}
+                  value={activeContent.url}
+                  onChange={(event) => setLocaleField("url", event.target.value)}
                   placeholder="https://example.com/article"
                   className="h-9"
                   inputMode="url"
@@ -517,7 +520,6 @@ function initForm(article: NewsArticle | null, availableTags: NewsTag[]): NewsFo
       id: null,
       createdAt: null,
       kind: "article",
-      url: "",
       author: "",
       status: "draft",
       publishedAtLocal: "",
@@ -529,7 +531,6 @@ function initForm(article: NewsArticle | null, availableTags: NewsTag[]): NewsFo
     id: article.id,
     createdAt: article.createdAt,
     kind: article.kind,
-    url: article.url,
     author: article.author,
     status: article.status,
     publishedAtLocal: isoToLocalInput(article.publishedAt),

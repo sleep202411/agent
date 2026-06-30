@@ -76,6 +76,7 @@ interface JavaLocale {
   body?: string | null;
   coverUrl?: string | null;
   videoUrl?: string | null;
+  url?: string | null;
 }
 interface JavaNews {
   id: number;
@@ -107,24 +108,33 @@ function toLocaleContent(java?: JavaLocale | null): NewsLocaleContent {
     body: java?.body ?? "",
     coverUrl: java?.coverUrl ?? "",
     videoUrl: java?.videoUrl ?? "",
+    url: java?.url ?? "",
   };
 }
 
 function toArticle(java: JavaNews): NewsArticle {
   const localized = java.localized ?? {};
+  const localizedContent = {
+    "zh-CN": toLocaleContent(localized["zh-CN"]),
+    "en-US": toLocaleContent(localized["en-US"]),
+    "zh-HK": toLocaleContent(localized["zh-HK"]),
+  };
   return {
     id: String(java.id),
     kind: java.kind,
-    url: java.url ?? "",
+    // External link is stored per-locale (localized.<locale>.url); the shared
+    // article.url is a convenience for the list card — derive it from the primary
+    // locale, falling back to any locale or the legacy top-level field.
+    url:
+      localizedContent["zh-CN"].url ||
+      localizedContent["en-US"].url ||
+      localizedContent["zh-HK"].url ||
+      (java.url ?? ""),
     author: java.author ?? "",
     status: java.status,
     tagIds: java.tagIds ?? [],
     publishedAt: java.publishedAt ?? null,
-    localized: {
-      "zh-CN": toLocaleContent(localized["zh-CN"]),
-      "en-US": toLocaleContent(localized["en-US"]),
-      "zh-HK": toLocaleContent(localized["zh-HK"]),
-    },
+    localized: localizedContent,
     createdAt: java.createdAt,
     updatedAt: java.updatedAt,
   };

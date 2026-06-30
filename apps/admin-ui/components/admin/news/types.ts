@@ -35,6 +35,9 @@ export interface NewsLocaleContent {
   body: string;
   coverUrl: string;
   videoUrl: string;
+  /** External link for this locale — only used when kind === "external". The Java
+   *  backend stores it per-locale under localized.<locale>.url. */
+  url: string;
 }
 
 export interface NewsTag {
@@ -59,7 +62,7 @@ export interface NewsArticle {
 }
 
 export function emptyNewsLocaleContent(): NewsLocaleContent {
-  return { title: "", summary: "", body: "", coverUrl: "", videoUrl: "" };
+  return { title: "", summary: "", body: "", coverUrl: "", videoUrl: "", url: "" };
 }
 
 export function emptyLocalizedContent(): Record<NewsLocaleCode, NewsLocaleContent> {
