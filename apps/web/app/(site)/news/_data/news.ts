@@ -26,17 +26,27 @@ function requireServerEnv(name: string): string {
 }
 
 const CONTENT_BASE = requireServerEnv("JAVA_CONTENT_URL").replace(/\/+$/, "");
-const UPSTREAM = `${CONTENT_BASE}/project/list/newsad`;
+// Public C-end endpoint (docs/news-module-backend-spec.md §5): anonymous,
+// published-only, ordered by publishedAt desc, fields fall back to zh-CN via the
+// `locale` param. Serves the admin-managed news table — replaces the legacy
+// `/project/list/newsad` so admin edits actually surface on the site.
+const UPSTREAM_BASE = `${CONTENT_BASE}/api/news`;
 const BANNER_HOST = env.BANNER_BASE_URL.replace(/\/+$/, "");
 
+interface UpstreamTag {
+  id: string;
+  label?: string;
+}
 interface UpstreamItem {
   id: number;
-  type?: string;
+  kind?: string; // "external" | "article"
   title?: string;
-  info?: string;
+  summary?: string;
   url?: string;
-  picLink?: string;
-  createTime?: string;
+  coverUrl?: string;
+  author?: string;
+  publishedAt?: string;
+  tags?: UpstreamTag[];
 }
 
 // Upstream is in flux: legacy shape uses `code: 200` for success; the
@@ -58,58 +68,48 @@ function isUpstreamSuccess(json: UpstreamResponse | null): boolean {
 }
 
 function normalizeUpstream(raw: UpstreamItem): NewsItem {
-  const picLink = raw.picLink ?? "";
-  const cover = picLink
-    ? picLink.startsWith("http")
-      ? picLink
-      : `${BANNER_HOST}/${picLink.replace(/^\/+/, "")}`
+  const coverUrl = raw.coverUrl ?? "";
+  const cover = coverUrl
+    ? coverUrl.startsWith("http")
+      ? coverUrl
+      : `${BANNER_HOST}/${coverUrl.replace(/^\/+/, "")}`
     : "";
+  const isExternal = raw.kind === "external";
   return {
     id: raw.id,
-    type: raw.type ?? "news",
+    type: raw.kind ?? "news",
     title: raw.title ?? "",
-    info: raw.info ?? "",
+    info: raw.summary ?? "",
     cover,
-    createTime: raw.createTime ?? new Date().toISOString(),
-    isExternal: true,
-    url: raw.url || undefined,
+    createTime: raw.publishedAt ?? new Date().toISOString(),
+    isExternal,
+    // External items jump to `url`; internal articles route to /news/:id.
+    url: isExternal ? raw.url || undefined : undefined,
   };
 }
 
-function flatten(data: unknown): NewsItem[] {
-  // Defensive: upstream sometimes returns malformed shapes (string
-  // error bodies, sections that aren't arrays, items missing fields).
-  // We never want to throw — worst case is "no live articles".
+function parseList(data: unknown): NewsItem[] {
+  // /api/news returns a single flat `data.list` (published-only, already
+  // deduped + ordered by publishedAt). Defensive: tolerate malformed shapes —
+  // worst case is "no live articles", never a throw.
   if (!data || typeof data !== "object") return [];
+  const list = (data as { list?: unknown }).list;
+  if (!Array.isArray(list)) return [];
 
-  // Dedupe by both id AND url. Upstream `newsad` slices the same
-  // article into multiple category sections and tends to assign a
-  // fresh id per section, so id-only dedup misses cross-section
-  // duplicates. Article url is the stable identity here.
   const seenIds = new Set<number>();
-  const seenUrls = new Set<string>();
   const out: NewsItem[] = [];
   try {
-    for (const arr of Object.values(data as Record<string, unknown>)) {
-      if (!Array.isArray(arr)) continue;
-      for (const raw of arr) {
-        if (!raw || typeof raw !== "object") continue;
-        const item = raw as UpstreamItem;
-        if (typeof item.id !== "number") continue;
-        // Drop garbage rows: live newsapi items only make sense if
-        // they carry an external link. Title/cover-only entries are
-        // filler.
-        if (!item.url || item.url.trim() === "") continue;
-        if (!item.title || item.title.trim() === "") continue;
-        const urlKey = item.url.trim();
-        if (seenIds.has(item.id) || seenUrls.has(urlKey)) continue;
-        seenIds.add(item.id);
-        seenUrls.add(urlKey);
-        out.push(normalizeUpstream(item));
-      }
+    for (const raw of list) {
+      if (!raw || typeof raw !== "object") continue;
+      const item = raw as UpstreamItem;
+      if (typeof item.id !== "number") continue;
+      if (!item.title || item.title.trim() === "") continue;
+      if (seenIds.has(item.id)) continue;
+      seenIds.add(item.id);
+      out.push(normalizeUpstream(item));
     }
   } catch (err) {
-    console.warn("[news] flatten failed, returning partial result:", err);
+    console.warn("[news] parseList failed, returning partial result:", err);
   }
   return out;
 }
@@ -121,11 +121,14 @@ export async function getNewsList(rawLang: string): Promise<NewsItem[]> {
   // 500 / malformed body / non-JSON response can never bubble up.
   // Worst case we just serve the static articles (or an empty list on
   // production .cn).
+  // Server-side locale fallback is done by the backend via the `locale` param.
+  // pageSize=100 returns the full published set today (73); revisit with real
+  // pagination if the catalogue ever outgrows that.
+  const url = `${UPSTREAM_BASE}?locale=${encodeURIComponent(lang)}&pageSize=100`;
   let live: NewsItem[] = [];
-  console.log(`[news] fetching upstream lang=${lang} url=${UPSTREAM}`);
+  console.log(`[news] fetching upstream lang=${lang} url=${url}`);
   try {
-    const res = await fetch(UPSTREAM, {
-      headers: { "accept-language": lang },
+    const res = await fetch(url, {
       next: { revalidate: 300 },
     });
     console.log(`[news] upstream status=${res.status} ${res.statusText}`);
@@ -144,8 +147,8 @@ export async function getNewsList(rawLang: string): Promise<NewsItem[]> {
         console.warn("[news] upstream JSON parse failed:", err);
       }
       if (isUpstreamSuccess(json) && json!.data) {
-        live = flatten(json!.data);
-        console.log(`[news] flattened live items=${live.length}`);
+        live = parseList(json!.data);
+        console.log(`[news] parsed live items=${live.length}`);
       } else if (json) {
         console.warn(
           `[news] upstream not OK — success=${json.success} code=${json.code} message=${json.message}`
