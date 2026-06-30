@@ -1754,6 +1754,27 @@
       "disclaimerTitle": "訂單履約",
       "disclaimerBody": "用戶購買後獲得的是內容訪問權益，積分扣減、退款和帳本記錄由後端閉環處理。"
     },
+    "narrative": {
+      "eyebrow": "互動文字遊戲",
+      "title": "可玩故事",
+      "body": "這個 IP 已經掛載文字遊戲草稿。玩家會直接進入文字回合、AI 續寫、線索和結局流程。",
+      "fallbackTitle": "文字遊戲入口已準備好",
+      "fallbackBody": "當前本地 IP 詳情接口還在載入或不可用，但這個 IP 已經臨時掛載了可玩的文字遊戲草稿。",
+      "viewAll": "查看遊戲列表",
+      "play": "開始試玩",
+      "status": {
+        "draft": "Draft 草稿",
+        "published": "已發佈"
+      },
+      "items": {
+        "story36Hours": {
+          "type": "AI 文遊",
+          "title": "36 小時溺亡案",
+          "summary": "17 歲少女被送入精英學校矯正，卻在首宗溺亡案中發現真相。",
+          "coverAlt": "36 小時溺亡案的校園入口畫面"
+        }
+      }
+    },
     "notFound": {
       "title": "這個 IP 暫不可訪問",
       "body": "它可能還沒有公開、已下架，或者當前帳號沒有預覽權限。",
@@ -7424,6 +7445,37 @@
       }
     }
   },
+  "games": {
+    "back": "返回 IP 廣場",
+    "eyebrow": "Playable stories",
+    "title": "遊戲",
+    "subtitle": "這裏會聚合所有可直接遊玩的內容：文字遊戲、RPG 和互動影片。當前先接入 36 小時溺亡案的文字遊戲草稿。",
+    "sourceIp": "來源 IP",
+    "start": "開始",
+    "status": {
+      "draft": "Draft 草稿",
+      "published": "已發佈"
+    },
+    "tags": {
+      "textRpg": "文字遊戲",
+      "mystery": "懸疑推理",
+      "aiRuntime": "AI 續寫"
+    },
+    "stats": {
+      "aiRuntime": "AI 回合運行",
+      "plotNodes": "2 個劇情節點",
+      "clues": "4 條線索",
+      "endings": "3 個結局"
+    },
+    "items": {
+      "story36Hours": {
+        "type": "文字遊戲 Draft",
+        "title": "36 小時溺亡案",
+        "summary": "現代中國，一名 17 歲少女被送入精英學校矯正，卻在首宗同學溺亡案中發現真相。",
+        "coverAlt": "36 小時溺亡案的校園入口畫面"
+      }
+    }
+  },
   "narrativeDemo": {
     "brand": {
       "referenceTitle": "氣泡龍 RPG"
@@ -7434,9 +7486,9 @@
     "setup": {
       "step": "第 {current} / {total} 步",
       "nameLabel": "輸入你的角色名字...",
-      "namePlaceholder": "在這裏輸入...",
-      "identityLabel": "你在這個世界裏的身份",
-      "identityPlaceholder": "在這裏輸入...",
+      "namePlaceholder": "林風",
+      "identityLabel": "你在這宗案件裏的身份",
+      "identityPlaceholder": "轉學生、目擊者、疑犯...",
       "detailsLabel": "補充外貌、性格、背景等資訊（可選）",
       "detailsPlaceholder": "在這裏輸入...",
       "back": "返回",
@@ -7444,37 +7496,221 @@
       "start": "開始"
     },
     "play": {
-      "scenarioTitle": "紅色檔案館",
-      "fallbackName": "旅人",
-      "identityFallback": "未認領的主角",
-      "detailsFallback": "沒有填寫額外背景。敘事系統會從你的前幾次行動中推斷細節。",
+      "scenarioTitle": "36 小時溺亡案",
+      "fallbackName": "林風",
+      "identityFallback": "17 歲轉學生，擁有過目不忘和邏輯推演能力。",
+      "detailsFallback": "AI 會從你的前幾次行動中推斷角色細節。",
       "character": "角色",
-      "savePrompt": "登入後可儲存本次遊玩，並在任意設備繼續。",
-      "signUp": "註冊",
-      "inputPlaceholder": "你要做甚麼？",
-      "takeTurn": "行動",
+      "inputPlaceholder": "說一句話，或描述你想做甚麼...",
+      "takeTurn": "發送",
+      "takeTurnPrompt": "我來行動",
       "continue": "繼續",
       "retry": "重試",
       "erase": "清空",
-      "suggestion": "建議",
-      "suggestedAction": "我問信使，檔案館到底偷走了我甚麼。",
-      "jumpToInput": "跳到輸入框",
+      "suggestion": "給點提示",
+      "suggestedAction": "我先不說話，觀察校門登記冊和保安反應。",
+      "freeInputLabel": "自由輸入",
+      "suggestedActionsLabel": "可以嘗試",
+      "closeComposer": "收起輸入",
       "undo": "撤銷",
       "redo": "重做",
       "settings": "設定",
-      "turnCount": "{count} 次行動",
+      "soundOn": "聲音開",
+      "soundOff": "聲音關",
+      "turnCount": "{count} 回合",
+      "riskCount": "風險 {count}",
       "statusReady": "準備就緒",
-      "statusStarted": "{name} 進入了故事。",
-      "statusTurnRecorded": "行動已記錄。已追加模擬敘事回饋。",
+      "statusStarted": "你進入了案件。",
+      "statusThinking": "AI 正在處理意圖：{judgement}",
+      "statusTurnRecorded": "回合已記錄。故事仍停留在當前劇情節點內。",
+      "statusClueUnlocked": "解鎖 {count} 條線索。",
       "statusContinued": "敘事系統繼續了場景。",
       "statusRetried": "已重寫上一次敘事回饋。",
       "statusSuggestion": "已填入建議行動。",
-      "mockResult": "世界接受了 {name} 的意圖。信使看了看龍形代幣，隨後悄悄改變路線。",
-      "mockRetry": "敘事系統重新組織結果：{name} 在同一個選擇裏發現了第二條隱藏路徑。",
-      "stats": {
-        "resolve": "決心",
-        "memory": "記憶",
-        "heat": "熱度"
+      "statusLLMTurnRecorded": "Qwen 已生成本回合。",
+      "statusFallbackTurnRecorded": "LLM 未接通，已使用本地規則降級。",
+      "statusLLMError": "LLM 調用失敗：{message}",
+      "llmUnknownError": "未知錯誤",
+      "soundBlocked": "瀏覽器暫時沒有開啟聲音，請再點一次聲音按鈕。",
+      "clueUnlocked": "解鎖 {count} 條線索",
+      "intentHandled": "處理意圖：{judgement}",
+      "intentHandledByLLM": "Qwen 處理：{judgement}",
+      "intentHandledFallback": "本地規則處理：{judgement}",
+      "systemContinue": "AI 續寫",
+      "systemContinueLLM": "Qwen 續寫",
+      "aiThinking": "AI 正在推演",
+      "runtimeStatus": "運行狀態",
+      "turnMetric": "回合",
+      "riskMetric": "風險",
+      "clueMetric": "線索",
+      "unlockedClues": "已解鎖線索",
+      "noClues": "當前還沒有證據狀態。玩家觀察、詢問或檢查物件後會解鎖線索。",
+      "mediaAssets": "場景 / 媒體資產",
+      "restart": "重新開始",
+      "endingReached": "本局結束",
+      "endingReview": "結局復盤",
+      "plotNodeLabel": "劇情節點 A",
+      "openAnswerLabel": "自由行動",
+      "presetChoicesLabel": "預設選項 3",
+      "cluesLabel": "線索 {count}",
+      "supportPanel": "輔助層",
+      "characterPanel": "角色",
+      "cluePanel": "線索",
+      "mediaPanel": "媒體",
+      "audioPanel": "音效",
+      "closePanel": "關閉面板",
+      "characterRuleTitle": "AI 角色規則",
+      "characterRuleBody": "這裏是給 AI 看的角色上下文，不是直接展示給玩家的正文。AI 可以在處理玩家意圖時引用記憶、推理、壓力和干預風險。",
+      "mediaPanelHint": "角色圖、影片片段和生成鏡頭負責輔助氛圍，但主玩法仍然以文字推進為核心。",
+      "videoLabel": "影片層",
+      "videoTitle": "校園入口生成片段",
+      "videoDescription": "由當前故事資產生成的劇情氛圍片段，用來輔助場景進入，不替代文字遊戲主循環。",
+      "videoSource": "來源：當前項目生成影片資產。",
+      "bgmLabel": "事件音效",
+      "bgmTitle": "文字觸發音效",
+      "bgmDescription": "當前不使用持續背景音樂；當正文出現關門、門禁、合上登記冊等動作時播放短音效。",
+      "bgmSource": "測試音效來源：Mixkit Door hard shut。"
+    },
+    "runtime": {
+      "story": {
+        "title": "36 小時溺亡案",
+        "plotANodeLabel": "劇情節點 A",
+        "plotTitle": "進入精英學校",
+        "location": "精英學校校門",
+        "objective": "建立處境：她被送來矯正，但學校和哥哥都在控制資訊。",
+        "boundary": "只能處理校門登記、轉學通知書、接待老師、保安和哥哥訊息；不能提前進入溺亡案、校長室或真兇。",
+        "openingMeta": "劇情節點 A / 精英學校校門",
+        "opening": "清晨的校門像一塊黑色玻璃。你站在門外，手裏捏着轉學通知書。接待老師還未出現，保安卻已經抬頭看向你，像是早就知道你會來。",
+        "plotAVideoTitle": "校園入口生成片段",
+        "plotAVideoDescription": "入校前的環境氛圍片段：校門、晨光、被提前安排好的接待流程。",
+        "plotBNodeLabel": "劇情節點 B",
+        "plotBTitle": "第一次聽說溺亡案",
+        "plotBLocation": "高二（3）班教室走廊",
+        "plotBObjective": "把入校流程轉入首宗案件：玩家第一次接觸同學溺亡的異常說法，但仍不能直接知道真兇。",
+        "plotBBoundary": "允許出現教室、走廊、同學議論、事故報告和自殺定性；不能揭露真兇，不能直接給完整證據鏈。",
+        "plotBOpeningMeta": "劇情節點 B / 高二（3）班教室走廊",
+        "plotBOpening": "接待老師把你帶過側門，走廊裏的消毒水味比校門更重。高二（3）班門口貼着一張臨時通知：今日心理評估延後。教室裏有人壓低聲音說，昨晚水域邊又拉了警戒線。你第一次聽見那個名字：莉娜。",
+        "plotBVideoTitle": "走廊轉場生成片段",
+        "plotBVideoDescription": "進入首宗案件前的生成轉場：從校門進入教學樓，環境從流程感轉向事故現場的壓迫感。"
+      },
+      "endings": {
+        "truth": {
+          "label": "主線",
+          "title": "真相結局",
+          "body": "你把轉學安排、校方預設身份和事故簡報裏的空白串成同一條證據鏈。溺亡案不再能被輕易寫成自殺，那個眾人不敢懷疑的人第一次被推到台前。",
+          "review": "達成方式：在入校階段發現校方提前預設身份，並在溺亡案階段拿到關鍵事故線索。AI 會停止繼續生成，保留本局證據鏈供復盤。"
+        },
+        "intervention": {
+          "label": "中斷",
+          "title": "哥哥介入結局",
+          "body": "你靠近了更高層的真相，也觸發了哥哥的底線。他沒有解釋，只把你從學校帶離。案件還在繼續，但你失去了現場調查權。",
+          "review": "達成方式：風險值過高，或行動觸碰到首案背後的更大秘密。這個結局不是失敗，而是說明保護和監控已經壓過了調查空間。"
+        },
+        "coverup": {
+          "label": "失敗",
+          "title": "表面自殺結局",
+          "body": "證據鏈沒有建立起來。校方和警方保留了自殺定性，你被要求停止追問。所有異常都還在，但它們暫時被流程壓回了檔案裏。",
+          "review": "達成方式：在關鍵回合內沒有拿到足夠線索，或錯過了事故簡報裏的矛盾點。重新開始後可以嘗試更聚焦地觀察、詢問和核對文件。"
+        }
+      },
+      "characters": {
+        "linFeng": {
+          "name": "林風",
+          "role": "玩家角色",
+          "summary": "17 歲轉學生，擁有過目不忘和邏輯推演能力。",
+          "detail": "她不會自然接受不合邏輯的解釋，所以 AI 處理她的行動時，要把推理落到可觀察證據上。"
+        },
+        "brother": {
+          "name": "哥哥 / 情報部門",
+          "role": "關係角色",
+          "summary": "既是保護者，也是監控者。主角越接近高層真相，他的干預越強。",
+          "detail": "他需要有情感上的保護感，但每一次保護都會壓縮玩家的調查空間。"
+        },
+        "receptionTeacher": {
+          "name": "接待老師",
+          "role": "機構角色",
+          "summary": "控制校門口的官方解釋，試圖把所有問題都收束到行政話術裏。",
+          "detail": "她適合展示學校如何把異常解釋成流程。"
+        },
+        "securityGuard": {
+          "name": "校門保安",
+          "role": "觀察對象",
+          "summary": "在檢查轉學通知書之前就知道主角名字，是校方預設流程暴露的第一個裂口。",
+          "detail": "他不需要直接招認，價值在習慣、時機、登記冊細節和微小反應。"
+        }
+      },
+      "choices": {
+        "transfer": {
+          "label": "出示轉學通知書",
+          "intent": "進入校方流程",
+          "response": "你把通知書遞過去。接待老師掃了一眼日期，很快把紙壓在登記冊下。你記住了她手指停頓的位置：落款時間比哥哥告訴你的時間早了三日。"
+        },
+        "project": {
+          "label": "詢問矯正項目",
+          "intent": "質疑制度說明",
+          "response": "你問起所謂的矯正項目。接待老師的表情沒有變化，只是重複官方說法。你給哥哥發了訊息，屏幕很快顯示已讀，但沒有任何回覆。"
+        },
+        "security": {
+          "label": "觀察校門保安",
+          "intent": "低風險調查",
+          "response": "你沒有急着開口，而是觀察保安亭和登記冊。保安在你遞交通知書之前就叫出了你的名字，保安亭的小門在他身後關上。這間學校知道的資訊比表面更多。"
+        }
+      },
+      "clues": {
+        "transferDate": {
+          "title": "轉學通知書日期異常",
+          "type": "文檔線索",
+          "summary": "通知書落款時間早於哥哥正式通知主角的時間，說明這次轉學並不是臨時決定。"
+        },
+        "brotherRead": {
+          "title": "哥哥沒有回覆但已讀",
+          "type": "通訊線索",
+          "summary": "哥哥看到了主角的訊息，卻沒有解釋轉學原因；保護和監控的關係同時成立。"
+        },
+        "guardName": {
+          "title": "保安提前知道主角姓名",
+          "type": "觀察線索",
+          "summary": "保安在主角遞交通知書之前就叫出了她的名字，證明校方早已完成身份預設。"
+        },
+        "caseReportNoStruggle": {
+          "title": "事故簡報寫着無掙扎痕跡",
+          "type": "案情線索",
+          "summary": "如果是普通溺亡，身體通常會留下掙扎或環境接觸痕跡；簡報裏的空白反而更像被處理過。"
+        }
+      },
+      "freeInput": {
+        "guard": {
+          "judgement": "觀察環境",
+          "response": "你把注意力放在校門和保安亭。登記冊第一頁已經寫着你的名字，時間欄卻是空的。保安沒有問你是誰，只說了一句：林風，往裏走。"
+        },
+        "brother": {
+          "judgement": "聯絡哥哥",
+          "response": "你給哥哥發出一句很短的問題：你何時知道我要轉學？訊息幾乎立刻變成已讀，但對話框沉默下來。校門內的廣播開始點名。"
+        },
+        "transfer": {
+          "judgement": "檢查轉學通知書",
+          "response": "你重新看向通知書。紙張邊緣有摺痕，但落款日期異常清晰：它比哥哥說出這件事更早。有人提前安排好了你的到來。"
+        },
+        "offTopic": {
+          "judgement": "跑題拉回",
+          "response": "你的思緒短暫偏離，但校門口的冷空氣把你拉回現實。接待老師已經看見你停在原地，保安亭裏的登記冊還攤開着。"
+        }
+      },
+      "continuations": {
+        "first": "接待老師終於走近。她胸牌上沒有姓氏，只有一個編號。她身後的攝像頭無聲轉向你。",
+        "second": "一群學生從你身邊經過，沒有人看你，但其中一個男生腳步慢了半拍。他看見你手裏的通知書，又很快低下頭。",
+        "third": "保安合上登記冊，不讓你繼續看下一行。可你已經記住了那一頁的形狀和空着的時間欄。"
+      },
+      "retryResult": "AI 重新組織結果：同一個行動不會直接跳到下一劇情節點，但會暴露校方流程裏的一個更小矛盾。",
+      "assets": {
+        "gate": "校門場景",
+        "security": "保安細節",
+        "brotherMessage": "哥哥訊息",
+        "pendingShot": "待生成鏡頭",
+        "campusVideo": "校園影片",
+        "characterPortraits": "角色圖",
+        "clueCards": "線索卡",
+        "generatedShots": "生成鏡頭"
       }
     }
   }

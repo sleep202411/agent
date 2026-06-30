@@ -33,9 +33,13 @@ const PUBLIC_PATTERNS: RegExp[] = [
   // Creator detail pages are public; the talent-market list remains
   // login-gated.
   /^\/creators\/[^/]+(\/|$)/,
+  /^\/games(\/|$)/,
   /^\/news(\/|$)/,
   /^\/invite(\/|$)/,
   /^\/ips(\/|$)/,
+  /^\/play(\/|$)/,
+  /^\/narrative-demo(\/|$)/,
+  /^\/narrative-runtime(\/|$)/,
   // Generic tag landing pages (e.g. competitions like SGWander) are public +
   // shareable; entries link to the public IP detail page.
   /^\/tags\/[^/]+(\/|$)/,

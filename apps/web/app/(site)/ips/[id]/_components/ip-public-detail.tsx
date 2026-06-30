@@ -6,6 +6,8 @@ import Image from "next/image";
 import { useRouter } from "next/navigation";
 import {
   IconArrowLeft,
+  IconArrowRight,
+  IconBook2,
   IconBookmark,
   IconDotsVertical,
   IconFlag,
@@ -39,6 +41,10 @@ import type { Locale } from "@/src/i18n/config";
 import { useLocale, useTranslations } from "@/src/i18n/i18n";
 import { localizePath } from "@/src/i18n/locale-url";
 import { useCurrentUser } from "@/src/hooks/use-user";
+import {
+  getNarrativePlayablesForIp,
+  type NarrativePlayable,
+} from "@/src/features/narrative/narrative-games";
 import { ApiRequestError } from "@/src/lib/api";
 import { axonViewItem } from "@/src/lib/axon";
 import { recordMemberView } from "@/src/lib/ip-commerce/api";
@@ -116,6 +122,7 @@ export function IpPublicDetail({ ipId }: IpPublicDetailProps) {
   const [reportOpen, setReportOpen] = useState(false);
   const [rechargeOpen, setRechargeOpen] = useState(false);
   const [membershipOpen, setMembershipOpen] = useState(false);
+  const ipNarrativePlayables = getNarrativePlayablesForIp(ipId);
 
   const detailIp = publicQuery.data?.ip
     ? normalizePublicIp(publicQuery.data.ip)
@@ -175,10 +182,13 @@ export function IpPublicDetail({ ipId }: IpPublicDetailProps) {
     (publicQuery.isError && userLoading) ||
     (publicQuery.isError && user && creatorQuery.isLoading)
   ) {
-    return <LoadingState t={t} />;
+    return <LoadingState locale={locale} playables={ipNarrativePlayables} t={t} />;
   }
 
   if (!detailIp) {
+    if (ipNarrativePlayables.length > 0) {
+      return <NarrativeIpFallbackState locale={locale} playables={ipNarrativePlayables} t={t} />;
+    }
     return <NotFoundState locale={locale} t={t} />;
   }
 
@@ -230,6 +240,7 @@ export function IpPublicDetail({ ipId }: IpPublicDetailProps) {
   const mediaSummary = selectedEpisode?.summary || detailIp.summary || t("emptySummary");
   const storyText = detailIp.description?.trim() || detailIp.summary || t("emptySummary");
   const tagItems = Array.from(new Set(detailIp.genres.map((item) => item.trim()).filter(Boolean)));
+  const narrativePlayables = getNarrativePlayablesForIp(detailIp.id);
   const loginHref = localizePath(
     `/login?redirect=${encodeURIComponent(localizePath(`/ips/${detailIp.id}`, locale))}`,
     locale
@@ -479,6 +490,8 @@ export function IpPublicDetail({ ipId }: IpPublicDetailProps) {
               </div>
             </section>
 
+            <NarrativePlayablePanel playables={narrativePlayables} locale={locale} t={t} />
+
             <section className="mt-6">
               <h2 className="text-base font-semibold text-foreground">{t("story.title")}</h2>
               <Prose text={storyText} />
@@ -578,15 +591,60 @@ function normalizeCreatorIp(ip: IpCreatorIp, ownerId: string | null): DetailIp {
   };
 }
 
-function LoadingState({ t }: { t: Translate }) {
+function LoadingState({
+  locale,
+  playables,
+  t,
+}: {
+  locale: Locale;
+  playables: NarrativePlayable[];
+  t: Translate;
+}) {
   return (
     <div className="min-h-[calc(100vh-4rem)] bg-background text-foreground">
-      <div className="mx-auto flex min-h-[560px] max-w-7xl items-center justify-center px-5">
+      <div className="mx-auto flex min-h-[560px] max-w-5xl flex-col justify-center px-5 py-10">
         <div className="flex items-center gap-3 rounded-lg border border-border bg-card px-4 py-3 text-sm text-muted-foreground shadow-2xl shadow-black/35">
           <IconLoader2 className="size-4 animate-spin text-primary" />
           {t("loading")}
         </div>
+        <NarrativePlayablePanel locale={locale} playables={playables} t={t} />
       </div>
+    </div>
+  );
+}
+
+function NarrativeIpFallbackState({
+  locale,
+  playables,
+  t,
+}: {
+  locale: Locale;
+  playables: NarrativePlayable[];
+  t: Translate;
+}) {
+  return (
+    <div className="min-h-[calc(100vh-4rem)] bg-background text-foreground">
+      <main className="mx-auto w-full max-w-5xl px-5 py-10">
+        <Button asChild variant="ghost" color="muted" className="text-muted-foreground">
+          <Link href={localizePath("/ips", locale)}>
+            <IconArrowLeft className="size-4" />
+            {t("back")}
+          </Link>
+        </Button>
+        <section className="mt-10 rounded-xl bg-secondary/55 p-5">
+          <div className="inline-flex items-center gap-2 rounded-full bg-primary/10 px-2.5 py-1 text-xs font-semibold text-primary">
+            <IconBook2 className="size-3.5" />
+            {t("narrative.eyebrow")}
+          </div>
+          <h1 className="mt-4 text-2xl font-semibold text-foreground">
+            {t("narrative.fallbackTitle")}
+          </h1>
+          <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">
+            {t("narrative.fallbackBody")}
+          </p>
+        </section>
+        <NarrativePlayablePanel locale={locale} playables={playables} t={t} />
+      </main>
     </div>
   );
 }
@@ -667,6 +725,81 @@ function MediaFrame({
         </div>
       ) : null}
     </div>
+  );
+}
+
+function NarrativePlayablePanel({
+  playables,
+  locale,
+  t,
+}: {
+  playables: NarrativePlayable[];
+  locale: Locale;
+  t: Translate;
+}) {
+  if (playables.length === 0) return null;
+
+  return (
+    <section className="mt-6 rounded-xl bg-secondary/65 p-4">
+      <div>
+        <div>
+          <div className="inline-flex items-center gap-2 rounded-full bg-primary/10 px-2.5 py-1 text-xs font-semibold text-primary">
+            <IconBook2 className="size-3.5" />
+            {t("narrative.eyebrow")}
+          </div>
+          <h2 className="mt-3 text-base font-semibold text-foreground">{t("narrative.title")}</h2>
+          <p className="mt-1 max-w-2xl text-sm leading-6 text-muted-foreground">
+            {t("narrative.body")}
+          </p>
+        </div>
+      </div>
+
+      <div className="mt-4 grid gap-3">
+        {playables.map((playable) => {
+          const itemKey = `narrative.items.${playable.translationKey}`;
+          return (
+            <Link
+              key={playable.id}
+              href={localizePath(playable.href, locale)}
+              className="group grid gap-4 rounded-xl bg-background/55 p-3 transition-colors hover:bg-background/75 sm:grid-cols-[160px_minmax(0,1fr)_auto] sm:items-center"
+            >
+              <div className="relative aspect-video overflow-hidden rounded-lg bg-black">
+                <Image
+                  src={playable.coverSrc}
+                  alt={t(`${itemKey}.coverAlt`)}
+                  fill
+                  unoptimized
+                  sizes="160px"
+                  className="object-cover opacity-80 transition-transform duration-500 group-hover:scale-[1.04]"
+                />
+                <div className="absolute inset-0 bg-linear-to-b from-transparent to-black/55" />
+                <IconPlayerPlay className="absolute bottom-2 left-2 size-5 text-white" />
+              </div>
+              <div className="min-w-0">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="rounded-full bg-primary/10 px-2 py-0.5 text-xs font-semibold text-primary">
+                    {t(`narrative.status.${playable.status}`)}
+                  </span>
+                  <span className="text-xs font-semibold text-muted-foreground">
+                    {t(`${itemKey}.type`)}
+                  </span>
+                </div>
+                <h3 className="mt-2 text-lg font-semibold leading-tight text-foreground">
+                  {t(`${itemKey}.title`)}
+                </h3>
+                <p className="mt-1 line-clamp-2 text-sm leading-6 text-muted-foreground">
+                  {t(`${itemKey}.summary`)}
+                </p>
+              </div>
+              <span className="inline-flex h-10 items-center justify-center gap-2 rounded-full bg-primary px-4 text-sm font-semibold text-primary-foreground transition-transform group-hover:-translate-y-0.5">
+                {t("narrative.play")}
+                <IconArrowRight className="size-4" />
+              </span>
+            </Link>
+          );
+        })}
+      </div>
+    </section>
   );
 }
 

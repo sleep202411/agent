@@ -1755,6 +1755,27 @@
       "disclaimerTitle": "Order fulfillment",
       "disclaimerBody": "After purchase, users receive content access. Point deduction, refunds, and ledger records are handled by the backend loop."
     },
+    "narrative": {
+      "eyebrow": "Interactive text game",
+      "title": "Playable stories",
+      "body": "This IP now has a text-game draft. Players enter text turns, AI continuation, clues, and endings directly.",
+      "fallbackTitle": "Text-game entry is ready",
+      "fallbackBody": "The local IP detail API is still loading or unavailable, but this IP already has a temporary playable text-game draft attached.",
+      "viewAll": "View game list",
+      "play": "Play draft",
+      "status": {
+        "draft": "Draft",
+        "published": "Published"
+      },
+      "items": {
+        "story36Hours": {
+          "type": "AI text RPG",
+          "title": "36-Hour Drowning Case",
+          "summary": "A 17-year-old girl is sent to an elite school for correction, then finds the truth inside the first drowning case.",
+          "coverAlt": "Campus entrance frame for 36-Hour Drowning Case"
+        }
+      }
+    },
     "notFound": {
       "title": "This IP is not available",
       "body": "It may not be public yet, may have been removed, or the current account may not have preview access.",
@@ -7425,6 +7446,37 @@
       }
     }
   },
+  "games": {
+    "back": "Back to IP plaza",
+    "eyebrow": "Playable stories",
+    "title": "Games",
+    "subtitle": "A home for playable experiences across text games, RPGs, and interactive video. The first entry is the 36-Hour Drowning Case text-game draft.",
+    "sourceIp": "Source IP",
+    "start": "Start",
+    "status": {
+      "draft": "Draft",
+      "published": "Published"
+    },
+    "tags": {
+      "textRpg": "Text game",
+      "mystery": "Mystery",
+      "aiRuntime": "AI continuation"
+    },
+    "stats": {
+      "aiRuntime": "AI turn runtime",
+      "plotNodes": "2 plot nodes",
+      "clues": "4 clues",
+      "endings": "3 endings"
+    },
+    "items": {
+      "story36Hours": {
+        "type": "Text-game draft",
+        "title": "36-Hour Drowning Case",
+        "summary": "In modern China, a 17-year-old girl is sent to an elite school for correction, then discovers the truth inside a classmate's drowning case.",
+        "coverAlt": "Campus entrance frame for 36-Hour Drowning Case"
+      }
+    }
+  },
   "narrativeDemo": {
     "brand": {
       "referenceTitle": "FizzDragon RPG"
@@ -7435,9 +7487,9 @@
     "setup": {
       "step": "Step {current} of {total}",
       "nameLabel": "Enter your character's name...",
-      "namePlaceholder": "Type here...",
-      "identityLabel": "Your role in this world",
-      "identityPlaceholder": "Type here...",
+      "namePlaceholder": "Lin Feng",
+      "identityLabel": "Your role in this case",
+      "identityPlaceholder": "Transfer student, witness, suspect...",
       "detailsLabel": "Additional information such as looks, personality, backstory, etc. (Optional)",
       "detailsPlaceholder": "Type here...",
       "back": "Back",
@@ -7445,37 +7497,221 @@
       "start": "Start"
     },
     "play": {
-      "scenarioTitle": "The Red Archive",
-      "fallbackName": "Traveler",
-      "identityFallback": "Unclaimed protagonist",
-      "detailsFallback": "No extra backstory entered. The narrator will infer details from your first turns.",
+      "scenarioTitle": "36-Hour Drowning Case",
+      "fallbackName": "Lin Feng",
+      "identityFallback": "17-year-old transfer student with precise memory and logical deduction.",
+      "detailsFallback": "The AI will infer character details from your early actions.",
       "character": "Character",
-      "savePrompt": "Sign up to save this run and continue from any device.",
-      "signUp": "Sign up",
-      "inputPlaceholder": "What do you do?",
-      "takeTurn": "Take a turn",
+      "inputPlaceholder": "Say something, or describe what you do...",
+      "takeTurn": "Send",
+      "takeTurnPrompt": "I act",
       "continue": "Continue",
       "retry": "Retry",
       "erase": "Erase",
-      "suggestion": "Suggest",
-      "suggestedAction": "I ask the courier what the archive stole from me.",
-      "jumpToInput": "Jump to input",
+      "suggestion": "Hint",
+      "suggestedAction": "I quietly observe the gate log and the guard before speaking.",
+      "freeInputLabel": "Free input",
+      "suggestedActionsLabel": "You could try",
+      "closeComposer": "Collapse input",
       "undo": "Undo",
       "redo": "Redo",
       "settings": "Settings",
+      "soundOn": "Sound on",
+      "soundOff": "Sound off",
       "turnCount": "{count} turns",
+      "riskCount": "Risk {count}",
       "statusReady": "Ready",
-      "statusStarted": "{name} entered the story.",
-      "statusTurnRecorded": "Turn recorded. Mock narrator response appended.",
+      "statusStarted": "You entered the case.",
+      "statusThinking": "AI is handling intent: {judgement}",
+      "statusTurnRecorded": "Turn recorded. The story stays inside the current plot node.",
+      "statusClueUnlocked": "Unlocked {count} clue(s).",
       "statusContinued": "Narrator continued the scene.",
       "statusRetried": "Last narrator response rewritten.",
       "statusSuggestion": "Suggested action filled.",
-      "mockResult": "The world accepts {name}'s intent. The courier studies the token, then quietly changes the route.",
-      "mockRetry": "The narrator reframes the result: {name} notices a second path hidden in the same choice.",
-      "stats": {
-        "resolve": "Resolve",
-        "memory": "Memory",
-        "heat": "Heat"
+      "statusLLMTurnRecorded": "Qwen generated this turn.",
+      "statusFallbackTurnRecorded": "LLM is not connected. Local rules handled this turn.",
+      "statusLLMError": "LLM call failed: {message}",
+      "llmUnknownError": "Unknown error",
+      "soundBlocked": "The browser did not start sound yet. Press the sound button again.",
+      "clueUnlocked": "Unlocked {count} clue(s)",
+      "intentHandled": "Intent handled: {judgement}",
+      "intentHandledByLLM": "Qwen handled: {judgement}",
+      "intentHandledFallback": "Local rules handled: {judgement}",
+      "systemContinue": "AI continuation",
+      "systemContinueLLM": "Qwen continuation",
+      "aiThinking": "AI is reasoning",
+      "runtimeStatus": "Runtime status",
+      "turnMetric": "Turns",
+      "riskMetric": "Risk",
+      "clueMetric": "Clues",
+      "unlockedClues": "Unlocked clues",
+      "noClues": "No evidence state yet. Observe, ask, or inspect objects to unlock clues.",
+      "mediaAssets": "Scene / media assets",
+      "restart": "Restart",
+      "endingReached": "Run ended",
+      "endingReview": "Ending review",
+      "plotNodeLabel": "Plot Node A",
+      "openAnswerLabel": "Open answer",
+      "presetChoicesLabel": "Preset choices 3",
+      "cluesLabel": "Clues {count}",
+      "supportPanel": "Support layer",
+      "characterPanel": "Character",
+      "cluePanel": "Clues",
+      "mediaPanel": "Media",
+      "audioPanel": "SFX",
+      "closePanel": "Close panel",
+      "characterRuleTitle": "AI role rules",
+      "characterRuleBody": "The AI should treat this as character context, not as visible narration. It can reference memory, deduction, pressure and intervention risk when resolving the player's intent.",
+      "mediaPanelHint": "Images, clips and generated shots support the scene, but the main play loop remains text-first.",
+      "videoLabel": "Video layer",
+      "videoTitle": "Generated Campus Entrance Clip",
+      "videoDescription": "A generated atmosphere clip from this story's assets. It supports scene entry without replacing the text-game loop.",
+      "videoSource": "Source: generated video asset from the current project.",
+      "bgmLabel": "Event SFX",
+      "bgmTitle": "Text-triggered sound effects",
+      "bgmDescription": "No always-on background music for now. Short effects play when narration mentions a door closing, a gate event, or the registry being shut.",
+      "bgmSource": "Test SFX source: Mixkit Door hard shut."
+    },
+    "runtime": {
+      "story": {
+        "title": "36-Hour Drowning Case",
+        "plotANodeLabel": "Plot Node A",
+        "plotTitle": "Enter the Elite School",
+        "location": "Elite school gate",
+        "objective": "Establish the situation: she has been sent here for correction, while the school and her brother both control information.",
+        "boundary": "Stay within gate registration, the transfer notice, the reception teacher, the guard, and brother messages; do not jump into the drowning case, principal office, or culprit reveal.",
+        "openingMeta": "Plot Node A / Elite school gate",
+        "opening": "The morning gate looks like black glass. You stand outside with the transfer notice in your hand. The reception teacher has not appeared yet, but the guard already looks up as if he knew you would arrive.",
+        "plotAVideoTitle": "Generated Campus Entrance Clip",
+        "plotAVideoDescription": "A short environmental clip for the entry beat: the gate, morning light, and a reception process that feels prearranged.",
+        "plotBNodeLabel": "Plot Node B",
+        "plotBTitle": "First Mention of the Drowning",
+        "plotBLocation": "Class 2-3 hallway",
+        "plotBObjective": "Move from school entry into the first case: the player hears the abnormal version of a classmate's drowning, without learning the culprit yet.",
+        "plotBBoundary": "Classroom, hallway, student rumors, accident report, and suicide classification are allowed; do not reveal the culprit or complete evidence chain.",
+        "plotBOpeningMeta": "Plot Node B / Class 2-3 hallway",
+        "plotBOpening": "The reception teacher leads you through the side gate, and the hallway smells more strongly of disinfectant than the entrance. A temporary notice outside Class 2-3 says today's psychological assessment is delayed. Inside, someone whispers that the police line went up again near the water last night. You hear the name for the first time: Lina.",
+        "plotBVideoTitle": "Generated Hallway Transition",
+        "plotBVideoDescription": "A generated transition for entering the first case: the mood shifts from school procedure into the pressure of an accident scene."
+      },
+      "endings": {
+        "truth": {
+          "label": "Mainline",
+          "title": "Truth Ending",
+          "body": "You connect the transfer arrangement, the school's preset identity process, and the blank space inside the accident brief into one evidence chain. The drowning can no longer be written off as suicide, and the person no one dared suspect is pushed into view.",
+          "review": "Achieved by finding the school's preset identity leak during entry and securing the key accident clue in the drowning phase. The AI stops generating and keeps this run's evidence chain for review."
+        },
+        "intervention": {
+          "label": "Interrupted",
+          "title": "Brother Intervention Ending",
+          "body": "You get close enough to a higher-level truth to trigger your brother's limit. He gives no explanation and removes you from the school. The case continues, but you lose access to the scene.",
+          "review": "Achieved when risk rises too high, or when your actions touch a larger secret behind the first case. This is not a simple failure; it means protection and surveillance have overtaken the investigation."
+        },
+        "coverup": {
+          "label": "Failure",
+          "title": "Surface Suicide Ending",
+          "body": "The evidence chain never forms. The school and police keep the suicide classification, and you are told to stop asking. The contradictions remain, but procedure pushes them back into the file.",
+          "review": "Achieved when enough clues are not gathered in the key turns, or when the contradiction inside the accident brief is missed. Restarting lets you focus more tightly on observing, questioning, and checking documents."
+        }
+      },
+      "characters": {
+        "linFeng": {
+          "name": "Lin Feng",
+          "role": "Player character",
+          "summary": "17-year-old transfer student with precise memory and logical deduction.",
+          "detail": "She does not naturally accept explanations that break logic, so the AI should make her reasoning traceable through observable evidence."
+        },
+        "brother": {
+          "name": "Brother / Intelligence department",
+          "role": "Relationship character",
+          "summary": "Protector and watcher at the same time. His intervention rises whenever she gets close to a higher-level truth.",
+          "detail": "He should feel emotionally protective, but every protection action also narrows the investigation space."
+        },
+        "receptionTeacher": {
+          "name": "Reception teacher",
+          "role": "Institution character",
+          "summary": "Controls the official explanation at the gate and tries to keep every question inside administrative language.",
+          "detail": "Useful for showing how the school converts contradictions into procedure."
+        },
+        "securityGuard": {
+          "name": "Gate security",
+          "role": "Observation target",
+          "summary": "Knows her name before checking the transfer notice. He is the first visible leak in the school's preset process.",
+          "detail": "He should not confess; his value is in habits, timing, registry details and small reactions."
+        }
+      },
+      "choices": {
+        "transfer": {
+          "label": "Show the transfer notice",
+          "intent": "Enter school procedure",
+          "response": "You hand over the notice. The reception teacher glances at the date and quickly presses the paper under the registry. You remember where her finger paused: the signing date is three days earlier than your brother told you."
+        },
+        "project": {
+          "label": "Ask about the correction program",
+          "intent": "Challenge the official explanation",
+          "response": "You ask about the so-called correction program. The teacher's expression does not change; she simply repeats the official language. You message your brother. The screen turns read almost immediately, but no reply comes."
+        },
+        "security": {
+          "label": "Observe gate security",
+          "intent": "Low-risk investigation",
+          "response": "You say nothing at first and watch the guard booth and registry. Before you hand over the notice, the guard calls your name, and the booth door closes behind him. This school knows more than it should."
+        }
+      },
+      "clues": {
+        "transferDate": {
+          "title": "Abnormal transfer notice date",
+          "type": "Document clue",
+          "summary": "The date on the notice is earlier than the day her brother officially told her, which means the transfer was arranged in advance."
+        },
+        "brotherRead": {
+          "title": "Brother read but did not reply",
+          "type": "Communication clue",
+          "summary": "Her brother saw the message but did not explain the transfer. Protection and surveillance are both plausible."
+        },
+        "guardName": {
+          "title": "Guard knew her name in advance",
+          "type": "Observation clue",
+          "summary": "The guard called her name before seeing the transfer notice, proving the school had already preset her identity."
+        },
+        "caseReportNoStruggle": {
+          "title": "Accident brief says there were no struggle marks",
+          "type": "Case clue",
+          "summary": "An ordinary drowning usually leaves signs of struggle or contact with the environment. The blankness in the brief feels more processed than natural."
+        }
+      },
+      "freeInput": {
+        "guard": {
+          "judgement": "Observe environment",
+          "response": "You focus on the gate and guard booth. The first line of the registry already contains your name, but the time column is empty. The guard does not ask who you are. He only says: Lin Feng, go inside."
+        },
+        "brother": {
+          "judgement": "Contact brother",
+          "response": "You send your brother a short question: when did you know I would transfer? The message becomes read almost instantly, but the chat remains silent. Inside the gate, the broadcast begins to call names."
+        },
+        "transfer": {
+          "judgement": "Inspect transfer notice",
+          "response": "You look at the notice again. The paper edge is creased, but the signing date is unusually clear: it predates your brother's explanation. Someone arranged your arrival ahead of time."
+        },
+        "offTopic": {
+          "judgement": "Redirect off-topic input",
+          "response": "Your attention drifts for a moment, but the cold air at the gate brings you back. The reception teacher has noticed you waiting, and the registry in the guard booth is still open."
+        }
+      },
+      "continuations": {
+        "first": "The reception teacher steps closer. Her badge has no surname, only a number. Behind her, the gate camera silently turns toward you.",
+        "second": "A group of students pass without looking at you, but one of them slows down for half a second. He notices the notice in your hand, then quickly lowers his head.",
+        "third": "The guard closes the registry before you can read the next line. You still remember the shape of the page and the empty time column."
+      },
+      "retryResult": "The AI reframes the result: the same action does not jump to the next plot node, but it exposes a smaller contradiction in the school's process.",
+      "assets": {
+        "gate": "Gate scene",
+        "security": "Security detail",
+        "brotherMessage": "Brother message",
+        "pendingShot": "Pending shot",
+        "campusVideo": "Campus video",
+        "characterPortraits": "Character portraits",
+        "clueCards": "Clue cards",
+        "generatedShots": "Generated shots"
       }
     }
   }

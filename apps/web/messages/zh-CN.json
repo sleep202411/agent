@@ -1754,6 +1754,27 @@
       "disclaimerTitle": "订单履约",
       "disclaimerBody": "用户购买后获得的是内容访问权益，积分扣减、退款和账本记录由后端闭环处理。"
     },
+    "narrative": {
+      "eyebrow": "互动文字游戏",
+      "title": "可玩故事",
+      "body": "这个 IP 已经挂载文字游戏草稿。玩家会直接进入文字回合、AI 续写、线索和结局流程。",
+      "fallbackTitle": "文字游戏入口已准备好",
+      "fallbackBody": "当前本地 IP 详情接口还在加载或不可用，但这个 IP 已经临时挂载了可玩的文字游戏草稿。",
+      "viewAll": "查看游戏列表",
+      "play": "开始试玩",
+      "status": {
+        "draft": "Draft 草稿",
+        "published": "已发布"
+      },
+      "items": {
+        "story36Hours": {
+          "type": "AI 文游",
+          "title": "36 小时溺亡案",
+          "summary": "17 岁少女被送入精英学校矫正，却在首宗溺亡案中发现真相。",
+          "coverAlt": "36 小时溺亡案的校园入口画面"
+        }
+      }
+    },
     "notFound": {
       "title": "这个 IP 暂不可访问",
       "body": "它可能还没有公开、已下架，或者当前账号没有预览权限。",
@@ -7424,6 +7445,37 @@
       }
     }
   },
+  "games": {
+    "back": "返回 IP 广场",
+    "eyebrow": "Playable stories",
+    "title": "游戏",
+    "subtitle": "这里会聚合所有可直接游玩的内容：文字游戏、RPG 和互动视频。当前先接入 36 小时溺亡案的文字游戏草稿。",
+    "sourceIp": "来源 IP",
+    "start": "开始",
+    "status": {
+      "draft": "Draft 草稿",
+      "published": "已发布"
+    },
+    "tags": {
+      "textRpg": "文字游戏",
+      "mystery": "悬疑推理",
+      "aiRuntime": "AI 续写"
+    },
+    "stats": {
+      "aiRuntime": "AI 回合运行",
+      "plotNodes": "2 个剧情节点",
+      "clues": "4 条线索",
+      "endings": "3 个结局"
+    },
+    "items": {
+      "story36Hours": {
+        "type": "文字游戏 Draft",
+        "title": "36 小时溺亡案",
+        "summary": "现代中国，一名 17 岁少女被送入精英学校矫正，却在首宗同学溺亡案中发现真相。",
+        "coverAlt": "36 小时溺亡案的校园入口画面"
+      }
+    }
+  },
   "narrativeDemo": {
     "brand": {
       "referenceTitle": "气泡龙 RPG"
@@ -7434,9 +7486,9 @@
     "setup": {
       "step": "第 {current} / {total} 步",
       "nameLabel": "输入你的角色名字...",
-      "namePlaceholder": "在这里输入...",
-      "identityLabel": "你在这个世界里的身份",
-      "identityPlaceholder": "在这里输入...",
+      "namePlaceholder": "林风",
+      "identityLabel": "你在这起案件里的身份",
+      "identityPlaceholder": "转学生、目击者、嫌疑人...",
       "detailsLabel": "补充外貌、性格、背景等信息（可选）",
       "detailsPlaceholder": "在这里输入...",
       "back": "返回",
@@ -7444,37 +7496,221 @@
       "start": "开始"
     },
     "play": {
-      "scenarioTitle": "红色档案馆",
-      "fallbackName": "旅人",
-      "identityFallback": "未认领的主角",
-      "detailsFallback": "没有填写额外背景。叙事系统会从你的前几次行动中推断细节。",
+      "scenarioTitle": "36 小时溺亡案",
+      "fallbackName": "林风",
+      "identityFallback": "17 岁转学生，拥有过目不忘和逻辑推演能力。",
+      "detailsFallback": "AI 会从你的前几次行动中推断角色细节。",
       "character": "角色",
-      "savePrompt": "登录后可保存本次游玩，并在任意设备继续。",
-      "signUp": "注册",
-      "inputPlaceholder": "你要做什么？",
-      "takeTurn": "行动",
+      "inputPlaceholder": "说一句话，或描述你想做什么...",
+      "takeTurn": "发送",
+      "takeTurnPrompt": "我来行动",
       "continue": "继续",
       "retry": "重试",
       "erase": "清空",
-      "suggestion": "建议",
-      "suggestedAction": "我问信使，档案馆到底偷走了我什么。",
-      "jumpToInput": "跳到输入框",
+      "suggestion": "给点提示",
+      "suggestedAction": "我先不说话，观察校门登记册和保安反应。",
+      "freeInputLabel": "自由输入",
+      "suggestedActionsLabel": "可以尝试",
+      "closeComposer": "收起输入",
       "undo": "撤销",
       "redo": "重做",
       "settings": "设置",
-      "turnCount": "{count} 次行动",
+      "soundOn": "声音开",
+      "soundOff": "声音关",
+      "turnCount": "{count} 回合",
+      "riskCount": "风险 {count}",
       "statusReady": "准备就绪",
-      "statusStarted": "{name} 进入了故事。",
-      "statusTurnRecorded": "行动已记录。已追加模拟叙事反馈。",
+      "statusStarted": "你进入了案件。",
+      "statusThinking": "AI 正在处理意图：{judgement}",
+      "statusTurnRecorded": "回合已记录。故事仍停留在当前剧情节点内。",
+      "statusClueUnlocked": "解锁 {count} 条线索。",
       "statusContinued": "叙事系统继续了场景。",
       "statusRetried": "已重写上一次叙事反馈。",
       "statusSuggestion": "已填入建议行动。",
-      "mockResult": "世界接受了 {name} 的意图。信使看了看龙形代币，随后悄悄改变路线。",
-      "mockRetry": "叙事系统重新组织结果：{name} 在同一个选择里发现了第二条隐藏路径。",
-      "stats": {
-        "resolve": "决心",
-        "memory": "记忆",
-        "heat": "热度"
+      "statusLLMTurnRecorded": "Qwen 已生成本回合。",
+      "statusFallbackTurnRecorded": "LLM 未接通，已使用本地规则降级。",
+      "statusLLMError": "LLM 调用失败：{message}",
+      "llmUnknownError": "未知错误",
+      "soundBlocked": "浏览器暂时没有开启声音，请再点一次声音按钮。",
+      "clueUnlocked": "解锁 {count} 条线索",
+      "intentHandled": "处理意图：{judgement}",
+      "intentHandledByLLM": "Qwen 处理：{judgement}",
+      "intentHandledFallback": "本地规则处理：{judgement}",
+      "systemContinue": "AI 续写",
+      "systemContinueLLM": "Qwen 续写",
+      "aiThinking": "AI 正在推演",
+      "runtimeStatus": "运行状态",
+      "turnMetric": "回合",
+      "riskMetric": "风险",
+      "clueMetric": "线索",
+      "unlockedClues": "已解锁线索",
+      "noClues": "当前还没有证据状态。玩家观察、询问或检查物件后会解锁线索。",
+      "mediaAssets": "场景 / 媒体资产",
+      "restart": "重新开始",
+      "endingReached": "本局结束",
+      "endingReview": "结局复盘",
+      "plotNodeLabel": "剧情节点 A",
+      "openAnswerLabel": "自由行动",
+      "presetChoicesLabel": "预设选项 3",
+      "cluesLabel": "线索 {count}",
+      "supportPanel": "辅助层",
+      "characterPanel": "角色",
+      "cluePanel": "线索",
+      "mediaPanel": "媒体",
+      "audioPanel": "音效",
+      "closePanel": "关闭面板",
+      "characterRuleTitle": "AI 角色规则",
+      "characterRuleBody": "这里是给 AI 看的角色上下文，不是直接展示给玩家的正文。AI 可以在处理玩家意图时引用记忆、推理、压力和干预风险。",
+      "mediaPanelHint": "角色图、视频片段和生成镜头负责辅助氛围，但主玩法仍然以文字推进为核心。",
+      "videoLabel": "视频层",
+      "videoTitle": "校园入口生成片段",
+      "videoDescription": "由当前故事资产生成的剧情氛围片段，用来辅助场景进入，不替代文字游戏主循环。",
+      "videoSource": "来源：当前项目生成视频资产。",
+      "bgmLabel": "事件音效",
+      "bgmTitle": "文字触发音效",
+      "bgmDescription": "当前不使用持续背景音乐；当正文出现关门、门禁、合上登记册等动作时播放短音效。",
+      "bgmSource": "测试音效来源：Mixkit Door hard shut。"
+    },
+    "runtime": {
+      "story": {
+        "title": "36 小时溺亡案",
+        "plotANodeLabel": "剧情节点 A",
+        "plotTitle": "进入精英学校",
+        "location": "精英学校校门",
+        "objective": "建立处境：她被送来矫正，但学校和哥哥都在控制信息。",
+        "boundary": "只能处理校门登记、转学通知书、接待老师、保安和哥哥消息；不能提前进入溺亡案、校长室或真凶。",
+        "openingMeta": "剧情节点 A / 精英学校校门",
+        "opening": "清晨的校门像一块黑色玻璃。你站在门外，手里捏着转学通知书。接待老师还没出现，保安却已经抬头看向你，像是早就知道你会来。",
+        "plotAVideoTitle": "校园入口生成片段",
+        "plotAVideoDescription": "入校前的环境氛围片段：校门、晨光、被提前安排好的接待流程。",
+        "plotBNodeLabel": "剧情节点 B",
+        "plotBTitle": "第一次听说溺亡案",
+        "plotBLocation": "高二（3）班教室走廊",
+        "plotBObjective": "把入校流程转入首宗案件：玩家第一次接触同学溺亡的异常说法，但仍不能直接知道真凶。",
+        "plotBBoundary": "允许出现教室、走廊、同学议论、事故报告和自杀定性；不能揭露真凶，不能直接给完整证据链。",
+        "plotBOpeningMeta": "剧情节点 B / 高二（3）班教室走廊",
+        "plotBOpening": "接待老师把你带过侧门，走廊里的消毒水味比校门更重。高二（3）班门口贴着一张临时通知：今日心理评估延后。教室里有人压低声音说，昨晚水域边又拉了警戒线。你第一次听见那个名字：莉娜。",
+        "plotBVideoTitle": "走廊转场生成片段",
+        "plotBVideoDescription": "进入首宗案件前的生成转场：从校门进入教学楼，环境从流程感转向事故现场的压迫感。"
+      },
+      "endings": {
+        "truth": {
+          "label": "主线",
+          "title": "真相结局",
+          "body": "你把转学安排、校方预设身份和事故简报里的空白串成同一条证据链。溺亡案不再能被轻易写成自杀，那个众人不敢怀疑的人第一次被推到台前。",
+          "review": "达成方式：在入校阶段发现校方提前预设身份，并在溺亡案阶段拿到关键事故线索。AI 会停止继续生成，保留本局证据链供复盘。"
+        },
+        "intervention": {
+          "label": "中断",
+          "title": "哥哥介入结局",
+          "body": "你靠近了更高层的真相，也触发了哥哥的底线。他没有解释，只把你从学校带离。案件还在继续，但你失去了现场调查权。",
+          "review": "达成方式：风险值过高，或行动触碰到首案背后的更大秘密。这个结局不是失败，而是说明保护和监控已经压过了调查空间。"
+        },
+        "coverup": {
+          "label": "失败",
+          "title": "表面自杀结局",
+          "body": "证据链没有建立起来。校方和警方保留了自杀定性，你被要求停止追问。所有异常都还在，但它们暂时被流程压回了档案里。",
+          "review": "达成方式：在关键回合内没有拿到足够线索，或错过了事故简报里的矛盾点。重新开始后可以尝试更聚焦地观察、询问和核对文件。"
+        }
+      },
+      "characters": {
+        "linFeng": {
+          "name": "林风",
+          "role": "玩家角色",
+          "summary": "17 岁转学生，拥有过目不忘和逻辑推演能力。",
+          "detail": "她不会自然接受不合逻辑的解释，所以 AI 处理她的行动时，要把推理落到可观察证据上。"
+        },
+        "brother": {
+          "name": "哥哥 / 情报部门",
+          "role": "关系角色",
+          "summary": "既是保护者，也是监控者。主角越接近高层真相，他的干预越强。",
+          "detail": "他需要有情感上的保护感，但每一次保护都会压缩玩家的调查空间。"
+        },
+        "receptionTeacher": {
+          "name": "接待老师",
+          "role": "机构角色",
+          "summary": "控制校门口的官方解释，试图把所有问题都收束到行政话术里。",
+          "detail": "她适合展示学校如何把异常解释成流程。"
+        },
+        "securityGuard": {
+          "name": "校门保安",
+          "role": "观察对象",
+          "summary": "在检查转学通知书之前就知道主角名字，是校方预设流程暴露的第一个裂口。",
+          "detail": "他不需要直接招认，价值在习惯、时机、登记册细节和微小反应。"
+        }
+      },
+      "choices": {
+        "transfer": {
+          "label": "出示转学通知书",
+          "intent": "进入校方流程",
+          "response": "你把通知书递过去。接待老师扫了一眼日期，很快把纸压在登记册下。你记住了她手指停顿的位置：落款时间比哥哥告诉你的时间早了三天。"
+        },
+        "project": {
+          "label": "询问矫正项目",
+          "intent": "质疑制度说明",
+          "response": "你问起所谓的矫正项目。接待老师的表情没有变化，只是重复官方说法。你给哥哥发了消息，屏幕很快显示已读，但没有任何回复。"
+        },
+        "security": {
+          "label": "观察校门安保",
+          "intent": "低风险调查",
+          "response": "你没有急着开口，而是观察保安亭和登记册。保安在你递交通知书之前就叫出了你的名字，保安亭的小门在他身后关上。这个学校知道的信息比表面更多。"
+        }
+      },
+      "clues": {
+        "transferDate": {
+          "title": "转学通知书日期异常",
+          "type": "文档线索",
+          "summary": "通知书落款时间早于哥哥正式通知主角的时间，说明这次转学并不是临时决定。"
+        },
+        "brotherRead": {
+          "title": "哥哥没有回复但已读",
+          "type": "通讯线索",
+          "summary": "哥哥看到了主角的信息，却没有解释转学原因；保护和监控的关系同时成立。"
+        },
+        "guardName": {
+          "title": "保安提前知道主角姓名",
+          "type": "观察线索",
+          "summary": "保安在主角递交通知书之前就叫出了她的名字，证明校方早已完成身份预设。"
+        },
+        "caseReportNoStruggle": {
+          "title": "事故简报写着无挣扎痕迹",
+          "type": "案情线索",
+          "summary": "如果是普通溺亡，身体通常会留下挣扎或环境接触痕迹；简报里的空白反而更像被处理过。"
+        }
+      },
+      "freeInput": {
+        "guard": {
+          "judgement": "观察环境",
+          "response": "你把注意力放在校门和保安亭。登记册第一页已经写着你的名字，时间栏却是空的。保安没有问你是谁，只说了一句：林风，往里走。"
+        },
+        "brother": {
+          "judgement": "联系哥哥",
+          "response": "你给哥哥发出一句很短的问题：你什么时候知道我要转学？消息几乎立刻变成已读，但对话框沉默下来。校门内的广播开始点名。"
+        },
+        "transfer": {
+          "judgement": "检查转学通知书",
+          "response": "你重新看向通知书。纸张边缘有折痕，但落款日期异常清晰：它比哥哥说出这件事更早。有人提前安排好了你的到来。"
+        },
+        "offTopic": {
+          "judgement": "跑题拉回",
+          "response": "你的思绪短暂偏离，但校门口的冷空气把你拉回现实。接待老师已经看见你停在原地，保安亭里的登记册还摊开着。"
+        }
+      },
+      "continuations": {
+        "first": "接待老师终于走近。她胸牌上没有姓氏，只有一个编号。她身后的摄像头无声转向你。",
+        "second": "一群学生从你身边经过，没有人看你，但其中一个男生脚步慢了半拍。他看见你手里的通知书，又很快低下头。",
+        "third": "保安合上登记册，不让你继续看下一行。可你已经记住了那一页的形状和空着的时间栏。"
+      },
+      "retryResult": "AI 重新组织结果：同一个行动不会直接跳到下一剧情节点，但会暴露校方流程里的一个更小矛盾。",
+      "assets": {
+        "gate": "校门场景",
+        "security": "安保细节",
+        "brotherMessage": "哥哥消息",
+        "pendingShot": "待生成镜头",
+        "campusVideo": "校园视频",
+        "characterPortraits": "角色图",
+        "clueCards": "线索卡",
+        "generatedShots": "生成镜头"
       }
     }
   }
