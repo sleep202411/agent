@@ -150,9 +150,20 @@ export function IpPublicDetail({ ipId }: IpPublicDetailProps) {
     if (viewItemFiredRef.current || !detailIp) return;
     viewItemFiredRef.current = true;
     const priceAmount = detailIp.price ? parseIntegerAmount(detailIp.price.amount) : null;
+    // Community points are denominated in US cents (100 points = $1), so report a
+    // USD value: AppLovin rejects non-ISO currency codes ("community_point" would
+    // flag the event as invalid and keep it out of the dashboard/optimisation).
+    const usdValue = priceAmount !== null ? Number(priceAmount) / 100 : null;
     axonViewItem({
-      items: [{ item_id: detailIp.id, item_name: detailIp.title }],
-      ...(priceAmount !== null ? { value: Number(priceAmount), currency: "community_point" } : {}),
+      items: [
+        {
+          item_id: detailIp.id,
+          item_name: detailIp.title,
+          quantity: 1,
+          ...(usdValue !== null ? { price: usdValue } : {}),
+        },
+      ],
+      ...(usdValue !== null ? { value: usdValue, currency: "USD" } : {}),
       userData: user
         ? { user_id: user.id, email: user.email ? user.email.toLowerCase() : undefined }
         : undefined,
