@@ -1342,6 +1342,62 @@ export const HAPPYHORSE_VIDEO_PRODUCT_PRICING: AiProductPricingPolicy = {
   roundTo: 1,
 };
 
+// HappyHorse 1.1 — upgrade of 1.0 (stronger motion, higher consistency,
+// multi-image reference). Same Model Studio video-synthesis contract + param
+// surface as 1.0, so this is a faithful clone. ⚠️ Confirm the 1.1 upstream model
+// ids + exact param set (duration floor, ratio set) against a LIVE DashScope
+// probe before deploying — 1.0 was live-probed 2026-06-16; 1.1 is documented
+// here but NOT yet probed.
+export const HAPPYHORSE_1_1_VIDEO_PARAMETER_POLICY = {
+  parameterMode: 'provider_union',
+  providerFamily: 'happyhorse',
+  defaultResolution: '720P',
+  resolutionOptions: ['720P', '1080P'],
+  defaultDurationSeconds: 5,
+  minDurationSeconds: 2,
+  maxDurationSeconds: 15,
+  defaultAspectRatio: '16:9',
+  supportedAspectRatios: [
+    '16:9',
+    '9:16',
+    '4:3',
+    '3:4',
+    '1:1',
+    '5:4',
+    '4:5',
+    '9:21',
+    '21:9',
+  ],
+  startFrame: { enabled: true }, // i2v first frame (input.media)
+  referenceTypes: ['reference_image'], // r2v: reference_image only
+  promptExtend: { enabled: true },
+  seed: { enabled: true, minimum: 0, maximum: 2147483647 },
+} as const satisfies Prisma.InputJsonObject;
+
+// HappyHorse 1.1 — per-second points (积分 ≡ US cent). Premium tier; same anchor
+// as 1.0 / Wan 2.7 (720P 20/s, 1080P 30/s = ~2× a standard video tier, i.e. it
+// draws 2× from the free allowance) pending finance sign-off. DB-editable via the
+// catalog ops flow.
+export const HAPPYHORSE_1_1_VIDEO_PRODUCT_PRICING: AiProductPricingPolicy = {
+  mode: 'per_second_matrix',
+  version: 'happyhorse-1-1-video-points-v1-2026-07-01',
+  currency: 'COMPUTE_POINTS',
+  defaultOutputCount: 1,
+  minOutputCount: 1,
+  maxOutputCount: 1,
+  defaultResolution: '720P',
+  pointsPerSecond: { '720P': 20, '1080P': 30 },
+  minSeconds: 2,
+  maxSeconds: 15,
+  defaultSeconds: 5,
+  autoQuoteSeconds: 15,
+  referenceImageSurchargePoints: 0,
+  extraReferenceImagePoints: 0,
+  maskSurchargePoints: 0,
+  minimumPoints: 1,
+  roundTo: 1,
+};
+
 // BytePlus ModelArk Seedance 2.0 is now co-bound onto the `seedance-2-0`
 // canonical as the primary provider (see video-models.ts), so it shares the
 // canonical SEEDANCE_2_0_PARAMETER_POLICY above — no BytePlus-specific policy.

@@ -12,6 +12,8 @@ import type { AiGenerationMode } from '@repo/shared';
 import {
   HAPPYHORSE_VIDEO_PARAMETER_POLICY,
   HAPPYHORSE_VIDEO_PRODUCT_PRICING,
+  HAPPYHORSE_1_1_VIDEO_PARAMETER_POLICY,
+  HAPPYHORSE_1_1_VIDEO_PRODUCT_PRICING,
   KLING_MOTION_PARAMETER_POLICY,
   KLING_MOTION_PRODUCT_PRICING,
   QUICK_VIDEO_PARAMETER_POLICY,
@@ -321,6 +323,76 @@ export const VIDEO_MODELS: VideoModelSeed[] = [
       'happyhorse-1.0-t2v',
       'happyhorse-1.0-i2v',
       'happyhorse-1.0-r2v',
+    ],
+  },
+  {
+    slug: 'happyhorse-1-1',
+    displayName: 'HappyHorse 1.1',
+    family: 'wan',
+    description:
+      'Alibaba HappyHorse 1.1 video — upgrade of 1.0 with stronger motion, higher consistency and multi-image reference, native synced audio and multi-language lip-sync. 720P/1080P, 2–15s.',
+    // Same shape as happyhorse-1-0: one canonical, three upstream ids
+    // (happyhorse-1.1-t2v / -i2v / -r2v). ⚠️ confirm the exact 1.1 model ids +
+    // param set against a live DashScope probe before deploying (see defaults.ts).
+    modes: [T2V, I2V, MM2V],
+    tier: 'vip',
+    // Display floor ≈ maxSeconds(15) × 720P points(20).
+    cost: 300,
+    parameterPolicy: HAPPYHORSE_1_1_VIDEO_PARAMETER_POLICY,
+    productPricing: HAPPYHORSE_1_1_VIDEO_PRODUCT_PRICING,
+    group: 'video',
+    sortOrder: 24, // surface just above 1.0 (25)
+    recommended: true, // feature 1.1 as the headline HappyHorse
+    providers: [
+      {
+        provider: 'aliyun-bailian',
+        endpointId: 'happyhorse-1.1-t2v',
+        modes: [T2V],
+        requestTimeoutSeconds: 900,
+        priority: 100,
+        catalogSnapshot: bailianVideoCatalogSnapshot({
+          model: 'happyhorse-1.1-t2v',
+          // Provider-cost per-second ESTIMATE pending finance; user price is the
+          // productPricing above.
+          cnRmbPerSecond: 0.7,
+          globalRmbPerSecond: 0.7,
+          docsUrl:
+            'https://www.alibabacloud.com/help/en/model-studio/happyhorse-text-to-video-api-reference',
+        }),
+      },
+      {
+        provider: 'aliyun-bailian',
+        endpointId: 'happyhorse-1.1-i2v',
+        modes: [I2V],
+        requestTimeoutSeconds: 900,
+        priority: 100,
+        catalogSnapshot: bailianVideoCatalogSnapshot({
+          model: 'happyhorse-1.1-i2v',
+          cnRmbPerSecond: 0.7,
+          globalRmbPerSecond: 0.7,
+          docsUrl:
+            'https://www.alibabacloud.com/help/en/model-studio/happyhorse-image-to-video-api-reference',
+        }),
+      },
+      {
+        provider: 'aliyun-bailian',
+        endpointId: 'happyhorse-1.1-r2v',
+        modes: [MM2V],
+        requestTimeoutSeconds: 900,
+        priority: 100,
+        catalogSnapshot: bailianVideoCatalogSnapshot({
+          model: 'happyhorse-1.1-r2v',
+          cnRmbPerSecond: 0.7,
+          globalRmbPerSecond: 0.7,
+          docsUrl:
+            'https://www.alibabacloud.com/help/en/model-studio/happyhorse-reference-to-video-api-reference',
+        }),
+      },
+    ],
+    providerAliases: [
+      'happyhorse-1.1-t2v',
+      'happyhorse-1.1-i2v',
+      'happyhorse-1.1-r2v',
     ],
   },
   {
