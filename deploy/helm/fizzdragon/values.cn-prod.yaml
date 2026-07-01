@@ -158,6 +158,11 @@ adminUi:
   env:
     ADMIN_SITE: cn
     NEXT_PUBLIC_ADMIN_UI_BASE_PATH: "/"
+    # 资讯 admin → the CN Java (else inherits base values.yaml's .com host and
+    # silently edits the .com news store). NOTE: java.fizzspace.cn's
+    # /content/api/admin/news currently 500s (Java-side handler bug); pointing
+    # here is the correct target — the 500 is for the Java team to fix.
+    NEWS_API_BASE_URL: https://java.fizzspace.cn/content
   nodeSelector: null
   tolerations: null
 

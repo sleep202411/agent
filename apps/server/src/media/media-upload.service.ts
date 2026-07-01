@@ -44,11 +44,13 @@ import {
   MediaAssetSource,
   MediaAssetStatus,
   MediaAssetVisibility,
+  MediaProcessingJobType,
   MediaStorageProvider,
 } from '@prisma/client';
 import { PrismaService } from '../infra/db/db.module';
 import { CURRENT_CELL } from '../common/region/current-cell';
 import { ensureOriginalMediaPlacement } from '../infra/storage/media-asset-placement';
+import { MediaProcessingService } from './media-processing.service';
 import {
   OutputStorageService,
   type HeadObjectResult,
@@ -83,6 +85,10 @@ interface UploadKindPolicy {
 
 const MiB = 1024 * 1024;
 const GiB = 1024 * MiB;
+
+/** Video upload kinds that are generation INPUTS, never played through
+ *  assetDto — excluded from ABR-HLS transcoding. */
+const HLS_SKIP_UPLOAD_KINDS = new Set<UploadKind>(['ai_reference_video']);
 
 const IMAGE_CONTENT_TYPES: Record<string, string> = {
   'image/jpeg': 'jpg',
@@ -181,7 +187,47 @@ export class MediaUploadService {
     private readonly prisma: PrismaService,
     private readonly storage: OutputStorageService,
     private readonly assetUrls: MediaAssetUrlResolverService,
+    private readonly mediaProcessing: MediaProcessingService,
   ) {}
+
+  /**
+   * Auto-enqueue ABR-HLS transcode for a freshly confirmed CN video. IMM is
+   * OSS/CN only, so non-`aliyun_oss` (e.g. Azure .com) and non-video assets are
+   * skipped — they play as the original mp4. Only PLAYED video is transcoded:
+   * `ai_reference_video` is a generation INPUT, never streamed through assetDto,
+   * so transcoding it is pure wasted IMM cost + contention on the single-flight
+   * media worker. Best-effort: a queue failure must NOT fail the upload confirm
+   * (the mp4 is already playable; a backfill can re-enqueue). Idempotent via
+   * `hls-stream:{assetId}`.
+   */
+  private async maybeEnqueueHlsTranscode(
+    assetId: string,
+    uploadKind: UploadKind,
+    assetKind: MediaAssetKind,
+    storageProvider: MediaStorageProvider,
+  ): Promise<void> {
+    if (
+      assetKind !== MediaAssetKind.video ||
+      storageProvider !== MediaStorageProvider.aliyun_oss ||
+      HLS_SKIP_UPLOAD_KINDS.has(uploadKind)
+    ) {
+      return;
+    }
+    try {
+      await this.mediaProcessing.enqueueJob({
+        assetId,
+        jobType: MediaProcessingJobType.hls_stream,
+        priority: 50,
+        idempotencyKey: `hls-stream:${assetId}`,
+      });
+    } catch (err) {
+      this.logger.warn(
+        `failed to enqueue hls_stream for asset=${assetId}: ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+      );
+    }
+  }
 
   /**
    * Issue a signed upload URL. STATELESS — no MediaAsset is created. The
@@ -464,6 +510,15 @@ export class MediaUploadService {
       });
       return created;
     });
+
+    // CN videos: kick off the ABR-HLS transcode now that the asset is active.
+    // Only fires for video on aliyun_oss; everything else plays the mp4.
+    await this.maybeEnqueueHlsTranscode(
+      asset.id,
+      input.kind,
+      policy.assetKind,
+      asset.storageProvider,
+    );
 
     return {
       mediaAssetId: asset.id,

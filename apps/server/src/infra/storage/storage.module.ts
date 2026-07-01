@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { CURRENT_CELL } from '../../common/region/current-cell';
 import { AzureBlobStorageService } from './azure-blob-storage.service';
+import { ImmTranscodeService } from './imm-transcode.service';
 import { AliyunOssStorageService } from './oss-storage.service';
 import { MediaAssetUrlResolverService } from './media-asset-url-resolver.service';
 import { MediaStorageAccessService } from './media-storage-access.service';
@@ -41,12 +42,14 @@ import { OutputStorageService } from './storage.types';
     MediaAssetUrlResolverService,
     MediaStorageAccessService,
     StorageProviderRegistry,
+    ImmTranscodeService,
   ],
   exports: [
     OutputStorageService,
     MediaAssetUrlResolverService,
     MediaStorageAccessService,
     StorageProviderRegistry,
+    ImmTranscodeService,
   ],
 })
 export class StorageModule {}

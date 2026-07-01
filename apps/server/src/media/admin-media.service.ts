@@ -276,10 +276,16 @@ export class AdminMediaService {
       sourceVariantId: input.sourceVariantId ?? null,
       priority: input.priority,
       input: (input.input ?? {}) as Prisma.InputJsonObject,
+      // Stable per-asset keys for single-output job types so an admin re-request
+      // (backfill / retry) UPSERTS the canonical job — via enqueueJob's reset
+      // branch — instead of forking a parallel one (e.g. two hls_stream jobs
+      // submitting concurrent IMM tasks onto the same hls/{assetId}/ prefix).
       idempotencyKey:
         input.jobType === MediaProcessingJobType.backfill_original_placement
           ? `media-backfill-original-placement:${assetId}`
-          : null,
+          : input.jobType === MediaProcessingJobType.hls_stream
+            ? `hls-stream:${assetId}`
+            : null,
       createdByAdminId: adminId,
     };
     return serializeProcessingJob(

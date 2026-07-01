@@ -34,6 +34,7 @@
   },
   "dependencies": {
     "@ai-sdk/alibaba": "^1.0.17",
+    "@alicloud/pop-core": "^1.8.0",
     "@azure/storage-blob": "^12.31.0",
     "@dicebear/collection": "9.4.2",
     "@dicebear/core": "9.4.2",

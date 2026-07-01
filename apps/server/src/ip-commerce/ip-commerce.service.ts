@@ -37,7 +37,9 @@ import {
   IpUserBlockTargetType,
   MediaAssetKind,
   MediaAssetStatus,
+  MediaAssetVariantStatus,
   MediaAssetVisibility,
+  MediaObjectPlacementStatus,
   MediaStorageProvider,
   Prisma,
   WalletAccountStatus,
@@ -57,7 +59,10 @@ import {
 import { formatSettlementPeriod } from './member-pool';
 import { PrismaService } from '../infra/db/db.module';
 import { OutputStorageService } from '../infra/storage/storage.types';
-import { resolveMediaPublicUrl } from '../infra/storage/media-asset-url-resolver.service';
+import {
+  resolveMediaPlaybackUrl,
+  type ResolvableMediaAssetVariant,
+} from '../infra/storage/media-asset-url-resolver.service';
 import { LegacyCnVideoResolverService } from './legacy-cn-video.service';
 import { WalletLedgerService } from '../workspaces';
 import { EntitlementService } from '../entitlements';
@@ -180,9 +185,30 @@ const adminTaxonomyTermInclude = {
   },
 } satisfies Prisma.IpTaxonomyTermInclude;
 
+/**
+ * For a VIDEO asset, load the ready ABR-HLS `stream` variant (+ its active
+ * placement) so `assetDto` can prefer the HLS rendition over the original mp4
+ * (`resolveMediaPlaybackUrl`). Filtering to `ready`/`active` here means a
+ * pending/failed transcode never surfaces — playback transparently keeps the
+ * mp4. Used for every video relation (episode media + trailers).
+ */
+const mediaAssetPlaybackInclude = {
+  variants: {
+    where: { deletedAt: null, status: MediaAssetVariantStatus.ready },
+    include: {
+      placements: {
+        where: {
+          deletedAt: null,
+          status: MediaObjectPlacementStatus.active,
+        },
+      },
+    },
+  },
+} satisfies Prisma.MediaAssetInclude;
+
 const ipInclude = {
   coverAsset: true,
-  trailerAsset: true,
+  trailerAsset: { include: mediaAssetPlaybackInclude },
   localizations: {
     where: { archivedAt: null },
     orderBy: [{ locale: 'asc' }, { updatedAt: 'desc' }],
@@ -204,8 +230,8 @@ const ipInclude = {
         orderBy: [{ locale: 'asc' }, { updatedAt: 'desc' }],
       },
       coverAsset: true,
-      mediaAsset: true,
-      trailerAsset: true,
+      mediaAsset: { include: mediaAssetPlaybackInclude },
+      trailerAsset: { include: mediaAssetPlaybackInclude },
       priceRules: {
         where: {
           status: IpPriceRuleStatus.active,
@@ -250,7 +276,7 @@ type IpWithCommerce = Prisma.IpGetPayload<{
 
 const adminIpInclude = {
   coverAsset: true,
-  trailerAsset: true,
+  trailerAsset: { include: mediaAssetPlaybackInclude },
   localizations: {
     where: { archivedAt: null },
     orderBy: [{ locale: 'asc' }, { updatedAt: 'desc' }],
@@ -269,8 +295,8 @@ const adminIpInclude = {
         orderBy: [{ locale: 'asc' }, { updatedAt: 'desc' }],
       },
       coverAsset: true,
-      mediaAsset: true,
-      trailerAsset: true,
+      mediaAsset: { include: mediaAssetPlaybackInclude },
+      trailerAsset: { include: mediaAssetPlaybackInclude },
       priceRules: {
         where: { archivedAt: null },
         orderBy: [{ status: 'asc' }, { priority: 'desc' }, { amount: 'asc' }],
@@ -7535,9 +7561,15 @@ function assetDto(
     width: number | null;
     height: number | null;
     durationSeconds: number | null;
+    // Optional: when the query loads them (video relations via
+    // mediaAssetPlaybackInclude), a ready HLS variant is preferred over the mp4.
+    variants?: ResolvableMediaAssetVariant[];
   } | null,
 ) {
   if (!asset) return null;
+  // Single source of truth for "asset → playable URL or null" (gate + build):
+  // prefers a ready ABR-HLS variant, falls back to the original mp4.
+  const playback = resolveMediaPlaybackUrl(asset);
   return {
     id: asset.id,
     kind: asset.kind,
@@ -7546,9 +7578,8 @@ function assetDto(
     region: asset.region,
     objectKey: asset.objectKey,
     externalUrl: asset.externalUrl,
-    // Single source of truth for "asset → public URL or null" (gate + build).
-    url: resolveMediaPublicUrl(asset),
-    contentType: asset.contentType,
+    url: playback.url,
+    contentType: playback.contentType ?? asset.contentType,
     width: asset.width,
     height: asset.height,
     durationSeconds: asset.durationSeconds,

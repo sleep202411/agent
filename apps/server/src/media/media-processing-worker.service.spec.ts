@@ -73,7 +73,42 @@ describe('MediaProcessingWorkerService', () => {
     };
   }
 
-  function setup(row = processingJob()) {
+  function videoAsset(
+    overrides: Record<string, unknown> = {},
+  ): ReturnType<typeof mediaAsset> {
+    return {
+      ...mediaAsset(),
+      kind: MediaAssetKind.video,
+      storageProvider: MediaStorageProvider.aliyun_oss,
+      bucket: 'fizzdragon-ai-outputs',
+      region: 'cn-hangzhou',
+      objectKey: 'media/cn/episode-video/34/x.mp4',
+      contentType: 'video/mp4',
+      durationSeconds: 230,
+      ...overrides,
+    } as ReturnType<typeof mediaAsset>;
+  }
+
+  function immMock(overrides: Record<string, unknown> = {}) {
+    return {
+      isConfigured: jest.fn().mockReturnValue(true),
+      submitHlsTask: jest.fn().mockResolvedValue('imm-task-1'),
+      getTaskStatus: jest.fn(),
+      finalizeHls: jest.fn(),
+      masterObjectKey: (id: string) => `hls/${id}/master.m3u8`,
+      ...overrides,
+    };
+  }
+
+  function setup(
+    row = processingJob(),
+    opts: {
+      asset?: ReturnType<typeof mediaAsset>;
+      imm?: ReturnType<typeof immMock>;
+    } = {},
+  ) {
+    const asset = opts.asset ?? mediaAsset();
+    const imm = opts.imm ?? immMock();
     const tx = {
       mediaAssetVariant: {
         upsert: jest.fn().mockResolvedValue({
@@ -85,6 +120,7 @@ describe('MediaProcessingWorkerService', () => {
         create: jest.fn().mockResolvedValue({
           id: '01900000-0000-7000-8000-000000000013',
         }),
+        updateMany: jest.fn().mockResolvedValue({ count: 0 }),
       },
     };
     const prisma = {
@@ -97,16 +133,17 @@ describe('MediaProcessingWorkerService', () => {
         update: jest.fn().mockResolvedValue(row),
       },
       mediaAsset: {
-        findFirst: jest.fn().mockResolvedValue(mediaAsset()),
+        findFirst: jest.fn().mockResolvedValue(asset),
       },
       $transaction: jest.fn(
         (callback: (client: typeof tx) => Promise<unknown>) => callback(tx),
       ),
     };
     return {
-      service: new MediaProcessingWorkerService(prisma as never),
+      service: new MediaProcessingWorkerService(prisma as never, imm as never),
       prisma,
       tx,
+      imm,
       row,
     };
   }
@@ -166,5 +203,235 @@ describe('MediaProcessingWorkerService', () => {
         }),
       }),
     );
+  });
+
+  describe('hls_stream', () => {
+    const ASSET_ID = '01900000-0000-7000-8000-000000000011';
+    function hlsJob(output: Record<string, unknown> = {}) {
+      return processingJob({
+        jobType: MediaProcessingJobType.hls_stream,
+        priority: 50,
+        output,
+      });
+    }
+    function running(output: Record<string, unknown>) {
+      return {
+        immTaskId: 'imm-task-1',
+        submittedAt: new Date().toISOString(),
+        ...output,
+      };
+    }
+
+    it('phase 1: submits the IMM task and re-queues for poll without burning an attempt', async () => {
+      const imm = immMock();
+      const { service, prisma } = setup(hlsJob({}), {
+        asset: videoAsset(),
+        imm,
+      });
+
+      await service.drainOnce();
+
+      expect(imm.submitHlsTask).toHaveBeenCalledWith(
+        ASSET_ID,
+        'fizzdragon-ai-outputs',
+        'media/cn/episode-video/34/x.mp4',
+      );
+      expect(prisma.mediaProcessingJob.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            status: MediaProcessingJobStatus.pending,
+            nextAttemptAt: expect.any(Date),
+            output: expect.objectContaining({
+              immTaskId: 'imm-task-1',
+              pollErrors: 0,
+            }),
+          }),
+        }),
+      );
+      expect(prisma.mediaProcessingJob.update).not.toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            status: MediaProcessingJobStatus.completed,
+          }),
+        }),
+      );
+    });
+
+    it('phase 2: a running task re-queues and resets pollErrors', async () => {
+      const imm = immMock();
+      imm.getTaskStatus.mockResolvedValue({ state: 'running', raw: 'Running' });
+      const { service, prisma } = setup(hlsJob(running({ pollErrors: 2 })), {
+        asset: videoAsset(),
+        imm,
+      });
+
+      await service.drainOnce();
+
+      expect(imm.getTaskStatus).toHaveBeenCalledWith('imm-task-1');
+      expect(imm.submitHlsTask).not.toHaveBeenCalled();
+      expect(prisma.mediaProcessingJob.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            status: MediaProcessingJobStatus.pending,
+            output: expect.objectContaining({ pollErrors: 0 }),
+          }),
+        }),
+      );
+    });
+
+    it('phase 3: a multi-segment success publishes a ready stream variant and completes', async () => {
+      const imm = immMock();
+      imm.getTaskStatus.mockResolvedValue({
+        state: 'succeeded',
+        raw: 'Succeeded',
+      });
+      imm.finalizeHls.mockResolvedValue({
+        masterObjectKey: `hls/${ASSET_ID}/master.m3u8`,
+        segmentCount: 31,
+      });
+      const { service, prisma, tx } = setup(hlsJob(running({})), {
+        asset: videoAsset(),
+        imm,
+      });
+
+      await service.drainOnce();
+
+      expect(tx.mediaAssetVariant.upsert).toHaveBeenCalledWith(
+        expect.objectContaining({
+          create: expect.objectContaining({
+            variantKey: 'hls',
+            kind: MediaAssetVariantKind.stream,
+            status: MediaAssetVariantStatus.ready,
+          }),
+        }),
+      );
+      expect(prisma.mediaProcessingJob.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            status: MediaProcessingJobStatus.completed,
+            output: expect.objectContaining({ segmentCount: 31 }),
+          }),
+        }),
+      );
+    });
+
+    it('a degenerate (<=1 segment) result marks the variant failed and keeps the mp4', async () => {
+      const imm = immMock();
+      imm.getTaskStatus.mockResolvedValue({
+        state: 'succeeded',
+        raw: 'Succeeded',
+      });
+      imm.finalizeHls.mockResolvedValue({
+        masterObjectKey: `hls/${ASSET_ID}/master.m3u8`,
+        segmentCount: 1,
+      });
+      const { service, prisma, tx } = setup(hlsJob(running({})), {
+        asset: videoAsset(),
+        imm,
+      });
+
+      await service.drainOnce();
+
+      expect(tx.mediaAssetVariant.upsert).toHaveBeenCalledWith(
+        expect.objectContaining({
+          create: expect.objectContaining({
+            variantKey: 'hls',
+            status: MediaAssetVariantStatus.failed,
+          }),
+        }),
+      );
+      expect(tx.mediaObjectPlacement.updateMany).toHaveBeenCalled();
+      expect(prisma.mediaProcessingJob.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            status: MediaProcessingJobStatus.completed,
+            output: expect.objectContaining({ skipped: 'degenerate_output' }),
+          }),
+        }),
+      );
+    });
+
+    it('an IMM failed status dead-letters permanently (keeps mp4)', async () => {
+      const imm = immMock();
+      imm.getTaskStatus.mockResolvedValue({
+        state: 'failed',
+        raw: 'Failed',
+        errorMessage: 'bad input',
+      });
+      const { service, prisma } = setup(hlsJob(running({})), {
+        asset: videoAsset(),
+        imm,
+      });
+
+      await service.drainOnce();
+
+      expect(prisma.mediaProcessingJob.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            status: MediaProcessingJobStatus.dead,
+            deadAt: expect.any(Date),
+          }),
+        }),
+      );
+    });
+
+    it('rejects a non-aliyun_oss asset permanently and never calls IMM', async () => {
+      const imm = immMock();
+      const { service, prisma } = setup(hlsJob({}), {
+        asset: videoAsset({ storageProvider: MediaStorageProvider.azure_blob }),
+        imm,
+      });
+
+      await service.drainOnce();
+
+      expect(imm.submitHlsTask).not.toHaveBeenCalled();
+      expect(prisma.mediaProcessingJob.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            status: MediaProcessingJobStatus.dead,
+            errorMessage: expect.stringContaining('aliyun_oss'),
+          }),
+        }),
+      );
+    });
+
+    it('a transient poll error re-queues with an incremented counter (not the retry budget)', async () => {
+      const imm = immMock();
+      imm.getTaskStatus.mockRejectedValue(new Error('ETIMEDOUT'));
+      const { service, prisma } = setup(hlsJob(running({ pollErrors: 2 })), {
+        asset: videoAsset(),
+        imm,
+      });
+
+      await service.drainOnce();
+
+      expect(prisma.mediaProcessingJob.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            status: MediaProcessingJobStatus.pending,
+            output: expect.objectContaining({ pollErrors: 3 }),
+          }),
+        }),
+      );
+    });
+
+    it('a transient poll error at the cap dead-letters permanently', async () => {
+      const imm = immMock();
+      imm.getTaskStatus.mockRejectedValue(new Error('ETIMEDOUT'));
+      const { service, prisma } = setup(hlsJob(running({ pollErrors: 29 })), {
+        asset: videoAsset(),
+        imm,
+      });
+
+      await service.drainOnce();
+
+      expect(prisma.mediaProcessingJob.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            status: MediaProcessingJobStatus.dead,
+          }),
+        }),
+      );
+    });
   });
 });
