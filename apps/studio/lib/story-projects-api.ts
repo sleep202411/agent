@@ -14,7 +14,7 @@ import { api, ApiRequestError } from "@/lib/api";
  */
 
 /** The draft snapshot wire schema this client reads and writes. */
-export const STORY_STUDIO_SCHEMA_VERSION = "story-studio-canvas-v1";
+export const STORY_STUDIO_SCHEMA_VERSION = "story-studio-canvas-v2";
 
 export type StoryPublishState = "unpublished" | "published" | "offline";
 
@@ -107,6 +107,145 @@ export async function putStoryDraft(
 /** Archive a story. 409 STORY_PUBLISHED while it is published. */
 export async function archiveStoryProject(id: string): Promise<void> {
   await api.delete(`/aurora/story-projects/${encodeURIComponent(id)}`);
+}
+
+// ─── StoryOS generation (fizzstory-v3, server-hosted S1) ─────────
+
+export type StoryActKey = "setup" | "development" | "turn" | "resolution";
+
+export type StoryGenreKey =
+  | "suspense"
+  | "two_hander"
+  | "power_play"
+  | "survival"
+  | "coming_of_age"
+  | "romance"
+  | "tragedy"
+  | "underdog"
+  | "road_trip"
+  | "detective";
+
+/** 起承转合 four-act plan entry — ①锚点 ②交互密度 ③情绪曲线 ④收口钩子 + 步数. */
+export interface StoryActPlan {
+  key: StoryActKey;
+  anchor: string;
+  interactionCount: number;
+  stepBudget: number;
+  emotionArc: string;
+  exitHook: string;
+}
+
+export interface StoryStudioAnalysis {
+  title: string;
+  summary: string;
+  worldview: string;
+  storyKernel: string;
+  adaptationDirection: string;
+  genre: StoryGenreKey;
+  locations: string[];
+  acts: StoryActPlan[];
+  protagonist: { name: string; role: string; summary: string };
+  characters: Array<{ name: string; role: string; summary: string; tags: string[] }>;
+  clues: Array<{
+    title: string;
+    summary: string;
+    type: string;
+    source: string;
+    use: string;
+    rule: string;
+    tags: string[];
+  }>;
+  plots: Array<{
+    title: string;
+    summary: string;
+    entryGoal: string;
+    actKey: StoryActKey;
+    tags: string[];
+  }>;
+  endings: Array<{
+    title: string;
+    type: "truth" | "intervention" | "failure" | "hidden";
+    summary: string;
+    trigger: string;
+    review: string;
+    tags: string[];
+  }>;
+  guardrails: string[];
+}
+
+export interface StoryPipelineState {
+  stage: string;
+  status: "running" | "done" | "error";
+  startedAt?: string;
+  error?: string;
+}
+
+/** Read the generation pipeline state out of a draft snapshot. */
+export function draftPipelineState(content: Record<string, unknown>): StoryPipelineState | null {
+  const spec = content.storySpec;
+  if (typeof spec !== "object" || spec === null) return null;
+  const pipeline = (spec as Record<string, unknown>).pipeline;
+  if (typeof pipeline !== "object" || pipeline === null) return null;
+  const record = pipeline as Record<string, unknown>;
+  if (typeof record.status !== "string") return null;
+  return record as unknown as StoryPipelineState;
+}
+
+/**
+ * S1 StoryOS analysis, ASYNC: the server marks the draft's pipeline
+ * `running` and returns immediately; the model run persists its result
+ * (or error) into the draft in the background. Follow with
+ * {@link pollStoryAnalysis} — this two-step shape survives every proxy
+ * timeout and lets a refreshed page resume the same wait.
+ */
+export async function startStoryAnalysis(
+  projectId: string,
+  input: {
+    prompt?: string;
+    uploadedFileName?: string;
+    uploadedContent?: string;
+    locale: string;
+    genre?: StoryGenreKey;
+    sessionId?: string;
+  }
+): Promise<{ pipeline: StoryPipelineState; draft: { revision: number; updatedAt: string } }> {
+  return api.post(`/aurora/story-projects/${encodeURIComponent(projectId)}/generate/analysis`, {
+    data: input,
+  });
+}
+
+/**
+ * Poll the draft until the generation pipeline settles. Resolves with the
+ * persisted analysis + the draft revision to adopt; throws on pipeline
+ * error or timeout.
+ */
+export async function pollStoryAnalysis(
+  projectId: string,
+  options: { timeoutMs?: number; intervalMs?: number } = {}
+): Promise<{ analysis: StoryStudioAnalysis; draft: StoryDraft }> {
+  const timeoutMs = options.timeoutMs ?? 240_000;
+  const intervalMs = options.intervalMs ?? 2_500;
+  const deadline = Date.now() + timeoutMs;
+
+  for (;;) {
+    const project = await getStoryProject(projectId);
+    const pipeline = draftPipelineState(project.draft.content);
+
+    if (pipeline?.status === "error") {
+      throw new Error(pipeline.error || "Story generation failed.");
+    }
+    if (pipeline?.status === "done") {
+      const analysis = project.draft.content.storyAnalysis;
+      if (!analysis || typeof analysis !== "object") {
+        throw new Error("Generation finished but the draft carries no analysis.");
+      }
+      return { analysis: analysis as unknown as StoryStudioAnalysis, draft: project.draft };
+    }
+    if (Date.now() > deadline) {
+      throw new Error("Story generation timed out — reopen the project to retry.");
+    }
+    await new Promise((resolve) => window.setTimeout(resolve, intervalMs));
+  }
 }
 
 // ─── Typed errors ───────────────────────────────────────

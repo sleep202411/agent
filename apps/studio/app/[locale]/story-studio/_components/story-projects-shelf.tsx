@@ -91,11 +91,11 @@ function ShelfSkeleton() {
 /**
  * The user's REAL story projects (sovereign `/aurora/story-projects` list,
  * newest-updated first) — replaces the old hardcoded demo shelf as the primary
- * section. Signed-out browsing gets an honest sign-in prompt; an empty library
- * gets a prominent Create.
+ * section. Signed-out visitors don't get this section at all; an empty
+ * library gets a prominent Create.
  */
 export function StoryProjectsShelf() {
-  const { user, loading: authLoading, signIn } = useAuth();
+  const { user, loading: authLoading } = useAuth();
 
   const query = useQuery({
     queryKey: storyProjectsQueryKey,
@@ -103,6 +103,8 @@ export function StoryProjectsShelf() {
     enabled: Boolean(user),
     staleTime: 30_000,
   });
+
+  if (!authLoading && !user) return null;
 
   return (
     <section className="relative z-20 px-[47px] pt-10 lg:pl-[120px]">
@@ -117,25 +119,8 @@ export function StoryProjectsShelf() {
       </div>
 
       <div className="mt-5">
-        {authLoading || (user && query.isPending) ? (
+        {authLoading || query.isPending ? (
           <ShelfSkeleton />
-        ) : !user ? (
-          <div className="flex flex-col items-center rounded-[20px] bg-white/[0.045] px-6 py-14 text-center">
-            <IconBook2 className="size-9 text-white/22" stroke={1.4} />
-            <p className="mt-4 text-[15px] font-semibold text-white/85">
-              Sign in to see your stories
-            </p>
-            <p className="mt-1 max-w-sm text-[13px] font-medium text-white/48">
-              Your playable story projects live in your account and sync across devices.
-            </p>
-            <button
-              type="button"
-              onClick={signIn}
-              className="mt-5 inline-flex h-10 items-center rounded-[15px] bg-white px-5 text-[14px] font-bold text-black transition hover:bg-white/90"
-            >
-              Sign In
-            </button>
-          </div>
         ) : query.isError ? (
           <div className="flex flex-col items-center rounded-[20px] bg-white/[0.045] px-6 py-14 text-center">
             <IconAlertTriangle className="size-9 text-[#ff8b8e]" stroke={1.4} />

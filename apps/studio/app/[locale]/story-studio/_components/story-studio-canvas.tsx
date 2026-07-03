@@ -24,6 +24,7 @@ import {
   useEdgesState,
   useNodesState,
   useReactFlow,
+  useUpdateNodeInternals,
   type Connection,
   type Edge,
   type Node,
@@ -73,13 +74,20 @@ import {
 import { useRouter } from "@/i18n/navigation";
 import {
   createStoryProject,
+  draftPipelineState,
   draftRevisionConflict,
   getStoryProject,
+  pollStoryAnalysis,
   putStoryDraft,
-  updateStoryProject,
+  startStoryAnalysis,
   type DraftRevisionConflict,
+  type StoryActKey,
+  type StoryDraft,
+  type StoryStudioAnalysis,
 } from "@/lib/story-projects-api";
+import { fetchRandomIpSeeds, type IpStarterSeed } from "@/lib/ip-seeds-api";
 import { cn } from "@/lib/utils";
+import { AiEdgeGlow, AiSketchGhost } from "./ai-edge-glow";
 
 type NarrativeNodeKind =
   | "storyRoot"
@@ -130,6 +138,13 @@ type NarrativeNodeData = {
   storyRootOverviewCards?: StoryRootOverviewCard[];
   storyRootStats?: StoryRootStats;
   plotId?: PlotNodeId;
+  /** Stage letter (A/B/C…) of a GENERATED plot node — presentational order. */
+  plotStage?: string;
+  /** The analysis `entryGoal` of a GENERATED plot node (real data). */
+  plotGoal?: string;
+  /** 起承转合 membership of a plot beat — invisible structural metadata
+   *  (the generation skill assigns it; the future compiler reads it). */
+  actKey?: StoryActKey;
   characterMode?: "protagonist" | "relation";
   characterPortrait?: CharacterPortraitKey;
   endingType?: "truth" | "intervention" | "failure" | "hidden";
@@ -174,93 +189,14 @@ type StoryCanvasSnapshot = Record<string, unknown> & {
   };
 };
 
-type StoryStudioAnalysis = {
-  title: string;
-  summary: string;
-  worldview: string;
-  storyKernel: string;
-  adaptationDirection: string;
-  locations: string[];
-  protagonist: {
-    name: string;
-    role: string;
-    summary: string;
-  };
-  characters: Array<{
-    name: string;
-    role: string;
-    summary: string;
-    tags: string[];
-  }>;
-  clues: Array<{
-    title: string;
-    summary: string;
-    type: string;
-    source: string;
-    use: string;
-    rule: string;
-    tags: string[];
-  }>;
-  plots: Array<{
-    title: string;
-    summary: string;
-    entryGoal: string;
-    tags: string[];
-  }>;
-  endings: Array<{
-    title: string;
-    type: "truth" | "intervention" | "failure" | "hidden";
-    summary: string;
-    trigger: string;
-    review: string;
-    tags: string[];
-  }>;
-  guardrails: string[];
-};
+/** Draft snapshot format written by THIS client (acts + storySpec). The
+ *  server refuses schema downgrades, so v1 drafts survive old clients. */
+const STORY_CANVAS_SCHEMA_VERSION = "story-studio-canvas-v2";
 
-type StoryStudioAnalyzeResponse =
-  | {
-      success: true;
-      analysis: StoryStudioAnalysis;
-    }
-  | {
-      success: false;
-      message: string;
-    };
-
-const STORY_CANVAS_SCHEMA_VERSION = "story-studio-canvas-v1";
+const ACT_ORDER: readonly StoryActKey[] = ["setup", "development", "turn", "resolution"];
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function isNarrativeNodeKind(value: unknown): value is NarrativeNodeKind {
-  return (
-    value === "storyRoot" ||
-    value === "plot" ||
-    value === "ending" ||
-    value === "role" ||
-    value === "scene" ||
-    value === "clue" ||
-    value === "storyboard" ||
-    value === "item" ||
-    value === "sfx" ||
-    value === "music" ||
-    value === "video" ||
-    value === "logic" ||
-    value === "condition" ||
-    value === "state" ||
-    value === "relationship" ||
-    value === "playtest"
-  );
-}
-
-function normalizeNarrativeNodeKind(value: unknown): NarrativeNodeKind | null {
-  if (value === "script") {
-    return "storyRoot";
-  }
-
-  return isNarrativeNodeKind(value) ? value : null;
 }
 
 function isPersistedNarrativeNode(value: unknown): value is NarrativeNode {
@@ -271,7 +207,9 @@ function isPersistedNarrativeNode(value: unknown): value is NarrativeNode {
     return false;
   }
   if (!isRecord(value.data)) return false;
-  if (!normalizeNarrativeNodeKind(value.data.kind)) return false;
+  // Unknown kinds are PRESERVED (forward compat): a draft written by a newer
+  // client must survive a round-trip through this one, not lose nodes.
+  if (typeof value.data.kind !== "string" || !value.data.kind) return false;
   return typeof value.data.label === "string" && typeof value.data.eyebrow === "string";
 }
 
@@ -292,49 +230,19 @@ function parseStoryCanvasSnapshot(snapshot: unknown): {
   const base = isRecord(snapshot) ? (snapshot as StoryCanvasSnapshot) : {};
   const canvas = isRecord(base.canvas) ? base.canvas : {};
   const nodes = Array.isArray(canvas.nodes)
-    ? canvas.nodes.filter(isPersistedNarrativeNode).map((node) => {
-        const kind = normalizeNarrativeNodeKind(node.data.kind);
-        const legacyStoryRootData = node.data as NarrativeNodeData & {
-          scriptMode?: "document";
-          scriptSections?: StoryRootDocumentSection[];
-          scriptOverviewCards?: StoryRootOverviewCard[];
-        };
-        const normalizedData: NarrativeNodeData = {
-          ...node.data,
-          kind: kind ?? "storyRoot",
-          ...(kind === "storyRoot"
-            ? {
-                storyRootMode:
-                  legacyStoryRootData.storyRootMode ?? legacyStoryRootData.scriptMode ?? "document",
-                storyRootSections:
-                  legacyStoryRootData.storyRootSections ?? legacyStoryRootData.scriptSections,
-                storyRootOverviewCards:
-                  legacyStoryRootData.storyRootOverviewCards ??
-                  legacyStoryRootData.scriptOverviewCards,
-              }
-            : {}),
-        };
-
-        return {
-          ...node,
-          id: node.id === "script" ? "storyRoot" : node.id,
-          type: "narrative" as const,
-          data: normalizedData,
-          selected: false,
-          dragging: false,
-        };
-      })
+    ? canvas.nodes.filter(isPersistedNarrativeNode).map((node) => ({
+        ...node,
+        type: "narrative" as const,
+        data: { ...node.data },
+        selected: false,
+        dragging: false,
+      }))
     : [];
-  const normalizedNodes = normalizeLegacyStoryRootLayout(nodes);
+  const normalizedNodes = nodes;
   const nodeKindById = new Map(normalizedNodes.map((node) => [node.id, node.data.kind]));
   const edges = Array.isArray(canvas.edges)
     ? canvas.edges
         .filter(isPersistedNarrativeEdge)
-        .map((edge) => ({
-          ...edge,
-          source: edge.source === "script" ? "storyRoot" : edge.source,
-          target: edge.target === "script" ? "storyRoot" : edge.target,
-        }))
         .map((edge) => normalizePersistedEdgeHandles(edge, nodeKindById.get(edge.target)))
         .filter((edge) =>
           isConnectionTargetKindAllowed(
@@ -405,12 +313,15 @@ function serializeNarrativeEdges(edges: NarrativeEdge[]): NarrativeEdge[] {
 function buildStoryCanvasSnapshot(
   base: StoryCanvasSnapshot,
   nodes: NarrativeNode[],
-  edges: NarrativeEdge[]
+  edges: NarrativeEdge[],
+  storySpec?: Record<string, unknown> | null
 ): Record<string, unknown> {
   return {
     ...base,
-    schemaVersion:
-      typeof base.schemaVersion === "string" ? base.schemaVersion : STORY_CANVAS_SCHEMA_VERSION,
+    // This client always writes the CURRENT format — the server refuses the
+    // reverse direction (schema downgrade guard).
+    schemaVersion: STORY_CANVAS_SCHEMA_VERSION,
+    ...(storySpec ? { storySpec } : {}),
     canvas: {
       ...(isRecord(base.canvas) ? base.canvas : {}),
       nodes: serializeNarrativeNodes(nodes),
@@ -549,11 +460,8 @@ type ConnectionPortId = keyof typeof CONNECTION_PORTS;
 
 const ROLE_CARD_WIDTH = 320;
 const ROLE_CARD_HEIGHT = 168;
-const ROLE_CARD_VERTICAL_GAP = 34;
 const ROLE_PORTRAIT_WIDTH = 82;
 const ROLE_PORTRAIT_HEIGHT = Math.round((ROLE_PORTRAIT_WIDTH * 16) / 9);
-const ROLE_LANE_OFFSET_X = 620;
-const ROLE_LANE_OFFSET_Y = -260;
 
 function isConnectionTargetKindAllowed(
   sourceHandle: string | null | undefined,
@@ -620,76 +528,6 @@ function normalizePersistedEdgeHandles(
     ...edge,
     targetHandle,
   };
-}
-
-function normalizeLegacyStoryRootLayout(nodes: NarrativeNode[]) {
-  const rootNode = nodes.find((node) => node.id === "storyRoot");
-
-  if (!rootNode) {
-    return nodes;
-  }
-
-  const roleNodes = nodes.filter((node) => node.data.kind === "role");
-  const shouldMoveLegacyRoleLane =
-    roleNodes.length > 0 &&
-    (roleNodes.every((node) => node.position.x < rootNode.position.x - 80) ||
-      roleNodes.some((node, index) => {
-        if (index === 0) return false;
-        const previousNode = roleNodes[index - 1];
-        return Math.abs(node.position.y - previousNode.position.y) < ROLE_CARD_HEIGHT;
-      }));
-
-  if (!shouldMoveLegacyRoleLane) {
-    return nodes;
-  }
-
-  let roleIndex = 0;
-  let plotIndex = 0;
-  let clueIndex = 0;
-  let endingIndex = 0;
-
-  return nodes.map((node) => {
-    if (node.data.kind === "role") {
-      const nextPosition = {
-        x: rootNode.position.x + ROLE_LANE_OFFSET_X,
-        y:
-          rootNode.position.y +
-          ROLE_LANE_OFFSET_Y +
-          roleIndex * (ROLE_CARD_HEIGHT + ROLE_CARD_VERTICAL_GAP),
-      };
-      roleIndex += 1;
-      return { ...node, position: nextPosition };
-    }
-
-    if (node.data.kind === "plot" && node.position.x < rootNode.position.x + 900) {
-      const nextPosition = {
-        x: rootNode.position.x + 980 + plotIndex * 420,
-        y: rootNode.position.y,
-      };
-      plotIndex += 1;
-      return { ...node, position: nextPosition };
-    }
-
-    if (node.data.kind === "clue" && node.position.y < rootNode.position.y + 900) {
-      const nextPosition = {
-        x: rootNode.position.x + 560 + (clueIndex % 3) * 340,
-        y: rootNode.position.y + 900 + Math.floor(clueIndex / 3) * 300,
-      };
-      clueIndex += 1;
-      return { ...node, position: nextPosition };
-    }
-
-    if (node.data.kind === "ending" && node.position.y < rootNode.position.y + 1380) {
-      const nextPosition = {
-        x: rootNode.position.x + 660 + endingIndex * 380,
-        y: rootNode.position.y + 1420,
-      };
-      endingIndex += 1;
-      return { ...node, position: nextPosition };
-    }
-
-    return node;
-  });
 }
 
 function nextDraftNodeForPort({ portId, index }: { portId: ConnectionPortId; index: number }): {
@@ -842,50 +680,6 @@ const CHARACTER_ABILITIES = [
   { label: "逻辑推演", value: 94, detail: "能把碎片证据压缩成可验证的事件链。" },
   { label: "社交伪装", value: 32, detail: "不擅长顺从社交规则，容易被误读为冷漠或失礼。" },
   { label: "干预风险", value: 78, detail: "逼近关键真相时，哥哥会以保护为名带她离场。" },
-] as const;
-
-const CHARACTER_DOCUMENT_SECTIONS = [
-  {
-    heading: "角色身份",
-    icon: IconFingerprint,
-    paragraphs: [
-      "17 岁少女，玩家默认扮演的核心角色。她被外界贴上「社交障碍」标签，被送往精英学校接受所谓矫正。",
-      "她不是天生反叛者，也不是传统侦探。她的问题在于无法自然接受不合逻辑的解释，因此会本能地拆解每一个被粉饰过的结论。",
-    ],
-  },
-  {
-    heading: "能力模型",
-    icon: IconBrain,
-    paragraphs: [
-      "过目不忘不是超能力，而是叙事约束：她能回忆已经看见过的信息，但不能凭空知道没接触过的证据。",
-      "逻辑推演必须基于观察、矛盾、证词或行为模式。AI 生成她的推理时，要明确展示至少一个可追踪的线索来源。",
-    ],
-  },
-  {
-    heading: "限制与风险",
-    icon: IconShieldCheck,
-    paragraphs: [
-      "她不擅长处理人情压力，容易在群体场景中被孤立。她越准确，越会让校方、警方或同学觉得危险。",
-      "哥哥任职政府情报部门。当她触碰到更高层级的真相，哥哥会触发干预：带她回家、切断调查、替她解释行为，甚至删除她接触证据的机会。",
-    ],
-  },
-  {
-    heading: "AI 扮演规则",
-    icon: IconEye,
-    paragraphs: [
-      "AI 可以让她提出尖锐问题、记住细节、指出矛盾，但不能让她直接说出真凶，除非证据链已经完成。",
-      "玩家自由输入时，AI 需要先判断动作是否符合她的能力和处境，再输出观察结果、推理推进、角色关系变化和潜在代价。",
-    ],
-  },
-  {
-    heading: "关系锚点",
-    icon: IconUsersGroup,
-    paragraphs: [
-      "哥哥：保护者、监控者、信息封锁者三种身份同时成立，不能写成单纯反派。",
-      "死者：不是案件道具，而是学校秩序的一次裂缝。主角必须通过死者留下的生活痕迹理解这起谋杀。",
-      "同学与校方：他们的沉默比证词更重要。AI 应持续追踪谁在回避、谁在过度配合、谁拥有不该拥有的信息。",
-    ],
-  },
 ] as const;
 
 const PLOT_NODE_DETAILS: Record<PlotNodeId, PlotNodeDetail> = {
@@ -1744,12 +1538,21 @@ function buildNodesAndEdgesFromAnalysis(analysis: StoryStudioAnalysis): {
 } {
   const now = Date.now();
   const rootId = "storyRoot";
-  const plotIds = ["arrival", "rumor", "report"] as const;
+
+  // ── Fan geometry ──────────────────────────────────────────────────────
+  // The 16:9 root (720×405 at x=0/y=0) sits on the LEFT; four lanes fan
+  // RIGHT off its edge ports, top→bottom: 角色 · 剧情节点 · 结局 · 线索.
+  // The plot lane is the ordered A→B chain; the other lanes fan per card.
+  // 起承转合 structures the GENERATION (archived in storyAnalysis for the
+  // compiler) but is deliberately NOT a visible canvas layer.
+  const LANE_X = 1040;
+  const LANE_Y = { roles: -520, plots: -40, endings: 430, clues: 950 } as const;
+  const LANE_STEP = { roles: 380, plots: 420, endings: 420, clues: 380 } as const;
 
   const storyRootNode: NarrativeNode = {
     id: rootId,
     type: "narrative",
-    position: { x: 260, y: 220 },
+    position: { x: 0, y: 0 },
     data: {
       ...nodeDefaults("storyRoot", 1),
       eyebrow: "故事总纲",
@@ -1780,25 +1583,24 @@ function buildNodesAndEdgesFromAnalysis(analysis: StoryStudioAnalysis): {
       summary: analysis.protagonist.summary,
       tags: ["玩家角色", "主角"],
       mode: "protagonist" as const,
-      portrait: "protagonist" as CharacterPortraitKey,
+      portrait: "neutral" as CharacterPortraitKey,
     },
-    ...analysis.characters.map((character, index) => ({
+    ...analysis.characters.map((character) => ({
       name: character.name,
       role: character.role,
       summary: character.summary,
       tags: character.tags,
       mode: "relation" as const,
-      portrait: (index % 2 === 0 ? "male" : "female") as CharacterPortraitKey,
+      // The analysis carries no imagery — every generated character gets
+      // the neutral placeholder until a real portrait is generated.
+      portrait: "neutral" as CharacterPortraitKey,
     })),
   ].slice(0, 5);
 
   const roleNodes: NarrativeNode[] = characterSeeds.map((character, index) => ({
     id: `role-${now}-${index}`,
     type: "narrative",
-    position: {
-      x: 860,
-      y: -120 + index * (ROLE_CARD_HEIGHT + ROLE_CARD_VERTICAL_GAP),
-    },
+    position: { x: LANE_X + index * LANE_STEP.roles, y: LANE_Y.roles },
     data: {
       ...nodeDefaults("role", index + 1),
       eyebrow: character.role,
@@ -1811,28 +1613,37 @@ function buildNodesAndEdgesFromAnalysis(analysis: StoryStudioAnalysis): {
     },
   }));
 
-  const plotNodes: NarrativeNode[] = analysis.plots.slice(0, 5).map((plot, index) => ({
+  // Beats flow in narrative order (the generation skill structures them);
+  // each keeps its invisible actKey for the compiler. On the canvas they are
+  // just a plain A/B/C chain — no structure vocabulary leaks to the creator.
+  const beatsInOrder = ACT_ORDER.flatMap((key) =>
+    analysis.plots.filter((plot) => plot.actKey === key).slice(0, 4)
+  );
+
+  const plotNodes: NarrativeNode[] = beatsInOrder.map((plot, index) => ({
     id: `plot-${now}-${index}`,
     type: "narrative",
-    position: { x: 1240 + index * 420, y: 220 },
+    position: { x: LANE_X + index * LANE_STEP.plots, y: LANE_Y.plots },
     data: {
       ...nodeDefaults("plot", index + 1),
-      eyebrow: `剧情节点 ${String.fromCharCode(65 + index)}`,
-      label: compactText(plot.title, `Plot Node ${index + 1}`),
+      eyebrow: "剧情节点",
+      label: compactText(plot.title, `Plot Beat ${index + 1}`),
       summary: compactText(
         plot.summary || plot.entryGoal,
         "Playable plot node pending refinement."
       ),
-      status: index === 0 ? "ready" : "working",
+      status: "ready",
       chips: compactChips(plot.tags, ["自由行动", "行动点", "进入条件"]),
-      plotId: plotIds[index],
+      plotStage: String.fromCharCode(65 + index),
+      plotGoal: compactText(plot.entryGoal, ""),
+      actKey: plot.actKey,
     },
   }));
 
   const clueNodes: NarrativeNode[] = analysis.clues.slice(0, 6).map((clue, index) => ({
     id: `clue-${now}-${index}`,
     type: "narrative",
-    position: { x: 820 + (index % 3) * 340, y: 760 + Math.floor(index / 3) * 300 },
+    position: { x: LANE_X + index * LANE_STEP.clues, y: LANE_Y.clues },
     data: {
       ...nodeDefaults("clue", index + 1),
       eyebrow: "线索 · 全局",
@@ -1850,7 +1661,7 @@ function buildNodesAndEdgesFromAnalysis(analysis: StoryStudioAnalysis): {
   const endingNodes: NarrativeNode[] = analysis.endings.slice(0, 4).map((ending, index) => ({
     id: `ending-${now}-${index}`,
     type: "narrative",
-    position: { x: 920 + index * 380, y: 1320 },
+    position: { x: LANE_X + index * LANE_STEP.endings, y: LANE_Y.endings },
     data: {
       ...nodeDefaults("ending", index + 1),
       eyebrow: `结局 · ${ending.type}`,
@@ -1867,9 +1678,14 @@ function buildNodesAndEdgesFromAnalysis(analysis: StoryStudioAnalysis): {
     },
   }));
 
-  const nodes = [storyRootNode, ...roleNodes, ...plotNodes, ...clueNodes, ...endingNodes];
+  // Draw order = staged-reveal order, lanes top→bottom:
+  // root → 角色 → 剧情 → 结局 → 线索.
+  const nodes = [storyRootNode, ...roleNodes, ...plotNodes, ...endingNodes, ...clueNodes];
   const edges: NarrativeEdge[] = [];
 
+  // Every group fans RIGHT off its own root port; every card anchors on its
+  // LEFT edge. The plot lane additionally chains left→right in play order.
+  // No fabricated plot→ending mapping (the analysis has none).
   roleNodes.forEach((node, index) => {
     edges.push({
       ...edgeOptionsForPort("roles"),
@@ -1882,10 +1698,34 @@ function buildNodesAndEdgesFromAnalysis(analysis: StoryStudioAnalysis): {
     });
   });
 
-  clueNodes.forEach((node) => {
+  plotNodes.forEach((node, index) => {
+    const previous = index === 0 ? null : plotNodes[index - 1];
+    edges.push({
+      ...CURVED_EDGE_OPTIONS,
+      ...edgeLabelOptions(index === 0 ? "剧情入口" : `进入 ${String.fromCharCode(65 + index)}`),
+      id: `${previous?.id ?? rootId}-${node.id}`,
+      source: previous?.id ?? rootId,
+      sourceHandle: previous ? undefined : "plots",
+      target: node.id,
+    });
+  });
+
+  endingNodes.forEach((node, index) => {
+    edges.push({
+      ...CURVED_EDGE_OPTIONS,
+      ...edgeLabelOptions(index === 0 ? "结局" : "结局"),
+      id: `${rootId}-${node.id}`,
+      source: rootId,
+      sourceHandle: "endings",
+      target: node.id,
+      targetHandle: "ending-in",
+    });
+  });
+
+  clueNodes.forEach((node, index) => {
     edges.push({
       ...edgeOptionsForPort("clues"),
-      ...edgeLabelOptions("全局线索", "clues"),
+      ...edgeLabelOptions(index === 0 ? "全局线索" : "线索", "clues"),
       id: `${rootId}-${node.id}`,
       source: rootId,
       sourceHandle: "clues",
@@ -1893,41 +1733,6 @@ function buildNodesAndEdgesFromAnalysis(analysis: StoryStudioAnalysis): {
       targetHandle: "clue-in",
     });
   });
-
-  if (plotNodes[0]) {
-    edges.push({
-      ...CURVED_EDGE_OPTIONS,
-      ...edgeLabelOptions("剧情入口"),
-      id: `${rootId}-${plotNodes[0].id}`,
-      source: rootId,
-      target: plotNodes[0].id,
-    });
-  }
-
-  plotNodes.slice(0, -1).forEach((node, index) => {
-    const nextNode = plotNodes[index + 1];
-    edges.push({
-      ...CURVED_EDGE_OPTIONS,
-      ...edgeLabelOptions(`进入 ${String.fromCharCode(66 + index)}`),
-      id: `${node.id}-${nextNode.id}`,
-      source: node.id,
-      target: nextNode.id,
-    });
-  });
-
-  const lastPlot = plotNodes[plotNodes.length - 1];
-  if (lastPlot) {
-    endingNodes.forEach((node) => {
-      edges.push({
-        ...CURVED_EDGE_OPTIONS,
-        ...edgeLabelOptions("结局出口"),
-        id: `${lastPlot.id}-${node.id}`,
-        source: lastPlot.id,
-        target: node.id,
-        targetHandle: "ending-in",
-      });
-    });
-  }
 
   return { nodes, edges };
 }
@@ -2041,7 +1846,7 @@ function StoryRootPreviewNode({
   };
 
   return (
-    <div className="relative w-[430px] pt-10">
+    <div className="relative w-[720px] pt-10">
       <div className="absolute left-0 top-0 z-10 inline-flex h-8 items-center gap-2 rounded-full bg-[#7b4be8]/42 px-3 text-[13px] font-semibold text-white shadow-[0_10px_30px_rgba(0,0,0,0.3)] backdrop-blur-xl">
         <span className="grid size-6 place-items-center rounded-full bg-[#8f65ff]/70">
           <IconFileText className="size-3.5" stroke={2} />
@@ -2051,25 +1856,37 @@ function StoryRootPreviewNode({
 
       <article
         className={cn(
-          "group relative overflow-visible rounded-[28px] bg-[linear-gradient(180deg,oklch(0.21_0_0),oklch(0.17_0_0))] p-8 shadow-[0_28px_100px_rgba(0,0,0,0.48)] transition duration-200",
+          // 16:9 canvas hero — the tree of global groups fans out below it.
+          "group relative h-[405px] overflow-visible rounded-[28px] bg-[linear-gradient(180deg,oklch(0.21_0_0),oklch(0.17_0_0))] p-7 shadow-[0_28px_100px_rgba(0,0,0,0.48)] transition duration-200",
           selected && "bg-[linear-gradient(180deg,oklch(0.24_0_0),oklch(0.18_0_0))]"
         )}
       >
+        {/* Fan ports, top→bottom on the RIGHT edge: 角色 · 剧情 · 结局 · 线索 —
+            each group hangs off its own anchor. */}
         <Handle
           id="roles"
           type="source"
           position={Position.Right}
           className="!-right-1.5 !z-30 !size-3 !border-0"
           style={{
-            top: "36%",
+            top: "18%",
             backgroundColor: CONNECTION_PORTS.roles.color,
             boxShadow: `0 0 18px ${CONNECTION_PORTS.roles.glow}`,
           }}
         />
         <Handle
+          id="plots"
           type="source"
           position={Position.Right}
-          className="!-right-1.5 !z-20 !size-3 !border-0 !bg-white/70"
+          className="!-right-1.5 !z-30 !size-3 !border-0 !bg-white/70"
+          style={{ top: "40%" }}
+        />
+        <Handle
+          id="endings"
+          type="source"
+          position={Position.Right}
+          className="!-right-1.5 !z-30 !size-3 !border-0 !bg-white/45"
+          style={{ top: "62%" }}
         />
         <Handle
           id="clues"
@@ -2077,100 +1894,71 @@ function StoryRootPreviewNode({
           position={Position.Right}
           className="!-right-1.5 !z-30 !size-3 !border-0"
           style={{
-            top: "66%",
+            top: "84%",
             backgroundColor: CONNECTION_PORTS.clues.color,
             boxShadow: `0 0 18px ${CONNECTION_PORTS.clues.glow}`,
           }}
         />
 
-        <div className="pointer-events-none absolute right-5 top-[31%] z-10 inline-flex items-center gap-1.5 rounded-full bg-black/18 px-2 py-1 text-[10px] font-black text-white/42 backdrop-blur-xl">
-          <span
-            className="size-1.5 rounded-full"
-            style={{
-              backgroundColor: CONNECTION_PORTS.roles.color,
-              boxShadow: `0 0 12px ${CONNECTION_PORTS.roles.glow}`,
-            }}
-          />
-          角色
-        </div>
-
-        <div className="pointer-events-none absolute right-5 top-[62%] z-10 inline-flex items-center gap-1.5 rounded-full bg-black/18 px-2 py-1 text-[10px] font-black text-white/42 backdrop-blur-xl">
-          <span
-            className="size-1.5 rounded-full"
-            style={{
-              backgroundColor: CONNECTION_PORTS.clues.color,
-              boxShadow: `0 0 12px ${CONNECTION_PORTS.clues.glow}`,
-            }}
-          />
-          线索库
-        </div>
-
-        <h2 className="text-[34px] font-black leading-none tracking-tight text-white/92">
-          故事总纲
-        </h2>
-        <p className="mt-2 text-sm font-semibold text-white/40">{data.label}</p>
-        <p className="mt-5 line-clamp-2 text-[14px] font-semibold leading-6 text-white/52">
-          {data.summary}
-        </p>
-
-        <div className="mt-6 grid grid-cols-4 gap-2">
-          <StoryRootStatTile label="角色" value={stats.roleCount} />
-          <StoryRootStatTile label="剧情" value={stats.plotCount} />
-          <StoryRootStatTile label="线索" value={stats.clueCount} />
-          <StoryRootStatTile label="结局" value={stats.endingCount} />
-        </div>
-
-        <div className="mt-5 rounded-[22px] bg-black/18 p-4">
-          <p className="text-[10px] font-black uppercase tracking-[0.18em] text-white/28">故事核</p>
-          <p className="mt-2 line-clamp-3 text-[13px] font-semibold leading-6 text-white/54">
-            {storyKernel}
-          </p>
-        </div>
-
-        <div className="mt-4 grid grid-cols-2 gap-2">
-          <div className="min-h-[78px] rounded-[20px] bg-white/[0.045] p-3">
-            <p className="text-[10px] font-black uppercase tracking-[0.16em] text-white/28">地点</p>
-            <div className="mt-2 flex flex-wrap gap-1.5">
-              {(locations.length > 0 ? locations : ["待生成"]).slice(0, 3).map((location) => (
-                <span
-                  key={location}
-                  className="max-w-full truncate rounded-full bg-white/[0.07] px-2 py-1 text-[10px] font-semibold text-white/44"
-                >
-                  {location}
-                </span>
-              ))}
+        <div className="flex h-full min-h-0 gap-6">
+          <div className="flex min-w-0 flex-1 flex-col">
+            <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-white/32">
+              故事总纲
+            </p>
+            <h2 className="mt-2 line-clamp-1 text-[22px] font-semibold leading-tight tracking-tight text-white/92">
+              {data.label}
+            </h2>
+            <p className="mt-3 line-clamp-3 text-[13px] font-medium leading-6 text-white/54">
+              {data.summary}
+            </p>
+            <div className="mt-auto rounded-[20px] bg-black/18 p-4">
+              <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-white/28">
+                故事核
+              </p>
+              <p className="mt-2 line-clamp-2 text-[12px] font-medium leading-5 text-white/54">
+                {storyKernel}
+              </p>
+              <p className="mt-2 line-clamp-1 text-[11px] font-medium leading-4 text-white/38">
+                {worldview}
+              </p>
             </div>
           </div>
-          <div className="min-h-[78px] rounded-[20px] bg-white/[0.045] p-3">
-            <p className="text-[10px] font-black uppercase tracking-[0.16em] text-white/28">
-              改编方向
-            </p>
-            <p className="mt-2 line-clamp-2 text-[12px] font-semibold leading-5 text-white/50">
-              {direction}
-            </p>
+
+          <div className="flex w-[236px] shrink-0 flex-col gap-2">
+            <div className="grid grid-cols-2 gap-2">
+              <StoryRootStatTile label="角色" value={stats.roleCount} />
+              <StoryRootStatTile label="剧情" value={stats.plotCount} />
+              <StoryRootStatTile label="线索" value={stats.clueCount} />
+              <StoryRootStatTile label="结局" value={stats.endingCount} />
+            </div>
+            <div className="min-h-0 flex-1 rounded-[18px] bg-white/[0.045] p-3">
+              <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-white/28">
+                地点 · {direction}
+              </p>
+              <div className="mt-2 flex flex-wrap gap-1.5 overflow-hidden">
+                {(locations.length > 0 ? locations : ["待生成"]).slice(0, 3).map((location) => (
+                  <span
+                    key={location}
+                    className="max-w-full truncate rounded-full bg-white/[0.07] px-2 py-1 text-[10px] font-medium text-white/44"
+                  >
+                    {location}
+                  </span>
+                ))}
+              </div>
+            </div>
+            <button
+              type="button"
+              data-testid="open-story-root-viewer"
+              onClick={(event) => {
+                event.stopPropagation();
+                data.onViewStoryRoot?.();
+              }}
+              className="nodrag nopan inline-flex h-10 items-center justify-center gap-2 self-end rounded-full bg-[#E52227] px-5 text-[13px] font-medium text-white shadow-[0_12px_34px_rgba(229,34,39,0.28)] transition hover:bg-[#ff3d42] active:translate-y-0.5"
+            >
+              查看
+              <IconFileText className="size-4" stroke={2} />
+            </button>
           </div>
-        </div>
-
-        <div className="mt-4 rounded-[20px] bg-white/[0.045] p-3">
-          <p className="text-[10px] font-black uppercase tracking-[0.16em] text-white/28">世界观</p>
-          <p className="mt-2 line-clamp-2 text-[12px] font-semibold leading-5 text-white/46">
-            {worldview}
-          </p>
-        </div>
-
-        <div className="mt-6 flex items-center justify-end">
-          <button
-            type="button"
-            data-testid="open-story-root-viewer"
-            onClick={(event) => {
-              event.stopPropagation();
-              data.onViewStoryRoot?.();
-            }}
-            className="nodrag nopan inline-flex h-11 items-center gap-2 rounded-full bg-[#E52227] px-5 text-sm font-black text-white shadow-[0_12px_34px_rgba(229,34,39,0.28)] transition hover:bg-[#ff3d42] active:translate-y-0.5"
-          >
-            查看
-            <IconFileText className="size-4" stroke={2} />
-          </button>
         </div>
       </article>
     </div>
@@ -2251,116 +2039,114 @@ function PlotEntryVideoStrip({ video }: { video: PlotNodeDetail["entryVideo"] })
   );
 }
 
-function PlotBorderPorts() {
-  const ports: Array<{ id: ConnectionPortId; top: string }> = [{ id: "assets", top: "72%" }];
-
-  return (
-    <>
-      {ports.map(({ id, top }) => {
-        const port = CONNECTION_PORTS[id];
-
-        return (
-          <Handle
-            key={id}
-            id={port.id}
-            type="source"
-            position={Position.Right}
-            className="nodrag nopan !-right-1.5 !z-30 !size-3 !border-0"
-            style={{
-              top,
-              backgroundColor: port.color,
-              boxShadow: `0 0 18px ${port.glow}`,
-            }}
-          />
-        );
-      })}
-    </>
-  );
-}
-
 function PlotNodeCard({ data, selected }: Pick<NodeProps<NarrativeNode>, "data" | "selected">) {
   const plot = data.plotId ? PLOT_NODE_DETAILS[data.plotId] : null;
 
   return (
-    <article
-      className={cn(
-        "relative w-[330px] overflow-visible rounded-[28px] bg-[oklch(0.19_0_0)] p-4 shadow-[0_24px_80px_rgba(0,0,0,0.38)] transition duration-200",
-        selected && "bg-[oklch(0.23_0_0)] shadow-[0_28px_90px_rgba(0,0,0,0.5)]"
-      )}
-    >
-      <Handle
-        type="target"
-        position={Position.Left}
-        className="!-left-1.5 !z-20 !size-3 !border-0 !bg-white/45"
-        style={{ top: "50%" }}
+    <div className="relative w-[330px] pt-10">
+      <NodeTypeChip
+        label="剧情节点"
+        icon={IconGitBranch}
+        color="rgba(255,255,255,0.14)"
+        iconBg="rgba(255,255,255,0.22)"
       />
-      <Handle
-        type="source"
-        position={Position.Right}
-        className="!-right-1.5 !z-20 !size-3 !border-0 !bg-white/62"
-        style={{ top: "50%" }}
-      />
-      <PlotBorderPorts />
-
-      <div className="flex items-start justify-between gap-3">
-        <div className="flex min-w-0 items-center gap-3">
-          <span className="grid size-12 shrink-0 place-items-center rounded-full bg-white text-[18px] font-black text-black">
-            {plot?.stage ?? "?"}
-          </span>
-          <div className="min-w-0">
-            <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-white/36">
-              {data.eyebrow}
-            </p>
-            <h3 className="mt-1 line-clamp-2 text-[19px] font-black leading-tight text-white/92">
-              {data.label}
-            </h3>
-          </div>
-        </div>
-        <StatusPill status={data.status ?? "ready"} />
-      </div>
-
-      <p className="mt-4 line-clamp-3 text-[13px] font-semibold leading-6 text-white/54">
-        {data.summary}
-      </p>
-
-      {plot?.entryVideo ? <PlotEntryVideoStrip video={plot.entryVideo} /> : null}
-
-      <div className="mt-4 grid grid-cols-2 gap-2">
-        <PlotInfoTile
-          label="行动点"
-          value={plot?.internalActions.length ?? 0}
-          description="内部判定"
+      <article
+        className={cn(
+          "relative w-[330px] overflow-visible rounded-[28px] bg-[oklch(0.19_0_0)] p-4 shadow-[0_24px_80px_rgba(0,0,0,0.38)] transition duration-200",
+          selected && "bg-[oklch(0.23_0_0)] shadow-[0_28px_90px_rgba(0,0,0,0.5)]"
+        )}
+      >
+        {/* Anchors sit at a FIXED offset from the card top (aligned with the
+          title row) — card heights vary with content, so percentage anchors
+          would zigzag the lane. */}
+        <Handle
+          type="target"
+          position={Position.Left}
+          className="!-left-1.5 !z-20 !size-3 !border-0 !bg-white/45"
+          style={{ top: 44 }}
         />
-        <PlotPortTile portId="assets" value={2} />
-      </div>
+        <Handle
+          type="source"
+          position={Position.Right}
+          className="!-right-1.5 !z-20 !size-3 !border-0 !bg-white/62"
+          style={{ top: 44 }}
+        />
 
-      <div className="mt-4 flex flex-wrap gap-1.5 pb-11">
-        {(data.chips ?? []).map((chip) => (
-          <span
-            key={chip}
-            className="rounded-full bg-white/[0.065] px-2.5 py-1 text-[11px] font-semibold text-white/52"
-          >
-            {chip}
-          </span>
-        ))}
-      </div>
+        <div className="flex items-start justify-between gap-3">
+          <div className="flex min-w-0 items-center gap-3">
+            <span className="grid size-12 shrink-0 place-items-center rounded-full bg-white text-[18px] font-black text-black">
+              {data.plotStage ?? plot?.stage ?? "?"}
+            </span>
+            <div className="min-w-0">
+              <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-white/36">
+                {data.eyebrow}
+              </p>
+              <h3 className="mt-1 line-clamp-2 text-[19px] font-black leading-tight text-white/92">
+                {data.label}
+              </h3>
+            </div>
+          </div>
+          <StatusPill status={data.status ?? "ready"} />
+        </div>
 
-      <div className="absolute bottom-4 right-4 flex items-center gap-2">
-        <NodeEditButton onClick={data.onEditNode} />
-        <button
-          type="button"
-          data-testid={`open-plot-viewer-${data.plotId ?? "draft"}`}
-          onClick={(event) => {
-            event.stopPropagation();
-            data.onViewPlot?.();
-          }}
-          className="nodrag nopan inline-flex h-10 items-center gap-2 rounded-full bg-white px-4 text-sm font-black text-black shadow-[0_12px_34px_rgba(0,0,0,0.26)] transition hover:bg-white/88 active:translate-y-0.5"
-        >
-          查看
-          <IconGitBranch className="size-4" stroke={2} />
-        </button>
-      </div>
-    </article>
+        <p className="mt-4 line-clamp-3 text-[13px] font-semibold leading-6 text-white/54">
+          {data.summary}
+        </p>
+
+        {plot?.entryVideo ? <PlotEntryVideoStrip video={plot.entryVideo} /> : null}
+
+        {plot ? (
+          <div className="mt-4 grid grid-cols-2 gap-2">
+            <PlotInfoTile
+              label="行动点"
+              value={plot.internalActions.length}
+              description="内部判定"
+            />
+            <PlotPortTile portId="assets" value={2} />
+          </div>
+        ) : data.plotGoal ? (
+          // Generated plots carry only the REAL analysis fields — no faked
+          // action counts or media until they are actually produced.
+          <div className="mt-4 rounded-[18px] bg-white/[0.06] px-3.5 py-3">
+            <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-white/32">
+              Entry goal
+            </p>
+            <p className="mt-1.5 line-clamp-2 text-[12px] font-medium leading-5 text-white/60">
+              {data.plotGoal}
+            </p>
+          </div>
+        ) : null}
+
+        <div className="mt-4 flex flex-wrap gap-1.5 pb-11">
+          {(data.chips ?? []).map((chip) => (
+            <span
+              key={chip}
+              className="rounded-full bg-white/[0.065] px-2.5 py-1 text-[11px] font-semibold text-white/52"
+            >
+              {chip}
+            </span>
+          ))}
+        </div>
+
+        <div className="absolute bottom-4 right-4 flex items-center gap-2">
+          <NodeEditButton onClick={data.onEditNode} />
+          {data.onViewPlot ? (
+            <button
+              type="button"
+              data-testid={`open-plot-viewer-${data.plotId ?? "draft"}`}
+              onClick={(event) => {
+                event.stopPropagation();
+                data.onViewPlot?.();
+              }}
+              className="nodrag nopan inline-flex h-10 items-center gap-2 rounded-full bg-white px-4 text-sm font-black text-black shadow-[0_12px_34px_rgba(0,0,0,0.26)] transition hover:bg-white/88 active:translate-y-0.5"
+            >
+              查看
+              <IconGitBranch className="size-4" stroke={2} />
+            </button>
+          ) : null}
+        </div>
+      </article>
+    </div>
   );
 }
 
@@ -2417,6 +2203,38 @@ function AbilityMeter({ label, value }: { label: string; value: number }) {
   );
 }
 
+/**
+ * Floating type chip above every card — the 故事总纲 pill language applied
+ * across kinds, color-coded: 角色 lavender · 剧情节点 neutral · 结局 red ·
+ * 线索 blue (matching the port palette).
+ */
+function NodeTypeChip({
+  label,
+  icon: ChipIcon,
+  color,
+  iconBg,
+}: {
+  label: string;
+  icon: Icon;
+  color: string;
+  iconBg: string;
+}) {
+  return (
+    <div
+      className="absolute top-0 left-0 z-10 inline-flex h-8 items-center gap-2 rounded-full px-3 text-[13px] font-semibold text-white shadow-[0_10px_30px_rgba(0,0,0,0.3)] backdrop-blur-xl"
+      style={{ backgroundColor: color }}
+    >
+      <span
+        className="grid size-6 place-items-center rounded-full"
+        style={{ backgroundColor: iconBg }}
+      >
+        <ChipIcon className="size-3.5" stroke={2} />
+      </span>
+      {label}
+    </div>
+  );
+}
+
 function CharacterCardNode({
   data,
   selected,
@@ -2424,146 +2242,162 @@ function CharacterCardNode({
   const roleLabel = data.characterMode === "protagonist" ? "主角" : "角色";
 
   return (
-    <article
-      className={cn(
-        "group relative overflow-visible rounded-[22px] bg-[oklch(0.18_0_0)] p-2.5 shadow-[0_18px_58px_rgba(0,0,0,0.32)] transition duration-200",
-        selected && "bg-[oklch(0.215_0_0)] shadow-[0_22px_70px_rgba(0,0,0,0.44)]"
-      )}
-      style={{ width: ROLE_CARD_WIDTH, height: ROLE_CARD_HEIGHT }}
-    >
-      <Handle
-        id="role-in"
-        type="target"
-        position={Position.Left}
-        className="!-left-1.5 !z-30 !size-3 !border-0"
-        style={{
-          top: "50%",
-          backgroundColor: CONNECTION_PORTS.roles.color,
-          boxShadow: `0 0 18px ${CONNECTION_PORTS.roles.glow}`,
-        }}
+    <div className="relative pt-10" style={{ width: ROLE_CARD_WIDTH }}>
+      <NodeTypeChip
+        label="角色"
+        icon={IconUsersGroup}
+        color="rgba(167,139,250,0.40)"
+        iconBg="rgba(167,139,250,0.65)"
       />
-
-      <div
-        className="grid h-full gap-3"
-        style={{ gridTemplateColumns: `${ROLE_PORTRAIT_WIDTH}px 1fr` }}
+      <article
+        className={cn(
+          "group relative overflow-visible rounded-[22px] bg-[oklch(0.18_0_0)] p-2.5 shadow-[0_18px_58px_rgba(0,0,0,0.32)] transition duration-200",
+          selected && "bg-[oklch(0.215_0_0)] shadow-[0_22px_70px_rgba(0,0,0,0.44)]"
+        )}
+        style={{ width: ROLE_CARD_WIDTH, height: ROLE_CARD_HEIGHT }}
       >
-        <CharacterPortrait
-          portrait={data.characterPortrait ?? "neutral"}
-          compact
-          sizes={`${ROLE_PORTRAIT_WIDTH}px`}
-          className="rounded-[18px]"
-          style={{ width: ROLE_PORTRAIT_WIDTH, height: ROLE_PORTRAIT_HEIGHT }}
+        <Handle
+          id="role-in"
+          type="target"
+          position={Position.Left}
+          className="!-left-1.5 !z-30 !size-3 !border-0"
+          style={{
+            top: 44,
+            backgroundColor: CONNECTION_PORTS.roles.color,
+            boxShadow: `0 0 18px ${CONNECTION_PORTS.roles.glow}`,
+          }}
         />
-        <div className="flex min-w-0 flex-col py-1">
-          <div className="mb-1.5 flex items-center">
-            <span className="rounded-full bg-white/[0.08] px-2 py-0.5 text-[10px] font-semibold text-white/50">
-              {roleLabel}
-            </span>
-          </div>
-          <h3 className="line-clamp-1 text-[15px] font-semibold leading-5 text-white/88">
-            {data.label}
-          </h3>
-          <p className="mt-2 line-clamp-2 text-[11px] font-medium leading-4 text-white/48">
-            {data.summary}
-          </p>
-          <div className="mt-auto flex items-center">
-            <button
-              type="button"
-              data-testid={`open-character-viewer-${data.label}`}
-              onClick={(event) => {
-                event.stopPropagation();
-                data.onViewCharacter?.();
-              }}
-              className="nodrag nopan inline-flex h-7 items-center gap-1.5 rounded-full bg-white px-2.5 text-[11px] font-semibold text-black transition hover:bg-white/88 active:translate-y-0.5"
-            >
-              查看
-              <IconUserCircle className="size-3.5" stroke={2} />
-            </button>
+        <div
+          className="grid h-full gap-3"
+          style={{ gridTemplateColumns: `${ROLE_PORTRAIT_WIDTH}px 1fr` }}
+        >
+          <CharacterPortrait
+            portrait={data.characterPortrait ?? "neutral"}
+            compact
+            sizes={`${ROLE_PORTRAIT_WIDTH}px`}
+            className="rounded-[18px]"
+            style={{ width: ROLE_PORTRAIT_WIDTH, height: ROLE_PORTRAIT_HEIGHT }}
+          />
+          <div className="flex min-w-0 flex-col py-1">
+            <div className="mb-1.5 flex items-center">
+              <span className="rounded-full bg-white/[0.08] px-2 py-0.5 text-[10px] font-semibold text-white/50">
+                {roleLabel}
+              </span>
+            </div>
+            <h3 className="line-clamp-1 text-[15px] font-semibold leading-5 text-white/88">
+              {data.label}
+            </h3>
+            <p className="mt-2 line-clamp-2 text-[11px] font-medium leading-4 text-white/48">
+              {data.summary}
+            </p>
+            <div className="mt-auto flex items-center">
+              <button
+                type="button"
+                data-testid={`open-character-viewer-${data.label}`}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  data.onViewCharacter?.();
+                }}
+                className="nodrag nopan inline-flex h-7 items-center gap-1.5 rounded-full bg-white px-2.5 text-[11px] font-semibold text-black transition hover:bg-white/88 active:translate-y-0.5"
+              >
+                查看
+                <IconUserCircle className="size-3.5" stroke={2} />
+              </button>
+            </div>
           </div>
         </div>
-      </div>
-    </article>
+      </article>
+    </div>
   );
 }
 
 function ClueNodeCard({ data, selected }: Pick<NodeProps<NarrativeNode>, "data" | "selected">) {
   return (
-    <article
-      className={cn(
-        "relative w-[300px] overflow-visible rounded-[24px] bg-[oklch(0.18_0_0)] p-4 shadow-[0_20px_64px_rgba(0,0,0,0.34)] transition duration-200",
-        selected && "bg-[oklch(0.22_0_0)] shadow-[0_24px_76px_rgba(0,0,0,0.48)]"
-      )}
-    >
-      <Handle
-        id="clue-in"
-        type="target"
-        position={Position.Left}
-        className="!-left-1.5 !z-20 !size-3 !border-0"
-        style={{
-          backgroundColor: CONNECTION_PORTS.clues.color,
-          boxShadow: `0 0 18px ${CONNECTION_PORTS.clues.glow}`,
-        }}
+    <div className="relative w-[300px] pt-10">
+      <NodeTypeChip
+        label="线索"
+        icon={IconFingerprint}
+        color="rgba(91,157,255,0.38)"
+        iconBg="rgba(91,157,255,0.62)"
       />
+      <article
+        className={cn(
+          "relative w-[300px] overflow-visible rounded-[24px] bg-[oklch(0.18_0_0)] p-4 shadow-[0_20px_64px_rgba(0,0,0,0.34)] transition duration-200",
+          selected && "bg-[oklch(0.22_0_0)] shadow-[0_24px_76px_rgba(0,0,0,0.48)]"
+        )}
+      >
+        <Handle
+          id="clue-in"
+          type="target"
+          position={Position.Left}
+          className="!-left-1.5 !z-20 !size-3 !border-0"
+          style={{
+            top: 44,
+            backgroundColor: CONNECTION_PORTS.clues.color,
+            boxShadow: `0 0 18px ${CONNECTION_PORTS.clues.glow}`,
+          }}
+        />
 
-      <div className="flex items-start justify-between gap-3">
-        <div className="flex min-w-0 items-start gap-3">
-          <span className="grid size-10 shrink-0 place-items-center rounded-full bg-[#5b9dff]/14 text-[#9dc5ff]">
-            <IconFingerprint className="size-5" stroke={1.8} />
-          </span>
-          <div className="min-w-0">
-            <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-white/34">
-              {data.eyebrow}
-            </p>
-            <h3 className="mt-1 line-clamp-2 text-[18px] font-black leading-tight text-white/92">
-              {data.label}
-            </h3>
+        <div className="flex items-start justify-between gap-3">
+          <div className="flex min-w-0 items-start gap-3">
+            <span className="grid size-10 shrink-0 place-items-center rounded-full bg-[#5b9dff]/14 text-[#9dc5ff]">
+              <IconFingerprint className="size-5" stroke={1.8} />
+            </span>
+            <div className="min-w-0">
+              <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-white/34">
+                {data.eyebrow}
+              </p>
+              <h3 className="mt-1 line-clamp-2 text-[18px] font-black leading-tight text-white/92">
+                {data.label}
+              </h3>
+            </div>
           </div>
+          <span className="shrink-0 rounded-full bg-[#5b9dff]/12 px-2 py-1 text-[10px] font-black text-[#9dc5ff]">
+            {data.clueType ?? "线索"}
+          </span>
         </div>
-        <span className="shrink-0 rounded-full bg-[#5b9dff]/12 px-2 py-1 text-[10px] font-black text-[#9dc5ff]">
-          {data.clueType ?? "线索"}
-        </span>
-      </div>
 
-      <p className="mt-4 line-clamp-2 text-[12px] font-semibold leading-5 text-white/54">
-        {data.summary}
-      </p>
+        <p className="mt-4 line-clamp-2 text-[12px] font-semibold leading-5 text-white/54">
+          {data.summary}
+        </p>
 
-      <div className="mt-4 grid grid-cols-2 gap-2">
-        {[
-          ["归属", data.clueSource ?? "归属故事线索库"],
-          ["用途", data.clueUse ?? "作为后续追问、推理或出口条件的证据状态。"],
-        ].map(([label, value]) => (
-          <div key={label} className="rounded-[16px] bg-black/18 p-3">
-            <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-white/28">
-              {label}
-            </p>
-            <p className="mt-1 line-clamp-1 text-[11px] font-semibold leading-5 text-white/48">
-              {value}
-            </p>
-          </div>
-        ))}
-      </div>
+        <div className="mt-4 grid grid-cols-2 gap-2">
+          {[
+            ["归属", data.clueSource ?? "归属故事线索库"],
+            ["用途", data.clueUse ?? "作为后续追问、推理或出口条件的证据状态。"],
+          ].map(([label, value]) => (
+            <div key={label} className="rounded-[16px] bg-black/18 p-3">
+              <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-white/28">
+                {label}
+              </p>
+              <p className="mt-1 line-clamp-1 text-[11px] font-semibold leading-5 text-white/48">
+                {value}
+              </p>
+            </div>
+          ))}
+        </div>
 
-      <p className="mt-2 line-clamp-2 rounded-[16px] bg-black/18 p-3 text-[11px] font-semibold leading-5 text-white/46">
-        <span className="mr-2 text-white/28">AI 约束</span>
-        {data.clueRule ?? "未解锁前不能被 AI 当作已知事实引用。"}
-      </p>
+        <p className="mt-2 line-clamp-2 rounded-[16px] bg-black/18 p-3 text-[11px] font-semibold leading-5 text-white/46">
+          <span className="mr-2 text-white/28">AI 约束</span>
+          {data.clueRule ?? "未解锁前不能被 AI 当作已知事实引用。"}
+        </p>
 
-      <div className="mt-4 flex flex-wrap gap-1.5">
-        {(data.chips ?? []).slice(0, 3).map((chip) => (
-          <span
-            key={chip}
-            className="rounded-full bg-white/[0.065] px-2.5 py-1 text-[10px] font-semibold text-white/48"
-          >
-            {chip}
-          </span>
-        ))}
-      </div>
+        <div className="mt-4 flex flex-wrap gap-1.5">
+          {(data.chips ?? []).slice(0, 3).map((chip) => (
+            <span
+              key={chip}
+              className="rounded-full bg-white/[0.065] px-2.5 py-1 text-[10px] font-semibold text-white/48"
+            >
+              {chip}
+            </span>
+          ))}
+        </div>
 
-      <div className="mt-4">
-        <NodeEditButton onClick={data.onEditNode} />
-      </div>
-    </article>
+        <div className="mt-4">
+          <NodeEditButton onClick={data.onEditNode} />
+        </div>
+      </article>
+    </div>
   );
 }
 
@@ -2578,69 +2412,77 @@ function EndingNodeCard({ data, selected }: Pick<NodeProps<NarrativeNode>, "data
           : "主线";
 
   return (
-    <article
-      className={cn(
-        "relative w-[330px] overflow-visible rounded-[26px] bg-[oklch(0.185_0_0)] p-5 shadow-[0_24px_80px_rgba(0,0,0,0.36)] transition duration-200",
-        selected && "bg-[oklch(0.225_0_0)] shadow-[0_28px_90px_rgba(0,0,0,0.5)]"
-      )}
-      style={{ height: CANVAS_LAYOUT.endingCardHeight }}
-    >
-      <Handle
-        id="ending-in"
-        type="target"
-        position={Position.Left}
-        className="!-left-1.5 !z-20 !size-3 !border-0 !bg-white/72"
-        style={{ top: "50%" }}
+    <div className="relative w-[330px] pt-10">
+      <NodeTypeChip
+        label="结局"
+        icon={IconRocket}
+        color="rgba(229,34,39,0.36)"
+        iconBg="rgba(229,34,39,0.60)"
       />
+      <article
+        className={cn(
+          "relative w-[330px] overflow-visible rounded-[26px] bg-[oklch(0.185_0_0)] p-5 shadow-[0_24px_80px_rgba(0,0,0,0.36)] transition duration-200",
+          selected && "bg-[oklch(0.225_0_0)] shadow-[0_28px_90px_rgba(0,0,0,0.5)]"
+        )}
+        style={{ height: CANVAS_LAYOUT.endingCardHeight }}
+      >
+        <Handle
+          id="ending-in"
+          type="target"
+          position={Position.Left}
+          className="!-left-1.5 !z-20 !size-3 !border-0 !bg-white/72"
+          style={{ top: 44 }}
+        />
 
-      <div className="flex items-start justify-between gap-3">
-        <div className="flex min-w-0 items-center gap-3">
-          <span className="grid size-11 shrink-0 place-items-center rounded-full bg-white/12 text-white/86">
-            <IconRocket className="size-5" stroke={1.8} />
+        <div className="flex items-start justify-between gap-3">
+          <div className="flex min-w-0 items-center gap-3">
+            <span className="grid size-11 shrink-0 place-items-center rounded-full bg-white/12 text-white/86">
+              <IconRocket className="size-5" stroke={1.8} />
+            </span>
+            <div className="min-w-0">
+              <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-white/34">
+                {data.eyebrow}
+              </p>
+              <h3 className="mt-1 line-clamp-2 text-[20px] font-black leading-tight text-white/92">
+                {data.label}
+              </h3>
+            </div>
+          </div>
+          <span className="shrink-0 rounded-full bg-white/[0.075] px-2.5 py-1 text-[10px] font-black text-white/58">
+            {endingLabel}
           </span>
-          <div className="min-w-0">
-            <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-white/34">
-              {data.eyebrow}
+        </div>
+
+        <p className="mt-4 line-clamp-2 text-[13px] font-semibold leading-6 text-white/56">
+          {data.summary}
+        </p>
+
+        <div className="mt-4">
+          <div className="rounded-[18px] bg-black/18 p-3">
+            <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-white/28">
+              达成方式
             </p>
-            <h3 className="mt-1 line-clamp-2 text-[20px] font-black leading-tight text-white/92">
-              {data.label}
-            </h3>
+            <p className="mt-1 line-clamp-2 text-[11px] font-semibold leading-5 text-white/50">
+              {data.endingTrigger ?? "由剧情出口触发。"}
+            </p>
           </div>
         </div>
-        <span className="shrink-0 rounded-full bg-white/[0.075] px-2.5 py-1 text-[10px] font-black text-white/58">
-          {endingLabel}
-        </span>
-      </div>
 
-      <p className="mt-4 line-clamp-2 text-[13px] font-semibold leading-6 text-white/56">
-        {data.summary}
-      </p>
-
-      <div className="mt-4">
-        <div className="rounded-[18px] bg-black/18 p-3">
-          <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-white/28">
-            达成方式
-          </p>
-          <p className="mt-1 line-clamp-2 text-[11px] font-semibold leading-5 text-white/50">
-            {data.endingTrigger ?? "由剧情出口触发。"}
-          </p>
+        <div className="absolute inset-x-5 bottom-5 flex items-center justify-between gap-3">
+          <div className="flex min-w-0 flex-wrap gap-1.5">
+            {(data.chips ?? []).slice(0, 2).map((chip) => (
+              <span
+                key={chip}
+                className="rounded-full bg-white/[0.065] px-2.5 py-1 text-[10px] font-semibold text-white/48"
+              >
+                {chip}
+              </span>
+            ))}
+          </div>
+          <NodeEditButton onClick={data.onEditNode} />
         </div>
-      </div>
-
-      <div className="absolute inset-x-5 bottom-5 flex items-center justify-between gap-3">
-        <div className="flex min-w-0 flex-wrap gap-1.5">
-          {(data.chips ?? []).slice(0, 2).map((chip) => (
-            <span
-              key={chip}
-              className="rounded-full bg-white/[0.065] px-2.5 py-1 text-[10px] font-semibold text-white/48"
-            >
-              {chip}
-            </span>
-          ))}
-        </div>
-        <NodeEditButton onClick={data.onEditNode} />
-      </div>
-    </article>
+      </article>
+    </div>
   );
 }
 
@@ -3015,7 +2857,11 @@ function NarrativeNodeCard({ data, selected }: NodeProps<NarrativeNode>) {
     return <RelationshipNodeCard data={data} selected={selected} />;
   }
 
-  const meta = KIND_META[data.kind];
+  const meta = KIND_META[data.kind] ?? {
+    icon: IconFileText,
+    accent: "text-white",
+    glow: "bg-white/14",
+  };
   const Icon = meta.icon;
 
   return (
@@ -3248,33 +3094,29 @@ function CharacterViewer({
 }) {
   const { closeFromClick, closeFromPointer } = useViewerClose(onClose);
   const isProtagonist = character.characterMode === "protagonist";
-  const detailSections = isProtagonist
-    ? CHARACTER_DOCUMENT_SECTIONS
-    : [
-        {
-          heading: "角色定位",
-          icon: IconFingerprint,
-          paragraphs: [
-            character.summary,
-            `当前标签：${(character.chips ?? ["待补充"]).join("、")}。`,
-          ],
-        },
-        {
-          heading: "AI 扮演规则",
-          icon: IconEye,
-          paragraphs: [
-            "AI 只能在当前剧情节点允许的信息范围内调用这个角色，不能让角色凭空知道未接触过的证据。",
-            "当玩家自由输入触发该角色时，AI 需要先判断角色是否在场、是否愿意回应、以及回应会带来什么关系变化。",
-          ],
-        },
-        {
-          heading: "关系锚点",
-          icon: IconUsersGroup,
-          paragraphs: [
-            "这张角色卡与故事总纲根节点相连，表示它是全局重要角色。具体出场、对话和触发条件应在剧情节点里绑定。",
-          ],
-        },
-      ];
+  // Always render from the node's REAL data — no hardcoded character sheet.
+  const detailSections = [
+    {
+      heading: isProtagonist ? "角色定位 · 玩家角色" : "角色定位",
+      icon: IconFingerprint,
+      paragraphs: [character.summary, `当前标签：${(character.chips ?? ["待补充"]).join("、")}。`],
+    },
+    {
+      heading: "AI 扮演规则",
+      icon: IconEye,
+      paragraphs: [
+        "AI 只能在当前剧情节点允许的信息范围内调用这个角色，不能让角色凭空知道未接触过的证据。",
+        "当玩家自由输入触发该角色时，AI 需要先判断角色是否在场、是否愿意回应、以及回应会带来什么关系变化。",
+      ],
+    },
+    {
+      heading: "关系锚点",
+      icon: IconUsersGroup,
+      paragraphs: [
+        "这张角色卡与故事总纲根节点相连，表示它是全局重要角色。具体出场、对话和触发条件应在剧情节点里绑定。",
+      ],
+    },
+  ];
 
   return (
     <div
@@ -4753,6 +4595,7 @@ type NarrativeStudioInnerProps = {
 
 function NarrativeStudioInner({ projectId }: NarrativeStudioInnerProps) {
   const reactFlow = useReactFlow<NarrativeNode, NarrativeEdge>();
+  const updateNodeInternals = useUpdateNodeInternals();
   const [nodes, setNodes, onNodesChange] = useNodesState<NarrativeNode>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState<NarrativeEdge>([]);
   const [activeAssetKind, setActiveAssetKind] = useState<AssetKind | null>(null);
@@ -4785,6 +4628,63 @@ function NarrativeStudioInner({ projectId }: NarrativeStudioInnerProps) {
     "idle" | "loading" | "error"
   >("idle");
   const [emptyCanvasAnalyzeError, setEmptyCanvasAnalyzeError] = useState<string | null>(null);
+  /** Random public IPs backing the intake starter cards (null → curated
+   *  fallback while loading / when the plaza pool is empty). */
+  const [ipStarters, setIpStarters] = useState<IpStarterSeed[] | null>(null);
+  /** True while the analyzed story is being staged onto the canvas node by
+   *  node — the AI edge glow stays on and autosave/lazy-create hold off
+   *  until the full result has landed. */
+  const [isAiDrawing, setIsAiDrawing] = useState(false);
+  const aiDrawTokenRef = useRef(0);
+  /** fizzstory-v3 story spec (genre / generator stamp / pipeline state) —
+   *  REACT STATE, not a ref: pure spec changes must trigger autosave and
+   *  join the snapshot signature. */
+  const [storySpec, setStorySpec] = useState<Record<string, unknown> | null>(null);
+  /** Set when hydration finds a generation still running server-side — a
+   *  dedicated effect resumes the poll (survives refresh mid-generation). */
+  const [resumeGenerationId, setResumeGenerationId] = useState<string | null>(null);
+
+  // Feed the intake starter cards with REAL plaza IPs, randomly picked.
+  useEffect(() => {
+    let cancelled = false;
+    const locale =
+      typeof window === "undefined"
+        ? undefined
+        : window.location.pathname.split("/").filter(Boolean)[0];
+    fetchRandomIpSeeds(4, locale)
+      .then((items) => {
+        if (!cancelled && items.length > 0) setIpStarters(items);
+      })
+      .catch(() => {
+        // Plaza unreachable / empty — the curated fallback stays.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const emptyCanvasStarters = useMemo(
+    () =>
+      ipStarters && ipStarters.length > 0
+        ? ipStarters.map((seed) => ({
+            key: seed.id,
+            title: seed.title,
+            description: "Generate with StoryOS",
+            prompt:
+              `Turn the IP "${seed.title}" into a playable text story with a clear story root, ` +
+              `plot spine, clues, characters, and endings.` +
+              (seed.summary ? ` Synopsis: ${seed.summary}` : ""),
+            image: seed.coverUrl,
+          }))
+        : EMPTY_CANVAS_STARTERS.map((starter) => ({
+            key: starter.kind as string,
+            title: starter.title,
+            description: starter.description,
+            prompt: starter.prompt,
+            image: starter.image as string | null,
+          })),
+    [ipStarters]
+  );
   const connectStartRef = useRef<Parameters<OnConnectStart>[1] | null>(null);
   const emptyCanvasUploadRef = useRef<HTMLInputElement | null>(null);
   const emptyCanvasInputRef = useRef<HTMLInputElement | null>(null);
@@ -4833,12 +4733,13 @@ function NarrativeStudioInner({ projectId }: NarrativeStudioInnerProps) {
       if (!projectId) {
         // Projectless editor: fully in-memory until the first meaningful
         // action lazily creates the story project (see the effect below).
-        const emptySnapshot = buildStoryCanvasSnapshot({}, [], []);
+        const emptySnapshot = buildStoryCanvasSnapshot({}, [], [], null);
         snapshotBaseRef.current = {};
         lastSavedSnapshotRef.current = JSON.stringify(emptySnapshot);
         revisionRef.current = 0;
         activeProjectIdRef.current = null;
         setActiveProjectId(null);
+        setStorySpec(null);
         setCanvasTitle("未命名故事");
         setNodes([]);
         setEdges([]);
@@ -4855,6 +4756,9 @@ function NarrativeStudioInner({ projectId }: NarrativeStudioInnerProps) {
         if (isCancelled) return;
 
         const parsed = parseStoryCanvasSnapshot(project.draft.content);
+        const parsedSpec = isRecord(parsed.base.storySpec)
+          ? (parsed.base.storySpec as Record<string, unknown>)
+          : null;
         const title =
           typeof parsed.base.title === "string" && parsed.base.title.trim()
             ? parsed.base.title
@@ -4862,7 +4766,8 @@ function NarrativeStudioInner({ projectId }: NarrativeStudioInnerProps) {
         const snapshotForSignature = buildStoryCanvasSnapshot(
           parsed.base,
           parsed.nodes,
-          parsed.edges
+          parsed.edges,
+          parsedSpec
         );
 
         snapshotBaseRef.current = parsed.base;
@@ -4870,9 +4775,45 @@ function NarrativeStudioInner({ projectId }: NarrativeStudioInnerProps) {
         revisionRef.current = project.draft.revision;
         activeProjectIdRef.current = project.id;
         setActiveProjectId(project.id);
+        setStorySpec(parsedSpec);
         setCanvasTitle(title || "未命名故事");
-        setNodes(parsed.nodes);
-        setEdges(parsed.edges);
+
+        // Pipeline resume: the generation stage persists its state into the
+        // draft server-side. Still RUNNING → re-enter the waiting experience
+        // and poll (the run continues regardless of tabs). DONE but never
+        // painted (timeout / closed tab) → rebuild the canvas from the
+        // persisted analysis instead of re-burning the model; the next
+        // autosave persists the painted canvas.
+        const pipeline = draftPipelineState(project.draft.content);
+        const persistedAnalysis = parsed.base.storyAnalysis;
+        let paintedCount = parsed.nodes.length;
+        if (parsed.nodes.length === 0 && pipeline?.status === "running") {
+          setNodes([]);
+          setEdges([]);
+          setEmptyCanvasAnalyzeState("loading");
+          setResumeGenerationId(project.id);
+        } else if (
+          parsed.nodes.length === 0 &&
+          isRecord(persistedAnalysis) &&
+          Array.isArray(persistedAnalysis.acts) &&
+          persistedAnalysis.acts.length > 0
+        ) {
+          const rebuilt = buildNodesAndEdgesFromAnalysis(
+            persistedAnalysis as unknown as StoryStudioAnalysis
+          );
+          paintedCount = rebuilt.nodes.length;
+          setNodes(rebuilt.nodes);
+          setEdges(rebuilt.edges);
+        } else {
+          setNodes(parsed.nodes);
+          setEdges(parsed.edges);
+        }
+        // Frame the hydrated story once the nodes have been measured.
+        window.setTimeout(() => {
+          if (!isCancelled && paintedCount > 0) {
+            void reactFlow.fitView({ padding: 0.1, maxZoom: 0.7 });
+          }
+        }, 80);
       } catch (error) {
         if (isCancelled) return;
         activeProjectIdRef.current = null;
@@ -4894,17 +4835,21 @@ function NarrativeStudioInner({ projectId }: NarrativeStudioInnerProps) {
     return () => {
       isCancelled = true;
     };
-  }, [projectId, setEdges, setNodes]);
+  }, [projectId, reactFlow, setEdges, setNodes]);
 
   /** Adopt server draft state into the local tracking refs + canvas. */
   const adoptServerDraft = useCallback(
     (content: Record<string, unknown>, revision: number) => {
       const parsed = parseStoryCanvasSnapshot(content);
+      const parsedSpec = isRecord(parsed.base.storySpec)
+        ? (parsed.base.storySpec as Record<string, unknown>)
+        : null;
       snapshotBaseRef.current = parsed.base;
       lastSavedSnapshotRef.current = JSON.stringify(
-        buildStoryCanvasSnapshot(parsed.base, parsed.nodes, parsed.edges)
+        buildStoryCanvasSnapshot(parsed.base, parsed.nodes, parsed.edges, parsedSpec)
       );
       revisionRef.current = revision;
+      setStorySpec(parsedSpec);
       if (typeof parsed.base.title === "string" && parsed.base.title.trim()) {
         setCanvasTitle(parsed.base.title);
       }
@@ -4920,13 +4865,23 @@ function NarrativeStudioInner({ projectId }: NarrativeStudioInnerProps) {
     // A stale-write conflict pauses autosave until the user picks a side —
     // retrying with a poisoned revision would just 409 every 700ms.
     if (draftConflict) return;
-
-    const nextSnapshot = buildStoryCanvasSnapshot(snapshotBaseRef.current, nodes, edges);
-    const nextSignature = JSON.stringify(nextSnapshot);
-
-    if (nextSignature === lastSavedSnapshotRef.current) return;
+    // Mid staged-draw the canvas is intentionally partial — save once the
+    // full analyzed story has landed.
+    if (isAiDrawing) return;
 
     const timer = window.setTimeout(async () => {
+      // Snapshot + signature are computed INSIDE the debounce window: doing
+      // it per render tick would stringify the whole canvas on every drag
+      // frame for nothing.
+      const nextSnapshot = buildStoryCanvasSnapshot(
+        snapshotBaseRef.current,
+        nodes,
+        edges,
+        storySpec
+      );
+      const nextSignature = JSON.stringify(nextSnapshot);
+      if (nextSignature === lastSavedSnapshotRef.current) return;
+
       setCanvasSaveState("saving");
       setCanvasSaveError(null);
 
@@ -4983,7 +4938,17 @@ function NarrativeStudioInner({ projectId }: NarrativeStudioInnerProps) {
     }, 700);
 
     return () => window.clearTimeout(timer);
-  }, [activeProjectId, draftConflict, edges, hasHydratedCanvas, isCanvasLoading, nodes, sessionId]);
+  }, [
+    activeProjectId,
+    draftConflict,
+    edges,
+    hasHydratedCanvas,
+    isAiDrawing,
+    isCanvasLoading,
+    nodes,
+    sessionId,
+    storySpec,
+  ]);
 
   // Lazy create (projectless editor ONLY): on the first meaningful action —
   // the AI analyze completing or the first node added by any path — persist
@@ -4993,10 +4958,13 @@ function NarrativeStudioInner({ projectId }: NarrativeStudioInnerProps) {
   useEffect(() => {
     if (!hasHydratedCanvas || isCanvasLoading || projectId) return;
     if (activeProjectId || nodes.length === 0) return;
+    // The staged draw is one meaningful action — create once it completes,
+    // with the full analyzed canvas, not a mid-animation slice.
+    if (isAiDrawing) return;
     if (lazyCreateInFlightRef.current) return;
     lazyCreateInFlightRef.current = true;
 
-    const content = buildStoryCanvasSnapshot(snapshotBaseRef.current, nodes, edges);
+    const content = buildStoryCanvasSnapshot(snapshotBaseRef.current, nodes, edges, storySpec);
     const signature = JSON.stringify(content);
 
     void createStoryProject({ content })
@@ -5018,7 +4986,17 @@ function NarrativeStudioInner({ projectId }: NarrativeStudioInnerProps) {
       .finally(() => {
         lazyCreateInFlightRef.current = false;
       });
-  }, [activeProjectId, edges, hasHydratedCanvas, isCanvasLoading, nodes, projectId, router]);
+  }, [
+    activeProjectId,
+    edges,
+    hasHydratedCanvas,
+    isAiDrawing,
+    isCanvasLoading,
+    nodes,
+    projectId,
+    router,
+    storySpec,
+  ]);
 
   /** Conflict banner: discard local edits and load the server's draft. */
   const resolveConflictLoadLatest = useCallback(() => {
@@ -5036,7 +5014,7 @@ function NarrativeStudioInner({ projectId }: NarrativeStudioInnerProps) {
     setConflictBusy(true);
     setCanvasSaveState("saving");
     try {
-      const content = buildStoryCanvasSnapshot(snapshotBaseRef.current, nodes, edges);
+      const content = buildStoryCanvasSnapshot(snapshotBaseRef.current, nodes, edges, storySpec);
       const saved = await putStoryDraft(activeProjectId, {
         content,
         revision: draftConflict.currentRevision,
@@ -5060,7 +5038,7 @@ function NarrativeStudioInner({ projectId }: NarrativeStudioInnerProps) {
     } finally {
       setConflictBusy(false);
     }
-  }, [activeProjectId, conflictBusy, draftConflict, edges, nodes, sessionId]);
+  }, [activeProjectId, conflictBusy, draftConflict, edges, nodes, sessionId, storySpec]);
 
   const openNodeEditor = useCallback((nodeId: string) => {
     setIsAssistantOpen(false);
@@ -5281,6 +5259,128 @@ function NarrativeStudioInner({ projectId }: NarrativeStudioInnerProps) {
     [nodes, reactFlow, setNodes]
   );
 
+  /** The "AI is drawing" reveal: stage the analyzed story onto the canvas
+   *  element by element — root first, then cast/plots/clues/endings in the
+   *  builder's order, each edge appearing once both endpoints exist. The
+   *  data is the REAL analysis result, only its arrival is choreographed.
+   *  Resolves after the last element (and its entrance) has settled. */
+  const playAiDrawing = useCallback(
+    async (generated: { nodes: NarrativeNode[]; edges: NarrativeEdge[] }) => {
+      const token = ++aiDrawTokenRef.current;
+      const alive = () => aiDrawTokenRef.current === token;
+      const sleep = (ms: number) => new Promise((resolve) => window.setTimeout(resolve, ms));
+      // The whole reveal targets ~5s regardless of story size.
+      const stepMs = Math.max(
+        110,
+        Math.min(320, Math.floor(4600 / Math.max(1, generated.nodes.length)))
+      );
+
+      setIsAiDrawing(true);
+      setNodes([]);
+      setEdges([]);
+      // Frame the fan (root + lane heads) while it draws; the exact fit
+      // happens once the last element has landed.
+      reactFlow.setViewport({ x: 60, y: 330, zoom: 0.4 });
+
+      const placed = new Set<string>();
+      let pendingEdges = [...generated.edges];
+      try {
+        for (const node of generated.nodes) {
+          if (!alive()) return;
+          placed.add(node.id);
+          setNodes((current) => [...current, { ...node, className: "fizz-node-enter" }]);
+          const ready = pendingEdges.filter(
+            (edge) => placed.has(edge.source) && placed.has(edge.target)
+          );
+          if (ready.length > 0) {
+            pendingEdges = pendingEdges.filter((edge) => !ready.includes(edge));
+            setEdges((current) => [
+              ...current,
+              ...ready.map((edge) => ({ ...edge, className: "fizz-edge-enter" })),
+            ]);
+          }
+          await sleep(stepMs);
+        }
+        if (!alive()) return;
+        // Safety net: edges whose endpoints never both appeared (malformed
+        // analysis) still land rather than silently vanishing.
+        if (pendingEdges.length > 0) {
+          setEdges((current) => [...current, ...pendingEdges]);
+        }
+        await sleep(380);
+        if (!alive()) return;
+        // Drop the entrance classes so the settled canvas is clean.
+        setNodes((current) =>
+          current.map((node) => (node.className ? { ...node, className: undefined } : node))
+        );
+        setEdges((current) =>
+          current.map((edge) => (edge.className ? { ...edge, className: undefined } : edge))
+        );
+        // Re-measure handles now that the scale-in animation has settled —
+        // React Flow captures handle offsets when a node mounts, i.e. while
+        // `fizz-node-enter` still has it scaled down; without this pass the
+        // edges stay anchored at the shrunken positions.
+        window.requestAnimationFrame(() => {
+          updateNodeInternals(generated.nodes.map((node) => node.id));
+        });
+        void reactFlow.fitView({ padding: 0.1, duration: 700, maxZoom: 0.7 });
+      } finally {
+        if (alive()) setIsAiDrawing(false);
+      }
+    },
+    [reactFlow, setEdges, setNodes, updateNodeInternals]
+  );
+
+  /** Terminal-state painter shared by the click flow and refresh-resume:
+   *  adopt the persisted draft (revision + spec), sync the snapshot base,
+   *  then stage the analyzed story onto the canvas. */
+  const adoptGeneratedAnalysis = useCallback(
+    async (analysis: StoryStudioAnalysis, draft: StoryDraft) => {
+      revisionRef.current = draft.revision;
+      setStorySpec(
+        isRecord(draft.content.storySpec)
+          ? (draft.content.storySpec as Record<string, unknown>)
+          : null
+      );
+      snapshotBaseRef.current = {
+        ...snapshotBaseRef.current,
+        title: analysis.title,
+        summary: analysis.summary,
+        storyAnalysis: analysis as unknown as Record<string, unknown>,
+      };
+      setCanvasTitle(analysis.title);
+      setEmptyCanvasAnalyzeState("idle");
+      setEmptyCanvasAnalyzeError(null);
+      await playAiDrawing(buildNodesAndEdgesFromAnalysis(analysis));
+    },
+    [playAiDrawing]
+  );
+
+  // Refresh-resume: hydration found a generation still running server-side —
+  // poll the draft to its terminal state and paint exactly like a live run.
+  useEffect(() => {
+    if (!resumeGenerationId) return;
+    let cancelled = false;
+
+    void (async () => {
+      try {
+        const { analysis, draft } = await pollStoryAnalysis(resumeGenerationId);
+        if (cancelled) return;
+        await adoptGeneratedAnalysis(analysis, draft);
+      } catch (error) {
+        if (cancelled) return;
+        setEmptyCanvasAnalyzeState("error");
+        setEmptyCanvasAnalyzeError(error instanceof Error ? error.message : "Analyze failed.");
+      } finally {
+        if (!cancelled) setResumeGenerationId(null);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [adoptGeneratedAnalysis, resumeGenerationId]);
+
   const createStoryRootFromEmptyState = useCallback(async () => {
     const prompt = emptyCanvasPrompt.trim();
 
@@ -5299,64 +5399,43 @@ function NarrativeStudioInner({ projectId }: NarrativeStudioInnerProps) {
         typeof window === "undefined"
           ? "en-US"
           : (window.location.pathname.split("/").filter(Boolean)[0] ?? "en-US");
-      const response = await fetch("/api/story-studio/analyze", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          projectId: activeProjectId,
-          prompt,
-          uploadedFileName: emptyCanvasUploadName,
-          uploadedContent: emptyCanvasUploadContent,
-          locale,
-        }),
+
+      // Starting generation IS the first meaningful action — materialize the
+      // project up front so the server-side stage has a draft to persist into
+      // (resumable pipeline, docs/story-studio-creator-v3-refactor.md §D3).
+      let projectId = activeProjectId;
+      if (!projectId) {
+        const project = await createStoryProject({ locale });
+        projectId = project.id;
+        activeProjectIdRef.current = project.id;
+        setActiveProjectId(project.id);
+        revisionRef.current = project.draft.revision;
+        router.replace(`/story-studio/editor?projectId=${project.id}`);
+      }
+
+      // Async stage: start returns immediately (proxy-timeout-proof); the
+      // model run persists into the draft and we poll for the terminal state.
+      await startStoryAnalysis(projectId, {
+        prompt: prompt || undefined,
+        uploadedFileName: emptyCanvasUploadName ?? undefined,
+        uploadedContent: emptyCanvasUploadContent ?? undefined,
+        locale,
+        sessionId,
       });
-      const result = (await response.json().catch(() => null)) as StoryStudioAnalyzeResponse | null;
-
-      if (!response.ok || !result?.success) {
-        throw new Error(
-          result && "message" in result
-            ? result.message
-            : `Analyze failed with HTTP ${response.status}.`
-        );
-      }
-
-      const generated = buildNodesAndEdgesFromAnalysis(result.analysis);
-      snapshotBaseRef.current = {
-        ...snapshotBaseRef.current,
-        title: result.analysis.title,
-        summary: result.analysis.summary,
-        storyAnalysis: result.analysis as unknown as Record<string, unknown>,
-      };
-      setCanvasTitle(result.analysis.title);
-      setNodes(generated.nodes);
-      setEdges(generated.edges);
-      // Existing project: sync the analyzed title/summary to the project row
-      // so the landing list stays truthful. (Projectless: the lazy create
-      // extracts them from `content` server-side.) Non-critical — the draft
-      // content still carries both if this write is lost.
-      if (activeProjectId) {
-        void updateStoryProject(activeProjectId, {
-          title: result.analysis.title,
-          summary: result.analysis.summary,
-        }).catch(() => {});
-      }
-      setEmptyCanvasAnalyzeState("idle");
-      setEmptyCanvasAnalyzeError(null);
-      window.setTimeout(() => {
-        reactFlow.setViewport({ x: 80, y: 390, zoom: 0.44 }, { duration: 420 });
-      }, 0);
+      const { analysis, draft } = await pollStoryAnalysis(projectId);
+      await adoptGeneratedAnalysis(analysis, draft);
     } catch (error) {
       setEmptyCanvasAnalyzeState("error");
       setEmptyCanvasAnalyzeError(error instanceof Error ? error.message : "Analyze failed.");
     }
   }, [
     activeProjectId,
+    adoptGeneratedAnalysis,
     emptyCanvasPrompt,
     emptyCanvasUploadContent,
     emptyCanvasUploadName,
-    reactFlow,
-    setEdges,
-    setNodes,
+    router,
+    sessionId,
   ]);
 
   const addAssetNode = useCallback(
@@ -5386,6 +5465,15 @@ function NarrativeStudioInner({ projectId }: NarrativeStudioInnerProps) {
 
   return (
     <main className="relative h-screen overflow-hidden bg-[oklch(0.105_0_0)] text-white">
+      <AiEdgeGlow
+        active={emptyCanvasAnalyzeState === "loading" || isAiDrawing}
+        label={
+          emptyCanvasAnalyzeState === "loading"
+            ? "StoryOS is thinking..."
+            : "StoryOS is drawing your story..."
+        }
+      />
+      <AiSketchGhost active={emptyCanvasAnalyzeState === "loading" && nodes.length === 0} />
       <div
         className="absolute inset-y-0 right-0 transition-[left] duration-300 ease-[cubic-bezier(0.16,1,0.3,1)]"
         style={{ left: leftDockWidth }}
@@ -5462,14 +5550,21 @@ function NarrativeStudioInner({ projectId }: NarrativeStudioInnerProps) {
         </div>
       ) : null}
 
-      {!isCanvasLoading && hasHydratedCanvas && !canvasLoadError && nodes.length === 0 ? (
+      {!isCanvasLoading &&
+      hasHydratedCanvas &&
+      !canvasLoadError &&
+      nodes.length === 0 &&
+      // From the moment Generate is pressed the intake yields to the canvas
+      // (sketch ghost + edge glow) — it only returns on analyze failure.
+      emptyCanvasAnalyzeState !== "loading" &&
+      !isAiDrawing ? (
         <section
-          className="pointer-events-none absolute bottom-0 top-[104px] z-10 flex items-start justify-center overflow-hidden px-8 pt-[72px] transition-[left] duration-300 ease-[cubic-bezier(0.16,1,0.3,1)]"
+          className="pointer-events-none absolute bottom-0 top-[104px] z-10 flex items-center justify-center overflow-hidden px-8 transition-[left] duration-300 ease-[cubic-bezier(0.16,1,0.3,1)]"
           style={{ left: leftDockWidth, right: 0 }}
           aria-label="StoryOS empty canvas intake"
         >
           <div className="pointer-events-auto w-full max-w-[1160px] text-center">
-            <p className="text-[20px] font-semibold tracking-tight text-white/44">
+            <p className="text-[15px] text-white/45">
               Double-click the canvas or describe what to generate.
             </p>
 
@@ -5479,8 +5574,7 @@ function NarrativeStudioInner({ projectId }: NarrativeStudioInnerProps) {
                 value={emptyCanvasPrompt}
                 onChange={(event) => setEmptyCanvasPrompt(event.target.value)}
                 placeholder="Describe the story you want StoryOS to generate..."
-                disabled={emptyCanvasAnalyzeState === "loading"}
-                className="h-full min-w-0 flex-1 bg-transparent px-6 text-[17px] font-semibold text-white/86 outline-none placeholder:text-white/32"
+                className="h-full min-w-0 flex-1 bg-transparent px-6 text-[15px] font-light text-white/85 outline-none placeholder:text-white/35"
               />
               <input
                 ref={emptyCanvasUploadRef}
@@ -5510,38 +5604,36 @@ function NarrativeStudioInner({ projectId }: NarrativeStudioInnerProps) {
               />
               <button
                 type="button"
-                disabled={emptyCanvasAnalyzeState === "loading"}
                 onClick={() => emptyCanvasUploadRef.current?.click()}
-                className="inline-flex h-12 shrink-0 items-center justify-center rounded-full bg-white/10 px-6 text-[15px] font-semibold text-white/72 transition hover:bg-white/15 hover:text-white active:translate-y-0.5 disabled:pointer-events-none disabled:opacity-45"
+                className="inline-flex h-12 shrink-0 items-center justify-center rounded-full bg-white/10 px-6 text-[14px] font-medium text-white/72 transition hover:bg-white/15 hover:text-white active:translate-y-0.5"
               >
                 {emptyCanvasUploadName ? "Uploaded" : "Upload"}
               </button>
               <button
                 type="button"
-                disabled={emptyCanvasAnalyzeState === "loading"}
                 onClick={createStoryRootFromEmptyState}
-                className="inline-flex h-12 shrink-0 items-center justify-center rounded-full bg-white px-7 text-[15px] font-black text-black shadow-[0_7px_0_0_rgba(255,255,255,0.18)] transition-[transform,box-shadow,background] duration-150 ease-[cubic-bezier(0.16,1,0.3,1)] hover:bg-white/90 active:translate-y-1 active:shadow-[0_2px_0_0_rgba(255,255,255,0.18)] disabled:pointer-events-none disabled:translate-y-1 disabled:opacity-70 disabled:shadow-[0_2px_0_0_rgba(255,255,255,0.18)]"
+                className="inline-flex h-12 shrink-0 items-center justify-center rounded-full bg-[#E52227] px-7 text-[14px] font-medium text-white shadow-[0_7px_0_0_rgba(122,14,17,0.9)] transition-[translate,box-shadow,background] duration-150 ease-[cubic-bezier(0.16,1,0.3,1)] hover:bg-[#ff3d42] active:translate-y-1 active:shadow-[0_2px_0_0_rgba(122,14,17,0.9)]"
               >
-                {emptyCanvasAnalyzeState === "loading" ? "Analyzing..." : "Analyze"}
+                Generate
               </button>
             </div>
 
             {emptyCanvasUploadName ? (
-              <p className="mt-3 text-xs font-semibold text-white/36">
+              <p className="mt-3 text-xs font-medium text-white/36">
                 Selected text document: {emptyCanvasUploadName}
               </p>
             ) : null}
 
             {emptyCanvasAnalyzeState === "error" && emptyCanvasAnalyzeError ? (
-              <p className="mx-auto mt-3 max-w-[760px] text-sm font-semibold leading-6 text-[#ff8b8e]">
+              <p className="mx-auto mt-3 max-w-[760px] text-sm font-medium leading-6 text-[#ff8b8e]">
                 {emptyCanvasAnalyzeError}
               </p>
             ) : null}
 
             <div className="mt-7 grid grid-cols-4 gap-4">
-              {EMPTY_CANVAS_STARTERS.map((starter) => (
+              {emptyCanvasStarters.map((starter) => (
                 <button
-                  key={starter.kind}
+                  key={starter.key}
                   type="button"
                   onClick={() => {
                     setEmptyCanvasPrompt((current) => current || starter.prompt);
@@ -5550,14 +5642,16 @@ function NarrativeStudioInner({ projectId }: NarrativeStudioInnerProps) {
                   }}
                   className="group relative h-[96px] overflow-hidden rounded-[22px] bg-cover bg-center p-5 text-left shadow-[0_22px_72px_rgba(0,0,0,0.26)] transition duration-200 hover:-translate-y-1 hover:shadow-[0_30px_90px_rgba(0,0,0,0.42)]"
                   style={{
-                    backgroundImage: `linear-gradient(90deg, rgba(18,18,18,0.86), rgba(18,18,18,0.48)), url(${starter.image})`,
+                    backgroundImage: starter.image
+                      ? `linear-gradient(90deg, rgba(18,18,18,0.86), rgba(18,18,18,0.48)), url(${starter.image})`
+                      : "linear-gradient(90deg, oklch(0.22 0 0), oklch(0.17 0 0))",
                   }}
                 >
                   <span className="absolute inset-0 bg-black/18 opacity-0 transition group-hover:opacity-100" />
-                  <span className="relative block text-[20px] font-black leading-tight text-white/94">
+                  <span className="relative block text-[15px] font-semibold leading-tight text-white/94">
                     {starter.title}
                   </span>
-                  <span className="relative mt-2 block text-sm font-semibold leading-5 text-white/56 transition group-hover:text-white/68">
+                  <span className="relative mt-1.5 block text-[12px] font-medium leading-5 text-white/56 transition group-hover:text-white/68">
                     {starter.description}
                   </span>
                 </button>
@@ -5764,7 +5858,7 @@ function NarrativeStudioInner({ projectId }: NarrativeStudioInnerProps) {
                 </button>
                 <button
                   type="button"
-                  className="grid size-11 place-items-center rounded-full bg-white text-black shadow-[0_6px_0_0_rgba(255,255,255,0.18)] transition-[transform,box-shadow] duration-150 ease-[cubic-bezier(0.16,1,0.3,1)] hover:-translate-y-px hover:shadow-[0_7px_0_0_rgba(255,255,255,0.18)] active:translate-y-1 active:shadow-[0_2px_0_0_rgba(255,255,255,0.18)]"
+                  className="grid size-11 place-items-center rounded-full bg-white text-black shadow-[0_6px_0_0_rgba(255,255,255,0.18)] transition-[translate,box-shadow] duration-150 ease-[cubic-bezier(0.16,1,0.3,1)] hover:-translate-y-px hover:shadow-[0_7px_0_0_rgba(255,255,255,0.18)] active:translate-y-1 active:shadow-[0_2px_0_0_rgba(255,255,255,0.18)]"
                 >
                   <IconSend className="size-5" />
                 </button>
