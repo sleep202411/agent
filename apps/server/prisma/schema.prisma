@@ -5400,6 +5400,7 @@ model MediaAsset {
   usages                  MediaAssetUsage[]
   characterCovers         StudioCharacter[]           @relation("CharacterCover")
   characterMedia          CharacterMedia[]
+  storyProjectCovers      StoryProject[]              @relation("StoryProjectCover")
   moderationCases         MediaModerationCase[]
   moderationActions       MediaModerationAction[]
   processingJobs          MediaProcessingJob[]
@@ -5811,4 +5812,104 @@ model ReferralReward {
   @@unique([userId, milestoneId], map: "referral_reward_user_milestone_unique")
   @@index([userId, status, createdAt(sort: Desc)], map: "referral_reward_user_idx")
   @@map("referral_rewards")
+}
+
+/// ─── Story Studio(文字游戏)专属项目面 —— 与 PlatformProject 分家 ───
+/// 设计: docs/story-studio-project-schema-v1.md(v2 主权版)。草稿 = 画布快照;
+/// 发布 = 本地事务产出不可变 StoryRelease;状态机归本域,无外部镜像/对账。
+
+enum StoryProjectStatus {
+  active
+  archived
+}
+
+/// unpublished → published ⇄ offline;republish 在 published 内滚 release 版本。
+enum StoryPublishState {
+  unpublished
+  published
+  offline
+}
+
+enum StoryVisibility {
+  private
+  public
+  unlisted
+}
+
+model StoryProject {
+  id           String             @id @default(uuid(7)) @db.Uuid
+  ownerUserId  String             @map("owner_user_id") @db.VarChar(64)
+  /// 仅为封面等 MediaAsset 对齐媒体管线;story 域无工作区协作语义。
+  workspaceId  String?            @map("workspace_id") @db.Uuid
+  /// 展示元数据唯一真源(R1: 草稿保存写透至此);列表/详情/发布编译器都读这里。
+  title        String             @db.VarChar(160)
+  summary      String?            @db.Text
+  coverAssetId String?            @map("cover_asset_id") @db.Uuid
+  locale       String             @default("zh-CN") @db.VarChar(16)
+  visibility   StoryVisibility    @default(private)
+  /// string[](展示标签)。
+  tags         Json               @default("[]") @db.JsonB
+  status       StoryProjectStatus @default(active)
+  /// 溯源 IP(bare 列,跨域不 FK)。
+  sourceIpId   String?            @map("source_ip_id") @db.Uuid
+
+  publishState     StoryPublishState @default(unpublished) @map("publish_state")
+  liveReleaseId    String?           @unique @map("live_release_id") @db.Uuid
+  publishedVersion Int?              @map("published_version")
+  publishedAt      DateTime?         @map("published_at") @db.Timestamptz(6)
+
+  version   Int       @default(0)
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  /// 草稿保存写透 bump(R2)→ owner 列表排序键始终新鲜。
+  updatedAt DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  deletedAt DateTime? @map("deleted_at") @db.Timestamptz(6)
+
+  draft       StoryDraft?
+  releases    StoryRelease[] @relation("StoryProjectReleases")
+  liveRelease StoryRelease?  @relation("StoryProjectLiveRelease", fields: [liveReleaseId], references: [id], onDelete: SetNull)
+  cover       MediaAsset?    @relation("StoryProjectCover", fields: [coverAssetId], references: [id], onDelete: SetNull)
+
+  @@index([ownerUserId, status, updatedAt(sort: Desc)], map: "story_projects_owner_idx")
+  @@map("story_projects")
+}
+
+model StoryDraft {
+  id             String @id @default(uuid(7)) @db.Uuid
+  storyProjectId String @unique @map("story_project_id") @db.Uuid
+  schemaVersion  String @default("story-studio-canvas-v1") @map("schema_version") @db.VarChar(40)
+  /// {title, summary, storyAnalysis, canvas:{nodes,edges}} —— 编辑器整图快照。
+  content        Json   @default("{}") @db.JsonB
+  /// CAS 乐观锁(409 恢复契约 R5)。
+  revision           Int     @default(0)
+  updatedBySessionId String? @map("updated_by_session_id") @db.VarChar(64)
+  updatedByUserId    String? @map("updated_by_user_id") @db.VarChar(64)
+  createdAt          DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt          DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  project StoryProject @relation(fields: [storyProjectId], references: [id], onDelete: Cascade)
+
+  @@map("story_drafts")
+}
+
+/// 不可变发布快照 —— 本域"已发布内容"真源(将来玩家端 detail/entry/turn 由此服务,
+/// session 钉 releaseId);同时天然是审计。Restrict: 有发布史的项目不可静默硬删。
+model StoryRelease {
+  id                String   @id @default(uuid(7)) @db.Uuid
+  storyProjectId    String   @map("story_project_id") @db.Uuid
+  releaseVersion    Int      @map("release_version")
+  schemaVersion     String   @map("schema_version") @db.VarChar(40)
+  /// 编译产物(narrative-runtime-v1),写后不改。
+  runtimeJson       Json     @map("runtime_json") @db.JsonB
+  runtimeHash       String   @map("runtime_hash") @db.VarChar(64)
+  /// 发布时的运行语言快照(服务端不解析 JSON 即可路由语言)。
+  locale            String   @db.VarChar(16)
+  publishedByUserId String   @map("published_by_user_id") @db.VarChar(64)
+  createdAt         DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  project StoryProject  @relation("StoryProjectReleases", fields: [storyProjectId], references: [id], onDelete: Restrict)
+  liveOf  StoryProject? @relation("StoryProjectLiveRelease")
+
+  @@unique([storyProjectId, releaseVersion], map: "story_releases_version_unique")
+  @@index([storyProjectId, createdAt(sort: Desc)], map: "story_releases_by_project_idx")
+  @@map("story_releases")
 }

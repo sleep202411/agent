@@ -8,6 +8,7 @@ import { BillingModule } from './billing';
 import { InternalModule } from './internal/internal.module';
 import { CertificatesModule } from './certificates/certificates.module';
 import { CharactersModule } from './characters/characters.module';
+import { StoryStudioModule } from './story-studio/story-studio.module';
 import { AlertingModule } from './common/alerting';
 import { RegionModule } from './common/region';
 import { ThrottleModule } from './common/throttle/throttle.module';
@@ -72,6 +73,7 @@ import { WorkspacesModule } from './workspaces';
     DocumentsModule,
     CertificatesModule,
     CharactersModule,
+    StoryStudioModule,
     MediaModule,
     CrewsModule,
     EpisodesModule,
