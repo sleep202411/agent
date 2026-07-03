@@ -1,9 +1,12 @@
 import type { Metadata } from "next";
-import { IconPlayerPlay, IconX } from "@tabler/icons-react";
+import { IconPlayerPlay } from "@tabler/icons-react";
 import { Link } from "@/i18n/navigation";
-import { StudioSidebar } from "@/app/_components/studio-sidebar";
-import { CreateStoryProjectButton } from "./_components/create-story-project-button";
-import { StoryShelf, type StoryStudioStory } from "./_components/story-studio-shelves";
+import { CreateStoryProjectButton } from "../../story-studio/_components/create-story-project-button";
+import { StoryProjectsShelf } from "../../story-studio/_components/story-projects-shelf";
+import {
+  StoryShelf,
+  type StoryStudioStory,
+} from "../../story-studio/_components/story-studio-shelves";
 
 export const metadata: Metadata = {
   title: "Story Studio",
@@ -77,36 +80,22 @@ const STORY_STUDIO_ITEMS: StoryStudioStory[] = [
 
 export default function StoryStudioPage() {
   return (
-    <div className="min-h-screen bg-[#101112] text-white antialiased">
-      <StudioSidebar />
+    <div className="relative min-h-screen bg-[#101112] text-white antialiased">
+      {/* Header + icon rail come from the (landing) layout; the hero runs
+          full-bleed underneath the floating header. */}
       <main className="relative min-h-screen overflow-x-clip pb-16">
-        <OfferBanner />
         <Hero />
+        {/* The user's real story projects (sovereign story-projects domain). */}
+        <StoryProjectsShelf />
+        {/* Inspiration only — example cards deliberately do not open the editor. */}
+        <section className="relative z-20 px-[47px] pt-12 lg:pl-[120px]">
+          <h2 className="text-[22px] font-semibold tracking-[-0.015em] text-white">Examples</h2>
+          <p className="mt-1 text-[13px] font-medium text-white/48">
+            Story shapes that work well as playable investigations — use them as inspiration.
+          </p>
+        </section>
         <StoryShelf stories={STORY_STUDIO_ITEMS} />
       </main>
-    </div>
-  );
-}
-
-function OfferBanner() {
-  return (
-    <div className="relative z-20 flex h-[43px] items-center justify-center gap-3 bg-[#1f6268] px-4 text-[14px] font-semibold text-white shadow-[inset_0_-1px_0_rgba(255,255,255,0.08)]">
-      <span className="rounded-full bg-white/15 px-3 py-1 text-[12px] font-bold tracking-[0.08em] uppercase">
-        Early access
-      </span>
-      <span className="rounded-full bg-white/15 px-3 py-1 text-[12px] font-bold tracking-[0.08em] uppercase">
-        Story Studio
-      </span>
-      <span className="text-white/90">
-        Build the first playable draft from story root, cast, and clues.
-      </span>
-      <button
-        type="button"
-        aria-label="Dismiss"
-        className="absolute right-4 flex size-7 items-center justify-center rounded-full text-white/75 transition hover:bg-white/10 hover:text-white"
-      >
-        <IconX className="size-4" stroke={2} />
-      </button>
     </div>
   );
 }
@@ -122,22 +111,8 @@ function Hero() {
         loop
         playsInline
       />
-      <div className="absolute inset-0 bg-[linear-gradient(90deg,rgba(16,17,18,0.88)_0%,rgba(16,17,18,0.52)_46%,rgba(16,17,18,0.08)_100%),linear-gradient(180deg,rgba(16,17,18,0.05)_0%,rgba(16,17,18,0.55)_100%)]" />
-
-      <div className="absolute top-5 right-5 z-10 flex items-center gap-2">
-        <button
-          type="button"
-          className="rounded-[14px] bg-white/20 px-4 py-2 text-[14px] font-semibold text-white shadow-[0_10px_30px_rgba(0,0,0,0.22)] backdrop-blur-xl transition hover:bg-white/26"
-        >
-          Pricing
-        </button>
-        <button
-          type="button"
-          className="rounded-[14px] bg-white px-4 py-2 text-[14px] font-semibold text-black shadow-[0_10px_30px_rgba(0,0,0,0.18)] transition hover:bg-white/90"
-        >
-          Sign In
-        </button>
-      </div>
+      {/* Left/bottom scrims for copy + a top scrim so the floating header stays legible. */}
+      <div className="absolute inset-0 bg-[linear-gradient(90deg,rgba(16,17,18,0.88)_0%,rgba(16,17,18,0.52)_46%,rgba(16,17,18,0.08)_100%),linear-gradient(180deg,rgba(16,17,18,0.6)_0%,rgba(16,17,18,0.05)_22%,rgba(16,17,18,0.55)_100%)]" />
 
       <div className="absolute top-[128px] left-[47px] z-10 max-w-[640px] lg:left-[120px]">
         <h1 className="max-w-[560px] text-[42px] leading-[1.02] font-semibold tracking-[-0.025em] text-white md:text-[48px]">

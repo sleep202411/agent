@@ -6,7 +6,6 @@ import Image from "next/image";
 import gsap from "gsap";
 import { useGSAP } from "@gsap/react";
 import { IconChevronRight, IconClock, IconPlayerPlay } from "@tabler/icons-react";
-import { Link } from "@/i18n/navigation";
 
 gsap.registerPlugin(useGSAP);
 
@@ -131,8 +130,10 @@ function StoryCard({
 }) {
   return (
     <div className="group relative aspect-video">
-      <Link
-        href="/story-studio/editor"
+      {/* Example cards are inspiration only — deliberately NOT a link to the
+          projectless editor (real projects live in the shelf above). */}
+      <div
+        tabIndex={0}
         onPointerEnter={(event) => onPreviewOpen(story, event.currentTarget)}
         onPointerLeave={onPreviewClose}
         onMouseEnter={(event) => onPreviewOpen(story, event.currentTarget)}
@@ -162,7 +163,7 @@ function StoryCard({
             <IconChevronRight className="size-3.5 shrink-0 text-white/70" stroke={2.2} />
           </div>
         </div>
-      </Link>
+      </div>
     </div>
   );
 }
@@ -176,7 +177,7 @@ function StoryPreview({
   onPreviewEnter: () => void;
   onPreviewLeave: () => void;
 }) {
-  const previewRef = useRef<HTMLAnchorElement>(null);
+  const previewRef = useRef<HTMLDivElement>(null);
 
   useGSAP(
     () => {
@@ -217,9 +218,8 @@ function StoryPreview({
   if (!preview || typeof document === "undefined") return null;
 
   return createPortal(
-    <Link
+    <div
       ref={previewRef}
-      href="/story-studio/editor"
       onPointerEnter={onPreviewEnter}
       onPointerLeave={onPreviewLeave}
       onMouseEnter={onPreviewEnter}
@@ -262,7 +262,7 @@ function StoryPreview({
           </span>
         </div>
       </div>
-    </Link>,
+    </div>,
     document.body
   );
 }

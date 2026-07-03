@@ -1,9 +1,9 @@
 "use client";
 
 /**
- * Home-page chrome: the top-right header actions (with the brand wordmark on
- * the left, since the shared icon rail carries no logo), and the footer.
- * Navigation itself is the app's shared `StudioSidebar` (icon rail).
+ * Home-page chrome: the footer. The header moved to the shared
+ * `LandingHeader` (app/_components/landing-header.tsx), mounted by the
+ * (landing) layout; navigation is the app's shared `StudioSidebar`.
  */
 
 import {
@@ -12,17 +12,10 @@ import {
   IconBrandInstagram,
   IconBrandX,
   IconBrandYoutube,
-  IconCrown,
   IconStarFilled,
   type Icon,
 } from "@tabler/icons-react";
 import Image from "next/image";
-import { useState } from "react";
-import { Link } from "@/i18n/navigation";
-import { useAuth } from "@/app/_components/auth-provider";
-import { AccountMenu } from "@/app/_components/account-menu";
-import { SubscriptionDialog } from "@/app/_components/subscription-dialog";
-import { WorkspaceSwitcher } from "@/app/_components/workspace-switcher";
 import type { Theme } from "../_pollo/theme";
 
 const SOCIAL: Icon[] = [
@@ -32,81 +25,6 @@ const SOCIAL: Icon[] = [
   IconBrandYoutube,
   IconBrandDiscord,
 ];
-
-export function HeaderBar() {
-  // Real auth. Home mirrors the imagine.art account cluster: Upgrade,
-  // workspace, message, notification, avatar. Search + Contact Sales are
-  // intentionally omitted. Signed-out users keep a compact sign-in entry so the
-  // public home is still usable.
-  const { user, loading, signIn } = useAuth();
-  const [pricingOpen, setPricingOpen] = useState(false);
-
-  return (
-    <header className="flex h-16 items-center justify-between gap-4 overflow-visible px-6 text-[14px]">
-      <Link href="/" aria-label="FizzDragon home" className="flex shrink-0 items-center">
-        <Image
-          src="/logo.png"
-          alt="FizzDragon"
-          width={439}
-          height={78}
-          priority
-          className="h-7 w-auto"
-        />
-      </Link>
-
-      <div className="flex items-center gap-2">
-        {loading ? (
-          <>
-            <div className="h-8 w-28 animate-pulse rounded-[12px] bg-white/[0.06]" />
-            <div className="h-8 w-52 animate-pulse rounded-[12px] bg-white/[0.06]" />
-            <div className="size-8 animate-pulse rounded-full bg-white/[0.06]" />
-          </>
-        ) : user ? (
-          <>
-            <UpgradeButton onClick={() => setPricingOpen(true)} />
-            <WorkspaceSwitcher
-              triggerClassName="h-8 min-w-[220px] max-w-[260px] gap-1.5 rounded-[12px] border border-[#2C263D] bg-[#15151A]/80 py-1.5 pr-2.5 pl-1.5 hover:bg-[#1B1B22]/90 data-[state=open]:bg-[#1B1B22]/90"
-              avatarSize="size-5"
-              avatarFallbackClassName="bg-[#744717] text-[12px] text-white"
-              nameClassName="max-w-[170px] text-[14px] leading-5 font-medium text-white"
-              chevronClassName="size-4 text-white/65"
-            />
-            <AccountMenu
-              fallback="initial"
-              triggerClassName="size-8 bg-[#744717] text-white hover:bg-[#86531C] data-[state=open]:bg-[#86531C] [&_span]:text-[13px]"
-            />
-          </>
-        ) : (
-          <>
-            <UpgradeButton onClick={() => setPricingOpen(true)} />
-            <button
-              type="button"
-              onClick={signIn}
-              className="h-8 rounded-[12px] bg-white px-2.5 py-1.5 text-[14px] leading-5 font-medium text-black transition hover:bg-white/90"
-            >
-              Sign In
-            </button>
-          </>
-        )}
-      </div>
-
-      <SubscriptionDialog open={pricingOpen} onOpenChange={setPricingOpen} />
-    </header>
-  );
-}
-
-function UpgradeButton({ onClick }: { onClick: () => void }) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className="flex h-8 items-center gap-1.5 rounded-[12px] bg-[#E52227] px-2.5 py-1.5 text-[14px] leading-5 font-medium text-white shadow-[0_0_18px_rgb(229_34_39/0.22)] transition hover:bg-[#c91e22]"
-    >
-      <IconCrown className="size-4 text-white" stroke={2} />
-      Upgrade
-    </button>
-  );
-}
 
 // ---------------------------------------------------------------------------
 // Footer

@@ -14,12 +14,11 @@
  * Projects, Agent routing, Generate) is a follow-up.
  */
 
-import { StudioSidebar } from "@/app/_components/studio-sidebar";
-import { Composer } from "./_pollo/composer";
-import { THEMES } from "./_pollo/theme";
-import { Footer, HeaderBar } from "./_home/chrome";
-import { ExploreMore, Models, RecentProjects } from "./_home/sections";
-import { HeroCanvas } from "./_home/hero-canvas";
+import { Composer } from "../_pollo/composer";
+import { THEMES } from "../_pollo/theme";
+import { Footer } from "../_home/chrome";
+import { ExploreMore, Models, RecentProjects } from "../_home/sections";
+import { HeroCanvas } from "../_home/hero-canvas";
 
 const THEME = THEMES.red;
 
@@ -37,12 +36,9 @@ export default function HomePage() {
       {/* imagine.art enterprise-style decorative collaboration canvas */}
       <HeroCanvas />
 
-      {/* shared icon rail (fixed, vertically centered, lg+ only) */}
-      <StudioSidebar />
-
-      {/* header + content float over the backdrop */}
-      <div className="relative z-10">
-        <HeaderBar />
+      {/* Header + icon rail come from the (landing) layout; pt-16 keeps the
+          content clear of the floating header. */}
+      <div className="relative z-10 pt-16">
         <main className="lg:pl-[104px]">
           <div className="px-6 pt-[220]">
             <Composer theme={THEME} />

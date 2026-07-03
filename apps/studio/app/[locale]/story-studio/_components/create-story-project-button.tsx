@@ -4,19 +4,8 @@ import { useState } from "react";
 import { IconLoader2, IconPlus } from "@tabler/icons-react";
 import { toast } from "sonner";
 import { useRouter } from "@/i18n/navigation";
-import {
-  createProject,
-  ensureModeDocument,
-  ensurePersonalWorkspace,
-  updateDocumentSnapshot,
-} from "@/lib/collab/projects-api";
-
-const EMPTY_STORY_CANVAS = {
-  schemaVersion: "story-studio-canvas-v1",
-  title: "Untitled Story",
-  summary: "",
-  canvas: { nodes: [], edges: [] },
-};
+import { ensurePersonalWorkspace } from "@/lib/collab/projects-api";
+import { createStoryProject } from "@/lib/story-projects-api";
 
 function errorMessage(error: unknown): string {
   if (error instanceof Error && error.message.trim()) return error.message;
@@ -32,18 +21,10 @@ export function CreateStoryProjectButton() {
     setIsCreating(true);
 
     try {
+      // Story projects are their own domain — ONE create call. The personal
+      // workspace is resolved only to anchor covers/media accounting.
       const workspace = await ensurePersonalWorkspace();
-      const project = await createProject(workspace.id, {
-        name: "Untitled Story",
-        projectType: "story-studio",
-        visibility: "private",
-        description: "A new playable story project.",
-      });
-      const document = await ensureModeDocument(project.id, "canvas");
-      await updateDocumentSnapshot(document.id, {
-        title: "Untitled Story",
-        contentSnapshot: EMPTY_STORY_CANVAS,
-      });
+      const project = await createStoryProject({ workspaceId: workspace.id });
 
       toast.success("Project created.");
       router.push(`/story-studio/editor?projectId=${project.id}`);

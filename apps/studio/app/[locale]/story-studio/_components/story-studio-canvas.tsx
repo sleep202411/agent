@@ -33,6 +33,7 @@ import {
   type OnSelectionChangeFunc,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
+import { toast } from "sonner";
 import {
   IconAdjustmentsHorizontal,
   IconArrowUpRight,
@@ -69,12 +70,15 @@ import {
   IconX,
   type Icon,
 } from "@tabler/icons-react";
+import { useRouter } from "@/i18n/navigation";
 import {
-  ensureCanvasDocument,
-  getDocument,
-  updateDocumentSnapshot,
-  type ModeDocumentRef,
-} from "@/lib/collab/projects-api";
+  createStoryProject,
+  draftRevisionConflict,
+  getStoryProject,
+  putStoryDraft,
+  updateStoryProject,
+  type DraftRevisionConflict,
+} from "@/lib/story-projects-api";
 import { cn } from "@/lib/utils";
 
 type NarrativeNodeKind =
@@ -4759,7 +4763,9 @@ function NarrativeStudioInner({ projectId }: NarrativeStudioInnerProps) {
   const [selectedNodeCount, setSelectedNodeCount] = useState(0);
   const [activeCharacter, setActiveCharacter] = useState<NarrativeNodeData | null>(null);
   const [activeEditNodeId, setActiveEditNodeId] = useState<string | null>(null);
-  const [canvasDocument, setCanvasDocument] = useState<ModeDocumentRef | null>(null);
+  /** The live story project id — set by hydrate (the prop's project) or by
+   *  the lazy create. Null until a project is actually loaded/created. */
+  const [activeProjectId, setActiveProjectId] = useState<string | null>(null);
   const [canvasTitle, setCanvasTitle] = useState("未命名故事");
   const [isCanvasLoading, setIsCanvasLoading] = useState(Boolean(projectId));
   const [hasHydratedCanvas, setHasHydratedCanvas] = useState(false);
@@ -4768,6 +4774,10 @@ function NarrativeStudioInner({ projectId }: NarrativeStudioInnerProps) {
     "idle"
   );
   const [canvasSaveError, setCanvasSaveError] = useState<string | null>(null);
+  /** Unresolved stale-write conflict (someone else's session updated the
+   *  draft) — autosave pauses until the user picks a side. */
+  const [draftConflict, setDraftConflict] = useState<DraftRevisionConflict | null>(null);
+  const [conflictBusy, setConflictBusy] = useState(false);
   const [emptyCanvasPrompt, setEmptyCanvasPrompt] = useState("");
   const [emptyCanvasUploadName, setEmptyCanvasUploadName] = useState<string | null>(null);
   const [emptyCanvasUploadContent, setEmptyCanvasUploadContent] = useState<string | null>(null);
@@ -4780,6 +4790,19 @@ function NarrativeStudioInner({ projectId }: NarrativeStudioInnerProps) {
   const emptyCanvasInputRef = useRef<HTMLInputElement | null>(null);
   const snapshotBaseRef = useRef<StoryCanvasSnapshot>({});
   const lastSavedSnapshotRef = useRef("");
+  /** CAS token — the last draft revision this client read or received. */
+  const revisionRef = useRef(0);
+  /** Per-mount save session — lets the server tell us when a conflicting
+   *  revision was in fact our own racing write (adopt silently). */
+  const [sessionId] = useState(() => crypto.randomUUID());
+  /** Mirrors activeProjectId so the hydrate effect can skip re-fetching the
+   *  project we just lazily created (router.replace re-runs the page). Only
+   *  ever set AFTER a successful hydrate or lazy create — never from the prop,
+   *  or the initial load would be skipped. */
+  const activeProjectIdRef = useRef<string | null>(null);
+  /** Single-flight lock for the lazy create. */
+  const lazyCreateInFlightRef = useRef(false);
+  const router = useRouter();
   const portDraftCounterRef = useRef<Record<ConnectionPortId, number>>({
     roles: 0,
     clues: 0,
@@ -4796,16 +4819,26 @@ function NarrativeStudioInner({ projectId }: NarrativeStudioInnerProps) {
     let isCancelled = false;
 
     async function hydrateCanvas() {
+      // The lazy-create path already holds the live state for this project —
+      // router.replace re-runs the page with the new projectId, and re-fetching
+      // here would clobber edits made between create and navigation.
+      if (projectId && projectId === activeProjectIdRef.current) return;
+
       setCanvasLoadError(null);
       setCanvasSaveError(null);
       setCanvasSaveState("idle");
+      setDraftConflict(null);
       setHasHydratedCanvas(false);
 
       if (!projectId) {
+        // Projectless editor: fully in-memory until the first meaningful
+        // action lazily creates the story project (see the effect below).
         const emptySnapshot = buildStoryCanvasSnapshot({}, [], []);
         snapshotBaseRef.current = {};
         lastSavedSnapshotRef.current = JSON.stringify(emptySnapshot);
-        setCanvasDocument(null);
+        revisionRef.current = 0;
+        activeProjectIdRef.current = null;
+        setActiveProjectId(null);
         setCanvasTitle("未命名故事");
         setNodes([]);
         setEdges([]);
@@ -4817,19 +4850,15 @@ function NarrativeStudioInner({ projectId }: NarrativeStudioInnerProps) {
       setIsCanvasLoading(true);
 
       try {
-        const ensuredDocument = await ensureCanvasDocument(projectId);
-        const detailedDocument =
-          ensuredDocument.contentSnapshot === undefined
-            ? await getDocument(ensuredDocument.id)
-            : ensuredDocument;
+        const project = await getStoryProject(projectId);
 
         if (isCancelled) return;
 
-        const parsed = parseStoryCanvasSnapshot(detailedDocument.contentSnapshot);
+        const parsed = parseStoryCanvasSnapshot(project.draft.content);
         const title =
           typeof parsed.base.title === "string" && parsed.base.title.trim()
             ? parsed.base.title
-            : detailedDocument.title;
+            : project.title;
         const snapshotForSignature = buildStoryCanvasSnapshot(
           parsed.base,
           parsed.nodes,
@@ -4838,13 +4867,16 @@ function NarrativeStudioInner({ projectId }: NarrativeStudioInnerProps) {
 
         snapshotBaseRef.current = parsed.base;
         lastSavedSnapshotRef.current = JSON.stringify(snapshotForSignature);
-        setCanvasDocument(detailedDocument);
+        revisionRef.current = project.draft.revision;
+        activeProjectIdRef.current = project.id;
+        setActiveProjectId(project.id);
         setCanvasTitle(title || "未命名故事");
         setNodes(parsed.nodes);
         setEdges(parsed.edges);
       } catch (error) {
         if (isCancelled) return;
-        setCanvasDocument(null);
+        activeProjectIdRef.current = null;
+        setActiveProjectId(null);
         setCanvasTitle("未命名故事");
         setNodes([]);
         setEdges([]);
@@ -4864,8 +4896,30 @@ function NarrativeStudioInner({ projectId }: NarrativeStudioInnerProps) {
     };
   }, [projectId, setEdges, setNodes]);
 
+  /** Adopt server draft state into the local tracking refs + canvas. */
+  const adoptServerDraft = useCallback(
+    (content: Record<string, unknown>, revision: number) => {
+      const parsed = parseStoryCanvasSnapshot(content);
+      snapshotBaseRef.current = parsed.base;
+      lastSavedSnapshotRef.current = JSON.stringify(
+        buildStoryCanvasSnapshot(parsed.base, parsed.nodes, parsed.edges)
+      );
+      revisionRef.current = revision;
+      if (typeof parsed.base.title === "string" && parsed.base.title.trim()) {
+        setCanvasTitle(parsed.base.title);
+      }
+      setNodes(parsed.nodes);
+      setEdges(parsed.edges);
+    },
+    [setEdges, setNodes]
+  );
+
+  // Debounced CAS autosave to the sovereign story-draft route.
   useEffect(() => {
-    if (!hasHydratedCanvas || isCanvasLoading || !canvasDocument?.id) return;
+    if (!hasHydratedCanvas || isCanvasLoading || !activeProjectId) return;
+    // A stale-write conflict pauses autosave until the user picks a side —
+    // retrying with a poisoned revision would just 409 every 700ms.
+    if (draftConflict) return;
 
     const nextSnapshot = buildStoryCanvasSnapshot(snapshotBaseRef.current, nodes, edges);
     const nextSignature = JSON.stringify(nextSnapshot);
@@ -4877,31 +4931,136 @@ function NarrativeStudioInner({ projectId }: NarrativeStudioInnerProps) {
       setCanvasSaveError(null);
 
       try {
-        const updatedDocument = await updateDocumentSnapshot(canvasDocument.id, {
-          title: canvasTitle || canvasDocument.title,
-          contentSnapshot: nextSnapshot,
+        const saved = await putStoryDraft(activeProjectId, {
+          content: nextSnapshot,
+          revision: revisionRef.current,
+          sessionId,
         });
 
         snapshotBaseRef.current = nextSnapshot;
         lastSavedSnapshotRef.current = nextSignature;
-        setCanvasDocument(updatedDocument);
+        revisionRef.current = saved.revision;
         setCanvasSaveState("saved");
       } catch (error) {
+        const conflict = draftRevisionConflict(error);
+        if (conflict) {
+          if (conflict.updatedBySessionId === sessionId) {
+            // Our own racing write already landed (e.g. a retried request) —
+            // adopt the revision silently and re-save the latest local state.
+            try {
+              const retried = await putStoryDraft(activeProjectId, {
+                content: nextSnapshot,
+                revision: conflict.currentRevision,
+                sessionId,
+              });
+              snapshotBaseRef.current = nextSnapshot;
+              lastSavedSnapshotRef.current = nextSignature;
+              revisionRef.current = retried.revision;
+              setCanvasSaveState("saved");
+              return;
+            } catch (retryError) {
+              const retryConflict = draftRevisionConflict(retryError);
+              if (retryConflict && retryConflict.updatedBySessionId !== sessionId) {
+                setDraftConflict(retryConflict);
+                setCanvasSaveState("error");
+                return;
+              }
+              setCanvasSaveState("error");
+              setCanvasSaveError(
+                retryError instanceof Error ? retryError.message : "Failed to save the canvas"
+              );
+              return;
+            }
+          }
+          // Someone else's session updated the draft — surface the banner.
+          setDraftConflict(conflict);
+          setCanvasSaveState("error");
+          return;
+        }
         setCanvasSaveState("error");
-        setCanvasSaveError(error instanceof Error ? error.message : "保存画布失败");
+        setCanvasSaveError(error instanceof Error ? error.message : "Failed to save the canvas");
       }
     }, 700);
 
     return () => window.clearTimeout(timer);
-  }, [
-    canvasDocument?.id,
-    canvasDocument?.title,
-    canvasTitle,
-    edges,
-    hasHydratedCanvas,
-    isCanvasLoading,
-    nodes,
-  ]);
+  }, [activeProjectId, draftConflict, edges, hasHydratedCanvas, isCanvasLoading, nodes, sessionId]);
+
+  // Lazy create (projectless editor ONLY): on the first meaningful action —
+  // the AI analyze completing or the first node added by any path — persist
+  // the in-memory canvas as a real story project and put its id in the URL.
+  // A project that FAILED to hydrate must never silently fork into a new one,
+  // hence the `projectId` (prop) guard.
+  useEffect(() => {
+    if (!hasHydratedCanvas || isCanvasLoading || projectId) return;
+    if (activeProjectId || nodes.length === 0) return;
+    if (lazyCreateInFlightRef.current) return;
+    lazyCreateInFlightRef.current = true;
+
+    const content = buildStoryCanvasSnapshot(snapshotBaseRef.current, nodes, edges);
+    const signature = JSON.stringify(content);
+
+    void createStoryProject({ content })
+      .then((project) => {
+        lastSavedSnapshotRef.current = signature;
+        revisionRef.current = project.draft.revision;
+        activeProjectIdRef.current = project.id;
+        setActiveProjectId(project.id);
+        setCanvasSaveState("saved");
+        // Reflect the project in the URL; the hydrate effect skips re-fetching
+        // (activeProjectIdRef already points at this project).
+        router.replace(`/story-studio/editor?projectId=${project.id}`);
+      })
+      .catch((error: unknown) => {
+        // Stay in-memory ("Not saved yet"); the next edit retries the create.
+        setCanvasSaveError(error instanceof Error ? error.message : "Failed to save the canvas");
+        setCanvasSaveState("error");
+      })
+      .finally(() => {
+        lazyCreateInFlightRef.current = false;
+      });
+  }, [activeProjectId, edges, hasHydratedCanvas, isCanvasLoading, nodes, projectId, router]);
+
+  /** Conflict banner: discard local edits and load the server's draft. */
+  const resolveConflictLoadLatest = useCallback(() => {
+    if (!draftConflict || conflictBusy) return;
+    adoptServerDraft(draftConflict.content, draftConflict.currentRevision);
+    setDraftConflict(null);
+    setCanvasSaveState("saved");
+    setCanvasSaveError(null);
+  }, [adoptServerDraft, conflictBusy, draftConflict]);
+
+  /** Conflict banner: keep local edits — retry the save on top of the server
+   *  revision (a deliberate overwrite, not a blind CAS retry). */
+  const resolveConflictOverwrite = useCallback(async () => {
+    if (!draftConflict || conflictBusy || !activeProjectId) return;
+    setConflictBusy(true);
+    setCanvasSaveState("saving");
+    try {
+      const content = buildStoryCanvasSnapshot(snapshotBaseRef.current, nodes, edges);
+      const saved = await putStoryDraft(activeProjectId, {
+        content,
+        revision: draftConflict.currentRevision,
+        sessionId,
+      });
+      snapshotBaseRef.current = content;
+      lastSavedSnapshotRef.current = JSON.stringify(content);
+      revisionRef.current = saved.revision;
+      setDraftConflict(null);
+      setCanvasSaveState("saved");
+      setCanvasSaveError(null);
+    } catch (error) {
+      // The draft moved again mid-resolution — refresh the banner's baseline.
+      const conflict = draftRevisionConflict(error);
+      if (conflict) {
+        setDraftConflict(conflict);
+      } else {
+        setCanvasSaveError(error instanceof Error ? error.message : "Failed to save the canvas");
+      }
+      setCanvasSaveState("error");
+    } finally {
+      setConflictBusy(false);
+    }
+  }, [activeProjectId, conflictBusy, draftConflict, edges, nodes, sessionId]);
 
   const openNodeEditor = useCallback((nodeId: string) => {
     setIsAssistantOpen(false);
@@ -5087,20 +5246,39 @@ function NarrativeStudioInner({ projectId }: NarrativeStudioInnerProps) {
 
   const addNode = useCallback(
     (kind: NarrativeNodeKind) => {
+      if (kind === "storyRoot") {
+        // A story has exactly one root; jump to the existing one instead of
+        // forking a second spine the compiler and edge rules would ignore.
+        const existingRoot = nodes.find((node) => node.data.kind === "storyRoot");
+        if (existingRoot) {
+          setNodes((current) =>
+            current.map((node) => ({ ...node, selected: node.id === existingRoot.id }))
+          );
+          void reactFlow.setCenter(
+            existingRoot.position.x + (existingRoot.measured?.width ?? 380) / 2,
+            existingRoot.position.y + (existingRoot.measured?.height ?? 260) / 2,
+            { zoom: reactFlow.getZoom(), duration: 500 }
+          );
+          toast.info("A story has a single Story Root — it's already on the canvas.");
+          return;
+        }
+      }
       const nextIndex = nodes.length + 1;
       const x = 260 + (nextIndex % 4) * 380;
       const y = 500 + Math.floor(nextIndex / 4) * 260;
       setNodes((current) => [
         ...current,
         {
-          id: `${kind}-${Date.now()}`,
+          // The root keeps the FIXED id "storyRoot" — edge rules and the
+          // legacy-layout normalizer identify the root by that id.
+          id: kind === "storyRoot" ? "storyRoot" : `${kind}-${Date.now()}`,
           type: "narrative",
           position: { x, y },
           data: nodeDefaults(kind, nextIndex),
         },
       ]);
     },
-    [nodes.length, setNodes]
+    [nodes, reactFlow, setNodes]
   );
 
   const createStoryRootFromEmptyState = useCallback(async () => {
@@ -5125,7 +5303,7 @@ function NarrativeStudioInner({ projectId }: NarrativeStudioInnerProps) {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          projectId,
+          projectId: activeProjectId,
           prompt,
           uploadedFileName: emptyCanvasUploadName,
           uploadedContent: emptyCanvasUploadContent,
@@ -5152,6 +5330,16 @@ function NarrativeStudioInner({ projectId }: NarrativeStudioInnerProps) {
       setCanvasTitle(result.analysis.title);
       setNodes(generated.nodes);
       setEdges(generated.edges);
+      // Existing project: sync the analyzed title/summary to the project row
+      // so the landing list stays truthful. (Projectless: the lazy create
+      // extracts them from `content` server-side.) Non-critical — the draft
+      // content still carries both if this write is lost.
+      if (activeProjectId) {
+        void updateStoryProject(activeProjectId, {
+          title: result.analysis.title,
+          summary: result.analysis.summary,
+        }).catch(() => {});
+      }
       setEmptyCanvasAnalyzeState("idle");
       setEmptyCanvasAnalyzeError(null);
       window.setTimeout(() => {
@@ -5162,10 +5350,10 @@ function NarrativeStudioInner({ projectId }: NarrativeStudioInnerProps) {
       setEmptyCanvasAnalyzeError(error instanceof Error ? error.message : "Analyze failed.");
     }
   }, [
+    activeProjectId,
     emptyCanvasPrompt,
     emptyCanvasUploadContent,
     emptyCanvasUploadName,
-    projectId,
     reactFlow,
     setEdges,
     setNodes,
@@ -5398,27 +5586,31 @@ function NarrativeStudioInner({ projectId }: NarrativeStudioInnerProps) {
         </div>
 
         <div className="pointer-events-auto flex items-center gap-2">
-          {projectId ? (
-            <span
-              title={canvasLoadError ?? canvasSaveError ?? undefined}
-              className={cn(
-                "inline-flex h-11 items-center rounded-full px-4 text-xs font-semibold shadow-[0_14px_44px_rgba(0,0,0,0.24)] backdrop-blur-xl",
-                canvasSaveState === "error" || canvasLoadError
-                  ? "bg-[#E52227]/18 text-[#ff8b8e]"
-                  : "bg-white/8 text-white/50"
-              )}
-            >
-              {isCanvasLoading
-                ? "读取项目中"
-                : canvasLoadError
-                  ? "读取失败"
+          <span
+            title={canvasLoadError ?? canvasSaveError ?? undefined}
+            className={cn(
+              "inline-flex h-11 items-center rounded-full px-4 text-xs font-semibold shadow-[0_14px_44px_rgba(0,0,0,0.24)] backdrop-blur-xl",
+              canvasSaveState === "error" || canvasLoadError
+                ? "bg-[#E52227]/18 text-[#ff8b8e]"
+                : "bg-white/8 text-white/50"
+            )}
+          >
+            {isCanvasLoading
+              ? "Loading project"
+              : canvasLoadError
+                ? "Load failed"
+                : draftConflict
+                  ? "Version conflict"
                   : canvasSaveState === "saving"
-                    ? "保存中"
+                    ? "Saving"
                     : canvasSaveState === "saved"
-                      ? "已保存"
-                      : "真实项目"}
-            </span>
-          ) : null}
+                      ? "Saved"
+                      : !activeProjectId
+                        ? "Not saved yet"
+                        : canvasSaveState === "error"
+                          ? "Save failed"
+                          : "Synced"}
+          </span>
           <button
             type="button"
             data-testid="toggle-selection-mode"
@@ -5450,6 +5642,49 @@ function NarrativeStudioInner({ projectId }: NarrativeStudioInnerProps) {
           </button>
         </div>
       </header>
+
+      {/* Stale-write conflict: another session updated the draft. Autosave is
+          paused; the user picks a side (server truth vs deliberate overwrite). */}
+      {draftConflict ? (
+        <div
+          role="alertdialog"
+          aria-label="Draft version conflict"
+          className="absolute top-[92px] left-1/2 z-30 flex w-[560px] max-w-[calc(100%-48px)] -translate-x-1/2 items-center gap-4 rounded-[24px] bg-[oklch(0.18_0_0)/0.94] px-5 py-4 shadow-[0_24px_90px_rgba(0,0,0,0.5)] backdrop-blur-2xl duration-200 animate-in fade-in-0 slide-in-from-top-2"
+        >
+          <span className="grid size-9 shrink-0 place-items-center rounded-full bg-[#E52227]/16">
+            <IconGitBranch className="size-4.5 text-[#ff8b8e]" />
+          </span>
+          <div className="min-w-0 flex-1">
+            <p className="text-sm font-semibold text-white/90">This draft changed somewhere else</p>
+            <p className="mt-0.5 text-xs leading-5 text-white/48">
+              Another session saved a newer version
+              {draftConflict.updatedAt
+                ? ` at ${new Date(draftConflict.updatedAt).toLocaleTimeString()}`
+                : ""}
+              . Load it, or overwrite it with your canvas.
+            </p>
+          </div>
+          <div className="flex shrink-0 items-center gap-2">
+            <button
+              type="button"
+              onClick={resolveConflictLoadLatest}
+              disabled={conflictBusy}
+              className="inline-flex h-9 items-center rounded-full bg-white px-4 text-xs font-bold text-black transition hover:bg-white/88 disabled:opacity-60"
+            >
+              Load latest
+            </button>
+            <button
+              type="button"
+              onClick={() => void resolveConflictOverwrite()}
+              disabled={conflictBusy}
+              className="inline-flex h-9 items-center gap-1.5 rounded-full bg-white/10 px-4 text-xs font-bold text-white/80 transition hover:bg-white/15 hover:text-white disabled:opacity-60"
+            >
+              {conflictBusy ? <IconRefresh className="size-3.5 animate-spin" /> : null}
+              Overwrite with mine
+            </button>
+          </div>
+        </div>
+      ) : null}
 
       {activeEditNode ? (
         <NodeEditorPanel

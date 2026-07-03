@@ -142,6 +142,7 @@ async function request<T>(method: string, path: string, config: ApiRequestConfig
 export const api = {
   get: <T = unknown>(path: string, config?: ApiRequestConfig) => request<T>("GET", path, config),
   post: <T = unknown>(path: string, config?: ApiRequestConfig) => request<T>("POST", path, config),
+  put: <T = unknown>(path: string, config?: ApiRequestConfig) => request<T>("PUT", path, config),
   patch: <T = unknown>(path: string, config?: ApiRequestConfig) =>
     request<T>("PATCH", path, config),
   delete: <T = unknown>(path: string, config?: ApiRequestConfig) =>
