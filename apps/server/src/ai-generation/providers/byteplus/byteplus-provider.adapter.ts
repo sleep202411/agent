@@ -21,6 +21,7 @@ import {
   bytePlusError,
   mapBytePlusUnknownError,
 } from './byteplus-error.mapper';
+import { BytePlusReferencePreparerService } from './byteplus-reference-preparer.service';
 import type { BytePlusImageRuntimeConfig } from './byteplus-runtime';
 import {
   mapBytePlusProviderRequest,
@@ -35,7 +36,25 @@ export class BytePlusProviderAdapter implements ProviderAdapter {
     private readonly configService: BytePlusConfigService,
     private readonly catalog: BytePlusCatalogService,
     private readonly client: BytePlusClient,
+    private readonly referencePreparer: BytePlusReferencePreparerService,
   ) {}
+
+  /**
+   * Worker seam (design §3.4): re-validate `asset://` mirrors + character
+   * status right before provider submit — see the preparer for semantics.
+   */
+  prepareReferences(
+    _modelId: string,
+    input: Record<string, unknown>,
+    ctx: ProviderGenerationContext,
+  ): Promise<Record<string, unknown>> {
+    return this.referencePreparer.prepareReferences(
+      input,
+      ctx.userId,
+      ctx.projectId ?? null,
+      ctx.workspaceId ?? null,
+    );
+  }
 
   listModels(): Promise<AiModelDefinition[]> {
     return this.catalog.listModels();
@@ -475,11 +494,15 @@ function collectVideoOutputs(
   );
 }
 
-// Per-second provider cost (USD). ESTIMATE pending finance confirmation
-// (apidog cites ~$0.66 / 5s 1080p ≈ $0.13/s); user-facing charge is the
-// canonical productPricing, this is provider-cost tracking only.
+// Per-second provider cost (USD), 720p list-price basis from the official
+// token table (doc 2191775, 2026-07-02): tokens/s at 720p ≈ 21,600;
+// flagship $0.0070/K → ≈$0.151/s, fast $0.0056/K → ≈$0.121/s (with-video
+// inputs bill 0.6×; resource packs cheaper still — this tracks the
+// conservative no-pack, no-video rate). User-facing charge is the canonical
+// productPricing; this is provider-cost tracking only.
 function videoUnitPriceUsdPerSecond(endpointId: string): number | null {
-  if (endpointId.startsWith('dreamina-seedance-2-0')) return 0.13;
+  if (endpointId.startsWith('dreamina-seedance-2-0-fast')) return 0.121;
+  if (endpointId.startsWith('dreamina-seedance-2-0')) return 0.151;
   if (endpointId.startsWith('seedance-1-5-pro')) return 0.13;
   if (endpointId.startsWith('seedance-1-0-pro')) return 0.1;
   return null;
@@ -525,7 +548,7 @@ function resolveVideoCost(
       unit: 'video_second',
       currency: 'USD',
       capturedAt,
-      pricingVersion: 'seedance-video-usd-second-v1-2026-06-16',
+      pricingVersion: 'seedance-video-usd-second-v2-2026-07-02',
       usage: body.usage ?? null,
     },
   };

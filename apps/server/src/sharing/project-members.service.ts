@@ -17,6 +17,7 @@ import {
 } from '@nestjs/common';
 import { ProjectMemberRole, ProjectMemberStatus } from '@prisma/client';
 import type { AuthUser } from '../auth';
+import { CharacterGrantService } from '../characters/character-grant.service';
 import { DocumentsGateway } from '../documents/documents.gateway';
 import { PrismaService } from '../infra/db/db.module';
 import { NotificationService } from '../notification';
@@ -48,6 +49,7 @@ export class ProjectMembersService {
     private readonly permissions: WorkspacePermissionService,
     private readonly audit: PlatformAuditLogService,
     private readonly docs: DocumentsGateway,
+    private readonly characterGrants: CharacterGrantService,
   ) {}
 
   async list(projectId: string, viewer: AuthUser, cookie: string) {
@@ -257,6 +259,19 @@ export class ProjectMembersService {
       );
     } catch {
       /* live-kick is defense-in-depth; never block the removal on it */
+    }
+
+    // ⟦v2⟧ A removed member's real_person likeness authorization for THIS
+    // project is withdrawn — otherwise the remaining editors keep generating
+    // their face with no consent record (design v2 §5). Best-effort; the
+    // grant service is self-idempotent and cancels in-flight jobs.
+    try {
+      await this.characterGrants.revokeGrantsOnMembershipLoss(
+        member.userId,
+        projectId,
+      );
+    } catch {
+      /* never block the removal on likeness teardown */
     }
   }
 }

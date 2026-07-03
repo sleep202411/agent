@@ -37,6 +37,12 @@ export interface BytePlusImageRuntimeConfig {
   queuePolicy: AiQueuePolicy;
   billingPolicy: AiBillingPolicy;
   parameterPolicy?: AiJsonValue;
+  /**
+   * Canonical model `outputPolicy` JsonB (AiCanonicalModel.outputPolicy),
+   * plumbed exactly like `parameterPolicy`. The request mapper reads
+   * `outputPolicy.watermark` (boolean) to decide the provider watermark.
+   */
+  outputPolicy?: AiJsonValue;
   inputSchema: AiInputSchema;
   outputSchema: AiOutputSchema;
   documentation: Array<{ title: string; url: string; scope: string }>;
@@ -57,6 +63,7 @@ export interface CreateBytePlusImageRuntimeArgs {
   perUserQueued: number;
   billingPolicy: AiBillingPolicy;
   parameterPolicy?: AiJsonValue;
+  outputPolicy?: AiJsonValue;
 }
 
 export function createBytePlusImageRuntimeConfig(
@@ -97,6 +104,7 @@ export function createBytePlusImageRuntimeConfig(
     queuePolicy,
     billingPolicy: args.billingPolicy,
     parameterPolicy: args.parameterPolicy,
+    outputPolicy: args.outputPolicy,
     inputSchema: inputSchemaFor(args.generationModes, args.parameterPolicy),
     outputSchema: outputSchemaFor(),
     documentation: documentationFor(args.endpointId),
@@ -146,6 +154,7 @@ export function createBytePlusVideoRuntimeConfig(
     queuePolicy,
     billingPolicy: args.billingPolicy,
     parameterPolicy: args.parameterPolicy,
+    outputPolicy: args.outputPolicy,
     inputSchema: videoInputSchemaFor(
       args.generationModes,
       args.parameterPolicy,
@@ -431,12 +440,13 @@ function imageFrameProperty(
 }
 
 /**
- * Seedance video input schema. Field NAMES mirror the fal Seedance schema
- * (`startFrame`/`endFrame`/`referenceImages`/`resolution`/`aspectRatio`/
- * `duration`) on purpose: when BytePlus is the primary binding of a co-bound
- * canonical, the studio renders THIS schema and submit-time routing keys on
- * these names, so a fal fallback (e.g. for reference videos/audios, which
- * BytePlus does not take) reads the exact same input keys.
+ * Seedance video input schema. Field NAMES and x-ui constraint metadata
+ * mirror the (retired) fal Seedance schema (`startFrame`/`endFrame`/
+ * `referenceImages`/`referenceVideos`/`referenceAudios`/`resolution`/
+ * `aspectRatio`/`duration`/`generateAudio`) on purpose: the studio composer,
+ * validation layer, and persisted job inputs all key on these names, so the
+ * official adapter is a drop-in replacement. BytePlus ModelArk is the sole
+ * Seedance provider (real-person ACR + pricing + watermark compliance).
  */
 function videoInputSchemaFor(
   generationModes: AiGenerationMode[],
@@ -481,32 +491,99 @@ function videoInputSchemaFor(
   if (firstLastFrame) {
     properties.endFrame = imageFrameProperty('End frame', 21);
   }
-  // Omni reference (multimodal_to_video): BytePlus content[] supports
-  // role:reference_image, so we expose IMAGE references only. Reference
-  // videos/audios are fal-only and route there (see isRouteRelevantField);
-  // they are intentionally absent from this schema rather than declared and
-  // silently dropped.
-  const maxReferenceImages = referenceImageMax(parameterPolicy);
-  if (multimodal && maxReferenceImages > 0) {
-    properties.referenceImages = {
-      type: 'array',
-      title: 'Reference images',
-      minItems: 0,
-      maxItems: maxReferenceImages,
-      items: {
-        type: 'object',
-        properties: { url: { type: 'string', format: 'uri', title: 'URL' } },
-        required: ['url'],
-        additionalProperties: true,
+  // Omni reference (multimodal_to_video, 全能参考): images + videos + audio,
+  // caps from `referenceInputs` policy. Field names and x-ui constraint
+  // metadata mirror the fal schema mapper so the studio composer/validation
+  // layer works unchanged. Content roles at the wire: reference_image /
+  // reference_video / reference_audio (ModelArk Seedance 2.0 API, doc
+  // 1520757). Entries may carry `asset://` URLs for provider-hosted
+  // (character-library) assets — the mapper forwards them verbatim.
+  const referenceInputs = referenceInputsFor(parameterPolicy);
+  if (multimodal && referenceInputs) {
+    const { maxTotalFiles } = referenceInputs;
+    const referenceItems = {
+      type: 'object' as const,
+      properties: {
+        url: { type: 'string' as const, format: 'uri', title: 'URL' },
       },
-      'x-ui': {
-        control: 'image_upload',
-        group: 'references',
-        order: 22,
-        importance: 'primary',
-        accept: 'image/jpeg,image/png,image/webp',
-      },
+      required: ['url'],
+      additionalProperties: true,
     };
+    if (referenceInputs.images.max > 0) {
+      properties.referenceImages = {
+        type: 'array',
+        title: 'Reference images',
+        minItems: referenceInputs.images.min,
+        maxItems: referenceInputs.images.max,
+        items: referenceItems,
+        'x-ui': {
+          control: 'image_upload',
+          group: 'references',
+          order: 22,
+          importance: 'primary',
+          accept: 'image/jpeg,image/png,image/webp',
+          ...({
+            mediaKind: 'image',
+            acceptFormats: ['jpeg', 'png', 'webp'],
+            maxFileSizeMb: 30,
+            promptRefPrefix: '@Image',
+            maxTotalFiles,
+          } as Record<string, unknown>),
+        } as AiInputSchema['properties'][string]['x-ui'],
+      };
+    }
+    if (referenceInputs.videos.max > 0) {
+      properties.referenceVideos = {
+        type: 'array',
+        title: 'Reference videos',
+        minItems: referenceInputs.videos.min,
+        maxItems: referenceInputs.videos.max,
+        items: referenceItems,
+        'x-ui': {
+          control: 'video_upload',
+          group: 'references',
+          order: 23,
+          importance: 'primary',
+          accept: 'video/mp4,video/quicktime',
+          ...({
+            mediaKind: 'video',
+            acceptFormats: ['mp4', 'mov'],
+            maxCombinedFileSizeMb: 50,
+            minCombinedDurationSeconds: 2,
+            maxCombinedDurationSeconds: 15,
+            resolutionBand: '480p-720p',
+            promptRefPrefix: '@Video',
+            maxTotalFiles,
+          } as Record<string, unknown>),
+        } as AiInputSchema['properties'][string]['x-ui'],
+      };
+    }
+    if (referenceInputs.audios.max > 0) {
+      properties.referenceAudios = {
+        type: 'array',
+        title: 'Reference audio',
+        minItems: referenceInputs.audios.min,
+        maxItems: referenceInputs.audios.max,
+        items: referenceItems,
+        'x-ui': {
+          control: 'audio_upload',
+          group: 'references',
+          order: 24,
+          importance: 'primary',
+          accept: 'audio/mpeg,audio/wav',
+          ...({
+            mediaKind: 'audio',
+            acceptFormats: ['mp3', 'wav'],
+            maxFileSizeMb: 15,
+            maxCombinedDurationSeconds: 15,
+            // Audio cannot be sent without ≥1 image or video reference.
+            audioRequiresVisual: true,
+            promptRefPrefix: '@Audio',
+            maxTotalFiles,
+          } as Record<string, unknown>),
+        } as AiInputSchema['properties'][string]['x-ui'],
+      };
+    }
   }
 
   properties.resolution = {
@@ -569,24 +646,81 @@ function videoInputSchemaFor(
       },
     };
   }
-  properties.seed = {
-    type: 'integer',
-    title: 'Seed',
-    minimum: 0,
-    maximum: 2147483647,
-    'x-ui': {
-      control: 'stepper',
-      group: 'advanced',
-      order: 60,
-      importance: 'secondary',
-    },
-  };
+  // Native synced audio switch (Seedance 2.0 `generate_audio`, upstream
+  // default true) — emitted only when the policy declares it, same shape as
+  // the fal schema mapper so the studio switch carries over.
+  const audioPolicy = generateAudioFor(parameterPolicy);
+  if (audioPolicy) {
+    properties.generateAudio = {
+      type: 'boolean',
+      title: 'Generate audio',
+      default: audioPolicy.default,
+      'x-ui': {
+        control: 'switch',
+        group: 'settings',
+        order: 55,
+        importance: 'secondary',
+      },
+    };
+  }
+  // Seed is policy-gated: the Seedance 2.0 series does NOT support `seed`
+  // (1.x only), so its policy disables it and the field never reaches the
+  // schema (additionalProperties:false then strips it from normalized input).
+  if (seedEnabledFor(parameterPolicy)) {
+    properties.seed = {
+      type: 'integer',
+      title: 'Seed',
+      minimum: 0,
+      maximum: 2147483647,
+      'x-ui': {
+        control: 'stepper',
+        group: 'advanced',
+        order: 60,
+        importance: 'secondary',
+      },
+    };
+  }
 
   return {
     type: 'object',
     properties,
     required: ['prompt'],
     additionalProperties: false,
+    // ModelArk Seedance 2.0 rejects these content[] combinations upfront
+    // (doc 1520757): the three image scenarios are mutually exclusive, and
+    // reference audio cannot be sent without a visual reference. Enforced on
+    // the character-EXPANDED input (normalizeInput runs after expansion,
+    // before any wallet hold) so both the manual and character-mention paths
+    // fail loud with a typed 400 instead of a provider-side rejection.
+    'x-rules': [
+      {
+        id: 'seedance-frames-xor-references',
+        when: {
+          any: [
+            { field: 'referenceImages', operator: 'exists' },
+            { field: 'referenceVideos', operator: 'exists' },
+            { field: 'referenceAudios', operator: 'exists' },
+          ],
+        },
+        fields: ['startFrame', 'endFrame'],
+        effect: 'forbid',
+        message:
+          'Start/end frames cannot be combined with reference media — use one or the other.',
+      },
+      {
+        id: 'seedance-audio-needs-visual',
+        when: {
+          all: [
+            { field: 'referenceAudios', operator: 'exists' },
+            { field: 'referenceImages', operator: 'empty' },
+            { field: 'referenceVideos', operator: 'empty' },
+          ],
+        },
+        fields: ['referenceImages'],
+        effect: 'require',
+        message: 'Reference audio needs at least one image or video reference.',
+      },
+    ],
     'x-ui': {
       groups: [
         { id: 'prompt', title: 'Prompt', order: 10 },
@@ -704,12 +838,52 @@ function numberFromPolicy(
     : undefined;
 }
 
-/** Max omni-reference IMAGES from `referenceInputs.images.max` (0 if absent). */
-function referenceImageMax(policy: AiJsonValue | undefined): number {
+/**
+ * Multimodal `referenceInputs` policy (Seedance 全能参考): per-kind caps +
+ * combined ceiling. Mirrors the fal schema mapper's reading so one canonical
+ * policy drives both providers' schemas identically.
+ */
+function referenceInputsFor(policy: AiJsonValue | undefined): {
+  images: { min: number; max: number };
+  videos: { min: number; max: number };
+  audios: { min: number; max: number };
+  maxTotalFiles?: number;
+} | null {
   const references = recordValue(recordValue(policy)?.referenceInputs);
-  const images = recordValue(references?.images);
-  const max = images?.max;
-  return typeof max === 'number' && Number.isFinite(max) && max > 0 ? max : 0;
+  if (!references || references.enabled === false) return null;
+  const range = (key: string): { min: number; max: number } => {
+    const value = recordValue(references[key]);
+    const min = typeof value?.min === 'number' ? Math.max(0, value.min) : 0;
+    const max = typeof value?.max === 'number' ? Math.max(0, value.max) : 0;
+    return { min, max };
+  };
+  const maxTotalFiles =
+    typeof references.maxTotalFiles === 'number'
+      ? references.maxTotalFiles
+      : undefined;
+  const parsed = {
+    images: range('images'),
+    videos: range('videos'),
+    audios: range('audios'),
+    ...(maxTotalFiles != null ? { maxTotalFiles } : {}),
+  };
+  return parsed.images.max > 0 || parsed.videos.max > 0 || parsed.audios.max > 0
+    ? parsed
+    : null;
+}
+
+/** `generateAudio` policy block — emitted only when enabled === true. */
+function generateAudioFor(
+  policy: AiJsonValue | undefined,
+): { default: boolean } | null {
+  const value = recordValue(recordValue(policy)?.generateAudio);
+  if (!value || value.enabled !== true) return null;
+  return { default: value.default !== false };
+}
+
+/** Seed support — default ON, disabled via `seed.enabled: false`. */
+function seedEnabledFor(policy: AiJsonValue | undefined): boolean {
+  return recordValue(recordValue(policy)?.seed)?.enabled !== false;
 }
 
 function referencePolicy(policy: AiJsonValue | undefined): {

@@ -7,6 +7,7 @@ import { AuthModule, AuthGuard } from './auth';
 import { BillingModule } from './billing';
 import { InternalModule } from './internal/internal.module';
 import { CertificatesModule } from './certificates/certificates.module';
+import { CharactersModule } from './characters/characters.module';
 import { AlertingModule } from './common/alerting';
 import { RegionModule } from './common/region';
 import { ThrottleModule } from './common/throttle/throttle.module';
@@ -70,6 +71,7 @@ import { WorkspacesModule } from './workspaces';
     IpCommerceModule,
     DocumentsModule,
     CertificatesModule,
+    CharactersModule,
     MediaModule,
     CrewsModule,
     EpisodesModule,

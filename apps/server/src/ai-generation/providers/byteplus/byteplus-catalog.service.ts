@@ -166,6 +166,7 @@ export class BytePlusCatalogService {
           10,
         billingPolicy: billingPolicyFromRow(row),
         parameterPolicy: row.canonicalModel.parameterPolicy as AiJsonValue,
+        outputPolicy: row.canonicalModel.outputPolicy as AiJsonValue,
       });
       return {
         runtime,

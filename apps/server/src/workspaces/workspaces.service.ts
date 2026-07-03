@@ -3,6 +3,8 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import { ModuleRef } from '@nestjs/core';
+import { CharacterGrantService } from '../characters/character-grant.service';
 import {
   PlatformProjectStatus,
   ProjectMemberRole,
@@ -39,6 +41,7 @@ export class WorkspacesService {
     private readonly audit: PlatformAuditLogService,
     private readonly permissions: WorkspacePermissionService,
     private readonly realtimeRevoke: RealtimeRevokeService,
+    private readonly moduleRef: ModuleRef,
   ) {}
 
   async listForUser(user: AuthUser) {
@@ -528,6 +531,20 @@ export class WorkspacesService {
       entityId: projectId,
       before,
     });
+
+    // ⟦v2⟧ Archiving tears down every real_person likeness grant for this
+    // project — a scoped revocation ledger entry per grant + in-flight job
+    // cancel (design v2 §5/§7). Resolved lazily via ModuleRef because
+    // CharactersModule imports WorkspacesModule (importing it here would
+    // cycle); strict:false scans the whole container. Best-effort.
+    try {
+      const grants = this.moduleRef.get(CharacterGrantService, {
+        strict: false,
+      });
+      await grants.revokeGrantsForProject(projectId, 'project_archived');
+    } catch {
+      /* likeness teardown is best-effort; never blocks the archive */
+    }
 
     return { archived: true, projectId };
   }

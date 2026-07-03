@@ -12,10 +12,13 @@
  */
 import {
   BadRequestException,
+  ConflictException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import type { CharacterKind } from '@prisma/client';
 import { estimateProductModelPoints } from '@repo/shared';
+import { REAL_PERSON_PROVIDER } from '../characters/character-generation.service';
 import { EntitlementService, type EntitlementSnapshot } from '../entitlements';
 import {
   AiModelPresetRegistryService,
@@ -60,6 +63,13 @@ export class AiGenerationRoutingService {
     entitlement: EntitlementSnapshot;
     body: AiSubmitJobBody;
     now: string;
+    /**
+     * SERVER-resolved kinds of the characters referenced by this job
+     * (character expansion runs before routing — design §3.2). Presence of
+     * `real_person` arms the post-selection provider pin below. Never derived
+     * from client input.
+     */
+    resolvedCharacterKinds?: CharacterKind[];
   }): Promise<AiRoutingDecision> {
     const requestedModelId = args.body.modelId?.trim();
     const presetId = this.resolvePresetId(args.body);
@@ -99,6 +109,21 @@ export class AiGenerationRoutingService {
       throw new NotFoundException({
         code: 'MODEL_NOT_FOUND',
         msg: 'Model not found.',
+      });
+    }
+
+    // Real-person pin (design §3.2 step 4 / §3.3): a POST-selection assertion
+    // on server-resolved truth — unreachable by any client input shape. The
+    // likeness lives in the provider's private asset store under a consent
+    // ledger; routing it anywhere else would bypass that consent boundary,
+    // so this fails the submit rather than falling back.
+    if (
+      args.resolvedCharacterKinds?.includes('real_person') &&
+      resolved.provider !== REAL_PERSON_PROVIDER
+    ) {
+      throw new ConflictException({
+        code: 'REAL_PERSON_REQUIRES_BYTEPLUS',
+        msg: 'Real-person characters can only generate on the official BytePlus provider.',
       });
     }
 

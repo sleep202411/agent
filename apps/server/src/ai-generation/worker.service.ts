@@ -36,11 +36,12 @@ import {
   ProviderCapacityRuntimeService,
   type ProviderCapacityGate,
 } from './provider-capacity-runtime.service';
-import type {
-  ProviderAdapter,
-  ProviderTimingSnapshot,
-  ProviderTraceEvent,
-  RawProviderOutput,
+import {
+  ReferencePreparationError,
+  type ProviderAdapter,
+  type ProviderTimingSnapshot,
+  type ProviderTraceEvent,
+  type RawProviderOutput,
 } from './provider-adapter';
 import { ProviderRegistry } from './provider-registry.service';
 import {
@@ -1012,7 +1013,40 @@ export class AiGenerationWorkerService
     // Reference media lives on public storage URLs (the moderation takedown
     // mechanism makes blocked objects unreachable at the storage layer), so the
     // normalized input is passed to the provider as-is — no per-request signing.
-    const providerInput = job.normalizedInput;
+    let providerInput = job.normalizedInput;
+
+    // Pre-start reference seam (design §3.4): provider-hosted references
+    // (asset:// mirrors, character status) are re-validated on EVERY attempt —
+    // the submit-time readiness check can go stale in queue. Terminal by
+    // contract: a typed failure releases the billing hold and never requeues.
+    if (adapter.prepareReferences) {
+      try {
+        providerInput = await adapter.prepareReferences(
+          modelId,
+          providerInput,
+          {
+            jobId: job.id,
+            userId: job.userId,
+            projectId: job.projectId,
+            workspaceId: job.workspaceId,
+            publicBaseUrl: process.env.PUBLIC_BASE_URL,
+          },
+        );
+      } catch (err) {
+        const payload =
+          err instanceof ReferencePreparationError
+            ? err.jobError
+            : { ...adapter.mapError(err), retryable: false };
+        await this.recordAttemptSafe(job, {
+          status: 'failed',
+          providerEndpoint: job.deployment,
+          error: payload,
+          completedAt: new Date().toISOString(),
+        });
+        await this.markFailed(job, payload);
+        return;
+      }
+    }
 
     const gate = await this.providerCapacity.reserveForProviderSubmit(job);
     if (!gate.ok) {
@@ -1566,6 +1600,10 @@ function severityForAiFailure(code: AiJobError['code']): AlertSeverity {
     case 'PROVIDER_CONTENT_FILTER':
     case 'OUTPUT_EXPIRED':
     case 'CANCELLED_BY_USER':
+    // Consent/lifecycle outcomes, not infrastructure faults: the character
+    // was revoked (or its provider mirror withdrawn) while the job waited.
+    case 'CHARACTER_REVOKED':
+    case 'CHARACTER_ASSET_NOT_READY':
       return 'warning';
   }
 }

@@ -100,6 +100,83 @@ enum ProjectVisibility {
   public
 }
 
+enum CharacterKind {
+  virtual
+  real_person
+}
+
+enum CharacterStatus {
+  draft
+  pending_verification
+  active
+  disabled
+  revoked
+}
+
+enum CharacterMediaStatus {
+  active
+  disabled
+}
+
+enum CharacterConsentRecordType {
+  consent_granted
+  liveness_verification
+  revocation
+  admin_takedown
+}
+
+/// Per-project authorization of a real_person likeness (design v2). The grant
+/// is to the PROJECT as a mutable collaboration unit (bounded by the consent's
+/// purpose limitation, not by an enumerated headcount).
+enum CharacterProjectGrantStatus {
+  active
+  revoked
+}
+
+/// Director-initiated casting invite (design v2 §D-B): invites a person to LEND
+/// their likeness to a project. The actor never becomes a ProjectMember.
+enum CharacterCastingInviteStatus {
+  pending
+  accepted
+  declined
+  expired
+  revoked
+}
+
+/// ModelArk asset-group flavor: `aigc` mirrors virtual-character reference
+/// media; `liveness_face` is a real-person likeness group created by the
+/// hosted liveness verification (provider literals "AIGC"/"LivenessFace"
+/// are mapped in the assets client).
+enum AiProviderAssetGroupType {
+  aigc
+  liveness_face
+}
+
+enum AiProviderAssetGroupStatus {
+  active
+  /// Flipped SYNCHRONOUSLY in the revoke transaction (design §5.1) —
+  /// submit-time checks and the worker seam treat disabled as unusable
+  /// immediately; upstream deletion is async cleanup, not the barrier.
+  disabled
+  deleted
+}
+
+enum AiProviderExternalAssetStatus {
+  pending
+  processing
+  active
+  failed
+  disabled
+  deleted
+}
+
+enum CharacterEnrollmentSessionStatus {
+  pending
+  completed
+  failed
+  expired
+}
+
 enum PlatformDocumentType {
   brief
   script
@@ -784,6 +861,7 @@ model Workspace {
   projectAssets    ProjectAsset[]
   aiJobs           AiJob[]
   mediaAssets      MediaAsset[]
+  studioCharacters StudioCharacter[]
   mediaAssetUsages MediaAssetUsage[]
   documents        PlatformDocument[]
   billingOrders    BillingOrder[]
@@ -859,7 +937,7 @@ model PlatformProject {
   updatedAt    DateTime              @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
   deletedAt    DateTime?             @map("deleted_at") @db.Timestamptz(6)
 
-  workspace        Workspace          @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  workspace        Workspace                @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   members          ProjectMember[]
   invites          ProjectInvite[]
   assets           ProjectAsset[]
@@ -867,6 +945,9 @@ model PlatformProject {
   aiJobs           AiJob[]
   mediaAssetUsages MediaAssetUsage[]
   documents        PlatformDocument[]
+  characterCast    CharacterProjectCast[]
+  characterGrants  CharacterProjectGrant[]
+  castingInvites   CharacterCastingInvite[]
 
   /// Active slug uniqueness is enforced by partial unique SQL:
   /// (workspace_id, slug) WHERE slug IS NOT NULL AND deleted_at IS NULL.
@@ -1109,6 +1190,260 @@ model ProjectAsset {
   @@index([sourceType, sourceId], map: "project_assets_source_idx")
   @@index([deletedAt], map: "project_assets_deleted_at_idx")
   @@map("project_assets")
+}
+
+/// Character library entry (角色) — a reusable generation subject owned by
+/// its home WORKSPACE (never a project; never a user directly — attribution
+/// only). See docs/character-library-real-person-portraits-design-v1.md.
+/// kind=virtual lives in the creating workspace (team or personal);
+/// kind=real_person is enforced at create to live in the subject's PERSONAL
+/// workspace (v1) and is additionally bounded by the consent ledger.
+model StudioCharacter {
+  id              String          @id @default(uuid(7)) @db.Uuid
+  workspaceId     String          @map("workspace_id") @db.Uuid
+  kind            CharacterKind
+  /// Prompt-facing label (@mention). Unique per workspace among live rows
+  /// via partial unique SQL: (workspace_id, name)
+  /// WHERE deleted_at IS NULL AND status <> 'revoked' (a revoked likeness is
+  /// retained but frees its name for re-enrollment).
+  name            String          @db.VarChar(64)
+  description     String?         @db.VarChar(200)
+  /// Cover preview — one of the character's media assets.
+  coverAssetId    String?         @map("cover_asset_id") @db.Uuid
+  status          CharacterStatus @default(draft)
+  /// Attribution ONLY (audit) — never ownership (MediaAsset posture).
+  createdByUserId String          @map("created_by_user_id") @db.VarChar(64)
+  /// real_person only: the depicted person. v1: === createdByUserId.
+  subjectUserId   String?         @map("subject_user_id") @db.VarChar(64)
+  version         Int             @default(0)
+  revokedAt       DateTime?       @map("revoked_at") @db.Timestamptz(6)
+  createdAt       DateTime        @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt       DateTime        @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  deletedAt       DateTime?       @map("deleted_at") @db.Timestamptz(6)
+
+  workspace          Workspace                    @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  cover              MediaAsset?                  @relation("CharacterCover", fields: [coverAssetId], references: [id], onDelete: SetNull)
+  media              CharacterMedia[]
+  castRows           CharacterProjectCast[]
+  consents           CharacterConsentRecord[]
+  projectGrants      CharacterProjectGrant[]
+  assetGroups        AiProviderAssetGroup[]
+  enrollmentSessions CharacterEnrollmentSession[]
+
+  @@index([workspaceId, status, deletedAt], map: "studio_characters_workspace_idx")
+  @@index([createdByUserId], map: "studio_characters_created_by_idx")
+  @@map("studio_characters")
+}
+
+/// Ordered reference media of a character. MediaAsset stays the storage
+/// source of truth (Restrict — a referenced asset is never hard-deleted
+/// from under a character).
+model CharacterMedia {
+  id           String               @id @default(uuid(7)) @db.Uuid
+  characterId  String               @map("character_id") @db.Uuid
+  mediaAssetId String               @map("media_asset_id") @db.Uuid
+  mediaKind    MediaAssetKind       @map("media_kind")
+  sortOrder    Int                  @default(0) @map("sort_order")
+  status       CharacterMediaStatus @default(active)
+  createdAt    DateTime             @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  character      StudioCharacter           @relation(fields: [characterId], references: [id], onDelete: Cascade)
+  mediaAsset     MediaAsset                @relation(fields: [mediaAssetId], references: [id], onDelete: Restrict)
+  externalAssets AiProviderExternalAsset[]
+
+  @@unique([characterId, mediaAssetId], map: "character_media_unique")
+  @@index([characterId, status, sortOrder], map: "character_media_by_character_idx")
+  @@index([mediaAssetId], map: "character_media_by_asset_idx")
+  @@map("character_media")
+}
+
+/// Per-project cast (演员表) — pure VISIBILITY: which characters this
+/// project has "cast" from its workspace library. Intent (casting),
+/// distinct from MediaAssetUsage (facts of use). Never crosses workspaces.
+model CharacterProjectCast {
+  id            String   @id @default(uuid(7)) @db.Uuid
+  projectId     String   @map("project_id") @db.Uuid
+  characterId   String   @map("character_id") @db.Uuid
+  addedByUserId String   @map("added_by_user_id") @db.VarChar(64)
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  project   PlatformProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  character StudioCharacter @relation(fields: [characterId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, characterId], map: "character_project_cast_unique")
+  @@index([characterId], map: "character_project_cast_by_character_idx")
+  @@map("character_project_cast")
+}
+
+/// APPEND-ONLY consent evidence ledger for real_person characters. Stores
+/// hashes/metadata only — never face bytes, never signed URLs. No deletedAt:
+/// retention survives character revocation (statute-of-limitations evidence).
+model CharacterConsentRecord {
+  id             String                     @id @default(uuid(7)) @db.Uuid
+  characterId    String                     @map("character_id") @db.Uuid
+  type           CharacterConsentRecordType
+  provider       String?                    @db.VarChar(64)
+  evidence       Json                       @default("{}") @db.JsonB
+  consentVersion String                     @map("consent_version") @db.VarChar(32)
+  /// v2 per-project grant scope (design §2 ⟦V⟧). A BARE denormalized project
+  /// id with NO foreign key — the same posture as MediaAsset.createdByUserId /
+  /// Workspace.ownerUserId. The append-only, Restrict-on-character ledger is
+  /// legal evidence and must survive project deletion; a real FK would force
+  /// Cascade (destroys evidence) or Restrict (undeletable projects). Null for
+  /// account-level (self-use) enrollment consent.
+  scopeProjectId String?                    @map("scope_project_id") @db.Uuid
+  occurredAt     DateTime                   @map("occurred_at") @db.Timestamptz(6)
+  createdAt      DateTime                   @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  character StudioCharacter         @relation(fields: [characterId], references: [id], onDelete: Restrict)
+  grants    CharacterProjectGrant[]
+
+  @@index([characterId, occurredAt(sort: Desc)], map: "character_consents_by_character_idx")
+  @@map("character_consent_records")
+}
+
+/// v2: a real_person likeness authorized for use inside ONE project (design
+/// §2/§4). The grant — NOT character/group status — is the per-project
+/// enforcement source of truth: the submit readiness check, both authz gates,
+/// and the worker seam all key on an ACTIVE grant for (characterId, job
+/// projectId). A per-project revoke flips only this row (the shared
+/// LivenessFace group stays active for other grants + self-use). Uniqueness is
+/// a PARTIAL index on active rows (see migration) so re-granting after revoke
+/// is a NEW row with its own consent record; revoked rows accumulate as history.
+model CharacterProjectGrant {
+  id              String                      @id @default(uuid(7)) @db.Uuid
+  characterId     String                      @map("character_id") @db.Uuid
+  projectId       String                      @map("project_id") @db.Uuid
+  /// The subject who authorized (must equal StudioCharacter.subjectUserId).
+  grantedByUserId String                      @map("granted_by_user_id") @db.VarChar(64)
+  status          CharacterProjectGrantStatus @default(active)
+  /// The scoped consent_granted record that authorized THIS grant (§6).
+  consentRecordId String                      @map("consent_record_id") @db.Uuid
+  createdAt       DateTime                    @default(now()) @map("created_at") @db.Timestamptz(6)
+  revokedAt       DateTime?                   @map("revoked_at") @db.Timestamptz(6)
+
+  character     StudioCharacter        @relation(fields: [characterId], references: [id], onDelete: Cascade)
+  // Restrict, not Cascade: project deletion runs an AUDITED grant teardown
+  // (append scoped revocation, cancel jobs) instead of silently dropping the
+  // consent state (design §7).
+  project       PlatformProject        @relation(fields: [projectId], references: [id], onDelete: Restrict)
+  consentRecord CharacterConsentRecord @relation(fields: [consentRecordId], references: [id], onDelete: Restrict)
+
+  @@index([projectId, status], map: "character_project_grants_by_project_idx")
+  @@index([characterId, status], map: "character_project_grants_by_character_idx")
+  @@map("character_project_grants")
+}
+
+/// v2 §D-B: a director invites a person to LEND their likeness to a project.
+/// Distinct from ProjectMember/ProjectInvite — the actor never becomes a
+/// project collaborator and never sees project content; acceptance leads into
+/// enrollment (if needed) + the per-project grant consent + an active grant.
+model CharacterCastingInvite {
+  id              String                       @id @default(uuid(7)) @db.Uuid
+  projectId       String                       @map("project_id") @db.Uuid
+  /// The director; asserted to be a ProjectMember editor+ at create time.
+  invitedByUserId String                       @map("invited_by_user_id") @db.VarChar(64)
+  /// Resolved recipient when a known user; else contact for an off-platform actor.
+  inviteeUserId   String?                      @map("invitee_user_id") @db.VarChar(64)
+  inviteeContact  String?                      @map("invitee_contact") @db.VarChar(256)
+  /// SHA-256 of the single-use accept token (never the token itself).
+  tokenHash       String                       @map("token_hash") @db.VarChar(128)
+  status          CharacterCastingInviteStatus @default(pending)
+  expiresAt       DateTime                     @map("expires_at") @db.Timestamptz(6)
+  createdAt       DateTime                     @default(now()) @map("created_at") @db.Timestamptz(6)
+  respondedAt     DateTime?                    @map("responded_at") @db.Timestamptz(6)
+
+  project PlatformProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@unique([tokenHash], map: "character_casting_invites_token_unique")
+  @@index([projectId, status], map: "character_casting_invites_by_project_idx")
+  @@index([inviteeUserId, status], map: "character_casting_invites_by_invitee_idx")
+  @@map("character_casting_invites")
+}
+
+/// Provider-side asset group MIRROR for a character (design §1). Everything
+/// provider-side is rebuildable from MediaAsset — the provider store is a
+/// cache, never a source of truth (ACR expiry+15d wipes it). One group per
+/// (character, provider); real_person characters get exactly one
+/// liveness_face group minted by the hosted liveness verification.
+model AiProviderAssetGroup {
+  id              String                     @id @default(uuid(7)) @db.Uuid
+  characterId     String                     @map("character_id") @db.Uuid
+  /// Provider key, e.g. 'byteplus-modelark'.
+  provider        String                     @db.VarChar(64)
+  externalGroupId String                     @map("external_group_id") @db.VarChar(128)
+  groupType       AiProviderAssetGroupType   @map("group_type")
+  /// ModelArk ProjectName the group lives under (IAM/quota scope).
+  projectName     String                     @map("project_name") @db.VarChar(64)
+  status          AiProviderAssetGroupStatus @default(active)
+  createdAt       DateTime                   @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt       DateTime                   @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  character      StudioCharacter           @relation(fields: [characterId], references: [id], onDelete: Cascade)
+  externalAssets AiProviderExternalAsset[]
+
+  @@unique([characterId, provider], map: "ai_provider_asset_groups_character_provider_unique")
+  @@index([provider, externalGroupId], map: "ai_provider_asset_groups_external_idx")
+  @@map("ai_provider_asset_groups")
+}
+
+/// Per-media provider mirror row (design §1). `providerResponse` is REDACTED
+/// before persist: status/ids/timings/error codes only — provider signed URLs
+/// (12h TTL, face imagery) are stripped, never stored, never shown in admin.
+model AiProviderExternalAsset {
+  id                   String                        @id @default(uuid(7)) @db.Uuid
+  /// Nullable so a mirror SURVIVES its CharacterMedia deletion (onDelete:
+  /// SetNull) as a durable upstream-teardown ledger: removeMedia flips the
+  /// row to `disabled` then deletes the media, leaving a detached
+  /// (characterMediaId=null, status=disabled) row the critical lane / the
+  /// reconciliation sweep drives to `deleted` once the provider asset is gone.
+  characterMediaId     String?                       @map("character_media_id") @db.Uuid
+  providerAssetGroupId String                        @map("provider_asset_group_id") @db.Uuid
+  externalAssetId      String?                       @map("external_asset_id") @db.VarChar(128)
+  status               AiProviderExternalAssetStatus @default(pending)
+  /// Typed upstream verdicts surfaced verbatim to the UI:
+  /// face_mismatch | multi_face | moderation | stale | ...
+  statusReason         String?                       @map("status_reason") @db.VarChar(64)
+  providerResponse     Json?                         @map("provider_response") @db.JsonB
+  lastSyncedAt         DateTime?                     @map("last_synced_at") @db.Timestamptz(6)
+  /// Staleness rule (design §2.2): processing past this deadline flips the
+  /// row to failed(statusReason=stale) with a visible retry affordance.
+  processingDeadline   DateTime?                     @map("processing_deadline") @db.Timestamptz(6)
+  createdAt            DateTime                      @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt            DateTime                      @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  characterMedia CharacterMedia?      @relation(fields: [characterMediaId], references: [id], onDelete: SetNull)
+  assetGroup     AiProviderAssetGroup @relation(fields: [providerAssetGroupId], references: [id], onDelete: Cascade)
+
+  @@unique([characterMediaId, providerAssetGroupId], map: "ai_provider_external_assets_media_group_unique")
+  @@index([providerAssetGroupId, status], map: "ai_provider_external_assets_by_group_idx")
+  @@index([status, processingDeadline], map: "ai_provider_external_assets_staleness_idx")
+  @@map("ai_provider_external_assets")
+}
+
+/// Real-person liveness enrollment session (design §2.1). The vendor token is
+/// envelope-encrypted, single-use, and HARD-DELETED (nulled) on completion or
+/// expiry; completion authority is exclusively the server→provider result
+/// pull — inbound callback parameters never mutate state.
+model CharacterEnrollmentSession {
+  id            String                           @id @default(uuid(7)) @db.Uuid
+  characterId   String                           @map("character_id") @db.Uuid
+  /// Denormalized owner: complete() asserts caller === ownerUserId.
+  ownerUserId   String                           @map("owner_user_id") @db.VarChar(64)
+  bytedTokenEnc String?                          @map("byted_token_enc") @db.Text
+  status        CharacterEnrollmentSessionStatus @default(pending)
+  /// Typed failure for failed sessions (provider verdict or expiry sweep).
+  statusReason  String?                          @map("status_reason") @db.VarChar(64)
+  /// createdAt + 30min.
+  expiresAt     DateTime                         @map("expires_at") @db.Timestamptz(6)
+  createdAt     DateTime                         @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt     DateTime                         @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  character StudioCharacter @relation(fields: [characterId], references: [id], onDelete: Cascade)
+
+  @@index([characterId, status], map: "character_enrollment_sessions_by_character_idx")
+  @@index([status, expiresAt], map: "character_enrollment_sessions_expiry_idx")
+  @@map("character_enrollment_sessions")
 }
 
 model WalletAccount {
@@ -3822,6 +4157,10 @@ enum AiOutboxEventType {
   team_member_changed
   /// Project changed (created / updated / archived / shared).
   project_changed
+  /// Character media provider-mirror state changed (pending/processing/
+  /// active/failed). Payload is a `character_media_updated` asset event,
+  /// published on `assets-user:{ownerUserId}` (design §2.2 leave-and-notify).
+  character_media_updated
 }
 
 enum AiControlPlaneStatus {
@@ -5059,6 +5398,8 @@ model MediaAsset {
   variants                MediaAssetVariant[]
   placements              MediaObjectPlacement[]
   usages                  MediaAssetUsage[]
+  characterCovers         StudioCharacter[]           @relation("CharacterCover")
+  characterMedia          CharacterMedia[]
   moderationCases         MediaModerationCase[]
   moderationActions       MediaModerationAction[]
   processingJobs          MediaProcessingJob[]

@@ -4,6 +4,7 @@ import type {
   AiPromptDocument,
   AiPromptDocumentNode,
   AiPromptReferenceBinding,
+  AiPromptReferenceKind,
   AiPromptStyleBinding,
 } from './prompt-document.types';
 
@@ -22,6 +23,21 @@ interface CompilePromptResult {
 
 const COMPILER_ID = 'fizzdragon.prompt-reference.v1' as const;
 
+const REFERENCE_KINDS = ['image', 'video', 'audio'] as const;
+
+const KIND_LABEL: Record<AiPromptReferenceKind, string> = {
+  image: 'Image',
+  video: 'Video',
+  audio: 'Audio',
+};
+
+/** The normalizedInput key each reference kind is written back to. */
+const KIND_INPUT_FIELD: Record<AiPromptReferenceKind, string> = {
+  image: 'referenceImages',
+  video: 'referenceVideos',
+  audio: 'referenceAudios',
+};
+
 @Injectable()
 export class AiPromptCompilerService {
   compile(input: CompilePromptInput): CompilePromptResult {
@@ -34,6 +50,14 @@ export class AiPromptCompilerService {
       rawReferenceImages: firstDefined(
         normalizedInput.referenceImages,
         rawInput.referenceImages,
+      ),
+      rawReferenceVideos: firstDefined(
+        normalizedInput.referenceVideos,
+        rawInput.referenceVideos,
+      ),
+      rawReferenceAudios: firstDefined(
+        normalizedInput.referenceAudios,
+        rawInput.referenceAudios,
       ),
     });
     const styles = normalizeStyleBindings(input.styles);
@@ -49,14 +73,23 @@ export class AiPromptCompilerService {
       .trim();
 
     normalizedInput.prompt = compiledPrompt;
-    if (references.length > 0) {
-      normalizedInput.referenceImages = references
+    // Write each kind back to its own input field — but ONLY when bindings
+    // of that kind exist, so image-only flows keep today's exact output and
+    // never grow referenceVideos/referenceAudios keys out of thin air.
+    for (const kind of REFERENCE_KINDS) {
+      const ofKind = references.filter((reference) => reference.kind === kind);
+      if (ofKind.length === 0) continue;
+      normalizedInput[KIND_INPUT_FIELD[kind]] = ofKind
         .filter((reference) => reference.url)
         .map((reference) => ({
           url: reference.url,
           refId: reference.refId,
           label: reference.label,
           assetId: reference.assetId,
+          ...(reference.groupRefId ? { groupRefId: reference.groupRefId } : {}),
+          ...(reference.characterId
+            ? { characterId: reference.characterId }
+            : {}),
         }));
     }
 
@@ -123,96 +156,122 @@ function normalizePromptNode(value: unknown): AiPromptDocumentNode | null {
   return null;
 }
 
+/** A reference binding parsed from the wire, before per-kind numbering. */
+interface RawReferenceBinding {
+  refId?: string;
+  kind: AiPromptReferenceKind;
+  label?: string;
+  url?: string;
+  assetId?: string;
+  role?: string;
+  weight?: number;
+  groupRefId?: string;
+  characterId?: string;
+}
+
 function normalizeReferenceBindings(input: {
   rawReferences: unknown;
   rawReferenceImages: unknown;
+  rawReferenceVideos: unknown;
+  rawReferenceAudios: unknown;
 }): AiPromptReferenceBinding[] {
-  const references = Array.isArray(input.rawReferences)
-    ? input.rawReferences
-    : [];
-  const referenceImages = Array.isArray(input.rawReferenceImages)
-    ? input.rawReferenceImages
-    : [];
-  const merged: AiPromptReferenceBinding[] = [];
+  const sources: Array<{ items: unknown; defaultKind: AiPromptReferenceKind }> =
+    [
+      { items: input.rawReferences, defaultKind: 'image' },
+      { items: input.rawReferenceImages, defaultKind: 'image' },
+      { items: input.rawReferenceVideos, defaultKind: 'video' },
+      { items: input.rawReferenceAudios, defaultKind: 'audio' },
+    ];
+  const merged: RawReferenceBinding[] = [];
   const seen = new Set<string>();
 
-  for (const item of references) {
-    const normalized = normalizeReference(item, merged.length);
-    if (!normalized) continue;
-    const key = normalized.assetId ?? normalized.url ?? normalized.refId;
-    if (seen.has(key)) continue;
-    seen.add(key);
-    merged.push(normalized);
+  for (const source of sources) {
+    if (!Array.isArray(source.items)) continue;
+    for (const item of source.items) {
+      const normalized = normalizeReference(item, source.defaultKind);
+      if (!normalized) continue;
+      // Dedupe on EVERY identity the entry carries (assetId AND url):
+      // schema normalization may strip assetId off input-array entries
+      // (additionalProperties: false), so a binding and its input-array
+      // copy must still collapse via the shared url.
+      const keys = [normalized.assetId, normalized.url].filter(
+        (value): value is string => Boolean(value),
+      );
+      if (keys.length === 0) {
+        if (!normalized.refId) continue;
+        keys.push(normalized.refId);
+      }
+      if (keys.some((key) => seen.has(key))) continue;
+      for (const key of keys) seen.add(key);
+      merged.push(normalized);
+    }
   }
 
-  for (const item of referenceImages) {
-    const normalized = normalizeReference(item, merged.length);
-    if (!normalized) continue;
-    const key = normalized.assetId ?? normalized.url ?? normalized.refId;
-    if (seen.has(key)) continue;
-    seen.add(key);
-    merged.push(normalized);
-  }
-
-  return merged.map((reference, index) => ({
-    ...reference,
-    order: index + 1,
-    label: reference.label || `Image ${index + 1}`,
-    token: `[Image ${index + 1}]`,
-  }));
+  // Positional tokens count per kind in merged order: images 1..n
+  // independently of videos and audios ([Image 1] … [Video 1] …).
+  const counters: Record<AiPromptReferenceKind, number> = {
+    image: 0,
+    video: 0,
+    audio: 0,
+  };
+  return merged.map((reference) => {
+    const order = ++counters[reference.kind];
+    const kindLabel = KIND_LABEL[reference.kind];
+    return {
+      refId:
+        reference.refId ?? reference.assetId ?? `${reference.kind}:${order}`,
+      kind: reference.kind,
+      label: reference.label || `${kindLabel} ${order}`,
+      token: `[${kindLabel} ${order}]`,
+      order,
+      ...(reference.url ? { url: reference.url } : {}),
+      ...(reference.assetId ? { assetId: reference.assetId } : {}),
+      ...(reference.role ? { role: reference.role } : {}),
+      ...(reference.weight !== undefined ? { weight: reference.weight } : {}),
+      ...(reference.groupRefId ? { groupRefId: reference.groupRefId } : {}),
+      ...(reference.characterId ? { characterId: reference.characterId } : {}),
+    };
+  });
 }
 
 function normalizeReference(
   value: unknown,
-  index: number,
-): AiPromptReferenceBinding | null {
+  defaultKind: AiPromptReferenceKind,
+): RawReferenceBinding | null {
   if (typeof value === 'string') {
     const url = value.trim();
     if (!url) return null;
-    return referenceBinding({ url }, index);
+    return { url, kind: defaultKind };
   }
   if (!isRecord(value)) return null;
   const url = stringValue(value.url);
   const assetId = stringValue(value.assetId);
   const refId = stringValue(value.refId) || stringValue(value.id);
   if (!url && !assetId && !refId) return null;
-  return referenceBinding(
-    {
-      refId,
-      url,
-      assetId,
-      label: stringValue(value.label) || stringValue(value.name),
-      role: stringValue(value.role),
-      weight: numberValue(value.weight),
-    },
-    index,
-  );
+  return {
+    ...(refId ? { refId } : {}),
+    kind: referenceKindValue(value.kind) ?? defaultKind,
+    ...(url ? { url } : {}),
+    ...(assetId ? { assetId } : {}),
+    ...(stringValue(value.label) || stringValue(value.name)
+      ? { label: stringValue(value.label) || stringValue(value.name) }
+      : {}),
+    ...(stringValue(value.role) ? { role: stringValue(value.role) } : {}),
+    ...(numberValue(value.weight) !== undefined
+      ? { weight: numberValue(value.weight) }
+      : {}),
+    ...(stringValue(value.groupRefId)
+      ? { groupRefId: stringValue(value.groupRefId) }
+      : {}),
+    ...(stringValue(value.characterId)
+      ? { characterId: stringValue(value.characterId) }
+      : {}),
+  };
 }
 
-function referenceBinding(
-  value: {
-    refId?: string;
-    url?: string;
-    assetId?: string;
-    label?: string;
-    role?: string;
-    weight?: number;
-  },
-  index: number,
-): AiPromptReferenceBinding {
-  const order = index + 1;
-  const refId = value.refId || value.assetId || `image:${order}`;
-  return {
-    refId,
-    kind: 'image',
-    label: value.label || `Image ${order}`,
-    token: `[Image ${order}]`,
-    order,
-    ...(value.url ? { url: value.url } : {}),
-    ...(value.assetId ? { assetId: value.assetId } : {}),
-    ...(value.role ? { role: value.role } : {}),
-    ...(value.weight !== undefined ? { weight: value.weight } : {}),
-  };
+function referenceKindValue(value: unknown): AiPromptReferenceKind | null {
+  const kind = stringValue(value);
+  return kind === 'image' || kind === 'video' || kind === 'audio' ? kind : null;
 }
 
 function normalizeStyleBindings(value: unknown): AiPromptStyleBinding[] {
@@ -247,6 +306,15 @@ function renderPromptDocument(
   usedReferenceIds: Set<string>;
 } {
   const referenceById = new Map(references.map((item) => [item.refId, item]));
+  // Character mentions: an asset_ref pointing at a character binding's
+  // original refId resolves to the GROUP of expanded per-media bindings.
+  const groupByRefId = new Map<string, AiPromptReferenceBinding[]>();
+  for (const reference of references) {
+    if (!reference.groupRefId) continue;
+    const members = groupByRefId.get(reference.groupRefId) ?? [];
+    members.push(reference);
+    groupByRefId.set(reference.groupRefId, members);
+  }
   const styleById = new Map(styles.map((item) => [item.refId, item]));
   const usedReferenceIds = new Set<string>();
   const displayParts: string[] = [];
@@ -264,6 +332,17 @@ function renderPromptDocument(
         usedReferenceIds.add(reference.refId);
         displayParts.push(`@${node.label || reference.label}`);
         providerParts.push(reference.token);
+        continue;
+      }
+      const group = groupByRefId.get(node.refId);
+      if (group && group.length > 0) {
+        for (const member of group) usedReferenceIds.add(member.refId);
+        displayParts.push(`@${node.label || group[0].label}`);
+        // One character mention → the joined member tokens, e.g.
+        // `[Image 1, Image 2, Video 1]`.
+        providerParts.push(
+          `[${group.map((member) => member.token.slice(1, -1)).join(', ')}]`,
+        );
         continue;
       }
       displayParts.push(`@${node.label || node.refId}`);
@@ -292,19 +371,24 @@ function compileProviderPrompt(
   const prompt = providerText.trim();
   if (input.references.length === 0) return prompt;
 
-  const bindingLines = input.references.map(
-    (reference) =>
-      `${reference.token}: provided reference image ${reference.order}`,
+  const bindingLines = input.references.map((reference) =>
+    reference.groupRefId
+      ? `${reference.token}: reference ${reference.kind} ${reference.order} — character "${reference.label}"`
+      : `${reference.token}: provided reference ${reference.kind} ${reference.order}`,
   );
+  const imagesOnly = input.references.every(
+    (reference) => reference.kind === 'image',
+  );
+  const mediaNoun = imagesOnly ? 'images' : 'media';
   const hasInlineReferences = input.usedReferenceIds.size > 0;
   const referenceInstruction = hasInlineReferences
     ? undefined
-    : 'Use the supplied reference images as visual references.';
+    : `Use the supplied reference ${mediaNoun} as visual references.`;
 
   return [
     prompt,
     referenceInstruction,
-    'Reference images are supplied separately in this order:',
+    `Reference ${mediaNoun} are supplied separately in this order:`,
     bindingLines.join('\n'),
   ]
     .filter((part): part is string => Boolean(part && part.trim()))

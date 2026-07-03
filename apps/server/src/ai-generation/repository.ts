@@ -842,6 +842,71 @@ export class AiGenerationRepository {
     return this.activeForUserWith(this.prisma, userId);
   }
 
+  /**
+   * Non-terminal jobs whose FROZEN referenceSnapshot references `characterId`
+   * (the pre-expansion `{role:'character', characterId}` binding), optionally
+   * scoped to one project. Drives per-project / global likeness revocation
+   * cancellation (design v2 §5). The projectId filter narrows the scan; the
+   * in-app snapshot filter is exact (referenceSnapshot is a JSON array).
+   */
+  async activeReferencingCharacter(
+    characterId: string,
+    projectId?: string,
+  ): Promise<AiJob[]> {
+    const rows = await this.prisma.aiJob.findMany({
+      where: {
+        deletedAt: null,
+        status: { notIn: ['completed', 'failed', 'cancelled', 'expired'] },
+        ...(projectId ? { projectId } : {}),
+      },
+      include: { outputs: this.outputsInclude(false) },
+    });
+    return rows
+      .map((r) => this.toDomain(r))
+      .filter((job) =>
+        referenceSnapshotReferencesCharacter(
+          job.referenceSnapshot,
+          characterId,
+        ),
+      );
+  }
+
+  /**
+   * ALL jobs (with outputs) whose FROZEN referenceSnapshot references
+   * `characterId`, newest first, optionally scoped to one project. Drives the
+   * subject's likeness-output visibility + takedown (design v2 §6) — a
+   * completeness-critical read (the NCII takedown must reach EVERY output), so
+   * the characterId predicate is pushed into the DB (jsonb containment) and
+   * there is NO recency cap. The in-app filter stays as an exactness net
+   * (jsonb `@>` matches the object subset; the JS check confirms it).
+   */
+  async referencingCharacterWithOutputs(
+    characterId: string,
+    opts: { projectId?: string } = {},
+  ): Promise<AiJob[]> {
+    const rows = await this.prisma.aiJob.findMany({
+      where: {
+        deletedAt: null,
+        ...(opts.projectId ? { projectId: opts.projectId } : {}),
+        // referenceSnapshot is a JSON array of {role, characterId} — jsonb
+        // containment narrows to rows that actually reference the character.
+        referenceSnapshot: {
+          array_contains: [{ role: 'character', characterId }],
+        },
+      },
+      include: { outputs: this.outputsInclude(false) },
+      orderBy: { createdAt: 'desc' },
+    });
+    return rows
+      .map((r) => this.toDomain(r))
+      .filter((job) =>
+        referenceSnapshotReferencesCharacter(
+          job.referenceSnapshot,
+          characterId,
+        ),
+      );
+  }
+
   private async activeForUserWith(
     client: DbClient,
     userId: string,
@@ -1357,6 +1422,62 @@ export class AiGenerationRepository {
       }
     });
   }
+
+  /**
+   * Reference usage ledger: one row per media asset a job consumed as a
+   * reference (plain uploads AND expanded character media). Mirrors the
+   * output usage writes above — same surface derivation, same
+   * `idempotencyKey` uniqueness — but uses `skipDuplicates` instead of
+   * delete-and-recreate because references are frozen at submit (a retry
+   * is a NEW job, so re-submits land distinct rows).
+   */
+  async recordReferenceUsage(
+    job: Pick<
+      AiJob,
+      'id' | 'userId' | 'workspaceId' | 'projectId' | 'sourceSurface'
+    >,
+    references: Array<{
+      assetId: string;
+      refId: string;
+      kind: string;
+      characterId?: string;
+    }>,
+  ): Promise<void> {
+    const byAssetId = new Map(
+      references.map((reference) => [reference.assetId, reference]),
+    );
+    if (byAssetId.size === 0) return;
+    const assetIds = [...byAssetId.keys()];
+    const variants = await this.prisma.mediaAssetVariant.findMany({
+      where: { assetId: { in: assetIds }, variantKey: 'original' },
+      select: { id: true, assetId: true },
+    });
+    const variantByAssetId = new Map(
+      variants.map((variant) => [variant.assetId, variant.id]),
+    );
+    await this.prisma.mediaAssetUsage.createMany({
+      data: [...byAssetId.values()].map((reference) => ({
+        assetId: reference.assetId,
+        variantId: variantByAssetId.get(reference.assetId) ?? null,
+        userId: job.userId,
+        workspaceId: job.workspaceId ?? null,
+        projectId: job.projectId ?? null,
+        aiJobId: job.id,
+        surface: usageSurfaceForSourceSurface(job.sourceSurface),
+        sourceSurface: job.sourceSurface ?? null,
+        role: MediaAssetUsageRole.reference,
+        idempotencyKey: `ai-reference:${job.id}:${reference.assetId}`,
+        metadata: {
+          refId: reference.refId,
+          kind: reference.kind,
+          ...(reference.characterId
+            ? { characterId: reference.characterId }
+            : {}),
+        } satisfies Prisma.InputJsonObject,
+      })),
+      skipDuplicates: true,
+    });
+  }
 }
 
 function mediaContentUrl(assetId: string): string {
@@ -1437,6 +1558,20 @@ function isUniqueConstraintError(err: unknown): boolean {
 
 function limitSubjectLockKey(subject: AiJobLimitSubject): string {
   return `ai-generation:limit:${subject.type}:${subject.id}`;
+}
+
+/** True iff the frozen reference snapshot has a character binding for `id`. */
+function referenceSnapshotReferencesCharacter(
+  snapshot: unknown,
+  characterId: string,
+): boolean {
+  if (!Array.isArray(snapshot)) return false;
+  return snapshot.some(
+    (entry) =>
+      Boolean(entry) &&
+      typeof entry === 'object' &&
+      (entry as { characterId?: unknown }).characterId === characterId,
+  );
 }
 
 export type {

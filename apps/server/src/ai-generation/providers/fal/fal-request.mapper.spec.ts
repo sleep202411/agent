@@ -425,6 +425,9 @@ describe('createFalModelConfig (policy-driven schema)', () => {
     expect(body.safety_tolerance).toBeUndefined();
   });
 
+  // Synthetic fixture post-cutover (2026-07-02): fal serves no Seedance
+  // binding anymore — this pins the generic providerFamily normalizer path
+  // for per_second_matrix video models (always-send duration).
   it('always sends seedance duration (no omitIfDefault) with default "5"', () => {
     const config = createFalModelConfig({
       endpointId: 'bytedance/seedance-2.0/text-to-video',

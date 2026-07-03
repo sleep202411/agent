@@ -1,4 +1,5 @@
 import type { AssetEvent } from '@repo/shared';
+import { redactProviderAssetRefs } from '../characters/asset-ref.util';
 import type { AiJob } from './types';
 
 export function toAiJobEvent(job: AiJob): AssetEvent {
@@ -16,7 +17,8 @@ export function toAiJobEvent(job: AiJob): AssetEvent {
       status: job.status,
       stage: job.stage,
       prompt: job.prompt,
-      input: job.normalizedInput,
+      // asset:// provider handles are stripped — never leave the server (§2.3).
+      input: redactProviderAssetRefs(job.normalizedInput) ?? undefined,
       outputs: job.outputs.map((o) => ({
         id: o.id,
         assetId: o.assetId,

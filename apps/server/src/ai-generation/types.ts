@@ -22,8 +22,8 @@ import type {
 import type { EntitlementPlanKey, EntitlementSnapshot } from '../entitlements';
 import type {
   AiPromptDocument,
-  AiPromptReferenceBinding,
   AiPromptStyleBinding,
+  AiSubmitReferenceBinding,
 } from './prompt-document.types';
 
 export { AI_MODEL_PROTOCOL_DIALECT } from '@repo/shared';
@@ -334,6 +334,11 @@ export interface AiJobError {
     | 'BILLING_SETTLEMENT_FAILED'
     | 'WORKER_CRASHED'
     | 'CANCELLED_BY_USER'
+    // Character-reference failures at the worker seam (design §3.4):
+    // consent revoked / provider mirror gone mid-flight. Terminal — the
+    // billing hold is released, the job is never requeued.
+    | 'CHARACTER_REVOKED'
+    | 'CHARACTER_ASSET_NOT_READY'
     | 'UNKNOWN';
   message: string;
   userMessage: string;
@@ -381,7 +386,13 @@ export interface AiJob {
   promptDisplayText?: string | null;
   promptSearchText?: string | null;
   compiledPrompt?: string | null;
-  referenceSnapshot?: AiPromptReferenceBinding[] | null;
+  /**
+   * ORIGINAL (pre-expansion) reference bindings as submitted — character
+   * bindings stay `{refId, role:'character', characterId}` so retryJob
+   * re-runs character expansion and re-validates consent/status. Jobs
+   * without character bindings keep the compiled bindings (back-compat).
+   */
+  referenceSnapshot?: AiSubmitReferenceBinding[] | null;
   styleSnapshot?: AiPromptStyleBinding[] | null;
   idempotencyKey: string;
   providerJobId?: string;
@@ -432,7 +443,7 @@ export interface AiSubmitJobBody {
   };
   input?: Record<string, unknown>;
   promptDocument?: AiPromptDocument;
-  referenceBindings?: AiPromptReferenceBinding[];
+  referenceBindings?: AiSubmitReferenceBinding[];
   styleBindings?: AiPromptStyleBinding[];
   idempotencyKey?: string;
   routing?: {

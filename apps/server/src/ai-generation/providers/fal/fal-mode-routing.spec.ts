@@ -1,6 +1,12 @@
 /**
- * Per-mode ContainerModel routing for multi-endpoint fal video models
- * (seedance 2.0 splits text/image/reference-to-video across 3 endpoints).
+ * Per-mode ContainerModel routing for multi-endpoint fal video models.
+ *
+ * NOTE (2026-07-02 Seedance cutover): the `bytedance/seedance-2.0/*` fixture
+ * ids below are SYNTHETIC — fal no longer serves any Seedance binding
+ * (byteplus-modelark is the sole provider). The suite remains because it pins
+ * the GENERIC fal multi-endpoint dispatch machinery (mode→endpoint map,
+ * sibling-endpoint poll registration, seedream /edit reverse-map), which
+ * outlives the fixture family that motivated it.
  *
  * Covers the two dispatch blockers:
  * 1. submit must route to the mode's endpoint (not the alphabetical primary);
@@ -332,10 +338,7 @@ describe('FalProviderAdapter edit-endpoint config reverse-map', () => {
       } as unknown as FalClient,
     );
 
-    await adapter.pollGeneration(
-      'fal-ai/bytedance/seedream/v4.5/edit::req-1',
-      {} as never,
-    );
+    await adapter.pollStatus('fal-ai/bytedance/seedream/v4.5/edit::req-1');
 
     // First tries the edit endpoint, then falls back to the text-to-image key.
     expect(getRuntimeConfig).toHaveBeenCalledWith(

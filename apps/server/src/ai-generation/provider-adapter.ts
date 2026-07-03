@@ -19,6 +19,19 @@ import type { AiJobError, AiJobType, AiModelDefinition } from './types';
 export type { AiModelDefinition } from './types';
 
 /**
+ * Typed failure thrown by {@link ProviderAdapter.prepareReferences}: the
+ * carried AiJobError (e.g. CHARACTER_REVOKED, CHARACTER_ASSET_NOT_READY)
+ * reaches the user verbatim and the worker treats it as terminal for this
+ * job — billing hold released, no requeue.
+ */
+export class ReferencePreparationError extends Error {
+  constructor(readonly jobError: AiJobError) {
+    super(jobError.message);
+    this.name = 'ReferencePreparationError';
+  }
+}
+
+/**
  * Context passed to adapter calls. The adapter doesn't usually need
  * these (the job row is the source of truth), but they're handy for
  * provider request shaping (e.g. fal accepts a webhook URL that's
@@ -29,6 +42,22 @@ export interface ProviderGenerationContext {
   jobId: string;
   /** Owning user — providers often pass it for abuse tracking. */
   userId: string;
+  /**
+   * The job's project context, when any. Threaded so the byteplus reference
+   * preparer can re-validate a real_person per-project GRANT at the worker
+   * seam (design v2 §4): a per-project revoke is invisible to character/group
+   * status, so the grant — keyed on (characterId, projectId) — is the only
+   * signal, and the seam cannot see it without projectId.
+   */
+  projectId?: string | null;
+  /**
+   * The job's workspace context. Threaded alongside projectId so the byteplus
+   * preparer's self-use test matches submit-time's exactly (self-use =
+   * subject AND job workspace === the character's personal home). Without it a
+   * subject generating in a TEAM project would read as self-use and skip the
+   * per-project grant re-check (design v2 §4).
+   */
+  workspaceId?: string | null;
   /** Public base URL of our Nest API; webhook adapters use it to
    *  derive the callback URL they ask the provider to hit. */
   publicBaseUrl?: string;
@@ -219,6 +248,25 @@ export interface ProviderAdapter {
     model: AiModelDefinition,
     input: Record<string, unknown>,
   ): Record<string, unknown>;
+
+  /**
+   * Optional pre-start reference validation/refresh hook (design §3.4).
+   * Runs in worker.runJob BEFORE the provider-capacity gate and
+   * `startGeneration`, on every attempt — the submit-time readiness
+   * pre-check can go stale while a job waits in queue (consent revocation,
+   * upstream asset deletion). Implementations re-validate provider-hosted
+   * references (e.g. `asset://` mirrors) and may return an updated input.
+   *
+   * Failure contract: throw {@link ReferencePreparationError} with a typed
+   * AiJobError (retryable:false) — the worker fails the job and RELEASES the
+   * billing hold; it never open-endedly requeues (re-registration has no
+   * SLA, and a wallet hold + queue slot must not spin on it).
+   */
+  prepareReferences?(
+    modelId: string,
+    input: Record<string, unknown>,
+    ctx: ProviderGenerationContext,
+  ): Promise<Record<string, unknown>>;
 
   /**
    * Kick off a generation. See StartResult union for sync vs async.

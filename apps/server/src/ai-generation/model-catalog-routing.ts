@@ -114,10 +114,9 @@ function isRouteRelevantField(field: string): boolean {
     field === 'numOutputs' ||
     field === 'outputFormat' ||
     field === 'referenceImages' ||
-    // Reference videos/audios are a fal-only omni-reference capability. Marking
-    // them route-relevant ensures a request carrying them is routed to a
-    // provider whose schema declares them (fal) rather than a co-bound primary
-    // (e.g. BytePlus) that would silently drop them.
+    // Omni-reference videos/audios: route-relevant so a request carrying them
+    // only lands on a provider whose schema declares them — a provider that
+    // doesn't would silently drop the reference.
     field === 'referenceVideos' ||
     field === 'referenceAudios' ||
     field === 'maskImage' ||

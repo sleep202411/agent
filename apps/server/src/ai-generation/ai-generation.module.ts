@@ -1,5 +1,9 @@
 import { Module, type OnModuleInit } from '@nestjs/common';
 import { AdminAuthModule } from '../admin-auth';
+import { CharactersModule } from '../characters/characters.module';
+import { REAL_PERSON_JOB_CANCELLER } from '../characters/ports/real-person-job-canceller';
+import { REAL_PERSON_LIKENESS_OUTPUTS } from '../characters/ports/real-person-likeness-outputs';
+import { RealPersonLikenessOutputsService } from './real-person-likeness-outputs.service';
 import { RealtimeModule } from '../infra/realtime/realtime.module';
 import { StorageModule } from '../infra/storage/storage.module';
 import { EntitlementsModule } from '../entitlements';
@@ -40,6 +44,7 @@ import { BytePlusCatalogService } from './providers/byteplus/byteplus-catalog.se
 import { BytePlusClient } from './providers/byteplus/byteplus-client';
 import { BytePlusConfigService } from './providers/byteplus/byteplus-config.service';
 import { BytePlusProviderAdapter } from './providers/byteplus/byteplus-provider.adapter';
+import { BytePlusReferencePreparerService } from './providers/byteplus/byteplus-reference-preparer.service';
 import { AgnesCatalogService } from './providers/agnes/agnes-catalog.service';
 import { AgnesClient } from './providers/agnes/agnes-client';
 import { AgnesConfigService } from './providers/agnes/agnes-config.service';
@@ -53,6 +58,7 @@ import { AiGenerationWorkerService } from './worker.service';
 @Module({
   imports: [
     AdminAuthModule,
+    CharactersModule,
     RealtimeModule,
     StorageModule,
     EntitlementsModule,
@@ -109,6 +115,7 @@ import { AiGenerationWorkerService } from './worker.service';
     BytePlusConfigService,
     BytePlusCatalogService,
     BytePlusClient,
+    BytePlusReferencePreparerService,
     BytePlusProviderAdapter,
 
     // Provider: Agnes AI
@@ -116,6 +123,17 @@ import { AiGenerationWorkerService } from './worker.service';
     AgnesCatalogService,
     AgnesClient,
     AgnesProviderAdapter,
+
+    // v2: bind the character job-cancellation port to the generation service.
+    // Characters resolves it lazily via ModuleRef (strict:false) to avoid a
+    // module-import cycle — see CharacterGrantService.
+    { provide: REAL_PERSON_JOB_CANCELLER, useExisting: AiGenerationService },
+    // v2 §6: subject likeness output visibility + takedown bridge.
+    RealPersonLikenessOutputsService,
+    {
+      provide: REAL_PERSON_LIKENESS_OUTPUTS,
+      useExisting: RealPersonLikenessOutputsService,
+    },
   ],
   exports: [],
 })

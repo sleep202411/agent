@@ -1,15 +1,17 @@
 import type { BytePlusImageRuntimeConfig } from './byteplus-runtime';
 
 /**
- * BytePlus ModelArk video task body (content-generation tasks API): a `content`
- * array of typed parts (text prompt + role-tagged images) plus top-level
+ * BytePlus ModelArk video task body (content-generation tasks API, doc
+ * 1520757): a `content` array of typed, role-tagged parts plus top-level
  * generation params. Covers all four Seedance generation modes:
  *  - text_to_video           → text only
  *  - image_to_video          → text + first_frame
  *  - first_last_frame_to_..  → text + first_frame + last_frame
- *  - multimodal_to_video     → text + N reference_image (omni reference)
- * Reference videos/audios are fal-only and never reach this mapper (routing
- * sends those requests to fal — see isRouteRelevantField).
+ *  - multimodal_to_video     → text + reference_image / reference_video /
+ *                              reference_audio parts (全能参考)
+ * Reference URLs may be `asset://<externalAssetId>` — ModelArk private-library
+ * assets (character likenesses) ride in the ordinary url slot; the routing pin
+ * guarantees real_person jobs only ever reach this mapper.
  */
 export function mapBytePlusVideoProviderRequest(
   config: BytePlusImageRuntimeConfig,
@@ -34,24 +36,38 @@ export function mapBytePlusVideoProviderRequest(
       role: 'last_frame',
     });
   }
-  for (const url of referenceImageUrls(input.referenceImages)) {
+  for (const url of referenceUrls(input.referenceImages)) {
     content.push({
       type: 'image_url',
       image_url: { url },
       role: 'reference_image',
     });
   }
+  for (const url of referenceUrls(input.referenceVideos)) {
+    content.push({
+      type: 'video_url',
+      video_url: { url },
+      role: 'reference_video',
+    });
+  }
+  for (const url of referenceUrls(input.referenceAudios)) {
+    content.push({
+      type: 'audio_url',
+      audio_url: { url },
+      role: 'reference_audio',
+    });
+  }
 
   const body: Record<string, unknown> = {
     model: config.endpointId,
     content,
-    watermark: false,
+    watermark: resolveBytePlusWatermark(config, input),
   };
   if (typeof input.resolution === 'string' && input.resolution) {
     body.resolution = input.resolution;
   }
-  // Aspect ratio: 'auto' means "derive from input / model default" — BytePlus
-  // has no explicit 'auto' value, so omit and let it default.
+  // Aspect ratio: 'auto' → omit; ModelArk's `ratio` defaults to 'adaptive'
+  // (derive from inputs), which is exactly what our 'auto' means.
   if (
     typeof input.aspectRatio === 'string' &&
     input.aspectRatio &&
@@ -59,15 +75,78 @@ export function mapBytePlusVideoProviderRequest(
   ) {
     body.ratio = input.aspectRatio;
   }
-  // Duration is the string-enum `duration` field (matches fal + the per-second
-  // billing source); fall back to the legacy numeric `durationSeconds`. A
-  // non-numeric value ('auto') is omitted so BytePlus picks its own length.
-  const duration = Number(input.duration ?? input.durationSeconds);
-  if (Number.isInteger(duration) && duration > 0) body.duration = duration;
+  // Duration is the string-enum `duration` field (matches the per-second
+  // billing source); legacy numeric `durationSeconds` as fallback. 'auto'
+  // maps to ModelArk's -1 (model picks the length) — omitting would silently
+  // pin the upstream default of 5s while billing quoted the 15s ceiling.
+  if (input.duration === 'auto') {
+    body.duration = -1;
+  } else {
+    const duration = Number(input.duration ?? input.durationSeconds);
+    if (Number.isInteger(duration) && duration > 0) body.duration = duration;
+  }
+  // Native synced audio: upstream default is TRUE, so an explicit user
+  // opt-out must be sent as generate_audio:false (omission ≠ off).
+  if (typeof input.generateAudio === 'boolean') {
+    body.generate_audio = input.generateAudio;
+  }
+  // Seed is 1.x-only (never in a 2.0 schema, so normalized input strips it);
+  // kept for future 1.x-family bindings.
   const seed = Number(input.seed);
   if (Number.isInteger(seed) && seed >= 0) body.seed = seed;
 
   return body;
+}
+
+/**
+ * Provider output watermark policy (design §5.4 ⟦R⟧; CN 《人工智能生成合成内容
+ * 标识办法》 + EU AI Act Art.50):
+ *  1. Character-reference generations FORCE `watermark: true` — character
+ *     expansion (character-generation.service.ts) replaces each character
+ *     binding with per-media entries stamped `characterId` in the job input's
+ *     reference arrays, so a stamped entry anywhere marks the job.
+ *  2. Otherwise the canonical model's `outputPolicy.watermark` boolean decides.
+ *  3. Unset (or non-boolean) → false, preserving pre-policy behavior; flipping
+ *     the global default is a product decision, not made here.
+ */
+export function resolveBytePlusWatermark(
+  config: BytePlusImageRuntimeConfig,
+  input: Record<string, unknown>,
+): boolean {
+  if (hasCharacterStampedReference(input)) return true;
+  return watermarkRecord(config.outputPolicy)?.watermark === true;
+}
+
+/** The reference-array fields character expansion stamps (all kinds). */
+const CHARACTER_REFERENCE_FIELDS = [
+  'referenceImages',
+  'referenceVideos',
+  'referenceAudios',
+] as const;
+
+function hasCharacterStampedReference(input: Record<string, unknown>): boolean {
+  return CHARACTER_REFERENCE_FIELDS.some((field) => {
+    const value = input[field];
+    return (
+      Array.isArray(value) && value.some((entry) => isCharacterStamped(entry))
+    );
+  });
+}
+
+/** Mirrors character-generation.service.ts' isCharacterStampedEntry. */
+function isCharacterStamped(entry: unknown): boolean {
+  return (
+    Boolean(entry) &&
+    typeof entry === 'object' &&
+    !Array.isArray(entry) &&
+    typeof (entry as { characterId?: unknown }).characterId === 'string'
+  );
+}
+
+function watermarkRecord(value: unknown): { watermark?: unknown } | null {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
+    ? (value as { watermark?: unknown })
+    : null;
 }
 
 function mediaUrl(value: unknown): string | undefined {
@@ -88,12 +167,12 @@ export function mapBytePlusProviderRequest(
     prompt: stringValue(input.prompt),
     size: sizeFor(input.imageSize, input.resolution),
     response_format: 'url',
-    watermark: false,
+    watermark: resolveBytePlusWatermark(config, input),
     stream: false,
     sequential_image_generation: 'disabled',
   };
 
-  const images = referenceImageUrls(input.referenceImages);
+  const images = referenceUrls(input.referenceImages);
   if (images.length === 1) body.image = images[0];
   if (images.length > 1) body.image = images;
 
@@ -184,7 +263,8 @@ function clamp(value: number): number {
   return Math.min(4096, Math.max(16, value));
 }
 
-function referenceImageUrls(value: unknown): string[] {
+/** Url strings from a reference array (plain, object, or asset:// entries). */
+function referenceUrls(value: unknown): string[] {
   if (!Array.isArray(value)) return [];
   return value
     .map((item) => {

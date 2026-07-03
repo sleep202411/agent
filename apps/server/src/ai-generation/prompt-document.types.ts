@@ -19,9 +19,32 @@ export interface AiPromptDocument {
   nodes: AiPromptDocumentNode[];
 }
 
+export type AiPromptReferenceKind = 'image' | 'video' | 'audio';
+
+/**
+ * Wire shape of one `referenceBindings` entry as clients submit it (and as
+ * the job's `referenceSnapshot` persists it for retry). Everything beyond
+ * `refId` is optional: plain uploads carry `url`/`assetId`, while character
+ * bindings carry `role: 'character'` + `characterId` and NO url — the
+ * generation path expands them into per-media bindings (with `groupRefId`
+ * pointing back at the original character refId) before compilation.
+ */
+export interface AiSubmitReferenceBinding {
+  refId: string;
+  kind?: AiPromptReferenceKind;
+  role?: string;
+  label?: string;
+  order?: number;
+  url?: string;
+  assetId?: string;
+  weight?: number;
+  characterId?: string;
+  groupRefId?: string;
+}
+
 export interface AiPromptReferenceBinding {
   refId: string;
-  kind: 'image';
+  kind: AiPromptReferenceKind;
   label: string;
   token: string;
   order: number;
@@ -29,6 +52,10 @@ export interface AiPromptReferenceBinding {
   assetId?: string;
   role?: string;
   weight?: number;
+  /** Set on members of an expanded character group — the original binding's refId. */
+  groupRefId?: string;
+  /** Set on members of an expanded character group — the StudioCharacter id. */
+  characterId?: string;
 }
 
 export interface AiPromptStyleBinding {

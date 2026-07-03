@@ -10,6 +10,7 @@ import {
 } from "@/components/ui/dialog";
 import type { ShareScope } from "@/lib/collab/sharing-api";
 import { MembersManager } from "./members-manager";
+import { CastingManager } from "./casting-manager";
 
 /**
  * Focused share modal — used for per-project sharing (team members live on the
@@ -39,6 +40,9 @@ export function ShareDialog({
           </DialogDescription>
         </DialogHeader>
         <MembersManager scope={scope} canManage={canManage} />
+        {/* Per-project only: cast a real person to lend their likeness without
+            joining the project (director casting invites). */}
+        {scope.kind === "project" && <CastingManager projectId={scope.id} canManage={canManage} />}
       </DialogContent>
     </Dialog>
   );

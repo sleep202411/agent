@@ -11,6 +11,12 @@ import {
 import { ProjectMemberRole, WorkspaceMemberRole } from '@prisma/client';
 import { randomUUID } from 'crypto';
 import type { AuthUser } from '../auth';
+import {
+  CharacterGenerationService,
+  redactProviderAssetRefs,
+  referenceSchemaFromModelInput,
+  type CharacterReferenceSchemaByKind,
+} from '../characters/character-generation.service';
 import { newUuidV7 } from '../common/id';
 import { EntitlementService } from '../entitlements';
 import { WorkspacesService, WorkspacePermissionService } from '../workspaces';
@@ -29,10 +35,13 @@ import { AiGenerationQueueService } from './queue.service';
 import { AiGenerationRoutingService } from './routing.service';
 import { AiGenerationValidatorService } from './validator.service';
 import { AiCanonicalCatalogService } from './canonical-catalog.service';
+import type { AiPromptReferenceBinding } from './prompt-document.types';
 import { AI_MODEL_PROTOCOL_DIALECT } from './types';
 import type {
   AiModelCatalogResponse,
+  AiModelDefinition,
   AiJob,
+  AiJobError,
   AiJobListQuery,
   AiJobLog,
   AiStatusResponse,
@@ -76,6 +85,7 @@ export class AiGenerationService {
     private readonly billingWallet: AiGenerationBillingWalletService,
     private readonly providerCapacity: ProviderCapacityRuntimeService,
     private readonly promptCompiler: AiPromptCompilerService,
+    private readonly characterGeneration: CharacterGenerationService,
   ) {}
 
   /**
@@ -151,14 +161,40 @@ export class AiGenerationService {
   ): Promise<AiSubmitResponse> {
     const now = new Date().toISOString();
     const context = await this.resolveJobContext(user, body, workspaceHeaderId);
+
+    // Character bindings expand FIRST — before routing — because routing,
+    // quota pricing, and input-shape matching must all see the true
+    // per-media reference counts (design §3.2). `input` below is the
+    // EXPANDED input; the raw client input is frozen on the job for audit.
+    const rawInput =
+      body.input && typeof body.input === 'object' ? body.input : {};
+    // Security invariant (design §3.2): `asset://` provider-hosted references
+    // may ONLY be produced by server-side character expansion (which enforces
+    // subject-only + the routing pin + forced watermark). A client that puts a
+    // raw asset:// URL into a reference field would bypass all of that, so
+    // reject it BEFORE expansion — expansion is the sole legitimate source.
+    this.characterGeneration.rejectClientAssetReferences(rawInput);
+    const characterExpansion =
+      await this.characterGeneration.expandCharacterBindings({
+        user,
+        workspaceId: context.workspaceId,
+        projectId: context.projectId,
+        referenceSchema: await this.referenceSchemaForCharacterBindings(body),
+        bindings: body.referenceBindings,
+        input: rawInput,
+      });
+    const input = characterExpansion.input;
+    const referenceBindings = characterExpansion.bindings;
+
     const entitlement = await this.entitlements.resolveForUser(user, {
       workspaceId: context.workspaceId,
       now,
     });
     const decision = await this.routing.resolve({
       entitlement,
-      body,
+      body: { ...body, input, referenceBindings },
       now,
+      resolvedCharacterKinds: characterExpansion.characterKinds,
     });
     const { model, provider, snapshot } = decision;
 
@@ -180,8 +216,6 @@ export class AiGenerationService {
       });
     }
 
-    const input =
-      body.input && typeof body.input === 'object' ? body.input : {};
     const schemaNormalizedInput = this.validator.normalizeInput(
       model.input_schema,
       input,
@@ -189,14 +223,16 @@ export class AiGenerationService {
     // Per-option plan gate (for example, high-resolution renders).
     // Server-side enforcement; the UI already gates these.
     this.authz.assertCanUseOptions(entitlement, model, schemaNormalizedInput);
-    const supportsReferenceImages = Boolean(
-      model.input_schema.properties?.referenceImages,
+    const supportsReferences = Boolean(
+      model.input_schema.properties?.referenceImages ||
+      model.input_schema.properties?.referenceVideos ||
+      model.input_schema.properties?.referenceAudios,
     );
     const promptCompilation = this.promptCompiler.compile({
       normalizedInput: schemaNormalizedInput,
       rawInput: input,
       promptDocument: body.promptDocument,
-      references: supportsReferenceImages ? body.referenceBindings : undefined,
+      references: supportsReferences ? referenceBindings : undefined,
       styles: body.styleBindings,
     });
     const normalizedInput = promptCompilation.normalizedInput;
@@ -266,14 +302,23 @@ export class AiGenerationService {
             sourceSurface: context.sourceSurface,
             status: 'in_queue',
             stage: 'queued',
-            input,
+            input: rawInput,
             normalizedInput,
             prompt,
             promptDocument: promptCompilation.snapshot.promptDocument,
             promptDisplayText: promptCompilation.snapshot.displayText,
             promptSearchText: promptCompilation.snapshot.searchText,
             compiledPrompt: promptCompilation.snapshot.compiledPrompt,
-            referenceSnapshot: promptCompilation.snapshot.references,
+            // Character jobs freeze the ORIGINAL (pre-expansion) bindings so
+            // retryJob re-runs expansion and re-validates character status;
+            // the expanded media live on in normalizedInput + the compiled
+            // references, and the expansion audit rides the job_submitted
+            // trace event. Non-character jobs keep the compiled bindings
+            // (unchanged behavior).
+            referenceSnapshot:
+              characterExpansion.expansions.length > 0
+                ? body.referenceBindings
+                : promptCompilation.snapshot.references,
             styleSnapshot: promptCompilation.snapshot.styles,
             idempotencyKey,
             routingSnapshot: snapshot,
@@ -321,6 +366,14 @@ export class AiGenerationService {
     }
 
     const job = reservation.job;
+    // P0 reference usage ledger: one row per media asset this job consumed
+    // as a reference — plain uploads AND expanded character media. The job
+    // row + wallet hold already exist, so a ledger fault must not fail the
+    // submit; the write is idempotent and error-logged instead.
+    await this.recordReferenceUsageSafe(
+      job,
+      promptCompilation.snapshot.references,
+    );
     await this.recordTraceSafe(job, {
       eventType: 'job_submitted',
       occurredAt: job.queuedAt ?? job.createdAt,
@@ -337,6 +390,10 @@ export class AiGenerationService {
         selectedProvider: snapshot.selectedProvider,
         selectedDeployment: snapshot.selectedDeployment,
         quotaCost: snapshot.policy.quota.cost,
+        // Expansion audit: which characters expanded into which media.
+        ...(characterExpansion.expansions.length > 0
+          ? { characterExpansions: characterExpansion.expansions }
+          : {}),
       },
     });
     // Hand off to BullMQ. The worker reads the canonical row from DB
@@ -371,6 +428,46 @@ export class AiGenerationService {
     this.emitJobUpdate(saved);
     this.emitRepositioned(reservation.repositioned, saved.id);
     return this.toSubmitResponse(saved);
+  }
+
+  /**
+   * Schema-awareness for character expansion (design §3.2): the expansion
+   * must know which reference-array fields the SELECTED model declares (and
+   * their maxItems) BEFORE routing runs, so undeliverable media is never
+   * token-compiled and routing/pricing see true reference counts. Cheapest
+   * existing lookup: the same per-provider `getModel` probe that
+   * routing.findModel uses — no policy resolution, no routing snapshot.
+   * Skipped entirely (empty schema) when no character bindings are present.
+   */
+  private async referenceSchemaForCharacterBindings(
+    body: AiSubmitJobBody,
+  ): Promise<CharacterReferenceSchemaByKind> {
+    const hasCharacterBindings = (body.referenceBindings ?? []).some(
+      (binding) => binding.role === 'character',
+    );
+    if (!hasCharacterBindings) return {};
+
+    const modelId = body.modelId?.trim();
+    if (!modelId) {
+      throw new BadRequestException({
+        code: 'VALIDATION_ERROR',
+        msg: 'modelId is required when referencing characters.',
+      });
+    }
+    const candidates: AiModelDefinition[] = [];
+    for (const adapter of this.providers.list()) {
+      const model = await adapter.getModel(modelId);
+      if (model) candidates.push(model);
+    }
+    const model =
+      candidates.find((candidate) => candidate.enabled) ?? candidates[0];
+    if (!model) {
+      throw new NotFoundException({
+        code: 'MODEL_NOT_FOUND',
+        msg: 'Model not found.',
+      });
+    }
+    return referenceSchemaFromModelInput(model.input_schema);
   }
 
   private campaignLimitFor(snapshot: AiRoutingSnapshot):
@@ -434,29 +531,50 @@ export class AiGenerationService {
     if (TERMINAL_STATUSES.has(job.status))
       return this.publicJob(job, { detail: true });
 
+    const updated = await this.cancelJobRow(job, {
+      code: 'CANCELLED_BY_USER',
+      message: 'Cancelled by user.',
+      userMessage: 'This generation was cancelled.',
+      retryable: true,
+      releaseReason: 'ai_job_cancelled',
+    });
+    return this.publicJob(updated, { detail: true });
+  }
+
+  /**
+   * Cancel one non-terminal job row: provider cancel + capacity/hold release +
+   * status update + queue reposition + realtime emit. Shared by the user
+   * cancel path and the internal likeness-revocation cancellation (v2 §5).
+   */
+  private async cancelJobRow(
+    job: AiJob,
+    opts: {
+      code: AiJobError['code'];
+      message: string;
+      userMessage: string;
+      retryable: boolean;
+      releaseReason: string;
+    },
+  ): Promise<AiJob> {
     await this.cancelProviderJobIfNeeded(job);
     await this.providerCapacity.release(job);
-    await this.billingWallet.releaseForJob(job, 'ai_job_cancelled');
+    await this.billingWallet.releaseForJob(job, opts.releaseReason);
 
     const now = new Date().toISOString();
-    const next = await this.store.update(id, {
+    const next = await this.store.update(job.id, {
       status: 'cancelled',
       stage: 'cancelled',
       completedAt: now,
       queuePosition: null,
       logs: [
         ...job.logs,
-        {
-          time: now,
-          stage: 'cancelled',
-          message: 'Cancelled by user.',
-        },
+        { time: now, stage: 'cancelled', message: opts.message },
       ],
       error: {
-        code: 'CANCELLED_BY_USER',
-        message: 'Cancelled by user.',
-        userMessage: 'This generation was cancelled.',
-        retryable: true,
+        code: opts.code,
+        message: opts.message,
+        userMessage: opts.userMessage,
+        retryable: opts.retryable,
         createdAt: now,
       },
     });
@@ -466,7 +584,45 @@ export class AiGenerationService {
     const updated = next ?? job;
     this.emitJobUpdate(updated);
     this.emitRepositioned(repositioned, updated.id);
-    return this.publicJob(updated, { detail: true });
+    return updated;
+  }
+
+  /**
+   * {@link RealPersonJobCanceller} port impl (design v2 §5): cancel non-terminal
+   * jobs referencing a likeness whose per-project grant (or the character
+   * itself) was withdrawn. Best-effort cleanup — the worker prepareReferences
+   * seam is the correctness barrier; this releases holds + slots promptly.
+   * Never throws into the revoke transaction: per-job failures are logged.
+   */
+  async cancelJobsForCharacter(args: {
+    characterId: string;
+    projectId?: string;
+    reason: string;
+  }): Promise<number> {
+    const jobs = await this.store.activeReferencingCharacter(
+      args.characterId,
+      args.projectId,
+    );
+    let cancelled = 0;
+    for (const job of jobs) {
+      if (TERMINAL_STATUSES.has(job.status)) continue;
+      try {
+        await this.cancelJobRow(job, {
+          code: 'CHARACTER_REVOKED',
+          message: `Authorization to use a referenced character was withdrawn (${args.reason}).`,
+          userMessage:
+            'Authorization to use a referenced character was withdrawn, so this generation was cancelled and your points released.',
+          retryable: false,
+          releaseReason: 'ai_job_character_revoked',
+        });
+        cancelled += 1;
+      } catch (err) {
+        this.logger.warn(
+          `failed to cancel job ${job.id} on character revoke: ${err instanceof Error ? err.message : err}`,
+        );
+      }
+    }
+    return cancelled;
   }
 
   async retryJob(user: AuthUser, id: string): Promise<AiSubmitResponse> {
@@ -481,7 +637,12 @@ export class AiGenerationService {
       documentId: job.documentId ?? undefined,
       documentBlockId: job.documentBlockId ?? undefined,
       sourceSurface: job.sourceSurface ?? undefined,
-      input: job.normalizedInput,
+      // Strip server-minted asset:// urls before resubmit: the submit-time
+      // rejectClientAssetReferences guard would otherwise 400 the retry, and
+      // expansion re-derives asset:// from the frozen referenceSnapshot anyway
+      // (the stamped url-less entries are stripped + re-appended). Preserves
+      // the guard for genuine client-sent asset:// (which never reach here).
+      input: redactProviderAssetRefs(job.normalizedInput) ?? undefined,
       promptDocument: job.promptDocument ?? undefined,
       referenceBindings: job.referenceSnapshot ?? undefined,
       styleBindings: job.styleSnapshot ?? undefined,
@@ -559,10 +720,14 @@ export class AiGenerationService {
     body: AiSubmitJobBody,
     workspaceHeaderId?: string,
   ): Promise<AiJobContext> {
-    const workspaceId = this.resolveWorkspaceScope(
-      workspaceHeaderId,
-      body.context?.workspaceId ?? body.workspaceId,
-    );
+    // The x-fizz-workspace-id header is UI scope only (the studio client
+    // stamps the ACTIVE workspace on every request). When the body pins an
+    // explicit document/project context, that entity's home workspace is the
+    // source of truth for the job's workspaceId — a shared project can live
+    // outside the caller's active workspace, so the header must never veto
+    // it. Only an EXPLICIT body workspaceId is cross-checked against the
+    // entity's home workspace.
+    const explicitWorkspaceId = body.context?.workspaceId ?? body.workspaceId;
     const projectId = body.context?.projectId ?? body.projectId;
     const documentId = body.context?.documentId ?? body.documentId;
     const documentBlockId =
@@ -577,7 +742,7 @@ export class AiGenerationService {
         documentId,
         ProjectMemberRole.editor,
       );
-      if (workspaceId && workspaceId !== document.workspaceId) {
+      if (explicitWorkspaceId && explicitWorkspaceId !== document.workspaceId) {
         throw new BadRequestException({
           code: 'DOCUMENT_WORKSPACE_MISMATCH',
           msg: 'Document does not belong to the selected workspace.',
@@ -604,7 +769,7 @@ export class AiGenerationService {
         projectId,
         ProjectMemberRole.editor,
       );
-      if (workspaceId && workspaceId !== project.workspaceId) {
+      if (explicitWorkspaceId && explicitWorkspaceId !== project.workspaceId) {
         throw new BadRequestException({
           code: 'PROJECT_WORKSPACE_MISMATCH',
           msg: 'Project does not belong to the selected workspace.',
@@ -616,6 +781,13 @@ export class AiGenerationService {
         sourceSurface,
       };
     }
+
+    // No entity context: the header participates again as the workspace
+    // scope (and must agree with an explicit body workspaceId, if any).
+    const workspaceId = this.resolveWorkspaceScope(
+      workspaceHeaderId,
+      explicitWorkspaceId,
+    );
 
     if (workspaceId) {
       await this.workspacePermissions.requireWorkspaceRole(
@@ -809,7 +981,8 @@ export class AiGenerationService {
       // Always include the normalized input so the gallery can render
       // the correct aspect ratio for queued/in-flight cards on reload
       // (output rows don't carry width/height until upload finishes).
-      input: job.normalizedInput,
+      // asset:// provider handles are stripped — never leave the server (§2.3).
+      input: redactProviderAssetRefs(job.normalizedInput),
       outputs: job.outputs,
       error: job.error,
       createdAt: job.createdAt,
@@ -836,6 +1009,42 @@ export class AiGenerationService {
         completedAt: job.completedAt,
       },
     };
+  }
+
+  /**
+   * Reference usage ledger write (role=reference) for every binding that
+   * carries an assetId. Idempotent per (job, asset); errors are logged
+   * loudly but never fail a submit whose job + wallet hold already exist.
+   */
+  private async recordReferenceUsageSafe(
+    job: Pick<
+      AiJob,
+      'id' | 'userId' | 'workspaceId' | 'projectId' | 'sourceSurface'
+    >,
+    references: AiPromptReferenceBinding[],
+  ): Promise<void> {
+    const entries = references.flatMap((reference) =>
+      reference.assetId
+        ? [
+            {
+              assetId: reference.assetId,
+              refId: reference.refId,
+              kind: reference.kind,
+              characterId: reference.characterId,
+            },
+          ]
+        : [],
+    );
+    if (entries.length === 0) return;
+    try {
+      await this.store.recordReferenceUsage(job, entries);
+    } catch (err) {
+      this.logger.error(
+        `Failed to record reference usage for job ${job.id}: ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+      );
+    }
   }
 
   private async recordTraceSafe(

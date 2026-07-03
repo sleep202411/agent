@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { AuthModule } from '../auth';
+import { CharactersModule } from '../characters/characters.module';
 import { DocumentsModule } from '../documents/documents.module';
 import { NotificationModule } from '../notification';
 import { UsersModule } from '../users/users.module';
@@ -33,6 +34,9 @@ import { WorkspaceMembersService } from './workspace-members.service';
     UsersModule,
     WorkspacesModule,
     RealtimeRevokeModule,
+    // v2: project-member removal withdraws the removed user's real_person
+    // grants for that project. Acyclic — characters does not import sharing.
+    CharactersModule,
   ],
   controllers: [
     WorkspaceMembersController,
