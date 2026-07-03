@@ -123,8 +123,7 @@ export function StudioSidebar() {
   const items: RailItem[] = [
     { label: t("nav.home"), href: "/", icon: IconHome },
     { label: t("nav.creativeStudio"), href: "/projects", icon: IconLayoutGrid },
-    // Story Studio has no route yet — keep the entry disabled (coming soon).
-    { label: t("nav.storyStudio"), href: "/story", icon: IconBook2, disabled: true },
+    { label: t("nav.storyStudio"), href: "/story-studio", icon: IconBook2 },
     // Plural to match the web app's /fizzstudio/images so that page ports 1:1.
     { label: t("nav.image"), href: "/images", icon: IconPhoto },
     { label: t("nav.video"), href: "/video", icon: IconVideo },

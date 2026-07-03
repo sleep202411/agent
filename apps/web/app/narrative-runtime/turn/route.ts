@@ -13,10 +13,16 @@ type NarrativeTurnRequest = {
   action?: NarrativeTurnAction;
   locale?: string;
   playerText?: string;
+  storyId?: string;
   setup?: {
-    name?: string;
-    identity?: string;
     details?: string;
+    direction?: string;
+    freedom?: string;
+    hintLevel?: string;
+    identity?: string;
+    name?: string;
+    pace?: string;
+    role?: string;
   };
   story?: Array<{
     kind?: "narrator" | "player" | "system";
@@ -238,6 +244,7 @@ function buildMessages(
         `剧情边界：${currentPlot.boundary}`,
         "你必须限制剧情：不能直接进入校长办公室，不能揭露真凶，不能凭空给证据。只有当前节点允许的信息可以出现。",
         "允许玩家自由行动，但要把动作归类为观察环境、检查转学通知书、询问接待老师、联系哥哥、拒绝配合或保持沉默之一；离题输入要自然拉回当前场景。",
+        "playerProfile.selectedRole、adaptationDirection、pace、hintLevel、freedom 是玩家开局校准：用它们调整叙事视角、类型氛围、节奏、提示力度和开放输入边界；但不得提前泄露真相、绕过线索条件或跳过剧情节点边界。",
         "每次 response 都必须从 recentStory 的最后一段之后继续推进，禁止复述、改写或轻微变体重复最近 3 段叙事。尤其是 action=continue 时，必须出现新的外部动作、对话、位置变化或时间推进；不要让同一张通知书、同一个手势、同一个物件悬停多回合。",
         "只允许解锁这些线索：" +
           availableClueIds
@@ -268,6 +275,11 @@ function buildMessages(
           name: payload.setup?.name || "林风",
           identity: payload.setup?.identity || "被送入精英学校的 17 岁少女",
           details: payload.setup?.details || "",
+          selectedRole: payload.setup?.role || "linFeng",
+          adaptationDirection: payload.setup?.direction || "mystery",
+          pace: payload.setup?.pace || "standard",
+          hintLevel: payload.setup?.hintLevel || "normal",
+          freedom: payload.setup?.freedom || "balanced",
         },
         currentPlot,
         unlockedClueIds: payload.unlockedClueIds ?? [],

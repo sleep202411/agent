@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
-import { NarrativeDemoPlayer } from "@/app/narrative-demo/_components/narrative-demo-player";
+import { NarrativePlayer } from "../_components/narrative-player";
 import { getNarrativePlayable } from "@/src/features/narrative/narrative-games";
 
 export const metadata: Metadata = {
@@ -16,5 +16,5 @@ export default async function NarrativePlayPage(props: { params: Promise<{ id: s
     notFound();
   }
 
-  return <NarrativeDemoPlayer />;
+  return <NarrativePlayer storyId={playable.id} />;
 }

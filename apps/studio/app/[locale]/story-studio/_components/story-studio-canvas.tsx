@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  type CSSProperties,
   type ReactNode,
   type SyntheticEvent,
   useCallback,
@@ -68,10 +69,16 @@ import {
   IconX,
   type Icon,
 } from "@tabler/icons-react";
+import {
+  ensureCanvasDocument,
+  getDocument,
+  updateDocumentSnapshot,
+  type ModeDocumentRef,
+} from "@/lib/collab/projects-api";
 import { cn } from "@/lib/utils";
 
 type NarrativeNodeKind =
-  | "script"
+  | "storyRoot"
   | "plot"
   | "ending"
   | "role"
@@ -88,6 +95,23 @@ type NarrativeNodeKind =
   | "relationship"
   | "playtest";
 
+type StoryRootDocumentSection = {
+  heading: string;
+  paragraphs: readonly string[];
+};
+
+type StoryRootOverviewCard = {
+  label: string;
+  value: string;
+};
+
+type StoryRootStats = {
+  roleCount: number;
+  plotCount: number;
+  clueCount: number;
+  endingCount: number;
+};
+
 type NarrativeNodeData = {
   kind: NarrativeNodeKind;
   label: string;
@@ -97,7 +121,10 @@ type NarrativeNodeData = {
   status?: "ready" | "working" | "review";
   chips?: string[];
   image?: "avatar" | "scene" | "board" | "item" | "sfx" | "music" | "video";
-  scriptMode?: "document";
+  storyRootMode?: "document";
+  storyRootSections?: StoryRootDocumentSection[];
+  storyRootOverviewCards?: StoryRootOverviewCard[];
+  storyRootStats?: StoryRootStats;
   plotId?: PlotNodeId;
   characterMode?: "protagonist" | "relation";
   characterPortrait?: CharacterPortraitKey;
@@ -121,7 +148,7 @@ type NarrativeNodeData = {
   relationshipFrom?: string;
   relationshipTo?: string;
   relationshipType?: string;
-  onViewScript?: () => void;
+  onViewStoryRoot?: () => void;
   onViewPlot?: () => void;
   onViewCharacter?: () => void;
   onEditNode?: () => void;
@@ -133,6 +160,260 @@ type NarrativeEdge = Edge & {
     curvature?: number;
   };
 };
+
+type StoryCanvasSnapshot = Record<string, unknown> & {
+  title?: string;
+  summary?: string;
+  canvas?: {
+    nodes?: unknown;
+    edges?: unknown;
+  };
+};
+
+type StoryStudioAnalysis = {
+  title: string;
+  summary: string;
+  worldview: string;
+  storyKernel: string;
+  adaptationDirection: string;
+  locations: string[];
+  protagonist: {
+    name: string;
+    role: string;
+    summary: string;
+  };
+  characters: Array<{
+    name: string;
+    role: string;
+    summary: string;
+    tags: string[];
+  }>;
+  clues: Array<{
+    title: string;
+    summary: string;
+    type: string;
+    source: string;
+    use: string;
+    rule: string;
+    tags: string[];
+  }>;
+  plots: Array<{
+    title: string;
+    summary: string;
+    entryGoal: string;
+    tags: string[];
+  }>;
+  endings: Array<{
+    title: string;
+    type: "truth" | "intervention" | "failure" | "hidden";
+    summary: string;
+    trigger: string;
+    review: string;
+    tags: string[];
+  }>;
+  guardrails: string[];
+};
+
+type StoryStudioAnalyzeResponse =
+  | {
+      success: true;
+      analysis: StoryStudioAnalysis;
+    }
+  | {
+      success: false;
+      message: string;
+    };
+
+const STORY_CANVAS_SCHEMA_VERSION = "story-studio-canvas-v1";
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function isNarrativeNodeKind(value: unknown): value is NarrativeNodeKind {
+  return (
+    value === "storyRoot" ||
+    value === "plot" ||
+    value === "ending" ||
+    value === "role" ||
+    value === "scene" ||
+    value === "clue" ||
+    value === "storyboard" ||
+    value === "item" ||
+    value === "sfx" ||
+    value === "music" ||
+    value === "video" ||
+    value === "logic" ||
+    value === "condition" ||
+    value === "state" ||
+    value === "relationship" ||
+    value === "playtest"
+  );
+}
+
+function normalizeNarrativeNodeKind(value: unknown): NarrativeNodeKind | null {
+  if (value === "script") {
+    return "storyRoot";
+  }
+
+  return isNarrativeNodeKind(value) ? value : null;
+}
+
+function isPersistedNarrativeNode(value: unknown): value is NarrativeNode {
+  if (!isRecord(value)) return false;
+  if (typeof value.id !== "string") return false;
+  if (!isRecord(value.position)) return false;
+  if (typeof value.position.x !== "number" || typeof value.position.y !== "number") {
+    return false;
+  }
+  if (!isRecord(value.data)) return false;
+  if (!normalizeNarrativeNodeKind(value.data.kind)) return false;
+  return typeof value.data.label === "string" && typeof value.data.eyebrow === "string";
+}
+
+function isPersistedNarrativeEdge(value: unknown): value is NarrativeEdge {
+  if (!isRecord(value)) return false;
+  return (
+    typeof value.id === "string" &&
+    typeof value.source === "string" &&
+    typeof value.target === "string"
+  );
+}
+
+function parseStoryCanvasSnapshot(snapshot: unknown): {
+  nodes: NarrativeNode[];
+  edges: NarrativeEdge[];
+  base: StoryCanvasSnapshot;
+} {
+  const base = isRecord(snapshot) ? (snapshot as StoryCanvasSnapshot) : {};
+  const canvas = isRecord(base.canvas) ? base.canvas : {};
+  const nodes = Array.isArray(canvas.nodes)
+    ? canvas.nodes.filter(isPersistedNarrativeNode).map((node) => {
+        const kind = normalizeNarrativeNodeKind(node.data.kind);
+        const legacyStoryRootData = node.data as NarrativeNodeData & {
+          scriptMode?: "document";
+          scriptSections?: StoryRootDocumentSection[];
+          scriptOverviewCards?: StoryRootOverviewCard[];
+        };
+        const normalizedData: NarrativeNodeData = {
+          ...node.data,
+          kind: kind ?? "storyRoot",
+          ...(kind === "storyRoot"
+            ? {
+                storyRootMode:
+                  legacyStoryRootData.storyRootMode ?? legacyStoryRootData.scriptMode ?? "document",
+                storyRootSections:
+                  legacyStoryRootData.storyRootSections ?? legacyStoryRootData.scriptSections,
+                storyRootOverviewCards:
+                  legacyStoryRootData.storyRootOverviewCards ??
+                  legacyStoryRootData.scriptOverviewCards,
+              }
+            : {}),
+        };
+
+        return {
+          ...node,
+          id: node.id === "script" ? "storyRoot" : node.id,
+          type: "narrative" as const,
+          data: normalizedData,
+          selected: false,
+          dragging: false,
+        };
+      })
+    : [];
+  const normalizedNodes = normalizeLegacyStoryRootLayout(nodes);
+  const nodeKindById = new Map(normalizedNodes.map((node) => [node.id, node.data.kind]));
+  const edges = Array.isArray(canvas.edges)
+    ? canvas.edges
+        .filter(isPersistedNarrativeEdge)
+        .map((edge) => ({
+          ...edge,
+          source: edge.source === "script" ? "storyRoot" : edge.source,
+          target: edge.target === "script" ? "storyRoot" : edge.target,
+        }))
+        .map((edge) => normalizePersistedEdgeHandles(edge, nodeKindById.get(edge.target)))
+        .filter((edge) =>
+          isConnectionTargetKindAllowed(
+            edge.sourceHandle,
+            nodeKindById.get(edge.target),
+            edge.source
+          )
+        )
+    : [];
+
+  return { nodes: normalizedNodes, edges, base };
+}
+
+function serializeNarrativeNodes(nodes: NarrativeNode[]): NarrativeNode[] {
+  return nodes.map((node) => ({
+    id: node.id,
+    type: "narrative",
+    position: node.position,
+    data: {
+      ...node.data,
+      onViewStoryRoot: undefined,
+      onViewPlot: undefined,
+      onViewCharacter: undefined,
+      onEditNode: undefined,
+      storyRootStats: undefined,
+    },
+    hidden: node.hidden,
+    draggable: node.draggable,
+    selectable: node.selectable,
+    deletable: node.deletable,
+    sourcePosition: node.sourcePosition,
+    targetPosition: node.targetPosition,
+    parentId: node.parentId,
+    extent: node.extent,
+    expandParent: node.expandParent,
+    origin: node.origin,
+    className: node.className,
+    style: node.style,
+  }));
+}
+
+function serializeNarrativeEdges(edges: NarrativeEdge[]): NarrativeEdge[] {
+  return edges.map((edge) => ({
+    id: edge.id,
+    source: edge.source,
+    target: edge.target,
+    sourceHandle: edge.sourceHandle,
+    targetHandle: edge.targetHandle,
+    type: edge.type,
+    label: edge.label,
+    animated: edge.animated,
+    hidden: edge.hidden,
+    deletable: edge.deletable,
+    selectable: edge.selectable,
+    style: edge.style,
+    className: edge.className,
+    markerEnd: edge.markerEnd,
+    pathOptions: edge.pathOptions,
+    labelBgBorderRadius: edge.labelBgBorderRadius,
+    labelBgPadding: edge.labelBgPadding,
+    labelBgStyle: edge.labelBgStyle,
+    labelStyle: edge.labelStyle,
+    interactionWidth: edge.interactionWidth,
+    data: edge.data,
+  }));
+}
+
+function buildStoryCanvasSnapshot(
+  base: StoryCanvasSnapshot,
+  nodes: NarrativeNode[],
+  edges: NarrativeEdge[]
+): Record<string, unknown> {
+  return {
+    ...base,
+    schemaVersion:
+      typeof base.schemaVersion === "string" ? base.schemaVersion : STORY_CANVAS_SCHEMA_VERSION,
+    canvas: {
+      ...(isRecord(base.canvas) ? base.canvas : {}),
+      nodes: serializeNarrativeNodes(nodes),
+      edges: serializeNarrativeEdges(edges),
+    },
+  };
+}
 
 const CURVED_EDGE_OPTIONS = {
   type: "default",
@@ -237,6 +518,13 @@ type PlotSimulationResult = {
 };
 
 const CONNECTION_PORTS = {
+  roles: {
+    id: "roles",
+    label: "角色",
+    description: "连角色卡片",
+    color: "#a78bfa",
+    glow: "rgba(167,139,250,0.42)",
+  },
   clues: {
     id: "clues",
     label: "线索库",
@@ -255,12 +543,175 @@ const CONNECTION_PORTS = {
 
 type ConnectionPortId = keyof typeof CONNECTION_PORTS;
 
+const ROLE_CARD_WIDTH = 320;
+const ROLE_CARD_HEIGHT = 168;
+const ROLE_CARD_VERTICAL_GAP = 34;
+const ROLE_PORTRAIT_WIDTH = 82;
+const ROLE_PORTRAIT_HEIGHT = Math.round((ROLE_PORTRAIT_WIDTH * 16) / 9);
+const ROLE_LANE_OFFSET_X = 620;
+const ROLE_LANE_OFFSET_Y = -260;
+
+function isConnectionTargetKindAllowed(
+  sourceHandle: string | null | undefined,
+  targetKind: NarrativeNodeKind | undefined,
+  sourceId?: string
+) {
+  if (targetKind === "role") {
+    return sourceId === "storyRoot" && sourceHandle === "roles";
+  }
+
+  if (!sourceHandle || !(sourceHandle in CONNECTION_PORTS)) {
+    return true;
+  }
+
+  if (sourceHandle === "roles") {
+    return false;
+  }
+
+  if (sourceHandle === "clues") {
+    return targetKind === "clue";
+  }
+
+  if (sourceHandle === "assets") {
+    return targetKind === "scene" || targetKind === "video";
+  }
+
+  return true;
+}
+
+function targetHandleForPort(
+  sourceHandle: string | null | undefined,
+  targetKind: NarrativeNodeKind | undefined
+) {
+  if (sourceHandle === "roles" && targetKind === "role") {
+    return "role-in";
+  }
+
+  if (sourceHandle === "clues" && targetKind === "clue") {
+    return "clue-in";
+  }
+
+  if (sourceHandle === "assets" && (targetKind === "scene" || targetKind === "video")) {
+    return "node-in";
+  }
+
+  return undefined;
+}
+
+function normalizePersistedEdgeHandles(
+  edge: NarrativeEdge,
+  targetKind: NarrativeNodeKind | undefined
+): NarrativeEdge {
+  const targetHandle = edge.targetHandle ?? targetHandleForPort(edge.sourceHandle, targetKind);
+
+  if (edge.sourceHandle && edge.sourceHandle in CONNECTION_PORTS) {
+    return {
+      ...edge,
+      ...edgeOptionsForPort(edge.sourceHandle),
+      targetHandle,
+    };
+  }
+
+  return {
+    ...edge,
+    targetHandle,
+  };
+}
+
+function normalizeLegacyStoryRootLayout(nodes: NarrativeNode[]) {
+  const rootNode = nodes.find((node) => node.id === "storyRoot");
+
+  if (!rootNode) {
+    return nodes;
+  }
+
+  const roleNodes = nodes.filter((node) => node.data.kind === "role");
+  const shouldMoveLegacyRoleLane =
+    roleNodes.length > 0 &&
+    (roleNodes.every((node) => node.position.x < rootNode.position.x - 80) ||
+      roleNodes.some((node, index) => {
+        if (index === 0) return false;
+        const previousNode = roleNodes[index - 1];
+        return Math.abs(node.position.y - previousNode.position.y) < ROLE_CARD_HEIGHT;
+      }));
+
+  if (!shouldMoveLegacyRoleLane) {
+    return nodes;
+  }
+
+  let roleIndex = 0;
+  let plotIndex = 0;
+  let clueIndex = 0;
+  let endingIndex = 0;
+
+  return nodes.map((node) => {
+    if (node.data.kind === "role") {
+      const nextPosition = {
+        x: rootNode.position.x + ROLE_LANE_OFFSET_X,
+        y:
+          rootNode.position.y +
+          ROLE_LANE_OFFSET_Y +
+          roleIndex * (ROLE_CARD_HEIGHT + ROLE_CARD_VERTICAL_GAP),
+      };
+      roleIndex += 1;
+      return { ...node, position: nextPosition };
+    }
+
+    if (node.data.kind === "plot" && node.position.x < rootNode.position.x + 900) {
+      const nextPosition = {
+        x: rootNode.position.x + 980 + plotIndex * 420,
+        y: rootNode.position.y,
+      };
+      plotIndex += 1;
+      return { ...node, position: nextPosition };
+    }
+
+    if (node.data.kind === "clue" && node.position.y < rootNode.position.y + 900) {
+      const nextPosition = {
+        x: rootNode.position.x + 560 + (clueIndex % 3) * 340,
+        y: rootNode.position.y + 900 + Math.floor(clueIndex / 3) * 300,
+      };
+      clueIndex += 1;
+      return { ...node, position: nextPosition };
+    }
+
+    if (node.data.kind === "ending" && node.position.y < rootNode.position.y + 1380) {
+      const nextPosition = {
+        x: rootNode.position.x + 660 + endingIndex * 380,
+        y: rootNode.position.y + 1420,
+      };
+      endingIndex += 1;
+      return { ...node, position: nextPosition };
+    }
+
+    return node;
+  });
+}
+
 function nextDraftNodeForPort({ portId, index }: { portId: ConnectionPortId; index: number }): {
   data: NarrativeNodeData;
-  targetHandle: string;
+  targetHandle?: string;
   label: string;
   offset: { x: number; y: number };
 } {
+  if (portId === "roles") {
+    return {
+      label: "角色",
+      offset: { x: 150, y: 105 },
+      targetHandle: "role-in",
+      data: {
+        kind: "role",
+        eyebrow: "角色",
+        label: `新角色 ${index}`,
+        summary: "从故事总纲拖出生成。用于定义玩家、关键关系人、机构或观察对象。",
+        status: "working",
+        chips: ["角色", "待设定", "可参与剧情"],
+        characterMode: index === 1 ? "protagonist" : "relation",
+        characterPortrait: "neutral",
+      },
+    };
+  }
+
   if (portId === "clues") {
     return {
       targetHandle: "clue-in",
@@ -274,7 +725,7 @@ function nextDraftNodeForPort({ portId, index }: { portId: ConnectionPortId; ind
         status: "working",
         chips: ["全局证据", "待设置出现点", "AI 可引用"],
         clueType: "待分类线索",
-        clueSource: "归属当前故事/剧本；具体发现点在剧情详情中配置。",
+        clueSource: "归属当前故事总纲；具体发现点在剧情详情中配置。",
         clueUse: "用于后续追问、推理、出口条件或风险变化。",
         clueRule: "未解锁前不能被 AI 当作已知事实引用。",
       },
@@ -351,7 +802,7 @@ const CHARACTER_PORTRAITS: Record<CharacterPortraitKey, { src: string; alt: stri
   },
 };
 
-const SCRIPT_DOCUMENT_SECTIONS = [
+const STORY_ROOT_DOCUMENT_SECTIONS = [
   {
     heading: "故事背景",
     paragraphs: [
@@ -381,15 +832,6 @@ const SCRIPT_DOCUMENT_SECTIONS = [
     ],
   },
 ] as const;
-
-const SCRIPT_PREVIEW_LINES = [
-  "故事背景",
-  SCRIPT_DOCUMENT_SECTIONS[0].paragraphs[0],
-  "首宗案件：同学「意外溺毙」",
-  SCRIPT_DOCUMENT_SECTIONS[0].paragraphs[1],
-  "主角拥有过目不忘与超强逻辑推演能力，但她的哥哥会在她逼近真相时介入。",
-  "玩家可以自由输入行动，AI 根据当前证据、角色关系和世界规则生成下一步。",
-];
 
 const CHARACTER_ABILITIES = [
   { label: "过目不忘", value: 96, detail: "能复现见过的物品位置、语气停顿和现场细节。" },
@@ -558,7 +1000,7 @@ const PLOT_NODE_DETAILS: Record<PlotNodeId, PlotNodeDetail> = {
 };
 
 const KIND_META: Record<NarrativeNodeKind, { icon: Icon; accent: string; glow: string }> = {
-  script: {
+  storyRoot: {
     icon: IconFileText,
     accent: "text-[#84b7ff]",
     glow: "bg-[#84b7ff]/18",
@@ -647,488 +1089,59 @@ const CANVAS_LAYOUT = {
   endingCardGap: 72,
 } as const;
 
-function endingNodePosition(index: number) {
-  return {
-    x: CANVAS_LAYOUT.endingColumnX,
-    y:
-      CANVAS_LAYOUT.endingColumnStartY +
-      index * (CANVAS_LAYOUT.endingCardHeight + CANVAS_LAYOUT.endingCardGap),
-  };
-}
-
-const INITIAL_NODES: NarrativeNode[] = [
-  {
-    id: "script",
-    type: "narrative",
-    position: { x: -220, y: -620 },
-    data: {
-      kind: "script",
-      eyebrow: "故事/剧本",
-      label: "36 小时溺亡案",
-      summary: "故事背景、首宗案件、主角能力和 AI 运行边界都在这个核心剧本节点中维护。",
-      status: "review",
-      chips: ["故事根目录", "首案剧本", "可查看全文"],
-      scriptMode: "document",
-    },
-  },
-  {
-    id: "plot-arrival",
-    type: "narrative",
-    position: { x: 360, y: -620 },
-    data: {
-      kind: "plot",
-      eyebrow: "剧情节点 A",
-      label: PLOT_NODE_DETAILS.arrival.title,
-      summary: PLOT_NODE_DETAILS.arrival.summary,
-      status: "ready",
-      chips: ["自由行动", "入校手续", "制度异常"],
-      plotId: "arrival",
-    },
-  },
-  {
-    id: "plot-rumor",
-    type: "narrative",
-    position: { x: 1760, y: -620 },
-    data: {
-      kind: "plot",
-      eyebrow: "剧情节点 B",
-      label: PLOT_NODE_DETAILS.rumor.title,
-      summary: PLOT_NODE_DETAILS.rumor.summary,
-      status: "working",
-      chips: ["开放追问", "碎片线索", "不能锁凶"],
-      plotId: "rumor",
-    },
-  },
-  {
-    id: "plot-report",
-    type: "narrative",
-    position: { x: 2220, y: -620 },
-    data: {
-      kind: "plot",
-      eyebrow: "剧情节点 C",
-      label: PLOT_NODE_DETAILS.report.title,
-      summary: PLOT_NODE_DETAILS.report.summary,
-      status: "review",
-      chips: ["证据链", "受控推理", "哥哥风险"],
-      plotId: "report",
-    },
-  },
-  {
-    id: "clue-transfer-date",
-    type: "narrative",
-    position: { x: -220, y: 20 },
-    data: {
-      kind: "clue",
-      eyebrow: "线索 · 文档",
-      label: "转学通知书日期异常",
-      summary: "通知书落款时间早于哥哥正式通知主角的时间，说明这次转学并不是临时决定。",
-      status: "ready",
-      chips: ["制度异常", "可追问老师", "出口条件"],
-      clueType: "文档线索",
-      clueSource: "出示或检查转学通知书",
-      clueUse: "允许玩家质问接待老师，也可满足“发现 1 个制度异常”。",
-      clueRule: "拿到前，AI 不能让主角主动指出日期异常；拿到后，推理必须引用通知书。",
-    },
-  },
-  {
-    id: "clue-brother-read",
-    type: "narrative",
-    position: { x: 100, y: 20 },
-    data: {
-      kind: "clue",
-      eyebrow: "线索 · 通讯",
-      label: "哥哥没有回复但已读",
-      summary: "哥哥看到了主角的信息，却没有解释转学原因；这会让保护和监控的关系同时成立。",
-      status: "review",
-      chips: ["哥哥干预", "关系变化", "风险上升"],
-      clueType: "通讯线索",
-      clueSource: "玩家尝试联系哥哥",
-      clueUse: "后续可以追问哥哥为何提前知道安排，并提高被带离现场的风险。",
-      clueRule: "不能直接解释哥哥真实目的，只能记录“已读不回”带来的不安和限制。",
-    },
-  },
-  {
-    id: "clue-security-name",
-    type: "narrative",
-    position: { x: -220, y: 310 },
-    data: {
-      kind: "clue",
-      eyebrow: "线索 · 观察",
-      label: "保安提前知道主角姓名",
-      summary: "保安在主角递交通知书之前就叫出了她的名字，证明校方早已完成身份预设。",
-      status: "ready",
-      chips: ["观察环境", "校方预设", "低风险线索"],
-      clueType: "观察线索",
-      clueSource: "观察校门安保",
-      clueUse: "让玩家意识到校方掌握的信息比表面更多，并帮助进入教室后继续追问制度。",
-      clueRule: "AI 只能输出可观察事实，不能直接推断校方参与谋杀。",
-    },
-  },
-  {
-    id: "role-protagonist",
-    type: "narrative",
-    position: { x: -720, y: -760 },
-    data: {
-      kind: "role",
-      eyebrow: "角色",
-      label: "17 岁少女主角",
-      summary:
-        "被指有社交障碍，实则拥有过目不忘和超强逻辑推演能力；她越接近真相，越容易被哥哥带离现场。",
-      status: "ready",
-      chips: ["过目不忘", "逻辑推演", "被保护性带回家"],
-      image: "avatar",
-      characterMode: "protagonist",
-      characterPortrait: "protagonist",
-    },
-  },
-  {
-    id: "role-brother",
-    type: "narrative",
-    position: { x: -720, y: -520 },
-    data: {
-      kind: "role",
-      eyebrow: "关系角色",
-      label: "哥哥 / 情报部门",
-      summary: "保护者、监控者、信息封锁者三种身份同时成立；当主角逼近更大真相时触发干预。",
-      status: "review",
-      chips: ["保护", "监控", "干预触发"],
-      image: "avatar",
-      characterMode: "relation",
-      characterPortrait: "brother",
-    },
-  },
-  {
-    id: "role-victim",
-    type: "narrative",
-    position: { x: -720, y: -280 },
-    data: {
-      kind: "role",
-      eyebrow: "案件角色",
-      label: "溺亡同学",
-      summary: "不是案件道具，而是学校秩序的一次裂缝；她留下的生活痕迹会推动证据链。",
-      status: "ready",
-      chips: ["死者", "生活痕迹", "证据源"],
-      image: "avatar",
-      characterMode: "relation",
-      characterPortrait: "victim",
-    },
-  },
-  {
-    id: "role-school",
-    type: "narrative",
-    position: { x: -720, y: -40 },
-    data: {
-      kind: "role",
-      eyebrow: "机构角色",
-      label: "精英学校 / 校方",
-      summary: "表面是矫正机构，实际维护一套沉默秩序；校方会把异常解释成学生个人问题。",
-      status: "working",
-      chips: ["矫正", "权力秩序", "压制调查"],
-      image: "avatar",
-      characterMode: "relation",
-      characterPortrait: "school",
-    },
-  },
-  {
-    id: "role-police",
-    type: "narrative",
-    position: { x: -720, y: 200 },
-    data: {
-      kind: "role",
-      eyebrow: "外部角色",
-      label: "警方 / 初步定性",
-      summary: "快速接受自杀结论，并用程序性语言封住追问空间；它是压力来源，不是单纯反派。",
-      status: "review",
-      chips: ["自杀定性", "程序压力", "可质疑"],
-      image: "avatar",
-      characterMode: "relation",
-      characterPortrait: "police",
-    },
-  },
-  {
-    id: "clue-accident-report",
-    type: "narrative",
-    position: { x: 100, y: 310 },
-    data: {
-      kind: "clue",
-      eyebrow: "线索",
-      label: "校方事故报告",
-      summary:
-        "警方和校方用来支撑自杀结论的核心文本，但其中的时间线、措辞和缺失细节都可能成为突破口。",
-      status: "ready",
-      chips: ["证据链", "时间线", "可质疑"],
-      image: "item",
-    },
-  },
-  {
-    id: "ending-truth",
-    type: "narrative",
-    position: endingNodePosition(0),
-    data: {
-      kind: "ending",
-      eyebrow: "结局 · 主线",
-      label: "真相结局",
-      summary: "证据链成立，主角证明溺亡案不是自杀，并把众人不敢怀疑的人推到台前。",
-      status: "review",
-      chips: ["主结局", "证据链成立", "揭开谋杀"],
-      endingType: "truth",
-      endingTrigger: "由剧情出口触发：关键证据齐全，并完成最后一次受控推理。",
-      endingReview: "复盘玩家发现的证据、关键行动和最终推理链。",
-    },
-  },
-  {
-    id: "ending-brother-intervention",
-    type: "narrative",
-    position: endingNodePosition(1),
-    data: {
-      kind: "ending",
-      eyebrow: "结局 · 中断",
-      label: "哥哥介入结局",
-      summary: "主角接近更大真相，哥哥判断继续调查会带来危险，强行把她带离现场。",
-      status: "working",
-      chips: ["中断结局", "哥哥介入", "更大真相"],
-      endingType: "intervention",
-      endingTrigger: "由剧情出口触发：干预风险过高，或玩家触碰到首案背后的更高层秘密。",
-      endingReview: "说明玩家已经发现了哪些危险信号，以及哥哥介入到底像保护还是阻止。",
-    },
-  },
-  {
-    id: "ending-failure",
-    type: "narrative",
-    position: endingNodePosition(2),
-    data: {
-      kind: "ending",
-      eyebrow: "结局 · 失败",
-      label: "表面自杀结局",
-      summary: "证据不足，校方和警方的自杀定性被保留下来，主角被迫离开调查现场。",
-      status: "ready",
-      chips: ["失败结局", "证据不足", "真相被压下"],
-      endingType: "failure",
-      endingTrigger: "由剧情出口触发：玩家没有建立足够证据链，或关键线索被错过。",
-      endingReview: "复盘缺失的证据和错过的出口，提示仍有其他路线可以重开尝试。",
-    },
-  },
+const NODE_LIBRARY: Array<{ kind: NarrativeNodeKind; title: string }> = [
+  { kind: "storyRoot", title: "故事总纲" },
+  { kind: "plot", title: "剧情节点" },
+  { kind: "role", title: "角色" },
+  { kind: "clue", title: "线索" },
+  { kind: "ending", title: "结局" },
+  { kind: "video", title: "视频" },
+  { kind: "item", title: "道具" },
 ];
 
-const INITIAL_EDGES: NarrativeEdge[] = [
-  {
-    ...CURVED_EDGE_OPTIONS,
-    id: "script-plot-arrival",
-    source: "script",
-    target: "plot-arrival",
-    animated: true,
-  },
-  {
-    ...edgeOptionsForPort("clues"),
-    ...edgeLabelOptions("全局线索", "clues"),
-    id: "script-clue-transfer-date",
-    source: "script",
-    sourceHandle: "clues",
-    target: "clue-transfer-date",
-    targetHandle: "clue-in",
-    animated: false,
-    style: {
-      ...CURVED_EDGE_OPTIONS.style,
-      opacity: 0.46,
-      stroke: CONNECTION_PORTS.clues.color,
-      strokeDasharray: "5 7",
-      strokeWidth: 1.4,
-    },
-  },
-  {
-    ...edgeOptionsForPort("clues"),
-    id: "script-clue-brother-read",
-    source: "script",
-    sourceHandle: "clues",
-    target: "clue-brother-read",
-    targetHandle: "clue-in",
-    animated: false,
-    style: {
-      ...CURVED_EDGE_OPTIONS.style,
-      opacity: 0.46,
-      stroke: CONNECTION_PORTS.clues.color,
-      strokeDasharray: "5 7",
-      strokeWidth: 1.4,
-    },
-  },
-  {
-    ...edgeOptionsForPort("clues"),
-    id: "script-clue-security-name",
-    source: "script",
-    sourceHandle: "clues",
-    target: "clue-security-name",
-    targetHandle: "clue-in",
-    animated: false,
-    style: {
-      ...CURVED_EDGE_OPTIONS.style,
-      opacity: 0.46,
-      stroke: CONNECTION_PORTS.clues.color,
-      strokeDasharray: "5 7",
-      strokeWidth: 1.4,
-    },
-  },
-  {
-    ...edgeOptionsForPort("clues"),
-    id: "script-clue-accident-report",
-    source: "script",
-    sourceHandle: "clues",
-    target: "clue-accident-report",
-    targetHandle: "clue-in",
-    animated: false,
-    style: {
-      ...CURVED_EDGE_OPTIONS.style,
-      opacity: 0.46,
-      stroke: CONNECTION_PORTS.clues.color,
-      strokeDasharray: "5 7",
-      strokeWidth: 1.4,
-    },
-  },
-  {
-    ...CURVED_EDGE_OPTIONS,
-    ...edgeLabelOptions("完成入校阶段"),
-    id: "plot-arrival-rumor",
-    source: "plot-arrival",
-    target: "plot-rumor",
-    animated: true,
-  },
-  {
-    ...CURVED_EDGE_OPTIONS,
-    id: "plot-rumor-report",
-    source: "plot-rumor",
-    target: "plot-report",
-    label: "获得异常",
-    labelBgBorderRadius: 999,
-    labelBgPadding: [9, 5],
-    labelBgStyle: {
-      fill: "oklch(0.19 0 0)",
-      fillOpacity: 0.94,
-    },
-    labelStyle: {
-      fill: "rgba(255, 255, 255, 0.68)",
-      fontSize: 12,
-      fontWeight: 800,
-    },
-  },
-  {
-    ...CURVED_EDGE_OPTIONS,
-    id: "role-protagonist-script",
-    source: "role-protagonist",
-    target: "script",
-    label: "核心主角",
-    labelBgBorderRadius: 999,
-    labelBgPadding: [9, 5],
-    labelBgStyle: {
-      fill: "oklch(0.19 0 0)",
-      fillOpacity: 0.94,
-    },
-    labelStyle: {
-      fill: "rgba(255, 255, 255, 0.68)",
-      fontSize: 12,
-      fontWeight: 800,
-    },
-  },
-  {
-    ...CURVED_EDGE_OPTIONS,
-    id: "role-brother-script",
-    source: "role-brother",
-    target: "script",
-    label: "干预关系",
-    labelBgBorderRadius: 999,
-    labelBgPadding: [9, 5],
-    labelBgStyle: {
-      fill: "oklch(0.19 0 0)",
-      fillOpacity: 0.94,
-    },
-    labelStyle: {
-      fill: "rgba(255, 255, 255, 0.68)",
-      fontSize: 12,
-      fontWeight: 800,
-    },
-  },
-  {
-    ...CURVED_EDGE_OPTIONS,
-    id: "role-victim-script",
-    source: "role-victim",
-    target: "script",
-    label: "首案死者",
-    labelBgBorderRadius: 999,
-    labelBgPadding: [9, 5],
-    labelBgStyle: {
-      fill: "oklch(0.19 0 0)",
-      fillOpacity: 0.94,
-    },
-    labelStyle: {
-      fill: "rgba(255, 255, 255, 0.68)",
-      fontSize: 12,
-      fontWeight: 800,
-    },
-  },
-  {
-    ...CURVED_EDGE_OPTIONS,
-    id: "role-school-script",
-    source: "role-school",
-    target: "script",
-    label: "制度角色",
-    labelBgBorderRadius: 999,
-    labelBgPadding: [9, 5],
-    labelBgStyle: {
-      fill: "oklch(0.19 0 0)",
-      fillOpacity: 0.94,
-    },
-    labelStyle: {
-      fill: "rgba(255, 255, 255, 0.68)",
-      fontSize: 12,
-      fontWeight: 800,
-    },
-  },
-  {
-    ...CURVED_EDGE_OPTIONS,
-    id: "role-police-script",
-    source: "role-police",
-    target: "script",
-    label: "外部压力",
-    labelBgBorderRadius: 999,
-    labelBgPadding: [9, 5],
-    labelBgStyle: {
-      fill: "oklch(0.19 0 0)",
-      fillOpacity: 0.94,
-    },
-    labelStyle: {
-      fill: "rgba(255, 255, 255, 0.68)",
-      fontSize: 12,
-      fontWeight: 800,
-    },
-  },
-];
-
-const NODE_LIBRARY: Array<{
+const EMPTY_CANVAS_STARTERS: Array<{
   kind: NarrativeNodeKind;
   title: string;
   description: string;
+  prompt: string;
+  image: string;
 }> = [
-  { kind: "script", title: "剧本片段", description: "可玩的叙事、铺垫或对白。" },
-  { kind: "plot", title: "剧情节点", description: "当前回合目标、自由输入边界和推进条件。" },
-  { kind: "ending", title: "结局节点", description: "故事终止状态、达成条件和复盘文本。" },
-  { kind: "role", title: "角色卡", description: "角色记忆、性格和视觉身份。" },
-  { kind: "scene", title: "场景卡", description: "地点、氛围、道具和连续性。" },
-  { kind: "clue", title: "线索卡", description: "证据、证词矛盾和可追踪事实。" },
-  { kind: "item", title: "道具卡", description: "玩家可持有、检查或触发的物件。" },
-  { kind: "sfx", title: "音效触发", description: "文字动作、状态变化和线索解锁触发短音效。" },
-  { kind: "storyboard", title: "视频分镜", description: "面向未来 Game Video 模式的镜头。" },
-  { kind: "music", title: "音乐卡", description: "场景 BGM、情绪曲线和触发条件。" },
-  { kind: "video", title: "视频片段", description: "可播放或可生成的剧情镜头。" },
-  { kind: "logic", title: "规则节点", description: "条件、变量和效果。" },
-  { kind: "condition", title: "条件节点", description: "进入、退出、线索和状态门槛。" },
-  { kind: "state", title: "状态变量", description: "玩家进度、风险、线索和角色关系状态。" },
   {
-    kind: "relationship",
-    title: "关系节点",
-    description: "角色之间的信任、冲突、保护或监控关系。",
+    kind: "storyRoot",
+    title: "Story Root",
+    description: "Generate with StoryOS",
+    prompt:
+      "Turn this IP into a playable text story with a clear story root, plot spine, clues, characters, and endings.",
+    image: "/gallery/seed/concept-story-archive-cover.jpg",
+  },
+  {
+    kind: "role",
+    title: "Character Sheets",
+    description: "Generate with StoryOS",
+    prompt:
+      "Analyze the IP and generate the first playable story structure with strong character sheets and role boundaries.",
+    image: "/gallery/seed/studio-dark-creative-interior.jpg",
+  },
+  {
+    kind: "video",
+    title: "Opening Video",
+    description: "Generate with StoryOS",
+    prompt:
+      "Analyze the IP and create a story canvas that includes the opening plot node and media moments.",
+    image: "/gallery/seed/studio-neon-story-panels.jpg",
+  },
+  {
+    kind: "music",
+    title: "Audio Scene",
+    description: "Generate with StoryOS",
+    prompt:
+      "Analyze the IP and create a playable story canvas with atmosphere, dramatic beats, and runtime guardrails.",
+    image: "/gallery/seed/studio-holographic-timeline-desk.jpg",
   },
 ];
 
 const AGENT_ACTIONS: Array<{ label: string; kind: NarrativeNodeKind }> = [
-  { label: "扩写案发前一天的校园氛围", kind: "script" },
+  { label: "扩写案发前一天的校园氛围", kind: "storyRoot" },
   { label: "生成下一个可玩剧情节点", kind: "plot" },
   { label: "生成哥哥干预角色节点", kind: "role" },
 ];
@@ -1518,6 +1531,17 @@ function nodeDefaults(kind: NarrativeNodeKind, index: number): NarrativeNodeData
     chips: ["草稿", "未连接", "待审阅"],
   };
 
+  if (kind === "storyRoot") {
+    return {
+      ...base,
+      storyRootMode: "document",
+      label: "故事总纲",
+      summary: "故事背景、核心冲突、世界观和全局线索库的根节点。",
+      status: "ready",
+      chips: ["故事背景", "世界观", "全局线索"],
+    };
+  }
+
   if (kind === "plot") {
     return {
       ...base,
@@ -1667,6 +1691,243 @@ function nodeDefaults(kind: NarrativeNodeKind, index: number): NarrativeNodeData
   return base;
 }
 
+function compactText(value: string, fallback: string): string {
+  const normalized = value.trim().replace(/\s+/g, " ");
+  return normalized || fallback;
+}
+
+function compactChips(values: string[], fallback: string[]): string[] {
+  const chips = values
+    .map((value) => value.trim())
+    .filter(Boolean)
+    .slice(0, 4);
+  return chips.length > 0 ? chips : fallback;
+}
+
+function buildStoryRootSectionsFromAnalysis(
+  analysis: StoryStudioAnalysis
+): StoryRootDocumentSection[] {
+  return [
+    {
+      heading: "Worldview",
+      paragraphs: [
+        compactText(analysis.worldview, "Worldview pending refinement."),
+        `Locations: ${analysis.locations.length > 0 ? analysis.locations.join(" · ") : "Pending"}.`,
+      ],
+    },
+    {
+      heading: "Story Kernel",
+      paragraphs: [
+        compactText(analysis.storyKernel, "Story kernel pending refinement."),
+        compactText(analysis.summary, "Playable premise pending refinement."),
+      ],
+    },
+    {
+      heading: "Adaptation Direction",
+      paragraphs: [
+        compactText(analysis.adaptationDirection, "Mystery"),
+        analysis.guardrails.length > 0
+          ? `AI guardrails: ${analysis.guardrails.join(" · ")}`
+          : "AI must respect discovered evidence, player state, and plot boundaries.",
+      ],
+    },
+  ];
+}
+
+function buildNodesAndEdgesFromAnalysis(analysis: StoryStudioAnalysis): {
+  nodes: NarrativeNode[];
+  edges: NarrativeEdge[];
+} {
+  const now = Date.now();
+  const rootId = "storyRoot";
+  const plotIds = ["arrival", "rumor", "report"] as const;
+
+  const storyRootNode: NarrativeNode = {
+    id: rootId,
+    type: "narrative",
+    position: { x: 260, y: 220 },
+    data: {
+      ...nodeDefaults("storyRoot", 1),
+      eyebrow: "故事总纲",
+      label: compactText(analysis.title, "Untitled Story"),
+      summary: compactText(analysis.summary, "A playable story draft generated by StoryOS."),
+      status: "ready",
+      storyRootMode: "document",
+      chips: compactChips(
+        [analysis.adaptationDirection, "故事核", "世界观", "全局线索"],
+        ["故事核", "世界观", "全局线索"]
+      ),
+      storyRootSections: buildStoryRootSectionsFromAnalysis(analysis),
+      storyRootOverviewCards: [
+        { label: "Worldview", value: compactText(analysis.worldview, "Pending") },
+        { label: "Locations", value: analysis.locations.slice(0, 4).join(" · ") || "Pending" },
+        {
+          label: "Direction",
+          value: compactText(analysis.adaptationDirection, "Mystery"),
+        },
+      ],
+    },
+  };
+
+  const characterSeeds = [
+    {
+      name: analysis.protagonist.name,
+      role: analysis.protagonist.role,
+      summary: analysis.protagonist.summary,
+      tags: ["玩家角色", "主角"],
+      mode: "protagonist" as const,
+      portrait: "protagonist" as CharacterPortraitKey,
+    },
+    ...analysis.characters.map((character, index) => ({
+      name: character.name,
+      role: character.role,
+      summary: character.summary,
+      tags: character.tags,
+      mode: "relation" as const,
+      portrait: (index % 2 === 0 ? "male" : "female") as CharacterPortraitKey,
+    })),
+  ].slice(0, 5);
+
+  const roleNodes: NarrativeNode[] = characterSeeds.map((character, index) => ({
+    id: `role-${now}-${index}`,
+    type: "narrative",
+    position: {
+      x: 860,
+      y: -120 + index * (ROLE_CARD_HEIGHT + ROLE_CARD_VERTICAL_GAP),
+    },
+    data: {
+      ...nodeDefaults("role", index + 1),
+      eyebrow: character.role,
+      label: character.name,
+      summary: compactText(character.summary, "Character role pending refinement."),
+      status: "ready",
+      chips: compactChips(character.tags, ["角色", "AI 扮演"]),
+      characterMode: character.mode,
+      characterPortrait: character.portrait,
+    },
+  }));
+
+  const plotNodes: NarrativeNode[] = analysis.plots.slice(0, 5).map((plot, index) => ({
+    id: `plot-${now}-${index}`,
+    type: "narrative",
+    position: { x: 1240 + index * 420, y: 220 },
+    data: {
+      ...nodeDefaults("plot", index + 1),
+      eyebrow: `剧情节点 ${String.fromCharCode(65 + index)}`,
+      label: compactText(plot.title, `Plot Node ${index + 1}`),
+      summary: compactText(
+        plot.summary || plot.entryGoal,
+        "Playable plot node pending refinement."
+      ),
+      status: index === 0 ? "ready" : "working",
+      chips: compactChips(plot.tags, ["自由行动", "行动点", "进入条件"]),
+      plotId: plotIds[index],
+    },
+  }));
+
+  const clueNodes: NarrativeNode[] = analysis.clues.slice(0, 6).map((clue, index) => ({
+    id: `clue-${now}-${index}`,
+    type: "narrative",
+    position: { x: 820 + (index % 3) * 340, y: 760 + Math.floor(index / 3) * 300 },
+    data: {
+      ...nodeDefaults("clue", index + 1),
+      eyebrow: "线索 · 全局",
+      label: compactText(clue.title, `Clue ${index + 1}`),
+      summary: compactText(clue.summary, "Discoverable clue pending refinement."),
+      status: "ready",
+      chips: compactChips(clue.tags, ["全局证据", "可解锁", "AI 可引用"]),
+      clueType: compactText(clue.type, "evidence"),
+      clueSource: compactText(clue.source, "Player action"),
+      clueUse: compactText(clue.use, "Supports later questions, deductions, or story exits."),
+      clueRule: compactText(clue.rule, "Must be discovered before the AI can cite it."),
+    },
+  }));
+
+  const endingNodes: NarrativeNode[] = analysis.endings.slice(0, 4).map((ending, index) => ({
+    id: `ending-${now}-${index}`,
+    type: "narrative",
+    position: { x: 920 + index * 380, y: 1320 },
+    data: {
+      ...nodeDefaults("ending", index + 1),
+      eyebrow: `结局 · ${ending.type}`,
+      label: compactText(ending.title, `Ending ${index + 1}`),
+      summary: compactText(ending.summary, "Terminal ending pending refinement."),
+      status: "ready",
+      chips: compactChips(ending.tags, ["结局", "终止节点"]),
+      endingType: ending.type,
+      endingTrigger: compactText(ending.trigger, "Reached through a plot exit condition."),
+      endingReview: compactText(
+        ending.review,
+        "Summarize the player evidence chain and missed opportunities."
+      ),
+    },
+  }));
+
+  const nodes = [storyRootNode, ...roleNodes, ...plotNodes, ...clueNodes, ...endingNodes];
+  const edges: NarrativeEdge[] = [];
+
+  roleNodes.forEach((node, index) => {
+    edges.push({
+      ...edgeOptionsForPort("roles"),
+      ...edgeLabelOptions(index === 0 ? "玩家角色" : "角色", "roles"),
+      id: `${rootId}-${node.id}`,
+      source: rootId,
+      sourceHandle: "roles",
+      target: node.id,
+      targetHandle: "role-in",
+    });
+  });
+
+  clueNodes.forEach((node) => {
+    edges.push({
+      ...edgeOptionsForPort("clues"),
+      ...edgeLabelOptions("全局线索", "clues"),
+      id: `${rootId}-${node.id}`,
+      source: rootId,
+      sourceHandle: "clues",
+      target: node.id,
+      targetHandle: "clue-in",
+    });
+  });
+
+  if (plotNodes[0]) {
+    edges.push({
+      ...CURVED_EDGE_OPTIONS,
+      ...edgeLabelOptions("剧情入口"),
+      id: `${rootId}-${plotNodes[0].id}`,
+      source: rootId,
+      target: plotNodes[0].id,
+    });
+  }
+
+  plotNodes.slice(0, -1).forEach((node, index) => {
+    const nextNode = plotNodes[index + 1];
+    edges.push({
+      ...CURVED_EDGE_OPTIONS,
+      ...edgeLabelOptions(`进入 ${String.fromCharCode(66 + index)}`),
+      id: `${node.id}-${nextNode.id}`,
+      source: node.id,
+      target: nextNode.id,
+    });
+  });
+
+  const lastPlot = plotNodes[plotNodes.length - 1];
+  if (lastPlot) {
+    endingNodes.forEach((node) => {
+      edges.push({
+        ...CURVED_EDGE_OPTIONS,
+        ...edgeLabelOptions("结局出口"),
+        id: `${lastPlot.id}-${node.id}`,
+        source: lastPlot.id,
+        target: node.id,
+        targetHandle: "ending-in",
+      });
+    });
+  }
+
+  return { nodes, edges };
+}
+
 function NodeEditButton({
   onClick,
   className,
@@ -1698,29 +1959,108 @@ function NodeEditButton({
   );
 }
 
-function ScriptPreviewNode({
+function storyRootOverviewValue(
+  cards: readonly StoryRootOverviewCard[] | undefined,
+  labels: string[]
+): string | null {
+  if (!cards || cards.length === 0) return null;
+
+  const normalizedLabels = labels.map((label) => label.toLowerCase());
+  const card = cards.find((item) =>
+    normalizedLabels.some((label) => item.label.toLowerCase().includes(label))
+  );
+
+  return card?.value?.trim() || null;
+}
+
+function storyRootSectionText(
+  sections: readonly StoryRootDocumentSection[],
+  headings: string[]
+): string | null {
+  const normalizedHeadings = headings.map((heading) => heading.toLowerCase());
+  const section = sections.find((item) =>
+    normalizedHeadings.some((heading) => item.heading.toLowerCase().includes(heading))
+  );
+
+  return section?.paragraphs.join(" ").trim() || null;
+}
+
+function splitStoryRootList(value: string | null | undefined): string[] {
+  if (!value) return [];
+
+  return value
+    .replace(/^locations:\s*/i, "")
+    .replace(/[;；、,，]/g, " · ")
+    .split(/\s*·\s*/)
+    .map((item) => item.replace(/\.$/, "").trim())
+    .filter(Boolean)
+    .slice(0, 4);
+}
+
+function StoryRootStatTile({ label, value }: { label: string; value: number }) {
+  return (
+    <div className="rounded-[18px] bg-white/[0.055] px-3 py-3">
+      <p className="text-[22px] font-black leading-none text-white/88">{value}</p>
+      <p className="mt-1 text-[11px] font-semibold text-white/36">{label}</p>
+    </div>
+  );
+}
+
+function StoryRootPreviewNode({
   data,
   selected,
 }: Pick<NodeProps<NarrativeNode>, "data" | "selected">) {
+  const storyRootSections =
+    data.storyRootSections && data.storyRootSections.length > 0
+      ? data.storyRootSections
+      : STORY_ROOT_DOCUMENT_SECTIONS;
+  const overviewCards = data.storyRootOverviewCards ?? [];
+  const worldview =
+    storyRootOverviewValue(overviewCards, ["worldview", "世界观"]) ??
+    storyRootSectionText(storyRootSections, ["worldview", "世界观"]) ??
+    data.summary;
+  const storyKernel =
+    storyRootSectionText(storyRootSections, ["story kernel", "故事核"]) ?? data.summary;
+  const locationText =
+    storyRootOverviewValue(overviewCards, ["locations", "地点"]) ??
+    storyRootSectionText(storyRootSections, ["locations", "地点"]);
+  const locations = splitStoryRootList(locationText);
+  const direction =
+    storyRootOverviewValue(overviewCards, ["direction", "改编", "类型"]) ??
+    storyRootSectionText(storyRootSections, ["adaptation direction", "改编方向"]) ??
+    "待确认";
+  const stats = data.storyRootStats ?? {
+    roleCount: 0,
+    plotCount: 0,
+    clueCount: 0,
+    endingCount: 0,
+  };
+
   return (
     <div className="relative w-[430px] pt-10">
       <div className="absolute left-0 top-0 z-10 inline-flex h-8 items-center gap-2 rounded-full bg-[#7b4be8]/42 px-3 text-[13px] font-semibold text-white shadow-[0_10px_30px_rgba(0,0,0,0.3)] backdrop-blur-xl">
         <span className="grid size-6 place-items-center rounded-full bg-[#8f65ff]/70">
           <IconFileText className="size-3.5" stroke={2} />
         </span>
-        剧本策划
+        故事总纲
       </div>
 
       <article
         className={cn(
-          "group relative h-[560px] overflow-visible rounded-[28px] bg-[linear-gradient(180deg,oklch(0.21_0_0),oklch(0.17_0_0))] p-8 shadow-[0_28px_100px_rgba(0,0,0,0.48)] transition duration-200",
+          "group relative overflow-visible rounded-[28px] bg-[linear-gradient(180deg,oklch(0.21_0_0),oklch(0.17_0_0))] p-8 shadow-[0_28px_100px_rgba(0,0,0,0.48)] transition duration-200",
           selected && "bg-[linear-gradient(180deg,oklch(0.24_0_0),oklch(0.18_0_0))]"
         )}
       >
         <Handle
-          type="target"
-          position={Position.Left}
-          className="!-left-1.5 !z-20 !size-3 !border-0 !bg-white/45"
+          id="roles"
+          type="source"
+          position={Position.Right}
+          className="!-right-1.5 !z-30 !size-3 !border-0"
+          style={{
+            top: "36%",
+            backgroundColor: CONNECTION_PORTS.roles.color,
+            boxShadow: `0 0 18px ${CONNECTION_PORTS.roles.glow}`,
+          }}
         />
         <Handle
           type="source"
@@ -1739,6 +2079,17 @@ function ScriptPreviewNode({
           }}
         />
 
+        <div className="pointer-events-none absolute right-5 top-[31%] z-10 inline-flex items-center gap-1.5 rounded-full bg-black/18 px-2 py-1 text-[10px] font-black text-white/42 backdrop-blur-xl">
+          <span
+            className="size-1.5 rounded-full"
+            style={{
+              backgroundColor: CONNECTION_PORTS.roles.color,
+              boxShadow: `0 0 12px ${CONNECTION_PORTS.roles.glow}`,
+            }}
+          />
+          角色
+        </div>
+
         <div className="pointer-events-none absolute right-5 top-[62%] z-10 inline-flex items-center gap-1.5 rounded-full bg-black/18 px-2 py-1 text-[10px] font-black text-white/42 backdrop-blur-xl">
           <span
             className="size-1.5 rounded-full"
@@ -1751,34 +2102,67 @@ function ScriptPreviewNode({
         </div>
 
         <h2 className="text-[34px] font-black leading-none tracking-tight text-white/92">
-          故事/剧本
+          故事总纲
         </h2>
         <p className="mt-2 text-sm font-semibold text-white/40">{data.label}</p>
+        <p className="mt-5 line-clamp-2 text-[14px] font-semibold leading-6 text-white/52">
+          {data.summary}
+        </p>
 
-        <div className="mt-8 space-y-5 text-[14px] font-semibold leading-7 text-white/42">
-          {SCRIPT_PREVIEW_LINES.map((line, index) =>
-            index === 0 || index === 2 ? (
-              <h3 key={line} className="text-[20px] font-black text-white/50">
-                {line}
-              </h3>
-            ) : (
-              <p key={line}>{line}</p>
-            )
-          )}
+        <div className="mt-6 grid grid-cols-4 gap-2">
+          <StoryRootStatTile label="角色" value={stats.roleCount} />
+          <StoryRootStatTile label="剧情" value={stats.plotCount} />
+          <StoryRootStatTile label="线索" value={stats.clueCount} />
+          <StoryRootStatTile label="结局" value={stats.endingCount} />
         </div>
 
-        <div className="pointer-events-none absolute inset-x-0 bottom-0 h-36 bg-[linear-gradient(180deg,transparent,oklch(0.17_0_0)_72%)]" />
+        <div className="mt-5 rounded-[22px] bg-black/18 p-4">
+          <p className="text-[10px] font-black uppercase tracking-[0.18em] text-white/28">故事核</p>
+          <p className="mt-2 line-clamp-3 text-[13px] font-semibold leading-6 text-white/54">
+            {storyKernel}
+          </p>
+        </div>
 
-        <div className="absolute bottom-5 right-6 z-10 flex items-center gap-2">
-          <NodeEditButton onClick={data.onEditNode} />
+        <div className="mt-4 grid grid-cols-2 gap-2">
+          <div className="min-h-[78px] rounded-[20px] bg-white/[0.045] p-3">
+            <p className="text-[10px] font-black uppercase tracking-[0.16em] text-white/28">地点</p>
+            <div className="mt-2 flex flex-wrap gap-1.5">
+              {(locations.length > 0 ? locations : ["待生成"]).slice(0, 3).map((location) => (
+                <span
+                  key={location}
+                  className="max-w-full truncate rounded-full bg-white/[0.07] px-2 py-1 text-[10px] font-semibold text-white/44"
+                >
+                  {location}
+                </span>
+              ))}
+            </div>
+          </div>
+          <div className="min-h-[78px] rounded-[20px] bg-white/[0.045] p-3">
+            <p className="text-[10px] font-black uppercase tracking-[0.16em] text-white/28">
+              改编方向
+            </p>
+            <p className="mt-2 line-clamp-2 text-[12px] font-semibold leading-5 text-white/50">
+              {direction}
+            </p>
+          </div>
+        </div>
+
+        <div className="mt-4 rounded-[20px] bg-white/[0.045] p-3">
+          <p className="text-[10px] font-black uppercase tracking-[0.16em] text-white/28">世界观</p>
+          <p className="mt-2 line-clamp-2 text-[12px] font-semibold leading-5 text-white/46">
+            {worldview}
+          </p>
+        </div>
+
+        <div className="mt-6 flex items-center justify-end">
           <button
             type="button"
-            data-testid="open-script-viewer"
+            data-testid="open-story-root-viewer"
             onClick={(event) => {
               event.stopPropagation();
-              data.onViewScript?.();
+              data.onViewStoryRoot?.();
             }}
-            className="nodrag nopan inline-flex h-11 items-center gap-2 rounded-full bg-[#f21aa7] px-5 text-sm font-black text-white shadow-[0_12px_34px_rgba(242,26,167,0.3)] transition hover:bg-[#ff35b5] active:translate-y-0.5"
+            className="nodrag nopan inline-flex h-11 items-center gap-2 rounded-full bg-[#E52227] px-5 text-sm font-black text-white shadow-[0_12px_34px_rgba(229,34,39,0.28)] transition hover:bg-[#ff3d42] active:translate-y-0.5"
           >
             查看
             <IconFileText className="size-4" stroke={2} />
@@ -1979,9 +2363,15 @@ function PlotNodeCard({ data, selected }: Pick<NodeProps<NarrativeNode>, "data" 
 function CharacterPortrait({
   portrait = "neutral",
   compact = false,
+  className,
+  sizes,
+  style,
 }: {
   portrait?: CharacterPortraitKey;
   compact?: boolean;
+  className?: string;
+  sizes?: string;
+  style?: CSSProperties;
 }) {
   const asset = CHARACTER_PORTRAITS[portrait];
 
@@ -1989,8 +2379,10 @@ function CharacterPortrait({
     <div
       className={cn(
         "relative overflow-hidden rounded-[24px] bg-[linear-gradient(180deg,oklch(0.28_0_0),oklch(0.12_0_0))] shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]",
-        compact ? "aspect-[9/16] w-full" : "aspect-[9/16] w-full"
+        compact ? "aspect-[9/16] w-full" : "aspect-[9/16] w-full",
+        className
       )}
+      style={style}
     >
       <Image
         src={asset.src}
@@ -1998,7 +2390,7 @@ function CharacterPortrait({
         fill
         unoptimized
         loading="eager"
-        sizes={compact ? "96px" : "340px"}
+        sizes={sizes ?? (compact ? "96px" : "340px")}
         className="object-cover"
         draggable={false}
       />
@@ -2025,38 +2417,52 @@ function CharacterCardNode({
   data,
   selected,
 }: Pick<NodeProps<NarrativeNode>, "data" | "selected">) {
+  const roleLabel = data.characterMode === "protagonist" ? "主角" : "角色";
+
   return (
     <article
       className={cn(
-        "group relative w-[310px] overflow-visible rounded-[24px] bg-[oklch(0.19_0_0)] p-3 shadow-[0_22px_70px_rgba(0,0,0,0.34)] transition duration-200",
-        selected && "bg-[oklch(0.23_0_0)] shadow-[0_28px_90px_rgba(0,0,0,0.45)]"
+        "group relative overflow-visible rounded-[22px] bg-[oklch(0.18_0_0)] p-2.5 shadow-[0_18px_58px_rgba(0,0,0,0.32)] transition duration-200",
+        selected && "bg-[oklch(0.215_0_0)] shadow-[0_22px_70px_rgba(0,0,0,0.44)]"
       )}
+      style={{ width: ROLE_CARD_WIDTH, height: ROLE_CARD_HEIGHT }}
     >
       <Handle
+        id="role-in"
         type="target"
         position={Position.Left}
-        className="!-left-1.5 !z-20 !size-3 !border-0 !bg-white/45"
-      />
-      <Handle
-        type="source"
-        position={Position.Right}
-        className="!-right-1.5 !z-20 !size-3 !border-0 !bg-white/55"
+        className="!-left-1.5 !z-30 !size-3 !border-0"
+        style={{
+          top: "50%",
+          backgroundColor: CONNECTION_PORTS.roles.color,
+          boxShadow: `0 0 18px ${CONNECTION_PORTS.roles.glow}`,
+        }}
       />
 
-      <div className="grid grid-cols-[86px_1fr] gap-3">
-        <CharacterPortrait portrait={data.characterPortrait ?? "neutral"} compact />
-        <div className="min-w-0 py-1">
-          <p className="truncate text-[10px] font-semibold uppercase tracking-[0.14em] text-white/36">
-            {data.eyebrow}
-          </p>
-          <h3 className="mt-1 line-clamp-2 text-[17px] font-black leading-tight text-white/90">
+      <div
+        className="grid h-full gap-3"
+        style={{ gridTemplateColumns: `${ROLE_PORTRAIT_WIDTH}px 1fr` }}
+      >
+        <CharacterPortrait
+          portrait={data.characterPortrait ?? "neutral"}
+          compact
+          sizes={`${ROLE_PORTRAIT_WIDTH}px`}
+          className="rounded-[18px]"
+          style={{ width: ROLE_PORTRAIT_WIDTH, height: ROLE_PORTRAIT_HEIGHT }}
+        />
+        <div className="flex min-w-0 flex-col py-1">
+          <div className="mb-1.5 flex items-center">
+            <span className="rounded-full bg-white/[0.08] px-2 py-0.5 text-[10px] font-semibold text-white/50">
+              {roleLabel}
+            </span>
+          </div>
+          <h3 className="line-clamp-1 text-[15px] font-semibold leading-5 text-white/88">
             {data.label}
           </h3>
-          <p className="mt-3 line-clamp-4 text-[12px] font-semibold leading-5 text-white/52">
+          <p className="mt-2 line-clamp-2 text-[11px] font-medium leading-4 text-white/48">
             {data.summary}
           </p>
-          <div className="mt-4 flex items-center gap-2">
-            <NodeEditButton onClick={data.onEditNode} className="h-8 px-2.5" />
+          <div className="mt-auto flex items-center">
             <button
               type="button"
               data-testid={`open-character-viewer-${data.label}`}
@@ -2064,7 +2470,7 @@ function CharacterCardNode({
                 event.stopPropagation();
                 data.onViewCharacter?.();
               }}
-              className="nodrag nopan inline-flex h-8 items-center gap-1.5 rounded-full bg-white px-3 text-xs font-black text-black transition hover:bg-white/88 active:translate-y-0.5"
+              className="nodrag nopan inline-flex h-7 items-center gap-1.5 rounded-full bg-white px-2.5 text-[11px] font-semibold text-black transition hover:bg-white/88 active:translate-y-0.5"
             >
               查看
               <IconUserCircle className="size-3.5" stroke={2} />
@@ -2569,8 +2975,8 @@ function RelationshipNodeCard({
 }
 
 function NarrativeNodeCard({ data, selected }: NodeProps<NarrativeNode>) {
-  if (data.scriptMode === "document") {
-    return <ScriptPreviewNode data={data} selected={selected} />;
+  if (data.kind === "storyRoot" || data.storyRootMode === "document") {
+    return <StoryRootPreviewNode data={data} selected={selected} />;
   }
 
   if (data.kind === "plot") {
@@ -2705,14 +3111,25 @@ function useViewerClose(onClose: () => void) {
   return { closeFromClick, closeFromPointer };
 }
 
-function ScriptViewer({ onClose }: { onClose: () => void }) {
+function StoryRootViewer({
+  storyRoot,
+  onClose,
+}: {
+  storyRoot: NarrativeNodeData;
+  onClose: () => void;
+}) {
   const { closeFromClick, closeFromPointer } = useViewerClose(onClose);
+  const sections =
+    storyRoot.storyRootSections && storyRoot.storyRootSections.length > 0
+      ? storyRoot.storyRootSections
+      : STORY_ROOT_DOCUMENT_SECTIONS;
+  const overviewCards = storyRoot.storyRootOverviewCards ?? [];
 
   return (
     <div
       role="dialog"
       aria-modal="true"
-      aria-label="故事剧本查看器"
+      aria-label="故事总纲查看器"
       className="fixed inset-0 z-[90] overflow-hidden bg-[oklch(0.03_0_0)] text-white duration-300 animate-in fade-in-0"
     >
       <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_18%_28%,rgba(242,26,167,0.08),transparent_28%),radial-gradient(circle_at_52%_18%,rgba(255,255,255,0.05),transparent_34%),linear-gradient(180deg,rgba(255,255,255,0.025),transparent_24%,rgba(0,0,0,0.5))] duration-500 animate-in fade-in-0 zoom-in-95" />
@@ -2744,19 +3161,43 @@ function ScriptViewer({ onClose }: { onClose: () => void }) {
         </div>
         <button
           type="button"
-          data-testid="close-script-viewer"
+          data-testid="close-story-root-viewer"
           onPointerDown={closeFromPointer}
           onClick={closeFromClick}
           className="grid size-11 place-items-center rounded-full bg-white/10 text-white/62 backdrop-blur-xl transition hover:bg-white/15 hover:text-white"
-          aria-label="关闭剧本"
+          aria-label="关闭故事总纲"
         >
           <IconX className="size-5" />
         </button>
       </div>
 
       <article className="relative mx-auto h-full w-full max-w-[860px] overflow-y-auto px-8 pb-40 pt-14 duration-500 animate-in fade-in-0 slide-in-from-bottom-8 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+        <header className="mb-10">
+          <p className="text-xs font-semibold uppercase tracking-[0.2em] text-white/30">
+            Story Root
+          </p>
+          <h1 className="mt-3 text-[42px] font-black leading-tight tracking-tight text-white/94">
+            {storyRoot.label}
+          </h1>
+          <p className="mt-5 text-[18px] font-semibold leading-8 text-white/56">
+            {storyRoot.summary}
+          </p>
+          {overviewCards.length > 0 ? (
+            <div className="mt-7 grid grid-cols-1 gap-3 sm:grid-cols-3">
+              {overviewCards.slice(0, 3).map((card) => (
+                <div key={card.label} className="rounded-[22px] bg-white/[0.055] p-4">
+                  <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-white/28">
+                    {card.label}
+                  </p>
+                  <p className="mt-2 text-sm font-semibold leading-6 text-white/66">{card.value}</p>
+                </div>
+              ))}
+            </div>
+          ) : null}
+        </header>
+
         <div className="space-y-10">
-          {SCRIPT_DOCUMENT_SECTIONS.map((section) => (
+          {sections.map((section) => (
             <section key={section.heading}>
               <h2 className="text-[27px] font-black leading-tight tracking-normal text-white/92">
                 {section.heading}
@@ -2826,7 +3267,7 @@ function CharacterViewer({
           heading: "关系锚点",
           icon: IconUsersGroup,
           paragraphs: [
-            "这张角色卡与故事/剧本根节点相连，表示它是全局重要角色。具体出场、对话和触发条件应在剧情节点里绑定。",
+            "这张角色卡与故事总纲根节点相连，表示它是全局重要角色。具体出场、对话和触发条件应在剧情节点里绑定。",
           ],
         },
       ];
@@ -4302,20 +4743,45 @@ function getClientPoint(event: MouseEvent | TouchEvent) {
   return { x: 0, y: 0 };
 }
 
-function NarrativeStudioInner() {
+type NarrativeStudioInnerProps = {
+  projectId?: string | null;
+};
+
+function NarrativeStudioInner({ projectId }: NarrativeStudioInnerProps) {
   const reactFlow = useReactFlow<NarrativeNode, NarrativeEdge>();
-  const [nodes, setNodes, onNodesChange] = useNodesState<NarrativeNode>(INITIAL_NODES);
-  const [edges, setEdges, onEdgesChange] = useEdgesState<NarrativeEdge>(INITIAL_EDGES);
+  const [nodes, setNodes, onNodesChange] = useNodesState<NarrativeNode>([]);
+  const [edges, setEdges, onEdgesChange] = useEdgesState<NarrativeEdge>([]);
   const [activeAssetKind, setActiveAssetKind] = useState<AssetKind | null>(null);
   const [activePlotId, setActivePlotId] = useState<PlotNodeId | null>(null);
-  const [isScriptViewerOpen, setIsScriptViewerOpen] = useState(false);
+  const [activeStoryRoot, setActiveStoryRoot] = useState<NarrativeNodeData | null>(null);
   const [isAssistantOpen, setIsAssistantOpen] = useState(false);
   const [isSelectionMode, setIsSelectionMode] = useState(false);
   const [selectedNodeCount, setSelectedNodeCount] = useState(0);
   const [activeCharacter, setActiveCharacter] = useState<NarrativeNodeData | null>(null);
   const [activeEditNodeId, setActiveEditNodeId] = useState<string | null>(null);
+  const [canvasDocument, setCanvasDocument] = useState<ModeDocumentRef | null>(null);
+  const [canvasTitle, setCanvasTitle] = useState("未命名故事");
+  const [isCanvasLoading, setIsCanvasLoading] = useState(Boolean(projectId));
+  const [hasHydratedCanvas, setHasHydratedCanvas] = useState(false);
+  const [canvasLoadError, setCanvasLoadError] = useState<string | null>(null);
+  const [canvasSaveState, setCanvasSaveState] = useState<"idle" | "saving" | "saved" | "error">(
+    "idle"
+  );
+  const [canvasSaveError, setCanvasSaveError] = useState<string | null>(null);
+  const [emptyCanvasPrompt, setEmptyCanvasPrompt] = useState("");
+  const [emptyCanvasUploadName, setEmptyCanvasUploadName] = useState<string | null>(null);
+  const [emptyCanvasUploadContent, setEmptyCanvasUploadContent] = useState<string | null>(null);
+  const [emptyCanvasAnalyzeState, setEmptyCanvasAnalyzeState] = useState<
+    "idle" | "loading" | "error"
+  >("idle");
+  const [emptyCanvasAnalyzeError, setEmptyCanvasAnalyzeError] = useState<string | null>(null);
   const connectStartRef = useRef<Parameters<OnConnectStart>[1] | null>(null);
+  const emptyCanvasUploadRef = useRef<HTMLInputElement | null>(null);
+  const emptyCanvasInputRef = useRef<HTMLInputElement | null>(null);
+  const snapshotBaseRef = useRef<StoryCanvasSnapshot>({});
+  const lastSavedSnapshotRef = useRef("");
   const portDraftCounterRef = useRef<Record<ConnectionPortId, number>>({
+    roles: 0,
     clues: 0,
     assets: 0,
   });
@@ -4325,6 +4791,117 @@ function NarrativeStudioInner() {
     () => nodes.find((node) => node.id === activeEditNodeId) ?? null,
     [activeEditNodeId, nodes]
   );
+
+  useEffect(() => {
+    let isCancelled = false;
+
+    async function hydrateCanvas() {
+      setCanvasLoadError(null);
+      setCanvasSaveError(null);
+      setCanvasSaveState("idle");
+      setHasHydratedCanvas(false);
+
+      if (!projectId) {
+        const emptySnapshot = buildStoryCanvasSnapshot({}, [], []);
+        snapshotBaseRef.current = {};
+        lastSavedSnapshotRef.current = JSON.stringify(emptySnapshot);
+        setCanvasDocument(null);
+        setCanvasTitle("未命名故事");
+        setNodes([]);
+        setEdges([]);
+        setIsCanvasLoading(false);
+        setHasHydratedCanvas(true);
+        return;
+      }
+
+      setIsCanvasLoading(true);
+
+      try {
+        const ensuredDocument = await ensureCanvasDocument(projectId);
+        const detailedDocument =
+          ensuredDocument.contentSnapshot === undefined
+            ? await getDocument(ensuredDocument.id)
+            : ensuredDocument;
+
+        if (isCancelled) return;
+
+        const parsed = parseStoryCanvasSnapshot(detailedDocument.contentSnapshot);
+        const title =
+          typeof parsed.base.title === "string" && parsed.base.title.trim()
+            ? parsed.base.title
+            : detailedDocument.title;
+        const snapshotForSignature = buildStoryCanvasSnapshot(
+          parsed.base,
+          parsed.nodes,
+          parsed.edges
+        );
+
+        snapshotBaseRef.current = parsed.base;
+        lastSavedSnapshotRef.current = JSON.stringify(snapshotForSignature);
+        setCanvasDocument(detailedDocument);
+        setCanvasTitle(title || "未命名故事");
+        setNodes(parsed.nodes);
+        setEdges(parsed.edges);
+      } catch (error) {
+        if (isCancelled) return;
+        setCanvasDocument(null);
+        setCanvasTitle("未命名故事");
+        setNodes([]);
+        setEdges([]);
+        setCanvasLoadError(error instanceof Error ? error.message : "无法读取项目画布");
+      } finally {
+        if (!isCancelled) {
+          setIsCanvasLoading(false);
+          setHasHydratedCanvas(true);
+        }
+      }
+    }
+
+    void hydrateCanvas();
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [projectId, setEdges, setNodes]);
+
+  useEffect(() => {
+    if (!hasHydratedCanvas || isCanvasLoading || !canvasDocument?.id) return;
+
+    const nextSnapshot = buildStoryCanvasSnapshot(snapshotBaseRef.current, nodes, edges);
+    const nextSignature = JSON.stringify(nextSnapshot);
+
+    if (nextSignature === lastSavedSnapshotRef.current) return;
+
+    const timer = window.setTimeout(async () => {
+      setCanvasSaveState("saving");
+      setCanvasSaveError(null);
+
+      try {
+        const updatedDocument = await updateDocumentSnapshot(canvasDocument.id, {
+          title: canvasTitle || canvasDocument.title,
+          contentSnapshot: nextSnapshot,
+        });
+
+        snapshotBaseRef.current = nextSnapshot;
+        lastSavedSnapshotRef.current = nextSignature;
+        setCanvasDocument(updatedDocument);
+        setCanvasSaveState("saved");
+      } catch (error) {
+        setCanvasSaveState("error");
+        setCanvasSaveError(error instanceof Error ? error.message : "保存画布失败");
+      }
+    }, 700);
+
+    return () => window.clearTimeout(timer);
+  }, [
+    canvasDocument?.id,
+    canvasDocument?.title,
+    canvasTitle,
+    edges,
+    hasHydratedCanvas,
+    isCanvasLoading,
+    nodes,
+  ]);
 
   const openNodeEditor = useCallback((nodeId: string) => {
     setIsAssistantOpen(false);
@@ -4353,56 +4930,88 @@ function NarrativeStudioInner() {
     [setEdges, setNodes]
   );
 
-  const nodesWithActions = useMemo(
-    () =>
-      nodes.map((node) => {
-        const dataWithEdit = {
-          ...node.data,
-          onEditNode: () => openNodeEditor(node.id),
+  const nodesWithActions = useMemo(() => {
+    const storyRootStats: StoryRootStats = {
+      roleCount: nodes.filter((node) => node.data.kind === "role").length,
+      plotCount: nodes.filter((node) => node.data.kind === "plot").length,
+      clueCount: nodes.filter((node) => node.data.kind === "clue").length,
+      endingCount: nodes.filter((node) => node.data.kind === "ending").length,
+    };
+
+    return nodes.map((node) => {
+      const dataWithEdit = {
+        ...node.data,
+        onEditNode: () => openNodeEditor(node.id),
+      };
+
+      if (node.id === "storyRoot") {
+        return {
+          ...node,
+          data: {
+            ...dataWithEdit,
+            storyRootStats,
+            onViewStoryRoot: () => setActiveStoryRoot(node.data),
+          },
         };
+      }
 
-        if (node.id === "script") {
-          return {
-            ...node,
-            data: {
-              ...dataWithEdit,
-              onViewScript: () => setIsScriptViewerOpen(true),
-            },
-          };
-        }
+      if (node.data.kind === "role") {
+        return {
+          ...node,
+          data: {
+            ...dataWithEdit,
+            onViewCharacter: () => setActiveCharacter(node.data),
+          },
+        };
+      }
 
-        if (node.data.kind === "role") {
-          return {
-            ...node,
-            data: {
-              ...dataWithEdit,
-              onViewCharacter: () => setActiveCharacter(node.data),
-            },
-          };
-        }
+      if (node.data.kind === "plot" && node.data.plotId) {
+        return {
+          ...node,
+          data: {
+            ...dataWithEdit,
+            onViewPlot: () => setActivePlotId(node.data.plotId ?? null),
+          },
+        };
+      }
 
-        if (node.data.kind === "plot" && node.data.plotId) {
-          return {
-            ...node,
-            data: {
-              ...dataWithEdit,
-              onViewPlot: () => setActivePlotId(node.data.plotId ?? null),
-            },
-          };
-        }
-
-        return { ...node, data: dataWithEdit };
-      }),
-    [nodes, openNodeEditor]
-  );
+      return { ...node, data: dataWithEdit };
+    });
+  }, [nodes, openNodeEditor]);
 
   const onConnect = useCallback(
     (connection: Connection) => {
+      const targetNode = nodes.find((node) => node.id === connection.target);
+
+      if (
+        !isConnectionTargetKindAllowed(
+          connection.sourceHandle,
+          targetNode?.data.kind,
+          connection.source
+        )
+      ) {
+        return;
+      }
+
+      const targetHandle =
+        connection.targetHandle ??
+        targetHandleForPort(connection.sourceHandle, targetNode?.data.kind);
+
       setEdges((current) =>
-        addEdge({ ...connection, ...edgeOptionsForPort(connection.sourceHandle) }, current)
+        addEdge(
+          {
+            ...connection,
+            id: `${connection.source}-${connection.sourceHandle ?? "default"}-${connection.target}-${
+              targetHandle ?? connection.targetHandle ?? "default"
+            }-${Date.now()}`,
+            targetHandle,
+            ...edgeOptionsForPort(connection.sourceHandle),
+          },
+          current
+        )
       );
     },
-    [setEdges]
+    [nodes, setEdges]
   );
 
   const onConnectStart = useCallback<OnConnectStart>((_event, params) => {
@@ -4494,6 +5103,74 @@ function NarrativeStudioInner() {
     [nodes.length, setNodes]
   );
 
+  const createStoryRootFromEmptyState = useCallback(async () => {
+    const prompt = emptyCanvasPrompt.trim();
+
+    if (!prompt && !emptyCanvasUploadContent) {
+      setEmptyCanvasAnalyzeState("error");
+      setEmptyCanvasAnalyzeError("Please describe the story or upload a text document first.");
+      emptyCanvasInputRef.current?.focus();
+      return;
+    }
+
+    setEmptyCanvasAnalyzeState("loading");
+    setEmptyCanvasAnalyzeError(null);
+
+    try {
+      const locale =
+        typeof window === "undefined"
+          ? "en-US"
+          : (window.location.pathname.split("/").filter(Boolean)[0] ?? "en-US");
+      const response = await fetch("/api/story-studio/analyze", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          projectId,
+          prompt,
+          uploadedFileName: emptyCanvasUploadName,
+          uploadedContent: emptyCanvasUploadContent,
+          locale,
+        }),
+      });
+      const result = (await response.json().catch(() => null)) as StoryStudioAnalyzeResponse | null;
+
+      if (!response.ok || !result?.success) {
+        throw new Error(
+          result && "message" in result
+            ? result.message
+            : `Analyze failed with HTTP ${response.status}.`
+        );
+      }
+
+      const generated = buildNodesAndEdgesFromAnalysis(result.analysis);
+      snapshotBaseRef.current = {
+        ...snapshotBaseRef.current,
+        title: result.analysis.title,
+        summary: result.analysis.summary,
+        storyAnalysis: result.analysis as unknown as Record<string, unknown>,
+      };
+      setCanvasTitle(result.analysis.title);
+      setNodes(generated.nodes);
+      setEdges(generated.edges);
+      setEmptyCanvasAnalyzeState("idle");
+      setEmptyCanvasAnalyzeError(null);
+      window.setTimeout(() => {
+        reactFlow.setViewport({ x: 80, y: 390, zoom: 0.44 }, { duration: 420 });
+      }, 0);
+    } catch (error) {
+      setEmptyCanvasAnalyzeState("error");
+      setEmptyCanvasAnalyzeError(error instanceof Error ? error.message : "Analyze failed.");
+    }
+  }, [
+    emptyCanvasPrompt,
+    emptyCanvasUploadContent,
+    emptyCanvasUploadName,
+    projectId,
+    reactFlow,
+    setEdges,
+    setNodes,
+  ]);
+
   const addAssetNode = useCallback(
     (asset: AssetItem) => {
       setNodes((current) => {
@@ -4581,6 +5258,127 @@ function NarrativeStudioInner() {
         </ReactFlow>
       </div>
 
+      {isCanvasLoading ? (
+        <div
+          className="pointer-events-none absolute left-1/2 top-1/2 z-20 -translate-x-1/2 -translate-y-1/2 rounded-full bg-white/10 px-5 py-3 text-sm font-semibold text-white/62 shadow-[0_18px_60px_rgba(0,0,0,0.32)] backdrop-blur-xl"
+          role="status"
+        >
+          正在读取项目画布...
+        </div>
+      ) : null}
+
+      {!isCanvasLoading && canvasLoadError ? (
+        <div className="absolute left-1/2 top-1/2 z-20 w-[420px] -translate-x-1/2 -translate-y-1/2 rounded-[28px] bg-[oklch(0.18_0_0)/0.92] p-6 text-center shadow-[0_24px_90px_rgba(0,0,0,0.5)] backdrop-blur-2xl">
+          <p className="text-sm font-semibold text-[#ff8b8e]">项目画布读取失败</p>
+          <p className="mt-3 text-sm leading-6 text-white/52">{canvasLoadError}</p>
+        </div>
+      ) : null}
+
+      {!isCanvasLoading && hasHydratedCanvas && !canvasLoadError && nodes.length === 0 ? (
+        <section
+          className="pointer-events-none absolute bottom-0 top-[104px] z-10 flex items-start justify-center overflow-hidden px-8 pt-[72px] transition-[left] duration-300 ease-[cubic-bezier(0.16,1,0.3,1)]"
+          style={{ left: leftDockWidth, right: 0 }}
+          aria-label="StoryOS empty canvas intake"
+        >
+          <div className="pointer-events-auto w-full max-w-[1160px] text-center">
+            <p className="text-[20px] font-semibold tracking-tight text-white/44">
+              Double-click the canvas or describe what to generate.
+            </p>
+
+            <div className="mx-auto mt-7 flex h-[64px] max-w-[920px] items-center gap-2 rounded-full bg-white/[0.105] p-2 shadow-[0_24px_90px_rgba(0,0,0,0.34)] backdrop-blur-2xl">
+              <input
+                ref={emptyCanvasInputRef}
+                value={emptyCanvasPrompt}
+                onChange={(event) => setEmptyCanvasPrompt(event.target.value)}
+                placeholder="Describe the story you want StoryOS to generate..."
+                disabled={emptyCanvasAnalyzeState === "loading"}
+                className="h-full min-w-0 flex-1 bg-transparent px-6 text-[17px] font-semibold text-white/86 outline-none placeholder:text-white/32"
+              />
+              <input
+                ref={emptyCanvasUploadRef}
+                type="file"
+                accept=".txt,.md,.json,text/plain,text/markdown,application/json"
+                className="hidden"
+                onChange={(event) => {
+                  const file = event.target.files?.[0];
+                  setEmptyCanvasAnalyzeError(null);
+                  setEmptyCanvasUploadName(file?.name ?? null);
+                  setEmptyCanvasUploadContent(null);
+
+                  if (!file) return;
+
+                  const reader = new FileReader();
+                  reader.onload = () => {
+                    setEmptyCanvasUploadContent(
+                      typeof reader.result === "string" ? reader.result.slice(0, 80000) : ""
+                    );
+                  };
+                  reader.onerror = () => {
+                    setEmptyCanvasAnalyzeState("error");
+                    setEmptyCanvasAnalyzeError("Could not read the selected text document.");
+                  };
+                  reader.readAsText(file);
+                }}
+              />
+              <button
+                type="button"
+                disabled={emptyCanvasAnalyzeState === "loading"}
+                onClick={() => emptyCanvasUploadRef.current?.click()}
+                className="inline-flex h-12 shrink-0 items-center justify-center rounded-full bg-white/10 px-6 text-[15px] font-semibold text-white/72 transition hover:bg-white/15 hover:text-white active:translate-y-0.5 disabled:pointer-events-none disabled:opacity-45"
+              >
+                {emptyCanvasUploadName ? "Uploaded" : "Upload"}
+              </button>
+              <button
+                type="button"
+                disabled={emptyCanvasAnalyzeState === "loading"}
+                onClick={createStoryRootFromEmptyState}
+                className="inline-flex h-12 shrink-0 items-center justify-center rounded-full bg-white px-7 text-[15px] font-black text-black shadow-[0_7px_0_0_rgba(255,255,255,0.18)] transition-[transform,box-shadow,background] duration-150 ease-[cubic-bezier(0.16,1,0.3,1)] hover:bg-white/90 active:translate-y-1 active:shadow-[0_2px_0_0_rgba(255,255,255,0.18)] disabled:pointer-events-none disabled:translate-y-1 disabled:opacity-70 disabled:shadow-[0_2px_0_0_rgba(255,255,255,0.18)]"
+              >
+                {emptyCanvasAnalyzeState === "loading" ? "Analyzing..." : "Analyze"}
+              </button>
+            </div>
+
+            {emptyCanvasUploadName ? (
+              <p className="mt-3 text-xs font-semibold text-white/36">
+                Selected text document: {emptyCanvasUploadName}
+              </p>
+            ) : null}
+
+            {emptyCanvasAnalyzeState === "error" && emptyCanvasAnalyzeError ? (
+              <p className="mx-auto mt-3 max-w-[760px] text-sm font-semibold leading-6 text-[#ff8b8e]">
+                {emptyCanvasAnalyzeError}
+              </p>
+            ) : null}
+
+            <div className="mt-7 grid grid-cols-4 gap-4">
+              {EMPTY_CANVAS_STARTERS.map((starter) => (
+                <button
+                  key={starter.kind}
+                  type="button"
+                  onClick={() => {
+                    setEmptyCanvasPrompt((current) => current || starter.prompt);
+                    setEmptyCanvasAnalyzeError(null);
+                    window.setTimeout(() => emptyCanvasInputRef.current?.focus(), 0);
+                  }}
+                  className="group relative h-[96px] overflow-hidden rounded-[22px] bg-cover bg-center p-5 text-left shadow-[0_22px_72px_rgba(0,0,0,0.26)] transition duration-200 hover:-translate-y-1 hover:shadow-[0_30px_90px_rgba(0,0,0,0.42)]"
+                  style={{
+                    backgroundImage: `linear-gradient(90deg, rgba(18,18,18,0.86), rgba(18,18,18,0.48)), url(${starter.image})`,
+                  }}
+                >
+                  <span className="absolute inset-0 bg-black/18 opacity-0 transition group-hover:opacity-100" />
+                  <span className="relative block text-[20px] font-black leading-tight text-white/94">
+                    {starter.title}
+                  </span>
+                  <span className="relative mt-2 block text-sm font-semibold leading-5 text-white/56 transition group-hover:text-white/68">
+                    {starter.description}
+                  </span>
+                </button>
+              ))}
+            </div>
+          </div>
+        </section>
+      ) : null}
+
       <header
         className="pointer-events-none absolute right-6 top-6 z-20 flex items-start justify-between gap-4 transition-[left] duration-300 ease-[cubic-bezier(0.16,1,0.3,1)]"
         style={{ left: leftDockWidth + 24 }}
@@ -4593,13 +5391,34 @@ function NarrativeStudioInner() {
               叙事工作台
             </p>
             <h1 className="max-w-[260px] truncate text-[15px] font-semibold text-white/88">
-              36 小时溺亡案
+              {canvasTitle}
             </h1>
           </div>
           <IconChevronDown className="size-4 text-white/45" />
         </div>
 
         <div className="pointer-events-auto flex items-center gap-2">
+          {projectId ? (
+            <span
+              title={canvasLoadError ?? canvasSaveError ?? undefined}
+              className={cn(
+                "inline-flex h-11 items-center rounded-full px-4 text-xs font-semibold shadow-[0_14px_44px_rgba(0,0,0,0.24)] backdrop-blur-xl",
+                canvasSaveState === "error" || canvasLoadError
+                  ? "bg-[#E52227]/18 text-[#ff8b8e]"
+                  : "bg-white/8 text-white/50"
+              )}
+            >
+              {isCanvasLoading
+                ? "读取项目中"
+                : canvasLoadError
+                  ? "读取失败"
+                  : canvasSaveState === "saving"
+                    ? "保存中"
+                    : canvasSaveState === "saved"
+                      ? "已保存"
+                      : "真实项目"}
+            </span>
+          ) : null}
           <button
             type="button"
             data-testid="toggle-selection-mode"
@@ -4768,7 +5587,7 @@ function NarrativeStudioInner() {
 
           <button
             type="button"
-            onClick={() => addNode("script")}
+            onClick={() => addNode("storyRoot")}
             className="grid size-12 place-items-center rounded-full bg-[#E52227] text-white shadow-[0_10px_30px_rgba(229,34,39,0.28)] transition hover:bg-[#ff3d42]"
             aria-label="新增节点"
             title="新增节点"
@@ -4821,7 +5640,9 @@ function NarrativeStudioInner() {
           onClose={() => setActivePlotId(null)}
         />
       ) : null}
-      {isScriptViewerOpen ? <ScriptViewer onClose={() => setIsScriptViewerOpen(false)} /> : null}
+      {activeStoryRoot ? (
+        <StoryRootViewer storyRoot={activeStoryRoot} onClose={() => setActiveStoryRoot(null)} />
+      ) : null}
       {activeCharacter ? (
         <CharacterViewer character={activeCharacter} onClose={() => setActiveCharacter(null)} />
       ) : null}
@@ -4829,10 +5650,14 @@ function NarrativeStudioInner() {
   );
 }
 
-export function NarrativeStudioCanvas() {
+type StoryStudioCanvasProps = {
+  projectId?: string | null;
+};
+
+export function StoryStudioCanvas({ projectId = null }: StoryStudioCanvasProps) {
   return (
     <ReactFlowProvider>
-      <NarrativeStudioInner />
+      <NarrativeStudioInner projectId={projectId} />
     </ReactFlowProvider>
   );
 }

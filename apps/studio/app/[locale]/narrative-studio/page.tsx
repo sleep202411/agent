@@ -1,11 +1,10 @@
-import type { Metadata } from "next";
-import { NarrativeStudioCanvas } from "./_components/narrative-studio-canvas";
+import { redirect } from "next/navigation";
 
-export const metadata: Metadata = {
-  title: "叙事工作台",
-  description: "互动故事创作画布原型。",
-};
-
-export default function NarrativeStudioPage() {
-  return <NarrativeStudioCanvas />;
+export default async function NarrativeStudioRedirect({
+  params,
+}: {
+  params: Promise<{ locale: string }>;
+}) {
+  const { locale } = await params;
+  redirect(`/${locale}/story-studio`);
 }
