@@ -7,12 +7,14 @@
  * collaboration semantics (design doc docs/story-studio-project-schema-v1.md).
  */
 import { Module } from '@nestjs/common';
+import { StoryLlmClient } from './generation/llm-client';
+import { StoryGenerationService } from './generation/story-generation.service';
 import { StoryProjectsController } from './story-projects.controller';
 import { StoryProjectsService } from './story-projects.service';
 
 @Module({
   controllers: [StoryProjectsController],
-  providers: [StoryProjectsService],
+  providers: [StoryProjectsService, StoryGenerationService, StoryLlmClient],
   exports: [StoryProjectsService],
 })
 export class StoryStudioModule {}

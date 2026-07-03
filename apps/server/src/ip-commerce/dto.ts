@@ -141,6 +141,12 @@ export const ListIpsQuerySchema = z.object({
 });
 export type ListIpsQuery = z.infer<typeof ListIpsQuerySchema>;
 
+export const RandomIpSeedsQuerySchema = z.object({
+  locale: LocaleQuerySchema,
+  limit: z.coerce.number().int().min(1).max(12).default(4),
+});
+export type RandomIpSeedsQuery = z.infer<typeof RandomIpSeedsQuerySchema>;
+
 export const ListIpTaxonomyTermsQuerySchema = z.object({
   type: IpTaxonomyTermTypeSchema.optional(),
   locale: LocaleQuerySchema,

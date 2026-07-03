@@ -91,6 +91,7 @@ import type {
   ReorderAdminIpDiscoveryInput,
   UpdateAdminIpDiscoveryInput,
   ListIpsQuery,
+  RandomIpSeedsQuery,
   RevokeAdminIpEntitlementInput,
   ResolveAdminIpReportInput,
   SubmitCreatorIpReviewInput,
@@ -3224,6 +3225,72 @@ export class IpCommerceService {
     return {
       items: items.map((ip) => ipDto(ip, query.locale)),
       nextCursor: rows.length > query.limit ? (items.at(-1)?.id ?? null) : null,
+    };
+  }
+
+  /**
+   * N DISTINCT random picks from the public plaza pool, projected lean
+   * ({id, title, summary, coverUrl}) — inspiration seeds for the
+   * story-studio empty canvas. Same public gate as listPublicIps.
+   */
+  async randomPublicIpSeeds(query: RandomIpSeedsQuery) {
+    const idRows = await this.prisma.ip.findMany({
+      where: {
+        deletedAt: null,
+        status: { in: PUBLIC_IP_STATUSES },
+        listingVisibility: 'public',
+        localizations: {
+          some: {
+            archivedAt: null,
+            status: { in: PUBLIC_LOCALIZATION_STATUSES },
+          },
+        },
+      },
+      select: { id: true },
+    });
+
+    const pool = idRows.map((row) => row.id);
+    // Fix the target BEFORE sampling — the pool shrinks as picks splice out.
+    const target = Math.min(query.limit, pool.length);
+    const picked: string[] = [];
+    while (picked.length < target) {
+      picked.push(pool.splice(Math.floor(Math.random() * pool.length), 1)[0]!);
+    }
+    if (picked.length === 0) return { items: [] };
+
+    const rows = await this.prisma.ip.findMany({
+      where: { id: { in: picked } },
+      include: {
+        coverAsset: true,
+        localizations: {
+          where: {
+            archivedAt: null,
+            status: { in: PUBLIC_LOCALIZATION_STATUSES },
+          },
+          include: { coverAsset: true },
+        },
+      },
+    });
+    const byId = new Map(rows.map((row) => [row.id, row]));
+
+    return {
+      items: picked
+        .map((id) => byId.get(id))
+        .filter((ip): ip is NonNullable<typeof ip> => Boolean(ip))
+        .map((ip) => {
+          const copy =
+            ip.localizations.find((loc) => loc.locale === query.locale) ??
+            ip.localizations.find((loc) => loc.locale === ip.sourceLocale) ??
+            ip.localizations[0] ??
+            null;
+          const cover = assetDto(copy?.coverAsset ?? ip.coverAsset);
+          return {
+            id: ip.id,
+            title: copy?.title ?? ip.id,
+            summary: copy?.summary ?? '',
+            coverUrl: cover?.url ?? null,
+          };
+        }),
     };
   }
 

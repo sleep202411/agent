@@ -18,19 +18,25 @@ import type { AuthUser } from '../auth';
 import { ZodValidationPipe } from '../common/zod.pipe';
 import {
   CreateStoryProjectSchema,
+  GenerateStoryAnalysisSchema,
   PatchStoryProjectSchema,
   PutStoryDraftSchema,
   StoryProjectIdParamsSchema,
   type CreateStoryProjectInput,
+  type GenerateStoryAnalysisInput,
   type PatchStoryProjectInput,
   type PutStoryDraftInput,
   type StoryProjectIdParams,
 } from './dto';
+import { StoryGenerationService } from './generation/story-generation.service';
 import { StoryProjectsService } from './story-projects.service';
 
 @Controller('story-projects')
 export class StoryProjectsController {
-  constructor(private readonly storyProjects: StoryProjectsService) {}
+  constructor(
+    private readonly storyProjects: StoryProjectsService,
+    private readonly generation: StoryGenerationService,
+  ) {}
 
   @Post()
   async create(
@@ -66,6 +72,24 @@ export class StoryProjectsController {
     return {
       code: 200,
       data: await this.storyProjects.patch(user, params.id, body),
+    };
+  }
+
+  /** S1 StoryOS analysis (ASYNC): marks the draft's pipeline `running` and
+   *  returns immediately — the model run completes in the background and
+   *  persists into the draft; the client polls the draft until done/error.
+   *  Proxy-timeout-proof by design (model calls run 30-90s). */
+  @Post(':id/generate/analysis')
+  async generateAnalysis(
+    @CurrentUser() user: AuthUser,
+    @Param(new ZodValidationPipe(StoryProjectIdParamsSchema))
+    params: StoryProjectIdParams,
+    @Body(new ZodValidationPipe(GenerateStoryAnalysisSchema))
+    body: GenerateStoryAnalysisInput,
+  ) {
+    return {
+      code: 200,
+      data: await this.generation.startAnalysis(user, params.id, body),
     };
   }
 

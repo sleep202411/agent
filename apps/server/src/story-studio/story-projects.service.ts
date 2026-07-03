@@ -18,6 +18,7 @@ import {
   ConflictException,
   Injectable,
   NotFoundException,
+  UnprocessableEntityException,
 } from '@nestjs/common';
 import { Prisma, StoryPublishState } from '@prisma/client';
 import type { StoryDraft, StoryProject } from '@prisma/client';
@@ -25,6 +26,7 @@ import type { AuthUser } from '../auth';
 import { PrismaService } from '../infra/db/db.module';
 import {
   STORY_TITLE_MAX,
+  draftSchemaRank,
   type CreateStoryProjectInput,
   type PatchStoryProjectInput,
   type PutStoryDraftInput,
@@ -142,6 +144,24 @@ export class StoryProjectsService {
     const meta = extractDisplayMeta(input.content);
 
     const result = await this.prisma.$transaction(async (tx) => {
+      // Schema downgrade guard: an outdated client (whose parser cannot
+      // represent newer node kinds) must never clobber a newer snapshot.
+      const stored = await tx.storyDraft.findUnique({
+        where: { storyProjectId: id },
+        select: { schemaVersion: true },
+      });
+      if (
+        stored &&
+        draftSchemaRank(input.schemaVersion) <
+          draftSchemaRank(stored.schemaVersion)
+      ) {
+        throw new UnprocessableEntityException({
+          code: 'DRAFT_SCHEMA_DOWNGRADE',
+          message: `This draft was saved with ${stored.schemaVersion}; refresh the editor to load the newer format.`,
+          storedSchemaVersion: stored.schemaVersion,
+        });
+      }
+
       const claimed = await tx.storyDraft.updateMany({
         where: { storyProjectId: id, revision: input.revision },
         data: {
@@ -211,7 +231,8 @@ export class StoryProjectsService {
 
   // ── Internals ────────────────────────────────────────────────────────────
 
-  private async requireOwnProject(
+  /** Owner gate — also used by StoryGenerationService (same domain). */
+  async requireOwnProject(
     user: AuthUser,
     id: string,
     include?: { draft: true },

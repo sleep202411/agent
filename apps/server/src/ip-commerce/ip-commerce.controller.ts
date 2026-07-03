@@ -41,6 +41,7 @@ import {
   ListIpTaxonomyTermsQuerySchema,
   ListPublicIpDiscoveryQuerySchema,
   ListIpsQuerySchema,
+  RandomIpSeedsQuerySchema,
   UpsertCreatorIpPriceRuleSchema,
   UpsertIpCollectionItemSchema,
   UpsertIpUserBlockSchema,
@@ -69,6 +70,7 @@ import {
   type ListIpTaxonomyTermsQuery,
   type ListPublicIpDiscoveryQuery,
   type ListIpsQuery,
+  type RandomIpSeedsQuery,
   type UpsertCreatorIpPriceRuleInput,
   type UpsertIpCollectionItemInput,
   type UpsertIpUserBlockInput,
@@ -427,6 +429,20 @@ export class IpCommerceController {
     return {
       code: 200,
       data: await this.ipCommerce.listPublicIps(query, user),
+    };
+  }
+
+  /** Random public IPs, lean projection — story-studio inspiration seeds.
+   *  Declared before `ips/:ipId` so `random` is not captured as an id. */
+  @Public()
+  @Get('ips/random')
+  async randomIps(
+    @Query(new ZodValidationPipe(RandomIpSeedsQuerySchema))
+    query: RandomIpSeedsQuery,
+  ) {
+    return {
+      code: 200,
+      data: await this.ipCommerce.randomPublicIpSeeds(query),
     };
   }
 

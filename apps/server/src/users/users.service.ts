@@ -61,7 +61,21 @@ export class UsersService {
     avatar: string;
   } | null> {
     const info = await this.javaLookup.findCurrentUser(cookie);
-    if (!info || info.id == null) return null;
+    if (!info || info.id == null) {
+      // Mirror the AuthGuard's dev fallback (auth.guard.ts DEV_USER): with
+      // auth disabled locally, surface the same 'dev' identity to the client
+      // so signed-in surfaces develop against the local database.
+      if (process.env.AUTH_DISABLED === 'true') {
+        return {
+          id: 'dev',
+          nickName: 'dev',
+          email: null,
+          phone: null,
+          avatar: await resolveUserAvatar(null, 'dev'),
+        };
+      }
+      return null;
+    }
     const str = (v: unknown): string | null =>
       typeof v === 'string' && v.trim()
         ? v

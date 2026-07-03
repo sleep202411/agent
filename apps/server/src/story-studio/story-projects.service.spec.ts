@@ -48,10 +48,14 @@ function makeService(
     project?: Record<string, unknown> | null;
     draftUpdateCount?: number;
     currentDraft?: Record<string, unknown> | null;
+    storedSchemaVersion?: string;
   } = {},
 ) {
   const tx = {
     storyDraft: {
+      findUnique: jest.fn(async () => ({
+        schemaVersion: opts.storedSchemaVersion ?? 'story-studio-canvas-v1',
+      })),
       updateMany: jest.fn(async () => ({ count: opts.draftUpdateCount ?? 1 })),
     },
     storyProject: {
@@ -157,6 +161,34 @@ describe('StoryProjectsService.putDraft (R1/R2/R5)', () => {
         updatedBySessionId: 'tab-a',
       }),
     });
+  });
+
+  it('rejects a schema DOWNGRADE write (v1 client onto a v2 draft)', async () => {
+    const { service, tx } = makeService({
+      storedSchemaVersion: 'story-studio-canvas-v2',
+    });
+    await expect(
+      service.putDraft(OWNER as never, 'proj-1', {
+        schemaVersion: 'story-studio-canvas-v1',
+        content: {},
+        revision: 3,
+      }),
+    ).rejects.toMatchObject({
+      response: expect.objectContaining({ code: 'DRAFT_SCHEMA_DOWNGRADE' }),
+    });
+    expect(tx.storyDraft.updateMany).not.toHaveBeenCalled();
+  });
+
+  it('allows a schema UPGRADE write (v2 client onto a v1 draft)', async () => {
+    const { service } = makeService({
+      storedSchemaVersion: 'story-studio-canvas-v1',
+    });
+    const res = await service.putDraft(OWNER as never, 'proj-1', {
+      schemaVersion: 'story-studio-canvas-v2',
+      content: { title: 't', canvas: {} },
+      revision: 3,
+    });
+    expect(res.revision).toBe(4);
   });
 });
 

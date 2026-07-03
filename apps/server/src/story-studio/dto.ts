@@ -7,9 +7,26 @@
  * canvas snapshots (`story-studio-canvas-v1`) guarded by a CAS `revision`.
  */
 import { z } from 'zod';
+import { STORY_GENRE_KEYS } from './generation/act-templates';
 
 /** Display title cap — mirrored by the R1 write-through clamp. */
 export const STORY_TITLE_MAX = 160;
+
+/**
+ * Known draft snapshot schema versions, oldest → newest. PUT /draft rejects
+ * writes whose version ranks BELOW the stored draft's version — an outdated
+ * client must never clobber a newer snapshot it cannot represent (fields
+ * like storySpec would be silently dropped by its serializer).
+ */
+export const DRAFT_SCHEMA_VERSIONS = [
+  'story-studio-canvas-v1',
+  'story-studio-canvas-v2',
+] as const;
+export type DraftSchemaVersion = (typeof DRAFT_SCHEMA_VERSIONS)[number];
+
+export function draftSchemaRank(version: string): number {
+  return DRAFT_SCHEMA_VERSIONS.indexOf(version as DraftSchemaVersion);
+}
 
 const StoryTitleSchema = z.string().trim().min(1).max(STORY_TITLE_MAX);
 const StoryTagsSchema = z.array(z.string().trim().min(1).max(40)).max(12);
@@ -45,8 +62,8 @@ export const PatchStoryProjectSchema = z
 export type PatchStoryProjectInput = z.infer<typeof PatchStoryProjectSchema>;
 
 export const PutStoryDraftSchema = z.object({
-  schemaVersion: z.literal('story-studio-canvas-v1'),
-  /** Whole canvas snapshot: {title, summary, storyAnalysis, canvas:{nodes,edges}}. */
+  schemaVersion: z.enum(DRAFT_SCHEMA_VERSIONS),
+  /** Whole canvas snapshot: {title, summary, storyAnalysis, storySpec?, canvas:{nodes,edges}}. */
   content: z.record(z.string(), z.unknown()),
   /** CAS token — the revision this client last read (R5). */
   revision: z.number().int().min(0),
@@ -54,6 +71,27 @@ export const PutStoryDraftSchema = z.object({
   sessionId: z.string().trim().min(1).max(64).optional(),
 });
 export type PutStoryDraftInput = z.infer<typeof PutStoryDraftSchema>;
+
+/** StoryOS generation intake — the creator prompt/document to analyze. */
+export const GenerateStoryAnalysisSchema = z
+  .object({
+    prompt: z.string().trim().max(4000).optional(),
+    uploadedFileName: z.string().trim().max(200).optional(),
+    uploadedContent: z.string().max(80_000).optional(),
+    locale: z.string().trim().min(2).max(16).default('en-US'),
+    /** Explicit 起承转合 genre; omitted = the model picks the best fit. */
+    genre: z.enum(STORY_GENRE_KEYS).optional(),
+    sessionId: z.string().trim().min(1).max(64).optional(),
+  })
+  .refine(
+    (value) => Boolean(value.prompt?.trim() || value.uploadedContent?.trim()),
+    {
+      message: 'Provide a story prompt or an uploaded document.',
+    },
+  );
+export type GenerateStoryAnalysisInput = z.infer<
+  typeof GenerateStoryAnalysisSchema
+>;
 
 // ─── Response DTOs (mirror apps/studio/lib/story-projects-api.ts) ───
 
