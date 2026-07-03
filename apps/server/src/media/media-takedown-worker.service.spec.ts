@@ -151,6 +151,86 @@ describe('MediaTakedownWorkerService', () => {
     );
   });
 
+  it('restricts an HLS rendition placement object (playlist/segment) in place', async () => {
+    const h = makeHarness({
+      claimed: [action({ placementId: 'placement-hls-2' })],
+      placement: {
+        id: 'placement-hls-2',
+        storageProvider: MediaStorageProvider.aliyun_oss,
+        bucket: 'bucket',
+        region: 'cn-hangzhou',
+        objectKey: 'hls/asset-1/480p-0.ts',
+        metadata: {},
+      },
+    });
+    await h.service.drainOnce();
+
+    expect(h.storage!.restrictObject).toHaveBeenCalledWith({
+      bucket: 'bucket',
+      storageKey: 'hls/asset-1/480p-0.ts',
+      region: 'cn-hangzhou',
+    });
+    expect(h.placementUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: 'placement-hls-2' },
+        data: expect.objectContaining({
+          metadata: expect.objectContaining({ moderationRestricted: true }),
+        }),
+      }),
+    );
+    expect(h.assetUpdate).not.toHaveBeenCalled();
+    expect(terminalData(h.actionUpdateMany)?.status).toBe(
+      MediaModerationActionStatus.completed,
+    );
+  });
+
+  it('restores an HLS rendition placement object symmetrically', async () => {
+    const h = makeHarness({
+      claimed: [
+        action({
+          placementId: 'placement-hls-1',
+          metadata: { direction: 'restore' },
+        }),
+      ],
+      placement: {
+        id: 'placement-hls-1',
+        storageProvider: MediaStorageProvider.aliyun_oss,
+        bucket: 'bucket',
+        region: 'cn-hangzhou',
+        objectKey: 'hls/asset-1/480p.m3u8',
+        metadata: { moderationRestricted: true },
+      },
+    });
+    await h.service.drainOnce();
+
+    expect(h.storage!.restoreObject).toHaveBeenCalledWith(
+      {
+        bucket: 'bucket',
+        storageKey: 'hls/asset-1/480p.m3u8',
+        region: 'cn-hangzhou',
+      },
+      {
+        bucket: 'bucket',
+        storageKey: 'hls/asset-1/480p.m3u8',
+        region: 'cn-hangzhou',
+      },
+    );
+    expect(h.placementUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: 'placement-hls-1' },
+        data: expect.objectContaining({
+          metadata: expect.objectContaining({
+            moderationRestricted: false,
+            quarantine: null,
+          }),
+        }),
+      }),
+    );
+    expect(terminalData(h.actionUpdateMany)?.status).toBe(
+      MediaModerationActionStatus.completed,
+    );
+  });
+
   it('records the original location when Azure relocates to quarantine', async () => {
     const h = makeHarness({
       claimed: [action()],

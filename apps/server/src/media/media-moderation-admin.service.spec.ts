@@ -271,4 +271,139 @@ describe('MediaModerationAdminService', () => {
     expect(rows).toHaveLength(2);
     expect(rows.every((r) => r.metadata.direction === 'restore')).toBe(true);
   });
+
+  describe('HLS-transcoded asset (master + rendition placements)', () => {
+    const HLS_PREFIX = `hls/${ASSET_ID}/`;
+
+    /** Placement ledger an HLS transcode leaves behind: the master playlist
+     *  (primary) plus one replica per rendition playlist and segment. */
+    function hlsPlacements(metadata: Record<string, unknown> = {}) {
+      return [
+        `${HLS_PREFIX}master.m3u8`,
+        `${HLS_PREFIX}480p.m3u8`,
+        `${HLS_PREFIX}480p-0.ts`,
+        `${HLS_PREFIX}480p-1.ts`,
+      ].map((objectKey, index) => ({
+        id: `placement-hls-${index}`,
+        status: MediaObjectPlacementStatus.active,
+        storageProvider: MediaStorageProvider.aliyun_oss,
+        objectKey,
+        cdnProvider: null,
+        cdnCacheKey: null,
+        publicBaseUrl: null,
+        metadata,
+      }));
+    }
+
+    function makeHarness(opts: {
+      placements: ReturnType<typeof hlsPlacements>;
+      currentModeration: MediaAssetModerationStatus;
+    }) {
+      const createMany = jest.fn().mockResolvedValue({ count: 1 });
+      const tx = {
+        mediaAsset: { update: jest.fn().mockResolvedValue(updatedAsset()) },
+        mediaModerationCase: {
+          create: jest.fn().mockResolvedValue({ id: 'case-hls' }),
+        },
+        mediaModerationAction: {
+          create: jest.fn().mockResolvedValue({ id: 'action-hls' }),
+          createMany,
+          updateMany: jest.fn().mockResolvedValue({ count: 0 }),
+        },
+        mediaObjectPlacement: {
+          findMany: jest.fn().mockResolvedValue(opts.placements),
+          updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+        },
+        mediaAssetUsage: { findMany: jest.fn().mockResolvedValue([]) },
+        aiEventOutbox: { create: jest.fn() },
+      };
+      const prisma = {
+        mediaAsset: {
+          findFirst: jest.fn().mockResolvedValue({
+            id: ASSET_ID,
+            moderationStatus: opts.currentModeration,
+            storageProvider: MediaStorageProvider.aliyun_oss,
+            objectKey: 'media/cn/episode-video/34/x.mp4',
+            metadata: {},
+          }),
+        },
+        $transaction: jest.fn((cb: (inner: typeof tx) => unknown) =>
+          Promise.resolve(cb(tx)),
+        ),
+      };
+      return {
+        service: new MediaModerationAdminService(prisma as never),
+        createMany,
+      };
+    }
+
+    function takedownRows(createMany: jest.Mock) {
+      const call = createMany.mock.calls.find(
+        (c) =>
+          (c[0] as { data: Array<{ actionType: MediaModerationActionType }> })
+            .data[0]?.actionType ===
+          MediaModerationActionType.restrict_visibility,
+      );
+      expect(call).toBeDefined();
+      return (
+        call![0] as {
+          data: Array<{
+            placementId: string | null;
+            metadata: { direction: string };
+          }>;
+        }
+      ).data;
+    }
+
+    it('block queues a restrict action for EVERY physical HLS object, not just the master', async () => {
+      const { service, createMany } = makeHarness({
+        placements: hlsPlacements(),
+        currentModeration: MediaAssetModerationStatus.approved,
+      });
+
+      await service.updateAssetModeration(ASSET_ID, 'admin-1', {
+        moderationStatus: MediaAssetModerationStatus.blocked,
+        reason: 'policy',
+      });
+
+      const rows = takedownRows(createMany);
+      // Source mp4 (asset object) + master + rendition playlist + 2 segments.
+      expect(rows).toHaveLength(5);
+      expect(rows.every((r) => r.metadata.direction === 'restrict')).toBe(true);
+      expect(rows.map((r) => r.placementId)).toEqual(
+        expect.arrayContaining([
+          null,
+          'placement-hls-0',
+          'placement-hls-1',
+          'placement-hls-2',
+          'placement-hls-3',
+        ]),
+      );
+    });
+
+    it('restore queues a restore action for EVERY physical HLS object symmetrically', async () => {
+      const { service, createMany } = makeHarness({
+        placements: hlsPlacements({ moderationRestricted: true }),
+        currentModeration: MediaAssetModerationStatus.blocked,
+      });
+
+      await service.updateAssetModeration(ASSET_ID, 'admin-1', {
+        moderationStatus: MediaAssetModerationStatus.approved,
+        reason: 'appeal upheld',
+      });
+
+      const rows = takedownRows(createMany);
+      expect(rows).toHaveLength(5);
+      expect(rows.every((r) => r.metadata.direction === 'restore')).toBe(true);
+      expect(rows.map((r) => r.placementId)).toEqual(
+        expect.arrayContaining([
+          null,
+          'placement-hls-0',
+          'placement-hls-1',
+          'placement-hls-2',
+          'placement-hls-3',
+        ]),
+      );
+    });
+  });
 });

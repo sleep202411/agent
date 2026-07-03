@@ -255,6 +255,133 @@ export async function ensureStreamVariantPlacement(
   }
 }
 
+export interface SyncStreamOutputPlacementsInput {
+  assetId: string;
+  variantId: string;
+  storageProvider: MediaStorageProvider;
+  bucket: string;
+  region: string | null;
+  /** The master playlist key — already registered as the PRIMARY placement by
+   *  {@link ensureStreamVariantPlacement}; excluded from the replica sync. */
+  masterObjectKey: string;
+  /** EVERY object key the transcode produced (master + rendition playlists +
+   *  segments), as reported by `ImmTranscodeService.finalizeHls`. */
+  objectKeys: string[];
+}
+
+export interface SyncStreamOutputPlacementsResult {
+  created: number;
+  reactivated: number;
+  retired: number;
+}
+
+/**
+ * Registers every NON-master physical object of an HLS transcode (rendition
+ * playlists + media segments) as a `replica` placement on the `hls` variant,
+ * and retires rows whose object a re-transcode no longer produced.
+ *
+ * WHY: a moderation takedown fans out one `restrict_visibility` action per
+ * placement. With only the master playlist registered, blocking an asset
+ * downed the master while every rendition playlist and segment under
+ * `hls/{assetId}/` stayed publicly streamable. Registering the full produced
+ * set makes the existing per-placement worker cover block AND restore for
+ * every physical object symmetrically — no special-casing in the takedown
+ * path.
+ *
+ * Playback is unaffected: the URL resolver's `pickPlacement` only ever
+ * selects `role: primary`, so replica rows are pure takedown/ledger surface.
+ *
+ * Sync semantics (idempotent, safe on re-transcode):
+ * - keys with no row → created (`skipDuplicates` guards races on the
+ *   (variantId, role, provider, bucket, objectKey) unique index);
+ * - existing rows for produced keys that are soft-deleted/non-active →
+ *   reactivated;
+ * - active rows whose key was NOT produced this run → soft-deleted, so a
+ *   later takedown never queues an ACL flip against a vanished object.
+ */
+export async function syncStreamOutputPlacements(
+  client: Prisma.TransactionClient,
+  input: SyncStreamOutputPlacementsInput,
+): Promise<SyncStreamOutputPlacementsResult> {
+  const wanted = Array.from(
+    new Set(
+      input.objectKeys.filter(
+        (key) => key.length > 0 && key !== input.masterObjectKey,
+      ),
+    ),
+  );
+  const existing = await client.mediaObjectPlacement.findMany({
+    where: {
+      variantId: input.variantId,
+      role: MediaObjectPlacementRole.replica,
+      storageProvider: input.storageProvider,
+      bucket: input.bucket,
+    },
+    select: { id: true, objectKey: true, status: true, deletedAt: true },
+  });
+
+  const wantedSet = new Set(wanted);
+  const existingKeys = new Set(
+    existing.flatMap((row) => (row.objectKey ? [row.objectKey] : [])),
+  );
+  const toCreate = wanted.filter((key) => !existingKeys.has(key));
+  const toReactivate = existing.filter(
+    (row) =>
+      row.objectKey != null &&
+      wantedSet.has(row.objectKey) &&
+      (row.deletedAt != null ||
+        row.status !== MediaObjectPlacementStatus.active),
+  );
+  const toRetire = existing.filter(
+    (row) =>
+      row.deletedAt == null &&
+      (row.objectKey == null || !wantedSet.has(row.objectKey)),
+  );
+
+  if (toCreate.length > 0) {
+    await client.mediaObjectPlacement.createMany({
+      data: toCreate.map((objectKey) => ({
+        assetId: input.assetId,
+        variantId: input.variantId,
+        role: MediaObjectPlacementRole.replica,
+        status: MediaObjectPlacementStatus.active,
+        storageProvider: input.storageProvider,
+        bucket: input.bucket,
+        region: input.region,
+        objectKey,
+        priority: 100,
+        metadata: { source: 'imm_media_convert', hlsOutput: true },
+      })),
+      skipDuplicates: true,
+    });
+  }
+  if (toReactivate.length > 0) {
+    await client.mediaObjectPlacement.updateMany({
+      where: { id: { in: toReactivate.map((row) => row.id) } },
+      data: {
+        deletedAt: null,
+        status: MediaObjectPlacementStatus.active,
+        region: input.region,
+      },
+    });
+  }
+  if (toRetire.length > 0) {
+    await client.mediaObjectPlacement.updateMany({
+      where: { id: { in: toRetire.map((row) => row.id) } },
+      data: {
+        deletedAt: new Date(),
+        status: MediaObjectPlacementStatus.deleted,
+      },
+    });
+  }
+
+  return {
+    created: toCreate.length,
+    reactivated: toReactivate.length,
+    retired: toRetire.length,
+  };
+}
+
 /**
  * Marks the `hls` variant as `failed` (degenerate/short/truncated source, or a
  * transcode that yielded ≤1 segment) WITHOUT a placement, so it's visible in

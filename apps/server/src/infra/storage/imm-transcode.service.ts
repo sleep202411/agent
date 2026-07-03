@@ -47,6 +47,15 @@ export interface ImmFinalizeResult {
    *  source was degenerate (too short / truncated / corrupt) and the HLS must
    *  not be published — playback keeps the original mp4. */
   segmentCount: number;
+  /**
+   * EVERY object key the transcode produced — the master playlist, each
+   * rendition playlist, and every media segment — resolved by parsing the
+   * playlists themselves (exact set, no bucket listing, no guessed names).
+   * The pipeline registers each as a MediaObjectPlacement so a moderation
+   * takedown covers every physical HLS object, not just the master (closing
+   * the "blocked HLS still streamable via rendition URLs" gap).
+   */
+  objectKeys: string[];
 }
 
 const ossInternal = (): boolean =>
@@ -242,26 +251,40 @@ export class ImmTranscodeService {
   }
 
   /**
-   * Read the produced master + first rendition playlist to count segments, and
-   * (best-effort) set Cache-Control on the HLS objects. Caller treats
-   * `segmentCount <= 1` as a degenerate source and keeps the mp4.
+   * Read the produced master + every rendition playlist to collect the exact
+   * set of produced object keys and count segments, and (best-effort) set
+   * Cache-Control on the HLS objects. Caller treats `segmentCount <= 1` as a
+   * degenerate source and keeps the mp4. `segmentCount` is measured on the
+   * FIRST rendition playlist (unchanged semantics); `objectKeys` covers ALL
+   * renditions so the placement ledger — and therefore moderation takedown —
+   * spans every physical object.
    */
   async finalizeHls(assetId: string): Promise<ImmFinalizeResult> {
     if (!this.oss) throw new Error('OSS read-back is not configured');
+    const prefix = this.hlsPrefix(assetId);
     const masterKey = this.masterObjectKey(assetId);
     const master = await this.getText(masterKey);
-    const firstChild = master
-      .split('\n')
-      .map((l) => l.trim())
-      .find((l) => l && !l.startsWith('#') && l.endsWith('.m3u8'));
-    if (!firstChild) {
+    const childNames = playlistEntries(master).filter((entry) =>
+      entry.endsWith('.m3u8'),
+    );
+    if (childNames.length === 0) {
       throw new Error(`HLS master has no rendition playlist: ${masterKey}`);
     }
-    const childKey = `${this.hlsPrefix(assetId)}${firstChild}`;
-    const child = await this.getText(childKey);
-    const segmentCount = child
-      .split('\n')
-      .filter((l) => /\.ts(\?|$)/i.test(l.trim())).length;
+
+    const objectKeys = new Set<string>([masterKey]);
+    let segmentCount = 0;
+    for (const [index, childName] of childNames.entries()) {
+      const childKey = `${prefix}${childName}`;
+      objectKeys.add(childKey);
+      const child = await this.getText(childKey);
+      const segments = playlistEntries(child).filter((entry) =>
+        /\.ts(\?|$)/i.test(entry),
+      );
+      for (const segment of segments) {
+        objectKeys.add(`${prefix}${stripQuery(segment)}`);
+      }
+      if (index === 0) segmentCount = segments.length;
+    }
 
     if (
       segmentCount > 1 &&
@@ -275,7 +298,11 @@ export class ImmTranscodeService {
       );
     }
 
-    return { masterObjectKey: masterKey, segmentCount };
+    return {
+      masterObjectKey: masterKey,
+      segmentCount,
+      objectKeys: [...objectKeys],
+    };
   }
 
   private rendition(prefix: string, height: number, crf: number) {
@@ -354,6 +381,22 @@ export class ImmTranscodeService {
       marker = listed.nextMarker;
     } while (marker);
   }
+}
+
+/** Non-comment, non-blank lines of an m3u8 — the URI entries, in order.
+ *  IMM writes RELATIVE entries (`480p.m3u8`, `480p-0.ts`) so each resolves
+ *  against the asset's `hls/{assetId}/` prefix. */
+function playlistEntries(text: string): string[] {
+  return text
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0 && !line.startsWith('#'));
+}
+
+/** Object key of a playlist URI entry — drop any query string. */
+function stripQuery(uri: string): string {
+  const index = uri.indexOf('?');
+  return index === -1 ? uri : uri.slice(0, index);
 }
 
 function mapTaskState(status: string): ImmTaskState {

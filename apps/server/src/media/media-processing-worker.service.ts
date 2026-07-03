@@ -19,6 +19,7 @@ import {
   ensureOriginalMediaPlacement,
   ensureStreamVariantPlacement,
   markStreamVariantFailed,
+  syncStreamOutputPlacements,
 } from '../infra/storage/media-asset-placement';
 import { ImmTranscodeService } from '../infra/storage/imm-transcode.service';
 
@@ -255,6 +256,9 @@ export class MediaProcessingWorkerService
       });
       return;
     }
+    // Narrowed local: property narrowing does not survive into the
+    // $transaction callback below.
+    const assetBucket = asset.bucket;
     if (
       asset.objectKey.endsWith('.m3u8') ||
       asset.objectKey.startsWith('hls/')
@@ -365,8 +369,8 @@ export class MediaProcessingWorkerService
         return;
       }
 
-      const result = await this.prisma.$transaction((tx) =>
-        ensureStreamVariantPlacement(tx, {
+      const result = await this.prisma.$transaction(async (tx) => {
+        const placement = await ensureStreamVariantPlacement(tx, {
           assetId: asset.id,
           storageProvider: asset.storageProvider,
           bucket: asset.bucket,
@@ -378,15 +382,31 @@ export class MediaProcessingWorkerService
             segmentCount: finalize.segmentCount,
             immTaskId: state.immTaskId ?? null,
           },
-        }),
-      );
+        });
+        // Register EVERY produced HLS object (rendition playlists + segments)
+        // as a placement too. Moderation takedown fans out one action per
+        // placement, so without these rows a block would down only the master
+        // playlist while the renditions stayed publicly streamable.
+        const outputs = await syncStreamOutputPlacements(tx, {
+          assetId: asset.id,
+          variantId: placement.variantId,
+          storageProvider: asset.storageProvider,
+          bucket: assetBucket,
+          region: asset.region,
+          masterObjectKey: finalize.masterObjectKey,
+          objectKeys: finalize.objectKeys,
+        });
+        return { ...placement, outputs };
+      });
       this.logger.log(
-        `hls_stream ready job=${row.id} asset=${asset.id} segments=${finalize.segmentCount}`,
+        `hls_stream ready job=${row.id} asset=${asset.id} segments=${finalize.segmentCount} ` +
+          `outputPlacements(created=${result.outputs.created} reactivated=${result.outputs.reactivated} retired=${result.outputs.retired})`,
       );
       await this.complete(row, {
         variantId: result.variantId,
         placementId: result.placementId,
         segmentCount: finalize.segmentCount,
+        outputPlacements: { ...result.outputs },
         immTaskId: state.immTaskId ?? null,
       });
     } catch (err) {

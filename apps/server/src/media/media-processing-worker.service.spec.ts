@@ -1,4 +1,4 @@
-/* eslint-disable @typescript-eslint/no-unsafe-assignment -- asserting on untyped jest mock payloads */
+/* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access -- asserting on untyped jest mock payloads */
 import {
   MediaAssetKind,
   MediaAssetModerationStatus,
@@ -117,9 +117,11 @@ describe('MediaProcessingWorkerService', () => {
       },
       mediaObjectPlacement: {
         findFirst: jest.fn().mockResolvedValue(null),
+        findMany: jest.fn().mockResolvedValue([]),
         create: jest.fn().mockResolvedValue({
           id: '01900000-0000-7000-8000-000000000013',
         }),
+        createMany: jest.fn().mockResolvedValue({ count: 0 }),
         updateMany: jest.fn().mockResolvedValue({ count: 0 }),
       },
     };
@@ -288,6 +290,11 @@ describe('MediaProcessingWorkerService', () => {
       imm.finalizeHls.mockResolvedValue({
         masterObjectKey: `hls/${ASSET_ID}/master.m3u8`,
         segmentCount: 31,
+        objectKeys: [
+          `hls/${ASSET_ID}/master.m3u8`,
+          `hls/${ASSET_ID}/480p.m3u8`,
+          `hls/${ASSET_ID}/480p-0.ts`,
+        ],
       });
       const { service, prisma, tx } = setup(hlsJob(running({})), {
         asset: videoAsset(),
@@ -315,6 +322,64 @@ describe('MediaProcessingWorkerService', () => {
       );
     });
 
+    it('phase 3: registers EVERY produced HLS object (renditions + segments) as replica placements so takedown covers them', async () => {
+      const imm = immMock();
+      imm.getTaskStatus.mockResolvedValue({
+        state: 'succeeded',
+        raw: 'Succeeded',
+      });
+      imm.finalizeHls.mockResolvedValue({
+        masterObjectKey: `hls/${ASSET_ID}/master.m3u8`,
+        segmentCount: 2,
+        objectKeys: [
+          `hls/${ASSET_ID}/master.m3u8`,
+          `hls/${ASSET_ID}/720p.m3u8`,
+          `hls/${ASSET_ID}/720p-0.ts`,
+          `hls/${ASSET_ID}/720p-1.ts`,
+          `hls/${ASSET_ID}/480p.m3u8`,
+          `hls/${ASSET_ID}/480p-0.ts`,
+          `hls/${ASSET_ID}/480p-1.ts`,
+        ],
+      });
+      const { service, prisma, tx } = setup(hlsJob(running({})), {
+        asset: videoAsset(),
+        imm,
+      });
+
+      await service.drainOnce();
+
+      const createManyArg = tx.mediaObjectPlacement.createMany.mock
+        .calls[0]?.[0] as {
+        data: Array<{ objectKey: string; role: string; status: string }>;
+        skipDuplicates: boolean;
+      };
+      expect(createManyArg).toBeDefined();
+      expect(createManyArg.skipDuplicates).toBe(true);
+      // Master is the primary placement (ensureStreamVariantPlacement) — the
+      // replica sync must register everything else, and nothing more.
+      expect(createManyArg.data.map((row) => row.objectKey).sort()).toEqual([
+        `hls/${ASSET_ID}/480p-0.ts`,
+        `hls/${ASSET_ID}/480p-1.ts`,
+        `hls/${ASSET_ID}/480p.m3u8`,
+        `hls/${ASSET_ID}/720p-0.ts`,
+        `hls/${ASSET_ID}/720p-1.ts`,
+        `hls/${ASSET_ID}/720p.m3u8`,
+      ]);
+      expect(createManyArg.data.every((row) => row.role === 'replica')).toBe(
+        true,
+      );
+      expect(prisma.mediaProcessingJob.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            status: MediaProcessingJobStatus.completed,
+            output: expect.objectContaining({
+              outputPlacements: { created: 6, reactivated: 0, retired: 0 },
+            }),
+          }),
+        }),
+      );
+    });
+
     it('a degenerate (<=1 segment) result marks the variant failed and keeps the mp4', async () => {
       const imm = immMock();
       imm.getTaskStatus.mockResolvedValue({
@@ -324,6 +389,11 @@ describe('MediaProcessingWorkerService', () => {
       imm.finalizeHls.mockResolvedValue({
         masterObjectKey: `hls/${ASSET_ID}/master.m3u8`,
         segmentCount: 1,
+        objectKeys: [
+          `hls/${ASSET_ID}/master.m3u8`,
+          `hls/${ASSET_ID}/480p.m3u8`,
+          `hls/${ASSET_ID}/480p-0.ts`,
+        ],
       });
       const { service, prisma, tx } = setup(hlsJob(running({})), {
         asset: videoAsset(),

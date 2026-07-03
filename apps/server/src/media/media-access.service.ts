@@ -6,12 +6,17 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import {
+  CharacterMediaStatus,
+  CharacterStatus,
   MediaAssetModerationStatus,
   MediaAssetStatus,
   MediaAssetVisibility,
   MediaObjectPlacementStatus,
+  PlatformProjectStatus,
   Prisma,
+  ProjectMemberStatus,
   WorkspaceMemberRole,
+  WorkspaceMemberStatus,
 } from '@prisma/client';
 import { PrismaService } from '../infra/db/db.module';
 import { MediaStorageAccessService } from '../infra/storage/media-storage-access.service';
@@ -147,6 +152,7 @@ export class MediaAccessService {
   private async requireAccess(
     userId: string | null | undefined,
     asset: {
+      id: string;
       visibility: MediaAssetVisibility;
       createdByUserId: string | null;
       workspaceId: string | null;
@@ -161,17 +167,86 @@ export class MediaAccessService {
     }
     if (asset.createdByUserId === userId) return;
     if (asset.workspaceId) {
-      await this.workspacePermissions.requireWorkspaceRole(
-        userId,
-        asset.workspaceId,
-        WorkspaceMemberRole.viewer,
-      );
-      return;
+      try {
+        await this.workspacePermissions.requireWorkspaceRole(
+          userId,
+          asset.workspaceId,
+          WorkspaceMemberRole.viewer,
+        );
+        return;
+      } catch (err) {
+        // Not a workspace member — fall through to the character-cast grant
+        // (a project-only member never holds a workspace role).
+        if (!(err instanceof ForbiddenException)) throw err;
+      }
     }
+    if (await this.hasCharacterReferenceAccess(userId, asset.id)) return;
     throw new ForbiddenException({
       code: 'MEDIA_ASSET_ACCESS_DENIED',
       message: 'You do not have access to this media asset.',
     });
+  }
+
+  /**
+   * Reference-reaches-context rule, two audiences per character grant:
+   *  - CAST: a media asset attached to a character (CharacterMedia) that is
+   *    CAST into a project is viewable by everyone who can see that
+   *    project's context — including project-only members (ProjectMember)
+   *    who hold no workspace role. The cast row is the explicit, audited
+   *    act that extends the asset's audience to the project.
+   *  - LIBRARY: an asset attached to a character belongs to the character's
+   *    home-workspace 演员池, so every active WorkspaceMember of that
+   *    workspace may render it — even when the underlying MediaAsset row
+   *    carries no workspaceId (personal uploads enrolled into the library).
+   * One indexed CharacterMedia query covers both branches. Narrowly scoped
+   * to this exact join on purpose — this is NOT a generic ACL.
+   */
+  private async hasCharacterReferenceAccess(
+    userId: string,
+    assetId: string,
+  ): Promise<boolean> {
+    const grant = await this.prisma.characterMedia.findFirst({
+      where: {
+        mediaAssetId: assetId,
+        status: CharacterMediaStatus.active,
+        character: {
+          deletedAt: null,
+          status: { not: CharacterStatus.revoked },
+          OR: [
+            {
+              castRows: {
+                some: {
+                  project: {
+                    status: PlatformProjectStatus.active,
+                    deletedAt: null,
+                    members: {
+                      some: {
+                        userId,
+                        status: ProjectMemberStatus.active,
+                        removedAt: null,
+                      },
+                    },
+                  },
+                },
+              },
+            },
+            {
+              workspace: {
+                members: {
+                  some: {
+                    userId,
+                    status: WorkspaceMemberStatus.active,
+                    removedAt: null,
+                  },
+                },
+              },
+            },
+          ],
+        },
+      },
+      select: { id: true },
+    });
+    return grant !== null;
   }
 
   private async loadAsset(assetId: string): Promise<MediaAccessAsset> {
