@@ -204,3 +204,51 @@ button:disabled,
     animation: none;
   }
 }
+
+/* Liquid-glass rail: two soft specular highlights drift slowly around a frosted
+   edge — the "flowing glass" read (DESIGN.md §3.2 rim-light, kept ≤50% alpha and
+   masked to the very edge, so it's edge-light, never an orb background). Mirrors
+   the generating-beam @property technique, white + much slower. */
+@property --liquid-angle {
+  syntax: "<angle>";
+  inherits: false;
+  initial-value: 0deg;
+}
+@keyframes liquid-drift {
+  to {
+    --liquid-angle: 360deg;
+  }
+}
+.liquid-rim::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  border-radius: inherit;
+  padding: 1px;
+  background: conic-gradient(
+    from var(--liquid-angle),
+    rgba(255, 255, 255, 0) 0deg,
+    rgba(255, 255, 255, 0) 55deg,
+    rgba(255, 255, 255, 0.28) 100deg,
+    rgba(255, 255, 255, 0.5) 122deg,
+    rgba(255, 255, 255, 0.2) 148deg,
+    rgba(255, 255, 255, 0) 205deg,
+    rgba(255, 255, 255, 0) 285deg,
+    rgba(255, 255, 255, 0.22) 305deg,
+    rgba(255, 255, 255, 0.44) 322deg,
+    rgba(255, 255, 255, 0) 348deg
+  );
+  -webkit-mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  animation: liquid-drift 9s linear infinite;
+  pointer-events: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  .liquid-rim::before {
+    animation: none;
+  }
+}

@@ -15,6 +15,7 @@ import {
   IconVolume,
 } from "@tabler/icons-react";
 import { cn } from "@/lib/utils";
+import { GlassRim } from "@/components/ui/glass-rim";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 
 type SidebarIcon = ComponentType<{ className?: string; stroke?: number }>;
@@ -56,12 +57,20 @@ function RailButton({
     disabled
       ? "cursor-not-allowed text-white/25"
       : active
-        ? "bg-white/[0.12] text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.1)]"
+        ? // Active = a brighter liquid-glass puck: frosted fill, top rim-light +
+          // bottom shade for depth, soft drop shadow. The GlassRim below catches
+          // the specular edge.
+          "bg-white/[0.14] text-white backdrop-blur-md shadow-[inset_0_1px_0_rgba(255,255,255,0.3),inset_0_-1px_1px_rgba(0,0,0,0.28),0_4px_16px_-4px_rgba(0,0,0,0.55)]"
         : detached
-          ? "bg-white/[0.04] text-white/55 hover:bg-white/[0.09] hover:text-white"
-          : "text-white/55 hover:bg-white/[0.07] hover:text-white"
+          ? "text-white/60 hover:bg-white/[0.1] hover:text-white"
+          : "text-white/55 hover:bg-white/[0.08] hover:text-white"
   );
-  const icon = <Icon className="size-[22px]" stroke={1.8} />;
+  const icon = (
+    <>
+      {active && !disabled ? <GlassRim className="opacity-80" /> : null}
+      <Icon className="relative size-[22px]" stroke={1.8} />
+    </>
+  );
 
   return (
     <Tooltip>
@@ -134,22 +143,28 @@ export function StudioSidebar() {
       aria-label={t("nav.studioNavigation")}
       className="fixed inset-y-0 left-6 z-50 hidden w-14 flex-col items-center justify-center gap-6 py-5 lg:flex"
     >
-      {/* Primary nav — grouped pill */}
+      {/* Primary nav — flowing liquid-glass pill: frosted body (blur+saturate
+          refracts the backdrop), the static GlassRim edge, and a slow specular
+          highlight drifting around the rim (`liquid-rim`). */}
       <nav
         aria-label={t("nav.main")}
-        className="flex flex-col items-center gap-1 rounded-4xl bg-white/[0.04] p-1.5"
+        className="liquid-rim relative flex flex-col items-center gap-1 rounded-4xl bg-white/[0.05] p-1.5 backdrop-blur-2xl backdrop-saturate-[1.8] shadow-[inset_0_1px_0_rgba(255,255,255,0.14),0_16px_48px_-14px_rgba(0,0,0,0.6)]"
       >
+        <GlassRim />
         {items.map((item) => (
           <RailButton key={item.href} item={item} active={isRailItemActive(pathname, item.href)} />
         ))}
       </nav>
 
-      {/* Detached utility */}
-      <RailButton
-        item={settingsItem}
-        active={isRailItemActive(pathname, settingsItem.href)}
-        detached
-      />
+      {/* Detached utility — its own liquid-glass puck */}
+      <div className="liquid-rim relative rounded-full bg-white/[0.05] p-1.5 backdrop-blur-2xl backdrop-saturate-[1.8] shadow-[inset_0_1px_0_rgba(255,255,255,0.14),0_12px_36px_-12px_rgba(0,0,0,0.55)]">
+        <GlassRim />
+        <RailButton
+          item={settingsItem}
+          active={isRailItemActive(pathname, settingsItem.href)}
+          detached
+        />
+      </div>
     </aside>
   );
 }
