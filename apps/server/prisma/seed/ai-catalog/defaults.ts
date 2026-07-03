@@ -1103,7 +1103,9 @@ export const SEEDANCE_2_0_PARAMETER_POLICY = {
     audios: { min: 0, max: 3 },
     maxTotalFiles: 12,
   },
-  seed: { enabled: true, minimum: 0, maximum: 2147483647 },
+  // ModelArk-verified (doc 1520757): the Seedance 2.0 series does NOT
+  // support `seed` (1.x only) — the schema mappers gate on this flag.
+  seed: { enabled: false },
 } as const satisfies Prisma.InputJsonObject;
 
 export const QUICK_VIDEO_PARAMETER_POLICY = {

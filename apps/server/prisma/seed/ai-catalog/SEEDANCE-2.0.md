@@ -1,105 +1,97 @@
-# Seedance 2.0 — parameter spec (fal-verified)
+# Seedance 2.0 — parameter spec (ModelArk-verified)
 
-ByteDance **Seedance 2.0** video generation. Verified against the fal API
-(2026-06): https://fal.ai/models/bytedance/seedance-2.0/reference-to-video/api
+ByteDance **Seedance 2.0** video generation, served EXCLUSIVELY by the official
+**BytePlus ModelArk** API since 2026-07-02 (fal retired: ~2× the official
+per-second price, no private-asset/ACR plane, no watermark compliance field).
+Verified against the official docs (2026-07): ModelArk 1520757 (API reference),
+1330310 (model list), 2191775 (resource packs), 2291680 (tutorial).
 
-Unified multimodal audio-video model with **native synced audio**. On fal it is
-split into 3 endpoints (+ `fast` variants):
+Unified multimodal audio-video model with **native synced audio**. One model id
+serves all four generation modes — `content[]` roles select the scenario:
 
-| Our generation mode              | fal endpoint                                | Extra inputs                                |
-| -------------------------------- | ------------------------------------------- | ------------------------------------------- |
-| `text_to_video`                  | `bytedance/seedance-2.0/text-to-video`      | — (common params only)                      |
-| `image_to_video`                 | `bytedance/seedance-2.0/image-to-video`     | start frame (`image_url`)                   |
-| `first_last_frame_to_video`      | `bytedance/seedance-2.0/image-to-video`     | start (`image_url`) + end (`end_image_url`) |
-| `multimodal_to_video` (全能参考) | `bytedance/seedance-2.0/reference-to-video` | image/video/audio reference arrays          |
+| Our generation mode              | content[] shape                                                        |
+| -------------------------------- | ---------------------------------------------------------------------- |
+| `text_to_video`                  | text only                                                              |
+| `image_to_video`                 | text + image role `first_frame`                                        |
+| `first_last_frame_to_video`      | text + roles `first_frame` + `last_frame`                              |
+| `multimodal_to_video` (全能参考) | text + `reference_image` / `reference_video` / `reference_audio` parts |
 
-`seedance-2-0-fast` is the same shape under `bytedance/seedance-2.0/fast/*`.
+The three image scenarios are mutually exclusive (frame roles never mix with
+reference parts). API: async `POST /api/v3/contents/generations/tasks` →
+poll `GET /tasks/{id}`; task records kept 7 days, output URL valid 24h.
 
----
+## Model ids (bindings)
 
-## Common parameters (all modes)
+| Canonical           | ModelArk model id                   | Resolutions                       |
+| ------------------- | ----------------------------------- | --------------------------------- |
+| `seedance-2-0`      | `dreamina-seedance-2-0-260128`      | 480p/720p/1080p/4k                |
+| `seedance-2-0-fast` | `dreamina-seedance-2-0-fast-260128` | 480p/720p                         |
+| (unbound)           | `dreamina-seedance-2-0-mini-260615` | 480p/720p — candidate budget tier |
 
-| Param          | Type    | Allowed values                                      | Default | fal field        |
-| -------------- | ------- | --------------------------------------------------- | ------- | ---------------- |
-| Prompt         | string  | — (**required**)                                    | —       | `prompt`         |
-| Resolution     | enum    | `480p` / `720p` / `1080p`                           | `720p`  | `resolution`     |
-| Duration       | enum    | `auto`, `4`–`15` (integer seconds)                  | `auto`  | `duration`       |
-| Aspect ratio   | enum    | `auto`, `21:9`, `16:9`, `4:3`, `1:1`, `3:4`, `9:16` | `auto`  | `aspect_ratio`   |
-| Generate audio | boolean | native synced audio                                 | `true`  | `generate_audio` |
-| Seed           | integer | ≥ 0                                                 | —       | `seed`           |
+CN 方舟 twins exist as `doubao-seedance-2-0*` (for a future .cn cell).
 
----
+## Common parameters (top-level JSON fields)
 
-## Mode-specific inputs
+| Param          | Type    | Allowed values                                                                         | Default      | ModelArk field   |
+| -------------- | ------- | -------------------------------------------------------------------------------------- | ------------ | ---------------- |
+| Prompt         | string  | — (**required**, text content part)                                                    | —            | `content[].text` |
+| Resolution     | enum    | `480p` / `720p` (1080p/4k exist upstream, unpriced)                                    | `720p`       | `resolution`     |
+| Duration       | enum    | `auto` (→ **-1**), `4`–`15` integer seconds                                            | `5`          | `duration`       |
+| Aspect ratio   | enum    | `auto` (→ omit; upstream `adaptive`), `21:9`…`9:16`                                    | `auto`       | `ratio`          |
+| Generate audio | boolean | native synced audio; **upstream default true** — an explicit opt-out must send `false` | `true`       | `generate_audio` |
+| Watermark      | boolean | policy-driven: character-stamped refs FORCE true                                       | outputPolicy | `watermark`      |
 
-### text_to_video
+**NOT supported by the 2.0 series** (1.x only — never emit): `seed`
+(`SEEDANCE_2_0_PARAMETER_POLICY.seed.enabled=false`), `camera_fixed`, `frames`,
+`draft`, `service_tier: flex`.
 
-Common params only.
+## Reference inputs (multimodal_to_video)
 
-### image_to_video / first_last_frame_to_video (one fal endpoint, two uses)
+Referenced in the prompt as `Image N` / `Video N` / `Audio N` by same-type
+position in `content[]` — never by asset id.
 
-- **Start frame** → `image_url` (single image)
-- **End frame** (optional) → `end_image_url` — providing it makes it first-last-frame.
+| Reference | Max | Formats                                     | Official limits                               | fal-era client cap kept                                  |
+| --------- | --- | ------------------------------------------- | --------------------------------------------- | -------------------------------------------------------- |
+| Images    | 9   | jpeg/png/webp (+bmp/tiff/gif/heic upstream) | ≤30MB each, AR (0.4,2.5), px (300,6000)       | —                                                        |
+| Videos    | 3   | mp4/mov                                     | each 2–15s, total ≤15s, ≤200MB each, 24–60fps | 50MB combined (conservative; also the asset-library cap) |
+| Audio     | 3   | mp3/wav                                     | each 2–15s, total ≤15s, ≤15MB each            | —                                                        |
 
-### multimodal_to_video — 全能参考 (reference-to-video endpoint)
+- **Audio cannot be sent alone** — needs ≥1 image or video reference.
+- Combined ≤12 across all types is OUR product cap (`maxTotalFiles`) — official
+  docs cap per modality only.
+- Entries may be **`asset://<externalAssetId>`** — ModelArk private-library
+  assets (character likenesses / ACR) ride the ordinary `url` slot. Provider
+  pin: real_person jobs route exclusively to byteplus-modelark.
 
-Prompt + up to **12 reference files total** spanning images / videos / audio.
-Reference assets are cited **inside the prompt** via `@Image1` / `@Video1` / `@Audio1`.
+## Pricing
 
-| Reference | Max                             | Formats       | Per-file size | Combined limit                  | Resolution                         | Prompt ref | fal field    |
-| --------- | ------------------------------- | ------------- | ------------- | ------------------------------- | ---------------------------------- | ---------- | ------------ |
-| Images    | 9                               | JPEG/PNG/WebP | ≤ 30 MB       | —                               | no constraint                      | `@Image1`  | `image_urls` |
-| Videos    | 3                               | MP4/MOV       | —             | total < 50 MB, **2–15 s** total | ~480p (640×640) – ~720p (834×1112) | `@Video1`  | `video_urls` |
-| Audio     | 3                               | MP3/WAV       | ≤ 15 MB       | ≤ 15 s total                    | —                                  | `@Audio1`  | `audio_urls` |
-| **Total** | **≤ 12 across all three types** |               |               |                                 |                                    |            |
+User-facing points unchanged (`per_second_matrix`, points ≡ US cents):
 
-**Constraints / validation (enforce client-side on upload):**
+| Variant             | 480p | 720p |
+| ------------------- | ---- | ---- |
+| `seedance-2-0`      | 37/s | 61/s |
+| `seedance-2-0-fast` | 30/s | 49/s |
 
-- File **format** (accept + `file.type`), **size** (`file.size`), per-type **count**.
-- **Video/audio duration** — read `<video>/<audio>.duration` (combined: video 2–15 s, audio ≤ 15 s).
-- **Video resolution** — read `videoWidth/videoHeight` (~480p–720p band).
-- **Audio requires ≥ 1 image or video reference** (cannot be sent alone).
-- **Total ≤ 12** across all types (caps even when a single type isn't maxed; 9+3+3=15 > 12).
+Provider-cost basis (v2 2026-07-02, official token table): 720p ≈ 21,600
+tokens/s; flagship $0.0070/K → **$0.151/s**, fast $0.0056/K → **$0.121/s**
+(with-video inputs bill 0.6×; resource packs ~40% cheaper — $4.30/1M flagship).
+Margin at 720p is now ≈4× (was 2× on fal) — repricing is a product decision,
+deliberately not made here. `auto` still quotes at the 15s ceiling
+(`autoQuoteSeconds`); default duration stays `5`. **1080p/4k stay ABSENT**
+until priced.
 
----
+## Implementation status (2026-07-02)
 
-## Pricing (per second, by resolution)
-
-fal bills `video_seconds`; our pricing matches with **`per_second_matrix`**
-(v2, 2026-06-11). Points/second = ceil(fal USD/s × 2.0 margin × 100)
-(积分 ≡ US cent):
-
-| Variant             | 480p | 720p | fal 720p basis |
-| ------------------- | ---- | ---- | -------------- |
-| `seedance-2-0`      | 37/s | 61/s | $0.3034/s      |
-| `seedance-2-0-fast` | 30/s | 49/s | $0.2419/s      |
-
-- Duration clamps to **4–15 s** (`minSeconds`/`maxSeconds`).
-- **`auto` quotes at the 15 s ceiling** (`autoQuoteSeconds`) — quotes never
-  undercharge; the catalog **default duration is `5`** (not `auto`) so the
-  default quote isn't the maximum.
-- Examples (standard / fast): 720p 5 s = 305 / 245, 10 s = 610 / 490,
-  15 s & `auto` = 915 / 735; 480p 5 s = 185 / 150.
-- **1080p stays ABSENT** (fal $0.682/s) until its pricing is approved.
-
----
-
-## Implementation status (2026-06-11)
-
-Implemented end to end (policy → `fal-schema.mapper` → web):
-
-- **duration** string enum `auto` + `4–15` (default `5`); **aspect_ratio** 7-value
-  enum incl. `auto/21:9/4:3/3:4`; **generate_audio** switch.
-- **reference inputs** — `referenceImages`/`referenceVideos`/`referenceAudios`
-  arrays (→ `image_urls`/`video_urls`/`audio_urls`) emitted for
-  `multimodal_to_video`, with the constraint metadata above carried on `x-ui`
-  and enforced client-side (formats/sizes/durations/resolution band/total cap/
-  audio-needs-visual).
-- **prompt referencing** — uploads auto-assign `@Image1/@Video1/@Audio1` labels
-  wired into the composer's @-mention system.
-- **per-mode dispatch** — each binding's `supported_modes` builds the runtime
-  `modeEndpoints` map; submits route to the mode's endpoint.
-
-Deliberately deferred:
-
-- **1080p** stays absent until its pricing is approved (see Pricing above).
+- byteplus runtime schema exposes the full surface (start/end frame, all three
+  reference arrays with x-ui constraint metadata, generateAudio switch,
+  policy-gated seed) — field names identical to the retired fal schema, so the
+  studio composer and persisted job inputs carry over unchanged.
+- Mapper emits role-tagged content parts, maps `duration:'auto'` → `-1`,
+  sends `generate_audio` only on explicit user choice, forwards `asset://`
+  URLs verbatim, and resolves watermark per policy (design §5.4).
+- fal bindings deleted from the seed; `bytedance/seedance-2.0*` ids remain as
+  lookup aliases for pre-cutover job rows. Seed prune removes the stale DB
+  rows on next `prisma db seed`.
+- In-flight fal seedance jobs at deploy time lose poll/cancel (runtime lookup
+  by endpointId misses) — they fail and a retry re-routes to byteplus with a
+  fresh quote. Accepted: video jobs run minutes; drain window is trivial.

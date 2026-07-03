@@ -57,49 +57,27 @@ const PROVIDER_VIDEO_OUTPUT_SCHEMA = {
   },
 };
 
-/** The 3 fal endpoints behind a Seedance 2.0 ContainerModel (std or fast). */
-function seedanceProviders(prefix: string): ProviderEntry[] {
-  return [
-    {
-      provider: 'fal-ai',
-      endpointId: `${prefix}/text-to-video`,
-      modes: [T2V],
-      providerOutputSchema: PROVIDER_VIDEO_OUTPUT_SCHEMA,
-      requestTimeoutSeconds: 2700,
-      priority: 100,
-    },
-    {
-      provider: 'fal-ai',
-      endpointId: `${prefix}/image-to-video`,
-      modes: [I2V, FLF2V],
-      providerOutputSchema: PROVIDER_VIDEO_OUTPUT_SCHEMA,
-      requestTimeoutSeconds: 2700,
-      priority: 100,
-    },
-    {
-      provider: 'fal-ai',
-      endpointId: `${prefix}/reference-to-video`,
-      modes: [MM2V],
-      providerOutputSchema: PROVIDER_VIDEO_OUTPUT_SCHEMA,
-      requestTimeoutSeconds: 2700,
-      priority: 100,
-    },
-  ];
-}
-
 const SEEDANCE_MODES: AiGenerationMode[] = [T2V, I2V, FLF2V, MM2V];
 
 /**
- * BytePlus ModelArk official Seedance 2.0 binding, co-bound onto the Seedance
- * canonical as the PRIMARY provider (priority 50 < fal's 100). Because the
- * canonical catalog assembles the public model from the lowest-priority ENABLED
- * binding, this serves BytePlus's schema when BYTEPLUS_MODELARK_ENABLED is set
- * and transparently falls back to fal (priority 100) when it is not. Covers all
- * four modes; reference videos/audios (fal-only) route to fal at submit time.
+ * BytePlus ModelArk is the SOLE Seedance provider (fal retired 2026-07-02:
+ * ~2× the official per-second price, no ACR/private-asset plane, no watermark
+ * compliance field). One official model id serves all four modes — content[]
+ * roles select the scenario; reference videos/audios ride content[] as
+ * reference_video / reference_audio parts (SEEDANCE-2.0.md).
  */
 const bytePlusSeedanceProvider: ProviderEntry = {
   provider: 'byteplus-modelark',
   endpointId: 'dreamina-seedance-2-0-260128',
+  modes: SEEDANCE_MODES,
+  requestTimeoutSeconds: 1800,
+  priority: 50,
+};
+
+/** Official fast variant (480p/720p only, no 1080p/4k tier). */
+const bytePlusSeedanceFastProvider: ProviderEntry = {
+  provider: 'byteplus-modelark',
+  endpointId: 'dreamina-seedance-2-0-fast-260128',
   modes: SEEDANCE_MODES,
   requestTimeoutSeconds: 1800,
   priority: 50,
@@ -161,10 +139,9 @@ export const VIDEO_MODELS: VideoModelSeed[] = [
     group: 'video',
     sortOrder: 10,
     recommended: true,
-    providers: [
-      bytePlusSeedanceProvider,
-      ...seedanceProviders('bytedance/seedance-2.0'),
-    ],
+    providers: [bytePlusSeedanceProvider],
+    // 'bytedance/seedance-2.0' kept as a lookup alias for pre-cutover job
+    // rows / presets that referenced the retired fal endpoint family.
     providerAliases: ['bytedance/seedance-2.0', 'dreamina-seedance-2-0-260128'],
   },
   {
@@ -181,8 +158,11 @@ export const VIDEO_MODELS: VideoModelSeed[] = [
     group: 'video',
     sortOrder: 20,
     recommended: false,
-    providers: seedanceProviders('bytedance/seedance-2.0/fast'),
-    providerAliases: ['bytedance/seedance-2.0/fast'],
+    providers: [bytePlusSeedanceFastProvider],
+    providerAliases: [
+      'bytedance/seedance-2.0/fast',
+      'dreamina-seedance-2-0-fast-260128',
+    ],
   },
   {
     slug: 'wan-2-7',
