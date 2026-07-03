@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import * as Y from "yjs";
 import type { Edge, EdgeChange, Node, NodeChange } from "@xyflow/react";
 import type { Awareness } from "y-protocols/awareness";
@@ -60,6 +60,13 @@ export interface CanvasGraph {
    * write immediately — safe to read a node right after addNode/patchNodeData.
    */
   getNode: (id: string) => CanvasNodeShape | null;
+  /**
+   * Read every edge straight from the Yjs doc. Unlike `edges`
+   * (render-derived, a commit behind), this reflects writes immediately —
+   * and being referentially stable it's safe inside long-lived
+   * subscriptions/effects without re-arming them on every render.
+   */
+  getEdges: () => CanvasEdgeShape[];
   onNodesChange: (changes: NodeChange[]) => void;
   onEdgesChange: (changes: EdgeChange[]) => void;
   addNode: (node: CanvasNodeShape) => void;
@@ -755,41 +762,83 @@ export function useCanvasGraph(
     [doc]
   );
 
+  const getEdges = useCallback((): CanvasEdgeShape[] => (doc ? readAllEdges(doc) : []), [doc]);
+
   // they also own ephemeral overlay state (selection/measure) — their *commits*
   // are gated internally above.
-  if (!canEdit) {
+  //
+  // The object is memoized so its identity only changes when a constituent
+  // does. Every mutator/accessor above is a stable useCallback, so consumers
+  // can safely list `graph.patchNodeData` etc. in effect deps — or the whole
+  // graph, which then re-fires only on real data changes, never per render.
+  // (An unmemoized literal here once had the generation provider re-arming
+  // its realtime subscription + reconcile fetch on every render.)
+  return useMemo<CanvasGraph>(() => {
+    if (!canEdit) {
+      return {
+        nodes,
+        edges,
+        getNode,
+        getEdges,
+        onNodesChange,
+        onEdgesChange,
+        addNode: noop,
+        addEdge: noop,
+        addNodesAndEdges: noop,
+        patchNodeData: noop,
+        removeNode: noop,
+        removeEdge: noop,
+        addLocalNode: noop,
+        promoteLocalNode: noop,
+        selectNodes,
+        restoreFromUpdate: noop,
+        assets,
+        addAssets: noop,
+        removeAsset: noop,
+        removeAssetsByMediaAssetId: noop,
+        canUndo: false,
+        canRedo: false,
+        undo: noop,
+        redo: noop,
+        canEdit: false,
+      };
+    }
     return {
       nodes,
       edges,
       getNode,
+      getEdges,
       onNodesChange,
       onEdgesChange,
-      addNode: noop,
-      addEdge: noop,
-      addNodesAndEdges: noop,
-      patchNodeData: noop,
-      removeNode: noop,
-      removeEdge: noop,
-      addLocalNode: noop,
-      promoteLocalNode: noop,
+      addNode,
+      addEdge,
+      addNodesAndEdges,
+      patchNodeData,
+      removeNode,
+      removeEdge,
+      addLocalNode,
+      promoteLocalNode,
       selectNodes,
-      restoreFromUpdate: noop,
+      restoreFromUpdate,
       assets,
-      addAssets: noop,
-      removeAsset: noop,
-      removeAssetsByMediaAssetId: noop,
-      canUndo: false,
-      canRedo: false,
-      undo: noop,
-      redo: noop,
-      canEdit: false,
+      addAssets,
+      removeAsset,
+      removeAssetsByMediaAssetId,
+      canUndo,
+      canRedo,
+      undo,
+      redo,
+      canEdit: true,
     };
-  }
-
-  return {
+  }, [
+    canEdit,
     nodes,
     edges,
+    assets,
+    canUndo,
+    canRedo,
     getNode,
+    getEdges,
     onNodesChange,
     onEdgesChange,
     addNode,
@@ -802,14 +851,11 @@ export function useCanvasGraph(
     promoteLocalNode,
     selectNodes,
     restoreFromUpdate,
-    assets,
     addAssets,
     removeAsset,
     removeAssetsByMediaAssetId,
-    canUndo,
-    canRedo,
     undo,
     redo,
-    canEdit: true,
-  };
+    noop,
+  ]);
 }

@@ -73,7 +73,8 @@ function mapSeedAgentToForcedPersona(agent: StudioAgent | null): ForcedPersonaKe
  *
  *   1. Opens the AI assistant panel (so the user sees the chat).
  *   2. Pushes the uploaded script (if any) into the conversation's
- *      attachments with status=uploaded (path/url already live on OSS).
+ *      attachments with status=uploaded (the text is already ingested
+ *      server-side; the seed carries its `att_xxx` ref).
  *   3. Sets the chip-selected agent type.
  *   4. Primes the draft input with the user's prompt.
  *   5. Fires sendUserMessage(projectId) to kick the assistant off.
@@ -114,8 +115,8 @@ export function useStudioSeedConsumer(projectId: string | null | undefined): {
             name: seed.attachment.name,
             mimeType: seed.attachment.mimeType,
             size: seed.attachment.size,
-            path: seed.attachment.path,
-            url: seed.attachment.url,
+            ref: seed.attachment.ref,
+            excerpt: seed.attachment.excerpt,
             status: "uploaded",
           },
         })

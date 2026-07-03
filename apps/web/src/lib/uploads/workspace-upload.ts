@@ -34,10 +34,6 @@ export interface UploadedWorkspaceFile {
   name: string;
   size: number;
   mimeType: string;
-  /** Set when the file went through `uploadChatAttachment` — short
-   *  preview of the extracted text for the file card UI. Populated
-   *  server-side after parse. Omit for legacy OSS uploads. */
-  excerpt?: string;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -271,12 +267,41 @@ export async function computeFileHash(file: File): Promise<string> {
  * to bucket A, GET attempted on bucket B" failures that broke chat
  * end-to-end every time the env / signer / bucket config drifted.
  */
+export interface ChatAttachmentUploadOptions {
+  maxSize?: number;
+  accept?: string | string[];
+}
+
+export interface UploadedChatAttachment {
+  /** Server text-cache handle (`att_xxx`) — the only thing the chat
+   *  message needs to embed for the agent to consume the file. */
+  ref: string;
+  name: string;
+  size: number;
+  mimeType: string;
+  /** Total characters extracted server-side. */
+  chars: number;
+  /** Short preview of the extracted text for the file card UI. */
+  excerpt?: string;
+}
+
+/** Must not exceed the Nest FileInterceptor cap on
+ *  `/aurora/assistant/upload-attachment` (25 MB) — a larger client
+ *  limit just converts the validation error into an opaque 413. */
+export const CHAT_ATTACHMENT_MAX_SIZE = 25 * 1024 * 1024;
+
 export async function uploadChatAttachment(
   file: File,
-  options: UploadWorkspaceFileOptions
-): Promise<UploadedWorkspaceFile> {
-  const validationError = validateWorkspaceUploadFile(file, options);
-  if (validationError) throw new Error(validationError);
+  options: ChatAttachmentUploadOptions = {}
+): Promise<UploadedChatAttachment> {
+  const rules = normalizeAccept(options.accept);
+  if (rules.length > 0 && !rules.some((rule) => matchesAcceptRule(file, rule))) {
+    throw new Error("unsupportedFileType");
+  }
+  const maxSize = options.maxSize ?? CHAT_ATTACHMENT_MAX_SIZE;
+  if (file.size > maxSize) {
+    throw new Error("fileSizeExceedMb");
+  }
 
   const form = new FormData();
   form.append("file", file, file.name);
@@ -305,16 +330,13 @@ export async function uploadChatAttachment(
     excerpt?: string;
   };
   return {
-    // `path` is overloaded — for chat attachments it carries the
-    // Redis ref so the message preprocessor can pick the cached text
-    // back up. The web UI never displays the path; it just round-trips.
-    path: body.ref,
-    url: "",
+    ref: body.ref,
     name: body.filename,
     size: body.size,
     mimeType: body.mimeType,
+    chars: body.chars,
     excerpt: body.excerpt,
-  } as UploadedWorkspaceFile;
+  };
 }
 
 export async function uploadWorkspaceFile(file: File, options: UploadWorkspaceFileOptions) {

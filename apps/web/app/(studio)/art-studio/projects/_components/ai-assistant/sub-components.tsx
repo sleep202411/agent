@@ -35,28 +35,31 @@ export function getFileTypeKey(mimeType?: string, name?: string): string {
 
 export function AssistantFilePreview({ attachment }: { attachment: AssistantAttachment }) {
   const t = useTranslations("ai");
-  const href = attachment.previewUrl || attachment.url || attachment.path || "#";
+  // Current attachments are text ingested server-side (ref only) — there
+  // is no browsable URL for them. Only legacy OSS attachments (`url`) or
+  // local image previews still link out; everything else renders as a
+  // plain informational card.
+  const href = attachment.previewUrl || attachment.url || "";
 
-  return isImageMime(attachment.mimeType) && href ? (
-    <a
-      href={href}
-      target="_blank"
-      rel="noreferrer"
-      className="block overflow-hidden rounded-xl border border-border/70 bg-background/60"
-    >
-      <img src={href} alt={attachment.name} className="h-36 w-full object-cover" />
-      <div className="flex items-center justify-between gap-3 px-3 py-2 text-xs text-muted-foreground">
-        <span className="truncate">{attachment.name}</span>
-        <span>{formatFileSize(attachment.size)}</span>
-      </div>
-    </a>
-  ) : (
-    <a
-      href={href}
-      target="_blank"
-      rel="noreferrer"
-      className="flex items-center justify-between gap-3 overflow-hidden rounded-xl border border-border/70 bg-background/60 px-3 py-2 text-xs transition-colors hover:border-primary/30 hover:bg-primary/5"
-    >
+  if (isImageMime(attachment.mimeType) && href) {
+    return (
+      <a
+        href={href}
+        target="_blank"
+        rel="noreferrer"
+        className="block overflow-hidden rounded-xl border border-border/70 bg-background/60"
+      >
+        <img src={href} alt={attachment.name} className="h-36 w-full object-cover" />
+        <div className="flex items-center justify-between gap-3 px-3 py-2 text-xs text-muted-foreground">
+          <span className="truncate">{attachment.name}</span>
+          <span>{formatFileSize(attachment.size)}</span>
+        </div>
+      </a>
+    );
+  }
+
+  const cardBody = (
+    <>
       <div className="min-w-0">
         <div className="truncate font-medium text-foreground">{attachment.name}</div>
         <div className="truncate text-muted-foreground">
@@ -64,7 +67,22 @@ export function AssistantFilePreview({ attachment }: { attachment: AssistantAtta
         </div>
       </div>
       <span className="shrink-0 text-muted-foreground">{formatFileSize(attachment.size)}</span>
+    </>
+  );
+
+  return href ? (
+    <a
+      href={href}
+      target="_blank"
+      rel="noreferrer"
+      className="flex items-center justify-between gap-3 overflow-hidden rounded-xl border border-border/70 bg-background/60 px-3 py-2 text-xs transition-colors hover:border-primary/30 hover:bg-primary/5"
+    >
+      {cardBody}
     </a>
+  ) : (
+    <div className="flex items-center justify-between gap-3 overflow-hidden rounded-xl border border-border/70 bg-background/60 px-3 py-2 text-xs">
+      {cardBody}
+    </div>
   );
 }
 

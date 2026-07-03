@@ -2,7 +2,11 @@ import { createSlice, createAsyncThunk, type PayloadAction } from "@reduxjs/tool
 import { toast } from "sonner";
 import { backendApi } from "@/src/lib/api";
 import { selectCurrentInstance, type ProjectDetail } from "@/src/store/slices/projectSlice";
-import { uploadChatAttachment, computeFileHash } from "@/src/lib/uploads/workspace-upload";
+import {
+  uploadChatAttachment,
+  computeFileHash,
+  CHAT_ATTACHMENT_MAX_SIZE,
+} from "@/src/lib/uploads/workspace-upload";
 import {
   submitMessageToAgent,
   saveConversation,
@@ -48,7 +52,7 @@ import {
 } from "./projectSlice";
 
 const MAX_ATTACHMENTS = 5;
-const MAX_ATTACHMENT_SIZE = 50 * 1024 * 1024;
+const MAX_ATTACHMENT_SIZE = CHAT_ATTACHMENT_MAX_SIZE;
 
 // AbortController per project — used to cancel in-flight streams when a tool result takes over
 const streamAbortControllers = new Map<string, AbortController>();
@@ -204,39 +208,6 @@ function isSupportedAttachment(file: File) {
   return isTextLikeFile(file) || isDocxFile(file) || isPdfFile(file);
 }
 
-const MAX_EXCERPT_CHARS = 80000;
-const MAX_TEXT_FILE_SIZE = 2 * 1024 * 1024;
-
-async function readAttachmentExcerpt(file: File): Promise<{ excerpt: string; truncated: boolean }> {
-  // PDF and DOCX: text extraction happens server-side.
-  // Frontend only uploads the file; excerpt stays empty.
-  // Server downloads from OSS and extracts text when pipeline starts.
-  if (isPdfFile(file) || isDocxFile(file)) {
-    return { excerpt: "", truncated: false };
-  }
-
-  // Plain text files: can extract directly in browser (small files)
-  if (!isTextLikeFile(file)) return { excerpt: "", truncated: false };
-  if (file.size > MAX_TEXT_FILE_SIZE) {
-    return { excerpt: "", truncated: true };
-  }
-  try {
-    const text = (await file.text()).trim();
-    if (!text) return { excerpt: "", truncated: false };
-    const truncated = text.length > MAX_EXCERPT_CHARS;
-    return { excerpt: text.slice(0, MAX_EXCERPT_CHARS), truncated };
-  } catch {
-    return { excerpt: "", truncated: false };
-  }
-}
-
-function getAttachmentUploadType(file: File) {
-  if (file.type.startsWith("image/")) return "PROJECT";
-  if (file.type.startsWith("video/")) return "SHOT_VALUE_VIDEO";
-  if (file.type.startsWith("audio/")) return "SHOT_VALUE_AUDIO";
-  return "WORLD";
-}
-
 function cleanupAttachmentPreview(attachment: AssistantAttachment) {
   if (attachment.previewUrl?.startsWith("blob:")) {
     URL.revokeObjectURL(attachment.previewUrl);
@@ -260,8 +231,7 @@ function sanitizeMessageAttachment(attachment: AssistantAttachment): AssistantAt
     name: attachment.name,
     mimeType: attachment.mimeType,
     size: attachment.size,
-    path: attachment.path,
-    url: attachment.url,
+    ref: attachment.ref,
     previewUrl: attachment.previewUrl,
     excerpt: attachment.excerpt,
   };
@@ -272,22 +242,16 @@ function buildUserMessage(
   attachments: AssistantAttachment[],
   forcedPersona: ForcedPersonaKey | null
 ): AssistantMessage {
+  // Attachments travel exclusively through `metadata.attachments` —
+  // each carries the server text-cache `ref` that the Nest
+  // preprocessor resolves to full text. No `file` parts: the server
+  // strips them unconditionally (Mastra can't fetch our storage), so
+  // emitting them would only be dead weight in the persisted history.
   const metadataAttachments = attachments.map(sanitizeMessageAttachment);
   const parts: AssistantMessagePart[] = [];
 
   if (text) {
     parts.push({ type: "text", text, state: "done" });
-  }
-
-  for (const attachment of metadataAttachments) {
-    if (attachment.url) {
-      parts.push({
-        type: "file",
-        mediaType: attachment.mimeType || "application/octet-stream",
-        filename: attachment.name,
-        url: attachment.url,
-      });
-    }
   }
 
   const metadata: AssistantMessage["metadata"] = {};
@@ -374,24 +338,20 @@ async function uploadAttachmentFile(
 
   try {
     // Direct-to-Nest upload: extracts text in-process and caches it
-    // in Redis under attachment:{ref}. The returned `path` is that
-    // ref string (no OSS URL); the chat preprocessor reads the
-    // cached text by ref so the LLM gets the full document content
-    // even though we never staged it to OSS.
+    // in Redis under attachment:{ref}. The returned `ref` is the only
+    // handle the chat message needs — the server preprocessor resolves
+    // it to the full document text, so the LLM sees the whole file
+    // without OSS ever participating.
     const uploaded = await uploadChatAttachment(attachment.file, {
-      uploadType: getAttachmentUploadType(attachment.file),
-      sourceType: "LOCAL",
       maxSize: MAX_ATTACHMENT_SIZE,
     });
-    const storagePath = uploaded.path;
 
     dispatch(
       updateAttachment({
         projectId,
         attachmentId,
         updates: {
-          path: storagePath,
-          url: uploaded.url,
+          ref: uploaded.ref,
           status: "uploaded",
           error: undefined,
           excerpt: uploaded.excerpt,
@@ -577,18 +537,11 @@ export const addAttachments = createAsyncThunk<
     const hash = await computeFileHash(file);
 
     const previewUrl = isImageMime(file.type) ? URL.createObjectURL(file) : "";
-    const { excerpt, truncated } = await readAttachmentExcerpt(file);
-
-    if (truncated && !excerpt) {
-      toast.warning(t("fileTooLargeForAi", { name: file.name, size: 2 }));
-    } else if (truncated) {
-      toast.info(
-        t("fileContentTruncated", { name: file.name, size: Math.round(MAX_EXCERPT_CHARS / 10000) })
-      );
-    }
-
     const attachmentId = crypto.randomUUID();
 
+    // No client-side text extraction: the upload endpoint parses the
+    // file server-side and returns the authoritative excerpt, which
+    // `uploadAttachmentFile` writes onto the attachment on success.
     dispatch(
       pushAttachment({
         projectId,
@@ -598,7 +551,6 @@ export const addAttachments = createAsyncThunk<
           mimeType: file.type || "application/octet-stream",
           size: file.size,
           previewUrl,
-          excerpt,
           hash,
           file,
           status: "uploading",
@@ -702,8 +654,12 @@ export const sendUserMessage = createAsyncThunk<
       return;
     }
 
+    // An attachment is sendable once the server acknowledged ingestion
+    // and handed back its text-cache ref. Gating on anything else (the
+    // old `attachment.url` check) silently drops the file from the
+    // outgoing message — the agent then never sees it.
     const uploadedAttachments = current.attachments.filter(
-      (attachment) => attachment.status === "uploaded" && attachment.url
+      (attachment) => attachment.status === "uploaded" && attachment.ref
     );
     const typedText =
       current.draftInput.trim() ||

@@ -135,6 +135,26 @@ export type AssetEvent = (
       action: "created" | "updated" | "archived";
       ts: number;
     }
+  | {
+      kind: "character_media_updated";
+      /** The character whose media/provider-mirror state changed. */
+      characterId: string;
+      workspaceId: string;
+      /** The affected CharacterMedia row (absent for character-level changes
+       * like enrollment status flips). */
+      characterMediaId?: string;
+      /** Provider-mirror readiness for the media row (leave-and-notify UX):
+       * pending | processing | active | failed | disabled | deleted. */
+      mirrorStatus?: string;
+      /** Typed upstream verdict when failed: face_mismatch | multi_face |
+       * moderation | stale | ... */
+      statusReason?: string | null;
+      /** Character lifecycle status when the change is character-level
+       * (e.g. pending_verification → active after enrollment). */
+      characterStatus?: string;
+      updatedAt: string;
+      ts: number;
+    }
 ) &
   RealtimeEnvelope;
 

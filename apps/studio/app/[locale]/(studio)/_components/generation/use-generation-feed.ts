@@ -18,6 +18,7 @@ import {
   type FizzAiSubmitJobInput,
 } from "@/app/[locale]/canvas/_lib/generation-api";
 import { getAssetsRealtimeKernel } from "@/app/[locale]/canvas/_lib/assets-realtime-kernel";
+import { charactersKeys } from "@/app/[locale]/(studio)/characters/_lib/use-characters";
 import { computeWalletBalanceQueryKey } from "@/app/_components/credits-badge";
 import { useActiveWorkspaceId } from "@/app/_components/workspace-context";
 
@@ -41,7 +42,6 @@ export interface FeedJob {
 }
 
 const HISTORY_LIMIT = 60;
-const CONNECTED_RECONCILE_INTERVAL_MS = 20_000;
 const DISCONNECTED_FALLBACK_INTERVAL_MS = 5_000;
 
 function jobToFeedJob(job: FizzAiJobView): FeedJob {
@@ -179,6 +179,15 @@ export function useGenerationFeed(type: FizzAiJobType, sourceSurface: string) {
           void reconcileHistory();
           return;
         }
+        if (event.kind === "character_media_updated") {
+          // Provider-mirror / enrollment change — refresh the character caches
+          // so the reference picker + library surfaces show the new state.
+          void queryClient.invalidateQueries({
+            queryKey: charactersKeys.detail(event.characterId),
+          });
+          void queryClient.invalidateQueries({ queryKey: charactersKeys.lists() });
+          return;
+        }
         if (event.kind !== "ai_job_update") return;
         const job = event.job as unknown as FizzAiJobView;
         if (job.type !== type) return;
@@ -192,7 +201,8 @@ export function useGenerationFeed(type: FizzAiJobType, sourceSurface: string) {
     return () => client.close();
   }, [queryClient, reconcileHistory, sourceSurface, type, workspaceId]);
 
-  // Polling backstop for non-terminal jobs (covers missed pushes).
+  // Non-terminal jobs still awaiting updates — input for the disconnected-only
+  // polling bridge below.
   const activeIds = useMemo(
     () =>
       jobs
@@ -208,6 +218,11 @@ export function useGenerationFeed(type: FizzAiJobType, sourceSurface: string) {
 
   useEffect(() => {
     if (!activeIds) return;
+    // While the realtime channel is live the socket delivers job updates —
+    // and the kernel's per-channel seq + gap replay backfills anything a
+    // reconnect missed — so we do NOT poll when connected (same contract as
+    // the canvas). Only while the channel is down does the interval bridge.
+    if (realtimeConnected) return;
     const poll = async () => {
       const ids = activeIdsRef.current;
       if (ids.length === 0) return;
@@ -228,10 +243,7 @@ export function useGenerationFeed(type: FizzAiJobType, sourceSurface: string) {
         pollInFlight.current = false;
       }
     };
-    const timer = setInterval(
-      () => void poll(),
-      realtimeConnected ? CONNECTED_RECONCILE_INTERVAL_MS : DISCONNECTED_FALLBACK_INTERVAL_MS
-    );
+    const timer = setInterval(() => void poll(), DISCONNECTED_FALLBACK_INTERVAL_MS);
     return () => clearInterval(timer);
   }, [activeIds, realtimeConnected]);
 

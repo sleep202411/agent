@@ -159,6 +159,19 @@ export interface FizzAiReferenceBinding {
   weight?: number;
 }
 
+/**
+ * Character reference binding — ids only, never a URL. The server resolves the
+ * character (workspace + status checks) and expands its library media into
+ * per-media bindings BEFORE routing/pricing, so reference counts and consent
+ * stay server-truth (docs/character-library-real-person-portraits-design-v1.md §3.2).
+ */
+export interface FizzAiCharacterBinding {
+  refId: string;
+  role: "character";
+  characterId: string;
+  label?: string;
+}
+
 export interface FizzAiStyleBinding {
   refId: string;
   label: string;
@@ -185,7 +198,7 @@ export interface FizzAiJobView {
   promptDisplayText?: string | null;
   promptSearchText?: string | null;
   compiledPrompt?: string | null;
-  referenceSnapshot?: FizzAiReferenceBinding[];
+  referenceSnapshot?: (FizzAiReferenceBinding | FizzAiCharacterBinding)[];
   styleSnapshot?: FizzAiStyleBinding[];
   input: Record<string, unknown>;
   outputs: FizzAiJobOutput[];
@@ -242,7 +255,7 @@ export interface FizzAiSubmitJobInput {
   idempotencyKey: string;
   input: Record<string, unknown>;
   promptDocument?: FizzAiPromptDocument;
-  referenceBindings?: FizzAiReferenceBinding[];
+  referenceBindings?: (FizzAiReferenceBinding | FizzAiCharacterBinding)[];
   styleBindings?: FizzAiStyleBinding[];
   modelId: string;
   schemaVersion: string;
@@ -985,6 +998,13 @@ export async function retryFizzAiJob(id: string): Promise<FizzAiSubmitResponse> 
 
 /* ── prompt document builders (shared by the image + video studios) ───────── */
 
+/** Minimal mention source `buildPromptDocument` needs to bind `@Label` tokens —
+ *  satisfied by both plain reference bindings and character bindings. */
+export interface FizzAiPromptMentionSource {
+  refId: string;
+  label: string;
+}
+
 /**
  * Build the structured prompt document from the raw prompt text plus the
  * reference bindings whose `@Label` tokens appear in it. Falls back to a
@@ -992,7 +1012,7 @@ export async function retryFizzAiJob(id: string): Promise<FizzAiSubmitResponse> 
  */
 export function buildPromptDocument(
   prompt: string,
-  references: FizzAiReferenceBinding[]
+  references: readonly FizzAiPromptMentionSource[]
 ): FizzAiPromptDocument {
   const nodes = promptDocumentNodesFromMentions(prompt, references);
   return {
@@ -1003,11 +1023,11 @@ export function buildPromptDocument(
 
 function promptDocumentNodesFromMentions(
   prompt: string,
-  references: FizzAiReferenceBinding[]
+  references: readonly FizzAiPromptMentionSource[]
 ): FizzAiPromptDocument["nodes"] {
   if (!prompt || references.length === 0) return [];
 
-  const matches: Array<{ binding: FizzAiReferenceBinding; end: number; start: number }> = [];
+  const matches: Array<{ binding: FizzAiPromptMentionSource; end: number; start: number }> = [];
   for (const binding of references) {
     const token = `@${binding.label}`;
     let cursor = 0;

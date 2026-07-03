@@ -19,7 +19,7 @@ import { toast } from "sonner";
 import { useTranslations } from "@/src/i18n/i18n";
 import { localizedProjectWorkspaceHref } from "@/src/lib/studio-routes";
 import { cn } from "@/lib/utils";
-import { uploadWorkspaceFile } from "@/src/lib/uploads/workspace-upload";
+import { uploadChatAttachment, CHAT_ATTACHMENT_MAX_SIZE } from "@/src/lib/uploads/workspace-upload";
 import { quickCreateWorldProduct } from "@/src/services/world";
 import {
   STUDIO_SEED_STORAGE_KEY,
@@ -29,7 +29,7 @@ import {
 } from "@/src/types/studio-seed";
 
 const ACCEPTED_EXTENSIONS = [".txt", ".md", ".text", ".docx", ".pdf"];
-const MAX_SCRIPT_SIZE = 50 * 1024 * 1024; // 50MB
+const MAX_SCRIPT_SIZE = CHAT_ATTACHMENT_MAX_SIZE;
 
 function isSupportedScript(file: File) {
   const name = file.name.toLowerCase();
@@ -190,17 +190,18 @@ export function StudioHomeComposer() {
     setScriptAttachment(null);
     setScriptUploading(true);
     try {
-      const uploaded = await uploadWorkspaceFile(file, {
-        uploadType: "WORLD",
-        sourceType: "LOCAL",
+      // Same ingestion path as in-chat uploads: Nest extracts the text
+      // in-process and caches it under the returned ref. The seed only
+      // has to carry the ref across the navigation — no OSS round-trip.
+      const uploaded = await uploadChatAttachment(file, {
         maxSize: MAX_SCRIPT_SIZE,
       });
       setScriptAttachment({
-        path: uploaded.path,
-        url: uploaded.url ?? "",
+        ref: uploaded.ref,
         name: file.name,
         mimeType: file.type || "application/octet-stream",
         size: file.size,
+        excerpt: uploaded.excerpt,
       });
     } catch (err) {
       console.warn("[StudioHomeComposer] script upload failed", err);

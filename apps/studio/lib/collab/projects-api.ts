@@ -54,11 +54,14 @@ export interface ModeDocumentRef {
   currentVersionId: string | null;
   /** Base64 compacted CRDT state (present once the doc has been compacted). */
   crdtStateBase64?: string;
+  /** Detail payload only: materialized document snapshot for non-CRDT editors. */
+  contentSnapshot?: Record<string, unknown> | null;
   version: number;
 }
 
 export interface CreateProjectInput {
   name: string;
+  projectType?: string;
   visibility?: "private" | "workspace" | "public";
   description?: string;
 }
@@ -152,4 +155,23 @@ export async function ensureModeDocument(
 /** Idempotent — the project's primary `canvas` document. */
 export function ensureCanvasDocument(projectId: string): Promise<ModeDocumentRef> {
   return ensureModeDocument(projectId, "canvas");
+}
+
+export async function getDocument(documentId: string): Promise<ModeDocumentRef> {
+  const data = await api.get<{ document: ModeDocumentRef }>(`/aurora/documents/${documentId}`);
+  return data.document;
+}
+
+export async function updateDocumentSnapshot(
+  documentId: string,
+  input: {
+    title?: string;
+    contentSnapshot: Record<string, unknown>;
+    expectedVersion?: number;
+  }
+): Promise<ModeDocumentRef> {
+  const data = await api.patch<{ document: ModeDocumentRef }>(`/aurora/documents/${documentId}`, {
+    data: input,
+  });
+  return data.document;
 }

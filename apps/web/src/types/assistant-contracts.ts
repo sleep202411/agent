@@ -80,7 +80,23 @@ export interface AssistantAttachment {
   name: string;
   mimeType: string;
   size: number;
+  /**
+   * Server-side text-cache handle (`att_xxx`) returned by
+   * `/aurora/assistant/upload-attachment`. This is what the chat
+   * pipeline consumes: `preprocessMessages` / `collectAttachmentRefs`
+   * on the Nest side resolve the ref to the cached full text. Every
+   * attachment produced by the current upload flow carries one.
+   */
+  ref?: string;
+  /**
+   * Legacy OSS storage key. Only present on messages persisted before
+   * the direct-ingestion flow; never produced by new uploads.
+   */
   path?: string;
+  /**
+   * Legacy OSS direct link, same vintage as `path`. Kept so old chat
+   * history keeps rendering/downloading; never produced by new uploads.
+   */
   url?: string;
   excerpt?: string;
   status?: "uploading" | "uploaded" | "error";

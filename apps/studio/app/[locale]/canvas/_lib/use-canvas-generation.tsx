@@ -19,7 +19,10 @@ import { getAssetsRealtimeKernel } from "./assets-realtime-kernel";
 import { outputKindForType, routeReferenceField } from "./reference-routing";
 import { computeWalletBalanceQueryKey } from "@/app/_components/credits-badge";
 import { useActiveWorkspaceId } from "@/app/_components/workspace-context";
+import { useProjectContext } from "@/app/[locale]/project/_components/project-context";
+import { CHARACTER_REFS_FIELD } from "@/app/[locale]/canvas/_components/reference-stack";
 import {
+  buildPromptDocument,
   cancelFizzAiJob,
   compactFizzAiInput,
   filterFizzAiInput,
@@ -32,6 +35,7 @@ import {
   normalizeFizzAiError,
   submitFizzAiJob,
   type FizzAiCatalog,
+  type FizzAiCharacterBinding,
   type FizzAiJobView,
   type GenerationState,
 } from "./generation-api";
@@ -45,7 +49,18 @@ type GenNodeData = {
   modelId?: string;
   mode?: string;
   settings?: Record<string, string | number | boolean>;
-  references?: Record<string, { url: string; edgeId?: string; sourceNodeId?: string }[]>;
+  references?: Record<
+    string,
+    {
+      id?: string;
+      url: string;
+      edgeId?: string;
+      sourceNodeId?: string;
+      /** Present on CHARACTER_REFS_FIELD entries (kind 'character'). */
+      characterId?: string;
+      label?: string;
+    }[]
+  >;
   generation?: GenerationState;
 };
 
@@ -73,6 +88,35 @@ function removeMediaAssetFromGeneration(
     status: outputs.length > 0 ? generation.status : "failed",
     error: outputs.length > 0 ? generation.error : unavailableMessage,
   };
+}
+
+/**
+ * Structural equality over JSON-ish values; `undefined` properties count as
+ * absent (a state freshly built by `generationStateFromJob` carries explicit
+ * `progress: undefined` etc., while the same state read back from the Y.Doc
+ * simply lacks the key — those must compare equal).
+ */
+function isSameJsonValue(a: unknown, b: unknown): boolean {
+  if (a === b) return true;
+  if (Array.isArray(a) && Array.isArray(b)) {
+    return a.length === b.length && a.every((item, i) => isSameJsonValue(item, b[i]));
+  }
+  if (
+    a !== null &&
+    b !== null &&
+    typeof a === "object" &&
+    typeof b === "object" &&
+    !Array.isArray(a) &&
+    !Array.isArray(b)
+  ) {
+    const ra = a as Record<string, unknown>;
+    const rb = b as Record<string, unknown>;
+    const keysA = Object.keys(ra).filter((k) => ra[k] !== undefined);
+    const keysB = Object.keys(rb).filter((k) => rb[k] !== undefined);
+    if (keysA.length !== keysB.length) return false;
+    return keysA.every((k) => isSameJsonValue(ra[k], rb[k]));
+  }
+  return false;
 }
 
 function removeReferencesFromSources(
@@ -118,7 +162,24 @@ export function CanvasGenerationProvider({
 }) {
   const t = useTranslations("canvasOps");
   const { getNodes } = useReactFlow();
-  const graph = useCanvasGraphContext();
+  // Destructured mutators/accessors are individually stable (useCallback in
+  // useCanvasGraph), unlike the graph object itself whose identity tracks
+  // nodes/edges. Every callback and effect below depends on these — NEVER on
+  // the whole graph — so the realtime subscription and the reconcile loop stay
+  // armed exactly once instead of re-firing (and re-fetching) per re-derive.
+  const {
+    addAssets,
+    addNode,
+    getEdges,
+    getNode,
+    patchNodeData,
+    removeAssetsByMediaAssetId,
+    removeEdge,
+    removeNode,
+  } = useCanvasGraphContext();
+  // Stable per canvas (the provider lives under the project shell) — jobs bind
+  // to the server-backed project so context (workspace, cast) resolves from it.
+  const { projectId } = useProjectContext();
   const queryClient = useQueryClient();
   // Latest catalog without re-subscribing the realtime loop on catalog load
   // (the completion back-fill reads it to resolve downstream models).
@@ -128,8 +189,8 @@ export function CanvasGenerationProvider({
   }, [catalog]);
 
   const patch = useCallback(
-    (nodeId: string, generation: GenerationState) => graph.patchNodeData(nodeId, { generation }),
-    [graph]
+    (nodeId: string, generation: GenerationState) => patchNodeData(nodeId, { generation }),
+    [patchNodeData]
   );
 
   const [realtimeConnected, setRealtimeConnected] = useState(false);
@@ -182,17 +243,22 @@ export function CanvasGenerationProvider({
           // input wire — the panorama node has an input handle, so the
           // source→panorama wire stays as provenance instead of being dropped).
           const src = out!.url ?? out!.accessUrl;
-          graph.removeNode(match.id);
-          graph.addNode({
+          removeNode(match.id);
+          addNode({
             id: match.id,
             type: "panorama",
             position: match.position,
             data: { src, mediaAssetId: out?.assetId, label: matchData?.prompt },
           });
         } else {
-          graph.patchNodeData(match.id, {
-            generation: generationStateFromJob(job),
-          });
+          const nextGeneration = generationStateFromJob(job);
+          // No-op update (a reconnect/focus reconcile re-fetching a state we
+          // already hold): apply nothing. Writing the identical object into
+          // the CRDT would broadcast to peers, force a graph re-derive, and —
+          // while a card is running — feed a render→reconcile→write loop.
+          // Every side effect below already ran when this state first landed.
+          if (isSameJsonValue(matchData?.generation, nextGeneration)) return;
+          patchNodeData(match.id, { generation: nextGeneration });
           // Back-fill downstream references. A card wired to this node BEFORE it
           // had an output (a preset, or wire-then-generate) binds nothing at
           // connect time. Now that an output exists, push its URL into every card
@@ -202,7 +268,7 @@ export function CanvasGenerationProvider({
           const kind = outputKindForType(out?.type);
           if (doneUrl && kind) {
             const allNodes = getNodes();
-            for (const edge of graph.edges) {
+            for (const edge of getEdges()) {
               if (edge.source !== match.id || !edge.target) continue;
               const target = allNodes.find((n) => n.id === edge.target);
               if (!target || (target.type !== "prompt" && target.type !== "video")) continue;
@@ -210,7 +276,7 @@ export function CanvasGenerationProvider({
               // Resolve model + field INSIDE the patch from the node's CURRENT
               // data, so a card wired from multiple sources (or re-modelled
               // meanwhile) routes against fresh state, not a stale snapshot.
-              graph.patchNodeData(edge.target, (node) => {
+              patchNodeData(edge.target, (node) => {
                 const tdata = node.data as GenNodeData;
                 const model = catalogRef.current?.models.find((m) => m.id === tdata.modelId);
                 const routed = routeReferenceField(model, tdata.mode, tdata.references, kind);
@@ -237,7 +303,7 @@ export function CanvasGenerationProvider({
       // A finished job's outputs join the project's persistent asset library
       // (deduped by id, so repeated pushes are harmless).
       if (incoming === "done" && job.outputs?.length) {
-        graph.addAssets(
+        addAssets(
           job.outputs
             .map((output, index): CanvasAsset | null => {
               const url = output.url ?? output.accessUrl;
@@ -262,7 +328,7 @@ export function CanvasGenerationProvider({
         void queryClient.invalidateQueries({ queryKey: computeWalletBalanceQueryKey });
       }
     },
-    [getNodes, graph, queryClient]
+    [getNodes, getEdges, patchNodeData, addNode, removeNode, addAssets, queryClient]
   );
 
   /**
@@ -362,10 +428,10 @@ export function CanvasGenerationProvider({
             ...placedNodeIds,
             ...blockedOutputSourceNodeIds,
           ]);
-          graph.removeAssetsByMediaAssetId(event.assetId);
+          removeAssetsByMediaAssetId(event.assetId);
           for (const node of currentNodes) {
             if (placedNodeIds.has(node.id)) {
-              graph.removeNode(node.id);
+              removeNode(node.id);
               continue;
             }
             if (node.type !== "prompt" && node.type !== "video") continue;
@@ -380,17 +446,17 @@ export function CanvasGenerationProvider({
               blockedReferenceSources
             );
             if (generation !== data.generation || references !== data.references) {
-              graph.patchNodeData(node.id, { generation, references });
+              patchNodeData(node.id, { generation, references });
             }
           }
           if (blockedReferenceSources.size > 0) {
-            for (const edge of graph.edges) {
+            for (const edge of getEdges()) {
               if (
                 placedNodeIds.has(edge.source) ||
                 placedNodeIds.has(edge.target) ||
                 blockedReferenceSources.has(edge.source)
               ) {
-                graph.removeEdge(edge.id);
+                removeEdge(edge.id);
               }
             }
           }
@@ -401,7 +467,24 @@ export function CanvasGenerationProvider({
       },
     });
     return () => client.close();
-  }, [applyJobUpdate, reconcile, sweepStaleUrls, graph, getNodes, t, workspaceId]);
+    // Deps are all referentially stable (they change only on doc/workspace
+    // switch), so this subscription arms once per canvas — NOT per render.
+    // Re-arming per render tears the shared socket down (last subscriber
+    // closes it) and re-fires onConnected→reconcile each time: that was the
+    // /aurora/ai/jobs request storm.
+  }, [
+    applyJobUpdate,
+    reconcile,
+    sweepStaleUrls,
+    getNodes,
+    getEdges,
+    patchNodeData,
+    removeAssetsByMediaAssetId,
+    removeEdge,
+    removeNode,
+    t,
+    workspaceId,
+  ]);
 
   // Non-terminal job ids on the canvas, reactive to doc hydration + node edits.
   const activeJobIds = useStore((s) => {
@@ -442,7 +525,7 @@ export function CanvasGenerationProvider({
     async (nodeId: string) => {
       // Read source-of-truth from the doc (synchronous) so a card created/edited
       // earlier in the same turn is found even before React Flow's store catches up.
-      const node = graph.getNode(nodeId);
+      const node = getNode(nodeId);
       if (!node) return;
       const data = node.data as GenNodeData;
       const model = catalog?.models.find((m) => m.id === data.modelId);
@@ -460,14 +543,41 @@ export function CanvasGenerationProvider({
 
       // Map wired/uploaded references into their schema fields. Only real
       // (http) URLs go to the backend — blob object URLs can't be fetched yet
-      // (they wait on SAS upload), so they're dropped here.
+      // (they wait on SAS upload), so they're dropped here. The character
+      // pseudo-slot never enters input fields: those refs carry ids, not URLs.
       const properties = model.input_schema?.properties ?? {};
       const referenceInput: Record<string, unknown> = {};
       for (const [field, list] of Object.entries(data.references ?? {})) {
+        if (field === CHARACTER_REFS_FIELD) continue;
         const urls = list.map((r) => r.url).filter((u) => /^https?:/i.test(u));
         if (urls.length === 0) continue;
         referenceInput[field] = properties[field]?.type === "array" ? urls : urls[0];
       }
+
+      // Cast characters ride as `role: 'character'` bindings (ids only) — the
+      // server resolves + expands their library media before routing/pricing.
+      const characterBindings: FizzAiCharacterBinding[] = [];
+      for (const ref of data.references?.[CHARACTER_REFS_FIELD] ?? []) {
+        if (!ref.id || !ref.characterId) continue;
+        characterBindings.push({
+          refId: ref.id,
+          role: "character",
+          characterId: ref.characterId,
+          label: ref.label,
+        });
+      }
+      // Structured prompt only when a character can be `@`-mentioned — plain
+      // canvas prompts keep today's raw-text contract byte-identical.
+      const promptText = data.prompt ?? "";
+      const promptDocument =
+        characterBindings.length > 0 && promptText.trim()
+          ? buildPromptDocument(
+              promptText,
+              characterBindings.flatMap((binding) =>
+                binding.label ? [{ refId: binding.refId, label: binding.label }] : []
+              )
+            )
+          : undefined;
 
       const input = compactFizzAiInput(
         filterFizzAiInput(model, {
@@ -484,16 +594,20 @@ export function CanvasGenerationProvider({
       });
       try {
         const response = await submitFizzAiJob({
-          // Only the block binds the job to its card. The canvas project is
-          // local (no backend entity), so projectId/documentId are omitted —
-          // the server validates them for access and 404s an unresolvable id.
-          // They return once projects are server-backed.
+          // The job binds to its server-backed project (canvas id === project
+          // id) and to its card via the block id. The server resolves the
+          // workspace from the project — required for cast-character bindings
+          // (job workspace must equal the character's home workspace) and for
+          // billing the project's workspace wallet.
           context: {
+            projectId,
             documentBlockId: nodeId,
             sourceSurface: "fizzstudio-canvas",
           },
           idempotencyKey: generationIdempotencyKey("canvas"),
           input,
+          promptDocument,
+          referenceBindings: characterBindings.length > 0 ? characterBindings : undefined,
           modelId: model.id,
           schemaVersion: model.schemaVersion,
         });
@@ -511,12 +625,12 @@ export function CanvasGenerationProvider({
         toast.error(message);
       }
     },
-    [graph, catalog, patch, queryClient, t]
+    [getNode, catalog, projectId, patch, queryClient, t]
   );
 
   const cancel = useCallback(
     async (nodeId: string) => {
-      const node = graph.getNode(nodeId);
+      const node = getNode(nodeId);
       if (!node) return;
       const generation = (node.data as GenNodeData).generation;
       if (!generation?.jobId) return;
@@ -528,7 +642,7 @@ export function CanvasGenerationProvider({
         // Best-effort — the job may already be terminal server-side.
       }
     },
-    [graph, patch]
+    [getNode, patch]
   );
 
   const value = useMemo<GenerationContextValue>(

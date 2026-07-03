@@ -63,37 +63,6 @@ async function negotiate(workspaceId?: string): Promise<NegotiateData> {
   };
 }
 
-export function openAssetsRealtime(
-  handlers: AssetsRealtimeHandlers,
-  options: AssetsRealtimeOptions = {}
-): AssetsRealtimeClient {
-  let userClosed = false;
-  let backend: AssetsRealtimeClient | null = null;
-  const isClosed = () => userClosed;
-
-  void (async () => {
-    let access: NegotiateData;
-    try {
-      access = await negotiate(options.workspaceId);
-    } catch (err) {
-      if (!userClosed) {
-        handlers.onDisconnected?.(err instanceof Error ? err.message : "negotiate_failed");
-      }
-      return;
-    }
-    if (userClosed) return;
-    backend = openSelfHosted(access, options, handlers, isClosed);
-    if (userClosed) backend.close();
-  })();
-
-  return {
-    close() {
-      userClosed = true;
-      backend?.close();
-    },
-  };
-}
-
 const PING_INTERVAL_MS = 25_000;
 const MAX_RECONNECT_DELAY_MS = 15_000;
 // Circuit breaker: after this many consecutive failed (re)connects, back off to a
@@ -102,18 +71,15 @@ const MAX_RECONNECT_DELAY_MS = 15_000;
 const MAX_RECONNECT_ATTEMPTS = 6;
 const COOLDOWN_MS = 60_000;
 
-function openSelfHosted(
-  initial: NegotiateData,
-  options: AssetsRealtimeOptions,
+export function openAssetsRealtime(
   handlers: AssetsRealtimeHandlers,
-  isClosed: () => boolean
+  options: AssetsRealtimeOptions = {}
 ): AssetsRealtimeClient {
   let ws: WebSocket | null = null;
   let stopped = false;
   let attempt = 0;
   let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   let pingTimer: ReturnType<typeof setInterval> | null = null;
-
   function buildUrl(access: NegotiateData): string {
     let base = access.url;
     if (!/^wss?:\/\//.test(base)) {
@@ -132,7 +98,7 @@ function openSelfHosted(
   }
 
   function scheduleReconnect() {
-    if (stopped || isClosed()) return;
+    if (stopped) return;
     attempt += 1;
     // Past the breaker threshold, stop hammering: probe at most once per cooldown.
     // `attempt` resets to 0 on a successful open (onopen), closing the breaker.
@@ -146,14 +112,14 @@ function openSelfHosted(
     reconnectTimer = setTimeout(() => {
       void negotiate(options.workspaceId)
         .then((access) => {
-          if (!stopped && !isClosed()) connect(access);
+          if (!stopped) connect(access);
         })
         .catch(() => scheduleReconnect());
     }, delay);
   }
 
   function connect(access: NegotiateData) {
-    if (stopped || isClosed()) return;
+    if (stopped) return;
     try {
       ws = new WebSocket(buildUrl(access));
     } catch {
@@ -162,7 +128,7 @@ function openSelfHosted(
     }
     ws.onopen = () => {
       attempt = 0;
-      if (!isClosed()) handlers.onConnected?.();
+      if (!stopped) handlers.onConnected?.();
       pingTimer = setInterval(() => {
         if (ws?.readyState === WebSocket.OPEN) {
           ws.send(JSON.stringify({ event: "ping" }));
@@ -184,7 +150,7 @@ function openSelfHosted(
     };
     ws.onclose = () => {
       stopPing();
-      if (stopped || isClosed()) return;
+      if (stopped) return;
       handlers.onDisconnected?.("disconnected");
       scheduleReconnect();
     };
@@ -193,7 +159,19 @@ function openSelfHosted(
     };
   }
 
-  connect(initial);
+  // Initial connect enters the SAME backoff/breaker loop as reconnects. A
+  // transient negotiate failure at mount must not kill the client for good —
+  // that would leave the consumer on its HTTP fallback poll for the rest of
+  // the tab's life even though the realtime plane is healthy.
+  void negotiate(options.workspaceId)
+    .then((access) => {
+      if (!stopped) connect(access);
+    })
+    .catch((err) => {
+      if (stopped) return;
+      handlers.onDisconnected?.(err instanceof Error ? err.message : "negotiate_failed");
+      scheduleReconnect();
+    });
 
   return {
     close() {

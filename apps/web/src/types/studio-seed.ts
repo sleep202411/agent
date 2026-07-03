@@ -14,16 +14,18 @@ export type StudioAgent =
   | "storyboard";
 
 export interface StudioSeedAttachment {
-  /** OSS 相对路径（后端拿这个去 OSS 下载） */
-  path: string;
-  /** 直链（前端可以直接拉显示/下载） */
-  url: string;
+  /** Server text-cache ref (`att_xxx`) from `/aurora/assistant/upload-attachment`.
+   *  The workspace embeds it in the first chat message; the Nest
+   *  preprocessor resolves it to the extracted full text. */
+  ref: string;
   /** 原始文件名 */
   name: string;
   /** MIME 类型 */
   mimeType: string;
   /** 字节大小 */
   size: number;
+  /** Short preview of the extracted text for the file card UI. */
+  excerpt?: string;
 }
 
 export interface StudioSeed {

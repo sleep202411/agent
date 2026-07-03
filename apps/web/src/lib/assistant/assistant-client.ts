@@ -12,6 +12,11 @@ function sanitizeAttachment(attachment: AssistantAttachment): AssistantAttachmen
     name: attachment.name,
     mimeType: attachment.mimeType,
     size: attachment.size,
+    // `ref` is the live contract: the server resolves it to the cached
+    // full text. `path`/`url` only still occur on messages persisted by
+    // the old OSS flow — they must survive the round-trip so the server
+    // can keep re-extracting those attachments in old conversations.
+    ref: attachment.ref,
     path: attachment.path,
     url: attachment.url,
     excerpt: attachment.excerpt,
