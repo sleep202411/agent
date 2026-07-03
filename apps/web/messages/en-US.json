@@ -7482,16 +7482,110 @@
       "referenceTitle": "FizzDragon RPG"
     },
     "topbar": {
-      "menu": "Game menu"
+      "back": "Back",
+      "ended": "Ended",
+      "menu": "Game menu",
+      "turns": "{count} turns"
     },
     "setup": {
       "step": "Step {current} of {total}",
-      "nameLabel": "Enter your character's name...",
-      "namePlaceholder": "Lin Feng",
-      "identityLabel": "Your role in this case",
-      "identityPlaceholder": "Transfer student, witness, suspect...",
-      "detailsLabel": "Additional information such as looks, personality, backstory, etc. (Optional)",
-      "detailsPlaceholder": "Type here...",
+      "stage": {
+        "prologue": "Opening",
+        "role": "Viewpoint",
+        "direction": "Direction",
+        "preferences": "Pacing"
+      },
+      "prologueTitle": "You are not here to adapt.",
+      "prologueBody1": "The morning gate looks like black glass. You stand outside with the transfer notice in your hand. The reception teacher has not appeared yet, but the guard already looks up at you.",
+      "prologueBody2": "The elite school says you need correction. You know what they really want to correct: the way you notice contradictions, remember details, and pull lies apart.",
+      "roleTitle": "Which viewpoint do you enter from?",
+      "roleDescription": "The first version defaults to the protagonist. Other viewpoints tune narration and visibility without revealing the truth early.",
+      "directionTitle": "What should this run feel like?",
+      "directionDescription": "This is an adaptation direction, not a fixed ending. The AI uses it to tune mood, conflict focus, and information density.",
+      "preferenceTitle": "Choose story pacing",
+      "preferenceDescription": "Set how quickly this run moves. Hint strength and open-input boundaries are handled automatically by the story system.",
+      "roles": {
+        "linFeng": {
+          "meta": "Recommended",
+          "label": "Lin Feng",
+          "description": "A 17-year-old transfer student with precise memory and deduction. This is the most complete player viewpoint."
+        },
+        "brother": {
+          "meta": "Relationship view",
+          "label": "Brother",
+          "description": "Protector and watcher. Good for a stronger control layer, while the AI limits direct scene visibility."
+        },
+        "observer": {
+          "meta": "Observer view",
+          "label": "Case recorder",
+          "description": "A cooler case-record tone for players who want more distance and less embodiment."
+        }
+      },
+      "directions": {
+        "mystery": {
+          "label": "Mystery",
+          "description": "Focus on clues, contradictions, testimony, and the evidence chain."
+        },
+        "pressure": {
+          "label": "School pressure",
+          "description": "Emphasize rules, surveillance, institutional language, and isolation."
+        },
+        "relationship": {
+          "label": "Relationship tension",
+          "description": "Lean into trust, misunderstanding, and intervention between the protagonist and others."
+        },
+        "truth": {
+          "label": "Higher truth",
+          "description": "Touch deeper secrets sooner, with higher risk and stronger brother intervention."
+        }
+      },
+      "preferences": {
+        "pace": {
+          "title": "Story pacing",
+          "slow": {
+            "label": "Slow burn",
+            "description": "More environment and internal detail."
+          },
+          "standard": {
+            "label": "Standard",
+            "description": "Balanced action, feedback, and progress."
+          },
+          "fast": {
+            "label": "Tight",
+            "description": "Reach conflict and node changes sooner."
+          }
+        },
+        "hint": {
+          "title": "Hint strength",
+          "low": {
+            "label": "Low",
+            "description": "Let the player find direction."
+          },
+          "normal": {
+            "label": "Normal",
+            "description": "Suggest actions when useful."
+          },
+          "high": {
+            "label": "Clear",
+            "description": "Offer investigation leads more actively."
+          }
+        },
+        "freedom": {
+          "title": "Openness",
+          "open": {
+            "label": "More open",
+            "description": "Accept wider free input."
+          },
+          "balanced": {
+            "label": "Balanced",
+            "description": "Balance freedom and story limits."
+          },
+          "guided": {
+            "label": "More guided",
+            "description": "Pull back to the main line more often."
+          }
+        }
+      },
       "back": "Back",
       "next": "Next",
       "start": "Start"

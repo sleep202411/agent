@@ -7481,16 +7481,110 @@
       "referenceTitle": "气泡龙 RPG"
     },
     "topbar": {
-      "menu": "游戏菜单"
+      "back": "返回",
+      "ended": "已结束",
+      "menu": "游戏菜单",
+      "turns": "{count} 回合"
     },
     "setup": {
       "step": "第 {current} / {total} 步",
-      "nameLabel": "输入你的角色名字...",
-      "namePlaceholder": "林风",
-      "identityLabel": "你在这起案件里的身份",
-      "identityPlaceholder": "转学生、目击者、嫌疑人...",
-      "detailsLabel": "补充外貌、性格、背景等信息（可选）",
-      "detailsPlaceholder": "在这里输入...",
+      "stage": {
+        "prologue": "开场序章",
+        "role": "选择视角",
+        "direction": "改编方向",
+        "preferences": "故事节奏"
+      },
+      "prologueTitle": "你不是来适应学校的。",
+      "prologueBody1": "清晨的校门像一块黑色玻璃。你握着转学通知书站在门外，接待老师还没出现，保安却已经抬头看向你。",
+      "prologueBody2": "这所精英学校说你需要矫正。你知道他们更想矫正的是你看见异常、记住细节、把谎言拆开的方式。",
+      "roleTitle": "你从哪个视角进入？",
+      "roleDescription": "第一版默认以主角推进；其他视角用于改变叙事口吻和信息可见度，不会提前泄露真相。",
+      "directionTitle": "你希望这局更像哪种故事？",
+      "directionDescription": "这是改编方向，不是固定结局。AI 会用它控制氛围、冲突重心和每回合信息密度。",
+      "preferenceTitle": "选择故事节奏",
+      "preferenceDescription": "决定这局推进速度。提示力度和开放输入边界由系统根据当前剧情自动控制。",
+      "roles": {
+        "linFeng": {
+          "meta": "推荐",
+          "label": "林风",
+          "description": "17 岁转学生。拥有过目不忘和逻辑推演能力，是当前故事最完整的玩家视角。"
+        },
+        "brother": {
+          "meta": "关系视角",
+          "label": "哥哥",
+          "description": "保护者与监控者。适合更强控制感，但 AI 会减少现场可见信息。"
+        },
+        "observer": {
+          "meta": "旁观视角",
+          "label": "旁观记录者",
+          "description": "像案件记录一样旁观推进，适合更冷静的推理文本和低代入感体验。"
+        }
+      },
+      "directions": {
+        "mystery": {
+          "label": "悬疑推理",
+          "description": "重点放在线索、矛盾、证词和证据链，节奏更像案件拆解。"
+        },
+        "pressure": {
+          "label": "校园压迫",
+          "description": "强化制度、监控、校方话术和被孤立感，让每次行动都有压力。"
+        },
+        "relationship": {
+          "label": "关系拉扯",
+          "description": "强化哥哥、老师、同学和主角之间的信任、误解与干预。"
+        },
+        "truth": {
+          "label": "高层真相",
+          "description": "更快触碰校方背后的秘密，但风险和哥哥介入概率也更高。"
+        }
+      },
+      "preferences": {
+        "pace": {
+          "title": "故事节奏",
+          "slow": {
+            "label": "慢热",
+            "description": "更多环境和心理细节。"
+          },
+          "standard": {
+            "label": "标准",
+            "description": "行动、反馈和推进保持均衡。"
+          },
+          "fast": {
+            "label": "紧凑",
+            "description": "更快进入冲突和节点变化。"
+          }
+        },
+        "hint": {
+          "title": "提示力度",
+          "low": {
+            "label": "少提示",
+            "description": "让玩家自己发现方向。"
+          },
+          "normal": {
+            "label": "适中",
+            "description": "必要时给可尝试行动。"
+          },
+          "high": {
+            "label": "明显",
+            "description": "更主动地给调查建议。"
+          }
+        },
+        "freedom": {
+          "title": "开放程度",
+          "open": {
+            "label": "更开放",
+            "description": "容纳更多自由输入。"
+          },
+          "balanced": {
+            "label": "平衡",
+            "description": "自由输入和剧情约束并重。"
+          },
+          "guided": {
+            "label": "更收敛",
+            "description": "更频繁拉回主线。"
+          }
+        }
+      },
       "back": "返回",
       "next": "下一步",
       "start": "开始"
