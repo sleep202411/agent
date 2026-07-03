@@ -126,6 +126,19 @@ secrets:
       env: DASHSCOPE_API_KEY
     - kv: byteplus-modelark-api-key
       env: BYTEPLUS_MODELARK_API_KEY
+    # ModelArk ASSETS plane (character likeness / liveness) — separate AK/SK
+    # from the inference Bearer key; worker pods run the sync queues so these
+    # live in the shared mapping. UNCOMMENT ONLY AFTER the three KV secrets
+    # exist — the CSI projection is fail-closed, so a mapping to a missing KV
+    # entry breaks the whole projected Secret. Then flip
+    # CHARACTERS_REAL_PERSON_ENABLED (the server fails loud at boot if any of
+    # these is still missing).
+    # - kv: byteplus-assets-ak
+    #   env: BYTEPLUS_ASSETS_AK
+    # - kv: byteplus-assets-sk
+    #   env: BYTEPLUS_ASSETS_SK
+    # - kv: character-enrollment-token-key
+    #   env: CHARACTER_ENROLLMENT_TOKEN_KEY
     - kv: blob-conn-string
       env: AZURE_BLOB_CONNECTION_STRING
     - kv: db-conn-string
@@ -157,6 +170,12 @@ serverSecrets:
       env: AIRWALLEX_LINKED_PAYMENT_ACCOUNT_ID
     - kv: airwallex-webhook-secret
       env: AIRWALLEX_WEBHOOK_SECRET
+    # AppLovin (Axon) Conversions API access token — the "Reporting Key" from the
+    # Axon dashboard (Account → General → Keys). Powers server-side purchase (S2S)
+    # reporting for community billing. PREREQUISITE: create `axon-capi-access-token`
+    # in Key Vault BEFORE deploying — the CSI projection is fail-closed.
+    - kv: axon-capi-access-token
+      env: AXON_CAPI_ACCESS_TOKEN
     - kv: admin-mfa-secret-key
       env: ADMIN_MFA_SECRET_KEY
     - kv: legacy-mysql-user
@@ -317,6 +336,11 @@ server:
     AUTH_DISABLED: "false"
     PAYMENT_PROVIDER: airwallex
     AIRWALLEX_API_BASE_URL: https://api.airwallex.com
+    # AppLovin (Axon) server-side Conversions API. AXON_PIXEL_ID is the
+    # non-secret pixel/event key (same value as web NEXT_PUBLIC_AXON_PIXEL_KEY);
+    # the AXON_CAPI_ACCESS_TOKEN secret is projected from Key Vault (serverSecrets
+    # mapping below). The S2S reporter is a no-op until BOTH are set.
+    AXON_PIXEL_ID: d34d9c48-8032-4b5e-a28a-2fa3082efb73
     # Billing checkout success/back URLs must originate from one of these. The
     # AKS web host (fizzstudio.fizzdragon.com) is NOT in the code's hardcoded
     # allowlist, so it must be listed here. localhost:9527 is for local testing
