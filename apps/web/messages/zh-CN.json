@@ -7807,5 +7807,42 @@
         "generatedShots": "生成镜头"
       }
     }
+  },
+  "referral": {
+    "title": "邀请有礼",
+    "subtitle": "分享你的邀请码，好友加入并创作即可获得奖励。",
+    "cashTotal": "累计现金奖励",
+    "heroHint": "此处仅统计现金奖励，积分与会员奖励见下方列表。",
+    "statPending": "待确认",
+    "statConfirmed": "已确认",
+    "statInvitees": "已邀请好友",
+    "inviteCodeLabel": "我的邀请码",
+    "copy": "复制",
+    "copied": "已复制",
+    "share": "分享",
+    "shareTitle": "来 FizzDragon 一起创作",
+    "programUnavailableTitle": "奖励活动暂停中",
+    "programUnavailableBody": "邀请活动当前未开启，邀请码仍然有效，活动恢复后继续累计奖励。",
+    "milestonesTitle": "邀请里程碑",
+    "milestonesInvitees": "已邀请 {count} 人",
+    "milestoneThreshold": "达标 {count} 人",
+    "rewardsTitle": "我的奖励",
+    "rewardsEmpty": "暂无奖励",
+    "rewardsEmptyHint": "好友注册并完成首次消费后，奖励会显示在这里。",
+    "claim": "领取",
+    "claiming": "领取中…",
+    "retry": "重试",
+    "loadErrorTitle": "奖励加载失败",
+    "statusPending": "待确认",
+    "statusQualified": "已达标",
+    "statusAccrued": "可领取",
+    "statusReversed": "已撤销",
+    "statusVoided": "已作废",
+    "statusPaidOut": "已发放",
+    "valuePointsCompute": "+{count} 算力积分",
+    "valuePointsCommunity": "+{count} 社区积分",
+    "valueMembershipCompute": "{days} 天 Studio 会员",
+    "valueMembershipCommunity": "{days} 天社区会员",
+    "valueMembershipBoth": "{days} 天 Studio+社区会员"
   }
 }

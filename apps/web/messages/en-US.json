@@ -7808,5 +7808,42 @@
         "generatedShots": "Generated shots"
       }
     }
+  },
+  "referral": {
+    "title": "Invite & Earn",
+    "subtitle": "Share your invite code — earn rewards as friends join and create.",
+    "cashTotal": "Cash rewards to date",
+    "heroHint": "Cash totals only — points and membership rewards are listed below.",
+    "statPending": "Pending",
+    "statConfirmed": "Confirmed",
+    "statInvitees": "Friends invited",
+    "inviteCodeLabel": "Your invite code",
+    "copy": "Copy",
+    "copied": "Copied",
+    "share": "Share",
+    "shareTitle": "Join me on FizzDragon",
+    "programUnavailableTitle": "Rewards are paused",
+    "programUnavailableBody": "The invite program isn't running right now. Invite codes still work — rewards resume once it's back.",
+    "milestonesTitle": "Invite milestones",
+    "milestonesInvitees": "{count} invited",
+    "milestoneThreshold": "{count} qualified",
+    "rewardsTitle": "Your rewards",
+    "rewardsEmpty": "No rewards yet",
+    "rewardsEmptyHint": "Rewards appear here once an invited friend signs up and makes their first purchase.",
+    "claim": "Claim",
+    "claiming": "Claiming…",
+    "retry": "Retry",
+    "loadErrorTitle": "Couldn't load your rewards",
+    "statusPending": "Pending",
+    "statusQualified": "Qualified",
+    "statusAccrued": "Ready to claim",
+    "statusReversed": "Reversed",
+    "statusVoided": "Voided",
+    "statusPaidOut": "Granted",
+    "valuePointsCompute": "+{count} compute points",
+    "valuePointsCommunity": "+{count} community points",
+    "valueMembershipCompute": "{days}d Studio membership",
+    "valueMembershipCommunity": "{days}d community membership",
+    "valueMembershipBoth": "{days}d Studio + community membership"
   }
 }

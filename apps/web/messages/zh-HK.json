@@ -7807,5 +7807,42 @@
         "generatedShots": "生成鏡頭"
       }
     }
+  },
+  "referral": {
+    "title": "邀請有禮",
+    "subtitle": "分享你的邀請碼，好友加入並創作即可獲得獎勵。",
+    "cashTotal": "累計現金獎勵",
+    "heroHint": "此處僅統計現金獎勵，積分與會員獎勵見下方列表。",
+    "statPending": "待確認",
+    "statConfirmed": "已確認",
+    "statInvitees": "已邀請好友",
+    "inviteCodeLabel": "我的邀請碼",
+    "copy": "複製",
+    "copied": "已複製",
+    "share": "分享",
+    "shareTitle": "來 FizzDragon 一起創作",
+    "programUnavailableTitle": "獎勵活動暫停中",
+    "programUnavailableBody": "邀請活動目前未開啟，邀請碼仍然有效，活動恢復後繼續累計獎勵。",
+    "milestonesTitle": "邀請里程碑",
+    "milestonesInvitees": "已邀請 {count} 人",
+    "milestoneThreshold": "達標 {count} 人",
+    "rewardsTitle": "我的獎勵",
+    "rewardsEmpty": "暫無獎勵",
+    "rewardsEmptyHint": "好友註冊並完成首次消費後，獎勵會顯示在這裡。",
+    "claim": "領取",
+    "claiming": "領取中…",
+    "retry": "重試",
+    "loadErrorTitle": "獎勵載入失敗",
+    "statusPending": "待確認",
+    "statusQualified": "已達標",
+    "statusAccrued": "可領取",
+    "statusReversed": "已撤銷",
+    "statusVoided": "已作廢",
+    "statusPaidOut": "已發放",
+    "valuePointsCompute": "+{count} 算力積分",
+    "valuePointsCommunity": "+{count} 社區積分",
+    "valueMembershipCompute": "{days} 天 Studio 會員",
+    "valueMembershipCommunity": "{days} 天社區會員",
+    "valueMembershipBoth": "{days} 天 Studio+社區會員"
   }
 }
