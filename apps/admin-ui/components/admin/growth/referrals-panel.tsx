@@ -40,7 +40,7 @@ import {
   stringField,
   toErrorMessage,
 } from "../billing/shared";
-import { CommissionRateForm, CommissionRatesTable } from "./commission-rates";
+import { CommissionRateForm, CommissionRatesTable, bpsPercentLabel } from "./commission-rates";
 import type {
   CommissionRateRow,
   PayoutType,
@@ -114,6 +114,7 @@ export function ReferralsPanel({
   initialError?: string | null;
 }) {
   const [config, setConfig] = useState<ReferralConfig | null>(initialConfig);
+  const [editProgramOpen, setEditProgramOpen] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
   const [editingMilestone, setEditingMilestone] = useState<ReferralMilestoneRow | null>(null);
   const [rates, setRates] = useState<CommissionRateRow[]>(initialRates ?? []);
@@ -146,6 +147,7 @@ export function ReferralsPanel({
         "PATCH"
       );
       setConfig(data);
+      setEditProgramOpen(false);
     } catch (err) {
       setError(toErrorMessage(err));
     } finally {
@@ -272,22 +274,30 @@ export function ReferralsPanel({
           <div>
             <h2 className="text-sm font-semibold text-slate-950">奖励配置</h2>
             <p className="mt-0.5 text-[12px] text-slate-500">
-              金额单位为分（积分 ≡ 美分）；达标事件决定何时计入有效邀请。
+              程序基础设置；达标事件决定被邀请人何时计为有效邀请。
             </p>
           </div>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => void refreshConfig()}
-            disabled={loading}
-          >
-            <IconRefresh className="size-4" />
-            刷新
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => void refreshConfig()}
+              disabled={loading}
+            >
+              <IconRefresh className="size-4" />
+              刷新
+            </Button>
+            <Button
+              size="sm"
+              onClick={() => setEditProgramOpen(true)}
+              disabled={loading || !config}
+            >
+              <IconEdit className="size-4" />
+              编辑配置
+            </Button>
+          </div>
         </div>
-        <div className="px-4 py-4">
-          <ProgramForm config={config} loading={loading} onSubmit={handleSaveProgram} />
-        </div>
+        <ProgramView config={config} />
       </section>
 
       <section className="rounded-xl border border-slate-200 bg-white">
@@ -296,6 +306,9 @@ export function ReferralsPanel({
             <h2 className="text-sm font-semibold text-slate-950">阶梯奖励</h2>
             <p className="mt-0.5 text-[12px] text-slate-500">
               邀请人数达到门槛后额外发放的阶梯奖励（每档可含多项），按 rank 排序展示。
+              {config?.giftedPointsValidityDays
+                ? ` 阶梯赠送的社区/算力积分领取后 ${config.giftedPointsValidityDays} 天过期（平台策略）。`
+                : ""}
             </p>
           </div>
           <Button size="sm" onClick={() => setCreateOpen(true)} disabled={loading}>
@@ -314,11 +327,16 @@ export function ReferralsPanel({
       <section className="rounded-xl border border-slate-200 bg-white">
         <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 px-4 py-3">
           <div>
-            <h2 className="text-sm font-semibold text-slate-950">消费返佣白名单</h2>
+            <h2 className="text-sm font-semibold text-slate-950">消费返佣</h2>
             <p className="mt-0.5 text-[12px] text-slate-500">
-              按用户覆写默认返佣比例（KOL
-              专属档）；被邀请人每笔实付订单按比例给邀请人现金返佣（进待提现钱包）。0% =
-              对该用户显式关闭。
+              被邀请人每笔实付订单，按比例给邀请人发<b>现金</b>返佣（进待提现钱包，不过期）。
+              默认比例
+              <b className="text-slate-700">
+                {" "}
+                {config ? bpsPercentLabel(config.commissionBps) : "—"}{" "}
+              </b>
+              适用于所有邀请人；下方白名单可为个别用户（KOL）覆写，0% = 对该用户显式关闭。
+              默认比例在「编辑配置」里改。
             </p>
           </div>
           <Button size="sm" onClick={() => setRateDialog({ mode: "create" })} disabled={loading}>
@@ -333,6 +351,17 @@ export function ReferralsPanel({
           onEditRate={(rate) => setRateDialog({ mode: "edit", rate })}
         />
       </section>
+
+      <AdminDialog
+        open={editProgramOpen}
+        title="编辑奖励配置"
+        description="程序基础设置 + 默认返佣比例 + 被邀请人福利；保存后立即生效，只影响之后的邀请与订单。"
+        onClose={() => setEditProgramOpen(false)}
+      >
+        {config ? (
+          <ProgramForm config={config} loading={loading} onSubmit={handleSaveProgram} />
+        ) : null}
+      </AdminDialog>
 
       <AdminDialog
         open={Boolean(rateDialog)}
@@ -390,6 +419,70 @@ export function ReferralsPanel({
   );
 }
 
+/** Read-only display of the program config (edit happens in the dialog). */
+function ProgramView({ config }: { config: ReferralConfig | null }) {
+  if (!config) {
+    return (
+      <div className="px-4 py-6 text-[13px] text-slate-500">
+        尚未配置。点右上角「编辑配置」创建。
+      </div>
+    );
+  }
+  const inviteeOn = Number(config.inviteeBenefitMinor) > 0;
+  return (
+    <dl className="grid gap-x-8 gap-y-3 px-4 py-4 sm:grid-cols-2">
+      <ViewRow label="状态">
+        {config.enabled ? (
+          <StatusPill tone="success">开启</StatusPill>
+        ) : (
+          <StatusPill tone="muted">关闭</StatusPill>
+        )}
+      </ViewRow>
+      <ViewRow label="达标事件">
+        首次购买 <span className="text-slate-400">（固定）</span>
+      </ViewRow>
+      <ViewRow label="现金币种">{config.currency ?? "—"}</ViewRow>
+      <ViewRow label="冻结天数">{config.holdDays} 天</ViewRow>
+      <ViewRow label="默认返佣比例" hint="现金返佣，进待提现钱包，不过期">
+        {bpsPercentLabel(config.commissionBps)}
+      </ViewRow>
+      <ViewRow label="账号年龄上限（防刷）">
+        {config.refereeMaxAccountAgeHours > 0 ? `${config.refereeMaxAccountAgeHours} 小时` : "不限"}
+      </ViewRow>
+      <ViewRow label="阶梯赠送积分有效期" hint="仅阶梯发的社区/算力积分；返佣现金与充值积分不过期">
+        {config.giftedPointsValidityDays} 天后过期
+      </ViewRow>
+      <ViewRow label="被邀请人福利（新人礼）">
+        {inviteeOn ? (
+          <span>
+            {config.inviteeBenefitTitle || "新人礼"} · {config.inviteeBenefitMinor} 分
+          </span>
+        ) : (
+          <span className="text-slate-400">未开启</span>
+        )}
+      </ViewRow>
+    </dl>
+  );
+}
+
+function ViewRow({
+  label,
+  hint,
+  children,
+}: {
+  label: string;
+  hint?: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="flex flex-col gap-0.5">
+      <dt className="text-[11px] font-medium text-slate-400">{label}</dt>
+      <dd className="text-sm text-slate-900">{children}</dd>
+      {hint ? <p className="text-[11px] text-slate-400">{hint}</p> : null}
+    </div>
+  );
+}
+
 function ProgramForm({
   config,
   loading,
@@ -401,6 +494,12 @@ function ProgramForm({
 }) {
   return (
     <form className="grid gap-4" onSubmit={onSubmit}>
+      {/* 达标事件是固定值（注册即达标无服务端触发点，已下线）—— 展示为说明，不是可编辑输入框。 */}
+      <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5 text-[12px] leading-5 text-slate-600">
+        <span className="font-semibold text-slate-700">达标事件：首次购买</span>
+        （固定）—— 被邀请人完成第一笔真金白银订单后，才计为有效邀请、开始发放奖励。
+      </div>
+
       <div className="grid gap-3 md:grid-cols-2">
         <FormLabel label="状态" help="关闭后不再统计邀请，也不发放邀请奖励。">
           <Select name="enabled" defaultValue={config?.enabled ? "on" : "off"}>
@@ -416,46 +515,8 @@ function ProgramForm({
             maxLength={3}
           />
         </FormLabel>
-        <FormLabel
-          label="达标事件"
-          help="固定为首次购买——被邀请人完成第一笔真金白银订单后计为有效邀请（注册即达标无服务端触发点，已下线）。"
-        >
-          <TextInput value="首次购买" readOnly className="bg-slate-50 text-slate-500" />
-        </FormLabel>
         <FormLabel label="冻结天数" help="奖励发放后冻结的天数，用于防作弊回收期。">
           <TextInput name="holdDays" type="number" min={0} defaultValue={config?.holdDays ?? 0} />
-        </FormLabel>
-        <FormLabel
-          label="每位邀请奖励(分)"
-          help="每位有效邀请发放给邀请人的金额，单位分（积分 ≡ 美分）。"
-        >
-          <TextInput
-            name="rewardPerReferralMinor"
-            type="number"
-            min={0}
-            defaultValue={config?.rewardPerReferralMinor ?? "0"}
-          />
-        </FormLabel>
-        <FormLabel label="最多奖励邀请数" help="每位邀请人最多被奖励的有效邀请人数上限。">
-          <TextInput
-            name="maxRewardedReferees"
-            type="number"
-            min={0}
-            defaultValue={config?.maxRewardedReferees ?? 0}
-          />
-        </FormLabel>
-        <FormLabel
-          label="默认返佣比例(%)"
-          help="被邀请人每笔实付订单按此比例给邀请人现金返佣；0 = 关闭（仅白名单用户返佣）。"
-        >
-          <TextInput
-            name="commissionRatePercent"
-            type="number"
-            min={0}
-            max={100}
-            step={0.01}
-            defaultValue={config ? config.commissionBps / 100 : 0}
-          />
         </FormLabel>
         <FormLabel
           label="账号年龄上限(小时)"
@@ -469,21 +530,43 @@ function ProgramForm({
           />
         </FormLabel>
         <FormLabel
-          label="赠送积分有效期"
-          help="平台级策略（与签到/代金券/活动共用），本页不可改。仅赠送的社区/算力积分适用；充值购买的积分与现金奖励不过期。"
+          label="默认返佣比例(%)"
+          help="被邀请人每笔实付订单按此比例给邀请人现金返佣（进待提现钱包，不过期）；0 = 关闭（仅白名单用户返佣）。"
         >
           <TextInput
-            value={config ? `${config.giftedPointsValidityDays} 天后过期` : "—"}
-            readOnly
-            className="bg-slate-50 text-slate-500"
+            name="commissionRatePercent"
+            type="number"
+            min={0}
+            max={100}
+            step={0.01}
+            defaultValue={config ? config.commissionBps / 100 : 0}
+          />
+        </FormLabel>
+        <FormLabel
+          label="每位邀请奖励(分)"
+          help="旧版：每位有效邀请给邀请人的固定现金，单位分（积分 ≡ 美分）。v3 用阶梯+返佣，通常留 0。"
+        >
+          <TextInput
+            name="rewardPerReferralMinor"
+            type="number"
+            min={0}
+            defaultValue={config?.rewardPerReferralMinor ?? "0"}
+          />
+        </FormLabel>
+        <FormLabel label="最多奖励邀请数" help="旧版每位邀请奖励的上限；0 = 不限。返佣不受此限制。">
+          <TextInput
+            name="maxRewardedReferees"
+            type="number"
+            min={0}
+            defaultValue={config?.maxRewardedReferees ?? 0}
           />
         </FormLabel>
       </div>
 
       <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-3">
-        <p className="text-[12px] font-semibold text-slate-500">被邀请人福利</p>
+        <p className="text-[12px] font-semibold text-slate-500">被邀请人福利（新人礼）</p>
         <p className="mt-0.5 text-[11px] text-slate-400">
-          展示给被邀请人的新人福利；留空表示不发放。
+          发给被邀请人自己的新人礼（现金，进待提现钱包）；福利金额为 0 表示不发放。
         </p>
         <div className="mt-3 grid gap-3 md:grid-cols-2">
           <FormLabel label="福利标题">
