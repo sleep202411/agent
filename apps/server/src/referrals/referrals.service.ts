@@ -3,6 +3,7 @@ import {
   Injectable,
   Logger,
   NotFoundException,
+  ServiceUnavailableException,
 } from '@nestjs/common';
 import {
   BillingOrderStatus,
@@ -16,6 +17,10 @@ import {
   WalletLedgerEntryType,
   WalletOwnerType,
 } from '@prisma/client';
+import {
+  PROMO_CREDIT_VALIDITY_DAYS,
+  promoCreditExpiresAt,
+} from '../billing/credit-policy';
 import { PrismaService } from '../infra/db/db.module';
 import { LegacyMysqlService } from '../infra/legacy-mysql/legacy-mysql.service';
 import {
@@ -33,6 +38,7 @@ import type {
   ReferralRewardItemDTO,
   UpdateReferralMilestoneInput,
   UpdateReferralProgramInput,
+  UpsertReferralCommissionRateInput,
 } from './dto';
 
 /** Single-program install for now; the schema already keys by program. */
@@ -88,6 +94,13 @@ export class ReferralsService {
         `lazy qualify failed for ${userId}: ${e instanceof Error ? e.message : e}`,
       ),
     );
+    // Same for per-order commissions the webhook hook may have missed (its
+    // failures are log-only — the provider event is already marked processed).
+    await this.backfillRefereeCommissions(userId).catch((e) =>
+      this.logger.warn(
+        `lazy commission backfill failed for ${userId}: ${e instanceof Error ? e.message : e}`,
+      ),
+    );
     const program = await this.prisma.referralProgram.findUnique({
       where: { key: PROGRAM_KEY },
       include: {
@@ -107,7 +120,17 @@ export class ReferralsService {
     const code = viewerCookie
       ? await this.javaUsers.findRecommendationCode(viewerCookie)
       : null;
-    const [inviteeCount, qualifiedCount, rewards] = await Promise.all([
+    // The reward LIST is windowed, but claimable (accrued) rewards are fetched
+    // separately so per-order commission churn can never push an unclaimed
+    // reward out of reach; the headline money TOTALS are a full-table
+    // aggregate, not a sum of the visible window.
+    const [
+      inviteeCount,
+      qualifiedCount,
+      accruedRewards,
+      recentRewards,
+      cashByStatus,
+    ] = await Promise.all([
       this.prisma.referralAttribution.count({
         where: { referrerUserId: userId },
       }),
@@ -115,12 +138,26 @@ export class ReferralsService {
         where: { referrerUserId: userId, status: 'qualified' },
       }),
       this.prisma.referralReward.findMany({
-        where: { userId },
+        where: { userId, status: 'accrued' },
+        orderBy: { createdAt: 'desc' },
+        take: 100,
+        include: { items: { orderBy: { rank: 'asc' } } },
+      }),
+      this.prisma.referralReward.findMany({
+        where: { userId, status: { not: 'accrued' } },
         orderBy: { createdAt: 'desc' },
         take: 50,
         include: { items: { orderBy: { rank: 'asc' } } },
       }),
+      this.prisma.referralReward.groupBy({
+        by: ['status'],
+        where: { userId, payoutType: 'cash' },
+        _sum: { amountMinor: true },
+      }),
     ]);
+    const rewards = [...accruedRewards, ...recentRewards].sort(
+      (a, b) => b.createdAt.getTime() - a.createdAt.getTime(),
+    );
 
     // Milestone progress tracks QUALIFIED referees (matches accrual), not raw
     // signups. First unmet tier is "active"; lower complete, higher locked.
@@ -157,7 +194,7 @@ export class ReferralsService {
           ? `${this.inviteBase}/register?recommendationCode=${encodeURIComponent(code)}`
           : null,
       currency: program.currency,
-      totals: computeTotals(rewards, inviteeCount),
+      totals: computeTotals(cashByStatus, inviteeCount),
       inviteeBenefit: {
         title: program.inviteeBenefitTitle,
         detail: program.inviteeBenefitDetail,
@@ -179,15 +216,18 @@ export class ReferralsService {
     const data: Prisma.ReferralProgramUpdateInput = { updatedById: adminId };
     if (input.enabled !== undefined) data.enabled = input.enabled;
     if (input.currency !== undefined) data.currency = input.currency;
-    if (input.qualifyEvent !== undefined) {
-      data.qualifyEvent = input.qualifyEvent;
-    }
     if (input.holdDays !== undefined) data.holdDays = input.holdDays;
     if (input.rewardPerReferralMinor !== undefined) {
       data.rewardPerReferralMinor = BigInt(input.rewardPerReferralMinor);
     }
     if (input.maxRewardedReferees !== undefined) {
       data.maxRewardedReferees = input.maxRewardedReferees;
+    }
+    if (input.commissionBps !== undefined) {
+      data.commissionBps = input.commissionBps;
+    }
+    if (input.refereeMaxAccountAgeHours !== undefined) {
+      data.refereeMaxAccountAgeHours = input.refereeMaxAccountAgeHours;
     }
     if (input.inviteeBenefitTitle !== undefined) {
       data.inviteeBenefitTitle = input.inviteeBenefitTitle;
@@ -300,6 +340,14 @@ export class ReferralsService {
       holdDays: program.holdDays,
       rewardPerReferralMinor: program.rewardPerReferralMinor.toString(),
       maxRewardedReferees: program.maxRewardedReferees,
+      commissionBps: program.commissionBps,
+      refereeMaxAccountAgeHours: program.refereeMaxAccountAgeHours,
+      // Read-only for the admin: gifted point rewards (社区/算力积分) expire this
+      // many days after they're granted — a platform-wide policy constant shared
+      // with check-in/voucher/campaign, not per-program editable. Surfaced so the
+      // admin knows the rewards they configure aren't permanent. Paid recharge
+      // and cash payouts never expire.
+      giftedPointsValidityDays: PROMO_CREDIT_VALIDITY_DAYS,
       inviteeBenefitTitle: program.inviteeBenefitTitle,
       inviteeBenefitDetail: program.inviteeBenefitDetail,
       inviteeBenefitMinor: program.inviteeBenefitMinor.toString(),
@@ -324,16 +372,127 @@ export class ReferralsService {
     };
   }
 
+  // ─── Admin: 消费返佣 per-user rates (KOL whitelist) ─────────────────────
+
+  async listCommissionRates() {
+    const rows = await this.prisma.referralCommissionRate.findMany({
+      where: { programKey: PROGRAM_KEY },
+      orderBy: { createdAt: 'desc' },
+    });
+    const users = await this.lookupLegacyUsers(rows.map((r) => r.userId));
+    return rows.map((r) => ({
+      id: r.id,
+      userId: r.userId,
+      commissionBps: r.commissionBps,
+      note: r.note,
+      nickName: users.get(r.userId)?.nickName ?? null,
+      email: users.get(r.userId)?.email ?? null,
+      createdAt: r.createdAt.toISOString(),
+      updatedAt: r.updatedAt.toISOString(),
+    }));
+  }
+
+  async upsertCommissionRate(
+    adminId: string,
+    input: UpsertReferralCommissionRateInput,
+  ) {
+    const userId = input.userId.trim();
+    // Reject unknown ids up front — a typo'd whitelist row would silently
+    // never match any attribution. A bridge outage must NOT masquerade as
+    // "unknown user" (that reads as an admin typo): surface it as a 503.
+    let exists = false;
+    try {
+      const row = await this.legacy.queryOne<
+        RowDataPacket & { id: number | string }
+      >('SELECT id FROM client_user WHERE id = ? LIMIT 1', [userId]);
+      exists = row?.id != null;
+    } catch {
+      throw new ServiceUnavailableException(
+        'User lookup is unavailable — cannot validate the user id right now; try again later',
+      );
+    }
+    if (!exists) {
+      throw new BadRequestException(`Unknown user id: ${userId}`);
+    }
+    await this.prisma.referralCommissionRate.upsert({
+      where: { programKey_userId: { programKey: PROGRAM_KEY, userId } },
+      create: {
+        programKey: PROGRAM_KEY,
+        userId,
+        commissionBps: input.commissionBps,
+        note: input.note ?? null,
+        createdById: adminId,
+        updatedById: adminId,
+      },
+      update: {
+        commissionBps: input.commissionBps,
+        note: input.note ?? null,
+        updatedById: adminId,
+      },
+    });
+    return this.listCommissionRates();
+  }
+
+  async removeCommissionRate(userId: string) {
+    await this.prisma.referralCommissionRate.deleteMany({
+      where: { programKey: PROGRAM_KEY, userId },
+    });
+    return this.listCommissionRates();
+  }
+
+  /** Best-effort display info for admin lists (nick/email via the Java bridge). */
+  private async lookupLegacyUsers(
+    userIds: string[],
+  ): Promise<Map<string, { nickName: string | null; email: string | null }>> {
+    const out = new Map<
+      string,
+      { nickName: string | null; email: string | null }
+    >();
+    const ids = [...new Set(userIds.filter(Boolean))];
+    if (!ids.length) return out;
+    try {
+      const rows = await this.legacy.query<
+        RowDataPacket & {
+          id: number | string;
+          nick_name: string | null;
+          email: string | null;
+        }
+      >(
+        `SELECT id, nick_name, email FROM client_user WHERE id IN (${ids
+          .map(() => '?')
+          .join(',')})`,
+        ids,
+      );
+      for (const r of rows) {
+        out.set(String(r.id), {
+          nickName: r.nick_name ?? null,
+          email: r.email ?? null,
+        });
+      }
+    } catch {
+      // bridge unavailable — names just render blank in the admin list
+    }
+    return out;
+  }
+
   /**
    * Billing hook — call AFTER the payment transaction commits (own tx,
    * best-effort), so a referral bug can never roll back a paid order. Resolves
-   * the order's buyer and qualifies them if they were referred. Idempotent;
+   * the order's buyer, qualifies them if they were referred (one-time), then
+   * accrues the per-order consumption commission (every order). Idempotent;
    * safe to call for any matched order (non-paid / adjustments are ignored).
    */
   async accrueForOrder(orderId: string): Promise<void> {
     const order = await this.prisma.billingOrder.findUnique({
       where: { id: orderId },
-      select: { userId: true, status: true, orderType: true },
+      select: {
+        id: true,
+        userId: true,
+        status: true,
+        orderType: true,
+        amountMinor: true,
+        currency: true,
+      },
     });
     if (!order) return;
     if (
@@ -344,6 +503,138 @@ export class ReferralsService {
     }
     if (order.orderType === BillingOrderType.manual_adjustment) return;
     await this.qualifyRefereePurchase(order.userId);
+    await this.accrueCommissionForOrder(order);
+  }
+
+  /**
+   * Per-order consumption commission (消费返佣): the referee's referrer earns
+   * `commissionBps` of this order's ACTUAL-PAID amount (`amountMinor` is
+   * discount-applied AND provider-reconciled before the post-commit hook
+   * fires). Unlike the one-time qualify reward this fires on EVERY paid
+   * order; idempotent per order via the (orderId, kind) unique. Rate: the
+   * per-user whitelist row → else the program default (0 = off). USD-only:
+   * commission is cash and the cash grant maps 积分 ≡ US cent.
+   */
+  private async accrueCommissionForOrder(order: {
+    id: string;
+    userId: string;
+    amountMinor: bigint;
+    currency: string;
+  }): Promise<void> {
+    if (order.amountMinor <= 0n) return;
+    const attribution = await this.prisma.referralAttribution.findUnique({
+      where: { refereeUserId: order.userId },
+    });
+    if (!attribution || attribution.status !== 'qualified') return;
+    const program = await this.prisma.referralProgram.findUnique({
+      where: { key: attribution.programKey },
+    });
+    if (!program || !program.enabled) return;
+    const override = await this.prisma.referralCommissionRate.findUnique({
+      where: {
+        programKey_userId: {
+          programKey: attribution.programKey,
+          userId: attribution.referrerUserId,
+        },
+      },
+    });
+    const bps = override ? override.commissionBps : program.commissionBps;
+    if (bps <= 0) return;
+    if (order.currency !== 'USD') {
+      // Skip loudly rather than throw — this hook must never read as a
+      // billing failure. (.cn needs its own payout mapping before commission.)
+      this.logger.warn(
+        `commission skipped for order ${order.id}: unsupported currency ${order.currency}`,
+      );
+      return;
+    }
+    const amount = (order.amountMinor * BigInt(bps)) / 10000n;
+    if (amount <= 0n) return;
+
+    const availableAt = new Date(Date.now() + program.holdDays * DAY_MS);
+    try {
+      await this.prisma.referralReward.create({
+        data: {
+          programKey: program.key,
+          userId: attribution.referrerUserId,
+          kind: 'commission',
+          status: 'accrued',
+          payoutType: 'cash',
+          amountMinor: amount,
+          currency: order.currency,
+          title: 'Purchase commission',
+          subtitle: `${formatBpsPercent(bps)} of a friend's ${formatUsdMinor(order.amountMinor)} purchase`,
+          orderId: order.id,
+          commissionBps: bps,
+          sourceAmountMinor: order.amountMinor,
+          availableAt,
+          items: {
+            create: [
+              {
+                payoutType: 'cash',
+                amountMinor: amount,
+                days: 0,
+                currency: order.currency,
+                rank: 0,
+              },
+            ],
+          },
+        },
+      });
+      this.logger.log(
+        `Commission accrued: order=${order.id} referrer=${attribution.referrerUserId} bps=${bps} amountMinor=${amount}`,
+      );
+    } catch (e) {
+      // (orderId, kind) unique → a duplicate webhook delivery already accrued.
+      if (!isUniqueViolation(e)) throw e;
+    }
+  }
+
+  /**
+   * Lazy backstop (dashboard-read time) for commissions the webhook hook
+   * missed — its failures are log-only because the provider event is already
+   * marked processed, so nothing retries them. Sweeps THIS viewer's recent
+   * paid orders (48h window: transient-failure recovery, NOT retroactive
+   * minting for newly-whitelisted referrers) and accrues any missing
+   * commission. Idempotent via the (orderId, kind) unique.
+   */
+  private async backfillRefereeCommissions(
+    refereeUserId: string,
+  ): Promise<void> {
+    const attribution = await this.prisma.referralAttribution.findUnique({
+      where: { refereeUserId },
+      select: { status: true },
+    });
+    if (!attribution || attribution.status !== 'qualified') return;
+    const orders = await this.prisma.billingOrder.findMany({
+      where: {
+        userId: refereeUserId,
+        status: {
+          in: [BillingOrderStatus.paid, BillingOrderStatus.fulfilled],
+        },
+        orderType: { not: BillingOrderType.manual_adjustment },
+        createdAt: { gte: new Date(Date.now() - 48 * 60 * 60 * 1000) },
+      },
+      orderBy: { createdAt: 'desc' },
+      take: 20,
+      select: { id: true, userId: true, amountMinor: true, currency: true },
+    });
+    if (!orders.length) return;
+    const existing = new Set(
+      (
+        await this.prisma.referralReward.findMany({
+          where: {
+            orderId: { in: orders.map((o) => o.id) },
+            kind: 'commission',
+          },
+          select: { orderId: true },
+        })
+      ).map((r) => r.orderId),
+    );
+    for (const order of orders) {
+      if (existing.has(order.id)) continue;
+      await this.accrueCommissionForOrder(order);
+    }
   }
 
   /**
@@ -371,25 +662,33 @@ export class ReferralsService {
       },
     });
     if (!program || !program.enabled) return;
-    // This path qualifies on first purchase; 'signup' programs qualify at claim.
-    if (program.qualifyEvent !== 'first_purchase') return;
+    // first_purchase is the ONLY qualify mode (the 'signup' option was removed
+    // — no signup-time trigger exists; registration happens on Java). A rogue
+    // DB value must scream, not silently brick qualification.
+    if (program.qualifyEvent !== 'first_purchase') {
+      this.logger.error(
+        `Referral program '${program.key}' has unsupported qualifyEvent '${program.qualifyEvent}' — qualification is disabled`,
+      );
+      return;
+    }
 
-    // Genuine new-user conversion: a paid purchase, and NONE before being
-    // referred (don't reward referring an already-paying customer).
-    const paidWhere = {
-      userId: refereeUserId,
-      status: {
-        in: [BillingOrderStatus.paid, BillingOrderStatus.fulfilled],
+    // Genuine conversion: the referee actually paid. "Already-paying customer"
+    // protection lives at attribution CREATION (ensureAttribution backdates to
+    // registration + the account-age gate) — invite codes are only enterable
+    // at registration, so an attributed referee cannot have pre-referral
+    // purchases. The old paid-before-attribution check misfired on the
+    // standard funnel (register → buy without ever opening /referral) because
+    // this row is created lazily AT accrual time, i.e. after the order.
+    const paidTotal = await this.prisma.billingOrder.count({
+      where: {
+        userId: refereeUserId,
+        status: {
+          in: [BillingOrderStatus.paid, BillingOrderStatus.fulfilled],
+        },
+        orderType: { not: BillingOrderType.manual_adjustment },
       },
-      orderType: { not: BillingOrderType.manual_adjustment },
-    };
-    const [paidTotal, paidBefore] = await Promise.all([
-      this.prisma.billingOrder.count({ where: paidWhere }),
-      this.prisma.billingOrder.count({
-        where: { ...paidWhere, createdAt: { lt: attribution.createdAt } },
-      }),
-    ]);
-    if (paidTotal === 0 || paidBefore > 0) return;
+    });
+    if (paidTotal === 0) return;
 
     const now = new Date();
     const availableAt = new Date(now.getTime() + program.holdDays * DAY_MS);
@@ -575,9 +874,22 @@ export class ReferralsService {
   async reverseForOrder(orderId: string): Promise<void> {
     const order = await this.prisma.billingOrder.findUnique({
       where: { id: orderId },
-      select: { userId: true, status: true },
+      select: { id: true, userId: true, status: true },
     });
     if (!order || order.status !== BillingOrderStatus.refunded) return;
+
+    // THIS order's commission reverses unconditionally — its money went back,
+    // whether or not other orders still back the qualification. Only while
+    // still accrued: the hold window exists to cover the refund window, so a
+    // claimed (paid_out) commission is not clawed back here.
+    const reversedCommission = await this.prisma.referralReward.updateMany({
+      where: { orderId: order.id, kind: 'commission', status: 'accrued' },
+      data: { status: 'reversed' },
+    });
+    if (reversedCommission.count > 0) {
+      this.logger.log(`Commission reversed (refund): order=${order.id}`);
+    }
+
     // Keep the qualification if another paid purchase still backs it.
     const stillPaid = await this.prisma.billingOrder.count({
       where: {
@@ -618,10 +930,13 @@ export class ReferralsService {
   }
 
   /**
-   * Claim an accrued, out-of-hold reward → grant it by payout type and mark it
-   * paid_out. The grant runs FIRST (each path idempotent on the reward id), then
-   * the accrued→paid_out CAS — so a crash can't mark a reward paid without the
-   * grant, and a re-claim can't double-grant.
+   * Claim an accrued, out-of-hold reward → mark it paid_out, then grant it by
+   * payout type. The accrued→paid_out CAS runs FIRST so a concurrent refund
+   * reversal can never interleave with the grant: once paid_out, reverse
+   * skips the reward (documented no-clawback); if reverse wins the CAS, we
+   * never grant. A crash between the CAS and the grant self-heals on re-claim
+   * — the paid_out path re-runs the grant, which is idempotent per item
+   * (grantedAt) and per wallet entry (idempotencyKey).
    */
   async claimReward(
     userId: string,
@@ -633,7 +948,12 @@ export class ReferralsService {
     if (!reward || reward.userId !== userId) {
       throw new NotFoundException('Reward not found');
     }
-    if (reward.status === 'paid_out') return { status: reward.status };
+    if (reward.status === 'paid_out') {
+      // Heal a claim that crashed after the status flip: grant whatever is
+      // still ungranted (no-op when everything already went out).
+      await this.grantIgnoringUniqueRace(reward);
+      return { status: reward.status };
+    }
     if (reward.status !== 'accrued') {
       throw new BadRequestException('Reward is not claimable');
     }
@@ -641,33 +961,50 @@ export class ReferralsService {
       throw new BadRequestException('Reward is still in its hold window');
     }
 
-    try {
-      await this.grantReward(reward);
-    } catch (e) {
-      // A concurrent claim won the grant's unique key — treat as already done
-      // and fall through to the status flip (the winner already granted).
-      if (!isUniqueViolation(e)) throw e;
-    }
-
-    await this.prisma.referralReward.updateMany({
+    const won = await this.prisma.referralReward.updateMany({
       where: { id: reward.id, status: 'accrued' },
       data: { status: 'paid_out', paidOutAt: new Date() },
     });
+    if (won.count === 0) {
+      // Lost the CAS: either a concurrent claim won (fine — it grants), or a
+      // refund reversal got here first (nothing to pay).
+      const current = await this.prisma.referralReward.findUnique({
+        where: { id: reward.id },
+        select: { status: true },
+      });
+      if (current?.status === 'paid_out') return { status: 'paid_out' };
+      throw new BadRequestException('Reward is not claimable');
+    }
+
+    await this.grantIgnoringUniqueRace(reward);
     return { status: 'paid_out' };
+  }
+
+  /** grantReward, swallowing unique-key races (a concurrent grant won → the
+   *  payout already exists; every grant path is idempotent). */
+  private async grantIgnoringUniqueRace(reward: {
+    id: string;
+    userId: string;
+    currency: string | null;
+  }): Promise<void> {
+    try {
+      await this.grantReward(reward);
+    } catch (e) {
+      if (!isUniqueViolation(e)) throw e;
+    }
   }
 
   /**
    * Grant a reward by iterating its bundle items (each a single payout), with
    * per-item idempotency (item.grantedAt) so a re-claim — or a crash partway
-   * through a multi-item bundle — only grants what's still pending. A reward
-   * with no items (legacy, pre-backfill) falls back to the flat payout columns.
+   * through a multi-item bundle — only grants what's still pending. Every
+   * reward has carried an items snapshot since migration 20260629000000
+   * backfilled the pre-bundle rows — a reward without items is a broken
+   * invariant, so it fails loud instead of guessing from the mirror columns.
    */
   private async grantReward(reward: {
     id: string;
     userId: string;
-    payoutType: string;
-    amountMinor: bigint;
-    days: number;
     currency: string | null;
   }): Promise<void> {
     const items = await this.prisma.referralRewardItem.findMany({
@@ -675,15 +1012,9 @@ export class ReferralsService {
       orderBy: { rank: 'asc' },
     });
     if (items.length === 0) {
-      await this.grantSingle(
-        reward.userId,
-        reward.payoutType,
-        reward.amountMinor,
-        reward.days,
-        reward.currency,
-        reward.id,
+      throw new Error(
+        `Referral reward ${reward.id} has no bundle items (snapshot invariant broken)`,
       );
-      return;
     }
     for (const item of items) {
       if (item.grantedAt) continue;
@@ -723,21 +1054,6 @@ export class ReferralsService {
           idemId,
         );
         break;
-      case 'membership_both':
-        // Items never carry 'both'; only a legacy flat reward reaches here.
-        await this.grantMembership(
-          userId,
-          COMPUTE_PLAN_KEY,
-          days,
-          `${idemId}:compute`,
-        );
-        await this.grantMembership(
-          userId,
-          COMMUNITY_MEMBERSHIP_PLAN_KEY,
-          days,
-          `${idemId}:community`,
-        );
-        break;
       case 'points_compute':
         await this.creditComputePoints(userId, amountMinor, idemId);
         break;
@@ -765,6 +1081,12 @@ export class ReferralsService {
           WalletBalanceKind.withdrawable,
         );
         break;
+      default:
+        // Bundle items are always a single concrete kind (membership_both is
+        // expressed as two items). Anything else means a new payout type
+        // reached the grant path without an implementation — fail loud rather
+        // than mark the item granted while paying nothing.
+        throw new Error(`Unsupported referral payout type: ${payoutType}`);
     }
   }
 
@@ -827,7 +1149,9 @@ export class ReferralsService {
       metadata: { rewardId },
       creditGrant: {
         grantType: WalletCreditGrantType.system_grant,
-        expiresAt: null,
+        // Referral-gifted compute points are promotional credits — they expire
+        // per the platform-wide policy (30d), same as check-in/voucher/campaign.
+        expiresAt: promoCreditExpiresAt(),
         metadata: { rewardId },
       },
     });
@@ -871,6 +1195,18 @@ export class ReferralsService {
       reason: 'referral_reward',
       description: 'Referral reward — community points',
       metadata: { rewardId },
+      // Gifted (consumable) community points are promotional — they expire per
+      // the platform policy (30d), same as gifted compute points. The
+      // WITHDRAWABLE cash-out pool is NOT grant-backed (earned money never
+      // expires), so its credit ignores this grant spec.
+      creditGrant:
+        balanceKind === WalletBalanceKind.consumable
+          ? {
+              grantType: WalletCreditGrantType.system_grant,
+              expiresAt: promoCreditExpiresAt(),
+              metadata: { rewardId },
+            }
+          : undefined,
     });
   }
 
@@ -890,15 +1226,23 @@ export class ReferralsService {
 
     let referrerUserId: string | null = null;
     let sourceCode: string | null = null;
+    let registeredAt: Date | null = null;
     try {
       const referee = await this.legacy.queryOne<
-        RowDataPacket & { recommendation_code_source: string | null }
+        RowDataPacket & {
+          recommendation_code_source: string | null;
+          create_time: Date | string | null;
+        }
       >(
-        'SELECT recommendation_code_source FROM client_user WHERE id = ? LIMIT 1',
+        'SELECT recommendation_code_source, create_time FROM client_user WHERE id = ? LIMIT 1',
         [refereeUserId],
       );
       sourceCode = referee?.recommendation_code_source?.trim() || null;
       if (!sourceCode) return; // this user wasn't referred
+      if (referee?.create_time) {
+        const t = new Date(referee.create_time);
+        if (!Number.isNaN(t.getTime())) registeredAt = t;
+      }
       const referrer = await this.legacy.queryOne<
         RowDataPacket & { id: number | string }
       >('SELECT id FROM client_user WHERE recommendation_code = ? LIMIT 1', [
@@ -911,6 +1255,22 @@ export class ReferralsService {
     // Unknown code or a self-referral → nothing to attribute.
     if (!referrerUserId || referrerUserId === refereeUserId) return;
 
+    // Anti-fraud age gate (refereeMaxAccountAgeHours, 0 = no limit): the code
+    // is only enterable at registration, so a LATE first attribution for an
+    // old account is legacy-data noise, not a fresh conversion — skip it.
+    const program = await this.prisma.referralProgram.findUnique({
+      where: { key: PROGRAM_KEY },
+      select: { refereeMaxAccountAgeHours: true },
+    });
+    const maxAgeHours = program?.refereeMaxAccountAgeHours ?? 0;
+    if (
+      maxAgeHours > 0 &&
+      registeredAt &&
+      Date.now() - registeredAt.getTime() > maxAgeHours * 3_600_000
+    ) {
+      return;
+    }
+
     try {
       await this.prisma.referralAttribution.create({
         data: {
@@ -919,6 +1279,10 @@ export class ReferralsService {
           refereeUserId,
           inviteCode: sourceCode,
           status: 'pending',
+          // Backdate to the referee's REGISTRATION — the moment the code was
+          // actually entered — not this lazy row-creation moment (which is
+          // typically DURING their first purchase's webhook).
+          ...(registeredAt ? { createdAt: registeredAt } : {}),
         },
       });
     } catch (e) {
@@ -927,21 +1291,24 @@ export class ReferralsService {
   }
 }
 
-function computeTotals(
-  rewards: { payoutType: string; amountMinor: bigint; status: string }[],
+/** Headline cash totals from a full-table groupBy(status) aggregate (already
+ *  filtered to payoutType='cash' in the query — never from the paged list).
+ *  Exported for tests. */
+export function computeTotals(
+  cashByStatus: { status: string; _sum: { amountMinor: bigint | null } }[],
   inviteeCount: number,
 ) {
   let pending = 0n;
   let confirmed = 0n;
   let reversed = 0n;
-  for (const r of rewards) {
-    if (r.payoutType !== 'cash') continue; // headline totals are cash-only
-    if (r.status === 'pending' || r.status === 'qualified') {
-      pending += r.amountMinor;
-    } else if (r.status === 'accrued' || r.status === 'paid_out') {
-      confirmed += r.amountMinor;
-    } else if (r.status === 'reversed' || r.status === 'voided') {
-      reversed += r.amountMinor;
+  for (const row of cashByStatus) {
+    const amount = row._sum.amountMinor ?? 0n;
+    if (row.status === 'pending' || row.status === 'qualified') {
+      pending += amount;
+    } else if (row.status === 'accrued' || row.status === 'paid_out') {
+      confirmed += amount;
+    } else if (row.status === 'reversed' || row.status === 'voided') {
+      reversed += amount;
     }
   }
   return {
@@ -1000,6 +1367,19 @@ function isUniqueViolation(e: unknown): boolean {
   return (
     e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2002'
   );
+}
+
+/** 3000 → "30%", 250 → "2.5%" (server-owned reward subtitles). Exported for tests. */
+export function formatBpsPercent(bps: number): string {
+  const pct = bps / 100;
+  return Number.isInteger(pct)
+    ? `${pct}%`
+    : `${pct.toFixed(2).replace(/0+$/, '').replace(/\.$/, '')}%`;
+}
+
+/** USD minor units → "$12.34" (server-owned reward subtitles). */
+function formatUsdMinor(minor: bigint): string {
+  return `$${(Number(minor) / 100).toFixed(2)}`;
 }
 
 // ─── Reward bundle helpers ──────────────────────────────────────────────

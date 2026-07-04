@@ -65,7 +65,7 @@ import { CURRENT_CELL } from '../common/region';
 import { PrismaService } from '../infra/db/db.module';
 import { EntitlementService } from '../entitlements/entitlement.service';
 import { ReferralsService } from '../referrals/referrals.service';
-import { WalletLedgerService } from '../workspaces';
+import { WalletLedgerService, isGrantBackedCurrencyKind } from '../workspaces';
 import { WorkspacePermissionService } from '../workspaces/workspace-permission.service';
 import { enqueueEntitlementChanged } from './entitlement-realtime';
 import type {
@@ -1309,7 +1309,7 @@ export class BillingService {
       owner = { ownerType: WalletOwnerType.user, ownerId: resolvedUserId };
     }
 
-    const account = owner
+    let account = owner
       ? await this.prisma.walletAccount.findUnique({
           where: {
             ownerType_ownerId_currency_balanceKind: {
@@ -1319,9 +1319,20 @@ export class BillingService {
               balanceKind,
             },
           },
-          select: { availableBalance: true },
+          select: { id: true, availableBalance: true },
         })
       : null;
+    // Sweep lapsed credit grants so the reported balance excludes expired
+    // credits (grant-backed accounts only; best-effort).
+    if (account && isGrantBackedCurrencyKind(currency, balanceKind)) {
+      await this.walletLedger
+        .expireLapsedGrants(account.id)
+        .catch(() => undefined);
+      account = await this.prisma.walletAccount.findUnique({
+        where: { id: account.id },
+        select: { id: true, availableBalance: true },
+      });
+    }
 
     return {
       resolvedUserId,
@@ -3626,6 +3637,11 @@ export class BillingService {
           );
           // Captured for post-commit referral accrual (see below).
           accrueOrderId = match.orderId;
+        } else if (renewalMatch?.orderId) {
+          // Subscription renewals are real provider-charged money too — the
+          // referral hook (per-order 消费返佣 commission) and the AppLovin S2S
+          // report fire for them as well. Idempotent per order downstream.
+          accrueOrderId = renewalMatch.orderId;
         }
         return tx.billingPaymentProviderEvent.update({
           where: { id: providerEvent.id },
@@ -4943,10 +4959,7 @@ export class BillingService {
         reason: `billing_${walletCurrency}_refund_reversal`,
       },
     });
-    if (
-      locked.currency === WalletCurrencyType.compute_point &&
-      locked.balanceKind === WalletBalanceKind.consumable
-    ) {
+    if (isGrantBackedCurrencyKind(locked.currency, locked.balanceKind)) {
       await reverseWalletCreditGrantForRefundTx(tx, {
         accountId: locked.id,
         order: input.order,
@@ -5158,7 +5171,7 @@ export class BillingService {
         },
       },
     });
-    await tx.walletLedgerEntry.create({
+    const entry = await tx.walletLedgerEntry.create({
       data: {
         transactionId: transaction.id,
         accountId: locked.id,
@@ -5173,6 +5186,51 @@ export class BillingService {
         reason: `billing_${refund.walletReversalCurrency}_refund_restore`,
       },
     });
+    // On a grant-backed account the earlier reversal REDUCED the order's grant
+    // lots; restoring only the balance would drift it above the grant total.
+    // Re-add a fresh non-expiring refund_return grant for the restored amount.
+    // (This fires only when a submitted provider refund later fails — rare —
+    // and the restored credits back a paid order, so non-expiring is correct.)
+    if (isGrantBackedCurrencyKind(locked.currency, locked.balanceKind)) {
+      const grantType = WalletCreditGrantType.refund_return;
+      const restoredGrant = await tx.walletCreditGrant.create({
+        data: {
+          accountId: locked.id,
+          transactionId: transaction.id,
+          grantType,
+          status: WalletCreditGrantStatus.active,
+          totalAmount: refund.walletReversalAmount,
+          availableAmount: refund.walletReversalAmount,
+          heldAmount: 0n,
+          consumedAmount: 0n,
+          expiredAmount: 0n,
+          reversedAmount: 0n,
+          priority: defaultGrantPriority(grantType, null),
+          validFrom: new Date(),
+          expiresAt: null,
+          sourceType: 'billing_refund',
+          sourceId: refund.id,
+          metadata: {
+            orderNo: order.orderNo,
+            refundNo: refund.refundNo,
+            reason: 'refund_restore',
+          },
+        },
+      });
+      await tx.walletCreditAllocation.create({
+        data: {
+          grantId: restoredGrant.id,
+          transactionId: transaction.id,
+          ledgerEntryId: entry.id,
+          amount: refund.walletReversalAmount,
+          availableDelta: refund.walletReversalAmount,
+          heldDelta: 0n,
+          consumedDelta: 0n,
+          expiredDelta: 0n,
+          reversedDelta: 0n,
+        },
+      });
+    }
     await tx.walletAccount.update({
       where: { id: locked.id },
       data: {
@@ -6347,8 +6405,10 @@ export class BillingService {
     });
 
     if (
-      lockedAccount.currency === WalletCurrencyType.compute_point &&
-      lockedAccount.balanceKind === WalletBalanceKind.consumable
+      isGrantBackedCurrencyKind(
+        lockedAccount.currency,
+        lockedAccount.balanceKind,
+      )
     ) {
       const creditGrant = await tx.walletCreditGrant.create({
         data: {

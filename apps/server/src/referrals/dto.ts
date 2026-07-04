@@ -40,10 +40,17 @@ export const UpdateReferralProgramSchema = z
       .trim()
       .length(3)
       .transform((v) => v.toUpperCase()),
-    qualifyEvent: z.enum(['signup', 'first_purchase']),
     holdDays: z.number().int().min(0).max(365),
     rewardPerReferralMinor: z.number().int().min(0),
     maxRewardedReferees: z.number().int().min(0),
+    /** Default consumption-commission rate, bps of order actual-paid (0 = off). */
+    commissionBps: z.number().int().min(0).max(10000),
+    /** Anti-fraud: max referee account age (hours) at attribution; 0 = no limit. */
+    refereeMaxAccountAgeHours: z
+      .number()
+      .int()
+      .min(0)
+      .max(24 * 365),
     inviteeBenefitTitle: z.string().max(120).nullable(),
     inviteeBenefitDetail: z.string().max(400).nullable(),
     inviteeBenefitMinor: z.number().int().min(0),
@@ -86,6 +93,17 @@ export const UpdateReferralMilestoneSchema =
   ReferralMilestoneFieldsSchema.partial();
 export type UpdateReferralMilestoneInput = z.infer<
   typeof UpdateReferralMilestoneSchema
+>;
+
+/** POST /admin/referrals/commission-rates — create/update a per-user rate
+ *  (消费返佣白名单). A row overrides the program default; 0 = explicitly off. */
+export const UpsertReferralCommissionRateSchema = z.object({
+  userId: z.string().trim().min(1).max(64),
+  commissionBps: z.number().int().min(0).max(10000),
+  note: z.string().trim().max(200).nullable().optional(),
+});
+export type UpsertReferralCommissionRateInput = z.infer<
+  typeof UpsertReferralCommissionRateSchema
 >;
 
 // ─── Dashboard response (server-built; mirrors the mobile contract) ─────

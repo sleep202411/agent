@@ -50,6 +50,7 @@ import {
   WalletTransactionStatus,
 } from '@prisma/client';
 import { createHash, randomUUID } from 'crypto';
+import { regionLabel as sharedRegionLabel } from '@repo/shared/regions';
 import type { AuthUser } from '../auth';
 import {
   applyMemberDiscount,
@@ -64,7 +65,11 @@ import {
   type ResolvableMediaAssetVariant,
 } from '../infra/storage/media-asset-url-resolver.service';
 import { LegacyCnVideoResolverService } from './legacy-cn-video.service';
-import { WalletLedgerService } from '../workspaces';
+import {
+  WalletLedgerService,
+  consumeAvailableGrantsTx,
+  expireLapsedGrantsTx,
+} from '../workspaces';
 import { EntitlementService } from '../entitlements';
 import type {
   CreateIpDraftInput,
@@ -3614,6 +3619,20 @@ export class IpCommerceService {
           },
         })
       : null;
+    // Sweep lapsed gift grants so the displayed balance doesn't show expired
+    // points as spendable (best-effort; the spend path re-sweeps anyway).
+    if (communityPointAccount) {
+      await this.walletLedger
+        .expireLapsedGrants(communityPointAccount.id)
+        .catch(() => undefined);
+      Object.assign(
+        communityPointAccount,
+        await this.prisma.walletAccount.findUniqueOrThrow({
+          where: { id: communityPointAccount.id },
+          select: { availableBalance: true },
+        }),
+      );
+    }
 
     return {
       authenticated: Boolean(user),
@@ -5042,6 +5061,11 @@ async function debitCommunityPointTx(
     SELECT pg_advisory_xact_lock(hashtext(${`wallet:account:${account.id}`})::bigint)
   `;
 
+  // community_point/consumable is credit-grant-backed: sweep lapsed grants
+  // BEFORE the balance check so an expired-but-not-yet-swept grant can't admit
+  // a spend the FIFO consume below then can't fulfill (mirrors postEntry).
+  await expireLapsedGrantsTx(tx, account.id);
+
   const locked = await tx.walletAccount.findUniqueOrThrow({
     where: { id: account.id },
   });
@@ -5079,7 +5103,7 @@ async function debitCommunityPointTx(
     },
   });
 
-  await tx.walletLedgerEntry.create({
+  const entry = await tx.walletLedgerEntry.create({
     data: {
       transactionId: transaction.id,
       accountId: locked.id,
@@ -5093,6 +5117,17 @@ async function debitCommunityPointTx(
       heldBalanceAfter: locked.heldBalance,
       reason: 'ip_purchase',
     },
+  });
+  // FIFO-consume grant lots (expiring first) so the grant ledger stays in lock-
+  // step with the balance. After the backfill every community balance is
+  // grant-backed, so this always covers the debit; a shortfall throws
+  // INSUFFICIENT_UNEXPIRED_WALLET_GRANTS (drift detector).
+  await consumeAvailableGrantsTx(tx, {
+    accountId: locked.id,
+    transactionId: transaction.id,
+    ledgerEntryId: entry.id,
+    amount: input.amount,
+    entryType: WalletLedgerEntryType.debit,
   });
   await tx.walletAccount.update({
     where: { id: locked.id },
@@ -6875,6 +6910,22 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
+/**
+ * Localized display name for an IP's region code, from the hand-curated table
+ * in @repo/shared — deliberately NOT Intl.DisplayNames, so sensitive region
+ * naming stays under our editorial control (decision 2026-07-04). Unknown
+ * codes render as the raw code. Additive payload field: released mobile
+ * builds ignore it; newer clients prefer it.
+ */
+function regionDisplayLabel(
+  region: string | null | undefined,
+  requestedLocale?: string | null,
+): string | null {
+  const code = region?.trim().toUpperCase();
+  if (!code) return null;
+  return sharedRegionLabel(code, requestedLocale?.trim() || 'en-US');
+}
+
 function ipDto(
   title: IpWithCommerce,
   requestedLocale?: string | null,
@@ -6896,6 +6947,7 @@ function ipDto(
     listingVisibility: title.listingVisibility,
     ageRating: title.ageRating,
     region: title.region ?? null,
+    regionLabel: regionDisplayLabel(title.region, requestedLocale),
     title: copy.value?.title ?? title.id,
     subtitle: copy.value?.subtitle ?? null,
     summary: copy.value?.summary ?? '',

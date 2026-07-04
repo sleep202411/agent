@@ -57,6 +57,12 @@ export type ReferralConfig = {
   /** BigInt string. */
   rewardPerReferralMinor: string;
   maxRewardedReferees: number;
+  /** 消费返佣默认比例，万分比（bps，3000 = 30%）；0 = 关闭（仅白名单）。 */
+  commissionBps: number;
+  /** 防刷：归因时被邀请人账号最大年龄（小时）；0 = 不限。 */
+  refereeMaxAccountAgeHours: number;
+  /** 只读：赠送积分类奖励的有效期天数（平台级常量，非本页可改）。 */
+  giftedPointsValidityDays: number;
   inviteeBenefitTitle: string | null;
   inviteeBenefitDetail: string | null;
   /** BigInt string. */
@@ -66,3 +72,16 @@ export type ReferralConfig = {
 };
 
 export type ReferralProgramData = ReferralConfig | null;
+
+/** 消费返佣白名单行（按用户覆写默认比例；0 = 对该用户显式关闭）。 */
+export type CommissionRateRow = {
+  id: string;
+  userId: string;
+  commissionBps: number;
+  note: string | null;
+  /** Java 侧展示信息（bridge 不可用时为 null）。 */
+  nickName: string | null;
+  email: string | null;
+  createdAt: string;
+  updatedAt: string;
+};

@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   Param,
   Patch,
@@ -21,9 +22,11 @@ import {
   CreateReferralMilestoneSchema,
   UpdateReferralMilestoneSchema,
   UpdateReferralProgramSchema,
+  UpsertReferralCommissionRateSchema,
   type CreateReferralMilestoneInput,
   type UpdateReferralMilestoneInput,
   type UpdateReferralProgramInput,
+  type UpsertReferralCommissionRateInput,
 } from './dto';
 import { ReferralsService } from './referrals.service';
 
@@ -80,5 +83,36 @@ export class ReferralsAdminController {
   @Post('milestones/:id/archive')
   async archiveMilestone(@Param('id') id: string) {
     return { code: 200, data: await this.service.archiveMilestone(id) };
+  }
+
+  // ─── 消费返佣 per-user rates (KOL whitelist) ────────────────────────────
+
+  @RequireAdminPermissions(ADMIN_PERMISSION_KEYS.BillingRead)
+  @Get('commission-rates')
+  async listCommissionRates() {
+    return { code: 200, data: await this.service.listCommissionRates() };
+  }
+
+  /** Create-or-update the rate for a user (unique per program+user). */
+  @RequireAdminPermissions(ADMIN_PERMISSION_KEYS.BillingWrite)
+  @Post('commission-rates')
+  async upsertCommissionRate(
+    @CurrentAdmin() admin: AdminActor,
+    @Body(new ZodValidationPipe(UpsertReferralCommissionRateSchema))
+    body: UpsertReferralCommissionRateInput,
+  ) {
+    return {
+      code: 200,
+      data: await this.service.upsertCommissionRate(admin.id, body),
+    };
+  }
+
+  @RequireAdminPermissions(ADMIN_PERMISSION_KEYS.BillingWrite)
+  @Delete('commission-rates/:userId')
+  async removeCommissionRate(@Param('userId') userId: string) {
+    return {
+      code: 200,
+      data: await this.service.removeCommissionRate(userId),
+    };
   }
 }

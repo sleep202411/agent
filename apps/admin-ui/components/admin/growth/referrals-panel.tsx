@@ -2,14 +2,18 @@
 
 // 邀请奖励 (referral program) config page for the /growth sub-app.
 //
-// Two sections:
+// Three sections:
 //   1. PROGRAM — single admin-editable config (enabled / currency / qualifyEvent
-//      / holdDays / 每位邀请奖励 / 上限 + invitee benefit). Saved via PATCH.
+//      / holdDays / 每位邀请奖励 / 上限 / 默认返佣比例 / 账号年龄闸门 + invitee
+//      benefit). Saved via PATCH.
 //   2. MILESTONES — table of referral milestones sorted by rank; 新建/编辑/归档
 //      via dialogs (POST / PATCH / POST :id/archive).
+//   3. COMMISSION RATES — 消费返佣白名单 (per-user KOL rates overriding the
+//      program default). POST upsert / DELETE remove.
 //
 // Money/units: *Minor fields arrive as BigInt STRINGS but the PATCH/POST bodies
 // expect NUMBERS — parse for display, send Number() on submit. minor = cents.
+// Rates: the wire unit is bps (万分比); the form edits percent (bps / 100).
 
 import { useMemo, useState } from "react";
 import {
@@ -36,7 +40,9 @@ import {
   stringField,
   toErrorMessage,
 } from "../billing/shared";
+import { CommissionRateForm, CommissionRatesTable } from "./commission-rates";
 import type {
+  CommissionRateRow,
   PayoutType,
   ReferralConfig,
   ReferralMilestoneRow,
@@ -98,16 +104,22 @@ export function ReferralsPanel({
   siteLabel,
   databaseLabel,
   initialConfig,
+  initialRates,
   initialError,
 }: {
   siteLabel: string;
   databaseLabel: string;
   initialConfig: ReferralConfig | null;
+  initialRates?: CommissionRateRow[];
   initialError?: string | null;
 }) {
   const [config, setConfig] = useState<ReferralConfig | null>(initialConfig);
   const [createOpen, setCreateOpen] = useState(false);
   const [editingMilestone, setEditingMilestone] = useState<ReferralMilestoneRow | null>(null);
+  const [rates, setRates] = useState<CommissionRateRow[]>(initialRates ?? []);
+  const [rateDialog, setRateDialog] = useState<
+    { mode: "create" } | { mode: "edit"; rate: CommissionRateRow } | null
+  >(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(initialError ?? null);
 
@@ -195,6 +207,47 @@ export function ReferralsPanel({
     }
   }
 
+  async function handleSaveRate(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setLoading(true);
+    setError(null);
+    const form = new FormData(event.currentTarget);
+    try {
+      const data = await mutateEnvelope<CommissionRateRow[]>(
+        "/api/admin/referrals/commission-rates",
+        {
+          userId: stringField(form, "userId"),
+          commissionBps: Math.round(Number(stringField(form, "ratePercent") || 0) * 100),
+          note: stringField(form, "note") || null,
+        }
+      );
+      setRates(data);
+      setRateDialog(null);
+    } catch (err) {
+      setError(toErrorMessage(err));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleRemoveRate(userId: string) {
+    setLoading(true);
+    setError(null);
+    try {
+      const data = await mutateEnvelope<CommissionRateRow[]>(
+        `/api/admin/referrals/commission-rates/${encodeURIComponent(userId)}`,
+        {},
+        "DELETE"
+      );
+      setRates(data);
+      setRateDialog(null);
+    } catch (err) {
+      setError(toErrorMessage(err));
+    } finally {
+      setLoading(false);
+    }
+  }
+
   const milestones = useMemo(
     () => [...(config?.milestones ?? [])].sort((left, right) => left.rank - right.rank),
     [config]
@@ -258,13 +311,62 @@ export function ReferralsPanel({
         />
       </section>
 
+      <section className="rounded-xl border border-slate-200 bg-white">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 px-4 py-3">
+          <div>
+            <h2 className="text-sm font-semibold text-slate-950">消费返佣白名单</h2>
+            <p className="mt-0.5 text-[12px] text-slate-500">
+              按用户覆写默认返佣比例（KOL
+              专属档）；被邀请人每笔实付订单按比例给邀请人现金返佣（进待提现钱包）。0% =
+              对该用户显式关闭。
+            </p>
+          </div>
+          <Button size="sm" onClick={() => setRateDialog({ mode: "create" })} disabled={loading}>
+            <IconPlus className="size-4" />
+            新增用户
+          </Button>
+        </div>
+
+        <CommissionRatesTable
+          rates={rates}
+          loading={loading}
+          onEditRate={(rate) => setRateDialog({ mode: "edit", rate })}
+        />
+      </section>
+
+      <AdminDialog
+        open={Boolean(rateDialog)}
+        title={rateDialog?.mode === "edit" ? "编辑返佣比例" : "新增返佣用户"}
+        description="比例按订单实付金额计算；修改只影响之后的订单，已计的返佣保留原比例快照。"
+        onClose={() => setRateDialog(null)}
+      >
+        {rateDialog ? (
+          <CommissionRateForm
+            key={rateDialog.mode === "edit" ? rateDialog.rate.userId : "create"}
+            rate={rateDialog.mode === "edit" ? rateDialog.rate : undefined}
+            loading={loading}
+            onSubmit={handleSaveRate}
+            onRemove={
+              rateDialog.mode === "edit"
+                ? () => void handleRemoveRate(rateDialog.rate.userId)
+                : undefined
+            }
+          />
+        ) : null}
+      </AdminDialog>
+
       <AdminDialog
         open={createOpen}
         title="新建阶梯奖励"
         description="设置邀请人数门槛与达标后发放的奖励包（可含多项）。"
         onClose={() => setCreateOpen(false)}
       >
-        <MilestoneForm mode="create" loading={loading} onSubmit={handleCreateMilestone} />
+        <MilestoneForm
+          mode="create"
+          loading={loading}
+          giftedPointsValidityDays={config?.giftedPointsValidityDays}
+          onSubmit={handleCreateMilestone}
+        />
       </AdminDialog>
 
       <AdminDialog
@@ -278,6 +380,7 @@ export function ReferralsPanel({
             mode="update"
             loading={loading}
             milestone={editingMilestone}
+            giftedPointsValidityDays={config?.giftedPointsValidityDays}
             onSubmit={handleUpdateMilestone}
             onArchive={() => void handleArchiveMilestone(editingMilestone)}
           />
@@ -313,11 +416,11 @@ function ProgramForm({
             maxLength={3}
           />
         </FormLabel>
-        <FormLabel label="达标事件" help="决定何时把一次邀请计为有效邀请。">
-          <Select name="qualifyEvent" defaultValue={config?.qualifyEvent ?? "signup"}>
-            <option value="signup">注册</option>
-            <option value="first_purchase">首次购买</option>
-          </Select>
+        <FormLabel
+          label="达标事件"
+          help="固定为首次购买——被邀请人完成第一笔真金白银订单后计为有效邀请（注册即达标无服务端触发点，已下线）。"
+        >
+          <TextInput value="首次购买" readOnly className="bg-slate-50 text-slate-500" />
         </FormLabel>
         <FormLabel label="冻结天数" help="奖励发放后冻结的天数，用于防作弊回收期。">
           <TextInput name="holdDays" type="number" min={0} defaultValue={config?.holdDays ?? 0} />
@@ -339,6 +442,40 @@ function ProgramForm({
             type="number"
             min={0}
             defaultValue={config?.maxRewardedReferees ?? 0}
+          />
+        </FormLabel>
+        <FormLabel
+          label="默认返佣比例(%)"
+          help="被邀请人每笔实付订单按此比例给邀请人现金返佣；0 = 关闭（仅白名单用户返佣）。"
+        >
+          <TextInput
+            name="commissionRatePercent"
+            type="number"
+            min={0}
+            max={100}
+            step={0.01}
+            defaultValue={config ? config.commissionBps / 100 : 0}
+          />
+        </FormLabel>
+        <FormLabel
+          label="账号年龄上限(小时)"
+          help="防刷：仅当被邀请人账号年龄小于该值时才建立邀请归因；0 = 不限制。"
+        >
+          <TextInput
+            name="refereeMaxAccountAgeHours"
+            type="number"
+            min={0}
+            defaultValue={config?.refereeMaxAccountAgeHours ?? 0}
+          />
+        </FormLabel>
+        <FormLabel
+          label="赠送积分有效期"
+          help="平台级策略（与签到/代金券/活动共用），本页不可改。仅赠送的社区/算力积分适用；充值购买的积分与现金奖励不过期。"
+        >
+          <TextInput
+            value={config ? `${config.giftedPointsValidityDays} 天后过期` : "—"}
+            readOnly
+            className="bg-slate-50 text-slate-500"
           />
         </FormLabel>
       </div>
@@ -490,12 +627,14 @@ function MilestoneForm({
   mode,
   milestone,
   loading,
+  giftedPointsValidityDays,
   onSubmit,
   onArchive,
 }: {
   mode: "create" | "update";
   milestone?: ReferralMilestoneRow;
   loading: boolean;
+  giftedPointsValidityDays?: number;
   onSubmit: (event: React.FormEvent<HTMLFormElement>) => void;
   onArchive?: () => void;
 }) {
@@ -549,6 +688,9 @@ function MilestoneForm({
             <p className="text-[12px] font-semibold text-slate-500">奖励包</p>
             <p className="mt-0.5 text-[11px] text-slate-400">
               达标后一次性发放以下全部奖励；可添加多项（如 studio 会员 + 社区积分）。
+              {giftedPointsValidityDays
+                ? ` 赠送的社区/算力积分领取后 ${giftedPointsValidityDays} 天过期。`
+                : ""}
             </p>
           </div>
           <Button type="button" variant="outline" size="sm" onClick={addItem}>
@@ -664,10 +806,11 @@ function programPayload(form: FormData): Record<string, unknown> {
   return {
     enabled: form.get("enabled") === "on",
     currency: currency || undefined,
-    qualifyEvent: stringField(form, "qualifyEvent"),
     holdDays: Number(stringField(form, "holdDays") || 0),
     rewardPerReferralMinor: Number(stringField(form, "rewardPerReferralMinor") || 0),
     maxRewardedReferees: Number(stringField(form, "maxRewardedReferees") || 0),
+    commissionBps: Math.round(Number(stringField(form, "commissionRatePercent") || 0) * 100),
+    refereeMaxAccountAgeHours: Number(stringField(form, "refereeMaxAccountAgeHours") || 0),
     inviteeBenefitTitle: stringField(form, "inviteeBenefitTitle") || null,
     inviteeBenefitDetail: stringField(form, "inviteeBenefitDetail") || null,
     inviteeBenefitMinor: Number(stringField(form, "inviteeBenefitMinor") || 0),

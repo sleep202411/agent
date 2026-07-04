@@ -6,7 +6,10 @@ import {
   parseAdminEnvelope,
 } from "@/lib/admin-api";
 import { currentAdminSite } from "@/lib/admin-sites";
-import type { ReferralProgramData } from "@/components/admin/growth/referrals-types";
+import type {
+  CommissionRateRow,
+  ReferralProgramData,
+} from "@/components/admin/growth/referrals-types";
 
 export type AdminReferralsLoadResult<T> = {
   data: T | null;
@@ -17,6 +20,12 @@ export async function fetchAdminReferralsProgram(): Promise<
   AdminReferralsLoadResult<ReferralProgramData>
 > {
   return fetchAdminReferralsResource("/referrals/program", "邀请奖励配置加载失败。");
+}
+
+export async function fetchAdminReferralCommissionRates(): Promise<
+  AdminReferralsLoadResult<CommissionRateRow[]>
+> {
+  return fetchAdminReferralsResource("/referrals/commission-rates", "消费返佣白名单加载失败。");
 }
 
 async function fetchAdminReferralsResource<T>(

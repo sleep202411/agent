@@ -5686,6 +5686,7 @@ enum ReferralRewardKind {
   referral // referrer earns per qualified referee
   milestone // referrer hit an invitee-count tier
   invitee // the invited user's welcome perk (earner = referee)
+  commission // referrer earns a % of a referee's order (消费返佣, per order)
 }
 
 enum ReferralRewardStatus {
@@ -5717,12 +5718,17 @@ model ReferralProgram {
   currency                    String   @default("USD") @db.VarChar(3)
   /// Referrer reward per qualified referee, minor units.
   rewardPerReferralMinor      BigInt   @default(0) @map("reward_per_referral_minor")
-  /// What qualifies a referee: "signup" | "first_purchase".
+  /// Referee qualify mode. "first_purchase" is the ONLY supported value —
+  /// the old "signup" option was removed (registration happens on Java; no
+  /// signup-time trigger exists Nest-side). Column kept for a future mode.
   qualifyEvent                String   @default("first_purchase") @map("qualify_event") @db.VarChar(32)
   /// Days an accrued reward is held before it becomes payable.
   holdDays                    Int      @default(0) @map("hold_days")
   /// Cap on rewarded referees per referrer (0 = unlimited).
   maxRewardedReferees         Int      @default(0) @map("max_rewarded_referees")
+  /// Consumption-commission (消费返佣) default rate in basis points of a
+  /// referee order's actual-paid amount (0 = off; per-user rows override).
+  commissionBps               Int      @default(0) @map("commission_bps")
   /// Anti-fraud: only attribute referees whose account is younger than this
   /// many hours (0 = no limit).
   refereeMaxAccountAgeHours   Int      @default(0) @map("referee_max_account_age_hours")
@@ -5764,7 +5770,10 @@ model ReferralMilestoneConfig {
   /// "primary" item) so older clients keep rendering a single reward.
   items ReferralRewardTierItem[]
 
-  @@unique([programId, inviteeThreshold], map: "referral_milestone_program_threshold_unique")
+  // DB-level PARTIAL unique on (program_id, invitee_threshold) WHERE
+  // archived_at IS NULL (migration 20260704150000) — active tiers can't share
+  // a threshold, but archived ones don't block re-creating it. Prisma can't
+  // express partial uniques, so it is intentionally NOT declared here.
   @@index([programId, rank], map: "referral_milestone_program_rank_idx")
   @@map("referral_milestone_configs")
 }
@@ -5808,6 +5817,13 @@ model ReferralReward {
   attributionId String?              @unique @map("attribution_id") @db.Uuid
   /// Source milestone config (null for per-referral / invitee rewards).
   milestoneId   String?              @map("milestone_id") @db.Uuid
+  /// Source BillingOrder for commission rewards — with `kind` the per-order
+  /// idempotency key (one commission per order). Null for other kinds.
+  orderId       String?              @map("order_id") @db.Uuid
+  /// Commission audit snapshot: the applied rate + the order's actual-paid
+  /// amount the rate was computed from. Null for non-commission rewards.
+  commissionBps     Int?    @map("commission_bps")
+  sourceAmountMinor BigInt? @map("source_amount_minor")
   /// When an accrued reward becomes payable (after the hold window).
   availableAt   DateTime?            @map("available_at") @db.Timestamptz(6)
   paidOutAt     DateTime?            @map("paid_out_at") @db.Timestamptz(6)
@@ -5820,8 +5836,30 @@ model ReferralReward {
   items ReferralRewardItem[]
 
   @@unique([userId, milestoneId], map: "referral_reward_user_milestone_unique")
+  @@unique([orderId, kind], map: "referral_reward_order_kind_unique")
   @@index([userId, status, createdAt(sort: Desc)], map: "referral_reward_user_idx")
   @@map("referral_rewards")
+}
+
+/// Per-referrer consumption-commission rate (消费返佣白名单 — KOL rates).
+/// Absence of a row means the program's default commissionBps applies; a row
+/// overrides it (0 = explicitly disabled for that user). Rates applied to a
+/// reward are SNAPSHOTTED onto it, so editing/removing a row only affects
+/// future orders. External Java user ids ride as VarChar(64), no FK.
+model ReferralCommissionRate {
+  id            String   @id @default(uuid(7)) @db.Uuid
+  programKey    String   @default("default") @map("program_key") @db.VarChar(64)
+  userId        String   @map("user_id") @db.VarChar(64)
+  commissionBps Int      @map("commission_bps")
+  /// Admin note — who this is / why this rate (e.g. "KOL 张三 抖音").
+  note          String?  @db.VarChar(200)
+  createdById   String?  @map("created_by_id") @db.VarChar(64)
+  updatedById   String?  @map("updated_by_id") @db.VarChar(64)
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt     DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@unique([programKey, userId], map: "referral_commission_rate_program_user_unique")
+  @@map("referral_commission_rates")
 }
 
 /// One reward in a milestone TIER's bundle (admin-edited). A tier grants ALL of
@@ -5966,4 +6004,33 @@ model StoryRelease {
   @@unique([storyProjectId, releaseVersion], map: "story_releases_version_unique")
   @@index([storyProjectId, createdAt(sort: Desc)], map: "story_releases_by_project_idx")
   @@map("story_releases")
+}
+
+enum AppPlatform {
+  ios
+  android
+}
+
+/// Mobile app version manifest — one row per release announcement, scoped to
+/// this deployment's region (the CN cell announces the CN build). The newest
+/// `active` row per platform wins. Managed from the admin-ui 应用发布 module.
+model AppRelease {
+  id               String      @id @default(uuid(7)) @db.Uuid
+  platform         AppPlatform
+  versionName      String      @map("version_name") @db.VarChar(32)
+  versionCode      Int         @map("version_code")
+  /// Where "update now" sends the user: direct APK URL or store page.
+  downloadUrl      String      @map("download_url") @db.VarChar(1024)
+  releaseNotes     String?     @map("release_notes") @db.VarChar(2000)
+  /// Builds older than this code get a forced (non-dismissable) prompt.
+  minSupportedCode Int?        @map("min_supported_code")
+  active           Boolean     @default(true)
+  createdAt        DateTime    @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt        DateTime    @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  // One row per (platform, versionCode) — a re-announce must edit the existing
+  // row, not create a duplicate; keeps `latest()` deterministic.
+  @@unique([platform, versionCode], map: "app_releases_platform_version_uq")
+  @@index([platform, active, versionCode], map: "app_releases_platform_latest_idx")
+  @@map("app_releases")
 }

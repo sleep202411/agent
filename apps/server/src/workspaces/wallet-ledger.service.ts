@@ -249,93 +249,114 @@ export class WalletLedgerService {
     if (!pending) return { expired: 0n };
 
     return this.prisma.$transaction(async (tx) => {
+      // expireLapsedGrantsTx is lock-free by contract (its raw-write callers
+      // already hold the account lock). As the standalone entry point we MUST
+      // take the per-account advisory lock ourselves — it writes availableBalance
+      // absolutely from a re-read, so without the lock a concurrent locked spend
+      // that commits in between would be clobbered (balance/grant drift →
+      // INSUFFICIENT_UNEXPIRED_WALLET_GRANTS on a positive balance).
       await tx.$executeRaw`
         SELECT pg_advisory_xact_lock(hashtext(${`wallet:account:${accountId}`})::bigint)
       `;
-      const grants = await tx.walletCreditGrant.findMany({
-        where: {
-          accountId,
-          status: WalletCreditGrantStatus.active,
-          availableAmount: { gt: 0n },
-          expiresAt: { not: null, lte: now },
-        },
-        orderBy: { id: 'asc' },
-      });
-      if (grants.length === 0) return { expired: 0n };
-
-      const account = await tx.walletAccount.findUniqueOrThrow({
-        where: { id: accountId },
-      });
-      const transaction = await tx.walletTransaction.create({
-        data: {
-          status: WalletTransactionStatus.posted,
-          sourceType: 'credit_expiry',
-          sourceId: accountId,
-          idempotencyKey: `credit_expiry:${accountId}:${randomUUID()}`,
-          workspaceId:
-            account.ownerType === WalletOwnerType.workspace
-              ? account.ownerId
-              : null,
-          description: 'Credit grant expiry sweep',
-          metadata: {},
-        },
-      });
-
-      let running = account.availableBalance;
-      let total = 0n;
-      for (const grant of grants) {
-        const amount = grant.availableAmount;
-        running -= amount;
-        total += amount;
-        const entry = await tx.walletLedgerEntry.create({
-          data: {
-            transactionId: transaction.id,
-            accountId,
-            entryType: WalletLedgerEntryType.expire,
-            currency: account.currency,
-            balanceKind: account.balanceKind,
-            amount,
-            availableDelta: -amount,
-            heldDelta: 0n,
-            availableBalanceAfter: running,
-            heldBalanceAfter: account.heldBalance,
-            reason: 'credit_grant_expired',
-          },
-        });
-        await tx.walletCreditAllocation.create({
-          data: {
-            grantId: grant.id,
-            transactionId: transaction.id,
-            ledgerEntryId: entry.id,
-            amount,
-            availableDelta: -amount,
-            heldDelta: 0n,
-            consumedDelta: 0n,
-            expiredDelta: amount,
-            reversedDelta: 0n,
-          },
-        });
-        await tx.walletCreditGrant.update({
-          where: { id: grant.id },
-          data: {
-            availableAmount: 0n,
-            expiredAmount: grant.expiredAmount + amount,
-            status: WalletCreditGrantStatus.expired,
-          },
-        });
-      }
-      const updated = await tx.walletAccount.update({
-        where: { id: accountId },
-        data: { availableBalance: running, version: { increment: 1 } },
-      });
-      // Only push when something actually expired (else the balance is unchanged).
-      if (total > 0n) await enqueueWalletChanged(tx, updated);
-      return { expired: total };
+      return expireLapsedGrantsTx(tx, accountId);
     });
   }
 }
 
 type WalletTx = Prisma.TransactionClient;
+
+/**
+ * Expire lapsed grants for an account INSIDE a caller's transaction (the
+ * tx-scoped core of expireLapsedGrants — same effect, no own transaction). Use
+ * this from a raw-write spend path that must sweep-then-debit atomically. The
+ * caller should already hold the account advisory lock. Idempotent + no-op when
+ * nothing has lapsed.
+ */
+export async function expireLapsedGrantsTx(
+  tx: WalletTx,
+  accountId: string,
+): Promise<{ expired: bigint }> {
+  const now = new Date();
+  const grants = await tx.walletCreditGrant.findMany({
+    where: {
+      accountId,
+      status: WalletCreditGrantStatus.active,
+      availableAmount: { gt: 0n },
+      expiresAt: { not: null, lte: now },
+    },
+    orderBy: { id: 'asc' },
+  });
+  if (grants.length === 0) return { expired: 0n };
+
+  const account = await tx.walletAccount.findUniqueOrThrow({
+    where: { id: accountId },
+  });
+  const transaction = await tx.walletTransaction.create({
+    data: {
+      status: WalletTransactionStatus.posted,
+      sourceType: 'credit_expiry',
+      sourceId: accountId,
+      idempotencyKey: `credit_expiry:${accountId}:${randomUUID()}`,
+      workspaceId:
+        account.ownerType === WalletOwnerType.workspace
+          ? account.ownerId
+          : null,
+      description: 'Credit grant expiry sweep',
+      metadata: {},
+    },
+  });
+
+  let running = account.availableBalance;
+  let total = 0n;
+  for (const grant of grants) {
+    const amount = grant.availableAmount;
+    running -= amount;
+    total += amount;
+    const entry = await tx.walletLedgerEntry.create({
+      data: {
+        transactionId: transaction.id,
+        accountId,
+        entryType: WalletLedgerEntryType.expire,
+        currency: account.currency,
+        balanceKind: account.balanceKind,
+        amount,
+        availableDelta: -amount,
+        heldDelta: 0n,
+        availableBalanceAfter: running,
+        heldBalanceAfter: account.heldBalance,
+        reason: 'credit_grant_expired',
+      },
+    });
+    await tx.walletCreditAllocation.create({
+      data: {
+        grantId: grant.id,
+        transactionId: transaction.id,
+        ledgerEntryId: entry.id,
+        amount,
+        availableDelta: -amount,
+        heldDelta: 0n,
+        consumedDelta: 0n,
+        expiredDelta: amount,
+        reversedDelta: 0n,
+      },
+    });
+    await tx.walletCreditGrant.update({
+      where: { id: grant.id },
+      data: {
+        availableAmount: 0n,
+        expiredAmount: grant.expiredAmount + amount,
+        status: WalletCreditGrantStatus.expired,
+      },
+    });
+  }
+  const updated = await tx.walletAccount.update({
+    where: { id: accountId },
+    data: { availableBalance: running, version: { increment: 1 } },
+  });
+  // Only push when something actually expired (else the balance is unchanged).
+  if (total > 0n) await enqueueWalletChanged(tx, updated);
+  return { expired: total };
+}
 
 async function createCreditGrantTx(
   tx: WalletTx,
@@ -401,7 +422,7 @@ async function createCreditGrantTx(
   });
 }
 
-async function consumeAvailableGrantsTx(
+export async function consumeAvailableGrantsTx(
   tx: WalletTx,
   args: {
     accountId: string;
@@ -481,11 +502,32 @@ async function consumeAvailableGrantsTx(
   }
 }
 
-function isCreditGrantBackedAccount(account: WalletAccount): boolean {
+/**
+ * Whether a wallet account is backed by credit grants (FIFO lots with expiry)
+ * rather than a plain running balance. The SINGLE source of truth — every raw
+ * write that touches such an account MUST keep grants in sync with the balance.
+ *
+ * consumable pots for BOTH currencies are grant-backed:
+ *   - compute_point/consumable — workspace credits (paid = non-expiring grant,
+ *     promo/membership = expiring).
+ *   - community_point/consumable — user credits (paid recharge = non-expiring,
+ *     gifted referral points = 30d expiring).
+ * WITHDRAWABLE community_point (the creator/referral cash-out pool) is a plain
+ * balance — earned money never expires — and is intentionally NOT grant-backed.
+ */
+export function isGrantBackedCurrencyKind(
+  currency: WalletCurrencyType,
+  balanceKind: WalletBalanceKind,
+): boolean {
   return (
-    account.currency === WalletCurrencyType.compute_point &&
-    account.balanceKind === WalletBalanceKind.consumable
+    balanceKind === WalletBalanceKind.consumable &&
+    (currency === WalletCurrencyType.compute_point ||
+      currency === WalletCurrencyType.community_point)
   );
+}
+
+function isCreditGrantBackedAccount(account: WalletAccount): boolean {
+  return isGrantBackedCurrencyKind(account.currency, account.balanceKind);
 }
 
 function inferCreditGrantType(
