@@ -422,5 +422,8 @@
   "ipDetail.saveSuccess": "已保存到相册",
   "ipDetail.saveFailed": "保存图片失败，请重试。",
   "ipDetail.savePermissionDenied": "请允许访问相册以保存图片。",
-  "report.close": "关闭"
+  "report.close": "关闭",
+  "authedWeb.sessionNeeded": "登录后即可查看此页面。",
+  "authedWeb.loadFailed": "页面加载失败。",
+  "authedWeb.retry": "重试"
 }

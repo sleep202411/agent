@@ -422,5 +422,8 @@
   "ipDetail.saveSuccess": "Saved to Photos",
   "ipDetail.saveFailed": "Couldn't save the image. Please try again.",
   "ipDetail.savePermissionDenied": "Allow photo access to save the image.",
-  "report.close": "Close"
+  "report.close": "Close",
+  "authedWeb.sessionNeeded": "Sign in to view this page.",
+  "authedWeb.loadFailed": "The page failed to load.",
+  "authedWeb.retry": "Retry"
 }
