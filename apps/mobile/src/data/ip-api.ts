@@ -10,6 +10,7 @@
  * (fizzdragon.com/aurora); the CN host returns 404 for these routes.
  */
 import { appEnv, resolveAssetUrl } from "@/config";
+import { getLocale } from "@/i18n/locale-store";
 import { api } from "@/lib/api-client";
 
 import type {
@@ -52,6 +53,8 @@ type IpDto = {
   summary?: string | null;
   description?: string | null;
   region?: string | null;
+  /** Server-localized region display name (additive; older servers omit it). */
+  regionLabel?: string | null;
   genres?: string[];
   genreCodes?: string[];
   tags?: string[];
@@ -75,8 +78,9 @@ type IpDto = {
 
 const AURORA = { service: "aurora" } as const;
 
+// Current UI locale, read at request time (the user can switch in-app).
 function locale() {
-  return appEnv.defaultLocale;
+  return getLocale();
 }
 
 function assetUrl(asset: AssetDto): string | undefined {
@@ -103,16 +107,6 @@ function normalizeRegionCode(region?: string | null): string | undefined {
   return code || undefined;
 }
 
-function regionLabel(code: string): string {
-  if (code === "GLOBAL") return "Global";
-  try {
-    const displayNames = new Intl.DisplayNames([locale()], { type: "region" });
-    return displayNames.of(code) ?? code;
-  } catch {
-    return code;
-  }
-}
-
 function mapSummary(dto: IpDto, featured = false): IpSummary {
   const cover = assetUrl(dto.coverAsset);
   const regionCode = normalizeRegionCode(dto.region);
@@ -126,7 +120,10 @@ function mapSummary(dto: IpDto, featured = false): IpSummary {
     genres: (dto.genres ?? []).filter(Boolean),
     genreCodes: (dto.genreCodes ?? []).filter(Boolean),
     regionCode,
-    regionLabel: regionCode ? regionLabel(regionCode) : undefined,
+    // Server-curated label only (hand-maintained table — never Intl/CLDR, so
+    // sensitive region naming stays controlled). Older servers omit it → show
+    // the raw code until the server deploy lands.
+    regionLabel: regionCode ? dto.regionLabel?.trim() || regionCode : undefined,
     typeTags: (dto.tags ?? []).filter(Boolean),
     typeTagCodes: (dto.tagCodes ?? []).filter(Boolean),
     year: dto.publishedAt ? new Date(dto.publishedAt).getFullYear() : undefined,

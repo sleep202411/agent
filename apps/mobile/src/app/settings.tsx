@@ -8,6 +8,7 @@ import { Spacing } from "@/constants/theme";
 import { useTheme } from "@/hooks/use-theme";
 import { useLocale, useTranslations } from "@/i18n";
 import { openLegal } from "@/lib/legal";
+import { checkForUpdate } from "@/lib/update-check";
 
 export default function SettingsScreen() {
   const t = useTranslations();
@@ -26,6 +27,11 @@ export default function SettingsScreen() {
       key: "terms",
       label: t("settings.terms"),
       onPress: () => void openLegal("/terms-of-service", locale),
+    },
+    {
+      key: "checkUpdate",
+      label: t("settings.checkUpdate"),
+      onPress: () => void checkForUpdate({ manual: true }),
     },
     {
       key: "delete",

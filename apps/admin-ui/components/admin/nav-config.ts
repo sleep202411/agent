@@ -9,6 +9,7 @@ import {
   IconDashboard,
   IconDatabaseSearch,
   IconDeviceDesktop,
+  IconDeviceMobile,
   IconFileAnalytics,
   IconFlag,
   IconLayoutCards,
@@ -116,6 +117,13 @@ export const GLOBAL_NAV: GlobalNavEntry[] = [
     href: "/users",
     label: "账号权限",
     icon: IconUsersGroup,
+    permission: "admin.manage",
+  },
+  {
+    key: "/releases",
+    href: "/releases",
+    label: "应用发布",
+    icon: IconDeviceMobile,
     permission: "admin.manage",
   },
   {

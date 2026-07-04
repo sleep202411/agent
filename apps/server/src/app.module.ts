@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { APP_GUARD } from '@nestjs/core';
 import { AdminAuthModule } from './admin-auth';
+import { AppReleaseModule } from './app-release';
 import { AiGenerationModule } from './ai-generation/ai-generation.module';
 import { AssistantModule } from './assistant/assistant.module';
 import { AuthModule, AuthGuard } from './auth';
@@ -52,6 +53,7 @@ import { WorkspacesModule } from './workspaces';
     AlertingModule,
     AuthModule,
     AdminAuthModule,
+    AppReleaseModule,
     // Region wires CountryMiddleware globally before any controller runs.
     RegionModule,
     // ThrottleModule is Global — provides RateLimitService to any consumer.

@@ -7,6 +7,7 @@ import { GestureHandlerRootView } from "react-native-gesture-handler";
 import "@/global.css";
 import { AuthProvider } from "@/auth";
 import { initLocale } from "@/i18n";
+import { checkForUpdate } from "@/lib/update-check";
 import { AnimatedSplashOverlay } from "@/components/animated-icon";
 import { ConsentGate } from "@/components/consent-gate";
 import { MobileAppFrame } from "@/components/mobile-app-frame";
@@ -31,6 +32,7 @@ const detailHeader = {
 export default function RootLayout() {
   useEffect(() => {
     void initLocale();
+    void checkForUpdate();
   }, []);
 
   return (

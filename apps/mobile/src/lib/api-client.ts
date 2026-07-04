@@ -1,6 +1,7 @@
 import { Platform } from "react-native";
 
 import { appEnv } from "@/config";
+import { getLocale } from "@/i18n/locale-store";
 
 export interface ApiResponse<T = unknown> {
   success?: boolean;
@@ -178,9 +179,12 @@ async function request<T>(method: string, path: string, config: ApiRequestConfig
 
   const isForm = form !== undefined;
   const token = tokenProvider?.();
+  // Read at request time — the user can switch language while the app runs,
+  // and the backends localize responses off these headers.
+  const activeLocale = getLocale();
   const headers: Record<string, string> = {
-    "accept-language": appEnv.defaultLocale,
-    lan: appEnv.defaultLocale,
+    "accept-language": activeLocale,
+    lan: activeLocale,
     // Java sa-token reads the token from a header named by its tokenName
     // (e.g. `satoken`), NOT from `Authorization: Bearer`. Browsers get away
     // with the cookie; on native we must send the named header explicitly.

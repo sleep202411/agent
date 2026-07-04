@@ -61,6 +61,10 @@
     "./user-id-codec": {
       "types": "./dist/user-id-codec.d.ts",
       "default": "./dist/user-id-codec.js"
+    },
+    "./regions": {
+      "types": "./dist/regions.d.ts",
+      "default": "./dist/regions.js"
     }
   },
   "scripts": {

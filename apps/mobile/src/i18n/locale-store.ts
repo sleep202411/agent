@@ -1,6 +1,7 @@
 import * as Localization from "expo-localization";
 
-import { appEnv, type AppLocale } from "@/config";
+import { type AppLocale } from "@/config";
+import { invalidateBrowse } from "@/data/browse-refresh";
 import { getStoredString, setStoredString } from "@/lib/persistent-storage";
 
 /**
@@ -12,21 +13,20 @@ import { getStoredString, setStoredString } from "@/lib/persistent-storage";
 export const SUPPORTED_LOCALES: AppLocale[] = ["en-US", "zh-CN", "zh-HK"];
 const STORAGE_KEY = "fizzdragon.locale.override";
 
-// Region default: global → en-US, CN → zh-CN. Used when the device language
-// isn't one we localize into, so the CN build opens in Chinese (not English).
-const DEFAULT_LOCALE: AppLocale = appEnv.defaultLocale;
+// Follow the device language; anything we don't localize into falls back to
+// English (product decision 2026-07-04 — was: per-region build default).
+const FALLBACK_LOCALE: AppLocale = "en-US";
 
 /** Map any BCP-47 device tag to one of our supported locales. */
 function mapToSupported(tag: string | null | undefined): AppLocale {
-  if (!tag) return DEFAULT_LOCALE;
+  if (!tag) return FALLBACK_LOCALE;
   const lower = tag.toLowerCase();
   if (lower.startsWith("zh")) {
     // Traditional Chinese (Hant / HK / TW / MO) → zh-HK, otherwise Simplified.
     return /hant|hk|tw|mo/.test(lower) ? "zh-HK" : "zh-CN";
   }
   if (lower.startsWith("en")) return "en-US";
-  // Any other device language falls back to the region default.
-  return DEFAULT_LOCALE;
+  return FALLBACK_LOCALE;
 }
 
 function detectDeviceLocale(): AppLocale {
@@ -34,7 +34,7 @@ function detectDeviceLocale(): AppLocale {
     const locales = Localization.getLocales();
     return mapToSupported(locales?.[0]?.languageTag);
   } catch {
-    return DEFAULT_LOCALE;
+    return FALLBACK_LOCALE;
   }
 }
 
@@ -61,6 +61,9 @@ export function setLocale(locale: AppLocale): void {
   if (!SUPPORTED_LOCALES.includes(locale) || locale === currentLocale) return;
   currentLocale = locale;
   notify();
+  // Server responses are locale-dependent (titles, taxonomy labels, region
+  // names) — every browse list must refetch in the new language.
+  invalidateBrowse();
   void setStoredString(STORAGE_KEY, locale).catch(() => {});
 }
 
@@ -71,6 +74,9 @@ export async function initLocale(): Promise<void> {
     if (saved && SUPPORTED_LOCALES.includes(saved as AppLocale) && saved !== currentLocale) {
       currentLocale = saved as AppLocale;
       notify();
+      // The override lands async after app start — anything fetched with the
+      // device-detected locale in the meantime is stale.
+      invalidateBrowse();
     }
   } catch {
     // Ignore — keep the device-detected locale.
