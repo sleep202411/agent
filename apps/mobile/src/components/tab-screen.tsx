@@ -13,10 +13,9 @@ type TabScreenProps = {
 export function TabScreen({ children, gap = Spacing.four }: TabScreenProps) {
   const safeAreaInsets = useSafeAreaInsets();
   const theme = useTheme();
-  // Native tab navigators already inset content below the status bar; adding the
-  // safe-area inset again double-counts it. Only web (custom tab bar, no native
-  // inset) needs the manual top inset.
-  const topInset = Platform.OS === "web" ? safeAreaInsets.top + Spacing.four : Spacing.three;
+  // The native tab host does NOT inset content below the status bar (verified
+  // on iOS 26.3) — apply the safe-area inset manually on every platform.
+  const topInset = safeAreaInsets.top + (Platform.OS === "web" ? Spacing.four : Spacing.three);
   const bottomInset = safeAreaInsets.bottom + BottomTabInset + Spacing.four;
 
   return (

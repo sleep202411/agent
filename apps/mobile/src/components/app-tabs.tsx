@@ -17,42 +17,42 @@ export default function AppTabs() {
       labelStyle={{ selected: { color: colors.brand } }}
     >
       <NativeTabs.Trigger name="index">
-        <NativeTabs.Trigger.Label>{t("tabs.home")}</NativeTabs.Trigger.Label>
+        <NativeTabs.Trigger.Label hidden>{t("tabs.home")}</NativeTabs.Trigger.Label>
         <NativeTabs.Trigger.Icon
-          md={{ default: "home", selected: "home" }}
-          sf={{ default: "house", selected: "house.fill" }}
+          src={require("@/assets/images/tab-icons/tab-home.png")}
+          renderingMode="template"
         />
       </NativeTabs.Trigger>
 
       <NativeTabs.Trigger name="creators">
-        <NativeTabs.Trigger.Label>{t("tabs.creators")}</NativeTabs.Trigger.Label>
+        <NativeTabs.Trigger.Label hidden>{t("tabs.creators")}</NativeTabs.Trigger.Label>
         <NativeTabs.Trigger.Icon
-          md={{ default: "person", selected: "person" }}
-          sf={{ default: "person.crop.circle", selected: "person.crop.circle.fill" }}
+          src={require("@/assets/images/tab-icons/tab-creators.png")}
+          renderingMode="template"
         />
       </NativeTabs.Trigger>
 
       <NativeTabs.Trigger name="crews">
-        <NativeTabs.Trigger.Label>{t("tabs.crews")}</NativeTabs.Trigger.Label>
+        <NativeTabs.Trigger.Label hidden>{t("tabs.crews")}</NativeTabs.Trigger.Label>
         <NativeTabs.Trigger.Icon
-          md={{ default: "groups", selected: "groups" }}
-          sf={{ default: "person.3", selected: "person.3.fill" }}
+          src={require("@/assets/images/tab-icons/tab-crews.png")}
+          renderingMode="template"
         />
       </NativeTabs.Trigger>
 
       <NativeTabs.Trigger name="news">
-        <NativeTabs.Trigger.Label>{t("tabs.news")}</NativeTabs.Trigger.Label>
+        <NativeTabs.Trigger.Label hidden>{t("tabs.news")}</NativeTabs.Trigger.Label>
         <NativeTabs.Trigger.Icon
-          md={{ default: "feed", selected: "feed" }}
-          sf={{ default: "newspaper", selected: "newspaper.fill" }}
+          src={require("@/assets/images/tab-icons/tab-news.png")}
+          renderingMode="template"
         />
       </NativeTabs.Trigger>
 
       <NativeTabs.Trigger name="mine">
-        <NativeTabs.Trigger.Label>{t("tabs.mine")}</NativeTabs.Trigger.Label>
+        <NativeTabs.Trigger.Label hidden>{t("tabs.mine")}</NativeTabs.Trigger.Label>
         <NativeTabs.Trigger.Icon
-          md={{ default: "person", selected: "person" }}
-          sf={{ default: "person", selected: "person.fill" }}
+          src={require("@/assets/images/tab-icons/tab-mine.png")}
+          renderingMode="template"
         />
       </NativeTabs.Trigger>
     </NativeTabs>

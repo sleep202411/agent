@@ -98,7 +98,7 @@ export default function CreatorsScreen() {
     }
   }, [load]);
 
-  const topInset = Platform.OS === "web" ? insets.top + Spacing.four : Spacing.three;
+  const topInset = insets.top + (Platform.OS === "web" ? Spacing.four : Spacing.three);
   const bottomInset = insets.bottom + BottomTabInset + Spacing.four;
 
   if (loading) {
