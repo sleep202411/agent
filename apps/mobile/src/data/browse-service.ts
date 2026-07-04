@@ -1,8 +1,10 @@
 /**
  * Browse data service — the single import surface for browse screens.
  * All live: IP + Crews on Nest (ip-commerce / crews via `/aurora`),
- * News on Java (`/content/project/list/newsad`).
+ * News on Java (`/content/api/news`).
  */
+import type { AppLocale } from "@/config";
+
 import { fetchCrewById, fetchCrewFeed, fetchCrewFeedPage, fetchCrewsByUser } from "./crew-api";
 import { fetchCreatorServiceById, fetchCreatorServices } from "./creator-service-api";
 import { fetchCreatorById, fetchCreators, type CreatorsPage } from "./creator-api";
@@ -87,6 +89,6 @@ export async function getCreatorIps(creatorId: string, limit = 12): Promise<IpSu
   return fetchCreatorIps(creatorId, limit);
 }
 
-export async function getNewsFeed(): Promise<NewsArticle[]> {
-  return fetchNewsFeed();
+export async function getNewsFeed(locale: AppLocale): Promise<NewsArticle[]> {
+  return fetchNewsFeed(locale);
 }

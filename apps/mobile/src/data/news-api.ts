@@ -1,74 +1,89 @@
 /**
- * News API — Java backend (NOT Nest). The web's news data layer fetches the
- * same upstream: `GET /content/project/list/newsad`. `/project/*` routes to the
- * `content` (Java) proxy in the mobile api-client.
+ * News API — Java backend public news endpoint (`GET /api/news` on the
+ * `content` service), the same admin-managed store the web /news page reads
+ * (docs/news-module-backend-spec.md §5). Replaces the legacy layout-placement
+ * feed `/project/list/newsad`.
  *
- * `data` is keyed by layout-placement sections (banner-Big, footer, …); the
- * same article appears across sections with different ids, so we dedupe by URL.
- * Items are EXTERNAL article links (open in a browser) — there is no internal
- * article body, so there is no News detail screen.
+ * The list is published-only, ordered by publishedAt desc; title/summary/cover
+ * and tag labels are resolved server-side for the requested `locale` with
+ * zh-CN fallback. There is NO public tag-list endpoint (tags are admin-only,
+ * `/api/admin/news/tags`) — tag rails must derive from the tags present on
+ * the fetched items.
  */
-import { appEnv, resolveAssetUrl } from "@/config";
+import { appEnv, resolveAssetUrl, type AppLocale } from "@/config";
 import { api } from "@/lib/api-client";
 
-import type { NewsArticle } from "./types";
+import type { NewsArticle, NewsTag } from "./types";
+
+type NewsTagDto = {
+  id?: string;
+  label?: string;
+};
 
 type NewsItemDto = {
   id?: number | string;
-  type?: string;
-  title?: string;
-  info?: string;
+  kind?: string;
   url?: string;
-  picLink?: string;
-  createTime?: string;
+  author?: string;
+  publishedAt?: string;
+  tags?: NewsTagDto[];
+  title?: string;
+  summary?: string;
+  coverUrl?: string;
 };
 
-function sourceFromUrl(url: string): string {
-  try {
-    return new URL(url).hostname.replace(/^www\./, "");
-  } catch {
-    return "FizzDragon";
+type NewsListDto = {
+  total?: number;
+  list?: NewsItemDto[];
+};
+
+// Returns the full published set today (~72 items); revisit with real
+// pagination if the catalogue ever outgrows this (same note as the web).
+const FEED_PAGE_SIZE = 100;
+
+function mapTags(raw?: NewsTagDto[]): NewsTag[] {
+  const out: NewsTag[] = [];
+  for (const tag of raw ?? []) {
+    const id = (tag?.id ?? "").trim();
+    const label = (tag?.label ?? "").trim();
+    if (id && label) out.push({ id, label });
   }
+  return out;
 }
 
-function coverUrl(picLink?: string): string | undefined {
-  return picLink ? resolveAssetUrl(picLink, appEnv.assets.bannerBaseUrl) : undefined;
-}
-
-function mapArticle(raw: NewsItemDto, url: string): NewsArticle {
-  return {
-    id: String(raw.id ?? url),
-    title: (raw.title ?? "").trim(),
-    excerpt: (raw.info ?? "").trim(),
-    coverUrl: coverUrl(raw.picLink ?? undefined),
-    source: sourceFromUrl(url),
-    publishedLabel: (raw.createTime ?? "").slice(0, 10),
-    url,
-    category: raw.type ?? undefined,
-  };
-}
-
-export async function fetchNewsFeed(): Promise<NewsArticle[]> {
-  const data = await api.get<Record<string, NewsItemDto[]>>("/project/list/newsad", {
+export async function fetchNewsFeed(locale: AppLocale): Promise<NewsArticle[]> {
+  const data = await api.get<NewsListDto>("/api/news", {
     service: "content",
+    params: { locale, pageSize: FEED_PAGE_SIZE },
   });
 
   const seen = new Set<string>();
   const out: NewsArticle[] = [];
-  if (data && typeof data === "object") {
-    for (const section of Object.values(data)) {
-      if (!Array.isArray(section)) continue;
-      for (const raw of section) {
-        if (!raw || typeof raw !== "object") continue;
-        const url = (raw.url ?? "").trim();
-        const title = (raw.title ?? "").trim();
-        if (!url || !title || seen.has(url)) continue;
-        seen.add(url);
-        out.push(mapArticle(raw, url));
-      }
-    }
+  for (const raw of data?.list ?? []) {
+    if (!raw || typeof raw !== "object") continue;
+    const id = raw.id === undefined || raw.id === null ? "" : String(raw.id);
+    const title = (raw.title ?? "").trim();
+    const url = (raw.url ?? "").trim() || undefined;
+    const kind = raw.kind === "article" ? "article" : "external";
+    if (!id || !title || seen.has(id)) continue;
+    // An external item is a bare link — without a URL there is nothing to open.
+    if (kind === "external" && !url) continue;
+    seen.add(id);
+
+    out.push({
+      id,
+      kind,
+      title,
+      excerpt: (raw.summary ?? "").trim(),
+      coverUrl: raw.coverUrl
+        ? resolveAssetUrl(raw.coverUrl, appEnv.assets.bannerBaseUrl)
+        : undefined,
+      publishedLabel: (raw.publishedAt ?? "").slice(0, 10),
+      url: kind === "external" ? url : undefined,
+      tags: mapTags(raw.tags),
+    });
   }
 
-  // Newest first (publishedLabel is an ISO date prefix, lexically sortable).
-  return out.sort((a, b) => b.publishedLabel.localeCompare(a.publishedLabel));
+  // Upstream already orders by publishedAt desc — keep server order.
+  return out;
 }

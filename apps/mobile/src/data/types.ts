@@ -193,16 +193,21 @@ export interface CreatorServiceDetail extends CreatorServiceSummary {
   updatedAt: string;
 }
 
+/** A news tag — `id` is locale-stable, `label` follows the request locale. */
+export interface NewsTag {
+  id: string;
+  label: string;
+}
+
 export interface NewsArticle {
   id: string;
+  /** `external` opens `url` in a browser; `article` opens the site detail page. */
+  kind: "article" | "external";
   title: string;
   excerpt: string;
   coverUrl?: string;
-  source: string;
   publishedLabel: string;
-  /** External article link — News items open in a browser. */
+  /** External article link — only set for `kind: "external"`. */
   url?: string;
-  /** Upstream placement/type tag; usually not surfaced. */
-  category?: string;
-  featured?: boolean;
+  tags: NewsTag[];
 }
