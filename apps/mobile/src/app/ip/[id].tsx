@@ -386,7 +386,6 @@ export default function IpDetailScreen() {
         creatorName={creatorName}
         creatorAvatar={creatorAvatar}
         shareUrl={shareUrl}
-        brand={t("ipDetail.shareBrand")}
         onClose={() => setShareOpen(false)}
       />
     </ThemedView>

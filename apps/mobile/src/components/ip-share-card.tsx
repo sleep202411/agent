@@ -1,8 +1,9 @@
 /**
  * Shareable "postcard" for an IP — the IP poster on top (full 16:9, shown in
- * its natural landscape ratio) with an info strip below carrying the title,
- * @creator, a QR code and the FizzDragon wordmark. Wrapped in a `ViewShot` ref
- * so `captureRef` can rasterize it to a PNG for the share / download actions.
+ * its natural landscape ratio) with an info strip below: title, a clamped
+ * synopsis and @creator on the left; the QR code with the FizzDragon wordmark
+ * and the "Let's Fizz" tagline stacked beneath it on the right. Wrapped in a `ViewShot` ref so
+ * `captureRef` can rasterize it to a PNG for the share / download actions.
  *
  * The card is NOT a fixed portrait ratio: its total height is poster height
  * (width × 9/16) + the strip height, so a 16:9 cover displays fully with no
@@ -23,12 +24,18 @@ import type { IpDetail } from "@/data/types";
 export const CARD_WIDTH = 360;
 /** Poster region — full width at the cover's natural 16:9 (landscape). */
 export const POSTER_HEIGHT = Math.round((CARD_WIDTH * 9) / 16);
-/** Info strip height (fixed) — fits two title lines + creator + wordmark. */
-export const STRIP_HEIGHT = 132;
+/** Info strip height (fixed) — sized by the right column's QR + tagline +
+ *  wordmark stack; the left column (two title lines + creator) sits lower. */
+export const STRIP_HEIGHT = 184;
 /** Total card height = poster + strip (NOT a forced portrait ratio). */
 export const CARD_HEIGHT = POSTER_HEIGHT + STRIP_HEIGHT;
 
 const QR_SIZE = 84;
+
+// The FizzDragon wordmark (red on transparent) — sits beneath the QR code so
+// the scan target and the brand read as one unit.
+const FIZZ_LOGO = require("@/assets/images/fizzdragon-logo.png");
+const BRAND_TAGLINE = "Let's Fizz";
 
 type ShareCardProps = {
   ip: IpDetail;
@@ -38,8 +45,6 @@ type ShareCardProps = {
   creatorAvatar?: string;
   /** Absolute URL the QR code encodes (the IP's locale-prefixed web page). */
   shareUrl: string;
-  /** Brand wordmark string (localized). */
-  brand: string;
   /**
    * Fired once the poster is ready to be captured — on `Image.onLoad` when a
    * poster URL exists, or immediately (on mount) when there's no poster and the
@@ -53,7 +58,7 @@ type ShareCardProps = {
  * Postcard view. Expose the `ViewShot` ref to the caller for `captureRef`.
  */
 export const ShareCard = forwardRef<ViewShotRef, ShareCardProps>(function ShareCard(
-  { ip, creatorName, creatorAvatar, shareUrl, brand, onPosterReady },
+  { ip, creatorName, creatorAvatar, shareUrl, onPosterReady },
   ref
 ) {
   const poster = ip.coverUrl ?? ip.backdropUrl;
@@ -91,6 +96,14 @@ export const ShareCard = forwardRef<ViewShotRef, ShareCardProps>(function ShareC
             <ThemedText type="subtitle" style={styles.title} numberOfLines={2}>
               {ip.title}
             </ThemedText>
+            {ip.synopsis.trim() ? (
+              // Clamped, not auto-sizing: the card is rasterized at a fixed
+              // geometry, so long synopses ellipsize instead of reflowing
+              // the export.
+              <ThemedText style={styles.synopsis} numberOfLines={3}>
+                {ip.synopsis.trim()}
+              </ThemedText>
+            ) : null}
             {creatorName ? (
               <View style={styles.creatorRow}>
                 {creatorAvatar ? (
@@ -105,13 +118,16 @@ export const ShareCard = forwardRef<ViewShotRef, ShareCardProps>(function ShareC
                 </ThemedText>
               </View>
             ) : null}
-            <ThemedText type="code" style={styles.brand}>
-              {brand}
-            </ThemedText>
           </View>
 
-          <View style={styles.qrWrap}>
-            <QRCode value={shareUrl} size={QR_SIZE} color="#0C0E14" backgroundColor="#FFFFFF" />
+          <View style={styles.qrColumn}>
+            <View style={styles.qrWrap}>
+              <QRCode value={shareUrl} size={QR_SIZE} color="#0C0E14" backgroundColor="#FFFFFF" />
+            </View>
+            <Image source={FIZZ_LOGO} style={styles.brandLogo} contentFit="contain" />
+            <ThemedText type="code" style={styles.brandTagline}>
+              {BRAND_TAGLINE}
+            </ThemedText>
           </View>
         </View>
       </View>
@@ -129,7 +145,6 @@ const styles = StyleSheet.create({
   card: {
     width: CARD_WIDTH,
     height: CARD_HEIGHT,
-    borderRadius: 20,
     overflow: "hidden",
     backgroundColor: Colors.dark.background,
   },
@@ -153,7 +168,7 @@ const styles = StyleSheet.create({
     height: STRIP_HEIGHT,
     flexDirection: "row",
     alignItems: "center",
-    gap: 16,
+    gap: 18,
     paddingHorizontal: 20,
     paddingVertical: 18,
     backgroundColor: Colors.dark.backgroundElement,
@@ -161,17 +176,23 @@ const styles = StyleSheet.create({
   stripText: {
     flex: 1,
     minWidth: 0,
-    gap: 4,
+    gap: 7,
   },
   title: {
-    fontSize: 22,
-    lineHeight: 26,
+    fontSize: 17,
+    lineHeight: 22,
     color: Colors.dark.text,
+  },
+  synopsis: {
+    fontSize: 12,
+    lineHeight: 17,
+    color: Colors.dark.textSecondary,
   },
   creatorRow: {
     flexDirection: "row",
     alignItems: "center",
     gap: 6,
+    marginTop: 6,
   },
   creatorAvatar: {
     width: 20,
@@ -179,14 +200,26 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     backgroundColor: Colors.dark.backgroundSelected,
   },
+  // Same secondary tier as the tagline — the wordmark is the card's only
+  // red; the creator handle is metadata, not an accent.
   creator: {
     flexShrink: 1,
-    color: Colors.dark.brand,
+    color: Colors.dark.textSecondary,
   },
-  brand: {
+  brandLogo: {
+    width: 84,
+    height: 15,
+    marginTop: 5,
+  },
+  brandTagline: {
     color: Colors.dark.textSecondary,
     letterSpacing: 1,
-    marginTop: 4,
+  },
+  // QR with the wordmark + tagline stacked beneath — the scan target and the
+  // brand read as one unit, and the wordmark stays the card's only red.
+  qrColumn: {
+    alignItems: "center",
+    gap: 5,
   },
   qrWrap: {
     width: QR_SIZE + 16,

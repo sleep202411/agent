@@ -41,8 +41,6 @@ type ShareSheetProps = {
   creatorAvatar?: string;
   /** Absolute URL the QR code encodes (the IP's locale-prefixed web page). */
   shareUrl: string;
-  /** Brand wordmark string (localized). */
-  brand: string;
   onClose: () => void;
 };
 
@@ -52,7 +50,6 @@ export function ShareSheet({
   creatorName,
   creatorAvatar,
   shareUrl,
-  brand,
   onClose,
 }: ShareSheetProps) {
   const t = useTranslations();
@@ -177,7 +174,6 @@ export function ShareSheet({
                 creatorName={creatorName}
                 creatorAvatar={creatorAvatar}
                 shareUrl={shareUrl}
-                brand={brand}
                 onPosterReady={markPosterReady}
               />
             </View>
