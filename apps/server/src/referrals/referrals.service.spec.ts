@@ -121,6 +121,7 @@ function makeService() {
     },
     referralReward: {
       findUnique: jest.fn(),
+      findFirst: jest.fn().mockResolvedValue(null),
       findMany: jest.fn().mockResolvedValue([]),
       updateMany: jest.fn().mockResolvedValue({ count: 0 }),
       create: jest.fn().mockResolvedValue({}),
@@ -706,18 +707,53 @@ describe('qualifyRefereePurchase', () => {
     expect(tx.referralReward.createMany).not.toHaveBeenCalled();
   });
 
-  it('accrues the invitee welcome-perk BUNDLE on the referee first purchase', async () => {
+  it('does NOT accrue the invitee perk on purchase anymore (moved to registration)', async () => {
     const { service, prisma, tx } = makeService();
     prisma.referralAttribution.findUnique.mockResolvedValue(
       attributionRow({ status: 'pending' }),
     );
     prisma.referralProgram.findUnique.mockResolvedValue(
       programRow({
+        inviteeBenefitItems: [
+          {
+            payoutType: 'points_community',
+            amountMinor: 1888n,
+            days: 0,
+            rank: 0,
+          },
+        ],
+      }),
+    );
+    prisma.billingOrder.count.mockResolvedValue(1);
+
+    await service.qualifyRefereePurchase(REFEREE);
+
+    // The purchase path qualifies the attribution but creates NO invitee reward.
+    expect(tx.referralAttribution.updateMany).toHaveBeenCalled();
+    expect(tx.referralReward.create).not.toHaveBeenCalled();
+  });
+});
+
+describe('accrueInviteePerkForReferee (registration-based)', () => {
+  const call = (service: ReferralsService, refereeUserId: string) =>
+    (
+      service as unknown as {
+        accrueInviteePerkForReferee(u: string): Promise<void>;
+      }
+    ).accrueInviteePerkForReferee(refereeUserId);
+
+  it('grants the configured bundle to a referred user — no purchase required', async () => {
+    const { service, prisma } = makeService();
+    prisma.referralAttribution.findUnique.mockResolvedValue({
+      programKey: 'default',
+    });
+    prisma.referralProgram.findUnique.mockResolvedValue(
+      programRow({
         inviteeBenefitTitle: '新人礼',
         inviteeBenefitItems: [
           {
             payoutType: 'points_community',
-            amountMinor: 200n,
+            amountMinor: 1888n,
             days: 0,
             rank: 0,
           },
@@ -730,22 +766,83 @@ describe('qualifyRefereePurchase', () => {
         ],
       }),
     );
-    prisma.billingOrder.count.mockResolvedValue(1);
+    prisma.referralReward.findFirst.mockResolvedValue(null);
 
-    await service.qualifyRefereePurchase(REFEREE);
+    await call(service, REFEREE);
 
+    // Never touches billingOrder — registration is enough.
+    expect(prisma.billingOrder.count).not.toHaveBeenCalled();
     const data = firstCallArg<{ data: Record<string, unknown> }>(
-      tx.referralReward.create,
+      prisma.referralReward.create,
     ).data;
     expect(data.kind).toBe('invitee');
     expect(data.userId).toBe(REFEREE);
+    expect(data.status).toBe('accrued'); // still manually claimed
     expect(data.payoutType).toBe('points_community');
     const items = (data.items as { create: Record<string, unknown>[] }).create;
     expect(items).toHaveLength(2);
+    expect(items[0]).toMatchObject({
+      payoutType: 'points_community',
+      amountMinor: 1888n,
+    });
     expect(items[1]).toMatchObject({
       payoutType: 'membership_compute',
       days: 7,
     });
+  });
+
+  it('is a no-op for a non-referred user (no attribution)', async () => {
+    const { service, prisma } = makeService();
+    prisma.referralAttribution.findUnique.mockResolvedValue(null);
+    await call(service, REFEREE);
+    expect(prisma.referralReward.create).not.toHaveBeenCalled();
+  });
+
+  it('is idempotent — skips when an invitee reward already exists', async () => {
+    const { service, prisma } = makeService();
+    prisma.referralAttribution.findUnique.mockResolvedValue({
+      programKey: 'default',
+    });
+    prisma.referralProgram.findUnique.mockResolvedValue(
+      programRow({
+        inviteeBenefitItems: [
+          {
+            payoutType: 'points_community',
+            amountMinor: 1888n,
+            days: 0,
+            rank: 0,
+          },
+        ],
+      }),
+    );
+    prisma.referralReward.findFirst.mockResolvedValue({ id: 'rw-inv-1' });
+
+    await call(service, REFEREE);
+
+    expect(prisma.referralReward.create).not.toHaveBeenCalled();
+  });
+
+  it('swallows a P2002 lost race but rethrows other errors', async () => {
+    const { service, prisma } = makeService();
+    prisma.referralAttribution.findUnique.mockResolvedValue({
+      programKey: 'default',
+    });
+    prisma.referralProgram.findUnique.mockResolvedValue(
+      programRow({
+        inviteeBenefitItems: [
+          {
+            payoutType: 'points_community',
+            amountMinor: 1888n,
+            days: 0,
+            rank: 0,
+          },
+        ],
+      }),
+    );
+    prisma.referralReward.findFirst.mockResolvedValue(null);
+    prisma.referralReward.create.mockRejectedValueOnce(uniqueViolation());
+
+    await expect(call(service, REFEREE)).resolves.toBeUndefined();
   });
 });
 

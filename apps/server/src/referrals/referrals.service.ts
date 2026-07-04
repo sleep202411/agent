@@ -101,6 +101,14 @@ export class ReferralsService {
         `lazy commission backfill failed for ${userId}: ${e instanceof Error ? e.message : e}`,
       ),
     );
+    // Registration-based invitee perk (新人礼): if this viewer is a referred user
+    // who hasn't been granted their welcome perk yet, accrue it now (no purchase
+    // needed) so it shows up claimable. Best-effort.
+    await this.accrueInviteePerkForReferee(userId).catch((e) =>
+      this.logger.warn(
+        `lazy invitee perk failed for ${userId}: ${e instanceof Error ? e.message : e}`,
+      ),
+    );
     const program = await this.prisma.referralProgram.findUnique({
       where: { key: PROGRAM_KEY },
       include: {
@@ -720,13 +728,11 @@ export class ReferralsService {
     });
     if (!attribution || attribution.status !== 'pending') return;
 
+    // Milestones (阶梯) and the invitee perk (新人礼) both accrue REGISTRATION-
+    // based on the dashboard — neither needs this purchase path. Here we only
+    // qualify the attribution (gates commission) + the flat per-referral reward.
     const program = await this.prisma.referralProgram.findUnique({
       where: { key: attribution.programKey },
-      include: {
-        // Milestones are NOT needed here — they accrue registration-based on the
-        // referrer's dashboard. This path only needs the invitee-perk bundle.
-        inviteeBenefitItems: { orderBy: { rank: 'asc' } },
-      },
     });
     if (!program || !program.enabled) return;
 
@@ -797,42 +803,11 @@ export class ReferralsService {
         }
       }
 
-      // 2) Invitee welcome perk (被邀请人) — the configured reward BUNDLE
-      //    (社区/算力积分, 会员, or cash; multi-item). Legacy mirror columns =
-      //    primary item (items[0]) so single-reward clients keep working.
-      if (program.inviteeBenefitItems.length) {
-        const items = program.inviteeBenefitItems.map((it) => ({
-          payoutType: it.payoutType,
-          amountMinor: it.amountMinor,
-          days: it.days,
-          currency: it.payoutType === 'cash' ? program.currency : null,
-          rank: it.rank,
-        }));
-        const primary = items[0];
-        const primaryIsMembership = primary.payoutType.startsWith('membership');
-        await tx.referralReward.create({
-          data: {
-            programKey: program.key,
-            userId: refereeUserId,
-            kind: 'invitee',
-            payoutType: primary.payoutType,
-            status: 'accrued',
-            amountMinor: primaryIsMembership ? 0n : primary.amountMinor,
-            days: primaryIsMembership ? primary.days : 0,
-            currency: primary.currency,
-            title: program.inviteeBenefitTitle ?? 'Welcome bonus',
-            subtitle: program.inviteeBenefitDetail ?? undefined,
-            availableAt,
-            items: { create: items },
-          },
-        });
-      }
-
-      // Milestones are NO LONGER accrued here. They moved to a REGISTRATION-
-      // based, referrer-side lazy path (accrueMilestonesForReferrer, called from
-      // getDashboard): a tier unlocks by how many people registered with the
-      // code, not by qualified purchases. This tx only qualifies the attribution
-      // (which gates commission) + the flat per-referral / invitee perks.
+      // The invitee welcome perk (被邀请人福利) is NO LONGER accrued here — it
+      // moved to a REGISTRATION-based lazy path (accrueInviteePerkForReferee):
+      // the referred user earns it just for registering with a code, no purchase
+      // required. Same as the milestone ladder. This tx only qualifies the
+      // attribution (gates commission) + the flat per-referral reward.
     });
 
     this.logger.log(
@@ -948,6 +923,82 @@ export class ReferralsService {
     this.logger.log(
       `Milestones accrued (registration-based): referrer=${referrerUserId} reached=${reachedCount}`,
     );
+  }
+
+  /**
+   * Invitee welcome perk (新人礼) — REGISTRATION-based. The referred user earns
+   * the configured bundle just for registering with a code; NO purchase needed
+   * (community points can't buy generation, so there's nothing to farm). Accrued
+   * LAZILY on the referee's own dashboard view — there is no signup webhook — as
+   * an 'accrued' reward they then manually 领取. Idempotent: at most one invitee
+   * reward per referee (partial unique index referral_reward_one_invitee_per_user
+   * on user_id WHERE kind='invitee'); a lost race just P2002s and is swallowed.
+   */
+  private async accrueInviteePerkForReferee(
+    refereeUserId: string,
+  ): Promise<void> {
+    const attribution = await this.prisma.referralAttribution.findUnique({
+      where: { refereeUserId },
+      select: { programKey: true },
+    });
+    if (!attribution) return; // not a referred user
+    const program = await this.prisma.referralProgram.findUnique({
+      where: { key: attribution.programKey },
+      include: { inviteeBenefitItems: { orderBy: { rank: 'asc' } } },
+    });
+    if (!program || !program.enabled || !program.inviteeBenefitItems.length) {
+      return;
+    }
+    // One invitee reward per referee — cheap pre-check before the insert.
+    const existing = await this.prisma.referralReward.findFirst({
+      where: { userId: refereeUserId, kind: 'invitee' },
+      select: { id: true },
+    });
+    if (existing) return;
+
+    const items = program.inviteeBenefitItems.map((it) => ({
+      payoutType: it.payoutType,
+      amountMinor: it.amountMinor,
+      days: it.days,
+      currency: it.payoutType === 'cash' ? program.currency : null,
+      rank: it.rank,
+    }));
+    const primary = items[0];
+    const primaryIsMembership = primary.payoutType.startsWith('membership');
+    try {
+      await this.prisma.referralReward.create({
+        data: {
+          programKey: program.key,
+          userId: refereeUserId,
+          kind: 'invitee',
+          payoutType: primary.payoutType,
+          status: 'accrued',
+          amountMinor: primaryIsMembership ? 0n : primary.amountMinor,
+          days: primaryIsMembership ? primary.days : 0,
+          currency: primary.currency,
+          title: program.inviteeBenefitTitle ?? 'Welcome bonus',
+          subtitle: program.inviteeBenefitDetail ?? undefined,
+          // Immediately claimable — a welcome gift, not a fraud-risk cash payout,
+          // so no hold window. The user still has to press 领取.
+          availableAt: new Date(),
+          items: { create: items },
+        },
+      });
+      this.logger.log(
+        `Invitee perk accrued (registration-based): referee=${refereeUserId}`,
+      );
+    } catch (e) {
+      // Concurrent dashboard view already granted it — the partial unique index
+      // rejects the duplicate. Any other error is real.
+      if (
+        !(
+          e instanceof Prisma.PrismaClientKnownRequestError &&
+          e.code === 'P2002'
+        )
+      ) {
+        throw e;
+      }
+    }
   }
 
   /**

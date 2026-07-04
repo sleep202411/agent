@@ -274,7 +274,7 @@ export function ReferralsPanel({
           <div>
             <h2 className="text-sm font-semibold text-slate-950">奖励配置</h2>
             <p className="mt-0.5 text-[12px] text-slate-500">
-              程序基础设置。阶梯奖励按注册人数发放；消费返佣和被邀请人福利在被邀请人首次付费后生效。
+              程序基础设置。阶梯奖励按注册人数发放、新人礼注册即得；消费返佣在被邀请人首次付费后生效。
             </p>
           </div>
           <div className="flex items-center gap-2">
@@ -572,7 +572,7 @@ function ProgramForm({
           <div>
             <p className="text-[12px] font-semibold text-slate-500">被邀请人福利（新人礼）</p>
             <p className="mt-0.5 text-[11px] text-slate-400">
-              发给被邀请人自己的新人礼，<b>被邀请人首次付费后发放</b>
+              发给被邀请人自己的新人礼，<b>被邀请人注册即得（需手动领取）</b>
               ；可发社区/算力积分、社区/算力会员或现金，可多项组合。不加任何奖励 = 不发放。
               {config.giftedPointsValidityDays
                 ? ` 赠送的积分领取后 ${config.giftedPointsValidityDays} 天过期。`
