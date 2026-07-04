@@ -488,7 +488,9 @@ function ProgramForm({
   loading,
   onSubmit,
 }: {
-  config: ReferralConfig | null;
+  // Rendered only with a real config (the program row always exists) — no
+  // fallback defaults, the form shows the actual saved values.
+  config: ReferralConfig;
   loading: boolean;
   onSubmit: (event: React.FormEvent<HTMLFormElement>) => void;
 }) {
@@ -502,21 +504,16 @@ function ProgramForm({
 
       <div className="grid gap-3 md:grid-cols-2">
         <FormLabel label="状态" help="关闭后不再统计邀请，也不发放邀请奖励。">
-          <Select name="enabled" defaultValue={config?.enabled ? "on" : "off"}>
+          <Select name="enabled" defaultValue={config.enabled ? "on" : "off"}>
             <option value="off">关闭</option>
             <option value="on">开启</option>
           </Select>
         </FormLabel>
         <FormLabel label="现金币种" help="3 位币种代码，例如 USD / CNY；仅现金奖励使用。">
-          <TextInput
-            name="currency"
-            placeholder="USD"
-            defaultValue={config?.currency ?? ""}
-            maxLength={3}
-          />
+          <TextInput name="currency" defaultValue={config.currency ?? ""} maxLength={3} />
         </FormLabel>
         <FormLabel label="冻结天数" help="奖励发放后冻结的天数，用于防作弊回收期。">
-          <TextInput name="holdDays" type="number" min={0} defaultValue={config?.holdDays ?? 0} />
+          <TextInput name="holdDays" type="number" min={0} defaultValue={config.holdDays} />
         </FormLabel>
         <FormLabel
           label="账号年龄上限(小时)"
@@ -526,7 +523,7 @@ function ProgramForm({
             name="refereeMaxAccountAgeHours"
             type="number"
             min={0}
-            defaultValue={config?.refereeMaxAccountAgeHours ?? 0}
+            defaultValue={config.refereeMaxAccountAgeHours}
           />
         </FormLabel>
         <FormLabel
@@ -539,7 +536,7 @@ function ProgramForm({
             min={0}
             max={100}
             step={0.01}
-            defaultValue={config ? config.commissionBps / 100 : 0}
+            defaultValue={config.commissionBps / 100}
           />
         </FormLabel>
         <FormLabel
@@ -550,7 +547,7 @@ function ProgramForm({
             name="rewardPerReferralMinor"
             type="number"
             min={0}
-            defaultValue={config?.rewardPerReferralMinor ?? "0"}
+            defaultValue={config.rewardPerReferralMinor}
           />
         </FormLabel>
         <FormLabel label="最多奖励邀请数" help="旧版每位邀请奖励的上限；0 = 不限。返佣不受此限制。">
@@ -558,7 +555,7 @@ function ProgramForm({
             name="maxRewardedReferees"
             type="number"
             min={0}
-            defaultValue={config?.maxRewardedReferees ?? 0}
+            defaultValue={config.maxRewardedReferees}
           />
         </FormLabel>
       </div>
@@ -570,18 +567,14 @@ function ProgramForm({
         </p>
         <div className="mt-3 grid gap-3 md:grid-cols-2">
           <FormLabel label="福利标题">
-            <TextInput
-              name="inviteeBenefitTitle"
-              placeholder="新人专享福利"
-              defaultValue={config?.inviteeBenefitTitle ?? ""}
-            />
+            <TextInput name="inviteeBenefitTitle" defaultValue={config.inviteeBenefitTitle ?? ""} />
           </FormLabel>
           <FormLabel label="福利金额(分)" help="发放给被邀请人的金额，单位分。">
             <TextInput
               name="inviteeBenefitMinor"
               type="number"
               min={0}
-              defaultValue={config?.inviteeBenefitMinor ?? "0"}
+              defaultValue={config.inviteeBenefitMinor}
             />
           </FormLabel>
           <FormLabel label="福利有效天数" help="被邀请人福利的有效期天数；留空表示长期有效。">
@@ -590,14 +583,13 @@ function ProgramForm({
               type="number"
               min={0}
               placeholder="留空表示长期有效"
-              defaultValue={config?.inviteeBenefitExpiresInDays ?? ""}
+              defaultValue={config.inviteeBenefitExpiresInDays ?? ""}
             />
           </FormLabel>
           <FormLabel label="福利说明">
             <TextInput
               name="inviteeBenefitDetail"
-              placeholder="例如：注册即得算力积分"
-              defaultValue={config?.inviteeBenefitDetail ?? ""}
+              defaultValue={config.inviteeBenefitDetail ?? ""}
             />
           </FormLabel>
         </div>
@@ -608,11 +600,7 @@ function ProgramForm({
           <IconDeviceFloppy className="size-3.5" />
           保存配置
         </Button>
-        {config ? (
-          <span className="text-[12px] text-slate-400">配置键 {config.key}</span>
-        ) : (
-          <span className="text-[12px] text-slate-400">尚未配置，保存后创建。</span>
-        )}
+        <span className="text-[12px] text-slate-400">配置键 {config.key}</span>
       </div>
     </form>
   );
