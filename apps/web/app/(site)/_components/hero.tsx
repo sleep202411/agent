@@ -125,7 +125,7 @@ export function Hero() {
         </motion.div>
 
         {/* 2. Headline — BlurText reveals each word with a 2-step blur ramp. */}
-        <div className="mt-10 max-w-6xl text-balance text-5xl font-semibold tracking-tight text-white sm:text-6xl md:text-7xl lg:text-[100px] lg:leading-[1.02]">
+        <div className="mt-10 max-w-6xl text-balance text-5xl font-semibold tracking-tight text-white sm:text-6xl md:text-7xl lg:text-[100px] lg:leading-[1.08]">
           <BlurText
             text={t("hero.headlineLine1")}
             animateBy="words"
@@ -141,7 +141,7 @@ export function Hero() {
             initial={{ opacity: 0, y: -20, filter: "blur(10px)" }}
             animate={{ opacity: 1, y: 0, filter: "blur(0px)" }}
             transition={{ duration: 0.6, delay: 0.45 }}
-            className="bg-gradient-to-r from-[#ff5257] via-[#e52227] to-[#cc1f23] bg-clip-text text-transparent"
+            className="bg-gradient-to-r from-[#ff5257] via-[#e52227] to-[#cc1f23] bg-clip-text pb-[0.1em] leading-[1.15] text-transparent"
           >
             {t("hero.headlineLine2")}
           </motion.div>

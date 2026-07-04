@@ -11,6 +11,26 @@ const PAYOUT_TYPES = [
   'membership_both',
 ] as const;
 
+// A reward BUNDLE item is a SINGLE payout — never membership_both (that is two
+// items: membership_compute + membership_community). A tier grants ALL items.
+const REWARD_ITEM_KINDS = [
+  'cash',
+  'points_compute',
+  'points_community',
+  'membership_compute',
+  'membership_community',
+] as const;
+
+/** One reward inside a tier's bundle. */
+export const ReferralRewardItemSchema = z.object({
+  kind: z.enum(REWARD_ITEM_KINDS),
+  /** Cash minor units OR point count (per kind); 0 for membership. */
+  amountMinor: z.number().int().min(0).default(0),
+  /** Membership duration in days; 0 for cash/points. */
+  days: z.number().int().min(0).max(3650).default(0),
+});
+export type ReferralRewardItemInput = z.infer<typeof ReferralRewardItemSchema>;
+
 /** PATCH /admin/referrals/program — tune the program. All fields optional. */
 export const UpdateReferralProgramSchema = z
   .object({
@@ -34,23 +54,36 @@ export type UpdateReferralProgramInput = z.infer<
   typeof UpdateReferralProgramSchema
 >;
 
-/** POST /admin/referrals/milestones — add a tier. */
-export const CreateReferralMilestoneSchema = z.object({
+/** Shared field shape for create/update of a milestone (阶梯奖励) tier. */
+const ReferralMilestoneFieldsSchema = z.object({
   inviteeThreshold: z.number().int().min(1),
-  payoutType: z.enum(PAYOUT_TYPES),
-  rewardMinor: z.number().int().min(0).default(0),
-  payoutDays: z.number().int().min(0).max(3650).default(0),
   title: z.string().trim().min(1).max(120),
   detail: z.string().trim().max(400).default(''),
   rank: z.number().int().default(0),
+  // The reward BUNDLE — each tier grants ALL items. Source of truth for the
+  // new admin. When present, the server derives the legacy single-reward
+  // columns below from items[0] (primary) so the shipped mobile keeps working.
+  rewardItems: z.array(ReferralRewardItemSchema).min(1).optional(),
+  // Legacy single-reward fields. Optional now. Accepted ALONE for backward
+  // compat (old clients) → the server lifts them into a one-item bundle.
+  payoutType: z.enum(PAYOUT_TYPES).optional(),
+  rewardMinor: z.number().int().min(0).default(0),
+  payoutDays: z.number().int().min(0).max(3650).default(0),
 });
+
+/** POST /admin/referrals/milestones — add a tier. */
+export const CreateReferralMilestoneSchema =
+  ReferralMilestoneFieldsSchema.refine(
+    (v) => (v.rewardItems?.length ?? 0) > 0 || !!v.payoutType,
+    { message: 'rewardItems or payoutType is required' },
+  );
 export type CreateReferralMilestoneInput = z.infer<
   typeof CreateReferralMilestoneSchema
 >;
 
-/** PATCH /admin/referrals/milestones/:id — edit a tier. */
+/** PATCH /admin/referrals/milestones/:id — edit a tier. All fields optional. */
 export const UpdateReferralMilestoneSchema =
-  CreateReferralMilestoneSchema.partial();
+  ReferralMilestoneFieldsSchema.partial();
 export type UpdateReferralMilestoneInput = z.infer<
   typeof UpdateReferralMilestoneSchema
 >;
@@ -73,6 +106,22 @@ export type ReferralPayoutType =
   | 'membership_community'
   | 'membership_both';
 
+/** A single reward inside a bundle — never membership_both. */
+export type ReferralRewardItemKind =
+  | 'cash'
+  | 'points_compute'
+  | 'points_community'
+  | 'membership_compute'
+  | 'membership_community';
+
+export interface ReferralRewardItemDTO {
+  kind: ReferralRewardItemKind;
+  /** Cash minor units OR point count, as a string (JSON BigInt safe). */
+  amountMinor: string;
+  /** Membership reward days (0 for cash/points). */
+  days: number;
+}
+
 export interface ReferralRewardDTO {
   id: string;
   title: string;
@@ -89,6 +138,9 @@ export interface ReferralRewardDTO {
   claimable: boolean;
   createdAt: string;
   availableAt: string | null;
+  /** Full reward bundle (one+ items). ADDITIVE — older mobile builds read the
+   * flat payoutType/amountMinor/days above; the next build reads this. */
+  items?: ReferralRewardItemDTO[];
 }
 
 export interface ReferralMilestoneDTO {
@@ -104,6 +156,8 @@ export interface ReferralMilestoneDTO {
   /** Membership reward days (0 for cash/points). */
   days: number;
   currency: string | null;
+  /** Full reward bundle for this tier (ADDITIVE — see ReferralRewardDTO.items). */
+  items?: ReferralRewardItemDTO[];
 }
 
 export interface ReferralDashboardDTO {

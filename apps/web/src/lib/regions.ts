@@ -19,6 +19,9 @@ export interface RegionOption {
 export const REGIONS: RegionOption[] = [
   { code: "GLOBAL", labels: { "zh-CN": "全球", "en-US": "Global", "zh-HK": "全球" } },
   { code: "CN", labels: { "zh-CN": "中国", "en-US": "China", "zh-HK": "中國" } },
+  { code: "HK", labels: { "zh-CN": "中国香港", "en-US": "Hong Kong, China", "zh-HK": "中國香港" } },
+  { code: "TW", labels: { "zh-CN": "中国台湾", "en-US": "Taiwan, China", "zh-HK": "中國台灣" } },
+  { code: "MO", labels: { "zh-CN": "中国澳门", "en-US": "Macao, China", "zh-HK": "中國澳門" } },
   { code: "SG", labels: { "zh-CN": "新加坡", "en-US": "Singapore", "zh-HK": "新加坡" } },
   { code: "IN", labels: { "zh-CN": "印度", "en-US": "India", "zh-HK": "印度" } },
   { code: "JP", labels: { "zh-CN": "日本", "en-US": "Japan", "zh-HK": "日本" } },

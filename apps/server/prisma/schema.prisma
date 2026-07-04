@@ -5759,6 +5759,11 @@ model ReferralMilestoneConfig {
   createdAt        DateTime           @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt        DateTime           @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
 
+  /// Reward bundle for this tier (one tier → many items). The legacy
+  /// payoutType/rewardMinor/payoutDays columns above mirror items[0] (the
+  /// "primary" item) so older clients keep rendering a single reward.
+  items ReferralRewardTierItem[]
+
   @@unique([programId, inviteeThreshold], map: "referral_milestone_program_threshold_unique")
   @@index([programId, rank], map: "referral_milestone_program_rank_idx")
   @@map("referral_milestone_configs")
@@ -5809,9 +5814,58 @@ model ReferralReward {
   createdAt     DateTime             @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt     DateTime             @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
 
+  /// Snapshot of the reward bundle at accrual (one reward → many items). The
+  /// legacy payoutType/amountMinor/days/currency columns above mirror items[0]
+  /// (primary) so the already-submitted mobile app keeps rendering w/o crashing.
+  items ReferralRewardItem[]
+
   @@unique([userId, milestoneId], map: "referral_reward_user_milestone_unique")
   @@index([userId, status, createdAt(sort: Desc)], map: "referral_reward_user_idx")
   @@map("referral_rewards")
+}
+
+/// One reward in a milestone TIER's bundle (admin-edited). A tier grants ALL of
+/// its items. `payoutType` here is always a SINGLE kind — never membership_both;
+/// a "both" tier is two items (membership_compute + membership_community). The
+/// legacy payoutType/rewardMinor/payoutDays on ReferralMilestoneConfig mirror
+/// items[0] (primary) so single-reward clients keep working.
+model ReferralRewardTierItem {
+  id          String                  @id @default(uuid(7)) @db.Uuid
+  milestoneId String                  @map("milestone_id") @db.Uuid
+  milestone   ReferralMilestoneConfig @relation(fields: [milestoneId], references: [id], onDelete: Cascade)
+  payoutType  ReferralPayoutType      @map("payout_type")
+  /// Cash minor units OR point count (per payoutType); 0 for membership.
+  amountMinor BigInt                  @default(0) @map("amount_minor")
+  /// Membership duration in days; 0 for cash/points.
+  days        Int                     @default(0)
+  rank        Int                     @default(0)
+  createdAt   DateTime                @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime                @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@index([milestoneId, rank], map: "referral_reward_tier_item_milestone_idx")
+  @@map("referral_reward_tier_items")
+}
+
+/// Snapshot of one granted thing inside a ReferralReward bundle, frozen at
+/// accrual (never reads live tier config). One reward → many items. The legacy
+/// payoutType/amountMinor/days/currency on ReferralReward mirror items[0]
+/// (primary) for the already-shipped mobile app. `grantedAt` gives per-item
+/// idempotency so a multi-item claim is re-claim-safe.
+model ReferralRewardItem {
+  id          String             @id @default(uuid(7)) @db.Uuid
+  rewardId    String             @map("reward_id") @db.Uuid
+  reward      ReferralReward     @relation(fields: [rewardId], references: [id], onDelete: Cascade)
+  payoutType  ReferralPayoutType @map("payout_type")
+  amountMinor BigInt             @default(0) @map("amount_minor")
+  days        Int                @default(0)
+  currency    String?            @db.VarChar(3)
+  rank        Int                @default(0)
+  /// Set when this item has been granted at claim (per-item idempotency).
+  grantedAt   DateTime?          @map("granted_at") @db.Timestamptz(6)
+  createdAt   DateTime           @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@index([rewardId, rank], map: "referral_reward_item_reward_idx")
+  @@map("referral_reward_items")
 }
 
 /// ─── Story Studio(文字游戏)专属项目面 —— 与 PlatformProject 分家 ───
