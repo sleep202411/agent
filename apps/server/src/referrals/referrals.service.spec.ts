@@ -28,6 +28,7 @@ function programRow(over: Record<string, unknown> = {}) {
     inviteeBenefitMinor: 0n,
     inviteeBenefitExpiresInDays: null,
     milestones: [] as unknown[],
+    inviteeBenefitItems: [] as unknown[],
     ...over,
   };
 }
@@ -704,45 +705,106 @@ describe('qualifyRefereePurchase', () => {
     expect(prisma.$transaction).not.toHaveBeenCalled();
   });
 
-  it('accrues newly-crossed milestone tiers with their bundle snapshot', async () => {
+  it('no longer accrues milestones (moved to the registration-based path)', async () => {
     const { service, prisma, tx } = makeService();
-    const milestone = {
-      id: 'ms-1',
-      inviteeThreshold: 1,
-      payoutType: 'points_community',
-      rewardMinor: 888n,
-      payoutDays: 0,
-      title: 'Invite 1 friend',
-      detail: '888 community points + 7 days of Studio membership',
-      rank: 1,
-      items: [
-        {
-          payoutType: 'points_community',
-          amountMinor: 888n,
-          days: 0,
-          rank: 0,
-        },
-        { payoutType: 'membership_compute', amountMinor: 0n, days: 7, rank: 1 },
-      ],
-    };
+    prisma.referralAttribution.findUnique.mockResolvedValue(
+      attributionRow({ status: 'pending' }),
+    );
+    prisma.referralProgram.findUnique.mockResolvedValue(programRow());
+    prisma.billingOrder.count.mockResolvedValue(1);
+
+    await service.qualifyRefereePurchase(REFEREE);
+
+    // Qualifies the attribution (gates commission) but creates NO milestone.
+    expect(tx.referralAttribution.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { id: 'attr-1', status: 'pending' } }),
+    );
+    expect(tx.referralReward.createMany).not.toHaveBeenCalled();
+  });
+
+  it('accrues the invitee welcome-perk BUNDLE on the referee first purchase', async () => {
+    const { service, prisma, tx } = makeService();
     prisma.referralAttribution.findUnique.mockResolvedValue(
       attributionRow({ status: 'pending' }),
     );
     prisma.referralProgram.findUnique.mockResolvedValue(
-      programRow({ milestones: [milestone] }),
+      programRow({
+        inviteeBenefitTitle: '新人礼',
+        inviteeBenefitItems: [
+          {
+            payoutType: 'points_community',
+            amountMinor: 200n,
+            days: 0,
+            rank: 0,
+          },
+          {
+            payoutType: 'membership_compute',
+            amountMinor: 0n,
+            days: 7,
+            rank: 1,
+          },
+        ],
+      }),
     );
     prisma.billingOrder.count.mockResolvedValue(1);
+
+    await service.qualifyRefereePurchase(REFEREE);
+
+    const data = firstCallArg<{ data: Record<string, unknown> }>(
+      tx.referralReward.create,
+    ).data;
+    expect(data.kind).toBe('invitee');
+    expect(data.userId).toBe(REFEREE);
+    expect(data.payoutType).toBe('points_community');
+    const items = (data.items as { create: Record<string, unknown>[] }).create;
+    expect(items).toHaveLength(2);
+    expect(items[1]).toMatchObject({
+      payoutType: 'membership_compute',
+      days: 7,
+    });
+  });
+});
+
+describe('accrueMilestonesForReferrer (registration-based)', () => {
+  const call = (
+    service: ReferralsService,
+    referrerUserId: string,
+    reached: number,
+  ) =>
+    (
+      service as unknown as {
+        accrueMilestonesForReferrer(u: string, n: number): Promise<void>;
+      }
+    ).accrueMilestonesForReferrer(referrerUserId, reached);
+
+  const milestone = {
+    id: 'ms-1',
+    inviteeThreshold: 1,
+    payoutType: 'points_community',
+    rewardMinor: 100n,
+    payoutDays: 0,
+    title: 'Invite 1 friend',
+    detail: '100 community points + 3 days of Studio membership',
+    rank: 1,
+    items: [
+      { payoutType: 'points_community', amountMinor: 100n, days: 0, rank: 0 },
+      { payoutType: 'membership_compute', amountMinor: 0n, days: 3, rank: 1 },
+    ],
+  };
+
+  it('grants a newly-crossed tier with its bundle snapshot', async () => {
+    const { service, prisma, tx } = makeService();
+    prisma.referralProgram.findUnique.mockResolvedValue(
+      programRow({ milestones: [milestone] }),
+    );
     tx.referralReward.findMany
       .mockResolvedValueOnce([]) // earned milestoneIds
       .mockResolvedValueOnce([
         { id: 'rw-ms-1', milestoneId: 'ms-1', _count: { items: 0 } },
       ]);
 
-    await service.qualifyRefereePurchase(REFEREE);
+    await call(service, REFERRER, 5);
 
-    expect(tx.referralAttribution.updateMany).toHaveBeenCalledWith(
-      expect.objectContaining({ where: { id: 'attr-1', status: 'pending' } }),
-    );
     expect(tx.referralReward.createMany).toHaveBeenCalledWith(
       expect.objectContaining({ skipDuplicates: true }),
     );
@@ -753,13 +815,50 @@ describe('qualifyRefereePurchase', () => {
     expect(itemRows[0]).toMatchObject({
       rewardId: 'rw-ms-1',
       payoutType: 'points_community',
-      amountMinor: 888n,
-      currency: null,
+      amountMinor: 100n,
     });
-    expect(itemRows[1]).toMatchObject({
-      payoutType: 'membership_compute',
-      days: 7,
-    });
+  });
+
+  it('does nothing at zero reached count', async () => {
+    const { service, prisma } = makeService();
+    await call(service, REFERRER, 0);
+    expect(prisma.referralProgram.findUnique).not.toHaveBeenCalled();
+  });
+
+  it('skips a tier already earned (idempotent)', async () => {
+    const { service, prisma, tx } = makeService();
+    prisma.referralProgram.findUnique.mockResolvedValue(
+      programRow({ milestones: [milestone] }),
+    );
+    tx.referralReward.findMany.mockResolvedValueOnce([{ milestoneId: 'ms-1' }]);
+
+    await call(service, REFERRER, 5);
+
+    expect(tx.referralReward.createMany).not.toHaveBeenCalled();
+  });
+});
+
+describe('countReferralRegistrations', () => {
+  const call = (service: ReferralsService, code: string) =>
+    (
+      service as unknown as {
+        countReferralRegistrations(c: string): Promise<number>;
+      }
+    ).countReferralRegistrations(code);
+
+  it('counts ALL registrations for the code (no phone filter)', async () => {
+    const { service, legacy } = makeService();
+    legacy.queryOne.mockResolvedValue({ n: 7 });
+    await expect(call(service, 'CODE9')).resolves.toBe(7);
+    const sql = legacy.queryOne.mock.calls[0][0] as string;
+    expect(sql).toContain('recommendation_code_source = ?');
+    expect(sql).not.toContain('phone');
+  });
+
+  it('returns 0 on a bridge outage', async () => {
+    const { service, legacy } = makeService();
+    legacy.queryOne.mockRejectedValue(new Error('bridge down'));
+    await expect(call(service, 'CODE9')).resolves.toBe(0);
   });
 });
 

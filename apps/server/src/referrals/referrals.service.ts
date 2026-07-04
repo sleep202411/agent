@@ -120,23 +120,27 @@ export class ReferralsService {
     const code = viewerCookie
       ? await this.javaUsers.findRecommendationCode(viewerCookie)
       : null;
+
+    // Milestone accrual is REGISTRATION-based and LAZY: this is the ONLY place
+    // Java MySQL is queried for the referrer's referral count (there is no
+    // signup webhook). Count how many people registered with this referrer's
+    // code, then grant any newly-crossed tiers before rendering. Best-effort.
+    const referralCount = code
+      ? await this.countReferralRegistrations(code)
+      : 0;
+    if (referralCount > 0) {
+      await this.accrueMilestonesForReferrer(userId, referralCount).catch((e) =>
+        this.logger.warn(
+          `lazy milestone accrual failed for ${userId}: ${e instanceof Error ? e.message : e}`,
+        ),
+      );
+    }
+
     // The reward LIST is windowed, but claimable (accrued) rewards are fetched
     // separately so per-order commission churn can never push an unclaimed
     // reward out of reach; the headline money TOTALS are a full-table
     // aggregate, not a sum of the visible window.
-    const [
-      inviteeCount,
-      qualifiedCount,
-      accruedRewards,
-      recentRewards,
-      cashByStatus,
-    ] = await Promise.all([
-      this.prisma.referralAttribution.count({
-        where: { referrerUserId: userId },
-      }),
-      this.prisma.referralAttribution.count({
-        where: { referrerUserId: userId, status: 'qualified' },
-      }),
+    const [accruedRewards, recentRewards, cashByStatus] = await Promise.all([
       this.prisma.referralReward.findMany({
         where: { userId, status: 'accrued' },
         orderBy: { createdAt: 'desc' },
@@ -159,12 +163,12 @@ export class ReferralsService {
       (a, b) => b.createdAt.getTime() - a.createdAt.getTime(),
     );
 
-    // Milestone progress tracks QUALIFIED referees (matches accrual), not raw
-    // signups. First unmet tier is "active"; lower complete, higher locked.
+    // Milestone progress tracks REGISTRATIONS with this code (matches accrual).
+    // First unmet tier is "active"; lower complete, higher locked.
     let activeAssigned = false;
     const milestones: ReferralMilestoneDTO[] = program.milestones.map((m) => {
       let status: ReferralMilestoneDTO['status'];
-      if (qualifiedCount >= m.inviteeThreshold) {
+      if (referralCount >= m.inviteeThreshold) {
         status = 'complete';
       } else if (!activeAssigned) {
         status = 'active';
@@ -194,7 +198,7 @@ export class ReferralsService {
           ? `${this.inviteBase}/register?recommendationCode=${encodeURIComponent(code)}`
           : null,
       currency: program.currency,
-      totals: computeTotals(cashByStatus, inviteeCount),
+      totals: computeTotals(cashByStatus, referralCount),
       inviteeBenefit: {
         title: program.inviteeBenefitTitle,
         detail: program.inviteeBenefitDetail,
@@ -240,6 +244,21 @@ export class ReferralsService {
     }
     if (input.inviteeBenefitExpiresInDays !== undefined) {
       data.inviteeBenefitExpiresInDays = input.inviteeBenefitExpiresInDays;
+    }
+    // Invitee welcome-perk BUNDLE — replace the whole set when provided (empty
+    // array = clear the perk). Mirror the primary cash item into the legacy
+    // inviteeBenefitMinor so single-reward clients keep working.
+    if (input.inviteeBenefitItems !== undefined) {
+      const items = input.inviteeBenefitItems.map((it, idx) => ({
+        payoutType: it.kind,
+        amountMinor: BigInt(it.amountMinor ?? 0),
+        days: it.days ?? 0,
+        rank: idx,
+      }));
+      data.inviteeBenefitItems = { deleteMany: {}, create: items };
+      const primary = items[0];
+      data.inviteeBenefitMinor =
+        primary && primary.payoutType === 'cash' ? primary.amountMinor : 0n;
     }
     await this.prisma.referralProgram.update({
       where: { key: PROGRAM_KEY },
@@ -329,6 +348,7 @@ export class ReferralsService {
           orderBy: { rank: 'asc' },
           include: { items: { orderBy: { rank: 'asc' } } },
         },
+        inviteeBenefitItems: { orderBy: { rank: 'asc' } },
       },
     });
     if (!program) return null;
@@ -352,6 +372,12 @@ export class ReferralsService {
       inviteeBenefitDetail: program.inviteeBenefitDetail,
       inviteeBenefitMinor: program.inviteeBenefitMinor.toString(),
       inviteeBenefitExpiresInDays: program.inviteeBenefitExpiresInDays,
+      // The invitee welcome-perk bundle the admin edits (same item shape as tiers).
+      inviteeBenefitItems: program.inviteeBenefitItems.map((it) => ({
+        kind: it.payoutType,
+        amountMinor: it.amountMinor.toString(),
+        days: it.days,
+      })),
       milestones: program.milestones.map((m) => ({
         id: m.id,
         inviteeThreshold: m.inviteeThreshold,
@@ -438,6 +464,49 @@ export class ReferralsService {
       where: { programKey: PROGRAM_KEY, userId },
     });
     return this.listCommissionRates();
+  }
+
+  /**
+   * Admin lookup for the 消费返佣 whitelist dialog: search client_user by
+   * email / phone / nickname / id → matched users so the admin picks the right
+   * person instead of hand-typing a raw Java id. Bridge outage → 503.
+   */
+  async lookupUsers(query: string): Promise<
+    Array<{
+      userId: string;
+      nickName: string | null;
+      email: string | null;
+      phone: string | null;
+    }>
+  > {
+    const q = query.trim();
+    if (!q) return [];
+    const like = `%${q}%`;
+    try {
+      const rows = await this.legacy.query<
+        RowDataPacket & {
+          id: number | string;
+          nick_name: string | null;
+          email: string | null;
+          phone: string | null;
+        }
+      >(
+        `SELECT id, nick_name, email, phone FROM client_user
+           WHERE phone LIKE ? OR email LIKE ? OR nick_name LIKE ? OR CAST(id AS CHAR) LIKE ?
+           ORDER BY id DESC LIMIT 10`,
+        [like, like, like, like],
+      );
+      return rows.map((r) => ({
+        userId: String(r.id),
+        nickName: r.nick_name ?? null,
+        email: r.email ?? null,
+        phone: r.phone ?? null,
+      }));
+    } catch {
+      throw new ServiceUnavailableException(
+        'User lookup is unavailable right now; try again later',
+      );
+    }
   }
 
   /** Best-effort display info for admin lists (nick/email via the Java bridge). */
@@ -655,10 +724,9 @@ export class ReferralsService {
     const program = await this.prisma.referralProgram.findUnique({
       where: { key: attribution.programKey },
       include: {
-        milestones: {
-          where: { archivedAt: null },
-          include: { items: { orderBy: { rank: 'asc' } } },
-        },
+        // Milestones are NOT needed here — they accrue registration-based on the
+        // referrer's dashboard. This path only needs the invitee-perk bundle.
+        inviteeBenefitItems: { orderBy: { rank: 'asc' } },
       },
     });
     if (!program || !program.enabled) return;
@@ -739,130 +807,179 @@ export class ReferralsService {
         }
       }
 
-      // 2) Invitee welcome perk (the referred user).
-      if (program.inviteeBenefitMinor > 0n) {
+      // 2) Invitee welcome perk (被邀请人) — the configured reward BUNDLE
+      //    (社区/算力积分, 会员, or cash; multi-item). Legacy mirror columns =
+      //    primary item (items[0]) so single-reward clients keep working.
+      if (program.inviteeBenefitItems.length) {
+        const items = program.inviteeBenefitItems.map((it) => ({
+          payoutType: it.payoutType,
+          amountMinor: it.amountMinor,
+          days: it.days,
+          currency: it.payoutType === 'cash' ? program.currency : null,
+          rank: it.rank,
+        }));
+        const primary = items[0];
+        const primaryIsMembership = primary.payoutType.startsWith('membership');
         await tx.referralReward.create({
           data: {
             programKey: program.key,
             userId: refereeUserId,
             kind: 'invitee',
+            payoutType: primary.payoutType,
             status: 'accrued',
-            amountMinor: program.inviteeBenefitMinor,
-            currency: program.currency,
+            amountMinor: primaryIsMembership ? 0n : primary.amountMinor,
+            days: primaryIsMembership ? primary.days : 0,
+            currency: primary.currency,
             title: program.inviteeBenefitTitle ?? 'Welcome bonus',
             subtitle: program.inviteeBenefitDetail ?? undefined,
             availableAt,
-            items: {
-              create: [
-                {
-                  payoutType: 'cash',
-                  amountMinor: program.inviteeBenefitMinor,
-                  days: 0,
-                  currency: program.currency,
-                  rank: 0,
-                },
-              ],
-            },
+            items: { create: items },
           },
         });
       }
 
-      // 3) Milestone tiers newly reached. Existence-checked so a tier (which
-      //    persists once earned) is never granted twice across referees.
-      if (program.milestones.length) {
-        const qualifiedCount = await tx.referralAttribution.count({
-          where: {
-            referrerUserId: attribution.referrerUserId,
-            status: 'qualified',
-          },
-        });
-        const earned = new Set(
-          (
-            await tx.referralReward.findMany({
-              where: { userId: attribution.referrerUserId, kind: 'milestone' },
-              select: { milestoneId: true },
-            })
-          ).map((r) => r.milestoneId),
-        );
-        const newTiers = program.milestones
-          .filter(
-            (m) => qualifiedCount >= m.inviteeThreshold && !earned.has(m.id),
-          )
-          .map((m) => ({
-            programKey: program.key,
-            userId: attribution.referrerUserId,
-            kind: 'milestone' as const,
-            payoutType: m.payoutType,
-            status: 'accrued' as const,
-            amountMinor: m.rewardMinor,
-            days: m.payoutDays,
-            currency: m.payoutType === 'cash' ? program.currency : null,
-            title: m.title,
-            subtitle: m.detail,
-            milestoneId: m.id,
-            availableAt,
-          }));
-        if (newTiers.length) {
-          // skipDuplicates → ON CONFLICT DO NOTHING; a concurrent tier crossing
-          // can't P2002-poison this tx (which would roll back the whole accrual).
-          await tx.referralReward.createMany({
-            data: newTiers,
-            skipDuplicates: true,
-          });
-          // Snapshot each tier's bundle onto its freshly-created reward row.
-          // Idempotent: only rewards without items yet get them, so a re-accrual
-          // (where skipDuplicates skipped the reward) won't double-insert.
-          const tierById = new Map(program.milestones.map((m) => [m.id, m]));
-          const created = await tx.referralReward.findMany({
-            where: {
-              userId: attribution.referrerUserId,
-              kind: 'milestone',
-              milestoneId: { in: newTiers.map((t) => t.milestoneId) },
-            },
-            select: {
-              id: true,
-              milestoneId: true,
-              _count: { select: { items: true } },
-            },
-          });
-          const itemRows: Prisma.ReferralRewardItemCreateManyInput[] = [];
-          for (const r of created) {
-            if (r._count.items > 0 || !r.milestoneId) continue;
-            const tier = tierById.get(r.milestoneId);
-            if (!tier) continue;
-            const items: BundleItem[] = tier.items.length
-              ? tier.items.map((it) => ({
-                  payoutType: it.payoutType as BundleItemKind,
-                  amountMinor: it.amountMinor,
-                  days: it.days,
-                  rank: it.rank,
-                }))
-              : expandLegacyToItems(
-                  tier.payoutType,
-                  tier.rewardMinor,
-                  tier.payoutDays,
-                );
-            for (const it of items) {
-              itemRows.push({
-                rewardId: r.id,
-                payoutType: it.payoutType,
-                amountMinor: it.amountMinor,
-                days: it.days,
-                currency: it.payoutType === 'cash' ? program.currency : null,
-                rank: it.rank,
-              });
-            }
-          }
-          if (itemRows.length) {
-            await tx.referralRewardItem.createMany({ data: itemRows });
-          }
-        }
-      }
+      // Milestones are NO LONGER accrued here. They moved to a REGISTRATION-
+      // based, referrer-side lazy path (accrueMilestonesForReferrer, called from
+      // getDashboard): a tier unlocks by how many people registered with the
+      // code, not by qualified purchases. This tx only qualifies the attribution
+      // (which gates commission) + the flat per-referral / invitee perks.
     });
 
     this.logger.log(
       `Referral qualified: referee=${refereeUserId} referrer=${attribution.referrerUserId}`,
     );
+  }
+
+  /**
+   * Milestone accrual — REGISTRATION-based (老板 2026-07-04). A tier unlocks by
+   * how many people registered with the referrer's own code (`reachedCount`);
+   * any registration counts (Java OTP-verifies email/phone at signup). Accrued
+   * LAZILY on the referrer's dashboard — there is no signup webhook. Idempotent:
+   * each tier is granted at most once per referrer (existence check +
+   * @@unique[userId,milestoneId]).
+   */
+  private async accrueMilestonesForReferrer(
+    referrerUserId: string,
+    reachedCount: number,
+  ): Promise<void> {
+    if (reachedCount <= 0) return;
+    const program = await this.prisma.referralProgram.findUnique({
+      where: { key: PROGRAM_KEY },
+      include: {
+        milestones: {
+          where: { archivedAt: null },
+          include: { items: { orderBy: { rank: 'asc' } } },
+        },
+      },
+    });
+    if (!program || !program.enabled || !program.milestones.length) return;
+    const availableAt = new Date(Date.now() + program.holdDays * DAY_MS);
+
+    await this.prisma.$transaction(async (tx) => {
+      const earned = new Set(
+        (
+          await tx.referralReward.findMany({
+            where: { userId: referrerUserId, kind: 'milestone' },
+            select: { milestoneId: true },
+          })
+        ).map((r) => r.milestoneId),
+      );
+      const newTiers = program.milestones
+        .filter((m) => reachedCount >= m.inviteeThreshold && !earned.has(m.id))
+        .map((m) => ({
+          programKey: program.key,
+          userId: referrerUserId,
+          kind: 'milestone' as const,
+          payoutType: m.payoutType,
+          status: 'accrued' as const,
+          amountMinor: m.rewardMinor,
+          days: m.payoutDays,
+          currency: m.payoutType === 'cash' ? program.currency : null,
+          title: m.title,
+          subtitle: m.detail,
+          milestoneId: m.id,
+          availableAt,
+        }));
+      if (!newTiers.length) return;
+      // skipDuplicates → ON CONFLICT DO NOTHING; a concurrent crossing can't
+      // P2002-poison this tx.
+      await tx.referralReward.createMany({
+        data: newTiers,
+        skipDuplicates: true,
+      });
+      // Snapshot each tier's bundle onto its freshly-created reward row.
+      // Idempotent: only rewards without items yet get them.
+      const tierById = new Map(program.milestones.map((m) => [m.id, m]));
+      const created = await tx.referralReward.findMany({
+        where: {
+          userId: referrerUserId,
+          kind: 'milestone',
+          milestoneId: { in: newTiers.map((t) => t.milestoneId) },
+        },
+        select: {
+          id: true,
+          milestoneId: true,
+          _count: { select: { items: true } },
+        },
+      });
+      const itemRows: Prisma.ReferralRewardItemCreateManyInput[] = [];
+      for (const r of created) {
+        if (r._count.items > 0 || !r.milestoneId) continue;
+        const tier = tierById.get(r.milestoneId);
+        if (!tier) continue;
+        const items: BundleItem[] = tier.items.length
+          ? tier.items.map((it) => ({
+              payoutType: it.payoutType as BundleItemKind,
+              amountMinor: it.amountMinor,
+              days: it.days,
+              rank: it.rank,
+            }))
+          : expandLegacyToItems(
+              tier.payoutType,
+              tier.rewardMinor,
+              tier.payoutDays,
+            );
+        for (const it of items) {
+          itemRows.push({
+            rewardId: r.id,
+            payoutType: it.payoutType,
+            amountMinor: it.amountMinor,
+            days: it.days,
+            currency: it.payoutType === 'cash' ? program.currency : null,
+            rank: it.rank,
+          });
+        }
+      }
+      if (itemRows.length) {
+        await tx.referralRewardItem.createMany({ data: itemRows });
+      }
+    });
+
+    this.logger.log(
+      `Milestones accrued (registration-based): referrer=${referrerUserId} reached=${reachedCount}`,
+    );
+  }
+
+  /**
+   * Count referees who registered with this referrer's code — the milestone
+   * (阶梯) count. Any registration counts (registration is the qualifying
+   * event; Java already OTP-verifies email/phone at signup). Best-effort;
+   * returns 0 on a bridge outage so the dashboard still renders.
+   */
+  private async countReferralRegistrations(
+    referrerCode: string,
+  ): Promise<number> {
+    try {
+      const row = await this.legacy.queryOne<
+        RowDataPacket & { n: number | string }
+      >(
+        'SELECT COUNT(*) AS n FROM client_user WHERE recommendation_code_source = ?',
+        [referrerCode],
+      );
+      return row?.n != null ? Number(row.n) : 0;
+    } catch {
+      return 0;
+    }
   }
 
   /**

@@ -5742,9 +5742,30 @@ model ReferralProgram {
   createdAt                   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt                   DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  milestones ReferralMilestoneConfig[]
+  milestones          ReferralMilestoneConfig[]
+  inviteeBenefitItems ReferralInviteeBenefitItem[]
 
   @@map("referral_programs")
+}
+
+/// The invitee (被邀请人) welcome-perk BUNDLE — one row per payout the referred
+/// user receives on qualifying (社区/算力积分, 社区/算力会员, or cash). Mirrors
+/// ReferralRewardTierItem; a "both memberships" perk is two items. The legacy
+/// inviteeBenefit* columns on ReferralProgram mirror items[0] (primary) so the
+/// old single-cash clients keep working. Empty = no welcome perk.
+model ReferralInviteeBenefitItem {
+  id          String             @id @default(uuid(7)) @db.Uuid
+  programId   String             @map("program_id") @db.Uuid
+  program     ReferralProgram    @relation(fields: [programId], references: [id], onDelete: Cascade)
+  payoutType  ReferralPayoutType @map("payout_type")
+  amountMinor BigInt             @default(0) @map("amount_minor")
+  days        Int                @default(0)
+  rank        Int                @default(0)
+  createdAt   DateTime           @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime           @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@index([programId, rank], map: "referral_invitee_benefit_item_program_idx")
+  @@map("referral_invitee_benefit_items")
 }
 
 /// Admin-editable milestone tiers: invite N referees → bonus reward.

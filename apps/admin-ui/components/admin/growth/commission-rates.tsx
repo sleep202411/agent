@@ -3,12 +3,12 @@
 // 消费返佣白名单 (per-user commission rates) — table + upsert form, rendered by
 // ReferralsPanel. Wire unit is bps (万分比); the form edits percent (bps / 100).
 
-import { useMemo } from "react";
-import { IconDeviceFloppy, IconEdit, IconTrash } from "@tabler/icons-react";
+import { useMemo, useState } from "react";
+import { IconDeviceFloppy, IconEdit, IconSearch, IconTrash } from "@tabler/icons-react";
 import { Button } from "@/components/ui/button";
 import { DataTable, type ColumnDef } from "@/components/ui/data-table";
-import { FormLabel, TextInput } from "../billing/shared";
-import type { CommissionRateRow } from "./referrals-types";
+import { FormLabel, TextInput, requestEnvelope, toErrorMessage } from "../billing/shared";
+import type { CommissionRateRow, UserLookupResult } from "./referrals-types";
 
 /** bps → "30%" / "2.5%" for display; the form edits percent directly. */
 export function bpsPercentLabel(bps: number): string {
@@ -99,6 +99,10 @@ export function CommissionRatesTable({
   );
 }
 
+function userLine(u: { userId: string; email: string | null; phone?: string | null }): string {
+  return [u.userId, u.email, u.phone].filter(Boolean).join(" · ");
+}
+
 export function CommissionRateForm({
   rate,
   loading,
@@ -110,33 +114,124 @@ export function CommissionRateForm({
   onSubmit: (event: React.FormEvent<HTMLFormElement>) => void;
   onRemove?: () => void;
 }) {
+  const editing = Boolean(rate);
+  const [query, setQuery] = useState("");
+  const [results, setResults] = useState<UserLookupResult[]>([]);
+  const [searching, setSearching] = useState(false);
+  const [lookupError, setLookupError] = useState<string | null>(null);
+  const [selected, setSelected] = useState<UserLookupResult | null>(
+    rate ? { userId: rate.userId, nickName: rate.nickName, email: rate.email, phone: null } : null
+  );
+
+  async function runLookup() {
+    const q = query.trim();
+    if (!q) return;
+    setSearching(true);
+    setLookupError(null);
+    setResults([]);
+    try {
+      const data = await requestEnvelope<UserLookupResult[]>(
+        `/api/admin/referrals/user-lookup?q=${encodeURIComponent(q)}`
+      );
+      setResults(data);
+      if (data.length === 0) setLookupError("未找到匹配用户。");
+    } catch (err) {
+      setLookupError(toErrorMessage(err));
+    } finally {
+      setSearching(false);
+    }
+  }
+
   return (
     <form className="space-y-5" onSubmit={onSubmit}>
-      <div className="grid gap-3 md:grid-cols-2">
-        <FormLabel
-          label="用户 ID"
-          help="Java 用户 ID（可在「用户管理 → 成员目录」搜索获取）；保存时校验存在性。"
-        >
-          <TextInput
-            name="userId"
-            defaultValue={rate?.userId ?? ""}
-            readOnly={Boolean(rate)}
-            required
-            className={rate ? "bg-slate-50 text-slate-500" : undefined}
-          />
-        </FormLabel>
-        <FormLabel label="返佣比例(%)" help="按订单实付金额计算；0 = 对该用户显式关闭。">
-          <TextInput
-            name="ratePercent"
-            type="number"
-            min={0}
-            max={100}
-            step={0.01}
-            defaultValue={rate ? rate.commissionBps / 100 : 30}
-            required
-          />
-        </FormLabel>
-      </div>
+      {editing ? (
+        // Editing an existing rate — the user is fixed.
+        <div className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2.5">
+          <p className="text-sm font-semibold text-slate-900">{rate?.nickName || "（昵称未知）"}</p>
+          <p className="mt-0.5 font-mono text-[12px] text-slate-500">
+            {userLine({ userId: rate!.userId, email: rate!.email })}
+          </p>
+        </div>
+      ) : selected ? (
+        // A user was picked from the search results.
+        <div className="flex items-center justify-between gap-3 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2.5">
+          <div>
+            <p className="text-sm font-semibold text-slate-900">
+              {selected.nickName || "（昵称未知）"}
+            </p>
+            <p className="mt-0.5 font-mono text-[12px] text-slate-500">{userLine(selected)}</p>
+          </div>
+          <Button type="button" variant="outline" size="sm" onClick={() => setSelected(null)}>
+            重选
+          </Button>
+        </div>
+      ) : (
+        // Search by email / phone / nickname / id.
+        <div className="space-y-2">
+          <FormLabel
+            label="查找用户"
+            help="输入邮箱 / 手机号 / 昵称 / 用户ID 搜索，选中确认是本人后再保存。"
+          >
+            <div className="flex gap-2">
+              <TextInput
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+                placeholder="邮箱 / 手机 / 昵称 / ID"
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") {
+                    event.preventDefault();
+                    void runLookup();
+                  }
+                }}
+              />
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => void runLookup()}
+                disabled={searching || !query.trim()}
+              >
+                <IconSearch className="size-4" />
+                查找
+              </Button>
+            </div>
+          </FormLabel>
+          {lookupError ? <p className="text-[12px] text-red-600">{lookupError}</p> : null}
+          {results.length > 0 ? (
+            <div className="max-h-52 space-y-1 overflow-y-auto rounded-md border border-slate-200 p-1">
+              {results.map((u) => (
+                <button
+                  key={u.userId}
+                  type="button"
+                  onClick={() => {
+                    setSelected(u);
+                    setResults([]);
+                  }}
+                  className="flex w-full flex-col items-start rounded px-2 py-1.5 text-left transition hover:bg-slate-50"
+                >
+                  <span className="text-sm font-medium text-slate-900">
+                    {u.nickName || "（昵称未知）"}
+                  </span>
+                  <span className="font-mono text-[11px] text-slate-500">{userLine(u)}</span>
+                </button>
+              ))}
+            </div>
+          ) : null}
+        </div>
+      )}
+      {/* Resolved on submit — the picked user's Java id. */}
+      <input type="hidden" name="userId" value={rate?.userId ?? selected?.userId ?? ""} readOnly />
+
+      <FormLabel label="返佣比例(%)" help="按订单实付金额计算；0 = 对该用户显式关闭。">
+        <TextInput
+          name="ratePercent"
+          type="number"
+          min={0}
+          max={100}
+          step={0.01}
+          defaultValue={rate ? rate.commissionBps / 100 : 30}
+          required
+        />
+      </FormLabel>
       <FormLabel label="备注" help="谁 / 渠道 / 约定，例如「KOL 张三 抖音 30%」。">
         <TextInput name="note" defaultValue={rate?.note ?? ""} maxLength={200} />
       </FormLabel>
@@ -150,7 +245,7 @@ export function CommissionRateForm({
         ) : (
           <span />
         )}
-        <Button type="submit" disabled={loading}>
+        <Button type="submit" disabled={loading || (!editing && !selected)}>
           <IconDeviceFloppy className="size-3.5" />
           保存
         </Button>

@@ -264,7 +264,7 @@ export function ReferralsPanel({
           </>
         }
         title="邀请奖励"
-        description="老带新邀请奖励：被邀请人达标后给邀请人发放奖励；可配置邀请人数阶梯奖励包。"
+        description="老带新邀请奖励：阶梯奖励按注册人数发放；消费返佣按被邀请人实付订单发放。"
       />
 
       {error ? <ErrorBanner message={error} /> : null}
@@ -274,7 +274,7 @@ export function ReferralsPanel({
           <div>
             <h2 className="text-sm font-semibold text-slate-950">奖励配置</h2>
             <p className="mt-0.5 text-[12px] text-slate-500">
-              程序基础设置；达标事件决定被邀请人何时计为有效邀请。
+              程序基础设置。达标事件（首次购买）用于消费返佣和被邀请人福利；阶梯奖励另按注册人数计。
             </p>
           </div>
           <div className="flex items-center gap-2">
@@ -305,9 +305,10 @@ export function ReferralsPanel({
           <div>
             <h2 className="text-sm font-semibold text-slate-950">阶梯奖励</h2>
             <p className="mt-0.5 text-[12px] text-slate-500">
-              邀请人数达到门槛后额外发放的阶梯奖励（每档可含多项），按 rank 排序展示。
+              <b>注册人数</b>
+              达到门槛即发放的阶梯奖励包（用你的码注册即算，无需消费；打开邀请页时结算）。
               {config?.giftedPointsValidityDays
-                ? ` 阶梯赠送的社区/算力积分领取后 ${config.giftedPointsValidityDays} 天过期（平台策略）。`
+                ? ` 赠送的社区/算力积分领取后 ${config.giftedPointsValidityDays} 天过期（平台策略）。`
                 : ""}
             </p>
           </div>
@@ -387,7 +388,7 @@ export function ReferralsPanel({
       <AdminDialog
         open={createOpen}
         title="新建阶梯奖励"
-        description="设置邀请人数门槛与达标后发放的奖励包（可含多项）。"
+        description="设置注册人数门槛与达标后发放的奖励包（可含多项）。"
         onClose={() => setCreateOpen(false)}
       >
         <MilestoneForm
@@ -428,7 +429,9 @@ function ProgramView({ config }: { config: ReferralConfig | null }) {
       </div>
     );
   }
-  const inviteeOn = Number(config.inviteeBenefitMinor) > 0;
+  // Read the BUNDLE, not the legacy cash mirror — a points/membership perk has
+  // inviteeBenefitMinor = 0 but is still configured.
+  const inviteeItems = config.inviteeBenefitItems ?? [];
   return (
     <dl className="grid gap-x-8 gap-y-3 px-4 py-4 sm:grid-cols-2">
       <ViewRow label="状态">
@@ -453,9 +456,10 @@ function ProgramView({ config }: { config: ReferralConfig | null }) {
         {config.giftedPointsValidityDays} 天后过期
       </ViewRow>
       <ViewRow label="被邀请人福利（新人礼）">
-        {inviteeOn ? (
+        {inviteeItems.length > 0 ? (
           <span>
-            {config.inviteeBenefitTitle || "新人礼"} · {config.inviteeBenefitMinor} 分
+            {config.inviteeBenefitTitle ? `${config.inviteeBenefitTitle}：` : ""}
+            {inviteeItems.map(itemSummary).join(" + ")}
           </span>
         ) : (
           <span className="text-slate-400">未开启</span>
@@ -494,12 +498,25 @@ function ProgramForm({
   loading: boolean;
   onSubmit: (event: React.FormEvent<HTMLFormElement>) => void;
 }) {
+  // Invitee welcome-perk bundle (社区/算力积分, 会员, 现金; 可多项). Empty = no perk.
+  const [inviteeItems, setInviteeItems] = useState<RewardItem[]>(config.inviteeBenefitItems ?? []);
+  function patchInvitee(index: number, patch: Partial<RewardItem>) {
+    setInviteeItems((prev) => prev.map((it, i) => (i === index ? { ...it, ...patch } : it)));
+  }
+  function addInvitee() {
+    setInviteeItems((prev) => [...prev, { kind: "points_community", amountMinor: "0", days: 0 }]);
+  }
+  function removeInvitee(index: number) {
+    setInviteeItems((prev) => prev.filter((_, i) => i !== index));
+  }
+
   return (
     <form className="grid gap-4" onSubmit={onSubmit}>
       {/* 达标事件是固定值（注册即达标无服务端触发点，已下线）—— 展示为说明，不是可编辑输入框。 */}
       <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5 text-[12px] leading-5 text-slate-600">
         <span className="font-semibold text-slate-700">达标事件：首次购买</span>
-        （固定）—— 被邀请人完成第一笔真金白银订单后，才计为有效邀请、开始发放奖励。
+        （固定）—— 用于<b>消费返佣</b>和<b>被邀请人福利</b>：被邀请人首次付费后才生效。
+        <b>阶梯奖励</b>另按注册人数计，无需消费。
       </div>
 
       <div className="grid gap-3 md:grid-cols-2">
@@ -561,30 +578,25 @@ function ProgramForm({
       </div>
 
       <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-3">
-        <p className="text-[12px] font-semibold text-slate-500">被邀请人福利（新人礼）</p>
-        <p className="mt-0.5 text-[11px] text-slate-400">
-          发给被邀请人自己的新人礼（现金，进待提现钱包）；福利金额为 0 表示不发放。
-        </p>
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <p className="text-[12px] font-semibold text-slate-500">被邀请人福利（新人礼）</p>
+            <p className="mt-0.5 text-[11px] text-slate-400">
+              发给被邀请人自己的新人礼；可发社区/算力积分、社区/算力会员或现金，可多项组合。不加任何奖励
+              = 不发放。
+              {config.giftedPointsValidityDays
+                ? ` 赠送的积分领取后 ${config.giftedPointsValidityDays} 天过期。`
+                : ""}
+            </p>
+          </div>
+          <Button type="button" variant="outline" size="sm" onClick={addInvitee}>
+            <IconPlus className="size-4" />
+            添加奖励
+          </Button>
+        </div>
         <div className="mt-3 grid gap-3 md:grid-cols-2">
           <FormLabel label="福利标题">
             <TextInput name="inviteeBenefitTitle" defaultValue={config.inviteeBenefitTitle ?? ""} />
-          </FormLabel>
-          <FormLabel label="福利金额(分)" help="发放给被邀请人的金额，单位分。">
-            <TextInput
-              name="inviteeBenefitMinor"
-              type="number"
-              min={0}
-              defaultValue={config.inviteeBenefitMinor}
-            />
-          </FormLabel>
-          <FormLabel label="福利有效天数" help="被邀请人福利的有效期天数；留空表示长期有效。">
-            <TextInput
-              name="inviteeBenefitExpiresInDays"
-              type="number"
-              min={0}
-              placeholder="留空表示长期有效"
-              defaultValue={config.inviteeBenefitExpiresInDays ?? ""}
-            />
           </FormLabel>
           <FormLabel label="福利说明">
             <TextInput
@@ -593,6 +605,28 @@ function ProgramForm({
             />
           </FormLabel>
         </div>
+        <div className="mt-3 space-y-2">
+          {inviteeItems.length === 0 ? (
+            <p className="text-[11px] text-slate-400">未添加奖励 —— 当前不发放新人礼。</p>
+          ) : (
+            inviteeItems.map((item, index) => (
+              <RewardItemRow
+                key={index}
+                item={item}
+                canRemove
+                onChange={(patch) => patchInvitee(index, patch)}
+                onRemove={() => removeInvitee(index)}
+              />
+            ))
+          )}
+        </div>
+        {/* Serialized bundle → programPayload reads it from FormData. */}
+        <input
+          type="hidden"
+          name="inviteeBenefitItems"
+          value={JSON.stringify(inviteeItems)}
+          readOnly
+        />
       </div>
 
       <div className="flex items-center gap-3 border-t border-slate-200 pt-4">
@@ -642,9 +676,9 @@ function MilestonesTable({
       },
       {
         accessorKey: "inviteeThreshold",
-        header: "邀请门槛",
+        header: "注册门槛",
         cell: ({ row }) => (
-          <span className="text-sm text-slate-700">{row.original.inviteeThreshold} 人</span>
+          <span className="text-sm text-slate-700">{row.original.inviteeThreshold} 人注册</span>
         ),
       },
       {
@@ -742,7 +776,7 @@ function MilestoneForm({
         <FormLabel label="Rank" help="排序值，越小越靠前。">
           <TextInput name="rank" type="number" min={0} defaultValue={milestone?.rank ?? 0} />
         </FormLabel>
-        <FormLabel label="邀请门槛" help="邀请人数达到该值后发放本阶梯奖励。">
+        <FormLabel label="注册门槛" help="用你的码注册的人数达到该值后发放本阶梯奖励（无需消费）。">
           <TextInput
             name="inviteeThreshold"
             type="number"
@@ -873,7 +907,6 @@ function RewardItemRow({
 
 function programPayload(form: FormData): Record<string, unknown> {
   const currency = stringField(form, "currency");
-  const expiresInDays = stringField(form, "inviteeBenefitExpiresInDays");
   return {
     enabled: form.get("enabled") === "on",
     currency: currency || undefined,
@@ -884,15 +917,15 @@ function programPayload(form: FormData): Record<string, unknown> {
     refereeMaxAccountAgeHours: Number(stringField(form, "refereeMaxAccountAgeHours") || 0),
     inviteeBenefitTitle: stringField(form, "inviteeBenefitTitle") || null,
     inviteeBenefitDetail: stringField(form, "inviteeBenefitDetail") || null,
-    inviteeBenefitMinor: Number(stringField(form, "inviteeBenefitMinor") || 0),
-    inviteeBenefitExpiresInDays: expiresInDays ? Number(expiresInDays) : null,
+    // Invitee welcome-perk bundle (社区/算力积分, 会员, 现金). Empty = no perk.
+    inviteeBenefitItems: parseRewardItems(form, "inviteeBenefitItems"),
   };
 }
 
 function milestonePayload(form: FormData): Record<string, unknown> {
   return {
     inviteeThreshold: Number(stringField(form, "inviteeThreshold") || 1),
-    rewardItems: parseRewardItems(form),
+    rewardItems: parseRewardItems(form, "rewardItems"),
     title: stringField(form, "title"),
     detail: stringField(form, "detail") || undefined,
     rank: Number(stringField(form, "rank") || 0),
@@ -900,9 +933,10 @@ function milestonePayload(form: FormData): Record<string, unknown> {
 }
 
 function parseRewardItems(
-  form: FormData
+  form: FormData,
+  field: string
 ): { kind: RewardItemKind; amountMinor: number; days: number }[] {
-  const raw = stringField(form, "rewardItems");
+  const raw = stringField(form, field);
   if (!raw) return [];
   let parsed: RewardItem[];
   try {

@@ -6,6 +6,7 @@ import {
   Param,
   Patch,
   Post,
+  Query,
   UseGuards,
 } from '@nestjs/common';
 import { Public } from '../auth';
@@ -91,6 +92,13 @@ export class ReferralsAdminController {
   @Get('commission-rates')
   async listCommissionRates() {
     return { code: 200, data: await this.service.listCommissionRates() };
+  }
+
+  /** Search users by email / phone / nickname / id for the whitelist dialog. */
+  @RequireAdminPermissions(ADMIN_PERMISSION_KEYS.BillingRead)
+  @Get('user-lookup')
+  async lookupUsers(@Query('q') q?: string) {
+    return { code: 200, data: await this.service.lookupUsers(q ?? '') };
   }
 
   /** Create-or-update the rate for a user (unique per program+user). */

@@ -55,6 +55,9 @@ export const UpdateReferralProgramSchema = z
     inviteeBenefitDetail: z.string().max(400).nullable(),
     inviteeBenefitMinor: z.number().int().min(0),
     inviteeBenefitExpiresInDays: z.number().int().min(0).nullable(),
+    /** Invitee welcome-perk BUNDLE (社区/算力积分, 会员, 现金; multi-item).
+     *  Empty array = no perk. Replaces the whole bundle when present. */
+    inviteeBenefitItems: z.array(ReferralRewardItemSchema),
   })
   .partial();
 export type UpdateReferralProgramInput = z.infer<

@@ -277,6 +277,10 @@ export function InfoTip({ text }: { text: string }) {
       <Tooltip>
         <TooltipTrigger
           type="button"
+          // Not in the tab/focus order: an info hint shouldn't steal a dialog's
+          // initial autofocus (which pops the tooltip open on open). Mouse hover
+          // still works.
+          tabIndex={-1}
           aria-label={text}
           className="inline-flex size-4 items-center justify-center rounded-full text-slate-400 outline-none transition hover:bg-slate-100 hover:text-slate-700 focus-visible:bg-slate-100 focus-visible:text-slate-700"
         >

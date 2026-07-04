@@ -65,10 +65,20 @@ export type ReferralConfig = {
   giftedPointsValidityDays: number;
   inviteeBenefitTitle: string | null;
   inviteeBenefitDetail: string | null;
-  /** BigInt string. */
+  /** BigInt string (legacy mirror of the primary invitee-benefit item). */
   inviteeBenefitMinor: string;
   inviteeBenefitExpiresInDays: number | null;
+  /** Invitee welcome-perk bundle (社区/算力积分, 会员, 现金; 可多项). Empty = no perk. */
+  inviteeBenefitItems: RewardItem[];
   milestones: ReferralMilestoneRow[];
+};
+
+/** A user matched by the whitelist dialog's email/phone/id lookup. */
+export type UserLookupResult = {
+  userId: string;
+  nickName: string | null;
+  email: string | null;
+  phone: string | null;
 };
 
 export type ReferralProgramData = ReferralConfig | null;
