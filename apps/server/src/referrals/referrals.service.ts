@@ -356,7 +356,6 @@ export class ReferralsService {
       key: program.key,
       enabled: program.enabled,
       currency: program.currency,
-      qualifyEvent: program.qualifyEvent,
       holdDays: program.holdDays,
       rewardPerReferralMinor: program.rewardPerReferralMinor.toString(),
       maxRewardedReferees: program.maxRewardedReferees,
@@ -730,15 +729,6 @@ export class ReferralsService {
       },
     });
     if (!program || !program.enabled) return;
-    // first_purchase is the ONLY qualify mode (the 'signup' option was removed
-    // — no signup-time trigger exists; registration happens on Java). A rogue
-    // DB value must scream, not silently brick qualification.
-    if (program.qualifyEvent !== 'first_purchase') {
-      this.logger.error(
-        `Referral program '${program.key}' has unsupported qualifyEvent '${program.qualifyEvent}' — qualification is disabled`,
-      );
-      return;
-    }
 
     // Genuine conversion: the referee actually paid. "Already-paying customer"
     // protection lives at attribution CREATION (ensureAttribution backdates to

@@ -17,7 +17,6 @@ function programRow(over: Record<string, unknown> = {}) {
     key: 'default',
     enabled: true,
     currency: 'USD',
-    qualifyEvent: 'first_purchase',
     holdDays: 7,
     rewardPerReferralMinor: 0n,
     maxRewardedReferees: 0,
@@ -675,21 +674,6 @@ describe('qualifyRefereePurchase', () => {
     await service.qualifyRefereePurchase(REFEREE);
 
     expect(prisma.referralProgram.findUnique).not.toHaveBeenCalled();
-  });
-
-  it('refuses rogue qualifyEvent values loudly instead of silently qualifying', async () => {
-    const { service, prisma } = makeService();
-    prisma.referralAttribution.findUnique.mockResolvedValue(
-      attributionRow({ status: 'pending' }),
-    );
-    prisma.referralProgram.findUnique.mockResolvedValue(
-      programRow({ qualifyEvent: 'signup' }),
-    );
-
-    await service.qualifyRefereePurchase(REFEREE);
-
-    expect(prisma.billingOrder.count).not.toHaveBeenCalled();
-    expect(prisma.$transaction).not.toHaveBeenCalled();
   });
 
   it('requires at least one paid order', async () => {

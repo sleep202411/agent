@@ -3,9 +3,9 @@
 // 邀请奖励 (referral program) config page for the /growth sub-app.
 //
 // Three sections:
-//   1. PROGRAM — single admin-editable config (enabled / currency / qualifyEvent
-//      / holdDays / 每位邀请奖励 / 上限 / 默认返佣比例 / 账号年龄闸门 + invitee
-//      benefit). Saved via PATCH.
+//   1. PROGRAM — single admin-editable config (enabled / currency / holdDays /
+//      每位邀请奖励 / 上限 / 默认返佣比例 / 账号年龄闸门 + invitee benefit bundle).
+//      Saved via PATCH.
 //   2. MILESTONES — table of referral milestones sorted by rank; 新建/编辑/归档
 //      via dialogs (POST / PATCH / POST :id/archive).
 //   3. COMMISSION RATES — 消费返佣白名单 (per-user KOL rates overriding the
@@ -274,7 +274,7 @@ export function ReferralsPanel({
           <div>
             <h2 className="text-sm font-semibold text-slate-950">奖励配置</h2>
             <p className="mt-0.5 text-[12px] text-slate-500">
-              程序基础设置。达标事件（首次购买）用于消费返佣和被邀请人福利；阶梯奖励另按注册人数计。
+              程序基础设置。阶梯奖励按注册人数发放；消费返佣和被邀请人福利在被邀请人首次付费后生效。
             </p>
           </div>
           <div className="flex items-center gap-2">
@@ -441,9 +441,6 @@ function ProgramView({ config }: { config: ReferralConfig | null }) {
           <StatusPill tone="muted">关闭</StatusPill>
         )}
       </ViewRow>
-      <ViewRow label="达标事件">
-        首次购买 <span className="text-slate-400">（固定）</span>
-      </ViewRow>
       <ViewRow label="现金币种">{config.currency ?? "—"}</ViewRow>
       <ViewRow label="冻结天数">{config.holdDays} 天</ViewRow>
       <ViewRow label="默认返佣比例" hint="现金返佣，进待提现钱包，不过期">
@@ -512,13 +509,6 @@ function ProgramForm({
 
   return (
     <form className="grid gap-4" onSubmit={onSubmit}>
-      {/* 达标事件是固定值（注册即达标无服务端触发点，已下线）—— 展示为说明，不是可编辑输入框。 */}
-      <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5 text-[12px] leading-5 text-slate-600">
-        <span className="font-semibold text-slate-700">达标事件：首次购买</span>
-        （固定）—— 用于<b>消费返佣</b>和<b>被邀请人福利</b>：被邀请人首次付费后才生效。
-        <b>阶梯奖励</b>另按注册人数计，无需消费。
-      </div>
-
       <div className="grid gap-3 md:grid-cols-2">
         <FormLabel label="状态" help="关闭后不再统计邀请，也不发放邀请奖励。">
           <Select name="enabled" defaultValue={config.enabled ? "on" : "off"}>
@@ -582,8 +572,8 @@ function ProgramForm({
           <div>
             <p className="text-[12px] font-semibold text-slate-500">被邀请人福利（新人礼）</p>
             <p className="mt-0.5 text-[11px] text-slate-400">
-              发给被邀请人自己的新人礼；可发社区/算力积分、社区/算力会员或现金，可多项组合。不加任何奖励
-              = 不发放。
+              发给被邀请人自己的新人礼，<b>被邀请人首次付费后发放</b>
+              ；可发社区/算力积分、社区/算力会员或现金，可多项组合。不加任何奖励 = 不发放。
               {config.giftedPointsValidityDays
                 ? ` 赠送的积分领取后 ${config.giftedPointsValidityDays} 天过期。`
                 : ""}

@@ -5718,10 +5718,6 @@ model ReferralProgram {
   currency                    String   @default("USD") @db.VarChar(3)
   /// Referrer reward per qualified referee, minor units.
   rewardPerReferralMinor      BigInt   @default(0) @map("reward_per_referral_minor")
-  /// Referee qualify mode. "first_purchase" is the ONLY supported value —
-  /// the old "signup" option was removed (registration happens on Java; no
-  /// signup-time trigger exists Nest-side). Column kept for a future mode.
-  qualifyEvent                String   @default("first_purchase") @map("qualify_event") @db.VarChar(32)
   /// Days an accrued reward is held before it becomes payable.
   holdDays                    Int      @default(0) @map("hold_days")
   /// Cap on rewarded referees per referrer (0 = unlimited).

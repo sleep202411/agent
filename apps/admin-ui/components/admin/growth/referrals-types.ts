@@ -30,8 +30,6 @@ export type RewardItem = {
   days: number;
 };
 
-export type ReferralQualifyEvent = "signup" | "first_purchase";
-
 export type ReferralMilestoneRow = {
   id: string;
   inviteeThreshold: number;
@@ -52,7 +50,6 @@ export type ReferralConfig = {
   key: string;
   enabled: boolean;
   currency: string | null;
-  qualifyEvent: ReferralQualifyEvent;
   holdDays: number;
   /** BigInt string. */
   rewardPerReferralMinor: string;
