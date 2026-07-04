@@ -357,5 +357,19 @@
   "report.close": "关闭",
   "authedWeb.sessionNeeded": "登录后即可查看此页面。",
   "authedWeb.loadFailed": "页面加载失败。",
-  "authedWeb.retry": "重试"
+  "authedWeb.retry": "重试",
+  "mine.pointsLabel": "社区积分",
+  "ipDetail.balanceLabel": "社区积分",
+  "ipDetail.pointsUnit": "积分",
+  "ipDetail.unlock": "解锁",
+  "ipDetail.unlockAllTitle": "解锁全集",
+  "ipDetail.unlockConfirmTitle": "解锁",
+  "ipDetail.unlockSpend": "花费 ",
+  "ipDetail.unlockBalanceLine": "余额 ",
+  "ipDetail.unlockFailed": "解锁失败",
+  "ipDetail.insufficientTitle": "余额不足",
+  "ipDetail.insufficientBody": "你的社区积分不足。",
+  "ipDetail.memberOnlyTitle": "会员专享",
+  "ipDetail.memberOnlyBody": "该内容仅社区会员可观看。",
+  "ipDetail.pendingUnlock": "即将解锁"
 }

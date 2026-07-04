@@ -1,12 +1,12 @@
 import { Image } from "expo-image";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import { SymbolView } from "expo-symbols";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useVideoPlayer, VideoView } from "expo-video";
 
-import { useAuthGate } from "@/auth";
+import { useAuth, useAuthGate } from "@/auth";
 import { ShareSheet } from "@/components/ip-share-sheet";
 import {
   MoreActionsButton,
@@ -21,16 +21,93 @@ import { Spacing } from "@/constants/theme";
 import { invalidateBrowse } from "@/data/browse-refresh";
 import {
   blockIpContent,
+  fetchIpAccess,
   getIpById,
+  isInsufficientBalanceError,
+  isMemberOnlyError,
+  purchaseIpContent,
   reportIpContent,
   type IpReportReason,
 } from "@/data/browse-service";
-import type { IpDetail, IpEpisode, Person } from "@/data/types";
+import type { EpisodeAccess, IpAccess, IpDetail, IpEpisode, Person, PriceRule } from "@/data/types";
 import { useTheme } from "@/hooks/use-theme";
 import { useLocale, useTranslations } from "@/i18n";
 import { ApiRequestError } from "@/lib/api-client";
 import { dicebearAvatarUrl } from "@/lib/avatar";
 import { toHref } from "@/lib/navigation";
+
+/** Charge price = the member-discounted amount when present, else list amount. */
+function chargeAmount(rule: PriceRule): string {
+  return rule.memberAmount ?? rule.amount;
+}
+
+/** Format whole community points for display (locale-grouped; amounts are BigInt strings). */
+function formatPoints(value: string, locale: string): string {
+  try {
+    return BigInt(value).toLocaleString(locale);
+  } catch {
+    return value;
+  }
+}
+
+/** True when `balance` is strictly below `price` (both whole-point BigInt strings). */
+function balanceBelow(balance: string, price: string): boolean {
+  try {
+    return BigInt(balance) < BigInt(price);
+  } catch {
+    return false;
+  }
+}
+
+/** Resolved action for a locked episode. */
+type UnlockPlan =
+  | { kind: "pending" }
+  | { kind: "member" }
+  | {
+      kind: "buy";
+      targetType: "ip" | "episode";
+      episodeId?: string;
+      priceRuleId?: string;
+      /** Community points to charge (whole points, string). */
+      points: string;
+    };
+
+/** Access codes that are already watchable — no unlock action. */
+const GRANTED_ACCESS: EpisodeAccess[] = [
+  "owned_ip",
+  "owned_episode",
+  "free_preview",
+  "member_free",
+  "free",
+];
+
+/** What tapping an episode does, from the authoritative access map. Returns
+ *  undefined when the episode is already granted (play it) OR access is unknown
+ *  (degrade to the media-URL fallback). Pure so it can run against a freshly
+ *  refetched access after login. */
+function resolvePlan(access: IpAccess | undefined, episode: IpEpisode): UnlockPlan | undefined {
+  const state = access?.episodes[episode.id];
+  if (!state) return undefined; // access not loaded — fall back to videoUrl presence
+  if (GRANTED_ACCESS.includes(state.access)) return undefined; // already watchable
+  if (state.access.startsWith("pending_unlock")) return { kind: "pending" };
+  if (state.access === "member_locked") return { kind: "member" };
+  // A per-episode price → buy just this episode.
+  if (state.access === "locked" && state.price) {
+    return {
+      kind: "buy",
+      targetType: "episode",
+      episodeId: episode.id,
+      priceRuleId: state.price.id,
+      points: chargeAmount(state.price),
+    };
+  }
+  // Gated by the whole-IP bundle price → buy the IP (unlocks all episodes).
+  const ipRule = access?.ip.price ?? null;
+  if (ipRule) {
+    return { kind: "buy", targetType: "ip", priceRuleId: ipRule.id, points: chargeAmount(ipRule) };
+  }
+  return undefined;
+}
 
 export default function IpDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -40,9 +117,13 @@ export default function IpDetailScreen() {
   const locale = useLocale();
   const router = useRouter();
   const authGate = useAuthGate();
+  const auth = useAuth();
   const scrollRef = useRef<ScrollView>(null);
   const [ip, setIp] = useState<IpDetail>();
+  // Per-viewer access + community-point balance + prices (authoritative unlock state).
+  const [access, setAccess] = useState<IpAccess>();
   const [loading, setLoading] = useState(true);
+  const [unlocking, setUnlocking] = useState(false);
   const [expanded, setExpanded] = useState(false);
   const [playing, setPlaying] = useState<{ url: string; title: string }>();
   const [reportOpen, setReportOpen] = useState(false);
@@ -54,8 +135,15 @@ export default function IpDetailScreen() {
     async function load() {
       setLoading(true);
       try {
-        const data = await getIpById(id);
-        if (alive) setIp(data);
+        // Detail carries the episode list + (once entitled) the video URLs;
+        // access carries per-viewer unlock state, prices and the point balance.
+        const [detail, acc] = await Promise.all([
+          getIpById(id),
+          fetchIpAccess(id).catch(() => undefined),
+        ]);
+        if (!alive) return;
+        setIp(detail);
+        setAccess(acc);
       } catch {
         if (alive) setIp(undefined);
       } finally {
@@ -66,6 +154,22 @@ export default function IpDetailScreen() {
     return () => {
       alive = false;
     };
+  }, [id]);
+
+  // Re-pull detail + access after an unlock (media URL appears; balance drops).
+  // Returns both so the caller can auto-play the episode + read the fresh balance
+  // without waiting on a state-update tick.
+  const refreshAfterUnlock = useCallback(async (): Promise<{
+    detail: IpDetail | undefined;
+    access: IpAccess | undefined;
+  }> => {
+    const [detail, acc] = await Promise.all([
+      getIpById(id),
+      fetchIpAccess(id).catch(() => undefined),
+    ]);
+    setIp(detail);
+    setAccess(acc);
+    return { detail, access: acc };
   }, [id]);
 
   if (loading) {
@@ -98,6 +202,105 @@ export default function IpDetailScreen() {
     if (!url) return;
     setPlaying({ url, title: title ?? ip.title });
     scrollRef.current?.scrollTo({ y: 0, animated: true });
+  };
+
+  const epLabel = (episode: IpEpisode) =>
+    `${t("ipDetail.episodePrefix")}${episode.index}${t("ipDetail.episodeSuffix")}`;
+
+  // Tap action for an episode, against the current access snapshot.
+  const planFor = (episode: IpEpisode) => resolvePlan(access, episode);
+
+  const runPurchase = async (plan: Extract<UnlockPlan, { kind: "buy" }>, episode: IpEpisode) => {
+    setUnlocking(true);
+    try {
+      await purchaseIpContent({
+        ipId: ip.id,
+        targetType: plan.targetType,
+        episodeId: plan.episodeId,
+        priceRuleId: plan.priceRuleId,
+      });
+      const { detail, access: acc } = await refreshAfterUnlock();
+      // The just-unlocked episode's media URL now resolves — start playback.
+      const fresh = detail?.episodes.find((e) => e.id === episode.id);
+      if (fresh?.videoUrl && !resolvePlan(acc, fresh)) {
+        playVideo(fresh.videoUrl, epLabel(fresh));
+      }
+    } catch (error) {
+      if (isInsufficientBalanceError(error)) {
+        Alert.alert(t("ipDetail.insufficientTitle"), t("ipDetail.insufficientBody"));
+      } else if (isMemberOnlyError(error)) {
+        Alert.alert(t("ipDetail.memberOnlyTitle"), t("ipDetail.memberOnlyBody"));
+      } else if (error instanceof ApiRequestError && error.status === 401) {
+        authGate.openLogin({ onAuthenticated: () => void runPurchase(plan, episode) });
+      } else {
+        Alert.alert(t("ipDetail.unlockFailed"));
+      }
+    } finally {
+      setUnlocking(false);
+    }
+  };
+
+  const confirmUnlock = (
+    plan: Extract<UnlockPlan, { kind: "buy" }>,
+    episode: IpEpisode,
+    balance: string | null
+  ) => {
+    // Balance is known and below the price → skip the doomed "unlock" and say so.
+    if (balance != null && balanceBelow(balance, plan.points)) {
+      Alert.alert(t("ipDetail.insufficientTitle"), t("ipDetail.insufficientBody"));
+      return;
+    }
+    const unit = t("ipDetail.pointsUnit");
+    const lines = [`${t("ipDetail.unlockSpend")}${formatPoints(plan.points, locale)} ${unit}`];
+    if (balance != null) {
+      lines.push(`${t("ipDetail.unlockBalanceLine")}${formatPoints(balance, locale)} ${unit}`);
+    }
+    const title =
+      plan.targetType === "ip" ? t("ipDetail.unlockAllTitle") : t("ipDetail.unlockConfirmTitle");
+    Alert.alert(title, lines.join("\n"), [
+      { text: t("report.cancel"), style: "cancel" },
+      { text: t("ipDetail.unlock"), onPress: () => void runPurchase(plan, episode) },
+    ]);
+  };
+
+  // Act on a resolved (non-pending) plan: member → upsell, buy → confirm+charge.
+  const startUnlock = (
+    plan: Exclude<UnlockPlan, { kind: "pending" }>,
+    episode: IpEpisode,
+    balance: string | null
+  ) => {
+    if (plan.kind === "member") {
+      Alert.alert(t("ipDetail.memberOnlyTitle"), t("ipDetail.memberOnlyBody"));
+      return;
+    }
+    confirmUnlock(plan, episode, balance);
+  };
+
+  const unlockEpisode = (episode: IpEpisode) => {
+    const plan = planFor(episode);
+    if (!plan || plan.kind === "pending") return;
+    // Not signed in → sign in FIRST (before any member/price decision), then
+    // re-derive against the fresh access: the viewer may now be a member (free
+    // or member-priced) or the episode may have become playable.
+    if (auth.status !== "authenticated") {
+      authGate.openLogin({
+        onAuthenticated: () => {
+          void refreshAfterUnlock().then(({ detail, access: acc }) => {
+            const fresh = detail?.episodes.find((e) => e.id === episode.id) ?? episode;
+            const freshPlan = resolvePlan(acc, fresh);
+            if (!freshPlan) {
+              // Now granted → just play it (member-free media, etc).
+              if (fresh.videoUrl) playVideo(fresh.videoUrl, epLabel(fresh));
+              return;
+            }
+            if (freshPlan.kind === "pending") return;
+            startUnlock(freshPlan, fresh, acc?.balance ?? null);
+          });
+        },
+      });
+      return;
+    }
+    startUnlock(plan, episode, access?.balance ?? null);
   };
 
   const showActions = () => {
@@ -284,6 +487,21 @@ export default function IpDetailScreen() {
                 title={t("ipDetail.episodesTitle")}
                 trailing={`${ip.episodeCount ?? ip.episodes.length} ${t("ipDetail.episodesTotal")}`}
               />
+              {access?.authenticated && access.balance != null ? (
+                <View style={[styles.balanceChip, { backgroundColor: theme.backgroundElement }]}>
+                  <SymbolView
+                    name={{ ios: "circlebadge.2.fill", android: "toll", web: "toll" }}
+                    size={14}
+                    tintColor={theme.brand}
+                  />
+                  <ThemedText type="code" themeColor="textSecondary">
+                    {t("ipDetail.balanceLabel")}
+                  </ThemedText>
+                  <ThemedText type="smallBold" style={{ color: theme.brand }}>
+                    {`${formatPoints(access.balance, locale)} ${t("ipDetail.pointsUnit")}`}
+                  </ThemedText>
+                </View>
+              ) : null}
               <ScrollView
                 horizontal
                 showsHorizontalScrollIndicator={false}
@@ -301,12 +519,16 @@ export default function IpDetailScreen() {
                     key={episode.id}
                     episode={episode}
                     title={ip.title}
+                    plan={planFor(episode)}
+                    locale={locale}
+                    disabled={unlocking}
                     onPlay={() =>
                       playVideo(
                         episode.videoUrl,
                         `${t("ipDetail.episodePrefix")}${episode.index}${t("ipDetail.episodeSuffix")}`
                       )
                     }
+                    onUnlock={() => unlockEpisode(episode)}
                   />
                 ))}
               </ScrollView>
@@ -440,19 +662,34 @@ function MediaCard({
 function EpisodeCard({
   episode,
   title,
+  plan,
+  locale,
+  disabled,
   onPlay,
+  onUnlock,
 }: {
   episode: IpEpisode;
   title: string;
+  plan?: UnlockPlan;
+  locale: string;
+  disabled?: boolean;
   onPlay: () => void;
+  onUnlock: () => void;
 }) {
   const t = useTranslations();
-  const playable = !!episode.videoUrl;
+  // Watchable now only when access grants it (no actionable plan) AND a media URL
+  // exists. A locked episode may still carry a trailer URL, so `videoUrl` alone
+  // is NOT proof of access — the plan (buy/member/pending) means not-yet-granted.
+  const playable = !!episode.videoUrl && !plan;
+  const buyPlan = plan?.kind === "buy" ? plan : undefined;
+  const pending = plan?.kind === "pending";
+  const memberLocked = plan?.kind === "member";
+  const interactive = playable || !!buyPlan || memberLocked;
   return (
     <Pressable
       accessibilityRole="button"
-      disabled={!playable}
-      onPress={onPlay}
+      disabled={!interactive || disabled}
+      onPress={playable ? onPlay : onUnlock}
       style={styles.episodeCard}
     >
       <View style={styles.episodeThumbWrap}>
@@ -465,9 +702,30 @@ function EpisodeCard({
               tintColor="#FFFFFF"
             />
           </View>
+        ) : pending ? (
+          <View style={styles.lockOverlay}>
+            <SymbolView
+              name={{ ios: "clock", android: "schedule", web: "schedule" }}
+              size={16}
+              tintColor="#FFFFFF"
+            />
+            <ThemedText type="code" style={styles.lockText}>
+              {t("ipDetail.pendingUnlock")}
+            </ThemedText>
+          </View>
+        ) : buyPlan ? (
+          <View style={styles.lockOverlay}>
+            <SymbolView
+              name={{ ios: "lock.fill", android: "lock", web: "lock" }}
+              size={16}
+              tintColor="#FFFFFF"
+            />
+            <ThemedText type="code" style={styles.lockPrice}>
+              {`${formatPoints(buyPlan.points, locale)} ${t("ipDetail.pointsUnit")}`}
+            </ThemedText>
+          </View>
         ) : (
-          // No playable video = locked: the backend withholds the media URL for
-          // episodes this viewer hasn't unlocked.
+          // Members-only or price-unknown — an inert/upsell lock.
           <View style={styles.lockOverlay}>
             <SymbolView
               name={{ ios: "lock.fill", android: "lock", web: "lock" }}
@@ -690,6 +948,21 @@ const styles = StyleSheet.create({
     color: "#FFFFFF",
     fontSize: 10,
     letterSpacing: 0.4,
+  },
+  lockPrice: {
+    color: "#FFFFFF",
+    fontSize: 11,
+    fontWeight: "700",
+    letterSpacing: 0.3,
+  },
+  balanceChip: {
+    alignSelf: "flex-start",
+    flexDirection: "row",
+    alignItems: "center",
+    gap: Spacing.one,
+    height: 30,
+    paddingHorizontal: Spacing.three,
+    borderRadius: 8,
   },
   peopleGrid: {
     flexDirection: "row",

@@ -75,6 +75,57 @@ export interface IpDetail extends IpSummary {
   aiStatement?: string;
 }
 
+/** A community-point price rule attached to an IP or episode (Nest ip-commerce).
+ *  Amounts are WHOLE community points serialized as BigInt strings — compare
+ *  with BigInt(), never assume number. `null` price = free. */
+export interface PriceRule {
+  id: string;
+  targetType: "ip" | "episode";
+  /** Charge price in whole community points (BigInt-as-string). */
+  amount: string;
+  /** Strike-through original price when discounted. */
+  originalAmount?: string | null;
+  /** Member-discounted price (present only for member viewers). Charge this when set. */
+  memberAmount?: string | null;
+  /** ISO — a pre-sale unlock becomes watchable at this time. */
+  unlocksAt?: string | null;
+}
+
+/** Per-episode access state (Nest ip-commerce /access). Granted (playable) =
+ *  free | free_preview | owned_* | member_free. */
+export type EpisodeAccess =
+  | "owned_ip"
+  | "owned_episode"
+  | "free_preview"
+  | "pending_unlock_ip"
+  | "pending_unlock_episode"
+  | "member_free"
+  | "member_locked"
+  | "locked"
+  | "locked_bundle"
+  | "free";
+
+/** Per-IP access state (Nest ip-commerce /access). */
+export type IpAccessCode =
+  | "owned"
+  | "pending_unlock"
+  | "member_free"
+  | "member_locked"
+  | "locked"
+  | "free";
+
+/** Authoritative per-viewer access + community-point balance map for one IP
+ *  (Nest `/aurora/ip-commerce/ips/:id/access`). */
+export interface IpAccess {
+  authenticated: boolean;
+  member: boolean;
+  /** community_point/consumable available balance (whole points, string); null logged-out. */
+  balance: string | null;
+  ip: { owned: boolean; access: IpAccessCode; price: PriceRule | null };
+  /** Keyed by episode id. */
+  episodes: Record<string, { owned: boolean; access: EpisodeAccess; price: PriceRule | null }>;
+}
+
 /** An IP taxonomy term (from Nest ip-commerce `/taxonomy`). */
 export interface TaxonomyTerm {
   code: string;
