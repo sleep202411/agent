@@ -136,7 +136,7 @@ export function coerceAnalysisV2(
   const endings = Array.isArray(raw.endings) ? raw.endings : [];
   const acts = Array.isArray(raw.acts) ? raw.acts : [];
 
-  return {
+  const analysis: StoryStudioAnalysisV2 = {
     title: asString(raw.title, fallbackTitle),
     summary: asString(
       raw.summary,
@@ -246,6 +246,13 @@ export function coerceAnalysisV2(
       'Do not reveal hidden truth before the player earns the relevant facts.',
     ]),
   };
+
+  // The client renders plots as a flat chain and knows nothing about acts —
+  // narrative order (起→承→转→合) is fixed HERE, on the skill side.
+  analysis.plots = ACT_KEYS.flatMap((key) =>
+    analysis.plots.filter((plot) => plot.actKey === key),
+  );
+  return analysis;
 }
 
 /**

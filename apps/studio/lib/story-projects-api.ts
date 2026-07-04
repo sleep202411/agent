@@ -111,39 +111,18 @@ export async function archiveStoryProject(id: string): Promise<void> {
 
 // ─── StoryOS generation (fizzstory-v3, server-hosted S1) ─────────
 
-export type StoryActKey = "setup" | "development" | "turn" | "resolution";
-
-export type StoryGenreKey =
-  | "suspense"
-  | "two_hander"
-  | "power_play"
-  | "survival"
-  | "coming_of_age"
-  | "romance"
-  | "tragedy"
-  | "underdog"
-  | "road_trip"
-  | "detective";
-
-/** 起承转合 four-act plan entry — ①锚点 ②交互密度 ③情绪曲线 ④收口钩子 + 步数. */
-export interface StoryActPlan {
-  key: StoryActKey;
-  anchor: string;
-  interactionCount: number;
-  stepBudget: number;
-  emotionArc: string;
-  exitHook: string;
-}
-
+/**
+ * The slice of the persisted StoryOS analysis the CLIENT renders. The server
+ * persists more (its generation-skill internals); those fields round-trip
+ * inside the opaque draft content without the client declaring them.
+ */
 export interface StoryStudioAnalysis {
   title: string;
   summary: string;
   worldview: string;
   storyKernel: string;
   adaptationDirection: string;
-  genre: StoryGenreKey;
   locations: string[];
-  acts: StoryActPlan[];
   protagonist: { name: string; role: string; summary: string };
   characters: Array<{ name: string; role: string; summary: string; tags: string[] }>;
   clues: Array<{
@@ -155,11 +134,11 @@ export interface StoryStudioAnalysis {
     rule: string;
     tags: string[];
   }>;
+  /** Already in narrative order — the server fixes the sequence. */
   plots: Array<{
     title: string;
     summary: string;
     entryGoal: string;
-    actKey: StoryActKey;
     tags: string[];
   }>;
   endings: Array<{
@@ -205,7 +184,6 @@ export async function startStoryAnalysis(
     uploadedFileName?: string;
     uploadedContent?: string;
     locale: string;
-    genre?: StoryGenreKey;
     sessionId?: string;
   }
 ): Promise<{ pipeline: StoryPipelineState; draft: { revision: number; updatedAt: string } }> {

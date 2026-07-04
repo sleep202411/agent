@@ -66,7 +66,6 @@ import {
   putStoryDraft,
   startStoryAnalysis,
   type DraftRevisionConflict,
-  type StoryActKey,
   type StoryDraft,
   type StoryStudioAnalysis,
 } from "@/lib/story-projects-api";
@@ -110,9 +109,6 @@ type NarrativeNodeData = {
   plotStage?: string;
   /** The analysis `entryGoal` of a GENERATED plot node (real data). */
   plotGoal?: string;
-  /** 起承转合 membership of a plot beat — invisible structural metadata
-   *  (the generation skill assigns it; the future compiler reads it). */
-  actKey?: StoryActKey;
   characterMode?: "protagonist" | "relation";
   characterPortrait?: CharacterPortraitKey;
   endingType?: "truth" | "intervention" | "failure" | "hidden";
@@ -143,11 +139,10 @@ type StoryCanvasSnapshot = Record<string, unknown> & {
   };
 };
 
-/** Draft snapshot format written by THIS client (acts + storySpec). The
- *  server refuses schema downgrades, so v1 drafts survive old clients. */
+/** Draft snapshot format written by THIS client (v2 carries storySpec).
+ *  The server refuses schema downgrades, so newer drafts survive old
+ *  clients. */
 const STORY_CANVAS_SCHEMA_VERSION = "story-studio-canvas-v2";
-
-const ACT_ORDER: readonly StoryActKey[] = ["setup", "development", "turn", "resolution"];
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -674,8 +669,6 @@ function buildNodesAndEdgesFromAnalysis(analysis: StoryStudioAnalysis): {
   // The 16:9 root (720×405 at x=0/y=0) sits on the LEFT; four lanes fan
   // RIGHT off its edge ports, top→bottom: 角色 · 剧情节点 · 结局 · 线索.
   // The plot lane is the ordered A→B chain; the other lanes fan per card.
-  // 起承转合 structures the GENERATION (archived in storyAnalysis for the
-  // compiler) but is deliberately NOT a visible canvas layer.
   const LANE_X = 1040;
   const LANE_Y = { roles: -520, plots: -40, endings: 430, clues: 950 } as const;
   const LANE_STEP = { roles: 380, plots: 420, endings: 420, clues: 380 } as const;
@@ -744,12 +737,9 @@ function buildNodesAndEdgesFromAnalysis(analysis: StoryStudioAnalysis): {
     },
   }));
 
-  // Beats flow in narrative order (the generation skill structures them);
-  // each keeps its invisible actKey for the compiler. On the canvas they are
-  // just a plain A/B/C chain — no structure vocabulary leaks to the creator.
-  const beatsInOrder = ACT_ORDER.flatMap((key) =>
-    analysis.plots.filter((plot) => plot.actKey === key).slice(0, 4)
-  );
+  // Plots arrive from the server already in narrative order — the canvas
+  // renders them as a plain A/B/C chain, nothing more.
+  const beatsInOrder = analysis.plots.slice(0, 16);
 
   const plotNodes: NarrativeNode[] = beatsInOrder.map((plot, index) => ({
     id: `plot-${now}-${index}`,
@@ -767,7 +757,6 @@ function buildNodesAndEdgesFromAnalysis(analysis: StoryStudioAnalysis): {
       chips: compactChips(plot.tags, ["自由行动", "行动点", "进入条件"]),
       plotStage: String.fromCharCode(65 + index),
       plotGoal: compactText(plot.entryGoal, ""),
-      actKey: plot.actKey,
     },
   }));
 
@@ -2455,8 +2444,8 @@ function NarrativeStudioInner({ projectId }: NarrativeStudioInnerProps) {
         } else if (
           parsed.nodes.length === 0 &&
           isRecord(persistedAnalysis) &&
-          Array.isArray(persistedAnalysis.acts) &&
-          persistedAnalysis.acts.length > 0
+          Array.isArray(persistedAnalysis.plots) &&
+          persistedAnalysis.plots.length > 0
         ) {
           const rebuilt = buildNodesAndEdgesFromAnalysis(
             persistedAnalysis as unknown as StoryStudioAnalysis
