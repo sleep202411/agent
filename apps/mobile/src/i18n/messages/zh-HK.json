@@ -371,5 +371,6 @@
   "ipDetail.insufficientBody": "你的社區積分不足。",
   "ipDetail.memberOnlyTitle": "會員專享",
   "ipDetail.memberOnlyBody": "該內容僅社區會員可觀看。",
-  "ipDetail.pendingUnlock": "即將解鎖"
+  "ipDetail.pendingUnlock": "即將解鎖",
+  "common.retry": "重試"
 }

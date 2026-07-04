@@ -371,5 +371,6 @@
   "ipDetail.insufficientBody": "You don't have enough community points.",
   "ipDetail.memberOnlyTitle": "Members only",
   "ipDetail.memberOnlyBody": "This content is for community members.",
-  "ipDetail.pendingUnlock": "Coming soon"
+  "ipDetail.pendingUnlock": "Coming soon",
+  "common.retry": "Retry"
 }

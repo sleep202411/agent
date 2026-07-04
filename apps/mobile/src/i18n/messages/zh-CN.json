@@ -371,5 +371,6 @@
   "ipDetail.insufficientBody": "你的社区积分不足。",
   "ipDetail.memberOnlyTitle": "会员专享",
   "ipDetail.memberOnlyBody": "该内容仅社区会员可观看。",
-  "ipDetail.pendingUnlock": "即将解锁"
+  "ipDetail.pendingUnlock": "即将解锁",
+  "common.retry": "重试"
 }

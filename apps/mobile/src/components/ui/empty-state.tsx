@@ -1,5 +1,5 @@
 import { SymbolView, type SymbolViewProps } from "expo-symbols";
-import { StyleSheet, View } from "react-native";
+import { Pressable, StyleSheet, View } from "react-native";
 
 import { ThemedText } from "@/components/themed-text";
 import { ThemedView } from "@/components/themed-view";
@@ -12,10 +12,13 @@ export function EmptyState({
   title,
   detail,
   symbol,
+  action,
 }: {
   title: string;
   detail: string;
   symbol?: AppSymbol;
+  /** Optional CTA (e.g. a retry button on network-error states). */
+  action?: { label: string; onPress: () => void };
 }) {
   const theme = useTheme();
 
@@ -31,6 +34,21 @@ export function EmptyState({
         <ThemedText type="small" themeColor="textSecondary">
           {detail}
         </ThemedText>
+        {action ? (
+          <Pressable
+            accessibilityRole="button"
+            onPress={action.onPress}
+            style={({ pressed }) => [
+              styles.action,
+              { backgroundColor: theme.brand },
+              pressed && styles.pressed,
+            ]}
+          >
+            <ThemedText type="smallBold" style={styles.actionLabel}>
+              {action.label}
+            </ThemedText>
+          </Pressable>
+        ) : null}
       </View>
     </ThemedView>
   );
@@ -55,5 +73,20 @@ const styles = StyleSheet.create({
     flex: 1,
     minWidth: 0,
     gap: Spacing.half,
+  },
+  action: {
+    alignSelf: "flex-start",
+    marginTop: Spacing.two,
+    height: 34,
+    paddingHorizontal: Spacing.four,
+    borderRadius: 8,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  actionLabel: {
+    color: "#FFFFFF",
+  },
+  pressed: {
+    opacity: 0.82,
   },
 });

@@ -275,6 +275,7 @@ export default function IpDiscoveryScreen() {
             title={t("home.errorTitle")}
             detail={error}
             symbol={{ ios: "exclamationmark.triangle", android: "warning", web: "warning" }}
+            action={{ label: t("common.retry"), onPress: () => void load() }}
           />
         </View>
       </View>
