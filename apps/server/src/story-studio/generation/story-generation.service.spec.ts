@@ -1,9 +1,4 @@
-import {
-  ACT_KEYS,
-  GENRE_TEMPLATES,
-  STORY_GENRE_KEYS,
-  TOTAL_STEP_BUDGET,
-} from './act-templates';
+import { ACT_KEYS, GENRE_TEMPLATES, STORY_GENRE_KEYS } from './act-templates';
 import { coerceAnalysisV2, validateAnalysisSemantics } from './analysis-schema';
 import { StoryGenerationService } from './story-generation.service';
 
@@ -22,8 +17,6 @@ function validRawAnalysis(): Record<string, unknown> {
     acts: ACT_KEYS.map((key, index) => ({
       key,
       anchor: `幕${index + 1}锚点`,
-      interactionCount: 3,
-      stepBudget: [10, 25, 25, 10][index],
       emotionArc: '不安',
       exitHook: '钩子',
     })),
@@ -64,7 +57,7 @@ function validRawAnalysis(): Record<string, unknown> {
 }
 
 describe('act templates (fizzstory PPT slide 7)', () => {
-  it('covers all 10 genres with all 4 acts and ~70-step budgets', () => {
+  it('covers all 10 genres with all 4 acts', () => {
     expect(STORY_GENRE_KEYS).toHaveLength(10);
     for (const key of STORY_GENRE_KEYS) {
       const template = GENRE_TEMPLATES[key];
@@ -73,11 +66,6 @@ describe('act templates (fizzstory PPT slide 7)', () => {
         expect(template.acts[actKey].exitHook.length).toBeGreaterThan(0);
         expect(template.emotionKeywords[actKey].length).toBeGreaterThan(0);
       }
-      const sum = ACT_KEYS.reduce(
-        (total, actKey) => total + template.stepBudget[actKey],
-        0,
-      );
-      expect(sum).toBe(TOTAL_STEP_BUDGET);
     }
   });
 });
@@ -90,7 +78,7 @@ describe('analysis v2 validation', () => {
     expect(analysis.acts).toHaveLength(4);
   });
 
-  it('flags a missing act, an orphan act, and a broken budget', () => {
+  it('flags a missing act and an orphan act', () => {
     const raw = validRawAnalysis();
     raw.acts = (raw.acts as unknown[]).slice(0, 3); // drop 合
     raw.plots = (raw.plots as Array<Record<string, unknown>>).map((plot) => ({

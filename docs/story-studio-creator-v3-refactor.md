@@ -8,15 +8,15 @@
 
 ## 0. PPT 要求 → 本方案的映射
 
-| PPT 要素                                                          | 落点                                          |
-| ----------------------------------------------------------------- | --------------------------------------------- |
-| 世界观模板(故事核/人物/道具/场景/地理/历史)                       | analysis schema 补字段(P1/P4)                 |
-| AI 分析文档 + 修改、确认                                          | 现有 Generate + 节点编辑;确认 gate 见 P4      |
-| 高概念 15 HC + 5 对标(logline/钩子/爽点/宣传语/trailer 文案/评级) | 新「概念挑选」阶段(P3)                        |
-| 观众三选:改编方向 / 扮演角色 / 开场方式                           | 创作者端预生成**变体矩阵**(P2),玩家端只做选择 |
-| 起承转合 × 10 类型模板(每幕 4 层 + 步数预算 ~70)                  | 幕(act)结构 + 模板提示词库(P1)                |
-| 前 3 步黄金开局                                                   | 开场 = 起幕入场 beats 变体(P2)                |
-| 衍生品/收藏/trailer                                               | 商业元数据字段 + 既有 IP commerce 管线(P4)    |
+| PPT 要素                                                          | 落点                                                                  |
+| ----------------------------------------------------------------- | --------------------------------------------------------------------- |
+| 世界观模板(故事核/人物/道具/场景/地理/历史)                       | analysis schema 补字段(P1/P4)                                         |
+| AI 分析文档 + 修改、确认                                          | 现有 Generate + 节点编辑;确认 gate 见 P4                              |
+| 高概念 15 HC + 5 对标(logline/钩子/爽点/宣传语/trailer 文案/评级) | 新「概念挑选」阶段(P3)                                                |
+| 观众三选:改编方向 / 扮演角色 / 开场方式                           | 创作者端预生成**变体矩阵**(P2),玩家端只做选择                         |
+| 起承转合 × 10 类型模板(每幕 4 层 + 步数预算 ~70)                  | 幕(act)结构 + 模板提示词库(P1);步数预算不落创作侧(玩家入场运行时设置) |
+| 前 3 步黄金开局                                                   | 开场 = 起幕入场 beats 变体(P2)                                        |
+| 衍生品/收藏/trailer                                               | 商业元数据字段 + 既有 IP commerce 管线(P4)                            |
 
 ## 1. 三个定调决策(评审确认)
 
@@ -39,7 +39,8 @@ play-time 生成严格更差):trailer 文案在逻辑上要求方向预先存在
   在创作者时生成该角色视角的锚点重述(或先标记 POV-中性锚点,仅对主角特定锚点
   出 overlay)。可扮演角色数量必须封顶(2-3)保持可审阅;
 - **千人千面的正确来源**:结构是策展的(创作者审过、可预先送审、可出 trailer),
-  每个玩家的独特性来自回合引擎在钉死的锚点与交互密度预算内**即兴表层文本**。
+  每个玩家的独特性来自回合引擎在钉死的锚点内**即兴表层文本**,节奏/步数由
+  玩家入场时的运行时设置决定。
   ⚠️ 此口径需老板签字确认,避免实现后被以"每人不同结构"重新翻案。
 
 > **课程修正(2026-07-03,已落地)**:起承转合最终定位为**纯生成侧 skill**——
@@ -49,11 +50,16 @@ play-time 生成严格更差):trailer 文案在逻辑上要求方向预先存在
 > beat 的 `actKey` 是不可见结构元数据。本节以下关于"act 节点上画布"的设计
 > 按此修正阅读。生成同时改为异步管线(POST 秒回 running 标记 → 后台执行 →
 > 客户端轮询草稿;根因:studio Next 代理 ~30s 硬超时 < 模型 45-90s)。
+>
+> **同判(2026-07-04)**:**步数预算/交互密度整体移除**——玩法节奏是玩家
+> 入场时的运行时设置,创作侧模板、契约、校验里零步数词汇(stepBudget/
+> interactionCount 已从 act-templates、analysis schema、prompt 删除,
+> GENERATOR_VERSION → fizzstory-gen-2)。本文其余提及处按此阅读。
 
 ### D2 · 画布 = 结构真源;storySpec 只装画布装不下的
 
-新增节点类型 `act`(幕):data 携带 {actKey 起/承/转/合, anchor, interactionCount,
-stepBudget, emotionArc, exitHook, directionKey};plot 节点增加 {actKey, directionKey};
+新增节点类型 `act`(幕):data 携带 {actKey 起/承/转/合, anchor, emotionArc,
+exitHook, directionKey};plot 节点增加 {actKey, directionKey};
 编译器(第二批)读画布节点 + storySpec 附件 ——一并终结「编译真源:画布 vs 分析 blob」
 的历史悬案。`storySpec` 段仅存:概念卡候选与选中项、各方向 trailer 文案、开场清单、
 POV overlays、世界观补充(道具/场景/历史)、pipeline 状态、generator 版本戳。
@@ -98,7 +104,7 @@ draft.storySpec(pipeline {stage, status, error}),天然可断点续跑。
 工程纪律(评审修正):共享 llm-call helper 先行(AbortSignal.timeout ~90s、
 一次有界重试、统一错误形状、requestId)——现 analyze 路由零超时,禁止复制三份;
 Zod 双层校验:宽松 shape 层(coerce/默认值)+ 严格语义层(.refine:幕数=4、
-步数和≈70、概念数=15+5)+ 一次带校验错误的修复重试(即 LLM Output Compliance
+概念数=15+5)+ 一次带校验错误的修复重试(即 LLM Output Compliance
 备忘里的 layer-3 配方);`GENERATOR_VERSION` + templateId + model 戳进每段产物
 (现在不戳,以后无法追溯);模板表用 locale 中性 key(setup/development/…)+
 每 locale 标签,输出语言在每段 prompt 显式声明(storyboarder 63f4b03 配方)。
@@ -117,7 +123,7 @@ Zod 双层校验:宽松 shape 层(coerce/默认值)+ 严格语义层(.refine:幕
 - runtimeJson v2 携带完整变体矩阵;session 钉 (releaseId, directionKey,
   openingId, povOverlayId?);
 - **R6 发布前置校验升级为逐 cell**:每个 (方向×开场×POV) 单元独立校验
-  线索/结局可达性、步数和、幕字段完整性,400 指明失败 cell——否则一个方向
+  线索/结局可达性、幕字段完整性,400 指明失败 cell——否则一个方向
   的坏编辑会借另一方向的通过静默上线;
 - 每个变体带 reviewed/confirmed 标记,未全确认不可发布(防"只看了方向 A 就
   发布,玩家抽到没人看过的方向 C");

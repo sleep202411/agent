@@ -23,7 +23,6 @@ import { StoryProjectsService } from '../story-projects.service';
 import {
   ACT_KEYS,
   GENERATOR_VERSION,
-  TOTAL_STEP_BUDGET,
   genreOverviewTable,
   genreTemplateBlock,
   type StoryGenreKey,
@@ -63,11 +62,9 @@ const ANALYSIS_JSON_SHAPE = {
   acts: [
     {
       key: 'setup | development | turn | resolution',
-      anchor: 'string (①剧情锚点)',
-      interactionCount: 3,
-      stepBudget: 10,
-      emotionArc: 'string (③情绪曲线)',
-      exitHook: 'string (④收口钩子)',
+      anchor: 'string (剧情锚点)',
+      emotionArc: 'string (情绪曲线)',
+      exitHook: 'string (收口钩子)',
     },
   ],
   protagonist: { name: 'string', role: 'string', summary: 'string' },
@@ -402,7 +399,7 @@ export class StoryGenerationService {
       : 'English';
     const templateBlock = genre
       ? [
-          'Follow this 起承转合 genre template EXACTLY (4-layer spec per act):',
+          'Follow this 起承转合 genre template EXACTLY (per-act spec):',
           genreTemplateBlock(genre),
           `Set "genre" to "${genre}".`,
         ]
@@ -421,7 +418,6 @@ export class StoryGenerationService {
       ...templateBlock,
       'STRUCTURAL REQUIREMENTS (hard):',
       `- "acts" must contain EXACTLY 4 entries with keys ${ACT_KEYS.join(', ')} in that order (起/承/转/合).`,
-      `- act stepBudget values must sum to ~${TOTAL_STEP_BUDGET}.`,
       '- every plot beat carries "actKey" and every act owns at least one beat; 4-8 beats total.',
       '- the FIRST setup beat is the golden opening: it must carry the most attractive player choices.',
       'Return concise fields. Avoid long essays. Do not include markdown.',

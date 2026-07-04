@@ -6,13 +6,12 @@
  *  - LENIENT shape coercion: the model may drift on optional prose fields —
  *    coerce with defaults instead of hard-failing.
  *  - STRICT semantic checks: structural invariants (4 acts, valid genre,
- *    plot→act membership, step budget) return readable errors that drive ONE
+ *    plot→act membership) return readable errors that drive ONE
  *    repair retry against the model before the request fails.
  */
 import {
   ACT_KEYS,
   STORY_GENRE_KEYS,
-  TOTAL_STEP_BUDGET,
   type StoryActKey,
   type StoryGenreKey,
 } from './act-templates';
@@ -20,8 +19,6 @@ import {
 export interface StoryActPlan {
   key: StoryActKey;
   anchor: string;
-  interactionCount: number;
-  stepBudget: number;
   emotionArc: string;
   exitHook: string;
 }
@@ -92,12 +89,6 @@ function asStringArray(value: unknown, fallback: string[] = []): string[] {
     .slice(0, 8);
 }
 
-function asCount(value: unknown, fallback: number): number {
-  const parsed =
-    typeof value === 'number' ? value : Number.parseInt(String(value), 10);
-  return Number.isFinite(parsed) && parsed > 0 ? Math.round(parsed) : fallback;
-}
-
 function coerceActKey(value: unknown): StoryActKey | null {
   return ACT_KEYS.includes(value as StoryActKey)
     ? (value as StoryActKey)
@@ -158,8 +149,6 @@ export function coerceAnalysisV2(
         {
           key,
           anchor: asString(record.anchor, 'Act anchor pending refinement.'),
-          interactionCount: asCount(record.interactionCount, 3),
-          stepBudget: asCount(record.stepBudget, TOTAL_STEP_BUDGET / 4),
           emotionArc: asString(
             record.emotionArc,
             'Emotion arc pending refinement.',
@@ -274,20 +263,6 @@ export function validateAnalysisSemantics(
     errors.push(
       `acts must contain exactly ${ACT_KEYS.length} entries, got ${analysis.acts.length}.`,
     );
-  }
-
-  const budgetSum = analysis.acts.reduce((sum, act) => sum + act.stepBudget, 0);
-  if (Math.abs(budgetSum - TOTAL_STEP_BUDGET) > 20) {
-    errors.push(
-      `act stepBudget values must sum to roughly ${TOTAL_STEP_BUDGET} (±20), got ${budgetSum}.`,
-    );
-  }
-  for (const act of analysis.acts) {
-    if (act.interactionCount < 1 || act.interactionCount > 12) {
-      errors.push(
-        `act "${act.key}" interactionCount must be between 1 and 12.`,
-      );
-    }
   }
 
   if (analysis.plots.length < ACT_KEYS.length) {
