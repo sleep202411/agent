@@ -234,7 +234,7 @@ module.exports = ({ config }) => {
       // its own adaptiveIcon below (Xiaomi et al. DO need a safe-zone margin).
       icon: "./assets/images/ios-icon.png",
       bundleIdentifier: readIdentifier(appRegion, appVariant, "ios"),
-      buildNumber: "72",
+      buildNumber: "73",
       // iPhone-only: no iPad/universal build (UIDeviceFamily=[1]). The 1.0
       // rejection was reviewed on an iPad Air; we do not claim tablet support.
       supportsTablet: false,
@@ -244,7 +244,7 @@ module.exports = ({ config }) => {
     android: {
       ...config.android,
       package: readIdentifier(appRegion, appVariant, "android"),
-      versionCode: 72,
+      versionCode: 73,
       userInterfaceStyle: "dark",
       backgroundColor: THEME_COLORS.canvas,
       adaptiveIcon: {
