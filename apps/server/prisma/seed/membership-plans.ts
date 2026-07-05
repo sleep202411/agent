@@ -41,7 +41,6 @@ type MembershipPriceSeed = {
 const PLAN_SEED_SOURCE = 'seed.membership_plans.v1';
 const PRICE_SEED_SOURCE = 'seed.membership_prices.v1';
 const BINDING_SEED_SOURCE = 'seed.provider_bindings.v1';
-const SGD_PER_USD = 1.2886;
 
 // Plans that existed in earlier seeds but are no longer offered. The seed
 // archives them (+ their prices + provider bindings) so they neither display
@@ -363,8 +362,8 @@ async function retireRemovedPlans(prisma: PrismaClient) {
 }
 
 // Create a sync_pending Airwallex provider binding for every active, non-archived
-// USD price that requires one (skips SGD — .com is USD-only — and sales-only
-// plans, which have no seeded price). The actual Airwallex product/price objects
+// USD price that requires one (.com memberships are USD-only; sales-only plans
+// have no seeded price). The actual Airwallex product/price objects
 // are created later by POST /admin/billing/provider-bindings/sync-pending, which
 // fills providerProductId/providerPriceId and flips status -> active. Idempotent:
 // never clobbers an existing (active/synced) binding.
@@ -401,6 +400,7 @@ function buildDefaultPriceSeeds(
   return defaultUsdPrices.flatMap((input) => {
     const plan = planByKey.get(input.planKey);
     if (!plan) return [];
+    // .com memberships are USD-only. (CN CNY prices are seeded by cn-prices.ts.)
     return [
       priceSeed(
         plan,
@@ -415,20 +415,6 @@ function buildDefaultPriceSeeds(
         'USD',
         input.annualMinor,
         input.annualOriginalMinor,
-      ),
-      priceSeed(
-        plan,
-        BillingPriceInterval.month,
-        'SGD',
-        usdToSgdMinor(input.monthlyAutoRenewMinor),
-        usdToSgdMinor(input.monthlyOriginalMinor),
-      ),
-      priceSeed(
-        plan,
-        BillingPriceInterval.year,
-        'SGD',
-        usdToSgdMinor(input.annualMinor),
-        usdToSgdMinor(input.annualOriginalMinor),
       ),
     ];
   });
@@ -450,10 +436,6 @@ function priceSeed(
     amountMinor,
     originalAmountMinor,
   };
-}
-
-function usdToSgdMinor(usdMinor: bigint) {
-  return BigInt(Math.round(Number(usdMinor) * SGD_PER_USD));
 }
 
 async function seedMembershipPrice(

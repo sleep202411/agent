@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useTranslations } from "next-intl";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { IconBolt, IconLoader2 } from "@tabler/icons-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
@@ -14,11 +14,8 @@ import {
 import { type WorkspaceRef } from "@/lib/collab/projects-api";
 import {
   createComputeCustomRecharge,
-  createComputeTopup,
   isWechatScanUrl,
-  listComputeTopupPackages,
   redirectToComputePayment,
-  type ComputeTopupPrice,
 } from "@/lib/billing";
 import { WechatScanPayDialog } from "@/app/_components/wechat-scan-pay-dialog";
 import { useIsCnSite } from "@/app/_components/region-provider";
@@ -29,15 +26,6 @@ import { Panel } from "./settings-ui";
 
 const errMsg = (e: unknown, fallback: string) =>
   e instanceof ApiRequestError ? e.message : e instanceof Error ? e.message : fallback;
-
-const usd = (amountMinor: string) => {
-  const cents = Number(amountMinor);
-  return Number.isFinite(cents) ? `$${(cents / 100).toLocaleString()}` : "—";
-};
-const points = (value: string | null) => {
-  const n = Number(value ?? 0);
-  return Number.isFinite(n) ? n.toLocaleString() : "0";
-};
 
 const CAN_MANAGE_BILLING = new Set(["owner", "admin", "billing"]);
 
@@ -101,22 +89,19 @@ export function TeamCreditsPanel({ ws }: { ws: WorkspaceRef }) {
 function RechargeControls({ workspaceId }: { workspaceId: string }) {
   const t = useTranslations("settings");
   const queryClient = useQueryClient();
-  // CN pays via WeChat 扫码, which only supports the fixed CNY packs — the custom
-  // USD amount goes through an Airwallex Payment Intent, so hide it on the CN cell.
+  // Compute credits are a CUSTOM-amount recharge on every cell — the only per-cell
+  // difference is currency + payment provider. CN: ¥ via WeChat 扫码 (¥7 = 100
+  // points); global: $ via Airwallex (1 point = 1 US cent). The quick chips are
+  // shortcuts into the same input, not fixed packs.
   const isCn = useIsCnSite();
+  const sym = isCn ? "¥" : "$";
+  const minorPerPoint = isCn ? 7 : 1;
   const [amount, setAmount] = useState("50");
-  const [pendingId, setPendingId] = useState<string | null>(null);
   const [wechatScan, setWechatScan] = useState<{
     orderId: string;
     codeUrl: string;
     successMessage: string;
   } | null>(null);
-
-  const { data: catalog } = useQuery({
-    queryKey: ["compute-topup-packages"] as const,
-    queryFn: listComputeTopupPackages,
-    staleTime: 5 * 60_000,
-  });
 
   const urls = () => {
     const base = typeof window !== "undefined" ? `${window.location.origin}/settings/billing` : "";
@@ -124,11 +109,11 @@ function RechargeControls({ workspaceId }: { workspaceId: string }) {
   };
 
   const afterStart = async (
-    result: Awaited<ReturnType<typeof createComputeTopup>>,
+    result: Awaited<ReturnType<typeof createComputeCustomRecharge>>,
     successMessage: string
   ) => {
-    // WeChat 扫码 returns a weixin:// code_url — render it as a QR + poll the
-    // order instead of navigating the browser to it.
+    // WeChat returns a weixin:// code_url — render it as a QR + poll the order
+    // instead of navigating the browser to it.
     const scanUrl = result.paymentIntent?.checkoutUrl;
     if (isWechatScanUrl(scanUrl)) {
       setWechatScan({ orderId: result.order.id, codeUrl: scanUrl, successMessage });
@@ -141,20 +126,6 @@ function RechargeControls({ workspaceId }: { workspaceId: string }) {
     }
     // "redirecting" → the browser is navigating to the provider; nothing to do.
   };
-
-  const packMut = useMutation({
-    mutationFn: (price: ComputeTopupPrice) =>
-      createComputeTopup({
-        priceId: price.id,
-        workspaceId,
-        idempotencyKey: crypto.randomUUID(),
-        ...urls(),
-      }),
-    onSuccess: (result, price) =>
-      afterStart(result, t("creditsAdded", { amount: points(price.grantsWalletAmount) })),
-    onError: (e) => toast.error(errMsg(e, t("couldntStartTopUp"))),
-    onSettled: () => setPendingId(null),
-  });
 
   const customMut = useMutation({
     mutationFn: () =>
@@ -170,9 +141,9 @@ function RechargeControls({ workspaceId }: { workspaceId: string }) {
 
   const amountNum = Number(amount);
   const amountValid = Number.isInteger(amountNum) && amountNum >= 10 && amountNum <= 5000;
-  const estimatedCredits = amountValid ? amountNum * 100 : null;
-  const busy = packMut.isPending || customMut.isPending;
-  const packs = catalog?.prices ?? [];
+  // Preview only — the server (anchor ratio) is authoritative. points = fiatMinor / minorPerPoint.
+  const estimatedCredits = amountValid ? Math.floor((amountNum * 100) / minorPerPoint) : null;
+  const busy = customMut.isPending;
 
   return (
     <div className="flex flex-col gap-4">
@@ -191,115 +162,89 @@ function RechargeControls({ workspaceId }: { workspaceId: string }) {
           }}
         />
       )}
-      {packs.length > 0 && (
-        <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
-          {packs.map((price) => {
-            const pending = packMut.isPending && pendingId === price.id;
-            return (
-              <button
-                key={price.id}
-                type="button"
-                disabled={busy}
-                onClick={() => {
-                  setPendingId(price.id);
-                  packMut.mutate(price);
-                }}
-                className="flex flex-col items-start gap-1 rounded-xl bg-secondary px-4 py-3 text-left transition-colors hover:bg-accent disabled:opacity-50"
-              >
-                <span className="flex items-center gap-1 text-base font-semibold tabular-nums">
-                  <IconBolt className="size-4 text-white/85" stroke={1.8} />
-                  {points(price.grantsWalletAmount)}
-                  {pending && <IconLoader2 className="size-3.5 animate-spin" />}
-                </span>
-                <span className="text-xs text-muted-foreground">{usd(price.amountMinor)}</span>
-              </button>
-            );
-          })}
-        </div>
-      )}
+      <div className="flex flex-wrap gap-2">
+        {[10, 50, 100, 500].map((v) => (
+          <button
+            key={v}
+            type="button"
+            disabled={busy}
+            onClick={() => setAmount(String(v))}
+            className={cn(
+              "rounded-lg px-3 py-1.5 text-sm tabular-nums transition-colors disabled:opacity-50",
+              amountNum === v ? "bg-white text-background" : "bg-secondary hover:bg-accent"
+            )}
+          >
+            {sym}
+            {v}
+          </button>
+        ))}
+      </div>
 
-      {!isCn && (
-        <>
-          <div className="flex flex-wrap gap-2">
-            {[10, 50, 100, 500].map((v) => (
-              <button
-                key={v}
-                type="button"
-                disabled={busy}
-                onClick={() => setAmount(String(v))}
-                className={cn(
-                  "rounded-lg px-3 py-1.5 text-sm tabular-nums transition-colors disabled:opacity-50",
-                  amountNum === v ? "bg-white text-background" : "bg-secondary hover:bg-accent"
-                )}
-              >
-                ${v}
-              </button>
-            ))}
-          </div>
-
-          <div className="flex items-end gap-2">
-            <label className="flex flex-1 flex-col gap-1.5">
-              <span className="text-xs text-muted-foreground">{t("amountUsdRange")}</span>
-              <div className="relative">
-                <span className="pointer-events-none absolute top-1/2 left-3.5 -translate-y-1/2 text-muted-foreground">
-                  $
-                </span>
-                <input
-                  type="number"
-                  inputMode="numeric"
-                  min={10}
-                  max={5000}
-                  value={amount}
-                  onChange={(e) => setAmount(e.target.value)}
-                  placeholder="50"
-                  className={cn(FIELD_CONTROL, "w-full pl-7 tabular-nums")}
-                />
-              </div>
-            </label>
-            <FrostedPanel className="hidden min-w-44 px-4 py-2.5 sm:block">
-              <span className="block text-xs text-muted-foreground">{t("estimatedCredits")}</span>
-              <span className="mt-1 flex items-center gap-1 text-base font-semibold tabular-nums">
-                <IconBolt className="size-4 text-white/85" stroke={1.8} />
-                {estimatedCredits != null ? estimatedCredits.toLocaleString() : "—"}
-                {estimatedCredits != null && (
-                  <span className="text-xs font-medium text-muted-foreground tabular-nums">
-                    {t("credits")}
-                  </span>
-                )}
-              </span>
-            </FrostedPanel>
-            {/* Brand-red hero CTA via the sanctioned primary-cta Button variant
-            (DESIGN.md rule 3) — kept at hero size with the red glow shadow. */}
-            <Button
-              type="button"
-              variant="primary-cta"
-              disabled={!amountValid || busy}
-              onClick={() => customMut.mutate()}
-              className="h-11 gap-1.5 rounded-xl px-5 text-sm font-semibold shadow-lg shadow-[#E52227]/25 disabled:opacity-40"
-            >
-              {customMut.isPending ? (
-                <IconLoader2 className="size-4 animate-spin" />
-              ) : (
-                <IconBolt className="size-4" stroke={1.9} />
-              )}
-              {t("recharge")}
-            </Button>
-          </div>
-          <FrostedPanel className="px-4 py-2.5 sm:hidden">
-            <span className="text-xs text-muted-foreground">{t("estimatedCredits")}</span>
-            <span className="mt-1 flex items-center gap-1 text-base font-semibold tabular-nums">
-              <IconBolt className="size-4 text-white/85" stroke={1.8} />
-              {estimatedCredits != null ? estimatedCredits.toLocaleString() : "—"}
-              {estimatedCredits != null && (
-                <span className="text-xs font-medium text-muted-foreground tabular-nums">
-                  {t("credits")}
-                </span>
-              )}
+      <div className="flex items-end gap-2">
+        <label className="flex flex-1 flex-col gap-1.5">
+          <span className="text-xs text-muted-foreground">
+            {t(isCn ? "amountCnyRange" : "amountUsdRange")}
+          </span>
+          <div className="relative">
+            <span className="pointer-events-none absolute top-1/2 left-3.5 -translate-y-1/2 text-muted-foreground">
+              {sym}
             </span>
-          </FrostedPanel>
-        </>
-      )}
-      <p className="text-xs text-muted-foreground">{t("secureCheckoutNote")}</p>
+            <input
+              type="number"
+              inputMode="numeric"
+              min={10}
+              max={5000}
+              value={amount}
+              onChange={(e) => setAmount(e.target.value)}
+              placeholder="50"
+              className={cn(FIELD_CONTROL, "w-full pl-7 tabular-nums")}
+            />
+          </div>
+        </label>
+        <FrostedPanel className="hidden min-w-44 px-4 py-2.5 sm:block">
+          <span className="block text-xs text-muted-foreground">{t("estimatedCredits")}</span>
+          <span className="mt-1 flex items-center gap-1 text-base font-semibold tabular-nums">
+            <IconBolt className="size-4 text-white/85" stroke={1.8} />
+            {estimatedCredits != null ? estimatedCredits.toLocaleString() : "—"}
+            {estimatedCredits != null && (
+              <span className="text-xs font-medium text-muted-foreground tabular-nums">
+                {t("credits")}
+              </span>
+            )}
+          </span>
+        </FrostedPanel>
+        {/* Brand-red hero CTA via the sanctioned primary-cta Button variant
+            (DESIGN.md rule 3) — kept at hero size with the red glow shadow. */}
+        <Button
+          type="button"
+          variant="primary-cta"
+          disabled={!amountValid || busy}
+          onClick={() => customMut.mutate()}
+          className="h-11 gap-1.5 rounded-xl px-5 text-sm font-semibold shadow-lg shadow-[#E52227]/25 disabled:opacity-40"
+        >
+          {customMut.isPending ? (
+            <IconLoader2 className="size-4 animate-spin" />
+          ) : (
+            <IconBolt className="size-4" stroke={1.9} />
+          )}
+          {t("recharge")}
+        </Button>
+      </div>
+      <FrostedPanel className="px-4 py-2.5 sm:hidden">
+        <span className="text-xs text-muted-foreground">{t("estimatedCredits")}</span>
+        <span className="mt-1 flex items-center gap-1 text-base font-semibold tabular-nums">
+          <IconBolt className="size-4 text-white/85" stroke={1.8} />
+          {estimatedCredits != null ? estimatedCredits.toLocaleString() : "—"}
+          {estimatedCredits != null && (
+            <span className="text-xs font-medium text-muted-foreground tabular-nums">
+              {t("credits")}
+            </span>
+          )}
+        </span>
+      </FrostedPanel>
+      <p className="text-xs text-muted-foreground">
+        {t(isCn ? "secureCheckoutNoteWechat" : "secureCheckoutNote")}
+      </p>
     </div>
   );
 }

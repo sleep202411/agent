@@ -45,12 +45,6 @@ type PointKind = {
   codePrefix: string;
   label: string;
 };
-const COMPUTE_POINTS: PointKind = {
-  walletCurrency: WalletCurrencyType.compute_point,
-  productType: BillingProductType.compute_point_pack,
-  codePrefix: 'COMPUTE_CN',
-  label: '算力积分',
-};
 const COMMUNITY_POINTS: PointKind = {
   walletCurrency: WalletCurrencyType.community_point,
   productType: BillingProductType.community_point_pack,
@@ -104,21 +98,74 @@ const cnMembershipPasses: MembershipPass[] = [
   }, // ¥69 (.com $9.99)
 ];
 
-/** All catalog-item code prefixes this seed owns (used to cull stray non-CN SKUs). */
+/** Catalog-item codes/prefixes this seed owns (used to cull stray non-CN SKUs).
+ *  Compute points have NO packs on CN — only the hidden custom-recharge anchor. */
 export const CN_CODE_PREFIXES = [
-  'COMPUTE_CN_',
   'COMMUNITY_CN_',
   'MEMBERSHIP_CN_',
+  'COMPUTE_POINT_CUSTOM_RECHARGE',
 ];
 
 export async function seedCnPrices(prisma: PrismaClient): Promise<void> {
+  // Compute points are a CUSTOM-amount recharge on EVERY cell — there are no fixed
+  // compute packs. Only the hidden ratio anchor is seeded (carries CNY→points).
+  // Community points DO sell in fixed packs; memberships are one-off passes.
+  await seedCnComputeCustomAnchor(prisma);
   for (const points of POINT_PACKS) {
-    await seedCnPointPack(prisma, points, COMPUTE_POINTS);
     await seedCnPointPack(prisma, points, COMMUNITY_POINTS);
   }
   for (const pass of cnMembershipPasses) {
     await seedCnMembershipPass(prisma, pass);
   }
+}
+
+/**
+ * Hidden compute-point custom-recharge anchor for the CN cell. Carries the CNY→
+ * compute-point ratio (¥7 = 100 points, i.e. 7 分/point — same value parity as the
+ * community packs). Read only by createCustomRecharge to size an arbitrary amount;
+ * has NO provider binding, so it never appears in any public listing.
+ */
+async function seedCnComputeCustomAnchor(prisma: PrismaClient): Promise<void> {
+  const code = 'COMPUTE_POINT_CUSTOM_RECHARGE';
+  const item = await prisma.billingCatalogItem.upsert({
+    where: { code },
+    create: {
+      code,
+      productType: BillingProductType.compute_point_pack,
+      name: 'Compute points (custom amount)',
+      metadata: { source: SOURCE },
+    },
+    update: {
+      productType: BillingProductType.compute_point_pack,
+      isActive: true,
+      archivedAt: null,
+    },
+  });
+  // ¥7 (700 分) grants 100 compute points → the custom-recharge math derives
+  // points = amountMinor × grantsWalletAmount / amountMinor-of-anchor = fen / 7.
+  await upsertCnPrice(prisma, {
+    itemId: item.id,
+    amountMinor: 100n * FEN_PER_POINT,
+    subjectType: BillingSubjectType.user,
+    grantsWalletCurrency: WalletCurrencyType.compute_point,
+    grantsWalletBalanceKind: WalletBalanceKind.consumable,
+    grantsWalletAmount: 100n,
+    grantsPlanKey: null,
+    grantDurationDays: null,
+    priceMetadata: {
+      topupKind: 'compute_point',
+      rateMode: 'explicit_admin_pricing',
+      cell: 'cn',
+    },
+  });
+  // The shared migration 20260615160000 inserts a USD anchor price on this item on
+  // EVERY cell (not cell-gated); on CN it must not shadow the CNY anchor — archive
+  // any non-CNY active price so exactly one active anchor price remains.
+  await prisma.billingPrice.updateMany({
+    where: { itemId: item.id, currency: { not: 'CNY' }, archivedAt: null },
+    data: { isActive: false, archivedAt: new Date() },
+  });
+  // Intentionally NO wechat binding — the anchor must stay hidden from listings.
 }
 
 async function seedCnPointPack(

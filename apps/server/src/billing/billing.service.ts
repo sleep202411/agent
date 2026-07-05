@@ -3081,27 +3081,30 @@ export class BillingService {
       (input.provider as PaymentProvider | undefined) ??
       this.providerRegistry.defaultProviderForRuntime();
     const adapter = this.providerRegistry.get(provider);
-    if (!adapter.createPaymentIntent) {
+    // Custom-amount recharge routes to the provider's one-off surface: Airwallex
+    // via a Payment Intent (client_secret + browser SDK); WeChat/Alipay via a
+    // hosted checkout 下单 (weixin:// code_url, scanned as a QR). Need at least one.
+    // Test declared CAPABILITIES, not method presence: UnsupportedPaymentProvider
+    // (e.g. alipay on a deployment without it) DEFINES createPaymentIntent but only
+    // to reject — capabilities.* is the source of truth, so we fail cleanly here
+    // instead of minting an order that then dies at the provider call.
+    if (
+      !adapter.capabilities.paymentIntent &&
+      !adapter.capabilities.hostedCheckout
+    ) {
       throw new ServiceUnavailableException({
-        code: 'BILLING_PROVIDER_NO_PAYMENT_INTENT',
+        code: 'BILLING_PROVIDER_NO_CUSTOM_RECHARGE',
         msg: `"${provider}" does not support custom-amount recharge.`,
       });
     }
 
-    // Compute recharge obeys the same per-cell policy as the fixed packs. The
-    // arbitrary-amount path relies on a fixed USD-cent anchor ratio, so cells that
-    // price compute points by explicit admin pricing (e.g. CN/CNY) have no ratio
-    // for an ad-hoc amount — reject and steer to the fixed packs. Also constrain
-    // the provider to the cell's allow-list (community recharge keeps its prior,
-    // provider-agnostic behavior).
+    // Compute recharge derives its point grant from the per-cell anchor's own
+    // ratio (its price ↔ its grant), so every cell/currency works — including
+    // explicit-admin-priced cells (CN/CNY): the CN anchor is ¥7 = 100 points.
+    // Constrain the provider to the cell's allow-list (community recharge keeps
+    // its prior, provider-agnostic behavior).
     if (isCompute) {
       const policy = computePointTopupPolicy();
-      if (policy.rateMode === COMPUTE_POINT_EXPLICIT_ADMIN_PRICING) {
-        throw new ServiceUnavailableException({
-          code: 'BILLING_COMPUTE_CUSTOM_RECHARGE_UNAVAILABLE',
-          msg: 'Custom-amount compute recharge is not available in this deployment. Use a fixed credit pack.',
-        });
-      }
       if (!policy.providers.includes(provider)) {
         throw new ServiceUnavailableException({
           code: 'BILLING_COMPUTE_TOPUP_PROVIDER_UNSUPPORTED',
@@ -3113,10 +3116,17 @@ export class BillingService {
     // The hidden anchor SKU carries only the points-per-$1 ratio + wallet currency
     // for ledger routing. It has no provider binding, so it never appears in the
     // public listing and is reached only here.
+    // MUST scope by the cell's billing currency: the shared migration
+    // 20260615160000 seeds a USD anchor price on this item on EVERY cell (not
+    // cell-gated), so on CN both a USD and a CNY row can be active. Without this
+    // filter findFirst picks arbitrarily — the USD row would 7×-over-grant AND set
+    // order.currency=USD, which WeChat can't settle (下单 rejects).
+    const anchorCurrency = CURRENT_CELL === 'cn' ? 'CNY' : 'USD';
     const anchor = await this.prisma.billingPrice.findFirst({
       where: {
         isActive: true,
         archivedAt: null,
+        currency: anchorCurrency,
         item: {
           code: anchorCode,
           isActive: true,
@@ -3125,18 +3135,26 @@ export class BillingService {
       },
       include: { item: true },
     });
-    if (!anchor || !anchor.grantsWalletCurrency || !anchor.grantsWalletAmount) {
+    if (
+      !anchor ||
+      !anchor.grantsWalletCurrency ||
+      !anchor.grantsWalletAmount ||
+      anchor.amountMinor <= 0n
+    ) {
       throw new ServiceUnavailableException({
         code: 'BILLING_CUSTOM_RECHARGE_UNAVAILABLE',
         msg: 'Custom recharge is not configured.',
       });
     }
 
-    const dollars = BigInt(input.amountDollars);
-    const amountMinor = dollars * 100n;
-    // Snapshot the per-unit grant on the order; quantity stays 1 so the existing
-    // grant math (grant = snapshot * quantity) yields ratio * dollars points.
-    const grantSnapshot = anchor.grantsWalletAmount * dollars;
+    const amountMajor = BigInt(input.amountDollars);
+    const amountMinor = amountMajor * 100n;
+    // Point grant from the anchor's own ratio (its price ↔ its grant), so any
+    // cell/currency works: points = amountMinor × anchorGrant / anchorPrice.
+    // .com anchor ($1 = 100 pts): amountMinor × 100/100 = amountMinor (1 pt/cent).
+    // .cn  anchor (¥7 = 100 pts): amountMinor × 100/700 = amountMinor/7 (1 pt/7 分).
+    const grantSnapshot =
+      (amountMinor * anchor.grantsWalletAmount) / anchor.amountMinor;
     const requestId = randomUUID();
     const orderNo = createOrderNo();
 
@@ -3222,54 +3240,118 @@ export class BillingService {
       };
     }
 
-    let intent: CreatePaymentIntentResult;
-    try {
-      intent = await adapter.createPaymentIntent({
-        requestId,
-        amountMinor,
-        currency: order.currency,
-        merchantOrderId: order.orderNo,
-        returnUrl: input.successUrl,
-        metadata: {
-          fizzdragon_order_id: order.id,
-          fizzdragon_order_no: order.orderNo,
-          fizzdragon_user_id: user.userId,
-        },
-      });
-    } catch (err) {
+    const failOrder = async (err: unknown, fallback: string) => {
       await this.prisma.billingOrder.update({
         where: { id: order.id },
         data: {
           status: BillingOrderStatus.failed,
           metadata: {
             ...(order.metadata as Record<string, unknown>),
-            providerError:
-              err instanceof Error
-                ? err.message
-                : 'Provider payment intent failed.',
+            providerError: err instanceof Error ? err.message : fallback,
           },
         },
       });
-      throw err;
+    };
+
+    // Route to the provider's one-off surface. Airwallex → Payment Intent
+    // (client_secret + browser SDK). WeChat/Alipay → hosted checkout 下单, whose
+    // checkoutUrl is a weixin:// code_url the client renders as a QR to scan.
+    // Gate on the capability (not method presence) so Unsupported adapters that
+    // stub createPaymentIntent fall through to the hosted-checkout branch/guard.
+    if (adapter.capabilities.paymentIntent && adapter.createPaymentIntent) {
+      let intent: CreatePaymentIntentResult;
+      try {
+        intent = await adapter.createPaymentIntent({
+          requestId,
+          amountMinor,
+          currency: order.currency,
+          merchantOrderId: order.orderNo,
+          returnUrl: input.successUrl,
+          metadata: {
+            fizzdragon_order_id: order.id,
+            fizzdragon_order_no: order.orderNo,
+            fizzdragon_user_id: user.userId,
+          },
+        });
+      } catch (err) {
+        await failOrder(err, 'Provider payment intent failed.');
+        throw err;
+      }
+      const paymentIntent = await this.prisma.billingPaymentIntent.create({
+        data: {
+          orderId: order.id,
+          provider,
+          kind: PaymentIntentKind.payment_intent,
+          status: PaymentIntentStatus.requires_action,
+          requestId,
+          providerPaymentIntentId: intent.providerPaymentIntentId,
+          clientSecret: intent.clientSecret,
+          currency: order.currency,
+          amountMinor: order.amountMinor,
+          providerStatus: intent.providerStatus,
+          providerPayload: intent.raw as Prisma.InputJsonValue,
+          expiresAt: order.expiresAt,
+        },
+      });
+      return {
+        order: this.orderDto(order),
+        paymentIntent: this.paymentIntentDto(paymentIntent),
+        shopperCountry: country,
+        env: sdkEnv,
+      };
     }
 
+    // Amount-based provider (WeChat/Alipay): hosted checkout with NO catalog
+    // binding — providerPriceId is null, the anchor-derived amount is charged
+    // directly. Mirrors the fixed-pack checkout, minus the price binding.
+    let checkout: HostedCheckoutResult;
+    try {
+      checkout = await adapter.createHostedCheckout({
+        requestId,
+        mode: 'PAYMENT',
+        successUrl: input.successUrl,
+        backUrl: input.backUrl,
+        lineItems: [
+          {
+            providerPriceId: null,
+            internalPriceId: anchor.id,
+            name: anchor.item.name,
+            currency: order.currency,
+            amountMinor,
+            quantity: 1,
+          },
+        ],
+        metadata: {
+          fizzdragon_order_id: order.id,
+          fizzdragon_order_no: order.orderNo,
+          fizzdragon_user_id: user.userId,
+          fizzdragon_product_type: BillingProductType.compute_point_pack,
+        },
+      });
+    } catch (err) {
+      await failOrder(err, 'Provider checkout failed.');
+      throw err;
+    }
     const paymentIntent = await this.prisma.billingPaymentIntent.create({
       data: {
         orderId: order.id,
         provider,
-        kind: PaymentIntentKind.payment_intent,
+        kind: PaymentIntentKind.hosted_checkout,
         status: PaymentIntentStatus.requires_action,
         requestId,
-        providerPaymentIntentId: intent.providerPaymentIntentId,
-        clientSecret: intent.clientSecret,
+        providerCheckoutId: checkout.providerCheckoutId,
+        providerCustomerId: checkout.providerCustomerId,
+        providerSubscriptionId: checkout.providerSubscriptionId,
+        providerInvoiceId: checkout.providerInvoiceId,
+        checkoutUrl: checkout.checkoutUrl,
+        clientSecret: checkout.clientSecret,
         currency: order.currency,
         amountMinor: order.amountMinor,
-        providerStatus: intent.providerStatus,
-        providerPayload: intent.raw as Prisma.InputJsonValue,
-        expiresAt: order.expiresAt,
+        providerStatus: checkout.providerStatus,
+        providerPayload: checkout.raw as Prisma.InputJsonValue,
+        expiresAt: checkout.expiresAt ?? order.expiresAt,
       },
     });
-
     return {
       order: this.orderDto(order),
       paymentIntent: this.paymentIntentDto(paymentIntent),

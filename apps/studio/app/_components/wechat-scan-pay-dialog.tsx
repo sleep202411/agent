@@ -96,8 +96,11 @@ export function WechatScanPayDialog({
   if (!open) return null;
 
   return createPortal(
+    // pointer-events-auto: this portals to <body>, which a Radix modal (the
+    // settings overlay) sets to pointer-events:none — without this the QR dialog
+    // renders but can't be clicked/closed.
     <div
-      className="fixed inset-0 z-[100] flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm"
+      className="pointer-events-auto fixed inset-0 z-[100] flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm"
       onClick={handleClose}
       role="dialog"
       aria-modal="true"

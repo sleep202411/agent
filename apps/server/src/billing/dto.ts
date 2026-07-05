@@ -611,7 +611,7 @@ export const CreateAdminBillingPromotionSchema = z
     status: BillingPromotionStatusSchema.default('draft'),
     percentOffBps: z.coerce.number().int().min(1).max(10000).optional(),
     amountOffMinor: z.coerce.number().int().min(1).optional(),
-    amountOffCurrency: z.enum(['USD', 'SGD', 'CNY']).optional(),
+    amountOffCurrency: z.enum(['USD', 'CNY']).optional(),
     durationType: BillingPromotionDurationTypeSchema.default('once'),
     durationCount: z.coerce.number().int().min(1).max(120).optional(),
     durationUnit: z.enum(['day', 'week', 'month', 'year']).optional(),

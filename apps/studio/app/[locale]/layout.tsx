@@ -71,10 +71,12 @@ export default async function LocaleLayout({
           <Providers>
             <RegionProvider country={country} siteRegion={siteRegion}>
               <TooltipProvider delayDuration={200}>{children}</TooltipProvider>
+              {/* Must stay INSIDE RegionProvider — SettingsOverlay renders the
+                  billing panel, which reads useIsCnSite() for cell-aware pricing. */}
+              <RouteAuthGuard />
+              <SettingsOverlay />
+              <NotificationsListener />
             </RegionProvider>
-            <RouteAuthGuard />
-            <SettingsOverlay />
-            <NotificationsListener />
           </Providers>
           <Toaster />
         </NextIntlClientProvider>
