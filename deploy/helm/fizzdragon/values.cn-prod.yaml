@@ -199,9 +199,10 @@ server:
     # Mirrors prod-cn .env (2026-06-10).
     AI_PROVIDER: deepseek
     DISABLE_CONTENT_MODERATION: "true"
-    # Live CN host is fizzstudio.fizzspace.cn (fizzdragon.fizzspace.cn stays = Java
-    # until the Java team frees it). billing.service auto-includes fizzdragon.fizzspace.cn.
-    BILLING_ALLOWED_RETURN_ORIGINS: "https://fizzstudio.fizzspace.cn"
+    # Return-URL allowlist (DECLARATIVE — never hardcode host origins in code):
+    # fizzstudio.fizzspace.cn = apps/web (社区), studio.fizzspace.cn = apps/studio (算力).
+    # billing.service auto-includes fizzdragon.fizzspace.cn + the .com hosts.
+    BILLING_ALLOWED_RETURN_ORIGINS: "https://fizzstudio.fizzspace.cn,https://studio.fizzspace.cn"
     # No payment provider wired on CN yet.
     PAYMENT_PROVIDER: null
     AIRWALLEX_API_BASE_URL: null
