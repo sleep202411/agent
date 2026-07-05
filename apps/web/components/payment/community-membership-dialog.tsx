@@ -26,6 +26,7 @@ import { siteConfig } from "@/src/config/site";
 import { ApiRequestError } from "@/src/lib/api";
 import {
   axonAleid,
+  axonAddToCart,
   axonBeginCheckout,
   axonFlushPendingPurchase,
   axonStashPendingPurchase,
@@ -144,20 +145,26 @@ export function CommunityMembershipDialog({
 
   const handleSubscribe = async () => {
     if (!selected) return;
-    // Fire the AppLovin `begin_checkout` conversion at subscribe initiation
+    // Fire AppLovin purchase-funnel conversions at subscribe initiation
     // (before the provider redirect). Effective price is in cents → divide by
     // 100. No-op off .com (axon.ts).
     {
       const value = Number(priceEffectiveAmountMinor(selected)) / 100;
+      const items = [
+        {
+          item_id: selected.id,
+          item_name: plan?.name ?? "Community membership",
+          price: value,
+          quantity: 1,
+        },
+      ];
+      axonAddToCart({
+        items,
+        currency: selected.currency,
+        value,
+      });
       axonBeginCheckout({
-        items: [
-          {
-            item_id: selected.id,
-            item_name: plan?.name ?? "Community membership",
-            price: value,
-            quantity: 1,
-          },
-        ],
+        items,
         currency: selected.currency,
         value,
       });
