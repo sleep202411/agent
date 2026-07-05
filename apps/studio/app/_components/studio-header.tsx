@@ -1,8 +1,9 @@
 "use client";
 
 import Image from "next/image";
-import { Link } from "@/i18n/navigation";
-import { useTranslations } from "next-intl";
+import { useTranslations, useLocale } from "next-intl";
+import { getWebBaseUrl } from "@/lib/web-base";
+import { useSiteRegion } from "@/app/_components/region-provider";
 import { AccountMenu } from "./account-menu";
 import { CreditsBadge } from "./credits-badge";
 import { LocaleSwitcher } from "./locale-switcher";
@@ -13,12 +14,16 @@ import { useAuth } from "./auth-provider";
 export function StudioHeader() {
   const t = useTranslations("shell");
   const { user, loading } = useAuth();
+  const locale = useLocale();
+  const siteRegion = useSiteRegion();
   const showWorkspaceControls = loading || Boolean(user);
   return (
     <header className="sticky top-0 z-40 bg-background/90 backdrop-blur-xl">
       <div className="flex w-full items-center justify-between gap-2 px-4 py-4 sm:px-6">
-        <Link
-          href="/"
+        {/* Logo → the main web app home (fizzdragon.com / fizzstudio.fizzspace.cn),
+            keyed on the deployment cell — same web base as the profile link. */}
+        <a
+          href={`${getWebBaseUrl(siteRegion)}/${locale}`}
           aria-label={t("header.homeAriaLabel")}
           className="flex shrink-0 items-center"
         >
@@ -30,7 +35,7 @@ export function StudioHeader() {
             priority
             className="h-7 w-auto"
           />
-        </Link>
+        </a>
 
         <div className="flex shrink-0 items-center gap-3">
           {showWorkspaceControls ? (
