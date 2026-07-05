@@ -8363,6 +8363,7 @@ function allowedReturnOrigins(): Set<string> {
   origins.add('https://fizzdragon.com');
   origins.add('https://studio.fizzdragon.com');
   origins.add('https://fizzdragon.fizzspace.cn');
+  origins.add('https://studio.fizzspace.cn');
   if (process.env.NODE_ENV !== 'production') {
     origins.add('http://localhost:9527');
     origins.add('http://127.0.0.1:9527');
