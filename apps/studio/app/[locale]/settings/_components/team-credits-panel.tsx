@@ -21,6 +21,7 @@ import {
   type ComputeTopupPrice,
 } from "@/lib/billing";
 import { WechatScanPayDialog } from "@/app/_components/wechat-scan-pay-dialog";
+import { useIsCnSite } from "@/app/_components/region-provider";
 import { FIELD_CONTROL } from "@/components/ui/field";
 import { Button } from "@/components/ui/button";
 import { FrostedPanel } from "@/components/ui/frosted-panel";
@@ -100,6 +101,9 @@ export function TeamCreditsPanel({ ws }: { ws: WorkspaceRef }) {
 function RechargeControls({ workspaceId }: { workspaceId: string }) {
   const t = useTranslations("settings");
   const queryClient = useQueryClient();
+  // CN pays via WeChat 扫码, which only supports the fixed CNY packs — the custom
+  // USD amount goes through an Airwallex Payment Intent, so hide it on the CN cell.
+  const isCn = useIsCnSite();
   const [amount, setAmount] = useState("50");
   const [pendingId, setPendingId] = useState<string | null>(null);
   const [wechatScan, setWechatScan] = useState<{
@@ -214,83 +218,87 @@ function RechargeControls({ workspaceId }: { workspaceId: string }) {
         </div>
       )}
 
-      <div className="flex flex-wrap gap-2">
-        {[10, 50, 100, 500].map((v) => (
-          <button
-            key={v}
-            type="button"
-            disabled={busy}
-            onClick={() => setAmount(String(v))}
-            className={cn(
-              "rounded-lg px-3 py-1.5 text-sm tabular-nums transition-colors disabled:opacity-50",
-              amountNum === v ? "bg-white text-background" : "bg-secondary hover:bg-accent"
-            )}
-          >
-            ${v}
-          </button>
-        ))}
-      </div>
-
-      <div className="flex items-end gap-2">
-        <label className="flex flex-1 flex-col gap-1.5">
-          <span className="text-xs text-muted-foreground">{t("amountUsdRange")}</span>
-          <div className="relative">
-            <span className="pointer-events-none absolute top-1/2 left-3.5 -translate-y-1/2 text-muted-foreground">
-              $
-            </span>
-            <input
-              type="number"
-              inputMode="numeric"
-              min={10}
-              max={5000}
-              value={amount}
-              onChange={(e) => setAmount(e.target.value)}
-              placeholder="50"
-              className={cn(FIELD_CONTROL, "w-full pl-7 tabular-nums")}
-            />
+      {!isCn && (
+        <>
+          <div className="flex flex-wrap gap-2">
+            {[10, 50, 100, 500].map((v) => (
+              <button
+                key={v}
+                type="button"
+                disabled={busy}
+                onClick={() => setAmount(String(v))}
+                className={cn(
+                  "rounded-lg px-3 py-1.5 text-sm tabular-nums transition-colors disabled:opacity-50",
+                  amountNum === v ? "bg-white text-background" : "bg-secondary hover:bg-accent"
+                )}
+              >
+                ${v}
+              </button>
+            ))}
           </div>
-        </label>
-        <FrostedPanel className="hidden min-w-44 px-4 py-2.5 sm:block">
-          <span className="block text-xs text-muted-foreground">{t("estimatedCredits")}</span>
-          <span className="mt-1 flex items-center gap-1 text-base font-semibold tabular-nums">
-            <IconBolt className="size-4 text-white/85" stroke={1.8} />
-            {estimatedCredits != null ? estimatedCredits.toLocaleString() : "—"}
-            {estimatedCredits != null && (
-              <span className="text-xs font-medium text-muted-foreground tabular-nums">
-                {t("credits")}
+
+          <div className="flex items-end gap-2">
+            <label className="flex flex-1 flex-col gap-1.5">
+              <span className="text-xs text-muted-foreground">{t("amountUsdRange")}</span>
+              <div className="relative">
+                <span className="pointer-events-none absolute top-1/2 left-3.5 -translate-y-1/2 text-muted-foreground">
+                  $
+                </span>
+                <input
+                  type="number"
+                  inputMode="numeric"
+                  min={10}
+                  max={5000}
+                  value={amount}
+                  onChange={(e) => setAmount(e.target.value)}
+                  placeholder="50"
+                  className={cn(FIELD_CONTROL, "w-full pl-7 tabular-nums")}
+                />
+              </div>
+            </label>
+            <FrostedPanel className="hidden min-w-44 px-4 py-2.5 sm:block">
+              <span className="block text-xs text-muted-foreground">{t("estimatedCredits")}</span>
+              <span className="mt-1 flex items-center gap-1 text-base font-semibold tabular-nums">
+                <IconBolt className="size-4 text-white/85" stroke={1.8} />
+                {estimatedCredits != null ? estimatedCredits.toLocaleString() : "—"}
+                {estimatedCredits != null && (
+                  <span className="text-xs font-medium text-muted-foreground tabular-nums">
+                    {t("credits")}
+                  </span>
+                )}
               </span>
-            )}
-          </span>
-        </FrostedPanel>
-        {/* Brand-red hero CTA via the sanctioned primary-cta Button variant
+            </FrostedPanel>
+            {/* Brand-red hero CTA via the sanctioned primary-cta Button variant
             (DESIGN.md rule 3) — kept at hero size with the red glow shadow. */}
-        <Button
-          type="button"
-          variant="primary-cta"
-          disabled={!amountValid || busy}
-          onClick={() => customMut.mutate()}
-          className="h-11 gap-1.5 rounded-xl px-5 text-sm font-semibold shadow-lg shadow-[#E52227]/25 disabled:opacity-40"
-        >
-          {customMut.isPending ? (
-            <IconLoader2 className="size-4 animate-spin" />
-          ) : (
-            <IconBolt className="size-4" stroke={1.9} />
-          )}
-          {t("recharge")}
-        </Button>
-      </div>
-      <FrostedPanel className="px-4 py-2.5 sm:hidden">
-        <span className="text-xs text-muted-foreground">{t("estimatedCredits")}</span>
-        <span className="mt-1 flex items-center gap-1 text-base font-semibold tabular-nums">
-          <IconBolt className="size-4 text-white/85" stroke={1.8} />
-          {estimatedCredits != null ? estimatedCredits.toLocaleString() : "—"}
-          {estimatedCredits != null && (
-            <span className="text-xs font-medium text-muted-foreground tabular-nums">
-              {t("credits")}
+            <Button
+              type="button"
+              variant="primary-cta"
+              disabled={!amountValid || busy}
+              onClick={() => customMut.mutate()}
+              className="h-11 gap-1.5 rounded-xl px-5 text-sm font-semibold shadow-lg shadow-[#E52227]/25 disabled:opacity-40"
+            >
+              {customMut.isPending ? (
+                <IconLoader2 className="size-4 animate-spin" />
+              ) : (
+                <IconBolt className="size-4" stroke={1.9} />
+              )}
+              {t("recharge")}
+            </Button>
+          </div>
+          <FrostedPanel className="px-4 py-2.5 sm:hidden">
+            <span className="text-xs text-muted-foreground">{t("estimatedCredits")}</span>
+            <span className="mt-1 flex items-center gap-1 text-base font-semibold tabular-nums">
+              <IconBolt className="size-4 text-white/85" stroke={1.8} />
+              {estimatedCredits != null ? estimatedCredits.toLocaleString() : "—"}
+              {estimatedCredits != null && (
+                <span className="text-xs font-medium text-muted-foreground tabular-nums">
+                  {t("credits")}
+                </span>
+              )}
             </span>
-          )}
-        </span>
-      </FrostedPanel>
+          </FrostedPanel>
+        </>
+      )}
       <p className="text-xs text-muted-foreground">{t("secureCheckoutNote")}</p>
     </div>
   );
