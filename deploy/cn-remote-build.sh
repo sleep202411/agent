@@ -13,6 +13,15 @@ rm -rf /root/src && mkdir -p /root/src
 tar -xzf /root/src.tar.gz -C /root/src
 cd /root/src || { echo "FATAL: no source"; exit 1; }
 [ -f apps/web/.env.production.cn ] || { echo "FATAL: bad source tree"; exit 1; }
+
+# Reclaim disk BEFORE building. Sequential builds leave 100s of untagged layers
+# (this ECS hit 40GB of dangling images → parallel `npm ci` failed with "no space
+# left on device"). `prune -f` drops ONLY dangling layers — it keeps the base
+# image + tagged builds, so it never re-triggers the blocked-docker.io base pull.
+# (`prune -af` WOULD nuke the base — do NOT use it here.) See docs/CN-DEPLOY.md.
+echo "=== disk free before prune: $(df -h / | awk 'NR==2{print $4}') ==="
+docker image prune -f >/dev/null 2>&1 || true
+echo "=== disk free after prune:  $(df -h / | awk 'NR==2{print $4}') ==="
 # IMPORTANT: do NOT write a root .npmrc here. A root .npmrc makes
 # `turbo prune --docker` (used by apps/server/Dockerfile) drop package-lock.json
 # from out/json/, so `npm ci` fails with EUSAGE. registry.npmjs.org is reachable
