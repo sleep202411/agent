@@ -11,66 +11,137 @@ import {
 } from '@prisma/client';
 
 /**
- * CN (.cn) fiat pricing — CNY compute-point packs + one-off membership passes, each
- * with a wechat_pay provider binding (WeChat has no catalog, so providerPriceId is
- * null — the amount is charged directly). Runs ONLY in the CN cell (see seed.ts) so
- * it never pollutes .com. Idempotent: re-running updates the same rows.
+ * CN (.cn) fiat pricing — CNY point packs (compute + community) + one-off
+ * membership passes (individual / team / community), each with a wechat_pay
+ * provider binding (WeChat has no catalog, so providerPriceId is null — the
+ * amount is charged directly). Runs ONLY in the CN cell (see seed.ts). Idempotent.
  *
- * Pricing mirrors .com VALUE at a FIXED business FX rate (the CN analogue of
- * SGD_PER_USD in membership-plans.ts): .com sells 1 point = 1 US cent, so at
- * CNY_PER_USD a CN point costs `1 分 × CNY_PER_USD` ≈ 7 分. Membership is a ONE-OFF
- * 30-day pass (no 委托代扣/auto-renew yet — users re-purchase on expiry).
+ * VALUE parity at a fixed FX rate: .com sells 1 point = 1 US cent (BOTH compute
+ * AND community points), so at CNY_PER_USD a CN point costs CNY_PER_USD 分 ≈ 7 分.
+ * The point↔minor-unit ratio matches .com (1:1), but the ABSOLUTE value is FX'd —
+ * keeping .com and .cn at equal real value (NOT a naive 1分=1美分, which would be
+ * ~7× cheaper). The referral/withdrawal 1:1 is a SEPARATE mechanism on the
+ * withdrawable balance and does not constrain this buy-price.
+ *
+ * Membership is a ONE-OFF 30-day pass (no auto-renew — re-purchase on expiry),
+ * priced from .com monthly × CNY_PER_USD, cleaned to a CN 尾数. Plan DEFINITIONS
+ * (basic/standard/pro/team/community_membership) are seeded cell-agnostically by
+ * membership-plans.ts; this file only adds the CN CNY prices that grant them.
  */
 
-const SOURCE = 'seed.cn_prices.v1';
+export const SOURCE = 'seed.cn_prices.v1';
 /** Fixed business FX rate (CNY per USD). Not real-time — a stable pricing anchor. */
 const CNY_PER_USD = 7.0;
 const MEMBERSHIP_PASS_DAYS = 30;
+/** 分 per point: 1 point = 1 US cent of value → CNY_PER_USD 分. Compute AND community. */
+const FEN_PER_POINT = BigInt(Math.round(CNY_PER_USD));
 
-// Compute-point packs: .com point counts, priced at points × CNY_PER_USD 分.
-const cnComputePacks = [5000n, 10000n, 30000n];
+/** Point-pack sizes — identical for compute + community (same per-point value). */
+const POINT_PACKS = [5000n, 10000n, 30000n];
 
-// Membership passes: .com USD monthly × ~CNY_PER_USD, cleaned to CN 尾数. Grants the
-// existing basic/standard/pro plan (seeded cell-agnostically by membership-plans.ts)
-// for a fixed 30 days.
-const cnMembershipPasses: { planKey: string; amountMinor: bigint }[] = [
-  { planKey: 'basic', amountMinor: 19900n }, // ¥199 (.com $27)
-  { planKey: 'standard', amountMinor: 39900n }, // ¥399 (.com $54)
-  { planKey: 'pro', amountMinor: 79900n }, // ¥799 (.com $108)
+type PointKind = {
+  walletCurrency: WalletCurrencyType;
+  productType: BillingProductType;
+  codePrefix: string;
+  label: string;
+};
+const COMPUTE_POINTS: PointKind = {
+  walletCurrency: WalletCurrencyType.compute_point,
+  productType: BillingProductType.compute_point_pack,
+  codePrefix: 'COMPUTE_CN',
+  label: '算力积分',
+};
+const COMMUNITY_POINTS: PointKind = {
+  walletCurrency: WalletCurrencyType.community_point,
+  productType: BillingProductType.community_point_pack,
+  codePrefix: 'COMMUNITY_CN',
+  label: '社区积分',
+};
+
+type MembershipPass = {
+  planKey: string;
+  amountMinor: bigint;
+  productType: BillingProductType;
+  subjectType: BillingSubjectType;
+  label: string;
+};
+// .com monthly × CNY_PER_USD, cleaned to CN 尾数. subjectType: team is workspace-scoped.
+const cnMembershipPasses: MembershipPass[] = [
+  {
+    planKey: 'basic',
+    amountMinor: 19900n,
+    productType: BillingProductType.membership_plan,
+    subjectType: BillingSubjectType.user,
+    label: '会员 basic',
+  }, // ¥199 (.com $27)
+  {
+    planKey: 'standard',
+    amountMinor: 39900n,
+    productType: BillingProductType.membership_plan,
+    subjectType: BillingSubjectType.user,
+    label: '会员 standard',
+  }, // ¥399 (.com $54)
+  {
+    planKey: 'pro',
+    amountMinor: 79900n,
+    productType: BillingProductType.membership_plan,
+    subjectType: BillingSubjectType.user,
+    label: '会员 pro',
+  }, // ¥799 (.com $108)
+  {
+    planKey: 'team',
+    amountMinor: 189900n,
+    productType: BillingProductType.team_membership_plan,
+    subjectType: BillingSubjectType.workspace,
+    label: '团队会员',
+  }, // ¥1899 (.com $270)
+  {
+    planKey: 'community_membership',
+    amountMinor: 6900n,
+    productType: BillingProductType.community_membership_plan,
+    subjectType: BillingSubjectType.user,
+    label: '社区会员',
+  }, // ¥69 (.com $9.99)
+];
+
+/** All catalog-item code prefixes this seed owns (used to cull stray non-CN SKUs). */
+export const CN_CODE_PREFIXES = [
+  'COMPUTE_CN_',
+  'COMMUNITY_CN_',
+  'MEMBERSHIP_CN_',
 ];
 
 export async function seedCnPrices(prisma: PrismaClient): Promise<void> {
-  for (const points of cnComputePacks) {
-    await seedCnComputePack(prisma, points);
+  for (const points of POINT_PACKS) {
+    await seedCnPointPack(prisma, points, COMPUTE_POINTS);
+    await seedCnPointPack(prisma, points, COMMUNITY_POINTS);
   }
   for (const pass of cnMembershipPasses) {
-    await seedCnMembershipPass(prisma, pass.planKey, pass.amountMinor);
+    await seedCnMembershipPass(prisma, pass);
   }
 }
 
-async function seedCnComputePack(
+async function seedCnPointPack(
   prisma: PrismaClient,
   points: bigint,
+  kind: PointKind,
 ): Promise<void> {
-  const code = `COMPUTE_CN_${points}`;
+  const code = `${kind.codePrefix}_${points}`;
   const item = await prisma.billingCatalogItem.upsert({
     where: { code },
     create: {
       code,
-      productType: BillingProductType.compute_point_pack,
-      name: `${Number(points).toLocaleString('en-US')} 算力积分`,
+      productType: kind.productType,
+      name: `${Number(points).toLocaleString('en-US')} ${kind.label}`,
       metadata: { source: SOURCE },
     },
-    update: {
-      productType: BillingProductType.compute_point_pack,
-      isActive: true,
-      archivedAt: null,
-    },
+    update: { productType: kind.productType, isActive: true, archivedAt: null },
   });
   const price = await upsertCnPrice(prisma, {
     itemId: item.id,
-    amountMinor: points * BigInt(Math.round(CNY_PER_USD * 100)), // points × 分/point
-    grantsWalletCurrency: WalletCurrencyType.compute_point,
+    amountMinor: points * FEN_PER_POINT, // 1 point = 1 US 分 of value → CNY_PER_USD 分
+    subjectType: BillingSubjectType.user,
+    grantsWalletCurrency: kind.walletCurrency,
     grantsWalletBalanceKind: WalletBalanceKind.consumable,
     grantsWalletAmount: points,
     grantsPlanKey: null,
@@ -81,31 +152,27 @@ async function seedCnComputePack(
 
 async function seedCnMembershipPass(
   prisma: PrismaClient,
-  planKey: string,
-  amountMinor: bigint,
+  pass: MembershipPass,
 ): Promise<void> {
-  const code = `MEMBERSHIP_CN_${planKey}`.toUpperCase();
+  const code = `MEMBERSHIP_CN_${pass.planKey}`.toUpperCase();
   const item = await prisma.billingCatalogItem.upsert({
     where: { code },
     create: {
       code,
-      productType: BillingProductType.membership_plan,
-      name: `会员 ${planKey}（30天）`,
-      metadata: { source: SOURCE, planKey },
+      productType: pass.productType,
+      name: `${pass.label}（30天）`,
+      metadata: { source: SOURCE, planKey: pass.planKey },
     },
-    update: {
-      productType: BillingProductType.membership_plan,
-      isActive: true,
-      archivedAt: null,
-    },
+    update: { productType: pass.productType, isActive: true, archivedAt: null },
   });
   const price = await upsertCnPrice(prisma, {
     itemId: item.id,
-    amountMinor,
+    amountMinor: pass.amountMinor,
+    subjectType: pass.subjectType,
     grantsWalletCurrency: null,
     grantsWalletBalanceKind: null,
     grantsWalletAmount: null,
-    grantsPlanKey: planKey,
+    grantsPlanKey: pass.planKey,
     grantDurationDays: MEMBERSHIP_PASS_DAYS,
   });
   await ensureWechatBinding(prisma, price.id);
@@ -114,6 +181,7 @@ async function seedCnMembershipPass(
 type CnPriceInput = {
   itemId: string;
   amountMinor: bigint;
+  subjectType: BillingSubjectType;
   grantsWalletCurrency: WalletCurrencyType | null;
   grantsWalletBalanceKind: WalletBalanceKind | null;
   grantsWalletAmount: bigint | null;
@@ -136,7 +204,7 @@ async function upsertCnPrice(prisma: PrismaClient, input: CnPriceInput) {
     currency: 'CNY',
     amountMinor: input.amountMinor,
     interval: BillingPriceInterval.one_time,
-    subjectType: BillingSubjectType.user,
+    subjectType: input.subjectType,
     grantsWalletCurrency: input.grantsWalletCurrency,
     grantsWalletBalanceKind: input.grantsWalletBalanceKind,
     grantsWalletAmount: input.grantsWalletAmount,
@@ -158,11 +226,7 @@ async function ensureWechatBinding(
   priceId: string,
 ): Promise<void> {
   const existing = await prisma.billingProviderPriceBinding.findFirst({
-    where: {
-      priceId,
-      provider: PaymentProvider.wechat_pay,
-      archivedAt: null,
-    },
+    where: { priceId, provider: PaymentProvider.wechat_pay, archivedAt: null },
   });
   if (existing) {
     if (existing.status !== BillingProviderBindingStatus.active) {
