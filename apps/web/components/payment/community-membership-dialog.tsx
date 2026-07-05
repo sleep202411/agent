@@ -86,7 +86,9 @@ export function CommunityMembershipDialog({
   const plan = plansQuery.data?.plans?.[0] ?? null;
   const monthly = plan?.prices.find((p) => p.isActive && p.interval === "month") ?? null;
   const yearly = plan?.prices.find((p) => p.isActive && p.interval === "year") ?? null;
-  const hasPrices = Boolean(monthly || yearly);
+  // CN sells a one-off 30-day pass (no auto-renew), so there is no month/year price.
+  const oneTime = plan?.prices.find((p) => p.isActive && p.interval === "one_time") ?? null;
+  const hasPrices = Boolean(monthly || yearly || oneTime);
 
   // Annual savings vs 12× monthly — drives the "Save X%" badge on the yearly card.
   const yearlySavePercent =
@@ -99,7 +101,11 @@ export function CommunityMembershipDialog({
 
   // Default selection: yearly (better value) when present, else monthly.
   const selected =
-    [monthly, yearly].find((p) => p && p.id === selectedPriceId) ?? yearly ?? monthly ?? null;
+    [monthly, yearly, oneTime].find((p) => p && p.id === selectedPriceId) ??
+    yearly ??
+    monthly ??
+    oneTime ??
+    null;
 
   const currencySymbol = siteConfig.currencies.find((c) => c.code === currency)?.symbol ?? "$";
   const fmtFiat = (minor: number | string) => (Number(minor) / 100).toFixed(2);
@@ -276,7 +282,7 @@ export function CommunityMembershipDialog({
                 {t("communityMembershipNoPlan")}
               </div>
             ) : (
-              <div className="grid grid-cols-2 gap-3">
+              <div className={cn("grid gap-3", monthly || yearly ? "grid-cols-2" : "grid-cols-1")}>
                 {monthly && (
                   <IntervalCard
                     label={t("communityMembershipMonthly")}
@@ -311,6 +317,21 @@ export function CommunityMembershipDialog({
                     }
                     selected={selected?.id === yearly.id}
                     onSelect={() => setSelectedPriceId(yearly.id)}
+                  />
+                )}
+                {oneTime && (
+                  <IntervalCard
+                    label={t("communityMembershipOneTime")}
+                    unit={t("communityMembershipOneTimeUnit")}
+                    price={`${currencySymbol}${fmtFiat(priceEffectiveAmountMinor(oneTime))}`}
+                    originalPrice={
+                      oneTime.activeDiscount
+                        ? `${currencySymbol}${fmtFiat(oneTime.amountMinor)}`
+                        : undefined
+                    }
+                    badge={oneTime.activeDiscount ? t("communityMembershipSaleBadge") : undefined}
+                    selected={selected?.id === oneTime.id}
+                    onSelect={() => setSelectedPriceId(oneTime.id)}
                   />
                 )}
               </div>
