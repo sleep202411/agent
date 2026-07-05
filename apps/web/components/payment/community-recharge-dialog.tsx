@@ -49,9 +49,11 @@ import {
 import {
   createBillingCheckout,
   createCustomRecharge,
+  isWechatScanUrl,
   listCommunityPointPackages,
   type BillingPackage,
 } from "@/src/lib/billing/api";
+import { WechatScanPayDialog } from "./wechat-scan-pay-dialog";
 
 // Whole-dollar bounds for a custom top-up (slider + input). Mirrors the server
 // CreateCustomRechargeSchema, which is authoritative.
@@ -98,6 +100,11 @@ export function CommunityRechargeDialog({
   const [customDollars, setCustomDollars] = useState("");
   const [customActive, setCustomActive] = useState(false);
   const [paying, setPaying] = useState(false);
+  const [wechatScan, setWechatScan] = useState<{
+    orderId: string;
+    codeUrl: string;
+    amountLabel: string;
+  } | null>(null);
 
   const { balance } = useCommunityPointBalance(open);
   const { user } = useCurrentUser();
@@ -393,6 +400,16 @@ export function CommunityRechargeDialog({
             },
           ],
         });
+        // WeChat 扫码 returns a weixin:// code_url — render a QR to scan, not a
+        // desktop navigation (which just prompts a useless "Open WeChat?").
+        if (isWechatScanUrl(url)) {
+          setWechatScan({
+            orderId: result.order.id,
+            codeUrl: url,
+            amountLabel: `${currencySymbol}${fmtFiat(submit.totalMinor)}`,
+          });
+          return;
+        }
         // Inside the legacy iframe wrapper, ask the shell to navigate the top
         // window; otherwise redirect this window to the hosted checkout.
         if (window.self !== window.top) {
@@ -418,199 +435,221 @@ export function CommunityRechargeDialog({
   };
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-xl">
-        <DialogHeader>
-          <DialogTitle>{t("communityRechargeTitle")}</DialogTitle>
-          <DialogDescription className="sr-only">{t("communityRechargeDesc")}</DialogDescription>
-        </DialogHeader>
+    <>
+      <Dialog open={open} onOpenChange={onOpenChange}>
+        <DialogContent className="sm:max-w-xl">
+          <DialogHeader>
+            <DialogTitle>{t("communityRechargeTitle")}</DialogTitle>
+            <DialogDescription className="sr-only">{t("communityRechargeDesc")}</DialogDescription>
+          </DialogHeader>
 
-        <div className="space-y-4 p-4">
-          {/* Account header — avatar, display name, current consumable balance. */}
-          <div className="flex items-center gap-3 rounded-xl border border-border/60 bg-muted/30 p-4">
-            {user?.avatar ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img
-                src={user.avatar}
-                alt=""
-                className="size-11 shrink-0 rounded-full object-cover ring-1 ring-border"
-              />
-            ) : (
-              <span className="grid size-11 shrink-0 place-items-center rounded-full bg-primary/15 text-primary">
-                <IconCoins className="size-5" />
-              </span>
-            )}
-            <div className="min-w-0 flex-1">
-              <p className="truncate text-sm font-semibold text-foreground">
-                {user?.nickname || t("communityRechargeTitle")}
-              </p>
-              <p className="mt-0.5 flex items-center gap-1.5 text-xs text-muted-foreground">
-                <IconCoins className="size-3.5 text-primary" />
-                {t("communityBalanceLabel")}
-                <span className="font-semibold tabular-nums text-foreground">
-                  {fmtPoints(balance)}
-                </span>
-              </p>
-            </div>
-          </div>
-
-          {/* Currency toggle — only currencies with active packages. */}
-          {availableCurrencies.length > 1 && (
-            <div className="flex items-center justify-center gap-1 rounded-full border border-border bg-muted/30 p-1">
-              {availableCurrencies.map((c) => (
-                <button
-                  key={c.code}
-                  type="button"
-                  onClick={() => setCurrency(c.code)}
-                  className={cn(
-                    "rounded-full px-4 py-1.5 text-xs font-medium transition-all",
-                    currency === c.code
-                      ? "bg-primary/10 text-primary"
-                      : "text-muted-foreground hover:text-foreground"
-                  )}
-                >
-                  {c.symbol} {c.code}
-                </button>
-              ))}
-            </div>
-          )}
-
-          {packagesQuery.isLoading ? (
-            <div className="flex h-32 items-center justify-center">
-              <IconLoader2 className="size-5 animate-spin text-muted-foreground" />
-            </div>
-          ) : presetPackages.length === 0 ? (
-            !customRechargeEnabled && (
-              <div className="py-12 text-center text-sm text-muted-foreground">
-                {t("noPackages")}
-              </div>
-            )
-          ) : (
-            <div className="grid grid-cols-3 gap-3">
-              {presetPackages.map((pkg, i) => (
-                <PresetCard
-                  key={pkg.id}
-                  pkg={pkg}
-                  index={i}
-                  selected={!customActive && selectedPreset?.id === pkg.id}
-                  currencySymbol={currencySymbol}
-                  fmtFiat={fmtFiat}
-                  fmtPoints={fmtPoints}
-                  pointsTypeLabel={t("pointsTypeLabel")}
-                  onSelect={() => {
-                    setCustomActive(false);
-                    setSelectedId(pkg.id);
-                  }}
+          <div className="space-y-4 p-4">
+            {/* Account header — avatar, display name, current consumable balance. */}
+            <div className="flex items-center gap-3 rounded-xl border border-border/60 bg-muted/30 p-4">
+              {user?.avatar ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={user.avatar}
+                  alt=""
+                  className="size-11 shrink-0 rounded-full object-cover ring-1 ring-border"
                 />
-              ))}
-            </div>
-          )}
-
-          {/* Custom amount — Airwallex Payment Intent, USD-only. Two-column panel:
-              a paid-amount/points summary on the left, slider + entry on the right. */}
-          {customRechargeEnabled && (
-            <div
-              className={cn(
-                "w-full rounded-2xl border p-4 transition-colors",
-                customActive ? "border-primary/60 bg-primary/[0.04]" : "border-border/60"
+              ) : (
+                <span className="grid size-11 shrink-0 place-items-center rounded-full bg-primary/15 text-primary">
+                  <IconCoins className="size-5" />
+                </span>
               )}
-            >
-              <div className="flex items-stretch gap-4">
-                {/* Summary — what you pay and what you get. */}
-                <div className="flex w-28 shrink-0 flex-col justify-center border-r border-border/60 pr-4">
-                  <span className="text-3xl font-bold leading-none tabular-nums text-foreground">
-                    <span className="align-top text-base font-normal text-muted-foreground">
-                      {currencySymbol}
-                    </span>
-                    {customValid ? customDollarsNum : CUSTOM_MIN_DOLLARS}
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-sm font-semibold text-foreground">
+                  {user?.nickname || t("communityRechargeTitle")}
+                </p>
+                <p className="mt-0.5 flex items-center gap-1.5 text-xs text-muted-foreground">
+                  <IconCoins className="size-3.5 text-primary" />
+                  {t("communityBalanceLabel")}
+                  <span className="font-semibold tabular-nums text-foreground">
+                    {fmtPoints(balance)}
                   </span>
-                  <span className="mt-2 text-[11px] leading-tight text-muted-foreground">
-                    {t("customGetLabel")}
-                    <br />
-                    <span className="font-semibold text-foreground">
-                      {fmtPoints(customPoints || CUSTOM_MIN_DOLLARS * POINTS_PER_DOLLAR)}
-                    </span>{" "}
-                    {t("creditsUnit")}
-                  </span>
-                </div>
+                </p>
+              </div>
+            </div>
 
-                {/* Slider + numeric entry. */}
-                <div className="min-w-0 flex-1 space-y-2.5">
-                  <div className="flex items-center justify-between">
-                    <Label
-                      htmlFor="community-custom-amount"
-                      className="text-xs text-muted-foreground"
-                    >
-                      {t("customAmountLabel")}
-                    </Label>
-                    <div className="relative w-24">
-                      <span className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">
+            {/* Currency toggle — only currencies with active packages. */}
+            {availableCurrencies.length > 1 && (
+              <div className="flex items-center justify-center gap-1 rounded-full border border-border bg-muted/30 p-1">
+                {availableCurrencies.map((c) => (
+                  <button
+                    key={c.code}
+                    type="button"
+                    onClick={() => setCurrency(c.code)}
+                    className={cn(
+                      "rounded-full px-4 py-1.5 text-xs font-medium transition-all",
+                      currency === c.code
+                        ? "bg-primary/10 text-primary"
+                        : "text-muted-foreground hover:text-foreground"
+                    )}
+                  >
+                    {c.symbol} {c.code}
+                  </button>
+                ))}
+              </div>
+            )}
+
+            {packagesQuery.isLoading ? (
+              <div className="flex h-32 items-center justify-center">
+                <IconLoader2 className="size-5 animate-spin text-muted-foreground" />
+              </div>
+            ) : presetPackages.length === 0 ? (
+              !customRechargeEnabled && (
+                <div className="py-12 text-center text-sm text-muted-foreground">
+                  {t("noPackages")}
+                </div>
+              )
+            ) : (
+              <div className="grid grid-cols-3 gap-3">
+                {presetPackages.map((pkg, i) => (
+                  <PresetCard
+                    key={pkg.id}
+                    pkg={pkg}
+                    index={i}
+                    selected={!customActive && selectedPreset?.id === pkg.id}
+                    currencySymbol={currencySymbol}
+                    fmtFiat={fmtFiat}
+                    fmtPoints={fmtPoints}
+                    pointsTypeLabel={t("pointsTypeLabel")}
+                    onSelect={() => {
+                      setCustomActive(false);
+                      setSelectedId(pkg.id);
+                    }}
+                  />
+                ))}
+              </div>
+            )}
+
+            {/* Custom amount — Airwallex Payment Intent, USD-only. Two-column panel:
+              a paid-amount/points summary on the left, slider + entry on the right. */}
+            {customRechargeEnabled && (
+              <div
+                className={cn(
+                  "w-full rounded-2xl border p-4 transition-colors",
+                  customActive ? "border-primary/60 bg-primary/[0.04]" : "border-border/60"
+                )}
+              >
+                <div className="flex items-stretch gap-4">
+                  {/* Summary — what you pay and what you get. */}
+                  <div className="flex w-28 shrink-0 flex-col justify-center border-r border-border/60 pr-4">
+                    <span className="text-3xl font-bold leading-none tabular-nums text-foreground">
+                      <span className="align-top text-base font-normal text-muted-foreground">
                         {currencySymbol}
                       </span>
-                      <Input
-                        id="community-custom-amount"
-                        type="number"
-                        inputMode="numeric"
-                        min={CUSTOM_MIN_DOLLARS}
-                        max={CUSTOM_MAX_DOLLARS}
-                        step={1}
-                        placeholder={String(CUSTOM_MIN_DOLLARS)}
-                        value={customDollars}
-                        onFocus={() => setCustomActive(true)}
-                        onChange={(e) => {
-                          setCustomActive(true);
-                          setCustomDollars(e.target.value);
-                        }}
-                        className="h-8 pl-5 text-right text-sm tabular-nums"
-                      />
+                      {customValid ? customDollarsNum : CUSTOM_MIN_DOLLARS}
+                    </span>
+                    <span className="mt-2 text-[11px] leading-tight text-muted-foreground">
+                      {t("customGetLabel")}
+                      <br />
+                      <span className="font-semibold text-foreground">
+                        {fmtPoints(customPoints || CUSTOM_MIN_DOLLARS * POINTS_PER_DOLLAR)}
+                      </span>{" "}
+                      {t("creditsUnit")}
+                    </span>
+                  </div>
+
+                  {/* Slider + numeric entry. */}
+                  <div className="min-w-0 flex-1 space-y-2.5">
+                    <div className="flex items-center justify-between">
+                      <Label
+                        htmlFor="community-custom-amount"
+                        className="text-xs text-muted-foreground"
+                      >
+                        {t("customAmountLabel")}
+                      </Label>
+                      <div className="relative w-24">
+                        <span className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">
+                          {currencySymbol}
+                        </span>
+                        <Input
+                          id="community-custom-amount"
+                          type="number"
+                          inputMode="numeric"
+                          min={CUSTOM_MIN_DOLLARS}
+                          max={CUSTOM_MAX_DOLLARS}
+                          step={1}
+                          placeholder={String(CUSTOM_MIN_DOLLARS)}
+                          value={customDollars}
+                          onFocus={() => setCustomActive(true)}
+                          onChange={(e) => {
+                            setCustomActive(true);
+                            setCustomDollars(e.target.value);
+                          }}
+                          className="h-8 pl-5 text-right text-sm tabular-nums"
+                        />
+                      </div>
                     </div>
-                  </div>
-                  <input
-                    type="range"
-                    aria-label={t("customAmountLabel")}
-                    min={CUSTOM_MIN_DOLLARS}
-                    max={CUSTOM_MAX_DOLLARS}
-                    step={1}
-                    value={Math.min(
-                      Math.max(
-                        customValid ? customDollarsNum : CUSTOM_MIN_DOLLARS,
-                        CUSTOM_MIN_DOLLARS
-                      ),
-                      CUSTOM_MAX_DOLLARS
+                    <input
+                      type="range"
+                      aria-label={t("customAmountLabel")}
+                      min={CUSTOM_MIN_DOLLARS}
+                      max={CUSTOM_MAX_DOLLARS}
+                      step={1}
+                      value={Math.min(
+                        Math.max(
+                          customValid ? customDollarsNum : CUSTOM_MIN_DOLLARS,
+                          CUSTOM_MIN_DOLLARS
+                        ),
+                        CUSTOM_MAX_DOLLARS
+                      )}
+                      onChange={(e) => {
+                        setCustomActive(true);
+                        setCustomDollars(e.target.value);
+                      }}
+                      className="w-full accent-primary"
+                    />
+                    <div className="flex justify-between text-[10px] text-muted-foreground tabular-nums">
+                      <span>
+                        {currencySymbol}
+                        {CUSTOM_MIN_DOLLARS}
+                      </span>
+                      <span>
+                        {currencySymbol}
+                        {CUSTOM_MAX_DOLLARS.toLocaleString()}
+                      </span>
+                    </div>
+                    {customActive && customDollars.trim() !== "" && !customValid && (
+                      <p className="text-[11px] text-primary">
+                        {t("customAmountMin", { min: CUSTOM_MIN_DOLLARS })}
+                      </p>
                     )}
-                    onChange={(e) => {
-                      setCustomActive(true);
-                      setCustomDollars(e.target.value);
-                    }}
-                    className="w-full accent-primary"
-                  />
-                  <div className="flex justify-between text-[10px] text-muted-foreground tabular-nums">
-                    <span>
-                      {currencySymbol}
-                      {CUSTOM_MIN_DOLLARS}
-                    </span>
-                    <span>
-                      {currencySymbol}
-                      {CUSTOM_MAX_DOLLARS.toLocaleString()}
-                    </span>
                   </div>
-                  {customActive && customDollars.trim() !== "" && !customValid && (
-                    <p className="text-[11px] text-primary">
-                      {t("customAmountMin", { min: CUSTOM_MIN_DOLLARS })}
-                    </p>
-                  )}
                 </div>
               </div>
-            </div>
-          )}
+            )}
 
-          <Button className="w-full" onClick={() => void handlePay()} disabled={paying || !submit}>
-            {paying && <IconLoader2 className="size-4 animate-spin" />}
-            {t("payNow")} {submit ? `${currencySymbol}${fmtFiat(submit.totalMinor)}` : ""}
-          </Button>
-        </div>
-      </DialogContent>
-    </Dialog>
+            <Button
+              className="w-full"
+              onClick={() => void handlePay()}
+              disabled={paying || !submit}
+            >
+              {paying && <IconLoader2 className="size-4 animate-spin" />}
+              {t("payNow")} {submit ? `${currencySymbol}${fmtFiat(submit.totalMinor)}` : ""}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+      {wechatScan && (
+        <WechatScanPayDialog
+          key={wechatScan.orderId}
+          open
+          orderId={wechatScan.orderId}
+          codeUrl={wechatScan.codeUrl}
+          amountLabel={wechatScan.amountLabel}
+          onClose={() => setWechatScan(null)}
+          onPaid={() => {
+            setWechatScan(null);
+            toast.success(t("paymentSuccess"));
+            void onSuccess?.();
+            onOpenChange(false);
+          }}
+        />
+      )}
+    </>
   );
 }
 
