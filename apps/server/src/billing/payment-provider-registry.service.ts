@@ -2,6 +2,7 @@ import { Injectable, ServiceUnavailableException } from '@nestjs/common';
 import { PaymentProvider } from '@prisma/client';
 import { CURRENT_CELL } from '../common/region';
 import { AirwallexProvider } from './providers/airwallex.provider';
+import { WechatPayProvider } from './providers/wechat-pay.provider';
 import {
   UnsupportedPaymentProvider,
   type PaymentProviderAdapter,
@@ -12,11 +13,11 @@ export class PaymentProviderRegistry {
   private readonly alipay = new UnsupportedPaymentProvider(
     PaymentProvider.alipay,
   );
-  private readonly wechatPay = new UnsupportedPaymentProvider(
-    PaymentProvider.wechat_pay,
-  );
 
-  constructor(private readonly airwallex: AirwallexProvider) {}
+  constructor(
+    private readonly airwallex: AirwallexProvider,
+    private readonly wechatPay: WechatPayProvider,
+  ) {}
 
   get(provider: PaymentProvider): PaymentProviderAdapter {
     if (provider === PaymentProvider.airwallex) return this.airwallex;

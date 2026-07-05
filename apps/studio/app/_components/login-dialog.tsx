@@ -7,6 +7,7 @@ import { useLocale, useTranslations } from "next-intl";
 import { IconLoader2, IconX } from "@tabler/icons-react";
 import { login } from "@/lib/auth";
 import { buildWebHref, WEB_PATHS } from "@/lib/web-base";
+import { useSiteRegion } from "@/app/_components/region-provider";
 
 /**
  * Global sign-in dialog (imagine.art layout): form panel + hero artwork.
@@ -22,6 +23,7 @@ export function LoginDialog({
   const t = useTranslations("auth");
   const tc = useTranslations("common");
   const locale = useLocale();
+  const siteRegion = useSiteRegion();
   const [identifier, setIdentifier] = useState("");
   const [password, setPassword] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -85,7 +87,7 @@ export function LoginDialog({
               <span className="mb-1.5 flex items-center justify-between gap-4 text-xs font-medium text-white/70">
                 <span>{t("passwordLabel")}</span>
                 <a
-                  href={buildWebHref(locale, WEB_PATHS.forgotPassword)}
+                  href={buildWebHref(siteRegion, locale, WEB_PATHS.forgotPassword)}
                   target="_blank"
                   rel="noreferrer"
                   className="font-semibold text-white/75 underline-offset-2 transition-colors hover:text-white hover:underline"
@@ -121,7 +123,7 @@ export function LoginDialog({
               {t.rich("registerPrompt", {
                 register: (chunks) => (
                   <a
-                    href={buildWebHref(locale, WEB_PATHS.register)}
+                    href={buildWebHref(siteRegion, locale, WEB_PATHS.register)}
                     target="_blank"
                     rel="noreferrer"
                     className="font-semibold text-white/80 underline-offset-2 transition-colors hover:text-white hover:underline"
@@ -136,7 +138,7 @@ export function LoginDialog({
                 {t.rich("termsNotice", {
                   terms: (chunks) => (
                     <a
-                      href={buildWebHref(locale, WEB_PATHS.terms)}
+                      href={buildWebHref(siteRegion, locale, WEB_PATHS.terms)}
                       target="_blank"
                       rel="noreferrer"
                       className="font-semibold text-white/80 underline-offset-2 transition-colors hover:text-white hover:underline"
@@ -150,7 +152,7 @@ export function LoginDialog({
                 {t.rich("privacyNotice", {
                   privacy: (chunks) => (
                     <a
-                      href={buildWebHref(locale, WEB_PATHS.privacy)}
+                      href={buildWebHref(siteRegion, locale, WEB_PATHS.privacy)}
                       target="_blank"
                       rel="noreferrer"
                       className="font-semibold text-white/80 underline-offset-2 transition-colors hover:text-white hover:underline"

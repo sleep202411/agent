@@ -257,7 +257,7 @@ describe('accrueCommissionForOrder', () => {
   });
 
   it.each([
-    ['non-USD order', { currency: 'CNY', amountMinor: 999n }],
+    ['unsupported currency', { currency: 'EUR', amountMinor: 999n }],
     ['zero-amount order', { currency: 'USD', amountMinor: 0n }],
     [
       'sub-cent commission (rounds to zero)',
@@ -277,6 +277,27 @@ describe('accrueCommissionForOrder', () => {
     } as CommissionOrder);
 
     expect(prisma.referralReward.create).not.toHaveBeenCalled();
+  });
+
+  it('accrues a CNY commission (accrual only; payout deferred)', async () => {
+    const { service, prisma } = makeService();
+    prisma.referralAttribution.findUnique.mockResolvedValue(attributionRow());
+    prisma.referralProgram.findUnique.mockResolvedValue(
+      programRow({ commissionBps: 3000 }),
+    );
+
+    await accrueCommission(service, {
+      id: 'order-cny',
+      userId: REFEREE,
+      currency: 'CNY',
+      amountMinor: 999n,
+    } as CommissionOrder);
+
+    expect(prisma.referralReward.create).toHaveBeenCalledTimes(1);
+    const { data } = prisma.referralReward.create.mock.calls[0][0];
+    expect(data.currency).toBe('CNY');
+    expect(data.amountMinor).toBe(299n);
+    expect(data.subtitle).toContain('¥9.99');
   });
 
   it('requires a QUALIFIED attribution', async () => {

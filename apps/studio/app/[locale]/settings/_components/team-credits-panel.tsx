@@ -15,10 +15,12 @@ import { type WorkspaceRef } from "@/lib/collab/projects-api";
 import {
   createComputeCustomRecharge,
   createComputeTopup,
+  isWechatScanUrl,
   listComputeTopupPackages,
   redirectToComputePayment,
   type ComputeTopupPrice,
 } from "@/lib/billing";
+import { WechatScanPayDialog } from "@/app/_components/wechat-scan-pay-dialog";
 import { FIELD_CONTROL } from "@/components/ui/field";
 import { Button } from "@/components/ui/button";
 import { FrostedPanel } from "@/components/ui/frosted-panel";
@@ -100,6 +102,11 @@ function RechargeControls({ workspaceId }: { workspaceId: string }) {
   const queryClient = useQueryClient();
   const [amount, setAmount] = useState("50");
   const [pendingId, setPendingId] = useState<string | null>(null);
+  const [wechatScan, setWechatScan] = useState<{
+    orderId: string;
+    codeUrl: string;
+    successMessage: string;
+  } | null>(null);
 
   const { data: catalog } = useQuery({
     queryKey: ["compute-topup-packages"] as const,
@@ -116,6 +123,13 @@ function RechargeControls({ workspaceId }: { workspaceId: string }) {
     result: Awaited<ReturnType<typeof createComputeTopup>>,
     successMessage: string
   ) => {
+    // WeChat 扫码 returns a weixin:// code_url — render it as a QR + poll the
+    // order instead of navigating the browser to it.
+    const scanUrl = result.paymentIntent?.checkoutUrl;
+    if (isWechatScanUrl(scanUrl)) {
+      setWechatScan({ orderId: result.order.id, codeUrl: scanUrl, successMessage });
+      return;
+    }
     const outcome = await redirectToComputePayment(result, urls());
     if (outcome === "fulfilled") {
       void queryClient.invalidateQueries({ queryKey: computeWalletBalanceQueryKey });
@@ -158,6 +172,21 @@ function RechargeControls({ workspaceId }: { workspaceId: string }) {
 
   return (
     <div className="flex flex-col gap-4">
+      {wechatScan && (
+        <WechatScanPayDialog
+          key={wechatScan.orderId}
+          open
+          orderId={wechatScan.orderId}
+          codeUrl={wechatScan.codeUrl}
+          onClose={() => setWechatScan(null)}
+          onPaid={() => {
+            void queryClient.invalidateQueries({
+              queryKey: computeWalletBalanceQueryKey,
+            });
+            toast.success(wechatScan.successMessage);
+          }}
+        />
+      )}
       {packs.length > 0 && (
         <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
           {packs.map((price) => {

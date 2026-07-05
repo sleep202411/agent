@@ -706,6 +706,15 @@
         "question": "Can I use my generations commercially?",
         "answer": "Paid plans include commercial use of your generated outputs, subject to the Terms of Service."
       }
+    },
+    "wechatScan": {
+      "title": "WeChat Pay",
+      "instruction": "Open WeChat, scan the code, and confirm the payment.",
+      "waiting": "Waiting for payment…",
+      "paid": "Payment received",
+      "expired": "The code expired. Please try again.",
+      "retry": "Close",
+      "close": "Close"
     }
   },
   "canvas": {

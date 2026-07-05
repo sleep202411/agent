@@ -1,23 +1,20 @@
+import type { SiteRegion } from "@/app/_components/region-provider";
+
 /**
  * Base URL of the legacy web app (apps/web — fizzdragon.com / fizzspace.cn) that
  * studio links out to for legacy projects, public profiles, and legal pages.
  *
- * Derived from the studio's OWN host (`studio.X` -> `X`), NOT the UI language: a
- * zh-CN user on the .com deployment must stay on .com, never be bounced to .cn.
- * On the server (no window) or in local dev (host has no dot) it falls back to
- * fizzdragon.com; the .com studio's client-derived value is identical, so there
- * is no hydration drift there.
+ * Keyed on the deployment CELL (SiteRegion from RegionProvider), NOT the host or
+ * the UI language — the same env-driven signal (SITE_REGION) the rest of the app
+ * uses to decide .cn vs global. Callers read it via `useSiteRegion()`.
  */
-export function getWebBaseUrl(): string {
-  if (typeof window !== "undefined") {
-    const h = window.location.hostname;
-    // CN: the web app for studio.fizzspace.cn lives at fizzstudio.fizzspace.cn
-    // (the live CN host), NOT the bare apex the generic `studio.`-strip yields.
-    if (h === "studio.fizzspace.cn") return "https://fizzstudio.fizzspace.cn";
-    const host = h.replace(/^studio\./, "");
-    if (host.includes(".")) return `https://${host}`;
-  }
-  return "https://fizzdragon.com";
+const WEB_BASE_BY_REGION: Record<SiteRegion, string> = {
+  cn: "https://fizzstudio.fizzspace.cn",
+  global: "https://fizzdragon.com",
+};
+
+export function getWebBaseUrl(siteRegion: SiteRegion): string {
+  return WEB_BASE_BY_REGION[siteRegion];
 }
 
 /** Legacy web-app paths studio links out to (auth + legal pages). */
@@ -30,13 +27,14 @@ export const WEB_PATHS = {
 
 /**
  * Build an absolute link into the legacy web app: domain from {@link getWebBaseUrl}
- * (the deployment), `locale` kept in the PATH for the web app's i18n routing.
+ * (the cell), `locale` kept in the PATH for the web app's i18n routing.
  */
 export function buildWebHref(
+  siteRegion: SiteRegion,
   locale: string,
   path: (typeof WEB_PATHS)[keyof typeof WEB_PATHS]
 ): string {
   const safeLocale =
     locale === "zh-CN" || locale === "zh-HK" || locale === "en-US" ? locale : "en-US";
-  return `${getWebBaseUrl()}/${safeLocale}${path}`;
+  return `${getWebBaseUrl(siteRegion)}/${safeLocale}${path}`;
 }

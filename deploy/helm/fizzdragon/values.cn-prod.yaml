@@ -177,6 +177,10 @@ studio:
   image:
     tag: set-at-deploy
   env:
+    # Deployment cell — the layout reads this at RUNTIME and hands it to the client
+    # via RegionProvider (studio bakes no NEXT_PUBLIC_*, and NEXT_PUBLIC_* would be
+    # compile-inlined anyway). Gates CN commerce: CNY one-off membership + WeChat 扫码.
+    SITE_REGION: cn
     AURORA_PROXY_TARGET: http://fizzdragon-server:3001
     AURORA_STRIP_PREFIX: "1"
     JAVA_CONTENT_URL: https://java.fizzspace.cn/content

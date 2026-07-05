@@ -15,16 +15,18 @@ import {
 import { toast } from "sonner";
 import {
   createBillingCheckout,
+  isWechatScanUrl,
   listMembershipPlans,
   type MembershipPlan,
   type MembershipPrice,
 } from "@/lib/billing";
+import { WechatScanPayDialog } from "@/app/_components/wechat-scan-pay-dialog";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { FrostedPanel } from "@/components/ui/frosted-panel";
 import { GlassRim } from "@/components/ui/glass-rim";
 import { cn } from "@/lib/utils";
 import { useAuth } from "./auth-provider";
-import { useCountry } from "./region-provider";
+import { useCountry, useIsCnSite } from "./region-provider";
 import { useWorkspace } from "./workspace-context";
 
 type BillingInterval = "month" | "year";
@@ -87,12 +89,20 @@ export function SubscriptionDialog({
   const t = useTranslations("billing");
   const tc = useTranslations("common");
   const country = useCountry();
-  const currency = membershipCurrencyForCountry(country);
+  // The CELL (deployment), not the currency/country, decides CN behaviour: .cn is a
+  // one-off CNY pass (no interval toggle) paid via WeChat 扫码; .com is a USD/SGD
+  // subscription via Airwallex.
+  const isCn = useIsCnSite();
+  const currency = isCn ? "CNY" : membershipCurrencyForCountry(country);
   const { user, signIn } = useAuth();
   const { workspaces, activeWorkspace, createTeam } = useWorkspace();
   const signedIn = Boolean(user);
   const [billingInterval, setBillingInterval] = useState<BillingInterval>("month");
   const [payingPriceId, setPayingPriceId] = useState<string | null>(null);
+  const [wechatScan, setWechatScan] = useState<{
+    orderId: string;
+    codeUrl: string;
+  } | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
   // The plan a signed-out visitor tried to buy — checkout resumes here once
   // the global login dialog succeeds. A ref: it drives no UI.
@@ -210,6 +220,12 @@ export function SubscriptionDialog({
           toast.error(t("toast.checkoutUrlMissing"));
           return;
         }
+        // WeChat 扫码 returns a weixin:// code_url — render it as a QR + poll the
+        // order instead of navigating the browser to it.
+        if (isWechatScanUrl(checkoutUrl)) {
+          setWechatScan({ orderId: result.order.id, codeUrl: checkoutUrl });
+          return;
+        }
         window.location.href = checkoutUrl;
       } catch (error) {
         toast.error(error instanceof Error ? error.message : t("toast.paymentFailed"));
@@ -244,6 +260,20 @@ export function SubscriptionDialog({
       aria-label={t("dialogLabel")}
       className="fixed left-0 top-0 z-50 h-[100dvh] w-screen overflow-hidden bg-background text-foreground"
     >
+      {wechatScan && (
+        <WechatScanPayDialog
+          key={wechatScan.orderId}
+          open
+          orderId={wechatScan.orderId}
+          codeUrl={wechatScan.codeUrl}
+          onClose={() => setWechatScan(null)}
+          onPaid={() => {
+            toast.success(t("toast.membershipActivated"));
+            setWechatScan(null);
+            onOpenChange(false);
+          }}
+        />
+      )}
       <button
         type="button"
         aria-label={t("closeDialog")}
@@ -262,28 +292,30 @@ export function SubscriptionDialog({
             <p className="max-w-2xl text-base leading-7 text-muted-foreground sm:text-lg">
               {t("header.subtitle")}
             </p>
-            <Tabs
-              className="mt-3"
-              value={billingInterval}
-              onValueChange={(value) => setBillingInterval(value as BillingInterval)}
-            >
-              <TabsList>
-                <TabsTrigger value="month" className="px-2.5">
-                  {t("interval.monthly")}
-                </TabsTrigger>
-                <TabsTrigger value="year" className="px-2.5">
-                  {t("interval.yearly")}
-                  <span
-                    className="rounded-full px-1.5 py-px text-[10px] font-bold text-white"
-                    style={{
-                      background: `linear-gradient(90deg, ${ACCENT_RED.deep}, ${ACCENT_RED.base} 33%, ${ACCENT_RED.base} 67%, ${ACCENT_RED.deep})`,
-                    }}
-                  >
-                    -25%
-                  </span>
-                </TabsTrigger>
-              </TabsList>
-            </Tabs>
+            {!isCn && (
+              <Tabs
+                className="mt-3"
+                value={billingInterval}
+                onValueChange={(value) => setBillingInterval(value as BillingInterval)}
+              >
+                <TabsList>
+                  <TabsTrigger value="month" className="px-2.5">
+                    {t("interval.monthly")}
+                  </TabsTrigger>
+                  <TabsTrigger value="year" className="px-2.5">
+                    {t("interval.yearly")}
+                    <span
+                      className="rounded-full px-1.5 py-px text-[10px] font-bold text-white"
+                      style={{
+                        background: `linear-gradient(90deg, ${ACCENT_RED.deep}, ${ACCENT_RED.base} 33%, ${ACCENT_RED.base} 67%, ${ACCENT_RED.deep})`,
+                      }}
+                    >
+                      -25%
+                    </span>
+                  </TabsTrigger>
+                </TabsList>
+              </Tabs>
+            )}
           </header>
 
           {loading ? (

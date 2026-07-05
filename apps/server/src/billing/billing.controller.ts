@@ -257,6 +257,39 @@ export class BillingController {
       }),
     };
   }
+
+  /**
+   * WeChat Pay APP支付 payment notification. Unlike the other routes this returns
+   * WeChat's REQUIRED top-level body `{"code":"SUCCESS","message":"OK"}` verbatim
+   * (there is no global envelope interceptor) — any other body / non-200 makes
+   * WeChat retry for ~24h. A failed verify/decrypt throws (4xx) → WeChat retries,
+   * which is the correct behaviour for a bad signature.
+   */
+  @Public()
+  @Post('webhooks/wechat')
+  async handleWechatWebhook(
+    @Req() req: RawBodyRequest,
+    @Headers('wechatpay-serial') serial?: string | string[],
+    @Headers('wechatpay-signature') signature?: string | string[],
+    @Headers('wechatpay-timestamp') timestamp?: string | string[],
+    @Headers('wechatpay-nonce') nonce?: string | string[],
+    @Headers('wechatpay-signature-type') signatureType?: string | string[],
+  ) {
+    const rawBody = req.rawBody ?? Buffer.from(JSON.stringify(req.body ?? {}));
+    await this.billing.handleWechatWebhook({
+      rawBody,
+      serial: firstHeader(serial),
+      signature: firstHeader(signature),
+      timestamp: firstHeader(timestamp),
+      nonce: firstHeader(nonce),
+      signatureType: firstHeader(signatureType),
+    });
+    return { code: 'SUCCESS', message: 'OK' };
+  }
+}
+
+function firstHeader(value?: string | string[]): string | undefined {
+  return Array.isArray(value) ? value[0] : value;
 }
 
 /**

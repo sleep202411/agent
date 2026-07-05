@@ -41,7 +41,7 @@ export interface MembershipPlan {
 
 export function listMembershipPlans(input: {
   productType: "membership_plan" | "team_membership_plan";
-  currency: "USD" | "SGD";
+  currency: "USD" | "SGD" | "CNY";
 }) {
   return api.get<{ provider: string; plans: MembershipPlan[] }>(
     "/aurora/billing/membership-plans",
@@ -67,6 +67,43 @@ export interface BillingCheckoutResult {
 
 export function createBillingCheckout(input: CreateBillingCheckoutInput) {
   return api.post<BillingCheckoutResult>("/aurora/billing/checkout", { data: input });
+}
+
+export interface BillingOrderView {
+  id: string;
+  orderNo: string;
+  status: string; // pending_payment | paid | fulfilled | failed | expired | cancelled
+  provider: string;
+}
+
+/**
+ * Poll an order's status. Server-side, reading a still-pending WeChat order
+ * triggers a 查单 reconcile + fulfil, so this flips to paid/fulfilled once the
+ * user finishes scanning — no dependency on the async callback landing first.
+ */
+export function getBillingOrder(orderId: string) {
+  return api.get<{
+    order: BillingOrderView;
+    paymentIntent: { checkoutUrl: string | null } | null;
+  }>(`/aurora/billing/orders/${encodeURIComponent(orderId)}`);
+}
+
+/**
+ * A WeChat 扫码 (Native) checkout returns a `weixin://` code_url — it is rendered
+ * as a QR the user scans, NOT a URL the browser navigates to.
+ */
+export function isWechatScanUrl(url: string | null | undefined): url is string {
+  return typeof url === "string" && url.startsWith("weixin://");
+}
+
+const SETTLED_ORDER_STATUSES = new Set(["paid", "fulfilled"]);
+const DEAD_ORDER_STATUSES = new Set(["failed", "expired", "cancelled"]);
+
+export function isOrderSettled(status: string): boolean {
+  return SETTLED_ORDER_STATUSES.has(status);
+}
+export function isOrderDead(status: string): boolean {
+  return DEAD_ORDER_STATUSES.has(status);
 }
 
 // ───────────────────────── Current plan + subscription ─────────────────────

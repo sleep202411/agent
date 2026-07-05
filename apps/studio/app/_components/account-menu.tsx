@@ -21,6 +21,7 @@ import { useComputeWalletBalance } from "./credits-badge";
 import { SubscriptionDialog } from "./subscription-dialog";
 import { cn } from "@/lib/utils";
 import { buildWebHref, getWebBaseUrl, WEB_PATHS } from "@/lib/web-base";
+import { useSiteRegion } from "@/app/_components/region-provider";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -59,6 +60,7 @@ export function AccountMenu({
   const t = useTranslations("account");
   const tLocale = useTranslations("localeSwitcher");
   const locale = useLocale();
+  const siteRegion = useSiteRegion();
   const router = useRouter();
   const pathname = usePathname();
   const [, startLocaleTransition] = useTransition();
@@ -189,7 +191,7 @@ export function AccountMenu({
               setMenuOpen(false);
               if (!publicUserId) return;
               // The public profile lives in apps/web; the domain follows the deployment.
-              const base = getWebBaseUrl();
+              const base = getWebBaseUrl(siteRegion);
               window.open(
                 `${base}/${locale}/creators/${publicUserId}`,
                 "_blank",
@@ -283,12 +285,12 @@ export function AccountMenu({
               {
                 key: "terms",
                 label: t("terms"),
-                href: buildWebHref(locale, WEB_PATHS.terms),
+                href: buildWebHref(siteRegion, locale, WEB_PATHS.terms),
               },
               {
                 key: "privacy",
                 label: t("privacy"),
-                href: buildWebHref(locale, WEB_PATHS.privacy),
+                href: buildWebHref(siteRegion, locale, WEB_PATHS.privacy),
               },
               { key: "app", label: t("app"), href: null },
             ].map(({ key, label, href }, i) => (

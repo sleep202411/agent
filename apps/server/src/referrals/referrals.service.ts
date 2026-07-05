@@ -17,6 +17,7 @@ import {
   WalletLedgerEntryType,
   WalletOwnerType,
 } from '@prisma/client';
+import { defaultCurrency } from '../common/currency';
 import {
   PROMO_CREDIT_VALIDITY_DAYS,
   promoCreditExpiresAt,
@@ -193,7 +194,7 @@ export class ReferralsService {
         payoutType: m.payoutType,
         amountMinor: m.rewardMinor.toString(),
         days: m.payoutDays,
-        currency: m.payoutType === 'cash' ? program.currency : null,
+        currency: m.payoutType === 'cash' ? defaultCurrency() : null,
         items: m.items.length ? m.items.map(mapBundleItem) : undefined,
       };
     });
@@ -205,7 +206,7 @@ export class ReferralsService {
         code && this.inviteBase
           ? `${this.inviteBase}/register?recommendationCode=${encodeURIComponent(code)}`
           : null,
-      currency: program.currency,
+      currency: defaultCurrency(),
       totals: computeTotals(cashByStatus, referralCount),
       inviteeBenefit: {
         title: program.inviteeBenefitTitle,
@@ -227,7 +228,9 @@ export class ReferralsService {
   async updateProgram(adminId: string, input: UpdateReferralProgramInput) {
     const data: Prisma.ReferralProgramUpdateInput = { updatedById: adminId };
     if (input.enabled !== undefined) data.enabled = input.enabled;
-    if (input.currency !== undefined) data.currency = input.currency;
+    // Program currency is NOT admin-settable — it is cell-derived (defaultCurrency:
+    // CNY on .cn, USD on .com), so an admin-supplied currency is intentionally
+    // ignored. A program only ever operates in its cell's one currency.
     if (input.holdDays !== undefined) data.holdDays = input.holdDays;
     if (input.rewardPerReferralMinor !== undefined) {
       data.rewardPerReferralMinor = BigInt(input.rewardPerReferralMinor);
@@ -363,7 +366,7 @@ export class ReferralsService {
     return {
       key: program.key,
       enabled: program.enabled,
-      currency: program.currency,
+      currency: defaultCurrency(),
       holdDays: program.holdDays,
       rewardPerReferralMinor: program.rewardPerReferralMinor.toString(),
       maxRewardedReferees: program.maxRewardedReferees,
@@ -616,14 +619,18 @@ export class ReferralsService {
     });
     const bps = override ? override.commissionBps : program.commissionBps;
     if (bps <= 0) return;
-    if (order.currency !== 'USD') {
+    if (order.currency !== 'USD' && order.currency !== 'CNY') {
       // Skip loudly rather than throw — this hook must never read as a
-      // billing failure. (.cn needs its own payout mapping before commission.)
+      // billing failure.
       this.logger.warn(
         `commission skipped for order ${order.id}: unsupported currency ${order.currency}`,
       );
       return;
     }
+    // NOTE: CNY commission accrues here AND its cash payout credits the WITHDRAWABLE
+    // community_point pool 1:1 (1 point = 1 CNY 分, symmetric with USD's 1 point = 1
+    // cent — see the 'cash' grant path). Only the final 提现 (points → real money via
+    // WeChat 商家转账) remains unbuilt, the same as USD.
     const amount = (order.amountMinor * BigInt(bps)) / 10000n;
     if (amount <= 0n) return;
 
@@ -639,7 +646,7 @@ export class ReferralsService {
           amountMinor: amount,
           currency: order.currency,
           title: 'Purchase commission',
-          subtitle: `${formatBpsPercent(bps)} of a friend's ${formatUsdMinor(order.amountMinor)} purchase`,
+          subtitle: `${formatBpsPercent(bps)} of a friend's ${formatMoneyMinor(order.amountMinor, order.currency)} purchase`,
           orderId: order.id,
           commissionBps: bps,
           sourceAmountMinor: order.amountMinor,
@@ -781,7 +788,7 @@ export class ReferralsService {
               kind: 'referral',
               status: 'accrued',
               amountMinor: program.rewardPerReferralMinor,
-              currency: program.currency,
+              currency: defaultCurrency(),
               title: 'Referral reward',
               subtitle: 'A friend joined and made their first purchase',
               attributionId: attribution.id,
@@ -793,7 +800,7 @@ export class ReferralsService {
                     payoutType: 'cash',
                     amountMinor: program.rewardPerReferralMinor,
                     days: 0,
-                    currency: program.currency,
+                    currency: defaultCurrency(),
                     rank: 0,
                   },
                 ],
@@ -859,7 +866,7 @@ export class ReferralsService {
           status: 'accrued' as const,
           amountMinor: m.rewardMinor,
           days: m.payoutDays,
-          currency: m.payoutType === 'cash' ? program.currency : null,
+          currency: m.payoutType === 'cash' ? defaultCurrency() : null,
           title: m.title,
           subtitle: m.detail,
           milestoneId: m.id,
@@ -910,7 +917,7 @@ export class ReferralsService {
             payoutType: it.payoutType,
             amountMinor: it.amountMinor,
             days: it.days,
-            currency: it.payoutType === 'cash' ? program.currency : null,
+            currency: it.payoutType === 'cash' ? defaultCurrency() : null,
             rank: it.rank,
           });
         }
@@ -960,7 +967,7 @@ export class ReferralsService {
       payoutType: it.payoutType,
       amountMinor: it.amountMinor,
       days: it.days,
-      currency: it.payoutType === 'cash' ? program.currency : null,
+      currency: it.payoutType === 'cash' ? defaultCurrency() : null,
       rank: it.rank,
     }));
     const primary = items[0];
@@ -1224,12 +1231,15 @@ export class ReferralsService {
         );
         break;
       case 'cash':
-        // Cash → the WITHDRAWABLE community_point pool where 积分 ≡ US cent, so
-        // ONLY a USD program maps 1:1. Fail loud on any other currency rather
-        // than mis-pay real money. (The 提现 cash-out is a separate TODO.)
-        if (currency !== 'USD') {
+        // Cash → the WITHDRAWABLE community_point pool, 1 point = 1 minor unit of
+        // the reward currency (1 point = 1 US cent in com, 1 CNY 分 in cn). Cells
+        // are separate deployments so a user's withdrawable pool is single-
+        // currency; crediting amountMinor 1:1 holds the money faithfully. The
+        // 提现 cash-out (points → real money, e.g. WeChat 企业付款) is a separate
+        // unbuilt step — until it ships the balance simply accrues.
+        if (currency !== 'USD' && currency !== 'CNY') {
           throw new BadRequestException(
-            `Cash referral payout is USD-only for now (got ${currency ?? 'null'})`,
+            `Cash referral payout supports USD/CNY only (got ${currency ?? 'null'})`,
           );
         }
         await this.creditCommunityPoints(
@@ -1536,8 +1546,10 @@ export function formatBpsPercent(bps: number): string {
 }
 
 /** USD minor units → "$12.34" (server-owned reward subtitles). */
-function formatUsdMinor(minor: bigint): string {
-  return `$${(Number(minor) / 100).toFixed(2)}`;
+/** Currency-aware money format for reward copy (USD / CNY). */
+function formatMoneyMinor(minor: bigint, currency: string): string {
+  const major = (Number(minor) / 100).toFixed(2);
+  return currency === 'CNY' ? `¥${major}` : `$${major}`;
 }
 
 // ─── Reward bundle helpers ──────────────────────────────────────────────

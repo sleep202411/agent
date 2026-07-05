@@ -10,7 +10,7 @@ import { cn } from "@/lib/utils";
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { Providers } from "@/app/providers";
-import { RegionProvider } from "@/app/_components/region-provider";
+import { RegionProvider, type SiteRegion } from "@/app/_components/region-provider";
 import { NotificationsListener } from "@/app/_components/notifications-listener";
 import { RouteAuthGuard } from "@/app/_components/route-auth-guard";
 import { SettingsOverlay } from "./_components/settings-overlay";
@@ -53,6 +53,7 @@ export default async function LocaleLayout({
 
   const headerBag = await headers();
   const country = detectCountry(headerBag);
+  const siteRegion = detectSiteRegion();
 
   return (
     <html
@@ -68,7 +69,7 @@ export default async function LocaleLayout({
       <body className="min-h-full flex flex-col">
         <NextIntlClientProvider>
           <Providers>
-            <RegionProvider country={country}>
+            <RegionProvider country={country} siteRegion={siteRegion}>
               <TooltipProvider delayDuration={200}>{children}</TooltipProvider>
             </RegionProvider>
             <RouteAuthGuard />
@@ -80,6 +81,16 @@ export default async function LocaleLayout({
       </body>
     </html>
   );
+}
+
+// The deployment cell, read from RUNTIME pod env here on the server (this layout is
+// dynamic — it reads headers) and handed to the client via RegionProvider. Uses the
+// non-public `SITE_REGION`: Next.js compile-time-inlines every `NEXT_PUBLIC_*` (even
+// server-side), and the studio image bakes none, so only a runtime var works. `cn`
+// on the .cn deployment; `global` everywhere else.
+function detectSiteRegion(): SiteRegion {
+  const raw = process.env.SITE_REGION ?? process.env.NEXT_PUBLIC_SITE_REGION ?? "global";
+  return raw === "cn" ? "cn" : "global";
 }
 
 function detectCountry(headers: Headers) {
