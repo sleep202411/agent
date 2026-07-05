@@ -146,6 +146,17 @@ async function seedCnPointPack(
     grantsWalletAmount: points,
     grantsPlanKey: null,
     grantDurationDays: null,
+    // The compute-topup listing (billing.service) requires each pack's price to
+    // be explicitly marked compute_point + explicit-admin-priced (CNY is non-USD,
+    // so no usd_cent_anchor). Community packs list via a different endpoint.
+    priceMetadata:
+      kind.walletCurrency === WalletCurrencyType.compute_point
+        ? {
+            topupKind: 'compute_point',
+            rateMode: 'explicit_admin_pricing',
+            cell: 'cn',
+          }
+        : undefined,
   });
   await ensureWechatBinding(prisma, price.id);
 }
@@ -187,6 +198,9 @@ type CnPriceInput = {
   grantsWalletAmount: bigint | null;
   grantsPlanKey: string | null;
   grantDurationDays: number | null;
+  /** Extra price metadata merged onto {source}. Compute-point packs must carry
+   *  topupKind/rateMode or the compute-topup listing rejects them. */
+  priceMetadata?: Prisma.InputJsonObject;
 };
 
 /** Find-or-update the one active CNY one_time price on the item (idempotent). */
@@ -212,7 +226,7 @@ async function upsertCnPrice(prisma: PrismaClient, input: CnPriceInput) {
     grantDurationDays: input.grantDurationDays,
     isActive: true,
     archivedAt: null,
-    metadata: { source: SOURCE },
+    metadata: { source: SOURCE, ...(input.priceMetadata ?? {}) },
   } satisfies Prisma.BillingPriceUncheckedCreateInput;
   if (existing) {
     return prisma.billingPrice.update({ where: { id: existing.id }, data });
