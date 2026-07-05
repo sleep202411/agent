@@ -14,7 +14,7 @@ import QRCode from "qrcode";
 import { Button } from "@/components/ui/button";
 import LightRays from "@/components/ui/light-rays";
 import { backendApi } from "@/src/lib/api";
-import { axonBeginCheckout } from "@/src/lib/axon";
+import { axonAddToCart, axonBeginCheckout } from "@/src/lib/axon";
 import { cn } from "@/lib/utils";
 import { siteConfig } from "@/src/config/site";
 
@@ -232,22 +232,28 @@ export function UpgradeDialog({ open, onOpenChange, onSuccess }: UpgradeDialogPr
 
   const handlePay = useCallback(async () => {
     if (!selectedPackage) return;
-    // Fire the AppLovin `begin_checkout` conversion at pay initiation (before the
+    // Fire AppLovin purchase-funnel conversions at pay initiation (before the
     // WeChat QR / Airwallex redirect). CN region stores price ×100 → divide by
     // 100 (mirrors `displayPrice`). No-op off .com (axon.ts).
     const checkoutValue =
       siteConfig.region === "cn"
         ? Number(selectedPackage.price) / 100
         : Number(selectedPackage.price);
+    const items = [
+      {
+        item_id: String(selectedPackage.id),
+        item_name: selectedPackage.packageName,
+        price: checkoutValue,
+        quantity: 1,
+      },
+    ];
+    axonAddToCart({
+      items,
+      currency,
+      value: checkoutValue,
+    });
     axonBeginCheckout({
-      items: [
-        {
-          item_id: String(selectedPackage.id),
-          item_name: selectedPackage.packageName,
-          price: checkoutValue,
-          quantity: 1,
-        },
-      ],
+      items,
       currency,
       value: checkoutValue,
     });

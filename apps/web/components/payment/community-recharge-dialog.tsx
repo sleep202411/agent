@@ -40,6 +40,7 @@ import { siteConfig } from "@/src/config/site";
 import { ApiRequestError } from "@/src/lib/api";
 import {
   axonAleid,
+  axonAddToCart,
   axonBeginCheckout,
   axonFlushPendingPurchase,
   axonStashPendingPurchase,
@@ -259,34 +260,42 @@ export function CommunityRechargeDialog({
   // is the derived `submit` trips react-hooks/preserve-manual-memoization.
   const handlePay = async () => {
     if (!submit) return;
-    // Fire the AppLovin `begin_checkout` conversion at pay initiation (before the
+    // Fire AppLovin purchase-funnel conversions at pay initiation (before the
     // provider redirect), for both the custom-amount and preset-package paths.
     // No-op off .com (axon.ts). Custom is USD whole-dollars; preset totalMinor is
     // cents → divide by 100.
     {
       const checkoutValue =
         submit.kind === "custom" ? submit.dollars : Number(submit.totalMinor) / 100;
-      axonBeginCheckout({
-        items: [
-          submit.kind === "custom"
-            ? {
-                item_id: `custom:${submit.dollars}`,
-                item_name: "Community points (custom)",
-                price: checkoutValue,
-                quantity: 1,
-              }
-            : {
-                item_id: submit.priceId,
-                item_name: selectedPreset?.name ?? "Community points",
-                price: checkoutValue,
-                quantity: 1,
-              },
-        ],
+      const items = [
+        submit.kind === "custom"
+          ? {
+              item_id: `custom:${submit.dollars}`,
+              item_name: "Community points (custom)",
+              price: checkoutValue,
+              quantity: 1,
+            }
+          : {
+              item_id: submit.priceId,
+              item_name: selectedPreset?.name ?? "Community points",
+              price: checkoutValue,
+              quantity: 1,
+            },
+      ];
+      const userData = user
+        ? { user_id: user.id, email: user.email ? user.email.toLowerCase() : undefined }
+        : undefined;
+      axonAddToCart({
+        items,
         currency,
         value: checkoutValue,
-        userData: user
-          ? { user_id: user.id, email: user.email ? user.email.toLowerCase() : undefined }
-          : undefined,
+        userData,
+      });
+      axonBeginCheckout({
+        items,
+        currency,
+        value: checkoutValue,
+        userData,
       });
     }
     setPaying(true);

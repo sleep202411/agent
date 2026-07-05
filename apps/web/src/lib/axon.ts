@@ -155,6 +155,20 @@ export function axonViewItem(params: {
   });
 }
 
+export function axonAddToCart(params: {
+  items: AxonItem[];
+  currency?: string;
+  value?: number;
+  userData?: AxonUserData;
+}): void {
+  axonTrack("add_to_cart", {
+    items: params.items,
+    currency: params.currency,
+    value: params.value,
+    user_data: params.userData,
+  });
+}
+
 export function axonBeginCheckout(params: {
   items: AxonItem[];
   currency: string;
