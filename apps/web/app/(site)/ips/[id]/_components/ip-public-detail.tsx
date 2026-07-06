@@ -23,6 +23,7 @@ import {
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Button3D } from "@/components/ui/button-3d";
+import { PlayFab } from "./play-fab";
 import { CommunityRechargeDialog } from "@/components/payment/community-recharge-dialog";
 import { CommunityMembershipDialog } from "@/components/payment/community-membership-dialog";
 import { VideoPlayer } from "@/components/media/video-player";
@@ -205,6 +206,9 @@ export function IpPublicDetail({ ipId }: IpPublicDetailProps) {
   const ipTrailerUrl = getAssetUrl(detailIp.trailerAsset);
   const episodeCoverUrl = getAssetUrl(selectedEpisode?.coverAsset);
   const episodeMediaUrl = getAssetUrl(selectedEpisode?.mediaAsset);
+
+  const openPlay = () =>
+    window.open(localizePath(`/play/${detailIp.id}`, locale), "_blank", "noopener,noreferrer");
   const episodeTrailerUrl = getAssetUrl(selectedEpisode?.trailerAsset);
   const selectedEpisodeAccess = selectedEpisode
     ? accessQuery.data?.episodes.find((item) => item.id === selectedEpisode.id)
@@ -318,6 +322,7 @@ export function IpPublicDetail({ ipId }: IpPublicDetailProps) {
 
   return (
     <div className="min-h-[calc(100vh-4rem)] bg-background text-foreground">
+      <PlayFab onClick={openPlay} label={t("playCta")} />
       <main className="mx-auto w-full max-w-[1840px] px-4 pb-8 pt-3 sm:px-5">
         <div className="mb-3 flex items-center justify-between gap-3">
           <Button asChild variant="ghost" color="muted" className="text-muted-foreground">
@@ -505,17 +510,7 @@ export function IpPublicDetail({ ipId }: IpPublicDetailProps) {
             {/* Duolingo-style 3D push CTA → opens the play page in a new tab.
                 (Play page + backend enter/turns still TBD — see
                 docs/narrative-runtime-java-api-v0.md.) */}
-            <Button3D
-              block
-              icon={<IconPlayerPlay />}
-              onClick={() =>
-                window.open(
-                  localizePath(`/play/${detailIp.id}`, locale),
-                  "_blank",
-                  "noopener,noreferrer"
-                )
-              }
-            >
+            <Button3D block icon={<IconPlayerPlay />} onClick={openPlay}>
               {t("playCta")}
             </Button3D>
             <CreatorTeamCard ip={detailIp} bannerUrl={ipCoverUrl} t={t} />
