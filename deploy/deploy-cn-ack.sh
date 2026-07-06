@@ -18,11 +18,6 @@
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"; cd "$ROOT"
 TAG="${1:-$(git rev-parse --short HEAD)}"
-# ADMINUI_TAG: pin admin-ui's image independently of $TAG (default $TAG). Used to
-# hold admin-ui back without holding back the other services — e.g. while the CN
-# Java news API (java.fizzspace.cn/content/api/admin/news) isn't deployed yet, so
-# the HEAD admin-ui 资讯 module would 404. Drop the override once CN Java ships it.
-ADMINUI_TAG="${ADMINUI_TAG:-$TAG}"
 ECS_ID=i-bp11r90r4g91u39iimnx
 ECS_IP=""   # fetched live below — the pay-as-you-go public IP changes on StopCharging stop/start
 DEPLOY_KEY="${DEPLOY_KEY:-$HOME/.ssh/id_ed25519_github}"
@@ -33,6 +28,14 @@ SSH="ssh -i $DEPLOY_KEY -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/n
 # 3 missed = drop a wedged connection in ~30s so the retry kicks in.
 SCP="scp -i $DEPLOY_KEY -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=30 -o ServerAliveInterval=10 -o ServerAliveCountMax=3"
 LIVE_ORIGIN="https://fizzstudio.fizzspace.cn"   # baked PARENT_ORIGIN (CN live host)
+
+# 生产只从 main 部署 —— 两个 cell 统一（.com 走 ArgoCD 盯 main，.cn 也对齐 main，
+# 避免两边跑不同代码）。覆盖：FORCE=1。
+BRANCH="$(git rev-parse --abbrev-ref HEAD)"
+if [ "$BRANCH" != "main" ] && [ "${FORCE:-0}" != "1" ]; then
+  echo "✋ 当前分支 '$BRANCH'——生产只从 main 部署。先 merge develop→main，或 FORCE=1 覆盖。" >&2
+  exit 1
+fi
 
 echo "==> [1/6] start build ECS"
 aliyun ecs StartInstance --InstanceId $ECS_ID --profile default >/dev/null 2>&1 || true
@@ -97,7 +100,7 @@ helm upgrade fizzdragon "$ROOT/deploy/helm/fizzdragon" \
   -f "$ROOT/deploy/helm/fizzdragon/values.cn-prod.yaml" \
   --set web.image.tag="$TAG" --set server.image.tag="$TAG" \
   --set agent.image.tag="$TAG" --set agentWorker.image.tag="$TAG" \
-  --set adminUi.image.tag="$ADMINUI_TAG" \
+  --set adminUi.image.tag="$TAG" \
   --set studio.image.tag="$TAG" \
   --force-conflicts --namespace fizzdragon
 kubectl rollout status deploy/fizzdragon-server -n fizzdragon --timeout=180s || true

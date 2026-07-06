@@ -6,11 +6,10 @@
 # files into the source tarball already on the build ECS. For the common case
 # (small diff, ECS already warm) this cuts the sync from ~30-40 min to seconds.
 #
-# ⚠️ WHY we patch the TARBALL and never scp into /root/src:
-#   cn-remote-build.sh begins with `rm -rf /root/src && tar -xzf /root/src.tar.gz`
-#   — it RE-EXTRACTS the tarball on every build. Files scp'd into /root/src are
-#   silently CLOBBERED at build time (this cost hours of "still broken" once). So
-#   we extract → patch the diff → re-tar → grep-verify BEFORE building.
+# Patch the TARBALL, not /root/src: cn-remote-build.sh begins with
+# `rm -rf /root/src && tar -xzf /root/src.tar.gz`, so it re-extracts the tarball
+# every build — anything scp'd into /root/src would be overwritten. So we extract
+# → patch the diff → re-tar → verify before building.
 #
 # Use deploy-cn-ack.sh instead when: the ECS has been off a while, the tarball is
 # stale/unknown, or the diff is huge. This script does NOT stop the ECS (leave it
@@ -27,6 +26,13 @@ DEPLOY_KEY="${DEPLOY_KEY:-$HOME/.ssh/id_ed25519_github}"
 SSH="ssh -i $DEPLOY_KEY -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=30 -o ServerAliveInterval=15"
 SCP="scp -i $DEPLOY_KEY -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=30"
 LIVE_ORIGIN="https://fizzstudio.fizzspace.cn"
+
+# 生产只从 main 部署（两个 cell 统一）。覆盖：FORCE=1。
+BRANCH="$(git rev-parse --abbrev-ref HEAD)"
+if [ "$BRANCH" != "main" ] && [ "${FORCE:-0}" != "1" ]; then
+  echo "✋ 当前分支 '$BRANCH'——生产只从 main 部署。先 merge develop→main，或 FORCE=1 覆盖。" >&2
+  exit 1
+fi
 
 echo "==> [1/6] ensure build ECS is up"
 aliyun ecs StartInstance --InstanceId $ECS_ID --profile default >/dev/null 2>&1 || true

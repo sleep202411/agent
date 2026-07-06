@@ -82,6 +82,8 @@ npx turbo build --filter=server
 
 ## Deployment
 
+**规范：两个 cell 都只从 `main` 部署**（`develop` 是工作分支，上线前 merge 到 main；所有部署脚本内置 `main` 分支 guard，非 main 直接拒绝，`FORCE=1` 覆盖）。两边机制不同——`.com` 走 ArgoCD/GitOps（改 git 里的镜像 tag，ArgoCD 收敛），`.cn` 直接 `helm upgrade`——但都以 `main` 为准。
+
 ### `.com`（国际）— AKS + ArgoCD + `deploy-com-aks.sh`
 
 生产 `.com` 跑在 **Azure AKS**，用 **ArgoCD**（GitOps）部署：**git 是唯一真相**，
@@ -165,7 +167,7 @@ User → Nginx (443/HTTPS)
 ## Branch Strategy
 
 ```
-main       ← 生产（.com prod）；合入后用 deploy-com-aks.sh 部署
+main       ← 生产：.com 和 .cn 两个 cell 都从这里部署
   ↑
 develop    ← 默认工作分支，日常直接在此提交（单人开发）
 ```
@@ -173,10 +175,12 @@ develop    ← 默认工作分支，日常直接在此提交（单人开发）
 ### 开发 / 上线流程
 
 1. 日常在 `develop` 直接提交。
-2. 上线：`develop` → `main`。
-3. 在 `main` 上跑 `deploy/deploy-com-aks.sh`（构建 + 改 tag + push）→ ArgoCD 自动部署。
+2. 上线：`develop` → `main`，用**普通 merge**（非 squash——squash 会把 `values.yaml` 里 .com 的镜像 tag 冲成 develop 的旧值）。
+3. **从 `main` 部署两个 cell**（脚本都有分支 guard，非 main 拒绝）：
+   - `.com`：`deploy/deploy-com-aks.sh <service…>`
+   - `.cn`：`deploy/deploy-cn-incremental.sh`（日常增量）或 `deploy/deploy-cn-ack.sh`（全量冷启动）
 
-> `main` = 生产；ArgoCD 盯 `main` 的 helm values。光合并不触发部署，必须跑 deploy 脚本——详见 [Deployment](#deployment)。
+> `main` = 唯一生产真相。两边机制不同（.com 走 ArgoCD/GitOps，.cn 直接 helm），但都以 main 为准——详见 [Deployment](#deployment)。
 
 ---
 
