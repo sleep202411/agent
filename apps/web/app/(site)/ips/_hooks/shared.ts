@@ -128,8 +128,6 @@ export const ipKeys = {
     ["ip", "plaza", "for-you", page, pageSize] as const,
   pricing: (id: string) => ["ip", "pricing", id] as const,
   merchandise: (id: string) => ["ip", "merchandise", id] as const,
-  likeCount: (id: string) => ["ip", "like", "count", id] as const,
-  likeStatus: (id: string) => ["ip", "like", "status", id] as const,
 };
 
 // ─── Image URL helpers ──────────────────────────────
