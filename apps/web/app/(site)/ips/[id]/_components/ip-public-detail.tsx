@@ -502,9 +502,20 @@ export function IpPublicDetail({ ipId }: IpPublicDetailProps) {
           <aside className="min-w-0 space-y-5 xl:sticky xl:top-20 xl:max-h-[calc(100vh-6rem)] xl:overflow-y-auto xl:pr-1">
             {/* Interactive-play entry (primary action). Backend enter/turns not
                 wired yet — see docs/narrative-runtime-java-api-v0.md. */}
-            {/* Duolingo-style 3D push CTA. Backend enter/turns not wired yet — see
-                docs/narrative-runtime-java-api-v0.md. */}
-            <Button3D block icon={<IconPlayerPlay />} onClick={() => toast(t("playComingSoon"))}>
+            {/* Duolingo-style 3D push CTA → opens the play page in a new tab.
+                (Play page + backend enter/turns still TBD — see
+                docs/narrative-runtime-java-api-v0.md.) */}
+            <Button3D
+              block
+              icon={<IconPlayerPlay />}
+              onClick={() =>
+                window.open(
+                  localizePath(`/play/${detailIp.id}`, locale),
+                  "_blank",
+                  "noopener,noreferrer"
+                )
+              }
+            >
               {t("playCta")}
             </Button3D>
             <CreatorTeamCard ip={detailIp} bannerUrl={ipCoverUrl} t={t} />
