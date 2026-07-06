@@ -25,11 +25,22 @@ import {
   getIpById,
   isInsufficientBalanceError,
   isMemberOnlyError,
+  likeIp,
   purchaseIpContent,
+  recordIpView,
   reportIpContent,
+  unlikeIp,
   type IpReportReason,
 } from "@/data/browse-service";
-import type { EpisodeAccess, IpAccess, IpDetail, IpEpisode, Person, PriceRule } from "@/data/types";
+import type {
+  EpisodeAccess,
+  IpAccess,
+  IpDetail,
+  IpEngagementSnapshot,
+  IpEpisode,
+  Person,
+  PriceRule,
+} from "@/data/types";
 import { useTheme } from "@/hooks/use-theme";
 import { useLocale, useTranslations } from "@/i18n";
 import { ApiRequestError } from "@/lib/api-client";
@@ -56,6 +67,18 @@ function balanceBelow(balance: string, price: string): boolean {
     return BigInt(balance) < BigInt(price);
   } catch {
     return false;
+  }
+}
+
+function formatEngagementCount(value: number, locale: string): string {
+  const normalized = Number.isFinite(value) && value > 0 ? Math.floor(value) : 0;
+  try {
+    return new Intl.NumberFormat(locale, {
+      notation: normalized >= 10_000 ? "compact" : "standard",
+      maximumFractionDigits: normalized >= 10_000 ? 1 : 0,
+    }).format(normalized);
+  } catch {
+    return String(normalized);
   }
 }
 
@@ -119,11 +142,13 @@ export default function IpDetailScreen() {
   const authGate = useAuthGate();
   const auth = useAuth();
   const scrollRef = useRef<ScrollView>(null);
+  const viewedIpRef = useRef<string | null>(null);
   const [ip, setIp] = useState<IpDetail>();
   // Per-viewer access + community-point balance + prices (authoritative unlock state).
   const [access, setAccess] = useState<IpAccess>();
   const [loading, setLoading] = useState(true);
   const [unlocking, setUnlocking] = useState(false);
+  const [likeBusy, setLikeBusy] = useState(false);
   const [expanded, setExpanded] = useState(false);
   const [playing, setPlaying] = useState<{ url: string; title: string }>();
   const [reportOpen, setReportOpen] = useState(false);
@@ -155,6 +180,43 @@ export default function IpDetailScreen() {
       alive = false;
     };
   }, [id]);
+
+  const applyEngagement = useCallback(
+    (ipId: string, engagement: IpEngagementSnapshot | undefined) => {
+      if (!engagement) return;
+      setIp((current) =>
+        current?.id === ipId
+          ? {
+              ...current,
+              viewCount: engagement.viewCount,
+              likeCount: engagement.likeCount,
+              viewerHasLiked: engagement.viewerHasLiked,
+              heatLabel: formatEngagementCount(engagement.viewCount, locale),
+            }
+          : current
+      );
+    },
+    [locale]
+  );
+
+  useEffect(() => {
+    const ipId = ip?.id;
+    if (!ipId || viewedIpRef.current === ipId) return;
+    viewedIpRef.current = ipId;
+    let alive = true;
+    void recordIpView(ipId, { source: "mobile_detail" })
+      .then((engagement) => {
+        if (!alive) return;
+        applyEngagement(ipId, engagement);
+        if (engagement) invalidateBrowse();
+      })
+      .catch(() => {
+        // Browsing should never dead-end because analytics recording failed.
+      });
+    return () => {
+      alive = false;
+    };
+  }, [applyEngagement, ip?.id]);
 
   // Re-pull detail + access after an unlock (media URL appears; balance drops).
   // Returns both so the caller can auto-play the episode + read the fresh balance
@@ -191,6 +253,28 @@ export default function IpDetailScreen() {
       </ThemedView>
     );
   }
+
+  const submitLikeToggle = async () => {
+    if (likeBusy) return;
+    setLikeBusy(true);
+    try {
+      const engagement = ip.viewerHasLiked ? await unlikeIp(ip.id) : await likeIp(ip.id);
+      applyEngagement(ip.id, engagement);
+      invalidateBrowse();
+    } catch (error) {
+      if (error instanceof ApiRequestError && error.status === 401) {
+        authGate.openLogin({ onAuthenticated: () => void submitLikeToggle() });
+        return;
+      }
+      Alert.alert(t("ipDetail.likeFailed"));
+    } finally {
+      setLikeBusy(false);
+    }
+  };
+
+  const toggleLike = () => {
+    authGate.requireAuth({ onAuthenticated: () => void submitLikeToggle() });
+  };
 
   const metaParts = [
     ip.year?.toString(),
@@ -478,6 +562,62 @@ export default function IpDetailScreen() {
                   {t("ipDetail.aiBadge")}
                 </ThemedText>
               </View>
+            </View>
+            <View style={styles.engagementRow}>
+              <View
+                style={[
+                  styles.engagementPill,
+                  { backgroundColor: theme.backgroundElement, borderColor: theme.border },
+                ]}
+              >
+                <SymbolView
+                  name={{ ios: "eye", android: "visibility", web: "visibility" }}
+                  size={14}
+                  tintColor={theme.textSecondary}
+                />
+                <ThemedText type="smallBold">
+                  {formatEngagementCount(ip.viewCount, locale)}
+                </ThemedText>
+                <ThemedText type="code" themeColor="textSecondary">
+                  {t("ipDetail.views")}
+                </ThemedText>
+              </View>
+              <Pressable
+                accessibilityLabel={ip.viewerHasLiked ? t("ipDetail.unlike") : t("ipDetail.like")}
+                accessibilityRole="button"
+                disabled={likeBusy}
+                onPress={toggleLike}
+                style={({ pressed }) => [
+                  styles.engagementPill,
+                  {
+                    backgroundColor: ip.viewerHasLiked
+                      ? "rgba(229,34,39,0.14)"
+                      : theme.backgroundElement,
+                    borderColor: ip.viewerHasLiked ? theme.brand : theme.border,
+                  },
+                  pressed && styles.pressed,
+                  likeBusy && styles.engagementDisabled,
+                ]}
+              >
+                <SymbolView
+                  name={{
+                    ios: ip.viewerHasLiked ? "heart.fill" : "heart",
+                    android: ip.viewerHasLiked ? "favorite" : "favorite_border",
+                    web: ip.viewerHasLiked ? "favorite" : "favorite_border",
+                  }}
+                  size={14}
+                  tintColor={ip.viewerHasLiked ? theme.brand : theme.textSecondary}
+                />
+                <ThemedText
+                  type="smallBold"
+                  style={ip.viewerHasLiked ? { color: theme.brand } : undefined}
+                >
+                  {formatEngagementCount(ip.likeCount, locale)}
+                </ThemedText>
+                <ThemedText type="code" themeColor="textSecondary">
+                  {t("ipDetail.likes")}
+                </ThemedText>
+              </Pressable>
             </View>
           </View>
 
@@ -837,7 +977,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.one,
   },
   titleBlock: {
-    gap: Spacing.one,
+    gap: Spacing.two,
   },
   title: {
     fontSize: 30,
@@ -858,6 +998,26 @@ const styles = StyleSheet.create({
     borderRadius: 4,
     paddingHorizontal: 5,
     paddingVertical: 1,
+  },
+  engagementRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    alignItems: "center",
+    gap: Spacing.two,
+  },
+  engagementPill: {
+    minWidth: 92,
+    height: 34,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: Spacing.one,
+    paddingHorizontal: Spacing.three,
+    borderWidth: 1,
+    borderRadius: 8,
+  },
+  engagementDisabled: {
+    opacity: 0.6,
   },
   body: {
     padding: Spacing.four,

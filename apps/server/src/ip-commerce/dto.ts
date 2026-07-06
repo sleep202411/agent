@@ -981,6 +981,23 @@ export const RecordMemberViewSchema = z.object({
 });
 export type RecordMemberViewInput = z.infer<typeof RecordMemberViewSchema>;
 
+export const RecordIpViewSchema = z.preprocess(
+  (value) => value ?? {},
+  z
+    .object({
+      idempotencyKey: z.string().trim().min(8).max(160).optional(),
+      source: z
+        .string()
+        .trim()
+        .min(1)
+        .max(64)
+        .regex(/^[a-z0-9][a-z0-9_-]*$/)
+        .default('public_api'),
+    })
+    .strict(),
+);
+export type RecordIpViewInput = z.infer<typeof RecordIpViewSchema>;
+
 export const CreateIpContentReportSchema = z
   .object({
     targetType: z.enum(['ip', 'episode']),

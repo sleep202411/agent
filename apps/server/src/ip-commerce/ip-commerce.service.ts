@@ -17,8 +17,10 @@ import {
   IpDiscoveryPlacementKey,
   IpDiscoveryRecommendationStatus,
   IpEntitlementStatus,
+  IpEngagementActorKind,
   IpLocalizationStatus,
   IpListingVisibility,
+  IpLikeStatus,
   IpModerationActionType,
   IpModerationTargetType,
   IpPriceRuleStatus,
@@ -82,6 +84,7 @@ import type {
   CreateAdminIpDiscoveryInput,
   CreateIpContentReportInput,
   RecordMemberViewInput,
+  RecordIpViewInput,
   CreateIpPurchaseInput,
   GrantAdminIpEntitlementInput,
   IpAccessQuery,
@@ -279,6 +282,16 @@ const ipInclude = {
 type IpWithCommerce = Prisma.IpGetPayload<{
   include: typeof ipInclude;
 }>;
+
+export interface IpEngagementStats {
+  viewCount: number;
+  likeCount: number;
+  humanViewCount: number;
+  agentViewCount: number;
+  humanLikeCount: number;
+  agentLikeCount: number;
+  viewerHasLiked: boolean;
+}
 
 const adminIpInclude = {
   coverAsset: true,
@@ -898,9 +911,13 @@ export class IpCommerceService {
       orderBy: [{ sortOrder: 'asc' }, { updatedAt: 'desc' }],
     });
 
+    const stats = await this.engagementStatsForIps(
+      rows.map((row) => row.ipId),
+      user,
+    );
     const items = rows
       .filter((row) => isPublicDiscoveryRenderable(row))
-      .map((row) => publicIpDiscoveryDto(row, locale));
+      .map((row) => publicIpDiscoveryDto(row, locale, stats.get(row.ipId)));
     return { items };
   }
 
@@ -3185,6 +3202,157 @@ export class IpCommerceService {
     return { report: adminReportDto(updated, report.ip?.sourceLocale) };
   }
 
+  async recordIpView(
+    user: AuthUser | undefined,
+    ipId: string,
+    input: RecordIpViewInput,
+  ) {
+    await this.ensurePublicEngagementTarget(user, ipId);
+    const now = new Date();
+    const actorKind = this.actorKindForUser(user);
+    let recorded = false;
+
+    try {
+      await this.prisma.$transaction(async (tx) => {
+        if (input.idempotencyKey) {
+          await tx.$executeRaw`
+            SELECT pg_advisory_xact_lock(hashtext(${`ip:view:${input.idempotencyKey}`})::bigint)
+          `;
+          const existing = await tx.ipViewEvent.findUnique({
+            where: { idempotencyKey: input.idempotencyKey },
+            select: { id: true },
+          });
+          if (existing) return;
+        }
+
+        await tx.ipViewEvent.create({
+          data: {
+            ipId,
+            userId: user?.userId ?? null,
+            actorKind,
+            idempotencyKey: input.idempotencyKey ?? null,
+            source: input.source,
+            metadata: {},
+            viewedAt: now,
+          },
+        });
+        await this.incrementViewAggregateTx(tx, ipId, actorKind, now);
+        recorded = true;
+      });
+    } catch (error) {
+      if (!isUniqueViolation(error)) throw error;
+    }
+
+    return {
+      recorded,
+      engagement: publicIpEngagementDto(
+        await this.engagementStatsForIp(ipId, user),
+      ),
+    };
+  }
+
+  async likeIp(user: AuthUser, ipId: string) {
+    await this.ensurePublicEngagementTarget(user, ipId);
+    const actorKind = this.actorKindForUser(user);
+    const now = new Date();
+    let changed = false;
+
+    await this.prisma.$transaction(async (tx) => {
+      await tx.$executeRaw`
+        SELECT pg_advisory_xact_lock(hashtext(${`ip:like:${ipId}:${user.userId}`})::bigint)
+      `;
+      const existing = await tx.ipLike.findUnique({
+        where: { ipId_userId: { ipId, userId: user.userId } },
+      });
+
+      if (!existing) {
+        await tx.ipLike.create({
+          data: {
+            ipId,
+            userId: user.userId,
+            actorKind,
+            status: IpLikeStatus.active,
+            likedAt: now,
+            removedAt: null,
+          },
+        });
+        await this.incrementLikeAggregateTx(tx, ipId, actorKind, now, 1);
+        changed = true;
+        return;
+      }
+
+      if (existing.status === IpLikeStatus.active && !existing.removedAt) {
+        return;
+      }
+
+      await tx.ipLike.update({
+        where: { id: existing.id },
+        data: {
+          actorKind,
+          status: IpLikeStatus.active,
+          likedAt: now,
+          removedAt: null,
+        },
+      });
+      await this.incrementLikeAggregateTx(tx, ipId, actorKind, now, 1);
+      changed = true;
+    });
+
+    return {
+      liked: true,
+      changed,
+      engagement: publicIpEngagementDto(
+        await this.engagementStatsForIp(ipId, user),
+      ),
+    };
+  }
+
+  async unlikeIp(user: AuthUser, ipId: string) {
+    await this.ensurePublicEngagementTarget(user, ipId);
+    const now = new Date();
+    let changed = false;
+
+    await this.prisma.$transaction(async (tx) => {
+      await tx.$executeRaw`
+        SELECT pg_advisory_xact_lock(hashtext(${`ip:like:${ipId}:${user.userId}`})::bigint)
+      `;
+      const existing = await tx.ipLike.findUnique({
+        where: { ipId_userId: { ipId, userId: user.userId } },
+      });
+      if (
+        !existing ||
+        existing.status === IpLikeStatus.removed ||
+        existing.removedAt
+      ) {
+        return;
+      }
+
+      await tx.ipLike.update({
+        where: { id: existing.id },
+        data: {
+          status: IpLikeStatus.removed,
+          removedAt: now,
+        },
+      });
+      await this.incrementLikeAggregateTx(
+        tx,
+        ipId,
+        existing.actorKind,
+        now,
+        -1,
+      );
+      changed = true;
+    });
+
+    return {
+      liked: false,
+      changed,
+      engagement: publicIpEngagementDto(
+        await this.engagementStatsForIp(ipId, user),
+      ),
+    };
+  }
+
   async listPublicIps(query: ListIpsQuery, user?: AuthUser) {
     const viewerBlockWhere = await this.viewerBlockWhere(user);
     const cursor = query.cursor
@@ -3227,8 +3395,14 @@ export class IpCommerceService {
     });
 
     const items = rows.slice(0, query.limit);
+    const stats = await this.engagementStatsForIps(
+      items.map((ip) => ip.id),
+      user,
+    );
     return {
-      items: items.map((ip) => ipDto(ip, query.locale)),
+      items: items.map((ip) =>
+        ipDto(ip, query.locale, undefined, stats.get(ip.id)),
+      ),
       nextCursor: rows.length > query.limit ? (items.at(-1)?.id ?? null) : null,
     };
   }
@@ -3277,6 +3451,7 @@ export class IpCommerceService {
       },
     });
     const byId = new Map(rows.map((row) => [row.id, row]));
+    const stats = await this.engagementStatsForIps(picked);
 
     return {
       items: picked
@@ -3294,6 +3469,8 @@ export class IpCommerceService {
             title: copy?.title ?? ip.id,
             summary: copy?.summary ?? '',
             coverUrl: cover?.url ?? null,
+            viewCount: stats.get(ip.id)?.viewCount ?? 0,
+            likeCount: stats.get(ip.id)?.likeCount ?? 0,
           };
         }),
     };
@@ -3351,8 +3528,14 @@ export class IpCommerceService {
     });
 
     const items = rows.slice(0, query.limit);
+    const stats = await this.engagementStatsForIps(
+      items.map((ip) => ip.id),
+      user,
+    );
     return {
-      items: items.map((ip) => ipDto(ip, query.locale)),
+      items: items.map((ip) =>
+        ipDto(ip, query.locale, undefined, stats.get(ip.id)),
+      ),
       nextCursor: rows.length > query.limit ? (items.at(-1)?.id ?? null) : null,
     };
   }
@@ -3435,10 +3618,16 @@ export class IpCommerceService {
     });
 
     const items = rows.slice(0, query.limit);
+    const stats = await this.engagementStatsForIps(
+      items.map((ip) => ip.id),
+      user,
+    );
     return {
       term: taxonomyTermDto(term, query.locale),
       total,
-      items: items.map((ip) => ipDto(ip, query.locale)),
+      items: items.map((ip) =>
+        ipDto(ip, query.locale, undefined, stats.get(ip.id)),
+      ),
       nextCursor: rows.length > query.limit ? (items.at(-1)?.id ?? null) : null,
     };
   }
@@ -3512,7 +3701,8 @@ export class IpCommerceService {
           .filter(Boolean) as string[],
       ),
     };
-    const dto = ipDto(ip, query.locale, mediaAccess);
+    const stats = await this.engagementStatsForIp(ip.id, user);
+    const dto = ipDto(ip, query.locale, mediaAccess, stats);
     // Legacy CN IPs store video external_urls on the image CDN (banner.fizzspace.cn,
     // 404 for videos); mint the real signed video URL via Java getLink at read time.
     await this.legacyCnVideo.resolveDtoVideos(dto);
@@ -4598,6 +4788,151 @@ export class IpCommerceService {
       not.push({ createdById: { in: blockedCreatorIds } });
     }
     return not.length > 0 ? { NOT: not } : {};
+  }
+
+  private actorKindForUser(_user?: AuthUser): IpEngagementActorKind {
+    // Agent User provenance will plug in here. Until the Agent User profile
+    // table exists, all authenticated/public product traffic is human.
+    return IpEngagementActorKind.human;
+  }
+
+  private async ensurePublicEngagementTarget(
+    user: AuthUser | undefined,
+    ipId: string,
+  ) {
+    const viewerBlockWhere = await this.viewerBlockWhere(user);
+    const ip = await this.prisma.ip.findFirst({
+      where: {
+        id: ipId,
+        deletedAt: null,
+        status: { in: PUBLIC_IP_STATUSES },
+        listingVisibility: { in: ['public', 'unlisted'] },
+        localizations: {
+          some: {
+            archivedAt: null,
+            status: { in: PUBLIC_LOCALIZATION_STATUSES },
+          },
+        },
+        ...viewerBlockWhere,
+      },
+      select: { id: true },
+    });
+    if (!ip) {
+      throw new NotFoundException({
+        code: 'IP_NOT_FOUND',
+        msg: 'IP not found.',
+      });
+    }
+    return ip;
+  }
+
+  private async engagementStatsForIp(
+    ipId: string,
+    user?: AuthUser,
+  ): Promise<IpEngagementStats> {
+    return (
+      (await this.engagementStatsForIps([ipId], user)).get(ipId) ??
+      emptyIpEngagementStats()
+    );
+  }
+
+  private async engagementStatsForIps(
+    ipIds: readonly string[],
+    user?: AuthUser,
+  ): Promise<Map<string, IpEngagementStats>> {
+    const uniqueIds = Array.from(new Set(ipIds.filter(Boolean)));
+    const out = new Map<string, IpEngagementStats>(
+      uniqueIds.map((id) => [id, emptyIpEngagementStats()]),
+    );
+    if (uniqueIds.length === 0) return out;
+
+    const [aggregates, viewerLikes] = await Promise.all([
+      this.prisma.ipEngagementAggregate.findMany({
+        where: { ipId: { in: uniqueIds } },
+      }),
+      user
+        ? this.prisma.ipLike.findMany({
+            where: {
+              userId: user.userId,
+              ipId: { in: uniqueIds },
+              status: IpLikeStatus.active,
+              removedAt: null,
+            },
+            select: { ipId: true },
+          })
+        : Promise.resolve([]),
+    ]);
+    const likedIpIds = new Set(viewerLikes.map((like) => like.ipId));
+
+    for (const row of aggregates) {
+      out.set(row.ipId, {
+        viewCount: bigintCount(row.totalViewCount),
+        likeCount: bigintCount(row.totalLikeCount),
+        humanViewCount: bigintCount(row.humanViewCount),
+        agentViewCount: bigintCount(row.agentViewCount),
+        humanLikeCount: bigintCount(row.humanLikeCount),
+        agentLikeCount: bigintCount(row.agentLikeCount),
+        viewerHasLiked: likedIpIds.has(row.ipId),
+      });
+    }
+    for (const ipId of likedIpIds) {
+      const current = out.get(ipId) ?? emptyIpEngagementStats();
+      out.set(ipId, { ...current, viewerHasLiked: true });
+    }
+    return out;
+  }
+
+  private async incrementViewAggregateTx(
+    tx: Prisma.TransactionClient,
+    ipId: string,
+    actorKind: IpEngagementActorKind,
+    now: Date,
+  ) {
+    const human = actorKind === IpEngagementActorKind.human ? 1 : 0;
+    const agent = actorKind === IpEngagementActorKind.agent ? 1 : 0;
+    await tx.ipEngagementAggregate.upsert({
+      where: { ipId },
+      create: {
+        ipId,
+        humanViewCount: human,
+        agentViewCount: agent,
+        totalViewCount: 1,
+        lastViewedAt: now,
+      },
+      update: {
+        humanViewCount: { increment: human },
+        agentViewCount: { increment: agent },
+        totalViewCount: { increment: 1 },
+        lastViewedAt: now,
+      },
+    });
+  }
+
+  private async incrementLikeAggregateTx(
+    tx: Prisma.TransactionClient,
+    ipId: string,
+    actorKind: IpEngagementActorKind,
+    now: Date,
+    delta: 1 | -1,
+  ) {
+    const human = actorKind === IpEngagementActorKind.human ? delta : 0;
+    const agent = actorKind === IpEngagementActorKind.agent ? delta : 0;
+    await tx.ipEngagementAggregate.upsert({
+      where: { ipId },
+      create: {
+        ipId,
+        humanLikeCount: Math.max(human, 0),
+        agentLikeCount: Math.max(agent, 0),
+        totalLikeCount: delta > 0 ? 1 : 0,
+        lastLikedAt: delta > 0 ? now : null,
+      },
+      update: {
+        humanLikeCount: { increment: human },
+        agentLikeCount: { increment: agent },
+        totalLikeCount: { increment: delta },
+        ...(delta > 0 ? { lastLikedAt: now } : {}),
+      },
+    });
   }
 
   private async resolveCollectionTarget(
@@ -6016,6 +6351,7 @@ function adminIpDiscoveryDto(
 function publicIpDiscoveryDto(
   rec: PublicIpDiscoveryRow,
   requestedLocale?: string | null,
+  engagement?: IpEngagementStats,
 ) {
   const copy = selectDiscoveryLocalization(rec.localizations, requestedLocale);
   return {
@@ -6025,7 +6361,9 @@ function publicIpDiscoveryDto(
     ip: ipReferenceDto(rec.ip, requestedLocale),
     // Native IP card — drives non-hero placements (for-you rail) and enriches
     // the hero (episode count / genres) where the curated copy leaves gaps.
-    ipCard: rec.ip ? ipDto(rec.ip, requestedLocale) : null,
+    ipCard: rec.ip
+      ? ipDto(rec.ip, requestedLocale, undefined, engagement)
+      : null,
     sortOrder: rec.sortOrder,
     eyebrow: copy?.eyebrow ?? null,
     title: copy?.title ?? null,
@@ -6933,6 +7271,7 @@ function ipDto(
   // detail) only free + free-preview episodes expose their playable media. When
   // provided, additionally expose media the viewer has unlocked.
   mediaAccess?: { ipOwned: boolean; ownedEpisodeIds: ReadonlySet<string> },
+  engagement: IpEngagementStats = emptyIpEngagementStats(),
 ) {
   const activeIpPrice = selectActivePrice(
     title.priceRules.filter((rule) => rule.targetType === IpTargetType.ip),
@@ -6940,6 +7279,7 @@ function ipDto(
   const ipPaid = Boolean(activeIpPrice);
   const copy = selectIpLocalization(title, requestedLocale, true);
   const taxonomy = taxonomyBundleDto(title, requestedLocale);
+  const publicEngagement = publicIpEngagementDto(engagement);
   return {
     id: title.id,
     slug: copy.value?.slug ?? null,
@@ -6972,6 +7312,10 @@ function ipDto(
     trailerAsset: assetDto(title.trailerAsset),
     publishedAt: title.publishedAt?.toISOString() ?? null,
     scheduledAt: title.scheduledAt?.toISOString() ?? null,
+    viewCount: publicEngagement.viewCount,
+    likeCount: publicEngagement.likeCount,
+    viewerHasLiked: publicEngagement.viewerHasLiked,
+    engagement: publicEngagement,
     price: activeIpPrice ? priceRuleDto(activeIpPrice) : null,
     campaigns: title.campaigns.map((campaign) => {
       const campaignCopy = selectCampaignLocalization(
@@ -7136,6 +7480,10 @@ function mockPublicIpDto(ipId: string, requestedLocale?: string | null) {
     trailerAsset: null,
     publishedAt,
     scheduledAt: null,
+    viewCount: 0,
+    likeCount: 0,
+    viewerHasLiked: false,
+    engagement: publicIpEngagementDto(emptyIpEngagementStats()),
     price: {
       id: '00000000-0000-4000-8000-000000000101',
       targetType: IpTargetType.ip,
@@ -7770,6 +8118,38 @@ function userBlockDto(block: {
     createdAt: block.createdAt.toISOString(),
     unblockedAt: block.unblockedAt?.toISOString() ?? null,
   };
+}
+
+function emptyIpEngagementStats(): IpEngagementStats {
+  return {
+    viewCount: 0,
+    likeCount: 0,
+    humanViewCount: 0,
+    agentViewCount: 0,
+    humanLikeCount: 0,
+    agentLikeCount: 0,
+    viewerHasLiked: false,
+  };
+}
+
+function publicIpEngagementDto(engagement: IpEngagementStats) {
+  return {
+    viewCount: engagement.viewCount,
+    likeCount: engagement.likeCount,
+    viewerHasLiked: engagement.viewerHasLiked,
+  };
+}
+
+function bigintCount(value: bigint | number | null | undefined): number {
+  if (value == null) return 0;
+  const numeric = typeof value === 'bigint' ? Number(value) : value;
+  return Number.isFinite(numeric) && numeric > 0 ? numeric : 0;
+}
+
+function isUniqueViolation(err: unknown): boolean {
+  return (
+    err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002'
+  );
 }
 
 function createIpOrderNo(): string {

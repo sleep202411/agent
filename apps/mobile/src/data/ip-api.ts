@@ -20,6 +20,7 @@ import type {
   IpAccessCode,
   IpDetail,
   IpDiscovery,
+  IpEngagementSnapshot,
   IpEpisode,
   IpStatus,
   IpSummary,
@@ -78,9 +79,30 @@ type IpDto = {
   trailerAsset?: AssetDto;
   contributors?: ContributorDto[];
   episodes?: EpisodeDto[];
+  viewCount?: number | string | null;
+  likeCount?: number | string | null;
+  viewerHasLiked?: boolean | null;
+  engagement?: EngagementDto | null;
 };
 
 const AURORA = { service: "aurora" } as const;
+
+type EngagementDto = {
+  viewCount?: number | string | null;
+  likeCount?: number | string | null;
+  viewerHasLiked?: boolean | null;
+};
+
+type EngagementCarrierDto = EngagementDto & {
+  engagement?: EngagementDto | null;
+};
+
+type EngagementMutationResponse = {
+  recorded?: boolean;
+  liked?: boolean;
+  changed?: boolean;
+  engagement?: EngagementCarrierDto | null;
+};
 
 // Current UI locale, read at request time (the user can switch in-app).
 function locale() {
@@ -106,6 +128,36 @@ function durationLabel(seconds?: number | null): string | undefined {
   return `${Math.max(1, Math.round(seconds / 60))}m`;
 }
 
+function countNumber(value: unknown): number {
+  const numeric = typeof value === "string" ? Number(value) : value;
+  if (typeof numeric !== "number" || !Number.isFinite(numeric) || numeric <= 0) return 0;
+  return Math.floor(numeric);
+}
+
+function compactCount(value: number): string | undefined {
+  if (value <= 0) return undefined;
+  if (value < 1_000) return String(value);
+  const units = [
+    { threshold: 1_000_000_000, suffix: "B" },
+    { threshold: 1_000_000, suffix: "M" },
+    { threshold: 1_000, suffix: "K" },
+  ];
+  const unit = units.find((item) => value >= item.threshold);
+  if (!unit) return String(value);
+  const scaled = value / unit.threshold;
+  const digits = scaled < 10 ? 1 : 0;
+  return `${scaled.toFixed(digits).replace(/\.0$/, "")}${unit.suffix}`;
+}
+
+function engagementSnapshot(dto: EngagementCarrierDto | null | undefined): IpEngagementSnapshot {
+  const source = dto?.engagement ?? dto ?? {};
+  return {
+    viewCount: countNumber(source.viewCount),
+    likeCount: countNumber(source.likeCount),
+    viewerHasLiked: source.viewerHasLiked === true,
+  };
+}
+
 function normalizeRegionCode(region?: string | null): string | undefined {
   const code = region?.trim().toUpperCase();
   return code || undefined;
@@ -114,6 +166,7 @@ function normalizeRegionCode(region?: string | null): string | undefined {
 function mapSummary(dto: IpDto, featured = false): IpSummary {
   const cover = assetUrl(dto.coverAsset);
   const regionCode = normalizeRegionCode(dto.region);
+  const engagement = engagementSnapshot(dto);
   return {
     id: dto.id,
     title: dto.title,
@@ -136,6 +189,10 @@ function mapSummary(dto: IpDto, featured = false): IpSummary {
     status: deriveStatus(dto),
     synopsis: dto.summary ?? dto.description ?? "",
     creator: creatorOf(dto),
+    viewCount: engagement.viewCount,
+    likeCount: engagement.likeCount,
+    viewerHasLiked: engagement.viewerHasLiked,
+    heatLabel: compactCount(engagement.viewCount),
     featured,
   };
 }
@@ -380,6 +437,30 @@ export async function fetchIpDetail(id: string): Promise<IpDetail | undefined> {
     detail.cast = detail.cast.map(enrich);
   }
   return detail;
+}
+
+export async function recordIpView(
+  ipId: string,
+  input?: { idempotencyKey?: string; source?: string }
+): Promise<IpEngagementSnapshot | undefined> {
+  const res = await api.post<EngagementMutationResponse>(`/ip-commerce/ips/${ipId}/view`, {
+    ...AURORA,
+    data: {
+      source: input?.source ?? "mobile_detail",
+      idempotencyKey: input?.idempotencyKey,
+    },
+  });
+  return res.engagement ? engagementSnapshot(res.engagement) : undefined;
+}
+
+export async function likeIp(ipId: string): Promise<IpEngagementSnapshot | undefined> {
+  const res = await api.put<EngagementMutationResponse>(`/ip-commerce/ips/${ipId}/like`, AURORA);
+  return res.engagement ? engagementSnapshot(res.engagement) : undefined;
+}
+
+export async function unlikeIp(ipId: string): Promise<IpEngagementSnapshot | undefined> {
+  const res = await api.delete<EngagementMutationResponse>(`/ip-commerce/ips/${ipId}/like`, AURORA);
+  return res.engagement ? engagementSnapshot(res.engagement) : undefined;
 }
 
 /** Report reasons accepted by Nest `POST /aurora/ip-commerce/reports`. */

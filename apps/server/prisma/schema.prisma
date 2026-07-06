@@ -728,6 +728,16 @@ enum IpCollectionItemStatus {
   removed
 }
 
+enum IpEngagementActorKind {
+  human
+  agent
+}
+
+enum IpLikeStatus {
+  active
+  removed
+}
+
 enum IpContributorRole {
   owner
   producer
@@ -2812,6 +2822,9 @@ model Ip {
   rightsDeclarations       IpRightsDeclaration[]
   reports                  IpContentReport[]
   userBlocks               IpUserContentBlock[]
+  engagementAggregate      IpEngagementAggregate?
+  viewEvents               IpViewEvent[]
+  likes                    IpLike[]
 
   /// Public slug uniqueness is locale-aware and enforced on
   /// IpLocalization by partial unique SQL.
@@ -3288,6 +3301,64 @@ model IpCollectionItem {
   @@index([userId, status, addedAt(sort: Desc)], map: "ip_collection_items_user_recent_idx")
   @@index([ipId, status], map: "ip_collection_items_ip_idx")
   @@map("ip_collection_items")
+}
+
+model IpEngagementAggregate {
+  ipId           String    @id @map("ip_id") @db.Uuid
+  humanViewCount BigInt    @default(0) @map("human_view_count")
+  agentViewCount BigInt    @default(0) @map("agent_view_count")
+  totalViewCount BigInt    @default(0) @map("total_view_count")
+  humanLikeCount BigInt    @default(0) @map("human_like_count")
+  agentLikeCount BigInt    @default(0) @map("agent_like_count")
+  totalLikeCount BigInt    @default(0) @map("total_like_count")
+  lastViewedAt   DateTime? @map("last_viewed_at") @db.Timestamptz(6)
+  lastLikedAt    DateTime? @map("last_liked_at") @db.Timestamptz(6)
+  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  ip Ip @relation(fields: [ipId], references: [id], onDelete: Cascade)
+
+  @@index([totalViewCount(sort: Desc), updatedAt(sort: Desc)], map: "ip_engagement_view_rank_idx")
+  @@index([totalLikeCount(sort: Desc), updatedAt(sort: Desc)], map: "ip_engagement_like_rank_idx")
+  @@map("ip_engagement_aggregates")
+}
+
+model IpViewEvent {
+  id             String                @id @default(uuid(7)) @db.Uuid
+  ipId           String                @map("ip_id") @db.Uuid
+  userId         String?               @map("user_id") @db.VarChar(64)
+  actorKind      IpEngagementActorKind @default(human) @map("actor_kind")
+  idempotencyKey String?               @unique(map: "ip_view_events_idempotency_key_unique") @map("idempotency_key") @db.VarChar(160)
+  source         String                @default("public_api") @db.VarChar(64)
+  metadata       Json                  @default("{}") @db.JsonB
+  viewedAt       DateTime              @default(now()) @map("viewed_at") @db.Timestamptz(6)
+
+  ip Ip @relation(fields: [ipId], references: [id], onDelete: Cascade)
+
+  @@index([ipId, viewedAt(sort: Desc)], map: "ip_view_events_ip_recent_idx")
+  @@index([userId, viewedAt(sort: Desc)], map: "ip_view_events_user_recent_idx")
+  @@index([actorKind, viewedAt(sort: Desc)], map: "ip_view_events_actor_recent_idx")
+  @@map("ip_view_events")
+}
+
+model IpLike {
+  id        String                @id @default(uuid(7)) @db.Uuid
+  ipId      String                @map("ip_id") @db.Uuid
+  userId    String                @map("user_id") @db.VarChar(64)
+  actorKind IpEngagementActorKind @default(human) @map("actor_kind")
+  status    IpLikeStatus          @default(active)
+  metadata  Json                  @default("{}") @db.JsonB
+  likedAt   DateTime              @default(now()) @map("liked_at") @db.Timestamptz(6)
+  removedAt DateTime?             @map("removed_at") @db.Timestamptz(6)
+  updatedAt DateTime              @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  ip Ip @relation(fields: [ipId], references: [id], onDelete: Cascade)
+
+  @@unique([ipId, userId], map: "ip_likes_ip_user_unique")
+  @@index([ipId, status], map: "ip_likes_ip_status_idx")
+  @@index([userId, status, likedAt(sort: Desc)], map: "ip_likes_user_recent_idx")
+  @@index([actorKind, status, likedAt(sort: Desc)], map: "ip_likes_actor_recent_idx")
+  @@map("ip_likes")
 }
 
 model IpContributor {

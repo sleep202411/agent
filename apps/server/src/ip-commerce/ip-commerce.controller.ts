@@ -18,6 +18,7 @@ import {
   CreateIpContentReportSchema,
   CreateIpPurchaseSchema,
   RecordMemberViewSchema,
+  RecordIpViewSchema,
   CreatorRevenueQuerySchema,
   UpdateCreatorIpContributorSchema,
   UpdateCreatorIpProfileSchema,
@@ -51,6 +52,7 @@ import {
   type CreateIpContentReportInput,
   type CreateIpPurchaseInput,
   type RecordMemberViewInput,
+  type RecordIpViewInput,
   type CreatorRevenueQuery,
   type IpAssetParams,
   type IpContributorParams,
@@ -477,6 +479,45 @@ export class IpCommerceController {
     return {
       code: 200,
       data: await this.ipCommerce.listPublicTagIps(params.code, query, user),
+    };
+  }
+
+  @Public()
+  @Post('ips/:ipId/view')
+  async recordIpView(
+    @CurrentUser() user: AuthUser | undefined,
+    @Param(new ZodValidationPipe(IpParamsSchema))
+    params: IpParams,
+    @Body(new ZodValidationPipe(RecordIpViewSchema))
+    body: RecordIpViewInput,
+  ) {
+    return {
+      code: 200,
+      data: await this.ipCommerce.recordIpView(user, params.ipId, body),
+    };
+  }
+
+  @Put('ips/:ipId/like')
+  async likeIp(
+    @CurrentUser() user: AuthUser,
+    @Param(new ZodValidationPipe(IpParamsSchema))
+    params: IpParams,
+  ) {
+    return {
+      code: 200,
+      data: await this.ipCommerce.likeIp(user, params.ipId),
+    };
+  }
+
+  @Delete('ips/:ipId/like')
+  async unlikeIp(
+    @CurrentUser() user: AuthUser,
+    @Param(new ZodValidationPipe(IpParamsSchema))
+    params: IpParams,
+  ) {
+    return {
+      code: 200,
+      data: await this.ipCommerce.unlikeIp(user, params.ipId),
     };
   }
 

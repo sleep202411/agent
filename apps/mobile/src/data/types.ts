@@ -26,7 +26,13 @@ export interface IpEpisode {
   videoUrl?: string;
 }
 
-export interface IpSummary {
+export interface IpEngagementSnapshot {
+  viewCount: number;
+  likeCount: number;
+  viewerHasLiked: boolean;
+}
+
+export interface IpSummary extends IpEngagementSnapshot {
   id: string;
   title: string;
   tagline?: string;

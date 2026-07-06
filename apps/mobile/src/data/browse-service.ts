@@ -26,6 +26,7 @@ import type {
 
 export type { IpDiscovery } from "./types";
 export { blockIpContent, IP_REPORT_REASONS, reportIpContent, type IpReportReason } from "./ip-api";
+export { likeIp, recordIpView, unlikeIp } from "./ip-api";
 export {
   fetchCommunityPointBalance,
   fetchIpAccess,

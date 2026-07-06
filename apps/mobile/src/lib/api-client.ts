@@ -287,6 +287,8 @@ async function request<T>(method: string, path: string, config: ApiRequestConfig
 export const api = {
   get: <T>(path: string, config?: ApiRequestConfig) => request<T>("GET", path, config),
   post: <T>(path: string, config?: ApiRequestConfig) => request<T>("POST", path, config),
+  put: <T>(path: string, config?: ApiRequestConfig) => request<T>("PUT", path, config),
+  delete: <T>(path: string, config?: ApiRequestConfig) => request<T>("DELETE", path, config),
   postForm: <T>(
     path: string,
     form: NonNullable<ApiRequestConfig["form"]>,
