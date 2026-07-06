@@ -1580,6 +1580,8 @@
     }
   },
   "newIpDetail": {
+    "playCta": "開始遊玩",
+    "playComingSoon": "互動版接入中,敬請期待。",
     "loading": "正在載入 IP 詳情...",
     "back": "返回 IP 廣場",
     "previewBadge": "僅本人可見的公開頁預覽",

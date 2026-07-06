@@ -1580,6 +1580,8 @@
     }
   },
   "newIpDetail": {
+    "playCta": "开始游玩",
+    "playComingSoon": "互动版接入中,敬请期待。",
     "loading": "正在加载 IP 详情...",
     "back": "返回 IP 广场",
     "previewBadge": "仅本人可见的公开页预览",

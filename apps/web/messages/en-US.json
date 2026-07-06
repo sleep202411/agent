@@ -1581,6 +1581,8 @@
     }
   },
   "newIpDetail": {
+    "playCta": "Play",
+    "playComingSoon": "Coming soon — the interactive story is being wired up.",
     "loading": "Loading IP detail...",
     "back": "Back to IP plaza",
     "previewBadge": "Public-page preview visible only to you",

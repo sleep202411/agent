@@ -22,6 +22,7 @@ import {
 } from "@tabler/icons-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { Button3D } from "@/components/ui/button-3d";
 import { CommunityRechargeDialog } from "@/components/payment/community-recharge-dialog";
 import { CommunityMembershipDialog } from "@/components/payment/community-membership-dialog";
 import { VideoPlayer } from "@/components/media/video-player";
@@ -499,6 +500,13 @@ export function IpPublicDetail({ ipId }: IpPublicDetailProps) {
           </div>
 
           <aside className="min-w-0 space-y-5 xl:sticky xl:top-20 xl:max-h-[calc(100vh-6rem)] xl:overflow-y-auto xl:pr-1">
+            {/* Interactive-play entry (primary action). Backend enter/turns not
+                wired yet — see docs/narrative-runtime-java-api-v0.md. */}
+            {/* Duolingo-style 3D push CTA. Backend enter/turns not wired yet — see
+                docs/narrative-runtime-java-api-v0.md. */}
+            <Button3D block icon={<IconPlayerPlay />} onClick={() => toast(t("playComingSoon"))}>
+              {t("playCta")}
+            </Button3D>
             <CreatorTeamCard ip={detailIp} bannerUrl={ipCoverUrl} t={t} />
             <EpisodePlaylist
               episodes={detailIp.episodes}
