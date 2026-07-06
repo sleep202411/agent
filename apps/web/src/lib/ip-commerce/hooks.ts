@@ -25,13 +25,16 @@ import {
   listIpCommerceIps,
   listIpCommerceTaxonomyTerms,
   lookupIpCommerceUser,
+  likeIpContent,
   searchIpCommerceUsers,
   purchaseIpContent,
+  recordIpView,
   reportIpContent,
   removeIpCommerceCollection,
   saveIpCommerceCollection,
   submitIpCommerceIpForReview,
   unblockIpContent,
+  unlikeIpContent,
   updateIpCommerceContributor,
   updateIpCommerceEpisode,
   updateIpCommerceIpAssets,
@@ -57,6 +60,8 @@ import {
   type UpsertIpBlockInput,
   type IpTaxonomyTermType,
   type IpDiscoveryPlacementKey,
+  type IpCommerceIp,
+  type IpEngagementMutationResult,
 } from "./api";
 
 export const ipCommerceKeys = {
@@ -268,6 +273,54 @@ export function useMyIpCommerceIp(ipId: string | null | undefined, params?: { lo
     queryFn: () => getMyIpCommerceIp(ipId!, params),
     enabled: Boolean(ipId),
     staleTime: 30_000,
+  });
+}
+
+function patchIpEngagement(
+  ip: IpCommerceIp,
+  engagement: IpEngagementMutationResult["engagement"]
+): IpCommerceIp {
+  return {
+    ...ip,
+    viewCount: engagement.viewCount,
+    likeCount: engagement.likeCount,
+    viewerHasLiked: engagement.viewerHasLiked,
+    engagement,
+  };
+}
+
+function usePatchIpEngagementCache() {
+  const qc = useQueryClient();
+  return (ipId: string, engagement: IpEngagementMutationResult["engagement"]) => {
+    qc.setQueriesData<{ ip: IpCommerceIp }>(
+      { queryKey: ["ip-commerce", "ips", ipId] },
+      (current) =>
+        current?.ip ? { ...current, ip: patchIpEngagement(current.ip, engagement) } : current
+    );
+  };
+}
+
+export function useRecordIpView() {
+  const patchCache = usePatchIpEngagementCache();
+  return useMutation({
+    mutationFn: (input: { ipId: string; source?: string; idempotencyKey?: string }) =>
+      recordIpView(input),
+    onSuccess: (result, input) => {
+      patchCache(input.ipId, result.engagement);
+    },
+  });
+}
+
+export function useToggleIpEngagementLike() {
+  const patchCache = usePatchIpEngagementCache();
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: { ipId: string; viewerHasLiked: boolean }) =>
+      input.viewerHasLiked ? unlikeIpContent(input.ipId) : likeIpContent(input.ipId),
+    onSuccess: async (result, input) => {
+      patchCache(input.ipId, result.engagement);
+      await qc.invalidateQueries({ queryKey: ["ip-commerce", "ips", input.ipId] });
+    },
   });
 }
 

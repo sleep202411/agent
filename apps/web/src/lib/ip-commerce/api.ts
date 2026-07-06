@@ -109,6 +109,19 @@ export interface IpCommerceEpisode {
   price: IpCommercePriceRule | null;
 }
 
+export interface IpEngagementSnapshot {
+  viewCount: number;
+  likeCount: number;
+  viewerHasLiked: boolean;
+}
+
+export interface IpEngagementMutationResult {
+  recorded?: boolean;
+  liked?: boolean;
+  changed?: boolean;
+  engagement: IpEngagementSnapshot;
+}
+
 export interface IpCommerceIp {
   id: string;
   slug: string | null;
@@ -147,6 +160,10 @@ export interface IpCommerceIp {
   trailerAsset: IpCommerceAsset | null;
   publishedAt: string | null;
   scheduledAt: string | null;
+  viewCount?: number | null;
+  likeCount?: number | null;
+  viewerHasLiked?: boolean | null;
+  engagement?: IpEngagementSnapshot | null;
   price: IpCommercePriceRule | null;
   campaigns: Array<{
     id: string;
@@ -1030,6 +1047,30 @@ export function getIpAccess(ipId: string, params?: { episodeIds?: string[]; loca
       locale: params?.locale,
     },
   });
+}
+
+export function recordIpView(input: { ipId: string; source?: string; idempotencyKey?: string }) {
+  return api.post<IpEngagementMutationResult>(
+    `/aurora/ip-commerce/ips/${encodeURIComponent(input.ipId)}/view`,
+    {
+      data: {
+        source: input.source ?? "web_detail",
+        idempotencyKey: input.idempotencyKey,
+      },
+    }
+  );
+}
+
+export function likeIpContent(ipId: string) {
+  return api.put<IpEngagementMutationResult>(
+    `/aurora/ip-commerce/ips/${encodeURIComponent(ipId)}/like`
+  );
+}
+
+export function unlikeIpContent(ipId: string) {
+  return api.delete<IpEngagementMutationResult>(
+    `/aurora/ip-commerce/ips/${encodeURIComponent(ipId)}/like`
+  );
 }
 
 export function getIpCommerceWallet() {

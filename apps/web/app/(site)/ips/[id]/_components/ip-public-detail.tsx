@@ -10,7 +10,9 @@ import {
   IconBook2,
   IconBookmark,
   IconDotsVertical,
+  IconEye,
   IconFlag,
+  IconHeart,
   IconLoader2,
   IconLock,
   IconPlayerPlay,
@@ -69,9 +71,11 @@ import {
   useIpCommerceIp,
   useMyIpCommerceIp,
   usePurchaseIpContent,
+  useRecordIpView,
   useRemoveIpCommerceCollection,
   useReportIpContent,
   useSaveIpCommerceCollection,
+  useToggleIpEngagementLike,
 } from "@/src/lib/ip-commerce/hooks";
 
 interface IpPublicDetailProps {
@@ -101,6 +105,9 @@ interface DetailIp {
   copyrightOwner: string | null;
   createdById: string | null;
   contributors: IpCommerceIp["contributors"];
+  viewCount: number;
+  likeCount: number;
+  viewerHasLiked: boolean;
   previewMode: boolean;
 }
 
@@ -150,6 +157,15 @@ export function IpPublicDetail({ ipId }: IpPublicDetailProps) {
   const removeCollection = useRemoveIpCommerceCollection();
   const reportContent = useReportIpContent();
   const blockContent = useBlockIpContent();
+  const recordView = useRecordIpView();
+  const toggleLike = useToggleIpEngagementLike();
+  const viewedIpRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (!detailIp || detailIp.previewMode || viewedIpRef.current === detailIp.id) return;
+    viewedIpRef.current = detailIp.id;
+    recordView.mutate({ ipId: detailIp.id, source: "web_detail" });
+  }, [detailIp, recordView]);
 
   // Fire the AppLovin `view_item` conversion once per IP view, when the IP has
   // loaded. No-op on the CN build / when the pixel key is unset (axon.ts). The
@@ -285,6 +301,25 @@ export function IpPublicDetail({ ipId }: IpPublicDetailProps) {
     }
   }
 
+  async function handleLikeToggle() {
+    const currentIp = detailIp;
+    if (!currentIp || currentIp.previewMode || toggleLike.isPending) return;
+    if (!user) {
+      router.push(loginHref);
+      return;
+    }
+    try {
+      const result = await toggleLike.mutateAsync({
+        ipId: currentIp.id,
+        viewerHasLiked: currentIp.viewerHasLiked,
+      });
+      toast.success(result.liked ? t("actions.likeSuccess") : t("actions.unlikeSuccess"));
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "";
+      toast.error(msg || t("actions.likeFailed"));
+    }
+  }
+
   async function handleReportSubmit(input: {
     reason: string;
     description?: string;
@@ -396,6 +431,22 @@ export function IpPublicDetail({ ipId }: IpPublicDetailProps) {
                     {t("actions.share")}
                   </ActionButton>
                   <ActionButton
+                    active={detailIp.viewerHasLiked}
+                    disabled={detailIp.previewMode || toggleLike.isPending}
+                    onClick={() => void handleLikeToggle()}
+                    icon={IconHeart}
+                  >
+                    <span>{detailIp.viewerHasLiked ? t("actions.liked") : t("actions.like")}</span>
+                    <span
+                      className={cn(
+                        "rounded-full bg-background/70 px-1.5 py-0.5 text-[11px] leading-none text-muted-foreground",
+                        detailIp.viewerHasLiked && "bg-primary/10 text-primary"
+                      )}
+                    >
+                      {formatEngagementCount(detailIp.likeCount, locale)}
+                    </span>
+                  </ActionButton>
+                  <ActionButton
                     disabled={detailIp.previewMode || collectionBusy}
                     onClick={() => void handleCollectionToggle()}
                     icon={IconBookmark}
@@ -489,6 +540,13 @@ export function IpPublicDetail({ ipId }: IpPublicDetailProps) {
                   <span>{t("episodes.count", { count: detailIp.episodes.length })}</span>
                   <span className="text-muted-foreground/50">·</span>
                   <span>{formatDate(detailIp.publishedAt ?? detailIp.scheduledAt, locale, t)}</span>
+                  <span className="text-muted-foreground/50">·</span>
+                  <span className="inline-flex items-center gap-1">
+                    <IconEye className="size-3.5 text-muted-foreground" />
+                    {t("actions.views", {
+                      count: formatEngagementCount(detailIp.viewCount, locale),
+                    })}
+                  </span>
                 </div>
                 <p className="mt-3 whitespace-pre-line text-sm leading-6 text-secondary-foreground">
                   {mediaSummary}
@@ -569,6 +627,9 @@ export function IpPublicDetail({ ipId }: IpPublicDetailProps) {
 function normalizePublicIp(ip: IpCommerceIp): DetailIp {
   return {
     ...ip,
+    viewCount: ip.engagement?.viewCount ?? ip.viewCount ?? 0,
+    likeCount: ip.engagement?.likeCount ?? ip.likeCount ?? 0,
+    viewerHasLiked: ip.engagement?.viewerHasLiked ?? ip.viewerHasLiked === true,
     version: null,
     previewMode: false,
   };
@@ -601,6 +662,9 @@ function normalizeCreatorIp(ip: IpCreatorIp, ownerId: string | null): DetailIp {
       ...contributor,
       displayName: contributor.displayName ?? "",
     })),
+    viewCount: 0,
+    likeCount: 0,
+    viewerHasLiked: false,
     previewMode: true,
   };
 }
@@ -1392,11 +1456,13 @@ function PurchasePanel({
 function ActionButton({
   children,
   icon: Icon,
+  active,
   disabled,
   onClick,
 }: {
   children: ReactNode;
   icon: ComponentType<{ className?: string }>;
+  active?: boolean;
   disabled?: boolean;
   onClick?: () => void;
 }) {
@@ -1405,7 +1471,12 @@ function ActionButton({
       type="button"
       disabled={disabled}
       onClick={onClick}
-      className="inline-flex h-9 items-center justify-center gap-2 rounded-full bg-secondary px-3.5 text-sm font-semibold text-foreground transition-colors hover:bg-secondary/80 disabled:cursor-not-allowed disabled:text-muted-foreground"
+      className={cn(
+        "inline-flex h-9 items-center justify-center gap-2 rounded-full px-3.5 text-sm font-semibold transition-colors disabled:cursor-not-allowed disabled:text-muted-foreground",
+        active
+          ? "bg-primary/10 text-primary hover:bg-primary/15"
+          : "bg-secondary text-foreground hover:bg-secondary/80"
+      )}
     >
       <Icon className="size-4" />
       {children}
@@ -1595,6 +1666,14 @@ function formatIntegerAmount(value: string, locale: Locale) {
   } catch {
     return value;
   }
+}
+
+function formatEngagementCount(value: number, locale: Locale): string {
+  const normalized = Number.isFinite(value) && value > 0 ? Math.floor(value) : 0;
+  return new Intl.NumberFormat(locale, {
+    notation: normalized >= 10_000 ? "compact" : "standard",
+    maximumFractionDigits: normalized >= 10_000 ? 1 : 0,
+  }).format(normalized);
 }
 
 function formatBigIntAmount(value: bigint, locale: Locale) {
