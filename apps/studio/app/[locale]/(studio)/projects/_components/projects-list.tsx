@@ -34,6 +34,7 @@ import {
   type LegacyProject,
 } from "@/lib/legacy-projects";
 import { getWebBaseUrl } from "@/lib/web-base";
+import { useSiteRegion } from "@/app/_components/region-provider";
 
 /**
  * "My history projects" — the user's legacy art-studio projects. A "New project"
@@ -46,6 +47,7 @@ export function ProjectsList() {
   const tp = useTranslations("projects");
   const tc = useTranslations("common");
   const locale = useLocale();
+  const siteRegion = useSiteRegion();
   const { user } = useAuth();
   const queryClient = useQueryClient();
   const queryKey = ["legacy-projects", "my", user?.id ?? "anon"];
@@ -67,8 +69,8 @@ export function ProjectsList() {
 
   const items = data ?? [];
   const ownerName = user.nickName?.trim() || user.email || user.phone || "Me";
-  // Legacy projects live in apps/web; the domain follows the deployment, not the UI language.
-  const webBase = getWebBaseUrl();
+  // Legacy projects live in apps/web; the domain follows the deployment cell.
+  const webBase = getWebBaseUrl(siteRegion);
   const refresh = () => queryClient.invalidateQueries({ queryKey });
 
   const submitCreate = async () => {

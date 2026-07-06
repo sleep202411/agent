@@ -4548,6 +4548,8 @@
     "communityMembershipBenefitDiscount": "購買付費作品享會員折扣",
     "communityMembershipBenefitExclusive": "專屬內容與會員標識",
     "communityMembershipMonthly": "月付",
+    "communityMembershipOneTime": "30天會員",
+    "communityMembershipOneTimeUnit": "/30天",
     "communityMembershipYearly": "年付",
     "communityMembershipSave": "省 {percent}%",
     "communityMembershipSaleBadge": "限時優惠",

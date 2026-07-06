@@ -706,6 +706,15 @@
         "question": "我可以将生成内容用于商业用途吗？",
         "answer": "付费方案允许将你的生成结果用于商业用途，但须遵守服务条款。"
       }
+    },
+    "wechatScan": {
+      "title": "微信支付",
+      "instruction": "打开微信，扫一扫二维码并确认支付。",
+      "waiting": "等待支付…",
+      "paid": "支付成功",
+      "expired": "二维码已过期，请重试。",
+      "retry": "关闭",
+      "close": "关闭"
     }
   },
   "canvas": {
@@ -1048,9 +1057,11 @@
     "couldntStartTopUp": "无法发起充值",
     "couldntStartRecharge": "无法发起充值",
     "amountUsdRange": "金额（美元，$10–$5,000）",
+    "amountCnyRange": "金额（人民币，¥10–¥5,000）",
     "estimatedCredits": "预计到账",
     "recharge": "充值",
     "secureCheckoutNote": "通过 Airwallex 安全结账。1 算力积分 = 1 美分。",
+    "secureCheckoutNoteWechat": "通过微信支付安全结账。¥7 = 100 算力积分。",
     "usageAnalytics": "用量分析",
     "usageAnalyticsSubtitle": "该工作区算力积分用量概要。",
     "noUsageDataYet": "暂无用量数据",

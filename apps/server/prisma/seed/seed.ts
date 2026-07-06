@@ -9,11 +9,13 @@
  */
 import 'dotenv/config';
 
+import { CURRENT_CELL } from '../../src/common/region';
 import { buildPrisma } from '../../src/infra/db/db.module';
 import {
   seedAiImageCatalog,
   seedAiVideoCatalog,
 } from './ai-catalog/seed-catalog';
+import { seedCnPrices } from './cn-prices';
 import { seedMembershipPlans } from './membership-plans';
 
 async function main(): Promise<void> {
@@ -23,6 +25,11 @@ async function main(): Promise<void> {
     await seedAiImageCatalog(prisma);
     await seedAiVideoCatalog(prisma);
     await seedMembershipPlans(prisma);
+    // CN-only fiat pricing (CNY compute packs + one-off membership + wechat_pay
+    // bindings). Gated so it never runs on .com.
+    if (CURRENT_CELL === 'cn') {
+      await seedCnPrices(prisma);
+    }
   } finally {
     await prisma.$disconnect();
   }

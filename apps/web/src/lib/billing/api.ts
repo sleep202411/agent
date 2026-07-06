@@ -142,6 +142,38 @@ export function createBillingCheckout(input: CreateBillingCheckoutInput) {
   return api.post<BillingCheckoutResult>("/aurora/billing/checkout", { data: input });
 }
 
+export interface BillingOrderView {
+  id: string;
+  orderNo: string;
+  status: string;
+}
+
+/**
+ * Fetch a single order. `GET /orders/:id` server-side self-reconciles a still-
+ * pending WeChat order via 查单, so polling this settles a scan payment even
+ * without the callback — the WeChat QR dialog uses it to detect payment.
+ */
+export function getBillingOrder(orderId: string) {
+  return api.get<{
+    order: BillingOrderView;
+    paymentIntent: { checkoutUrl: string | null } | null;
+  }>(`/aurora/billing/orders/${encodeURIComponent(orderId)}`);
+}
+
+const SETTLED_ORDER_STATUSES = new Set(["paid", "fulfilled"]);
+const DEAD_ORDER_STATUSES = new Set(["failed", "expired", "cancelled"]);
+export const isOrderSettled = (status: string) => SETTLED_ORDER_STATUSES.has(status);
+export const isOrderDead = (status: string) => DEAD_ORDER_STATUSES.has(status);
+
+/**
+ * A WeChat 扫码 (Native) checkout URL is a `weixin://` code_url meant to be
+ * rendered as a QR the buyer scans in the WeChat app — NOT navigated to (a
+ * desktop browser just shows a useless "Open WeChat?" prompt). Intercept it.
+ */
+export function isWechatScanUrl(url: string | null | undefined): url is string {
+  return typeof url === "string" && url.startsWith("weixin://");
+}
+
 export interface CreateCustomRechargeInput {
   /** Whole US dollars (server clamps to $10–$5000). */
   amountDollars: number;

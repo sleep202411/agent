@@ -219,7 +219,7 @@ module.exports = ({ config }) => {
     ...config,
     name: getDisplayName(appRegion, appVariant),
     slug: readSlug(),
-    version: "2.0.2",
+    version: "2.0.3",
     orientation: "portrait",
     icon: "./assets/images/icon.png",
     scheme: getScheme(appRegion, appVariant),
@@ -228,11 +228,13 @@ module.exports = ({ config }) => {
     primaryColor: THEME_COLORS.brand,
     ios: {
       ...config.ios,
-      // Brand icon is the red FizzDragon wordmark (assets/images/icon.png).
-      // Do NOT set ios.icon to the Expo `.icon` template — that ships the
-      // blue Expo arrow (seen on the 2.0.0(60) internal build).
+      // iOS-ONLY icon: a full-bleed 1024×1024 opaque poster (no transparency, no
+      // pre-baked corners — iOS applies its own squircle mask). iOS has no
+      // safe-zone/margin requirement, so the art runs edge to edge. Android keeps
+      // its own adaptiveIcon below (Xiaomi et al. DO need a safe-zone margin).
+      icon: "./assets/images/ios-icon.png",
       bundleIdentifier: readIdentifier(appRegion, appVariant, "ios"),
-      buildNumber: "70",
+      buildNumber: "73",
       // iPhone-only: no iPad/universal build (UIDeviceFamily=[1]). The 1.0
       // rejection was reviewed on an iPad Air; we do not claim tablet support.
       supportsTablet: false,
@@ -242,7 +244,7 @@ module.exports = ({ config }) => {
     android: {
       ...config.android,
       package: readIdentifier(appRegion, appVariant, "android"),
-      versionCode: 70,
+      versionCode: 73,
       userInterfaceStyle: "dark",
       backgroundColor: THEME_COLORS.canvas,
       adaptiveIcon: {

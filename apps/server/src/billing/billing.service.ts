@@ -98,6 +98,10 @@ import type {
   UpsertAdminBillingPromotionProviderBindingInput,
 } from './dto';
 import { PaymentProviderRegistry } from './payment-provider-registry.service';
+import {
+  WechatPayProvider,
+  type WechatTransaction,
+} from './providers/wechat-pay.provider';
 import type {
   CreatePaymentIntentResult,
   CreateProviderRefundResult,
@@ -287,6 +291,7 @@ export class BillingService {
     private readonly entitlements: EntitlementService,
     private readonly referrals: ReferralsService,
     private readonly appLovinConversion: AppLovinConversionService,
+    private readonly wechatPay: WechatPayProvider,
   ) {}
 
   async listPrices(query: ListBillingPricesQuery) {
@@ -345,7 +350,12 @@ export class BillingService {
             provider,
             status: BillingProviderBindingStatus.active,
             archivedAt: null,
-            providerPriceId: { not: null },
+            // Catalog providers (Airwallex) need a synced providerPriceId; amount-
+            // based providers (WeChat/Alipay) charge the amount directly, so their
+            // binding has none — don't require it for them.
+            ...(providerRequiresPriceId(provider)
+              ? { providerPriceId: { not: null } }
+              : {}),
           },
         },
         item: {
@@ -3071,27 +3081,30 @@ export class BillingService {
       (input.provider as PaymentProvider | undefined) ??
       this.providerRegistry.defaultProviderForRuntime();
     const adapter = this.providerRegistry.get(provider);
-    if (!adapter.createPaymentIntent) {
+    // Custom-amount recharge routes to the provider's one-off surface: Airwallex
+    // via a Payment Intent (client_secret + browser SDK); WeChat/Alipay via a
+    // hosted checkout 下单 (weixin:// code_url, scanned as a QR). Need at least one.
+    // Test declared CAPABILITIES, not method presence: UnsupportedPaymentProvider
+    // (e.g. alipay on a deployment without it) DEFINES createPaymentIntent but only
+    // to reject — capabilities.* is the source of truth, so we fail cleanly here
+    // instead of minting an order that then dies at the provider call.
+    if (
+      !adapter.capabilities.paymentIntent &&
+      !adapter.capabilities.hostedCheckout
+    ) {
       throw new ServiceUnavailableException({
-        code: 'BILLING_PROVIDER_NO_PAYMENT_INTENT',
+        code: 'BILLING_PROVIDER_NO_CUSTOM_RECHARGE',
         msg: `"${provider}" does not support custom-amount recharge.`,
       });
     }
 
-    // Compute recharge obeys the same per-cell policy as the fixed packs. The
-    // arbitrary-amount path relies on a fixed USD-cent anchor ratio, so cells that
-    // price compute points by explicit admin pricing (e.g. CN/CNY) have no ratio
-    // for an ad-hoc amount — reject and steer to the fixed packs. Also constrain
-    // the provider to the cell's allow-list (community recharge keeps its prior,
-    // provider-agnostic behavior).
+    // Compute recharge derives its point grant from the per-cell anchor's own
+    // ratio (its price ↔ its grant), so every cell/currency works — including
+    // explicit-admin-priced cells (CN/CNY): the CN anchor is ¥7 = 100 points.
+    // Constrain the provider to the cell's allow-list (community recharge keeps
+    // its prior, provider-agnostic behavior).
     if (isCompute) {
       const policy = computePointTopupPolicy();
-      if (policy.rateMode === COMPUTE_POINT_EXPLICIT_ADMIN_PRICING) {
-        throw new ServiceUnavailableException({
-          code: 'BILLING_COMPUTE_CUSTOM_RECHARGE_UNAVAILABLE',
-          msg: 'Custom-amount compute recharge is not available in this deployment. Use a fixed credit pack.',
-        });
-      }
       if (!policy.providers.includes(provider)) {
         throw new ServiceUnavailableException({
           code: 'BILLING_COMPUTE_TOPUP_PROVIDER_UNSUPPORTED',
@@ -3103,10 +3116,17 @@ export class BillingService {
     // The hidden anchor SKU carries only the points-per-$1 ratio + wallet currency
     // for ledger routing. It has no provider binding, so it never appears in the
     // public listing and is reached only here.
+    // MUST scope by the cell's billing currency: the shared migration
+    // 20260615160000 seeds a USD anchor price on this item on EVERY cell (not
+    // cell-gated), so on CN both a USD and a CNY row can be active. Without this
+    // filter findFirst picks arbitrarily — the USD row would 7×-over-grant AND set
+    // order.currency=USD, which WeChat can't settle (下单 rejects).
+    const anchorCurrency = CURRENT_CELL === 'cn' ? 'CNY' : 'USD';
     const anchor = await this.prisma.billingPrice.findFirst({
       where: {
         isActive: true,
         archivedAt: null,
+        currency: anchorCurrency,
         item: {
           code: anchorCode,
           isActive: true,
@@ -3115,18 +3135,26 @@ export class BillingService {
       },
       include: { item: true },
     });
-    if (!anchor || !anchor.grantsWalletCurrency || !anchor.grantsWalletAmount) {
+    if (
+      !anchor ||
+      !anchor.grantsWalletCurrency ||
+      !anchor.grantsWalletAmount ||
+      anchor.amountMinor <= 0n
+    ) {
       throw new ServiceUnavailableException({
         code: 'BILLING_CUSTOM_RECHARGE_UNAVAILABLE',
         msg: 'Custom recharge is not configured.',
       });
     }
 
-    const dollars = BigInt(input.amountDollars);
-    const amountMinor = dollars * 100n;
-    // Snapshot the per-unit grant on the order; quantity stays 1 so the existing
-    // grant math (grant = snapshot * quantity) yields ratio * dollars points.
-    const grantSnapshot = anchor.grantsWalletAmount * dollars;
+    const amountMajor = BigInt(input.amountDollars);
+    const amountMinor = amountMajor * 100n;
+    // Point grant from the anchor's own ratio (its price ↔ its grant), so any
+    // cell/currency works: points = amountMinor × anchorGrant / anchorPrice.
+    // .com anchor ($1 = 100 pts): amountMinor × 100/100 = amountMinor (1 pt/cent).
+    // .cn  anchor (¥7 = 100 pts): amountMinor × 100/700 = amountMinor/7 (1 pt/7 分).
+    const grantSnapshot =
+      (amountMinor * anchor.grantsWalletAmount) / anchor.amountMinor;
     const requestId = randomUUID();
     const orderNo = createOrderNo();
 
@@ -3212,54 +3240,118 @@ export class BillingService {
       };
     }
 
-    let intent: CreatePaymentIntentResult;
-    try {
-      intent = await adapter.createPaymentIntent({
-        requestId,
-        amountMinor,
-        currency: order.currency,
-        merchantOrderId: order.orderNo,
-        returnUrl: input.successUrl,
-        metadata: {
-          fizzdragon_order_id: order.id,
-          fizzdragon_order_no: order.orderNo,
-          fizzdragon_user_id: user.userId,
-        },
-      });
-    } catch (err) {
+    const failOrder = async (err: unknown, fallback: string) => {
       await this.prisma.billingOrder.update({
         where: { id: order.id },
         data: {
           status: BillingOrderStatus.failed,
           metadata: {
             ...(order.metadata as Record<string, unknown>),
-            providerError:
-              err instanceof Error
-                ? err.message
-                : 'Provider payment intent failed.',
+            providerError: err instanceof Error ? err.message : fallback,
           },
         },
       });
-      throw err;
+    };
+
+    // Route to the provider's one-off surface. Airwallex → Payment Intent
+    // (client_secret + browser SDK). WeChat/Alipay → hosted checkout 下单, whose
+    // checkoutUrl is a weixin:// code_url the client renders as a QR to scan.
+    // Gate on the capability (not method presence) so Unsupported adapters that
+    // stub createPaymentIntent fall through to the hosted-checkout branch/guard.
+    if (adapter.capabilities.paymentIntent && adapter.createPaymentIntent) {
+      let intent: CreatePaymentIntentResult;
+      try {
+        intent = await adapter.createPaymentIntent({
+          requestId,
+          amountMinor,
+          currency: order.currency,
+          merchantOrderId: order.orderNo,
+          returnUrl: input.successUrl,
+          metadata: {
+            fizzdragon_order_id: order.id,
+            fizzdragon_order_no: order.orderNo,
+            fizzdragon_user_id: user.userId,
+          },
+        });
+      } catch (err) {
+        await failOrder(err, 'Provider payment intent failed.');
+        throw err;
+      }
+      const paymentIntent = await this.prisma.billingPaymentIntent.create({
+        data: {
+          orderId: order.id,
+          provider,
+          kind: PaymentIntentKind.payment_intent,
+          status: PaymentIntentStatus.requires_action,
+          requestId,
+          providerPaymentIntentId: intent.providerPaymentIntentId,
+          clientSecret: intent.clientSecret,
+          currency: order.currency,
+          amountMinor: order.amountMinor,
+          providerStatus: intent.providerStatus,
+          providerPayload: intent.raw as Prisma.InputJsonValue,
+          expiresAt: order.expiresAt,
+        },
+      });
+      return {
+        order: this.orderDto(order),
+        paymentIntent: this.paymentIntentDto(paymentIntent),
+        shopperCountry: country,
+        env: sdkEnv,
+      };
     }
 
+    // Amount-based provider (WeChat/Alipay): hosted checkout with NO catalog
+    // binding — providerPriceId is null, the anchor-derived amount is charged
+    // directly. Mirrors the fixed-pack checkout, minus the price binding.
+    let checkout: HostedCheckoutResult;
+    try {
+      checkout = await adapter.createHostedCheckout({
+        requestId,
+        mode: 'PAYMENT',
+        successUrl: input.successUrl,
+        backUrl: input.backUrl,
+        lineItems: [
+          {
+            providerPriceId: null,
+            internalPriceId: anchor.id,
+            name: anchor.item.name,
+            currency: order.currency,
+            amountMinor,
+            quantity: 1,
+          },
+        ],
+        metadata: {
+          fizzdragon_order_id: order.id,
+          fizzdragon_order_no: order.orderNo,
+          fizzdragon_user_id: user.userId,
+          fizzdragon_product_type: BillingProductType.compute_point_pack,
+        },
+      });
+    } catch (err) {
+      await failOrder(err, 'Provider checkout failed.');
+      throw err;
+    }
     const paymentIntent = await this.prisma.billingPaymentIntent.create({
       data: {
         orderId: order.id,
         provider,
-        kind: PaymentIntentKind.payment_intent,
+        kind: PaymentIntentKind.hosted_checkout,
         status: PaymentIntentStatus.requires_action,
         requestId,
-        providerPaymentIntentId: intent.providerPaymentIntentId,
-        clientSecret: intent.clientSecret,
+        providerCheckoutId: checkout.providerCheckoutId,
+        providerCustomerId: checkout.providerCustomerId,
+        providerSubscriptionId: checkout.providerSubscriptionId,
+        providerInvoiceId: checkout.providerInvoiceId,
+        checkoutUrl: checkout.checkoutUrl,
+        clientSecret: checkout.clientSecret,
         currency: order.currency,
         amountMinor: order.amountMinor,
-        providerStatus: intent.providerStatus,
-        providerPayload: intent.raw as Prisma.InputJsonValue,
-        expiresAt: order.expiresAt,
+        providerStatus: checkout.providerStatus,
+        providerPayload: checkout.raw as Prisma.InputJsonValue,
+        expiresAt: checkout.expiresAt ?? order.expiresAt,
       },
     });
-
     return {
       order: this.orderDto(order),
       paymentIntent: this.paymentIntentDto(paymentIntent),
@@ -3412,9 +3504,13 @@ export class BillingService {
   }
 
   async getOrder(user: AuthUser, orderId: string) {
-    const order = await this.prisma.billingOrder.findFirst({
+    const orderInclude = {
+      paymentIntents: { orderBy: { createdAt: 'desc' }, take: 1 },
+      price: true,
+    } satisfies Prisma.BillingOrderInclude;
+    let order = await this.prisma.billingOrder.findFirst({
       where: { id: orderId },
-      include: { paymentIntents: { orderBy: { createdAt: 'desc' }, take: 1 } },
+      include: orderInclude,
     });
     if (!order) {
       throw new NotFoundException({
@@ -3436,12 +3532,129 @@ export class BillingService {
       );
     }
 
+    // Poll-driven WeChat reconcile: the client polls this endpoint after returning
+    // from the WeChat SDK; 查单 + fulfil so the order flips to paid without waiting
+    // on the async callback. Only for still-pending WeChat orders; best-effort.
+    if (
+      order.provider === PaymentProvider.wechat_pay &&
+      order.status === BillingOrderStatus.pending_payment &&
+      order.price
+    ) {
+      await this.reconcileWechatOrder(order);
+      order =
+        (await this.prisma.billingOrder.findFirst({
+          where: { id: orderId },
+          include: orderInclude,
+        })) ?? order;
+    }
+
     return {
       order: this.orderDto(order),
       paymentIntent: order.paymentIntents[0]
         ? this.paymentIntentDto(order.paymentIntents[0])
         : null,
     };
+  }
+
+  /**
+   * WeChat Pay APP支付 payment notification (支付通知). Verifies + AES-GCM-decrypts
+   * the resource (WechatPayProvider), then — ONLY on a confirmed SUCCESS whose
+   * paid amount matches the order — marks the order paid and fulfils it, which
+   * (post-commit) accrues referral commission. Idempotent: markOrderPaidAndFulfill
+   * short-circuits on an already-fulfilled order (advisory lock + upserts). The
+   * route MUST return the exact {"code":"SUCCESS","message":"OK"} body.
+   */
+  async handleWechatWebhook(input: {
+    rawBody: Buffer;
+    serial?: string;
+    signature?: string;
+    timestamp?: string;
+    nonce?: string;
+    signatureType?: string;
+  }): Promise<{ received: boolean; deduped?: boolean }> {
+    const tx = this.wechatPay.verifyAndDecryptNotification(input);
+    if (tx.trade_state !== 'SUCCESS') {
+      this.logger.log(
+        `WeChat notify ${tx.out_trade_no}: trade_state=${tx.trade_state} — no fulfilment`,
+      );
+      return { received: true };
+    }
+    const order = await this.prisma.billingOrder.findUnique({
+      where: { orderNo: tx.out_trade_no },
+      include: { price: true },
+    });
+    if (!order?.price) {
+      // Ack to stop WeChat's ~24h retry storm; surface for investigation.
+      this.logger.error(`WeChat notify for unknown order ${tx.out_trade_no}`);
+      return { received: true };
+    }
+    const fulfilled = await this.fulfillPaidWechatOrder(order, tx);
+    return fulfilled ? { received: true } : { received: true, deduped: true };
+  }
+
+  /**
+   * Fulfil a WeChat order from a VERIFIED SUCCESS transaction (async callback OR
+   * 查单 reconcile). Idempotent — markOrderPaidAndFulfill advisory-locks and
+   * short-circuits an already-fulfilled order. Refuses on an amount mismatch
+   * (anti-tamper). Fires referral commission post-commit, best-effort. Returns
+   * true when it fulfilled, false when it was already fulfilled or refused.
+   */
+  private async fulfillPaidWechatOrder(
+    order: OrderWithPrice,
+    tx: WechatTransaction,
+  ): Promise<boolean> {
+    if (order.status === BillingOrderStatus.fulfilled) return false;
+    // Verify-before-fulfil: the amount WeChat actually charged must match the
+    // order, or we refuse to fulfil it (anti-tamper).
+    const paidTotal = tx.amount?.total;
+    if (paidTotal != null && BigInt(paidTotal) !== order.amountMinor) {
+      this.logger.error(
+        `WeChat amount mismatch ${tx.out_trade_no}: paid ${paidTotal} vs order ${order.amountMinor}`,
+      );
+      return false;
+    }
+    const now = new Date();
+    await this.prisma.$transaction((prismaTx) =>
+      this.markOrderPaidAndFulfill(
+        prismaTx,
+        order,
+        now,
+        null,
+        tx.transaction_id ?? null,
+        tx as unknown as Record<string, unknown>,
+      ),
+    );
+    // Referral commission — own transaction, post-commit, best-effort (a referral
+    // failure can never roll back a paid order). CNY orders accrue once the
+    // USD-only guard is lifted in referrals.service.
+    await this.referrals
+      .accrueForOrder(order.id)
+      .catch((e) =>
+        this.logger.warn(
+          `referral accrual failed (wechat order ${order.id}): ${e instanceof Error ? e.message : String(e)}`,
+        ),
+      );
+    return true;
+  }
+
+  /**
+   * Poll-driven reconcile: for a still-pending WeChat order, 查单 at WeChat and
+   * fulfil if it is paid. Best-effort — a query failure must never break the order
+   * read. This is the backstop that keeps fulfilment working even when the async
+   * callback is missed or (before the APIv3 key is set) cannot be decrypted; the
+   * 查单 response is plaintext and needs no APIv3 key.
+   */
+  private async reconcileWechatOrder(order: OrderWithPrice): Promise<void> {
+    try {
+      const tx = await this.wechatPay.queryOrder(order.orderNo);
+      if (tx?.trade_state === 'SUCCESS') {
+        await this.fulfillPaidWechatOrder(order, tx);
+      }
+    } catch (e) {
+      this.logger.warn(
+        `WeChat reconcile failed (order ${order.id}): ${e instanceof Error ? e.message : String(e)}`,
+      );
+    }
   }
 
   async handleAirwallexWebhook(input: {
@@ -7018,6 +7231,12 @@ export class BillingService {
       status: intent.status,
       checkoutUrl: intent.checkoutUrl,
       clientSecret: intent.clientSecret,
+      // Provider-specific payload the client SDK needs to launch payment.
+      // Hosted-checkout providers (Airwallex) use checkoutUrl/clientSecret; WeChat
+      // Pay APP支付 has no URL — the native OpenSDK is invoked with these signed
+      // params (appId/partnerId/prepayId/package/nonceStr/timeStamp/sign). Null
+      // when the provider has no extra client payload.
+      providerData: wechatAppInvokePayload(intent),
       providerPaymentIntentId: intent.providerPaymentIntentId,
       providerStatus: intent.providerStatus,
       expiresAt: intent.expiresAt?.toISOString() ?? null,
@@ -7388,6 +7607,16 @@ function computePointTopupPolicy(): ComputePointTopupPolicy {
   };
 }
 
+/**
+ * Catalog providers (Airwallex) require a synced providerPriceId on their price
+ * binding; amount-based providers (WeChat/Alipay) charge the amount directly and
+ * have none. Gates the compute-topup binding query so a WeChat binding with a null
+ * providerPriceId is still eligible.
+ */
+function providerRequiresPriceId(provider: PaymentProvider): boolean {
+  return provider === PaymentProvider.airwallex;
+}
+
 function assertComputePointTopupPrice(
   price: PriceWithItem,
   policy: ComputePointTopupPolicy,
@@ -7654,6 +7883,22 @@ function assertProviderBindingReady(
       msg: 'Airwallex price binding is missing provider_price_id.',
     });
   }
+}
+
+/**
+ * The WeChat Pay APP支付 app-invoke params the mobile OpenSDK needs, as stored by
+ * WechatPayProvider in the payment intent's `providerPayload.appInvoke`. Returns
+ * null for any other provider or a malformed payload — deliberately narrow so the
+ * raw provider payload is never surfaced to the client wholesale.
+ */
+function wechatAppInvokePayload(
+  intent: BillingPaymentIntent,
+): Record<string, unknown> | null {
+  if (intent.provider !== PaymentProvider.wechat_pay) return null;
+  const payload = intent.providerPayload;
+  if (!isRecord(payload)) return null;
+  const appInvoke = payload.appInvoke;
+  return isRecord(appInvoke) ? appInvoke : null;
 }
 
 function providerEventKey(payload: Record<string, unknown>, rawBody: Buffer) {

@@ -11,16 +11,20 @@
  */
 import { appEnv, resolveAssetUrl } from "@/config";
 import { getLocale } from "@/i18n/locale-store";
-import { api } from "@/lib/api-client";
+import { api, ApiRequestError } from "@/lib/api-client";
 
 import type {
+  EpisodeAccess,
   Genre,
+  IpAccess,
+  IpAccessCode,
   IpDetail,
   IpDiscovery,
   IpEpisode,
   IpStatus,
   IpSummary,
   Person,
+  PriceRule,
   Region,
   TaxonomyTerm,
 } from "./types";
@@ -405,6 +409,147 @@ export async function blockIpContent(ipId: string): Promise<void> {
     ...AURORA,
     data: { targetType: "ip", targetId: ipId },
   });
+}
+
+// ─── Community-points balance + spend-to-unlock (Nest ip-commerce) ──────────
+
+type PriceRuleDto =
+  | {
+      id: string;
+      targetType: "ip" | "episode";
+      amount: string;
+      originalAmount?: string | null;
+      memberAmount?: string | null;
+      unlocksAt?: string | null;
+    }
+  | null
+  | undefined;
+
+function mapPrice(dto: PriceRuleDto): PriceRule | null {
+  if (!dto) return null;
+  return {
+    id: dto.id,
+    targetType: dto.targetType,
+    amount: dto.amount,
+    originalAmount: dto.originalAmount ?? null,
+    memberAmount: dto.memberAmount ?? null,
+    unlocksAt: dto.unlocksAt ?? null,
+  };
+}
+
+type AccessDto = {
+  authenticated?: boolean;
+  member?: boolean;
+  wallet?: { availableBalance?: string | null } | null;
+  ip?: { owned?: boolean; access?: IpAccessCode; price?: PriceRuleDto } | null;
+  episodes?: { id: string; owned?: boolean; access?: EpisodeAccess; price?: PriceRuleDto }[];
+};
+
+/** Authoritative per-viewer access + community-point balance for one IP
+ *  (`GET /aurora/ip-commerce/ips/:id/access`). @Public — the api-client sends
+ *  the viewer's auth automatically, so `owned`/`balance` reflect this user. */
+export async function fetchIpAccess(ipId: string, episodeIds?: string[]): Promise<IpAccess> {
+  const res = await api.get<AccessDto>(`/ip-commerce/ips/${ipId}/access`, {
+    ...AURORA,
+    params: {
+      episodeIds: episodeIds?.length ? episodeIds.join(",") : undefined,
+      locale: locale(),
+    },
+  });
+  const episodes: IpAccess["episodes"] = {};
+  for (const episode of res.episodes ?? []) {
+    episodes[episode.id] = {
+      owned: !!episode.owned,
+      access: episode.access ?? "locked",
+      price: mapPrice(episode.price),
+    };
+  }
+  return {
+    authenticated: !!res.authenticated,
+    member: !!res.member,
+    balance: res.wallet?.availableBalance ?? null,
+    ip: {
+      owned: !!res.ip?.owned,
+      access: res.ip?.access ?? "locked",
+      price: mapPrice(res.ip?.price),
+    },
+    episodes,
+  };
+}
+
+type WalletDto = {
+  accounts?: { currency?: string; balanceKind?: string; availableBalance?: string }[];
+};
+
+/** The signed-in user's spendable community-points balance (whole points, as a
+ *  string). `GET /aurora/ip-commerce/wallet` (auth). Filters to the
+ *  community_point/consumable account (NOT the withdrawable earnings pool).
+ *  Returns "0" on any failure so callers can render unconditionally. */
+export async function fetchCommunityPointBalance(): Promise<string> {
+  try {
+    const res = await api.get<WalletDto>("/ip-commerce/wallet", AURORA);
+    const account = (res.accounts ?? []).find(
+      (a) => a.currency === "community_point" && a.balanceKind === "consumable"
+    );
+    return account?.availableBalance ?? "0";
+  } catch {
+    return "0";
+  }
+}
+
+export type PurchaseResult = { alreadyOwned: boolean; alreadyProcessed: boolean };
+
+/** Spend community points to unlock a whole IP (`targetType:"ip"`) or a single
+ *  episode (`targetType:"episode"` + episodeId). `POST /aurora/ip-commerce/purchases`
+ *  (auth). Throws ApiRequestError — use isInsufficientBalanceError / isMemberOnlyError
+ *  to branch. A fresh idempotencyKey per call is safe: the server's entitlement
+ *  guard returns alreadyOwned instead of double-charging on a lost-response retry. */
+export async function purchaseIpContent(input: {
+  ipId: string;
+  targetType: "ip" | "episode";
+  episodeId?: string;
+  priceRuleId?: string;
+}): Promise<PurchaseResult> {
+  const res = await api.post<{ alreadyOwned?: boolean; alreadyProcessed?: boolean }>(
+    "/ip-commerce/purchases",
+    {
+      ...AURORA,
+      data: {
+        ipId: input.ipId,
+        targetType: input.targetType,
+        episodeId: input.targetType === "episode" ? input.episodeId : undefined,
+        priceRuleId: input.priceRuleId,
+        idempotencyKey: newIdempotencyKey(),
+      },
+    }
+  );
+  return { alreadyOwned: !!res.alreadyOwned, alreadyProcessed: !!res.alreadyProcessed };
+}
+
+/** Unique-per-attempt purchase key (8–160 chars; no crypto lib needed). */
+function newIdempotencyKey(): string {
+  const rand = () => Math.random().toString(36).slice(2);
+  return `m-${Date.now()}-${rand()}-${rand()}`;
+}
+
+/** Server signalled the community-point balance was too low (409 + business code).
+ *  The mobile api-client surfaces the HTTP status; the business code sits in the
+ *  raw responseBody, so match on both. */
+export function isInsufficientBalanceError(error: unknown): boolean {
+  return (
+    error instanceof ApiRequestError &&
+    error.status === 409 &&
+    !!error.responseBody?.includes("INSUFFICIENT_COMMUNITY_POINTS")
+  );
+}
+
+/** Server refused because the IP is community-members-only (403). */
+export function isMemberOnlyError(error: unknown): boolean {
+  return (
+    error instanceof ApiRequestError &&
+    error.status === 403 &&
+    !!error.responseBody?.includes("IP_MEMBER_ONLY")
+  );
 }
 
 /** A creator-owned IP row; `published` mirrors the public-detail visibility

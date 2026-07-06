@@ -213,23 +213,40 @@ async function request<T>(method: string, path: string, config: ApiRequestConfig
     init.body = JSON.stringify(data);
   }
 
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeout);
+  const url = buildApiUrl(path, { params, service });
+  const attemptFetch = async (): Promise<Response> => {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeout);
+    try {
+      return await fetch(url, { ...init, signal: controller.signal });
+    } finally {
+      clearTimeout(timer);
+    }
+  };
 
-  let response: Response;
-  try {
-    response = await fetch(buildApiUrl(path, { params, service }), {
-      ...init,
-      signal: controller.signal,
-    });
-  } catch (error) {
-    throw new ApiRequestError(
-      "NETWORK_ERROR",
-      isAbortError(error) ? "Request timed out" : "Network connection failed",
-      0
-    );
-  } finally {
-    clearTimeout(timer);
+  // iOS first launch (esp. CN): the network-permission prompt hasn't been granted
+  // yet when the first requests fire, so they fail with a connection error and the
+  // screen dead-ends until the app is restarted. Retry idempotent GETs with
+  // exponential backoff (~0.8s → 1.6s → 3.2s, ≈5.6s window) so content self-heals
+  // the moment the user taps "Allow" — no restart. Mutations are NEVER auto-retried
+  // (a network error mid-POST could have reached the server; retrying risks a
+  // double submit).
+  const maxAttempts = method === "GET" ? 4 : 1;
+  let response!: Response;
+  for (let attempt = 1; ; attempt++) {
+    try {
+      response = await attemptFetch();
+      break;
+    } catch (error) {
+      if (attempt >= maxAttempts) {
+        throw new ApiRequestError(
+          "NETWORK_ERROR",
+          isAbortError(error) ? "Request timed out" : "Network connection failed",
+          0
+        );
+      }
+      await new Promise((resolve) => setTimeout(resolve, 800 * 2 ** (attempt - 1)));
+    }
   }
 
   const { body, rawBody } = await parseResponseBody(response);

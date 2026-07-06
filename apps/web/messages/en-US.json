@@ -4550,6 +4550,8 @@
     "communityMembershipBenefitExclusive": "Exclusive content and a member badge",
     "communityMembershipMonthly": "Monthly",
     "communityMembershipYearly": "Yearly",
+    "communityMembershipOneTime": "30-Day Pass",
+    "communityMembershipOneTimeUnit": "/30 days",
     "communityMembershipSave": "Save {percent}%",
     "communityMembershipSaleBadge": "Limited offer",
     "communityMembershipSubscribe": "Subscribe",

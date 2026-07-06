@@ -34,9 +34,11 @@ import {
 } from "@/src/lib/axon";
 import {
   createBillingCheckout,
+  isWechatScanUrl,
   listMembershipPlans,
   priceEffectiveAmountMinor,
 } from "@/src/lib/billing/api";
+import { WechatScanPayDialog } from "./wechat-scan-pay-dialog";
 
 // Module-level so the `?membership=success` return is handled once per page load
 // (the provider redirect back is a full page load), across all mounted instances.
@@ -61,6 +63,11 @@ export function CommunityMembershipDialog({
   const [currency] = useState(siteConfig.defaultCurrency);
   const [selectedPriceId, setSelectedPriceId] = useState<string | null>(null);
   const [paying, setPaying] = useState(false);
+  const [wechatScan, setWechatScan] = useState<{
+    orderId: string;
+    codeUrl: string;
+    amountLabel: string;
+  } | null>(null);
 
   // Idempotency key bound to one (priceId, currency) intent; regenerated when the
   // intent changes, cleared on a failed/incomplete attempt so a retry is fresh.
@@ -79,7 +86,9 @@ export function CommunityMembershipDialog({
   const plan = plansQuery.data?.plans?.[0] ?? null;
   const monthly = plan?.prices.find((p) => p.isActive && p.interval === "month") ?? null;
   const yearly = plan?.prices.find((p) => p.isActive && p.interval === "year") ?? null;
-  const hasPrices = Boolean(monthly || yearly);
+  // CN sells a one-off 30-day pass (no auto-renew), so there is no month/year price.
+  const oneTime = plan?.prices.find((p) => p.isActive && p.interval === "one_time") ?? null;
+  const hasPrices = Boolean(monthly || yearly || oneTime);
 
   // Annual savings vs 12× monthly — drives the "Save X%" badge on the yearly card.
   const yearlySavePercent =
@@ -92,7 +101,11 @@ export function CommunityMembershipDialog({
 
   // Default selection: yearly (better value) when present, else monthly.
   const selected =
-    [monthly, yearly].find((p) => p && p.id === selectedPriceId) ?? yearly ?? monthly ?? null;
+    [monthly, yearly, oneTime].find((p) => p && p.id === selectedPriceId) ??
+    yearly ??
+    monthly ??
+    oneTime ??
+    null;
 
   const currencySymbol = siteConfig.currencies.find((c) => c.code === currency)?.symbol ?? "$";
   const fmtFiat = (minor: number | string) => (Number(minor) / 100).toFixed(2);
@@ -204,6 +217,16 @@ export function CommunityMembershipDialog({
             },
           ],
         });
+        // WeChat 扫码 returns a weixin:// code_url — render a QR to scan, not a
+        // desktop navigation (which just prompts a useless "Open WeChat?").
+        if (isWechatScanUrl(url)) {
+          setWechatScan({
+            orderId: result.order.id,
+            codeUrl: url,
+            amountLabel: `${currencySymbol}${value.toFixed(2)}`,
+          });
+          return;
+        }
         if (window.self !== window.top) {
           window.parent.postMessage({ type: "navigateToPayment", url }, "*");
         } else {
@@ -229,87 +252,122 @@ export function CommunityMembershipDialog({
   ];
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md">
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            <IconCrown className="size-5 text-primary" />
-            {t("communityMembershipTitle")}
-          </DialogTitle>
-          <DialogDescription>{t("communityMembershipDesc")}</DialogDescription>
-        </DialogHeader>
+    <>
+      <Dialog open={open} onOpenChange={onOpenChange}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <IconCrown className="size-5 text-primary" />
+              {t("communityMembershipTitle")}
+            </DialogTitle>
+            <DialogDescription>{t("communityMembershipDesc")}</DialogDescription>
+          </DialogHeader>
 
-        <div className="space-y-4 p-4">
-          <ul className="space-y-2">
-            {benefits.map((b) => (
-              <li key={b} className="flex items-start gap-2 text-sm text-foreground">
-                <IconSparkles className="mt-0.5 size-4 shrink-0 text-primary" />
-                {b}
-              </li>
-            ))}
-          </ul>
+          <div className="space-y-4 p-4">
+            <ul className="space-y-2">
+              {benefits.map((b) => (
+                <li key={b} className="flex items-start gap-2 text-sm text-foreground">
+                  <IconSparkles className="mt-0.5 size-4 shrink-0 text-primary" />
+                  {b}
+                </li>
+              ))}
+            </ul>
 
-          {plansQuery.isLoading ? (
-            <div className="flex h-28 items-center justify-center">
-              <IconLoader2 className="size-5 animate-spin text-muted-foreground" />
-            </div>
-          ) : !plan || !hasPrices ? (
-            <div className="py-10 text-center text-sm text-muted-foreground">
-              {t("communityMembershipNoPlan")}
-            </div>
-          ) : (
-            <div className="grid grid-cols-2 gap-3">
-              {monthly && (
-                <IntervalCard
-                  label={t("communityMembershipMonthly")}
-                  unit={t("communityMembershipPerMonth")}
-                  price={`${currencySymbol}${fmtFiat(priceEffectiveAmountMinor(monthly))}`}
-                  originalPrice={
-                    monthly.activeDiscount
-                      ? `${currencySymbol}${fmtFiat(monthly.amountMinor)}`
-                      : undefined
-                  }
-                  badge={monthly.activeDiscount ? t("communityMembershipSaleBadge") : undefined}
-                  selected={selected?.id === monthly.id}
-                  onSelect={() => setSelectedPriceId(monthly.id)}
-                />
-              )}
-              {yearly && (
-                <IntervalCard
-                  label={t("communityMembershipYearly")}
-                  unit={t("communityMembershipPerYear")}
-                  price={`${currencySymbol}${fmtFiat(priceEffectiveAmountMinor(yearly))}`}
-                  originalPrice={
-                    yearly.activeDiscount
-                      ? `${currencySymbol}${fmtFiat(yearly.amountMinor)}`
-                      : undefined
-                  }
-                  badge={
-                    yearly.activeDiscount
-                      ? t("communityMembershipSaleBadge")
-                      : yearlySavePercent > 0
-                        ? t("communityMembershipSave", { percent: yearlySavePercent })
+            {plansQuery.isLoading ? (
+              <div className="flex h-28 items-center justify-center">
+                <IconLoader2 className="size-5 animate-spin text-muted-foreground" />
+              </div>
+            ) : !plan || !hasPrices ? (
+              <div className="py-10 text-center text-sm text-muted-foreground">
+                {t("communityMembershipNoPlan")}
+              </div>
+            ) : (
+              <div className={cn("grid gap-3", monthly || yearly ? "grid-cols-2" : "grid-cols-1")}>
+                {monthly && (
+                  <IntervalCard
+                    label={t("communityMembershipMonthly")}
+                    unit={t("communityMembershipPerMonth")}
+                    price={`${currencySymbol}${fmtFiat(priceEffectiveAmountMinor(monthly))}`}
+                    originalPrice={
+                      monthly.activeDiscount
+                        ? `${currencySymbol}${fmtFiat(monthly.amountMinor)}`
                         : undefined
-                  }
-                  selected={selected?.id === yearly.id}
-                  onSelect={() => setSelectedPriceId(yearly.id)}
-                />
-              )}
-            </div>
-          )}
+                    }
+                    badge={monthly.activeDiscount ? t("communityMembershipSaleBadge") : undefined}
+                    selected={selected?.id === monthly.id}
+                    onSelect={() => setSelectedPriceId(monthly.id)}
+                  />
+                )}
+                {yearly && (
+                  <IntervalCard
+                    label={t("communityMembershipYearly")}
+                    unit={t("communityMembershipPerYear")}
+                    price={`${currencySymbol}${fmtFiat(priceEffectiveAmountMinor(yearly))}`}
+                    originalPrice={
+                      yearly.activeDiscount
+                        ? `${currencySymbol}${fmtFiat(yearly.amountMinor)}`
+                        : undefined
+                    }
+                    badge={
+                      yearly.activeDiscount
+                        ? t("communityMembershipSaleBadge")
+                        : yearlySavePercent > 0
+                          ? t("communityMembershipSave", { percent: yearlySavePercent })
+                          : undefined
+                    }
+                    selected={selected?.id === yearly.id}
+                    onSelect={() => setSelectedPriceId(yearly.id)}
+                  />
+                )}
+                {oneTime && (
+                  <IntervalCard
+                    label={t("communityMembershipOneTime")}
+                    unit={t("communityMembershipOneTimeUnit")}
+                    price={`${currencySymbol}${fmtFiat(priceEffectiveAmountMinor(oneTime))}`}
+                    originalPrice={
+                      oneTime.activeDiscount
+                        ? `${currencySymbol}${fmtFiat(oneTime.amountMinor)}`
+                        : undefined
+                    }
+                    badge={oneTime.activeDiscount ? t("communityMembershipSaleBadge") : undefined}
+                    selected={selected?.id === oneTime.id}
+                    onSelect={() => setSelectedPriceId(oneTime.id)}
+                  />
+                )}
+              </div>
+            )}
 
-          <Button
-            className="w-full"
-            onClick={() => void handleSubscribe()}
-            disabled={paying || !selected}
-          >
-            {paying && <IconLoader2 className="size-4 animate-spin" />}
-            {t("communityMembershipSubscribe")}
-            {selected ? ` · ${currencySymbol}${fmtFiat(priceEffectiveAmountMinor(selected))}` : ""}
-          </Button>
-        </div>
-      </DialogContent>
-    </Dialog>
+            <Button
+              className="w-full"
+              onClick={() => void handleSubscribe()}
+              disabled={paying || !selected}
+            >
+              {paying && <IconLoader2 className="size-4 animate-spin" />}
+              {t("communityMembershipSubscribe")}
+              {selected
+                ? ` · ${currencySymbol}${fmtFiat(priceEffectiveAmountMinor(selected))}`
+                : ""}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+      {wechatScan && (
+        <WechatScanPayDialog
+          key={wechatScan.orderId}
+          open
+          orderId={wechatScan.orderId}
+          codeUrl={wechatScan.codeUrl}
+          amountLabel={wechatScan.amountLabel}
+          onClose={() => setWechatScan(null)}
+          onPaid={() => {
+            setWechatScan(null);
+            toast.success(t("paymentSuccess"));
+            void onSuccess?.();
+            onOpenChange(false);
+          }}
+        />
+      )}
+    </>
   );
 }
 

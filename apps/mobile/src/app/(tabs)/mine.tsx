@@ -11,7 +11,7 @@ import { ThemedText } from "@/components/themed-text";
 import { appEnv, resolveAssetUrl } from "@/config";
 import { Spacing } from "@/constants/theme";
 import { fetchMyCrews } from "@/data/crew-api";
-import { fetchMyIps, type MyIp } from "@/data/ip-api";
+import { fetchCommunityPointBalance, fetchMyIps, type MyIp } from "@/data/ip-api";
 import { fetchMyWorks, type MyWork } from "@/data/mine-api";
 import type { CrewSummary } from "@/data/types";
 import { useTheme } from "@/hooks/use-theme";
@@ -39,6 +39,15 @@ interface Tile {
 }
 
 const COLUMNS = 3;
+
+/** Whole community points (BigInt string) → locale-grouped display. */
+function formatPoints(value: string, locale: string): string {
+  try {
+    return BigInt(value).toLocaleString(locale);
+  } catch {
+    return value;
+  }
+}
 
 export default function MineScreen() {
   const auth = useAuth();
@@ -75,6 +84,8 @@ export default function MineScreen() {
   const [works, setWorks] = useState<MyWork[]>();
   const [ips, setIps] = useState<MyIp[]>();
   const [crews, setCrews] = useState<CrewSummary[]>();
+  // Spendable community-points balance (whole points, string); undefined until loaded.
+  const [pointsBalance, setPointsBalance] = useState<string>();
   const [loadedFor, setLoadedFor] = useState<string>();
 
   useEffect(() => {
@@ -82,12 +93,13 @@ export default function MineScreen() {
     // guest never fires (and 401s) these requests.
     if (!authOwnerKey) return;
     let active = true;
-    void Promise.all([fetchMyWorks(), fetchMyIps(), fetchMyCrews()])
-      .then(([nextWorks, nextIps, nextCrews]) => {
+    void Promise.all([fetchMyWorks(), fetchMyIps(), fetchMyCrews(), fetchCommunityPointBalance()])
+      .then(([nextWorks, nextIps, nextCrews, nextBalance]) => {
         if (!active) return;
         setWorks(nextWorks);
         setIps(nextIps);
         setCrews(nextCrews);
+        setPointsBalance(nextBalance);
         setLoadedFor(authOwnerKey);
       })
       .catch(() => {
@@ -303,6 +315,18 @@ export default function MineScreen() {
                       {accountMeta}
                     </ThemedText>
                   ) : null}
+                  {pointsBalance != null ? (
+                    <View style={[styles.pointsPill, { backgroundColor: `${theme.brand}22` }]}>
+                      <SymbolView
+                        name={{ ios: "circlebadge.2.fill", android: "toll", web: "toll" }}
+                        size={12}
+                        tintColor={theme.brand}
+                      />
+                      <ThemedText type="code" style={{ color: theme.brand }}>
+                        {`${t("mine.pointsLabel")} ${formatPoints(pointsBalance, locale)}`}
+                      </ThemedText>
+                    </View>
+                  ) : null}
                 </View>
               </View>
             </View>
@@ -506,6 +530,16 @@ const styles = StyleSheet.create({
   },
   profileMeta: {
     color: "rgba(255,255,255,0.7)",
+  },
+  pointsPill: {
+    alignSelf: "flex-start",
+    flexDirection: "row",
+    alignItems: "center",
+    gap: Spacing.half,
+    marginTop: Spacing.half,
+    height: 24,
+    paddingHorizontal: Spacing.two,
+    borderRadius: 12,
   },
   tabBar: {
     borderBottomWidth: 1,

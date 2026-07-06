@@ -357,5 +357,20 @@
   "report.close": "Close",
   "authedWeb.sessionNeeded": "Sign in to view this page.",
   "authedWeb.loadFailed": "The page failed to load.",
-  "authedWeb.retry": "Retry"
+  "authedWeb.retry": "Retry",
+  "mine.pointsLabel": "Community points",
+  "ipDetail.balanceLabel": "Community points",
+  "ipDetail.pointsUnit": "pts",
+  "ipDetail.unlock": "Unlock",
+  "ipDetail.unlockAllTitle": "Unlock all episodes",
+  "ipDetail.unlockConfirmTitle": "Unlock",
+  "ipDetail.unlockSpend": "Spend ",
+  "ipDetail.unlockBalanceLine": "Balance ",
+  "ipDetail.unlockFailed": "Unlock failed",
+  "ipDetail.insufficientTitle": "Insufficient balance",
+  "ipDetail.insufficientBody": "You don't have enough community points.",
+  "ipDetail.memberOnlyTitle": "Members only",
+  "ipDetail.memberOnlyBody": "This content is for community members.",
+  "ipDetail.pendingUnlock": "Coming soon",
+  "common.retry": "Retry"
 }

@@ -9,7 +9,9 @@
 import { IconCrown } from "@tabler/icons-react";
 import Image from "next/image";
 import { useState } from "react";
-import { Link } from "@/i18n/navigation";
+import { useLocale } from "next-intl";
+import { getWebBaseUrl } from "@/lib/web-base";
+import { useSiteRegion } from "@/app/_components/region-provider";
 import { useAuth } from "./auth-provider";
 import { AccountMenu } from "./account-menu";
 import { SubscriptionDialog } from "./subscription-dialog";
@@ -21,10 +23,17 @@ export function LandingHeader() {
   // landings stay usable.
   const { user, loading, signIn } = useAuth();
   const [pricingOpen, setPricingOpen] = useState(false);
+  const locale = useLocale();
+  const siteRegion = useSiteRegion();
 
   return (
     <header className="flex h-16 items-center justify-between gap-4 overflow-visible px-6 text-[14px]">
-      <Link href="/" aria-label="FizzDragon home" className="flex shrink-0 items-center">
+      {/* Logo → main web app home (cell-keyed), same web base as the profile link. */}
+      <a
+        href={`${getWebBaseUrl(siteRegion)}/${locale}`}
+        aria-label="FizzDragon home"
+        className="flex shrink-0 items-center"
+      >
         <Image
           src="/logo.png"
           alt="FizzDragon"
@@ -33,7 +42,7 @@ export function LandingHeader() {
           priority
           className="h-7 w-auto"
         />
-      </Link>
+      </a>
 
       <div className="flex items-center gap-2">
         {loading ? (

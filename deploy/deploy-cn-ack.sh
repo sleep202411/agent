@@ -101,6 +101,8 @@ helm upgrade fizzdragon "$ROOT/deploy/helm/fizzdragon" \
   --set studio.image.tag="$TAG" \
   --force-conflicts --namespace fizzdragon
 kubectl rollout status deploy/fizzdragon-server -n fizzdragon --timeout=180s || true
+# Record the deployed tag so deploy-cn-incremental.sh knows the tarball's base.
+$SSH root@$ECS_IP "echo $TAG > /root/.deployed-tag" 2>/dev/null || true
 
 echo "==> [6/6] stop build ECS"
 aliyun ecs StopInstance --InstanceId $ECS_ID --StoppedMode StopCharging --profile default >/dev/null 2>&1 || true

@@ -45,11 +45,14 @@
     },
     "production-cn": {
       "autoIncrement": true,
+      "android": {
+        "buildType": "apk"
+      },
       "env": {
         "APP_VARIANT": "production",
         "FD_APP_REGION": "cn",
         "FD_CN_IOS_BUNDLE_IDENTIFIER": "cn.fizzspaceapp",
-        "FD_CN_ANDROID_PACKAGE": "cn.fizzdragon"
+        "FD_CN_ANDROID_PACKAGE": "cn.feiteng.fizzspace"
       }
     }
   },

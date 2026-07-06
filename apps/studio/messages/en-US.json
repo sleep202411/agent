@@ -706,6 +706,15 @@
         "question": "Can I use my generations commercially?",
         "answer": "Paid plans include commercial use of your generated outputs, subject to the Terms of Service."
       }
+    },
+    "wechatScan": {
+      "title": "WeChat Pay",
+      "instruction": "Open WeChat, scan the code, and confirm the payment.",
+      "waiting": "Waiting for payment…",
+      "paid": "Payment received",
+      "expired": "The code expired. Please try again.",
+      "retry": "Close",
+      "close": "Close"
     }
   },
   "canvas": {
@@ -1048,9 +1057,11 @@
     "couldntStartTopUp": "Couldn’t start the top-up",
     "couldntStartRecharge": "Couldn’t start the recharge",
     "amountUsdRange": "Amount (USD, $10–$5,000)",
+    "amountCnyRange": "Amount (CNY, ¥10–¥5,000)",
     "estimatedCredits": "Estimated compute credits",
     "recharge": "Recharge",
     "secureCheckoutNote": "Secure checkout via Airwallex. 1 compute credit = 1¢ USD.",
+    "secureCheckoutNoteWechat": "Secure checkout via WeChat Pay. ¥7 = 100 compute credits.",
     "usageAnalytics": "Usage Analytics",
     "usageAnalyticsSubtitle": "A summary of compute credit usage for this workspace.",
     "noUsageDataYet": "No usage data yet",

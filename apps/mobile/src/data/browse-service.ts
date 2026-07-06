@@ -26,6 +26,14 @@ import type {
 
 export type { IpDiscovery } from "./types";
 export { blockIpContent, IP_REPORT_REASONS, reportIpContent, type IpReportReason } from "./ip-api";
+export {
+  fetchCommunityPointBalance,
+  fetchIpAccess,
+  isInsufficientBalanceError,
+  isMemberOnlyError,
+  purchaseIpContent,
+  type PurchaseResult,
+} from "./ip-api";
 export { applyToCrewPosition, blockCrew, reportCrew } from "./crew-api";
 
 export async function getIpDiscovery(): Promise<IpDiscovery> {

@@ -357,5 +357,20 @@
   "report.close": "關閉",
   "authedWeb.sessionNeeded": "登入後即可查看此頁面。",
   "authedWeb.loadFailed": "頁面載入失敗。",
-  "authedWeb.retry": "重試"
+  "authedWeb.retry": "重試",
+  "mine.pointsLabel": "社區積分",
+  "ipDetail.balanceLabel": "社區積分",
+  "ipDetail.pointsUnit": "積分",
+  "ipDetail.unlock": "解鎖",
+  "ipDetail.unlockAllTitle": "解鎖全集",
+  "ipDetail.unlockConfirmTitle": "解鎖",
+  "ipDetail.unlockSpend": "花費 ",
+  "ipDetail.unlockBalanceLine": "餘額 ",
+  "ipDetail.unlockFailed": "解鎖失敗",
+  "ipDetail.insufficientTitle": "餘額不足",
+  "ipDetail.insufficientBody": "你的社區積分不足。",
+  "ipDetail.memberOnlyTitle": "會員專享",
+  "ipDetail.memberOnlyBody": "該內容僅社區會員可觀看。",
+  "ipDetail.pendingUnlock": "即將解鎖",
+  "common.retry": "重試"
 }
