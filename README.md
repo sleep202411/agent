@@ -22,7 +22,6 @@ deploy/
   argocd/            ArgoCD Application 声明
   deploy-com-aks.sh  .com 部署（az acr build → bump values → ArgoCD）
   deploy-cn.sh · cn-remote-build.sh   .cn 部署（build ECS → CN ACR → helm；cn-remote-build 是 ECS 侧帮手，不直接跑）
-  docker-compose.yml · auto-update.sh · nginx/   ← 旧 ECS/podman 方案（legacy，CN 已迁 ACK / .com 已迁 AKS，可删）
 ```
 
 ## Getting Started
@@ -131,7 +130,6 @@ deploy/deploy-cn.sh --full     # 全量冷启动：源码 tarball → 分块跨�
   （envFrom 只在 pod 启动时读）。配置一律落声明式源头（values / 代码 / secret），别用运行时 `kubectl set env`——helm 升级会冲掉。
 - prod PG 操作 / seed：laptop 连不上，用 pod 里跑 esbuild 打包的一次性 Prisma 脚本（`kubectl cp` + `NODE_PATH=/app/node_modules node`）；
   删数据先确认 0 订单/订阅（order→price 是 onDelete Restrict，有引用改归档 `isActive=false`）。
-- 旧的 `deploy/docker-compose.yml` / `nginx/`（ECS/podman 方案）已停用。
 
 ## Domains, DNS & TLS
 
