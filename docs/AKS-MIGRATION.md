@@ -14,7 +14,7 @@
 ## TL;DR
 
 - **Scope:** Move `fizzdragon.com` (international side) from Alibaba Cloud ECS docker-compose → Azure Kubernetes Service (AKS) with Helm + ArgoCD + GitOps
-- **Out of scope:** `fizzdragon.fizzspace.cn` (China side) stays on Alibaba ECS docker-compose. Compliance + latency reasons.
+- **Out of scope (at the time):** `fizzdragon.fizzspace.cn` (China side) stayed on Alibaba ECS docker-compose. **Update: .cn has since migrated to Aliyun ACK (2026-06-26; cluster `fizzdragon-cn`, ns `fizzdragon`, live host `fizzstudio.fizzspace.cn`) — see README § Deployment.**
 - **Region:** `southeastasia` (Singapore) — matches existing `fizzdragon-ai-pg`. Future EU/US regions via Front Door / Traffic Manager when needed.
 - **Target architecture:** Free-tier control plane + dual node pool (system always-on, worker KEDA scale-to-zero) — ~**$75/mo** estimated.
 - **Subscription:** `fizzdragon-ai-prod` (`5d94f40f-701f-45e1-ab4b-0e1506104ebd`), tenant `FIZZDRAGON`.

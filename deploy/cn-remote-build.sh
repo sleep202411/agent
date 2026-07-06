@@ -19,7 +19,7 @@ cd /root/src || { echo "FATAL: no source"; exit 1; }
 # (this ECS hit 40GB of dangling images → parallel `npm ci` failed with "no space
 # left on device"). `prune -f` drops ONLY dangling layers — it keeps the base
 # image + tagged builds, so it never re-triggers the blocked-docker.io base pull.
-# (`prune -af` WOULD nuke the base — do NOT use it here.) See docs/CN-DEPLOY.md.
+# (`prune -af` WOULD nuke the base — do NOT use it here.) See README.md § Deployment.
 echo "=== disk free before prune: $(df -h / | awk 'NR==2{print $4}') ==="
 docker image prune -f >/dev/null 2>&1 || true
 echo "=== disk free after prune:  $(df -h / | awk 'NR==2{print $4}') ==="

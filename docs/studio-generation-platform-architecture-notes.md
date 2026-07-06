@@ -1,5 +1,10 @@
 # Studio Generation Platform Architecture Notes
 
+> **Update 2026-06-25:** realtime is now the self-hosted WebSocket gateway (Redis
+> pub/sub fan-out); **Azure Web PubSub was decommissioned**. Where this note says
+> "Web PubSub" for the realtime transport, read it as the self-hosted gateway
+> behind the same provider abstraction — see `docs/studio-realtime-architecture.md`.
+
 Status: implementation in progress
 Owner: FizzDragon platform
 Date: 2026-06-12

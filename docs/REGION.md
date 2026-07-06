@@ -35,14 +35,14 @@ needing a separate deployment for each country.
 ```
                        ┌──────────── com cell (Azure SG) ───────────┐
                        │                                              │
-   user from US ──────►│ ──→ x-country: US  →  Stripe pay, CCPA      │
-   user from DE ──────►│ ──→ x-country: DE  →  Stripe pay, GDPR     │
-   user from JP ──────►│ ──→ x-country: JP  →  Stripe pay           │
+   user from US ──────►│ ──→ x-country: US  →  Airwallex, CCPA      │
+   user from DE ──────►│ ──→ x-country: DE  →  Airwallex, GDPR      │
+   user from JP ──────►│ ──→ x-country: JP  →  Airwallex            │
                        │       (single data plane: Azure PG + Blob)  │
                        └──────────────────────────────────────────────┘
 
                        ┌──────────── cn cell (Alibaba) ─────────────┐
-   user from CN ──────►│ ──→ x-country: CN  →  Alipay, PIP notice   │
+   user from CN ──────►│ ──→ x-country: CN  →  WeChat Pay, PIP      │
                        │       (separate data plane: Alibaba RDS)    │
                        └──────────────────────────────────────────────┘
 ```
@@ -90,9 +90,9 @@ import { useCountry, useFeature } from "@/src/lib/region/provider";
 
 function PaymentBlock() {
   const country = useCountry(); // "US" / "DE" / ...
-  const stripeAvailable = useFeature("stripePay");
-  if (!stripeAvailable) return null;
-  return <StripeButton />;
+  const airwallexAvailable = useFeature("airwallexPay");
+  if (!airwallexAvailable) return null;
+  return <AirwallexButton />;
 }
 ```
 
@@ -123,10 +123,10 @@ import { Country } from "@/common/region";
 export class PaymentController {
   @Post("checkout")
   checkout(@Country() country: string, @Body() body: CheckoutDto) {
-    if (!hasFeature("stripePay", country)) {
-      throw new BadRequestException("Stripe not available in your country");
+    if (!hasFeature("airwallexPay", country)) {
+      throw new BadRequestException("Airwallex not available in your country");
     }
-    return this.svc.checkoutStripe(country, body);
+    return this.svc.checkoutAirwallex(country, body);
   }
 }
 ```
@@ -137,13 +137,13 @@ export class PaymentController {
    `apps/server/src/common/region/features.ts`:
 
    ```ts
-   stripePay: {
+   airwallexPay: {
      cells: ["com", "global"],                  // not available in cn
-     countries: ["US", "GB", "DE", "FR", ...],  // stripe-supported only
+     countries: ["US", "GB", "DE", "FR", ...],  // airwallex-supported only
    },
    ```
 
-2. Call `hasFeature("stripePay", country)` at the gate site.
+2. Call `hasFeature("airwallexPay", country)` at the gate site.
 
 3. Web layer hides UI; server layer 403's the request. **Both** —
    never just web (front-end gates are advisory).
