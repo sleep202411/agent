@@ -21,7 +21,7 @@ deploy/
   helm/              Helm chart（ArgoCD 渲染部署 .com → AKS）
   argocd/            ArgoCD Application 声明
   deploy-com-aks.sh  .com 部署（az acr build → bump values → ArgoCD）
-  deploy-cn-ack.sh · deploy-cn-incremental.sh · cn-remote-build.sh   .cn 部署（build ECS → CN ACR → helm）
+  deploy-cn.sh · cn-remote-build.sh   .cn 部署（build ECS → CN ACR → helm；cn-remote-build 是 ECS 侧帮手，不直接跑）
   docker-compose.yml · auto-update.sh · nginx/   ← 旧 ECS/podman 方案（legacy，待 CN→Aliyun 时清理）
 ```
 
@@ -112,7 +112,7 @@ deploy/deploy-com-aks.sh all            # 全部：web studio admin-ui server ag
 - ArgoCD app：`fizzdragon-com`（auto-sync + prune + selfHeal）
 - 回滚：把 `values.yaml` 的 tag 改回上一个 good sha 并 push（ArgoCD 收敛），或 `git revert` 那次 bump
 
-### `.cn`（中国）— Aliyun ACK + `deploy-cn-ack.sh` / `deploy-cn-incremental.sh`
+### `.cn`（中国）— Aliyun ACK + `deploy-cn.sh`
 
 生产 `.cn` 跑在 **Aliyun ACK**（集群 `fizzdragon-cn`，cn-hangzhou，namespace `fizzdragon`，
 kubeconfig `~/.kube/config-fizzdragon-cn`），与 .com 的 AKS 完全独立（独立 VPC / RDS PG / Redis）；
@@ -120,8 +120,8 @@ Java 仅作外部 HTTPS API 调用。无托管构建、无 GitOps：在**境内 
 → push CN ACR → 直接 `helm upgrade`。
 
 ```bash
-deploy/deploy-cn-ack.sh [TAG]     # 全量冷启动：StartInstance → tarball → 分块跨境同步 → build → helm → StopInstance
-deploy/deploy-cn-incremental.sh   # 增量（日常小改）：只补丁 git diff 到 ECS 已有 tarball → build → helm；base 读 /root/.deployed-tag
+deploy/deploy-cn.sh            # 增量（默认，日常小改）：只补丁 git diff 到 ECS 已有 tarball → build → helm
+deploy/deploy-cn.sh --full     # 全量冷启动：源码 tarball → 分块跨境同步 → build → helm → StopInstance（首次/ECS 停机久/大 diff）
 ```
 
 - 全量的跨境源码同步是瓶颈（~72MB 分块 scp，~30-40 分钟）；日常小改用增量脚本，只传改动文件、秒级。
@@ -178,7 +178,7 @@ develop    ← 默认工作分支，日常直接在此提交（单人开发）
 2. 上线：`develop` → `main`，用**普通 merge**（非 squash——squash 会把 `values.yaml` 里 .com 的镜像 tag 冲成 develop 的旧值）。
 3. **从 `main` 部署两个 cell**（脚本都有分支 guard，非 main 拒绝）：
    - `.com`：`deploy/deploy-com-aks.sh <service…>`
-   - `.cn`：`deploy/deploy-cn-incremental.sh`（日常增量）或 `deploy/deploy-cn-ack.sh`（全量冷启动）
+   - `.cn`：`deploy/deploy-cn.sh`（日常增量）或 `deploy/deploy-cn.sh --full`（全量冷启动）
 
 > `main` = 唯一生产真相。两边机制不同（.com 走 ArgoCD/GitOps，.cn 直接 helm），但都以 main 为准——详见 [Deployment](#deployment)。
 

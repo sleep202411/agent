@@ -1,8 +1,9 @@
 #!/bin/bash
-# Runs ON the cn-hangzhou build ECS (invoked by deploy-cn-ack.sh).
-# Extracts the source tarball, logs into the CN ACR, builds all CN services
-# amd64 and pushes them. ACR creds are read from /root/.acr_user + /root/.acr_token.
-# Image tag is passed as $TAG (env). Source is /root/src.tar.gz.
+# ECS-side build helper — NOT run directly; deploy-cn.sh scp's this onto the
+# cn-hangzhou build ECS and runs it there. Extracts the source tarball, logs into
+# the CN ACR, builds all CN services amd64 and pushes them. ACR creds are read
+# from /root/.acr_user + /root/.acr_token. Image tag is $TAG (env). Source is
+# /root/src.tar.gz.
 set -uo pipefail
 REG=fizzdragon-registry-vpc.cn-hangzhou.cr.aliyuncs.com   # VPC endpoint (push+pull, no IP-ACL)
 NS=fizzdragon
