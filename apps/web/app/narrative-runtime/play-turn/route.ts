@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 
 import { callLlmJson, getLlmKey, LlmError } from "../_lib/llm";
 import { writerMessages } from "../_lib/prompts";
-import { getSession, touchSession } from "../_lib/session-store";
+import { openSession, sealSession } from "../_lib/session-token";
 import type { ActStage, TurnRequest, TurnResponse } from "../_lib/types";
 
 export const runtime = "nodejs";
@@ -34,9 +34,8 @@ export async function POST(request: NextRequest) {
   const sessionId = body.sessionId?.trim();
   if (!sessionId) return json({ error: "sessionId is required" }, 400);
 
-  const session = getSession(sessionId);
-  if (!session)
-    return json({ error: "Session not found or expired", code: "SESSION_EXPIRED" }, 410);
+  const session = openSession(sessionId);
+  if (!session) return json({ error: "Invalid or corrupt session token", code: "BAD_TOKEN" }, 400);
 
   const { bible, live } = session;
   const action = body.action;
@@ -98,14 +97,13 @@ export async function POST(request: NextRequest) {
   if (ACT_ORDER.indexOf(paced) > ACT_ORDER.indexOf(live.stage)) live.stage = paced;
   if (finished) live.stage = "he";
 
-  touchSession(sessionId, session);
-
   const res: TurnResponse = {
     narrative,
     options,
     finished,
     stage: live.stage,
     turnCount: live.turnCount,
+    sessionId: sealSession(session), // refreshed stateless token for the next turn
   };
   return json(res);
 }

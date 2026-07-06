@@ -3,7 +3,8 @@
  *
  * This is the throwaway Next implementation of the enter/turns contract
  * (docs/narrative-runtime-java-api-v0.md). Java owns the real, persisted version;
- * here everything lives in process memory (no DB). See ./session-store.
+ * here the session is stateless — sealed into an opaque token the client
+ * round-trips (no server storage). See ./session-token.
  */
 
 export type ActStage = "qi" | "cheng" | "zhuan" | "he";
@@ -57,16 +58,6 @@ export interface LiveState {
   lastOptions: Array<{ id: string; label: string }>;
 }
 
-export interface Session {
-  ipId: string;
-  ipTitle: string;
-  locale: string;
-  bible: Bible;
-  live: LiveState;
-  createdAt: number;
-  updatedAt: number;
-}
-
 // ── Client-facing shapes ──
 
 export interface SetupOptions {
@@ -101,4 +92,6 @@ export interface TurnResponse {
   finished: boolean;
   stage: ActStage;
   turnCount: number;
+  /** Refreshed stateless session token to send on the next turn. */
+  sessionId: string;
 }

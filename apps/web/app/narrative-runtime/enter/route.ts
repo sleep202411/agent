@@ -1,11 +1,10 @@
-import { randomUUID } from "node:crypto";
 import { NextRequest, NextResponse } from "next/server";
 
 import { callLlmJson, getLlmKey, LlmError } from "../_lib/llm";
 import { fetchIpSeed } from "../_lib/ip-seed";
 import { architectMessages } from "../_lib/prompts";
-import { saveSession } from "../_lib/session-store";
-import type { Bible, EnterResponse, Session, SetupOptions } from "../_lib/types";
+import { sealSession } from "../_lib/session-token";
+import type { Bible, EnterResponse, LiveState, SetupOptions } from "../_lib/types";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -75,25 +74,15 @@ export async function POST(request: NextRequest) {
     return json({ error: "Generated story had no characters; try again." }, 502);
   }
 
-  const sessionId = randomUUID();
-  const now = Date.now();
-  const session: Session = {
-    ipId,
-    ipTitle: seed.title,
-    locale,
-    bible,
-    live: {
-      setup: null,
-      turnCount: 0,
-      stage: "qi",
-      unlockedClueIds: [],
-      recentTurns: [],
-      lastOptions: [],
-    },
-    createdAt: now,
-    updatedAt: now,
+  const live: LiveState = {
+    setup: null,
+    turnCount: 0,
+    stage: "qi",
+    unlockedClueIds: [],
+    recentTurns: [],
+    lastOptions: [],
   };
-  saveSession(sessionId, session);
+  const sessionId = sealSession({ ipId, ipTitle: seed.title, locale, bible, live });
 
   const playable = bible.characters.filter((c) => c.playable && c.public);
   const roles = (playable.length ? playable : bible.characters.slice(0, 1)).map((c) => ({

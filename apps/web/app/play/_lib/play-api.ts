@@ -27,6 +27,8 @@ export interface TurnResult {
   finished: boolean;
   stage: string;
   turnCount: number;
+  /** Refreshed stateless session token to send on the next turn. */
+  sessionId: string;
 }
 
 export type PlayTurnAction = "start" | "continue" | "choice" | "free";

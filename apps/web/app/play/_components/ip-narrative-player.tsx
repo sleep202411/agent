@@ -62,6 +62,8 @@ export function IpNarrativePlayer({ ipId }: { ipId: string }) {
 
   const feedRef = useRef<HTMLDivElement>(null);
   const startedRef = useRef(false);
+  // Stateless session: the current opaque token, refreshed on every turn.
+  const tokenRef = useRef<string | null>(null);
 
   useEffect(() => {
     let alive = true;
@@ -69,6 +71,7 @@ export function IpNarrativePlayer({ ipId }: { ipId: string }) {
       .then((d) => {
         if (!alive) return;
         setEnterData(d);
+        tokenRef.current = d.sessionId;
         setRoleId(d.defaults.roleId ?? d.setupOptions.roles[0]?.id);
         setDirection(d.defaults.directionKey ?? "suspense");
         setPace(d.defaults.pace ?? "standard");
@@ -88,13 +91,14 @@ export function IpNarrativePlayer({ ipId }: { ipId: string }) {
     feedRef.current?.scrollTo({ top: feedRef.current.scrollHeight, behavior: "smooth" });
   }, [lines, options, busy]);
 
-  async function turn(req: Parameters<typeof playTurn>[1], playerEcho?: string) {
-    if (busy || !enterData) return;
+  async function turn(req: Omit<Parameters<typeof playTurn>[1], "sessionId">, playerEcho?: string) {
+    if (busy || !tokenRef.current) return;
     setBusy(true);
     setOptions([]);
     if (playerEcho) setLines((l) => [...l, { role: "player", text: playerEcho }]);
     try {
-      const r: TurnResult = await playTurn(locale, req);
+      const r: TurnResult = await playTurn(locale, { ...req, sessionId: tokenRef.current });
+      tokenRef.current = r.sessionId;
       setLines((l) => [...l, { role: "narrator", text: r.narrative }]);
       setOptions(r.options);
       setFinished(r.finished);
@@ -114,7 +118,6 @@ export function IpNarrativePlayer({ ipId }: { ipId: string }) {
     startedRef.current = true;
     setPhase("playing");
     void turn({
-      sessionId: enterData.sessionId,
       action: "start",
       setup: { roleId, directionKey: direction, pace },
     });
@@ -124,7 +127,7 @@ export function IpNarrativePlayer({ ipId }: { ipId: string }) {
     const text = draft.trim();
     if (!text || !enterData) return;
     setDraft("");
-    void turn({ sessionId: enterData.sessionId, action: "free", text }, text);
+    void turn({ action: "free", text }, text);
   };
 
   const close = (
@@ -175,7 +178,7 @@ export function IpNarrativePlayer({ ipId }: { ipId: string }) {
         eyebrow: "开场设定",
         heading: enterData.title || "走进这个故事",
         body: <p className="text-[15px] leading-relaxed text-[#c7d3d9]">{enterData.prologue}</p>,
-        cta: "开始设定",
+        cta: "开始",
       });
     }
     if (so.roles.length > 0) {
@@ -231,7 +234,7 @@ export function IpNarrativePlayer({ ipId }: { ipId: string }) {
 
     return (
       <Root>
-        <div className="mx-auto flex w-full max-w-2xl items-center gap-3">
+        <div className="mx-auto flex w-full max-w-6xl items-center gap-3">
           <button
             type="button"
             aria-label="返回"
@@ -255,7 +258,7 @@ export function IpNarrativePlayer({ ipId }: { ipId: string }) {
         {/* Content fills the middle and vertically-centers (m-auto); the CTA is
             pinned to the bottom bar. Only the play phase flows top-to-bottom. */}
         <div className="flex flex-1 flex-col overflow-y-auto px-5 py-8 sm:px-6">
-          <div className="m-auto w-full max-w-2xl">
+          <div className="m-auto w-full max-w-5xl">
             {cur.eyebrow ? (
               <p className="text-xs font-bold uppercase tracking-[0.08em] text-[#ff5a2c]">
                 {cur.eyebrow}
@@ -267,7 +270,7 @@ export function IpNarrativePlayer({ ipId }: { ipId: string }) {
         </div>
 
         <div className="border-t border-white/5 px-5 py-4 sm:px-6">
-          <div className="mx-auto flex w-full max-w-2xl justify-end">
+          <div className="mx-auto flex w-full max-w-5xl justify-end">
             <Button3D
               block
               size="md"
@@ -287,7 +290,7 @@ export function IpNarrativePlayer({ ipId }: { ipId: string }) {
   const progress = finished ? 100 : (ACT_PROGRESS[stage] ?? 12);
   return (
     <Root>
-      <div className="mx-auto flex w-full max-w-2xl items-center gap-3">
+      <div className="mx-auto flex w-full max-w-6xl items-center gap-3">
         {close}
         <div className="relative h-4 flex-1 overflow-hidden rounded-full bg-[#14232a]">
           <div
@@ -337,12 +340,7 @@ export function IpNarrativePlayer({ ipId }: { ipId: string }) {
               <Choice
                 key={o.id}
                 disabled={busy}
-                onClick={() =>
-                  void turn(
-                    { sessionId: enterData!.sessionId, action: "choice", choiceId: o.id },
-                    o.label
-                  )
-                }
+                onClick={() => void turn({ action: "choice", choiceId: o.id }, o.label)}
               >
                 {o.label}
               </Choice>
@@ -369,7 +367,7 @@ export function IpNarrativePlayer({ ipId }: { ipId: string }) {
                 size="md"
                 className="w-23 shrink-0"
                 disabled={busy}
-                onClick={() => void turn({ sessionId: enterData!.sessionId, action: "continue" })}
+                onClick={() => void turn({ action: "continue" })}
               >
                 继续
               </Button3D>
