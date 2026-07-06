@@ -20,7 +20,8 @@ packages/
 deploy/
   helm/              Helm chart（ArgoCD 渲染部署 .com → AKS）
   argocd/            ArgoCD Application 声明
-  deploy-com-aks.sh  .com 部署脚本（az acr build → bump values → ArgoCD）
+  deploy-com-aks.sh  .com 部署（az acr build → bump values → ArgoCD）
+  deploy-cn-ack.sh · deploy-cn-incremental.sh · cn-remote-build.sh   .cn 部署（build ECS → CN ACR → helm）
   docker-compose.yml · auto-update.sh · nginx/   ← 旧 ECS/podman 方案（legacy，待 CN→Aliyun 时清理）
 ```
 
@@ -109,17 +110,25 @@ deploy/deploy-com-aks.sh all            # 全部：web studio admin-ui server ag
 - ArgoCD app：`fizzdragon-com`（auto-sync + prune + selfHeal）
 - 回滚：把 `values.yaml` 的 tag 改回上一个 good sha 并 push（ArgoCD 收敛），或 `git revert` 那次 bump
 
-### `.cn`（中国）— Aliyun ACK + `deploy-cn-ack.sh`
+### `.cn`（中国）— Aliyun ACK + `deploy-cn-ack.sh` / `deploy-cn-incremental.sh`
 
-生产 `.cn` 跑在 **Aliyun ACK**（集群 `fizzdragon-cn`，cn-hangzhou，namespace `fizzdragon`），
-与 .com 的 AKS 完全独立（独立 VPC / RDS PG / Redis）；Java 仅作外部 HTTPS API 调用。
+生产 `.cn` 跑在 **Aliyun ACK**（集群 `fizzdragon-cn`，cn-hangzhou，namespace `fizzdragon`，
+kubeconfig `~/.kube/config-fizzdragon-cn`），与 .com 的 AKS 完全独立（独立 VPC / RDS PG / Redis）；
+Java 仅作外部 HTTPS API 调用。无托管构建、无 GitOps：在**境内 build ECS** 构建（跨境推镜像不可行）
+→ push CN ACR → 直接 `helm upgrade`。
 
 ```bash
-deploy/deploy-cn-ack.sh   # 在 in-region build ECS 构建 → push CN ACR → helm(-f values.yaml -f values.cn-prod.yaml)
+deploy/deploy-cn-ack.sh [TAG]     # 全量冷启动：StartInstance → tarball → 分块跨境同步 → build → helm → StopInstance
+deploy/deploy-cn-incremental.sh   # 增量（日常小改）：只补丁 git diff 到 ECS 已有 tarball → build → helm；base 读 /root/.deployed-tag
 ```
 
-- ⚠️ `admin-ui` 在 CN 构建会 BUILDFAIL → 脚本在 helm 前中止；手动 `helm upgrade` 只滚 server+web（绕开 admin-ui）即可。
-- ⚠️ **瓶颈**：源码跨境从本机 scp 到 build ECS 很慢（54MB 曾耗 ~30 分钟）。根治 = CN git 镜像让 ECS in-region 拉，或 ACR 托管构建。
+- 全量的跨境源码同步是瓶颈（~72MB 分块 scp，~30-40 分钟）；日常小改用增量脚本，只传改动文件、秒级。
+  增量补丁 tarball 本身而非 `/root/src`——`cn-remote-build.sh` 每次构建会 `rm -rf /root/src` 重解压 tarball。
+- `cn-remote-build.sh` 构建前 `docker image prune -f` 清 dangling 层（防磁盘满）；不用 `-af`，会删被墙的 base 镜像。
+- 密钥（WeChat Pay 等）改 live secret `fizzdragon-server-secrets` 后必须 `kubectl rollout restart deploy/fizzdragon-server`
+  （envFrom 只在 pod 启动时读）。配置一律落声明式源头（values / 代码 / secret），别用运行时 `kubectl set env`——helm 升级会冲掉。
+- prod PG 操作 / seed：laptop 连不上，用 pod 里跑 esbuild 打包的一次性 Prisma 脚本（`kubectl cp` + `NODE_PATH=/app/node_modules node`）；
+  删数据先确认 0 订单/订阅（order→price 是 onDelete Restrict，有引用改归档 `isActive=false`）。
 - 旧的 `deploy/docker-compose.yml` / `nginx/`（ECS/podman 方案）已停用。
 
 ## Domains, DNS & TLS
