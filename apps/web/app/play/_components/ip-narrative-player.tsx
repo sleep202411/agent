@@ -5,19 +5,23 @@
  * language (dark): rounded chunky type, hard-edge 3D buttons, speech-bubble
  * dialogue, thick rounded progress. Flow: enter (generate bible) → setup →
  * turn loop (continue / choice / free) → ending.
- *
- * Backend is the throwaway Next prototype; Java owns the real one later.
  */
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import Link from "next/link";
-import { IconArrowLeft, IconLoader2, IconRefresh, IconSend, IconX } from "@tabler/icons-react";
+import { IconArrowLeft, IconRefresh, IconSend, IconX } from "@tabler/icons-react";
 import { cn } from "@/lib/utils";
 import { Button3D } from "@/components/ui/button-3d";
 import type { Locale } from "@/src/i18n/config";
-import { useLocale } from "@/src/i18n/i18n";
+import { useLocale, useTranslations } from "@/src/i18n/i18n";
 import { localizePath } from "@/src/i18n/locale-url";
-import { enterPlay, playTurn, type EnterResult, type TurnResult } from "../_lib/play-api";
+import {
+  enterPlay,
+  playTurn,
+  type EnterResult,
+  type PlayerPersonality,
+  type TurnResult,
+} from "../_lib/play-api";
 
 const FONT =
   "ui-rounded, 'SF Pro Rounded', 'Nunito', system-ui, 'PingFang SC', 'Microsoft YaHei', sans-serif";
@@ -36,14 +40,27 @@ const BUILD_STEPS = [
   "擦亮第一幕的灯…",
   "拉开帷幕…",
 ];
-const ACT_PROGRESS: Record<string, number> = { qi: 12, cheng: 40, zhuan: 68, he: 92 };
 const AVATARS = ["#3a4a6a", "#6a3a4a", "#4a6a3a", "#5a4a6a", "#5c503d"];
+const MAX_REVEAL_STEPS = 220;
+const REVEAL_INTERVAL_MS = 34;
+
+function progressFromTurnCount(turnCount: number): number {
+  return Math.min(92, 12 + Math.max(0, turnCount) * 2);
+}
 
 type Phase = "loading" | "setup" | "playing" | "error";
-type Line = { role: "player" | "narrator"; text: string };
+type Line = { id: string; role: "player" | "narrator"; text: string; reveal?: boolean };
+type Option = { id: string; label: string };
+type PendingReveal = {
+  lineId: string;
+  options: Option[];
+  finished: boolean;
+  playerPersonality: PlayerPersonality | null;
+};
 
 export function IpNarrativePlayer({ ipId }: { ipId: string }) {
   const locale = useLocale() as Locale;
+  const t = useTranslations("narrativeDemo");
 
   const [phase, setPhase] = useState<Phase>("loading");
   const [error, setError] = useState<string | null>(null);
@@ -54,15 +71,19 @@ export function IpNarrativePlayer({ ipId }: { ipId: string }) {
   const [step, setStep] = useState(0);
 
   const [lines, setLines] = useState<Line[]>([]);
-  const [options, setOptions] = useState<Array<{ id: string; label: string }>>([]);
+  const [options, setOptions] = useState<Option[]>([]);
   const [finished, setFinished] = useState(false);
-  const [stage, setStage] = useState("qi");
+  const [turnCount, setTurnCount] = useState(0);
+  const [playerPersonality, setPlayerPersonality] = useState<PlayerPersonality | null>(null);
+  const [pendingReveal, setPendingReveal] = useState<PendingReveal | null>(null);
   const [busy, setBusy] = useState(false);
   const [draft, setDraft] = useState("");
 
   const feedRef = useRef<HTMLDivElement>(null);
+  const lineSeqRef = useRef(0);
+  const pendingRevealRef = useRef<PendingReveal | null>(null);
   const startedRef = useRef(false);
-  // Stateless session: the current opaque token, refreshed on every turn.
+  // Java keeps session state server-side; the browser only holds the opaque session id.
   const tokenRef = useRef<string | null>(null);
 
   useEffect(() => {
@@ -73,8 +94,8 @@ export function IpNarrativePlayer({ ipId }: { ipId: string }) {
         setEnterData(d);
         tokenRef.current = d.sessionId;
         setRoleId(d.defaults.roleId ?? d.setupOptions.roles[0]?.id);
-        setDirection(d.defaults.directionKey ?? "suspense");
-        setPace(d.defaults.pace ?? "standard");
+        setDirection(d.defaults.directionKey ?? d.setupOptions.directions[0]?.key ?? "suspense");
+        setPace(d.defaults.pace ?? d.setupOptions.paces[0]?.key ?? "standard");
         setPhase("setup");
       })
       .catch((e: unknown) => {
@@ -89,25 +110,69 @@ export function IpNarrativePlayer({ ipId }: { ipId: string }) {
 
   useEffect(() => {
     feedRef.current?.scrollTo({ top: feedRef.current.scrollHeight, behavior: "smooth" });
-  }, [lines, options, busy]);
+  }, [lines, options, busy, pendingReveal, playerPersonality]);
+
+  useEffect(() => {
+    pendingRevealRef.current = pendingReveal;
+  }, [pendingReveal]);
+
+  function nextLineId(role: Line["role"]) {
+    lineSeqRef.current += 1;
+    return `${role}-${lineSeqRef.current}`;
+  }
+
+  function scrollFeedToBottom(behavior: ScrollBehavior = "smooth") {
+    feedRef.current?.scrollTo({ top: feedRef.current.scrollHeight, behavior });
+  }
+
+  function completeReveal(lineId: string) {
+    const pending = pendingRevealRef.current;
+    if (!pending || pending.lineId !== lineId) return;
+    setOptions(pending.options);
+    setFinished(pending.finished);
+    setPlayerPersonality(pending.playerPersonality);
+    pendingRevealRef.current = null;
+    setPendingReveal(null);
+    window.requestAnimationFrame(() => scrollFeedToBottom("smooth"));
+  }
 
   async function turn(req: Omit<Parameters<typeof playTurn>[1], "sessionId">, playerEcho?: string) {
-    if (busy || !tokenRef.current) return;
+    if (busy || pendingRevealRef.current || !tokenRef.current) return;
     setBusy(true);
     setOptions([]);
-    if (playerEcho) setLines((l) => [...l, { role: "player", text: playerEcho }]);
+    pendingRevealRef.current = null;
+    setPendingReveal(null);
+    setPlayerPersonality(null);
+    if (playerEcho) {
+      setLines((l) => [...l, { id: nextLineId("player"), role: "player", text: playerEcho }]);
+    }
     try {
       const r: TurnResult = await playTurn(locale, { ...req, sessionId: tokenRef.current });
-      tokenRef.current = r.sessionId;
-      setLines((l) => [...l, { role: "narrator", text: r.narrative }]);
-      setOptions(r.options);
-      setFinished(r.finished);
-      setStage(r.stage);
+      const lineId = nextLineId("narrator");
+      const pending = {
+        lineId,
+        options: r.options,
+        finished: r.finished,
+        playerPersonality: r.playerPersonality ?? null,
+      };
+      setLines((l) => [...l, { id: lineId, role: "narrator", text: r.narrative, reveal: true }]);
+      pendingRevealRef.current = pending;
+      setPendingReveal(pending);
+      setTurnCount(r.turnCount);
     } catch (e) {
+      const lineId = nextLineId("narrator");
+      const pending = { lineId, options: [], finished: false, playerPersonality: null };
       setLines((l) => [
         ...l,
-        { role: "narrator", text: `（生成失败：${e instanceof Error ? e.message : String(e)}）` },
+        {
+          id: lineId,
+          role: "narrator",
+          text: `（生成失败：${e instanceof Error ? e.message : String(e)}）`,
+          reveal: true,
+        },
       ]);
+      pendingRevealRef.current = pending;
+      setPendingReveal(pending);
     } finally {
       setBusy(false);
     }
@@ -125,7 +190,7 @@ export function IpNarrativePlayer({ ipId }: { ipId: string }) {
 
   const submitFree = () => {
     const text = draft.trim();
-    if (!text || !enterData) return;
+    if (!text || !enterData || busy || pendingRevealRef.current) return;
     setDraft("");
     void turn({ action: "free", text }, text);
   };
@@ -287,7 +352,8 @@ export function IpNarrativePlayer({ ipId }: { ipId: string }) {
   }
 
   // ── playing ──
-  const progress = finished ? 100 : (ACT_PROGRESS[stage] ?? 12);
+  const progress = finished ? 100 : progressFromTurnCount(turnCount);
+  const interactionLocked = busy || Boolean(pendingReveal);
   return (
     <Root>
       <div className="mx-auto flex w-full max-w-6xl items-center gap-3">
@@ -306,40 +372,47 @@ export function IpNarrativePlayer({ ipId }: { ipId: string }) {
           actions are dimmer inset lines within the narrative. */}
       <div ref={feedRef} className="w-full flex-1 overflow-y-auto px-5 py-8 sm:px-6">
         <div className="mx-auto max-w-2xl">
-          {lines.map((ln, i) =>
+          {lines.map((ln) =>
             ln.role === "narrator" ? (
-              <p
-                key={i}
-                className="mb-7 whitespace-pre-line text-[18px] font-medium leading-[1.9] text-white/88 sm:text-[19px]"
-                style={{ fontFamily: SERIF }}
-              >
-                {ln.text}
-              </p>
+              <AnimatedProseLine
+                key={ln.id}
+                text={ln.text}
+                reveal={ln.reveal}
+                onRevealProgress={() => scrollFeedToBottom("auto")}
+                onRevealComplete={() => completeReveal(ln.id)}
+              />
             ) : (
               <p
-                key={i}
-                className="mb-7 whitespace-pre-line border-l-2 border-[#ff5a2c]/50 pl-4 text-[17px] font-medium italic leading-[1.9] text-white/52 sm:text-[18px]"
+                key={ln.id}
+                className="mb-7 whitespace-pre-line border-l-2 border-[#ff5a2c]/50 pl-4 text-[17px] font-medium italic leading-[1.9] text-white/52 duration-300 animate-in fade-in-0 slide-in-from-bottom-1 sm:text-[18px] motion-reduce:animate-none"
                 style={{ fontFamily: SERIF }}
               >
                 {ln.text}
               </p>
             )
           )}
-          {busy ? <IconLoader2 className="mt-1 animate-spin text-white/40" size={20} /> : null}
+          {busy ? <TurnLoadingCue /> : null}
+          {finished && playerPersonality ? (
+            <PlayerPersonalityCard
+              label={t("play.playerPersonality")}
+              personality={playerPersonality}
+            />
+          ) : null}
         </div>
       </div>
 
       <div className="mx-auto w-full max-w-2xl px-4 pb-5 sm:px-6">
         {finished ? (
           <Button3D block onClick={() => window.location.reload()} icon={<IconRefresh />}>
-            再玩一次
+            {t("play.restart")}
           </Button3D>
         ) : (
           <div className="flex flex-col gap-2.5">
-            {options.map((o) => (
+            {options.map((o, index) => (
               <Choice
                 key={o.id}
-                disabled={busy}
+                index={index}
+                disabled={interactionLocked}
                 onClick={() => void turn({ action: "choice", choiceId: o.id }, o.label)}
               >
                 {o.label}
@@ -350,14 +423,14 @@ export function IpNarrativePlayer({ ipId }: { ipId: string }) {
                 value={draft}
                 onChange={(e) => setDraft(e.target.value)}
                 onKeyDown={(e) => e.key === "Enter" && submitFree()}
-                disabled={busy}
+                disabled={interactionLocked}
                 placeholder="你想做什么…"
                 style={{ fontFamily: FONT }}
                 className="h-12 min-w-0 flex-1 rounded-2xl border-2 border-white/10 bg-[#17262d] px-4 text-[15px] font-semibold text-[#f1f7fb] outline-none placeholder:font-medium placeholder:text-[#5f7580] focus:border-white/25 disabled:opacity-50"
               />
               <button
                 onClick={submitFree}
-                disabled={busy || !draft.trim()}
+                disabled={interactionLocked || !draft.trim()}
                 aria-label="发送"
                 className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl bg-[#24363f] text-[#8ea6b2] shadow-[0_4px_0_#131f25] transition active:translate-y-1 active:shadow-[0_0_0_#131f25] disabled:opacity-40"
               >
@@ -366,7 +439,7 @@ export function IpNarrativePlayer({ ipId }: { ipId: string }) {
               <Button3D
                 size="md"
                 className="w-23 shrink-0"
-                disabled={busy}
+                disabled={interactionLocked}
                 onClick={() => void turn({ action: "continue" })}
               >
                 继续
@@ -376,6 +449,172 @@ export function IpNarrativePlayer({ ipId }: { ipId: string }) {
         )}
       </div>
     </Root>
+  );
+}
+
+function PlayerPersonalityCard({
+  label,
+  personality,
+}: {
+  label: string;
+  personality: PlayerPersonality;
+}) {
+  return (
+    <section className="mb-7 rounded-3xl bg-[#17262d] px-5 py-5 shadow-[0_4px_0_#101b20]">
+      <p className="text-xs font-extrabold uppercase tracking-[0.08em] text-[#ff5a2c]">{label}</p>
+      {personality.title ? (
+        <h2 className="mt-2 text-[20px] font-extrabold leading-tight text-[#f1f7fb]">
+          {personality.title}
+        </h2>
+      ) : null}
+      {personality.summary ? (
+        <p className="mt-3 whitespace-pre-line text-[15px] font-medium leading-relaxed text-[#c7d3d9]">
+          {personality.summary}
+        </p>
+      ) : null}
+    </section>
+  );
+}
+
+function AnimatedProseLine({
+  text,
+  reveal,
+  onRevealProgress,
+  onRevealComplete,
+}: {
+  text: string;
+  reveal?: boolean;
+  onRevealProgress?: () => void;
+  onRevealComplete?: () => void;
+}) {
+  const reduceMotion = usePrefersReducedMotion();
+  const units = useMemo(() => splitGraphemes(text), [text]);
+  const [visibleCount, setVisibleCount] = useState(() => (reveal ? 0 : units.length));
+  const progressRef = useRef(onRevealProgress);
+  const completeRef = useRef(onRevealComplete);
+
+  useEffect(() => {
+    progressRef.current = onRevealProgress;
+    completeRef.current = onRevealComplete;
+  }, [onRevealComplete, onRevealProgress]);
+
+  useEffect(() => {
+    if (!reveal || reduceMotion || units.length === 0) {
+      const id = window.setTimeout(() => {
+        setVisibleCount(units.length);
+        completeRef.current?.();
+      }, 0);
+      return () => window.clearTimeout(id);
+    }
+
+    let visible = 0;
+    let ticks = 0;
+    const stepSize = Math.max(1, Math.ceil(units.length / MAX_REVEAL_STEPS));
+
+    const id = window.setInterval(() => {
+      ticks += 1;
+      visible = Math.min(units.length, visible + stepSize);
+      setVisibleCount(visible);
+
+      if (ticks % 4 === 0 || visible >= units.length) {
+        progressRef.current?.();
+      }
+
+      if (visible >= units.length) {
+        window.clearInterval(id);
+        completeRef.current?.();
+      }
+    }, REVEAL_INTERVAL_MS);
+
+    return () => window.clearInterval(id);
+  }, [reduceMotion, reveal, units]);
+
+  const visibleText = units.slice(0, visibleCount).join("");
+  const revealing = Boolean(reveal) && visibleCount < units.length && !reduceMotion;
+
+  return (
+    <p
+      className="mb-7 whitespace-pre-line text-[18px] font-medium leading-[1.9] text-white/88 sm:text-[19px]"
+      style={{ fontFamily: SERIF }}
+    >
+      {visibleText}
+      {revealing ? (
+        <span className="ml-1 inline-block h-[1.15em] w-0.5 translate-y-0.5 animate-pulse bg-[#ff5a2c]/75 align-text-bottom" />
+      ) : null}
+    </p>
+  );
+}
+
+function TurnLoadingCue() {
+  return (
+    <div
+      className="mb-8 flex items-center gap-3 border-l-2 border-[#ff5a2c]/40 pl-4 text-white/42 duration-500 animate-in fade-in-0 motion-reduce:animate-none"
+      aria-live="polite"
+    >
+      <span className="text-[17px] font-medium italic leading-[1.9]" style={{ fontFamily: SERIF }}>
+        落笔中
+      </span>
+      <LoadingDots />
+    </div>
+  );
+}
+
+function LoadingDots() {
+  return (
+    <span className="flex h-5 items-center gap-1.5" aria-hidden="true">
+      {[0, 1, 2].map((index) => (
+        <span
+          key={index}
+          className="h-1.5 w-1.5 animate-pulse rounded-full bg-[#ff5a2c]/70 motion-reduce:animate-none"
+          style={{ animationDelay: `${index * 180}ms`, animationDuration: "1.2s" }}
+        />
+      ))}
+    </span>
+  );
+}
+
+function splitGraphemes(text: string): string[] {
+  const Segmenter = (
+    Intl as typeof Intl & {
+      Segmenter?: new (
+        locale?: string,
+        options?: { granularity: "grapheme" }
+      ) => { segment(input: string): Iterable<{ segment: string }> };
+    }
+  ).Segmenter;
+
+  if (Segmenter) {
+    return Array.from(
+      new Segmenter(undefined, { granularity: "grapheme" }).segment(text),
+      (part) => part.segment
+    );
+  }
+
+  return Array.from(text);
+}
+
+function subscribeReducedMotion(onStoreChange: () => void) {
+  if (typeof window === "undefined") return () => {};
+  const media = window.matchMedia("(prefers-reduced-motion: reduce)");
+  media.addEventListener("change", onStoreChange);
+  return () => media.removeEventListener("change", onStoreChange);
+}
+
+function getReducedMotionSnapshot() {
+  return (
+    typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches
+  );
+}
+
+function getServerReducedMotionSnapshot() {
+  return false;
+}
+
+function usePrefersReducedMotion() {
+  return useSyncExternalStore(
+    subscribeReducedMotion,
+    getReducedMotionSnapshot,
+    getServerReducedMotionSnapshot
   );
 }
 
@@ -458,10 +697,12 @@ function Pill({
 function Choice({
   onClick,
   disabled,
+  index,
   children,
 }: {
   onClick: () => void;
   disabled?: boolean;
+  index: number;
   children: React.ReactNode;
 }) {
   return (
@@ -469,7 +710,8 @@ function Choice({
       type="button"
       onClick={onClick}
       disabled={disabled}
-      className="w-full rounded-2xl bg-[#24363f] px-4 py-3.5 text-left text-[15px] font-bold text-[#f1f7fb] shadow-[0_4px_0_#131f25] transition active:translate-y-1 active:shadow-[0_0_0_#131f25] disabled:opacity-50"
+      className="w-full rounded-2xl bg-[#24363f] px-4 py-3.5 text-left text-[15px] font-bold text-[#f1f7fb] shadow-[0_4px_0_#131f25] transition duration-500 animate-in fade-in-0 slide-in-from-bottom-2 active:translate-y-1 active:shadow-[0_0_0_#131f25] disabled:opacity-50 motion-reduce:animate-none"
+      style={{ animationDelay: `${index * 130}ms` }}
     >
       {children}
     </button>
@@ -485,20 +727,29 @@ function PlayLoading() {
   const step = Math.min(BUILD_STEPS.length - 1, Math.floor((progress / 100) * BUILD_STEPS.length));
 
   return (
-    <div className="mx-auto flex w-full max-w-lg flex-1 flex-col items-center justify-center px-6 text-center">
-      <div className="mb-6 grid h-18.5 w-18.5 animate-bounce place-items-center rounded-3xl bg-[#24363f] text-4xl motion-reduce:animate-none">
-        🎭
-      </div>
-      <p className="min-h-[1.4em] text-base font-bold">{BUILD_STEPS[step]}</p>
-      <div className="relative mt-4 h-4 w-full overflow-hidden rounded-full bg-[#14232a]">
-        <div
-          className="absolute inset-y-0 left-0 rounded-full bg-[#ff5a2c] transition-[width] duration-200 ease-linear"
-          style={{ width: `${Math.round(progress)}%` }}
-        >
-          <span className="absolute inset-x-1.5 top-0.75 h-1 rounded-full bg-white/35" />
+    <div className="mx-auto flex w-full max-w-lg flex-1 flex-col justify-center px-5 py-10">
+      <div className="rounded-[28px] bg-[#111d22] px-6 py-7 shadow-[0_16px_60px_rgba(0,0,0,0.24)]">
+        <div className="flex items-start gap-4">
+          <div className="grid h-12 w-12 place-items-center rounded-2xl bg-[#24363f] text-2xl">
+            🎭
+          </div>
+          <div className="min-w-0 flex-1 pt-0.5">
+            <p className="min-h-[1.4em] text-base font-extrabold text-[#f1f7fb]">
+              {BUILD_STEPS[step]}
+            </p>
+            <p className="mt-1 text-xs font-semibold text-[#5f7580]">每一次推门,都是不一样的世界</p>
+          </div>
+        </div>
+        <div className="mt-6 flex items-center gap-4">
+          <div className="relative h-2 flex-1 overflow-hidden rounded-full bg-[#14232a]">
+            <div
+              className="absolute inset-y-0 left-0 rounded-full bg-[#ff5a2c] transition-[width] duration-300 ease-out"
+              style={{ width: `${Math.round(progress)}%` }}
+            />
+          </div>
+          <LoadingDots />
         </div>
       </div>
-      <p className="mt-3 text-xs text-[#5f7580]">每一次推门,都是不一样的世界</p>
     </div>
   );
 }

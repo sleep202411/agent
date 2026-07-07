@@ -12,15 +12,15 @@ export type NarrativePlayable = {
 };
 
 export const PRIMARY_NARRATIVE_IP_ID = "2eddb763-a259-52d5-bef4-a7ade100c57c";
-export const PRIMARY_NARRATIVE_PLAYABLE_ID = "story_36_hours_case";
+const LEGACY_NARRATIVE_PLAYABLE_ID = "story_36_hours_case";
 
 export const NARRATIVE_PLAYABLES = [
   {
-    id: PRIMARY_NARRATIVE_PLAYABLE_ID,
+    id: LEGACY_NARRATIVE_PLAYABLE_ID,
     sourceIpId: PRIMARY_NARRATIVE_IP_ID,
     status: "draft",
     coverSrc: "/narrative-demo/videos/plot-a-enter-elite-school.jpg",
-    href: `/play/${PRIMARY_NARRATIVE_PLAYABLE_ID}`,
+    href: `/play/${PRIMARY_NARRATIVE_IP_ID}`,
     statKeys: ["aiRuntime", "plotNodes", "clues", "endings"],
     tagKeys: ["textRpg", "mystery", "aiRuntime"],
     translationKey: "story36Hours",

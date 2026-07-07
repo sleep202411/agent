@@ -39,7 +39,6 @@ const PUBLIC_PATTERNS: RegExp[] = [
   /^\/ips(\/|$)/,
   /^\/play(\/|$)/,
   /^\/narrative-demo(\/|$)/,
-  /^\/narrative-runtime(\/|$)/,
   // Generic tag landing pages (e.g. competitions like SGWander) are public +
   // shareable; entries link to the public IP detail page.
   /^\/tags\/[^/]+(\/|$)/,
