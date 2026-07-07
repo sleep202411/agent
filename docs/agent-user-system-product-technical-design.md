@@ -1,9 +1,9 @@
 # Agent User System Target-State Product + Technical Design
 
-Status: target-state design v1  
-Date: 2026-07-06  
-Owner surfaces: `apps/server`, `apps/admin-ui`, selected product APIs  
-Engineering name: **Agent User System**  
+Status: target-state design v1
+Date: 2026-07-07
+Owner surfaces: `apps/server`, `apps/admin-ui`, selected product APIs
+Engineering name: **Agent User System**
 Optional product/world name: **Dragonlings**
 
 > This is the target-state product and technical design, not a fallback MVP
@@ -864,6 +864,170 @@ Open product decision:
 
 - Whether public surfaces disclose AI-native identity. Internal provenance is
   mandatory either way.
+
+### 22.1 Identity States
+
+Agent identity has two explicit states:
+
+| State    | Meaning                                                                                                                                                                                   |
+| -------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `shadow` | Agent exists only in Nest/Postgres. It can run Nest-owned actions such as IP views, likes, collections, recommendations, and memory writes.                                               |
+| `bound`  | Agent is linked to a real Java platform user through `platformUserId`. It can call Java-authenticated product APIs such as comments, game play, follows, and legacy user-owned resources. |
+
+The id fields have different responsibilities:
+
+| Field                      | Owner     | Meaning                                                                                                            |
+| -------------------------- | --------- | ------------------------------------------------------------------------------------------------------------------ |
+| `AgentUser.id`             | Nest      | Stable internal agent actor id. This is never replaced.                                                            |
+| `AgentUser.platformUserId` | Java      | Real Java user id returned by the Java identity service. Stored as string because legacy ids are external to Nest. |
+| `AgentUser.simulatedEmail` | Nest/Java | Synthetic contact identifier used only for account uniqueness. It must not enable normal password login by itself. |
+
+For Java-backed actions, `platformUserId` is the only user id passed to Java
+business APIs. Nest must not fabricate Java user ids.
+
+### 22.2 Java Internal Identity Bridge
+
+Java only needs to provide the identity bridge that Nest cannot create by
+itself:
+
+1. create or return a real Java `userId` for a Nest `agentId`,
+2. mint a Java Sa-Token for that `userId`.
+
+Everything else stays in Nest: agent profile, persona, schedule, status,
+memory, policy, runner decisions, action audit, and safety auto-pause.
+
+These APIs are called by `apps/server`; they are not public registration or
+login interfaces.
+
+Common requirements:
+
+- Transport: HTTPS or trusted private network between services.
+- Auth: service-to-service credential such as `x-service-token`, mTLS, or
+  gateway-level internal auth. A missing or invalid credential must fail closed.
+- Response envelope: Java's standard `{ "code": 200, "msg": "...", "data": ... }`.
+- Idempotency: repeated provisioning calls for the same `agentId` must
+  return the same Java user.
+- Java auth implementation details are Java-owned. Nest treats returned
+  Sa-Tokens as opaque strings.
+
+#### 22.2.1 Upsert Agent User
+
+```http
+POST /internal/agent-users/upsert
+```
+
+Creates or returns the Java platform user for an Agent User.
+
+Request:
+
+```json
+{
+  "agentId": "019a0000-0000-7000-8000-000000000001",
+  "name": "Luna",
+  "email": "agent.luna@agents.fizzdragon.local",
+  "avatarUrl": null
+}
+```
+
+Field rules:
+
+| Field       | Required | Rule                                                                                                                |
+| ----------- | -------- | ------------------------------------------------------------------------------------------------------------------- |
+| `agentId`   | yes      | Nest `AgentUser.id`; unique and immutable. This is not the Java `userId`.                                           |
+| `name`      | yes      | Display name Java should store for this user.                                                                       |
+| `email`     | yes      | Synthetic email-shaped identifier. Java may store it in an email column, but must not allow password login with it. |
+| `avatarUrl` | no       | Nullable avatar URL.                                                                                                |
+
+Java behavior:
+
+- If `agentId` already exists, return the existing Java `userId`.
+- Otherwise create a Java user and return its new `userId`.
+- Do not run public signup requirements such as captcha or email verification.
+- Do not accept or create a normal password-login credential in this interface.
+- Store enough binding state so repeated calls with the same `agentId` are
+  idempotent.
+
+Success response:
+
+```json
+{
+  "code": 200,
+  "msg": "success",
+  "data": {
+    "userId": "10086"
+  }
+}
+```
+
+Nest behavior after success:
+
+- Save `data.userId` to `AgentUser.platformUserId`.
+- Set `AgentUser.identityStatus = bound`.
+- Keep `AgentUser.id` as the primary internal agent id.
+
+#### 22.2.2 Mint Agent Sa-Token
+
+```http
+POST /internal/agent-users/{userId}/satoken
+```
+
+Mints a Java Sa-Token for an already-bound Agent User. This replaces ordinary
+email/password login for agents.
+
+No request body. The path `userId` is enough for Java to mint the token.
+
+Path parameters:
+
+| Field    | Required | Rule                                        |
+| -------- | -------- | ------------------------------------------- |
+| `userId` | yes      | Java user id previously returned by upsert. |
+
+Java behavior:
+
+- Return a Java Sa-Token that can be used on downstream Java product APIs.
+- Token format, TTL, storage, validation, header name, and Sa-Token internals are
+  Java-owned implementation details.
+
+Success response:
+
+```json
+{
+  "code": 200,
+  "msg": "success",
+  "data": {
+    "saToken": "<java-sa-token>"
+  }
+}
+```
+
+Nest behavior after success:
+
+- Use `data.saToken` only for the current run/session/action window.
+- Attach it to downstream Java product API calls using Java's existing auth
+  convention. Nest does not parse the token or depend on Java auth internals.
+- Do not persist the token in `AgentMemory` or profile JSON.
+- Record Java-authenticated actions in `AgentAction` with `actorKind = agent`,
+  target, result, and Java response metadata.
+
+### 22.3 Failure Behavior
+
+- If an Agent User is `shadow` and an action requires Java identity, the runner
+  must skip or fail that action with `AGENT_IDENTITY_NOT_BOUND`.
+- If token minting fails, Nest must not call the downstream Java product API.
+- If Java returns `code !== 200`, Nest treats it as failure even when HTTP is 200.
+- Repeated provisioning or token failures can auto-pause the agent according to
+  the safety policy.
+
+### 22.4 Java Non-Goals
+
+The current Java contract does not include:
+
+- agent persona, memory, schedule, policy, or runner state,
+- Nest agent pause/disable status sync,
+- Java-side agent behavior planning,
+- token payload/claim design,
+- batch profile lookup,
+- Java-to-Nest action audit push.
 
 ## 23. Analytics and Finance Boundary
 
