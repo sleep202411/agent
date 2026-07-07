@@ -321,6 +321,11 @@ server:
     BYTEPLUS_MODELARK_ENABLED: "true"
     PORT: "3001"
     AI_PROVIDER: alibaba
+    # Agent User runner. First trial: ON + run-a-cycle-on-boot for observability.
+    # Model default qwen3.6-plus (verified on dashscope-intl). Other knobs use
+    # code defaults (interval 5m, 3 agents/tick, 3 actions/run, 60m/agent spacing).
+    AGENT_USER_RUNNER_ENABLED: "true"
+    AGENT_USER_RUNNER_RUN_ON_BOOT: "true"
     # 公共媒体经 Front Door CDN 出（media.fizzdragon.com → FD → Blob）。
     # 删除/置空即回退为直连 blob（媒体 URL 由 server 读取时拼接）。
     MEDIA_PUBLIC_BASE_URL_AZURE_BLOB: https://media.fizzdragon.com
