@@ -12,6 +12,7 @@ export interface PlazaProject {
   genres: string[];
   tags: string[];
   episodes: number;
+  viewCount: number;
   likeCount: number;
   collectionCount: number;
   eyebrow: string;

@@ -14,7 +14,6 @@ import type { Locale } from "@/src/i18n/config";
 import { cn } from "@/lib/utils";
 import { Input } from "@/components/ui/input";
 import { ApiRequestError } from "@/src/lib/api";
-import { useUserDisplays } from "@/app/(site)/crews/_hooks/use-users";
 import type { IpCommerceAsset, IpCommerceIp } from "@/src/lib/ip-commerce/api";
 import { useInfiniteIpsByTag } from "@/src/lib/ip-commerce/hooks";
 import { IPPlazaCard } from "@/app/(site)/ips/_components/ip-plaza-card";
@@ -63,12 +62,6 @@ export function TagPageClient({ code }: { code: string }) {
         .includes(needle)
     );
   }, [debouncedSearch, allProjects]);
-
-  const ownerIds = useMemo(
-    () => Array.from(new Set(projects.map((project) => project.ownerId).filter(Boolean))),
-    [projects]
-  );
-  const ownerDisplays = useUserDisplays(ownerIds);
 
   const loadMoreRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -176,11 +169,7 @@ export function TagPageClient({ code }: { code: string }) {
           <>
             <div className="columns-2 gap-6 sm:columns-3 xl:columns-4">
               {projects.map((project) => (
-                <IPPlazaCard
-                  key={project.id}
-                  project={project}
-                  ownerDisplay={ownerDisplays.get(project.ownerId)}
-                />
+                <IPPlazaCard key={project.id} project={project} />
               ))}
             </div>
             <div ref={loadMoreRef} className="h-px" aria-hidden />
@@ -272,6 +261,7 @@ function toPlazaProject(ip: IpCommerceIp, t: ReturnType<typeof useTranslations>)
     genres: ip.genres,
     tags: ip.tags.length > 0 ? ip.tags : ip.genres,
     episodes: ip.episodes.length,
+    viewCount: ip.engagement?.viewCount ?? ip.viewCount ?? 0,
     likeCount: ip.engagement?.likeCount ?? ip.likeCount ?? 0,
     collectionCount: ip.engagement?.collectionCount ?? ip.collectionCount ?? 0,
     eyebrow: primaryGenre || t("featured"),

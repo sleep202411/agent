@@ -1,22 +1,20 @@
 "use client";
 
 import Link from "next/link";
-import { IconBookmark, IconHeart, IconPlayerPlay, IconSparkles } from "@tabler/icons-react";
+import {
+  IconBookmark,
+  IconEye,
+  IconHeart,
+  IconPlayerPlay,
+  IconSparkles,
+} from "@tabler/icons-react";
 import { useLocale, useTranslations } from "@/src/i18n/i18n";
 import { localizePath } from "@/src/i18n/locale-url";
 import type { Locale } from "@/src/i18n/config";
-import { UserAvatar, resolveUserAvatarUrl } from "@/components/user-avatar";
 import { regionLabel } from "@/src/lib/regions";
-import type { LookupUserDTO } from "@repo/shared/users";
 import type { PlazaProject } from "./plaza-types";
 
-export function IPPlazaCard({
-  project,
-  ownerDisplay,
-}: {
-  project: PlazaProject;
-  ownerDisplay?: LookupUserDTO;
-}) {
+export function IPPlazaCard({ project }: { project: PlazaProject }) {
   const t = useTranslations("ip");
   const locale = useLocale() as Locale;
   const cat = project.genres[0] ?? "";
@@ -24,8 +22,6 @@ export function IPPlazaCard({
   // The primary genre already shows as the image overlay (`cat`); drop it from
   // the badge row so single-genre IPs don't render the same label twice.
   const tags = project.tags.filter((tag) => tag !== cat).slice(0, 3);
-  const ownerName =
-    ownerDisplay?.nickname?.trim() || project.ownerName.trim() || t("anonymousOwner");
 
   return (
     <Link
@@ -90,17 +86,17 @@ export function IPPlazaCard({
           </div>
         )}
 
-        <div className="flex items-center justify-between gap-3 text-xs">
-          <div className="flex min-w-0 items-center gap-2">
-            <UserAvatar
-              src={resolveUserAvatarUrl(ownerDisplay?.avatar ?? project.ownerAvatar)}
-              seed={project.ownerId || project.id}
-              name={ownerName}
-              className="size-6 shrink-0"
-            />
-            <span className="truncate font-medium text-foreground">{ownerName}</span>
-          </div>
-          <div className="flex shrink-0 items-center gap-2 text-muted-foreground">
+        <div className="flex items-center justify-end text-xs">
+          <div className="flex shrink-0 items-center gap-3 text-muted-foreground">
+            <span
+              className="inline-flex items-center gap-1"
+              aria-label={`${t("detailViews")} ${formatEngagementCount(project.viewCount, locale)}`}
+            >
+              <IconEye className="size-3.5" />
+              <span className="tabular-nums">
+                {formatEngagementCount(project.viewCount, locale)}
+              </span>
+            </span>
             <span
               className="inline-flex items-center gap-1"
               aria-label={`${t("detailLike")} ${formatEngagementCount(project.likeCount, locale)}`}

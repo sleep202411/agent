@@ -129,6 +129,12 @@ const IP_COMMERCE_DETAIL_MOCK_ID = '00000000-0000-4000-8000-000000000001';
 const PUBLIC_LOCALIZATION_STATUSES: IpLocalizationStatus[] = [
   IpLocalizationStatus.published,
 ];
+const IP_LIST_RANK_WEIGHTS = {
+  view: 1,
+  like: 5,
+  collection: 8,
+} as const;
+const IP_LIST_NULL_PUBLISHED_AT = new Date(0);
 
 // (a)-policy: content (localization / episode) created or edited on a
 // publicly-live IP (status `published`) goes live immediately instead of being
@@ -293,6 +299,22 @@ export interface IpEngagementStats {
   agentLikeCount: number;
   viewerHasLiked: boolean;
 }
+
+type PublicIpRankRow = {
+  id: string;
+};
+
+type PublicIpRankCursor = {
+  id: string;
+  rankScore: bigint;
+  sortPublishedAt: Date;
+  createdAt: Date;
+};
+
+type ViewerBlockLists = {
+  blockedIpIds: string[];
+  blockedCreatorIds: string[];
+};
 
 type IpEngagementActor = {
   userId: string | null;
@@ -3441,47 +3463,17 @@ export class IpCommerceService {
   }
 
   async listPublicIps(query: ListIpsQuery, user?: AuthUser) {
-    const viewerBlockWhere = await this.viewerBlockWhere(user);
-    const cursor = query.cursor
-      ? await this.prisma.ip.findUnique({
-          where: { id: query.cursor },
-          select: { publishedAt: true, createdAt: true },
+    const ranked = await this.rankedPublicIpIds(query, user);
+    const rows = ranked.pageIds.length
+      ? await this.prisma.ip.findMany({
+          where: { id: { in: ranked.pageIds } },
+          include: ipInclude,
         })
-      : null;
-    const cursorDate = cursor?.publishedAt ?? cursor?.createdAt ?? null;
-
-    const rows = await this.prisma.ip.findMany({
-      where: {
-        deletedAt: null,
-        status: { in: PUBLIC_IP_STATUSES },
-        listingVisibility: 'public',
-        localizations: {
-          some: {
-            archivedAt: null,
-            status: { in: PUBLIC_LOCALIZATION_STATUSES },
-          },
-        },
-        ...ipTaxonomyFilterWhere(query.genreCodes, query.tagCodes),
-        ...(query.regions.length ? { region: { in: query.regions } } : {}),
-        ...viewerBlockWhere,
-        ...(cursorDate
-          ? {
-              OR: [
-                { publishedAt: { lt: cursorDate } },
-                { publishedAt: null, createdAt: { lt: cursorDate } },
-              ],
-            }
-          : {}),
-      },
-      include: ipInclude,
-      orderBy: [
-        { publishedAt: { sort: 'desc', nulls: 'last' } },
-        { createdAt: 'desc' },
-      ],
-      take: query.limit + 1,
-    });
-
-    const items = rows.slice(0, query.limit);
+      : [];
+    const rowsById = new Map(rows.map((row) => [row.id, row]));
+    const items = ranked.pageIds
+      .map((id) => rowsById.get(id))
+      .filter((row): row is IpWithCommerce => Boolean(row));
     const stats = await this.engagementStatsForIps(
       items.map((ip) => ip.id),
       user,
@@ -3490,8 +3482,68 @@ export class IpCommerceService {
       items: items.map((ip) =>
         ipDto(ip, query.locale, undefined, stats.get(ip.id)),
       ),
-      nextCursor: rows.length > query.limit ? (items.at(-1)?.id ?? null) : null,
+      nextCursor: ranked.nextCursor,
     };
+  }
+
+  private async rankedPublicIpIds(query: ListIpsQuery, user?: AuthUser) {
+    const [viewerBlocks, cursor] = await Promise.all([
+      this.viewerBlockLists(user),
+      this.publicIpRankCursor(query.cursor),
+    ]);
+    const rows = await this.prisma.$queryRaw<PublicIpRankRow[]>(Prisma.sql`
+      SELECT ip.id::text AS id
+      FROM ips ip
+      LEFT JOIN ip_engagement_aggregates engagement ON engagement.ip_id = ip.id
+      LEFT JOIN (
+        SELECT ip_id, COUNT(*)::bigint AS collection_count
+        FROM ip_collection_items
+        WHERE target_type::text = 'ip'
+          AND status::text = 'active'
+          AND removed_at IS NULL
+        GROUP BY ip_id
+      ) collections ON collections.ip_id = ip.id
+      WHERE ${publicIpRankBaseFilterSql(query, viewerBlocks)}
+      ${publicIpRankSeekSql(cursor)}
+      ORDER BY
+        ${publicIpRankScoreSql()} DESC,
+        COALESCE(ip.published_at, ${IP_LIST_NULL_PUBLISHED_AT}) DESC,
+        ip.created_at DESC,
+        ip.id DESC
+      LIMIT ${query.limit + 1}
+    `);
+    const ids = rows.map((row) => row.id);
+    const pageIds = ids.slice(0, query.limit);
+    return {
+      pageIds,
+      nextCursor: ids.length > query.limit ? (pageIds.at(-1) ?? null) : null,
+    };
+  }
+
+  private async publicIpRankCursor(
+    cursor: string | undefined,
+  ): Promise<PublicIpRankCursor | null> {
+    if (!cursor) return null;
+    const rows = await this.prisma.$queryRaw<PublicIpRankCursor[]>(Prisma.sql`
+      SELECT
+        ip.id::text AS id,
+        ${publicIpRankScoreSql()} AS "rankScore",
+        COALESCE(ip.published_at, ${IP_LIST_NULL_PUBLISHED_AT}) AS "sortPublishedAt",
+        ip.created_at AS "createdAt"
+      FROM ips ip
+      LEFT JOIN ip_engagement_aggregates engagement ON engagement.ip_id = ip.id
+      LEFT JOIN (
+        SELECT ip_id, COUNT(*)::bigint AS collection_count
+        FROM ip_collection_items
+        WHERE target_type::text = 'ip'
+          AND status::text = 'active'
+          AND removed_at IS NULL
+        GROUP BY ip_id
+      ) collections ON collections.ip_id = ip.id
+      WHERE ip.id = ${cursor}::uuid
+      LIMIT 1
+    `);
+    return rows[0] ?? null;
   }
 
   /**
@@ -4948,7 +5000,20 @@ export class IpCommerceService {
   private async viewerBlockWhere(
     user?: AuthUser,
   ): Promise<Prisma.IpWhereInput> {
-    if (!user) return {};
+    const { blockedIpIds, blockedCreatorIds } =
+      await this.viewerBlockLists(user);
+    const not: Prisma.IpWhereInput[] = [];
+    if (blockedIpIds.length > 0) {
+      not.push({ id: { in: blockedIpIds } });
+    }
+    if (blockedCreatorIds.length > 0) {
+      not.push({ createdById: { in: blockedCreatorIds } });
+    }
+    return not.length > 0 ? { NOT: not } : {};
+  }
+
+  private async viewerBlockLists(user?: AuthUser): Promise<ViewerBlockLists> {
+    if (!user) return { blockedIpIds: [], blockedCreatorIds: [] };
     const blocks = await this.prisma.ipUserContentBlock.findMany({
       where: {
         userId: user.userId,
@@ -4959,20 +5024,14 @@ export class IpCommerceService {
         targetId: true,
       },
     });
-    const blockedIpIds = blocks
-      .filter((block) => block.targetType === IpUserBlockTargetType.ip)
-      .map((block) => block.targetId);
-    const blockedCreatorIds = blocks
-      .filter((block) => block.targetType === IpUserBlockTargetType.creator)
-      .map((block) => block.targetId);
-    const not: Prisma.IpWhereInput[] = [];
-    if (blockedIpIds.length > 0) {
-      not.push({ id: { in: blockedIpIds } });
-    }
-    if (blockedCreatorIds.length > 0) {
-      not.push({ createdById: { in: blockedCreatorIds } });
-    }
-    return not.length > 0 ? { NOT: not } : {};
+    return {
+      blockedIpIds: blocks
+        .filter((block) => block.targetType === IpUserBlockTargetType.ip)
+        .map((block) => block.targetId),
+      blockedCreatorIds: blocks
+        .filter((block) => block.targetType === IpUserBlockTargetType.creator)
+        .map((block) => block.targetId),
+    };
   }
 
   private actorKindForUser(): IpEngagementActorKind {
@@ -6105,6 +6164,103 @@ function generateTaxonomyCode(
     .digest('hex')
     .slice(0, 12);
   return `${type}_${digest}`;
+}
+
+function publicIpRankBaseFilterSql(
+  query: ListIpsQuery,
+  viewerBlocks: ViewerBlockLists,
+): Prisma.Sql {
+  const genreFilter = query.genreCodes.length
+    ? Prisma.sql`
+        AND EXISTS (
+          SELECT 1
+          FROM ip_taxonomy_assignments genre_assignment
+          JOIN ip_taxonomy_terms genre_term
+            ON genre_term.id = genre_assignment.term_id
+          WHERE genre_assignment.ip_id = ip.id
+            AND genre_term.type::text = 'genre'
+            AND genre_term.code IN (${Prisma.join(query.genreCodes)})
+            AND genre_term.status::text = 'active'
+            AND genre_term.archived_at IS NULL
+        )
+      `
+    : Prisma.empty;
+  const tagFilter = query.tagCodes.length
+    ? Prisma.sql`
+        AND EXISTS (
+          SELECT 1
+          FROM ip_taxonomy_assignments tag_assignment
+          JOIN ip_taxonomy_terms tag_term
+            ON tag_term.id = tag_assignment.term_id
+          WHERE tag_assignment.ip_id = ip.id
+            AND tag_term.type::text = 'tag'
+            AND tag_term.code IN (${Prisma.join(query.tagCodes)})
+            AND tag_term.status::text = 'active'
+            AND tag_term.archived_at IS NULL
+        )
+      `
+    : Prisma.empty;
+  const regionFilter = query.regions.length
+    ? Prisma.sql`AND ip.region IN (${Prisma.join(query.regions)})`
+    : Prisma.empty;
+  const blockedIpFilter = viewerBlocks.blockedIpIds.length
+    ? Prisma.sql`AND ip.id::text NOT IN (${Prisma.join(viewerBlocks.blockedIpIds)})`
+    : Prisma.empty;
+  const blockedCreatorFilter = viewerBlocks.blockedCreatorIds.length
+    ? Prisma.sql`AND ip.created_by_id NOT IN (${Prisma.join(viewerBlocks.blockedCreatorIds)})`
+    : Prisma.empty;
+
+  return Prisma.sql`
+    ip.deleted_at IS NULL
+    AND ip.status::text IN (${Prisma.join(PUBLIC_IP_STATUSES)})
+    AND ip.listing_visibility::text = 'public'
+    AND EXISTS (
+      SELECT 1
+      FROM ip_localizations localization
+      WHERE localization.ip_id = ip.id
+        AND localization.archived_at IS NULL
+        AND localization.status::text IN (${Prisma.join(PUBLIC_LOCALIZATION_STATUSES)})
+    )
+    ${genreFilter}
+    ${tagFilter}
+    ${regionFilter}
+    ${blockedIpFilter}
+    ${blockedCreatorFilter}
+  `;
+}
+
+function publicIpRankSeekSql(cursor: PublicIpRankCursor | null): Prisma.Sql {
+  if (!cursor) return Prisma.empty;
+  return Prisma.sql`
+    AND (
+      ${publicIpRankScoreSql()} < ${cursor.rankScore}::bigint
+      OR (
+        ${publicIpRankScoreSql()} = ${cursor.rankScore}::bigint
+        AND COALESCE(ip.published_at, ${IP_LIST_NULL_PUBLISHED_AT}) < ${cursor.sortPublishedAt}
+      )
+      OR (
+        ${publicIpRankScoreSql()} = ${cursor.rankScore}::bigint
+        AND COALESCE(ip.published_at, ${IP_LIST_NULL_PUBLISHED_AT}) = ${cursor.sortPublishedAt}
+        AND ip.created_at < ${cursor.createdAt}
+      )
+      OR (
+        ${publicIpRankScoreSql()} = ${cursor.rankScore}::bigint
+        AND COALESCE(ip.published_at, ${IP_LIST_NULL_PUBLISHED_AT}) = ${cursor.sortPublishedAt}
+        AND ip.created_at = ${cursor.createdAt}
+        AND ip.id::text < ${cursor.id}
+      )
+    )
+  `;
+}
+
+function publicIpRankScoreSql(): Prisma.Sql {
+  return Prisma.sql`
+    (
+      COALESCE(engagement.total_view_count, 0)::bigint * ${IP_LIST_RANK_WEIGHTS.view}::bigint
+      + COALESCE(engagement.total_like_count, 0)::bigint * ${IP_LIST_RANK_WEIGHTS.like}::bigint
+      + COALESCE(collections.collection_count, 0)::bigint * ${IP_LIST_RANK_WEIGHTS.collection}::bigint
+    )::bigint
+  `;
 }
 
 function ipTaxonomyFilterWhere(

@@ -15,7 +15,6 @@ import { cn } from "@/lib/utils";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { NewIpCreateDialog } from "@/app/(site)/ip-studio/_components/new-ip-create-form";
-import { useUserDisplays } from "@/app/(site)/crews/_hooks/use-users";
 import type {
   IpCommerceAsset,
   IpCommerceDiscoveryItem,
@@ -102,14 +101,6 @@ export function IpPlazaClient() {
         .includes(needle)
     );
   }, [debouncedSearch, rawProjects]);
-
-  // Resolve creator user ids → live Java name/avatar (dicebear fallback in the
-  // card). Batched once for the whole grid via the shared crew lookup BFF.
-  const ownerIds = useMemo(
-    () => Array.from(new Set(projects.map((project) => project.ownerId).filter(Boolean))),
-    [projects]
-  );
-  const ownerDisplays = useUserDisplays(ownerIds);
 
   const loadMoreRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -286,11 +277,7 @@ export function IpPlazaClient() {
             <>
               <div className="grid auto-rows-fr grid-cols-2 gap-6 sm:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5">
                 {projects.map((project) => (
-                  <IPPlazaCard
-                    key={project.id}
-                    project={project}
-                    ownerDisplay={ownerDisplays.get(project.ownerId)}
-                  />
+                  <IPPlazaCard key={project.id} project={project} />
                 ))}
               </div>
               <div ref={loadMoreRef} className="h-px" aria-hidden />
@@ -379,6 +366,7 @@ function toPlazaProject(ip: IpCommerceIp, t: ReturnType<typeof useTranslations>)
     genres: ip.genres,
     tags: ip.tags.length > 0 ? ip.tags : ip.genres,
     episodes: ip.episodes.length,
+    viewCount: ip.engagement?.viewCount ?? ip.viewCount ?? 0,
     likeCount: ip.engagement?.likeCount ?? ip.likeCount ?? 0,
     collectionCount: ip.engagement?.collectionCount ?? ip.collectionCount ?? 0,
     eyebrow: primaryGenre || t("featured"),
@@ -407,6 +395,7 @@ function discoveryToPlazaProject(
     genres: base?.genres ?? [],
     tags: base?.tags ?? [],
     episodes: base?.episodes ?? 0,
+    viewCount: base?.viewCount ?? 0,
     likeCount: base?.likeCount ?? 0,
     collectionCount: base?.collectionCount ?? 0,
     eyebrow: item.eyebrow || base?.eyebrow || t("featured"),
