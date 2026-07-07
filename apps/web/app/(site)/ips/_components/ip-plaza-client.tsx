@@ -379,6 +379,8 @@ function toPlazaProject(ip: IpCommerceIp, t: ReturnType<typeof useTranslations>)
     genres: ip.genres,
     tags: ip.tags.length > 0 ? ip.tags : ip.genres,
     episodes: ip.episodes.length,
+    likeCount: ip.engagement?.likeCount ?? ip.likeCount ?? 0,
+    collectionCount: ip.engagement?.collectionCount ?? ip.collectionCount ?? 0,
     eyebrow: primaryGenre || t("featured"),
     region: ip.region ?? "",
   };
@@ -405,6 +407,8 @@ function discoveryToPlazaProject(
     genres: base?.genres ?? [],
     tags: base?.tags ?? [],
     episodes: base?.episodes ?? 0,
+    likeCount: base?.likeCount ?? 0,
+    collectionCount: base?.collectionCount ?? 0,
     eyebrow: item.eyebrow || base?.eyebrow || t("featured"),
     region: base?.region ?? "",
   };

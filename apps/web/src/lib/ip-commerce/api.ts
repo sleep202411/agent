@@ -112,6 +112,7 @@ export interface IpCommerceEpisode {
 export interface IpEngagementSnapshot {
   viewCount: number;
   likeCount: number;
+  collectionCount: number;
   viewerHasLiked: boolean;
 }
 
@@ -162,6 +163,7 @@ export interface IpCommerceIp {
   scheduledAt: string | null;
   viewCount?: number | null;
   likeCount?: number | null;
+  collectionCount?: number | null;
   viewerHasLiked?: boolean | null;
   engagement?: IpEngagementSnapshot | null;
   price: IpCommercePriceRule | null;

@@ -286,12 +286,23 @@ type IpWithCommerce = Prisma.IpGetPayload<{
 export interface IpEngagementStats {
   viewCount: number;
   likeCount: number;
+  collectionCount: number;
   humanViewCount: number;
   agentViewCount: number;
   humanLikeCount: number;
   agentLikeCount: number;
   viewerHasLiked: boolean;
 }
+
+type IpEngagementActor = {
+  userId: string | null;
+  actorKind: IpEngagementActorKind;
+};
+
+type IpEngagementLikeActor = {
+  userId: string;
+  actorKind: IpEngagementActorKind;
+};
 
 const adminIpInclude = {
   coverAsset: true,
@@ -3208,8 +3219,41 @@ export class IpCommerceService {
     input: RecordIpViewInput,
   ) {
     await this.ensurePublicEngagementTarget(user, ipId);
+    return this.recordIpViewForActor(
+      {
+        userId: user?.userId ?? null,
+        actorKind: this.actorKindForUser(),
+      },
+      user,
+      ipId,
+      input,
+    );
+  }
+
+  async recordAgentIpView(
+    agentUserId: string,
+    ipId: string,
+    input: RecordIpViewInput,
+  ) {
+    await this.ensurePublicEngagementTarget(undefined, ipId);
+    return this.recordIpViewForActor(
+      {
+        userId: agentUserId,
+        actorKind: IpEngagementActorKind.agent,
+      },
+      { userId: agentUserId },
+      ipId,
+      input,
+    );
+  }
+
+  private async recordIpViewForActor(
+    actor: IpEngagementActor,
+    viewer: AuthUser | undefined,
+    ipId: string,
+    input: RecordIpViewInput,
+  ) {
     const now = new Date();
-    const actorKind = this.actorKindForUser(user);
     let recorded = false;
 
     try {
@@ -3228,15 +3272,15 @@ export class IpCommerceService {
         await tx.ipViewEvent.create({
           data: {
             ipId,
-            userId: user?.userId ?? null,
-            actorKind,
+            userId: actor.userId,
+            actorKind: actor.actorKind,
             idempotencyKey: input.idempotencyKey ?? null,
             source: input.source,
             metadata: {},
             viewedAt: now,
           },
         });
-        await this.incrementViewAggregateTx(tx, ipId, actorKind, now);
+        await this.incrementViewAggregateTx(tx, ipId, actor.actorKind, now);
         recorded = true;
       });
     } catch (error) {
@@ -3246,37 +3290,63 @@ export class IpCommerceService {
     return {
       recorded,
       engagement: publicIpEngagementDto(
-        await this.engagementStatsForIp(ipId, user),
+        await this.engagementStatsForIp(ipId, viewer),
       ),
     };
   }
 
   async likeIp(user: AuthUser, ipId: string) {
     await this.ensurePublicEngagementTarget(user, ipId);
-    const actorKind = this.actorKindForUser(user);
+    return this.likeIpForActor(
+      {
+        userId: user.userId,
+        actorKind: this.actorKindForUser(),
+      },
+      user,
+      ipId,
+    );
+  }
+
+  async likeAgentIp(agentUserId: string, ipId: string) {
+    await this.ensurePublicEngagementTarget(undefined, ipId);
+    return this.likeIpForActor(
+      {
+        userId: agentUserId,
+        actorKind: IpEngagementActorKind.agent,
+      },
+      { userId: agentUserId },
+      ipId,
+    );
+  }
+
+  private async likeIpForActor(
+    actor: IpEngagementLikeActor,
+    viewer: AuthUser,
+    ipId: string,
+  ) {
     const now = new Date();
     let changed = false;
 
     await this.prisma.$transaction(async (tx) => {
       await tx.$executeRaw`
-        SELECT pg_advisory_xact_lock(hashtext(${`ip:like:${ipId}:${user.userId}`})::bigint)
+        SELECT pg_advisory_xact_lock(hashtext(${`ip:like:${ipId}:${actor.userId}`})::bigint)
       `;
       const existing = await tx.ipLike.findUnique({
-        where: { ipId_userId: { ipId, userId: user.userId } },
+        where: { ipId_userId: { ipId, userId: actor.userId } },
       });
 
       if (!existing) {
         await tx.ipLike.create({
           data: {
             ipId,
-            userId: user.userId,
-            actorKind,
+            userId: actor.userId,
+            actorKind: actor.actorKind,
             status: IpLikeStatus.active,
             likedAt: now,
             removedAt: null,
           },
         });
-        await this.incrementLikeAggregateTx(tx, ipId, actorKind, now, 1);
+        await this.incrementLikeAggregateTx(tx, ipId, actor.actorKind, now, 1);
         changed = true;
         return;
       }
@@ -3288,13 +3358,13 @@ export class IpCommerceService {
       await tx.ipLike.update({
         where: { id: existing.id },
         data: {
-          actorKind,
+          actorKind: actor.actorKind,
           status: IpLikeStatus.active,
           likedAt: now,
           removedAt: null,
         },
       });
-      await this.incrementLikeAggregateTx(tx, ipId, actorKind, now, 1);
+      await this.incrementLikeAggregateTx(tx, ipId, actor.actorKind, now, 1);
       changed = true;
     });
 
@@ -3302,22 +3372,39 @@ export class IpCommerceService {
       liked: true,
       changed,
       engagement: publicIpEngagementDto(
-        await this.engagementStatsForIp(ipId, user),
+        await this.engagementStatsForIp(ipId, viewer),
       ),
     };
   }
 
   async unlikeIp(user: AuthUser, ipId: string) {
     await this.ensurePublicEngagementTarget(user, ipId);
+    return this.unlikeIpForActor({ userId: user.userId }, user, ipId);
+  }
+
+  async unlikeAgentIp(agentUserId: string, ipId: string) {
+    await this.ensurePublicEngagementTarget(undefined, ipId);
+    return this.unlikeIpForActor(
+      { userId: agentUserId },
+      { userId: agentUserId },
+      ipId,
+    );
+  }
+
+  private async unlikeIpForActor(
+    actor: { userId: string },
+    viewer: AuthUser,
+    ipId: string,
+  ) {
     const now = new Date();
     let changed = false;
 
     await this.prisma.$transaction(async (tx) => {
       await tx.$executeRaw`
-        SELECT pg_advisory_xact_lock(hashtext(${`ip:like:${ipId}:${user.userId}`})::bigint)
+        SELECT pg_advisory_xact_lock(hashtext(${`ip:like:${ipId}:${actor.userId}`})::bigint)
       `;
       const existing = await tx.ipLike.findUnique({
-        where: { ipId_userId: { ipId, userId: user.userId } },
+        where: { ipId_userId: { ipId, userId: actor.userId } },
       });
       if (
         !existing ||
@@ -3348,7 +3435,7 @@ export class IpCommerceService {
       liked: false,
       changed,
       engagement: publicIpEngagementDto(
-        await this.engagementStatsForIp(ipId, user),
+        await this.engagementStatsForIp(ipId, viewer),
       ),
     };
   }
@@ -3433,7 +3520,11 @@ export class IpCommerceService {
     const target = Math.min(query.limit, pool.length);
     const picked: string[] = [];
     while (picked.length < target) {
-      picked.push(pool.splice(Math.floor(Math.random() * pool.length), 1)[0]!);
+      const [pickedId] = pool.splice(
+        Math.floor(Math.random() * pool.length),
+        1,
+      );
+      if (pickedId) picked.push(pickedId);
     }
     if (picked.length === 0) return { items: [] };
 
@@ -4068,6 +4159,100 @@ export class IpCommerceService {
           ipId: target.ipId,
           episodeId: target.episodeId,
           targetType: target.targetType,
+          removedAt: null,
+        },
+      });
+      if (!active) return null;
+      return tx.ipCollectionItem.update({
+        where: { id: active.id },
+        data: {
+          status: IpCollectionItemStatus.removed,
+          removedAt: now,
+        },
+      });
+    });
+
+    return { item: item ? collectionItemMutationDto(item) : null };
+  }
+
+  async saveAgentCollectionItem(agentUserId: string, ipId: string) {
+    const target = await this.resolveAgentIpCollectionTarget(ipId);
+    const now = new Date();
+    const item = await this.prisma.$transaction(async (tx) => {
+      await tx.$executeRaw`
+        SELECT pg_advisory_xact_lock(hashtext(${`ip:collection:${agentUserId}:ip:${target.ipId}:ip`})::bigint)
+      `;
+
+      const active = await tx.ipCollectionItem.findFirst({
+        where: {
+          userId: agentUserId,
+          ipId: target.ipId,
+          episodeId: null,
+          targetType: IpTargetType.ip,
+          removedAt: null,
+        },
+      });
+      if (active) {
+        return tx.ipCollectionItem.update({
+          where: { id: active.id },
+          data: {
+            status: IpCollectionItemStatus.active,
+            addedAt: active.addedAt,
+            removedAt: null,
+          },
+        });
+      }
+
+      const removed = await tx.ipCollectionItem.findFirst({
+        where: {
+          userId: agentUserId,
+          ipId: target.ipId,
+          episodeId: null,
+          targetType: IpTargetType.ip,
+          removedAt: { not: null },
+        },
+        orderBy: { removedAt: 'desc' },
+      });
+      if (removed) {
+        return tx.ipCollectionItem.update({
+          where: { id: removed.id },
+          data: {
+            status: IpCollectionItemStatus.active,
+            addedAt: now,
+            removedAt: null,
+            lastViewedAt: null,
+          },
+        });
+      }
+
+      return tx.ipCollectionItem.create({
+        data: {
+          userId: agentUserId,
+          ipId: target.ipId,
+          episodeId: null,
+          targetType: IpTargetType.ip,
+          status: IpCollectionItemStatus.active,
+          metadata: { actorKind: 'agent' },
+        },
+      });
+    });
+
+    return { item: collectionItemMutationDto(item) };
+  }
+
+  async removeAgentCollectionItem(agentUserId: string, ipId: string) {
+    const target = await this.resolveAgentIpCollectionTarget(ipId);
+    const now = new Date();
+    const item = await this.prisma.$transaction(async (tx) => {
+      await tx.$executeRaw`
+        SELECT pg_advisory_xact_lock(hashtext(${`ip:collection:${agentUserId}:ip:${target.ipId}:ip`})::bigint)
+      `;
+      const active = await tx.ipCollectionItem.findFirst({
+        where: {
+          userId: agentUserId,
+          ipId: target.ipId,
+          episodeId: null,
+          targetType: IpTargetType.ip,
           removedAt: null,
         },
       });
@@ -4790,9 +4975,9 @@ export class IpCommerceService {
     return not.length > 0 ? { NOT: not } : {};
   }
 
-  private actorKindForUser(_user?: AuthUser): IpEngagementActorKind {
-    // Agent User provenance will plug in here. Until the Agent User profile
-    // table exists, all authenticated/public product traffic is human.
+  private actorKindForUser(): IpEngagementActorKind {
+    // Product user traffic is always human. Agent traffic enters through the
+    // internal Agent User endpoints, which pass explicit actor provenance.
     return IpEngagementActorKind.human;
   }
 
@@ -4846,33 +5031,55 @@ export class IpCommerceService {
     );
     if (uniqueIds.length === 0) return out;
 
-    const [aggregates, viewerLikes] = await Promise.all([
-      this.prisma.ipEngagementAggregate.findMany({
-        where: { ipId: { in: uniqueIds } },
-      }),
-      user
-        ? this.prisma.ipLike.findMany({
-            where: {
-              userId: user.userId,
-              ipId: { in: uniqueIds },
-              status: IpLikeStatus.active,
-              removedAt: null,
-            },
-            select: { ipId: true },
-          })
-        : Promise.resolve([]),
+    const aggregatesPromise = this.prisma.ipEngagementAggregate.findMany({
+      where: { ipId: { in: uniqueIds } },
+    });
+    const collectionCountsPromise = this.prisma.ipCollectionItem.groupBy({
+      by: ['ipId'],
+      where: {
+        ipId: { in: uniqueIds },
+        targetType: IpTargetType.ip,
+        status: IpCollectionItemStatus.active,
+        removedAt: null,
+      },
+      _count: { _all: true },
+    });
+    const viewerLikesPromise: Promise<Array<{ ipId: string }>> = user
+      ? this.prisma.ipLike.findMany({
+          where: {
+            userId: user.userId,
+            ipId: { in: uniqueIds },
+            status: IpLikeStatus.active,
+            removedAt: null,
+          },
+          select: { ipId: true },
+        })
+      : Promise.resolve([]);
+    const [aggregates, collectionCounts, viewerLikes] = await Promise.all([
+      aggregatesPromise,
+      collectionCountsPromise,
+      viewerLikesPromise,
     ]);
     const likedIpIds = new Set(viewerLikes.map((like) => like.ipId));
 
     for (const row of aggregates) {
+      const current = out.get(row.ipId) ?? emptyIpEngagementStats();
       out.set(row.ipId, {
         viewCount: bigintCount(row.totalViewCount),
         likeCount: bigintCount(row.totalLikeCount),
+        collectionCount: current.collectionCount,
         humanViewCount: bigintCount(row.humanViewCount),
         agentViewCount: bigintCount(row.agentViewCount),
         humanLikeCount: bigintCount(row.humanLikeCount),
         agentLikeCount: bigintCount(row.agentLikeCount),
         viewerHasLiked: likedIpIds.has(row.ipId),
+      });
+    }
+    for (const row of collectionCounts) {
+      const current = out.get(row.ipId) ?? emptyIpEngagementStats();
+      out.set(row.ipId, {
+        ...current,
+        collectionCount: bigintCount(row._count._all),
       });
     }
     for (const ipId of likedIpIds) {
@@ -4984,6 +5191,25 @@ export class IpCommerceService {
       });
     }
     return { ipId: episode.ipId, episodeId: episode.id, targetType };
+  }
+
+  private async resolveAgentIpCollectionTarget(ipId: string) {
+    const ip = await this.prisma.ip.findFirst({
+      where: {
+        id: ipId,
+        deletedAt: null,
+        status: { in: PUBLIC_IP_STATUSES },
+        listingVisibility: IpListingVisibility.public,
+      },
+      select: { id: true },
+    });
+    if (!ip) {
+      throw new NotFoundException({
+        code: 'IP_COLLECTION_TARGET_NOT_FOUND',
+        msg: 'Collection target was not found.',
+      });
+    }
+    return { ipId: ip.id };
   }
 
   private async resolveReportTarget(input: CreateIpContentReportInput) {
@@ -7314,6 +7540,7 @@ function ipDto(
     scheduledAt: title.scheduledAt?.toISOString() ?? null,
     viewCount: publicEngagement.viewCount,
     likeCount: publicEngagement.likeCount,
+    collectionCount: publicEngagement.collectionCount,
     viewerHasLiked: publicEngagement.viewerHasLiked,
     engagement: publicEngagement,
     price: activeIpPrice ? priceRuleDto(activeIpPrice) : null,
@@ -7482,6 +7709,7 @@ function mockPublicIpDto(ipId: string, requestedLocale?: string | null) {
     scheduledAt: null,
     viewCount: 0,
     likeCount: 0,
+    collectionCount: 0,
     viewerHasLiked: false,
     engagement: publicIpEngagementDto(emptyIpEngagementStats()),
     price: {
@@ -8124,6 +8352,7 @@ function emptyIpEngagementStats(): IpEngagementStats {
   return {
     viewCount: 0,
     likeCount: 0,
+    collectionCount: 0,
     humanViewCount: 0,
     agentViewCount: 0,
     humanLikeCount: 0,
@@ -8136,6 +8365,7 @@ function publicIpEngagementDto(engagement: IpEngagementStats) {
   return {
     viewCount: engagement.viewCount,
     likeCount: engagement.likeCount,
+    collectionCount: engagement.collectionCount,
     viewerHasLiked: engagement.viewerHasLiked,
   };
 }

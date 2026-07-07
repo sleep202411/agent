@@ -2696,6 +2696,179 @@ model AdminAuditLog {
 }
 
 // ─────────────────────────────────────────────────────────────
+// Agent User domain (src/agent-users/)
+// ─────────────────────────────────────────────────────────────
+//
+// AI Agent Users are platform-controlled synthetic users that can simulate
+// real engagement patterns inside strict policy boundaries. The root identity
+// is Nest-owned even before Java creates a real user row:
+//
+//   AgentUser.id          -> stable agent actor id used by Nest domains
+//   AgentUser.platformUserId -> optional Java user id once bound
+//
+// This keeps SHADOW agents useful for Nest-owned features (IP views/likes,
+// recommendations, future community signals) while preserving a clean upgrade
+// path to BOUND platform users.
+
+enum AgentUserStatus {
+  active
+  paused
+  disabled
+}
+
+enum AgentUserIdentityStatus {
+  shadow
+  bound
+}
+
+enum AgentRunStatus {
+  queued
+  running
+  succeeded
+  failed
+  cancelled
+}
+
+enum AgentActionStatus {
+  planned
+  running
+  succeeded
+  failed
+  skipped
+}
+
+enum AgentMemoryType {
+  preference
+  content_affinity
+  negative_signal
+  relationship
+  summary
+  fact
+}
+
+enum AgentMemoryStatus {
+  active
+  archived
+}
+
+model AgentUser {
+  id              String                  @id @default(uuid(7)) @db.Uuid
+  handle          String                  @unique @db.VarChar(80)
+  displayName     String                  @map("display_name") @db.VarChar(120)
+  avatarUrl       String?                 @map("avatar_url") @db.VarChar(512)
+  status          AgentUserStatus         @default(active)
+  identityStatus  AgentUserIdentityStatus @default(shadow) @map("identity_status")
+  platformUserId  String?                 @unique @map("platform_user_id") @db.VarChar(64)
+  simulatedEmail  String?                 @unique @map("simulated_email") @db.VarChar(320)
+  locale          String                  @default("zh-CN") @db.VarChar(16)
+  region          String?                 @db.VarChar(16)
+  timezone        String                  @default("Asia/Shanghai") @db.VarChar(64)
+  persona         Json                    @default("{}") @db.JsonB
+  schedule        Json                    @default("{}") @db.JsonB
+  policy          Json                    @default("{}") @db.JsonB
+  notes           String?                 @db.Text
+  createdByAdminId String?                @map("created_by_admin_id") @db.Uuid
+  updatedByAdminId String?                @map("updated_by_admin_id") @db.Uuid
+  lastRunAt       DateTime?               @map("last_run_at") @db.Timestamptz(6)
+  createdAt       DateTime                @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt       DateTime                @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  disabledAt      DateTime?               @map("disabled_at") @db.Timestamptz(6)
+
+  runs     AgentRun[]
+  actions  AgentAction[]
+  memories AgentMemory[]
+
+  @@index([status, updatedAt(sort: Desc)], map: "agent_users_status_recent_idx")
+  @@index([identityStatus, status], map: "agent_users_identity_status_idx")
+  @@index([locale, region], map: "agent_users_locale_region_idx")
+  @@index([lastRunAt(sort: Desc)], map: "agent_users_last_run_idx")
+  @@map("agent_users")
+}
+
+model AgentRun {
+  id           String         @id @default(uuid(7)) @db.Uuid
+  agentUserId  String         @map("agent_user_id") @db.Uuid
+  status       AgentRunStatus @default(queued)
+  trigger      String         @default("scheduler") @db.VarChar(64)
+  objective    String?        @db.VarChar(500)
+  summary      String?        @db.Text
+  errorCode    String?        @map("error_code") @db.VarChar(80)
+  errorMessage String?        @map("error_message") @db.Text
+  metrics      Json           @default("{}") @db.JsonB
+  metadata     Json           @default("{}") @db.JsonB
+  queuedAt     DateTime       @default(now()) @map("queued_at") @db.Timestamptz(6)
+  startedAt    DateTime?      @map("started_at") @db.Timestamptz(6)
+  completedAt  DateTime?      @map("completed_at") @db.Timestamptz(6)
+  createdAt    DateTime       @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt    DateTime       @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  agentUser AgentUser     @relation(fields: [agentUserId], references: [id], onDelete: Cascade)
+  actions   AgentAction[]
+
+  @@index([agentUserId, createdAt(sort: Desc)], map: "agent_runs_agent_recent_idx")
+  @@index([status, queuedAt], map: "agent_runs_status_queue_idx")
+  @@map("agent_runs")
+}
+
+model AgentAction {
+  id             String            @id @default(uuid(7)) @db.Uuid
+  agentUserId    String            @map("agent_user_id") @db.Uuid
+  runId          String?           @map("run_id") @db.Uuid
+  actionType     String            @map("action_type") @db.VarChar(80)
+  targetType     String?           @map("target_type") @db.VarChar(80)
+  targetId       String?           @map("target_id") @db.VarChar(128)
+  status         AgentActionStatus @default(planned)
+  idempotencyKey String?           @unique @map("idempotency_key") @db.VarChar(180)
+  decision       Json              @default("{}") @db.JsonB
+  input          Json              @default("{}") @db.JsonB
+  result         Json              @default("{}") @db.JsonB
+  metadata       Json              @default("{}") @db.JsonB
+  errorCode      String?           @map("error_code") @db.VarChar(80)
+  errorMessage   String?           @map("error_message") @db.Text
+  plannedAt      DateTime          @default(now()) @map("planned_at") @db.Timestamptz(6)
+  startedAt      DateTime?         @map("started_at") @db.Timestamptz(6)
+  completedAt    DateTime?         @map("completed_at") @db.Timestamptz(6)
+  createdAt      DateTime          @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime          @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  agentUser AgentUser @relation(fields: [agentUserId], references: [id], onDelete: Cascade)
+  run       AgentRun? @relation(fields: [runId], references: [id], onDelete: SetNull)
+
+  @@index([agentUserId, createdAt(sort: Desc)], map: "agent_actions_agent_recent_idx")
+  @@index([runId, createdAt(sort: Asc)], map: "agent_actions_run_order_idx")
+  @@index([actionType, status, createdAt(sort: Desc)], map: "agent_actions_type_status_idx")
+  @@index([targetType, targetId, createdAt(sort: Desc)], map: "agent_actions_target_recent_idx")
+  @@map("agent_actions")
+}
+
+model AgentMemory {
+  id               String            @id @default(uuid(7)) @db.Uuid
+  agentUserId      String            @map("agent_user_id") @db.Uuid
+  memoryKey        String?           @map("memory_key") @db.VarChar(180)
+  type             AgentMemoryType
+  status           AgentMemoryStatus @default(active)
+  scopeType        String?           @map("scope_type") @db.VarChar(64)
+  scopeId          String?           @map("scope_id") @db.VarChar(128)
+  summary          String            @db.VarChar(500)
+  content          Json              @default("{}") @db.JsonB
+  confidence       Int               @default(50)
+  weight           Int               @default(100)
+  sourceActionIds  String[]          @default([]) @map("source_action_ids")
+  lastReinforcedAt DateTime?         @map("last_reinforced_at") @db.Timestamptz(6)
+  createdAt        DateTime          @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt        DateTime          @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  archivedAt       DateTime?         @map("archived_at") @db.Timestamptz(6)
+
+  agentUser AgentUser @relation(fields: [agentUserId], references: [id], onDelete: Cascade)
+
+  @@unique([agentUserId, memoryKey], name: "agentUserMemoryKey", map: "agent_memories_agent_key_unique")
+  @@index([agentUserId, status, type, updatedAt(sort: Desc)], map: "agent_memories_agent_status_type_idx")
+  @@index([agentUserId, scopeType, scopeId], map: "agent_memories_agent_scope_idx")
+  @@index([type, status, updatedAt(sort: Desc)], map: "agent_memories_type_status_recent_idx")
+  @@map("agent_memories")
+}
+
+// ─────────────────────────────────────────────────────────────
 // IP Commerce domain (src/ip-commerce/)
 // ─────────────────────────────────────────────────────────────
 //
