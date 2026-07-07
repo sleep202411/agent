@@ -54,18 +54,13 @@ flowchart LR
 
 ## 2. 数据来源:IP 种子
 
-`concepts` / `enter` 时后端从 IP 现有数据取以下字段拼成种子喂 LLM(不需要任何新表):
+`concepts` / `enter` 时调用方必须把 IP 内容作为 `ipStory` 传给 Java。`ipId` 只用于关联、权限校验、日志和埋点,不作为生成内容来源。
 
-| 来源                          | 字段                                                      | 用途                                                 |
-| ----------------------------- | --------------------------------------------------------- | ---------------------------------------------------- |
-| `ips`                         | `ageRating`、genre 分类(taxonomy)                         | 分级、类型基调                                       |
-| `ip_localizations`(按 locale) | `title`、`subtitle`、`summary`(≤500)、`description`(长文) | 世界观、人物、冲突的主要来源                         |
-| `ip_episodes` + 本地化        | 各集 `title`、`summary`                                   | 情节骨架参考(分集是**视频短剧**,非文本章节,仅作骨架) |
-| `ips` / `ip_localizations`    | `coverAssetId`、`trailerAssetId`                          | 可作开场媒体(§10 media 开关)                         |
+当前版本 `ipStory` 可以直接使用 IP 的 description。现有 Web 调用会把 IP title / subtitle / summary / description / episode summaries 拼成一个字符串后放进 `ipStory`;若后续有用户上传的小说/剧本文本,也放进同一字段。Java 不关心其内部字段结构。
 
-> 种子偏营销口吻且各 IP 厚薄不均 —— LLM① 的职责就是把「blurb + 类型」补全成一份可玩的、自洽的故事圣经。`description` 越丰满,质量越高。
+> `ipStory` 越丰满,高概念和进场圣经质量越高。最小可用输入就是当前 IP description。
 
-`concepts` 与 `enter` 使用同一套 IP 种子。区别是:`concepts` 只产出玩家可见的方向候选;`enter` 必须读取玩家选中的候选,再生成服务端内部圣经。
+`concepts` 与 `enter` 使用同一份 `ipStory`。区别是:`concepts` 只产出玩家可见的方向候选;`enter` 必须读取玩家选中的候选,再生成服务端内部圣经。
 
 ---
 
@@ -79,9 +74,12 @@ flowchart LR
 {
   "ipId": "018f...uuid", // 必填。必须是已上架/可玩 IP
   "locale": "zh-CN", // 必填。运行语言
+  "ipStory": "IP description / 用户上传小说或剧本文本", // 必填。生成依据正文
   "count": 6, // 可选。默认 6,建议 3–6
 }
 ```
+
+> Java 不按 `ipId` 反查 IP 正文。调用方必须传 `ipStory`,Java 直接用 `ipStory` 生成高概念候选。
 
 ### 3.2 响应
 
@@ -131,7 +129,7 @@ Trailer文案（15秒）：...
 
 ### 3.3 后端职责
 
-1. 取 IP 种子(§2)。
+1. 读取请求里的 `ipStory`(§2)。
 2. **LLM⓪ 概念策划** → 生成 `count` 个高概念候选。
 3. 校验 `items` 非空、`id` 本批唯一、`contentMarkdown` 非空。
 4. 返回候选列表。候选内容均为玩家可见,不得包含隐藏真相、系统 prompt 或服务端日志。
@@ -149,12 +147,14 @@ Trailer文案（15秒）：...
 {
   "ipId": "018f...uuid", // 必填。必须是已上架/可玩 IP
   "locale": "zh-CN", // 必填。运行语言
+  "ipStory": "IP description / 用户上传小说或剧本文本", // 必填。生成依据正文
   "selectedConceptId": "HC-01", // 可选。来自 concepts.items[].id,供日志/埋点/展示用
   "selectedConceptMarkdown": "【高概念 HC-01】\nLogline：...\n\n类型标签：...", // 必填。来自 concepts.items[].contentMarkdown
 }
 ```
 
 > setup(观众三选)不在进场时传 —— 它从本接口返回的清单里选,随第一个 `turns`(`action:start`)提交。
+> Java 不按 `ipId` 反查 IP 正文。调用方必须再次传 `ipStory`,Java 用 `ipStory + selectedConceptMarkdown` 生成本局圣经。
 > `enter` 必须基于选中的高概念生成本局圣经。前端直接回传 `selectedConceptMarkdown`;`selectedConceptId` 只是同批候选里的编号,后端可用于日志/埋点,不得依赖它查回候选正文。
 
 ### 4.2 响应
@@ -205,7 +205,7 @@ Trailer文案（15秒）：...
 
 ### 4.3 后端职责
 
-1. 取 IP 种子(§2)。
+1. 读取请求里的 `ipStory`(§2)。
 2. 读取 `selectedConceptMarkdown`;如有 `selectedConceptId`,可记录到日志/埋点。
 3. **LLM① 故事架构师** → 基于 IP 种子 + 选中高概念生成圣经(§6)。方向/节奏是**游玩期镜头**(writing-skill §4),不改核心事实,故此处一次生成与具体方向无关的核心圣经即可。
 4. 校验圣经(§7.2);不过则带错误 **一次修复重试**,再不过 → 503。

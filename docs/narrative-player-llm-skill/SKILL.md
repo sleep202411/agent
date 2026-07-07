@@ -58,7 +58,7 @@ Input usually contains:
   "ipId": "IP id",
   "locale": "zh-CN",
   "count": 6,
-  "ipStory": "IP title, summary, description, episode summaries, and other seed text"
+  "ipStory": "IP description, uploaded novel/script text, or caller-assembled seed text"
 }
 ```
 
@@ -100,13 +100,13 @@ Input usually contains:
   "phase": "enter",
   "ipId": "IP id",
   "locale": "zh-CN",
+  "ipStory": "IP description, uploaded novel/script text, or caller-assembled seed text",
   "selectedConceptId": "HC-01",
-  "selectedConceptMarkdown": "The selected high concept option markdown",
-  "ipStory": "IP title, summary, description, episode summaries, and other seed text"
+  "selectedConceptMarkdown": "The selected high concept option markdown"
 }
 ```
 
-In `enter`, you must create a hidden session bible from the IP story and the selected high concept, then return only player-safe setup content.
+In `enter`, you must create a hidden session bible from `ipStory` and the selected high concept, then return only player-safe setup content.
 
 The hidden session bible must contain:
 
