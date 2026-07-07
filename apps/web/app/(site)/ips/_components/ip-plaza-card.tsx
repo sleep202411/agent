@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { IconPlayerPlay, IconSparkles } from "@tabler/icons-react";
+import { IconBookmark, IconHeart, IconPlayerPlay, IconSparkles } from "@tabler/icons-react";
 import { useLocale, useTranslations } from "@/src/i18n/i18n";
 import { localizePath } from "@/src/i18n/locale-url";
 import type { Locale } from "@/src/i18n/config";
@@ -90,16 +90,45 @@ export function IPPlazaCard({
           </div>
         )}
 
-        <div className="flex items-center gap-2 text-xs">
-          <UserAvatar
-            src={resolveUserAvatarUrl(ownerDisplay?.avatar ?? project.ownerAvatar)}
-            seed={project.ownerId || project.id}
-            name={ownerName}
-            className="size-6 shrink-0"
-          />
-          <span className="truncate font-medium text-foreground">{ownerName}</span>
+        <div className="flex items-center justify-between gap-3 text-xs">
+          <div className="flex min-w-0 items-center gap-2">
+            <UserAvatar
+              src={resolveUserAvatarUrl(ownerDisplay?.avatar ?? project.ownerAvatar)}
+              seed={project.ownerId || project.id}
+              name={ownerName}
+              className="size-6 shrink-0"
+            />
+            <span className="truncate font-medium text-foreground">{ownerName}</span>
+          </div>
+          <div className="flex shrink-0 items-center gap-2 text-muted-foreground">
+            <span
+              className="inline-flex items-center gap-1"
+              aria-label={`${t("detailLike")} ${formatEngagementCount(project.likeCount, locale)}`}
+            >
+              <IconHeart className="size-3.5" />
+              <span className="tabular-nums">
+                {formatEngagementCount(project.likeCount, locale)}
+              </span>
+            </span>
+            <span
+              className="inline-flex items-center gap-1"
+              aria-label={`${t("detailSave")} ${formatEngagementCount(project.collectionCount, locale)}`}
+            >
+              <IconBookmark className="size-3.5" />
+              <span className="tabular-nums">
+                {formatEngagementCount(project.collectionCount, locale)}
+              </span>
+            </span>
+          </div>
         </div>
       </div>
     </Link>
   );
+}
+
+function formatEngagementCount(value: number, locale: Locale) {
+  return new Intl.NumberFormat(locale, {
+    notation: "compact",
+    maximumFractionDigits: 1,
+  }).format(Math.max(0, value));
 }

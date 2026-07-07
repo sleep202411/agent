@@ -284,6 +284,7 @@ function patchIpEngagement(
     ...ip,
     viewCount: engagement.viewCount,
     likeCount: engagement.likeCount,
+    collectionCount: engagement.collectionCount,
     viewerHasLiked: engagement.viewerHasLiked,
     engagement,
   };

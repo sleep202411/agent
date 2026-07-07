@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { APP_GUARD } from '@nestjs/core';
 import { AdminAuthModule } from './admin-auth';
+import { AgentUsersModule } from './agent-users';
 import { AppReleaseModule } from './app-release';
 import { AiGenerationModule } from './ai-generation/ai-generation.module';
 import { AssistantModule } from './assistant/assistant.module';
@@ -53,6 +54,7 @@ import { WorkspacesModule } from './workspaces';
     AlertingModule,
     AuthModule,
     AdminAuthModule,
+    AgentUsersModule,
     AppReleaseModule,
     // Region wires CountryMiddleware globally before any controller runs.
     RegionModule,
