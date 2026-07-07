@@ -100,13 +100,12 @@ Input usually contains:
   "phase": "enter",
   "ipId": "IP id",
   "locale": "zh-CN",
-  "ipStory": "IP description, uploaded novel/script text, or caller-assembled seed text",
   "selectedConceptId": "HC-01",
   "selectedConceptMarkdown": "The selected high concept option markdown"
 }
 ```
 
-In `enter`, you must create a hidden session bible from `ipStory` and the selected high concept, then return only player-safe setup content.
+In `enter`, you must create a hidden session bible from the selected high concept, then return only player-safe setup content.
 
 The hidden session bible must contain:
 

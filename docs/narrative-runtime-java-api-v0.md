@@ -54,13 +54,13 @@ flowchart LR
 
 ## 2. 数据来源:IP 种子
 
-`concepts` / `enter` 时调用方必须把 IP 内容作为 `ipStory` 传给 Java。`ipId` 只用于关联、权限校验、日志和埋点,不作为生成内容来源。
+`concepts` 时调用方必须把 IP 内容作为 `ipStory` 传给 Java。`ipId` 只用于关联、权限校验、日志和埋点,不作为生成内容来源。
 
 当前版本 `ipStory` 可以直接使用 IP 的 description。现有 Web 调用会把 IP title / subtitle / summary / description / episode summaries 拼成一个字符串后放进 `ipStory`;若后续有用户上传的小说/剧本文本,也放进同一字段。Java 不关心其内部字段结构。
 
 > `ipStory` 越丰满,高概念和进场圣经质量越高。最小可用输入就是当前 IP description。
 
-`concepts` 与 `enter` 使用同一份 `ipStory`。区别是:`concepts` 只产出玩家可见的方向候选;`enter` 必须读取玩家选中的候选,再生成服务端内部圣经。
+`concepts` 的输出必须足够自包含。后续 `enter` 不再接收 `ipStory`,只使用玩家选中的 `selectedConceptMarkdown` 生成服务端内部圣经。
 
 ---
 
@@ -101,10 +101,10 @@ flowchart LR
 
 字段约束:
 
-| 字段              | 说明                                                       |
-| ----------------- | ---------------------------------------------------------- |
-| `items[].id`      | 本批内唯一即可,建议 `HC-01` / `HC-02`。不再单独返回 `code` |
-| `contentMarkdown` | 玩家可见 Markdown。前端直接渲染,也可用于复制/分享          |
+| 字段              | 说明                                                        |
+| ----------------- | ----------------------------------------------------------- |
+| `items[].id`      | 本批内唯一即可,建议 `HC-01` / `HC-02`。不再单独返回 `code`  |
+| `contentMarkdown` | 玩家可见 Markdown。必须自包含,因为 `enter` 只依赖它生成圣经 |
 
 `contentMarkdown` 推荐包含:
 
@@ -147,15 +147,13 @@ Trailer文案（15秒）：...
 {
   "ipId": "018f...uuid", // 必填。必须是已上架/可玩 IP
   "locale": "zh-CN", // 必填。运行语言
-  "ipStory": "IP description / 用户上传小说或剧本文本", // 必填。生成依据正文
   "selectedConceptId": "HC-01", // 可选。来自 concepts.items[].id,供日志/埋点/展示用
   "selectedConceptMarkdown": "【高概念 HC-01】\nLogline：...\n\n类型标签：...", // 必填。来自 concepts.items[].contentMarkdown
 }
 ```
 
 > setup(观众三选)不在进场时传 —— 它从本接口返回的清单里选,随第一个 `turns`(`action:start`)提交。
-> Java 不按 `ipId` 反查 IP 正文。调用方必须再次传 `ipStory`,Java 用 `ipStory + selectedConceptMarkdown` 生成本局圣经。
-> `enter` 必须基于选中的高概念生成本局圣经。前端直接回传 `selectedConceptMarkdown`;`selectedConceptId` 只是同批候选里的编号,后端可用于日志/埋点,不得依赖它查回候选正文。
+> `enter` 不接收 `ipStory`,也不按 `ipId` 反查 IP 正文。它只基于 `selectedConceptMarkdown` 生成本局圣经;`selectedConceptId` 只是同批候选里的编号,后端可用于日志/埋点,不得依赖它查回候选正文。
 
 ### 4.2 响应
 
@@ -205,14 +203,13 @@ Trailer文案（15秒）：...
 
 ### 4.3 后端职责
 
-1. 读取请求里的 `ipStory`(§2)。
-2. 读取 `selectedConceptMarkdown`;如有 `selectedConceptId`,可记录到日志/埋点。
-3. **LLM① 故事架构师** → 基于 IP 种子 + 选中高概念生成圣经(§6)。方向/节奏是**游玩期镜头**(writing-skill §4),不改核心事实,故此处一次生成与具体方向无关的核心圣经即可。
-4. 校验圣经(§7.2);不过则带错误 **一次修复重试**,再不过 → 503。
-5. 建会话,钉 `bible` + 初始 `live` 状态(`setup=null, stage=qi, risk=0, turnCount=0, unlockedClueIds=[]`)。
-6. 从圣经派生 `setupOptions`:`roles`=`playable&&public` 人物;`directions`=按本 IP 从固定清单挑的合适子集;`paces`=固定三档。
-7. 角色对象必须包含 `profileMarkdown`,供前端在角色选择界面直接 Markdown 渲染。
-8. **脱敏**后返回清单。圣经绝不下发,第一幕不在此产出。
+1. 读取 `selectedConceptMarkdown`;如有 `selectedConceptId`,可记录到日志/埋点。
+2. **LLM① 故事架构师** → 基于选中的高概念生成圣经(§6)。方向/节奏是**游玩期镜头**(writing-skill §4),不改核心事实,故此处一次生成与具体方向无关的核心圣经即可。
+3. 校验圣经(§7.2);不过则带错误 **一次修复重试**,再不过 → 503。
+4. 建会话,钉 `bible` + 初始 `live` 状态(`setup=null, stage=qi, risk=0, turnCount=0, unlockedClueIds=[]`)。
+5. 从圣经派生 `setupOptions`:`roles`=`playable&&public` 人物;`directions`=按本 IP 从固定清单挑的合适子集;`paces`=固定三档。
+6. 角色对象必须包含 `profileMarkdown`,供前端在角色选择界面直接 Markdown 渲染。
+7. **脱敏**后返回清单。圣经绝不下发,第一幕不在此产出。
 
 ---
 
