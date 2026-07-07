@@ -43,6 +43,21 @@ const RunnerDecisionSchema = z.object({
   memories: z.array(RunnerMemorySchema).max(5).default([]),
 });
 
+const PUBLIC_GENRE_CODES = new Set([
+  'sci_fi',
+  'fantasy',
+  'mystery',
+  'romance',
+  'adventure',
+  'action',
+  'comedy',
+  'drama',
+  'horror',
+  'children',
+  'education',
+  'documentary',
+]);
+
 type RunnerDecision = z.infer<typeof RunnerDecisionSchema>;
 type RunnerAction = z.infer<typeof RunnerActionSchema>;
 type JsonRecord = Record<string, unknown>;
@@ -331,10 +346,16 @@ export class AgentUserRunnerService
   }): Promise<CandidateIp[]> {
     const persona = asRecord(agent.persona);
     const interests = stringArray(persona.interests);
-    const tagCodes = interests
+    const taxonomyCodes = interests
       .map((value) => value.toLowerCase().replaceAll(' ', '-'))
       .filter((value) => /^[a-z0-9][a-z0-9_-]*$/.test(value))
       .slice(0, 6);
+    const genreCodes = taxonomyCodes.filter((code) =>
+      PUBLIC_GENRE_CODES.has(code),
+    );
+    const tagCodes = taxonomyCodes.filter(
+      (code) => !PUBLIC_GENRE_CODES.has(code),
+    );
     const locale = supportedLocale(agent.locale);
     const withRegion = agent.region
       ? toCandidateIpSource(
@@ -352,7 +373,7 @@ export class AgentUserRunnerService
         ? withRegion
         : toCandidateIpSource(
             await this.ipCommerce.listPublicIps({
-              genreCodes: [],
+              genreCodes,
               tagCodes,
               regions: [],
               locale,
