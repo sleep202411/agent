@@ -156,6 +156,16 @@ export class IpCommerceController {
     };
   }
 
+  @Get('users/search')
+  async searchUsers(@CurrentUser() _user: AuthUser, @Query('q') q?: string) {
+    return {
+      code: 200,
+      data: await this.ipCommerce.searchPlatformUsers(
+        typeof q === 'string' ? q.slice(0, 64) : '',
+      ),
+    };
+  }
+
   @Get('me/ips/:ipId/acl')
   async listMyIpAcl(
     @CurrentUser() user: AuthUser,

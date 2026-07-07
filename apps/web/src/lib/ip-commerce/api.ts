@@ -1044,57 +1044,14 @@ export interface IpUserSearchHit {
  */
 export async function searchIpCommerceUsers(query: string): Promise<IpUserSearchHit[]> {
   const q = query.trim();
-  if (!q) return [];
-  const lowered = q.toLowerCase();
-  const PAGE_SIZE = 100;
-  const MAX_PAGES = 25; // scan up to 2500 users per search — a hard safety cap
-  const MAX_MATCHES = 20;
-
-  // The talent-market list endpoint does NOT have a verified keyword filter (the
-  // /creators page paginates it client-side and never passes `key`), so we can't
-  // trust server-side filtering to surface a user beyond the first page. Page
-  // through with body.sum as the bound and filter client-side, so a real user is
-  // discoverable wherever they sort — not silently "not found" past row 100. We
-  // still send `key` as a best-effort narrowing (harmless if the server ignores it).
-  const matches: IpUserSearchHit[] = [];
-  const seen = new Set<string>();
-  let scanned = 0;
-  let total = Infinity;
-  for (let page = 1; page <= MAX_PAGES && scanned < total; page++) {
-    const form = new URLSearchParams();
-    form.append("page", String(page));
-    form.append("pageSize", String(PAGE_SIZE));
-    form.append("key", q);
-    const res = await fetch("/user/list/user/info", {
-      method: "POST",
-      credentials: "include",
-      headers: { "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8" },
-      body: form.toString(),
-    });
-    if (!res.ok) break;
-    const body = (await res.json()) as {
-      data?: Array<{ info?: { id?: number | string; nickName?: string; avatar?: string } }>;
-      sum?: number;
-    };
-    const rows = Array.isArray(body.data) ? body.data : [];
-    if (typeof body.sum === "number") total = body.sum;
-    if (rows.length === 0) break;
-    scanned += rows.length;
-    for (const row of rows) {
-      const info = row.info;
-      if (!info || info.id == null) continue;
-      const userId = String(info.id);
-      if (seen.has(userId)) continue;
-      const nickname = (info.nickName ?? "").trim();
-      if (nickname.toLowerCase().includes(lowered) || userId.includes(lowered)) {
-        seen.add(userId);
-        matches.push({ userId, nickname, avatar: info.avatar ?? null });
-        if (matches.length >= MAX_MATCHES) return matches;
-      }
-    }
-    if (rows.length < PAGE_SIZE) break; // last page reached
-  }
-  return matches;
+  if (q.length < 2) return [];
+  // Single server-side query against the Java client_user table via the Nest
+  // MySQL bridge (server↔RDS, same region). Matches phone / email / nickname /
+  // id — replaces the old 25-page client-side scan of the talent list.
+  const res = await api.get<{ users: IpUserSearchHit[] }>("/aurora/ip-commerce/users/search", {
+    params: { q },
+  });
+  return Array.isArray(res.users) ? res.users : [];
 }
 
 export function getIpCommerceIp(ipId: string, params?: { locale?: string }) {

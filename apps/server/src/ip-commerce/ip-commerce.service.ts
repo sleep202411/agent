@@ -74,6 +74,8 @@ import {
   expireLapsedGrantsTx,
 } from '../workspaces';
 import { EntitlementService } from '../entitlements';
+import { LegacyMysqlService } from '../infra/legacy-mysql';
+import type { RowDataPacket } from 'mysql2/promise';
 import type {
   CreateIpDraftInput,
   CreateCreatorIpContributorInput,
@@ -479,7 +481,35 @@ export class IpCommerceService {
     private readonly outputStorage: OutputStorageService,
     private readonly legacyCnVideo: LegacyCnVideoResolverService,
     private readonly entitlements: EntitlementService,
+    private readonly legacyMysql: LegacyMysqlService,
   ) {}
+
+  /**
+   * Look up a platform user for ACL/member linking by EXACT phone or email —
+   * the identifiers a granting owner actually knows. Single query against the
+   * Java `client_user` table via the MySQL bridge (server↔RDS, same region),
+   * replacing the old client-side 25-page scan. Exact match (no fuzzy LIKE, no
+   * nickname/id browse) keeps it precise and cheap: phone is indexed, and a
+   * contact maps to ~one account. Returns only public identity fields.
+   */
+  async searchPlatformUsers(query: string) {
+    const q = query.trim();
+    if (q.length < 3) return { users: [] };
+    const rows = await this.legacyMysql.query<RowDataPacket>(
+      `SELECT CAST(id AS CHAR) AS id, nick_name, avatar
+         FROM client_user
+        WHERE phone = ? OR email = ?
+        ORDER BY id DESC`,
+      [q, q],
+    );
+    return {
+      users: rows.map((row) => ({
+        userId: String(row.id),
+        nickname: typeof row.nick_name === 'string' ? row.nick_name.trim() : '',
+        avatar: row.avatar ? String(row.avatar) : null,
+      })),
+    };
+  }
 
   private ipEditAccessWhere(user: AuthUser): Prisma.IpWhereInput {
     return {
