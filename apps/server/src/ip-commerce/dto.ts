@@ -867,6 +867,22 @@ export const IpContributorParamsSchema = z.object({
 });
 export type IpContributorParams = z.infer<typeof IpContributorParamsSchema>;
 
+export const IpAclPermissionSchema = z.enum(['edit']);
+export type IpAclPermissionValue = z.infer<typeof IpAclPermissionSchema>;
+
+export const IpAclGrantParamsSchema = IpParamsSchema.extend({
+  grantId: z.string().uuid(),
+});
+export type IpAclGrantParams = z.infer<typeof IpAclGrantParamsSchema>;
+
+export const GrantCreatorIpAclSchema = z
+  .object({
+    userId: IpContributorUserIdSchema,
+    permission: IpAclPermissionSchema.default('edit'),
+  })
+  .strict();
+export type GrantCreatorIpAclInput = z.infer<typeof GrantCreatorIpAclSchema>;
+
 export const CreateCreatorIpContributorSchema = z
   .object({
     displayName: z.string().trim().min(1).max(120),

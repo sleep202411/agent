@@ -1,7 +1,10 @@
 import { ConflictException } from '@nestjs/common';
+import { IpAccessMode } from '@prisma/client';
 import {
   assertIpPurchaserAllowed,
   isEntitlementActiveForAccess,
+  resolveEpisodeAccessState,
+  resolveIpAccessState,
   resolveIpEntitlementWindow,
 } from './ip-commerce.service';
 
@@ -22,6 +25,65 @@ describe('IP commerce purchase guards', () => {
         creatorUserId: 'creator-1',
       }),
     ).not.toThrow();
+  });
+
+  it('rejects purchases by an editor with IP edit access', () => {
+    expect(() =>
+      assertIpPurchaserAllowed({
+        buyerUserId: 'editor-1',
+        creatorUserId: 'creator-1',
+        hasEditAccess: true,
+      }),
+    ).toThrow(ConflictException);
+  });
+});
+
+describe('IP commerce management access', () => {
+  it('treats an IP manager as owning their IP even without an entitlement', () => {
+    expect(
+      resolveIpAccessState({
+        hasManagementAccess: true,
+        hasIpEntitlement: false,
+        hasPendingIpEntitlement: false,
+        accessMode: IpAccessMode.points_priced,
+        isMember: false,
+        hasIpPrice: true,
+      }),
+    ).toEqual({ owned: true, access: 'owned' });
+  });
+
+  it('treats an IP manager as owning paid episodes even without an entitlement', () => {
+    expect(
+      resolveEpisodeAccessState({
+        hasManagementAccess: true,
+        hasIpEntitlement: false,
+        hasEpisodeEntitlement: false,
+        hasPendingIpEntitlement: false,
+        hasPendingEpisodeEntitlement: false,
+        isFreePreview: false,
+        accessMode: IpAccessMode.points_priced,
+        isMember: false,
+        hasEpisodePrice: true,
+        hasIpPrice: true,
+      }),
+    ).toEqual({ owned: true, access: 'owned_ip' });
+  });
+
+  it('keeps a paid episode locked for a non-manager without entitlement', () => {
+    expect(
+      resolveEpisodeAccessState({
+        hasManagementAccess: false,
+        hasIpEntitlement: false,
+        hasEpisodeEntitlement: false,
+        hasPendingIpEntitlement: false,
+        hasPendingEpisodeEntitlement: false,
+        isFreePreview: false,
+        accessMode: IpAccessMode.points_priced,
+        isMember: false,
+        hasEpisodePrice: true,
+        hasIpPrice: false,
+      }),
+    ).toEqual({ owned: false, access: 'locked' });
   });
 });
 

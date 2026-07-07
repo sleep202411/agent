@@ -984,6 +984,10 @@
       "failed": "提交审核失败",
       "requirements": "提交前先补齐：{items}"
     },
+    "viewerAccess": {
+      "owner": "主理人",
+      "editor": "可编辑"
+    },
     "navTitle": "工作区",
     "flowTitle": "创作流程",
     "flowBody": "按阶段推进，但每个阶段都可以独立补齐；圆环显示当前完成度。",
@@ -1043,6 +1047,26 @@
     "membersPanel": {
       "sectionTitle": "团队与收益分成",
       "sectionBody": "添加参与该 IP 的成员，并决定创作者收益池如何分配，无需管理员审批。",
+      "accessTitle": "编辑权限",
+      "accessBody": "给可信用户授予 IP 工作台编辑权限，不改变成员角色，也不改变收益分成。",
+      "accessEditorTitle": "你拥有编辑权限",
+      "accessEditorBody": "你可以管理该 IP 的内容、定价、成员、权利信息和提交审核。只有主理人可以转移 owner、归档/删除 IP，或继续授权编辑权限。",
+      "accessOwnerImplicitTitle": "主理人",
+      "accessLoading": "正在加载编辑权限…",
+      "accessLoadFailed": "编辑权限加载失败，请重试。",
+      "accessEmpty": "暂未添加编辑者。",
+      "accessGrantTitle": "授权编辑者",
+      "accessGrantBody": "搜索平台用户。此操作只授予 ACL 编辑权限，不会添加成员署名，也不会设置收益分成。",
+      "accessGrantHint": "编辑者可以管理 IP 内容、定价、成员、权利信息和提交审核。",
+      "accessGrant": "授予权限",
+      "accessGranting": "授权中…",
+      "accessRevoke": "撤销",
+      "accessRevokeConfirm": "确定撤销 {name} 的编辑权限吗？",
+      "accessSelectUserFirst": "请先选择用户。",
+      "accessAlreadyOwner": "主理人已默认拥有完整权限。",
+      "accessAlreadyEditor": "该用户已拥有编辑权限。",
+      "accessUserId": "ID：{id}",
+      "accessGrantedLine": "ID：{id} · 授权于 {date}",
       "creatorShareLine": "每笔销售中创作者可获得 {pct}（由平台设定）。",
       "splitPrompt": "将该收益池分配给你的团队：",
       "allocated": "{allocated} / 100%",
@@ -1088,7 +1112,11 @@
         "updated": "已更新成员。",
         "updateFailed": "更新成员失败。",
         "removed": "已移除成员。",
-        "removeFailed": "移除成员失败。"
+        "removeFailed": "移除成员失败。",
+        "accessGranted": "已授予编辑权限。",
+        "accessGrantFailed": "授予编辑权限失败。",
+        "accessRevoked": "已撤销编辑权限。",
+        "accessRevokeFailed": "撤销编辑权限失败。"
       }
     },
     "sections": {

@@ -7,6 +7,7 @@ import {
   ServiceUnavailableException,
 } from '@nestjs/common';
 import {
+  IpAclPermission,
   IpAccessMode,
   IpCampaignStatus,
   IpAgeRating,
@@ -77,6 +78,7 @@ import type {
   CreateIpDraftInput,
   CreateCreatorIpContributorInput,
   CreateCreatorIpEpisodeInput,
+  GrantCreatorIpAclInput,
   CreatorRevenueQuery,
   ListAdminIpRevenueQuery,
   UpdateAdminIpRevenueConfigInput,
@@ -387,6 +389,10 @@ const adminIpInclude = {
     where: { removedAt: null },
     orderBy: [{ displayOrder: 'asc' }, { createdAt: 'asc' }],
   },
+  aclGrants: {
+    where: { revokedAt: null },
+    orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+  },
   reports: {
     orderBy: { createdAt: 'desc' },
     take: 5,
@@ -474,6 +480,63 @@ export class IpCommerceService {
     private readonly legacyCnVideo: LegacyCnVideoResolverService,
     private readonly entitlements: EntitlementService,
   ) {}
+
+  private ipEditAccessWhere(user: AuthUser): Prisma.IpWhereInput {
+    return {
+      OR: [
+        { createdById: user.userId },
+        {
+          aclGrants: {
+            some: {
+              userId: user.userId,
+              permission: IpAclPermission.edit,
+              revokedAt: null,
+            },
+          },
+        },
+      ],
+    };
+  }
+
+  private async hasActiveIpEditGrant(
+    user: AuthUser | undefined,
+    ipId: string,
+    db: Pick<Prisma.TransactionClient, 'ipAclGrant'> = this.prisma,
+  ): Promise<boolean> {
+    if (!user) return false;
+    const grant = await db.ipAclGrant.findFirst({
+      where: {
+        ipId,
+        userId: user.userId,
+        permission: IpAclPermission.edit,
+        revokedAt: null,
+      },
+      select: { id: true },
+    });
+    return Boolean(grant);
+  }
+
+  private async requireIpWithEditAccess<T extends Prisma.IpSelect>(
+    user: AuthUser,
+    ipId: string,
+    select: T,
+  ): Promise<Prisma.IpGetPayload<{ select: T }>> {
+    const ip = await this.prisma.ip.findFirst({
+      where: {
+        id: ipId,
+        deletedAt: null,
+        ...this.ipEditAccessWhere(user),
+      },
+      select,
+    });
+    if (!ip) {
+      throw new NotFoundException({
+        code: 'IP_NOT_FOUND',
+        msg: 'IP not found.',
+      });
+    }
+    return ip as Prisma.IpGetPayload<{ select: T }>;
+  }
 
   /**
    * Platform-default creator revenue share (bps), read from ip_commerce_settings
@@ -1020,8 +1083,8 @@ export class IpCommerceService {
   async listCreatorIps(user: AuthUser, query: ListCreatorIpsQuery) {
     const rows = await this.prisma.ip.findMany({
       where: {
-        createdById: user.userId,
         deletedAt: null,
+        ...this.ipEditAccessWhere(user),
       },
       cursor: query.cursor ? { id: query.cursor } : undefined,
       skip: query.cursor ? 1 : 0,
@@ -1032,7 +1095,9 @@ export class IpCommerceService {
 
     const items = rows.slice(0, query.limit);
     return {
-      items: items.map((ip) => creatorIpSummaryDto(ip, query.locale)),
+      items: items.map((ip) =>
+        creatorIpSummaryDto(ip, query.locale, user.userId),
+      ),
       nextCursor: rows.length > query.limit ? (items.at(-1)?.id ?? null) : null,
     };
   }
@@ -1045,8 +1110,8 @@ export class IpCommerceService {
     const ip = await this.prisma.ip.findFirst({
       where: {
         id: ipId,
-        createdById: user.userId,
         deletedAt: null,
+        ...this.ipEditAccessWhere(user),
       },
       include: adminIpInclude,
     });
@@ -1058,7 +1123,7 @@ export class IpCommerceService {
       });
     }
 
-    return { ip: creatorIpDetailDto(ip, query.locale) };
+    return { ip: creatorIpDetailDto(ip, query.locale, user.userId) };
   }
 
   async getCreatorIpCommerce(
@@ -1069,8 +1134,8 @@ export class IpCommerceService {
     const ip = await this.prisma.ip.findFirst({
       where: {
         id: ipId,
-        createdById: user.userId,
         deletedAt: null,
+        ...this.ipEditAccessWhere(user),
       },
       include: adminIpInclude,
     });
@@ -1494,8 +1559,9 @@ export class IpCommerceService {
   // read-only to creators (admin-managed default / per-IP override).
 
   /**
-   * Load an IP the caller owns, or throw IP_NOT_FOUND. Shared by every
-   * creator-scoped contributor op so a foreign / deleted IP is never touched.
+   * Load an IP the caller owns, or throw IP_NOT_FOUND. This is intentionally
+   * stricter than edit access and is reserved for owner-only operations such as
+   * ACL management.
    */
   private async requireOwnedIp(
     user: AuthUser,
@@ -1513,6 +1579,116 @@ export class IpCommerceService {
       });
     }
     return ip;
+  }
+
+  async listCreatorIpAcl(user: AuthUser, ipId: string) {
+    const ip = await this.requireOwnedIp(user, ipId, {
+      id: true,
+      createdById: true,
+    });
+    const grants = await this.prisma.ipAclGrant.findMany({
+      where: {
+        ipId: ip.id,
+        permission: IpAclPermission.edit,
+        revokedAt: null,
+      },
+      orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+    });
+    return {
+      ownerUserId: ip.createdById,
+      grants: grants.map(ipAclGrantDto),
+    };
+  }
+
+  async grantCreatorIpAcl(
+    user: AuthUser,
+    ipId: string,
+    input: GrantCreatorIpAclInput,
+  ) {
+    const grant = await this.prisma.$transaction(async (tx) => {
+      await tx.$executeRaw`
+        SELECT pg_advisory_xact_lock(hashtext(${`ip:acl:${ipId}`})::bigint)
+      `;
+      const ip = await tx.ip.findFirst({
+        where: { id: ipId, createdById: user.userId, deletedAt: null },
+        select: { id: true, createdById: true },
+      });
+      if (!ip) {
+        throw new NotFoundException({
+          code: 'IP_NOT_FOUND',
+          msg: 'IP not found.',
+        });
+      }
+      if (input.userId === ip.createdById) {
+        throw new ConflictException({
+          code: 'IP_ACL_OWNER_IMPLICIT',
+          msg: 'The owner already has full IP management access.',
+        });
+      }
+
+      const existing = await tx.ipAclGrant.findFirst({
+        where: {
+          ipId: ip.id,
+          userId: input.userId,
+          permission: input.permission as IpAclPermission,
+          revokedAt: null,
+        },
+      });
+      if (existing) return existing;
+
+      return tx.ipAclGrant.create({
+        data: {
+          ipId: ip.id,
+          userId: input.userId,
+          permission: input.permission as IpAclPermission,
+          grantedById: user.userId,
+        },
+      });
+    });
+
+    return { grant: ipAclGrantDto(grant) };
+  }
+
+  async revokeCreatorIpAcl(user: AuthUser, ipId: string, grantId: string) {
+    const revoked = await this.prisma.$transaction(async (tx) => {
+      await tx.$executeRaw`
+        SELECT pg_advisory_xact_lock(hashtext(${`ip:acl:${ipId}`})::bigint)
+      `;
+      const ip = await tx.ip.findFirst({
+        where: { id: ipId, createdById: user.userId, deletedAt: null },
+        select: { id: true },
+      });
+      if (!ip) {
+        throw new NotFoundException({
+          code: 'IP_NOT_FOUND',
+          msg: 'IP not found.',
+        });
+      }
+      const grant = await tx.ipAclGrant.findFirst({
+        where: {
+          id: grantId,
+          ipId: ip.id,
+          permission: IpAclPermission.edit,
+          revokedAt: null,
+        },
+        select: { id: true },
+      });
+      if (!grant) {
+        throw new NotFoundException({
+          code: 'IP_ACL_GRANT_NOT_FOUND',
+          msg: 'IP edit grant not found.',
+        });
+      }
+      return tx.ipAclGrant.update({
+        where: { id: grant.id },
+        data: {
+          revokedAt: new Date(),
+          revokedById: user.userId,
+        },
+      });
+    });
+
+    return { grant: ipAclGrantDto(revoked), revoked: true };
   }
 
   /**
@@ -1533,7 +1709,7 @@ export class IpCommerceService {
   }
 
   async listCreatorIpContributors(user: AuthUser, ipId: string) {
-    const ip = await this.requireOwnedIp(user, ipId, {
+    const ip = await this.requireIpWithEditAccess(user, ipId, {
       id: true,
       sourceLocale: true,
       creatorRevenueShareBps: true,
@@ -1565,7 +1741,11 @@ export class IpCommerceService {
         SELECT pg_advisory_xact_lock(hashtext(${`ip:revenue-config:${ipId}`})::bigint)
       `;
       const ip = await tx.ip.findFirst({
-        where: { id: ipId, createdById: user.userId, deletedAt: null },
+        where: {
+          id: ipId,
+          deletedAt: null,
+          ...this.ipEditAccessWhere(user),
+        },
         select: { id: true },
       });
       if (!ip) {
@@ -1608,7 +1788,11 @@ export class IpCommerceService {
         SELECT pg_advisory_xact_lock(hashtext(${`ip:revenue-config:${ipId}`})::bigint)
       `;
       const ip = await tx.ip.findFirst({
-        where: { id: ipId, createdById: user.userId, deletedAt: null },
+        where: {
+          id: ipId,
+          deletedAt: null,
+          ...this.ipEditAccessWhere(user),
+        },
         select: { id: true },
       });
       if (!ip) {
@@ -1661,7 +1845,11 @@ export class IpCommerceService {
         SELECT pg_advisory_xact_lock(hashtext(${`ip:revenue-config:${ipId}`})::bigint)
       `;
       const ip = await tx.ip.findFirst({
-        where: { id: ipId, createdById: user.userId, deletedAt: null },
+        where: {
+          id: ipId,
+          deletedAt: null,
+          ...this.ipEditAccessWhere(user),
+        },
         select: { id: true },
       });
       if (!ip) {
@@ -1825,7 +2013,7 @@ export class IpCommerceService {
       });
     });
 
-    return { ip: creatorIpDetailDto(ip, sourceLocale) };
+    return { ip: creatorIpDetailDto(ip, sourceLocale, user.userId) };
   }
 
   async updateCreatorIpProfile(
@@ -1836,8 +2024,8 @@ export class IpCommerceService {
     const ip = await this.prisma.ip.findFirst({
       where: {
         id: ipId,
-        createdById: user.userId,
         deletedAt: null,
+        ...this.ipEditAccessWhere(user),
       },
       include: {
         localizations: {
@@ -1966,7 +2154,7 @@ export class IpCommerceService {
       });
     });
 
-    return { ip: creatorIpDetailDto(updated, sourceLocale) };
+    return { ip: creatorIpDetailDto(updated, sourceLocale, user.userId) };
   }
 
   async updateCreatorIpAssets(
@@ -1999,7 +2187,7 @@ export class IpCommerceService {
       });
     });
 
-    return { ip: creatorIpDetailDto(updated, ip.sourceLocale) };
+    return { ip: creatorIpDetailDto(updated, ip.sourceLocale, user.userId) };
   }
 
   /**
@@ -2214,7 +2402,9 @@ export class IpCommerceService {
           });
         });
 
-        return { ip: creatorIpDetailDto(updated, ip.sourceLocale) };
+        return {
+          ip: creatorIpDetailDto(updated, ip.sourceLocale, user.userId),
+        };
       } catch (error) {
         if (
           attempt < 3 &&
@@ -2367,7 +2557,7 @@ export class IpCommerceService {
       });
     });
 
-    return { ip: creatorIpDetailDto(updated, ip.sourceLocale) };
+    return { ip: creatorIpDetailDto(updated, ip.sourceLocale, user.userId) };
   }
 
   async deleteCreatorIpEpisode(
@@ -2434,7 +2624,7 @@ export class IpCommerceService {
       });
     });
 
-    return { ip: creatorIpDetailDto(updated, ip.sourceLocale) };
+    return { ip: creatorIpDetailDto(updated, ip.sourceLocale, user.userId) };
   }
 
   async upsertCreatorIpPriceRule(
@@ -2514,7 +2704,7 @@ export class IpCommerceService {
       });
     });
 
-    return { ip: creatorIpDetailDto(updated, ip.sourceLocale) };
+    return { ip: creatorIpDetailDto(updated, ip.sourceLocale, user.userId) };
   }
 
   async submitCreatorIpForReview(
@@ -2525,8 +2715,8 @@ export class IpCommerceService {
     const ip = await this.prisma.ip.findFirst({
       where: {
         id: ipId,
-        createdById: user.userId,
         deletedAt: null,
+        ...this.ipEditAccessWhere(user),
       },
       include: adminIpInclude,
     });
@@ -2660,7 +2850,7 @@ export class IpCommerceService {
       });
     });
 
-    return { ip: creatorIpDetailDto(updated, sourceLocale) };
+    return { ip: creatorIpDetailDto(updated, sourceLocale, user.userId) };
   }
 
   async getAdminOverview(query: ListAdminIpsQuery) {
@@ -3823,13 +4013,15 @@ export class IpCommerceService {
     const activeEntitlements = entitlements.filter((entitlement) =>
       isEntitlementActiveForAccess(entitlement, now),
     );
-    // The IP's creator always sees their own media — they can't (and the
-    // purchase path won't let them) buy their own content, so entitlement alone
-    // would wrongly lock them out of their own published paid IP.
+    // IP managers always see their managed media — they can't (and the purchase
+    // path won't let them) buy that content, so entitlement alone would wrongly
+    // lock them out of a paid IP they manage.
     const isCreator = !!user && ip.createdById === user.userId;
+    const hasEditGrant = await this.hasActiveIpEditGrant(user, ip.id);
+    const hasManagementAccess = isCreator || hasEditGrant;
     const mediaAccess = {
       ipOwned:
-        isCreator ||
+        hasManagementAccess ||
         activeEntitlements.some(
           (entitlement) =>
             entitlement.targetType === IpTargetType.ip &&
@@ -3916,6 +4108,9 @@ export class IpCommerceService {
         entitlement.targetType === IpTargetType.ip &&
         entitlement.episodeId === null,
     );
+    const isCreator = !!user && ip.createdById === user.userId;
+    const hasEditGrant = await this.hasActiveIpEditGrant(user, ip.id);
+    const hasManagementAccess = isCreator || hasEditGrant;
     const pendingIpEntitlement = entitlements.find(
       (entitlement) =>
         entitlement.targetType === IpTargetType.ip &&
@@ -3967,6 +4162,15 @@ export class IpCommerceService {
       );
     }
 
+    const ipAccessState = resolveIpAccessState({
+      hasManagementAccess,
+      hasIpEntitlement: Boolean(ipEntitlement),
+      hasPendingIpEntitlement: Boolean(pendingIpEntitlement),
+      accessMode: ip.accessMode,
+      isMember,
+      hasIpPrice: Boolean(ipPrice),
+    });
+
     return {
       authenticated: Boolean(user),
       member: isMember,
@@ -3981,49 +4185,29 @@ export class IpCommerceService {
         : null,
       ip: {
         id: ip.id,
-        owned: Boolean(ipEntitlement),
-        access: ipEntitlement
-          ? 'owned'
-          : pendingIpEntitlement
-            ? 'pending_unlock'
-            : ip.accessMode === IpAccessMode.member_free
-              ? isMember
-                ? 'member_free'
-                : 'member_locked'
-              : ipPrice
-                ? 'locked'
-                : 'free',
+        owned: ipAccessState.owned,
+        access: ipAccessState.access,
         price: ipPrice ? priceRuleDto(ipPrice, memberCtx) : null,
       },
       episodes: episodes.map((episode) => {
         const episodePrice = selectActivePrice(episode.priceRules, now);
-        const owned = Boolean(ipEntitlement) || ownedEpisodeIds.has(episode.id);
-        const pending =
-          Boolean(pendingIpEntitlement) || pendingEpisodeIds.has(episode.id);
-        const access = owned
-          ? ipEntitlement
-            ? 'owned_ip'
-            : 'owned_episode'
-          : episode.isFreePreview
-            ? 'free_preview'
-            : pending
-              ? pendingIpEntitlement
-                ? 'pending_unlock_ip'
-                : 'pending_unlock_episode'
-              : ip.accessMode === IpAccessMode.member_free
-                ? isMember
-                  ? 'member_free'
-                  : 'member_locked'
-                : episodePrice
-                  ? 'locked'
-                  : ipPrice
-                    ? 'locked_bundle'
-                    : 'free';
+        const episodeAccessState = resolveEpisodeAccessState({
+          hasManagementAccess,
+          hasIpEntitlement: Boolean(ipEntitlement),
+          hasEpisodeEntitlement: ownedEpisodeIds.has(episode.id),
+          hasPendingIpEntitlement: Boolean(pendingIpEntitlement),
+          hasPendingEpisodeEntitlement: pendingEpisodeIds.has(episode.id),
+          isFreePreview: episode.isFreePreview,
+          accessMode: ip.accessMode,
+          isMember,
+          hasEpisodePrice: Boolean(episodePrice),
+          hasIpPrice: Boolean(ipPrice),
+        });
         return {
           id: episode.id,
           episodeNo: episode.episodeNo,
-          owned,
-          access,
+          owned: episodeAccessState.owned,
+          access: episodeAccessState.access,
           price: episodePrice ? priceRuleDto(episodePrice, memberCtx) : null,
         };
       }),
@@ -4383,9 +4567,15 @@ export class IpCommerceService {
           msg: 'IP is not available for purchase.',
         });
       }
+      const buyerHasEditAccess = await this.hasActiveIpEditGrant(
+        user,
+        ip.id,
+        tx,
+      );
       assertIpPurchaserAllowed({
         buyerUserId: user.userId,
         creatorUserId: ip.createdById,
+        hasEditAccess: buyerHasEditAccess,
       });
 
       const episode =
@@ -4819,8 +5009,8 @@ export class IpCommerceService {
     const ip = await this.prisma.ip.findFirst({
       where: {
         id: ipId,
-        createdById: user.userId,
         deletedAt: null,
+        ...this.ipEditAccessWhere(user),
       },
       select: {
         id: true,
@@ -5472,12 +5662,20 @@ export class IpCommerceService {
 export function assertIpPurchaserAllowed(input: {
   buyerUserId: string;
   creatorUserId: string;
+  hasEditAccess?: boolean;
 }) {
-  if (input.buyerUserId !== input.creatorUserId) return;
-  throw new ConflictException({
-    code: 'IP_OWNER_CANNOT_PURCHASE',
-    msg: 'Creators cannot purchase their own IP content.',
-  });
+  if (input.buyerUserId === input.creatorUserId) {
+    throw new ConflictException({
+      code: 'IP_OWNER_CANNOT_PURCHASE',
+      msg: 'Creators cannot purchase their own IP content.',
+    });
+  }
+  if (input.hasEditAccess) {
+    throw new ConflictException({
+      code: 'IP_EDITOR_CANNOT_PURCHASE',
+      msg: 'Editors cannot purchase IP content they can already manage.',
+    });
+  }
 }
 
 /**
@@ -5549,6 +5747,90 @@ export function isEntitlementActiveForAccess(
     entitlement.startsAt <= now &&
     (entitlement.endsAt === null || entitlement.endsAt > now)
   );
+}
+
+export function resolveIpAccessState(input: {
+  hasManagementAccess: boolean;
+  hasIpEntitlement: boolean;
+  hasPendingIpEntitlement: boolean;
+  accessMode: IpAccessMode;
+  isMember: boolean;
+  hasIpPrice: boolean;
+}): {
+  owned: boolean;
+  access:
+    | 'free'
+    | 'locked'
+    | 'owned'
+    | 'pending_unlock'
+    | 'member_free'
+    | 'member_locked';
+} {
+  if (input.hasManagementAccess || input.hasIpEntitlement) {
+    return { owned: true, access: 'owned' };
+  }
+  if (input.hasPendingIpEntitlement) {
+    return { owned: false, access: 'pending_unlock' };
+  }
+  if (input.accessMode === IpAccessMode.member_free) {
+    return {
+      owned: false,
+      access: input.isMember ? 'member_free' : 'member_locked',
+    };
+  }
+  return { owned: false, access: input.hasIpPrice ? 'locked' : 'free' };
+}
+
+export function resolveEpisodeAccessState(input: {
+  hasManagementAccess: boolean;
+  hasIpEntitlement: boolean;
+  hasEpisodeEntitlement: boolean;
+  hasPendingIpEntitlement: boolean;
+  hasPendingEpisodeEntitlement: boolean;
+  isFreePreview: boolean;
+  accessMode: IpAccessMode;
+  isMember: boolean;
+  hasEpisodePrice: boolean;
+  hasIpPrice: boolean;
+}): {
+  owned: boolean;
+  access:
+    | 'free'
+    | 'free_preview'
+    | 'locked'
+    | 'locked_bundle'
+    | 'pending_unlock_ip'
+    | 'pending_unlock_episode'
+    | 'owned_ip'
+    | 'owned_episode'
+    | 'member_free'
+    | 'member_locked';
+} {
+  if (input.hasManagementAccess || input.hasIpEntitlement) {
+    return { owned: true, access: 'owned_ip' };
+  }
+  if (input.hasEpisodeEntitlement) {
+    return { owned: true, access: 'owned_episode' };
+  }
+  if (input.isFreePreview) {
+    return { owned: false, access: 'free_preview' };
+  }
+  if (input.hasPendingIpEntitlement) {
+    return { owned: false, access: 'pending_unlock_ip' };
+  }
+  if (input.hasPendingEpisodeEntitlement) {
+    return { owned: false, access: 'pending_unlock_episode' };
+  }
+  if (input.accessMode === IpAccessMode.member_free) {
+    return {
+      owned: false,
+      access: input.isMember ? 'member_free' : 'member_locked',
+    };
+  }
+  if (input.hasEpisodePrice) {
+    return { owned: false, access: 'locked' };
+  }
+  return { owned: false, access: input.hasIpPrice ? 'locked_bundle' : 'free' };
 }
 
 async function findCurrentOrPendingEntitlementTx(
@@ -6909,6 +7191,56 @@ function creatorIpContributorListDto(input: {
   };
 }
 
+function ipAclGrantDto(grant: {
+  id: string;
+  ipId: string;
+  userId: string;
+  permission: IpAclPermission;
+  grantedById: string;
+  revokedById: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+  revokedAt: Date | null;
+}) {
+  return {
+    id: grant.id,
+    ipId: grant.ipId,
+    userId: grant.userId,
+    permission: grant.permission,
+    grantedById: grant.grantedById,
+    revokedById: grant.revokedById,
+    createdAt: grant.createdAt.toISOString(),
+    updatedAt: grant.updatedAt.toISOString(),
+    revokedAt: grant.revokedAt?.toISOString() ?? null,
+  };
+}
+
+function ipViewerAccessDto(
+  title: Pick<AdminIpWithCommerce, 'createdById' | 'aclGrants'>,
+  viewerUserId?: string | null,
+) {
+  const owner = Boolean(viewerUserId && title.createdById === viewerUserId);
+  const hasEditGrant = Boolean(
+    viewerUserId &&
+    title.aclGrants.some(
+      (grant) =>
+        grant.userId === viewerUserId &&
+        grant.permission === IpAclPermission.edit &&
+        grant.revokedAt === null,
+    ),
+  );
+  const canEdit = owner || hasEditGrant;
+  return {
+    owner,
+    permissions: canEdit ? [IpAclPermission.edit] : [],
+    canEdit,
+    canManageAcl: owner,
+    canTransferOwner: owner,
+    canArchive: owner,
+    canDelete: owner,
+  };
+}
+
 function ipReferenceDto(
   ip:
     | {
@@ -7029,6 +7361,7 @@ function adminIpSummaryDto(
 function creatorIpSummaryDto(
   title: AdminIpWithCommerce,
   requestedLocale?: string | null,
+  viewerUserId?: string | null,
 ) {
   const copy = selectIpLocalization(title, requestedLocale, false);
   const taxonomy = taxonomyBundleDto(title, requestedLocale);
@@ -7048,6 +7381,7 @@ function creatorIpSummaryDto(
     trailerAsset: assetDto(title.trailerAsset),
     createdAt: title.createdAt.toISOString(),
     updatedAt: title.updatedAt.toISOString(),
+    viewerAccess: ipViewerAccessDto(title, viewerUserId),
     counts: {
       episodes: title._count.episodes,
       assets: title._count.assets,
@@ -7061,12 +7395,13 @@ function creatorIpSummaryDto(
 function creatorIpDetailDto(
   title: AdminIpWithCommerce,
   requestedLocale?: string | null,
+  viewerUserId?: string | null,
 ) {
   const activeIpPrice = selectActivePrice(
     title.priceRules.filter((rule) => rule.targetType === IpTargetType.ip),
   );
   return {
-    ...creatorIpSummaryDto(title, requestedLocale),
+    ...creatorIpSummaryDto(title, requestedLocale, viewerUserId),
     copyrightOwner: title.copyrightOwner,
     rightsSummary: title.rightsSummary,
     aiDisclosure: title.aiDisclosure,

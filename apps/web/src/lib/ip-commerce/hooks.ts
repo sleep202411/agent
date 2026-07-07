@@ -15,9 +15,11 @@ import {
   getMyCreatorRevenue,
   getIpCommerceWallet,
   getIpAccess,
+  grantIpEditAccess,
   listIpCommerceCollection,
   listIpCommerceContributors,
   listIpCommerceDiscovery,
+  listMyIpAclGrants,
   listMyIpCommerceIpAssets,
   listMyIpCommerceIps,
   listPublicCreatorIps,
@@ -31,6 +33,7 @@ import {
   recordIpView,
   reportIpContent,
   removeIpCommerceCollection,
+  revokeIpEditAccess,
   saveIpCommerceCollection,
   submitIpCommerceIpForReview,
   unblockIpContent,
@@ -49,6 +52,8 @@ import {
   type DeleteIpAssetInput,
   type DeleteIpContributorInput,
   type DeleteIpEpisodeInput,
+  type GrantIpAclInput,
+  type RevokeIpAclInput,
   type UpdateIpContributorInput,
   type SubmitIpReviewInput,
   type UpdateIpAssetsInput,
@@ -95,6 +100,7 @@ export const ipCommerceKeys = {
   myIpAssets: (ipId: string, params?: { purpose?: string }) =>
     ["ip-commerce", "me", "ips", ipId, "assets", params ?? {}] as const,
   myIpContributors: (ipId: string) => ["ip-commerce", "me", "ips", ipId, "contributors"] as const,
+  myIpAcl: (ipId: string) => ["ip-commerce", "me", "ips", ipId, "acl"] as const,
   creatorRevenueRoot: ["ip-commerce", "me", "revenue"] as const,
   creatorRevenue: (params?: { locale?: string; cursor?: string; limit?: number }) =>
     ["ip-commerce", "me", "revenue", params ?? {}] as const,
@@ -513,6 +519,45 @@ export function useSubmitIpCommerceIpForReview() {
         qc.invalidateQueries({ queryKey: ipCommerceKeys.myIp(input.ipId) }),
         qc.invalidateQueries({ queryKey: ["ip-commerce", "me", "ips", input.ipId] }),
       ]);
+    },
+  });
+}
+
+function invalidateIpAclCaches(qc: ReturnType<typeof useQueryClient>, ipId: string) {
+  return Promise.all([
+    qc.invalidateQueries({ queryKey: ipCommerceKeys.myIpAcl(ipId) }),
+    qc.invalidateQueries({ queryKey: ipCommerceKeys.myIpsRoot }),
+    qc.invalidateQueries({ queryKey: ["ip-commerce", "me", "ips", ipId] }),
+    qc.invalidateQueries({ queryKey: ["ip-commerce", "ip-access", ipId] }),
+    qc.invalidateQueries({ queryKey: ["ip-commerce", "ips", ipId] }),
+  ]);
+}
+
+export function useMyIpAclGrants(ipId: string | null | undefined, enabled = true) {
+  return useQuery({
+    queryKey: ipCommerceKeys.myIpAcl(ipId ?? ""),
+    queryFn: () => listMyIpAclGrants(ipId!),
+    enabled: enabled && Boolean(ipId),
+    staleTime: 30_000,
+  });
+}
+
+export function useGrantIpEditAccess() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: GrantIpAclInput) => grantIpEditAccess(input),
+    onSuccess: async (_result, input) => {
+      await invalidateIpAclCaches(qc, input.ipId);
+    },
+  });
+}
+
+export function useRevokeIpEditAccess() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: RevokeIpAclInput) => revokeIpEditAccess(input),
+    onSuccess: async (_result, input) => {
+      await invalidateIpAclCaches(qc, input.ipId);
     },
   });
 }

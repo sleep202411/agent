@@ -24,11 +24,13 @@ import {
   UpdateCreatorIpProfileSchema,
   UpdateCreatorIpAssetsSchema,
   UpdateCreatorIpEpisodeSchema,
+  GrantCreatorIpAclSchema,
   SubmitCreatorIpReviewSchema,
   UploadCreatorIpMediaQuerySchema,
   UploadCreatorIpMediaBodySchema,
   IpAccessQuerySchema,
   IpAssetParamsSchema,
+  IpAclGrantParamsSchema,
   IpContributorParamsSchema,
   IpEpisodeParamsSchema,
   IpLocaleQuerySchema,
@@ -49,12 +51,14 @@ import {
   type CreateIpDraftInput,
   type CreateCreatorIpContributorInput,
   type CreateCreatorIpEpisodeInput,
+  type GrantCreatorIpAclInput,
   type CreateIpContentReportInput,
   type CreateIpPurchaseInput,
   type RecordMemberViewInput,
   type RecordIpViewInput,
   type CreatorRevenueQuery,
   type IpAssetParams,
+  type IpAclGrantParams,
   type IpContributorParams,
   type SubmitCreatorIpReviewInput,
   type UploadCreatorIpMediaQuery,
@@ -148,6 +152,48 @@ export class IpCommerceController {
         user,
         params.ipId,
         query,
+      ),
+    };
+  }
+
+  @Get('me/ips/:ipId/acl')
+  async listMyIpAcl(
+    @CurrentUser() user: AuthUser,
+    @Param(new ZodValidationPipe(IpParamsSchema))
+    params: IpParams,
+  ) {
+    return {
+      code: 200,
+      data: await this.ipCommerce.listCreatorIpAcl(user, params.ipId),
+    };
+  }
+
+  @Post('me/ips/:ipId/acl')
+  async grantMyIpAcl(
+    @CurrentUser() user: AuthUser,
+    @Param(new ZodValidationPipe(IpParamsSchema))
+    params: IpParams,
+    @Body(new ZodValidationPipe(GrantCreatorIpAclSchema))
+    body: GrantCreatorIpAclInput,
+  ) {
+    return {
+      code: 200,
+      data: await this.ipCommerce.grantCreatorIpAcl(user, params.ipId, body),
+    };
+  }
+
+  @Delete('me/ips/:ipId/acl/:grantId')
+  async revokeMyIpAcl(
+    @CurrentUser() user: AuthUser,
+    @Param(new ZodValidationPipe(IpAclGrantParamsSchema))
+    params: IpAclGrantParams,
+  ) {
+    return {
+      code: 200,
+      data: await this.ipCommerce.revokeCreatorIpAcl(
+        user,
+        params.ipId,
+        params.grantId,
       ),
     };
   }

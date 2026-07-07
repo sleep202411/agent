@@ -985,6 +985,10 @@
       "failed": "Failed to submit for review",
       "requirements": "Complete before submitting: {items}"
     },
+    "viewerAccess": {
+      "owner": "Owner",
+      "editor": "Editor access"
+    },
     "navTitle": "Workspace",
     "flowTitle": "Creation flow",
     "flowBody": "Move by stages, but complete each stage independently. The rings show current readiness.",
@@ -1044,6 +1048,26 @@
     "membersPanel": {
       "sectionTitle": "Team & revenue split",
       "sectionBody": "Add the people behind this IP and decide how the creator pool is shared. No admin approval needed.",
+      "accessTitle": "Edit access",
+      "accessBody": "Grant trusted users IP Studio edit access without changing member roles or revenue splits.",
+      "accessEditorTitle": "You have edit access",
+      "accessEditorBody": "You can manage this IP’s content, pricing, members, rights, and review submission. Only the owner can transfer ownership, archive/delete the IP, or grant edit access.",
+      "accessOwnerImplicitTitle": "Owner",
+      "accessLoading": "Loading edit access…",
+      "accessLoadFailed": "Could not load edit access. Try again.",
+      "accessEmpty": "No editors yet.",
+      "accessGrantTitle": "Grant editor",
+      "accessGrantBody": "Search a platform user. This only grants ACL edit access; it does not add a member credit or revenue share.",
+      "accessGrantHint": "Editors can manage IP content, pricing, members, rights, and review submission.",
+      "accessGrant": "Grant access",
+      "accessGranting": "Granting…",
+      "accessRevoke": "Revoke",
+      "accessRevokeConfirm": "Revoke edit access for {name}?",
+      "accessSelectUserFirst": "Select a user first.",
+      "accessAlreadyOwner": "The owner already has full access.",
+      "accessAlreadyEditor": "This user already has edit access.",
+      "accessUserId": "ID: {id}",
+      "accessGrantedLine": "ID: {id} · granted {date}",
       "creatorShareLine": "Creators earn {pct} of each sale (set by platform).",
       "splitPrompt": "Split that pool among your team:",
       "allocated": "{allocated} / 100%",
@@ -1089,7 +1113,11 @@
         "updated": "Member updated.",
         "updateFailed": "Could not update member.",
         "removed": "Member removed.",
-        "removeFailed": "Could not remove member."
+        "removeFailed": "Could not remove member.",
+        "accessGranted": "Edit access granted.",
+        "accessGrantFailed": "Could not grant edit access.",
+        "accessRevoked": "Edit access revoked.",
+        "accessRevokeFailed": "Could not revoke edit access."
       }
     },
     "sections": {

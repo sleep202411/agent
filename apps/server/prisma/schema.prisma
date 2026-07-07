@@ -749,6 +749,10 @@ enum IpContributorRole {
   other
 }
 
+enum IpAclPermission {
+  edit
+}
+
 enum IpReferralLinkStatus {
   active
   disabled
@@ -2988,6 +2992,7 @@ model Ip {
   entitlements             IpContentEntitlement[]
   collectionItems          IpCollectionItem[]
   contributors             IpContributor[]
+  aclGrants                IpAclGrant[]
   referralLinks            IpReferralLink[]
   referralAttributions     IpReferralAttribution[]
   revenueLedgerEntries     IpRevenueLedgerEntry[]
@@ -3558,6 +3563,25 @@ model IpContributor {
   @@index([ipId, displayOrder], map: "ip_contributors_ip_order_idx")
   @@index([userId, removedAt], map: "ip_contributors_user_idx")
   @@map("ip_contributors")
+}
+
+model IpAclGrant {
+  id          String          @id @default(uuid(7)) @db.Uuid
+  ipId        String          @map("ip_id") @db.Uuid
+  userId      String          @map("user_id") @db.VarChar(64)
+  permission  IpAclPermission
+  grantedById String          @map("granted_by_id") @db.VarChar(64)
+  revokedById String?         @map("revoked_by_id") @db.VarChar(64)
+  metadata    Json            @default("{}") @db.JsonB
+  createdAt   DateTime        @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime        @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  revokedAt   DateTime?       @map("revoked_at") @db.Timestamptz(6)
+
+  ip Ip @relation(fields: [ipId], references: [id], onDelete: Cascade)
+
+  @@index([ipId, permission, revokedAt], map: "ip_acl_grants_ip_permission_idx")
+  @@index([userId, permission, revokedAt], map: "ip_acl_grants_user_permission_idx")
+  @@map("ip_acl_grants")
 }
 
 enum IpRevenueLedgerEntryType {

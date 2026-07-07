@@ -29,6 +29,7 @@ import {
   IconTags,
   IconTrash,
   IconUpload,
+  IconUserCheck,
   IconUserPlus,
   IconUsers,
   IconVideo,
@@ -60,6 +61,7 @@ import { cn } from "@/lib/utils";
 import { VideoPlayer } from "@/components/media/video-player";
 import type {
   IpCommerceAsset,
+  IpAclGrant,
   IpContributorRole,
   IpCreatorCommerceOverview,
   IpCreatorContributor,
@@ -72,11 +74,14 @@ import {
   useCreateIpCommerceEpisode,
   useDeleteIpCommerceContributor,
   useDeleteIpCommerceEpisode,
+  useGrantIpEditAccess,
   useIpCommerceTaxonomyTerms,
-  useSearchIpCommerceUsers,
+  useMyIpAclGrants,
   useMyIpContributors,
   useMyIpCommerceOverview,
   useMyIpCommerceIp,
+  useRevokeIpEditAccess,
+  useSearchIpCommerceUsers,
   useSubmitIpCommerceIpForReview,
   useUpdateIpCommerceContributor,
   useUpdateIpCommerceEpisode,
@@ -296,6 +301,9 @@ function EditStyleHero({
             ))}
             <StatusPill>{t(`status.${ip.status}`)}</StatusPill>
             <StatusPill>{t(`visibility.${ip.listingVisibility}`)}</StatusPill>
+            <StatusPill>
+              {ip.viewerAccess.owner ? t("viewerAccess.owner") : t("viewerAccess.editor")}
+            </StatusPill>
             <span className="text-xs text-muted-foreground">
               {t("lastEdited", { time: updatedAt })}
             </span>
@@ -2142,58 +2150,62 @@ function MembersPanel({ ip, t, locale }: { ip: IpCreatorIp; t: Translate; locale
 
   return (
     <Section title={t("membersPanel.sectionTitle")} description={t("membersPanel.sectionBody")}>
-      <div className="rounded-xl bg-card p-4 ring-1 ring-border/65">
-        <div className="flex flex-wrap items-start justify-between gap-4">
-          <div className="min-w-0 space-y-1">
-            <p className="text-sm font-medium text-foreground">
-              {t("membersPanel.creatorShareLine", { pct: creatorPct })}
-            </p>
-            <p className="text-xs text-muted-foreground">{t("membersPanel.splitPrompt")}</p>
-          </div>
-          <div className="text-right">
-            <p
-              className={cn(
-                "text-sm font-semibold tabular-nums",
-                overAllocated ? "text-destructive" : "text-foreground"
-              )}
-            >
-              {t("membersPanel.allocated", { allocated: allocatedPct })}
-            </p>
-            {overAllocated ? (
-              <p className="mt-1 max-w-[16rem] text-[11px] leading-4 text-destructive">
-                {t("membersPanel.overAllocated")}
+      <div className="space-y-4">
+        <AccessControlPanel ip={ip} contributors={data.contributors} t={t} locale={locale} />
+
+        <div className="rounded-xl bg-card p-4 ring-1 ring-border/65">
+          <div className="flex flex-wrap items-start justify-between gap-4">
+            <div className="min-w-0 space-y-1">
+              <p className="text-sm font-medium text-foreground">
+                {t("membersPanel.creatorShareLine", { pct: creatorPct })}
               </p>
-            ) : null}
+              <p className="text-xs text-muted-foreground">{t("membersPanel.splitPrompt")}</p>
+            </div>
+            <div className="text-right">
+              <p
+                className={cn(
+                  "text-sm font-semibold tabular-nums",
+                  overAllocated ? "text-destructive" : "text-foreground"
+                )}
+              >
+                {t("membersPanel.allocated", { allocated: allocatedPct })}
+              </p>
+              {overAllocated ? (
+                <p className="mt-1 max-w-[16rem] text-[11px] leading-4 text-destructive">
+                  {t("membersPanel.overAllocated")}
+                </p>
+              ) : null}
+            </div>
           </div>
-        </div>
 
-        <p className="mt-2 text-[11px] leading-4 text-muted-foreground">
-          {t("membersPanel.ownerFallbackNote")}
-        </p>
+          <p className="mt-2 text-[11px] leading-4 text-muted-foreground">
+            {t("membersPanel.ownerFallbackNote")}
+          </p>
 
-        <div className="mt-4 divide-y divide-border/70 rounded-lg border border-border">
-          {data.contributors.length ? (
-            data.contributors.map((contributor) => (
-              <MemberRow
-                key={contributor.id}
-                ip={ip}
-                contributor={contributor}
-                contributors={data.contributors}
-                t={t}
-              />
-            ))
-          ) : (
-            <p className="px-4 py-6 text-center text-sm text-muted-foreground">
-              {t("membersPanel.empty")}
-            </p>
-          )}
-        </div>
+          <div className="mt-4 divide-y divide-border/70 rounded-lg border border-border">
+            {data.contributors.length ? (
+              data.contributors.map((contributor) => (
+                <MemberRow
+                  key={contributor.id}
+                  ip={ip}
+                  contributor={contributor}
+                  contributors={data.contributors}
+                  t={t}
+                />
+              ))
+            ) : (
+              <p className="px-4 py-6 text-center text-sm text-muted-foreground">
+                {t("membersPanel.empty")}
+              </p>
+            )}
+          </div>
 
-        <div className="mt-4 flex justify-end">
-          <Button type="button" onClick={() => setAddOpen(true)}>
-            <IconUserPlus className="size-4" />
-            {t("membersPanel.addMember")}
-          </Button>
+          <div className="mt-4 flex justify-end">
+            <Button type="button" onClick={() => setAddOpen(true)}>
+              <IconUserPlus className="size-4" />
+              {t("membersPanel.addMember")}
+            </Button>
+          </div>
         </div>
       </div>
 
@@ -2206,6 +2218,383 @@ function MembersPanel({ ip, t, locale }: { ip: IpCreatorIp; t: Translate; locale
         t={t}
       />
     </Section>
+  );
+}
+
+type LinkedUserDraft = { userId: string; name: string };
+
+function AccessControlPanel({
+  ip,
+  contributors,
+  t,
+  locale,
+}: {
+  ip: IpCreatorIp;
+  contributors: IpCreatorContributor[];
+  t: Translate;
+  locale: Locale;
+}) {
+  const canManageAcl = ip.viewerAccess.canManageAcl;
+  const acl = useMyIpAclGrants(ip.id, canManageAcl);
+  const grantAccess = useGrantIpEditAccess();
+  const revokeAccess = useRevokeIpEditAccess();
+  const [selectedUser, setSelectedUser] = useState<LinkedUserDraft | null>(null);
+
+  if (!canManageAcl) {
+    return (
+      <div className="rounded-xl bg-card p-4 ring-1 ring-border/65">
+        <div className="flex items-start gap-3">
+          <span className="grid size-9 shrink-0 place-items-center rounded-full bg-primary/10 text-primary">
+            <IconShieldCheck className="size-4" />
+          </span>
+          <div className="min-w-0">
+            <p className="text-sm font-semibold text-foreground">
+              {t("membersPanel.accessEditorTitle")}
+            </p>
+            <p className="mt-1 text-xs leading-5 text-muted-foreground">
+              {t("membersPanel.accessEditorBody")}
+            </p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  const activeGrants = acl.data?.grants ?? [];
+  const activeUserIds = new Set(activeGrants.map((grant) => grant.userId));
+  const ownerUserId = acl.data?.ownerUserId ?? "";
+  const selectedIsOwner = Boolean(selectedUser && selectedUser.userId === ownerUserId);
+  const selectedAlreadyEditor = Boolean(selectedUser && activeUserIds.has(selectedUser.userId));
+  const blockedReason = selectedIsOwner
+    ? t("membersPanel.accessAlreadyOwner")
+    : selectedAlreadyEditor
+      ? t("membersPanel.accessAlreadyEditor")
+      : null;
+  const canGrant =
+    Boolean(selectedUser) &&
+    !blockedReason &&
+    !acl.isLoading &&
+    !acl.error &&
+    !grantAccess.isPending;
+
+  const handleGrant = async () => {
+    if (!selectedUser) {
+      toast.error(t("membersPanel.accessSelectUserFirst"));
+      return;
+    }
+    if (blockedReason) {
+      toast.error(blockedReason);
+      return;
+    }
+    try {
+      await grantAccess.mutateAsync({
+        ipId: ip.id,
+        userId: selectedUser.userId,
+        permission: "edit",
+      });
+      toast.success(t("membersPanel.toasts.accessGranted"));
+      setSelectedUser(null);
+    } catch (err) {
+      toast.error(errorMessage(err) || t("membersPanel.toasts.accessGrantFailed"));
+    }
+  };
+
+  const handleRevoke = async (grant: IpAclGrant) => {
+    const label = accessUserLabel(grant.userId, contributors);
+    if (!window.confirm(t("membersPanel.accessRevokeConfirm", { name: label }))) return;
+    try {
+      await revokeAccess.mutateAsync({ ipId: ip.id, grantId: grant.id });
+      toast.success(t("membersPanel.toasts.accessRevoked"));
+    } catch (err) {
+      toast.error(errorMessage(err) || t("membersPanel.toasts.accessRevokeFailed"));
+    }
+  };
+
+  return (
+    <div className="rounded-xl bg-card p-4 ring-1 ring-border/65">
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div className="min-w-0">
+          <p className="text-sm font-semibold text-foreground">{t("membersPanel.accessTitle")}</p>
+          <p className="mt-1 max-w-2xl text-xs leading-5 text-muted-foreground">
+            {t("membersPanel.accessBody")}
+          </p>
+        </div>
+        <StatusPill>{t("viewerAccess.owner")}</StatusPill>
+      </div>
+
+      <div className="mt-4 grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(20rem,0.8fr)]">
+        <div className="min-w-0 rounded-lg border border-border bg-background">
+          <AccessUserRow
+            icon={<IconShieldCheck className="size-4" />}
+            title={t("membersPanel.accessOwnerImplicitTitle")}
+            subtitle={ownerUserId ? t("membersPanel.accessUserId", { id: ownerUserId }) : ""}
+            badge={t("viewerAccess.owner")}
+          />
+          <div className="border-t border-border/70">
+            {acl.isLoading ? (
+              <div className="flex items-center gap-2 px-3 py-4 text-sm text-muted-foreground">
+                <IconLoader2 className="size-4 animate-spin" />
+                {t("membersPanel.accessLoading")}
+              </div>
+            ) : acl.error ? (
+              <div className="px-3 py-4">
+                <p className="text-sm text-destructive">
+                  {errorMessage(acl.error) || t("membersPanel.accessLoadFailed")}
+                </p>
+                <Button
+                  type="button"
+                  variant="outline"
+                  color="muted"
+                  size="sm"
+                  className="mt-3"
+                  onClick={() => void acl.refetch()}
+                >
+                  <IconRefresh className="size-4" />
+                  {t("membersPanel.retry")}
+                </Button>
+              </div>
+            ) : activeGrants.length ? (
+              <div className="divide-y divide-border/70">
+                {activeGrants.map((grant) => {
+                  const label = accessUserLabel(grant.userId, contributors);
+                  return (
+                    <AccessUserRow
+                      key={grant.id}
+                      icon={<IconUserCheck className="size-4" />}
+                      title={label}
+                      subtitle={t("membersPanel.accessGrantedLine", {
+                        id: grant.userId,
+                        date: formatDateTime(grant.createdAt, locale),
+                      })}
+                      badge={t("viewerAccess.editor")}
+                      action={
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="ghost"
+                          color="muted"
+                          className="text-muted-foreground hover:bg-red-500/10 hover:text-red-500"
+                          disabled={revokeAccess.isPending}
+                          onClick={() => void handleRevoke(grant)}
+                        >
+                          <IconX className="size-3.5" />
+                          {t("membersPanel.accessRevoke")}
+                        </Button>
+                      }
+                    />
+                  );
+                })}
+              </div>
+            ) : (
+              <p className="px-3 py-5 text-sm text-muted-foreground">
+                {t("membersPanel.accessEmpty")}
+              </p>
+            )}
+          </div>
+        </div>
+
+        <div className="rounded-lg border border-border bg-background p-3">
+          <p className="text-sm font-medium text-foreground">
+            {t("membersPanel.accessGrantTitle")}
+          </p>
+          <p className="mt-1 text-xs leading-5 text-muted-foreground">
+            {t("membersPanel.accessGrantBody")}
+          </p>
+          <div className="mt-3">
+            <UserSearchPicker
+              t={t}
+              selectedUser={selectedUser}
+              onSelect={(hit) =>
+                setSelectedUser({ userId: hit.userId, name: hit.nickname || hit.userId })
+              }
+              onClear={() => setSelectedUser(null)}
+              placeholder={t("membersPanel.linkUserPlaceholder")}
+              selectedLabel={(user) => t("membersPanel.lookupFound", { name: user.name })}
+              description={blockedReason ?? t("membersPanel.accessGrantHint")}
+              descriptionClassName={blockedReason ? "text-destructive" : undefined}
+            />
+          </div>
+          <Button
+            type="button"
+            className="mt-3 w-full"
+            disabled={!canGrant}
+            onClick={() => void handleGrant()}
+          >
+            {grantAccess.isPending ? (
+              <IconLoader2 className="size-4 animate-spin" />
+            ) : (
+              <IconUserPlus className="size-4" />
+            )}
+            {grantAccess.isPending
+              ? t("membersPanel.accessGranting")
+              : t("membersPanel.accessGrant")}
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function AccessUserRow({
+  icon,
+  title,
+  subtitle,
+  badge,
+  action,
+}: {
+  icon: ReactNode;
+  title: string;
+  subtitle: string;
+  badge: string;
+  action?: ReactNode;
+}) {
+  return (
+    <div className="flex flex-wrap items-center gap-3 px-3 py-3 sm:flex-nowrap">
+      <span className="grid size-8 shrink-0 place-items-center rounded-full bg-muted text-muted-foreground">
+        {icon}
+      </span>
+      <div className="min-w-0 flex-1">
+        <p className="truncate text-sm font-medium text-foreground">{title}</p>
+        {subtitle ? <p className="truncate text-[11px] text-muted-foreground">{subtitle}</p> : null}
+      </div>
+      <StatusPill>{badge}</StatusPill>
+      {action}
+    </div>
+  );
+}
+
+function accessUserLabel(userId: string, contributors: IpCreatorContributor[]) {
+  const contributor = contributors.find((item) => item.userId === userId);
+  return contributor?.displayName || userId;
+}
+
+function UserSearchPicker({
+  t,
+  selectedUser,
+  onSelect,
+  onClear,
+  placeholder,
+  selectedLabel,
+  description,
+  descriptionClassName,
+}: {
+  t: Translate;
+  selectedUser: LinkedUserDraft | null;
+  onSelect: (hit: IpUserSearchHit) => void;
+  onClear: () => void;
+  placeholder: string;
+  selectedLabel: (user: LinkedUserDraft) => string;
+  description: string;
+  descriptionClassName?: string;
+}) {
+  const search = useSearchIpCommerceUsers();
+  const [account, setAccount] = useState("");
+  const [results, setResults] = useState<IpUserSearchHit[]>([]);
+  const [lookupError, setLookupError] = useState<string | null>(null);
+
+  const handleSearch = async () => {
+    const value = account.trim();
+    if (!value) return;
+    setLookupError(null);
+    try {
+      const hits = await search.mutateAsync(value);
+      setResults(hits);
+      if (hits.length === 0) setLookupError(t("membersPanel.lookupNotFound"));
+    } catch (err) {
+      setResults([]);
+      setLookupError(errorMessage(err) || t("membersPanel.lookupFailed"));
+    }
+  };
+
+  const handleSelect = (hit: IpUserSearchHit) => {
+    onSelect(hit);
+    setAccount("");
+    setResults([]);
+    setLookupError(null);
+  };
+
+  const handleClear = () => {
+    onClear();
+    setAccount("");
+    setResults([]);
+    setLookupError(null);
+  };
+
+  if (selectedUser) {
+    return (
+      <div className="space-y-2">
+        <div className="flex items-center justify-between gap-2 rounded-md border border-border bg-background px-3 py-2">
+          <span className="flex min-w-0 items-center gap-1.5 text-sm">
+            <IconLink className="size-4 shrink-0 text-primary" />
+            <span className="truncate">{selectedLabel(selectedUser)}</span>
+          </span>
+          <Button type="button" size="sm" variant="ghost" color="muted" onClick={handleClear}>
+            {t("membersPanel.unlink")}
+          </Button>
+        </div>
+        <FieldDescription className={descriptionClassName}>{description}</FieldDescription>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-2">
+      <div className="flex gap-2">
+        <Input
+          value={account}
+          onChange={(event) => {
+            setAccount(event.target.value);
+            setLookupError(null);
+          }}
+          onKeyDown={(event) => {
+            if (event.key === "Enter") {
+              event.preventDefault();
+              void handleSearch();
+            }
+          }}
+          placeholder={placeholder}
+        />
+        <Button
+          type="button"
+          variant="outline"
+          color="muted"
+          disabled={!account.trim() || search.isPending}
+          onClick={() => void handleSearch()}
+        >
+          {search.isPending ? t("membersPanel.looking") : t("membersPanel.lookup")}
+        </Button>
+      </div>
+      {results.length > 0 ? (
+        <ul className="max-h-44 divide-y divide-border overflow-y-auto rounded-md border border-border bg-background">
+          {results.map((hit) => (
+            <li key={hit.userId}>
+              <button
+                type="button"
+                onClick={() => handleSelect(hit)}
+                className="flex w-full items-center gap-2.5 px-3 py-2 text-left transition-colors hover:bg-muted/50"
+              >
+                <span className="grid size-7 shrink-0 place-items-center rounded-full bg-primary/15 text-xs font-semibold text-primary">
+                  {(hit.nickname || hit.userId).charAt(0).toUpperCase()}
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-sm text-foreground">
+                    {hit.nickname || hit.userId}
+                  </span>
+                  <span className="block truncate text-xs text-muted-foreground">
+                    {t("membersPanel.accessUserId", { id: hit.userId })}
+                  </span>
+                </span>
+              </button>
+            </li>
+          ))}
+        </ul>
+      ) : null}
+      {lookupError ? (
+        <FieldDescription className="text-destructive">{lookupError}</FieldDescription>
+      ) : (
+        <FieldDescription className={descriptionClassName}>{description}</FieldDescription>
+      )}
+    </div>
   );
 }
 
@@ -2345,8 +2734,6 @@ function MemberRow({
   );
 }
 
-type LinkedUserDraft = { userId: string; name: string };
-
 function AddMemberDialog({
   open,
   onOpenChange,
@@ -2361,45 +2748,23 @@ function AddMemberDialog({
   t: Translate;
 }) {
   const create = useCreateIpCommerceContributor();
-  const search = useSearchIpCommerceUsers();
   const [displayName, setDisplayName] = useState("");
   const [role, setRole] = useState<IpContributorRole>("writer");
   const [customRole, setCustomRole] = useState("");
-  const [account, setAccount] = useState("");
-  const [results, setResults] = useState<IpUserSearchHit[]>([]);
   const [linkedUser, setLinkedUser] = useState<LinkedUserDraft | null>(null);
-  const [lookupError, setLookupError] = useState<string | null>(null);
   const [eligible, setEligible] = useState(false);
   const [shareText, setShareText] = useState("");
 
   const eligibleSum = sumEligibleBps(contributors, null);
 
-  const handleSearch = async () => {
-    const value = account.trim();
-    if (!value) return;
-    setLookupError(null);
-    try {
-      const hits = await search.mutateAsync(value);
-      setResults(hits);
-      if (hits.length === 0) setLookupError(t("membersPanel.lookupNotFound"));
-    } catch (err) {
-      setResults([]);
-      setLookupError(errorMessage(err) || t("membersPanel.lookupFailed"));
-    }
-  };
-
   const pickUser = (hit: IpUserSearchHit) => {
     setLinkedUser({ userId: hit.userId, name: hit.nickname || hit.userId });
     // Default the credit name to the matched user if not set yet.
     setDisplayName((current) => current.trim() || hit.nickname || hit.userId);
-    setResults([]);
-    setLookupError(null);
   };
 
   const unlink = () => {
     setLinkedUser(null);
-    setResults([]);
-    setLookupError(null);
     setEligible(false);
     setShareText("");
   };
@@ -2483,77 +2848,15 @@ function AddMemberDialog({
 
             <Field>
               <FieldLabel>{t("membersPanel.linkUserLabel")}</FieldLabel>
-              {linkedUser ? (
-                <div className="flex items-center justify-between gap-2 rounded-md border border-border bg-background px-3 py-2">
-                  <span className="flex min-w-0 items-center gap-1.5 text-sm">
-                    <IconLink className="size-4 shrink-0 text-primary" />
-                    <span className="truncate">
-                      {t("membersPanel.lookupFound", { name: linkedUser.name })}
-                    </span>
-                  </span>
-                  <Button type="button" size="sm" variant="ghost" color="muted" onClick={unlink}>
-                    {t("membersPanel.unlink")}
-                  </Button>
-                </div>
-              ) : (
-                <div className="space-y-2">
-                  <div className="flex gap-2">
-                    <Input
-                      value={account}
-                      onChange={(event) => {
-                        setAccount(event.target.value);
-                        setLookupError(null);
-                      }}
-                      onKeyDown={(event) => {
-                        if (event.key === "Enter") {
-                          event.preventDefault();
-                          void handleSearch();
-                        }
-                      }}
-                      placeholder={t("membersPanel.linkUserPlaceholder")}
-                    />
-                    <Button
-                      type="button"
-                      variant="outline"
-                      color="muted"
-                      disabled={!account.trim() || search.isPending}
-                      onClick={() => void handleSearch()}
-                    >
-                      {search.isPending ? t("membersPanel.looking") : t("membersPanel.lookup")}
-                    </Button>
-                  </div>
-                  {results.length > 0 && (
-                    <ul className="max-h-44 divide-y divide-border overflow-y-auto rounded-md border border-border bg-background">
-                      {results.map((hit) => (
-                        <li key={hit.userId}>
-                          <button
-                            type="button"
-                            onClick={() => pickUser(hit)}
-                            className="flex w-full items-center gap-2.5 px-3 py-2 text-left transition-colors hover:bg-muted/50"
-                          >
-                            <span className="grid size-7 shrink-0 place-items-center rounded-full bg-primary/15 text-xs font-semibold text-primary">
-                              {(hit.nickname || hit.userId).charAt(0).toUpperCase()}
-                            </span>
-                            <span className="min-w-0 flex-1">
-                              <span className="block truncate text-sm text-foreground">
-                                {hit.nickname || hit.userId}
-                              </span>
-                              <span className="block truncate text-xs text-muted-foreground">
-                                ID: {hit.userId}
-                              </span>
-                            </span>
-                          </button>
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-                </div>
-              )}
-              {lookupError ? (
-                <FieldDescription className="text-destructive">{lookupError}</FieldDescription>
-              ) : (
-                <FieldDescription>{t("membersPanel.eligibleHint")}</FieldDescription>
-              )}
+              <UserSearchPicker
+                t={t}
+                selectedUser={linkedUser}
+                onSelect={pickUser}
+                onClear={unlink}
+                placeholder={t("membersPanel.linkUserPlaceholder")}
+                selectedLabel={(user) => t("membersPanel.lookupFound", { name: user.name })}
+                description={t("membersPanel.eligibleHint")}
+              />
             </Field>
 
             <div className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-border bg-background px-3 py-2.5">

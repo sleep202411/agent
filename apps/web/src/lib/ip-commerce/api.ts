@@ -204,7 +204,7 @@ export interface IpCreatorIp {
   episodes?: IpCommerceEpisode[];
   contributors?: Array<{
     id: string;
-    userId: string;
+    userId: string | null;
     displayName: string | null;
     role: string;
     customRole: string | null;
@@ -217,6 +217,7 @@ export interface IpCreatorIp {
   aiDisclosure?: Record<string, unknown>;
   createdAt: string;
   updatedAt: string;
+  viewerAccess: IpViewerAccess;
   counts: {
     episodes: number;
     assets: number;
@@ -224,6 +225,18 @@ export interface IpCreatorIp {
     priceRules: number;
     reports: number;
   };
+}
+
+export type IpAclPermission = "edit";
+
+export interface IpViewerAccess {
+  owner: boolean;
+  permissions: IpAclPermission[];
+  canEdit: boolean;
+  canManageAcl: boolean;
+  canTransferOwner: boolean;
+  canArchive: boolean;
+  canDelete: boolean;
 }
 
 export interface IpCommerceWalletAccount {
@@ -430,6 +443,34 @@ export interface IpCreatorContributorList {
   /** Sum of eligible contributors' revenueShareBps (bps). */
   poolAllocatedBps: number;
   contributors: IpCreatorContributor[];
+}
+
+export interface IpAclGrant {
+  id: string;
+  ipId: string;
+  userId: string;
+  permission: IpAclPermission;
+  grantedById: string;
+  revokedById: string | null;
+  createdAt: string;
+  updatedAt: string;
+  revokedAt: string | null;
+}
+
+export interface IpAclGrantList {
+  ownerUserId: string;
+  grants: IpAclGrant[];
+}
+
+export interface GrantIpAclInput {
+  ipId: string;
+  userId: string;
+  permission?: IpAclPermission;
+}
+
+export interface RevokeIpAclInput {
+  ipId: string;
+  grantId: string;
 }
 
 export interface CreateIpContributorInput {
@@ -778,6 +819,26 @@ export function getMyIpCommerceOverview(ipId: string, params?: { locale?: string
   return api.get<IpCreatorCommerceOverview>(
     `/aurora/ip-commerce/me/ips/${encodeURIComponent(ipId)}/commerce`,
     { params }
+  );
+}
+
+export function listMyIpAclGrants(ipId: string) {
+  return api.get<IpAclGrantList>(`/aurora/ip-commerce/me/ips/${encodeURIComponent(ipId)}/acl`);
+}
+
+export function grantIpEditAccess(input: GrantIpAclInput) {
+  const { ipId, userId, permission = "edit" } = input;
+  return api.post<{ grant: IpAclGrant }>(
+    `/aurora/ip-commerce/me/ips/${encodeURIComponent(ipId)}/acl`,
+    { data: { userId, permission } }
+  );
+}
+
+export function revokeIpEditAccess(input: RevokeIpAclInput) {
+  return api.delete<{ grant: IpAclGrant; revoked: boolean }>(
+    `/aurora/ip-commerce/me/ips/${encodeURIComponent(input.ipId)}/acl/${encodeURIComponent(
+      input.grantId
+    )}`
   );
 }
 
