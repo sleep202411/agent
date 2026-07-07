@@ -40,9 +40,10 @@ const BUILD_STEPS = [
   "擦亮第一幕的灯…",
   "拉开帷幕…",
 ];
-const AVATARS = ["#3a4a6a", "#6a3a4a", "#4a6a3a", "#5a4a6a", "#5c503d"];
 const MAX_REVEAL_STEPS = 220;
 const REVEAL_INTERVAL_MS = 34;
+const TURN_PENDING_PHRASE_ROTATE_MS = 2400;
+const TURN_PENDING_PHRASE_KEYS = ["fate", "world", "story", "choice", "nextScene"] as const;
 
 function progressFromTurnCount(turnCount: number): number {
   return Math.min(92, 12 + Math.max(0, turnCount) * 2);
@@ -51,6 +52,13 @@ function progressFromTurnCount(turnCount: number): number {
 type Phase = "loading" | "setup" | "playing" | "error";
 type Line = { id: string; role: "player" | "narrator"; text: string; reveal?: boolean };
 type Option = { id: string; label: string };
+type SetupStep = {
+  eyebrow?: string;
+  heading: string;
+  body: React.ReactNode;
+  cta: string;
+  centered?: boolean;
+};
 type PendingReveal = {
   lineId: string;
   options: Option[];
@@ -109,7 +117,8 @@ export function IpNarrativePlayer({ ipId }: { ipId: string }) {
   }, [ipId, locale]);
 
   useEffect(() => {
-    feedRef.current?.scrollTo({ top: feedRef.current.scrollHeight, behavior: "smooth" });
+    const id = window.requestAnimationFrame(() => scrollFeedToBottom("smooth"));
+    return () => window.cancelAnimationFrame(id);
   }, [lines, options, busy, pendingReveal, playerPersonality]);
 
   useEffect(() => {
@@ -236,8 +245,7 @@ export function IpNarrativePlayer({ ipId }: { ipId: string }) {
   // ── setup (step-by-step wizard) ──
   if (phase === "setup" && enterData) {
     const so = enterData.setupOptions;
-    const steps: Array<{ eyebrow?: string; heading: string; body: React.ReactNode; cta: string }> =
-      [];
+    const steps: SetupStep[] = [];
     if (enterData.prologue) {
       steps.push({
         eyebrow: "开场设定",
@@ -250,26 +258,27 @@ export function IpNarrativePlayer({ ipId }: { ipId: string }) {
       steps.push({
         heading: "你想扮演谁?",
         body: (
-          <div className="grid grid-cols-[repeat(auto-fill,minmax(220px,1fr))] gap-2.5">
-            {so.roles.map((r, i) => (
+          <div className="mx-auto grid w-full max-w-[920px] grid-cols-[repeat(auto-fit,minmax(240px,280px))] justify-center gap-4">
+            {so.roles.map((r) => (
               <RoleCard
                 key={r.id}
                 on={roleId === r.id}
                 onClick={() => setRoleId(r.id)}
                 name={r.name}
                 role={r.role}
-                avatar={AVATARS[i % AVATARS.length]}
+                tagline={r.tagline}
               />
             ))}
           </div>
         ),
         cta: "继续",
+        centered: true,
       });
     }
     steps.push({
       heading: "想要哪种改编?",
       body: (
-        <div className="flex flex-wrap gap-2">
+        <div className="flex flex-wrap justify-center gap-3">
           {so.directions.map((d) => (
             <Pill key={d.key} on={direction === d.key} onClick={() => setDirection(d.key)}>
               {d.label}
@@ -278,11 +287,12 @@ export function IpNarrativePlayer({ ipId }: { ipId: string }) {
         </div>
       ),
       cta: "继续",
+      centered: true,
     });
     steps.push({
       heading: "想要多快的节奏?",
       body: (
-        <div className="flex flex-wrap gap-2">
+        <div className="flex flex-wrap justify-center gap-3">
           {so.paces.map((p) => (
             <Pill key={p.key} on={pace === p.key} onClick={() => setPace(p.key)}>
               {p.label}
@@ -291,11 +301,13 @@ export function IpNarrativePlayer({ ipId }: { ipId: string }) {
         </div>
       ),
       cta: "进入故事",
+      centered: true,
     });
 
     const idx = Math.min(step, steps.length - 1);
     const cur = steps[idx];
     const isLast = idx >= steps.length - 1;
+    const setupContentWidth = cur.centered ? "max-w-[920px]" : "max-w-5xl";
 
     return (
       <Root>
@@ -323,7 +335,7 @@ export function IpNarrativePlayer({ ipId }: { ipId: string }) {
         {/* Content fills the middle and vertically-centers (m-auto); the CTA is
             pinned to the bottom bar. Only the play phase flows top-to-bottom. */}
         <div className="flex flex-1 flex-col overflow-y-auto px-5 py-8 sm:px-6">
-          <div className="m-auto w-full max-w-5xl">
+          <div className={cn("m-auto w-full", setupContentWidth, cur.centered && "text-center")}>
             {cur.eyebrow ? (
               <p className="text-xs font-bold uppercase tracking-[0.08em] text-[#ff5a2c]">
                 {cur.eyebrow}
@@ -335,7 +347,7 @@ export function IpNarrativePlayer({ ipId }: { ipId: string }) {
         </div>
 
         <div className="border-t border-white/5 px-5 py-4 sm:px-6">
-          <div className="mx-auto flex w-full max-w-5xl justify-end">
+          <div className={cn("mx-auto flex w-full justify-end", setupContentWidth)}>
             <Button3D
               block
               size="md"
@@ -356,7 +368,7 @@ export function IpNarrativePlayer({ ipId }: { ipId: string }) {
   const interactionLocked = busy || Boolean(pendingReveal);
   return (
     <Root>
-      <div className="mx-auto flex w-full max-w-6xl items-center gap-3">
+      <div className="mx-auto flex w-full max-w-6xl shrink-0 items-center gap-3">
         {close}
         <div className="relative h-4 flex-1 overflow-hidden rounded-full bg-[#14232a]">
           <div
@@ -370,7 +382,7 @@ export function IpNarrativePlayer({ ipId }: { ipId: string }) {
 
       {/* Immersive reading — flowing serif prose, not chat bubbles. Player
           actions are dimmer inset lines within the narrative. */}
-      <div ref={feedRef} className="w-full flex-1 overflow-y-auto px-5 py-8 sm:px-6">
+      <div ref={feedRef} className="min-h-0 w-full flex-1 overflow-y-auto px-5 py-8 sm:px-6">
         <div className="mx-auto max-w-2xl">
           {lines.map((ln) =>
             ln.role === "narrator" ? (
@@ -401,7 +413,7 @@ export function IpNarrativePlayer({ ipId }: { ipId: string }) {
         </div>
       </div>
 
-      <div className="mx-auto w-full max-w-2xl px-4 pb-5 sm:px-6">
+      <div className="mx-auto w-full max-w-2xl shrink-0 px-4 pb-5 pt-3 sm:px-6">
         {finished ? (
           <Button3D block onClick={() => window.location.reload()} icon={<IconRefresh />}>
             {t("play.restart")}
@@ -426,13 +438,13 @@ export function IpNarrativePlayer({ ipId }: { ipId: string }) {
                 disabled={interactionLocked}
                 placeholder="你想做什么…"
                 style={{ fontFamily: FONT }}
-                className="h-12 min-w-0 flex-1 rounded-2xl border-2 border-white/10 bg-[#17262d] px-4 text-[15px] font-semibold text-[#f1f7fb] outline-none placeholder:font-medium placeholder:text-[#5f7580] focus:border-white/25 disabled:opacity-50"
+                className="h-12 min-w-0 flex-1 rounded-2xl border border-white/[0.1] bg-[#111111] px-4 text-[15px] font-semibold text-white/90 outline-none transition placeholder:font-medium placeholder:text-white/32 focus:border-[#ff5a2c]/70 focus:bg-[#151515] disabled:opacity-45"
               />
               <button
                 onClick={submitFree}
                 disabled={interactionLocked || !draft.trim()}
                 aria-label="发送"
-                className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl bg-[#24363f] text-[#8ea6b2] shadow-[0_4px_0_#131f25] transition active:translate-y-1 active:shadow-[0_0_0_#131f25] disabled:opacity-40"
+                className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl border border-white/[0.08] bg-[#1b1b1b] text-white/40 shadow-[0_4px_0_#070707] transition hover:border-white/[0.14] hover:text-[#ff5a2c] active:translate-y-1 active:shadow-[0_0_0_#070707] disabled:opacity-35"
               >
                 <IconSend size={18} />
               </button>
@@ -546,17 +558,48 @@ function AnimatedProseLine({
 }
 
 function TurnLoadingCue() {
+  const t = useTranslations("narrativeDemo");
+  const reduceMotion = usePrefersReducedMotion();
+  const [phraseIndex, setPhraseIndex] = useState(() => pickPendingPhraseIndex());
+
+  useEffect(() => {
+    if (reduceMotion) return;
+    const id = window.setInterval(() => {
+      setPhraseIndex((current) => pickPendingPhraseIndex(current));
+    }, TURN_PENDING_PHRASE_ROTATE_MS);
+    return () => window.clearInterval(id);
+  }, [reduceMotion]);
+
+  const phraseKey = TURN_PENDING_PHRASE_KEYS[phraseIndex] ?? TURN_PENDING_PHRASE_KEYS[0];
+
   return (
     <div
       className="mb-8 flex items-center gap-3 border-l-2 border-[#ff5a2c]/40 pl-4 text-white/42 duration-500 animate-in fade-in-0 motion-reduce:animate-none"
-      aria-live="polite"
+      aria-label={t("play.pendingAriaLabel")}
+      role="status"
     >
-      <span className="text-[17px] font-medium italic leading-[1.9]" style={{ fontFamily: SERIF }}>
-        落笔中
+      <span
+        key={phraseKey}
+        aria-hidden="true"
+        className="text-[17px] font-medium italic leading-[1.9] duration-700 animate-in fade-in-0 motion-reduce:animate-none"
+        style={{ fontFamily: SERIF }}
+      >
+        {t(`play.pendingPhrases.${phraseKey}`)}
       </span>
       <LoadingDots />
     </div>
   );
+}
+
+function pickPendingPhraseIndex(current = -1) {
+  const count = TURN_PENDING_PHRASE_KEYS.length;
+  if (count <= 1) return 0;
+
+  let next = Math.floor(Math.random() * count);
+  if (next === current) {
+    next = (next + 1 + Math.floor(Math.random() * (count - 1))) % count;
+  }
+  return next;
 }
 
 function LoadingDots() {
@@ -623,7 +666,7 @@ function usePrefersReducedMotion() {
 function Root({ children }: { children: React.ReactNode }) {
   return (
     <div
-      className="flex min-h-screen flex-col bg-[#0c1418] text-[#f1f7fb] p-6"
+      className="flex h-[100dvh] min-h-0 flex-col overflow-hidden bg-[#0c1418] p-6 text-[#f1f7fb]"
       style={{ fontFamily: FONT }}
     >
       {children}
@@ -636,34 +679,43 @@ function RoleCard({
   onClick,
   name,
   role,
-  avatar,
+  tagline,
 }: {
   on: boolean;
   onClick: () => void;
   name: string;
   role: string;
-  avatar: string;
+  tagline?: string;
 }) {
   return (
     <button
       type="button"
       onClick={onClick}
       className={cn(
-        "flex w-full items-center gap-3 rounded-2xl border-2 p-3 text-left transition",
+        "flex min-h-44 w-full items-start gap-4 rounded-2xl border p-4 text-left transition duration-200",
         on
-          ? "border-[#ff5a2c] bg-[#2a1a15] shadow-[0_4px_0_#5a2410]"
-          : "border-transparent bg-[#24363f] shadow-[0_4px_0_#131f25]"
+          ? "border-[#ff5a2c] bg-[#191919] shadow-[0_4px_0_#651d0b]"
+          : "border-white/[0.08] bg-[#1f1f1f] shadow-[0_4px_0_#080808] hover:border-white/[0.14] hover:bg-[#262626]"
       )}
     >
       <span
-        className="grid h-10.5 w-10.5 shrink-0 place-items-center rounded-full text-[15px] font-extrabold text-white"
-        style={{ background: avatar }}
+        className={cn(
+          "grid h-10.5 w-10.5 shrink-0 place-items-center rounded-full border text-[15px] font-extrabold",
+          on
+            ? "border-[#ff5a2c]/50 bg-[#ff5a2c] text-white"
+            : "border-white/[0.08] bg-[#2a2a2a] text-white/78"
+        )}
       >
         {name.trim().charAt(0) || "?"}
       </span>
       <span className="min-w-0">
         <span className="block text-[15px] font-extrabold">{name}</span>
         <span className="block truncate text-xs text-[#8ea6b2]">{role}</span>
+        {tagline ? (
+          <span className="mt-1.5 block text-[12px] font-semibold leading-5 text-[#c7d3d9]/78">
+            {tagline}
+          </span>
+        ) : null}
       </span>
     </button>
   );
@@ -710,7 +762,7 @@ function Choice({
       type="button"
       onClick={onClick}
       disabled={disabled}
-      className="w-full rounded-2xl bg-[#24363f] px-4 py-3.5 text-left text-[15px] font-bold text-[#f1f7fb] shadow-[0_4px_0_#131f25] transition duration-500 animate-in fade-in-0 slide-in-from-bottom-2 active:translate-y-1 active:shadow-[0_0_0_#131f25] disabled:opacity-50 motion-reduce:animate-none"
+      className="w-full rounded-2xl border border-white/[0.08] bg-[#1f1f1f] px-4 py-3.5 text-left text-[15px] font-bold text-white/88 shadow-[0_4px_0_#080808] transition duration-500 animate-in fade-in-0 slide-in-from-bottom-2 hover:border-white/[0.14] hover:bg-[#262626] active:translate-y-1 active:shadow-[0_0_0_#080808] disabled:opacity-50 motion-reduce:animate-none"
       style={{ animationDelay: `${index * 130}ms` }}
     >
       {children}
@@ -727,29 +779,20 @@ function PlayLoading() {
   const step = Math.min(BUILD_STEPS.length - 1, Math.floor((progress / 100) * BUILD_STEPS.length));
 
   return (
-    <div className="mx-auto flex w-full max-w-lg flex-1 flex-col justify-center px-5 py-10">
-      <div className="rounded-[28px] bg-[#111d22] px-6 py-7 shadow-[0_16px_60px_rgba(0,0,0,0.24)]">
-        <div className="flex items-start gap-4">
-          <div className="grid h-12 w-12 place-items-center rounded-2xl bg-[#24363f] text-2xl">
-            🎭
-          </div>
-          <div className="min-w-0 flex-1 pt-0.5">
-            <p className="min-h-[1.4em] text-base font-extrabold text-[#f1f7fb]">
-              {BUILD_STEPS[step]}
-            </p>
-            <p className="mt-1 text-xs font-semibold text-[#5f7580]">每一次推门,都是不一样的世界</p>
-          </div>
-        </div>
-        <div className="mt-6 flex items-center gap-4">
-          <div className="relative h-2 flex-1 overflow-hidden rounded-full bg-[#14232a]">
-            <div
-              className="absolute inset-y-0 left-0 rounded-full bg-[#ff5a2c] transition-[width] duration-300 ease-out"
-              style={{ width: `${Math.round(progress)}%` }}
-            />
-          </div>
-          <LoadingDots />
+    <div className="mx-auto flex w-full max-w-lg flex-1 flex-col items-center justify-center px-6 text-center">
+      <div className="mb-6 grid h-18.5 w-18.5 animate-bounce place-items-center rounded-3xl bg-[#24363f] text-4xl motion-reduce:animate-none">
+        🎭
+      </div>
+      <p className="min-h-[1.4em] text-base font-bold">{BUILD_STEPS[step]}</p>
+      <div className="relative mt-4 h-4 w-full overflow-hidden rounded-full bg-[#14232a]">
+        <div
+          className="absolute inset-y-0 left-0 rounded-full bg-[#ff5a2c] transition-[width] duration-200 ease-linear"
+          style={{ width: `${Math.round(progress)}%` }}
+        >
+          <span className="absolute inset-x-1.5 top-0.75 h-1 rounded-full bg-white/35" />
         </div>
       </div>
+      <p className="mt-3 text-xs text-[#5f7580]">每一次推门,都是不一样的世界</p>
     </div>
   );
 }

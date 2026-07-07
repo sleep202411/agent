@@ -7656,6 +7656,14 @@
       "endingReached": "Run ended",
       "endingReview": "Ending review",
       "playerPersonality": "Player profile",
+      "pendingAriaLabel": "Story response loading",
+      "pendingPhrases": {
+        "fate": "Fate is answering",
+        "world": "The world is changing",
+        "story": "The story keeps unfolding",
+        "choice": "Your choice is taking root",
+        "nextScene": "The next scene is surfacing"
+      },
       "plotNodeLabel": "Plot Node A",
       "openAnswerLabel": "Open answer",
       "presetChoicesLabel": "Preset choices 3",

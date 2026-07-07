@@ -7655,6 +7655,14 @@
       "endingReached": "本局結束",
       "endingReview": "結局復盤",
       "playerPersonality": "玩家畫像",
+      "pendingAriaLabel": "故事回覆載入中",
+      "pendingPhrases": {
+        "fate": "命運正在回應",
+        "world": "世界正在變化",
+        "story": "故事繼續展開",
+        "choice": "你的選擇正在發酵",
+        "nextScene": "下一幕正在浮現"
+      },
       "plotNodeLabel": "劇情節點 A",
       "openAnswerLabel": "自由行動",
       "presetChoicesLabel": "預設選項 3",
