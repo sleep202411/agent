@@ -48,6 +48,7 @@ import {
   MediaStorageProvider,
 } from '@prisma/client';
 import { PrismaService } from '../infra/db/db.module';
+import { MediaAssetProviderSyncService } from '../ai-generation/providers/byteplus/assets/media-asset-provider-sync.service';
 import { CURRENT_CELL } from '../common/region/current-cell';
 import { ensureOriginalMediaPlacement } from '../infra/storage/media-asset-placement';
 import { MediaProcessingService } from './media-processing.service';
@@ -61,6 +62,8 @@ import type {
   ConfirmUploadResponseDto,
   CreateUploadUrlInputDto,
   CreateUploadUrlResponseDto,
+  MediaProviderAssetStatusRequestDto,
+  MediaProviderAssetStatusResponseDto,
 } from './dto';
 import type { UploadKind } from './dto';
 
@@ -188,6 +191,7 @@ export class MediaUploadService {
     private readonly storage: OutputStorageService,
     private readonly assetUrls: MediaAssetUrlResolverService,
     private readonly mediaProcessing: MediaProcessingService,
+    private readonly providerAssets: MediaAssetProviderSyncService,
   ) {}
 
   /**
@@ -390,6 +394,9 @@ export class MediaUploadService {
           metadata: { source: 'direct_upload', uploadKind: input.kind },
         }),
       );
+      if (policy.assetKind === MediaAssetKind.image) {
+        void this.enqueueProviderImageCheck(existing.id);
+      }
       return {
         mediaAssetId: existing.id,
         storageKey,
@@ -519,6 +526,9 @@ export class MediaUploadService {
       policy.assetKind,
       asset.storageProvider,
     );
+    if (policy.assetKind === MediaAssetKind.image) {
+      void this.enqueueProviderImageCheck(asset.id);
+    }
 
     return {
       mediaAssetId: asset.id,
@@ -526,6 +536,29 @@ export class MediaUploadService {
       provider: providerId,
       url: this.assetUrls.resolve(asset),
     };
+  }
+
+  async providerAssetStatuses(
+    userId: string,
+    input: MediaProviderAssetStatusRequestDto,
+  ): Promise<MediaProviderAssetStatusResponseDto> {
+    const assets = await this.providerAssets.listStatusesForUser(
+      userId,
+      input.assetIds,
+    );
+    return { assets };
+  }
+
+  private async enqueueProviderImageCheck(assetId: string): Promise<void> {
+    try {
+      await this.providerAssets.enqueueImageAssetRegistration(assetId);
+    } catch (err) {
+      this.logger.warn(
+        `failed to enqueue provider image check for asset=${assetId}: ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+      );
+    }
   }
 
   /**

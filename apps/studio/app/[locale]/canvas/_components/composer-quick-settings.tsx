@@ -108,7 +108,7 @@ export function ComposerQuickSettings({
     <div ref={ref} className={cn("relative shrink-0", className)}>
       <button
         type="button"
-        aria-label="Generation settings"
+        aria-label={t("generationSettings")}
         onClick={() => setOpen((o) => !o)}
         className={cn(
           "flex h-10 items-center rounded-xl px-2.5 text-sm font-medium text-foreground transition-colors",

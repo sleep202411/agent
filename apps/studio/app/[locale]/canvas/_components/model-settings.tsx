@@ -27,6 +27,7 @@ const OUTPUT_FIELDS = new Set([
   "outputs",
 ]);
 const ENUM_QUICK_FIELDS = new Set(["resolution", "quality"]);
+const DURATION_FIELDS = new Set(["duration", "durationSeconds", "duration_seconds"]);
 
 export function isOutputField(field: SchemaFieldDescriptor) {
   return OUTPUT_FIELDS.has(field.name);
@@ -39,6 +40,7 @@ export function isQuickSettingField(field: SchemaFieldDescriptor) {
   return (
     isSizeField(field) ||
     isOutputField(field) ||
+    (DURATION_FIELDS.has(field.name) && field.control !== "hidden") ||
     (ENUM_QUICK_FIELDS.has(field.name) && (field.enum?.length ?? 0) > 0)
   );
 }

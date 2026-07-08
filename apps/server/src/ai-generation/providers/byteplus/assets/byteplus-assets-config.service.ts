@@ -10,7 +10,9 @@ export interface BytePlusAssetsConfig {
   realPersonEnabled: boolean;
   /** CHARACTERS_AIGC_REGISTRATION_ENABLED — needs AK/SK + ACR (no enrollment). */
   aigcRegistrationEnabled: boolean;
-  /** Either track needs the signed Action API — the plane is "on". */
+  /** MEDIA_ASSET_AIGC_REGISTRATION_ENABLED — canvas MediaAsset images register directly. */
+  mediaAssetRegistrationEnabled: boolean;
+  /** Any track needs the signed Action API — the plane is "on". */
   assetsPlaneEnabled: boolean;
   accessKeyId: string | null;
   secretAccessKey: string | null;
@@ -55,15 +57,23 @@ export class BytePlusAssetsConfigService {
       process.env.CHARACTERS_AIGC_REGISTRATION_ENABLED,
       false,
     );
+    const mediaAssetRegistrationEnabled = boolEnv(
+      process.env.MEDIA_ASSET_AIGC_REGISTRATION_ENABLED,
+      aigcRegistrationEnabled,
+    );
     // Both tracks CreateAsset against the signed Action API and share the ACR
     // capacity quota, so both need AK/SK + a monitored expiry.
-    const assetsPlaneEnabled = realPersonEnabled || aigcRegistrationEnabled;
+    const assetsPlaneEnabled =
+      realPersonEnabled ||
+      aigcRegistrationEnabled ||
+      mediaAssetRegistrationEnabled;
     const acrExpiresAtRaw = process.env.BYTEPLUS_ACR_EXPIRES_AT?.trim() || null;
     const acrExpiresAt = acrExpiresAtRaw ? new Date(acrExpiresAtRaw) : null;
 
     this.value = {
       realPersonEnabled,
       aigcRegistrationEnabled,
+      mediaAssetRegistrationEnabled,
       assetsPlaneEnabled,
       accessKeyId: process.env.BYTEPLUS_ASSETS_AK?.trim() || null,
       secretAccessKey: process.env.BYTEPLUS_ASSETS_SK?.trim() || null,
@@ -93,7 +103,9 @@ export class BytePlusAssetsConfigService {
       if (missing.length > 0) {
         const flag = realPersonEnabled
           ? 'CHARACTERS_REAL_PERSON_ENABLED'
-          : 'CHARACTERS_AIGC_REGISTRATION_ENABLED';
+          : mediaAssetRegistrationEnabled
+            ? 'MEDIA_ASSET_AIGC_REGISTRATION_ENABLED'
+            : 'CHARACTERS_AIGC_REGISTRATION_ENABLED';
         throw new Error(`${flag} requires: ${missing.join(', ')}`);
       }
       if (acrExpiresAt && Number.isNaN(acrExpiresAt.getTime())) {

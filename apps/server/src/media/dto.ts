@@ -91,6 +91,24 @@ export interface ConfirmUploadResponseDto {
   url: string;
 }
 
+export const MediaProviderAssetStatusRequestSchema = z.object({
+  assetIds: z.array(z.string().uuid()).max(100),
+});
+export type MediaProviderAssetStatusRequestDto = z.infer<
+  typeof MediaProviderAssetStatusRequestSchema
+>;
+
+export interface MediaProviderAssetStatusDto {
+  assetId: string;
+  status: string;
+  statusReason?: string | null;
+  updatedAt: string;
+}
+
+export interface MediaProviderAssetStatusResponseDto {
+  assets: MediaProviderAssetStatusDto[];
+}
+
 export const MediaAssetAccessParamsSchema = z.object({
   assetId: z.string().uuid(),
 });

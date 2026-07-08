@@ -1,15 +1,27 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import { useTranslations } from "next-intl";
+import { useQuery } from "@tanstack/react-query";
 import { IconPhoto, IconSearch, IconX } from "@tabler/icons-react";
 import { cn } from "@/lib/utils";
 import { useCanvasGraphContext } from "@/lib/collab/canvas-graph-context";
 import type { CanvasAsset } from "@/lib/collab/canvas-doc";
+import {
+  getMediaProviderAssetStatuses,
+  mediaProviderAssetKeys,
+  type MediaProviderAssetStatus,
+} from "@/lib/media-provider-assets";
 import { Icon720 } from "./panorama-viewer";
+import {
+  MediaProviderStatusChip,
+  mediaProviderStatusState,
+  type MediaProviderStatusState,
+} from "./media-provider-status-chip";
 
 /** dataTransfer type carrying a dragged library asset to the canvas. */
 export const ASSET_DRAG_MIME = "application/x-fizz-asset";
+export const ASSET_LIBRARY_WIDTH = 320;
 
 type AssetTab = "generated" | "uploaded";
 
@@ -18,8 +30,18 @@ const TABS: { id: AssetTab; labelKey: "myCreations" | "uploaded" }[] = [
   { id: "uploaded", labelKey: "uploaded" },
 ];
 
-function AssetThumb({ asset }: { asset: CanvasAsset }) {
+function AssetThumb({
+  asset,
+  providerStatus,
+  providerFallback,
+}: {
+  asset: CanvasAsset;
+  providerStatus?: MediaProviderAssetStatus;
+  providerFallback: MediaProviderStatusState | null;
+}) {
   const t = useTranslations("canvasNodes");
+  const state =
+    asset.kind === "image" ? mediaProviderStatusState(providerStatus, providerFallback) : null;
   return (
     <div
       title={asset.prompt ?? undefined}
@@ -52,15 +74,25 @@ function AssetThumb({ asset }: { asset: CanvasAsset }) {
           <Icon720 className="size-2.5" /> 720°
         </span>
       )}
+      <MediaProviderStatusChip state={state} />
+    </div>
+  );
+}
+
+function EmptyState({ icon, title, body }: { icon: ReactNode; title: string; body: string }) {
+  return (
+    <div className="flex flex-1 flex-col items-center justify-center gap-2 px-6 text-center">
+      {icon}
+      <p className="text-sm font-medium text-white/70">{title}</p>
+      <p className="text-xs text-muted-foreground">{body}</p>
     </div>
   );
 }
 
 /**
- * The project's persistent asset library — a slide-in drawer (imagine.art-style)
- * over the canvas. "My Creations" = generated outputs; "Uploaded" = uploaded
- * media. The library lives in the synced canvas doc, so every collaborator sees
- * the same assets. Drag an asset out onto the canvas to place it.
+ * The project's persistent asset library — a slide-in drawer over the canvas.
+ * Generated and uploaded image assets are provider-checked at the MediaAsset
+ * layer; the UI only reflects that server state.
  */
 export function AssetLibrary({ open, onClose }: { open: boolean; onClose: () => void }) {
   const t = useTranslations("canvasNodes");
@@ -68,17 +100,43 @@ export function AssetLibrary({ open, onClose }: { open: boolean; onClose: () => 
   const [tab, setTab] = useState<AssetTab>("generated");
   const [query, setQuery] = useState("");
 
-  const filtered = useMemo(() => {
+  const filteredAssets = useMemo(() => {
     const q = query.trim().toLowerCase();
     return assets.filter(
       (a) => a.source === tab && (!q || (a.prompt ?? "").toLowerCase().includes(q))
     );
   }, [assets, tab, query]);
 
+  const statusAssetIds = useMemo(
+    () =>
+      filteredAssets
+        .filter((asset) => asset.kind === "image" && asset.mediaAssetId)
+        .map((asset) => asset.mediaAssetId as string),
+    [filteredAssets]
+  );
+  const statusQuery = useQuery({
+    queryKey: mediaProviderAssetKeys.statuses(statusAssetIds),
+    queryFn: () => getMediaProviderAssetStatuses(statusAssetIds),
+    enabled: open && statusAssetIds.length > 0,
+    refetchInterval: (query) => {
+      const data = query.state.data;
+      if (!data) return false;
+      return Object.values(data).some(
+        (status) => status.status === "pending" || status.status === "processing"
+      )
+        ? 8_000
+        : false;
+    },
+  });
+
   if (!open) return null;
+  const empty = filteredAssets.length === 0;
 
   return (
-    <div className="absolute top-0 left-0 z-30 flex h-full w-[320px] flex-col bg-popover/95 shadow-2xl shadow-black/50 backdrop-blur-xl">
+    <div
+      className="absolute top-0 left-0 z-30 flex h-full flex-col bg-popover/95 shadow-2xl shadow-black/50 backdrop-blur-xl"
+      style={{ width: ASSET_LIBRARY_WIDTH }}
+    >
       <div className="flex items-center justify-between px-4 pt-4 pb-3">
         <span className="text-base font-semibold">{t("asset.title")}</span>
         <button
@@ -119,18 +177,29 @@ export function AssetLibrary({ open, onClose }: { open: boolean; onClose: () => 
         />
       </div>
 
-      {filtered.length === 0 ? (
-        <div className="flex flex-1 flex-col items-center justify-center gap-2 px-6 text-center">
-          <IconPhoto className="size-7 text-white/20" stroke={1.4} />
-          <p className="text-sm font-medium text-white/70">{t("asset.empty.title")}</p>
-          <p className="text-xs text-muted-foreground">
-            {tab === "generated" ? t("asset.empty.generated") : t("asset.empty.uploaded")}
-          </p>
-        </div>
+      {empty ? (
+        <EmptyState
+          icon={<IconPhoto className="size-7 text-white/20" stroke={1.4} />}
+          title={t("asset.empty.title")}
+          body={tab === "generated" ? t("asset.empty.generated") : t("asset.empty.uploaded")}
+        />
       ) : (
         <div className="grid auto-rows-max grid-cols-2 gap-2 overflow-y-auto p-4">
-          {filtered.map((asset) => (
-            <AssetThumb key={asset.id} asset={asset} />
+          {filteredAssets.map((asset) => (
+            <AssetThumb
+              key={asset.id}
+              asset={asset}
+              providerStatus={
+                asset.mediaAssetId ? statusQuery.data?.[asset.mediaAssetId] : undefined
+              }
+              providerFallback={
+                asset.kind === "image" && asset.mediaAssetId
+                  ? statusQuery.isError
+                    ? { kind: "unavailable" }
+                    : { kind: "pending" }
+                  : null
+              }
+            />
           ))}
         </div>
       )}

@@ -747,6 +747,7 @@
   "canvasControls": {
     "comment": "評論",
     "loadingModels": "正在載入模型…",
+    "generationSettings": "生成設定",
     "addNode": {
       "upload": "上載",
       "image": "圖像",
@@ -840,6 +841,14 @@
       "alt": "素材",
       "close": "關閉素材庫",
       "searchPlaceholder": "搜尋素材",
+      "providerStatusApproved": "安全檢查通過",
+      "providerStatusApprovedTitle": "圖片已完成 Seedance 生成安全檢查",
+      "providerStatusChecking": "安全檢查中",
+      "providerStatusCheckingTitle": "正在進行 Seedance 生成安全檢查",
+      "providerStatusFailed": "檢查未通過",
+      "providerStatusFailedTitle": "圖片未通過 Seedance 生成安全檢查",
+      "providerStatusUnavailable": "不可用",
+      "providerStatusUnavailableTitle": "Seedance 資產註冊不可用",
       "tab": {
         "myCreations": "我的創作",
         "uploaded": "已上載"
@@ -849,21 +858,6 @@
         "generated": "此專案中的生成結果會顯示在這裡。",
         "uploaded": "你上載到此專案的媒體會顯示在這裡。"
       }
-    },
-    "cast": {
-      "characterFallback": "角色",
-      "realPersonBadge": "Real person",
-      "referenceCount": "{count} 個參考素材",
-      "tabCast": "專案演員表",
-      "tabLibrary": "角色庫",
-      "capReason": "每次生成最多 {max} 個角色。",
-      "castFailed": "無法將該角色選角到此專案。",
-      "castLoadFailed": "無法載入此專案的演員表。",
-      "castEmpty": "此專案尚未選角任何角色。",
-      "addFromLibrary": "從角色庫加入",
-      "workspaceResolveFailed": "無法解析此專案所屬的工作區。",
-      "libraryLoadFailed": "無法載入工作區角色庫。",
-      "libraryEmpty": "此工作區尚未有角色。請在「角色」庫中建立。"
     }
   },
   "canvasOps": {
@@ -883,6 +877,7 @@
     "result": "結果",
     "resultsPlaceholder": "生成結果將顯示在這裡。",
     "generationFailed": "生成失敗",
+    "generationProviderUnavailable": "此模型暫時不可用。請切換模型或稍後再試。",
     "assetUnavailable": "此素材已不再可用。",
     "chooseModelFirst": "請先選擇模型",
     "writePromptFirst": "請先輸入提示詞",

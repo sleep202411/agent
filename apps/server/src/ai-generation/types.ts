@@ -339,6 +339,7 @@ export interface AiJobError {
     // billing hold is released, the job is never requeued.
     | 'CHARACTER_REVOKED'
     | 'CHARACTER_ASSET_NOT_READY'
+    | 'MEDIA_ASSET_NOT_READY'
     | 'UNKNOWN';
   message: string;
   userMessage: string;

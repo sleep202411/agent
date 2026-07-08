@@ -747,6 +747,7 @@
   "canvasControls": {
     "comment": "评论",
     "loadingModels": "正在加载模型…",
+    "generationSettings": "生成设置",
     "addNode": {
       "upload": "上传",
       "image": "图像",
@@ -840,6 +841,14 @@
       "alt": "素材",
       "close": "关闭素材库",
       "searchPlaceholder": "搜索素材",
+      "providerStatusApproved": "安全检查通过",
+      "providerStatusApprovedTitle": "图片已完成 Seedance 生成安全检查",
+      "providerStatusChecking": "安全检查中",
+      "providerStatusCheckingTitle": "正在进行 Seedance 生成安全检查",
+      "providerStatusFailed": "检查未通过",
+      "providerStatusFailedTitle": "图片未通过 Seedance 生成安全检查",
+      "providerStatusUnavailable": "不可用",
+      "providerStatusUnavailableTitle": "Seedance 资产注册不可用",
       "tab": {
         "myCreations": "我的创作",
         "uploaded": "已上传"
@@ -849,21 +858,6 @@
         "generated": "该项目中的生成结果会显示在这里。",
         "uploaded": "你上传到该项目的媒体会显示在这里。"
       }
-    },
-    "cast": {
-      "characterFallback": "角色",
-      "realPersonBadge": "Real person",
-      "referenceCount": "{count} 个参考素材",
-      "tabCast": "项目演员表",
-      "tabLibrary": "角色库",
-      "capReason": "每次生成最多 {max} 个角色。",
-      "castFailed": "无法将该角色选角到此项目。",
-      "castLoadFailed": "无法加载此项目的演员表。",
-      "castEmpty": "此项目还没有选角任何角色。",
-      "addFromLibrary": "从角色库添加",
-      "workspaceResolveFailed": "无法解析此项目所属的工作区。",
-      "libraryLoadFailed": "无法加载工作区角色库。",
-      "libraryEmpty": "此工作区还没有角色。请在「角色」库中创建。"
     }
   },
   "canvasOps": {
@@ -883,6 +877,7 @@
     "result": "结果",
     "resultsPlaceholder": "生成结果将显示在这里。",
     "generationFailed": "生成失败",
+    "generationProviderUnavailable": "该模型暂时不可用。请切换模型或稍后再试。",
     "assetUnavailable": "此素材已不可用。",
     "chooseModelFirst": "请先选择模型",
     "writePromptFirst": "请先输入提示词",

@@ -155,6 +155,18 @@ export type AssetEvent = (
       updatedAt: string;
       ts: number;
     }
+  | {
+      kind: "media_provider_asset_updated";
+      /** Logical media asset identity whose provider mirror changed. */
+      assetId: string;
+      workspaceId?: string | null;
+      /** pending | processing | active | failed | disabled | deleted. */
+      mirrorStatus: string;
+      /** Typed upstream verdict when failed: moderation | stale | ... */
+      statusReason?: string | null;
+      updatedAt: string;
+      ts: number;
+    }
 ) &
   RealtimeEnvelope;
 

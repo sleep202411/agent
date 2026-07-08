@@ -35,6 +35,7 @@ export default function ProjectLayout({
   const [name, setName] = useState("");
   const [role, setRole] = useState<ProjectRole | null>(null);
   const [shareOpen, setShareOpen] = useState(false);
+  const [canvasChromeInset, setCanvasChromeInset] = useState(0);
   const dirtyRef = useRef(false);
   const committedRef = useRef("");
   useEffect(() => {
@@ -58,6 +59,7 @@ export default function ProjectLayout({
   const canEdit = role == null ? true : role !== "viewer";
   const canManage = role === "owner" || role === "admin";
   const openShare = useCallback(() => setShareOpen(true), []);
+  const shellLeftInset = activeMode === "canvas" ? canvasChromeInset : 0;
 
   const commitName = (next: string) => {
     if (!canEdit) return; // viewers can't rename (server rejects too)
@@ -81,12 +83,20 @@ export default function ProjectLayout({
   };
 
   return (
-    <ProjectProvider projectId={projectId} role={role} openShare={openShare}>
+    <ProjectProvider
+      projectId={projectId}
+      role={role}
+      openShare={openShare}
+      setCanvasChromeInset={setCanvasChromeInset}
+    >
       <div className="relative h-dvh">
         {children}
 
         {/* Back + editable project name (top-left). */}
-        <div className="absolute top-4 left-4 z-30 flex items-center gap-1">
+        <div
+          className="absolute top-4 z-30 flex items-center gap-1 transition-[left] duration-200 ease-out"
+          style={{ left: `calc(1rem + ${shellLeftInset}px)` }}
+        >
           <Link
             href="/projects"
             aria-label={t("backToProjects")}

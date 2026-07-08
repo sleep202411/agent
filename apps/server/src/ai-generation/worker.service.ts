@@ -30,6 +30,7 @@ import { newShortId } from '../common/id';
 import { EntitlementService } from '../entitlements';
 import { DocumentsService } from '../documents/documents.service';
 import { OutputStorageService } from '../infra/storage/storage.types';
+import { MediaAssetProviderSyncService } from './providers/byteplus/assets/media-asset-provider-sync.service';
 import { AiGenerationBillingWalletService } from './billing-wallet.service';
 import { AiGenerationOutboxService } from './outbox.service';
 import {
@@ -118,6 +119,7 @@ export class AiGenerationWorkerService
     private readonly billingWallet: AiGenerationBillingWalletService,
     private readonly providerCapacity: ProviderCapacityRuntimeService,
     private readonly documents: DocumentsService,
+    private readonly mediaAssetProviderSync: MediaAssetProviderSyncService,
   ) {}
 
   private queuePriorityFor(job: AiJob): number {
@@ -1532,6 +1534,9 @@ export class AiGenerationWorkerService
         contentHash,
         safetyFlags: raw.safetyFlags,
       });
+      if (outputType === 'image') {
+        void this.enqueueProviderImageCheck(assetId);
+      }
       out.push({
         // Short app-generated ID. Idempotent recovery on retry is via
         // `(jobId, outputIndex)` unique + repository.replaceOutputs
@@ -1561,6 +1566,18 @@ export class AiGenerationWorkerService
       });
     }
     return out;
+  }
+
+  private async enqueueProviderImageCheck(assetId: string): Promise<void> {
+    try {
+      await this.mediaAssetProviderSync.enqueueImageAssetRegistration(assetId);
+    } catch (err) {
+      this.logger.warn(
+        `failed to enqueue provider image check for asset=${assetId}: ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+      );
+    }
   }
 
   private async fetchProviderBytes(url: string): Promise<Buffer> {
@@ -1600,10 +1617,9 @@ function severityForAiFailure(code: AiJobError['code']): AlertSeverity {
     case 'PROVIDER_CONTENT_FILTER':
     case 'OUTPUT_EXPIRED':
     case 'CANCELLED_BY_USER':
-    // Consent/lifecycle outcomes, not infrastructure faults: the character
-    // was revoked (or its provider mirror withdrawn) while the job waited.
     case 'CHARACTER_REVOKED':
     case 'CHARACTER_ASSET_NOT_READY':
+    case 'MEDIA_ASSET_NOT_READY':
       return 'warning';
   }
 }

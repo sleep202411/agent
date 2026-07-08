@@ -6,6 +6,8 @@ import {
   CharacterKind,
   CharacterProjectGrantStatus,
   CharacterStatus,
+  MediaAssetModerationStatus,
+  MediaAssetStatus,
 } from '@prisma/client';
 import { PrismaService } from '../../../infra/db/db.module';
 import { ReferencePreparationError } from '../../provider-adapter';
@@ -32,14 +34,14 @@ const PROVIDER_KEY = 'byteplus-modelark';
  *     (revocation source of truth). Failures are TERMINAL — the worker
  *     releases the billing hold and never requeues.
  *
- *  2. UPGRADE virtual character IMAGE references from their plain CDN URL to
- *     `asset://<externalAssetId>` when an ACTIVE AIGC digital-human mirror
- *     exists. This is what lets a photorealistic AI face pass Seedance's
- *     real-person risk control (a plain URL of the same image is rejected).
- *     Best-effort and provider-scoped: only byteplus jobs reach this hook, an
- *     un-registered / still-processing image keeps its plain URL (no worse
- *     than today), and the rewrite is ephemeral (never persisted — retry
- *     re-derives it, and client-facing job payloads keep the plain URL).
+ *  2. UPGRADE provider-registered IMAGE references from their plain CDN URL
+ *     to `asset://<externalAssetId>` when an ACTIVE AIGC mirror exists. This
+ *     is what lets Seedance use the private asset library instead of treating
+ *     the same image as an unregistered public URL. Best-effort and
+ *     provider-scoped: only byteplus jobs reach this hook, an unregistered /
+ *     still-processing image keeps its plain URL, and the rewrite is
+ *     ephemeral (never persisted — retry re-derives it, and client-facing job
+ *     payloads keep the plain URL).
  */
 @Injectable()
 export class BytePlusReferencePreparerService {
@@ -93,6 +95,23 @@ export class BytePlusReferencePreparerService {
     const byExternalId = new Map(
       mirrors.map((mirror) => [mirror.externalAssetId, mirror]),
     );
+    const mediaMirrors = await this.prisma.aiProviderMediaAssetMirror.findMany({
+      where: { externalAssetId: { in: externalIds } },
+      include: {
+        assetGroup: true,
+        mediaAsset: {
+          select: {
+            id: true,
+            status: true,
+            moderationStatus: true,
+            deletedAt: true,
+          },
+        },
+      },
+    });
+    const mediaByExternalId = new Map(
+      mediaMirrors.map((mirror) => [mirror.externalAssetId, mirror]),
+    );
 
     // ⟦v2⟧ Which real_person characters is THIS job authorized for? A per-
     // project revoke leaves character/group active, so the GRANT is the only
@@ -102,10 +121,12 @@ export class BytePlusReferencePreparerService {
     // granted likeness → terminal CHARACTER_REVOKED.
     const realPersonCharacterIds = [
       ...new Set(
-        mirrors
-          .map((m) => m.assetGroup.character)
-          .filter((c) => c?.kind === CharacterKind.real_person)
-          .map((c) => c!.id),
+        mirrors.flatMap((mirror) => {
+          const character = mirror.assetGroup.character;
+          return character?.kind === CharacterKind.real_person
+            ? [character.id]
+            : [];
+        }),
       ),
     ];
     const grantedCharacterIds = new Set<string>();
@@ -124,6 +145,27 @@ export class BytePlusReferencePreparerService {
     const now = new Date().toISOString();
     for (const externalId of externalIds) {
       const mirror = byExternalId.get(externalId);
+      const mediaMirror = mediaByExternalId.get(externalId);
+      if (!mirror && mediaMirror) {
+        if (
+          mediaMirror.status !== AiProviderExternalAssetStatus.active ||
+          mediaMirror.assetGroup.status !== AiProviderAssetGroupStatus.active ||
+          mediaMirror.mediaAsset.status !== MediaAssetStatus.ready ||
+          mediaMirror.mediaAsset.deletedAt ||
+          mediaMirror.mediaAsset.moderationStatus ===
+            MediaAssetModerationStatus.blocked
+        ) {
+          throw new ReferencePreparationError({
+            code: 'MEDIA_ASSET_NOT_READY',
+            message: `Provider asset ${externalId} is no longer available.`,
+            userMessage:
+              'A referenced asset is not ready on the provider. Retry once it shows active again.',
+            retryable: false,
+            createdAt: now,
+          });
+        }
+        continue;
+      }
       const character = mirror?.assetGroup.character;
       if (
         character &&
@@ -179,22 +221,46 @@ export class BytePlusReferencePreparerService {
     }
   }
 
-  /** Pass 2 — opportunistically upgrade virtual image refs to `asset://`. */
+  /** Pass 2 — opportunistically upgrade provider-registered image refs to `asset://`. */
   private async upgradeAigcImageReferences(
     input: Record<string, unknown>,
   ): Promise<Record<string, unknown>> {
-    const images = input.referenceImages;
-    if (!Array.isArray(images)) return input;
+    const imagesValue = input.referenceImages;
+    if (!Array.isArray(imagesValue)) return input;
+    const images: unknown[] = imagesValue;
 
-    // Character-stamped entries still on a plain URL are upgrade candidates.
+    // Any MediaAsset-stamped image reference still on a plain URL is an
+    // upgrade candidate. Canvas references carry assetId directly; old
+    // character-expanded entries carry both characterId and assetId.
     const candidates = images.filter(
-      (e): e is { characterId: string; assetId: string; url?: unknown } =>
+      (e): e is { characterId?: string; assetId: string; url?: unknown } =>
         isRecord(e) &&
-        typeof e.characterId === 'string' &&
         typeof e.assetId === 'string' &&
         !(typeof e.url === 'string' && e.url.startsWith(ASSET_SCHEME)),
     );
     if (candidates.length === 0) return input;
+
+    const mediaRows = await this.prisma.aiProviderMediaAssetMirror.findMany({
+      where: {
+        status: AiProviderExternalAssetStatus.active,
+        externalAssetId: { not: null },
+        mediaAssetId: { in: [...new Set(candidates.map((c) => c.assetId))] },
+        assetGroup: {
+          provider: PROVIDER_KEY,
+          groupType: AiProviderAssetGroupType.aigc,
+          status: AiProviderAssetGroupStatus.active,
+        },
+      },
+      select: {
+        mediaAssetId: true,
+        externalAssetId: true,
+      },
+    });
+    const byAssetId = new Map<string, string>();
+    for (const row of mediaRows) {
+      if (row.externalAssetId)
+        byAssetId.set(row.mediaAssetId, row.externalAssetId);
+    }
 
     const rows = await this.prisma.aiProviderExternalAsset.findMany({
       where: {
@@ -207,7 +273,13 @@ export class BytePlusReferencePreparerService {
         },
         characterMedia: {
           characterId: {
-            in: [...new Set(candidates.map((c) => c.characterId))],
+            in: [
+              ...new Set(
+                candidates
+                  .map((c) => c.characterId)
+                  .filter((id): id is string => Boolean(id)),
+              ),
+            ],
           },
           mediaAssetId: { in: [...new Set(candidates.map((c) => c.assetId))] },
         },
@@ -217,22 +289,29 @@ export class BytePlusReferencePreparerService {
         characterMedia: { select: { characterId: true, mediaAssetId: true } },
       },
     });
-    if (rows.length === 0) return input;
 
-    const byKey = new Map<string, string>();
+    const byCharacterAssetKey = new Map<string, string>();
     for (const row of rows) {
       if (row.characterMedia && row.externalAssetId) {
-        byKey.set(
+        byCharacterAssetKey.set(
           `${row.characterMedia.characterId}:${row.characterMedia.mediaAssetId}`,
           row.externalAssetId,
         );
       }
     }
-    if (byKey.size === 0) return input;
+    if (byAssetId.size === 0 && byCharacterAssetKey.size === 0) return input;
 
     const upgraded = images.map((entry) => {
       if (!isRecord(entry)) return entry;
-      const externalId = byKey.get(`${entry.characterId}:${entry.assetId}`);
+      const assetId = stringValue(entry.assetId);
+      const characterId = stringValue(entry.characterId);
+      const externalId =
+        assetId != null
+          ? (byAssetId.get(assetId) ??
+            (characterId != null
+              ? byCharacterAssetKey.get(`${characterId}:${assetId}`)
+              : undefined))
+          : undefined;
       return externalId
         ? { ...entry, url: `${ASSET_SCHEME}${externalId}` }
         : entry;
@@ -243,6 +322,10 @@ export class BytePlusReferencePreparerService {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value && typeof value === 'object' && !Array.isArray(value));
+}
+
+function stringValue(value: unknown): string | undefined {
+  return typeof value === 'string' && value.trim() ? value : undefined;
 }
 
 /** Unique `asset://` external ids across the reference arrays + frames. */

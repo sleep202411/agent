@@ -20,9 +20,7 @@ import { outputKindForType, routeReferenceField } from "./reference-routing";
 import { computeWalletBalanceQueryKey } from "@/app/_components/credits-badge";
 import { useActiveWorkspaceId } from "@/app/_components/workspace-context";
 import { useProjectContext } from "@/app/[locale]/project/_components/project-context";
-import { CHARACTER_REFS_FIELD } from "@/app/[locale]/canvas/_components/reference-stack";
 import {
-  buildPromptDocument,
   cancelFizzAiJob,
   compactFizzAiInput,
   filterFizzAiInput,
@@ -35,7 +33,6 @@ import {
   normalizeFizzAiError,
   submitFizzAiJob,
   type FizzAiCatalog,
-  type FizzAiCharacterBinding,
   type FizzAiJobView,
   type GenerationState,
 } from "./generation-api";
@@ -54,11 +51,9 @@ type GenNodeData = {
     {
       id?: string;
       url: string;
+      assetId?: string;
       edgeId?: string;
       sourceNodeId?: string;
-      /** Present on CHARACTER_REFS_FIELD entries (kind 'character'). */
-      characterId?: string;
-      label?: string;
     }[]
   >;
   generation?: GenerationState;
@@ -288,7 +283,14 @@ export function CanvasGenerationProvider({
                     ...refs,
                     [routed.field]: [
                       ...list,
-                      { id: edgeId, edgeId, sourceNodeId: match.id, url: doneUrl, kind },
+                      {
+                        id: edgeId,
+                        edgeId,
+                        sourceNodeId: match.id,
+                        url: doneUrl,
+                        kind,
+                        ...(out?.assetId ? { assetId: out.assetId } : {}),
+                      },
                     ],
                   },
                 };
@@ -543,41 +545,20 @@ export function CanvasGenerationProvider({
 
       // Map wired/uploaded references into their schema fields. Only real
       // (http) URLs go to the backend — blob object URLs can't be fetched yet
-      // (they wait on SAS upload), so they're dropped here. The character
-      // pseudo-slot never enters input fields: those refs carry ids, not URLs.
+      // (they wait on SAS upload), so they're dropped here. When a reference is
+      // backed by MediaAsset, include its id so the server can upgrade approved
+      // BytePlus private-library assets to `asset://...` references.
       const properties = model.input_schema?.properties ?? {};
       const referenceInput: Record<string, unknown> = {};
       for (const [field, list] of Object.entries(data.references ?? {})) {
-        if (field === CHARACTER_REFS_FIELD) continue;
-        const urls = list.map((r) => r.url).filter((u) => /^https?:/i.test(u));
-        if (urls.length === 0) continue;
-        referenceInput[field] = properties[field]?.type === "array" ? urls : urls[0];
+        const entries = list
+          .filter((ref) => /^https?:/i.test(ref.url))
+          .map((ref) =>
+            ref.assetId ? { url: ref.url, assetId: ref.assetId, refId: ref.id } : ref.url
+          );
+        if (entries.length === 0) continue;
+        referenceInput[field] = properties[field]?.type === "array" ? entries : entries[0];
       }
-
-      // Cast characters ride as `role: 'character'` bindings (ids only) — the
-      // server resolves + expands their library media before routing/pricing.
-      const characterBindings: FizzAiCharacterBinding[] = [];
-      for (const ref of data.references?.[CHARACTER_REFS_FIELD] ?? []) {
-        if (!ref.id || !ref.characterId) continue;
-        characterBindings.push({
-          refId: ref.id,
-          role: "character",
-          characterId: ref.characterId,
-          label: ref.label,
-        });
-      }
-      // Structured prompt only when a character can be `@`-mentioned — plain
-      // canvas prompts keep today's raw-text contract byte-identical.
-      const promptText = data.prompt ?? "";
-      const promptDocument =
-        characterBindings.length > 0 && promptText.trim()
-          ? buildPromptDocument(
-              promptText,
-              characterBindings.flatMap((binding) =>
-                binding.label ? [{ refId: binding.refId, label: binding.label }] : []
-              )
-            )
-          : undefined;
 
       const input = compactFizzAiInput(
         filterFizzAiInput(model, {
@@ -596,9 +577,8 @@ export function CanvasGenerationProvider({
         const response = await submitFizzAiJob({
           // The job binds to its server-backed project (canvas id === project
           // id) and to its card via the block id. The server resolves the
-          // workspace from the project — required for cast-character bindings
-          // (job workspace must equal the character's home workspace) and for
-          // billing the project's workspace wallet.
+          // workspace from the project, which is required for billing the
+          // project's workspace wallet.
           context: {
             projectId,
             documentBlockId: nodeId,
@@ -606,8 +586,6 @@ export function CanvasGenerationProvider({
           },
           idempotencyKey: generationIdempotencyKey("canvas"),
           input,
-          promptDocument,
-          referenceBindings: characterBindings.length > 0 ? characterBindings : undefined,
           modelId: model.id,
           schemaVersion: model.schemaVersion,
         });

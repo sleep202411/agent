@@ -80,7 +80,7 @@ export function PromptTextarea({
   }
 
   return (
-    <div className="relative">
+    <div className="nodrag nowheel relative">
       <textarea
         {...rest}
         ref={ref}
@@ -112,6 +112,10 @@ export function PromptTextarea({
             }
           }
           rest.onKeyDown?.(e);
+        }}
+        onWheel={(e) => {
+          e.stopPropagation();
+          rest.onWheel?.(e);
         }}
         onCompositionStart={() => {
           composing.current = true;

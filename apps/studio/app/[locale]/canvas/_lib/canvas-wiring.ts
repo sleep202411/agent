@@ -52,6 +52,19 @@ export function sourceMediaUrl(getNode: GetNode, nodeId: string): string | undef
   return undefined;
 }
 
+/** Persistent MediaAsset id a source node exposes, when it has one. */
+export function sourceMediaAssetId(getNode: GetNode, nodeId: string): string | undefined {
+  const node = getNode(nodeId);
+  if (!node) return undefined;
+  if (node.type === "image" || node.type === "panorama") {
+    return (node.data as { mediaAssetId?: string }).mediaAssetId;
+  }
+  if (node.type === "prompt" || node.type === "video") {
+    return (node.data as GenerationNodeData).generation?.outputs?.[0]?.assetId;
+  }
+  return undefined;
+}
+
 /** Route a source kind to a reference field on a target generation card. */
 function routeForCard(ctx: WiringCtx, cardId: string, kind: string) {
   const node = ctx.getNode(cardId);
@@ -71,11 +84,19 @@ export function bindEdgeReference(
 ): void {
   const kind = sourceOutputKind(ctx.getNode, source);
   const url = sourceMediaUrl(ctx.getNode, source);
+  const assetId = sourceMediaAssetId(ctx.getNode, source);
   const routed = kind ? routeForCard(ctx, target, kind) : undefined;
   // Never bind a session-local blob: URL into the shared doc; the reconciler
   // re-binds the durable URL once the source's generation/upload resolves.
   if (!kind || !url || url.startsWith("blob:") || !routed) return;
-  const reference: CardReference = { id: edgeId, edgeId, sourceNodeId: source, url, kind };
+  const reference: CardReference = {
+    id: edgeId,
+    edgeId,
+    sourceNodeId: source,
+    url,
+    kind,
+    ...(assetId ? { assetId } : {}),
+  };
   ctx.graph.patchNodeData(target, (node) => {
     const refs = (node.data as GenerationNodeData).references ?? {};
     const list = (refs[routed.field] ?? []).filter((r) => r.edgeId !== edgeId);

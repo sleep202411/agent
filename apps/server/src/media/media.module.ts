@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { AdminAuthModule } from '../admin-auth';
+import { BytePlusAssetsModule } from '../ai-generation/providers/byteplus/assets/byteplus-assets.module';
 import { AuthModule } from '../auth';
 import { StorageModule } from '../infra/storage/storage.module';
 import { WorkspacesModule } from '../workspaces';
@@ -30,7 +31,13 @@ import { MediaUploadService } from './media-upload.service';
  * module's scope.
  */
 @Module({
-  imports: [AdminAuthModule, AuthModule, StorageModule, WorkspacesModule],
+  imports: [
+    AdminAuthModule,
+    AuthModule,
+    StorageModule,
+    WorkspacesModule,
+    BytePlusAssetsModule,
+  ],
   controllers: [
     MediaUploadController,
     MediaAccessController,

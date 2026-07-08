@@ -15,6 +15,8 @@ interface ProjectContextValue {
   /** Opens the project share/members dialog (owned by the project shell), so any
    *  mode's own toolbar can host the Share button without owning the dialog. */
   openShare: () => void;
+  /** Lets full-screen mode panels reserve horizontal space in the shell chrome. */
+  setCanvasChromeInset: (inset: number) => void;
 }
 
 const ProjectContext = createContext<ProjectContextValue | null>(null);
@@ -24,11 +26,13 @@ export function ProjectProvider({
   projectId,
   role,
   openShare,
+  setCanvasChromeInset,
   children,
 }: {
   projectId: string;
   role: ProjectRole | null;
   openShare: () => void;
+  setCanvasChromeInset?: (inset: number) => void;
   children: React.ReactNode;
 }) {
   const value = useMemo<ProjectContextValue>(() => {
@@ -36,10 +40,21 @@ export function ProjectProvider({
     // existing single-user flow isn't blocked; the server still enforces writes.
     const canEdit = role == null ? true : role !== "viewer";
     const canManage = role === "owner" || role === "admin";
-    return { projectId, role, canEdit, canManage, openShare };
-  }, [projectId, role, openShare]);
+    return {
+      projectId,
+      role,
+      canEdit,
+      canManage,
+      openShare,
+      setCanvasChromeInset: setCanvasChromeInset ?? noopCanvasChromeInset,
+    };
+  }, [projectId, role, openShare, setCanvasChromeInset]);
 
   return <ProjectContext.Provider value={value}>{children}</ProjectContext.Provider>;
+}
+
+function noopCanvasChromeInset(_inset: number) {
+  void _inset;
 }
 
 export function useProjectContext(): ProjectContextValue {

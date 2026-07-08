@@ -1435,6 +1435,53 @@ model AiProviderExternalAsset {
   @@map("ai_provider_external_assets")
 }
 
+/// Provider-side AIGC asset group for generic MediaAsset registration.
+/// This is the canvas-default path: image assets are registered for Seedance
+/// provider checks without first inventing a product "character" wrapper.
+model AiProviderMediaAssetGroup {
+  id              String                     @id @default(uuid(7)) @db.Uuid
+  /// Provider key, e.g. 'byteplus-modelark'.
+  provider        String                     @db.VarChar(64)
+  externalGroupId String                     @map("external_group_id") @db.VarChar(128)
+  groupType       AiProviderAssetGroupType   @map("group_type")
+  projectName     String                     @map("project_name") @db.VarChar(64)
+  status          AiProviderAssetGroupStatus @default(active)
+  createdAt       DateTime                   @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt       DateTime                   @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  externalAssets AiProviderMediaAssetMirror[]
+
+  @@unique([provider, groupType, projectName], map: "ai_provider_media_asset_groups_provider_type_project_unique")
+  @@index([provider, externalGroupId], map: "ai_provider_media_asset_groups_external_idx")
+  @@map("ai_provider_media_asset_groups")
+}
+
+/// Provider mirror for a plain MediaAsset. `providerResponse` is REDACTED
+/// before persist: status/ids/timings/error codes only — provider signed URLs
+/// are stripped, never stored, never shown in admin.
+model AiProviderMediaAssetMirror {
+  id                   String                        @id @default(uuid(7)) @db.Uuid
+  mediaAssetId         String                        @map("media_asset_id") @db.Uuid
+  providerAssetGroupId String                        @map("provider_asset_group_id") @db.Uuid
+  externalAssetId      String?                       @map("external_asset_id") @db.VarChar(128)
+  status               AiProviderExternalAssetStatus @default(pending)
+  statusReason         String?                       @map("status_reason") @db.VarChar(64)
+  providerResponse     Json?                         @map("provider_response") @db.JsonB
+  lastSyncedAt         DateTime?                     @map("last_synced_at") @db.Timestamptz(6)
+  processingDeadline   DateTime?                     @map("processing_deadline") @db.Timestamptz(6)
+  createdAt            DateTime                      @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt            DateTime                      @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  mediaAsset MediaAsset                @relation(fields: [mediaAssetId], references: [id], onDelete: Cascade)
+  assetGroup AiProviderMediaAssetGroup @relation(fields: [providerAssetGroupId], references: [id], onDelete: Cascade)
+
+  @@unique([mediaAssetId, providerAssetGroupId], map: "ai_provider_media_asset_mirrors_media_group_unique")
+  @@index([mediaAssetId, status], map: "ai_provider_media_asset_mirrors_media_status_idx")
+  @@index([providerAssetGroupId, status], map: "ai_provider_media_asset_mirrors_by_group_idx")
+  @@index([status, processingDeadline], map: "ai_provider_media_asset_mirrors_staleness_idx")
+  @@map("ai_provider_media_asset_mirrors")
+}
+
 /// Real-person liveness enrollment session (design §2.1). The vendor token is
 /// envelope-encrypted, single-use, and HARD-DELETED (nulled) on completion or
 /// expiry; completion authority is exclusively the server→provider result
@@ -4429,6 +4476,9 @@ enum AiOutboxEventType {
   /// active/failed). Payload is a `character_media_updated` asset event,
   /// published on `assets-user:{ownerUserId}` (design §2.2 leave-and-notify).
   character_media_updated
+  /// Plain MediaAsset provider-mirror state changed. Payload is a
+  /// `media_provider_asset_updated` asset event.
+  media_provider_asset_updated
 }
 
 enum AiControlPlaneStatus {
@@ -5668,6 +5718,7 @@ model MediaAsset {
   usages                  MediaAssetUsage[]
   characterCovers         StudioCharacter[]           @relation("CharacterCover")
   characterMedia          CharacterMedia[]
+  providerMirrors         AiProviderMediaAssetMirror[]
   storyProjectCovers      StoryProject[]              @relation("StoryProjectCover")
   moderationCases         MediaModerationCase[]
   moderationActions       MediaModerationAction[]

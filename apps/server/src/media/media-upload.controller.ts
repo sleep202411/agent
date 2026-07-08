@@ -20,10 +20,13 @@ import { ZodValidationPipe } from '../common/zod.pipe';
 import {
   ConfirmUploadSchema,
   CreateUploadUrlSchema,
+  MediaProviderAssetStatusRequestSchema,
   type ConfirmUploadInputDto,
   type ConfirmUploadResponseDto,
   type CreateUploadUrlInputDto,
   type CreateUploadUrlResponseDto,
+  type MediaProviderAssetStatusRequestDto,
+  type MediaProviderAssetStatusResponseDto,
 } from './dto';
 import { MediaUploadService } from './media-upload.service';
 
@@ -49,5 +52,15 @@ export class MediaUploadController {
     body: ConfirmUploadInputDto,
   ): Promise<ConfirmUploadResponseDto> {
     return this.svc.confirmUpload(user.userId, body);
+  }
+
+  @Post('provider-assets/status')
+  @HttpCode(HttpStatus.OK)
+  async providerAssetStatuses(
+    @CurrentUser() user: AuthUser,
+    @Body(new ZodValidationPipe(MediaProviderAssetStatusRequestSchema))
+    body: MediaProviderAssetStatusRequestDto,
+  ): Promise<MediaProviderAssetStatusResponseDto> {
+    return this.svc.providerAssetStatuses(user.userId, body);
   }
 }

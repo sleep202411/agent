@@ -8,6 +8,7 @@ import { cn } from "@/lib/utils";
 import { CanvasNodeToolbar, ToolbarButton } from "./node-toolbar";
 import { Icon720, PanoramaCanvas, PanoramaViewer } from "./panorama-viewer";
 import { PortPlus } from "./ports";
+import { MediaProviderStatusChipForAsset } from "./media-provider-status-chip";
 
 export type PanoramaNodeType = Node<
   { src: string; imageId?: string; mediaAssetId?: string; label?: string },
@@ -38,7 +39,7 @@ function PanoramaNodeComponent({ id, data, selected }: NodeProps<PanoramaNodeTyp
         <ToolbarButton label={t("panorama.view720")} onClick={() => setFull(true)}>
           <Icon720 className="size-4" />
         </ToolbarButton>
-        <ToolbarButton label={t("panorama.download")} onClick={onDownload}>
+        <ToolbarButton label={t("panorama.download")} onClick={onDownload} iconOnly>
           <IconDownload className="size-4" stroke={1.8} />
         </ToolbarButton>
       </CanvasNodeToolbar>
@@ -98,6 +99,12 @@ function PanoramaNodeComponent({ id, data, selected }: NodeProps<PanoramaNodeTyp
                 {t("panorama.enter")}
               </button>
             </>
+          )}
+          {!entered && (
+            <MediaProviderStatusChipForAsset
+              mediaAssetId={data.mediaAssetId}
+              className="top-2 right-2 h-6 px-2 text-[10px]"
+            />
           )}
         </div>
       </div>

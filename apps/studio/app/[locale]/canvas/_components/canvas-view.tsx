@@ -63,7 +63,7 @@ import { cn } from "@/lib/utils";
 import { CopilotPanel } from "./copilot/copilot-panel";
 import { CreditsBadge } from "@/app/_components/credits-badge";
 import { useProjectContext } from "@/app/[locale]/project/_components/project-context";
-import { AssetLibrary, ASSET_DRAG_MIME } from "./asset-library";
+import { ASSET_LIBRARY_WIDTH, AssetLibrary, ASSET_DRAG_MIME } from "./asset-library";
 import { AddNodeMenu, type AddNodeAction } from "./add-node-menu";
 import { CanvasEmptyState } from "./canvas-empty-state";
 import { useApplyPreset } from "@/app/[locale]/canvas/_lib/use-apply-preset";
@@ -271,12 +271,14 @@ function ZoomControls({
   onToggleSnap,
   minimapOpen,
   onToggleMinimap,
+  leftInset = 0,
 }: {
   onTidy: () => void;
   snapToGrid: boolean;
   onToggleSnap: () => void;
   minimapOpen: boolean;
   onToggleMinimap: () => void;
+  leftInset?: number;
 }) {
   const t = useTranslations("canvas");
   const { zoom } = useViewport();
@@ -287,7 +289,10 @@ function ZoomControls({
   const toggleClass = (active: boolean) => cn(controlClass, active && "bg-white/[0.12] text-white");
 
   return (
-    <div className="absolute bottom-4 left-4 z-20 flex h-[42px] items-center gap-0.5 rounded-full bg-popover/90 px-2 shadow-md backdrop-blur-xl">
+    <div
+      className="absolute bottom-4 z-20 flex h-[42px] items-center gap-0.5 rounded-full bg-popover/90 px-2 shadow-md backdrop-blur-xl transition-[left] duration-200 ease-out"
+      style={{ left: 16 + leftInset }}
+    >
       <button type="button" aria-label={t("tidyCanvas")} className={controlClass} onClick={onTidy}>
         <IconApps className="size-4" stroke={1.8} />
       </button>
@@ -401,7 +406,7 @@ function CanvasInner({ projectId, canEdit }: { projectId: string; canEdit: boole
   const t = useTranslations("canvas");
   const tCopilot = useTranslations("copilot");
   const tProject = useTranslations("project");
-  const { canManage, openShare } = useProjectContext();
+  const { canManage, openShare, setCanvasChromeInset } = useProjectContext();
   const { data: catalog } = useAiCatalog();
   const { user } = useAuth();
   const guestName = t("guest");
@@ -436,6 +441,7 @@ function CanvasInner({ projectId, canEdit }: { projectId: string; canEdit: boole
   } = graph;
   const [addMenu, setAddMenu] = useState<AddMenuState | null>(null);
   const [assetsOpen, setAssetsOpen] = useState(false);
+  const assetLibraryInset = assetsOpen ? ASSET_LIBRARY_WIDTH : 0;
   const [historyOpen, setHistoryOpen] = useState(false);
   const [copilotOpen, setCopilotOpen] = useState(false);
   const [snapToGrid, setSnapToGrid] = useState(false);
@@ -688,9 +694,7 @@ function CanvasInner({ projectId, canEdit }: { projectId: string; canEdit: boole
   // Transient state for in-flight optimistic uploads (blob preview / progress /
   // abort), keyed by node id and kept OUT of the shared doc — see
   // upload-state-context. Created once; its identity is stable.
-  const uploadStoreRef = useRef<UploadStateStore | null>(null);
-  if (!uploadStoreRef.current) uploadStoreRef.current = createUploadStateStore();
-  const uploadStore = uploadStoreRef.current;
+  const uploadStore = useMemo<UploadStateStore>(() => createUploadStateStore(), []);
   // Wires whose binding must wait for the durable URL (set by the file-input
   // path; run on upload confirm). Keyed by the uploaded node id.
   const pendingWires = useRef<Map<string, () => void>>(new Map());
@@ -811,11 +815,17 @@ function CanvasInner({ projectId, canEdit }: { projectId: string; canEdit: boole
   // the canvas unmounts), abort + revoke every pending upload and drop deferred
   // wires; the aborts reject with AbortError, which runUpload's catch ignores.
   useEffect(() => {
+    const wires = pendingWires.current;
     return () => {
       uploadStore.cancelAll();
-      pendingWires.current.clear();
+      wires.clear();
     };
   }, [doc, uploadStore]);
+
+  useEffect(() => {
+    setCanvasChromeInset(assetLibraryInset);
+    return () => setCanvasChromeInset(0);
+  }, [assetLibraryInset, setCanvasChromeInset]);
 
   const addNode = useCallback(
     (node: CanvasNodeShape) => {
@@ -1225,7 +1235,7 @@ function CanvasInner({ projectId, canEdit }: { projectId: string; canEdit: boole
               onPointerMove={onPointerMove}
               onPointerLeave={onPointerLeave}
             >
-              {connStatus !== "synced" && nodes.length === 0 && (
+              {docStatus === "loading" && nodes.length === 0 && (
                 <div className="absolute inset-0 z-50 grid place-items-center bg-[#0a0a0a]">
                   <IconLoader2 className="size-7 animate-spin text-white/40" stroke={1.5} />
                 </div>
@@ -1372,6 +1382,7 @@ function CanvasInner({ projectId, canEdit }: { projectId: string; canEdit: boole
                 onToggleSnap={() => setSnapToGrid((v) => !v)}
                 minimapOpen={minimapOpen}
                 onToggleMinimap={() => setMinimapOpen((v) => !v)}
+                leftInset={assetLibraryInset}
               />
               {canEdit && <NodeDock onAdd={addNodeFromDock} />}
 

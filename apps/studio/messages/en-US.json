@@ -747,6 +747,7 @@
   "canvasControls": {
     "comment": "Comment",
     "loadingModels": "Loading models…",
+    "generationSettings": "Generation settings",
     "addNode": {
       "upload": "Upload",
       "image": "Image",
@@ -840,6 +841,14 @@
       "alt": "Asset",
       "close": "Close assets",
       "searchPlaceholder": "Search assets",
+      "providerStatusApproved": "Safety checked",
+      "providerStatusApprovedTitle": "Image has completed the Seedance generation safety check",
+      "providerStatusChecking": "Safety check",
+      "providerStatusCheckingTitle": "Running the Seedance generation safety check",
+      "providerStatusFailed": "Check failed",
+      "providerStatusFailedTitle": "Image did not pass the Seedance generation safety check",
+      "providerStatusUnavailable": "Unavailable",
+      "providerStatusUnavailableTitle": "Seedance asset registration is unavailable",
       "tab": {
         "myCreations": "My Creations",
         "uploaded": "Uploaded"
@@ -849,21 +858,6 @@
         "generated": "Generations in this project show up here.",
         "uploaded": "Media you upload to this project shows up here."
       }
-    },
-    "cast": {
-      "characterFallback": "Character",
-      "realPersonBadge": "Real person",
-      "referenceCount": "{count, plural, one {# reference} other {# references}}",
-      "tabCast": "Project cast",
-      "tabLibrary": "Library",
-      "capReason": "Up to {max} characters per generation.",
-      "castFailed": "Couldn't cast the character to this project.",
-      "castLoadFailed": "Couldn't load this project's cast.",
-      "castEmpty": "No characters cast in this project yet.",
-      "addFromLibrary": "Add from library",
-      "workspaceResolveFailed": "Couldn't resolve this project's workspace.",
-      "libraryLoadFailed": "Couldn't load the workspace library.",
-      "libraryEmpty": "No characters in this workspace yet. Create them in the Characters library."
     }
   },
   "canvasOps": {
@@ -883,6 +877,7 @@
     "result": "Result",
     "resultsPlaceholder": "Results will appear here.",
     "generationFailed": "Generation failed",
+    "generationProviderUnavailable": "This model is temporarily unavailable. Please choose another model or try again later.",
     "assetUnavailable": "This asset is no longer available.",
     "chooseModelFirst": "Choose a model first",
     "writePromptFirst": "Write a prompt first",

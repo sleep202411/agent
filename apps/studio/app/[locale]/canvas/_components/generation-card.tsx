@@ -54,35 +54,23 @@ import {
   mergeCompatibleSettings,
   estimateModelSellPoints,
   hasSchemaProperty,
-  maxReferenceImages,
+  isUnsafeGenerationErrorMessage,
   referenceFieldsForMode,
-  supportsReferenceImages,
   type FizzAiModel,
   type FizzAiReferenceKind,
   type GenerationState,
   type ModelSettings,
 } from "@/app/[locale]/canvas/_lib/generation-api";
-import { useProjectContext } from "@/app/[locale]/project/_components/project-context";
-import {
-  MAX_CHARACTERS_PER_GENERATION,
-  characterMediaContentUrl,
-  type CharacterSummary,
-} from "@/lib/characters-api";
-import { CastPicker, useProjectCast } from "./cast-picker";
 import { useModeLabel, useOperationLabel } from "@/app/[locale]/canvas/_lib/use-labels";
 import { CanvasNodeToolbar, ToolbarButton } from "./node-toolbar";
 import { Icon720, PanoramaViewer } from "./panorama-viewer";
 import { ModeMenu } from "./mode-menu";
 import { ModelPicker } from "./model-picker";
-import { ModelSettings as ModelSettingsPanel } from "./model-settings";
-import {
-  CHARACTER_REFS_FIELD,
-  ReferenceStack,
-  type CardReferences,
-  type CharacterChipItem,
-  type CharacterSlot,
-} from "./reference-stack";
+import { ComposerQuickSettings } from "./composer-quick-settings";
+import { hasRenderableModelSettings, ModelSettings as ModelSettingsPanel } from "./model-settings";
+import { ReferenceStack, type CardReferences } from "./reference-stack";
 import { PortPlus } from "./ports";
+import { MediaProviderStatusChipForAsset } from "./media-provider-status-chip";
 
 /**
  * One generation card for both image and video — the card is a display
@@ -128,6 +116,16 @@ const MODALITY = {
   image: { icon: IconPhoto },
   video: { icon: IconVideo },
 } as const;
+
+function displayGenerationError(
+  generation: GenerationState | undefined,
+  fallback: string,
+  providerUnavailable: string
+): string {
+  if (generation?.errorCode === "PROVIDER_NOT_CONFIGURED") return providerUnavailable;
+  if (isUnsafeGenerationErrorMessage(generation?.error)) return providerUnavailable;
+  return generation?.error || fallback;
+}
 
 /**
  * CSS aspect-ratio for the result area so the card matches its content: actual
@@ -201,17 +199,6 @@ function useCountdown(seconds: number | undefined, active: boolean): number | nu
   return remaining;
 }
 
-/**
- * Strip every `@Label` mention of a removed character from a prompt —
- * word-boundary safe (only when followed by whitespace / punctuation / end, so
- * `@Nova` never eats into `@NovaPrime`) — then collapse doubled spaces.
- */
-function stripCharacterMention(prompt: string, label: string): string {
-  const escaped = label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const mention = new RegExp(`@${escaped}(?=$|[\\s.,;:!?'"()\\[\\]{}])`, "g");
-  return prompt.replace(mention, "").replace(/ {2,}/g, " ");
-}
-
 /** Mode-specific prompt hints — generic prompt placeholder gives no guidance
  *  for ops where the prompt has a particular job (e.g. relight = the lighting).
  *  Maps a mode to the translation key for its placeholder. */
@@ -231,11 +218,9 @@ function GenerationCard({
 }: NodeProps<GenerationNodeType> & { modality: GenerationModality }) {
   const t = useTranslations("canvasOps");
   const tc = useTranslations("common");
-  const tCast = useTranslations("canvasNodes.cast");
   const ml = useModeLabel();
   const ol = useOperationLabel();
   const { patchNodeData, canEdit, nodes } = useCanvasGraphContext();
-  const { projectId } = useProjectContext();
   const { data: catalog } = useAiCatalog();
   // Composer is click-triggered: it opens for a sole selected node only, so a
   // marquee / select-all doesn't pop every card's prompt at once.
@@ -244,7 +229,7 @@ function GenerationCard({
   const spawnComposedOp = useSpawnComposedOperation();
   const [pendingOp, setPendingOp] = useState<OperationDef | null>(null);
   const autoSubmittedRef = useRef(false);
-  const [panel, setPanel] = useState<"model" | "settings" | "mode" | "cast" | null>(null);
+  const [panel, setPanel] = useState<"model" | "settings" | "mode" | null>(null);
   const [renaming, setRenaming] = useState(false);
   const [pano, setPano] = useState(false);
   // Actual rendered-output aspect ratio (e.g. Topaz upscale returns no width/
@@ -262,6 +247,11 @@ function GenerationCard({
   const opTitle = ol(data.opType);
   const displayTitle = data.name ?? opTitle ?? modalityLabel;
   const generation = data.generation;
+  const generationErrorMessage = displayGenerationError(
+    generation,
+    t("generationFailed"),
+    t("generationProviderUnavailable")
+  );
   const settings = useMemo(() => data.settings ?? {}, [data.settings]);
   const busy =
     generation?.status === "submitting" ||
@@ -273,49 +263,8 @@ function GenerationCard({
     () => catalog?.models.find((m) => m.id === data.modelId),
     [catalog, data.modelId]
   );
+  const hasAdvancedSettings = hasRenderableModelSettings(model, true);
   const references = useMemo(() => data.references ?? {}, [data.references]);
-  // Cast characters attached to this card (pseudo-slot; ride the submit as
-  // `role: 'character'` referenceBindings — the server expands their media).
-  const characterRefs = useMemo(
-    () => (references[CHARACTER_REFS_FIELD] ?? []).filter((ref) => ref.kind === "character"),
-    [references]
-  );
-  const selectedCharacterIds = useMemo(
-    () =>
-      new Set(
-        characterRefs
-          .map((ref) => ref.characterId)
-          .filter((value): value is string => Boolean(value))
-      ),
-    [characterRefs]
-  );
-  // Chip covers resolve through the project cast (selection guarantees cast
-  // membership); fetched only when a character is attached or the picker opens.
-  const { data: cast } = useProjectCast(projectId, characterRefs.length > 0 || panel === "cast");
-  const coverByCharacterId = useMemo(() => {
-    const map = new Map<string, string>();
-    for (const entry of cast ?? []) {
-      if (entry.character.coverAssetId) {
-        map.set(entry.characterId, characterMediaContentUrl(entry.character.coverAssetId));
-      }
-    }
-    return map;
-  }, [cast]);
-  // Per-character image counts, feeding the cost estimate's expansion mirror.
-  const castImageCountByCharacterId = useMemo(() => {
-    const map = new Map<string, number>();
-    for (const entry of cast ?? []) map.set(entry.characterId, entry.character.mediaCounts.image);
-    return map;
-  }, [cast]);
-  const characterChips = useMemo<CharacterChipItem[]>(
-    () =>
-      characterRefs.map((ref) => ({
-        id: ref.id,
-        label: ref.label ?? tCast("characterFallback"),
-        coverUrl: ref.characterId ? coverByCharacterId.get(ref.characterId) : undefined,
-      })),
-    [characterRefs, coverByCharacterId, tCast]
-  );
   // First bound input image — the "before" for an op's before/after comparison.
   const compareBeforeUrl = useMemo(() => {
     for (const list of Object.values(references)) {
@@ -339,8 +288,7 @@ function GenerationCard({
     return merged;
   }, [references, pendingRefs]);
   // Attached references the prompt can cite with `@` — labeled per kind
-  // (Image1, Video1, …) in the same scheme as the studio composer; character
-  // refs mention by NAME (`@Nova`), previewing their cast cover. Still-
+  // (Image1, Video1, …) in the same scheme as the studio composer. Still-
   // uploading items are skipped (no stable target yet).
   const mentionItems = useMemo<MentionItem[]>(() => {
     const counts: Record<FizzAiReferenceKind, number> = { image: 0, video: 0, audio: 0 };
@@ -348,15 +296,6 @@ function GenerationCard({
     for (const list of Object.values(referencesForDisplay)) {
       for (const ref of list) {
         if (ref.uploading) continue;
-        if (ref.kind === "character") {
-          items.push({
-            id: ref.id,
-            label: ref.label ?? tCast("characterFallback"),
-            kind: "image",
-            previewUrl: ref.characterId ? coverByCharacterId.get(ref.characterId) : undefined,
-          });
-          continue;
-        }
         counts[ref.kind] += 1;
         items.push({
           id: ref.id,
@@ -368,7 +307,7 @@ function GenerationCard({
       }
     }
     return items;
-  }, [referencesForDisplay, coverByCharacterId, tCast]);
+  }, [referencesForDisplay]);
   const mode = data.mode ?? defaultMode(model);
   const modes = model?.generationModes ?? [];
   const refFields = useMemo(() => referenceFieldsForMode(model, mode), [model, mode]);
@@ -383,22 +322,6 @@ function GenerationCard({
       (n, ff) => n + (references[ff.field]?.length ?? 0),
       0
     );
-    // Character chips aren't schema reference fields — the server expands each
-    // attached character's library images into `referenceImages` at submit,
-    // truncated to that field's maxItems. Mirror that expansion here (counts
-    // from the already-fetched project cast) so the advisory estimate doesn't
-    // undercount character runs; the SERVER prices the post-expansion truth.
-    const characterImageCount = characterRefs.reduce(
-      (n, ref) =>
-        n + (ref.characterId ? (castImageCountByCharacterId.get(ref.characterId) ?? 0) : 0),
-      0
-    );
-    const remainingImageSlots = Math.max(
-      0,
-      maxReferenceImages(model) - (references["referenceImages"]?.length ?? 0)
-    );
-    const referenceImageCount =
-      uploadedReferenceCount + Math.min(characterImageCount, remainingImageSlots);
     return (
       estimateModelSellPoints(model, {
         numOutputs: Number(settings.numOutputs ?? settings.n ?? 1) || 1,
@@ -407,10 +330,10 @@ function GenerationCard({
         duration: settings.duration != null ? String(settings.duration) : undefined,
         durationSeconds:
           typeof settings.durationSeconds === "number" ? settings.durationSeconds : undefined,
-        referenceImageCount: referenceImageCount || undefined,
+        referenceImageCount: uploadedReferenceCount || undefined,
       })?.sellPoints ?? null
     );
-  }, [model, settings, refFields, references, characterRefs, castImageCountByCharacterId]);
+  }, [model, settings, refFields, references]);
   const isPanorama =
     mode === "image_to_panorama" || /hunyuan|panorama|world/i.test(model?.id ?? "");
 
@@ -457,7 +380,13 @@ function GenerationCard({
                 ...refs,
                 [field]: [
                   ...(refs[field] ?? []),
-                  { id: refId, url: uploaded.url, name: file.name, kind },
+                  {
+                    id: refId,
+                    url: uploaded.url,
+                    name: file.name,
+                    kind,
+                    assetId: uploaded.mediaAssetId,
+                  },
                 ],
               },
             };
@@ -481,79 +410,6 @@ function GenerationCard({
         references: { ...refs, [field]: (refs[field] ?? []).filter((r) => r.id !== refId) },
       };
     });
-
-  // Detach a character chip — removes the reference AND strips its `@Label`
-  // mentions from the prompt in the same patch (a mention pointing at a
-  // removed character would otherwise dangle in the doc).
-  const removeCharacter = (refId: string) =>
-    patchNodeData(id, (node) => {
-      const nodeData = node.data as GenerationNodeData;
-      const refs: CardReferences = nodeData.references ?? {};
-      const list = refs[CHARACTER_REFS_FIELD] ?? [];
-      const removed = list.find((ref) => ref.id === refId);
-      if (!removed) return {};
-      const patch: Partial<GenerationNodeData> = {
-        references: {
-          ...refs,
-          [CHARACTER_REFS_FIELD]: list.filter((ref) => ref.id !== refId),
-        },
-      };
-      if (removed.label && nodeData.prompt) {
-        const stripped = stripCharacterMention(nodeData.prompt, removed.label);
-        if (stripped !== nodeData.prompt) patch.prompt = stripped;
-      }
-      return patch;
-    });
-
-  // Attach a cast character (dedupe + cap re-checked against doc truth inside
-  // the patch, so concurrent editors converge; the picker gates the UI too).
-  const addCharacter = (character: CharacterSummary) =>
-    patchNodeData(id, (node) => {
-      const refs: CardReferences = (node.data as GenerationNodeData).references ?? {};
-      const list = refs[CHARACTER_REFS_FIELD] ?? [];
-      if (
-        list.some((ref) => ref.characterId === character.id) ||
-        list.length >= MAX_CHARACTERS_PER_GENERATION
-      ) {
-        return {};
-      }
-      return {
-        references: {
-          ...refs,
-          [CHARACTER_REFS_FIELD]: [
-            ...list,
-            {
-              id: crypto.randomUUID(),
-              kind: "character" as const,
-              characterId: character.id,
-              label: character.name,
-              url: "",
-            },
-          ],
-        },
-      };
-    });
-
-  // Character pseudo-slot — offered whenever the model's schema accepts
-  // reference images (the server expands character media into referenceImages).
-  const characterSlot: CharacterSlot | undefined = supportsReferenceImages(model)
-    ? {
-        items: characterChips,
-        canAdd: characterRefs.length < MAX_CHARACTERS_PER_GENERATION,
-        open: panel === "cast",
-        onToggle: () => setPanel((p) => (p === "cast" ? null : "cast")),
-        onRemove: removeCharacter,
-        picker: (
-          <CastPicker
-            projectId={projectId}
-            selectedCharacterIds={selectedCharacterIds}
-            capReached={characterRefs.length >= MAX_CHARACTERS_PER_GENERATION}
-            onPick={addCharacter}
-            onClose={() => setPanel(null)}
-          />
-        ),
-      }
-    : undefined;
 
   const onSelectModel = (selected: FizzAiModel) =>
     patchNodeData(id, {
@@ -639,7 +495,7 @@ function GenerationCard({
             </>
           ))}
         {output && (
-          <ToolbarButton label={t("download")} onClick={onDownload}>
+          <ToolbarButton label={t("download")} onClick={onDownload} iconOnly>
             <IconDownload className="size-4" stroke={1.8} />
           </ToolbarButton>
         )}
@@ -763,8 +619,8 @@ function GenerationCard({
           ) : generation?.status === "failed" ? (
             <>
               <IconAlertTriangle className="size-7 text-destructive" stroke={1.6} />
-              <p className="px-5 text-center text-sm text-white/55">
-                {generation.error ?? t("generationFailed")}
+              <p className="max-w-full px-5 text-center text-sm leading-relaxed text-white/55 [overflow-wrap:anywhere]">
+                {generationErrorMessage}
               </p>
               <button
                 type="button"
@@ -785,6 +641,12 @@ function GenerationCard({
               <Icon className="size-7 text-white/30" stroke={1.5} />
               <p className="text-sm text-white/45">{t("resultsPlaceholder")}</p>
             </>
+          )}
+          {output?.type === "image" && (
+            <MediaProviderStatusChipForAsset
+              mediaAssetId={output.assetId}
+              className="top-3 right-3 h-6 px-2 text-[10px]"
+            />
           )}
         </div>
       </div>
@@ -835,13 +697,12 @@ function GenerationCard({
                 transformOrigin: "top center",
               }}
             >
-              {(refFields.length > 0 || characterSlot) && (
+              {refFields.length > 0 && (
                 <ReferenceStack
                   fields={refFields}
                   references={referencesForDisplay}
                   onAdd={addReferences}
                   onRemove={removeReference}
-                  characters={characterSlot}
                 />
               )}
               {/* Pure transform ops (e.g. upscale) declare no prompt in their
@@ -854,7 +715,7 @@ function GenerationCard({
                   placeholder={t(promptPlaceholderKey(mode))}
                   rows={3}
                   autoFocus
-                  className="block w-full resize-none bg-transparent text-sm outline-none placeholder:text-muted-foreground"
+                  className="block max-h-28 w-full resize-none overflow-y-auto bg-transparent text-sm outline-none placeholder:text-muted-foreground"
                 />
               )}
               <div className="flex items-center gap-2 pt-2">
@@ -904,24 +765,33 @@ function GenerationCard({
                   </div>
                 )}
 
-                {/* Schema-driven settings pill */}
-                <div className="relative" data-popover-zone>
-                  <button
-                    type="button"
-                    onClick={() => setPanel((p) => (p === "settings" ? null : "settings"))}
-                    className="flex size-8 items-center justify-center rounded-full bg-white/[0.06] transition-colors hover:bg-white/[0.1]"
-                    aria-label={t("settings")}
-                  >
-                    <IconAdjustments className="size-4" stroke={1.8} />
-                  </button>
-                  {panel === "settings" && (
-                    <ModelSettingsPanel
-                      model={model}
-                      settings={settings}
-                      onChange={(next) => patchNodeData(id, { settings: next })}
-                    />
-                  )}
-                </div>
+                <ComposerQuickSettings
+                  model={model}
+                  settings={settings}
+                  onChange={(next) => patchNodeData(id, { settings: next })}
+                />
+
+                {/* Long-tail schema-driven settings. Common fields live inline. */}
+                {hasAdvancedSettings && (
+                  <div className="relative" data-popover-zone>
+                    <button
+                      type="button"
+                      onClick={() => setPanel((p) => (p === "settings" ? null : "settings"))}
+                      className="flex size-8 items-center justify-center rounded-full bg-white/[0.06] transition-colors hover:bg-white/[0.1]"
+                      aria-label={t("settings")}
+                    >
+                      <IconAdjustments className="size-4" stroke={1.8} />
+                    </button>
+                    {panel === "settings" && (
+                      <ModelSettingsPanel
+                        model={model}
+                        settings={settings}
+                        onChange={(next) => patchNodeData(id, { settings: next })}
+                        hideQuickFields
+                      />
+                    )}
+                  </div>
+                )}
 
                 <div className="ml-auto flex items-center gap-3">
                   {cost != null && (

@@ -159,19 +159,6 @@ export interface FizzAiReferenceBinding {
   weight?: number;
 }
 
-/**
- * Character reference binding — ids only, never a URL. The server resolves the
- * character (workspace + status checks) and expands its library media into
- * per-media bindings BEFORE routing/pricing, so reference counts and consent
- * stay server-truth (docs/character-library-real-person-portraits-design-v1.md §3.2).
- */
-export interface FizzAiCharacterBinding {
-  refId: string;
-  role: "character";
-  characterId: string;
-  label?: string;
-}
-
 export interface FizzAiStyleBinding {
   refId: string;
   label: string;
@@ -198,7 +185,7 @@ export interface FizzAiJobView {
   promptDisplayText?: string | null;
   promptSearchText?: string | null;
   compiledPrompt?: string | null;
-  referenceSnapshot?: (FizzAiReferenceBinding | FizzAiCharacterBinding)[];
+  referenceSnapshot?: FizzAiReferenceBinding[];
   styleSnapshot?: FizzAiStyleBinding[];
   input: Record<string, unknown>;
   outputs: FizzAiJobOutput[];
@@ -255,7 +242,7 @@ export interface FizzAiSubmitJobInput {
   idempotencyKey: string;
   input: Record<string, unknown>;
   promptDocument?: FizzAiPromptDocument;
-  referenceBindings?: (FizzAiReferenceBinding | FizzAiCharacterBinding)[];
+  referenceBindings?: FizzAiReferenceBinding[];
   styleBindings?: FizzAiStyleBinding[];
   modelId: string;
   schemaVersion: string;
@@ -301,7 +288,27 @@ export interface GenerationState {
     width?: number;
     height?: number;
   }[];
+  errorCode?: string;
   error?: string;
+}
+
+const UNSAFE_GENERATION_ERROR_PATTERNS = [
+  /\byour account\s+\d+\b/i,
+  /\brequest\s*id\s*:/i,
+  /\bmodelnotopen\b/i,
+  /\bdreamina-[a-z0-9-]+/i,
+  /\bark-[a-z0-9-]+/i,
+  /\b\d{10,}\b/,
+];
+
+export function isUnsafeGenerationErrorMessage(message?: string): boolean {
+  if (!message) return false;
+  return UNSAFE_GENERATION_ERROR_PATTERNS.some((pattern) => pattern.test(message));
+}
+
+function safeGenerationErrorMessage(message?: string): string | undefined {
+  if (!message?.trim()) return undefined;
+  return isUnsafeGenerationErrorMessage(message) ? undefined : message;
 }
 
 /** Project an Ai job update / job view / submit response into a card's state. */
@@ -319,8 +326,9 @@ export function generationStateFromJob(job: {
     width?: number;
     height?: number;
   }>;
-  error?: { userMessage?: string; message?: string };
+  error?: { code?: string; userMessage?: string; message?: string };
 }): GenerationState {
+  const rawError = job.error?.userMessage || job.error?.message;
   return {
     jobId: job.id,
     status: generationStatusFromRaw(job.status),
@@ -335,12 +343,13 @@ export function generationStateFromJob(job: {
       width: output.width,
       height: output.height,
     })),
-    error: job.error?.userMessage || job.error?.message,
+    errorCode: job.error?.code,
+    error: safeGenerationErrorMessage(rawError),
   };
 }
 
 export function errorMessageFromJob(job: FizzAiJobView, fallback: string): string {
-  return job.error?.userMessage || job.error?.message || fallback;
+  return safeGenerationErrorMessage(job.error?.userMessage || job.error?.message) || fallback;
 }
 
 export function generationIdempotencyKey(prefix: string): string {
@@ -855,13 +864,15 @@ export function normalizeFizzAiError(error: unknown, fallback: string): string {
       try {
         const parsed = JSON.parse(error.responseBody) as Record<string, unknown>;
         const msg = parsed.msg ?? parsed.message;
-        if (typeof msg === "string" && msg.trim()) return msg;
+        if (typeof msg === "string" && msg.trim()) {
+          return safeGenerationErrorMessage(msg) || fallback;
+        }
       } catch {
         // fall through
       }
     }
     if ("message" in error && typeof error.message === "string" && error.message.trim()) {
-      return error.message;
+      return safeGenerationErrorMessage(error.message) || fallback;
     }
   }
   return fallback;
@@ -998,8 +1009,7 @@ export async function retryFizzAiJob(id: string): Promise<FizzAiSubmitResponse> 
 
 /* ── prompt document builders (shared by the image + video studios) ───────── */
 
-/** Minimal mention source `buildPromptDocument` needs to bind `@Label` tokens —
- *  satisfied by both plain reference bindings and character bindings. */
+/** Minimal mention source `buildPromptDocument` needs to bind `@Label` tokens. */
 export interface FizzAiPromptMentionSource {
   refId: string;
   label: string;

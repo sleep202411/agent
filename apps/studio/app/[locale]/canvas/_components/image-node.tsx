@@ -36,6 +36,7 @@ import { MotionEditor } from "./motion-editor";
 import { Icon720 } from "./panorama-viewer";
 import { PortPlus } from "./ports";
 import { useRetryUpload, useUploadEntry } from "./upload-state-context";
+import { MediaProviderStatusChipForAsset } from "./media-provider-status-chip";
 
 export type ImageNodeType = Node<
   { src: string; imageId?: string; mediaAssetId?: string; label?: string },
@@ -111,7 +112,7 @@ function ImageNodeComponent({ id, data, selected }: NodeProps<ImageNodeType>) {
               >
                 <Icon720 className="size-4" />
               </ToolbarButton>
-              <ToolbarButton label={t("image.download")} onClick={onDownload}>
+              <ToolbarButton label={t("image.download")} onClick={onDownload} iconOnly>
                 <IconDownload className="size-4" stroke={1.8} />
               </ToolbarButton>
             </>
@@ -126,6 +127,12 @@ function ImageNodeComponent({ id, data, selected }: NodeProps<ImageNodeType>) {
           draggable={false}
           className="block max-h-[480px] w-[280px] rounded-xl object-cover select-none"
         />
+        {!upload && (
+          <MediaProviderStatusChipForAsset
+            mediaAssetId={data.mediaAssetId}
+            className="top-2 right-2 h-6 px-2 text-[10px]"
+          />
+        )}
 
         {uploading && (
           <>
