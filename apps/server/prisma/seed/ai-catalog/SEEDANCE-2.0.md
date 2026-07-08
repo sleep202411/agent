@@ -24,7 +24,7 @@ poll `GET /tasks/{id}`; task records kept 7 days, output URL valid 24h.
 
 | Canonical           | ModelArk model id                   | Resolutions                       |
 | ------------------- | ----------------------------------- | --------------------------------- |
-| `seedance-2-0`      | `ep-20260708234913-w8kjy`           | 480p/720p/1080p/4k                |
+| `seedance-2-0`      | `ep-20260708234913-w8kjv`           | 480p/720p/1080p/4k                |
 | `seedance-2-0-fast` | `dreamina-seedance-2-0-fast-260128` | 480p/720p                         |
 | (unbound)           | `dreamina-seedance-2-0-mini-260615` | 480p/720p — candidate budget tier |
 

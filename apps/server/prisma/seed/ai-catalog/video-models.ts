@@ -70,7 +70,7 @@ const SEEDANCE_MODES: AiGenerationMode[] = [T2V, I2V, FLF2V, MM2V];
  */
 const bytePlusSeedanceProvider: ProviderEntry = {
   provider: 'byteplus-modelark',
-  endpointId: 'ep-20260708234913-w8kjy',
+  endpointId: 'ep-20260708234913-w8kjv',
   modes: SEEDANCE_MODES,
   requestTimeoutSeconds: 1800,
   priority: 50,
@@ -148,7 +148,7 @@ export const VIDEO_MODELS: VideoModelSeed[] = [
     providerAliases: [
       'bytedance/seedance-2.0',
       'dreamina-seedance-2-0-260128',
-      'ep-20260708234913-w8kjy',
+      'ep-20260708234913-w8kjv',
     ],
   },
   {

@@ -501,7 +501,7 @@ function collectVideoOutputs(
 // conservative no-pack, no-video rate). User-facing charge is the canonical
 // productPricing; this is provider-cost tracking only.
 function videoUnitPriceUsdPerSecond(endpointId: string): number | null {
-  if (endpointId === 'ep-20260708234913-w8kjy') return 0.151;
+  if (endpointId === 'ep-20260708234913-w8kjv') return 0.151;
   if (endpointId.startsWith('dreamina-seedance-2-0-fast')) return 0.121;
   if (endpointId.startsWith('dreamina-seedance-2-0')) return 0.151;
   if (endpointId.startsWith('seedance-1-5-pro')) return 0.13;
