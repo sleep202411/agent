@@ -3,6 +3,7 @@
 /* eslint-disable @next/next/no-img-element */
 
 import { useEffect, useRef } from "react";
+import { useTranslations } from "next-intl";
 
 const LOCAL_HERO_ASSET_BASE = "/home/hero";
 const DESKTOP_STAGE = { width: 1900, height: 360 };
@@ -15,13 +16,13 @@ const GRAPHITE_DOT = "rgb(255 255 255 / 0.13)";
 const WARM_AMBER = "#F5B640";
 
 type PromptCard = {
-  text: string;
+  textKey: string;
   className: string;
 };
 
 type MediaCard = {
   imageSrc: string;
-  alt: string;
+  altKey: string;
   className: string;
   mediaType?: "image" | "video";
   objectPositionClassName?: string;
@@ -39,34 +40,34 @@ type PointHandle = {
 };
 
 type CursorMarker = {
-  label: string;
+  labelKey: string;
   color: string;
   className: string;
 };
 
 const DESKTOP_PROMPTS: PromptCard[] = [
   {
-    text: "A bright social creator collage showing a young woman laughing with friends, filming short clips in daylight, festival energy, handheld vlog frames, warm natural color.",
+    textKey: "heroCanvas.prompts.socialCollage",
     className: "left-[225.3671875px] top-[80.228515625px] h-[80px] w-[171.1392364501953px]",
   },
   {
-    text: "A cheerful female creator portrait in outdoor daylight, curly hair, amber sunglasses, clean white jacket, confident smile, fresh social-media editorial style.",
+    textKey: "heroCanvas.prompts.creatorPortrait",
     className: "left-[957px] top-[21px] h-[80px] w-[171.1392364501953px]",
   },
   {
-    text: "A dynamic creator lifestyle video: crowd reactions, waving at camera, quick joyful movement, bright city square, natural daylight, energetic but polished.",
+    textKey: "heroCanvas.prompts.lifestyleVideo",
     className: "left-[1299px] top-[209.8681640625px] h-[80px] w-[171.1392364501953px]",
   },
 ];
 
 const MOBILE_PROMPTS: PromptCard[] = [
   {
-    text: "A cheerful female creator portrait in outdoor daylight, curly hair, amber sunglasses, clean white jacket, confident smile, fresh social-media editorial style.",
+    textKey: "heroCanvas.prompts.creatorPortrait",
     className:
       "left-[19.42194366455078px] top-[19.421964645385742px] h-[73.98844146728516px] w-[158.27906799316406px]",
   },
   {
-    text: "A bright creator storyboard with friends, city scenes, festival crowds, snacks, laughter, and energetic social-media moments in warm daylight.",
+    textKey: "heroCanvas.prompts.storyboard",
     className:
       "left-[335.7225341796875px] top-[221.8433837890625px] h-[73.98844146728516px] w-[158.27906799316406px]",
   },
@@ -76,31 +77,31 @@ const DESKTOP_MEDIA: MediaCard[] = [
   {
     imageSrc: `${LOCAL_HERO_ASSET_BASE}/poster-card-01.png`,
     objectPositionClassName: "object-[center_62%]",
-    alt: "Architectural editorial poster with a seated creative director",
+    altKey: "heroCanvas.alts.poster",
     className:
       "left-[520px] top-[85.9013671875px] h-[140px] w-[131.34629821777344px] rounded-[14.054px] border-[0.365px]",
   },
   {
     imageSrc: `${LOCAL_HERO_ASSET_BASE}/source-card-01.png`,
-    alt: "Courtyard reference photo with a seated creative director",
+    altKey: "heroCanvas.alts.source",
     className: "left-[231px] top-[230px] h-[148px] w-[126px] rounded-[14.328px]",
   },
   {
     imageSrc: `${LOCAL_HERO_ASSET_BASE}/portrait-card-01.png`,
-    alt: "Editorial portrait reference of a creative professional",
+    altKey: "heroCanvas.alts.portrait",
     className:
       "left-[1010.533203125px] top-[142.4111328125px] h-[120px] w-[128px] rounded-[8.533px] border-[0.356px]",
   },
   {
     imageSrc: `${LOCAL_HERO_ASSET_BASE}/storyboard-card-01.png`,
-    alt: "Bright creator lifestyle storyboard grid",
+    altKey: "heroCanvas.alts.storyboard",
     className: "left-[1289px] top-[62px] h-[120px] w-[178px] rounded-[6.834px]",
   },
   {
     imageSrc: `${LOCAL_HERO_ASSET_BASE}/video-card-01.mp4`,
     mediaType: "video",
     posterSrc: `${LOCAL_HERO_ASSET_BASE}/video-card-01-poster.jpg`,
-    alt: "Generated creator lifestyle video preview",
+    altKey: "heroCanvas.alts.video",
     className:
       "left-[1572.673828125px] top-[119.8681640625px] h-[120px] w-[178px] rounded-[6.834px] border-[0.285px]",
   },
@@ -109,13 +110,13 @@ const DESKTOP_MEDIA: MediaCard[] = [
 const MOBILE_MEDIA: MediaCard[] = [
   {
     imageSrc: `${LOCAL_HERO_ASSET_BASE}/portrait-card-01.png`,
-    alt: "Editorial portrait reference of a creative professional",
+    altKey: "heroCanvas.alts.portrait",
     className:
       "left-[68.93319781532045px] top-[131.71013832092285px] h-[110.98265838623047px] w-[118.38150024414062px]",
   },
   {
     imageSrc: `${LOCAL_HERO_ASSET_BASE}/storyboard-card-01.png`,
-    alt: "Bright creator lifestyle storyboard grid",
+    altKey: "heroCanvas.alts.storyboard",
     className:
       "left-[335.7225341796875px] top-[85.1535415649414px] h-[110.98265838623047px] w-[94.8093032836914px]",
   },
@@ -123,7 +124,7 @@ const MOBILE_MEDIA: MediaCard[] = [
     imageSrc: `${LOCAL_HERO_ASSET_BASE}/video-card-01.mp4`,
     mediaType: "video",
     posterSrc: `${LOCAL_HERO_ASSET_BASE}/video-card-01-poster.jpg`,
-    alt: "Generated creator lifestyle video preview",
+    altKey: "heroCanvas.alts.video",
     className:
       "left-[603.6289672851562px] top-[110.86073303222656px] h-[110.98265838623047px] w-[94.8093032836914px]",
   },
@@ -172,13 +173,17 @@ const MOBILE_HANDLES: PointHandle[] = [
 ];
 
 const DESKTOP_CURSORS: CursorMarker[] = [
-  { label: "Emma", color: WARM_AMBER, className: "left-[472px] top-[245px]" },
-  { label: "Amelia", color: BRAND_RED, className: "left-[778px] top-[117px]" },
+  { labelKey: "heroCanvas.cursors.emma", color: WARM_AMBER, className: "left-[472px] top-[245px]" },
+  {
+    labelKey: "heroCanvas.cursors.amelia",
+    color: BRAND_RED,
+    className: "left-[778px] top-[117px]",
+  },
 ];
 
 const MOBILE_CURSORS: CursorMarker[] = [
   {
-    label: "Emma",
+    labelKey: "heroCanvas.cursors.emma",
     color: WARM_AMBER,
     className: "left-[233.721923828125px] top-[186.2997283935547px]",
   },
@@ -189,6 +194,7 @@ const SPOTLIGHT_MASK =
   "radial-gradient(circle 500px at var(--glow-x) var(--glow-y), #000 0%, #000 35%, transparent 75%)";
 
 export function HeroCanvas() {
+  const t = useTranslations("home");
   const rootRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -245,6 +251,7 @@ export function HeroCanvas() {
             connectors={DESKTOP_CONNECTORS}
             handles={DESKTOP_HANDLES}
             cursors={DESKTOP_CURSORS}
+            t={t}
             showComment
           />
           <Scene
@@ -255,6 +262,7 @@ export function HeroCanvas() {
             connectors={MOBILE_CONNECTORS}
             handles={MOBILE_HANDLES}
             cursors={MOBILE_CURSORS}
+            t={t}
           />
         </div>
         <div
@@ -280,6 +288,7 @@ function Scene({
   handles,
   cursors,
   showComment = false,
+  t,
 }: {
   className: string;
   stage: { width: number; height: number };
@@ -289,6 +298,7 @@ function Scene({
   handles: PointHandle[];
   cursors: CursorMarker[];
   showComment?: boolean;
+  t: ReturnType<typeof useTranslations<"home">>;
 }) {
   return (
     <div
@@ -314,23 +324,28 @@ function Scene({
       </svg>
 
       {prompts.map((prompt) => (
-        <PromptNode key={prompt.className} {...prompt} />
+        <PromptNode key={prompt.className} text={t(prompt.textKey)} className={prompt.className} />
       ))}
       {media.map((item) => (
-        <MediaNode key={item.className} {...item} />
+        <MediaNode key={item.className} {...item} alt={t(item.altKey)} />
       ))}
       {handles.map((handle) => (
         <Handle key={`${handle.className}-${handle.color}`} {...handle} />
       ))}
-      {showComment ? <IterationComment /> : null}
+      {showComment ? <IterationComment text={t("heroCanvas.comment")} /> : null}
       {cursors.map((cursor) => (
-        <CursorNode key={cursor.label} {...cursor} />
+        <CursorNode
+          key={cursor.labelKey}
+          label={t(cursor.labelKey)}
+          color={cursor.color}
+          className={cursor.className}
+        />
       ))}
     </div>
   );
 }
 
-function PromptNode({ text, className }: PromptCard) {
+function PromptNode({ text, className }: { text: string; className: string }) {
   return (
     <div
       className={`absolute scale-90 overflow-hidden rounded-[12.152px] border-[0.506px] border-white/[0.08] bg-[#191919]/95 p-[8.101px] text-[8.101px] font-normal leading-[12.152px] tracking-[0.081px] text-white/60 shadow-[0_4px_10px_rgb(0_0_0/0.18)] ${className}`}
@@ -347,7 +362,7 @@ function MediaNode({
   mediaType = "image",
   objectPositionClassName = "object-center",
   posterSrc,
-}: MediaCard) {
+}: MediaCard & { alt: string }) {
   return (
     <div
       className={`absolute scale-90 overflow-hidden border-white/[0.12] shadow-[0_4px_10px_rgb(0_0_0/0.18)] after:absolute after:inset-0 after:bg-[rgb(0_0_0/0.3)] after:content-[''] ${className}`}
@@ -384,7 +399,15 @@ function Handle({ className, color }: PointHandle) {
   );
 }
 
-function CursorNode({ label, color, className }: CursorMarker) {
+function CursorNode({
+  label,
+  color,
+  className,
+}: {
+  label: string;
+  color: string;
+  className: string;
+}) {
   return (
     <div className={`absolute flex items-start gap-1 ${className}`}>
       <svg width="28" height="27" viewBox="0 0 28 27" fill="none">
@@ -405,13 +428,13 @@ function CursorNode({ label, color, className }: CursorMarker) {
   );
 }
 
-function IterationComment() {
+function IterationComment({ text }: { text: string }) {
   return (
     <div className={`absolute scale-90 ${COMMENT_CLASS}`}>
       <div className="absolute left-[2.25px] top-[3px] h-[29.25px] w-[172.854px] bg-[#B93A3E]" />
       <div className="absolute left-[2.25px] top-[3px] h-[29.25px] w-[172.854px] border-[0.75px] border-white" />
       <span className="absolute left-[8.75px] top-[9px] whitespace-nowrap text-[18px] font-semibold leading-[20px] text-white">
-        Loved this iteration
+        {text}
       </span>
       <SelectionHandle className="left-0 top-0" />
       <SelectionHandle className="right-0 top-0" />

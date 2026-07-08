@@ -47,6 +47,7 @@ const SECTIONS: Record<SettingsSection, React.ComponentType> = {
 };
 
 export function SettingsOverlay() {
+  const t = useTranslations("settings");
   const { user, loading, requireAuth } = useAuth();
   const [section, setSection] = useState<SettingsSection | null>(null);
 
@@ -84,7 +85,7 @@ export function SettingsOverlay() {
         aria-describedby={undefined}
         className="h-[85vh] max-h-[860px] w-[calc(100%-2rem)] max-w-5xl overflow-hidden p-0 sm:max-w-5xl"
       >
-        <DialogTitle className="sr-only">Settings</DialogTitle>
+        <DialogTitle className="sr-only">{t("settings")}</DialogTitle>
         <div className="flex h-full min-h-0">
           <OverlaySidebar active={section} />
           <div className="min-w-0 flex-1 overflow-y-auto">{Content && <Content />}</div>

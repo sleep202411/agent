@@ -2,6 +2,7 @@
 
 import type { ReactNode } from "react";
 import { IconPhoto } from "@tabler/icons-react";
+import { useTranslations } from "next-intl";
 import { Link } from "@/i18n/navigation";
 import { cn } from "@/lib/utils";
 
@@ -41,6 +42,8 @@ export function ProjectCard({
   onMenuClick,
   menu,
 }: ProjectCardProps) {
+  const t = useTranslations("home");
+
   const body = (
     <article className="group w-full cursor-pointer overflow-hidden rounded-[16px] border border-white/[0.075] bg-[#151515] shadow-[0_1px_0_rgba(255,255,255,0.03)_inset] transition hover:border-white/[0.13] hover:shadow-[0_8px_24px_rgba(0,0,0,0.22)]">
       <div className="p-1">
@@ -82,7 +85,7 @@ export function ProjectCard({
         {menu ?? (
           <button
             type="button"
-            aria-label="Project actions"
+            aria-label={t("recent.projectActions")}
             className="grid size-8 shrink-0 place-items-center rounded-full text-white/90 transition hover:bg-white/[0.08]"
             onClick={(event) => {
               event.preventDefault();
@@ -114,31 +117,21 @@ export function ProjectCard({
 }
 
 function ProjectMetrics({ assets, credits }: { assets: number; credits: number }) {
+  const t = useTranslations("home");
+
   return (
     <div className="absolute right-2 bottom-2 flex items-center gap-2">
-      <MetricPill icon={<AssetIcon />} value={assets} label={assets === 1 ? "Asset" : "Assets"} />
-      <MetricPill
-        icon={<CreditIcon />}
-        value={credits}
-        label={credits === 1 ? "Credit" : "Credits"}
-      />
+      <MetricPill icon={<AssetIcon />} label={t("recent.assetCount", { count: assets })} />
+      <MetricPill icon={<CreditIcon />} label={t("recent.creditCount", { count: credits })} />
     </div>
   );
 }
 
-function MetricPill({
-  icon,
-  value,
-  label,
-}: {
-  icon: React.ReactNode;
-  value: number;
-  label: string;
-}) {
+function MetricPill({ icon, label }: { icon: React.ReactNode; label: string }) {
   return (
     <span className="flex h-6 items-center gap-1 rounded-full bg-[#101010]/90 px-2 text-[14px] font-semibold leading-none text-white/90 shadow-[0_2px_8px_rgba(0,0,0,0.32)] ring-1 ring-white/[0.05]">
       <span className="text-white/75">{icon}</span>
-      {value} {label}
+      {label}
     </span>
   );
 }

@@ -12,6 +12,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { IconChevronRight, IconLoader2, IconPlus } from "@tabler/icons-react";
+import { useTranslations } from "next-intl";
 import { toast } from "sonner";
 import { Link, useRouter } from "@/i18n/navigation";
 import { useAuth } from "@/app/_components/auth-provider";
@@ -60,19 +61,21 @@ function SectionHeading({
 // ---------------------------------------------------------------------------
 // Recent Projects — source-style enterprise rail: create tile + project cards.
 // ---------------------------------------------------------------------------
-function timeAgo(iso: string): string {
+type HomeT = ReturnType<typeof useTranslations<"home">>;
+
+function timeAgo(iso: string, t: HomeT): string {
   const seconds = Math.max(0, Math.floor((Date.now() - Date.parse(iso)) / 1000));
-  if (seconds < 60) return "just now";
+  if (seconds < 60) return t("recent.timeAgo.justNow");
   const minutes = Math.floor(seconds / 60);
-  if (minutes < 60) return `${minutes} min${minutes === 1 ? "" : "s"} ago`;
+  if (minutes < 60) return t("recent.timeAgo.minutes", { count: minutes });
   const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours} hr${hours === 1 ? "" : "s"} ago`;
+  if (hours < 24) return t("recent.timeAgo.hours", { count: hours });
   const days = Math.floor(hours / 24);
-  if (days < 7) return `${days} day${days === 1 ? "" : "s"} ago`;
+  if (days < 7) return t("recent.timeAgo.days", { count: days });
   const weeks = Math.floor(days / 7);
-  if (weeks < 5) return `${weeks} week${weeks === 1 ? "" : "s"} ago`;
+  if (weeks < 5) return t("recent.timeAgo.weeks", { count: weeks });
   const months = Math.floor(days / 30);
-  return `${months} month${months === 1 ? "" : "s"} ago`;
+  return t("recent.timeAgo.months", { count: months });
 }
 
 type RecentProjectCard = {
@@ -85,11 +88,13 @@ type RecentProjectCard = {
   // the endpoint provides them (rather than showing fabricated numbers).
   assets?: number;
   credits?: number;
+  cover?: string | null;
   thumbnail?: "workflow";
   href?: string;
 };
 
 export function RecentProjects({ theme: t }: { theme: Theme }) {
+  const th = useTranslations("home");
   const router = useRouter();
   const { user, requireAuth } = useAuth();
   const { activeWorkspace } = useWorkspace();
@@ -113,17 +118,17 @@ export function RecentProjects({ theme: t }: { theme: Theme }) {
       if (!workspaceId || creating) return;
       setCreating(true);
       try {
-        const project = await createProject(workspaceId, { name: "Untitled Workflow" });
+        const project = await createProject(workspaceId, { name: th("untitledWorkflow") });
         router.push(`/project/${project.id}`);
       } catch {
         setCreating(false);
-        toast.error("Couldn't create the project. Please try again.");
+        toast.error(th("createProjectErrorDetailed"));
       }
     });
   };
 
-  const ownerName = user?.nickName?.trim() || user?.email || user?.phone || "Isaac";
-  const cards = buildRecentProjectCards(projects, ownerName);
+  const ownerName = user?.nickName?.trim() || user?.email || user?.phone || th("recent.you");
+  const cards = buildRecentProjectCards(projects, ownerName, th);
 
   useEffect(() => {
     const el = scrollRef.current;
@@ -147,12 +152,12 @@ export function RecentProjects({ theme: t }: { theme: Theme }) {
   return (
     <section className="pt-12">
       <div className="mb-2 flex items-end justify-between px-6">
-        <h2 className="text-[18px] font-medium leading-7 text-white/90">Recent Projects</h2>
+        <h2 className="text-[18px] font-medium leading-7 text-white/90">{th("recent.title")}</h2>
         <Link
           href="/projects"
           className="inline-flex h-8 items-center rounded-full px-2.5 text-[14px] font-medium leading-5 text-white/85 transition hover:bg-white/[0.06] hover:text-white"
         >
-          Show All
+          {th("recent.showAll")}
         </Link>
       </div>
       <div className="relative px-6">
@@ -169,6 +174,7 @@ export function RecentProjects({ theme: t }: { theme: Theme }) {
               ownerName={project.ownerName}
               metaLabel={project.updatedLabel}
               href={project.href}
+              cover={project.cover}
               showWorkflowPreview={project.thumbnail === "workflow"}
               metrics={
                 project.assets != null && project.credits != null
@@ -180,7 +186,7 @@ export function RecentProjects({ theme: t }: { theme: Theme }) {
         </div>
         <button
           type="button"
-          aria-label="Scroll left"
+          aria-label={th("recent.scrollLeft")}
           onClick={() => nudge(-1)}
           className={`absolute top-1/2 left-4 size-10 -translate-y-1/2 place-items-center rounded-full bg-black/45 text-white/80 backdrop-blur transition hover:bg-black/70 ${
             canScrollPrev ? "hidden md:grid" : "hidden"
@@ -190,7 +196,7 @@ export function RecentProjects({ theme: t }: { theme: Theme }) {
         </button>
         <button
           type="button"
-          aria-label="Scroll right"
+          aria-label={th("recent.scrollRight")}
           onClick={() => nudge(1)}
           className={`absolute top-1/2 right-4 size-10 -translate-y-1/2 place-items-center rounded-full bg-black/45 text-white/80 backdrop-blur transition hover:bg-black/70 ${
             canScrollNext ? "hidden md:grid" : "hidden"
@@ -206,22 +212,26 @@ export function RecentProjects({ theme: t }: { theme: Theme }) {
 
 function buildRecentProjectCards(
   projects: ProjectRef[] | undefined,
-  ownerName: string
+  ownerName: string,
+  t: HomeT
 ): RecentProjectCard[] {
   // Real workspace projects only — no placeholder padding. An empty list leaves
   // just the "Create new project" tile (clean empty state). The canvas preview
   // graphic is a shared placeholder until per-project thumbnails exist.
   return (projects ?? []).slice(0, 10).map((project) => ({
     id: project.id,
-    name: project.name || "Untitled Workflow",
+    name: project.name || t("untitledWorkflow"),
     ownerName,
-    updatedLabel: timeAgo(project.updatedAt),
-    thumbnail: "workflow" as const,
+    updatedLabel: timeAgo(project.updatedAt, t),
+    cover: project.thumbnailUrl,
+    thumbnail: project.thumbnailUrl ? undefined : ("workflow" as const),
     href: `/project/${project.id}`,
   }));
 }
 
 function CreateProjectCard({ creating, onCreate }: { creating: boolean; onCreate: () => void }) {
+  const t = useTranslations("home");
+
   return (
     <button
       type="button"
@@ -240,7 +250,9 @@ function CreateProjectCard({ creating, onCreate }: { creating: boolean; onCreate
             <IconPlus className="size-6" stroke={1.8} />
           </span>
         )}
-        <span className="text-[14px] font-medium leading-5 text-white/90">Create new project</span>
+        <span className="text-[14px] font-medium leading-5 text-white/90">
+          {creating ? t("createProjectLoading") : t("createNewProject")}
+        </span>
       </span>
     </button>
   );
@@ -252,72 +264,74 @@ function CreateProjectCard({ creating, onCreate }: { creating: boolean; onCreate
 const MODELS: {
   name: string;
   img: string;
-  desc: string;
-  badges: { text: string; kind: "new" | "off" | "muted" }[];
+  descKey: string;
+  badges: { key: string; kind: "new" | "off" | "muted" }[];
 }[] = [
   {
     name: "HappyHorse 1.1",
     img: `${MODEL_CDN}/production/cm28rh3bi0000oh09cxvjkeky/image/1777279556897-394c84db-0a26-4b50-990b-8184addb63fa.svg`,
-    desc: "Sharper cinematic realism with tighter audio sync",
-    badges: [{ text: "New", kind: "new" }],
+    descKey: "models.descriptions.happyHorse",
+    badges: [{ key: "models.badges.new", kind: "new" }],
   },
   {
     name: "Seedance 2.0",
     img: `${MODEL_CDN}/production/cm3po9yyf0003oh0c2iyt8ajy/image/1754894158793-1e7ef687-c3c1-4f44-8b06-d044a8121f66.svg`,
-    desc: "Fluid, cohesive multi-shot video outputs",
-    badges: [{ text: "New", kind: "new" }],
+    descKey: "models.descriptions.seedance",
+    badges: [{ key: "models.badges.new", kind: "new" }],
   },
   {
     name: "Kling 2.5",
     img: "",
-    desc: "Vivid motion with strong prompt adherence",
-    badges: [{ text: "New", kind: "new" }],
+    descKey: "models.descriptions.kling",
+    badges: [{ key: "models.badges.new", kind: "new" }],
   },
   {
     name: "Veo 3.1",
     img: `${MODEL_CDN}/production/cm3po9yyf0003oh0c2iyt8ajy/image/1753259785486-de7c53b0-9576-4d3e-a76a-a94fcac57bf1.svg`,
-    desc: "Frame to frame control & multi-image reference",
-    badges: [{ text: "Audio", kind: "muted" }],
+    descKey: "models.descriptions.veo",
+    badges: [{ key: "models.badges.audio", kind: "muted" }],
   },
   {
     name: "Wan 2.7",
     img: "",
-    desc: "Bilingual prompts & precise camera control",
-    badges: [{ text: "New", kind: "new" }],
+    descKey: "models.descriptions.wan",
+    badges: [{ key: "models.badges.new", kind: "new" }],
   },
   {
     name: "Nano Banana 2",
     img: `${MODEL_CDN}/production/cm28rh3bi0000oh09cxvjkeky/image/1763647743647-46f3d8cf-3b10-4643-b245-8fa62358d74e.svg`,
-    desc: "Faster high-fidelity image generation",
+    descKey: "models.descriptions.nanoBanana",
     badges: [
-      { text: "New", kind: "new" },
-      { text: "Unlimited Free", kind: "muted" },
+      { key: "models.badges.new", kind: "new" },
+      { key: "models.badges.unlimitedFree", kind: "muted" },
     ],
   },
   {
     name: "GPT Image 2.0",
     img: `${MODEL_CDN}/production/cmjcpqbto01pciumr1glww7ne/image/1776672746985-d87dadd4-e935-4a3b-8183-849f7a7c951d.svg`,
-    desc: "Near-perfect text and extreme precision",
+    descKey: "models.descriptions.gptImage",
     badges: [
-      { text: "New", kind: "new" },
-      { text: "Unlimited Free", kind: "muted" },
+      { key: "models.badges.new", kind: "new" },
+      { key: "models.badges.unlimitedFree", kind: "muted" },
     ],
   },
   {
     name: "Seedream 5.0 Lite",
     img: `${MODEL_CDN}/test/cm97uxg1v000m1490lu4pqgla/image/1757657687665-71703205-e9ea-4ec1-86d6-5a8a5cd5a9f8.svg`,
-    desc: "Real-time web retrieval & precise editing controls",
+    descKey: "models.descriptions.seedream",
     badges: [
-      { text: "New", kind: "new" },
-      { text: "Unlimited Free", kind: "muted" },
+      { key: "models.badges.new", kind: "new" },
+      { key: "models.badges.unlimitedFree", kind: "muted" },
     ],
   },
 ];
 
 export function Models({ theme: t }: { theme: Theme }) {
+  const th = useTranslations("home");
+
   return (
     <section className="px-6 pt-16">
-      <SectionHeading title="Models" />
+      <SectionHeading title={th("models.title")} />
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
         {MODELS.map((m) => (
           <button
@@ -346,7 +360,7 @@ export function Models({ theme: t }: { theme: Theme }) {
                 <span className="truncate text-[14px] font-medium">{m.name}</span>
                 {m.badges.map((b) => (
                   <span
-                    key={b.text}
+                    key={b.key}
                     className="shrink-0 rounded px-1.5 py-0.5 text-[10px] font-semibold"
                     style={
                       b.kind === "off"
@@ -356,11 +370,11 @@ export function Models({ theme: t }: { theme: Theme }) {
                           : { color: "rgba(255,255,255,0.6)", background: "rgba(255,255,255,0.07)" }
                     }
                   >
-                    {b.text}
+                    {th(b.key)}
                   </span>
                 ))}
               </div>
-              <div className="mt-0.5 truncate text-[12px] text-white/45">{m.desc}</div>
+              <div className="mt-0.5 truncate text-[12px] text-white/45">{th(m.descKey)}</div>
             </div>
           </button>
         ))}
@@ -392,6 +406,7 @@ type GalleryPosition = {
 };
 
 export function ExploreMore() {
+  const t = useTranslations("home");
   const gridRef = useRef<HTMLDivElement>(null);
   const [gridWidth, setGridWidth] = useState(0);
   const columns = getGalleryColumnCount(gridWidth);
@@ -415,9 +430,9 @@ export function ExploreMore() {
     <section className="px-4 pt-16 sm:px-6 lg:px-12">
       <div className="relative flex w-full flex-col gap-4 pb-4">
         <div className="flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
-          <h2 className="text-[20px] font-medium leading-6 text-white/95">Gallery</h2>
+          <h2 className="text-[20px] font-medium leading-6 text-white/95">{t("gallery.title")}</h2>
           <p className="text-[13px] leading-5 text-white/45">
-            {GALLERY_ITEMS.length} curated seed images with prompts and model metadata
+            {t("gallery.summary", { count: GALLERY_ITEMS.length })}
           </p>
         </div>
         <div

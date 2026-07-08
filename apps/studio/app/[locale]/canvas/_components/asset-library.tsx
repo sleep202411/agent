@@ -3,7 +3,7 @@
 import { useMemo, useState, type ReactNode } from "react";
 import { useTranslations } from "next-intl";
 import { useQuery } from "@tanstack/react-query";
-import { IconPhoto, IconSearch, IconX } from "@tabler/icons-react";
+import { IconMusic, IconPhoto, IconSearch, IconX } from "@tabler/icons-react";
 import { cn } from "@/lib/utils";
 import { useCanvasGraphContext } from "@/lib/collab/canvas-graph-context";
 import type { CanvasAsset } from "@/lib/collab/canvas-doc";
@@ -40,41 +40,53 @@ function AssetThumb({
   providerFallback: MediaProviderStatusState | null;
 }) {
   const t = useTranslations("canvasNodes");
+  const title = asset.name ?? asset.prompt ?? undefined;
   const state =
     asset.kind === "image" ? mediaProviderStatusState(providerStatus, providerFallback) : null;
   return (
     <div
-      title={asset.prompt ?? undefined}
+      title={title}
       draggable
       onDragStart={(event) => {
         event.dataTransfer.setData(ASSET_DRAG_MIME, JSON.stringify(asset));
         event.dataTransfer.effectAllowed = "copy";
       }}
-      className="group relative aspect-square cursor-grab overflow-hidden rounded-lg bg-white/[0.04] transition-colors hover:bg-white/[0.08] active:cursor-grabbing"
+      className="group cursor-grab overflow-hidden rounded-lg bg-white/[0.04] transition-colors hover:bg-white/[0.08] active:cursor-grabbing"
     >
-      {asset.kind === "video" ? (
-        <video
-          src={asset.url}
-          muted
-          playsInline
-          draggable={false}
-          className="pointer-events-none size-full object-cover"
-        />
-      ) : (
-        // eslint-disable-next-line @next/next/no-img-element
-        <img
-          src={asset.url}
-          alt={asset.prompt ?? t("asset.alt")}
-          draggable={false}
-          className="pointer-events-none size-full object-cover"
-        />
-      )}
-      {asset.panorama && (
-        <span className="pointer-events-none absolute top-1 left-1 flex items-center gap-0.5 rounded bg-black/55 px-1 py-0.5 text-[9px] font-medium text-white/90 backdrop-blur-sm">
-          <Icon720 className="size-2.5" /> 720°
-        </span>
-      )}
-      <MediaProviderStatusChip state={state} />
+      <div className="relative aspect-square overflow-hidden">
+        {asset.kind === "video" ? (
+          <video
+            src={asset.url}
+            muted
+            playsInline
+            draggable={false}
+            className="pointer-events-none size-full object-cover"
+          />
+        ) : asset.kind === "audio" ? (
+          <div className="pointer-events-none flex size-full items-center justify-center">
+            <IconMusic className="size-7 text-white/70" stroke={1.7} />
+          </div>
+        ) : (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={asset.url}
+            alt={title ?? t("asset.alt")}
+            draggable={false}
+            className="pointer-events-none size-full object-cover"
+          />
+        )}
+        {asset.panorama && (
+          <span className="pointer-events-none absolute top-1 left-1 flex items-center gap-0.5 rounded bg-black/55 px-1 py-0.5 text-[9px] font-medium text-white/90 backdrop-blur-sm">
+            <Icon720 className="size-2.5" /> 720°
+          </span>
+        )}
+        <MediaProviderStatusChip state={state} />
+      </div>
+      <div className="min-w-0 px-2 py-1.5">
+        <p className="truncate text-[11px] leading-tight text-white/75">
+          {title ?? t("asset.untitled")}
+        </p>
+      </div>
     </div>
   );
 }
@@ -103,7 +115,11 @@ export function AssetLibrary({ open, onClose }: { open: boolean; onClose: () => 
   const filteredAssets = useMemo(() => {
     const q = query.trim().toLowerCase();
     return assets.filter(
-      (a) => a.source === tab && (!q || (a.prompt ?? "").toLowerCase().includes(q))
+      (a) =>
+        a.source === tab &&
+        (!q ||
+          (a.name ?? "").toLowerCase().includes(q) ||
+          (a.prompt ?? "").toLowerCase().includes(q))
     );
   }, [assets, tab, query]);
 

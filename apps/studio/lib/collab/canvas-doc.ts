@@ -44,11 +44,13 @@ export interface CanvasEdgeShape {
 export interface CanvasAsset {
   id: string;
   mediaAssetId?: string;
-  kind: "image" | "video";
+  kind: "image" | "video" | "audio";
   source: "generated" | "uploaded";
   url: string;
   width?: number;
   height?: number;
+  /** User-editable display name. Prompt remains the generation/source text. */
+  name?: string;
   prompt?: string;
   /** Equirectangular 360° panorama — placed/rendered as a panorama, not a flat image. */
   panorama?: boolean;
@@ -272,6 +274,18 @@ export function removeAssetsByMediaAssetId(doc: Y.Doc, mediaAssetId: string): vo
     if (asset.mediaAssetId === mediaAssetId || asset.id === mediaAssetId) {
       am.delete(id);
     }
+  }
+}
+
+export function renameAssetsByMediaAssetId(doc: Y.Doc, mediaAssetId: string, name: string): void {
+  const am = assetsMap(doc);
+  const trimmed = name.trim();
+  for (const [id, asset] of [...am.entries()]) {
+    if (asset.mediaAssetId !== mediaAssetId && asset.id !== mediaAssetId) continue;
+    const next: CanvasAsset = { ...asset };
+    if (trimmed) next.name = trimmed;
+    else delete next.name;
+    am.set(id, next);
   }
 }
 

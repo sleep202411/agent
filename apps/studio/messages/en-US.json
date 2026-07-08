@@ -15,7 +15,9 @@
     "back": "Back",
     "next": "Next",
     "copy": "Copy",
-    "copied": "Copied"
+    "copied": "Copied",
+    "fizzDragon": "FizzDragon",
+    "fizzStudio": "FizzStudio"
   },
   "localeSwitcher": {
     "label": "Language"
@@ -61,7 +63,8 @@
     "gallery": {
       "title": "Gallery",
       "optionsAction": "Options",
-      "saveAction": "Save"
+      "saveAction": "Save",
+      "summary": "{count} curated seed images with prompts and model metadata"
     },
     "recent": {
       "title": "Recent Projects",
@@ -77,8 +80,162 @@
         "justNow": "just now",
         "minutes": "{count, plural, one {# minute ago} other {# minutes ago}}",
         "hours": "{count, plural, one {# hour ago} other {# hours ago}}",
-        "days": "{count, plural, one {# day ago} other {# days ago}}"
+        "days": "{count, plural, one {# day ago} other {# days ago}}",
+        "weeks": "{count, plural, one {# week ago} other {# weeks ago}}",
+        "months": "{count, plural, one {# month ago} other {# months ago}}"
+      },
+      "scrollLeft": "Scroll left",
+      "scrollRight": "Scroll right",
+      "assetCount": "{count, plural, one {# Asset} other {# Assets}}",
+      "creditCount": "{count, plural, one {# Credit} other {# Credits}}"
+    },
+    "untitledWorkflow": "Untitled Workflow",
+    "createProjectErrorDetailed": "Couldn't create the project. Please try again.",
+    "models": {
+      "title": "Models",
+      "badges": {
+        "new": "New",
+        "audio": "Audio",
+        "unlimitedFree": "Unlimited Free"
+      },
+      "descriptions": {
+        "happyHorse": "Sharper cinematic realism with tighter audio sync",
+        "seedance": "Fluid, cohesive multi-shot video outputs",
+        "kling": "Vivid motion with strong prompt adherence",
+        "veo": "Frame to frame control & multi-image reference",
+        "wan": "Bilingual prompts & precise camera control",
+        "nanoBanana": "Faster high-fidelity image generation",
+        "gptImage": "Near-perfect text and extreme precision",
+        "seedream": "Real-time web retrieval & precise editing controls"
       }
+    },
+    "footer": {
+      "copyright": "© 2026 FizzDragon. All rights reserved.",
+      "trustScore": "Trustscore 4.4",
+      "reviewCount": "3600+ reviews"
+    },
+    "composer": {
+      "modes": {
+        "image": "Image",
+        "video": "Video",
+        "project": "Project"
+      },
+      "promptAria": "Prompt",
+      "generationTypeAria": "Generation type",
+      "createAria": "Create",
+      "shuffleAria": "Shuffle suggestions",
+      "placeholders": {
+        "logo": "Design a logo",
+        "carousel": "Make a 5-slide product carousel for Instagram",
+        "ugcVideo": "Create a UGC-style ad video",
+        "campaign": "Turn a product photo into a campaign"
+      },
+      "suggestions": {
+        "socialCarousel": {
+          "label": "On-brand social carousel",
+          "prompt": "Make a 5-slide Instagram carousel for a skincare product launch with a clean, modern look."
+        },
+        "etsyMockup": {
+          "label": "Product mockup for Etsy",
+          "prompt": "Create a polished Etsy product mockup with warm daylight, a clean lifestyle backdrop, and space for listing copy."
+        },
+        "ugcAdVideo": {
+          "label": "UGC-style ad video",
+          "prompt": "Create a UGC-style ad video for a new wellness product with natural handheld energy, quick cuts, captions, and a clear call to action."
+        },
+        "facelessShort": {
+          "label": "Faceless YouTube short",
+          "prompt": "Create a faceless YouTube short with fast visual pacing, bold scene changes, and a concise educational hook."
+        },
+        "musicVideo": {
+          "label": "AI music video",
+          "prompt": "Create an AI music video with expressive camera movement, rhythmic scene changes, and a bright cinematic visual style."
+        },
+        "podcastCover": {
+          "label": "Podcast cover art",
+          "prompt": "Design premium podcast cover art with a clean editorial composition, strong title-safe negative space, and modern lighting."
+        },
+        "brandKit": {
+          "label": "Brand kit from logo",
+          "prompt": "Design a complete brand kit from a minimal logo concept, including color palette, typography direction, social avatar, and launch visuals."
+        },
+        "interiorMoodboard": {
+          "label": "Interior moodboard",
+          "prompt": "Create an interior design moodboard for a bright modern studio with natural materials, soft daylight, and refined editorial styling."
+        },
+        "campaignStoryboard": {
+          "label": "Campaign storyboard",
+          "prompt": "Build a campaign storyboard for a 15-second product launch video with opening hook, lifestyle use case, product close-up, and final CTA."
+        }
+      }
+    },
+    "heroComposer": {
+      "headlinePrefix": "The Ultimate AI Creative Suite for",
+      "headlineHighlight": "Creators",
+      "subtitle": "Describe an idea and generate images or video in seconds."
+    },
+    "studioTabs": {
+      "agent": "Agent",
+      "creative": "Creative Studio",
+      "project": "Project Studio",
+      "marketing": "Marketing Studio",
+      "commerce": "Commerce Studio"
+    },
+    "agentStudio": {
+      "intro": "Not sure where to start? Tell me your idea — I'll pick the right tools and set it up.",
+      "placeholder": "Describe what you want to make, or ask how to get started…",
+      "attachAria": "Attach",
+      "sendAria": "Send",
+      "suggestions": {
+        "productAd": "Make a cinematic product ad",
+        "imagePrompt": "Generate an image from a prompt",
+        "scriptVideo": "Turn a script into a video",
+        "newCanvas": "Start a new project on the canvas",
+        "removeBg": "Remove the background from a photo"
+      }
+    },
+    "projectStudio": {
+      "intro": "Open the canvas — start blank, or from a ready-to-run workflow that drops a finished sample in.",
+      "blankCanvas": "Blank Canvas",
+      "startFromScratch": "Start from scratch",
+      "presets": {
+        "marketingAd": {
+          "name": "Marketing Ad",
+          "description": "Storyboard → cinematic product ad"
+        },
+        "fashionTrailer": {
+          "name": "Fashion Trailer",
+          "description": "Storyboard → moody fashion trailer"
+        },
+        "youtubeVlog": {
+          "name": "Youtube Vlog",
+          "description": "Storyboard → energetic vlog clip"
+        },
+        "brandVisuals": {
+          "name": "On Brand Visuals",
+          "description": "A single on-brand key visual"
+        }
+      }
+    },
+    "heroCanvas": {
+      "prompts": {
+        "socialCollage": "A bright social creator collage showing a young woman laughing with friends, filming short clips in daylight, festival energy, handheld vlog frames, warm natural color.",
+        "creatorPortrait": "A cheerful female creator portrait in outdoor daylight, curly hair, amber sunglasses, clean white jacket, confident smile, fresh social-media editorial style.",
+        "lifestyleVideo": "A dynamic creator lifestyle video: crowd reactions, waving at camera, quick joyful movement, bright city square, natural daylight, energetic but polished.",
+        "storyboard": "A bright creator storyboard with friends, city scenes, festival crowds, snacks, laughter, and energetic social-media moments in warm daylight."
+      },
+      "alts": {
+        "poster": "Architectural editorial poster with a seated creative director",
+        "source": "Courtyard reference photo with a seated creative director",
+        "portrait": "Editorial portrait reference of a creative professional",
+        "storyboard": "Bright creator lifestyle storyboard grid",
+        "video": "Generated creator lifestyle video preview"
+      },
+      "cursors": {
+        "emma": "Emma",
+        "amelia": "Amelia"
+      },
+      "comment": "Loved this iteration"
     }
   },
   "generation": {
@@ -519,7 +676,8 @@
       "teamTag": "Team"
     },
     "header": {
-      "homeAriaLabel": "FizzStudio home"
+      "homeAriaLabel": "FizzStudio home",
+      "fizzDragonHomeAriaLabel": "FizzDragon home"
     },
     "nav": {
       "home": "Home",
@@ -675,6 +833,20 @@
       "checkoutUrlMissing": "Payment checkout URL was not returned",
       "paymentFailed": "Payment failed"
     },
+    "rechargePrompt": {
+      "close": "Close recharge dialog",
+      "eyebrow": "Low compute credits",
+      "title": "Top up and keep creating",
+      "body": "Your current balance is below the estimated cost for this generation. Add credits to continue without leaving the canvas.",
+      "bodyWithModel": "Your current balance is below the estimated cost for {model}. Add credits to continue without leaving the canvas.",
+      "available": "Available",
+      "required": "Required",
+      "missing": "Missing",
+      "estimated": "Estimated credits",
+      "cta": "Continue to checkout",
+      "viewBilling": "View billing",
+      "billingAdminOnly": "This team uses a shared workspace balance. Ask an owner, admin, or billing member to recharge compute credits."
+    },
     "faq": {
       "heading": "Your questions,<br></br>answered",
       "computeCredits": {
@@ -726,6 +898,7 @@
     "snapToGrid": "Snap to grid",
     "zoomOut": "Zoom out",
     "zoomIn": "Zoom in",
+    "zoomLevel": "Zoom {percent}%",
     "zoomToFit": "Zoom to fit",
     "dock": {
       "upload": "Upload",
@@ -804,6 +977,35 @@
       "title": "Settings",
       "selectModel": "Select a model to configure.",
       "advanced": "Advanced Settings"
+    },
+    "presets": {
+      "modelsLoading": "Models are still loading — try again in a moment",
+      "noModelAvailable": "No {modality} model is available right now"
+    },
+    "workflowPresets": {
+      "marketingAd": {
+        "name": "Marketing Ad",
+        "description": "Storyboard → cinematic product ad"
+      },
+      "fashionTrailer": {
+        "name": "Fashion Trailer",
+        "description": "Storyboard → moody fashion trailer"
+      },
+      "youtubeVlog": {
+        "name": "Youtube Vlog",
+        "description": "Storyboard → energetic vlog clip"
+      },
+      "brandVisuals": {
+        "name": "On Brand Visuals",
+        "description": "A single on-brand key visual"
+      },
+      "nodes": {
+        "storyboard": "Storyboard",
+        "ad": "Ad",
+        "trailer": "Trailer",
+        "clip": "Clip",
+        "keyVisual": "Key Visual"
+      }
     }
   },
   "canvasNodes": {
@@ -819,6 +1021,7 @@
       "generatePanorama": "Generate Panorama",
       "preview": "Preview",
       "download": "Download",
+      "rename": "Rename",
       "uploading": "Uploading · {progress}%",
       "uploadFailed": "Upload failed"
     },
@@ -831,8 +1034,20 @@
       "alt": "Panorama",
       "view720": "720° View",
       "download": "Download",
+      "rename": "Rename",
       "enter": "Enter panorama",
       "exit": "Exit"
+    },
+    "media": {
+      "video": {
+        "title": "Video"
+      },
+      "audio": {
+        "title": "Audio"
+      },
+      "preview": "Preview",
+      "download": "Download",
+      "rename": "Rename"
     },
     "reference": {
       "alt": "Reference",
@@ -843,6 +1058,8 @@
     "asset": {
       "title": "Assets",
       "alt": "Asset",
+      "audio": "Audio",
+      "untitled": "Untitled asset",
       "close": "Close assets",
       "searchPlaceholder": "Search assets",
       "providerStatusApproved": "Safety checked",
@@ -886,6 +1103,9 @@
     "assetUnavailable": "This asset is no longer available.",
     "chooseModelFirst": "Choose a model first",
     "writePromptFirst": "Write a prompt first",
+    "copyTaskId": "Copy task ID",
+    "taskIdCopied": "Task ID copied",
+    "taskIdCopyFailed": "Could not copy task ID",
     "uploadFailed": "Couldn't upload {name}",
     "noModelForOp": "No {op} model in the catalog yet",
     "promptPlaceholderDefault": "Write your prompt..",
@@ -999,6 +1219,15 @@
         "checkpoint": "Saved a checkpoint",
         "imported": "Imported"
       }
+    },
+    "connection": {
+      "offline": "Realtime offline",
+      "connecting": "Connecting…",
+      "connected": "Realtime connected",
+      "latencyExcellent": "Realtime · {ms} · excellent",
+      "latencyGood": "Realtime · {ms} · good",
+      "latencyFair": "Realtime · {ms} · fair",
+      "latencyPoor": "Realtime · {ms} · poor"
     }
   },
   "settings": {
@@ -1205,7 +1434,11 @@
     "documentOpenError": "Couldn't open this document — check the link or your access.",
     "briefPlaceholder": "Write the brief…",
     "offlineSaved": "Offline — changes saved locally",
-    "connecting": "Connecting…"
+    "connecting": "Connecting…",
+    "modes": {
+      "canvas": "Canvas",
+      "brief": "Brief"
+    }
   },
   "invite": {
     "loading": "Loading invitation…",
@@ -1271,5 +1504,9 @@
     "confirmRun": "Run this generation? It will use your workspace compute credits.",
     "confirmRemoveNode": "Delete this node from the canvas?",
     "confirmRemoveEdge": "Delete this connection?"
+  },
+  "metadata": {
+    "studioTitle": "FizzStudio",
+    "studioDescription": "AI creative studio"
   }
 }

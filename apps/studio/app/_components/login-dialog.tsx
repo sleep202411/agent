@@ -64,7 +64,13 @@ export function LoginDialog({
       <div className="relative flex h-[min(768px,calc(100vh-2rem))] w-full max-w-[1200px] overflow-hidden rounded-3xl bg-[oklch(0.16_0_0)] shadow-2xl shadow-black/60 duration-200 animate-in fade-in-0 zoom-in-95">
         {/* Form panel */}
         <div className="flex min-w-0 flex-1 flex-col items-center justify-center px-8 py-14 sm:px-14">
-          <Image src="/logo.png" alt="FizzDragon" width={439} height={78} className="h-9 w-auto" />
+          <Image
+            src="/logo.png"
+            alt={tc("fizzDragon")}
+            width={439}
+            height={78}
+            className="h-9 w-auto"
+          />
           <h2 className="mt-6 text-2xl font-semibold">{t("welcomeTitle")}</h2>
           <p className="mt-2 text-sm text-muted-foreground">{t("welcomeSubtitle")}</p>
 

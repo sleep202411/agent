@@ -39,7 +39,7 @@ export default function HomePage() {
       {/* Header + icon rail come from the (landing) layout; pt-16 keeps the
           content clear of the floating header. */}
       <div className="relative z-10 pt-16">
-        <main className="lg:pl-[104px]">
+        <main className="pl-20 lg:pl-[104px]">
           <div className="px-6 pt-[220]">
             <Composer theme={THEME} />
           </div>

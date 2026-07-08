@@ -13,46 +13,45 @@
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { IconPlus } from "@tabler/icons-react";
+import { useTranslations } from "next-intl";
 import type { Theme } from "./theme";
 
 const PRESETS = [
   {
     id: "marketing-ad",
-    name: "Marketing Ad",
-    desc: "Storyboard → cinematic product ad",
+    nameKey: "projectStudio.presets.marketingAd.name",
+    descKey: "projectStudio.presets.marketingAd.description",
     thumb: "/presets/marketing-ad.jpg",
   },
   {
     id: "fashion-trailer",
-    name: "Fashion Trailer",
-    desc: "Storyboard → moody fashion trailer",
+    nameKey: "projectStudio.presets.fashionTrailer.name",
+    descKey: "projectStudio.presets.fashionTrailer.description",
     thumb: "/presets/fashion-trailer.jpg",
   },
   {
     id: "youtube-vlog",
-    name: "Youtube Vlog",
-    desc: "Storyboard → energetic vlog clip",
+    nameKey: "projectStudio.presets.youtubeVlog.name",
+    descKey: "projectStudio.presets.youtubeVlog.description",
     thumb: "/presets/youtube-vlog.jpg",
   },
   {
     id: "brand-visuals",
-    name: "On Brand Visuals",
-    desc: "A single on-brand key visual",
+    nameKey: "projectStudio.presets.brandVisuals.name",
+    descKey: "projectStudio.presets.brandVisuals.description",
     thumb: "/presets/brand-visuals.jpg",
   },
 ];
 
 export function ProjectStudio({ theme: t }: { theme: Theme }) {
+  const th = useTranslations("home");
   const params = useParams();
   const locale = typeof params?.locale === "string" ? params.locale : "en-US";
   const canvasHref = `/${locale}/canvas`;
 
   return (
     <div className="mt-8 w-full">
-      <p className="mb-6 text-center text-[14px] text-white/50">
-        Open the canvas — start blank, or from a ready-to-run workflow that drops a finished sample
-        in.
-      </p>
+      <p className="mb-6 text-center text-[14px] text-white/50">{th("projectStudio.intro")}</p>
 
       <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5 2xl:grid-cols-6">
         {/* Blank canvas */}
@@ -69,8 +68,8 @@ export function ProjectStudio({ theme: t }: { theme: Theme }) {
             </span>
           </div>
           <div>
-            <div className="text-[14px] font-medium">Blank Canvas</div>
-            <div className="text-[12px] text-white/45">Start from scratch</div>
+            <div className="text-[14px] font-medium">{th("projectStudio.blankCanvas")}</div>
+            <div className="text-[12px] text-white/45">{th("projectStudio.startFromScratch")}</div>
           </div>
         </Link>
 
@@ -84,7 +83,7 @@ export function ProjectStudio({ theme: t }: { theme: Theme }) {
             <div className="relative aspect-[4/3] overflow-hidden rounded-2xl ring-1 ring-white/[0.08]">
               <img
                 src={p.thumb}
-                alt={p.name}
+                alt={th(p.nameKey)}
                 loading="lazy"
                 className="size-full object-cover transition-transform duration-500 group-hover:scale-105"
               />
@@ -95,8 +94,8 @@ export function ProjectStudio({ theme: t }: { theme: Theme }) {
               />
             </div>
             <div>
-              <div className="text-[14px] font-medium">{p.name}</div>
-              <div className="text-[12px] text-white/45">{p.desc}</div>
+              <div className="text-[14px] font-medium">{th(p.nameKey)}</div>
+              <div className="text-[12px] text-white/45">{th(p.descKey)}</div>
             </div>
           </Link>
         ))}

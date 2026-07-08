@@ -57,6 +57,14 @@ function autoContinueToolLoop({ messages }: { messages: UIMessage[] }): boolean 
   return toolSteps < MAX_TOOL_STEPS_PER_TURN;
 }
 
+function useLatestRef<T>(value: T) {
+  const ref = useRef(value);
+  useEffect(() => {
+    ref.current = value;
+  }, [value]);
+  return ref;
+}
+
 export function CopilotPanel({
   projectId,
   mode = "canvas",
@@ -85,25 +93,18 @@ export function CopilotPanel({
     []
   );
 
-  // Live values read inside stable closures (transport / onToolCall).
-  const wsRef = useRef(workspaceId);
-  wsRef.current = workspaceId;
-  const modeRef = useRef(mode);
-  modeRef.current = mode;
-  const runToolRef = useRef(runTool);
-  runToolRef.current = runTool;
-  const buildDigestRef = useRef(buildGraphDigest);
-  buildDigestRef.current = buildGraphDigest;
-  const buildModelsRef = useRef(buildModelsDigest);
-  buildModelsRef.current = buildModelsDigest;
-  const requestConfirmRef = useRef(requestConfirm);
-  requestConfirmRef.current = requestConfirm;
-  const confirmTextRef = useRef<Record<string, string>>({});
-  confirmTextRef.current = {
-    run_generation: t("confirmRun"),
-    remove_node: t("confirmRemoveNode"),
-    remove_edge: t("confirmRemoveEdge"),
-  };
+  // Live values read inside stable async tool closures.
+  const runToolRef = useLatestRef(runTool);
+  const requestConfirmRef = useLatestRef(requestConfirm);
+  const confirmText = useMemo(
+    () => ({
+      run_generation: t("confirmRun"),
+      remove_node: t("confirmRemoveNode"),
+      remove_edge: t("confirmRemoveEdge"),
+    }),
+    [t]
+  );
+  const confirmTextRef = useLatestRef<Record<string, string>>(confirmText);
   const toolOutputRef = useRef<ToolOutputFn | null>(null);
 
   const transport = useMemo(
@@ -118,15 +119,15 @@ export function CopilotPanel({
               messages,
               conversationId,
               projectId,
-              mode: modeRef.current,
-              graphContext: buildDigestRef.current(),
-              modelsContext: buildModelsRef.current(),
+              mode,
+              graphContext: buildGraphDigest(),
+              modelsContext: buildModelsDigest(),
             },
-            headers: wsRef.current ? { "x-fizz-workspace-id": wsRef.current } : undefined,
+            headers: workspaceId ? { "x-fizz-workspace-id": workspaceId } : undefined,
           };
         },
       }),
-    [conversationId, projectId]
+    [buildGraphDigest, buildModelsDigest, conversationId, mode, projectId, workspaceId]
   );
 
   const chat = useChat<UIMessage>({
@@ -164,7 +165,9 @@ export function CopilotPanel({
     },
   });
   const { messages, sendMessage, setMessages, status, stop, error, regenerate } = chat;
-  toolOutputRef.current = chat.addToolOutput as unknown as ToolOutputFn;
+  useEffect(() => {
+    toolOutputRef.current = chat.addToolOutput as unknown as ToolOutputFn;
+  }, [chat.addToolOutput]);
 
   const [input, setInput] = useState("");
   const busy = status === "submitted" || status === "streaming";
@@ -182,7 +185,7 @@ export function CopilotPanel({
           credentials: "include",
           headers: {
             "Content-Type": "application/json",
-            ...(wsRef.current ? { "x-fizz-workspace-id": wsRef.current } : {}),
+            ...(workspaceId ? { "x-fizz-workspace-id": workspaceId } : {}),
           },
           body: JSON.stringify({ conversationId }),
         });
@@ -202,7 +205,7 @@ export function CopilotPanel({
     return () => {
       cancelled = true;
     };
-  }, [conversationId, setMessages]);
+  }, [conversationId, setMessages, workspaceId]);
 
   const scrollRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -213,10 +216,11 @@ export function CopilotPanel({
   // If the panel is closed while a confirmation is pending, auto-decline it so
   // the awaiting tool call (and the held stream) doesn't park indefinitely.
   useEffect(() => {
-    if (!open && pendingConfirm) {
+    if (open || !pendingConfirm) return;
+    queueMicrotask(() => {
       pendingConfirm.resolve(false);
-      setPendingConfirm(null);
-    }
+      setPendingConfirm((current) => (current === pendingConfirm ? null : current));
+    });
   }, [open, pendingConfirm]);
 
   const submit = useCallback(() => {

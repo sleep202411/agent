@@ -13,11 +13,16 @@ import { useTranslations } from "next-intl";
 import { useQueryClient } from "@tanstack/react-query";
 import { useReactFlow, useStore } from "@xyflow/react";
 import { toast } from "sonner";
+import { ComputeRechargeDialog } from "@/app/_components/compute-recharge-dialog";
 import type { CanvasAsset } from "@/lib/collab/canvas-doc";
 import { useCanvasGraphContext } from "@/lib/collab/canvas-graph-context";
+import { ApiRequestError } from "@/lib/api";
 import { getAssetsRealtimeKernel } from "./assets-realtime-kernel";
 import { outputKindForType, routeReferenceField } from "./reference-routing";
-import { computeWalletBalanceQueryKey } from "@/app/_components/credits-badge";
+import {
+  computeWalletBalanceQueryKey,
+  useComputeWalletBalance,
+} from "@/app/_components/credits-badge";
 import { useActiveWorkspaceId } from "@/app/_components/workspace-context";
 import { useProjectContext } from "@/app/[locale]/project/_components/project-context";
 import {
@@ -27,6 +32,7 @@ import {
   cancelFizzAiJob,
   compactFizzAiInput,
   defaultMode,
+  estimateModelSellPoints,
   filterFizzAiInput,
   generationIdempotencyKey,
   generationStateFromJob,
@@ -35,6 +41,7 @@ import {
   isTerminalGenerationStatus,
   promptRequired,
   normalizeFizzAiError,
+  referenceFieldsForMode,
   submitFizzAiJob,
   type FizzAiCatalog,
   type FizzAiJobView,
@@ -141,11 +148,80 @@ type GenerationContextValue = {
   cancel: (nodeId: string) => void;
 };
 
+type RechargePromptState = {
+  available?: bigint | null;
+  modelName?: string;
+  required?: number | null;
+};
+
 const GenerationContext = createContext<GenerationContextValue | null>(null);
 
 /** Cards call this to submit / cancel themselves; no-ops outside a provider. */
 export function useGeneration(): GenerationContextValue {
   return useContext(GenerationContext) ?? { submit: () => {}, cancel: () => {} };
+}
+
+function generationCost(model: FizzAiCatalog["models"][number], data: GenNodeData): number | null {
+  const mode = data.mode ?? defaultMode(model);
+  const settings = data.settings ?? {};
+  const refFields = referenceFieldsForMode(model, mode);
+  const uploadedReferenceCount = refFields.reduce(
+    (count, field) => count + (data.references?.[field.field]?.length ?? 0),
+    0
+  );
+  return (
+    estimateModelSellPoints(model, {
+      numOutputs: Number(settings.numOutputs ?? settings.n ?? 1) || 1,
+      resolution: settings.resolution != null ? String(settings.resolution) : undefined,
+      quality: settings.quality != null ? String(settings.quality) : undefined,
+      duration: settings.duration != null ? String(settings.duration) : undefined,
+      durationSeconds:
+        typeof settings.durationSeconds === "number" ? settings.durationSeconds : undefined,
+      referenceImageCount: uploadedReferenceCount || undefined,
+    })?.sellPoints ?? null
+  );
+}
+
+function insufficientComputePointDetails(
+  error: unknown
+): { available?: bigint; required?: number } | null {
+  const text = error instanceof Error ? error.message : "";
+  let parsed: unknown;
+  if (error instanceof ApiRequestError && error.responseBody) {
+    try {
+      parsed = JSON.parse(error.responseBody);
+    } catch {
+      parsed = undefined;
+    }
+  }
+  const envelopes = [
+    parsed,
+    parsed && typeof parsed === "object" ? (parsed as { message?: unknown }).message : null,
+  ].filter((value): value is Record<string, unknown> =>
+    Boolean(value && typeof value === "object")
+  );
+  const code = envelopes
+    .map((value) => value.code)
+    .find((value): value is string => typeof value === "string");
+  const isInsufficient =
+    code === "INSUFFICIENT_COMPUTE_POINTS" ||
+    code === "INSUFFICIENT_UNEXPIRED_COMPUTE_POINTS" ||
+    /not enough (usable )?compute points/i.test(text) ||
+    /insufficient.*compute/i.test(text);
+  if (!isInsufficient) return null;
+  const detail = envelopes.find((value) => value.requiredAmount || value.availableBalance);
+  const requiredRaw = detail?.requiredAmount;
+  const availableRaw = detail?.availableBalance;
+  return {
+    required:
+      typeof requiredRaw === "string" && /^\d+$/.test(requiredRaw)
+        ? Number(requiredRaw)
+        : undefined,
+    available:
+      typeof availableRaw === "string" && /^-?\d+$/.test(availableRaw)
+        ? BigInt(availableRaw)
+        : undefined,
+  };
 }
 
 /**
@@ -183,6 +259,17 @@ export function CanvasGenerationProvider({
   // to the server-backed project so context (workspace, cast) resolves from it.
   const { projectId } = useProjectContext();
   const queryClient = useQueryClient();
+  const { data: wallet } = useComputeWalletBalance();
+  const [rechargePrompt, setRechargePrompt] = useState<RechargePromptState | null>(null);
+  useEffect(() => {
+    if (process.env.NODE_ENV === "production") return;
+    const params = new URLSearchParams(window.location.search);
+    if (!params.has("previewRecharge")) return;
+    const timer = window.setTimeout(() => {
+      setRechargePrompt({ available: BigInt(0), required: 305, modelName: "Seedance 2.0" });
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, []);
   // Latest catalog without re-subscribing the realtime loop on catalog load
   // (the completion back-fill reads it to resolve downstream models).
   const catalogRef = useRef(catalog);
@@ -549,6 +636,15 @@ export function CanvasGenerationProvider({
         toast.error(t("writePromptFirst"));
         return;
       }
+      const estimatedCost = generationCost(model, data);
+      if (estimatedCost != null && wallet && wallet.available < BigInt(Math.ceil(estimatedCost))) {
+        setRechargePrompt({
+          available: wallet.available,
+          modelName: model.name,
+          required: estimatedCost,
+        });
+        return;
+      }
 
       // Only the ACTIVE mode's reference fields are submitted — leftover slots
       // from a prior mode must not ride along or Seedance rejects the combo.
@@ -603,12 +699,22 @@ export function CanvasGenerationProvider({
         });
         void queryClient.invalidateQueries({ queryKey: computeWalletBalanceQueryKey });
       } catch (error) {
+        const insufficient = insufficientComputePointDetails(error);
+        if (insufficient) {
+          patchNodeData(nodeId, { generation: data.generation });
+          setRechargePrompt({
+            available: insufficient.available ?? wallet?.available ?? null,
+            modelName: model.name,
+            required: insufficient.required ?? estimatedCost,
+          });
+          return;
+        }
         const message = normalizeFizzAiError(error, t("generationFailed"));
         patch(nodeId, { status: "failed", error: message });
         toast.error(message);
       }
     },
-    [getNode, catalog, projectId, patch, queryClient, t]
+    [getNode, catalog, wallet, projectId, patch, patchNodeData, queryClient, t]
   );
 
   const cancel = useCallback(
@@ -633,5 +739,18 @@ export function CanvasGenerationProvider({
     [submit, cancel]
   );
 
-  return <GenerationContext.Provider value={value}>{children}</GenerationContext.Provider>;
+  return (
+    <GenerationContext.Provider value={value}>
+      {children}
+      <ComputeRechargeDialog
+        open={rechargePrompt !== null}
+        available={rechargePrompt?.available}
+        required={rechargePrompt?.required}
+        modelName={rechargePrompt?.modelName}
+        onOpenChange={(next) => {
+          if (!next) setRechargePrompt(null);
+        }}
+      />
+    </GenerationContext.Provider>
+  );
 }

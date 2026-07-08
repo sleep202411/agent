@@ -140,14 +140,14 @@ export function StudioSidebar() {
   return (
     <aside
       aria-label={t("nav.studioNavigation")}
-      className="fixed inset-y-0 left-6 z-50 hidden w-14 flex-col items-center justify-center gap-6 py-5 lg:flex"
+      className="pointer-events-none fixed inset-y-0 left-2 z-50 flex w-14 flex-col items-center justify-center gap-4 py-4 sm:left-4 sm:gap-5 lg:left-6 lg:gap-6 lg:py-5"
     >
       {/* Primary nav — flowing liquid-glass pill: frosted body (blur+saturate
           refracts the backdrop), the static GlassRim edge, and a slow specular
           highlight drifting around the rim (`liquid-rim`). */}
       <nav
         aria-label={t("nav.main")}
-        className="liquid-rim relative flex flex-col items-center gap-1 rounded-4xl bg-white/[0.05] p-1.5 backdrop-blur-2xl backdrop-saturate-[1.8] shadow-[inset_0_1px_0_rgba(255,255,255,0.14),0_16px_48px_-14px_rgba(0,0,0,0.6)]"
+        className="liquid-rim pointer-events-auto relative flex flex-col items-center gap-1 rounded-4xl bg-white/[0.05] p-1.5 backdrop-blur-2xl backdrop-saturate-[1.8] shadow-[inset_0_1px_0_rgba(255,255,255,0.14),0_16px_48px_-14px_rgba(0,0,0,0.6)]"
       >
         <GlassRim />
         {items.map((item) => (
@@ -156,7 +156,7 @@ export function StudioSidebar() {
       </nav>
 
       {/* Detached utility — its own liquid-glass puck */}
-      <div className="liquid-rim relative rounded-full bg-white/[0.05] p-1.5 backdrop-blur-2xl backdrop-saturate-[1.8] shadow-[inset_0_1px_0_rgba(255,255,255,0.14),0_12px_36px_-12px_rgba(0,0,0,0.55)]">
+      <div className="liquid-rim pointer-events-auto relative rounded-full bg-white/[0.05] p-1.5 backdrop-blur-2xl backdrop-saturate-[1.8] shadow-[inset_0_1px_0_rgba(255,255,255,0.14),0_12px_36px_-12px_rgba(0,0,0,0.55)]">
         <GlassRim />
         <RailButton
           item={settingsItem}

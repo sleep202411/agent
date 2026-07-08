@@ -5,7 +5,6 @@ import { useQuery } from "@tanstack/react-query";
 import { useTranslations } from "next-intl";
 import { IconBolt } from "@tabler/icons-react";
 import { Button } from "@/components/ui/button";
-import { FrostedPanel } from "@/components/ui/frosted-panel";
 import { useAuth } from "@/app/_components/auth-provider";
 import { useComputeWalletBalance } from "@/app/_components/credits-badge";
 import { SubscriptionDialog } from "@/app/_components/subscription-dialog";

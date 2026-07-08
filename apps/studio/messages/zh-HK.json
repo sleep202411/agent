@@ -15,7 +15,9 @@
     "back": "返回",
     "next": "下一步",
     "copy": "複製",
-    "copied": "已複製"
+    "copied": "已複製",
+    "fizzDragon": "FizzDragon",
+    "fizzStudio": "FizzStudio"
   },
   "localeSwitcher": {
     "label": "語言"
@@ -61,7 +63,8 @@
     "gallery": {
       "title": "作品庫",
       "optionsAction": "更多操作",
-      "saveAction": "收藏"
+      "saveAction": "收藏",
+      "summary": "{count} 張精選種子圖，包含提示詞和模型資訊"
     },
     "recent": {
       "title": "最近項目",
@@ -77,8 +80,162 @@
         "justNow": "剛剛",
         "minutes": "{count, plural, other {# 分鐘前}}",
         "hours": "{count, plural, other {# 小時前}}",
-        "days": "{count, plural, other {# 天前}}"
+        "days": "{count, plural, other {# 天前}}",
+        "weeks": "{count} 週前",
+        "months": "{count} 個月前"
+      },
+      "scrollLeft": "向左捲動",
+      "scrollRight": "向右捲動",
+      "assetCount": "{count} 個資產",
+      "creditCount": "{count} 點算力"
+    },
+    "untitledWorkflow": "未命名工作流",
+    "createProjectErrorDetailed": "無法建立項目，請稍後再試。",
+    "models": {
+      "title": "模型",
+      "badges": {
+        "new": "新",
+        "audio": "音訊",
+        "unlimitedFree": "不限量免費"
+      },
+      "descriptions": {
+        "happyHorse": "更銳利的電影真實感和更穩定的音畫同步",
+        "seedance": "流暢一致的多鏡頭影片輸出",
+        "kling": "動作表現鮮明，提示詞遵循度強",
+        "veo": "影格控制與多圖參考能力",
+        "wan": "雙語提示詞與精準鏡頭控制",
+        "nanoBanana": "更快的高保真圖片生成",
+        "gptImage": "近乎完美的文字渲染與極高精度",
+        "seedream": "即時網頁檢索與精準編輯控制"
       }
+    },
+    "footer": {
+      "copyright": "© 2026 FizzDragon。保留所有權利。",
+      "trustScore": "信任評分 4.4",
+      "reviewCount": "3600+ 則評價"
+    },
+    "composer": {
+      "modes": {
+        "image": "圖片",
+        "video": "影片",
+        "project": "項目"
+      },
+      "promptAria": "提示詞",
+      "generationTypeAria": "生成類型",
+      "createAria": "建立",
+      "shuffleAria": "換一組建議",
+      "placeholders": {
+        "logo": "設計一個 logo",
+        "carousel": "為 Instagram 製作 5 頁產品輪播圖",
+        "ugcVideo": "建立一段 UGC 風格廣告影片",
+        "campaign": "把產品照片變成行銷 campaign"
+      },
+      "suggestions": {
+        "socialCarousel": {
+          "label": "品牌社媒輪播圖",
+          "prompt": "為護膚品新品發佈製作 5 頁 Instagram 輪播圖，視覺乾淨現代。"
+        },
+        "etsyMockup": {
+          "label": "Etsy 產品樣機",
+          "prompt": "建立一個精緻的 Etsy 產品樣機，溫暖日光、乾淨生活方式背景，並預留商品文案空間。"
+        },
+        "ugcAdVideo": {
+          "label": "UGC 風格廣告影片",
+          "prompt": "為一款新的健康產品建立 UGC 風格廣告影片，自然手持感、快節奏剪輯、字幕和明確行動號召。"
+        },
+        "facelessShort": {
+          "label": "無露面 YouTube Shorts",
+          "prompt": "建立一段無露面 YouTube Shorts，視覺節奏快、場景切換清晰，並有簡潔的教育型開場鉤子。"
+        },
+        "musicVideo": {
+          "label": "AI 音樂影片",
+          "prompt": "建立一段 AI 音樂影片，鏡頭運動有表現力，場景變化貼合節奏，整體明亮電影感。"
+        },
+        "podcastCover": {
+          "label": "Podcast 封面圖",
+          "prompt": "設計高級感 podcast 封面，乾淨編輯式構圖，保留標題安全留白，並使用現代燈光。"
+        },
+        "brandKit": {
+          "label": "從 logo 生成品牌套件",
+          "prompt": "基於一個極簡 logo 概念設計完整品牌套件，包括色彩、字體方向、社媒頭像和發佈視覺。"
+        },
+        "interiorMoodboard": {
+          "label": "室內設計 moodboard",
+          "prompt": "為明亮現代工作室建立室內設計 moodboard，包含自然材質、柔和日光和精緻編輯風格。"
+        },
+        "campaignStoryboard": {
+          "label": "Campaign 分鏡",
+          "prompt": "為 15 秒產品發佈影片製作 campaign 分鏡，包括開場鉤子、生活方式場景、產品特寫和最終 CTA。"
+        }
+      }
+    },
+    "heroComposer": {
+      "headlinePrefix": "面向",
+      "headlineHighlight": "創作者的終極 AI 創意套件",
+      "subtitle": "描述一個想法，即可快速生成圖片或影片。"
+    },
+    "studioTabs": {
+      "agent": "Agent",
+      "creative": "創意工作台",
+      "project": "項目工作台",
+      "marketing": "行銷工作台",
+      "commerce": "電商工作台"
+    },
+    "agentStudio": {
+      "intro": "不知道從哪裏開始？告訴我你的想法，我會選擇合適工具並幫你搭好。",
+      "placeholder": "描述你想做甚麼，或者詢問如何開始…",
+      "attachAria": "加入附件",
+      "sendAria": "發送",
+      "suggestions": {
+        "productAd": "製作電影感產品廣告",
+        "imagePrompt": "根據提示詞生成圖片",
+        "scriptVideo": "把腳本變成影片",
+        "newCanvas": "在畫布中開始新項目",
+        "removeBg": "移除照片背景"
+      }
+    },
+    "projectStudio": {
+      "intro": "打開畫布，從空白開始，或使用可直接運行的工作流樣例。",
+      "blankCanvas": "空白畫布",
+      "startFromScratch": "從零開始",
+      "presets": {
+        "marketingAd": {
+          "name": "行銷廣告",
+          "description": "分鏡 → 電影感產品廣告"
+        },
+        "fashionTrailer": {
+          "name": "時裝預告片",
+          "description": "分鏡 → 情緒化時裝短片"
+        },
+        "youtubeVlog": {
+          "name": "YouTube Vlog",
+          "description": "分鏡 → 高能 vlog 片段"
+        },
+        "brandVisuals": {
+          "name": "品牌主視覺",
+          "description": "單張品牌調性主視覺"
+        }
+      }
+    },
+    "heroCanvas": {
+      "prompts": {
+        "socialCollage": "明亮的社媒創作者拼貼：年輕女性與朋友歡笑，在日光下拍攝短影片，節日氛圍、手持 vlog 畫面、溫暖自然色彩。",
+        "creatorPortrait": "戶外日光下開朗的女性創作者肖像，捲髮、琥珀色太陽眼鏡、乾淨白色外套，自信微笑，清新的社媒編輯風格。",
+        "lifestyleVideo": "動態創作者生活方式影片：人群反應、向鏡頭揮手、輕快動作、明亮城市廣場、自然日光，充滿能量但保持精緻。",
+        "storyboard": "明亮的創作者分鏡：朋友、城市街景、節日人群、小食、笑聲，以及溫暖日光下充滿能量的社媒瞬間。"
+      },
+      "alts": {
+        "poster": "坐姿創意總監的建築編輯風海報",
+        "source": "坐姿創意總監的庭院參考相片",
+        "portrait": "創意專業人士的編輯風肖像參考",
+        "storyboard": "明亮創作者生活方式分鏡網格",
+        "video": "生成的創作者生活方式影片預覽"
+      },
+      "cursors": {
+        "emma": "Emma",
+        "amelia": "Amelia"
+      },
+      "comment": "喜歡這個版本"
     }
   },
   "generation": {
@@ -519,7 +676,8 @@
       "teamTag": "團隊"
     },
     "header": {
-      "homeAriaLabel": "FizzStudio 首頁"
+      "homeAriaLabel": "FizzStudio 首頁",
+      "fizzDragonHomeAriaLabel": "FizzDragon 首頁"
     },
     "nav": {
       "home": "首頁",
@@ -675,6 +833,20 @@
       "checkoutUrlMissing": "未回傳付款結算連結",
       "paymentFailed": "付款失敗"
     },
+    "rechargePrompt": {
+      "close": "關閉增值彈窗",
+      "eyebrow": "算力積分不足",
+      "title": "增值後繼續創作",
+      "body": "目前結餘低於本次生成的預計消耗。增值後即可留在畫布繼續生成。",
+      "bodyWithModel": "目前結餘低於 {model} 的預計消耗。增值後即可留在畫布繼續生成。",
+      "available": "可用",
+      "required": "需要",
+      "missing": "缺口",
+      "estimated": "預計到賬",
+      "cta": "繼續付款",
+      "viewBilling": "查看帳單",
+      "billingAdminOnly": "此團隊使用共享工作空間結餘。請聯絡所有者、管理員或帳單管理員增值算力積分。"
+    },
     "faq": {
       "heading": "你的疑問，<br></br>這裡解答",
       "computeCredits": {
@@ -726,6 +898,7 @@
     "snapToGrid": "對齊網格",
     "zoomOut": "縮小",
     "zoomIn": "放大",
+    "zoomLevel": "縮放 {percent}%",
     "zoomToFit": "適應視窗",
     "dock": {
       "upload": "上載",
@@ -804,6 +977,35 @@
       "title": "設定",
       "selectModel": "請選擇要設定的模型。",
       "advanced": "進階設定"
+    },
+    "presets": {
+      "modelsLoading": "模型仍在載入，請稍後再試",
+      "noModelAvailable": "目前沒有可用的 {modality} 模型"
+    },
+    "workflowPresets": {
+      "marketingAd": {
+        "name": "行銷廣告",
+        "description": "分鏡 → 電影感產品廣告"
+      },
+      "fashionTrailer": {
+        "name": "時裝預告片",
+        "description": "分鏡 → 情緒化時裝短片"
+      },
+      "youtubeVlog": {
+        "name": "YouTube Vlog",
+        "description": "分鏡 → 高能 vlog 片段"
+      },
+      "brandVisuals": {
+        "name": "品牌主視覺",
+        "description": "單張品牌調性主視覺"
+      },
+      "nodes": {
+        "storyboard": "分鏡",
+        "ad": "廣告",
+        "trailer": "預告片",
+        "clip": "片段",
+        "keyVisual": "主視覺"
+      }
     }
   },
   "canvasNodes": {
@@ -819,6 +1021,7 @@
       "generatePanorama": "生成全景圖",
       "preview": "放大檢視",
       "download": "下載",
+      "rename": "重新命名",
       "uploading": "上載中 · {progress}%",
       "uploadFailed": "上載失敗"
     },
@@ -831,8 +1034,20 @@
       "alt": "全景圖",
       "view720": "720° 檢視",
       "download": "下載",
+      "rename": "重新命名",
       "enter": "進入全景",
       "exit": "退出"
+    },
+    "media": {
+      "video": {
+        "title": "影片"
+      },
+      "audio": {
+        "title": "音訊"
+      },
+      "preview": "放大檢視",
+      "download": "下載",
+      "rename": "重新命名"
     },
     "reference": {
       "alt": "參考",
@@ -843,6 +1058,8 @@
     "asset": {
       "title": "素材",
       "alt": "素材",
+      "audio": "音訊",
+      "untitled": "未命名素材",
       "close": "關閉素材庫",
       "searchPlaceholder": "搜尋素材",
       "providerStatusApproved": "安全檢查通過",
@@ -886,6 +1103,9 @@
     "assetUnavailable": "此素材已不再可用。",
     "chooseModelFirst": "請先選擇模型",
     "writePromptFirst": "請先輸入提示詞",
+    "copyTaskId": "複製任務 ID",
+    "taskIdCopied": "任務 ID 已複製",
+    "taskIdCopyFailed": "無法複製任務 ID",
     "uploadFailed": "無法上載 {name}",
     "noModelForOp": "目錄中暫無可用的{op}模型",
     "promptPlaceholderDefault": "輸入你的提示詞……",
@@ -999,6 +1219,15 @@
         "checkpoint": "儲存了檢查點",
         "imported": "已匯入"
       }
+    },
+    "connection": {
+      "offline": "即時連線已離線",
+      "connecting": "正在連線…",
+      "connected": "即時連線已連接",
+      "latencyExcellent": "即時 · {ms} · 極佳",
+      "latencyGood": "即時 · {ms} · 良好",
+      "latencyFair": "即時 · {ms} · 一般",
+      "latencyPoor": "即時 · {ms} · 較差"
     }
   },
   "settings": {
@@ -1205,7 +1434,11 @@
     "documentOpenError": "無法開啟此文件——請檢查連結或你的存取權限。",
     "briefPlaceholder": "撰寫簡介…",
     "offlineSaved": "離線——變更已儲存至本機",
-    "connecting": "連線中…"
+    "connecting": "連線中…",
+    "modes": {
+      "canvas": "畫布",
+      "brief": "簡報"
+    }
   },
   "invite": {
     "loading": "正在載入邀請…",
@@ -1271,5 +1504,9 @@
     "confirmRun": "執行這次生成？將消耗工作區算力積分。",
     "confirmRemoveNode": "從畫布刪除這個節點？",
     "confirmRemoveEdge": "刪除這條連線？"
+  },
+  "metadata": {
+    "studioTitle": "FizzStudio",
+    "studioDescription": "AI 創意工作台"
   }
 }

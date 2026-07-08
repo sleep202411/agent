@@ -17,7 +17,7 @@ export interface StudioMode {
   type: string;
   /** URL segment under /project/[projectId]/[slug]. */
   slug: string;
-  label: string;
+  labelKey: "modes.canvas" | "modes.brief";
   Icon: Icon;
   Editor: ComponentType;
 }
@@ -26,14 +26,14 @@ export const MODES: Record<string, StudioMode> = {
   canvas: {
     type: "canvas",
     slug: "canvas",
-    label: "Canvas",
+    labelKey: "modes.canvas",
     Icon: IconArtboard,
     Editor: CanvasEditor,
   },
   brief: {
     type: "brief",
     slug: "brief",
-    label: "Brief",
+    labelKey: "modes.brief",
     Icon: IconFileText,
     Editor: BriefEditor,
   },

@@ -633,6 +633,18 @@ export function defaultMode(model: FizzAiModel | undefined): string | undefined 
   return modes.find((m) => m.startsWith("text_to_")) ?? modes[0];
 }
 
+const CANVAS_DEFAULT_MODE_PRIORITY: Record<FizzAiJobType, readonly FizzAiGenerationMode[]> = {
+  image: ["image_to_image"],
+  video: ["multimodal_to_video", "image_to_video", "first_last_frame_to_video", "video_to_video"],
+};
+
+/** New blank canvas cards should start in reference-friendly modes. */
+export function canvasDefaultMode(model: FizzAiModel | undefined): string | undefined {
+  const modes = model?.generationModes ?? [];
+  const priority = model ? CANVAS_DEFAULT_MODE_PRIORITY[model.type] : [];
+  return priority.find((mode) => modes.includes(mode)) ?? defaultMode(model);
+}
+
 /** Modes reached via a dedicated canvas action (a toolbar button on an image),
  *  never the general model picker. */
 const OPERATION_ONLY_MODES: readonly string[] = [
@@ -919,6 +931,20 @@ export function mergeCompatibleSettings(
 
 export function isFizzAiModelUsable(model: FizzAiModel): boolean {
   return model.enabled && model.access?.allowed !== false;
+}
+
+export function canvasDefaultModel(
+  catalog: FizzAiCatalog | undefined,
+  modality: FizzAiJobType
+): FizzAiModel | undefined {
+  const models = (catalog?.models ?? []).filter(
+    (model) => model.type === modality && isFizzAiModelUsable(model)
+  );
+  const priority = CANVAS_DEFAULT_MODE_PRIORITY[modality];
+  return (
+    models.find((model) => priority.some((mode) => model.generationModes?.includes(mode))) ??
+    models[0]
+  );
 }
 
 export function filterFizzAiInput(

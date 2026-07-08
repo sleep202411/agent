@@ -13,11 +13,19 @@
  * Paths here are LOCALE-STRIPPED, matching next-intl's `usePathname()`
  * (e.g. "/canvas", not "/zh-CN/canvas").
  */
+import { locales } from "@/i18n/config";
+
 const PROTECTED_PREFIXES = ["/canvas", "/projects", "/project", "/settings", "/invite"] as const;
+
+function stripLocalePrefix(pathname: string): string {
+  const normalized = pathname.startsWith("/") ? pathname : `/${pathname}`;
+  const [, firstSegment = "", ...rest] = normalized.split("/");
+  if (!(locales as readonly string[]).includes(firstSegment)) return normalized;
+  return rest.length === 0 ? "/" : `/${rest.join("/")}`;
+}
 
 /** True when a (locale-stripped) path requires a signed-in user to view. */
 export function isProtectedPath(pathname: string): boolean {
-  return PROTECTED_PREFIXES.some(
-    (prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`)
-  );
+  const path = stripLocalePrefix(pathname);
+  return PROTECTED_PREFIXES.some((prefix) => path === prefix || path.startsWith(`${prefix}/`));
 }

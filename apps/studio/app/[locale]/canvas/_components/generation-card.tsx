@@ -18,6 +18,7 @@ import {
   IconBackground,
   IconBulb,
   IconPhoto,
+  IconCopy,
   IconRefresh,
   IconRotate3d,
   IconRoute,
@@ -29,6 +30,7 @@ import { ReactCompareSlider } from "react-compare-slider";
 import { cn } from "@/lib/utils";
 import { isUploadAbort, uploadFileViaSignedUrl } from "@/lib/media-upload";
 import { useDismiss } from "@/lib/use-dismiss";
+import type { CanvasAsset, CanvasEdgeShape, CanvasNodeShape } from "@/lib/collab/canvas-doc";
 import { useAiCatalog, usableModelsByModality } from "@/app/[locale]/canvas/_lib/use-ai-catalog";
 import { useGeneration } from "@/app/[locale]/canvas/_lib/use-canvas-generation";
 import {
@@ -50,7 +52,8 @@ import { PromptTextarea } from "./prompt-textarea";
 import { mentionLabel, type MentionItem } from "@/lib/prompt-mentions";
 import { useCanvasGraphContext } from "@/lib/collab/canvas-graph-context";
 import {
-  defaultMode,
+  canvasDefaultMode,
+  canvasDefaultModel,
   defaultSettingsForModel,
   mergeCompatibleSettings,
   estimateModelSellPoints,
@@ -58,6 +61,7 @@ import {
   isUnsafeGenerationErrorMessage,
   referenceFieldsForMode,
   type FizzAiModel,
+  type FizzAiGenerationMode,
   type FizzAiReferenceKind,
   type GenerationState,
   type ModelSettings,
@@ -134,6 +138,79 @@ const UPLOAD_KIND_BY_REFERENCE: Record<FizzAiReferenceKind, string> = {
   video: "ai_reference_video",
   audio: "ai_reference_audio",
 };
+
+const SOURCE_NODE_GAP_X = 96;
+const SOURCE_NODE_STACK_Y = 92;
+const IMAGE_SOURCE_WIDTH = 280;
+const MEDIA_SOURCE_WIDTH = 240;
+
+function referenceCountForLayout(references: CardReferences): number {
+  return Object.values(references).reduce((count, list) => count + (list?.length ?? 0), 0);
+}
+
+function sourceNodeTypeForReference(
+  kind: FizzAiReferenceKind
+): "image" | "videoAsset" | "audioAsset" {
+  if (kind === "video") return "videoAsset";
+  if (kind === "audio") return "audioAsset";
+  return "image";
+}
+
+function sourceNodePosition(
+  target: CanvasNodeShape | null,
+  kind: FizzAiReferenceKind,
+  ordinal: number
+): { x: number; y: number } {
+  const width = kind === "image" ? IMAGE_SOURCE_WIDTH : MEDIA_SOURCE_WIDTH;
+  const targetX = target?.position.x ?? 0;
+  const targetY = target?.position.y ?? 0;
+  return {
+    x: targetX - width - SOURCE_NODE_GAP_X,
+    y: targetY + ordinal * SOURCE_NODE_STACK_Y,
+  };
+}
+
+function uploadedReferenceGraph({
+  edgeId,
+  fileName,
+  kind,
+  mediaAssetId,
+  ordinal,
+  sourceNodeId,
+  target,
+  targetNodeId,
+  url,
+}: {
+  edgeId: string;
+  fileName: string;
+  kind: FizzAiReferenceKind;
+  mediaAssetId: string;
+  ordinal: number;
+  sourceNodeId: string;
+  target: CanvasNodeShape | null;
+  targetNodeId: string;
+  url: string;
+}): { edge: CanvasEdgeShape; node: CanvasNodeShape } {
+  return {
+    node: {
+      id: sourceNodeId,
+      type: sourceNodeTypeForReference(kind),
+      position: sourceNodePosition(target, kind, ordinal),
+      data: {
+        src: url,
+        mediaAssetId,
+        label: fileName,
+      },
+    },
+    edge: {
+      id: edgeId,
+      source: sourceNodeId,
+      target: targetNodeId,
+      sourceHandle: "output",
+      targetHandle: "input",
+    },
+  };
+}
 
 /**
  * CSS aspect-ratio for the result area so the card matches its content: actual
@@ -217,6 +294,18 @@ function promptPlaceholderKey(mode: string | undefined): string {
   return (mode && PROMPT_PLACEHOLDER_KEYS[mode]) || "promptPlaceholderDefault";
 }
 
+function modelSupportsMode(
+  model: FizzAiModel,
+  mode: string | undefined
+): mode is FizzAiGenerationMode {
+  return Boolean(mode && model.generationModes?.some((candidate) => candidate === mode));
+}
+
+function modeForSelectedModel(selected: FizzAiModel, currentMode: string | undefined) {
+  if (modelSupportsMode(selected, currentMode)) return currentMode;
+  return canvasDefaultMode(selected);
+}
+
 function GenerationCard({
   id,
   data,
@@ -228,7 +317,8 @@ function GenerationCard({
   const tc = useTranslations("common");
   const ml = useModeLabel();
   const ol = useOperationLabel();
-  const { patchNodeData, canEdit, nodes } = useCanvasGraphContext();
+  const { addAssets, addNodesAndEdges, getNode, patchNodeData, canEdit, nodes } =
+    useCanvasGraphContext();
   const { data: catalog } = useAiCatalog();
   // Composer is click-triggered: it opens for a sole selected node only, so a
   // marquee / select-all doesn't pop every card's prompt at once.
@@ -297,7 +387,7 @@ function GenerationCard({
     }
     return merged;
   }, [references, pendingRefs]);
-  const mode = data.mode ?? defaultMode(model);
+  const mode = data.mode ?? canvasDefaultMode(model);
   const modes = model?.generationModes ?? [];
   const refFields = useMemo(() => referenceFieldsForMode(model, mode), [model, mode]);
   // Attached references the prompt can cite with `@` — labeled per kind
@@ -368,7 +458,8 @@ function GenerationCard({
 
   const addReferences = (field: string, files: File[]) => {
     const kind = refFields.find((f) => f.field === field)?.kind ?? "image";
-    for (const file of files) {
+    const layoutOrdinalBase = referenceCountForLayout(referencesForDisplay);
+    for (const [fileIndex, file] of files.entries()) {
       const refId = crypto.randomUUID();
       const objectUrl = URL.createObjectURL(file);
       createdUrls.current.push(objectUrl);
@@ -382,7 +473,39 @@ function GenerationCard({
       }));
       uploadFileViaSignedUrl(file, { kind: UPLOAD_KIND_BY_REFERENCE[kind] })
         .then((uploaded) => {
+          URL.revokeObjectURL(objectUrl);
+          const target = getNode(id);
+          if (!target) {
+            dropPending(field, refId);
+            return;
+          }
+          const edgeId = crypto.randomUUID();
+          const sourceNodeId = crypto.randomUUID();
+          const { edge, node } = uploadedReferenceGraph({
+            edgeId,
+            fileName: file.name,
+            kind,
+            mediaAssetId: uploaded.mediaAssetId,
+            ordinal: layoutOrdinalBase + fileIndex,
+            sourceNodeId,
+            target,
+            targetNodeId: id,
+            url: uploaded.url,
+          });
+          addNodesAndEdges([node], [edge]);
+          addAssets([
+            {
+              id: uploaded.mediaAssetId,
+              mediaAssetId: uploaded.mediaAssetId,
+              kind: kind as CanvasAsset["kind"],
+              source: "uploaded",
+              url: uploaded.url,
+              name: file.name,
+              createdAt: Date.now(),
+            },
+          ]);
           // Persist the DURABLE url (never the blob:) into the doc, drop the chip.
+          // The reference is wired, so removing it happens by disconnecting the edge.
           patchNodeData(id, (node) => {
             const refs: CardReferences = (node.data as GenerationNodeData).references ?? {};
             return {
@@ -391,7 +514,9 @@ function GenerationCard({
                 [field]: [
                   ...(refs[field] ?? []),
                   {
-                    id: refId,
+                    id: edgeId,
+                    edgeId,
+                    sourceNodeId,
                     url: uploaded.url,
                     name: file.name,
                     kind,
@@ -432,7 +557,7 @@ function GenerationCard({
     patchNodeData(id, {
       modelId: selected.id,
       modelName: selected.name,
-      mode: defaultMode(selected),
+      mode: modeForSelectedModel(selected, data.mode),
       // Re-base onto the new model's defaults, keeping only prior values still
       // valid for it — a stale value (e.g. Seedance "720p" vs Wan "720P") would
       // otherwise make the request unroutable for the new model.
@@ -445,12 +570,13 @@ function GenerationCard({
   // re-firing, and concurrent editors converge on the same default.
   useEffect(() => {
     if (data.modelId || !canEdit || !catalog) return;
-    const def = usableModelsByModality(catalog, modality)[0];
+    const def =
+      canvasDefaultModel(catalog, modality) ?? usableModelsByModality(catalog, modality)[0];
     if (!def) return;
     patchNodeData(id, {
       modelId: def.id,
       modelName: def.name,
-      mode: defaultMode(def),
+      mode: canvasDefaultMode(def),
       settings: defaultSettingsForModel(def),
     });
   }, [data.modelId, canEdit, catalog, modality, id, patchNodeData]);
@@ -469,6 +595,15 @@ function GenerationCard({
       URL.revokeObjectURL(url);
     } catch {
       window.open(output.url, "_blank");
+    }
+  };
+
+  const copyTaskId = async (jobId: string) => {
+    try {
+      await navigator.clipboard.writeText(jobId);
+      toast.success(t("taskIdCopied"));
+    } catch {
+      toast.error(t("taskIdCopyFailed"));
     }
   };
 
@@ -671,9 +806,19 @@ function GenerationCard({
                 {tc("retry")}
               </button>
               {generation.jobId && (
-                <span className="select-text font-mono text-[10px] text-white/30">
-                  {generation.jobId}
-                </span>
+                <div className="flex max-w-[calc(100%-2rem)] items-center gap-1.5 rounded-full bg-black/20 py-1 pr-1 pl-2.5">
+                  <span className="min-w-0 select-text truncate font-mono text-[10px] text-white/38">
+                    {generation.jobId}
+                  </span>
+                  <button
+                    type="button"
+                    aria-label={t("copyTaskId")}
+                    onClick={() => void copyTaskId(generation.jobId as string)}
+                    className="flex size-6 shrink-0 items-center justify-center rounded-full text-white/55 transition-colors hover:bg-white/[0.1] hover:text-white"
+                  >
+                    <IconCopy className="size-3.5" stroke={1.8} />
+                  </button>
+                </div>
               )}
             </>
           ) : (
@@ -758,7 +903,7 @@ function GenerationCard({
                   className="block max-h-40 w-full resize-none overflow-y-auto bg-transparent text-sm outline-none placeholder:text-muted-foreground"
                 />
               )}
-              <div className="flex items-center gap-2 pt-2">
+              <div className="flex min-h-10 items-center gap-2 pt-2">
                 {/* Mode pill — hidden on operation-locked / model-locked cards
                   (the op fixes the mode). */}
                 {!data.locked && !data.modelLocked && modes.length > 1 && (
@@ -766,7 +911,7 @@ function GenerationCard({
                     <button
                       type="button"
                       onClick={() => setPanel((p) => (p === "mode" ? null : "mode"))}
-                      className="flex h-8 items-center gap-1 rounded-full bg-white/[0.06] px-3 text-xs font-medium transition-colors hover:bg-white/[0.1]"
+                      className="flex h-10 items-center gap-1 rounded-xl bg-white/[0.08] px-3 text-sm font-medium transition-colors hover:bg-white/[0.12]"
                     >
                       {ml(mode ?? "")}
                       <IconChevronDown className="size-3.5 text-muted-foreground" stroke={1.8} />
@@ -789,7 +934,7 @@ function GenerationCard({
                     <button
                       type="button"
                       onClick={() => setPanel((p) => (p === "model" ? null : "model"))}
-                      className="flex h-8 items-center rounded-full bg-white/[0.06] px-3 text-xs font-medium transition-colors hover:bg-white/[0.1]"
+                      className="flex h-10 items-center rounded-xl bg-white/[0.08] px-3 text-sm font-medium transition-colors hover:bg-white/[0.12]"
                     >
                       {data.modelName ?? t("selectModel")}
                     </button>
@@ -818,7 +963,7 @@ function GenerationCard({
                     <button
                       type="button"
                       onClick={() => setPanel((p) => (p === "settings" ? null : "settings"))}
-                      className="flex size-8 items-center justify-center rounded-full bg-white/[0.06] transition-colors hover:bg-white/[0.1]"
+                      className="flex size-10 items-center justify-center rounded-xl bg-white/[0.08] transition-colors hover:bg-white/[0.12]"
                       aria-label={t("settings")}
                     >
                       <IconAdjustments className="size-4" stroke={1.8} />
@@ -836,7 +981,7 @@ function GenerationCard({
 
                 <div className="ml-auto flex items-center gap-3">
                   {cost != null && (
-                    <span className="flex items-center gap-1 text-xs text-muted-foreground tabular-nums">
+                    <span className="flex h-10 items-center gap-1 px-1 text-xs text-muted-foreground tabular-nums">
                       <IconBolt className="size-3.5" stroke={1.8} />
                       {cost}
                     </span>
@@ -847,7 +992,7 @@ function GenerationCard({
                     onClick={() => (busy ? cancel(id) : submit(id))}
                     // Brand red as the hero CTA — sanctioned case-by-case accent
                     // (DESIGN.md rule 3), applied locally, never a token.
-                    className="flex size-8 items-center justify-center rounded-full bg-[#E52227] text-white shadow-lg shadow-[#E52227]/25 transition-colors hover:bg-[#c91e22]"
+                    className="flex size-10 items-center justify-center rounded-full bg-[#E52227] text-white shadow-lg shadow-[#E52227]/25 transition-colors hover:bg-[#c91e22]"
                   >
                     {busy ? (
                       <IconX className="size-4" stroke={2} />

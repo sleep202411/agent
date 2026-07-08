@@ -307,7 +307,7 @@ export function PromptMentionMirror({
       aria-hidden
       className={cn(
         className,
-        "pointer-events-none absolute inset-0 z-[2] overflow-visible whitespace-pre-wrap break-words text-foreground"
+        "pointer-events-none absolute inset-0 z-[2] overflow-hidden whitespace-pre-wrap break-words text-foreground"
       )}
     >
       <div style={{ transform: `translateY(-${scrollTop}px)` }}>

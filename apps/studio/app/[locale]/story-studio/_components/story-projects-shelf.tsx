@@ -107,7 +107,7 @@ export function StoryProjectsShelf() {
   if (!authLoading && !user) return null;
 
   return (
-    <section className="relative z-20 px-[47px] pt-10 lg:pl-[120px]">
+    <section className="relative z-20 pr-6 pl-20 pt-10 lg:pl-[120px]">
       <div className="flex items-end justify-between gap-4">
         <div>
           <h2 className="text-[22px] font-semibold tracking-[-0.015em] text-white">Your stories</h2>

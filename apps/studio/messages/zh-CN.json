@@ -15,7 +15,9 @@
     "back": "返回",
     "next": "下一步",
     "copy": "复制",
-    "copied": "已复制"
+    "copied": "已复制",
+    "fizzDragon": "FizzDragon",
+    "fizzStudio": "FizzStudio"
   },
   "localeSwitcher": {
     "label": "语言"
@@ -61,7 +63,8 @@
     "gallery": {
       "title": "作品库",
       "optionsAction": "更多操作",
-      "saveAction": "收藏"
+      "saveAction": "收藏",
+      "summary": "{count} 张精选种子图，包含提示词和模型信息"
     },
     "recent": {
       "title": "最近项目",
@@ -77,8 +80,162 @@
         "justNow": "刚刚",
         "minutes": "{count, plural, other {# 分钟前}}",
         "hours": "{count, plural, other {# 小时前}}",
-        "days": "{count, plural, other {# 天前}}"
+        "days": "{count, plural, other {# 天前}}",
+        "weeks": "{count} 周前",
+        "months": "{count} 个月前"
+      },
+      "scrollLeft": "向左滚动",
+      "scrollRight": "向右滚动",
+      "assetCount": "{count} 个资产",
+      "creditCount": "{count} 点算力"
+    },
+    "untitledWorkflow": "未命名工作流",
+    "createProjectErrorDetailed": "无法创建项目，请稍后重试。",
+    "models": {
+      "title": "模型",
+      "badges": {
+        "new": "新",
+        "audio": "音频",
+        "unlimitedFree": "不限量免费"
+      },
+      "descriptions": {
+        "happyHorse": "更锐利的电影真实感和更稳定的音画同步",
+        "seedance": "流畅统一的多镜头视频输出",
+        "kling": "运动表现鲜明，提示词遵循度强",
+        "veo": "帧间控制和多图参考能力",
+        "wan": "双语提示词和精准镜头控制",
+        "nanoBanana": "更快的高保真图像生成",
+        "gptImage": "近乎完美的文字渲染和极高精度",
+        "seedream": "实时网页检索和精准编辑控制"
       }
+    },
+    "footer": {
+      "copyright": "© 2026 FizzDragon。保留所有权利。",
+      "trustScore": "信任评分 4.4",
+      "reviewCount": "3600+ 条评价"
+    },
+    "composer": {
+      "modes": {
+        "image": "图片",
+        "video": "视频",
+        "project": "项目"
+      },
+      "promptAria": "提示词",
+      "generationTypeAria": "生成类型",
+      "createAria": "创建",
+      "shuffleAria": "换一组建议",
+      "placeholders": {
+        "logo": "设计一个 logo",
+        "carousel": "为 Instagram 制作 5 页产品轮播图",
+        "ugcVideo": "创建一条 UGC 风格广告视频",
+        "campaign": "把产品照片变成营销 campaign"
+      },
+      "suggestions": {
+        "socialCarousel": {
+          "label": "品牌社媒轮播图",
+          "prompt": "为护肤品新品发布制作 5 页 Instagram 轮播图，视觉干净现代。"
+        },
+        "etsyMockup": {
+          "label": "Etsy 产品样机",
+          "prompt": "创建一个精致的 Etsy 产品样机，温暖日光、干净生活方式背景，并预留商品文案空间。"
+        },
+        "ugcAdVideo": {
+          "label": "UGC 风格广告视频",
+          "prompt": "为一款新的健康产品创建 UGC 风格广告视频，自然手持感、快节奏剪辑、字幕和明确行动号召。"
+        },
+        "facelessShort": {
+          "label": "无露脸 YouTube 短视频",
+          "prompt": "创建一个无露脸 YouTube 短视频，视觉节奏快、场景切换清晰，并有简洁的教育型开场钩子。"
+        },
+        "musicVideo": {
+          "label": "AI 音乐视频",
+          "prompt": "创建一条 AI 音乐视频，镜头运动有表现力，场景变化贴合节奏，整体明亮电影感。"
+        },
+        "podcastCover": {
+          "label": "播客封面图",
+          "prompt": "设计高级感播客封面，干净编辑式构图，保留标题安全留白，并使用现代灯光。"
+        },
+        "brandKit": {
+          "label": "从 logo 生成品牌套件",
+          "prompt": "基于一个极简 logo 概念设计完整品牌套件，包括色彩、字体方向、社媒头像和发布视觉。"
+        },
+        "interiorMoodboard": {
+          "label": "室内设计 moodboard",
+          "prompt": "为明亮现代工作室创建室内设计 moodboard，包含自然材质、柔和日光和精致编辑风格。"
+        },
+        "campaignStoryboard": {
+          "label": "Campaign 分镜",
+          "prompt": "为 15 秒产品发布视频制作 campaign 分镜，包括开场钩子、生活方式场景、产品特写和最终 CTA。"
+        }
+      }
+    },
+    "heroComposer": {
+      "headlinePrefix": "面向",
+      "headlineHighlight": "创作者的终极 AI 创意套件",
+      "subtitle": "描述一个想法，即可快速生成图片或视频。"
+    },
+    "studioTabs": {
+      "agent": "Agent",
+      "creative": "创意工作台",
+      "project": "项目工作台",
+      "marketing": "营销工作台",
+      "commerce": "电商工作台"
+    },
+    "agentStudio": {
+      "intro": "不知道从哪里开始？告诉我你的想法，我会选择合适工具并帮你搭好。",
+      "placeholder": "描述你想做什么，或者询问如何开始…",
+      "attachAria": "添加附件",
+      "sendAria": "发送",
+      "suggestions": {
+        "productAd": "制作电影感产品广告",
+        "imagePrompt": "根据提示词生成图片",
+        "scriptVideo": "把脚本变成视频",
+        "newCanvas": "在画布中开始新项目",
+        "removeBg": "移除照片背景"
+      }
+    },
+    "projectStudio": {
+      "intro": "打开画布，从空白开始，或使用可直接运行的工作流样例。",
+      "blankCanvas": "空白画布",
+      "startFromScratch": "从零开始",
+      "presets": {
+        "marketingAd": {
+          "name": "营销广告",
+          "description": "分镜 → 电影感产品广告"
+        },
+        "fashionTrailer": {
+          "name": "时装预告片",
+          "description": "分镜 → 情绪化时装短片"
+        },
+        "youtubeVlog": {
+          "name": "YouTube Vlog",
+          "description": "分镜 → 高能 vlog 片段"
+        },
+        "brandVisuals": {
+          "name": "品牌主视觉",
+          "description": "单张品牌调性主视觉"
+        }
+      }
+    },
+    "heroCanvas": {
+      "prompts": {
+        "socialCollage": "明亮的社媒创作者拼贴：年轻女性与朋友欢笑，在日光下拍摄短视频，节日氛围、手持 vlog 画面、温暖自然色彩。",
+        "creatorPortrait": "户外日光下开朗的女性创作者肖像，卷发、琥珀色太阳镜、干净白色外套，自信微笑，清新的社媒编辑风格。",
+        "lifestyleVideo": "动态创作者生活方式视频：人群反应、向镜头挥手、轻快动作、明亮城市广场、自然日光，充满能量但保持精致。",
+        "storyboard": "明亮的创作者分镜：朋友、城市街景、节日人群、小吃、笑声，以及温暖日光下充满能量的社媒瞬间。"
+      },
+      "alts": {
+        "poster": "坐姿创意总监的建筑编辑风海报",
+        "source": "坐姿创意总监的庭院参考照片",
+        "portrait": "创意专业人士的编辑风肖像参考",
+        "storyboard": "明亮创作者生活方式分镜网格",
+        "video": "生成的创作者生活方式视频预览"
+      },
+      "cursors": {
+        "emma": "Emma",
+        "amelia": "Amelia"
+      },
+      "comment": "喜欢这个版本"
     }
   },
   "generation": {
@@ -519,7 +676,8 @@
       "teamTag": "团队"
     },
     "header": {
-      "homeAriaLabel": "FizzStudio 首页"
+      "homeAriaLabel": "FizzStudio 首页",
+      "fizzDragonHomeAriaLabel": "FizzDragon 首页"
     },
     "nav": {
       "home": "首页",
@@ -675,6 +833,20 @@
       "checkoutUrlMissing": "未返回支付结算链接",
       "paymentFailed": "支付失败"
     },
+    "rechargePrompt": {
+      "close": "关闭充值弹窗",
+      "eyebrow": "算力积分不足",
+      "title": "充值后继续创作",
+      "body": "当前余额低于本次生成的预计消耗。充值后即可留在画布继续生成。",
+      "bodyWithModel": "当前余额低于 {model} 的预计消耗。充值后即可留在画布继续生成。",
+      "available": "可用",
+      "required": "需要",
+      "missing": "缺口",
+      "estimated": "预计到账",
+      "cta": "继续支付",
+      "viewBilling": "查看账单",
+      "billingAdminOnly": "该团队使用共享工作空间余额。请联系所有者、管理员或账单管理员充值算力积分。"
+    },
     "faq": {
       "heading": "你的疑问，<br></br>这里解答",
       "computeCredits": {
@@ -726,6 +898,7 @@
     "snapToGrid": "对齐网格",
     "zoomOut": "缩小",
     "zoomIn": "放大",
+    "zoomLevel": "缩放 {percent}%",
     "zoomToFit": "适应窗口",
     "dock": {
       "upload": "上传",
@@ -804,6 +977,35 @@
       "title": "设置",
       "selectModel": "请选择要配置的模型。",
       "advanced": "高级设置"
+    },
+    "presets": {
+      "modelsLoading": "模型仍在加载，请稍后再试",
+      "noModelAvailable": "当前没有可用的 {modality} 模型"
+    },
+    "workflowPresets": {
+      "marketingAd": {
+        "name": "营销广告",
+        "description": "分镜 → 电影感产品广告"
+      },
+      "fashionTrailer": {
+        "name": "时装预告片",
+        "description": "分镜 → 情绪化时装短片"
+      },
+      "youtubeVlog": {
+        "name": "YouTube Vlog",
+        "description": "分镜 → 高能 vlog 片段"
+      },
+      "brandVisuals": {
+        "name": "品牌主视觉",
+        "description": "单张品牌调性主视觉"
+      },
+      "nodes": {
+        "storyboard": "分镜",
+        "ad": "广告",
+        "trailer": "预告片",
+        "clip": "片段",
+        "keyVisual": "主视觉"
+      }
     }
   },
   "canvasNodes": {
@@ -819,6 +1021,7 @@
       "generatePanorama": "生成全景图",
       "preview": "放大查看",
       "download": "下载",
+      "rename": "重命名",
       "uploading": "上传中 · {progress}%",
       "uploadFailed": "上传失败"
     },
@@ -831,8 +1034,20 @@
       "alt": "全景图",
       "view720": "720° 查看",
       "download": "下载",
+      "rename": "重命名",
       "enter": "进入全景",
       "exit": "退出"
+    },
+    "media": {
+      "video": {
+        "title": "视频"
+      },
+      "audio": {
+        "title": "音频"
+      },
+      "preview": "放大查看",
+      "download": "下载",
+      "rename": "重命名"
     },
     "reference": {
       "alt": "参考",
@@ -843,6 +1058,8 @@
     "asset": {
       "title": "素材",
       "alt": "素材",
+      "audio": "音频",
+      "untitled": "未命名素材",
       "close": "关闭素材库",
       "searchPlaceholder": "搜索素材",
       "providerStatusApproved": "安全检查通过",
@@ -886,6 +1103,9 @@
     "assetUnavailable": "此素材已不可用。",
     "chooseModelFirst": "请先选择模型",
     "writePromptFirst": "请先输入提示词",
+    "copyTaskId": "复制任务 ID",
+    "taskIdCopied": "任务 ID 已复制",
+    "taskIdCopyFailed": "无法复制任务 ID",
     "uploadFailed": "无法上传 {name}",
     "noModelForOp": "目录中暂无可用的{op}模型",
     "promptPlaceholderDefault": "输入提示词……",
@@ -999,6 +1219,15 @@
         "checkpoint": "保存了检查点",
         "imported": "已导入"
       }
+    },
+    "connection": {
+      "offline": "实时连接已离线",
+      "connecting": "正在连接…",
+      "connected": "实时连接已连接",
+      "latencyExcellent": "实时 · {ms} · 极佳",
+      "latencyGood": "实时 · {ms} · 良好",
+      "latencyFair": "实时 · {ms} · 一般",
+      "latencyPoor": "实时 · {ms} · 较差"
     }
   },
   "settings": {
@@ -1205,7 +1434,11 @@
     "documentOpenError": "无法打开此文档——请检查链接或你的访问权限。",
     "briefPlaceholder": "撰写简介…",
     "offlineSaved": "离线——更改已保存到本地",
-    "connecting": "连接中…"
+    "connecting": "连接中…",
+    "modes": {
+      "canvas": "画布",
+      "brief": "简报"
+    }
   },
   "invite": {
     "loading": "正在加载邀请…",
@@ -1271,5 +1504,9 @@
     "confirmRun": "运行这次生成？将消耗工作区算力积分。",
     "confirmRemoveNode": "从画布删除这个节点？",
     "confirmRemoveEdge": "删除这条连线？"
+  },
+  "metadata": {
+    "studioTitle": "FizzStudio",
+    "studioDescription": "AI 创意工作台"
   }
 }

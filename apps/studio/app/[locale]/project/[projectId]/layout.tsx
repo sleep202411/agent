@@ -173,7 +173,7 @@ export default function ProjectLayout({
                 )}
               >
                 <Icon className="size-3.5" stroke={1.8} />
-                {mode.label}
+                {t(mode.labelKey)}
               </Link>
             );
           })}

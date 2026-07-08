@@ -142,7 +142,7 @@ export class DocumentsService {
     const project = await this.permissions.requireProjectRole(
       user.userId,
       projectId,
-      ProjectMemberRole.editor,
+      ProjectMemberRole.viewer,
     );
 
     const existing = await this.prisma.platformDocument.findFirst({
@@ -157,6 +157,12 @@ export class DocumentsService {
     if (existing) {
       return { document: this.documentDto(existing, { detail: true }) };
     }
+
+    await this.permissions.requireProjectRole(
+      user.userId,
+      projectId,
+      ProjectMemberRole.editor,
+    );
 
     const document = await this.prisma.$transaction(async (tx) => {
       await tx.$executeRaw`

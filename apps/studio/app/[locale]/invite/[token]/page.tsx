@@ -28,6 +28,7 @@ const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 export default function InviteAcceptPage({ params }: { params: Promise<{ token: string }> }) {
   const { token } = use(params);
   const t = useTranslations("invite");
+  const tc = useTranslations("common");
   const router = useRouter();
   const { user, loading: authLoading, signIn } = useAuth();
 
@@ -62,7 +63,7 @@ export default function InviteAcceptPage({ params }: { params: Promise<{ token: 
       <div className="w-full max-w-sm">
         <div className="mb-6 flex items-center justify-center gap-2 text-sm font-semibold tracking-tight text-muted-foreground">
           <IconLink className="size-4" />
-          FizzStudio
+          {tc("fizzStudio")}
         </div>
 
         <div className="rounded-2xl bg-card p-6">{renderBody()}</div>

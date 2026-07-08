@@ -15,7 +15,7 @@ export default function StudioLayout({ children }: { children: React.ReactNode }
           only the page content offsets for the nav rail. */}
       <StudioHeader />
       <StudioSidebar />
-      <div className="flex min-w-0 flex-1 flex-col lg:pl-[104px]">{children}</div>
+      <div className="flex min-w-0 flex-1 flex-col pl-20 lg:pl-[104px]">{children}</div>
     </>
   );
 }

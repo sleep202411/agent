@@ -188,33 +188,16 @@ export function CanvasProjectsGrid() {
               <TileCard
                 title={project.name}
                 meta={timeAgo(project.updatedAt, t)}
-                media={<WorkflowPreview />}
+                media={<CanvasProjectPreview project={project} />}
                 overlay={
-                  <DropdownMenu>
-                    <DropdownMenuTrigger
-                      aria-label={t("projectActions")}
-                      onClick={(event) => event.preventDefault()}
-                      className="absolute top-2 right-2 flex size-8 items-center justify-center rounded-full bg-black/50 text-white/70 opacity-0 shadow-md backdrop-blur-xl transition-opacity outline-none hover:text-white group-hover:opacity-100 data-[state=open]:opacity-100"
-                    >
-                      <IconDotsVertical className="size-4" stroke={1.8} />
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end" onClick={(event) => event.preventDefault()}>
-                      <DropdownMenuItem
-                        onSelect={() => {
-                          setRenameValue(project.name);
-                          setRenaming(project);
-                        }}
-                      >
-                        <IconPencil className="size-4" stroke={1.8} />
-                        {t("rename")}
-                      </DropdownMenuItem>
-                      <DropdownMenuSeparator />
-                      <DropdownMenuItem variant="destructive" onSelect={() => setDeleting(project)}>
-                        <IconTrash className="size-4" stroke={1.8} />
-                        {tc("delete")}
-                      </DropdownMenuItem>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
+                  <ProjectActions
+                    project={project}
+                    onRename={() => {
+                      setRenameValue(project.name);
+                      setRenaming(project);
+                    }}
+                    onDelete={() => setDeleting(project)}
+                  />
                 }
               />
             </Link>
@@ -263,5 +246,70 @@ export function CanvasProjectsGrid() {
         </DialogContent>
       </Dialog>
     </>
+  );
+}
+
+function CanvasProjectPreview({ project }: { project: ProjectRef }) {
+  if (project.thumbnailUrl) {
+    return (
+      <>
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src={project.thumbnailUrl}
+          alt={project.name}
+          loading="lazy"
+          className="size-full object-cover transition duration-500 group-hover:scale-[1.025]"
+        />
+        <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-transparent via-transparent to-black/15" />
+      </>
+    );
+  }
+  return <WorkflowPreview />;
+}
+
+function ProjectActions({
+  project,
+  onRename,
+  onDelete,
+}: {
+  project: ProjectRef;
+  onRename: () => void;
+  onDelete: () => void;
+}) {
+  const t = useTranslations("projects");
+  const tc = useTranslations("common");
+  const canRename =
+    project.role == null ||
+    project.role === "owner" ||
+    project.role === "admin" ||
+    project.role === "editor";
+  const canDelete = project.role == null || project.role === "owner";
+  if (!canRename && !canDelete) return null;
+
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger
+        aria-label={t("projectActions")}
+        onClick={(event) => event.preventDefault()}
+        className="absolute top-2 right-2 flex size-8 items-center justify-center rounded-full bg-black/50 text-white/70 opacity-0 shadow-md backdrop-blur-xl transition-opacity outline-none hover:text-white group-hover:opacity-100 data-[state=open]:opacity-100"
+      >
+        <IconDotsVertical className="size-4" stroke={1.8} />
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" onClick={(event) => event.preventDefault()}>
+        {canRename ? (
+          <DropdownMenuItem onSelect={onRename}>
+            <IconPencil className="size-4" stroke={1.8} />
+            {t("rename")}
+          </DropdownMenuItem>
+        ) : null}
+        {canRename && canDelete ? <DropdownMenuSeparator /> : null}
+        {canDelete ? (
+          <DropdownMenuItem variant="destructive" onSelect={onDelete}>
+            <IconTrash className="size-4" stroke={1.8} />
+            {tc("delete")}
+          </DropdownMenuItem>
+        ) : null}
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }

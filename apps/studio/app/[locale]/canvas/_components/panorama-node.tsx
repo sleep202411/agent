@@ -1,10 +1,11 @@
 "use client";
 
-import { memo, useState } from "react";
+import { memo, useCallback, useState } from "react";
 import { useTranslations } from "next-intl";
 import type { Node, NodeProps } from "@xyflow/react";
-import { IconDownload, IconX } from "@tabler/icons-react";
+import { IconDownload, IconPencil, IconX } from "@tabler/icons-react";
 import { cn } from "@/lib/utils";
+import { useCanvasGraphContext } from "@/lib/collab/canvas-graph-context";
 import { CanvasNodeToolbar, ToolbarButton } from "./node-toolbar";
 import { Icon720, PanoramaCanvas, PanoramaViewer } from "./panorama-viewer";
 import { PortPlus } from "./ports";
@@ -22,16 +23,29 @@ export type PanoramaNodeType = Node<
 function PanoramaNodeComponent({ id, data, selected }: NodeProps<PanoramaNodeType>) {
   const t = useTranslations("canvasNodes");
   const [full, setFull] = useState(false);
+  const [renaming, setRenaming] = useState(false);
   // Default to a STATIC preview — the live 360 canvas captures drag/scroll, so
   // entering it must be opt-in (else hovering the card hijacks the canvas).
   const [entered, setEntered] = useState(false);
+  const { patchNodeData, renameAssetsByMediaAssetId } = useCanvasGraphContext();
+  const title = data.label ?? t("panorama.title");
 
   const onDownload = () => {
     const anchor = document.createElement("a");
     anchor.href = data.src;
-    anchor.download = data.label ?? "panorama";
+    anchor.download = title;
     anchor.click();
   };
+
+  const commitName = useCallback(
+    (name: string) => {
+      const trimmed = name.trim();
+      patchNodeData(id, { label: trimmed || undefined });
+      if (data.mediaAssetId) renameAssetsByMediaAssetId(data.mediaAssetId, trimmed);
+      setRenaming(false);
+    },
+    [data.mediaAssetId, id, patchNodeData, renameAssetsByMediaAssetId]
+  );
 
   return (
     <div className="relative w-[360px]">
@@ -42,12 +56,28 @@ function PanoramaNodeComponent({ id, data, selected }: NodeProps<PanoramaNodeTyp
         <ToolbarButton label={t("panorama.download")} onClick={onDownload} iconOnly>
           <IconDownload className="size-4" stroke={1.8} />
         </ToolbarButton>
+        <ToolbarButton label={t("panorama.rename")} onClick={() => setRenaming(true)}>
+          <IconPencil className="size-4" stroke={1.8} />
+        </ToolbarButton>
       </CanvasNodeToolbar>
 
       {/* Header = drag handle */}
       <div className="flex items-center gap-1.5 px-1 pb-1.5 text-xs text-white/80">
         <Icon720 className="size-3.5" />
-        {t("panorama.title")}
+        {renaming ? (
+          <input
+            autoFocus
+            defaultValue={title}
+            onBlur={(event) => commitName(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") event.currentTarget.blur();
+              else if (event.key === "Escape") setRenaming(false);
+            }}
+            className="nodrag w-full min-w-0 bg-transparent text-white/80 outline-none"
+          />
+        ) : (
+          <span className="truncate">{title}</span>
+        )}
       </div>
 
       {/* Input port: keeps the wire from the source image (provenance). */}
@@ -83,7 +113,7 @@ function PanoramaNodeComponent({ id, data, selected }: NodeProps<PanoramaNodeTyp
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
                 src={data.src}
-                alt={data.label ?? t("panorama.alt")}
+                alt={title}
                 draggable={false}
                 className="absolute inset-0 size-full object-cover select-none"
               />

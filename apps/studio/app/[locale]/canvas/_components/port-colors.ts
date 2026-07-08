@@ -45,6 +45,8 @@ const NODE_OUTPUT_TYPE: Record<string, PortDataType> = {
   panorama: "image",
   prompt: "image",
   video: "video",
+  videoAsset: "video",
+  audioAsset: "audio",
 };
 
 export function outputTypeForNodeType(

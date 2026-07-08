@@ -12,12 +12,14 @@ import {
   IconDownload,
   IconLoader2,
   IconMaximize,
+  IconPencil,
   IconRefresh,
   IconRotate3d,
   IconRoute,
   IconUpload,
 } from "@tabler/icons-react";
 import { cn } from "@/lib/utils";
+import { useCanvasGraphContext } from "@/lib/collab/canvas-graph-context";
 import { CanvasNodeToolbar, ToolbarButton } from "./node-toolbar";
 import {
   EXPAND_OP,
@@ -54,20 +56,33 @@ function ImageNodeComponent({ id, data, selected }: NodeProps<ImageNodeType>) {
   // bar under THIS node; running it creates the result node.
   const [pendingOp, setPendingOp] = useState<OperationDef | null>(null);
   const [viewerOpen, setViewerOpen] = useState(false);
+  const [renaming, setRenaming] = useState(false);
   const spawnComposedOp = useSpawnComposedOperation();
   const upload = useUploadEntry(id);
   const retryUpload = useRetryUpload();
+  const { patchNodeData, renameAssetsByMediaAssetId } = useCanvasGraphContext();
   const uploading = upload?.status === "uploading";
   const failed = upload?.status === "failed";
   // Show the local blob preview until the durable URL lands in data.src.
   const src = upload?.objectUrl ?? data.src;
+  const title = data.label ?? t("image.title");
 
   const onDownload = useCallback(() => {
     const anchor = document.createElement("a");
     anchor.href = data.src;
-    anchor.download = data.label ?? "image";
+    anchor.download = title;
     anchor.click();
-  }, [data.label, data.src]);
+  }, [data.src, title]);
+
+  const commitName = useCallback(
+    (name: string) => {
+      const trimmed = name.trim();
+      patchNodeData(id, { label: trimmed || undefined });
+      if (data.mediaAssetId) renameAssetsByMediaAssetId(data.mediaAssetId, trimmed);
+      setRenaming(false);
+    },
+    [data.mediaAssetId, id, patchNodeData, renameAssetsByMediaAssetId]
+  );
 
   return (
     <div className="relative">
@@ -75,7 +90,20 @@ function ImageNodeComponent({ id, data, selected }: NodeProps<ImageNodeType>) {
           reads at a glance without a heavy title bar. */}
       <div className="mb-1.5 flex max-w-[280px] items-center gap-1.5 px-0.5 text-xs text-white/50">
         <IconUpload className="size-3.5 shrink-0" stroke={1.8} />
-        <span className="truncate">{data.label ?? t("image.title")}</span>
+        {renaming ? (
+          <input
+            autoFocus
+            defaultValue={title}
+            onBlur={(event) => commitName(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") event.currentTarget.blur();
+              else if (event.key === "Escape") setRenaming(false);
+            }}
+            className="nodrag w-full min-w-0 bg-transparent text-white/80 outline-none"
+          />
+        ) : (
+          <span className="truncate">{title}</span>
+        )}
       </div>
       <div className={cn("relative rounded-xl bg-card", selected && "ring-2 ring-ring")}>
         <PortPlus type="source" id="output" side="right" dataType="image" />
@@ -132,13 +160,16 @@ function ImageNodeComponent({ id, data, selected }: NodeProps<ImageNodeType>) {
               <IconMaximize className="size-4" stroke={1.8} />
             </ToolbarButton>
           )}
+          <ToolbarButton label={t("image.rename")} onClick={() => setRenaming(true)}>
+            <IconPencil className="size-4" stroke={1.8} />
+          </ToolbarButton>
         </CanvasNodeToolbar>
 
         {/* Object URLs from local blobs can't go through next/image. */}
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
           src={src}
-          alt={data.label ?? t("image.alt")}
+          alt={title}
           draggable={false}
           onDoubleClick={(event) => {
             event.stopPropagation();
@@ -210,9 +241,9 @@ function ImageNodeComponent({ id, data, selected }: NodeProps<ImageNodeType>) {
         <CanvasMediaViewer
           type="image"
           src={src}
-          title={data.label ?? t("image.title")}
-          alt={data.label ?? t("image.alt")}
-          downloadName={data.label ?? "image.png"}
+          title={title}
+          alt={title}
+          downloadName={title}
           onClose={() => setViewerOpen(false)}
         />
       )}

@@ -2,6 +2,7 @@
 
 import { useCallback } from "react";
 import { useReactFlow } from "@xyflow/react";
+import { useTranslations } from "next-intl";
 import { toast } from "sonner";
 import type { CanvasEdgeShape, CanvasNodeShape } from "@/lib/collab/canvas-doc";
 import type { CanvasGraph } from "@/lib/collab/use-canvas-graph";
@@ -17,6 +18,7 @@ import type { WorkflowPreset } from "./workflow-presets";
  * when each source node generates (the completion back-fill), not faked here.
  */
 export function useApplyPreset(graph: CanvasGraph): (preset: WorkflowPreset) => void {
+  const t = useTranslations("canvasControls");
   const { addNodesAndEdges, selectNodes } = graph;
   const { fitView } = useReactFlow();
   const { data: catalog } = useAiCatalog();
@@ -24,7 +26,7 @@ export function useApplyPreset(graph: CanvasGraph): (preset: WorkflowPreset) => 
   return useCallback(
     (preset: WorkflowPreset) => {
       if (!catalog || catalog.models.length === 0) {
-        toast.info("Models are still loading — try again in a moment");
+        toast.info(t("presets.modelsLoading"));
         return;
       }
 
@@ -81,7 +83,7 @@ export function useApplyPreset(graph: CanvasGraph): (preset: WorkflowPreset) => 
       // submit silently). If the catalog has no usable model for a modality the
       // preset needs, bail with a clear message.
       if (unresolvedModality) {
-        toast.error(`No ${unresolvedModality} model is available right now`);
+        toast.error(t("presets.noModelAvailable", { modality: unresolvedModality }));
         return;
       }
 
@@ -98,6 +100,6 @@ export function useApplyPreset(graph: CanvasGraph): (preset: WorkflowPreset) => 
       // Let the doc rebuild land before framing.
       requestAnimationFrame(() => fitView({ padding: 0.2, duration: 300 }));
     },
-    [addNodesAndEdges, selectNodes, fitView, catalog]
+    [addNodesAndEdges, selectNodes, fitView, catalog, t]
   );
 }

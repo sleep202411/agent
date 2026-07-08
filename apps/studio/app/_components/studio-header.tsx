@@ -13,6 +13,7 @@ import { useAuth } from "./auth-provider";
 /** Full-viewport-width top bar — spans edge to edge, above the nav rail. */
 export function StudioHeader() {
   const t = useTranslations("shell");
+  const tc = useTranslations("common");
   const { user, loading } = useAuth();
   const locale = useLocale();
   const siteRegion = useSiteRegion();
@@ -29,7 +30,7 @@ export function StudioHeader() {
         >
           <Image
             src="/logo.png"
-            alt="FizzDragon"
+            alt={tc("fizzDragon")}
             width={439}
             height={78}
             priority

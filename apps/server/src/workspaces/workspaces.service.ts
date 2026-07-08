@@ -6,8 +6,11 @@ import {
 import { ModuleRef } from '@nestjs/core';
 import { CharacterGrantService } from '../characters/character-grant.service';
 import {
+  PlatformDocumentStatus,
+  PlatformDocumentType,
   PlatformProjectStatus,
   ProjectMemberRole,
+  ProjectMemberStatus,
   ProjectVisibility,
   WalletOwnerType,
   WorkspaceMemberRole,
@@ -32,6 +35,10 @@ import { WalletLedgerService } from './wallet-ledger.service';
 import { WorkspacePermissionService } from './workspace-permission.service';
 import { enqueueProjectChanged } from './project-realtime';
 import { RealtimeRevokeService } from '../infra/realtime/realtime-revoke.service';
+
+type ProjectWithCanvasPreview = PlatformProject & {
+  documents?: Array<{ contentSnapshot: unknown }>;
+};
 
 @Injectable()
 export class WorkspacesService {
@@ -270,13 +277,47 @@ export class WorkspacesService {
     );
     const projects = await this.prisma.platformProject.findMany({
       where: {
-        workspaceId,
         deletedAt: null,
         status: PlatformProjectStatus.active,
+        OR: [
+          { workspaceId },
+          {
+            members: {
+              some: {
+                userId: user.userId,
+                status: ProjectMemberStatus.active,
+                removedAt: null,
+              },
+            },
+          },
+        ],
+      },
+      include: {
+        documents: {
+          where: {
+            type: PlatformDocumentType.canvas,
+            status: PlatformDocumentStatus.active,
+            deletedAt: null,
+          },
+          orderBy: [{ createdAt: 'asc' }],
+          take: 1,
+          select: { contentSnapshot: true },
+        },
       },
       orderBy: [{ updatedAt: 'desc' }, { createdAt: 'desc' }],
     });
-    return { projects: projects.map((project) => this.projectDto(project)) };
+    const rows = await Promise.all(
+      projects.map(async (project) =>
+        this.projectDto(
+          project,
+          await this.permissions.resolveEffectiveProjectRole(
+            user.userId,
+            project,
+          ),
+        ),
+      ),
+    );
+    return { projects: rows };
   }
 
   async createProject(
@@ -569,7 +610,7 @@ export class WorkspacesService {
   }
 
   private projectDto(
-    project: PlatformProject,
+    project: ProjectWithCanvasPreview,
     role?: ProjectMemberRole | null,
   ) {
     return {
@@ -582,6 +623,9 @@ export class WorkspacesService {
       visibility: project.visibility,
       description: project.description,
       coverAssetId: project.coverAssetId,
+      thumbnailUrl: project.coverAssetId
+        ? mediaAssetContentUrl(project.coverAssetId)
+        : earliestCanvasImageAssetUrl(project.documents?.[0]?.contentSnapshot),
       createdById: project.createdById,
       updatedById: project.updatedById,
       // The caller's effective role (direct project role, else workspace
@@ -593,6 +637,40 @@ export class WorkspacesService {
       archivedAt: project.archivedAt?.toISOString() ?? null,
     };
   }
+}
+
+function mediaAssetContentUrl(assetId: string): string {
+  return `/aurora/media/assets/${encodeURIComponent(assetId)}/content`;
+}
+
+function earliestCanvasImageAssetUrl(snapshot: unknown): string | null {
+  if (!isRecord(snapshot)) return null;
+  const assets = snapshot.assets;
+  const values = Array.isArray(assets)
+    ? assets
+    : isRecord(assets)
+      ? Object.values(assets)
+      : [];
+  const images = values
+    .filter(isRecord)
+    .filter((asset) => asset.kind === 'image' && typeof asset.url === 'string')
+    .sort((a, b) => assetCreatedAt(a) - assetCreatedAt(b));
+  const first = images[0];
+  return typeof first?.url === 'string' ? first.url : null;
+}
+
+function assetCreatedAt(asset: Record<string, unknown>): number {
+  const value = asset.createdAt;
+  if (typeof value === 'number') return Number.isFinite(value) ? value : 0;
+  if (typeof value === 'string') {
+    const parsed = Date.parse(value);
+    return Number.isNaN(parsed) ? 0 : parsed;
+  }
+  return 0;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === 'object';
 }
 
 function displayName(user: AuthUser): string {

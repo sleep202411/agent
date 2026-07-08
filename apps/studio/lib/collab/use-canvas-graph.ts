@@ -16,6 +16,7 @@ import {
   readEdge,
   readNode,
   reconcileCanvasToUpdate,
+  renameAssetsByMediaAssetId as yRenameAssetsByMediaAssetId,
   removeAsset as yRemoveAsset,
   removeAssetsByMediaAssetId as yRemoveAssetsByMediaAssetId,
   removeEdge as yRemoveEdge,
@@ -97,6 +98,7 @@ export interface CanvasGraph {
   assets: CanvasAsset[];
   /** Add library assets (deduped by id); synced to every collaborator. */
   addAssets: (assets: CanvasAsset[]) => void;
+  renameAssetsByMediaAssetId: (mediaAssetId: string, name: string) => void;
   removeAsset: (id: string) => void;
   removeAssetsByMediaAssetId: (mediaAssetId: string) => void;
   /**
@@ -732,6 +734,14 @@ export function useCanvasGraph(
     [doc]
   );
 
+  const renameAssetsByMediaAssetId = useCallback(
+    (mediaAssetId: string, name: string) => {
+      if (!doc) return;
+      doc.transact(() => yRenameAssetsByMediaAssetId(doc, mediaAssetId, name), LOCAL_ORIGIN);
+    },
+    [doc]
+  );
+
   const removeAssetsByMediaAssetId = useCallback(
     (mediaAssetId: string) => {
       if (!doc) return;
@@ -794,6 +804,7 @@ export function useCanvasGraph(
         restoreFromUpdate: noop,
         assets,
         addAssets: noop,
+        renameAssetsByMediaAssetId: noop,
         removeAsset: noop,
         removeAssetsByMediaAssetId: noop,
         canUndo: false,
@@ -822,6 +833,7 @@ export function useCanvasGraph(
       restoreFromUpdate,
       assets,
       addAssets,
+      renameAssetsByMediaAssetId,
       removeAsset,
       removeAssetsByMediaAssetId,
       canUndo,
@@ -852,6 +864,7 @@ export function useCanvasGraph(
     selectNodes,
     restoreFromUpdate,
     addAssets,
+    renameAssetsByMediaAssetId,
     removeAsset,
     removeAssetsByMediaAssetId,
     undo,

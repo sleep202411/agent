@@ -88,7 +88,7 @@ export default function StoryStudioPage() {
         {/* The user's real story projects (sovereign story-projects domain). */}
         <StoryProjectsShelf />
         {/* Inspiration only — example cards deliberately do not open the editor. */}
-        <section className="relative z-20 px-[47px] pt-12 lg:pl-[120px]">
+        <section className="relative z-20 pr-6 pl-20 pt-12 lg:pl-[120px]">
           <h2 className="text-[22px] font-semibold tracking-[-0.015em] text-white">Examples</h2>
           <p className="mt-1 text-[13px] font-medium text-white/48">
             Story shapes that work well as playable investigations — use them as inspiration.
@@ -114,7 +114,7 @@ function Hero() {
       {/* Left/bottom scrims for copy + a top scrim so the floating header stays legible. */}
       <div className="absolute inset-0 bg-[linear-gradient(90deg,rgba(16,17,18,0.88)_0%,rgba(16,17,18,0.52)_46%,rgba(16,17,18,0.08)_100%),linear-gradient(180deg,rgba(16,17,18,0.6)_0%,rgba(16,17,18,0.05)_22%,rgba(16,17,18,0.55)_100%)]" />
 
-      <div className="absolute top-[128px] left-[47px] z-10 max-w-[640px] lg:left-[120px]">
+      <div className="absolute top-[128px] left-20 z-10 max-w-[640px] lg:left-[120px]">
         <h1 className="max-w-[560px] text-[42px] leading-[1.02] font-semibold tracking-[-0.025em] text-white md:text-[48px]">
           36-Hour
           <br />

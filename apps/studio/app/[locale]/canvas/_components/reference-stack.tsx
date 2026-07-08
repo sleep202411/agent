@@ -65,7 +65,8 @@ function ReferenceTile({
   return (
     <div
       ref={tileRef}
-      className="group relative size-16"
+      title={refItem.name}
+      className="group relative size-16 shrink-0"
       onPointerEnter={showPreview}
       onPointerMove={showPreview}
       onPointerLeave={() => setPreviewStyle(null)}
@@ -84,9 +85,9 @@ function ReferenceTile({
         ) : refItem.kind === "video" ? (
           <video src={refItem.url} muted playsInline className="size-full object-cover" />
         ) : (
-          <div className="flex size-full flex-col items-center justify-center gap-1 px-1.5 text-center">
+          <div className="flex size-full min-w-0 flex-col items-center justify-center gap-1 px-2 text-center">
             <IconMusic className="size-5 text-white/70" stroke={1.7} />
-            <span className="line-clamp-1 text-[9px] text-muted-foreground">
+            <span className="w-full truncate px-0.5 text-[9px] leading-tight text-muted-foreground">
               {refItem.name ?? t("reference.audio")}
             </span>
           </div>
@@ -170,7 +171,7 @@ function ReferenceField({
           title={humanize(field.field)}
           aria-label={t("reference.add", { field: humanize(field.field) })}
           onClick={() => inputRef.current?.click()}
-          className="flex size-16 items-center justify-center rounded-xl bg-white/[0.05] text-muted-foreground transition-colors hover:bg-white/[0.09] hover:text-white"
+          className="flex size-16 shrink-0 items-center justify-center rounded-xl bg-white/[0.05] text-muted-foreground transition-colors hover:bg-white/[0.09] hover:text-white"
         >
           <AddIcon className="size-6" stroke={1.6} />
         </button>
@@ -211,7 +212,7 @@ export function ReferenceStack({
 }) {
   if (fields.length === 0) return null;
   return (
-    <div className="flex flex-wrap items-center gap-2 pb-3">
+    <div className="flex items-center gap-2 overflow-x-auto overflow-y-visible pb-3 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
       {fields.map((field) => (
         <ReferenceField
           key={field.field}

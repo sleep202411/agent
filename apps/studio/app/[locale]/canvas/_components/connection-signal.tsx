@@ -1,5 +1,6 @@
 "use client";
 
+import { useTranslations } from "next-intl";
 import { cn } from "@/lib/utils";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 
@@ -21,7 +22,8 @@ export function ConnectionSignal({
   rtt: number | null;
   className?: string;
 }) {
-  const { bars, color, title } = signal(status, rtt);
+  const t = useTranslations("canvasCollab");
+  const { bars, color, title } = signal(status, rtt, t);
   return (
     <Tooltip>
       <TooltipTrigger asChild>
@@ -45,16 +47,21 @@ export function ConnectionSignal({
 
 function signal(
   status: Status,
-  rtt: number | null
+  rtt: number | null,
+  t: ReturnType<typeof useTranslations<"canvasCollab">>
 ): { bars: number; color: string; title: string } {
-  if (status === "offline") return { bars: 0, color: "bg-white/20", title: "Realtime offline" };
+  if (status === "offline")
+    return { bars: 0, color: "bg-white/20", title: t("connection.offline") };
   if (status === "connecting")
-    return { bars: 1, color: "animate-pulse bg-white/50", title: "Connecting…" };
+    return { bars: 1, color: "animate-pulse bg-white/50", title: t("connection.connecting") };
   // synced
-  if (rtt == null) return { bars: 3, color: "bg-emerald-400", title: "Realtime connected" };
+  if (rtt == null) return { bars: 3, color: "bg-emerald-400", title: t("connection.connected") };
   const ms = `${Math.round(rtt)}ms`;
-  if (rtt < 80) return { bars: 4, color: "bg-sky-400", title: `Realtime · ${ms} · excellent` };
-  if (rtt < 150) return { bars: 3, color: "bg-emerald-400", title: `Realtime · ${ms} · good` };
-  if (rtt < 300) return { bars: 2, color: "bg-amber-400", title: `Realtime · ${ms} · fair` };
-  return { bars: 1, color: "bg-red-400", title: `Realtime · ${ms} · poor` };
+  if (rtt < 80)
+    return { bars: 4, color: "bg-sky-400", title: t("connection.latencyExcellent", { ms }) };
+  if (rtt < 150)
+    return { bars: 3, color: "bg-emerald-400", title: t("connection.latencyGood", { ms }) };
+  if (rtt < 300)
+    return { bars: 2, color: "bg-amber-400", title: t("connection.latencyFair", { ms }) };
+  return { bars: 1, color: "bg-red-400", title: t("connection.latencyPoor", { ms }) };
 }

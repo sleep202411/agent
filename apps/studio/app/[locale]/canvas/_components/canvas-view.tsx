@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactElement } from "react";
 import {
   Background,
   BackgroundVariant,
@@ -40,7 +40,6 @@ import {
   IconVideo,
   type Icon,
 } from "@tabler/icons-react";
-import { toast } from "sonner";
 import type { CanvasAsset } from "@/lib/collab/canvas-doc";
 import { isUploadAbort, uploadFileViaSignedUrl } from "@/lib/media-upload";
 import type { AuthUser } from "@/lib/auth";
@@ -60,6 +59,7 @@ import {
 import { CanvasHistory } from "./canvas-history";
 import { ConnectionSignal } from "./connection-signal";
 import { cn } from "@/lib/utils";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { CopilotPanel } from "./copilot/copilot-panel";
 import { CreditsBadge } from "@/app/_components/credits-badge";
 import { useProjectContext } from "@/app/[locale]/project/_components/project-context";
@@ -67,7 +67,7 @@ import { ASSET_LIBRARY_WIDTH, AssetLibrary, ASSET_DRAG_MIME } from "./asset-libr
 import { AddNodeMenu, type AddNodeAction } from "./add-node-menu";
 import { CanvasEmptyState } from "./canvas-empty-state";
 import { useApplyPreset } from "@/app/[locale]/canvas/_lib/use-apply-preset";
-import { WORKFLOW_PRESETS } from "@/app/[locale]/canvas/_lib/workflow-presets";
+import { createWorkflowPresets } from "@/app/[locale]/canvas/_lib/workflow-presets";
 import { ToolbarButton, FLOATING_PANEL } from "./node-toolbar";
 import { CanvasConnectionLine } from "./connection-line";
 import { GradientEdge } from "./gradient-edge";
@@ -76,6 +76,12 @@ import { ImageNode, type ImageNodeType } from "./image-node";
 import { PanoramaNode, type PanoramaNodeType } from "./panorama-node";
 import { NoteNode, type NoteNodeType } from "./note-node";
 import {
+  AudioAssetNode,
+  VideoAssetNode,
+  type AudioAssetNodeType,
+  type VideoAssetNodeType,
+} from "./media-node";
+import {
   PromptNode,
   VideoNode,
   type GenerationNodeData,
@@ -83,6 +89,11 @@ import {
 } from "./generation-card";
 import { useAiCatalog } from "@/app/[locale]/canvas/_lib/use-ai-catalog";
 import { CanvasGenerationProvider } from "@/app/[locale]/canvas/_lib/use-canvas-generation";
+import {
+  canvasDefaultMode,
+  canvasDefaultModel,
+  defaultSettingsForModel,
+} from "@/app/[locale]/canvas/_lib/generation-api";
 import {
   modelAcceptsKind,
   routeReferenceField as routeReferenceFieldFor,
@@ -95,12 +106,20 @@ import {
   stripEdgeRef,
 } from "@/app/[locale]/canvas/_lib/canvas-wiring";
 
-export type CanvasNode = ImageNodeType | PanoramaNodeType | NoteNodeType | GenerationNodeType;
+export type CanvasNode =
+  | ImageNodeType
+  | PanoramaNodeType
+  | NoteNodeType
+  | VideoAssetNodeType
+  | AudioAssetNodeType
+  | GenerationNodeType;
 
 const nodeTypes = {
   image: ImageNode,
   panorama: PanoramaNode,
   note: NoteNode,
+  videoAsset: VideoAssetNode,
+  audioAsset: AudioAssetNode,
   prompt: PromptNode,
   video: VideoNode,
 };
@@ -109,9 +128,12 @@ const edgeTypes = { gradient: GradientEdge };
 // Which source output kinds each generator can consume — image generation takes
 // image references only; video generation takes image (i2v) or video (ref/edit).
 // Drives the add-node menu gating: a video source greys out image generation.
-const GEN_ACCEPTS: Record<"generate-image" | "generate-video", readonly ("image" | "video")[]> = {
+const GEN_ACCEPTS: Record<
+  "generate-image" | "generate-video",
+  readonly ("image" | "video" | "audio")[]
+> = {
   "generate-image": ["image"],
-  "generate-video": ["image", "video"],
+  "generate-video": ["image", "video", "audio"],
 };
 
 // Zoom/pan tuning proven in apps/web's storyboard canvas.
@@ -287,62 +309,93 @@ function ZoomControls({
   const controlClass =
     "flex size-8 items-center justify-center rounded-full text-white/70 transition-colors hover:bg-white/[0.08] hover:text-white";
   const toggleClass = (active: boolean) => cn(controlClass, active && "bg-white/[0.12] text-white");
+  const zoomPercent = Math.round(zoom * 100);
 
   return (
     <div
       className="absolute bottom-4 z-20 flex h-[42px] items-center gap-0.5 rounded-full bg-popover/90 px-2 shadow-md backdrop-blur-xl transition-[left] duration-200 ease-out"
       style={{ left: 16 + leftInset }}
     >
-      <button type="button" aria-label={t("tidyCanvas")} className={controlClass} onClick={onTidy}>
-        <IconApps className="size-4" stroke={1.8} />
-      </button>
-      <button
-        type="button"
-        aria-label={t("toggleMinimap")}
-        aria-pressed={minimapOpen}
-        className={toggleClass(minimapOpen)}
-        onClick={onToggleMinimap}
-      >
-        <IconMap className="size-4" stroke={1.8} />
-      </button>
-      <button
-        type="button"
-        aria-label={t("snapToGrid")}
-        aria-pressed={snapToGrid}
-        className={toggleClass(snapToGrid)}
-        onClick={onToggleSnap}
-      >
-        <IconMagnet className="size-4" stroke={1.8} />
-      </button>
+      <ControlTooltip label={t("tidyCanvas")}>
+        <button
+          type="button"
+          aria-label={t("tidyCanvas")}
+          className={controlClass}
+          onClick={onTidy}
+        >
+          <IconApps className="size-4" stroke={1.8} />
+        </button>
+      </ControlTooltip>
+      <ControlTooltip label={t("toggleMinimap")}>
+        <button
+          type="button"
+          aria-label={t("toggleMinimap")}
+          aria-pressed={minimapOpen}
+          className={toggleClass(minimapOpen)}
+          onClick={onToggleMinimap}
+        >
+          <IconMap className="size-4" stroke={1.8} />
+        </button>
+      </ControlTooltip>
+      <ControlTooltip label={t("snapToGrid")}>
+        <button
+          type="button"
+          aria-label={t("snapToGrid")}
+          aria-pressed={snapToGrid}
+          className={toggleClass(snapToGrid)}
+          onClick={onToggleSnap}
+        >
+          <IconMagnet className="size-4" stroke={1.8} />
+        </button>
+      </ControlTooltip>
       <span className="mx-0.5 h-4 w-px bg-white/10" />
-      <button
-        type="button"
-        aria-label={t("zoomOut")}
-        className={controlClass}
-        onClick={() => zoomOut()}
-      >
-        <IconMinus className="size-4" stroke={1.8} />
-      </button>
-      <span className="w-12 text-center text-xs text-white/70 tabular-nums select-none">
-        {Math.round(zoom * 100)}%
-      </span>
-      <button
-        type="button"
-        aria-label={t("zoomIn")}
-        className={controlClass}
-        onClick={() => zoomIn()}
-      >
-        <IconPlus className="size-4" stroke={1.8} />
-      </button>
-      <button
-        type="button"
-        aria-label={t("zoomToFit")}
-        className={controlClass}
-        onClick={() => fitView({ padding: 0.3, duration: 300 })}
-      >
-        <IconMaximize className="size-4" stroke={1.8} />
-      </button>
+      <ControlTooltip label={t("zoomOut")}>
+        <button
+          type="button"
+          aria-label={t("zoomOut")}
+          className={controlClass}
+          onClick={() => zoomOut()}
+        >
+          <IconMinus className="size-4" stroke={1.8} />
+        </button>
+      </ControlTooltip>
+      <ControlTooltip label={t("zoomLevel", { percent: zoomPercent })}>
+        <span className="w-12 text-center text-xs text-white/70 tabular-nums select-none">
+          {zoomPercent}%
+        </span>
+      </ControlTooltip>
+      <ControlTooltip label={t("zoomIn")}>
+        <button
+          type="button"
+          aria-label={t("zoomIn")}
+          className={controlClass}
+          onClick={() => zoomIn()}
+        >
+          <IconPlus className="size-4" stroke={1.8} />
+        </button>
+      </ControlTooltip>
+      <ControlTooltip label={t("zoomToFit")}>
+        <button
+          type="button"
+          aria-label={t("zoomToFit")}
+          className={controlClass}
+          onClick={() => fitView({ padding: 0.3, duration: 300 })}
+        >
+          <IconMaximize className="size-4" stroke={1.8} />
+        </button>
+      </ControlTooltip>
     </div>
+  );
+}
+
+function ControlTooltip({ label, children }: { label: string; children: ReactElement }) {
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>{children}</TooltipTrigger>
+      <TooltipContent side="top" sideOffset={8}>
+        {label}
+      </TooltipContent>
+    </Tooltip>
   );
 }
 
@@ -406,6 +459,7 @@ function CanvasInner({ projectId, canEdit }: { projectId: string; canEdit: boole
   const t = useTranslations("canvas");
   const tCopilot = useTranslations("copilot");
   const tProject = useTranslations("project");
+  const tCanvasControls = useTranslations("canvasControls");
   const { canManage, openShare, setCanvasChromeInset } = useProjectContext();
   const { data: catalog } = useAiCatalog();
   const { user } = useAuth();
@@ -482,7 +536,7 @@ function CanvasInner({ projectId, canEdit }: { projectId: string; canEdit: boole
   // The output kind a node exposes — "image" for image nodes, the card's
   // modality for a generation card (image card → image, video card → video).
   const sourceOutputKind = useCallback(
-    (nodeId: string | null | undefined): "image" | "video" | undefined =>
+    (nodeId: string | null | undefined): "image" | "video" | "audio" | undefined =>
       nodeId ? wiringSourceOutputKind(getNode, nodeId) : undefined,
     [getNode]
   );
@@ -724,6 +778,7 @@ function CanvasInner({ projectId, canEdit }: { projectId: string; canEdit: boole
               kind: "image",
               source: "uploaded",
               url: uploaded.url,
+              name: file.name,
               createdAt: Date.now(),
             },
           ]);
@@ -837,6 +892,20 @@ function CanvasInner({ projectId, canEdit }: { projectId: string; canEdit: boole
     [graphAddNode, selectNodes]
   );
 
+  const generationDefaults = useCallback(
+    (modality: "image" | "video"): Partial<GenerationNodeData> => {
+      const model = canvasDefaultModel(catalog, modality);
+      if (!model) return {};
+      return {
+        modelId: model.id,
+        modelName: model.name,
+        mode: canvasDefaultMode(model),
+        settings: defaultSettingsForModel(model),
+      };
+    },
+    [catalog]
+  );
+
   // Create a node of the chosen kind at `flow`; optionally wire it to a pending
   // dragged connection. Shared by the double-click menu and the bottom dock.
   const addNodeOfType = useCallback(
@@ -856,7 +925,11 @@ function CanvasInner({ projectId, canEdit }: { projectId: string; canEdit: boole
           id,
           type: "prompt",
           position: flow,
-          data: { prompt: "", name: t("imageCardName", { index: count + 1 }) },
+          data: {
+            ...generationDefaults("image"),
+            prompt: "",
+            name: t("imageCardName", { index: count + 1 }),
+          },
         });
       } else if (nodeType === "video") {
         const count = nodes.filter((node) => node.type === "video").length;
@@ -864,7 +937,11 @@ function CanvasInner({ projectId, canEdit }: { projectId: string; canEdit: boole
           id,
           type: "video",
           position: flow,
-          data: { prompt: "", name: t("videoCardName", { index: count + 1 }) },
+          data: {
+            ...generationDefaults("video"),
+            prompt: "",
+            name: t("videoCardName", { index: count + 1 }),
+          },
         });
       } else {
         addNode({ id, type: "note", position: flow, data: { text: "" } });
@@ -884,7 +961,7 @@ function CanvasInner({ projectId, canEdit }: { projectId: string; canEdit: boole
         onConnect(connection);
       }
     },
-    [nodes, addNode, onConnect, t]
+    [nodes, addNode, onConnect, t, generationDefaults]
   );
 
   // Bottom-dock add: drop the node at the viewport center, nudged per node count
@@ -997,24 +1074,31 @@ function CanvasInner({ projectId, canEdit }: { projectId: string; canEdit: boole
     return () => window.removeEventListener("keydown", onKey);
   }, [undo, redo, addNodeFromDock, copySelection, pasteClipboard, duplicateSelection]);
 
-  // Place a library asset on the canvas as an image node — at `position` when
-  // dragged-and-dropped, else the viewport center (click-to-add).
+  // Place a library asset on the canvas as a typed source node — at `position`
+  // when dragged-and-dropped, else the viewport center (click-to-add).
   const addAssetToCanvas = useCallback(
     (asset: CanvasAsset, position?: { x: number; y: number }) => {
-      if (asset.kind !== "image") {
-        toast.info(t("videoAssetsComingSoon"));
-        return;
-      }
       if (!asset.url) return;
       addNode({
         id: crypto.randomUUID(),
-        type: asset.panorama ? "panorama" : "image",
+        type:
+          asset.kind === "audio"
+            ? "audioAsset"
+            : asset.kind === "video"
+              ? "videoAsset"
+              : asset.panorama
+                ? "panorama"
+                : "image",
         position:
           position ?? screenToFlowPosition({ x: window.innerWidth / 2, y: window.innerHeight / 2 }),
-        data: { src: asset.url, mediaAssetId: asset.mediaAssetId, label: asset.prompt },
+        data: {
+          src: asset.url,
+          mediaAssetId: asset.mediaAssetId,
+          label: asset.name ?? asset.prompt,
+        },
       });
     },
-    [addNode, screenToFlowPosition, t]
+    [addNode, screenToFlowPosition]
   );
 
   const onDragOver = useCallback((event: React.DragEvent) => {
@@ -1110,7 +1194,9 @@ function CanvasInner({ projectId, canEdit }: { projectId: string; canEdit: boole
         (hit.type === "prompt" ||
           hit.type === "note" ||
           hit.type === "image" ||
-          hit.type === "video")
+          hit.type === "video" ||
+          hit.type === "videoAsset" ||
+          hit.type === "audioAsset")
       ) {
         const connection = connectionForPending(pending, hit.id);
         if (connection) onConnect(connection);
@@ -1211,6 +1297,7 @@ function CanvasInner({ projectId, canEdit }: { projectId: string; canEdit: boole
 
   // Empty-state "Click to add a node": open the add menu near the canvas center.
   const applyPreset = useApplyPreset(graph);
+  const workflowPresets = useMemo(() => createWorkflowPresets(tCanvasControls), [tCanvasControls]);
   const openAddMenuAtCenter = useCallback(() => {
     const rect = containerRef.current?.getBoundingClientRect();
     if (!rect) return;
@@ -1495,7 +1582,7 @@ function CanvasInner({ projectId, canEdit }: { projectId: string; canEdit: boole
                 !addMenu &&
                 (canEdit ? (
                   <CanvasEmptyState
-                    presets={WORKFLOW_PRESETS}
+                    presets={workflowPresets}
                     catalogReady={Boolean(catalog && catalog.models.length > 0)}
                     onAddNode={openAddMenuAtCenter}
                     onApplyPreset={applyPreset}

@@ -99,7 +99,7 @@ export function StoryShelf({ stories }: { stories: StoryStudioStory[] }) {
   };
 
   return (
-    <section className="relative z-20 px-[47px] pt-8 pb-16 lg:pl-[120px]">
+    <section className="relative z-20 pr-6 pl-20 pt-8 pb-16 lg:pl-[120px]">
       <div className="grid grid-cols-[repeat(auto-fit,minmax(260px,1fr))] gap-4">
         {stories.map((story) => (
           <StoryCard

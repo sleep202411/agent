@@ -22,7 +22,8 @@ import {
   removeNodeCascade,
 } from "@/app/[locale]/canvas/_lib/canvas-wiring";
 import {
-  defaultMode,
+  canvasDefaultMode,
+  canvasDefaultModel,
   defaultSettingsForModel,
   mergeCompatibleSettings,
   type ModelSettings,
@@ -122,11 +123,11 @@ export function useCopilotTools() {
             // same-turn run_generation.
             const modality = kind === "video" ? "video" : "image";
             const named = modelId ? catalog?.models.find((m) => m.id === modelId) : undefined;
-            const model = named ?? usableModelsByModality(catalog, modality)[0];
+            const model = named ?? canvasDefaultModel(catalog, modality);
             if (model) {
               data.modelId = model.id;
               data.modelName = model.name;
-              data.mode = defaultMode(model);
+              data.mode = canvasDefaultMode(model);
               data.settings = defaultSettingsForModel(model);
             }
             graph.addNode({ id, type: kind === "video" ? "video" : "prompt", position, data });
@@ -150,7 +151,7 @@ export function useCopilotTools() {
             if (model) {
               patch.modelId = model.id;
               patch.modelName = model.name;
-              patch.mode = defaultMode(model);
+              patch.mode = canvasDefaultMode(model);
               const prev = (node.data as { settings?: ModelSettings } | undefined)?.settings ?? {};
               patch.settings = mergeCompatibleSettings(model, prev);
             }

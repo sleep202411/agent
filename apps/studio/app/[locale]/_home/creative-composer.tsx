@@ -10,6 +10,7 @@
 
 import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { IconArrowUp, IconLayoutGrid, IconRefresh, type Icon } from "@tabler/icons-react";
+import { useTranslations } from "next-intl";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { useAuth } from "@/app/_components/auth-provider";
 import { GlassRim } from "@/components/ui/glass-rim";
@@ -20,79 +21,34 @@ import { G, Glyph } from "../_pollo/glyphs";
 
 type Modality = "image" | "video" | "project";
 
-const TOGGLE: { id: Modality; label: string; svg?: string; Icon?: Icon }[] = [
-  { id: "image", label: "Image", svg: G.image },
-  { id: "video", label: "Video", svg: G.video },
-  { id: "project", label: "Project", Icon: IconLayoutGrid },
+const TOGGLE: { id: Modality; labelKey: string; svg?: string; Icon?: Icon }[] = [
+  { id: "image", labelKey: "composer.modes.image", svg: G.image },
+  { id: "video", labelKey: "composer.modes.video", svg: G.video },
+  { id: "project", labelKey: "composer.modes.project", Icon: IconLayoutGrid },
 ];
 
 const PLACEHOLDER_EXAMPLES = [
-  "Design a logo",
-  "Make a 5-slide product carousel for Instagram",
-  "Create a UGC-style ad video",
-  "Turn a product photo into a campaign",
+  "composer.placeholders.logo",
+  "composer.placeholders.carousel",
+  "composer.placeholders.ugcVideo",
+  "composer.placeholders.campaign",
 ];
 
-const SUGGESTION_GROUPS: Array<Array<{ label: string; prompt: string; modality: Modality }>> = [
+const SUGGESTION_GROUPS: Array<Array<{ key: string; modality: Modality }>> = [
   [
-    {
-      label: "On-brand social carousel",
-      prompt:
-        "Make a 5-slide Instagram carousel for a skincare product launch with a clean, modern look.",
-      modality: "image",
-    },
-    {
-      label: "Product mockup for Etsy",
-      prompt:
-        "Create a polished Etsy product mockup with warm daylight, a clean lifestyle backdrop, and space for listing copy.",
-      modality: "image",
-    },
-    {
-      label: "UGC-style ad video",
-      prompt:
-        "Create a UGC-style ad video for a new wellness product with natural handheld energy, quick cuts, captions, and a clear call to action.",
-      modality: "video",
-    },
+    { key: "socialCarousel", modality: "image" },
+    { key: "etsyMockup", modality: "image" },
+    { key: "ugcAdVideo", modality: "video" },
   ],
   [
-    {
-      label: "Faceless YouTube short",
-      prompt:
-        "Create a faceless YouTube short with fast visual pacing, bold scene changes, and a concise educational hook.",
-      modality: "video",
-    },
-    {
-      label: "AI music video",
-      prompt:
-        "Create an AI music video with expressive camera movement, rhythmic scene changes, and a bright cinematic visual style.",
-      modality: "video",
-    },
-    {
-      label: "Podcast cover art",
-      prompt:
-        "Design premium podcast cover art with a clean editorial composition, strong title-safe negative space, and modern lighting.",
-      modality: "image",
-    },
+    { key: "facelessShort", modality: "video" },
+    { key: "musicVideo", modality: "video" },
+    { key: "podcastCover", modality: "image" },
   ],
   [
-    {
-      label: "Brand kit from logo",
-      prompt:
-        "Design a complete brand kit from a minimal logo concept, including color palette, typography direction, social avatar, and launch visuals.",
-      modality: "project",
-    },
-    {
-      label: "Interior moodboard",
-      prompt:
-        "Create an interior design moodboard for a bright modern studio with natural materials, soft daylight, and refined editorial styling.",
-      modality: "image",
-    },
-    {
-      label: "Campaign storyboard",
-      prompt:
-        "Build a campaign storyboard for a 15-second product launch video with opening hook, lifestyle use case, product close-up, and final CTA.",
-      modality: "project",
-    },
+    { key: "brandKit", modality: "project" },
+    { key: "interiorMoodboard", modality: "image" },
+    { key: "campaignStoryboard", modality: "project" },
   ],
 ];
 
@@ -109,6 +65,7 @@ const FLOWING_RIM_STYLE = {
 } as CSSProperties;
 
 export function CreativeComposer({ theme: t }: { theme: Theme }) {
+  const th = useTranslations("home");
   const router = useRouter();
   const { requireAuth } = useAuth();
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
@@ -117,8 +74,9 @@ export function CreativeComposer({ theme: t }: { theme: Theme }) {
   const [isPromptFocused, setIsPromptFocused] = useState(false);
   const [suggestionGroup, setSuggestionGroup] = useState(0);
   const showTypedPlaceholder = !prompt && !isPromptFocused;
+  const placeholderExamples = PLACEHOLDER_EXAMPLES.map((key) => th(key));
   const { text: typedPlaceholder, reducedMotion } = useTypewriterPlaceholder(
-    PLACEHOLDER_EXAMPLES,
+    placeholderExamples,
     showTypedPlaceholder
   );
   const canSubmit = prompt.trim().length > 0;
@@ -131,7 +89,7 @@ export function CreativeComposer({ theme: t }: { theme: Theme }) {
   };
 
   const applySuggestion = (suggestion: (typeof SUGGESTION_GROUPS)[number][number]) => {
-    setPrompt(suggestion.prompt);
+    setPrompt(th(`composer.suggestions.${suggestion.key}.prompt`));
     setModality(suggestion.modality);
     setIsPromptFocused(true);
     requestAnimationFrame(() => textareaRef.current?.focus());
@@ -184,7 +142,7 @@ export function CreativeComposer({ theme: t }: { theme: Theme }) {
                 submit();
               }
             }}
-            aria-label="Prompt"
+            aria-label={th("composer.promptAria")}
             placeholder=""
             rows={1}
             className="relative z-10 block max-h-48 min-h-8 w-full resize-none overflow-y-auto bg-transparent px-1 py-1 text-[14px] leading-5 font-normal tracking-[0.28px] text-white/90 caret-white/80 outline-none"
@@ -212,7 +170,7 @@ export function CreativeComposer({ theme: t }: { theme: Theme }) {
                 setModality(value);
               }
             }}
-            aria-label="Generation type"
+            aria-label={th("composer.generationTypeAria")}
             spacing={0.5}
             className="inline-flex shrink-0 items-center gap-0.5 rounded-xl bg-white/[0.03] p-0.5"
           >
@@ -222,7 +180,7 @@ export function CreativeComposer({ theme: t }: { theme: Theme }) {
                 <ToggleGroupItem
                   key={m.id}
                   value={m.id}
-                  aria-label={m.label}
+                  aria-label={th(m.labelKey)}
                   className={cn(
                     "h-7 min-w-0 gap-1.5 rounded-[9px] px-2.5 text-[13px] font-medium transition-colors hover:bg-transparent hover:text-white/80 focus-visible:ring-1 focus-visible:ring-white/20",
                     "data-[state=on]:bg-white/[0.10] data-[state=on]:text-white",
@@ -238,7 +196,7 @@ export function CreativeComposer({ theme: t }: { theme: Theme }) {
                   ) : m.Icon ? (
                     <m.Icon className="size-[15px] shrink-0" stroke={1.8} />
                   ) : null}
-                  {m.label}
+                  {th(m.labelKey)}
                 </ToggleGroupItem>
               );
             })}
@@ -248,7 +206,7 @@ export function CreativeComposer({ theme: t }: { theme: Theme }) {
             type="button"
             disabled={!canSubmit}
             onClick={submit}
-            aria-label="Create"
+            aria-label={th("composer.createAria")}
             className={cn(
               "grid size-7 place-items-center rounded-full transition",
               canSubmit
@@ -269,17 +227,17 @@ export function CreativeComposer({ theme: t }: { theme: Theme }) {
       <div className="mt-6 flex w-full items-center justify-center gap-2.5">
         {SUGGESTION_GROUPS[suggestionGroup].map((suggestion) => (
           <button
-            key={suggestion.label}
+            key={suggestion.key}
             type="button"
             onClick={() => applySuggestion(suggestion)}
             className="h-8 max-w-[220px] min-w-0 truncate rounded-xl bg-transparent px-2.5 py-1.5 text-[14px] leading-5 font-medium whitespace-nowrap text-white shadow-[inset_0_0_0_1px_rgba(255,255,255,0.11)] transition duration-300 hover:bg-white/[0.07] hover:shadow-[inset_0_0_0_1px_rgba(255,255,255,0)] active:translate-y-px"
           >
-            {suggestion.label}
+            {th(`composer.suggestions.${suggestion.key}.label`)}
           </button>
         ))}
         <button
           type="button"
-          aria-label="Shuffle suggestions"
+          aria-label={th("composer.shuffleAria")}
           onClick={() => setSuggestionGroup((group) => (group + 1) % SUGGESTION_GROUPS.length)}
           className="grid size-8 shrink-0 place-items-center rounded-full bg-transparent text-white shadow-[inset_0_0_0_1px_rgba(255,255,255,0.11)] transition duration-300 hover:bg-white/[0.07] hover:shadow-[inset_0_0_0_1px_rgba(255,255,255,0)] active:translate-y-px"
         >

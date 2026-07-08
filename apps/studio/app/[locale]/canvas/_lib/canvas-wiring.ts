@@ -15,7 +15,7 @@
  */
 import type { Edge } from "@xyflow/react";
 import { routeReferenceField } from "@/app/[locale]/canvas/_lib/reference-routing";
-import type { FizzAiModel } from "@/app/[locale]/canvas/_lib/generation-api";
+import type { FizzAiModel, FizzAiReferenceKind } from "@/app/[locale]/canvas/_lib/generation-api";
 import type { CardReference } from "@/app/[locale]/canvas/_components/reference-stack";
 import type { GenerationNodeData } from "@/app/[locale]/canvas/_components/generation-card";
 import type { CanvasGraph } from "@/lib/collab/use-canvas-graph";
@@ -31,11 +31,15 @@ export interface WiringCtx {
 }
 
 /** Node type → the kind exposed on its 'output' handle (notes have none). */
-export function sourceOutputKind(getNode: GetNode, nodeId: string): "image" | "video" | undefined {
+export function sourceOutputKind(
+  getNode: GetNode,
+  nodeId: string
+): FizzAiReferenceKind | undefined {
   const node = getNode(nodeId);
   if (!node) return undefined;
   if (node.type === "image" || node.type === "panorama" || node.type === "prompt") return "image";
-  if (node.type === "video") return "video";
+  if (node.type === "video" || node.type === "videoAsset") return "video";
+  if (node.type === "audioAsset") return "audio";
   return undefined;
 }
 
@@ -49,6 +53,9 @@ export function sourceMediaUrl(getNode: GetNode, nodeId: string): string | undef
   if (node.type === "prompt" || node.type === "video") {
     return (node.data as GenerationNodeData).generation?.outputs?.[0]?.url;
   }
+  if (node.type === "videoAsset" || node.type === "audioAsset") {
+    return (node.data as { src?: string }).src;
+  }
   return undefined;
 }
 
@@ -61,6 +68,9 @@ export function sourceMediaAssetId(getNode: GetNode, nodeId: string): string | u
   }
   if (node.type === "prompt" || node.type === "video") {
     return (node.data as GenerationNodeData).generation?.outputs?.[0]?.assetId;
+  }
+  if (node.type === "videoAsset" || node.type === "audioAsset") {
+    return (node.data as { mediaAssetId?: string }).mediaAssetId;
   }
   return undefined;
 }

@@ -38,6 +38,8 @@ export interface ProjectRef {
   visibility: "private" | "workspace" | "public";
   /** The caller's effective role (present on getProject; gates the UI). */
   role?: ProjectRole;
+  /** Explicit cover image, else the earliest image in the canvas asset library. */
+  thumbnailUrl?: string | null;
   updatedAt: string;
 }
 

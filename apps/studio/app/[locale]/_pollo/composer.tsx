@@ -16,6 +16,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { IconLayoutGrid, IconRobot, IconSparkles, type Icon } from "@tabler/icons-react";
+import { useTranslations } from "next-intl";
 import { EASE, type Theme } from "./theme";
 import { GradientRing } from "./glyphs";
 import { ProjectStudio } from "./project-studio";
@@ -24,7 +25,7 @@ import { CreativeComposer } from "../_home/creative-composer";
 
 type Studio = {
   id: string;
-  label: string;
+  labelKey: string;
   kind: "compose" | "project" | "agent";
   icon: Icon;
   /** Kept-but-hidden (not deleted). Re-enable by removing this flag. */
@@ -33,12 +34,24 @@ type Studio = {
 
 const STUDIOS: Studio[] = [
   // chat-first guided entry — placed first so the homepage defaults to it.
-  { id: "agent", label: "Agent", kind: "agent", icon: IconRobot },
-  { id: "creative", label: "Creative Studio", kind: "compose", icon: IconSparkles },
-  { id: "project", label: "Project Studio", kind: "project", icon: IconLayoutGrid },
+  { id: "agent", labelKey: "studioTabs.agent", kind: "agent", icon: IconRobot },
+  { id: "creative", labelKey: "studioTabs.creative", kind: "compose", icon: IconSparkles },
+  { id: "project", labelKey: "studioTabs.project", kind: "project", icon: IconLayoutGrid },
   // ---- hidden (kept, not deleted) — verticals we can't back yet ----
-  { id: "marketing", label: "Marketing Studio", kind: "compose", icon: IconSparkles, hidden: true },
-  { id: "commerce", label: "Commerce Studio", kind: "compose", icon: IconSparkles, hidden: true },
+  {
+    id: "marketing",
+    labelKey: "studioTabs.marketing",
+    kind: "compose",
+    icon: IconSparkles,
+    hidden: true,
+  },
+  {
+    id: "commerce",
+    labelKey: "studioTabs.commerce",
+    kind: "compose",
+    icon: IconSparkles,
+    hidden: true,
+  },
 ];
 
 const VISIBLE_STUDIOS = STUDIOS.filter((s) => !s.hidden);
@@ -49,6 +62,7 @@ const VISIBLE_STUDIOS = STUDIOS.filter((s) => !s.hidden);
 const SHOW_STUDIO_TABS = false;
 
 export function Composer({ theme: t }: { theme: Theme }) {
+  const th = useTranslations("home");
   // Default to the Creative composer — the homepage's primary create surface.
   const [studioIdx, setStudioIdx] = useState(() =>
     Math.max(
@@ -75,14 +89,12 @@ export function Composer({ theme: t }: { theme: Theme }) {
     <div className="flex w-full flex-col items-center">
       {/* headline — static tagline (the tabs are modes, not audiences) */}
       <h1 className="text-center text-[30px] font-medium leading-[40px] tracking-tight md:text-[34px] md:leading-[44px]">
-        The Ultimate AI Creative Suite for{" "}
+        {th("heroComposer.headlinePrefix")}{" "}
         <span className="bg-clip-text text-transparent" style={{ backgroundImage: t.word }}>
-          Creators
+          {th("heroComposer.headlineHighlight")}
         </span>
       </h1>
-      <p className="mt-3 text-center text-[15px] text-white/45">
-        Describe an idea and generate images or video in seconds.
-      </p>
+      <p className="mt-3 text-center text-[15px] text-white/45">{th("heroComposer.subtitle")}</p>
 
       {/* studio tabs — Agent + Creative + Project (Marketing/Commerce hidden).
           Whole switcher hidden via SHOW_STUDIO_TABS — design kept intact. */}
@@ -128,10 +140,10 @@ export function Composer({ theme: t }: { theme: Theme }) {
                     className="bg-clip-text text-transparent"
                     style={{ backgroundImage: t.accentText }}
                   >
-                    {s.label}
+                    {th(s.labelKey)}
                   </span>
                 ) : (
-                  s.label
+                  th(s.labelKey)
                 )}
               </button>
             );

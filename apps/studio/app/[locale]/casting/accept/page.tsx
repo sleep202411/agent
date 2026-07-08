@@ -119,7 +119,7 @@ function CastingAcceptInner() {
       <div className="w-full max-w-md">
         <div className="mb-6 flex items-center justify-center gap-2 text-sm font-semibold tracking-tight text-muted-foreground">
           <IconMask className="size-4" />
-          FizzStudio
+          {tc("fizzStudio")}
         </div>
         <div className="rounded-2xl bg-card p-6">{renderBody()}</div>
       </div>

@@ -2,7 +2,7 @@ import type { Metadata, Viewport } from "next";
 import { headers } from "next/headers";
 import { notFound } from "next/navigation";
 import { NextIntlClientProvider, hasLocale } from "next-intl";
-import { setRequestLocale } from "next-intl/server";
+import { getTranslations, setRequestLocale } from "next-intl/server";
 import { Geist, Geist_Mono, Inter } from "next/font/google";
 import "../globals.css";
 import { routing } from "@/i18n/routing";
@@ -27,10 +27,13 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 });
 
-export const metadata: Metadata = {
-  title: "FizzStudio",
-  description: "AI creative studio",
-};
+export async function generateMetadata(): Promise<Metadata> {
+  const t = await getTranslations("metadata");
+  return {
+    title: t("studioTitle"),
+    description: t("studioDescription"),
+  };
+}
 
 export const viewport: Viewport = {
   colorScheme: "dark",

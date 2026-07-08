@@ -9,7 +9,7 @@
 import { IconCrown } from "@tabler/icons-react";
 import Image from "next/image";
 import { useState } from "react";
-import { useLocale } from "next-intl";
+import { useLocale, useTranslations } from "next-intl";
 import { getWebBaseUrl } from "@/lib/web-base";
 import { useSiteRegion } from "@/app/_components/region-provider";
 import { useAuth } from "./auth-provider";
@@ -24,6 +24,9 @@ export function LandingHeader() {
   const { user, loading, signIn } = useAuth();
   const [pricingOpen, setPricingOpen] = useState(false);
   const locale = useLocale();
+  const t = useTranslations("shell");
+  const ta = useTranslations("auth");
+  const tc = useTranslations("common");
   const siteRegion = useSiteRegion();
 
   return (
@@ -31,12 +34,12 @@ export function LandingHeader() {
       {/* Logo → main web app home (cell-keyed), same web base as the profile link. */}
       <a
         href={`${getWebBaseUrl(siteRegion)}/${locale}`}
-        aria-label="FizzDragon home"
+        aria-label={t("header.fizzDragonHomeAriaLabel")}
         className="flex shrink-0 items-center"
       >
         <Image
           src="/logo.png"
-          alt="FizzDragon"
+          alt={tc("fizzDragon")}
           width={439}
           height={78}
           priority
@@ -74,7 +77,7 @@ export function LandingHeader() {
               onClick={signIn}
               className="h-8 rounded-[12px] bg-white px-2.5 py-1.5 text-[14px] leading-5 font-medium text-black transition hover:bg-white/90"
             >
-              Sign In
+              {ta("signIn")}
             </button>
           </>
         )}
@@ -86,6 +89,8 @@ export function LandingHeader() {
 }
 
 function UpgradeButton({ onClick }: { onClick: () => void }) {
+  const t = useTranslations("account");
+
   return (
     <button
       type="button"
@@ -93,7 +98,7 @@ function UpgradeButton({ onClick }: { onClick: () => void }) {
       className="flex h-8 items-center gap-1.5 rounded-[12px] bg-[#E52227] px-2.5 py-1.5 text-[14px] leading-5 font-medium text-white shadow-[0_0_18px_rgb(229_34_39/0.22)] transition hover:bg-[#c91e22]"
     >
       <IconCrown className="size-4 text-white" stroke={2} />
-      Upgrade
+      {t("upgrade")}
     </button>
   );
 }
