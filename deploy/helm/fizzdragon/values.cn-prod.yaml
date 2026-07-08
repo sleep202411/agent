@@ -198,6 +198,12 @@ server:
     NEXT_PUBLIC_SITE_REGION: cn
     # Mirrors prod-cn .env (2026-06-10).
     AI_PROVIDER: deepseek
+    # BytePlus ModelArk ASSETS plane — same intl BytePlus account as .com (verified
+    # same inference key). AK/SK live in the out-of-band fizzdragon-server-secrets
+    # (added via kubectl, NOT Key Vault — azure.enabled=false here). ACR expiry +
+    # endpoint (default ap-southeast-1) match .com.
+    MEDIA_ASSET_AIGC_REGISTRATION_ENABLED: "true"
+    BYTEPLUS_ACR_EXPIRES_AT: "2027-06-29T16:59:59+08:00"
     DISABLE_CONTENT_MODERATION: "true"
     # Return-URL allowlist (DECLARATIVE — never hardcode host origins in code):
     # fizzstudio.fizzspace.cn = apps/web (社区), studio.fizzspace.cn = apps/studio (算力).
