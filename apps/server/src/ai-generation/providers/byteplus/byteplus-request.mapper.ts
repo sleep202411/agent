@@ -212,9 +212,19 @@ function sizeFor(imageSize: unknown, resolution: unknown): string {
     width = height * aspect;
   }
 
+  // Seedream 5.0 Pro's `1K` tier has a 921,600 total-pixel FLOOR (Method 1 range
+  // [1280x720, 2048x2048]); non-square ratios computed off the 1024 long edge
+  // fall under it. Pin 1K to its full ~1.05M-pixel budget so every ratio clears
+  // the floor with rounding headroom (matches the official 1K sizes ≈1M px).
+  // Other tiers only cap at their max.
+  const minPixels = resolution === '1K' ? maxPixels : 0;
   const pixels = width * height;
   if (pixels > maxPixels) {
     const scale = Math.sqrt(maxPixels / pixels);
+    width *= scale;
+    height *= scale;
+  } else if (minPixels > 0 && pixels < minPixels) {
+    const scale = Math.sqrt(minPixels / pixels);
     width *= scale;
     height *= scale;
   }

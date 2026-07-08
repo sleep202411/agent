@@ -566,19 +566,6 @@ export const FLUX_2_DEV_PARAMETER_POLICY = {
   seed: { enabled: true, minimum: 0, maximum: 2_147_483_647 },
 } as const satisfies Prisma.InputJsonObject;
 
-export const SEEDREAM_4_PARAMETER_POLICY = {
-  parameterMode: 'provider_union',
-  providerFamily: 'seedream',
-  defaultAspectRatio: '1:1',
-  supportedAspectRatios: SEEDREAM_BASE_ASPECT_RATIOS,
-  defaultVariations: 1,
-  variationOptions: [1],
-  defaultResolution: '2K',
-  resolutionOptions: ['1K', '2K', '4K'],
-  referenceImages: SEEDREAM_REFERENCE_IMAGES,
-  seed: { enabled: false },
-} as const satisfies Prisma.InputJsonObject;
-
 export const SEEDREAM_45_PARAMETER_POLICY = {
   parameterMode: 'provider_union',
   providerFamily: 'seedream',
@@ -601,6 +588,21 @@ export const SEEDREAM_5_LITE_PARAMETER_POLICY = {
   variationOptions: [1],
   defaultResolution: '2K',
   resolutionOptions: ['2K', '3K', '4K'],
+  referenceImages: SEEDREAM_REFERENCE_IMAGES,
+  seed: { enabled: false },
+} as const satisfies Prisma.InputJsonObject;
+
+export const SEEDREAM_5_PRO_PARAMETER_POLICY = {
+  parameterMode: 'provider_union',
+  providerFamily: 'seedream',
+  defaultAspectRatio: '1:1',
+  supportedAspectRatios: SEEDREAM_EXTENDED_ASPECT_RATIOS,
+  defaultVariations: 1,
+  variationOptions: [1],
+  defaultResolution: '2K',
+  // Official seedream-5-0-pro size levels: 1K / 2K only (no 3K/4K upstream).
+  resolutionOptions: ['1K', '2K'],
+  // Pro supports up to 10 reference images (lite/4.5/4.0 allow 14).
   referenceImages: SEEDREAM_REFERENCE_IMAGES,
   seed: { enabled: false },
 } as const satisfies Prisma.InputJsonObject;
@@ -984,29 +986,6 @@ export const FLUX_2_DEV_PRODUCT_PRICING: AiProductPricingPolicy = {
   roundTo: 1,
 };
 
-export const SEEDREAM_4_PRODUCT_PRICING: AiProductPricingPolicy = {
-  mode: 'parameter_matrix',
-  version: 'seedream-4-points-v1-2026-06-08',
-  currency: 'COMPUTE_POINTS',
-  defaultOutputCount: 1,
-  minOutputCount: 1,
-  maxOutputCount: 1,
-  defaultResolution: '2K',
-  defaultQuality: 'standard',
-  resolutionOptions: ['1K', '2K', '4K'],
-  qualityOptions: ['standard'],
-  matrix: {
-    '1K': { standard: 20 },
-    '2K': { standard: 30 },
-    '4K': { standard: 50 },
-  },
-  referenceImageSurchargePoints: 0,
-  extraReferenceImagePoints: 0,
-  maskSurchargePoints: 0,
-  minimumPoints: 1,
-  roundTo: 1,
-};
-
 export const SEEDREAM_45_PRODUCT_PRICING: AiProductPricingPolicy = {
   mode: 'parameter_matrix',
   // v2 2026-07-08: re-based on official BytePlus per-piece cost ($0.040/piece,
@@ -1048,6 +1027,32 @@ export const SEEDREAM_5_LITE_PRODUCT_PRICING: AiProductPricingPolicy = {
     '2K': { standard: 10 },
     '3K': { standard: 10 },
     '4K': { standard: 10 },
+  },
+  referenceImageSurchargePoints: 0,
+  extraReferenceImagePoints: 0,
+  maskSurchargePoints: 0,
+  minimumPoints: 1,
+  roundTo: 1,
+};
+
+// Seedream 5.0 Pro — flagship. Official BytePlus $0.045/piece (output ≤2.36MP,
+// single tier). Designed/floored pro price 15 — top of the seedream ladder
+// (lite 10, 4.5 12, pro 15); capped, not raw ×margin.
+export const SEEDREAM_5_PRO_PRODUCT_PRICING: AiProductPricingPolicy = {
+  mode: 'parameter_matrix',
+  version: 'seedream-5-pro-points-v1-2026-07-08',
+  currency: 'COMPUTE_POINTS',
+  defaultOutputCount: 1,
+  minOutputCount: 1,
+  maxOutputCount: 1,
+  defaultResolution: '2K',
+  defaultQuality: 'standard',
+  resolutionOptions: ['1K', '2K'],
+  qualityOptions: ['standard'],
+  // Flat per-piece pricing (official bills $0.045/image regardless of size).
+  matrix: {
+    '1K': { standard: 15 },
+    '2K': { standard: 15 },
   },
   referenceImageSurchargePoints: 0,
   extraReferenceImagePoints: 0,
