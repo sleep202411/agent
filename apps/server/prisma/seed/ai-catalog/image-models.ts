@@ -229,62 +229,6 @@ const FAL_FLUX_FLEX_INPUT_SCHEMA = {
   },
 } as const satisfies Prisma.InputJsonObject;
 
-const REPLICATE_GENERIC_IMAGE_INPUT_SCHEMA = {
-  type: 'object',
-  required: ['input'],
-  properties: {
-    input: { type: 'object' },
-  },
-} as const satisfies Prisma.InputJsonObject;
-
-const REPLICATE_FLUX_INPUT_SCHEMA = {
-  type: 'object',
-  required: ['input'],
-  properties: {
-    input: {
-      type: 'object',
-      required: ['prompt'],
-      properties: {
-        prompt: { type: 'string' },
-        input_images: { type: 'array', items: { type: 'string' } },
-        aspect_ratio: { type: 'string' },
-        resolution: { type: 'string' },
-        seed: { type: 'integer' },
-        output_format: { type: 'string' },
-        output_quality: { type: 'integer' },
-        safety_tolerance: { type: 'integer' },
-        prompt_upsampling: { type: 'boolean' },
-      },
-    },
-  },
-} as const satisfies Prisma.InputJsonObject;
-
-const REPLICATE_FLUX_FLEX_INPUT_SCHEMA = {
-  type: 'object',
-  required: ['input'],
-  properties: {
-    input: {
-      type: 'object',
-      required: ['prompt'],
-      properties: {
-        prompt: { type: 'string' },
-        input_images: { type: 'array', items: { type: 'string' } },
-        aspect_ratio: { type: 'string' },
-        resolution: { type: 'string' },
-        width: { type: 'integer' },
-        height: { type: 'integer' },
-        seed: { type: 'integer' },
-        steps: { type: 'integer' },
-        guidance: { type: 'number' },
-        output_format: { type: 'string' },
-        output_quality: { type: 'integer' },
-        safety_tolerance: { type: 'integer' },
-        prompt_upsampling: { type: 'boolean' },
-      },
-    },
-  },
-} as const satisfies Prisma.InputJsonObject;
-
 function bailianCatalogSnapshot(args: {
   model: string;
   callMode: 'sync' | 'async';
@@ -365,28 +309,6 @@ function falCatalogSnapshot(args: {
   };
 }
 
-function replicateCatalogSnapshot(args: {
-  model: string;
-  usdPerImage?: number;
-  usdPerUnit?: number;
-  unit?: string;
-  pricingSource?: string;
-  pricingNote?: string;
-  docsUrl: string;
-}): Prisma.InputJsonObject {
-  return {
-    pricing: {
-      source: args.pricingSource ?? 'replicate_public_pricing',
-      unit: args.unit ?? 'image',
-      currency: 'USD',
-      unitPrice: args.usdPerUnit ?? args.usdPerImage,
-      ...(args.pricingNote ? { note: args.pricingNote } : {}),
-    },
-    docs: [{ title: 'Replicate API reference', url: args.docsUrl }],
-    model: args.model,
-  };
-}
-
 export const IMAGE_MODELS: ImageModelSeed[] = [
   {
     slug: 'gpt-image-2',
@@ -409,15 +331,8 @@ export const IMAGE_MODELS: ImageModelSeed[] = [
         priority: 10,
         weight: 100,
       },
-      {
-        provider: 'replicate',
-        endpointId: 'openai/gpt-image-2',
-        modes: [T2I, I2I],
-        priority: 20,
-        weight: 100,
-      },
     ],
-    providerAliases: ['fal/openai/gpt-image-2', 'replicate/openai/gpt-image-2'],
+    providerAliases: ['fal/openai/gpt-image-2'],
   },
   {
     slug: 'flux-2-pro',
@@ -455,31 +370,8 @@ export const IMAGE_MODELS: ImageModelSeed[] = [
         requestTimeoutSeconds: 600,
         failureThreshold: 3,
       },
-      {
-        provider: 'replicate',
-        endpointId: 'black-forest-labs/flux-2-pro',
-        priority: 30,
-        weight: 90,
-        providerInputSchema: REPLICATE_FLUX_INPUT_SCHEMA,
-        providerOutputSchema: PROVIDER_IMAGE_OUTPUT_SCHEMA,
-        catalogSnapshot: replicateCatalogSnapshot({
-          model: 'black-forest-labs/flux-2-pro',
-          usdPerUnit: 0.03,
-          unit: 'MP',
-          pricingSource: 'replicate_model_page_and_bfl_official_pricing',
-          pricingNote:
-            'Replicate lists this model as priced by input and output megapixels; BFL official pricing starts at $0.03 per output megapixel.',
-          docsUrl: 'https://replicate.com/black-forest-labs/flux-2-pro/api',
-        }),
-        maxConcurrentRequests: 4,
-        requestTimeoutSeconds: 600,
-        failureThreshold: 3,
-      },
     ],
-    providerAliases: [
-      'fal/fal-ai/flux-2-pro',
-      'replicate/black-forest-labs/flux-2-pro',
-    ],
+    providerAliases: ['fal/fal-ai/flux-2-pro'],
   },
   {
     slug: 'hunyuan-world',
@@ -714,31 +606,8 @@ export const IMAGE_MODELS: ImageModelSeed[] = [
         requestTimeoutSeconds: 600,
         failureThreshold: 3,
       },
-      {
-        provider: 'replicate',
-        endpointId: 'black-forest-labs/flux-2-flex',
-        priority: 30,
-        weight: 90,
-        providerInputSchema: REPLICATE_FLUX_FLEX_INPUT_SCHEMA,
-        providerOutputSchema: PROVIDER_IMAGE_OUTPUT_SCHEMA,
-        catalogSnapshot: replicateCatalogSnapshot({
-          model: 'black-forest-labs/flux-2-flex',
-          usdPerUnit: 0.06,
-          unit: 'MP',
-          pricingSource: 'replicate_model_page_and_bfl_official_pricing',
-          pricingNote:
-            'Replicate lists this model as priced by input and output megapixels; BFL official pricing starts at $0.06 per megapixel for FLUX.2 Flex.',
-          docsUrl: 'https://replicate.com/black-forest-labs/flux-2-flex/api',
-        }),
-        maxConcurrentRequests: 4,
-        requestTimeoutSeconds: 600,
-        failureThreshold: 3,
-      },
     ],
-    providerAliases: [
-      'fal/fal-ai/flux-2-flex',
-      'replicate/black-forest-labs/flux-2-flex',
-    ],
+    providerAliases: ['fal/fal-ai/flux-2-flex'],
   },
   {
     slug: 'flux-2-max',
@@ -775,31 +644,8 @@ export const IMAGE_MODELS: ImageModelSeed[] = [
         requestTimeoutSeconds: 600,
         failureThreshold: 3,
       },
-      {
-        provider: 'replicate',
-        endpointId: 'black-forest-labs/flux-2-max',
-        priority: 30,
-        weight: 90,
-        providerInputSchema: REPLICATE_FLUX_INPUT_SCHEMA,
-        providerOutputSchema: PROVIDER_IMAGE_OUTPUT_SCHEMA,
-        catalogSnapshot: replicateCatalogSnapshot({
-          model: 'black-forest-labs/flux-2-max',
-          usdPerUnit: 0.03,
-          unit: 'MP',
-          pricingSource: 'replicate_billing_config_official',
-          pricingNote:
-            'Replicate FLUX.2 [max]: $0.04 per run + $0.03 per input megapixel + $0.03 per output megapixel; one image per run, up to 8 reference images.',
-          docsUrl: 'https://replicate.com/black-forest-labs/flux-2-max/api',
-        }),
-        maxConcurrentRequests: 4,
-        requestTimeoutSeconds: 600,
-        failureThreshold: 3,
-      },
     ],
-    providerAliases: [
-      'fal/fal-ai/flux-2-max',
-      'replicate/black-forest-labs/flux-2-max',
-    ],
+    providerAliases: ['fal/fal-ai/flux-2-max'],
   },
   {
     slug: 'flux-2-dev',
@@ -836,31 +682,8 @@ export const IMAGE_MODELS: ImageModelSeed[] = [
         requestTimeoutSeconds: 600,
         failureThreshold: 3,
       },
-      {
-        provider: 'replicate',
-        endpointId: 'black-forest-labs/flux-2-dev',
-        priority: 30,
-        weight: 90,
-        providerInputSchema: REPLICATE_FLUX_INPUT_SCHEMA,
-        providerOutputSchema: PROVIDER_IMAGE_OUTPUT_SCHEMA,
-        catalogSnapshot: replicateCatalogSnapshot({
-          model: 'black-forest-labs/flux-2-dev',
-          usdPerUnit: 0.012,
-          unit: 'MP',
-          pricingSource: 'replicate_official_pricing',
-          pricingNote:
-            'Replicate FLUX.2 [dev]: $0.012 per input and output megapixel; distilled (no steps param), up to 4 reference images, one image per run.',
-          docsUrl: 'https://replicate.com/black-forest-labs/flux-2-dev/api',
-        }),
-        maxConcurrentRequests: 4,
-        requestTimeoutSeconds: 600,
-        failureThreshold: 3,
-      },
     ],
-    providerAliases: [
-      'fal/fal-ai/flux-2',
-      'replicate/black-forest-labs/flux-2-dev',
-    ],
+    providerAliases: ['fal/fal-ai/flux-2'],
   },
   {
     slug: 'wan-image-2.7-pro',
@@ -896,24 +719,8 @@ export const IMAGE_MODELS: ImageModelSeed[] = [
         requestTimeoutSeconds: 600,
         failureThreshold: 3,
       },
-      {
-        provider: 'replicate',
-        endpointId: 'wan-video/wan-2.7-image-pro',
-        priority: 30,
-        weight: 100,
-        providerInputSchema: REPLICATE_GENERIC_IMAGE_INPUT_SCHEMA,
-        providerOutputSchema: PROVIDER_IMAGE_OUTPUT_SCHEMA,
-        catalogSnapshot: replicateCatalogSnapshot({
-          model: 'wan-video/wan-2.7-image-pro',
-          usdPerImage: 0.03,
-          docsUrl: 'https://replicate.com/wan-video/wan-2.7-image-pro/api',
-        }),
-      },
     ],
-    providerAliases: [
-      'bailian/wan2.7-image-pro',
-      'replicate/wan-video/wan-2.7-image-pro',
-    ],
+    providerAliases: ['bailian/wan2.7-image-pro'],
   },
   {
     slug: 'wan-image-2.7',
@@ -1000,24 +807,10 @@ export const IMAGE_MODELS: ImageModelSeed[] = [
             'https://fal.ai/models/fal-ai/qwen-image-2/pro/text-to-image',
         }),
       },
-      {
-        provider: 'replicate',
-        endpointId: 'qwen/qwen-image-2-pro',
-        priority: 40,
-        weight: 80,
-        providerInputSchema: REPLICATE_GENERIC_IMAGE_INPUT_SCHEMA,
-        providerOutputSchema: PROVIDER_IMAGE_OUTPUT_SCHEMA,
-        catalogSnapshot: replicateCatalogSnapshot({
-          model: 'qwen/qwen-image-2-pro',
-          usdPerImage: 0.075,
-          docsUrl: 'https://replicate.com/qwen/qwen-image-2-pro/api',
-        }),
-      },
     ],
     providerAliases: [
       'bailian/qwen-image-2.0-pro',
       'fal/fal-ai/qwen-image-2/pro/text-to-image',
-      'replicate/qwen/qwen-image-2-pro',
     ],
   },
   {
@@ -1067,24 +860,10 @@ export const IMAGE_MODELS: ImageModelSeed[] = [
           docsUrl: 'https://fal.ai/models/fal-ai/qwen-image-2/text-to-image',
         }),
       },
-      {
-        provider: 'replicate',
-        endpointId: 'qwen/qwen-image-2512',
-        priority: 40,
-        weight: 80,
-        providerInputSchema: REPLICATE_GENERIC_IMAGE_INPUT_SCHEMA,
-        providerOutputSchema: PROVIDER_IMAGE_OUTPUT_SCHEMA,
-        catalogSnapshot: replicateCatalogSnapshot({
-          model: 'qwen/qwen-image-2512',
-          usdPerImage: 0.02,
-          docsUrl: 'https://replicate.com/qwen/qwen-image-2512/api',
-        }),
-      },
     ],
     providerAliases: [
       'bailian/qwen-image-2.0',
       'fal/fal-ai/qwen-image-2/text-to-image',
-      'replicate/qwen/qwen-image-2512',
     ],
   },
   {
@@ -1108,14 +887,8 @@ export const IMAGE_MODELS: ImageModelSeed[] = [
         priority: 10,
         weight: 100,
       },
-      {
-        provider: 'replicate',
-        endpointId: 'google/nano-banana',
-        priority: 20,
-        weight: 100,
-      },
     ],
-    providerAliases: ['fal/fal-ai/nano-banana', 'replicate/google/nano-banana'],
+    providerAliases: ['fal/fal-ai/nano-banana'],
   },
   {
     slug: 'quick-image-1-0',
@@ -1177,17 +950,8 @@ export const IMAGE_MODELS: ImageModelSeed[] = [
         priority: 10,
         weight: 100,
       },
-      {
-        provider: 'replicate',
-        endpointId: 'google/nano-banana-2',
-        priority: 20,
-        weight: 100,
-      },
     ],
-    providerAliases: [
-      'fal/fal-ai/nano-banana-2',
-      'replicate/google/nano-banana-2',
-    ],
+    providerAliases: ['fal/fal-ai/nano-banana-2'],
   },
   {
     slug: 'nano-banana-pro',
@@ -1210,17 +974,8 @@ export const IMAGE_MODELS: ImageModelSeed[] = [
         priority: 10,
         weight: 100,
       },
-      {
-        provider: 'replicate',
-        endpointId: 'google/nano-banana-pro',
-        priority: 20,
-        weight: 100,
-      },
     ],
-    providerAliases: [
-      'fal/fal-ai/nano-banana-pro',
-      'replicate/google/nano-banana-pro',
-    ],
+    providerAliases: ['fal/fal-ai/nano-banana-pro'],
   },
   {
     slug: 'seedream-4',
@@ -1249,17 +1004,10 @@ export const IMAGE_MODELS: ImageModelSeed[] = [
         priority: 20,
         weight: 100,
       },
-      {
-        provider: 'replicate',
-        endpointId: 'bytedance/seedream-4',
-        priority: 30,
-        weight: 100,
-      },
     ],
     providerAliases: [
       'byteplus/seedream-4-0-250828',
       'fal/fal-ai/bytedance/seedream/v4/text-to-image',
-      'replicate/bytedance/seedream-4',
     ],
   },
   {
@@ -1289,17 +1037,10 @@ export const IMAGE_MODELS: ImageModelSeed[] = [
         priority: 20,
         weight: 100,
       },
-      {
-        provider: 'replicate',
-        endpointId: 'bytedance/seedream-4.5',
-        priority: 30,
-        weight: 100,
-      },
     ],
     providerAliases: [
       'byteplus/seedream-4-5-251128',
       'fal/fal-ai/bytedance/seedream/v4.5/text-to-image',
-      'replicate/bytedance/seedream-4.5',
     ],
   },
   {
@@ -1329,17 +1070,10 @@ export const IMAGE_MODELS: ImageModelSeed[] = [
         priority: 20,
         weight: 100,
       },
-      {
-        provider: 'replicate',
-        endpointId: 'bytedance/seedream-5-lite',
-        priority: 30,
-        weight: 100,
-      },
     ],
     providerAliases: [
       'byteplus/seedream-5-0-lite-260128',
       'fal/fal-ai/bytedance/seedream/v5/lite/text-to-image',
-      'replicate/bytedance/seedream-5-lite',
     ],
   },
 ];
