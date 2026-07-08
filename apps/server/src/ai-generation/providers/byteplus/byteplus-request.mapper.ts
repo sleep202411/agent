@@ -162,14 +162,19 @@ export function mapBytePlusProviderRequest(
   config: BytePlusImageRuntimeConfig,
   input: Record<string, unknown>,
 ): Record<string, unknown> {
+  // seedream-5-0-pro is single-image only: it rejects both `stream` and
+  // `sequential_image_generation` (400 InvalidParameter). Only the batch-capable
+  // models (5-0-lite, 4-5, 4-0) get those controls.
+  const supportsBatchControls = !config.endpointId.includes('seedream-5-0-pro');
   const body: Record<string, unknown> = {
     model: config.endpointId,
     prompt: stringValue(input.prompt),
     size: sizeFor(input.imageSize, input.resolution),
     response_format: 'url',
     watermark: resolveBytePlusWatermark(config, input),
-    stream: false,
-    sequential_image_generation: 'disabled',
+    ...(supportsBatchControls
+      ? { stream: false, sequential_image_generation: 'disabled' }
+      : {}),
   };
 
   const images = referenceUrls(input.referenceImages);
