@@ -12,6 +12,7 @@ import {
   IconChevronDown,
   IconDownload,
   IconLoader2,
+  IconMaximize,
   IconPencil,
   IconArrowsDiagonal,
   IconBackground,
@@ -71,6 +72,7 @@ import { hasRenderableModelSettings, ModelSettings as ModelSettingsPanel } from 
 import { ReferenceStack, type CardReferences } from "./reference-stack";
 import { PortPlus } from "./ports";
 import { MediaProviderStatusChipForAsset } from "./media-provider-status-chip";
+import { CanvasMediaViewer } from "./canvas-media-viewer";
 
 /**
  * One generation card for both image and video — the card is a display
@@ -126,6 +128,12 @@ function displayGenerationError(
   if (isUnsafeGenerationErrorMessage(generation?.error)) return providerUnavailable;
   return generation?.error || fallback;
 }
+
+const UPLOAD_KIND_BY_REFERENCE: Record<FizzAiReferenceKind, string> = {
+  image: "ai_reference_image",
+  video: "ai_reference_video",
+  audio: "ai_reference_audio",
+};
 
 /**
  * CSS aspect-ratio for the result area so the card matches its content: actual
@@ -232,6 +240,8 @@ function GenerationCard({
   const [panel, setPanel] = useState<"model" | "settings" | "mode" | null>(null);
   const [renaming, setRenaming] = useState(false);
   const [pano, setPano] = useState(false);
+  const [viewerOpen, setViewerOpen] = useState(false);
+  const [quickSettingsOpen, setQuickSettingsOpen] = useState(false);
   // Actual rendered-output aspect ratio (e.g. Topaz upscale returns no width/
   // height metadata) so the card hugs its content instead of the size default.
   const [loadedRatio, setLoadedRatio] = useState<string | null>(null);
@@ -287,14 +297,17 @@ function GenerationCard({
     }
     return merged;
   }, [references, pendingRefs]);
+  const mode = data.mode ?? defaultMode(model);
+  const modes = model?.generationModes ?? [];
+  const refFields = useMemo(() => referenceFieldsForMode(model, mode), [model, mode]);
   // Attached references the prompt can cite with `@` — labeled per kind
   // (Image1, Video1, …) in the same scheme as the studio composer. Still-
   // uploading items are skipped (no stable target yet).
   const mentionItems = useMemo<MentionItem[]>(() => {
     const counts: Record<FizzAiReferenceKind, number> = { image: 0, video: 0, audio: 0 };
     const items: MentionItem[] = [];
-    for (const list of Object.values(referencesForDisplay)) {
-      for (const ref of list) {
+    for (const field of refFields) {
+      for (const ref of referencesForDisplay[field.field] ?? []) {
         if (ref.uploading) continue;
         counts[ref.kind] += 1;
         items.push({
@@ -307,10 +320,7 @@ function GenerationCard({
       }
     }
     return items;
-  }, [referencesForDisplay]);
-  const mode = data.mode ?? defaultMode(model);
-  const modes = model?.generationModes ?? [];
-  const refFields = useMemo(() => referenceFieldsForMode(model, mode), [model, mode]);
+  }, [referencesForDisplay, refFields]);
 
   // Live compute-point estimate for the current model + settings + wired/uploaded
   // references — mirrors the model-settings panel and the standalone studio
@@ -370,7 +380,7 @@ function GenerationCard({
           { id: refId, url: objectUrl, name: file.name, kind, uploading: true },
         ],
       }));
-      uploadFileViaSignedUrl(file, { kind: "ai_reference_image" })
+      uploadFileViaSignedUrl(file, { kind: UPLOAD_KIND_BY_REFERENCE[kind] })
         .then((uploaded) => {
           // Persist the DURABLE url (never the blob:) into the doc, drop the chip.
           patchNodeData(id, (node) => {
@@ -396,7 +406,14 @@ function GenerationCard({
         .catch((err) => {
           dropPending(field, refId);
           URL.revokeObjectURL(objectUrl);
-          if (!isUploadAbort(err)) toast.error(t("uploadFailed", { name: file.name }));
+          if (!isUploadAbort(err)) {
+            const message = err instanceof Error ? err.message : "";
+            toast.error(
+              message
+                ? `${t("uploadFailed", { name: file.name })}: ${message}`
+                : t("uploadFailed", { name: file.name })
+            );
+          }
         });
     }
   };
@@ -457,7 +474,10 @@ function GenerationCard({
 
   return (
     <div className="relative">
-      <CanvasNodeToolbar nodeId={id} visible={(selected ?? false) && panel === null && !dragging}>
+      <CanvasNodeToolbar
+        nodeId={id}
+        visible={(selected ?? false) && panel === null && !quickSettingsOpen && !dragging}
+      >
         {output?.type === "image" &&
           (isPanorama ? (
             <ToolbarButton label={t("view720")} onClick={() => setPano(true)}>
@@ -495,15 +515,30 @@ function GenerationCard({
             </>
           ))}
         {output && (
-          <ToolbarButton label={t("download")} onClick={onDownload} iconOnly>
-            <IconDownload className="size-4" stroke={1.8} />
-          </ToolbarButton>
+          <>
+            <ToolbarButton label={t("preview")} onClick={() => setViewerOpen(true)} iconOnly>
+              <IconMaximize className="size-4" stroke={1.8} />
+            </ToolbarButton>
+            <ToolbarButton label={t("download")} onClick={onDownload} iconOnly>
+              <IconDownload className="size-4" stroke={1.8} />
+            </ToolbarButton>
+          </>
         )}
         <ToolbarButton label={t("rename")} onClick={() => setRenaming(true)}>
           <IconPencil className="size-4" stroke={1.8} />
         </ToolbarButton>
       </CanvasNodeToolbar>
       {pano && output && <PanoramaViewer src={output.url} onClose={() => setPano(false)} />}
+      {viewerOpen && output && (
+        <CanvasMediaViewer
+          type={output.type}
+          src={output.url}
+          title={displayTitle}
+          alt={data.prompt ?? t("result")}
+          downloadName={`${displayTitle}.${output.type === "video" ? "mp4" : "png"}`}
+          onClose={() => setViewerOpen(false)}
+        />
+      )}
 
       <div
         className={cn(
@@ -547,6 +582,11 @@ function GenerationCard({
         <div
           className="relative flex flex-col items-center justify-center gap-3 overflow-hidden bg-muted"
           style={{ aspectRatio: loadedRatio ?? resultAspectRatio(modality, settings, generation) }}
+          onDoubleClick={(event) => {
+            if (!output?.url) return;
+            event.stopPropagation();
+            setViewerOpen(true);
+          }}
         >
           {generation?.status === "done" && generation.outputs?.[0] ? (
             generation.outputs[0].type === "video" ? (
@@ -691,7 +731,7 @@ function GenerationCard({
         !pendingOp && (
           <div className="absolute top-full left-1/2 z-10 mt-3 duration-200 animate-in fade-in-0 slide-in-from-bottom-3">
             <div
-              className="nodrag w-[600px] rounded-3xl bg-white/[0.05] p-4 backdrop-blur-3xl backdrop-saturate-200 shadow-[0_24px_80px_rgba(0,0,0,0.5),inset_0_1px_0_rgba(255,255,255,0.16)]"
+              className="nodrag w-[680px] rounded-3xl bg-white/[0.05] p-4 backdrop-blur-3xl backdrop-saturate-200 shadow-[0_24px_80px_rgba(0,0,0,0.5),inset_0_1px_0_rgba(255,255,255,0.16)]"
               style={{
                 transform: `translateX(-50%) scale(${1 / zoom})`,
                 transformOrigin: "top center",
@@ -713,9 +753,9 @@ function GenerationCard({
                   onCommit={(prompt) => patchNodeData(id, { prompt })}
                   mentions={mentionItems}
                   placeholder={t(promptPlaceholderKey(mode))}
-                  rows={3}
+                  rows={4}
                   autoFocus
-                  className="block max-h-28 w-full resize-none overflow-y-auto bg-transparent text-sm outline-none placeholder:text-muted-foreground"
+                  className="block max-h-40 w-full resize-none overflow-y-auto bg-transparent text-sm outline-none placeholder:text-muted-foreground"
                 />
               )}
               <div className="flex items-center gap-2 pt-2">
@@ -769,6 +809,7 @@ function GenerationCard({
                   model={model}
                   settings={settings}
                   onChange={(next) => patchNodeData(id, { settings: next })}
+                  onOpenChange={setQuickSettingsOpen}
                 />
 
                 {/* Long-tail schema-driven settings. Common fields live inline. */}

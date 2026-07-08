@@ -1,10 +1,11 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useRef, useState, type CSSProperties } from "react";
 import { useTranslations } from "next-intl";
 import { IconAlertTriangle, IconMusic, IconPlus, IconX } from "@tabler/icons-react";
 import { cn } from "@/lib/utils";
 import type { FizzAiReferenceFieldConstraints } from "@/app/[locale]/canvas/_lib/generation-api";
+import { ReferenceMediaHoverPreview, mediaHoverPreviewPosition } from "@/lib/prompt-mentions";
 import type { ReferenceUpload } from "./use-reference-uploads";
 
 const COMPACT_TILT = [-8, 4, -3, 6];
@@ -35,6 +36,89 @@ function TileMedia({ item }: { item: ReferenceUpload }) {
   }
   // eslint-disable-next-line @next/next/no-img-element
   return <img src={item.previewUrl} alt={item.name} className="size-full object-cover" />;
+}
+
+function ReferenceFanTile({
+  expanded,
+  index,
+  item,
+  onRemove,
+  overflow,
+  step,
+  visibleLength,
+}: {
+  expanded: boolean;
+  index: number;
+  item: ReferenceUpload;
+  onRemove: (id: string) => void;
+  overflow: number;
+  step: number;
+  visibleLength: number;
+}) {
+  const t = useTranslations("generation");
+  const tileRef = useRef<HTMLDivElement>(null);
+  const [previewStyle, setPreviewStyle] = useState<CSSProperties | null>(null);
+  const showPreview = () => {
+    const rect = tileRef.current?.getBoundingClientRect();
+    if (rect) setPreviewStyle(mediaHoverPreviewPosition(rect));
+  };
+
+  return (
+    <div
+      ref={tileRef}
+      className="group absolute top-1 h-[68px] w-[52px] transition-all duration-200 hover:z-30 hover:-translate-y-1 hover:rotate-0"
+      style={{
+        left: index * step,
+        transform: `rotate(${(expanded ? EXPANDED_TILT : COMPACT_TILT)[index % 4]}deg)`,
+        zIndex: index,
+      }}
+      title={item.error ?? item.name}
+      onPointerEnter={showPreview}
+      onPointerMove={showPreview}
+      onPointerLeave={() => setPreviewStyle(null)}
+      onMouseEnter={showPreview}
+      onMouseMove={showPreview}
+      onMouseLeave={() => setPreviewStyle(null)}
+    >
+      <div className="relative size-full overflow-hidden rounded-lg bg-muted shadow-md shadow-black/40">
+        <TileMedia item={item} />
+        {item.uploading && (
+          <span className="absolute inset-0 flex items-center justify-center bg-black/55 text-[10px] font-medium text-white tabular-nums">
+            {item.progress}%
+          </span>
+        )}
+        {!item.uploading && (
+          <span className="pointer-events-none absolute bottom-0.5 left-0.5 rounded bg-black/60 px-1 text-[8px] font-medium text-white/90">
+            @{item.label}
+          </span>
+        )}
+        {overflow > 0 && index === visibleLength - 1 && (
+          <span className="pointer-events-none absolute top-0.5 right-0.5 rounded-full bg-black/65 px-1.5 py-0.5 text-[9px] font-semibold text-white">
+            +{overflow}
+          </span>
+        )}
+        <button
+          type="button"
+          aria-label={t("removeReference", { label: item.label })}
+          onClick={() => onRemove(item.id)}
+          className="absolute top-0.5 right-0.5 flex size-4 items-center justify-center rounded-full bg-black/65 text-white opacity-0 transition-opacity group-hover:opacity-100"
+        >
+          <IconX className="size-2.5" stroke={2.4} />
+        </button>
+      </div>
+      {!item.error && previewStyle ? (
+        <ReferenceMediaHoverPreview
+          item={{
+            kind: item.kind,
+            label: item.label,
+            name: item.name,
+            previewUrl: item.previewUrl,
+          }}
+          style={previewStyle}
+        />
+      ) : null}
+    </div>
+  );
 }
 
 /**
@@ -115,41 +199,16 @@ export function ReferenceFan({
       ))}
 
       {visible.map((item, index) => (
-        <div
+        <ReferenceFanTile
           key={item.id}
-          className="group absolute top-1 h-[68px] w-[52px] overflow-hidden rounded-lg bg-muted shadow-md shadow-black/40 transition-all duration-200 hover:z-30 hover:-translate-y-1 hover:rotate-0"
-          style={{
-            left: index * step,
-            transform: `rotate(${(expanded ? EXPANDED_TILT : COMPACT_TILT)[index % 4]}deg)`,
-            zIndex: index,
-          }}
-          title={item.error ?? item.name}
-        >
-          <TileMedia item={item} />
-          {item.uploading && (
-            <span className="absolute inset-0 flex items-center justify-center bg-black/55 text-[10px] font-medium text-white tabular-nums">
-              {item.progress}%
-            </span>
-          )}
-          {!item.uploading && (
-            <span className="pointer-events-none absolute bottom-0.5 left-0.5 rounded bg-black/60 px-1 text-[8px] font-medium text-white/90">
-              @{item.label}
-            </span>
-          )}
-          {overflow > 0 && index === visible.length - 1 && (
-            <span className="pointer-events-none absolute top-0.5 right-0.5 rounded-full bg-black/65 px-1.5 py-0.5 text-[9px] font-semibold text-white">
-              +{overflow}
-            </span>
-          )}
-          <button
-            type="button"
-            aria-label={t("removeReference", { label: item.label })}
-            onClick={() => onRemove(item.id)}
-            className="absolute top-0.5 right-0.5 flex size-4 items-center justify-center rounded-full bg-black/65 text-white opacity-0 transition-opacity group-hover:opacity-100"
-          >
-            <IconX className="size-2.5" stroke={2.4} />
-          </button>
-        </div>
+          expanded={expanded}
+          index={index}
+          item={item}
+          onRemove={onRemove}
+          overflow={overflow}
+          step={step}
+          visibleLength={visible.length}
+        />
       ))}
 
       {anyRoom && (

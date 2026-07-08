@@ -38,6 +38,18 @@ interface ConfirmResponse {
   url: string;
 }
 
+const CONTENT_TYPE_BY_EXTENSION: Record<string, string> = {
+  jpg: "image/jpeg",
+  jpeg: "image/jpeg",
+  png: "image/png",
+  webp: "image/webp",
+  mp4: "video/mp4",
+  mov: "video/quicktime",
+  webm: "video/webm",
+  mp3: "audio/mpeg",
+  wav: "audio/wav",
+};
+
 export interface UploadFileOptions {
   /** Closed media upload kind (apps/server media/dto UploadKindSchema). */
   kind: string;
@@ -66,17 +78,43 @@ async function postJson<T extends object>(
     body: JSON.stringify(body),
     signal,
   });
-  let json: Partial<T> & { message?: string; msg?: string; data?: T } = {};
+  let json: Partial<T> & {
+    error?: string;
+    message?: string | { message?: string; code?: string };
+    msg?: string;
+    data?: T;
+  } = {};
   try {
     json = await res.json();
   } catch {
     /* non-JSON body — fall through to the HTTP-status error */
   }
   if (!res.ok) {
-    throw new Error(json.message || json.msg || `${label} failed: HTTP ${res.status}`);
+    throw new Error(errorMessageFromJson(json) || `${label} failed: HTTP ${res.status}`);
   }
   // The server may wrap in a { code, data } envelope.
   return (json.data ?? json) as T;
+}
+
+function errorMessageFromJson(json: {
+  error?: string;
+  message?: string | { message?: string; code?: string };
+  msg?: string;
+}): string | undefined {
+  if (typeof json.message === "string") return json.message;
+  if (json.message?.message) return json.message.message;
+  if (typeof json.msg === "string") return json.msg;
+  if (typeof json.error === "string") return json.error;
+  return undefined;
+}
+
+function contentTypeForFile(file: File, explicit?: string): string {
+  if (explicit) return explicit;
+  const extension = file.name.split(".").pop()?.toLowerCase();
+  if (extension && CONTENT_TYPE_BY_EXTENSION[extension]) {
+    return CONTENT_TYPE_BY_EXTENSION[extension];
+  }
+  return file.type || "application/octet-stream";
 }
 
 function putBytesToStorage(
@@ -151,7 +189,7 @@ export async function uploadFileViaSignedUrl(
   file: File,
   opts: UploadFileOptions
 ): Promise<UploadFileResult> {
-  const contentType = opts.contentType || file.type || "application/octet-stream";
+  const contentType = contentTypeForFile(file, opts.contentType);
   const info = await postJson<SignedUrlResponse>(
     UPLOAD_URL_ENDPOINT,
     { kind: opts.kind, contentType, fileName: file.name, sizeBytes: file.size },

@@ -1,7 +1,16 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { MentionMenu, mentionRange, type MentionItem } from "@/lib/prompt-mentions";
+import {
+  MentionMenu,
+  PromptMentionMirror,
+  insertMentionText,
+  mentionRange,
+  removeMentionText,
+  textareaMentionMenuPosition,
+  type MentionItem,
+} from "@/lib/prompt-mentions";
+import { cn } from "@/lib/utils";
 
 /**
  * IME-safe prompt textarea. The card's prompt lives in the Yjs doc, so a plain
@@ -20,6 +29,7 @@ export function PromptTextarea({
   value,
   onCommit,
   mentions,
+  className,
   ...rest
 }: {
   value: string;
@@ -30,11 +40,14 @@ export function PromptTextarea({
   const composing = useRef(false);
   const focused = useRef(false);
   const ref = useRef<HTMLTextAreaElement>(null);
+  const wrapperRef = useRef<HTMLDivElement>(null);
 
   const mentionsOn = !!mentions && mentions.length > 0;
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [active, setActive] = useState(0);
+  const [menuStyle, setMenuStyle] = useState<React.CSSProperties | undefined>();
+  const [scrollTop, setScrollTop] = useState(0);
 
   // Reflect external changes (a peer's edit, a reset) only when the field is
   // idle — never while the user is typing or mid-composition.
@@ -59,32 +72,59 @@ export function PromptTextarea({
     setOpen(Boolean(range));
     setActive(0);
     setQuery(range?.query ?? "");
+    if (range && ref.current && wrapperRef.current) {
+      setMenuStyle(textareaMentionMenuPosition(ref.current, wrapperRef.current, range.start));
+    } else {
+      setMenuStyle(undefined);
+    }
   }
 
   function insertMention(item: MentionItem) {
     const el = ref.current;
     const caret = el?.selectionStart ?? draft.length;
-    const range = mentionRange(draft, caret);
-    if (!range) return;
-    const before = draft.slice(0, range.start);
-    const after = draft.slice(caret);
-    const next = `${before}@${item.label} ${after}`;
-    setDraft(next);
-    onCommit(next);
+    const inserted = insertMentionText(draft, caret, item);
+    if (!inserted) return;
+    setDraft(inserted.value);
+    onCommit(inserted.value);
     setOpen(false);
     requestAnimationFrame(() => {
       el?.focus();
-      const pos = before.length + item.label.length + 2;
-      el?.setSelectionRange(pos, pos);
+      el?.setSelectionRange(inserted.caret, inserted.caret);
+    });
+  }
+
+  function removeMention(range: { end: number; start: number }) {
+    const el = ref.current;
+    const removed = removeMentionText(draft, range);
+    setDraft(removed.value);
+    onCommit(removed.value);
+    setOpen(false);
+    requestAnimationFrame(() => {
+      el?.focus();
+      el?.setSelectionRange(removed.caret, removed.caret);
     });
   }
 
   return (
-    <div className="nodrag nowheel relative">
+    <div ref={wrapperRef} className="nodrag nowheel relative">
+      {mentionsOn && (
+        <PromptMentionMirror
+          value={draft}
+          mentions={mentions ?? []}
+          onRemoveMention={removeMention}
+          scrollTop={scrollTop}
+          className={className}
+        />
+      )}
       <textarea
         {...rest}
         ref={ref}
         value={draft}
+        className={cn(
+          className,
+          "relative z-[1]",
+          mentionsOn && draft && "text-transparent caret-white selection:bg-sky-500/35"
+        )}
         onChange={(e) => {
           setDraft(e.target.value);
           if (!composing.current) onCommit(e.target.value);
@@ -117,6 +157,13 @@ export function PromptTextarea({
           e.stopPropagation();
           rest.onWheel?.(e);
         }}
+        onScroll={(e) => {
+          setScrollTop(e.currentTarget.scrollTop);
+          if (open) {
+            refreshMention(e.currentTarget.value, e.currentTarget.selectionStart ?? 0);
+          }
+          rest.onScroll?.(e);
+        }}
         onCompositionStart={() => {
           composing.current = true;
         }}
@@ -146,7 +193,8 @@ export function PromptTextarea({
           options={options}
           active={active}
           onPick={insertMention}
-          className="top-full left-0 mt-1"
+          className="top-0 left-0"
+          style={menuStyle}
         />
       )}
     </div>

@@ -22,6 +22,8 @@ import { useActiveWorkspaceId } from "@/app/_components/workspace-context";
 import { useProjectContext } from "@/app/[locale]/project/_components/project-context";
 import {
   buildReferenceInputForMode,
+  buildPromptDocument,
+  buildPromptReferenceBindingsForMode,
   cancelFizzAiJob,
   compactFizzAiInput,
   defaultMode,
@@ -51,11 +53,14 @@ type GenNodeData = {
   references?: Record<
     string,
     {
-      id?: string;
+      id: string;
       url: string;
+      kind?: "image" | "video" | "audio";
+      name?: string;
       assetId?: string;
       edgeId?: string;
       sourceNodeId?: string;
+      uploading?: boolean;
     }[]
   >;
   generation?: GenerationState;
@@ -552,6 +557,11 @@ export function CanvasGenerationProvider({
         data.mode ?? defaultMode(model),
         data.references
       );
+      const referenceBindings = buildPromptReferenceBindingsForMode(
+        model,
+        data.mode ?? defaultMode(model),
+        data.references
+      );
 
       const input = compactFizzAiInput(
         filterFizzAiInput(model, {
@@ -579,6 +589,8 @@ export function CanvasGenerationProvider({
           },
           idempotencyKey: generationIdempotencyKey("canvas"),
           input,
+          promptDocument: buildPromptDocument(data.prompt ?? "", referenceBindings),
+          referenceBindings: referenceBindings.length ? referenceBindings : undefined,
           modelId: model.id,
           schemaVersion: model.schemaVersion,
         });

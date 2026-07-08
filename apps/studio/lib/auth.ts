@@ -18,6 +18,11 @@ export interface AuthUser {
 }
 
 class JavaAuthError extends Error {}
+class AuthUnavailableError extends Error {}
+
+export function isAuthUnavailableError(error: unknown): boolean {
+  return error instanceof AuthUnavailableError;
+}
 
 async function javaPostForm(path: string, body: Record<string, string>): Promise<void> {
   const response = await fetch(path, {
@@ -66,7 +71,10 @@ export async function getAuthUser(): Promise<AuthUser | null> {
       credentials: "include",
       headers: { "accept-language": "en-US" },
     });
-    if (!response.ok) return null;
+    if (response.status === 401 || response.status === 403) return null;
+    if (!response.ok) {
+      throw new AuthUnavailableError(`Auth session check failed: ${response.status}`);
+    }
     const body = (await response.json()) as Record<string, unknown> | null;
     const data = (body && typeof body === "object" && "data" in body ? body.data : body) as {
       id?: string | number;
@@ -84,7 +92,7 @@ export async function getAuthUser(): Promise<AuthUser | null> {
       avatar: data.avatar ?? undefined,
     };
   } catch {
-    return null;
+    throw new AuthUnavailableError("Auth session check unavailable");
   }
 }
 

@@ -13,6 +13,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslations } from "next-intl";
 import { IconClock } from "@tabler/icons-react";
 import { cn } from "@/lib/utils";
+import { GlassRim } from "@/components/ui/glass-rim";
 import {
   schemaFields,
   type FizzAiModel,
@@ -34,26 +35,18 @@ export function ComposerQuickSettings({
   model,
   settings,
   onChange,
+  onOpenChange,
   className,
 }: {
   model: FizzAiModel | undefined;
   settings: ModelSettings;
   onChange: (next: ModelSettings) => void;
+  onOpenChange?: (open: boolean) => void;
   className?: string;
 }) {
   const t = useTranslations("canvasControls");
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
-
-  // Close the popover on an outside click.
-  useEffect(() => {
-    if (!open) return;
-    const onDown = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
-    };
-    document.addEventListener("mousedown", onDown);
-    return () => document.removeEventListener("mousedown", onDown);
-  }, [open]);
 
   const scalar = useCallback(
     (name: string): string | number | boolean | undefined => {
@@ -64,8 +57,7 @@ export function ComposerQuickSettings({
   );
   const set = (name: string, v: string | number | boolean) => onChange({ ...settings, [name]: v });
 
-  if (!model) return null;
-  const fields = schemaFields(model);
+  const fields = model ? schemaFields(model) : [];
   // Order matches pollo: duration / resolution / quality / outputs first, then
   // the size (aspect-ratio) grid last.
   const sizeField = fields.find(isSizeField);
@@ -73,6 +65,26 @@ export function ComposerQuickSettings({
     ...fields.filter((f) => !isSizeField(f) && isQuickSettingField(f)),
     sizeField,
   ].filter((f): f is SchemaFieldDescriptor => Boolean(f));
+  const effectiveOpen = open && Boolean(model) && quick.length > 0;
+
+  // Close the popover on an outside click.
+  useEffect(() => {
+    if (!effectiveOpen) return;
+    const onDown = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener("mousedown", onDown);
+    return () => document.removeEventListener("mousedown", onDown);
+  }, [effectiveOpen]);
+
+  useEffect(() => {
+    onOpenChange?.(effectiveOpen);
+    return () => {
+      if (effectiveOpen) onOpenChange?.(false);
+    };
+  }, [effectiveOpen, onOpenChange]);
+
+  if (!model) return null;
   if (quick.length === 0) return null;
 
   const chipLabel = (field: SchemaFieldDescriptor) => {
@@ -112,7 +124,7 @@ export function ComposerQuickSettings({
         onClick={() => setOpen((o) => !o)}
         className={cn(
           "flex h-10 items-center rounded-xl px-2.5 text-sm font-medium text-foreground transition-colors",
-          open ? "bg-white/[0.14]" : "bg-white/[0.08] hover:bg-white/[0.12]"
+          effectiveOpen ? "bg-white/[0.14]" : "bg-white/[0.08] hover:bg-white/[0.12]"
         )}
       >
         {quick.map((field, i) => (
@@ -123,29 +135,40 @@ export function ComposerQuickSettings({
         ))}
       </button>
 
-      {open && (
-        <div className="nodrag nowheel absolute bottom-full left-0 z-50 mb-2 w-[320px] origin-bottom-left rounded-2xl border border-white/[0.06] bg-[oklch(0.235_0_0_/_0.95)] p-4 shadow-2xl shadow-black/60 backdrop-blur-2xl duration-150 animate-in fade-in-0 zoom-in-95">
-          {quick.map((field, i) => (
-            <div key={field.name} className={i > 0 ? "mt-4" : ""}>
-              {isSizeField(field) ? (
-                <>
-                  {/* SizeGrid has no built-in label; the others self-label. */}
-                  <div className="mb-2 text-sm text-muted-foreground">{fieldLabel(field)}</div>
-                  <SizeGrid
+      {effectiveOpen && (
+        <div className="liquid-rim nodrag nowheel absolute bottom-full left-0 z-50 mb-2 w-[320px] origin-bottom-left overflow-hidden rounded-2xl bg-[oklch(0.19_0_0_/_0.97)] p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.18),inset_0_-24px_48px_rgba(0,0,0,0.28),0_30px_90px_rgba(0,0,0,0.72)] backdrop-blur-[56px] backdrop-saturate-[1.25] duration-150 animate-in fade-in-0 zoom-in-95">
+          <span
+            aria-hidden
+            className="pointer-events-none absolute inset-0 rounded-[inherit] bg-[linear-gradient(180deg,rgba(255,255,255,0.11)_0%,rgba(255,255,255,0.035)_38%,rgba(0,0,0,0.22)_100%)]"
+          />
+          <span
+            aria-hidden
+            className="pointer-events-none absolute inset-x-3 top-0 h-px bg-white/30"
+          />
+          <GlassRim className="opacity-80" />
+          <div className="relative z-10">
+            {quick.map((field, i) => (
+              <div key={field.name} className={i > 0 ? "mt-4" : ""}>
+                {isSizeField(field) ? (
+                  <>
+                    {/* SizeGrid has no built-in label; the others self-label. */}
+                    <div className="mb-2 text-sm text-muted-foreground">{fieldLabel(field)}</div>
+                    <SizeGrid
+                      field={field}
+                      value={String(scalar(field.name) ?? field.default ?? field.enum?.[0] ?? "")}
+                      onChange={(v) => set(field.name, v)}
+                    />
+                  </>
+                ) : (
+                  <Field
                     field={field}
-                    value={String(scalar(field.name) ?? field.default ?? field.enum?.[0] ?? "")}
-                    onChange={(v) => set(field.name, v)}
+                    value={scalar(field.name) ?? field.default}
+                    set={(v) => set(field.name, v)}
                   />
-                </>
-              ) : (
-                <Field
-                  field={field}
-                  value={scalar(field.name) ?? field.default}
-                  set={(v) => set(field.name, v)}
-                />
-              )}
-            </div>
-          ))}
+                )}
+              </div>
+            ))}
+          </div>
         </div>
       )}
     </div>

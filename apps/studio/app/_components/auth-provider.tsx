@@ -10,7 +10,12 @@ import {
   useState,
 } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { getAuthUser, logout as javaLogout, type AuthUser } from "@/lib/auth";
+import {
+  getAuthUser,
+  isAuthUnavailableError,
+  logout as javaLogout,
+  type AuthUser,
+} from "@/lib/auth";
 import { LoginDialog } from "./login-dialog";
 
 interface AuthContextValue {
@@ -51,12 +56,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const pendingActionRef = useRef<(() => void) | null>(null);
   const queryClient = useQueryClient();
 
-  const { data: user = null, isLoading } = useQuery({
+  const {
+    data: user = null,
+    error,
+    isError,
+    isLoading,
+  } = useQuery({
     queryKey: ME_KEY,
     queryFn: getAuthUser,
     staleTime: 5 * 60_000,
-    retry: false,
+    retry: (failureCount, err) => isAuthUnavailableError(err) && failureCount < 3,
   });
+  const authUnavailable = isError && isAuthUnavailableError(error);
 
   useEffect(() => {
     const onUnauthorized = () => setDialogOpen(true);
@@ -102,8 +113,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [queryClient]);
 
   const value = useMemo<AuthContextValue>(
-    () => ({ user, loading: isLoading, signIn, requireAuth, signOut }),
-    [user, isLoading, signIn, requireAuth, signOut]
+    () => ({ user, loading: isLoading || authUnavailable, signIn, requireAuth, signOut }),
+    [user, isLoading, authUnavailable, signIn, requireAuth, signOut]
   );
 
   return (

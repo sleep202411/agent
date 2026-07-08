@@ -11,6 +11,7 @@ import {
   IconBulb,
   IconDownload,
   IconLoader2,
+  IconMaximize,
   IconRefresh,
   IconRotate3d,
   IconRoute,
@@ -37,6 +38,7 @@ import { Icon720 } from "./panorama-viewer";
 import { PortPlus } from "./ports";
 import { useRetryUpload, useUploadEntry } from "./upload-state-context";
 import { MediaProviderStatusChipForAsset } from "./media-provider-status-chip";
+import { CanvasMediaViewer } from "./canvas-media-viewer";
 
 export type ImageNodeType = Node<
   { src: string; imageId?: string; mediaAssetId?: string; label?: string },
@@ -51,6 +53,7 @@ function ImageNodeComponent({ id, data, selected }: NodeProps<ImageNodeType>) {
   // Pending operation invoked from the toolbar (Upscale / 720°): shows a confirm
   // bar under THIS node; running it creates the result node.
   const [pendingOp, setPendingOp] = useState<OperationDef | null>(null);
+  const [viewerOpen, setViewerOpen] = useState(false);
   const spawnComposedOp = useSpawnComposedOperation();
   const upload = useUploadEntry(id);
   const retryUpload = useRetryUpload();
@@ -112,10 +115,22 @@ function ImageNodeComponent({ id, data, selected }: NodeProps<ImageNodeType>) {
               >
                 <Icon720 className="size-4" />
               </ToolbarButton>
+              <ToolbarButton
+                label={t("image.preview")}
+                onClick={() => setViewerOpen(true)}
+                iconOnly
+              >
+                <IconMaximize className="size-4" stroke={1.8} />
+              </ToolbarButton>
               <ToolbarButton label={t("image.download")} onClick={onDownload} iconOnly>
                 <IconDownload className="size-4" stroke={1.8} />
               </ToolbarButton>
             </>
+          )}
+          {upload && (
+            <ToolbarButton label={t("image.preview")} onClick={() => setViewerOpen(true)} iconOnly>
+              <IconMaximize className="size-4" stroke={1.8} />
+            </ToolbarButton>
           )}
         </CanvasNodeToolbar>
 
@@ -125,6 +140,10 @@ function ImageNodeComponent({ id, data, selected }: NodeProps<ImageNodeType>) {
           src={src}
           alt={data.label ?? t("image.alt")}
           draggable={false}
+          onDoubleClick={(event) => {
+            event.stopPropagation();
+            setViewerOpen(true);
+          }}
           className="block max-h-[480px] w-[280px] rounded-xl object-cover select-none"
         />
         {!upload && (
@@ -186,6 +205,17 @@ function ImageNodeComponent({ id, data, selected }: NodeProps<ImageNodeType>) {
           onClose={() => setPendingOp(null)}
         />
       ) : null}
+
+      {viewerOpen && (
+        <CanvasMediaViewer
+          type="image"
+          src={src}
+          title={data.label ?? t("image.title")}
+          alt={data.label ?? t("image.alt")}
+          downloadName={data.label ?? "image.png"}
+          onClose={() => setViewerOpen(false)}
+        />
+      )}
     </div>
   );
 }

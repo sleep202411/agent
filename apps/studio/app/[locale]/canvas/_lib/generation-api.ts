@@ -509,7 +509,7 @@ export interface FizzAiReferenceFieldConstraints {
 const DEFAULT_REFERENCE_ACCEPT: Record<FizzAiReferenceKind, string> = {
   image: "image/jpeg,image/png,image/webp",
   video: "video/mp4,video/quicktime",
-  audio: "audio/mpeg,audio/wav",
+  audio: "audio/mpeg,audio/wav,.mp3,.wav",
 };
 
 function referenceKindFromUi(
@@ -719,6 +719,22 @@ function referenceEntry(row: ReferenceRowLike): string | Record<string, string> 
   return row.assetId ? { url: row.url, assetId: row.assetId, refId: row.id } : row.url;
 }
 
+export type PromptReferenceRowLike = ReferenceRowLike & {
+  kind?: FizzAiReferenceKind;
+  name?: string;
+  uploading?: boolean;
+};
+
+const PROMPT_MENTION_LABEL_PREFIX: Record<FizzAiReferenceKind, string> = {
+  image: "Image",
+  video: "Video",
+  audio: "Audio",
+};
+
+function promptMentionLabel(kind: FizzAiReferenceKind, indexWithinKind: number): string {
+  return `${PROMPT_MENTION_LABEL_PREFIX[kind]}${indexWithinKind}`;
+}
+
 /**
  * Build schema-shaped reference input for ONLY the active generation mode's
  * fields. Stale slots from a previous mode (e.g. `referenceImages` after
@@ -745,6 +761,38 @@ export function buildReferenceInputForMode(
     referenceInput[field] = referenceEntry(ready[0]);
   }
   return referenceInput;
+}
+
+/**
+ * Build the structured bindings whose labels match composer `@Image1` /
+ * `@Video1` tokens. Only the active mode's ready references are bindable, using
+ * the same field order as the visible reference stack.
+ */
+export function buildPromptReferenceBindingsForMode(
+  model: FizzAiModel,
+  mode: string | undefined,
+  references: Record<string, PromptReferenceRowLike[] | undefined> | undefined
+): FizzAiReferenceBinding[] {
+  const counts: Record<FizzAiReferenceKind, number> = { image: 0, video: 0, audio: 0 };
+  const bindings: FizzAiReferenceBinding[] = [];
+  for (const field of referenceFieldsForMode(model, mode)) {
+    const ready = (references?.[field.field] ?? []).filter(
+      (row) => !row.uploading && /^https?:/i.test(row.url)
+    );
+    for (const row of ready) {
+      const kind = row.kind ?? field.kind;
+      counts[kind] += 1;
+      bindings.push({
+        refId: row.id,
+        kind,
+        label: promptMentionLabel(kind, counts[kind]),
+        order: bindings.length,
+        url: row.url,
+        assetId: row.assetId,
+      });
+    }
+  }
+  return bindings;
 }
 
 // ── Schema-driven UI (x-ui hints) ───────────────────────────────────────────
@@ -1085,8 +1133,11 @@ function promptDocumentNodesFromMentions(
     while (cursor < prompt.length) {
       const start = prompt.indexOf(token, cursor);
       if (start < 0) break;
-      matches.push({ binding, start, end: start + token.length });
-      cursor = start + token.length;
+      const end = start + token.length;
+      if (isPromptMentionTokenEnd(prompt, end)) {
+        matches.push({ binding, start, end });
+      }
+      cursor = end;
     }
   }
 
@@ -1111,6 +1162,15 @@ function promptDocumentNodesFromMentions(
   }
   if (cursor < prompt.length) nodes.push({ type: "text", text: prompt.slice(cursor) });
   return nodes;
+}
+
+function isPromptMentionTokenEnd(prompt: string, end: number): boolean {
+  if (end >= prompt.length) return true;
+  // Mention labels are ASCII (`Image1`, `Video2`, ...). Treat any non-ASCII
+  // continuation (notably CJK text) as a boundary so users don't need to type a
+  // space after a mention, while still preventing `@Image1` from matching
+  // `@Image10` or `@Image1foo`.
+  return !/^[A-Za-z0-9_]/.test(prompt[end] ?? "");
 }
 
 export async function getFizzAiJob(id: string): Promise<FizzAiJobView> {

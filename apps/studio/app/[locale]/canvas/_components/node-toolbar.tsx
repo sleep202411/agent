@@ -6,11 +6,10 @@ import {
   cloneElement,
   isValidElement,
   useCallback,
-  useMemo,
   type ReactElement,
 } from "react";
 import { useTranslations } from "next-intl";
-import { NodeToolbar, Position, useReactFlow, useStore, type Align } from "@xyflow/react";
+import { NodeToolbar, Position, useReactFlow } from "@xyflow/react";
 import { IconMessage, IconMessagePlus, IconTrash } from "@tabler/icons-react";
 import { cn } from "@/lib/utils";
 import { useCanvasGraphContext } from "@/lib/collab/canvas-graph-context";
@@ -53,7 +52,7 @@ export function ToolbarButton({
         "group/tb relative flex items-center justify-center rounded-full transition-colors",
         withLabel ? "h-8 gap-1.5 px-2.5" : "size-8",
         variant === "danger"
-          ? "text-white/70 hover:bg-red-500/15 hover:text-red-400"
+          ? "text-red-400 hover:bg-red-500/15 hover:text-red-300"
           : "text-white/70 hover:bg-white/[0.1] hover:text-white",
         className
       )}
@@ -70,18 +69,27 @@ export function ToolbarButton({
   );
 }
 
+const MAX_VISIBLE_TOOLBAR_LABELS = 3;
+
 function withVisibleToolbarLabels(children: React.ReactNode): React.ReactNode {
-  return Children.map(children, (child) => {
-    if (!isValidElement(child)) return child;
-    if (child.type === Fragment) {
-      const fragment = child as ReactElement<{ children?: React.ReactNode }>;
-      return cloneElement(fragment, undefined, withVisibleToolbarLabels(fragment.props.children));
-    }
-    if (child.type !== ToolbarButton) return child;
-    const button = child as ReactElement<ToolbarButtonProps>;
-    if (button.props.iconOnly) return button;
-    return cloneElement(button, { showLabel: true });
-  });
+  let visibleLabels = 0;
+
+  const mapChildren = (node: React.ReactNode): React.ReactNode =>
+    Children.map(node, (child) => {
+      if (!isValidElement(child)) return child;
+      if (child.type === Fragment) {
+        const fragment = child as ReactElement<{ children?: React.ReactNode }>;
+        return cloneElement(fragment, undefined, mapChildren(fragment.props.children));
+      }
+      if (child.type !== ToolbarButton) return child;
+      const button = child as ReactElement<ToolbarButtonProps>;
+      if (button.props.iconOnly) return button;
+      const showLabel = visibleLabels < MAX_VISIBLE_TOOLBAR_LABELS;
+      visibleLabels += 1;
+      return cloneElement(button, { showLabel });
+    });
+
+  return mapChildren(children);
 }
 
 /**
@@ -105,19 +113,6 @@ export function CanvasNodeToolbar({
   const { toggle, commentCount } = useComments();
   const soleSelected = nodes.filter((n) => n.selected).length === 1;
   const count = commentCount(nodeId);
-  const transform = useStore((s) => s.transform);
-  const viewportWidth = useStore((s) => s.width);
-  const toolbarAlign = useMemo<Align>(() => {
-    const node = nodes.find((n) => n.id === nodeId);
-    if (!node) return "center";
-    const zoom = transform[2] || 1;
-    const nodeWidth = node.width ?? node.measured?.width ?? 240;
-    const left = node.position.x * zoom + transform[0];
-    const right = (node.position.x + nodeWidth) * zoom + transform[0];
-    if (left < 320) return "start";
-    if (viewportWidth - right < 320) return "end";
-    return "center";
-  }, [nodeId, nodes, transform, viewportWidth]);
 
   const onDelete = useCallback(() => {
     void deleteElements({ nodes: [{ id: nodeId }] });
@@ -127,7 +122,7 @@ export function CanvasNodeToolbar({
     <NodeToolbar
       isVisible={visible && soleSelected}
       position={Position.Top}
-      align={toolbarAlign}
+      align="center"
       offset={10}
       className={cn(
         "flex min-h-12 max-w-[calc(100vw-2rem)] flex-wrap items-center gap-1 rounded-2xl px-2 py-2",

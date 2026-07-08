@@ -28,7 +28,15 @@ import { ComposerQuickSettings } from "@/app/[locale]/canvas/_components/compose
 import { ModeMenu } from "@/app/[locale]/canvas/_components/mode-menu";
 import { ReferenceFan } from "./reference-fan";
 import type { ReferenceUpload } from "./use-reference-uploads";
-import { MentionMenu, mentionRange, type MentionItem } from "@/lib/prompt-mentions";
+import {
+  MentionMenu,
+  PromptMentionMirror,
+  insertMentionText,
+  mentionRange,
+  removeMentionText,
+  textareaMentionMenuPosition,
+  type MentionItem,
+} from "@/lib/prompt-mentions";
 import { useAuth } from "@/app/_components/auth-provider";
 
 /**
@@ -90,7 +98,10 @@ export function StudioComposer({
   const [mentionActive, setMentionActive] = useState(0);
   const [mentionOpen, setMentionOpen] = useState(false);
   const [mentionQuery, setMentionQuery] = useState("");
+  const [mentionMenuStyle, setMentionMenuStyle] = useState<React.CSSProperties | undefined>();
+  const [promptScrollTop, setPromptScrollTop] = useState(0);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const promptAreaRef = useRef<HTMLDivElement>(null);
   useDismiss(panel !== null, () => setPanel(null));
 
   const { requireAuth } = useAuth();
@@ -115,6 +126,13 @@ export function StudioComposer({
     setMentionOpen(Boolean(range));
     setMentionActive(0);
     setMentionQuery(range?.query.toLowerCase() ?? "");
+    if (range && textareaRef.current && promptAreaRef.current) {
+      setMentionMenuStyle(
+        textareaMentionMenuPosition(textareaRef.current, promptAreaRef.current, range.start)
+      );
+    } else {
+      setMentionMenuStyle(undefined);
+    }
   };
   const mentionOptions = useMemo(() => {
     if (!mentionOpen) return [];
@@ -128,18 +146,26 @@ export function StudioComposer({
 
   const insertMention = (item: MentionItem) => {
     const el = textareaRef.current;
-    const range = currentMention();
-    if (!el || !range) return;
+    if (!el || !currentMention()) return;
     const caret = el.selectionStart ?? prompt.length;
-    const before = prompt.slice(0, range.start);
-    const after = prompt.slice(caret);
-    const next = `${before}@${item.label} ${after}`;
-    onPromptChange(next);
+    const inserted = insertMentionText(prompt, caret, item);
+    if (!inserted) return;
+    onPromptChange(inserted.value);
     setMentionOpen(false);
     requestAnimationFrame(() => {
       el.focus();
-      const position = before.length + item.label.length + 2;
-      el.setSelectionRange(position, position);
+      el.setSelectionRange(inserted.caret, inserted.caret);
+    });
+  };
+
+  const removeMention = (range: { end: number; start: number }) => {
+    const el = textareaRef.current;
+    const removed = removeMentionText(prompt, range);
+    onPromptChange(removed.value);
+    setMentionOpen(false);
+    requestAnimationFrame(() => {
+      el?.focus();
+      el?.setSelectionRange(removed.caret, removed.caret);
     });
   };
 
@@ -170,12 +196,18 @@ export function StudioComposer({
     }
   };
 
+  const promptTextClassName = cn(
+    "block max-h-40 w-full resize-none bg-transparent text-sm leading-6 outline-none placeholder:text-muted-foreground",
+    showReferences && "min-h-[80px] pl-[150px]",
+    showReferences && referenceItems.length > 1 && "pl-[190px]"
+  );
+
   const shell = (
     <div className="pointer-events-auto relative mx-auto w-full max-w-[1120px] rounded-3xl bg-[oklch(0.22_0_0_/_0.92)] p-4 shadow-[0_24px_70px_-12px_rgba(0,0,0,0.7)] backdrop-blur-2xl backdrop-saturate-150">
       {/* signature glass rim-light (DESIGN.md §3.2) */}
       <GlassRim />
       {/* Prompt + fanned references */}
-      <div className="relative">
+      <div ref={promptAreaRef} className="relative">
         {showReferences && (
           <div className="absolute top-0 left-0 z-10">
             <ReferenceFan
@@ -185,6 +217,15 @@ export function StudioComposer({
               onRemove={onRemoveReference}
             />
           </div>
+        )}
+        {mentionables.length > 0 && (
+          <PromptMentionMirror
+            value={prompt}
+            mentions={mentionables}
+            onRemoveMention={removeMention}
+            scrollTop={promptScrollTop}
+            className={promptTextClassName}
+          />
         )}
         <textarea
           ref={textareaRef}
@@ -206,25 +247,30 @@ export function StudioComposer({
             )
           }
           onKeyDown={onKeyDown}
+          onScroll={(event) => {
+            setPromptScrollTop(event.currentTarget.scrollTop);
+            updateMentionState(
+              event.currentTarget.value,
+              event.currentTarget.selectionStart ?? event.currentTarget.value.length
+            );
+          }}
           onBlur={() => setTimeout(() => setMentionOpen(false), 120)}
           className={cn(
-            "block max-h-40 w-full resize-none bg-transparent text-sm leading-6 outline-none placeholder:text-muted-foreground",
-            showReferences && "min-h-[80px] pl-[150px]",
-            showReferences && referenceItems.length > 1 && "pl-[190px]"
+            promptTextClassName,
+            "relative z-[1]",
+            mentionables.length > 0 &&
+              prompt &&
+              "text-transparent caret-white selection:bg-sky-500/35"
           )}
         />
         {mentionOpen && (
-          <div
-            className={cn("absolute", showReferences ? "left-[150px]" : "left-0")}
-            data-popover-zone
-          >
-            <MentionMenu
-              options={mentionOptions}
-              active={mentionActive}
-              onPick={insertMention}
-              className="top-9 left-0"
-            />
-          </div>
+          <MentionMenu
+            options={mentionOptions}
+            active={mentionActive}
+            onPick={insertMention}
+            className="top-0 left-0"
+            style={mentionMenuStyle}
+          />
         )}
       </div>
 
