@@ -19,8 +19,10 @@ import {
   QUICK_VIDEO_PARAMETER_POLICY,
   QUICK_VIDEO_PRODUCT_PRICING,
   SEEDANCE_2_0_FAST_PRODUCT_PRICING,
+  SEEDANCE_2_0_MINI_PRODUCT_PRICING,
   SEEDANCE_2_0_PARAMETER_POLICY,
   SEEDANCE_2_0_PRODUCT_PRICING,
+  SEEDANCE_2_0_SD_PARAMETER_POLICY,
   WAN_2_7_VIDEO_PARAMETER_POLICY,
   WAN_2_7_VIDEO_PRODUCT_PRICING,
 } from './defaults';
@@ -80,6 +82,15 @@ const bytePlusSeedanceProvider: ProviderEntry = {
 const bytePlusSeedanceFastProvider: ProviderEntry = {
   provider: 'byteplus-modelark',
   endpointId: 'dreamina-seedance-2-0-fast-260128',
+  modes: SEEDANCE_MODES,
+  requestTimeoutSeconds: 1800,
+  priority: 50,
+};
+
+/** Official budget variant (~50% cheaper; 480p/720p only). */
+const bytePlusSeedanceMiniProvider: ProviderEntry = {
+  provider: 'byteplus-modelark',
+  endpointId: 'dreamina-seedance-2-0-mini-260615',
   modes: SEEDANCE_MODES,
   requestTimeoutSeconds: 1800,
   priority: 50,
@@ -161,7 +172,7 @@ export const VIDEO_MODELS: VideoModelSeed[] = [
     tier: 'vip',
     // Preflight hold = 15s × 720p @ 20/s. v3 reprice.
     cost: 300,
-    parameterPolicy: SEEDANCE_2_0_PARAMETER_POLICY,
+    parameterPolicy: SEEDANCE_2_0_SD_PARAMETER_POLICY,
     productPricing: SEEDANCE_2_0_FAST_PRODUCT_PRICING,
     group: 'video',
     sortOrder: 20,
@@ -170,6 +181,27 @@ export const VIDEO_MODELS: VideoModelSeed[] = [
     providerAliases: [
       'bytedance/seedance-2.0/fast',
       'dreamina-seedance-2-0-fast-260128',
+    ],
+  },
+  {
+    slug: 'seedance-2-0-mini',
+    displayName: 'Seedance 2.0 Mini',
+    family: 'seedance',
+    description:
+      'ByteDance Seedance 2.0 Mini — cost-effective budget tier (~50% cheaper) for high-volume video generation; 480p/720p.',
+    modes: SEEDANCE_MODES,
+    tier: 'vip',
+    // Preflight hold = 15s × 720p @ 12/s.
+    cost: 180,
+    parameterPolicy: SEEDANCE_2_0_SD_PARAMETER_POLICY,
+    productPricing: SEEDANCE_2_0_MINI_PRODUCT_PRICING,
+    group: 'video',
+    sortOrder: 30,
+    recommended: false,
+    providers: [bytePlusSeedanceMiniProvider],
+    providerAliases: [
+      'bytedance/seedance-2.0/mini',
+      'dreamina-seedance-2-0-mini-260615',
     ],
   },
   {

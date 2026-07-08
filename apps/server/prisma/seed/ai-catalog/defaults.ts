@@ -1089,7 +1089,7 @@ export const SEEDANCE_2_0_PARAMETER_POLICY = {
   parameterMode: 'provider_union',
   providerFamily: 'seedance',
   defaultResolution: '720p',
-  resolutionOptions: ['480p', '720p'], // 1080p pending pricing approval
+  resolutionOptions: ['480p', '720p', '1080p'], // 4k exists upstream, unpriced
   // Default '5' (not 'auto'): 'auto' bills at the 15 s ceiling, so defaulting
   // to it would make the default quote the maximum price. 'auto' remains
   // selectable in durationOptions.
@@ -1124,7 +1124,7 @@ export const QUICK_VIDEO_PARAMETER_POLICY = {
   referenceImages: {
     enabled: true,
     min: 0,
-    max: 9,
+    max: 1,
     maskSupported: false,
   },
   seed: { enabled: false },
@@ -1136,13 +1136,15 @@ export const QUICK_VIDEO_PARAMETER_POLICY = {
 // raw ×margin: 720p 25 (~1.65×), 480p 12 (floored ≥ double digit).
 export const SEEDANCE_2_0_PRODUCT_PRICING: AiProductPricingPolicy = {
   mode: 'per_second_matrix',
-  version: 'seedance-2-0-points-v3-2026-07-08',
+  version: 'seedance-2-0-points-v4-2026-07-08',
   currency: 'COMPUTE_POINTS',
   defaultOutputCount: 1,
   minOutputCount: 1,
   maxOutputCount: 1,
   defaultResolution: '720p',
-  pointsPerSecond: { '480p': 12, '720p': 25 },
+  // 1080p ≈ 2.25× 720p pixels (~$0.34/s official); designed/capped at 45 (not
+  // the raw ~56) to keep the ladder controlled. 4k still absent (capacity/price).
+  pointsPerSecond: { '480p': 12, '720p': 25, '1080p': 45 },
   minSeconds: 4,
   maxSeconds: 15,
   defaultSeconds: 5,
@@ -1175,6 +1177,36 @@ export const SEEDANCE_2_0_FAST_PRODUCT_PRICING: AiProductPricingPolicy = {
   minimumPoints: 1,
   roundTo: 1,
 };
+
+// Seedance 2.0 mini — official budget tier (~50% cheaper than 2.0). Cost 720p
+// ≈ $0.076/s ($0.0035/K exclude-video), 480p ≈ $0.034/s. Designed/floored:
+// 720p 12, 480p 8. 480p/720p only (no 1080p/4k upstream).
+export const SEEDANCE_2_0_MINI_PRODUCT_PRICING: AiProductPricingPolicy = {
+  mode: 'per_second_matrix',
+  version: 'seedance-2-0-mini-points-v1-2026-07-08',
+  currency: 'COMPUTE_POINTS',
+  defaultOutputCount: 1,
+  minOutputCount: 1,
+  maxOutputCount: 1,
+  defaultResolution: '720p',
+  pointsPerSecond: { '480p': 8, '720p': 12 },
+  minSeconds: 4,
+  maxSeconds: 15,
+  defaultSeconds: 5,
+  autoQuoteSeconds: 15,
+  referenceImageSurchargePoints: 0,
+  extraReferenceImagePoints: 0,
+  maskSurchargePoints: 0,
+  minimumPoints: 1,
+  roundTo: 1,
+};
+
+// Fast + mini support 480p/720p only — a shared param policy so the flagship's
+// 1080p option never leaks into the non-flagship variants.
+export const SEEDANCE_2_0_SD_PARAMETER_POLICY = {
+  ...SEEDANCE_2_0_PARAMETER_POLICY,
+  resolutionOptions: ['480p', '720p'],
+} as const;
 
 export const QUICK_VIDEO_PRODUCT_PRICING: AiProductPricingPolicy = {
   mode: 'per_second_matrix',

@@ -703,8 +703,12 @@ function NodeComposer({
 
         <div
           className={cn(
-            "relative mt-2 flex flex-1 gap-1 rounded-xl border p-1 transition-[min-height,border-color,background-color]",
-            expanded ? "min-h-[132px]" : toolPanel ? "min-h-12" : "min-h-20",
+            "relative mt-2 flex flex-1 gap-1 overflow-hidden rounded-xl border p-1 transition-[min-height,max-height,border-color,background-color]",
+            expanded
+              ? "min-h-[132px] max-h-[172px]"
+              : toolPanel
+                ? "min-h-12 max-h-20"
+                : "min-h-20 max-h-28",
             promptFocused ? "border-white/[0.16] bg-white/[0.035]" : "border-transparent"
           )}
         >
@@ -995,8 +999,12 @@ const ComposerPromptEditor = forwardRef<
         document.execCommand("insertText", false, allowedText);
       }}
       className={cn(
-        "tiny-scrollbar nodrag nowheel w-full cursor-text overflow-y-auto whitespace-pre-wrap break-words bg-transparent pb-5 pl-1 pr-2 pt-1 text-[15px] font-normal leading-8 text-white/88 outline-none",
-        expanded ? "min-h-[132px]" : toolPanelOpen ? "min-h-12" : "min-h-20"
+        "tiny-scrollbar nodrag nowheel min-h-0 w-full cursor-text overflow-y-auto whitespace-pre-wrap break-words bg-transparent pb-5 pl-1 pr-2 pt-1 text-[15px] font-normal leading-8 text-white/88 outline-none",
+        expanded
+          ? "min-h-[132px] max-h-[164px]"
+          : toolPanelOpen
+            ? "min-h-12 max-h-[72px]"
+            : "min-h-20 max-h-[104px]"
       )}
       aria-label={ariaLabel}
     >
