@@ -706,6 +706,47 @@ export function referenceFieldsForMode(
   return all;
 }
 
+const SINGLE_REFERENCE_FIELDS = new Set(["startFrame", "firstFrame", "endFrame", "lastFrame"]);
+
+/** Minimal reference row for submit helpers (canvas CardReference). */
+export type ReferenceRowLike = {
+  id: string;
+  url: string;
+  assetId?: string;
+};
+
+function referenceEntry(row: ReferenceRowLike): string | Record<string, string> {
+  return row.assetId ? { url: row.url, assetId: row.assetId, refId: row.id } : row.url;
+}
+
+/**
+ * Build schema-shaped reference input for ONLY the active generation mode's
+ * fields. Stale slots from a previous mode (e.g. `referenceImages` after
+ * switching to i2v) are omitted so Seedance's frame↔reference rule isn't hit.
+ */
+export function buildReferenceInputForMode(
+  model: FizzAiModel,
+  mode: string | undefined,
+  references: Record<string, ReferenceRowLike[] | undefined> | undefined
+): Record<string, unknown> {
+  const properties = model.input_schema?.properties ?? {};
+  const referenceInput: Record<string, unknown> = {};
+  for (const { field } of referenceFieldsForMode(model, mode)) {
+    const ready = (references?.[field] ?? []).filter((row) => /^https?:/i.test(row.url));
+    if (ready.length === 0) continue;
+    if (SINGLE_REFERENCE_FIELDS.has(field)) {
+      referenceInput[field] = referenceEntry(ready[0]);
+      continue;
+    }
+    if (properties[field]?.type === "array") {
+      referenceInput[field] = ready.map(referenceEntry);
+      continue;
+    }
+    referenceInput[field] = referenceEntry(ready[0]);
+  }
+  return referenceInput;
+}
+
 // ── Schema-driven UI (x-ui hints) ───────────────────────────────────────────
 // The catalog stamps each schema property with an `x-ui` hint (control type,
 // group, order). One generic settings panel renders any model — image, video,

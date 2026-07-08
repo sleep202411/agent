@@ -21,8 +21,10 @@ import { computeWalletBalanceQueryKey } from "@/app/_components/credits-badge";
 import { useActiveWorkspaceId } from "@/app/_components/workspace-context";
 import { useProjectContext } from "@/app/[locale]/project/_components/project-context";
 import {
+  buildReferenceInputForMode,
   cancelFizzAiJob,
   compactFizzAiInput,
+  defaultMode,
   filterFizzAiInput,
   generationIdempotencyKey,
   generationStateFromJob,
@@ -543,22 +545,13 @@ export function CanvasGenerationProvider({
         return;
       }
 
-      // Map wired/uploaded references into their schema fields. Only real
-      // (http) URLs go to the backend — blob object URLs can't be fetched yet
-      // (they wait on SAS upload), so they're dropped here. When a reference is
-      // backed by MediaAsset, include its id so the server can upgrade approved
-      // BytePlus private-library assets to `asset://...` references.
-      const properties = model.input_schema?.properties ?? {};
-      const referenceInput: Record<string, unknown> = {};
-      for (const [field, list] of Object.entries(data.references ?? {})) {
-        const entries = list
-          .filter((ref) => /^https?:/i.test(ref.url))
-          .map((ref) =>
-            ref.assetId ? { url: ref.url, assetId: ref.assetId, refId: ref.id } : ref.url
-          );
-        if (entries.length === 0) continue;
-        referenceInput[field] = properties[field]?.type === "array" ? entries : entries[0];
-      }
+      // Only the ACTIVE mode's reference fields are submitted — leftover slots
+      // from a prior mode must not ride along or Seedance rejects the combo.
+      const referenceInput = buildReferenceInputForMode(
+        model,
+        data.mode ?? defaultMode(model),
+        data.references
+      );
 
       const input = compactFizzAiInput(
         filterFizzAiInput(model, {
