@@ -234,8 +234,11 @@ export class BytePlusAssetsClient {
       URL: args.url,
       AssetType: args.assetType,
       ...(args.name ? { Name: args.name } : {}),
-      // Never Moderation.Strategy: Skip (design §2.3).
-      Moderation: { Strategy: 'Default' },
+      // Configurable because BytePlus baseline safety remains enforced even
+      // when the optional Content Pre-filter review is skipped.
+      Moderation: {
+        Strategy: this.configService.config.assetModerationStrategy,
+      },
     });
   }
 

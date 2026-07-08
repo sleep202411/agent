@@ -1009,7 +1009,9 @@ export const SEEDREAM_4_PRODUCT_PRICING: AiProductPricingPolicy = {
 
 export const SEEDREAM_45_PRODUCT_PRICING: AiProductPricingPolicy = {
   mode: 'parameter_matrix',
-  version: 'seedream-4-5-points-v1-2026-06-08',
+  // v2 2026-07-08: re-based on official BytePlus per-piece cost ($0.040/piece,
+  // flat across resolution) at a floored designed price (not raw ×margin).
+  version: 'seedream-4-5-points-v2-2026-07-08',
   currency: 'COMPUTE_POINTS',
   defaultOutputCount: 1,
   minOutputCount: 1,
@@ -1019,8 +1021,8 @@ export const SEEDREAM_45_PRODUCT_PRICING: AiProductPricingPolicy = {
   resolutionOptions: ['2K', '4K'],
   qualityOptions: ['standard'],
   matrix: {
-    '2K': { standard: 40 },
-    '4K': { standard: 70 },
+    '2K': { standard: 12 },
+    '4K': { standard: 12 },
   },
   referenceImageSurchargePoints: 0,
   extraReferenceImagePoints: 0,
@@ -1031,7 +1033,9 @@ export const SEEDREAM_45_PRODUCT_PRICING: AiProductPricingPolicy = {
 
 export const SEEDREAM_5_LITE_PRODUCT_PRICING: AiProductPricingPolicy = {
   mode: 'parameter_matrix',
-  version: 'seedream-5-lite-points-v1-2026-06-08',
+  // v2 2026-07-08: re-based on official BytePlus per-piece cost ($0.035/piece,
+  // flat across resolution) at a floored designed price (10 = ~2.9× cost).
+  version: 'seedream-5-lite-points-v2-2026-07-08',
   currency: 'COMPUTE_POINTS',
   defaultOutputCount: 1,
   minOutputCount: 1,
@@ -1041,9 +1045,9 @@ export const SEEDREAM_5_LITE_PRODUCT_PRICING: AiProductPricingPolicy = {
   resolutionOptions: ['2K', '3K', '4K'],
   qualityOptions: ['standard'],
   matrix: {
-    '2K': { standard: 35 },
-    '3K': { standard: 50 },
-    '4K': { standard: 70 },
+    '2K': { standard: 10 },
+    '3K': { standard: 10 },
+    '4K': { standard: 10 },
   },
   referenceImageSurchargePoints: 0,
   extraReferenceImagePoints: 0,
@@ -1126,20 +1130,19 @@ export const QUICK_VIDEO_PARAMETER_POLICY = {
   seed: { enabled: false },
 } as const satisfies Prisma.InputJsonObject;
 
-// Per-second pricing matching fal's `video_seconds` billing. Points =
-// ceil(fal USD/s × 2.0 margin × 100) (积分 ≡ US cent): 720p $0.3034/s → 61,
-// 480p ≈ $0.185/s → 37. Duration 4–15 s; 'auto' quotes at the 15 s ceiling so
-// the estimate can never undercharge the final per-second provider bill.
-// 1080p stays ABSENT until its pricing is approved.
+// v3 2026-07-08: re-based on the OFFICIAL BytePlus ModelArk per-second cost
+// (720p ≈ $0.151/s, 480p ≈ $0.067/s) — fal (retired) was ~2× pricier, so the old
+// v2 points (61/37) were an accidental ~4× margin. Designed/floored price, not
+// raw ×margin: 720p 25 (~1.65×), 480p 12 (floored ≥ double digit).
 export const SEEDANCE_2_0_PRODUCT_PRICING: AiProductPricingPolicy = {
   mode: 'per_second_matrix',
-  version: 'seedance-2-0-points-v2-2026-06-11',
+  version: 'seedance-2-0-points-v3-2026-07-08',
   currency: 'COMPUTE_POINTS',
   defaultOutputCount: 1,
   minOutputCount: 1,
   maxOutputCount: 1,
   defaultResolution: '720p',
-  pointsPerSecond: { '480p': 37, '720p': 61 },
+  pointsPerSecond: { '480p': 12, '720p': 25 },
   minSeconds: 4,
   maxSeconds: 15,
   defaultSeconds: 5,
@@ -1151,16 +1154,17 @@ export const SEEDANCE_2_0_PRODUCT_PRICING: AiProductPricingPolicy = {
   roundTo: 1,
 };
 
-// fast 720p $0.2419/s → 49; 480p ≈ $0.15/s → 30.
+// v3 2026-07-08: official BytePlus cost 720p ≈ $0.121/s, 480p ≈ $0.054/s.
+// Designed/floored: 720p 20 (~1.65×), 480p 10.
 export const SEEDANCE_2_0_FAST_PRODUCT_PRICING: AiProductPricingPolicy = {
   mode: 'per_second_matrix',
-  version: 'seedance-2-0-fast-points-v2-2026-06-11',
+  version: 'seedance-2-0-fast-points-v3-2026-07-08',
   currency: 'COMPUTE_POINTS',
   defaultOutputCount: 1,
   minOutputCount: 1,
   maxOutputCount: 1,
   defaultResolution: '720p',
-  pointsPerSecond: { '480p': 30, '720p': 49 },
+  pointsPerSecond: { '480p': 10, '720p': 20 },
   minSeconds: 4,
   maxSeconds: 15,
   defaultSeconds: 5,

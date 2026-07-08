@@ -5,6 +5,21 @@ const boolEnv = (value: string | undefined, fallback = false): boolean => {
   return ['1', 'true', 'yes', 'on'].includes(value.trim().toLowerCase());
 };
 
+export type BytePlusAssetModerationStrategy = 'Default' | 'Skip';
+
+const assetModerationStrategyEnv = (
+  value: string | undefined,
+  fallback: BytePlusAssetModerationStrategy,
+): BytePlusAssetModerationStrategy => {
+  if (value == null || value.trim() === '') return fallback;
+  const normalized = value.trim().toLowerCase();
+  if (normalized === 'default') return 'Default';
+  if (normalized === 'skip') return 'Skip';
+  throw new Error(
+    'BYTEPLUS_ASSETS_MODERATION_STRATEGY must be either Default or Skip',
+  );
+};
+
 export interface BytePlusAssetsConfig {
   /** CHARACTERS_REAL_PERSON_ENABLED — needs AK/SK + ACR + enrollment key. */
   realPersonEnabled: boolean;
@@ -25,6 +40,8 @@ export interface BytePlusAssetsConfig {
   service: string;
   /** ?Version= date of the Action API. */
   apiVersion: string;
+  /** CreateAsset content pre-filter strategy. BytePlus baseline safety remains enforced. */
+  assetModerationStrategy: BytePlusAssetModerationStrategy;
   requestTimeoutMs: number;
   /**
    * ACR subscription expiry (design §6.1) — monitored CONFIG, not queryable
@@ -85,6 +102,10 @@ export class BytePlusAssetsConfigService {
       service: 'ark',
       apiVersion:
         process.env.BYTEPLUS_ASSETS_API_VERSION?.trim() || '2024-01-01',
+      assetModerationStrategy: assetModerationStrategyEnv(
+        process.env.BYTEPLUS_ASSETS_MODERATION_STRATEGY,
+        'Skip',
+      ),
       requestTimeoutMs: 30_000,
       acrExpiresAt,
       enrollmentTokenKey:

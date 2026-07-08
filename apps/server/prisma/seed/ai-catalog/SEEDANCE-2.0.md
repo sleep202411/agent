@@ -24,9 +24,14 @@ poll `GET /tasks/{id}`; task records kept 7 days, output URL valid 24h.
 
 | Canonical           | ModelArk model id                   | Resolutions                       |
 | ------------------- | ----------------------------------- | --------------------------------- |
-| `seedance-2-0`      | `dreamina-seedance-2-0-260128`      | 480p/720p/1080p/4k                |
+| `seedance-2-0`      | `ep-20260708234913-w8kjy`           | 480p/720p/1080p/4k                |
 | `seedance-2-0-fast` | `dreamina-seedance-2-0-fast-260128` | 480p/720p                         |
 | (unbound)           | `dreamina-seedance-2-0-mini-260615` | 480p/720p — candidate budget tier |
+
+`seedance-2-0` is a custom Standard endpoint (`seedance-2-0-standard-no-prefilter`)
+backed by `dreamina-seedance-2-0-260128` with ModelArk Content Pre-filter disabled;
+BytePlus baseline content safety still applies. The original model id remains a
+provider alias for historical rows and rollback.
 
 CN 方舟 twins exist as `doubao-seedance-2-0*` (for a future .cn cell).
 

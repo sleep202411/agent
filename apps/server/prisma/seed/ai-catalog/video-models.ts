@@ -62,13 +62,15 @@ const SEEDANCE_MODES: AiGenerationMode[] = [T2V, I2V, FLF2V, MM2V];
 /**
  * BytePlus ModelArk is the SOLE Seedance provider (fal retired 2026-07-02:
  * ~2× the official per-second price, no ACR/private-asset plane, no watermark
- * compliance field). One official model id serves all four modes — content[]
+ * compliance field). One ModelArk endpoint id serves all four modes — content[]
  * roles select the scenario; reference videos/audios ride content[] as
- * reference_video / reference_audio parts (SEEDANCE-2.0.md).
+ * reference_video / reference_audio parts. The current Standard endpoint is a
+ * custom no-prefilter access point backed by dreamina-seedance-2-0-260128
+ * (SEEDANCE-2.0.md).
  */
 const bytePlusSeedanceProvider: ProviderEntry = {
   provider: 'byteplus-modelark',
-  endpointId: 'dreamina-seedance-2-0-260128',
+  endpointId: 'ep-20260708234913-w8kjy',
   modes: SEEDANCE_MODES,
   requestTimeoutSeconds: 1800,
   priority: 50,
@@ -133,7 +135,8 @@ export const VIDEO_MODELS: VideoModelSeed[] = [
       'ByteDance Seedance 2.0 video — text/image/first-last-frame and omni reference, with native synced audio.',
     modes: SEEDANCE_MODES,
     tier: 'vip',
-    cost: 600,
+    // Preflight hold = max realistic charge (15s × 720p @ 25/s). v3 reprice.
+    cost: 375,
     parameterPolicy: SEEDANCE_2_0_PARAMETER_POLICY,
     productPricing: SEEDANCE_2_0_PRODUCT_PRICING,
     group: 'video',
@@ -142,7 +145,11 @@ export const VIDEO_MODELS: VideoModelSeed[] = [
     providers: [bytePlusSeedanceProvider],
     // 'bytedance/seedance-2.0' kept as a lookup alias for pre-cutover job
     // rows / presets that referenced the retired fal endpoint family.
-    providerAliases: ['bytedance/seedance-2.0', 'dreamina-seedance-2-0-260128'],
+    providerAliases: [
+      'bytedance/seedance-2.0',
+      'dreamina-seedance-2-0-260128',
+      'ep-20260708234913-w8kjy',
+    ],
   },
   {
     slug: 'seedance-2-0-fast',
@@ -152,7 +159,8 @@ export const VIDEO_MODELS: VideoModelSeed[] = [
       'ByteDance Seedance 2.0 Fast — same modes at a lower cost / faster turnaround (720p).',
     modes: SEEDANCE_MODES,
     tier: 'vip',
-    cost: 484,
+    // Preflight hold = 15s × 720p @ 20/s. v3 reprice.
+    cost: 300,
     parameterPolicy: SEEDANCE_2_0_PARAMETER_POLICY,
     productPricing: SEEDANCE_2_0_FAST_PRODUCT_PRICING,
     group: 'video',

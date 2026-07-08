@@ -309,12 +309,15 @@ ledger view (hash/metadata only), force-revoke (admin_takedown), provider-sync i
   (e.g. 30 min) transitions stuck rows to failed(stale) with a retry affordance. CreateAsset has no
   SLA — the wizard never hard-blocks on it.
 - Typed failure surfacing: face_mismatch / multi_face / moderation rejections verbatim to the UI.
+- `CreateAsset` moderation strategy is config-controlled via
+  `BYTEPLUS_ASSETS_MODERATION_STRATEGY` (`Skip` current operational default; `Default` rollback).
+  BytePlus baseline content safety still applies.
 
 ### 2.3 What we deliberately do NOT build (target-state, no hedging)
 
 - No self-built liveness/consent-video verification — BytePlus H5 owns the biometric check; we own
   the consent LEDGER and the procedure binding.
-- No `Moderation.Strategy: Skip` anywhere in v1.
+- No irreversible moderation bypass — the provider strategy remains reversible via env config.
 - No fal fallback for real persons — ever (§3.3 pin).
 - No storing provider signed URLs anywhere (12h TTL; providerResponse is redacted before persist).
 
