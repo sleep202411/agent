@@ -128,15 +128,16 @@ secrets:
       env: BYTEPLUS_MODELARK_API_KEY
     # ModelArk ASSETS plane (character likeness / liveness) — separate AK/SK
     # from the inference Bearer key; worker pods run the sync queues so these
-    # live in the shared mapping. UNCOMMENT ONLY AFTER the three KV secrets
-    # exist — the CSI projection is fail-closed, so a mapping to a missing KV
-    # entry breaks the whole projected Secret. Then flip
-    # CHARACTERS_REAL_PERSON_ENABLED (the server fails loud at boot if any of
-    # these is still missing).
-    # - kv: byteplus-assets-ak
-    #   env: BYTEPLUS_ASSETS_AK
-    # - kv: byteplus-assets-sk
-    #   env: BYTEPLUS_ASSETS_SK
+    # live in the shared mapping. UNCOMMENT ONLY AFTER the KV secrets exist —
+    # the CSI projection is fail-closed, so a mapping to a missing KV entry
+    # breaks the whole projected Secret.
+    # AK/SK live in KV (2026-07-08) for the AIGC media-asset registration track.
+    - kv: byteplus-assets-ak
+      env: BYTEPLUS_ASSETS_AK
+    - kv: byteplus-assets-sk
+      env: BYTEPLUS_ASSETS_SK
+    # Enrollment token is real-person LIVENESS only (not AIGC). Keep commented
+    # until the KV secret exists — uncommenting without it breaks the projection.
     # - kv: character-enrollment-token-key
     #   env: CHARACTER_ENROLLMENT_TOKEN_KEY
     - kv: blob-conn-string
@@ -319,6 +320,12 @@ server:
     FAL_ENABLED: "true"
     BAILIAN_ENABLED: "true"
     BYTEPLUS_MODELARK_ENABLED: "true"
+    # BytePlus ModelArk ASSETS plane — register canvas MediaAssets as AIGC assets.
+    # AK/SK come from KV (serverSecrets mapping). ACR = the paid capacity-reservation
+    # subscription; its expiry is not queryable via API, so it's declared here and
+    # drives the T-7d new-registration hard-block + 15d post-expiry grace window.
+    MEDIA_ASSET_AIGC_REGISTRATION_ENABLED: "true"
+    BYTEPLUS_ACR_EXPIRES_AT: "2027-06-29T16:59:59+08:00"
     PORT: "3001"
     AI_PROVIDER: alibaba
     # Agent User runner. First trial: ON + run-a-cycle-on-boot for observability.
