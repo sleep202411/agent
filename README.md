@@ -83,6 +83,26 @@ npx turbo build --filter=server
 
 **规范：两个 cell 都只从 `main` 部署**（`develop` 是工作分支，上线前 merge 到 main；所有部署脚本内置 `main` 分支 guard，非 main 直接拒绝，`FORCE=1` 覆盖）。两边机制不同——`.com` 走 ArgoCD/GitOps（改 git 里的镜像 tag，ArgoCD 收敛），`.cn` 直接 `helm upgrade`——但都以 `main` 为准。
 
+### 部署前置（一次性）
+
+`.com` 部署脚本本身只需要 **Azure CLI**（`az acr build` + 登录检查）；`kubectl` 仅用于部署后**验证** rollout / 查 pod / 跑 prod DB 脚本。装一次即可：
+
+```bash
+# Azure CLI —— 部署必需
+brew install azure-cli                 # macOS（其它平台见 docs.microsoft.com/cli/azure/install）
+az login
+az account set --subscription 5d94f40f-701f-45e1-ab4b-0e1506104ebd   # fizzdragon-ai-prod
+
+# kubectl + AKS 凭据 —— 验证 / 运维用（部署脚本不需要）
+brew install kubectl
+az aks get-credentials \
+  --subscription 5d94f40f-701f-45e1-ab4b-0e1506104ebd \
+  --resource-group rg-fizzdragon-com-prod \
+  --name aks-fizzdragon-com            # → 得到 `aks-fizzdragon-com` context
+```
+
+> `.cn` 走 Aliyun ACK（阿里云），凭据 / 工具见 `.cn` 小节；与上面的 Azure 凭据无关。
+
 ### `.com`（国际）— AKS + ArgoCD + `deploy-com-aks.sh`
 
 生产 `.com` 跑在 **Azure AKS**，用 **ArgoCD**（GitOps）部署：**git 是唯一真相**，
