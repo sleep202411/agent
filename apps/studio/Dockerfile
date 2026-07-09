@@ -14,9 +14,17 @@ COPY . .
 RUN rm -f apps/studio/.env.local apps/studio/.env.development.local apps/studio/.env.production.local
 RUN npm ci --ignore-scripts
 
-# No build args: the studio inlines no NEXT_PUBLIC_* config in production.
+# Java backend URLs are baked into the Next.js rewrite table at BUILD time
+# (next.config.ts rewrites → routes-manifest). A runtime-only env is IGNORED by
+# the compiled rewrites, so these MUST be passed as build args. When missing,
+# next.config falls back to the .com host — which silently forwards a non-.com
+# cell's /user/* (auth) + /api/* to the wrong (intl) Java. Pass per-cell.
 # Developer-local Next env files are removed above so localhost WS/auth values
 # cannot be baked into the standalone server or client bundle.
+ARG JAVA_STUDIO_URL
+ARG JAVA_CONTENT_URL
+ENV JAVA_STUDIO_URL=$JAVA_STUDIO_URL
+ENV JAVA_CONTENT_URL=$JAVA_CONTENT_URL
 ENV NODE_OPTIONS="--max-old-space-size=4096"
 RUN npx turbo run build --filter=studio
 

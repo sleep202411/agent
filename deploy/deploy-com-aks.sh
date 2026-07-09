@@ -91,7 +91,14 @@ build_one() {
     admin-ui)
       args+=(--build-arg "NEXT_PUBLIC_ADMIN_UI_BASE_PATH=/")
       ;;
-    # studio / server / agent: 无 build-arg（运行时读 env）
+    studio)
+      # Java URLs are baked into next.config rewrites at BUILD time (see
+      # apps/studio/Dockerfile). Pass them explicitly — the fallback happens to
+      # be the .com host here, but relying on it is what broke .cn (wrong Java).
+      args+=(--build-arg "$(grep -E '^JAVA_STUDIO_URL=' "$WEB_ENV")")
+      args+=(--build-arg "$(grep -E '^JAVA_CONTENT_URL=' "$WEB_ENV")")
+      ;;
+    # server / agent: 无 build-arg（运行时读 env）
   esac
   echo "  · 构建 $image:$SHORT …"
   az acr build --registry "$ACR" \
