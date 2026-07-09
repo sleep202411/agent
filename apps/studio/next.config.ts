@@ -5,24 +5,42 @@ import createNextIntlPlugin from "next-intl/plugin";
 // NEXT_LOCALE cookie / Accept-Language. See i18n/request.ts.
 const withNextIntl = createNextIntlPlugin("./i18n/request.ts");
 
-// Where to proxy `/aurora/*` (the NestJS backend).
-//  - Prod (default): studio.fizzdragon.com, which keeps the `/aurora` prefix
-//    (the ingress strips it before the server).
-//  - Local dev: point AURORA_PROXY_TARGET at the local server (http://localhost:4399)
-//    and set AURORA_STRIP_PREFIX=1 — the local server serves routes at root,
-//    with no `/aurora` prefix.
-const AURORA_TARGET = process.env.AURORA_PROXY_TARGET ?? "https://studio.fizzdragon.com";
+// Backend URLs are baked into the rewrite table at BUILD time (routes-manifest),
+// and NEXT_PUBLIC_SITE_REGION is inlined into the client bundle. A missing value
+// used to silently fall back to the .com host / `global` region — which sent
+// non-.com cells' auth (/user), studio APIs (/api), and marketing links to the
+// WRONG (intl) backend without any error. These are per-cell critical config:
+// fail LOUD when unset (matches apps/web) so a mis-provisioned build never ships.
+function requiredEnv(name: string): string {
+  const value = process.env[name]?.trim();
+  if (!value) {
+    throw new Error(
+      `Missing required studio build env: ${name}. It is baked into the bundle ` +
+        `at build time and must be passed per cell (see apps/studio/Dockerfile ` +
+        `+ deploy/cn-remote-build.sh / deploy-com-aks.sh). No silent .com fallback.`
+    );
+  }
+  return value;
+}
+
+// Where to proxy `/aurora/*` (the NestJS backend). In-cluster this is
+// http://fizzdragon-server:3001 with AURORA_STRIP_PREFIX=1 (Nest serves at root);
+// on the public host the sibling -aurora-ingress handles /aurora before the pod.
+const AURORA_TARGET = requiredEnv("AURORA_PROXY_TARGET");
 const STRIP_PREFIX = process.env.AURORA_STRIP_PREFIX === "1";
 
 // Java content backend — owns auth (/user/email/login, /user/login,
 // /user/query/user/info, /user/logout). Same prefix contract as apps/web.
-const JAVA_CONTENT = process.env.JAVA_CONTENT_URL ?? "https://java.fizzdragon.com/content";
+const JAVA_CONTENT = requiredEnv("JAVA_CONTENT_URL");
 
 // Java studio backend — owns the art-studio world/project APIs
 // (/api/user/world/*, /api/user/project/*). Same prefix contract as apps/web's
 // JAVA_STUDIO_URL. The `/api/img` Next route is a filesystem route, so the
 // array-form (afterFiles) rewrite below never shadows it.
-const JAVA_STUDIO = process.env.JAVA_STUDIO_URL ?? "https://java.fizzdragon.com/studio";
+const JAVA_STUDIO = requiredEnv("JAVA_STUDIO_URL");
+
+// Inlined into the client bundle (web-base.ts region → register / legal links).
+requiredEnv("NEXT_PUBLIC_SITE_REGION");
 
 const nextConfig: NextConfig = {
   // Self-contained server bundle for the Docker runner stage.

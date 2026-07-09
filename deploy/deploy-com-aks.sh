@@ -92,11 +92,15 @@ build_one() {
       args+=(--build-arg "NEXT_PUBLIC_ADMIN_UI_BASE_PATH=/")
       ;;
     studio)
-      # Java URLs are baked into next.config rewrites at BUILD time (see
-      # apps/studio/Dockerfile). Pass them explicitly — the fallback happens to
-      # be the .com host here, but relying on it is what broke .cn (wrong Java).
+      # Java URLs + SITE_REGION are baked into the studio bundle at BUILD time
+      # (next.config rewrites + NEXT_PUBLIC inlining; see apps/studio/Dockerfile).
+      # Pass them explicitly — the fallback happens to be the .com host here, but
+      # relying on it is what sent .cn's auth + register links to the wrong host.
+      args+=(--build-arg "AURORA_PROXY_TARGET=http://fizzdragon-server:3001")
+      args+=(--build-arg "AURORA_STRIP_PREFIX=1")
       args+=(--build-arg "$(grep -E '^JAVA_STUDIO_URL=' "$WEB_ENV")")
       args+=(--build-arg "$(grep -E '^JAVA_CONTENT_URL=' "$WEB_ENV")")
+      args+=(--build-arg "$(grep -E '^NEXT_PUBLIC_SITE_REGION=' "$WEB_ENV")")
       ;;
     # server / agent: 无 build-arg（运行时读 env）
   esac

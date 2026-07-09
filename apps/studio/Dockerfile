@@ -21,10 +21,20 @@ RUN npm ci --ignore-scripts
 # cell's /user/* (auth) + /api/* to the wrong (intl) Java. Pass per-cell.
 # Developer-local Next env files are removed above so localhost WS/auth values
 # cannot be baked into the standalone server or client bundle.
+ARG AURORA_PROXY_TARGET
+ARG AURORA_STRIP_PREFIX
 ARG JAVA_STUDIO_URL
 ARG JAVA_CONTENT_URL
+ENV AURORA_PROXY_TARGET=$AURORA_PROXY_TARGET
+ENV AURORA_STRIP_PREFIX=$AURORA_STRIP_PREFIX
 ENV JAVA_STUDIO_URL=$JAVA_STUDIO_URL
 ENV JAVA_CONTENT_URL=$JAVA_CONTENT_URL
+# NEXT_PUBLIC_* are inlined into the CLIENT bundle at build. SITE_REGION drives
+# which host studio links out to for register / forgot-password / legal pages
+# (web-base.ts) — missing → defaults to `global` → those links point at
+# fizzdragon.com even on the .cn cell. Must be a build arg, per cell.
+ARG NEXT_PUBLIC_SITE_REGION
+ENV NEXT_PUBLIC_SITE_REGION=$NEXT_PUBLIC_SITE_REGION
 ENV NODE_OPTIONS="--max-old-space-size=4096"
 RUN npx turbo run build --filter=studio
 
