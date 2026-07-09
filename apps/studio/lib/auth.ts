@@ -24,7 +24,12 @@ export function isAuthUnavailableError(error: unknown): boolean {
   return error instanceof AuthUnavailableError;
 }
 
-async function javaPostForm(path: string, body: Record<string, string>): Promise<void> {
+interface SessionToken {
+  tokenName: string;
+  tokenValue?: string;
+}
+
+async function javaPostForm(path: string, body: Record<string, string>): Promise<SessionToken> {
   const response = await fetch(path, {
     method: "POST",
     credentials: "include",
@@ -34,7 +39,12 @@ async function javaPostForm(path: string, body: Record<string, string>): Promise
     },
     body: new URLSearchParams(body).toString(),
   });
-  let json: { code?: number | string; msg?: string; message?: string } = {};
+  let json: {
+    code?: number | string;
+    msg?: string;
+    message?: string;
+    data?: unknown;
+  } = {};
   try {
     json = await response.json();
   } catch {
@@ -44,6 +54,17 @@ async function javaPostForm(path: string, body: Record<string, string>): Promise
   if (code !== 200) {
     throw new JavaAuthError(json.msg || json.message || "Sign in failed");
   }
+  return readSessionToken(json.data);
+}
+
+/** Extract the satoken from Java's login body (matches apps/web's shapes). */
+function readSessionToken(data: unknown): SessionToken {
+  const d = (data ?? {}) as Record<string, unknown>;
+  const info = (d.tokenInfo ?? {}) as { tokenName?: string; tokenValue?: string };
+  const tokenName = info.tokenName ?? "satoken";
+  const str = (v: unknown) => (typeof v === "string" && v ? v : undefined);
+  const tokenValue = info.tokenValue || str(d.token) || str(d.satoken) || str(d[tokenName]);
+  return { tokenName, tokenValue };
 }
 
 /** Looks like a phone number (all digits, optionally +country). */
@@ -54,11 +75,35 @@ export function isPhoneIdentifier(identifier: string): boolean {
 /** Email/phone + password login. The backend sets the satoken cookie. */
 export async function login(identifier: string, password: string): Promise<void> {
   const id = identifier.trim();
-  if (isPhoneIdentifier(id)) {
-    await javaPostForm("/user/login", { phone: id.replace(/[\s-]/g, ""), pwd: password });
-    return;
-  }
-  await javaPostForm("/user/email/login", { email: id, pwd: password });
+  const token = isPhoneIdentifier(id)
+    ? await javaPostForm("/user/login", { phone: id.replace(/[\s-]/g, ""), pwd: password })
+    : await javaPostForm("/user/email/login", { email: id, pwd: password });
+  persistSessionCookie(token);
+}
+
+/**
+ * Re-write the satoken cookie with the domain derived from the CURRENT host
+ * (`.fizzspace.cn` on CN, `.fizzdragon.com` on .com) so it is scoped correctly
+ * and shared across subdomains. The Java backend Set-Cookies satoken with
+ * Domain=.fizzdragon.com unconditionally — which a *.fizzspace.cn browser
+ * REJECTS (domain mismatch), so the CN session never persists. We read the raw
+ * token from the login body (not the rejected cookie) and re-set it host-derived,
+ * mirroring apps/web's post-auth fix. Decoupled from Java; a no-op on .com where
+ * the domain already matches. Temporary until Java sets the domain per host.
+ */
+function persistSessionCookie(token: SessionToken): void {
+  const value = token.tokenValue;
+  if (!value || typeof document === "undefined") return;
+  const secure = window.location.protocol === "https:" ? "; Secure" : "";
+  const maxAge = 60 * 60 * 24 * 30; // 30d, refreshed on every login
+  document.cookie = `${token.tokenName}=${value}; Path=/${sessionCookieDomain()}; Max-Age=${maxAge}; SameSite=Lax${secure}`;
+}
+
+/** `; Domain=.<registrable>` from the current host; empty on localhost / IPs. */
+function sessionCookieDomain(): string {
+  const host = window.location.hostname;
+  if (host === "localhost" || /^[\d.]+$/.test(host)) return "";
+  return `; Domain=.${host.split(".").slice(-2).join(".")}`;
 }
 
 /** Current session's user, or null when not signed in. */

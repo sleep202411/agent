@@ -105,7 +105,10 @@ export function GlobalNav() {
     href: "/art-studio",
     linkHref: getStudioHref(locale),
     label: t("fizzStudio"),
-    requiresAuth: true,
+    // No web-side auth gate: FizzStudio is a standalone app on its own subdomain
+    // (getStudioHref → https://studio.fizzspace.cn/...). Let visitors go straight
+    // there and let studio handle its own login — gating here would build a
+    // /login?redirect=/art-studio bounce to the retired in-web studio path.
   };
 
   const normalizedPathname = stripLocalePrefix(pathname);
