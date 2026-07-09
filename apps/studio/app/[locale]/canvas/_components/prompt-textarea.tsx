@@ -3,14 +3,11 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   MentionMenu,
-  PromptMentionMirror,
   insertMentionText,
   mentionRange,
-  removeMentionText,
   textareaMentionMenuPosition,
   type MentionItem,
 } from "@/lib/prompt-mentions";
-import { cn } from "@/lib/utils";
 
 /**
  * IME-safe prompt textarea. The card's prompt lives in the Yjs doc, so a plain
@@ -47,7 +44,6 @@ export function PromptTextarea({
   const [query, setQuery] = useState("");
   const [active, setActive] = useState(0);
   const [menuStyle, setMenuStyle] = useState<React.CSSProperties | undefined>();
-  const [scrollTop, setScrollTop] = useState(0);
 
   // Reflect external changes (a peer's edit, a reset) only when the field is
   // idle — never while the user is typing or mid-composition.
@@ -93,38 +89,18 @@ export function PromptTextarea({
     });
   }
 
-  function removeMention(range: { end: number; start: number }) {
-    const el = ref.current;
-    const removed = removeMentionText(draft, range);
-    setDraft(removed.value);
-    onCommit(removed.value);
-    setOpen(false);
-    requestAnimationFrame(() => {
-      el?.focus();
-      el?.setSelectionRange(removed.caret, removed.caret);
-    });
-  }
-
   return (
     <div ref={wrapperRef} className="nodrag nowheel relative">
-      {mentionsOn && (
-        <PromptMentionMirror
-          value={draft}
-          mentions={mentions ?? []}
-          onRemoveMention={removeMention}
-          scrollTop={scrollTop}
-          className={className}
-        />
-      )}
+      {/* Keep the native textarea as the only text layout. A transparent
+          textarea over a rich mention mirror cannot share caret, wrapping, or
+          scroll geometry once a visual chip is wider than its `@Image1`
+          token. Rich reference previews belong in the ReferenceStack above;
+          inline chips require a true single-DOM rich-text editor. */}
       <textarea
         {...rest}
         ref={ref}
         value={draft}
-        className={cn(
-          className,
-          "relative z-[1]",
-          mentionsOn && draft && "text-transparent caret-white selection:bg-sky-500/35"
-        )}
+        className={className}
         onChange={(e) => {
           setDraft(e.target.value);
           if (!composing.current) onCommit(e.target.value);
@@ -158,7 +134,6 @@ export function PromptTextarea({
           rest.onWheel?.(e);
         }}
         onScroll={(e) => {
-          setScrollTop(e.currentTarget.scrollTop);
           if (open) {
             refreshMention(e.currentTarget.value, e.currentTarget.selectionStart ?? 0);
           }

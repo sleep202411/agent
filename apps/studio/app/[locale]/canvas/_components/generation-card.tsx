@@ -900,7 +900,7 @@ function GenerationCard({
                   placeholder={t(promptPlaceholderKey(mode))}
                   rows={4}
                   autoFocus
-                  className="block max-h-40 w-full resize-none overflow-y-auto bg-transparent text-sm outline-none placeholder:text-muted-foreground"
+                  className="block max-h-40 w-full resize-none overflow-y-auto overscroll-contain bg-transparent pb-2 text-sm leading-6 outline-none placeholder:text-muted-foreground"
                 />
               )}
               <div className="flex min-h-10 items-center gap-2 pt-2">
