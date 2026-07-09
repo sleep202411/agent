@@ -8,7 +8,8 @@
  * (and the cache-without-CORS 304 trap). Restricted to our storage hosts to
  * avoid an open proxy / SSRF.
  */
-const ALLOWED_HOST = /^([a-z0-9-]+\.blob\.core\.windows\.net|v3\.fal\.media)$/i;
+const ALLOWED_HOST =
+  /^([a-z0-9-]+\.blob\.core\.windows\.net|v3\.fal\.media|media\.fizzdragon\.com|media\.fizzspace\.cn)$/i;
 
 export async function GET(request: Request): Promise<Response> {
   const target = new URL(request.url).searchParams.get("url");
