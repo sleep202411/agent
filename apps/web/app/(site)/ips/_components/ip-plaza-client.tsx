@@ -72,6 +72,10 @@ export function IpPlazaClient() {
     placementKey: "ip_plaza_for_you",
     locale,
   });
+  const { data: pinnedData } = useIpCommerceDiscovery({
+    placementKey: "ip_plaza_list_pinned",
+    locale,
+  });
 
   const rawProjects = useMemo<PlazaProject[]>(
     () => (listData?.pages.flatMap((page) => page.items) ?? []).map((ip) => toPlazaProject(ip, t)),
@@ -90,17 +94,32 @@ export function IpPlazaClient() {
     () => (forYouData?.items ?? []).map((item) => discoveryToPlazaProject(item, t)),
     [forYouData?.items, t]
   );
+  // Operator-pinned list entries (`ip_plaza_list_pinned`): native IP cards that
+  // lead the DEFAULT list. Scoped to the unfiltered view — when the visitor
+  // narrows by genre/tag/region or searches, they asked for something specific
+  // and the pins step aside. Server already sorts by the admin's sortOrder.
+  const pinnedProjects = useMemo<PlazaProject[]>(
+    () => (pinnedData?.items ?? []).map((item) => discoveryToPlazaProject(item, t)),
+    [pinnedData?.items, t]
+  );
+
+  const hasCategoryFilter = Boolean(selectedGenreCode || selectedTagCode || selectedRegion);
 
   const projects = useMemo(() => {
     const needle = debouncedSearch.trim().toLowerCase();
-    if (!needle) return rawProjects;
-    return rawProjects.filter((project) =>
+    let base = rawProjects;
+    if (!hasCategoryFilter && pinnedProjects.length > 0) {
+      const pinnedIds = new Set(pinnedProjects.map((project) => project.id));
+      base = [...pinnedProjects, ...rawProjects.filter((project) => !pinnedIds.has(project.id))];
+    }
+    if (!needle) return base;
+    return base.filter((project) =>
       [project.name, project.subtitle, project.description, ...project.genres, ...project.tags]
         .join(" ")
         .toLowerCase()
         .includes(needle)
     );
-  }, [debouncedSearch, rawProjects]);
+  }, [debouncedSearch, rawProjects, pinnedProjects, hasCategoryFilter]);
 
   const loadMoreRef = useRef<HTMLDivElement>(null);
   useEffect(() => {

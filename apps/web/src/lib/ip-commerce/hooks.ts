@@ -278,6 +278,10 @@ export function useMyIpCommerceIp(ipId: string | null | undefined, params?: { lo
     queryKey: ipCommerceKeys.myIp(ipId ?? "", params),
     queryFn: () => getMyIpCommerceIp(ipId!, params),
     enabled: Boolean(ipId),
+    // 404 is a definitive answer (not the creator / IP gone) — the default
+    // 3-retry backoff only pins the public detail page in its loading state
+    // for extra seconds before the not-found screen. Mirrors useIpCommerceIp.
+    retry: false,
     staleTime: 30_000,
   });
 }
