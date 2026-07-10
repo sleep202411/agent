@@ -37,6 +37,7 @@ import {
   WalletOwnerType,
   WalletTransactionStatus,
   WorkspaceType,
+  WorkspaceStatus,
   WorkspaceMemberRole,
   type BillingOrder,
   type BillingMembershipPlan,
@@ -79,6 +80,9 @@ import type {
   CreateAdminBillingRefundInput,
   CreateAdminUserWalletCreditInput,
   GetAdminUserWalletCreditQueryInput,
+  CreateAdminWorkspaceWalletCreditInput,
+  GetAdminWorkspaceWalletCreditQueryInput,
+  ListAdminWorkspacesQueryInput,
   CreateAdminWalletAdjustmentInput,
   ListAdminBillingOrdersQuery,
   ListAdminBillingProviderEventsQuery,
@@ -90,6 +94,7 @@ import type {
   ListBillingPricesQuery,
   ListWalletLedgerQuery,
   WalletDailyUsageQuery,
+  WalletMemberUsageQuery,
   QuoteAdminBillingRefundInput,
   UpdateAdminMembershipPlanInput,
   UpdateAdminBillingPriceInput,
@@ -589,6 +594,146 @@ export class BillingService {
             : String(r.day).slice(0, 10),
         credits: r.credits.toString(),
       })),
+    };
+  }
+
+  /**
+   * Per-member compute usage for a team workspace — how much each member spent,
+   * broken down by project. Powers the team admin's usage view. Admin-only
+   * (surfaces teammates' consumption). Reads the settled charges (settle/debit)
+   * on the workspace's compute pot, grouped by the submitting member + project.
+   * Members are keyed by userId; the client joins its team-members list for
+   * display names. Project names are resolved here (cheap PG join).
+   */
+  async walletMemberUsage(
+    user: AuthUser,
+    query: WalletMemberUsageQuery,
+    workspaceId?: string | null,
+  ) {
+    if (!workspaceId) {
+      throw new BadRequestException({
+        code: 'WORKSPACE_REQUIRED',
+        msg: 'Member usage is only available for a team workspace.',
+      });
+    }
+    // Per-member consumption is sensitive — restrict to workspace admins/owners.
+    await this.permissions.requireWorkspaceRole(
+      user.userId,
+      workspaceId,
+      WorkspaceMemberRole.admin,
+    );
+
+    const accounts = await this.prisma.walletAccount.findMany({
+      where: {
+        ownerType: WalletOwnerType.workspace,
+        ownerId: workspaceId,
+        currency: WalletCurrencyType.compute_point,
+        balanceKind: WalletBalanceKind.consumable,
+      },
+      select: { id: true },
+    });
+    if (accounts.length === 0) {
+      return {
+        rangeDays: query.days,
+        projectId: query.projectId ?? null,
+        members: [],
+      };
+    }
+
+    const accountIds = accounts.map((account) => account.id);
+    const from = new Date(Date.now() - query.days * 24 * 60 * 60 * 1000);
+    const projectFilter = query.projectId
+      ? Prisma.sql`AND t.project_id = ${query.projectId}::uuid`
+      : Prisma.empty;
+    const rows = await this.prisma.$queryRaw<
+      Array<{
+        actorUserId: string | null;
+        projectId: string | null;
+        credits: bigint;
+        jobs: bigint;
+      }>
+    >(Prisma.sql`
+      SELECT t.actor_user_id AS "actorUserId",
+             t.project_id AS "projectId",
+             SUM(e.amount)::bigint AS credits,
+             COUNT(*)::bigint AS jobs
+      FROM wallet_ledger_entries e
+      JOIN wallet_transactions t ON t.id = e.transaction_id
+      WHERE e.account_id IN (${Prisma.join(accountIds)})
+        AND e.entry_type::text IN ('settle','debit')
+        AND e.created_at >= ${from}
+        ${projectFilter}
+      GROUP BY t.actor_user_id, t.project_id
+    `);
+
+    const projectIds = [
+      ...new Set(
+        rows
+          .map((row) => row.projectId)
+          .filter((id): id is string => id != null),
+      ),
+    ];
+    const projects = projectIds.length
+      ? await this.prisma.platformProject.findMany({
+          where: { id: { in: projectIds } },
+          select: { id: true, name: true },
+        })
+      : [];
+    const projectNameById = new Map(projects.map((p) => [p.id, p.name]));
+
+    type MemberProject = {
+      projectId: string | null;
+      projectName: string | null;
+      credits: bigint;
+      jobs: number;
+    };
+    type MemberAgg = {
+      userId: string;
+      totalCredits: bigint;
+      totalJobs: number;
+      projects: MemberProject[];
+    };
+    const byMember = new Map<string, MemberAgg>();
+    for (const row of rows) {
+      const userId = row.actorUserId ?? 'unknown';
+      let member = byMember.get(userId);
+      if (!member) {
+        member = { userId, totalCredits: 0n, totalJobs: 0, projects: [] };
+        byMember.set(userId, member);
+      }
+      const jobs = Number(row.jobs);
+      member.totalCredits += row.credits;
+      member.totalJobs += jobs;
+      member.projects.push({
+        projectId: row.projectId,
+        projectName: row.projectId
+          ? (projectNameById.get(row.projectId) ?? null)
+          : null,
+        credits: row.credits,
+        jobs,
+      });
+    }
+
+    const members = [...byMember.values()]
+      .sort((a, b) => (b.totalCredits > a.totalCredits ? 1 : -1))
+      .map((member) => ({
+        userId: member.userId,
+        totalCredits: member.totalCredits.toString(),
+        totalJobs: member.totalJobs,
+        projects: member.projects
+          .sort((a, b) => (b.credits > a.credits ? 1 : -1))
+          .map((project) => ({
+            projectId: project.projectId,
+            projectName: project.projectName,
+            credits: project.credits.toString(),
+            jobs: project.jobs,
+          })),
+      }));
+
+    return {
+      rangeDays: query.days,
+      projectId: query.projectId ?? null,
+      members,
     };
   }
 
@@ -1350,6 +1495,213 @@ export class BillingService {
       balanceKind,
       availableBalance: account ? account.availableBalance.toString() : '0',
       hasWallet: Boolean(account),
+    };
+  }
+
+  /**
+   * Credit (or debit) a WORKSPACE's compute_point pot directly by workspaceId —
+   * the only admin path that can fund a TEAM workspace. Ensures the pot exists
+   * (workspaces always own exactly one compute_point/consumable account) and
+   * routes through createAdminWalletAdjustment, which owns the grant / balance /
+   * idempotency / audit semantics. Rejects deleted or non-active workspaces so
+   * funds never land in an unreachable pot.
+   */
+  async createAdminWorkspaceWalletCredit(
+    adminId: string,
+    input: CreateAdminWorkspaceWalletCreditInput,
+  ) {
+    const workspace = await this.prisma.workspace.findFirst({
+      where: { id: input.workspaceId, deletedAt: null },
+      select: { id: true, name: true, type: true, status: true },
+    });
+    if (!workspace) {
+      throw new NotFoundException({
+        code: 'WORKSPACE_NOT_FOUND',
+        msg: 'Workspace not found.',
+      });
+    }
+    if (workspace.status !== WorkspaceStatus.active) {
+      throw new ConflictException({
+        code: 'WORKSPACE_NOT_ACTIVE',
+        msg: 'Only active workspaces can be credited.',
+      });
+    }
+
+    const account = await this.prisma.walletAccount.upsert({
+      where: {
+        ownerType_ownerId_currency_balanceKind: {
+          ownerType: WalletOwnerType.workspace,
+          ownerId: workspace.id,
+          currency: WalletCurrencyType.compute_point,
+          balanceKind: WalletBalanceKind.consumable,
+        },
+      },
+      create: {
+        ownerType: WalletOwnerType.workspace,
+        ownerId: workspace.id,
+        currency: WalletCurrencyType.compute_point,
+        balanceKind: WalletBalanceKind.consumable,
+        status: WalletAccountStatus.active,
+      },
+      update: {},
+    });
+
+    return this.createAdminWalletAdjustment(adminId, account.id, {
+      amount: input.amount,
+      grantType: input.grantType,
+      expiresAt: input.expiresAt,
+      reason: input.reason,
+      idempotencyKey: input.idempotencyKey,
+      metadata: {
+        ...input.metadata,
+        subject: 'workspace',
+        workspaceId: workspace.id,
+        workspaceName: workspace.name,
+        workspaceType: workspace.type,
+      },
+    });
+  }
+
+  /**
+   * Read-only compute_point balance for a single workspace pot (team or
+   * personal). Sweeps lapsed grants first so the number excludes expired credits.
+   */
+  async getAdminWorkspaceWalletBalance(
+    input: GetAdminWorkspaceWalletCreditQueryInput,
+  ) {
+    const workspace = await this.prisma.workspace.findFirst({
+      where: { id: input.workspaceId, deletedAt: null },
+      select: {
+        id: true,
+        name: true,
+        type: true,
+        status: true,
+        ownerUserId: true,
+      },
+    });
+    if (!workspace) {
+      throw new NotFoundException({
+        code: 'WORKSPACE_NOT_FOUND',
+        msg: 'Workspace not found.',
+      });
+    }
+
+    let account = await this.prisma.walletAccount.findUnique({
+      where: {
+        ownerType_ownerId_currency_balanceKind: {
+          ownerType: WalletOwnerType.workspace,
+          ownerId: workspace.id,
+          currency: WalletCurrencyType.compute_point,
+          balanceKind: WalletBalanceKind.consumable,
+        },
+      },
+      select: { id: true, availableBalance: true, heldBalance: true },
+    });
+    if (
+      account &&
+      isGrantBackedCurrencyKind(
+        WalletCurrencyType.compute_point,
+        WalletBalanceKind.consumable,
+      )
+    ) {
+      await this.walletLedger
+        .expireLapsedGrants(account.id)
+        .catch(() => undefined);
+      account = await this.prisma.walletAccount.findUnique({
+        where: { id: account.id },
+        select: { id: true, availableBalance: true, heldBalance: true },
+      });
+    }
+
+    return {
+      workspace: {
+        id: workspace.id,
+        name: workspace.name,
+        type: workspace.type,
+        status: workspace.status,
+        ownerUserId: workspace.ownerUserId,
+      },
+      accountId: account?.id ?? null,
+      hasWallet: Boolean(account),
+      availableBalance: account ? account.availableBalance.toString() : '0',
+      heldBalance: account ? account.heldBalance.toString() : '0',
+    };
+  }
+
+  /**
+   * Search workspaces for the admin team-wallet picker. Defaults to team
+   * workspaces; `query` matches id / name (case-insensitive) / ownerUserId.
+   * Returns each workspace's current compute_point balance so the operator can
+   * pick the right pot without a second round-trip.
+   */
+  async listAdminWorkspaces(input: ListAdminWorkspacesQueryInput) {
+    const where: Prisma.WorkspaceWhereInput = { deletedAt: null };
+    if (input.type !== 'all') {
+      where.type =
+        input.type === 'team' ? WorkspaceType.team : WorkspaceType.personal;
+    }
+    const query = input.query?.trim();
+    if (query) {
+      const or: Prisma.WorkspaceWhereInput[] = [
+        { name: { contains: query, mode: 'insensitive' } },
+        { ownerUserId: query },
+      ];
+      if (
+        /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+          query,
+        )
+      ) {
+        or.push({ id: query });
+      }
+      where.OR = or;
+    }
+
+    const workspaces = await this.prisma.workspace.findMany({
+      where,
+      orderBy: [{ createdAt: 'desc' }],
+      take: input.limit,
+      select: {
+        id: true,
+        name: true,
+        type: true,
+        status: true,
+        ownerUserId: true,
+        createdAt: true,
+        _count: { select: { members: true } },
+      },
+    });
+
+    const accounts = workspaces.length
+      ? await this.prisma.walletAccount.findMany({
+          where: {
+            ownerType: WalletOwnerType.workspace,
+            ownerId: { in: workspaces.map((workspace) => workspace.id) },
+            currency: WalletCurrencyType.compute_point,
+            balanceKind: WalletBalanceKind.consumable,
+          },
+          select: { ownerId: true, availableBalance: true, heldBalance: true },
+        })
+      : [];
+    const balanceByWorkspace = new Map(
+      accounts.map((account) => [account.ownerId, account]),
+    );
+
+    return {
+      items: workspaces.map((workspace) => {
+        const account = balanceByWorkspace.get(workspace.id);
+        return {
+          id: workspace.id,
+          name: workspace.name,
+          type: workspace.type,
+          status: workspace.status,
+          ownerUserId: workspace.ownerUserId,
+          memberCount: workspace._count.members,
+          createdAt: workspace.createdAt.toISOString(),
+          hasWallet: Boolean(account),
+          availableBalance: account ? account.availableBalance.toString() : '0',
+          heldBalance: account ? account.heldBalance.toString() : '0',
+        };
+      }),
     };
   }
 

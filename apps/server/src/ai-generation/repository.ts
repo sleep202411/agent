@@ -504,6 +504,74 @@ export class AiGenerationRepository {
     return this.findById(id);
   }
 
+  /**
+   * Claim a running job's terminal completion atomically:
+   * `UPDATE ... WHERE id = ? AND status = 'in_progress'`. Returns the fresh
+   * row if THIS call won the transition, or `null` if the job already left
+   * in_progress — i.e. a user cancel (issued out-of-band from the API, not
+   * through the BullMQ processor) got there first. The caller MUST treat null
+   * as "someone else owns the outcome" and discard: this is the barrier that
+   * stops a cancelled job from being delivered, and stops us from settling a
+   * hold the cancel path already released.
+   */
+  async completeIfRunning(
+    id: string,
+    patch: Partial<AiJob>,
+  ): Promise<AiJob | null> {
+    const data = this.patchToRow(patch);
+    const result = await this.prisma.aiJob.updateMany({
+      where: { id, status: 'in_progress' },
+      data: { ...data, version: { increment: 1 } },
+    });
+    if (result.count === 0) return null;
+    if (patch.outputs) await this.replaceOutputs(id, patch.outputs);
+    return this.findById(id);
+  }
+
+  /**
+   * Requeue a retryable failure atomically, but ONLY if the job is still
+   * running (`WHERE id = ? AND status = 'in_progress'`). Returns the fresh row
+   * if the requeue applied, or `null` if the job already left in_progress — a
+   * user cancel refunded and terminated it out-of-band. Treating null as
+   * "don't re-enqueue" is what stops a cancelled+refunded job from being
+   * resurrected to in_queue and re-run into a free (unsettleable) generation.
+   */
+  async requeueIfRunning(
+    id: string,
+    patch: Partial<AiJob>,
+  ): Promise<AiJob | null> {
+    const data = this.patchToRow(patch);
+    const result = await this.prisma.aiJob.updateMany({
+      where: { id, status: 'in_progress' },
+      data: { ...data, version: { increment: 1 } },
+    });
+    if (result.count === 0) return null;
+    if (patch.outputs) await this.replaceOutputs(id, patch.outputs);
+    return this.findById(id);
+  }
+
+  /**
+   * Claim a cancellation atomically: only transitions a job that is still in a
+   * cancellable (non-terminal) state. Returns the fresh row if THIS call won,
+   * or `null` if the job already reached a terminal state (e.g. the worker
+   * completed it first). The caller must release the hold / provider slot ONLY
+   * when this returns non-null, so a cancel that lost the race can never refund
+   * an already-charged, delivered job.
+   */
+  async cancelIfActive(
+    id: string,
+    patch: Partial<AiJob>,
+  ): Promise<AiJob | null> {
+    const data = this.patchToRow(patch);
+    const result = await this.prisma.aiJob.updateMany({
+      where: { id, status: { in: ['created', 'in_queue', 'in_progress'] } },
+      data: { ...data, version: { increment: 1 } },
+    });
+    if (result.count === 0) return null;
+    if (patch.outputs) await this.replaceOutputs(id, patch.outputs);
+    return this.findById(id);
+  }
+
   async recordAttempt(
     job: Pick<AiJob, 'id' | 'attempt'>,
     input: RecordAiJobAttemptInput,

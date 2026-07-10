@@ -6,12 +6,17 @@ import {
 import { ModuleRef } from '@nestjs/core';
 import { CharacterGrantService } from '../characters/character-grant.service';
 import {
+  BillingOrderStatus,
+  BillingSubjectType,
+  BillingSubscriptionStatus,
   PlatformDocumentStatus,
   PlatformDocumentType,
   PlatformProjectStatus,
   ProjectMemberRole,
   ProjectMemberStatus,
   ProjectVisibility,
+  WalletBalanceKind,
+  WalletCurrencyType,
   WalletOwnerType,
   WorkspaceMemberRole,
   WorkspaceMemberStatus,
@@ -481,6 +486,107 @@ export class WorkspacesService {
         msg: 'Personal workspace cannot be deleted.',
       });
     }
+
+    // Block deletion while the team still holds money or a live billing
+    // relationship. A soft-deleted workspace's compute pot becomes unreadable
+    // (every wallet read requires an active workspace) while order fulfillment
+    // has no deletedAt guard — so leftover credits, in-flight holds, a charging
+    // subscription, or a pending order would strand real money in an
+    // unreachable pot. Require the owner to clear these first. Match both the
+    // workspaceId FK and the (subjectType, subjectId) subject so no team-scoped
+    // record is missed regardless of which the billing path populated.
+    const subjectFilter = {
+      OR: [
+        { workspaceId },
+        {
+          subjectType: BillingSubjectType.workspace,
+          subjectId: workspaceId,
+        },
+      ],
+    };
+    const computeAccount = await this.prisma.walletAccount.findUnique({
+      where: {
+        ownerType_ownerId_currency_balanceKind: {
+          ownerType: WalletOwnerType.workspace,
+          ownerId: workspaceId,
+          currency: WalletCurrencyType.compute_point,
+          balanceKind: WalletBalanceKind.consumable,
+        },
+      },
+      select: { id: true },
+    });
+    if (computeAccount) {
+      // Sweep lapsed grants first so worthless expired credits don't over-block.
+      await this.wallets
+        .expireLapsedGrants(computeAccount.id)
+        .catch(() => undefined);
+    }
+    const [freshAccount, activeSubscriptions, pendingOrders] =
+      await Promise.all([
+        computeAccount
+          ? this.prisma.walletAccount.findUnique({
+              where: { id: computeAccount.id },
+              select: { availableBalance: true, heldBalance: true },
+            })
+          : Promise.resolve(null),
+        this.prisma.billingSubscription.count({
+          where: {
+            status: {
+              in: [
+                BillingSubscriptionStatus.active,
+                BillingSubscriptionStatus.past_due,
+              ],
+            },
+            ...subjectFilter,
+          },
+        }),
+        this.prisma.billingOrder.count({
+          where: {
+            status: BillingOrderStatus.pending_payment,
+            ...subjectFilter,
+          },
+        }),
+      ]);
+
+    const available = freshAccount?.availableBalance ?? 0n;
+    const held = freshAccount?.heldBalance ?? 0n;
+    const blockers: Array<{ type: string; detail: string }> = [];
+    if (available > 0n) {
+      blockers.push({
+        type: 'compute_balance',
+        detail: `${available} compute credits remaining`,
+      });
+    }
+    if (held > 0n) {
+      blockers.push({
+        type: 'compute_hold',
+        detail: `${held} compute credits held by in-progress generations`,
+      });
+    }
+    if (activeSubscriptions > 0) {
+      blockers.push({
+        type: 'active_subscription',
+        detail: `${activeSubscriptions} active plan${activeSubscriptions === 1 ? '' : 's'}`,
+      });
+    }
+    if (pendingOrders > 0) {
+      blockers.push({
+        type: 'pending_order',
+        detail: `${pendingOrders} unpaid order${pendingOrders === 1 ? '' : 's'}`,
+      });
+    }
+    if (blockers.length > 0) {
+      throw new ConflictException({
+        code: 'WORKSPACE_NOT_EMPTY',
+        msg: `This team still has ${blockers
+          .map((blocker) => blocker.detail)
+          .join(
+            '; ',
+          )}. Spend down the remaining credits (or ask support to adjust the balance), let in-progress generations finish, cancel any active plan, and settle pending orders before deleting.`,
+        blockers,
+      });
+    }
+
     const result = await this.prisma.workspace.updateMany({
       where: {
         id: workspaceId,

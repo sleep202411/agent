@@ -268,7 +268,6 @@ export class AiGenerationService {
           this.billingWallet.reserveForJobInTransaction({
             tx,
             job,
-            requestIdempotencyKey: idempotencyKey,
           }),
         buildJob: (queuePosition) => {
           const estimate = this.eta.estimateForNewJob(
@@ -556,12 +555,13 @@ export class AiGenerationService {
       releaseReason: string;
     },
   ): Promise<AiJob> {
-    await this.cancelProviderJobIfNeeded(job);
-    await this.providerCapacity.release(job);
-    await this.billingWallet.releaseForJob(job, opts.releaseReason);
-
     const now = new Date().toISOString();
-    const next = await this.store.update(job.id, {
+    // Claim the cancellation atomically FIRST. A worker completing this job runs
+    // out-of-band from this API call, so the status write must be the barrier:
+    // if the worker already claimed completion (in_progress → completed), this
+    // returns null and we must NOT release the hold or cancel the provider run —
+    // otherwise a delivered job would also be refunded (free generation).
+    const cancelled = await this.store.cancelIfActive(job.id, {
       status: 'cancelled',
       stage: 'cancelled',
       completedAt: now,
@@ -578,13 +578,22 @@ export class AiGenerationService {
         createdAt: now,
       },
     });
+    if (!cancelled) {
+      // Lost the race: the job reached a terminal state first. The winner
+      // (completion / failure) already owns the hold + outputs; leave them be.
+      return (await this.store.findById(job.id)) ?? job;
+    }
+
+    await this.cancelProviderJobIfNeeded(job);
+    await this.providerCapacity.release(job);
+    await this.billingWallet.releaseForJob(cancelled, opts.releaseReason);
+
     const repositioned = await this.store.recomputeQueuePositions(
       job.queueName,
     );
-    const updated = next ?? job;
-    this.emitJobUpdate(updated);
-    this.emitRepositioned(repositioned, updated.id);
-    return updated;
+    this.emitJobUpdate(cancelled);
+    this.emitRepositioned(repositioned, cancelled.id);
+    return cancelled;
   }
 
   /**

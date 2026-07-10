@@ -203,6 +203,17 @@ export const WalletDailyUsageQuerySchema = z.object({
 });
 export type WalletDailyUsageQuery = z.infer<typeof WalletDailyUsageQuerySchema>;
 
+// Per-member compute usage for a team workspace, optionally scoped to one
+// project. Admin-only (surfaces teammates' consumption). Fixed to the compute
+// pot — the only workspace-owned currency.
+export const WalletMemberUsageQuerySchema = z.object({
+  days: z.coerce.number().int().min(1).max(90).default(30),
+  projectId: z.string().uuid().optional(),
+});
+export type WalletMemberUsageQuery = z.infer<
+  typeof WalletMemberUsageQuerySchema
+>;
+
 export const CreateAdminWalletAdjustmentSchema = z
   .object({
     amount: z.coerce
@@ -287,6 +298,67 @@ export const GetAdminUserWalletCreditQuerySchema = z.object({
 });
 export type GetAdminUserWalletCreditQueryInput = z.infer<
   typeof GetAdminUserWalletCreditQuerySchema
+>;
+
+// ── Admin team/workspace compute credit ─────────────────────────────────────
+// compute_point pots are workspace-owned. The user-credit endpoint above resolves
+// a userId → that user's PERSONAL workspace; it cannot express a team workspace.
+// This targets ANY workspace pot directly by workspaceId — the only way to fund a
+// team pool — and delegates to the same account-level adjustment service, so the
+// same active-account / grant-backed / idempotency guards apply. amount travels as
+// a string so large grants never lose precision through a JS number.
+export const CreateAdminWorkspaceWalletCreditSchema = z
+  .object({
+    workspaceId: z.string().uuid(),
+    amount: z.coerce
+      .bigint()
+      .refine((value) => value !== 0n, 'Amount cannot be zero.'),
+    grantType: AdminWalletCreditGrantTypeSchema.default('admin_adjustment'),
+    expiresAt: z.coerce.date().nullable().optional(),
+    reason: z.string().trim().min(1).max(1000),
+    idempotencyKey: z.string().trim().min(8).max(180),
+    metadata: z.record(z.string(), z.unknown()).default({}),
+  })
+  .superRefine((value, ctx) => {
+    if (value.expiresAt && value.expiresAt <= new Date()) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['expiresAt'],
+        message: 'Expiry must be in the future.',
+      });
+    }
+    // Debits (negative) are only legitimate as an admin adjustment — mirrors the
+    // user-credit + account-adjustment guards (all three share one service).
+    if (value.amount < 0n && value.grantType !== 'admin_adjustment') {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['grantType'],
+        message: 'Only admin_adjustment may be negative.',
+      });
+    }
+  });
+export type CreateAdminWorkspaceWalletCreditInput = z.infer<
+  typeof CreateAdminWorkspaceWalletCreditSchema
+>;
+
+// Read-only compute_point balance for one workspace pot (team or personal).
+export const GetAdminWorkspaceWalletCreditQuerySchema = z.object({
+  workspaceId: z.string().uuid(),
+});
+export type GetAdminWorkspaceWalletCreditQueryInput = z.infer<
+  typeof GetAdminWorkspaceWalletCreditQuerySchema
+>;
+
+// Workspace search powering the admin team-wallet picker. Defaults to team
+// workspaces (the reason this surface exists); `query` matches workspace id,
+// name (case-insensitive contains), or ownerUserId (exact).
+export const ListAdminWorkspacesQuerySchema = z.object({
+  query: z.string().trim().max(120).optional(),
+  type: z.enum(['team', 'personal', 'all']).default('team'),
+  limit: z.coerce.number().int().min(1).max(50).default(20),
+});
+export type ListAdminWorkspacesQueryInput = z.infer<
+  typeof ListAdminWorkspacesQuerySchema
 >;
 
 export const ListAdminBillingPricesQuerySchema = z.object({

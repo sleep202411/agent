@@ -612,6 +612,26 @@ export type AdminBillingPromotionsData = {
   items: BillingPromotionRow[];
 };
 
+// Workspace row + compute_point balance for the team-wallet picker.
+export type AdminWorkspaceType = "team" | "personal";
+
+export type AdminWorkspaceRow = {
+  id: string;
+  name: string;
+  type: AdminWorkspaceType;
+  status: string;
+  ownerUserId: string;
+  memberCount: number;
+  createdAt: string;
+  hasWallet: boolean;
+  availableBalance: string;
+  heldBalance: string;
+};
+
+export type AdminBillingWorkspacesData = {
+  items: AdminWorkspaceRow[];
+};
+
 export type VoucherStatus = "active" | "redeemed" | "void" | "expired";
 export type VoucherGrantType = "compute_credits";
 

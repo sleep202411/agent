@@ -35,6 +35,7 @@ import {
   IconUsersGroup,
   IconUserSearch,
   IconVersions,
+  IconWallet,
 } from "@tabler/icons-react";
 
 export type NavIcon = typeof IconDashboard;
@@ -162,6 +163,17 @@ export const MODULE_NAV: Record<string, ModuleNavGroup[]> = {
           href: "/billing/memberships",
           label: "会员计划",
           icon: IconUsersGroup,
+          permission: "billing.read",
+        },
+      ],
+    },
+    {
+      label: "算力钱包",
+      items: [
+        {
+          href: "/billing/team-wallet",
+          label: "团队算力池",
+          icon: IconWallet,
           permission: "billing.read",
         },
       ],

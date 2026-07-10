@@ -45,6 +45,9 @@ import {
   CreateAdminBillingRefundSchema,
   CreateAdminUserWalletCreditSchema,
   GetAdminUserWalletCreditQuerySchema,
+  CreateAdminWorkspaceWalletCreditSchema,
+  GetAdminWorkspaceWalletCreditQuerySchema,
+  ListAdminWorkspacesQuerySchema,
   IgnoreAdminBillingProviderEventSchema,
   QuoteAdminBillingRefundSchema,
   UpdateAdminMembershipPlanSchema,
@@ -70,6 +73,9 @@ import {
   type CreateAdminBillingRefundInput,
   type CreateAdminUserWalletCreditInput,
   type GetAdminUserWalletCreditQueryInput,
+  type CreateAdminWorkspaceWalletCreditInput,
+  type GetAdminWorkspaceWalletCreditQueryInput,
+  type ListAdminWorkspacesQueryInput,
   type IgnoreAdminBillingProviderEventInput,
   type ListAdminMembershipPlansQuery,
   type ListAdminBillingLedgerJournalsQuery,
@@ -160,6 +166,62 @@ export class BillingAdminController {
     return {
       code: 200,
       data: await this.billing.getAdminUserWalletBalance(query),
+    };
+  }
+
+  // Credit/debit a TEAM (or any) workspace compute_point pot directly — the only
+  // path that can fund a team pool (user-credits redirects compute→personal ws).
+  @RequireAdminPermissions(ADMIN_PERMISSION_KEYS.BillingWrite)
+  @Post('wallets/workspace-credits')
+  async createWorkspaceWalletCredit(
+    @CurrentAdmin() admin: AdminActor,
+    @Body(new ZodValidationPipe(CreateAdminWorkspaceWalletCreditSchema))
+    body: CreateAdminWorkspaceWalletCreditInput,
+    @Req() request: Request,
+  ) {
+    const data = await this.billing.createAdminWorkspaceWalletCredit(
+      admin.id,
+      body,
+    );
+    await this.audit(
+      admin,
+      request,
+      'admin.billing.wallet.workspace_credit',
+      'wallet_account',
+      data.account.id,
+      {
+        workspaceId: body.workspaceId,
+        amount: body.amount.toString(),
+        grantType: body.grantType,
+        expiresAt: body.expiresAt?.toISOString() ?? null,
+        reason: body.reason,
+        idempotencyKey: body.idempotencyKey,
+      },
+    );
+    return { code: 200, data };
+  }
+
+  @RequireAdminPermissions(ADMIN_PERMISSION_KEYS.BillingRead)
+  @Get('wallets/workspace-credits')
+  async getWorkspaceWalletCredit(
+    @Query(new ZodValidationPipe(GetAdminWorkspaceWalletCreditQuerySchema))
+    query: GetAdminWorkspaceWalletCreditQueryInput,
+  ) {
+    return {
+      code: 200,
+      data: await this.billing.getAdminWorkspaceWalletBalance(query),
+    };
+  }
+
+  @RequireAdminPermissions(ADMIN_PERMISSION_KEYS.BillingRead)
+  @Get('workspaces')
+  async listWorkspaces(
+    @Query(new ZodValidationPipe(ListAdminWorkspacesQuerySchema))
+    query: ListAdminWorkspacesQueryInput,
+  ) {
+    return {
+      code: 200,
+      data: await this.billing.listAdminWorkspaces(query),
     };
   }
 

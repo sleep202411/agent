@@ -6,9 +6,11 @@ import { useTranslations } from "next-intl";
 import {
   IconBolt,
   IconChartBar,
+  IconChevronRight,
   IconClock,
   IconListDetails,
   IconPhoto,
+  IconUsers,
   IconVideo,
 } from "@tabler/icons-react";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -17,6 +19,7 @@ import { api } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { useWorkspace } from "@/app/_components/workspace-context";
 import { listProjects, type ProjectRef } from "@/lib/collab/projects-api";
+import { listWorkspaceMembers, type SharingMember } from "@/lib/collab/sharing-api";
 import {
   generationStatusFromRaw,
   listFizzAiJobs,
@@ -50,6 +53,29 @@ interface DailyUsagePoint {
 interface DailyUsageData {
   days: DailyUsagePoint[];
 }
+
+interface MemberUsageProjectRow {
+  projectId: string | null;
+  projectName: string | null;
+  credits: string;
+  jobs: number;
+}
+
+interface MemberUsageRow {
+  userId: string;
+  totalCredits: string;
+  totalJobs: number;
+  projects: MemberUsageProjectRow[];
+}
+
+interface MemberUsageData {
+  rangeDays: number;
+  projectId: string | null;
+  members: MemberUsageRow[];
+}
+
+const MEMBER_USAGE_RANGES = [7, 30, 90] as const;
+const EMPTY_MEMBERS: SharingMember[] = [];
 
 const JOB_HISTORY_LIMIT = 100;
 const LEDGER_LIMIT = 100;
@@ -210,6 +236,19 @@ export default function AnalyticsSettingsPage() {
     staleTime: 20_000,
   });
 
+  // Team members power the member-usage panel: display names (the usage endpoint
+  // is keyed by userId) and the caller's own role, which gates the panel — per-
+  // member consumption is admin-only (the server enforces it too).
+  const membersQuery = useQuery({
+    queryKey: ["settings", "analytics", "members", ws?.id],
+    enabled: Boolean(ws?.id) && ws?.type === "team",
+    queryFn: () => listWorkspaceMembers(ws!.id),
+    staleTime: 20_000,
+  });
+  const members = membersQuery.data ?? EMPTY_MEMBERS;
+  const selfRole = members.find((member) => member.isSelf)?.role;
+  const canViewMemberUsage = ws?.type === "team" && (selfRole === "owner" || selfRole === "admin");
+
   const projects = projectsQuery.data ?? EMPTY_PROJECTS;
   const dailyAxis = useMemo(
     () => buildDailyAxis(dailyUsage.data?.days ?? [], DAILY_USAGE_DAYS),
@@ -331,6 +370,10 @@ export default function AnalyticsSettingsPage() {
         <DailyUsageChart axis={dailyAxis} />
       </Panel>
 
+      {canViewMemberUsage && (
+        <MemberUsagePanel workspaceId={ws.id} projects={projects} members={members} />
+      )}
+
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
         <Panel title={t("modelsUsage")}>
           {modelRows.length > 0 ? (
@@ -409,6 +452,212 @@ export default function AnalyticsSettingsPage() {
         )}
       </Panel>
     </main>
+  );
+}
+
+/** Per-member compute usage for a team (admin-only), broken down by project. */
+function MemberUsagePanel({
+  workspaceId,
+  projects,
+  members,
+}: {
+  workspaceId: string;
+  projects: ProjectRef[];
+  members: SharingMember[];
+}) {
+  const t = useTranslations("settings");
+  const [range, setRange] = useState<number>(30);
+  const [projectId, setProjectId] = useState("");
+  const [expanded, setExpanded] = useState<Set<string>>(() => new Set());
+
+  const usage = useQuery({
+    queryKey: ["settings", "analytics", "member-usage", workspaceId, range, projectId],
+    enabled: Boolean(workspaceId),
+    queryFn: () =>
+      api.get<MemberUsageData>("/aurora/billing/wallet-ledger/member-usage", {
+        params: { days: range, projectId: projectId || undefined },
+      }),
+    staleTime: 20_000,
+  });
+
+  const identity = useMemo(() => {
+    const map = new Map<string, SharingMember>();
+    for (const member of members) map.set(member.userId, member);
+    return map;
+  }, [members]);
+
+  const rows = usage.data?.members ?? [];
+  const maxCredits = rows.reduce((max, row) => {
+    const credits = bigintFromString(row.totalCredits);
+    return credits > max ? credits : max;
+  }, BigInt(0));
+
+  function toggle(userId: string) {
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      if (next.has(userId)) next.delete(userId);
+      else next.add(userId);
+      return next;
+    });
+  }
+
+  return (
+    <Panel
+      title={t("memberUsage")}
+      icon={<IconUsers className="size-4 text-muted-foreground" />}
+      action={
+        <select
+          value={projectId}
+          onChange={(event) => setProjectId(event.target.value)}
+          className="h-9 max-w-[200px] rounded-md bg-input/30 px-2 text-sm text-foreground outline-none"
+          aria-label={t("projectFilter")}
+        >
+          <option value="">{t("allProjects")}</option>
+          {projects.map((project) => (
+            <option key={project.id} value={project.id}>
+              {project.name}
+            </option>
+          ))}
+        </select>
+      }
+    >
+      <div className="mb-3 flex items-center justify-between gap-2">
+        <p className="text-xs text-muted-foreground">{t("memberUsageWindow", { count: range })}</p>
+        <div className="flex gap-1">
+          {MEMBER_USAGE_RANGES.map((option) => (
+            <button
+              key={option}
+              type="button"
+              onClick={() => setRange(option)}
+              className={cn(
+                "rounded-md px-2 py-1 text-xs font-medium tabular-nums transition-colors",
+                option === range
+                  ? "bg-white/10 text-foreground"
+                  : "text-muted-foreground hover:text-foreground"
+              )}
+            >
+              {t("lastNDays", { count: option })}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {usage.isLoading ? (
+        <div className="space-y-3">
+          <Skeleton className="h-10 w-full rounded-lg" />
+          <Skeleton className="h-10 w-full rounded-lg" />
+          <Skeleton className="h-10 w-full rounded-lg" />
+        </div>
+      ) : usage.isError ? (
+        <p className="text-sm text-muted-foreground">{t("usageAnalyticsLoadFailed")}</p>
+      ) : rows.length === 0 ? (
+        <EmptyState
+          icon={<IconUsers className="size-5" />}
+          title={t("noUsageDataYet")}
+          body={t("noMemberUsageYet")}
+        />
+      ) : (
+        <div className="space-y-1.5">
+          {rows.map((row) => {
+            const member = identity.get(row.userId);
+            const credits = bigintFromString(row.totalCredits);
+            const width = `${
+              maxCredits > BigInt(0)
+                ? Math.max(4, Number((credits * BigInt(1000)) / maxCredits) / 10)
+                : 0
+            }%`;
+            const name = member?.nickname?.trim()
+              ? member.nickname
+              : row.userId === "unknown"
+                ? t("memberUnknown")
+                : row.userId;
+            const isOpen = expanded.has(row.userId);
+            return (
+              <div key={row.userId}>
+                <button
+                  type="button"
+                  onClick={() => toggle(row.userId)}
+                  className="w-full rounded-lg px-2 py-2 text-left transition-colors hover:bg-white/[0.04]"
+                  aria-expanded={isOpen}
+                >
+                  <div className="flex items-center gap-3">
+                    <IconChevronRight
+                      className={cn(
+                        "size-4 shrink-0 text-muted-foreground transition-transform",
+                        isOpen && "rotate-90"
+                      )}
+                    />
+                    <MemberAvatar member={member} name={name} />
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center justify-between gap-3">
+                        <span className="truncate text-sm font-medium">
+                          {name}
+                          {member?.isSelf ? (
+                            <span className="ml-1.5 text-xs text-muted-foreground">
+                              {t("memberSelfSuffix")}
+                            </span>
+                          ) : null}
+                        </span>
+                        <span className="flex shrink-0 items-center gap-1 text-sm font-semibold tabular-nums">
+                          <IconBolt className="size-3.5" stroke={1.8} />
+                          {formatBigint(credits)}
+                        </span>
+                      </div>
+                      <div className="mt-1.5 flex items-center gap-2">
+                        <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-white/[0.06]">
+                          <div className="h-full rounded-full bg-white/70" style={{ width }} />
+                        </div>
+                        <span className="shrink-0 text-xs text-muted-foreground tabular-nums">
+                          {t("memberGenerations", { count: row.totalJobs })}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                </button>
+                {isOpen && (
+                  <div className="mt-0.5 mb-1 ml-11 space-y-1 border-l border-white/[0.06] pl-3">
+                    {row.projects.map((project) => (
+                      <div
+                        key={project.projectId ?? "none"}
+                        className="flex items-center justify-between gap-3 text-xs"
+                      >
+                        <span className="truncate text-muted-foreground">
+                          {project.projectId
+                            ? (project.projectName ?? project.projectId)
+                            : t("workspaceLevelUsage")}
+                        </span>
+                        <span className="flex shrink-0 items-center gap-3 tabular-nums">
+                          <span className="text-muted-foreground">
+                            {t("memberGenerations", { count: project.jobs })}
+                          </span>
+                          <span className="font-medium text-foreground">
+                            {formatBigint(bigintFromString(project.credits))}
+                          </span>
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </Panel>
+  );
+}
+
+function MemberAvatar({ member, name }: { member: SharingMember | undefined; name: string }) {
+  if (member?.avatar) {
+    return (
+      // eslint-disable-next-line @next/next/no-img-element
+      <img src={member.avatar} alt={name} className="size-7 shrink-0 rounded-full object-cover" />
+    );
+  }
+  return (
+    <span className="flex size-7 shrink-0 items-center justify-center rounded-full bg-white/10 text-xs font-medium text-foreground">
+      {name.slice(0, 1).toUpperCase()}
+    </span>
   );
 }
 

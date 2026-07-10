@@ -25,6 +25,7 @@ import {
   ListBillingPricesQuerySchema,
   ListWalletLedgerQuerySchema,
   WalletDailyUsageQuerySchema,
+  WalletMemberUsageQuerySchema,
   type BillingOrderParams,
   type BillingSubscriptionParams,
   type CreateBillingCheckoutInput,
@@ -34,6 +35,7 @@ import {
   type ListBillingPricesQuery,
   type ListWalletLedgerQuery,
   type WalletDailyUsageQuery,
+  type WalletMemberUsageQuery,
   RedeemVoucherSchema,
   type RedeemVoucherInput,
   CreditCampaignParamsSchema,
@@ -145,6 +147,21 @@ export class BillingController {
     return {
       code: 200,
       data: await this.billing.walletDailyUsage(user, query, workspaceId),
+    };
+  }
+
+  // Per-member compute usage for a team workspace (admin-only), broken down by
+  // project. Powers the team admin's "who used how much" view.
+  @Get('wallet-ledger/member-usage')
+  async walletMemberUsage(
+    @CurrentUser() user: AuthUser,
+    @Headers('x-fizz-workspace-id') workspaceId: string | undefined,
+    @Query(new ZodValidationPipe(WalletMemberUsageQuerySchema))
+    query: WalletMemberUsageQuery,
+  ) {
+    return {
+      code: 200,
+      data: await this.billing.walletMemberUsage(user, query, workspaceId),
     };
   }
 

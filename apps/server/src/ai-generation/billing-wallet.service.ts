@@ -16,7 +16,6 @@ import {
   type WalletAccount,
   type WalletCreditGrant,
 } from '@prisma/client';
-import { createHash } from 'crypto';
 import { PrismaService } from '../infra/db/db.module';
 import { enqueueWalletChanged } from '../workspaces/wallet-realtime';
 import type { AiJob, AiRoutingSnapshot } from './types';
@@ -69,7 +68,6 @@ export class AiGenerationBillingWalletService {
   async reserveForJobInTransaction(args: {
     tx: Prisma.TransactionClient;
     job: ChargeableJob;
-    requestIdempotencyKey: string;
   }): Promise<void> {
     const amount = chargeAmount(args.job.routingSnapshot);
     if (amount <= 0n) return;
@@ -95,13 +93,14 @@ export class AiGenerationBillingWalletService {
       update: {},
     });
 
-    const idempotencyKey = requestScopedIdempotencyKey(
-      'ai_job:hold',
-      payer.ownerType,
-      payer.ownerId,
-      args.job.modelId,
-      args.requestIdempotencyKey,
-    );
+    // Job-scoped (not request-scoped): each reserve is for exactly one NEW job
+    // (job-level dedup returns the existing job without re-reserving), so the
+    // hold key must be unique per jobId — matching settle/release. The old
+    // request-scoped key (payer + model + client idempotencyKey) collided across
+    // DIFFERENT jobs that shared a client idempotencyKey — e.g. two members of
+    // the same team pot reusing a key — silently skipping the second job's hold
+    // and letting it generate unbilled.
+    const idempotencyKey = jobScopedIdempotencyKey('ai_job:hold', args.job.id);
     const existing = await tx.walletTransaction.findUnique({
       where: { idempotencyKey },
     });
@@ -750,25 +749,8 @@ function chargeAmount(snapshot: AiRoutingSnapshot | null | undefined): bigint {
   return BigInt(Math.max(0, Math.ceil(policy.cost)));
 }
 
-function requestScopedIdempotencyKey(
-  prefix: string,
-  ownerType: WalletOwnerType,
-  ownerId: string,
-  modelId: string,
-  requestIdempotencyKey: string,
-): string {
-  return `${prefix}:${hashKey([ownerType, ownerId, modelId, requestIdempotencyKey])}`;
-}
-
 function jobScopedIdempotencyKey(prefix: string, jobId: string): string {
   return `${prefix}:${jobId}`;
-}
-
-function hashKey(parts: string[]): string {
-  return createHash('sha256')
-    .update(parts.join('\0'))
-    .digest('hex')
-    .slice(0, 48);
 }
 
 function walletMetadata(input: {

@@ -1317,23 +1317,14 @@ export class AiGenerationWorkerService
         ),
       },
     });
-    try {
-      await this.billingWallet.settleForJob(job);
-    } catch (err) {
-      await this.handleFailure(job, {
-        code: 'BILLING_SETTLEMENT_FAILED',
-        message:
-          err instanceof Error
-            ? err.message
-            : 'Compute point settlement failed',
-        userMessage:
-          'Generation finished but billing settlement failed. Please try again or contact support.',
-        retryable: true,
-        createdAt: new Date().toISOString(),
-      });
-      return;
-    }
-    const completed = await this.store.update(job.id, {
+    // Claim the terminal completion BEFORE charging. A user cancel runs
+    // out-of-band from this BullMQ worker, so the status write is the barrier:
+    // completeIfRunning only transitions in_progress → completed. If it returns
+    // null the job was cancelled (or failed) first — the cancel path already
+    // released the hold, so we must NOT settle and must NOT deliver. The
+    // uploaded outputs are then orphaned in storage (swept by storage GC), never
+    // handed to the user.
+    const completed = await this.store.completeIfRunning(job.id, {
       status: 'completed',
       stage: 'completed',
       outputs,
@@ -1354,23 +1345,57 @@ export class AiGenerationWorkerService
         },
       ],
     });
-    if (completed) {
-      await this.recordTraceSafe(completed, {
-        eventType: 'job_completed',
-        occurredAt: now,
-        source: 'internal',
-        confidence: 'exact',
-        title: 'Job completed',
-        description:
-          'Job completed after output persistence and database update.',
-        idempotencyKey: `ai_trace:${job.id}:job_completed:${job.attempt}`,
-        payload: {
-          outputCount: outputs.length,
-        },
-      });
-      this.emit(completed);
-      await this.recordActivityVersionSafe(completed);
+    if (!completed) {
+      this.logger.warn(
+        `job ${job.id} left in_progress before completion (cancelled?); discarding outputs and skipping settlement`,
+      );
+      return;
     }
+
+    // We own the outcome now: status is terminal 'completed', so a racing cancel
+    // can no longer win the transition. Convert the hold to a charge. On the rare
+    // settlement failure (wallet infra), keep the completed + delivered job and
+    // leave the hold reserved for reconciliation — we NEVER refund a delivered
+    // generation, so this cannot become a free-generation path.
+    try {
+      await this.billingWallet.settleForJob(completed);
+    } catch (err) {
+      this.logger.error(
+        `settlement failed for completed job ${job.id}: ${
+          err instanceof Error ? err.message : String(err)
+        } — hold left reserved for reconciliation`,
+      );
+      this.alertJobFailure(
+        completed,
+        {
+          code: 'BILLING_SETTLEMENT_FAILED',
+          message:
+            err instanceof Error
+              ? err.message
+              : 'Compute point settlement failed',
+          userMessage: 'Generation finished but billing settlement failed.',
+          retryable: false,
+          createdAt: now,
+        },
+        now,
+      );
+    }
+
+    await this.recordTraceSafe(completed, {
+      eventType: 'job_completed',
+      occurredAt: now,
+      source: 'internal',
+      confidence: 'exact',
+      title: 'Job completed',
+      description:
+        'Job completed after output persistence and database update.',
+      idempotencyKey: `ai_trace:${job.id}:job_completed:${job.attempt}`,
+      payload: {
+        outputCount: outputs.length,
+      },
+    });
+    this.emit(completed);
+    await this.recordActivityVersionSafe(completed);
   }
 
   /**
@@ -1411,7 +1436,13 @@ export class AiGenerationWorkerService
     if (shouldRetry) {
       const delayMs = RETRY_BACKOFFS_MS[backoffIdx];
       const reQueuedAt = new Date(Date.now() + delayMs).toISOString();
-      const requeued = await this.store.update(job.id, {
+      // Status-guarded: only requeue a job that is STILL in_progress. If a user
+      // cancel already terminated + refunded it out-of-band, requeueIfRunning
+      // returns null and we drop the retry — otherwise a retryable provider
+      // error would resurrect the cancelled job to in_queue, re-run it, and
+      // deliver outputs that can no longer be settled (the hold is gone) = free
+      // generation after a refund.
+      const requeued = await this.store.requeueIfRunning(job.id, {
         status: 'in_queue',
         stage: 'provider_queued',
         attempt,
@@ -1438,6 +1469,10 @@ export class AiGenerationWorkerService
         this.emit(requeued);
         this.logger.log(
           `job ${job.id} requeued after ${payload.code} (attempt ${attempt}, delay ${Math.round(delayMs / 1000)}s)`,
+        );
+      } else {
+        this.logger.warn(
+          `job ${job.id} left in_progress before retryable ${payload.code} could requeue (cancelled?); dropping retry`,
         );
       }
       return;
