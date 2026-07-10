@@ -185,11 +185,13 @@ export function stripEdgeRef(
   });
 }
 
-/** Delete a wire AND drop the reference it bound on the target. */
-export function removeEdgeById(ctx: DeleteCtx, edgeId: string): void {
+/** Delete a wire AND drop the reference it bound on the target. A known target
+ *  keeps orphaned legacy references removable even when their edge is gone. */
+export function removeEdgeById(ctx: DeleteCtx, edgeId: string, knownTargetId?: string): void {
   const edge = ctx.getEdges().find((e) => e.id === edgeId);
   ctx.graph.removeEdge(edgeId);
-  if (edge?.target) stripEdgeRef(ctx.graph.patchNodeData, edge.target, edgeId);
+  const targetId = edge?.target ?? knownTargetId;
+  if (targetId) stripEdgeRef(ctx.graph.patchNodeData, targetId, edgeId);
 }
 
 /** Delete a node, its touching edges, and the references those edges bound. */

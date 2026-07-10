@@ -60,7 +60,7 @@ function ReferenceFanTile({
   const [previewStyle, setPreviewStyle] = useState<CSSProperties | null>(null);
   const showPreview = () => {
     const rect = tileRef.current?.getBoundingClientRect();
-    if (rect) setPreviewStyle(mediaHoverPreviewPosition(rect));
+    if (rect) setPreviewStyle(mediaHoverPreviewPosition(rect, item.kind));
   };
 
   return (

@@ -7,7 +7,6 @@ import {
   IconMusic,
   IconMusicPlus,
   IconPhotoPlus,
-  IconPlugConnected,
   IconVideoPlus,
   IconX,
   type Icon,
@@ -59,12 +58,15 @@ function ReferenceTile({
   const [previewStyle, setPreviewStyle] = useState<CSSProperties | null>(null);
   const showPreview = () => {
     const rect = tileRef.current?.getBoundingClientRect();
-    if (rect) setPreviewStyle(mediaHoverPreviewPosition(rect));
+    if (rect) setPreviewStyle(mediaHoverPreviewPosition(rect, refItem.kind));
   };
 
   return (
     <div
       ref={tileRef}
+      data-reference-edge-id={refItem.edgeId}
+      data-reference-kind={refItem.kind}
+      data-reference-tile=""
       title={refItem.name}
       className="group relative size-16 shrink-0"
       onPointerEnter={showPreview}
@@ -85,9 +87,11 @@ function ReferenceTile({
         ) : refItem.kind === "video" ? (
           <video src={refItem.url} muted playsInline className="size-full object-cover" />
         ) : (
-          <div className="flex size-full min-w-0 flex-col items-center justify-center gap-1 px-2 text-center">
-            <IconMusic className="size-5 text-white/70" stroke={1.7} />
-            <span className="w-full truncate px-0.5 text-[9px] leading-tight text-muted-foreground">
+          <div className="flex size-full min-w-0 flex-col items-center justify-center gap-1 bg-violet-500/20 px-2 text-center transition-colors group-hover:bg-violet-500/30">
+            <span className="flex size-7 shrink-0 items-center justify-center rounded-lg bg-violet-200/10 text-violet-100">
+              <IconMusic className="size-4" stroke={1.8} />
+            </span>
+            <span className="w-full truncate text-[9px] leading-none font-medium text-violet-100/70">
               {refItem.name ?? t("reference.audio")}
             </span>
           </div>
@@ -103,14 +107,6 @@ function ReferenceTile({
           // Still uploading to storage — spinner, no remove until it lands.
           <span className="absolute inset-0 flex items-center justify-center bg-black/45">
             <IconLoader2 className="size-5 animate-spin text-white/70" stroke={1.8} />
-          </span>
-        ) : refItem.edgeId ? (
-          // Wired in from a source node — remove by disconnecting the wire.
-          <span
-            title={t("reference.linkedFromNode")}
-            className="absolute top-0.5 right-0.5 flex size-4 items-center justify-center rounded-full bg-black/55 text-white/80"
-          >
-            <IconPlugConnected className="size-2.5" stroke={2} />
           </span>
         ) : (
           <button

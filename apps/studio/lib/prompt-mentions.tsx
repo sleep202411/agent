@@ -5,30 +5,27 @@ import { createPortal } from "react-dom";
 import { useTranslations } from "next-intl";
 import { IconMusic, IconX } from "@tabler/icons-react";
 import { cn } from "@/lib/utils";
-import type { FizzAiReferenceKind } from "@/app/[locale]/canvas/_lib/generation-api";
+import {
+  promptMentionParts,
+  type PromptMentionItem,
+  type PromptMentionKind,
+} from "@/lib/prompt-document";
 
 /**
  * `@`-mention support shared by the studio composer and the canvas generation
  * card: a reference can be cited in the prompt as `@Image1`, `@Video2`, … so a
  * phrase binds to a specific attached reference (imagine.art-style targeting).
  */
-export type MentionItem = {
-  id: string;
-  /** Token shown after the `@`, e.g. "Image1". */
-  label: string;
-  name?: string;
-  kind: FizzAiReferenceKind;
-  previewUrl?: string;
-};
+export type MentionItem = PromptMentionItem;
 
-const LABEL_PREFIX: Record<FizzAiReferenceKind, string> = {
+const LABEL_PREFIX: Record<PromptMentionKind, string> = {
   image: "Image",
   video: "Video",
   audio: "Audio",
 };
 
 /** Per-kind mention label, e.g. mentionLabel("image", 1) → "Image1". */
-export function mentionLabel(kind: FizzAiReferenceKind, indexWithinKind: number): string {
+export function mentionLabel(kind: PromptMentionKind, indexWithinKind: number): string {
   return `${LABEL_PREFIX[kind]}${indexWithinKind}`;
 }
 
@@ -67,45 +64,6 @@ export function insertMentionText(
   };
 }
 
-function isMentionTokenEnd(value: string, end: number): boolean {
-  if (end >= value.length) return true;
-  return !/^[A-Za-z0-9_]/.test(value[end] ?? "");
-}
-
-function mentionAt(
-  value: string,
-  offset: number,
-  mentions: readonly MentionItem[]
-): MentionItem | undefined {
-  if (value[offset] !== "@") return undefined;
-  return [...mentions]
-    .sort((a, b) => b.label.length - a.label.length)
-    .find((mention) => {
-      const token = `@${mention.label}`;
-      const end = offset + token.length;
-      return value.startsWith(token, offset) && isMentionTokenEnd(value, end);
-    });
-}
-
-function mentionMirrorParts(value: string, mentions: readonly MentionItem[]) {
-  const parts: Array<{ end: number; mention?: MentionItem; start: number; text: string }> = [];
-  let offset = 0;
-  while (offset < value.length) {
-    const mention = mentionAt(value, offset, mentions);
-    if (mention) {
-      const end = offset + mention.label.length + 1;
-      parts.push({ end, mention, start: offset, text: `@${mention.label}` });
-      offset = end;
-      continue;
-    }
-    const nextMentionOffset = value.indexOf("@", offset + 1);
-    const end = nextMentionOffset === -1 ? value.length : nextMentionOffset;
-    parts.push({ end, start: offset, text: value.slice(offset, end) });
-    offset = end;
-  }
-  return parts;
-}
-
 export function removeMentionText(
   value: string,
   range: { end: number; start: number }
@@ -123,13 +81,18 @@ export function removeMentionText(
   };
 }
 
-const PREVIEW_WIDTH = 260;
-const PREVIEW_GAP = 10;
+const MEDIA_PREVIEW_WIDTH = 260;
+const AUDIO_PREVIEW_WIDTH = 200;
+const PREVIEW_GAP = 8;
 
-export function mediaHoverPreviewPosition(rect: DOMRect): CSSProperties {
+export function mediaHoverPreviewPosition(
+  rect: DOMRect,
+  kind: PromptMentionKind = "image"
+): CSSProperties {
+  const previewWidth = kind === "audio" ? AUDIO_PREVIEW_WIDTH : MEDIA_PREVIEW_WIDTH;
   return {
     bottom: window.innerHeight - rect.top + PREVIEW_GAP,
-    left: rect.left + rect.width / 2 - PREVIEW_WIDTH / 2,
+    left: rect.left + rect.width / 2 - previewWidth / 2,
   };
 }
 
@@ -141,34 +104,81 @@ function AudioWaveformPreview({
   style: CSSProperties;
 }) {
   const audioRef = useRef<HTMLAudioElement>(null);
-  useEffect(() => {
-    void audioRef.current?.play().catch(() => undefined);
-  }, []);
+  const [isWaveformActive, setIsWaveformActive] = useState(true);
 
-  const bars = [18, 34, 24, 48, 31, 58, 38, 72, 44, 62, 28, 52, 35, 46, 22, 40];
+  useEffect(() => {
+    const audio = audioRef.current;
+    if (!audio) return;
+
+    let cancelled = false;
+    void audio.play().catch(() => {
+      if (!cancelled) setIsWaveformActive(false);
+    });
+
+    return () => {
+      cancelled = true;
+      audio.pause();
+    };
+  }, [item.previewUrl]);
+
+  const bars = [8, 15, 11, 20, 14, 25, 17, 28, 18, 24, 13, 22, 15, 19, 10, 16];
   return (
     <div
+      data-audio-preview
+      data-waveform-active={isWaveformActive ? "true" : "false"}
+      aria-hidden="true"
       style={style}
-      className="pointer-events-none fixed z-[1000] flex h-28 w-[260px] flex-col justify-center overflow-hidden rounded-2xl bg-[oklch(0.18_0_0_/_0.96)] px-5 shadow-2xl shadow-black/70 backdrop-blur-2xl"
+      className="pointer-events-none fixed z-[1000] w-[200px] overflow-hidden rounded-xl bg-[oklch(0.17_0_0_/_0.97)] p-2.5 shadow-[0_14px_36px_rgba(0,0,0,0.48)] backdrop-blur-xl"
     >
-      <div className="flex h-14 items-center gap-1.5">
+      <div
+        data-audio-waveform
+        aria-hidden="true"
+        className="flex h-8 items-center justify-center gap-1.5"
+      >
         {bars.map((height, index) => (
           <span
             key={`${height}-${index}`}
-            className="w-1.5 animate-pulse rounded-full bg-violet-300/80"
+            className={cn(
+              "w-[3px] rounded-full bg-violet-300/70",
+              isWaveformActive && "prompt-audio-wave-bar"
+            )}
             style={{
+              animationDelay: `-${index * 70}ms`,
+              animationDuration: `${620 + (index % 5) * 90}ms`,
               height,
-              opacity: 0.45 + (index % 4) * 0.13,
-              animationDelay: `${index * 55}ms`,
+              opacity: 0.42 + (index % 4) * 0.12,
             }}
           />
         ))}
       </div>
-      <div className="mt-2 truncate text-xs font-medium text-violet-100">
-        {item.name ?? `@${item.label}`}
+      <div className="mt-1.5 min-w-0">
+        <div data-audio-meta className="mx-auto flex w-fit min-w-0 max-w-full items-center gap-1.5">
+          <span className="inline-flex size-5 shrink-0 items-center justify-center rounded-md bg-violet-300/10 text-violet-200/80">
+            <IconMusic className="size-3" stroke={1.8} />
+          </span>
+          <span className="min-w-0 max-w-[148px] truncate text-center text-[11px] leading-4 font-medium text-white/75">
+            {item.name ?? `@${item.label}`}
+          </span>
+        </div>
       </div>
       {item.previewUrl ? (
-        <audio ref={audioRef} src={item.previewUrl} autoPlay className="hidden" />
+        <audio
+          key={item.previewUrl}
+          ref={audioRef}
+          src={item.previewUrl}
+          preload="auto"
+          onPlay={() => setIsWaveformActive(true)}
+          onPlaying={() => setIsWaveformActive(true)}
+          onPause={() => setIsWaveformActive(false)}
+          onWaiting={() => setIsWaveformActive(false)}
+          onStalled={() => setIsWaveformActive(false)}
+          onSeeking={() => setIsWaveformActive(false)}
+          onEnded={() => setIsWaveformActive(false)}
+          onAbort={() => setIsWaveformActive(false)}
+          onEmptied={() => setIsWaveformActive(false)}
+          onError={() => setIsWaveformActive(false)}
+          className="hidden"
+        />
       ) : null}
     </div>
   );
@@ -189,7 +199,11 @@ export function ReferenceMediaHoverPreview({
   if (item.kind === "audio") {
     return (
       <HoverPreviewPortal>
-        <AudioWaveformPreview item={item} style={style} />
+        <AudioWaveformPreview
+          key={item.previewUrl ?? `${item.label}:no-preview`}
+          item={item}
+          style={style}
+        />
       </HoverPreviewPortal>
     );
   }
@@ -223,7 +237,7 @@ export function ReferenceMediaHoverPreview({
   );
 }
 
-function MentionChip({
+export function MentionChip({
   mention,
   onRemove,
   text,
@@ -238,13 +252,13 @@ function MentionChip({
 
   const showPreview = () => {
     const rect = ref.current?.getBoundingClientRect();
-    if (rect) setPreviewStyle(mediaHoverPreviewPosition(rect));
+    if (rect) setPreviewStyle(mediaHoverPreviewPosition(rect, mention.kind));
   };
 
   return (
     <span
       ref={ref}
-      className="pointer-events-auto mr-0.5 inline-flex items-center gap-1 rounded-full bg-violet-500/25 py-[1px] pr-1.5 pl-1 align-baseline font-normal text-violet-100 shadow-[inset_0_1px_0_rgba(255,255,255,0.18),inset_0_-1px_0_rgba(76,29,149,0.34),0_0_0_1px_rgba(167,139,250,0.3)]"
+      className="pointer-events-auto mr-0.5 inline-flex items-center gap-1 rounded-full bg-violet-500/25 py-[1px] pr-1.5 pl-1 align-baseline text-xs leading-5 font-normal text-violet-100 shadow-[inset_0_1px_0_rgba(255,255,255,0.18),inset_0_-1px_0_rgba(76,29,149,0.34),0_0_0_1px_rgba(167,139,250,0.3)]"
       onPointerEnter={showPreview}
       onPointerMove={showPreview}
       onPointerLeave={() => setPreviewStyle(null)}
@@ -252,9 +266,9 @@ function MentionChip({
       onMouseMove={showPreview}
       onMouseLeave={() => setPreviewStyle(null)}
     >
-      <span className="inline-flex size-3.5 shrink-0 items-center justify-center overflow-hidden rounded-full bg-violet-200/20">
+      <span className="inline-flex size-3 shrink-0 items-center justify-center overflow-hidden rounded-full bg-violet-200/20">
         {mention.kind === "audio" ? (
-          <IconMusic className="size-2.5 text-violet-100" stroke={2} />
+          <IconMusic className="size-2 text-violet-100" stroke={2} />
         ) : mention.kind === "video" ? (
           <video src={mention.previewUrl} muted playsInline className="size-full object-cover" />
         ) : mention.previewUrl ? (
@@ -267,7 +281,7 @@ function MentionChip({
         <button
           type="button"
           aria-label={`Remove ${displayText}`}
-          className="-mr-0.5 ml-0.5 inline-flex size-3.5 shrink-0 items-center justify-center rounded-full text-violet-100/55 transition-colors hover:bg-violet-100/15 hover:text-violet-50"
+          className="-mr-0.5 ml-0.5 inline-flex size-3 shrink-0 items-center justify-center rounded-full text-violet-100/55 transition-colors hover:bg-violet-100/15 hover:text-violet-50"
           onMouseDown={(event) => {
             event.preventDefault();
             event.stopPropagation();
@@ -279,7 +293,7 @@ function MentionChip({
             onRemove();
           }}
         >
-          <IconX className="size-2.5" stroke={2.2} />
+          <IconX className="size-2" stroke={2.2} />
         </button>
       ) : null}
       {previewStyle ? <ReferenceMediaHoverPreview item={mention} style={previewStyle} /> : null}
@@ -301,7 +315,7 @@ export function PromptMentionMirror({
   value: string;
 }) {
   if (!value) return null;
-  const parts = mentionMirrorParts(value, mentions);
+  const parts = promptMentionParts(value, mentions);
   return (
     <div
       aria-hidden

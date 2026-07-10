@@ -32,6 +32,7 @@ import { isUploadAbort, uploadFileViaSignedUrl } from "@/lib/media-upload";
 import { useDismiss } from "@/lib/use-dismiss";
 import type { CanvasAsset, CanvasEdgeShape, CanvasNodeShape } from "@/lib/collab/canvas-doc";
 import { useAiCatalog, usableModelsByModality } from "@/app/[locale]/canvas/_lib/use-ai-catalog";
+import { removeEdgeById } from "@/app/[locale]/canvas/_lib/canvas-wiring";
 import { useGeneration } from "@/app/[locale]/canvas/_lib/use-canvas-generation";
 import {
   EXPAND_OP,
@@ -317,8 +318,8 @@ function GenerationCard({
   const tc = useTranslations("common");
   const ml = useModeLabel();
   const ol = useOperationLabel();
-  const { addAssets, addNodesAndEdges, getNode, patchNodeData, canEdit, nodes } =
-    useCanvasGraphContext();
+  const graph = useCanvasGraphContext();
+  const { addAssets, addNodesAndEdges, getNode, patchNodeData, canEdit, nodes } = graph;
   const { data: catalog } = useAiCatalog();
   // Composer is click-triggered: it opens for a sole selected node only, so a
   // marquee / select-all doesn't pop every card's prompt at once.
@@ -505,7 +506,7 @@ function GenerationCard({
             },
           ]);
           // Persist the DURABLE url (never the blob:) into the doc, drop the chip.
-          // The reference is wired, so removing it happens by disconnecting the edge.
+          // Removing the reference later removes this edge and binding together.
           patchNodeData(id, (node) => {
             const refs: CardReferences = (node.data as GenerationNodeData).references ?? {};
             return {
@@ -543,15 +544,22 @@ function GenerationCard({
     }
   };
 
-  const removeReference = (field: string, refId: string) =>
-    patchNodeData(id, (node) => {
-      const refs: CardReferences = (node.data as GenerationNodeData).references ?? {};
-      const removed = (refs[field] ?? []).find((r) => r.id === refId);
-      if (removed) URL.revokeObjectURL(removed.url);
-      return {
-        references: { ...refs, [field]: (refs[field] ?? []).filter((r) => r.id !== refId) },
-      };
+  const removeReference = (field: string, refId: string) => {
+    const node = getNode(id);
+    const refs: CardReferences = (node?.data as GenerationNodeData | undefined)?.references ?? {};
+    const removed = (refs[field] ?? []).find((reference) => reference.id === refId);
+    if (!removed) return;
+
+    URL.revokeObjectURL(removed.url);
+    if (removed.edgeId) {
+      removeEdgeById({ getEdges: graph.getEdges, graph }, removed.edgeId, id);
+      return;
+    }
+
+    patchNodeData(id, {
+      references: { ...refs, [field]: (refs[field] ?? []).filter((r) => r.id !== refId) },
     });
+  };
 
   const onSelectModel = (selected: FizzAiModel) =>
     patchNodeData(id, {

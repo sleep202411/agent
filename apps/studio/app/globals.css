@@ -252,3 +252,32 @@ button:disabled,
     animation: none;
   }
 }
+
+/* Audio mention previews start with immediate visual feedback, then follow the
+   hidden player's media events so the waveform stops when playback finishes. */
+@keyframes prompt-audio-wave {
+  0% {
+    transform: scaleY(0.46);
+    opacity: 0.38;
+  }
+  55% {
+    transform: scaleY(1);
+    opacity: 0.82;
+  }
+  100% {
+    transform: scaleY(0.62);
+    opacity: 0.5;
+  }
+}
+.prompt-audio-wave-bar {
+  transform-origin: center;
+  animation-name: prompt-audio-wave;
+  animation-timing-function: ease-in-out;
+  animation-iteration-count: infinite;
+  animation-direction: alternate;
+}
+@media (prefers-reduced-motion: reduce) {
+  .prompt-audio-wave-bar {
+    animation: none;
+  }
+}
