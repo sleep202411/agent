@@ -7526,6 +7526,66 @@
       "menu": "Game menu",
       "turns": "{count} turns"
     },
+    "concepts": {
+      "actions": {
+        "exit": "Exit story",
+        "regenerate": "Explore again"
+      },
+      "loading": {
+        "title": "Exploring this world…",
+        "description": "FizzDragon is shaping several different ways into the story.",
+        "ariaLabel": "Generating story concepts",
+        "steps": {
+          "premise": "Finding the strongest premise",
+          "conflict": "Sharpening the central conflict",
+          "contrast": "Testing a surprising reversal",
+          "hook": "Looking for the visual hook",
+          "possibility": "Opening another path"
+        }
+      },
+      "select": {
+        "eyebrow": "Story direction",
+        "title": "Which story do you want to enter?",
+        "description": "Choose one possibility. FizzDragon will build this run around it.",
+        "resultCount": "{count} story directions",
+        "optionLabel": "Story concept {index}",
+        "selected": "Selected",
+        "confirm": "Continue",
+        "resume": "Continue with this story"
+      },
+      "entering": {
+        "title": "Building your story…",
+        "description": "Setting the cast, hiding clues, and preparing the opening scene.",
+        "ariaLabel": "Building your story",
+        "steps": {
+          "world": "Surveying this world",
+          "characters": "Placing the cast",
+          "secrets": "Giving everyone a secret",
+          "clues": "Hiding clues in the details",
+          "structure": "Shaping the four-act arc",
+          "truth": "Locking away the final truth",
+          "endings": "Testing every ending",
+          "opening": "Lighting the opening scene"
+        },
+        "selectedLabel": "Your chosen story"
+      },
+      "error": {
+        "conceptsTitle": "We couldn’t create story concepts",
+        "conceptsFallback": "Please try generating them again.",
+        "emptyStory": "This IP does not contain enough story information to generate concepts.",
+        "requestTimeout": "The story service took too long to respond. Please try again.",
+        "network": "The story service could not be reached. Check your connection and try again.",
+        "invalidResponse": "The story service returned an incomplete response. Please try again.",
+        "invalidConcept": "That story concept can no longer be used.",
+        "enterTitle": "We couldn’t build this story",
+        "enterFallback": "Your choice is saved. Try building it again.",
+        "freshRunHint": "This session cannot be resumed safely. Build a fresh run from the selected concept.",
+        "chooseAnotherHint": "Choose a different story concept to continue.",
+        "retryConcepts": "Generate again",
+        "retryEnter": "Try again",
+        "buildFresh": "Build a fresh run"
+      }
+    },
     "setup": {
       "step": "Step {current} of {total}",
       "stage": {
@@ -7625,6 +7685,19 @@
           }
         }
       },
+      "dynamic": {
+        "prologueEyebrow": "Opening",
+        "prologueTitle": "Step into this story",
+        "roleTitle": "Who do you want to play?",
+        "directionTitle": "What kind of adaptation do you want?",
+        "paceTitle": "How fast should the story move?",
+        "enterStory": "Enter the story",
+        "paceOptions": {
+          "slow": "Slow burn",
+          "standard": "Standard",
+          "compact": "Compact"
+        }
+      },
       "back": "Back",
       "next": "Next",
       "start": "Start"
@@ -7637,6 +7710,7 @@
       "character": "Character",
       "inputPlaceholder": "Say something, or describe what you do...",
       "takeTurn": "Send",
+      "turnErrorFallback": "The story could not respond. Please try another action.",
       "takeTurnPrompt": "I act",
       "continue": "Continue",
       "retry": "Retry",

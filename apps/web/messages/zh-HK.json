@@ -7525,6 +7525,66 @@
       "menu": "遊戲選單",
       "turns": "{count} 回合"
     },
+    "concepts": {
+      "actions": {
+        "exit": "退出故事",
+        "regenerate": "換一批"
+      },
+      "loading": {
+        "title": "探索這個世界的可能…",
+        "description": "氣泡龍正在構思幾種不同的入場方式。",
+        "ariaLabel": "正在生成故事高概念",
+        "steps": {
+          "premise": "尋找最有力的故事命題",
+          "conflict": "打磨故事的核心衝突",
+          "contrast": "推演意料之外的反差",
+          "hook": "尋找一眼難忘的視覺鉤子",
+          "possibility": "打開另一種可能"
+        }
+      },
+      "select": {
+        "eyebrow": "故事方向",
+        "title": "你想進入哪一個故事？",
+        "description": "選擇一種可能，氣泡龍會以它為核心構建這一局。",
+        "resultCount": "{count} 個故事方向",
+        "optionLabel": "故事高概念 {index}",
+        "selected": "已選擇",
+        "confirm": "繼續",
+        "resume": "繼續這個故事"
+      },
+      "entering": {
+        "title": "正在構建你的故事…",
+        "description": "安置人物、埋下線索，並準備第一幕。",
+        "ariaLabel": "正在構建你的故事",
+        "steps": {
+          "world": "勘測這片世界",
+          "characters": "安置登場人物",
+          "secrets": "給每個人留一個秘密",
+          "clues": "把線索藏進細節裏",
+          "structure": "編排起承轉合",
+          "truth": "鎖住藏到最後的真相",
+          "endings": "反覆推演每一種結局",
+          "opening": "擦亮第一幕的燈"
+        },
+        "selectedLabel": "你選擇的故事"
+      },
+      "error": {
+        "conceptsTitle": "暫時無法生成故事方向",
+        "conceptsFallback": "請重新生成一次。",
+        "emptyStory": "這個 IP 暫時沒有足夠的故事內容來生成高概念。",
+        "requestTimeout": "故事服務回應逾時，請稍後重試。",
+        "network": "暫時無法連接故事服務，請檢查網絡後重試。",
+        "invalidResponse": "故事服務返回了不完整的資料，請重試。",
+        "invalidConcept": "這個故事方向已失效。",
+        "enterTitle": "暫時無法構建這個故事",
+        "enterFallback": "你的選擇已保留，請再試一次。",
+        "freshRunHint": "目前會話無法安全恢復，請根據已選方向重新構建一次。",
+        "chooseAnotherHint": "請選擇另一個故事方向後繼續。",
+        "retryConcepts": "重新生成",
+        "retryEnter": "再試一次",
+        "buildFresh": "重新構建"
+      }
+    },
     "setup": {
       "step": "第 {current} / {total} 步",
       "stage": {
@@ -7624,6 +7684,19 @@
           }
         }
       },
+      "dynamic": {
+        "prologueEyebrow": "開場設定",
+        "prologueTitle": "走進這個故事",
+        "roleTitle": "你想扮演誰？",
+        "directionTitle": "想要哪種改編？",
+        "paceTitle": "想要多快的節奏？",
+        "enterStory": "進入故事",
+        "paceOptions": {
+          "slow": "慢熱",
+          "standard": "標準",
+          "compact": "緊湊"
+        }
+      },
       "back": "返回",
       "next": "下一步",
       "start": "開始"
@@ -7636,6 +7709,7 @@
       "character": "角色",
       "inputPlaceholder": "說一句話，或描述你想做甚麼...",
       "takeTurn": "發送",
+      "turnErrorFallback": "故事暫時沒有回應，請嘗試另一個行動。",
       "takeTurnPrompt": "我來行動",
       "continue": "繼續",
       "retry": "重試",
