@@ -85,12 +85,17 @@ else
   $SSH root@$ECS_IP 'rm -rf /root/stage && mkdir -p /root/stage && tar -xzf /root/src.tar.gz -C /root/stage'
   CHANGED="$(git diff --name-only "$BASE"..HEAD || true)"
   [ -n "$CHANGED" ] || { echo "  no changes vs $BASE — nothing to deploy"; exit 0; }
+  # Single-quote every REMOTE path. Next.js route-group dirs use parens
+  # ((admin)/(site)/(auth)/(studio)); unquoted, the remote shell parses them as
+  # subshell syntax → "syntax error near unexpected token '('" and set -e aborts
+  # the whole deploy at this step. The quotes make the remote shell treat the
+  # path literally. (Locally, $(dirname "$f") still expands before the SSH call.)
   for f in $CHANGED; do
     if [ -f "$f" ]; then
-      $SSH root@$ECS_IP "mkdir -p /root/stage/$(dirname "$f")"
-      $SCP "$f" "root@$ECS_IP:/root/stage/$f" >/dev/null && echo "  + $f"
+      $SSH root@$ECS_IP "mkdir -p '/root/stage/$(dirname "$f")'"
+      $SCP "$f" "root@$ECS_IP:'/root/stage/$f'" >/dev/null && echo "  + $f"
     else
-      $SSH root@$ECS_IP "rm -f /root/stage/$f" && echo "  - $f (deleted)"
+      $SSH root@$ECS_IP "rm -f '/root/stage/$f'" && echo "  - $f (deleted)"
     fi
   done
   $SSH root@$ECS_IP "sed -i 's#^NEXT_PUBLIC_PARENT_ORIGIN=.*#NEXT_PUBLIC_PARENT_ORIGIN=$LIVE_ORIGIN#' /root/stage/apps/web/.env.production.cn"
