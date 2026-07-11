@@ -71,16 +71,21 @@ export default async function LocaleLayout({
     >
       <body className="min-h-full flex flex-col">
         <NextIntlClientProvider>
-          <Providers>
-            <RegionProvider country={country} siteRegion={siteRegion}>
+          {/* RegionProvider must wrap Providers: AuthProvider (inside Providers)
+              renders the global LoginDialog, and its buildWebHref() links read
+              useSiteRegion(). Nested the other way the dialog sits ABOVE this
+              provider and falls back to the "global" context default — sending
+              register / forgot-password / legal links to .com on the .cn cell. */}
+          <RegionProvider country={country} siteRegion={siteRegion}>
+            <Providers>
               <TooltipProvider delayDuration={200}>{children}</TooltipProvider>
-              {/* Must stay INSIDE RegionProvider — SettingsOverlay renders the
-                  billing panel, which reads useIsCnSite() for cell-aware pricing. */}
+              {/* SettingsOverlay renders the billing panel, which reads
+                  useIsCnSite() for cell-aware pricing — still inside RegionProvider. */}
               <RouteAuthGuard />
               <SettingsOverlay />
               <NotificationsListener />
-            </RegionProvider>
-          </Providers>
+            </Providers>
+          </RegionProvider>
           <Toaster />
         </NextIntlClientProvider>
       </body>
