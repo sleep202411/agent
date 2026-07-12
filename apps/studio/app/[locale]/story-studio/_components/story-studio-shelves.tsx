@@ -6,6 +6,7 @@ import Image from "next/image";
 import gsap from "gsap";
 import { useGSAP } from "@gsap/react";
 import { IconChevronRight, IconClock, IconPlayerPlay } from "@tabler/icons-react";
+import { Link } from "@/i18n/navigation";
 
 gsap.registerPlugin(useGSAP);
 
@@ -15,6 +16,8 @@ export type StoryStudioStory = {
   description: string;
   estimatedPlayTime: string;
   image: string;
+  video?: string;
+  href?: string;
 };
 
 type PreviewState = {
@@ -128,20 +131,20 @@ function StoryCard({
   onPreviewOpen: (story: StoryStudioStory, anchor: HTMLElement) => void;
   onPreviewClose: () => void;
 }) {
-  return (
-    <div className="group relative aspect-video">
-      {/* Example cards are inspiration only — deliberately NOT a link to the
-          projectless editor (real projects live in the shelf above). */}
-      <div
-        tabIndex={0}
-        onPointerEnter={(event) => onPreviewOpen(story, event.currentTarget)}
-        onPointerLeave={onPreviewClose}
-        onMouseEnter={(event) => onPreviewOpen(story, event.currentTarget)}
-        onMouseLeave={onPreviewClose}
-        onFocus={(event) => onPreviewOpen(story, event.currentTarget)}
-        onBlur={onPreviewClose}
-        className="relative block h-full overflow-hidden rounded-[4px] bg-white/[0.06] shadow-[0_18px_42px_rgba(0,0,0,0.32)]"
-      >
+  const content = (
+    <>
+      {story.video ? (
+        <video
+          src={story.video}
+          poster={story.image}
+          autoPlay
+          muted
+          loop
+          playsInline
+          preload="metadata"
+          className="absolute inset-0 h-full w-full object-cover transition duration-500 group-hover:scale-105"
+        />
+      ) : (
         <Image
           src={story.image}
           alt=""
@@ -149,21 +152,47 @@ function StoryCard({
           sizes="(max-width: 1200px) 25vw, 280px"
           className="object-cover transition duration-500 group-hover:scale-105"
         />
-        <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(0,0,0,0.06)_0%,rgba(0,0,0,0.58)_100%)]" />
-        <div className="absolute right-3 bottom-3 left-3">
-          {story.eyebrow ? (
-            <div className="mb-1 text-[10px] font-semibold tracking-[0.12em] text-white/62 uppercase">
-              {story.eyebrow}
-            </div>
-          ) : null}
-          <div className="flex items-center justify-between gap-2">
-            <h3 className="truncate text-[14px] font-semibold tracking-[-0.005em] text-white">
-              {story.title}
-            </h3>
-            <IconChevronRight className="size-3.5 shrink-0 text-white/70" stroke={2.2} />
+      )}
+      <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(0,0,0,0.06)_0%,rgba(0,0,0,0.58)_100%)]" />
+      <div className="absolute right-3 bottom-3 left-3">
+        {story.eyebrow ? (
+          <div className="mb-1 text-[10px] font-semibold tracking-[0.12em] text-white/62 uppercase">
+            {story.eyebrow}
           </div>
+        ) : null}
+        <div className="flex items-center justify-between gap-2">
+          <h3 className="truncate text-[14px] font-semibold tracking-[-0.005em] text-white">
+            {story.title}
+          </h3>
+          <IconChevronRight className="size-3.5 shrink-0 text-white/70" stroke={2.2} />
         </div>
       </div>
+    </>
+  );
+  const interactionProps = {
+    onPointerEnter: (event: React.PointerEvent<HTMLElement>) =>
+      onPreviewOpen(story, event.currentTarget),
+    onPointerLeave: onPreviewClose,
+    onMouseEnter: (event: React.MouseEvent<HTMLElement>) =>
+      onPreviewOpen(story, event.currentTarget),
+    onMouseLeave: onPreviewClose,
+    onFocus: (event: React.FocusEvent<HTMLElement>) => onPreviewOpen(story, event.currentTarget),
+    onBlur: onPreviewClose,
+  };
+  const className =
+    "relative block h-full overflow-hidden rounded-[4px] bg-white/[0.06] shadow-[0_18px_42px_rgba(0,0,0,0.32)]";
+
+  return (
+    <div className="group relative aspect-video">
+      {story.href ? (
+        <Link href={story.href} {...interactionProps} className={className}>
+          {content}
+        </Link>
+      ) : (
+        <div tabIndex={0} {...interactionProps} className={className}>
+          {content}
+        </div>
+      )}
     </div>
   );
 }
@@ -232,14 +261,27 @@ function StoryPreview({
       }}
     >
       <div className="relative h-[160px] overflow-hidden rounded-t-[16px]">
-        <Image
-          src={preview.story.image}
-          alt=""
-          fill
-          sizes={`${Math.round(preview.width)}px`}
-          className="object-cover"
-          priority={false}
-        />
+        {preview.story.video ? (
+          <video
+            src={preview.story.video}
+            poster={preview.story.image}
+            autoPlay
+            muted
+            loop
+            playsInline
+            preload="metadata"
+            className="h-full w-full object-cover"
+          />
+        ) : (
+          <Image
+            src={preview.story.image}
+            alt=""
+            fill
+            sizes={`${Math.round(preview.width)}px`}
+            className="object-cover"
+            priority={false}
+          />
+        )}
         <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(0,0,0,0.02)_0%,rgba(0,0,0,0.18)_100%)]" />
       </div>
 
@@ -252,10 +294,20 @@ function StoryPreview({
         </p>
 
         <div className="mt-3.5 flex items-center justify-between gap-2.5">
-          <span className="inline-flex h-8 items-center gap-1.5 rounded-full bg-white px-3.5 text-[12px] font-semibold text-black shadow-[0_10px_24px_rgba(0,0,0,0.24)]">
-            <IconPlayerPlay className="size-3 fill-black" stroke={2.4} />
-            Play
-          </span>
+          {preview.story.href ? (
+            <Link
+              href={preview.story.href}
+              className="inline-flex h-8 items-center gap-1.5 rounded-full bg-white px-3.5 text-[12px] font-semibold text-black shadow-[0_10px_24px_rgba(0,0,0,0.24)]"
+            >
+              <IconPlayerPlay className="size-3 fill-black" stroke={2.4} />
+              Open
+            </Link>
+          ) : (
+            <span className="inline-flex h-8 items-center gap-1.5 rounded-full bg-white px-3.5 text-[12px] font-semibold text-black shadow-[0_10px_24px_rgba(0,0,0,0.24)]">
+              <IconPlayerPlay className="size-3 fill-black" stroke={2.4} />
+              Preview
+            </span>
+          )}
           <span className="inline-flex h-8 min-w-0 items-center gap-1.5 rounded-full bg-white/[0.08] px-2.5 text-[11px] font-medium text-white/72 shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]">
             <IconClock className="size-3 shrink-0" stroke={2} />
             <span className="truncate">Estimated {preview.story.estimatedPlayTime}</span>

@@ -6,5 +6,5 @@ export default async function NarrativeStudioEditorRedirect({
   params: Promise<{ locale: string }>;
 }) {
   const { locale } = await params;
-  redirect(`/${locale}/story-studio/editor`);
+  redirect(`/${locale}/story-studio`);
 }

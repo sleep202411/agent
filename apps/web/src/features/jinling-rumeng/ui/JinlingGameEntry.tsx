@@ -1,7 +1,6 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import Link from "next/link";
 import { useGSAP } from "@gsap/react";
 import gsap from "gsap";
 import {
@@ -26,7 +25,6 @@ import {
 } from "../../interactive-film/media/responsive-media";
 import type { Locale } from "@/src/i18n/config";
 import { useLocale, useTranslations } from "@/src/i18n/i18n";
-import { localizePath } from "@/src/i18n/locale-url";
 import {
   completeJinlingProfileDraft,
   createEmptyJinlingProfileDraft,
@@ -515,14 +513,7 @@ export function JinlingGameEntry() {
         </section>
       ) : null}
 
-      <header className="absolute inset-x-0 top-0 z-40 flex items-center justify-between px-4 py-4 sm:px-7 sm:py-6">
-        <Link
-          href={localizePath("/games", locale)}
-          className="inline-flex min-h-11 items-center gap-2 border border-white/10 bg-black/25 px-4 text-sm text-white/75 backdrop-blur-md transition hover:border-white/25 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#a52a2e]"
-        >
-          <IconArrowLeft size={17} />
-          {t("back")}
-        </Link>
+      <header className="absolute inset-x-0 top-0 z-40 flex items-center justify-end px-4 py-4 sm:px-7 sm:py-6">
         <div className="flex items-center gap-3 text-right">
           <button
             type="button"

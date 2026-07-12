@@ -118,12 +118,11 @@ export function StudioSidebar() {
   const t = useTranslations("shell");
   const pathname = usePathname() ?? "/";
 
-  // Primary nav — the studio workspaces. Story Studio and Audio have UI shells
-  // for review, but their public entries are not ready yet.
+  // Primary nav — the studio workspaces. Audio still has a review-only shell.
   const items: RailItem[] = [
     { label: t("nav.home"), href: "/", icon: IconHome },
     { label: t("nav.creativeStudio"), href: "/projects", icon: IconLayoutGrid },
-    { label: t("nav.storyStudio"), href: "/story-studio", icon: IconBook2, disabled: true },
+    { label: t("nav.storyStudio"), href: "/story-studio", icon: IconBook2 },
     // Plural to match the web app's /fizzstudio/images so that page ports 1:1.
     { label: t("nav.image"), href: "/images", icon: IconPhoto },
     { label: t("nav.video"), href: "/video", icon: IconVideo },

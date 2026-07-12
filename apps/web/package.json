@@ -9,17 +9,6 @@
     "lint": "eslint",
     "check-types": "tsc --noEmit",
     "test:interactive-film": "tsx --test src/features/interactive-film/domain/*.test.ts src/features/interactive-film/persistence/*.test.ts src/features/jinling-rumeng/content/*.test.ts src/features/jinling-rumeng/production/*.test.ts",
-    "jinling:assets:validate": "tsx scripts/jinling-production/cli.ts validate",
-    "jinling:assets:plan": "tsx scripts/jinling-production/cli.ts plan",
-    "jinling:assets:generate": "tsx scripts/jinling-production/cli.ts fizzdragon-reference-trial",
-    "jinling:dialogue:build": "tsx scripts/jinling-production/build-dialogue-lock.ts",
-    "jinling:production:build": "tsx scripts/jinling-production/build-p00-sc01-production.ts",
-    "jinling:film-cut:build": "tsx scripts/jinling-production/build-film-cut-v2-manifest.ts",
-    "jinling:film-cut:generate": "tsx scripts/jinling-production/run-film-cut-v2-batch.ts",
-    "jinling:film-cut:compile": "tsx scripts/jinling-production/compile-film-chapters.ts",
-    "jinling:media:manifest": "tsx scripts/jinling-production/build-azure-media-release.ts",
-    "jinling:audio": "tsx scripts/jinling-production/seedaudio-production-cli.ts",
-    "jinling:audio:split-sessions": "tsx scripts/jinling-production/split-seedaudio-sessions.ts",
     "legacy:sync": "node scripts/sync-legacy.mjs"
   },
   "dependencies": {
