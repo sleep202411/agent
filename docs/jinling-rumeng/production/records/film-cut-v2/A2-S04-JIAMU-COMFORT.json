@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "assetId": "VIDEO-A2-S04-JIAMU-COMFORT",
+  "fingerprint": "43baa43803365393e3cef6494a99aa2839265f09b6ead058751486eb5776b9a1",
+  "jobId": "019f550c-c5f6-7414-9caf-77743cb6f93e",
+  "referenceMediaAssetIds": ["019f550c-89ac-740d-9e12-6c13b9e5815b"],
+  "sha256": "c05fb4a708adcf0b6a33a5168915edaa1e56b4a48475ebf629da816ff3ff3db4",
+  "bytes": 6049858,
+  "width": 1280,
+  "height": 720,
+  "framesPerSecond": 24,
+  "frameCount": 360,
+  "durationSeconds": 15.022993,
+  "audioStreamCount": 1,
+  "continuityPredecessor": "A2-S03-JIAMU-EMBRACE",
+  "continuityTailSha256": "aa55888e82641be53074c7ff688eb5a4c95b2d64102f6598d5d699a0d5a3266a",
+  "continuitySeamSsim": 0.740749,
+  "continuityEditBridge": null,
+  "outputPath": "/jinling-rumeng/production/story/film-cut-v2/a2-s04-jiamu-comfort.mp4",
+  "reviewed": false
+}

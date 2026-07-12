@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "assetId": "VIDEO-A1-S03-GATE-ARRIVAL",
+  "fingerprint": "c275acd167fc8ad4a096606a6fc1709395b7c7dacae9ccc3d9ce7c6cc9b21275",
+  "jobId": "019f54c9-581f-7703-a39c-8989b0f5873f",
+  "referenceMediaAssetIds": ["019f54c9-0ab4-763f-b4a3-7ec694873e90"],
+  "sha256": "f0b94cbb7743030a4c92d1a48cb56068223ffeb4892a6cbc8437e7003d406b83",
+  "bytes": 6156135,
+  "width": 1280,
+  "height": 720,
+  "framesPerSecond": 24,
+  "frameCount": 360,
+  "durationSeconds": 15,
+  "audioStreamCount": 1,
+  "continuityPredecessor": "A1-S02-DAIYU-SEDAN",
+  "continuityTailSha256": "f2c7fdfe73a91b7d5c3b95d6dcd44a3854f188d6d4a48423cf91d61bf920c632",
+  "continuitySeamSsim": 0.972547,
+  "outputPath": "/jinling-rumeng/production/story/film-cut-v2/a1-s03-gate-arrival.mp4",
+  "reviewed": false
+}

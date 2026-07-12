@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "assetId": "VIDEO-A4-S02-DAIYU-REMEMBERS",
+  "fingerprint": "310e4062cace54eddc86ecc42f97e36d5c6a98b31a55b1b0dd498844615b8885",
+  "jobId": "019f5585-ac09-70d6-961d-a7dc02892e86",
+  "referenceMediaAssetIds": ["019f5585-6405-7081-b3fc-100c7aa47b4a"],
+  "sha256": "0a51198708b4c020140b5cb30ebc624e1126f23b529afeecef7a42c5618d3b8a",
+  "bytes": 3905553,
+  "width": 1280,
+  "height": 720,
+  "framesPerSecond": 24,
+  "frameCount": 360,
+  "durationSeconds": 15.022993,
+  "audioStreamCount": 1,
+  "continuityPredecessor": "A4-S01-DAIYU-NIGHT-ARRIVAL",
+  "continuityTailSha256": "2d933b3457851790216a1b4288739ef34c37cbeae1f845350bb4ef48de983b1f",
+  "continuitySeamSsim": 0.222074,
+  "continuityEditBridge": "candle-steam-pullback",
+  "outputPath": "/jinling-rumeng/production/story/film-cut-v2/a4-s02-daiyu-remembers.mp4",
+  "reviewed": false
+}

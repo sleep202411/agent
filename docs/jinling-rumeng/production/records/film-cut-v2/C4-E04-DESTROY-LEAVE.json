@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "assetId": "VIDEO-C4-E04-DESTROY-LEAVE",
+  "fingerprint": "afe310da096971dcfc7bdbc3c40e3c668c3e1d57ea5d63ed73803539e1b219db",
+  "jobId": "019f55b9-4b15-7c8b-a537-033d42f43ce9",
+  "referenceMediaAssetIds": ["019f55b9-0151-7125-8149-c7cd9d866e3c"],
+  "sha256": "3df81b141bc7c1cc36d07017f4681fe1984ee898cf9a9a72658719009e36aa11",
+  "bytes": 7936689,
+  "width": 1280,
+  "height": 720,
+  "framesPerSecond": 24,
+  "frameCount": 360,
+  "durationSeconds": 15,
+  "audioStreamCount": 1,
+  "continuityPredecessor": "A4-S06-LETTER-CHOICE-WAIT",
+  "continuityTailSha256": "f57586214c343865f20729be37bc0e8ab00e07f406baecbb3dc8cdf3cafc220b",
+  "continuitySeamSsim": 0.715869,
+  "continuityEditBridge": "final-choice-lamp-dip",
+  "outputPath": "/jinling-rumeng/production/story/film-cut-v2/c4-e04-destroy-leave.mp4",
+  "reviewed": false
+}

@@ -1,0 +1,90 @@
+{
+  "schemaVersion": 1,
+  "manifestId": "S01-SC02-SEEDANCE-MANIFEST-V1",
+  "gameId": "jinling-rumeng",
+  "releaseId": "season-01-production",
+  "contentVersion": "2026.07.12.sc02-video.1",
+  "sceneId": "S01-SC02",
+  "productionCardId": "S01-SC02-PRODUCTION-CARD-V1",
+  "status": "LOCKED",
+  "promptVersion": "sc02-locked-dialogue-v1",
+  "authoredAt": "2026-07-12T00:00:00.000Z",
+  "taskIds": ["S01-SC02-B01-VIDEO-MAIN-V2"],
+  "assets": [
+    {
+      "assetId": "S01-SC02-B01-VIDEO-MAIN-CANDIDATE-V2",
+      "taskId": "S01-SC02-B01-VIDEO-MAIN-V2",
+      "sceneId": "S01-SC02",
+      "shotId": "S01-SC02-B01-VIDEO-MAIN-V2",
+      "kind": "VIDEO",
+      "status": "REVIEW",
+      "purpose": "Silent clean-picture main film for the locked Rongguo gate confrontation",
+      "source": {
+        "strategy": "seedance",
+        "provider": "byteplus-modelark",
+        "model": "seedance-2.0",
+        "endpointId": "ep-20260708234913-w8kjv",
+        "mode": "image-to-video",
+        "enabledEnv": "BYTEPLUS_MODELARK_ENABLED",
+        "credentialEnv": "BYTEPLUS_MODELARK_API_KEY",
+        "baseUrlEnv": "BYTEPLUS_MODELARK_API_BASE_URL",
+        "generationParams": {
+          "resolution": "1080p",
+          "ratio": "16:9",
+          "durationSeconds": 12,
+          "generateAudio": false,
+          "watermark": false,
+          "outputRole": "reference-trial"
+        }
+      },
+      "prompt": {
+        "positive": "Continue this exact 16:9 first-person live-action Rongguo gate image as one restrained continuous period-drama shot at cold early dawn. Lin Daiyu's pale-blue sedan and its attendants move naturally deeper through the open gate while the indigo-robed gate attendant at frame right takes one controlled half-step toward the unseen player, lowers his raised stopping hand, and looks down to inspect a recommendation letter held just below frame. A messenger inside pauses and turns to receive the report. Preserve the gate, stone steps, courtyard depth, costume, sedan, cold dawn light and sparse warm lanterns. Camera remains at the unseen player's eye level with only subtle breathing and no third-person reveal. The final three seconds settle into a stable waiting composition for a choice. Silent clean picture plate only; all locked Mandarin dialogue will be added as independent stems.",
+        "negative": [
+          "camera cut, dissolve, teleport, fast zoom, orbit, violent shake or time lapse",
+          "visible player body or face, third-person camera, portrait crop or vertical reframe",
+          "readable plaque, calligraphy, subtitles, captions, logo, watermark or pseudo-writing",
+          "modern object, fantasy palace, temple, Japanese architecture, magic glow or particles",
+          "extra crowd, duplicated sedan, malformed hands, extra limbs, costume drift or identity drift",
+          "embedded speech, generated voice, music, sound effects or any audio stream"
+        ],
+        "script": "0.0–3.0s Daiyu's sedan continues through the open gate as the gate attendant holds the unseen player outside; 3.0–7.0s the attendant lowers his hand, shifts toward the player and inspects the recommendation letter below frame; 7.0–9.0s the inner messenger turns and waits; 9.0–12.0s stable natural hold with the gate attendant at right and the path inside still visible.",
+        "referenceAssetIds": ["S01-SC02-REF-GATE-ESTABLISHING-V1"]
+      },
+      "dependsOn": [],
+      "references": [
+        {
+          "assetId": "S01-SC02-REF-GATE-ESTABLISHING-V1",
+          "path": "apps/web/public/jinling-rumeng/production/story/image/sc02-gate-establishing-16x9-v01.png",
+          "role": "Reviewed 16:9 Rongguo gate environment, sedan blocking and gate-attendant continuity reference"
+        }
+      ],
+      "submission": { "state": "REFERENCE_TRIAL", "blockers": [] },
+      "delivery": {
+        "type": "video",
+        "width": 1920,
+        "height": 1080,
+        "aspectRatio": "16:9",
+        "framesPerSecond": { "numerator": 24, "denominator": 1 },
+        "frameCount": 288,
+        "durationSeconds": { "min": 12, "max": 12 },
+        "container": "mp4",
+        "videoCodec": "h264",
+        "audio": false
+      },
+      "output": {
+        "publicPath": "/jinling-rumeng/production/story/video/sc02-b01-main-16x9-v02.mp4",
+        "recordPath": "production/records/S01-SC02-B01-VIDEO-MAIN-CANDIDATE-V2.json"
+      },
+      "acceptance": [
+        "The shot remains one stable 1920x1080 first-person landscape take",
+        "Daiyu's sedan enters while the gate attendant visibly retains the player at the threshold",
+        "The final composition provides a natural waiting state for C02 choices",
+        "No audio stream, generated text, modern object, fantasy effect or third-person player appears"
+      ],
+      "rejection": [
+        "Reject any camera cut, portrait reframe, player reveal, malformed anatomy or architecture drift",
+        "Reject a static slideshow, duplicated sedan, unreadable staging or embedded audio"
+      ]
+    }
+  ]
+}

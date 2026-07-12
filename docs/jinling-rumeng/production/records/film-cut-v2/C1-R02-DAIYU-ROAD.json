@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "assetId": "VIDEO-C1-R02-DAIYU-ROAD",
+  "fingerprint": "b166e12b2b924aae60dce1dadb9aa3c8f7d82aeb0ae984d1245e66e58ef9b946",
+  "jobId": "019f54d9-d0eb-7f44-bf46-4a740514f3a6",
+  "referenceMediaAssetIds": ["019f54d9-8480-7633-8f0a-8e6f6c3ea4d9"],
+  "sha256": "ded648ace501b2c328054e0179bc7619f3c6f81c35a3e215267f9d681cea7302",
+  "bytes": 4882557,
+  "width": 1280,
+  "height": 720,
+  "framesPerSecond": 24,
+  "frameCount": 360,
+  "durationSeconds": 15.022993,
+  "audioStreamCount": 1,
+  "continuityPredecessor": "A1-S04-GATE-QUESTION",
+  "continuityTailSha256": "2c4c5ff8a938160719b042aa3055c8a88a08e63a237cff71896b6aba84304cc2",
+  "continuitySeamSsim": 0.259555,
+  "continuityEditBridge": "choice-confirm-gate-dip",
+  "outputPath": "/jinling-rumeng/production/story/film-cut-v2/c1-r02-daiyu-road.mp4",
+  "reviewed": false
+}

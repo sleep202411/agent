@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "assetId": "VIDEO-A2-S06-LETTER-TO-XIFENG",
+  "fingerprint": "e519513b7f3e73e7d1186ebb170b23a6619d52303c8c1f943783927f868cccde",
+  "jobId": "019f5513-6464-7e5b-bc37-bfcaa2cfc90a",
+  "referenceMediaAssetIds": ["019f5513-1a4a-738f-944c-47278ea85b6d"],
+  "sha256": "05e4b729be1f072cff54e522d8b7500fca0b173d7ea6d7c612fc22f7c17b291c",
+  "bytes": 5969838,
+  "width": 1280,
+  "height": 720,
+  "framesPerSecond": 24,
+  "frameCount": 360,
+  "durationSeconds": 15.022993,
+  "audioStreamCount": 1,
+  "continuityPredecessor": "A2-S05-JIAMU-TURNS",
+  "continuityTailSha256": "6507bb1638512dbec675458144aefec24d37c182fdfdbd057e3358ebb9275316",
+  "continuitySeamSsim": 0.327654,
+  "continuityEditBridge": "letter-rise-pullback",
+  "outputPath": "/jinling-rumeng/production/story/film-cut-v2/a2-s06-letter-to-xifeng.mp4",
+  "reviewed": false
+}

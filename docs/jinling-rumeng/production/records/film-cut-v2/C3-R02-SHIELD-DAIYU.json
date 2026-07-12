@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "assetId": "VIDEO-C3-R02-SHIELD-DAIYU",
+  "fingerprint": "10777b2c24498f66d9f3b91a79c7304106f7acf74fcf4a1936d814a0e61e0424",
+  "jobId": "019f5570-cfc1-7d02-82db-26cd6366b289",
+  "referenceMediaAssetIds": ["019f5570-81ff-7298-9eb5-94fbd6fcd70a"],
+  "sha256": "a939a9c8fc8013a7aee703b0841ebc27b9c86cb309ebb1d46c72195e8f42aa1a",
+  "bytes": 5657702,
+  "width": 1280,
+  "height": 720,
+  "framesPerSecond": 24,
+  "frameCount": 360,
+  "durationSeconds": 15.022993,
+  "audioStreamCount": 1,
+  "continuityPredecessor": "A3-S08-JADE-THROW",
+  "continuityTailSha256": "cb9c92576158c33d2d3396c1cfcddd04f646c8df2c77fe5cbde20be796b108c7",
+  "continuitySeamSsim": 0.825289,
+  "continuityEditBridge": "choice-confirm-sleeve-dip",
+  "outputPath": "/jinling-rumeng/production/story/film-cut-v2/c3-r02-shield-daiyu.mp4",
+  "reviewed": false
+}

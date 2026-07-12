@@ -1,0 +1,103 @@
+{
+  "schemaVersion": 1,
+  "manifestId": "S01-SC02-ENVIRONMENT-MANIFEST-V1",
+  "gameId": "jinling-rumeng",
+  "releaseId": "season-01-production",
+  "contentVersion": "2026.07.12.sc02-environment.1",
+  "sceneId": "S01-SC02",
+  "productionCardId": "S01-SC02-PRODUCTION-CARD-V1",
+  "status": "LOCKED",
+  "promptVersion": "sc02-gate-environment-v1",
+  "authoredAt": "2026-07-12T00:00:00.000Z",
+  "taskIds": ["S01-SC02-IMG-GATE-ESTABLISHING-V1"],
+  "assets": [
+    {
+      "assetId": "S01-SC02-IMG-GATE-ESTABLISHING-CANDIDATE-V1",
+      "taskId": "S01-SC02-IMG-GATE-ESTABLISHING-V1",
+      "sceneId": "S01-SC02",
+      "shotId": "S01-SC02-B01-VIDEO-MAIN-V2",
+      "kind": "IMAGE",
+      "status": "REVIEW",
+      "purpose": "Historically grounded landscape first-frame environment for the Rongguo residence gate sequence",
+      "source": {
+        "strategy": "seedream",
+        "provider": "byteplus-modelark",
+        "model": "seedream-5-pro",
+        "providerModelId": "seedream-5-0-pro-260628",
+        "endpointId": "dola-seedream-5-0-pro-260628",
+        "mode": "text-to-image",
+        "enabledEnv": "BYTEPLUS_MODELARK_ENABLED",
+        "credentialEnv": "BYTEPLUS_MODELARK_API_KEY",
+        "baseUrlEnv": "BYTEPLUS_MODELARK_API_BASE_URL",
+        "orchestration": {
+          "route": "fizzdragon-cloud-job",
+          "publicBaseUrl": "https://studio.fizzdragon.com",
+          "authEnv": "FIZZDRAGON_SATOKEN",
+          "workspaceEnv": "FIZZDRAGON_WORKSPACE_ID",
+          "catalogModelId": "seedream-5-pro",
+          "schemaVersion": "2026-06-08",
+          "imageSize": "16:9",
+          "resolution": "2K",
+          "sourceSurface": "jinling-production"
+        },
+        "generationParams": {
+          "requestSizeMode": "exact-pixels",
+          "width": 2816,
+          "height": 1584,
+          "size": "2816x1584",
+          "resolutionTier": "2K",
+          "outputFormat": "png",
+          "watermark": false,
+          "outputRole": "reference-trial",
+          "derivation": {
+            "purpose": "review-only",
+            "method": "lanczos3",
+            "sourceDimensions": { "width": 2816, "height": 1584 },
+            "targetDimensions": { "width": 3840, "height": 2160 }
+          }
+        }
+      },
+      "prompt": {
+        "positive": "Cinematic live-action first-person view at the main gate of a wealthy late-imperial Jiangnan aristocratic residence at cold early dawn, historically grounded Qing-era Chinese timber architecture, tall weathered vermilion gate doors and grey stone steps, restrained carved details, natural wood and stone textures. Lin Daiyu's enclosed pale-blue sedan has just reached the open gate and is being guided inside at mid-distance, seen from behind and never as a close portrait. A sober male gate attendant in historically accurate dark indigo servant robes stands three-quarter back at the right side, raising one hand to stop the unseen player while looking down toward a recommendation letter held low at the bottom edge of the first-person frame. Another small messenger figure waits deeper inside the gate. Clear spatial path from street to inner courtyard, misty cool dawn light with sparse warm lantern spill, emotionally restrained prestige period drama, realistic optics, 35mm lens, eye-level landscape composition, central lower safe area for subtitles, no readable writing anywhere",
+        "negative": [
+          "portrait crop, vertical frame, centered glamour portrait or modern beauty photography",
+          "fantasy palace, imperial throne gate, temple, modern street, tourism lighting or saturated red spectacle",
+          "readable plaques, calligraphy, subtitles, logos, watermarks or pseudo-writing",
+          "magic glow, particles, supernatural seal, purple light, fire or horror effect",
+          "third-person player, visible player face, extra hands, malformed anatomy, crowd or soldiers",
+          "Japanese architecture, Korean costume, modern fabric, plastic props or theatrical studio backdrop",
+          "crushed blacks, flat front lighting, shallow portrait background or blocked path into the residence"
+        ],
+        "referenceAssetIds": []
+      },
+      "dependsOn": [],
+      "references": [],
+      "submission": { "state": "REFERENCE_TRIAL", "blockers": [] },
+      "delivery": {
+        "type": "image",
+        "width": 3840,
+        "height": 2160,
+        "aspectRatio": "16:9",
+        "format": "png",
+        "colorSpace": "srgb",
+        "alpha": false
+      },
+      "output": {
+        "publicPath": "/jinling-rumeng/production/story/image/sc02-gate-establishing-16x9-v01.png",
+        "recordPath": "production/records/S01-SC02-IMG-GATE-ESTABLISHING-CANDIDATE-V1.json"
+      },
+      "acceptance": [
+        "The image is a true 16:9 first-person environment, not a portrait inside a landscape canvas",
+        "Daiyu's sedan is mid-distance and entering while the gate attendant physically stops the player",
+        "Architecture, costume, materials and light read as a restrained late-imperial Jiangnan residence",
+        "No readable generated text, player face, modern object or fantasy effect appears",
+        "The lower-center composition remains usable for subtitles and later recommendation-letter continuity"
+      ],
+      "rejection": [
+        "Reject any portrait-framed Daiyu, frontal fashion pose or third-person player",
+        "Reject a magical, imperial-palace, temple, Japanese, modern or tourism-light-show reading",
+        "Reject malformed hands, duplicated people, pseudo-calligraphy or a gate with no readable depth"
+      ]
+    }
+  ]
+}

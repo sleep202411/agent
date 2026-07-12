@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "assetId": "VIDEO-A4-S04-DAIYU-REFUSES-FATE",
+  "fingerprint": "7c5f7b681f0aaac55595ac617d65755cc78f939a5e6a2a8a7448c84f265c349c",
+  "jobId": "019f559c-ee58-7a22-b32c-03f918d18b8a",
+  "referenceMediaAssetIds": ["019f559c-a4bc-70c2-9566-4e281686a075"],
+  "sha256": "cb587da9be695d984a41c18828a6fa646fdc78ba809cc9daa1fc65987a561122",
+  "bytes": 3712308,
+  "width": 1280,
+  "height": 720,
+  "framesPerSecond": 24,
+  "frameCount": 360,
+  "durationSeconds": 15.022993,
+  "audioStreamCount": 1,
+  "continuityPredecessor": "A4-S03-LETTER-REVEAL",
+  "continuityTailSha256": "aeb42089edbc7e41d5d38fae9c3ab134fb8d4f110fd25bae5ef570659246aae7",
+  "continuitySeamSsim": 0.397395,
+  "continuityEditBridge": "letter-lower-eye-lift",
+  "outputPath": "/jinling-rumeng/production/story/film-cut-v2/a4-s04-daiyu-refuses-fate.mp4",
+  "reviewed": false
+}

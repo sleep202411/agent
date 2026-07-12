@@ -83,3 +83,8 @@ playwright-report/
 /*-preview.html
 tmp/
 apps/server/outputs/
+
+# Jinling production renders are immutable Azure Blob release assets. Keep
+# scripts, manifests, prompts and review images in Git; never commit binaries.
+/apps/web/public/jinling-rumeng/**/*.mp4
+/apps/web/public/jinling-rumeng/**/*.wav

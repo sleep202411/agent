@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "assetId": "VIDEO-A3-S06-BAOYU-RECOGNITION",
+  "fingerprint": "c77d2006f600f229b5987316de407f5c47e43f3629c0d359a6d3f674be84a223",
+  "jobId": "019f555d-c84d-749c-820d-580f42122795",
+  "referenceMediaAssetIds": ["019f555d-7f71-75ab-b0a3-3b8c39dfa228"],
+  "sha256": "1e63b0b20ede07f86a5faf853ec3f2f740db005fc9e40cc9cf28a4e328c897f0",
+  "bytes": 6684991,
+  "width": 1280,
+  "height": 720,
+  "framesPerSecond": 24,
+  "frameCount": 360,
+  "durationSeconds": 15,
+  "audioStreamCount": 1,
+  "continuityPredecessor": "A3-S05-BAOYU-HOME-RETURN",
+  "continuityTailSha256": "34bd5e0109e0b6fc6efd3062fa715c244869bc02d8006cd83a2b7d1ee0881d4c",
+  "continuitySeamSsim": 0.546319,
+  "continuityEditBridge": null,
+  "outputPath": "/jinling-rumeng/production/story/film-cut-v2/a3-s06-baoyu-recognition.mp4",
+  "reviewed": false
+}

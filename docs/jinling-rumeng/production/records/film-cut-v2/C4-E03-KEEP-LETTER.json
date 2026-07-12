@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "assetId": "VIDEO-C4-E03-KEEP-LETTER",
+  "fingerprint": "7fc4ebb08f2ac7c0de52d53892e8a435f4b5f5efba72311296977b02c711278d",
+  "jobId": "019f55b4-fbae-7bee-b2f8-bafc49f7edd6",
+  "referenceMediaAssetIds": ["019f55b4-ae44-744d-b4d8-fe54ce02edc3"],
+  "sha256": "81f3e1078b9d8869ebec906abe8950e4c9478f32fb1307ef74f3c9f479406b16",
+  "bytes": 6608380,
+  "width": 1280,
+  "height": 720,
+  "framesPerSecond": 24,
+  "frameCount": 360,
+  "durationSeconds": 15.022993,
+  "audioStreamCount": 1,
+  "continuityPredecessor": "A4-S06-LETTER-CHOICE-WAIT",
+  "continuityTailSha256": "f57586214c343865f20729be37bc0e8ab00e07f406baecbb3dc8cdf3cafc220b",
+  "continuitySeamSsim": 0.264842,
+  "continuityEditBridge": "final-choice-lamp-dip",
+  "outputPath": "/jinling-rumeng/production/story/film-cut-v2/c4-e03-keep-letter.mp4",
+  "reviewed": false
+}

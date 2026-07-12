@@ -1,0 +1,25 @@
+{
+  "schemaVersion": 1,
+  "assetId": "VIDEO-A3-S04-BAOYU-FORMAL-ENTRY",
+  "fingerprint": "5669f9ac3c8b9307962df9971778afb74676d5069be6ec3410af920b7ec71427",
+  "jobId": "019f5557-026a-7a9b-9eb2-9e36fe1eb04c",
+  "referenceMediaAssetIds": [
+    "019f5556-a8f8-77ee-b33e-18178926ff60",
+    "019f5556-b34d-757b-a1e6-ecf94113fc39",
+    "019f5556-ba0c-73ff-bd30-e52417bb7d7e"
+  ],
+  "sha256": "ca0308934732e7452d821382497d770aa1ae69b2414f03354b1acd80007b5e17",
+  "bytes": 9447881,
+  "width": 1280,
+  "height": 720,
+  "framesPerSecond": 24,
+  "frameCount": 360,
+  "durationSeconds": 15.022993,
+  "audioStreamCount": 1,
+  "continuityPredecessor": "A3-S03-XIFENG-SEAL",
+  "continuityTailSha256": "40d0b711a06f474c5f890ac50241de1238eba458bac6a5f4ce998b99507aa5e7",
+  "continuitySeamSsim": null,
+  "continuityEditBridge": null,
+  "outputPath": "/jinling-rumeng/production/story/film-cut-v2/a3-s04-baoyu-formal-entry.mp4",
+  "reviewed": false
+}

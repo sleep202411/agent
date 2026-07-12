@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "assetId": "VIDEO-C3-R04-LET-FALL",
+  "fingerprint": "2b200d4c3cf85af8f590cc975e0da01f493272eae9ef2a081539ef82cc0b83ca",
+  "jobId": "019f557b-19d4-7462-b6a3-915962624bbe",
+  "referenceMediaAssetIds": ["019f557a-d166-74df-a673-057127d5b801"],
+  "sha256": "1988e38d0c805edccb0c17b3cfb169e2947d6f7be85eeea0a3653b77bd7cf6cc",
+  "bytes": 6485697,
+  "width": 1280,
+  "height": 720,
+  "framesPerSecond": 24,
+  "frameCount": 360,
+  "durationSeconds": 15.022993,
+  "audioStreamCount": 1,
+  "continuityPredecessor": "A3-S08-JADE-THROW",
+  "continuityTailSha256": "cb9c92576158c33d2d3396c1cfcddd04f646c8df2c77fe5cbde20be796b108c7",
+  "continuitySeamSsim": 0.723723,
+  "continuityEditBridge": "choice-confirm-sleeve-dip",
+  "outputPath": "/jinling-rumeng/production/story/film-cut-v2/c3-r04-let-fall.mp4",
+  "reviewed": false
+}

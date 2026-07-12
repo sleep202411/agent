@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "assetId": "VIDEO-A4-S03-LETTER-REVEAL",
+  "fingerprint": "c9440e6a3360402e9c8af2b56bd2f1ef23e0d1425933c9f325b80f422ab7893a",
+  "jobId": "019f5590-42dd-7747-bcaa-65d3284e9d84",
+  "referenceMediaAssetIds": ["019f5590-04c0-70dc-989c-ed94fc0754e3"],
+  "sha256": "63647a492d50412b524b902794b2b89ce185928f31c1f19e4743a73ab520b521",
+  "bytes": 4328327,
+  "width": 1280,
+  "height": 720,
+  "framesPerSecond": 24,
+  "frameCount": 360,
+  "durationSeconds": 15.022993,
+  "audioStreamCount": 1,
+  "continuityPredecessor": "A4-S02-DAIYU-REMEMBERS",
+  "continuityTailSha256": "34f9e8b44673566db5a7e7dae6f30a82d59e55b7f042463f9bcd39f7dd47f7fa",
+  "continuitySeamSsim": 0.177405,
+  "continuityEditBridge": "hands-enter-letter-rack-focus",
+  "outputPath": "/jinling-rumeng/production/story/film-cut-v2/a4-s03-letter-reveal.mp4",
+  "reviewed": false
+}

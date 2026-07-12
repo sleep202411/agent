@@ -1,0 +1,726 @@
+{
+  "schemaVersion": 1,
+  "productionVersion": "1.0.0",
+  "dialogueLockVersion": "1.0.0",
+  "dialogueManifestSha256": "6adc1f59a7dc25385ff7862a3155d62384441fc92864ce55b4b0544987d1e1ab",
+  "status": "LOCKED",
+  "title": "金陵入梦：无字来客",
+  "scopeSceneIds": ["S01-P00", "S01-SC01", "S01-SC02"],
+  "orientation": "landscape-only",
+  "aspectRatio": "16:9",
+  "playerVoice": "silent-choice-intent",
+  "references": [
+    {
+      "referenceId": "S01-SC01-REF-LETTER-COMPOSITION",
+      "path": "apps/web/public/jinling-rumeng/preview/story/sc01-letter.png",
+      "role": "SC01 first-person letter, carriage light and prop continuity reference",
+      "requiresVirtualPortrait": false
+    },
+    {
+      "referenceId": "S01-SC01-REF-DAIYU-IDENTITY",
+      "path": "docs/jinling-rumeng/visual/review/CHAR-DAIYU-CAST-A-REF-V02.png",
+      "role": "Reviewed Lin Daiyu face, age, hair, ornaments and pale blue-white costume identity",
+      "requiresVirtualPortrait": true
+    },
+    {
+      "referenceId": "S01-SC01-C01A-V2-FIRST",
+      "path": "docs/jinling-rumeng/visual/review/S01-SC01-C01A-V2-FIRST.png",
+      "role": "Exact final frame of the approved SC01 main shot; ordered first-frame continuity control",
+      "requiresVirtualPortrait": false
+    },
+    {
+      "referenceId": "S01-SC01-C01A-V2-LAST",
+      "path": "docs/jinling-rumeng/visual/review/S01-SC01-C01A-V2-LAST.png",
+      "role": "Reviewed letter close-up with the sedan absent; ordered last-frame narrative-cost control",
+      "requiresVirtualPortrait": false
+    }
+  ],
+  "existingVisuals": [
+    {
+      "visualId": "S01-P00-B02-VIDEO-OPENING-V1",
+      "sceneId": "S01-P00",
+      "path": "/jinling-rumeng/production/p00/video/ledger-opening-16x9-v01.mp4",
+      "durationSeconds": 12,
+      "audioEmbedded": false,
+      "status": "REVIEW"
+    },
+    {
+      "visualId": "S01-P00-B03-VIDEO-CONFIRM-V1",
+      "sceneId": "S01-P00",
+      "path": "/jinling-rumeng/production/p00/video/ledger-confirm-16x9-v01.mp4",
+      "durationSeconds": 6,
+      "audioEmbedded": false,
+      "status": "REVIEW"
+    },
+    {
+      "visualId": "S01-SC01-C01B-VIDEO-REACT-CONTROLLED-V2",
+      "sceneId": "S01-SC01",
+      "path": "/jinling-rumeng/production/story/video/sc01-c01b-react-16x9-v02.mp4",
+      "durationSeconds": 6,
+      "audioEmbedded": false,
+      "status": "REVIEW"
+    },
+    {
+      "visualId": "S01-SC02-B01-VIDEO-MAIN-V2",
+      "sceneId": "S01-SC02",
+      "path": "/jinling-rumeng/production/story/video/sc02-b01-main-16x9-v02.mp4",
+      "durationSeconds": 12,
+      "audioEmbedded": false,
+      "status": "REVIEW"
+    }
+  ],
+  "audioTasks": [
+    {
+      "taskId": "S01-P00-B01-VO-01-AUDIO-V1",
+      "sceneId": "S01-P00",
+      "condition": "always",
+      "dialogueIds": ["S01-P00-B01-VO-01"],
+      "speakerId": "VOICE-LEDGER",
+      "provider": "seedaudio",
+      "task": "voice",
+      "voiceCardId": "VOICECARD-LEDGER-V1",
+      "text": "一页一页，都有来处，也有归处。",
+      "performance": "遥远、平静，不表现具体年龄或身份。",
+      "targetDurationSeconds": 5,
+      "delivery": {
+        "format": "wav",
+        "sampleRateHz": 48000,
+        "bitDepth": 24,
+        "channels": 1
+      },
+      "outputPath": "/jinling-rumeng/production/audio/s01-p00-b01-vo-01-v1.wav"
+    },
+    {
+      "taskId": "S01-P00-B01-VO-02-AUDIO-V1",
+      "sceneId": "S01-P00",
+      "condition": "always",
+      "dialogueIds": ["S01-P00-B01-VO-02"],
+      "speakerId": "VOICE-LEDGER",
+      "provider": "seedaudio",
+      "task": "voice",
+      "voiceCardId": "VOICECARD-LEDGER-V1",
+      "text": "怎么空了一页？",
+      "performance": "第一次出现疑问，仍不惊恐。",
+      "targetDurationSeconds": 3,
+      "delivery": {
+        "format": "wav",
+        "sampleRateHz": 48000,
+        "bitDepth": 24,
+        "channels": 1
+      },
+      "outputPath": "/jinling-rumeng/production/audio/s01-p00-b01-vo-02-v1.wav"
+    },
+    {
+      "taskId": "S01-P00-B02-VO-01-AUDIO-V1",
+      "sceneId": "S01-P00",
+      "condition": "always",
+      "dialogueIds": ["S01-P00-B02-VO-01"],
+      "speakerId": "VOICE-LEDGER",
+      "provider": "seedaudio",
+      "task": "voice",
+      "voiceCardId": "VOICECARD-LEDGER-V1",
+      "text": "册中无名，便没有命么？",
+      "performance": "近一些，像对玩家发问，也像自问。",
+      "targetDurationSeconds": 5,
+      "delivery": {
+        "format": "wav",
+        "sampleRateHz": 48000,
+        "bitDepth": 24,
+        "channels": 1
+      },
+      "outputPath": "/jinling-rumeng/production/audio/s01-p00-b02-vo-01-v1.wav"
+    },
+    {
+      "taskId": "S01-P00-B03-VO-01-AUDIO-V1",
+      "sceneId": "S01-P00",
+      "condition": "profile.confirmed",
+      "dialogueIds": ["S01-P00-B03-VO-01"],
+      "speakerId": "VOICE-LEDGER",
+      "provider": "seedaudio",
+      "task": "voice",
+      "voiceCardId": "VOICECARD-LEDGER-V1",
+      "text": "既不肯照写——便自己去走。",
+      "performance": "破折号前停一拍，后半句不是威胁，而是放行。",
+      "targetDurationSeconds": 6,
+      "delivery": {
+        "format": "wav",
+        "sampleRateHz": 48000,
+        "bitDepth": 24,
+        "channels": 1
+      },
+      "outputPath": "/jinling-rumeng/production/audio/s01-p00-b03-vo-01-v1.wav"
+    },
+    {
+      "taskId": "S01-SC01-B01-VO-01-AUDIO-V1",
+      "sceneId": "S01-SC01",
+      "condition": "always",
+      "dialogueIds": ["S01-SC01-B01-VO-01"],
+      "speakerId": "VOICE-DRIVER",
+      "provider": "seedaudio",
+      "task": "voice",
+      "voiceCardId": "VOICECARD-DRIVER-V1",
+      "text": "前头就是荣府。沈老夫人那封荐书，可收好了。",
+      "performance": "车帘外中距离，年长车夫，平常嘱咐。",
+      "targetDurationSeconds": 6,
+      "delivery": {
+        "format": "wav",
+        "sampleRateHz": 48000,
+        "bitDepth": 24,
+        "channels": 1
+      },
+      "outputPath": "/jinling-rumeng/production/audio/s01-sc01-b01-vo-01-v1.wav"
+    },
+    {
+      "taskId": "S01-SC01-C01A-VO-01-AUDIO-V1",
+      "sceneId": "S01-SC01",
+      "condition": "choice.C01-A",
+      "dialogueIds": ["S01-SC01-C01A-VO-01"],
+      "speakerId": "VOICE-DRIVER",
+      "provider": "seedaudio",
+      "task": "voice",
+      "voiceCardId": "VOICECARD-DRIVER-V1",
+      "text": "到了——别误了门上的报帖。",
+      "performance": "车停时略提高音量，不催命。",
+      "targetDurationSeconds": 4,
+      "delivery": {
+        "format": "wav",
+        "sampleRateHz": 48000,
+        "bitDepth": 24,
+        "channels": 1
+      },
+      "outputPath": "/jinling-rumeng/production/audio/s01-sc01-c01a-vo-01-v1.wav"
+    },
+    {
+      "taskId": "S01-SC01-C01B-VO-01-AUDIO-V1",
+      "sceneId": "S01-SC01",
+      "condition": "choice.C01-B",
+      "dialogueIds": ["S01-SC01-C01B-VO-01"],
+      "speakerId": "VOICE-LEDGER",
+      "provider": "seedaudio",
+      "task": "voice",
+      "voiceCardId": "VOICECARD-LEDGER-V1",
+      "text": "写下了，便是真的么？",
+      "performance": "几不可闻，像水声中的人声倒影。",
+      "targetDurationSeconds": 4,
+      "delivery": {
+        "format": "wav",
+        "sampleRateHz": 48000,
+        "bitDepth": 24,
+        "channels": 1
+      },
+      "outputPath": "/jinling-rumeng/production/audio/s01-sc01-c01b-vo-01-v1.wav"
+    },
+    {
+      "taskId": "S01-SC02-B01-GATE-01-AUDIO-V1",
+      "sceneId": "S01-SC02",
+      "condition": "always",
+      "dialogueIds": ["S01-SC02-B01-GATE-01"],
+      "speakerId": "CHAR-GATE",
+      "provider": "seedaudio",
+      "task": "voice",
+      "voiceCardId": "VOICECARD-GATE-V1",
+      "text": "林姑老爷家的姑娘到了——里头已经候着了。",
+      "performance": "对轿队唱报，声音利落。",
+      "targetDurationSeconds": 6,
+      "delivery": {
+        "format": "wav",
+        "sampleRateHz": 48000,
+        "bitDepth": 24,
+        "channels": 1
+      },
+      "outputPath": "/jinling-rumeng/production/audio/s01-sc02-b01-gate-01-v1.wav"
+    },
+    {
+      "taskId": "S01-SC02-B01-GATE-02-AUDIO-V1",
+      "sceneId": "S01-SC02",
+      "condition": "always",
+      "dialogueIds": ["S01-SC02-B01-GATE-02"],
+      "speakerId": "CHAR-GATE",
+      "provider": "seedaudio",
+      "task": "voice",
+      "voiceCardId": "VOICECARD-GATE-V1",
+      "text": "慢。你的名帖呢？",
+      "performance": "拦住玩家，短句，不粗暴。",
+      "targetDurationSeconds": 3,
+      "delivery": {
+        "format": "wav",
+        "sampleRateHz": 48000,
+        "bitDepth": 24,
+        "channels": 1
+      },
+      "outputPath": "/jinling-rumeng/production/audio/s01-sc02-b01-gate-02-v1.wav"
+    },
+    {
+      "taskId": "S01-SC02-B01-GATE-03-AUDIO-V1",
+      "sceneId": "S01-SC02",
+      "condition": "always",
+      "dialogueIds": ["S01-SC02-B01-GATE-03"],
+      "speakerId": "CHAR-GATE",
+      "provider": "seedaudio",
+      "task": "voice",
+      "voiceCardId": "VOICECARD-GATE-V1",
+      "text": "沈老夫人的旧印……你与林姑娘同行，还是另有来处？",
+      "performance": "认出旧印后收敛态度，停顿落在旧印。",
+      "targetDurationSeconds": 7,
+      "delivery": {
+        "format": "wav",
+        "sampleRateHz": 48000,
+        "bitDepth": 24,
+        "channels": 1
+      },
+      "outputPath": "/jinling-rumeng/production/audio/s01-sc02-b01-gate-03-v1.wav"
+    },
+    {
+      "taskId": "S01-SC02-C02A-GATE-01-AUDIO-V1",
+      "sceneId": "S01-SC02",
+      "condition": "choice.C02-A",
+      "dialogueIds": ["S01-SC02-C02A-GATE-01"],
+      "speakerId": "CHAR-GATE",
+      "provider": "seedaudio",
+      "task": "voice",
+      "voiceCardId": "VOICECARD-GATE-V1",
+      "text": "既是旧托，先在门内候。话我照原样传，少一句都不成。",
+      "performance": "重新打量后双手交信，公事公办。",
+      "targetDurationSeconds": 7,
+      "delivery": {
+        "format": "wav",
+        "sampleRateHz": 48000,
+        "bitDepth": 24,
+        "channels": 1
+      },
+      "outputPath": "/jinling-rumeng/production/audio/s01-sc02-c02a-gate-01-v1.wav"
+    },
+    {
+      "taskId": "S01-SC02-C02A-MSG-01-AUDIO-V1",
+      "sceneId": "S01-SC02",
+      "condition": "choice.C02-A",
+      "dialogueIds": ["S01-SC02-C02A-MSG-01"],
+      "speakerId": "CHAR-MESSENGER",
+      "provider": "seedaudio",
+      "task": "voice",
+      "voiceCardId": "VOICECARD-MESSENGER-V1",
+      "text": "姓名和来处，再说一遍。",
+      "performance": "走前回头确认，语速快。",
+      "targetDurationSeconds": 4,
+      "delivery": {
+        "format": "wav",
+        "sampleRateHz": 48000,
+        "bitDepth": 24,
+        "channels": 1
+      },
+      "outputPath": "/jinling-rumeng/production/audio/s01-sc02-c02a-msg-01-v1.wav"
+    },
+    {
+      "taskId": "S01-SC02-C02B-GATE-01-AUDIO-V1",
+      "sceneId": "S01-SC02",
+      "condition": "choice.C02-B",
+      "dialogueIds": ["S01-SC02-C02B-GATE-01"],
+      "speakerId": "CHAR-GATE",
+      "provider": "seedaudio",
+      "task": "voice",
+      "voiceCardId": "VOICECARD-GATE-V1",
+      "text": "林家的帖上没有你。",
+      "performance": "翻帖后直接指出矛盾。",
+      "targetDurationSeconds": 4,
+      "delivery": {
+        "format": "wav",
+        "sampleRateHz": 48000,
+        "bitDepth": 24,
+        "channels": 1
+      },
+      "outputPath": "/jinling-rumeng/production/audio/s01-sc02-c02b-gate-01-v1.wav"
+    },
+    {
+      "taskId": "S01-SC02-C02B-GATE-02-AUDIO-V1",
+      "sceneId": "S01-SC02",
+      "condition": "choice.C02-B",
+      "dialogueIds": ["S01-SC02-C02B-GATE-02"],
+      "speakerId": "CHAR-GATE",
+      "provider": "seedaudio",
+      "task": "voice",
+      "voiceCardId": "VOICECARD-GATE-V1",
+      "text": "罢了，先并作同路报进去。若问起来，你自己圆。",
+      "performance": "给一条临时通路，也把风险还给玩家。",
+      "targetDurationSeconds": 7,
+      "delivery": {
+        "format": "wav",
+        "sampleRateHz": 48000,
+        "bitDepth": 24,
+        "channels": 1
+      },
+      "outputPath": "/jinling-rumeng/production/audio/s01-sc02-c02b-gate-02-v1.wav"
+    },
+    {
+      "taskId": "S01-SC02-C02C-GATE-01-AUDIO-V1",
+      "sceneId": "S01-SC02",
+      "condition": "choice.C02-C && origin.WEAVE",
+      "dialogueIds": ["S01-SC02-C02C-GATE-01"],
+      "speakerId": "CHAR-GATE",
+      "provider": "seedaudio",
+      "task": "voice",
+      "voiceCardId": "VOICECARD-GATE-V1",
+      "text": "这不是寻常铺子的样。你先进去，东西收紧些，凤奶奶眼尖。",
+      "performance": "不碰云锦，只近看；后半句压低。",
+      "targetDurationSeconds": 7,
+      "delivery": {
+        "format": "wav",
+        "sampleRateHz": 48000,
+        "bitDepth": 24,
+        "channels": 1
+      },
+      "outputPath": "/jinling-rumeng/production/audio/s01-sc02-c02c-gate-01-v1.wav"
+    },
+    {
+      "taskId": "S01-SC02-C02C-GATE-02-AUDIO-V1",
+      "sceneId": "S01-SC02",
+      "condition": "choice.C02-C && origin.KIN",
+      "dialogueIds": ["S01-SC02-C02C-GATE-02"],
+      "speakerId": "CHAR-GATE",
+      "provider": "seedaudio",
+      "task": "voice",
+      "voiceCardId": "VOICECARD-GATE-V1",
+      "text": "这印我见管事房拓过。你先候着，我不敢替里头认人。",
+      "performance": "立即让开半步，但不越权担保。",
+      "targetDurationSeconds": 7,
+      "delivery": {
+        "format": "wav",
+        "sampleRateHz": 48000,
+        "bitDepth": 24,
+        "channels": 1
+      },
+      "outputPath": "/jinling-rumeng/production/audio/s01-sc02-c02c-gate-02-v1.wav"
+    },
+    {
+      "taskId": "S01-SC02-C02C-GATE-03-AUDIO-V1",
+      "sceneId": "S01-SC02",
+      "condition": "choice.C02-C && origin.MEDIC",
+      "dialogueIds": ["S01-SC02-C02C-GATE-03"],
+      "speakerId": "CHAR-GATE",
+      "provider": "seedaudio",
+      "task": "voice",
+      "voiceCardId": "VOICECARD-GATE-V1",
+      "text": "今儿府里没请外医。你若是来投亲，药箱别往内院乱带。",
+      "performance": "闻见药香后提醒规矩，不嘲讽。",
+      "targetDurationSeconds": 7,
+      "delivery": {
+        "format": "wav",
+        "sampleRateHz": 48000,
+        "bitDepth": 24,
+        "channels": 1
+      },
+      "outputPath": "/jinling-rumeng/production/audio/s01-sc02-c02c-gate-03-v1.wav"
+    },
+    {
+      "taskId": "S01-SC02-B02-MSG-01-AUDIO-V1",
+      "sceneId": "S01-SC02",
+      "condition": "always",
+      "dialogueIds": ["S01-SC02-B02-MSG-01"],
+      "speakerId": "CHAR-MESSENGER",
+      "provider": "seedaudio",
+      "task": "voice",
+      "voiceCardId": "VOICECARD-MESSENGER-V1",
+      "text": "林姑娘后头还有一位——他说的是……",
+      "performance": "边走边向下一道门复述，尾句进入音桥。",
+      "targetDurationSeconds": 5,
+      "delivery": {
+        "format": "wav",
+        "sampleRateHz": 48000,
+        "bitDepth": 24,
+        "channels": 1
+      },
+      "outputPath": "/jinling-rumeng/production/audio/s01-sc02-b02-msg-01-v1.wav"
+    }
+  ],
+  "videoTasks": [
+    {
+      "taskId": "S01-SC01-B01-VIDEO-MAIN-V2",
+      "assetId": "S01-SC01-B01-VIDEO-MAIN-CANDIDATE-V2",
+      "sceneId": "S01-SC01",
+      "condition": "always",
+      "dialogueIds": [],
+      "provider": "seedance-2.0",
+      "endpointId": "ep-20260708234913-w8kjv",
+      "mode": "image-to-video",
+      "generateAudio": false,
+      "durationSeconds": 12,
+      "resolution": "1080p",
+      "width": 1920,
+      "height": 1080,
+      "framesPerSecond": 24,
+      "frameCount": 288,
+      "prompt": "Create a continuous restrained live-action first-person carriage arrival in late-imperial Jiangnan from this exact recommendation-letter reference. Begin inside a moving wooden carriage with the letter held low in frame, then let the curtain breathe open enough to reveal the Rongguo residence approach and Lin Daiyu's sedan ahead. Preserve the letter, cord, pale-red seal, cold dawn light and physical carriage motion. The player is never shown in third person. Keep the central 16:9 action area clear for subtitles. Produce a silent clean picture plate; no dialogue, music or generated sound.",
+      "timeline": "0.0–3.0s wake into gentle carriage motion with the letter low in frame; 3.0–7.0s curtain movement reveals the approach and distant sedan; 7.0–10.0s carriage slows near the residence; 10.0–12.0s stable natural hold for the choice transition.",
+      "negative": [
+        "baked subtitles, captions, readable pseudo-writing, logos or watermarks",
+        "modern objects, fantasy particles, glowing magic, identity drift or costume drift",
+        "extra people, extra limbs, malformed anatomy, camera cuts, fast zooms or violent shake",
+        "vertical framing, 9:16 crop, portrait composition or key action outside the central landscape frame",
+        "embedded speech, music, sound effects, visible player face, third-person camera or readable letter text"
+      ],
+      "referenceIds": ["S01-SC01-REF-LETTER-COMPOSITION"],
+      "outputPath": "/jinling-rumeng/production/story/video/sc01-b01-main-16x9-v02.mp4",
+      "recordPath": "production/records/S01-SC01-B01-VIDEO-MAIN-CANDIDATE-V2.json"
+    },
+    {
+      "taskId": "S01-SC01-C01A-VIDEO-REACT-V2",
+      "assetId": "S01-SC01-C01A-VIDEO-REACT-CANDIDATE-V2",
+      "sceneId": "S01-SC01",
+      "condition": "choice.C01-A",
+      "dialogueIds": [],
+      "provider": "seedance-2.0",
+      "endpointId": "ep-20260708234913-w8kjv",
+      "mode": "first-last-frame-to-video",
+      "generateAudio": false,
+      "durationSeconds": 6,
+      "resolution": "1080p",
+      "width": 1920,
+      "height": 1080,
+      "framesPerSecond": 24,
+      "frameCount": 144,
+      "prompt": "Create one continuous restrained live-action first-person camera movement between the exact supplied first and last frames. Begin at the end of the carriage-arrival shot with Lin Daiyu's sedan still centered near the gate. The player deliberately lowers their gaze to inspect the old recommendation letter; the camera tilts down naturally inside the same carriage while it settles with believable weight. End exactly on the supplied letter close-up, where the sedan is no longer visible because the player chose to look away. Preserve carriage curtains, dark wood, cold dawn light, letter geometry, cord and seal. Do not invent readable writing. Silent clean picture plate only.",
+      "timeline": "0.0–1.2s hold the sedan and gate from the exact first frame; 1.2–4.8s one natural continuous downward first-person tilt toward the letter as the carriage settles; 4.8–6.0s arrive exactly at the supplied letter close-up and hold, with no sedan visible.",
+      "negative": [
+        "baked subtitles, captions, readable pseudo-writing, logos or watermarks",
+        "modern objects, fantasy particles, glowing magic, identity drift or costume drift",
+        "extra people, extra limbs, malformed anatomy, camera cuts, fast zooms or violent shake",
+        "vertical framing, 9:16 crop, portrait composition or key action outside the central landscape frame",
+        "readable generated calligraphy, embedded audio, camera cut, cross-dissolve, teleporting objects, returning sedan or melodramatic camera movement"
+      ],
+      "referenceIds": ["S01-SC01-C01A-V2-FIRST", "S01-SC01-C01A-V2-LAST"],
+      "outputPath": "/jinling-rumeng/production/story/video/sc01-c01a-react-16x9-v02.mp4",
+      "recordPath": "production/records/S01-SC01-C01A-VIDEO-REACT-CANDIDATE-V2.json"
+    },
+    {
+      "taskId": "S01-SC01-C01B-VIDEO-REACT-V1",
+      "assetId": "S01-SC01-C01B-VIDEO-REACT-CANDIDATE-V1",
+      "sceneId": "S01-SC01",
+      "condition": "choice.C01-B",
+      "dialogueIds": [],
+      "provider": "seedance-2.0",
+      "endpointId": "ep-20260708234913-w8kjv",
+      "mode": "image-to-video",
+      "generateAudio": false,
+      "durationSeconds": 6,
+      "resolution": "1080p",
+      "width": 1920,
+      "height": 1080,
+      "framesPerSecond": 24,
+      "frameCount": 144,
+      "prompt": "Continue the exact first-person recommendation-letter close-up as a restrained six-second live-action uncanny reaction. A very faint pale-red fibre pattern becomes perceptible inside the existing seal and then recedes as natural dawn reflection crosses the paper. It must look physically embedded in paper fibres, never like magic, fire, neon or a user interface. Preserve letter geometry, cord, wood, carriage motion and 16:9 composition. Silent clean picture plate only.",
+      "timeline": "0.0–1.8s normal paper and carriage vibration; 1.8–4.2s the pale-red fibre trace quietly emerges under changing natural light; 4.2–6.0s the trace recedes to an unresolved stable hold.",
+      "negative": [
+        "baked subtitles, captions, readable pseudo-writing, logos or watermarks",
+        "modern objects, fantasy particles, glowing magic, identity drift or costume drift",
+        "extra people, extra limbs, malformed anatomy, camera cuts, fast zooms or violent shake",
+        "vertical framing, 9:16 crop, portrait composition or key action outside the central landscape frame",
+        "magic seal, glowing rune, fire, horror effect, readable text or embedded audio"
+      ],
+      "referenceIds": ["S01-SC01-REF-LETTER-COMPOSITION"],
+      "outputPath": "/jinling-rumeng/production/story/video/sc01-c01b-react-16x9-v01.mp4",
+      "recordPath": "production/records/S01-SC01-C01B-VIDEO-REACT-CANDIDATE-V1.json"
+    },
+    {
+      "taskId": "S01-SC01-C01C-VIDEO-REACT-V1",
+      "assetId": "S01-SC01-C01C-VIDEO-REACT-CANDIDATE-V1",
+      "sceneId": "S01-SC01",
+      "condition": "choice.C01-C",
+      "dialogueIds": ["S01-SC01-C01C-DY-01"],
+      "provider": "seedance-2.0",
+      "endpointId": "ep-20260708234913-w8kjv",
+      "mode": "multimodal-to-video",
+      "generateAudio": true,
+      "durationSeconds": 6,
+      "resolution": "1080p",
+      "width": 1920,
+      "height": 1080,
+      "framesPerSecond": 24,
+      "frameCount": 144,
+      "prompt": "Use the exact Lin Daiyu identity reference and the exact Qinhuai carriage visual reference to create one continuous restrained live-action first-person shot. Lin Daiyu is a young late-imperial Chinese woman in pale blue-white clothing, seen through the partially raised curtain of her sedan. Preserve her face, age, hair, ornaments and clothing exactly. She notices the player, asks softly in natural Mandarin with accurate restrained lip sync: ‘也是来做客的么？’ She is unsure whether the player heard her, and withdraws her gaze immediately after speaking. Generate synchronized quiet carriage ambience, cloth movement, distant horse steps and only that spoken line; no music.",
+      "timeline": "0.0–1.2s curtain and sedan motion establish her glance; 1.2–4.3s Daiyu says ‘也是来做客的么？’ with accurate lip sync; 4.3–6.0s she withdraws her gaze and the curtain settles.",
+      "negative": [
+        "baked subtitles, captions, readable pseudo-writing, logos or watermarks",
+        "modern objects, fantasy particles, glowing magic, identity drift or costume drift",
+        "extra people, extra limbs, malformed anatomy, camera cuts, fast zooms or violent shake",
+        "vertical framing, 9:16 crop, portrait composition or key action outside the central landscape frame",
+        "different face, adult makeup, romantic posing, flirtation, exaggerated smile, duplicated voice, English speech or background music"
+      ],
+      "referenceIds": ["S01-SC01-REF-DAIYU-IDENTITY", "S01-SC01-REF-LETTER-COMPOSITION"],
+      "outputPath": "/jinling-rumeng/production/story/video/sc01-c01c-daiyu-react-16x9-v01.mp4",
+      "recordPath": "production/records/S01-SC01-C01C-VIDEO-REACT-CANDIDATE-V1.json"
+    }
+  ],
+  "assemblyNodes": [
+    {
+      "nodeId": "S01-P00-B01-OPENING",
+      "sceneId": "S01-P00",
+      "condition": "always",
+      "cues": [
+        {
+          "cueId": "P00-B01-VISUAL",
+          "kind": "visual",
+          "refId": "S01-P00-B02-VIDEO-OPENING-V1",
+          "trigger": "node-enter"
+        },
+        {
+          "cueId": "P00-B01-VO01",
+          "kind": "audio-task",
+          "refId": "S01-P00-B01-VO-01-AUDIO-V1",
+          "trigger": "visual-time",
+          "startSeconds": 0.8
+        },
+        {
+          "cueId": "P00-B01-VO02",
+          "kind": "audio-task",
+          "refId": "S01-P00-B01-VO-02-AUDIO-V1",
+          "trigger": "visual-time",
+          "startSeconds": 7.2
+        }
+      ]
+    },
+    {
+      "nodeId": "S01-P00-B02-PROFILE",
+      "sceneId": "S01-P00",
+      "condition": "always",
+      "cues": [
+        {
+          "cueId": "P00-B02-INTERACTION",
+          "kind": "interaction",
+          "refId": "P00-PROFILE-INTERACTION",
+          "trigger": "node-enter"
+        },
+        {
+          "cueId": "P00-B02-VO01",
+          "kind": "audio-task",
+          "refId": "S01-P00-B02-VO-01-AUDIO-V1",
+          "trigger": "profile-ready"
+        }
+      ]
+    },
+    {
+      "nodeId": "S01-P00-B03-CONFIRM",
+      "sceneId": "S01-P00",
+      "condition": "profile.confirmed",
+      "cues": [
+        {
+          "cueId": "P00-B03-VISUAL",
+          "kind": "visual",
+          "refId": "S01-P00-B03-VIDEO-CONFIRM-V1",
+          "trigger": "profile-confirmed"
+        },
+        {
+          "cueId": "P00-B03-VO01",
+          "kind": "audio-task",
+          "refId": "S01-P00-B03-VO-01-AUDIO-V1",
+          "trigger": "profile-confirmed"
+        }
+      ]
+    },
+    {
+      "nodeId": "S01-SC01-B01-MAIN",
+      "sceneId": "S01-SC01",
+      "condition": "always",
+      "cues": [
+        {
+          "cueId": "SC01-B01-VISUAL",
+          "kind": "video-task",
+          "refId": "S01-SC01-B01-VIDEO-MAIN-V2",
+          "trigger": "node-enter"
+        },
+        {
+          "cueId": "SC01-B01-VO",
+          "kind": "audio-task",
+          "refId": "S01-SC01-B01-VO-01-AUDIO-V1",
+          "trigger": "visual-time",
+          "startSeconds": 3.2
+        }
+      ]
+    },
+    {
+      "nodeId": "S01-SC01-C01A-REACT",
+      "sceneId": "S01-SC01",
+      "condition": "choice.C01-A",
+      "cues": [
+        {
+          "cueId": "SC01-C01A-VISUAL",
+          "kind": "video-task",
+          "refId": "S01-SC01-C01A-VIDEO-REACT-V2",
+          "trigger": "node-enter"
+        },
+        {
+          "cueId": "SC01-C01A-VO",
+          "kind": "audio-task",
+          "refId": "S01-SC01-C01A-VO-01-AUDIO-V1",
+          "trigger": "visual-time",
+          "startSeconds": 1
+        }
+      ]
+    },
+    {
+      "nodeId": "S01-SC01-C01B-REACT",
+      "sceneId": "S01-SC01",
+      "condition": "choice.C01-B",
+      "cues": [
+        {
+          "cueId": "SC01-C01B-VISUAL",
+          "kind": "visual",
+          "refId": "S01-SC01-C01B-VIDEO-REACT-CONTROLLED-V2",
+          "trigger": "node-enter"
+        },
+        {
+          "cueId": "SC01-C01B-VO",
+          "kind": "audio-task",
+          "refId": "S01-SC01-C01B-VO-01-AUDIO-V1",
+          "trigger": "visual-time",
+          "startSeconds": 1
+        }
+      ]
+    },
+    {
+      "nodeId": "S01-SC01-C01C-REACT",
+      "sceneId": "S01-SC01",
+      "condition": "choice.C01-C",
+      "cues": [
+        {
+          "cueId": "SC01-C01C-VISUAL",
+          "kind": "video-task",
+          "refId": "S01-SC01-C01C-VIDEO-REACT-V1",
+          "trigger": "node-enter"
+        }
+      ]
+    },
+    {
+      "nodeId": "S01-SC02-B01-MAIN",
+      "sceneId": "S01-SC02",
+      "condition": "always",
+      "cues": [
+        {
+          "cueId": "SC02-B01-VISUAL",
+          "kind": "visual",
+          "refId": "S01-SC02-B01-VIDEO-MAIN-V2",
+          "trigger": "node-enter"
+        },
+        {
+          "cueId": "SC02-B01-GATE-01",
+          "kind": "audio-task",
+          "refId": "S01-SC02-B01-GATE-01-AUDIO-V1",
+          "trigger": "visual-time",
+          "startSeconds": 0.2
+        },
+        {
+          "cueId": "SC02-B01-GATE-02",
+          "kind": "audio-task",
+          "refId": "S01-SC02-B01-GATE-02-AUDIO-V1",
+          "trigger": "visual-time",
+          "startSeconds": 3.7
+        },
+        {
+          "cueId": "SC02-B01-GATE-03",
+          "kind": "audio-task",
+          "refId": "S01-SC02-B01-GATE-03-AUDIO-V1",
+          "trigger": "visual-time",
+          "startSeconds": 6.1
+        }
+      ]
+    }
+  ]
+}

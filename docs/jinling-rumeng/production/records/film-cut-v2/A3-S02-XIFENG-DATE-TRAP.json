@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "assetId": "VIDEO-A3-S02-XIFENG-DATE-TRAP",
+  "fingerprint": "81e6fa460cbe873d795832ba934d090caa87191d64ab3f305032d53df2b2c1c4",
+  "jobId": "019f5527-f227-720b-9180-8c259f292d18",
+  "referenceMediaAssetIds": ["019f5527-b32f-716a-a0bf-76fc9a61bf39"],
+  "sha256": "626ef7109b1dc7dd2f6e9210b668a50202f5426e7733f141ef8363720dc3493d",
+  "bytes": 6526902,
+  "width": 1280,
+  "height": 720,
+  "framesPerSecond": 24,
+  "frameCount": 360,
+  "durationSeconds": 15.022993,
+  "audioStreamCount": 1,
+  "continuityPredecessor": "A3-S01-XIFENG-CLOSES-DOOR",
+  "continuityTailSha256": "7e1a42d33216144f247ee5f9cfabb7df24ea9aa6639f3eb3004d81524825eb81",
+  "continuitySeamSsim": 0.584492,
+  "continuityEditBridge": null,
+  "outputPath": "/jinling-rumeng/production/story/film-cut-v2/a3-s02-xifeng-date-trap.mp4",
+  "reviewed": false
+}

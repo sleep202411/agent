@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "assetId": "VIDEO-C2-R01-PROTECT-DAIYU",
+  "fingerprint": "16988990b08ccb8e61c84971cb51bf30f4e9c3cca0b1fb912add1f2d9d2e79a8",
+  "jobId": "019f54eb-e453-77ea-9f14-3e6dfc2cf6ab",
+  "referenceMediaAssetIds": ["019f54eb-927f-7518-ab64-196df6bbd476"],
+  "sha256": "0d5aee18b62078825ced5cb4c8ac5bea485f340217ed5aa5229610b460efe32c",
+  "bytes": 6482719,
+  "width": 1280,
+  "height": 720,
+  "framesPerSecond": 24,
+  "frameCount": 360,
+  "durationSeconds": 15.022993,
+  "audioStreamCount": 1,
+  "continuityPredecessor": "A2-S02-WIND-CRISIS",
+  "continuityTailSha256": "35bbaa32ea9503e20c9875ddea8a0b9acfcbb0084f0e346aa82d2a4f941eb2b8",
+  "continuitySeamSsim": 0.356429,
+  "continuityEditBridge": "choice-confirm-lantern-dip",
+  "outputPath": "/jinling-rumeng/production/story/film-cut-v2/c2-r01-protect-daiyu.mp4",
+  "reviewed": false
+}

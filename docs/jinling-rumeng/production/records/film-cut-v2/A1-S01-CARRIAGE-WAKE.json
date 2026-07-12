@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 1,
+  "assetId": "VIDEO-A1-S01-CARRIAGE-WAKE",
+  "fingerprint": "2d3ff7e8e59b653821ab7d908b7ee54aa80cbf96092f91a9fdaf619d83400584",
+  "jobId": "019f54c0-ffc8-7adf-a124-6b9208603378",
+  "referenceMediaAssetIds": [
+    "019f54c0-b7f3-7479-b81e-ff351c26c459",
+    "019f54c0-c1de-765b-8f56-233438ffe1a1"
+  ],
+  "sha256": "f3699ac87ed876319d7b859bbe602b0dbd6e22a99e16616125152cbd6308899d",
+  "bytes": 6816264,
+  "width": 1280,
+  "height": 720,
+  "framesPerSecond": 24,
+  "frameCount": 360,
+  "durationSeconds": 15.022993,
+  "audioStreamCount": 1,
+  "continuityPredecessor": null,
+  "continuityTailSha256": null,
+  "continuitySeamSsim": null,
+  "outputPath": "/jinling-rumeng/production/story/film-cut-v2/a1-s01-carriage-wake.mp4",
+  "reviewed": false
+}

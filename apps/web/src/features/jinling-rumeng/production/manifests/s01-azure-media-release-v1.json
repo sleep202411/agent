@@ -1,0 +1,515 @@
+{
+  "schemaVersion": 1,
+  "releaseId": "jinling-rumeng-s01-v1",
+  "provider": "azure-blob",
+  "container": "foundry-outputs",
+  "objectPrefix": "interactive-films/jinling-rumeng/s01/v1",
+  "cacheControl": "public,max-age=31536000,immutable",
+  "publishedAt": "2026-07-12T10:17:34.000Z",
+  "assets": [
+    {
+      "assetId": "audio:s01-p00-ambience-v1",
+      "kind": "audio",
+      "contentType": "audio/wav",
+      "bytes": 3456102,
+      "sha256": "a7411e81c8550b2951961ac4fbde99564b741abb77ade2a32298f8adadd89c07",
+      "objectKey": "interactive-films/jinling-rumeng/s01/v1/audio/s01-p00-ambience-v1.wav",
+      "publicUrl": "https://fizzdragonblob.blob.core.windows.net/foundry-outputs/interactive-films/jinling-rumeng/s01/v1/audio/s01-p00-ambience-v1.wav"
+    },
+    {
+      "assetId": "audio:s01-p00-b01-vo-01-v1",
+      "kind": "audio",
+      "contentType": "audio/wav",
+      "bytes": 798582,
+      "sha256": "1c26af4acab285d7bbf5ebda66a00e584407d549210a33c1f1c6257ab9998c7b",
+      "objectKey": "interactive-films/jinling-rumeng/s01/v1/audio/s01-p00-b01-vo-01-v1.wav",
+      "publicUrl": "https://fizzdragonblob.blob.core.windows.net/foundry-outputs/interactive-films/jinling-rumeng/s01/v1/audio/s01-p00-b01-vo-01-v1.wav"
+    },
+    {
+      "assetId": "audio:s01-p00-b01-vo-02-v1",
+      "kind": "audio",
+      "contentType": "audio/wav",
+      "bytes": 222582,
+      "sha256": "b421f45602394ac00022d0390896bd925896426e3c0970df8fd5162179697fa2",
+      "objectKey": "interactive-films/jinling-rumeng/s01/v1/audio/s01-p00-b01-vo-02-v1.wav",
+      "publicUrl": "https://fizzdragonblob.blob.core.windows.net/foundry-outputs/interactive-films/jinling-rumeng/s01/v1/audio/s01-p00-b01-vo-02-v1.wav"
+    },
+    {
+      "assetId": "audio:s01-p00-b02-vo-01-v1",
+      "kind": "audio",
+      "contentType": "audio/wav",
+      "bytes": 464502,
+      "sha256": "9de3c4901aee731105b82a6854bbd349a889d8913cc3fd2a81fe3437bbec07aa",
+      "objectKey": "interactive-films/jinling-rumeng/s01/v1/audio/s01-p00-b02-vo-01-v1.wav",
+      "publicUrl": "https://fizzdragonblob.blob.core.windows.net/foundry-outputs/interactive-films/jinling-rumeng/s01/v1/audio/s01-p00-b02-vo-01-v1.wav"
+    },
+    {
+      "assetId": "audio:s01-p00-b03-vo-01-v1",
+      "kind": "audio",
+      "contentType": "audio/wav",
+      "bytes": 527862,
+      "sha256": "2837b140ce5fdc6dc8340d40d835940a96a05e30f8c4d0149b0aa55ea79d4f2d",
+      "objectKey": "interactive-films/jinling-rumeng/s01/v1/audio/s01-p00-b03-vo-01-v1.wav",
+      "publicUrl": "https://fizzdragonblob.blob.core.windows.net/foundry-outputs/interactive-films/jinling-rumeng/s01/v1/audio/s01-p00-b03-vo-01-v1.wav"
+    },
+    {
+      "assetId": "audio:s01-p00-confirm-mix-v1",
+      "kind": "audio",
+      "contentType": "audio/wav",
+      "bytes": 1728102,
+      "sha256": "0b39e77fff43baa51211ae919a794e49fd485baf63b34c115b1bda0ec27ee2bc",
+      "objectKey": "interactive-films/jinling-rumeng/s01/v1/audio/s01-p00-confirm-mix-v1.wav",
+      "publicUrl": "https://fizzdragonblob.blob.core.windows.net/foundry-outputs/interactive-films/jinling-rumeng/s01/v1/audio/s01-p00-confirm-mix-v1.wav"
+    },
+    {
+      "assetId": "audio:s01-p00-opening-mix-v1",
+      "kind": "audio",
+      "contentType": "audio/wav",
+      "bytes": 3456102,
+      "sha256": "4c1d54883f536702a9a7f06c998a39d56638a9a5611c5fb7bfc806714b618cc1",
+      "objectKey": "interactive-films/jinling-rumeng/s01/v1/audio/s01-p00-opening-mix-v1.wav",
+      "publicUrl": "https://fizzdragonblob.blob.core.windows.net/foundry-outputs/interactive-films/jinling-rumeng/s01/v1/audio/s01-p00-opening-mix-v1.wav"
+    },
+    {
+      "assetId": "p00:ledger-confirm-16x9-v01",
+      "kind": "video",
+      "contentType": "video/mp4",
+      "bytes": 4155262,
+      "sha256": "2435dc800b6de38d8934f53e1f3dc773290d2fd0d31bb816752c3d6c3115fbc8",
+      "objectKey": "interactive-films/jinling-rumeng/s01/v1/p00/ledger-confirm-16x9-v01.mp4",
+      "publicUrl": "https://fizzdragonblob.blob.core.windows.net/foundry-outputs/interactive-films/jinling-rumeng/s01/v1/p00/ledger-confirm-16x9-v01.mp4"
+    },
+    {
+      "assetId": "p00:ledger-confirm-16x9-v03",
+      "kind": "video",
+      "contentType": "video/mp4",
+      "bytes": 4303397,
+      "sha256": "c016bed985af4808eb6a2de9f070457a78d03804c1af218c0d9788a68cfe1a62",
+      "objectKey": "interactive-films/jinling-rumeng/s01/v1/p00/ledger-confirm-16x9-v03.mp4",
+      "publicUrl": "https://fizzdragonblob.blob.core.windows.net/foundry-outputs/interactive-films/jinling-rumeng/s01/v1/p00/ledger-confirm-16x9-v03.mp4"
+    },
+    {
+      "assetId": "p00:ledger-opening-16x9-v01",
+      "kind": "video",
+      "contentType": "video/mp4",
+      "bytes": 10063313,
+      "sha256": "f6256753acac640391888e873b9a743011d3a1f10cd0dec7e2026c43ce27b251",
+      "objectKey": "interactive-films/jinling-rumeng/s01/v1/p00/ledger-opening-16x9-v01.mp4",
+      "publicUrl": "https://fizzdragonblob.blob.core.windows.net/foundry-outputs/interactive-films/jinling-rumeng/s01/v1/p00/ledger-opening-16x9-v01.mp4"
+    },
+    {
+      "assetId": "p00:ledger-opening-16x9-v03",
+      "kind": "video",
+      "contentType": "video/mp4",
+      "bytes": 10355632,
+      "sha256": "4e6abc914aade5c511026160f629bbff2943aa22a5d2c853bd63959f919d10da",
+      "objectKey": "interactive-films/jinling-rumeng/s01/v1/p00/ledger-opening-16x9-v03.mp4",
+      "publicUrl": "https://fizzdragonblob.blob.core.windows.net/foundry-outputs/interactive-films/jinling-rumeng/s01/v1/p00/ledger-opening-16x9-v03.mp4"
+    },
+    {
+      "assetId": "p00:ledger-to-carriage-transition-16x9-v01",
+      "kind": "video",
+      "contentType": "video/mp4",
+      "bytes": 9678205,
+      "sha256": "6b87e2f08e9ca2a33b140fa606a9f75f33aebbc8e6f9562935dba0c73d3f17fa",
+      "objectKey": "interactive-films/jinling-rumeng/s01/v1/p00/ledger-to-carriage-transition-16x9-v01.mp4",
+      "publicUrl": "https://fizzdragonblob.blob.core.windows.net/foundry-outputs/interactive-films/jinling-rumeng/s01/v1/p00/ledger-to-carriage-transition-16x9-v01.mp4"
+    },
+    {
+      "assetId": "p00:water-establishing-16x9-v01",
+      "kind": "video",
+      "contentType": "video/mp4",
+      "bytes": 8561432,
+      "sha256": "399d3b4bda1235bd076c07bf6ad32bd1f3c97b98dac540a5f682f8dd5dcb8e75",
+      "objectKey": "interactive-films/jinling-rumeng/s01/v1/p00/water-establishing-16x9-v01.mp4",
+      "publicUrl": "https://fizzdragonblob.blob.core.windows.net/foundry-outputs/interactive-films/jinling-rumeng/s01/v1/p00/water-establishing-16x9-v01.mp4"
+    },
+    {
+      "assetId": "film-cut-v2:a1-s01-carriage-wake",
+      "kind": "video",
+      "contentType": "video/mp4",
+      "bytes": 6816264,
+      "sha256": "f3699ac87ed876319d7b859bbe602b0dbd6e22a99e16616125152cbd6308899d",
+      "objectKey": "interactive-films/jinling-rumeng/s01/v1/film-cut-v2/a1-s01-carriage-wake.mp4",
+      "publicUrl": "https://fizzdragonblob.blob.core.windows.net/foundry-outputs/interactive-films/jinling-rumeng/s01/v1/film-cut-v2/a1-s01-carriage-wake.mp4"
+    },
+    {
+      "assetId": "film-cut-v2:a1-s02-daiyu-sedan",
+      "kind": "video",
+      "contentType": "video/mp4",
+      "bytes": 6832214,
+      "sha256": "722e71fa03fdb63e9a33513314ce0ffa8d426fce076920ccaa91172502473fe8",
+      "objectKey": "interactive-films/jinling-rumeng/s01/v1/film-cut-v2/a1-s02-daiyu-sedan.mp4",
+      "publicUrl": "https://fizzdragonblob.blob.core.windows.net/foundry-outputs/interactive-films/jinling-rumeng/s01/v1/film-cut-v2/a1-s02-daiyu-sedan.mp4"
+    },
+    {
+      "assetId": "film-cut-v2:a1-s03-gate-arrival",
+      "kind": "video",
+      "contentType": "video/mp4",
+      "bytes": 6156135,
+      "sha256": "f0b94cbb7743030a4c92d1a48cb56068223ffeb4892a6cbc8437e7003d406b83",
+      "objectKey": "interactive-films/jinling-rumeng/s01/v1/film-cut-v2/a1-s03-gate-arrival.mp4",
+      "publicUrl": "https://fizzdragonblob.blob.core.windows.net/foundry-outputs/interactive-films/jinling-rumeng/s01/v1/film-cut-v2/a1-s03-gate-arrival.mp4"
+    },
+    {
+      "assetId": "film-cut-v2:a1-s04-gate-question",
+      "kind": "video",
+      "contentType": "video/mp4",
+      "bytes": 4448071,
+      "sha256": "74f618dcebd4d447a2654a545f972e622b9c9072d87f7ee1c1fc5f803c2c00e5",
+      "objectKey": "interactive-films/jinling-rumeng/s01/v1/film-cut-v2/a1-s04-gate-question.mp4",
+      "publicUrl": "https://fizzdragonblob.blob.core.windows.net/foundry-outputs/interactive-films/jinling-rumeng/s01/v1/film-cut-v2/a1-s04-gate-question.mp4"
+    },
+    {
+      "assetId": "film-cut-v2:a2-s01-corridor-entry",
+      "kind": "video",
+      "contentType": "video/mp4",
+      "bytes": 6735488,
+      "sha256": "596b6802937f127e9c21712d1dae18a19f440e02076b9bf0447e9a4f439deefe",
+      "objectKey": "interactive-films/jinling-rumeng/s01/v1/film-cut-v2/a2-s01-corridor-entry.mp4",
+      "publicUrl": "https://fizzdragonblob.blob.core.windows.net/foundry-outputs/interactive-films/jinling-rumeng/s01/v1/film-cut-v2/a2-s01-corridor-entry.mp4"
+    },
+    {
+      "assetId": "film-cut-v2:a2-s02-wind-crisis",
+      "kind": "video",
+      "contentType": "video/mp4",
+      "bytes": 6040985,
+      "sha256": "605b5f192dd8fdb6786c5fb675726144cf8555535048c72eb1e9cc11c64dc219",
+      "objectKey": "interactive-films/jinling-rumeng/s01/v1/film-cut-v2/a2-s02-wind-crisis.mp4",
+      "publicUrl": "https://fizzdragonblob.blob.core.windows.net/foundry-outputs/interactive-films/jinling-rumeng/s01/v1/film-cut-v2/a2-s02-wind-crisis.mp4"
+    },
+    {
+      "assetId": "film-cut-v2:a2-s03-jiamu-embrace",
+      "kind": "video",
+      "contentType": "video/mp4",
+      "bytes": 6186927,
+      "sha256": "87fb11e4e4cb4d6998ae718233f41ff289c15a957c1b943a918203d2d8ea9d29",
+      "objectKey": "interactive-films/jinling-rumeng/s01/v1/film-cut-v2/a2-s03-jiamu-embrace.mp4",
+      "publicUrl": "https://fizzdragonblob.blob.core.windows.net/foundry-outputs/interactive-films/jinling-rumeng/s01/v1/film-cut-v2/a2-s03-jiamu-embrace.mp4"
+    },
+    {
+      "assetId": "film-cut-v2:a2-s04-jiamu-comfort",
+      "kind": "video",
+      "contentType": "video/mp4",
+      "bytes": 6049858,
+      "sha256": "c05fb4a708adcf0b6a33a5168915edaa1e56b4a48475ebf629da816ff3ff3db4",
+      "objectKey": "interactive-films/jinling-rumeng/s01/v1/film-cut-v2/a2-s04-jiamu-comfort.mp4",
+      "publicUrl": "https://fizzdragonblob.blob.core.windows.net/foundry-outputs/interactive-films/jinling-rumeng/s01/v1/film-cut-v2/a2-s04-jiamu-comfort.mp4"
+    },
+    {
+      "assetId": "film-cut-v2:a2-s05-jiamu-turns",
+      "kind": "video",
+      "contentType": "video/mp4",
+      "bytes": 6076480,
+      "sha256": "ede5b6c8d69642213befa6d96ec3edb0df3995d0a2b5cadf60c101098e6735bd",
+      "objectKey": "interactive-films/jinling-rumeng/s01/v1/film-cut-v2/a2-s05-jiamu-turns.mp4",
+      "publicUrl": "https://fizzdragonblob.blob.core.windows.net/foundry-outputs/interactive-films/jinling-rumeng/s01/v1/film-cut-v2/a2-s05-jiamu-turns.mp4"
+    },
+    {
+      "assetId": "film-cut-v2:a2-s06-letter-to-xifeng",
+      "kind": "video",
+      "contentType": "video/mp4",
+      "bytes": 5969838,
+      "sha256": "05e4b729be1f072cff54e522d8b7500fca0b173d7ea6d7c612fc22f7c17b291c",
+      "objectKey": "interactive-films/jinling-rumeng/s01/v1/film-cut-v2/a2-s06-letter-to-xifeng.mp4",
+      "publicUrl": "https://fizzdragonblob.blob.core.windows.net/foundry-outputs/interactive-films/jinling-rumeng/s01/v1/film-cut-v2/a2-s06-letter-to-xifeng.mp4"
+    },
+    {
+      "assetId": "film-cut-v2:a3-s01-xifeng-closes-door",
+      "kind": "video",
+      "contentType": "video/mp4",
+      "bytes": 6722514,
+      "sha256": "d07f52a6c557ef530f9844282d3d06f56207de04390533543d0465d69c4a324d",
+      "objectKey": "interactive-films/jinling-rumeng/s01/v1/film-cut-v2/a3-s01-xifeng-closes-door.mp4",
+      "publicUrl": "https://fizzdragonblob.blob.core.windows.net/foundry-outputs/interactive-films/jinling-rumeng/s01/v1/film-cut-v2/a3-s01-xifeng-closes-door.mp4"
+    },
+    {
+      "assetId": "film-cut-v2:a3-s02-xifeng-date-trap",
+      "kind": "video",
+      "contentType": "video/mp4",
+      "bytes": 6526902,
+      "sha256": "626ef7109b1dc7dd2f6e9210b668a50202f5426e7733f141ef8363720dc3493d",
+      "objectKey": "interactive-films/jinling-rumeng/s01/v1/film-cut-v2/a3-s02-xifeng-date-trap.mp4",
+      "publicUrl": "https://fizzdragonblob.blob.core.windows.net/foundry-outputs/interactive-films/jinling-rumeng/s01/v1/film-cut-v2/a3-s02-xifeng-date-trap.mp4"
+    },
+    {
+      "assetId": "film-cut-v2:a3-s03-xifeng-seal",
+      "kind": "video",
+      "contentType": "video/mp4",
+      "bytes": 6406337,
+      "sha256": "efaa7a0899ac2eb005402bf2ef263e4dda41b2ce719d3a7ba6b9220936149efc",
+      "objectKey": "interactive-films/jinling-rumeng/s01/v1/film-cut-v2/a3-s03-xifeng-seal.mp4",
+      "publicUrl": "https://fizzdragonblob.blob.core.windows.net/foundry-outputs/interactive-films/jinling-rumeng/s01/v1/film-cut-v2/a3-s03-xifeng-seal.mp4"
+    },
+    {
+      "assetId": "film-cut-v2:a3-s04-baoyu-formal-entry",
+      "kind": "video",
+      "contentType": "video/mp4",
+      "bytes": 9447881,
+      "sha256": "ca0308934732e7452d821382497d770aa1ae69b2414f03354b1acd80007b5e17",
+      "objectKey": "interactive-films/jinling-rumeng/s01/v1/film-cut-v2/a3-s04-baoyu-formal-entry.mp4",
+      "publicUrl": "https://fizzdragonblob.blob.core.windows.net/foundry-outputs/interactive-films/jinling-rumeng/s01/v1/film-cut-v2/a3-s04-baoyu-formal-entry.mp4"
+    },
+    {
+      "assetId": "film-cut-v2:a3-s05-baoyu-home-return",
+      "kind": "video",
+      "contentType": "video/mp4",
+      "bytes": 7103797,
+      "sha256": "a182c987e9241c58545c41d3ce828f640605c50285174f11f778815ed1faa281",
+      "objectKey": "interactive-films/jinling-rumeng/s01/v1/film-cut-v2/a3-s05-baoyu-home-return.mp4",
+      "publicUrl": "https://fizzdragonblob.blob.core.windows.net/foundry-outputs/interactive-films/jinling-rumeng/s01/v1/film-cut-v2/a3-s05-baoyu-home-return.mp4"
+    },
+    {
+      "assetId": "film-cut-v2:a3-s06-baoyu-recognition",
+      "kind": "video",
+      "contentType": "video/mp4",
+      "bytes": 6684991,
+      "sha256": "1e63b0b20ede07f86a5faf853ec3f2f740db005fc9e40cc9cf28a4e328c897f0",
+      "objectKey": "interactive-films/jinling-rumeng/s01/v1/film-cut-v2/a3-s06-baoyu-recognition.mp4",
+      "publicUrl": "https://fizzdragonblob.blob.core.windows.net/foundry-outputs/interactive-films/jinling-rumeng/s01/v1/film-cut-v2/a3-s06-baoyu-recognition.mp4"
+    },
+    {
+      "assetId": "film-cut-v2:a3-s07-ask-about-jade",
+      "kind": "video",
+      "contentType": "video/mp4",
+      "bytes": 5486294,
+      "sha256": "17c0ea90b3e057c225c67fd2ccdebf54d296210554c54990c46800f83a8aa60c",
+      "objectKey": "interactive-films/jinling-rumeng/s01/v1/film-cut-v2/a3-s07-ask-about-jade.mp4",
+      "publicUrl": "https://fizzdragonblob.blob.core.windows.net/foundry-outputs/interactive-films/jinling-rumeng/s01/v1/film-cut-v2/a3-s07-ask-about-jade.mp4"
+    },
+    {
+      "assetId": "film-cut-v2:a3-s08-jade-throw",
+      "kind": "video",
+      "contentType": "video/mp4",
+      "bytes": 5791220,
+      "sha256": "7e898e52b1c9ec820002c68cb319c56a474f502ce80ad998b449100dc8dceebe",
+      "objectKey": "interactive-films/jinling-rumeng/s01/v1/film-cut-v2/a3-s08-jade-throw.mp4",
+      "publicUrl": "https://fizzdragonblob.blob.core.windows.net/foundry-outputs/interactive-films/jinling-rumeng/s01/v1/film-cut-v2/a3-s08-jade-throw.mp4"
+    },
+    {
+      "assetId": "film-cut-v2:a4-s01-daiyu-night-arrival",
+      "kind": "video",
+      "contentType": "video/mp4",
+      "bytes": 4949013,
+      "sha256": "548700dd26e9f9b994d32c2f6a856ecf13d70b010c8c7b0425eb55ad79d9bbef",
+      "objectKey": "interactive-films/jinling-rumeng/s01/v1/film-cut-v2/a4-s01-daiyu-night-arrival.mp4",
+      "publicUrl": "https://fizzdragonblob.blob.core.windows.net/foundry-outputs/interactive-films/jinling-rumeng/s01/v1/film-cut-v2/a4-s01-daiyu-night-arrival.mp4"
+    },
+    {
+      "assetId": "film-cut-v2:a4-s02-daiyu-remembers",
+      "kind": "video",
+      "contentType": "video/mp4",
+      "bytes": 3905553,
+      "sha256": "0a51198708b4c020140b5cb30ebc624e1126f23b529afeecef7a42c5618d3b8a",
+      "objectKey": "interactive-films/jinling-rumeng/s01/v1/film-cut-v2/a4-s02-daiyu-remembers.mp4",
+      "publicUrl": "https://fizzdragonblob.blob.core.windows.net/foundry-outputs/interactive-films/jinling-rumeng/s01/v1/film-cut-v2/a4-s02-daiyu-remembers.mp4"
+    },
+    {
+      "assetId": "film-cut-v2:a4-s03-letter-reveal",
+      "kind": "video",
+      "contentType": "video/mp4",
+      "bytes": 4328327,
+      "sha256": "63647a492d50412b524b902794b2b89ce185928f31c1f19e4743a73ab520b521",
+      "objectKey": "interactive-films/jinling-rumeng/s01/v1/film-cut-v2/a4-s03-letter-reveal.mp4",
+      "publicUrl": "https://fizzdragonblob.blob.core.windows.net/foundry-outputs/interactive-films/jinling-rumeng/s01/v1/film-cut-v2/a4-s03-letter-reveal.mp4"
+    },
+    {
+      "assetId": "film-cut-v2:a4-s04-daiyu-refuses-fate",
+      "kind": "video",
+      "contentType": "video/mp4",
+      "bytes": 3712308,
+      "sha256": "cb587da9be695d984a41c18828a6fa646fdc78ba809cc9daa1fc65987a561122",
+      "objectKey": "interactive-films/jinling-rumeng/s01/v1/film-cut-v2/a4-s04-daiyu-refuses-fate.mp4",
+      "publicUrl": "https://fizzdragonblob.blob.core.windows.net/foundry-outputs/interactive-films/jinling-rumeng/s01/v1/film-cut-v2/a4-s04-daiyu-refuses-fate.mp4"
+    },
+    {
+      "assetId": "film-cut-v2:a4-s05-seal-awakens",
+      "kind": "video",
+      "contentType": "video/mp4",
+      "bytes": 8263727,
+      "sha256": "11d6296a6f80d034fb189ce5e6de218398655737c048a6afc92f1ea77c8578c3",
+      "objectKey": "interactive-films/jinling-rumeng/s01/v1/film-cut-v2/a4-s05-seal-awakens.mp4",
+      "publicUrl": "https://fizzdragonblob.blob.core.windows.net/foundry-outputs/interactive-films/jinling-rumeng/s01/v1/film-cut-v2/a4-s05-seal-awakens.mp4"
+    },
+    {
+      "assetId": "film-cut-v2:a4-s06-letter-choice-wait",
+      "kind": "video",
+      "contentType": "video/mp4",
+      "bytes": 5780417,
+      "sha256": "7301f60b45e15bc4b736f4acdc9c403e53677008882deb2bf62a07634d677bd5",
+      "objectKey": "interactive-films/jinling-rumeng/s01/v1/film-cut-v2/a4-s06-letter-choice-wait.mp4",
+      "publicUrl": "https://fizzdragonblob.blob.core.windows.net/foundry-outputs/interactive-films/jinling-rumeng/s01/v1/film-cut-v2/a4-s06-letter-choice-wait.mp4"
+    },
+    {
+      "assetId": "film-cut-v2:c1-r01-old-trust",
+      "kind": "video",
+      "contentType": "video/mp4",
+      "bytes": 5428285,
+      "sha256": "911f88f0d779738b2ac42a3be0208958aa4553522cee9652c493190e528892cc",
+      "objectKey": "interactive-films/jinling-rumeng/s01/v1/film-cut-v2/c1-r01-old-trust.mp4",
+      "publicUrl": "https://fizzdragonblob.blob.core.windows.net/foundry-outputs/interactive-films/jinling-rumeng/s01/v1/film-cut-v2/c1-r01-old-trust.mp4"
+    },
+    {
+      "assetId": "film-cut-v2:c1-r02-daiyu-road",
+      "kind": "video",
+      "contentType": "video/mp4",
+      "bytes": 4882557,
+      "sha256": "ded648ace501b2c328054e0179bc7619f3c6f81c35a3e215267f9d681cea7302",
+      "objectKey": "interactive-films/jinling-rumeng/s01/v1/film-cut-v2/c1-r02-daiyu-road.mp4",
+      "publicUrl": "https://fizzdragonblob.blob.core.windows.net/foundry-outputs/interactive-films/jinling-rumeng/s01/v1/film-cut-v2/c1-r02-daiyu-road.mp4"
+    },
+    {
+      "assetId": "film-cut-v2:c1-r03-keepsake",
+      "kind": "video",
+      "contentType": "video/mp4",
+      "bytes": 4347131,
+      "sha256": "6bd854d105263a9d8cba4b73d2d3841d9bbf17c9ce72250b8745649ce77fda2f",
+      "objectKey": "interactive-films/jinling-rumeng/s01/v1/film-cut-v2/c1-r03-keepsake.mp4",
+      "publicUrl": "https://fizzdragonblob.blob.core.windows.net/foundry-outputs/interactive-films/jinling-rumeng/s01/v1/film-cut-v2/c1-r03-keepsake.mp4"
+    },
+    {
+      "assetId": "film-cut-v2:c2-r01-protect-daiyu",
+      "kind": "video",
+      "contentType": "video/mp4",
+      "bytes": 6482719,
+      "sha256": "0d5aee18b62078825ced5cb4c8ac5bea485f340217ed5aa5229610b460efe32c",
+      "objectKey": "interactive-films/jinling-rumeng/s01/v1/film-cut-v2/c2-r01-protect-daiyu.mp4",
+      "publicUrl": "https://fizzdragonblob.blob.core.windows.net/foundry-outputs/interactive-films/jinling-rumeng/s01/v1/film-cut-v2/c2-r01-protect-daiyu.mp4"
+    },
+    {
+      "assetId": "film-cut-v2:c2-r02-steady-lantern",
+      "kind": "video",
+      "contentType": "video/mp4",
+      "bytes": 7113752,
+      "sha256": "28b4979ecbad213e76f8e2c7cd07af5fe1f72a9de900ec8c73271ef3ea72344d",
+      "objectKey": "interactive-films/jinling-rumeng/s01/v1/film-cut-v2/c2-r02-steady-lantern.mp4",
+      "publicUrl": "https://fizzdragonblob.blob.core.windows.net/foundry-outputs/interactive-films/jinling-rumeng/s01/v1/film-cut-v2/c2-r02-steady-lantern.mp4"
+    },
+    {
+      "assetId": "film-cut-v2:c2-r03-protect-letter",
+      "kind": "video",
+      "contentType": "video/mp4",
+      "bytes": 6534939,
+      "sha256": "41bb6db4b0ada26b2a03eaa9c8163081c59d6d95367353ba8f6ff840f4fdab04",
+      "objectKey": "interactive-films/jinling-rumeng/s01/v1/film-cut-v2/c2-r03-protect-letter.mp4",
+      "publicUrl": "https://fizzdragonblob.blob.core.windows.net/foundry-outputs/interactive-films/jinling-rumeng/s01/v1/film-cut-v2/c2-r03-protect-letter.mp4"
+    },
+    {
+      "assetId": "film-cut-v2:c3-r01-catch-jade",
+      "kind": "video",
+      "contentType": "video/mp4",
+      "bytes": 7641781,
+      "sha256": "7b44aa205dc87300ad4981194fcd47c13d925f95e48290ad221ea40d342ec42f",
+      "objectKey": "interactive-films/jinling-rumeng/s01/v1/film-cut-v2/c3-r01-catch-jade.mp4",
+      "publicUrl": "https://fizzdragonblob.blob.core.windows.net/foundry-outputs/interactive-films/jinling-rumeng/s01/v1/film-cut-v2/c3-r01-catch-jade.mp4"
+    },
+    {
+      "assetId": "film-cut-v2:c3-r02-shield-daiyu",
+      "kind": "video",
+      "contentType": "video/mp4",
+      "bytes": 5657702,
+      "sha256": "a939a9c8fc8013a7aee703b0841ebc27b9c86cb309ebb1d46c72195e8f42aa1a",
+      "objectKey": "interactive-films/jinling-rumeng/s01/v1/film-cut-v2/c3-r02-shield-daiyu.mp4",
+      "publicUrl": "https://fizzdragonblob.blob.core.windows.net/foundry-outputs/interactive-films/jinling-rumeng/s01/v1/film-cut-v2/c3-r02-shield-daiyu.mp4"
+    },
+    {
+      "assetId": "film-cut-v2:c3-r03-call-jiamu",
+      "kind": "video",
+      "contentType": "video/mp4",
+      "bytes": 7981443,
+      "sha256": "520528db4be4608a0a4ac61deca32e2d1024953c7933666ac89e37d3343ea378",
+      "objectKey": "interactive-films/jinling-rumeng/s01/v1/film-cut-v2/c3-r03-call-jiamu.mp4",
+      "publicUrl": "https://fizzdragonblob.blob.core.windows.net/foundry-outputs/interactive-films/jinling-rumeng/s01/v1/film-cut-v2/c3-r03-call-jiamu.mp4"
+    },
+    {
+      "assetId": "film-cut-v2:c3-r04-let-fall",
+      "kind": "video",
+      "contentType": "video/mp4",
+      "bytes": 6485697,
+      "sha256": "1988e38d0c805edccb0c17b3cfb169e2947d6f7be85eeea0a3653b77bd7cf6cc",
+      "objectKey": "interactive-films/jinling-rumeng/s01/v1/film-cut-v2/c3-r04-let-fall.mp4",
+      "publicUrl": "https://fizzdragonblob.blob.core.windows.net/foundry-outputs/interactive-films/jinling-rumeng/s01/v1/film-cut-v2/c3-r04-let-fall.mp4"
+    },
+    {
+      "assetId": "film-cut-v2:c4-e01-trust-daiyu",
+      "kind": "video",
+      "contentType": "video/mp4",
+      "bytes": 4127965,
+      "sha256": "f1b6efd01f8a337d311ff67a4df88ae61c602466fb86b260e3f4a4d6ca9b0562",
+      "objectKey": "interactive-films/jinling-rumeng/s01/v1/film-cut-v2/c4-e01-trust-daiyu.mp4",
+      "publicUrl": "https://fizzdragonblob.blob.core.windows.net/foundry-outputs/interactive-films/jinling-rumeng/s01/v1/film-cut-v2/c4-e01-trust-daiyu.mp4"
+    },
+    {
+      "assetId": "film-cut-v2:c4-e02-hand-xifeng",
+      "kind": "video",
+      "contentType": "video/mp4",
+      "bytes": 5858654,
+      "sha256": "6727f2e438663468429d1ab58c36fd4853e2aef3e6119f4b58c5f90475d4f248",
+      "objectKey": "interactive-films/jinling-rumeng/s01/v1/film-cut-v2/c4-e02-hand-xifeng.mp4",
+      "publicUrl": "https://fizzdragonblob.blob.core.windows.net/foundry-outputs/interactive-films/jinling-rumeng/s01/v1/film-cut-v2/c4-e02-hand-xifeng.mp4"
+    },
+    {
+      "assetId": "film-cut-v2:c4-e03-keep-letter",
+      "kind": "video",
+      "contentType": "video/mp4",
+      "bytes": 6608380,
+      "sha256": "81f3e1078b9d8869ebec906abe8950e4c9478f32fb1307ef74f3c9f479406b16",
+      "objectKey": "interactive-films/jinling-rumeng/s01/v1/film-cut-v2/c4-e03-keep-letter.mp4",
+      "publicUrl": "https://fizzdragonblob.blob.core.windows.net/foundry-outputs/interactive-films/jinling-rumeng/s01/v1/film-cut-v2/c4-e03-keep-letter.mp4"
+    },
+    {
+      "assetId": "film-cut-v2:c4-e04-destroy-leave",
+      "kind": "video",
+      "contentType": "video/mp4",
+      "bytes": 7936689,
+      "sha256": "3df81b141bc7c1cc36d07017f4681fe1984ee898cf9a9a72658719009e36aa11",
+      "objectKey": "interactive-films/jinling-rumeng/s01/v1/film-cut-v2/c4-e04-destroy-leave.mp4",
+      "publicUrl": "https://fizzdragonblob.blob.core.windows.net/foundry-outputs/interactive-films/jinling-rumeng/s01/v1/film-cut-v2/c4-e04-destroy-leave.mp4"
+    },
+    {
+      "assetId": "film-cut-v2:c4-e05-unwritten",
+      "kind": "video",
+      "contentType": "video/mp4",
+      "bytes": 6903286,
+      "sha256": "b2979ce6df7b0162c0001e5ed2a02c0ae77c2b4100d85736ebd2cbb0f82413c1",
+      "objectKey": "interactive-films/jinling-rumeng/s01/v1/film-cut-v2/c4-e05-unwritten.mp4",
+      "publicUrl": "https://fizzdragonblob.blob.core.windows.net/foundry-outputs/interactive-films/jinling-rumeng/s01/v1/film-cut-v2/c4-e05-unwritten.mp4"
+    },
+    {
+      "assetId": "film-cut-v2:chapters:c1",
+      "kind": "video",
+      "contentType": "video/mp4",
+      "bytes": 20772687,
+      "sha256": "5d61b5c82111ca45b90bb90dc1326fc1bdb94fa70370cc374284069576198537",
+      "objectKey": "interactive-films/jinling-rumeng/s01/v1/film-cut-v2/chapters/c1.mp4",
+      "publicUrl": "https://fizzdragonblob.blob.core.windows.net/foundry-outputs/interactive-films/jinling-rumeng/s01/v1/film-cut-v2/chapters/c1.mp4"
+    },
+    {
+      "assetId": "film-cut-v2:chapters:c2",
+      "kind": "video",
+      "contentType": "video/mp4",
+      "bytes": 12404613,
+      "sha256": "68e96ce0d2405af07c3e090bc3015afa88c951f22cb03627b441f6554e7a912f",
+      "objectKey": "interactive-films/jinling-rumeng/s01/v1/film-cut-v2/chapters/c2.mp4",
+      "publicUrl": "https://fizzdragonblob.blob.core.windows.net/foundry-outputs/interactive-films/jinling-rumeng/s01/v1/film-cut-v2/chapters/c2.mp4"
+    },
+    {
+      "assetId": "film-cut-v2:chapters:c3",
+      "kind": "video",
+      "contentType": "video/mp4",
+      "bytes": 74392167,
+      "sha256": "5fd3187e9afaebaf9fd375d4896c80139a85a89dd310c90ebb09acef5a07803a",
+      "objectKey": "interactive-films/jinling-rumeng/s01/v1/film-cut-v2/chapters/c3.mp4",
+      "publicUrl": "https://fizzdragonblob.blob.core.windows.net/foundry-outputs/interactive-films/jinling-rumeng/s01/v1/film-cut-v2/chapters/c3.mp4"
+    },
+    {
+      "assetId": "film-cut-v2:chapters:c4",
+      "kind": "video",
+      "contentType": "video/mp4",
+      "bytes": 29590321,
+      "sha256": "e7a421d02bb41aacc661b48ed7c75c3a2d4cd1083d9429a843b9f3e7591e2045",
+      "objectKey": "interactive-films/jinling-rumeng/s01/v1/film-cut-v2/chapters/c4.mp4",
+      "publicUrl": "https://fizzdragonblob.blob.core.windows.net/foundry-outputs/interactive-films/jinling-rumeng/s01/v1/film-cut-v2/chapters/c4.mp4"
+    }
+  ]
+}

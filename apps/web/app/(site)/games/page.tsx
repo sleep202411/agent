@@ -2,7 +2,13 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { IconArrowLeft, IconArrowRight, IconPlayerPlay, IconSparkles } from "@tabler/icons-react";
+import {
+  IconArrowLeft,
+  IconArrowRight,
+  IconBook2,
+  IconPlayerPlay,
+  IconSparkles,
+} from "@tabler/icons-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import type { Locale } from "@/src/i18n/config";
@@ -36,6 +42,64 @@ export default function GamesPage() {
         </section>
 
         <section className="mt-10 grid gap-5 md:grid-cols-2">
+          {/* Dream of Jinling — first-person interactive film */}
+          <article className="group overflow-hidden rounded-2xl bg-secondary/55 transition-colors hover:bg-secondary/70">
+            <div className="relative aspect-video overflow-hidden bg-[linear-gradient(155deg,#101b20_0%,#070b0d_48%,#020304_100%)]">
+              <div className="absolute inset-x-[24%] bottom-[14%] top-[23%] rotate-[-4deg] border border-[#d6c5a0]/25 bg-[#b9a77f]/15 shadow-[0_24px_70px_rgba(0,0,0,0.7)] transition-transform duration-700 group-hover:rotate-[-2deg] group-hover:scale-[1.02]">
+                <div className="absolute inset-x-[12%] top-[22%] h-px bg-[#e3d4b4]/18" />
+                <div className="absolute inset-x-[12%] top-[38%] h-px bg-[#e3d4b4]/12" />
+                <div className="absolute bottom-[17%] right-[12%] grid size-9 place-items-center border border-[#a93438]/55 text-[#bd4b4e]">
+                  <IconBook2 className="size-4" stroke={1.25} />
+                </div>
+              </div>
+              <div className="absolute inset-0 bg-linear-to-b from-black/5 via-transparent to-black/82" />
+              <div className="absolute left-4 top-4 rounded-full bg-black/55 px-3 py-1 text-xs font-semibold text-white/90">
+                {t("status.inProduction")}
+              </div>
+              <div className="absolute bottom-4 left-4 right-4">
+                <p className="text-sm font-semibold text-white/60">
+                  {t("items.jinlingRumeng.type")}
+                </p>
+                <h2 className="mt-1 text-2xl font-semibold leading-tight text-white">
+                  {t("items.jinlingRumeng.title")}
+                </h2>
+              </div>
+            </div>
+            <div className="p-5">
+              <p className="text-sm leading-6 text-muted-foreground">
+                {t("items.jinlingRumeng.summary")}
+              </p>
+              <div className="mt-4 flex flex-wrap gap-2">
+                {(["interactiveCinema", "originalPlayer", "firstPerson"] as const).map((tagKey) => (
+                  <span
+                    key={tagKey}
+                    className="rounded-full bg-background/65 px-2.5 py-1 text-xs font-semibold text-muted-foreground"
+                  >
+                    {t(`tags.${tagKey}`)}
+                  </span>
+                ))}
+              </div>
+              <div className="mt-5 grid grid-cols-2 gap-2">
+                {(["scenes10", "endings5", "localSession"] as const).map((statKey) => (
+                  <div key={statKey} className="rounded-xl bg-background/55 px-3 py-2">
+                    <p className="text-xs font-semibold text-muted-foreground">
+                      {t(`stats.${statKey}`)}
+                    </p>
+                  </div>
+                ))}
+              </div>
+              <div className="mt-5 flex justify-end">
+                <Link
+                  href={localizePath("/play/jinling", locale)}
+                  className="inline-flex items-center gap-2 rounded-full bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground transition hover:brightness-110"
+                >
+                  <IconPlayerPlay className="size-4" />
+                  {t("openLedger")}
+                </Link>
+              </div>
+            </div>
+          </article>
+
           {NARRATIVE_PLAYABLES.map((playable) => {
             const itemKey = `items.${playable.translationKey}`;
             return (

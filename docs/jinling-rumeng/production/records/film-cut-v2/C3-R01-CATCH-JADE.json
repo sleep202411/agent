@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "assetId": "VIDEO-C3-R01-CATCH-JADE",
+  "fingerprint": "43f0d3ee19b809c94468e2b75f0a2c3f0b0ea3a6acb9ea91346d359c0a2ae115",
+  "jobId": "019f556c-bf77-7938-b5e2-9e42c415a21d",
+  "referenceMediaAssetIds": ["019f556c-76a0-75dc-be7f-44673653d42e"],
+  "sha256": "7b44aa205dc87300ad4981194fcd47c13d925f95e48290ad221ea40d342ec42f",
+  "bytes": 7641781,
+  "width": 1280,
+  "height": 720,
+  "framesPerSecond": 24,
+  "frameCount": 360,
+  "durationSeconds": 15,
+  "audioStreamCount": 1,
+  "continuityPredecessor": "A3-S08-JADE-THROW",
+  "continuityTailSha256": "cb9c92576158c33d2d3396c1cfcddd04f646c8df2c77fe5cbde20be796b108c7",
+  "continuitySeamSsim": 0.811779,
+  "continuityEditBridge": "choice-confirm-sleeve-dip",
+  "outputPath": "/jinling-rumeng/production/story/film-cut-v2/c3-r01-catch-jade.mp4",
+  "reviewed": false
+}

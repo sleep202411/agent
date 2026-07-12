@@ -1,0 +1,24 @@
+{
+  "schemaVersion": 1,
+  "assetId": "VIDEO-A4-S01-DAIYU-NIGHT-ARRIVAL",
+  "fingerprint": "9a4929905cdd1c4eeb4d2aade87018afe54a56d02c58d5eb5acb86d5a6a2d67b",
+  "jobId": "019f5580-4d4e-76f3-9ee8-76cc09bfc24a",
+  "referenceMediaAssetIds": [
+    "019f557f-d189-74d6-8057-6ad72aceba72",
+    "019f557f-dc0a-7158-9380-c60854c2ebed"
+  ],
+  "sha256": "548700dd26e9f9b994d32c2f6a856ecf13d70b010c8c7b0425eb55ad79d9bbef",
+  "bytes": 4949013,
+  "width": 1280,
+  "height": 720,
+  "framesPerSecond": 24,
+  "frameCount": 360,
+  "durationSeconds": 15.022993,
+  "audioStreamCount": 1,
+  "continuityPredecessor": null,
+  "continuityTailSha256": null,
+  "continuitySeamSsim": null,
+  "continuityEditBridge": null,
+  "outputPath": "/jinling-rumeng/production/story/film-cut-v2/a4-s01-daiyu-night-arrival.mp4",
+  "reviewed": false
+}

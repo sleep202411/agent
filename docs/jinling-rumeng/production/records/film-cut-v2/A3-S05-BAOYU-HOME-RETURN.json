@@ -1,0 +1,25 @@
+{
+  "schemaVersion": 1,
+  "assetId": "VIDEO-A3-S05-BAOYU-HOME-RETURN",
+  "fingerprint": "85c412383827ba593b21d549d52d7e9da3f5067eea8e45c7316868d914fd8e59",
+  "jobId": "019f555a-890f-7a5c-aaba-169a964d1b56",
+  "referenceMediaAssetIds": [
+    "019f555a-352c-71cc-bdf2-e86eac1d3ff2",
+    "019f555a-418d-71cd-b35d-7ec36fd913e7",
+    "019f555a-4b32-72d2-9b88-b8367789a52b"
+  ],
+  "sha256": "a182c987e9241c58545c41d3ce828f640605c50285174f11f778815ed1faa281",
+  "bytes": 7103797,
+  "width": 1280,
+  "height": 720,
+  "framesPerSecond": 24,
+  "frameCount": 360,
+  "durationSeconds": 15.022993,
+  "audioStreamCount": 1,
+  "continuityPredecessor": "A3-S04-BAOYU-FORMAL-ENTRY",
+  "continuityTailSha256": "4bf77286d60485da6c72b5542da737707014f12f81fb0aef89a654c1247f6b41",
+  "continuitySeamSsim": null,
+  "continuityEditBridge": null,
+  "outputPath": "/jinling-rumeng/production/story/film-cut-v2/a3-s05-baoyu-home-return.mp4",
+  "reviewed": false
+}
