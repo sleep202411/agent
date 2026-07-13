@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { MediaStorageProvider } from '@prisma/client';
 import { AzureBlobStorageService } from './azure-blob-storage.service';
 import { AliyunOssStorageService } from './oss-storage.service';
+import { S3CompatibleStorageService } from './s3-storage.service';
 import type { OutputStorageService } from './storage.types';
 
 /**
@@ -15,15 +16,16 @@ import type { OutputStorageService } from './storage.types';
  * the OSS impl. The cell-default `OutputStorageService` token is wrong for
  * that; this registry maps the enum to the right instance.
  *
- * `external_url` has no object we control and `s3_compatible` has no impl
- * today, so both resolve to `null` — callers treat that as "no physical
- * takedown possible; the DTO moderation gate is the only enforcement".
+ * `external_url` has no object we control, so it resolves to `null` —
+ * callers treat that as "no physical takedown possible; the DTO moderation
+ * gate is the only enforcement".
  */
 @Injectable()
 export class StorageProviderRegistry {
   constructor(
     private readonly azure: AzureBlobStorageService,
     private readonly oss: AliyunOssStorageService,
+    private readonly s3: S3CompatibleStorageService,
   ) {}
 
   forProvider(provider: MediaStorageProvider): OutputStorageService | null {
@@ -32,6 +34,8 @@ export class StorageProviderRegistry {
         return this.azure;
       case MediaStorageProvider.aliyun_oss:
         return this.oss;
+      case MediaStorageProvider.s3_compatible:
+        return this.s3;
       default:
         return null;
     }

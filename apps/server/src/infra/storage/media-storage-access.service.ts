@@ -2,6 +2,7 @@ import { Injectable, ServiceUnavailableException } from '@nestjs/common';
 import { MediaStorageProvider } from '@prisma/client';
 import { AzureBlobStorageService } from './azure-blob-storage.service';
 import { AliyunOssStorageService } from './oss-storage.service';
+import { S3CompatibleStorageService } from './s3-storage.service';
 import type { CreateReadUrlResult } from './storage.types';
 
 export interface MediaStorageReadRef {
@@ -26,6 +27,7 @@ export class MediaStorageAccessService {
   constructor(
     private readonly azure: AzureBlobStorageService,
     private readonly oss: AliyunOssStorageService,
+    private readonly s3: S3CompatibleStorageService,
   ) {}
 
   async createReadUrl(
@@ -97,9 +99,7 @@ export class MediaStorageAccessService {
       case MediaStorageProvider.aliyun_oss:
         return this.oss.createReadUrl(input);
       case MediaStorageProvider.s3_compatible:
-        throw new ServiceUnavailableException(
-          's3_compatible read URLs are not configured',
-        );
+        return this.s3.createReadUrl(input);
       default:
         throw new ServiceUnavailableException(
           `unsupported media storage provider: ${ref.storageProvider}`,
