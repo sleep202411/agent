@@ -45,6 +45,7 @@ import {
   type CursorPageDto,
   type FilmBuildDiagnosticDto,
   type FilmBuildSummaryDto,
+  type FilmCarriedMasterDto,
   type FilmClipSummaryDto,
   type FilmDefaultModelDto,
   type FilmReferenceSlotDto,
@@ -1168,6 +1169,7 @@ export class StoryProjectsService {
               latestBuild: latestBuild
                 ? this.toFilmBuildSummary(latestBuild)
                 : null,
+              carriedMasters: await this.loadCarriedMasters(tx, projectId),
             };
           }
 
@@ -1184,6 +1186,52 @@ export class StoryProjectsService {
         : null,
       film,
     };
+  }
+
+  /**
+   * The latest approved master video per clip identity (`clipKey`) across every
+   * revision, newest revision winning. Display-only fallback so the canvas keeps
+   * a shot's video visible after an edit rolls the draft into a fresh revision.
+   */
+  private async loadCarriedMasters(
+    tx: Prisma.TransactionClient,
+    projectId: string,
+  ): Promise<FilmCarriedMasterDto[]> {
+    const rows = await tx.storyFilmClip.findMany({
+      where: { storyProjectId: projectId, masterTakeId: { not: null } },
+      select: {
+        key: true,
+        masterSelectedAt: true,
+        revision: { select: { number: true } },
+        masterTake: {
+          select: {
+            id: true,
+            outputAsset: {
+              include: {
+                placements: true,
+                variants: { include: { placements: true } },
+              },
+            },
+          },
+        },
+      },
+      orderBy: [{ revision: { number: 'desc' } }, { id: 'asc' }],
+    });
+
+    const seen = new Set<string>();
+    const carried: FilmCarriedMasterDto[] = [];
+    for (const row of rows) {
+      if (seen.has(row.key) || !row.masterTake?.outputAsset) continue;
+      seen.add(row.key);
+      carried.push({
+        clipKey: row.key,
+        takeId: row.masterTake.id,
+        revisionNumber: row.revision.number,
+        outputAsset: toMediaAsset(row.masterTake.outputAsset),
+        selectedAt: row.masterSelectedAt?.toISOString() ?? null,
+      });
+    }
+    return carried;
   }
 
   private async requireScopedProject(

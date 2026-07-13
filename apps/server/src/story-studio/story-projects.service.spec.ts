@@ -226,6 +226,7 @@ function makeHarness(
     workbenchRevision?: ReturnType<typeof revisionRow> | null;
     workbenchFilmSpec?: Record<string, unknown> | null;
     workbenchFilmClips?: Array<Record<string, unknown>>;
+    workbenchCarriedClips?: Array<Record<string, unknown>>;
     workbenchFilmTrailer?: Record<string, unknown> | null;
     activeProduction?: { releaseId: string } | null;
     canvasLayoutUpdateCount?: number;
@@ -290,8 +291,10 @@ function makeHarness(
       create: jest.fn(({ data }: { data: Record<string, unknown> }) => data),
     },
     storyFilmClip: {
-      findMany: jest.fn(
-        () => options.workbenchFilmClips ?? options.existingFilmClips ?? [],
+      findMany: jest.fn((args?: { where?: { masterTakeId?: unknown } }) =>
+        args?.where?.masterTakeId
+          ? (options.workbenchCarriedClips ?? [])
+          : (options.workbenchFilmClips ?? options.existingFilmClips ?? []),
       ),
       create: jest.fn(({ data }: { data: Record<string, unknown> }) => data),
     },
@@ -395,7 +398,11 @@ function makeHarness(
       findUnique: jest.fn(() => options.workbenchFilmSpec ?? null),
     },
     storyFilmClip: {
-      findMany: jest.fn(() => options.workbenchFilmClips ?? []),
+      findMany: jest.fn((args?: { where?: { masterTakeId?: unknown } }) =>
+        args?.where?.masterTakeId
+          ? (options.workbenchCarriedClips ?? [])
+          : (options.workbenchFilmClips ?? []),
+      ),
     },
     storyFilmTrailer: {
       findUnique: jest.fn(() => options.workbenchFilmTrailer ?? null),
@@ -1164,7 +1171,8 @@ describe('StoryProjectsService film workbench', () => {
     expect(tx.storyDraft.findUnique).toHaveBeenCalledTimes(1);
     expect(tx.storyRevision.findFirst).toHaveBeenCalledTimes(1);
     expect(tx.storyFilmSpec.findUnique).toHaveBeenCalledTimes(1);
-    expect(tx.storyFilmClip.findMany).toHaveBeenCalledTimes(1);
+    // Clips for the selected revision + the cross-revision carried-master sweep.
+    expect(tx.storyFilmClip.findMany).toHaveBeenCalledTimes(2);
     expect(prisma.storyProject.findUnique).not.toHaveBeenCalled();
     expect(prisma.storyDraft.findUnique).not.toHaveBeenCalled();
     expect(prisma.storyRevision.findFirst).not.toHaveBeenCalled();

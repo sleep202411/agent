@@ -1338,6 +1338,22 @@ export interface StoryReleaseAssetDto extends FrozenStoryAssetDto {
   role: string;
 }
 
+/**
+ * The most recent approved master video for a clip identity (`clipKey`),
+ * resolved across ALL revisions. It lets the canvas keep showing a shot's
+ * generated video after the draft is edited into a new revision, instead of
+ * blanking out — the video is flagged as carried over so the author knows it
+ * predates their latest edits. Display-only: builds/releases never read this
+ * and stay bound to the selected revision's own master.
+ */
+export interface FilmCarriedMasterDto {
+  clipKey: string;
+  takeId: string;
+  revisionNumber: number;
+  outputAsset: MediaAssetSummaryDto | null;
+  selectedAt: string | null;
+}
+
 export interface StoryWorkbenchDto {
   project: StoryProjectSummaryDto;
   draft: StoryDraftDto;
@@ -1350,6 +1366,7 @@ export interface StoryWorkbenchDto {
     clips: FilmClipSummaryDto[];
     references: FilmReferenceSlotDto[];
     latestBuild: FilmBuildSummaryDto | null;
+    carriedMasters: FilmCarriedMasterDto[];
   } | null;
 }
 

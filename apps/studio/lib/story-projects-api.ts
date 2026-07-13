@@ -711,7 +711,22 @@ export interface StoryWorkbench {
     clips: FilmClipSummary[];
     references: FilmReferenceSlot[];
     latestBuild: FilmBuildSummary | null;
+    carriedMasters: FilmCarriedMaster[];
   } | null;
+}
+
+/**
+ * The newest approved master video for a clip identity (`clipKey`), resolved
+ * across all revisions. Lets the canvas keep a shot's video on screen after the
+ * draft is edited into a new revision — flagged as carried over so the author
+ * knows it predates their latest edits. Display-only; builds ignore it.
+ */
+export interface FilmCarriedMaster {
+  clipKey: string;
+  takeId: string;
+  revisionNumber: number;
+  outputAsset: MediaAssetSummary | null;
+  selectedAt: string | null;
 }
 
 export interface CreateStoryProjectInput {

@@ -1,5 +1,6 @@
 import type { Edge, Node } from "@xyflow/react";
 import type {
+  FilmCarriedMaster,
   FilmClipProductionStatus,
   FilmClipSummary,
   FilmTrailerSummary,
@@ -40,6 +41,8 @@ export interface StoryCanvasNodeData extends Record<string, unknown> {
   autoRoutes?: StoryCanvasAutoRouteData[];
   productionStatus?: FilmClipProductionStatus;
   filmClip?: FilmClipSummary;
+  /** Master video carried over from an earlier revision (draft edited since). */
+  carriedMaster?: FilmCarriedMaster;
   filmTrailer?: FilmTrailerSummary;
   frameAspectRatio?: "16:9" | "9:16";
   directorPrompt?: StoryClipPromptDraft;
@@ -161,12 +164,14 @@ export function buildStoryCanvasModel(
   clips: FilmClipSummary[] = [],
   copy: StoryCanvasCopy = DEFAULT_COPY,
   frameProfile: StoryFrameProfile = "landscape_16_9",
-  trailer: FilmTrailerSummary | null = null
+  trailer: FilmTrailerSummary | null = null,
+  carriedMasters: FilmCarriedMaster[] = []
 ): { nodes: StoryCanvasNode[]; edges: StoryCanvasEdge[] } {
   content = normalizeStoryClipPromptDrafts(content);
   const graphNodesById = new Map(content.graph.nodes.map((node) => [node.nodeId, node]));
   const clipsByGraphNodeId = indexClips(clips, (clip) => clip.graphNodeId);
   const clipsByKey = indexClips(clips, (clip) => clip.key);
+  const carriedMastersByKey = new Map(carriedMasters.map((master) => [master.clipKey, master]));
   const promptByGraphNodeId = new Map(
     content.clipPrompts.map((prompt) => [prompt.graphNodeId, prompt])
   );
@@ -241,6 +246,7 @@ export function buildStoryCanvasModel(
           autoRoutes: node.exit.kind === "auto" ? projectAutoRoutes(node.exit.routes) : undefined,
           productionStatus: clip?.productionStatus,
           filmClip: clip,
+          carriedMaster: carriedMastersByKey.get(node.clipKey),
           frameAspectRatio:
             clip?.outputContract.aspectRatio ??
             (frameProfile === "portrait_9_16" ? "9:16" : "16:9"),

@@ -1583,7 +1583,9 @@
       "title": "建立互動影遊",
       "description": "將在目前工作區建立獨立的 Story Project，並建立一份空白的可追溯草稿。"
     },
-    "edit": { "title": "編輯專案資料" },
+    "edit": {
+      "title": "編輯專案資料"
+    },
     "fields": {
       "title": "標題",
       "titlePlaceholder": "未命名互動影遊",
@@ -1820,7 +1822,10 @@
           "deleteDescription": "「{key}」將從故事世界中移除。",
           "cancel": "取消",
           "confirmDelete": "刪除變數",
-          "boolean": { "true": "是", "false": "否" }
+          "boolean": {
+            "true": "是",
+            "false": "否"
+          }
         }
       },
       "metrics": {
@@ -1938,7 +1943,6 @@
         },
         "production": {
           "title": "宣傳片生產",
-          "editPromptInInspector": "在右側檢查器編輯結構化宣傳片導演設計；目前生產版本保持不可變。",
           "refresh": "重新整理宣傳片生產狀態",
           "disabled": {
             "permission": "你沒有此項目的影片生成權限。",
@@ -1986,7 +1990,11 @@
               "rights": "權利合規",
               "safety": "安全"
             },
-            "values": { "pass": "通過", "fail": "未通過", "na": "不適用" },
+            "values": {
+              "pass": "通過",
+              "fail": "未通過",
+              "na": "不適用"
+            },
             "comment": "審核備註",
             "commentRequired": "要求修改或拒絕 Take 時必須填寫審核備註。",
             "approveRequirements": "批准前，技術質量與安全兩項必須通過。",
@@ -2001,7 +2009,6 @@
         "description": "根據最新儲存的導演設計建立 Take。畫布始終可編輯，每個 Take 都會儲存自己的輸入快照。",
         "refresh": "重新整理製作狀態",
         "masterPrompt": "Master Prompt",
-        "editPromptInInspector": "在右側檢查器編輯導演設計；生成時會自動採用最新儲存版本。",
         "beats": "{count} 個時間節拍",
         "emptyPrompt": "請先完成目前鏡頭的導演提示詞。",
         "model": "影片模型",
@@ -2065,7 +2072,8 @@
           "approved": "已批准",
           "master": "Master",
           "noMaster": "尚無 Master 影片",
-          "masterPreview": "Master 影片預覽"
+          "masterPreview": "Master 影片預覽",
+          "carriedMaster": "草稿已改 · 舊版本影片"
         },
         "takes": {
           "title": "Take 列",
@@ -2103,7 +2111,11 @@
             "lipSync": "口型同步",
             "safety": "安全合規"
           },
-          "values": { "pass": "通過", "fail": "不通過", "na": "不適用" },
+          "values": {
+            "pass": "通過",
+            "fail": "不通過",
+            "na": "不適用"
+          },
           "comment": "審核備註",
           "commentPlaceholder": "拒絕或要求修改時必須填寫。",
           "cancel": "取消",
@@ -2122,6 +2134,17 @@
           "selectSlot": "選擇已批准槽位",
           "noApprovedSlots": "請先批准兼容的參考槽位，再綁定目前鏡頭。",
           "save": "儲存參考職責"
+        },
+        "promptAutosaveHint": "編輯將自動儲存到導演設計；生成時採用最新儲存版本。",
+        "referenceRail": {
+          "unapproved": "未審批",
+          "remove": "移除 {label}",
+          "add": "新增參考",
+          "addTitle": "已審批參考母版"
+        },
+        "durationControl": {
+          "label": "片段時長",
+          "seconds": "{count} 秒"
         }
       },
       "inspector": {
@@ -2213,7 +2236,10 @@
         "removeCondition": "刪除條件",
         "addCondition": "新增巢狀條件",
         "maxDepth": "已達到條件最大巢狀層級",
-        "boolean": { "true": "是", "false": "否" },
+        "boolean": {
+          "true": "是",
+          "false": "否"
+        },
         "kinds": {
           "flag": "故事標記",
           "variable": "狀態變數",
@@ -2258,7 +2284,10 @@
           "adjust_relationship": "調整關係值",
           "unlock_ending": "解鎖結局"
         },
-        "booleans": { "true": "是", "false": "否" },
+        "booleans": {
+          "true": "是",
+          "false": "否"
+        },
         "afterSelect": "選擇之後",
         "afterSelectKinds": {
           "immediate": "立即繼續",
@@ -2300,7 +2329,9 @@
         "production": "鏡頭生產",
         "build": "預覽試玩"
       },
-      "errors": { "loadTitle": "無法開啟這個專案。" },
+      "errors": {
+        "loadTitle": "無法開啟這個專案。"
+      },
       "noProductionDataTitle": "目前還沒有可用的製作資料",
       "noProductionDataDescription": "請返回故事畫布，完成導演提示詞並建立第一個 Take。整個製作過程中，目前草稿都可以繼續修改。"
     },

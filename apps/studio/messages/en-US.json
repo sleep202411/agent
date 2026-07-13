@@ -262,7 +262,7 @@
     "download": "Download",
     "fullscreen": "Fullscreen",
     "previewUnsupported": "Preview unavailable",
-    "previewUnsupportedHint": "Preview not supported in this browser \u2014 download to view",
+    "previewUnsupportedHint": "Preview not supported in this browser — download to view",
     "zoomIn": "Zoom in",
     "zoomOut": "Zoom out",
     "resetZoom": "Reset zoom",
@@ -1583,7 +1583,9 @@
       "title": "Create an interactive film",
       "description": "This creates a sovereign Story Project and an empty versioned draft in the active workspace."
     },
-    "edit": { "title": "Edit project details" },
+    "edit": {
+      "title": "Edit project details"
+    },
     "fields": {
       "title": "Title",
       "titlePlaceholder": "Untitled interactive film",
@@ -1820,7 +1822,10 @@
           "deleteDescription": "“{key}” will be removed from the story world.",
           "cancel": "Cancel",
           "confirmDelete": "Delete variable",
-          "boolean": { "true": "True", "false": "False" }
+          "boolean": {
+            "true": "True",
+            "false": "False"
+          }
         }
       },
       "metrics": {
@@ -1938,7 +1943,6 @@
         },
         "production": {
           "title": "Trailer production",
-          "editPromptInInspector": "Edit the structured trailer direction in the inspector; this production revision remains immutable.",
           "refresh": "Refresh trailer production",
           "disabled": {
             "permission": "You do not have permission to generate video for this project.",
@@ -1986,7 +1990,11 @@
               "rights": "Rights",
               "safety": "Safety"
             },
-            "values": { "pass": "Pass", "fail": "Fail", "na": "N/A" },
+            "values": {
+              "pass": "Pass",
+              "fail": "Fail",
+              "na": "N/A"
+            },
             "comment": "Review note",
             "commentRequired": "Add a review note when requesting changes or rejecting a Take.",
             "approveRequirements": "Technical and safety checks must both pass before approval.",
@@ -2001,7 +2009,6 @@
         "description": "Create Takes from the latest saved director design. The canvas stays editable and every Take preserves its own input snapshot.",
         "refresh": "Refresh production status",
         "masterPrompt": "Master Prompt",
-        "editPromptInInspector": "Edit the director design in the inspector. Generate always captures the latest saved version.",
         "beats": "{count, plural, one {# timed beat} other {# timed beats}}",
         "emptyPrompt": "Complete the director prompt before generating.",
         "model": "Video model",
@@ -2065,7 +2072,8 @@
           "approved": "Approved",
           "master": "Master",
           "noMaster": "No Master video yet",
-          "masterPreview": "Master video preview"
+          "masterPreview": "Master video preview",
+          "carriedMaster": "Draft edited · older video"
         },
         "takes": {
           "title": "Take Strip",
@@ -2103,7 +2111,11 @@
             "lipSync": "Lip sync",
             "safety": "Safety"
           },
-          "values": { "pass": "Pass", "fail": "Fail", "na": "N/A" },
+          "values": {
+            "pass": "Pass",
+            "fail": "Fail",
+            "na": "N/A"
+          },
           "comment": "Review note",
           "commentPlaceholder": "Required when rejecting or requesting changes.",
           "cancel": "Cancel",
@@ -2122,6 +2134,17 @@
           "selectSlot": "Select approved slot",
           "noApprovedSlots": "Approve a compatible Reference Slot before binding this clip.",
           "save": "Save responsibilities"
+        },
+        "promptAutosaveHint": "Edits autosave to the director design. Generate captures the latest saved version.",
+        "referenceRail": {
+          "unapproved": "Unapproved",
+          "remove": "Remove {label}",
+          "add": "Add reference",
+          "addTitle": "Approved references"
+        },
+        "durationControl": {
+          "label": "Clip duration",
+          "seconds": "{count}s"
         }
       },
       "inspector": {
@@ -2213,7 +2236,10 @@
         "removeCondition": "Remove condition",
         "addCondition": "Add nested condition",
         "maxDepth": "Maximum condition depth reached",
-        "boolean": { "true": "True", "false": "False" },
+        "boolean": {
+          "true": "True",
+          "false": "False"
+        },
         "kinds": {
           "flag": "Flag",
           "variable": "State variable",
@@ -2258,7 +2284,10 @@
           "adjust_relationship": "Adjust relationship",
           "unlock_ending": "Unlock ending"
         },
-        "booleans": { "true": "True", "false": "False" },
+        "booleans": {
+          "true": "True",
+          "false": "False"
+        },
         "afterSelect": "After selection",
         "afterSelectKinds": {
           "immediate": "Continue immediately",
@@ -2300,7 +2329,9 @@
         "production": "Production",
         "build": "Preview & Playtest"
       },
-      "errors": { "loadTitle": "This project could not be opened." },
+      "errors": {
+        "loadTitle": "This project could not be opened."
+      },
       "noProductionDataTitle": "Production data is not available yet",
       "noProductionDataDescription": "Return to the story canvas to complete director prompts and create the first Take. The working draft remains editable throughout production."
     },

@@ -61,6 +61,7 @@ export function GenerationPromptComposer({
   onSelectMode,
   modePickerEnabled = true,
   fixedControls,
+  trailingControls,
   settings,
   onSettingsChange,
   settingsEnabled = true,
@@ -102,6 +103,8 @@ export function GenerationPromptComposer({
   onSelectMode?: (mode: string) => void;
   modePickerEnabled?: boolean;
   fixedControls?: ReactNode;
+  /** Rendered after the mode/model/settings pickers, before the cost group. */
+  trailingControls?: ReactNode;
   settings: ModelSettings;
   onSettingsChange?: (next: ModelSettings) => void;
   settingsEnabled?: boolean;
@@ -257,6 +260,8 @@ export function GenerationPromptComposer({
             onOpenChange={onQuickSettingsOpenChange}
           />
         ) : null}
+
+        {trailingControls}
 
         {hasAdvancedSettings ? (
           <div className="relative" data-popover-zone>

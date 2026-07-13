@@ -1583,7 +1583,9 @@
       "title": "创建互动影游",
       "description": "将在当前工作区创建独立的 Story Project，并建立一份空白的可追溯草稿。"
     },
-    "edit": { "title": "编辑项目信息" },
+    "edit": {
+      "title": "编辑项目信息"
+    },
     "fields": {
       "title": "标题",
       "titlePlaceholder": "未命名互动影游",
@@ -1820,7 +1822,10 @@
           "deleteDescription": "“{key}”将从故事世界中移除。",
           "cancel": "取消",
           "confirmDelete": "删除变量",
-          "boolean": { "true": "是", "false": "否" }
+          "boolean": {
+            "true": "是",
+            "false": "否"
+          }
         }
       },
       "metrics": {
@@ -1938,7 +1943,6 @@
         },
         "production": {
           "title": "宣传片生产",
-          "editPromptInInspector": "在右侧检查器编辑结构化宣传片导演设计；当前生产版本保持不可变。",
           "refresh": "刷新宣传片生产状态",
           "disabled": {
             "permission": "你没有此项目的视频生成权限。",
@@ -1986,7 +1990,11 @@
               "rights": "权利合规",
               "safety": "安全"
             },
-            "values": { "pass": "通过", "fail": "未通过", "na": "不适用" },
+            "values": {
+              "pass": "通过",
+              "fail": "未通过",
+              "na": "不适用"
+            },
             "comment": "审核备注",
             "commentRequired": "要求修改或拒绝 Take 时必须填写审核备注。",
             "approveRequirements": "批准前，技术质量与安全两项必须通过。",
@@ -2001,7 +2009,6 @@
         "description": "根据最新保存的导演设计创建 Take。画布始终可编辑，每个 Take 都会保存自己的输入快照。",
         "refresh": "刷新生产状态",
         "masterPrompt": "Master Prompt",
-        "editPromptInInspector": "在右侧检查器编辑导演设计；生成时会自动采用最新保存版本。",
         "beats": "{count} 个时间节拍",
         "emptyPrompt": "请先完成当前镜头的导演提示词。",
         "model": "视频模型",
@@ -2065,7 +2072,8 @@
           "approved": "已批准",
           "master": "Master",
           "noMaster": "尚无 Master 视频",
-          "masterPreview": "Master 视频预览"
+          "masterPreview": "Master 视频预览",
+          "carriedMaster": "草稿已改 · 旧版本视频"
         },
         "takes": {
           "title": "Take 条",
@@ -2103,7 +2111,11 @@
             "lipSync": "口型同步",
             "safety": "安全合规"
           },
-          "values": { "pass": "通过", "fail": "不通过", "na": "不适用" },
+          "values": {
+            "pass": "通过",
+            "fail": "不通过",
+            "na": "不适用"
+          },
           "comment": "审核备注",
           "commentPlaceholder": "拒绝或要求修改时必须填写。",
           "cancel": "取消",
@@ -2122,6 +2134,17 @@
           "selectSlot": "选择已批准槽位",
           "noApprovedSlots": "请先批准兼容的参考槽位，再绑定当前镜头。",
           "save": "保存参考职责"
+        },
+        "promptAutosaveHint": "编辑将自动保存到导演设计；生成时采用最新保存版本。",
+        "referenceRail": {
+          "unapproved": "未审批",
+          "remove": "移除 {label}",
+          "add": "添加参考",
+          "addTitle": "已审批参考母版"
+        },
+        "durationControl": {
+          "label": "片段时长",
+          "seconds": "{count} 秒"
         }
       },
       "inspector": {
@@ -2213,7 +2236,10 @@
         "removeCondition": "删除条件",
         "addCondition": "添加嵌套条件",
         "maxDepth": "已达到条件最大嵌套层级",
-        "boolean": { "true": "是", "false": "否" },
+        "boolean": {
+          "true": "是",
+          "false": "否"
+        },
         "kinds": {
           "flag": "故事标记",
           "variable": "状态变量",
@@ -2258,7 +2284,10 @@
           "adjust_relationship": "调整关系值",
           "unlock_ending": "解锁结局"
         },
-        "booleans": { "true": "是", "false": "否" },
+        "booleans": {
+          "true": "是",
+          "false": "否"
+        },
         "afterSelect": "选择之后",
         "afterSelectKinds": {
           "immediate": "立即继续",
@@ -2300,7 +2329,9 @@
         "production": "镜头生产",
         "build": "预览试玩"
       },
-      "errors": { "loadTitle": "无法打开这个项目。" },
+      "errors": {
+        "loadTitle": "无法打开这个项目。"
+      },
       "noProductionDataTitle": "当前还没有可用的生产数据",
       "noProductionDataDescription": "请返回故事画布，完成导演提示词并创建第一个 Take。整个生产过程中，当前草稿都可以继续修改。"
     },

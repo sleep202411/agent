@@ -510,9 +510,9 @@ function GraphNodeEditor({
             clip={production.clip}
             references={production.references}
             canEdit={canEdit}
-            apiConnected={production.referenceApiConnected}
-            pending={production.referenceBindingsPending}
-            onSave={production.onUpdateReferenceBindings}
+            apiConnected={production.referenceApiConnected ?? false}
+            pending={production.referenceBindingsPending ?? false}
+            onSave={production.onUpdateReferenceBindings ?? (() => undefined)}
           />
           <StoryTakePanel {...production} />
         </>

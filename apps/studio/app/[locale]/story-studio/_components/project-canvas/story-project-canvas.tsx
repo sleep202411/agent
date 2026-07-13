@@ -128,6 +128,7 @@ import {
   removeChoiceOption,
   replaceClipPrompt,
   replaceTrailerPrompt,
+  setClipPromptTargetDuration,
   setEntryNode,
   updateChoiceExit,
   updateChoiceOption,
@@ -847,7 +848,11 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
             currentDraftProductionRevisionId ? film?.clips : [],
             projectionCopy,
             project?.frameProfile,
-            currentDraftProductionRevisionId ? film?.trailer : null
+            currentDraftProductionRevisionId ? film?.trailer : null,
+            // Carried masters are revision-independent: keep a shot's generated
+            // video visible even after an edit rolls the draft off the locked
+            // production revision.
+            film?.carriedMasters ?? []
           )
         : null,
     // Translation values are primitives. Depending on them keeps the model
@@ -857,6 +862,7 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
       content,
       film?.clips,
       film?.trailer,
+      film?.carriedMasters,
       currentDraftProductionRevisionId,
       project?.defaultLocale,
       project?.frameProfile,
@@ -1421,6 +1427,51 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
               ? storyApiErrorMessage(takesQuery.error, t("production.errors.loadTakes"))
               : null),
           onGenerate: generateSelectedClip,
+          onModeChange: (mode) => {
+            if (!selectedGraphNodeId || !selectedDirectorPrompt) return;
+            const nextControl =
+              mode === "omni_reference"
+                ? ({ mode: "omni_reference" } as const)
+                : ({ mode: "frame_lock", frameMode: "first_last_frame" } as const);
+            if (
+              JSON.stringify(nextControl) ===
+              JSON.stringify(selectedDirectorPrompt.generationControl)
+            ) {
+              return;
+            }
+            applyGraphMutation((current) =>
+              replaceClipPrompt(current, selectedGraphNodeId, {
+                ...selectedDirectorPrompt,
+                generationControl: nextControl,
+              })
+            );
+          },
+          onPromptCommit: (next) => {
+            if (
+              !selectedGraphNodeId ||
+              !selectedDirectorPrompt ||
+              next === selectedDirectorPrompt.masterDirection
+            ) {
+              return;
+            }
+            applyGraphMutation((current) =>
+              replaceClipPrompt(current, selectedGraphNodeId, {
+                ...selectedDirectorPrompt,
+                masterDirection: next,
+              })
+            );
+          },
+          onDurationCommit: (durationMs) => {
+            if (!selectedGraphNodeId || !selectedDirectorPrompt) return;
+            applyGraphMutation((current) =>
+              replaceClipPrompt(
+                current,
+                selectedGraphNodeId,
+                setClipPromptTargetDuration(selectedDirectorPrompt, durationMs)
+              )
+            );
+          },
+          maxDurationMs: film?.spec?.duration.maxGeneratedClipMs,
           onRefresh: () => void refreshProduction(),
           onRetry: retrySelectedTake,
           onReview: reviewSelectedTake,
@@ -1430,10 +1481,15 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
           onUpdateReferenceBindings: updateSelectedReferenceBindings,
         }
       : null;
+  /* eslint-disable react-hooks/refs -- the composer's commit closures reach
+     latestContentRef only inside event handlers; these objects carry no ref
+     reads at render time. */
   const productionUi: StoryProductionUiContextValue | null =
     selectedGraphNodeId && productionComposer
       ? { graphNodeId: selectedGraphNodeId, composer: productionComposer }
       : null;
+  const inspectorProduction = productionComposer ?? undefined;
+  /* eslint-enable react-hooks/refs */
   const selectedIsRoot = selectedNode?.data.kind === "root";
   const selectedTrailer =
     selectedIsRoot && currentDraftProductionRevisionId ? (film?.trailer ?? null) : null;
@@ -1639,91 +1695,91 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
     : selectedTrailer?.productionStatus === "blocked"
       ? selectedTrailer.blockReasons[0]?.message || t("trailer.production.disabled.blocked")
       : null;
-  const trailerUi = useMemo<StoryTrailerUiContextValue | null>(
-    () =>
-      selectedIsRoot && selectedTrailer
-        ? {
-            composer: {
-              subject: "trailer",
-              clip: selectedTrailer,
-              prompt: content?.trailerPrompt ?? projectLockedTrailerPrompt(selectedTrailer),
-              references: film?.references ?? [],
-              defaultModel: film?.defaultModel,
-              frameProfile: project?.frameProfile ?? "landscape_16_9",
-              canGenerate: trailerDisabledReason === null,
-              disabledReason: trailerDisabledReason,
-              pendingKey: trailerPendingKey,
-              error:
-                trailerError ??
-                (trailerTakesQuery.isError
-                  ? storyApiErrorMessage(
-                      trailerTakesQuery.error,
-                      t("trailer.production.errors.loadTakes")
-                    )
-                  : null),
-              onGenerate: generateTrailer,
+  // Like productionUi, this stays a plain per-render object: the composer
+  // closures reach through applyGraphMutation, which the hooks lint forbids
+  // inside memoized values that are read during render.
+  const trailerUi: StoryTrailerUiContextValue | null =
+    selectedIsRoot && selectedTrailer
+      ? {
+          composer: {
+            subject: "trailer",
+            clip: selectedTrailer,
+            prompt: content?.trailerPrompt ?? projectLockedTrailerPrompt(selectedTrailer),
+            references: film?.references ?? [],
+            defaultModel: film?.defaultModel,
+            frameProfile: project?.frameProfile ?? "landscape_16_9",
+            canGenerate: trailerDisabledReason === null,
+            disabledReason: trailerDisabledReason,
+            pendingKey: trailerPendingKey,
+            error:
+              trailerError ??
+              (trailerTakesQuery.isError
+                ? storyApiErrorMessage(
+                    trailerTakesQuery.error,
+                    t("trailer.production.errors.loadTakes")
+                  )
+                : null),
+            onGenerate: generateTrailer,
+            onPromptCommit: (next: string) => {
+              const base = content?.trailerPrompt ?? projectLockedTrailerPrompt(selectedTrailer);
+              if (!base || next === base.masterDirection) return;
+              applyGraphMutation((current) =>
+                replaceTrailerPrompt(current, {
+                  ...(current.trailerPrompt ?? base),
+                  masterDirection: next,
+                })
+              );
             },
-            production: {
-              trailer: selectedTrailer,
-              references: film?.references ?? [],
-              takes: trailerTakesQuery.data?.items ?? [],
-              loading: trailerTakesQuery.isLoading,
-              refreshing: workbenchQuery.isFetching || trailerTakesQuery.isFetching,
-              pendingKey: trailerPendingKey,
-              error:
-                trailerError ??
-                (trailerTakesQuery.isError
-                  ? storyApiErrorMessage(
-                      trailerTakesQuery.error,
-                      t("trailer.production.errors.loadTakes")
-                    )
-                  : null),
-              referenceBindingsPending: trailerPendingKey === "reference-bindings",
-              canGenerateActions: canGenerateTrailer,
-              generateDisabledReason: canGenerateTrailer
-                ? null
-                : t("trailer.production.disabled.permission"),
-              canReviewActions: canReviewTrailer,
-              reviewDisabledReason: canReviewTrailer
-                ? null
-                : t("trailer.production.disabled.reviewPermission"),
-              onRefresh: () => void refreshTrailerProduction(),
-              onCancel: cancelTrailerTake,
-              onRetry: retryTrailerTake,
-              onReview: reviewTrailerTake,
-              onSetMaster: setTrailerMaster,
-              onUpdateReferenceBindings: updateTrailerReferenceBindings,
+            onDurationCommit: (durationMs: number) => {
+              const base = content?.trailerPrompt ?? projectLockedTrailerPrompt(selectedTrailer);
+              if (!base) return;
+              applyGraphMutation((current) =>
+                replaceTrailerPrompt(
+                  current,
+                  setClipPromptTargetDuration(current.trailerPrompt ?? base, durationMs)
+                )
+              );
             },
-          }
-        : null,
-    [
-      content,
-      cancelTrailerTake,
-      canGenerateTrailer,
-      canReviewTrailer,
-      film?.defaultModel,
-      film?.references,
-      generateTrailer,
-      project?.frameProfile,
-      refreshTrailerProduction,
-      retryTrailerTake,
-      reviewTrailerTake,
-      selectedIsRoot,
-      selectedTrailer,
-      setTrailerMaster,
-      t,
-      trailerDisabledReason,
-      trailerError,
-      trailerPendingKey,
-      trailerTakesQuery.data?.items,
-      trailerTakesQuery.error,
-      trailerTakesQuery.isError,
-      trailerTakesQuery.isFetching,
-      trailerTakesQuery.isLoading,
-      updateTrailerReferenceBindings,
-      workbenchQuery.isFetching,
-    ]
-  );
+            maxDurationMs: film?.spec?.duration.maxGeneratedClipMs,
+            referenceApiConnected: STORY_REFERENCE_API_CONNECTED,
+            referenceBindingsPending: trailerPendingKey === "reference-bindings",
+            onUpdateReferenceBindings: updateTrailerReferenceBindings,
+          },
+          production: {
+            trailer: selectedTrailer,
+            references: film?.references ?? [],
+            takes: trailerTakesQuery.data?.items ?? [],
+            loading: trailerTakesQuery.isLoading,
+            refreshing: workbenchQuery.isFetching || trailerTakesQuery.isFetching,
+            pendingKey: trailerPendingKey,
+            error:
+              trailerError ??
+              (trailerTakesQuery.isError
+                ? storyApiErrorMessage(
+                    trailerTakesQuery.error,
+                    t("trailer.production.errors.loadTakes")
+                  )
+                : null),
+            referenceBindingsPending: trailerPendingKey === "reference-bindings",
+            canGenerateActions: canGenerateTrailer,
+            generateDisabledReason: canGenerateTrailer
+              ? null
+              : t("trailer.production.disabled.permission"),
+            canReviewActions: canReviewTrailer,
+            reviewDisabledReason: canReviewTrailer
+              ? null
+              : t("trailer.production.disabled.reviewPermission"),
+            onRefresh: () => void refreshTrailerProduction(),
+            onCancel: cancelTrailerTake,
+            onRetry: retryTrailerTake,
+            onReview: reviewTrailerTake,
+            onSetMaster: setTrailerMaster,
+            onUpdateReferenceBindings: updateTrailerReferenceBindings,
+          },
+        }
+      : null;
+  /* eslint-disable-next-line react-hooks/refs -- see inspectorProduction. */
+  const inspectorTrailerProduction = trailerUi?.production;
   const authoringLocale = project?.defaultLocale ?? "en-US";
   const selectedChoiceSourceId =
     selectedNode?.data.kind === "decision"
@@ -2383,9 +2439,9 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
         content={content}
         locale={authoringLocale}
         selectedNode={selectedNode}
-        production={productionComposer ?? undefined}
+        production={inspectorProduction}
         filmTrailer={film?.trailer ?? null}
-        trailerProduction={trailerUi?.production}
+        trailerProduction={inspectorTrailerProduction}
         onCreateTrailerPrompt={() =>
           applyGraphMutation((current) =>
             createTrailerPrompt(current, t("trailer.authoring.defaultTitle"))
@@ -2649,11 +2705,17 @@ function StoryGraphNodeCard({ data, selected, isConnectable }: NodeProps<StoryCa
     productionUi?.graphNodeId === data.nodeId && data.filmClip?.master
       ? productionUi.composer.takes.find((take) => take.id === data.filmClip?.master?.takeId)
       : null;
-  const masterPreviewUrl =
+  const liveMasterPreviewUrl =
     data.kind === "root"
       ? data.filmTrailer?.master?.outputAsset?.previewUrl
       : (data.filmClip?.master?.outputAsset?.previewUrl ??
         selectedMasterTake?.outputAsset?.previewUrl);
+  // Fall back to the carried-over master (an earlier revision's video for this
+  // clip identity) so an in-progress draft edit doesn't blank the shot.
+  const carriedPreviewUrl =
+    data.kind === "clip" ? data.carriedMaster?.outputAsset?.previewUrl : undefined;
+  const masterPreviewUrl = liveMasterPreviewUrl ?? carriedPreviewUrl ?? undefined;
+  const showsCarriedMaster = Boolean(!liveMasterPreviewUrl && carriedPreviewUrl);
   const productionTarget = data.kind === "root" ? data.filmTrailer : data.filmClip;
   const nodeProductionStatus = productionTarget?.productionStatus;
   const chipStyle =
@@ -2772,19 +2834,26 @@ function StoryGraphNodeCard({ data, selected, isConnectable }: NodeProps<StoryCa
               style={{ aspectRatio: data.frameAspectRatio === "9:16" ? "9 / 16" : "16 / 9" }}
             >
               {masterPreviewUrl ? (
-                <video
-                  src={masterPreviewUrl}
-                  controls={selected}
-                  muted={!selected}
-                  playsInline
-                  preload="metadata"
-                  className={cn("size-full object-cover", !selected && "pointer-events-none")}
-                  aria-label={t(
-                    data.kind === "root"
-                      ? "trailer.node.masterPreview"
-                      : "production.node.masterPreview"
-                  )}
-                />
+                <>
+                  <video
+                    src={masterPreviewUrl}
+                    controls={selected}
+                    muted={!selected}
+                    playsInline
+                    preload="metadata"
+                    className={cn("size-full object-cover", !selected && "pointer-events-none")}
+                    aria-label={t(
+                      data.kind === "root"
+                        ? "trailer.node.masterPreview"
+                        : "production.node.masterPreview"
+                    )}
+                  />
+                  {showsCarriedMaster ? (
+                    <span className="pointer-events-none absolute top-2 left-2 rounded-full bg-black/62 px-2 py-1 text-[8px] font-semibold text-white/82 backdrop-blur-sm">
+                      {t("production.node.carriedMaster")}
+                    </span>
+                  ) : null}
+                </>
               ) : (
                 <div className="flex size-full flex-col items-center justify-center gap-2 text-white/24">
                   <span className="grid size-9 place-items-center rounded-full bg-white/[0.055]">
