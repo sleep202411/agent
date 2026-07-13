@@ -29,6 +29,16 @@ import { AI_MODEL_PATHS } from "@/components/ui/schema-field/paths";
 
 const MUSIC_SHOT_ID = -100;
 const MUSIC_COLUMN_ID = -100;
+const DEFAULT_DURATION = 90;
+const MIN_DURATION = 1;
+const MAX_DURATION = 600;
+
+function resolveDuration(raw: string): number | null {
+  const trimmed = raw.trim();
+  const value = trimmed ? Number(trimmed) : DEFAULT_DURATION;
+  if (!Number.isInteger(value) || value < MIN_DURATION || value > MAX_DURATION) return null;
+  return value;
+}
 
 interface MusicCreateDialogProps {
   open: boolean;
@@ -49,6 +59,7 @@ export function MusicCreateDialog({ open, onOpenChange, onCreated }: MusicCreate
     prompt: "",
     tags: "",
     model: "",
+    duration: String(DEFAULT_DURATION),
   });
 
   const modelOptions = useMemo(
@@ -72,12 +83,24 @@ export function MusicCreateDialog({ open, onOpenChange, onCreated }: MusicCreate
 
   // Only reset form after successful generation, not on open/close
   const resetForm = () => {
-    setFormData((prev) => ({ title: "", prompt: "", tags: "", model: prev.model }));
+    setFormData((prev) => ({
+      title: "",
+      prompt: "",
+      tags: "",
+      duration: String(DEFAULT_DURATION),
+      model: prev.model,
+    }));
   };
 
   const handleGenerate = async () => {
     if (!formData.title.trim()) {
       toast.warning(t("musicTitleRequired"));
+      return;
+    }
+
+    const duration = resolveDuration(formData.duration);
+    if (duration == null) {
+      toast.warning(t("durationInvalid"));
       return;
     }
 
@@ -94,6 +117,7 @@ export function MusicCreateDialog({ open, onOpenChange, onCreated }: MusicCreate
           prompt: formData.prompt.trim() || "...",
           title: formData.title.trim(),
           tags: formData.tags.trim(),
+          duration,
         },
         timeout: 360_000,
       });
@@ -143,6 +167,19 @@ export function MusicCreateDialog({ open, onOpenChange, onCreated }: MusicCreate
                 value={formData.tags}
                 onChange={(e) => setFormData((prev) => ({ ...prev, tags: e.target.value }))}
                 placeholder={t("tagsPlaceholder")}
+              />
+            </Field>
+
+            <Field>
+              <FieldLabel>{t("duration")}</FieldLabel>
+              <Input
+                type="number"
+                min={MIN_DURATION}
+                max={MAX_DURATION}
+                step={1}
+                value={formData.duration}
+                onChange={(e) => setFormData((prev) => ({ ...prev, duration: e.target.value }))}
+                placeholder={t("durationPlaceholder")}
               />
             </Field>
 
