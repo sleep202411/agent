@@ -24,7 +24,13 @@ apps/mobile
 .github
 .claude
 .agents
-.env*
+# Root `.env*` only matches repo root — use `**/` so apps/web/.env.local
+# never ships in the ACR upload (Next.js would load it during `next build` and
+# override Dockerfile-generated .env.production).
+**/.env
+**/.env.*
+**/.env.local
+**/.env.*.local
 *.tar
 *.tar.gz
 *.md

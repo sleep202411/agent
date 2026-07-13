@@ -131,11 +131,15 @@ build_one() {
   local args=()
   case "$svc" in
     web)
-      # 13 个 build-arg 来自 .env.production.com；SERVER_URL 用集群内地址覆盖
-      while IFS= read -r line; do
-        [[ "$line" =~ ^[A-Z_]+= ]] && args+=(--build-arg "$line")
-      done < <(grep -E '^[A-Z_]+=' "$WEB_ENV")
+      # Build args from .env.production.com only — strip CR (Windows) so values
+      # never bake as `/studio\r` or corrupt NEXT_PUBLIC_* in the client bundle.
+      while IFS= read -r line || [ -n "$line" ]; do
+        line="${line//$'\r'/}"
+        [[ "$line" =~ ^NEXT_PUBLIC_[A-Z0-9_]+= ]] && args+=(--build-arg "$line")
+      done < "$WEB_ENV"
       args+=(--build-arg "SERVER_URL=http://fizzdragon-server:3001")
+      args+=(--build-arg "JAVA_STUDIO_URL=$(grep -E '^JAVA_STUDIO_URL=' "$WEB_ENV" | tail -1 | cut -d= -f2- | tr -d '\r')")
+      args+=(--build-arg "JAVA_CONTENT_URL=$(grep -E '^JAVA_CONTENT_URL=' "$WEB_ENV" | tail -1 | cut -d= -f2- | tr -d '\r')")
       ;;
     admin-ui)
       args+=(--build-arg "NEXT_PUBLIC_ADMIN_UI_BASE_PATH=/")
