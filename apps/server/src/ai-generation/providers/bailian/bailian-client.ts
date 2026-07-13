@@ -22,6 +22,7 @@ export class BailianClient {
         body: JSON.stringify(body),
         headers: {
           'X-DashScope-Async': 'enable',
+          ...dataInspectionHeaders(config),
         },
       },
     );
@@ -38,6 +39,9 @@ export class BailianClient {
       {
         method: 'POST',
         body: JSON.stringify(body),
+        headers: {
+          ...dataInspectionHeaders(config),
+        },
       },
     );
   }
@@ -112,6 +116,22 @@ export class BailianClient {
 
     return (await response.json()) as T;
   }
+}
+
+/**
+ * When enabled, tells DashScope to skip its built-in content inspection on
+ * request/response — the same header the Java backend sends on its 万相 calls
+ * (`X-DashScope-DataInspection: {"input":"disable","output":"disable"}`).
+ * Omitted entirely when disableDataInspection is false, so DashScope applies
+ * its default moderation.
+ */
+function dataInspectionHeaders(
+  config: BailianProviderConfig,
+): Record<string, string> {
+  if (!config.disableDataInspection) return {};
+  return {
+    'X-DashScope-DataInspection': '{"input":"disable","output":"disable"}',
+  };
 }
 
 function servicePath(runtime: BailianModelRuntimeConfig): string {

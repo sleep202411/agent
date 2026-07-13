@@ -2,6 +2,16 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { parseInteractiveFilmRelease } from "./release-manifest";
 
+type ParsedRelease = ReturnType<typeof parseInteractiveFilmRelease>;
+
+function parsedSceneAt(release: ParsedRelease, index: number) {
+  const node = release.nodes[index];
+  if (!node || !("presentation" in node)) {
+    throw new Error(`Expected runtime scene at index ${index}`);
+  }
+  return node;
+}
+
 function fixture() {
   const sha256 = "a".repeat(64);
   return {
@@ -138,11 +148,310 @@ function setSequenceEndBehavior(
   clip.endBehavior = endBehavior;
 }
 
+function repeatedDecisionFixture() {
+  const release = fixture() as ReturnType<typeof fixture> & {
+    initialState?: unknown;
+  };
+  const sceneTemplate = structuredClone(release.nodes[0]) as unknown as {
+    nodeId: string;
+    exit: unknown;
+  };
+  const choices = [
+    {
+      choiceId: "CHOICE-A",
+      label: { "en-US": "A", "zh-CN": "甲", "zh-HK": "甲" },
+      effects: [],
+      nextNodeId: "DECISION-REPEATED",
+      afterSelect: { kind: "immediate" },
+    },
+    {
+      choiceId: "CHOICE-B",
+      label: { "en-US": "B", "zh-CN": "乙", "zh-HK": "乙" },
+      effects: [],
+      nextNodeId: "ENDING-B",
+      afterSelect: { kind: "immediate" },
+    },
+  ];
+  (release.nodes[0] as unknown as { exit: unknown }).exit = {
+    kind: "choice",
+    decisionId: "DECISION-SHARED",
+    prompt: { "en-US": "Choose", "zh-CN": "选择", "zh-HK": "選擇" },
+    trigger: { kind: "media-ended" },
+    choices,
+  };
+  (release.nodes as unknown[]).push(
+    {
+      ...structuredClone(sceneTemplate),
+      nodeId: "DECISION-REPEATED",
+      exit: {
+        kind: "choice",
+        decisionId: "DECISION-SHARED",
+        prompt: { "zh-HK": "選擇", "zh-CN": "选择", "en-US": "Choose" },
+        trigger: { kind: "media-ended" },
+        choices: structuredClone(choices)
+          .map((choice) => ({
+            ...choice,
+            nextNodeId: choice.choiceId === "CHOICE-A" ? "ENDING-A" : "ENDING-B",
+          }))
+          .reverse(),
+      },
+    },
+    {
+      ...structuredClone(sceneTemplate),
+      nodeId: "ENDING-A",
+      exit: { kind: "ending", endingId: "ENDING-A" },
+    },
+    {
+      ...structuredClone(sceneTemplate),
+      nodeId: "ENDING-B",
+      exit: { kind: "ending", endingId: "ENDING-B" },
+    }
+  );
+  return release;
+}
+
 test("parses a video-first release with independent wide and portrait masters", () => {
   const parsed = parseInteractiveFilmRelease(fixture());
   assert.equal(parsed.entryNodeId, "S01-P00-CREATE");
   assert.equal(parsed.media[0]?.kind, "video");
-  assert.equal(parsed.nodes[0]?.presentation.kind, "video");
+  assert.equal(parsedSceneAt(parsed, 0).presentation.kind, "video");
+  assert.deepEqual(parsed.initialState, { variables: {}, flags: {}, relationships: {} });
+  assert.deepEqual(parsed.endings, []);
+});
+
+test("parses build-backed media without inventing poster, codec, or frame-rate metadata", () => {
+  const release = fixture();
+  for (const asset of release.media.slice(0, 2)) {
+    for (const variant of Object.values(asset.variants)) {
+      const buildBackedVariant = variant as {
+        codec?: unknown;
+        framesPerSecond?: unknown;
+      };
+      delete buildBackedVariant.codec;
+      delete buildBackedVariant.framesPerSecond;
+    }
+  }
+  delete (release.nodes[0].presentation as { posterAssetId?: unknown }).posterAssetId;
+
+  const parsed = parseInteractiveFilmRelease(release);
+  assert.equal(parsedSceneAt(parsed, 0).presentation.kind, "video");
+});
+
+test("supports authored initial state, six variable operators, prioritized routes, and routers", () => {
+  const release = fixture() as ReturnType<typeof fixture> & {
+    initialState: unknown;
+    endings: unknown[];
+  };
+  release.initialState = {
+    variables: { truth: 0, finalAction: "unset" },
+    flags: { heardWarning: false },
+    relationships: { maya: 0 },
+  };
+  release.endings = [
+    {
+      endingId: "ENDING-TRUTH",
+      title: {
+        "en-US": "The whole tape",
+        "zh-CN": "完整母带",
+        "zh-HK": "完整母帶",
+      },
+      summary: {
+        "en-US": "The complete record survives.",
+        "zh-CN": "完整记录被保存。",
+        "zh-HK": "完整記錄被保存。",
+      },
+      kind: "truth",
+    },
+  ];
+  (release.nodes[0] as { exit: unknown }).exit = {
+    kind: "auto",
+    routes: [
+      ["equals", 0],
+      ["not_equals", 1],
+      ["greater_than", -1],
+      ["at_least", 0],
+      ["less_than", 1],
+      ["at_most", 0],
+    ].map(([operator, value], index) => ({
+      nextNodeId: "ROUTER-ENDING",
+      when: { kind: "variable", key: "truth", operator, value },
+      priority: 100 - index,
+    })),
+  };
+  (release.nodes as unknown[]).push(
+    {
+      kind: "router",
+      nodeId: "ROUTER-ENDING",
+      exit: {
+        kind: "auto",
+        routes: [{ nextNodeId: "SCENE-ENDING", priority: 10 }],
+      },
+    },
+    {
+      ...release.nodes[0],
+      nodeId: "SCENE-ENDING",
+      exit: { kind: "ending", endingId: "ENDING-TRUTH" },
+    }
+  );
+
+  const parsed = parseInteractiveFilmRelease(release);
+  assert.deepEqual(parsed.initialState.variables, { truth: 0, finalAction: "unset" });
+  const router = parsed.nodes.find((node) => node.nodeId === "ROUTER-ENDING");
+  assert.ok(router && "kind" in router && router.kind === "router");
+  assert.equal(router.exit.routes[0]?.priority, 10);
+  assert.equal(parsed.endings[0]?.title["zh-CN"], "完整母带");
+});
+
+test("keeps stable decision metadata and localized prompts in choice exits", () => {
+  const release = fixture() as ReturnType<typeof fixture> & { endings: unknown[] };
+  release.endings = [
+    {
+      endingId: "ENDING-A",
+      title: { "en-US": "A", "zh-CN": "甲", "zh-HK": "甲" },
+      kind: "custom",
+    },
+    {
+      endingId: "ENDING-B",
+      title: { "en-US": "B", "zh-CN": "乙", "zh-HK": "乙" },
+      kind: "custom",
+    },
+  ];
+  (release.nodes[0] as { exit: unknown }).exit = {
+    kind: "choice",
+    decisionId: "DECISION-TAPE",
+    prompt: {
+      "en-US": "Which track should play?",
+      "zh-CN": "先播放哪一轨？",
+      "zh-HK": "先播放哪一軌？",
+    },
+    trigger: { kind: "media-ended" },
+    choices: [
+      {
+        choiceId: "CHOICE-A",
+        label: { "en-US": "Side A", "zh-CN": "A 面", "zh-HK": "A 面" },
+        effects: [],
+        nextNodeId: "SCENE-END-A",
+        afterSelect: { kind: "immediate" },
+      },
+      {
+        choiceId: "CHOICE-B",
+        label: { "en-US": "Side B", "zh-CN": "B 面", "zh-HK": "B 面" },
+        effects: [],
+        nextNodeId: "SCENE-END-B",
+        afterSelect: { kind: "immediate" },
+      },
+    ],
+  };
+  (release.nodes as unknown[]).push(
+    {
+      ...release.nodes[0],
+      nodeId: "SCENE-END-A",
+      exit: { kind: "ending", endingId: "ENDING-A" },
+    },
+    {
+      ...release.nodes[0],
+      nodeId: "SCENE-END-B",
+      exit: { kind: "ending", endingId: "ENDING-B" },
+    }
+  );
+
+  const parsed = parseInteractiveFilmRelease(release);
+  const exit = parsed.nodes[0]?.exit;
+  assert.equal(exit?.kind, "choice");
+  assert.equal(exit?.kind === "choice" ? exit.decisionId : null, "DECISION-TAPE");
+  assert.equal(exit?.kind === "choice" ? exit.prompt["zh-CN"] : null, "先播放哪一轨？");
+});
+
+test("accepts consistent repeated decisions with predecessor-specific targets", () => {
+  const parsed = parseInteractiveFilmRelease(repeatedDecisionFixture());
+  const repeated = parsed.nodes.filter((node) => node.exit.kind === "choice");
+  assert.equal(repeated.length, 2);
+  assert.deepEqual(
+    repeated.map((node) => node.exit.kind === "choice" && node.exit.decisionId),
+    ["DECISION-SHARED", "DECISION-SHARED"]
+  );
+});
+
+test("rejects a conflicting copy of a repeated runtime decision", () => {
+  const release = repeatedDecisionFixture();
+  const repeatedExit = (
+    release.nodes[1] as unknown as {
+      exit: { choices: Array<{ choiceId: string; label: Record<string, string> }> };
+    }
+  ).exit;
+  const choice = repeatedExit.choices.find((candidate) => candidate.choiceId === "CHOICE-A");
+  assert.ok(choice);
+  choice.label["zh-CN"] = "冲突选项";
+
+  assert.throws(
+    () => parseInteractiveFilmRelease(release),
+    /Decision DECISION-SHARED conflicts.*choice CHOICE-A label must match/
+  );
+});
+
+test("validates runtime variable conditions and effects against their initial types", () => {
+  const valid = repeatedDecisionFixture();
+  valid.initialState = {
+    variables: { score: 0, mode: "idle" },
+    flags: {},
+    relationships: {},
+  };
+  for (const node of valid.nodes as unknown as Array<{
+    exit: {
+      kind: string;
+      choices?: Array<{
+        choiceId: string;
+        visibleWhen?: unknown;
+        effects: unknown[];
+      }>;
+    };
+  }>) {
+    if (node.exit.kind !== "choice") continue;
+    const choice = node.exit.choices?.find((candidate) => candidate.choiceId === "CHOICE-A");
+    assert.ok(choice);
+    choice.visibleWhen = {
+      kind: "variable",
+      key: "score",
+      operator: "at_least",
+      value: 0,
+    };
+    choice.effects = [{ kind: "set_variable", key: "mode", value: "active" }];
+  }
+  assert.equal(parseInteractiveFilmRelease(valid).initialState.variables.score, 0);
+
+  const badComparison = structuredClone(valid);
+  for (const node of badComparison.nodes as unknown as Array<{
+    exit: {
+      kind: string;
+      choices?: Array<{ choiceId: string; visibleWhen?: { value: unknown } }>;
+    };
+  }>) {
+    if (node.exit.kind !== "choice") continue;
+    const choice = node.exit.choices?.find((candidate) => candidate.choiceId === "CHOICE-A");
+    if (choice?.visibleWhen) choice.visibleWhen.value = "0";
+  }
+  assert.throws(
+    () => parseInteractiveFilmRelease(badComparison),
+    /at_least requires a numeric comparison value/
+  );
+
+  const badEffect = structuredClone(valid);
+  for (const node of badEffect.nodes as unknown as Array<{
+    exit: {
+      kind: string;
+      choices?: Array<{ choiceId: string; effects: unknown[] }>;
+    };
+  }>) {
+    if (node.exit.kind !== "choice") continue;
+    const choice = node.exit.choices?.find((candidate) => candidate.choiceId === "CHOICE-A");
+    if (choice) {
+      choice.effects = [{ kind: "set_variable", key: "score", value: "one" }];
+    }
+  }
+  assert.throws(
+    () => parseInteractiveFilmRelease(badEffect),
+    /set_variable value must match runtime variable score/
+  );
 });
 
 test("rejects a paired asset with a missing portrait master", () => {
@@ -194,6 +503,8 @@ test("requires every branch target and reaction asset to resolve", () => {
   const release = fixture();
   (release.nodes[0] as { exit: unknown }).exit = {
     kind: "choice",
+    decisionId: "DECISION-MISSING",
+    prompt: { "en-US": "Go?", "zh-CN": "前进？", "zh-HK": "前進？" },
     trigger: { kind: "media-ended" },
     choices: [
       {
@@ -222,7 +533,7 @@ test("expresses a last-frame hold without inventing a second media asset", () =>
   const release = fixture();
   setSequenceEndBehavior(release, { behavior: "hold-last-frame" });
   const parsed = parseInteractiveFilmRelease(release);
-  const presentation = parsed.nodes[0]?.presentation;
+  const presentation = parsedSceneAt(parsed, 0).presentation;
   assert.equal(presentation?.kind, "video");
   assert.deepEqual(presentation?.kind === "video" ? presentation.sequence[0]?.endBehavior : null, {
     behavior: "hold-last-frame",
@@ -244,7 +555,7 @@ test("supports finite inter-shot holds but rejects indefinite waits before the l
       endBehavior: { behavior: "hold-last-frame" },
     },
   ];
-  assert.equal(parseInteractiveFilmRelease(release).nodes[0]?.presentation.kind, "video");
+  assert.equal(parsedSceneAt(parseInteractiveFilmRelease(release), 0).presentation.kind, "video");
 
   setSequenceEndBehavior(release, { behavior: "hold-last-frame" });
   assert.throws(
@@ -265,7 +576,7 @@ test("tail loops are final-only and cannot repeat embedded dialogue", () => {
     /Tail loops require a silent picture asset/
   );
   release.media[0].audio = "none";
-  assert.equal(parseInteractiveFilmRelease(release).nodes[0]?.presentation.kind, "video");
+  assert.equal(parsedSceneAt(parseInteractiveFilmRelease(release), 0).presentation.kind, "video");
 });
 
 test("rejects unreachable nodes and dangling external action targets", () => {

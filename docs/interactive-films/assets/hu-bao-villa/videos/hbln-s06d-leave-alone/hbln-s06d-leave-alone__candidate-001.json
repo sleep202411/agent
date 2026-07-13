@@ -1,0 +1,13 @@
+{
+  "clipId": "hbln-s06d-leave-alone",
+  "model": "seedance-2-0",
+  "mode": "image_to_video",
+  "resolution": "720p",
+  "duration": 15,
+  "audio": true,
+  "taskId": "cgt-20260713213100-rm46k",
+  "sha256": "187da2d8bb7d5841bddcc30158606a3cab7223188b56fe71609391b82a896979",
+  "bytes": 6558777,
+  "videoUrl": "https://ark-acg-ap-southeast-1.tos-ap-southeast-1.volces.com/dreamina-seedance-2-0/02178394953609500000000000000000000ffffc0a8a26c1ba71b.mp4?X-Tos-Algorithm=TOS4-HMAC-SHA256&X-Tos-Credential=AKLTYWJkZTExNjA1ZDUyNDc3YzhjNTM5OGIyNjBhNDcyOTQ%2F20260713%2Fap-southeast-1%2Ftos%2Frequest&X-Tos-Date=20260713T133338Z&X-Tos-Expires=86400&X-Tos-Signature=58899ca74a9caf1bd7340af2fae2e84e8d896eb4fd4dfdbd6b3f230265bef83f&X-Tos-SignedHeaders=host",
+  "seconds": 175
+}

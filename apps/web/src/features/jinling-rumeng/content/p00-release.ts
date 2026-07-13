@@ -1,5 +1,5 @@
 import {
-  parseInteractiveFilmRelease,
+  parseInteractiveFilmSceneRelease,
   type RuntimeDataAsset,
   type RuntimeImageAsset,
   type InteractiveFilmSceneNode,
@@ -15,7 +15,7 @@ const FPS_24 = { numerator: 24, denominator: 1 } as const;
  * compilation remains blocked until every referenced source asset is formally
  * APPROVED.
  */
-export const JINLING_P00_RELEASE = parseInteractiveFilmRelease({
+export const JINLING_P00_RELEASE = parseInteractiveFilmSceneRelease({
   schemaVersion: 1,
   channel: "preview",
   gameId: "jinling-rumeng",

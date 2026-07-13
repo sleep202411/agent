@@ -137,7 +137,7 @@ import { AiGenerationWorkerService } from './worker.service';
       useExisting: RealPersonLikenessOutputsService,
     },
   ],
-  exports: [],
+  exports: [AiGenerationService],
 })
 export class AiGenerationModule implements OnModuleInit {
   /**

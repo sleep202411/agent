@@ -1515,8 +1515,1108 @@
     "confirmRemoveNode": "Delete this node from the canvas?",
     "confirmRemoveEdge": "Delete this connection?"
   },
+  "storyStudio": {
+    "metaTitle": "Story Studio",
+    "metaDescription": "Author, produce, review, and release interactive cinematic stories.",
+    "eyebrow": "Interactive narrative production",
+    "title": "Story Studio",
+    "subtitle": "Develop the story, reference pack, production takes, and release from one versioned workspace.",
+    "newProject": "New interactive film",
+    "projects": {
+      "title": "Interactive films",
+      "subtitle": "Real Story Projects in the active workspace.",
+      "revision": "Revision {number}",
+      "draft": "Draft",
+      "noSummary": "No project summary yet.",
+      "noBlocker": "No active production blocker",
+      "updatedUnknown": "Update time unavailable"
+    },
+    "metrics": {
+      "references": "References",
+      "clips": "Clips",
+      "masters": "Masters",
+      "blocked": "Blocked",
+      "choices": "Choices",
+      "endings": "Endings",
+      "graphClips": "Graph clips"
+    },
+    "blockers": {
+      "referenceApproval": "{count} required reference slots need approval.",
+      "clipReferences": "{count} clips are blocked by reference inputs.",
+      "clipMasters": "{count} clips still need an approved master.",
+      "productionInputsUnresolved": "The production input manifest is not fully resolved.",
+      "referenceInputApproval": "A required reference input has no approved version.",
+      "omniReferenceRequired": "The Omni Reference input package is incomplete.",
+      "firstFrameRequired": "The required first frame is not bound.",
+      "lastFrameRequired": "The required last frame is not bound.",
+      "masterInputStale": "The selected master was generated from older inputs."
+    },
+    "actions": {
+      "retry": "Retry",
+      "projectMenu": "Project actions",
+      "editDetails": "Edit details",
+      "archive": "Archive",
+      "cancel": "Cancel",
+      "create": "Create project",
+      "save": "Save"
+    },
+    "errors": {
+      "loadProjects": "Projects could not be loaded.",
+      "generic": "Something went wrong.",
+      "createProject": "Project could not be created.",
+      "updateProject": "Project could not be updated.",
+      "archiveProject": "Project could not be archived."
+    },
+    "empty": {
+      "title": "No interactive-film projects yet",
+      "description": "Create a project to start an editable story draft, then direct and generate clips from the same canvas."
+    },
+    "example": {
+      "sectionTitle": "Official example",
+      "sectionSubtitle": "Study a published production without adding it to your project library.",
+      "readOnly": "Official example · Read-only",
+      "title": "Dream of Jinling",
+      "description": "Inspect the existing cinematic branch map and published media package. This example remains separate from creator projects.",
+      "open": "Open example"
+    },
+    "create": {
+      "title": "Create an interactive film",
+      "description": "This creates a sovereign Story Project and an empty versioned draft in the active workspace."
+    },
+    "edit": { "title": "Edit project details" },
+    "fields": {
+      "title": "Title",
+      "titlePlaceholder": "Untitled interactive film",
+      "summary": "Summary",
+      "summaryPlaceholder": "Describe the premise and intended experience.",
+      "frameProfile": "Video format",
+      "frameProfileHint": "Choose once. Every generated clip in this project will use this fixed format."
+    },
+    "frameProfiles": {
+      "landscape_16_9": {
+        "label": "Landscape",
+        "dimensions": "16:9 · 1920 × 1080"
+      },
+      "portrait_9_16": {
+        "label": "Portrait",
+        "dimensions": "9:16 · 1080 × 1920"
+      }
+    },
+    "archive": {
+      "title": "Archive project?",
+      "description": "“{title}” will leave the active project library. Its revisions and production history remain preserved."
+    },
+    "visibility": {
+      "private": "Private",
+      "unlisted": "Unlisted",
+      "public": "Public"
+    },
+    "canvas": {
+      "back": "Back to Story Studio",
+      "mode": "Story canvas",
+      "workbench": "Production workspace",
+      "workingPreview": {
+        "action": "Preview playtest",
+        "title": "Working preview",
+        "description": "Play the latest saved story graph with its current video takes. This preview never freezes the project or stops you from editing.",
+        "draftRevision": "Draft r{revision}",
+        "loading": "Preparing the latest saved draft…",
+        "errorTitle": "Working preview could not be prepared",
+        "errorFallback": "The working preview could not be loaded.",
+        "retry": "Retry",
+        "refresh": "Refresh preview",
+        "editStory": "Edit story",
+        "previewWarnings": "{count} working-preview warnings",
+        "unavailableTitle": "The story is not playable yet",
+        "unavailableDescription": "{errors} blocking errors · {warnings} warnings. Complete only the missing production inputs listed below; the canvas remains editable.",
+        "noDiagnostics": "No diagnostic details were returned. Retry or inspect the project production state.",
+        "severity": {
+          "error": "Blocking",
+          "warning": "Warning"
+        },
+        "pathReport": {
+          "title": "Current path coverage",
+          "paths": "Paths",
+          "endings": "Endings",
+          "ambiguous": "Ambiguous",
+          "unreachable": "Unreachable",
+          "unavailable": "Path coverage becomes available after the graph can be compiled."
+        }
+      },
+      "fit": "Fit story to view",
+      "autosave": "Autosave",
+      "readOnly": "Read only",
+      "addNode": "Add story node",
+      "loading": "Opening the story canvas…",
+      "saveState": {
+        "idle": "Mutable draft · revision {revision}",
+        "dirty": "Unsaved changes · revision {revision}",
+        "saving": "Saving changes… · revision {revision}",
+        "saved": "All changes saved · revision {revision}",
+        "error": "Changes could not be saved · revision {revision}",
+        "conflict": "A newer project state exists · revision {revision}"
+      },
+      "nodeKinds": {
+        "root": "Story world",
+        "clip": "Film clip",
+        "choice": "Branch choice",
+        "decision": "Branch choice",
+        "router": "Conditional router",
+        "ending": "Story ending"
+      },
+      "ports": {
+        "entry": "Story entry",
+        "input": "Incoming story flow",
+        "auto": "Continue automatically",
+        "checkpoint": "Wait for player confirmation",
+        "checkpointTarget": "Continue checkpoint to {target}",
+        "choiceTrigger": "Trigger choice",
+        "choiceOption": "Choice: {label}",
+        "newChoice": "Connect a new option",
+        "route": "Route to {target}",
+        "priority": "Priority {priority}",
+        "newRoute": "Connect a new route",
+        "ending": "Enter ending"
+      },
+      "creator": {
+        "title": "Add to story graph",
+        "description": "Create an element in the interactive-film story structure.",
+        "clip": "Film clip",
+        "clipDescription": "A generated video segment with a defined next step.",
+        "choice": "Branch choice",
+        "choiceDescription": "Turn the selected clip ending into a player decision.",
+        "choiceUnavailable": "Select a film clip first.",
+        "router": "Conditional router",
+        "routerDescription": "A graph-only conditional merge or redirect with no video.",
+        "ending": "Story ending",
+        "endingDescription": "A named outcome stored in the story bible."
+      },
+      "endingKinds": {
+        "truth": "Truth",
+        "bond": "Bond",
+        "echo": "Echo",
+        "failure": "Failure",
+        "hidden": "Hidden",
+        "custom": "Custom"
+      },
+      "projection": {
+        "rootTitle": "Story World",
+        "rootEyebrow": "World Root",
+        "rootSummary": "Define the premise, world rules, characters, and narrative state here.",
+        "clip": "Clip",
+        "decision": "Choice",
+        "router": "Router",
+        "ending": "Ending"
+      },
+      "foundation": {
+        "action": "Story foundation",
+        "eyebrow": "Story foundation",
+        "title": "Story foundation",
+        "description": "Define the dramatic promise before expanding the branch graph. Changes autosave to the mutable draft.",
+        "logline": "Logline",
+        "loglinePlaceholder": "One sentence that captures the protagonist, pressure, and irreversible choice.",
+        "synopsis": "Synopsis",
+        "synopsisPlaceholder": "Describe the complete dramatic arc, including the central turn and possible outcomes.",
+        "worldview": "World and rules",
+        "worldviewPlaceholder": "Define the setting, its logic, visual texture, and any rules the story cannot break."
+      },
+      "world": {
+        "eyebrow": "Story world",
+        "title": "Story world library",
+        "description": "Define reusable story entities here. They are referenced by the graph but do not become playback nodes.",
+        "tabs": {
+          "foundation": "Foundation",
+          "characters": "Characters",
+          "locations": "Locations",
+          "props": "Props",
+          "rules": "Rules",
+          "variables": "Variables"
+        },
+        "characters": {
+          "eyebrow": "Character library",
+          "title": "Characters",
+          "description": "Each character is an independent story entity referenced by conditions and effects.",
+          "create": "Add character",
+          "emptyTitle": "No characters yet",
+          "emptyDescription": "Create the first reusable character for this story world.",
+          "openCharacter": "Open {name}",
+          "roleEmpty": "Role not defined",
+          "referenceCount": "{count, plural, one {# reference} other {# references}}",
+          "backToList": "Back to characters",
+          "detailEyebrow": "Character record",
+          "stableId": "Stable character ID",
+          "name": "Name · {locale}",
+          "namePlaceholder": "Character name",
+          "role": "Story role",
+          "rolePlaceholder": "Protagonist, guide, antagonist…",
+          "summary": "Character summary",
+          "summaryPlaceholder": "Motivation, conflict, arc, and dramatic function.",
+          "playable": "Playable character",
+          "playableToggle": "Toggle playable character",
+          "playableOn": "Playable",
+          "playableOff": "Not playable",
+          "continuityRules": "Continuity rules",
+          "noContinuityRules": "No continuity rules yet.",
+          "newRulePlaceholder": "Clothing, injury, voice, behavior, or other continuity constraint",
+          "newRuleLabel": "New continuity rule",
+          "addRule": "Add rule",
+          "ruleLabel": "Rule {number}",
+          "removeRule": "Remove rule {number}",
+          "delete": "Delete character",
+          "deleteBlocked": "{count, plural, one {Referenced # time.} other {Referenced # times.}} Remove those references before deleting.",
+          "deleteAvailable": "This character is not referenced and can be deleted.",
+          "deleteTitle": "Delete this character?",
+          "deleteDescription": "“{name}” will be removed from the story world. Production reference assets are not affected.",
+          "cancel": "Cancel",
+          "confirmDelete": "Delete character"
+        },
+        "collections": {
+          "kinds": {
+            "locations": "Locations",
+            "props": "Props",
+            "storyRules": "Story rules"
+          },
+          "add": "Add",
+          "remove": "Remove item {number}: {value}",
+          "emptyValue": "empty value",
+          "itemLabel": "Item {number}",
+          "empty": "Nothing has been defined here yet.",
+          "requiredBeforeComplete": "Required for a complete story."
+        },
+        "variables": {
+          "title": "State variables",
+          "empty": "No state variables yet.",
+          "add": "Add variable",
+          "addTypes": {
+            "boolean": "Boolean variable",
+            "number": "Number variable",
+            "string": "Text variable"
+          },
+          "typeLabels": {
+            "boolean": "Boolean",
+            "number": "Number",
+            "string": "Text"
+          },
+          "key": "Stable variable key",
+          "type": "Variable type",
+          "initialValue": "Initial value",
+          "minimum": "Minimum",
+          "maximum": "Maximum",
+          "allowedValues": "Allowed values",
+          "addAllowedValue": "Add allowed value",
+          "removeAllowedValue": "Remove allowed value {number}: {value}",
+          "emptyValue": "empty value",
+          "allowedValueLabel": "Allowed value {number}",
+          "references": "{count, plural, one {# reference} other {# references}}",
+          "delete": "Delete variable",
+          "deleteBlocked": "{count, plural, one {Referenced # time.} other {Referenced # times.}} Remove those references before deleting.",
+          "warnings": {
+            "minimumExceedsMaximum": "Minimum exceeds maximum. The draft can save, but this variable cannot run in a preview.",
+            "initialBelowMinimum": "Initial value is below minimum. The draft can save, but this variable cannot run in a preview.",
+            "initialAboveMaximum": "Initial value is above maximum. The draft can save, but this variable cannot run in a preview.",
+            "initialNotAllowed": "Initial value is not in the allowed-values list. The draft can save, but this variable cannot run in a preview."
+          },
+          "deleteTitle": "Delete this state variable?",
+          "deleteDescription": "“{key}” will be removed from the story world.",
+          "cancel": "Cancel",
+          "confirmDelete": "Delete variable",
+          "boolean": { "true": "True", "false": "False" }
+        }
+      },
+      "metrics": {
+        "characters": "Characters",
+        "locations": "Locations",
+        "props": "Props",
+        "rules": "Rules",
+        "nodes": "Graph nodes",
+        "endings": "Endings"
+      },
+      "director": {
+        "eyebrow": "Director prompt",
+        "title": "Video direction",
+        "description": "Author the structured direction for this clip. It stays editable; each generated Take records the exact saved inputs it used.",
+        "compact": {
+          "title": "Prompt composer",
+          "beats": "{count, plural, one {# beat} other {# beats}}",
+          "emptyDirection": "Master direction is not authored yet.",
+          "manifest": "{count} chars",
+          "editInInspector": "Edit the complete timeline in the inspector →"
+        },
+        "fields": {
+          "title": "Clip title",
+          "description": "Visual intent",
+          "duration": "Target seconds",
+          "generationMode": "Generation control",
+          "frameMode": "Frame lock",
+          "masterDirection": "Master direction",
+          "emotionalArc": "Emotional arc"
+        },
+        "hints": {
+          "masterDirection": "The global cinematic instruction that governs every beat."
+        },
+        "generation": {
+          "frameLock": "Frame Lock",
+          "omni": "Omni Reference",
+          "firstFrame": "First frame",
+          "firstLast": "First + last frame"
+        },
+        "references": {
+          "title": "Reference responsibilities",
+          "description": "Describe what each subject, location, prop, style, or frame reference controls.",
+          "add": "Add reference responsibility",
+          "remove": "Remove reference responsibility",
+          "referencePlaceholder": "Reference ID or slot key",
+          "notePlaceholder": "Identity, wardrobe, placement, lighting, or usage instructions",
+          "roles": {
+            "subject": "Subject",
+            "location": "Location",
+            "prop": "Prop",
+            "style": "Style",
+            "first_frame": "First frame",
+            "last_frame": "Last frame",
+            "omni_reference": "Omni reference",
+            "other": "Other"
+          }
+        },
+        "beats": {
+          "title": "Time-coded beats",
+          "description": "Direct the shot over time. Beats must be ordered and non-overlapping for generation.",
+          "add": "Add beat",
+          "required": "At least one directed beat is required for generation.",
+          "beat": "Beat {number}",
+          "start": "Start · seconds",
+          "end": "End · seconds",
+          "moveUp": "Move beat earlier",
+          "moveDown": "Move beat later",
+          "remove": "Remove beat",
+          "fields": {
+            "visual": "Visual composition",
+            "camera": "Camera and lens",
+            "action": "Action and motion",
+            "performance": "Performance",
+            "emotion": "Emotion",
+            "dialogue": "Dialogue",
+            "audio": "Audio",
+            "endState": "End state",
+            "continuity": "Continuity detail"
+          }
+        },
+        "negative": {
+          "title": "Negative constraints",
+          "description": "Hard failures the generation must avoid.",
+          "add": "Add negative constraint",
+          "item": "Negative constraint"
+        },
+        "continuity": {
+          "title": "Continuity notes",
+          "description": "State that must survive from adjacent clips or into the next clip.",
+          "add": "Add continuity note",
+          "item": "Continuity note"
+        },
+        "preview": {
+          "title": "Director manifest preview",
+          "count": "{count} characters",
+          "description": "Read-only deterministic compilation. No generation is submitted from this editor.",
+          "withinBudget": "The manifest currently fits Seedance's 4,000-character provider budget.",
+          "requiresCompaction": "This manifest exceeds Seedance's 4,000-character budget. The production adapter must compile and compact it before submission."
+        }
+      },
+      "trailer": {
+        "eyebrow": "World trailer",
+        "title": "Trailer direction",
+        "description": "Author and produce the project trailer independently from story clips and runtime paths.",
+        "close": "Close trailer inspector",
+        "node": {
+          "noMaster": "No Master trailer yet",
+          "masterPreview": "Master trailer preview"
+        },
+        "authoring": {
+          "emptyTitle": "Author the trailer first",
+          "emptyDescription": "Create a dedicated director design for the project trailer.",
+          "create": "Create trailer direction",
+          "defaultTitle": "Project trailer"
+        },
+        "production": {
+          "title": "Trailer production",
+          "editPromptInInspector": "Edit the structured trailer direction in the inspector; this production revision remains immutable.",
+          "refresh": "Refresh trailer production",
+          "disabled": {
+            "permission": "You do not have permission to generate video for this project.",
+            "reviewPermission": "You do not have permission to review trailer Takes for this project.",
+            "blocked": "Resolve this trailer's production blockers before generating."
+          },
+          "errors": {
+            "action": "The trailer production action could not be completed.",
+            "loadTakes": "Trailer Takes could not be loaded."
+          },
+          "statuses": {
+            "queued": "Queued",
+            "running": "Running",
+            "processing": "Processing",
+            "ready": "Ready",
+            "failed": "Failed",
+            "cancelled": "Cancelled"
+          },
+          "takes": {
+            "title": "Trailer Take Strip",
+            "count": "{count, plural, one {# Take} other {# Takes}}",
+            "empty": "Generate the first Take for this trailer.",
+            "master": "Master",
+            "take": "Take {number}",
+            "review": "Review",
+            "cancel": "Cancel",
+            "retry": "Retry",
+            "setMaster": "Set Master"
+          },
+          "review": {
+            "title": "Review trailer Take",
+            "description": "Review trailer-specific story fidelity, identity, pacing, readability, rights, and safety before approval.",
+            "decisions": {
+              "approve": "Approve",
+              "requestChanges": "Request changes",
+              "reject": "Reject"
+            },
+            "checklist": {
+              "technical": "Technical",
+              "storyFidelity": "Story fidelity",
+              "identityConsistency": "Identity consistency",
+              "visualConsistency": "Visual consistency",
+              "pacing": "Pacing",
+              "textReadability": "Text readability",
+              "rights": "Rights",
+              "safety": "Safety"
+            },
+            "values": { "pass": "Pass", "fail": "Fail", "na": "N/A" },
+            "comment": "Review note",
+            "commentRequired": "Add a review note when requesting changes or rejecting a Take.",
+            "approveRequirements": "Technical and safety checks must both pass before approval.",
+            "cancel": "Cancel",
+            "submit": "Submit review"
+          }
+        }
+      },
+      "production": {
+        "eyebrow": "Clip production",
+        "title": "Video production",
+        "description": "Create Takes from the latest saved director design. The canvas stays editable and every Take preserves its own input snapshot.",
+        "refresh": "Refresh production status",
+        "masterPrompt": "Master Prompt",
+        "editPromptInInspector": "Edit the director design in the inspector. Generate always captures the latest saved version.",
+        "beats": "{count, plural, one {# timed beat} other {# timed beats}}",
+        "emptyPrompt": "Complete the director prompt before generating.",
+        "model": "Video model",
+        "projectDefaultModel": "Project default Omni model",
+        "duration": "Duration",
+        "seconds": "{seconds}s",
+        "output": "Project output",
+        "cost": "Estimated cost",
+        "costAtSubmit": "Quoted at submit",
+        "credits": "{count} credits",
+        "generationControl": "Generation control",
+        "modes": {
+          "omni_reference": "Omni Reference",
+          "first_frame": "First Frame",
+          "first_last_frame": "First + Last Frame"
+        },
+        "references": "Approved reference responsibilities",
+        "approvedCount": "{count, plural, one {# approved slot} other {# approved slots}}",
+        "noReferenceResponsibilities": "No reference responsibilities are authored for this clip.",
+        "referenceRoles": {
+          "subject": "Subject",
+          "location": "Location",
+          "prop": "Prop",
+          "style": "Style",
+          "first_frame": "First frame",
+          "last_frame": "Last frame",
+          "omni_reference": "Omni reference",
+          "other": "Other"
+        },
+        "variationNote": "Variation note",
+        "variationPlaceholder": "Optional direction for this Take only. It does not modify the saved director design.",
+        "generate": "Generate Take",
+        "disabled": {
+          "preparing": "Preparing the current shot inputs before generation.",
+          "promptRequired": "Complete the current clip's director prompt before generating.",
+          "permission": "You do not have permission to generate video for this project.",
+          "blocked": "Resolve this clip's production blockers before generating."
+        },
+        "errors": {
+          "prepare": "The current shot inputs could not be prepared.",
+          "action": "The production action could not be completed.",
+          "loadTakes": "Takes could not be loaded."
+        },
+        "statuses": {
+          "preparing": "Preparing shot inputs",
+          "blocked": "Blocked",
+          "ready": "Ready",
+          "generating": "Generating",
+          "in_review": "In review",
+          "approved": "Approved",
+          "stale": "Stale",
+          "queued": "Queued",
+          "running": "Running",
+          "processing": "Processing",
+          "failed": "Failed",
+          "cancelled": "Cancelled"
+        },
+        "node": {
+          "takes": "Takes",
+          "running": "Running",
+          "approved": "Approved",
+          "master": "Master",
+          "noMaster": "No Master video yet",
+          "masterPreview": "Master video preview"
+        },
+        "takes": {
+          "title": "Take Strip",
+          "count": "{count, plural, one {# Take} other {# Takes}}",
+          "empty": "Generate the first Take for this clip.",
+          "take": "Take {number}",
+          "master": "Master",
+          "stale": "stale inputs",
+          "review": "Review",
+          "retry": "Retry",
+          "retrying": "Retrying…",
+          "setMaster": "Set Master"
+        },
+        "reviewStatuses": {
+          "unreviewed": "Unreviewed",
+          "changes_requested": "Changes requested",
+          "approved": "Approved",
+          "rejected": "Rejected"
+        },
+        "review": {
+          "title": "Review Take {number}",
+          "description": "Record an explicit production review. An Approve decision also promotes the reviewed Take to approved status; Master selection remains separate.",
+          "decision": "Decision",
+          "decisions": {
+            "approve": "Approve",
+            "request_changes": "Request changes",
+            "reject": "Reject"
+          },
+          "checklist": {
+            "technical": "Technical",
+            "identityContinuity": "Identity continuity",
+            "visualContinuity": "Visual continuity",
+            "motion": "Motion",
+            "dialogueTiming": "Dialogue timing",
+            "lipSync": "Lip sync",
+            "safety": "Safety"
+          },
+          "values": { "pass": "Pass", "fail": "Fail", "na": "N/A" },
+          "comment": "Review note",
+          "commentPlaceholder": "Required when rejecting or requesting changes.",
+          "cancel": "Cancel",
+          "submit": "Submit review"
+        },
+        "bindings": {
+          "title": "Clip reference responsibilities",
+          "trailerTitle": "Trailer reference responsibilities",
+          "omniDescription": "Select every approved input this Omni Reference clip may use.",
+          "frameDescription": "Bind approved frame slots to the selected first/last-frame mode.",
+          "omni": "Omni",
+          "frame": "Frame Lock",
+          "apiPending": "Reference binding is read-only until the versioned production API is connected.",
+          "firstFrame": "First frame",
+          "lastFrame": "Last frame",
+          "selectSlot": "Select approved slot",
+          "noApprovedSlots": "Approve a compatible Reference Slot before binding this clip.",
+          "save": "Save responsibilities"
+        }
+      },
+      "inspector": {
+        "eyebrow": "Node inspector",
+        "close": "Close node inspector",
+        "nodeId": "Stable node ID",
+        "clipKey": "Clip key",
+        "exit": "Next step",
+        "production": "Production status",
+        "openProduction": "Open clip production",
+        "choices": "Branch choices",
+        "entry": "Entry clip",
+        "entryNode": "Story entry",
+        "makeEntry": "Set as entry",
+        "exitAuto": "Automatic route",
+        "exitChoice": "Player choice",
+        "exitCheckpoint": "Continue checkpoint",
+        "exitEnding": "Story ending",
+        "checkpointTarget": "Target after checkpoint",
+        "checkpointDescription": "Pauses after this clip for one explicit Continue action. It does not create a narrative choice or change story state.",
+        "choicePrompt": "Decision prompt",
+        "choicePromptPlaceholder": "What must the player decide?",
+        "choiceTrigger": "Choice trigger",
+        "triggerMediaEnded": "When the clip ends",
+        "triggerTimecode": "At a timecode",
+        "timecodeMs": "Timecode (ms)",
+        "optionLabel": "Option {number}",
+        "optionPlaceholder": "Write the player-facing option",
+        "target": "Target node",
+        "targetPlaceholder": "Choose a target",
+        "newChoiceTarget": "Target for new option",
+        "addChoice": "Add option",
+        "removeChoice": "Remove option",
+        "removeChoiceTitle": "Remove this option?",
+        "removeChoiceDescription": "Its visibility condition, effects, and reaction clip settings will also be removed.",
+        "moveChoiceUp": "Move option up",
+        "moveChoiceDown": "Move option down",
+        "choiceMinimum": "A playable choice needs at least 2 options. It currently has {count}.",
+        "requiredForPlayableStory": "Required for a playable story.",
+        "endingTarget": "Target ending",
+        "endingTargetPlaceholder": "Choose an ending",
+        "convertExitTitle": "Replace the current next step?",
+        "convertExitDescription": "This will remove {count} existing branches and their authored conditions or option details.",
+        "confirmConversion": "Replace next step",
+        "endingTitle": "Ending title",
+        "endingSummary": "Ending summary",
+        "endingKind": "Ending type",
+        "duplicate": "Duplicate node",
+        "delete": "Delete node",
+        "deleteEnding": "Delete ending",
+        "removeDecision": "Remove choice step",
+        "removeDecisionTitle": "Remove this choice step?",
+        "removeDecisionDescription": "The decision prompt and every option, condition, effect, and target will be removed. The source clip will return to an empty automatic route.",
+        "deleteTitle": "Delete this graph element?",
+        "deleteDescription": "Incoming and outgoing routes will be removed. Existing production media is not deleted.",
+        "cancel": "Cancel",
+        "confirmDelete": "Delete"
+      },
+      "routes": {
+        "title": "Automatic routes",
+        "description": "Continue to the first matching route in priority order.",
+        "routerDescription": "Evaluate conditions without producing another video clip.",
+        "empty": "Route required",
+        "emptyDescription": "This draft can still save, but the node has no valid next step yet.",
+        "routeLabel": "Route {number}",
+        "priority": "Priority",
+        "addCondition": "Add condition",
+        "unconditional": "No condition · always eligible",
+        "add": "Add route",
+        "newTarget": "Target for new route",
+        "remove": "Remove route",
+        "removeTitle": "Remove this route?",
+        "removeDescription": "The route target, priority, and complete condition tree will be deleted.",
+        "searchTarget": "Search nodes",
+        "noTargets": "No matching nodes"
+      },
+      "condition": {
+        "title": "Route condition",
+        "kindLabel": "Condition type",
+        "flagLabel": "Flag",
+        "equalsLabel": "Equals",
+        "variableLabel": "State variable",
+        "operatorLabel": "Operator",
+        "valueLabel": "Value",
+        "characterLabel": "Character",
+        "noVariables": "No state variables",
+        "noCharacters": "No characters",
+        "missingReference": "Missing: {id}",
+        "removeCondition": "Remove condition",
+        "addCondition": "Add nested condition",
+        "maxDepth": "Maximum condition depth reached",
+        "boolean": { "true": "True", "false": "False" },
+        "kinds": {
+          "flag": "Flag",
+          "variable": "State variable",
+          "relationship-at-least": "Relationship threshold",
+          "all": "All conditions",
+          "any": "Any condition",
+          "not": "Not"
+        },
+        "operators": {
+          "equals": "Equals",
+          "not_equals": "Does not equal",
+          "greater_than": "Greater than",
+          "at_least": "At least",
+          "less_than": "Less than",
+          "at_most": "At most"
+        }
+      },
+      "choiceAdvanced": {
+        "accessibilityLabel": "Accessibility label",
+        "accessibilityPlaceholder": "Optional clearer wording for assistive technology",
+        "visibility": "Option visibility",
+        "addVisibilityCondition": "Add visibility condition",
+        "effects": "State effects",
+        "addEffect": "Add effect",
+        "noEffects": "This option does not change story state.",
+        "removeEffect": "Remove effect",
+        "variable": "State variable",
+        "value": "Value",
+        "amount": "Amount",
+        "flag": "Flag",
+        "character": "Character",
+        "ending": "Ending",
+        "reactionClip": "Reaction clip",
+        "selectVariable": "Select variable",
+        "selectCharacter": "Select character",
+        "selectEnding": "Select ending",
+        "selectReactionClip": "Select reaction clip",
+        "effectKinds": {
+          "set_variable": "Set variable",
+          "increment_variable": "Change number",
+          "set_flag": "Set flag",
+          "adjust_relationship": "Adjust relationship",
+          "unlock_ending": "Unlock ending"
+        },
+        "booleans": { "true": "True", "false": "False" },
+        "afterSelect": "After selection",
+        "afterSelectKinds": {
+          "immediate": "Continue immediately",
+          "play": "Play a reaction clip"
+        }
+      },
+      "empty": {
+        "title": "Start with the story foundation",
+        "description": "Write the logline and synopsis in the inspector, then add the opening clip to begin the interactive-film graph.",
+        "addOpening": "Add opening clip"
+      },
+      "conflict": {
+        "description": "Someone saved a newer version of this draft. Load it before continuing.",
+        "loadLatest": "Load latest"
+      },
+      "layoutConflict": {
+        "description": "Someone rearranged this canvas. Load the latest layout before continuing."
+      },
+      "graphError": {
+        "generic": "That graph change conflicts with the current next step. Remove the existing route or choose a compatible target first.",
+        "dismiss": "Dismiss graph message"
+      },
+      "error": {
+        "title": "The story canvas could not be opened",
+        "retry": "Retry"
+      }
+    },
+    "workbench": {
+      "back": "Back to Story Studio",
+      "lockedRevision": "Locked story revision {number}",
+      "lockedRevisionWithDraftUpdates": "Locked story revision {number} · draft r{revision} has updates",
+      "draftHead": "Mutable draft · revision {revision}",
+      "formatInteractiveFilm": "Interactive film",
+      "stageNav": "Project stages",
+      "stages": {
+        "overview": "Overview",
+        "story": "Story",
+        "references": "References",
+        "production": "Production",
+        "build": "Preview & Playtest"
+      },
+      "errors": { "loadTitle": "This project could not be opened." },
+      "noProductionDataTitle": "Production data is not available yet",
+      "noProductionDataDescription": "Return to the story canvas to complete director prompts and create the first Take. The working draft remains editable throughout production."
+    },
+    "overview": {
+      "productionTitle": "Production readiness",
+      "productionSubtitle": "Approval and blocker projections for the current working draft.",
+      "draftRevisionStatus": "Working draft r{revision}",
+      "productionRevision": "Production revision {revision}",
+      "storyStructureTitle": "Story structure",
+      "storyStructureSubtitle": "The authored graph is the single source for choices, state, and endings.",
+      "targetRuntime": "Target {seconds}s per path",
+      "maxContinuous": "Maximum continuous playback {seconds}s",
+      "nextBlocker": "Next blocker",
+      "noBlocker": "No blocker",
+      "noBlockerDescription": "The current production projection has no unresolved blocker.",
+      "revisionTitle": "Version identity",
+      "draftRevision": "Draft revision",
+      "schemaVersion": "Draft schema",
+      "contentHash": "Content hash"
+    },
+    "story": {
+      "logline": "Logline",
+      "empty": "The story bible is still empty.",
+      "characters": "Characters",
+      "rules": "Story rules",
+      "storyGraph": "Story graph",
+      "graphNodes": "Graph nodes",
+      "stateVariables": "State variables",
+      "endings": "Endings",
+      "decisions": "Branch decisions",
+      "decisionsSubtitle": "Stable decisions, options, state effects, and their next graph nodes.",
+      "decisionSources": "Presented after {clips}"
+    },
+    "references": {
+      "title": "Reference pack",
+      "subtitle": "Characters, locations, props, and join frames required by this revision.",
+      "approvedCount": "{approved} of {total} approved",
+      "required": "Required",
+      "optional": "Optional",
+      "status": {
+        "empty": "Empty",
+        "candidate": "Candidate",
+        "approved": "Approved",
+        "invalidated": "Invalidated"
+      },
+      "kind": {
+        "character": "Character",
+        "location": "Location",
+        "prop": "Prop",
+        "graphic": "Graphic",
+        "style": "Style",
+        "join_frame": "Join frame",
+        "first_frame": "First frame",
+        "last_frame": "Last frame"
+      },
+      "apiUnavailable": "Reference production APIs are still being connected. You can inspect the real pack, but mutations stay disabled until the versioned backend contract is live.",
+      "actions": {
+        "createSlot": "New slot",
+        "editSlot": "Edit slot",
+        "upload": "Upload image",
+        "uploading": "Uploading {progress}%",
+        "review": "Review",
+        "cancel": "Cancel",
+        "save": "Save"
+      },
+      "empty": {
+        "title": "No reference slots",
+        "description": "Create a typed slot for every character, location, prop, style, or frame that production must keep stable."
+      },
+      "detail": {
+        "noDescription": "No production responsibility has been described.",
+        "noVersions": "No real media version is attached to this slot yet.",
+        "versionCount": "{count, plural, one {# version} other {# versions}}",
+        "version": "Version {number}",
+        "approved": "Approved"
+      },
+      "assets": {
+        "title": "Add a real media version",
+        "description": "Upload through the signed media pipeline, or reuse an asset already attached to this project's Reference Pack.",
+        "existing": "Project asset",
+        "retryAttach": "Attach uploaded asset",
+        "empty": "This project has no existing reference assets. Upload an image to create the first real MediaAsset."
+      },
+      "editor": {
+        "createTitle": "Create reference slot",
+        "editTitle": "Edit reference slot",
+        "description": "The stable key and kind define this input's durable production responsibility.",
+        "key": "Stable key",
+        "kind": "Reference kind",
+        "label": "Label",
+        "descriptionLabel": "Production responsibility",
+        "required": "Required before this revision can generate"
+      },
+      "review": {
+        "title": "Review reference version",
+        "description": "Record technical, identity, rights, and safety checks. Approving the review also promotes this version to the slot's approved input.",
+        "approve": "Approve",
+        "requestChanges": "Request changes",
+        "reject": "Reject",
+        "pass": "Pass",
+        "fail": "Fail",
+        "na": "N/A",
+        "comment": "Required when rejecting or requesting changes",
+        "checklist": {
+          "technical": "Technical",
+          "identityContinuity": "Identity continuity",
+          "rights": "Rights",
+          "safety": "Safety"
+        }
+      },
+      "errors": {
+        "action": "The reference action could not be completed.",
+        "upload": "The media upload could not be completed."
+      }
+    },
+    "production": {
+      "title": "Clip production",
+      "subtitle": "Current draft direction, generation readiness, reviews, and available Masters.",
+      "clipCount": "{count} clips",
+      "seconds": "{seconds}s",
+      "noBlocker": "Ready for the next action",
+      "currentDraftReady": "Current prompt can be generated from the canvas",
+      "currentDraftPromptRequired": "Complete the director prompt in the canvas",
+      "detail": {
+        "visualIntent": "Visual intent",
+        "masterPrompt": "Seedance master prompt",
+        "timeline": "Shot timeline",
+        "negativeConstraints": "Hard negative constraints",
+        "continuityAndDialogue": "Inputs, acceptance, continuity, and dialogue",
+        "audio": "Audio: {mode}",
+        "specVersion": "Clip specification v{version}"
+      },
+      "columns": {
+        "key": "Key",
+        "clip": "Clip",
+        "mode": "Generation mode",
+        "duration": "Duration",
+        "status": "Status",
+        "blocker": "Blocker"
+      },
+      "modes": {
+        "omni": "Omni Reference",
+        "first": "First Frame",
+        "firstLast": "First + Last Frame"
+      },
+      "status": {
+        "draft": "Current draft",
+        "blocked": "Blocked",
+        "ready": "Ready",
+        "generating": "Generating",
+        "in_review": "In review",
+        "approved": "Approved",
+        "stale": "Stale"
+      }
+    },
+    "build": {
+      "title": "Build & Playtest",
+      "subtitle": "Compile the locked story graph and approved masters into an immutable preview build, then play every branch against the exact frozen runtime.",
+      "buildNumber": "Build {number}",
+      "activeBuild": "Build {number} is still compiling.",
+      "actions": {
+        "createPreview": "Create preview build",
+        "creating": "Creating build…",
+        "refresh": "Refresh builds",
+        "cancel": "Cancel build",
+        "retry": "Retry"
+      },
+      "permissions": {
+        "build": "Your project role does not include build permission.",
+        "edit": "Your project role cannot lock a production revision."
+      },
+      "notifications": {
+        "created": "Preview build created.",
+        "validationFailed": "The build found production blockers. Review the diagnostics.",
+        "cancelled": "Build cancelled.",
+        "revisionLocked": "Production revision locked."
+      },
+      "errors": {
+        "revisionRequired": "Lock a production revision before creating a build.",
+        "create": "The preview build could not be created.",
+        "cancel": "The build could not be cancelled.",
+        "list": "Build history could not be loaded.",
+        "detail": "The selected build could not be loaded.",
+        "lockRevision": "The production revision could not be locked.",
+        "revisionState": "The locked version is inconsistent with the current draft. Refresh the project before building.",
+        "runtimeUnavailable": "This frozen runtime is currently unavailable. Review the build diagnostics; media stays inaccessible until every asset satisfies current lifecycle and moderation policy."
+      },
+      "lockRevision": {
+        "title": "Lock a production revision",
+        "description": "A build must point to an immutable story version. Lock the saved draft to materialize its clip and runtime production contracts.",
+        "action": "Lock production version",
+        "locking": "Locking…",
+        "root": "Story root"
+      },
+      "revisionBasis": {
+        "currentTitle": "Building locked version {number}",
+        "currentDescription": "New preview builds explicitly use locked version {number}, captured from draft r{sourceRevision}. The mutable draft has no later changes.",
+        "draftAheadTitle": "The draft has newer changes",
+        "draftAheadDescription": "New preview builds still use locked version {number}, captured from draft r{sourceRevision}. The current draft is r{draftRevision}; lock it as a new production version to include those changes.",
+        "inconsistentTitle": "Version state is inconsistent",
+        "inconsistentDescription": "Locked version {number} comes from draft r{sourceRevision}, but the current draft reports r{draftRevision}. Building is disabled until the project state is refreshed.",
+        "action": "Lock current draft",
+        "locking": "Locking current draft…"
+      },
+      "missingFilm": {
+        "title": "Production contracts are unavailable",
+        "description": "The locked revision did not materialize an interactive-film production contract. Refresh the project or inspect the server diagnostics before building."
+      },
+      "history": {
+        "title": "Build history",
+        "count": "{count, plural, one {# build} other {# builds}}",
+        "empty": "No preview build has been created.",
+        "errors": "{count, plural, one {# error} other {# errors}}"
+      },
+      "profile": {
+        "preview": "Preview",
+        "production": "Production"
+      },
+      "scope": {
+        "full": "Full graph",
+        "subgraph": "Subgraph from {entryClipId} · depth {maxDepth}",
+        "unbounded": "unbounded"
+      },
+      "status": {
+        "queued": "Queued",
+        "validating": "Validating",
+        "compiling": "Compiling",
+        "ready": "Ready",
+        "failed": "Failed",
+        "cancelled": "Cancelled"
+      },
+      "detail": {
+        "identity": "Production state r{revision} · {profile} · {scope}",
+        "polling": "This view updates automatically while the build is active."
+      },
+      "empty": {
+        "title": "Compile the first playable build",
+        "description": "A preview build validates every reachable route, freezes approved media, and produces the runtime used by this playtest."
+      },
+      "pathReport": {
+        "title": "Path coverage",
+        "description": "Deterministic graph traversal from the build compiler.",
+        "duration": "{min}–{max} per path",
+        "paths": "Enumerated paths",
+        "endings": "Reachable endings",
+        "ambiguous": "Ambiguous paths",
+        "unreachable": "Unreachable nodes"
+      },
+      "diagnostics": {
+        "title": "Build diagnostics",
+        "summary": "{errors} errors · {warnings} warnings",
+        "error": "{count, plural, one {# blocking error} other {# blocking errors}}",
+        "warning": "{count, plural, one {# warning} other {# warnings}}",
+        "cleanTitle": "Build validation passed",
+        "cleanDescription": "The compiler found no blocking errors or warnings."
+      },
+      "entity": {
+        "revision": "Revision",
+        "clip": "Clip",
+        "reference": "Reference",
+        "take": "Take",
+        "choice": "Choice",
+        "ending": "Ending",
+        "asset": "Asset"
+      },
+      "playtest": {
+        "title": "Interactive playtest",
+        "description": "Runs only this frozen preview manifest; no generation task is created."
+      },
+      "assets": {
+        "title": "Frozen build assets",
+        "description": "Exact variants and checksums captured by this build."
+      },
+      "player": {
+        "invalidManifest": "The runtime manifest is invalid",
+        "manifestRoot": "Manifest root",
+        "routerHops": "Resolved {count, plural, one {# router} other {# routers}}",
+        "localeFallback": "Showing authored {locale} copy",
+        "restart": "Restart",
+        "play": "Play",
+        "regionLabel": "Interactive film playtest",
+        "playbackPaused": "Playback needs your confirmation",
+        "videoLabel": "Story video for scene {nodeId}",
+        "reactionVideoLabel": "Choice reaction video for scene {nodeId}",
+        "imageAlt": "Interactive story scene",
+        "checkpoint": {
+          "prompt": "Ready for the next scene?",
+          "description": "Continue when you are ready.",
+          "continue": "Continue",
+          "actionLabel": "Continue to the next story scene"
+        },
+        "noVisibleChoices": "No choice is currently available for this story state.",
+        "endingEyebrow": "Ending reached",
+        "unknownEnding": "Ending {endingId}",
+        "playAgain": "Play again",
+        "errors": {
+          "runtimeTitle": "The playtest cannot continue",
+          "UNKNOWN_NODE": "Runtime node {nodeId} does not exist.",
+          "NO_MATCHING_ROUTE": "Router {nodeId} has no route for the current story state.",
+          "ROUTER_CYCLE": "Router {nodeId} forms a cycle that cannot resolve to a scene.",
+          "routerNotResolved": "The current runtime node did not resolve to a playable scene.",
+          "noRoute": "Scene {nodeId} has no matching automatic route.",
+          "checkpointContract": "Scene {nodeId} has an invalid built-in checkpoint action.",
+          "externalOverlay": "Extension renderer {rendererId} is not available in the internal playtest.",
+          "sequence": "Scene {nodeId} references an invalid video sequence.",
+          "mediaTitle": "Preview media is unavailable",
+          "media": "Frozen media asset {assetId} could not be played.",
+          "unknownAsset": "unknown",
+          "extensionTitle": "This scene requires an extension renderer",
+          "extension": "Renderer {rendererId} is not installed in this playtest."
+        }
+      }
+    }
+  },
   "storyStudioLanding": {
-    "previewNotice": "Internal preview stage — creation features coming soon",
+    "badge": "Official example · Read only",
     "hero": {
       "eyebrow": "Season One · The Unwritten Visitor",
       "title": "Dream of Jinling",

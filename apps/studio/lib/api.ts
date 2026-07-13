@@ -70,6 +70,14 @@ function resolveWorkspaceId(): string | null {
   }
 }
 
+function resolveRequestLocale(): string {
+  if (typeof window === "undefined") return "en-US";
+  const candidate = window.location.pathname.split("/")[1];
+  return candidate === "zh-CN" || candidate === "zh-HK" || candidate === "en-US"
+    ? candidate
+    : "en-US";
+}
+
 async function request<T>(method: string, path: string, config: ApiRequestConfig = {}): Promise<T> {
   const { params, data, timeout = 30_000, raw, headers: customHeaders, ...rest } = config;
   const url = buildUrl(path, params);
@@ -77,7 +85,7 @@ async function request<T>(method: string, path: string, config: ApiRequestConfig
   const workspaceId = resolveWorkspaceId();
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
-    "accept-language": "en-US",
+    "accept-language": resolveRequestLocale(),
     // Default workspace scope; an explicit per-call header still wins.
     ...(workspaceId ? { "x-fizz-workspace-id": workspaceId } : {}),
     ...(customHeaders as Record<string, string>),

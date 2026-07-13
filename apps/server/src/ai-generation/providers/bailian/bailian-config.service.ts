@@ -17,6 +17,14 @@ const numberEnv = (
 
 export interface BailianProviderConfig {
   enabled: boolean;
+  /**
+   * Send `X-DashScope-DataInspection: {"input":"disable","output":"disable"}`
+   * to bypass DashScope's built-in content inspection — mirrors the Java
+   * backend's 万相 video/image calls (Wan25VideoService et al.). Default true.
+   * Set BAILIAN_DISABLE_DATA_INSPECTION=false per-cell to keep provider-side
+   * moderation on (e.g. where platform-side moderation isn't a substitute).
+   */
+  disableDataInspection: boolean;
   apiKey: string | null;
   region: string;
   workspaceId: string | null;
@@ -42,6 +50,10 @@ export class BailianConfigService {
 
     this.value = {
       enabled: boolEnv(process.env.BAILIAN_ENABLED, false),
+      disableDataInspection: boolEnv(
+        process.env.BAILIAN_DISABLE_DATA_INSPECTION,
+        true,
+      ),
       apiKey:
         process.env.DASHSCOPE_API_KEY?.trim() ||
         process.env.BAILIAN_API_KEY?.trim() ||

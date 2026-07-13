@@ -1,0 +1,13 @@
+{
+  "clipId": "hbln-s01a-opening-march",
+  "model": "seedance-2-0",
+  "mode": "first_last_frame_to_video",
+  "resolution": "720p",
+  "duration": 15,
+  "audio": true,
+  "taskId": "cgt-20260713213740-gqmcs",
+  "sha256": "85daede92a6d75cf359e22d8c4d0e6358989bf04939cecbc2dfb636d2d54f7a6",
+  "bytes": 6588653,
+  "videoUrl": "https://ark-acg-ap-southeast-1.tos-ap-southeast-1.volces.com/dreamina-seedance-2-0/02178394993949400000000000000000000ffffc0a8bb311dfdcb.mp4?X-Tos-Algorithm=TOS4-HMAC-SHA256&X-Tos-Credential=AKLTYWJkZTExNjA1ZDUyNDc3YzhjNTM5OGIyNjBhNDcyOTQ%2F20260713%2Fap-southeast-1%2Ftos%2Frequest&X-Tos-Date=20260713T134013Z&X-Tos-Expires=86400&X-Tos-Signature=481149f10c5bfabb8b86536531e7c11de2ebaea6d8a253c6894c114e7aa1d00f&X-Tos-SignedHeaders=host",
+  "seconds": 175
+}

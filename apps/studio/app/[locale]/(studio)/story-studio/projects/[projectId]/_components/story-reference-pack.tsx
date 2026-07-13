@@ -1,0 +1,728 @@
+"use client";
+
+import { useMemo, useRef, useState } from "react";
+import {
+  IconAlertTriangle,
+  IconCheck,
+  IconEdit,
+  IconLoader2,
+  IconPhoto,
+  IconPlus,
+  IconUpload,
+} from "@tabler/icons-react";
+import { useTranslations } from "next-intl";
+import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { FrostedPanel } from "@/components/ui/frosted-panel";
+import { Input } from "@/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Textarea } from "@/components/ui/textarea";
+import { uploadFileViaSignedUrl } from "@/lib/media-upload";
+import {
+  approveFilmReferenceVersion,
+  createFilmReferenceSlots,
+  createFilmReferenceVersion,
+  reviewFilmReferenceVersion,
+  storyApiErrorMessage,
+  updateFilmReferenceSlot,
+  type FilmReferenceKind,
+  type FilmReferenceReviewChecklist,
+  type FilmReferenceSlot,
+  type FilmReferenceSlotSpec,
+  type FilmReviewChecklistValue,
+  type FilmReviewDecision,
+  type MediaAssetSummary,
+  type StoryWorkbench,
+} from "@/lib/story-projects-api";
+import { cn } from "@/lib/utils";
+
+const REFERENCE_KINDS: FilmReferenceKind[] = [
+  "character",
+  "location",
+  "prop",
+  "graphic",
+  "style",
+  "join_frame",
+  "first_frame",
+  "last_frame",
+];
+
+const REVIEW_KEYS = ["technical", "identityContinuity", "rights", "safety"] as const;
+const PASSING_REVIEW: FilmReferenceReviewChecklist = {
+  technical: "pass",
+  identityContinuity: "pass",
+  rights: "pass",
+  safety: "pass",
+};
+
+export function StoryReferencePack({
+  projectId,
+  workspaceId,
+  workbench,
+  onRefresh,
+  apiConnected,
+}: {
+  projectId: string;
+  workspaceId: string;
+  workbench: StoryWorkbench;
+  onRefresh: () => Promise<unknown>;
+  apiConnected: boolean;
+}) {
+  const t = useTranslations("storyStudio.references");
+  const revisionId = workbench.selectedRevision?.id ?? null;
+  const film = workbench.film;
+  const references = useMemo(() => film?.references ?? [], [film?.references]);
+  const canProduce = workbench.project.capabilities.includes("story.generate");
+  const canReview = workbench.project.capabilities.includes("story.review");
+  const [selectedSlotId, setSelectedSlotId] = useState<string | null>(null);
+  const [editorSlotId, setEditorSlotId] = useState<string | "new" | null>(null);
+  const [reviewTarget, setReviewTarget] = useState<{ slotId: string; versionId: string } | null>(
+    null
+  );
+  const [pendingKey, setPendingKey] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [uploadProgress, setUploadProgress] = useState<number | null>(null);
+  const [confirmedUpload, setConfirmedUpload] = useState<{
+    id: string;
+    previewUrl: string;
+  } | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const selectedSlot = references.find((slot) => slot.id === selectedSlotId) ?? null;
+  const existingAssets = useMemo(() => projectReferenceAssets(references), [references]);
+
+  const run = async (key: string, action: () => Promise<unknown>) => {
+    if (pendingKey) return false;
+    setPendingKey(key);
+    setError(null);
+    try {
+      await action();
+      await onRefresh();
+      return true;
+    } catch (cause) {
+      setError(storyApiErrorMessage(cause, t("errors.action")));
+      return false;
+    } finally {
+      setPendingKey(null);
+    }
+  };
+
+  const attachAsset = (slot: FilmReferenceSlot, assetId: string, source: "upload" | "import") => {
+    if (!revisionId || !apiConnected) return Promise.resolve(false);
+    return run(`version:${slot.id}`, () =>
+      createFilmReferenceVersion(
+        workspaceId,
+        projectId,
+        revisionId,
+        slot.id,
+        { expectedSlotVersion: slot.version, assetId, source },
+        globalThis.crypto.randomUUID()
+      )
+    );
+  };
+
+  const upload = async (slot: FilmReferenceSlot, file: File) => {
+    if (!revisionId || !apiConnected) return;
+    setUploadProgress(0);
+    setError(null);
+    try {
+      const asset = await uploadFileViaSignedUrl(file, {
+        kind: "ai_reference_image",
+        onProgress: setUploadProgress,
+      });
+      setConfirmedUpload({ id: asset.mediaAssetId, previewUrl: asset.url });
+      const attached = await attachAsset(slot, asset.mediaAssetId, "upload");
+      if (attached) setConfirmedUpload(null);
+    } catch (cause) {
+      setError(storyApiErrorMessage(cause, t("errors.upload")));
+    } finally {
+      setUploadProgress(null);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+  };
+
+  if (!revisionId || !film) return null;
+
+  return (
+    <div>
+      <div className="flex flex-wrap items-end justify-between gap-4">
+        <div>
+          <h2 className="text-base font-semibold text-white">{t("title")}</h2>
+          <p className="mt-1 text-xs text-white/40">{t("subtitle")}</p>
+        </div>
+        <div className="flex items-center gap-3">
+          <p className="text-xs tabular-nums text-white/40">
+            {t("approvedCount", {
+              approved: references.filter((reference) => reference.status === "approved").length,
+              total: references.length,
+            })}
+          </p>
+          <Button
+            size="sm"
+            disabled={!apiConnected || !canProduce}
+            onClick={() => setEditorSlotId("new")}
+          >
+            <IconPlus className="size-4" />
+            {t("actions.createSlot")}
+          </Button>
+        </div>
+      </div>
+
+      {!apiConnected ? (
+        <div className="mt-4 flex items-start gap-2 rounded-xl bg-white/[0.04] px-4 py-3 text-xs leading-5 text-white/44">
+          <IconAlertTriangle className="mt-0.5 size-4 shrink-0" />
+          {t("apiUnavailable")}
+        </div>
+      ) : null}
+      {error ? <p className="mt-3 text-xs text-destructive">{error}</p> : null}
+
+      {references.length === 0 ? (
+        <FrostedPanel className="mt-5 flex min-h-56 flex-col items-center justify-center p-8 text-center">
+          <IconPhoto className="size-7 text-white/22" />
+          <h3 className="mt-3 text-sm font-semibold text-white/68">{t("empty.title")}</h3>
+          <p className="mt-1 max-w-md text-xs leading-5 text-white/36">{t("empty.description")}</p>
+        </FrostedPanel>
+      ) : (
+        <div className="mt-5 grid gap-3 lg:grid-cols-2 2xl:grid-cols-3">
+          {references.map((slot) => (
+            <ReferenceSlotCard
+              key={slot.id}
+              slot={slot}
+              onOpen={() => setSelectedSlotId(slot.id)}
+            />
+          ))}
+        </div>
+      )}
+
+      <Dialog
+        open={Boolean(selectedSlot)}
+        onOpenChange={(open) => !open && setSelectedSlotId(null)}
+      >
+        {selectedSlot ? (
+          <DialogContent className="max-h-[86vh] max-w-[920px] overflow-y-auto rounded-[26px] bg-[oklch(0.22_0_0/0.98)] p-5 shadow-[0_30px_120px_rgba(0,0,0,0.7)] backdrop-blur-[40px]">
+            <DialogHeader>
+              <DialogTitle>{selectedSlot.label}</DialogTitle>
+              <DialogDescription>
+                {t(`kind.${selectedSlot.kind}`)} · {selectedSlot.key}
+              </DialogDescription>
+            </DialogHeader>
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <p className="max-w-xl text-xs leading-5 text-white/44">
+                {selectedSlot.description || t("detail.noDescription")}
+              </p>
+              <Button
+                size="sm"
+                variant="secondary"
+                disabled={!apiConnected || !canProduce}
+                onClick={() => setEditorSlotId(selectedSlot.id)}
+              >
+                <IconEdit className="size-4" />
+                {t("actions.editSlot")}
+              </Button>
+            </div>
+
+            <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+              {selectedSlot.versions.map((version) => (
+                <VersionCard
+                  key={version.id}
+                  version={version}
+                  approved={selectedSlot.approvedVersionId === version.id}
+                  canReview={apiConnected && canReview && !version.approved}
+                  pending={pendingKey === `review:${version.id}`}
+                  onReview={() =>
+                    setReviewTarget({ slotId: selectedSlot.id, versionId: version.id })
+                  }
+                />
+              ))}
+            </div>
+            {selectedSlot.versions.length === 0 ? (
+              <p className="mt-4 rounded-xl bg-white/[0.035] px-4 py-5 text-center text-xs text-white/34">
+                {t("detail.noVersions")}
+              </p>
+            ) : null}
+
+            <div className="mt-5 rounded-[18px] bg-black/18 p-4">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <h3 className="text-xs font-semibold text-white/68">{t("assets.title")}</h3>
+                  <p className="mt-1 text-[11px] text-white/34">{t("assets.description")}</p>
+                </div>
+                <Button
+                  size="sm"
+                  disabled={!apiConnected || !canProduce || uploadProgress !== null}
+                  onClick={() => fileInputRef.current?.click()}
+                >
+                  {uploadProgress !== null ? (
+                    <IconLoader2 className="size-4 animate-spin" />
+                  ) : (
+                    <IconUpload className="size-4" />
+                  )}
+                  {uploadProgress === null
+                    ? t("actions.upload")
+                    : t("actions.uploading", { progress: uploadProgress })}
+                </Button>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/jpeg,image/png,image/webp"
+                  className="hidden"
+                  onChange={(event) => {
+                    const file = event.target.files?.[0];
+                    if (file) void upload(selectedSlot, file);
+                  }}
+                />
+              </div>
+              {existingAssets.length > 0 || confirmedUpload ? (
+                <div className="mt-3 flex gap-2 overflow-x-auto pb-1">
+                  {confirmedUpload ? (
+                    <button
+                      type="button"
+                      disabled={!apiConnected || !canProduce || pendingKey !== null}
+                      onClick={() =>
+                        void attachAsset(selectedSlot, confirmedUpload.id, "upload").then(
+                          (attached) => attached && setConfirmedUpload(null)
+                        )
+                      }
+                      className="group w-28 shrink-0 overflow-hidden rounded-xl bg-white/[0.08] text-left transition hover:bg-white/[0.12] disabled:opacity-40"
+                    >
+                      {/* eslint-disable-next-line @next/next/no-img-element -- confirmed signed media URL. */}
+                      <img
+                        src={confirmedUpload.previewUrl}
+                        alt=""
+                        className="aspect-square size-full object-cover"
+                      />
+                      <span className="block truncate px-2 py-1.5 text-[9px] text-white/58">
+                        {t("assets.retryAttach")}
+                      </span>
+                    </button>
+                  ) : null}
+                  {existingAssets.map((asset) => (
+                    <button
+                      key={asset.id}
+                      type="button"
+                      disabled={!apiConnected || !canProduce || pendingKey !== null}
+                      onClick={() => void attachAsset(selectedSlot, asset.id, "import")}
+                      className="group w-28 shrink-0 overflow-hidden rounded-xl bg-white/[0.045] text-left transition hover:bg-white/[0.08] disabled:opacity-40"
+                    >
+                      <AssetPreview asset={asset} className="aspect-square" />
+                      <span className="block truncate px-2 py-1.5 text-[9px] text-white/42">
+                        {t("assets.existing")}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              ) : (
+                <p className="mt-3 text-[11px] text-white/32">{t("assets.empty")}</p>
+              )}
+            </div>
+          </DialogContent>
+        ) : null}
+      </Dialog>
+
+      <SlotEditorDialog
+        key={editorSlotId ?? "closed"}
+        open={editorSlotId !== null}
+        slot={references.find((slot) => slot.id === editorSlotId) ?? null}
+        nextRank={references.reduce((max, slot) => Math.max(max, slot.rank), 0) + 10}
+        busy={pendingKey === "slot"}
+        onClose={() => setEditorSlotId(null)}
+        onSubmit={(spec) => {
+          if (!apiConnected || !revisionId || !film) return;
+          const current = references.find((slot) => slot.id === editorSlotId);
+          void run("slot", () =>
+            current
+              ? updateFilmReferenceSlot(workspaceId, projectId, revisionId, current.id, {
+                  expectedVersion: current.version,
+                  expectedProductionRevision: film.productionRevision,
+                  slot: spec,
+                })
+              : createFilmReferenceSlots(workspaceId, projectId, revisionId, {
+                  expectedProductionRevision: film.productionRevision,
+                  slots: [spec],
+                })
+          ).then((saved) => {
+            if (saved) setEditorSlotId(null);
+          });
+        }}
+      />
+
+      <ReferenceReviewDialog
+        open={reviewTarget !== null}
+        busy={Boolean(reviewTarget && pendingKey === `review:${reviewTarget.versionId}`)}
+        onClose={() => setReviewTarget(null)}
+        onSubmit={(decision, checklist, comment) => {
+          const target = reviewTarget;
+          const slot = references.find((candidate) => candidate.id === target?.slotId);
+          const version = slot?.versions.find((candidate) => candidate.id === target?.versionId);
+          if (!target || !slot || !version || !revisionId || !film || !apiConnected) return;
+          void run(`review:${version.id}`, async () => {
+            const result = await reviewFilmReferenceVersion(
+              workspaceId,
+              projectId,
+              revisionId,
+              slot.id,
+              version.id,
+              { expectedReviewRevision: version.reviewRevision, decision, checklist, comment }
+            );
+            if (decision === "approve") {
+              await approveFilmReferenceVersion(workspaceId, projectId, revisionId, slot.id, {
+                expectedSlotVersion: slot.version,
+                expectedProductionRevision: film.productionRevision,
+                referenceVersionId: version.id,
+                approveReviewId: result.review.id,
+              });
+            }
+          }).then((saved) => {
+            if (saved) setReviewTarget(null);
+          });
+        }}
+      />
+    </div>
+  );
+}
+
+function ReferenceSlotCard({ slot, onOpen }: { slot: FilmReferenceSlot; onOpen: () => void }) {
+  const t = useTranslations("storyStudio.references");
+  const approved = slot.versions.find((version) => version.id === slot.approvedVersionId);
+  const preview = approved ?? slot.versions[0];
+  return (
+    <button type="button" onClick={onOpen} className="text-left">
+      <FrostedPanel className="h-full min-h-48 overflow-hidden p-0 transition hover:bg-white/[0.045]">
+        <div className="grid grid-cols-[116px_1fr] gap-4 p-4">
+          <AssetPreview asset={preview?.asset ?? null} className="aspect-square rounded-xl" />
+          <div className="min-w-0">
+            <div className="flex items-center justify-between gap-2">
+              <span className="font-mono text-[9px] text-white/26">{slot.key}</span>
+              <span className="rounded-full bg-white/[0.055] px-2 py-1 text-[8px] font-semibold text-white/42">
+                {t(`status.${slot.status}`)}
+              </span>
+            </div>
+            <h3 className="mt-2 truncate text-sm font-semibold text-white/80">{slot.label}</h3>
+            <p className="mt-2 line-clamp-3 text-[11px] leading-4 text-white/38">
+              {slot.description || t("detail.noDescription")}
+            </p>
+            <div className="mt-3 flex gap-2 text-[9px] text-white/28">
+              <span>{t(`kind.${slot.kind}`)}</span>
+              <span>·</span>
+              <span>{slot.required ? t("required") : t("optional")}</span>
+              <span>·</span>
+              <span>{t("detail.versionCount", { count: slot.versions.length })}</span>
+            </div>
+          </div>
+        </div>
+      </FrostedPanel>
+    </button>
+  );
+}
+
+function VersionCard({
+  version,
+  approved,
+  canReview,
+  pending,
+  onReview,
+}: {
+  version: FilmReferenceSlot["versions"][number];
+  approved: boolean;
+  canReview: boolean;
+  pending: boolean;
+  onReview: () => void;
+}) {
+  const t = useTranslations("storyStudio.references");
+  return (
+    <article className="overflow-hidden rounded-xl bg-white/[0.04]">
+      <div className="relative">
+        <AssetPreview asset={version.asset} className="aspect-square" />
+        {approved ? (
+          <span className="absolute top-2 left-2 flex items-center gap-1 rounded-full bg-white/90 px-2 py-1 text-[8px] font-semibold text-black">
+            <IconCheck className="size-2.5" />
+            {t("detail.approved")}
+          </span>
+        ) : null}
+      </div>
+      <div className="p-2.5">
+        <div className="flex items-center justify-between gap-2 text-[9px] text-white/34">
+          <span>{t("detail.version", { number: version.number })}</span>
+          <span>{version.source}</span>
+        </div>
+        {!approved ? (
+          <Button
+            size="sm"
+            variant="secondary"
+            className="mt-2 w-full"
+            disabled={!canReview || pending}
+            onClick={onReview}
+          >
+            {pending ? (
+              <IconLoader2 className="size-3.5 animate-spin" />
+            ) : (
+              <IconCheck className="size-3.5" />
+            )}
+            {t("actions.review")}
+          </Button>
+        ) : null}
+      </div>
+    </article>
+  );
+}
+
+function AssetPreview({
+  asset,
+  className,
+}: {
+  asset: MediaAssetSummary | null;
+  className?: string;
+}) {
+  if (!asset?.previewUrl) {
+    return (
+      <div className={cn("grid place-items-center bg-black/25 text-white/20", className)}>
+        <IconPhoto className="size-6" />
+      </div>
+    );
+  }
+  if (asset.kind === "video") {
+    return (
+      <video
+        src={asset.previewUrl}
+        muted
+        playsInline
+        preload="metadata"
+        className={cn("size-full object-cover", className)}
+      />
+    );
+  }
+  // eslint-disable-next-line @next/next/no-img-element -- signed media URL.
+  return <img src={asset.previewUrl} alt="" className={cn("size-full object-cover", className)} />;
+}
+
+function SlotEditorDialog({
+  open,
+  slot,
+  nextRank,
+  busy,
+  onClose,
+  onSubmit,
+}: {
+  open: boolean;
+  slot: FilmReferenceSlot | null;
+  nextRank: number;
+  busy: boolean;
+  onClose: () => void;
+  onSubmit: (spec: FilmReferenceSlotSpec) => void;
+}) {
+  const t = useTranslations("storyStudio.references");
+  const [draft, setDraft] = useState<FilmReferenceSlotSpec>(() => slotSpec(slot, nextRank));
+  const valid = /^[A-Z][A-Z0-9_-]{0,39}$/.test(draft.key) && draft.label.trim().length > 0;
+  return (
+    <Dialog open={open} onOpenChange={(value) => !value && onClose()}>
+      <DialogContent className="max-w-lg rounded-[24px] bg-[oklch(0.22_0_0/0.98)] p-5">
+        <DialogHeader>
+          <DialogTitle>{slot ? t("editor.editTitle") : t("editor.createTitle")}</DialogTitle>
+          <DialogDescription>{t("editor.description")}</DialogDescription>
+        </DialogHeader>
+        <div className="grid grid-cols-2 gap-3">
+          <label>
+            <span className="text-[10px] font-semibold text-white/42">{t("editor.key")}</span>
+            <Input
+              value={draft.key}
+              disabled={Boolean(slot)}
+              onChange={(event) => setDraft({ ...draft, key: event.target.value.toUpperCase() })}
+              className="mt-2"
+            />
+          </label>
+          <label>
+            <span className="text-[10px] font-semibold text-white/42">{t("editor.kind")}</span>
+            <Select
+              value={draft.kind}
+              onValueChange={(kind) => setDraft({ ...draft, kind: kind as FilmReferenceKind })}
+            >
+              <SelectTrigger className="mt-2 w-full">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {REFERENCE_KINDS.map((kind) => (
+                  <SelectItem key={kind} value={kind}>
+                    {t(`kind.${kind}`)}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </label>
+        </div>
+        <label>
+          <span className="text-[10px] font-semibold text-white/42">{t("editor.label")}</span>
+          <Input
+            value={draft.label}
+            onChange={(event) => setDraft({ ...draft, label: event.target.value })}
+            className="mt-2"
+          />
+        </label>
+        <label>
+          <span className="text-[10px] font-semibold text-white/42">
+            {t("editor.descriptionLabel")}
+          </span>
+          <Textarea
+            value={draft.description}
+            onChange={(event) => setDraft({ ...draft, description: event.target.value })}
+            rows={3}
+            className="mt-2 resize-none"
+          />
+        </label>
+        <label className="flex items-center gap-2 rounded-xl bg-white/[0.04] px-3 py-2.5 text-xs text-white/54">
+          <input
+            type="checkbox"
+            checked={draft.required}
+            onChange={(event) => setDraft({ ...draft, required: event.target.checked })}
+          />
+          {t("editor.required")}
+        </label>
+        <DialogFooter>
+          <Button variant="secondary" onClick={onClose}>
+            {t("actions.cancel")}
+          </Button>
+          <Button
+            disabled={!valid || busy}
+            onClick={() =>
+              onSubmit({
+                ...draft,
+                key: draft.key.trim(),
+                label: draft.label.trim(),
+                description: draft.description.trim(),
+              })
+            }
+          >
+            {busy ? (
+              <IconLoader2 className="size-4 animate-spin" />
+            ) : (
+              <IconCheck className="size-4" />
+            )}
+            {t("actions.save")}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function ReferenceReviewDialog({
+  open,
+  busy,
+  onClose,
+  onSubmit,
+}: {
+  open: boolean;
+  busy: boolean;
+  onClose: () => void;
+  onSubmit: (
+    decision: FilmReviewDecision,
+    checklist: FilmReferenceReviewChecklist,
+    comment?: string
+  ) => void;
+}) {
+  const t = useTranslations("storyStudio.references");
+  const [decision, setDecision] = useState<FilmReviewDecision>("approve");
+  const [checklist, setChecklist] = useState(PASSING_REVIEW);
+  const [comment, setComment] = useState("");
+  return (
+    <Dialog open={open} onOpenChange={(value) => !value && onClose()}>
+      <DialogContent className="max-w-lg rounded-[24px] bg-[oklch(0.22_0_0/0.98)] p-5">
+        <DialogHeader>
+          <DialogTitle>{t("review.title")}</DialogTitle>
+          <DialogDescription>{t("review.description")}</DialogDescription>
+        </DialogHeader>
+        <Select
+          value={decision}
+          onValueChange={(value) => setDecision(value as FilmReviewDecision)}
+        >
+          <SelectTrigger className="w-full">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="approve">{t("review.approve")}</SelectItem>
+            <SelectItem value="request_changes">{t("review.requestChanges")}</SelectItem>
+            <SelectItem value="reject">{t("review.reject")}</SelectItem>
+          </SelectContent>
+        </Select>
+        <div className="grid grid-cols-2 gap-2">
+          {REVIEW_KEYS.map((key) => (
+            <label key={key} className="rounded-xl bg-white/[0.04] p-2.5 text-[10px] text-white/52">
+              {t(`review.checklist.${key}`)}
+              <Select
+                value={checklist[key]}
+                onValueChange={(value) =>
+                  setChecklist({ ...checklist, [key]: value as FilmReviewChecklistValue })
+                }
+              >
+                <SelectTrigger className="mt-2 h-8! w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="pass">{t("review.pass")}</SelectItem>
+                  <SelectItem value="fail">{t("review.fail")}</SelectItem>
+                  <SelectItem value="na">{t("review.na")}</SelectItem>
+                </SelectContent>
+              </Select>
+            </label>
+          ))}
+        </div>
+        <Textarea
+          value={comment}
+          onChange={(event) => setComment(event.target.value)}
+          placeholder={t("review.comment")}
+          rows={3}
+          className="resize-none"
+        />
+        <DialogFooter>
+          <Button variant="secondary" onClick={onClose}>
+            {t("actions.cancel")}
+          </Button>
+          <Button
+            disabled={busy}
+            onClick={() => onSubmit(decision, checklist, comment.trim() || undefined)}
+          >
+            {busy ? (
+              <IconLoader2 className="size-4 animate-spin" />
+            ) : (
+              <IconCheck className="size-4" />
+            )}
+            {t("actions.review")}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function slotSpec(slot: FilmReferenceSlot | null, rank: number): FilmReferenceSlotSpec {
+  return slot
+    ? {
+        key: slot.key,
+        kind: slot.kind,
+        label: slot.label,
+        description: slot.description,
+        required: slot.required,
+        rank: slot.rank,
+      }
+    : { key: "", kind: "character", label: "", description: "", required: true, rank };
+}
+
+function projectReferenceAssets(references: FilmReferenceSlot[]): MediaAssetSummary[] {
+  const assets = new Map<string, MediaAssetSummary>();
+  references.forEach((slot) =>
+    slot.versions.forEach((version) => assets.set(version.asset.id, version.asset))
+  );
+  return [...assets.values()];
+}

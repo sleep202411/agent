@@ -1,0 +1,13 @@
+{
+  "clipId": "hbln-s02b-tell-maya",
+  "model": "seedance-2-0",
+  "mode": "first_last_frame_to_video",
+  "resolution": "720p",
+  "duration": 15,
+  "audio": true,
+  "taskId": "cgt-20260713213100-4s4dc",
+  "sha256": "cc8a66f0de949ad829153dea79523156ec6e1b86d16567490274597c31873ae4",
+  "bytes": 7588228,
+  "videoUrl": "https://ark-acg-ap-southeast-1.tos-ap-southeast-1.volces.com/dreamina-seedance-2-0/02178394955519600000000000000000000ffffc0a8a936e2401f.mp4?X-Tos-Algorithm=TOS4-HMAC-SHA256&X-Tos-Credential=AKLTYWJkZTExNjA1ZDUyNDc3YzhjNTM5OGIyNjBhNDcyOTQ%2F20260713%2Fap-southeast-1%2Ftos%2Frequest&X-Tos-Date=20260713T133415Z&X-Tos-Expires=86400&X-Tos-Signature=ad0236131e2b98fcbadd732e62741efcc9c579c2441c2ce64f67ebb099f01e6c&X-Tos-SignedHeaders=host",
+  "seconds": 228
+}

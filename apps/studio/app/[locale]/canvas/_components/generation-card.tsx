@@ -4,12 +4,8 @@ import { memo, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslations } from "next-intl";
 import { useStore, type Node, type NodeProps } from "@xyflow/react";
 import {
-  IconAdjustments,
   IconAlertTriangle,
   IconArrowsMaximize,
-  IconArrowUp,
-  IconBolt,
-  IconChevronDown,
   IconDownload,
   IconLoader2,
   IconMaximize,
@@ -23,14 +19,12 @@ import {
   IconRotate3d,
   IconRoute,
   IconVideo,
-  IconX,
 } from "@tabler/icons-react";
 import { toast } from "sonner";
 import { ReactCompareSlider } from "react-compare-slider";
 import { cn } from "@/lib/utils";
 import { useVideoPlaybackError, VideoPlaybackFallback } from "@/components/video-playback-fallback";
 import { isUploadAbort, uploadFileViaSignedUrl } from "@/lib/media-upload";
-import { useDismiss } from "@/lib/use-dismiss";
 import type { CanvasAsset, CanvasEdgeShape, CanvasNodeShape } from "@/lib/collab/canvas-doc";
 import { useAiCatalog, usableModelsByModality } from "@/app/[locale]/canvas/_lib/use-ai-catalog";
 import { removeEdgeById } from "@/app/[locale]/canvas/_lib/canvas-wiring";
@@ -50,7 +44,6 @@ import {
 import { MultiAngleEditor } from "./multi-angle-editor";
 import { ExpandEditor } from "./expand-editor";
 import { MotionEditor } from "./motion-editor";
-import { PromptTextarea } from "./prompt-textarea";
 import { mentionLabel, type MentionItem } from "@/lib/prompt-mentions";
 import { useCanvasGraphContext } from "@/lib/collab/canvas-graph-context";
 import {
@@ -68,14 +61,14 @@ import {
   type GenerationState,
   type ModelSettings,
 } from "@/app/[locale]/canvas/_lib/generation-api";
-import { useModeLabel, useOperationLabel } from "@/app/[locale]/canvas/_lib/use-labels";
+import { useOperationLabel } from "@/app/[locale]/canvas/_lib/use-labels";
 import { CanvasNodeToolbar, ToolbarButton } from "./node-toolbar";
 import { Icon720, PanoramaViewer } from "./panorama-viewer";
-import { ModeMenu } from "./mode-menu";
-import { ModelPicker } from "./model-picker";
-import { ComposerQuickSettings } from "./composer-quick-settings";
-import { hasRenderableModelSettings, ModelSettings as ModelSettingsPanel } from "./model-settings";
 import { ReferenceStack, type CardReferences } from "./reference-stack";
+import {
+  GenerationPromptComposer,
+  type GenerationPromptComposerPanel,
+} from "@/app/[locale]/_components/generation/generation-prompt-composer";
 import { PortPlus } from "./ports";
 import { MediaProviderStatusChipForAsset } from "./media-provider-status-chip";
 import { CanvasMediaViewer } from "./canvas-media-viewer";
@@ -322,7 +315,6 @@ function GenerationCard({
 }: NodeProps<GenerationNodeType> & { modality: GenerationModality }) {
   const t = useTranslations("canvasOps");
   const tc = useTranslations("common");
-  const ml = useModeLabel();
   const ol = useOperationLabel();
   const graph = useCanvasGraphContext();
   const { addAssets, addNodesAndEdges, getNode, patchNodeData, canEdit, nodes } = graph;
@@ -334,7 +326,7 @@ function GenerationCard({
   const spawnComposedOp = useSpawnComposedOperation();
   const [pendingOp, setPendingOp] = useState<OperationDef | null>(null);
   const autoSubmittedRef = useRef(false);
-  const [panel, setPanel] = useState<"model" | "settings" | "mode" | null>(null);
+  const [panel, setPanel] = useState<GenerationPromptComposerPanel>(null);
   const [renaming, setRenaming] = useState(false);
   const [pano, setPano] = useState(false);
   const [viewerOpen, setViewerOpen] = useState(false);
@@ -344,7 +336,6 @@ function GenerationCard({
   const [loadedRatio, setLoadedRatio] = useState<string | null>(null);
   // Keep the composer at a constant screen size (don't shrink/grow with zoom).
   const zoom = useStore((s) => s.transform[2]);
-  useDismiss(panel !== null, () => setPanel(null));
 
   const descriptor = MODALITY[modality];
   const Icon = descriptor.icon;
@@ -370,7 +361,6 @@ function GenerationCard({
     () => catalog?.models.find((m) => m.id === data.modelId),
     [catalog, data.modelId]
   );
-  const hasAdvancedSettings = hasRenderableModelSettings(model, true);
   const references = useMemo(() => data.references ?? {}, [data.references]);
   // First bound input image — the "before" for an op's before/after comparison.
   const compareBeforeUrl = useMemo(() => {
@@ -890,132 +880,53 @@ function GenerationCard({
         !pendingOp && (
           <div className="absolute top-full left-1/2 z-10 mt-3 duration-200 animate-in fade-in-0 slide-in-from-bottom-3">
             <div
-              className="nodrag w-[680px] rounded-3xl bg-white/[0.05] p-4 backdrop-blur-3xl backdrop-saturate-200 shadow-[0_24px_80px_rgba(0,0,0,0.5),inset_0_1px_0_rgba(255,255,255,0.16)]"
               style={{
                 transform: `translateX(-50%) scale(${1 / zoom})`,
                 transformOrigin: "top center",
               }}
             >
-              {refFields.length > 0 && (
-                <ReferenceStack
-                  fields={refFields}
-                  references={referencesForDisplay}
-                  onAdd={addReferences}
-                  onRemove={removeReference}
-                />
-              )}
-              {/* Pure transform ops (e.g. upscale) declare no prompt in their
-                schema — hide the textarea so the composer is just the op + send. */}
-              {(!model || hasSchemaProperty(model, "prompt")) && (
-                <PromptTextarea
-                  value={data.prompt ?? ""}
-                  onCommit={(prompt) => patchNodeData(id, { prompt })}
-                  mentions={mentionItems}
-                  placeholder={t(promptPlaceholderKey(mode))}
-                  rows={4}
-                  autoFocus
-                  className="block max-h-40 w-full resize-none overflow-y-auto overscroll-contain bg-transparent pb-2 text-sm leading-6 outline-none placeholder:text-muted-foreground"
-                />
-              )}
-              <div className="flex min-h-10 items-center gap-2 pt-2">
-                {/* Mode pill — hidden on operation-locked / model-locked cards
-                  (the op fixes the mode). */}
-                {!data.locked && !data.modelLocked && modes.length > 1 && (
-                  <div className="relative" data-popover-zone>
-                    <button
-                      type="button"
-                      onClick={() => setPanel((p) => (p === "mode" ? null : "mode"))}
-                      className="flex h-10 items-center gap-1 rounded-xl bg-white/[0.08] px-3 text-sm font-medium transition-colors hover:bg-white/[0.12]"
-                    >
-                      {ml(mode ?? "")}
-                      <IconChevronDown className="size-3.5 text-muted-foreground" stroke={1.8} />
-                    </button>
-                    {panel === "mode" && (
-                      <ModeMenu
-                        modes={modes}
-                        value={mode}
-                        onSelect={(mo) => patchNodeData(id, { mode: mo })}
-                        onClose={() => setPanel(null)}
-                      />
-                    )}
-                  </div>
-                )}
-                {/* Model pill — hidden on operation-locked / model-locked cards
-                  (op fixes the model; switching it would contradict the
-                  operation + bring back mode/prompt). Header still shows it. */}
-                {!data.locked && !data.modelLocked && (
-                  <div className="relative" data-popover-zone>
-                    <button
-                      type="button"
-                      onClick={() => setPanel((p) => (p === "model" ? null : "model"))}
-                      className="flex h-10 items-center rounded-xl bg-white/[0.08] px-3 text-sm font-medium transition-colors hover:bg-white/[0.12]"
-                    >
-                      {data.modelName ?? t("selectModel")}
-                    </button>
-                    {panel === "model" && (
-                      <ModelPicker
-                        catalog={catalog}
-                        modality={modality}
-                        selectedId={data.modelId}
-                        onSelect={onSelectModel}
-                        onClose={() => setPanel(null)}
-                      />
-                    )}
-                  </div>
-                )}
-
-                <ComposerQuickSettings
-                  model={model}
-                  settings={settings}
-                  onChange={(next) => patchNodeData(id, { settings: next })}
-                  onOpenChange={setQuickSettingsOpen}
-                />
-
-                {/* Long-tail schema-driven settings. Common fields live inline. */}
-                {hasAdvancedSettings && (
-                  <div className="relative" data-popover-zone>
-                    <button
-                      type="button"
-                      onClick={() => setPanel((p) => (p === "settings" ? null : "settings"))}
-                      className="flex size-10 items-center justify-center rounded-xl bg-white/[0.08] transition-colors hover:bg-white/[0.12]"
-                      aria-label={t("settings")}
-                    >
-                      <IconAdjustments className="size-4" stroke={1.8} />
-                    </button>
-                    {panel === "settings" && (
-                      <ModelSettingsPanel
-                        model={model}
-                        settings={settings}
-                        onChange={(next) => patchNodeData(id, { settings: next })}
-                        hideQuickFields
-                      />
-                    )}
-                  </div>
-                )}
-
-                <div className="ml-auto flex items-center gap-3">
-                  {cost != null && (
-                    <span className="flex h-10 items-center gap-1 px-1 text-xs text-muted-foreground tabular-nums">
-                      <IconBolt className="size-3.5" stroke={1.8} />
-                      {cost}
-                    </span>
-                  )}
-                  <button
-                    type="button"
-                    aria-label={busy ? t("cancelGeneration") : t("generate")}
-                    onClick={() => (busy ? cancel(id) : submit(id))}
-                    // Brand red as the hero CTA — sanctioned case-by-case accent
-                    // (DESIGN.md rule 3), applied locally, never a token.
-                    className="flex size-10 items-center justify-center rounded-full bg-[#E52227] text-white shadow-lg shadow-[#E52227]/25 transition-colors hover:bg-[#c91e22]"
-                  >
-                    {busy ? (
-                      <IconX className="size-4" stroke={2} />
-                    ) : (
-                      <IconArrowUp className="size-4" stroke={2} />
-                    )}
-                  </button>
-                </div>
-              </div>
+              <GenerationPromptComposer
+                ariaLabel={t("generate")}
+                modality={modality}
+                catalog={catalog}
+                model={model}
+                modelFallbackLabel={data.modelName}
+                onSelectModel={onSelectModel}
+                modelPickerEnabled={!data.locked && !data.modelLocked}
+                prompt={data.prompt ?? ""}
+                onPromptCommit={(prompt) => patchNodeData(id, { prompt })}
+                promptPlaceholder={t(promptPlaceholderKey(mode))}
+                promptAriaLabel={t(promptPlaceholderKey(mode))}
+                promptAutoFocus
+                showPrompt={!model || hasSchemaProperty(model, "prompt")}
+                mentions={mentionItems}
+                referenceContent={
+                  refFields.length > 0 ? (
+                    <ReferenceStack
+                      fields={refFields}
+                      references={referencesForDisplay}
+                      onAdd={addReferences}
+                      onRemove={removeReference}
+                    />
+                  ) : null
+                }
+                mode={mode}
+                modes={modes}
+                onSelectMode={(nextMode) => patchNodeData(id, { mode: nextMode })}
+                modePickerEnabled={!data.locked && !data.modelLocked}
+                settings={settings}
+                onSettingsChange={(next) => patchNodeData(id, { settings: next })}
+                panel={panel}
+                onPanelChange={setPanel}
+                onQuickSettingsOpenChange={setQuickSettingsOpen}
+                cost={cost}
+                canSubmit
+                submitting={busy}
+                onSubmit={() => submit(id)}
+                onCancel={() => cancel(id)}
+                submitLabel={t("generate")}
+                cancelLabel={t("cancelGeneration")}
+              />
             </div>
           </div>
         )}

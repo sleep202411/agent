@@ -1,0 +1,1736 @@
+{
+  "schemaVersion": 1,
+  "channel": "preview",
+  "gameId": "hbln-demo",
+  "releaseId": "hbln-demo-1",
+  "contentVersion": "revision:1",
+  "entryNodeId": "clip:S00",
+  "defaultLocale": "zh-CN",
+  "locales": ["zh-CN", "en-US", "zh-HK"],
+  "initialState": {
+    "variables": {
+      "truth": 0,
+      "bond": 0,
+      "echo": 0,
+      "c4Choice": "unset",
+      "finalAction": "unset"
+    },
+    "flags": {},
+    "relationships": {}
+  },
+  "endings": [
+    {
+      "endingId": "E01",
+      "title": {
+        "en-US": "The Name Returned",
+        "zh-CN": "名字归还",
+        "zh-HK": "名字歸還"
+      },
+      "summary": {
+        "en-US": "At the morning entrance, the oral-history exhibit credits “Salmah Binte Yusof and the original voices of the 1994 night-shift staff”; Lim Guo Sheng is listed as an interviewee, not a hero. Cheng and Maya listen together to the end.",
+        "zh-CN": "清晨入口。口述史展的音频页面标题为“Salmah Binte Yusof 与 1994 夜班员工原声记录”；林国声列为受访者而非英雄。陈澄和 Maya 并肩听完。",
+        "zh-HK": "清晨入口。口述史展的音頻頁面標題為「Salmah Binte Yusof 與 1994 夜班員工原聲記錄」；林國聲列為受訪者而非英雄。陳澄和 Maya 並肩聽完。"
+      },
+      "kind": "truth"
+    },
+    {
+      "endingId": "E02",
+      "title": {
+        "en-US": "The Last Opening",
+        "zh-CN": "最后开园",
+        "zh-HK": "最後開園"
+      },
+      "summary": {
+        "en-US": "The exhibit plays the restored, magnificent opening song while visitors smile for photos. In a corner of the original waveform, a short female voice is marked “irreparable noise”. Cheng stands alone behind the crowd.",
+        "zh-CN": "展览播放修复后的华丽开园曲，观众微笑拍照。屏幕角落的原始波形里，一小段女声被标红为“不可修复噪声”。陈澄独自站在人群后。",
+        "zh-HK": "展覽播放修復後的華麗開園曲，觀眾微笑拍照。屏幕角落的原始波形裡，一小段女聲被標紅為「不可修復噪聲」。陳澄獨自站在人群後。"
+      },
+      "kind": "echo"
+    },
+    {
+      "endingId": "E03",
+      "title": {
+        "en-US": "Leaving Together",
+        "zh-CN": "两人出园",
+        "zh-HK": "兩人出園"
+      },
+      "summary": {
+        "en-US": "The two sit in a morning MRT station with the uncut tape sealed in a clear evidence bag. Maya switches off the DV camera while Cheng writes both names on the bag.",
+        "zh-CN": "两人坐在清晨地铁站，未剪母带封在透明证物袋中。Maya 关掉 DV，陈澄在袋上写下两个人名。",
+        "zh-HK": "兩人坐在清晨地鐵站，未剪母帶封在透明證物袋中。Maya 關掉 DV，陳澄在袋上寫下兩個人的名字。"
+      },
+      "kind": "bond"
+    },
+    {
+      "endingId": "E04",
+      "title": {
+        "en-US": "The Seventh Gong",
+        "zh-CN": "第七声锣",
+        "zh-HK": "第七聲鑼"
+      },
+      "summary": {
+        "en-US": "Time jumps back to the S00 camera position. The entrance is empty as Cheng presses play alone; on the DV screen, Maya has become the afterimage of a 1994 visitor. The seventh gong falls.",
+        "zh-CN": "时间跳回 S00 的机位。入口空无一人，陈澄独自按下播放；DV 屏幕里 Maya 成了 1994 年的游客残影。 第七声锣落下。",
+        "zh-HK": "時間跳回 S00 的機位。入口空無一人，陳澄獨自按下播放；DV 屏幕裡 Maya 成了 1994 年的遊客殘影。第七聲鑼落下。"
+      },
+      "kind": "failure"
+    }
+  ],
+  "media": [
+    {
+      "assetId": "video:S00",
+      "kind": "video",
+      "orientationPolicy": "single-master",
+      "variants": {
+        "landscape": {
+          "sourceAssetId": "asset-S00",
+          "sha256": "e27f571a9c94451697f3d3f590f645fb1c125f3eba6923c1c44aeacd7457b14c",
+          "src": "https://fizzdragonblob.blob.core.windows.net/foundry-outputs/hbln/video/hbln-s00-dragon-returns.mp4?sv=2026-02-06&st=2026-07-13T14%3A04%3A53Z&se=2027-07-13T14%3A05%3A53Z&sr=b&sp=r&sig=0bXT4YQp9%2BX66ID9sRGbK2ZCIAWB0MZqIFw0v6j8p6g%3D",
+          "width": 1280,
+          "height": 720,
+          "durationSeconds": 15
+        }
+      },
+      "audio": "embedded"
+    },
+    {
+      "assetId": "video:S01A",
+      "kind": "video",
+      "orientationPolicy": "single-master",
+      "variants": {
+        "landscape": {
+          "sourceAssetId": "asset-S01A",
+          "sha256": "85daede92a6d75cf359e22d8c4d0e6358989bf04939cecbc2dfb636d2d54f7a6",
+          "src": "https://fizzdragonblob.blob.core.windows.net/foundry-outputs/hbln/video/hbln-s01a-opening-march.mp4?sv=2026-02-06&st=2026-07-13T14%3A04%3A55Z&se=2027-07-13T14%3A05%3A55Z&sr=b&sp=r&sig=nnQTQ9sNbz3ELdiGUH0NBbrXXlPA6yugY6SXiLqLv3E%3D",
+          "width": 1280,
+          "height": 720,
+          "durationSeconds": 15
+        }
+      },
+      "audio": "embedded"
+    },
+    {
+      "assetId": "video:S01B",
+      "kind": "video",
+      "orientationPolicy": "single-master",
+      "variants": {
+        "landscape": {
+          "sourceAssetId": "asset-S01B",
+          "sha256": "9422381ba236fa1ad8aff7d46bdc6439b526dc4de18510ede9cfe695d9b4e7dc",
+          "src": "https://fizzdragonblob.blob.core.windows.net/foundry-outputs/hbln/video/hbln-s01b-side-b.mp4?sv=2026-02-06&st=2026-07-13T14%3A04%3A56Z&se=2027-07-13T14%3A05%3A56Z&sr=b&sp=r&sig=RSs825msc75idPrdYnjiE9m%2FLGUOXPQ6rt8eY%2Be2BFk%3D",
+          "width": 1280,
+          "height": 720,
+          "durationSeconds": 15
+        }
+      },
+      "audio": "embedded"
+    },
+    {
+      "assetId": "video:S02A",
+      "kind": "video",
+      "orientationPolicy": "single-master",
+      "variants": {
+        "landscape": {
+          "sourceAssetId": "asset-S02A",
+          "sha256": "3dbfc681886783b665460787928673b7bd87bdeab90ee945ca997bcf4bda3a8d",
+          "src": "https://fizzdragonblob.blob.core.windows.net/foundry-outputs/hbln/video/hbln-s02a-answer-grandfather.mp4?sv=2026-02-06&st=2026-07-13T14%3A04%3A59Z&se=2027-07-13T14%3A05%3A59Z&sr=b&sp=r&sig=vIEopB4ohayqNbDV4fXm18%2FyLYrMxsVgI42ipcevyVk%3D",
+          "width": 1280,
+          "height": 720,
+          "durationSeconds": 15
+        }
+      },
+      "audio": "embedded"
+    },
+    {
+      "assetId": "video:S02B",
+      "kind": "video",
+      "orientationPolicy": "single-master",
+      "variants": {
+        "landscape": {
+          "sourceAssetId": "asset-S02B",
+          "sha256": "cc8a66f0de949ad829153dea79523156ec6e1b86d16567490274597c31873ae4",
+          "src": "https://fizzdragonblob.blob.core.windows.net/foundry-outputs/hbln/video/hbln-s02b-tell-maya.mp4?sv=2026-02-06&st=2026-07-13T14%3A05%3A01Z&se=2027-07-13T14%3A06%3A01Z&sr=b&sp=r&sig=5cl6YUOddWp2GEB7IlzWKu%2BA0PgHEs0sdglXV7Ao68g%3D",
+          "width": 1280,
+          "height": 720,
+          "durationSeconds": 15
+        }
+      },
+      "audio": "embedded"
+    },
+    {
+      "assetId": "video:S03A",
+      "kind": "video",
+      "orientationPolicy": "single-master",
+      "variants": {
+        "landscape": {
+          "sourceAssetId": "asset-S03A",
+          "sha256": "69461542b84c6a389c2928ec26e2cb5c858bb1d1244a07752e3b02d05337b8f8",
+          "src": "https://fizzdragonblob.blob.core.windows.net/foundry-outputs/hbln/video/hbln-s03a-save-maya.mp4?sv=2026-02-06&st=2026-07-13T14%3A05%3A05Z&se=2027-07-13T14%3A06%3A05Z&sr=b&sp=r&sig=RRLCg3aoirQDTRUbwK%2Bsuv5UQaPiVLfebIqReWIQOAQ%3D",
+          "width": 1280,
+          "height": 720,
+          "durationSeconds": 15
+        }
+      },
+      "audio": "embedded"
+    },
+    {
+      "assetId": "video:S03B",
+      "kind": "video",
+      "orientationPolicy": "single-master",
+      "variants": {
+        "landscape": {
+          "sourceAssetId": "asset-S03B",
+          "sha256": "1f7717882b7d86d8a94a5a43398ab12201efb68e2e3fa23e9a4f78ad52b4309a",
+          "src": "https://fizzdragonblob.blob.core.windows.net/foundry-outputs/hbln/video/hbln-s03b-save-tape.mp4?sv=2026-02-06&st=2026-07-13T14%3A05%3A08Z&se=2027-07-13T14%3A06%3A08Z&sr=b&sp=r&sig=IZ6Lq3yL2X7ujcV2iPo33C1JwSjFGYxNkuQaiVvrHvI%3D",
+          "width": 1280,
+          "height": 720,
+          "durationSeconds": 15
+        }
+      },
+      "audio": "embedded"
+    },
+    {
+      "assetId": "video:S04A",
+      "kind": "video",
+      "orientationPolicy": "single-master",
+      "variants": {
+        "landscape": {
+          "sourceAssetId": "asset-S04A",
+          "sha256": "f49d11a282be8492c6d1415cc643b03a3c0f43686360ab6df5389beb844e4fd3",
+          "src": "https://fizzdragonblob.blob.core.windows.net/foundry-outputs/hbln/video/hbln-s04a-side-by-side.mp4?sv=2026-02-06&st=2026-07-13T14%3A05%3A10Z&se=2027-07-13T14%3A06%3A10Z&sr=b&sp=r&sig=u22y4lbV52gUOKiCP0LAnA8gQ%2Bk7PVV2sWGdt54B3Pk%3D",
+          "width": 1280,
+          "height": 720,
+          "durationSeconds": 15
+        }
+      },
+      "audio": "embedded"
+    },
+    {
+      "assetId": "video:S04B",
+      "kind": "video",
+      "orientationPolicy": "single-master",
+      "variants": {
+        "landscape": {
+          "sourceAssetId": "asset-S04B",
+          "sha256": "de76cbb74a4d57cae74ac0ab28853f39e67b0694e173e5d88b2bc7eda0789989",
+          "src": "https://fizzdragonblob.blob.core.windows.net/foundry-outputs/hbln/video/hbln-s04b-admit-fault.mp4?sv=2026-02-06&st=2026-07-13T14%3A05%3A13Z&se=2027-07-13T14%3A06%3A13Z&sr=b&sp=r&sig=50B89Nz5XpHUPF%2BTUFTaGgYznc%2FlcJkoV8%2Bl90Jmufs%3D",
+          "width": 1280,
+          "height": 720,
+          "durationSeconds": 15
+        }
+      },
+      "audio": "embedded"
+    },
+    {
+      "assetId": "video:S04C",
+      "kind": "video",
+      "orientationPolicy": "single-master",
+      "variants": {
+        "landscape": {
+          "sourceAssetId": "asset-S04C",
+          "sha256": "0fe982587354dd0ae31d7253c96bc3c6cd3fabd6690e40fc757640c39a868bc6",
+          "src": "https://fizzdragonblob.blob.core.windows.net/foundry-outputs/hbln/video/hbln-s04c-defend-him.mp4?sv=2026-02-06&st=2026-07-13T14%3A05%3A15Z&se=2027-07-13T14%3A06%3A15Z&sr=b&sp=r&sig=lBbDxGkj7mK71sZDVGi%2Biq54U83ZMVXNKyxIwRhIlsI%3D",
+          "width": 1280,
+          "height": 720,
+          "durationSeconds": 15
+        }
+      },
+      "audio": "embedded"
+    },
+    {
+      "assetId": "video:S05A",
+      "kind": "video",
+      "orientationPolicy": "single-master",
+      "variants": {
+        "landscape": {
+          "sourceAssetId": "asset-S05A",
+          "sha256": "a3edf37eacc0ed9ef76bd7428dbfc54c3b8c325a1eefec9cfbbdf7bfcf50ff32",
+          "src": "https://fizzdragonblob.blob.core.windows.net/foundry-outputs/hbln/video/hbln-s05a-raw-voice.mp4?sv=2026-02-06&st=2026-07-13T14%3A05%3A17Z&se=2027-07-13T14%3A06%3A17Z&sr=b&sp=r&sig=C5glfezLuRgMQMuQAtyeK8yBuavyQT0O3WNN6Kic7BQ%3D",
+          "width": 1280,
+          "height": 720,
+          "durationSeconds": 15
+        }
+      },
+      "audio": "embedded"
+    },
+    {
+      "assetId": "video:S05B",
+      "kind": "video",
+      "orientationPolicy": "single-master",
+      "variants": {
+        "landscape": {
+          "sourceAssetId": "asset-S05B",
+          "sha256": "671c3c277ea3158c2bb36ac38181e1aa62aaa063ce3aea8d8a40a77b266e424c",
+          "src": "https://fizzdragonblob.blob.core.windows.net/foundry-outputs/hbln/video/hbln-s05b-opening-wins.mp4?sv=2026-02-06&st=2026-07-13T14%3A05%3A19Z&se=2027-07-13T14%3A06%3A19Z&sr=b&sp=r&sig=rTjzIKHB6lIE7BVbhQvZOwj5Amh%2FErqEbBQnq7oTF5w%3D",
+          "width": 1280,
+          "height": 720,
+          "durationSeconds": 15
+        }
+      },
+      "audio": "embedded"
+    },
+    {
+      "assetId": "video:S05C",
+      "kind": "video",
+      "orientationPolicy": "single-master",
+      "variants": {
+        "landscape": {
+          "sourceAssetId": "asset-S05C",
+          "sha256": "074bbd2e4d5363703c18d7a61a52718551b84591617fd53ec10bd4a4ea49c5be",
+          "src": "https://fizzdragonblob.blob.core.windows.net/foundry-outputs/hbln/video/hbln-s05c-mixed-track.mp4?sv=2026-02-06&st=2026-07-13T14%3A05%3A22Z&se=2027-07-13T14%3A06%3A22Z&sr=b&sp=r&sig=Xcn9069u1W4Nzun0cTPkD9iC1mxAs85P0i2a6MROl70%3D",
+          "width": 1280,
+          "height": 720,
+          "durationSeconds": 15
+        }
+      },
+      "audio": "embedded"
+    },
+    {
+      "assetId": "video:S06A",
+      "kind": "video",
+      "orientationPolicy": "single-master",
+      "variants": {
+        "landscape": {
+          "sourceAssetId": "asset-S06A",
+          "sha256": "ea53e634798094ef56f58e9cf24761f15ea6246356408f5dcb6423eac8f3b582",
+          "src": "https://fizzdragonblob.blob.core.windows.net/foundry-outputs/hbln/video/hbln-s06a-release-truth.mp4?sv=2026-02-06&st=2026-07-13T14%3A05%3A25Z&se=2027-07-13T14%3A06%3A25Z&sr=b&sp=r&sig=%2BIJtw3DsFQSINActAeuyXoyJefzWyKbPDZKa0s8l1Y8%3D",
+          "width": 1280,
+          "height": 720,
+          "durationSeconds": 15
+        }
+      },
+      "audio": "embedded"
+    },
+    {
+      "assetId": "video:S06B",
+      "kind": "video",
+      "orientationPolicy": "single-master",
+      "variants": {
+        "landscape": {
+          "sourceAssetId": "asset-S06B",
+          "sha256": "a30917fef37021881686c0a3c7de9715039b671abfaa05909ee906bdc645e98e",
+          "src": "https://fizzdragonblob.blob.core.windows.net/foundry-outputs/hbln/video/hbln-s06b-release-cleaned.mp4?sv=2026-02-06&st=2026-07-13T14%3A05%3A26Z&se=2027-07-13T14%3A06%3A26Z&sr=b&sp=r&sig=u3iFNw4HXSn%2BD7bMECVfg%2BZFt66hQWumY4093HxL5H4%3D",
+          "width": 1280,
+          "height": 720,
+          "durationSeconds": 15
+        }
+      },
+      "audio": "embedded"
+    },
+    {
+      "assetId": "video:S06C",
+      "kind": "video",
+      "orientationPolicy": "single-master",
+      "variants": {
+        "landscape": {
+          "sourceAssetId": "asset-S06C",
+          "sha256": "ee1c1f3a88078b12d614b884e2cf86cdc9ff34367898bfbcde5926c10ff4f1e7",
+          "src": "https://fizzdragonblob.blob.core.windows.net/foundry-outputs/hbln/video/hbln-s06c-leave-together.mp4?sv=2026-02-06&st=2026-07-13T14%3A05%3A29Z&se=2027-07-13T14%3A06%3A29Z&sr=b&sp=r&sig=gX9ecNjwOJE8OgrR7SfCDZqp0G3%2FsxG6NbrcvR13Qz0%3D",
+          "width": 1280,
+          "height": 720,
+          "durationSeconds": 15
+        }
+      },
+      "audio": "embedded"
+    },
+    {
+      "assetId": "video:S06D",
+      "kind": "video",
+      "orientationPolicy": "single-master",
+      "variants": {
+        "landscape": {
+          "sourceAssetId": "asset-S06D",
+          "sha256": "187da2d8bb7d5841bddcc30158606a3cab7223188b56fe71609391b82a896979",
+          "src": "https://fizzdragonblob.blob.core.windows.net/foundry-outputs/hbln/video/hbln-s06d-leave-alone.mp4?sv=2026-02-06&st=2026-07-13T14%3A05%3A32Z&se=2027-07-13T14%3A06%3A32Z&sr=b&sp=r&sig=A5CdEYrFvmQm7S8g%2BXXed87zwzYLu1Rmu3W2E3sh4C8%3D",
+          "width": 1280,
+          "height": 720,
+          "durationSeconds": 15
+        }
+      },
+      "audio": "embedded"
+    },
+    {
+      "assetId": "video:E01",
+      "kind": "video",
+      "orientationPolicy": "single-master",
+      "variants": {
+        "landscape": {
+          "sourceAssetId": "asset-E01",
+          "sha256": "b852a60b51897762de60faf86c60b6b7c9adf0fd939b5b393f3b5a0eba827fd9",
+          "src": "https://fizzdragonblob.blob.core.windows.net/foundry-outputs/hbln/video/hbln-e01-name-returned.mp4?sv=2026-02-06&st=2026-07-13T14%3A04%3A45Z&se=2027-07-13T14%3A05%3A45Z&sr=b&sp=r&sig=dH5Brdjzgqhsvijejrdy1%2FgX1sRcd40KRCW9BRodxs4%3D",
+          "width": 1280,
+          "height": 720,
+          "durationSeconds": 15
+        }
+      },
+      "audio": "embedded"
+    },
+    {
+      "assetId": "video:E02",
+      "kind": "video",
+      "orientationPolicy": "single-master",
+      "variants": {
+        "landscape": {
+          "sourceAssetId": "asset-E02",
+          "sha256": "80f02393f13e99f651b3bd1a4de3b844ac29b16f3022d493e68073c9e994ff02",
+          "src": "https://fizzdragonblob.blob.core.windows.net/foundry-outputs/hbln/video/hbln-e02-last-opening.mp4?sv=2026-02-06&st=2026-07-13T14%3A04%3A47Z&se=2027-07-13T14%3A05%3A47Z&sr=b&sp=r&sig=brn855Ya7K9yweLT3LRwPa1K9EHdDgSFCvXmRmizc28%3D",
+          "width": 1280,
+          "height": 720,
+          "durationSeconds": 15
+        }
+      },
+      "audio": "embedded"
+    },
+    {
+      "assetId": "video:E03",
+      "kind": "video",
+      "orientationPolicy": "single-master",
+      "variants": {
+        "landscape": {
+          "sourceAssetId": "asset-E03",
+          "sha256": "e661100214de1cef67a64ce2141f410f524d62ceb588b5fdb1c295b85f65fd30",
+          "src": "https://fizzdragonblob.blob.core.windows.net/foundry-outputs/hbln/video/hbln-e03-exit-together.mp4?sv=2026-02-06&st=2026-07-13T14%3A04%3A49Z&se=2027-07-13T14%3A05%3A49Z&sr=b&sp=r&sig=dVUjik4vHG0bV6wKTnaUacurv%2BGoWGMvnSiskTzMxRY%3D",
+          "width": 1280,
+          "height": 720,
+          "durationSeconds": 15
+        }
+      },
+      "audio": "embedded"
+    },
+    {
+      "assetId": "video:E04",
+      "kind": "video",
+      "orientationPolicy": "single-master",
+      "variants": {
+        "landscape": {
+          "sourceAssetId": "asset-E04",
+          "sha256": "1266a13e76dad75c82cd2332054cb5de8ac90e93f1602e236f4206cab9ab58bd",
+          "src": "https://fizzdragonblob.blob.core.windows.net/foundry-outputs/hbln/video/hbln-e04-seventh-gong.mp4?sv=2026-02-06&st=2026-07-13T14%3A04%3A50Z&se=2027-07-13T14%3A05%3A50Z&sr=b&sp=r&sig=KwXQpiTgejPae5lng0o%2BMyrJnMZcIUEO78AEOAa%2B7vU%3D",
+          "width": 1280,
+          "height": 720,
+          "durationSeconds": 15
+        }
+      },
+      "audio": "embedded"
+    }
+  ],
+  "nodes": [
+    {
+      "nodeId": "clip:E01",
+      "presentation": {
+        "kind": "video",
+        "sequence": [
+          {
+            "clipId": "clip-E01",
+            "assetId": "video:E01",
+            "endBehavior": {
+              "behavior": "advance"
+            }
+          }
+        ],
+        "fit": "cover"
+      },
+      "overlays": [],
+      "exit": {
+        "kind": "ending",
+        "endingId": "E01"
+      }
+    },
+    {
+      "nodeId": "clip:E02",
+      "presentation": {
+        "kind": "video",
+        "sequence": [
+          {
+            "clipId": "clip-E02",
+            "assetId": "video:E02",
+            "endBehavior": {
+              "behavior": "advance"
+            }
+          }
+        ],
+        "fit": "cover"
+      },
+      "overlays": [],
+      "exit": {
+        "kind": "ending",
+        "endingId": "E02"
+      }
+    },
+    {
+      "nodeId": "clip:E03",
+      "presentation": {
+        "kind": "video",
+        "sequence": [
+          {
+            "clipId": "clip-E03",
+            "assetId": "video:E03",
+            "endBehavior": {
+              "behavior": "advance"
+            }
+          }
+        ],
+        "fit": "cover"
+      },
+      "overlays": [],
+      "exit": {
+        "kind": "ending",
+        "endingId": "E03"
+      }
+    },
+    {
+      "nodeId": "clip:E04",
+      "presentation": {
+        "kind": "video",
+        "sequence": [
+          {
+            "clipId": "clip-E04",
+            "assetId": "video:E04",
+            "endBehavior": {
+              "behavior": "advance"
+            }
+          }
+        ],
+        "fit": "cover"
+      },
+      "overlays": [],
+      "exit": {
+        "kind": "ending",
+        "endingId": "E04"
+      }
+    },
+    {
+      "nodeId": "clip:S00",
+      "presentation": {
+        "kind": "video",
+        "sequence": [
+          {
+            "clipId": "clip-S00",
+            "assetId": "video:S00",
+            "endBehavior": {
+              "behavior": "advance"
+            }
+          }
+        ],
+        "fit": "cover"
+      },
+      "overlays": [],
+      "exit": {
+        "kind": "choice",
+        "decisionId": "C1",
+        "prompt": {
+          "en-US": "Which track should play first?",
+          "zh-CN": "先播放哪一轨？",
+          "zh-HK": "先播放哪一軌？"
+        },
+        "trigger": {
+          "kind": "media-ended"
+        },
+        "choices": [
+          {
+            "choiceId": "C1:A",
+            "label": {
+              "en-US": "Grandpa's marked opening song",
+              "zh-CN": "外公标记的开园曲",
+              "zh-HK": "外公標記的開園曲"
+            },
+            "effects": [
+              {
+                "kind": "increment_variable",
+                "key": "echo",
+                "amount": 1
+              }
+            ],
+            "nextNodeId": "clip:S01A",
+            "afterSelect": {
+              "kind": "immediate"
+            }
+          },
+          {
+            "choiceId": "C1:B",
+            "label": {
+              "en-US": "The unlabelled B-side",
+              "zh-CN": "没有标签的 B 面",
+              "zh-HK": "沒有標籤的 B 面"
+            },
+            "effects": [
+              {
+                "kind": "increment_variable",
+                "key": "truth",
+                "amount": 1
+              }
+            ],
+            "nextNodeId": "clip:S01B",
+            "afterSelect": {
+              "kind": "immediate"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "nodeId": "clip:S01A",
+      "presentation": {
+        "kind": "video",
+        "sequence": [
+          {
+            "clipId": "clip-S01A",
+            "assetId": "video:S01A",
+            "endBehavior": {
+              "behavior": "advance"
+            }
+          }
+        ],
+        "fit": "cover"
+      },
+      "overlays": [],
+      "exit": {
+        "kind": "choice",
+        "decisionId": "C2",
+        "prompt": {
+          "en-US": "The broadcast calls your childhood name. Who do you answer?",
+          "zh-CN": "广播叫出乳名，回应谁？",
+          "zh-HK": "廣播叫出乳名，回應誰？"
+        },
+        "trigger": {
+          "kind": "media-ended"
+        },
+        "choices": [
+          {
+            "choiceId": "C2:A",
+            "label": {
+              "en-US": "Answer Grandpa",
+              "zh-CN": "回应外公",
+              "zh-HK": "回應外公"
+            },
+            "effects": [
+              {
+                "kind": "increment_variable",
+                "key": "echo",
+                "amount": 1
+              }
+            ],
+            "nextNodeId": "clip:S02A",
+            "afterSelect": {
+              "kind": "immediate"
+            }
+          },
+          {
+            "choiceId": "C2:B",
+            "label": {
+              "en-US": "Tell Maya the truth first",
+              "zh-CN": "先告诉 Maya 真相",
+              "zh-HK": "先告訴 Maya 真相"
+            },
+            "effects": [
+              {
+                "kind": "increment_variable",
+                "key": "bond",
+                "amount": 1
+              }
+            ],
+            "nextNodeId": "clip:S02B",
+            "afterSelect": {
+              "kind": "immediate"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "nodeId": "clip:S01B",
+      "presentation": {
+        "kind": "video",
+        "sequence": [
+          {
+            "clipId": "clip-S01B",
+            "assetId": "video:S01B",
+            "endBehavior": {
+              "behavior": "advance"
+            }
+          }
+        ],
+        "fit": "cover"
+      },
+      "overlays": [],
+      "exit": {
+        "kind": "choice",
+        "decisionId": "C2",
+        "prompt": {
+          "en-US": "The broadcast calls your childhood name. Who do you answer?",
+          "zh-CN": "广播叫出乳名，回应谁？",
+          "zh-HK": "廣播叫出乳名，回應誰？"
+        },
+        "trigger": {
+          "kind": "media-ended"
+        },
+        "choices": [
+          {
+            "choiceId": "C2:A",
+            "label": {
+              "en-US": "Answer Grandpa",
+              "zh-CN": "回应外公",
+              "zh-HK": "回應外公"
+            },
+            "effects": [
+              {
+                "kind": "increment_variable",
+                "key": "echo",
+                "amount": 1
+              }
+            ],
+            "nextNodeId": "clip:S02A",
+            "afterSelect": {
+              "kind": "immediate"
+            }
+          },
+          {
+            "choiceId": "C2:B",
+            "label": {
+              "en-US": "Tell Maya the truth first",
+              "zh-CN": "先告诉 Maya 真相",
+              "zh-HK": "先告訴 Maya 真相"
+            },
+            "effects": [
+              {
+                "kind": "increment_variable",
+                "key": "bond",
+                "amount": 1
+              }
+            ],
+            "nextNodeId": "clip:S02B",
+            "afterSelect": {
+              "kind": "immediate"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "nodeId": "clip:S02A",
+      "presentation": {
+        "kind": "video",
+        "sequence": [
+          {
+            "clipId": "clip-S02A",
+            "assetId": "video:S02A",
+            "endBehavior": {
+              "behavior": "advance"
+            }
+          }
+        ],
+        "fit": "cover"
+      },
+      "overlays": [],
+      "exit": {
+        "kind": "choice",
+        "decisionId": "C3",
+        "prompt": {
+          "en-US": "The ride is flooding. What do you save first?",
+          "zh-CN": "船道进水，先抢什么？",
+          "zh-HK": "船道進水，先搶救甚麼？"
+        },
+        "trigger": {
+          "kind": "media-ended"
+        },
+        "choices": [
+          {
+            "choiceId": "C3:A",
+            "label": {
+              "en-US": "Grab Maya",
+              "zh-CN": "拉住 Maya",
+              "zh-HK": "拉住 Maya"
+            },
+            "effects": [
+              {
+                "kind": "increment_variable",
+                "key": "bond",
+                "amount": 1
+              }
+            ],
+            "nextNodeId": "clip:S03A",
+            "afterSelect": {
+              "kind": "immediate"
+            }
+          },
+          {
+            "choiceId": "C3:B",
+            "label": {
+              "en-US": "Recover the master tape",
+              "zh-CN": "抢回母带",
+              "zh-HK": "搶回母帶"
+            },
+            "effects": [
+              {
+                "kind": "increment_variable",
+                "key": "truth",
+                "amount": 1
+              }
+            ],
+            "nextNodeId": "clip:S03B",
+            "afterSelect": {
+              "kind": "immediate"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "nodeId": "clip:S02B",
+      "presentation": {
+        "kind": "video",
+        "sequence": [
+          {
+            "clipId": "clip-S02B",
+            "assetId": "video:S02B",
+            "endBehavior": {
+              "behavior": "advance"
+            }
+          }
+        ],
+        "fit": "cover"
+      },
+      "overlays": [],
+      "exit": {
+        "kind": "choice",
+        "decisionId": "C3",
+        "prompt": {
+          "en-US": "The ride is flooding. What do you save first?",
+          "zh-CN": "船道进水，先抢什么？",
+          "zh-HK": "船道進水，先搶救甚麼？"
+        },
+        "trigger": {
+          "kind": "media-ended"
+        },
+        "choices": [
+          {
+            "choiceId": "C3:A",
+            "label": {
+              "en-US": "Grab Maya",
+              "zh-CN": "拉住 Maya",
+              "zh-HK": "拉住 Maya"
+            },
+            "effects": [
+              {
+                "kind": "increment_variable",
+                "key": "bond",
+                "amount": 1
+              }
+            ],
+            "nextNodeId": "clip:S03A",
+            "afterSelect": {
+              "kind": "immediate"
+            }
+          },
+          {
+            "choiceId": "C3:B",
+            "label": {
+              "en-US": "Recover the master tape",
+              "zh-CN": "抢回母带",
+              "zh-HK": "搶回母帶"
+            },
+            "effects": [
+              {
+                "kind": "increment_variable",
+                "key": "truth",
+                "amount": 1
+              }
+            ],
+            "nextNodeId": "clip:S03B",
+            "afterSelect": {
+              "kind": "immediate"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "nodeId": "clip:S03A",
+      "presentation": {
+        "kind": "video",
+        "sequence": [
+          {
+            "clipId": "clip-S03A",
+            "assetId": "video:S03A",
+            "endBehavior": {
+              "behavior": "advance"
+            }
+          }
+        ],
+        "fit": "cover"
+      },
+      "overlays": [],
+      "exit": {
+        "kind": "choice",
+        "decisionId": "C4",
+        "prompt": {
+          "en-US": "Who should answer for the accident?",
+          "zh-CN": "谁该为事故负责？",
+          "zh-HK": "誰該為事故負責？"
+        },
+        "trigger": {
+          "kind": "media-ended"
+        },
+        "choices": [
+          {
+            "choiceId": "C4:A",
+            "label": {
+              "en-US": "Admit Grandpa hid the fault",
+              "zh-CN": "承认外公隐瞒故障",
+              "zh-HK": "承認外公隱瞞故障"
+            },
+            "effects": [
+              {
+                "kind": "increment_variable",
+                "key": "truth",
+                "amount": 1
+              },
+              {
+                "kind": "set_variable",
+                "key": "c4Choice",
+                "value": "A"
+              }
+            ],
+            "nextNodeId": "router:S04",
+            "afterSelect": {
+              "kind": "immediate"
+            }
+          },
+          {
+            "choiceId": "C4:B",
+            "label": {
+              "en-US": "Say no one had a choice",
+              "zh-CN": "说当年没人有选择",
+              "zh-HK": "說當年沒有人有選擇"
+            },
+            "effects": [
+              {
+                "kind": "increment_variable",
+                "key": "echo",
+                "amount": 1
+              },
+              {
+                "kind": "set_variable",
+                "key": "c4Choice",
+                "value": "B"
+              }
+            ],
+            "nextNodeId": "router:S04",
+            "afterSelect": {
+              "kind": "immediate"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "nodeId": "clip:S03B",
+      "presentation": {
+        "kind": "video",
+        "sequence": [
+          {
+            "clipId": "clip-S03B",
+            "assetId": "video:S03B",
+            "endBehavior": {
+              "behavior": "advance"
+            }
+          }
+        ],
+        "fit": "cover"
+      },
+      "overlays": [],
+      "exit": {
+        "kind": "choice",
+        "decisionId": "C4",
+        "prompt": {
+          "en-US": "Who should answer for the accident?",
+          "zh-CN": "谁该为事故负责？",
+          "zh-HK": "誰該為事故負責？"
+        },
+        "trigger": {
+          "kind": "media-ended"
+        },
+        "choices": [
+          {
+            "choiceId": "C4:A",
+            "label": {
+              "en-US": "Admit Grandpa hid the fault",
+              "zh-CN": "承认外公隐瞒故障",
+              "zh-HK": "承認外公隱瞞故障"
+            },
+            "effects": [
+              {
+                "kind": "increment_variable",
+                "key": "truth",
+                "amount": 1
+              },
+              {
+                "kind": "set_variable",
+                "key": "c4Choice",
+                "value": "A"
+              }
+            ],
+            "nextNodeId": "router:S04",
+            "afterSelect": {
+              "kind": "immediate"
+            }
+          },
+          {
+            "choiceId": "C4:B",
+            "label": {
+              "en-US": "Say no one had a choice",
+              "zh-CN": "说当年没人有选择",
+              "zh-HK": "說當年沒有人有選擇"
+            },
+            "effects": [
+              {
+                "kind": "increment_variable",
+                "key": "echo",
+                "amount": 1
+              },
+              {
+                "kind": "set_variable",
+                "key": "c4Choice",
+                "value": "B"
+              }
+            ],
+            "nextNodeId": "router:S04",
+            "afterSelect": {
+              "kind": "immediate"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "nodeId": "clip:S04A",
+      "presentation": {
+        "kind": "video",
+        "sequence": [
+          {
+            "clipId": "clip-S04A",
+            "assetId": "video:S04A",
+            "endBehavior": {
+              "behavior": "advance"
+            }
+          }
+        ],
+        "fit": "cover"
+      },
+      "overlays": [],
+      "exit": {
+        "kind": "choice",
+        "decisionId": "C5",
+        "prompt": {
+          "en-US": "Only one track can survive. Whose voice stays?",
+          "zh-CN": "只够保留一条声轨，留下谁？",
+          "zh-HK": "只夠保留一條聲軌，留下誰？"
+        },
+        "trigger": {
+          "kind": "media-ended"
+        },
+        "choices": [
+          {
+            "choiceId": "C5:A",
+            "label": {
+              "en-US": "Keep Salmah's original voice",
+              "zh-CN": "留下 Salmah 的原声",
+              "zh-HK": "留下 Salmah 的原聲"
+            },
+            "effects": [
+              {
+                "kind": "increment_variable",
+                "key": "truth",
+                "amount": 1
+              }
+            ],
+            "nextNodeId": "router:S05",
+            "afterSelect": {
+              "kind": "immediate"
+            }
+          },
+          {
+            "choiceId": "C5:B",
+            "label": {
+              "en-US": "Keep Grandpa's opening song",
+              "zh-CN": "留下外公的开园曲",
+              "zh-HK": "留下外公的開園曲"
+            },
+            "effects": [
+              {
+                "kind": "increment_variable",
+                "key": "echo",
+                "amount": 1
+              }
+            ],
+            "nextNodeId": "router:S05",
+            "afterSelect": {
+              "kind": "immediate"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "nodeId": "clip:S04B",
+      "presentation": {
+        "kind": "video",
+        "sequence": [
+          {
+            "clipId": "clip-S04B",
+            "assetId": "video:S04B",
+            "endBehavior": {
+              "behavior": "advance"
+            }
+          }
+        ],
+        "fit": "cover"
+      },
+      "overlays": [],
+      "exit": {
+        "kind": "choice",
+        "decisionId": "C5",
+        "prompt": {
+          "en-US": "Only one track can survive. Whose voice stays?",
+          "zh-CN": "只够保留一条声轨，留下谁？",
+          "zh-HK": "只夠保留一條聲軌，留下誰？"
+        },
+        "trigger": {
+          "kind": "media-ended"
+        },
+        "choices": [
+          {
+            "choiceId": "C5:A",
+            "label": {
+              "en-US": "Keep Salmah's original voice",
+              "zh-CN": "留下 Salmah 的原声",
+              "zh-HK": "留下 Salmah 的原聲"
+            },
+            "effects": [
+              {
+                "kind": "increment_variable",
+                "key": "truth",
+                "amount": 1
+              }
+            ],
+            "nextNodeId": "router:S05",
+            "afterSelect": {
+              "kind": "immediate"
+            }
+          },
+          {
+            "choiceId": "C5:B",
+            "label": {
+              "en-US": "Keep Grandpa's opening song",
+              "zh-CN": "留下外公的开园曲",
+              "zh-HK": "留下外公的開園曲"
+            },
+            "effects": [
+              {
+                "kind": "increment_variable",
+                "key": "echo",
+                "amount": 1
+              }
+            ],
+            "nextNodeId": "router:S05",
+            "afterSelect": {
+              "kind": "immediate"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "nodeId": "clip:S04C",
+      "presentation": {
+        "kind": "video",
+        "sequence": [
+          {
+            "clipId": "clip-S04C",
+            "assetId": "video:S04C",
+            "endBehavior": {
+              "behavior": "advance"
+            }
+          }
+        ],
+        "fit": "cover"
+      },
+      "overlays": [],
+      "exit": {
+        "kind": "choice",
+        "decisionId": "C5",
+        "prompt": {
+          "en-US": "Only one track can survive. Whose voice stays?",
+          "zh-CN": "只够保留一条声轨，留下谁？",
+          "zh-HK": "只夠保留一條聲軌，留下誰？"
+        },
+        "trigger": {
+          "kind": "media-ended"
+        },
+        "choices": [
+          {
+            "choiceId": "C5:A",
+            "label": {
+              "en-US": "Keep Salmah's original voice",
+              "zh-CN": "留下 Salmah 的原声",
+              "zh-HK": "留下 Salmah 的原聲"
+            },
+            "effects": [
+              {
+                "kind": "increment_variable",
+                "key": "truth",
+                "amount": 1
+              }
+            ],
+            "nextNodeId": "router:S05",
+            "afterSelect": {
+              "kind": "immediate"
+            }
+          },
+          {
+            "choiceId": "C5:B",
+            "label": {
+              "en-US": "Keep Grandpa's opening song",
+              "zh-CN": "留下外公的开园曲",
+              "zh-HK": "留下外公的開園曲"
+            },
+            "effects": [
+              {
+                "kind": "increment_variable",
+                "key": "echo",
+                "amount": 1
+              }
+            ],
+            "nextNodeId": "router:S05",
+            "afterSelect": {
+              "kind": "immediate"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "nodeId": "clip:S05A",
+      "presentation": {
+        "kind": "video",
+        "sequence": [
+          {
+            "clipId": "clip-S05A",
+            "assetId": "video:S05A",
+            "endBehavior": {
+              "behavior": "advance"
+            }
+          }
+        ],
+        "fit": "cover"
+      },
+      "overlays": [],
+      "exit": {
+        "kind": "choice",
+        "decisionId": "C6",
+        "prompt": {
+          "en-US": "Before the sixth gong, how do you end the playback?",
+          "zh-CN": "第六声锣前，怎么结束回放？",
+          "zh-HK": "第六聲鑼前，怎樣結束回放？"
+        },
+        "trigger": {
+          "kind": "media-ended"
+        },
+        "choices": [
+          {
+            "choiceId": "C6:A",
+            "label": {
+              "en-US": "Release the complete tape",
+              "zh-CN": "公开完整母带",
+              "zh-HK": "公開完整母帶"
+            },
+            "effects": [
+              {
+                "kind": "set_variable",
+                "key": "finalAction",
+                "value": "release"
+              }
+            ],
+            "nextNodeId": "router:S06",
+            "afterSelect": {
+              "kind": "immediate"
+            }
+          },
+          {
+            "choiceId": "C6:B",
+            "label": {
+              "en-US": "Eject it and leave with Maya",
+              "zh-CN": "拔带，带 Maya 离开",
+              "zh-HK": "拔帶，帶 Maya 離開"
+            },
+            "effects": [
+              {
+                "kind": "set_variable",
+                "key": "finalAction",
+                "value": "leave"
+              }
+            ],
+            "nextNodeId": "router:S06",
+            "afterSelect": {
+              "kind": "immediate"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "nodeId": "clip:S05B",
+      "presentation": {
+        "kind": "video",
+        "sequence": [
+          {
+            "clipId": "clip-S05B",
+            "assetId": "video:S05B",
+            "endBehavior": {
+              "behavior": "advance"
+            }
+          }
+        ],
+        "fit": "cover"
+      },
+      "overlays": [],
+      "exit": {
+        "kind": "choice",
+        "decisionId": "C6",
+        "prompt": {
+          "en-US": "Before the sixth gong, how do you end the playback?",
+          "zh-CN": "第六声锣前，怎么结束回放？",
+          "zh-HK": "第六聲鑼前，怎樣結束回放？"
+        },
+        "trigger": {
+          "kind": "media-ended"
+        },
+        "choices": [
+          {
+            "choiceId": "C6:A",
+            "label": {
+              "en-US": "Release the complete tape",
+              "zh-CN": "公开完整母带",
+              "zh-HK": "公開完整母帶"
+            },
+            "effects": [
+              {
+                "kind": "set_variable",
+                "key": "finalAction",
+                "value": "release"
+              }
+            ],
+            "nextNodeId": "router:S06",
+            "afterSelect": {
+              "kind": "immediate"
+            }
+          },
+          {
+            "choiceId": "C6:B",
+            "label": {
+              "en-US": "Eject it and leave with Maya",
+              "zh-CN": "拔带，带 Maya 离开",
+              "zh-HK": "拔帶，帶 Maya 離開"
+            },
+            "effects": [
+              {
+                "kind": "set_variable",
+                "key": "finalAction",
+                "value": "leave"
+              }
+            ],
+            "nextNodeId": "router:S06",
+            "afterSelect": {
+              "kind": "immediate"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "nodeId": "clip:S05C",
+      "presentation": {
+        "kind": "video",
+        "sequence": [
+          {
+            "clipId": "clip-S05C",
+            "assetId": "video:S05C",
+            "endBehavior": {
+              "behavior": "advance"
+            }
+          }
+        ],
+        "fit": "cover"
+      },
+      "overlays": [],
+      "exit": {
+        "kind": "choice",
+        "decisionId": "C6",
+        "prompt": {
+          "en-US": "Before the sixth gong, how do you end the playback?",
+          "zh-CN": "第六声锣前，怎么结束回放？",
+          "zh-HK": "第六聲鑼前，怎樣結束回放？"
+        },
+        "trigger": {
+          "kind": "media-ended"
+        },
+        "choices": [
+          {
+            "choiceId": "C6:A",
+            "label": {
+              "en-US": "Release the complete tape",
+              "zh-CN": "公开完整母带",
+              "zh-HK": "公開完整母帶"
+            },
+            "effects": [
+              {
+                "kind": "set_variable",
+                "key": "finalAction",
+                "value": "release"
+              }
+            ],
+            "nextNodeId": "router:S06",
+            "afterSelect": {
+              "kind": "immediate"
+            }
+          },
+          {
+            "choiceId": "C6:B",
+            "label": {
+              "en-US": "Eject it and leave with Maya",
+              "zh-CN": "拔带，带 Maya 离开",
+              "zh-HK": "拔帶，帶 Maya 離開"
+            },
+            "effects": [
+              {
+                "kind": "set_variable",
+                "key": "finalAction",
+                "value": "leave"
+              }
+            ],
+            "nextNodeId": "router:S06",
+            "afterSelect": {
+              "kind": "immediate"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "nodeId": "clip:S06A",
+      "presentation": {
+        "kind": "video",
+        "sequence": [
+          {
+            "clipId": "clip-S06A",
+            "assetId": "video:S06A",
+            "endBehavior": {
+              "behavior": "advance"
+            }
+          }
+        ],
+        "fit": "cover"
+      },
+      "overlays": [],
+      "exit": {
+        "kind": "external-overlay",
+        "rendererId": "story.checkpoint",
+        "routes": [
+          {
+            "actionId": "continue",
+            "effects": [],
+            "nextNodeId": "clip:E01"
+          }
+        ]
+      }
+    },
+    {
+      "nodeId": "clip:S06B",
+      "presentation": {
+        "kind": "video",
+        "sequence": [
+          {
+            "clipId": "clip-S06B",
+            "assetId": "video:S06B",
+            "endBehavior": {
+              "behavior": "advance"
+            }
+          }
+        ],
+        "fit": "cover"
+      },
+      "overlays": [],
+      "exit": {
+        "kind": "external-overlay",
+        "rendererId": "story.checkpoint",
+        "routes": [
+          {
+            "actionId": "continue",
+            "effects": [],
+            "nextNodeId": "clip:E02"
+          }
+        ]
+      }
+    },
+    {
+      "nodeId": "clip:S06C",
+      "presentation": {
+        "kind": "video",
+        "sequence": [
+          {
+            "clipId": "clip-S06C",
+            "assetId": "video:S06C",
+            "endBehavior": {
+              "behavior": "advance"
+            }
+          }
+        ],
+        "fit": "cover"
+      },
+      "overlays": [],
+      "exit": {
+        "kind": "external-overlay",
+        "rendererId": "story.checkpoint",
+        "routes": [
+          {
+            "actionId": "continue",
+            "effects": [],
+            "nextNodeId": "clip:E03"
+          }
+        ]
+      }
+    },
+    {
+      "nodeId": "clip:S06D",
+      "presentation": {
+        "kind": "video",
+        "sequence": [
+          {
+            "clipId": "clip-S06D",
+            "assetId": "video:S06D",
+            "endBehavior": {
+              "behavior": "advance"
+            }
+          }
+        ],
+        "fit": "cover"
+      },
+      "overlays": [],
+      "exit": {
+        "kind": "external-overlay",
+        "rendererId": "story.checkpoint",
+        "routes": [
+          {
+            "actionId": "continue",
+            "effects": [],
+            "nextNodeId": "clip:E04"
+          }
+        ]
+      }
+    },
+    {
+      "kind": "router",
+      "nodeId": "router:S04",
+      "exit": {
+        "kind": "auto",
+        "routes": [
+          {
+            "nextNodeId": "clip:S04A",
+            "when": {
+              "kind": "variable",
+              "key": "bond",
+              "operator": "at_least",
+              "value": 2
+            },
+            "priority": 1
+          },
+          {
+            "nextNodeId": "clip:S04B",
+            "when": {
+              "kind": "all",
+              "conditions": [
+                {
+                  "kind": "variable",
+                  "key": "bond",
+                  "operator": "less_than",
+                  "value": 2
+                },
+                {
+                  "kind": "variable",
+                  "key": "c4Choice",
+                  "operator": "equals",
+                  "value": "A"
+                }
+              ]
+            },
+            "priority": 2
+          },
+          {
+            "nextNodeId": "clip:S04C",
+            "when": {
+              "kind": "all",
+              "conditions": [
+                {
+                  "kind": "variable",
+                  "key": "bond",
+                  "operator": "less_than",
+                  "value": 2
+                },
+                {
+                  "kind": "variable",
+                  "key": "c4Choice",
+                  "operator": "equals",
+                  "value": "B"
+                }
+              ]
+            },
+            "priority": 3
+          }
+        ]
+      }
+    },
+    {
+      "kind": "router",
+      "nodeId": "router:S05",
+      "exit": {
+        "kind": "auto",
+        "routes": [
+          {
+            "nextNodeId": "clip:S05A",
+            "when": {
+              "kind": "variable",
+              "key": "truth",
+              "operator": "at_least",
+              "value": 3
+            },
+            "priority": 1
+          },
+          {
+            "nextNodeId": "clip:S05B",
+            "when": {
+              "kind": "variable",
+              "key": "echo",
+              "operator": "at_least",
+              "value": 3
+            },
+            "priority": 2
+          },
+          {
+            "nextNodeId": "clip:S05C",
+            "when": {
+              "kind": "all",
+              "conditions": [
+                {
+                  "kind": "variable",
+                  "key": "truth",
+                  "operator": "less_than",
+                  "value": 3
+                },
+                {
+                  "kind": "variable",
+                  "key": "echo",
+                  "operator": "less_than",
+                  "value": 3
+                }
+              ]
+            },
+            "priority": 3
+          }
+        ]
+      }
+    },
+    {
+      "kind": "router",
+      "nodeId": "router:S06",
+      "exit": {
+        "kind": "auto",
+        "routes": [
+          {
+            "nextNodeId": "clip:S06A",
+            "when": {
+              "kind": "all",
+              "conditions": [
+                {
+                  "kind": "variable",
+                  "key": "finalAction",
+                  "operator": "equals",
+                  "value": "release"
+                },
+                {
+                  "kind": "variable",
+                  "key": "truth",
+                  "operator": "at_least",
+                  "value": 3
+                }
+              ]
+            },
+            "priority": 1
+          },
+          {
+            "nextNodeId": "clip:S06B",
+            "when": {
+              "kind": "all",
+              "conditions": [
+                {
+                  "kind": "variable",
+                  "key": "finalAction",
+                  "operator": "equals",
+                  "value": "release"
+                },
+                {
+                  "kind": "variable",
+                  "key": "truth",
+                  "operator": "less_than",
+                  "value": 3
+                }
+              ]
+            },
+            "priority": 2
+          },
+          {
+            "nextNodeId": "clip:S06C",
+            "when": {
+              "kind": "all",
+              "conditions": [
+                {
+                  "kind": "variable",
+                  "key": "finalAction",
+                  "operator": "equals",
+                  "value": "leave"
+                },
+                {
+                  "kind": "variable",
+                  "key": "bond",
+                  "operator": "at_least",
+                  "value": 2
+                }
+              ]
+            },
+            "priority": 3
+          },
+          {
+            "nextNodeId": "clip:S06D",
+            "when": {
+              "kind": "all",
+              "conditions": [
+                {
+                  "kind": "variable",
+                  "key": "finalAction",
+                  "operator": "equals",
+                  "value": "leave"
+                },
+                {
+                  "kind": "variable",
+                  "key": "bond",
+                  "operator": "less_than",
+                  "value": 2
+                }
+              ]
+            },
+            "priority": 4
+          }
+        ]
+      }
+    }
+  ]
+}

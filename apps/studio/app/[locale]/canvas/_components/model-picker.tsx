@@ -192,6 +192,8 @@ export function ModelPicker({
 
   return (
     <div
+      role="dialog"
+      aria-label={t("modelPicker.allModels")}
       className={cn(
         "nodrag absolute z-50 flex max-h-[460px] w-[380px] flex-col overflow-hidden rounded-2xl border border-white/[0.06] bg-[oklch(0.235_0_0_/_0.95)] shadow-2xl shadow-black/60 backdrop-blur-2xl",
         "duration-150 animate-in fade-in-0 zoom-in-95",

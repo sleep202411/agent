@@ -8,7 +8,7 @@ import {
   NotFoundException,
   ServiceUnavailableException,
 } from '@nestjs/common';
-import { ProjectMemberRole, WorkspaceMemberRole } from '@prisma/client';
+import { Prisma, ProjectMemberRole, WorkspaceMemberRole } from '@prisma/client';
 import { randomUUID } from 'crypto';
 import type { AuthUser } from '../auth';
 import {
@@ -63,6 +63,14 @@ interface AiJobContext {
   documentId?: string;
   documentBlockId?: string;
   sourceSurface?: string;
+}
+
+/**
+ * Internal product-plane seam for atomically binding a durable domain row to
+ * a newly accepted AiJob. HTTP clients cannot supply this callback.
+ */
+export interface AiJobSubmissionHooks {
+  afterJobCreate?: (tx: Prisma.TransactionClient, job: AiJob) => Promise<void>;
 }
 
 @Injectable()
@@ -158,6 +166,7 @@ export class AiGenerationService {
     user: AuthUser,
     body: AiSubmitJobBody,
     workspaceHeaderId?: string,
+    hooks: AiJobSubmissionHooks = {},
   ): Promise<AiSubmitResponse> {
     const now = new Date().toISOString();
     const context = await this.resolveJobContext(user, body, workspaceHeaderId);
@@ -269,6 +278,7 @@ export class AiGenerationService {
             tx,
             job,
           }),
+        afterCreate: hooks.afterJobCreate,
         buildJob: (queuePosition) => {
           const estimate = this.eta.estimateForNewJob(
             model,

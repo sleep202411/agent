@@ -88,3 +88,14 @@ apps/server/outputs/
 # scripts, manifests, prompts and review images in Git; never commit binaries.
 /apps/web/public/jinling-rumeng/**/*.mp4
 /apps/web/public/jinling-rumeng/**/*.wav
+
+# Interactive-film production working assets (hu-bao-villa etc.): raw video
+# candidates and reference frames stay out of Git; finals live in cloud
+# storage. Keep JSON manifests, prompts and docs in Git.
+/docs/interactive-films/assets/**/*.mp4
+/docs/interactive-films/assets/**/*.mov
+/docs/interactive-films/assets/**/*.wav
+/docs/interactive-films/assets/**/*.png
+/docs/interactive-films/assets/**/*.jpg
+/docs/interactive-films/assets/**/*.jpeg
+/docs/interactive-films/assets/**/*.webp

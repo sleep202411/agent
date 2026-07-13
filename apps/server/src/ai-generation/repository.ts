@@ -85,6 +85,13 @@ export interface ReserveQueuedJobOptions {
     totalLimit?: number;
   };
   beforeCreate?: (tx: Prisma.TransactionClient, job: AiJob) => Promise<void>;
+  /**
+   * Product-plane rows that own an AI job may be inserted here after the
+   * canonical AiJob row exists, but before the reservation transaction
+   * commits. This is deliberately distinct from `beforeCreate`: foreign keys
+   * such as StoryFilmTake.aiJobId require the job row to exist first.
+   */
+  afterCreate?: (tx: Prisma.TransactionClient, job: AiJob) => Promise<void>;
   buildJob: (queuePosition: number) => AiJob;
 }
 
@@ -354,6 +361,7 @@ export class AiGenerationRepository {
       const job = options.buildJob(queuePosition);
       await options.beforeCreate?.(tx, job);
       await tx.aiJob.create({ data: this.toRow(job) });
+      await options.afterCreate?.(tx, job);
       const repositioned = await this.recomputeQueuePositionsWith(
         tx,
         options.queueName,

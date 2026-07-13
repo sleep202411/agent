@@ -18,11 +18,16 @@ export function ModeMenu({
 }) {
   const ml = useModeLabel();
   return (
-    <div className="nodrag nowheel absolute bottom-full left-0 z-50 mb-2 w-56 origin-bottom overflow-hidden rounded-2xl bg-[oklch(0.24_0_0)] p-1.5 shadow-2xl shadow-black/60 backdrop-blur-xl duration-150 animate-in fade-in-0 zoom-in-95">
+    <div
+      role="menu"
+      className="nodrag nowheel absolute bottom-full left-0 z-50 mb-2 w-56 origin-bottom overflow-hidden rounded-2xl bg-[oklch(0.24_0_0)] p-1.5 shadow-2xl shadow-black/60 backdrop-blur-xl duration-150 animate-in fade-in-0 zoom-in-95"
+    >
       {modes.map((mode) => (
         <button
           key={mode}
           type="button"
+          role="menuitemradio"
+          aria-checked={mode === value}
           onClick={() => {
             onSelect(mode);
             onClose();

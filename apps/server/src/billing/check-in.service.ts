@@ -107,8 +107,8 @@ export class CheckInService {
     let streak = 0; // consecutive days already claimed (incl. today if claimed)
     let nextStreakDay = 1; // the streak day the next claim would be
     if (checkedInToday) {
-      streak = last!.streakDay;
-      nextStreakDay = last!.streakDay + 1;
+      streak = last.streakDay;
+      nextStreakDay = last.streakDay + 1;
     } else if (last && last.checkInDate.getTime() === yesterday.getTime()) {
       streak = last.streakDay;
       nextStreakDay = last.streakDay + 1;
@@ -123,7 +123,7 @@ export class CheckInService {
       nextStreakDay,
       nextReward: rewards[(nextStreakDay - 1) % rewards.length],
       todayReward: checkedInToday
-        ? last!.amount
+        ? last.amount
         : rewards[(nextStreakDay - 1) % rewards.length],
     };
   }

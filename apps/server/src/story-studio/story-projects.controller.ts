@@ -1,119 +1,327 @@
-/**
- * Story Studio project routes (owner-only). Same envelope + validation
- * conventions as the characters module: `{ code: 200, data }`, Zod pipes,
- * the global user AuthGuard supplies `@CurrentUser()`.
- */
 import {
+  BadRequestException,
   Body,
   Controller,
-  Delete,
   Get,
+  Headers,
+  HttpCode,
+  HttpStatus,
   Param,
   Patch,
   Post,
   Put,
+  Query,
 } from '@nestjs/common';
 import { CurrentUser } from '../auth';
 import type { AuthUser } from '../auth';
 import { ZodValidationPipe } from '../common/zod.pipe';
 import {
+  ArchiveStoryProjectSchema,
   CreateStoryProjectSchema,
-  GenerateStoryAnalysisSchema,
+  LockStoryRevisionSchema,
   PatchStoryProjectSchema,
+  PutStoryCanvasLayoutSchema,
   PutStoryDraftSchema,
   StoryProjectIdParamsSchema,
+  StoryProjectListQuerySchema,
+  StoryRevisionListQuerySchema,
+  StoryRevisionParamsSchema,
+  StoryUuidSchema,
+  StoryWorkbenchQuerySchema,
+  type ArchiveStoryProjectInput,
   type CreateStoryProjectInput,
-  type GenerateStoryAnalysisInput,
+  type LockStoryRevisionInput,
   type PatchStoryProjectInput,
+  type PutStoryCanvasLayoutInput,
   type PutStoryDraftInput,
   type StoryProjectIdParams,
+  type StoryProjectListQuery,
+  type StoryRevisionListQuery,
+  type StoryRevisionParams,
+  type StoryWorkbenchQuery,
 } from './dto';
-import { StoryGenerationService } from './generation/story-generation.service';
 import { StoryProjectsService } from './story-projects.service';
 
 @Controller('story-projects')
 export class StoryProjectsController {
-  constructor(
-    private readonly storyProjects: StoryProjectsService,
-    private readonly generation: StoryGenerationService,
-  ) {}
+  constructor(private readonly storyProjects: StoryProjectsService) {}
 
   @Post()
+  @HttpCode(HttpStatus.CREATED)
   async create(
     @CurrentUser() user: AuthUser,
+    @Headers('x-fizz-workspace-id')
+    workspaceHeader: string | string[] | undefined,
     @Body(new ZodValidationPipe(CreateStoryProjectSchema))
     body: CreateStoryProjectInput,
   ) {
-    return { code: 200, data: await this.storyProjects.create(user, body) };
+    const workspaceId = requiredWorkspaceId(workspaceHeader);
+    return {
+      code: 200,
+      data: await this.storyProjects.create(user, workspaceId, body),
+    };
   }
 
   @Get()
-  async list(@CurrentUser() user: AuthUser) {
-    return { code: 200, data: await this.storyProjects.list(user) };
-  }
-
-  @Get(':id')
-  async get(
+  async list(
     @CurrentUser() user: AuthUser,
-    @Param(new ZodValidationPipe(StoryProjectIdParamsSchema))
-    params: StoryProjectIdParams,
+    @Headers('x-fizz-workspace-id')
+    workspaceHeader: string | string[] | undefined,
+    @Query(new ZodValidationPipe(StoryProjectListQuerySchema))
+    query: StoryProjectListQuery,
   ) {
-    return { code: 200, data: await this.storyProjects.get(user, params.id) };
-  }
-
-  @Patch(':id')
-  async patch(
-    @CurrentUser() user: AuthUser,
-    @Param(new ZodValidationPipe(StoryProjectIdParamsSchema))
-    params: StoryProjectIdParams,
-    @Body(new ZodValidationPipe(PatchStoryProjectSchema))
-    body: PatchStoryProjectInput,
-  ) {
+    const workspaceId = requiredWorkspaceId(workspaceHeader);
     return {
       code: 200,
-      data: await this.storyProjects.patch(user, params.id, body),
+      data: await this.storyProjects.list(user, workspaceId, query),
     };
   }
 
-  /** S1 StoryOS analysis (ASYNC): marks the draft's pipeline `running` and
-   *  returns immediately — the model run completes in the background and
-   *  persists into the draft; the client polls the draft until done/error.
-   *  Proxy-timeout-proof by design (model calls run 30-90s). */
-  @Post(':id/generate/analysis')
-  async generateAnalysis(
+  @Get(':projectId/workbench')
+  async workbench(
     @CurrentUser() user: AuthUser,
+    @Headers('x-fizz-workspace-id')
+    workspaceHeader: string | string[] | undefined,
     @Param(new ZodValidationPipe(StoryProjectIdParamsSchema))
     params: StoryProjectIdParams,
-    @Body(new ZodValidationPipe(GenerateStoryAnalysisSchema))
-    body: GenerateStoryAnalysisInput,
+    @Query(new ZodValidationPipe(StoryWorkbenchQuerySchema))
+    query: StoryWorkbenchQuery,
   ) {
+    const workspaceId = requiredWorkspaceId(workspaceHeader);
     return {
       code: 200,
-      data: await this.generation.startAnalysis(user, params.id, body),
+      data: await this.storyProjects.workbench(
+        user,
+        workspaceId,
+        params.projectId,
+        query,
+      ),
     };
   }
 
-  @Put(':id/draft')
+  @Get(':projectId/draft')
+  async getDraft(
+    @CurrentUser() user: AuthUser,
+    @Headers('x-fizz-workspace-id')
+    workspaceHeader: string | string[] | undefined,
+    @Param(new ZodValidationPipe(StoryProjectIdParamsSchema))
+    params: StoryProjectIdParams,
+  ) {
+    const workspaceId = requiredWorkspaceId(workspaceHeader);
+    return {
+      code: 200,
+      data: await this.storyProjects.getDraft(
+        user,
+        workspaceId,
+        params.projectId,
+      ),
+    };
+  }
+
+  @Put(':projectId/draft')
   async putDraft(
     @CurrentUser() user: AuthUser,
+    @Headers('x-fizz-workspace-id')
+    workspaceHeader: string | string[] | undefined,
     @Param(new ZodValidationPipe(StoryProjectIdParamsSchema))
     params: StoryProjectIdParams,
     @Body(new ZodValidationPipe(PutStoryDraftSchema))
     body: PutStoryDraftInput,
   ) {
+    const workspaceId = requiredWorkspaceId(workspaceHeader);
     return {
       code: 200,
-      data: await this.storyProjects.putDraft(user, params.id, body),
+      data: await this.storyProjects.putDraft(
+        user,
+        workspaceId,
+        params.projectId,
+        body,
+      ),
     };
   }
 
-  @Delete(':id')
-  async archive(
+  @Get(':projectId/canvas-layout')
+  async getCanvasLayout(
     @CurrentUser() user: AuthUser,
+    @Headers('x-fizz-workspace-id')
+    workspaceHeader: string | string[] | undefined,
     @Param(new ZodValidationPipe(StoryProjectIdParamsSchema))
     params: StoryProjectIdParams,
   ) {
-    await this.storyProjects.archive(user, params.id);
-    return { code: 200, data: { archived: true } };
+    const workspaceId = requiredWorkspaceId(workspaceHeader);
+    return {
+      code: 200,
+      data: await this.storyProjects.getCanvasLayout(
+        user,
+        workspaceId,
+        params.projectId,
+      ),
+    };
   }
+
+  @Put(':projectId/canvas-layout')
+  async putCanvasLayout(
+    @CurrentUser() user: AuthUser,
+    @Headers('x-fizz-workspace-id')
+    workspaceHeader: string | string[] | undefined,
+    @Param(new ZodValidationPipe(StoryProjectIdParamsSchema))
+    params: StoryProjectIdParams,
+    @Body(new ZodValidationPipe(PutStoryCanvasLayoutSchema))
+    body: PutStoryCanvasLayoutInput,
+  ) {
+    const workspaceId = requiredWorkspaceId(workspaceHeader);
+    return {
+      code: 200,
+      data: await this.storyProjects.putCanvasLayout(
+        user,
+        workspaceId,
+        params.projectId,
+        body,
+      ),
+    };
+  }
+
+  @Get(':projectId/revisions')
+  async listRevisions(
+    @CurrentUser() user: AuthUser,
+    @Headers('x-fizz-workspace-id')
+    workspaceHeader: string | string[] | undefined,
+    @Param(new ZodValidationPipe(StoryProjectIdParamsSchema))
+    params: StoryProjectIdParams,
+    @Query(new ZodValidationPipe(StoryRevisionListQuerySchema))
+    query: StoryRevisionListQuery,
+  ) {
+    const workspaceId = requiredWorkspaceId(workspaceHeader);
+    return {
+      code: 200,
+      data: await this.storyProjects.listRevisions(
+        user,
+        workspaceId,
+        params.projectId,
+        query,
+      ),
+    };
+  }
+
+  @Get(':projectId/revisions/:revisionId')
+  async getRevision(
+    @CurrentUser() user: AuthUser,
+    @Headers('x-fizz-workspace-id')
+    workspaceHeader: string | string[] | undefined,
+    @Param(new ZodValidationPipe(StoryRevisionParamsSchema))
+    params: StoryRevisionParams,
+  ) {
+    const workspaceId = requiredWorkspaceId(workspaceHeader);
+    return {
+      code: 200,
+      data: await this.storyProjects.getRevision(
+        user,
+        workspaceId,
+        params.projectId,
+        params.revisionId,
+      ),
+    };
+  }
+
+  @Post(':projectId/revisions/lock')
+  @HttpCode(HttpStatus.CREATED)
+  async lockRevision(
+    @CurrentUser() user: AuthUser,
+    @Headers('x-fizz-workspace-id')
+    workspaceHeader: string | string[] | undefined,
+    @Param(new ZodValidationPipe(StoryProjectIdParamsSchema))
+    params: StoryProjectIdParams,
+    @Body(new ZodValidationPipe(LockStoryRevisionSchema))
+    body: LockStoryRevisionInput,
+  ) {
+    const workspaceId = requiredWorkspaceId(workspaceHeader);
+    return {
+      code: 200,
+      data: await this.storyProjects.lockRevision(
+        user,
+        workspaceId,
+        params.projectId,
+        body,
+      ),
+    };
+  }
+
+  @Get(':projectId')
+  async get(
+    @CurrentUser() user: AuthUser,
+    @Headers('x-fizz-workspace-id')
+    workspaceHeader: string | string[] | undefined,
+    @Param(new ZodValidationPipe(StoryProjectIdParamsSchema))
+    params: StoryProjectIdParams,
+  ) {
+    const workspaceId = requiredWorkspaceId(workspaceHeader);
+    return {
+      code: 200,
+      data: await this.storyProjects.get(user, workspaceId, params.projectId),
+    };
+  }
+
+  @Patch(':projectId')
+  async patch(
+    @CurrentUser() user: AuthUser,
+    @Headers('x-fizz-workspace-id')
+    workspaceHeader: string | string[] | undefined,
+    @Param(new ZodValidationPipe(StoryProjectIdParamsSchema))
+    params: StoryProjectIdParams,
+    @Body(new ZodValidationPipe(PatchStoryProjectSchema))
+    body: PatchStoryProjectInput,
+  ) {
+    const workspaceId = requiredWorkspaceId(workspaceHeader);
+    return {
+      code: 200,
+      data: await this.storyProjects.patch(
+        user,
+        workspaceId,
+        params.projectId,
+        body,
+      ),
+    };
+  }
+
+  @Post(':projectId/archive')
+  @HttpCode(HttpStatus.OK)
+  async archive(
+    @CurrentUser() user: AuthUser,
+    @Headers('x-fizz-workspace-id')
+    workspaceHeader: string | string[] | undefined,
+    @Param(new ZodValidationPipe(StoryProjectIdParamsSchema))
+    params: StoryProjectIdParams,
+    @Body(new ZodValidationPipe(ArchiveStoryProjectSchema))
+    body: ArchiveStoryProjectInput,
+  ) {
+    const workspaceId = requiredWorkspaceId(workspaceHeader);
+    return {
+      code: 200,
+      data: await this.storyProjects.archive(
+        user,
+        workspaceId,
+        params.projectId,
+        body,
+      ),
+    };
+  }
+}
+
+function requiredWorkspaceId(value: string | string[] | undefined): string {
+  const raw = Array.isArray(value) ? value[0] : value;
+  const normalized = raw?.trim();
+  if (!normalized) {
+    throw new BadRequestException({
+      code: 'WORKSPACE_HEADER_REQUIRED',
+      message: 'x-fizz-workspace-id is required.',
+    });
+  }
+  const parsed = StoryUuidSchema.safeParse(normalized);
+  if (!parsed.success) {
+    throw new BadRequestException({
+      code: 'WORKSPACE_HEADER_INVALID',
+      message: 'x-fizz-workspace-id must be a valid UUID.',
+    });
+  }
+  return parsed.data;
 }

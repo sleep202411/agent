@@ -65,6 +65,10 @@
     "./regions": {
       "types": "./dist/regions.d.ts",
       "default": "./dist/regions.js"
+    },
+    "./interactive-film-runtime": {
+      "types": "./dist/interactive-film-runtime.d.ts",
+      "default": "./dist/interactive-film-runtime.js"
     }
   },
   "scripts": {

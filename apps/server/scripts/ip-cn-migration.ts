@@ -252,12 +252,12 @@ async function pull(opts: {
   const epByIp = new Map<string, any[]>();
   for (const v of await q('SELECT * FROM video_list')) {
     const k = String(v.project_id);
-    (epByIp.get(k) ?? epByIp.set(k, []).get(k)!)!.push(v);
+    (epByIp.get(k) ?? epByIp.set(k, []).get(k)!).push(v);
   }
   const memByIp = new Map<string, any[]>();
   for (const m of await q('SELECT * FROM client_project_ip_member')) {
     const k = String(m.project_id);
-    (memByIp.get(k) ?? memByIp.set(k, []).get(k)!)!.push(m);
+    (memByIp.get(k) ?? memByIp.set(k, []).get(k)!).push(m);
   }
 
   const ips: CnIp[] = cps.map((cp) => {
@@ -353,7 +353,7 @@ function parseDuration(meta: unknown): number | null {
   if (!meta) return null;
   try {
     const m = typeof meta === 'string' ? JSON.parse(meta) : meta;
-    const d = Number((m as any)?.duration);
+    const d = Number(m?.duration);
     // ip_episodes has a duration_positive CHECK; 0/negative → null.
     return Number.isFinite(d) && d > 0 ? Math.round(d) : null;
   } catch {
@@ -519,7 +519,7 @@ async function upsertIp(prisma: PrismaClient, s: CnSnapshot, ip: CnIp) {
       : [];
   const tagLabels = ip.tagIds
     .map((t) => s.dictionaries.types[String(t)])
-    .filter(Boolean) as string[];
+    .filter(Boolean);
   await replaceTaxonomy(prisma, ipId, 'genre', genreLabels);
   await replaceTaxonomy(prisma, ipId, 'tag', tagLabels);
 

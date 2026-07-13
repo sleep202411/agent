@@ -1,20 +1,40 @@
-/**
- * Story Studio (文字游戏) — sovereign domain module.
- *
- * Owns story projects, drafts, and (second batch) releases + the publish
- * state machine. Deliberately does NOT import workspaces/sharing/documents:
- * a story project is not a PlatformProject and carries none of that
- * collaboration semantics (design doc docs/story-studio-project-schema-v1.md).
- */
 import { Module } from '@nestjs/common';
-import { StoryLlmClient } from './generation/llm-client';
-import { StoryGenerationService } from './generation/story-generation.service';
+import { AiGenerationModule } from '../ai-generation/ai-generation.module';
+import { WorkspacesModule } from '../workspaces/workspaces.module';
+import { StorageModule } from '../infra/storage/storage.module';
+import { StoryFilmBuildController } from './story-film-build.controller';
+import { StoryFilmBuildService } from './story-film-build.service';
+import { StoryFilmProductionController } from './story-film-production.controller';
+import { StoryFilmProductionService } from './story-film-production.service';
+import { StoryFilmReferenceController } from './story-film-reference.controller';
+import { StoryFilmReferenceService } from './story-film-reference.service';
+import { StoryFilmTrailerProductionController } from './story-film-trailer-production.controller';
+import { StoryFilmTrailerProductionService } from './story-film-trailer-production.service';
+import { StoryPermissionService } from './story-permission.service';
 import { StoryProjectsController } from './story-projects.controller';
 import { StoryProjectsService } from './story-projects.service';
+import { StoryWorkingPreviewController } from './story-working-preview.controller';
+import { StoryWorkingPreviewService } from './story-working-preview.service';
 
 @Module({
-  controllers: [StoryProjectsController],
-  providers: [StoryProjectsService, StoryGenerationService, StoryLlmClient],
-  exports: [StoryProjectsService],
+  imports: [WorkspacesModule, AiGenerationModule, StorageModule],
+  controllers: [
+    StoryProjectsController,
+    StoryFilmProductionController,
+    StoryFilmReferenceController,
+    StoryFilmTrailerProductionController,
+    StoryFilmBuildController,
+    StoryWorkingPreviewController,
+  ],
+  providers: [
+    StoryProjectsService,
+    StoryFilmProductionService,
+    StoryFilmReferenceService,
+    StoryFilmTrailerProductionService,
+    StoryFilmBuildService,
+    StoryWorkingPreviewService,
+    StoryPermissionService,
+  ],
+  exports: [StoryProjectsService, StoryPermissionService],
 })
 export class StoryStudioModule {}
