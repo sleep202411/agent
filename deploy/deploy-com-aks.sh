@@ -76,6 +76,55 @@ SHA="$(git rev-parse HEAD)"
 SHORT="${SHA:0:7}"
 echo "▶ 部署 [${SERVICES[*]}] @ ${SHORT}  (registry=$REGISTRY)"
 
+# Windows Git Bash: az acr build 流式日志含 Unicode（如 U+2022 •），GBK 控制台会
+# UnicodeEncodeError 误报失败。用 --no-logs + 轮询 tag 代替。
+# 覆盖：任意环境设 AZ_ACR_BUILD_NO_LOGS=1 强制 --no-logs。
+is_windows_acr_cli() {
+  [ "${AZ_ACR_BUILD_NO_LOGS:-}" = "1" ] && return 0
+  case "$(uname -s 2>/dev/null)" in
+    MINGW* | MSYS* | CYGWIN* | Windows*) return 0 ;;
+  esac
+  case "${OSTYPE:-}" in
+    msys* | cygwin*) return 0 ;;
+  esac
+  [ "${OS:-}" = "Windows_NT" ] && return 0
+  [ -n "${WINDIR:-}" ] && return 0
+  return 1
+}
+
+ACR_BUILD_EXTRA=()
+if is_windows_acr_cli; then
+  export PYTHONUTF8=1
+  export AZURE_CORE_NO_COLOR=true
+  ACR_BUILD_EXTRA+=(--no-logs)
+  echo "ℹ Windows 检测到：az acr build 使用 --no-logs（规避 GBK 日志编码崩溃）"
+fi
+
+wait_for_acr_image() {
+  local repo="$1" tag="$2"
+  echo "  · 等待 ACR 镜像 $repo:$tag …"
+  local deadline=$((SECONDS + 3600))
+  while [ "$SECONDS" -lt "$deadline" ]; do
+    if az acr repository show-tags --name "$ACR" --repository "$repo" \
+      --query "contains(@, '${tag}')" -o tsv 2>/dev/null | grep -qi true; then
+      echo "  · 镜像已就绪"
+      return 0
+    fi
+    local run_status run_id
+    run_status="$(az acr task list-runs --registry "$ACR" --top 1 --query "[0].status" -o tsv 2>/dev/null || true)"
+    run_id="$(az acr task list-runs --registry "$ACR" --top 1 --query "[0].runId" -o tsv 2>/dev/null || true)"
+    if [ "$run_status" = "Failed" ]; then
+      echo "  ✋ ACR 构建失败 (run $run_id)。日志：" >&2
+      echo "     az acr task logs --registry $ACR --run-id $run_id > build.log" >&2
+      exit 1
+    fi
+    [ -n "$run_status" ] && echo "  · 构建中 ($run_status)…"
+    sleep 20
+  done
+  echo "  ✋ 超时：ACR 未出现 $repo:$tag" >&2
+  exit 1
+}
+
 # --- build (az acr build, 镜像在 ACR 里构建) ------------------------------
 build_one() {
   local svc="$1" image="$2" dockerfile="$3"
@@ -109,8 +158,12 @@ build_one() {
     --image "${image}:${SHA}" \
     --file "$dockerfile" \
     --platform linux/amd64 \
+    ${ACR_BUILD_EXTRA[@]+"${ACR_BUILD_EXTRA[@]}"} \
     ${args[@]+"${args[@]}"} \
     .
+  if [ "${#ACR_BUILD_EXTRA[@]}" -gt 0 ]; then
+    wait_for_acr_image "$image" "$SHA"
+  fi
 }
 
 # awk 改某 repository 块的下一行 tag（自动覆盖 agent 的两处块），不依赖 yq
