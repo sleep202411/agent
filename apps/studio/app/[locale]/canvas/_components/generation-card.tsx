@@ -28,6 +28,7 @@ import {
 import { toast } from "sonner";
 import { ReactCompareSlider } from "react-compare-slider";
 import { cn } from "@/lib/utils";
+import { useVideoPlaybackError, VideoPlaybackFallback } from "@/components/video-playback-fallback";
 import { isUploadAbort, uploadFileViaSignedUrl } from "@/lib/media-upload";
 import { useDismiss } from "@/lib/use-dismiss";
 import type { CanvasAsset, CanvasEdgeShape, CanvasNodeShape } from "@/lib/collab/canvas-doc";
@@ -248,22 +249,27 @@ function HoverPreviewVideo({
   onLoadedRatio?: (ratio: string) => void;
 }) {
   const ref = useRef<HTMLVideoElement>(null);
+  const { failed, onError } = useVideoPlaybackError(src);
   return (
-    <video
-      ref={ref}
-      src={src}
-      loop
-      muted
-      playsInline
-      controls
-      onLoadedMetadata={() => {
-        const v = ref.current;
-        if (v?.videoWidth && v.videoHeight) onLoadedRatio?.(`${v.videoWidth} / ${v.videoHeight}`);
-      }}
-      onMouseEnter={() => void ref.current?.play().catch(() => {})}
-      onMouseLeave={() => ref.current?.pause()}
-      className={className}
-    />
+    <>
+      <video
+        ref={ref}
+        src={src}
+        loop
+        muted
+        playsInline
+        controls
+        onError={onError}
+        onLoadedMetadata={() => {
+          const v = ref.current;
+          if (v?.videoWidth && v.videoHeight) onLoadedRatio?.(`${v.videoWidth} / ${v.videoHeight}`);
+        }}
+        onMouseEnter={() => void ref.current?.play().catch(() => {})}
+        onMouseLeave={() => ref.current?.pause()}
+        className={className}
+      />
+      {failed && <VideoPlaybackFallback compact />}
+    </>
   );
 }
 

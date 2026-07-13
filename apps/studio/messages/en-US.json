@@ -261,6 +261,8 @@
     "generationFailed": "Generation failed",
     "download": "Download",
     "fullscreen": "Fullscreen",
+    "previewUnsupported": "Preview unavailable",
+    "previewUnsupportedHint": "Preview not supported in this browser \u2014 download to view",
     "zoomIn": "Zoom in",
     "zoomOut": "Zoom out",
     "resetZoom": "Reset zoom",

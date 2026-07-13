@@ -35,6 +35,7 @@ import {
   type HeadObjectResult,
   type OutputStorageResult,
   type OutputStorageUpload,
+  type OutputStorageUploadFromFile,
   type RestrictObjectResult,
   type StorageObjectRef,
 } from './storage.types';
@@ -157,6 +158,36 @@ export class AliyunOssStorageService extends OutputStorageService {
       url: result.url,
       storagePath: result.name,
       bytes: input.body.byteLength,
+      provider: 'aliyun_oss',
+      bucket: this.bucket,
+      region: this.region,
+    };
+  }
+
+  override async uploadFromFile(
+    input: OutputStorageUploadFromFile,
+  ): Promise<OutputStorageResult> {
+    if (!this.client) {
+      throw new Error('OSS_* env not configured');
+    }
+    // Multipart from disk: 300MB-class video outputs would blow ali-oss's
+    // 60s default single-PUT budget on the public endpoint; parts stream
+    // from the file, each with its own generous timeout.
+    await this.client.multipartUpload(input.key, input.filePath, {
+      timeout: 10 * 60_000,
+      headers: {
+        'Content-Type': input.contentType,
+        // Same immutable-bytes caching rationale as upload().
+        'Cache-Control': 'public, max-age=31536000, immutable',
+        ...(input.filename
+          ? { 'Content-Disposition': `inline; filename="${input.filename}"` }
+          : {}),
+      },
+    });
+    return {
+      url: this.client.generateObjectUrl(input.key),
+      storagePath: input.key,
+      bytes: input.sizeBytes,
       provider: 'aliyun_oss',
       bucket: this.bucket,
       region: this.region,

@@ -236,6 +236,7 @@ export interface AiModelOpsMetadata {
   providerRoutePriority: number;
   providerRouteWeight: number;
   providerCapacity?: AiProviderCapacitySnapshot;
+  providerCapacityTiers?: AiProviderCapacityTiers;
 }
 
 export interface AiProviderCapacitySnapshot {
@@ -244,6 +245,23 @@ export interface AiProviderCapacitySnapshot {
   requestTimeoutSeconds: number | null;
   cooldownSeconds: number | null;
   failureThreshold: number | null;
+  /**
+   * Set when this snapshot came from a capacity tier (e.g. the Seedance 4k
+   * lane, upstream concurrency 1). The capacity runtime appends it to the
+   * Redis bucket key so the tier gets its own lease/RPM lane instead of
+   * sharing (or monopolizing) the endpoint-wide bucket.
+   */
+  tierKey?: string | null;
+}
+
+/**
+ * Per-endpoint capacity overrides selected by job input at routing time.
+ * Seeded via `AiProviderEndpoint.catalogSnapshot.capacityTiers`. Tier fields
+ * fall back to the endpoint-level capacity where omitted.
+ */
+export interface AiProviderCapacityTiers {
+  /** Keyed by the job input's `resolution` value (e.g. '4k'). */
+  resolution?: Record<string, Partial<AiProviderCapacitySnapshot>>;
 }
 
 export interface AiModelDefinition extends SharedAiModelDefinition {

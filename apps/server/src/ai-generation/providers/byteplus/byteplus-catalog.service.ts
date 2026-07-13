@@ -3,6 +3,7 @@ import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../../infra/db/db.module';
 import {
   applyProviderConcurrencyLimit,
+  capacityTiersFromCatalogSnapshot,
   providerCapacityFromRow,
 } from '../../provider-capacity';
 import { AI_QUEUE_IMAGE, AI_QUEUE_VIDEO } from '../../queue';
@@ -180,6 +181,9 @@ export class BytePlusCatalogService {
           providerRoutePriority: row.priority,
           providerRouteWeight: row.weight,
           providerCapacity,
+          providerCapacityTiers: capacityTiersFromCatalogSnapshot(
+            row.providerEndpoint.catalogSnapshot,
+          ),
         },
       };
     });

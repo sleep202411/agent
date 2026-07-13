@@ -11,6 +11,7 @@ import {
   IconX,
 } from "@tabler/icons-react";
 import type { FizzAiJobOutput } from "@/app/[locale]/canvas/_lib/generation-api";
+import { useVideoPlaybackError, VideoPlaybackFallback } from "@/components/video-playback-fallback";
 import { timeAgo } from "./feed-tiles";
 import type { FeedJob } from "./use-generation-feed";
 
@@ -77,6 +78,10 @@ export function ResultLightbox({
     return () => window.removeEventListener("keydown", onKey);
   }, [index, items.length, onNavigate, onClose]);
 
+  const { failed: videoFailed, onError: onVideoError } = useVideoPlaybackError(
+    item ? (item.output.url ?? item.output.accessUrl) : undefined
+  );
+
   if (!item) return null;
   const { job, output } = item;
   const isVideo = output.type === "video";
@@ -118,6 +123,7 @@ export function ResultLightbox({
             controls
             autoPlay
             playsInline
+            onError={onVideoError}
             className="max-h-full max-w-full rounded-lg"
           />
         ) : (
@@ -128,6 +134,8 @@ export function ResultLightbox({
             className="max-h-full max-w-full rounded-lg object-contain"
           />
         )}
+
+        {isVideo && videoFailed && <VideoPlaybackFallback onDownload={() => void download()} />}
 
         {items.length > 1 && (
           <>

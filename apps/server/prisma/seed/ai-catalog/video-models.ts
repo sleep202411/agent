@@ -76,6 +76,18 @@ const bytePlusSeedanceProvider: ProviderEntry = {
   modes: SEEDANCE_MODES,
   requestTimeoutSeconds: 1800,
   priority: 50,
+  catalogSnapshot: {
+    // ModelArk's 4k lane is account-wide concurrency 1 / 15 RPM (non-4k:
+    // 10 / 600). The tier gives 4k jobs their own capacity bucket so they
+    // queue politely instead of exhausting the retry ladder, without
+    // serializing the 480p-1080p lane. NOTE: the lane is shared with the
+    // .cn cell (same ModelArk account).
+    capacityTiers: {
+      resolution: {
+        '4k': { maxConcurrentRequests: 1, maxRequestsPerMinute: 15 },
+      },
+    },
+  },
 };
 
 /** Official fast variant (480p/720p only, no 1080p/4k tier). */
@@ -146,7 +158,9 @@ export const VIDEO_MODELS: VideoModelSeed[] = [
       'ByteDance Seedance 2.0 video — text/image/first-last-frame and omni reference, with native synced audio.',
     modes: SEEDANCE_MODES,
     tier: 'vip',
-    // Preflight hold = max realistic charge (15s × 720p @ 25/s). v3 reprice.
+    // billingPolicy.preflightCost — display metadata only; the real wallet
+    // hold is quoted per job from productPricing (4k tops out at 15s × 180
+    // = 2700). Kept at the 15s × 720p default-lane ceiling.
     cost: 375,
     parameterPolicy: SEEDANCE_2_0_PARAMETER_POLICY,
     productPricing: SEEDANCE_2_0_PRODUCT_PRICING,

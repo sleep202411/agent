@@ -496,14 +496,41 @@ function collectVideoOutputs(
 
 // Per-second provider cost (USD), 720p list-price basis from the official
 // token table (doc 2191775, 2026-07-02): tokens/s at 720p ≈ 21,600;
-// flagship $0.0070/K → ≈$0.151/s, fast $0.0056/K → ≈$0.121/s (with-video
-// inputs bill 0.6×; resource packs cheaper still — this tracks the
-// conservative no-pack, no-video rate). User-facing charge is the canonical
-// productPricing; this is provider-cost tracking only.
-function videoUnitPriceUsdPerSecond(endpointId: string): number | null {
-  if (endpointId === 'ep-20260708234913-w8kjv') return 0.151;
-  if (endpointId.startsWith('dreamina-seedance-2-0-fast')) return 0.121;
-  if (endpointId.startsWith('dreamina-seedance-2-0')) return 0.151;
+// flagship $0.0070/K → ≈$0.151/s, fast $0.0056/K → ≈$0.121/s, mini
+// $0.0035/K → ≈$0.076/s (with-video inputs bill 0.6×; resource packs
+// cheaper still — this tracks the conservative no-pack, no-video rate).
+// User-facing charge is the canonical productPricing; this is provider-cost
+// tracking only.
+//
+// ModelArk tokens scale linearly with pixels (tokens/s = W×H×24/1024), so
+// the 2.0 family cost is the 720p base × the pixel ratio of the resolution
+// the task reports. 1.x rates predate resolution capture and stay flat.
+const SEEDANCE_2_0_RESOLUTION_COST_MULTIPLIER: Record<string, number> = {
+  '480p': 0.44,
+  '720p': 1,
+  '1080p': 2.25,
+  '4k': 9,
+};
+
+function videoUnitPriceUsdPerSecond(
+  endpointId: string,
+  resolution: string | undefined,
+): number | null {
+  const base720p =
+    endpointId === 'ep-20260708234913-w8kjv'
+      ? 0.151
+      : endpointId.startsWith('dreamina-seedance-2-0-fast')
+        ? 0.121
+        : endpointId.startsWith('dreamina-seedance-2-0-mini')
+          ? 0.076
+          : endpointId.startsWith('dreamina-seedance-2-0')
+            ? 0.151
+            : null;
+  if (base720p != null) {
+    const multiplier =
+      SEEDANCE_2_0_RESOLUTION_COST_MULTIPLIER[resolution ?? '720p'] ?? 1;
+    return base720p * multiplier;
+  }
   if (endpointId.startsWith('seedance-1-5-pro')) return 0.13;
   if (endpointId.startsWith('seedance-1-0-pro')) return 0.1;
   return null;
@@ -517,7 +544,11 @@ function resolveVideoCost(
   costAccounting: Record<string, unknown> | null;
   pricingSnapshot: Record<string, unknown> | null;
 } {
-  const perSecond = videoUnitPriceUsdPerSecond(endpointId);
+  const resolution =
+    typeof body.resolution === 'string' && body.resolution
+      ? body.resolution
+      : undefined;
+  const perSecond = videoUnitPriceUsdPerSecond(endpointId, resolution);
   const duration =
     typeof body.duration === 'number' && body.duration > 0
       ? body.duration
@@ -536,6 +567,7 @@ function resolveVideoCost(
       billableUnits: duration,
       unitPrice: perSecond,
       unit: 'video_second',
+      resolution: resolution ?? null,
       currency: 'USD',
       providerCost,
       providerCostUsd: providerCost,
@@ -547,9 +579,10 @@ function resolveVideoCost(
       endpointId,
       unitPrice: perSecond,
       unit: 'video_second',
+      resolution: resolution ?? null,
       currency: 'USD',
       capturedAt,
-      pricingVersion: 'seedance-video-usd-second-v2-2026-07-02',
+      pricingVersion: 'seedance-video-usd-second-v3-2026-07-12',
       usage: body.usage ?? null,
     },
   };

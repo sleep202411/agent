@@ -1094,7 +1094,9 @@ export const SEEDANCE_2_0_PARAMETER_POLICY = {
   parameterMode: 'provider_union',
   providerFamily: 'seedance',
   defaultResolution: '720p',
-  resolutionOptions: ['480p', '720p', '1080p'], // 4k exists upstream, unpriced
+  // '4k' is the exact ModelArk enum literal (lowercase). Flagship-only lane:
+  // upstream limits 4k to 15 RPM / concurrency 1, output is 10-bit HEVC.
+  resolutionOptions: ['480p', '720p', '1080p', '4k'],
   // Default '5' (not 'auto'): 'auto' bills at the 15 s ceiling, so defaulting
   // to it would make the default quote the maximum price. 'auto' remains
   // selectable in durationOptions.
@@ -1139,17 +1141,21 @@ export const QUICK_VIDEO_PARAMETER_POLICY = {
 // (720p ≈ $0.151/s, 480p ≈ $0.067/s) — fal (retired) was ~2× pricier, so the old
 // v2 points (61/37) were an accidental ~4× margin. Designed/floored price, not
 // raw ×margin: 720p 25 (~1.65×), 480p 12 (floored ≥ double digit).
+// v5 2026-07-12: 4k enabled — upstream replaced the launch-era 2K ceiling with
+// native 4K (June 2026); official enum is 480p/720p/1080p/4k.
 export const SEEDANCE_2_0_PRODUCT_PRICING: AiProductPricingPolicy = {
   mode: 'per_second_matrix',
-  version: 'seedance-2-0-points-v4-2026-07-08',
+  version: 'seedance-2-0-points-v5-2026-07-12',
   currency: 'COMPUTE_POINTS',
   defaultOutputCount: 1,
   minOutputCount: 1,
   maxOutputCount: 1,
   defaultResolution: '720p',
   // 1080p ≈ 2.25× 720p pixels (~$0.34/s official); designed/capped at 45 (not
-  // the raw ~56) to keep the ladder controlled. 4k still absent (capacity/price).
-  pointsPerSecond: { '480p': 12, '720p': 25, '1080p': 45 },
+  // the raw ~56) to keep the ladder controlled. 4k = exactly 4× 1080p pixels
+  // (194,400 tokens/s ≈ $1.36/s list, ~$0.82/s on resource packs); priced at
+  // 4× the 1080p point = 180/s (~1.3× list margin, same cap-down as 1080p).
+  pointsPerSecond: { '480p': 12, '720p': 25, '1080p': 45, '4k': 180 },
   minSeconds: 4,
   maxSeconds: 15,
   defaultSeconds: 5,

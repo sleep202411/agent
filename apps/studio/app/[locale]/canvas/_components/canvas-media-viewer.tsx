@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useTranslations } from "next-intl";
 import { createPortal } from "react-dom";
 import { IconDownload, IconMinus, IconPlus, IconRefresh, IconX } from "@tabler/icons-react";
+import { useVideoPlaybackError, VideoPlaybackFallback } from "@/components/video-playback-fallback";
 
 export function CanvasMediaViewer({
   alt,
@@ -23,6 +24,9 @@ export function CanvasMediaViewer({
   const tc = useTranslations("common");
   const tg = useTranslations("generation");
   const [scale, setScale] = useState(1);
+  const { failed: videoFailed, onError: onVideoError } = useVideoPlaybackError(
+    type === "video" ? src : undefined
+  );
 
   useEffect(() => {
     const previous = document.body.style.overflow;
@@ -123,14 +127,16 @@ export function CanvasMediaViewer({
 
       <div className="min-h-0 flex-1 overflow-auto px-5 pb-5">
         {type === "video" ? (
-          <div className="flex size-full items-center justify-center">
+          <div className="relative flex size-full items-center justify-center">
             <video
               src={src}
               controls
               autoPlay
               playsInline
+              onError={onVideoError}
               className="max-h-full max-w-full rounded-xl"
             />
+            {videoFailed && <VideoPlaybackFallback onDownload={() => void download()} />}
           </div>
         ) : (
           <div

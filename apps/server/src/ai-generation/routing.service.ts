@@ -30,7 +30,10 @@ import {
   type ProviderModelCandidate,
 } from './model-catalog-routing';
 import { AiCanonicalCatalogService } from './canonical-catalog.service';
-import { applyProviderRuntimeLimit } from './provider-capacity';
+import {
+  applyProviderRuntimeLimit,
+  selectProviderCapacity,
+} from './provider-capacity';
 import type { ProviderAdapter } from './provider-adapter';
 import { ProviderRegistry } from './provider-registry.service';
 import type {
@@ -162,10 +165,15 @@ export class AiGenerationRoutingService {
       minNullableLimit(perSubjectRunning, perTypeRunning) ?? 1_000_000_000;
     const legacyPerUserQueued =
       perSubjectQueued ?? normalizeRequiredLimit(queuePolicy.perUserQueued);
+    const providerCapacity = selectProviderCapacity(
+      model.ops?.providerCapacity,
+      model.ops?.providerCapacityTiers,
+      stringInput(args.body.input?.resolution),
+    );
     const maxProviderRuntimeSeconds = applyProviderRuntimeLimit(
       queuePolicy?.maxProviderRuntimeSeconds ??
         (model.type === 'video' ? 45 * 60 : 10 * 60),
-      model.ops?.providerCapacity,
+      providerCapacity,
     );
     const requiredPlan = this.entitlements.requiredPlan(
       configuredRoute?.requiredPlan ??
@@ -258,7 +266,7 @@ export class AiGenerationRoutingService {
               Number(process.env.AI_ASYNC_PROVIDER_POLL_DELAY_MS ?? 5_000),
             ),
           },
-          providerCapacity: model.ops?.providerCapacity,
+          providerCapacity,
         },
         selectedAt: args.now,
       },

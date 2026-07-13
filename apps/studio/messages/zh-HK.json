@@ -261,6 +261,8 @@
     "generationFailed": "生成失敗",
     "download": "下載",
     "fullscreen": "全螢幕",
+    "previewUnsupported": "無法預覽",
+    "previewUnsupportedHint": "目前瀏覽器不支援預覽此影片，下載後即可查看",
     "zoomIn": "放大",
     "zoomOut": "縮小",
     "resetZoom": "重設縮放",

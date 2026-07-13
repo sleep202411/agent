@@ -25,11 +25,21 @@ import {
 } from '@nestjs/common';
 import type { Worker, Job as BullJob } from 'bullmq';
 import { createHash } from 'crypto';
+import { createWriteStream } from 'node:fs';
+import { unlink } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { Readable, Transform } from 'node:stream';
+import { pipeline } from 'node:stream/promises';
+import type { ReadableStream as WebReadableStream } from 'node:stream/web';
 import { AlertingService, type AlertSeverity } from '../common/alerting';
 import { newShortId } from '../common/id';
 import { EntitlementService } from '../entitlements';
 import { DocumentsService } from '../documents/documents.service';
-import { OutputStorageService } from '../infra/storage/storage.types';
+import {
+  OutputStorageService,
+  type OutputStorageResult,
+} from '../infra/storage/storage.types';
 import { MediaAssetProviderSyncService } from './providers/byteplus/assets/media-asset-provider-sync.service';
 import { AiGenerationBillingWalletService } from './billing-wallet.service';
 import { AiGenerationOutboxService } from './outbox.service';
@@ -95,6 +105,12 @@ const ASYNC_PROVIDER_POLL_DELAY_MS = Math.max(
   1_000,
   Number(process.env.AI_ASYNC_PROVIDER_POLL_DELAY_MS ?? 5_000),
 );
+// Provider output download guards. The timeout spans the whole transfer
+// (undici's default is header/idle only); the byte ceiling is a runaway
+// backstop far above the largest legitimate output (15s Seedance 4k HEVC
+// ≈ 300MB class).
+const PROVIDER_FETCH_TIMEOUT_MS = 10 * 60_000;
+const MAX_PROVIDER_OUTPUT_BYTES = 2 * 1024 * 1024 * 1024;
 const ENTITLEMENT_CONCURRENCY_RETRY_DELAY_MS = Math.max(
   1_000,
   Number(process.env.AI_ENTITLEMENT_CONCURRENCY_RETRY_DELAY_MS ?? 3_000),
@@ -1182,7 +1198,13 @@ export class AiGenerationWorkerService
     gate: Extract<ProviderCapacityGate, { ok: false }>,
   ): Promise<void> {
     const now = new Date().toISOString();
-    const delayMs = Math.max(1_000, gate.retryAfterMs);
+    // Concurrency leases span the whole async render, so the gate's
+    // retryAfterMs is the WORST-case lease expiry (up to the runtime budget),
+    // not the expected slot release — re-check on a short cadence instead of
+    // sleeping it out (a 1-slot lane like Seedance 4k frees after minutes).
+    const delayCapMs =
+      gate.reason === 'provider_concurrency' ? 30_000 : Number.MAX_SAFE_INTEGER;
+    const delayMs = Math.max(1_000, Math.min(gate.retryAfterMs, delayCapMs));
     const retryAt = new Date(Date.now() + delayMs).toISOString();
     await this.recordTraceSafe(job, {
       eventType: 'provider_capacity_wait',
@@ -1532,26 +1554,52 @@ export class AiGenerationWorkerService
 
     const out: AiJobOutput[] = [];
     for (const raw of raws) {
-      let body = raw.buffer;
-      if (!body && raw.providerUrl) {
-        body = await this.fetchProviderBytes(raw.providerUrl);
-      }
-      if (!body) {
-        throw new Error(`no bytes available for output index ${raw.index}`);
-      }
-      const checksumSha256 = createHash('sha256').update(body).digest('hex');
-      const contentHash = checksumSha256.slice(0, 12);
-      // Storage key prefix is the historical container name; safe to
-      // keep even as more providers land (`foundry-outputs` is just
-      // the container, not a provider-specific path).
-      const key = `${job.provider}/${yyyy}/${mm}/${dd}/${job.userId}/${job.id}/${raw.index}-${contentHash}.${raw.ext}`;
-      const result = await this.storage.upload({
-        body,
-        key,
-        contentType: raw.mimeType,
-        filename: `${job.id}-${raw.index}.${raw.ext}`,
-      });
       const outputType = raw.type ?? job.type;
+      let checksumSha256: string;
+      let result: OutputStorageResult;
+      if (!raw.buffer && raw.providerUrl && outputType === 'video') {
+        // Video outputs never transit worker memory whole — a 15s Seedance
+        // 4k HEVC clip is a ~300MB-class file and the worker shares its
+        // process (and the pod's 1Gi cgroup) with the entire API. Stream
+        // provider → disk spool (hashing en route, since the object key
+        // embeds the content hash) → staged/multipart file upload.
+        const spoolPath = join(
+          tmpdir(),
+          `ai-output-${job.id}-${raw.index}.spool`,
+        );
+        try {
+          const spooled = await this.spoolProviderUrlToFile(
+            raw.providerUrl,
+            spoolPath,
+          );
+          checksumSha256 = spooled.sha256;
+          result = await this.storage.uploadFromFile({
+            filePath: spoolPath,
+            sizeBytes: spooled.bytes,
+            key: this.outputKey(job, raw, checksumSha256, { yyyy, mm, dd }),
+            contentType: raw.mimeType,
+            filename: `${job.id}-${raw.index}.${raw.ext}`,
+          });
+        } finally {
+          await unlink(spoolPath).catch(() => {});
+        }
+      } else {
+        let body = raw.buffer;
+        if (!body && raw.providerUrl) {
+          body = await this.fetchProviderBytes(raw.providerUrl);
+        }
+        if (!body) {
+          throw new Error(`no bytes available for output index ${raw.index}`);
+        }
+        checksumSha256 = createHash('sha256').update(body).digest('hex');
+        result = await this.storage.upload({
+          body,
+          key: this.outputKey(job, raw, checksumSha256, { yyyy, mm, dd }),
+          contentType: raw.mimeType,
+          filename: `${job.id}-${raw.index}.${raw.ext}`,
+        });
+      }
+      const contentHash = checksumSha256.slice(0, 12);
       const assetId = await this.store.createAiOutputAsset(job, {
         type: outputType,
         url: result.url,
@@ -1615,13 +1663,70 @@ export class AiGenerationWorkerService
     }
   }
 
+  /**
+   * Storage key prefix is the historical container name; safe to keep even
+   * as more providers land (`foundry-outputs` is just the container, not a
+   * provider-specific path).
+   */
+  private outputKey(
+    job: AiJob,
+    raw: RawProviderOutput,
+    checksumSha256: string,
+    date: { yyyy: number; mm: string; dd: string },
+  ): string {
+    const contentHash = checksumSha256.slice(0, 12);
+    return `${job.provider}/${date.yyyy}/${date.mm}/${date.dd}/${job.userId}/${job.id}/${raw.index}-${contentHash}.${raw.ext}`;
+  }
+
   private async fetchProviderBytes(url: string): Promise<Buffer> {
-    const res = await fetch(url);
+    const res = await fetch(url, {
+      signal: AbortSignal.timeout(PROVIDER_FETCH_TIMEOUT_MS),
+    });
     if (!res.ok) {
       throw new Error(`provider URL fetch failed: HTTP ${res.status}`);
     }
     const ab = await res.arrayBuffer();
     return Buffer.from(ab);
+  }
+
+  /**
+   * Streams a provider output straight to disk, computing sha256 and byte
+   * count en route, so worker memory stays O(chunk) no matter how large the
+   * file is. Guards: whole-transfer abort timeout + hard byte ceiling.
+   */
+  private async spoolProviderUrlToFile(
+    url: string,
+    filePath: string,
+  ): Promise<{ sha256: string; bytes: number }> {
+    const res = await fetch(url, {
+      signal: AbortSignal.timeout(PROVIDER_FETCH_TIMEOUT_MS),
+    });
+    if (!res.ok || !res.body) {
+      throw new Error(`provider URL fetch failed: HTTP ${res.status}`);
+    }
+    const hash = createHash('sha256');
+    let bytes = 0;
+    const guardAndHash = new Transform({
+      transform(chunk: Buffer, _encoding, callback) {
+        bytes += chunk.length;
+        if (bytes > MAX_PROVIDER_OUTPUT_BYTES) {
+          callback(
+            new Error(
+              `provider output exceeds ${MAX_PROVIDER_OUTPUT_BYTES} bytes`,
+            ),
+          );
+          return;
+        }
+        hash.update(chunk);
+        callback(null, chunk);
+      },
+    });
+    await pipeline(
+      Readable.fromWeb(res.body as WebReadableStream),
+      guardAndHash,
+      createWriteStream(filePath),
+    );
+    return { sha256: hash.digest('hex'), bytes };
   }
 
   private emit(job: AiJob) {

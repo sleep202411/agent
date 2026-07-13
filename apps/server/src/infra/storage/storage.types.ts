@@ -22,6 +22,23 @@ export interface OutputStorageUpload {
   filename?: string;
 }
 
+/**
+ * Input to {@link OutputStorageService.uploadFromFile} — the large-output
+ * path. The bytes come from a disk spool file instead of a Buffer so a
+ * 300MB-class video output (Seedance 4k HEVC) never has to fit in process
+ * memory; impls upload with their staged/multipart file APIs.
+ */
+export interface OutputStorageUploadFromFile {
+  /** Absolute path of the spooled file. Caller owns cleanup. */
+  filePath: string;
+  /** Exact size of the spooled file, echoed into the result. */
+  sizeBytes: number;
+  /** Same deterministic key contract as {@link OutputStorageUpload.key}. */
+  key: string;
+  contentType: string;
+  filename?: string;
+}
+
 export interface OutputStorageResult {
   /** Storage-side URL returned by the provider SDK. Never expose this to clients. */
   url: string;
@@ -198,6 +215,23 @@ export interface RestrictObjectResult {
 
 export abstract class OutputStorageService {
   abstract upload(input: OutputStorageUpload): Promise<OutputStorageResult>;
+  /**
+   * Upload from a disk spool file. Azure/OSS override with their staged
+   * block / multipart file APIs so the bytes stream from disk; this default
+   * exists only so other impls (and test doubles) keep working — it buffers
+   * the whole file and MUST NOT be relied on for large outputs.
+   */
+  async uploadFromFile(
+    input: OutputStorageUploadFromFile,
+  ): Promise<OutputStorageResult> {
+    const { readFile } = await import('node:fs/promises');
+    return this.upload({
+      body: await readFile(input.filePath),
+      key: input.key,
+      contentType: input.contentType,
+      filename: input.filename,
+    });
+  }
   /** Cheap probe for /ready endpoint. Returns false if creds missing or container unreachable. */
   abstract isHealthy(): Promise<boolean>;
   /**

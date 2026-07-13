@@ -35,6 +35,7 @@ import {
   type HeadObjectResult,
   type OutputStorageResult,
   type OutputStorageUpload,
+  type OutputStorageUploadFromFile,
   type RestrictObjectResult,
   type StorageObjectRef,
 } from './storage.types';
@@ -113,6 +114,37 @@ export class AzureBlobStorageService extends OutputStorageService {
       url: this.publicUrl(input.key, block.url),
       storagePath: input.key,
       bytes: input.body.byteLength,
+      provider: 'azure_blob',
+      bucket: this.containerName,
+      region: this.region,
+    };
+  }
+
+  override async uploadFromFile(
+    input: OutputStorageUploadFromFile,
+  ): Promise<OutputStorageResult> {
+    if (!this.client) {
+      throw new Error('AZURE_BLOB_CONNECTION_STRING not configured');
+    }
+    const block = this.client.getBlockBlobClient(input.key);
+    // Staged block upload straight from disk — the SDK streams the file in
+    // chunks, so a 300MB-class video output never sits in process memory.
+    await block.uploadFile(input.filePath, {
+      blobHTTPHeaders: {
+        blobContentType: input.contentType,
+        ...(input.filename
+          ? {
+              blobContentDisposition: `inline; filename="${input.filename}"`,
+            }
+          : {}),
+        // Same immutable-bytes caching rationale as upload().
+        blobCacheControl: 'public, max-age=31536000, immutable',
+      },
+    });
+    return {
+      url: this.publicUrl(input.key, block.url),
+      storagePath: input.key,
+      bytes: input.sizeBytes,
       provider: 'azure_blob',
       bucket: this.containerName,
       region: this.region,

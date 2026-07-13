@@ -5,6 +5,7 @@ import { useTranslations } from "next-intl";
 import type { Node, NodeProps } from "@xyflow/react";
 import { IconDownload, IconMaximize, IconMusic, IconPencil, IconUpload } from "@tabler/icons-react";
 import { cn } from "@/lib/utils";
+import { useVideoPlaybackError, VideoPlaybackFallback } from "@/components/video-playback-fallback";
 import { useCanvasGraphContext } from "@/lib/collab/canvas-graph-context";
 import { CanvasNodeToolbar, ToolbarButton } from "./node-toolbar";
 import { PortPlus } from "./ports";
@@ -35,6 +36,7 @@ function MediaAssetNodeComponent({
   const t = useTranslations("canvasNodes");
   const [viewerOpen, setViewerOpen] = useState(false);
   const [renaming, setRenaming] = useState(false);
+  const { failed: videoFailed, onError: onVideoError } = useVideoPlaybackError(data.src);
   const { patchNodeData, renameAssetsByMediaAssetId } = useCanvasGraphContext();
   const title = data.label ?? t(`media.${kind}.title`);
 
@@ -88,17 +90,21 @@ function MediaAssetNodeComponent({
         </CanvasNodeToolbar>
 
         {kind === "video" ? (
-          <video
-            src={data.src}
-            muted
-            playsInline
-            draggable={false}
-            onDoubleClick={(event) => {
-              event.stopPropagation();
-              setViewerOpen(true);
-            }}
-            className="block h-[136px] w-[240px] rounded-xl object-cover select-none"
-          />
+          <>
+            <video
+              src={data.src}
+              muted
+              playsInline
+              draggable={false}
+              onError={onVideoError}
+              onDoubleClick={(event) => {
+                event.stopPropagation();
+                setViewerOpen(true);
+              }}
+              className="block h-[136px] w-[240px] rounded-xl object-cover select-none"
+            />
+            {videoFailed && <VideoPlaybackFallback compact className="rounded-xl" />}
+          </>
         ) : (
           <div className="flex h-[112px] w-[240px] flex-col justify-center gap-3 rounded-xl bg-card px-4">
             <div className="flex min-w-0 items-center gap-2 text-white/70">

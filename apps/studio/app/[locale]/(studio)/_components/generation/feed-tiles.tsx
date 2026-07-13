@@ -10,6 +10,7 @@ import {
   IconRefresh,
 } from "@tabler/icons-react";
 import { cn } from "@/lib/utils";
+import { useVideoPlaybackError, VideoPlaybackFallback } from "@/components/video-playback-fallback";
 import type { FizzAiJobOutput } from "@/app/[locale]/canvas/_lib/generation-api";
 import type { FeedJob } from "./use-generation-feed";
 
@@ -253,6 +254,7 @@ export function VideoResultTile({
   const t = useTranslations("generation");
   const videoRef = useRef<HTMLVideoElement>(null);
   const src = output.url ?? output.accessUrl;
+  const { failed, onError } = useVideoPlaybackError(src);
   return (
     <div
       className="group relative aspect-video cursor-pointer overflow-hidden rounded-xl bg-card"
@@ -273,8 +275,10 @@ export function VideoResultTile({
         loop
         playsInline
         preload="metadata"
+        onError={onError}
         className="size-full object-cover"
       />
+      {failed && <VideoPlaybackFallback compact />}
       <HoverCaption job={job} index={0} total={1} />
       <span className="absolute top-2 right-2 flex gap-1.5 opacity-0 transition-opacity duration-200 group-hover:opacity-100">
         <span

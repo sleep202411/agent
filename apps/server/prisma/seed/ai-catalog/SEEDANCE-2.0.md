@@ -22,11 +22,11 @@ poll `GET /tasks/{id}`; task records kept 7 days, output URL valid 24h.
 
 ## Model ids (bindings)
 
-| Canonical           | ModelArk model id                   | Resolutions                       |
-| ------------------- | ----------------------------------- | --------------------------------- |
-| `seedance-2-0`      | `ep-20260708234913-w8kjv`           | 480p/720p/1080p/4k                |
-| `seedance-2-0-fast` | `dreamina-seedance-2-0-fast-260128` | 480p/720p                         |
-| (unbound)           | `dreamina-seedance-2-0-mini-260615` | 480p/720p — candidate budget tier |
+| Canonical           | ModelArk model id                   | Resolutions        |
+| ------------------- | ----------------------------------- | ------------------ |
+| `seedance-2-0`      | `ep-20260708234913-w8kjv`           | 480p/720p/1080p/4k |
+| `seedance-2-0-fast` | `dreamina-seedance-2-0-fast-260128` | 480p/720p          |
+| `seedance-2-0-mini` | `dreamina-seedance-2-0-mini-260615` | 480p/720p          |
 
 `seedance-2-0` is a custom Standard endpoint (`seedance-2-0-standard-no-prefilter`)
 backed by `dreamina-seedance-2-0-260128` with ModelArk Content Pre-filter disabled;
@@ -40,7 +40,7 @@ CN 方舟 twins exist as `doubao-seedance-2-0*` (for a future .cn cell).
 | Param          | Type    | Allowed values                                                                         | Default      | ModelArk field   |
 | -------------- | ------- | -------------------------------------------------------------------------------------- | ------------ | ---------------- |
 | Prompt         | string  | — (**required**, text content part)                                                    | —            | `content[].text` |
-| Resolution     | enum    | `480p` / `720p` (1080p/4k exist upstream, unpriced)                                    | `720p`       | `resolution`     |
+| Resolution     | enum    | `480p` / `720p` / `1080p` / `4k` (flagship; fast/mini cap at `720p`)                   | `720p`       | `resolution`     |
 | Duration       | enum    | `auto` (→ **-1**), `4`–`15` integer seconds                                            | `5`          | `duration`       |
 | Aspect ratio   | enum    | `auto` (→ omit; upstream `adaptive`), `21:9`…`9:16`                                    | `auto`       | `ratio`          |
 | Generate audio | boolean | native synced audio; **upstream default true** — an explicit opt-out must send `false` | `true`       | `generate_audio` |
@@ -70,20 +70,44 @@ position in `content[]` — never by asset id.
 
 ## Pricing
 
-User-facing points unchanged (`per_second_matrix`, points ≡ US cents):
+`per_second_matrix`, points ≡ US cents (flagship v5 2026-07-12, fast v3,
+mini v1):
 
-| Variant             | 480p | 720p |
-| ------------------- | ---- | ---- |
-| `seedance-2-0`      | 37/s | 61/s |
-| `seedance-2-0-fast` | 30/s | 49/s |
+| Variant             | 480p | 720p | 1080p | 4k    |
+| ------------------- | ---- | ---- | ----- | ----- |
+| `seedance-2-0`      | 12/s | 25/s | 45/s  | 180/s |
+| `seedance-2-0-fast` | 10/s | 20/s | —     | —     |
+| `seedance-2-0-mini` | 8/s  | 12/s | —     | —     |
 
-Provider-cost basis (v2 2026-07-02, official token table): 720p ≈ 21,600
-tokens/s; flagship $0.0070/K → **$0.151/s**, fast $0.0056/K → **$0.121/s**
-(with-video inputs bill 0.6×; resource packs ~40% cheaper — $4.30/1M flagship).
-Margin at 720p is now ≈4× (was 2× on fal) — repricing is a product decision,
-deliberately not made here. `auto` still quotes at the 15s ceiling
-(`autoQuoteSeconds`); default duration stays `5`. **1080p/4k stay ABSENT**
-until priced.
+Provider-cost basis (official token table, tokens/s = W×H×24/1024, flagship
+$0.0070/K exclude-video): 720p 21,600 t/s → **$0.151/s**; 1080p 48,600 t/s →
+**$0.34/s**; 4k 194,400 t/s → **$1.36/s** list, ~$0.82/s on resource packs
+(with-video inputs bill 0.6×). Points follow the pixel ladder with a designed
+cap-down at the top: 1080p 45 (raw ×1.65 would be ~56), 4k 180 = exactly
+4× the 1080p point (~1.3× list margin, ~2.2× on packs). `auto` quotes at the
+15s ceiling (`autoQuoteSeconds`) — 4k `auto` holds 2,700 points; default
+duration stays `5`.
+
+## 4k operational caveats (flagship only)
+
+- Upstream lane limits: **15 RPM, concurrency 1** (non-4k: 600 RPM / 10),
+  and the ModelArk account is SHARED with the .cn cell. Handled by a
+  per-resolution capacity tier (`catalogSnapshot.capacityTiers` on the
+  flagship endpoint → `selectProviderCapacity` stamps `tierKey` into the
+  routing snapshot → the capacity runtime buckets the 4k lane separately at
+  concurrency 1 / 15 RPM). Contending 4k jobs queue politely
+  (`deferForProviderCapacity`, 30s re-check, no retry burn, no refund-fail);
+  non-4k resolutions keep an ungated lane.
+- Output is **10-bit H.265/HEVC** (native dims 16:9 3840×2160 … 21:9
+  4398×1886): Safari plays it; Chrome needs hardware HEVC decode; Firefox
+  generally cannot. Studio surfaces show a download-to-view fallback on
+  decode failure (`video-playback-fallback.tsx`); a server-side H.264
+  preview rendition is the fast-follow.
+- A 15s 4k clip is a ~300MB-class artifact. Video outputs stream provider →
+  disk spool → staged/multipart upload (`spoolProviderUrlToFile` +
+  `uploadFromFile`) with a 10-min transfer timeout and 2GB ceiling — never
+  buffered whole in worker memory. Provider cost accounting is
+  resolution-aware (pixel-ratio multiplier, `byteplus-provider.adapter.ts`).
 
 ## Implementation status (2026-07-02)
 

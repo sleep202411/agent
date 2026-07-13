@@ -339,7 +339,11 @@ export class ProviderCapacityRuntimeService {
       job.routingSnapshot?.selectedDeployment ??
       job.deployment ??
       'unknown';
-    const endpointKey = `${provider}:${endpointId}`;
+    // Tiered capacity (e.g. the Seedance 4k lane) buckets separately from
+    // the endpoint-wide lane so neither throttles the other.
+    const endpointKey = capacity.tierKey
+      ? `${provider}:${endpointId}:${capacity.tierKey}`
+      : `${provider}:${endpointId}`;
     const hash = createHash('sha256')
       .update(endpointKey)
       .digest('hex')
