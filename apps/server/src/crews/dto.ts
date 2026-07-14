@@ -71,6 +71,17 @@ export const UpdateCrewListingSchema = z.object({
 });
 export type UpdateCrewListingInput = z.infer<typeof UpdateCrewListingSchema>;
 
+export const TransferCrewOwnerSchema = z.object({
+  /// External auth user id (raw Java user id) of the incoming owner.
+  toUserId: z.string().trim().min(1).max(64),
+  /// Whether to drop the outgoing owner from the crew. Default (false)
+  /// keeps them as a normal member.
+  removeOldOwner: z.boolean().optional(),
+  /// Optimistic concurrency token from the row read prior to action.
+  expectedVersion: z.number().int().min(0).optional(),
+});
+export type TransferCrewOwnerInput = z.infer<typeof TransferCrewOwnerSchema>;
+
 // ─── Position CRUD ──────────────────────────────────────────
 
 /// Salary block validated as a unit so we can express "max >= min"
