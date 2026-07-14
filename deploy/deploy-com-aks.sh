@@ -158,7 +158,13 @@ build_one() {
     # server / agent: 无 build-arg（运行时读 env）
   esac
   echo "  · 构建 $image:$SHORT …"
-  az acr build --registry "$ACR" \
+  # Git Bash MSYS converts `/studio` → `E:/Git/studio` when passing --build-arg
+  # to az.exe, baking broken NEXT_PUBLIC_API_*_PREFIX into the client bundle.
+  local acr_env=()
+  if is_windows_acr_cli; then
+    acr_env=(env MSYS_NO_PATHCONV=1 MSYS2_ARG_CONV_EXCL='*')
+  fi
+  "${acr_env[@]}" az acr build --registry "$ACR" \
     --image "${image}:${SHA}" \
     --file "$dockerfile" \
     --platform linux/amd64 \
