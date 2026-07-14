@@ -41,6 +41,10 @@ import { jinlingAudio } from "../content/media-release";
 import { p00DataAsset, p00ImageAsset, p00SceneNode, p00VideoAsset } from "../content/p00-release";
 import { LedgerCharacterCreator, type CreationStep } from "./LedgerCharacterCreator";
 import { JinlingStoryPlayer } from "./JinlingStoryPlayer";
+import { JinlingStoryPlayerV2 } from "./JinlingStoryPlayerV2";
+
+/** Which storyline to play once the character is sealed. */
+export type JinlingStoryVariant = "v1" | "v2";
 
 gsap.registerPlugin(useGSAP);
 
@@ -160,7 +164,9 @@ function useConfirmOverlayLayout(): ConfirmOverlayLayout | null {
   }, [viewport]);
 }
 
-export function JinlingGameEntry() {
+export function JinlingGameEntry({
+  storyVariant = "v1",
+}: { storyVariant?: JinlingStoryVariant } = {}) {
   const locale = useLocale() as Locale;
   const t = useTranslations("jinlingRumeng");
   const rootRef = useRef<HTMLDivElement>(null);
@@ -793,11 +799,19 @@ export function JinlingGameEntry() {
       ) : null}
 
       {phase === "story" && activeSession ? (
-        <JinlingStoryPlayer
-          sessionId={activeSession.sessionId}
-          playerName={activeSession.profile.displayName}
-          onExit={returnToTitle}
-        />
+        storyVariant === "v2" ? (
+          <JinlingStoryPlayerV2
+            sessionId={activeSession.sessionId}
+            playerName={activeSession.profile.displayName}
+            onExit={returnToTitle}
+          />
+        ) : (
+          <JinlingStoryPlayer
+            sessionId={activeSession.sessionId}
+            playerName={activeSession.profile.displayName}
+            onExit={returnToTitle}
+          />
+        )
       ) : null}
 
       {phase === "error" ? (

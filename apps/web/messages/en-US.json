@@ -8290,6 +8290,90 @@
         }
       }
     },
+    "storyV2": {
+      "exit": "Step away",
+      "loading": "Loading the reel…",
+      "choose": "In this moment, you—",
+      "reactionPlaying": "The choice is made. Its consequence is unfolding…",
+      "reactionFailed": "The consequence clip failed to load. Your choice hasn't been submitted — you can safely retry.",
+      "reactionRetry": "Retry consequence clip",
+      "sound": {
+        "enable": "Turn on sound",
+        "disable": "Turn off sound",
+        "resume": "Play with sound"
+      },
+      "cut": {
+        "progress": "Cut · {current}/{total}",
+        "chapters": {
+          "c1": {
+            "eyebrow": "Choice I · The Rong Gate",
+            "title": "How will you prove where you came from?",
+            "body": "The gatekeeper has taken the letter, but still waits for a token that counts. Whatever you offer will reach the inner court before you do.",
+            "choices": {
+              "brocade": "Show the old Jiangning brocade fragment",
+              "oldSeal": "Show an old friend's private seal, and let him check the imprint",
+              "medicinePouch": "Show the medicine pouch and its worn prescription slip"
+            }
+          },
+          "c2": {
+            "eyebrow": "Choice II · Lantern in the Gallery",
+            "title": "The wind reaches her first",
+            "body": "A draft gusts through; the wind-lantern tips toward the rail. Daiyu's sleeve is snagged on its hook, and the letter is sliding from your own. You can only save one in time.",
+            "choices": {
+              "protectDaiyu": "Free Daiyu's snagged sleeve without touching her",
+              "steadyLantern": "Steady the heavy lantern first and bring the flame down",
+              "protectLetter": "Shield the letter and its faint crimson seal"
+            }
+          },
+          "c3": {
+            "eyebrow": "Choice III · The Falling Jade",
+            "title": "The whole hall will remember this instant",
+            "body": "Baoyu asks whether Daiyu has a jade — then tears his own free, cord and all, and hurls it at the floor. There is only time for one clear act.",
+            "choices": {
+              "catchJade": "Reach down and catch the falling jade",
+              "shieldDaiyu": "Step between Daiyu and the falling jade",
+              "callHousehold": "Call out for the household to take over the chaos",
+              "observePattern": "Stay your hand, and watch the crimson trace on jade and letter"
+            }
+          },
+          "c4": {
+            "eyebrow": "Choice IV · Before Daybreak",
+            "title": "Into whose hands does this unwritten fate go?",
+            "body": "Daiyu comes alone in the night. The letter's crimson trace rises in the lamplight yet never forms a single word. Where it lands will decide what your first night in the Rong house means.",
+            "choices": {
+              "spring": "Promise Daiyu the crabapple gallery, and live out this spring first",
+              "name": "Ask the house to enter your name on its roll, and stay in earnest",
+              "memory": "Tell her the truth of the wordless ledger and the waking",
+              "unwritten": "Settle nothing, and leave the fate ahead a blank page"
+            }
+          }
+        }
+      },
+      "ending": {
+        "eyebrow": "End of Reel One",
+        "path": "This fate-page recorded {count} choices. Progress is saved on this device.",
+        "restart": "Rewrite this reel",
+        "exit": "Back to the ledger"
+      },
+      "endings": {
+        "e01": {
+          "title": "A Shared Spring",
+          "body": "{name} meets Daiyu beneath the crabapple gallery. Two strangers to this world take this one spring and live it fully first."
+        },
+        "e02": {
+          "title": "A Name in the House",
+          "body": "The Rong house enters {name} on its roll. The place is real; how to carry the name is a question the days ahead must answer."
+        },
+        "e03": {
+          "title": "A Shared Memory",
+          "body": "{name} tells the truth of the wordless ledger. Someone chooses to keep this impossible memory with you — the fate is no longer yours to bear alone."
+        },
+        "e04": {
+          "title": "Unwritten",
+          "body": "{name} settles nothing. The letter's last page stays blank — the ledger can record a choice, but it never finishes the road ahead for anyone."
+        }
+      }
+    },
     "error": {
       "localStateTitle": "The local register could not be opened",
       "localStateBody": "The saved page may be damaged or belong to an incompatible story release. Retry first, or discard only this device’s Dream of Jinling data.",

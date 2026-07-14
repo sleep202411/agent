@@ -266,11 +266,33 @@ export async function runSeedAudioProduction(input: {
   }
 }
 
+const SEED_AUDIO_IDENTITY: Record<string, string> = {
+  "VOICE-DRIVER":
+    "an older Mandarin Chinese male carriage driver; plain, steady, weathered and natural; never a theatrical narrator",
+  "CHAR-DAIYU":
+    "a young Mandarin Chinese woman, clear and light with real breath and crisp diction; short, restrained phrasing; firm when she guards a boundary; never sweet idol acting",
+  "CHAR-JIAMU":
+    "an elderly Mandarin Chinese matriarch; warm, slow and authoritative; a single quiet word can still the whole room",
+  "CHAR-XIFENG":
+    "a sharp, bright Mandarin Chinese woman; quick, smiling and precise; lowers her volume exactly when she turns dangerous; never a pure-villain tone",
+  "CHAR-WANG":
+    "a composed middle-aged Mandarin Chinese woman; low emotion, clear information; her pressure comes from order and propriety, not malice",
+  "CHAR-BAOYU":
+    "a bright, natural young Mandarin Chinese man who speaks as he thinks with visible emotional swings; stays tender-hearted even when he flares up",
+  "VOICE-PLAYER-A":
+    "a young adult Mandarin Chinese voice, mid-range, clear diction, restrained and courteous but not timid; never modern slang, idol-drama breathiness or broadcast tone",
+  "CHAR-GATE":
+    "a middle-aged Mandarin Chinese male gatekeeper of a noble household; polite but firm, neither obsequious nor rude, plain and steady",
+  "CHAR-MAID":
+    "a Mandarin Chinese female servant; quiet, careful and courteous, unhurried, no drama",
+  "VOICE-NARRATOR":
+    "a mature Mandarin Chinese female narrator, close-miked and intimate yet disembodied, restrained and slightly archaic in cadence, unhurried; never sentimental, never broadcast-like",
+};
+
 function composeVoicePrompt(task: SeedAudioTask, usesReference: boolean): string {
   const identity =
-    task.speakerId === "VOICE-DRIVER"
-      ? "an older Mandarin Chinese male carriage driver; plain, steady, weathered and natural; never a theatrical narrator"
-      : "a Mandarin Chinese female voice whose age is difficult to identify; calm, distant, restrained and natural; never horror, whisper-ASMR or sweet idol acting";
+    SEED_AUDIO_IDENTITY[task.speakerId] ??
+    "a Mandarin Chinese female voice whose age is difficult to identify; calm, distant, restrained and natural; never horror, whisper-ASMR or sweet idol acting";
   const referenceInstruction = usesReference
     ? "Use @Audio1 only as the exact speaker identity and vocal-timbre reference. "
     : "";
