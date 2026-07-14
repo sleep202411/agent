@@ -365,14 +365,21 @@ function OverviewPanel({ ip, t, onEdit }: { ip: IpCreatorIp; t: Translate; onEdi
   const taxonomy = ip.genres;
   const updateAssets = useUpdateIpCommerceIpAssets();
   const uploadMedia = useUploadIpCommerceMedia();
+  // Cover + trailer share one mutation, so `isPending` can't tell which
+  // slot is in flight — track the active slot so only it shows loading.
+  const [uploadingSlot, setUploadingSlot] = useState<"cover" | "trailer" | null>(null);
+  const [uploadProgress, setUploadProgress] = useState(0);
 
   const handleCoverUpload = async (file: File) => {
+    setUploadingSlot("cover");
+    setUploadProgress(0);
     try {
       const { asset } = await uploadMedia.mutateAsync({
         ipId: ip.id,
         file,
         kind: "image",
         purpose: "cover",
+        onProgress: setUploadProgress,
       });
       await updateAssets.mutateAsync({
         ipId: ip.id,
@@ -381,16 +388,21 @@ function OverviewPanel({ ip, t, onEdit }: { ip: IpCreatorIp; t: Translate; onEdi
       toast.success(t("assetsPanel.toasts.uploadSaved"));
     } catch (err) {
       toast.error(errorMessage(err) || t("assetsPanel.toasts.uploadFailed"));
+    } finally {
+      setUploadingSlot(null);
     }
   };
 
   const handleTrailerUpload = async (file: File) => {
+    setUploadingSlot("trailer");
+    setUploadProgress(0);
     try {
       const { asset } = await uploadMedia.mutateAsync({
         ipId: ip.id,
         file,
         kind: "video",
         purpose: "trailer",
+        onProgress: setUploadProgress,
       });
       await updateAssets.mutateAsync({
         ipId: ip.id,
@@ -399,6 +411,8 @@ function OverviewPanel({ ip, t, onEdit }: { ip: IpCreatorIp; t: Translate; onEdi
       toast.success(t("assetsPanel.toasts.uploadSaved"));
     } catch (err) {
       toast.error(errorMessage(err) || t("assetsPanel.toasts.uploadFailed"));
+    } finally {
+      setUploadingSlot(null);
     }
   };
 
@@ -463,7 +477,8 @@ function OverviewPanel({ ip, t, onEdit }: { ip: IpCreatorIp; t: Translate; onEdi
             uploadingLabel={t("assetsPanel.form.uploading")}
             uploadAccept="image/*"
             uploadDisabled={uploadMedia.isPending || updateAssets.isPending}
-            isUploading={uploadMedia.isPending}
+            isUploading={uploadingSlot === "cover"}
+            progress={uploadProgress}
             onUpload={(file) => void handleCoverUpload(file)}
           />
           <AssetUploadSlot
@@ -476,7 +491,8 @@ function OverviewPanel({ ip, t, onEdit }: { ip: IpCreatorIp; t: Translate; onEdi
             uploadingLabel={t("assetsPanel.form.uploading")}
             uploadAccept="video/*"
             uploadDisabled={uploadMedia.isPending || updateAssets.isPending}
-            isUploading={uploadMedia.isPending}
+            isUploading={uploadingSlot === "trailer"}
+            progress={uploadProgress}
             onUpload={(file) => void handleTrailerUpload(file)}
           />
         </div>
@@ -3028,6 +3044,7 @@ function AssetUploadSlot({
   uploadAccept,
   uploadDisabled,
   isUploading,
+  progress,
   onUpload,
 }: {
   icon: IconComponent;
@@ -3040,6 +3057,7 @@ function AssetUploadSlot({
   uploadAccept: string;
   uploadDisabled: boolean;
   isUploading: boolean;
+  progress: number;
   onUpload: (file: File) => void;
 }) {
   const assetUrl = getAssetUrl(asset);
@@ -3097,18 +3115,35 @@ function AssetUploadSlot({
             : "cursor-pointer hover:border-primary/60 hover:bg-primary/5",
         ].join(" ")}
       >
-        {assetUrl ? <AssetPreview asset={asset} assetUrl={assetUrl} icon={Icon} /> : null}
-        {!assetUrl ? (
+        {isUploading ? (
           <span className="flex size-12 items-center justify-center rounded-full bg-muted text-muted-foreground">
-            <IconUpload className="size-5" />
+            <IconLoader2 className="size-5 animate-spin" />
           </span>
-        ) : null}
+        ) : (
+          <>
+            {assetUrl ? <AssetPreview asset={asset} assetUrl={assetUrl} icon={Icon} /> : null}
+            {!assetUrl ? (
+              <span className="flex size-12 items-center justify-center rounded-full bg-muted text-muted-foreground">
+                <IconUpload className="size-5" />
+              </span>
+            ) : null}
+          </>
+        )}
         <p className="mt-3 text-sm font-semibold text-foreground">
-          {isUploading ? uploadingLabel : uploadLabel}
+          {isUploading ? `${uploadingLabel}${progress > 0 ? ` ${progress}%` : ""}` : uploadLabel}
         </p>
-        <p className="mt-1 max-w-lg text-xs leading-5 text-muted-foreground">
-          {t("assetsPanel.form.uploadHint")}
-        </p>
+        {isUploading ? (
+          <div className="mt-2 h-1.5 w-full max-w-xs overflow-hidden rounded-full bg-muted">
+            <div
+              className="h-full rounded-full bg-primary transition-all duration-200"
+              style={{ width: `${Math.min(100, Math.max(0, progress))}%` }}
+            />
+          </div>
+        ) : (
+          <p className="mt-1 max-w-lg text-xs leading-5 text-muted-foreground">
+            {t("assetsPanel.form.uploadHint")}
+          </p>
+        )}
       </div>
     </div>
   );
