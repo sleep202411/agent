@@ -164,7 +164,7 @@ build_one() {
   if is_windows_acr_cli; then
     acr_env=(env MSYS_NO_PATHCONV=1 MSYS2_ARG_CONV_EXCL='*')
   fi
-  "${acr_env[@]}" az acr build --registry "$ACR" \
+  ${acr_env[@]+"${acr_env[@]}"} az acr build --registry "$ACR" \
     --image "${image}:${SHA}" \
     --file "$dockerfile" \
     --platform linux/amd64 \
