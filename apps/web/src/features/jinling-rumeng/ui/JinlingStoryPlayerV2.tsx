@@ -5,6 +5,7 @@ import NextImage from "next/image";
 import {
   IconArrowLeft,
   IconChevronRight,
+  IconDeviceMobileRotated,
   IconPlayerPlayFilled,
   IconRefresh,
   IconVolume,
@@ -97,6 +98,7 @@ export function JinlingStoryPlayerV2({ sessionId, playerName, onExit }: JinlingS
   const [progress, setProgress] = useState<JinlingV2StoryProgress>(createJinlingV2StoryProgress);
   const [ready, setReady] = useState(false);
   const [mediaLoading, setMediaLoading] = useState(true);
+  const [needsRotate, setNeedsRotate] = useState(false);
   const [clipIndex, setClipIndex] = useState(0);
   const [choiceReady, setChoiceReady] = useState(false);
   const [pendingChoice, setPendingChoice] = useState<JinlingV2Choice | null>(null);
@@ -135,6 +137,46 @@ export function JinlingStoryPlayerV2({ sessionId, playerName, onExit }: JinlingS
     }, 0);
     return () => window.clearTimeout(timer);
   }, [storageKey]);
+
+  // A 16:9 cinematic cut needs landscape. On a touch phone held portrait, prompt
+  // the user to rotate (reliable on both iOS and Android) instead of cropping the
+  // frame. Desktop portrait windows (fine-pointer) are never prompted.
+  useEffect(() => {
+    const mq = window.matchMedia("(orientation: portrait) and (pointer: coarse)");
+    const update = () => setNeedsRotate(mq.matches);
+    update();
+    mq.addEventListener("change", update);
+    return () => mq.removeEventListener("change", update);
+  }, []);
+
+  // Progressive enhancement: on the first touch, best-effort request fullscreen +
+  // lock landscape. Works on Android Chrome; iOS Safari has no lock API and throws
+  // — caught silently, the rotate prompt above covers that case.
+  useEffect(() => {
+    if (!window.matchMedia("(pointer: coarse)").matches) return;
+    let used = false;
+    const enterImmersive = () => {
+      if (used) return;
+      used = true;
+      window.removeEventListener("pointerdown", enterImmersive);
+      void (async () => {
+        try {
+          const root = document.documentElement;
+          if (!document.fullscreenElement && root.requestFullscreen) {
+            await root.requestFullscreen();
+          }
+          const orientation = screen.orientation as ScreenOrientation & {
+            lock?: (o: string) => Promise<void>;
+          };
+          await orientation?.lock?.("landscape");
+        } catch {
+          /* unsupported (iOS) — rotate prompt handles it */
+        }
+      })();
+    };
+    window.addEventListener("pointerdown", enterImmersive);
+    return () => window.removeEventListener("pointerdown", enterImmersive);
+  }, []);
 
   useEffect(() => {
     if (!ready) return;
@@ -265,6 +307,23 @@ export function JinlingStoryPlayerV2({ sessionId, playerName, onExit }: JinlingS
     setPendingChoice(null);
     setProgress(next);
   };
+
+  if (needsRotate && !progress.endingId) {
+    return (
+      <section className="fixed inset-0 z-[60] grid place-items-center bg-black px-8 text-center text-[#f4ecdc]">
+        <div className="flex flex-col items-center gap-6">
+          <IconDeviceMobileRotated size={44} className="animate-pulse text-white/70" stroke={1.4} />
+          <p
+            className="text-2xl tracking-[0.06em] text-[#f0e4cc]"
+            style={{ fontFamily: '"Noto Serif SC", "Songti SC", ui-serif, Georgia, serif' }}
+          >
+            {t("rotate.title")}
+          </p>
+          <p className="max-w-xs text-sm leading-6 text-white/55">{t("rotate.hint")}</p>
+        </div>
+      </section>
+    );
+  }
 
   if (!ready || mediaLoading) {
     return (

@@ -8293,6 +8293,10 @@
     "storyV2": {
       "exit": "Step away",
       "loading": "Loading the reel…",
+      "rotate": {
+        "title": "Rotate to landscape",
+        "hint": "Turn your phone sideways for the full cinematic frame."
+      },
       "choose": "In this moment, you—",
       "reactionPlaying": "The choice is made. Its consequence is unfolding…",
       "reactionFailed": "The consequence clip failed to load. Your choice hasn't been submitted — you can safely retry.",
