@@ -388,13 +388,13 @@ function InteractiveFilmCanvasInner() {
   const [assetFilter, setAssetFilter] = useState<AssetFilter>("all");
   const [assetQuery, setAssetQuery] = useState("");
   const [playerHref, setPlayerHref] = useState(
-    `${getWebBaseUrl(siteRegion)}/${locale}/play/jinling`
+    `${getWebBaseUrl(siteRegion)}/${locale}/play/jinling-v2`
   );
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
       if (window.location.hostname === "localhost") {
-        setPlayerHref(`http://localhost:9527/${locale}/play/jinling`);
+        setPlayerHref(`http://localhost:9527/${locale}/play/jinling-v2`);
       }
     }, 0);
     return () => window.clearTimeout(timer);

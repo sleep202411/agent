@@ -64,7 +64,7 @@ export default async function StoryStudioPage({ params }: { params: Promise<{ lo
                 {t("hero.openCanvas")}
               </Link>
               <a
-                href={`${playerBase}/${locale}/play/jinling`}
+                href={`${playerBase}/${locale}/play/jinling-v2`}
                 className="inline-flex h-10 items-center gap-2 rounded-[15px] bg-black/55 px-4 text-[14px] font-bold text-white shadow-[0_12px_28px_rgba(0,0,0,0.2)] transition hover:bg-black/70"
               >
                 <IconPlayerPlay className="size-4 fill-white" stroke={2.1} />
