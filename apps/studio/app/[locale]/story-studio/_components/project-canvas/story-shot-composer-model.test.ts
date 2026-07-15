@@ -160,7 +160,7 @@ function slot(
             source: "import",
             aiJobId: null,
             aiJobOutputId: null,
-            sourceTakeId: null,
+            sourceGenerationId: null,
             sourceFrameIndex: null,
             sourceOutputChecksumSha256: null,
             asset: {

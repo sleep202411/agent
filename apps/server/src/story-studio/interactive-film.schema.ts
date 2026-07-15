@@ -1452,11 +1452,6 @@ export const FilmFrameRateSchema = z
   })
   .strict();
 
-export const FilmReviewPolicySchema = z.enum([
-  'explicit_approval',
-  'four_eyes',
-]);
-
 export const FilmAspectRatioSchema = z.enum(['16:9', '9:16']);
 export type FilmAspectRatio = z.infer<typeof FilmAspectRatioSchema>;
 
@@ -1506,7 +1501,6 @@ export const FilmSpecSchema = z
       })
       .strict(),
     generation: z.object({ defaultCanonicalModelId: StoryUuidSchema }).strict(),
-    reviewPolicy: FilmReviewPolicySchema,
   })
   .strict()
   .superRefine((spec, context) => {
@@ -1970,33 +1964,6 @@ export type FilmClipDependencySpec = z.infer<
 >;
 
 export const ReviewChecklistValueSchema = z.enum(['pass', 'fail', 'na']);
-export const FilmTakeReviewChecklistSchema = z
-  .object({
-    technical: ReviewChecklistValueSchema,
-    identityContinuity: ReviewChecklistValueSchema,
-    visualContinuity: ReviewChecklistValueSchema,
-    motion: ReviewChecklistValueSchema,
-    dialogueTiming: ReviewChecklistValueSchema,
-    lipSync: ReviewChecklistValueSchema,
-    safety: ReviewChecklistValueSchema,
-  })
-  .strict();
-
-/** Promotional trailers are reviewed as editorial assets, not as individual
- * continuity clips. Keep this contract separate so trailer QA can evolve
- * without weakening the runtime-clip approval checklist. */
-export const FilmTrailerTakeReviewChecklistSchema = z
-  .object({
-    technical: ReviewChecklistValueSchema,
-    storyFidelity: ReviewChecklistValueSchema,
-    identityConsistency: ReviewChecklistValueSchema,
-    visualConsistency: ReviewChecklistValueSchema,
-    pacing: ReviewChecklistValueSchema,
-    textReadability: ReviewChecklistValueSchema,
-    rights: ReviewChecklistValueSchema,
-    safety: ReviewChecklistValueSchema,
-  })
-  .strict();
 
 export const FilmBuildScopeSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('full') }).strict(),
@@ -2019,16 +1986,6 @@ export const FilmBuildStatusSchema = z.enum([
   'cancelled',
 ]);
 export type FilmBuildStatus = z.infer<typeof FilmBuildStatusSchema>;
-
-export const FilmTakeStatusSchema = z.enum([
-  'queued',
-  'running',
-  'processing',
-  'ready',
-  'failed',
-  'cancelled',
-]);
-export type FilmTakeStatus = z.infer<typeof FilmTakeStatusSchema>;
 
 export const FilmReviewDecisionSchema = z.enum([
   'approve',

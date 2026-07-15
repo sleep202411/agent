@@ -11,7 +11,7 @@ export interface PromptTimelineEntry {
   instruction: string;
 }
 
-export type ParsedSeedanceModelInput =
+export type ParsedVideoPromptModelInput =
   | {
       kind: 'omni_reference';
       position: number;
@@ -23,13 +23,13 @@ export type ParsedSeedanceModelInput =
       referenceSlotKey: string;
     };
 
-export interface ParsedSeedanceClip {
+export interface ParsedVideoPromptClip {
   rank: number;
   key: string;
   durationMs: number;
   generationControl: FilmGenerationControl;
   modelInput: string;
-  modelInputs: ParsedSeedanceModelInput[];
+  modelInputs: ParsedVideoPromptModelInput[];
   productionDependencies: string;
   positivePrompt: string;
   timeline: PromptTimelineEntry[];
@@ -42,9 +42,9 @@ export interface ParsedSeedanceClip {
 const CLIP_HEADING = /^### (\d{2})｜`([^`]+)`｜(\d+)s｜(.+)$/gm;
 const TIMELINE_LINE = /^(\d+(?:\.\d+)?)–(\d+(?:\.\d+)?)s\s+(.+)$/;
 
-export function parseSeedancePromptPack(
+export function parseVideoPromptPack(
   markdown: string,
-): ParsedSeedanceClip[] {
+): ParsedVideoPromptClip[] {
   const matches = [...markdown.matchAll(CLIP_HEADING)];
   return matches.map((match, index) => {
     const start = (match.index ?? 0) + match[0].length;
@@ -91,7 +91,7 @@ export function parseSeedancePromptPack(
 function parseModelInputs(
   line: string,
   key: string,
-): ParsedSeedanceModelInput[] {
+): ParsedVideoPromptModelInput[] {
   const declarations = line
     .split('；')
     .map((part) => part.trim())
@@ -134,8 +134,15 @@ function parseModelInputs(
 }
 
 function referenceSlotKeyFromModelValue(value: string, key: string): string {
-  const declaredSlot = value.match(/^(REF-\d{2}|JF-\d{2})(?:\s|$)/u)?.[1];
-  if (declaredSlot) return declaredSlot;
+  const declaredSlot = value.match(
+    /^(REF-\d{2}|JF-\d{2})(?:\/(EXHIBIT|METRO))?(?:\s|$)/u,
+  );
+  if (declaredSlot) {
+    if (declaredSlot[2] && declaredSlot[1] !== 'REF-08') {
+      throw new Error(`Unknown reference-slot variant for ${key}: ${value}`);
+    }
+    return declaredSlot[1];
+  }
 
   switch (value) {
     case 'S00 审核首帧':
@@ -150,11 +157,11 @@ function referenceSlotKeyFromModelValue(value: string, key: string): string {
 }
 
 function parseMode(mode: string, key: string): FilmGenerationControl {
-  if (mode === 'Omni Reference') return { mode: 'omni_reference' };
-  if (mode === 'First Frame') {
+  if (mode === 'HappyHorse 1.1 R2V') return { mode: 'omni_reference' };
+  if (mode === 'HappyHorse 1.1 I2V') {
     return { mode: 'frame_lock', frameMode: 'first_frame' };
   }
-  if (mode === 'First + Last Frame') {
+  if (mode === 'Wan 2.7 First + Last Frame') {
     return { mode: 'frame_lock', frameMode: 'first_last_frame' };
   }
   throw new Error(`Unsupported generation mode "${mode}" for ${key}.`);
@@ -232,7 +239,7 @@ function parseTimeline(
 function validateInputs(
   key: string,
   control: FilmGenerationControl,
-  modelInputs: ParsedSeedanceModelInput[],
+  modelInputs: ParsedVideoPromptModelInput[],
 ): void {
   const omniInputs = modelInputs.filter(
     (input) => input.kind === 'omni_reference',

@@ -16,13 +16,9 @@ import {
   MediaStorageProvider,
   Prisma,
   StoryFilmGenerationMode,
-  StoryFilmReviewPolicy,
-  StoryFilmTakeStatus,
-  StoryReviewDecision,
   StoryRevisionSource,
   type PrismaClient,
 } from '@prisma/client';
-import { newShortId, newUuidV7 } from '../src/common/id';
 import { buildPrisma } from '../src/infra/db/db.module';
 import { ensureOriginalMediaPlacement } from '../src/infra/storage/media-asset-placement';
 import { canonicalJsonHash } from '../src/story-studio/canonical-json';
@@ -38,7 +34,6 @@ import { storyFilmTechnicalChecks } from '../src/story-studio/story-film-product
 const IMPORT_TAG = 'jinling-rumeng-v2-local-import-v1';
 const DRAFT_SCHEMA_VERSION = 'interactive-film-draft-v1';
 const MODEL_SLUG = 'seedance-2-0';
-const PROVIDER = 'byteplus-modelark';
 const BLOB_ROOT =
   'https://fizzdragonblob.blob.core.windows.net/foundry-outputs/interactive-films/jinling-rumeng/s01/v2/film-cut';
 const REPO_ROOT = path.resolve(__dirname, '..', '..', '..');
@@ -91,7 +86,7 @@ async function main(): Promise<void> {
     const existing = await findCompletedImport(prisma, options.projectId);
     if (existing) {
       console.log(
-        `Import already complete: revision=${existing.revisionNumber} clips=${existing.clipCount} takes=${existing.takeCount}.`,
+        `Import already complete: revision=${existing.revisionNumber} clips=${existing.clipCount} currentVideos=${existing.currentVideoCount}.`,
       );
       return;
     }
@@ -103,8 +98,7 @@ async function main(): Promise<void> {
         `projectId=${options.projectId}`,
         'revision=1',
         `clips=${files.length}`,
-        `takes=${files.length}`,
-        `masters=${files.length}`,
+        `currentVideos=${files.length}`,
         'remoteWrites=0',
       ].join('\n'),
     );
@@ -196,7 +190,7 @@ function readVideoFile(clipId: JinlingV2ClipId): VideoFile {
     durationSeconds !== 12
   ) {
     throw new Error(
-      `${clipId} is not the locked 1920×1080 / 12s v2 master (${video?.width}×${video?.height}, ${durationSeconds}s).`,
+      `${clipId} is not the locked 1920×1080 / 12s v2 video (${video?.width}×${video?.height}, ${durationSeconds}s).`,
     );
   }
   return {
@@ -216,7 +210,6 @@ interface ImportContext {
   ownerUserId: string;
   draftRevision: number;
   canonicalModelId: string;
-  canonicalModelDisplayName: string;
 }
 
 async function loadContext(
@@ -227,7 +220,13 @@ async function loadContext(
     where: { id: projectId },
     include: {
       draft: true,
-      _count: { select: { revisions: true, filmClips: true, filmTakes: true } },
+      _count: {
+        select: {
+          revisions: true,
+          filmClips: true,
+          filmGenerationAttempts: true,
+        },
+      },
     },
   });
   if (
@@ -240,7 +239,7 @@ async function loadContext(
   if (
     project._count.revisions !== 0 ||
     project._count.filmClips !== 0 ||
-    project._count.filmTakes !== 0
+    project._count.filmGenerationAttempts !== 0
   ) {
     const completed = await findCompletedImport(prisma, projectId);
     if (!completed) {
@@ -274,14 +273,13 @@ async function loadContext(
       status: 'active',
       archivedAt: null,
     },
-    select: { id: true, displayName: true },
+    select: { id: true },
   });
   return {
     workspaceId: project.workspaceId,
     ownerUserId: owner.userId,
     draftRevision: project.draft.revision,
     canonicalModelId: model.id,
-    canonicalModelDisplayName: model.displayName,
   };
 }
 
@@ -291,20 +289,24 @@ async function findCompletedImport(prisma: PrismaClient, projectId: string) {
     select: { id: true, number: true },
   });
   if (!revision) return null;
-  const [clipCount, takeCount] = await Promise.all([
+  const [clipCount, currentVideoCount] = await Promise.all([
     prisma.storyFilmClip.count({
       where: { revisionId: revision.id, archivedAt: null },
     }),
-    prisma.storyFilmTake.count({
-      where: { revisionId: revision.id, status: StoryFilmTakeStatus.ready },
+    prisma.storyFilmClip.count({
+      where: {
+        revisionId: revision.id,
+        archivedAt: null,
+        currentVideoAssetId: { not: null },
+      },
     }),
   ]);
-  if (clipCount !== 26 || takeCount !== 26) {
+  if (clipCount !== 26 || currentVideoCount !== 26) {
     throw new Error(
-      `Existing Jinling import is incomplete (${clipCount} clips, ${takeCount} takes).`,
+      `Existing Jinling import is incomplete (${clipCount} clips, ${currentVideoCount} current videos).`,
     );
   }
-  return { revisionNumber: revision.number, clipCount, takeCount };
+  return { revisionNumber: revision.number, clipCount, currentVideoCount };
 }
 
 async function importBundle(
@@ -390,7 +392,6 @@ async function importBundle(
           enabledLocales: asJson(bundle.filmSpec.locales.enabledLocales),
           defaultCanonicalModelId:
             bundle.filmSpec.generation.defaultCanonicalModelId,
-          reviewPolicy: StoryFilmReviewPolicy.explicit_approval,
           specJson: asJson(bundle.filmSpec),
           specHash: filmSpecHash,
           createdByUserId: context.ownerUserId,
@@ -400,7 +401,7 @@ async function importBundle(
 
       for (const clipSpec of bundle.clipSpecs) {
         const file = fileByClipKey.get(clipSpec.key);
-        if (!file) throw new Error(`No local master for ${clipSpec.key}.`);
+        if (!file) throw new Error(`No local video for ${clipSpec.key}.`);
         const parsedPrompt = promptByClipId.get(file.clipId);
         if (!parsedPrompt)
           throw new Error(`No source prompt for ${file.clipId}.`);
@@ -454,38 +455,6 @@ async function importBundle(
           },
         });
 
-        const jobId = newUuidV7();
-        const outputId = newShortId();
-        const submissionKey = `${IMPORT_TAG}:${projectId}:${clipSpec.key}`;
-        await tx.aiJob.create({
-          data: {
-            id: jobId,
-            userId: context.ownerUserId,
-            workspaceId: context.workspaceId,
-            sourceSurface: 'story-studio',
-            type: 'video',
-            provider: PROVIDER,
-            modelId: MODEL_SLUG,
-            canonicalModelId: context.canonicalModelId,
-            deployment: 'external-import',
-            schemaVersion: 'external-import-v1',
-            status: 'completed',
-            stage: 'completed',
-            queueName: 'external-import',
-            prompt: compilation.text,
-            compiledPrompt: compilation.text,
-            idempotencyKey: submissionKey,
-            input: asJson({ ...generationConfig, sourcePrompt: parsedPrompt }),
-            normalizedInput: asJson(generationConfig),
-            logs: asJson([]),
-            metrics: asJson({ importSource: IMPORT_TAG, remoteWrites: 0 }),
-            queuedAt: now,
-            startedAt: now,
-            providerCompletedAt: now,
-            outputFetchedAt: now,
-            completedAt: now,
-          },
-        });
         const asset = await tx.mediaAsset.create({
           data: {
             kind: MediaAssetKind.video,
@@ -502,7 +471,7 @@ async function importBundle(
             source: MediaAssetSource.imported,
             moderationStatus: MediaAssetModerationStatus.approved,
             moderationReason:
-              'Existing Jinling v2 production master imported into local development.',
+              'Existing Jinling v2 production video imported into local development.',
             moderatedAt: now,
             workspaceId: context.workspaceId,
             createdByUserId: context.ownerUserId,
@@ -527,124 +496,40 @@ async function importBundle(
           durationSeconds: file.durationSeconds,
           checksumSha256: file.sha256,
         });
-        await tx.aiJobOutput.create({
-          data: {
-            id: outputId,
-            jobId,
-            assetId: asset.id,
-            type: 'video',
-            url: file.url,
-            storagePath: file.url,
-            contentHash: file.sha256.slice(0, 12),
-            width: file.width,
-            height: file.height,
-            durationSeconds: file.durationSeconds,
-            mimeType: 'video/mp4',
-            bytes: file.bytes,
-            outputIndex: 0,
-            provenance: asJson({
-              provider: PROVIDER,
-              modelId: MODEL_SLUG,
-              importSource: IMPORT_TAG,
-              checksumSha256: file.sha256,
-            }),
-          },
-        });
         await tx.mediaAssetUsage.create({
           data: {
             assetId: asset.id,
             variantId: placement.variantId,
             userId: context.ownerUserId,
             workspaceId: context.workspaceId,
-            aiJobId: jobId,
-            aiJobOutputId: outputId,
             surface: MediaAssetUsageSurface.standalone_generation,
             sourceSurface: 'story-studio',
             role: MediaAssetUsageRole.output,
             idempotencyKey: `${IMPORT_TAG}:${asset.id}`,
           },
         });
-        const take = await tx.storyFilmTake.create({
-          data: {
-            storyProjectId: projectId,
-            revisionId: revision.id,
-            clipId: clip.id,
-            takeNumber: 1,
-            submissionKey,
-            status: StoryFilmTakeStatus.ready,
-            clipSpecHash: specHash,
-            productionInputHash,
-            promptSnapshot: asJson({
-              version: 1,
-              importSource: IMPORT_TAG,
-              compiledPrompt: compilation.text,
-              draftSource: {
-                revision: context.draftRevision + 1,
-                contentHash: draftContentHash,
-              },
-            }),
-            generationConfig: asJson(generationConfig),
-            modelSnapshot: asJson({
-              version: 1,
-              canonicalModelId: context.canonicalModelId,
-              slug: MODEL_SLUG,
-              displayName: context.canonicalModelDisplayName,
-              schemaVersion: 'external-import-v1',
-              generationModes: ['omni_reference'],
-            }),
-            aiJobId: jobId,
-            aiJobOutputId: outputId,
-            outputAssetId: asset.id,
-            outputVariantId: placement.variantId,
-            outputChecksumSha256: file.sha256,
-            technicalChecks: storyFilmTechnicalChecks(
-              {
-                kind: MediaAssetKind.video,
-                width: file.width,
-                height: file.height,
-                durationSeconds: file.durationSeconds,
-                checksumSha256: file.sha256,
-              },
-              clipSpec.outputContract,
-            ),
-            createdByUserId: context.ownerUserId,
-            queuedAt: now,
-            startedAt: now,
-            readyAt: now,
-            completedAt: now,
-            version: 1,
+        const technicalChecks = storyFilmTechnicalChecks(
+          {
+            kind: MediaAssetKind.video,
+            width: file.width,
+            height: file.height,
+            durationSeconds: file.durationSeconds,
+            checksumSha256: file.sha256,
           },
-        });
-        const review = await tx.storyFilmTakeReview.create({
-          data: {
-            takeId: take.id,
-            sequence: 1,
-            decision: StoryReviewDecision.approve,
-            technicalPassed: true,
-            safetyPassed: true,
-            checklist: asJson({
-              technical: 'pass',
-              safety: 'existing-release-approved',
-            }),
-            notes:
-              'Existing Jinling v2 1080p master imported into local Story Studio.',
-            reviewerUserId: context.ownerUserId,
-          },
-        });
-        await tx.storyFilmTakeApproval.create({
-          data: {
-            takeId: take.id,
-            reviewId: review.id,
-            approvedByUserId: context.ownerUserId,
-          },
-        });
+          clipSpec.outputContract,
+        );
         await tx.storyFilmClip.update({
           where: { id: clip.id },
           data: {
-            masterTakeId: take.id,
-            masterRevision: 1,
-            masterSelectedByUserId: context.ownerUserId,
-            masterSelectedAt: now,
+            currentVideoAssetId: asset.id,
+            currentVideoVariantId: placement.variantId,
+            currentVideoSpecHash: specHash,
+            currentVideoInputHash: productionInputHash,
+            currentVideoChecksumSha256: file.sha256,
+            currentVideoTechnicalChecks: asJson(technicalChecks),
+            currentVideoRevision: 1,
+            currentVideoSetByUserId: context.ownerUserId,
+            currentVideoSetAt: now,
           },
         });
       }

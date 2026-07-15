@@ -243,13 +243,13 @@ function OverviewStage({ workbench }: { workbench: StoryWorkbench }) {
             />
             <OverviewMetric
               icon={IconCheck}
-              label={t("metrics.masters")}
-              value={`${production.approvedMasterCount}/${production.clipCount}`}
+              label={t("metrics.videos")}
+              value={`${production.currentVideoCount}/${production.clipCount}`}
             />
             <OverviewMetric
               icon={IconAlertTriangle}
-              label={t("metrics.blocked")}
-              value={String(production.blockedClipCount)}
+              label={t("metrics.generating")}
+              value={String(production.generatingClipCount)}
             />
           </div>
         </FrostedPanel>
@@ -294,7 +294,7 @@ function OverviewStage({ workbench }: { workbench: StoryWorkbench }) {
       </div>
 
       <aside className="space-y-5">
-        <NextBlocker production={production} />
+        <CurrentVideoState production={production} />
         <FrostedPanel className="p-5">
           <h2 className="text-sm font-semibold text-white">{t("overview.revisionTitle")}</h2>
           <dl className="mt-4 space-y-3 text-xs">
@@ -312,29 +312,25 @@ function OverviewStage({ workbench }: { workbench: StoryWorkbench }) {
   );
 }
 
-function NextBlocker({ production }: { production: StoryProjectProductionSummary }) {
+function CurrentVideoState({ production }: { production: StoryProjectProductionSummary }) {
   const t = useTranslations("storyStudio");
-  const blocker = production.nextBlocker;
+  const generating = production.generatingClipCount > 0;
   return (
     <FrostedPanel className="p-5">
       <div className="flex items-start gap-3">
         <div className="grid size-9 shrink-0 place-items-center rounded-xl bg-white/[0.055] text-white/62">
-          {blocker ? <IconAlertTriangle className="size-4" /> : <IconCheck className="size-4" />}
+          {generating ? <IconSparkles className="size-4" /> : <IconCheck className="size-4" />}
         </div>
         <div>
-          <h2 className="text-sm font-semibold text-white">
-            {blocker ? t("overview.nextBlocker") : t("overview.noBlocker")}
-          </h2>
+          <h2 className="text-sm font-semibold text-white">{t("overview.videoState")}</h2>
           <p className="mt-1.5 text-xs leading-5 text-white/46">
-            {blocker ? (
-              <ProjectProductionBlocker production={production} />
-            ) : (
-              t("overview.noBlockerDescription")
-            )}
+            {generating
+              ? t("overview.videoStateGenerating", { count: production.generatingClipCount })
+              : t("overview.videoStateReady", {
+                  current: production.currentVideoCount,
+                  total: production.clipCount,
+                })}
           </p>
-          {blocker ? (
-            <p className="mt-3 font-mono text-[10px] text-white/28">{blocker.code}</p>
-          ) : null}
         </div>
       </div>
     </FrostedPanel>
@@ -547,7 +543,34 @@ function ProductionStage({ workbench }: { workbench: StoryWorkbench }) {
           <div className="divide-y divide-white/[0.045]">
             {prompts.map((prompt) => {
               const clip = materializedClips.get(prompt.graphNodeId);
-              const status = clip?.productionStatus ?? "draft";
+              const generationStatus = clip?.generation?.status;
+              const generationActive =
+                generationStatus === "queued" ||
+                generationStatus === "running" ||
+                generationStatus === "processing";
+              const generationError = clip?.generation?.error?.message;
+              const status = generationActive
+                ? generationStatus
+                : generationStatus === "failed"
+                  ? "failed"
+                  : clip?.currentVideo?.outdated
+                    ? "outdated"
+                    : clip?.currentVideo
+                      ? "ready"
+                      : "draft";
+              const statusDetail = generationActive
+                ? t("production.generationInProgress")
+                : generationStatus === "failed"
+                  ? typeof generationError === "string" && generationError.trim()
+                    ? generationError
+                    : t("production.generationFailed")
+                  : clip?.currentVideo?.outdated
+                    ? t("production.currentVideoOutdated")
+                    : clip?.currentVideo
+                      ? t("production.currentVideoReady")
+                      : prompt.masterDirection.trim()
+                        ? t("production.currentDraftReady")
+                        : t("production.currentDraftPromptRequired");
               return (
                 <details key={prompt.graphNodeId} className="group open:bg-white/[0.018]">
                   <summary className="grid cursor-pointer list-none gap-3 px-5 py-4 transition hover:bg-white/[0.025] [&::-webkit-details-marker]:hidden lg:grid-cols-[80px_minmax(220px,1fr)_160px_100px_120px_minmax(180px,0.8fr)] lg:items-center lg:gap-4">
@@ -572,15 +595,7 @@ function ProductionStage({ workbench }: { workbench: StoryWorkbench }) {
                       {t("production.seconds", { seconds: prompt.targetDurationMs / 1000 })}
                     </span>
                     <StatusPill label={t(`production.status.${status}`)} status={status} />
-                    <p className="truncate text-[11px] text-white/36">
-                      {clip ? (
-                        <ClipBlockerMessage reason={clip.blockReasons[0]} />
-                      ) : prompt.masterDirection.trim() ? (
-                        t("production.currentDraftReady")
-                      ) : (
-                        t("production.currentDraftPromptRequired")
-                      )}
-                    </p>
+                    <p className="truncate text-[11px] text-white/36">{statusDetail}</p>
                   </summary>
                   <div className="border-t border-white/[0.04] px-5 pt-5 pb-6">
                     <div className="grid gap-5 xl:grid-cols-2">
@@ -688,45 +703,6 @@ function ProductionContractList({ title, items }: { title: string; items: string
       </ul>
     </div>
   );
-}
-
-function ProjectProductionBlocker({ production }: { production: StoryProjectProductionSummary }) {
-  const t = useTranslations("storyStudio");
-  switch (production.nextBlocker?.code) {
-    case "REFERENCE_APPROVAL_REQUIRED":
-      return t("blockers.referenceApproval", {
-        count: production.referenceSlotCount - production.approvedReferenceCount,
-      });
-    case "CLIP_REFERENCE_BLOCKED":
-      return t("blockers.clipReferences", { count: production.blockedClipCount });
-    case "CLIP_MASTER_REQUIRED":
-      return t("blockers.clipMasters", {
-        count: production.clipCount - production.approvedMasterCount,
-      });
-    default:
-      return production.nextBlocker?.message ?? t("overview.noBlockerDescription");
-  }
-}
-
-function ClipBlockerMessage({ reason }: { reason: { code: string; message: string } | undefined }) {
-  const t = useTranslations("storyStudio");
-  if (!reason) return t("production.noBlocker");
-  switch (reason.code) {
-    case "PRODUCTION_INPUTS_UNRESOLVED":
-      return t("blockers.productionInputsUnresolved");
-    case "REFERENCE_APPROVAL_REQUIRED":
-      return t("blockers.referenceInputApproval");
-    case "OMNI_REFERENCE_REQUIRED":
-      return t("blockers.omniReferenceRequired");
-    case "FIRST_FRAME_REQUIRED":
-      return t("blockers.firstFrameRequired");
-    case "LAST_FRAME_REQUIRED":
-      return t("blockers.lastFrameRequired");
-    case "MASTER_INPUT_STALE":
-      return t("blockers.masterInputStale");
-    default:
-      return reason.message;
-  }
 }
 
 function NoProductionData() {

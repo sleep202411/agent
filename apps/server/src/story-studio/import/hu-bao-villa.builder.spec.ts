@@ -19,12 +19,12 @@ import {
   HU_BAO_VILLA_DRAFT_CONTENT,
   HU_BAO_VILLA_FRAME_PROFILE,
 } from './hu-bao-villa.fixture';
-import { parseSeedancePromptPack } from './seedance-prompt-pack';
+import { parseVideoPromptPack } from './video-prompt-pack';
 
 const promptPackMarkdown = readFileSync(
   resolve(
     __dirname,
-    '../../../../../docs/interactive-films/hu-bao-villa-longkou-night-seedance-prompt-pack-v1.md',
+    '../../../../../docs/interactive-films/hu-bao-villa-longkou-night-video-prompt-pack-v1.md',
   ),
   'utf8',
 );
@@ -398,13 +398,13 @@ describe('Haw Par Villa product import builder', () => {
     ).toEqual(new Set(['release', 'leave']));
   });
 
-  it('preserves each parsed Seedance mode and timed instruction in the immutable manifest', () => {
+  it('preserves each parsed video mode and timed instruction in the immutable manifest', () => {
     const { clipSpecs, draftContent } = buildHuBaoVillaImportBundle();
     const clipByKey = new Map(clipSpecs.map((clip) => [clip.key, clip]));
     const promptByKey = new Map(
       draftContent.clipPrompts.map((prompt) => [prompt.clipKey, prompt]),
     );
-    const parsedPrompts = parseSeedancePromptPack(promptPackMarkdown);
+    const parsedPrompts = parseVideoPromptPack(promptPackMarkdown);
 
     for (const parsed of parsedPrompts) {
       const storyKey = storyKeyFromPromptKey(parsed.key);

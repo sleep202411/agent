@@ -19,18 +19,18 @@ import {
   type HuBaoVillaChoiceEffect,
 } from './hu-bao-villa.fixture';
 import {
-  parseSeedancePromptPack,
-  type ParsedSeedanceClip,
-} from './seedance-prompt-pack';
+  parseVideoPromptPack,
+  type ParsedVideoPromptClip,
+} from './video-prompt-pack';
 import { parseStoryBibleSegments, type StoryBibleSegment } from './story-bible';
 
 const STORY_BIBLE_PATH = resolve(
   __dirname,
   '../../../../../docs/interactive-films/hu-bao-villa-longkou-night-story-bible-v1.md',
 );
-const SEEDANCE_PROMPT_PACK_PATH = resolve(
+const VIDEO_PROMPT_PACK_PATH = resolve(
   __dirname,
-  '../../../../../docs/interactive-films/hu-bao-villa-longkou-night-seedance-prompt-pack-v1.md',
+  '../../../../../docs/interactive-films/hu-bao-villa-longkou-night-video-prompt-pack-v1.md',
 );
 
 /**
@@ -55,7 +55,7 @@ const AUTHORED_CHOICES: readonly HuBaoVillaAuthoredChoice[] =
 
 export interface BuildHuBaoVillaImportBundleOptions {
   storyBibleMarkdown?: string;
-  seedancePromptPackMarkdown?: string;
+  videoPromptPackMarkdown?: string;
   defaultCanonicalModelId?: string;
 }
 
@@ -102,21 +102,21 @@ export function buildHuBaoVillaImportBundle(
   const storySegments = parseStoryBibleSegments(
     options.storyBibleMarkdown ?? readFileSync(STORY_BIBLE_PATH, 'utf8'),
   );
-  const seedanceClips = parseSeedancePromptPack(
-    options.seedancePromptPackMarkdown ??
-      readFileSync(SEEDANCE_PROMPT_PACK_PATH, 'utf8'),
+  const videoPrompts = parseVideoPromptPack(
+    options.videoPromptPackMarkdown ??
+      readFileSync(VIDEO_PROMPT_PACK_PATH, 'utf8'),
   );
 
-  assertLockedDocumentAlignment(storySegments, seedanceClips);
+  assertLockedDocumentAlignment(storySegments, videoPrompts);
 
   const promptByStoryKey = new Map(
-    seedanceClips.map((clip) => [storyKeyFromPromptKey(clip.key), clip]),
+    videoPrompts.map((clip) => [storyKeyFromPromptKey(clip.key), clip]),
   );
   const mutableDraft = buildDraftContent(storySegments);
   mutableDraft.clipPrompts = storySegments.map((segment) => {
     const prompt = promptByStoryKey.get(segment.key);
     if (!prompt) {
-      throw new Error(`No Seedance prompt is locked for ${segment.key}.`);
+      throw new Error(`No video prompt is locked for ${segment.key}.`);
     }
     return buildClipPromptDraft(segment, prompt);
   });
@@ -142,7 +142,7 @@ export function buildHuBaoVillaImportBundle(
       }),
   );
   const clipReferencePlans = buildClipReferencePlans(
-    seedanceClips,
+    videoPrompts,
     clipSpecs,
     referenceSlotSpecs,
   );
@@ -162,7 +162,7 @@ export function buildHuBaoVillaImportBundle(
 }
 
 function buildClipReferencePlans(
-  seedanceClips: ParsedSeedanceClip[],
+  videoPrompts: ParsedVideoPromptClip[],
   clipSpecs: FilmClipSpec[],
   referenceSlotSpecs: FilmReferenceSlotSpec[],
 ): HuBaoVillaClipReferencePlan[] {
@@ -171,7 +171,7 @@ function buildClipReferencePlans(
     referenceSlotSpecs.map((slot) => [slot.key, slot.kind]),
   );
 
-  const plans = seedanceClips.map((prompt) => {
+  const plans = videoPrompts.map((prompt) => {
     const clipKey = storyKeyFromPromptKey(prompt.key);
     const clip = clipByKey.get(clipKey);
     if (!clip) throw new Error(`No FilmClipSpec exists for ${clipKey}.`);
@@ -736,7 +736,7 @@ function clipNodeId(clipKey: string): string {
 
 function buildClipPromptDraft(
   segment: StoryBibleSegment,
-  prompt: ParsedSeedanceClip,
+  prompt: ParsedVideoPromptClip,
 ): StoryClipPromptDraft {
   return {
     graphNodeId: clipNodeId(segment.key),
@@ -781,29 +781,27 @@ function buildClipPromptDraft(
 
 function assertLockedDocumentAlignment(
   storySegments: StoryBibleSegment[],
-  seedanceClips: ParsedSeedanceClip[],
+  videoPrompts: ParsedVideoPromptClip[],
 ): void {
   const expectedCount = HU_BAO_VILLA_DRAFT_CONTENT.experience.clipCount;
   if (
     storySegments.length !== expectedCount ||
-    seedanceClips.length !== expectedCount
+    videoPrompts.length !== expectedCount
   ) {
     throw new Error(
-      `Locked documents must both contain ${expectedCount} clips; received ${storySegments.length} story segments and ${seedanceClips.length} prompts.`,
+      `Locked documents must both contain ${expectedCount} clips; received ${storySegments.length} story segments and ${videoPrompts.length} prompts.`,
     );
   }
 
   const storyKeys = new Set(storySegments.map((segment) => segment.key));
-  const promptStoryKeys = seedanceClips.map((clip) =>
+  const promptStoryKeys = videoPrompts.map((clip) =>
     storyKeyFromPromptKey(clip.key),
   );
   if (
     promptStoryKeys.some((key) => !storyKeys.has(key)) ||
     new Set(promptStoryKeys).size !== expectedCount
   ) {
-    throw new Error(
-      'Story-bible and Seedance prompt clip keys are not aligned.',
-    );
+    throw new Error('Story-bible and video-prompt clip keys are not aligned.');
   }
 
   for (const segment of storySegments) {
@@ -813,7 +811,7 @@ function assertLockedDocumentAlignment(
       );
     }
   }
-  for (const prompt of seedanceClips) {
+  for (const prompt of videoPrompts) {
     if (prompt.durationMs !== CLIP_DURATION_MS) {
       throw new Error(`${prompt.key} must be locked to ${CLIP_DURATION_MS}ms.`);
     }
@@ -823,7 +821,7 @@ function assertLockedDocumentAlignment(
 function storyKeyFromPromptKey(promptKey: string): string {
   const match = promptKey.match(/^hbln-((?:s\d{2}[a-z]?)|(?:e\d{2}))-/u);
   if (!match) {
-    throw new Error(`Seedance prompt key ${promptKey} has no story clip key.`);
+    throw new Error(`Video prompt key ${promptKey} has no story clip key.`);
   }
   return match[1].toUpperCase();
 }

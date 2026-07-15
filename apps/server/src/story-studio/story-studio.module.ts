@@ -11,6 +11,8 @@ import { StoryFilmReferenceService } from './story-film-reference.service';
 import { StoryFilmTrailerProductionController } from './story-film-trailer-production.controller';
 import { StoryFilmTrailerProductionService } from './story-film-trailer-production.service';
 import { StoryPermissionService } from './story-permission.service';
+import { StoryProjectVideoLibraryController } from './story-project-video-library.controller';
+import { StoryProjectVideoLibraryService } from './story-project-video-library.service';
 import { StoryProjectsController } from './story-projects.controller';
 import { StoryProjectsService } from './story-projects.service';
 import { StoryWorkingPreviewController } from './story-working-preview.controller';
@@ -20,6 +22,7 @@ import { StoryWorkingPreviewService } from './story-working-preview.service';
   imports: [WorkspacesModule, AiGenerationModule, StorageModule],
   controllers: [
     StoryProjectsController,
+    StoryProjectVideoLibraryController,
     StoryFilmProductionController,
     StoryFilmReferenceController,
     StoryFilmTrailerProductionController,
@@ -28,6 +31,7 @@ import { StoryWorkingPreviewService } from './story-working-preview.service';
   ],
   providers: [
     StoryProjectsService,
+    StoryProjectVideoLibraryService,
     StoryFilmProductionService,
     StoryFilmReferenceService,
     StoryFilmTrailerProductionService,

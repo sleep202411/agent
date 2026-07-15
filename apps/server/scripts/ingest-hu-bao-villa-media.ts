@@ -17,10 +17,8 @@ import {
   Prisma,
   StoryFilmReferenceSource,
   StoryFilmReferenceVersionStatus,
-  StoryFilmTakeStatus,
   StoryReviewDecision,
   type PrismaClient,
-  type StoryFilmClipReferenceRole,
 } from '@prisma/client';
 import { buildPrisma } from '../src/infra/db/db.module';
 import { newShortId, newUuidV7 } from '../src/common/id';
@@ -33,12 +31,12 @@ import { HU_BAO_VILLA_PROJECT_ID } from '../src/story-studio/import/hu-bao-villa
 // One-to-one backfill of the externally produced hu-bao-villa media (docs/
 // interactive-films runbook §"archive → backfill") into the seeded story-film
 // project: approves the 16 reference slots from the real reference pack, then
-// imports the 21 seedance-2.0 videos as ready+approved master takes. Local-DB
+// binds the 21 seedance-2.0 videos as each clip's current video. Local-DB
 // only; uploads land in the shared dev/prod blob container like all local dev
 // output. The videos are the boss-approved 720p draft batch while the seeded
 // output contract is 1920×1080 — technicalChecks are recorded HONESTLY (the
 // dimensions check fails), so working-preview/build stay gated until 1080p
-// masters exist; canvas cards and the shot composer play the takes regardless.
+// replacements exist; canvas cards and the shot composer play them regardless.
 
 const PROJECT_ID = HU_BAO_VILLA_PROJECT_ID;
 const REPO_ROOT = path.resolve(__dirname, '..', '..', '..');
@@ -223,7 +221,7 @@ async function main(): Promise<void> {
     const context = await loadContext(prisma);
     await ensureCanvasLayout(prisma, context);
     await ingestReferencePlane(prisma, uploader, context);
-    await ingestVideoTakes(prisma, uploader, context);
+    await ingestCurrentVideos(prisma, uploader, context);
     console.log(
       '\nDone. Canvas: /story-studio/projects/' + PROJECT_ID + '/canvas',
     );
@@ -236,10 +234,7 @@ interface IngestContext {
   ownerUserId: string;
   workspaceId: string;
   revisionId: string;
-  draftRevision: number;
-  draftContentHash: string;
   canonicalModelId: string;
-  canonicalModelDisplayName: string;
   modelArkAssets: Record<string, { assetId: string; asset_uri: string }>;
 }
 
@@ -256,13 +251,9 @@ async function loadContext(prisma: PrismaClient): Promise<IngestContext> {
     where: { storyProjectId: PROJECT_ID, number: 1 },
     select: { id: true },
   });
-  const draft = await prisma.storyDraft.findUniqueOrThrow({
-    where: { storyProjectId: PROJECT_ID },
-    select: { revision: true, contentHash: true },
-  });
   const model = await prisma.aiCanonicalModel.findFirstOrThrow({
     where: { slug: MODEL_SLUG, modality: 'video', status: 'active' },
-    select: { id: true, displayName: true },
+    select: { id: true },
   });
   const registryPath = path.join(ASSETS_ROOT, 'byteplus-assets.json');
   const modelArkAssets = existsSync(registryPath)
@@ -276,10 +267,7 @@ async function loadContext(prisma: PrismaClient): Promise<IngestContext> {
     ownerUserId: owner.userId,
     workspaceId: project.workspaceId,
     revisionId: revision.id,
-    draftRevision: draft.revision,
-    draftContentHash: draft.contentHash,
     canonicalModelId: model.id,
-    canonicalModelDisplayName: model.displayName,
     modelArkAssets,
   };
 }
@@ -437,7 +425,7 @@ async function ingestReferencePlane(
   }
 }
 
-async function ingestVideoTakes(
+async function ingestCurrentVideos(
   prisma: PrismaClient,
   uploader: BlobUploader,
   context: IngestContext,
@@ -456,7 +444,6 @@ async function ingestVideoTakes(
           },
         },
       },
-      takes: { select: { id: true }, take: 1 },
     },
   });
   const clipsByKey = new Map(clips.map((clip) => [clip.key, clip]));
@@ -470,8 +457,8 @@ async function ingestVideoTakes(
     const clipKey = storyKeyFromDirName(dir);
     const clip = clipsByKey.get(clipKey);
     if (!clip) throw new Error(`No seeded clip for video dir ${dir}`);
-    if (clip.takes.length > 0) {
-      console.log(`[clip ${clipKey}] already has takes — skip`);
+    if (clip.currentVideoAssetId) {
+      console.log(`[clip ${clipKey}] already has a current video — skip`);
       continue;
     }
 
@@ -501,8 +488,6 @@ async function ingestVideoTakes(
 
     const spec = clip.specJson as never;
     const compilation = compileStoryFilmPrompt({ clip: spec, maxLength: null });
-    const prompt =
-      (clip.specJson as { prompt?: Record<string, unknown> }).prompt ?? {};
     const outputContract = (
       clip.specJson as {
         outputContract: {
@@ -689,133 +674,35 @@ async function ingestVideoTakes(
           },
         });
 
-        const take = await tx.storyFilmTake.create({
-          data: {
-            storyProjectId: PROJECT_ID,
-            revisionId: context.revisionId,
-            clipId: clip.id,
-            takeNumber: 1,
-            submissionKey,
-            status: StoryFilmTakeStatus.queued,
-            clipSpecHash: clip.specHash,
-            productionInputHash,
-            promptSnapshot: asJson({
-              version: 1,
-              requestFingerprint: canonicalJsonHash({
-                import: INGEST_TAG,
-                clipKey,
-                candidate: 1,
-              }),
-              idempotencyFingerprint: canonicalJsonHash({
-                graphNodeId: clip.graphNodeId,
-                expectedDraftRevision: context.draftRevision,
-                modelId: MODEL_SLUG,
-                variationNote: null,
-                seed: null,
-              }),
-              draftSource: {
-                revision: context.draftRevision,
-                contentHash: context.draftContentHash,
-              },
-              masterPrompt: prompt.masterPrompt ?? null,
-              negativeConstraints: prompt.negativeConstraints ?? null,
-              timeline: prompt.timeline ?? null,
-              continuityNotes: prompt.continuityNotes ?? null,
-              variationNote: null,
-              compiledPrompt: compilation.text,
-              compilerStats: compilation.stats,
-            }),
-            generationConfig: asJson(generationConfig),
-            modelSnapshot: asJson({
-              version: 1,
-              canonicalModelId: context.canonicalModelId,
-              slug: MODEL_SLUG,
-              displayName: context.canonicalModelDisplayName,
-              schemaVersion: 'external-import-v1',
-              generationModes: [meta.mode],
-            }),
-            aiJobId: jobId,
-            createdByUserId: context.ownerUserId,
-            queuedAt,
-            startedAt: queuedAt,
+        const technicalChecks = storyFilmTechnicalChecks(
+          {
+            kind: MediaAssetKind.video,
+            width: probe.width,
+            height: probe.height,
+            durationSeconds: probe.durationSeconds,
+            checksumSha256: sha256,
           },
-          select: { id: true },
-        });
-        await tx.storyFilmTakeReference.createMany({
-          data: bindings.map((binding) => ({
-            storyProjectId: PROJECT_ID,
-            revisionId: context.revisionId,
-            takeId: take.id,
-            referenceSlotId: binding.referenceSlotId,
-            referenceVersionId: binding.referenceSlot.approvedVersion!.id,
-            role: binding.role as StoryFilmClipReferenceRole,
-            position: binding.position,
-            assetId: binding.referenceSlot.approvedVersion!.assetId,
-            checksumSha256:
-              binding.referenceSlot.approvedVersion!.checksumSha256,
-          })),
-        });
-        await tx.storyFilmTake.update({
-          where: { id: take.id },
-          data: {
-            status: StoryFilmTakeStatus.ready,
-            aiJobOutputId: outputId,
-            outputAssetId: asset.id,
-            outputVariantId: placement.variantId,
-            outputChecksumSha256: sha256,
-            technicalChecks: storyFilmTechnicalChecks(
-              {
-                kind: MediaAssetKind.video,
-                width: probe.width,
-                height: probe.height,
-                durationSeconds: probe.durationSeconds,
-                checksumSha256: sha256,
-              },
-              outputContract,
-            ),
-            readyAt: completedAt,
-            completedAt,
-            version: 1,
-          },
-        });
-        const review = await tx.storyFilmTakeReview.create({
-          data: {
-            takeId: take.id,
-            sequence: 1,
-            decision: StoryReviewDecision.approve,
-            technicalPassed: true,
-            safetyPassed: true,
-            checklist: asJson({
-              technical: 'accepted-720p-draft-batch',
-              safety: 'pass',
-            }),
-            notes:
-              '720p draft batch accepted by production decision (2026-07-13); contract is 1080p — dimensions technical check fails honestly until master regeneration.',
-            reviewerUserId: context.ownerUserId,
-          },
-          select: { id: true },
-        });
-        await tx.storyFilmTakeApproval.create({
-          data: {
-            takeId: take.id,
-            reviewId: review.id,
-            approvedByUserId: context.ownerUserId,
-          },
-        });
+          outputContract,
+        );
         await tx.storyFilmClip.update({
           where: { id: clip.id },
           data: {
-            masterTakeId: take.id,
-            masterSelectedByUserId: context.ownerUserId,
-            masterSelectedAt: completedAt,
-            masterRevision: clip.masterRevision + 1,
+            currentVideoAssetId: asset.id,
+            currentVideoVariantId: placement.variantId,
+            currentVideoSpecHash: clip.specHash,
+            currentVideoInputHash: productionInputHash,
+            currentVideoChecksumSha256: sha256,
+            currentVideoTechnicalChecks: asJson(technicalChecks),
+            currentVideoRevision: clip.currentVideoRevision + 1,
+            currentVideoSetByUserId: context.ownerUserId,
+            currentVideoSetAt: completedAt,
           },
         });
       },
       { timeout: 60_000 },
     );
     console.log(
-      `[clip ${clipKey}] take 1 ready+approved+master ← ${dir} (${probe.width}x${probe.height}, ${(uploaded.bytes / 1024 / 1024).toFixed(1)}MB)`,
+      `[clip ${clipKey}] current video ← ${dir} (${probe.width}x${probe.height}, ${(uploaded.bytes / 1024 / 1024).toFixed(1)}MB)`,
     );
   }
 }

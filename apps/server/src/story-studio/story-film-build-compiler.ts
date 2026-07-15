@@ -48,15 +48,15 @@ export interface StoryFilmBuildClipInput {
    * schema-validated. Keep that state explicit so Build validation can report
    * it without letting an unsafe type assertion reach path enumeration. */
   spec: FilmClipSpec | null;
-  takeId: string | null;
+  /** Optional generation provenance. A current video selected from the asset
+   * library has no generation attempt and remains fully buildable. */
+  sourceGenerationId: string | null;
   asset: FrozenFilmClipAsset | null;
   eligibilityDiagnostics: FilmBuildDiagnosticDto[];
 }
 
 type EligibleStoryFilmBuildClipInput = StoryFilmBuildClipInput & {
   spec: FilmClipSpec;
-  productionInputHash: string;
-  takeId: string;
   asset: FrozenFilmClipAsset;
 };
 
@@ -212,7 +212,7 @@ export function compileStoryFilmBuild(
         diagnostic(
           'error',
           'STORY_BUILD_GENERATED_CLIP_DURATION_EXCEEDED',
-          `Clip ${clip.key} Master is ${clip.asset.durationMs}ms, exceeding the Film contract generated-clip limit of ${input.filmSpec.duration.maxGeneratedClipMs}ms.`,
+          `Clip ${clip.key} current video is ${clip.asset.durationMs}ms, exceeding the Film contract generated-clip limit of ${input.filmSpec.duration.maxGeneratedClipMs}ms.`,
           'clip',
           clip.id,
         ),
@@ -299,10 +299,7 @@ export function compileStoryFilmBuild(
   if (!diagnostics.some((item) => item.severity === 'error')) {
     const eligibleClips = includedClips.filter(
       (clip): clip is EligibleStoryFilmBuildClipInput =>
-        clip.spec !== null &&
-        clip.productionInputHash !== null &&
-        clip.takeId !== null &&
-        clip.asset !== null,
+        clip.spec !== null && clip.asset !== null,
     );
     if (eligibleClips.length !== includedClips.length) {
       diagnostics.push(

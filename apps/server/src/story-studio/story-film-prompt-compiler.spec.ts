@@ -1,7 +1,6 @@
 import { buildHuBaoVillaImportBundle } from './import/hu-bao-villa.builder';
 import { UnprocessableEntityException } from '@nestjs/common';
 import { projectStoryFilmRevision } from './story-film-revision-projector';
-import { filmClipProductionBlockReasons } from './story-film-production-read-model';
 import {
   compileStoryFilmPrompt,
   providerImageReferencePromptOverhead,
@@ -76,27 +75,5 @@ describe('Story film provider prompt budget', () => {
       compiled.text.match(/Keep her eyes fixed on the gate\./gu),
     ).toHaveLength(1);
     expect(compiled.text).not.toMatch(/Keep her eyes fixed on the gat$/u);
-  });
-});
-
-describe('Story film initial production readiness', () => {
-  it('does not treat an unmaterialized productionInputHash as a blocker', () => {
-    expect(
-      filmClipProductionBlockReasons(
-        {
-          generationControl: {
-            mode: 'frame_lock',
-            frameMode: 'first_frame',
-          },
-        },
-        [
-          {
-            role: 'first_frame',
-            required: true,
-            approvedReferenceVersionId: '0197f4a2-0800-7000-8000-000000000001',
-          },
-        ],
-      ),
-    ).toEqual([]);
   });
 });

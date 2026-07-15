@@ -727,21 +727,17 @@ export class StoryFilmReferenceService {
         });
       }
       let clipVersion = clip.version;
-      if (clip.productionInputHash !== null || clip.masterTakeId !== null) {
+      if (
+        clip.productionInputHash !== null ||
+        clip.latestGenerationAttemptId !== null
+      ) {
         const updated = await tx.storyFilmClip.update({
           where: { id: clipId },
           data: {
             productionInputManifest: Prisma.DbNull,
             productionInputHash: null,
             version: { increment: 1 },
-            ...(clip.masterTakeId
-              ? {
-                  masterTakeId: null,
-                  masterRevision: { increment: 1 },
-                  masterSelectedByUserId: null,
-                  masterSelectedAt: null,
-                }
-              : {}),
+            latestGenerationAttemptId: null,
             updatedByUserId: user.userId,
           },
           select: { version: true },
@@ -929,7 +925,7 @@ function toReferenceVersionDto(row: ReferenceVersionRow) {
     source: row.source,
     aiJobId: row.aiJobId,
     aiJobOutputId: row.aiJobOutputId,
-    sourceTakeId: row.sourceTakeId,
+    sourceGenerationId: row.sourceGenerationAttemptId,
     sourceFrameIndex: row.sourceFrameIndex,
     sourceOutputChecksumSha256: row.sourceOutputChecksumSha256,
     asset: toMediaAsset(row.asset),

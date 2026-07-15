@@ -1,57 +1,10 @@
 import { describe, expect, it } from "vitest";
-import type { FilmTrailerReviewChecklist, FilmTrailerSummary } from "@/lib/story-projects-api";
+import type { FilmTrailerSummary } from "@/lib/story-projects-api";
 import {
   projectLockedTrailerPrompt,
   StorySubmissionKeyRegistry,
-  trailerProductionCapabilities,
   type StorySubmissionStorage,
-  validateTrailerReviewSubmission,
 } from "./story-trailer-production-model";
-
-const PASSING_REVIEW: FilmTrailerReviewChecklist = {
-  technical: "pass",
-  storyFidelity: "pass",
-  identityConsistency: "pass",
-  visualConsistency: "pass",
-  pacing: "pass",
-  textReadability: "pass",
-  rights: "pass",
-  safety: "pass",
-};
-
-describe("trailerProductionCapabilities", () => {
-  it("keeps generation/master actions separate from review/approval actions", () => {
-    expect(trailerProductionCapabilities(["story.read", "story.generate"])).toEqual({
-      canGenerate: true,
-      canReview: false,
-    });
-    expect(trailerProductionCapabilities(["story.read", "story.review"])).toEqual({
-      canGenerate: false,
-      canReview: true,
-    });
-  });
-});
-
-describe("validateTrailerReviewSubmission", () => {
-  it("requires a review note for request-changes and reject decisions", () => {
-    expect(validateTrailerReviewSubmission("request_changes", PASSING_REVIEW, "  ")).toBe(
-      "comment_required"
-    );
-    expect(
-      validateTrailerReviewSubmission("reject", PASSING_REVIEW, "Identity drifted.")
-    ).toBeNull();
-  });
-
-  it("requires technical and safety checks to pass before approval", () => {
-    expect(
-      validateTrailerReviewSubmission("approve", { ...PASSING_REVIEW, technical: "fail" }, "")
-    ).toBe("approve_requirements");
-    expect(
-      validateTrailerReviewSubmission("approve", { ...PASSING_REVIEW, safety: "na" }, "")
-    ).toBe("approve_requirements");
-    expect(validateTrailerReviewSubmission("approve", PASSING_REVIEW, "")).toBeNull();
-  });
-});
 
 describe("StorySubmissionKeyRegistry", () => {
   it("reuses ambiguous submissions, rotates on input changes, and clears only confirmed input", () => {

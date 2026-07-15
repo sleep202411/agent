@@ -18,7 +18,6 @@ import {
   StoryBuildStatus,
   StoryFilmContinuityDecision,
   StoryFilmDependencyKind,
-  StoryFilmTakeStatus,
 } from '@prisma/client';
 import type { AuthUser } from '../auth';
 import { PrismaService } from '../infra/db/db.module';
@@ -49,7 +48,7 @@ import {
   type FrozenFilmClipAsset,
   type StoryFilmBuildClipInput,
 } from './story-film-build-compiler';
-import { storyFilmHasFailedTechnicalCheck } from './story-film-production.service';
+import { storyFilmTechnicalCheckDtos } from './story-film-production.service';
 import { StoryPermissionService } from './story-permission.service';
 
 const BUILD_INCLUDE = Prisma.validator<Prisma.StoryBuildInclude>()({
@@ -63,7 +62,6 @@ const BUILD_INCLUDE = Prisma.validator<Prisma.StoryBuildInclude>()({
           id: true,
           status: true,
           moderationStatus: true,
-          checksumSha256: true,
           deletedAt: true,
         },
       },
@@ -95,27 +93,20 @@ const BUILD_MEDIA_READ_URL_TTL_SECONDS = positiveInt(
   process.env.MEDIA_USER_READ_URL_TTL_SECONDS,
   5 * 60,
 );
+const REQUIRED_CURRENT_VIDEO_TECHNICAL_CHECK_KEYS = [
+  'kind',
+  'dimensions',
+  'duration',
+  'checksum',
+] as const;
 
 const BUILD_CLIP_INCLUDE = Prisma.validator<Prisma.StoryFilmClipInclude>()({
-  references: {
-    orderBy: [{ role: 'asc' }, { position: 'asc' }],
+  currentVideoAsset: {
     include: {
-      referenceSlot: { select: { approvedVersionId: true } },
+      placements: true,
     },
   },
-  masterTake: {
-    include: {
-      approval: true,
-      references: true,
-      outputAsset: {
-        include: {
-          placements: true,
-          variants: { include: { placements: true } },
-        },
-      },
-      outputVariant: { include: { placements: true } },
-    },
-  },
+  currentVideoVariant: { include: { placements: true } },
 });
 type BuildClipRow = Prisma.StoryFilmClipGetPayload<{
   include: typeof BUILD_CLIP_INCLUDE;
@@ -127,8 +118,12 @@ const BUILD_DEPENDENCY_INCLUDE =
       orderBy: [{ id: 'asc' }],
       select: {
         id: true,
-        upstreamTakeId: true,
-        downstreamTakeId: true,
+        upstreamAssetId: true,
+        upstreamVariantId: true,
+        upstreamChecksumSha256: true,
+        downstreamAssetId: true,
+        downstreamVariantId: true,
+        downstreamChecksumSha256: true,
         decision: true,
       },
     },
@@ -229,7 +224,7 @@ export class StoryFilmBuildService {
             snapshot.filmSpec.productionRevision,
           );
         }
-        const inputManifest = buildInputManifest(input, snapshot);
+        const inputManifest = storyFilmBuildInputManifest(input, snapshot);
         const inputManifestHash = canonicalJsonHash(inputManifest);
         const inputHash = canonicalJsonHash({
           request: input,
@@ -450,7 +445,7 @@ export class StoryFilmBuildService {
         build.sourceRevisionId,
       );
       const currentManifestHash = canonicalJsonHash(
-        buildInputManifest(
+        storyFilmBuildInputManifest(
           {
             revisionId: build.sourceRevisionId,
             expectedProductionRevision: build.sourceProductionRevision,
@@ -559,7 +554,7 @@ export class StoryFilmBuildService {
         filmSpec: filmSpec.data,
         clips: preparedClips,
       });
-      const continuityDiagnostics = continuityBuildDiagnostics(
+      const continuityDiagnostics = storyFilmBuildContinuityDiagnostics(
         snapshot.dependencies,
         preparedClips,
         new Set(compiled.includedClipIds),
@@ -603,7 +598,7 @@ export class StoryFilmBuildService {
           build.sourceRevisionId,
         );
         const lockedManifestHash = canonicalJsonHash(
-          buildInputManifest(
+          storyFilmBuildInputManifest(
             {
               revisionId: build.sourceRevisionId,
               expectedProductionRevision: build.sourceProductionRevision,
@@ -618,12 +613,7 @@ export class StoryFilmBuildService {
         }
         for (const [rank, clipId] of compiled.includedClipIds.entries()) {
           const clip = includedById.get(clipId);
-          if (
-            !clip?.spec ||
-            !clip.asset ||
-            !clip.takeId ||
-            !clip.productionInputHash
-          ) {
+          if (!clip?.spec || !clip.asset) {
             throw new Error(`Compiler admitted an ineligible Clip ${clipId}.`);
           }
           const logicalKey = `clip:${clip.key}:video`;
@@ -650,7 +640,7 @@ export class StoryFilmBuildService {
               storyProjectId: build.storyProjectId,
               revisionId: build.sourceRevisionId,
               clipId: clip.id,
-              takeId: clip.takeId,
+              sourceGenerationAttemptId: clip.sourceGenerationId,
               buildAssetId: buildAsset.id,
               logicalKey,
               clipSpecHash: clip.specHash,
@@ -738,116 +728,106 @@ export class StoryFilmBuildService {
         ),
       );
     }
-    const take = clip.masterTake;
-    if (!clip.masterTakeId || !take) {
+    const hasCurrentAssetId = clip.currentVideoAssetId !== null;
+    const hasCurrentVariantId = clip.currentVideoVariantId !== null;
+    if (!hasCurrentAssetId && !hasCurrentVariantId) {
       diagnostics.push(
         buildDiagnostic(
-          'STORY_BUILD_MASTER_MISSING',
-          `Clip ${clip.key} has no selected Master Take.`,
+          'STORY_BUILD_CURRENT_VIDEO_MISSING',
+          `Clip ${clip.key} has no current video.`,
           'clip',
           clip.id,
         ),
       );
-    } else {
-      if (take.status !== StoryFilmTakeStatus.ready) {
-        diagnostics.push(
-          buildDiagnostic(
-            'STORY_BUILD_MASTER_NOT_READY',
-            `Clip ${clip.key} Master Take is not ready.`,
-            'take',
-            take.id,
-          ),
-        );
-      }
-      if (!take.approval) {
-        diagnostics.push(
-          buildDiagnostic(
-            'STORY_BUILD_MASTER_NOT_APPROVED',
-            `Clip ${clip.key} Master Take has not been approved.`,
-            'take',
-            take.id,
-          ),
-        );
-      }
-      if (take.supersededAt) {
-        diagnostics.push(
-          buildDiagnostic(
-            'STORY_BUILD_MASTER_SUPERSEDED',
-            `Clip ${clip.key} Master Take was superseded.`,
-            'take',
-            take.id,
-          ),
-        );
-      }
-      if (
-        take.clipSpecHash !== clip.specHash ||
-        !clip.productionInputHash ||
-        take.productionInputHash !== clip.productionInputHash
-      ) {
-        diagnostics.push(
-          buildDiagnostic(
-            'STORY_BUILD_MASTER_STALE',
-            `Clip ${clip.key} Master Take does not match the current production snapshot.`,
-            'take',
-            take.id,
-          ),
-        );
-      }
-      if (storyFilmHasFailedTechnicalCheck(take.technicalChecks)) {
-        diagnostics.push(
-          buildDiagnostic(
-            'STORY_BUILD_MASTER_TECHNICAL_CHECKS_FAILED',
-            `Clip ${clip.key} Master Take has failed technical checks.`,
-            'take',
-            take.id,
-          ),
-        );
-      }
-      clip.references
-        .filter((binding) => binding.required)
-        .forEach((binding) => {
-          const approvedVersionId = binding.referenceSlot.approvedVersionId;
-          const frozen = take.references.some(
-            (reference) =>
-              reference.referenceSlotId === binding.referenceSlotId &&
-              reference.referenceVersionId === approvedVersionId &&
-              reference.role === binding.role &&
-              reference.position === binding.position,
-          );
-          if (!approvedVersionId || !frozen) {
-            diagnostics.push(
-              buildDiagnostic(
-                'STORY_BUILD_MASTER_REFERENCE_STALE',
-                `Clip ${clip.key} Master Take does not freeze the currently approved required references.`,
-                'take',
-                take.id,
-              ),
-            );
-          }
-        });
-    }
-
-    const asset = take?.outputAsset;
-    const variant = take?.outputVariant;
-    let frozenAsset: FrozenFilmClipAsset | null = null;
-    if (take && (!asset || !variant)) {
+    } else if (!hasCurrentAssetId || !hasCurrentVariantId) {
       diagnostics.push(
         buildDiagnostic(
-          'STORY_BUILD_MASTER_OUTPUT_MISSING',
-          `Clip ${clip.key} Master Take has no output asset and variant.`,
-          'asset',
-          take.id,
+          'STORY_BUILD_CURRENT_VIDEO_POINTER_INVALID',
+          `Clip ${clip.key} current video asset and variant pointers are incomplete.`,
+          'clip',
+          clip.id,
         ),
       );
-    } else if (take && asset && variant) {
+    }
+    if (
+      (hasCurrentAssetId || hasCurrentVariantId) &&
+      (clip.currentVideoRevision < 1 || clip.currentVideoSetAt === null)
+    ) {
+      diagnostics.push(
+        buildDiagnostic(
+          'STORY_BUILD_CURRENT_VIDEO_POINTER_INVALID',
+          `Clip ${clip.key} current video selection metadata is incomplete.`,
+          'clip',
+          clip.id,
+        ),
+      );
+    }
+    if (
+      hasCurrentAssetId &&
+      hasCurrentVariantId &&
+      (clip.currentVideoSpecHash !== clip.specHash ||
+        clip.currentVideoInputHash !== clip.productionInputHash)
+    ) {
+      diagnostics.push(
+        buildDiagnostic(
+          'STORY_BUILD_CURRENT_VIDEO_OUTDATED',
+          `Clip ${clip.key} current video does not match the current production snapshot.`,
+          'asset',
+          clip.currentVideoAssetId,
+        ),
+      );
+    }
+
+    const rawTechnicalChecks = clip.currentVideoTechnicalChecks;
+    const technicalChecks = storyFilmTechnicalCheckDtos(
+      rawTechnicalChecks ?? [],
+    );
+    const technicalCheckKeys = new Set(
+      technicalChecks.map((check) => check.key),
+    );
+    if (
+      (hasCurrentAssetId || hasCurrentVariantId) &&
+      (!Array.isArray(rawTechnicalChecks) ||
+        rawTechnicalChecks.length === 0 ||
+        technicalChecks.length !== rawTechnicalChecks.length ||
+        REQUIRED_CURRENT_VIDEO_TECHNICAL_CHECK_KEYS.some(
+          (key) => !technicalCheckKeys.has(key),
+        ) ||
+        technicalChecks.some((check) => check.status !== 'passed'))
+    ) {
+      diagnostics.push(
+        buildDiagnostic(
+          'STORY_BUILD_CURRENT_VIDEO_TECHNICAL_CHECKS_FAILED',
+          `Clip ${clip.key} current video has incomplete or failed technical checks.`,
+          'asset',
+          clip.currentVideoAssetId,
+        ),
+      );
+    }
+
+    const asset = clip.currentVideoAsset;
+    const variant = clip.currentVideoVariant;
+    let frozenAsset: FrozenFilmClipAsset | null = null;
+    if ((hasCurrentAssetId || hasCurrentVariantId) && (!asset || !variant)) {
+      diagnostics.push(
+        buildDiagnostic(
+          'STORY_BUILD_CURRENT_VIDEO_OUTPUT_MISSING',
+          `Clip ${clip.key} current video asset or variant is missing.`,
+          'asset',
+          clip.currentVideoAssetId,
+        ),
+      );
+    } else if (asset && variant) {
       if (
         asset.workspaceId !== build.project.workspaceId ||
+        asset.id !== clip.currentVideoAssetId ||
+        variant.id !== clip.currentVideoVariantId ||
         variant.assetId !== asset.id
       ) {
         diagnostics.push(
           buildDiagnostic(
             'STORY_BUILD_ASSET_SCOPE_INVALID',
-            `Clip ${clip.key} output asset does not belong to this Workspace or variant.`,
+            `Clip ${clip.key} current video does not belong to this Workspace or selected asset.`,
             'asset',
             asset.id,
           ),
@@ -863,7 +843,7 @@ export class StoryFilmBuildService {
         diagnostics.push(
           buildDiagnostic(
             'STORY_BUILD_ASSET_NOT_READY',
-            `Clip ${clip.key} output asset and selected variant must both be ready video media.`,
+            `Clip ${clip.key} current video asset and variant must both be ready video media.`,
             'asset',
             asset.id,
           ),
@@ -874,19 +854,15 @@ export class StoryFilmBuildService {
           asset,
           variant,
           requireModerationApproval(),
-          `Clip ${clip.key} output asset`,
+          `Clip ${clip.key} current video`,
         ),
       );
-      const checksum = take.outputChecksumSha256;
-      if (
-        !checksum ||
-        asset.checksumSha256 !== checksum ||
-        variant.checksumSha256 !== checksum
-      ) {
+      const checksum = clip.currentVideoChecksumSha256;
+      if (!checksum || variant.checksumSha256 !== checksum) {
         diagnostics.push(
           buildDiagnostic(
             'STORY_BUILD_ASSET_CHECKSUM_INVALID',
-            `Clip ${clip.key} output checksums are missing or inconsistent.`,
+            `Clip ${clip.key} current video checksum does not match its selected variant.`,
             'asset',
             asset.id,
           ),
@@ -907,7 +883,7 @@ export class StoryFilmBuildService {
         diagnostics.push(
           buildDiagnostic(
             'STORY_BUILD_ASSET_OUTPUT_CONTRACT_MISMATCH',
-            `Clip ${clip.key} output dimensions or duration do not satisfy the immutable output contract.`,
+            `Clip ${clip.key} current video dimensions or duration do not satisfy the immutable output contract.`,
             'asset',
             asset.id,
           ),
@@ -918,7 +894,7 @@ export class StoryFilmBuildService {
         diagnostics.push(
           buildDiagnostic(
             'STORY_BUILD_ASSET_STORAGE_UNAVAILABLE',
-            `Clip ${clip.key} output variant has no active delivery source.`,
+            `Clip ${clip.key} current video variant has no active delivery source.`,
             'asset',
             asset.id,
           ),
@@ -942,7 +918,12 @@ export class StoryFilmBuildService {
         asset.id,
         variant.id,
       );
-      if (checksum && width && height && durationSeconds !== null && url) {
+      if (
+        checksum &&
+        width !== null &&
+        height !== null &&
+        durationSeconds !== null
+      ) {
         frozenAsset = {
           assetId: asset.id,
           variantId: variant.id,
@@ -964,7 +945,7 @@ export class StoryFilmBuildService {
       specHash: clip.specHash,
       productionInputHash: clip.productionInputHash,
       spec: spec.success ? spec.data : null,
-      takeId: take?.id ?? null,
+      sourceGenerationId: clip.currentVideoSourceAttemptId,
       asset: frozenAsset,
       eligibilityDiagnostics: diagnostics,
     };
@@ -1167,6 +1148,12 @@ async function lockCompilationSnapshot(
   revisionId: string,
 ): Promise<void> {
   await tx.$queryRaw`
+    SELECT "id" FROM "story_revisions"
+    WHERE "story_project_id" = ${projectId}::uuid
+      AND "id" = ${revisionId}::uuid
+    FOR SHARE
+  `;
+  await tx.$queryRaw`
     SELECT "revision_id" FROM "story_film_specs"
     WHERE "story_project_id" = ${projectId}::uuid
       AND "revision_id" = ${revisionId}::uuid
@@ -1180,26 +1167,9 @@ async function lockCompilationSnapshot(
     FOR SHARE
   `;
   await tx.$queryRaw`
-    SELECT t."id"
-    FROM "story_film_takes" t
-    JOIN "story_film_clips" c ON c."master_take_id" = t."id"
-    WHERE c."story_project_id" = ${projectId}::uuid
-      AND c."revision_id" = ${revisionId}::uuid
-      AND c."archived_at" IS NULL
-    FOR SHARE OF t
-  `;
-  await tx.$queryRaw`
-    SELECT s."id"
-    FROM "story_film_reference_slots" s
-    WHERE s."story_project_id" = ${projectId}::uuid
-      AND s."revision_id" = ${revisionId}::uuid
-    FOR SHARE OF s
-  `;
-  await tx.$queryRaw`
     SELECT a."id"
     FROM "media_assets" a
-    JOIN "story_film_takes" t ON t."output_asset_id" = a."id"
-    JOIN "story_film_clips" c ON c."master_take_id" = t."id"
+    JOIN "story_film_clips" c ON c."current_video_asset_id" = a."id"
     WHERE c."story_project_id" = ${projectId}::uuid
       AND c."revision_id" = ${revisionId}::uuid
       AND c."archived_at" IS NULL
@@ -1208,8 +1178,7 @@ async function lockCompilationSnapshot(
   await tx.$queryRaw`
     SELECT v."id"
     FROM "media_asset_variants" v
-    JOIN "story_film_takes" t ON t."output_variant_id" = v."id"
-    JOIN "story_film_clips" c ON c."master_take_id" = t."id"
+    JOIN "story_film_clips" c ON c."current_video_variant_id" = v."id"
     WHERE c."story_project_id" = ${projectId}::uuid
       AND c."revision_id" = ${revisionId}::uuid
       AND c."archived_at" IS NULL
@@ -1218,14 +1187,23 @@ async function lockCompilationSnapshot(
   await tx.$queryRaw`
     SELECT p."id"
     FROM "media_object_placements" p
-    JOIN "story_film_takes" t
-      ON p."asset_id" = t."output_asset_id"
-     AND (p."variant_id" IS NULL OR p."variant_id" = t."output_variant_id")
-    JOIN "story_film_clips" c ON c."master_take_id" = t."id"
+    JOIN "story_film_clips" c
+      ON p."asset_id" = c."current_video_asset_id"
+     AND (
+       p."variant_id" IS NULL
+       OR p."variant_id" = c."current_video_variant_id"
+     )
     WHERE c."story_project_id" = ${projectId}::uuid
       AND c."revision_id" = ${revisionId}::uuid
       AND c."archived_at" IS NULL
     FOR SHARE OF p
+  `;
+  await tx.$queryRaw`
+    SELECT d."id"
+    FROM "story_film_clip_dependencies" d
+    WHERE d."story_project_id" = ${projectId}::uuid
+      AND d."revision_id" = ${revisionId}::uuid
+    FOR SHARE OF d
   `;
   await tx.$queryRaw`
     SELECT cc."id"
@@ -1236,12 +1214,12 @@ async function lockCompilationSnapshot(
   `;
 }
 
-function buildInputManifest(
+export function storyFilmBuildInputManifest(
   input: CreateFilmBuildInput,
   snapshot: CompilationSnapshot,
 ): Record<string, unknown> {
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     profile: input.profile,
     scope: input.scope,
     revision: {
@@ -1260,56 +1238,24 @@ function buildInputManifest(
       rank: clip.rank,
       specHash: clip.specHash,
       productionInputHash: clip.productionInputHash,
-      masterTakeId: clip.masterTakeId,
-      masterRevision: clip.masterRevision,
-      requiredReferences: clip.references
-        .filter((binding) => binding.required)
-        .map((binding) => ({
-          referenceSlotId: binding.referenceSlotId,
-          approvedVersionId: binding.referenceSlot.approvedVersionId,
-          role: binding.role,
-          position: binding.position,
-        })),
-      take: clip.masterTake
-        ? {
-            id: clip.masterTake.id,
-            status: clip.masterTake.status,
-            clipSpecHash: clip.masterTake.clipSpecHash,
-            productionInputHash: clip.masterTake.productionInputHash,
-            outputAssetId: clip.masterTake.outputAssetId,
-            outputVariantId: clip.masterTake.outputVariantId,
-            outputChecksumSha256: clip.masterTake.outputChecksumSha256,
-            supersededAt: clip.masterTake.supersededAt?.toISOString() ?? null,
-            approval: clip.masterTake.approval
-              ? {
-                  reviewId: clip.masterTake.approval.reviewId,
-                  approvedByUserId: clip.masterTake.approval.approvedByUserId,
-                  approvedAt: clip.masterTake.approval.approvedAt.toISOString(),
-                }
-              : null,
-            technicalChecks: clip.masterTake.technicalChecks,
-            references: [...clip.masterTake.references]
-              .sort(
-                (left, right) =>
-                  left.role.localeCompare(right.role) ||
-                  left.position - right.position,
-              )
-              .map((reference) => ({
-                referenceSlotId: reference.referenceSlotId,
-                referenceVersionId: reference.referenceVersionId,
-                role: reference.role,
-                position: reference.position,
-                assetId: reference.assetId,
-                checksumSha256: reference.checksumSha256,
-              })),
-            asset: clip.masterTake.outputAsset
-              ? mediaAssetManifest(clip.masterTake.outputAsset)
-              : null,
-            variant: clip.masterTake.outputVariant
-              ? mediaVariantManifest(clip.masterTake.outputVariant)
-              : null,
-          }
-        : null,
+      currentVideo: {
+        revision: clip.currentVideoRevision,
+        assetId: clip.currentVideoAssetId,
+        variantId: clip.currentVideoVariantId,
+        sourceGenerationAttemptId: clip.currentVideoSourceAttemptId,
+        specHash: clip.currentVideoSpecHash,
+        inputHash: clip.currentVideoInputHash,
+        checksumSha256: clip.currentVideoChecksumSha256,
+        technicalChecks: clip.currentVideoTechnicalChecks,
+        setByUserId: clip.currentVideoSetByUserId,
+        setAt: clip.currentVideoSetAt?.toISOString() ?? null,
+        asset: clip.currentVideoAsset
+          ? mediaAssetManifest(clip.currentVideoAsset)
+          : null,
+        variant: clip.currentVideoVariant
+          ? mediaVariantManifest(clip.currentVideoVariant)
+          : null,
+      },
     })),
     dependencies: snapshot.dependencies.map((dependency) => ({
       id: dependency.id,
@@ -1318,8 +1264,12 @@ function buildInputManifest(
       successorClipId: dependency.successorClipId,
       continuityChecks: dependency.continuityChecks.map((check) => ({
         id: check.id,
-        upstreamTakeId: check.upstreamTakeId,
-        downstreamTakeId: check.downstreamTakeId,
+        upstreamAssetId: check.upstreamAssetId,
+        upstreamVariantId: check.upstreamVariantId,
+        upstreamChecksumSha256: check.upstreamChecksumSha256,
+        downstreamAssetId: check.downstreamAssetId,
+        downstreamVariantId: check.downstreamVariantId,
+        downstreamChecksumSha256: check.downstreamChecksumSha256,
         decision: check.decision,
       })),
     })),
@@ -1327,7 +1277,7 @@ function buildInputManifest(
 }
 
 function mediaAssetManifest(
-  asset: NonNullable<BuildClipRow['masterTake']>['outputAsset'] & {},
+  asset: NonNullable<BuildClipRow['currentVideoAsset']>,
 ): Record<string, unknown> {
   return {
     id: asset.id,
@@ -1353,7 +1303,7 @@ function mediaAssetManifest(
 }
 
 function mediaVariantManifest(
-  variant: NonNullable<BuildClipRow['masterTake']>['outputVariant'] & {},
+  variant: NonNullable<BuildClipRow['currentVideoVariant']>,
 ): Record<string, unknown> {
   return {
     id: variant.id,
@@ -1404,12 +1354,14 @@ function placementManifest(
     }));
 }
 
-function continuityBuildDiagnostics(
+export function storyFilmBuildContinuityDiagnostics(
   dependencies: BuildDependencyRow[],
   clips: StoryFilmBuildClipInput[],
   includedClipIds: Set<string>,
 ): FilmBuildDiagnosticDto[] {
-  const takeByClipId = new Map(clips.map((clip) => [clip.id, clip.takeId]));
+  const currentVideoByClipId = new Map(
+    clips.map((clip) => [clip.id, clip.asset]),
+  );
   return dependencies.flatMap((dependency) => {
     if (
       !includedClipIds.has(dependency.predecessorClipId) ||
@@ -1419,16 +1371,20 @@ function continuityBuildDiagnostics(
     ) {
       return [];
     }
-    const upstreamTakeId = takeByClipId.get(dependency.predecessorClipId);
-    const downstreamTakeId = takeByClipId.get(dependency.successorClipId);
-    // Missing Masters already carry an actionable Clip-level diagnostic. A
-    // continuity review cannot exist until both concrete Takes are selected,
-    // so reporting it here would only multiply secondary errors.
-    if (!upstreamTakeId || !downstreamTakeId) return [];
+    const upstream = currentVideoByClipId.get(dependency.predecessorClipId);
+    const downstream = currentVideoByClipId.get(dependency.successorClipId);
+    // Missing or ineligible current videos already carry actionable Clip-level
+    // diagnostics. Reporting continuity before both concrete media identities
+    // exist would only multiply secondary errors.
+    if (!upstream || !downstream) return [];
     const passed = dependency.continuityChecks.some(
       (check) =>
-        check.upstreamTakeId === upstreamTakeId &&
-        check.downstreamTakeId === downstreamTakeId &&
+        check.upstreamAssetId === upstream.assetId &&
+        check.upstreamVariantId === upstream.variantId &&
+        check.upstreamChecksumSha256 === upstream.checksumSha256 &&
+        check.downstreamAssetId === downstream.assetId &&
+        check.downstreamVariantId === downstream.variantId &&
+        check.downstreamChecksumSha256 === downstream.checksumSha256 &&
         (check.decision === StoryFilmContinuityDecision.pass ||
           check.decision === StoryFilmContinuityDecision.waived),
     );
@@ -1437,7 +1393,7 @@ function continuityBuildDiagnostics(
       : [
           buildDiagnostic(
             'STORY_BUILD_CONTINUITY_CHECK_MISSING',
-            'The selected Master Takes do not have a passing continuity check for a required transition.',
+            'The selected current videos do not have a passing continuity check for a required transition.',
             'clip',
             dependency.successorClipId,
           ),
@@ -1506,7 +1462,6 @@ interface CurrentBuildMediaRow {
     id: string;
     status: MediaAssetStatus;
     moderationStatus: MediaAssetModerationStatus;
-    checksumSha256: string | null;
     deletedAt: Date | null;
   };
   variant: {
@@ -1703,10 +1658,7 @@ function storyBuildCurrentMediaDiagnostics(
       ];
     }
     if (moderation.length > 0) return moderation;
-    if (
-      frozen.asset.checksumSha256 !== frozen.checksumSha256 ||
-      frozen.variant.checksumSha256 !== frozen.checksumSha256
-    ) {
+    if (frozen.variant.checksumSha256 !== frozen.checksumSha256) {
       return [
         buildDiagnostic(
           'STORY_BUILD_ASSET_INTEGRITY_CHANGED',

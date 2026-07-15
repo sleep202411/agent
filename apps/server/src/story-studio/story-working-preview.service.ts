@@ -9,8 +9,6 @@ import {
   MediaAssetStatus,
   MediaAssetVariantStatus,
   Prisma,
-  StoryFilmTakeStatus,
-  StoryReviewDecision,
 } from '@prisma/client';
 import type { AuthUser } from '../auth';
 import { PrismaService } from '../infra/db/db.module';
@@ -30,48 +28,20 @@ import { storyFilmHasFailedTechnicalCheck } from './story-film-production.servic
 import { projectStoryFilmRevision } from './story-film-revision-projector';
 import { StoryPermissionService } from './story-permission.service';
 
-const WORKING_PREVIEW_TAKE_INCLUDE =
-  Prisma.validator<Prisma.StoryFilmTakeInclude>()({
-    approval: { select: { takeId: true } },
-    reviews: {
-      orderBy: [{ sequence: 'desc' }, { id: 'desc' }],
-      take: 1,
-      select: { decision: true },
-    },
-    outputAsset: {
+const WORKING_PREVIEW_CLIP_INCLUDE =
+  Prisma.validator<Prisma.StoryFilmClipInclude>()({
+    currentVideoAsset: {
       include: {
         placements: true,
         variants: { include: { placements: true } },
       },
     },
-    outputVariant: { include: { placements: true } },
+    currentVideoVariant: { include: { placements: true } },
   });
-
-const WORKING_PREVIEW_CLIP_INCLUDE =
-  Prisma.validator<Prisma.StoryFilmClipInclude>()({
-    masterTake: { include: WORKING_PREVIEW_TAKE_INCLUDE },
-    takes: {
-      where: {
-        status: StoryFilmTakeStatus.ready,
-        supersededAt: null,
-      },
-      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
-      include: WORKING_PREVIEW_TAKE_INCLUDE,
-    },
-  });
-
-type WorkingPreviewTake = Prisma.StoryFilmTakeGetPayload<{
-  include: typeof WORKING_PREVIEW_TAKE_INCLUDE;
-}>;
 
 type WorkingPreviewClip = Prisma.StoryFilmClipGetPayload<{
   include: typeof WORKING_PREVIEW_CLIP_INCLUDE;
 }>;
-
-interface WorkingPreviewTakeSelection {
-  take: WorkingPreviewTake;
-  kind: 'master' | 'latest_ready';
-}
 
 @Injectable()
 export class StoryWorkingPreviewService {
@@ -240,7 +210,7 @@ export class StoryWorkingPreviewService {
     );
     const selections = projection.clipSpecs.map((clip) => {
       const specHash = canonicalJsonHash(clip);
-      const selection = selectWorkingPreviewTake(
+      const currentVideo = selectWorkingPreviewVideo(
         currentClipByNodeId.get(clip.graphNodeId) ?? null,
         specHash,
       );
@@ -249,15 +219,20 @@ export class StoryWorkingPreviewService {
           project.workspaceId,
           clip,
           specHash,
-          selection,
+          currentVideo,
         ),
-        source: selection
-          ? {
-              graphNodeId: clip.graphNodeId,
-              takeId: selection.take.id,
-              selection: selection.kind,
-            }
-          : null,
+        source:
+          currentVideo?.currentVideoAssetId &&
+          currentVideo.currentVideoVariantId
+            ? {
+                graphNodeId: clip.graphNodeId,
+                assetId: currentVideo.currentVideoAssetId,
+                variantId: currentVideo.currentVideoVariantId,
+                sourceGenerationId: currentVideo.currentVideoSourceAttemptId,
+                currentVideoRevision: currentVideo.currentVideoRevision,
+                selection: 'current' as const,
+              }
+            : null,
       };
     });
     const compiled = compileStoryFilmBuild({
@@ -315,61 +290,77 @@ function prepareWorkingPreviewClip(
   workspaceId: string,
   spec: ReturnType<typeof projectStoryFilmRevision>['clipSpecs'][number],
   specHash: string,
-  selection: WorkingPreviewTakeSelection | null,
+  currentVideo: WorkingPreviewClip | null,
 ): StoryFilmBuildClipInput {
   const diagnostics: FilmBuildDiagnosticDto[] = [];
   let asset: FrozenFilmClipAsset | null = null;
-  const take = selection?.take ?? null;
-  if (!take) {
+  if (!currentVideo) {
     diagnostics.push(
       previewDiagnostic(
         'error',
-        'STORY_WORKING_PREVIEW_TAKE_MISSING',
-        `Shot ${spec.key} has no ready video Take matching its current director design.`,
+        'STORY_WORKING_PREVIEW_CURRENT_VIDEO_MISSING',
+        `Shot ${spec.key} has no current video.`,
         'clip',
         spec.graphNodeId,
       ),
     );
   } else {
-    if (selection?.kind === 'latest_ready') {
+    if (currentVideo.currentVideoSpecHash === null) {
+      diagnostics.push(
+        previewDiagnostic(
+          'error',
+          'STORY_WORKING_PREVIEW_CURRENT_VIDEO_PROVENANCE_MISSING',
+          `Shot ${spec.key} current video is missing the design snapshot required for playtesting.`,
+          'asset',
+          currentVideo.currentVideoAssetId,
+        ),
+      );
+    } else if (
+      currentVideo.currentVideoSpecHash !== specHash ||
+      currentVideo.currentVideoInputHash !== currentVideo.productionInputHash
+    ) {
       diagnostics.push(
         previewDiagnostic(
           'warning',
-          'STORY_WORKING_PREVIEW_READY_TAKE_FALLBACK',
-          `Shot ${spec.key} has no current Master, so preview is using its latest compatible ready Take.`,
-          'take',
-          take.id,
+          'STORY_WORKING_PREVIEW_CURRENT_VIDEO_OUTDATED',
+          `Shot ${spec.key} is using its previous current video while a newer design is pending.`,
+          'asset',
+          currentVideo.currentVideoAssetId,
         ),
       );
     }
-    if (storyFilmHasFailedTechnicalCheck(take.technicalChecks)) {
+    if (
+      storyFilmHasFailedTechnicalCheck(
+        currentVideo.currentVideoTechnicalChecks ?? [],
+      )
+    ) {
       diagnostics.push(
         previewDiagnostic(
           'error',
           'STORY_WORKING_PREVIEW_TECHNICAL_CHECK_FAILED',
-          `Shot ${spec.key} latest ready Take has a failed technical check.`,
-          'take',
-          take.id,
+          `Shot ${spec.key} current video has a failed technical check.`,
+          'asset',
+          currentVideo.currentVideoAssetId,
         ),
       );
     }
-    const source = take.outputAsset;
-    const variant = take.outputVariant;
+    const source = currentVideo.currentVideoAsset;
+    const variant = currentVideo.currentVideoVariant;
     if (!source || !variant) {
       diagnostics.push(
         previewDiagnostic(
           'error',
           'STORY_WORKING_PREVIEW_OUTPUT_MISSING',
-          `Shot ${spec.key} latest ready Take has no playable output.`,
-          'take',
-          take.id,
+          `Shot ${spec.key} current video has no playable output.`,
+          'clip',
+          currentVideo.id,
         ),
       );
     } else {
       const width = variant.width ?? source.width;
       const height = variant.height ?? source.height;
       const durationSeconds = variant.durationSeconds ?? source.durationSeconds;
-      const checksum = take.outputChecksumSha256;
+      const checksum = currentVideo.currentVideoChecksumSha256;
       const url = resolveMediaPublicUrl(source);
       if (
         source.workspaceId !== workspaceId ||
@@ -381,7 +372,6 @@ function prepareWorkingPreviewClip(
         variant.deletedAt ||
         source.moderationStatus === MediaAssetModerationStatus.blocked ||
         !checksum ||
-        source.checksumSha256 !== checksum ||
         variant.checksumSha256 !== checksum ||
         width !== spec.outputContract.width ||
         height !== spec.outputContract.height ||
@@ -394,7 +384,7 @@ function prepareWorkingPreviewClip(
           previewDiagnostic(
             'error',
             'STORY_WORKING_PREVIEW_OUTPUT_INELIGIBLE',
-            `Shot ${spec.key} latest ready Take does not satisfy the current video output contract.`,
+            `Shot ${spec.key} current video does not satisfy the current video output contract.`,
             'asset',
             source.id,
           ),
@@ -431,49 +421,24 @@ function prepareWorkingPreviewClip(
     graphNodeId: spec.graphNodeId,
     rank: spec.rank,
     specHash,
-    productionInputHash: take?.productionInputHash ?? null,
+    productionInputHash: currentVideo?.currentVideoInputHash ?? null,
     spec,
-    takeId: take?.id ?? null,
+    sourceGenerationId: currentVideo?.currentVideoSourceAttemptId ?? null,
     asset,
     eligibilityDiagnostics: diagnostics,
   };
 }
 
-export function selectWorkingPreviewTake(
+export function selectWorkingPreviewVideo(
   clip: WorkingPreviewClip | null,
   specHash: string,
-): WorkingPreviewTakeSelection | null {
-  if (!clip || clip.specHash !== specHash || !clip.productionInputHash) {
-    return null;
-  }
-  const isCurrent = (
-    take: WorkingPreviewTake | null,
-  ): take is WorkingPreviewTake => {
-    if (
-      !take ||
-      take.status !== StoryFilmTakeStatus.ready ||
-      take.supersededAt ||
-      take.clipSpecHash !== specHash ||
-      take.productionInputHash !== clip.productionInputHash
-    ) {
-      return false;
-    }
-    const latestDecision = take.reviews[0]?.decision;
-    return (
-      latestDecision !== StoryReviewDecision.reject &&
-      latestDecision !== StoryReviewDecision.request_changes
-    );
-  };
-  if (
-    clip.masterTakeId &&
-    clip.masterTake?.id === clip.masterTakeId &&
-    clip.masterTake.approval &&
-    isCurrent(clip.masterTake)
-  ) {
-    return { take: clip.masterTake, kind: 'master' };
-  }
-  const fallback = clip.takes.find((take) => isCurrent(take));
-  return fallback ? { take: fallback, kind: 'latest_ready' } : null;
+): WorkingPreviewClip | null {
+  return clip &&
+    clip.specHash === specHash &&
+    clip.currentVideoAssetId !== null &&
+    clip.currentVideoVariantId !== null
+    ? clip
+    : null;
 }
 
 function previewDiagnostic(

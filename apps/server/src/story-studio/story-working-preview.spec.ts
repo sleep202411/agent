@@ -4,7 +4,7 @@ import { buildHuBaoVillaImportBundle } from './import/hu-bao-villa.builder';
 import { projectStoryFilmRevision } from './story-film-revision-projector';
 import { StoryWorkingPreviewController } from './story-working-preview.controller';
 import {
-  selectWorkingPreviewTake,
+  selectWorkingPreviewVideo,
   StoryWorkingPreviewService,
 } from './story-working-preview.service';
 
@@ -15,7 +15,7 @@ const MODEL_ID = '01980f10-7a20-7c01-8000-000000000099';
 
 function scopedService(
   draftContent: ReturnType<typeof buildHuBaoVillaImportBundle>['draftContent'],
-  takes: unknown[] = [],
+  clips: unknown[] = [],
 ) {
   const contentHash = canonicalJsonHash(draftContent);
   const tx = {
@@ -33,23 +33,7 @@ function scopedService(
     },
     aiCanonicalModel: { findFirst: jest.fn() },
     storyFilmClip: {
-      findMany: jest.fn().mockResolvedValue(
-        takes.map((take) => {
-          const row = take as {
-            clip: { graphNodeId: string };
-            clipSpecHash: string;
-            productionInputHash: string;
-          };
-          return {
-            graphNodeId: row.clip.graphNodeId,
-            specHash: row.clipSpecHash,
-            productionInputHash: row.productionInputHash,
-            masterTakeId: null,
-            masterTake: null,
-            takes: [take],
-          };
-        }),
-      ),
+      findMany: jest.fn().mockResolvedValue(clips),
     },
   };
   const prisma = {
@@ -119,7 +103,7 @@ describe('StoryWorkingPreviewService', () => {
     expect(tx.storyFilmClip.findMany).not.toHaveBeenCalled();
   });
 
-  it('plays the latest ready Takes directly from the saved draft, with review only a warning', async () => {
+  it('plays only each shot current video directly from the saved draft', async () => {
     const draft = buildHuBaoVillaImportBundle({
       defaultCanonicalModelId: MODEL_ID,
     }).draftContent;
@@ -129,22 +113,26 @@ describe('StoryWorkingPreviewService', () => {
       defaultLocale: 'zh-CN',
       defaultCanonicalModelId: MODEL_ID,
     });
-    const takes = projection.clipSpecs.map((clip, index) => {
+    const clips = projection.clipSpecs.map((clip, index) => {
       const checksum = `${index + 1}`.padStart(64, '0');
       const assetId = uuidAt(100 + index);
+      const variantId = uuidAt(300 + index);
+      const specHash = canonicalJsonHash(clip);
+      const inputHash = canonicalJsonHash({ clip: clip.key });
       return {
-        id: uuidAt(200 + index),
-        clipSpecHash: canonicalJsonHash(clip),
-        productionInputHash: canonicalJsonHash({ clip: clip.key }),
-        technicalChecks: [],
-        outputChecksumSha256: checksum,
-        approval: null,
-        reviews: [],
-        status: 'ready',
-        supersededAt: null,
-        createdAt: new Date(1_800_000_000_000 + index),
-        clip: { graphNodeId: clip.graphNodeId },
-        outputAsset: {
+        id: uuidAt(400 + index),
+        graphNodeId: clip.graphNodeId,
+        specHash,
+        productionInputHash: inputHash,
+        currentVideoAssetId: assetId,
+        currentVideoVariantId: variantId,
+        currentVideoSourceAttemptId: uuidAt(200 + index),
+        currentVideoSpecHash: specHash,
+        currentVideoInputHash: inputHash,
+        currentVideoChecksumSha256: checksum,
+        currentVideoTechnicalChecks: [],
+        currentVideoRevision: 1,
+        currentVideoAsset: {
           id: assetId,
           workspaceId: WORKSPACE_ID,
           kind: 'video',
@@ -165,8 +153,8 @@ describe('StoryWorkingPreviewService', () => {
           placements: [],
           variants: [],
         },
-        outputVariant: {
-          id: uuidAt(300 + index),
+        currentVideoVariant: {
+          id: variantId,
           assetId,
           status: 'ready',
           deletedAt: null,
@@ -180,7 +168,7 @@ describe('StoryWorkingPreviewService', () => {
         },
       };
     });
-    const { service, contentHash } = scopedService(draft, takes);
+    const { service, contentHash } = scopedService(draft, clips);
 
     const preview = await service.getWorkingPreview(
       USER as never,
@@ -198,55 +186,29 @@ describe('StoryWorkingPreviewService', () => {
     expect(preview.pathReport).toMatchObject({
       reachableEndingIds: ['E01', 'E02', 'E03', 'E04'],
     });
-    expect(preview.diagnostics).toHaveLength(21);
-    expect(
-      preview.diagnostics.every(
-        (item) =>
-          item.severity === 'warning' &&
-          item.code === 'STORY_WORKING_PREVIEW_READY_TAKE_FALLBACK',
-      ),
-    ).toBe(true);
+    expect(preview.diagnostics).toEqual([]);
     expect(preview.sources).toHaveLength(21);
     expect(
-      preview.sources.every((source) => source.selection === 'latest_ready'),
+      preview.sources.every((source) => source.selection === 'current'),
     ).toBe(true);
   });
 
-  it('prefers the compatible Master over a newer ready candidate', () => {
-    const master = {
-      id: uuidAt(700),
-      status: 'ready',
-      supersededAt: null,
-      clipSpecHash: 'spec-hash',
+  it('selects only the direct current pointer and never a generation fallback', () => {
+    const current = {
+      specHash: 'spec-hash',
       productionInputHash: 'production-hash',
-      approval: { takeId: uuidAt(700) },
-      reviews: [],
+      currentVideoAssetId: uuidAt(700),
+      currentVideoVariantId: uuidAt(701),
     };
-    const newer = {
-      ...master,
-      id: uuidAt(701),
-      approval: null,
-    };
+    expect(selectWorkingPreviewVideo(current as never, 'spec-hash')).toBe(
+      current,
+    );
     expect(
-      selectWorkingPreviewTake(
+      selectWorkingPreviewVideo(
         {
           specHash: 'spec-hash',
-          productionInputHash: 'production-hash',
-          masterTakeId: master.id,
-          masterTake: master,
-          takes: [newer],
-        } as never,
-        'spec-hash',
-      ),
-    ).toMatchObject({ kind: 'master', take: { id: master.id } });
-    expect(
-      selectWorkingPreviewTake(
-        {
-          specHash: 'spec-hash',
-          productionInputHash: 'new-production-hash',
-          masterTakeId: null,
-          masterTake: null,
-          takes: [newer],
+          currentVideoAssetId: null,
+          currentVideoVariantId: null,
         } as never,
         'spec-hash',
       ),

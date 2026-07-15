@@ -1534,7 +1534,7 @@
     "metaDescription": "创作、制作、审核并发布互动影像故事。",
     "eyebrow": "互动叙事制作",
     "title": "Story Studio",
-    "subtitle": "在一个可追溯版本的工作台内完成故事设定、参考包、镜头生产与发布。",
+    "subtitle": "在一个可追溯版本的工作台内完成故事设定、参考包、当前视频与发布。",
     "newProject": "新建互动影游",
     "projects": {
       "title": "互动影游",
@@ -1542,28 +1542,18 @@
       "revision": "版本 {number}",
       "draft": "草稿",
       "noSummary": "尚未填写项目简介。",
-      "noBlocker": "当前没有生产阻塞",
+      "videoProgress": "当前视频 {current}/{total}",
+      "generating": "{count} 个视频生成中",
       "updatedUnknown": "更新时间不可用"
     },
     "metrics": {
       "references": "参考位",
       "clips": "镜头",
-      "masters": "母版",
-      "blocked": "阻塞",
+      "videos": "当前视频",
+      "generating": "生成中",
       "choices": "选择",
       "endings": "结局",
       "graphClips": "剧情镜头"
-    },
-    "blockers": {
-      "referenceApproval": "{count} 个必需参考位尚待批准。",
-      "clipReferences": "{count} 个镜头仍被参考输入阻塞。",
-      "clipMasters": "{count} 个镜头尚无已批准母版。",
-      "productionInputsUnresolved": "生产输入清单尚未完整解析。",
-      "referenceInputApproval": "必需参考输入尚无已批准版本。",
-      "omniReferenceRequired": "Omni Reference 输入包不完整。",
-      "firstFrameRequired": "尚未绑定必需首帧。",
-      "lastFrameRequired": "尚未绑定必需尾帧。",
-      "masterInputStale": "所选母版来自旧版生产输入。"
     },
     "actions": {
       "retry": "重试",
@@ -1853,7 +1843,7 @@
       "director": {
         "eyebrow": "导演提示词",
         "title": "视频导演设计",
-        "description": "为当前镜头编写结构化导演设计。内容始终可编辑；每个生成的 Take 会记录当时使用的准确输入。",
+        "description": "为当前镜头编写结构化导演设计。内容始终可编辑；每次视频生成都会记录当时使用的准确输入。",
         "compact": {
           "title": "提示词编排",
           "beats": "{count} 个节拍",
@@ -1946,8 +1936,8 @@
         "description": "宣传片独立于剧情镜头和运行时分支，在这里完成导演设计与生产。",
         "close": "关闭宣传片检查器",
         "node": {
-          "noMaster": "尚无 Master 宣传片",
-          "masterPreview": "Master 宣传片预览"
+          "noVideo": "尚无宣传片视频",
+          "videoPreview": "当前宣传片视频预览"
         },
         "authoring": {
           "emptyTitle": "先创作宣传片",
@@ -1957,70 +1947,18 @@
         },
         "production": {
           "title": "宣传片生产",
-          "refresh": "刷新宣传片生产状态",
           "disabled": {
-            "permission": "你没有此项目的视频生成权限。",
-            "reviewPermission": "你没有此项目宣传片 Take 的审核权限。",
-            "blocked": "请先解决宣传片的生产阻塞项。"
+            "permission": "你没有此项目的视频生成权限。"
           },
           "errors": {
-            "action": "宣传片生产操作未能完成。",
-            "loadTakes": "无法加载宣传片 Take。"
-          },
-          "statuses": {
-            "queued": "排队中",
-            "running": "运行中",
-            "processing": "处理中",
-            "ready": "可审核",
-            "failed": "失败",
-            "cancelled": "已取消"
-          },
-          "takes": {
-            "title": "宣传片 Take 列表",
-            "count": "共 {count} 个 Take",
-            "empty": "为这支宣传片生成第一个 Take。",
-            "master": "Master",
-            "take": "Take {number}",
-            "review": "审核",
-            "cancel": "取消",
-            "retry": "重试",
-            "setMaster": "设为 Master"
-          },
-          "review": {
-            "title": "审核宣传片 Take",
-            "description": "批准前，专项检查故事忠实度、人物身份、节奏、文字可读性、权利与安全。",
-            "decisions": {
-              "approve": "批准",
-              "requestChanges": "要求修改",
-              "reject": "拒绝"
-            },
-            "checklist": {
-              "technical": "技术质量",
-              "storyFidelity": "故事忠实度",
-              "identityConsistency": "身份一致性",
-              "visualConsistency": "视觉一致性",
-              "pacing": "节奏",
-              "textReadability": "文字可读性",
-              "rights": "权利合规",
-              "safety": "安全"
-            },
-            "values": {
-              "pass": "通过",
-              "fail": "未通过",
-              "na": "不适用"
-            },
-            "comment": "审核备注",
-            "commentRequired": "要求修改或拒绝 Take 时必须填写审核备注。",
-            "approveRequirements": "批准前，技术质量与安全两项必须通过。",
-            "cancel": "取消",
-            "submit": "提交审核"
+            "action": "宣传片生产操作未能完成。"
           }
         }
       },
       "production": {
         "eyebrow": "镜头生产",
         "title": "视频生产",
-        "description": "根据最新保存的导演设计创建 Take。画布始终可编辑，每个 Take 都会保存自己的输入快照。",
+        "description": "根据最新保存的导演设计生成当前视频。画布始终可编辑，每次生成都会保存自己的输入快照。",
         "refresh": "刷新生产状态",
         "masterPrompt": "Master Prompt",
         "beats": "{count} 个时间节拍",
@@ -2053,27 +1991,22 @@
           "other": "其他"
         },
         "variationNote": "本次变化说明",
-        "variationPlaceholder": "仅影响本次 Take 的可选指令；不会修改已保存的导演设计。",
-        "generate": "生成 Take",
+        "variationPlaceholder": "仅影响本次生成的可选指令；不会修改已保存的导演设计。",
+        "generate": "生成视频",
         "disabled": {
           "preparing": "正在准备当前镜头输入，完成后即可生成。",
           "promptRequired": "请先完成当前镜头的导演提示词。",
           "permission": "你没有在该项目中生成视频的权限。",
-          "blocked": "请先解决当前镜头的生产阻塞。"
+          "generating": "当前节点已有视频生成任务正在进行。"
         },
         "errors": {
           "prepare": "无法准备当前镜头的生产输入。",
-          "action": "生产操作未能完成。",
-          "loadTakes": "无法加载 Take。"
+          "action": "生产操作未能完成。"
         },
         "statuses": {
           "preparing": "正在准备镜头输入",
-          "blocked": "阻塞",
           "ready": "可生成",
           "generating": "生成中",
-          "in_review": "待审核",
-          "approved": "已批准",
-          "stale": "已过期",
           "queued": "排队中",
           "running": "生成中",
           "processing": "处理中",
@@ -2081,59 +2014,10 @@
           "cancelled": "已取消"
         },
         "node": {
-          "takes": "Take",
-          "running": "运行中",
-          "approved": "已批准",
-          "master": "Master",
-          "noMaster": "尚无 Master 视频",
-          "masterPreview": "Master 视频预览",
-          "carriedMaster": "草稿已改 · 旧版本视频"
-        },
-        "takes": {
-          "title": "Take 条",
-          "count": "{count} 个 Take",
-          "empty": "为当前镜头生成第一个 Take。",
-          "take": "Take {number}",
-          "master": "Master",
-          "stale": "输入已过期",
-          "review": "审核",
-          "retry": "重试",
-          "retrying": "重试中…",
-          "setMaster": "设为 Master"
-        },
-        "reviewStatuses": {
-          "unreviewed": "未审核",
-          "changes_requested": "需修改",
-          "approved": "已批准",
-          "rejected": "已拒绝"
-        },
-        "review": {
-          "title": "审核 Take {number}",
-          "description": "记录一次明确的生产审核。选择“批准”会同时批准该 Take；设为 Master 仍是独立操作。",
-          "decision": "审核决定",
-          "decisions": {
-            "approve": "批准",
-            "request_changes": "要求修改",
-            "reject": "拒绝"
-          },
-          "checklist": {
-            "technical": "技术质量",
-            "identityContinuity": "人物一致性",
-            "visualContinuity": "画面连续性",
-            "motion": "动作",
-            "dialogueTiming": "对白时序",
-            "lipSync": "口型同步",
-            "safety": "安全合规"
-          },
-          "values": {
-            "pass": "通过",
-            "fail": "不通过",
-            "na": "不适用"
-          },
-          "comment": "审核备注",
-          "commentPlaceholder": "拒绝或要求修改时必须填写。",
-          "cancel": "取消",
-          "submit": "提交审核"
+          "noVideo": "尚无视频",
+          "videoPreview": "当前视频预览",
+          "earlierDirection": "来自较早导演设计",
+          "generationFailed": "生成失败"
         },
         "bindings": {
           "title": "镜头参考图职责",
@@ -2154,11 +2038,45 @@
           "unapproved": "未审批",
           "remove": "移除 {label}",
           "add": "添加参考",
-          "addTitle": "已审批参考母版"
+          "addTitle": "已审批参考素材"
         },
         "durationControl": {
           "label": "片段时长",
           "seconds": "{count} 秒"
+        },
+        "videoLibrary": {
+          "trigger": "使用已有视频",
+          "title": "视频历史",
+          "description": "选择符合当前输出要求的可复用视频：{width}×{height}，{duration} ± {tolerance}。",
+          "loading": "正在加载视频历史",
+          "loadingMore": "正在加载更多视频",
+          "loadMore": "加载更多",
+          "retry": "重试",
+          "playPreview": "播放视频预览 {number}",
+          "pausePreview": "暂停视频预览 {number}",
+          "previewUnavailable": "无法预览",
+          "current": "当前视频",
+          "incompatible": "不兼容",
+          "select": "使用此视频",
+          "selecting": "正在设为当前视频",
+          "unavailable": "无法使用",
+          "unknownDimensions": "尺寸未知",
+          "unknownDuration": "时长未知",
+          "empty": {
+            "title": "暂无可复用视频",
+            "description": "此工作区生成过的视频会作为可复用历史保留在这里。"
+          },
+          "issues": {
+            "preview_unavailable": "此资产没有可播放的预览。",
+            "dimensions_unknown": "无法验证此视频的尺寸。",
+            "dimensions_mismatch": "此视频的尺寸与当前镜头不符。",
+            "duration_unknown": "无法验证此视频的时长。",
+            "duration_mismatch": "此视频的时长超出当前镜头的容差。"
+          },
+          "errors": {
+            "load": "无法加载视频历史。",
+            "select": "无法更改当前视频。"
+          }
         }
       },
       "inspector": {
@@ -2347,20 +2265,20 @@
         "loadTitle": "无法打开这个项目。"
       },
       "noProductionDataTitle": "当前还没有可用的生产数据",
-      "noProductionDataDescription": "请返回故事画布，完成导演提示词并创建第一个 Take。整个生产过程中，当前草稿都可以继续修改。"
+      "noProductionDataDescription": "请返回故事画布，完成导演提示词并生成第一批视频。整个生产过程中，当前草稿都可以继续修改。"
     },
     "overview": {
-      "productionTitle": "生产就绪度",
-      "productionSubtitle": "当前工作草稿的审核与阻塞状态投影。",
+      "productionTitle": "视频生产",
+      "productionSubtitle": "当前工作草稿的参考就绪度、视频覆盖与活跃生成任务。",
       "draftRevisionStatus": "工作草稿 r{revision}",
       "productionRevision": "生产修订 {revision}",
       "storyStructureTitle": "故事结构",
       "storyStructureSubtitle": "选择、状态与结局均以创作图为唯一真源。",
       "targetRuntime": "每条路径目标 {seconds} 秒",
       "maxContinuous": "最长连续播放 {seconds} 秒",
-      "nextBlocker": "下一阻塞项",
-      "noBlocker": "没有阻塞",
-      "noBlockerDescription": "当前生产状态没有未解决的阻塞项。",
+      "videoState": "当前视频状态",
+      "videoStateGenerating": "{count} 个镜头正在生成替换视频。",
+      "videoStateReady": "{total} 个镜头中已有 {current} 个绑定当前视频。",
       "revisionTitle": "版本标识",
       "draftRevision": "草稿修订",
       "schemaVersion": "草稿 Schema",
@@ -2463,12 +2381,16 @@
     },
     "production": {
       "title": "镜头生产",
-      "subtitle": "当前草稿的导演设计、生成就绪度、审核与现有 Master。",
+      "subtitle": "当前草稿导演设计、生成状态，以及每个镜头正在使用的视频。",
       "clipCount": "{count} 个镜头",
       "seconds": "{seconds} 秒",
       "noBlocker": "可以执行下一步",
       "currentDraftReady": "可从故事画布直接生成当前提示词",
       "currentDraftPromptRequired": "请在故事画布中完成导演提示词",
+      "generationInProgress": "替换视频正在生成中。",
+      "generationFailed": "最近一次生成失败；此前的视频仍保持为当前视频。",
+      "currentVideoReady": "当前镜头已绑定视频。",
+      "currentVideoOutdated": "当前视频来自较早的导演设计。",
       "detail": {
         "visualIntent": "画面意图",
         "masterPrompt": "Seedance 主提示词",
@@ -2484,7 +2406,7 @@
         "mode": "生成模式",
         "duration": "时长",
         "status": "状态",
-        "blocker": "阻塞原因"
+        "blocker": "详情"
       },
       "modes": {
         "omni": "Omni Reference",
@@ -2493,17 +2415,18 @@
       },
       "status": {
         "draft": "当前草稿",
-        "blocked": "阻塞",
         "ready": "就绪",
-        "generating": "生成中",
-        "in_review": "审核中",
-        "approved": "已批准",
-        "stale": "已过期"
+        "queued": "排队中",
+        "running": "生成中",
+        "processing": "处理中",
+        "failed": "失败",
+        "cancelled": "已取消",
+        "outdated": "较早导演设计"
       }
     },
     "build": {
       "title": "构建与试玩",
-      "subtitle": "把已锁定的故事图和已批准母版编译成不可变预览构建，再用完全冻结的 Runtime 试玩每一条分支。",
+      "subtitle": "把已锁定的故事图和当前视频编译成不可变预览构建，再用完全冻结的 Runtime 试玩每一条分支。",
       "buildNumber": "构建 {number}",
       "activeBuild": "构建 {number} 仍在编译中。",
       "actions": {
@@ -2606,7 +2529,7 @@
         "revision": "版本",
         "clip": "镜头",
         "reference": "参考",
-        "take": "Take",
+        "generation": "生成任务",
         "choice": "选择",
         "ending": "结局",
         "asset": "资产"

@@ -1,17 +1,17 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { parseSeedancePromptPack } from './seedance-prompt-pack';
+import { parseVideoPromptPack } from './video-prompt-pack';
 
 const promptPack = readFileSync(
   resolve(
     __dirname,
-    '../../../../../docs/interactive-films/hu-bao-villa-longkou-night-seedance-prompt-pack-v1.md',
+    '../../../../../docs/interactive-films/hu-bao-villa-longkou-night-video-prompt-pack-v1.md',
   ),
   'utf8',
 );
 
-describe('Seedance prompt-pack importer', () => {
-  const clips = parseSeedancePromptPack(promptPack);
+describe('Video prompt-pack importer', () => {
+  const clips = parseVideoPromptPack(promptPack);
 
   it('parses all 21 production clips in stable rank order', () => {
     expect(clips).toHaveLength(21);
@@ -46,6 +46,22 @@ describe('Seedance prompt-pack importer', () => {
     );
   });
 
+  it('maps the locked HappyHorse and Wan modes into provider-neutral generation controls', () => {
+    const byKey = new Map(clips.map((clip) => [clip.key, clip]));
+
+    expect(byKey.get('hbln-s00-dragon-returns')?.generationControl).toEqual({
+      mode: 'omni_reference',
+    });
+    expect(byKey.get('hbln-s06a-release-truth')?.generationControl).toEqual({
+      mode: 'frame_lock',
+      frameMode: 'first_frame',
+    });
+    expect(byKey.get('hbln-s01a-opening-march')?.generationControl).toEqual({
+      mode: 'frame_lock',
+      frameMode: 'first_last_frame',
+    });
+  });
+
   it('parses every display declaration into a logical reference-slot input', () => {
     const byKey = new Map(clips.map((clip) => [clip.key, clip]));
 
@@ -61,6 +77,16 @@ describe('Seedance prompt-pack importer', () => {
         referenceSlotKey: 'E04-PREBLACK-END',
       },
     ]);
+    expect(byKey.get('hbln-e01-name-returned')?.modelInputs[0]).toEqual({
+      kind: 'omni_reference',
+      position: 0,
+      referenceSlotKey: 'REF-08',
+    });
+    expect(byKey.get('hbln-e03-exit-together')?.modelInputs[0]).toEqual({
+      kind: 'omni_reference',
+      position: 0,
+      referenceSlotKey: 'REF-08',
+    });
     expect(
       clips.every(
         (clip) =>

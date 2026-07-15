@@ -225,7 +225,6 @@ export function projectStoryFilmRevision(input: {
       generation: {
         defaultCanonicalModelId: input.defaultCanonicalModelId,
       },
-      reviewPolicy: 'explicit_approval',
     }),
     clipSpecs,
     trailerSpec,

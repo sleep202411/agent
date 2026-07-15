@@ -4,6 +4,8 @@ import { resolve } from 'node:path';
 import {
   MediaAssetModerationStatus,
   MediaAssetVariantStatus,
+  StoryFilmContinuityDecision,
+  StoryFilmDependencyKind,
 } from '@prisma/client';
 import {
   STORY_CHECKPOINT_CONTINUE_ACTION_ID,
@@ -23,6 +25,8 @@ import {
 import { StoryFilmBuildController } from './story-film-build.controller';
 import {
   storyBuildAssetDeliveryPath,
+  storyFilmBuildContinuityDiagnostics,
+  storyFilmBuildInputManifest,
   storyBuildModerationDiagnostics,
   storyBuildRequestFingerprint,
   StoryFilmBuildService,
@@ -52,7 +56,7 @@ function fixture() {
       specHash: `${(index + 1).toString(16).padStart(64, '0')}`,
       productionInputHash: `${(index + 101).toString(16).padStart(64, '0')}`,
       spec,
-      takeId: uuid(index + 1, '3000'),
+      sourceGenerationId: uuid(index + 1, '3000'),
       asset: {
         assetId: uuid(index + 1, '4000'),
         variantId: uuid(index + 1, '5000'),
@@ -198,7 +202,7 @@ describe('Story film Build compiler', () => {
     }
   });
 
-  it('reports frozen Master Variant durations instead of authored targets', () => {
+  it('reports frozen current-video Variant durations instead of authored targets', () => {
     const { bundle, clips } = fixture();
     const first = clips[0];
     if (!first?.asset || !first.spec) {
@@ -377,17 +381,17 @@ describe('Story film Build compiler', () => {
     );
   });
 
-  it('fails an incomplete Master snapshot instead of fabricating media', () => {
+  it('fails an incomplete current-video snapshot instead of fabricating media', () => {
     const { clips } = fixture();
     clips[0] = {
       ...clips[0],
-      takeId: null,
+      sourceGenerationId: null,
       asset: null,
       eligibilityDiagnostics: [
         {
           severity: 'error',
-          code: 'STORY_BUILD_MASTER_MISSING',
-          message: 'Master missing.',
+          code: 'STORY_BUILD_CURRENT_VIDEO_MISSING',
+          message: 'Current video missing.',
           entityType: 'clip',
           entityId: clips[0].id,
         },
@@ -398,7 +402,7 @@ describe('Story film Build compiler', () => {
     expect(result.runtime).toBeNull();
     expect(result.diagnostics).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ code: 'STORY_BUILD_MASTER_MISSING' }),
+        expect.objectContaining({ code: 'STORY_BUILD_CURRENT_VIDEO_MISSING' }),
       ]),
     );
     expect(result.diagnostics).not.toEqual(
@@ -766,6 +770,309 @@ describe('StoryFilmBuildService idempotency', () => {
   });
 });
 
+describe('StoryFilmBuildService direct current-video compilation', () => {
+  const CHECKSUM = 'a'.repeat(64);
+  const SPEC_HASH = 'b'.repeat(64);
+  const GENERATION_ID = uuid(1, '7000');
+
+  function currentVideoClip() {
+    const { bundle } = fixture();
+    const spec = bundle.clipSpecs[0];
+    if (!spec) throw new Error('Fixture Clip specification missing.');
+    return {
+      id: uuid(2, '7000'),
+      storyProjectId: PROJECT_ID,
+      revisionId: REVISION_ID,
+      key: spec.key,
+      graphNodeId: spec.graphNodeId,
+      title: spec.title,
+      generationMode: spec.generationControl.mode,
+      frameMode:
+        spec.generationControl.mode === 'frame_lock'
+          ? spec.generationControl.frameMode
+          : null,
+      targetDurationMs: spec.outputContract.durationMs,
+      specJson: spec,
+      specHash: SPEC_HASH,
+      productionInputManifest: null,
+      productionInputHash: null,
+      version: 0,
+      rank: spec.rank,
+      currentVideoAssetId: ASSET_ID,
+      currentVideoVariantId: VARIANT_ID,
+      currentVideoSourceAttemptId: null,
+      currentVideoSpecHash: SPEC_HASH,
+      currentVideoInputHash: null,
+      currentVideoChecksumSha256: CHECKSUM,
+      currentVideoTechnicalChecks: [
+        { key: 'kind', status: 'passed', message: null },
+        { key: 'dimensions', status: 'passed', message: null },
+        { key: 'duration', status: 'passed', message: null },
+        { key: 'checksum', status: 'passed', message: null },
+      ],
+      currentVideoRevision: 4,
+      currentVideoSetByUserId: USER.userId,
+      currentVideoSetAt: new Date('2026-07-15T12:00:00.000Z'),
+      latestGenerationAttemptId: null,
+      createdByUserId: USER.userId,
+      updatedByUserId: USER.userId,
+      archivedAt: null,
+      createdAt: new Date('2026-07-15T11:00:00.000Z'),
+      updatedAt: new Date('2026-07-15T12:00:00.000Z'),
+      currentVideoAsset: {
+        id: ASSET_ID,
+        workspaceId: WORKSPACE_ID,
+        kind: 'video',
+        storageProvider: 'aliyun_oss',
+        bucket: 'story-media',
+        region: 'oss-cn-hangzhou',
+        objectKey: 'clips/current-video.mp4',
+        externalUrl: null,
+        contentType: 'video/mp4',
+        sizeBytes: 1_024n,
+        width: spec.outputContract.width,
+        height: spec.outputContract.height,
+        durationSeconds: spec.outputContract.durationMs / 1_000,
+        checksumSha256: CHECKSUM,
+        visibility: 'private',
+        status: 'ready',
+        source: 'generated',
+        moderationStatus: 'approved',
+        moderationReason: null,
+        moderatedByAdminId: null,
+        moderatedAt: null,
+        metadata: {},
+        createdByUserId: USER.userId,
+        createdAt: new Date('2026-07-15T11:55:00.000Z'),
+        updatedAt: new Date('2026-07-15T11:55:00.000Z'),
+        deletedAt: null,
+        placements: [],
+      },
+      currentVideoVariant: {
+        id: VARIANT_ID,
+        assetId: ASSET_ID,
+        variantKey: 'original',
+        kind: 'original',
+        status: 'ready',
+        contentType: 'video/mp4',
+        sizeBytes: 1_024n,
+        width: spec.outputContract.width,
+        height: spec.outputContract.height,
+        durationSeconds: spec.outputContract.durationMs / 1_000,
+        checksumSha256: CHECKSUM,
+        metadata: {},
+        createdAt: new Date('2026-07-15T11:55:00.000Z'),
+        updatedAt: new Date('2026-07-15T11:55:00.000Z'),
+        deletedAt: null,
+        placements: [],
+      },
+    };
+  }
+
+  function prepareClip(row: ReturnType<typeof currentVideoClip>) {
+    const service = new StoryFilmBuildService(
+      {} as never,
+      {} as never,
+      {} as never,
+    );
+    return (
+      service as unknown as {
+        prepareClip(
+          build: {
+            id: string;
+            storyProjectId: string;
+            project: { workspaceId: string };
+          },
+          clip: ReturnType<typeof currentVideoClip>,
+        ): StoryFilmBuildClipInput;
+      }
+    ).prepareClip(
+      {
+        id: BUILD_ID,
+        storyProjectId: PROJECT_ID,
+        project: { workspaceId: WORKSPACE_ID },
+      },
+      row,
+    );
+  }
+
+  it('builds a selected library asset without generation provenance or production input hashes', () => {
+    const row = currentVideoClip();
+    // Asset-level metadata and the selected Variant can describe different
+    // bytes. Current-video identity is always the selected Variant checksum,
+    // never an asset-level fallback.
+    row.currentVideoAsset.checksumSha256 = '0'.repeat(64);
+    const prepared = prepareClip(row);
+
+    expect(prepared.eligibilityDiagnostics).toEqual([]);
+    expect(prepared.sourceGenerationId).toBeNull();
+    expect(prepared.productionInputHash).toBeNull();
+    expect(prepared.asset).toMatchObject({
+      assetId: ASSET_ID,
+      variantId: VARIANT_ID,
+      checksumSha256: CHECKSUM,
+    });
+  });
+
+  it.each([
+    ['spec hash', { currentVideoSpecHash: 'c'.repeat(64) }],
+    [
+      'input hash',
+      {
+        productionInputHash: 'd'.repeat(64),
+        currentVideoInputHash: null,
+      },
+    ],
+  ])('rejects an outdated current video by %s', (_label, changes) => {
+    const row = Object.assign(currentVideoClip(), changes);
+    expect(prepareClip(row).eligibilityDiagnostics).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ code: 'STORY_BUILD_CURRENT_VIDEO_OUTDATED' }),
+      ]),
+    );
+  });
+
+  it('rejects pending, failed, empty, or malformed technical checks', () => {
+    const rows = [
+      [{ key: 'duration', status: 'pending', message: null }],
+      [{ key: 'duration', status: 'failed', message: 'Too long.' }],
+      [{ key: 'duration', status: 'passed', message: null }],
+      [],
+      [{ status: 'passed' }],
+    ];
+
+    rows.forEach((currentVideoTechnicalChecks) => {
+      const row = currentVideoClip();
+      row.currentVideoTechnicalChecks = currentVideoTechnicalChecks;
+      expect(prepareClip(row).eligibilityDiagnostics).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            code: 'STORY_BUILD_CURRENT_VIDEO_TECHNICAL_CHECKS_FAILED',
+          }),
+        ]),
+      );
+    });
+  });
+
+  it('strictly rejects a foreign Workspace and non-signable storage', () => {
+    const row = currentVideoClip();
+    row.currentVideoAsset.workspaceId = uuid(3, '7000');
+    row.currentVideoAsset.storageProvider = 'external_url';
+    row.currentVideoAsset.bucket = null;
+    row.currentVideoAsset.objectKey = null;
+    row.currentVideoAsset.externalUrl =
+      'https://cdn.example.test/current-video.mp4';
+
+    expect(prepareClip(row).eligibilityDiagnostics).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ code: 'STORY_BUILD_ASSET_SCOPE_INVALID' }),
+        expect.objectContaining({ code: 'STORY_BUILD_ASSET_NOT_SIGNABLE' }),
+      ]),
+    );
+  });
+
+  it('freezes currentVideoRevision and direct media identity in manifest v2', () => {
+    const row = currentVideoClip();
+    row.currentVideoSourceAttemptId = GENERATION_ID;
+    const manifest = storyFilmBuildInputManifest(
+      {
+        revisionId: REVISION_ID,
+        expectedProductionRevision: 3,
+        profile: 'production',
+        scope: { kind: 'full' },
+      },
+      {
+        revision: {
+          id: REVISION_ID,
+          number: 2,
+          content: {},
+          contentHash: 'e'.repeat(64),
+        },
+        filmSpec: {
+          specJson: {},
+          specHash: 'f'.repeat(64),
+          productionRevision: 3,
+        },
+        clips: [row],
+        dependencies: [],
+      } as never,
+    );
+
+    expect(manifest).toMatchObject({
+      schemaVersion: 2,
+      clips: [
+        {
+          currentVideo: {
+            revision: 4,
+            assetId: ASSET_ID,
+            variantId: VARIANT_ID,
+            sourceGenerationAttemptId: GENERATION_ID,
+            checksumSha256: CHECKSUM,
+            asset: { id: ASSET_ID },
+            variant: { id: VARIANT_ID },
+          },
+        },
+      ],
+    });
+    expect(JSON.stringify(manifest)).not.toMatch(/take|master/i);
+  });
+
+  it('matches continuity by both direct assets, variants, and checksums', () => {
+    const upstream = prepareClip(currentVideoClip());
+    const downstreamRow = currentVideoClip();
+    downstreamRow.id = uuid(4, '7000');
+    downstreamRow.currentVideoAssetId = uuid(5, '7000');
+    downstreamRow.currentVideoVariantId = uuid(6, '7000');
+    downstreamRow.currentVideoChecksumSha256 = '9'.repeat(64);
+    downstreamRow.currentVideoAsset.id = downstreamRow.currentVideoAssetId;
+    downstreamRow.currentVideoAsset.checksumSha256 =
+      downstreamRow.currentVideoChecksumSha256;
+    downstreamRow.currentVideoVariant.id = downstreamRow.currentVideoVariantId;
+    downstreamRow.currentVideoVariant.assetId =
+      downstreamRow.currentVideoAssetId;
+    downstreamRow.currentVideoVariant.checksumSha256 =
+      downstreamRow.currentVideoChecksumSha256;
+    const downstream = prepareClip(downstreamRow);
+    const dependency = {
+      id: uuid(7, '7000'),
+      kind: StoryFilmDependencyKind.continuity,
+      predecessorClipId: upstream.id,
+      successorClipId: downstream.id,
+      continuityChecks: [
+        {
+          id: uuid(8, '7000'),
+          upstreamAssetId: upstream.asset?.assetId,
+          upstreamVariantId: upstream.asset?.variantId,
+          upstreamChecksumSha256: upstream.asset?.checksumSha256,
+          downstreamAssetId: downstream.asset?.assetId,
+          downstreamVariantId: downstream.asset?.variantId,
+          downstreamChecksumSha256: downstream.asset?.checksumSha256,
+          decision: StoryFilmContinuityDecision.pass,
+        },
+      ],
+    };
+
+    expect(
+      storyFilmBuildContinuityDiagnostics(
+        [dependency] as never,
+        [upstream, downstream],
+        new Set([upstream.id, downstream.id]),
+      ),
+    ).toEqual([]);
+
+    dependency.continuityChecks[0].downstreamChecksumSha256 = '8'.repeat(64);
+    expect(
+      storyFilmBuildContinuityDiagnostics(
+        [dependency] as never,
+        [upstream, downstream],
+        new Set([upstream.id, downstream.id]),
+      ),
+    ).toEqual([
+      expect.objectContaining({ code: 'STORY_BUILD_CONTINUITY_CHECK_MISSING' }),
+    ]);
+  });
+});
+
 describe('StoryFilmBuildService media delivery policy', () => {
   const CHECKSUM = 'a'.repeat(64);
 
@@ -867,7 +1174,7 @@ describe('StoryFilmBuildService media delivery policy', () => {
         },
         { status: MediaAssetVariantStatus.ready },
         true,
-        'Master output',
+        'Current video',
       ),
     ).toEqual([
       expect.objectContaining({
@@ -883,9 +1190,41 @@ describe('StoryFilmBuildService media delivery policy', () => {
         },
         { status: MediaAssetVariantStatus.ready },
         false,
-        'Master output',
+        'Current video',
       ),
     ).toEqual([]);
+  });
+
+  it('keeps a frozen runtime available when only the asset-level checksum differs', async () => {
+    const row = readyBuildRow();
+    row.assets[0].asset.checksumSha256 = '0'.repeat(64);
+    const service = new StoryFilmBuildService(
+      {
+        storyBuild: { findFirst: jest.fn().mockResolvedValue(row) },
+      } as never,
+      {
+        requireProject: jest.fn().mockResolvedValue({
+          project: { workspaceId: WORKSPACE_ID },
+        }),
+      } as never,
+      {} as never,
+    );
+
+    const detail = await service.getBuild(
+      USER as never,
+      WORKSPACE_ID,
+      PROJECT_ID,
+      BUILD_ID,
+    );
+
+    expect(detail.runtimeJson).not.toBeNull();
+    expect(detail.diagnostics).not.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: 'STORY_BUILD_ASSET_INTEGRITY_CHANGED',
+        }),
+      ]),
+    );
   });
 
   it('suppresses a ready runtime and annotates list/get when current moderation no longer permits playback', async () => {
@@ -951,7 +1290,7 @@ describe('StoryFilmBuildService media delivery policy', () => {
   it('withholds legacy runtimes that contain permanent object URLs', async () => {
     const row = readyBuildRow();
     row.runtimeJson.media[0].variants.landscape.src =
-      'https://cdn.example.test/permanent-master.mp4';
+      'https://cdn.example.test/permanent-current-video.mp4';
     const prisma = {
       storyBuild: { findFirst: jest.fn().mockResolvedValue(row) },
     };
@@ -994,7 +1333,7 @@ describe('StoryFilmBuildService media delivery policy', () => {
         storageProvider: 'aliyun_oss',
         bucket: 'story-media',
         region: 'oss-cn-hangzhou',
-        objectKey: 'builds/master.mp4',
+        objectKey: 'builds/current-video.mp4',
         externalUrl: null,
         contentType: 'video/mp4',
         placements: [],
@@ -1016,7 +1355,7 @@ describe('StoryFilmBuildService media delivery policy', () => {
     };
     const storage = {
       createReadUrl: jest.fn().mockResolvedValue({
-        url: 'https://signed.example.test/master.mp4?expires=300',
+        url: 'https://signed.example.test/current-video.mp4?expires=300',
         expiresAt: '2026-07-13T12:05:00.000Z',
       }),
     };
@@ -1035,7 +1374,7 @@ describe('StoryFilmBuildService media delivery policy', () => {
         VARIANT_ID,
       ),
     ).resolves.toEqual({
-      url: 'https://signed.example.test/master.mp4?expires=300',
+      url: 'https://signed.example.test/current-video.mp4?expires=300',
       expiresAt: '2026-07-13T12:05:00.000Z',
     });
     expect(permissions.requireProject).toHaveBeenCalledWith(
@@ -1057,7 +1396,7 @@ describe('StoryFilmBuildService media delivery policy', () => {
       expect.objectContaining({
         storageProvider: 'aliyun_oss',
         bucket: 'story-media',
-        objectKey: 'builds/master.mp4',
+        objectKey: 'builds/current-video.mp4',
       }),
       expect.objectContaining({
         cacheControl: 'private, no-store',
@@ -1078,7 +1417,7 @@ describe('StoryFilmBuildService media delivery policy', () => {
         bucket: null,
         region: null,
         objectKey: null,
-        externalUrl: 'https://cdn.example.test/permanent-master.mp4',
+        externalUrl: 'https://cdn.example.test/permanent-current-video.mp4',
         contentType: 'video/mp4',
         placements: [],
       },

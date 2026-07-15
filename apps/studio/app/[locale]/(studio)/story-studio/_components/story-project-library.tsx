@@ -197,7 +197,6 @@ function StoryProjectCard({
   const t = useTranslations("storyStudio");
   const canEdit = project.capabilities.includes("story.edit");
   const canAdmin = project.capabilities.includes("story.admin");
-  const nextBlocker = project.production.nextBlocker;
 
   const coverUrl = project.cover?.previewUrl ?? null;
 
@@ -244,8 +243,8 @@ function StoryProjectCard({
             />
             <ProjectMetricChip
               icon={<IconSparkles className="size-3" />}
-              value={`${project.production.approvedMasterCount}/${project.production.clipCount}`}
-              label={t("metrics.masters")}
+              value={`${project.production.currentVideoCount}/${project.production.clipCount}`}
+              label={t("metrics.videos")}
             />
           </div>
         </div>
@@ -264,11 +263,12 @@ function StoryProjectCard({
             </p>
             <p className="flex min-w-0 items-center gap-1 text-[10px] font-medium text-white/38">
               <span className="truncate">
-                {nextBlocker ? (
-                  <ProjectBlockerMessage production={project.production} />
-                ) : (
-                  t("projects.noBlocker")
-                )}
+                {project.production.generatingClipCount > 0
+                  ? t("projects.generating", { count: project.production.generatingClipCount })
+                  : t("projects.videoProgress", {
+                      current: project.production.currentVideoCount,
+                      total: project.production.clipCount,
+                    })}
               </span>
               <IconArrowRight
                 className="size-3 shrink-0 transition-transform group-hover:translate-x-0.5 group-hover:text-white/66"
@@ -307,24 +307,6 @@ function StoryProjectCard({
       ) : null}
     </div>
   );
-}
-
-function ProjectBlockerMessage({ production }: { production: StoryProjectSummary["production"] }) {
-  const t = useTranslations("storyStudio");
-  switch (production.nextBlocker?.code) {
-    case "REFERENCE_APPROVAL_REQUIRED":
-      return t("blockers.referenceApproval", {
-        count: production.referenceSlotCount - production.approvedReferenceCount,
-      });
-    case "CLIP_REFERENCE_BLOCKED":
-      return t("blockers.clipReferences", { count: production.blockedClipCount });
-    case "CLIP_MASTER_REQUIRED":
-      return t("blockers.clipMasters", {
-        count: production.clipCount - production.approvedMasterCount,
-      });
-    default:
-      return production.nextBlocker?.message ?? t("projects.noBlocker");
-  }
 }
 
 function ProjectMetricChip({

@@ -6,7 +6,6 @@ import {
   IconArrowUp,
   IconBook2,
   IconCopy,
-  IconExternalLink,
   IconGitBranch,
   IconPlus,
   IconTrash,
@@ -32,7 +31,6 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
-import { Link } from "@/i18n/navigation";
 import { cn } from "@/lib/utils";
 import type {
   InteractiveFilmDraftContent,
@@ -51,11 +49,7 @@ import {
 import { StoryChoiceAdvancedEditor } from "./story-choice-advanced-editor";
 import { StoryDirectorPromptEditor } from "./story-director-prompt-editor";
 import { StoryClipReferenceBindings } from "./story-clip-reference-bindings";
-import { StoryTakePanel, type StoryShotComposerProps } from "./story-shot-composer";
-import {
-  StoryTrailerTakePanel,
-  type StoryTrailerProductionProps,
-} from "./story-trailer-production";
+import type { StoryVideoComposerProps } from "./story-shot-composer";
 import { StoryWorldLibrary } from "./story-world-library";
 
 type FoundationField = "logline" | "synopsis" | "worldview";
@@ -67,7 +61,6 @@ type StateVariable = InteractiveFilmDraftContent["storyBible"]["stateVariables"]
 type WorldTextField = "locations" | "props" | "storyRules";
 
 interface StoryNodeInspectorProps {
-  projectId: string;
   content: InteractiveFilmDraftContent;
   locale: string;
   selectedNode: StoryCanvasNode | null;
@@ -112,9 +105,9 @@ interface StoryNodeInspectorProps {
   onUpdateEnding: (endingId: string, patch: Partial<Ending>) => void;
   onDuplicateNode: (nodeId: string) => void;
   onDeleteSelected: () => void;
-  production?: StoryShotComposerProps;
+  production?: StoryVideoComposerProps;
   filmTrailer: FilmTrailerSummary | null;
-  trailerProduction?: StoryTrailerProductionProps;
+  trailerProduction?: StoryVideoComposerProps;
   onCreateTrailerPrompt: () => void;
   onReplaceTrailerPrompt: (prompt: StoryTrailerPromptDraft) => void;
 }
@@ -122,7 +115,6 @@ interface StoryNodeInspectorProps {
 const ENDING_KINDS: Ending["kind"][] = ["truth", "bond", "echo", "failure", "hidden", "custom"];
 
 export function StoryNodeInspector({
-  projectId,
   content,
   locale,
   selectedNode,
@@ -224,12 +216,10 @@ export function StoryNodeInspector({
           {graphNode ? (
             <GraphNodeEditor
               content={content}
-              projectId={projectId}
               locale={locale}
               node={graphNode}
               decisionOnly={canvasData.kind === "decision"}
               canEdit={canEdit}
-              productionStatus={canvasData.productionStatus}
               production={production}
               onSetEntry={onSetEntry}
               onChangeExitKind={onChangeExitKind}
@@ -342,7 +332,7 @@ function RootTrailerInspector({
 }: {
   prompt: StoryTrailerPromptDraft | null;
   trailer: FilmTrailerSummary | null;
-  production?: StoryTrailerProductionProps;
+  production?: StoryVideoComposerProps;
   canEdit: boolean;
   onCreate: () => void;
   onChange: (prompt: StoryTrailerPromptDraft) => void;
@@ -371,7 +361,7 @@ function RootTrailerInspector({
 
       {!prompt ? (
         <div className="mt-6 rounded-[20px] bg-white/[0.04] p-5 text-center">
-          <IconExternalLink className="mx-auto size-5 text-white/28" />
+          <IconBook2 className="mx-auto size-5 text-white/28" />
           <h3 className="mt-3 text-sm font-semibold text-white/72">{t("authoring.emptyTitle")}</h3>
           <p className="mt-2 text-[10px] leading-5 text-white/38">
             {t("authoring.emptyDescription")}
@@ -392,10 +382,9 @@ function RootTrailerInspector({
             references={production.references}
             canEdit={canEdit}
             apiConnected
-            pending={production.referenceBindingsPending}
-            onSave={production.onUpdateReferenceBindings}
+            pending={Boolean(production.referenceBindingsPending)}
+            onSave={production.onUpdateReferenceBindings ?? (() => undefined)}
           />
-          <StoryTrailerTakePanel {...production} />
         </>
       ) : null}
     </>
@@ -404,12 +393,10 @@ function RootTrailerInspector({
 
 function GraphNodeEditor({
   content,
-  projectId,
   locale,
   node,
   decisionOnly,
   canEdit,
-  productionStatus,
   production,
   onSetEntry,
   onChangeExitKind,
@@ -425,13 +412,11 @@ function GraphNodeEditor({
   onReplaceClipPrompt,
 }: {
   content: InteractiveFilmDraftContent;
-  projectId: string;
   locale: string;
   node: StoryGraphNode;
   decisionOnly: boolean;
   canEdit: boolean;
-  productionStatus?: string;
-  production?: StoryShotComposerProps;
+  production?: StoryVideoComposerProps;
   onSetEntry: StoryNodeInspectorProps["onSetEntry"];
   onChangeExitKind: StoryNodeInspectorProps["onChangeExitKind"];
   onUpdateCheckpointTarget: StoryNodeInspectorProps["onUpdateCheckpointTarget"];
@@ -490,19 +475,7 @@ function GraphNodeEditor({
         {node.kind === "clip" && !decisionOnly ? (
           <InspectorRow label={t("inspector.clipKey")} value={node.clipKey} mono />
         ) : null}
-        {productionStatus && !decisionOnly ? (
-          <InspectorRow label={t("inspector.production")} value={productionStatus} />
-        ) : null}
       </dl>
-
-      {node.kind === "clip" && productionStatus && !decisionOnly ? (
-        <Button variant="secondary" className="mt-3 w-full" asChild>
-          <Link href={`/story-studio/projects/${projectId}/production`}>
-            <IconExternalLink className="size-4" />
-            {t("inspector.openProduction")}
-          </Link>
-        </Button>
-      ) : null}
 
       {node.kind === "clip" && production?.clip && !decisionOnly ? (
         <>
@@ -514,7 +487,6 @@ function GraphNodeEditor({
             pending={production.referenceBindingsPending ?? false}
             onSave={production.onUpdateReferenceBindings ?? (() => undefined)}
           />
-          <StoryTakePanel {...production} />
         </>
       ) : null}
 
