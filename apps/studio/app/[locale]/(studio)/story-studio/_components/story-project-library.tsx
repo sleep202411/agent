@@ -469,11 +469,18 @@ function CreateProjectDialog({
             </div>
           </fieldset>
         </div>
-        <DialogFooter>
-          <Button variant="ghost" onClick={() => onOpenChange(false)}>
+        <DialogFooter className="pt-2">
+          <Button
+            variant="ghost"
+            size="xl"
+            className="sm:min-w-24"
+            onClick={() => onOpenChange(false)}
+          >
             {t("actions.cancel")}
           </Button>
           <Button
+            size="xl"
+            className="sm:min-w-32"
             onClick={() => createMutation.mutate()}
             disabled={!workspaceId || !title.trim() || !frameProfile || createMutation.isPending}
           >
