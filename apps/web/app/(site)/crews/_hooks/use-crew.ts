@@ -78,4 +78,10 @@ export {
   useRejectApplication,
 } from "./use-applications";
 
-export { useAddCrewMember, useCrewMembers, useRemoveMember, useUpdateMember } from "./use-members";
+export {
+  useAddCrewMember,
+  useCrewMembers,
+  useRemoveMember,
+  useTransferCrewOwner,
+  useUpdateMember,
+} from "./use-members";

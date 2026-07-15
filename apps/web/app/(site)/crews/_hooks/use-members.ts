@@ -62,3 +62,23 @@ export function useUpdateMember(crewId: string) {
     },
   });
 }
+
+/**
+ * Hand crew ownership to an existing member. `toUserId` is the target
+ * member's user id; `removeOldOwner` drops the outgoing owner from the
+ * crew (default keeps them as a normal member).
+ */
+export function useTransferCrewOwner(crewId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ toUserId, removeOldOwner }: { toUserId: string; removeOldOwner?: boolean }) =>
+      crewApi.post(`/crews/${encodeURIComponent(crewId)}/transfer-owner`, {
+        body: { toUserId, removeOldOwner },
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: crewKeys.members(crewId) });
+      qc.invalidateQueries({ queryKey: crewKeys.detail(crewId) });
+      qc.invalidateQueries({ queryKey: crewKeys.mine });
+    },
+  });
+}

@@ -288,6 +288,7 @@ export class CrewsService {
     toUserId: string,
     opts: {
       requireCurrentFounderId?: string;
+      requireTargetActiveMember?: boolean;
       expectedVersion?: number;
       removeOldOwner?: boolean;
     } = {},
@@ -315,6 +316,20 @@ export class CrewsService {
       throw new BadRequestException({
         message: 'Target user is already the crew owner',
       });
+    }
+
+    // Self-service transfers may only hand off to an existing member; the
+    // admin path leaves this off so ops can transfer to any user.
+    if (opts.requireTargetActiveMember) {
+      const isMember = await this.prisma.crewMember.findFirst({
+        where: { crewId, userId: target, removedAt: null },
+        select: { id: true },
+      });
+      if (!isMember) {
+        throw new BadRequestException({
+          message: 'Target user must be an existing crew member',
+        });
+      }
     }
 
     await this.prisma.$transaction(async (tx) => {

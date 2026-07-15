@@ -37,6 +37,8 @@ import {
   type UpdateCrewInput,
   UpdateCrewListingSchema,
   type UpdateCrewListingInput,
+  TransferCrewOwnerSchema,
+  type TransferCrewOwnerInput,
 } from './dto';
 import { parseIdParam } from '../common/params';
 import { ZodValidationPipe } from '../common/zod.pipe';
@@ -125,6 +127,27 @@ export class CrewsController {
   async remove(@Param('id') idRaw: string, @CurrentUser() user: AuthUser) {
     const id = parseIdParam(idRaw, 'id');
     await this.svc.softDelete(id, user.userId);
+  }
+
+  /**
+   * Hand ownership to another member (owner only). Self-service, so the
+   * target must already be an active member and the caller must be the
+   * current founder.
+   */
+  @Post(':id/transfer-owner')
+  transferOwner(
+    @Param('id') idRaw: string,
+    @CurrentUser() user: AuthUser,
+    @Body(new ZodValidationPipe(TransferCrewOwnerSchema))
+    body: TransferCrewOwnerInput,
+  ) {
+    const id = parseIdParam(idRaw, 'id');
+    return this.svc.transferOwnership(id, body.toUserId, {
+      requireCurrentFounderId: user.userId,
+      requireTargetActiveMember: true,
+      removeOldOwner: body.removeOldOwner,
+      expectedVersion: body.expectedVersion,
+    });
   }
 
   @Post(':id/reports')
