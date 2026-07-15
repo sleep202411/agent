@@ -5,10 +5,7 @@ import {
   Background,
   BackgroundVariant,
   MiniMap,
-  PanOnScrollMode,
-  ReactFlow,
   ReactFlowProvider,
-  SelectionMode,
   useReactFlow,
   useViewport,
   type Connection,
@@ -60,6 +57,8 @@ import { CanvasHistory } from "./canvas-history";
 import { ConnectionSignal } from "./connection-signal";
 import { cn } from "@/lib/utils";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { CanvasReactFlow } from "@/components/canvas/canvas-react-flow";
+import { CanvasToolButtons } from "@/components/canvas/canvas-controls";
 import { CopilotPanel } from "./copilot/copilot-panel";
 import { CreditsBadge } from "@/app/_components/credits-badge";
 import { useProjectContext } from "@/app/[locale]/project/_components/project-context";
@@ -313,9 +312,15 @@ function ZoomControls({
 
   return (
     <div
-      className="absolute bottom-4 z-20 flex h-[42px] items-center gap-0.5 rounded-full bg-popover/90 px-2 shadow-md backdrop-blur-xl transition-[left] duration-200 ease-out"
+      className="nodrag nopan nowheel absolute bottom-4 z-20 flex h-[42px] items-center gap-0.5 rounded-full bg-popover/90 px-2 shadow-md backdrop-blur-xl transition-[left] duration-200 ease-out"
       style={{ left: 16 + leftInset }}
     >
+      <CanvasToolButtons
+        buttonClassName={controlClass}
+        activeButtonClassName="bg-white/[0.12] text-white"
+        renderTooltip={(label, button) => <ControlTooltip label={label}>{button}</ControlTooltip>}
+      />
+      <span className="mx-0.5 h-4 w-px bg-white/10" />
       <ControlTooltip label={t("tidyCanvas")}>
         <button
           type="button"
@@ -1327,7 +1332,7 @@ function CanvasInner({ projectId, canEdit }: { projectId: string; canEdit: boole
                   <IconLoader2 className="size-7 animate-spin text-white/40" stroke={1.5} />
                 </div>
               )}
-              <ReactFlow
+              <CanvasReactFlow
                 nodes={nodes}
                 edges={edges}
                 onNodesChange={onNodesChange}
@@ -1354,13 +1359,6 @@ function CanvasInner({ projectId, canEdit }: { projectId: string; canEdit: boole
                 maxZoom={MAX_ZOOM}
                 snapToGrid={snapToGrid}
                 snapGrid={[GRID_SIZE, GRID_SIZE]}
-                selectionOnDrag
-                selectionMode={SelectionMode.Partial}
-                panOnDrag={[1, 2]}
-                panOnScroll
-                panOnScrollMode={PanOnScrollMode.Free}
-                zoomOnScroll={false}
-                zoomOnPinch
                 zoomOnDoubleClick={false}
                 deleteKeyCode={canEdit ? ["Backspace", "Delete"] : null}
                 onPaneClick={() => {
@@ -1382,9 +1380,8 @@ function CanvasInner({ projectId, canEdit }: { projectId: string; canEdit: boole
                 {minimapOpen && (
                   <MiniMap
                     pannable
-                    zoomable
                     position="bottom-right"
-                    className="!right-4 !bottom-[68px] !m-0 overflow-hidden rounded-xl border border-white/10 shadow-md"
+                    className="canvas-wheel-zoom !right-4 !bottom-[68px] !m-0 overflow-hidden rounded-xl border border-white/10 shadow-md"
                     bgColor="rgb(17 17 17)"
                     maskColor="rgba(0,0,0,0.35)"
                     maskStrokeColor="rgba(255,255,255,0.35)"
@@ -1393,7 +1390,15 @@ function CanvasInner({ projectId, canEdit }: { projectId: string; canEdit: boole
                     nodeStrokeWidth={0}
                   />
                 )}
-              </ReactFlow>
+                <ZoomControls
+                  onTidy={tidyCanvas}
+                  snapToGrid={snapToGrid}
+                  onToggleSnap={() => setSnapToGrid((v) => !v)}
+                  minimapOpen={minimapOpen}
+                  onToggleMinimap={() => setMinimapOpen((v) => !v)}
+                  leftInset={assetLibraryInset}
+                />
+              </CanvasReactFlow>
 
               {/* Back / project name / mode switcher live in the project shell;
             this cluster holds the canvas-specific + presence controls. */}
@@ -1463,14 +1468,6 @@ function CanvasInner({ projectId, canEdit }: { projectId: string; canEdit: boole
                 onChange={onPickFiles}
               />
 
-              <ZoomControls
-                onTidy={tidyCanvas}
-                snapToGrid={snapToGrid}
-                onToggleSnap={() => setSnapToGrid((v) => !v)}
-                minimapOpen={minimapOpen}
-                onToggleMinimap={() => setMinimapOpen((v) => !v)}
-                leftInset={assetLibraryInset}
-              />
               {canEdit && <NodeDock onAdd={addNodeFromDock} />}
 
               {/* Undo / redo (Ctrl+Z / Ctrl+Shift+Z). */}

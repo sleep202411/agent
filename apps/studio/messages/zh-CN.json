@@ -19,6 +19,18 @@
     "fizzDragon": "FizzDragon",
     "fizzStudio": "FizzStudio"
   },
+  "videoPlayer": {
+    "play": "播放",
+    "pause": "暂停",
+    "mute": "静音",
+    "unmute": "取消静音",
+    "volume": "音量",
+    "seek": "调整视频进度",
+    "seekForward": "快进",
+    "seekBackward": "快退",
+    "enterFullscreen": "进入全屏",
+    "exitFullscreen": "退出全屏"
+  },
   "localeSwitcher": {
     "label": "语言"
   },
@@ -924,6 +936,8 @@
   },
   "canvasControls": {
     "comment": "评论",
+    "selectTool": "选择工具（V）",
+    "panTool": "平移工具（H）",
     "loadingModels": "正在加载模型…",
     "generationSettings": "生成设置",
     "addNode": {

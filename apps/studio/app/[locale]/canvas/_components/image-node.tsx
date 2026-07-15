@@ -19,6 +19,7 @@ import {
   IconUpload,
 } from "@tabler/icons-react";
 import { cn } from "@/lib/utils";
+import { CANVAS_NODE_DRAG_HANDLE_CLASS } from "@/components/canvas/canvas-interaction-policy";
 import { useCanvasGraphContext } from "@/lib/collab/canvas-graph-context";
 import { CanvasNodeToolbar, ToolbarButton } from "./node-toolbar";
 import {
@@ -88,7 +89,12 @@ function ImageNodeComponent({ id, data, selected }: NodeProps<ImageNodeType>) {
     <div className="relative">
       {/* Filename header above the card (imagine.art pattern): an uploaded image
           reads at a glance without a heavy title bar. */}
-      <div className="mb-1.5 flex max-w-[280px] items-center gap-1.5 px-0.5 text-xs text-white/50">
+      <div
+        className={cn(
+          CANVAS_NODE_DRAG_HANDLE_CLASS,
+          "mb-1.5 flex max-w-[280px] items-center gap-1.5 rounded px-0.5 text-xs text-white/50"
+        )}
+      >
         <IconUpload className="size-3.5 shrink-0" stroke={1.8} />
         {renaming ? (
           <input

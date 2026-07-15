@@ -208,7 +208,10 @@ export function ReferenceStack({
 }) {
   if (fields.length === 0) return null;
   return (
-    <div className="flex items-center gap-2 overflow-x-auto overflow-y-visible pb-3 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+    <div
+      data-canvas-scroll-owner="x"
+      className="nowheel flex items-center gap-2 overflow-x-auto overflow-y-visible pb-3 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+    >
       {fields.map((field) => (
         <ReferenceField
           key={field.field}

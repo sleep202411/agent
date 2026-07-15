@@ -1,8 +1,7 @@
 "use client";
 
-import { useLayoutEffect, useMemo, useRef, useState, type RefObject } from "react";
-import { createPortal } from "react-dom";
-import { useViewport } from "@xyflow/react";
+import { useMemo, useState } from "react";
+import { useStore } from "@xyflow/react";
 import {
   IconCheck,
   IconChevronDown,
@@ -24,6 +23,7 @@ import {
 import { estimateModelSellPoints } from "@/app/[locale]/canvas/_lib/generation-api";
 import { useAiCatalog } from "@/app/[locale]/canvas/_lib/use-ai-catalog";
 import { Button } from "@/components/ui/button";
+import { CanvasNativePointerOwner } from "@/components/canvas/canvas-native-pointer-owner";
 import {
   Dialog,
   DialogContent,
@@ -166,13 +166,10 @@ export function StoryShotComposer({
   referenceApiConnected = false,
   referenceBindingsPending = false,
   onUpdateReferenceBindings,
-  anchorRef,
-}: StoryVideoComposerProps & { anchorRef: RefObject<HTMLElement | null> }) {
+}: StoryVideoComposerProps) {
   const t = useTranslations("storyStudio.canvas.production");
   const trailerT = useTranslations("storyStudio.canvas.trailer.production");
-  const viewport = useViewport();
-  const composerRef = useRef<HTMLElement>(null);
-  const [position, setPosition] = useState<{ left: number; top: number } | null>(null);
+  const zoom = useStore((state) => state.transform[2]);
   const catalogQuery = useAiCatalog();
   const [selectedModelId, setSelectedModelId] = useState<string | undefined>(defaultModel?.slug);
   const [panel, setPanel] = useState<GenerationPromptComposerPanel>(null);
@@ -225,51 +222,15 @@ export function StoryShotComposer({
     clip && referenceApiConnected && onUpdateReferenceBindings && !referenceBindingsPending
   );
 
-  useLayoutEffect(() => {
-    const updatePosition = () => {
-      const anchor = anchorRef.current;
-      if (!anchor) return;
-      const rect = anchor.getBoundingClientRect();
-      const width = 680;
-      const height = composerRef.current?.offsetHeight ?? 190;
-      const gutter = 12;
-      const inspectorWidth = 380;
-      const canvasRight = Math.max(width + gutter * 2, window.innerWidth - inspectorWidth);
-      const left = Math.min(
-        Math.max(gutter, rect.left + rect.width / 2 - width / 2),
-        canvasRight - width - gutter
-      );
-      const below = rect.bottom + gutter;
-      const above = rect.top - height - gutter;
-      const top =
-        below + height <= window.innerHeight - gutter
-          ? below
-          : above >= gutter
-            ? above
-            : Math.max(gutter, Math.min(window.innerHeight - height - gutter, below));
-      setPosition((current) =>
-        current?.left === left && current.top === top ? current : { left, top }
-      );
-    };
-    updatePosition();
-    const observer = new ResizeObserver(updatePosition);
-    if (anchorRef.current) observer.observe(anchorRef.current);
-    if (composerRef.current) observer.observe(composerRef.current);
-    window.addEventListener("resize", updatePosition);
-    return () => {
-      observer.disconnect();
-      window.removeEventListener("resize", updatePosition);
-    };
-  }, [anchorRef, position, viewport.x, viewport.y, viewport.zoom]);
-
-  if (!position) return null;
-
-  return createPortal(
+  return (
     <div
-      className="fixed z-40 duration-200 animate-in fade-in-0 zoom-in-95"
-      style={{ left: position.left, top: position.top }}
+      className="absolute top-full left-1/2 z-40 flex w-0 justify-center duration-200 animate-in fade-in-0 zoom-in-95"
+      style={{ marginTop: 12 / zoom }}
     >
-      <section ref={composerRef} className="relative">
+      <CanvasNativePointerOwner
+        className="relative shrink-0 origin-top"
+        style={{ transform: `scale(${1 / zoom})` }}
+      >
         <GenerationPromptComposer
           ariaLabel={subject === "trailer" ? trailerT("title") : t("title")}
           modality="video"
@@ -345,9 +306,8 @@ export function StoryShotComposer({
           error={error}
           className="w-[680px]"
         />
-      </section>
-    </div>,
-    document.body
+      </CanvasNativePointerOwner>
+    </div>
   );
 }
 

@@ -11,20 +11,21 @@ import {
   type CSSProperties,
 } from "react";
 import {
-  Controls,
+  applyNodeChanges,
   Handle,
   MiniMap,
   Position,
-  ReactFlow,
   ReactFlowProvider,
-  SelectionMode,
   useEdgesState,
   useNodesState,
   useReactFlow,
+  useStore,
   type Connection,
   type Edge,
   type FinalConnectionState,
+  type NodeChange,
   type NodeProps,
+  type OnSelectionChangeParams,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import {
@@ -48,6 +49,22 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useLocale, useTranslations } from "next-intl";
 import { useWorkspace } from "@/app/_components/workspace-context";
 import { Button } from "@/components/ui/button";
+import { CanvasControls } from "@/components/canvas/canvas-controls";
+import { CanvasNativePointerOwner } from "@/components/canvas/canvas-native-pointer-owner";
+import { CanvasReactFlow, type CanvasReactFlowProps } from "@/components/canvas/canvas-react-flow";
+import { CANVAS_NODE_DRAG_HANDLE_CLASS } from "@/components/canvas/canvas-interaction-policy";
+import {
+  canActivateCanvasMediaPreview,
+  canClaimCanvasManualPlayback,
+} from "@/components/canvas/canvas-media-preview-policy";
+import {
+  MediaHoverPreviewProvider,
+  useMediaHoverPreview,
+  useMediaHoverPreviewInterruption,
+} from "@/components/media/media-hover-preview";
+import type { MediaManualPlaybackLease } from "@/components/media/media-preview-coordinator";
+import { StudioVideoPlayer, type StudioVideoSource } from "@/components/media/studio-video-player";
+import { resolveCanvasVideoControlDensity } from "@/components/media/studio-video-player-model";
 import { FrostedPanel } from "@/components/ui/frosted-panel";
 import { GlassRim } from "@/components/ui/glass-rim";
 import { Link } from "@/i18n/navigation";
@@ -99,6 +116,10 @@ import {
   type StoryCanvasEdge,
   type StoryCanvasNode,
 } from "./story-project-canvas-model";
+import {
+  nextStoryCanvasFocusedNodeId,
+  reconcileStoryCanvasSelectedIds,
+} from "./story-project-canvas-selection";
 import {
   coalesceQueuedLayout,
   layoutPositionSignature,
@@ -214,6 +235,12 @@ type StoryTrailerUiContextValue = {
 
 const StoryProductionUiContext = createContext<StoryProductionUiContextValue | null>(null);
 const StoryTrailerUiContext = createContext<StoryTrailerUiContextValue | null>(null);
+const StoryCanvasFocusContext = createContext<string | null>(null);
+
+function StoryCanvasReactFlow(props: CanvasReactFlowProps<StoryCanvasNode, StoryCanvasEdge>) {
+  const interruptHoverPreview = useMediaHoverPreviewInterruption();
+  return <CanvasReactFlow {...props} onInteractionStart={interruptHoverPreview} />;
+}
 
 export function StoryProjectCanvas({ projectId }: { projectId: string }) {
   const { activeWorkspace } = useWorkspace();
@@ -235,8 +262,7 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
   const { activeWorkspace, loading: workspaceLoading } = useWorkspace();
   const workspaceId = activeWorkspace?.id ?? null;
   const [content, setContent] = useState<InteractiveFilmDraftContent | null>(null);
-  const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
-  const [showFoundation, setShowFoundation] = useState(true);
+  const [focusedNodeId, setFocusedNodeId] = useState<string | null>(null);
   const [creatorOpen, setCreatorOpen] = useState(false);
   const [graphError, setGraphError] = useState<string | null>(null);
   const [saveState, setSaveState] = useState<SaveState>("idle");
@@ -289,7 +315,7 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
         }
       )
   );
-  const [canvasNodes, setCanvasNodes, onCanvasNodesChange] = useNodesState<StoryCanvasNode>([]);
+  const [canvasNodes, setCanvasNodes] = useNodesState<StoryCanvasNode>([]);
   const [canvasEdges, setCanvasEdges, onCanvasEdgesChange] = useEdgesState<StoryCanvasEdge>([]);
   const [sessionId] = useState(() => globalThis.crypto.randomUUID());
   const hydratedRef = useRef(false);
@@ -327,7 +353,75 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
     async () => {}
   );
   const canvasNodesRef = useRef<StoryCanvasNode[]>([]);
+  const pendingCanvasSelectionRef = useRef<string | null>(null);
+  const requestedCanvasFocusRef = useRef<string | null>(null);
+  const marqueeSelectionActiveRef = useRef(false);
+  const latestCanvasSelectionRef = useRef<string[]>([]);
   const pendingNodePositionsRef = useRef(new Map<string, StoryCanvasPosition>());
+
+  const onCanvasNodesChange = useCallback(
+    (changes: NodeChange<StoryCanvasNode>[]) => {
+      setCanvasNodes((current) => {
+        const next = applyNodeChanges(changes, current);
+        canvasNodesRef.current = next;
+        return next;
+      });
+    },
+    [setCanvasNodes]
+  );
+
+  const selectCanvasNodeExclusively = useCallback(
+    (nodeId: string | null) => {
+      pendingCanvasSelectionRef.current = nodeId;
+      requestedCanvasFocusRef.current = null;
+      setFocusedNodeId(nodeId);
+      setCanvasNodes((current) => {
+        const nodeExists = nodeId !== null && current.some((node) => node.id === nodeId);
+        if (nodeId !== null && !nodeExists) return current;
+
+        const selectedNodeIds = nodeId ? new Set([nodeId]) : new Set<string>();
+        const next = current.map((node) => ({
+          ...node,
+          selected: selectedNodeIds.has(node.id),
+        }));
+        pendingCanvasSelectionRef.current = null;
+        latestCanvasSelectionRef.current = [...selectedNodeIds];
+        canvasNodesRef.current = next;
+        return next;
+      });
+    },
+    [setCanvasNodes]
+  );
+
+  const reconcileCanvasFocus = useCallback((selectedNodeIds: readonly string[]) => {
+    const preferredNodeId = requestedCanvasFocusRef.current;
+    requestedCanvasFocusRef.current = null;
+    setFocusedNodeId((current) =>
+      nextStoryCanvasFocusedNodeId(current, selectedNodeIds, preferredNodeId)
+    );
+  }, []);
+
+  const onCanvasSelectionChange = useCallback(
+    ({ nodes: selectedNodes }: OnSelectionChangeParams<StoryCanvasNode, StoryCanvasEdge>) => {
+      const selectedNodeIds = selectedNodes.map((node) => node.id);
+      latestCanvasSelectionRef.current = selectedNodeIds;
+      const pendingSelection = pendingCanvasSelectionRef.current;
+      if (!pendingSelection || selectedNodeIds.includes(pendingSelection)) {
+        pendingCanvasSelectionRef.current = null;
+      }
+      if (!marqueeSelectionActiveRef.current) reconcileCanvasFocus(selectedNodeIds);
+    },
+    [reconcileCanvasFocus]
+  );
+
+  const onCanvasSelectionStart = useCallback(() => {
+    marqueeSelectionActiveRef.current = true;
+  }, []);
+
+  const onCanvasSelectionEnd = useCallback(() => {
+    marqueeSelectionActiveRef.current = false;
+    reconcileCanvasFocus(latestCanvasSelectionRef.current);
+  }, [reconcileCanvasFocus]);
 
   const workbenchQuery = useQuery({
     queryKey: ["story-studio", "workbench", workspaceId, projectId],
@@ -885,11 +979,29 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
 
   useEffect(() => {
     if (!model || !layoutQuery.data) return;
+    const currentById = new Map(canvasNodesRef.current.map((node) => [node.id, node]));
+    const pendingSelection = pendingCanvasSelectionRef.current;
+    const selectedNodeIds = reconcileStoryCanvasSelectedIds(
+      model.nodes.map((node) => node.id),
+      new Set(canvasNodesRef.current.filter((node) => node.selected).map((node) => node.id)),
+      pendingSelection
+    );
+    if (pendingSelection && selectedNodeIds.has(pendingSelection)) {
+      pendingCanvasSelectionRef.current = null;
+    }
+
+    const reconcileFocusAfterModel = (nodes: StoryCanvasNode[]) => {
+      const nextSelectedNodeIds = nodes.filter((node) => node.selected).map((node) => node.id);
+      latestCanvasSelectionRef.current = nextSelectedNodeIds;
+      if (pendingSelection && !selectedNodeIds.has(pendingSelection)) return;
+      setFocusedNodeId((current) => nextStoryCanvasFocusedNodeId(current, nextSelectedNodeIds));
+    };
+
     if (!layoutHydratedRef.current) {
       const initialNodes = model.nodes.map((node) => ({
         ...node,
         position: layoutQuery.data.nodePositions[node.id] ?? node.position,
-        selected: node.id === selectedNodeId,
+        selected: selectedNodeIds.has(node.id),
       }));
       layoutHydratedRef.current = true;
       layoutRevisionRef.current = layoutQuery.data.revision;
@@ -897,16 +1009,16 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
       setLayoutSaveState("idle");
       canvasNodesRef.current = initialNodes;
       setCanvasNodes(initialNodes);
+      reconcileFocusAfterModel(initialNodes);
       return;
     }
-    const currentById = new Map(canvasNodesRef.current.map((node) => [node.id, node]));
     const placedNodeIds: string[] = [];
     const nextNodes = model.nodes.map((node) => {
       const pendingPosition = pendingNodePositionsRef.current.get(node.id);
       if (pendingPosition) placedNodeIds.push(node.id);
       return {
         ...node,
-        selected: node.id === selectedNodeId,
+        selected: selectedNodeIds.has(node.id),
         position:
           pendingPosition ??
           currentById.get(node.id)?.position ??
@@ -917,12 +1029,13 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
     placedNodeIds.forEach((nodeId) => pendingNodePositionsRef.current.delete(nodeId));
     canvasNodesRef.current = nextNodes;
     setCanvasNodes(nextNodes);
+    reconcileFocusAfterModel(nextNodes);
     if (placedNodeIds.length > 0) {
       const positions = nodePositions(nextNodes);
       setLayoutSaveState("dirty");
       void persistLayoutRef.current(positions);
     }
-  }, [layoutQuery.data, model, selectedNodeId, setCanvasNodes]);
+  }, [layoutQuery.data, model, setCanvasNodes]);
 
   const clearLayoutSaveRetry = useCallback((resetAttempts = false) => {
     if (layoutRetryTimerRef.current !== null) {
@@ -1028,21 +1141,21 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
 
   useEffect(() => () => clearLayoutSaveRetry(), [clearLayoutSaveRetry]);
 
-  const selectedNode = useMemo(
-    () => model?.nodes.find((node) => node.id === selectedNodeId) ?? null,
-    [model?.nodes, selectedNodeId]
+  const focusedNode = useMemo(
+    () => model?.nodes.find((node) => node.id === focusedNodeId) ?? null,
+    [focusedNodeId, model?.nodes]
   );
-  const selectedFilmClip =
-    selectedNode?.data.kind === "clip" ? (selectedNode.data.filmClip ?? null) : null;
-  const selectedDirectorPrompt =
-    selectedNode?.data.kind === "clip" ? (selectedNode.data.directorPrompt ?? null) : null;
-  const selectedGraphNodeId = selectedNode?.data.kind === "clip" ? selectedNode.data.nodeId : null;
-  const currentSelectedFilmClip = currentDraftProductionRevisionId ? selectedFilmClip : null;
+  const focusedFilmClip =
+    focusedNode?.data.kind === "clip" ? (focusedNode.data.filmClip ?? null) : null;
+  const focusedDirectorPrompt =
+    focusedNode?.data.kind === "clip" ? (focusedNode.data.directorPrompt ?? null) : null;
+  const focusedGraphNodeId = focusedNode?.data.kind === "clip" ? focusedNode.data.nodeId : null;
+  const currentFocusedFilmClip = currentDraftProductionRevisionId ? focusedFilmClip : null;
   const takesQuery = useQuery({
-    queryKey: ["story-studio", "film-takes", workspaceId, projectId, selectedGraphNodeId],
+    queryKey: ["story-studio", "film-takes", workspaceId, projectId, focusedGraphNodeId],
     queryFn: () =>
-      listFilmTakes(workspaceId as string, projectId, selectedGraphNodeId as string, { limit: 50 }),
-    enabled: Boolean(workspaceId && selectedGraphNodeId),
+      listFilmTakes(workspaceId as string, projectId, focusedGraphNodeId as string, { limit: 50 }),
+    enabled: Boolean(workspaceId && focusedGraphNodeId),
     retry: false,
     refetchInterval: (query) =>
       query.state.data?.items.some(
@@ -1056,17 +1169,17 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
   const refreshProduction = useCallback(async () => {
     await Promise.all([
       workbenchQuery.refetch(),
-      selectedGraphNodeId ? takesQuery.refetch() : Promise.resolve(),
+      focusedGraphNodeId ? takesQuery.refetch() : Promise.resolve(),
     ]);
-  }, [selectedGraphNodeId, takesQuery, workbenchQuery]);
+  }, [focusedGraphNodeId, takesQuery, workbenchQuery]);
 
   useEffect(() => {
     if (!workspaceId) return;
     if (
       !shouldPrepareStoryClip({
-        graphNodeId: selectedGraphNodeId,
-        hasMaterializedClip: Boolean(currentSelectedFilmClip),
-        masterDirection: selectedDirectorPrompt?.masterDirection ?? null,
+        graphNodeId: focusedGraphNodeId,
+        hasMaterializedClip: Boolean(currentFocusedFilmClip),
+        masterDirection: focusedDirectorPrompt?.masterDirection ?? null,
         canGenerate: Boolean(project?.capabilities.includes("story.generate")),
         draftSettled: saveState === "idle" || saveState === "saved",
         draftRevision,
@@ -1075,7 +1188,7 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
       return;
     }
 
-    const graphNodeId = selectedGraphNodeId as string;
+    const graphNodeId = focusedGraphNodeId as string;
     const triggerKey = canonicalJsonString({ draftRevision, modelId: null });
     let scheduled = true;
 
@@ -1150,14 +1263,14 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
     };
   }, [
     clipPreparationGate,
-    currentSelectedFilmClip,
+    currentFocusedFilmClip,
     draftRevision,
     project?.capabilities,
     projectId,
     refetchWorkbench,
     saveState,
-    selectedDirectorPrompt?.masterDirection,
-    selectedGraphNodeId,
+    focusedDirectorPrompt?.masterDirection,
+    focusedGraphNodeId,
     t,
     withSavedDraftSnapshot,
     workspaceId,
@@ -1193,21 +1306,21 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
 
   const generateSelectedClip = useCallback(
     (variationNote?: string, modelId?: string) => {
-      if (!selectedGraphNodeId) return;
+      if (!focusedGraphNodeId) return;
       setClipPreparationStates((current) => {
-        if (!current[selectedGraphNodeId]) return current;
+        if (!current[focusedGraphNodeId]) return current;
         const next = { ...current };
-        delete next[selectedGraphNodeId];
+        delete next[focusedGraphNodeId];
         return next;
       });
       setClipGenerationRequest({
         requestId: globalThis.crypto.randomUUID(),
-        graphNodeId: selectedGraphNodeId,
+        graphNodeId: focusedGraphNodeId,
         variationNote,
         modelId,
       });
     },
-    [selectedGraphNodeId]
+    [focusedGraphNodeId]
   );
 
   useEffect(() => {
@@ -1314,7 +1427,7 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
         take.stale ||
         !workspaceId ||
         !currentDraftProductionRevisionId ||
-        !currentSelectedFilmClip ||
+        !currentFocusedFilmClip ||
         !film
       ) {
         return;
@@ -1324,9 +1437,9 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
           workspaceId,
           projectId,
           currentDraftProductionRevisionId,
-          currentSelectedFilmClip.id,
+          currentFocusedFilmClip.id,
           {
-            expectedMasterRevision: currentSelectedFilmClip.master?.masterRevision ?? 0,
+            expectedMasterRevision: currentFocusedFilmClip.master?.masterRevision ?? 0,
             expectedProductionRevision: film.productionRevision,
             takeId: take.id,
           }
@@ -1335,7 +1448,7 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
     },
     [
       currentDraftProductionRevisionId,
-      currentSelectedFilmClip,
+      currentFocusedFilmClip,
       film,
       projectId,
       runProductionAction,
@@ -1349,7 +1462,7 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
         !STORY_REFERENCE_API_CONNECTED ||
         !workspaceId ||
         !currentDraftProductionRevisionId ||
-        !currentSelectedFilmClip ||
+        !currentFocusedFilmClip ||
         !film
       ) {
         return;
@@ -1359,9 +1472,9 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
           workspaceId,
           projectId,
           currentDraftProductionRevisionId,
-          currentSelectedFilmClip.id,
+          currentFocusedFilmClip.id,
           {
-            expectedClipVersion: currentSelectedFilmClip.version,
+            expectedClipVersion: currentFocusedFilmClip.version,
             expectedProductionRevision: film.productionRevision,
             bindings,
           }
@@ -1370,7 +1483,7 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
     },
     [
       currentDraftProductionRevisionId,
-      currentSelectedFilmClip,
+      currentFocusedFilmClip,
       film,
       projectId,
       runProductionAction,
@@ -1378,7 +1491,7 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
     ]
   );
 
-  const generationInputBlocker = currentSelectedFilmClip?.blockReasons.find((reason) =>
+  const generationInputBlocker = currentFocusedFilmClip?.blockReasons.find((reason) =>
     [
       "PRODUCTION_INPUTS_UNRESOLVED",
       "REFERENCE_APPROVAL_REQUIRED",
@@ -1389,20 +1502,20 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
   );
   const productionDisabledReason = !project?.capabilities.includes("story.generate")
     ? t("production.disabled.permission")
-    : !selectedDirectorPrompt?.masterDirection.trim()
+    : !focusedDirectorPrompt?.masterDirection.trim()
       ? t("production.disabled.promptRequired")
       : generationInputBlocker
         ? generationInputBlocker.message || t("production.disabled.blocked")
         : null;
   const selectedClipPreparation =
-    selectedGraphNodeId && !currentSelectedFilmClip
-      ? (clipPreparationStates[selectedGraphNodeId] ?? null)
+    focusedGraphNodeId && !currentFocusedFilmClip
+      ? (clipPreparationStates[focusedGraphNodeId] ?? null)
       : null;
   const productionComposer: StoryShotComposerProps | null =
-    selectedNode?.data.kind === "clip" && selectedDirectorPrompt
+    focusedNode?.data.kind === "clip" && focusedDirectorPrompt
       ? {
-          clip: currentSelectedFilmClip,
-          prompt: selectedDirectorPrompt,
+          clip: currentFocusedFilmClip,
+          prompt: focusedDirectorPrompt,
           references: film?.references ?? [],
           takes:
             takesQuery.data?.items.map((take) => ({
@@ -1428,46 +1541,46 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
               : null),
           onGenerate: generateSelectedClip,
           onModeChange: (mode) => {
-            if (!selectedGraphNodeId || !selectedDirectorPrompt) return;
+            if (!focusedGraphNodeId || !focusedDirectorPrompt) return;
             const nextControl =
               mode === "omni_reference"
                 ? ({ mode: "omni_reference" } as const)
                 : ({ mode: "frame_lock", frameMode: "first_last_frame" } as const);
             if (
               JSON.stringify(nextControl) ===
-              JSON.stringify(selectedDirectorPrompt.generationControl)
+              JSON.stringify(focusedDirectorPrompt.generationControl)
             ) {
               return;
             }
             applyGraphMutation((current) =>
-              replaceClipPrompt(current, selectedGraphNodeId, {
-                ...selectedDirectorPrompt,
+              replaceClipPrompt(current, focusedGraphNodeId, {
+                ...focusedDirectorPrompt,
                 generationControl: nextControl,
               })
             );
           },
           onPromptCommit: (next) => {
             if (
-              !selectedGraphNodeId ||
-              !selectedDirectorPrompt ||
-              next === selectedDirectorPrompt.masterDirection
+              !focusedGraphNodeId ||
+              !focusedDirectorPrompt ||
+              next === focusedDirectorPrompt.masterDirection
             ) {
               return;
             }
             applyGraphMutation((current) =>
-              replaceClipPrompt(current, selectedGraphNodeId, {
-                ...selectedDirectorPrompt,
+              replaceClipPrompt(current, focusedGraphNodeId, {
+                ...focusedDirectorPrompt,
                 masterDirection: next,
               })
             );
           },
           onDurationCommit: (durationMs) => {
-            if (!selectedGraphNodeId || !selectedDirectorPrompt) return;
+            if (!focusedGraphNodeId || !focusedDirectorPrompt) return;
             applyGraphMutation((current) =>
               replaceClipPrompt(
                 current,
-                selectedGraphNodeId,
-                setClipPromptTargetDuration(selectedDirectorPrompt, durationMs)
+                focusedGraphNodeId,
+                setClipPromptTargetDuration(focusedDirectorPrompt, durationMs)
               )
             );
           },
@@ -1485,14 +1598,14 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
      latestContentRef only inside event handlers; these objects carry no ref
      reads at render time. */
   const productionUi: StoryProductionUiContextValue | null =
-    selectedGraphNodeId && productionComposer
-      ? { graphNodeId: selectedGraphNodeId, composer: productionComposer }
+    focusedGraphNodeId && productionComposer
+      ? { graphNodeId: focusedGraphNodeId, composer: productionComposer }
       : null;
   const inspectorProduction = productionComposer ?? undefined;
   /* eslint-enable react-hooks/refs */
-  const selectedIsRoot = selectedNode?.data.kind === "root";
+  const focusedIsRoot = focusedNode?.data.kind === "root";
   const selectedTrailer =
-    selectedIsRoot && currentDraftProductionRevisionId ? (film?.trailer ?? null) : null;
+    focusedIsRoot && currentDraftProductionRevisionId ? (film?.trailer ?? null) : null;
   const trailerTakesQuery = useQuery({
     queryKey: [
       "story-studio",
@@ -1506,7 +1619,7 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
       listFilmTrailerTakes(workspaceId as string, projectId, selectedRevisionId as string, {
         limit: 50,
       }),
-    enabled: Boolean(workspaceId && selectedRevisionId && selectedTrailer?.id && selectedIsRoot),
+    enabled: Boolean(workspaceId && selectedRevisionId && selectedTrailer?.id && focusedIsRoot),
     retry: false,
     refetchInterval: (query) =>
       query.state.data?.items.some(
@@ -1699,7 +1812,7 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
   // closures reach through applyGraphMutation, which the hooks lint forbids
   // inside memoized values that are read during render.
   const trailerUi: StoryTrailerUiContextValue | null =
-    selectedIsRoot && selectedTrailer
+    focusedIsRoot && selectedTrailer
       ? {
           composer: {
             subject: "trailer",
@@ -1782,16 +1895,24 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
   const inspectorTrailerProduction = trailerUi?.production;
   const authoringLocale = project?.defaultLocale ?? "en-US";
   const selectedChoiceSourceId =
-    selectedNode?.data.kind === "decision"
-      ? selectedNode.data.sourceNodeId
-      : selectedNode?.data.kind === "clip"
-        ? selectedNode.data.nodeId
+    focusedNode?.data.kind === "decision"
+      ? focusedNode.data.sourceNodeId
+      : focusedNode?.data.kind === "clip"
+        ? focusedNode.data.nodeId
         : undefined;
+  const layeredCanvasNodes = useMemo(
+    () =>
+      canvasNodes.map((node) => {
+        const zIndex = node.id === focusedNodeId ? 1 : 0;
+        return node.zIndex === zIndex ? node : { ...node, zIndex };
+      }),
+    [canvasNodes, focusedNodeId]
+  );
   const displayEdges = useMemo(
     () =>
       model?.edges.map((edge) => {
         const related =
-          !selectedNodeId || edge.source === selectedNodeId || edge.target === selectedNodeId;
+          !focusedNodeId || edge.source === focusedNodeId || edge.target === focusedNodeId;
         const sourceKind = model?.nodes.find((node) => node.id === edge.source)?.data.kind;
         return {
           ...edge,
@@ -1818,7 +1939,7 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
           labelBgBorderRadius: 8,
         };
       }) ?? [],
-    [model, selectedNodeId]
+    [focusedNodeId, model]
   );
 
   useEffect(() => {
@@ -1855,20 +1976,17 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
   };
 
   const applyGraphMutation = (
-    mutation: (current: InteractiveFilmDraftContent) => InteractiveFilmDraftContent,
-    nextSelection?: string | null
-  ) => {
-    if (!content || !canEdit) return;
+    mutation: (current: InteractiveFilmDraftContent) => InteractiveFilmDraftContent
+  ): boolean => {
+    if (!content || !canEdit) return false;
     try {
       const next = mutation(content);
       setGraphError(null);
       commitContent(next);
-      if (nextSelection !== undefined) {
-        setSelectedNodeId(nextSelection);
-        setShowFoundation(nextSelection === null);
-      }
+      return true;
     } catch {
       setGraphError(t("graphError.generic"));
+      return false;
     }
   };
 
@@ -1878,21 +1996,20 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
       if (kind === "clip") {
         const result = createClipNode(content);
         commitContent(result.content);
-        setSelectedNodeId(result.created.nodeId);
+        selectCanvasNodeExclusively(result.created.nodeId);
       } else if (kind === "router") {
         const result = createRouterNode(content);
         commitContent(result.content);
-        setSelectedNodeId(result.created.nodeId);
+        selectCanvasNodeExclusively(result.created.nodeId);
       } else if (kind === "ending") {
         const result = createEndingNode(content, { locale: authoringLocale });
         commitContent(result.content);
-        setSelectedNodeId(syntheticEndingNodeId(result.created.id));
+        selectCanvasNodeExclusively(syntheticEndingNodeId(result.created.id));
       } else if (selectedChoiceSourceId) {
         commitContent(convertClipExitToChoice(content, selectedChoiceSourceId, authoringLocale));
-        setSelectedNodeId(syntheticDecisionNodeId(selectedChoiceSourceId));
+        selectCanvasNodeExclusively(syntheticDecisionNodeId(selectedChoiceSourceId));
       }
       setGraphError(null);
-      setShowFoundation(false);
     } catch {
       setGraphError(t("graphError.generic"));
     }
@@ -1982,8 +2099,7 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
       });
       setGraphError(null);
       commitContent(created.content);
-      setSelectedNodeId(created.createdNodeId);
-      setShowFoundation(false);
+      selectCanvasNodeExclusively(created.createdNodeId);
       setCreatorOpen(false);
     } catch {
       setGraphError(t("graphError.generic"));
@@ -2106,20 +2222,27 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
   };
 
   const deleteStoryNodes = (nodes: StoryCanvasNode[]) => {
-    applyGraphMutation(
-      (current) =>
-        nodes.reduce((next, node) => {
-          if (node.data.kind === "root") return next;
-          if (node.data.kind === "decision" && node.data.sourceNodeId) {
-            return convertExitToAuto(next, node.data.sourceNodeId);
-          }
-          if (node.data.kind === "ending" && node.data.endingId) {
-            return deleteEndingNode(next, node.data.endingId);
-          }
-          return deleteGraphNode(next, node.data.nodeId);
-        }, current),
-      null
+    const deletedNodeIds = new Set(nodes.map((node) => node.id));
+    const remainingSelectedNodeIds = latestCanvasSelectionRef.current.filter(
+      (nodeId) => !deletedNodeIds.has(nodeId)
     );
+    const deleted = applyGraphMutation((current) =>
+      nodes.reduce((next, node) => {
+        if (node.data.kind === "root") return next;
+        if (node.data.kind === "decision" && node.data.sourceNodeId) {
+          return convertExitToAuto(next, node.data.sourceNodeId);
+        }
+        if (node.data.kind === "ending" && node.data.endingId) {
+          return deleteEndingNode(next, node.data.endingId);
+        }
+        return deleteGraphNode(next, node.data.nodeId);
+      }, current)
+    );
+    if (!deleted) return;
+    pendingCanvasSelectionRef.current = null;
+    requestedCanvasFocusRef.current = null;
+    latestCanvasSelectionRef.current = remainingSelectedNodeIds;
+    setFocusedNodeId((current) => nextStoryCanvasFocusedNodeId(current, remainingSelectedNodeIds));
   };
 
   const changeExitKind = (
@@ -2238,8 +2361,7 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
           ? duplicateClipNode(content, nodeId)
           : duplicateRouterNode(content, nodeId);
       commitContent(result.content);
-      setSelectedNodeId(result.created.nodeId);
-      setShowFoundation(false);
+      selectCanvasNodeExclusively(result.created.nodeId);
       setGraphError(null);
     } catch {
       setGraphError(t("graphError.generic"));
@@ -2265,8 +2387,10 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
 
   const loadLatestLayoutAfterConflict = () => {
     if (!layoutConflict || !model) return;
+    const currentById = new Map(canvasNodesRef.current.map((node) => [node.id, node]));
     const latestNodes = model.nodes.map((node) => ({
       ...node,
+      selected: Boolean(currentById.get(node.id)?.selected),
       position: layoutConflict.current.nodePositions[node.id] ?? node.position,
     }));
     layoutConflictRef.current = null;
@@ -2275,6 +2399,10 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
     clearLayoutSaveRetry(true);
     layoutRevisionRef.current = layoutConflict.current.revision;
     layoutSavedSignatureRef.current = layoutPositionSignature(nodePositions(latestNodes));
+    canvasNodesRef.current = latestNodes;
+    const selectedNodeIds = latestNodes.filter((node) => node.selected).map((node) => node.id);
+    latestCanvasSelectionRef.current = selectedNodeIds;
+    setFocusedNodeId((current) => nextStoryCanvasFocusedNodeId(current, selectedNodeIds));
     setCanvasNodes(latestNodes);
     setLayoutConflict(null);
     setLayoutSaveError(null);
@@ -2313,10 +2441,7 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
         previewPending={workingPreviewPending}
         onPreview={() => void loadWorkingPreview()}
         onFit={() => void fitView({ padding: 0.16, duration: 420, maxZoom: 0.78 })}
-        onShowFoundation={() => {
-          setSelectedNodeId(null);
-          setShowFoundation(true);
-        }}
+        onShowFoundation={() => selectCanvasNodeExclusively(null)}
       />
 
       <StoryWorkingPreviewDialog
@@ -2341,88 +2466,91 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
             backgroundSize: "20px 20px",
           }}
         />
-        <StoryTrailerUiContext.Provider value={trailerUi}>
-          <StoryProductionUiContext.Provider value={productionUi}>
-            <ReactFlow
-              nodes={canvasNodes}
-              edges={canvasEdges}
-              onNodesChange={onCanvasNodesChange}
-              onEdgesChange={(changes) =>
-                onCanvasEdgesChange(changes.filter((change) => change.type === "select"))
-              }
-              onConnect={connectStoryNodes}
-              onConnectEnd={finishConnectionOnBlankCanvas}
-              isValidConnection={isValidStoryConnection}
-              onEdgesDelete={deleteStoryEdges}
-              onNodesDelete={deleteStoryNodes}
-              onNodeDragStop={(_event, draggedNode, draggedNodes) => {
-                const movedNodes = new Map(
-                  [...draggedNodes, draggedNode].map((node) => [node.id, node])
-                );
-                const positions = nodePositions(
-                  canvasNodes.map((node) => movedNodes.get(node.id) ?? node)
-                );
-                if (layoutPositionSignature(positions) === layoutSavedSignatureRef.current) return;
-                setLayoutSaveState("dirty");
-                void persistLayoutRef.current(positions);
-              }}
-              onNodeClick={(_event, node) => {
-                if (node.data.kind === "root") {
-                  setSelectedNodeId(node.id);
-                  setShowFoundation(false);
-                  return;
-                }
-                setSelectedNodeId(node.id);
-                setShowFoundation(false);
-              }}
-              onPaneClick={() => {
-                setSelectedNodeId(null);
-                setShowFoundation(true);
-                setCreatorOpen(false);
-              }}
-              nodeTypes={NODE_TYPES}
-              defaultEdgeOptions={DEFAULT_EDGE_OPTIONS}
-              colorMode="dark"
-              proOptions={{ hideAttribution: true }}
-              minZoom={0.16}
-              maxZoom={1.4}
-              defaultViewport={{ x: 80, y: 160, zoom: 0.48 }}
-              selectionOnDrag
-              selectionMode={SelectionMode.Partial}
-              selectionKeyCode={null}
-              panOnDrag={[1, 2]}
-              panActivationKeyCode="Space"
-              panOnScroll
-              nodesDraggable={canEdit}
-              nodesConnectable={canEdit}
-              edgesReconnectable={false}
-              edgesFocusable={canEdit}
-              deleteKeyCode={canEdit ? ["Backspace", "Delete"] : null}
-              selectNodesOnDrag
-              zoomOnDoubleClick={false}
-              fitView={canvasNodes.length > 0}
-              fitViewOptions={{ padding: 0.16, maxZoom: 0.78 }}
-              className="relative z-10"
-              style={{ backgroundColor: "transparent" }}
-            >
-              <MiniMap
-                pannable
-                zoomable
-                position="bottom-left"
-                className="bottom-5! left-20! m-0! overflow-hidden rounded-[18px] bg-[oklch(0.24_0_0/0.82)]! shadow-[0_18px_60px_rgba(0,0,0,0.4)] backdrop-blur-[30px]! backdrop-saturate-150!"
-                bgColor="oklch(0.24 0 0 / 0.82)"
-                maskColor="rgba(0,0,0,0.46)"
-                nodeColor="rgba(255,255,255,0.42)"
-                nodeStrokeWidth={0}
-              />
-              <Controls
-                position="bottom-left"
-                className="bottom-5! left-5! overflow-hidden rounded-full bg-[oklch(0.24_0_0/0.82)]! p-1! shadow-[0_18px_60px_rgba(0,0,0,0.35)] backdrop-blur-[30px]! backdrop-saturate-150! [&_button]:size-9! [&_button]:border-0! [&_button]:bg-transparent! [&_button]:text-white/70! [&_button:hover]:bg-white/10! [&_svg]:fill-white/70!"
-                showInteractive={false}
-              />
-            </ReactFlow>
-          </StoryProductionUiContext.Provider>
-        </StoryTrailerUiContext.Provider>
+        <MediaHoverPreviewProvider>
+          <StoryTrailerUiContext.Provider value={trailerUi}>
+            <StoryProductionUiContext.Provider value={productionUi}>
+              <StoryCanvasFocusContext.Provider value={focusedNodeId}>
+                <StoryCanvasReactFlow
+                  nodes={layeredCanvasNodes}
+                  edges={canvasEdges}
+                  onNodesChange={onCanvasNodesChange}
+                  onEdgesChange={(changes) =>
+                    onCanvasEdgesChange(changes.filter((change) => change.type === "select"))
+                  }
+                  onConnect={connectStoryNodes}
+                  onConnectEnd={finishConnectionOnBlankCanvas}
+                  isValidConnection={isValidStoryConnection}
+                  onEdgesDelete={deleteStoryEdges}
+                  onNodesDelete={deleteStoryNodes}
+                  onSelectionChange={onCanvasSelectionChange}
+                  onSelectionStart={onCanvasSelectionStart}
+                  onSelectionEnd={onCanvasSelectionEnd}
+                  onNodeDragStop={(_event, draggedNode, draggedNodes) => {
+                    const movedNodes = new Map(
+                      [...draggedNodes, draggedNode].map((node) => [node.id, node])
+                    );
+                    const positions = nodePositions(
+                      canvasNodes.map((node) => movedNodes.get(node.id) ?? node)
+                    );
+                    if (layoutPositionSignature(positions) === layoutSavedSignatureRef.current)
+                      return;
+                    setLayoutSaveState("dirty");
+                    void persistLayoutRef.current(positions);
+                  }}
+                  onNodeClick={(event, node) => {
+                    if (event.shiftKey && node.selected) {
+                      requestedCanvasFocusRef.current = null;
+                      const remainingNodeIds = latestCanvasSelectionRef.current.filter(
+                        (nodeId) => nodeId !== node.id
+                      );
+                      latestCanvasSelectionRef.current = remainingNodeIds;
+                      reconcileCanvasFocus(remainingNodeIds);
+                      return;
+                    }
+                    requestedCanvasFocusRef.current = node.id;
+                    setFocusedNodeId(node.id);
+                  }}
+                  onPaneClick={() => {
+                    selectCanvasNodeExclusively(null);
+                    setCreatorOpen(false);
+                  }}
+                  nodeTypes={NODE_TYPES}
+                  defaultEdgeOptions={DEFAULT_EDGE_OPTIONS}
+                  colorMode="dark"
+                  proOptions={{ hideAttribution: true }}
+                  minZoom={0.16}
+                  maxZoom={1.4}
+                  defaultViewport={{ x: 80, y: 160, zoom: 0.48 }}
+                  nodesDraggable={canEdit}
+                  nodesConnectable={canEdit}
+                  edgesReconnectable={false}
+                  edgesFocusable={canEdit}
+                  deleteKeyCode={canEdit ? ["Backspace", "Delete"] : null}
+                  selectNodesOnDrag
+                  zoomOnDoubleClick={false}
+                  fitView={canvasNodes.length > 0}
+                  fitViewOptions={{ padding: 0.16, maxZoom: 0.78 }}
+                  className="relative z-10"
+                  style={{ backgroundColor: "transparent" }}
+                >
+                  <MiniMap
+                    pannable
+                    position="bottom-left"
+                    className="canvas-wheel-zoom bottom-5! left-20! m-0! overflow-hidden rounded-[18px] bg-[oklch(0.24_0_0/0.82)]! shadow-[0_18px_60px_rgba(0,0,0,0.4)] backdrop-blur-[30px]! backdrop-saturate-150!"
+                    bgColor="oklch(0.24 0 0 / 0.82)"
+                    maskColor="rgba(0,0,0,0.46)"
+                    nodeColor="rgba(255,255,255,0.42)"
+                    nodeStrokeWidth={0}
+                  />
+                  <CanvasControls
+                    position="bottom-left"
+                    className="bottom-5! left-5! overflow-hidden rounded-full bg-[oklch(0.24_0_0/0.82)]! p-1! shadow-[0_18px_60px_rgba(0,0,0,0.35)] backdrop-blur-[30px]! backdrop-saturate-150! [&_button]:size-9!"
+                  />
+                </StoryCanvasReactFlow>
+              </StoryCanvasFocusContext.Provider>
+            </StoryProductionUiContext.Provider>
+          </StoryTrailerUiContext.Provider>
+        </MediaHoverPreviewProvider>
 
         {canEdit ? (
           <StoryNodeCreator
@@ -2438,7 +2566,7 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
         projectId={projectId}
         content={content}
         locale={authoringLocale}
-        selectedNode={selectedNode}
+        selectedNode={focusedNode}
         production={inspectorProduction}
         filmTrailer={film?.trailer ?? null}
         trailerProduction={inspectorTrailerProduction}
@@ -2450,12 +2578,9 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
         onReplaceTrailerPrompt={(prompt) =>
           applyGraphMutation((current) => replaceTrailerPrompt(current, prompt))
         }
-        showFoundation={showFoundation}
+        showFoundation={focusedNodeId === null}
         canEdit={canEdit}
-        onShowFoundation={() => {
-          setSelectedNodeId(null);
-          setShowFoundation(true);
-        }}
+        onShowFoundation={() => selectCanvasNodeExclusively(null)}
         onUpdateFoundation={updateFoundation}
         onCreateCharacter={createCharacter}
         onUpdateCharacter={(characterId, patch) =>
@@ -2481,10 +2606,7 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
         onReplaceClipPrompt={(graphNodeId, next) =>
           applyGraphMutation((current) => replaceClipPrompt(current, graphNodeId, next))
         }
-        onCloseNode={() => {
-          setSelectedNodeId(null);
-          setShowFoundation(true);
-        }}
+        onCloseNode={() => selectCanvasNodeExclusively(null)}
         onSetEntry={(nodeId) => applyGraphMutation((current) => setEntryNode(current, nodeId))}
         onChangeExitKind={changeExitKind}
         onUpdateCheckpointTarget={(nodeId, targetNodeId) =>
@@ -2513,7 +2635,7 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
         onUpdateEnding={updateEnding}
         onDuplicateNode={duplicateNode}
         onDeleteSelected={() => {
-          if (selectedNode) deleteStoryNodes([selectedNode]);
+          if (focusedNode) deleteStoryNodes([focusedNode]);
         }}
       />
 
@@ -2692,11 +2814,11 @@ function StoryPortHandle({
   );
 }
 
-function StoryGraphNodeCard({ data, selected, isConnectable }: NodeProps<StoryCanvasNode>) {
+function StoryGraphNodeCard({ id, data, selected, isConnectable }: NodeProps<StoryCanvasNode>) {
   const t = useTranslations("storyStudio.canvas");
-  const nodeCardRef = useRef<HTMLDivElement>(null);
   const productionUi = useContext(StoryProductionUiContext);
   const trailerUi = useContext(StoryTrailerUiContext);
+  const focusedNodeId = useContext(StoryCanvasFocusContext);
   const isRoot = data.kind === "root";
   const isEnding = data.kind === "ending";
   const isRouter = data.kind === "router";
@@ -2705,17 +2827,34 @@ function StoryGraphNodeCard({ data, selected, isConnectable }: NodeProps<StoryCa
     productionUi?.graphNodeId === data.nodeId && data.filmClip?.master
       ? productionUi.composer.takes.find((take) => take.id === data.filmClip?.master?.takeId)
       : null;
-  const liveMasterPreviewUrl =
+  const liveMasterAsset =
     data.kind === "root"
-      ? data.filmTrailer?.master?.outputAsset?.previewUrl
-      : (data.filmClip?.master?.outputAsset?.previewUrl ??
-        selectedMasterTake?.outputAsset?.previewUrl);
+      ? data.filmTrailer?.master?.outputAsset
+      : (data.filmClip?.master?.outputAsset ?? selectedMasterTake?.outputAsset);
   // Fall back to the carried-over master (an earlier revision's video for this
   // clip identity) so an in-progress draft edit doesn't blank the shot.
-  const carriedPreviewUrl =
-    data.kind === "clip" ? data.carriedMaster?.outputAsset?.previewUrl : undefined;
-  const masterPreviewUrl = liveMasterPreviewUrl ?? carriedPreviewUrl ?? undefined;
-  const showsCarriedMaster = Boolean(!liveMasterPreviewUrl && carriedPreviewUrl);
+  const carriedMasterAsset = data.kind === "clip" ? data.carriedMaster?.outputAsset : undefined;
+  const masterPreviewAsset = liveMasterAsset?.previewUrl
+    ? liveMasterAsset
+    : carriedMasterAsset?.previewUrl
+      ? carriedMasterAsset
+      : undefined;
+  const masterPreviewSource: StudioVideoSource | undefined = masterPreviewAsset?.previewUrl
+    ? {
+        src: masterPreviewAsset.previewUrl,
+        type: masterPreviewAsset.contentType,
+      }
+    : undefined;
+  const showsCarriedMaster = Boolean(
+    !liveMasterAsset?.previewUrl && carriedMasterAsset?.previewUrl
+  );
+  const mediaPreview = useMediaHoverPreview({
+    ownerId: id,
+    enabled: Boolean(masterPreviewSource),
+    canActivate: canActivateCanvasMediaPreview,
+    canClaimManual: canClaimCanvasManualPlayback,
+  });
+  const previewFocused = focusedNodeId === id;
   const productionTarget = data.kind === "root" ? data.filmTrailer : data.filmClip;
   const nodeProductionStatus = productionTarget?.productionStatus;
   const chipStyle =
@@ -2729,10 +2868,13 @@ function StoryGraphNodeCard({ data, selected, isConnectable }: NodeProps<StoryCa
             ? { background: "rgba(229,34,39,0.36)", iconBackground: "rgba(229,34,39,0.60)" }
             : { background: "rgba(255,255,255,0.14)", iconBackground: "rgba(255,255,255,0.22)" };
   return (
-    <div ref={nodeCardRef} className="relative pt-10">
+    <div className="relative pt-10">
       <FrostedPanel
         rim={false}
-        className="pointer-events-none absolute top-0 left-0 z-10 inline-flex h-8 items-center gap-2 rounded-full px-3 text-[13px] font-semibold text-white shadow-[0_10px_30px_rgba(0,0,0,0.3)] backdrop-blur-xl"
+        className={cn(
+          CANVAS_NODE_DRAG_HANDLE_CLASS,
+          "pointer-events-auto absolute top-0 left-0 z-10 inline-flex h-8 items-center gap-2 rounded-full px-3 text-[13px] font-semibold text-white shadow-[0_10px_30px_rgba(0,0,0,0.3)] backdrop-blur-xl"
+        )}
         style={{ backgroundColor: chipStyle.background }}
       >
         <span
@@ -2748,6 +2890,7 @@ function StoryGraphNodeCard({ data, selected, isConnectable }: NodeProps<StoryCa
         {t(`nodeKinds.${data.kind}`)}
       </FrostedPanel>
       <article
+        {...mediaPreview.hoverProps}
         className={cn(
           "relative w-[310px] overflow-visible rounded-[22px] bg-[oklch(0.205_0_0/0.72)] shadow-[0_22px_70px_rgba(0,0,0,0.38)] backdrop-blur-xl backdrop-saturate-150 transition",
           isRoot && "w-[360px]",
@@ -2810,64 +2953,72 @@ function StoryGraphNodeCard({ data, selected, isConnectable }: NodeProps<StoryCa
             className="-right-1.75!"
           />
         ) : null}
-        <div className="p-4">
-          <div className="flex items-start justify-between gap-3">
-            <div className="min-w-0">
-              <p className="text-[10px] font-semibold tracking-[0.14em] text-white/34 uppercase">
-                {data.eyebrow}
-              </p>
-              <h2 className="mt-1 truncate text-[15px] font-semibold text-white/90">
+        {data.kind === "clip" ? (
+          <StoryMasterPreview
+            source={masterPreviewSource}
+            interactive={previewFocused}
+            showsCarriedMaster={showsCarriedMaster}
+            frameAspectRatio={data.frameAspectRatio}
+            ariaLabel={t("production.node.masterPreview")}
+            noMasterLabel={t("production.node.noMaster")}
+            carriedMasterLabel={t("production.node.carriedMaster")}
+            autoPreviewActive={mediaPreview.isAutoPreviewActive}
+            manualPlaybackOwned={mediaPreview.isManualPlaybackOwner}
+            onManualPlaybackStart={mediaPreview.acquireManualPlayback}
+            onManualPlaybackStop={mediaPreview.releaseManualPlayback}
+            className="rounded-t-[22px]"
+          />
+        ) : null}
+        <div className="p-3">
+          {data.kind === "clip" ? (
+            data.title ? (
+              <h2
+                className={cn(
+                  CANVAS_NODE_DRAG_HANDLE_CLASS,
+                  "-mx-1 truncate rounded px-1 text-[15px] font-semibold text-white/90"
+                )}
+              >
                 {data.title}
               </h2>
-            </div>
-            <span className="grid size-8 shrink-0 place-items-center rounded-xl bg-white/[0.07] text-white/58">
-              {data.kind === "clip" ? <IconMovie className="size-4" /> : null}
-              {isDecision ? <IconGitBranch className="size-4" /> : null}
-              {isRouter ? <IconRoute className="size-4" /> : null}
-              {isEnding ? <IconSparkles className="size-4" /> : null}
-              {isRoot ? <IconWorld className="size-4" /> : null}
-            </span>
-          </div>
-          {data.kind === "clip" || data.kind === "root" ? (
+            ) : null
+          ) : (
             <div
-              className="nodrag nopan nowheel relative mt-3 w-full overflow-hidden rounded-[16px] bg-black/30"
-              style={{ aspectRatio: data.frameAspectRatio === "9:16" ? "9 / 16" : "16 / 9" }}
-            >
-              {masterPreviewUrl ? (
-                <>
-                  <video
-                    src={masterPreviewUrl}
-                    controls={selected}
-                    muted={!selected}
-                    playsInline
-                    preload="metadata"
-                    className={cn("size-full object-cover", !selected && "pointer-events-none")}
-                    aria-label={t(
-                      data.kind === "root"
-                        ? "trailer.node.masterPreview"
-                        : "production.node.masterPreview"
-                    )}
-                  />
-                  {showsCarriedMaster ? (
-                    <span className="pointer-events-none absolute top-2 left-2 rounded-full bg-black/62 px-2 py-1 text-[8px] font-semibold text-white/82 backdrop-blur-sm">
-                      {t("production.node.carriedMaster")}
-                    </span>
-                  ) : null}
-                </>
-              ) : (
-                <div className="flex size-full flex-col items-center justify-center gap-2 text-white/24">
-                  <span className="grid size-9 place-items-center rounded-full bg-white/[0.055]">
-                    <IconMovie className="size-4" />
-                  </span>
-                  <span className="text-[9px] font-semibold">
-                    {t(data.kind === "root" ? "trailer.node.noMaster" : "production.node.noMaster")}
-                  </span>
-                  <span className="text-[8px] tabular-nums text-white/18">
-                    {data.frameAspectRatio ?? "16:9"}
-                  </span>
-                </div>
+              className={cn(
+                CANVAS_NODE_DRAG_HANDLE_CLASS,
+                "-mx-1 flex items-start justify-between gap-3 rounded px-1"
               )}
+            >
+              <div className="min-w-0">
+                <p className="text-[10px] font-semibold tracking-[0.14em] text-white/34 uppercase">
+                  {data.eyebrow}
+                </p>
+                <h2 className="mt-1 truncate text-[15px] font-semibold text-white/90">
+                  {data.title}
+                </h2>
+              </div>
+              <span className="grid size-8 shrink-0 place-items-center rounded-xl bg-white/[0.07] text-white/58">
+                {isDecision ? <IconGitBranch className="size-4" /> : null}
+                {isRouter ? <IconRoute className="size-4" /> : null}
+                {isEnding ? <IconSparkles className="size-4" /> : null}
+                {isRoot ? <IconWorld className="size-4" /> : null}
+              </span>
             </div>
+          )}
+          {data.kind === "root" ? (
+            <StoryMasterPreview
+              source={masterPreviewSource}
+              interactive={previewFocused}
+              showsCarriedMaster={showsCarriedMaster}
+              frameAspectRatio={data.frameAspectRatio}
+              ariaLabel={t("trailer.node.masterPreview")}
+              noMasterLabel={t("trailer.node.noMaster")}
+              carriedMasterLabel={t("production.node.carriedMaster")}
+              autoPreviewActive={mediaPreview.isAutoPreviewActive}
+              manualPlaybackOwned={mediaPreview.isManualPlaybackOwner}
+              onManualPlaybackStart={mediaPreview.acquireManualPlayback}
+              onManualPlaybackStop={mediaPreview.releaseManualPlayback}
+              className="mt-3 rounded-[16px]"
+            />
           ) : null}
           {data.summary ? (
             <p className="mt-3 line-clamp-3 text-[11px] leading-[18px] text-white/48">
@@ -3021,12 +3172,170 @@ function StoryGraphNodeCard({ data, selected, isConnectable }: NodeProps<StoryCa
       data.kind === "clip" &&
       data.directorPrompt &&
       productionUi?.graphNodeId === data.nodeId ? (
-        <StoryShotComposer {...productionUi.composer} anchorRef={nodeCardRef} />
+        <StoryShotComposer {...productionUi.composer} />
       ) : null}
       {selected && data.kind === "root" && trailerUi?.composer ? (
-        <StoryShotComposer {...trailerUi.composer} anchorRef={nodeCardRef} />
+        <StoryShotComposer {...trailerUi.composer} />
       ) : null}
     </div>
+  );
+}
+
+function StoryMasterPreview({
+  source,
+  interactive,
+  showsCarriedMaster,
+  frameAspectRatio,
+  ariaLabel,
+  noMasterLabel,
+  carriedMasterLabel,
+  autoPreviewActive,
+  manualPlaybackOwned,
+  onManualPlaybackStart,
+  onManualPlaybackStop,
+  className,
+}: {
+  source?: StudioVideoSource;
+  interactive: boolean;
+  showsCarriedMaster: boolean;
+  frameAspectRatio?: string;
+  ariaLabel: string;
+  noMasterLabel: string;
+  carriedMasterLabel: string;
+  autoPreviewActive: boolean;
+  manualPlaybackOwned: boolean;
+  onManualPlaybackStart: () => MediaManualPlaybackLease | null;
+  onManualPlaybackStop: (lease: MediaManualPlaybackLease) => void;
+  className?: string;
+}) {
+  return (
+    <div
+      className={cn("relative w-full overflow-hidden bg-black/30", className)}
+      style={{ aspectRatio: frameAspectRatio === "9:16" ? "9 / 16" : "16 / 9" }}
+    >
+      {source ? (
+        <>
+          {interactive ? (
+            <StoryInteractiveMasterPreview
+              source={source}
+              ariaLabel={ariaLabel}
+              autoPreviewActive={autoPreviewActive}
+              manualPlaybackOwned={manualPlaybackOwned}
+              onManualPlaybackStart={onManualPlaybackStart}
+              onManualPlaybackStop={onManualPlaybackStop}
+            />
+          ) : (
+            <StoryPassiveMasterPreview source={source} active={autoPreviewActive} />
+          )}
+          {showsCarriedMaster ? (
+            <span className="pointer-events-none absolute top-2 left-2 z-30 rounded-full bg-black/62 px-2 py-1 text-[8px] font-semibold text-white/82 backdrop-blur-sm">
+              {carriedMasterLabel}
+            </span>
+          ) : null}
+        </>
+      ) : (
+        <div className="flex size-full flex-col items-center justify-center gap-2 text-white/24">
+          <span className="grid size-9 place-items-center rounded-full bg-white/[0.055]">
+            <IconMovie className="size-4" />
+          </span>
+          <span className="text-[9px] font-semibold">{noMasterLabel}</span>
+          <span className="text-[8px] tabular-nums text-white/18">
+            {frameAspectRatio ?? "16:9"}
+          </span>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function StoryInteractiveMasterPreview({
+  source,
+  ariaLabel,
+  autoPreviewActive,
+  manualPlaybackOwned,
+  onManualPlaybackStart,
+  onManualPlaybackStop,
+}: {
+  source: StudioVideoSource;
+  ariaLabel: string;
+  autoPreviewActive: boolean;
+  manualPlaybackOwned: boolean;
+  onManualPlaybackStart: () => MediaManualPlaybackLease | null;
+  onManualPlaybackStop: (lease: MediaManualPlaybackLease) => void;
+}) {
+  const zoom = useStore((state) => state.transform[2]);
+  const controlDensity = resolveCanvasVideoControlDensity(zoom);
+
+  return (
+    <CanvasNativePointerOwner
+      className={cn("absolute inset-0", controlDensity === null && "pointer-events-none")}
+    >
+      <StudioVideoPlayer
+        source={source}
+        ariaLabel={ariaLabel}
+        controlDensity={controlDensity}
+        autoPreviewActive={autoPreviewActive}
+        manualPlaybackOwned={manualPlaybackOwned}
+        onManualPlaybackStart={onManualPlaybackStart}
+        onManualPlaybackStop={onManualPlaybackStop}
+        fit="cover"
+        renderScale={zoom}
+      />
+    </CanvasNativePointerOwner>
+  );
+}
+
+function StoryPassiveMasterPreview({
+  source,
+  active,
+}: {
+  source: StudioVideoSource;
+  active: boolean;
+}) {
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const playbackEpochRef = useRef(0);
+
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video) return;
+    const epoch = ++playbackEpochRef.current;
+
+    if (!active) {
+      video.pause();
+      video.currentTime = 0;
+      return;
+    }
+
+    video.muted = true;
+    video.currentTime = 0;
+    void video
+      .play()
+      .then(() => {
+        if (epoch === playbackEpochRef.current && active) return;
+        video.pause();
+        video.currentTime = 0;
+      })
+      .catch(() => {});
+
+    return () => {
+      playbackEpochRef.current += 1;
+      video.pause();
+    };
+  }, [active, source.src]);
+
+  return (
+    <video
+      ref={videoRef}
+      src={source.src}
+      muted
+      draggable={false}
+      playsInline
+      preload="metadata"
+      tabIndex={-1}
+      aria-hidden="true"
+      data-auto-preview={active ? "true" : undefined}
+      className="pointer-events-none size-full object-cover select-none"
+    />
   );
 }
 

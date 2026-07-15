@@ -19,6 +19,7 @@ describe("buildStoryCanvasModel", () => {
       {
         id: "__story_root__",
         type: "storyCanvas",
+        dragHandle: ".canvas-node-drag-handle",
         position: { x: 0, y: 0 },
         data: { kind: "root", title: "Story World" },
       },

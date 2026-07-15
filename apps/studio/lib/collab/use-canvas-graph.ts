@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import * as Y from "yjs";
 import type { Edge, EdgeChange, Node, NodeChange } from "@xyflow/react";
 import type { Awareness } from "y-protocols/awareness";
+import { CANVAS_NODE_DRAG_HANDLE_SELECTOR } from "../../components/canvas/canvas-interaction-policy";
 import {
   addAssets as yAddAssets,
   assetsMap,
@@ -232,7 +233,13 @@ export function useCanvasGraph(
         nextNodes.push(cached.node);
         continue;
       }
-      const node: Node = { id: n.id, type: n.type, position, data: n.data };
+      const node: Node = {
+        id: n.id,
+        type: n.type,
+        position,
+        data: n.data,
+        dragHandle: CANVAS_NODE_DRAG_HANDLE_SELECTOR,
+      };
       if (dims) node.measured = dims;
       node.selected = selected;
       if (ring) node.style = { boxShadow: `0 0 0 2px ${ring}`, borderRadius: 12 };
@@ -267,7 +274,13 @@ export function useCanvasGraph(
         nextNodes.push(cached.node);
         continue;
       }
-      const node: Node = { id, type: shape.type, position, data: shape.data };
+      const node: Node = {
+        id,
+        type: shape.type,
+        position,
+        data: shape.data,
+        dragHandle: CANVAS_NODE_DRAG_HANDLE_SELECTOR,
+      };
       if (dims) node.measured = dims;
       node.selected = selected;
       nodeCache.current.set(id, { sig, node });

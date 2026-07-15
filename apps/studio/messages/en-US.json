@@ -19,6 +19,18 @@
     "fizzDragon": "FizzDragon",
     "fizzStudio": "FizzStudio"
   },
+  "videoPlayer": {
+    "play": "Play",
+    "pause": "Pause",
+    "mute": "Mute",
+    "unmute": "Unmute",
+    "volume": "Volume",
+    "seek": "Seek video",
+    "seekForward": "Seek forward",
+    "seekBackward": "Seek backward",
+    "enterFullscreen": "Enter fullscreen",
+    "exitFullscreen": "Exit fullscreen"
+  },
   "localeSwitcher": {
     "label": "Language"
   },
@@ -924,6 +936,8 @@
   },
   "canvasControls": {
     "comment": "Comment",
+    "selectTool": "Select tool (V)",
+    "panTool": "Hand tool (H)",
     "loadingModels": "Loading models…",
     "generationSettings": "Generation settings",
     "addNode": {

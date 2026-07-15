@@ -129,6 +129,76 @@ button:disabled,
  * Handle/edge affordances are functional connector states (DESIGN.md rule 4:
  * port circles and focus-style highlights, not decoration).
  */
+.canvas-managed-wheel {
+  overscroll-behavior: none;
+}
+.canvas-node-drag-handle {
+  touch-action: none;
+  user-select: none;
+}
+.canvas-managed-wheel .react-flow__node.draggable {
+  cursor: default;
+}
+.canvas-managed-wheel .react-flow__node.draggable .canvas-node-drag-handle {
+  cursor: grab;
+}
+.canvas-managed-wheel .react-flow__node.dragging .canvas-node-drag-handle {
+  cursor: grabbing;
+}
+.canvas-managed-wheel .react-flow__pane.selection {
+  cursor: default;
+}
+.canvas-managed-wheel .react-flow__pane.dragging {
+  cursor: grabbing;
+}
+.canvas-managed-wheel[data-canvas-tool="pan"] .react-flow__pane,
+.canvas-managed-wheel[data-canvas-tool="pan"] .react-flow__node,
+.canvas-managed-wheel[data-canvas-tool="pan"] .react-flow__node *,
+.canvas-managed-wheel[data-canvas-tool="pan"] .react-flow__edge {
+  cursor: grab !important;
+}
+.canvas-managed-wheel[data-canvas-tool="pan"] [data-canvas-native-pointer],
+.canvas-managed-wheel[data-canvas-tool="pan"] [data-canvas-native-pointer] * {
+  cursor: auto !important;
+}
+.canvas-managed-wheel[data-canvas-tool="pan"]
+  [data-canvas-native-pointer]
+  :is(button, [role="button"], [role="slider"], a[href]) {
+  cursor: pointer !important;
+}
+.canvas-managed-wheel[data-canvas-tool="pan"]
+  [data-canvas-native-pointer]
+  :is(:disabled, [aria-disabled="true"]) {
+  cursor: not-allowed !important;
+}
+.canvas-managed-wheel[data-canvas-pan-ready="true"],
+.canvas-managed-wheel[data-canvas-pan-ready="true"] * {
+  cursor: grab !important;
+}
+.canvas-managed-wheel[data-canvas-panning="true"],
+.canvas-managed-wheel[data-canvas-panning="true"] * {
+  cursor: grabbing !important;
+}
+.canvas-tool-controls .react-flow__controls-button {
+  border: 0 !important;
+  background: transparent !important;
+  color: rgb(255 255 255 / 0.7) !important;
+}
+.canvas-tool-controls .react-flow__controls-button:hover {
+  background: rgb(255 255 255 / 0.1) !important;
+  color: white !important;
+}
+.canvas-tool-controls .canvas-tool-button.canvas-tool-button-active,
+.canvas-tool-controls .canvas-tool-button.canvas-tool-button-active:hover {
+  background: rgb(255 255 255 / 0.16) !important;
+  color: white !important;
+}
+.canvas-tool-controls .canvas-tool-button .canvas-tool-icon {
+  max-width: 16px;
+  max-height: 16px;
+  fill: none;
+  stroke: currentColor;
+}
 .react-flow__handle {
   transition:
     scale 120ms ease,

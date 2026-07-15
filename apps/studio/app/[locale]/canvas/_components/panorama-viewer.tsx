@@ -184,6 +184,8 @@ export function PanoramaCanvas({
     el.addEventListener("pointerdown", onDown);
     el.addEventListener("pointermove", onMove);
     el.addEventListener("pointerup", onUp);
+    el.addEventListener("pointercancel", onUp);
+    el.addEventListener("lostpointercapture", onUp);
     el.addEventListener("wheel", onWheel, { passive: false });
 
     return () => {
@@ -192,6 +194,8 @@ export function PanoramaCanvas({
       el.removeEventListener("pointerdown", onDown);
       el.removeEventListener("pointermove", onMove);
       el.removeEventListener("pointerup", onUp);
+      el.removeEventListener("pointercancel", onUp);
+      el.removeEventListener("lostpointercapture", onUp);
       el.removeEventListener("wheel", onWheel);
       geometry.dispose();
       material.map?.dispose();
@@ -202,7 +206,7 @@ export function PanoramaCanvas({
   }, [src]);
 
   return (
-    <div className={className}>
+    <div data-canvas-native-wheel="true" className={className}>
       <div ref={mountRef} className="size-full" />
       {loading && (
         <div className="pointer-events-none absolute inset-0 flex items-center justify-center">

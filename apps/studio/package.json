@@ -20,6 +20,7 @@
     "@tiptap/react": "^3.22.3",
     "@tiptap/starter-kit": "^3.22.3",
     "@tiptap/suggestion": "^3.22.3",
+    "@vidstack/react": "1.15.6",
     "@xyflow/react": "^12.10.2",
     "ai": "^6.0.154",
     "class-variance-authority": "^0.7.1",

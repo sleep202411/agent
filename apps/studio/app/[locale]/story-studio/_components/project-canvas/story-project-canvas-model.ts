@@ -1,4 +1,5 @@
 import type { Edge, Node } from "@xyflow/react";
+import { CANVAS_NODE_DRAG_HANDLE_SELECTOR } from "../../../../../components/canvas/canvas-interaction-policy";
 import type {
   FilmCarriedMaster,
   FilmClipProductionStatus,
@@ -324,6 +325,7 @@ export function buildStoryCanvasModel(
       // Node deletion is confirmed in the inspector. Keeping XYFlow keyboard
       // deletion disabled prevents bypassing that domain-level confirmation.
       deletable: false,
+      dragHandle: CANVAS_NODE_DRAG_HANDLE_SELECTOR,
       data: projection.data,
     }));
 

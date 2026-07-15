@@ -4,12 +4,10 @@ import { useEffect, useMemo, useState } from "react";
 import {
   Background,
   BackgroundVariant,
-  Controls,
   Handle,
   MarkerType,
   MiniMap,
   Position,
-  ReactFlow,
   ReactFlowProvider,
   useNodesState,
   useReactFlow,
@@ -40,6 +38,8 @@ import { useSiteRegion } from "@/app/_components/region-provider";
 import { Link } from "@/i18n/navigation";
 import { cn } from "@/lib/utils";
 import { getWebBaseUrl } from "@/lib/web-base";
+import { CanvasControls } from "@/components/canvas/canvas-controls";
+import { CanvasReactFlow } from "@/components/canvas/canvas-react-flow";
 import {
   JINLING_INTERACTIVE_FILM_ASSETS,
   JINLING_INTERACTIVE_FILM_DRAFT,
@@ -481,7 +481,7 @@ function InteractiveFilmCanvasInner() {
       </header>
 
       <section className="absolute inset-x-0 top-16 bottom-0 right-[360px]">
-        <ReactFlow
+        <CanvasReactFlow
           nodes={nodes}
           edges={edges}
           onNodesChange={applyNodeChanges}
@@ -499,7 +499,6 @@ function InteractiveFilmCanvasInner() {
           defaultViewport={{ x: 70, y: 200, zoom: 0.32 }}
           snapToGrid
           snapGrid={[20, 20]}
-          panOnScroll
           nodesDraggable={false}
           selectNodesOnDrag={false}
           zoomOnDoubleClick={false}
@@ -514,20 +513,18 @@ function InteractiveFilmCanvasInner() {
           />
           <MiniMap
             pannable
-            zoomable
             position="bottom-left"
-            className="bottom-5! left-20! m-0! overflow-hidden rounded-[18px] bg-[oklch(0.18_0_0)]! shadow-[0_18px_60px_rgba(0,0,0,0.4)]"
+            className="canvas-wheel-zoom bottom-5! left-20! m-0! overflow-hidden rounded-[18px] bg-[oklch(0.18_0_0)]! shadow-[0_18px_60px_rgba(0,0,0,0.4)]"
             bgColor="oklch(0.18 0 0)"
             maskColor="rgba(0,0,0,0.46)"
             nodeColor="rgba(255,255,255,0.42)"
             nodeStrokeWidth={0}
           />
-          <Controls
+          <CanvasControls
             position="bottom-left"
-            className="bottom-5! left-5! overflow-hidden rounded-full bg-[oklch(0.18_0_0)]! p-1! shadow-[0_18px_60px_rgba(0,0,0,0.35)] [&_button]:size-9! [&_button]:border-0! [&_button]:bg-transparent! [&_button]:text-white/70! [&_button:hover]:bg-white/10! [&_svg]:fill-white/70!"
-            showInteractive={false}
+            className="bottom-5! left-5! overflow-hidden rounded-full bg-[oklch(0.18_0_0)]! p-1! shadow-[0_18px_60px_rgba(0,0,0,0.35)] [&_button]:size-9!"
           />
-        </ReactFlow>
+        </CanvasReactFlow>
         <div className="pointer-events-none absolute top-4 left-5 rounded-full bg-black/30 px-3 py-1.5 text-[10px] text-white/35 backdrop-blur-lg">
           {t("canvas.hint")}
         </div>

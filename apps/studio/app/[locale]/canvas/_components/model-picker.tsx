@@ -214,7 +214,10 @@ export function ModelPicker({
 
       <div className="mx-1 h-px bg-border" />
 
-      <div className="nowheel min-h-0 flex-1 space-y-3 overflow-y-auto p-2">
+      <div
+        data-canvas-scroll-owner="y"
+        className="nowheel min-h-0 flex-1 space-y-3 overflow-y-auto p-2"
+      >
         {!hasModels && (
           <p className="p-3 text-sm text-muted-foreground">
             {catalog ? t("modelPicker.noModels") : t("modelPicker.signInToLoad")}

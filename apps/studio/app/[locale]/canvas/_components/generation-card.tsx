@@ -23,6 +23,7 @@ import {
 import { toast } from "sonner";
 import { ReactCompareSlider } from "react-compare-slider";
 import { cn } from "@/lib/utils";
+import { CANVAS_NODE_DRAG_HANDLE_CLASS } from "@/components/canvas/canvas-interaction-policy";
 import { useVideoPlaybackError, VideoPlaybackFallback } from "@/components/video-playback-fallback";
 import { isUploadAbort, uploadFileViaSignedUrl } from "@/lib/media-upload";
 import type { CanvasAsset, CanvasEdgeShape, CanvasNodeShape } from "@/lib/collab/canvas-doc";
@@ -252,6 +253,7 @@ function HoverPreviewVideo({
         muted
         playsInline
         controls
+        draggable={false}
         onError={onError}
         onLoadedMetadata={() => {
           const v = ref.current;
@@ -259,7 +261,7 @@ function HoverPreviewVideo({
         }}
         onMouseEnter={() => void ref.current?.play().catch(() => {})}
         onMouseLeave={() => ref.current?.pause()}
-        className={className}
+        className={cn("nodrag select-none", className)}
       />
       {failed && <VideoPlaybackFallback compact />}
     </>
@@ -688,7 +690,12 @@ function GenerationCard({
       >
         {/* Header: node name left, model used right — a lighter frosted strip
             distinct from the preview well below. */}
-        <div className="flex items-center justify-between gap-2 bg-white/[0.12] px-3 py-2 text-xs">
+        <div
+          className={cn(
+            CANVAS_NODE_DRAG_HANDLE_CLASS,
+            "flex items-center justify-between gap-2 bg-white/[0.12] px-3 py-2 text-xs"
+          )}
+        >
           <span className="flex min-w-0 items-center gap-1.5 text-white/80">
             <Icon className="size-3.5 shrink-0" stroke={1.8} />
             {renaming ? (
@@ -723,6 +730,7 @@ function GenerationCard({
           style={{ aspectRatio: loadedRatio ?? resultAspectRatio(modality, settings, generation) }}
           onDoubleClick={(event) => {
             if (!output?.url) return;
+            event.preventDefault();
             event.stopPropagation();
             setViewerOpen(true);
           }}
@@ -742,13 +750,14 @@ function GenerationCard({
               // output. Skipped for expand: the output is a larger canvas, so an
               // overlaid slider misaligns rather than compares.
               <ReactCompareSlider
-                className="size-full"
+                className="nodrag size-full"
                 itemOne={
                   // eslint-disable-next-line @next/next/no-img-element
                   <img
                     src={compareBeforeUrl}
                     alt={t("before")}
-                    className="size-full object-contain"
+                    draggable={false}
+                    className="size-full object-contain select-none"
                   />
                 }
                 itemTwo={
@@ -756,13 +765,14 @@ function GenerationCard({
                   <img
                     src={generation.outputs[0].url}
                     alt={t("after")}
+                    draggable={false}
                     onLoad={(e) => {
                       const t = e.currentTarget;
                       if (t.naturalWidth && t.naturalHeight) {
                         setLoadedRatio(`${t.naturalWidth} / ${t.naturalHeight}`);
                       }
                     }}
-                    className="size-full object-contain"
+                    className="size-full object-contain select-none"
                   />
                 }
               />
@@ -771,13 +781,14 @@ function GenerationCard({
               <img
                 src={generation.outputs[0].url}
                 alt={data.prompt ?? t("result")}
+                draggable={false}
                 onLoad={(e) => {
                   const t = e.currentTarget;
                   if (t.naturalWidth && t.naturalHeight) {
                     setLoadedRatio(`${t.naturalWidth} / ${t.naturalHeight}`);
                   }
                 }}
-                className="size-full object-contain"
+                className="size-full object-contain select-none"
               />
             )
           ) : busy ? (
