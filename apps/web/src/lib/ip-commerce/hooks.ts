@@ -34,6 +34,7 @@ import {
   reportIpContent,
   removeIpCommerceCollection,
   revokeIpEditAccess,
+  transferIpOwner,
   saveIpCommerceCollection,
   submitIpCommerceIpForReview,
   unblockIpContent,
@@ -54,6 +55,7 @@ import {
   type DeleteIpEpisodeInput,
   type GrantIpAclInput,
   type RevokeIpAclInput,
+  type TransferIpOwnerInput,
   type UpdateIpContributorInput,
   type SubmitIpReviewInput,
   type UpdateIpAssetsInput,
@@ -567,6 +569,16 @@ export function useRevokeIpEditAccess() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (input: RevokeIpAclInput) => revokeIpEditAccess(input),
+    onSuccess: async (_result, input) => {
+      await invalidateIpAclCaches(qc, input.ipId);
+    },
+  });
+}
+
+export function useTransferIpOwner() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: TransferIpOwnerInput) => transferIpOwner(input),
     onSuccess: async (_result, input) => {
       await invalidateIpAclCaches(qc, input.ipId);
     },

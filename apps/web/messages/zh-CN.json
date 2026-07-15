@@ -1062,6 +1062,9 @@
       "accessGranting": "授权中…",
       "accessRevoke": "撤销",
       "accessRevokeConfirm": "确定撤销 {name} 的编辑权限吗？",
+      "transferOwner": "转移所有者",
+      "transferOwnerConfirm": "将 {name} 设为该 IP 的所有者？转移后你将不再是所有者。",
+      "transferOwnerLeaveLabel": "转移后移除我的权限",
       "accessSelectUserFirst": "请先选择用户。",
       "accessAlreadyOwner": "管理员已默认拥有完整权限。",
       "accessAlreadyEditor": "该用户已拥有编辑权限。",
@@ -1116,7 +1119,9 @@
         "accessGranted": "已授予编辑权限。",
         "accessGrantFailed": "授予编辑权限失败。",
         "accessRevoked": "已撤销编辑权限。",
-        "accessRevokeFailed": "撤销编辑权限失败。"
+        "accessRevokeFailed": "撤销编辑权限失败。",
+        "ownerTransferred": "所有者已转移给 {name}",
+        "ownerTransferFailed": "转移所有者失败。"
       }
     },
     "sections": {

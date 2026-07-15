@@ -25,6 +25,7 @@ import {
   UpdateCreatorIpAssetsSchema,
   UpdateCreatorIpEpisodeSchema,
   GrantCreatorIpAclSchema,
+  TransferIpOwnerSchema,
   SubmitCreatorIpReviewSchema,
   UploadCreatorIpMediaQuerySchema,
   UploadCreatorIpMediaBodySchema,
@@ -52,6 +53,7 @@ import {
   type CreateCreatorIpContributorInput,
   type CreateCreatorIpEpisodeInput,
   type GrantCreatorIpAclInput,
+  type TransferIpOwnerInput,
   type CreateIpContentReportInput,
   type CreateIpPurchaseInput,
   type RecordMemberViewInput,
@@ -204,6 +206,24 @@ export class IpCommerceController {
         user,
         params.ipId,
         params.grantId,
+      ),
+    };
+  }
+
+  @Post('me/ips/:ipId/transfer-owner')
+  async transferMyIpOwner(
+    @CurrentUser() user: AuthUser,
+    @Param(new ZodValidationPipe(IpParamsSchema))
+    params: IpParams,
+    @Body(new ZodValidationPipe(TransferIpOwnerSchema))
+    body: TransferIpOwnerInput,
+  ) {
+    return {
+      code: 200,
+      data: await this.ipCommerce.transferCreatorIpOwnership(
+        user,
+        params.ipId,
+        body,
       ),
     };
   }

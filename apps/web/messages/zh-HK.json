@@ -1062,6 +1062,9 @@
       "accessGranting": "授權中…",
       "accessRevoke": "撤銷",
       "accessRevokeConfirm": "確定撤銷 {name} 的編輯權限嗎？",
+      "transferOwner": "轉移所有者",
+      "transferOwnerConfirm": "將 {name} 設為該 IP 的所有者？轉移後你將不再是所有者。",
+      "transferOwnerLeaveLabel": "轉移後移除我的權限",
       "accessSelectUserFirst": "請先選擇用戶。",
       "accessAlreadyOwner": "管理員已預設擁有完整權限。",
       "accessAlreadyEditor": "此用戶已擁有編輯權限。",
@@ -1116,7 +1119,9 @@
         "accessGranted": "已授予編輯權限。",
         "accessGrantFailed": "授予編輯權限失敗。",
         "accessRevoked": "已撤銷編輯權限。",
-        "accessRevokeFailed": "撤銷編輯權限失敗。"
+        "accessRevokeFailed": "撤銷編輯權限失敗。",
+        "ownerTransferred": "所有者已轉移給 {name}",
+        "ownerTransferFailed": "轉移所有者失敗。"
       }
     },
     "sections": {

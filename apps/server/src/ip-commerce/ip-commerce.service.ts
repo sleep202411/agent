@@ -81,6 +81,7 @@ import type {
   CreateCreatorIpContributorInput,
   CreateCreatorIpEpisodeInput,
   GrantCreatorIpAclInput,
+  TransferIpOwnerInput,
   CreatorRevenueQuery,
   ListAdminIpRevenueQuery,
   UpdateAdminIpRevenueConfigInput,
@@ -1719,6 +1720,115 @@ export class IpCommerceService {
     });
 
     return { grant: ipAclGrantDto(revoked), revoked: true };
+  }
+
+  /**
+   * Hand IP ownership (createdById) to an existing editor. Owner-only,
+   * self-service: the caller must be the current owner and the target must
+   * already hold an active edit grant.
+   *
+   * Reconciliation, all under the same advisory lock as ACL edits:
+   *   - the incoming owner's now-redundant edit grant is revoked (the owner
+   *     has full access implicitly);
+   *   - the outgoing owner is either dropped entirely (`removeOldOwner`) or
+   *     kept on as an editor via a fresh edit grant (default).
+   */
+  async transferCreatorIpOwnership(
+    user: AuthUser,
+    ipId: string,
+    input: TransferIpOwnerInput,
+  ) {
+    const target = input.toUserId.trim();
+    const previousOwnerId = await this.prisma.$transaction(async (tx) => {
+      await tx.$executeRaw`
+        SELECT pg_advisory_xact_lock(hashtext(${`ip:acl:${ipId}`})::bigint)
+      `;
+      const ip = await tx.ip.findFirst({
+        where: { id: ipId, createdById: user.userId, deletedAt: null },
+        select: { id: true, createdById: true, version: true },
+      });
+      if (!ip) {
+        throw new NotFoundException({
+          code: 'IP_NOT_FOUND',
+          msg: 'IP not found.',
+        });
+      }
+      this.assertExpectedVersion(input.expectedVersion, ip.version);
+      if (target === ip.createdById) {
+        throw new ConflictException({
+          code: 'IP_OWNER_ALREADY',
+          msg: 'Target user is already the IP owner.',
+        });
+      }
+
+      const collaborator = await tx.ipAclGrant.findFirst({
+        where: {
+          ipId: ip.id,
+          userId: target,
+          permission: IpAclPermission.edit,
+          revokedAt: null,
+        },
+        select: { id: true },
+      });
+      if (!collaborator) {
+        throw new BadRequestException({
+          code: 'IP_TRANSFER_TARGET_NOT_COLLABORATOR',
+          msg: 'Target user must be an existing editor of this IP.',
+        });
+      }
+
+      await tx.ip.update({
+        where: { id: ip.id },
+        data: {
+          createdById: target,
+          updatedById: user.userId,
+          version: { increment: 1 },
+        },
+      });
+
+      // The new owner's edit grant is redundant now — owners have full
+      // access implicitly (see grantCreatorIpAcl's IP_ACL_OWNER_IMPLICIT).
+      await tx.ipAclGrant.updateMany({
+        where: {
+          ipId: ip.id,
+          userId: target,
+          permission: IpAclPermission.edit,
+          revokedAt: null,
+        },
+        data: { revokedAt: new Date(), revokedById: user.userId },
+      });
+
+      if (!input.removeOldOwner) {
+        const existing = await tx.ipAclGrant.findFirst({
+          where: {
+            ipId: ip.id,
+            userId: ip.createdById,
+            permission: IpAclPermission.edit,
+            revokedAt: null,
+          },
+          select: { id: true },
+        });
+        if (!existing) {
+          await tx.ipAclGrant.create({
+            data: {
+              ipId: ip.id,
+              userId: ip.createdById,
+              permission: IpAclPermission.edit,
+              grantedById: user.userId,
+            },
+          });
+        }
+      }
+
+      return ip.createdById;
+    });
+
+    return {
+      ipId,
+      previousOwnerId,
+      newOwnerId: target,
+      oldOwnerKept: !input.removeOldOwner,
+    };
   }
 
   /**

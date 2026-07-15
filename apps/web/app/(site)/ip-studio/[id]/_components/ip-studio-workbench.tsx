@@ -30,6 +30,7 @@ import {
   IconTrash,
   IconUpload,
   IconUserCheck,
+  IconCrown,
   IconUserPlus,
   IconUsers,
   IconVideo,
@@ -81,6 +82,7 @@ import {
   useMyIpCommerceOverview,
   useMyIpCommerceIp,
   useRevokeIpEditAccess,
+  useTransferIpOwner,
   useSearchIpCommerceUsers,
   useSubmitIpCommerceIpForReview,
   useUpdateIpCommerceContributor,
@@ -2251,10 +2253,34 @@ function AccessControlPanel({
   locale: Locale;
 }) {
   const canManageAcl = ip.viewerAccess.canManageAcl;
+  const canTransferOwner = ip.viewerAccess.canTransferOwner;
   const acl = useMyIpAclGrants(ip.id, canManageAcl);
   const grantAccess = useGrantIpEditAccess();
   const revokeAccess = useRevokeIpEditAccess();
+  const transferOwner = useTransferIpOwner();
   const [selectedUser, setSelectedUser] = useState<LinkedUserDraft | null>(null);
+  const [pendingTransfer, setPendingTransfer] = useState<{ userId: string; name: string } | null>(
+    null
+  );
+  // Whether the outgoing owner is dropped (default: kept on as an editor).
+  const [transferLeave, setTransferLeave] = useState(false);
+
+  const handleTransfer = async () => {
+    if (!pendingTransfer) return;
+    const { userId, name } = pendingTransfer;
+    try {
+      await transferOwner.mutateAsync({
+        ipId: ip.id,
+        toUserId: userId,
+        removeOldOwner: transferLeave,
+      });
+      toast.success(t("membersPanel.toasts.ownerTransferred", { name }));
+      setPendingTransfer(null);
+      setTransferLeave(false);
+    } catch (err) {
+      toast.error(errorMessage(err) || t("membersPanel.toasts.ownerTransferFailed"));
+    }
+  };
 
   if (!canManageAcl) {
     return (
@@ -2384,18 +2410,35 @@ function AccessControlPanel({
                       })}
                       badge={t("viewerAccess.editor")}
                       action={
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant="ghost"
-                          color="muted"
-                          className="text-muted-foreground hover:bg-red-500/10 hover:text-red-500"
-                          disabled={revokeAccess.isPending}
-                          onClick={() => void handleRevoke(grant)}
-                        >
-                          <IconX className="size-3.5" />
-                          {t("membersPanel.accessRevoke")}
-                        </Button>
+                        <div className="flex items-center gap-1">
+                          {canTransferOwner ? (
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="ghost"
+                              color="muted"
+                              disabled={transferOwner.isPending}
+                              onClick={() =>
+                                setPendingTransfer({ userId: grant.userId, name: label })
+                              }
+                            >
+                              <IconCrown className="size-3.5" />
+                              {t("membersPanel.transferOwner")}
+                            </Button>
+                          ) : null}
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="ghost"
+                            color="muted"
+                            className="text-muted-foreground hover:bg-red-500/10 hover:text-red-500"
+                            disabled={revokeAccess.isPending}
+                            onClick={() => void handleRevoke(grant)}
+                          >
+                            <IconX className="size-3.5" />
+                            {t("membersPanel.accessRevoke")}
+                          </Button>
+                        </div>
                       }
                     />
                   );
@@ -2447,6 +2490,61 @@ function AccessControlPanel({
           </Button>
         </div>
       </div>
+
+      <Dialog
+        open={pendingTransfer !== null}
+        onOpenChange={(v) => {
+          if (!v && !transferOwner.isPending) {
+            setPendingTransfer(null);
+            setTransferLeave(false);
+          }
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{t("membersPanel.transferOwner")}</DialogTitle>
+            <DialogDescription>
+              {pendingTransfer
+                ? t("membersPanel.transferOwnerConfirm", { name: pendingTransfer.name })
+                : ""}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogBody>
+            <label className="flex cursor-pointer items-center gap-2 text-sm text-foreground">
+              <input
+                type="checkbox"
+                checked={transferLeave}
+                onChange={(event) => setTransferLeave(event.target.checked)}
+                disabled={transferOwner.isPending}
+                className="size-4 accent-primary"
+              />
+              {t("membersPanel.transferOwnerLeaveLabel")}
+            </label>
+          </DialogBody>
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              color="muted"
+              onClick={() => {
+                setPendingTransfer(null);
+                setTransferLeave(false);
+              }}
+              disabled={transferOwner.isPending}
+            >
+              {t("membersPanel.cancel")}
+            </Button>
+            <Button
+              type="button"
+              onClick={() => void handleTransfer()}
+              disabled={transferOwner.isPending}
+            >
+              {transferOwner.isPending ? <IconLoader2 className="size-4 animate-spin" /> : null}
+              {t("membersPanel.transferOwner")}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

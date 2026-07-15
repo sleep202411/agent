@@ -1063,6 +1063,9 @@
       "accessGranting": "Granting…",
       "accessRevoke": "Revoke",
       "accessRevokeConfirm": "Revoke edit access for {name}?",
+      "transferOwner": "Transfer ownership",
+      "transferOwnerConfirm": "Make {name} the owner of this IP? You will no longer be the owner.",
+      "transferOwnerLeaveLabel": "Remove my access after transferring",
       "accessSelectUserFirst": "Select a user first.",
       "accessAlreadyOwner": "The owner already has full access.",
       "accessAlreadyEditor": "This user already has edit access.",
@@ -1117,7 +1120,9 @@
         "accessGranted": "Edit access granted.",
         "accessGrantFailed": "Could not grant edit access.",
         "accessRevoked": "Edit access revoked.",
-        "accessRevokeFailed": "Could not revoke edit access."
+        "accessRevokeFailed": "Could not revoke edit access.",
+        "ownerTransferred": "Ownership transferred to {name}",
+        "ownerTransferFailed": "Could not transfer ownership."
       }
     },
     "sections": {
