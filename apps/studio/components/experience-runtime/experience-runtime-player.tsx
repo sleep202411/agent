@@ -414,6 +414,10 @@ function CoreVideoRenderer({
     sequenceIndex,
     frameProfile
   );
+  const playbackKey =
+    terminalMode?.kind === "loop"
+      ? `${renderer.instanceId}:${sequenceIndex}:loop:${assetId}:${terminalMode.clipStartTime ?? 0}`
+      : `${renderer.instanceId}:${sequenceIndex}:sequence:${assetId}`;
 
   useEffect(
     () => () => {
@@ -476,7 +480,7 @@ function CoreVideoRenderer({
   return (
     <div className="absolute inset-0" style={{ zIndex: renderer.layer }}>
       <StudioVideoPlayer
-        key={`${renderer.instanceId}:${sequenceIndex}:${terminalMode?.kind ?? "sequence"}:${assetId}`}
+        key={playbackKey}
         source={{ src: media.variant.uri, type: media.variant.mediaType }}
         ariaLabel={t("videoLabel", { nodeId: renderer.instanceId })}
         controlDensity="full"

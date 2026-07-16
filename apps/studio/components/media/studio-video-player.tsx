@@ -154,7 +154,7 @@ export function StudioVideoPlayer({
       autoPlay={autoPlay}
       muted={muted}
       loop={loop}
-      clipStartTime={clipStartTime}
+      clipStartTime={clipStartTime ?? 0}
       playsInline
       preload="metadata"
       load="visible"
@@ -194,7 +194,7 @@ export function StudioVideoPlayer({
         releaseManualPlayback();
         onEnd?.();
       }}
-      onTimeUpdate={(detail) => onTimeUpdate?.(detail.currentTime)}
+      onTimeUpdate={(detail) => emitValidTimeUpdate(onTimeUpdate, detail.currentTime)}
       onPlayFail={releaseManualPlayback}
       onError={() => {
         releaseManualPlayback();
@@ -368,6 +368,13 @@ function setPlayerMuted(player: MediaPlayerInstance, muted: boolean): void {
   ) {
     provider.media.muted = muted;
   }
+}
+
+function emitValidTimeUpdate(
+  onTimeUpdate: StudioVideoPlayerProps["onTimeUpdate"],
+  seconds: number
+): void {
+  if (Number.isFinite(seconds) && seconds >= 0) onTimeUpdate?.(seconds);
 }
 
 function StudioVideoSurface({
