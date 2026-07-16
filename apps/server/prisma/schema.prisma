@@ -6419,24 +6419,24 @@ enum StoryFilmContinuityDecision {
 }
 
 model StoryProject {
-  id                 String             @id @default(uuid(7)) @db.Uuid
-  workspaceId        String             @map("workspace_id") @db.Uuid
-  format             StoryFormat
-  frameProfile       StoryFrameProfile  @map("frame_profile")
-  status             StoryProjectStatus @default(active)
-  visibility         StoryVisibility    @default(private)
-  title              String             @db.VarChar(160)
-  summary            String?            @db.Text
-  defaultLocale      String             @default("en-US") @map("default_locale") @db.VarChar(16)
-  coverAssetId       String?            @map("cover_asset_id") @db.Uuid
-  tags               Json               @default("[]") @db.JsonB
-  sourceIpId         String?            @map("source_ip_id") @db.Uuid
-  nextBuildNumber    Int                @default(1) @map("next_build_number")
-  version            Int                @default(0)
-  createdByUserId    String             @map("created_by_user_id") @db.VarChar(64)
-  archivedAt         DateTime?          @map("archived_at") @db.Timestamptz(6)
-  createdAt          DateTime           @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt          DateTime           @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  id              String             @id @default(uuid(7)) @db.Uuid
+  workspaceId     String             @map("workspace_id") @db.Uuid
+  format          StoryFormat
+  frameProfile    StoryFrameProfile  @map("frame_profile")
+  status          StoryProjectStatus @default(active)
+  visibility      StoryVisibility    @default(private)
+  title           String             @db.VarChar(160)
+  summary         String?            @db.Text
+  defaultLocale   String             @default("en-US") @map("default_locale") @db.VarChar(16)
+  coverAssetId    String?            @map("cover_asset_id") @db.Uuid
+  tags            Json               @default("[]") @db.JsonB
+  sourceIpId      String?            @map("source_ip_id") @db.Uuid
+  nextBuildNumber Int                @default(1) @map("next_build_number")
+  version         Int                @default(0)
+  createdByUserId String             @map("created_by_user_id") @db.VarChar(64)
+  archivedAt      DateTime?          @map("archived_at") @db.Timestamptz(6)
+  createdAt       DateTime           @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt       DateTime           @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   workspace                              Workspace                                    @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
   cover                                  MediaAsset?                                  @relation("StoryProjectCover", fields: [coverAssetId], references: [id], onDelete: SetNull)
@@ -6446,6 +6446,8 @@ model StoryProject {
   revisions                              StoryRevision[]
   builds                                 StoryBuild[]
   filmSpecs                              StoryFilmSpec[]
+  filmTrailerHead                        StoryFilmTrailerHead?
+  filmClipHeads                          StoryFilmClipHead[]
   filmReferenceSlots                     StoryFilmReferenceSlot[]
   filmReferenceVersions                  StoryFilmReferenceVersion[]
   filmClips                              StoryFilmClip[]
@@ -6815,10 +6817,28 @@ model StoryFilmTrailer {
   latestGenerationAttempt   StoryFilmTrailerGenerationAttempt?  @relation("StoryFilmTrailerLatestGenerationAttempt", fields: [latestGenerationAttemptId], references: [id], onDelete: NoAction)
   generationAttempts        StoryFilmTrailerGenerationAttempt[] @relation("StoryFilmTrailerGenerationAttempts")
   references                StoryFilmTrailerReference[]
+  head                      StoryFilmTrailerHead?
 
+  @@unique([id, storyProjectId], map: "story_film_trailers_id_project_unique")
   @@unique([id, storyProjectId, revisionId], map: "story_film_trailers_scope_unique")
   @@index([storyProjectId, revisionId], map: "story_film_trailers_scope_idx")
   @@map("story_film_trailers")
+}
+
+/// Project-level pointer to the current trailer production record. Revisions
+/// remain immutable snapshots; the head is the creator workspace's current
+/// state and prevents a partial newer Revision from hiding an existing video.
+model StoryFilmTrailerHead {
+  storyProjectId String   @id @map("story_project_id") @db.Uuid
+  trailerId      String   @unique @map("trailer_id") @db.Uuid
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  project StoryProject     @relation(fields: [storyProjectId], references: [id], onDelete: Cascade)
+  trailer StoryFilmTrailer @relation(fields: [trailerId, storyProjectId], references: [id, storyProjectId], onDelete: Restrict)
+
+  @@unique([trailerId, storyProjectId], map: "story_film_trailer_heads_trailer_project_unique")
+  @@map("story_film_trailer_heads")
 }
 
 model StoryFilmTrailerReference {
@@ -6960,12 +6980,34 @@ model StoryFilmClip {
   predecessorDependencies   StoryFilmClipDependency[]    @relation("StoryFilmDependencyPredecessor")
   successorDependencies     StoryFilmClipDependency[]    @relation("StoryFilmDependencySuccessor")
   buildClips                StoryFilmBuildClip[]
+  head                      StoryFilmClipHead?
 
+  @@unique([id, storyProjectId], map: "story_film_clips_id_project_unique")
   @@unique([revisionId, key], map: "story_film_clips_revision_key_unique")
   @@unique([revisionId, graphNodeId], map: "story_film_clips_revision_graph_node_unique")
   @@unique([id, storyProjectId, revisionId], map: "story_film_clips_scope_unique")
   @@index([storyProjectId, revisionId, rank], map: "story_film_clips_scope_rank_idx")
   @@map("story_film_clips")
+}
+
+/// Stable project/graph-node pointer to the current production record. A new
+/// immutable Revision may materialize only the shots being edited; untouched
+/// nodes keep pointing at their last real production record until explicitly
+/// replaced. Historical Clip rows and MediaAssets remain reusable history.
+model StoryFilmClipHead {
+  storyProjectId String   @map("story_project_id") @db.Uuid
+  graphNodeId    String   @map("graph_node_id") @db.VarChar(128)
+  clipId         String   @unique @map("clip_id") @db.Uuid
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  project StoryProject  @relation(fields: [storyProjectId], references: [id], onDelete: Cascade)
+  clip    StoryFilmClip @relation(fields: [clipId, storyProjectId], references: [id, storyProjectId], onDelete: Restrict)
+
+  @@id([storyProjectId, graphNodeId])
+  @@unique([clipId, storyProjectId], map: "story_film_clip_heads_clip_project_unique")
+  @@index([storyProjectId, updatedAt(sort: Desc)], map: "story_film_clip_heads_project_recent_idx")
+  @@map("story_film_clip_heads")
 }
 
 model StoryFilmClipReference {

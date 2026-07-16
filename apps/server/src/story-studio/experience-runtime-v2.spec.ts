@@ -680,21 +680,21 @@ describe('Experience Runtime Manifest v2', () => {
   it('validates the agreed Java release and discovery responses', () => {
     expect(
       ExperienceReleaseResponseSchema.parse({
-        gameId: 'jinling',
+        gameId: 'branching-film',
         contentVersion: 'v2',
         status: 'published',
         manifestUrl:
-          'https://media.example.com/interactive-film/jinling/v2/manifest.json',
+          'https://media.example.com/interactive-film/branching-film/v2/manifest.json',
       }),
-    ).toMatchObject({ gameId: 'jinling', contentVersion: 'v2' });
+    ).toMatchObject({ gameId: 'branching-film', contentVersion: 'v2' });
 
     expect(
       ExperienceGameListResponseSchema.parse([
         {
-          gameId: 'jinling',
-          title: '金陵入梦',
+          gameId: 'branching-film',
+          title: 'Branching Film Test',
           subtitle: '第一季 · 无字来客',
-          coverUrl: 'https://media.example.com/jinling/cover.jpg',
+          coverUrl: 'https://media.example.com/branching-film/cover.jpg',
           currentVersion: 'v2',
           updatedAt: '2026-07-16T12:00:00.000Z',
         },
@@ -703,12 +703,12 @@ describe('Experience Runtime Manifest v2', () => {
 
     expect(
       ExperienceGameDetailResponseSchema.parse({
-        gameId: 'jinling',
-        title: '金陵入梦',
-        coverUrl: 'https://media.example.com/jinling/cover.jpg',
+        gameId: 'branching-film',
+        title: 'Branching Film Test',
+        coverUrl: 'https://media.example.com/branching-film/cover.jpg',
         currentVersion: 'v2',
         manifestUrl:
-          'https://media.example.com/interactive-film/jinling/v2/manifest.json',
+          'https://media.example.com/interactive-film/branching-film/v2/manifest.json',
       }),
     ).toMatchObject({ currentVersion: 'v2' });
   });

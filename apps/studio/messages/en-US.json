@@ -1575,14 +1575,6 @@
       "title": "No interactive-film projects yet",
       "description": "Create a project to start an editable story draft, then direct and generate clips from the same canvas."
     },
-    "example": {
-      "sectionTitle": "Official example",
-      "sectionSubtitle": "Study a published production without adding it to your project library.",
-      "readOnly": "Official example · Read-only",
-      "title": "Dream of Jinling",
-      "description": "Inspect the existing cinematic branch map and published media package. This example remains separate from creator projects.",
-      "open": "Open example"
-    },
     "create": {
       "title": "Create an interactive film",
       "description": "This creates a sovereign Story Project and an empty versioned draft in the active workspace."
@@ -2559,108 +2551,6 @@
           "runtimeTitle": "The playtest cannot continue",
           "media": "Frozen media asset {assetId} could not be played."
         }
-      }
-    }
-  },
-  "storyStudioLanding": {
-    "badge": "Official example · Read only",
-    "hero": {
-      "eyebrow": "Season One · The Unwritten Visitor",
-      "title": "Dream of Jinling",
-      "description": "Enter the Rongguo Mansion beside Daiyu as a visitor absent from the old story, then reshape Jinling through continuous cinema and consequential choices.",
-      "openCanvas": "View production canvas",
-      "playFilm": "Play interactive film"
-    }
-  },
-  "interactiveFilmStudio": {
-    "previewNotice": "Internal preview stage — creation features coming soon",
-    "back": "Back to Story Studio",
-    "mode": "Interactive film",
-    "saving": "Saving…",
-    "saved": "Saved locally",
-    "reset": "Reset example",
-    "validate": "Validate",
-    "openPlayer": "Open player",
-    "canvas": {
-      "mode": "Canvas",
-      "fit": "Fit story to view",
-      "hint": "Drag nodes to arrange · Scroll to pan · Pinch or wheel to zoom",
-      "fallbackEnding": "Fallback ending",
-      "authoredEnding": "Authored ending",
-      "noSelection": "No node selected",
-      "nodeTypes": {
-        "entry": "Prologue node",
-        "scene": "Chapter node",
-        "choice": "Choice and reaction node",
-        "ending": "Ending node"
-      }
-    },
-    "views": {
-      "story": "Story map",
-      "media": "Media",
-      "preview": "Player preview"
-    },
-    "stats": {
-      "scenes": "{count} scenes",
-      "endings": "{count} endings",
-      "assets": "{count} assets"
-    },
-    "toast": {
-      "reset": "Official example restored.",
-      "validationPassed": "Release validation passed.",
-      "validationFailed": "Release validation has unresolved issues."
-    },
-    "assets": {
-      "title": "Media library",
-      "azureRelease": "Immutable Azure release",
-      "search": "Search media",
-      "close": "Close media library",
-      "filters": {
-        "all": "All",
-        "video": "Video",
-        "audio": "Audio"
-      }
-    },
-    "sceneCard": {
-      "clips": "{count} clips",
-      "choices": "{count} choices"
-    },
-    "timeline": {
-      "title": "Scene timeline",
-      "continuity": "First/last-frame continuity locked",
-      "choiceGate": "Choice gate",
-      "reactions": "{count} reactions"
-    },
-    "media": {
-      "audioMaster": "Published audio master",
-      "published": "Published"
-    },
-    "preview": {
-      "choiceMoment": "Choice moment"
-    },
-    "inspector": {
-      "scene": "Scene {number}",
-      "title": "Scene inspector",
-      "name": "Scene name",
-      "summary": "Summary",
-      "choices": "Choices",
-      "choiceLabel": "Player choice",
-      "routeTarget": "Route target",
-      "sequence": "Video sequence",
-      "reaction": "Reaction film",
-      "chapterMaster": "Chapter master"
-    },
-    "validation": {
-      "title": "Project integrity",
-      "count": "{passed}/{total} passed",
-      "checks": {
-        "entry": "Entry scene exists",
-        "masters": "Every scene has a chapter master",
-        "sequences": "All timeline clips are published",
-        "reactions": "Every choice has a reaction clip",
-        "targets": "Every branch reaches a scene or ending",
-        "endings": "All five endings are available",
-        "delivery": "Landscape delivery uses secure media URLs"
       }
     }
   },

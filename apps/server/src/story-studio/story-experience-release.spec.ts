@@ -24,12 +24,15 @@ function manifestFixture() {
     manifestType: 'fizzdragon.experience',
     schemaVersion: 2,
     channel: 'production',
-    gameId: 'jinling',
+    gameId: 'branching-film',
     buildId: BUILD_ID,
     contentVersion: `build:${BUILD_ID}`,
     completionPolicy: 'finite',
     metadata: {
-      title: { 'zh-CN': '金陵入梦', 'en-US': 'Dream of Jinling' },
+      title: {
+        'zh-CN': 'Branching Film Test',
+        'en-US': 'Dream of Branching Film',
+      },
       summary: { 'zh-CN': '第一季 · 无字来客', 'en-US': 'Season one' },
     },
     compatibility: {
@@ -135,7 +138,7 @@ describe('StoryExperienceReleaseGateway', () => {
             contentVersion: manifest.contentVersion,
             status: 'published',
             manifestUrl:
-              'https://media.example.com/interactive-film/jinling/build/manifest.json',
+              'https://media.example.com/interactive-film/branching-film/build/manifest.json',
           },
         }),
         { status: 200, headers: { 'content-type': 'application/json' } },
@@ -146,7 +149,7 @@ describe('StoryExperienceReleaseGateway', () => {
       {
         gameId: manifest.gameId,
         contentVersion: manifest.contentVersion,
-        title: '金陵入梦',
+        title: 'Branching Film Test',
         manifest,
         status: 'published',
         setCurrent: true,
@@ -162,14 +165,17 @@ describe('StoryExperienceReleaseGateway', () => {
       throw new Error('Expected the Java release body to be serialized JSON');
     }
     expect(JSON.parse(init.body)).toEqual({
-      gameId: 'jinling',
+      gameId: 'branching-film',
       contentVersion: `build:${BUILD_ID}`,
-      title: '金陵入梦',
+      title: 'Branching Film Test',
       manifest,
       status: 'published',
       setCurrent: true,
     });
-    expect(result).toMatchObject({ gameId: 'jinling', status: 'published' });
+    expect(result).toMatchObject({
+      gameId: 'branching-film',
+      status: 'published',
+    });
   });
 
   it('surfaces the Java envelope message when publication is rejected', async () => {
@@ -187,7 +193,7 @@ describe('StoryExperienceReleaseGateway', () => {
     try {
       await new StoryExperienceReleaseGateway().publish(
         {
-          gameId: 'jinling',
+          gameId: 'branching-film',
           contentVersion: 'v2',
           manifest: manifestFixture(),
           status: 'published',
@@ -225,7 +231,7 @@ describe('StoryExperienceReleaseGateway', () => {
     try {
       await new StoryExperienceReleaseGateway().publish(
         {
-          gameId: 'jinling',
+          gameId: 'branching-film',
           contentVersion: 'v2',
           manifest: manifestFixture(),
           status: 'published',
@@ -266,7 +272,7 @@ describe('StoryExperienceReleaseService', () => {
           gameId: request.gameId,
           contentVersion: request.contentVersion,
           status: request.status,
-          manifestUrl: 'https://media.example.com/jinling/manifest.json',
+          manifestUrl: 'https://media.example.com/branching-film/manifest.json',
         }),
       ),
     };
@@ -285,7 +291,7 @@ describe('StoryExperienceReleaseService', () => {
         { status: 'published', setCurrent: true },
         { cookie: 'satoken=test-session' },
       ),
-    ).resolves.toMatchObject({ gameId: 'jinling', status: 'published' });
+    ).resolves.toMatchObject({ gameId: 'branching-film', status: 'published' });
     expect(permissions.requireProject).toHaveBeenCalledWith(
       'user-1',
       PROJECT_ID,
@@ -293,9 +299,9 @@ describe('StoryExperienceReleaseService', () => {
     );
     expect(gateway.publish).toHaveBeenCalledWith(
       expect.objectContaining({
-        gameId: 'jinling',
+        gameId: 'branching-film',
         contentVersion: `build:${BUILD_ID}`,
-        title: '金陵入梦',
+        title: 'Branching Film Test',
         subtitle: '第一季 · 无字来客',
         setCurrent: true,
       }),

@@ -7,7 +7,7 @@ import {
   EXPERIENCE_CORE_VIDEO_RENDERER_ID,
   ExperienceRuntimeManifestSchema,
 } from '@repo/shared/experience-runtime';
-import { buildHuBaoVillaImportBundle } from './import/hu-bao-villa.builder';
+import { buildInteractiveFilmTestBundle } from './__tests__/interactive-film-test-bundle';
 import {
   compileStoryExperienceManifest,
   STORY_CORE_THEME_CONFIG_ASSET_ID,
@@ -27,7 +27,7 @@ function uuid(index: number, group: string): string {
 }
 
 function fixture() {
-  const bundle = buildHuBaoVillaImportBundle();
+  const bundle = buildInteractiveFilmTestBundle();
   const clips: StoryFilmBuildClipInput[] = bundle.clipSpecs.map(
     (spec, index) => ({
       id: uuid(index + 1, '2000'),
@@ -83,7 +83,7 @@ function compileFixture() {
   const result = compileStoryExperienceManifest({
     release: value.release,
     metadata: {
-      title: '虎豹别墅：龙口入夜',
+      title: 'Branching Film Test',
       summary: value.bundle.draftContent.storyBible.logline,
     },
     stateVariables: value.bundle.draftContent.storyBible.stateVariables,
@@ -112,7 +112,7 @@ describe('Story Runtime Manifest v2 compiler', () => {
       completionPolicy: 'finite',
       metadata: {
         title: {
-          'zh-CN': '虎豹别墅：龙口入夜',
+          'zh-CN': 'Branching Film Test',
         },
       },
     });

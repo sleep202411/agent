@@ -1,5 +1,5 @@
 import { LockableInteractiveFilmDraftContentSchema } from './interactive-film.schema';
-import { buildHuBaoVillaImportBundle } from './import/hu-bao-villa.builder';
+import { buildInteractiveFilmTestBundle } from './__tests__/interactive-film-test-bundle';
 import {
   compileStoryDirectorPrompt,
   projectStoryFilmDraftClip,
@@ -11,7 +11,7 @@ const MODEL_ID = '01980f10-7a20-7c01-8000-000000000099';
 describe('Story film revision projector', () => {
   it('strictly projects one selected shot while neighbouring draft shots remain incomplete', () => {
     const draft = structuredClone(
-      buildHuBaoVillaImportBundle({
+      buildInteractiveFilmTestBundle({
         defaultCanonicalModelId: MODEL_ID,
       }).draftContent,
     );
@@ -45,7 +45,7 @@ describe('Story film revision projector', () => {
   });
 
   it('deterministically projects the locked graph and director prompts', () => {
-    const draft = buildHuBaoVillaImportBundle({
+    const draft = buildInteractiveFilmTestBundle({
       defaultCanonicalModelId: MODEL_ID,
     }).draftContent;
 
@@ -90,7 +90,7 @@ describe('Story film revision projector', () => {
 
   it('treats a checkpoint as a duration-preserving interaction boundary', () => {
     const draft = structuredClone(
-      buildHuBaoVillaImportBundle({
+      buildInteractiveFilmTestBundle({
         defaultCanonicalModelId: MODEL_ID,
       }).draftContent,
     );
@@ -123,7 +123,7 @@ describe('Story film revision projector', () => {
 
   it('includes checkpoint continuations in graph cycle detection', () => {
     const draft = structuredClone(
-      buildHuBaoVillaImportBundle({
+      buildInteractiveFilmTestBundle({
         defaultCanonicalModelId: MODEL_ID,
       }).draftContent,
     );
@@ -149,7 +149,7 @@ describe('Story film revision projector', () => {
 
   it('derives total tolerance and uninterrupted duration from authored reaction playback', () => {
     const draft = structuredClone(
-      buildHuBaoVillaImportBundle({
+      buildInteractiveFilmTestBundle({
         defaultCanonicalModelId: MODEL_ID,
       }).draftContent,
     );
@@ -181,12 +181,12 @@ describe('Story film revision projector', () => {
 
   it('projects an authored root trailer without changing runtime clip targets', () => {
     const draft = structuredClone(
-      buildHuBaoVillaImportBundle({
+      buildInteractiveFilmTestBundle({
         defaultCanonicalModelId: MODEL_ID,
       }).draftContent,
     );
     draft.trailerPrompt = {
-      title: '虎豹别墅：龙口入夜｜15 秒宣传片',
+      title: '分支影游测试｜15 秒宣传片',
       description: '从故事世界出发的独立宣传片。',
       targetDurationMs: 15_000,
       generationControl: { mode: 'omni_reference' },
@@ -236,7 +236,7 @@ describe('Story film revision projector', () => {
     expect(projection.clipSpecs).toHaveLength(21);
     expect(projection.trailerSpec).toMatchObject({
       schemaVersion: 1,
-      title: '虎豹别墅：龙口入夜｜15 秒宣传片',
+      title: '分支影游测试｜15 秒宣传片',
       targetDurationMs: 15_000,
       generationControl: { mode: 'omni_reference' },
       referenceRoleNotes: [
@@ -268,7 +268,7 @@ describe('Story film revision projector', () => {
   });
 
   it('locks every clip output to the project frame profile', () => {
-    const draft = buildHuBaoVillaImportBundle({
+    const draft = buildInteractiveFilmTestBundle({
       defaultCanonicalModelId: MODEL_ID,
     }).draftContent;
     const projection = projectStoryFilmRevision({
@@ -295,7 +295,7 @@ describe('Story film revision projector', () => {
 
   it('preserves micro-performance and end-state direction in the immutable manifest', () => {
     const draft = structuredClone(
-      buildHuBaoVillaImportBundle({
+      buildInteractiveFilmTestBundle({
         defaultCanonicalModelId: MODEL_ID,
       }).draftContent,
     );
@@ -335,7 +335,7 @@ describe('Story film revision projector', () => {
 
   it('derives authoritative locales only from runtime copy and rejects incomplete coverage', () => {
     const draft = structuredClone(
-      buildHuBaoVillaImportBundle({
+      buildInteractiveFilmTestBundle({
         defaultCanonicalModelId: MODEL_ID,
       }).draftContent,
     );
@@ -367,7 +367,7 @@ describe('Story film revision projector', () => {
 
     expect(() =>
       projectStoryFilmRevision({
-        draft: buildHuBaoVillaImportBundle().draftContent,
+        draft: buildInteractiveFilmTestBundle().draftContent,
         frameProfile: 'landscape_16_9',
         defaultLocale: 'ja-JP',
         defaultCanonicalModelId: MODEL_ID,

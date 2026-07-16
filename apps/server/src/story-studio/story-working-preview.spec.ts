@@ -1,6 +1,6 @@
 import { canonicalJsonHash } from './canonical-json';
 import { StoryWorkingPreviewQuerySchema } from './dto';
-import { buildHuBaoVillaImportBundle } from './import/hu-bao-villa.builder';
+import { buildInteractiveFilmTestBundle } from './__tests__/interactive-film-test-bundle';
 import { projectStoryFilmRevision } from './story-film-revision-projector';
 import { StoryWorkingPreviewController } from './story-working-preview.controller';
 import {
@@ -14,7 +14,9 @@ const PROJECT_ID = '0197f4a2-0800-7000-8000-000000000002';
 const MODEL_ID = '01980f10-7a20-7c01-8000-000000000099';
 
 function scopedService(
-  draftContent: ReturnType<typeof buildHuBaoVillaImportBundle>['draftContent'],
+  draftContent: ReturnType<
+    typeof buildInteractiveFilmTestBundle
+  >['draftContent'],
   clips: unknown[] = [],
 ) {
   const contentHash = canonicalJsonHash(draftContent);
@@ -48,7 +50,7 @@ function scopedService(
         workspaceId: WORKSPACE_ID,
         frameProfile: 'landscape_16_9',
         defaultLocale: 'zh-CN',
-        title: 'Hu Bao Villa',
+        title: 'Branching Film Test',
         summary: 'A branching interactive film.',
       },
     }),
@@ -65,7 +67,7 @@ function scopedService(
 
 describe('StoryWorkingPreviewService', () => {
   it('rejects a preview request for a different saved draft head', async () => {
-    const draft = buildHuBaoVillaImportBundle().draftContent;
+    const draft = buildInteractiveFilmTestBundle().draftContent;
     const { service, tx } = scopedService(draft);
 
     await expect(
@@ -81,7 +83,7 @@ describe('StoryWorkingPreviewService', () => {
   });
 
   it('returns actionable draft diagnostics without requiring a formal version', async () => {
-    const draft = buildHuBaoVillaImportBundle({
+    const draft = buildInteractiveFilmTestBundle({
       defaultCanonicalModelId: MODEL_ID,
     }).draftContent;
     const unfinished = draft.clipPrompts[0];
@@ -107,7 +109,7 @@ describe('StoryWorkingPreviewService', () => {
   });
 
   it('plays only each shot current video directly from the saved draft', async () => {
-    const draft = buildHuBaoVillaImportBundle({
+    const draft = buildInteractiveFilmTestBundle({
       defaultCanonicalModelId: MODEL_ID,
     }).draftContent;
     const projection = projectStoryFilmRevision({

@@ -97,12 +97,15 @@ const PROJECT_SUMMARY_INCLUDE = Prisma.validator<Prisma.StoryProjectInclude>()({
     where: { archivedAt: null },
     select: { revisionId: true, required: true, approvedVersionId: true },
   },
-  filmClips: {
-    where: { archivedAt: null },
+  filmClipHeads: {
     select: {
-      revisionId: true,
-      currentVideoAssetId: true,
-      latestGenerationAttempt: { select: { status: true } },
+      clip: {
+        select: {
+          graphNodeId: true,
+          currentVideoAssetId: true,
+          latestGenerationAttempt: { select: { status: true } },
+        },
+      },
     },
   },
   builds: {
@@ -1124,10 +1127,16 @@ export class StoryProjectsService {
           if (query.revisionId && !selectedRevision) {
             throwRevisionNotFound();
           }
+          const parsedDraft = InteractiveFilmDraftContentSchema.safeParse(
+            draft.content,
+          );
+          const currentGraphNodeIds = parsedDraft.success
+            ? new Set(parsedDraft.data.graph.nodes.map((node) => node.nodeId))
+            : null;
 
           let film: StoryWorkbenchDto['film'] = null;
           if (selectedRevision) {
-            const [spec, trailer, clips, references, latestBuild] =
+            const [spec, trailerHead, clipHeads, references, latestBuild] =
               await Promise.all([
                 tx.storyFilmSpec.findUnique({
                   where: { revisionId: selectedRevision.id },
@@ -1142,18 +1151,17 @@ export class StoryProjectsService {
                     },
                   },
                 }),
-                tx.storyFilmTrailer.findUnique({
-                  where: { revisionId: selectedRevision.id },
-                  include: FILM_TRAILER_INCLUDE,
-                }),
-                tx.storyFilmClip.findMany({
-                  where: {
-                    storyProjectId: projectId,
-                    revisionId: selectedRevision.id,
-                    archivedAt: null,
+                tx.storyFilmTrailerHead.findUnique({
+                  where: { storyProjectId: projectId },
+                  include: {
+                    trailer: { include: FILM_TRAILER_INCLUDE },
                   },
-                  orderBy: [{ rank: 'asc' }, { id: 'asc' }],
-                  include: FILM_CLIP_INCLUDE,
+                }),
+                tx.storyFilmClipHead.findMany({
+                  where: { storyProjectId: projectId },
+                  include: {
+                    clip: { include: FILM_CLIP_INCLUDE },
+                  },
                 }),
                 tx.storyFilmReferenceSlot.findMany({
                   where: {
@@ -1178,8 +1186,19 @@ export class StoryProjectsService {
               defaultModel: spec
                 ? this.toFilmDefaultModel(spec.defaultCanonicalModel)
                 : null,
-              trailer: trailer ? this.toFilmTrailerSummary(trailer) : null,
-              clips: clips.map((clip) => this.toFilmClipSummary(clip)),
+              trailer: trailerHead
+                ? this.toFilmTrailerSummary(trailerHead.trailer)
+                : null,
+              clips: clipHeads
+                .map((head) => head.clip)
+                .filter(
+                  (clip) => currentGraphNodeIds?.has(clip.graphNodeId) ?? true,
+                )
+                .sort(
+                  (left, right) =>
+                    left.rank - right.rank || left.id.localeCompare(right.id),
+                )
+                .map((clip) => this.toFilmClipSummary(clip)),
               references: references.map((slot) => this.toFilmReference(slot)),
               latestBuild: latestBuild
                 ? this.toFilmBuildSummary(latestBuild)
@@ -1326,9 +1345,12 @@ export class StoryProjectsService {
           (slot) => slot.revisionId === activeRevisionId,
         )
       : [];
-    const clips = activeRevisionId
-      ? row.filmClips.filter((clip) => clip.revisionId === activeRevisionId)
-      : [];
+    const currentGraphNodeIds = parsedDraft?.success
+      ? new Set(parsedDraft.data.graph.nodes.map((node) => node.nodeId))
+      : null;
+    const clips = row.filmClipHeads
+      .map((head) => head.clip)
+      .filter((clip) => currentGraphNodeIds?.has(clip.graphNodeId) ?? true);
     const approvedReferenceCount = references.filter(
       (slot) => slot.approvedVersionId !== null,
     ).length;
@@ -1570,6 +1592,7 @@ export class StoryProjectsService {
     }
     return {
       id: row.id,
+      revisionId: row.revisionId,
       key: parsed.data.key,
       graphNodeId: parsed.data.graphNodeId,
       kind: parsed.data.kind,

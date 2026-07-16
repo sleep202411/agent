@@ -16,7 +16,6 @@ import {
   CancelFilmGenerationSchema,
   CreateDraftFilmGenerationSchema,
   CreateFilmGenerationSchema,
-  PrepareDraftFilmClipSchema,
   PutDraftFilmCurrentVideoSchema,
   RetryFilmGenerationSchema,
   StoryFilmClipParamsSchema,
@@ -26,7 +25,6 @@ import {
   type CancelFilmGenerationInput,
   type CreateDraftFilmGenerationInput,
   type CreateFilmGenerationInput,
-  type PrepareDraftFilmClipInput,
   type PutDraftFilmCurrentVideoInput,
   type RetryFilmGenerationInput,
   type StoryFilmClipParams,
@@ -38,28 +36,6 @@ import { StoryFilmProductionService } from './story-film-production.service';
 @Controller('story-projects')
 export class StoryFilmProductionController {
   constructor(private readonly production: StoryFilmProductionService) {}
-
-  @Post(':projectId/clips/:graphNodeId/prepare')
-  async prepareDraftClip(
-    @CurrentUser() user: AuthUser,
-    @Headers('x-fizz-workspace-id')
-    workspaceHeader: string | string[] | undefined,
-    @Param(new ZodValidationPipe(StoryFilmDraftClipParamsSchema))
-    params: StoryFilmDraftClipParams,
-    @Body(new ZodValidationPipe(PrepareDraftFilmClipSchema))
-    body: PrepareDraftFilmClipInput,
-  ) {
-    return {
-      code: 200,
-      data: await this.production.prepareDraftClip(
-        user,
-        requiredWorkspaceId(workspaceHeader),
-        params.projectId,
-        params.graphNodeId,
-        body,
-      ),
-    };
-  }
 
   @Post(':projectId/clips/:graphNodeId/generations')
   @HttpCode(HttpStatus.CREATED)

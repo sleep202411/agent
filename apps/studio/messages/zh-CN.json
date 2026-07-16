@@ -1575,14 +1575,6 @@
       "title": "还没有互动影游项目",
       "description": "创建项目和可追溯的故事草稿，然后直接在同一画布中设计并生成镜头。"
     },
-    "example": {
-      "sectionTitle": "官方样例",
-      "sectionSubtitle": "无需加入项目库，即可查看一套已发布的完整制作。",
-      "readOnly": "官方样例 · 只读",
-      "title": "金陵入梦",
-      "description": "查看现有的电影化分支图和已发布媒体包；该样例始终与创作者项目保持独立。",
-      "open": "打开样例"
-    },
     "create": {
       "title": "创建互动影游",
       "description": "将在当前工作区创建独立的 Story Project，并建立一份空白的可追溯草稿。"
@@ -2559,108 +2551,6 @@
           "runtimeTitle": "试玩无法继续",
           "media": "无法播放冻结媒体资产 {assetId}。"
         }
-      }
-    }
-  },
-  "storyStudioLanding": {
-    "badge": "官方样例 · 只读",
-    "hero": {
-      "eyebrow": "第一季 · 无字来客",
-      "title": "金陵入梦",
-      "description": "以一位不属于旧命册的无名来客，随黛玉同日入府；在连续影像与关键选择中，亲手改写金陵命数。",
-      "openCanvas": "查看制作画布",
-      "playFilm": "试玩影游"
-    }
-  },
-  "interactiveFilmStudio": {
-    "previewNotice": "内测预览阶段，即将开放创作功能",
-    "back": "返回故事工作室",
-    "mode": "互动影游",
-    "saving": "正在保存…",
-    "saved": "已保存到本机",
-    "reset": "重置示例",
-    "validate": "检查发布",
-    "openPlayer": "打开玩家端",
-    "canvas": {
-      "mode": "画布",
-      "fit": "显示完整剧情图",
-      "hint": "拖动节点整理剧情 · 滚动平移 · 双指或滚轮缩放",
-      "fallbackEnding": "保底结局",
-      "authoredEnding": "正式结局",
-      "noSelection": "尚未选择节点",
-      "nodeTypes": {
-        "entry": "序章节点",
-        "scene": "章节节点",
-        "choice": "选择与反馈节点",
-        "ending": "结局节点"
-      }
-    },
-    "views": {
-      "story": "剧情图",
-      "media": "素材",
-      "preview": "玩家预览"
-    },
-    "stats": {
-      "scenes": "{count} 个场景",
-      "endings": "{count} 个结局",
-      "assets": "{count} 个素材"
-    },
-    "toast": {
-      "reset": "已恢复官方示例。",
-      "validationPassed": "发布检查全部通过。",
-      "validationFailed": "发布检查仍有未解决的问题。"
-    },
-    "assets": {
-      "title": "素材库",
-      "azureRelease": "Azure 不可变发布版本",
-      "search": "搜索素材",
-      "close": "关闭素材库",
-      "filters": {
-        "all": "全部",
-        "video": "视频",
-        "audio": "音频"
-      }
-    },
-    "sceneCard": {
-      "clips": "{count} 个片段",
-      "choices": "{count} 个选择"
-    },
-    "timeline": {
-      "title": "场景时间线",
-      "continuity": "首尾帧连续性已锁定",
-      "choiceGate": "选择节点",
-      "reactions": "{count} 个反馈片段"
-    },
-    "media": {
-      "audioMaster": "已发布音频母版",
-      "published": "已发布"
-    },
-    "preview": {
-      "choiceMoment": "选择时刻"
-    },
-    "inspector": {
-      "scene": "场景 {number}",
-      "title": "场景检查器",
-      "name": "场景名称",
-      "summary": "剧情摘要",
-      "choices": "玩家选择",
-      "choiceLabel": "玩家选项",
-      "routeTarget": "分支去向",
-      "sequence": "视频序列",
-      "reaction": "选择反馈影片",
-      "chapterMaster": "章节母版"
-    },
-    "validation": {
-      "title": "项目完整性",
-      "count": "通过 {passed}/{total}",
-      "checks": {
-        "entry": "入口场景存在",
-        "masters": "每个场景都有章节母版",
-        "sequences": "时间线片段均已发布",
-        "reactions": "每个选择都有反馈片段",
-        "targets": "每条分支都通向场景或结局",
-        "endings": "五个结局素材均已就绪",
-        "delivery": "横屏交付使用安全素材地址"
       }
     }
   },

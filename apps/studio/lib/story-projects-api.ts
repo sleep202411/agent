@@ -393,6 +393,7 @@ export interface FilmVideoGeneration {
 
 export interface FilmClipSummary {
   id: string;
+  revisionId: string;
   key: string;
   graphNodeId: string;
   kind: "opening" | "scene" | "ending";
@@ -672,13 +673,6 @@ export interface FilmTechnicalCheck {
   key: string;
   status: "pending" | "passed" | "failed";
   message: string | null;
-}
-
-export interface PreparedDraftFilmClip {
-  draftRevision: number;
-  revisionId: string;
-  productionRevision: number;
-  clip: FilmClipSummary;
 }
 
 export interface FilmReview {
@@ -970,21 +964,6 @@ export async function publishFilmBuild(
 ): Promise<ExperienceReleaseResult> {
   return api.post<ExperienceReleaseResult>(
     `/aurora/story-projects/${encodeURIComponent(projectId)}/builds/${encodeURIComponent(buildId)}/publish`,
-    { data: input, headers: storyWorkspaceHeaders(workspaceId) }
-  );
-}
-
-export async function prepareFilmClip(
-  workspaceId: string,
-  projectId: string,
-  graphNodeId: string,
-  input: {
-    expectedDraftRevision: number;
-    modelId?: string;
-  }
-): Promise<PreparedDraftFilmClip> {
-  return api.post<PreparedDraftFilmClip>(
-    `/aurora/story-projects/${encodeURIComponent(projectId)}/clips/${encodeURIComponent(graphNodeId)}/prepare`,
     { data: input, headers: storyWorkspaceHeaders(workspaceId) }
   );
 }

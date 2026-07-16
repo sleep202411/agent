@@ -31,7 +31,7 @@ import {
   storyBuildRequestFingerprint,
   StoryFilmBuildService,
 } from './story-film-build.service';
-import { buildHuBaoVillaImportBundle } from './import/hu-bao-villa.builder';
+import { buildInteractiveFilmTestBundle } from './__tests__/interactive-film-test-bundle';
 
 const WORKSPACE_ID = '0197f4a2-0800-7000-8000-000000000001';
 const PROJECT_ID = '0197f4a2-0800-7000-8000-000000000002';
@@ -46,7 +46,7 @@ function uuid(index: number, group = '1000'): string {
 }
 
 function fixture() {
-  const bundle = buildHuBaoVillaImportBundle();
+  const bundle = buildInteractiveFilmTestBundle();
   const clips: StoryFilmBuildClipInput[] = bundle.clipSpecs.map(
     (spec, index) => ({
       id: uuid(index + 1, '2000'),
@@ -724,10 +724,10 @@ describe('StoryFilmBuildController', () => {
 
   it('publishes an exact Build through the release boundary with caller auth', async () => {
     const release = {
-      gameId: 'jinling',
+      gameId: 'branching-film',
       contentVersion: `build:${BUILD_ID}`,
       status: 'published',
-      manifestUrl: 'https://media.example.test/jinling/manifest.json',
+      manifestUrl: 'https://media.example.test/branching-film/manifest.json',
     };
     const releases = { publishBuild: jest.fn().mockResolvedValue(release) };
     const controller = new StoryFilmBuildController(

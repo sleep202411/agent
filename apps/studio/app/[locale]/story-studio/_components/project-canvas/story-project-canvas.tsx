@@ -78,7 +78,6 @@ import {
   getStoryCanvasLayout,
   getStoryWorkingPreview,
   getStoryWorkbench,
-  prepareFilmClip,
   putFilmClipCurrentVideo,
   putStoryCanvasLayout,
   putStoryDraft,
@@ -173,7 +172,6 @@ import {
   type StoryWorldTextField,
 } from "./story-world-mutations";
 import { StoryDraftSnapshotCoordinator } from "./story-draft-snapshot-coordinator";
-import { shouldPrepareStoryClip, StoryClipPreparationGate } from "./story-clip-preparation-gate";
 import { StoryWorkingPreviewDialog } from "./story-working-preview-dialog";
 import {
   filmGenerationError,
@@ -197,11 +195,6 @@ type StoryClipGenerationRequest = {
   graphNodeId: string;
   variationNote?: string;
   modelId?: string;
-};
-type StoryClipPreparationUiState = {
-  attemptKey: string;
-  status: "preparing" | "error";
-  error: string | null;
 };
 type PendingCompletionDrop = {
   sourceCanvasNodeId: string;
@@ -279,9 +272,6 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
   const [layoutSaveError, setLayoutSaveError] = useState<string | null>(null);
   const [productionPendingKey, setProductionPendingKey] = useState<string | null>(null);
   const [productionError, setProductionError] = useState<string | null>(null);
-  const [clipPreparationStates, setClipPreparationStates] = useState<
-    Record<string, StoryClipPreparationUiState>
-  >({});
   const [clipGenerationRequest, setClipGenerationRequest] =
     useState<StoryClipGenerationRequest | null>(null);
   const [workingPreviewOpen, setWorkingPreviewOpen] = useState(false);
@@ -290,7 +280,6 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
   const [workingPreview, setWorkingPreview] = useState<StoryWorkingPreview | null>(null);
   const [productionActionGate] = useState(() => new StoryProductionActionGate());
   const [draftSnapshotCoordinator] = useState(() => new StoryDraftSnapshotCoordinator());
-  const [clipPreparationGate] = useState(() => new StoryClipPreparationGate());
   const [productionSubmissionKeys] = useState(
     () =>
       new StorySubmissionKeyRegistry(
@@ -1150,114 +1139,15 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
   const focusedDirectorPrompt =
     focusedNode?.data.kind === "clip" ? (focusedNode.data.directorPrompt ?? null) : null;
   const focusedGraphNodeId = focusedNode?.data.kind === "clip" ? focusedNode.data.nodeId : null;
-  const currentFocusedFilmClip = currentDraftProductionRevisionId ? focusedFilmClip : null;
+  const currentRevisionFocusedFilmClip =
+    currentDraftProductionRevisionId &&
+    focusedFilmClip?.revisionId === currentDraftProductionRevisionId
+      ? focusedFilmClip
+      : null;
 
   const refreshProduction = useCallback(async () => {
     await workbenchQuery.refetch();
   }, [workbenchQuery]);
-
-  useEffect(() => {
-    if (!workspaceId) return;
-    if (
-      !shouldPrepareStoryClip({
-        graphNodeId: focusedGraphNodeId,
-        hasMaterializedClip: Boolean(currentFocusedFilmClip),
-        masterDirection: focusedDirectorPrompt?.masterDirection ?? null,
-        canGenerate: Boolean(project?.capabilities.includes("story.generate")),
-        draftSettled: saveState === "idle" || saveState === "saved",
-        draftRevision,
-      })
-    ) {
-      return;
-    }
-
-    const graphNodeId = focusedGraphNodeId as string;
-    const triggerKey = canonicalJsonString({ draftRevision, modelId: null });
-    let scheduled = true;
-
-    queueMicrotask(() => {
-      if (!scheduled || !clipPreparationGate.tryStart(graphNodeId, triggerKey)) return;
-      let activeKey = triggerKey;
-      setClipPreparationStates((current) => ({
-        ...current,
-        [graphNodeId]: { attemptKey: activeKey, status: "preparing", error: null },
-      }));
-
-      void withSavedDraftSnapshot((expectedDraftRevision) => {
-        const exactKey = canonicalJsonString({
-          draftRevision: expectedDraftRevision,
-          modelId: null,
-        });
-        if (exactKey !== activeKey) {
-          const previousKey = activeKey;
-          if (clipPreparationGate.rekey(graphNodeId, previousKey, exactKey)) {
-            activeKey = exactKey;
-            if (!disposedRef.current) {
-              setClipPreparationStates((current) =>
-                current[graphNodeId]?.attemptKey === previousKey
-                  ? {
-                      ...current,
-                      [graphNodeId]: {
-                        attemptKey: exactKey,
-                        status: "preparing",
-                        error: null,
-                      },
-                    }
-                  : current
-              );
-            }
-          }
-        }
-        return prepareFilmClip(workspaceId, projectId, graphNodeId, {
-          expectedDraftRevision,
-        });
-      })
-        .then(async () => {
-          await refetchWorkbench();
-          clipPreparationGate.settle(graphNodeId, activeKey, "succeeded");
-          if (disposedRef.current) return;
-          setClipPreparationStates((current) => {
-            if (current[graphNodeId]?.attemptKey !== activeKey) return current;
-            const next = { ...current };
-            delete next[graphNodeId];
-            return next;
-          });
-        })
-        .catch((error: unknown) => {
-          clipPreparationGate.settle(graphNodeId, activeKey, "failed");
-          if (disposedRef.current) return;
-          setClipPreparationStates((current) =>
-            current[graphNodeId]?.attemptKey === activeKey
-              ? {
-                  ...current,
-                  [graphNodeId]: {
-                    attemptKey: activeKey,
-                    status: "error",
-                    error: storyApiErrorMessage(error, t("production.errors.prepare")),
-                  },
-                }
-              : current
-          );
-        });
-    });
-
-    return () => {
-      scheduled = false;
-    };
-  }, [
-    clipPreparationGate,
-    currentFocusedFilmClip,
-    draftRevision,
-    project?.capabilities,
-    projectId,
-    refetchWorkbench,
-    saveState,
-    focusedDirectorPrompt?.masterDirection,
-    focusedGraphNodeId,
-    t,
-    withSavedDraftSnapshot,
-    workspaceId,
-  ]);
 
   const runProductionAction = useCallback(
     async (key: string, action: () => Promise<unknown>): Promise<boolean> => {
@@ -1290,12 +1180,6 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
   const generateSelectedClip = useCallback(
     (variationNote?: string, modelId?: string) => {
       if (!focusedGraphNodeId) return;
-      setClipPreparationStates((current) => {
-        if (!current[focusedGraphNodeId]) return current;
-        const next = { ...current };
-        delete next[focusedGraphNodeId];
-        return next;
-      });
       setClipGenerationRequest({
         requestId: globalThis.crypto.randomUUID(),
         graphNodeId: focusedGraphNodeId,
@@ -1364,7 +1248,7 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
         !STORY_REFERENCE_API_CONNECTED ||
         !workspaceId ||
         !currentDraftProductionRevisionId ||
-        !currentFocusedFilmClip ||
+        !currentRevisionFocusedFilmClip ||
         !film
       ) {
         return;
@@ -1374,9 +1258,9 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
           workspaceId,
           projectId,
           currentDraftProductionRevisionId,
-          currentFocusedFilmClip.id,
+          currentRevisionFocusedFilmClip.id,
           {
-            expectedClipVersion: currentFocusedFilmClip.version,
+            expectedClipVersion: currentRevisionFocusedFilmClip.version,
             expectedProductionRevision: film.productionRevision,
             bindings,
           }
@@ -1385,7 +1269,7 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
     },
     [
       currentDraftProductionRevisionId,
-      currentFocusedFilmClip,
+      currentRevisionFocusedFilmClip,
       film,
       projectId,
       runProductionAction,
@@ -1393,7 +1277,7 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
     ]
   );
 
-  const clipGenerationActive = isActiveVideoGeneration(currentFocusedFilmClip?.generation);
+  const clipGenerationActive = isActiveVideoGeneration(focusedFilmClip?.generation);
   const productionDisabledReason = !project?.capabilities.includes("story.generate")
     ? t("production.disabled.permission")
     : !focusedDirectorPrompt?.masterDirection.trim()
@@ -1403,13 +1287,13 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
         : null;
   const selectExistingClipVideo = useCallback(
     async (item: StoryVideoLibraryItem) => {
-      if (!workspaceId || !focusedGraphNodeId || !currentFocusedFilmClip) {
+      if (!workspaceId || !focusedGraphNodeId || !focusedFilmClip) {
         throw new Error(t("production.errors.action"));
       }
       const confirmedClip = await withSavedDraftSnapshot((expectedDraftRevision) =>
         putFilmClipCurrentVideo(workspaceId, projectId, focusedGraphNodeId, {
           expectedDraftRevision,
-          expectedCurrentVideoRevision: currentFocusedFilmClip.currentVideoRevision,
+          expectedCurrentVideoRevision: focusedFilmClip.currentVideoRevision,
           assetId: item.asset.id,
           variantId: item.variantId,
         })
@@ -1421,7 +1305,7 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
       void refetchWorkbench();
     },
     [
-      currentFocusedFilmClip,
+      focusedFilmClip,
       focusedGraphNodeId,
       projectId,
       queryClient,
@@ -1431,26 +1315,18 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
       workspaceId,
     ]
   );
-  const selectedClipPreparation =
-    focusedGraphNodeId && !currentFocusedFilmClip
-      ? (clipPreparationStates[focusedGraphNodeId] ?? null)
-      : null;
   const productionComposer: StoryVideoComposerProps | null =
     focusedNode?.data.kind === "clip" && focusedDirectorPrompt
       ? {
-          clip: currentFocusedFilmClip,
+          clip: focusedFilmClip,
           prompt: focusedDirectorPrompt,
           references: film?.references ?? [],
           defaultModel: film?.defaultModel,
           frameProfile: project?.frameProfile ?? "landscape_16_9",
           canGenerate: productionDisabledReason === null,
           disabledReason: productionDisabledReason,
-          preparingInputs: selectedClipPreparation?.status === "preparing",
           pendingKey: productionPendingKey ?? (clipGenerationActive ? "generate" : null),
-          error:
-            productionError ??
-            selectedClipPreparation?.error ??
-            filmGenerationError(currentFocusedFilmClip?.generation),
+          error: productionError ?? filmGenerationError(focusedFilmClip?.generation),
           onGenerate: generateSelectedClip,
           onModeChange: (mode) => {
             if (!focusedGraphNodeId || !focusedDirectorPrompt) return;
@@ -1501,7 +1377,7 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
           referenceBindingsPending: productionPendingKey === "reference-bindings",
           onUpdateReferenceBindings: updateSelectedReferenceBindings,
           videoLibrary:
-            workspaceId && currentFocusedFilmClip
+            workspaceId && focusedFilmClip
               ? {
                   workspaceId,
                   projectId,

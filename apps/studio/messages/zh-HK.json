@@ -1575,14 +1575,6 @@
       "title": "還沒有互動影遊專案",
       "description": "建立專案和可追溯的故事草稿，然後直接在同一畫布中設計並生成鏡頭。"
     },
-    "example": {
-      "sectionTitle": "官方範例",
-      "sectionSubtitle": "毋須加入專案庫，即可查看一套已發佈的完整製作。",
-      "readOnly": "官方範例 · 唯讀",
-      "title": "金陵入夢",
-      "description": "查看現有的電影化分支圖和已發佈媒體包；該範例始終與創作者專案保持獨立。",
-      "open": "開啟範例"
-    },
     "create": {
       "title": "建立互動影遊",
       "description": "將在目前工作區建立獨立的 Story Project，並建立一份空白的可追溯草稿。"
@@ -2559,108 +2551,6 @@
           "runtimeTitle": "試玩無法繼續",
           "media": "無法播放凍結媒體資產 {assetId}。"
         }
-      }
-    }
-  },
-  "storyStudioLanding": {
-    "badge": "官方樣例 · 唯讀",
-    "hero": {
-      "eyebrow": "第一季 · 無字來客",
-      "title": "金陵入夢",
-      "description": "以一位不屬於舊命冊的無名來客，隨黛玉同日入府；在連續影像與關鍵選擇中，親手改寫金陵命數。",
-      "openCanvas": "查看製作畫布",
-      "playFilm": "試玩影遊"
-    }
-  },
-  "interactiveFilmStudio": {
-    "previewNotice": "內測預覽階段，即將開放創作功能",
-    "back": "返回故事工作室",
-    "mode": "互動影遊",
-    "saving": "正在儲存…",
-    "saved": "已儲存到本機",
-    "reset": "重設範例",
-    "validate": "檢查發佈",
-    "openPlayer": "開啟玩家端",
-    "canvas": {
-      "mode": "畫布",
-      "fit": "顯示完整劇情圖",
-      "hint": "拖動節點整理劇情 · 捲動平移 · 雙指或滾輪縮放",
-      "fallbackEnding": "保底結局",
-      "authoredEnding": "正式結局",
-      "noSelection": "尚未選擇節點",
-      "nodeTypes": {
-        "entry": "序章節點",
-        "scene": "章節節點",
-        "choice": "選擇與回應節點",
-        "ending": "結局節點"
-      }
-    },
-    "views": {
-      "story": "劇情圖",
-      "media": "素材",
-      "preview": "玩家預覽"
-    },
-    "stats": {
-      "scenes": "{count} 個場景",
-      "endings": "{count} 個結局",
-      "assets": "{count} 個素材"
-    },
-    "toast": {
-      "reset": "已恢復官方範例。",
-      "validationPassed": "發佈檢查全部通過。",
-      "validationFailed": "發佈檢查仍有未解決的問題。"
-    },
-    "assets": {
-      "title": "素材庫",
-      "azureRelease": "Azure 不可變發佈版本",
-      "search": "搜尋素材",
-      "close": "關閉素材庫",
-      "filters": {
-        "all": "全部",
-        "video": "影片",
-        "audio": "音訊"
-      }
-    },
-    "sceneCard": {
-      "clips": "{count} 個片段",
-      "choices": "{count} 個選擇"
-    },
-    "timeline": {
-      "title": "場景時間線",
-      "continuity": "首尾幀連續性已鎖定",
-      "choiceGate": "選擇節點",
-      "reactions": "{count} 個回應片段"
-    },
-    "media": {
-      "audioMaster": "已發佈音訊母版",
-      "published": "已發佈"
-    },
-    "preview": {
-      "choiceMoment": "選擇時刻"
-    },
-    "inspector": {
-      "scene": "場景 {number}",
-      "title": "場景檢查器",
-      "name": "場景名稱",
-      "summary": "劇情摘要",
-      "choices": "玩家選擇",
-      "choiceLabel": "玩家選項",
-      "routeTarget": "分支去向",
-      "sequence": "影片序列",
-      "reaction": "選擇回應影片",
-      "chapterMaster": "章節母版"
-    },
-    "validation": {
-      "title": "專案完整性",
-      "count": "通過 {passed}/{total}",
-      "checks": {
-        "entry": "入口場景存在",
-        "masters": "每個場景都有章節母版",
-        "sequences": "時間線片段均已發佈",
-        "reactions": "每個選擇都有回應片段",
-        "targets": "每條分支都通往場景或結局",
-        "endings": "五個結局素材均已就緒",
-        "delivery": "橫屏交付使用安全素材網址"
       }
     }
   },

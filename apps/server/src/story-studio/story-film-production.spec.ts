@@ -4,11 +4,10 @@ import {
   CreateDraftFilmGenerationSchema,
   CreateFilmGenerationSchema,
   FilmClipSpecSchema,
-  PrepareDraftFilmClipSchema,
   PutDraftFilmCurrentVideoSchema,
   type FilmClipSpec,
 } from './dto';
-import { buildHuBaoVillaImportBundle } from './import/hu-bao-villa.builder';
+import { buildInteractiveFilmTestBundle } from './__tests__/interactive-film-test-bundle';
 import { StoryFilmProductionController } from './story-film-production.controller';
 import {
   assertModelSupportsClip,
@@ -233,21 +232,6 @@ describe('Story film production contract', () => {
     ).toBe(false);
   });
 
-  it('keeps shot preparation separate from generation controls', () => {
-    expect(
-      PrepareDraftFilmClipSchema.parse({
-        expectedDraftRevision: 7,
-        modelId: 'seedance-2-0',
-      }),
-    ).toEqual({ expectedDraftRevision: 7, modelId: 'seedance-2-0' });
-    expect(() =>
-      PrepareDraftFilmClipSchema.parse({
-        expectedDraftRevision: 7,
-        variationNote: 'must not be accepted',
-      }),
-    ).toThrow();
-  });
-
   it('derives deterministic, de-duplicated Omni reference requirements', () => {
     const plan = requiredDraftClipReferencePlan(
       clip({ mode: 'omni_reference' }),
@@ -380,7 +364,7 @@ describe('Story film production contract', () => {
   });
 
   it('isolates selected-shot generation from an unrelated graph cycle', () => {
-    const draft = buildHuBaoVillaImportBundle().draftContent;
+    const draft = buildInteractiveFilmTestBundle().draftContent;
     const checkpoint = draft.graph.nodes.find(
       (node) => node.exit.kind === 'checkpoint',
     );
@@ -412,29 +396,6 @@ describe('Story film production contract', () => {
 });
 
 describe('StoryFilmProductionController', () => {
-  it('forwards deterministic current-draft preparation', async () => {
-    const prepared = {
-      draftRevision: 7,
-      revisionId: REVISION_ID,
-      productionRevision: 1,
-      clip: { id: CLIP_ID },
-    };
-    const service = { prepareDraftClip: jest.fn().mockResolvedValue(prepared) };
-    const controller = new StoryFilmProductionController(service as never);
-    const params = { projectId: PROJECT_ID, graphNodeId: 'clip:S00' };
-    const body = { expectedDraftRevision: 7, modelId: 'seedance-2-0' };
-    await expect(
-      controller.prepareDraftClip(USER as never, WORKSPACE_ID, params, body),
-    ).resolves.toEqual({ code: 200, data: prepared });
-    expect(service.prepareDraftClip).toHaveBeenCalledWith(
-      USER,
-      WORKSPACE_ID,
-      PROJECT_ID,
-      'clip:S00',
-      body,
-    );
-  });
-
   it('forwards generation by stable graph node id', async () => {
     const generation = { id: GENERATION_ID };
     const service = {

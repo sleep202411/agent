@@ -62,7 +62,6 @@ export interface StoryVideoComposerProps {
   frameProfile: StoryFrameProfile;
   canGenerate: boolean;
   disabledReason: string | null;
-  preparingInputs?: boolean;
   pendingKey: string | null;
   error: string | null;
   onGenerate: (variationNote?: string, modelId?: string) => void;
@@ -98,7 +97,6 @@ export function StoryShotComposer({
   frameProfile,
   canGenerate,
   disabledReason,
-  preparingInputs = false,
   pendingKey,
   error,
   onGenerate,
@@ -186,11 +184,7 @@ export function StoryShotComposer({
           onPromptCommit={(next) => onPromptCommit?.(next)}
           promptPlaceholder={t("emptyPrompt")}
           promptAriaLabel={t("masterPrompt")}
-          promptHint={
-            preparingInputs
-              ? `${t("statuses.preparing")} · ${t("promptAutosaveHint")}`
-              : t("promptAutosaveHint")
-          }
+          promptHint={t("promptAutosaveHint")}
           promptReadOnly={!onPromptCommit}
           promptRows={3}
           mode={
@@ -248,12 +242,12 @@ export function StoryShotComposer({
           panel={panel}
           onPanelChange={setPanel}
           cost={cost}
-          canSubmit={canGenerate && !preparingInputs}
+          canSubmit={canGenerate}
           submitting={generating}
           onSubmit={() => onGenerate(undefined, catalogModel?.id)}
           submitLabel={t("generate")}
           submittingLabel={t("statuses.generating")}
-          disabledReason={preparingInputs ? t("disabled.preparing") : disabledReason}
+          disabledReason={disabledReason}
           error={error}
           className="w-[680px]"
         />

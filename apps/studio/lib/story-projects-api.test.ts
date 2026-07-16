@@ -18,7 +18,6 @@ import {
   createFilmTrailerGeneration,
   getStoryWorkingPreview,
   listStoryVideoLibrary,
-  prepareFilmClip,
   putFilmClipCurrentVideo,
   putFilmTrailerCurrentVideo,
   retryFilmVideoGeneration,
@@ -187,28 +186,6 @@ describe("current-draft Story production routes", () => {
           variantId: null,
         },
       })
-    );
-  });
-
-  it("prepares one graph-node clip from the exact saved draft without an AI submission", async () => {
-    vi.mocked(api.post).mockResolvedValueOnce({
-      draftRevision: 18,
-      revisionId: "revision-18",
-      productionRevision: 1,
-      clip: { id: "clip-1" },
-    });
-
-    await prepareFilmClip("workspace-1", "project / one", "clip / one", {
-      expectedDraftRevision: 18,
-      modelId: "seedance-2",
-    });
-
-    expect(api.post).toHaveBeenCalledWith(
-      "/aurora/story-projects/project%20%2F%20one/clips/clip%20%2F%20one/prepare",
-      {
-        data: { expectedDraftRevision: 18, modelId: "seedance-2" },
-        headers: { "x-fizz-workspace-id": "workspace-1" },
-      }
     );
   });
 

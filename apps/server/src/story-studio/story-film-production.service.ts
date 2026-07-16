@@ -40,8 +40,6 @@ import {
   type FilmClipSummaryDto,
   type FilmVideoGenerationDto,
   type MediaAssetSummaryDto,
-  type PreparedDraftFilmClipDto,
-  type PrepareDraftFilmClipInput,
   type PutFilmCurrentVideoInput,
   type RetryFilmGenerationInput,
 } from './dto';
@@ -227,58 +225,6 @@ export class StoryFilmProductionService {
     private readonly permissions: StoryPermissionService,
     private readonly aiGeneration: AiGenerationService,
   ) {}
-
-  async prepareDraftClip(
-    user: AuthUser,
-    workspaceId: string,
-    projectId: string,
-    graphNodeId: string,
-    input: PrepareDraftFilmClipInput,
-  ): Promise<PreparedDraftFilmClipDto> {
-    const scope = await this.requireProjectScope(
-      user,
-      workspaceId,
-      projectId,
-      'story.generate',
-    );
-    const materialized = await this.materializeDraftClip(
-      user,
-      scope.project,
-      graphNodeId,
-      input,
-    );
-    const [clip, filmSpec] = await this.prisma.$transaction(
-      async (tx) =>
-        Promise.all([
-          tx.storyFilmClip.findFirst({
-            where: {
-              id: materialized.clipId,
-              storyProjectId: projectId,
-              revisionId: materialized.revisionId,
-              archivedAt: null,
-            },
-            include: CLIP_SUMMARY_INCLUDE,
-          }),
-          tx.storyFilmSpec.findUnique({
-            where: { revisionId: materialized.revisionId },
-            select: { productionRevision: true },
-          }),
-        ]),
-      { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead },
-    );
-    if (!clip || !filmSpec) {
-      throw new ConflictException({
-        code: 'STORY_DRAFT_PRODUCTION_PREPARATION_INCOMPLETE',
-        message: 'The current shot production plan could not be prepared.',
-      });
-    }
-    return {
-      draftRevision: materialized.source.revision,
-      revisionId: materialized.revisionId,
-      productionRevision: filmSpec.productionRevision,
-      clip: toClipSummary(clip),
-    };
-  }
 
   async createDraftGeneration(
     user: AuthUser,
@@ -2391,6 +2337,7 @@ function toClipSummary(row: ClipSummaryRow): FilmClipSummaryDto {
   return {
     ...spec,
     id: row.id,
+    revisionId: row.revisionId,
     version: row.version,
     productionInputHash: row.productionInputHash,
     currentVideoRevision: row.currentVideoRevision,

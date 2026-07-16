@@ -67,7 +67,7 @@ function summaryProject(overrides: Record<string, unknown> = {}) {
     revisions: [],
     members: [{ userId: USER.userId, role: StoryProjectMemberRole.owner }],
     filmReferenceSlots: [],
-    filmClips: [],
+    filmClipHeads: [],
     builds: [],
     ...overrides,
   });
@@ -295,6 +295,11 @@ function makeHarness(
       ),
       create: jest.fn(({ data }: { data: Record<string, unknown> }) => data),
     },
+    storyFilmClipHead: {
+      findMany: jest.fn(() =>
+        (options.workbenchFilmClips ?? []).map((clip) => ({ clip })),
+      ),
+    },
     storyFilmTrailer: {
       findUnique: jest.fn(
         () =>
@@ -302,6 +307,13 @@ function makeHarness(
       ),
       findFirst: jest.fn(() => options.priorFilmTrailer ?? null),
       create: jest.fn(({ data }: { data: Record<string, unknown> }) => data),
+    },
+    storyFilmTrailerHead: {
+      findUnique: jest.fn(() => {
+        const trailer =
+          options.workbenchFilmTrailer ?? options.existingFilmTrailer ?? null;
+        return trailer ? { trailer } : null;
+      }),
     },
     storyFilmReferenceSlot: {
       findMany: jest.fn(() => []),
@@ -398,8 +410,19 @@ function makeHarness(
     storyFilmClip: {
       findMany: jest.fn(() => options.workbenchFilmClips ?? []),
     },
+    storyFilmClipHead: {
+      findMany: jest.fn(() =>
+        (options.workbenchFilmClips ?? []).map((clip) => ({ clip })),
+      ),
+    },
     storyFilmTrailer: {
       findUnique: jest.fn(() => options.workbenchFilmTrailer ?? null),
+    },
+    storyFilmTrailerHead: {
+      findUnique: jest.fn(() => {
+        const trailer = options.workbenchFilmTrailer ?? null;
+        return trailer ? { trailer } : null;
+      }),
     },
     storyFilmReferenceSlot: {
       findMany: jest.fn(() => []),
@@ -447,7 +470,7 @@ describe('StoryProjectsService.create', () => {
     const result = await service.create(USER as never, WORKSPACE_ID, {
       format: 'interactive_film',
       frameProfile: 'portrait_9_16',
-      title: '虎豹别墅：龙口入夜',
+      title: 'Branching Film Test',
       defaultLocale: 'zh-CN',
       visibility: 'private',
     });
@@ -500,7 +523,7 @@ describe('StoryProjectsService current-draft production readiness', () => {
     ).toProjectSummary(row, USER.userId);
   }
 
-  it('does not count current videos from an older materialized revision', () => {
+  it('preserves a project current video across draft revisions', () => {
     const { service } = makeHarness();
     const draft = lockableDraft();
     const row = summaryProject({
@@ -522,18 +545,21 @@ describe('StoryProjectsService current-draft production readiness', () => {
           approvedVersionId: MODEL_ID,
         },
       ],
-      filmClips: [
+      filmClipHeads: [
         {
-          revisionId: REVISION_ID,
-          currentVideoAssetId: VIDEO_ASSET_ID,
-          latestGenerationAttempt: null,
+          clip: {
+            graphNodeId: 'node.opening',
+            revisionId: REVISION_ID,
+            currentVideoAssetId: VIDEO_ASSET_ID,
+            latestGenerationAttempt: null,
+          },
         },
       ],
     });
 
     expect(projectSummary(service, row).production).toMatchObject({
       clipCount: 1,
-      currentVideoCount: 0,
+      currentVideoCount: 1,
       generatingClipCount: 0,
       referenceSlotCount: 0,
     });
@@ -548,11 +574,14 @@ describe('StoryProjectsService current-draft production readiness', () => {
       revisions: [
         revisionRow({ sourceDraftRevision: 9, contentHash, content: draft }),
       ],
-      filmClips: [
+      filmClipHeads: [
         {
-          revisionId: REVISION_ID,
-          currentVideoAssetId: VIDEO_ASSET_ID,
-          latestGenerationAttempt: { status: 'running' },
+          clip: {
+            graphNodeId: 'node.opening',
+            revisionId: REVISION_ID,
+            currentVideoAssetId: VIDEO_ASSET_ID,
+            latestGenerationAttempt: { status: 'running' },
+          },
         },
       ],
     });
@@ -1114,6 +1143,8 @@ describe('StoryProjectsService film workbench', () => {
           id: '0197f4a2-0800-7000-8000-000000000008',
           storyProjectId: PROJECT_ID,
           revisionId: REVISION_ID,
+          graphNodeId: projectedClip.graphNodeId,
+          rank: projectedClip.rank,
           specJson: projectedClip,
           specHash: canonicalJsonHash(projectedClip),
           version: 0,
@@ -1214,12 +1245,12 @@ describe('StoryProjectsService film workbench', () => {
     expect(tx.storyDraft.findUnique).toHaveBeenCalledTimes(1);
     expect(tx.storyRevision.findFirst).toHaveBeenCalledTimes(1);
     expect(tx.storyFilmSpec.findUnique).toHaveBeenCalledTimes(1);
-    expect(tx.storyFilmClip.findMany).toHaveBeenCalledTimes(1);
+    expect(tx.storyFilmClipHead.findMany).toHaveBeenCalledTimes(1);
     expect(prisma.storyProject.findUnique).not.toHaveBeenCalled();
     expect(prisma.storyDraft.findUnique).not.toHaveBeenCalled();
     expect(prisma.storyRevision.findFirst).not.toHaveBeenCalled();
     expect(prisma.storyFilmSpec.findUnique).not.toHaveBeenCalled();
-    expect(prisma.storyFilmClip.findMany).not.toHaveBeenCalled();
+    expect(prisma.storyFilmClipHead.findMany).not.toHaveBeenCalled();
   });
 
   it('returns a revision trailer with neutral current-video state', async () => {

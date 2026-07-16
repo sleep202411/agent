@@ -611,21 +611,6 @@ export type CreateDraftFilmGenerationInput = z.infer<
   typeof CreateDraftFilmGenerationSchema
 >;
 
-export const PrepareDraftFilmClipSchema = CreateDraftFilmGenerationSchema.pick({
-  expectedDraftRevision: true,
-  modelId: true,
-}).strict();
-export type PrepareDraftFilmClipInput = z.infer<
-  typeof PrepareDraftFilmClipSchema
->;
-
-export interface PreparedDraftFilmClipDto {
-  draftRevision: number;
-  revisionId: string;
-  productionRevision: number;
-  clip: FilmClipSummaryDto;
-}
-
 export const CreateFilmTrailerGenerationSchema =
   CreateFilmGenerationSchema.omit({
     expectedClipVersion: true,
@@ -998,6 +983,7 @@ export interface FilmClipDto extends FilmClipSpec {
 export type FilmClipSummaryDto = Pick<
   FilmClipDto,
   | 'id'
+  | 'revisionId'
   | 'key'
   | 'graphNodeId'
   | 'kind'

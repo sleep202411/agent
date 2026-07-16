@@ -77,6 +77,7 @@ function fixture(clips: FilmClipSummary[]): StoryWorkbench {
 function clip(patch: Partial<FilmClipSummary> = {}): FilmClipSummary {
   return {
     id: "clip-1",
+    revisionId: "revision-1",
     key: "clip-key",
     graphNodeId: "node-1",
     kind: "scene",
