@@ -2013,17 +2013,3 @@ export const FilmReviewDecisionSchema = z.enum([
   'request_changes',
 ]);
 export type FilmReviewDecision = z.infer<typeof FilmReviewDecisionSchema>;
-
-export const StoryReleaseChannelSchema = z.enum(['preview', 'production']);
-export type StoryReleaseChannel = z.infer<typeof StoryReleaseChannelSchema>;
-
-export const StoryDeploymentEnvironmentSchema = z.enum([
-  'preview',
-  'production',
-]);
-export type StoryDeploymentEnvironment = z.infer<
-  typeof StoryDeploymentEnvironmentSchema
->;
-
-export const StoryDeploymentStatusSchema = z.enum(['active', 'offline']);
-export type StoryDeploymentStatus = z.infer<typeof StoryDeploymentStatusSchema>;

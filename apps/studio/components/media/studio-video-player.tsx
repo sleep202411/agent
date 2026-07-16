@@ -72,6 +72,13 @@ export type StudioVideoPlayerProps = {
   onManualPlaybackStop?: (lease: MediaManualPlaybackLease) => void;
   poster?: string;
   fit?: "cover" | "contain";
+  autoPlay?: boolean;
+  muted?: boolean;
+  loop?: boolean;
+  clipStartTime?: number;
+  onEnd?: () => void;
+  onTimeUpdate?: (currentTimeSeconds: number) => void;
+  onPlaybackError?: () => void;
   renderScale?: number;
   className?: string;
 };
@@ -94,6 +101,13 @@ export function StudioVideoPlayer({
   onManualPlaybackStop,
   poster,
   fit = "cover",
+  autoPlay = false,
+  muted = false,
+  loop = false,
+  clipStartTime,
+  onEnd,
+  onTimeUpdate,
+  onPlaybackError,
   renderScale = 1,
   className,
 }: StudioVideoPlayerProps) {
@@ -137,6 +151,10 @@ export function StudioVideoPlayer({
       viewType="video"
       streamType="on-demand"
       controls={false}
+      autoPlay={autoPlay}
+      muted={muted}
+      loop={loop}
+      clipStartTime={clipStartTime}
       playsInline
       preload="metadata"
       load="visible"
@@ -172,9 +190,16 @@ export function StudioVideoPlayer({
         if (autoPreviewPlayRequestRef.current === null) acquireManualPlayback();
       }}
       onPause={releaseManualPlayback}
-      onEnd={releaseManualPlayback}
+      onEnd={() => {
+        releaseManualPlayback();
+        onEnd?.();
+      }}
+      onTimeUpdate={(detail) => onTimeUpdate?.(detail.currentTime)}
       onPlayFail={releaseManualPlayback}
-      onError={releaseManualPlayback}
+      onError={() => {
+        releaseManualPlayback();
+        onPlaybackError?.();
+      }}
       className={cn(
         "group/studio-video relative flex size-full overflow-hidden bg-black outline-none data-[fullscreen]:fixed data-[fullscreen]:inset-0 data-[fullscreen]:z-[9999] data-[fullscreen]:h-screen data-[fullscreen]:w-screen data-[fullscreen]:rounded-none",
         controlDensity === null && "pointer-events-none",

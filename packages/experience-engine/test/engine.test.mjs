@@ -4,16 +4,19 @@ import { parseExperienceRuntimeManifest } from "@repo/shared/experience-runtime"
 import {
   advanceExperienceTimeline,
   assertExperienceRuntimeCompatibility,
+  boundsOfExperienceProjectedGeometry,
   createExperienceDeterministicRuntimeState,
   createExperiencePressHoldState,
   createExperienceTimelineCursor,
   createMediaContentTransform,
   dispatchExperienceEvent,
+  ExperienceRuntimeController,
   ExperienceRendererRegistry,
   hitTestExperienceGeometry,
   hitTestExperienceAnchor,
   initializeExperienceRuntime,
   normalizedContentPointToViewport,
+  projectExperienceGeometryToViewport,
   resolveExperienceAnchorGeometry,
   resolveExperienceAudioPlayback,
   runExperienceEventQueue,
@@ -369,6 +372,32 @@ test("interpolates keyframed anchors in source-content coordinates", () => {
   assert.ok(Math.abs(geometry.rect.height - 0.15) < 1e-10);
 });
 
+test("projects visible spatial geometry through the same cropped media transform as hit testing", () => {
+  const transform = createMediaContentTransform(
+    { width: 1_000, height: 1_000 },
+    { width: 1_920, height: 1_080 },
+    "cover"
+  );
+  const projected = projectExperienceGeometryToViewport(
+    {
+      kind: "ellipse",
+      bounds: { x: 0.67, y: 0.3, width: 0.1, height: 0.18 },
+    },
+    transform
+  );
+  assert.equal(projected.kind, "ellipse");
+  const bounds = boundsOfExperienceProjectedGeometry(projected);
+  const center = { x: bounds.x + bounds.width / 2, y: bounds.y + bounds.height / 2 };
+  assert.equal(
+    hitTestExperienceGeometry(
+      { kind: "ellipse", bounds: { x: 0.67, y: 0.3, width: 0.1, height: 0.18 } },
+      center,
+      transform
+    ),
+    true
+  );
+});
+
 test("advances, cancels, decays, and completes a press-hold gesture deterministically", () => {
   const gesture = {
     gestureId: "gesture.hold",
@@ -540,6 +569,8 @@ test("fails compatibility and renderer validation before playback starts", () =>
     apiVersion: "1.0.0",
     configSchemaVersion: "1.0.0",
     capabilities: new Set(["core.text"]),
+    supportsCommand: () => false,
+    supportsOutcome: () => false,
     assertConfig(config) {
       if (typeof config.text !== "string") throw new Error("text config is required");
     },
@@ -550,6 +581,52 @@ test("fails compatibility and renderer validation before playback starts", () =>
   const scene = manifest.graph.nodes.find((node) => node.sceneId === "scene.one");
   scene.renderers[0].config = {};
   assert.throws(() => registry.assertManifest(manifest), /text config is required/);
+});
+
+test("settles scene-entry routes after navigation in the shared queue", () => {
+  const manifest = manifestFixture();
+  const result = runExperienceEventQueue(manifest, initializeExperienceRuntime(manifest), [
+    {
+      type: "interaction.completed",
+      sourceId: "interaction.test",
+      payload: { input: "hold", durationMs: 1_650 },
+    },
+  ]);
+
+  assert.equal(result.processedEventCount, 2);
+  assert.equal(result.state.status, "completed");
+  assert.equal(result.state.completedEndingId, "ending.done");
+  assert.deepEqual(
+    result.effects.map((effect) => effect.kind),
+    ["telemetry.emit", "scene.changed", "ending.completed"]
+  );
+});
+
+test("starts a fresh controller once and rejects entry replay", () => {
+  const manifest = manifestFixture();
+  const registry = new ExperienceRendererRegistry();
+  registry.register({
+    rendererId: "core.text",
+    apiVersion: "1.0.0",
+    configSchemaVersion: "1.0.0",
+    capabilities: new Set(["core.text"]),
+    supportsCommand: () => false,
+    supportsOutcome: () => false,
+    assertConfig() {},
+    assertCommand() {},
+    assertOutcome() {},
+  });
+  const controller = new ExperienceRuntimeController(manifest, {
+    compatibility: {
+      engineApiVersion: "2.0.0",
+      experienceApiVersion: "1.0.0",
+      capabilities: new Set(["core.text"]),
+    },
+    rendererRegistry: registry,
+  });
+
+  assert.equal(controller.start().state.currentSceneId, "scene.one");
+  assert.throws(() => controller.start(), { code: "RUNTIME_ALREADY_STARTED" });
 });
 
 test("resolves random and sequential audio deterministically from persisted cursors", () => {

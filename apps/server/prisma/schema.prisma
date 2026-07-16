@@ -5738,7 +5738,6 @@ model MediaAsset {
   storyFilmContinuityUpstreamVideos           StoryFilmContinuityCheck[]                   @relation("StoryFilmContinuityUpstreamAsset")
   storyFilmContinuityDownstreamVideos         StoryFilmContinuityCheck[]                   @relation("StoryFilmContinuityDownstreamAsset")
   storyBuildAssets                            StoryBuildAsset[]                            @relation("StoryBuildAssetMedia")
-  storyReleaseAssets                          StoryReleaseAsset[]                          @relation("StoryReleaseAssetMedia")
   moderationCases                             MediaModerationCase[]
   moderationActions                           MediaModerationAction[]
   processingJobs                              MediaProcessingJob[]
@@ -5787,7 +5786,6 @@ model MediaAssetVariant {
   storyFilmContinuityUpstreamVideos        StoryFilmContinuityCheck[]          @relation("StoryFilmContinuityUpstreamVariant")
   storyFilmContinuityDownstreamVideos      StoryFilmContinuityCheck[]          @relation("StoryFilmContinuityDownstreamVariant")
   storyBuildAssets                         StoryBuildAsset[]                   @relation("StoryBuildAssetVariant")
-  storyReleaseAssets                       StoryReleaseAsset[]                 @relation("StoryReleaseAssetVariant")
 
   @@unique([assetId, variantKey], map: "media_asset_variants_asset_key_unique")
   @@index([assetId, kind, status], map: "media_asset_variants_asset_kind_status_idx")
@@ -6349,21 +6347,6 @@ enum StoryReviewDecision {
   request_changes
 }
 
-enum StoryDeploymentEnvironment {
-  preview
-  production
-}
-
-enum StoryDeploymentStatus {
-  active
-  offline
-}
-
-enum StoryReleaseChannel {
-  preview
-  production
-}
-
 enum StoryFilmReferenceKind {
   character
   location
@@ -6449,8 +6432,6 @@ model StoryProject {
   tags               Json               @default("[]") @db.JsonB
   sourceIpId         String?            @map("source_ip_id") @db.Uuid
   nextBuildNumber    Int                @default(1) @map("next_build_number")
-  nextReleaseVersion Int                @default(1) @map("next_release_version")
-  publishRevision    Int                @default(0) @map("publish_revision")
   version            Int                @default(0)
   createdByUserId    String             @map("created_by_user_id") @db.VarChar(64)
   archivedAt         DateTime?          @map("archived_at") @db.Timestamptz(6)
@@ -6464,8 +6445,6 @@ model StoryProject {
   canvasLayout                           StoryCanvasLayout?
   revisions                              StoryRevision[]
   builds                                 StoryBuild[]
-  releases                               StoryRelease[]
-  deployments                            StoryDeployment[]
   filmSpecs                              StoryFilmSpec[]
   filmReferenceSlots                     StoryFilmReferenceSlot[]
   filmReferenceVersions                  StoryFilmReferenceVersion[]
@@ -6481,7 +6460,6 @@ model StoryProject {
   filmContinuityChecks                   StoryFilmContinuityCheck[]
   filmBuildClips                         StoryFilmBuildClip[]
   storyBuildAssets                       StoryBuildAsset[]
-  storyReleaseAssets                     StoryReleaseAsset[]
 
   @@unique([id, workspaceId], map: "story_projects_id_workspace_unique")
   @@index([workspaceId, format, status, updatedAt(sort: Desc)], map: "story_projects_workspace_format_recent_idx")
@@ -6558,7 +6536,6 @@ model StoryRevision {
 
   project                                StoryProject                                 @relation(fields: [storyProjectId], references: [id], onDelete: Restrict)
   builds                                 StoryBuild[]
-  releases                               StoryRelease[]
   filmSpecs                              StoryFilmSpec[]
   filmReferenceSlots                     StoryFilmReferenceSlot[]
   filmReferenceVersions                  StoryFilmReferenceVersion[]
@@ -6598,7 +6575,7 @@ model StoryBuild {
   status                   StoryBuildStatus @default(queued)
   inputHash                String           @map("input_hash") @db.VarChar(64)
   inputManifestHash        String           @map("input_manifest_hash") @db.VarChar(64)
-  runtimeSchemaVersion     Int              @default(1) @map("runtime_schema_version")
+  runtimeSchemaVersion     Int              @default(2) @map("runtime_schema_version")
   runtimeJson              Json?            @map("runtime_json") @db.JsonB
   runtimeHash              String?          @map("runtime_hash") @db.VarChar(64)
   diagnostics              Json             @default("[]") @db.JsonB
@@ -6615,7 +6592,6 @@ model StoryBuild {
   project        StoryProject         @relation(fields: [storyProjectId], references: [id], onDelete: Restrict)
   sourceRevision StoryRevision        @relation(fields: [sourceRevisionId], references: [id], onDelete: Restrict)
   assets         StoryBuildAsset[]
-  release        StoryRelease?
   filmClips      StoryFilmBuildClip[]
 
   @@unique([storyProjectId, buildNumber], map: "story_builds_project_number_unique")
@@ -6651,115 +6627,6 @@ model StoryBuildAsset {
   @@unique([id, buildId], map: "story_build_assets_id_build_unique")
   @@index([storyProjectId, createdAt], map: "story_build_assets_project_idx")
   @@map("story_build_assets")
-}
-
-model StoryRelease {
-  id                   String              @id @default(uuid(7)) @db.Uuid
-  storyProjectId       String              @map("story_project_id") @db.Uuid
-  buildId              String              @unique @map("build_id") @db.Uuid
-  sourceRevisionId     String              @map("source_revision_id") @db.Uuid
-  releaseVersion       Int                 @map("release_version")
-  channel              StoryReleaseChannel
-  format               StoryFormat
-  runtimeLocale        String              @map("runtime_locale") @db.VarChar(16)
-  runtimeSchemaVersion Int                 @map("runtime_schema_version")
-  runtimeJson          Json                @map("runtime_json") @db.JsonB
-  runtimeHash          String              @map("runtime_hash") @db.VarChar(64)
-  manifestHash         String              @map("manifest_hash") @db.VarChar(64)
-  metadataSnapshot     Json                @default("{}") @map("metadata_snapshot") @db.JsonB
-  reviewRevision       Int                 @default(0) @map("review_revision")
-  createdByUserId      String              @map("created_by_user_id") @db.VarChar(64)
-  createdAt            DateTime            @default(now()) @map("created_at") @db.Timestamptz(6)
-
-  project        StoryProject          @relation(fields: [storyProjectId], references: [id], onDelete: Restrict)
-  build          StoryBuild            @relation(fields: [buildId], references: [id], onDelete: Restrict)
-  sourceRevision StoryRevision         @relation(fields: [sourceRevisionId], references: [id], onDelete: Restrict)
-  assets         StoryReleaseAsset[]
-  reviews        StoryReleaseReview[]
-  approval       StoryReleaseApproval?
-  deployments    StoryDeployment[]
-
-  @@unique([storyProjectId, releaseVersion], map: "story_releases_project_version_unique")
-  @@unique([id, storyProjectId], map: "story_releases_id_project_unique")
-  @@index([storyProjectId, createdAt(sort: Desc)], map: "story_releases_project_recent_idx")
-  @@map("story_releases")
-}
-
-model StoryReleaseAsset {
-  id             String         @id @default(uuid(7)) @db.Uuid
-  releaseId      String         @map("release_id") @db.Uuid
-  storyProjectId String         @map("story_project_id") @db.Uuid
-  logicalKey     String         @map("logical_key") @db.VarChar(160)
-  role           StoryAssetRole
-  assetId        String         @map("asset_id") @db.Uuid
-  variantId      String         @map("variant_id") @db.Uuid
-  checksumSha256 String         @map("checksum_sha256") @db.VarChar(64)
-  contentType    String         @map("content_type") @db.VarChar(128)
-  sizeBytes      BigInt?        @map("size_bytes")
-  width          Int?
-  height         Int?
-  durationMs     Int?           @map("duration_ms")
-  rank           Int            @default(0)
-  createdAt      DateTime       @default(now()) @map("created_at") @db.Timestamptz(6)
-
-  release StoryRelease      @relation(fields: [releaseId], references: [id], onDelete: Restrict)
-  project StoryProject      @relation(fields: [storyProjectId], references: [id], onDelete: Restrict)
-  asset   MediaAsset        @relation("StoryReleaseAssetMedia", fields: [assetId], references: [id], onDelete: Restrict)
-  variant MediaAssetVariant @relation("StoryReleaseAssetVariant", fields: [variantId], references: [id], onDelete: Restrict)
-
-  @@unique([releaseId, logicalKey], map: "story_release_assets_release_logical_key_unique")
-  @@index([storyProjectId, createdAt], map: "story_release_assets_project_idx")
-  @@map("story_release_assets")
-}
-
-model StoryReleaseReview {
-  id             String              @id @default(uuid(7)) @db.Uuid
-  releaseId      String              @map("release_id") @db.Uuid
-  sequence       Int
-  decision       StoryReviewDecision
-  checklist      Json                @default("{}") @db.JsonB
-  notes          String?             @db.Text
-  reviewerUserId String              @map("reviewer_user_id") @db.VarChar(64)
-  createdAt      DateTime            @default(now()) @map("created_at") @db.Timestamptz(6)
-
-  release  StoryRelease          @relation(fields: [releaseId], references: [id], onDelete: Restrict)
-  approval StoryReleaseApproval?
-
-  @@unique([releaseId, sequence], map: "story_release_reviews_release_sequence_unique")
-  @@unique([id, releaseId], map: "story_release_reviews_id_release_unique")
-  @@map("story_release_reviews")
-}
-
-model StoryReleaseApproval {
-  releaseId        String   @id @map("release_id") @db.Uuid
-  reviewId         String   @unique @map("review_id") @db.Uuid
-  approvedByUserId String   @map("approved_by_user_id") @db.VarChar(64)
-  approvedAt       DateTime @default(now()) @map("approved_at") @db.Timestamptz(6)
-
-  release StoryRelease       @relation(fields: [releaseId], references: [id], onDelete: Restrict)
-  review  StoryReleaseReview @relation(fields: [reviewId], references: [id], onDelete: Restrict)
-
-  @@map("story_release_approvals")
-}
-
-model StoryDeployment {
-  storyProjectId   String                     @map("story_project_id") @db.Uuid
-  environment      StoryDeploymentEnvironment
-  releaseId        String                     @map("release_id") @db.Uuid
-  status           StoryDeploymentStatus      @default(active)
-  version          Int                        @default(0)
-  deployedByUserId String                     @map("deployed_by_user_id") @db.VarChar(64)
-  deployedAt       DateTime                   @default(now()) @map("deployed_at") @db.Timestamptz(6)
-  offlineByUserId  String?                    @map("offline_by_user_id") @db.VarChar(64)
-  offlineAt        DateTime?                  @map("offline_at") @db.Timestamptz(6)
-  updatedAt        DateTime                   @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
-
-  project StoryProject @relation(fields: [storyProjectId], references: [id], onDelete: Restrict)
-  release StoryRelease @relation(fields: [releaseId], references: [id], onDelete: Restrict)
-
-  @@id([storyProjectId, environment])
-  @@index([releaseId, status], map: "story_deployments_release_status_idx")
-  @@map("story_deployments")
 }
 
 model StoryFilmSpec {

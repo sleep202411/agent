@@ -37,10 +37,7 @@ function assertUnicodeScalarString(value: string): void {
   }
 }
 
-/**
- * Serialize JSON using RFC 8785 JCS. Java must apply the same algorithm to the
- * exact, fully materialized Manifest JSON value before accepting publication.
- */
+/** Serialize JSON using RFC 8785 JCS for publisher-side reproducibility. */
 export function canonicalizeExperienceJson(value: ExperienceJsonValue): string {
   if (value === null || typeof value === "boolean") return JSON.stringify(value);
   if (typeof value === "string") {

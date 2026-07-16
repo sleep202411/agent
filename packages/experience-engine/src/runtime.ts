@@ -287,6 +287,13 @@ export function runExperienceEventQueue(
         return;
       }
       effects.push(effect);
+      if (effect.kind === "scene.changed") {
+        pending.push({
+          type: "scene.entered",
+          sourceId: effect.toSceneId,
+          payload: { fromSceneId: effect.fromSceneId },
+        });
+      }
     });
   }
   return { state, effects, processedEventCount };

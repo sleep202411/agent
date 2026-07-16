@@ -133,10 +133,10 @@ data is never embedded back into an immutable Runtime Manifest.
   `contentVersion`;
 - does not become the source of truth for published manifests or player data.
 
-Existing local `StoryRelease` and `StoryDeployment` persistence is not the
-target publication authority under this decision. It must not be expanded as
-a competing source of truth. Migration or removal is handled when Java's
-release contract is integrated.
+Local `StoryRelease`, review, approval, and `StoryDeployment` persistence was
+removed when the Java release contract was integrated. Nest retains only the
+reproducible immutable `StoryBuild`; it validates a publishable production
+Build and submits it to Java without creating a competing publication record.
 
 ### Java platform
 
@@ -308,6 +308,15 @@ current pointer. Repeating the same `(gameId, contentVersion)` is idempotent.
 The response returns `gameId`, `contentVersion`, `status`, and `manifestUrl`;
 there is no Java-assigned `publicationId`, numeric `releaseVersion`, or
 integrity wrapper.
+
+The Nest publication boundary is
+`POST /story-projects/{projectId}/builds/{buildId}/publish`. It requires
+`story.release`, accepts only a ready `production/full` Runtime Manifest v2
+Build whose frozen media remains deliverable, and forwards the fully
+materialized body to
+`{JAVA_STUDIO_URL}/api/player/interactive-film/releases`. Java's
+`{code,msg,data}` envelope is unwrapped at this boundary; non-200 application
+codes and upstream messages remain visible to Studio.
 
 RFC 8785 JCS plus SHA-256 remains the local reproducible-build hash algorithm.
 It is not transmitted in release API v1 and Java is not required to recompute

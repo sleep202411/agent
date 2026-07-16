@@ -2438,52 +2438,53 @@
     },
     "build": {
       "title": "Build & Playtest",
-      "subtitle": "Compile the locked story graph and current videos into an immutable preview build, then play every branch against the exact frozen runtime.",
+      "subtitle": "Compile a locked story revision and its current videos into an immutable production manifest. This exact artifact is the only payload eligible for Java publication.",
       "buildNumber": "Build {number}",
-      "activeBuild": "Build {number} is still compiling.",
       "actions": {
-        "createPreview": "Create preview build",
+        "createProduction": "Create production build",
         "creating": "Creating build…",
-        "refresh": "Refresh builds",
-        "cancel": "Cancel build",
-        "retry": "Retry"
+        "editStory": "Edit story",
+        "publish": "Publish",
+        "publishing": "Publishing…",
+        "refresh": "Refresh builds"
       },
       "permissions": {
         "build": "Your project role does not include build permission.",
-        "edit": "Your project role cannot lock a production revision."
+        "release": "Your project role does not include release permission."
       },
       "notifications": {
-        "created": "Preview build created.",
+        "created": "Production build created.",
         "validationFailed": "The build found production blockers. Review the diagnostics.",
-        "cancelled": "Build cancelled.",
-        "revisionLocked": "Production revision locked."
+        "revisionLocked": "Production revision locked.",
+        "published": "This production Build is now the current published version."
       },
       "errors": {
         "revisionRequired": "Lock a production revision before creating a build.",
-        "create": "The preview build could not be created.",
-        "cancel": "The build could not be cancelled.",
+        "create": "The production build could not be created.",
         "list": "Build history could not be loaded.",
         "detail": "The selected build could not be loaded.",
         "lockRevision": "The production revision could not be locked.",
-        "revisionState": "The locked version is inconsistent with the current draft. Refresh the project before building.",
+        "publish": "The production Build could not be published.",
         "runtimeUnavailable": "This frozen runtime is currently unavailable. Review the build diagnostics; media stays inaccessible until every asset satisfies current lifecycle and moderation policy."
+      },
+      "publication": {
+        "current": "Published version {version} · open manifest"
+      },
+      "publishDialog": {
+        "title": "Publish this production Build?",
+        "description": "Java will store this immutable Manifest as the current player version. The Build itself will not change after publication.",
+        "cancel": "Cancel",
+        "confirm": "Publish current version"
       },
       "lockRevision": {
         "title": "Lock a production revision",
         "description": "A build must point to an immutable story version. Lock the saved draft to materialize its clip and runtime production contracts.",
         "action": "Lock production version",
-        "locking": "Locking…",
-        "root": "Story root"
+        "locking": "Locking…"
       },
       "revisionBasis": {
         "currentTitle": "Building locked version {number}",
-        "currentDescription": "New preview builds explicitly use locked version {number}, captured from draft r{sourceRevision}. The mutable draft has no later changes.",
-        "draftAheadTitle": "The draft has newer changes",
-        "draftAheadDescription": "New preview builds still use locked version {number}, captured from draft r{sourceRevision}. The current draft is r{draftRevision}; lock it as a new production version to include those changes.",
-        "inconsistentTitle": "Version state is inconsistent",
-        "inconsistentDescription": "Locked version {number} comes from draft r{sourceRevision}, but the current draft reports r{draftRevision}. Building is disabled until the project state is refreshed.",
-        "action": "Lock current draft",
-        "locking": "Locking current draft…"
+        "currentDescription": "New production builds use locked version {number}, captured from draft r{sourceRevision}. The mutable draft has no later changes."
       },
       "missingFilm": {
         "title": "Production contracts are unavailable",
@@ -2492,7 +2493,7 @@
       "history": {
         "title": "Build history",
         "count": "{count, plural, one {# build} other {# builds}}",
-        "empty": "No preview build has been created.",
+        "empty": "No production build has been created.",
         "errors": "{count, plural, one {# error} other {# errors}}"
       },
       "profile": {
@@ -2500,9 +2501,7 @@
         "production": "Production"
       },
       "scope": {
-        "full": "Full graph",
-        "subgraph": "Subgraph from {entryClipId} · depth {maxDepth}",
-        "unbounded": "unbounded"
+        "full": "Full graph"
       },
       "status": {
         "queued": "Queued",
@@ -2513,17 +2512,15 @@
         "cancelled": "Cancelled"
       },
       "detail": {
-        "identity": "Production state r{revision} · {profile} · {scope}",
-        "polling": "This view updates automatically while the build is active."
+        "identity": "Production state r{revision} · {profile} · {scope}"
       },
       "empty": {
         "title": "Compile the first playable build",
-        "description": "A preview build validates every reachable route, freezes approved media, and produces the runtime used by this playtest."
+        "description": "A production build validates every reachable route, freezes exact media variants and produces the immutable Runtime Manifest used for publication."
       },
       "pathReport": {
         "title": "Path coverage",
         "description": "Deterministic graph traversal from the build compiler.",
-        "duration": "{min}–{max} per path",
         "paths": "Enumerated paths",
         "endings": "Reachable endings",
         "ambiguous": "Ambiguous paths",
@@ -2532,23 +2529,12 @@
       "diagnostics": {
         "title": "Build diagnostics",
         "summary": "{errors} errors · {warnings} warnings",
-        "error": "{count, plural, one {# blocking error} other {# blocking errors}}",
-        "warning": "{count, plural, one {# warning} other {# warnings}}",
         "cleanTitle": "Build validation passed",
         "cleanDescription": "The compiler found no blocking errors or warnings."
       },
-      "entity": {
-        "revision": "Revision",
-        "clip": "Clip",
-        "reference": "Reference",
-        "generation": "Generation",
-        "choice": "Choice",
-        "ending": "Ending",
-        "asset": "Asset"
-      },
       "playtest": {
         "title": "Interactive playtest",
-        "description": "Runs only this frozen preview manifest; no generation task is created."
+        "description": "Runs this exact frozen production manifest; no generation task or mutable draft data is used."
       },
       "assets": {
         "title": "Frozen build assets",
@@ -2557,20 +2543,13 @@
       "player": {
         "invalidManifest": "The runtime manifest is invalid",
         "manifestRoot": "Manifest root",
-        "routerHops": "Resolved {count, plural, one {# router} other {# routers}}",
-        "localeFallback": "Showing authored {locale} copy",
         "restart": "Restart",
-        "play": "Play",
         "regionLabel": "Interactive film playtest",
-        "playbackPaused": "Playback needs your confirmation",
         "videoLabel": "Story video for scene {nodeId}",
-        "reactionVideoLabel": "Choice reaction video for scene {nodeId}",
-        "imageAlt": "Interactive story scene",
         "checkpoint": {
           "prompt": "Ready for the next scene?",
           "description": "Continue when you are ready.",
-          "continue": "Continue",
-          "actionLabel": "Continue to the next story scene"
+          "continue": "Continue"
         },
         "noVisibleChoices": "No choice is currently available for this story state.",
         "endingEyebrow": "Ending reached",
@@ -2578,19 +2557,7 @@
         "playAgain": "Play again",
         "errors": {
           "runtimeTitle": "The playtest cannot continue",
-          "UNKNOWN_NODE": "Runtime node {nodeId} does not exist.",
-          "NO_MATCHING_ROUTE": "Router {nodeId} has no route for the current story state.",
-          "ROUTER_CYCLE": "Router {nodeId} forms a cycle that cannot resolve to a scene.",
-          "routerNotResolved": "The current runtime node did not resolve to a playable scene.",
-          "noRoute": "Scene {nodeId} has no matching automatic route.",
-          "checkpointContract": "Scene {nodeId} has an invalid built-in checkpoint action.",
-          "externalOverlay": "Extension renderer {rendererId} is not available in the internal playtest.",
-          "sequence": "Scene {nodeId} references an invalid video sequence.",
-          "mediaTitle": "Preview media is unavailable",
-          "media": "Frozen media asset {assetId} could not be played.",
-          "unknownAsset": "unknown",
-          "extensionTitle": "This scene requires an extension renderer",
-          "extension": "Renderer {rendererId} is not installed in this playtest."
+          "media": "Frozen media asset {assetId} could not be played."
         }
       }
     }

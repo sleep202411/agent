@@ -34,6 +34,7 @@ export class ExperienceRuntimeController {
   readonly #manifest: ExperienceRuntimeManifest;
   readonly #rendererRegistry: ExperienceRendererRegistry;
   #state: ExperienceRuntimeState;
+  #started: boolean;
 
   constructor(manifest: ExperienceRuntimeManifest, options: ExperienceRuntimeControllerOptions) {
     assertExperienceRuntimeCompatibility(manifest, options.compatibility);
@@ -43,10 +44,33 @@ export class ExperienceRuntimeController {
     this.#state = options.restore
       ? restoreExperienceRuntime(manifest, options.restore)
       : initializeExperienceRuntime(manifest, { randomSeed: options.randomSeed });
+    this.#started = Boolean(options.restore);
   }
 
   state(): ExperienceRuntimeState {
     return structuredClone(this.#state);
+  }
+
+  /**
+   * Activates a fresh runtime exactly once and settles entry routers through
+   * the canonical event queue. Restored sessions are already active and must
+   * not replay scene-entry actions.
+   */
+  start(): ExperienceEventQueueResult {
+    if (this.#started) {
+      throw new ExperienceRuntimeInvariantError(
+        "RUNTIME_ALREADY_STARTED",
+        "Experience runtime has already started"
+      );
+    }
+    this.#started = true;
+    return this.dispatch([
+      {
+        type: "scene.entered",
+        sourceId: this.#state.currentSceneId,
+        payload: {},
+      },
+    ]);
   }
 
   dispatch(

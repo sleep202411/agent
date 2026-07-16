@@ -924,7 +924,7 @@ function compileRuntime(
       durationSeconds: clip.asset.durationMs / 1_000,
     };
     return {
-      assetId: runtimeAssetId(clip),
+      assetId: storyFilmRuntimeAssetId(clip),
       kind: 'video' as const,
       orientationPolicy: 'single-master' as const,
       variants: landscape ? { landscape: variant } : { portrait: variant },
@@ -956,7 +956,7 @@ function compileRuntime(
         sequence: [
           {
             clipId: clip.id,
-            assetId: runtimeAssetId(clip),
+            assetId: storyFilmRuntimeAssetId(clip),
             endBehavior: { behavior: 'advance' as const },
           },
         ],
@@ -1056,7 +1056,7 @@ function compileExit(
         choice.afterSelect.kind === 'play'
           ? {
               kind: 'play',
-              reactionAssetId: runtimeAssetId(
+              reactionAssetId: storyFilmRuntimeAssetId(
                 clipsByKey.get(
                   choice.afterSelect.reactionClipKey,
                 ) as StoryFilmBuildClipInput,
@@ -1067,7 +1067,9 @@ function compileExit(
   };
 }
 
-function runtimeAssetId(clip: Pick<StoryFilmBuildClipInput, 'key'>): string {
+export function storyFilmRuntimeAssetId(
+  clip: Pick<StoryFilmBuildClipInput, 'key'>,
+): string {
   return `video:${clip.key}`;
 }
 

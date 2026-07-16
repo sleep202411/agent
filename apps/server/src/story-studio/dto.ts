@@ -11,8 +11,6 @@ import {
   INTERACTIVE_FILM_DRAFT_SCHEMA_VERSION,
   InteractiveFilmDraftContentSchema,
   ReviewChecklistValueSchema,
-  StoryDeploymentEnvironmentSchema,
-  StoryReleaseChannelSchema,
   StoryStableIdSchema,
   StoryUuidSchema,
   type FilmBuildScope,
@@ -25,9 +23,6 @@ import {
   type FilmSpec,
   type FilmTrailerSpec,
   type InteractiveFilmDraftContent,
-  type StoryDeploymentEnvironment,
-  type StoryDeploymentStatus,
-  type StoryReleaseChannel,
 } from './interactive-film.schema';
 
 export * from './interactive-film.schema';
@@ -245,11 +240,6 @@ export type StoryFilmBuildAssetParams = z.infer<
   typeof StoryFilmBuildAssetParamsSchema
 >;
 
-export const StoryReleaseParamsSchema = z
-  .object({ projectId: StoryUuidSchema, releaseId: StoryUuidSchema })
-  .strict();
-export type StoryReleaseParams = z.infer<typeof StoryReleaseParamsSchema>;
-
 export const StoryProjectListQuerySchema = z
   .object({
     format: StoryFormatSchema.optional(),
@@ -302,15 +292,6 @@ export const FilmBuildListQuerySchema = z
   })
   .strict();
 export type FilmBuildListQuery = z.infer<typeof FilmBuildListQuerySchema>;
-
-export const StoryReleaseListQuerySchema = z
-  .object({
-    channel: StoryReleaseChannelSchema.optional(),
-    cursor: z.string().trim().min(1).max(500).optional(),
-    limit: z.coerce.number().int().min(1).max(100).default(20),
-  })
-  .strict();
-export type StoryReleaseListQuery = z.infer<typeof StoryReleaseListQuerySchema>;
 
 // ─── Core project, draft, and immutable revision requests ───────────────
 
@@ -725,6 +706,23 @@ export const CancelFilmBuildSchema = z
   .strict();
 export type CancelFilmBuildInput = z.infer<typeof CancelFilmBuildSchema>;
 
+export const PublishStoryBuildSchema = z
+  .object({
+    status: z.enum(['published', 'draft']).default('published'),
+    setCurrent: z.boolean().default(true),
+  })
+  .strict()
+  .superRefine((input, context) => {
+    if (input.status === 'draft' && input.setCurrent) {
+      context.addIssue({
+        code: 'custom',
+        path: ['setCurrent'],
+        message: 'A draft release cannot become the current published version.',
+      });
+    }
+  });
+export type PublishStoryBuildInput = z.infer<typeof PublishStoryBuildSchema>;
+
 export const CreateFilmPreviewTokenSchema = z
   .object({
     expiresInSeconds: z
@@ -737,81 +735,6 @@ export const CreateFilmPreviewTokenSchema = z
   .strict();
 export type CreateFilmPreviewTokenInput = z.infer<
   typeof CreateFilmPreviewTokenSchema
->;
-
-// ─── Immutable release, review, approval, and deployment requests ───────
-
-export const CreateStoryReleaseSchema = z
-  .object({
-    expectedPublishRevision: NonNegativeVersionSchema,
-    buildId: StoryUuidSchema,
-    channel: StoryReleaseChannelSchema,
-    releaseNotes: z.string().trim().max(4_000).optional(),
-  })
-  .strict();
-export type CreateStoryReleaseInput = z.infer<typeof CreateStoryReleaseSchema>;
-
-export const CreateStoryReleaseReviewSchema = z
-  .object({
-    expectedReviewRevision: NonNegativeVersionSchema,
-    decision: FilmReviewDecisionSchema,
-    checklist: z
-      .object({
-        runtimeValidation: ReviewChecklistValueSchema,
-        pathCoverage: ReviewChecklistValueSchema,
-        mediaIntegrity: ReviewChecklistValueSchema,
-        moderation: ReviewChecklistValueSchema,
-      })
-      .strict(),
-    comment: z.string().trim().max(4_000).optional(),
-  })
-  .strict()
-  .superRefine((review, context) => {
-    requireReviewComment(review, context);
-    if (
-      review.decision === 'approve' &&
-      Object.values(review.checklist).some((value) => value !== 'pass')
-    ) {
-      context.addIssue({
-        code: 'custom',
-        path: ['checklist'],
-        message: 'All release checks must pass to approve.',
-      });
-    }
-  });
-export type CreateStoryReleaseReviewInput = z.infer<
-  typeof CreateStoryReleaseReviewSchema
->;
-
-export const ApproveStoryReleaseSchema = z
-  .object({
-    expectedPublishRevision: NonNegativeVersionSchema,
-    approveReviewId: StoryUuidSchema,
-  })
-  .strict();
-export type ApproveStoryReleaseInput = z.infer<
-  typeof ApproveStoryReleaseSchema
->;
-
-export const ActivateStoryReleaseSchema = z
-  .object({
-    expectedPublishRevision: NonNegativeVersionSchema,
-    environment: StoryDeploymentEnvironmentSchema,
-    expectedDeploymentVersion: NonNegativeVersionSchema.nullable(),
-  })
-  .strict();
-export type ActivateStoryReleaseInput = z.infer<
-  typeof ActivateStoryReleaseSchema
->;
-
-export const OfflineStoryDeploymentSchema = z
-  .object({
-    environment: StoryDeploymentEnvironmentSchema,
-    expectedDeploymentVersion: NonNegativeVersionSchema,
-  })
-  .strict();
-export type OfflineStoryDeploymentInput = z.infer<
-  typeof OfflineStoryDeploymentSchema
 >;
 
 function requireReviewComment(
@@ -874,17 +797,6 @@ export interface StoryRevisionSummaryDto {
   createdAt: string;
 }
 
-export interface StoryDeploymentDto {
-  environment: StoryDeploymentEnvironment;
-  releaseId: string;
-  status: StoryDeploymentStatus;
-  version: number;
-  deployedByUserId: string | null;
-  deployedAt: string | null;
-  offlinedByUserId: string | null;
-  offlinedAt: string | null;
-}
-
 export interface StoryProjectProductionSummaryDto {
   referenceSlotCount: number;
   approvedReferenceCount: number;
@@ -910,8 +822,6 @@ export interface StoryProjectSummaryDto {
   projectVersion: number;
   draftRevision: number;
   activeRevision: StoryRevisionSummaryDto | null;
-  publishRevision: number;
-  deployments: StoryDeploymentDto[];
   production: StoryProjectProductionSummaryDto;
   capabilities: StoryCapability[];
   createdAt: string;
@@ -1141,7 +1051,7 @@ export interface FilmReferenceSlotDto extends FilmReferenceSlotSpec {
   updatedAt: string;
 }
 
-/** Review projection shared by reference-version and release approval flows. */
+/** Review projection for reference-version approval. */
 export interface FilmReviewDto {
   id: string;
   decision: FilmReviewDecision;
@@ -1207,7 +1117,7 @@ export interface FilmBuildDto {
   sourceProductionRevision: number;
   inputHash: string;
   inputManifestHash: string;
-  runtimeSchemaVersion: 1;
+  runtimeSchemaVersion: 1 | 2;
   runtimeJson: Record<string, unknown> | null;
   runtimeHash: string | null;
   assets: FilmBuildAssetDto[];
@@ -1222,6 +1132,7 @@ export interface FilmBuildDto {
 export interface StoryWorkingPreviewDto {
   draftRevision: number;
   contentHash: string;
+  runtimeSchemaVersion: 2;
   runtime: Record<string, unknown> | null;
   diagnostics: FilmBuildDiagnosticDto[];
   pathReport: FilmBuildPathReportDto | null;
@@ -1247,33 +1158,6 @@ export type FilmBuildSummaryDto = Pick<
   | 'createdAt'
   | 'completedAt'
 >;
-
-export interface StoryReleaseDto {
-  id: string;
-  projectId: string;
-  revisionId: string;
-  buildId: string;
-  format: StoryFormat;
-  version: number;
-  channel: StoryReleaseChannel;
-  runtimeSchemaVersion: 1;
-  runtimeJson: Record<string, unknown>;
-  runtimeHash: string;
-  manifestHash: string;
-  metadata: Record<string, unknown>;
-  assets: StoryReleaseAssetDto[];
-  reviewRevision: number;
-  approved: boolean;
-  createdByUserId: string;
-  createdAt: string;
-}
-
-export interface StoryReleaseAssetDto extends FrozenStoryAssetDto {
-  id: string;
-  releaseId: string;
-  clipId: string | null;
-  role: string;
-}
 
 export interface StoryWorkbenchDto {
   project: StoryProjectSummaryDto;

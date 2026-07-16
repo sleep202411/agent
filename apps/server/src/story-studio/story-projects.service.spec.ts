@@ -46,8 +46,6 @@ function projectRow(overrides: Record<string, unknown> = {}) {
     tags: [],
     sourceIpId: null,
     nextBuildNumber: 1,
-    nextReleaseVersion: 1,
-    publishRevision: 0,
     version: 3,
     createdByUserId: USER.userId,
     archivedAt: null,
@@ -67,7 +65,6 @@ function summaryProject(overrides: Record<string, unknown> = {}) {
       contentHash: canonicalJsonHash(content),
     },
     revisions: [],
-    deployments: [],
     members: [{ userId: USER.userId, role: StoryProjectMemberRole.owner }],
     filmReferenceSlots: [],
     filmClips: [],
@@ -228,7 +225,6 @@ function makeHarness(
     workbenchFilmSpec?: Record<string, unknown> | null;
     workbenchFilmClips?: Array<Record<string, unknown>>;
     workbenchFilmTrailer?: Record<string, unknown> | null;
-    activeProduction?: { releaseId: string } | null;
     canvasLayoutUpdateCount?: number;
     currentCanvasLayout?: ReturnType<typeof canvasLayoutRow> | null;
     transactionCanvasLayout?: ReturnType<typeof canvasLayoutRow> | null;
@@ -410,9 +406,6 @@ function makeHarness(
     },
     storyBuild: {
       findFirst: jest.fn(() => null),
-    },
-    storyDeployment: {
-      findFirst: jest.fn(() => options.activeProduction ?? null),
     },
     $transaction: jest.fn(
       (operation: (client: typeof tx) => Promise<unknown>) => operation(tx),

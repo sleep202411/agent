@@ -2,7 +2,7 @@
 
 import { IconAlertTriangle, IconLoader2, IconRefresh, IconRoute } from "@tabler/icons-react";
 import { useTranslations } from "next-intl";
-import { StoryFilmPreviewPlayer } from "@/app/[locale]/(studio)/story-studio/projects/[projectId]/_components/story-film-preview-player";
+import { ExperienceRuntimePlayer } from "@/components/experience-runtime/experience-runtime-player";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -117,7 +117,7 @@ export function StoryWorkingPreviewContent({
   if (preview?.runtime) {
     return (
       <div className="space-y-3">
-        <StoryFilmPreviewPlayer
+        <ExperienceRuntimePlayer
           runtime={preview.runtime}
           locale={locale}
           frameProfile={frameProfile}

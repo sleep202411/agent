@@ -14,6 +14,16 @@ export interface ExperienceViewportPoint {
   y: number;
 }
 
+export interface ExperienceViewportRect extends ExperienceViewportPoint {
+  width: number;
+  height: number;
+}
+
+export type ExperienceProjectedGeometry =
+  | { kind: "rect"; rect: ExperienceViewportRect }
+  | { kind: "ellipse"; bounds: ExperienceViewportRect }
+  | { kind: "polygon"; points: ExperienceViewportPoint[] };
+
 export interface ExperienceMediaContentTransform {
   scale: number;
   offsetX: number;
@@ -85,6 +95,46 @@ export function viewportPointToNormalizedContent(
   return {
     x: (point.x - transform.offsetX) / transform.renderedWidth,
     y: (point.y - transform.offsetY) / transform.renderedHeight,
+  };
+}
+
+/**
+ * Projects authored source-content geometry into the host viewport. Renderers
+ * and hit testing consume the same transform, so visible affordances cannot
+ * drift away from their interactive target under contain/cover cropping.
+ */
+export function projectExperienceGeometryToViewport(
+  geometry: ExperienceSpatialGeometry,
+  transform: ExperienceMediaContentTransform
+): ExperienceProjectedGeometry {
+  if (geometry.kind === "rect") {
+    return { kind: "rect", rect: projectRect(geometry.rect, transform) };
+  }
+  if (geometry.kind === "ellipse") {
+    return { kind: "ellipse", bounds: projectRect(geometry.bounds, transform) };
+  }
+  return {
+    kind: "polygon",
+    points: geometry.points.map((point) => normalizedContentPointToViewport(point, transform)),
+  };
+}
+
+export function boundsOfExperienceProjectedGeometry(
+  geometry: ExperienceProjectedGeometry
+): ExperienceViewportRect {
+  if (geometry.kind === "rect") return geometry.rect;
+  if (geometry.kind === "ellipse") return geometry.bounds;
+  const xs = geometry.points.map((point) => point.x);
+  const ys = geometry.points.map((point) => point.y);
+  const minimumX = Math.min(...xs);
+  const maximumX = Math.max(...xs);
+  const minimumY = Math.min(...ys);
+  const maximumY = Math.max(...ys);
+  return {
+    x: minimumX,
+    y: minimumY,
+    width: maximumX - minimumX,
+    height: maximumY - minimumY,
   };
 }
 
@@ -267,6 +317,18 @@ function interpolateRect(
     y: interpolate(left.y, right.y, progress),
     width: interpolate(left.width, right.width, progress),
     height: interpolate(left.height, right.height, progress),
+  };
+}
+
+function projectRect(
+  rect: { x: number; y: number; width: number; height: number },
+  transform: ExperienceMediaContentTransform
+): ExperienceViewportRect {
+  const origin = normalizedContentPointToViewport(rect, transform);
+  return {
+    ...origin,
+    width: rect.width * transform.renderedWidth,
+    height: rect.height * transform.renderedHeight,
   };
 }
 

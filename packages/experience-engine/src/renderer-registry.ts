@@ -9,6 +9,8 @@ export interface ExperienceRendererAdapter {
   apiVersion: string;
   configSchemaVersion: string;
   capabilities: ReadonlySet<string>;
+  supportsCommand(commandType: string): boolean;
+  supportsOutcome(outcomeType: string): boolean;
   assertConfig(config: ExperienceJsonObject): void;
   assertCommand(commandType: string, payload: ExperienceJsonObject): void;
   assertOutcome(outcomeType: string, payload: ExperienceJsonObject): void;
@@ -70,6 +72,20 @@ export class ExperienceRendererRegistry {
           `Renderer ${requirement.rendererId} is missing capabilities: ${missing.join(", ")}`
         );
       }
+      requirement.commands.forEach((command) => {
+        if (adapter.supportsCommand(command.commandType)) return;
+        throw new ExperienceRuntimeInvariantError(
+          "RENDERER_COMMAND_UNSUPPORTED",
+          `Renderer ${requirement.rendererId} does not support declared command ${command.commandType}`
+        );
+      });
+      requirement.outcomes.forEach((outcome) => {
+        if (adapter.supportsOutcome(outcome.outcomeType)) return;
+        throw new ExperienceRuntimeInvariantError(
+          "RENDERER_OUTCOME_UNSUPPORTED",
+          `Renderer ${requirement.rendererId} does not support declared outcome ${outcome.outcomeType}`
+        );
+      });
     });
 
     manifest.graph.nodes.forEach((node) => {

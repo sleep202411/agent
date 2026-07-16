@@ -19,6 +19,7 @@ import {
   StoryFilmContinuityDecision,
   StoryFilmDependencyKind,
 } from '@prisma/client';
+import { EXPERIENCE_RUNTIME_SCHEMA_VERSION } from '@repo/shared/experience-runtime';
 import type { AuthUser } from '../auth';
 import { PrismaService } from '../infra/db/db.module';
 import {
@@ -44,7 +45,12 @@ import {
   type FilmBuildSummaryDto,
 } from './dto';
 import {
+  compileStoryExperienceManifest,
+  type StoryExperienceMediaIdentity,
+} from './story-experience-manifest-compiler';
+import {
   compileStoryFilmBuild,
+  storyFilmRuntimeAssetId,
   type FrozenFilmClipAsset,
   type StoryFilmBuildClipInput,
 } from './story-film-build-compiler';
@@ -138,6 +144,12 @@ interface BuildCursor {
 }
 
 interface CompilationSnapshot {
+  project: {
+    id: string;
+    title: string;
+    summary: string | null;
+    defaultLocale: string;
+  };
   revision: {
     id: string;
     number: number;
@@ -250,7 +262,7 @@ export class StoryFilmBuildService {
             status: StoryBuildStatus.queued,
             inputHash,
             inputManifestHash,
-            runtimeSchemaVersion: 1,
+            runtimeSchemaVersion: EXPERIENCE_RUNTIME_SCHEMA_VERSION,
             createdByUserId: user.userId,
           },
           include: BUILD_INCLUDE,
@@ -585,7 +597,47 @@ export class StoryFilmBuildService {
       const includedById = new Map(
         preparedClips.map((clip) => [clip.id, clip]),
       );
-      const runtimeHash = canonicalJsonHash(compiled.runtime);
+      const mediaIdentities = compiled.includedClipIds.flatMap((clipId) => {
+        const clip = includedById.get(clipId);
+        if (!clip?.asset) return [];
+        return [
+          {
+            runtimeAssetId: storyFilmRuntimeAssetId(clip),
+            variantId: clip.asset.variantId,
+            mediaType: clip.asset.contentType,
+          } satisfies StoryExperienceMediaIdentity,
+        ];
+      });
+      const experience = compileStoryExperienceManifest({
+        release: compiled.runtime,
+        metadata: {
+          title: snapshot.project.title,
+          summary:
+            snapshot.project.summary?.trim() || draft.data.storyBible.logline,
+        },
+        stateVariables: draft.data.storyBible.stateVariables,
+        mediaIdentities,
+      });
+      if (!experience.manifest) {
+        return this.failBuild(
+          build,
+          [
+            ...compiled.diagnostics,
+            ...experience.diagnostics.map((item) =>
+              buildDiagnostic(
+                item.code,
+                item.message,
+                'revision',
+                build.sourceRevisionId,
+              ),
+            ),
+          ],
+          compiled.pathReport,
+          experience.diagnostics[0]?.code ??
+            'STORY_EXPERIENCE_MANIFEST_COMPILATION_FAILED',
+        );
+      }
+      const runtimeHash = canonicalJsonHash(experience.manifest);
       await this.prisma.$transaction(async (tx) => {
         await lockCompilationSnapshot(
           tx,
@@ -660,7 +712,7 @@ export class StoryFilmBuildService {
           },
           data: {
             status: StoryBuildStatus.ready,
-            runtimeJson: compiled.runtime as Prisma.InputJsonObject,
+            runtimeJson: experience.manifest as Prisma.InputJsonObject,
             runtimeHash,
             diagnostics:
               compiled.diagnostics as unknown as Prisma.InputJsonArray,
@@ -1033,6 +1085,15 @@ export class StoryFilmBuildService {
         message: 'The stored Build scope is invalid.',
       });
     }
+    if (
+      row.runtimeSchemaVersion !== 1 &&
+      row.runtimeSchemaVersion !== EXPERIENCE_RUNTIME_SCHEMA_VERSION
+    ) {
+      throw new ConflictException({
+        code: 'STORY_FILM_BUILD_CORRUPT',
+        message: `The stored Build runtime schema version ${row.runtimeSchemaVersion} is unsupported.`,
+      });
+    }
     const persistedDiagnostics = parseBuildDiagnostics(row.diagnostics);
     const currentMediaDiagnostics = storyBuildCurrentMediaDiagnostics(
       row.assets,
@@ -1057,7 +1118,7 @@ export class StoryFilmBuildService {
       sourceProductionRevision: row.sourceProductionRevision,
       inputHash: row.inputHash,
       inputManifestHash: row.inputManifestHash,
-      runtimeSchemaVersion: 1,
+      runtimeSchemaVersion: row.runtimeSchemaVersion,
       // The immutable Build remains ready and retains its frozen manifest, but
       // a read must never disclose permanent media URLs after moderation or
       // lifecycle policy makes one of its assets unavailable. This projection
@@ -1099,7 +1160,16 @@ async function loadCompilationSnapshot(
   projectId: string,
   revisionId: string,
 ): Promise<CompilationSnapshot> {
-  const [revision, filmSpec, clips, dependencies] = await Promise.all([
+  const [project, revision, filmSpec, clips, dependencies] = await Promise.all([
+    prisma.storyProject.findUnique({
+      where: { id: projectId },
+      select: {
+        id: true,
+        title: true,
+        summary: true,
+        defaultLocale: true,
+      },
+    }),
     prisma.storyRevision.findFirst({
       where: { id: revisionId, storyProjectId: projectId },
       select: { id: true, number: true, content: true, contentHash: true },
@@ -1123,6 +1193,12 @@ async function loadCompilationSnapshot(
       include: BUILD_DEPENDENCY_INCLUDE,
     }),
   ]);
+  if (!project) {
+    throw new NotFoundException({
+      code: 'STORY_PROJECT_NOT_FOUND',
+      message: 'Story project not found.',
+    });
+  }
   if (!revision) {
     throw new NotFoundException({
       code: 'STORY_REVISION_NOT_FOUND',
@@ -1135,7 +1211,7 @@ async function loadCompilationSnapshot(
       message: 'This revision has no immutable interactive-film specification.',
     });
   }
-  return { revision, filmSpec, clips, dependencies };
+  return { project, revision, filmSpec, clips, dependencies };
 }
 
 /** Lock every mutable row class that contributes to eligibility or runtime
@@ -1147,6 +1223,11 @@ async function lockCompilationSnapshot(
   projectId: string,
   revisionId: string,
 ): Promise<void> {
+  await tx.$queryRaw`
+    SELECT "id" FROM "story_projects"
+    WHERE "id" = ${projectId}::uuid
+    FOR SHARE
+  `;
   await tx.$queryRaw`
     SELECT "id" FROM "story_revisions"
     WHERE "story_project_id" = ${projectId}::uuid
@@ -1222,6 +1303,12 @@ export function storyFilmBuildInputManifest(
     schemaVersion: 2,
     profile: input.profile,
     scope: input.scope,
+    project: {
+      id: snapshot.project.id,
+      title: snapshot.project.title,
+      summary: snapshot.project.summary,
+      defaultLocale: snapshot.project.defaultLocale,
+    },
     revision: {
       id: snapshot.revision.id,
       number: snapshot.revision.number,
@@ -1687,8 +1774,46 @@ function storyBuildRuntimeDeliveryDiagnostics(
       ),
     ),
   );
+  const sources = runtimeDeliverySources(runtime, build.runtimeSchemaVersion);
+  if (
+    sources.length === build.assets.length &&
+    sources.every((source) => allowedSources.has(source))
+  ) {
+    return [];
+  }
+  return [
+    buildDiagnostic(
+      'STORY_BUILD_RUNTIME_DELIVERY_UNSAFE',
+      'This Build runtime predates authenticated Build media delivery and cannot be exposed. Create a new Build.',
+      'revision',
+      build.sourceRevisionId,
+    ),
+  ];
+}
+
+function runtimeDeliverySources(
+  runtime: Record<string, unknown>,
+  schemaVersion: number,
+): string[] {
+  if (schemaVersion === EXPERIENCE_RUNTIME_SCHEMA_VERSION) {
+    const assets = Array.isArray(runtime.assets) ? runtime.assets : [];
+    return assets.flatMap((entry) => {
+      if (!entry || typeof entry !== 'object' || Array.isArray(entry))
+        return [];
+      const asset = entry as Record<string, unknown>;
+      if (asset.kind !== 'video' && asset.kind !== 'image') return [];
+      if (!Array.isArray(asset.variants)) return [];
+      return asset.variants.flatMap((variant) => {
+        if (!variant || typeof variant !== 'object' || Array.isArray(variant)) {
+          return [];
+        }
+        const uri = (variant as Record<string, unknown>).uri;
+        return typeof uri === 'string' ? [uri] : [];
+      });
+    });
+  }
   const media = Array.isArray(runtime.media) ? runtime.media : [];
-  const sources = media.flatMap((entry) => {
+  return media.flatMap((entry) => {
     if (!entry || typeof entry !== 'object' || Array.isArray(entry)) return [];
     const variants = (entry as Record<string, unknown>).variants;
     if (!variants || typeof variants !== 'object' || Array.isArray(variants)) {
@@ -1704,20 +1829,6 @@ function storyBuildRuntimeDeliveryDiagnostics(
       },
     );
   });
-  if (
-    sources.length === build.assets.length &&
-    sources.every((source) => allowedSources.has(source))
-  ) {
-    return [];
-  }
-  return [
-    buildDiagnostic(
-      'STORY_BUILD_RUNTIME_DELIVERY_UNSAFE',
-      'This Build runtime predates authenticated Build media delivery and cannot be exposed. Create a new Build.',
-      'revision',
-      build.sourceRevisionId,
-    ),
-  ];
 }
 
 function mergeBuildDiagnostics(

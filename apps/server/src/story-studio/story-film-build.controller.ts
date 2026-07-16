@@ -18,6 +18,7 @@ import {
   CancelFilmBuildSchema,
   CreateFilmBuildSchema,
   FilmBuildListQuerySchema,
+  PublishStoryBuildSchema,
   StoryFilmBuildAssetParamsSchema,
   StoryFilmBuildParamsSchema,
   StoryProjectIdParamsSchema,
@@ -25,15 +26,20 @@ import {
   type CancelFilmBuildInput,
   type CreateFilmBuildInput,
   type FilmBuildListQuery,
+  type PublishStoryBuildInput,
   type StoryFilmBuildAssetParams,
   type StoryFilmBuildParams,
   type StoryProjectIdParams,
 } from './dto';
 import { StoryFilmBuildService } from './story-film-build.service';
+import { StoryExperienceReleaseService } from './story-experience-release.service';
 
 @Controller('story-projects')
 export class StoryFilmBuildController {
-  constructor(private readonly builds: StoryFilmBuildService) {}
+  constructor(
+    private readonly builds: StoryFilmBuildService,
+    private readonly releases: StoryExperienceReleaseService,
+  ) {}
 
   @Post(':projectId/builds')
   @HttpCode(HttpStatus.CREATED)
@@ -137,6 +143,32 @@ export class StoryFilmBuildController {
         params.projectId,
         params.buildId,
         body,
+      ),
+    };
+  }
+
+  @Post(':projectId/builds/:buildId/publish')
+  @HttpCode(HttpStatus.OK)
+  async publishBuild(
+    @CurrentUser() user: AuthUser,
+    @Headers('x-fizz-workspace-id')
+    workspaceHeader: string | string[] | undefined,
+    @Headers('cookie') cookie: string | undefined,
+    @Headers('authorization') authorization: string | undefined,
+    @Param(new ZodValidationPipe(StoryFilmBuildParamsSchema))
+    params: StoryFilmBuildParams,
+    @Body(new ZodValidationPipe(PublishStoryBuildSchema))
+    body: PublishStoryBuildInput,
+  ) {
+    return {
+      code: 200,
+      data: await this.releases.publishBuild(
+        user,
+        requiredWorkspaceId(workspaceHeader),
+        params.projectId,
+        params.buildId,
+        body,
+        { cookie, authorization },
       ),
     };
   }

@@ -2438,52 +2438,53 @@
     },
     "build": {
       "title": "构建与试玩",
-      "subtitle": "把已锁定的故事图和当前视频编译成不可变预览构建，再用完全冻结的 Runtime 试玩每一条分支。",
+      "subtitle": "把已锁定的故事版本和当前视频编译为不可变生产清单；只有这一精确产物可以提交给 Java 发布。",
       "buildNumber": "构建 {number}",
-      "activeBuild": "构建 {number} 仍在编译中。",
       "actions": {
-        "createPreview": "创建预览构建",
+        "createProduction": "创建生产构建",
         "creating": "正在创建构建…",
-        "refresh": "刷新构建",
-        "cancel": "取消构建",
-        "retry": "重试"
+        "editStory": "编辑故事",
+        "publish": "发布",
+        "publishing": "正在发布…",
+        "refresh": "刷新构建"
       },
       "permissions": {
         "build": "你在该项目中的角色没有构建权限。",
-        "edit": "你在该项目中的角色不能锁定生产版本。"
+        "release": "你在该项目中的角色没有发布权限。"
       },
       "notifications": {
-        "created": "预览构建已创建。",
+        "created": "生产构建已创建。",
         "validationFailed": "构建发现生产阻塞项，请查看诊断。",
-        "cancelled": "构建已取消。",
-        "revisionLocked": "生产版本已锁定。"
+        "revisionLocked": "生产版本已锁定。",
+        "published": "这个生产构建已成为当前发布版本。"
       },
       "errors": {
         "revisionRequired": "创建构建前请先锁定生产版本。",
-        "create": "无法创建预览构建。",
-        "cancel": "无法取消该构建。",
+        "create": "无法创建生产构建。",
         "list": "无法载入构建历史。",
         "detail": "无法载入所选构建。",
         "lockRevision": "无法锁定生产版本。",
-        "revisionState": "锁定版本与当前草稿的状态不一致，请刷新项目后再构建。",
+        "publish": "无法发布这个生产构建。",
         "runtimeUnavailable": "这个冻结 Runtime 当前不可用。请查看构建诊断；所有资产满足当前生命周期与审核策略前，媒体会保持不可访问。"
+      },
+      "publication": {
+        "current": "已发布版本 {version} · 打开清单"
+      },
+      "publishDialog": {
+        "title": "发布这个生产 Build？",
+        "description": "Java 将原样保存这份不可变 Manifest，并把它设为玩家端当前版本。发布后不会修改 Build 本身。",
+        "cancel": "取消",
+        "confirm": "发布为当前版本"
       },
       "lockRevision": {
         "title": "锁定生产版本",
         "description": "构建必须指向不可变的故事版本。锁定已保存草稿后，系统会物化镜头和 Runtime 生产规范。",
         "action": "锁定生产版本",
-        "locking": "正在锁定…",
-        "root": "故事根节点"
+        "locking": "正在锁定…"
       },
       "revisionBasis": {
         "currentTitle": "正在基于锁定版本 {number} 构建",
-        "currentDescription": "新的预览构建会明确使用锁定版本 {number}；它来自草稿 r{sourceRevision}，当前可编辑草稿没有更新的改动。",
-        "draftAheadTitle": "草稿有更新",
-        "draftAheadDescription": "新的预览构建仍会使用锁定版本 {number}，它来自草稿 r{sourceRevision}。当前草稿已更新至 r{draftRevision}；如需包含这些改动，请将当前草稿锁定为新的生产版本。",
-        "inconsistentTitle": "版本状态不一致",
-        "inconsistentDescription": "锁定版本 {number} 来自草稿 r{sourceRevision}，但当前草稿显示为 r{draftRevision}。刷新项目状态前不可构建。",
-        "action": "锁定当前草稿",
-        "locking": "正在锁定当前草稿…"
+        "currentDescription": "新的生产构建会使用锁定版本 {number}；它来自草稿 r{sourceRevision}，当前可编辑草稿没有更新的改动。"
       },
       "missingFilm": {
         "title": "生产规范不可用",
@@ -2492,7 +2493,7 @@
       "history": {
         "title": "构建历史",
         "count": "{count} 个构建",
-        "empty": "尚未创建预览构建。",
+        "empty": "尚未创建生产构建。",
         "errors": "{count} 个错误"
       },
       "profile": {
@@ -2500,9 +2501,7 @@
         "production": "生产"
       },
       "scope": {
-        "full": "完整故事图",
-        "subgraph": "从 {entryClipId} 开始的子图 · 深度 {maxDepth}",
-        "unbounded": "不限"
+        "full": "完整故事图"
       },
       "status": {
         "queued": "已排队",
@@ -2513,17 +2512,15 @@
         "cancelled": "已取消"
       },
       "detail": {
-        "identity": "生产状态 r{revision} · {profile} · {scope}",
-        "polling": "构建活动期间，本页面会自动更新。"
+        "identity": "生产状态 r{revision} · {profile} · {scope}"
       },
       "empty": {
         "title": "编译第一个可试玩构建",
-        "description": "预览构建会校验所有可达路线、冻结已批准媒体，并生成本试玩所使用的 Runtime。"
+        "description": "生产构建会校验所有可达路线、冻结精确媒体变体，并生成用于发布的不可变 Runtime Manifest。"
       },
       "pathReport": {
         "title": "路径覆盖",
         "description": "构建编译器从入口开始进行确定性故事图遍历。",
-        "duration": "每条路径 {min}–{max}",
         "paths": "已枚举路径",
         "endings": "可达结局",
         "ambiguous": "歧义路径",
@@ -2532,23 +2529,12 @@
       "diagnostics": {
         "title": "构建诊断",
         "summary": "{errors} 个错误 · {warnings} 个警告",
-        "error": "{count} 个阻塞错误",
-        "warning": "{count} 个警告",
         "cleanTitle": "构建校验通过",
         "cleanDescription": "编译器未发现阻塞错误或警告。"
       },
-      "entity": {
-        "revision": "版本",
-        "clip": "镜头",
-        "reference": "参考",
-        "generation": "生成任务",
-        "choice": "选择",
-        "ending": "结局",
-        "asset": "资产"
-      },
       "playtest": {
         "title": "互动试玩",
-        "description": "只运行这个冻结的预览清单，不会创建任何生成任务。"
+        "description": "只运行这个精确冻结的生产清单，不会创建生成任务，也不会读取可变草稿数据。"
       },
       "assets": {
         "title": "冻结构建资产",
@@ -2557,20 +2543,13 @@
       "player": {
         "invalidManifest": "Runtime 清单无效",
         "manifestRoot": "清单根节点",
-        "routerHops": "已解析 {count} 个路由节点",
-        "localeFallback": "当前显示已创作的 {locale} 文案",
         "restart": "重新开始",
-        "play": "播放",
         "regionLabel": "互动影游试玩",
-        "playbackPaused": "需要确认后才能继续播放",
         "videoLabel": "画面 {nodeId} 的故事视频",
-        "reactionVideoLabel": "画面 {nodeId} 的选择反馈视频",
-        "imageAlt": "互动故事画面",
         "checkpoint": {
           "prompt": "准备好进入下一幕了吗？",
           "description": "准备好后继续。",
-          "continue": "继续",
-          "actionLabel": "继续进入下一个故事镜头"
+          "continue": "继续"
         },
         "noVisibleChoices": "当前故事状态下没有可用选择。",
         "endingEyebrow": "抵达结局",
@@ -2578,19 +2557,7 @@
         "playAgain": "再玩一次",
         "errors": {
           "runtimeTitle": "试玩无法继续",
-          "UNKNOWN_NODE": "Runtime 节点 {nodeId} 不存在。",
-          "NO_MATCHING_ROUTE": "路由节点 {nodeId} 在当前故事状态下没有可用路线。",
-          "ROUTER_CYCLE": "路由节点 {nodeId} 形成了无法抵达画面的循环。",
-          "routerNotResolved": "当前 Runtime 节点未能解析为可播放画面。",
-          "noRoute": "画面 {nodeId} 没有匹配的自动路线。",
-          "checkpointContract": "画面 {nodeId} 的内置继续确认动作无效。",
-          "externalOverlay": "内部试玩尚未安装扩展渲染器 {rendererId}。",
-          "sequence": "画面 {nodeId} 引用了无效的视频序列。",
-          "mediaTitle": "预览媒体不可用",
-          "media": "无法播放冻结媒体资产 {assetId}。",
-          "unknownAsset": "未知",
-          "extensionTitle": "该画面需要扩展渲染器",
-          "extension": "本次试玩未安装渲染器 {rendererId}。"
+          "media": "无法播放冻结媒体资产 {assetId}。"
         }
       }
     }

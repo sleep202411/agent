@@ -648,7 +648,10 @@ describe('StoryFilmBuildController', () => {
   it('forwards revision, CAS, workspace, and Idempotency-Key to Build creation', async () => {
     const build = { id: BUILD_ID, status: 'failed' };
     const service = { createBuild: jest.fn().mockResolvedValue(build) };
-    const controller = new StoryFilmBuildController(service as never);
+    const controller = new StoryFilmBuildController(
+      service as never,
+      {} as never,
+    );
     const body = {
       revisionId: REVISION_ID,
       expectedProductionRevision: 3,
@@ -685,7 +688,10 @@ describe('StoryFilmBuildController', () => {
       setHeader: jest.fn(),
       redirect: jest.fn().mockReturnValue('redirected'),
     };
-    const controller = new StoryFilmBuildController(service as never);
+    const controller = new StoryFilmBuildController(
+      service as never,
+      {} as never,
+    );
 
     await expect(
       controller.redirectToBuildAsset(
@@ -713,6 +719,43 @@ describe('StoryFilmBuildController', () => {
     expect(response.redirect).toHaveBeenCalledWith(
       302,
       'https://signed.example.test/video.mp4?expires=300',
+    );
+  });
+
+  it('publishes an exact Build through the release boundary with caller auth', async () => {
+    const release = {
+      gameId: 'jinling',
+      contentVersion: `build:${BUILD_ID}`,
+      status: 'published',
+      manifestUrl: 'https://media.example.test/jinling/manifest.json',
+    };
+    const releases = { publishBuild: jest.fn().mockResolvedValue(release) };
+    const controller = new StoryFilmBuildController(
+      {} as never,
+      releases as never,
+    );
+    const body = { status: 'published' as const, setCurrent: true };
+
+    await expect(
+      controller.publishBuild(
+        USER as never,
+        WORKSPACE_ID,
+        'satoken=test-session',
+        'Bearer test-token',
+        { projectId: PROJECT_ID, buildId: BUILD_ID },
+        body,
+      ),
+    ).resolves.toEqual({ code: 200, data: release });
+    expect(releases.publishBuild).toHaveBeenCalledWith(
+      USER,
+      WORKSPACE_ID,
+      PROJECT_ID,
+      BUILD_ID,
+      body,
+      {
+        cookie: 'satoken=test-session',
+        authorization: 'Bearer test-token',
+      },
     );
   });
 });
@@ -982,6 +1025,12 @@ describe('StoryFilmBuildService direct current-video compilation', () => {
         scope: { kind: 'full' },
       },
       {
+        project: {
+          id: PROJECT_ID,
+          title: 'Build manifest test',
+          summary: null,
+          defaultLocale: 'en-US',
+        },
         revision: {
           id: REVISION_ID,
           number: 2,
@@ -1165,6 +1214,40 @@ describe('StoryFilmBuildService media delivery policy', () => {
     };
   }
 
+  function readyV2BuildRow() {
+    const row = readyBuildRow();
+    return {
+      ...row,
+      runtimeSchemaVersion: 2,
+      runtimeJson: {
+        manifestType: 'fizzdragon.experience',
+        schemaVersion: 2,
+        assets: [
+          {
+            assetId: 'video:S01',
+            kind: 'video',
+            variants: [
+              {
+                variantId: VARIANT_ID,
+                uri: storyBuildAssetDeliveryPath(
+                  PROJECT_ID,
+                  BUILD_ID,
+                  ASSET_ID,
+                  VARIANT_ID,
+                ),
+              },
+            ],
+          },
+          {
+            assetId: 'theme:core.film-dark:1',
+            kind: 'data',
+            uri: '/experience-runtime/themes/core.film-dark.v1.json',
+          },
+        ],
+      },
+    };
+  }
+
   it('applies approval-required moderation to shared Build compilation', () => {
     expect(
       storyBuildModerationDiagnostics(
@@ -1302,6 +1385,71 @@ describe('StoryFilmBuildService media delivery policy', () => {
     const service = new StoryFilmBuildService(
       prisma as never,
       permissions as never,
+      {} as never,
+    );
+
+    const detail = await service.getBuild(
+      USER as never,
+      WORKSPACE_ID,
+      PROJECT_ID,
+      BUILD_ID,
+    );
+
+    expect(detail.runtimeJson).toBeNull();
+    expect(detail.diagnostics).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: 'STORY_BUILD_RUNTIME_DELIVERY_UNSAFE',
+        }),
+      ]),
+    );
+  });
+
+  it('exposes v2 runtimes whose frozen visual assets use authenticated Build delivery', async () => {
+    const row = readyV2BuildRow();
+    const service = new StoryFilmBuildService(
+      {
+        storyBuild: { findFirst: jest.fn().mockResolvedValue(row) },
+      } as never,
+      {
+        requireProject: jest.fn().mockResolvedValue({
+          project: { workspaceId: WORKSPACE_ID },
+        }),
+      } as never,
+      {} as never,
+    );
+
+    const detail = await service.getBuild(
+      USER as never,
+      WORKSPACE_ID,
+      PROJECT_ID,
+      BUILD_ID,
+    );
+
+    expect(detail.runtimeSchemaVersion).toBe(2);
+    expect(detail.runtimeJson).toEqual(row.runtimeJson);
+    expect(detail.diagnostics).not.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: 'STORY_BUILD_RUNTIME_DELIVERY_UNSAFE',
+        }),
+      ]),
+    );
+  });
+
+  it('withholds v2 runtimes when a visual asset bypasses authenticated Build delivery', async () => {
+    const row = readyV2BuildRow();
+    row.runtimeJson.assets[0].variants[0].uri =
+      'https://cdn.example.test/permanent-current-video.mp4';
+    const service = new StoryFilmBuildService(
+      {
+        storyBuild: { findFirst: jest.fn().mockResolvedValue(row) },
+      } as never,
+      {
+        requireProject: jest.fn().mockResolvedValue({
+          project: { workspaceId: WORKSPACE_ID },
+        }),
+      } as never,
       {} as never,
     );
 

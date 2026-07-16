@@ -2438,52 +2438,53 @@
     },
     "build": {
       "title": "構建與試玩",
-      "subtitle": "把已鎖定的故事圖和目前影片編譯成不可變預覽構建，再用完全凍結的 Runtime 試玩每一條分支。",
+      "subtitle": "把已鎖定的故事版本和目前影片編譯為不可變生產清單；只有這一精確產物可以提交給 Java 發佈。",
       "buildNumber": "構建 {number}",
-      "activeBuild": "構建 {number} 仍在編譯中。",
       "actions": {
-        "createPreview": "建立預覽構建",
+        "createProduction": "建立生產構建",
         "creating": "正在建立構建…",
-        "refresh": "重新整理構建",
-        "cancel": "取消構建",
-        "retry": "重試"
+        "editStory": "編輯故事",
+        "publish": "發佈",
+        "publishing": "正在發佈…",
+        "refresh": "重新整理構建"
       },
       "permissions": {
         "build": "你在該專案中的角色沒有構建權限。",
-        "edit": "你在該專案中的角色不能鎖定生產版本。"
+        "release": "你在該專案中的角色沒有發佈權限。"
       },
       "notifications": {
-        "created": "預覽構建已建立。",
+        "created": "生產構建已建立。",
         "validationFailed": "構建發現生產阻塞項，請查看診斷。",
-        "cancelled": "構建已取消。",
-        "revisionLocked": "生產版本已鎖定。"
+        "revisionLocked": "生產版本已鎖定。",
+        "published": "這個生產構建已成為目前發佈版本。"
       },
       "errors": {
         "revisionRequired": "建立構建前請先鎖定生產版本。",
-        "create": "無法建立預覽構建。",
-        "cancel": "無法取消該構建。",
+        "create": "無法建立生產構建。",
         "list": "無法載入構建歷史。",
         "detail": "無法載入所選構建。",
         "lockRevision": "無法鎖定生產版本。",
-        "revisionState": "鎖定版本與目前草稿的狀態不一致，請重新整理專案後再構建。",
+        "publish": "無法發佈這個生產構建。",
         "runtimeUnavailable": "這個凍結 Runtime 目前不可用。請查看構建診斷；所有資產符合目前生命週期與審核策略前，媒體會保持無法存取。"
+      },
+      "publication": {
+        "current": "已發佈版本 {version} · 開啟清單"
+      },
+      "publishDialog": {
+        "title": "發佈這個生產 Build？",
+        "description": "Java 將原樣保存這份不可變 Manifest，並把它設為玩家端目前版本。發佈後不會修改 Build 本身。",
+        "cancel": "取消",
+        "confirm": "發佈為目前版本"
       },
       "lockRevision": {
         "title": "鎖定生產版本",
         "description": "構建必須指向不可變的故事版本。鎖定已儲存草稿後，系統會物化鏡頭和 Runtime 生產規格。",
         "action": "鎖定生產版本",
-        "locking": "正在鎖定…",
-        "root": "故事根節點"
+        "locking": "正在鎖定…"
       },
       "revisionBasis": {
         "currentTitle": "正在基於鎖定版本 {number} 構建",
-        "currentDescription": "新的預覽構建會明確使用鎖定版本 {number}；它來自草稿 r{sourceRevision}，目前可編輯草稿沒有更新的改動。",
-        "draftAheadTitle": "草稿有更新",
-        "draftAheadDescription": "新的預覽構建仍會使用鎖定版本 {number}，它來自草稿 r{sourceRevision}。目前草稿已更新至 r{draftRevision}；如需包含這些改動，請將目前草稿鎖定為新的生產版本。",
-        "inconsistentTitle": "版本狀態不一致",
-        "inconsistentDescription": "鎖定版本 {number} 來自草稿 r{sourceRevision}，但目前草稿顯示為 r{draftRevision}。重新整理專案狀態前不可構建。",
-        "action": "鎖定目前草稿",
-        "locking": "正在鎖定目前草稿…"
+        "currentDescription": "新的生產構建會使用鎖定版本 {number}；它來自草稿 r{sourceRevision}，目前可編輯草稿沒有更新的改動。"
       },
       "missingFilm": {
         "title": "生產規格不可用",
@@ -2492,7 +2493,7 @@
       "history": {
         "title": "構建歷史",
         "count": "{count} 個構建",
-        "empty": "尚未建立預覽構建。",
+        "empty": "尚未建立生產構建。",
         "errors": "{count} 個錯誤"
       },
       "profile": {
@@ -2500,9 +2501,7 @@
         "production": "生產"
       },
       "scope": {
-        "full": "完整故事圖",
-        "subgraph": "從 {entryClipId} 開始的子圖 · 深度 {maxDepth}",
-        "unbounded": "不限"
+        "full": "完整故事圖"
       },
       "status": {
         "queued": "已排隊",
@@ -2513,17 +2512,15 @@
         "cancelled": "已取消"
       },
       "detail": {
-        "identity": "生產狀態 r{revision} · {profile} · {scope}",
-        "polling": "構建活動期間，本頁面會自動更新。"
+        "identity": "生產狀態 r{revision} · {profile} · {scope}"
       },
       "empty": {
         "title": "編譯第一個可試玩構建",
-        "description": "預覽構建會校驗所有可達路線、凍結已批准媒體，並生成本次試玩所使用的 Runtime。"
+        "description": "生產構建會校驗所有可達路線、凍結精確媒體變體，並生成用於發佈的不可變 Runtime Manifest。"
       },
       "pathReport": {
         "title": "路徑覆蓋",
         "description": "構建編譯器從入口開始進行確定性故事圖遍歷。",
-        "duration": "每條路徑 {min}–{max}",
         "paths": "已枚舉路徑",
         "endings": "可達結局",
         "ambiguous": "歧義路徑",
@@ -2532,23 +2529,12 @@
       "diagnostics": {
         "title": "構建診斷",
         "summary": "{errors} 個錯誤 · {warnings} 個警告",
-        "error": "{count} 個阻塞錯誤",
-        "warning": "{count} 個警告",
         "cleanTitle": "構建校驗通過",
         "cleanDescription": "編譯器未發現阻塞錯誤或警告。"
       },
-      "entity": {
-        "revision": "版本",
-        "clip": "鏡頭",
-        "reference": "參考",
-        "generation": "生成工作",
-        "choice": "選擇",
-        "ending": "結局",
-        "asset": "資產"
-      },
       "playtest": {
         "title": "互動試玩",
-        "description": "只運行這個凍結的預覽清單，不會建立任何生成任務。"
+        "description": "只運行這個精確凍結的生產清單，不會建立生成任務，也不會讀取可變草稿資料。"
       },
       "assets": {
         "title": "凍結構建資產",
@@ -2557,20 +2543,13 @@
       "player": {
         "invalidManifest": "Runtime 清單無效",
         "manifestRoot": "清單根節點",
-        "routerHops": "已解析 {count} 個路由節點",
-        "localeFallback": "目前顯示已創作的 {locale} 文案",
         "restart": "重新開始",
-        "play": "播放",
         "regionLabel": "互動影遊試玩",
-        "playbackPaused": "需要確認後才能繼續播放",
         "videoLabel": "畫面 {nodeId} 的故事影片",
-        "reactionVideoLabel": "畫面 {nodeId} 的選擇回應影片",
-        "imageAlt": "互動故事畫面",
         "checkpoint": {
           "prompt": "準備好進入下一幕了嗎？",
           "description": "準備好後繼續。",
-          "continue": "繼續",
-          "actionLabel": "繼續進入下一個故事鏡頭"
+          "continue": "繼續"
         },
         "noVisibleChoices": "目前故事狀態下沒有可用選擇。",
         "endingEyebrow": "抵達結局",
@@ -2578,19 +2557,7 @@
         "playAgain": "再玩一次",
         "errors": {
           "runtimeTitle": "試玩無法繼續",
-          "UNKNOWN_NODE": "Runtime 節點 {nodeId} 不存在。",
-          "NO_MATCHING_ROUTE": "路由節點 {nodeId} 在目前故事狀態下沒有可用路線。",
-          "ROUTER_CYCLE": "路由節點 {nodeId} 形成了無法抵達畫面的循環。",
-          "routerNotResolved": "目前 Runtime 節點未能解析為可播放畫面。",
-          "noRoute": "畫面 {nodeId} 沒有符合的自動路線。",
-          "checkpointContract": "畫面 {nodeId} 的內置繼續確認動作無效。",
-          "externalOverlay": "內部試玩尚未安裝擴展渲染器 {rendererId}。",
-          "sequence": "畫面 {nodeId} 引用了無效的影片序列。",
-          "mediaTitle": "預覽媒體不可用",
-          "media": "無法播放凍結媒體資產 {assetId}。",
-          "unknownAsset": "未知",
-          "extensionTitle": "該畫面需要擴展渲染器",
-          "extension": "本次試玩未安裝渲染器 {rendererId}。"
+          "media": "無法播放凍結媒體資產 {assetId}。"
         }
       }
     }

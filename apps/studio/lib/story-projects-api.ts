@@ -5,7 +5,7 @@ import { api, ApiRequestError } from "@/lib/api";
  *
  * StoryProject is a sovereign project root. It is scoped to the active
  * workspace by the API client's x-fizz-workspace-id header and never borrows a
- * PlatformProject id. Mutable drafts use revision CAS; generation and release
+ * PlatformProject id. Mutable drafts use revision CAS; generation and Build
  * records capture server-owned immutable input snapshots automatically.
  */
 
@@ -82,17 +82,6 @@ export interface StoryRevisionSummary {
   createdAt: string;
 }
 
-export interface StoryDeployment {
-  environment: "preview" | "production";
-  releaseId: string;
-  status: "active" | "offline";
-  version: number;
-  deployedByUserId: string | null;
-  deployedAt: string | null;
-  offlinedByUserId: string | null;
-  offlinedAt: string | null;
-}
-
 export interface StoryProjectProductionSummary {
   referenceSlotCount: number;
   approvedReferenceCount: number;
@@ -125,8 +114,6 @@ export interface StoryProjectSummary {
   projectVersion: number;
   draftRevision: number;
   activeRevision: StoryRevisionSummary | null;
-  publishRevision: number;
-  deployments: StoryDeployment[];
   production: StoryProjectProductionSummary;
   capabilities: StoryCapability[];
   createdAt: string;
@@ -638,7 +625,7 @@ export interface FilmBuild {
   sourceProductionRevision: number;
   inputHash: string;
   inputManifestHash: string;
-  runtimeSchemaVersion: 1;
+  runtimeSchemaVersion: 1 | 2;
   runtimeJson: Record<string, unknown> | null;
   runtimeHash: string | null;
   assets: FilmBuildAsset[];
@@ -647,6 +634,13 @@ export interface FilmBuild {
   createdByUserId: string;
   createdAt: string;
   completedAt: string | null;
+}
+
+export interface ExperienceReleaseResult {
+  gameId: string;
+  contentVersion: string;
+  status: "published" | "draft";
+  manifestUrl: string;
 }
 
 /**
@@ -658,6 +652,7 @@ export interface FilmBuild {
 export interface StoryWorkingPreview {
   draftRevision: number;
   contentHash: string;
+  runtimeSchemaVersion: 2;
   runtime: Record<string, unknown> | null;
   diagnostics: FilmBuildDiagnostic[];
   pathReport: FilmBuildPathReport | null;
@@ -895,6 +890,23 @@ export async function putStoryDraft(
   });
 }
 
+export async function lockStoryRevision(
+  workspaceId: string,
+  projectId: string,
+  input: {
+    expectedDraftRevision: number;
+    label?: string;
+  }
+): Promise<StoryRevision> {
+  return api.post<StoryRevision>(
+    `/aurora/story-projects/${encodeURIComponent(projectId)}/revisions/lock`,
+    {
+      data: { ...input, source: "creator" },
+      headers: storyWorkspaceHeaders(workspaceId),
+    }
+  );
+}
+
 export async function listFilmBuilds(
   workspaceId: string,
   projectId: string,
@@ -946,6 +958,18 @@ export async function cancelFilmBuild(
 ): Promise<FilmBuild> {
   return api.post<FilmBuild>(
     `/aurora/story-projects/${encodeURIComponent(projectId)}/builds/${encodeURIComponent(buildId)}/cancel`,
+    { data: input, headers: storyWorkspaceHeaders(workspaceId) }
+  );
+}
+
+export async function publishFilmBuild(
+  workspaceId: string,
+  projectId: string,
+  buildId: string,
+  input: { status: "published" | "draft"; setCurrent: boolean }
+): Promise<ExperienceReleaseResult> {
+  return api.post<ExperienceReleaseResult>(
+    `/aurora/story-projects/${encodeURIComponent(projectId)}/builds/${encodeURIComponent(buildId)}/publish`,
     { data: input, headers: storyWorkspaceHeaders(workspaceId) }
   );
 }

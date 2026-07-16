@@ -20,7 +20,12 @@ import {
   type StoryWorkingPreviewDto,
 } from './dto';
 import {
+  compileStoryExperienceManifest,
+  type StoryExperienceMediaIdentity,
+} from './story-experience-manifest-compiler';
+import {
   compileStoryFilmBuild,
+  storyFilmRuntimeAssetId,
   type FrozenFilmClipAsset,
   type StoryFilmBuildClipInput,
 } from './story-film-build-compiler';
@@ -87,6 +92,8 @@ export class StoryWorkingPreviewService {
       workspaceId: string;
       frameProfile: 'landscape_16_9' | 'portrait_9_16';
       defaultLocale: string;
+      title: string;
+      summary: string | null;
     },
     projectId: string,
     expectedDraftRevision: number,
@@ -125,6 +132,7 @@ export class StoryWorkingPreviewService {
       return {
         draftRevision: draft.revision,
         contentHash: draft.contentHash,
+        runtimeSchemaVersion: 2,
         runtime: null,
         diagnostics: playableDraft.error.issues.map((issue) =>
           previewDiagnostic(
@@ -148,6 +156,7 @@ export class StoryWorkingPreviewService {
       return {
         draftRevision: draft.revision,
         contentHash: draft.contentHash,
+        runtimeSchemaVersion: 2,
         runtime: null,
         diagnostics: [
           previewDiagnostic(
@@ -175,6 +184,7 @@ export class StoryWorkingPreviewService {
       return {
         draftRevision: draft.revision,
         contentHash: draft.contentHash,
+        runtimeSchemaVersion: 2,
         runtime: null,
         diagnostics: [
           previewDiagnostic(
@@ -239,20 +249,55 @@ export class StoryWorkingPreviewService {
       projectId,
       revisionId: projectId,
       revisionNumber: draft.revision,
-      buildId: projectId,
+      buildId: `preview:${projectId}:draft:${draft.revision}`,
       profile: 'preview',
       scope: { kind: 'full' },
       draft: playableDraft.data,
       filmSpec: projection.filmSpec,
       clips: selections.map((selection) => selection.input),
     });
+    const mediaIdentities = selections.flatMap((selection) => {
+      const asset = selection.input.asset;
+      if (!asset) return [];
+      return [
+        {
+          runtimeAssetId: storyFilmRuntimeAssetId(selection.input),
+          variantId: asset.variantId,
+          mediaType: asset.contentType,
+        } satisfies StoryExperienceMediaIdentity,
+      ];
+    });
+    const experience = compiled.runtime
+      ? compileStoryExperienceManifest({
+          release: compiled.runtime,
+          metadata: {
+            title: project.title,
+            summary:
+              project.summary?.trim() || playableDraft.data.storyBible.logline,
+          },
+          stateVariables: playableDraft.data.storyBible.stateVariables,
+          mediaIdentities,
+        })
+      : null;
     return {
       draftRevision: draft.revision,
       contentHash: draft.contentHash,
-      runtime: compiled.runtime
-        ? (compiled.runtime as unknown as Record<string, unknown>)
+      runtimeSchemaVersion: 2,
+      runtime: experience?.manifest
+        ? (experience.manifest as Record<string, unknown>)
         : null,
-      diagnostics: compiled.diagnostics,
+      diagnostics: [
+        ...compiled.diagnostics,
+        ...(experience?.diagnostics.map((diagnostic) =>
+          previewDiagnostic(
+            'error',
+            diagnostic.code,
+            diagnostic.message,
+            'revision',
+            projectId,
+          ),
+        ) ?? []),
+      ],
       pathReport: compiled.pathReport,
       sources: selections.flatMap((selection) =>
         selection.source ? [selection.source] : [],

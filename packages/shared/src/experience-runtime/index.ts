@@ -6,6 +6,7 @@ export * from "./spatial.js";
 export * from "./audio.js";
 export * from "./theme.js";
 export * from "./renderer.js";
+export * from "./core-renderers.js";
 export * from "./scene.js";
 export * from "./manifest.js";
 export * from "./integrity.js";

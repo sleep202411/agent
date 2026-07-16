@@ -48,6 +48,8 @@ function scopedService(
         workspaceId: WORKSPACE_ID,
         frameProfile: 'landscape_16_9',
         defaultLocale: 'zh-CN',
+        title: 'Hu Bao Villa',
+        summary: 'A branching interactive film.',
       },
     }),
   };
@@ -91,6 +93,7 @@ describe('StoryWorkingPreviewService', () => {
       service.getWorkingPreview(USER as never, WORKSPACE_ID, PROJECT_ID, 9),
     ).resolves.toMatchObject({
       draftRevision: 9,
+      runtimeSchemaVersion: 2,
       runtime: null,
       pathReport: null,
       diagnostics: [
@@ -180,8 +183,11 @@ describe('StoryWorkingPreviewService', () => {
     expect(preview.draftRevision).toBe(9);
     expect(preview.contentHash).toBe(contentHash);
     expect(preview.runtime).toMatchObject({
+      manifestType: 'fizzdragon.experience',
+      schemaVersion: 2,
       gameId: PROJECT_ID,
-      releaseId: PROJECT_ID,
+      buildId: `preview:${PROJECT_ID}:draft:9`,
+      contentVersion: `build:preview:${PROJECT_ID}:draft:9`,
     });
     expect(preview.pathReport).toMatchObject({
       reachableEndingIds: ['E01', 'E02', 'E03', 'E04'],
@@ -226,9 +232,12 @@ describe('StoryWorkingPreviewController', () => {
   it('forwards the current project and Workspace scope', async () => {
     const preview = {
       draftRevision: 9,
+      contentHash: 'a'.repeat(64),
+      runtimeSchemaVersion: 2,
       runtime: null,
       diagnostics: [],
       pathReport: null,
+      sources: [],
     };
     const service = { getWorkingPreview: jest.fn().mockResolvedValue(preview) };
     const controller = new StoryWorkingPreviewController(service as never);

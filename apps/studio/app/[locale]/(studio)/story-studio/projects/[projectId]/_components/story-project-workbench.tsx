@@ -122,6 +122,7 @@ export function StoryProjectWorkbench({
               projectId={projectId}
               workspaceId={workspaceId as string}
               workbench={authoringWorkbench}
+              onRefresh={() => workbenchQuery.refetch()}
             />
           ) : null}
         </div>

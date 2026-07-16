@@ -4,6 +4,8 @@ import { WorkspacesModule } from '../workspaces/workspaces.module';
 import { StorageModule } from '../infra/storage/storage.module';
 import { StoryFilmBuildController } from './story-film-build.controller';
 import { StoryFilmBuildService } from './story-film-build.service';
+import { StoryExperienceReleaseGateway } from './story-experience-release.gateway';
+import { StoryExperienceReleaseService } from './story-experience-release.service';
 import { StoryFilmProductionController } from './story-film-production.controller';
 import { StoryFilmProductionService } from './story-film-production.service';
 import { StoryFilmReferenceController } from './story-film-reference.controller';
@@ -36,6 +38,8 @@ import { StoryWorkingPreviewService } from './story-working-preview.service';
     StoryFilmReferenceService,
     StoryFilmTrailerProductionService,
     StoryFilmBuildService,
+    StoryExperienceReleaseGateway,
+    StoryExperienceReleaseService,
     StoryWorkingPreviewService,
     StoryPermissionService,
   ],

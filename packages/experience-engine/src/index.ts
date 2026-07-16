@@ -4,5 +4,6 @@ export * from "./spatial.js";
 export * from "./gestures.js";
 export * from "./compatibility.js";
 export * from "./renderer-registry.js";
+export * from "./core-renderer-adapters.js";
 export * from "./audio-runtime.js";
 export * from "./controller.js";

@@ -10,8 +10,6 @@ import {
   AiControlPlaneStatus,
   AiJobType,
   Prisma,
-  StoryDeploymentEnvironment,
-  StoryDeploymentStatus,
   StoryFilmFrameMode,
   StoryFilmGenerationAttemptStatus,
   StoryFilmGenerationMode,
@@ -58,7 +56,6 @@ import {
   type PutStoryDraftInput,
   type StoryCapability,
   type StoryCanvasLayoutDto,
-  type StoryDeploymentDto,
   type StoryDraftDto,
   type StoryProjectListQuery,
   type StoryProjectSummaryDto,
@@ -89,7 +86,6 @@ const PROJECT_SUMMARY_INCLUDE = Prisma.validator<Prisma.StoryProjectInclude>()({
   },
   draft: { select: { revision: true, contentHash: true, content: true } },
   revisions: { orderBy: [{ number: 'desc' }, { id: 'desc' }], take: 1 },
-  deployments: { orderBy: { environment: 'asc' } },
   members: {
     where: {
       status: StoryProjectMemberStatus.active,
@@ -448,22 +444,6 @@ export class StoryProjectsService {
       projectId,
       'story.admin',
     );
-    const production = await this.prisma.storyDeployment.findFirst({
-      where: {
-        storyProjectId: projectId,
-        environment: StoryDeploymentEnvironment.production,
-        status: StoryDeploymentStatus.active,
-      },
-      select: { releaseId: true },
-    });
-    if (production) {
-      throw new ConflictException({
-        code: 'STORY_PRODUCTION_ACTIVE',
-        message: 'Take the production deployment offline before archiving.',
-        releaseId: production.releaseId,
-      });
-    }
-
     const updated = await this.prisma.storyProject.updateMany({
       where: {
         id: projectId,
@@ -1377,8 +1357,6 @@ export class StoryProjectsService {
       activeRevision: row.revisions[0]
         ? this.toRevisionSummary(row.revisions[0])
         : null,
-      publishRevision: row.publishRevision,
-      deployments: row.deployments.map(toDeployment),
       production: {
         referenceSlotCount: references.length,
         approvedReferenceCount,
@@ -1896,28 +1874,6 @@ function toVideoGenerationDto(
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
     completedAt: row.completedAt?.toISOString() ?? null,
-  };
-}
-
-function toDeployment(row: {
-  environment: StoryDeploymentDto['environment'];
-  releaseId: string;
-  status: StoryDeploymentDto['status'];
-  version: number;
-  deployedByUserId: string;
-  deployedAt: Date;
-  offlineByUserId: string | null;
-  offlineAt: Date | null;
-}): StoryDeploymentDto {
-  return {
-    environment: row.environment,
-    releaseId: row.releaseId,
-    status: row.status,
-    version: row.version,
-    deployedByUserId: row.deployedByUserId,
-    deployedAt: row.deployedAt.toISOString(),
-    offlinedByUserId: row.offlineByUserId,
-    offlinedAt: row.offlineAt?.toISOString() ?? null,
   };
 }
 
