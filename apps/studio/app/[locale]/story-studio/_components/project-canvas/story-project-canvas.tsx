@@ -117,6 +117,7 @@ import {
 import { createConnectedClipForBlankDrop } from "./story-project-canvas-drop";
 import {
   addChoiceOption,
+  connectClipContinuation,
   connectAutoRoute,
   connectChoiceTarget,
   convertClipExitToCheckpoint,
@@ -146,6 +147,10 @@ import {
   updateAutoRouteTarget,
   updateEndingNode,
 } from "./story-project-canvas-mutations";
+import {
+  StoryConnectionCreator,
+  type StoryConnectionCreationKind,
+} from "./story-connection-creator";
 import { StoryNodeCreator, type StoryNodeCreationKind } from "./story-node-creator";
 import type { StoryReferenceBindingInput } from "./story-clip-reference-bindings-model";
 import { StoryNodeInspector } from "./story-node-inspector";
@@ -197,6 +202,12 @@ type StoryClipPreparationUiState = {
   attemptKey: string;
   status: "preparing" | "error";
   error: string | null;
+};
+type PendingCompletionDrop = {
+  sourceCanvasNodeId: string;
+  sourceHandleId: string;
+  clientPosition: { x: number; y: number };
+  flowPosition: StoryCanvasPosition;
 };
 
 const NODE_TYPES = { storyCanvas: StoryGraphNodeCard };
@@ -255,6 +266,9 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
   const [content, setContent] = useState<InteractiveFilmDraftContent | null>(null);
   const [focusedNodeId, setFocusedNodeId] = useState<string | null>(null);
   const [creatorOpen, setCreatorOpen] = useState(false);
+  const [pendingCompletionDrop, setPendingCompletionDrop] = useState<PendingCompletionDrop | null>(
+    null
+  );
   const [graphError, setGraphError] = useState<string | null>(null);
   const [saveState, setSaveState] = useState<SaveState>("idle");
   const [saveError, setSaveError] = useState<string | null>(null);
@@ -1686,12 +1700,6 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
       : null;
   const inspectorTrailerProduction = trailerUi?.composer ?? undefined;
   const authoringLocale = project?.defaultLocale ?? "en-US";
-  const selectedChoiceSourceId =
-    focusedNode?.data.kind === "decision"
-      ? focusedNode.data.sourceNodeId
-      : focusedNode?.data.kind === "clip"
-        ? focusedNode.data.nodeId
-        : undefined;
   const layeredCanvasNodes = useMemo(
     () =>
       canvasNodes.map((node) => {
@@ -1797,9 +1805,6 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
         const result = createEndingNode(content, { locale: authoringLocale });
         commitContent(result.content);
         selectCanvasNodeExclusively(syntheticEndingNodeId(result.created.id));
-      } else if (selectedChoiceSourceId) {
-        commitContent(convertClipExitToChoice(content, selectedChoiceSourceId, authoringLocale));
-        selectCanvasNodeExclusively(syntheticDecisionNodeId(selectedChoiceSourceId));
       }
       setGraphError(null);
     } catch {
@@ -1830,17 +1835,17 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
           authoringLocale
         ).content;
       }
-      if (
-        source.data.kind === "clip" &&
-        source.data.exitKind === "checkpoint" &&
-        connection.sourceHandle === "checkpoint"
-      ) {
-        return updateCheckpointTarget(current, source.data.nodeId, target.data.nodeId);
-      }
       if (target.data.kind === "ending" && target.data.endingId) {
         return convertClipExitToEnding(current, source.data.nodeId, target.data.endingId);
       }
-      const routeHandle = connection.sourceHandle?.match(/^(?:auto|route):(\d+)$/u);
+      if (
+        source.data.kind === "clip" &&
+        source.data.exitKind === "auto" &&
+        connection.sourceHandle === "completion"
+      ) {
+        return connectClipContinuation(current, source.data.nodeId, target.data.nodeId);
+      }
+      const routeHandle = connection.sourceHandle?.match(/^route:(\d+)$/u);
       if (routeHandle) {
         return updateAutoRouteTarget(
           current,
@@ -1872,17 +1877,33 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
     const source = model.nodes.find((node) => node.id === connectionState.fromNode?.id);
     const clientPosition = connectionDropClientPosition(event);
     if (!source || !clientPosition) return;
+    const sourceHandleId = connectionState.fromHandle.id ?? "";
+    const dropPosition = screenToFlowPosition(clientPosition);
+
+    if (
+      source.data.kind === "clip" &&
+      source.data.exitKind === "auto" &&
+      sourceHandleId === "completion"
+    ) {
+      setCreatorOpen(false);
+      setPendingCompletionDrop({
+        sourceCanvasNodeId: source.id,
+        sourceHandleId,
+        clientPosition,
+        flowPosition: dropPosition,
+      });
+      return;
+    }
 
     try {
       const created = createConnectedClipForBlankDrop(
         content,
         source.data,
-        connectionState.fromHandle.id ?? null,
+        sourceHandleId,
         authoringLocale
       );
       if (!created) return;
 
-      const dropPosition = screenToFlowPosition(clientPosition);
       pendingNodePositionsRef.current.set(created.createdNodeId, {
         // The newly-created clip's input handle lands beside the release
         // point instead of placing the whole card underneath the pointer.
@@ -1895,6 +1916,47 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
       setCreatorOpen(false);
     } catch {
       setGraphError(t("graphError.generic"));
+    }
+  };
+
+  const createCompletionStep = (kind: StoryConnectionCreationKind) => {
+    const pending = pendingCompletionDrop;
+    if (!pending || !content || !model || !canEdit) return;
+    const source = model.nodes.find((node) => node.id === pending.sourceCanvasNodeId);
+    if (!source || source.data.kind !== "clip" || source.data.exitKind !== "auto") {
+      setPendingCompletionDrop(null);
+      return;
+    }
+
+    try {
+      if (kind === "choice") {
+        const decisionNodeId = syntheticDecisionNodeId(source.data.nodeId);
+        pendingNodePositionsRef.current.set(decisionNodeId, {
+          x: pending.flowPosition.x + 18,
+          y: pending.flowPosition.y - 72,
+        });
+        commitContent(convertClipExitToChoice(content, source.data.nodeId, authoringLocale));
+        selectCanvasNodeExclusively(decisionNodeId);
+      } else {
+        const created = createConnectedClipForBlankDrop(
+          content,
+          source.data,
+          pending.sourceHandleId,
+          authoringLocale
+        );
+        if (!created) return;
+        pendingNodePositionsRef.current.set(created.createdNodeId, {
+          x: pending.flowPosition.x + 18,
+          y: pending.flowPosition.y - 108,
+        });
+        commitContent(created.content);
+        selectCanvasNodeExclusively(created.createdNodeId);
+      }
+      setGraphError(null);
+    } catch {
+      setGraphError(t("graphError.generic"));
+    } finally {
+      setPendingCompletionDrop(null);
     }
   };
 
@@ -1928,28 +1990,29 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
         (target.data.kind === "clip" || target.data.kind === "router")
       );
     }
-    if (source.data.kind === "clip" && source.data.exitKind === "checkpoint") {
-      return (
-        connection.sourceHandle === "checkpoint" &&
-        connection.targetHandle === "in" &&
-        (target.data.kind === "clip" || target.data.kind === "router")
-      );
-    }
     if (target.data.kind === "ending") {
       return (
         source.data.kind === "clip" &&
         source.data.exitKind === "auto" &&
-        (source.data.autoRoutes?.length ?? 0) === 0 &&
-        connection.sourceHandle === "auto-new" &&
+        !source.data.continuationTargetNodeId &&
+        connection.sourceHandle === "completion" &&
         connection.targetHandle === "ending-in"
       );
     }
-    if (source.data.exitKind !== "auto" || connection.targetHandle !== "in") return false;
-    return source.data.kind === "router"
-      ? connection.sourceHandle === "route-new" ||
-          Boolean(connection.sourceHandle?.match(/^route:\d+$/u))
-      : connection.sourceHandle === "auto-new" ||
-          Boolean(connection.sourceHandle?.match(/^auto:\d+$/u));
+    if (connection.targetHandle !== "in") return false;
+    if (source.data.kind === "clip") {
+      return (
+        source.data.exitKind === "auto" &&
+        !source.data.continuationTargetNodeId &&
+        connection.sourceHandle === "completion" &&
+        (target.data.kind === "clip" || target.data.kind === "router")
+      );
+    }
+    return (
+      source.data.kind === "router" &&
+      (connection.sourceHandle === "route-new" ||
+        Boolean(connection.sourceHandle?.match(/^route:\d+$/u)))
+    );
   };
 
   const deleteStoryEdges = (edges: StoryCanvasEdge[]) => {
@@ -1973,6 +2036,13 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
     applyGraphMutation((current) =>
       orderedEdges.reduce((next, edge) => {
         if (edge.data.kind === "root") return setEntryNode(next, null);
+        if (edge.data.kind === "continuation") {
+          return disconnectStoryBranch(next, {
+            kind: "continuation",
+            sourceNodeId: edge.source,
+            targetNodeId: edge.target,
+          });
+        }
         if (edge.data.kind === "auto") {
           return disconnectStoryBranch(next, {
             kind: "auto",
@@ -2349,12 +2419,19 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
         {canEdit ? (
           <StoryNodeCreator
             open={creatorOpen}
-            canAddChoice={Boolean(selectedChoiceSourceId)}
             onOpenChange={setCreatorOpen}
             onCreate={createStoryElement}
           />
         ) : null}
       </section>
+
+      {pendingCompletionDrop ? (
+        <StoryConnectionCreator
+          position={pendingCompletionDrop.clientPosition}
+          onCreate={createCompletionStep}
+          onCancel={() => setPendingCompletionDrop(null)}
+        />
+      ) : null}
 
       <StoryNodeInspector
         content={content}
@@ -2402,6 +2479,9 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
         onCloseNode={() => selectCanvasNodeExclusively(null)}
         onSetEntry={(nodeId) => applyGraphMutation((current) => setEntryNode(current, nodeId))}
         onChangeExitKind={changeExitKind}
+        onUpdateClipContinuation={(nodeId, targetNodeId) =>
+          applyGraphMutation((current) => connectClipContinuation(current, nodeId, targetNodeId))
+        }
         onUpdateCheckpointTarget={(nodeId, targetNodeId) =>
           applyGraphMutation((current) => updateCheckpointTarget(current, nodeId, targetNodeId))
         }
@@ -2706,25 +2786,24 @@ function StoryGraphNodeCard({ id, data, selected, isConnectable }: NodeProps<Sto
             className="-right-1.75!"
           />
         ) : null}
-        {data.kind === "clip" && data.exitKind === "choice" ? (
+        {data.kind === "clip" ? (
           <StoryPortHandle
-            id="choice-trigger"
+            id="completion"
             type="source"
             position={Position.Right}
-            color={STORY_PORT_COLORS.choice}
-            label={t("ports.choiceTrigger")}
-            isConnectable={false}
-            className="-right-1.75!"
-          />
-        ) : null}
-        {data.kind === "clip" && data.exitKind === "ending" ? (
-          <StoryPortHandle
-            id="ending"
-            type="source"
-            position={Position.Right}
-            color={STORY_PORT_COLORS.ending}
-            label={t("ports.ending")}
-            isConnectable={false}
+            color={
+              data.exitKind === "choice"
+                ? STORY_PORT_COLORS.choice
+                : data.exitKind === "checkpoint"
+                  ? STORY_PORT_COLORS.checkpoint
+                  : data.exitKind === "ending"
+                    ? STORY_PORT_COLORS.ending
+                    : STORY_PORT_COLORS.flow
+            }
+            label={t("ports.completion")}
+            isConnectable={
+              isConnectable && data.exitKind === "auto" && !data.continuationTargetNodeId
+            }
             className="-right-1.75!"
           />
         ) : null}
@@ -2856,7 +2935,7 @@ function StoryGraphNodeCard({ id, data, selected, isConnectable }: NodeProps<Sto
               ) : null}
             </div>
           ) : null}
-          {(data.kind === "clip" || isRouter) && data.exitKind === "auto" ? (
+          {isRouter && data.exitKind === "auto" ? (
             <div className="mt-3 space-y-1.5">
               {(data.autoRoutes ?? []).map((route) => (
                 <div
@@ -2870,56 +2949,30 @@ function StoryGraphNodeCard({ id, data, selected, isConnectable }: NodeProps<Sto
                   </span>
                   <span className="shrink-0 text-white/28">→ {route.targetNodeId}</span>
                   <StoryPortHandle
-                    id={`${isRouter ? "route" : "auto"}:${route.routeIndex}`}
+                    id={`route:${route.routeIndex}`}
                     type="source"
                     position={Position.Right}
                     isConnectable={isConnectable}
-                    color={isRouter ? STORY_PORT_COLORS.route : STORY_PORT_COLORS.flow}
+                    color={STORY_PORT_COLORS.route}
                     label={t("ports.route", { target: route.targetNodeId })}
                     className="-right-[23px]!"
                   />
                 </div>
               ))}
               {(data.autoRoutes?.length ?? 0) < 20 ? (
-                <div
-                  className={cn(
-                    "relative flex h-8 items-center rounded-xl px-2.5 text-[10px] font-semibold",
-                    isRouter
-                      ? "bg-[rgba(224,164,92,0.08)] text-[#e0a45c]/74"
-                      : "bg-white/[0.045] text-white/42"
-                  )}
-                >
+                <div className="relative flex h-8 items-center rounded-xl bg-[rgba(224,164,92,0.08)] px-2.5 text-[10px] font-semibold text-[#e0a45c]/74">
                   {t("ports.newRoute")}
                   <StoryPortHandle
-                    id={isRouter ? "route-new" : "auto-new"}
+                    id="route-new"
                     type="source"
                     position={Position.Right}
                     isConnectable={isConnectable}
-                    color={isRouter ? STORY_PORT_COLORS.route : STORY_PORT_COLORS.flow}
+                    color={STORY_PORT_COLORS.route}
                     label={t("ports.newRoute")}
                     className="-right-[23px]!"
                   />
                 </div>
               ) : null}
-            </div>
-          ) : null}
-          {data.kind === "clip" && data.exitKind === "checkpoint" ? (
-            <div className="relative mt-3 flex items-center justify-between gap-3 rounded-xl bg-[rgba(143,101,255,0.1)] px-2.5 py-2 pr-3.5 text-[10px]">
-              <span className="truncate font-semibold text-[#b7a5ff]/82">
-                {t("ports.checkpoint")}
-              </span>
-              <span className="shrink-0 text-white/28">→ {data.checkpointTargetNodeId}</span>
-              <StoryPortHandle
-                id="checkpoint"
-                type="source"
-                position={Position.Right}
-                isConnectable={isConnectable}
-                color={STORY_PORT_COLORS.checkpoint}
-                label={t("ports.checkpointTarget", {
-                  target: data.checkpointTargetNodeId ?? "",
-                })}
-                className="-right-[23px]!"
-              />
             </div>
           ) : null}
         </div>

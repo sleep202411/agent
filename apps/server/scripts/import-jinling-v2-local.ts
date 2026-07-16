@@ -22,6 +22,7 @@ import {
 import { buildPrisma } from '../src/infra/db/db.module';
 import { ensureOriginalMediaPlacement } from '../src/infra/storage/media-asset-placement';
 import { canonicalJsonHash } from '../src/story-studio/canonical-json';
+import { INTERACTIVE_FILM_DRAFT_SCHEMA_VERSION } from '../src/story-studio/interactive-film.schema';
 import {
   buildJinlingV2ImportBundle,
   JINLING_V2_CLIP_IDS,
@@ -32,7 +33,7 @@ import { compileStoryFilmPrompt } from '../src/story-studio/story-film-prompt-co
 import { storyFilmTechnicalChecks } from '../src/story-studio/story-film-production.service';
 
 const IMPORT_TAG = 'jinling-rumeng-v2-local-import-v1';
-const DRAFT_SCHEMA_VERSION = 'interactive-film-draft-v1';
+const DRAFT_SCHEMA_VERSION = INTERACTIVE_FILM_DRAFT_SCHEMA_VERSION;
 const MODEL_SLUG = 'seedance-2-0';
 const BLOB_ROOT =
   'https://fizzdragonblob.blob.core.windows.net/foundry-outputs/interactive-films/jinling-rumeng/s01/v2/film-cut';

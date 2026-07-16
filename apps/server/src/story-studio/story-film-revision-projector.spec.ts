@@ -103,7 +103,7 @@ describe('Story film revision projector', () => {
     const nextNodeId = checkpointNode.exit.nextNodeId;
     checkpointNode.exit = {
       kind: 'auto',
-      routes: [{ nextNodeId, priority: 0 }],
+      nextNodeId,
     };
 
     const projection = projectStoryFilmRevision({

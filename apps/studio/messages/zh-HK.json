@@ -1673,6 +1673,7 @@
       "ports": {
         "entry": "故事入口",
         "input": "故事流入",
+        "completion": "影片的下一步",
         "auto": "自動繼續",
         "checkpoint": "等待玩家確認繼續",
         "checkpointTarget": "確認繼續至 {target}",
@@ -1696,6 +1697,15 @@
         "routerDescription": "沒有影片的條件合流或跳轉節點。",
         "ending": "故事結局",
         "endingDescription": "儲存於故事聖經中的命名結局。"
+      },
+      "connectionCreator": {
+        "title": "建立下一步",
+        "description": "選擇這個影片片段結束後會發生甚麼。",
+        "clip": "影片片段",
+        "clipDescription": "直接繼續到另一個生成的影片片段。",
+        "choice": "玩家選擇",
+        "choiceDescription": "暫停播放，讓玩家選擇後續分支。",
+        "cancel": "取消"
       },
       "endingKinds": {
         "truth": "真相",
@@ -2091,10 +2101,12 @@
         "entry": "入口鏡頭",
         "entryNode": "故事入口",
         "makeEntry": "設為入口",
-        "exitAuto": "自動路由",
+        "exitAuto": "繼續到影片",
         "exitChoice": "玩家選擇",
         "exitCheckpoint": "繼續確認點",
         "exitEnding": "故事結局",
+        "continuationTarget": "下一個影片片段",
+        "continuationDescription": "影片只有一個直接後續；需要分支時請使用玩家選擇。",
         "checkpointTarget": "確認後的目標節點",
         "checkpointDescription": "鏡頭結束後暫停，等待玩家明確按一次繼續；它不會建立劇情選擇，也不會改變故事狀態。",
         "choicePrompt": "選擇問題",

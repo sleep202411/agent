@@ -274,7 +274,9 @@ function buildClipDependencyPlans(
         ? predecessor.exit.choices.map((choice) => choice.nextNodeId)
         : predecessor.exit.kind === 'checkpoint'
           ? [predecessor.exit.nextNodeId]
-          : predecessor.exit.routes.map((route) => route.nextNodeId);
+          : predecessor.exit.nextNodeId
+            ? [predecessor.exit.nextNodeId]
+            : [];
     const successors = new Map<string, ClipGraphNode>();
     for (const nodeId of startingNodeIds) {
       for (const successor of collectNextClipNodes(

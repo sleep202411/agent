@@ -51,7 +51,7 @@ describe("buildStoryCanvasModel", () => {
       nodes: [
         clip("opening", "clip-opening", {
           kind: "auto",
-          routes: [{ nextNodeId: "arrival", priority: 0 }],
+          nextNodeId: "arrival",
         }),
         clip("arrival", "clip-arrival", { kind: "ending", endingId: "truth" }),
       ],
@@ -108,27 +108,27 @@ describe("buildStoryCanvasModel", () => {
       {
         source: "opening",
         target: "arrival",
-        sourceHandle: "auto:0",
+        sourceHandle: "completion",
         targetHandle: "in",
-        data: { kind: "auto", priority: 0 },
+        data: { kind: "continuation" },
       },
       {
         source: "arrival",
         target: "__ending__:truth",
-        sourceHandle: "ending",
+        sourceHandle: "completion",
         targetHandle: "ending-in",
         data: { kind: "ending", endingId: "truth" },
       },
     ]);
-    expect(first.nodes.find((node) => node.id === "opening")?.data.autoRoutes).toEqual([
-      { routeIndex: 0, targetNodeId: "arrival", priority: 0, hasCondition: false },
-    ]);
+    expect(first.nodes.find((node) => node.id === "opening")?.data).toMatchObject({
+      continuationTargetNodeId: "arrival",
+    });
   });
 
   it("projects mutable director authoring onto its clip card without mutation", () => {
     const prompt = clipPrompt("opening", "OPENING");
     const content = draft({
-      nodes: [clip("opening", "OPENING", { kind: "auto", routes: [] })],
+      nodes: [clip("opening", "OPENING", { kind: "auto", nextNodeId: null })],
       clipPrompts: [prompt],
     });
 
@@ -140,7 +140,7 @@ describe("buildStoryCanvasModel", () => {
 
   it("normalizes a legacy payload with no clipPrompts before projection", () => {
     const legacy = draft({
-      nodes: [clip("opening", "OPENING", { kind: "auto", routes: [] })],
+      nodes: [clip("opening", "OPENING", { kind: "auto", nextNodeId: null })],
     });
     delete (legacy as Partial<InteractiveFilmDraftContent>).clipPrompts;
 
@@ -233,7 +233,7 @@ describe("buildStoryCanvasModel", () => {
         expect.objectContaining({
           source: "decision",
           target: "__decision__:decision",
-          sourceHandle: "choice-trigger",
+          sourceHandle: "completion",
           targetHandle: "decision-in",
           data: { kind: "decision", decisionId: "gate", sourceNodeId: "decision" },
         }),
@@ -282,7 +282,7 @@ describe("buildStoryCanvasModel", () => {
         expect.objectContaining({
           source: "scene",
           target: "epilogue",
-          sourceHandle: "checkpoint",
+          sourceHandle: "completion",
           targetHandle: "in",
           data: { kind: "checkpoint" },
         }),

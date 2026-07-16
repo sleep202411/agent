@@ -318,7 +318,7 @@ function buildGraph(): GraphNode[] {
     clipKey: jinlingClipKey(clipId),
     exit: {
       kind: 'auto',
-      routes: [{ nextNodeId: jinlingClipNodeId(next), priority: 0 }],
+      nextNodeId: jinlingClipNodeId(next),
     },
   });
   const decision = (chapter: keyof typeof CHOICES): GraphNode => {

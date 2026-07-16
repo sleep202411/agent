@@ -9,7 +9,7 @@ import { z } from 'zod';
  */
 
 export const INTERACTIVE_FILM_DRAFT_SCHEMA_VERSION =
-  'interactive-film-draft-v1' as const;
+  'interactive-film-draft-v2' as const;
 export const INTERACTIVE_FILM_RUNTIME_SCHEMA_VERSION = 1 as const;
 
 export const StoryUuidSchema = z.string().uuid();
@@ -232,20 +232,25 @@ export const StoryGraphChoiceSchema = z
   })
   .strict();
 
-const StoryAutoExitSchema = z
+const StoryAutoRouteSchema = z
+  .object({
+    nextNodeId: StoryStableIdSchema,
+    when: FilmConditionSchema.optional(),
+    priority: z.number().int().min(0).max(10_000).default(0),
+  })
+  .strict();
+
+const StoryClipAutoExitSchema = z
   .object({
     kind: z.literal('auto'),
-    routes: z
-      .array(
-        z
-          .object({
-            nextNodeId: StoryStableIdSchema,
-            when: FilmConditionSchema.optional(),
-            priority: z.number().int().min(0).max(10_000).default(0),
-          })
-          .strict(),
-      )
-      .max(20),
+    nextNodeId: StoryStableIdSchema.nullable(),
+  })
+  .strict();
+
+const StoryRouterAutoExitSchema = z
+  .object({
+    kind: z.literal('auto'),
+    routes: z.array(StoryAutoRouteSchema).max(20),
   })
   .strict();
 
@@ -297,7 +302,7 @@ const StoryClipGraphNodeSchema = z
     nodeId: StoryStableIdSchema,
     clipKey: FilmClipKeySchema,
     exit: z.discriminatedUnion('kind', [
-      StoryAutoExitSchema,
+      StoryClipAutoExitSchema,
       StoryChoiceExitSchema,
       StoryCheckpointExitSchema,
       StoryEndingExitSchema,
@@ -314,7 +319,7 @@ const StoryRouterGraphNodeSchema = z
   .object({
     kind: z.literal('router'),
     nodeId: StoryStableIdSchema,
-    exit: StoryAutoExitSchema,
+    exit: StoryRouterAutoExitSchema,
   })
   .strict();
 
@@ -1324,7 +1329,22 @@ function validateLockableDraft(
 
   draft.graph.nodes.forEach((node, nodeIndex) => {
     const exitPath: PropertyKey[] = ['graph', 'nodes', nodeIndex, 'exit'];
-    if (node.exit.kind === 'auto') {
+    if (node.kind === 'clip' && node.exit.kind === 'auto') {
+      if (node.exit.nextNodeId === null) {
+        context.addIssue({
+          code: 'custom',
+          path: [...exitPath, 'nextNodeId'],
+          message: 'A clip continuation needs a target node.',
+        });
+      } else if (!nodeIds.has(node.exit.nextNodeId)) {
+        context.addIssue({
+          code: 'custom',
+          path: [...exitPath, 'nextNodeId'],
+          message: `Unknown target node ${node.exit.nextNodeId}.`,
+        });
+      }
+    }
+    if (node.kind === 'router') {
       if (node.exit.routes.length === 0) {
         context.addIssue({
           code: 'custom',

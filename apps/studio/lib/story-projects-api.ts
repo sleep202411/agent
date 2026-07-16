@@ -9,7 +9,7 @@ import { api, ApiRequestError } from "@/lib/api";
  * records capture server-owned immutable input snapshots automatically.
  */
 
-export const INTERACTIVE_FILM_DRAFT_SCHEMA_VERSION = "interactive-film-draft-v1" as const;
+export const INTERACTIVE_FILM_DRAFT_SCHEMA_VERSION = "interactive-film-draft-v2" as const;
 export const STORY_CANVAS_LAYOUT_SCHEMA_VERSION = "story-canvas-layout-v1" as const;
 
 export type StoryFormat = "text_adventure" | "interactive_film" | "narrative_rpg";
@@ -176,7 +176,7 @@ export type StoryGraphNode =
       nodeId: string;
       clipKey: string;
       exit:
-        | { kind: "auto"; routes: StoryAutoRoute[] }
+        | { kind: "auto"; nextNodeId: string | null }
         | {
             kind: "choice";
             decisionId: string;

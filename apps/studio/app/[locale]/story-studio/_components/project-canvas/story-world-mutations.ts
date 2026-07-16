@@ -390,7 +390,7 @@ function visitGraphConditions(
   };
 
   for (const node of content.graph.nodes) {
-    if (node.exit.kind === "auto") {
+    if (node.kind === "router") {
       node.exit.routes.forEach((route) => {
         if (route.when) visit(route.when);
       });

@@ -1673,6 +1673,7 @@
       "ports": {
         "entry": "Story entry",
         "input": "Incoming story flow",
+        "completion": "Next step from this clip",
         "auto": "Continue automatically",
         "checkpoint": "Wait for player confirmation",
         "checkpointTarget": "Continue checkpoint to {target}",
@@ -1696,6 +1697,15 @@
         "routerDescription": "A graph-only conditional merge or redirect with no video.",
         "ending": "Story ending",
         "endingDescription": "A named outcome stored in the story bible."
+      },
+      "connectionCreator": {
+        "title": "Create next step",
+        "description": "Choose what happens when this clip finishes.",
+        "clip": "Film clip",
+        "clipDescription": "Continue directly into another generated video segment.",
+        "choice": "Player choice",
+        "choiceDescription": "Pause playback and let the player choose a branch.",
+        "cancel": "Cancel"
       },
       "endingKinds": {
         "truth": "Truth",
@@ -2091,10 +2101,12 @@
         "entry": "Entry clip",
         "entryNode": "Story entry",
         "makeEntry": "Set as entry",
-        "exitAuto": "Automatic route",
+        "exitAuto": "Continue to clip",
         "exitChoice": "Player choice",
         "exitCheckpoint": "Continue checkpoint",
         "exitEnding": "Story ending",
+        "continuationTarget": "Next film clip",
+        "continuationDescription": "A clip has one direct continuation. Use a player choice when the story must branch.",
         "checkpointTarget": "Target after checkpoint",
         "checkpointDescription": "Pauses after this clip for one explicit Continue action. It does not create a narrative choice or change story state.",
         "choicePrompt": "Decision prompt",

@@ -497,13 +497,27 @@ function diagnoseGraphContracts(
   });
   selectedNodes.forEach((node) => {
     if (node.exit.kind !== 'auto') return;
+    if (node.kind === 'clip') {
+      if (node.exit.nextNodeId === null) {
+        diagnostics.push(
+          diagnostic(
+            'error',
+            'STORY_BUILD_CLIP_CONTINUATION_MISSING',
+            `Clip ${node.nodeId} has no next step.`,
+            'clip',
+            node.nodeId,
+          ),
+        );
+      }
+      return;
+    }
     if (node.exit.routes.length === 0) {
       diagnostics.push(
         diagnostic(
           'error',
           'STORY_BUILD_AUTO_ROUTE_MISSING',
           `Automatic node ${node.nodeId} has no route.`,
-          node.kind === 'clip' ? 'clip' : 'revision',
+          'revision',
           node.nodeId,
         ),
       );
@@ -517,7 +531,7 @@ function diagnoseGraphContracts(
           'error',
           'STORY_BUILD_AUTO_ROUTE_AMBIGUOUS',
           `Automatic node ${node.nodeId} has ${unconditionalCount} competing unconditional routes.`,
-          node.kind === 'clip' ? 'clip' : 'revision',
+          'revision',
           node.nodeId,
         ),
       );
@@ -744,6 +758,30 @@ function enumeratePaths(
       return;
     }
 
+    if (node.kind === 'clip') {
+      if (node.exit.nextNodeId === null) {
+        reportOnce(
+          diagnostic(
+            'error',
+            'STORY_BUILD_CLIP_CONTINUATION_MISSING',
+            `Clip ${node.nodeId} has no next step.`,
+            'clip',
+            node.nodeId,
+          ),
+        );
+        return;
+      }
+      walk(
+        node.exit.nextNodeId,
+        cloneState(state),
+        nextDuration,
+        nextContinuousDuration,
+        nextActive,
+        steps + 1,
+      );
+      return;
+    }
+
     const matching = node.exit.routes
       .map((route, index) => ({ route, index }))
       .filter(
@@ -760,7 +798,7 @@ function enumeratePaths(
           'error',
           'STORY_BUILD_AUTO_ROUTE_DEAD_END',
           `Automatic node ${node.nodeId} has no matching route for a reachable state.`,
-          node.kind === 'clip' ? 'clip' : 'revision',
+          'revision',
           node.nodeId,
         ),
       );
@@ -773,7 +811,7 @@ function enumeratePaths(
           'error',
           'STORY_BUILD_AUTO_ROUTE_AMBIGUOUS_STATE',
           `Automatic node ${node.nodeId} matches ${matching.length} routes for a reachable state; automatic routes must be mutually exclusive.`,
-          node.kind === 'clip' ? 'clip' : 'revision',
+          'revision',
           node.nodeId,
         ),
       );
@@ -905,7 +943,7 @@ function compileRuntime(
       runtimeNodes.push({
         kind: 'router' as const,
         nodeId: node.nodeId,
-        exit: compileExit(node.exit, clipsByKey),
+        exit: compileExit(node, clipsByKey),
       });
       return;
     }
@@ -925,7 +963,7 @@ function compileRuntime(
         fit: 'cover' as const,
       },
       overlays: [],
-      exit: compileExit(node.exit, clipsByKey),
+      exit: compileExit(node, clipsByKey),
     });
   });
 
@@ -957,14 +995,27 @@ function compileRuntime(
 }
 
 function compileExit(
-  exit: InteractiveFilmDraftContent['graph']['nodes'][number]['exit'],
+  node: InteractiveFilmDraftContent['graph']['nodes'][number],
   clipsByKey: Map<string, StoryFilmBuildClipInput>,
 ): unknown {
+  const { exit } = node;
   if (exit.kind === 'ending') return exit;
   if (exit.kind === 'auto') {
+    if (node.kind === 'clip') {
+      const clipExit = node.exit;
+      if (clipExit.kind !== 'auto') {
+        throw new Error(`Clip ${node.nodeId} exit changed while compiling.`);
+      }
+      return {
+        kind: 'auto',
+        routes: clipExit.nextNodeId
+          ? [{ nextNodeId: clipExit.nextNodeId, priority: 0 }]
+          : [],
+      };
+    }
     return {
       kind: 'auto',
-      routes: exit.routes.map((route) => ({
+      routes: node.exit.routes.map((route) => ({
         nextNodeId: route.nextNodeId,
         ...(route.when ? { when: route.when } : {}),
         priority: route.priority,
@@ -1025,8 +1076,13 @@ function nextNodeIds(
 ): string[] {
   if (node.exit.kind === 'ending') return [];
   if (node.exit.kind === 'checkpoint') return [node.exit.nextNodeId];
-  return node.exit.kind === 'choice'
-    ? node.exit.choices.map((choice) => choice.nextNodeId)
+  if (node.exit.kind === 'choice') {
+    return node.exit.choices.map((choice) => choice.nextNodeId);
+  }
+  return node.kind === 'clip'
+    ? node.exit.nextNodeId
+      ? [node.exit.nextNodeId]
+      : []
     : node.exit.routes.map((route) => route.nextNodeId);
 }
 

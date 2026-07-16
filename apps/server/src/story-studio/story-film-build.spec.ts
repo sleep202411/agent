@@ -269,7 +269,7 @@ describe('Story film Build compiler', () => {
     if (!successorId) throw new Error('Fixture successor missing.');
     entry.exit = {
       kind: 'auto',
-      routes: [{ nextNodeId: successorId, priority: 0 }],
+      nextNodeId: successorId,
     };
 
     const filmSpec = FilmSpecSchema.parse({
@@ -304,7 +304,7 @@ describe('Story film Build compiler', () => {
     const nextNodeId = checkpoint.exit.nextNodeId;
     checkpoint.exit = {
       kind: 'auto',
-      routes: [{ nextNodeId, priority: 0 }],
+      nextNodeId,
     };
 
     const result = compileFixture({ draft });
@@ -465,9 +465,9 @@ describe('Story film Build compiler', () => {
     const { bundle } = fixture();
     const draft = structuredClone(bundle.draftContent);
     const auto = draft.graph.nodes.find(
-      (node) => node.exit.kind === 'auto' && node.exit.routes.length > 0,
+      (node) => node.kind === 'router' && node.exit.routes.length > 0,
     );
-    if (!auto || auto.exit.kind !== 'auto') {
+    if (!auto || auto.kind !== 'router') {
       throw new Error('Fixture auto node missing.');
     }
     auto.exit.routes.push({ ...auto.exit.routes[0], priority: 999 });
@@ -540,7 +540,7 @@ describe('Story film Build compiler', () => {
     });
     const terminal = nodes.at(-1);
     if (!terminal) throw new Error('Adversarial terminal missing.');
-    terminal.exit = { kind: 'auto', routes: [] };
+    terminal.exit = { kind: 'auto', nextNodeId: null };
     draft.graph = { entryNodeId: nodes[0]?.nodeId ?? null, nodes };
     const filmSpec = FilmSpecSchema.parse({
       ...bundle.filmSpec,

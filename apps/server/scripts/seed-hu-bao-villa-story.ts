@@ -8,7 +8,6 @@ import {
   StoryFilmFrameMode,
   StoryFilmGenerationMode,
   StoryFilmReferenceKind,
-  StoryFilmReviewPolicy,
   StoryFormat,
   StoryFrameProfile,
   StoryProjectMemberRole,
@@ -25,6 +24,7 @@ import {
 import { buildPrisma } from '../src/infra/db/db.module';
 import { canonicalJsonHash } from '../src/story-studio/canonical-json';
 import { frameContractMatchesStoryProfile } from '../src/story-studio/dto';
+import { INTERACTIVE_FILM_DRAFT_SCHEMA_VERSION } from '../src/story-studio/interactive-film.schema';
 import {
   buildHuBaoVillaImportBundle,
   type HuBaoVillaClipDependencyPlan,
@@ -37,7 +37,7 @@ import {
   HU_BAO_VILLA_PROJECT_ID,
 } from '../src/story-studio/import/hu-bao-villa.fixture';
 
-const DRAFT_SCHEMA_VERSION = 'interactive-film-draft-v1';
+const DRAFT_SCHEMA_VERSION = INTERACTIVE_FILM_DRAFT_SCHEMA_VERSION;
 const IMPORT_LABEL = '虎豹别墅：龙口入夜 · 锁定制作版 v1.1';
 const IMPORT_SESSION_ID = 'local-seed:hu-bao-villa-v1.1';
 const CANONICAL_MODEL_SLUG = 'seedance-2-0';
@@ -290,7 +290,7 @@ async function createImport(
         enabledLocales: asJson(bundle.filmSpec.locales.enabledLocales),
         defaultCanonicalModelId:
           bundle.filmSpec.generation.defaultCanonicalModelId,
-        reviewPolicy: StoryFilmReviewPolicy.explicit_approval,
+        reviewPolicy: 'explicit_approval',
         specJson: asJson(bundle.filmSpec),
         specHash,
         createdByUserId: userId,

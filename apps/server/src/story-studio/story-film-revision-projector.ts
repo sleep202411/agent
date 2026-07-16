@@ -302,9 +302,13 @@ function calculatePlaybackDurationContract(
         maxContinuousMs: ownDurationMs,
       };
     } else if (node.exit.kind === 'auto') {
-      const successors = node.exit.routes.map((route) =>
-        visit(route.nextNodeId),
-      );
+      const successorNodeIds =
+        node.kind === 'clip'
+          ? node.exit.nextNodeId
+            ? [node.exit.nextNodeId]
+            : []
+          : node.exit.routes.map((route) => route.nextNodeId);
+      const successors = successorNodeIds.map(visit);
       result = successors.reduce(
         (current, successor) => ({
           minTotalMs: Math.min(

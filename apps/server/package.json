@@ -19,6 +19,7 @@
     "story:seed:hu-bao-villa": "node scripts/ensure-local-database.mjs tsx scripts/seed-hu-bao-villa-story.ts",
     "story:ingest:hu-bao-villa": "node scripts/ensure-local-database.mjs tsx scripts/ingest-hu-bao-villa-media.ts",
     "story:import:jinling-v2:local": "node scripts/ensure-local-database.mjs tsx scripts/import-jinling-v2-local.ts",
+    "story:migrate:draft-v2:local": "node scripts/ensure-local-database.mjs tsx scripts/migrate-story-drafts-v2-local.ts",
     "lint": "eslint \"{src,scripts,apps,libs,test}/**/*.ts\" --fix",
     "test": "jest",
     "test:watch": "jest --watch",

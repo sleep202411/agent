@@ -35,6 +35,7 @@ export interface StoryCanvasNodeData extends Record<string, unknown> {
   clipKey?: string;
   endingId?: string;
   exitKind?: StoryCanvasExitKind;
+  continuationTargetNodeId?: string;
   checkpointTargetNodeId?: string;
   choices?: StoryCanvasChoiceData[];
   autoRoutes?: StoryCanvasAutoRouteData[];
@@ -55,6 +56,7 @@ export type StoryCanvasNode = Node<StoryCanvasNodeData, "storyCanvas">;
 
 type StoryCanvasEdgeData =
   | { kind: "root" }
+  | { kind: "continuation" }
   | { kind: "auto"; priority: number; routeIndex: number }
   | { kind: "decision"; decisionId: string; sourceNodeId: string }
   | { kind: "choice"; choiceId: string }
@@ -237,7 +239,8 @@ export function buildStoryCanvasModel(
           exitKind: node.exit.kind,
           checkpointTargetNodeId:
             node.exit.kind === "checkpoint" ? node.exit.nextNodeId : undefined,
-          autoRoutes: node.exit.kind === "auto" ? projectAutoRoutes(node.exit.routes) : undefined,
+          continuationTargetNodeId:
+            node.exit.kind === "auto" ? (node.exit.nextNodeId ?? undefined) : undefined,
           filmClip: clip,
           frameAspectRatio:
             clip?.outputContract.aspectRatio ??
@@ -333,7 +336,23 @@ function buildConnections(
   let order = 0;
 
   for (const node of graphNodes) {
-    if (node.exit.kind === "auto") {
+    if (node.kind === "clip" && node.exit.kind === "auto") {
+      if (!node.exit.nextNodeId || !graphNodesById.has(node.exit.nextNodeId)) continue;
+      connections.push({
+        order: order++,
+        edge: {
+          id: `continuation:${node.nodeId}:${node.exit.nextNodeId}`,
+          source: node.nodeId,
+          target: node.exit.nextNodeId,
+          sourceHandle: "completion",
+          targetHandle: "in",
+          data: { kind: "continuation" },
+        },
+      });
+      continue;
+    }
+
+    if (node.kind === "router") {
       const routes = node.exit.routes
         .map((route, routeIndex) => ({ route, routeIndex }))
         .sort(
@@ -351,7 +370,7 @@ function buildConnections(
             id: `auto:${node.nodeId}:${route.priority}:${routeIndex}:${route.nextNodeId}`,
             source: node.nodeId,
             target: route.nextNodeId,
-            sourceHandle: `${node.kind === "router" ? "route" : "auto"}:${routeIndex}`,
+            sourceHandle: `route:${routeIndex}`,
             targetHandle: "in",
             data: { kind: "auto", priority: route.priority, routeIndex },
           },
@@ -368,7 +387,7 @@ function buildConnections(
           id: `decision:${node.nodeId}:${node.exit.decisionId}`,
           source: node.nodeId,
           target: decisionNodeId,
-          sourceHandle: "choice-trigger",
+          sourceHandle: "completion",
           targetHandle: "decision-in",
           data: {
             kind: "decision",
@@ -403,13 +422,15 @@ function buildConnections(
           id: `checkpoint:${node.nodeId}:${node.exit.nextNodeId}`,
           source: node.nodeId,
           target: node.exit.nextNodeId,
-          sourceHandle: "checkpoint",
+          sourceHandle: "completion",
           targetHandle: "in",
           data: { kind: "checkpoint" },
         },
       });
       continue;
     }
+
+    if (node.kind !== "clip" || node.exit.kind !== "ending") continue;
 
     const target = endingCanvasIds.get(node.exit.endingId);
     if (!target) continue;
@@ -419,7 +440,7 @@ function buildConnections(
         id: `ending:${node.nodeId}:${node.exit.endingId}`,
         source: node.nodeId,
         target,
-        sourceHandle: "ending",
+        sourceHandle: "completion",
         targetHandle: "ending-in",
         data: { kind: "ending", endingId: node.exit.endingId },
       },
@@ -430,7 +451,7 @@ function buildConnections(
 }
 
 function projectAutoRoutes(
-  routes: Extract<StoryGraphNode["exit"], { kind: "auto" }>["routes"]
+  routes: Extract<StoryGraphNode, { kind: "router" }>["exit"]["routes"]
 ): StoryCanvasAutoRouteData[] {
   return routes.map((route, routeIndex) => ({
     routeIndex,

@@ -81,6 +81,7 @@ interface StoryNodeInspectorProps {
   onCloseNode: () => void;
   onSetEntry: (nodeId: string) => void;
   onChangeExitKind: (nodeId: string, kind: ClipNode["exit"]["kind"], targetId?: string) => void;
+  onUpdateClipContinuation: (nodeId: string, targetNodeId: string) => void;
   onUpdateCheckpointTarget: (nodeId: string, targetNodeId: string) => void;
   onAddAutoRoute: (nodeId: string, targetNodeId: string) => void;
   onUpdateAutoRoute: (nodeId: string, routeIndex: number, patch: AutoRoutePatch) => void;
@@ -135,6 +136,7 @@ export function StoryNodeInspector({
   onCloseNode,
   onSetEntry,
   onChangeExitKind,
+  onUpdateClipContinuation,
   onUpdateCheckpointTarget,
   onAddAutoRoute,
   onUpdateAutoRoute,
@@ -223,6 +225,7 @@ export function StoryNodeInspector({
               production={production}
               onSetEntry={onSetEntry}
               onChangeExitKind={onChangeExitKind}
+              onUpdateClipContinuation={onUpdateClipContinuation}
               onUpdateCheckpointTarget={onUpdateCheckpointTarget}
               onAddAutoRoute={onAddAutoRoute}
               onUpdateAutoRoute={onUpdateAutoRoute}
@@ -400,6 +403,7 @@ function GraphNodeEditor({
   production,
   onSetEntry,
   onChangeExitKind,
+  onUpdateClipContinuation,
   onUpdateCheckpointTarget,
   onAddAutoRoute,
   onUpdateAutoRoute,
@@ -419,6 +423,7 @@ function GraphNodeEditor({
   production?: StoryVideoComposerProps;
   onSetEntry: StoryNodeInspectorProps["onSetEntry"];
   onChangeExitKind: StoryNodeInspectorProps["onChangeExitKind"];
+  onUpdateClipContinuation: StoryNodeInspectorProps["onUpdateClipContinuation"];
   onUpdateCheckpointTarget: StoryNodeInspectorProps["onUpdateCheckpointTarget"];
   onAddAutoRoute: StoryNodeInspectorProps["onAddAutoRoute"];
   onUpdateAutoRoute: StoryNodeInspectorProps["onUpdateAutoRoute"];
@@ -441,7 +446,9 @@ function GraphNodeEditor({
       : null;
   const exitBranchCount =
     node.exit.kind === "auto"
-      ? node.exit.routes.length
+      ? node.kind === "clip"
+        ? Number(node.exit.nextNodeId !== null)
+        : node.exit.routes.length
       : node.exit.kind === "choice"
         ? node.exit.choices.length
         : 1;
@@ -565,6 +572,25 @@ function GraphNodeEditor({
             </label>
           ) : null}
 
+          {node.kind === "clip" && node.exit.kind === "auto" ? (
+            <label>
+              <span className="text-[10px] font-semibold text-white/42">
+                {t("inspector.continuationTarget")}
+              </span>
+              <TargetNodePicker
+                value={node.exit.nextNodeId}
+                nodes={targetNodes}
+                ariaLabel={t("inspector.continuationTarget")}
+                disabled={!canEdit}
+                onChange={(targetNodeId) => onUpdateClipContinuation(node.nodeId, targetNodeId)}
+                className="mt-2"
+              />
+              <p className="mt-2 text-[9px] leading-4 text-white/34">
+                {t("inspector.continuationDescription")}
+              </p>
+            </label>
+          ) : null}
+
           {node.kind === "clip" && node.exit.kind === "checkpoint" ? (
             <label>
               <span className="text-[10px] font-semibold text-white/42">
@@ -602,7 +628,7 @@ function GraphNodeEditor({
         />
       ) : null}
 
-      {node.exit.kind === "auto" ? (
+      {node.kind === "router" ? (
         <StoryAutoRoutesEditor
           content={content}
           node={node}

@@ -1,7 +1,6 @@
 "use client";
 
 import {
-  IconGitBranch,
   IconMovie,
   IconPlus,
   IconRoute,
@@ -13,11 +12,10 @@ import { useTranslations } from "next-intl";
 import { FrostedPanel } from "@/components/ui/frosted-panel";
 import { cn } from "@/lib/utils";
 
-export type StoryNodeCreationKind = "clip" | "choice" | "router" | "ending";
+export type StoryNodeCreationKind = "clip" | "router" | "ending";
 
 interface StoryNodeCreatorProps {
   open: boolean;
-  canAddChoice: boolean;
   onOpenChange: (open: boolean) => void;
   onCreate: (kind: StoryNodeCreationKind) => void;
 }
@@ -37,12 +35,6 @@ const CREATOR_ITEMS: CreatorItem[] = [
     iconBackground: "rgba(255,255,255,0.22)",
   },
   {
-    kind: "choice",
-    icon: IconGitBranch,
-    color: "rgba(91,157,255,0.38)",
-    iconBackground: "rgba(91,157,255,0.62)",
-  },
-  {
     kind: "router",
     icon: IconRoute,
     color: "rgba(224,164,92,0.30)",
@@ -56,12 +48,7 @@ const CREATOR_ITEMS: CreatorItem[] = [
   },
 ];
 
-export function StoryNodeCreator({
-  open,
-  canAddChoice,
-  onOpenChange,
-  onCreate,
-}: StoryNodeCreatorProps) {
+export function StoryNodeCreator({ open, onOpenChange, onCreate }: StoryNodeCreatorProps) {
   const t = useTranslations("storyStudio.canvas");
 
   return (
@@ -89,18 +76,16 @@ export function StoryNodeCreator({
           </div>
           <div className="grid gap-1">
             {CREATOR_ITEMS.map((item) => {
-              const disabled = item.kind === "choice" && !canAddChoice;
               const ItemIcon = item.icon;
               return (
                 <button
                   key={item.kind}
                   type="button"
-                  disabled={disabled}
                   onClick={() => {
                     onCreate(item.kind);
                     onOpenChange(false);
                   }}
-                  className="group flex min-h-16 w-full items-center gap-3 rounded-[16px] px-2.5 py-2 text-left transition hover:bg-white/[0.07] disabled:cursor-not-allowed disabled:opacity-36"
+                  className="group flex min-h-16 w-full items-center gap-3 rounded-[16px] px-2.5 py-2 text-left transition hover:bg-white/[0.07]"
                 >
                   <span
                     className="grid size-10 shrink-0 place-items-center rounded-[14px] text-white shadow-[0_10px_26px_rgba(0,0,0,0.22)]"
@@ -118,9 +103,7 @@ export function StoryNodeCreator({
                       {t(`creator.${item.kind}`)}
                     </span>
                     <span className="mt-0.5 block text-[10px] leading-4 text-white/36">
-                      {disabled
-                        ? t("creator.choiceUnavailable")
-                        : t(`creator.${item.kind}Description`)}
+                      {t(`creator.${item.kind}Description`)}
                     </span>
                   </span>
                 </button>
