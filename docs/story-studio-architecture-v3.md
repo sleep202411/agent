@@ -1,5 +1,14 @@
 # Story Studio 产品架构 v3
 
+> **2026-07-15 ownership update:** `docs/story-experience-platform-rfc-v1.md`
+> is now authoritative for Runtime Manifest v2, Experience SDK, publication,
+> player sessions/saves, and durable telemetry. In particular, Java is the
+> target source of truth for published manifests and player data. The local
+> `StoryRelease` / `StoryDeployment` design below documents the existing
+> implementation and is no longer the target publication authority. The
+> authoring, revision, production, and Build sections remain applicable until
+> their v2 migration is completed.
+
 > 状态：目标态准源（2026-07-12）  
 > 范围：多格式 Story Studio、互动影游生产、审核、Build、Release  
 > 取代：已删除的文字画布专用 `story-studio-project-schema-v1.md`  

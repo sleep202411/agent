@@ -1,0 +1,70 @@
+{
+  "semanticRulesVersion": 1,
+  "rules": [
+    {
+      "id": "manifest.identifiers.unique",
+      "appliesTo": "RuntimeManifest",
+      "summary": "IDs are unique in their declared scope and globally where the contract says globally unique."
+    },
+    {
+      "id": "manifest.state.unambiguous",
+      "appliesTo": "RuntimeManifest",
+      "summary": "State definitions are unique, cannot overlap a JSON-object root, and every expression/action path resolves to one definition."
+    },
+    {
+      "id": "manifest.event-selector.non-overlap",
+      "appliesTo": "RuntimeManifest",
+      "summary": "No two selectors in one node may match the same event, including wildcard source or qualifier overlap."
+    },
+    {
+      "id": "manifest.route.deterministic",
+      "appliesTo": "RuntimeManifest",
+      "summary": "Fallback routes are last; at most one navigation action exists and it is the final action."
+    },
+    {
+      "id": "manifest.graph.valid",
+      "appliesTo": "RuntimeManifest",
+      "summary": "References resolve, finite experiences can reach an ending, and all graph nodes are reachable from entry."
+    },
+    {
+      "id": "manifest.capabilities.complete",
+      "appliesTo": "RuntimeManifest",
+      "summary": "Renderer, gesture, spatial, audio, and extension features declare every required host capability."
+    },
+    {
+      "id": "manifest.spatial.executable",
+      "appliesTo": "RuntimeManifest",
+      "summary": "Anchors remain in bounds, reference the same scene, and keyframes preserve resolved geometry kind and polygon topology for every orientation."
+    },
+    {
+      "id": "manifest.gesture.executable",
+      "appliesTo": "RuntimeManifest",
+      "summary": "Gesture references resolve and a press-hold duration fits within its active window."
+    },
+    {
+      "id": "manifest.telemetry.privacy-and-types",
+      "appliesTo": "RuntimeManifest",
+      "summary": "Telemetry payload fields are declared, type-compatible, complete, and never read sensitive state."
+    },
+    {
+      "id": "release.publisher-materialization",
+      "appliesTo": "ReleaseRequestPublisherValidation",
+      "summary": "The publisher fully materializes and validates Runtime Manifest v2 before Java stores its opaque JSON value."
+    },
+    {
+      "id": "player-event-batch.identity",
+      "appliesTo": "PlayerEventBatch",
+      "summary": "All events share session, game, manifest, build, and content-version identities."
+    },
+    {
+      "id": "player-event-batch.order",
+      "appliesTo": "PlayerEventBatch",
+      "summary": "Event IDs and sequence numbers are unique and sequences are strictly increasing."
+    },
+    {
+      "id": "checkpoint.concurrency",
+      "appliesTo": "CheckpointWrite",
+      "summary": "clientWriteId is idempotent and Java atomically compares both session and player-state versions."
+    }
+  ]
+}

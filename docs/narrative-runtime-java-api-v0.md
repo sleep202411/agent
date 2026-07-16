@@ -1,5 +1,12 @@
 # 文字游戏 Narrative Play — 后端接口契约 v1(IP 直玩 · 无创作者版)
 
+> **Scope clarification (2026-07-15):** this document defines the separate
+> IP-direct, live-LLM text-play service. It does not define Story Studio
+> Runtime Manifest publication, compiled experiences, player saves, or
+> telemetry. Those cross-team contracts are defined by
+> `docs/story-experience-platform-rfc-v1.md` and
+> `contracts/experience-runtime/v2/`.
+
 > 状态:需求草案,发后端前待确认(§10 开关未定)。
 > 目标读者:后端、Web 玩家端。
 > 版本变更:本文 **v1 取代 v0**。v0 是「创作者授权 → 编译 → 发布 runtimeJson release → 玩家端读 release」

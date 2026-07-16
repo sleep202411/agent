@@ -1,0 +1,1413 @@
+{
+  "$id": "https://contracts.fizzdragon.com/experience-runtime/v2/runtime-manifest.schema.json",
+  "title": "FizzDragon Experience Runtime v2 RuntimeManifest",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "manifestType": { "$ref": "#/$defs/__schema0" },
+    "schemaVersion": { "$ref": "#/$defs/__schema1" },
+    "channel": { "$ref": "#/$defs/__schema2" },
+    "gameId": { "$ref": "#/$defs/__schema3" },
+    "buildId": { "$ref": "#/$defs/__schema3" },
+    "contentVersion": { "$ref": "#/$defs/__schema3" },
+    "completionPolicy": { "$ref": "#/$defs/__schema4" },
+    "metadata": { "$ref": "#/$defs/__schema5" },
+    "compatibility": { "$ref": "#/$defs/__schema8" },
+    "localization": { "$ref": "#/$defs/__schema9" },
+    "stateDefinitions": { "$ref": "#/$defs/__schema10" },
+    "inputActions": { "$ref": "#/$defs/__schema17" },
+    "rendererRequirements": { "$ref": "#/$defs/__schema18" },
+    "assets": { "$ref": "#/$defs/__schema20" },
+    "theme": { "$ref": "#/$defs/__schema37" },
+    "audio": { "$ref": "#/$defs/__schema38" },
+    "telemetryDefinitions": { "$ref": "#/$defs/__schema49" },
+    "endings": { "$ref": "#/$defs/__schema52" },
+    "graph": { "$ref": "#/$defs/__schema53" }
+  },
+  "required": [
+    "manifestType",
+    "schemaVersion",
+    "channel",
+    "gameId",
+    "buildId",
+    "contentVersion",
+    "completionPolicy",
+    "metadata",
+    "compatibility",
+    "localization",
+    "stateDefinitions",
+    "inputActions",
+    "rendererRequirements",
+    "assets",
+    "theme",
+    "telemetryDefinitions",
+    "endings",
+    "graph"
+  ],
+  "additionalProperties": false,
+  "$defs": {
+    "__schema0": { "type": "string", "const": "fizzdragon.experience" },
+    "__schema1": { "type": "number", "const": 2 },
+    "__schema2": { "type": "string", "enum": ["preview", "production"] },
+    "__schema3": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 160,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]*$"
+    },
+    "__schema4": { "type": "string", "enum": ["finite", "open-ended"] },
+    "__schema5": {
+      "type": "object",
+      "properties": {
+        "title": { "$ref": "#/$defs/__schema6" },
+        "summary": { "$ref": "#/$defs/__schema6" },
+        "coverAssetId": { "$ref": "#/$defs/__schema3" }
+      },
+      "required": ["title"],
+      "additionalProperties": false
+    },
+    "__schema6": {
+      "type": "object",
+      "propertyNames": { "$ref": "#/$defs/__schema7" },
+      "additionalProperties": { "type": "string", "minLength": 1 }
+    },
+    "__schema7": { "type": "string", "pattern": "^[A-Za-z]{2,3}(?:-[A-Za-z0-9]{2,8})*$" },
+    "__schema8": {
+      "type": "object",
+      "properties": {
+        "engineApiVersion": { "$ref": "#/$defs/__schema3" },
+        "experienceApiVersion": { "$ref": "#/$defs/__schema3" },
+        "semanticRulesVersion": { "type": "number", "const": 1 },
+        "requiredCapabilities": {
+          "default": [],
+          "type": "array",
+          "items": { "$ref": "#/$defs/__schema3" }
+        }
+      },
+      "required": [
+        "engineApiVersion",
+        "experienceApiVersion",
+        "semanticRulesVersion",
+        "requiredCapabilities"
+      ],
+      "additionalProperties": false
+    },
+    "__schema9": {
+      "type": "object",
+      "properties": {
+        "defaultLocale": { "$ref": "#/$defs/__schema7" },
+        "locales": { "minItems": 1, "type": "array", "items": { "$ref": "#/$defs/__schema7" } }
+      },
+      "required": ["defaultLocale", "locales"],
+      "additionalProperties": false
+    },
+    "__schema10": {
+      "default": [],
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "key": { "$ref": "#/$defs/__schema11" },
+          "valueType": { "$ref": "#/$defs/__schema12" },
+          "scope": { "$ref": "#/$defs/__schema13" },
+          "initialValue": { "$ref": "#/$defs/__schema14" },
+          "constraints": { "$ref": "#/$defs/__schema15" },
+          "sensitive": { "$ref": "#/$defs/__schema16" }
+        },
+        "required": ["key", "valueType", "scope", "initialValue", "sensitive"],
+        "additionalProperties": false
+      }
+    },
+    "__schema11": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 240,
+      "pattern": "^[A-Za-z_][A-Za-z0-9_-]*(?:\\.[A-Za-z_][A-Za-z0-9_-]*)*$"
+    },
+    "__schema12": { "type": "string", "enum": ["string", "number", "boolean", "json"] },
+    "__schema13": { "type": "string", "enum": ["session", "player", "scene"] },
+    "__schema14": {
+      "anyOf": [
+        { "type": "string" },
+        { "type": "number" },
+        { "type": "boolean" },
+        { "type": "null" },
+        { "type": "array", "items": { "$ref": "#/$defs/__schema14" } },
+        {
+          "type": "object",
+          "propertyNames": { "type": "string" },
+          "additionalProperties": { "$ref": "#/$defs/__schema14" }
+        }
+      ]
+    },
+    "__schema15": {
+      "type": "object",
+      "properties": {
+        "minimum": { "type": "number" },
+        "maximum": { "type": "number" },
+        "minLength": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
+        "maxLength": { "type": "integer", "exclusiveMinimum": 0, "maximum": 9007199254740991 },
+        "allowedValues": {
+          "minItems": 1,
+          "type": "array",
+          "items": { "$ref": "#/$defs/__schema14" }
+        }
+      },
+      "additionalProperties": false
+    },
+    "__schema16": { "default": false, "type": "boolean" },
+    "__schema17": {
+      "default": [],
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "actionId": { "$ref": "#/$defs/__schema3" },
+          "label": { "$ref": "#/$defs/__schema6" },
+          "required": { "default": true, "type": "boolean" },
+          "accessibilityDescription": { "$ref": "#/$defs/__schema6" }
+        },
+        "required": ["actionId", "label", "required"],
+        "additionalProperties": false
+      }
+    },
+    "__schema18": { "minItems": 1, "type": "array", "items": { "$ref": "#/$defs/__schema19" } },
+    "__schema19": {
+      "type": "object",
+      "properties": {
+        "rendererId": { "$ref": "#/$defs/__schema3" },
+        "apiVersion": { "$ref": "#/$defs/__schema3" },
+        "configSchemaVersion": { "$ref": "#/$defs/__schema3" },
+        "requiredCapabilities": {
+          "default": [],
+          "type": "array",
+          "items": { "$ref": "#/$defs/__schema3" }
+        },
+        "outcomes": {
+          "default": [],
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "outcomeType": { "$ref": "#/$defs/__schema3" },
+              "payloadSchemaAssetId": { "$ref": "#/$defs/__schema3" }
+            },
+            "required": ["outcomeType"],
+            "additionalProperties": false
+          }
+        },
+        "commands": {
+          "default": [],
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "commandType": { "$ref": "#/$defs/__schema3" },
+              "payloadSchemaAssetId": { "$ref": "#/$defs/__schema3" }
+            },
+            "required": ["commandType"],
+            "additionalProperties": false
+          }
+        }
+      },
+      "required": [
+        "rendererId",
+        "apiVersion",
+        "configSchemaVersion",
+        "requiredCapabilities",
+        "outcomes",
+        "commands"
+      ],
+      "additionalProperties": false
+    },
+    "__schema20": {
+      "default": [],
+      "type": "array",
+      "items": {
+        "oneOf": [
+          {
+            "type": "object",
+            "properties": {
+              "assetId": { "$ref": "#/$defs/__schema3" },
+              "kind": { "$ref": "#/$defs/__schema21" },
+              "orientationPolicy": { "$ref": "#/$defs/__schema22" },
+              "variants": { "$ref": "#/$defs/__schema23" },
+              "audioMode": { "$ref": "#/$defs/__schema30" }
+            },
+            "required": ["assetId", "kind", "orientationPolicy", "variants", "audioMode"],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "assetId": { "$ref": "#/$defs/__schema3" },
+              "kind": { "$ref": "#/$defs/__schema31" },
+              "orientationPolicy": { "$ref": "#/$defs/__schema22" },
+              "variants": { "$ref": "#/$defs/__schema32" }
+            },
+            "required": ["assetId", "kind", "orientationPolicy", "variants"],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "assetId": { "$ref": "#/$defs/__schema3" },
+              "kind": { "$ref": "#/$defs/__schema34" },
+              "variants": { "$ref": "#/$defs/__schema35" }
+            },
+            "required": ["assetId", "kind", "variants"],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "assetId": { "$ref": "#/$defs/__schema3" },
+              "sourceAssetId": { "$ref": "#/$defs/__schema3" },
+              "sha256": { "$ref": "#/$defs/__schema25" },
+              "uri": { "$ref": "#/$defs/__schema26" },
+              "mediaType": { "$ref": "#/$defs/__schema27" },
+              "kind": { "type": "string", "const": "data" },
+              "format": { "type": "string", "enum": ["json", "vtt", "svg", "lottie", "tracking"] }
+            },
+            "required": [
+              "assetId",
+              "sourceAssetId",
+              "sha256",
+              "uri",
+              "mediaType",
+              "kind",
+              "format"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "assetId": { "$ref": "#/$defs/__schema3" },
+              "sourceAssetId": { "$ref": "#/$defs/__schema3" },
+              "sha256": { "$ref": "#/$defs/__schema25" },
+              "uri": { "$ref": "#/$defs/__schema26" },
+              "mediaType": { "$ref": "#/$defs/__schema27" },
+              "kind": { "type": "string", "const": "font" },
+              "family": { "type": "string", "minLength": 1, "maxLength": 120 },
+              "weight": { "type": "integer", "minimum": 100, "maximum": 900 },
+              "style": { "type": "string", "enum": ["normal", "italic"] }
+            },
+            "required": [
+              "assetId",
+              "sourceAssetId",
+              "sha256",
+              "uri",
+              "mediaType",
+              "kind",
+              "family",
+              "weight",
+              "style"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "assetId": { "$ref": "#/$defs/__schema3" },
+              "sourceAssetId": { "$ref": "#/$defs/__schema3" },
+              "sha256": { "$ref": "#/$defs/__schema25" },
+              "uri": { "$ref": "#/$defs/__schema26" },
+              "mediaType": { "$ref": "#/$defs/__schema27" },
+              "kind": { "type": "string", "const": "model" },
+              "format": { "type": "string", "enum": ["gltf", "glb"] }
+            },
+            "required": [
+              "assetId",
+              "sourceAssetId",
+              "sha256",
+              "uri",
+              "mediaType",
+              "kind",
+              "format"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "assetId": { "$ref": "#/$defs/__schema3" },
+              "sourceAssetId": { "$ref": "#/$defs/__schema3" },
+              "sha256": { "$ref": "#/$defs/__schema25" },
+              "uri": { "$ref": "#/$defs/__schema26" },
+              "mediaType": { "$ref": "#/$defs/__schema27" },
+              "kind": { "type": "string", "const": "binary" },
+              "format": { "$ref": "#/$defs/__schema3" }
+            },
+            "required": [
+              "assetId",
+              "sourceAssetId",
+              "sha256",
+              "uri",
+              "mediaType",
+              "kind",
+              "format"
+            ],
+            "additionalProperties": false
+          }
+        ]
+      }
+    },
+    "__schema21": { "type": "string", "const": "video" },
+    "__schema22": { "type": "string", "enum": ["paired-required", "single-master", "responsive"] },
+    "__schema23": { "minItems": 1, "type": "array", "items": { "$ref": "#/$defs/__schema24" } },
+    "__schema24": {
+      "type": "object",
+      "properties": {
+        "variantId": { "$ref": "#/$defs/__schema3" },
+        "sourceAssetId": { "$ref": "#/$defs/__schema3" },
+        "sha256": { "$ref": "#/$defs/__schema25" },
+        "uri": { "$ref": "#/$defs/__schema26" },
+        "mediaType": { "$ref": "#/$defs/__schema27" },
+        "orientation": { "$ref": "#/$defs/__schema28" },
+        "width": { "$ref": "#/$defs/__schema29" },
+        "height": { "$ref": "#/$defs/__schema29" },
+        "durationMs": { "$ref": "#/$defs/__schema29" },
+        "framesPerSecond": {
+          "type": "object",
+          "properties": {
+            "numerator": { "$ref": "#/$defs/__schema29" },
+            "denominator": { "$ref": "#/$defs/__schema29" }
+          },
+          "required": ["numerator", "denominator"],
+          "additionalProperties": false
+        },
+        "codec": { "type": "string", "minLength": 1, "maxLength": 80 }
+      },
+      "required": [
+        "variantId",
+        "sourceAssetId",
+        "sha256",
+        "uri",
+        "mediaType",
+        "orientation",
+        "width",
+        "height",
+        "durationMs"
+      ],
+      "additionalProperties": false
+    },
+    "__schema25": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+    "__schema26": { "type": "string", "minLength": 1 },
+    "__schema27": { "type": "string", "pattern": "^[a-z0-9.+-]+\\/[a-z0-9.+-]+$" },
+    "__schema28": { "type": "string", "enum": ["landscape", "portrait", "square"] },
+    "__schema29": { "type": "integer", "exclusiveMinimum": 0, "maximum": 9007199254740991 },
+    "__schema30": { "type": "string", "enum": ["none", "embedded"] },
+    "__schema31": { "type": "string", "const": "image" },
+    "__schema32": { "minItems": 1, "type": "array", "items": { "$ref": "#/$defs/__schema33" } },
+    "__schema33": {
+      "type": "object",
+      "properties": {
+        "variantId": { "$ref": "#/$defs/__schema3" },
+        "sourceAssetId": { "$ref": "#/$defs/__schema3" },
+        "sha256": { "$ref": "#/$defs/__schema25" },
+        "uri": { "$ref": "#/$defs/__schema26" },
+        "mediaType": { "$ref": "#/$defs/__schema27" },
+        "orientation": { "$ref": "#/$defs/__schema28" },
+        "width": { "$ref": "#/$defs/__schema29" },
+        "height": { "$ref": "#/$defs/__schema29" }
+      },
+      "required": [
+        "variantId",
+        "sourceAssetId",
+        "sha256",
+        "uri",
+        "mediaType",
+        "orientation",
+        "width",
+        "height"
+      ],
+      "additionalProperties": false
+    },
+    "__schema34": { "type": "string", "const": "audio" },
+    "__schema35": { "minItems": 1, "type": "array", "items": { "$ref": "#/$defs/__schema36" } },
+    "__schema36": {
+      "type": "object",
+      "properties": {
+        "variantId": { "$ref": "#/$defs/__schema3" },
+        "sourceAssetId": { "$ref": "#/$defs/__schema3" },
+        "sha256": { "$ref": "#/$defs/__schema25" },
+        "uri": { "$ref": "#/$defs/__schema26" },
+        "mediaType": { "$ref": "#/$defs/__schema27" },
+        "locale": { "$ref": "#/$defs/__schema7" },
+        "durationMs": { "$ref": "#/$defs/__schema29" },
+        "channels": { "maximum": 32, "$ref": "#/$defs/__schema29" },
+        "sampleRate": { "$ref": "#/$defs/__schema29" },
+        "codec": { "type": "string", "minLength": 1, "maxLength": 80 }
+      },
+      "required": ["variantId", "sourceAssetId", "sha256", "uri", "mediaType", "durationMs"],
+      "additionalProperties": false
+    },
+    "__schema37": {
+      "type": "object",
+      "properties": {
+        "themeId": { "$ref": "#/$defs/__schema3" },
+        "apiVersion": { "$ref": "#/$defs/__schema3" },
+        "configAssetId": { "$ref": "#/$defs/__schema3" }
+      },
+      "required": ["themeId", "apiVersion", "configAssetId"],
+      "additionalProperties": false
+    },
+    "__schema38": {
+      "type": "object",
+      "properties": {
+        "buses": { "minItems": 1, "type": "array", "items": { "$ref": "#/$defs/__schema39" } },
+        "cues": {
+          "default": [],
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "cueId": { "$ref": "#/$defs/__schema3" },
+              "busId": { "$ref": "#/$defs/__schema3" },
+              "assetIds": { "$ref": "#/$defs/__schema40" },
+              "selection": { "$ref": "#/$defs/__schema41" },
+              "loop": { "$ref": "#/$defs/__schema42" },
+              "gain": { "$ref": "#/$defs/__schema43" },
+              "playbackRate": { "$ref": "#/$defs/__schema44" },
+              "fadeInMs": { "$ref": "#/$defs/__schema45" },
+              "fadeOutMs": { "$ref": "#/$defs/__schema46" },
+              "concurrency": { "$ref": "#/$defs/__schema47" },
+              "spatialAnchorId": { "$ref": "#/$defs/__schema48" }
+            },
+            "required": [
+              "cueId",
+              "busId",
+              "assetIds",
+              "selection",
+              "loop",
+              "gain",
+              "playbackRate",
+              "fadeInMs",
+              "fadeOutMs"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "snapshots": {
+          "default": [],
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "snapshotId": { "$ref": "#/$defs/__schema3" },
+              "busGains": {
+                "type": "object",
+                "propertyNames": { "$ref": "#/$defs/__schema3" },
+                "additionalProperties": { "type": "number", "minimum": 0, "maximum": 4 }
+              },
+              "transitionMs": { "default": 0, "type": "integer", "minimum": 0, "maximum": 60000 }
+            },
+            "required": ["snapshotId", "busGains", "transitionMs"],
+            "additionalProperties": false
+          }
+        },
+        "duckingRules": {
+          "default": [],
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "ruleId": { "$ref": "#/$defs/__schema3" },
+              "triggerBusId": { "$ref": "#/$defs/__schema3" },
+              "targetBusId": { "$ref": "#/$defs/__schema3" },
+              "targetGain": { "type": "number", "minimum": 0, "maximum": 1 },
+              "attackMs": { "type": "integer", "minimum": 0, "maximum": 10000 },
+              "releaseMs": { "type": "integer", "minimum": 0, "maximum": 10000 }
+            },
+            "required": [
+              "ruleId",
+              "triggerBusId",
+              "targetBusId",
+              "targetGain",
+              "attackMs",
+              "releaseMs"
+            ],
+            "additionalProperties": false
+          }
+        }
+      },
+      "required": ["buses", "cues", "snapshots", "duckingRules"],
+      "additionalProperties": false
+    },
+    "__schema39": {
+      "type": "object",
+      "properties": {
+        "busId": { "$ref": "#/$defs/__schema3" },
+        "role": {
+          "type": "string",
+          "enum": ["master", "music", "ambience", "dialogue", "sfx", "ui", "media", "custom"]
+        },
+        "parentBusId": { "$ref": "#/$defs/__schema3" },
+        "defaultGain": { "default": 1, "type": "number", "minimum": 0, "maximum": 4 },
+        "defaultMuted": { "default": false, "type": "boolean" }
+      },
+      "required": ["busId", "role", "defaultGain", "defaultMuted"],
+      "additionalProperties": false
+    },
+    "__schema40": { "minItems": 1, "type": "array", "items": { "$ref": "#/$defs/__schema3" } },
+    "__schema41": {
+      "default": "single",
+      "type": "string",
+      "enum": ["single", "random", "sequential"]
+    },
+    "__schema42": { "default": false, "type": "boolean" },
+    "__schema43": { "default": 1, "type": "number", "minimum": 0, "maximum": 4 },
+    "__schema44": {
+      "default": { "minimum": 1, "maximum": 1 },
+      "type": "object",
+      "properties": {
+        "minimum": { "type": "number", "exclusiveMinimum": 0 },
+        "maximum": { "type": "number", "exclusiveMinimum": 0 }
+      },
+      "required": ["minimum", "maximum"],
+      "additionalProperties": false
+    },
+    "__schema45": { "default": 0, "type": "integer", "minimum": 0, "maximum": 60000 },
+    "__schema46": { "default": 0, "type": "integer", "minimum": 0, "maximum": 60000 },
+    "__schema47": {
+      "type": "object",
+      "properties": {
+        "groupId": { "$ref": "#/$defs/__schema3" },
+        "maxInstances": { "type": "integer", "exclusiveMinimum": 0, "maximum": 64 },
+        "overflowBehavior": {
+          "type": "string",
+          "enum": ["reject-new", "stop-oldest", "stop-quietest"]
+        }
+      },
+      "required": ["groupId", "maxInstances", "overflowBehavior"],
+      "additionalProperties": false
+    },
+    "__schema48": { "$ref": "#/$defs/__schema3" },
+    "__schema49": {
+      "default": [],
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "eventName": { "$ref": "#/$defs/__schema50" },
+          "fields": { "$ref": "#/$defs/__schema51" }
+        },
+        "required": ["eventName", "fields"],
+        "additionalProperties": false
+      }
+    },
+    "__schema50": {
+      "type": "string",
+      "minLength": 3,
+      "maxLength": 160,
+      "pattern": "^[a-z][a-z0-9-]*(?:\\.[a-z][a-z0-9-]*)+$"
+    },
+    "__schema51": {
+      "default": [],
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "field": { "$ref": "#/$defs/__schema3" },
+          "valueType": {
+            "type": "string",
+            "enum": ["string", "number", "boolean", "duration-ms", "id", "json"]
+          },
+          "required": { "default": false, "type": "boolean" },
+          "classification": { "type": "string", "enum": ["functional", "analytics"] }
+        },
+        "required": ["field", "valueType", "required", "classification"],
+        "additionalProperties": false
+      }
+    },
+    "__schema52": {
+      "default": [],
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "endingId": { "$ref": "#/$defs/__schema3" },
+          "title": { "$ref": "#/$defs/__schema6" },
+          "summary": { "$ref": "#/$defs/__schema6" },
+          "kind": {
+            "type": "string",
+            "enum": ["success", "failure", "neutral", "hidden", "custom"]
+          }
+        },
+        "required": ["endingId", "title", "kind"],
+        "additionalProperties": false
+      }
+    },
+    "__schema53": {
+      "type": "object",
+      "properties": {
+        "entrySceneId": { "$ref": "#/$defs/__schema3" },
+        "nodes": { "minItems": 1, "type": "array", "items": { "$ref": "#/$defs/__schema54" } }
+      },
+      "required": ["entrySceneId", "nodes"],
+      "additionalProperties": false
+    },
+    "__schema54": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "kind": { "type": "string", "const": "scene" },
+            "sceneId": { "$ref": "#/$defs/__schema3" },
+            "clock": {
+              "default": { "kind": "none" },
+              "oneOf": [
+                {
+                  "type": "object",
+                  "properties": { "kind": { "type": "string", "const": "none" } },
+                  "required": ["kind"],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "kind": { "type": "string", "const": "fixed" },
+                    "durationMs": {
+                      "type": "integer",
+                      "exclusiveMinimum": 0,
+                      "maximum": 9007199254740991
+                    }
+                  },
+                  "required": ["kind", "durationMs"],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "kind": { "type": "string", "const": "renderer" },
+                    "rendererInstanceId": { "$ref": "#/$defs/__schema3" }
+                  },
+                  "required": ["kind", "rendererInstanceId"],
+                  "additionalProperties": false
+                }
+              ]
+            },
+            "renderers": {
+              "default": [],
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "instanceId": { "$ref": "#/$defs/__schema3" },
+                  "rendererId": { "$ref": "#/$defs/__schema3" },
+                  "layer": { "type": "integer", "minimum": -10000, "maximum": 10000 },
+                  "config": { "$ref": "#/$defs/__schema55" },
+                  "bindings": {
+                    "default": {},
+                    "type": "object",
+                    "propertyNames": { "$ref": "#/$defs/__schema3" },
+                    "additionalProperties": { "$ref": "#/$defs/__schema56" }
+                  },
+                  "visibleWhen": { "$ref": "#/$defs/__schema57" },
+                  "anchorId": { "$ref": "#/$defs/__schema3" },
+                  "accessibleFallback": {
+                    "type": "object",
+                    "properties": {
+                      "rendererId": { "$ref": "#/$defs/__schema3" },
+                      "config": { "$ref": "#/$defs/__schema55" }
+                    },
+                    "required": ["rendererId", "config"],
+                    "additionalProperties": false
+                  }
+                },
+                "required": ["instanceId", "rendererId", "layer", "config", "bindings"],
+                "additionalProperties": false
+              }
+            },
+            "anchors": {
+              "default": [],
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "anchorId": { "$ref": "#/$defs/__schema3" },
+                  "space": {
+                    "oneOf": [
+                      {
+                        "type": "object",
+                        "properties": { "kind": { "type": "string", "const": "viewport" } },
+                        "required": ["kind"],
+                        "additionalProperties": false
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "kind": { "type": "string", "const": "renderer-content" },
+                          "rendererInstanceId": { "$ref": "#/$defs/__schema3" }
+                        },
+                        "required": ["kind", "rendererInstanceId"],
+                        "additionalProperties": false
+                      }
+                    ]
+                  },
+                  "geometry": { "$ref": "#/$defs/__schema58" },
+                  "motion": {
+                    "default": { "kind": "fixed" },
+                    "oneOf": [
+                      {
+                        "type": "object",
+                        "properties": { "kind": { "type": "string", "const": "fixed" } },
+                        "required": ["kind"],
+                        "additionalProperties": false
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "kind": { "$ref": "#/$defs/__schema70" },
+                          "keyframes": { "$ref": "#/$defs/__schema71" }
+                        },
+                        "required": ["kind", "keyframes"],
+                        "additionalProperties": false
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "kind": { "type": "string", "const": "tracked" },
+                          "trackingAssetId": { "$ref": "#/$defs/__schema3" },
+                          "trackId": { "$ref": "#/$defs/__schema3" }
+                        },
+                        "required": ["kind", "trackingAssetId", "trackId"],
+                        "additionalProperties": false
+                      }
+                    ]
+                  }
+                },
+                "required": ["anchorId", "space", "geometry", "motion"],
+                "additionalProperties": false
+              }
+            },
+            "gestures": {
+              "default": [],
+              "type": "array",
+              "items": {
+                "anyOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "gestureId": { "$ref": "#/$defs/__schema3" },
+                      "anchorId": { "$ref": "#/$defs/__schema3" },
+                      "inputActionId": { "$ref": "#/$defs/__schema3" },
+                      "enabledWhen": { "$ref": "#/$defs/__schema73" },
+                      "activeWindow": { "$ref": "#/$defs/__schema74" },
+                      "feedbackRendererInstanceId": { "$ref": "#/$defs/__schema77" },
+                      "accessibleAlternativeActionId": { "$ref": "#/$defs/__schema78" },
+                      "kind": { "type": "string", "const": "tap" },
+                      "maxDurationMs": {
+                        "default": 500,
+                        "type": "integer",
+                        "minimum": 100,
+                        "maximum": 2000
+                      }
+                    },
+                    "required": ["gestureId", "anchorId", "inputActionId", "kind", "maxDurationMs"],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "gestureId": { "$ref": "#/$defs/__schema3" },
+                      "anchorId": { "$ref": "#/$defs/__schema3" },
+                      "inputActionId": { "$ref": "#/$defs/__schema3" },
+                      "enabledWhen": { "$ref": "#/$defs/__schema73" },
+                      "activeWindow": { "$ref": "#/$defs/__schema74" },
+                      "feedbackRendererInstanceId": { "$ref": "#/$defs/__schema77" },
+                      "accessibleAlternativeActionId": { "$ref": "#/$defs/__schema78" },
+                      "kind": { "$ref": "#/$defs/__schema79" },
+                      "durationMs": { "$ref": "#/$defs/__schema80" },
+                      "releaseBehavior": { "$ref": "#/$defs/__schema81" },
+                      "decayPerSecond": { "$ref": "#/$defs/__schema82" },
+                      "cancelOnPointerExit": { "$ref": "#/$defs/__schema83" }
+                    },
+                    "required": [
+                      "gestureId",
+                      "anchorId",
+                      "inputActionId",
+                      "kind",
+                      "durationMs",
+                      "releaseBehavior",
+                      "cancelOnPointerExit"
+                    ],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "gestureId": { "$ref": "#/$defs/__schema3" },
+                      "anchorId": { "$ref": "#/$defs/__schema3" },
+                      "inputActionId": { "$ref": "#/$defs/__schema3" },
+                      "enabledWhen": { "$ref": "#/$defs/__schema73" },
+                      "activeWindow": { "$ref": "#/$defs/__schema74" },
+                      "feedbackRendererInstanceId": { "$ref": "#/$defs/__schema77" },
+                      "accessibleAlternativeActionId": { "$ref": "#/$defs/__schema78" },
+                      "kind": { "type": "string", "const": "rapid-tap" },
+                      "requiredCount": { "type": "integer", "minimum": 2, "maximum": 100 },
+                      "withinMs": { "type": "integer", "minimum": 250, "maximum": 60000 },
+                      "missBehavior": {
+                        "default": "decay",
+                        "type": "string",
+                        "enum": ["reset", "decay"]
+                      }
+                    },
+                    "required": [
+                      "gestureId",
+                      "anchorId",
+                      "inputActionId",
+                      "kind",
+                      "requiredCount",
+                      "withinMs",
+                      "missBehavior"
+                    ],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "gestureId": { "$ref": "#/$defs/__schema3" },
+                      "anchorId": { "$ref": "#/$defs/__schema3" },
+                      "inputActionId": { "$ref": "#/$defs/__schema3" },
+                      "enabledWhen": { "$ref": "#/$defs/__schema73" },
+                      "activeWindow": { "$ref": "#/$defs/__schema74" },
+                      "feedbackRendererInstanceId": { "$ref": "#/$defs/__schema77" },
+                      "accessibleAlternativeActionId": { "$ref": "#/$defs/__schema78" },
+                      "kind": { "type": "string", "const": "swipe" },
+                      "directions": {
+                        "minItems": 1,
+                        "type": "array",
+                        "items": { "$ref": "#/$defs/__schema84" }
+                      },
+                      "minimumDistance": { "type": "number", "exclusiveMinimum": 0, "maximum": 1 },
+                      "maximumDurationMs": { "type": "integer", "minimum": 100, "maximum": 5000 }
+                    },
+                    "required": [
+                      "gestureId",
+                      "anchorId",
+                      "inputActionId",
+                      "kind",
+                      "directions",
+                      "minimumDistance",
+                      "maximumDurationMs"
+                    ],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "gestureId": { "$ref": "#/$defs/__schema3" },
+                      "anchorId": { "$ref": "#/$defs/__schema3" },
+                      "inputActionId": { "$ref": "#/$defs/__schema3" },
+                      "enabledWhen": { "$ref": "#/$defs/__schema73" },
+                      "activeWindow": { "$ref": "#/$defs/__schema74" },
+                      "feedbackRendererInstanceId": { "$ref": "#/$defs/__schema77" },
+                      "accessibleAlternativeActionId": { "$ref": "#/$defs/__schema78" },
+                      "kind": { "type": "string", "const": "drag" },
+                      "targetAnchorIds": {
+                        "minItems": 1,
+                        "type": "array",
+                        "items": { "$ref": "#/$defs/__schema3" }
+                      },
+                      "snapOnComplete": { "default": true, "type": "boolean" }
+                    },
+                    "required": [
+                      "gestureId",
+                      "anchorId",
+                      "inputActionId",
+                      "kind",
+                      "targetAnchorIds",
+                      "snapOnComplete"
+                    ],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "gestureId": { "$ref": "#/$defs/__schema3" },
+                      "anchorId": { "$ref": "#/$defs/__schema3" },
+                      "inputActionId": { "$ref": "#/$defs/__schema3" },
+                      "enabledWhen": { "$ref": "#/$defs/__schema73" },
+                      "activeWindow": { "$ref": "#/$defs/__schema74" },
+                      "feedbackRendererInstanceId": { "$ref": "#/$defs/__schema77" },
+                      "accessibleAlternativeActionId": { "$ref": "#/$defs/__schema78" },
+                      "kind": { "type": "string", "enum": ["pan", "pinch", "rotate"] },
+                      "completionThreshold": { "type": "number", "exclusiveMinimum": 0 }
+                    },
+                    "required": [
+                      "gestureId",
+                      "anchorId",
+                      "inputActionId",
+                      "kind",
+                      "completionThreshold"
+                    ],
+                    "additionalProperties": false
+                  }
+                ]
+              }
+            },
+            "timeline": {
+              "default": { "cues": [] },
+              "type": "object",
+              "properties": { "cues": { "$ref": "#/$defs/__schema85" } },
+              "required": ["cues"],
+              "additionalProperties": false
+            },
+            "eventBindings": {
+              "default": [],
+              "type": "array",
+              "items": { "$ref": "#/$defs/__schema86" }
+            }
+          },
+          "required": [
+            "kind",
+            "sceneId",
+            "clock",
+            "renderers",
+            "anchors",
+            "gestures",
+            "timeline",
+            "eventBindings"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": { "type": "string", "const": "router" },
+            "sceneId": { "$ref": "#/$defs/__schema3" },
+            "eventBindings": {
+              "minItems": 1,
+              "type": "array",
+              "items": { "$ref": "#/$defs/__schema86" }
+            }
+          },
+          "required": ["kind", "sceneId", "eventBindings"],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "__schema55": {
+      "type": "object",
+      "propertyNames": { "type": "string" },
+      "additionalProperties": { "$ref": "#/$defs/__schema14" }
+    },
+    "__schema56": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "kind": { "type": "string", "const": "literal" },
+            "value": { "$ref": "#/$defs/__schema14" }
+          },
+          "required": ["kind", "value"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": { "type": "string", "const": "state" },
+            "path": { "$ref": "#/$defs/__schema11" }
+          },
+          "required": ["kind", "path"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": { "type": "string", "const": "event" },
+            "path": { "$ref": "#/$defs/__schema11" }
+          },
+          "required": ["kind", "path"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": { "type": "string", "const": "context" },
+            "path": { "$ref": "#/$defs/__schema11" }
+          },
+          "required": ["kind", "path"],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "__schema57": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "kind": { "type": "string", "const": "compare" },
+            "left": { "$ref": "#/$defs/__schema56" },
+            "operator": {
+              "type": "string",
+              "enum": [
+                "equals",
+                "not-equals",
+                "greater-than",
+                "at-least",
+                "less-than",
+                "at-most",
+                "contains"
+              ]
+            },
+            "right": { "$ref": "#/$defs/__schema56" }
+          },
+          "required": ["kind", "left", "operator", "right"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": { "type": "string", "const": "exists" },
+            "value": { "$ref": "#/$defs/__schema56" }
+          },
+          "required": ["kind", "value"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": { "type": "string", "const": "all" },
+            "conditions": {
+              "minItems": 1,
+              "type": "array",
+              "items": { "$ref": "#/$defs/__schema57" }
+            }
+          },
+          "required": ["kind", "conditions"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": { "type": "string", "const": "any" },
+            "conditions": {
+              "minItems": 1,
+              "type": "array",
+              "items": { "$ref": "#/$defs/__schema57" }
+            }
+          },
+          "required": ["kind", "conditions"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": { "type": "string", "const": "not" },
+            "condition": { "$ref": "#/$defs/__schema57" }
+          },
+          "required": ["kind", "condition"],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "__schema58": {
+      "type": "object",
+      "properties": {
+        "default": { "$ref": "#/$defs/__schema59" },
+        "landscape": { "$ref": "#/$defs/__schema67" },
+        "portrait": { "$ref": "#/$defs/__schema68" },
+        "square": { "$ref": "#/$defs/__schema69" }
+      },
+      "additionalProperties": false
+    },
+    "__schema59": { "$ref": "#/$defs/__schema60" },
+    "__schema60": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "kind": { "type": "string", "const": "rect" },
+            "rect": { "$ref": "#/$defs/__schema61" }
+          },
+          "required": ["kind", "rect"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": { "type": "string", "const": "ellipse" },
+            "bounds": { "$ref": "#/$defs/__schema61" }
+          },
+          "required": ["kind", "bounds"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": { "type": "string", "const": "polygon" },
+            "points": {
+              "minItems": 3,
+              "maxItems": 64,
+              "type": "array",
+              "items": { "$ref": "#/$defs/__schema66" }
+            }
+          },
+          "required": ["kind", "points"],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "__schema61": {
+      "type": "object",
+      "properties": {
+        "x": { "$ref": "#/$defs/__schema62" },
+        "y": { "$ref": "#/$defs/__schema63" },
+        "width": { "$ref": "#/$defs/__schema64" },
+        "height": { "$ref": "#/$defs/__schema65" }
+      },
+      "required": ["x", "y", "width", "height"],
+      "additionalProperties": false
+    },
+    "__schema62": { "type": "number", "minimum": 0, "maximum": 1 },
+    "__schema63": { "type": "number", "minimum": 0, "maximum": 1 },
+    "__schema64": { "type": "number", "exclusiveMinimum": 0, "maximum": 1 },
+    "__schema65": { "type": "number", "exclusiveMinimum": 0, "maximum": 1 },
+    "__schema66": {
+      "type": "object",
+      "properties": {
+        "x": { "type": "number", "minimum": 0, "maximum": 1 },
+        "y": { "type": "number", "minimum": 0, "maximum": 1 }
+      },
+      "required": ["x", "y"],
+      "additionalProperties": false
+    },
+    "__schema67": { "$ref": "#/$defs/__schema60" },
+    "__schema68": { "$ref": "#/$defs/__schema60" },
+    "__schema69": { "$ref": "#/$defs/__schema60" },
+    "__schema70": { "type": "string", "const": "keyframes" },
+    "__schema71": { "minItems": 2, "type": "array", "items": { "$ref": "#/$defs/__schema72" } },
+    "__schema72": {
+      "type": "object",
+      "properties": {
+        "atMs": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
+        "geometry": { "$ref": "#/$defs/__schema58" },
+        "easing": {
+          "default": "linear",
+          "type": "string",
+          "enum": ["linear", "ease-in", "ease-out", "ease-in-out", "step"]
+        }
+      },
+      "required": ["atMs", "geometry", "easing"],
+      "additionalProperties": false
+    },
+    "__schema73": { "$ref": "#/$defs/__schema57" },
+    "__schema74": {
+      "type": "object",
+      "properties": {
+        "startMs": { "$ref": "#/$defs/__schema75" },
+        "endMs": { "$ref": "#/$defs/__schema76" }
+      },
+      "required": ["startMs", "endMs"],
+      "additionalProperties": false
+    },
+    "__schema75": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
+    "__schema76": { "type": "integer", "exclusiveMinimum": 0, "maximum": 9007199254740991 },
+    "__schema77": { "$ref": "#/$defs/__schema3" },
+    "__schema78": { "$ref": "#/$defs/__schema3" },
+    "__schema79": { "type": "string", "const": "press-hold" },
+    "__schema80": { "type": "integer", "minimum": 100, "maximum": 60000 },
+    "__schema81": { "type": "string", "enum": ["reset", "retain", "decay"] },
+    "__schema82": { "type": "number", "exclusiveMinimum": 0, "maximum": 10 },
+    "__schema83": { "default": true, "type": "boolean" },
+    "__schema84": { "type": "string", "enum": ["up", "down", "left", "right"] },
+    "__schema85": {
+      "default": [],
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "cueId": { "$ref": "#/$defs/__schema3" },
+          "atMs": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
+          "once": { "default": true, "type": "boolean" }
+        },
+        "required": ["cueId", "atMs", "once"],
+        "additionalProperties": false
+      }
+    },
+    "__schema86": {
+      "type": "object",
+      "properties": {
+        "bindingId": { "$ref": "#/$defs/__schema3" },
+        "on": { "$ref": "#/$defs/__schema87" },
+        "routes": { "$ref": "#/$defs/__schema88" }
+      },
+      "required": ["bindingId", "on", "routes"],
+      "additionalProperties": false
+    },
+    "__schema87": {
+      "type": "object",
+      "properties": {
+        "type": { "$ref": "#/$defs/__schema50" },
+        "sourceId": { "$ref": "#/$defs/__schema3" },
+        "qualifierId": { "$ref": "#/$defs/__schema3" }
+      },
+      "required": ["type"],
+      "additionalProperties": false
+    },
+    "__schema88": { "minItems": 1, "type": "array", "items": { "$ref": "#/$defs/__schema89" } },
+    "__schema89": {
+      "type": "object",
+      "properties": {
+        "routeId": { "$ref": "#/$defs/__schema3" },
+        "when": { "$ref": "#/$defs/__schema90" },
+        "actions": { "$ref": "#/$defs/__schema91" }
+      },
+      "required": ["routeId", "actions"],
+      "additionalProperties": false
+    },
+    "__schema90": { "$ref": "#/$defs/__schema57" },
+    "__schema91": { "minItems": 1, "type": "array", "items": { "$ref": "#/$defs/__schema92" } },
+    "__schema92": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "kind": { "type": "string", "const": "state.set" },
+            "path": { "$ref": "#/$defs/__schema11" },
+            "value": { "$ref": "#/$defs/__schema56" }
+          },
+          "required": ["kind", "path", "value"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": { "type": "string", "const": "state.increment" },
+            "path": { "$ref": "#/$defs/__schema11" },
+            "amount": { "$ref": "#/$defs/__schema56" }
+          },
+          "required": ["kind", "path", "amount"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": { "type": "string", "const": "scene.goto" },
+            "sceneId": { "$ref": "#/$defs/__schema3" }
+          },
+          "required": ["kind", "sceneId"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": { "type": "string", "const": "ending.complete" },
+            "endingId": { "$ref": "#/$defs/__schema3" }
+          },
+          "required": ["kind", "endingId"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": { "type": "string", "const": "renderer.command" },
+            "instanceId": { "$ref": "#/$defs/__schema3" },
+            "commandType": { "$ref": "#/$defs/__schema3" },
+            "payload": { "default": {}, "$ref": "#/$defs/__schema93" }
+          },
+          "required": ["kind", "instanceId", "commandType", "payload"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": { "type": "string", "const": "audio.play" },
+            "cueId": { "$ref": "#/$defs/__schema3" },
+            "playbackId": { "$ref": "#/$defs/__schema3" }
+          },
+          "required": ["kind", "cueId"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": { "type": "string", "const": "audio.stop" },
+            "target": { "type": "string", "enum": ["cue", "playback"] },
+            "targetId": { "$ref": "#/$defs/__schema3" },
+            "fadeOutMs": { "type": "integer", "minimum": 0, "maximum": 60000 }
+          },
+          "required": ["kind", "target", "targetId"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": { "type": "string", "const": "audio.fade-bus" },
+            "busId": { "$ref": "#/$defs/__schema3" },
+            "gain": { "type": "number", "minimum": 0, "maximum": 4 },
+            "durationMs": { "type": "integer", "minimum": 0, "maximum": 60000 }
+          },
+          "required": ["kind", "busId", "gain", "durationMs"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": { "type": "string", "const": "audio.apply-snapshot" },
+            "snapshotId": { "$ref": "#/$defs/__schema3" }
+          },
+          "required": ["kind", "snapshotId"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": { "type": "string", "const": "event.emit" },
+            "eventType": { "$ref": "#/$defs/__schema50" },
+            "sourceId": { "$ref": "#/$defs/__schema3" },
+            "qualifierId": { "$ref": "#/$defs/__schema3" },
+            "payload": { "default": {}, "$ref": "#/$defs/__schema93" }
+          },
+          "required": ["kind", "eventType", "payload"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": { "type": "string", "const": "telemetry.emit" },
+            "eventName": { "$ref": "#/$defs/__schema50" },
+            "payload": { "default": {}, "$ref": "#/$defs/__schema93" }
+          },
+          "required": ["kind", "eventName", "payload"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": { "type": "string", "const": "progress.mark-asset-watched" },
+            "assetId": { "$ref": "#/$defs/__schema3" }
+          },
+          "required": ["kind", "assetId"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": { "type": "string", "const": "progress.unlock-ending" },
+            "endingId": { "$ref": "#/$defs/__schema3" }
+          },
+          "required": ["kind", "endingId"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": { "type": "string", "const": "session.checkpoint" },
+            "checkpointId": { "$ref": "#/$defs/__schema3" }
+          },
+          "required": ["kind", "checkpointId"],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "__schema93": {
+      "type": "object",
+      "propertyNames": { "type": "string" },
+      "additionalProperties": { "$ref": "#/$defs/__schema56" }
+    }
+  }
+}
