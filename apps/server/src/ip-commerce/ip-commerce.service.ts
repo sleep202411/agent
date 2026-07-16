@@ -6521,6 +6521,46 @@ function publicIpRankBaseFilterSql(
   const blockedCreatorFilter = viewerBlocks.blockedCreatorIds.length
     ? Prisma.sql`AND ip.created_by_id NOT IN (${Prisma.join(viewerBlocks.blockedCreatorIds)})`
     : Prisma.empty;
+  const searchNeedle = query.q?.trim();
+  const searchFilter = searchNeedle
+    ? (() => {
+        const pattern = likeContainsPattern(searchNeedle);
+        return Prisma.sql`
+        AND (
+          COALESCE(ip.copyright_owner, '') ILIKE ${pattern} ESCAPE '\\'
+          OR EXISTS (
+            SELECT 1
+            FROM ip_localizations search_localization
+            WHERE search_localization.ip_id = ip.id
+              AND search_localization.archived_at IS NULL
+              AND search_localization.status::text IN (${Prisma.join(PUBLIC_LOCALIZATION_STATUSES)})
+              AND (
+                search_localization.title ILIKE ${pattern} ESCAPE '\\'
+                OR COALESCE(search_localization.subtitle, '') ILIKE ${pattern} ESCAPE '\\'
+                OR search_localization.summary ILIKE ${pattern} ESCAPE '\\'
+                OR COALESCE(search_localization.description, '') ILIKE ${pattern} ESCAPE '\\'
+                OR COALESCE(search_localization.slug, '') ILIKE ${pattern} ESCAPE '\\'
+              )
+          )
+          OR EXISTS (
+            SELECT 1
+            FROM ip_taxonomy_assignments search_assignment
+            JOIN ip_taxonomy_terms search_term
+              ON search_term.id = search_assignment.term_id
+            LEFT JOIN ip_taxonomy_term_localizations search_term_loc
+              ON search_term_loc.term_id = search_term.id
+            WHERE search_assignment.ip_id = ip.id
+              AND search_term.status::text = 'active'
+              AND search_term.archived_at IS NULL
+              AND (
+                search_term.code ILIKE ${pattern} ESCAPE '\\'
+                OR COALESCE(search_term_loc.label, '') ILIKE ${pattern} ESCAPE '\\'
+              )
+          )
+        )
+      `;
+      })()
+    : Prisma.empty;
 
   return Prisma.sql`
     ip.deleted_at IS NULL
@@ -6536,9 +6576,15 @@ function publicIpRankBaseFilterSql(
     ${genreFilter}
     ${tagFilter}
     ${regionFilter}
+    ${searchFilter}
     ${blockedIpFilter}
     ${blockedCreatorFilter}
   `;
+}
+
+/** Escape `\`, `%`, `_` so user input is treated as a literal ILIKE substring. */
+function likeContainsPattern(raw: string): string {
+  return `%${raw.replace(/\\/g, '\\\\').replace(/%/g, '\\%').replace(/_/g, '\\_')}%`;
 }
 
 function publicIpRankSeekSql(cursor: PublicIpRankCursor | null): Prisma.Sql {

@@ -62,6 +62,7 @@ export function IpPlazaClient() {
     genreCodes: selectedGenreCode ? [selectedGenreCode] : undefined,
     tagCodes: selectedTagCode ? [selectedTagCode] : undefined,
     regions: selectedRegion ? [selectedRegion] : undefined,
+    q: debouncedSearch.trim() || undefined,
     locale,
     limit: PAGE_SIZE,
   });
@@ -103,23 +104,15 @@ export function IpPlazaClient() {
     [pinnedData?.items, t]
   );
 
-  const hasCategoryFilter = Boolean(selectedGenreCode || selectedTagCode || selectedRegion);
+  const hasListNarrowing = Boolean(
+    selectedGenreCode || selectedTagCode || selectedRegion || debouncedSearch.trim()
+  );
 
   const projects = useMemo(() => {
-    const needle = debouncedSearch.trim().toLowerCase();
-    let base = rawProjects;
-    if (!hasCategoryFilter && pinnedProjects.length > 0) {
-      const pinnedIds = new Set(pinnedProjects.map((project) => project.id));
-      base = [...pinnedProjects, ...rawProjects.filter((project) => !pinnedIds.has(project.id))];
-    }
-    if (!needle) return base;
-    return base.filter((project) =>
-      [project.name, project.subtitle, project.description, ...project.genres, ...project.tags]
-        .join(" ")
-        .toLowerCase()
-        .includes(needle)
-    );
-  }, [debouncedSearch, rawProjects, pinnedProjects, hasCategoryFilter]);
+    if (hasListNarrowing || pinnedProjects.length === 0) return rawProjects;
+    const pinnedIds = new Set(pinnedProjects.map((project) => project.id));
+    return [...pinnedProjects, ...rawProjects.filter((project) => !pinnedIds.has(project.id))];
+  }, [rawProjects, pinnedProjects, hasListNarrowing]);
 
   const loadMoreRef = useRef<HTMLDivElement>(null);
   useEffect(() => {

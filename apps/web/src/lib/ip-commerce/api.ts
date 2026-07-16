@@ -699,6 +699,7 @@ export function listIpCommerceIps(params?: {
   genreCodes?: string[];
   tagCodes?: string[];
   regions?: string[];
+  q?: string;
   locale?: string;
   cursor?: string;
   limit?: number;

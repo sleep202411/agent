@@ -135,6 +135,9 @@ export const ListIpsQuerySchema = z.object({
   tagCodes: TaxonomyCodeListFromQuerySchema(20),
   // ISO-3166 alpha-2 codes or the 'GLOBAL' sentinel (scalar Ip.region filter).
   regions: RegionListFromQuerySchema,
+  // Case-insensitive contains over public localization title/subtitle/summary/
+  // description/slug, copyright owner, and genre/tag labels (or codes).
+  q: z.string().trim().min(1).max(120).optional(),
   locale: LocaleQuerySchema,
   cursor: z.string().uuid().optional(),
   limit: z.coerce.number().int().min(1).max(50).default(20),
