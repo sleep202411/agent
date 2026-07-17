@@ -121,7 +121,7 @@ export function StoryProjectPlaytest({
 
   return (
     <main className="relative isolate min-h-dvh overflow-hidden bg-black text-white">
-      <div className="absolute inset-0 grid place-items-center">
+      <div className="absolute inset-0">
         <ExperienceRuntimePlayer runtime={runtime} locale={locale} />
       </div>
 
