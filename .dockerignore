@@ -39,7 +39,9 @@ tmp
 **/.env.*
 **/.env.local
 **/.env.*.local
+*.tar
 **/*.tar
+*.tar.gz
 **/*.tar.gz
 *.md
 # package.json is needed for npm install in the build — keep it.
@@ -48,4 +50,6 @@ tmp
 # Agent runtime sqlite — gitignored local artifact, ~30MB each, never needed
 # at build (a fresh checkout has none). az's packer ignores it via **/.
 **/mastra.db
+**/mastra.db-wal
+**/mastra.db-shm
 **/.mastra/output
