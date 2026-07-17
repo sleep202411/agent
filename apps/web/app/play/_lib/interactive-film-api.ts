@@ -3,6 +3,7 @@ import "server-only";
 import {
   ExperienceGameDetailResponseSchema,
   ExperienceGameListResponseSchema,
+  ExperienceGameSummarySchema,
   ExperienceJsonObjectSchema,
   ExperienceRuntimeManifestSchema,
   canonicalizeExperienceJson,
@@ -55,16 +56,24 @@ export async function listPublishedInteractiveFilms(
     `${javaBaseUrl(options.javaStudioUrl)}${INTERACTIVE_FILM_API_PATH}/games`,
     options.fetcher ?? fetch
   );
-  const parsed = ExperienceGameListResponseSchema.safeParse(data);
-  if (!parsed.success) {
+  // Tolerant catalogue: one malformed Java row (e.g. a test entry with a
+  // broken coverUrl) must not blank the whole page. Parse each summary
+  // independently and drop the ones that fail validation; only a
+  // non-array payload is a hard error.
+  if (!Array.isArray(data)) {
     throw new InteractiveFilmLoadError(
       "JAVA_RESPONSE_INVALID",
       "Java returned an invalid interactive-film catalogue.",
       undefined,
-      parsed.error.issues
+      ExperienceGameListResponseSchema.safeParse(data).error?.issues
     );
   }
-  return parsed.data;
+  const games: ExperienceGameListResponse = [];
+  for (const entry of data) {
+    const parsed = ExperienceGameSummarySchema.safeParse(entry);
+    if (parsed.success) games.push(parsed.data);
+  }
+  return games;
 }
 
 /** Metadata lookup used independently by page metadata and full playback loading. */
