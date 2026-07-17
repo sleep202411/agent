@@ -391,10 +391,14 @@ BEGIN
   FOR item IN
     SELECT conrelid::regclass AS table_name, conname
     FROM pg_constraint
-    WHERE conname LIKE 'story_film_takes_%'
+    -- PG17+ tracks NOT NULL constraints in pg_constraint; their auto-generated
+    -- names are internal and renaming them here overflows the 63-char
+    -- identifier limit into collisions (observed in prod 2026-07-17). Skip them.
+    WHERE contype <> 'n'
+      AND (conname LIKE 'story_film_takes_%'
        OR conname LIKE 'story_film_trailer_takes_%'
        OR conname LIKE 'story_film_take_references_%'
-       OR conname LIKE 'story_film_trailer_take_references_%'
+       OR conname LIKE 'story_film_trailer_take_references_%')
   LOOP
     target_name := replace(
       replace(
@@ -423,6 +427,7 @@ BEGIN
       'story_film_generation_attempt_references'::regclass,
       'story_film_trailer_generation_attempt_references'::regclass
     )
+      AND contype <> 'n'
       AND conname ILIKE '%take%'
   LOOP
     target_name := replace(
