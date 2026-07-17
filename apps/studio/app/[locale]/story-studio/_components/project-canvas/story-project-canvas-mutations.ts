@@ -100,7 +100,7 @@ export function createClipNode(
     kind: "clip",
     nodeId,
     clipKey,
-    exit: { kind: "auto", routes: [] },
+    exit: { kind: "auto", nextNodeId: null },
   };
   const next = appendGraphNode(content, created);
   return {
@@ -185,7 +185,7 @@ export function duplicateClipNode(
     ...source,
     nodeId: result.created.nodeId,
     clipKey: result.created.clipKey,
-    exit: { kind: "auto", routes: [] },
+    exit: { kind: "auto", nextNodeId: null },
   };
   return {
     content: {
@@ -509,11 +509,11 @@ export function convertExitToAuto(
   content: InteractiveFilmDraftContent,
   sourceNodeId: string
 ): InteractiveFilmDraftContent {
-  const source = requireGraphNode(content, sourceNodeId);
+  const source = requireClip(content, sourceNodeId);
   if (source.exit.kind === "auto") return content;
   return replaceGraphNode(content, sourceNodeId, {
     ...source,
-    exit: { kind: "auto", routes: [] },
+    exit: { kind: "auto", nextNodeId: null },
   });
 }
 
@@ -722,13 +722,56 @@ export function disconnectChoiceTarget(
   return removeChoiceOption(content, sourceNodeId, choiceId);
 }
 
+/** Sets the one completion target owned by a film clip. */
+export function connectClipContinuation(
+  content: InteractiveFilmDraftContent,
+  sourceNodeId: string,
+  targetNodeId: string
+): InteractiveFilmDraftContent {
+  const source = requireClip(content, sourceNodeId);
+  requireTargetNode(content, targetNodeId);
+  if (source.exit.kind !== "auto") {
+    throw mutationError(
+      "SOURCE_EXIT_KIND_MISMATCH",
+      `Clip ${sourceNodeId} has a ${source.exit.kind} exit, not an automatic exit.`
+    );
+  }
+  if (source.exit.nextNodeId === targetNodeId) return content;
+  return replaceGraphNode(content, sourceNodeId, {
+    ...source,
+    exit: { kind: "auto", nextNodeId: targetNodeId },
+  });
+}
+
+export function disconnectClipContinuation(
+  content: InteractiveFilmDraftContent,
+  sourceNodeId: string,
+  targetNodeId?: string
+): InteractiveFilmDraftContent {
+  const source = requireClip(content, sourceNodeId);
+  if (
+    source.exit.kind !== "auto" ||
+    source.exit.nextNodeId === null ||
+    (targetNodeId !== undefined && source.exit.nextNodeId !== targetNodeId)
+  ) {
+    throw mutationError(
+      "BRANCH_NOT_FOUND",
+      `Clip ${sourceNodeId} is not connected to that continuation target.`
+    );
+  }
+  return replaceGraphNode(content, sourceNodeId, {
+    ...source,
+    exit: { kind: "auto", nextNodeId: null },
+  });
+}
+
 export function connectAutoRoute(
   content: InteractiveFilmDraftContent,
   sourceNodeId: string,
   targetNodeId: string,
   options: { priority?: number; when?: FilmCondition } = {}
 ): InteractiveFilmDraftContent {
-  const source = requireGraphNode(content, sourceNodeId);
+  const source = requireRouter(content, sourceNodeId);
   requireTargetNode(content, targetNodeId);
   if (source.exit.kind !== "auto") {
     throw mutationError(
@@ -780,13 +823,7 @@ export function updateAutoRoute(
   routeIndex: number,
   patch: AutoRoutePatch
 ): InteractiveFilmDraftContent {
-  const source = requireGraphNode(content, sourceNodeId);
-  if (source.exit.kind !== "auto") {
-    throw mutationError(
-      "SOURCE_EXIT_KIND_MISMATCH",
-      `Node ${sourceNodeId} has a ${source.exit.kind} exit, not an auto exit.`
-    );
-  }
+  const source = requireRouter(content, sourceNodeId);
   if (!Number.isInteger(routeIndex) || routeIndex < 0) {
     throw mutationError(
       "INVALID_BRANCH_SELECTOR",
@@ -862,13 +899,7 @@ export function disconnectAutoRoute(
       "Select an automatic route by routeIndex or targetNodeId."
     );
   }
-  const source = requireGraphNode(content, sourceNodeId);
-  if (source.exit.kind !== "auto") {
-    throw mutationError(
-      "SOURCE_EXIT_KIND_MISMATCH",
-      `Node ${sourceNodeId} has a ${source.exit.kind} exit, not an auto exit.`
-    );
-  }
+  const source = requireRouter(content, sourceNodeId);
   const routeIndex = findAutoRouteIndex(source.exit.routes, selector);
   if (routeIndex < 0) {
     throw mutationError("BRANCH_NOT_FOUND", `No matching auto route leaves ${sourceNodeId}.`);
@@ -934,11 +965,16 @@ export function disconnectEnding(
   }
   return replaceGraphNode(content, sourceNodeId, {
     ...source,
-    exit: { kind: "auto", routes: [] },
+    exit: { kind: "auto", nextNodeId: null },
   });
 }
 
 export type StoryBranchSelector =
+  | {
+      kind: "continuation";
+      sourceNodeId: string;
+      targetNodeId: string;
+    }
   | {
       kind: "auto";
       sourceNodeId: string;
@@ -956,6 +992,9 @@ export function disconnectStoryBranch(
   content: InteractiveFilmDraftContent,
   selector: StoryBranchSelector
 ): InteractiveFilmDraftContent {
+  if (selector.kind === "continuation") {
+    return disconnectClipContinuation(content, selector.sourceNodeId, selector.targetNodeId);
+  }
   if (selector.kind === "auto") {
     return disconnectAutoRoute(content, selector.sourceNodeId, {
       routeIndex: selector.routeIndex,
@@ -1098,12 +1137,29 @@ export function validateStoryDraftGraph(
 
   content.graph.nodes.forEach((node, nodeIndex) => {
     const exitPath: Array<string | number> = ["graph", "nodes", nodeIndex, "exit"];
-    if (node.exit.kind === "auto") {
+    if (node.kind === "clip" && node.exit.kind === "auto") {
+      if (options.requireComplete && node.exit.nextNodeId === null) {
+        issues.push({
+          code: "empty-auto-exit",
+          path: [...exitPath, "nextNodeId"],
+          message: "An automatic clip exit needs a continuation target to be playable.",
+        });
+      }
+      if (node.exit.nextNodeId !== null && !nodeIds.has(node.exit.nextNodeId)) {
+        issues.push({
+          code: "unknown-target-node",
+          path: [...exitPath, "nextNodeId"],
+          message: `Unknown target node ${node.exit.nextNodeId}.`,
+        });
+      }
+      return;
+    }
+    if (node.kind === "router") {
       if (options.requireComplete && node.exit.routes.length === 0) {
         issues.push({
           code: "empty-auto-exit",
           path: [...exitPath, "routes"],
-          message: "An automatic exit needs at least one route to be playable.",
+          message: "A conditional router needs at least one route to be playable.",
         });
       }
       node.exit.routes.forEach((route, routeIndex) => {
@@ -1217,7 +1273,7 @@ export function validateStoryDraftGraph(
       }
       return;
     }
-    if (!endingIds.has(node.exit.endingId)) {
+    if (node.kind === "clip" && node.exit.kind === "ending" && !endingIds.has(node.exit.endingId)) {
       issues.push({
         code: "unknown-ending",
         path: [...exitPath, "endingId"],
@@ -1242,7 +1298,7 @@ function appendGraphNode(
 }
 
 function removeGraphNodeReferences(node: StoryGraphNode, deleted: StoryGraphNode): StoryGraphNode {
-  if (node.exit.kind === "auto") {
+  if (node.kind === "router") {
     return {
       ...node,
       exit: {
@@ -1250,6 +1306,11 @@ function removeGraphNodeReferences(node: StoryGraphNode, deleted: StoryGraphNode
         routes: node.exit.routes.filter((route) => route.nextNodeId !== deleted.nodeId),
       },
     };
+  }
+  if (node.exit.kind === "auto") {
+    return node.exit.nextNodeId === deleted.nodeId
+      ? { ...node, exit: { kind: "auto", nextNodeId: null } }
+      : node;
   }
   if (node.kind === "clip" && node.exit.kind === "choice") {
     return {
@@ -1270,7 +1331,7 @@ function removeGraphNodeReferences(node: StoryGraphNode, deleted: StoryGraphNode
   }
   if (node.kind === "clip" && node.exit.kind === "checkpoint") {
     return node.exit.nextNodeId === deleted.nodeId
-      ? { ...node, exit: { kind: "auto", routes: [] } }
+      ? { ...node, exit: { kind: "auto", nextNodeId: null } }
       : node;
   }
   return node;
@@ -1278,7 +1339,7 @@ function removeGraphNodeReferences(node: StoryGraphNode, deleted: StoryGraphNode
 
 function removeEndingReferences(node: StoryGraphNode, endingId: string): StoryGraphNode {
   if (node.kind === "clip" && node.exit.kind === "ending" && node.exit.endingId === endingId) {
-    return { ...node, exit: { kind: "auto", routes: [] } };
+    return { ...node, exit: { kind: "auto", nextNodeId: null } };
   }
   if (node.kind !== "clip" || node.exit.kind !== "choice") return node;
   return {
@@ -1327,6 +1388,14 @@ function requireClip(content: InteractiveFilmDraftContent, nodeId: string): Clip
   const node = content.graph.nodes.find((candidate) => candidate.nodeId === nodeId);
   if (!node || node.kind !== "clip") {
     throw mutationError("CLIP_NOT_FOUND", `Unknown clip node ${nodeId}.`);
+  }
+  return node;
+}
+
+function requireRouter(content: InteractiveFilmDraftContent, nodeId: string): RouterGraphNode {
+  const node = content.graph.nodes.find((candidate) => candidate.nodeId === nodeId);
+  if (!node || node.kind !== "router") {
+    throw mutationError("NODE_NOT_FOUND", `Unknown router node ${nodeId}.`);
   }
   return node;
 }
@@ -1515,7 +1584,7 @@ function findAutoRouteIndex(
 function hasBranches(exit: ClipGraphNode["exit"]): boolean {
   if (exit.kind === "ending" || exit.kind === "checkpoint") return true;
   if (exit.kind === "choice") return exit.choices.length > 0;
-  return exit.routes.length > 0;
+  return exit.nextNodeId !== null;
 }
 
 function sameCondition(left: FilmCondition | undefined, right: FilmCondition | undefined): boolean {

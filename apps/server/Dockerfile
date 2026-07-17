@@ -28,7 +28,8 @@ WORKDIR /app
 ENV NODE_ENV=production
 ENV PORT=3001
 
-RUN addgroup --system --gid 1001 nodejs && \
+RUN apk add --no-cache ffmpeg && \
+    addgroup --system --gid 1001 nodejs && \
     adduser --system --uid 1001 nestjs
 
 # Re-install production-only deps in workspace layout

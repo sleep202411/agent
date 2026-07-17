@@ -48,15 +48,15 @@ export interface StoryFilmBuildClipInput {
    * schema-validated. Keep that state explicit so Build validation can report
    * it without letting an unsafe type assertion reach path enumeration. */
   spec: FilmClipSpec | null;
-  takeId: string | null;
+  /** Optional generation provenance. A current video selected from the asset
+   * library has no generation attempt and remains fully buildable. */
+  sourceGenerationId: string | null;
   asset: FrozenFilmClipAsset | null;
   eligibilityDiagnostics: FilmBuildDiagnosticDto[];
 }
 
 type EligibleStoryFilmBuildClipInput = StoryFilmBuildClipInput & {
   spec: FilmClipSpec;
-  productionInputHash: string;
-  takeId: string;
   asset: FrozenFilmClipAsset;
 };
 
@@ -212,7 +212,7 @@ export function compileStoryFilmBuild(
         diagnostic(
           'error',
           'STORY_BUILD_GENERATED_CLIP_DURATION_EXCEEDED',
-          `Clip ${clip.key} Master is ${clip.asset.durationMs}ms, exceeding the Film contract generated-clip limit of ${input.filmSpec.duration.maxGeneratedClipMs}ms.`,
+          `Clip ${clip.key} current video is ${clip.asset.durationMs}ms, exceeding the Film contract generated-clip limit of ${input.filmSpec.duration.maxGeneratedClipMs}ms.`,
           'clip',
           clip.id,
         ),
@@ -299,10 +299,7 @@ export function compileStoryFilmBuild(
   if (!diagnostics.some((item) => item.severity === 'error')) {
     const eligibleClips = includedClips.filter(
       (clip): clip is EligibleStoryFilmBuildClipInput =>
-        clip.spec !== null &&
-        clip.productionInputHash !== null &&
-        clip.takeId !== null &&
-        clip.asset !== null,
+        clip.spec !== null && clip.asset !== null,
     );
     if (eligibleClips.length !== includedClips.length) {
       diagnostics.push(
@@ -500,13 +497,27 @@ function diagnoseGraphContracts(
   });
   selectedNodes.forEach((node) => {
     if (node.exit.kind !== 'auto') return;
+    if (node.kind === 'clip') {
+      if (node.exit.nextNodeId === null) {
+        diagnostics.push(
+          diagnostic(
+            'error',
+            'STORY_BUILD_CLIP_CONTINUATION_MISSING',
+            `Clip ${node.nodeId} has no next step.`,
+            'clip',
+            node.nodeId,
+          ),
+        );
+      }
+      return;
+    }
     if (node.exit.routes.length === 0) {
       diagnostics.push(
         diagnostic(
           'error',
           'STORY_BUILD_AUTO_ROUTE_MISSING',
           `Automatic node ${node.nodeId} has no route.`,
-          node.kind === 'clip' ? 'clip' : 'revision',
+          'revision',
           node.nodeId,
         ),
       );
@@ -520,7 +531,7 @@ function diagnoseGraphContracts(
           'error',
           'STORY_BUILD_AUTO_ROUTE_AMBIGUOUS',
           `Automatic node ${node.nodeId} has ${unconditionalCount} competing unconditional routes.`,
-          node.kind === 'clip' ? 'clip' : 'revision',
+          'revision',
           node.nodeId,
         ),
       );
@@ -747,6 +758,30 @@ function enumeratePaths(
       return;
     }
 
+    if (node.kind === 'clip') {
+      if (node.exit.nextNodeId === null) {
+        reportOnce(
+          diagnostic(
+            'error',
+            'STORY_BUILD_CLIP_CONTINUATION_MISSING',
+            `Clip ${node.nodeId} has no next step.`,
+            'clip',
+            node.nodeId,
+          ),
+        );
+        return;
+      }
+      walk(
+        node.exit.nextNodeId,
+        cloneState(state),
+        nextDuration,
+        nextContinuousDuration,
+        nextActive,
+        steps + 1,
+      );
+      return;
+    }
+
     const matching = node.exit.routes
       .map((route, index) => ({ route, index }))
       .filter(
@@ -763,7 +798,7 @@ function enumeratePaths(
           'error',
           'STORY_BUILD_AUTO_ROUTE_DEAD_END',
           `Automatic node ${node.nodeId} has no matching route for a reachable state.`,
-          node.kind === 'clip' ? 'clip' : 'revision',
+          'revision',
           node.nodeId,
         ),
       );
@@ -776,7 +811,7 @@ function enumeratePaths(
           'error',
           'STORY_BUILD_AUTO_ROUTE_AMBIGUOUS_STATE',
           `Automatic node ${node.nodeId} matches ${matching.length} routes for a reachable state; automatic routes must be mutually exclusive.`,
-          node.kind === 'clip' ? 'clip' : 'revision',
+          'revision',
           node.nodeId,
         ),
       );
@@ -889,7 +924,7 @@ function compileRuntime(
       durationSeconds: clip.asset.durationMs / 1_000,
     };
     return {
-      assetId: runtimeAssetId(clip),
+      assetId: storyFilmRuntimeAssetId(clip),
       kind: 'video' as const,
       orientationPolicy: 'single-master' as const,
       variants: landscape ? { landscape: variant } : { portrait: variant },
@@ -908,7 +943,7 @@ function compileRuntime(
       runtimeNodes.push({
         kind: 'router' as const,
         nodeId: node.nodeId,
-        exit: compileExit(node.exit, clipsByKey),
+        exit: compileExit(node, clipsByKey),
       });
       return;
     }
@@ -921,14 +956,14 @@ function compileRuntime(
         sequence: [
           {
             clipId: clip.id,
-            assetId: runtimeAssetId(clip),
+            assetId: storyFilmRuntimeAssetId(clip),
             endBehavior: { behavior: 'advance' as const },
           },
         ],
         fit: 'cover' as const,
       },
       overlays: [],
-      exit: compileExit(node.exit, clipsByKey),
+      exit: compileExit(node, clipsByKey),
     });
   });
 
@@ -960,14 +995,27 @@ function compileRuntime(
 }
 
 function compileExit(
-  exit: InteractiveFilmDraftContent['graph']['nodes'][number]['exit'],
+  node: InteractiveFilmDraftContent['graph']['nodes'][number],
   clipsByKey: Map<string, StoryFilmBuildClipInput>,
 ): unknown {
+  const { exit } = node;
   if (exit.kind === 'ending') return exit;
   if (exit.kind === 'auto') {
+    if (node.kind === 'clip') {
+      const clipExit = node.exit;
+      if (clipExit.kind !== 'auto') {
+        throw new Error(`Clip ${node.nodeId} exit changed while compiling.`);
+      }
+      return {
+        kind: 'auto',
+        routes: clipExit.nextNodeId
+          ? [{ nextNodeId: clipExit.nextNodeId, priority: 0 }]
+          : [],
+      };
+    }
     return {
       kind: 'auto',
-      routes: exit.routes.map((route) => ({
+      routes: node.exit.routes.map((route) => ({
         nextNodeId: route.nextNodeId,
         ...(route.when ? { when: route.when } : {}),
         priority: route.priority,
@@ -1008,7 +1056,7 @@ function compileExit(
         choice.afterSelect.kind === 'play'
           ? {
               kind: 'play',
-              reactionAssetId: runtimeAssetId(
+              reactionAssetId: storyFilmRuntimeAssetId(
                 clipsByKey.get(
                   choice.afterSelect.reactionClipKey,
                 ) as StoryFilmBuildClipInput,
@@ -1019,7 +1067,9 @@ function compileExit(
   };
 }
 
-function runtimeAssetId(clip: Pick<StoryFilmBuildClipInput, 'key'>): string {
+export function storyFilmRuntimeAssetId(
+  clip: Pick<StoryFilmBuildClipInput, 'key'>,
+): string {
   return `video:${clip.key}`;
 }
 
@@ -1028,8 +1078,13 @@ function nextNodeIds(
 ): string[] {
   if (node.exit.kind === 'ending') return [];
   if (node.exit.kind === 'checkpoint') return [node.exit.nextNodeId];
-  return node.exit.kind === 'choice'
-    ? node.exit.choices.map((choice) => choice.nextNodeId)
+  if (node.exit.kind === 'choice') {
+    return node.exit.choices.map((choice) => choice.nextNodeId);
+  }
+  return node.kind === 'clip'
+    ? node.exit.nextNodeId
+      ? [node.exit.nextNodeId]
+      : []
     : node.exit.routes.map((route) => route.nextNodeId);
 }
 

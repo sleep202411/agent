@@ -1,10 +1,10 @@
+import { Prisma } from '@prisma/client';
 import { canonicalJsonHash } from './canonical-json';
-import { StoryWorkingPreviewQuerySchema } from './dto';
-import { buildHuBaoVillaImportBundle } from './import/hu-bao-villa.builder';
+import { buildInteractiveFilmTestBundle } from './__tests__/interactive-film-test-bundle';
 import { projectStoryFilmRevision } from './story-film-revision-projector';
 import { StoryWorkingPreviewController } from './story-working-preview.controller';
 import {
-  selectWorkingPreviewTake,
+  selectWorkingPreviewVideo,
   StoryWorkingPreviewService,
 } from './story-working-preview.service';
 
@@ -14,8 +14,10 @@ const PROJECT_ID = '0197f4a2-0800-7000-8000-000000000002';
 const MODEL_ID = '01980f10-7a20-7c01-8000-000000000099';
 
 function scopedService(
-  draftContent: ReturnType<typeof buildHuBaoVillaImportBundle>['draftContent'],
-  takes: unknown[] = [],
+  draftContent: ReturnType<
+    typeof buildInteractiveFilmTestBundle
+  >['draftContent'],
+  clips: unknown[] = [],
 ) {
   const contentHash = canonicalJsonHash(draftContent);
   const tx = {
@@ -33,23 +35,7 @@ function scopedService(
     },
     aiCanonicalModel: { findFirst: jest.fn() },
     storyFilmClip: {
-      findMany: jest.fn().mockResolvedValue(
-        takes.map((take) => {
-          const row = take as {
-            clip: { graphNodeId: string };
-            clipSpecHash: string;
-            productionInputHash: string;
-          };
-          return {
-            graphNodeId: row.clip.graphNodeId,
-            specHash: row.clipSpecHash,
-            productionInputHash: row.productionInputHash,
-            masterTakeId: null,
-            masterTake: null,
-            takes: [take],
-          };
-        }),
-      ),
+      findMany: jest.fn().mockResolvedValue(clips),
     },
   };
   const prisma = {
@@ -64,11 +50,14 @@ function scopedService(
         workspaceId: WORKSPACE_ID,
         frameProfile: 'landscape_16_9',
         defaultLocale: 'zh-CN',
+        title: 'Branching Film Test',
+        summary: 'A branching interactive film.',
       },
     }),
   };
   return {
     contentHash,
+    prisma,
     tx,
     service: new StoryWorkingPreviewService(
       prisma as never,
@@ -77,25 +66,76 @@ function scopedService(
   };
 }
 
-describe('StoryWorkingPreviewService', () => {
-  it('rejects a preview request for a different saved draft head', async () => {
-    const draft = buildHuBaoVillaImportBundle().draftContent;
-    const { service, tx } = scopedService(draft);
-
-    await expect(
-      service.getWorkingPreview(USER as never, WORKSPACE_ID, PROJECT_ID, 8),
-    ).rejects.toMatchObject({
-      response: {
-        code: 'DRAFT_REVISION_CONFLICT',
-        expectedRevision: 8,
-        actualRevision: 9,
-      },
-    });
-    expect(tx.storyFilmClip.findMany).not.toHaveBeenCalled();
+function currentPreviewClips(
+  draft: ReturnType<typeof buildInteractiveFilmTestBundle>['draftContent'],
+) {
+  const projection = projectStoryFilmRevision({
+    draft,
+    frameProfile: 'landscape_16_9',
+    defaultLocale: 'zh-CN',
+    defaultCanonicalModelId: MODEL_ID,
+    includeTrailer: false,
   });
+  return projection.clipSpecs.map((clip, index) => {
+    const checksum = `${index + 1}`.padStart(64, '0');
+    const assetId = uuidAt(100 + index);
+    const variantId = uuidAt(300 + index);
+    const specHash = canonicalJsonHash(clip);
+    const inputHash = canonicalJsonHash({ clip: clip.key });
+    return {
+      id: uuidAt(400 + index),
+      graphNodeId: clip.graphNodeId,
+      specHash,
+      productionInputHash: inputHash,
+      currentVideoAssetId: assetId,
+      currentVideoVariantId: variantId,
+      currentVideoSourceAttemptId: uuidAt(200 + index),
+      currentVideoSpecHash: specHash,
+      currentVideoInputHash: inputHash,
+      currentVideoChecksumSha256: checksum,
+      currentVideoTechnicalChecks: [],
+      currentVideoRevision: 1,
+      currentVideoAsset: {
+        id: assetId,
+        workspaceId: WORKSPACE_ID,
+        kind: 'video',
+        status: 'ready',
+        moderationStatus: 'approved',
+        deletedAt: null,
+        storageProvider: 'external_url',
+        bucket: null,
+        region: null,
+        objectKey: null,
+        externalUrl: `https://assets.example/${clip.key}.mp4`,
+        contentType: 'video/mp4',
+        checksumSha256: checksum,
+        width: clip.outputContract.width,
+        height: clip.outputContract.height,
+        durationSeconds: clip.outputContract.durationMs / 1_000,
+        sizeBytes: BigInt(1_000 + index),
+        placements: [],
+        variants: [],
+      },
+      currentVideoVariant: {
+        id: variantId,
+        assetId,
+        status: 'ready',
+        deletedAt: null,
+        contentType: 'video/mp4',
+        checksumSha256: checksum,
+        width: clip.outputContract.width,
+        height: clip.outputContract.height,
+        durationSeconds: clip.outputContract.durationMs / 1_000,
+        sizeBytes: BigInt(1_000 + index),
+        placements: [],
+      },
+    };
+  });
+}
 
+describe('StoryWorkingPreviewService', () => {
   it('returns actionable draft diagnostics without requiring a formal version', async () => {
-    const draft = buildHuBaoVillaImportBundle({
+    const draft = buildInteractiveFilmTestBundle({
       defaultCanonicalModelId: MODEL_ID,
     }).draftContent;
     const unfinished = draft.clipPrompts[0];
@@ -104,9 +144,10 @@ describe('StoryWorkingPreviewService', () => {
     const { service, tx } = scopedService(draft);
 
     await expect(
-      service.getWorkingPreview(USER as never, WORKSPACE_ID, PROJECT_ID, 9),
+      service.getWorkingPreview(USER as never, WORKSPACE_ID, PROJECT_ID),
     ).resolves.toMatchObject({
       draftRevision: 9,
+      runtimeSchemaVersion: 2,
       runtime: null,
       pathReport: null,
       diagnostics: [
@@ -119,171 +160,220 @@ describe('StoryWorkingPreviewService', () => {
     expect(tx.storyFilmClip.findMany).not.toHaveBeenCalled();
   });
 
-  it('plays the latest ready Takes directly from the saved draft, with review only a warning', async () => {
-    const draft = buildHuBaoVillaImportBundle({
+  it('compiles the full player runtime without requiring the separate project trailer prompt', async () => {
+    const draft = buildInteractiveFilmTestBundle({
       defaultCanonicalModelId: MODEL_ID,
     }).draftContent;
-    const projection = projectStoryFilmRevision({
-      draft,
-      frameProfile: 'landscape_16_9',
-      defaultLocale: 'zh-CN',
-      defaultCanonicalModelId: MODEL_ID,
-    });
-    const takes = projection.clipSpecs.map((clip, index) => {
-      const checksum = `${index + 1}`.padStart(64, '0');
-      const assetId = uuidAt(100 + index);
-      return {
-        id: uuidAt(200 + index),
-        clipSpecHash: canonicalJsonHash(clip),
-        productionInputHash: canonicalJsonHash({ clip: clip.key }),
-        technicalChecks: [],
-        outputChecksumSha256: checksum,
-        approval: null,
-        reviews: [],
-        status: 'ready',
-        supersededAt: null,
-        createdAt: new Date(1_800_000_000_000 + index),
-        clip: { graphNodeId: clip.graphNodeId },
-        outputAsset: {
-          id: assetId,
-          workspaceId: WORKSPACE_ID,
-          kind: 'video',
-          status: 'ready',
-          moderationStatus: 'approved',
-          deletedAt: null,
-          storageProvider: 'external_url',
-          bucket: null,
-          region: null,
-          objectKey: null,
-          externalUrl: `https://assets.example/${clip.key}.mp4`,
-          contentType: 'video/mp4',
-          checksumSha256: checksum,
-          width: clip.outputContract.width,
-          height: clip.outputContract.height,
-          durationSeconds: clip.outputContract.durationMs / 1_000,
-          sizeBytes: BigInt(1_000 + index),
-          placements: [],
-          variants: [],
+    draft.trailerPrompt = {
+      title: 'Unfinished project trailer',
+      description: '',
+      targetDurationMs: 12_000,
+      generationControl: { mode: 'omni_reference' },
+      masterDirection: '',
+      referenceRoleNotes: [],
+      emotionalArc: '',
+      beats: [
+        {
+          id: 'trailer:beat:1',
+          startMs: 0,
+          endMs: 12_000,
+          visual: '',
+          camera: '',
+          action: '',
+          performance: '',
+          emotion: '',
+          dialogue: '',
+          audio: '',
+          endState: '',
+          continuity: '',
         },
-        outputVariant: {
-          id: uuidAt(300 + index),
-          assetId,
-          status: 'ready',
-          deletedAt: null,
-          contentType: 'video/mp4',
-          checksumSha256: checksum,
-          width: clip.outputContract.width,
-          height: clip.outputContract.height,
-          durationSeconds: clip.outputContract.durationMs / 1_000,
-          sizeBytes: BigInt(1_000 + index),
-          placements: [],
-        },
-      };
-    });
-    const { service, contentHash } = scopedService(draft, takes);
+      ],
+      negativeConstraints: [],
+      continuityNotes: [],
+    };
+    const { service } = scopedService(draft, currentPreviewClips(draft));
 
     const preview = await service.getWorkingPreview(
       USER as never,
       WORKSPACE_ID,
       PROJECT_ID,
-      9,
+    );
+
+    expect(preview.runtime).toMatchObject({
+      manifestType: 'fizzdragon.experience',
+      schemaVersion: 2,
+      gameId: PROJECT_ID,
+    });
+    expect(preview.diagnostics).toEqual([]);
+    expect(preview.pathReport).toMatchObject({
+      reachableEndingIds: ['E01', 'E02', 'E03', 'E04'],
+    });
+  });
+
+  it('reuses exact-spec current videos from an earlier production revision after the draft advances', async () => {
+    const draft = buildInteractiveFilmTestBundle({
+      defaultCanonicalModelId: MODEL_ID,
+    }).draftContent;
+    const clips = currentPreviewClips(draft);
+    const { service, contentHash, prisma, tx } = scopedService(draft, clips);
+
+    const preview = await service.getWorkingPreview(
+      USER as never,
+      WORKSPACE_ID,
+      PROJECT_ID,
     );
 
     expect(preview.draftRevision).toBe(9);
     expect(preview.contentHash).toBe(contentHash);
+    expect(prisma.$transaction).toHaveBeenCalledWith(expect.any(Function), {
+      isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead,
+    });
     expect(preview.runtime).toMatchObject({
+      manifestType: 'fizzdragon.experience',
+      schemaVersion: 2,
       gameId: PROJECT_ID,
-      releaseId: PROJECT_ID,
+      buildId: `preview:${PROJECT_ID}:draft:9`,
+      contentVersion: `build:preview:${PROJECT_ID}:draft:9`,
     });
     expect(preview.pathReport).toMatchObject({
       reachableEndingIds: ['E01', 'E02', 'E03', 'E04'],
     });
-    expect(preview.diagnostics).toHaveLength(21);
-    expect(
-      preview.diagnostics.every(
-        (item) =>
-          item.severity === 'warning' &&
-          item.code === 'STORY_WORKING_PREVIEW_READY_TAKE_FALLBACK',
-      ),
-    ).toBe(true);
+    expect(preview.diagnostics).toEqual([]);
     expect(preview.sources).toHaveLength(21);
     expect(
-      preview.sources.every((source) => source.selection === 'latest_ready'),
+      preview.sources.every((source) => source.selection === 'current'),
     ).toBe(true);
+    const calls = tx.storyFilmClip.findMany.mock.calls as unknown as Array<
+      [
+        {
+          where: Record<string, unknown>;
+          orderBy: unknown[];
+        },
+      ]
+    >;
+    const query = calls[0]?.[0];
+    if (!query) throw new Error('Expected the preview clip query.');
+    expect(query.where).not.toHaveProperty('revision');
+    expect(query.where).toMatchObject({
+      storyProjectId: PROJECT_ID,
+      archivedAt: null,
+      currentVideoAssetId: { not: null },
+      currentVideoVariantId: { not: null },
+    });
+    expect(query.orderBy).toEqual([
+      { revision: { number: 'desc' } },
+      { currentVideoRevision: 'desc' },
+      { currentVideoSetAt: 'desc' },
+      { updatedAt: 'desc' },
+      { id: 'desc' },
+    ]);
   });
 
-  it('prefers the compatible Master over a newer ready candidate', () => {
-    const master = {
-      id: uuidAt(700),
-      status: 'ready',
-      supersededAt: null,
-      clipSpecHash: 'spec-hash',
+  it('compiles the same saved content hash deterministically across repeated requests', async () => {
+    const draft = buildInteractiveFilmTestBundle({
+      defaultCanonicalModelId: MODEL_ID,
+    }).draftContent;
+    const originalDraftHash = canonicalJsonHash(draft);
+    const { service, contentHash } = scopedService(
+      draft,
+      currentPreviewClips(draft),
+    );
+
+    const first = await service.getWorkingPreview(
+      USER as never,
+      WORKSPACE_ID,
+      PROJECT_ID,
+    );
+    const second = await service.getWorkingPreview(
+      USER as never,
+      WORKSPACE_ID,
+      PROJECT_ID,
+    );
+
+    expect(first.contentHash).toBe(contentHash);
+    expect(second).toEqual(first);
+    expect(second.runtime).toMatchObject({
+      graph: { entrySceneId: draft.graph.entryNodeId },
+    });
+    expect(canonicalJsonHash(draft)).toBe(originalDraftHash);
+  });
+
+  it('does not reuse a previous video when its projected ClipSpec changed', async () => {
+    const draft = buildInteractiveFilmTestBundle({
+      defaultCanonicalModelId: MODEL_ID,
+    }).draftContent;
+    const clips = currentPreviewClips(draft);
+    const incompatible = clips[0];
+    if (!incompatible) throw new Error('Fixture clip missing.');
+    incompatible.specHash = 'f'.repeat(64);
+    const { service } = scopedService(draft, clips);
+
+    const preview = await service.getWorkingPreview(
+      USER as never,
+      WORKSPACE_ID,
+      PROJECT_ID,
+    );
+
+    expect(preview.runtime).toBeNull();
+    expect(preview.sources).toHaveLength(clips.length - 1);
+    expect(preview.diagnostics).toContainEqual(
+      expect.objectContaining({
+        severity: 'error',
+        code: 'STORY_WORKING_PREVIEW_CURRENT_VIDEO_MISSING',
+        entityId: incompatible.graphNodeId,
+      }),
+    );
+  });
+
+  it('selects only the direct current pointer and never a generation fallback', () => {
+    const current = {
+      specHash: 'spec-hash',
       productionInputHash: 'production-hash',
-      approval: { takeId: uuidAt(700) },
-      reviews: [],
+      currentVideoAssetId: uuidAt(700),
+      currentVideoVariantId: uuidAt(701),
     };
-    const newer = {
-      ...master,
-      id: uuidAt(701),
-      approval: null,
-    };
+    expect(selectWorkingPreviewVideo(current as never, 'spec-hash')).toBe(
+      current,
+    );
     expect(
-      selectWorkingPreviewTake(
+      selectWorkingPreviewVideo(
         {
           specHash: 'spec-hash',
-          productionInputHash: 'production-hash',
-          masterTakeId: master.id,
-          masterTake: master,
-          takes: [newer],
+          currentVideoAssetId: null,
+          currentVideoVariantId: null,
         } as never,
         'spec-hash',
       ),
-    ).toMatchObject({ kind: 'master', take: { id: master.id } });
+    ).toBeNull();
     expect(
-      selectWorkingPreviewTake(
-        {
-          specHash: 'spec-hash',
-          productionInputHash: 'new-production-hash',
-          masterTakeId: null,
-          masterTake: null,
-          takes: [newer],
-        } as never,
-        'spec-hash',
-      ),
+      selectWorkingPreviewVideo(current as never, 'different-spec-hash'),
     ).toBeNull();
   });
 });
 
 describe('StoryWorkingPreviewController', () => {
-  it('coerces the HTTP query string revision before calling the controller', () => {
-    expect(
-      StoryWorkingPreviewQuerySchema.parse({ expectedDraftRevision: '9' }),
-    ).toEqual({ expectedDraftRevision: 9 });
-  });
-
-  it('forwards the current project and Workspace scope', async () => {
+  it('forwards the current project and Workspace scope without a draft revision query', async () => {
     const preview = {
       draftRevision: 9,
+      contentHash: 'a'.repeat(64),
+      runtimeSchemaVersion: 2,
       runtime: null,
       diagnostics: [],
       pathReport: null,
+      sources: [],
     };
     const service = { getWorkingPreview: jest.fn().mockResolvedValue(preview) };
     const controller = new StoryWorkingPreviewController(service as never);
 
     await expect(
-      controller.getWorkingPreview(
-        USER as never,
-        WORKSPACE_ID,
-        { projectId: PROJECT_ID },
-        { expectedDraftRevision: 9 },
-      ),
+      controller.getWorkingPreview(USER as never, WORKSPACE_ID, {
+        projectId: PROJECT_ID,
+      }),
     ).resolves.toEqual({ code: 200, data: preview });
     expect(service.getWorkingPreview).toHaveBeenCalledWith(
       USER,
       WORKSPACE_ID,
       PROJECT_ID,
-      9,
     );
   });
 });

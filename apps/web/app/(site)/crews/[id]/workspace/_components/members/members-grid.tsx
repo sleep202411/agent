@@ -28,9 +28,11 @@ import { useTranslations as useTranslationsCommon } from "@/src/i18n/i18n";
 import {
   CrewApiError,
   useRemoveMember,
+  useTransferCrewOwner,
   type CrewMemberDTO,
 } from "@/app/(site)/crews/_hooks/use-crew";
 import { useUserDisplays } from "@/app/(site)/crews/_hooks/use-users";
+import { SwitchControl } from "@/components/ui/schema-field/switch-control";
 import { MemberCard } from "./member-card";
 
 interface MembersGridProps {
@@ -45,9 +47,16 @@ export function MembersGrid({ crewId, members, isOwner, loading, onInvite }: Mem
   const t = useTranslations("workspace");
   const tc = useTranslationsCommon("common");
   const removeMember = useRemoveMember(crewId);
+  const transferOwner = useTransferCrewOwner(crewId);
   const [pendingRemove, setPendingRemove] = useState<{ memberId: string; name: string } | null>(
     null
   );
+  const [pendingTransfer, setPendingTransfer] = useState<{ userId: string; name: string } | null>(
+    null
+  );
+  // Whether the outgoing owner leaves the crew after handing off (default:
+  // stay on as a normal member).
+  const [transferLeave, setTransferLeave] = useState(false);
 
   // Founder always at the top; rest by join order (oldest first).
   const sorted = useMemo(() => {
@@ -64,6 +73,32 @@ export function MembersGrid({ crewId, members, isOwner, loading, onInvite }: Mem
   // so two grids on the same crew share the cache row.
   const memberIds = useMemo(() => members.map((m) => m.userId), [members]);
   const displays = useUserDisplays(memberIds);
+
+  const handleTransfer = () => {
+    if (!pendingTransfer) return;
+    const { userId, name } = pendingTransfer;
+    transferOwner.mutate(
+      { toUserId: userId, removeOldOwner: transferLeave },
+      {
+        onSuccess: () => {
+          toast.success(t("transferOwnerSuccess", { name }));
+          setPendingTransfer(null);
+          setTransferLeave(false);
+        },
+        onError: (err) => {
+          if (err instanceof CrewApiError) {
+            const detail =
+              typeof err.body === "object" && err.body && "message" in err.body
+                ? String((err.body as { message: unknown }).message)
+                : err.message;
+            toast.error(`HTTP ${err.status}`, { description: detail, duration: 8000 });
+          } else {
+            toast.error(err instanceof Error ? err.message : t("transferOwnerFailed"));
+          }
+        },
+      }
+    );
+  };
 
   const handleRemove = () => {
     if (!pendingRemove) return;
@@ -122,6 +157,7 @@ export function MembersGrid({ crewId, members, isOwner, loading, onInvite }: Mem
                 isOwner={isOwner}
                 canManage={false}
                 onAskRemove={() => undefined}
+                onAskTransfer={() => undefined}
               />
             </div>
           ) : null}
@@ -138,6 +174,10 @@ export function MembersGrid({ crewId, members, isOwner, loading, onInvite }: Mem
                   isOwner={isOwner}
                   canManage={isOwner}
                   onAskRemove={(memberId, name) => setPendingRemove({ memberId, name })}
+                  onAskTransfer={(userId, name) => {
+                    setTransferLeave(false);
+                    setPendingTransfer({ userId, name });
+                  }}
                 />
               ))}
             </div>
@@ -171,6 +211,46 @@ export function MembersGrid({ crewId, members, isOwner, loading, onInvite }: Mem
               }}
             >
               {removeMember.isPending ? <IconLoader2 className="size-4 animate-spin" /> : null}
+              {tc("confirm")}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Transfer-ownership confirmation */}
+      <AlertDialog
+        open={pendingTransfer !== null}
+        onOpenChange={(v) => {
+          if (!v && !transferOwner.isPending) setPendingTransfer(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t("transferOwner")}</AlertDialogTitle>
+            <AlertDialogDescription>
+              {pendingTransfer ? t("transferOwnerConfirm", { name: pendingTransfer.name }) : ""}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <label className="flex items-center justify-between gap-3 rounded-lg bg-card px-3 py-2 text-sm text-foreground">
+            {t("transferOwnerLeaveLabel")}
+            <SwitchControl
+              value={transferLeave}
+              onChange={setTransferLeave}
+              disabled={transferOwner.isPending}
+            />
+          </label>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={transferOwner.isPending}>{tc("cancel")}</AlertDialogCancel>
+            <AlertDialogAction
+              variant="solid"
+              color="primary"
+              disabled={transferOwner.isPending}
+              onClick={(e) => {
+                e.preventDefault();
+                handleTransfer();
+              }}
+            >
+              {transferOwner.isPending ? <IconLoader2 className="size-4 animate-spin" /> : null}
               {tc("confirm")}
             </AlertDialogAction>
           </AlertDialogFooter>

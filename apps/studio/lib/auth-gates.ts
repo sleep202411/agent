@@ -15,7 +15,14 @@
  */
 import { locales } from "@/i18n/config";
 
-const PROTECTED_PREFIXES = ["/canvas", "/projects", "/project", "/settings", "/invite"] as const;
+const PROTECTED_PREFIXES = [
+  "/canvas",
+  "/projects",
+  "/project",
+  "/story-studio/projects",
+  "/settings",
+  "/invite",
+] as const;
 
 function stripLocalePrefix(pathname: string): string {
   const normalized = pathname.startsWith("/") ? pathname : `/${pathname}`;

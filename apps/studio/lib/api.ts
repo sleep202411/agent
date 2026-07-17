@@ -78,8 +78,39 @@ function resolveRequestLocale(): string {
     : "en-US";
 }
 
+function responseErrorDetail(body: Record<string, unknown>): {
+  code?: string | number;
+  message?: string;
+} {
+  const nested =
+    body.message && typeof body.message === "object"
+      ? (body.message as Record<string, unknown>)
+      : null;
+  const codeCandidate = nested?.code ?? body.code;
+  const messageCandidate =
+    (typeof nested?.message === "string" ? nested.message : undefined) ??
+    (typeof body.message === "string" ? body.message : undefined) ??
+    (typeof body.msg === "string" ? body.msg : undefined) ??
+    (typeof body.error === "string" ? body.error : undefined);
+  return {
+    code:
+      typeof codeCandidate === "string" || typeof codeCandidate === "number"
+        ? codeCandidate
+        : undefined,
+    message: messageCandidate?.trim() || undefined,
+  };
+}
+
 async function request<T>(method: string, path: string, config: ApiRequestConfig = {}): Promise<T> {
-  const { params, data, timeout = 30_000, raw, headers: customHeaders, ...rest } = config;
+  const {
+    params,
+    data,
+    timeout = 30_000,
+    raw,
+    headers: customHeaders,
+    signal: callerSignal,
+    ...rest
+  } = config;
   const url = buildUrl(path, params);
 
   const workspaceId = resolveWorkspaceId();
@@ -95,56 +126,78 @@ async function request<T>(method: string, path: string, config: ApiRequestConfig
   if (data !== undefined) init.body = JSON.stringify(data);
 
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeout);
+  let timedOut = false;
+  const abortFromCaller = () => controller.abort(callerSignal?.reason);
+  if (callerSignal?.aborted) abortFromCaller();
+  else callerSignal?.addEventListener("abort", abortFromCaller, { once: true });
+  const timer = setTimeout(() => {
+    timedOut = true;
+    controller.abort();
+  }, timeout);
 
-  let response: Response;
   try {
-    response = await fetch(url, { ...init, signal: controller.signal });
-  } catch (error) {
-    const isTimeout = error instanceof DOMException && error.name === "AbortError";
-    throw new ApiRequestError(
-      "NETWORK_ERROR",
-      isTimeout ? "Request timed out" : "Network connection failed",
-      0
-    );
+    let response: Response;
+    try {
+      response = await fetch(url, { ...init, signal: controller.signal });
+    } catch {
+      if (callerSignal?.aborted) {
+        throw callerSignal.reason instanceof Error
+          ? callerSignal.reason
+          : new DOMException("Request aborted", "AbortError");
+      }
+      throw new ApiRequestError(
+        "NETWORK_ERROR",
+        timedOut ? "Request timed out" : "Network connection failed",
+        0
+      );
+    }
+
+    if (!response.ok) {
+      let message = `HTTP ${response.status}`;
+      let code: string | number = `HTTP_${response.status}`;
+      let rawBody = "";
+      try {
+        rawBody = await response.text();
+        try {
+          const body = JSON.parse(rawBody) as Record<string, unknown>;
+          const detail = responseErrorDetail(body);
+          message = detail.message ?? message;
+          code = detail.code ?? code;
+        } catch {
+          if (rawBody.trim()) message = rawBody.trim();
+        }
+      } catch {
+        /* ignore */
+      }
+      if (response.status === 401 && typeof window !== "undefined") {
+        // Session missing/expired — let the auth provider raise the login dialog.
+        window.dispatchEvent(new CustomEvent("fizz:unauthorized"));
+      }
+      throw new ApiRequestError(code, message, response.status, rawBody);
+    }
+
+    const body = await response.json();
+    const numericCode = typeof body.code === "number" ? body.code : null;
+    const isSuccess =
+      body.success === true ||
+      (numericCode !== null && numericCode >= 200 && numericCode < 300) ||
+      body.code === "SUCCESS";
+    if (!isSuccess) {
+      const detail = responseErrorDetail(body as Record<string, unknown>);
+      throw new ApiRequestError(
+        detail.code ?? "UNKNOWN",
+        detail.message ?? "Request failed",
+        200,
+        JSON.stringify(body)
+      );
+    }
+
+    if (raw) return body as T;
+    return (body.data ?? body) as T;
   } finally {
     clearTimeout(timer);
+    callerSignal?.removeEventListener("abort", abortFromCaller);
   }
-
-  if (!response.ok) {
-    let message = `HTTP ${response.status}`;
-    let rawBody = "";
-    try {
-      rawBody = await response.text();
-      try {
-        const body = JSON.parse(rawBody) as Record<string, unknown>;
-        message = String(body.msg || body.message || "") || message;
-      } catch {
-        if (rawBody.trim()) message = rawBody.trim();
-      }
-    } catch {
-      /* ignore */
-    }
-    if (response.status === 401 && typeof window !== "undefined") {
-      // Session missing/expired — let the auth provider raise the login dialog.
-      window.dispatchEvent(new CustomEvent("fizz:unauthorized"));
-    }
-    throw new ApiRequestError(`HTTP_${response.status}`, message, response.status, rawBody);
-  }
-
-  const body = await response.json();
-  const isSuccess = body.success === true || body.code === 200 || body.code === "SUCCESS";
-  if (!isSuccess) {
-    throw new ApiRequestError(
-      body.code ?? "UNKNOWN",
-      body.msg || body.message || "Request failed",
-      200,
-      JSON.stringify(body)
-    );
-  }
-
-  if (raw) return body as T;
-  return (body.data ?? body) as T;
 }
 
 export const api = {

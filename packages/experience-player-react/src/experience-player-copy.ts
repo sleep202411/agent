@@ -1,0 +1,32 @@
+export interface ExperiencePlayerVideoCopy {
+  play: string;
+  pause: string;
+  mute: string;
+  unmute: string;
+  volume: string;
+  enterFullscreen: string;
+  exitFullscreen: string;
+  seekForward: string;
+  seekBackward: string;
+}
+
+export interface ExperiencePlayerCopy {
+  invalidManifest: string;
+  manifestRoot: string;
+  interactiveFilm: string;
+  starting: string;
+  start: string;
+  endingEyebrow: string;
+  unknownEnding: (endingId: string) => string;
+  playAgain: string;
+  runtimeError: string;
+  restart: string;
+  mediaError: (assetId: string) => string;
+  videoLabel: (rendererInstanceId: string) => string;
+  noVisibleChoices: string;
+  checkpointPrompt: string;
+  checkpointDescription: string;
+  continue: string;
+  regionLabel: string;
+  video: ExperiencePlayerVideoCopy;
+}

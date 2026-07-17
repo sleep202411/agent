@@ -5,6 +5,7 @@ import { useTranslations } from "next-intl";
 import { type Node, type NodeProps } from "@xyflow/react";
 import { IconNote } from "@tabler/icons-react";
 import { cn } from "@/lib/utils";
+import { CANVAS_NODE_DRAG_HANDLE_CLASS } from "@/components/canvas/canvas-interaction-policy";
 import { useCanvasGraphContext } from "@/lib/collab/canvas-graph-context";
 import { CanvasNodeToolbar } from "./node-toolbar";
 
@@ -19,7 +20,12 @@ function NoteNodeComponent({ id, data, selected }: NodeProps<NoteNodeType>) {
       <CanvasNodeToolbar nodeId={id} visible={selected ?? false} />
 
       {/* Header — matches the generation cards' title row. */}
-      <div className="flex items-center gap-1.5 px-1 pb-1.5 text-xs text-white/80">
+      <div
+        className={cn(
+          CANVAS_NODE_DRAG_HANDLE_CLASS,
+          "flex items-center gap-1.5 rounded px-1 pb-1.5 text-xs text-white/80"
+        )}
+      >
         <IconNote className="size-3.5" stroke={1.8} />
         {t("note.title")}
       </div>
@@ -31,7 +37,8 @@ function NoteNodeComponent({ id, data, selected }: NodeProps<NoteNodeType>) {
           placeholder={canEdit ? t("note.placeholder") : ""}
           rows={4}
           readOnly={!canEdit}
-          className="nodrag block w-full resize-none bg-transparent text-sm outline-none placeholder:text-muted-foreground"
+          data-canvas-scroll-owner="y"
+          className="nodrag nowheel block w-full resize-none bg-transparent text-sm outline-none placeholder:text-muted-foreground"
         />
       </div>
     </div>

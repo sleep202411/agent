@@ -1,0 +1,2979 @@
+{
+  "schemaVersion": "story-project-source-v2",
+  "sourceId": "jinling-rumeng-v2",
+  "project": {
+    "title": "金陵入梦",
+    "summary": "作为一个不属于原著的无字来客，你与黛玉一同进入荣国府，并以四次选择决定自己在金陵留下怎样的命。",
+    "defaultLocale": "zh-CN",
+    "frameProfile": "landscape_16_9",
+    "tags": ["interactive_film", "classical_literature", "mystery"]
+  },
+  "sourceRevision": {
+    "number": 1,
+    "label": "金陵入梦 v2 · 26 片段导入"
+  },
+  "defaultVideoModelSlug": "seedance-2-0",
+  "draft": {
+    "storyBible": {
+      "logline": "作为一个不属于原著的无字来客，你与黛玉一同进入荣国府，并以四次选择决定自己在金陵留下怎样的命。",
+      "synopsis": "玩家从太虚水面的无字命册醒来，持一封带淡红印纹的荐书进入荣国府。门前验身、游廊风灯、宝玉摔玉与黛玉夜访构成四个选择节点；每次选择先产生一条即时反应，再汇回共同主线。最终四个选择分别通向共春、立名、共忆与未写。",
+      "worldview": "古典写实的荣国府与一条极克制的超自然规则相叠：命册只记录选择，从不替人写完命运；淡红印纹只借纸、水、灯火和反射显现。",
+      "storyRules": [
+        "玩家是不属于原著的成年无字来客，始终使用第一视角且不露脸。",
+        "选择会改变人物对玩家的理解，但前三次选择最终汇回同一主线。",
+        "第四次选择确定唯一结局，不使用隐藏分数随机改写。",
+        "超自然表现必须克制，不破坏古典写实质感。"
+      ],
+      "characters": [
+        {
+          "id": "player",
+          "name": {
+            "en-US": "The Unwritten Visitor",
+            "zh-CN": "无字来客",
+            "zh-HK": "無字來客"
+          },
+          "role": "player_protagonist",
+          "summary": "从无字命册醒来、持荐书进入荣国府的成年异乡人。",
+          "playable": true,
+          "continuityRules": ["第一视角，不露脸。", "手部与成年声线保持一致。"]
+        },
+        {
+          "id": "daiyu",
+          "name": {
+            "en-US": "Lin Daiyu",
+            "zh-CN": "林黛玉",
+            "zh-HK": "林黛玉"
+          },
+          "role": "primary_companion",
+          "summary": "同为异乡人的敏锐少女，是玩家进入荣府后的情感锚点。",
+          "playable": false,
+          "continuityRules": ["清瘦克制，不病弱化。", "服装与发型遵循锁定参考。"]
+        },
+        {
+          "id": "baoyu",
+          "name": {
+            "en-US": "Jia Baoyu",
+            "zh-CN": "贾宝玉",
+            "zh-HK": "賈寶玉"
+          },
+          "role": "catalyst",
+          "summary": "以摔玉事件迫使满堂人物显露各自边界。",
+          "playable": false,
+          "continuityRules": ["少年感与冲动并存。"]
+        },
+        {
+          "id": "xifeng",
+          "name": {
+            "en-US": "Wang Xifeng",
+            "zh-CN": "王熙凤",
+            "zh-HK": "王熙鳳"
+          },
+          "role": "household_boundary",
+          "summary": "以热络和审视同时确认来客在府中的位置。",
+          "playable": false,
+          "continuityRules": ["明艳、利落、边界清晰。"]
+        }
+      ],
+      "locations": ["太虚水面", "荣国府门前", "荣府游廊", "荣禧堂正厅", "内院客房", "海棠廊下"],
+      "props": ["无字命册", "淡红封印荐书", "旧云锦残片", "故交私印", "随身药囊", "风灯", "通灵玉"],
+      "stateVariables": [],
+      "endings": [
+        {
+          "id": "ending:e01",
+          "title": {
+            "en-US": "A Shared Spring",
+            "zh-CN": "共春",
+            "zh-HK": "共春"
+          },
+          "summary": {
+            "en-US": "Live this spring fully with Daiyu.",
+            "zh-CN": "与黛玉把眼前这一春认真过完。",
+            "zh-HK": "與黛玉把眼前這一春認真過完。"
+          },
+          "kind": "bond"
+        },
+        {
+          "id": "ending:e02",
+          "title": {
+            "en-US": "A Name in the House",
+            "zh-CN": "立名",
+            "zh-HK": "立名"
+          },
+          "summary": {
+            "en-US": "Take a real place and name in the Rong house.",
+            "zh-CN": "在荣府得到一张真正的名帖。",
+            "zh-HK": "在榮府得到一張真正的名帖。"
+          },
+          "kind": "custom"
+        },
+        {
+          "id": "ending:e03",
+          "title": {
+            "en-US": "A Shared Memory",
+            "zh-CN": "共忆",
+            "zh-HK": "共憶"
+          },
+          "summary": {
+            "en-US": "Share the impossible memory with Daiyu.",
+            "zh-CN": "把无字命册的秘密与黛玉共同守住。",
+            "zh-HK": "把無字命冊的秘密與黛玉共同守住。"
+          },
+          "kind": "truth"
+        },
+        {
+          "id": "ending:e04",
+          "title": {
+            "en-US": "Unwritten",
+            "zh-CN": "未写",
+            "zh-HK": "未寫"
+          },
+          "summary": {
+            "en-US": "Leave the road ahead unwritten.",
+            "zh-CN": "什么都不定下，让往后的路仍然空白。",
+            "zh-HK": "甚麼都不定下，讓往後的路仍然空白。"
+          },
+          "kind": "hidden"
+        }
+      ]
+    },
+    "graph": {
+      "entryNodeId": "clip:p00-ledger-opening",
+      "nodes": [
+        {
+          "kind": "clip",
+          "nodeId": "clip:p00-ledger-opening",
+          "clipKey": "P00_LEDGER_OPENING",
+          "exit": {
+            "kind": "auto",
+            "nextNodeId": "clip:s01-gate-arrival"
+          }
+        },
+        {
+          "kind": "clip",
+          "nodeId": "clip:s01-gate-arrival",
+          "clipKey": "S01_GATE_ARRIVAL",
+          "exit": {
+            "kind": "auto",
+            "nextNodeId": "clip:w01-identity-wait"
+          }
+        },
+        {
+          "kind": "clip",
+          "nodeId": "clip:w01-identity-wait",
+          "clipKey": "W01_IDENTITY_WAIT",
+          "exit": {
+            "kind": "choice",
+            "decisionId": "decision:c1",
+            "prompt": {
+              "en-US": "How will you prove where you came from?",
+              "zh-CN": "你拿什么证明自己的来处？",
+              "zh-HK": "你拿甚麼證明自己的來處？"
+            },
+            "trigger": {
+              "kind": "timecode",
+              "atMs": 0
+            },
+            "choices": [
+              {
+                "choiceId": "choice:c1:brocade",
+                "label": {
+                  "en-US": "Show the old Jiangning brocade fragment",
+                  "zh-CN": "出示江宁织造的旧云锦残片",
+                  "zh-HK": "出示江寧織造的舊雲錦殘片"
+                },
+                "effects": [],
+                "nextNodeId": "clip:c1-r01-brocade",
+                "afterSelect": {
+                  "kind": "immediate"
+                }
+              },
+              {
+                "choiceId": "choice:c1:oldSeal",
+                "label": {
+                  "en-US": "Show an old friend's private seal",
+                  "zh-CN": "出示故交私印，请门房比对印面",
+                  "zh-HK": "出示故交私印，請門房比對印面"
+                },
+                "effects": [],
+                "nextNodeId": "clip:c1-r02-old-seal",
+                "afterSelect": {
+                  "kind": "immediate"
+                }
+              },
+              {
+                "choiceId": "choice:c1:medicinePouch",
+                "label": {
+                  "en-US": "Show the medicine pouch and worn prescription",
+                  "zh-CN": "出示随身药囊与那张旧方笺",
+                  "zh-HK": "出示隨身藥囊與那張舊方箋"
+                },
+                "effects": [],
+                "nextNodeId": "clip:c1-r03-medicine-pouch",
+                "afterSelect": {
+                  "kind": "immediate"
+                }
+              }
+            ]
+          }
+        },
+        {
+          "kind": "clip",
+          "nodeId": "clip:c1-r01-brocade",
+          "clipKey": "C1_R01_BROCADE",
+          "exit": {
+            "kind": "auto",
+            "nextNodeId": "clip:s02-corridor-crisis"
+          }
+        },
+        {
+          "kind": "clip",
+          "nodeId": "clip:c1-r02-old-seal",
+          "clipKey": "C1_R02_OLD_SEAL",
+          "exit": {
+            "kind": "auto",
+            "nextNodeId": "clip:s02-corridor-crisis"
+          }
+        },
+        {
+          "kind": "clip",
+          "nodeId": "clip:c1-r03-medicine-pouch",
+          "clipKey": "C1_R03_MEDICINE_POUCH",
+          "exit": {
+            "kind": "auto",
+            "nextNodeId": "clip:s02-corridor-crisis"
+          }
+        },
+        {
+          "kind": "clip",
+          "nodeId": "clip:s02-corridor-crisis",
+          "clipKey": "S02_CORRIDOR_CRISIS",
+          "exit": {
+            "kind": "auto",
+            "nextNodeId": "clip:w02-corridor-wait"
+          }
+        },
+        {
+          "kind": "clip",
+          "nodeId": "clip:w02-corridor-wait",
+          "clipKey": "W02_CORRIDOR_WAIT",
+          "exit": {
+            "kind": "choice",
+            "decisionId": "decision:c2",
+            "prompt": {
+              "en-US": "The wind reaches her first. What do you protect?",
+              "zh-CN": "风先扑向了她，你先护住什么？",
+              "zh-HK": "風先撲向了她，你先護住甚麼？"
+            },
+            "trigger": {
+              "kind": "timecode",
+              "atMs": 0
+            },
+            "choices": [
+              {
+                "choiceId": "choice:c2:protectDaiyu",
+                "label": {
+                  "en-US": "Free Daiyu's snagged sleeve",
+                  "zh-CN": "先替黛玉解开被挂住的衣袖",
+                  "zh-HK": "先替黛玉解開被掛住的衣袖"
+                },
+                "effects": [],
+                "nextNodeId": "clip:c2-r01-protect-daiyu",
+                "afterSelect": {
+                  "kind": "immediate"
+                }
+              },
+              {
+                "choiceId": "choice:c2:steadyLantern",
+                "label": {
+                  "en-US": "Steady the heavy lantern",
+                  "zh-CN": "先稳住那盏沉重的风灯",
+                  "zh-HK": "先穩住那盞沉重的風燈"
+                },
+                "effects": [],
+                "nextNodeId": "clip:c2-r02-steady-lantern",
+                "afterSelect": {
+                  "kind": "immediate"
+                }
+              },
+              {
+                "choiceId": "choice:c2:protectLetter",
+                "label": {
+                  "en-US": "Shield the letter and crimson seal",
+                  "zh-CN": "先护住荐书与淡红封印",
+                  "zh-HK": "先護住薦書與淡紅封印"
+                },
+                "effects": [],
+                "nextNodeId": "clip:c2-r03-protect-letter",
+                "afterSelect": {
+                  "kind": "immediate"
+                }
+              }
+            ]
+          }
+        },
+        {
+          "kind": "clip",
+          "nodeId": "clip:c2-r01-protect-daiyu",
+          "clipKey": "C2_R01_PROTECT_DAIYU",
+          "exit": {
+            "kind": "auto",
+            "nextNodeId": "clip:s03-jiamu-reunion"
+          }
+        },
+        {
+          "kind": "clip",
+          "nodeId": "clip:c2-r02-steady-lantern",
+          "clipKey": "C2_R02_STEADY_LANTERN",
+          "exit": {
+            "kind": "auto",
+            "nextNodeId": "clip:s03-jiamu-reunion"
+          }
+        },
+        {
+          "kind": "clip",
+          "nodeId": "clip:c2-r03-protect-letter",
+          "clipKey": "C2_R03_PROTECT_LETTER",
+          "exit": {
+            "kind": "auto",
+            "nextNodeId": "clip:s03-jiamu-reunion"
+          }
+        },
+        {
+          "kind": "clip",
+          "nodeId": "clip:s03-jiamu-reunion",
+          "clipKey": "S03_JIAMU_REUNION",
+          "exit": {
+            "kind": "auto",
+            "nextNodeId": "clip:s03-xifeng-boundary"
+          }
+        },
+        {
+          "kind": "clip",
+          "nodeId": "clip:s03-xifeng-boundary",
+          "clipKey": "S03_XIFENG_BOUNDARY",
+          "exit": {
+            "kind": "auto",
+            "nextNodeId": "clip:s04-baoyu-arrival"
+          }
+        },
+        {
+          "kind": "clip",
+          "nodeId": "clip:s04-baoyu-arrival",
+          "clipKey": "S04_BAOYU_ARRIVAL",
+          "exit": {
+            "kind": "auto",
+            "nextNodeId": "clip:s04-jade-throw"
+          }
+        },
+        {
+          "kind": "clip",
+          "nodeId": "clip:s04-jade-throw",
+          "clipKey": "S04_JADE_THROW",
+          "exit": {
+            "kind": "choice",
+            "decisionId": "decision:c3",
+            "prompt": {
+              "en-US": "The whole hall will remember this instant. What do you do?",
+              "zh-CN": "满堂人都会记住这一瞬，你怎么做？",
+              "zh-HK": "滿堂人都會記住這一瞬，你怎樣做？"
+            },
+            "trigger": {
+              "kind": "media-ended"
+            },
+            "choices": [
+              {
+                "choiceId": "choice:c3:catchJade",
+                "label": {
+                  "en-US": "Catch the falling jade",
+                  "zh-CN": "接住坠落的通灵玉",
+                  "zh-HK": "接住墜落的通靈玉"
+                },
+                "effects": [],
+                "nextNodeId": "clip:c3-r01-catch-jade",
+                "afterSelect": {
+                  "kind": "immediate"
+                }
+              },
+              {
+                "choiceId": "choice:c3:shieldDaiyu",
+                "label": {
+                  "en-US": "Step between Daiyu and the jade",
+                  "zh-CN": "挡到黛玉与落玉之间",
+                  "zh-HK": "擋到黛玉與落玉之間"
+                },
+                "effects": [],
+                "nextNodeId": "clip:c3-r02-shield-daiyu",
+                "afterSelect": {
+                  "kind": "immediate"
+                }
+              },
+              {
+                "choiceId": "choice:c3:callHousehold",
+                "label": {
+                  "en-US": "Call for the household",
+                  "zh-CN": "扬声唤众人接管这一乱",
+                  "zh-HK": "揚聲喚眾人接管這一亂"
+                },
+                "effects": [],
+                "nextNodeId": "clip:c3-r03-call-household",
+                "afterSelect": {
+                  "kind": "immediate"
+                }
+              },
+              {
+                "choiceId": "choice:c3:observePattern",
+                "label": {
+                  "en-US": "Watch the crimson trace",
+                  "zh-CN": "不出手，只看那道淡红纹",
+                  "zh-HK": "不出手，只看那道淡紅紋"
+                },
+                "effects": [],
+                "nextNodeId": "clip:c3-r04-observe-pattern",
+                "afterSelect": {
+                  "kind": "immediate"
+                }
+              }
+            ]
+          }
+        },
+        {
+          "kind": "clip",
+          "nodeId": "clip:c3-r01-catch-jade",
+          "clipKey": "C3_R01_CATCH_JADE",
+          "exit": {
+            "kind": "auto",
+            "nextNodeId": "clip:s05-daiyu-night-visit"
+          }
+        },
+        {
+          "kind": "clip",
+          "nodeId": "clip:c3-r02-shield-daiyu",
+          "clipKey": "C3_R02_SHIELD_DAIYU",
+          "exit": {
+            "kind": "auto",
+            "nextNodeId": "clip:s05-daiyu-night-visit"
+          }
+        },
+        {
+          "kind": "clip",
+          "nodeId": "clip:c3-r03-call-household",
+          "clipKey": "C3_R03_CALL_HOUSEHOLD",
+          "exit": {
+            "kind": "auto",
+            "nextNodeId": "clip:s05-daiyu-night-visit"
+          }
+        },
+        {
+          "kind": "clip",
+          "nodeId": "clip:c3-r04-observe-pattern",
+          "clipKey": "C3_R04_OBSERVE_PATTERN",
+          "exit": {
+            "kind": "auto",
+            "nextNodeId": "clip:s05-daiyu-night-visit"
+          }
+        },
+        {
+          "kind": "clip",
+          "nodeId": "clip:s05-daiyu-night-visit",
+          "clipKey": "S05_DAIYU_NIGHT_VISIT",
+          "exit": {
+            "kind": "auto",
+            "nextNodeId": "clip:s05-letter-reveal"
+          }
+        },
+        {
+          "kind": "clip",
+          "nodeId": "clip:s05-letter-reveal",
+          "clipKey": "S05_LETTER_REVEAL",
+          "exit": {
+            "kind": "auto",
+            "nextNodeId": "clip:w03-final-choice-wait"
+          }
+        },
+        {
+          "kind": "clip",
+          "nodeId": "clip:w03-final-choice-wait",
+          "clipKey": "W03_FINAL_CHOICE_WAIT",
+          "exit": {
+            "kind": "choice",
+            "decisionId": "decision:c4",
+            "prompt": {
+              "en-US": "Into whose hands does this unwritten fate go?",
+              "zh-CN": "这页未写完的命，交到谁手里？",
+              "zh-HK": "這頁未寫完的命，交到誰手裏？"
+            },
+            "trigger": {
+              "kind": "timecode",
+              "atMs": 0
+            },
+            "choices": [
+              {
+                "choiceId": "choice:c4:spring",
+                "label": {
+                  "en-US": "Live out this spring with Daiyu",
+                  "zh-CN": "与黛玉把这一春过完",
+                  "zh-HK": "與黛玉把這一春過完"
+                },
+                "effects": [],
+                "nextNodeId": "clip:e01-spring-with-daiyu",
+                "afterSelect": {
+                  "kind": "immediate"
+                }
+              },
+              {
+                "choiceId": "choice:c4:name",
+                "label": {
+                  "en-US": "Ask the house to enter your name",
+                  "zh-CN": "请府中为你立一张名帖",
+                  "zh-HK": "請府中為你立一張名帖"
+                },
+                "effects": [],
+                "nextNodeId": "clip:e02-name-in-house",
+                "afterSelect": {
+                  "kind": "immediate"
+                }
+              },
+              {
+                "choiceId": "choice:c4:memory",
+                "label": {
+                  "en-US": "Tell her the truth of the wordless ledger",
+                  "zh-CN": "把无字命册的秘密如实相告",
+                  "zh-HK": "把無字命冊的秘密如實相告"
+                },
+                "effects": [],
+                "nextNodeId": "clip:e03-memory-shared",
+                "afterSelect": {
+                  "kind": "immediate"
+                }
+              },
+              {
+                "choiceId": "choice:c4:unwritten",
+                "label": {
+                  "en-US": "Leave the fate ahead unwritten",
+                  "zh-CN": "让往后的命仍是一页空白",
+                  "zh-HK": "讓往後的命仍是一頁空白"
+                },
+                "effects": [],
+                "nextNodeId": "clip:e04-future-unwritten",
+                "afterSelect": {
+                  "kind": "immediate"
+                }
+              }
+            ]
+          }
+        },
+        {
+          "kind": "clip",
+          "nodeId": "clip:e01-spring-with-daiyu",
+          "clipKey": "E01_SPRING_WITH_DAIYU",
+          "exit": {
+            "kind": "ending",
+            "endingId": "ending:e01"
+          }
+        },
+        {
+          "kind": "clip",
+          "nodeId": "clip:e02-name-in-house",
+          "clipKey": "E02_NAME_IN_HOUSE",
+          "exit": {
+            "kind": "ending",
+            "endingId": "ending:e02"
+          }
+        },
+        {
+          "kind": "clip",
+          "nodeId": "clip:e03-memory-shared",
+          "clipKey": "E03_MEMORY_SHARED",
+          "exit": {
+            "kind": "ending",
+            "endingId": "ending:e03"
+          }
+        },
+        {
+          "kind": "clip",
+          "nodeId": "clip:e04-future-unwritten",
+          "clipKey": "E04_FUTURE_UNWRITTEN",
+          "exit": {
+            "kind": "ending",
+            "endingId": "ending:e04"
+          }
+        }
+      ]
+    },
+    "clipPrompts": [
+      {
+        "graphNodeId": "clip:p00-ledger-opening",
+        "clipKey": "P00_LEDGER_OPENING",
+        "title": "太虚水面·无字命册",
+        "description": "太虚水面·无字命册（金陵入梦 v2 成片）",
+        "targetDurationMs": 12000,
+        "generationControl": {
+          "mode": "omni_reference"
+        },
+        "masterDirection": "真人古装电影质感的《红楼梦》荣国府场景，第一视角亲密感，表演克制，材质、光线和物理动作可信。荣国府使用深木、黛青、月白与旧金，淡红印纹是唯一强色。超自然只通过纸张、水面、灯火、反射和不可能的淡红纹路出现，不使用粒子魔法、仙侠光效或科幻 HUD。玩家永不露脸。全片 16:9、1920×1080、24fps、一镜到底，无剪切、无跳时、无突然变焦，末帧达到稳定态。\n\n夜色秦淮河真实水面近景，江宁城郭远灯与薄雾压在天际，冷月只在水面右侧揉出细碎冷光；水墨实景般的太虚入口自雾里缓缓显形，绝无仙侠光晕。第一视角贴着水面缓慢前行，全画只见黛青夜色、旧金灯影与月白水光三色。倒影中的纸页纤维逐渐与真实水纹重合，一本图1的侧缝线装、空白无字命册自雾后真实漂近，在玩家面前自行掀开一层，不发光、不喷涌。玩家一只中性手（图6）自画面下缘伸入、露出黛青色袖口，稳稳接住落下的图2旧纸荐书——旧纸信封、淡红封印——不翻动、不写字。斜掠的月光下，册页纤维显出三处不成字的淡红痕迹，恰对应三件信物的摆放位：图3江宁织造出的旧云锦残片、图4故交私印的印面、图5手缝药囊与折叠旧方笺，各自从雾中进入下缘各就其位。未知女声近而不露身、克制念出两句旁白，声由Audio1锁定；玩家以Audio2锁定的成年画外声线自问。全片深木、黛青、月白、旧金，淡红纹是唯一强色。末帧命册稳定开于约一百二十度，荐书横放画面下缘，三信物区域清楚，下中部留出不遮挡的选择安全区。",
+        "referenceRoleNotes": [
+          {
+            "id": "ref:image:1",
+            "role": "omni_reference",
+            "referenceId": "REF-LEDGER",
+            "note": "生成时的第 1 个图像参考位。"
+          },
+          {
+            "id": "ref:image:2",
+            "role": "omni_reference",
+            "referenceId": "REF-LETTER",
+            "note": "生成时的第 2 个图像参考位。"
+          },
+          {
+            "id": "ref:image:3",
+            "role": "omni_reference",
+            "referenceId": "REF-TOKEN-WEAVE",
+            "note": "生成时的第 3 个图像参考位。"
+          },
+          {
+            "id": "ref:image:4",
+            "role": "omni_reference",
+            "referenceId": "REF-TOKEN-KIN",
+            "note": "生成时的第 4 个图像参考位。"
+          },
+          {
+            "id": "ref:image:5",
+            "role": "omni_reference",
+            "referenceId": "REF-TOKEN-MEDIC",
+            "note": "生成时的第 5 个图像参考位。"
+          },
+          {
+            "id": "ref:image:6",
+            "role": "omni_reference",
+            "referenceId": "REF-PLAYER-POV",
+            "note": "生成时的第 6 个图像参考位。"
+          },
+          {
+            "id": "ref:audio:1",
+            "role": "other",
+            "referenceId": "VOICE-NARRATOR",
+            "note": "生成时的第 1 个声纹参考位。"
+          },
+          {
+            "id": "ref:audio:2",
+            "role": "other",
+            "referenceId": "VOICE-PLAYER-A",
+            "note": "生成时的第 2 个声纹参考位。"
+          }
+        ],
+        "emotionalArc": "克制、真实，以细微反应完成叙事推进。",
+        "beats": [
+          {
+            "id": "beat:full",
+            "startMs": 0,
+            "endMs": 12000,
+            "visual": "夜色秦淮河真实水面近景，江宁城郭远灯与薄雾压在天际，冷月只在水面右侧揉出细碎冷光；水墨实景般的太虚入口自雾里缓缓显形，绝无仙侠光晕。第一视角贴着水面缓慢前行，全画只见黛青夜色、旧金灯影与月白水光三色。倒影中的纸页纤维逐渐与真实水纹重合，一本图1的侧缝线装、空白无字命册自雾后真实漂近，在玩家面前自行掀开一层，不发光、不喷涌。玩家一只中性手（图6）自画面下缘伸入、露出黛青色袖口，稳稳接住落下的图2旧纸荐书——旧纸信封、淡红封印——不翻动、不写字。斜掠的月光下，册页纤维显出三处不成字的淡红痕迹，恰对应三件信物的摆放位：图3江宁织造出的旧云锦残片、图4故交私印的印面、图5手缝药囊与折叠旧方笺，各自从雾中进入下缘各就其位。未知女声近而不露身、克制念出两句旁白，声由Audio1锁定；玩家以Audio2锁定的成年画外声线自问。全片深木、黛青、月白、旧金，淡红纹是唯一强色。末帧命册稳定开于约一百二十度，荐书横放画面下缘，三信物区域清楚，下中部留出不遮挡的选择安全区。",
+            "camera": "16:9 横屏，第一视角，一镜到底。",
+            "action": "起｜镜头前段：第一视角贴真实水面缓慢前行，全画只有黛青夜色、旧金灯影与月白水光；只闻水声、远处江宁灯火与薄雾，尚无册子入画，节奏沉静克制。\n承｜镜头中段：水纹反射渐次揉化成旧纸纤维，图1空白命册自画面中右侧真实漂近、自行掀开一层，不发光不喷涌；未知女声（Audio1）近而不露身、克制地念完两句旁白——“册中有名，便有定数。”……停一拍……“册中无名，未必无路。”其间玩家一只中性手（图6）自下缘伸入、稳稳接住图2旧纸荐书，命册自然定在约一百二十度。\n转｜镜头后段：斜掠月光下，三处淡红痕迹沿纸纤维极轻浮现、始终不成可读符号；图3云锦、图4旧印、图5药囊的真实轮廓自雾中先后各就其位。玩家以Audio2成年画外声线低声自问：“这封信……是在等我？”\n收｜末段：镜头止住推进，回到真实电影般的静止，只余水纹、纸页极轻起伏与远灯微动，无新台词；命册稳开、荐书横放、三信物区域清楚，下中部留出不遮挡的选择安全区，末帧稳定同相位。",
+            "performance": "自然克制，不做舞台化夸张表演。",
+            "emotion": "由场景动作自然递进。",
+            "dialogue": "",
+            "audio": "保留同期环境声与已锁定角色声线。",
+            "endState": "末帧进入稳定、可衔接状态。",
+            "continuity": "服装、道具、人物站位与淡红纹路保持连续。"
+          }
+        ],
+        "negativeConstraints": [
+          "不生成可读姓名、字幕、判词或信中文字。",
+          "不使用粒子魔法、仙侠光效、科幻 HUD、剪切、跳时或突然变焦。",
+          "玩家不露脸。"
+        ],
+        "continuityNotes": ["以原 v2 生成规格与现有 1080p 成片为准。"]
+      },
+      {
+        "graphNodeId": "clip:s01-gate-arrival",
+        "clipKey": "S01_GATE_ARRIVAL",
+        "title": "荣府门前·验帖",
+        "description": "荣府门前·验帖（金陵入梦 v2 成片）",
+        "targetDurationMs": 12000,
+        "generationControl": {
+          "mode": "omni_reference"
+        },
+        "masterDirection": "真人古装电影质感的《红楼梦》荣国府场景，第一视角亲密感，表演克制，材质、光线和物理动作可信。荣国府使用深木、黛青、月白与旧金，淡红印纹是唯一强色。超自然只通过纸张、水面、灯火、反射和不可能的淡红纹路出现，不使用粒子魔法、仙侠光效或科幻 HUD。玩家永不露脸。全片 16:9、1920×1080、24fps、一镜到底，无剪切、无跳时、无突然变焦，末帧达到稳定态。\n\n接命册淡红痕迹的极近景做物理匹配转场：红痕自然化为玩家手中图2旧纸荐书封口上的淡红反光，第一视角已立于荣国府街门之前。公府规格的朱漆大门、铜钉门环、青砖黛瓦、门前抱鼓石与上马石，抄手游廊自门内延展，绝无宫门规模与现代构件；日间天光平铺，深木黛青为底、旧金门饰为点。前方一乘林家素帏暖轿稳稳停住，图1成年黛玉——月白明制交领右衽衫裙、清瘦不病态、眉眼清冷——由一名明制青衣仆妇搀扶掀帘而下，先被门内接应，跨过高门槛时动作谨慎安静，不看镜头。玩家（图3中性手部、黛青袖口）向前半步，门房（皂青明制仆役衣帽、守礼不卑不亢）横臂拦在镜头前方旋即收回，双手接过图2荐书却不拆封。黛玉步过门槛后察觉身后停顿，回身看玩家一眼，眼神留意却不替玩家作证。门房把林家素笺帖子与玩家荐书并排比看，问出一句短话，声由Audio1锁定。全片守明代礼制，无清式旗装、无影楼汉服。末帧门房持信等待，黛玉留在门内侧后方，画面下部为三种信物选择留出不遮脸的安全区。",
+        "referenceRoleNotes": [
+          {
+            "id": "ref:image:1",
+            "role": "omni_reference",
+            "referenceId": "REF-DAIYU",
+            "note": "生成时的第 1 个图像参考位。"
+          },
+          {
+            "id": "ref:image:2",
+            "role": "omni_reference",
+            "referenceId": "REF-LETTER",
+            "note": "生成时的第 2 个图像参考位。"
+          },
+          {
+            "id": "ref:image:3",
+            "role": "omni_reference",
+            "referenceId": "REF-PLAYER-POV",
+            "note": "生成时的第 3 个图像参考位。"
+          },
+          {
+            "id": "ref:audio:1",
+            "role": "other",
+            "referenceId": "VOICE-GATE",
+            "note": "生成时的第 1 个声纹参考位。"
+          }
+        ],
+        "emotionalArc": "克制、真实，以细微反应完成叙事推进。",
+        "beats": [
+          {
+            "id": "beat:full",
+            "startMs": 0,
+            "endMs": 12000,
+            "visual": "接命册淡红痕迹的极近景做物理匹配转场：红痕自然化为玩家手中图2旧纸荐书封口上的淡红反光，第一视角已立于荣国府街门之前。公府规格的朱漆大门、铜钉门环、青砖黛瓦、门前抱鼓石与上马石，抄手游廊自门内延展，绝无宫门规模与现代构件；日间天光平铺，深木黛青为底、旧金门饰为点。前方一乘林家素帏暖轿稳稳停住，图1成年黛玉——月白明制交领右衽衫裙、清瘦不病态、眉眼清冷——由一名明制青衣仆妇搀扶掀帘而下，先被门内接应，跨过高门槛时动作谨慎安静，不看镜头。玩家（图3中性手部、黛青袖口）向前半步，门房（皂青明制仆役衣帽、守礼不卑不亢）横臂拦在镜头前方旋即收回，双手接过图2荐书却不拆封。黛玉步过门槛后察觉身后停顿，回身看玩家一眼，眼神留意却不替玩家作证。门房把林家素笺帖子与玩家荐书并排比看，问出一句短话，声由Audio1锁定。全片守明代礼制，无清式旗装、无影楼汉服。末帧门房持信等待，黛玉留在门内侧后方，画面下部为三种信物选择留出不遮脸的安全区。",
+            "camera": "16:9 横屏，第一视角，一镜到底。",
+            "action": "起｜镜头前段：承前镜命册淡红痕迹做物理匹配转场——红痕自然化为玩家手中图2荐书封口的淡红反光，镜头顺势自然拉开到荣国府街门之前，不黑切；朱漆大门、铜钉门环、抱鼓石与抄手游廊在日间平光下深木黛青为底、旧金门饰为点。\n承｜镜头中段：前方一乘林家素帏暖轿稳稳停住，图1黛玉在青衣仆妇扶引下掀帘而下，跨过高门槛时动作谨慎安静、不看镜头；玩家（图3中性手部、黛青袖口）向前半步，门房横臂一拦旋即收回，双手接过图2荐书却不拆封，礼貌而明确。\n转｜镜头后段：门房把林家素笺帖子与荐书并排比看，神色守礼不卑不亢，自然问出（Audio1）：“林姑娘的帖子在这里。你的凭据呢？”黛玉步过门槛后察觉身后停顿，回身看玩家一眼，眼神留意却不替玩家作证。\n收｜末段：门房持信等待，众人不再言语；黛玉留在门内侧后方，画面下部留出不遮脸的信物选择安全区，末帧稳定。",
+            "performance": "自然克制，不做舞台化夸张表演。",
+            "emotion": "由场景动作自然递进。",
+            "dialogue": "",
+            "audio": "保留同期环境声与已锁定角色声线。",
+            "endState": "末帧进入稳定、可衔接状态。",
+            "continuity": "服装、道具、人物站位与淡红纹路保持连续。"
+          }
+        ],
+        "negativeConstraints": [
+          "不生成可读姓名、字幕、判词或信中文字。",
+          "不使用粒子魔法、仙侠光效、科幻 HUD、剪切、跳时或突然变焦。",
+          "玩家不露脸。"
+        ],
+        "continuityNotes": ["以原 v2 生成规格与现有 1080p 成片为准。"]
+      },
+      {
+        "graphNodeId": "clip:w01-identity-wait",
+        "clipKey": "W01_IDENTITY_WAIT",
+        "title": "命册等待·秦淮水面",
+        "description": "命册等待·秦淮水面（金陵入梦 v2 成片）",
+        "targetDurationMs": 12000,
+        "generationControl": {
+          "mode": "omni_reference"
+        },
+        "masterDirection": "真人古装电影质感的《红楼梦》荣国府场景，第一视角亲密感，表演克制，材质、光线和物理动作可信。荣国府使用深木、黛青、月白与旧金，淡红印纹是唯一强色。超自然只通过纸张、水面、灯火、反射和不可能的淡红纹路出现，不使用粒子魔法、仙侠光效或科幻 HUD。玩家永不露脸。全片 16:9、1920×1080、24fps、一镜到底，无剪切、无跳时、无突然变焦，末帧达到稳定态。\n\n延续 P00 命册审核末帧的稳定状态，静默循环，绝无对白、无音乐节拍、无口型：Image 1 那本侧缝线装、旧纸无字的命册开至约 120° 稳定悬于秦淮真实水面上方约一掌高，纸页纤维显三处淡红痕迹但不成字；冷月只在水面右侧碎光，深夜水墨实景，深木、黛青、月白纸色、旧金灯影为主。Image 2 云锦（江宁旧织残片）、Image 3 故交旧印（印面朝上）、Image 4 手缝药囊三件信物在纸页各自位置完全不移。只允许水面细纹缓动、远处灯影极轻晃、纸页边缘极轻起伏、以及淡红纹沿纸纤维一明一暗地极缓呼吸；没有翻页、没有手、没有文字、没有信物移动、没有镜头推进。5 秒末尾回到与首帧完全相同的水纹相位、灯影位置与光照亮度，形成像素级自然循环，循环缝绝不靠倒放实现。",
+        "referenceRoleNotes": [
+          {
+            "id": "ref:image:1",
+            "role": "omni_reference",
+            "referenceId": "REF-LEDGER",
+            "note": "生成时的第 1 个图像参考位。"
+          },
+          {
+            "id": "ref:image:2",
+            "role": "omni_reference",
+            "referenceId": "REF-TOKEN-WEAVE",
+            "note": "生成时的第 2 个图像参考位。"
+          },
+          {
+            "id": "ref:image:3",
+            "role": "omni_reference",
+            "referenceId": "REF-TOKEN-KIN",
+            "note": "生成时的第 3 个图像参考位。"
+          },
+          {
+            "id": "ref:image:4",
+            "role": "omni_reference",
+            "referenceId": "REF-TOKEN-MEDIC",
+            "note": "生成时的第 4 个图像参考位。"
+          }
+        ],
+        "emotionalArc": "克制、真实，以细微反应完成叙事推进。",
+        "beats": [
+          {
+            "id": "beat:full",
+            "startMs": 0,
+            "endMs": 12000,
+            "visual": "延续 P00 命册审核末帧的稳定状态，静默循环，绝无对白、无音乐节拍、无口型：Image 1 那本侧缝线装、旧纸无字的命册开至约 120° 稳定悬于秦淮真实水面上方约一掌高，纸页纤维显三处淡红痕迹但不成字；冷月只在水面右侧碎光，深夜水墨实景，深木、黛青、月白纸色、旧金灯影为主。Image 2 云锦（江宁旧织残片）、Image 3 故交旧印（印面朝上）、Image 4 手缝药囊三件信物在纸页各自位置完全不移。只允许水面细纹缓动、远处灯影极轻晃、纸页边缘极轻起伏、以及淡红纹沿纸纤维一明一暗地极缓呼吸；没有翻页、没有手、没有文字、没有信物移动、没有镜头推进。5 秒末尾回到与首帧完全相同的水纹相位、灯影位置与光照亮度，形成像素级自然循环，循环缝绝不靠倒放实现。",
+            "camera": "16:9 横屏，第一视角，一镜到底。",
+            "action": "静默循环片，无对白、无口型、无音乐节拍：整段延续 P00 命册审核末帧的同一稳定态。Image 1 那本侧缝线装、旧纸无字的命册开至约 120° 稳定悬于秦淮真实水面上方约一掌高，纸页纤维显三处淡红痕但不成字；冷月只在水面右侧碎光，深夜水墨实景；Image 2 云锦残片、Image 3 故交旧印（印面朝上）、Image 4 手缝药囊三件信物在纸页各自位置完全不移。整段只允许水面细纹缓动、远处灯影极轻晃、纸页边缘极轻起伏、以及淡红纹沿纸纤维一明一暗地极缓呼吸的极轻往复；全程没有翻页、没有手、没有文字、没有信物移动、没有镜头推进。首尾必须回到完全相同的水纹相位、灯影位置与光照亮度，形成像素级自然循环，循环缝绝不靠倒放实现。",
+            "performance": "自然克制，不做舞台化夸张表演。",
+            "emotion": "由场景动作自然递进。",
+            "dialogue": "",
+            "audio": "保留同期环境声与已锁定角色声线。",
+            "endState": "末帧进入稳定、可衔接状态。",
+            "continuity": "服装、道具、人物站位与淡红纹路保持连续。"
+          }
+        ],
+        "negativeConstraints": [
+          "不生成可读姓名、字幕、判词或信中文字。",
+          "不使用粒子魔法、仙侠光效、科幻 HUD、剪切、跳时或突然变焦。",
+          "玩家不露脸。"
+        ],
+        "continuityNotes": ["以原 v2 生成规格与现有 1080p 成片为准。"]
+      },
+      {
+        "graphNodeId": "clip:c1-r01-brocade",
+        "clipKey": "C1_R01_BROCADE",
+        "title": "荣府门前·云锦验身",
+        "description": "荣府门前·云锦验身（金陵入梦 v2 成片）",
+        "targetDurationMs": 12000,
+        "generationControl": {
+          "mode": "omni_reference"
+        },
+        "masterDirection": "真人古装电影质感的《红楼梦》荣国府场景，第一视角亲密感，表演克制，材质、光线和物理动作可信。荣国府使用深木、黛青、月白与旧金，淡红印纹是唯一强色。超自然只通过纸张、水面、灯火、反射和不可能的淡红纹路出现，不使用粒子魔法、仙侠光效或科幻 HUD。玩家永不露脸。全片 16:9、1920×1080、24fps、一镜到底，无剪切、无跳时、无突然变焦，末帧达到稳定态。\n\n承接荣府街门前末帧、以同一空间连续开始：青砖黛瓦、朱漆廊柱、抱鼓石与高木门槛，门额匾联在景内但不生成可读字，门洞内外形成日间明暗光差、天光自门道漏入。门上（一名明制家仆守礼门房：青灰交领右衽直身、束带、网巾小帽，安静守礼、绝不下跪）仍双手托着旧纸荐书等待，黛玉留在门内侧后方。第一视角玩家从黛青色明制大袖中取出 Image 2 所示的一小片边缘磨损的旧云锦——江宁织造的缠枝云纹旧织残片，丝光内敛、经纬可辨、不见任何龙纹或机织化纤高光——只托在自己掌心说明来历，不递到门上脸前。门上以两指托住布边，就门前天光细看织法，神色由例行拦查转为谨慎确认。门内黛玉严格保持 Image 1 锁定：清瘦而不病态的身形、月白极浅青白的明制交领右衽褙子配马面裙、清冷眉眼、眼神重于妆容；她听见玩家口音，辨出同是金陵旧路人，第一次微微侧身、目光落向玩家主动开口，克制不趋前亲近。门上把云锦连同荐书（保持 Image 3 的侧封旧纸信封形制与淡红封印，封面纸纤维只显极淡红痕、绝不成字）一并交给身旁一名明制褙子仆妇传话报进内院，侧身让开门道。玩家只以 Image 4 的中性手部与黛青色袖口出现、永不露脸、只在画外发声，随镜头平稳跨过高门槛，稳定停在抄手游廊入口共同末帧：朱漆廊柱、悬挂风灯、木栏杆与水磨砖地，天井漏光洒下，为下一镜留连续性。",
+        "referenceRoleNotes": [
+          {
+            "id": "ref:image:1",
+            "role": "omni_reference",
+            "referenceId": "REF-DAIYU",
+            "note": "生成时的第 1 个图像参考位。"
+          },
+          {
+            "id": "ref:image:2",
+            "role": "omni_reference",
+            "referenceId": "REF-TOKEN-BROCADE",
+            "note": "生成时的第 2 个图像参考位。"
+          },
+          {
+            "id": "ref:image:3",
+            "role": "omni_reference",
+            "referenceId": "REF-LETTER",
+            "note": "生成时的第 3 个图像参考位。"
+          },
+          {
+            "id": "ref:image:4",
+            "role": "omni_reference",
+            "referenceId": "REF-PLAYER-POV",
+            "note": "生成时的第 4 个图像参考位。"
+          },
+          {
+            "id": "ref:audio:1",
+            "role": "other",
+            "referenceId": "VOICE-PLAYER-A",
+            "note": "生成时的第 1 个声纹参考位。"
+          },
+          {
+            "id": "ref:audio:2",
+            "role": "other",
+            "referenceId": "VOICE-DAIYU",
+            "note": "生成时的第 2 个声纹参考位。"
+          },
+          {
+            "id": "ref:audio:3",
+            "role": "other",
+            "referenceId": "VOICE-GATEKEEPER",
+            "note": "生成时的第 3 个声纹参考位。"
+          }
+        ],
+        "emotionalArc": "克制、真实，以细微反应完成叙事推进。",
+        "beats": [
+          {
+            "id": "beat:full",
+            "startMs": 0,
+            "endMs": 12000,
+            "visual": "承接荣府街门前末帧、以同一空间连续开始：青砖黛瓦、朱漆廊柱、抱鼓石与高木门槛，门额匾联在景内但不生成可读字，门洞内外形成日间明暗光差、天光自门道漏入。门上（一名明制家仆守礼门房：青灰交领右衽直身、束带、网巾小帽，安静守礼、绝不下跪）仍双手托着旧纸荐书等待，黛玉留在门内侧后方。第一视角玩家从黛青色明制大袖中取出 Image 2 所示的一小片边缘磨损的旧云锦——江宁织造的缠枝云纹旧织残片，丝光内敛、经纬可辨、不见任何龙纹或机织化纤高光——只托在自己掌心说明来历，不递到门上脸前。门上以两指托住布边，就门前天光细看织法，神色由例行拦查转为谨慎确认。门内黛玉严格保持 Image 1 锁定：清瘦而不病态的身形、月白极浅青白的明制交领右衽褙子配马面裙、清冷眉眼、眼神重于妆容；她听见玩家口音，辨出同是金陵旧路人，第一次微微侧身、目光落向玩家主动开口，克制不趋前亲近。门上把云锦连同荐书（保持 Image 3 的侧封旧纸信封形制与淡红封印，封面纸纤维只显极淡红痕、绝不成字）一并交给身旁一名明制褙子仆妇传话报进内院，侧身让开门道。玩家只以 Image 4 的中性手部与黛青色袖口出现、永不露脸、只在画外发声，随镜头平稳跨过高门槛，稳定停在抄手游廊入口共同末帧：朱漆廊柱、悬挂风灯、木栏杆与水磨砖地，天井漏光洒下，为下一镜留连续性。",
+            "camera": "16:9 横屏，第一视角，一镜到底。",
+            "action": "镜头前段（起）：承接荣府门前末帧、同一空间连续开始——青砖黛瓦、朱漆廊柱、门房仍双手托着旧纸荐书候在门上、黛玉留在门内侧后方。第一视角玩家自黛青大袖中取出 Image 2 的旧云锦残片，只托在自己掌心说明来历、不递到门房脸前，以锁定画外声线自然道出『家中旧物，只剩这一片了。』（Audio 1），语气平缓克制、不催不夺。\n\n镜头中段（承）：门房两指托住布边、就门前天光细看织法，神色由例行拦查徐徐转为谨慎确认，认出这方旧织后自然说出『这纹样，是江宁旧织。』（Audio 3）。与此同时门内黛玉严格保持 Image 1 锁定，听出玩家口音、第一次微微侧身、清冷目光落向玩家，主动而克制地轻问『你也是从金陵来的？』（Audio 2），不趋前亲近。\n\n镜头后段（收）：门房把云锦连同 Image 3 荐书一并交给身旁明制褙子仆妇报进内院、侧身让开门道，顺势道出『且候着，容我先报进去。』（Audio 3）。镜头随玩家中性手部一气跨过高门槛，稳定停在抄手游廊入口共同末帧；人物与道具归于静止呼吸态，唯悬挂风灯与天井漏光极轻浮动，首尾同相位、为下一镜留连续性。",
+            "performance": "自然克制，不做舞台化夸张表演。",
+            "emotion": "由场景动作自然递进。",
+            "dialogue": "",
+            "audio": "保留同期环境声与已锁定角色声线。",
+            "endState": "末帧进入稳定、可衔接状态。",
+            "continuity": "服装、道具、人物站位与淡红纹路保持连续。"
+          }
+        ],
+        "negativeConstraints": [
+          "不生成可读姓名、字幕、判词或信中文字。",
+          "不使用粒子魔法、仙侠光效、科幻 HUD、剪切、跳时或突然变焦。",
+          "玩家不露脸。"
+        ],
+        "continuityNotes": ["以原 v2 生成规格与现有 1080p 成片为准。"]
+      },
+      {
+        "graphNodeId": "clip:c1-r02-old-seal",
+        "clipKey": "C1_R02_OLD_SEAL",
+        "title": "荣府门前·旧印核验",
+        "description": "荣府门前·旧印核验（金陵入梦 v2 成片）",
+        "targetDurationMs": 12000,
+        "generationControl": {
+          "mode": "omni_reference"
+        },
+        "masterDirection": "真人古装电影质感的《红楼梦》荣国府场景，第一视角亲密感，表演克制，材质、光线和物理动作可信。荣国府使用深木、黛青、月白与旧金，淡红印纹是唯一强色。超自然只通过纸张、水面、灯火、反射和不可能的淡红纹路出现，不使用粒子魔法、仙侠光效或科幻 HUD。玩家永不露脸。全片 16:9、1920×1080、24fps、一镜到底，无剪切、无跳时、无突然变焦，末帧达到稳定态。\n\n承接荣府街门前末帧、以同一空间连续开始：青砖黛瓦、朱漆廊柱、抱鼓石与高木门槛，门额匾联在景内但不生成可读字，门洞内外日间明暗分明、天光自门道漏入。门上（明制家仆守礼门房：青灰交领右衽直身、束带、网巾小帽，安静守礼、绝不下跪）双手托着旧纸荐书，黛玉留在门内侧后方。第一视角玩家从黛青色明制大袖中取出一只旧布袋，就掌心解开，只托出 Image 2 所示的一枚故交私印，仅向门上展示阴文印面——印面刀口古旧、纹样清晰但不成任何可读姓名——绝不在现场蘸泥盖章，请府中老人核验。门上就门前天光把私印与荐书封口并置比对：他认得这方私印的旧式印制，却发现荐书上的淡红封印与之相似而不相同，神色由『疑其伪造』收敛为『不敢擅自处置』的谨慎。他双手把私印奉还玩家，将荐书（保持 Image 3 的侧封旧纸信封形制与淡红封印，纸纤维只显极淡红痕、绝不成字）交给身旁一名明制褙子仆妇报进内院，压低声音让玩家先在门内候查。门内黛玉严格保持 Image 1 锁定：清瘦而不病态、月白极浅青白明制交领右衽褙子配马面裙、清冷眉眼；她不替玩家说话，只静静记下门上那一瞬的停顿。玩家仅以 Image 4 的中性手部与黛青色袖口出现、永不露脸、只在画外发声，随镜头平稳跨过高门槛，停在抄手游廊入口共同末帧——朱漆廊柱、悬挂风灯、木栏杆、水磨砖地、天井漏光——为下一镜留稳定连续性。",
+        "referenceRoleNotes": [
+          {
+            "id": "ref:image:1",
+            "role": "omni_reference",
+            "referenceId": "REF-DAIYU",
+            "note": "生成时的第 1 个图像参考位。"
+          },
+          {
+            "id": "ref:image:2",
+            "role": "omni_reference",
+            "referenceId": "REF-TOKEN-SEAL",
+            "note": "生成时的第 2 个图像参考位。"
+          },
+          {
+            "id": "ref:image:3",
+            "role": "omni_reference",
+            "referenceId": "REF-LETTER",
+            "note": "生成时的第 3 个图像参考位。"
+          },
+          {
+            "id": "ref:image:4",
+            "role": "omni_reference",
+            "referenceId": "REF-PLAYER-POV",
+            "note": "生成时的第 4 个图像参考位。"
+          },
+          {
+            "id": "ref:audio:1",
+            "role": "other",
+            "referenceId": "VOICE-PLAYER-A",
+            "note": "生成时的第 1 个声纹参考位。"
+          },
+          {
+            "id": "ref:audio:2",
+            "role": "other",
+            "referenceId": "VOICE-GATEKEEPER",
+            "note": "生成时的第 2 个声纹参考位。"
+          }
+        ],
+        "emotionalArc": "克制、真实，以细微反应完成叙事推进。",
+        "beats": [
+          {
+            "id": "beat:full",
+            "startMs": 0,
+            "endMs": 12000,
+            "visual": "承接荣府街门前末帧、以同一空间连续开始：青砖黛瓦、朱漆廊柱、抱鼓石与高木门槛，门额匾联在景内但不生成可读字，门洞内外日间明暗分明、天光自门道漏入。门上（明制家仆守礼门房：青灰交领右衽直身、束带、网巾小帽，安静守礼、绝不下跪）双手托着旧纸荐书，黛玉留在门内侧后方。第一视角玩家从黛青色明制大袖中取出一只旧布袋，就掌心解开，只托出 Image 2 所示的一枚故交私印，仅向门上展示阴文印面——印面刀口古旧、纹样清晰但不成任何可读姓名——绝不在现场蘸泥盖章，请府中老人核验。门上就门前天光把私印与荐书封口并置比对：他认得这方私印的旧式印制，却发现荐书上的淡红封印与之相似而不相同，神色由『疑其伪造』收敛为『不敢擅自处置』的谨慎。他双手把私印奉还玩家，将荐书（保持 Image 3 的侧封旧纸信封形制与淡红封印，纸纤维只显极淡红痕、绝不成字）交给身旁一名明制褙子仆妇报进内院，压低声音让玩家先在门内候查。门内黛玉严格保持 Image 1 锁定：清瘦而不病态、月白极浅青白明制交领右衽褙子配马面裙、清冷眉眼；她不替玩家说话，只静静记下门上那一瞬的停顿。玩家仅以 Image 4 的中性手部与黛青色袖口出现、永不露脸、只在画外发声，随镜头平稳跨过高门槛，停在抄手游廊入口共同末帧——朱漆廊柱、悬挂风灯、木栏杆、水磨砖地、天井漏光——为下一镜留稳定连续性。",
+            "camera": "16:9 横屏，第一视角，一镜到底。",
+            "action": "镜头前段（起）：承接荣府门前末帧、同一空间连续开始——青砖黛瓦、朱漆廊柱、门房双手托着旧纸荐书、黛玉留在门内侧后方。第一视角玩家自黛青大袖取出旧布袋、就掌心从容解开，只托出 Image 2 的故交私印、仅展示阴文印面、绝不在现场蘸泥盖章，以锁定画外声线请托『这是先人留下的私印，可请府里老人辨认。』（Audio 1）。\n\n镜头中段（承）：门房就门前天光把私印与荐书封口并置比对——他认得这方旧式印制，却察觉荐书上的淡红封印与之相似而不相同，神色由『疑其伪造』一路收敛为『不敢擅自处置』的谨慎，低声道出『印是真的，信上的却不是这一方。』（Audio 2）。门内黛玉严格保持 Image 1 锁定、始终不出声，只静静记下门房这一瞬的停顿。\n\n镜头后段（收）：门房双手把私印奉还玩家掌中，转手将 Image 3 荐书交给身旁明制褙子仆妇、压低声音吩咐『先报进去。』（Audio 2）。镜头随玩家中性手部平稳跨过高门槛，停在抄手游廊入口共同末帧；人物道具归于静止呼吸态，风灯与天井漏光极轻浮动，首尾同相位、为下一镜留稳定连续性。",
+            "performance": "自然克制，不做舞台化夸张表演。",
+            "emotion": "由场景动作自然递进。",
+            "dialogue": "",
+            "audio": "保留同期环境声与已锁定角色声线。",
+            "endState": "末帧进入稳定、可衔接状态。",
+            "continuity": "服装、道具、人物站位与淡红纹路保持连续。"
+          }
+        ],
+        "negativeConstraints": [
+          "不生成可读姓名、字幕、判词或信中文字。",
+          "不使用粒子魔法、仙侠光效、科幻 HUD、剪切、跳时或突然变焦。",
+          "玩家不露脸。"
+        ],
+        "continuityNotes": ["以原 v2 生成规格与现有 1080p 成片为准。"]
+      },
+      {
+        "graphNodeId": "clip:c1-r03-medicine-pouch",
+        "clipKey": "C1_R03_MEDICINE_POUCH",
+        "title": "荣府门前·药囊问医",
+        "description": "荣府门前·药囊问医（金陵入梦 v2 成片）",
+        "targetDurationMs": 12000,
+        "generationControl": {
+          "mode": "omni_reference"
+        },
+        "masterDirection": "真人古装电影质感的《红楼梦》荣国府场景，第一视角亲密感，表演克制，材质、光线和物理动作可信。荣国府使用深木、黛青、月白与旧金，淡红印纹是唯一强色。超自然只通过纸张、水面、灯火、反射和不可能的淡红纹路出现，不使用粒子魔法、仙侠光效或科幻 HUD。玩家永不露脸。全片 16:9、1920×1080、24fps、一镜到底，无剪切、无跳时、无突然变焦，末帧达到稳定态。\n\n承接荣府街门前末帧、以同一空间连续开始：青砖黛瓦、朱漆廊柱、抱鼓石与高木门槛，门额匾联在景内但不生成可读字，门洞内外日间明暗分明、天光自门道漏入。门上（明制家仆守礼门房：青灰交领右衽直身、束带、网巾小帽，安静守礼、绝不下跪）双手托着旧纸荐书，黛玉留在门内侧后方。第一视角玩家从黛青色明制大袖中取出 Image 2 所示的一只用旧的手缝布药囊，连同一张折叠的旧方笺——囊口露出真实晾干药材（枸杞、当归片、陈皮之类天然草药），绝无玻璃药瓶、香水瓶或任何现代塑料容器——托在掌心说明信与药皆出自金陵医馆、皆可查验。门上不通药理仍保持例行审查，就门前天光展开旧方笺细看，纸上只有旧墨笔迹质感，绝不生成可读乱码或药名。门内黛玉严格保持 Image 1 锁定：清瘦而不病态、月白极浅青白明制交领右衽褙子配马面裙、清冷眉眼；她从门内嗅到极淡药香，先看药囊再看玩家，第一次主动开口，神态清瘦而不咳嗽发病、无病弱滤镜。门上把荐书（保持 Image 3 的侧封旧纸信封形制与淡红封印，纸纤维只显极淡红痕、绝不成字）交给身旁一名明制褙子仆妇报进内院，说身份仍须内院核验、但允许玩家先进门候查。玩家仅以 Image 4 的中性手部与黛青色袖口出现、永不露脸、只在画外发声、不生成固定口型，随镜头平稳跨过高门槛，停在抄手游廊入口共同末帧——朱漆廊柱、悬挂风灯、木栏杆、水磨砖地、天井漏光——为下一镜留稳定连续性。",
+        "referenceRoleNotes": [
+          {
+            "id": "ref:image:1",
+            "role": "omni_reference",
+            "referenceId": "REF-DAIYU",
+            "note": "生成时的第 1 个图像参考位。"
+          },
+          {
+            "id": "ref:image:2",
+            "role": "omni_reference",
+            "referenceId": "REF-TOKEN-POUCH",
+            "note": "生成时的第 2 个图像参考位。"
+          },
+          {
+            "id": "ref:image:3",
+            "role": "omni_reference",
+            "referenceId": "REF-LETTER",
+            "note": "生成时的第 3 个图像参考位。"
+          },
+          {
+            "id": "ref:image:4",
+            "role": "omni_reference",
+            "referenceId": "REF-PLAYER-POV",
+            "note": "生成时的第 4 个图像参考位。"
+          },
+          {
+            "id": "ref:audio:1",
+            "role": "other",
+            "referenceId": "VOICE-PLAYER-A",
+            "note": "生成时的第 1 个声纹参考位。"
+          },
+          {
+            "id": "ref:audio:2",
+            "role": "other",
+            "referenceId": "VOICE-DAIYU",
+            "note": "生成时的第 2 个声纹参考位。"
+          },
+          {
+            "id": "ref:audio:3",
+            "role": "other",
+            "referenceId": "VOICE-GATEKEEPER",
+            "note": "生成时的第 3 个声纹参考位。"
+          }
+        ],
+        "emotionalArc": "克制、真实，以细微反应完成叙事推进。",
+        "beats": [
+          {
+            "id": "beat:full",
+            "startMs": 0,
+            "endMs": 12000,
+            "visual": "承接荣府街门前末帧、以同一空间连续开始：青砖黛瓦、朱漆廊柱、抱鼓石与高木门槛，门额匾联在景内但不生成可读字，门洞内外日间明暗分明、天光自门道漏入。门上（明制家仆守礼门房：青灰交领右衽直身、束带、网巾小帽，安静守礼、绝不下跪）双手托着旧纸荐书，黛玉留在门内侧后方。第一视角玩家从黛青色明制大袖中取出 Image 2 所示的一只用旧的手缝布药囊，连同一张折叠的旧方笺——囊口露出真实晾干药材（枸杞、当归片、陈皮之类天然草药），绝无玻璃药瓶、香水瓶或任何现代塑料容器——托在掌心说明信与药皆出自金陵医馆、皆可查验。门上不通药理仍保持例行审查，就门前天光展开旧方笺细看，纸上只有旧墨笔迹质感，绝不生成可读乱码或药名。门内黛玉严格保持 Image 1 锁定：清瘦而不病态、月白极浅青白明制交领右衽褙子配马面裙、清冷眉眼；她从门内嗅到极淡药香，先看药囊再看玩家，第一次主动开口，神态清瘦而不咳嗽发病、无病弱滤镜。门上把荐书（保持 Image 3 的侧封旧纸信封形制与淡红封印，纸纤维只显极淡红痕、绝不成字）交给身旁一名明制褙子仆妇报进内院，说身份仍须内院核验、但允许玩家先进门候查。玩家仅以 Image 4 的中性手部与黛青色袖口出现、永不露脸、只在画外发声、不生成固定口型，随镜头平稳跨过高门槛，停在抄手游廊入口共同末帧——朱漆廊柱、悬挂风灯、木栏杆、水磨砖地、天井漏光——为下一镜留稳定连续性。",
+            "camera": "16:9 横屏，第一视角，一镜到底。",
+            "action": "镜头前段（起）：承接荣府门前末帧、同一空间连续开始——青砖黛瓦、朱漆廊柱、门房双手托着旧纸荐书、黛玉留在门内侧后方。第一视角玩家自黛青大袖取出 Image 2 的旧手缝布药囊连同一张折叠旧方笺、囊口露出真实晾干药材、托在掌心说明信与药皆出自金陵医馆皆可查验，以锁定画外声线道出『我从金陵医馆来，信可查，药囊也可查。』（Audio 1）。\n\n镜头中段（承）：门房不通药理仍保持例行审查、就门前天光展开旧方笺细看、纸上只有旧墨笔迹质感、不读出任何字。门内黛玉严格保持 Image 1 锁定，从门内嗅到极淡药香、先看药囊再看玩家，清瘦而不咳嗽发病、无病弱滤镜，第一次主动开口轻问『你也懂药？』（Audio 2）；玩家以锁定画外声线自然接话、简短答『略懂一些。』（Audio 1），全程不露脸、无固定口型。\n\n镜头后段（收）：门房把 Image 3 荐书交给身旁明制褙子仆妇报进内院、示意身份仍须内院核验但允许玩家先进门候查，顺势道出『先进去候着，信还要查。』（Audio 3）。镜头随玩家中性手部平稳跨过高门槛，停在抄手游廊入口共同末帧；人物道具归于静止呼吸态，风灯与天井漏光极轻浮动，首尾同相位、为下一镜留稳定连续性。",
+            "performance": "自然克制，不做舞台化夸张表演。",
+            "emotion": "由场景动作自然递进。",
+            "dialogue": "",
+            "audio": "保留同期环境声与已锁定角色声线。",
+            "endState": "末帧进入稳定、可衔接状态。",
+            "continuity": "服装、道具、人物站位与淡红纹路保持连续。"
+          }
+        ],
+        "negativeConstraints": [
+          "不生成可读姓名、字幕、判词或信中文字。",
+          "不使用粒子魔法、仙侠光效、科幻 HUD、剪切、跳时或突然变焦。",
+          "玩家不露脸。"
+        ],
+        "continuityNotes": ["以原 v2 生成规格与现有 1080p 成片为准。"]
+      },
+      {
+        "graphNodeId": "clip:s02-corridor-crisis",
+        "clipKey": "S02_CORRIDOR_CRISIS",
+        "title": "荣府游廊·风灯危机",
+        "description": "荣府游廊·风灯危机（金陵入梦 v2 成片）",
+        "targetDurationMs": 12000,
+        "generationControl": {
+          "mode": "omni_reference"
+        },
+        "masterDirection": "真人古装电影质感的《红楼梦》荣国府场景，第一视角亲密感，表演克制，材质、光线和物理动作可信。荣国府使用深木、黛青、月白与旧金，淡红印纹是唯一强色。超自然只通过纸张、水面、灯火、反射和不可能的淡红纹路出现，不使用粒子魔法、仙侠光效或科幻 HUD。玩家永不露脸。全片 16:9、1920×1080、24fps、一镜到底，无剪切、无跳时、无突然变焦，末帧达到稳定态。\n\n第一视角紧随图1成年黛玉右后侧，沿荣国府抄手游廊平稳前行，机位克制不晃。游廊朱漆廊柱、槅扇窗、水磨青砖地、木栏杆，一盏可倾斜的图2风灯——旧木灯架、纸糊灯罩、垂着灯穗——悬于栏侧。日间天井漏光斜入，深木黛青为底、旧金灯火为点。黛玉一袭月白明制衫裙，与玩家（图4中性手部、黛青袖口）保持合礼距离；一名明制青衣仆妇走在前方。真实穿堂风自左侧灌入，先掀动灯穗与黛玉外层大袖，发丝只轻动、不遮脸；继而使风灯挂钩偏移、灯身向黛玉一侧倾斜。黛玉外层衣袖被灯架一处木钩轻轻挂住，她立即停步低头确认、不惊叫；同一刻玩家袖中的图3旧纸荐书自下方袖口滑出三分之一。危机三事同时可读却不灾难化：灯仍在架上、火苗不飞出、黛玉未跌倒。仆妇声由Audio1锁定。末帧停在人、灯、信三者都待处置的稳定构图。",
+        "referenceRoleNotes": [
+          {
+            "id": "ref:image:1",
+            "role": "omni_reference",
+            "referenceId": "REF-DAIYU",
+            "note": "生成时的第 1 个图像参考位。"
+          },
+          {
+            "id": "ref:image:2",
+            "role": "omni_reference",
+            "referenceId": "REF-LANTERN",
+            "note": "生成时的第 2 个图像参考位。"
+          },
+          {
+            "id": "ref:image:3",
+            "role": "omni_reference",
+            "referenceId": "REF-LETTER",
+            "note": "生成时的第 3 个图像参考位。"
+          },
+          {
+            "id": "ref:image:4",
+            "role": "omni_reference",
+            "referenceId": "REF-PLAYER-POV",
+            "note": "生成时的第 4 个图像参考位。"
+          },
+          {
+            "id": "ref:audio:1",
+            "role": "other",
+            "referenceId": "VOICE-MAID",
+            "note": "生成时的第 1 个声纹参考位。"
+          }
+        ],
+        "emotionalArc": "克制、真实，以细微反应完成叙事推进。",
+        "beats": [
+          {
+            "id": "beat:full",
+            "startMs": 0,
+            "endMs": 12000,
+            "visual": "第一视角紧随图1成年黛玉右后侧，沿荣国府抄手游廊平稳前行，机位克制不晃。游廊朱漆廊柱、槅扇窗、水磨青砖地、木栏杆，一盏可倾斜的图2风灯——旧木灯架、纸糊灯罩、垂着灯穗——悬于栏侧。日间天井漏光斜入，深木黛青为底、旧金灯火为点。黛玉一袭月白明制衫裙，与玩家（图4中性手部、黛青袖口）保持合礼距离；一名明制青衣仆妇走在前方。真实穿堂风自左侧灌入，先掀动灯穗与黛玉外层大袖，发丝只轻动、不遮脸；继而使风灯挂钩偏移、灯身向黛玉一侧倾斜。黛玉外层衣袖被灯架一处木钩轻轻挂住，她立即停步低头确认、不惊叫；同一刻玩家袖中的图3旧纸荐书自下方袖口滑出三分之一。危机三事同时可读却不灾难化：灯仍在架上、火苗不飞出、黛玉未跌倒。仆妇声由Audio1锁定。末帧停在人、灯、信三者都待处置的稳定构图。",
+            "camera": "16:9 横屏，第一视角，一镜到底。",
+            "action": "起｜镜头前段：第一视角紧随图1黛玉右后侧，沿荣国府抄手游廊平稳前行、机位克制不晃；黛玉收袖避开栏边，前方青衣仆妇回头轻声提醒（Audio1）：“廊下风紧，姑娘仔细。”\n承｜镜头中段：真实穿堂风自左侧灌入，先掀动图2风灯的灯穗与黛玉外层大袖，发丝只轻动、不遮脸；继而风灯挂钩偏移、灯身向黛玉一侧倾斜，外层衣袖被灯架一处木钩轻轻挂住，她立即停步低头确认、不惊叫。\n转｜镜头后段：同一刻玩家袖中图3旧纸荐书自下方袖口滑出约三分之一，仆妇刚转身、援手未及；危机三事同时可读却不灾难化——灯仍在架上、火苗不飞出、黛玉未跌倒。\n收｜末段：黛玉抬眼看向玩家、呼吸微紧，灯、衣袖、荐书三者位置保持稳定、皆待处置，无新动作，构图停在人灯信共存的稳定末帧，为选择停留。",
+            "performance": "自然克制，不做舞台化夸张表演。",
+            "emotion": "由场景动作自然递进。",
+            "dialogue": "",
+            "audio": "保留同期环境声与已锁定角色声线。",
+            "endState": "末帧进入稳定、可衔接状态。",
+            "continuity": "服装、道具、人物站位与淡红纹路保持连续。"
+          }
+        ],
+        "negativeConstraints": [
+          "不生成可读姓名、字幕、判词或信中文字。",
+          "不使用粒子魔法、仙侠光效、科幻 HUD、剪切、跳时或突然变焦。",
+          "玩家不露脸。"
+        ],
+        "continuityNotes": ["以原 v2 生成规格与现有 1080p 成片为准。"]
+      },
+      {
+        "graphNodeId": "clip:w02-corridor-wait",
+        "clipKey": "W02_CORRIDOR_WAIT",
+        "title": "游廊等待·风灯危机",
+        "description": "游廊等待·风灯危机（金陵入梦 v2 成片）",
+        "targetDurationMs": 12000,
+        "generationControl": {
+          "mode": "omni_reference"
+        },
+        "masterDirection": "真人古装电影质感的《红楼梦》荣国府场景，第一视角亲密感，表演克制，材质、光线和物理动作可信。荣国府使用深木、黛青、月白与旧金，淡红印纹是唯一强色。超自然只通过纸张、水面、灯火、反射和不可能的淡红纹路出现，不使用粒子魔法、仙侠光效或科幻 HUD。玩家永不露脸。全片 16:9、1920×1080、24fps、一镜到底，无剪切、无跳时、无突然变焦，末帧达到稳定态。\n\n保持游廊风灯危机的稳定末帧，静默循环，绝无对白、无音乐节拍、无口型：荣府抄手游廊，青砖黛瓦、朱漆廊柱、雕栏与槅扇窗，夜色里 Image 2 风灯仍轻度倾斜、火苗未熄。Image 1 锁定的林黛玉月白日间明制衣裙（交领右衽、马面裙、素褙子），外层大袖仍挂在同一木钩上，姿态克制、眼神清冷；一名明制仆役装扮的引路仆妇（青灰比甲、挽髻、守礼安静）刚转身、尚未触碰任何物件。Image 3 那封旧纸荐书、淡红封印，仍从玩家第一视角（Image 4）黛青袖口滑出约三分之一未落地。真实夜光只有风灯暖火与远处廊灯。只允许黛玉一次自然呼吸、鬓边发丝极轻往复、火苗小幅恢复直立再偏斜、衣料张力微动；任何危机都不得自行解决。4 秒末尾回到相同灯角、手位、眼线、火苗高度与衣袖张力，像素级首尾同帧循环，绝不靠倒放。",
+        "referenceRoleNotes": [
+          {
+            "id": "ref:image:1",
+            "role": "omni_reference",
+            "referenceId": "REF-DAIYU",
+            "note": "生成时的第 1 个图像参考位。"
+          },
+          {
+            "id": "ref:image:2",
+            "role": "omni_reference",
+            "referenceId": "REF-LANTERN",
+            "note": "生成时的第 2 个图像参考位。"
+          },
+          {
+            "id": "ref:image:3",
+            "role": "omni_reference",
+            "referenceId": "REF-LETTER",
+            "note": "生成时的第 3 个图像参考位。"
+          },
+          {
+            "id": "ref:image:4",
+            "role": "omni_reference",
+            "referenceId": "REF-PLAYER-POV",
+            "note": "生成时的第 4 个图像参考位。"
+          }
+        ],
+        "emotionalArc": "克制、真实，以细微反应完成叙事推进。",
+        "beats": [
+          {
+            "id": "beat:full",
+            "startMs": 0,
+            "endMs": 12000,
+            "visual": "保持游廊风灯危机的稳定末帧，静默循环，绝无对白、无音乐节拍、无口型：荣府抄手游廊，青砖黛瓦、朱漆廊柱、雕栏与槅扇窗，夜色里 Image 2 风灯仍轻度倾斜、火苗未熄。Image 1 锁定的林黛玉月白日间明制衣裙（交领右衽、马面裙、素褙子），外层大袖仍挂在同一木钩上，姿态克制、眼神清冷；一名明制仆役装扮的引路仆妇（青灰比甲、挽髻、守礼安静）刚转身、尚未触碰任何物件。Image 3 那封旧纸荐书、淡红封印，仍从玩家第一视角（Image 4）黛青袖口滑出约三分之一未落地。真实夜光只有风灯暖火与远处廊灯。只允许黛玉一次自然呼吸、鬓边发丝极轻往复、火苗小幅恢复直立再偏斜、衣料张力微动；任何危机都不得自行解决。4 秒末尾回到相同灯角、手位、眼线、火苗高度与衣袖张力，像素级首尾同帧循环，绝不靠倒放。",
+            "camera": "16:9 横屏，第一视角，一镜到底。",
+            "action": "静默循环片，无对白、无口型、无音乐节拍：整段保持游廊风灯危机的同一稳定末帧。荣府抄手游廊、青砖黛瓦、朱漆廊柱、雕栏槅扇，夜色里 Image 2 风灯仍轻度倾斜、火苗未熄；Image 1 锁定的林黛玉月白日间明制衣裙、外层大袖仍挂在同一木钩上，姿态克制、眼神清冷；一名明制引路仆妇（青灰比甲、挽髻、守礼安静）刚转身、尚未触碰任何物件；Image 3 那封旧纸荐书、淡红封印仍从玩家第一视角（Image 4）黛青袖口滑出约三分之一未落地。整段只允许黛玉一次自然呼吸、鬓边发丝极轻往复、火苗小幅恢复直立再偏斜、衣料张力微动的极轻往复；任何危机都不得自行解决。首尾必须回到相同灯角、手位、眼线、火苗高度与衣袖张力，像素级首尾同帧循环，绝不靠倒放。",
+            "performance": "自然克制，不做舞台化夸张表演。",
+            "emotion": "由场景动作自然递进。",
+            "dialogue": "",
+            "audio": "保留同期环境声与已锁定角色声线。",
+            "endState": "末帧进入稳定、可衔接状态。",
+            "continuity": "服装、道具、人物站位与淡红纹路保持连续。"
+          }
+        ],
+        "negativeConstraints": [
+          "不生成可读姓名、字幕、判词或信中文字。",
+          "不使用粒子魔法、仙侠光效、科幻 HUD、剪切、跳时或突然变焦。",
+          "玩家不露脸。"
+        ],
+        "continuityNotes": ["以原 v2 生成规格与现有 1080p 成片为准。"]
+      },
+      {
+        "graphNodeId": "clip:c2-r01-protect-daiyu",
+        "clipKey": "C2_R01_PROTECT_DAIYU",
+        "title": "荣府游廊风灯·护黛玉衣袖",
+        "description": "荣府游廊风灯·护黛玉衣袖（金陵入梦 v2 成片）",
+        "targetDurationMs": 12000,
+        "generationControl": {
+          "mode": "omni_reference"
+        },
+        "masterDirection": "真人古装电影质感的《红楼梦》荣国府场景，第一视角亲密感，表演克制，材质、光线和物理动作可信。荣国府使用深木、黛青、月白与旧金，淡红印纹是唯一强色。超自然只通过纸张、水面、灯火、反射和不可能的淡红纹路出现，不使用粒子魔法、仙侠光效或科幻 HUD。玩家永不露脸。全片 16:9、1920×1080、24fps、一镜到底，无剪切、无跳时、无突然变焦，末帧达到稳定态。\n\n承接游廊风灯危机末帧，物理连续、不黑切：第一视角仍稳在林黛玉（Image 1，月白极浅青白明制交领右衽大袖褙子配同色马面裙，清瘦不病态、眉眼清冷、眼神比妆容重）右后侧半步的合礼距离。场景为荣国府抄手游廊——朱漆廊柱、槅扇支摘窗、寻杖木栏与水磨方砖地，在日间天井漏光与侧窗光下泛深木、黛青、旧金冷调，穿堂风仍从左侧掠入。黛玉外层大袖仍被廊柱旁悬挂的风灯（Image 3，六棱木架、素纱灯罩、垂灯穗、火苗微偏未飞出）一处木钩轻轻挂住。玩家（Image 5，只出中性手部与黛青色窄袖口，永不露脸）先出画外声说明动作，随即只用拇指与食指捏住被钩住衣料的最远端外缘，绝不触及黛玉手腕、身体或内袖；先把布料张力固定，再顺木钩弧度将外袖轻轻退出。黛玉本能后退半步、垂目确认，见玩家守礼收手后才让呼吸松动。引路仆妇（Image 2，明制素色比甲布裙、挽袖、发髻简净、守礼安静）同时上前双手扶正倾斜风灯，火苗回正垂直。玩家袖中旧纸荐书（Image 4，侧缝旧纸信封、淡红封印、纸纤维隐约三处淡红痕不成字，仍滑出约三分之一）稳停袖口未落地。黛玉理好外袖、敛容克制道谢并温和提醒分寸，众人沿游廊继续向荣禧堂式正厅门前行进。末帧收在正厅槅扇大门前合礼站位、匾额楹联在景深中不可读的稳定构图，为下一镜留连续性。",
+        "referenceRoleNotes": [
+          {
+            "id": "ref:image:1",
+            "role": "omni_reference",
+            "referenceId": "REF-DAIYU-DAY",
+            "note": "生成时的第 1 个图像参考位。"
+          },
+          {
+            "id": "ref:image:2",
+            "role": "omni_reference",
+            "referenceId": "REF-MAID",
+            "note": "生成时的第 2 个图像参考位。"
+          },
+          {
+            "id": "ref:image:3",
+            "role": "omni_reference",
+            "referenceId": "REF-LANTERN",
+            "note": "生成时的第 3 个图像参考位。"
+          },
+          {
+            "id": "ref:image:4",
+            "role": "omni_reference",
+            "referenceId": "REF-LETTER",
+            "note": "生成时的第 4 个图像参考位。"
+          },
+          {
+            "id": "ref:image:5",
+            "role": "omni_reference",
+            "referenceId": "REF-PLAYER-POV",
+            "note": "生成时的第 5 个图像参考位。"
+          },
+          {
+            "id": "ref:audio:1",
+            "role": "other",
+            "referenceId": "VOICE-PLAYER-A",
+            "note": "生成时的第 1 个声纹参考位。"
+          },
+          {
+            "id": "ref:audio:2",
+            "role": "other",
+            "referenceId": "VOICE-DAIYU",
+            "note": "生成时的第 2 个声纹参考位。"
+          }
+        ],
+        "emotionalArc": "克制、真实，以细微反应完成叙事推进。",
+        "beats": [
+          {
+            "id": "beat:full",
+            "startMs": 0,
+            "endMs": 12000,
+            "visual": "承接游廊风灯危机末帧，物理连续、不黑切：第一视角仍稳在林黛玉（Image 1，月白极浅青白明制交领右衽大袖褙子配同色马面裙，清瘦不病态、眉眼清冷、眼神比妆容重）右后侧半步的合礼距离。场景为荣国府抄手游廊——朱漆廊柱、槅扇支摘窗、寻杖木栏与水磨方砖地，在日间天井漏光与侧窗光下泛深木、黛青、旧金冷调，穿堂风仍从左侧掠入。黛玉外层大袖仍被廊柱旁悬挂的风灯（Image 3，六棱木架、素纱灯罩、垂灯穗、火苗微偏未飞出）一处木钩轻轻挂住。玩家（Image 5，只出中性手部与黛青色窄袖口，永不露脸）先出画外声说明动作，随即只用拇指与食指捏住被钩住衣料的最远端外缘，绝不触及黛玉手腕、身体或内袖；先把布料张力固定，再顺木钩弧度将外袖轻轻退出。黛玉本能后退半步、垂目确认，见玩家守礼收手后才让呼吸松动。引路仆妇（Image 2，明制素色比甲布裙、挽袖、发髻简净、守礼安静）同时上前双手扶正倾斜风灯，火苗回正垂直。玩家袖中旧纸荐书（Image 4，侧缝旧纸信封、淡红封印、纸纤维隐约三处淡红痕不成字，仍滑出约三分之一）稳停袖口未落地。黛玉理好外袖、敛容克制道谢并温和提醒分寸，众人沿游廊继续向荣禧堂式正厅门前行进。末帧收在正厅槅扇大门前合礼站位、匾额楹联在景深中不可读的稳定构图，为下一镜留连续性。",
+            "camera": "16:9 横屏，第一视角，一镜到底。",
+            "action": "起（镜头前段）：承接游廊风灯危机末帧，物理连续不黑切。玩家（图5，只出中性手部与黛青窄袖口，永不露脸）先出画外声、自然说出：“得罪了，我只解衣袖。”，随即仅以拇指食指捏住被木钩挂住的衣料远端外缘，手不入内袖、不触黛玉身体。\n承（镜头中段）：衣料顺风灯（图3）木钩弧度被轻轻退出，形成一个连续的解衣袖动作弧；黛玉（图1）本能后退半步、垂目确认玩家未触身；引路仆妇（图2）同时上前双手扶正倾斜的风灯，火苗回正垂直。\n收（镜头后段）：黛玉确认玩家已守礼收手，敛容自然道出：“多谢。我自己来便好。”，从容理好外袖，袖中旧纸荐书（图4）仍稳停袖口未落地；穿堂风渐息。众人沿抄手游廊自然续行，镜头以真实电影节奏稳定收在荣禧堂正厅槅扇大门前的合礼站位末帧，匾额楹联在景深中不可读，无新台词、无不可逆动作，为下一镜留连续性。",
+            "performance": "自然克制，不做舞台化夸张表演。",
+            "emotion": "由场景动作自然递进。",
+            "dialogue": "",
+            "audio": "保留同期环境声与已锁定角色声线。",
+            "endState": "末帧进入稳定、可衔接状态。",
+            "continuity": "服装、道具、人物站位与淡红纹路保持连续。"
+          }
+        ],
+        "negativeConstraints": [
+          "不生成可读姓名、字幕、判词或信中文字。",
+          "不使用粒子魔法、仙侠光效、科幻 HUD、剪切、跳时或突然变焦。",
+          "玩家不露脸。"
+        ],
+        "continuityNotes": ["以原 v2 生成规格与现有 1080p 成片为准。"]
+      },
+      {
+        "graphNodeId": "clip:c2-r02-steady-lantern",
+        "clipKey": "C2_R02_STEADY_LANTERN",
+        "title": "荣府游廊风灯·稳灯递信",
+        "description": "荣府游廊风灯·稳灯递信（金陵入梦 v2 成片）",
+        "targetDurationMs": 12000,
+        "generationControl": {
+          "mode": "omni_reference"
+        },
+        "masterDirection": "真人古装电影质感的《红楼梦》荣国府场景，第一视角亲密感，表演克制，材质、光线和物理动作可信。荣国府使用深木、黛青、月白与旧金，淡红印纹是唯一强色。超自然只通过纸张、水面、灯火、反射和不可能的淡红纹路出现，不使用粒子魔法、仙侠光效或科幻 HUD。玩家永不露脸。全片 16:9、1920×1080、24fps、一镜到底，无剪切、无跳时、无突然变焦，末帧达到稳定态。\n\n承接游廊风灯危机末帧，物理连续、不黑切：第一视角在林黛玉（Image 1，月白极浅青白明制交领右衽大袖褙子配马面裙，清瘦清冷、眼神比妆容重）右后侧半步。场景为荣国府抄手游廊——朱漆廊柱、槅扇窗、寻杖木栏与水磨方砖，日间天井漏光与窗光下呈深木、黛青、旧金冷调，穿堂风自左掠入。黛玉外袖仍挂在悬灯木钩上，风灯（Image 3，六棱木架、素纱灯罩、垂灯穗）向黛玉方向倾斜、火苗偏斜但不飞出。玩家（Image 5，只出中性手部与黛青色窄袖口，永不露脸）先出画外声提醒先避火，随即以双手稳稳托住风灯木架与外层纱罩两侧，掌心不触火苗、绝不徒手抓火，令灯身回正、火苗恢复垂直。引路仆妇（Image 2，明制素色比甲布裙、挽袖、守礼安静）立即上前双手替黛玉解开钩住的外袖。玩家因双手托灯，袖中旧纸荐书（Image 4，侧缝旧纸信封、淡红封印、纸纤维隐约淡红痕不成字）自然滑落至干燥水磨砖地边缘、平躺未开封。黛玉恢复行动自由后先于仆妇微微弯身拾起荐书，只以指尖捏住信封空白边缘，视线掠过淡红封印时克制停顿一拍，随即双手将信端回玩家，两人指尖始终不相触、无暧昧接触。众人沿游廊继续向荣禧堂式正厅门前行进。末帧收在正厅槅扇大门前合礼站位、匾额楹联景深中不可读的稳定构图。",
+        "referenceRoleNotes": [
+          {
+            "id": "ref:image:1",
+            "role": "omni_reference",
+            "referenceId": "REF-DAIYU-DAY",
+            "note": "生成时的第 1 个图像参考位。"
+          },
+          {
+            "id": "ref:image:2",
+            "role": "omni_reference",
+            "referenceId": "REF-MAID",
+            "note": "生成时的第 2 个图像参考位。"
+          },
+          {
+            "id": "ref:image:3",
+            "role": "omni_reference",
+            "referenceId": "REF-LANTERN",
+            "note": "生成时的第 3 个图像参考位。"
+          },
+          {
+            "id": "ref:image:4",
+            "role": "omni_reference",
+            "referenceId": "REF-LETTER",
+            "note": "生成时的第 4 个图像参考位。"
+          },
+          {
+            "id": "ref:image:5",
+            "role": "omni_reference",
+            "referenceId": "REF-PLAYER-POV",
+            "note": "生成时的第 5 个图像参考位。"
+          },
+          {
+            "id": "ref:audio:1",
+            "role": "other",
+            "referenceId": "VOICE-PLAYER-A",
+            "note": "生成时的第 1 个声纹参考位。"
+          },
+          {
+            "id": "ref:audio:2",
+            "role": "other",
+            "referenceId": "VOICE-DAIYU",
+            "note": "生成时的第 2 个声纹参考位。"
+          }
+        ],
+        "emotionalArc": "克制、真实，以细微反应完成叙事推进。",
+        "beats": [
+          {
+            "id": "beat:full",
+            "startMs": 0,
+            "endMs": 12000,
+            "visual": "承接游廊风灯危机末帧，物理连续、不黑切：第一视角在林黛玉（Image 1，月白极浅青白明制交领右衽大袖褙子配马面裙，清瘦清冷、眼神比妆容重）右后侧半步。场景为荣国府抄手游廊——朱漆廊柱、槅扇窗、寻杖木栏与水磨方砖，日间天井漏光与窗光下呈深木、黛青、旧金冷调，穿堂风自左掠入。黛玉外袖仍挂在悬灯木钩上，风灯（Image 3，六棱木架、素纱灯罩、垂灯穗）向黛玉方向倾斜、火苗偏斜但不飞出。玩家（Image 5，只出中性手部与黛青色窄袖口，永不露脸）先出画外声提醒先避火，随即以双手稳稳托住风灯木架与外层纱罩两侧，掌心不触火苗、绝不徒手抓火，令灯身回正、火苗恢复垂直。引路仆妇（Image 2，明制素色比甲布裙、挽袖、守礼安静）立即上前双手替黛玉解开钩住的外袖。玩家因双手托灯，袖中旧纸荐书（Image 4，侧缝旧纸信封、淡红封印、纸纤维隐约淡红痕不成字）自然滑落至干燥水磨砖地边缘、平躺未开封。黛玉恢复行动自由后先于仆妇微微弯身拾起荐书，只以指尖捏住信封空白边缘，视线掠过淡红封印时克制停顿一拍，随即双手将信端回玩家，两人指尖始终不相触、无暧昧接触。众人沿游廊继续向荣禧堂式正厅门前行进。末帧收在正厅槅扇大门前合礼站位、匾额楹联景深中不可读的稳定构图。",
+            "camera": "16:9 横屏，第一视角，一镜到底。",
+            "action": "起（镜头前段）：承接游廊风灯危机末帧，物理连续不黑切。玩家（图5，只出中性手部与黛青窄袖口，永不露脸）先出画外声、自然提醒先避火：“先避开灯火。”，随即双手稳稳托住风灯（图3）木架与素纱灯罩两侧，掌心不触火苗、绝不徒手抓火。\n承（镜头中段）：一个连续的稳灯动作弧——灯身回正、火苗恢复垂直；引路仆妇（图2）上前双手替黛玉解开钩住的外袖；玩家因双手托灯，袖中旧纸荐书（图4）自然滑落至干燥水磨砖地边缘、平躺未开封。\n收（镜头后段）：黛玉（图1）恢复行动自由，先于仆妇微微弯身，只以指尖捏住信封空白边缘拾起荐书，视线掠过淡红封印时克制停顿一拍，随即双手将信端回、自然说出：“你的信。”，两人指尖始终不相触、无暧昧接触；玩家双手接回荐书收入袖口。众人沿抄手游廊自然续行，镜头以真实电影节奏稳定收在荣禧堂正厅槅扇大门前的合礼站位末帧，匾额楹联景深中不可读。",
+            "performance": "自然克制，不做舞台化夸张表演。",
+            "emotion": "由场景动作自然递进。",
+            "dialogue": "",
+            "audio": "保留同期环境声与已锁定角色声线。",
+            "endState": "末帧进入稳定、可衔接状态。",
+            "continuity": "服装、道具、人物站位与淡红纹路保持连续。"
+          }
+        ],
+        "negativeConstraints": [
+          "不生成可读姓名、字幕、判词或信中文字。",
+          "不使用粒子魔法、仙侠光效、科幻 HUD、剪切、跳时或突然变焦。",
+          "玩家不露脸。"
+        ],
+        "continuityNotes": ["以原 v2 生成规格与现有 1080p 成片为准。"]
+      },
+      {
+        "graphNodeId": "clip:c2-r03-protect-letter",
+        "clipKey": "C2_R03_PROTECT_LETTER",
+        "title": "荣府游廊风灯·护信反问",
+        "description": "荣府游廊风灯·护信反问（金陵入梦 v2 成片）",
+        "targetDurationMs": 12000,
+        "generationControl": {
+          "mode": "omni_reference"
+        },
+        "masterDirection": "真人古装电影质感的《红楼梦》荣国府场景，第一视角亲密感，表演克制，材质、光线和物理动作可信。荣国府使用深木、黛青、月白与旧金，淡红印纹是唯一强色。超自然只通过纸张、水面、灯火、反射和不可能的淡红纹路出现，不使用粒子魔法、仙侠光效或科幻 HUD。玩家永不露脸。全片 16:9、1920×1080、24fps、一镜到底，无剪切、无跳时、无突然变焦，末帧达到稳定态。\n\n承接游廊风灯危机末帧，物理连续、不黑切：第一视角在林黛玉（Image 1，月白极浅青白明制交领右衽大袖褙子配马面裙，清瘦不病态、眉眼清冷、眼神比妆容重）右后侧半步。场景为荣国府抄手游廊——朱漆廊柱、槅扇支摘窗、寻杖木栏与水磨方砖，日间天井漏光与窗光下呈深木、黛青、旧金冷调，穿堂风未息。黛玉外袖仍挂在悬灯木钩上，风灯（Image 3，六棱木架、素纱灯罩、垂灯穗、火苗微偏）向黛玉方向轻倾。玩家（Image 5，只出中性手部与黛青色窄袖口，永不露脸）第一反应先以掌心把已滑出约三分之一的旧纸荐书（Image 4，侧缝旧纸信封、淡红封印、纸纤维隐约淡红痕不成字）连封印一起按回袖内压稳，动作坦荡、不遮不藏、绝不似窃取，同时出画外声说明信不能落地。引路仆妇（Image 2，明制素色比甲布裙、挽袖、守礼安静）及时上前双手扶正倾斜风灯、火苗回正，并替黛玉解开钩住的外袖，危险未扩大。黛玉全程看清玩家先护信的优先顺序，神情并不责怪，只在敛容整理外袖时目光落向玩家胸前收信处，克制轻声反问。玩家听见却不再解释、不辩白。仆妇轻声催促继续，黛玉转身前又向荐书方向看了一眼。众人沿游廊向荣禧堂式正厅门前行进，末帧收在正厅槅扇大门前合礼站位、匾额楹联景深中不可读的稳定构图。",
+        "referenceRoleNotes": [
+          {
+            "id": "ref:image:1",
+            "role": "omni_reference",
+            "referenceId": "REF-DAIYU-DAY",
+            "note": "生成时的第 1 个图像参考位。"
+          },
+          {
+            "id": "ref:image:2",
+            "role": "omni_reference",
+            "referenceId": "REF-MAID",
+            "note": "生成时的第 2 个图像参考位。"
+          },
+          {
+            "id": "ref:image:3",
+            "role": "omni_reference",
+            "referenceId": "REF-LANTERN",
+            "note": "生成时的第 3 个图像参考位。"
+          },
+          {
+            "id": "ref:image:4",
+            "role": "omni_reference",
+            "referenceId": "REF-LETTER",
+            "note": "生成时的第 4 个图像参考位。"
+          },
+          {
+            "id": "ref:image:5",
+            "role": "omni_reference",
+            "referenceId": "REF-PLAYER-POV",
+            "note": "生成时的第 5 个图像参考位。"
+          },
+          {
+            "id": "ref:audio:1",
+            "role": "other",
+            "referenceId": "VOICE-PLAYER-A",
+            "note": "生成时的第 1 个声纹参考位。"
+          },
+          {
+            "id": "ref:audio:2",
+            "role": "other",
+            "referenceId": "VOICE-DAIYU",
+            "note": "生成时的第 2 个声纹参考位。"
+          }
+        ],
+        "emotionalArc": "克制、真实，以细微反应完成叙事推进。",
+        "beats": [
+          {
+            "id": "beat:full",
+            "startMs": 0,
+            "endMs": 12000,
+            "visual": "承接游廊风灯危机末帧，物理连续、不黑切：第一视角在林黛玉（Image 1，月白极浅青白明制交领右衽大袖褙子配马面裙，清瘦不病态、眉眼清冷、眼神比妆容重）右后侧半步。场景为荣国府抄手游廊——朱漆廊柱、槅扇支摘窗、寻杖木栏与水磨方砖，日间天井漏光与窗光下呈深木、黛青、旧金冷调，穿堂风未息。黛玉外袖仍挂在悬灯木钩上，风灯（Image 3，六棱木架、素纱灯罩、垂灯穗、火苗微偏）向黛玉方向轻倾。玩家（Image 5，只出中性手部与黛青色窄袖口，永不露脸）第一反应先以掌心把已滑出约三分之一的旧纸荐书（Image 4，侧缝旧纸信封、淡红封印、纸纤维隐约淡红痕不成字）连封印一起按回袖内压稳，动作坦荡、不遮不藏、绝不似窃取，同时出画外声说明信不能落地。引路仆妇（Image 2，明制素色比甲布裙、挽袖、守礼安静）及时上前双手扶正倾斜风灯、火苗回正，并替黛玉解开钩住的外袖，危险未扩大。黛玉全程看清玩家先护信的优先顺序，神情并不责怪，只在敛容整理外袖时目光落向玩家胸前收信处，克制轻声反问。玩家听见却不再解释、不辩白。仆妇轻声催促继续，黛玉转身前又向荐书方向看了一眼。众人沿游廊向荣禧堂式正厅门前行进，末帧收在正厅槅扇大门前合礼站位、匾额楹联景深中不可读的稳定构图。",
+            "camera": "16:9 横屏，第一视角，一镜到底。",
+            "action": "起（镜头前段）：承接游廊风灯危机末帧，物理连续不黑切。玩家（图5，只出中性手部与黛青窄袖口，永不露脸）第一反应以掌心把已滑出约三分之一的旧纸荐书（图4）连淡红封印一起按回袖内压稳，动作坦荡、不遮不藏、绝不似窃取，同时出画外声、自然说明信不能落地：“这封信不能落地。”\n承（镜头中段）：引路仆妇（图2）及时上前双手扶正倾斜的风灯（图3）、火苗回正，并替黛玉解开钩住的外袖，危险未扩大——一个把危机收束下来的连续动作弧。\n收（镜头后段）：黛玉（图1）全程看清玩家先护信的优先顺序，神情并不责怪，只在敛容整理外袖时目光落向玩家胸前收信处，克制轻声反问：“它比灯火还要紧么？”；玩家听见却不再解释、不辩白。仆妇轻声催促续行，黛玉转身前又向荐书方向看了一眼，众人沿抄手游廊自然前行，镜头以真实电影节奏稳定收在荣禧堂正厅槅扇大门前的合礼站位末帧，匾额楹联景深中不可读。",
+            "performance": "自然克制，不做舞台化夸张表演。",
+            "emotion": "由场景动作自然递进。",
+            "dialogue": "",
+            "audio": "保留同期环境声与已锁定角色声线。",
+            "endState": "末帧进入稳定、可衔接状态。",
+            "continuity": "服装、道具、人物站位与淡红纹路保持连续。"
+          }
+        ],
+        "negativeConstraints": [
+          "不生成可读姓名、字幕、判词或信中文字。",
+          "不使用粒子魔法、仙侠光效、科幻 HUD、剪切、跳时或突然变焦。",
+          "玩家不露脸。"
+        ],
+        "continuityNotes": ["以原 v2 生成规格与现有 1080p 成片为准。"]
+      },
+      {
+        "graphNodeId": "clip:s03-jiamu-reunion",
+        "clipKey": "S03_JIAMU_REUNION",
+        "title": "荣禧堂·贾母相见",
+        "description": "荣禧堂·贾母相见（金陵入梦 v2 成片）",
+        "targetDurationMs": 12000,
+        "generationControl": {
+          "mode": "omni_reference"
+        },
+        "masterDirection": "真人古装电影质感的《红楼梦》荣国府场景，第一视角亲密感，表演克制，材质、光线和物理动作可信。荣国府使用深木、黛青、月白与旧金，淡红印纹是唯一强色。超自然只通过纸张、水面、灯火、反射和不可能的淡红纹路出现，不使用粒子魔法、仙侠光效或科幻 HUD。玩家永不露脸。全片 16:9、1920×1080、24fps、一镜到底，无剪切、无跳时、无突然变焦，末帧达到稳定态。\n\n荣国府正厅（荣禧堂式正厅，高悬匾额、两侧楹联，但镜头内不生成任何可读字迹），真实窗光自槅扇漏入，深木、黛青、旧金陈设，紫檀太师椅、云母屏风、地平上座。第一视角位于图1黛玉侧后方两步，绝不抢占宝黛亲情中心。上座的图2贾母——老年诰命、慈祥温厚、绝不年轻化、着深色诰命命妇明制大袖礼服——自座前倾身伸手。图1黛玉一袭月白明制衫裙走近，刚屈膝行半礼即被扶起。贾母双手握住黛玉前臂将她拉近，悲喜交杂而不嚎哭。黛玉先忍，听见贾母称呼后才让呼吸松动，轻声唤一声。玩家始终只是同日入府的客人，镜头不靠近两人中间。侧后方的图3王熙凤——彩绣辉煌却深朱克制的明制华服、笑里带锋——目光从宝黛移到玩家手中图4旧纸荐书。日间只用天井漏光与窗光两种真实光源，绝无宫廷金光。图5为玩家中性手部、黛青袖口。贾母声由Audio1锁定，黛玉声由Audio2锁定。末帧黛玉被贾母握着手，熙凤视线落定在荐书上，画面稳定。",
+        "referenceRoleNotes": [
+          {
+            "id": "ref:image:1",
+            "role": "omni_reference",
+            "referenceId": "REF-DAIYU",
+            "note": "生成时的第 1 个图像参考位。"
+          },
+          {
+            "id": "ref:image:2",
+            "role": "omni_reference",
+            "referenceId": "REF-JIAMU",
+            "note": "生成时的第 2 个图像参考位。"
+          },
+          {
+            "id": "ref:image:3",
+            "role": "omni_reference",
+            "referenceId": "REF-XIFENG",
+            "note": "生成时的第 3 个图像参考位。"
+          },
+          {
+            "id": "ref:image:4",
+            "role": "omni_reference",
+            "referenceId": "REF-LETTER",
+            "note": "生成时的第 4 个图像参考位。"
+          },
+          {
+            "id": "ref:image:5",
+            "role": "omni_reference",
+            "referenceId": "REF-PLAYER-POV",
+            "note": "生成时的第 5 个图像参考位。"
+          },
+          {
+            "id": "ref:audio:1",
+            "role": "other",
+            "referenceId": "VOICE-JIAMU",
+            "note": "生成时的第 1 个声纹参考位。"
+          },
+          {
+            "id": "ref:audio:2",
+            "role": "other",
+            "referenceId": "VOICE-DAIYU",
+            "note": "生成时的第 2 个声纹参考位。"
+          }
+        ],
+        "emotionalArc": "克制、真实，以细微反应完成叙事推进。",
+        "beats": [
+          {
+            "id": "beat:full",
+            "startMs": 0,
+            "endMs": 12000,
+            "visual": "荣国府正厅（荣禧堂式正厅，高悬匾额、两侧楹联，但镜头内不生成任何可读字迹），真实窗光自槅扇漏入，深木、黛青、旧金陈设，紫檀太师椅、云母屏风、地平上座。第一视角位于图1黛玉侧后方两步，绝不抢占宝黛亲情中心。上座的图2贾母——老年诰命、慈祥温厚、绝不年轻化、着深色诰命命妇明制大袖礼服——自座前倾身伸手。图1黛玉一袭月白明制衫裙走近，刚屈膝行半礼即被扶起。贾母双手握住黛玉前臂将她拉近，悲喜交杂而不嚎哭。黛玉先忍，听见贾母称呼后才让呼吸松动，轻声唤一声。玩家始终只是同日入府的客人，镜头不靠近两人中间。侧后方的图3王熙凤——彩绣辉煌却深朱克制的明制华服、笑里带锋——目光从宝黛移到玩家手中图4旧纸荐书。日间只用天井漏光与窗光两种真实光源，绝无宫廷金光。图5为玩家中性手部、黛青袖口。贾母声由Audio1锁定，黛玉声由Audio2锁定。末帧黛玉被贾母握着手，熙凤视线落定在荐书上，画面稳定。",
+            "camera": "16:9 横屏，第一视角，一镜到底。",
+            "action": "起｜镜头前段：第一视角位于图1黛玉侧后方两步、绝不抢占宝黛亲情中心；黛玉自玩家前方走向上座图2贾母，镜头驻原位，贾母自座前倾身伸手，厅中众人自然让开。\n承｜镜头中段：黛玉刚要屈膝行半礼即被贾母双手扶起、握住前臂拉近，悲喜交杂而不嚎哭；贾母看清她的脸唤出（Audio1）：“我的儿，今日才见着你了。”手掌轻抚黛玉手背、克制续问（Audio1）：“怎么这样瘦？”\n转｜镜头后段：黛玉先忍、垂眼吸气，听见称呼后才让呼吸松动，重新看向贾母、轻声唤（Audio2）：“外祖母。”两人续握着手，黛玉眼中有水光而不落泪。\n收｜末段：侧后方图3熙凤的视线自宝黛二人自然移到玩家手中图4旧纸荐书，日间只用天井漏光与窗光，画面稳定收在黛玉被贾母握手、熙凤视线落定荐书的末帧。",
+            "performance": "自然克制，不做舞台化夸张表演。",
+            "emotion": "由场景动作自然递进。",
+            "dialogue": "",
+            "audio": "保留同期环境声与已锁定角色声线。",
+            "endState": "末帧进入稳定、可衔接状态。",
+            "continuity": "服装、道具、人物站位与淡红纹路保持连续。"
+          }
+        ],
+        "negativeConstraints": [
+          "不生成可读姓名、字幕、判词或信中文字。",
+          "不使用粒子魔法、仙侠光效、科幻 HUD、剪切、跳时或突然变焦。",
+          "玩家不露脸。"
+        ],
+        "continuityNotes": ["以原 v2 生成规格与现有 1080p 成片为准。"]
+      },
+      {
+        "graphNodeId": "clip:s03-xifeng-boundary",
+        "clipKey": "S03_XIFENG_BOUNDARY",
+        "title": "荣禧堂·熙凤边界",
+        "description": "荣禧堂·熙凤边界（金陵入梦 v2 成片）",
+        "targetDurationMs": 12000,
+        "generationControl": {
+          "mode": "omni_reference"
+        },
+        "masterDirection": "真人古装电影质感的《红楼梦》荣国府场景，第一视角亲密感，表演克制，材质、光线和物理动作可信。荣国府使用深木、黛青、月白与旧金，淡红印纹是唯一强色。超自然只通过纸张、水面、灯火、反射和不可能的淡红纹路出现，不使用粒子魔法、仙侠光效或科幻 HUD。玩家永不露脸。全片 16:9、1920×1080、24fps、一镜到底，无剪切、无跳时、无突然变焦，末帧达到稳定态。\n\n承接图4贾母握住黛玉之手的同一荣禧堂式正厅连续开始，真实窗光、深木黛青旧金陈设不变，匾额楹联皆不生成可读字。图1王熙凤自画面侧面步入，不打断亲情，只在贾母目光示意后走向玩家；她一身彩绣辉煌却深朱克制的明制华服，笑里带锋、眼神精确，绝非反派冷笑。她带笑双手接过玩家（图6中性手部、黛青袖口）递来的图5旧纸荐书，先以拇指摩挲旧纸边缘，再在淡红封印处停一拍——笑意不变而眼神骤然精确。图2王夫人在另一侧，平静端严、手持念珠、礼佛之态，用温和却清晰的口吻向黛玉与玩家划定边界，不凶狠。图3黛玉仍在图4贾母身侧、被贾母握着手，安静而不被忽略。熙凤把荐书留在自己掌中，并不拆开。日间只用天井漏光与窗光，绝无宫廷金光。熙凤声由Audio1锁定，王夫人声由Audio2锁定。末帧信封停在熙凤胸下安全位置，淡红封印可见而无任何可读文字，三人位置稳定，略转向厅门方向。",
+        "referenceRoleNotes": [
+          {
+            "id": "ref:image:1",
+            "role": "omni_reference",
+            "referenceId": "REF-XIFENG",
+            "note": "生成时的第 1 个图像参考位。"
+          },
+          {
+            "id": "ref:image:2",
+            "role": "omni_reference",
+            "referenceId": "REF-WANG",
+            "note": "生成时的第 2 个图像参考位。"
+          },
+          {
+            "id": "ref:image:3",
+            "role": "omni_reference",
+            "referenceId": "REF-DAIYU",
+            "note": "生成时的第 3 个图像参考位。"
+          },
+          {
+            "id": "ref:image:4",
+            "role": "omni_reference",
+            "referenceId": "REF-JIAMU",
+            "note": "生成时的第 4 个图像参考位。"
+          },
+          {
+            "id": "ref:image:5",
+            "role": "omni_reference",
+            "referenceId": "REF-LETTER",
+            "note": "生成时的第 5 个图像参考位。"
+          },
+          {
+            "id": "ref:image:6",
+            "role": "omni_reference",
+            "referenceId": "REF-PLAYER-POV",
+            "note": "生成时的第 6 个图像参考位。"
+          },
+          {
+            "id": "ref:audio:1",
+            "role": "other",
+            "referenceId": "VOICE-XIFENG",
+            "note": "生成时的第 1 个声纹参考位。"
+          },
+          {
+            "id": "ref:audio:2",
+            "role": "other",
+            "referenceId": "VOICE-WANG",
+            "note": "生成时的第 2 个声纹参考位。"
+          }
+        ],
+        "emotionalArc": "克制、真实，以细微反应完成叙事推进。",
+        "beats": [
+          {
+            "id": "beat:full",
+            "startMs": 0,
+            "endMs": 12000,
+            "visual": "承接图4贾母握住黛玉之手的同一荣禧堂式正厅连续开始，真实窗光、深木黛青旧金陈设不变，匾额楹联皆不生成可读字。图1王熙凤自画面侧面步入，不打断亲情，只在贾母目光示意后走向玩家；她一身彩绣辉煌却深朱克制的明制华服，笑里带锋、眼神精确，绝非反派冷笑。她带笑双手接过玩家（图6中性手部、黛青袖口）递来的图5旧纸荐书，先以拇指摩挲旧纸边缘，再在淡红封印处停一拍——笑意不变而眼神骤然精确。图2王夫人在另一侧，平静端严、手持念珠、礼佛之态，用温和却清晰的口吻向黛玉与玩家划定边界，不凶狠。图3黛玉仍在图4贾母身侧、被贾母握着手，安静而不被忽略。熙凤把荐书留在自己掌中，并不拆开。日间只用天井漏光与窗光，绝无宫廷金光。熙凤声由Audio1锁定，王夫人声由Audio2锁定。末帧信封停在熙凤胸下安全位置，淡红封印可见而无任何可读文字，三人位置稳定，略转向厅门方向。",
+            "camera": "16:9 横屏，第一视角，一镜到底。",
+            "action": "起｜镜头前段：承接前镜同一荣禧堂式正厅连续开始，真实窗光、深木黛青旧金陈设不变；图4贾母仍握图3黛玉的手，侧头给图1熙凤一个处理后续的眼神，熙凤自画面侧面步入、不打断亲情。\n承｜镜头中段：熙凤走到玩家（图6）镜头前合礼距离，一身彩绣辉煌却深朱克制、笑里带锋，带笑双手接过图5旧纸荐书；她先向上座回话（Audio1）：“老祖宗放心，两位客人，我都替您安置。”随即拇指摩挲旧纸边缘、在淡红封印处停一拍，笑意不变而眼神骤然精确，压低声音对玩家道（Audio1）：“旧纸，新印。你这封信，倒会挑日子。”\n转｜镜头后段：侧旁图2王夫人手持念珠、礼佛端严，看向黛玉再看玩家，用温和却清晰的口吻划定边界（Audio2）：“既是客，便守客人的分寸。”图3黛玉仍在贾母身侧被握着手，安静而不被忽略。\n收｜末段：熙凤笑意恢复，把荐书留在自己掌中而非袖内、并不拆开；信封停在她胸下安全位置，淡红封印可见而无任何可读文字，三人位置稳定、略转向厅门方向，末帧稳定。",
+            "performance": "自然克制，不做舞台化夸张表演。",
+            "emotion": "由场景动作自然递进。",
+            "dialogue": "",
+            "audio": "保留同期环境声与已锁定角色声线。",
+            "endState": "末帧进入稳定、可衔接状态。",
+            "continuity": "服装、道具、人物站位与淡红纹路保持连续。"
+          }
+        ],
+        "negativeConstraints": [
+          "不生成可读姓名、字幕、判词或信中文字。",
+          "不使用粒子魔法、仙侠光效、科幻 HUD、剪切、跳时或突然变焦。",
+          "玩家不露脸。"
+        ],
+        "continuityNotes": ["以原 v2 生成规格与现有 1080p 成片为准。"]
+      },
+      {
+        "graphNodeId": "clip:s04-baoyu-arrival",
+        "clipKey": "S04_BAOYU_ARRIVAL",
+        "title": "宝玉入厅（荣禧堂正厅·日间）",
+        "description": "宝玉入厅（荣禧堂正厅·日间）（金陵入梦 v2 成片）",
+        "targetDurationMs": 12000,
+        "generationControl": {
+          "mode": "omni_reference"
+        },
+        "masterDirection": "真人古装电影质感的《红楼梦》荣国府场景，第一视角亲密感，表演克制，材质、光线和物理动作可信。荣国府使用深木、黛青、月白与旧金，淡红印纹是唯一强色。超自然只通过纸张、水面、灯火、反射和不可能的淡红纹路出现，不使用粒子魔法、仙侠光效或科幻 HUD。玩家永不露脸。全片 16:9、1920×1080、24fps、一镜到底，无剪切、无跳时、无突然变焦，末帧达到稳定态。\n\n荣国府荣禧堂式正厅日间实景：五进大宅内院正堂，朱漆楠木廊柱、槅扇支摘窗把天井顶光与侧窗白昼柔光漏进厅内，水磨方砖地面，紫檀条案、官帽椅、大理石插屏、錾金铜香炉、缂丝椅袱，梁上匾额楹联只见形制、绝不生成可读字。色调深木、黛青、月白、旧金，无任何鲜艳强色。宝玉（Image 1）已换家常装——非盛装大氅，为家常松花色交领右衽直裰道袍、束发轻冠、腰束丝绦；颈前完整佩戴通灵宝玉（Image 4，一块雀卵大小、温润灿若明霞的真玉，配五色丝绦编成的络子穗子）以及项圈、寄名锁、护身符，四件各自独立分层垂挂、绝不合成一个大吊坠、不增不减——他从正厅侧角门快步真诚进入，不作舞台亮相。先向上座贾母（Image 3，老年诰命、慈祥温厚、不年轻化）方向俯身请安，颈前诸佩饰随动作真实轻摆。随后目光落到黛玉（Image 2，月白或极浅青白明制衣裙、清瘦而不病态、眉眼清冷、眼神比妆容重），脚步自然放慢，神情由惊讶化成毫无防备的旧识熟悉，说出只属于黛玉的原著台词。众长辈轻笑之后，他的视线才第一次越过黛玉、落到她侧后方的玩家第一视角（Image 5，只见中性手部与黛青色袖口、永不露脸），眉梢笑意轻轻停住，像第一次在旧画里看见多出来一个人。全程明制汉服礼制、表演克制、材质光线物理可信。宝玉说话音色锁定 Audio 1。",
+        "referenceRoleNotes": [
+          {
+            "id": "ref:image:1",
+            "role": "omni_reference",
+            "referenceId": "REF-BAOYU-HOME",
+            "note": "生成时的第 1 个图像参考位。"
+          },
+          {
+            "id": "ref:image:2",
+            "role": "omni_reference",
+            "referenceId": "REF-DAIYU-DAY",
+            "note": "生成时的第 2 个图像参考位。"
+          },
+          {
+            "id": "ref:image:3",
+            "role": "omni_reference",
+            "referenceId": "REF-JIAMU",
+            "note": "生成时的第 3 个图像参考位。"
+          },
+          {
+            "id": "ref:image:4",
+            "role": "omni_reference",
+            "referenceId": "REF-JADE",
+            "note": "生成时的第 4 个图像参考位。"
+          },
+          {
+            "id": "ref:image:5",
+            "role": "omni_reference",
+            "referenceId": "REF-PLAYER-POV",
+            "note": "生成时的第 5 个图像参考位。"
+          },
+          {
+            "id": "ref:audio:1",
+            "role": "other",
+            "referenceId": "VOICE-BAOYU",
+            "note": "生成时的第 1 个声纹参考位。"
+          }
+        ],
+        "emotionalArc": "克制、真实，以细微反应完成叙事推进。",
+        "beats": [
+          {
+            "id": "beat:full",
+            "startMs": 0,
+            "endMs": 12000,
+            "visual": "荣国府荣禧堂式正厅日间实景：五进大宅内院正堂，朱漆楠木廊柱、槅扇支摘窗把天井顶光与侧窗白昼柔光漏进厅内，水磨方砖地面，紫檀条案、官帽椅、大理石插屏、錾金铜香炉、缂丝椅袱，梁上匾额楹联只见形制、绝不生成可读字。色调深木、黛青、月白、旧金，无任何鲜艳强色。宝玉（Image 1）已换家常装——非盛装大氅，为家常松花色交领右衽直裰道袍、束发轻冠、腰束丝绦；颈前完整佩戴通灵宝玉（Image 4，一块雀卵大小、温润灿若明霞的真玉，配五色丝绦编成的络子穗子）以及项圈、寄名锁、护身符，四件各自独立分层垂挂、绝不合成一个大吊坠、不增不减——他从正厅侧角门快步真诚进入，不作舞台亮相。先向上座贾母（Image 3，老年诰命、慈祥温厚、不年轻化）方向俯身请安，颈前诸佩饰随动作真实轻摆。随后目光落到黛玉（Image 2，月白或极浅青白明制衣裙、清瘦而不病态、眉眼清冷、眼神比妆容重），脚步自然放慢，神情由惊讶化成毫无防备的旧识熟悉，说出只属于黛玉的原著台词。众长辈轻笑之后，他的视线才第一次越过黛玉、落到她侧后方的玩家第一视角（Image 5，只见中性手部与黛青色袖口、永不露脸），眉梢笑意轻轻停住，像第一次在旧画里看见多出来一个人。全程明制汉服礼制、表演克制、材质光线物理可信。宝玉说话音色锁定 Audio 1。",
+            "camera": "16:9 横屏，第一视角，一镜到底。",
+            "action": "镜头前段（起）：宝玉自正厅侧角门快步而诚恳地进入，不作舞台亮相；先向上座贾母（图3）方向俯身请安，颈前通灵宝玉（图4）与项圈、寄名锁、护身符四件各自独立分层，随动作真实轻摆。\n\n镜头中段（承）：他抬眼看见黛玉（图2），脚步自然放慢，神情由惊讶化成旧识般毫无防备的熟悉；走近半步后，向黛玉自然说出只属于她的那句——\"这个妹妹，我曾见过的。\"厅中长辈微露笑意，黛玉垂眼后重新看他，并不即时回应。\n\n镜头后段（收）：待长辈轻笑落定，宝玉的视线才第一次越过黛玉、落到她侧后方的玩家第一视角（图5）上，笑意轻轻停住，像第一次在旧画里看见多出来一个人；他微偏头打量、不说话。整段克制、真实、明制礼制，末帧保持好奇而非戒备的稳定态。\n\n宝玉说话音色锁定 Audio 1。",
+            "performance": "自然克制，不做舞台化夸张表演。",
+            "emotion": "由场景动作自然递进。",
+            "dialogue": "",
+            "audio": "保留同期环境声与已锁定角色声线。",
+            "endState": "末帧进入稳定、可衔接状态。",
+            "continuity": "服装、道具、人物站位与淡红纹路保持连续。"
+          }
+        ],
+        "negativeConstraints": [
+          "不生成可读姓名、字幕、判词或信中文字。",
+          "不使用粒子魔法、仙侠光效、科幻 HUD、剪切、跳时或突然变焦。",
+          "玩家不露脸。"
+        ],
+        "continuityNotes": ["以原 v2 生成规格与现有 1080p 成片为准。"]
+      },
+      {
+        "graphNodeId": "clip:s04-jade-throw",
+        "clipKey": "S04_JADE_THROW",
+        "title": "宝玉摔玉（荣禧堂正厅·日间）",
+        "description": "宝玉摔玉（荣禧堂正厅·日间）（金陵入梦 v2 成片）",
+        "targetDurationMs": 12000,
+        "generationControl": {
+          "mode": "omni_reference"
+        },
+        "masterDirection": "真人古装电影质感的《红楼梦》荣国府场景，第一视角亲密感，表演克制，材质、光线和物理动作可信。荣国府使用深木、黛青、月白与旧金，淡红印纹是唯一强色。超自然只通过纸张、水面、灯火、反射和不可能的淡红纹路出现，不使用粒子魔法、仙侠光效或科幻 HUD。玩家永不露脸。全片 16:9、1920×1080、24fps、一镜到底，无剪切、无跳时、无突然变焦，末帧达到稳定态。\n\n荣禧堂正厅日间实景，连续承接前镜末帧：同一正堂窗光、朱漆楠木廊柱、水磨方砖、紫檀条案与官帽椅、大理石插屏、錾金铜炉，色调深木、黛青、月白、旧金，无强色。承宝玉（Image 1，家常松花色交领右衽直裰道袍、束发、腰束丝绦，颈前通灵宝玉 Image 3 配五色丝绦络子，加项圈、寄名锁、护身符四件各自独立分层）问出“她在册上、你怎么没有”的情绪。玩家第一视角（Image 6，中性手部、黛青袖口、永不露脸、画外发声）先以锁定声线简短回答；宝玉听见后把注意力转回黛玉（Image 2，月白明制衣裙、清瘦不病态、眉眼清冷），问她是否有玉。黛玉克制平静回答。宝玉的情绪不是凶狠，而是因“以象征物定义人”的荒唐而真实失控：他先僵住一次呼吸、笑意消失但不瞪人，右手准确抓住颈前那串五色丝绦与通灵宝玉，猛地连玉带绦一并摘下、掷向黛玉前方的水磨砖地面；其余项圈、寄名锁、护身符仍稳留胸前不动。通灵宝玉全程锁定为一块雀卵大小、温润灿若明霞的真玉，绝非巨型宝石、绝不发光。袭人（Image 4，明制仆役装扮、守礼安静）在侧后方刚开始反应、不预知、不提前接玉；贾母（Image 5）在上座。玉离手后沿真实抛物线运动、绝不悬停空中或慢镜旋转。全程明制礼制、表演克制、物理可信。玩家声线锁定 Audio 1，宝玉声线锁定 Audio 2，黛玉声线锁定 Audio 3。",
+        "referenceRoleNotes": [
+          {
+            "id": "ref:image:1",
+            "role": "omni_reference",
+            "referenceId": "REF-BAOYU-HOME",
+            "note": "生成时的第 1 个图像参考位。"
+          },
+          {
+            "id": "ref:image:2",
+            "role": "omni_reference",
+            "referenceId": "REF-DAIYU-DAY",
+            "note": "生成时的第 2 个图像参考位。"
+          },
+          {
+            "id": "ref:image:3",
+            "role": "omni_reference",
+            "referenceId": "REF-JADE",
+            "note": "生成时的第 3 个图像参考位。"
+          },
+          {
+            "id": "ref:image:4",
+            "role": "omni_reference",
+            "referenceId": "REF-XIREN",
+            "note": "生成时的第 4 个图像参考位。"
+          },
+          {
+            "id": "ref:image:5",
+            "role": "omni_reference",
+            "referenceId": "REF-JIAMU",
+            "note": "生成时的第 5 个图像参考位。"
+          },
+          {
+            "id": "ref:image:6",
+            "role": "omni_reference",
+            "referenceId": "REF-PLAYER-POV",
+            "note": "生成时的第 6 个图像参考位。"
+          },
+          {
+            "id": "ref:audio:1",
+            "role": "other",
+            "referenceId": "VOICE-PLAYER-A",
+            "note": "生成时的第 1 个声纹参考位。"
+          },
+          {
+            "id": "ref:audio:2",
+            "role": "other",
+            "referenceId": "VOICE-BAOYU",
+            "note": "生成时的第 2 个声纹参考位。"
+          },
+          {
+            "id": "ref:audio:3",
+            "role": "other",
+            "referenceId": "VOICE-DAIYU",
+            "note": "生成时的第 3 个声纹参考位。"
+          }
+        ],
+        "emotionalArc": "克制、真实，以细微反应完成叙事推进。",
+        "beats": [
+          {
+            "id": "beat:full",
+            "startMs": 0,
+            "endMs": 12000,
+            "visual": "荣禧堂正厅日间实景，连续承接前镜末帧：同一正堂窗光、朱漆楠木廊柱、水磨方砖、紫檀条案与官帽椅、大理石插屏、錾金铜炉，色调深木、黛青、月白、旧金，无强色。承宝玉（Image 1，家常松花色交领右衽直裰道袍、束发、腰束丝绦，颈前通灵宝玉 Image 3 配五色丝绦络子，加项圈、寄名锁、护身符四件各自独立分层）问出“她在册上、你怎么没有”的情绪。玩家第一视角（Image 6，中性手部、黛青袖口、永不露脸、画外发声）先以锁定声线简短回答；宝玉听见后把注意力转回黛玉（Image 2，月白明制衣裙、清瘦不病态、眉眼清冷），问她是否有玉。黛玉克制平静回答。宝玉的情绪不是凶狠，而是因“以象征物定义人”的荒唐而真实失控：他先僵住一次呼吸、笑意消失但不瞪人，右手准确抓住颈前那串五色丝绦与通灵宝玉，猛地连玉带绦一并摘下、掷向黛玉前方的水磨砖地面；其余项圈、寄名锁、护身符仍稳留胸前不动。通灵宝玉全程锁定为一块雀卵大小、温润灿若明霞的真玉，绝非巨型宝石、绝不发光。袭人（Image 4，明制仆役装扮、守礼安静）在侧后方刚开始反应、不预知、不提前接玉；贾母（Image 5）在上座。玉离手后沿真实抛物线运动、绝不悬停空中或慢镜旋转。全程明制礼制、表演克制、物理可信。玩家声线锁定 Audio 1，宝玉声线锁定 Audio 2，黛玉声线锁定 Audio 3。",
+            "camera": "16:9 横屏，第一视角，一镜到底。",
+            "action": "镜头前段（起）：承前镜末帧，玩家以锁定画外声线（图6）简短回答——\"我也想知道。\"宝玉听见，眉心微动，把注意力转回黛玉（图2），目光落到她颈前，自然问出——\"妹妹可有玉没有？\"\n\n镜头中段（承）：黛玉克制平静地回答——\"我没有那个。想来是件罕物，岂能人人都有。\"宝玉的情绪不是凶狠，而是因\"以象征物定义人\"的荒唐而真实失控：他先僵住一次呼吸、笑意尽消却不瞪人，右手准确抓住颈前那串五色丝绦与通灵宝玉（图3）。\n\n镜头后段（收）：他猛地连玉带绦一并摘下，同时说出——\"什么罕物！连人之高低都不识！\"——就在玉与丝绦离手的这一瞬，即限时选择/精确暂停帧的触发点；其余项圈、寄名锁、护身符仍稳留胸前不动，袭人（图4）在侧后方刚起身、不预知、不提前接玉。玉沿真实抛物线向黛玉前方的水磨砖地面自然下落，绝不悬停空中、绝不慢镜旋转，末态停在尚未落定任何分支落点的下坠中。\n\n玩家声线锁定 Audio 1，宝玉声线锁定 Audio 2，黛玉声线锁定 Audio 3。",
+            "performance": "自然克制，不做舞台化夸张表演。",
+            "emotion": "由场景动作自然递进。",
+            "dialogue": "",
+            "audio": "保留同期环境声与已锁定角色声线。",
+            "endState": "末帧进入稳定、可衔接状态。",
+            "continuity": "服装、道具、人物站位与淡红纹路保持连续。"
+          }
+        ],
+        "negativeConstraints": [
+          "不生成可读姓名、字幕、判词或信中文字。",
+          "不使用粒子魔法、仙侠光效、科幻 HUD、剪切、跳时或突然变焦。",
+          "玩家不露脸。"
+        ],
+        "continuityNotes": ["以原 v2 生成规格与现有 1080p 成片为准。"]
+      },
+      {
+        "graphNodeId": "clip:c3-r01-catch-jade",
+        "clipKey": "C3_R01_CATCH_JADE",
+        "title": "荣府正厅·接玉",
+        "description": "荣府正厅·接玉（金陵入梦 v2 成片）",
+        "targetDurationMs": 12000,
+        "generationControl": {
+          "mode": "omni_reference"
+        },
+        "masterDirection": "真人古装电影质感的《红楼梦》荣国府场景，第一视角亲密感，表演克制，材质、光线和物理动作可信。荣国府使用深木、黛青、月白与旧金，淡红印纹是唯一强色。超自然只通过纸张、水面、灯火、反射和不可能的淡红纹路出现，不使用粒子魔法、仙侠光效或科幻 HUD。玩家永不露脸。全片 16:9、1920×1080、24fps、一镜到底，无剪切、无跳时、无突然变焦，末帧达到稳定态。\n\n承接宝玉摔玉的分支首帧：荣府荣禧堂式正厅，明代公府正堂规制，深木梁柱、朱漆廊柱、槅扇窗与水磨青砖地，匾额楹联在景内但不生成可读字；天井与槅扇窗漏入的日间冷白自然光，光色偏冷、无夜灯。宝玉（Image 1）为家常装：素色交领右衽直身袍、束发，非盛装大氅，神情由失控转为愕然又不解。林黛玉（Image 2）月白色明制交领袄裙配马面裙，清瘦而不病态、眉眼清冷，立于原位未动。通灵宝玉（Image 3）为一块温润羊脂白微透青的美玉，约拇指指腹大小，扁圆带天然肌理，顶端穿孔系一根青、赤、黄、白、黑五色丝绦编结；玉体不发光、不放大、不变形；宝玉颈前的项圈、寄名锁、护身符始终留在胸前不随玉掉落，佩戴组合与 Image 1 完全一致。玩家第一视角（Image 4）只见中性手部与黛青色袖口，双手自画面下缘沿玉的真实抛物线迎上，用掌心与手指共同接住玉与丝绦，手掌受冲力自然轻微后撤，绝无凌空武术式抓取，玉完好无损。袭人为明制仆役装扮、素色比甲袄裙、守礼安静，从侧后方靠近但不抢夺。玩家以 Audio 1 锁定成年画外声线直接回应宝玉的失控；宝玉以 Audio 2、黛玉以 Audio 3 出声，NPC 必须听见玩家话音后再承接。末帧宝玉停手、黛玉仍在原位、玉与丝绦稳定停在玩家掌中位置明确、厅内呼吸开始恢复。",
+        "referenceRoleNotes": [
+          {
+            "id": "ref:image:1",
+            "role": "omni_reference",
+            "referenceId": "REF-BAOYU",
+            "note": "生成时的第 1 个图像参考位。"
+          },
+          {
+            "id": "ref:image:2",
+            "role": "omni_reference",
+            "referenceId": "REF-DAIYU",
+            "note": "生成时的第 2 个图像参考位。"
+          },
+          {
+            "id": "ref:image:3",
+            "role": "omni_reference",
+            "referenceId": "REF-JADE",
+            "note": "生成时的第 3 个图像参考位。"
+          },
+          {
+            "id": "ref:image:4",
+            "role": "omni_reference",
+            "referenceId": "REF-PLAYER-POV",
+            "note": "生成时的第 4 个图像参考位。"
+          },
+          {
+            "id": "ref:audio:1",
+            "role": "other",
+            "referenceId": "VOICE-PLAYER-A",
+            "note": "生成时的第 1 个声纹参考位。"
+          },
+          {
+            "id": "ref:audio:2",
+            "role": "other",
+            "referenceId": "VOICE-BAOYU",
+            "note": "生成时的第 2 个声纹参考位。"
+          },
+          {
+            "id": "ref:audio:3",
+            "role": "other",
+            "referenceId": "VOICE-DAIYU",
+            "note": "生成时的第 3 个声纹参考位。"
+          }
+        ],
+        "emotionalArc": "克制、真实，以细微反应完成叙事推进。",
+        "beats": [
+          {
+            "id": "beat:full",
+            "startMs": 0,
+            "endMs": 12000,
+            "visual": "承接宝玉摔玉的分支首帧：荣府荣禧堂式正厅，明代公府正堂规制，深木梁柱、朱漆廊柱、槅扇窗与水磨青砖地，匾额楹联在景内但不生成可读字；天井与槅扇窗漏入的日间冷白自然光，光色偏冷、无夜灯。宝玉（Image 1）为家常装：素色交领右衽直身袍、束发，非盛装大氅，神情由失控转为愕然又不解。林黛玉（Image 2）月白色明制交领袄裙配马面裙，清瘦而不病态、眉眼清冷，立于原位未动。通灵宝玉（Image 3）为一块温润羊脂白微透青的美玉，约拇指指腹大小，扁圆带天然肌理，顶端穿孔系一根青、赤、黄、白、黑五色丝绦编结；玉体不发光、不放大、不变形；宝玉颈前的项圈、寄名锁、护身符始终留在胸前不随玉掉落，佩戴组合与 Image 1 完全一致。玩家第一视角（Image 4）只见中性手部与黛青色袖口，双手自画面下缘沿玉的真实抛物线迎上，用掌心与手指共同接住玉与丝绦，手掌受冲力自然轻微后撤，绝无凌空武术式抓取，玉完好无损。袭人为明制仆役装扮、素色比甲袄裙、守礼安静，从侧后方靠近但不抢夺。玩家以 Audio 1 锁定成年画外声线直接回应宝玉的失控；宝玉以 Audio 2、黛玉以 Audio 3 出声，NPC 必须听见玩家话音后再承接。末帧宝玉停手、黛玉仍在原位、玉与丝绦稳定停在玩家掌中位置明确、厅内呼吸开始恢复。",
+            "camera": "16:9 横屏，第一视角，一镜到底。",
+            "action": "起｜镜头前段，玩家双手自画面下缘顺玉的真实抛物线迎上，掌心与手指共同接住玉与五色丝绦（图3），受冲力自然轻撤，玉不落地、不碎、不发光，宝玉（图1）失控之势就此顿住。承｜镜头中段，玩家先以 Audio 1 锁定的成年画外声线落定一句：“玉无过，何必拿它出气。”宝玉听见后由愕然转为不解，才顺势承接 Audio 2 问出：“你也护着它？”收｜镜头后段，黛玉（图2）不急着道谢，先看玩家的手是否受伤，才克制说出 Audio 3：“他护的不是玉。”袭人从侧后方靠近接应但不抢走，全程真实电影节奏、无慢镜环绕；末帧三人各自停住、玉与丝绦稳定停在玩家掌心位置明确，厅内呼吸缓缓恢复。",
+            "performance": "自然克制，不做舞台化夸张表演。",
+            "emotion": "由场景动作自然递进。",
+            "dialogue": "",
+            "audio": "保留同期环境声与已锁定角色声线。",
+            "endState": "末帧进入稳定、可衔接状态。",
+            "continuity": "服装、道具、人物站位与淡红纹路保持连续。"
+          }
+        ],
+        "negativeConstraints": [
+          "不生成可读姓名、字幕、判词或信中文字。",
+          "不使用粒子魔法、仙侠光效、科幻 HUD、剪切、跳时或突然变焦。",
+          "玩家不露脸。"
+        ],
+        "continuityNotes": ["以原 v2 生成规格与现有 1080p 成片为准。"]
+      },
+      {
+        "graphNodeId": "clip:c3-r02-shield-daiyu",
+        "clipKey": "C3_R02_SHIELD_DAIYU",
+        "title": "荣府正厅·挡黛玉",
+        "description": "荣府正厅·挡黛玉（金陵入梦 v2 成片）",
+        "targetDurationMs": 12000,
+        "generationControl": {
+          "mode": "omni_reference"
+        },
+        "masterDirection": "真人古装电影质感的《红楼梦》荣国府场景，第一视角亲密感，表演克制，材质、光线和物理动作可信。荣国府使用深木、黛青、月白与旧金，淡红印纹是唯一强色。超自然只通过纸张、水面、灯火、反射和不可能的淡红纹路出现，不使用粒子魔法、仙侠光效或科幻 HUD。玩家永不露脸。全片 16:9、1920×1080、24fps、一镜到底，无剪切、无跳时、无突然变焦，末帧达到稳定态。\n\n承接宝玉摔玉的分支首帧：荣府荣禧堂式正厅，日间天井与槅扇窗漏入的冷白自然光，深木梁柱、朱漆廊柱、槅扇窗、水磨青砖地，匾额楹联在景内但不生成可读字，无夜灯。宝玉（Image 1）家常装素色交领右衽直身袍、束发，怒气未歇；林黛玉（Image 2）月白色明制交领袄裙配马面裙，清瘦清冷，立于原位。通灵宝玉（Image 3）为温润羊脂白微透青的美玉，约拇指指腹大小，扁圆带天然肌理，顶端系青、赤、黄、白、黑五色丝绦，不发光、不放大、不变形；宝玉颈前项圈、寄名锁、护身符留在胸前不随玉掉落，组合与 Image 1 一致。玩家第一视角（Image 4）中性手部与黛青袖口，向黛玉与玉落点之间跨半步，只用肩背与袖口形成遮挡，绝不扑倒、不抱住、不触碰黛玉身体。厅中原本就摆放的一只素色锦缎坐垫在落点处（并非凭空出现）；玉越过玩家下方落在坐垫边缘，发出真实轻响而不碎，五色丝绦自然摊开。袭人为明制仆役素色比甲袄裙、守礼安静，从侧面控制人群距离。玩家以 Audio 1 锁定画外声线明确说黛玉没有错；黛玉以 Audio 2 承接。末帧宝玉怒意转为错愕、黛玉仍在原位、玉与丝绦停在坐垫边缘位置明确、厅内秩序开始恢复。",
+        "referenceRoleNotes": [
+          {
+            "id": "ref:image:1",
+            "role": "omni_reference",
+            "referenceId": "REF-BAOYU",
+            "note": "生成时的第 1 个图像参考位。"
+          },
+          {
+            "id": "ref:image:2",
+            "role": "omni_reference",
+            "referenceId": "REF-DAIYU",
+            "note": "生成时的第 2 个图像参考位。"
+          },
+          {
+            "id": "ref:image:3",
+            "role": "omni_reference",
+            "referenceId": "REF-JADE",
+            "note": "生成时的第 3 个图像参考位。"
+          },
+          {
+            "id": "ref:image:4",
+            "role": "omni_reference",
+            "referenceId": "REF-PLAYER-POV",
+            "note": "生成时的第 4 个图像参考位。"
+          },
+          {
+            "id": "ref:audio:1",
+            "role": "other",
+            "referenceId": "VOICE-PLAYER-A",
+            "note": "生成时的第 1 个声纹参考位。"
+          },
+          {
+            "id": "ref:audio:2",
+            "role": "other",
+            "referenceId": "VOICE-DAIYU",
+            "note": "生成时的第 2 个声纹参考位。"
+          }
+        ],
+        "emotionalArc": "克制、真实，以细微反应完成叙事推进。",
+        "beats": [
+          {
+            "id": "beat:full",
+            "startMs": 0,
+            "endMs": 12000,
+            "visual": "承接宝玉摔玉的分支首帧：荣府荣禧堂式正厅，日间天井与槅扇窗漏入的冷白自然光，深木梁柱、朱漆廊柱、槅扇窗、水磨青砖地，匾额楹联在景内但不生成可读字，无夜灯。宝玉（Image 1）家常装素色交领右衽直身袍、束发，怒气未歇；林黛玉（Image 2）月白色明制交领袄裙配马面裙，清瘦清冷，立于原位。通灵宝玉（Image 3）为温润羊脂白微透青的美玉，约拇指指腹大小，扁圆带天然肌理，顶端系青、赤、黄、白、黑五色丝绦，不发光、不放大、不变形；宝玉颈前项圈、寄名锁、护身符留在胸前不随玉掉落，组合与 Image 1 一致。玩家第一视角（Image 4）中性手部与黛青袖口，向黛玉与玉落点之间跨半步，只用肩背与袖口形成遮挡，绝不扑倒、不抱住、不触碰黛玉身体。厅中原本就摆放的一只素色锦缎坐垫在落点处（并非凭空出现）；玉越过玩家下方落在坐垫边缘，发出真实轻响而不碎，五色丝绦自然摊开。袭人为明制仆役素色比甲袄裙、守礼安静，从侧面控制人群距离。玩家以 Audio 1 锁定画外声线明确说黛玉没有错；黛玉以 Audio 2 承接。末帧宝玉怒意转为错愕、黛玉仍在原位、玉与丝绦停在坐垫边缘位置明确、厅内秩序开始恢复。",
+            "camera": "16:9 横屏，第一视角，一镜到底。",
+            "action": "起｜镜头前段，玩家向黛玉（图2）与玉落点之间自然跨出半步，只以肩背与袖口形成遮挡，绝不扑倒、不抱住、不触碰她身体，同时以 Audio 1 锁定画外声线明确落下一句：“林姑娘没有错。”承｜镜头中段，玉（图3）越过玩家下方，落在厅中原就摆着的锦缎坐垫边缘，发出真实轻响而不碎，五色丝绦自然摊开；黛玉因突然的遮挡先本能退半步，随即看清玩家并未碰她，才对着玩家背影克制承接 Audio 2：“你何必挡在前面？”收｜镜头后段，宝玉（图1）看见两人与地上的玉，未歇的怒意被这一挡打断、转为错愕；袭人从侧面靠近坐垫边的玉、控制人群距离而不抢接，玩家缓缓退回合礼位置，无暧昧慢镜环绕；末帧秩序初定、玉与丝绦停在坐垫边缘位置明确。",
+            "performance": "自然克制，不做舞台化夸张表演。",
+            "emotion": "由场景动作自然递进。",
+            "dialogue": "",
+            "audio": "保留同期环境声与已锁定角色声线。",
+            "endState": "末帧进入稳定、可衔接状态。",
+            "continuity": "服装、道具、人物站位与淡红纹路保持连续。"
+          }
+        ],
+        "negativeConstraints": [
+          "不生成可读姓名、字幕、判词或信中文字。",
+          "不使用粒子魔法、仙侠光效、科幻 HUD、剪切、跳时或突然变焦。",
+          "玩家不露脸。"
+        ],
+        "continuityNotes": ["以原 v2 生成规格与现有 1080p 成片为准。"]
+      },
+      {
+        "graphNodeId": "clip:c3-r03-call-household",
+        "clipKey": "C3_R03_CALL_HOUSEHOLD",
+        "title": "荣府正厅·唤众收玉",
+        "description": "荣府正厅·唤众收玉（金陵入梦 v2 成片）",
+        "targetDurationMs": 12000,
+        "generationControl": {
+          "mode": "omni_reference"
+        },
+        "masterDirection": "真人古装电影质感的《红楼梦》荣国府场景，第一视角亲密感，表演克制，材质、光线和物理动作可信。荣国府使用深木、黛青、月白与旧金，淡红印纹是唯一强色。超自然只通过纸张、水面、灯火、反射和不可能的淡红纹路出现，不使用粒子魔法、仙侠光效或科幻 HUD。玩家永不露脸。全片 16:9、1920×1080、24fps、一镜到底，无剪切、无跳时、无突然变焦，末帧达到稳定态。\n\n承接宝玉摔玉的分支首帧：荣府荣禧堂式正厅，日间天井与槅扇窗漏入的冷白自然光，深木梁柱、朱漆廊柱、槅扇窗、水磨青砖地，匾额楹联在景内但不生成可读字，无夜灯。宝玉（Image 1）家常装素色交领右衽直身袍、束发；林黛玉（Image 2）月白色明制交领袄裙配马面裙，清瘦清冷，被众人注视于厅中。通灵宝玉（Image 3）为温润羊脂白微透青的美玉，约拇指指腹大小，扁圆带天然肌理，顶端系青、赤、黄、白、黑五色丝绦，不发光、不放大、不变形；宝玉颈前项圈、寄名锁、护身符留在胸前不随玉掉落，组合与 Image 1 一致。玩家第一视角（Image 4）保持稳定镜头高度，此镜玩家不伸手追玉、手部不入画，只以 Audio 1 锁定成年画外声线出声，绝不露脸、不换成固定男声或女声。厅中原本摆放的素色锦缎坐垫在落点处，玉自然落在坐垫边缘、落点不改变、不悬停。袭人为明制仆役素色比甲袄裙、守礼安静，听见后从侧后方接近落点、俯身拾玉，绝不飞身抢接。贾母为年长诰命、慈祥温厚不年轻化，此镜只闻其声、不入画（画外），以 Audio 2 平静低声稳住全场；宝玉听见贾母声音后自然停手，非被武力制服。末帧袭人拾起玉、众人不再围向黛玉、黛玉获得一息空间并看玩家一眼、玉位置明确、厅内秩序开始恢复。",
+        "referenceRoleNotes": [
+          {
+            "id": "ref:image:1",
+            "role": "omni_reference",
+            "referenceId": "REF-BAOYU",
+            "note": "生成时的第 1 个图像参考位。"
+          },
+          {
+            "id": "ref:image:2",
+            "role": "omni_reference",
+            "referenceId": "REF-DAIYU",
+            "note": "生成时的第 2 个图像参考位。"
+          },
+          {
+            "id": "ref:image:3",
+            "role": "omni_reference",
+            "referenceId": "REF-JADE",
+            "note": "生成时的第 3 个图像参考位。"
+          },
+          {
+            "id": "ref:image:4",
+            "role": "omni_reference",
+            "referenceId": "REF-PLAYER-POV",
+            "note": "生成时的第 4 个图像参考位。"
+          },
+          {
+            "id": "ref:audio:1",
+            "role": "other",
+            "referenceId": "VOICE-PLAYER-A",
+            "note": "生成时的第 1 个声纹参考位。"
+          },
+          {
+            "id": "ref:audio:2",
+            "role": "other",
+            "referenceId": "VOICE-JIAMU",
+            "note": "生成时的第 2 个声纹参考位。"
+          }
+        ],
+        "emotionalArc": "克制、真实，以细微反应完成叙事推进。",
+        "beats": [
+          {
+            "id": "beat:full",
+            "startMs": 0,
+            "endMs": 12000,
+            "visual": "承接宝玉摔玉的分支首帧：荣府荣禧堂式正厅，日间天井与槅扇窗漏入的冷白自然光，深木梁柱、朱漆廊柱、槅扇窗、水磨青砖地，匾额楹联在景内但不生成可读字，无夜灯。宝玉（Image 1）家常装素色交领右衽直身袍、束发；林黛玉（Image 2）月白色明制交领袄裙配马面裙，清瘦清冷，被众人注视于厅中。通灵宝玉（Image 3）为温润羊脂白微透青的美玉，约拇指指腹大小，扁圆带天然肌理，顶端系青、赤、黄、白、黑五色丝绦，不发光、不放大、不变形；宝玉颈前项圈、寄名锁、护身符留在胸前不随玉掉落，组合与 Image 1 一致。玩家第一视角（Image 4）保持稳定镜头高度，此镜玩家不伸手追玉、手部不入画，只以 Audio 1 锁定成年画外声线出声，绝不露脸、不换成固定男声或女声。厅中原本摆放的素色锦缎坐垫在落点处，玉自然落在坐垫边缘、落点不改变、不悬停。袭人为明制仆役素色比甲袄裙、守礼安静，听见后从侧后方接近落点、俯身拾玉，绝不飞身抢接。贾母为年长诰命、慈祥温厚不年轻化，此镜只闻其声、不入画（画外），以 Audio 2 平静低声稳住全场；宝玉听见贾母声音后自然停手，非被武力制服。末帧袭人拾起玉、众人不再围向黛玉、黛玉获得一息空间并看玩家一眼、玉位置明确、厅内秩序开始恢复。",
+            "camera": "16:9 横屏，第一视角，一镜到底。",
+            "action": "起｜镜头前段，玩家手部始终不入画、镜头高度稳定，不伸手追玉，只在玉自然下落的同时以 Audio 1 锁定的成年画外声线沉声吩咐：“袭人，先收玉。别再责怪林姑娘。”承｜镜头中段，玉（图3）落在厅中原摆的锦缎坐垫边缘、落点不改不悬停，袭人听见后从侧后方俯身接近、绝不飞身抢接；贾母只闻其声、不入画，平静低声稳住全场，承接 Audio 2：“好孩子，先把玉放下。”收｜镜头后段，宝玉（图1）听见贾母声音后呼吸顿住、手自然垂下，怒意非被武力压制地慢慢退去；袭人拾起玉，众人不再围向黛玉（图2），黛玉得一息空间、看玩家一眼，克制真实的收束节奏；末帧厅内秩序初复、玉的位置明确。",
+            "performance": "自然克制，不做舞台化夸张表演。",
+            "emotion": "由场景动作自然递进。",
+            "dialogue": "",
+            "audio": "保留同期环境声与已锁定角色声线。",
+            "endState": "末帧进入稳定、可衔接状态。",
+            "continuity": "服装、道具、人物站位与淡红纹路保持连续。"
+          }
+        ],
+        "negativeConstraints": [
+          "不生成可读姓名、字幕、判词或信中文字。",
+          "不使用粒子魔法、仙侠光效、科幻 HUD、剪切、跳时或突然变焦。",
+          "玩家不露脸。"
+        ],
+        "continuityNotes": ["以原 v2 生成规格与现有 1080p 成片为准。"]
+      },
+      {
+        "graphNodeId": "clip:c3-r04-observe-pattern",
+        "clipKey": "C3_R04_OBSERVE_PATTERN",
+        "title": "荣府正厅·观纹",
+        "description": "荣府正厅·观纹（金陵入梦 v2 成片）",
+        "targetDurationMs": 12000,
+        "generationControl": {
+          "mode": "omni_reference"
+        },
+        "masterDirection": "真人古装电影质感的《红楼梦》荣国府场景，第一视角亲密感，表演克制，材质、光线和物理动作可信。荣国府使用深木、黛青、月白与旧金，淡红印纹是唯一强色。超自然只通过纸张、水面、灯火、反射和不可能的淡红纹路出现，不使用粒子魔法、仙侠光效或科幻 HUD。玩家永不露脸。全片 16:9、1920×1080、24fps、一镜到底，无剪切、无跳时、无突然变焦，末帧达到稳定态。\n\n承接宝玉摔玉的分支首帧：荣府荣禧堂式正厅，日间天井与槅扇窗漏入的冷白自然光，深木梁柱、朱漆廊柱、槅扇窗、水磨青砖地，匾额楹联在景内但不生成可读字，无夜灯。宝玉（Image 1）家常装素色交领右衽直身袍、束发；林黛玉（Image 2）月白色明制交领袄裙配马面裙，清瘦清冷。通灵宝玉（Image 3）为温润羊脂白微透青的美玉，约拇指指腹大小，扁圆带天然肌理，顶端系青、赤、黄、白、黑五色丝绦，不发光、不放大、不变形；宝玉颈前项圈、寄名锁、护身符留在胸前不随玉掉落，组合与 Image 1 一致。荐书（Image 4）为侧缝旧纸信封、淡红封印，纸纤维显淡红痕迹而不成字。玩家第一视角（Image 5）中性手部与黛青袖口，此镜玩家不抢玉、身体蹲低观察，镜头随之自然压低但不长时间宏观特写失去人物。厅中原有素色锦缎坐垫在落点旁；镜头跟随玉自然下移，玉落地后翻转一次即静止。侧光在玉面天然纹理中显出一缕极淡的红色纤维状反射，其形态与荐书旧纸封口处的淡红印纹同源，绝不成字、不发红光、不出现汉字或符号。袭人为明制仆役素色比甲袄裙、守礼安静，进入画面控制落点。玩家以 Audio 1 锁定成年画外声线说出发现；宝玉以 Audio 2、黛玉以 Audio 3 出声承接，NPC 必须听见玩家话音后再回应。末帧宝玉未恢复笑闹、黛玉顺玩家视线看见相同淡红纹第一次连接两处谜团、三人短暂停住、玉与淡红反射位置明确。",
+        "referenceRoleNotes": [
+          {
+            "id": "ref:image:1",
+            "role": "omni_reference",
+            "referenceId": "REF-BAOYU",
+            "note": "生成时的第 1 个图像参考位。"
+          },
+          {
+            "id": "ref:image:2",
+            "role": "omni_reference",
+            "referenceId": "REF-DAIYU",
+            "note": "生成时的第 2 个图像参考位。"
+          },
+          {
+            "id": "ref:image:3",
+            "role": "omni_reference",
+            "referenceId": "REF-JADE",
+            "note": "生成时的第 3 个图像参考位。"
+          },
+          {
+            "id": "ref:image:4",
+            "role": "omni_reference",
+            "referenceId": "REF-LETTER",
+            "note": "生成时的第 4 个图像参考位。"
+          },
+          {
+            "id": "ref:image:5",
+            "role": "omni_reference",
+            "referenceId": "REF-PLAYER-POV",
+            "note": "生成时的第 5 个图像参考位。"
+          },
+          {
+            "id": "ref:audio:1",
+            "role": "other",
+            "referenceId": "VOICE-PLAYER-A",
+            "note": "生成时的第 1 个声纹参考位。"
+          },
+          {
+            "id": "ref:audio:2",
+            "role": "other",
+            "referenceId": "VOICE-BAOYU",
+            "note": "生成时的第 2 个声纹参考位。"
+          },
+          {
+            "id": "ref:audio:3",
+            "role": "other",
+            "referenceId": "VOICE-DAIYU",
+            "note": "生成时的第 3 个声纹参考位。"
+          }
+        ],
+        "emotionalArc": "克制、真实，以细微反应完成叙事推进。",
+        "beats": [
+          {
+            "id": "beat:full",
+            "startMs": 0,
+            "endMs": 12000,
+            "visual": "承接宝玉摔玉的分支首帧：荣府荣禧堂式正厅，日间天井与槅扇窗漏入的冷白自然光，深木梁柱、朱漆廊柱、槅扇窗、水磨青砖地，匾额楹联在景内但不生成可读字，无夜灯。宝玉（Image 1）家常装素色交领右衽直身袍、束发；林黛玉（Image 2）月白色明制交领袄裙配马面裙，清瘦清冷。通灵宝玉（Image 3）为温润羊脂白微透青的美玉，约拇指指腹大小，扁圆带天然肌理，顶端系青、赤、黄、白、黑五色丝绦，不发光、不放大、不变形；宝玉颈前项圈、寄名锁、护身符留在胸前不随玉掉落，组合与 Image 1 一致。荐书（Image 4）为侧缝旧纸信封、淡红封印，纸纤维显淡红痕迹而不成字。玩家第一视角（Image 5）中性手部与黛青袖口，此镜玩家不抢玉、身体蹲低观察，镜头随之自然压低但不长时间宏观特写失去人物。厅中原有素色锦缎坐垫在落点旁；镜头跟随玉自然下移，玉落地后翻转一次即静止。侧光在玉面天然纹理中显出一缕极淡的红色纤维状反射，其形态与荐书旧纸封口处的淡红印纹同源，绝不成字、不发红光、不出现汉字或符号。袭人为明制仆役素色比甲袄裙、守礼安静，进入画面控制落点。玩家以 Audio 1 锁定成年画外声线说出发现；宝玉以 Audio 2、黛玉以 Audio 3 出声承接，NPC 必须听见玩家话音后再回应。末帧宝玉未恢复笑闹、黛玉顺玩家视线看见相同淡红纹第一次连接两处谜团、三人短暂停住、玉与淡红反射位置明确。",
+            "camera": "16:9 横屏，第一视角，一镜到底。",
+            "action": "起｜镜头前段，镜头随玉（图3）自然下移，玉落地只翻转一次便静止，玩家不抢玉、身体蹲低观察、镜头随之压低，但始终不长时间宏观特写而失去人物。承｜镜头中段，侧光在玉面天然纹理中显出一缕极淡的红色纤维状反射，其形态与荐书（图4）旧纸封口的淡红印纹同源，只是纹理、绝不成字、不发红光；玩家看清后才以 Audio 1 锁定画外声线说出发现：“这玉上的纹路，我在信上见过。”收｜镜头后段，宝玉（图1）听见后看向玩家、承接 Audio 2 问：“你看见什么了？”黛玉（图2）顺着玩家视线低声接上 Audio 3：“果然……和你的信一样。”玩家重新抬起视线，三人第一次把两处谜团短暂连在一起、各自停住，宝玉未恢复笑闹；末帧玉与淡红反射位置明确。",
+            "performance": "自然克制，不做舞台化夸张表演。",
+            "emotion": "由场景动作自然递进。",
+            "dialogue": "",
+            "audio": "保留同期环境声与已锁定角色声线。",
+            "endState": "末帧进入稳定、可衔接状态。",
+            "continuity": "服装、道具、人物站位与淡红纹路保持连续。"
+          }
+        ],
+        "negativeConstraints": [
+          "不生成可读姓名、字幕、判词或信中文字。",
+          "不使用粒子魔法、仙侠光效、科幻 HUD、剪切、跳时或突然变焦。",
+          "玩家不露脸。"
+        ],
+        "continuityNotes": ["以原 v2 生成规格与现有 1080p 成片为准。"]
+      },
+      {
+        "graphNodeId": "clip:s05-daiyu-night-visit",
+        "clipKey": "S05_DAIYU_NIGHT_VISIT",
+        "title": "黛玉夜访（内院客房·夜）",
+        "description": "黛玉夜访（内院客房·夜）（金陵入梦 v2 成片）",
+        "targetDurationMs": 12000,
+        "generationControl": {
+          "mode": "omni_reference"
+        },
+        "masterDirection": "真人古装电影质感的《红楼梦》荣国府场景，第一视角亲密感，表演克制，材质、光线和物理动作可信。荣国府使用深木、黛青、月白与旧金，淡红印纹是唯一强色。超自然只通过纸张、水面、灯火、反射和不可能的淡红纹路出现，不使用粒子魔法、仙侠光效或科幻 HUD。玩家永不露脸。全片 16:9、1920×1080、24fps、一镜到底，无剪切、无跳时、无突然变焦，末帧达到稳定态。\n\n荣国府内院客房夜间实景：只有两种真实光源——条桌上一盏羊角罩暖光油灯把近景染成旧金暖调，槅扇糊纸窗外一轮冷月透过窗纱洒下青白冷光，二者在桌案交界处相接，绝不用第三种光。房间陈设守明代礼制而不奢华：紫檀方桌、官帽椅、素净帐幔、水磨砖地，无金红艳饰。色调深木、黛青、月白、旧金。玩家第一视角（Image 3，中性手部、黛青袖口、永不露脸，坐在桌边）。黛玉（Image 1，夜间灯下同一身份、月白或极浅青白明制寝衣外罩褙子、清瘦不病态、眉眼清冷、绝不作暧昧夜装造型）自房门轻步进入，手中拿着仍保持前序对应状态的荐书（Image 2，旧纸信封、有自然折痕、封口一处淡红印、纸纤维沿前序隐现淡红痕但绝不成可读字）。她回身把门合上却不上闩，走到桌案对面，将荐书横放在两人之间、不直接推给玩家，指尖始终未离信封边缘。她不立即倾诉，先用一句短话建立只说一次的私密压力，末尾不逼近、保持眼神等待。灯火因空气流动与她的动作轻微晃动，窗纱微颤。近景微表情克制可信。黛玉声线锁定 Audio 1。",
+        "referenceRoleNotes": [
+          {
+            "id": "ref:image:1",
+            "role": "omni_reference",
+            "referenceId": "REF-DAIYU-NIGHT",
+            "note": "生成时的第 1 个图像参考位。"
+          },
+          {
+            "id": "ref:image:2",
+            "role": "omni_reference",
+            "referenceId": "REF-LETTER",
+            "note": "生成时的第 2 个图像参考位。"
+          },
+          {
+            "id": "ref:image:3",
+            "role": "omni_reference",
+            "referenceId": "REF-PLAYER-POV",
+            "note": "生成时的第 3 个图像参考位。"
+          },
+          {
+            "id": "ref:audio:1",
+            "role": "other",
+            "referenceId": "VOICE-DAIYU",
+            "note": "生成时的第 1 个声纹参考位。"
+          }
+        ],
+        "emotionalArc": "克制、真实，以细微反应完成叙事推进。",
+        "beats": [
+          {
+            "id": "beat:full",
+            "startMs": 0,
+            "endMs": 12000,
+            "visual": "荣国府内院客房夜间实景：只有两种真实光源——条桌上一盏羊角罩暖光油灯把近景染成旧金暖调，槅扇糊纸窗外一轮冷月透过窗纱洒下青白冷光，二者在桌案交界处相接，绝不用第三种光。房间陈设守明代礼制而不奢华：紫檀方桌、官帽椅、素净帐幔、水磨砖地，无金红艳饰。色调深木、黛青、月白、旧金。玩家第一视角（Image 3，中性手部、黛青袖口、永不露脸，坐在桌边）。黛玉（Image 1，夜间灯下同一身份、月白或极浅青白明制寝衣外罩褙子、清瘦不病态、眉眼清冷、绝不作暧昧夜装造型）自房门轻步进入，手中拿着仍保持前序对应状态的荐书（Image 2，旧纸信封、有自然折痕、封口一处淡红印、纸纤维沿前序隐现淡红痕但绝不成可读字）。她回身把门合上却不上闩，走到桌案对面，将荐书横放在两人之间、不直接推给玩家，指尖始终未离信封边缘。她不立即倾诉，先用一句短话建立只说一次的私密压力，末尾不逼近、保持眼神等待。灯火因空气流动与她的动作轻微晃动，窗纱微颤。近景微表情克制可信。黛玉声线锁定 Audio 1。",
+            "camera": "16:9 横屏，第一视角，一镜到底。",
+            "action": "镜头前段（起）：门轻响，黛玉（图1）自房门轻步进入，手中拿着仍保持前序对应状态的荐书（图2）；她回身把门合上却不上闩，转身走向桌案。灯火因空气流动与她的动作轻微晃动，窗纱微颤。\n\n镜头中段（承）：她走到桌案对面，将荐书横放在两人之间、不直接推给玩家，指尖始终未离信封边缘；先低头看信，再抬眼准确看向玩家（图3）镜头，用一句短话建立只说一次的私密压力，轻声说——\"白日里人多。有句话，我只问你一次。\"\n\n镜头后段（收）：她停一拍，观察玩家呼吸，右手拇指轻按帕角，情绪克制；随后自然问出——\"是这封信带你来的，还是你让它认了主？\"末尾不逼近、不落泪，保持眼神等待，末帧维持灯火与窗纱极轻晃动的稳定态。\n\n黛玉声线锁定 Audio 1。",
+            "performance": "自然克制，不做舞台化夸张表演。",
+            "emotion": "由场景动作自然递进。",
+            "dialogue": "",
+            "audio": "保留同期环境声与已锁定角色声线。",
+            "endState": "末帧进入稳定、可衔接状态。",
+            "continuity": "服装、道具、人物站位与淡红纹路保持连续。"
+          }
+        ],
+        "negativeConstraints": [
+          "不生成可读姓名、字幕、判词或信中文字。",
+          "不使用粒子魔法、仙侠光效、科幻 HUD、剪切、跳时或突然变焦。",
+          "玩家不露脸。"
+        ],
+        "continuityNotes": ["以原 v2 生成规格与现有 1080p 成片为准。"]
+      },
+      {
+        "graphNodeId": "clip:s05-letter-reveal",
+        "clipKey": "S05_LETTER_REVEAL",
+        "title": "荐书显字（内院客房·夜）",
+        "description": "荐书显字（内院客房·夜）（金陵入梦 v2 成片）",
+        "targetDurationMs": 12000,
+        "generationControl": {
+          "mode": "omni_reference"
+        },
+        "masterDirection": "真人古装电影质感的《红楼梦》荣国府场景，第一视角亲密感，表演克制，材质、光线和物理动作可信。荣国府使用深木、黛青、月白与旧金，淡红印纹是唯一强色。超自然只通过纸张、水面、灯火、反射和不可能的淡红纹路出现，不使用粒子魔法、仙侠光效或科幻 HUD。玩家永不露脸。全片 16:9、1920×1080、24fps、一镜到底，无剪切、无跳时、无突然变焦，末帧达到稳定态。\n\n承前镜同一夜间客房桌案连续开始：条桌暖光油灯旧金近景、窗外冷月透窗纱洒青白冷光，紫檀方桌、官帽椅、素净帐幔、水磨砖地，色调深木、黛青、月白、旧金，无金红。黛玉（Image 1，夜间灯下同一身份、月白明制寝衣外罩褙子、清瘦清冷）在桌案对面等待玩家回答。玩家第一视角（Image 3，中性手部、黛青袖口、永不露脸、画外发声）以锁定声线回答，同时把手从画面下缘靠近横放的荐书（Image 2，旧纸信封、有折痕、封口一处淡红印）但不触碰黛玉，手停在信边一掌距离。桌上暖灯从侧面斜掠过旧纸，三处淡红纹按前三次选择的顺序沿纸纤维依次极轻显现——只有纹理质感、绝不生成可读文字或完整判词、绝不发红光照亮房间。黛玉看见变化先收住呼吸，再把信略微转向玩家；她不是害怕，而是在验证一个不可能的事实，用自己的声音清楚克制地读出运行时另行叠加的核心句，随后问玩家要把这次“未写定的选择”留给谁。最后两秒她与信保持稳定、无新口型，承载最终选择。超自然只通过纸纤维的淡红纹路显现，绝无粒子魔法或光效。玩家声线锁定 Audio 1，黛玉声线锁定 Audio 2。",
+        "referenceRoleNotes": [
+          {
+            "id": "ref:image:1",
+            "role": "omni_reference",
+            "referenceId": "REF-DAIYU-NIGHT",
+            "note": "生成时的第 1 个图像参考位。"
+          },
+          {
+            "id": "ref:image:2",
+            "role": "omni_reference",
+            "referenceId": "REF-LETTER",
+            "note": "生成时的第 2 个图像参考位。"
+          },
+          {
+            "id": "ref:image:3",
+            "role": "omni_reference",
+            "referenceId": "REF-PLAYER-POV",
+            "note": "生成时的第 3 个图像参考位。"
+          },
+          {
+            "id": "ref:audio:1",
+            "role": "other",
+            "referenceId": "VOICE-PLAYER-A",
+            "note": "生成时的第 1 个声纹参考位。"
+          },
+          {
+            "id": "ref:audio:2",
+            "role": "other",
+            "referenceId": "VOICE-DAIYU",
+            "note": "生成时的第 2 个声纹参考位。"
+          }
+        ],
+        "emotionalArc": "克制、真实，以细微反应完成叙事推进。",
+        "beats": [
+          {
+            "id": "beat:full",
+            "startMs": 0,
+            "endMs": 12000,
+            "visual": "承前镜同一夜间客房桌案连续开始：条桌暖光油灯旧金近景、窗外冷月透窗纱洒青白冷光，紫檀方桌、官帽椅、素净帐幔、水磨砖地，色调深木、黛青、月白、旧金，无金红。黛玉（Image 1，夜间灯下同一身份、月白明制寝衣外罩褙子、清瘦清冷）在桌案对面等待玩家回答。玩家第一视角（Image 3，中性手部、黛青袖口、永不露脸、画外发声）以锁定声线回答，同时把手从画面下缘靠近横放的荐书（Image 2，旧纸信封、有折痕、封口一处淡红印）但不触碰黛玉，手停在信边一掌距离。桌上暖灯从侧面斜掠过旧纸，三处淡红纹按前三次选择的顺序沿纸纤维依次极轻显现——只有纹理质感、绝不生成可读文字或完整判词、绝不发红光照亮房间。黛玉看见变化先收住呼吸，再把信略微转向玩家；她不是害怕，而是在验证一个不可能的事实，用自己的声音清楚克制地读出运行时另行叠加的核心句，随后问玩家要把这次“未写定的选择”留给谁。最后两秒她与信保持稳定、无新口型，承载最终选择。超自然只通过纸纤维的淡红纹路显现，绝无粒子魔法或光效。玩家声线锁定 Audio 1，黛玉声线锁定 Audio 2。",
+            "camera": "16:9 横屏，第一视角，一镜到底。",
+            "action": "镜头前段（起）：玩家（图3）的手从画面下缘自然靠近横放的荐书（图2）、不触碰黛玉，以锁定画外声线说出——\"我也不知道。可每做一个选择，它便多一道纹。\"手停在信边一掌距离。\n\n镜头中段（承）：桌上暖灯从侧面斜掠过旧纸，三处淡红纹按前三次选择的顺序沿纸纤维依次极轻显现——只有纹理质感、绝不出现可读字、绝不发红光照亮房间；黛玉（图1）眼神逐处跟随、呼吸变浅，先收住呼吸，再把信略微转向玩家，说——\"这纸原是空的，却多了一句话。\"\n\n镜头后段（收）：她不是害怕，而是在验证一个不可能的事实，用自己的声音清楚、克制地读出运行时另行叠加的核心句——\"册中多一人，世间便多一种可能。\"随后停一拍，眼神从纸回到玩家，轻声问她要把这次未写定的选择留给谁——\"这一次，你想留给谁？\"\n\n镜头收束：黛玉与信保持稳定、手停在荐书边缘，灯火与窗纱只作极轻往复、无新口型，承载最终选择的末帧稳定态。\n\n玩家声线锁定 Audio 1，黛玉声线锁定 Audio 2。",
+            "performance": "自然克制，不做舞台化夸张表演。",
+            "emotion": "由场景动作自然递进。",
+            "dialogue": "",
+            "audio": "保留同期环境声与已锁定角色声线。",
+            "endState": "末帧进入稳定、可衔接状态。",
+            "continuity": "服装、道具、人物站位与淡红纹路保持连续。"
+          }
+        ],
+        "negativeConstraints": [
+          "不生成可读姓名、字幕、判词或信中文字。",
+          "不使用粒子魔法、仙侠光效、科幻 HUD、剪切、跳时或突然变焦。",
+          "玩家不露脸。"
+        ],
+        "continuityNotes": ["以原 v2 生成规格与现有 1080p 成片为准。"]
+      },
+      {
+        "graphNodeId": "clip:w03-final-choice-wait",
+        "clipKey": "W03_FINAL_CHOICE_WAIT",
+        "title": "终选等待·夜间客房",
+        "description": "终选等待·夜间客房（金陵入梦 v2 成片）",
+        "targetDurationMs": 12000,
+        "generationControl": {
+          "mode": "omni_reference"
+        },
+        "masterDirection": "真人古装电影质感的《红楼梦》荣国府场景，第一视角亲密感，表演克制，材质、光线和物理动作可信。荣国府使用深木、黛青、月白与旧金，淡红印纹是唯一强色。超自然只通过纸张、水面、灯火、反射和不可能的淡红纹路出现，不使用粒子魔法、仙侠光效或科幻 HUD。玩家永不露脸。全片 16:9、1920×1080、24fps、一镜到底，无剪切、无跳时、无突然变焦，末帧达到稳定态。\n\n保持荐书显字后的最终选择稳定末帧，静默循环，绝无对白、无音乐节拍、无口型：夜间荣国府内院客房，桌上旧金暖灯与窗外冷月两种真实光源，深木桌案、槅扇糊纸窗、水磨砖地，黛青、月白为底。Image 1 锁定的林黛玉月白交领右衽明制衣裙坐桌案对面，清瘦不病态、眉眼清冷，目光稳定落在 Image 3 玩家第一视角镜头光轴上，右手指尖停在 Image 2 那封旧纸荐书的边缘、淡红封印可见但不显字。玩家第一视角只露黛青袖口，永不露脸。只允许一次很轻的呼吸、眼神短暂落到信封再重新回到玩家、暖灯小幅摆动、窗纱微动；嘴唇不形成任何新台词与口型，手不离开信，身体不改变与镜头的距离。5 秒末尾回到首帧的眼线、呼吸相位、灯火亮度与手指位置，形成不可察觉的像素级自然循环，绝不倒放。",
+        "referenceRoleNotes": [
+          {
+            "id": "ref:image:1",
+            "role": "omni_reference",
+            "referenceId": "REF-DAIYU",
+            "note": "生成时的第 1 个图像参考位。"
+          },
+          {
+            "id": "ref:image:2",
+            "role": "omni_reference",
+            "referenceId": "REF-LETTER",
+            "note": "生成时的第 2 个图像参考位。"
+          },
+          {
+            "id": "ref:image:3",
+            "role": "omni_reference",
+            "referenceId": "REF-PLAYER-POV",
+            "note": "生成时的第 3 个图像参考位。"
+          }
+        ],
+        "emotionalArc": "克制、真实，以细微反应完成叙事推进。",
+        "beats": [
+          {
+            "id": "beat:full",
+            "startMs": 0,
+            "endMs": 12000,
+            "visual": "保持荐书显字后的最终选择稳定末帧，静默循环，绝无对白、无音乐节拍、无口型：夜间荣国府内院客房，桌上旧金暖灯与窗外冷月两种真实光源，深木桌案、槅扇糊纸窗、水磨砖地，黛青、月白为底。Image 1 锁定的林黛玉月白交领右衽明制衣裙坐桌案对面，清瘦不病态、眉眼清冷，目光稳定落在 Image 3 玩家第一视角镜头光轴上，右手指尖停在 Image 2 那封旧纸荐书的边缘、淡红封印可见但不显字。玩家第一视角只露黛青袖口，永不露脸。只允许一次很轻的呼吸、眼神短暂落到信封再重新回到玩家、暖灯小幅摆动、窗纱微动；嘴唇不形成任何新台词与口型，手不离开信，身体不改变与镜头的距离。5 秒末尾回到首帧的眼线、呼吸相位、灯火亮度与手指位置，形成不可察觉的像素级自然循环，绝不倒放。",
+            "camera": "16:9 横屏，第一视角，一镜到底。",
+            "action": "静默循环片，无对白、无口型、无催促：整段保持荐书显字后最终选择的同一稳定末帧。夜间荣国府内院客房，桌上 Image 旧金暖灯与窗外冷月两种真实光源，深木桌案、槅扇糊纸窗、水磨砖地，黛青、月白为底。Image 1 锁定的林黛玉月白明制衣裙坐桌案对面，清瘦不病态、眉眼清冷，目光稳定落在 Image 3 玩家第一视角镜头光轴上，右手指尖停在 Image 2 那封旧纸荐书的边缘、淡红封印可见但不显字；玩家第一视角只露黛青袖口，永不露脸。整段只允许一次很轻的呼吸、眼神短暂落到信封再重新回到玩家、暖灯小幅摆动、窗纱微动的极轻往复；嘴唇不形成任何新台词与口型，手不离信，身体不改变与镜头的距离。首尾必须回到相同的眼线、呼吸相位、灯火亮度与手指位置，形成不可察觉的像素级自然循环，绝不倒放。",
+            "performance": "自然克制，不做舞台化夸张表演。",
+            "emotion": "由场景动作自然递进。",
+            "dialogue": "",
+            "audio": "保留同期环境声与已锁定角色声线。",
+            "endState": "末帧进入稳定、可衔接状态。",
+            "continuity": "服装、道具、人物站位与淡红纹路保持连续。"
+          }
+        ],
+        "negativeConstraints": [
+          "不生成可读姓名、字幕、判词或信中文字。",
+          "不使用粒子魔法、仙侠光效、科幻 HUD、剪切、跳时或突然变焦。",
+          "玩家不露脸。"
+        ],
+        "continuityNotes": ["以原 v2 生成规格与现有 1080p 成片为准。"]
+      },
+      {
+        "graphNodeId": "clip:e01-spring-with-daiyu",
+        "clipKey": "E01_SPRING_WITH_DAIYU",
+        "title": "共春·海棠廊下",
+        "description": "共春·海棠廊下（金陵入梦 v2 成片）",
+        "targetDurationMs": 12000,
+        "generationControl": {
+          "mode": "omni_reference"
+        },
+        "masterDirection": "真人古装电影质感的《红楼梦》荣国府场景，第一视角亲密感，表演克制，材质、光线和物理动作可信。荣国府使用深木、黛青、月白与旧金，淡红印纹是唯一强色。超自然只通过纸张、水面、灯火、反射和不可能的淡红纹路出现，不使用粒子魔法、仙侠光效或科幻 HUD。玩家永不露脸。全片 16:9、1920×1080、24fps、一镜到底，无剪切、无跳时、无突然变焦，末帧达到稳定态。\n\n夜间荣国府内院客房，青砖黛瓦、朱漆廊柱之内，槅扇窗糊旧纸，水磨方砖地面；只有桌上一盏旧金铜暖灯与窗外一弯冷月两种真实光源，暖黄贴着旧木，月色冷落在窗纱。Image 3 玩家第一视角坐桌边，只露中性手部与黛青色大袖袖口，永不露脸。Image 1 锁定的林黛玉坐桌案对面，月白交领右衽明制上襦配极浅青白马面裙、素色褙子，清瘦不病态，眉眼清冷、眼神比妆容重。玩家以 Audio 1 锁定成年画外声线说出最终选择，缓慢把 Image 2 那封旧纸荐书、淡红封印朝上推到黛玉面前，绝不替她打开或书写。黛玉看信后不落泪、不作感激状，只第一次露出极轻、带主见的笑意，用 Audio 2 声线轻短说这一笔要自己写，把荐书敛入褙子广袖。暖灯的暖色沿同一运动方向自然过渡为次日清晨抄手游廊的真实天井漏光，冷金转为清透日色；廊下海棠初绽两三点淡粉，黛玉在花枝旁停步回身等玩家并肩前行。荐书淡红封印全程只是印痕，绝不显字。深木、黛青、月白、旧金为底，淡红是唯一强色。末帧稳定：海棠枝下黛玉侧身回望，玩家黛青袖口入画，为下一状态留连续性。",
+        "referenceRoleNotes": [
+          {
+            "id": "ref:image:1",
+            "role": "omni_reference",
+            "referenceId": "REF-DAIYU",
+            "note": "生成时的第 1 个图像参考位。"
+          },
+          {
+            "id": "ref:image:2",
+            "role": "omni_reference",
+            "referenceId": "REF-LETTER",
+            "note": "生成时的第 2 个图像参考位。"
+          },
+          {
+            "id": "ref:image:3",
+            "role": "omni_reference",
+            "referenceId": "REF-PLAYER-POV",
+            "note": "生成时的第 3 个图像参考位。"
+          },
+          {
+            "id": "ref:audio:1",
+            "role": "other",
+            "referenceId": "VOICE-PLAYER-A",
+            "note": "生成时的第 1 个声纹参考位。"
+          },
+          {
+            "id": "ref:audio:2",
+            "role": "other",
+            "referenceId": "VOICE-DAIYU",
+            "note": "生成时的第 2 个声纹参考位。"
+          }
+        ],
+        "emotionalArc": "克制、真实，以细微反应完成叙事推进。",
+        "beats": [
+          {
+            "id": "beat:full",
+            "startMs": 0,
+            "endMs": 12000,
+            "visual": "夜间荣国府内院客房，青砖黛瓦、朱漆廊柱之内，槅扇窗糊旧纸，水磨方砖地面；只有桌上一盏旧金铜暖灯与窗外一弯冷月两种真实光源，暖黄贴着旧木，月色冷落在窗纱。Image 3 玩家第一视角坐桌边，只露中性手部与黛青色大袖袖口，永不露脸。Image 1 锁定的林黛玉坐桌案对面，月白交领右衽明制上襦配极浅青白马面裙、素色褙子，清瘦不病态，眉眼清冷、眼神比妆容重。玩家以 Audio 1 锁定成年画外声线说出最终选择，缓慢把 Image 2 那封旧纸荐书、淡红封印朝上推到黛玉面前，绝不替她打开或书写。黛玉看信后不落泪、不作感激状，只第一次露出极轻、带主见的笑意，用 Audio 2 声线轻短说这一笔要自己写，把荐书敛入褙子广袖。暖灯的暖色沿同一运动方向自然过渡为次日清晨抄手游廊的真实天井漏光，冷金转为清透日色；廊下海棠初绽两三点淡粉，黛玉在花枝旁停步回身等玩家并肩前行。荐书淡红封印全程只是印痕，绝不显字。深木、黛青、月白、旧金为底，淡红是唯一强色。末帧稳定：海棠枝下黛玉侧身回望，玩家黛青袖口入画，为下一状态留连续性。",
+            "camera": "16:9 横屏，第一视角，一镜到底。",
+            "action": "一镜到底、克制真实的电影节奏，压成四个自然流动的核心节拍——起（镜头前段）：夜间客房桌案，玩家以锁定画外声线（Audio 1）缓慢把那封旧纸荐书、淡红封印朝上推到黛玉面前；镜头前段，玩家自然说出这句最终选择——“若真有一次未写定的选择，我留给你。”，绝不替她打开或书写。承（镜头中段）：黛玉看信、再看玩家，情绪克制，以 Audio 2 声线轻声应下——“这一笔，我想自己写。”，随即把荐书敛入褙子广袖起身，第一次露出极轻、带主见的笑意，只落在眼角，不落泪、不作感激状。转（镜头后段）：黛青大袖袖口经过镜头形成自然遮挡，桌上旧金暖灯沿同一运动方向连续过渡为次日清晨抄手游廊的天井漏光，冷金转清透日色，一镜到底不做剪辑式蒙太奇。收（末帧稳定态）：抄手游廊海棠初绽两三点淡粉，黛玉在花枝旁停步回身等待、与玩家并肩前行；末帧稳定——海棠枝下黛玉侧身回望，玩家黛青袖口入画，荐书淡红封印全程只是印痕、始终无字，为下一状态留连续性。",
+            "performance": "自然克制，不做舞台化夸张表演。",
+            "emotion": "由场景动作自然递进。",
+            "dialogue": "",
+            "audio": "保留同期环境声与已锁定角色声线。",
+            "endState": "末帧进入稳定、可衔接状态。",
+            "continuity": "服装、道具、人物站位与淡红纹路保持连续。"
+          }
+        ],
+        "negativeConstraints": [
+          "不生成可读姓名、字幕、判词或信中文字。",
+          "不使用粒子魔法、仙侠光效、科幻 HUD、剪切、跳时或突然变焦。",
+          "玩家不露脸。"
+        ],
+        "continuityNotes": ["以原 v2 生成规格与现有 1080p 成片为准。"]
+      },
+      {
+        "graphNodeId": "clip:e02-name-in-house",
+        "clipKey": "E02_NAME_IN_HOUSE",
+        "title": "立名·正厅名帖",
+        "description": "立名·正厅名帖（金陵入梦 v2 成片）",
+        "targetDurationMs": 12000,
+        "generationControl": {
+          "mode": "omni_reference"
+        },
+        "masterDirection": "真人古装电影质感的《红楼梦》荣国府场景，第一视角亲密感，表演克制，材质、光线和物理动作可信。荣国府使用深木、黛青、月白与旧金，淡红印纹是唯一强色。超自然只通过纸张、水面、灯火、反射和不可能的淡红纹路出现，不使用粒子魔法、仙侠光效或科幻 HUD。玩家永不露脸。全片 16:9、1920×1080、24fps、一镜到底，无剪切、无跳时、无突然变焦，末帧达到稳定态。\n\n由夜间 Image 3 荐书纸面淡红纹的极近景做物理匹配转场，红纹化作次日正厅名帖的纸纤维反光，镜头已在荣禧堂式正厅：五进大宅正堂，明间高敞，紫檀条案，朱漆槅扇大开，梁间悬匾与楹联但镜头内绝不生成可读字，天井侧光与窗光落在水磨砖地。Image 4 玩家第一视角站在合礼客位，只露中性手部与黛青袖口，永不露脸。Image 1 锁定的贾母居正厅上座，老年诰命装束，酱色大袖圆领配霞帔样式明制命妇服，慈祥温厚、绝不年轻化；她已核验旧情，不宣布宏大身份，只温和给予暂留与真实位置。Image 2 锁定的王熙凤侍立在侧，深朱克制的彩绣明制大袖华服，笑里带锋、眼神精确、不作反派冷笑；她双手递来一张未烧录姓名、素白无字的正式名帖，玩家伸黛青袖口手接住；名帖动态姓名区保持干净留白供运行时叠加，绝不生成可读姓名。熙凤接纳不等于完全信任，眼神留观察意味。深木、黛青、月白、旧金为底，淡红只在荐书封印处。末帧名帖位于画面安全区、厅门向内院敞开，玩家不显完整身体。",
+        "referenceRoleNotes": [
+          {
+            "id": "ref:image:1",
+            "role": "omni_reference",
+            "referenceId": "REF-JIAMU",
+            "note": "生成时的第 1 个图像参考位。"
+          },
+          {
+            "id": "ref:image:2",
+            "role": "omni_reference",
+            "referenceId": "REF-XIFENG",
+            "note": "生成时的第 2 个图像参考位。"
+          },
+          {
+            "id": "ref:image:3",
+            "role": "omni_reference",
+            "referenceId": "REF-LETTER",
+            "note": "生成时的第 3 个图像参考位。"
+          },
+          {
+            "id": "ref:image:4",
+            "role": "omni_reference",
+            "referenceId": "REF-PLAYER-POV",
+            "note": "生成时的第 4 个图像参考位。"
+          },
+          {
+            "id": "ref:audio:1",
+            "role": "other",
+            "referenceId": "VOICE-PLAYER-A",
+            "note": "生成时的第 1 个声纹参考位。"
+          },
+          {
+            "id": "ref:audio:2",
+            "role": "other",
+            "referenceId": "VOICE-JIAMU",
+            "note": "生成时的第 2 个声纹参考位。"
+          },
+          {
+            "id": "ref:audio:3",
+            "role": "other",
+            "referenceId": "VOICE-XIFENG",
+            "note": "生成时的第 3 个声纹参考位。"
+          }
+        ],
+        "emotionalArc": "克制、真实，以细微反应完成叙事推进。",
+        "beats": [
+          {
+            "id": "beat:full",
+            "startMs": 0,
+            "endMs": 12000,
+            "visual": "由夜间 Image 3 荐书纸面淡红纹的极近景做物理匹配转场，红纹化作次日正厅名帖的纸纤维反光，镜头已在荣禧堂式正厅：五进大宅正堂，明间高敞，紫檀条案，朱漆槅扇大开，梁间悬匾与楹联但镜头内绝不生成可读字，天井侧光与窗光落在水磨砖地。Image 4 玩家第一视角站在合礼客位，只露中性手部与黛青袖口，永不露脸。Image 1 锁定的贾母居正厅上座，老年诰命装束，酱色大袖圆领配霞帔样式明制命妇服，慈祥温厚、绝不年轻化；她已核验旧情，不宣布宏大身份，只温和给予暂留与真实位置。Image 2 锁定的王熙凤侍立在侧，深朱克制的彩绣明制大袖华服，笑里带锋、眼神精确、不作反派冷笑；她双手递来一张未烧录姓名、素白无字的正式名帖，玩家伸黛青袖口手接住；名帖动态姓名区保持干净留白供运行时叠加，绝不生成可读姓名。熙凤接纳不等于完全信任，眼神留观察意味。深木、黛青、月白、旧金为底，淡红只在荐书封印处。末帧名帖位于画面安全区、厅门向内院敞开，玩家不显完整身体。",
+            "camera": "16:9 横屏，第一视角，一镜到底。",
+            "action": "一镜到底、克制威仪的正厅节奏，压成四个核心节拍——起（镜头前段·物理匹配转场）：由夜间荐书淡红纸纹的极近景做物理匹配，红纹化作次日正厅名帖的纸纤维反光，镜头已在荣禧堂式正厅；镜头前段，玩家以锁定画外声线（Audio 1）自然求名——“我想先为自己求一个名字。”承（镜头中段·贾母温厚给予）：贾母居正厅上座、老年诰命装束、慈祥温厚绝不年轻化，端详玩家后以 Audio 2 声线从容道出、不宣布宏大身份，只给予暂留与真实位置——“旧人既认得，便先留下吧。”“从今日起，府里有你的位置。”转（镜头后段·熙凤递帖）：王熙凤侍立在侧、笑里带锋、眼神精确不作反派冷笑，双手递出未烧录姓名、素白无字的正式名帖，以 Audio 3 声线留一句余地——“位置有了，往后怎么站，可看你自己。”玩家伸黛青袖口手接住，熙凤眼神留观察意味、接纳不等于完全信任。收（末帧稳定态）：内院厅门向里敞开，名帖动态姓名区保持干净留白、位于画面安全区、绝无姓名显现，玩家不露脸、不显完整身体。",
+            "performance": "自然克制，不做舞台化夸张表演。",
+            "emotion": "由场景动作自然递进。",
+            "dialogue": "",
+            "audio": "保留同期环境声与已锁定角色声线。",
+            "endState": "末帧进入稳定、可衔接状态。",
+            "continuity": "服装、道具、人物站位与淡红纹路保持连续。"
+          }
+        ],
+        "negativeConstraints": [
+          "不生成可读姓名、字幕、判词或信中文字。",
+          "不使用粒子魔法、仙侠光效、科幻 HUD、剪切、跳时或突然变焦。",
+          "玩家不露脸。"
+        ],
+        "continuityNotes": ["以原 v2 生成规格与现有 1080p 成片为准。"]
+      },
+      {
+        "graphNodeId": "clip:e03-memory-shared",
+        "clipKey": "E03_MEMORY_SHARED",
+        "title": "共忆·三层空间",
+        "description": "共忆·三层空间（金陵入梦 v2 成片）",
+        "targetDurationMs": 12000,
+        "generationControl": {
+          "mode": "omni_reference"
+        },
+        "masterDirection": "真人古装电影质感的《红楼梦》荣国府场景，第一视角亲密感，表演克制，材质、光线和物理动作可信。荣国府使用深木、黛青、月白与旧金，淡红印纹是唯一强色。超自然只通过纸张、水面、灯火、反射和不可能的淡红纹路出现，不使用粒子魔法、仙侠光效或科幻 HUD。玩家永不露脸。全片 16:9、1920×1080、24fps、一镜到底，无剪切、无跳时、无突然变焦，末帧达到稳定态。\n\n以 Image 5 荐书淡红纹为视觉连接，在同一连续运镜里横穿荣禧堂式正厅的三个真实空间层次，绝不做剪辑式蒙太奇。正厅青砖黛瓦、朱漆廊柱、槅扇窗、水磨砖地，天井漏光与窗光交叠，深木、黛青、月白、旧金为主，淡红只在纸与玉的纹理。近处 Image 1 锁定的林黛玉月白交领右衽明制衣裙，合上那封荐书，用 Audio 2 声线看向玩家说记得今日；镜头沿一列朱漆廊柱平稳横移，见 Image 2 锁定的王熙凤深朱克制彩绣明制华服停下翻账动作，抬眼说出记住人的判断，笑意精确、不温柔感动、不落泪；镜头继续到门边，Image 3 锁定的贾宝玉家常装（非盛装大氅），佩 Image 4 通灵宝玉配五色丝绦、项圈、寄名锁、护身符的完整组合，右手握住通灵玉回头，以 Audio 3 声线用轻快而不轻浮的一句收束。三人不是被法术控制，只在同一时刻真实想起玩家做过的选择，绝无红光扫眼、瞬移或齐声。Image 6 玩家第一视角只露黛青袖口，永不露脸。末帧三个空间层次同时安静，远处门扇向内院打开，玩家存在被这座宅子承认。",
+        "referenceRoleNotes": [
+          {
+            "id": "ref:image:1",
+            "role": "omni_reference",
+            "referenceId": "REF-DAIYU",
+            "note": "生成时的第 1 个图像参考位。"
+          },
+          {
+            "id": "ref:image:2",
+            "role": "omni_reference",
+            "referenceId": "REF-XIFENG",
+            "note": "生成时的第 2 个图像参考位。"
+          },
+          {
+            "id": "ref:image:3",
+            "role": "omni_reference",
+            "referenceId": "REF-BAOYU",
+            "note": "生成时的第 3 个图像参考位。"
+          },
+          {
+            "id": "ref:image:4",
+            "role": "omni_reference",
+            "referenceId": "REF-JADE",
+            "note": "生成时的第 4 个图像参考位。"
+          },
+          {
+            "id": "ref:image:5",
+            "role": "omni_reference",
+            "referenceId": "REF-LETTER",
+            "note": "生成时的第 5 个图像参考位。"
+          },
+          {
+            "id": "ref:image:6",
+            "role": "omni_reference",
+            "referenceId": "REF-PLAYER-POV",
+            "note": "生成时的第 6 个图像参考位。"
+          },
+          {
+            "id": "ref:audio:1",
+            "role": "other",
+            "referenceId": "VOICE-PLAYER-A",
+            "note": "生成时的第 1 个声纹参考位。"
+          },
+          {
+            "id": "ref:audio:2",
+            "role": "other",
+            "referenceId": "VOICE-DAIYU",
+            "note": "生成时的第 2 个声纹参考位。"
+          },
+          {
+            "id": "ref:audio:3",
+            "role": "other",
+            "referenceId": "VOICE-BAOYU",
+            "note": "生成时的第 3 个声纹参考位。"
+          }
+        ],
+        "emotionalArc": "克制、真实，以细微反应完成叙事推进。",
+        "beats": [
+          {
+            "id": "beat:full",
+            "startMs": 0,
+            "endMs": 12000,
+            "visual": "以 Image 5 荐书淡红纹为视觉连接，在同一连续运镜里横穿荣禧堂式正厅的三个真实空间层次，绝不做剪辑式蒙太奇。正厅青砖黛瓦、朱漆廊柱、槅扇窗、水磨砖地，天井漏光与窗光交叠，深木、黛青、月白、旧金为主，淡红只在纸与玉的纹理。近处 Image 1 锁定的林黛玉月白交领右衽明制衣裙，合上那封荐书，用 Audio 2 声线看向玩家说记得今日；镜头沿一列朱漆廊柱平稳横移，见 Image 2 锁定的王熙凤深朱克制彩绣明制华服停下翻账动作，抬眼说出记住人的判断，笑意精确、不温柔感动、不落泪；镜头继续到门边，Image 3 锁定的贾宝玉家常装（非盛装大氅），佩 Image 4 通灵宝玉配五色丝绦、项圈、寄名锁、护身符的完整组合，右手握住通灵玉回头，以 Audio 3 声线用轻快而不轻浮的一句收束。三人不是被法术控制，只在同一时刻真实想起玩家做过的选择，绝无红光扫眼、瞬移或齐声。Image 6 玩家第一视角只露黛青袖口，永不露脸。末帧三个空间层次同时安静，远处门扇向内院打开，玩家存在被这座宅子承认。",
+            "camera": "16:9 横屏，第一视角，一镜到底。",
+            "action": "一镜到底、在同一连续运镜里横穿正厅三个真实空间层次，绝不做剪辑式蒙太奇，压成四个核心节拍——起（镜头前段·近处黛玉）：以荐书淡红纹为视觉连接，镜头前段玩家以锁定画外声线（Audio 1）说出愿望——“让今日见过我的人，都记得发生过什么。”，近处林黛玉月白明制衣裙合上荐书、看向玩家，以 Audio 2 声线应下——“今日的事，我记得。”承（镜头中段·廊柱横移到熙凤）：镜头沿一列朱漆廊柱平稳横移，王熙凤深朱克制彩绣华服停下翻账、抬眼，笑意精确、不温柔感动不落泪，道破——“原来不是信认了人，是我们都记住了你。”转（镜头后段·门边宝玉）：镜头继续行到门边，贾宝玉家常装、佩通灵宝玉完整组合，右手握住通灵玉回头，以 Audio 3 声线轻快而不轻浮地收束——“这才好。多一人，故事便不同了。”三人不是被法术控制、只在同一时刻真实想起玩家的选择，绝无红光扫眼、瞬移或齐声。收（末帧稳定态）：三个空间层次同时安静，远处门扇向内院打开，玩家（第一视角只露黛青袖口、永不露脸）的存在被这座宅子承认，末帧稳定。",
+            "performance": "自然克制，不做舞台化夸张表演。",
+            "emotion": "由场景动作自然递进。",
+            "dialogue": "",
+            "audio": "保留同期环境声与已锁定角色声线。",
+            "endState": "末帧进入稳定、可衔接状态。",
+            "continuity": "服装、道具、人物站位与淡红纹路保持连续。"
+          }
+        ],
+        "negativeConstraints": [
+          "不生成可读姓名、字幕、判词或信中文字。",
+          "不使用粒子魔法、仙侠光效、科幻 HUD、剪切、跳时或突然变焦。",
+          "玩家不露脸。"
+        ],
+        "continuityNotes": ["以原 v2 生成规格与现有 1080p 成片为准。"]
+      },
+      {
+        "graphNodeId": "clip:e04-future-unwritten",
+        "clipKey": "E04_FUTURE_UNWRITTEN",
+        "title": "未写·长廊清晨",
+        "description": "未写·长廊清晨（金陵入梦 v2 成片）",
+        "targetDurationMs": 12000,
+        "generationControl": {
+          "mode": "omni_reference"
+        },
+        "masterDirection": "真人古装电影质感的《红楼梦》荣国府场景，第一视角亲密感，表演克制，材质、光线和物理动作可信。荣国府使用深木、黛青、月白与旧金，淡红印纹是唯一强色。超自然只通过纸张、水面、灯火、反射和不可能的淡红纹路出现，不使用粒子魔法、仙侠光效或科幻 HUD。玩家永不露脸。全片 16:9、1920×1080、24fps、一镜到底，无剪切、无跳时、无突然变焦，末帧达到稳定态。\n\n夜间荣国府内院客房，桌上旧金暖灯与窗外冷月两种真实光源，深木家具、槅扇糊纸窗、水磨砖地，黛青与月白为底、旧金点缀。Image 4 玩家第一视角坐桌边，只露中性手部与黛青袖口，永不露脸，把 Image 2 那封旧纸荐书、淡红封印朝上推回桌案正中，绝不替任何人写下结论。Image 1 锁定的林黛玉月白交领右衽明制上襦配浅青白马面裙、素褙子，清瘦不病态、眉眼清冷，看空白纸面后不失望，用 Audio 2 声线轻声说不写也好，再把荐书按原折痕重新折好、保留空白，敛回广袖。两人起身开门，镜头跟随跨出门槛，夜色在连续运动中自然过渡为清晨；远处荣府抄手游廊传来真实生活声，却无人等待颁布结局。画面下缘水面反光短暂形成 Image 3 无字命册那种侧缝线装旧纸页质感，仍无判词、无字。末帧黛玉与玩家沿青砖游廊并肩前行，水光如空白纸页掠过下缘，稳定收束。",
+        "referenceRoleNotes": [
+          {
+            "id": "ref:image:1",
+            "role": "omni_reference",
+            "referenceId": "REF-DAIYU",
+            "note": "生成时的第 1 个图像参考位。"
+          },
+          {
+            "id": "ref:image:2",
+            "role": "omni_reference",
+            "referenceId": "REF-LETTER",
+            "note": "生成时的第 2 个图像参考位。"
+          },
+          {
+            "id": "ref:image:3",
+            "role": "omni_reference",
+            "referenceId": "REF-LEDGER",
+            "note": "生成时的第 3 个图像参考位。"
+          },
+          {
+            "id": "ref:image:4",
+            "role": "omni_reference",
+            "referenceId": "REF-PLAYER-POV",
+            "note": "生成时的第 4 个图像参考位。"
+          },
+          {
+            "id": "ref:audio:1",
+            "role": "other",
+            "referenceId": "VOICE-PLAYER-A",
+            "note": "生成时的第 1 个声纹参考位。"
+          },
+          {
+            "id": "ref:audio:2",
+            "role": "other",
+            "referenceId": "VOICE-DAIYU",
+            "note": "生成时的第 2 个声纹参考位。"
+          }
+        ],
+        "emotionalArc": "克制、真实，以细微反应完成叙事推进。",
+        "beats": [
+          {
+            "id": "beat:full",
+            "startMs": 0,
+            "endMs": 12000,
+            "visual": "夜间荣国府内院客房，桌上旧金暖灯与窗外冷月两种真实光源，深木家具、槅扇糊纸窗、水磨砖地，黛青与月白为底、旧金点缀。Image 4 玩家第一视角坐桌边，只露中性手部与黛青袖口，永不露脸，把 Image 2 那封旧纸荐书、淡红封印朝上推回桌案正中，绝不替任何人写下结论。Image 1 锁定的林黛玉月白交领右衽明制上襦配浅青白马面裙、素褙子，清瘦不病态、眉眼清冷，看空白纸面后不失望，用 Audio 2 声线轻声说不写也好，再把荐书按原折痕重新折好、保留空白，敛回广袖。两人起身开门，镜头跟随跨出门槛，夜色在连续运动中自然过渡为清晨；远处荣府抄手游廊传来真实生活声，却无人等待颁布结局。画面下缘水面反光短暂形成 Image 3 无字命册那种侧缝线装旧纸页质感，仍无判词、无字。末帧黛玉与玩家沿青砖游廊并肩前行，水光如空白纸页掠过下缘，稳定收束。",
+            "camera": "16:9 横屏，第一视角，一镜到底。",
+            "action": "一镜到底、留白克制的电影节奏，压成四个核心节拍——起（镜头前段）：夜间客房桌案，玩家第一视角只露黛青袖口，以锁定画外声线（Audio 1）把那封旧纸荐书、淡红封印朝上推回桌案正中，绝不替任何人写下结论——镜头前段自然说出：“谁也不替谁写。让它继续空着。”承（镜头中段）：林黛玉月白明制衣裙看空白纸面后不失望，以 Audio 2 声线轻声接受，随后把荐书按原折痕重新折好、保留空白、敛回广袖——“不写也好。”“来日的事，留待来日。”转（镜头后段）：两人起身开门，镜头跟随跨出门槛，夜色在连续运动中自然过渡为清晨，远处抄手游廊传来真实生活声、却无人等待颁布结局。收（末帧稳定态）：黛玉与玩家沿青砖游廊并肩前行，画面下缘水面反光短暂形成无字命册那种侧缝线装旧纸页质感、如空白纸页掠过，仍无判词、无字，节奏克制，末帧稳定收束。",
+            "performance": "自然克制，不做舞台化夸张表演。",
+            "emotion": "由场景动作自然递进。",
+            "dialogue": "",
+            "audio": "保留同期环境声与已锁定角色声线。",
+            "endState": "末帧进入稳定、可衔接状态。",
+            "continuity": "服装、道具、人物站位与淡红纹路保持连续。"
+          }
+        ],
+        "negativeConstraints": [
+          "不生成可读姓名、字幕、判词或信中文字。",
+          "不使用粒子魔法、仙侠光效、科幻 HUD、剪切、跳时或突然变焦。",
+          "玩家不露脸。"
+        ],
+        "continuityNotes": ["以原 v2 生成规格与现有 1080p 成片为准。"]
+      }
+    ],
+    "trailerPrompt": null,
+    "productionNotes": [
+      "由《金陵入梦：无字来客》v2 的 26 条 Seedance 2.0 成片导入。",
+      "等待片段暂作为时间码 0 出现选择的普通影片节点；循环等待 UI 语义后续单独抽象。"
+    ]
+  },
+  "canvasLayout": {
+    "clip:scene-27": {
+      "x": 1948.047157212383,
+      "y": 448.3810432114543
+    },
+    "__story_root__": {
+      "x": -216.66666666666666,
+      "y": -211.53846153846155
+    },
+    "clip:c1-r01-brocade": {
+      "x": 2100,
+      "y": -220
+    },
+    "clip:s04-jade-throw": {
+      "x": 5460,
+      "y": 0
+    },
+    "clip:c1-r02-old-seal": {
+      "x": 2100,
+      "y": 0
+    },
+    "__ending__:ending:e01": {
+      "x": 8820,
+      "y": -330
+    },
+    "__ending__:ending:e02": {
+      "x": 8820,
+      "y": -110
+    },
+    "__ending__:ending:e03": {
+      "x": 8820,
+      "y": 110
+    },
+    "__ending__:ending:e04": {
+      "x": 8820,
+      "y": 330
+    },
+    "clip:s01-gate-arrival": {
+      "x": 840,
+      "y": 0
+    },
+    "clip:c3-r01-catch-jade": {
+      "x": 6300,
+      "y": -330
+    },
+    "clip:e02-name-in-house": {
+      "x": 8400,
+      "y": -110
+    },
+    "clip:e03-memory-shared": {
+      "x": 8400,
+      "y": 110
+    },
+    "clip:s03-jiamu-reunion": {
+      "x": 4230.680178816731,
+      "y": -0.06810581533673599
+    },
+    "clip:s04-baoyu-arrival": {
+      "x": 5040,
+      "y": 0
+    },
+    "clip:s05-letter-reveal": {
+      "x": 7140,
+      "y": 0
+    },
+    "clip:w01-identity-wait": {
+      "x": 1287.8526428377972,
+      "y": -5.305265302437562
+    },
+    "clip:w02-corridor-wait": {
+      "x": 3003.1927011938624,
+      "y": 15.130646764727686
+    },
+    "clip:p00-ledger-opening": {
+      "x": 420,
+      "y": 0
+    },
+    "clip:c3-r02-shield-daiyu": {
+      "x": 6300,
+      "y": -110
+    },
+    "clip:s02-corridor-crisis": {
+      "x": 2536.2114247369896,
+      "y": 29.72094535114715
+    },
+    "clip:s03-xifeng-boundary": {
+      "x": 4620,
+      "y": 0
+    },
+    "clip:c2-r01-protect-daiyu": {
+      "x": 3780,
+      "y": -220
+    },
+    "clip:e04-future-unwritten": {
+      "x": 8400,
+      "y": 330
+    },
+    "clip:c1-r03-medicine-pouch": {
+      "x": 2051.510630270765,
+      "y": 450.657547923189
+    },
+    "clip:c2-r02-steady-lantern": {
+      "x": 3785.1001271045875,
+      "y": 260.10648233395847
+    },
+    "clip:c2-r03-protect-letter": {
+      "x": 3792.2137804958456,
+      "y": 424.3032373850479
+    },
+    "clip:c3-r03-call-household": {
+      "x": 6300,
+      "y": 110
+    },
+    "clip:e01-spring-with-daiyu": {
+      "x": 8400,
+      "y": -330
+    },
+    "clip:s05-daiyu-night-visit": {
+      "x": 6720,
+      "y": 0
+    },
+    "clip:w03-final-choice-wait": {
+      "x": 7560,
+      "y": 0
+    },
+    "clip:c3-r04-observe-pattern": {
+      "x": 6300,
+      "y": 330
+    },
+    "__decision__:clip:s04-jade-throw": {
+      "x": 5880,
+      "y": 0
+    },
+    "__decision__:clip:w01-identity-wait": {
+      "x": 1680,
+      "y": 0
+    },
+    "__decision__:clip:w02-corridor-wait": {
+      "x": 3389.960902373377,
+      "y": 19.564441048658566
+    },
+    "__decision__:clip:w03-final-choice-wait": {
+      "x": 7980,
+      "y": 0
+    }
+  },
+  "clips": [
+    {
+      "graphNodeId": "clip:p00-ledger-opening",
+      "media": {
+        "externalUrl": "https://fizzdragonblob.blob.core.windows.net/foundry-outputs/interactive-films/jinling-rumeng/s01/v2/film-cut/p00-ledger-opening.mp4",
+        "contentType": "video/mp4",
+        "sizeBytes": "11022329",
+        "width": 1920,
+        "height": 1080,
+        "durationSeconds": 12,
+        "checksumSha256": "c6627709171b49b76d8e988965af8479f425a8a76c08d92be69a8d2b027e205d"
+      }
+    },
+    {
+      "graphNodeId": "clip:s01-gate-arrival",
+      "media": {
+        "externalUrl": "https://fizzdragonblob.blob.core.windows.net/foundry-outputs/interactive-films/jinling-rumeng/s01/v2/film-cut/s01-gate-arrival.mp4",
+        "contentType": "video/mp4",
+        "sizeBytes": "9091872",
+        "width": 1920,
+        "height": 1080,
+        "durationSeconds": 12,
+        "checksumSha256": "f23fd9575ae85a112f36e29570a1cf1c90792730757bf1e98af97bbd965f42c2"
+      }
+    },
+    {
+      "graphNodeId": "clip:w01-identity-wait",
+      "media": {
+        "externalUrl": "https://fizzdragonblob.blob.core.windows.net/foundry-outputs/interactive-films/jinling-rumeng/s01/v2/film-cut/w01-identity-wait.mp4",
+        "contentType": "video/mp4",
+        "sizeBytes": "8652451",
+        "width": 1920,
+        "height": 1080,
+        "durationSeconds": 12,
+        "checksumSha256": "90a2016118b56ebe68ffb5118b1f98e838a8f477e423cd2485a58b3cc0beddb1"
+      }
+    },
+    {
+      "graphNodeId": "clip:c1-r01-brocade",
+      "media": {
+        "externalUrl": "https://fizzdragonblob.blob.core.windows.net/foundry-outputs/interactive-films/jinling-rumeng/s01/v2/film-cut/c1-r01-brocade.mp4",
+        "contentType": "video/mp4",
+        "sizeBytes": "9039577",
+        "width": 1920,
+        "height": 1080,
+        "durationSeconds": 12,
+        "checksumSha256": "3831bb0c4cec400533db302d2a5ad80f8a0187f921f9bf90462b238651949b41"
+      }
+    },
+    {
+      "graphNodeId": "clip:c1-r02-old-seal",
+      "media": {
+        "externalUrl": "https://fizzdragonblob.blob.core.windows.net/foundry-outputs/interactive-films/jinling-rumeng/s01/v2/film-cut/c1-r02-old-seal.mp4",
+        "contentType": "video/mp4",
+        "sizeBytes": "10591101",
+        "width": 1920,
+        "height": 1080,
+        "durationSeconds": 12,
+        "checksumSha256": "bf4675dec452d7050a62f09ace8d996c435a5ab2f4338c8b40e04c11badb5c39"
+      }
+    },
+    {
+      "graphNodeId": "clip:c1-r03-medicine-pouch",
+      "media": {
+        "externalUrl": "https://fizzdragonblob.blob.core.windows.net/foundry-outputs/interactive-films/jinling-rumeng/s01/v2/film-cut/c1-r03-medicine-pouch.mp4",
+        "contentType": "video/mp4",
+        "sizeBytes": "10054033",
+        "width": 1920,
+        "height": 1080,
+        "durationSeconds": 12,
+        "checksumSha256": "aace79a6d62a5161eaaae3e17ed053b289314290f2c7eef3307cb3893d8b799a"
+      }
+    },
+    {
+      "graphNodeId": "clip:s02-corridor-crisis",
+      "media": {
+        "externalUrl": "https://fizzdragonblob.blob.core.windows.net/foundry-outputs/interactive-films/jinling-rumeng/s01/v2/film-cut/s02-corridor-crisis.mp4",
+        "contentType": "video/mp4",
+        "sizeBytes": "10045708",
+        "width": 1920,
+        "height": 1080,
+        "durationSeconds": 12,
+        "checksumSha256": "fa47bef331dcdc8af025fb5527ee5072e0116e000704ae378e3e9e2fa7641d1b"
+      }
+    },
+    {
+      "graphNodeId": "clip:w02-corridor-wait",
+      "media": {
+        "externalUrl": "https://fizzdragonblob.blob.core.windows.net/foundry-outputs/interactive-films/jinling-rumeng/s01/v2/film-cut/w02-corridor-wait.mp4",
+        "contentType": "video/mp4",
+        "sizeBytes": "10751002",
+        "width": 1920,
+        "height": 1080,
+        "durationSeconds": 12,
+        "checksumSha256": "d5a40c21b774db56082d6505cc51a4e3f33d71148f67de662a58bc38bb1f530b"
+      }
+    },
+    {
+      "graphNodeId": "clip:c2-r01-protect-daiyu",
+      "media": {
+        "externalUrl": "https://fizzdragonblob.blob.core.windows.net/foundry-outputs/interactive-films/jinling-rumeng/s01/v2/film-cut/c2-r01-protect-daiyu.mp4",
+        "contentType": "video/mp4",
+        "sizeBytes": "9811999",
+        "width": 1920,
+        "height": 1080,
+        "durationSeconds": 12,
+        "checksumSha256": "e29d8157a0bfbc689da7a8c166155d9c73d603243060ce1eaed272314bf30737"
+      }
+    },
+    {
+      "graphNodeId": "clip:c2-r02-steady-lantern",
+      "media": {
+        "externalUrl": "https://fizzdragonblob.blob.core.windows.net/foundry-outputs/interactive-films/jinling-rumeng/s01/v2/film-cut/c2-r02-steady-lantern.mp4",
+        "contentType": "video/mp4",
+        "sizeBytes": "11269309",
+        "width": 1920,
+        "height": 1080,
+        "durationSeconds": 12,
+        "checksumSha256": "2d53d2d05b79348901fc0c3d2ce8ac5a5910b69a5b1b3eafa62d3a8b34f51e59"
+      }
+    },
+    {
+      "graphNodeId": "clip:c2-r03-protect-letter",
+      "media": {
+        "externalUrl": "https://fizzdragonblob.blob.core.windows.net/foundry-outputs/interactive-films/jinling-rumeng/s01/v2/film-cut/c2-r03-protect-letter.mp4",
+        "contentType": "video/mp4",
+        "sizeBytes": "8446246",
+        "width": 1920,
+        "height": 1080,
+        "durationSeconds": 12,
+        "checksumSha256": "69a89320b65b9d5e7f7b1739223f7ff5e94c226a6d83f14968c0db802cb12e44"
+      }
+    },
+    {
+      "graphNodeId": "clip:s03-jiamu-reunion",
+      "media": {
+        "externalUrl": "https://fizzdragonblob.blob.core.windows.net/foundry-outputs/interactive-films/jinling-rumeng/s01/v2/film-cut/s03-jiamu-reunion.mp4",
+        "contentType": "video/mp4",
+        "sizeBytes": "9798640",
+        "width": 1920,
+        "height": 1080,
+        "durationSeconds": 12,
+        "checksumSha256": "5a6f7e15d7d111f20e1391b9d3ced8aabc5a55d38cbf2e08d3d185ea5a22a6fa"
+      }
+    },
+    {
+      "graphNodeId": "clip:s03-xifeng-boundary",
+      "media": {
+        "externalUrl": "https://fizzdragonblob.blob.core.windows.net/foundry-outputs/interactive-films/jinling-rumeng/s01/v2/film-cut/s03-xifeng-boundary.mp4",
+        "contentType": "video/mp4",
+        "sizeBytes": "10315155",
+        "width": 1920,
+        "height": 1080,
+        "durationSeconds": 12,
+        "checksumSha256": "dfa08dc14ae52482ec2c9fc6427cb4ec2d49b3a49316908ea3c203825e130aa4"
+      }
+    },
+    {
+      "graphNodeId": "clip:s04-baoyu-arrival",
+      "media": {
+        "externalUrl": "https://fizzdragonblob.blob.core.windows.net/foundry-outputs/interactive-films/jinling-rumeng/s01/v2/film-cut/s04-baoyu-arrival.mp4",
+        "contentType": "video/mp4",
+        "sizeBytes": "7873856",
+        "width": 1920,
+        "height": 1080,
+        "durationSeconds": 12,
+        "checksumSha256": "4ff897bcc3d9c12b185c8fac46ccc409d15d19398841b4135680dd63be47d9c7"
+      }
+    },
+    {
+      "graphNodeId": "clip:s04-jade-throw",
+      "media": {
+        "externalUrl": "https://fizzdragonblob.blob.core.windows.net/foundry-outputs/interactive-films/jinling-rumeng/s01/v2/film-cut/s04-jade-throw.mp4",
+        "contentType": "video/mp4",
+        "sizeBytes": "8823408",
+        "width": 1920,
+        "height": 1080,
+        "durationSeconds": 12,
+        "checksumSha256": "74aec7ea0f4d8aef0e0cd2e112731787284ff914ca48063b35077aa2ec5f59ba"
+      }
+    },
+    {
+      "graphNodeId": "clip:c3-r01-catch-jade",
+      "media": {
+        "externalUrl": "https://fizzdragonblob.blob.core.windows.net/foundry-outputs/interactive-films/jinling-rumeng/s01/v2/film-cut/c3-r01-catch-jade.mp4",
+        "contentType": "video/mp4",
+        "sizeBytes": "6977811",
+        "width": 1920,
+        "height": 1080,
+        "durationSeconds": 12,
+        "checksumSha256": "1bbf38323a6e12db606f38d16c86f4c2af361cf060e4cc10125603a69afed3d3"
+      }
+    },
+    {
+      "graphNodeId": "clip:c3-r02-shield-daiyu",
+      "media": {
+        "externalUrl": "https://fizzdragonblob.blob.core.windows.net/foundry-outputs/interactive-films/jinling-rumeng/s01/v2/film-cut/c3-r02-shield-daiyu.mp4",
+        "contentType": "video/mp4",
+        "sizeBytes": "11222995",
+        "width": 1920,
+        "height": 1080,
+        "durationSeconds": 12,
+        "checksumSha256": "8867f21f80acbc12c485bcb1644b5055bf7b0f56ac20c21bd693e1404e3c7e63"
+      }
+    },
+    {
+      "graphNodeId": "clip:c3-r03-call-household",
+      "media": {
+        "externalUrl": "https://fizzdragonblob.blob.core.windows.net/foundry-outputs/interactive-films/jinling-rumeng/s01/v2/film-cut/c3-r03-call-household.mp4",
+        "contentType": "video/mp4",
+        "sizeBytes": "8772676",
+        "width": 1920,
+        "height": 1080,
+        "durationSeconds": 12,
+        "checksumSha256": "9a596d312aa37c502ec0e256fae5a7768cc354a25e045c19cfaaeffcc52cf4d2"
+      }
+    },
+    {
+      "graphNodeId": "clip:c3-r04-observe-pattern",
+      "media": {
+        "externalUrl": "https://fizzdragonblob.blob.core.windows.net/foundry-outputs/interactive-films/jinling-rumeng/s01/v2/film-cut/c3-r04-observe-pattern.mp4",
+        "contentType": "video/mp4",
+        "sizeBytes": "14261418",
+        "width": 1920,
+        "height": 1080,
+        "durationSeconds": 12,
+        "checksumSha256": "e51b1e1ba38af4f5470b8d31f8b74d84fb33649a7707a9bd14daba4f60581538"
+      }
+    },
+    {
+      "graphNodeId": "clip:s05-daiyu-night-visit",
+      "media": {
+        "externalUrl": "https://fizzdragonblob.blob.core.windows.net/foundry-outputs/interactive-films/jinling-rumeng/s01/v2/film-cut/s05-daiyu-night-visit.mp4",
+        "contentType": "video/mp4",
+        "sizeBytes": "7417704",
+        "width": 1920,
+        "height": 1080,
+        "durationSeconds": 12,
+        "checksumSha256": "b770b0814cd3389d8d37065fa47dd818d6fdac53135b45ff8f8eb4d1ed8f1c6d"
+      }
+    },
+    {
+      "graphNodeId": "clip:s05-letter-reveal",
+      "media": {
+        "externalUrl": "https://fizzdragonblob.blob.core.windows.net/foundry-outputs/interactive-films/jinling-rumeng/s01/v2/film-cut/s05-letter-reveal.mp4",
+        "contentType": "video/mp4",
+        "sizeBytes": "6390568",
+        "width": 1920,
+        "height": 1080,
+        "durationSeconds": 12,
+        "checksumSha256": "a5eaaee8d95841e28f1d0bce6e0cd74f399243e1a2ce8af6a1f1266404d51418"
+      }
+    },
+    {
+      "graphNodeId": "clip:w03-final-choice-wait",
+      "media": {
+        "externalUrl": "https://fizzdragonblob.blob.core.windows.net/foundry-outputs/interactive-films/jinling-rumeng/s01/v2/film-cut/w03-final-choice-wait.mp4",
+        "contentType": "video/mp4",
+        "sizeBytes": "5662107",
+        "width": 1920,
+        "height": 1080,
+        "durationSeconds": 12,
+        "checksumSha256": "268dcb7507b836872d5b84e2e411f48cdc7ce8ab253fceb673391a5877594087"
+      }
+    },
+    {
+      "graphNodeId": "clip:e01-spring-with-daiyu",
+      "media": {
+        "externalUrl": "https://fizzdragonblob.blob.core.windows.net/foundry-outputs/interactive-films/jinling-rumeng/s01/v2/film-cut/e01-spring-with-daiyu.mp4",
+        "contentType": "video/mp4",
+        "sizeBytes": "8180554",
+        "width": 1920,
+        "height": 1080,
+        "durationSeconds": 12,
+        "checksumSha256": "c8942a5b1467b4b6bef05ed2a6b247da20bd23f98b1061781e4fd07a56f9e72c"
+      }
+    },
+    {
+      "graphNodeId": "clip:e02-name-in-house",
+      "media": {
+        "externalUrl": "https://fizzdragonblob.blob.core.windows.net/foundry-outputs/interactive-films/jinling-rumeng/s01/v2/film-cut/e02-name-in-house.mp4",
+        "contentType": "video/mp4",
+        "sizeBytes": "9026523",
+        "width": 1920,
+        "height": 1080,
+        "durationSeconds": 12,
+        "checksumSha256": "491485d75cc990403dd11be0a1734ca27146193e5a2372e9a89627e6e756cd50"
+      }
+    },
+    {
+      "graphNodeId": "clip:e03-memory-shared",
+      "media": {
+        "externalUrl": "https://fizzdragonblob.blob.core.windows.net/foundry-outputs/interactive-films/jinling-rumeng/s01/v2/film-cut/e03-memory-shared.mp4",
+        "contentType": "video/mp4",
+        "sizeBytes": "12373587",
+        "width": 1920,
+        "height": 1080,
+        "durationSeconds": 12,
+        "checksumSha256": "6a38ea1217538e582ede40f602a2ab13e6903a426e53b01db4e272c73726f3b5"
+      }
+    },
+    {
+      "graphNodeId": "clip:e04-future-unwritten",
+      "media": {
+        "externalUrl": "https://fizzdragonblob.blob.core.windows.net/foundry-outputs/interactive-films/jinling-rumeng/s01/v2/film-cut/e04-future-unwritten.mp4",
+        "contentType": "video/mp4",
+        "sizeBytes": "9571795",
+        "width": 1920,
+        "height": 1080,
+        "durationSeconds": 12,
+        "checksumSha256": "99d1769e027c3222b11685d4544c26508c851ad970e59754187a93fd01ada982"
+      }
+    }
+  ]
+}

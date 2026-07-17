@@ -2,7 +2,7 @@
 --
 -- Interactive-film output orientation is selected once, at project creation,
 -- then owned by StoryProject for the entire production lifecycle. Existing
--- local Story Studio projects (including 虎豹别墅) were authored at 16:9 and
+-- Story Studio projects were authored at 16:9 and
 -- are therefore backfilled to the landscape contract.
 
 CREATE TYPE "StoryFrameProfile" AS ENUM (

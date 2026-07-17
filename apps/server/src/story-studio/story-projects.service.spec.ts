@@ -16,7 +16,7 @@ import {
   type InteractiveFilmDraftContent,
   type StoryProjectSummaryDto,
 } from './dto';
-import { buildHuBaoVillaImportBundle } from './import/hu-bao-villa.builder';
+import type { StoryTrailerPromptDraft } from './interactive-film.schema';
 import { projectStoryFilmRevision } from './story-film-revision-projector';
 import { StoryProjectsService } from './story-projects.service';
 
@@ -26,7 +26,7 @@ const PROJECT_ID = '0197f4a2-0800-7000-8000-000000000002';
 const DRAFT_ID = '0197f4a2-0800-7000-8000-000000000003';
 const REVISION_ID = '0197f4a2-0800-7000-8000-000000000004';
 const MODEL_ID = '0197f4a2-0800-7000-8000-000000000005';
-const TAKE_ID = '0197f4a2-0800-7000-8000-000000000006';
+const VIDEO_ASSET_ID = '0197f4a2-0800-7000-8000-000000000006';
 const MODEL_SLUG = 'story-video-model';
 const NOW = new Date('2026-07-12T12:00:00.000Z');
 
@@ -47,8 +47,6 @@ function projectRow(overrides: Record<string, unknown> = {}) {
     tags: [],
     sourceIpId: null,
     nextBuildNumber: 1,
-    nextReleaseVersion: 1,
-    publishRevision: 0,
     version: 3,
     createdByUserId: USER.userId,
     archivedAt: null,
@@ -68,10 +66,9 @@ function summaryProject(overrides: Record<string, unknown> = {}) {
       contentHash: canonicalJsonHash(content),
     },
     revisions: [],
-    deployments: [],
     members: [{ userId: USER.userId, role: StoryProjectMemberRole.owner }],
     filmReferenceSlots: [],
-    filmClips: [],
+    filmClipHeads: [],
     builds: [],
     ...overrides,
   });
@@ -210,6 +207,39 @@ function lockableDraft(): InteractiveFilmDraftContent {
   };
 }
 
+function trailerDraft(
+  overrides: Partial<StoryTrailerPromptDraft> = {},
+): StoryTrailerPromptDraft {
+  return {
+    title: '15-second trailer',
+    description: 'A promotional root video.',
+    targetDurationMs: 15_000,
+    generationControl: { mode: 'omni_reference' },
+    masterDirection: 'Build restrained dread without revealing the ending.',
+    referenceRoleNotes: [],
+    emotionalArc: 'Curiosity becomes danger.',
+    beats: [
+      {
+        id: 'trailer:beat:1',
+        startMs: 0,
+        endMs: 15_000,
+        visual: 'The dragon gate emerges from the rain.',
+        camera: 'Slow controlled push toward the gate.',
+        action: 'The two visitors stop as the cassette starts.',
+        performance: '',
+        emotion: '',
+        dialogue: '',
+        audio: 'Tape hiss and wet night ambience.',
+        endState: 'Hold on the open dragon mouth.',
+        continuity: '',
+      },
+    ],
+    negativeConstraints: ['Do not reveal an ending.'],
+    continuityNotes: [],
+    ...overrides,
+  };
+}
+
 function makeHarness(
   options: {
     permissionError?: Error;
@@ -221,14 +251,15 @@ function makeHarness(
     existingRevision?: ReturnType<typeof revisionRow> | null;
     existingFilmSpec?: Record<string, unknown> | null;
     existingFilmClips?: Array<Record<string, unknown>>;
+    priorFilmClips?: Array<Record<string, unknown>>;
     existingFilmTrailer?: Record<string, unknown> | null;
+    priorFilmTrailer?: Record<string, unknown> | null;
     modelGenerationModes?: string[];
     workbenchRevision?: ReturnType<typeof revisionRow> | null;
     workbenchFilmSpec?: Record<string, unknown> | null;
     workbenchFilmClips?: Array<Record<string, unknown>>;
-    workbenchCarriedClips?: Array<Record<string, unknown>>;
     workbenchFilmTrailer?: Record<string, unknown> | null;
-    activeProduction?: { releaseId: string } | null;
+    workbenchBuild?: Record<string, unknown> | null;
     canvasLayoutUpdateCount?: number;
     currentCanvasLayout?: ReturnType<typeof canvasLayoutRow> | null;
     transactionCanvasLayout?: ReturnType<typeof canvasLayoutRow> | null;
@@ -291,25 +322,39 @@ function makeHarness(
       create: jest.fn(({ data }: { data: Record<string, unknown> }) => data),
     },
     storyFilmClip: {
-      findMany: jest.fn((args?: { where?: { masterTakeId?: unknown } }) =>
-        args?.where?.masterTakeId
-          ? (options.workbenchCarriedClips ?? [])
-          : (options.workbenchFilmClips ?? options.existingFilmClips ?? []),
+      findMany: jest.fn(
+        (args?: { where?: { revisionId?: string | { not?: string } } }) =>
+          typeof args?.where?.revisionId === 'object'
+            ? (options.priorFilmClips ?? [])
+            : (options.workbenchFilmClips ?? options.existingFilmClips ?? []),
       ),
       create: jest.fn(({ data }: { data: Record<string, unknown> }) => data),
+    },
+    storyFilmClipHead: {
+      findMany: jest.fn(() =>
+        (options.workbenchFilmClips ?? []).map((clip) => ({ clip })),
+      ),
     },
     storyFilmTrailer: {
       findUnique: jest.fn(
         () =>
           options.workbenchFilmTrailer ?? options.existingFilmTrailer ?? null,
       ),
+      findFirst: jest.fn(() => options.priorFilmTrailer ?? null),
       create: jest.fn(({ data }: { data: Record<string, unknown> }) => data),
+    },
+    storyFilmTrailerHead: {
+      findUnique: jest.fn(() => {
+        const trailer =
+          options.workbenchFilmTrailer ?? options.existingFilmTrailer ?? null;
+        return trailer ? { trailer } : null;
+      }),
     },
     storyFilmReferenceSlot: {
       findMany: jest.fn(() => []),
     },
     storyBuild: {
-      findFirst: jest.fn(() => null),
+      findFirst: jest.fn(() => options.workbenchBuild ?? null),
     },
     aiCanonicalModel: {
       findUnique: jest.fn(() => ({
@@ -398,23 +443,27 @@ function makeHarness(
       findUnique: jest.fn(() => options.workbenchFilmSpec ?? null),
     },
     storyFilmClip: {
-      findMany: jest.fn((args?: { where?: { masterTakeId?: unknown } }) =>
-        args?.where?.masterTakeId
-          ? (options.workbenchCarriedClips ?? [])
-          : (options.workbenchFilmClips ?? []),
+      findMany: jest.fn(() => options.workbenchFilmClips ?? []),
+    },
+    storyFilmClipHead: {
+      findMany: jest.fn(() =>
+        (options.workbenchFilmClips ?? []).map((clip) => ({ clip })),
       ),
     },
     storyFilmTrailer: {
       findUnique: jest.fn(() => options.workbenchFilmTrailer ?? null),
+    },
+    storyFilmTrailerHead: {
+      findUnique: jest.fn(() => {
+        const trailer = options.workbenchFilmTrailer ?? null;
+        return trailer ? { trailer } : null;
+      }),
     },
     storyFilmReferenceSlot: {
       findMany: jest.fn(() => []),
     },
     storyBuild: {
       findFirst: jest.fn(() => null),
-    },
-    storyDeployment: {
-      findFirst: jest.fn(() => options.activeProduction ?? null),
     },
     $transaction: jest.fn(
       (operation: (client: typeof tx) => Promise<unknown>) => operation(tx),
@@ -456,7 +505,7 @@ describe('StoryProjectsService.create', () => {
     const result = await service.create(USER as never, WORKSPACE_ID, {
       format: 'interactive_film',
       frameProfile: 'portrait_9_16',
-      title: '虎豹别墅：龙口入夜',
+      title: 'Branching Film Test',
       defaultLocale: 'zh-CN',
       visibility: 'private',
     });
@@ -509,9 +558,9 @@ describe('StoryProjectsService current-draft production readiness', () => {
     ).toProjectSummary(row, USER.userId);
   }
 
-  it('does not let an older materialized revision make the current draft look ready', () => {
+  it('preserves a project current video across draft revisions', () => {
     const { service } = makeHarness();
-    const draft = buildHuBaoVillaImportBundle().draftContent;
+    const draft = lockableDraft();
     const row = summaryProject({
       draft: {
         revision: 9,
@@ -531,60 +580,51 @@ describe('StoryProjectsService current-draft production readiness', () => {
           approvedVersionId: MODEL_ID,
         },
       ],
-      filmClips: [
+      filmClipHeads: [
         {
-          revisionId: REVISION_ID,
-          generationMode: 'frame_lock',
-          frameMode: 'first_frame',
-          masterTakeId: TAKE_ID,
-          references: [],
+          clip: {
+            graphNodeId: 'node.opening',
+            revisionId: REVISION_ID,
+            currentVideoAssetId: VIDEO_ASSET_ID,
+            latestGenerationAttempt: null,
+          },
         },
       ],
     });
 
     expect(projectSummary(service, row).production).toMatchObject({
-      clipCount: 21,
-      approvedMasterCount: 0,
+      clipCount: 1,
+      currentVideoCount: 1,
+      generatingClipCount: 0,
       referenceSlotCount: 0,
-      nextBlocker: {
-        code: 'CURRENT_DRAFT_PRODUCTION_PREPARATION_REQUIRED',
-      },
     });
   });
 
-  it('counts unmaterialized current-draft shots instead of reporting a partial snapshot ready', () => {
+  it('reports neutral current-video and active-generation counts', () => {
     const { service } = makeHarness();
-    const draft = buildHuBaoVillaImportBundle().draftContent;
+    const draft = lockableDraft();
     const contentHash = canonicalJsonHash(draft);
     const row = summaryProject({
       draft: { revision: 9, content: draft, contentHash },
       revisions: [
         revisionRow({ sourceDraftRevision: 9, contentHash, content: draft }),
       ],
-      filmClips: [
+      filmClipHeads: [
         {
-          revisionId: REVISION_ID,
-          generationMode: 'frame_lock',
-          frameMode: 'first_frame',
-          masterTakeId: TAKE_ID,
-          references: [
-            {
-              role: 'first_frame',
-              required: true,
-              referenceSlot: { approvedVersionId: MODEL_ID },
-            },
-          ],
+          clip: {
+            graphNodeId: 'node.opening',
+            revisionId: REVISION_ID,
+            currentVideoAssetId: VIDEO_ASSET_ID,
+            latestGenerationAttempt: { status: 'running' },
+          },
         },
       ],
     });
 
     expect(projectSummary(service, row).production).toMatchObject({
-      clipCount: 21,
-      approvedMasterCount: 1,
-      nextBlocker: {
-        code: 'CURRENT_DRAFT_PRODUCTION_PREPARATION_REQUIRED',
-        message: '20 current draft shots need production preparation.',
-      },
+      clipCount: 1,
+      currentVideoCount: 1,
+      generatingClipCount: 1,
     });
   });
 });
@@ -738,6 +778,107 @@ describe('StoryProjectsService canvas layout CAS', () => {
 });
 
 describe('StoryProjectsService draft CAS', () => {
+  it('does not advance the draft revision for an identical canonical payload', async () => {
+    const current = draftRow({
+      revision: 3,
+      content: EMPTY_INTERACTIVE_FILM_DRAFT_CONTENT,
+    });
+    const { service, tx } = makeHarness({ transactionDraft: current });
+
+    const saved = await service.putDraft(
+      USER as never,
+      WORKSPACE_ID,
+      PROJECT_ID,
+      {
+        expectedRevision: 3,
+        schemaVersion: INTERACTIVE_FILM_DRAFT_SCHEMA_VERSION,
+        content: EMPTY_INTERACTIVE_FILM_DRAFT_CONTENT,
+        sessionId: 'session-b',
+      },
+    );
+
+    expect(saved).toMatchObject({
+      revision: 3,
+      contentHash: current.contentHash,
+      updatedBySessionId: 'session-a',
+    });
+    expect(tx.storyDraft.updateMany).not.toHaveBeenCalled();
+    expect(tx.storyProject.update).not.toHaveBeenCalled();
+  });
+
+  it('advances the draft revision exactly once for changed content', async () => {
+    const current = draftRow({
+      revision: 3,
+      content: EMPTY_INTERACTIVE_FILM_DRAFT_CONTENT,
+    });
+    const next = lockableDraft();
+    const stored = draftRow({ revision: 4, content: next });
+    const { service, tx } = makeHarness({ transactionDraft: current });
+    tx.storyDraft.findUnique
+      .mockResolvedValueOnce(current)
+      .mockResolvedValueOnce(stored);
+
+    const saved = await service.putDraft(
+      USER as never,
+      WORKSPACE_ID,
+      PROJECT_ID,
+      {
+        expectedRevision: 3,
+        schemaVersion: INTERACTIVE_FILM_DRAFT_SCHEMA_VERSION,
+        content: next,
+        sessionId: 'session-b',
+      },
+    );
+
+    expect(saved).toMatchObject({
+      revision: 4,
+      contentHash: canonicalJsonHash(next),
+    });
+    expect(tx.storyDraft.updateMany).toHaveBeenCalledTimes(1);
+    expect(tx.storyProject.update).toHaveBeenCalledTimes(1);
+  });
+
+  it('advances the draft revision when only the schema version changes', async () => {
+    const current = draftRow({
+      revision: 3,
+      schemaVersion: 'interactive-film-draft-v1',
+      content: EMPTY_INTERACTIVE_FILM_DRAFT_CONTENT,
+    });
+    const stored = draftRow({
+      revision: 4,
+      schemaVersion: INTERACTIVE_FILM_DRAFT_SCHEMA_VERSION,
+      content: EMPTY_INTERACTIVE_FILM_DRAFT_CONTENT,
+    });
+    const { service, tx } = makeHarness({ transactionDraft: current });
+    tx.storyDraft.findUnique
+      .mockResolvedValueOnce(current)
+      .mockResolvedValueOnce(stored);
+
+    const saved = await service.putDraft(
+      USER as never,
+      WORKSPACE_ID,
+      PROJECT_ID,
+      {
+        expectedRevision: 3,
+        schemaVersion: INTERACTIVE_FILM_DRAFT_SCHEMA_VERSION,
+        content: EMPTY_INTERACTIVE_FILM_DRAFT_CONTENT,
+        sessionId: 'session-b',
+      },
+    );
+
+    expect(saved).toMatchObject({
+      revision: 4,
+      schemaVersion: INTERACTIVE_FILM_DRAFT_SCHEMA_VERSION,
+    });
+    const updateCalls = tx.storyDraft.updateMany.mock.calls as unknown as Array<
+      [{ data: Record<string, unknown> }]
+    >;
+    expect(updateCalls[0]?.[0].data).toMatchObject({
+      schemaVersion: INTERACTIVE_FILM_DRAFT_SCHEMA_VERSION,
+      revision: { increment: 1 },
+    });
+  });
+
   it('returns the complete current draft on a stale save', async () => {
     const { service } = makeHarness({ draftUpdateCount: 0 });
 
@@ -839,39 +980,92 @@ describe('StoryProjectsService revision locking', () => {
     expect(tx.storyFilmTrailer.create).not.toHaveBeenCalled();
   });
 
-  it('projects an authored trailer beside the runtime clips without changing clip targets', async () => {
+  it('carries the stable clip current video into a new revision without carrying generation ownership', async () => {
+    const assetId = '0197f4a2-0800-7000-8000-000000000030';
+    const variantId = '0197f4a2-0800-7000-8000-000000000031';
+    const oldSpecHash = 'a'.repeat(64);
+    const oldInputHash = 'b'.repeat(64);
+    const { service, tx } = makeHarness({
+      transactionDraft: draftRow({ content: lockableDraft() }),
+      priorFilmClips: [
+        {
+          key: 'S00',
+          currentVideoAssetId: assetId,
+          currentVideoVariantId: variantId,
+          currentVideoSpecHash: oldSpecHash,
+          currentVideoInputHash: oldInputHash,
+          currentVideoChecksumSha256: 'c'.repeat(64),
+          currentVideoTechnicalChecks: [
+            { key: 'kind', status: 'passed', message: null },
+          ],
+          currentVideoRevision: 3,
+          currentVideoSetByUserId: USER.userId,
+          currentVideoSetAt: NOW,
+        },
+      ],
+    });
+
+    await service.lockRevision(USER as never, WORKSPACE_ID, PROJECT_ID, {
+      expectedDraftRevision: 3,
+      source: 'creator',
+    });
+
+    expect(tx.storyFilmClip.create.mock.calls[0]?.[0].data).toMatchObject({
+      key: 'S00',
+      currentVideoAssetId: assetId,
+      currentVideoVariantId: variantId,
+      currentVideoSourceAttemptId: null,
+      currentVideoSpecHash: oldSpecHash,
+      currentVideoInputHash: oldInputHash,
+      currentVideoChecksumSha256: 'c'.repeat(64),
+      currentVideoRevision: 3,
+      latestGenerationAttemptId: null,
+    });
+  });
+
+  it('locks complete gameplay while skipping unfinished trailer production', async () => {
     const content: InteractiveFilmDraftContent = {
       ...lockableDraft(),
-      trailerPrompt: {
-        title: '15-second trailer',
-        description: 'A promotional root video.',
-        targetDurationMs: 15_000,
-        generationControl: { mode: 'omni_reference' },
-        masterDirection: 'Build restrained dread without revealing the ending.',
-        referenceRoleNotes: [],
-        emotionalArc: 'Curiosity becomes danger.',
-        beats: [
-          {
-            id: 'trailer:beat:1',
-            startMs: 0,
-            endMs: 15_000,
-            visual: 'The dragon gate emerges from the rain.',
-            camera: 'Slow controlled push toward the gate.',
-            action: 'The two visitors stop as the cassette starts.',
-            performance: '',
-            emotion: '',
-            dialogue: '',
-            audio: 'Tape hiss and wet night ambience.',
-            endState: 'Hold on the open dragon mouth.',
-            continuity: '',
-          },
-        ],
-        negativeConstraints: ['Do not reveal an ending.'],
-        continuityNotes: [],
-      },
+      trailerPrompt: trailerDraft({ masterDirection: '' }),
     };
     const { service, tx } = makeHarness({
       transactionDraft: draftRow({ content }),
+    });
+
+    const revision = await service.lockRevision(
+      USER as never,
+      WORKSPACE_ID,
+      PROJECT_ID,
+      { expectedDraftRevision: 3, source: 'creator' },
+    );
+
+    expect(revision.content.trailerPrompt?.masterDirection).toBe('');
+    expect(tx.storyFilmSpec.create).toHaveBeenCalledTimes(1);
+    expect(tx.storyFilmClip.create).toHaveBeenCalledTimes(1);
+    expect(tx.storyFilmTrailer.findFirst).not.toHaveBeenCalled();
+    expect(tx.storyFilmTrailer.create).not.toHaveBeenCalled();
+  });
+
+  it('projects an authored trailer beside the runtime clips without changing clip targets', async () => {
+    const content: InteractiveFilmDraftContent = {
+      ...lockableDraft(),
+      trailerPrompt: trailerDraft(),
+    };
+    const trailerAssetId = '0197f4a2-0800-7000-8000-000000000040';
+    const trailerVariantId = '0197f4a2-0800-7000-8000-000000000041';
+    const { service, tx } = makeHarness({
+      transactionDraft: draftRow({ content }),
+      priorFilmTrailer: {
+        currentVideoAssetId: trailerAssetId,
+        currentVideoVariantId: trailerVariantId,
+        currentVideoSpecHash: 'd'.repeat(64),
+        currentVideoInputHash: 'e'.repeat(64),
+        currentVideoChecksumSha256: 'f'.repeat(64),
+        currentVideoTechnicalChecks: [],
+        currentVideoRevision: 2,
+        currentVideoSetByUserId: USER.userId,
+        currentVideoSetAt: NOW,
+      },
     });
 
     await service.lockRevision(USER as never, WORKSPACE_ID, PROJECT_ID, {
@@ -893,32 +1087,33 @@ describe('StoryProjectsService revision locking', () => {
       generationMode: 'omni_reference',
       frameMode: null,
       targetDurationMs: 15_000,
+      currentVideoAssetId: trailerAssetId,
+      currentVideoVariantId: trailerVariantId,
+      currentVideoSourceAttemptId: null,
+      currentVideoSpecHash: 'd'.repeat(64),
+      currentVideoInputHash: 'e'.repeat(64),
+      currentVideoRevision: 2,
+      latestGenerationAttemptId: null,
     });
   });
 
-  it('hashes the exact normalized Revision content for a legacy v1 draft head', async () => {
-    const legacy = lockableDraft();
-    delete (legacy as { trailerPrompt?: unknown }).trailerPrompt;
-    const rawDraftHash = canonicalJsonHash(legacy);
-    const { service, tx } = makeHarness({
+  it('rejects a stored draft that omits required v2 authoring state', async () => {
+    const incomplete = lockableDraft();
+    delete (incomplete as { trailerPrompt?: unknown }).trailerPrompt;
+    const { service } = makeHarness({
       transactionDraft: draftRow({
-        content: legacy,
-        contentHash: rawDraftHash,
+        content: incomplete,
+        contentHash: canonicalJsonHash(incomplete),
       }),
     });
 
-    await service.lockRevision(USER as never, WORKSPACE_ID, PROJECT_ID, {
-      expectedDraftRevision: 3,
-      source: 'creator',
-    });
-
-    const createData = tx.storyRevision.create.mock.calls[0]?.[0].data as {
-      content: InteractiveFilmDraftContent;
-      contentHash: string;
-    };
-    expect(createData.content.trailerPrompt).toBeNull();
-    expect(createData.contentHash).toBe(canonicalJsonHash(createData.content));
-    expect(createData.contentHash).not.toBe(rawDraftHash);
+    const response = await expectApiError(
+      service.lockRevision(USER as never, WORKSPACE_ID, PROJECT_ID, {
+        expectedDraftRevision: 3,
+        source: 'creator',
+      }),
+    );
+    expect(response.code).toBe('STORY_REVISION_NOT_LOCKABLE');
   });
 
   it('fails loudly when no system or project video model is selected', async () => {
@@ -1044,9 +1239,10 @@ describe('StoryProjectsService film workbench', () => {
     });
     const projectedClip = projection.clipSpecs[0];
     if (!projectedClip) throw new Error('Expected the projected clip.');
-    const takeId = '0197f4a2-0800-7000-8000-000000000006';
+    const generationId = '0197f4a2-0800-7000-8000-000000000006';
     const outputAssetId = '0197f4a2-0800-7000-8000-000000000007';
-    const outputUrl = 'https://media.example.com/story-master.mp4';
+    const outputVariantId = '0197f4a2-0800-7000-8000-000000000012';
+    const outputUrl = 'https://media.example.com/story-video.mp4';
     const { service, prisma, tx } = makeHarness({
       workbenchRevision: revisionRow({ content }),
       workbenchFilmSpec: {
@@ -1074,13 +1270,22 @@ describe('StoryProjectsService film workbench', () => {
           id: '0197f4a2-0800-7000-8000-000000000008',
           storyProjectId: PROJECT_ID,
           revisionId: REVISION_ID,
+          graphNodeId: projectedClip.graphNodeId,
+          rank: projectedClip.rank,
           specJson: projectedClip,
+          specHash: canonicalJsonHash(projectedClip),
           version: 0,
           productionInputHash: 'a'.repeat(64),
-          masterTakeId: takeId,
-          masterRevision: 1,
-          masterSelectedByUserId: USER.userId,
-          masterSelectedAt: NOW,
+          currentVideoAssetId: outputAssetId,
+          currentVideoVariantId: outputVariantId,
+          currentVideoSourceAttemptId: generationId,
+          currentVideoSpecHash: canonicalJsonHash(projectedClip),
+          currentVideoInputHash: 'a'.repeat(64),
+          currentVideoChecksumSha256: 'b'.repeat(64),
+          currentVideoTechnicalChecks: [],
+          currentVideoRevision: 1,
+          currentVideoSetByUserId: USER.userId,
+          currentVideoSetAt: NOW,
           updatedAt: NOW,
           references: [
             {
@@ -1094,32 +1299,55 @@ describe('StoryProjectsService film workbench', () => {
               },
             },
           ],
-          takes: [],
-          masterTake: {
-            productionInputHash: 'a'.repeat(64),
+          currentVideoAsset: {
+            id: outputAssetId,
+            kind: 'video',
             status: 'ready',
-            outputAsset: {
-              id: outputAssetId,
-              kind: 'video',
-              status: 'ready',
-              moderationStatus: 'approved',
-              contentType: 'video/mp4',
-              width: 1920,
-              height: 1080,
-              durationSeconds: 15,
-              checksumSha256: 'b'.repeat(64),
-              storageProvider: 'external_url',
-              bucket: null,
-              region: null,
-              objectKey: null,
-              externalUrl: outputUrl,
-              deletedAt: null,
-              placements: [],
-              variants: [],
-            },
+            moderationStatus: 'approved',
+            contentType: 'video/mp4',
+            width: 1920,
+            height: 1080,
+            durationSeconds: 15,
+            checksumSha256: 'b'.repeat(64),
+            storageProvider: 'external_url',
+            bucket: null,
+            region: null,
+            objectKey: null,
+            externalUrl: outputUrl,
+            deletedAt: null,
+            placements: [],
+            variants: [],
           },
+          latestGenerationAttempt: null,
         },
       ],
+      workbenchBuild: {
+        id: '0197f4a2-0800-7000-8000-000000000013',
+        buildNumber: 4,
+        kind: 'production',
+        scope: { kind: 'full' },
+        status: 'ready',
+        sourceProductionRevision: 0,
+        diagnostics: [],
+        experiencePublication: {
+          status: 'confirmed',
+          gameId: 'branching-film',
+          contentVersion: 'build:0197f4a2-0800-7000-8000-000000000013',
+          manifestUrl:
+            'https://media.example.test/interactive-film/branching-film/manifest.json',
+          publishedAt: NOW,
+          mediaAuthorizedAt: NOW,
+          mediaAuthorizationRevokedAt: null,
+          authorityIsCurrent: true,
+          authorityGameExists: true,
+          authorityCurrentVersion: 'build:0197f4a2-0800-7000-8000-000000000013',
+          authorityCheckedAt: NOW,
+          lastErrorCode: null,
+          lastErrorDetail: null,
+        },
+        createdAt: NOW,
+        completedAt: NOW,
+      },
     });
 
     const result = await service.workbench(
@@ -1143,10 +1371,10 @@ describe('StoryProjectsService film workbench', () => {
       ],
     });
     expect(result.film?.trailer).toBeNull();
-    expect(result.film?.clips[0]?.master).toMatchObject({
-      takeId,
-      status: 'ready',
-      outputAsset: {
+    expect(result.film?.clips[0]?.currentVideo).toMatchObject({
+      sourceGenerationId: generationId,
+      revision: 1,
+      asset: {
         id: outputAssetId,
         previewUrl: outputUrl,
       },
@@ -1161,6 +1389,22 @@ describe('StoryProjectsService film workbench', () => {
         approvedReferenceVersionId: '0197f4a2-0800-7000-8000-000000000011',
       },
     ]);
+    expect(result.film?.latestBuild?.publication).toEqual({
+      status: 'confirmed',
+      gameId: 'branching-film',
+      contentVersion: 'build:0197f4a2-0800-7000-8000-000000000013',
+      manifestUrl:
+        'https://media.example.test/interactive-film/branching-film/manifest.json',
+      publishedAt: NOW.toISOString(),
+      mediaAuthorizedAt: NOW.toISOString(),
+      mediaAuthorizationRevokedAt: null,
+      authorityIsCurrent: true,
+      authorityGameExists: true,
+      authorityCurrentVersion: 'build:0197f4a2-0800-7000-8000-000000000013',
+      authorityCheckedAt: NOW.toISOString(),
+      lastErrorCode: null,
+      lastErrorDetail: null,
+    });
     const transactionCalls = prisma.$transaction.mock.calls as unknown as Array<
       [unknown, { isolationLevel: Prisma.TransactionIsolationLevel }]
     >;
@@ -1171,16 +1415,15 @@ describe('StoryProjectsService film workbench', () => {
     expect(tx.storyDraft.findUnique).toHaveBeenCalledTimes(1);
     expect(tx.storyRevision.findFirst).toHaveBeenCalledTimes(1);
     expect(tx.storyFilmSpec.findUnique).toHaveBeenCalledTimes(1);
-    // Clips for the selected revision + the cross-revision carried-master sweep.
-    expect(tx.storyFilmClip.findMany).toHaveBeenCalledTimes(2);
+    expect(tx.storyFilmClipHead.findMany).toHaveBeenCalledTimes(1);
     expect(prisma.storyProject.findUnique).not.toHaveBeenCalled();
     expect(prisma.storyDraft.findUnique).not.toHaveBeenCalled();
     expect(prisma.storyRevision.findFirst).not.toHaveBeenCalled();
     expect(prisma.storyFilmSpec.findUnique).not.toHaveBeenCalled();
-    expect(prisma.storyFilmClip.findMany).not.toHaveBeenCalled();
+    expect(prisma.storyFilmClipHead.findMany).not.toHaveBeenCalled();
   });
 
-  it('returns a revision trailer as a separate blocked production target', async () => {
+  it('returns a revision trailer with neutral current-video state', async () => {
     const content: InteractiveFilmDraftContent = {
       ...lockableDraft(),
       trailerPrompt: {
@@ -1250,17 +1493,23 @@ describe('StoryProjectsService film workbench', () => {
         productionInputManifest: null,
         productionInputHash: null,
         version: 0,
-        masterTakeId: null,
-        masterRevision: 0,
-        masterSelectedByUserId: null,
-        masterSelectedAt: null,
+        currentVideoAssetId: null,
+        currentVideoVariantId: null,
+        currentVideoSourceAttemptId: null,
+        currentVideoSpecHash: null,
+        currentVideoInputHash: null,
+        currentVideoChecksumSha256: null,
+        currentVideoTechnicalChecks: null,
+        currentVideoRevision: 0,
+        currentVideoSetByUserId: null,
+        currentVideoSetAt: null,
         createdByUserId: USER.userId,
         updatedByUserId: USER.userId,
         createdAt: NOW,
         updatedAt: NOW,
         references: [],
-        takes: [],
-        masterTake: null,
+        currentVideoAsset: null,
+        latestGenerationAttempt: null,
       },
     });
 
@@ -1275,13 +1524,10 @@ describe('StoryProjectsService film workbench', () => {
     expect(result.film?.trailer).toMatchObject({
       id: '0197f4a2-0800-7000-8000-000000000020',
       title: '15-second trailer',
-      productionStatus: 'blocked',
-      blockReasons: [
-        expect.objectContaining({ code: 'OMNI_REFERENCE_REQUIRED' }),
-      ],
-      takeCounts: { total: 0, running: 0, ready: 0, approved: 0 },
+      currentVideoRevision: 0,
       referenceBindings: [],
-      master: null,
+      currentVideo: null,
+      generation: null,
     });
   });
 });

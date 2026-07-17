@@ -1,10 +1,10 @@
 /**
- * DTOs for the direct-to-storage upload pipeline (stateless + confirm).
+ * DTOs for the direct-to-storage upload pipeline.
  *
  * Two steps:
- *   1. `POST /aurora/media/upload-url` — STATELESS. Server decides the
- *      permanent key + mints a signed write URL. NO MediaAsset is created,
- *      so an abandoned/cancelled/re-picked upload leaves ZERO DB residue.
+ *   1. `POST /aurora/media/upload-url` — generic uploads remain stateless.
+ *      Story clip uploads are the deliberate exception: they create a durable,
+ *      project-scoped staging session before its signed URL is returned.
  *   2. `POST /aurora/media/confirm`    — after the PUT lands, the server
  *      VERIFIES the bytes (ownership + HEAD) and only then writes an
  *      `active` MediaAsset. Storage is the source of truth; the DB only
@@ -20,6 +20,7 @@ import { z } from 'zod';
 
 export const UploadKindSchema = z.enum([
   'episode_video',
+  'story_clip_video',
   'episode_cover',
   'ip_banner',
   'news_cover',
@@ -53,21 +54,26 @@ export interface CreateUploadUrlResponseDto {
   method: 'PUT';
   headers: Record<string, string>;
   /**
-   * Server-decided PERMANENT object key. The client echoes this verbatim
-   * to `POST /aurora/media/confirm` after the PUT lands — it is NOT a DB
-   * id (issuing a URL is stateless; no MediaAsset exists yet). The client
-   * derives nothing from `uploadUrl`.
+   * Server-decided object key. Generic uploads receive their permanent key;
+   * Story clips receive a disposable staging key backed by the accompanying
+   * upload session. The client echoes it verbatim to confirm and derives
+   * nothing from `uploadUrl`.
    */
   storageKey: string;
   provider: 'azure_blob' | 'aliyun_oss' | 's3_compatible';
   /** ISO; client re-requests a fresh URL if it'll lapse mid-upload. */
   expiresAt: string;
+  /** Present only for durable Story clip staging uploads. */
+  uploadSessionId?: string;
+  /** Pre-created uploading asset ledger; present only for Story clips. */
+  mediaAssetId?: string;
 }
 
 /**
  * `POST /aurora/media/confirm` — called AFTER the direct PUT lands. The
- * server verifies (never trusts) the bytes and only then mints the
- * MediaAsset row. The client sends back the exact `storageKey` it was
+ * server verifies (never trusts) the bytes. Generic flows then mint the
+ * MediaAsset row; Story flows confirm the durable staging ledger and leave it
+ * non-ready for async promotion/probing. The client sends back the exact `storageKey` it was
  * issued; `kind` re-asserts which feature this was (used to re-derive the
  * ownership scope + asset kind), and `contentType` is advisory only — the
  * persisted content-type is read from the storage HEAD, never this field.
@@ -78,6 +84,8 @@ export const ConfirmUploadSchema = z.object({
   kind: UploadKindSchema,
   /** ADVISORY ONLY — the stored content-type comes from the HEAD, not this. */
   contentType: z.string().trim().min(1).max(128),
+  /** Required for story_clip_video; omitted by stateless generic uploads. */
+  uploadSessionId: z.string().uuid().optional(),
 });
 export type ConfirmUploadInputDto = z.infer<typeof ConfirmUploadSchema>;
 
@@ -87,8 +95,10 @@ export interface ConfirmUploadResponseDto {
   /** Echoed back for the client's bookkeeping / debugging. */
   storageKey: string;
   provider: 'azure_blob' | 'aliyun_oss' | 's3_compatible';
-  /** Browser/provider-fetchable URL resolved from the durable MediaAsset row. */
-  url: string;
+  /** Present for durable Story clip sessions. */
+  uploadSessionId?: string;
+  /** Story staging assets are intentionally unreadable until async finalize. */
+  url: string | null;
 }
 
 export const MediaProviderAssetStatusRequestSchema = z.object({

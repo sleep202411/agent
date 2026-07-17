@@ -1,0 +1,1271 @@
+/* eslint-disable @typescript-eslint/no-unsafe-assignment -- Jest asymmetric matchers and mock.calls payloads are intentionally untyped in lifecycle assertions. */
+import {
+  BadGatewayException,
+  UnprocessableEntityException,
+} from '@nestjs/common';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
+import {
+  ExperienceRuntimeManifestSchema,
+  type ExperienceReleaseRequest,
+} from '@repo/shared/experience-runtime';
+import {
+  JAVA_REQUEST_TIMEOUT_MS,
+  JAVA_STUDIO_URL,
+} from '../integrations/java/java-config';
+import {
+  JAVA_EXPERIENCE_GAMES_PATH,
+  JAVA_EXPERIENCE_RELEASE_PATH,
+  StoryExperienceReleaseGateway,
+  StoryExperienceReleaseOutcomeUnknownException,
+} from './story-experience-release.gateway';
+import { StoryExperienceReleaseService } from './story-experience-release.service';
+
+const BUILD_ID = '019f60f4-b101-70d4-8000-000000000001';
+const OLD_BUILD_ID = '019f60f4-b101-70d4-8000-000000000004';
+const NEW_BUILD_ID = '019f60f4-b101-70d4-8000-000000000005';
+const PROJECT_ID = '019f60f4-b101-70d4-8000-000000000002';
+const WORKSPACE_ID = '019f60f4-b101-70d4-8000-000000000003';
+const HASH = 'a'.repeat(64);
+const MANIFEST_URL =
+  'https://media.example.com/interactive-film/branching-film/build/manifest.json';
+
+function manifestFixture(buildId = BUILD_ID) {
+  return ExperienceRuntimeManifestSchema.parse({
+    manifestType: 'fizzdragon.experience',
+    schemaVersion: 2,
+    channel: 'production',
+    gameId: PROJECT_ID,
+    buildId,
+    contentVersion: `build:${buildId}`,
+    completionPolicy: 'finite',
+    metadata: {
+      title: {
+        'zh-CN': 'Branching Film Test',
+        'en-US': 'Dream of Branching Film',
+      },
+      summary: { 'zh-CN': '第一季 · 无字来客', 'en-US': 'Season one' },
+    },
+    compatibility: {
+      engineApiVersion: '2.0.0',
+      experienceApiVersion: '1.0.0',
+      semanticRulesVersion: 1,
+      requiredCapabilities: ['core.text'],
+    },
+    localization: {
+      defaultLocale: 'zh-CN',
+      locales: ['zh-CN', 'en-US'],
+    },
+    stateDefinitions: [],
+    inputActions: [],
+    rendererRequirements: [
+      {
+        rendererId: 'core.text',
+        apiVersion: '1.0.0',
+        configSchemaVersion: '1.0.0',
+        requiredCapabilities: ['core.text'],
+        outcomes: [],
+        commands: [],
+      },
+    ],
+    assets: [
+      {
+        assetId: 'theme.config',
+        kind: 'data',
+        sourceAssetId: 'theme.config.source',
+        sha256: HASH,
+        uri: '/experience-runtime/themes/test.json',
+        mediaType: 'application/json',
+        format: 'json',
+      },
+    ],
+    theme: {
+      themeId: 'theme.test',
+      apiVersion: '1.0.0',
+      configAssetId: 'theme.config',
+    },
+    telemetryDefinitions: [],
+    endings: [
+      {
+        endingId: 'ending.complete',
+        title: { 'zh-CN': '完成', 'en-US': 'Complete' },
+        kind: 'success',
+      },
+    ],
+    graph: {
+      entrySceneId: 'scene.entry',
+      nodes: [
+        {
+          kind: 'scene',
+          sceneId: 'scene.entry',
+          clock: { kind: 'none' },
+          renderers: [
+            {
+              instanceId: 'text.entry',
+              rendererId: 'core.text',
+              layer: 0,
+              config: { body: { 'zh-CN': '开始', 'en-US': 'Start' } },
+              bindings: {},
+            },
+          ],
+          anchors: [],
+          gestures: [],
+          timeline: { cues: [] },
+          eventBindings: [
+            {
+              bindingId: 'complete.on-enter',
+              on: { type: 'scene.entered' },
+              routes: [
+                {
+                  routeId: 'complete',
+                  actions: [
+                    { kind: 'ending.complete', endingId: 'ending.complete' },
+                  ],
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    },
+  });
+}
+
+describe('StoryExperienceReleaseGateway', () => {
+  afterEach(() => jest.restoreAllMocks());
+
+  it('forwards only the guard-normalized viewer cookie to Java POST', async () => {
+    const manifest = manifestFixture();
+    const fetchMock = jest.spyOn(globalThis, 'fetch').mockResolvedValue(
+      javaResponse(200, {
+        gameId: manifest.gameId,
+        contentVersion: manifest.contentVersion,
+        status: 'published',
+        manifestUrl: MANIFEST_URL,
+      }),
+    );
+
+    await new StoryExperienceReleaseGateway().publish(
+      releaseRequest(manifest),
+      'satoken=normalized-session',
+    );
+
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toBe(`${JAVA_STUDIO_URL}${JAVA_EXPERIENCE_RELEASE_PATH}`);
+    expect(init?.headers).toEqual({
+      Accept: 'application/json',
+      'Content-Type': 'application/json',
+      Cookie: 'satoken=normalized-session',
+    });
+    expect(init?.headers).not.toHaveProperty('Authorization');
+  });
+
+  it('treats a business envelope rejection as definitive', async () => {
+    jest
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValue(
+        new Response(
+          JSON.stringify({ code: 409, msg: '版本内容冲突', data: null }),
+          { status: 200, headers: { 'content-type': 'application/json' } },
+        ),
+      );
+
+    await expect(
+      new StoryExperienceReleaseGateway().publish(
+        releaseRequest(manifestFixture()),
+        '',
+      ),
+    ).rejects.toMatchObject({
+      response: expect.objectContaining({
+        code: 'JAVA_EXPERIENCE_RELEASE_REJECTED',
+        message: '版本内容冲突',
+      }),
+    });
+  });
+
+  it('treats a non-JSON HTTP 4xx response as a definitive rejection', async () => {
+    jest
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValue(new Response('invalid release', { status: 400 }));
+
+    await expect(
+      new StoryExperienceReleaseGateway().publish(
+        releaseRequest(manifestFixture()),
+        '',
+      ),
+    ).rejects.toMatchObject({
+      response: expect.objectContaining({
+        code: 'JAVA_EXPERIENCE_RELEASE_REJECTED',
+      }),
+    });
+  });
+
+  it.each([502, 503, 504])(
+    'treats HTTP %s as unknown because Java may already have committed',
+    async (status) => {
+      jest
+        .spyOn(globalThis, 'fetch')
+        .mockResolvedValue(
+          new Response(
+            JSON.stringify({ code: 500, msg: 'upstream gateway failed' }),
+            { status, headers: { 'content-type': 'application/json' } },
+          ),
+        );
+      await expect(
+        new StoryExperienceReleaseGateway().publish(
+          releaseRequest(manifestFixture()),
+          '',
+        ),
+      ).rejects.toBeInstanceOf(StoryExperienceReleaseOutcomeUnknownException);
+    },
+  );
+
+  it('treats a non-JSON HTTP 5xx response as unknown', async () => {
+    jest
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValue(new Response('gateway failed', { status: 503 }));
+    await expect(
+      new StoryExperienceReleaseGateway().publish(
+        releaseRequest(manifestFixture()),
+        '',
+      ),
+    ).rejects.toBeInstanceOf(StoryExperienceReleaseOutcomeUnknownException);
+  });
+
+  it('treats HTTP 408 as unknown because the request may have committed', async () => {
+    jest.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(JSON.stringify({ code: 408, msg: 'request timeout' }), {
+        status: 408,
+        headers: { 'content-type': 'application/json' },
+      }),
+    );
+    await expect(
+      new StoryExperienceReleaseGateway().publish(
+        releaseRequest(manifestFixture()),
+        '',
+      ),
+    ).rejects.toBeInstanceOf(StoryExperienceReleaseOutcomeUnknownException);
+  });
+
+  it('treats an HTTP-success envelope 5xx as unknown', async () => {
+    jest.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(JSON.stringify({ code: 500, msg: 'internal error' }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      }),
+    );
+    await expect(
+      new StoryExperienceReleaseGateway().publish(
+        releaseRequest(manifestFixture()),
+        '',
+      ),
+    ).rejects.toBeInstanceOf(StoryExperienceReleaseOutcomeUnknownException);
+  });
+
+  it('keeps the deadline active while reading the Java response body', async () => {
+    jest.useFakeTimers();
+    try {
+      jest.spyOn(globalThis, 'fetch').mockImplementation((_url, init) => {
+        const signal = init?.signal;
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          json: () =>
+            new Promise((_resolve, reject) => {
+              signal?.addEventListener('abort', () => {
+                reject(
+                  new DOMException('The operation was aborted.', 'AbortError'),
+                );
+              });
+            }),
+        } as Response);
+      });
+      const pending = new StoryExperienceReleaseGateway().publish(
+        releaseRequest(manifestFixture()),
+        '',
+      );
+      const assertion = expect(pending).rejects.toBeInstanceOf(
+        StoryExperienceReleaseOutcomeUnknownException,
+      );
+      await jest.advanceTimersByTimeAsync(JAVA_REQUEST_TIMEOUT_MS);
+      await assertion;
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it('treats a malformed successful acknowledgement as unknown', async () => {
+    jest.spyOn(globalThis, 'fetch').mockResolvedValue(
+      javaResponse(200, {
+        gameId: 'different-game',
+        contentVersion: 'different-version',
+        status: 'published',
+        manifestUrl: MANIFEST_URL,
+      }),
+    );
+    await expect(
+      new StoryExperienceReleaseGateway().publish(
+        releaseRequest(manifestFixture()),
+        '',
+      ),
+    ).rejects.toBeInstanceOf(StoryExperienceReleaseOutcomeUnknownException);
+  });
+
+  it('queries Java currentVersion publicly without creator credentials', async () => {
+    const fetchMock = jest.spyOn(globalThis, 'fetch').mockResolvedValue(
+      javaResponse(200, {
+        gameId: PROJECT_ID,
+        title: 'Branching Film',
+        currentVersion: `build:${BUILD_ID}`,
+        manifestUrl: MANIFEST_URL,
+      }),
+    );
+    const result = await new StoryExperienceReleaseGateway().getGame(
+      PROJECT_ID,
+    );
+    expect(result.currentVersion).toBe(`build:${BUILD_ID}`);
+    expect(fetchMock).toHaveBeenCalledWith(
+      `${JAVA_STUDIO_URL}${JAVA_EXPERIENCE_GAMES_PATH}/${PROJECT_ID}`,
+      expect.objectContaining({
+        method: 'GET',
+        headers: { Accept: 'application/json' },
+      }),
+    );
+  });
+
+  it('models an explicit Java game-not-found response as authority absence', async () => {
+    jest
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValue(
+        new Response(
+          JSON.stringify({ code: 404, msg: 'game not found', data: null }),
+          { status: 200, headers: { 'content-type': 'application/json' } },
+        ),
+      );
+    await expect(
+      new StoryExperienceReleaseGateway().getGame(PROJECT_ID),
+    ).resolves.toBeNull();
+  });
+
+  it('accepts an HTTP 404 game response even when its body is not JSON', async () => {
+    jest
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValue(new Response('not found', { status: 404 }));
+    await expect(
+      new StoryExperienceReleaseGateway().getGame(PROJECT_ID),
+    ).resolves.toBeNull();
+  });
+
+  it('does not interpret a 5xx envelope code 404 as authority absence', async () => {
+    jest.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(JSON.stringify({ code: 404, msg: 'upstream unavailable' }), {
+        status: 503,
+        headers: { 'content-type': 'application/json' },
+      }),
+    );
+    await expect(
+      new StoryExperienceReleaseGateway().getGame(PROJECT_ID),
+    ).rejects.toBeInstanceOf(BadGatewayException);
+  });
+});
+
+describe('StoryExperienceReleaseService publication lifecycle', () => {
+  it('durably authorizes media before Java POST and confirms afterward', async () => {
+    const events: string[] = [];
+    const manifest = manifestFixture();
+    const pending = publicationRow({ status: 'pending' });
+    const claimed = publicationRow({
+      status: 'pending',
+      leaseOwner: 'lease-1',
+      leaseExpiresAt: new Date(Date.now() + 30_000),
+    });
+    const tx = claimTransaction({
+      existing: null,
+      created: pending,
+      claimed,
+      onCreate: () => events.push('authorized'),
+    });
+    const prisma = prismaWithTransaction(tx);
+    prisma.storyExperiencePublication.updateMany.mockImplementation(() => {
+      events.push('confirmed');
+      return { count: 1 };
+    });
+    const gateway = {
+      publish: jest.fn(() => {
+        events.push('java-post');
+        return releaseResponse(manifest);
+      }),
+    };
+    const service = serviceWith({ gateway, prisma, manifest });
+
+    await expect(
+      service.publishBuild(
+        { userId: 'user-1' } as never,
+        WORKSPACE_ID,
+        PROJECT_ID,
+        BUILD_ID,
+        { status: 'published', setCurrent: true },
+        'satoken=session',
+      ),
+    ).resolves.toEqual(releaseResponse(manifest));
+    expect(events).toEqual(['authorized', 'java-post', 'confirmed']);
+    expect(tx.storyExperiencePublication.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        buildId: BUILD_ID,
+        requestedByUserId: 'user-1',
+      }),
+    });
+    expect(
+      tx.storyExperiencePublication.create.mock.calls[0][0].data,
+    ).not.toHaveProperty('mediaAuthorizedAt');
+    expect(gateway.publish).toHaveBeenCalledWith(
+      expect.objectContaining({ contentVersion: `build:${BUILD_ID}` }),
+      'satoken=session',
+    );
+  });
+
+  it('uses the database clock for first-attempt and lease timestamps', async () => {
+    const clock = new Date('2026-07-16T23:59:59.123Z');
+    const tx = claimTransaction({
+      existing: null,
+      created: publicationRow(),
+      claimed: publicationRow({
+        leaseOwner: 'lease-1',
+        leaseExpiresAt: new Date(clock.getTime() + 30_000),
+      }),
+      clock,
+    });
+    const service = serviceWith({
+      prisma: prismaWithTransaction(tx),
+      gateway: { publish: jest.fn(() => releaseResponse(manifestFixture())) },
+    });
+
+    await publish(service);
+
+    expect(tx.storyExperiencePublication.update).toHaveBeenCalledWith({
+      where: { buildId: BUILD_ID },
+      data: expect.objectContaining({
+        firstAttemptAt: clock,
+        lastAttemptAt: clock,
+        leaseAcquiredAt: clock,
+        leaseExpiresAt: new Date(
+          clock.getTime() + 20_000 + JAVA_REQUEST_TIMEOUT_MS,
+        ),
+      }),
+    });
+  });
+
+  it('keeps media authorized and records uncertain after an ambiguous POST', async () => {
+    const claimed = publicationRow({
+      status: 'pending',
+      leaseOwner: 'lease-unknown',
+      leaseExpiresAt: new Date(Date.now() + 30_000),
+    });
+    const prisma = prismaWithTransaction(
+      claimTransaction({
+        existing: publicationRow({ status: 'pending' }),
+        claimed,
+      }),
+    );
+    const unknown = new StoryExperienceReleaseOutcomeUnknownException({
+      code: 'JAVA_EXPERIENCE_RELEASE_UNAVAILABLE',
+      message: 'timeout',
+    });
+    const service = serviceWith({
+      prisma,
+      gateway: { publish: jest.fn(() => Promise.reject(unknown)) },
+    });
+
+    await expect(publish(service)).rejects.toBe(unknown);
+    expect(prisma.storyExperiencePublication.updateMany).toHaveBeenCalledWith({
+      where: expect.objectContaining({ leaseOwner: expect.any(String) }),
+      data: expect.objectContaining({
+        status: 'uncertain',
+        nextReconciliationAt: expect.any(Date),
+      }),
+    });
+    const data =
+      prisma.storyExperiencePublication.updateMany.mock.calls[0][0].data;
+    expect(data).not.toHaveProperty('mediaAuthorizationRevokedAt');
+    expect(data).not.toHaveProperty('leaseOwner');
+  });
+
+  it('revokes authorization only for a definitive first-attempt rejection', async () => {
+    const claimed = publicationRow({
+      status: 'pending',
+      leaseOwner: 'lease-rejected',
+      leaseExpiresAt: new Date(Date.now() + 30_000),
+    });
+    const prisma = prismaWithTransaction(
+      claimTransaction({
+        existing: publicationRow({ status: 'pending' }),
+        claimed,
+      }),
+    );
+    const rejected = new BadGatewayException({
+      code: 'JAVA_EXPERIENCE_RELEASE_REJECTED',
+      message: 'invalid release',
+    });
+    const service = serviceWith({
+      prisma,
+      gateway: { publish: jest.fn(() => Promise.reject(rejected)) },
+    });
+
+    await expect(publish(service)).rejects.toBe(rejected);
+    expect(prisma.storyExperiencePublication.updateMany).toHaveBeenCalledWith({
+      where: expect.objectContaining({ status: 'pending' }),
+      data: expect.objectContaining({
+        status: 'rejected',
+        rejectedAt: expect.any(Date),
+        mediaAuthorizationRevokedAt: expect.any(Date),
+        leaseOwner: null,
+      }),
+    });
+  });
+
+  it('returns the same confirmed Build without a second Java POST', async () => {
+    const confirmed = publicationRow({
+      status: 'confirmed',
+      manifestUrl: MANIFEST_URL,
+      publishedAt: new Date(),
+    });
+    const tx = claimTransaction({ existing: confirmed });
+    const gateway = { publish: jest.fn() };
+    const service = serviceWith({
+      gateway,
+      prisma: prismaWithTransaction(tx),
+    });
+
+    await expect(publish(service)).resolves.toEqual(
+      releaseResponse(manifestFixture()),
+    );
+    expect(gateway.publish).not.toHaveBeenCalled();
+  });
+
+  it('serializes different Builds in one project across processes', async () => {
+    const competing = publicationRow({
+      buildId: OLD_BUILD_ID,
+      contentVersion: `build:${OLD_BUILD_ID}`,
+      status: 'uncertain',
+      leaseOwner: 'other-process',
+      leaseExpiresAt: new Date(Date.now() + 30_000),
+    });
+    const tx = claimTransaction({ existing: null, competing });
+    const gateway = { publish: jest.fn() };
+    const service = serviceWith({
+      gateway,
+      prisma: prismaWithTransaction(tx),
+    });
+
+    await expect(publish(service)).rejects.toMatchObject({
+      response: expect.objectContaining({
+        code: 'STORY_EXPERIENCE_PUBLICATION_IN_PROGRESS',
+        activeBuildId: OLD_BUILD_ID,
+      }),
+    });
+    expect(gateway.publish).not.toHaveBeenCalled();
+  });
+
+  it('reconciles an expired unknown fence before allowing a newer Build', async () => {
+    const newManifest = manifestFixture(NEW_BUILD_ID);
+    const expired = authorityRow({
+      id: 'publication-old-unknown',
+      buildId: OLD_BUILD_ID,
+      contentVersion: `build:${OLD_BUILD_ID}`,
+      status: 'uncertain',
+      sourceDraftRevision: 3,
+      sourceProductionRevision: 1,
+    });
+    Object.assign(expired, {
+      leaseOwner: 'dead-process',
+      leaseExpiresAt: new Date(Date.now() - 5_000),
+      authorityCheckedAt: null,
+    });
+    const created = publicationRow({
+      buildId: NEW_BUILD_ID,
+      contentVersion: `build:${NEW_BUILD_ID}`,
+    });
+    const claimed = publicationRow({
+      buildId: NEW_BUILD_ID,
+      contentVersion: `build:${NEW_BUILD_ID}`,
+      leaseOwner: 'new-lease',
+      leaseExpiresAt: new Date(Date.now() + 30_000),
+    });
+    const delegate = {
+      findUnique: jest.fn(() => null),
+      findMany: jest
+        .fn()
+        .mockReturnValueOnce([expired])
+        .mockReturnValueOnce([expired])
+        .mockReturnValueOnce([]),
+      create: jest.fn(() => created),
+      update: jest.fn().mockReturnValueOnce({}).mockReturnValueOnce(claimed),
+    };
+    const tx = {
+      $executeRaw: jest.fn(() => 1),
+      $queryRaw: jest.fn(() => [{ now: new Date() }]),
+      storyExperiencePublication: delegate,
+    };
+    const prisma = prismaWithTransaction(tx);
+    const gateway = {
+      getGame: jest.fn(() => gameDetail(`build:${BUILD_ID}`)),
+      publish: jest.fn(() => releaseResponse(newManifest)),
+    };
+    const service = serviceWith({ manifest: newManifest, prisma, gateway });
+
+    await expect(
+      service.publishBuild(
+        { userId: 'user-1' } as never,
+        WORKSPACE_ID,
+        PROJECT_ID,
+        NEW_BUILD_ID,
+        { status: 'published', setCurrent: true },
+        'satoken=session',
+      ),
+    ).resolves.toEqual(releaseResponse(newManifest));
+    expect(gateway.getGame.mock.invocationCallOrder[0]).toBeLessThan(
+      gateway.publish.mock.invocationCallOrder[0],
+    );
+    expect(gateway.publish).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not create an anonymous authorization for a Java draft', async () => {
+    const prisma = prismaWithTransaction(claimTransaction({ existing: null }));
+    const gateway = {
+      publish: jest.fn(() => ({
+        ...releaseResponse(manifestFixture()),
+        status: 'draft' as const,
+      })),
+    };
+    const service = serviceWith({ gateway, prisma });
+    await service.publishBuild(
+      { userId: 'user-1' } as never,
+      WORKSPACE_ID,
+      PROJECT_ID,
+      BUILD_ID,
+      { status: 'draft', setCurrent: false },
+      'satoken=session',
+    );
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+  });
+
+  it('rejects a non-production Build before contacting Java', async () => {
+    const gateway = { publish: jest.fn() };
+    const service = serviceWith({ gateway, buildProfile: 'preview' });
+    await expect(publish(service)).rejects.toBeInstanceOf(
+      UnprocessableEntityException,
+    );
+    expect(gateway.publish).not.toHaveBeenCalled();
+  });
+});
+
+describe('StoryExperienceReleaseService authority reconciliation', () => {
+  it('does not keep an interactive database transaction open during Java GET', async () => {
+    const row = authorityRow({
+      id: 'publication-current',
+      buildId: BUILD_ID,
+      contentVersion: `build:${BUILD_ID}`,
+      status: 'confirmed',
+      manifestUrl: MANIFEST_URL,
+      publishedAt: new Date('2026-07-16T11:00:00.000Z'),
+      sourceDraftRevision: 7,
+      sourceProductionRevision: 3,
+    });
+    const tx = reconciliationTransaction([row]);
+    const prisma = prismaWithTransaction(tx);
+    let transactionDepth = 0;
+    prisma.$transaction.mockImplementation(
+      async (operation: (value: typeof tx) => unknown) => {
+        transactionDepth += 1;
+        try {
+          return await operation(tx);
+        } finally {
+          transactionDepth -= 1;
+        }
+      },
+    );
+    const gateway = {
+      getGame: jest.fn(() => {
+        expect(transactionDepth).toBe(0);
+        return gameDetail(`build:${BUILD_ID}`);
+      }),
+    };
+    const service = serviceWith({ prisma, gateway });
+
+    await service.reconcileProjectCurrent(PROJECT_ID, PROJECT_ID);
+
+    expect(gateway.getGame).toHaveBeenCalledTimes(1);
+    expect(prisma.$transaction).toHaveBeenCalledTimes(2);
+  });
+
+  it('discards a slower stale Java response after a newer observation wins', async () => {
+    const row = authorityRow({
+      id: 'publication-v1',
+      buildId: BUILD_ID,
+      contentVersion: `build:${BUILD_ID}`,
+      status: 'confirmed',
+      manifestUrl: MANIFEST_URL,
+      publishedAt: new Date('2026-07-16T11:00:00.000Z'),
+      sourceDraftRevision: 7,
+      sourceProductionRevision: 3,
+    });
+    const tx = reconciliationTransaction([row]);
+    let rowVersion = '101';
+    tx.$queryRaw.mockImplementation((query: TemplateStringsArray) =>
+      query.join('').includes('xmin::text')
+        ? [{ id: row.id, rowVersion }]
+        : [{ now: new Date() }],
+    );
+    const persistedVersions: string[] = [];
+    tx.storyExperiencePublication.update.mockImplementation((args) => {
+      const data = (args as { data: Record<string, unknown> }).data;
+      const currentVersion = data.authorityCurrentVersion;
+      if (typeof currentVersion === 'string') {
+        persistedVersions.push(currentVersion);
+      }
+      rowVersion = String(Number(rowVersion) + 1);
+      return {};
+    });
+    const prisma = prismaWithTransaction(tx);
+    const slowResponse = deferred<ReturnType<typeof gameDetail>>();
+    const newerAuthority = gameDetail(`build:${NEW_BUILD_ID}`);
+    const gateway = {
+      getGame: jest
+        .fn()
+        .mockReturnValueOnce(slowResponse.promise)
+        .mockResolvedValue(newerAuthority),
+    };
+    const service = serviceWith({ prisma, gateway });
+
+    const slowerRead = service.reconcileProjectCurrent(PROJECT_ID, PROJECT_ID);
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    const newerRead = await service.reconcileProjectCurrent(
+      PROJECT_ID,
+      PROJECT_ID,
+    );
+    slowResponse.resolve(gameDetail(`build:${BUILD_ID}`));
+    const retriedRead = await slowerRead;
+
+    expect(newerRead.currentVersion).toBe(`build:${NEW_BUILD_ID}`);
+    expect(retriedRead.currentVersion).toBe(`build:${NEW_BUILD_ID}`);
+    expect(gateway.getGame).toHaveBeenCalledTimes(3);
+    expect(persistedVersions).toEqual([
+      `build:${NEW_BUILD_ID}`,
+      `build:${NEW_BUILD_ID}`,
+    ]);
+    expect(persistedVersions).not.toContain(`build:${BUILD_ID}`);
+  });
+
+  it('fails retryably instead of spinning when publication churn never settles', async () => {
+    const row = authorityRow({
+      id: 'publication-current',
+      buildId: BUILD_ID,
+      contentVersion: `build:${BUILD_ID}`,
+      status: 'confirmed',
+      manifestUrl: MANIFEST_URL,
+      publishedAt: new Date('2026-07-16T11:00:00.000Z'),
+      sourceDraftRevision: 7,
+      sourceProductionRevision: 3,
+    });
+    const tx = reconciliationTransaction([row]);
+    let tokenRead = 0;
+    tx.$queryRaw.mockImplementation((query: TemplateStringsArray) => {
+      if (!query.join('').includes('xmin::text')) {
+        return [{ now: new Date() }];
+      }
+      tokenRead += 1;
+      return [{ id: row.id, rowVersion: String(tokenRead) }];
+    });
+    const gateway = {
+      getGame: jest.fn(() => gameDetail(`build:${BUILD_ID}`)),
+    };
+    const service = serviceWith({
+      prisma: prismaWithTransaction(tx),
+      gateway,
+    });
+
+    await expect(
+      service.reconcileProjectCurrent(PROJECT_ID, PROJECT_ID),
+    ).rejects.toMatchObject({
+      response: expect.objectContaining({
+        code: 'STORY_EXPERIENCE_AUTHORITY_OBSERVATION_SUPERSEDED',
+      }),
+    });
+    expect(gateway.getGame).toHaveBeenCalledTimes(3);
+    expect(tx.storyExperiencePublication.update).not.toHaveBeenCalled();
+  });
+
+  it('does not clear an active publish fence when current is queried', async () => {
+    const checkedAt = new Date('2026-07-16T12:00:00.000Z');
+    const pending = authorityRow({
+      id: 'publication-in-flight',
+      buildId: BUILD_ID,
+      contentVersion: `build:${BUILD_ID}`,
+      status: 'pending',
+      sourceDraftRevision: 7,
+      sourceProductionRevision: 3,
+    });
+    Object.assign(pending, {
+      leaseOwner: 'active-publisher',
+      leaseAcquiredAt: new Date(checkedAt.getTime() - 1_000),
+      leaseExpiresAt: new Date(checkedAt.getTime() + 30_000),
+    });
+    const tx = reconciliationTransaction([pending], checkedAt);
+    const service = serviceWith({
+      prisma: prismaWithTransaction(tx),
+      gateway: { getGame: jest.fn(() => gameDetail(`build:${BUILD_ID}`)) },
+    });
+
+    await expect(
+      service.getCurrentRelease(
+        { userId: 'user-1' } as never,
+        WORKSPACE_ID,
+        PROJECT_ID,
+      ),
+    ).resolves.toMatchObject({
+      published: true,
+      currentBuild: { id: BUILD_ID },
+    });
+    expect(tx.storyExperiencePublication.update).toHaveBeenCalledWith({
+      where: { id: 'publication-in-flight' },
+      data: { updatedAt: checkedAt },
+    });
+    expect(
+      tx.storyExperiencePublication.update.mock.calls[0][0].data,
+    ).not.toHaveProperty('leaseOwner');
+  });
+
+  it('recovers a crash after Java committed by confirming the pending Build', async () => {
+    const pending = authorityRow({
+      id: 'publication-current',
+      buildId: BUILD_ID,
+      contentVersion: `build:${BUILD_ID}`,
+      status: 'pending',
+      sourceDraftRevision: 7,
+      sourceProductionRevision: 3,
+    });
+    const tx = reconciliationTransaction([pending]);
+    const service = serviceWith({
+      prisma: prismaWithTransaction(tx),
+      gateway: { getGame: jest.fn(() => gameDetail(`build:${BUILD_ID}`)) },
+    });
+
+    const current = await service.getCurrentRelease(
+      { userId: 'user-1' } as never,
+      WORKSPACE_ID,
+      PROJECT_ID,
+    );
+    expect(current.currentBuild).toEqual({
+      id: BUILD_ID,
+      sourceRevisionId: pending.build.sourceRevisionId,
+      sourceDraftRevision: 7,
+      sourceProductionRevision: 3,
+    });
+    expect(tx.storyExperiencePublication.update).toHaveBeenCalledWith({
+      where: { id: 'publication-current' },
+      data: expect.objectContaining({
+        status: 'confirmed',
+        manifestUrl: MANIFEST_URL,
+        authorityIsCurrent: true,
+        leaseOwner: null,
+      }),
+    });
+  });
+
+  it('matches Java currentVersion against historical v1 when latest v2 is uncertain', async () => {
+    const v1 = authorityRow({
+      id: 'publication-v1',
+      buildId: OLD_BUILD_ID,
+      contentVersion: `build:${OLD_BUILD_ID}`,
+      status: 'confirmed',
+      manifestUrl: MANIFEST_URL,
+      publishedAt: new Date('2026-01-01T00:00:00.000Z'),
+      sourceDraftRevision: 4,
+      sourceProductionRevision: 1,
+    });
+    const v2 = authorityRow({
+      id: 'publication-v2',
+      buildId: NEW_BUILD_ID,
+      contentVersion: `build:${NEW_BUILD_ID}`,
+      status: 'uncertain',
+      sourceDraftRevision: 8,
+      sourceProductionRevision: 2,
+    });
+    const tx = reconciliationTransaction([v1, v2]);
+    const service = serviceWith({
+      prisma: prismaWithTransaction(tx),
+      gateway: {
+        getGame: jest.fn(() => gameDetail(`build:${OLD_BUILD_ID}`)),
+      },
+    });
+
+    const current = await service.getCurrentRelease(
+      { userId: 'user-1' } as never,
+      WORKSPACE_ID,
+      PROJECT_ID,
+    );
+    expect(current.currentBuild?.id).toBe(OLD_BUILD_ID);
+    expect(current.currentBuild?.sourceDraftRevision).toBe(4);
+    expect(tx.storyExperiencePublication.update).toHaveBeenCalledWith({
+      where: { id: 'publication-v2' },
+      data: expect.objectContaining({
+        authorityIsCurrent: false,
+        authorityCurrentVersion: `build:${OLD_BUILD_ID}`,
+      }),
+    });
+  });
+
+  it('exposes exact authoring identity so a newer draft is not marked published', async () => {
+    const published = authorityRow({
+      id: 'publication-v1',
+      buildId: OLD_BUILD_ID,
+      contentVersion: `build:${OLD_BUILD_ID}`,
+      status: 'confirmed',
+      manifestUrl: MANIFEST_URL,
+      publishedAt: new Date(),
+      sourceDraftRevision: 11,
+      sourceProductionRevision: 5,
+    });
+    const service = serviceWith({
+      prisma: prismaWithTransaction(reconciliationTransaction([published])),
+      gateway: {
+        getGame: jest.fn(() => gameDetail(`build:${OLD_BUILD_ID}`)),
+      },
+    });
+    const current = await service.getCurrentRelease(
+      { userId: 'user-1' } as never,
+      WORKSPACE_ID,
+      PROJECT_ID,
+    );
+    const currentSavedDraftRevision = 12;
+    expect(current.currentBuild?.sourceDraftRevision).toBe(11);
+    expect(current.currentBuild?.sourceDraftRevision).not.toBe(
+      currentSavedDraftRevision,
+    );
+  });
+
+  it('returns a normal unpublished state before the first lifecycle exists', async () => {
+    const prisma = prismaWithTransaction(reconciliationTransaction([]));
+    prisma.storyExperiencePublication.findFirst.mockResolvedValue(null);
+    const gateway = { getGame: jest.fn() };
+    const service = serviceWith({ prisma, gateway });
+    await expect(
+      service.getCurrentRelease(
+        { userId: 'user-1' } as never,
+        WORKSPACE_ID,
+        PROJECT_ID,
+      ),
+    ).resolves.toEqual({
+      projectId: PROJECT_ID,
+      gameId: PROJECT_ID,
+      published: false,
+      currentVersion: null,
+      manifestUrl: null,
+      currentBuild: null,
+      checkedAt: null,
+    });
+    expect(gateway.getGame).not.toHaveBeenCalled();
+  });
+
+  it('returns unpublished when the only local lifecycles were rejected', async () => {
+    const prisma = prismaWithTransaction(reconciliationTransaction([]));
+    prisma.storyExperiencePublication.findFirst.mockReturnValue(null);
+    const gateway = { getGame: jest.fn() };
+    const service = serviceWith({ prisma, gateway });
+    const current = await service.getCurrentRelease(
+      { userId: 'user-1' } as never,
+      WORKSPACE_ID,
+      PROJECT_ID,
+    );
+    expect(current).toMatchObject({ published: false, currentBuild: null });
+    expect(prisma.storyExperiencePublication.findFirst).toHaveBeenCalledWith({
+      where: {
+        storyProjectId: PROJECT_ID,
+        status: { in: ['pending', 'uncertain', 'confirmed'] },
+      },
+      select: { id: true },
+    });
+    expect(gateway.getGame).not.toHaveBeenCalled();
+  });
+
+  it('persists explicit Java absence and releases an expired unknown fence', async () => {
+    const uncertain = authorityRow({
+      id: 'publication-unknown',
+      buildId: BUILD_ID,
+      contentVersion: `build:${BUILD_ID}`,
+      status: 'uncertain',
+      sourceDraftRevision: 2,
+      sourceProductionRevision: 1,
+    });
+    Object.assign(uncertain, {
+      leaseOwner: 'dead-process',
+      leaseExpiresAt: new Date(Date.now() - 5_000),
+      reconciliationLeaseOwner: null,
+    });
+    const tx = reconciliationTransaction([uncertain]);
+    const service = serviceWith({
+      prisma: prismaWithTransaction(tx),
+      gateway: { getGame: jest.fn(() => null) },
+    });
+    const current = await service.getCurrentRelease(
+      { userId: 'user-1' } as never,
+      WORKSPACE_ID,
+      PROJECT_ID,
+    );
+    expect(current).toMatchObject({
+      published: false,
+      currentVersion: null,
+      currentBuild: null,
+      checkedAt: expect.any(String),
+    });
+    expect(tx.storyExperiencePublication.update).toHaveBeenCalledWith({
+      where: { id: 'publication-unknown' },
+      data: expect.objectContaining({
+        authorityGameExists: false,
+        authorityIsCurrent: false,
+        authorityCheckedAt: expect.any(Date),
+        nextReconciliationAt: null,
+        leaseOwner: null,
+      }),
+    });
+  });
+});
+
+describe('StoryExperiencePublication migration', () => {
+  it('guards exact Build identity, authorization revocation and deletion', () => {
+    const sql = readFileSync(
+      resolve(
+        __dirname,
+        '../../prisma/migrations/20260716180000_story_experience_publications/migration.sql',
+      ),
+      'utf8',
+    );
+    expect(sql).toContain('build_row."status" <> \'ready\'');
+    expect(sql).toContain(
+      'build_row."runtime_json"->>\'contentVersion\' IS DISTINCT FROM NEW."content_version"',
+    );
+    expect(sql).toContain(
+      'Only a definitively rejected publication may revoke media authorization',
+    );
+    expect(sql).toContain('"story_experience_publications_no_delete_trg"');
+  });
+});
+
+function releaseRequest(
+  manifest: ReturnType<typeof manifestFixture>,
+): ExperienceReleaseRequest {
+  return {
+    gameId: manifest.gameId,
+    contentVersion: manifest.contentVersion,
+    title: 'Branching Film Test',
+    manifest,
+    status: 'published',
+    setCurrent: true,
+  };
+}
+
+function releaseResponse(manifest: ReturnType<typeof manifestFixture>) {
+  return {
+    gameId: manifest.gameId,
+    contentVersion: manifest.contentVersion,
+    status: 'published' as const,
+    manifestUrl: MANIFEST_URL,
+  };
+}
+
+function gameDetail(currentVersion: string) {
+  return {
+    gameId: PROJECT_ID,
+    title: 'Branching Film',
+    currentVersion,
+    manifestUrl: MANIFEST_URL,
+  };
+}
+
+function javaResponse(status: number, data: unknown): Response {
+  return new Response(JSON.stringify({ code: 200, msg: '成功', data }), {
+    status,
+    headers: { 'content-type': 'application/json' },
+  });
+}
+
+function publicationRow(overrides: Record<string, unknown> = {}) {
+  return {
+    id: 'publication-1',
+    buildId: BUILD_ID,
+    storyProjectId: PROJECT_ID,
+    gameId: PROJECT_ID,
+    contentVersion: `build:${BUILD_ID}`,
+    status: 'pending' as const,
+    requestedSetCurrent: true,
+    requestedByUserId: 'user-1',
+    mediaAuthorizedAt: new Date(),
+    mediaAuthorizationRevokedAt: null,
+    manifestUrl: null,
+    publishedAt: null,
+    rejectedAt: null,
+    attemptCount: 0,
+    firstAttemptAt: null,
+    lastAttemptAt: null,
+    nextAttemptAt: null,
+    lastAttemptedByUserId: null,
+    leaseOwner: null,
+    leaseAcquiredAt: null,
+    leaseExpiresAt: null,
+    lastErrorCode: null,
+    lastErrorDetail: null,
+    lastErrorAt: null,
+    createdAt: new Date(),
+    ...overrides,
+  };
+}
+
+function authorityRow(input: {
+  id: string;
+  buildId: string;
+  contentVersion: string;
+  status: 'pending' | 'confirmed' | 'uncertain' | 'rejected';
+  manifestUrl?: string | null;
+  publishedAt?: Date | null;
+  sourceDraftRevision: number;
+  sourceProductionRevision: number;
+}) {
+  return {
+    ...publicationRow({
+      id: input.id,
+      buildId: input.buildId,
+      contentVersion: input.contentVersion,
+      status: input.status,
+      manifestUrl: input.manifestUrl ?? null,
+      publishedAt: input.publishedAt ?? null,
+    }),
+    build: {
+      id: input.buildId,
+      sourceRevisionId: `${input.buildId.slice(0, -1)}9`,
+      sourceProductionRevision: input.sourceProductionRevision,
+      sourceRevision: { sourceDraftRevision: input.sourceDraftRevision },
+    },
+  };
+}
+
+function claimTransaction(input: {
+  existing: ReturnType<typeof publicationRow> | null;
+  competing?: ReturnType<typeof publicationRow> | null;
+  created?: ReturnType<typeof publicationRow>;
+  claimed?: ReturnType<typeof publicationRow>;
+  onCreate?: () => void;
+  clock?: Date;
+}) {
+  return {
+    $executeRaw: jest.fn(() => 1),
+    $queryRaw: jest.fn(() => [{ now: input.clock ?? new Date() }]),
+    storyExperiencePublication: {
+      findUnique: jest.fn(() => input.existing),
+      findMany: jest.fn(() => (input.competing ? [input.competing] : [])),
+      create: jest.fn(() => {
+        input.onCreate?.();
+        return input.created ?? publicationRow();
+      }),
+      update: jest.fn(
+        () =>
+          input.claimed ??
+          publicationRow({
+            status: input.existing?.status ?? 'pending',
+            leaseOwner: 'lease-1',
+            leaseExpiresAt: new Date(Date.now() + 30_000),
+          }),
+      ),
+    },
+  };
+}
+
+function reconciliationTransaction(
+  rows: ReturnType<typeof authorityRow>[],
+  clock = new Date(),
+) {
+  return {
+    $executeRaw: jest.fn(() => 1),
+    $queryRaw: jest.fn((query: TemplateStringsArray) =>
+      query.join('').includes('xmin::text')
+        ? rows.map((row) => ({
+            id: row.id,
+            rowVersion:
+              (row as typeof row & { rowVersion?: string }).rowVersion ??
+              `version:${row.id}`,
+          }))
+        : [{ now: clock }],
+    ),
+    storyExperiencePublication: {
+      findMany: jest.fn(() => rows),
+      update: jest.fn(() => ({})),
+    },
+  };
+}
+
+function prismaWithTransaction(tx: object) {
+  return {
+    $transaction: jest.fn((operation: (value: object) => unknown) =>
+      operation(tx),
+    ),
+    $queryRaw: jest.fn(() => [{ now: new Date() }]),
+    storyExperiencePublication: {
+      updateMany: jest.fn(() => ({ count: 1 })),
+      findUnique: jest.fn(() => null),
+      findFirst: jest.fn(() => ({ id: 'publication-1' })),
+    },
+  };
+}
+
+function serviceWith(input: {
+  manifest?: ReturnType<typeof manifestFixture>;
+  gateway?: object;
+  prisma?: object;
+  buildProfile?: 'preview' | 'production';
+}) {
+  const manifest = input.manifest ?? manifestFixture();
+  return new StoryExperienceReleaseService(
+    {
+      requireProject: jest.fn(() => ({
+        project: { workspaceId: WORKSPACE_ID },
+      })),
+    } as never,
+    {
+      getBuild: jest.fn(() => ({
+        id: manifest.buildId,
+        status: 'ready',
+        profile: input.buildProfile ?? 'production',
+        scope: { kind: 'full' },
+        runtimeSchemaVersion: 2,
+        runtimeJson: manifest,
+      })),
+    } as never,
+    (input.gateway ?? {
+      publish: jest.fn(() => releaseResponse(manifest)),
+      getGame: jest.fn(() => gameDetail(manifest.contentVersion)),
+    }) as never,
+    (input.prisma ??
+      prismaWithTransaction(claimTransaction({ existing: null }))) as never,
+  );
+}
+
+function publish(service: StoryExperienceReleaseService) {
+  return service.publishBuild(
+    { userId: 'user-1' } as never,
+    WORKSPACE_ID,
+    PROJECT_ID,
+    BUILD_ID,
+    { status: 'published', setCurrent: true },
+    'satoken=session',
+  );
+}
+
+function deferred<T>(): {
+  promise: Promise<T>;
+  resolve: (value: T) => void;
+} {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((fulfill) => {
+    resolve = fulfill;
+  });
+  return { promise, resolve };
+}

@@ -12,6 +12,7 @@
  * one round trip.
  */
 import {
+  BadRequestException,
   ConflictException,
   ForbiddenException,
   Injectable,
@@ -262,6 +263,144 @@ export class CrewsService {
     }
 
     const updated = await this.prisma.crew.findUnique({ where: { id } });
+    if (!updated) throw new NotFoundException('Crew not found');
+    return toCrewDTO(updated);
+  }
+
+  /**
+   * Transfer crew ownership to `toUserId`.
+   *
+   * `founderId` is the single source of truth for owner/admin authority
+   * (see {@link CrewRoleService}), so the transfer swaps it and reconciles
+   * the `crew_members` "owner" row so the member list stays truthful:
+   *   - outgoing owner: demoted to a normal member (default) or removed
+   *     from the crew (`opts.removeOldOwner`);
+   *   - incoming owner: their active membership is promoted to `owner`, or
+   *     a fresh `owner` member row is created if they weren't a member.
+   *
+   * Permission-agnostic by design — the caller decides who may invoke it:
+   *   - the admin path passes no `requireCurrentFounderId` (act on any crew);
+   *   - a future self-service path passes the acting user id so a non-owner
+   *     can't transfer a crew they don't own.
+   */
+  async transferOwnership(
+    crewId: string,
+    toUserId: string,
+    opts: {
+      requireCurrentFounderId?: string;
+      requireTargetActiveMember?: boolean;
+      expectedVersion?: number;
+      removeOldOwner?: boolean;
+    } = {},
+  ) {
+    const target = toUserId.trim();
+    if (!target) {
+      throw new BadRequestException({ message: 'toUserId is required' });
+    }
+
+    const crew = await this.prisma.crew.findFirst({
+      where: { id: crewId, deletedAt: null },
+      select: { founderId: true },
+    });
+    if (!crew) throw new NotFoundException('Crew not found');
+
+    if (
+      opts.requireCurrentFounderId !== undefined &&
+      crew.founderId !== opts.requireCurrentFounderId
+    ) {
+      throw new ForbiddenException({
+        message: 'Only the crew owner can transfer ownership',
+      });
+    }
+    if (crew.founderId === target) {
+      throw new BadRequestException({
+        message: 'Target user is already the crew owner',
+      });
+    }
+
+    // Self-service transfers may only hand off to an existing member; the
+    // admin path leaves this off so ops can transfer to any user.
+    if (opts.requireTargetActiveMember) {
+      const isMember = await this.prisma.crewMember.findFirst({
+        where: { crewId, userId: target, removedAt: null },
+        select: { id: true },
+      });
+      if (!isMember) {
+        throw new BadRequestException({
+          message: 'Target user must be an existing crew member',
+        });
+      }
+    }
+
+    await this.prisma.$transaction(async (tx) => {
+      // 1) founder_id carries the authority — swap it (optimistic if asked).
+      if (opts.expectedVersion !== undefined) {
+        const r = await tx.crew.updateMany({
+          where: { id: crewId, version: opts.expectedVersion, deletedAt: null },
+          data: { founderId: target, version: { increment: 1 } },
+        });
+        if (r.count === 0) {
+          const current = await tx.crew.findUnique({
+            where: { id: crewId },
+            select: { version: true, deletedAt: true },
+          });
+          if (!current || current.deletedAt)
+            throw new NotFoundException('Crew not found');
+          throw new ConflictException({
+            message: 'Crew was modified by someone else; refresh and retry',
+            expectedVersion: opts.expectedVersion,
+            actualVersion: current.version,
+          });
+        }
+      } else {
+        await tx.crew.update({
+          where: { id: crewId },
+          data: { founderId: target, version: { increment: 1 } },
+        });
+      }
+
+      // 2) Reconcile the outgoing owner's membership row.
+      const oldOwnerMember = await tx.crewMember.findFirst({
+        where: { crewId, userId: crew.founderId, removedAt: null },
+        select: { id: true },
+      });
+      if (oldOwnerMember) {
+        await tx.crewMember.update({
+          where: { id: oldOwnerMember.id },
+          data: opts.removeOldOwner
+            ? { removedAt: new Date() }
+            : { roleType: 'member' },
+        });
+      }
+
+      // 3) Ensure the incoming owner has an active `owner` member row. The
+      //    partial unique (crew_id, user_id) WHERE removed_at IS NULL means
+      //    we promote an existing active row rather than insert a duplicate.
+      const newOwnerMember = await tx.crewMember.findFirst({
+        where: { crewId, userId: target, removedAt: null },
+        select: { id: true },
+      });
+      if (newOwnerMember) {
+        await tx.crewMember.update({
+          where: { id: newOwnerMember.id },
+          data: { roleType: 'owner' },
+        });
+      } else {
+        await tx.crewMember.create({
+          data: {
+            id: newCrewDomainId(),
+            crewId,
+            userId: target,
+            roleType: 'owner',
+            via: 'manual',
+          },
+        });
+      }
+    });
+
+    const updated = await this.prisma.crew.findUnique({
+      where: { id: crewId },
+    });
     if (!updated) throw new NotFoundException('Crew not found');
     return toCrewDTO(updated);
   }

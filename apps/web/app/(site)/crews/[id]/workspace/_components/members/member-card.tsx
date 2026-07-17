@@ -49,6 +49,8 @@ interface MemberCardProps {
   /** Owner can manage every other member but not themselves. */
   canManage: boolean;
   onAskRemove: (memberId: string, name: string) => void;
+  /** Owner-only: hand crew ownership to this member. */
+  onAskTransfer: (userId: string, name: string) => void;
 }
 
 export function MemberCard({
@@ -60,6 +62,7 @@ export function MemberCard({
   isOwner: _isOwner,
   canManage,
   onAskRemove,
+  onAskTransfer,
 }: MemberCardProps) {
   const t = useTranslations("workspace");
   const translatePosition = useTranslatePositionValue();
@@ -154,6 +157,16 @@ export function MemberCard({
                 disabled={updateMember.isPending}
               />
             </div>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon-xs"
+              onClick={() => onAskTransfer(member.userId, displayName)}
+              aria-label={t("transferOwner")}
+              title={t("transferOwner")}
+            >
+              <IconCrown className="size-3.5" />
+            </Button>
             <Button
               type="button"
               variant="ghost"

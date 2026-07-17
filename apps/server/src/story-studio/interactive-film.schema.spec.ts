@@ -1,13 +1,15 @@
 import {
   collectInteractiveFilmRuntimeLocales,
   createLockableInteractiveFilmDraftContentSchema,
+  createPlayableInteractiveFilmDraftContentSchema,
   InteractiveFilmDraftContentSchema,
   LockableInteractiveFilmDraftContentSchema,
+  ProductionReadyStoryTrailerPromptSchema,
   type FilmCondition,
   type FilmEffect,
   type InteractiveFilmDraftContent,
 } from './interactive-film.schema';
-import { buildHuBaoVillaImportBundle } from './import/hu-bao-villa.builder';
+import { buildInteractiveFilmTestBundle } from './__tests__/interactive-film-test-bundle';
 
 type GraphNode = InteractiveFilmDraftContent['graph']['nodes'][number];
 type ChoiceExit = Extract<
@@ -16,30 +18,28 @@ type ChoiceExit = Extract<
 >;
 
 describe('interactive-film choice exit prompt contract', () => {
-  it('normalizes legacy mutable drafts without a graph-level prompt', () => {
-    const draft = structuredClone(buildHuBaoVillaImportBundle().draftContent);
+  it('rejects a choice exit without its explicit graph-level prompt', () => {
+    const draft = structuredClone(
+      buildInteractiveFilmTestBundle().draftContent,
+    );
     const exit = firstChoiceExit(draft);
     const mutableExit: { prompt?: Record<string, string> } = exit;
     delete mutableExit.prompt;
 
     const result = InteractiveFilmDraftContentSchema.safeParse(draft);
-    expect(result.success).toBe(true);
-    if (!result.success) return;
-    expect(firstChoiceExit(result.data).prompt).toEqual({});
-    const lockResult = LockableInteractiveFilmDraftContentSchema.safeParse(
-      result.data,
-    );
-    expect(lockResult.success).toBe(false);
-    if (lockResult.success) return;
+    expect(result.success).toBe(false);
+    if (result.success) return;
     expect(
-      lockResult.error.issues.some(
+      result.error.issues.some(
         (issue) => issue.path.includes('exit') && issue.path.includes('prompt'),
       ),
     ).toBe(true);
   });
 
   it('allows an empty prompt while authoring but rejects it at revision lock', () => {
-    const draft = structuredClone(buildHuBaoVillaImportBundle().draftContent);
+    const draft = structuredClone(
+      buildInteractiveFilmTestBundle().draftContent,
+    );
     firstChoiceExit(draft).prompt = { 'zh-CN': '   ' };
 
     expect(InteractiveFilmDraftContentSchema.safeParse(draft).success).toBe(
@@ -59,7 +59,7 @@ describe('interactive-film choice exit prompt contract', () => {
   });
 
   it('locks a choice exit with a non-empty localized prompt', () => {
-    const draft = buildHuBaoVillaImportBundle().draftContent;
+    const draft = buildInteractiveFilmTestBundle().draftContent;
     expect(firstChoiceExit(draft).prompt).toEqual({
       'en-US': 'Which track should play first?',
       'zh-CN': '先播放哪一轨？',
@@ -73,7 +73,9 @@ describe('interactive-film choice exit prompt contract', () => {
 
 describe('interactive-film runtime locale coverage', () => {
   it('derives locales only from runtime-visible copy and locks complete coverage', () => {
-    const draft = structuredClone(buildHuBaoVillaImportBundle().draftContent);
+    const draft = structuredClone(
+      buildInteractiveFilmTestBundle().draftContent,
+    );
     draft.storyBible.characters[0].name['fr-FR'] = 'Visiteuse';
 
     expect(collectInteractiveFilmRuntimeLocales(draft, 'zh-CN')).toEqual([
@@ -89,7 +91,7 @@ describe('interactive-film runtime locale coverage', () => {
 
   it('rejects any missing runtime copy for an authored or project-default locale', () => {
     const missingAuthoredLocale = structuredClone(
-      buildHuBaoVillaImportBundle().draftContent,
+      buildInteractiveFilmTestBundle().draftContent,
     );
     delete missingAuthoredLocale.storyBible.endings[0].summary['en-US'];
     const authoredResult = createLockableInteractiveFilmDraftContentSchema(
@@ -106,7 +108,7 @@ describe('interactive-film runtime locale coverage', () => {
     }
 
     const missingDefaultLocale = structuredClone(
-      buildHuBaoVillaImportBundle().draftContent,
+      buildInteractiveFilmTestBundle().draftContent,
     );
     const defaultResult =
       createLockableInteractiveFilmDraftContentSchema('ja-JP').safeParse(
@@ -127,7 +129,9 @@ describe('interactive-film runtime locale coverage', () => {
 
 describe('interactive-film mutable draft structural identity', () => {
   it('rejects duplicate character identifiers before revision lock', () => {
-    const draft = structuredClone(buildHuBaoVillaImportBundle().draftContent);
+    const draft = structuredClone(
+      buildInteractiveFilmTestBundle().draftContent,
+    );
     const duplicate = structuredClone(draft.storyBible.characters[0]);
     draft.storyBible.characters.push(duplicate);
 
@@ -150,7 +154,9 @@ describe('interactive-film mutable draft structural identity', () => {
   });
 
   it('rejects duplicate state-variable keys before revision lock', () => {
-    const draft = structuredClone(buildHuBaoVillaImportBundle().draftContent);
+    const draft = structuredClone(
+      buildInteractiveFilmTestBundle().draftContent,
+    );
     const duplicate = structuredClone(draft.storyBible.stateVariables[0]);
     draft.storyBible.stateVariables.push(duplicate);
 
@@ -175,7 +181,7 @@ describe('interactive-film mutable draft structural identity', () => {
 
 describe('interactive-film checkpoint exit contract', () => {
   it('locks the four finale checkpoints without counting them as decisions', () => {
-    const draft = buildHuBaoVillaImportBundle().draftContent;
+    const draft = buildInteractiveFilmTestBundle().draftContent;
     const checkpoints = draft.graph.nodes.flatMap((node) =>
       node.kind === 'clip' && node.exit.kind === 'checkpoint'
         ? [node.exit]
@@ -202,7 +208,9 @@ describe('interactive-film checkpoint exit contract', () => {
   });
 
   it('rejects an unknown checkpoint continuation at revision lock', () => {
-    const draft = structuredClone(buildHuBaoVillaImportBundle().draftContent);
+    const draft = structuredClone(
+      buildInteractiveFilmTestBundle().draftContent,
+    );
     const checkpointNode = draft.graph.nodes.find(
       (node) => node.kind === 'clip' && node.exit.kind === 'checkpoint',
     );
@@ -226,7 +234,9 @@ describe('interactive-film checkpoint exit contract', () => {
 
 describe('interactive-film canonical decision identity', () => {
   it('allows one semantically identical decision after multiple predecessors with context-specific targets', () => {
-    const draft = structuredClone(buildHuBaoVillaImportBundle().draftContent);
+    const draft = structuredClone(
+      buildInteractiveFilmTestBundle().draftContent,
+    );
     const { canonical, repeated } =
       repeatFirstDecisionAtSecondPredecessor(draft);
 
@@ -309,7 +319,9 @@ describe('interactive-film canonical decision identity', () => {
   ])(
     'rejects conflicting repeated-decision $field in the mutable draft',
     ({ field, mutate }) => {
-      const draft = structuredClone(buildHuBaoVillaImportBundle().draftContent);
+      const draft = structuredClone(
+        buildInteractiveFilmTestBundle().draftContent,
+      );
       const { repeated } = repeatFirstDecisionAtSecondPredecessor(draft);
       mutate(repeated);
 
@@ -380,7 +392,9 @@ describe('interactive-film state-variable semantic contract', () => {
         'not_equals value must match the string type of state variable finalAction.',
     },
   ])('rejects $name at revision lock', ({ condition, message }) => {
-    const draft = structuredClone(buildHuBaoVillaImportBundle().draftContent);
+    const draft = structuredClone(
+      buildInteractiveFilmTestBundle().draftContent,
+    );
     firstChoiceExit(draft).choices[0].visibleWhen = condition;
 
     expectLockIssue(draft, {
@@ -433,7 +447,9 @@ describe('interactive-film state-variable semantic contract', () => {
       message: 'increment_variable requires a numeric state variable.',
     },
   ])('rejects $name at revision lock', ({ prepare, effect, message }) => {
-    const draft = structuredClone(buildHuBaoVillaImportBundle().draftContent);
+    const draft = structuredClone(
+      buildInteractiveFilmTestBundle().draftContent,
+    );
     prepare?.(draft);
     firstChoiceExit(draft).choices[0].effects = [effect];
 
@@ -445,37 +461,32 @@ describe('interactive-film state-variable semantic contract', () => {
 });
 
 describe('interactive-film mutable clip prompt authoring', () => {
-  it('normalizes legacy drafts at the schema boundary without inventing production records', () => {
-    const legacy = structuredClone(buildHuBaoVillaImportBundle().draftContent);
-    delete (legacy as { clipPrompts?: unknown }).clipPrompts;
-
-    const result = InteractiveFilmDraftContentSchema.safeParse(legacy);
-
-    expect(result.success).toBe(true);
-    if (!result.success) return;
-    const clipNodes = result.data.graph.nodes.filter(
-      (node) => node.kind === 'clip',
+  it('requires the explicit v2 clip prompt collection', () => {
+    const incomplete = structuredClone(
+      buildInteractiveFilmTestBundle().draftContent,
     );
-    expect(result.data.clipPrompts).toHaveLength(clipNodes.length);
-    expect(result.data.clipPrompts[0]).toMatchObject({
-      graphNodeId: clipNodes[0]?.nodeId,
-      clipKey: clipNodes[0]?.kind === 'clip' ? clipNodes[0].clipKey : undefined,
-      targetDurationMs: 15_000,
-      generationControl: { mode: 'frame_lock', frameMode: 'first_frame' },
-      masterDirection: '',
-      beats: [{ id: 'beat:1', startMs: 0, endMs: 15_000 }],
-    });
+    delete (incomplete as { clipPrompts?: unknown }).clipPrompts;
+
+    const result = InteractiveFilmDraftContentSchema.safeParse(incomplete);
+
+    expect(result.success).toBe(false);
+    if (result.success) return;
+    expect(result.error.issues).toContainEqual(
+      expect.objectContaining({ path: ['clipPrompts'] }),
+    );
   });
 
   it('rejects orphan, mismatched, and duplicate nested prompt identities in mutable drafts', () => {
-    const orphan = structuredClone(buildHuBaoVillaImportBundle().draftContent);
+    const orphan = structuredClone(
+      buildInteractiveFilmTestBundle().draftContent,
+    );
     orphan.clipPrompts[0].graphNodeId = 'clip:missing';
     const mismatched = structuredClone(
-      buildHuBaoVillaImportBundle().draftContent,
+      buildInteractiveFilmTestBundle().draftContent,
     );
     mismatched.clipPrompts[0].clipKey = 'MISSING';
     const duplicateBeat = structuredClone(
-      buildHuBaoVillaImportBundle().draftContent,
+      buildInteractiveFilmTestBundle().draftContent,
     );
     duplicateBeat.clipPrompts[0].beats.push({
       ...duplicateBeat.clipPrompts[0].beats[0],
@@ -489,7 +500,9 @@ describe('interactive-film mutable clip prompt authoring', () => {
   });
 
   it('keeps timing relationships mutable but enforces direction and timeline semantics at lock', () => {
-    const draft = structuredClone(buildHuBaoVillaImportBundle().draftContent);
+    const draft = structuredClone(
+      buildInteractiveFilmTestBundle().draftContent,
+    );
     const prompt = draft.clipPrompts[0];
     prompt.masterDirection = '';
     prompt.emotionalArc = '';
@@ -498,6 +511,10 @@ describe('interactive-film mutable clip prompt authoring', () => {
     expect(InteractiveFilmDraftContentSchema.safeParse(draft).success).toBe(
       true,
     );
+    expect(
+      createPlayableInteractiveFilmDraftContentSchema('zh-CN').safeParse(draft)
+        .success,
+    ).toBe(false);
     const locked = LockableInteractiveFilmDraftContentSchema.safeParse(draft);
     expect(locked.success).toBe(false);
     if (locked.success) return;
@@ -516,7 +533,7 @@ describe('interactive-film mutable clip prompt authoring', () => {
 
   it('requires lockable beat timelines to cover the full target duration without gaps', () => {
     const complete = structuredClone(
-      buildHuBaoVillaImportBundle().draftContent,
+      buildInteractiveFilmTestBundle().draftContent,
     );
     expect(
       LockableInteractiveFilmDraftContentSchema.safeParse(complete).success,
@@ -562,7 +579,7 @@ describe('interactive-film mutable clip prompt authoring', () => {
 
   it('reports an empty lockable timeline at the beats collection boundary', () => {
     const emptyTimeline = structuredClone(
-      buildHuBaoVillaImportBundle().draftContent,
+      buildInteractiveFilmTestBundle().draftContent,
     );
     emptyTimeline.clipPrompts[0].beats = [];
 
@@ -586,49 +603,66 @@ describe('interactive-film mutable clip prompt authoring', () => {
 });
 
 describe('interactive-film project-root trailer authoring', () => {
-  it('normalizes an older v1 draft to an explicit absent trailer', () => {
-    const draft = structuredClone(buildHuBaoVillaImportBundle().draftContent);
+  it('requires an explicit trailer state in every v2 draft', () => {
+    const draft = structuredClone(
+      buildInteractiveFilmTestBundle().draftContent,
+    );
     delete (draft as { trailerPrompt?: unknown }).trailerPrompt;
 
     const result = InteractiveFilmDraftContentSchema.safeParse(draft);
 
-    expect(result.success).toBe(true);
-    if (!result.success) return;
-    expect(result.data.trailerPrompt).toBeNull();
-    expect(
-      LockableInteractiveFilmDraftContentSchema.safeParse(result.data).success,
-    ).toBe(true);
+    expect(result.success).toBe(false);
+    if (result.success) return;
+    expect(result.error.issues).toContainEqual(
+      expect.objectContaining({ path: ['trailerPrompt'] }),
+    );
   });
 
-  it('keeps an unfinished trailer mutable but rejects it at revision lock', () => {
-    const draft = structuredClone(buildHuBaoVillaImportBundle().draftContent);
+  it('keeps an unfinished trailer draft without blocking gameplay revision lock', () => {
+    const draft = structuredClone(
+      buildInteractiveFilmTestBundle().draftContent,
+    );
     draft.trailerPrompt = trailerPrompt();
     draft.trailerPrompt.masterDirection = '';
 
     expect(InteractiveFilmDraftContentSchema.safeParse(draft).success).toBe(
       true,
     );
-    const locked = LockableInteractiveFilmDraftContentSchema.safeParse(draft);
-    expect(locked.success).toBe(false);
-    if (locked.success) return;
-    expect(locked.error.issues).toContainEqual(
+    expect(
+      createPlayableInteractiveFilmDraftContentSchema('zh-CN').safeParse(draft)
+        .success,
+    ).toBe(true);
+    expect(
+      LockableInteractiveFilmDraftContentSchema.safeParse(draft).success,
+    ).toBe(true);
+    const productionReady = ProductionReadyStoryTrailerPromptSchema.safeParse(
+      draft.trailerPrompt,
+    );
+    expect(productionReady.success).toBe(false);
+    if (productionReady.success) return;
+    expect(productionReady.error.issues).toContainEqual(
       expect.objectContaining({
-        path: ['trailerPrompt', 'masterDirection'],
-        message: 'Required before locking a revision.',
+        path: ['masterDirection'],
+        message: 'Required before trailer production.',
       }),
     );
   });
 
   it('locks a complete time-coded trailer without adding a graph clip', () => {
-    const draft = structuredClone(buildHuBaoVillaImportBundle().draftContent);
+    const draft = structuredClone(
+      buildInteractiveFilmTestBundle().draftContent,
+    );
     const clipCount = draft.graph.nodes.filter(
       (node) => node.kind === 'clip',
     ).length;
     draft.trailerPrompt = trailerPrompt();
 
     const locked = LockableInteractiveFilmDraftContentSchema.parse(draft);
+    const productionReady = ProductionReadyStoryTrailerPromptSchema.parse(
+      locked.trailerPrompt,
+    );
 
-    expect(locked.trailerPrompt?.targetDurationMs).toBe(15_000);
+    expect(productionReady.targetDurationMs).toBe(15_000);
     expect(
       locked.graph.nodes.filter((node) => node.kind === 'clip'),
     ).toHaveLength(clipCount);
@@ -639,7 +673,7 @@ function trailerPrompt(): NonNullable<
   InteractiveFilmDraftContent['trailerPrompt']
 > {
   return {
-    title: '虎豹别墅：龙口入夜｜15 秒宣传片',
+    title: '分支影游测试｜15 秒宣传片',
     description: '以巨龙入口与两位女主的抉择建立悬念。',
     targetDurationMs: 15_000,
     generationControl: { mode: 'omni_reference' },

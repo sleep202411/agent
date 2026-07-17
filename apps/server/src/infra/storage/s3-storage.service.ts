@@ -47,6 +47,10 @@ import { Upload } from '@aws-sdk/lib-storage';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { createReadStream } from 'node:fs';
 import {
+  assertExpectedStorageObjectSize,
+  assertStoredObjectSize,
+  assertStoragePromotionLocations,
+  IMMUTABLE_STORAGE_CACHE_CONTROL,
   OutputStorageService,
   type CreateReadUrlInput,
   type CreateReadUrlResult,
@@ -56,6 +60,8 @@ import {
   type OutputStorageResult,
   type OutputStorageUpload,
   type OutputStorageUploadFromFile,
+  type PromoteStorageObjectInput,
+  type PromoteStorageObjectResult,
   type RestrictObjectResult,
   type StorageObjectRef,
 } from './storage.types';
@@ -236,18 +242,29 @@ export class S3CompatibleStorageService extends OutputStorageService {
   }
 
   async headObject(key: string): Promise<HeadObjectResult> {
+    return this.headStoredObject({
+      bucket: this.bucket,
+      storageKey: key,
+      region: this.region,
+    });
+  }
+
+  override async headStoredObject(
+    ref: StorageObjectRef,
+  ): Promise<HeadObjectResult> {
     const client = this.requireClient();
     try {
       const head = await client.send(
-        new HeadObjectCommand({ Bucket: this.bucket, Key: key }),
+        new HeadObjectCommand({ Bucket: ref.bucket, Key: ref.storageKey }),
       );
       return {
         exists: true,
         sizeBytes: head.ContentLength,
         contentType: head.ContentType,
+        etag: head.ETag,
         provider: 's3_compatible',
-        bucket: this.bucket,
-        region: this.region,
+        bucket: ref.bucket,
+        region: ref.region ?? this.region,
       };
     } catch (err) {
       if (isS3NotFound(err)) {
@@ -255,6 +272,76 @@ export class S3CompatibleStorageService extends OutputStorageService {
       }
       throw err;
     }
+  }
+
+  override async promoteObject(
+    input: PromoteStorageObjectInput,
+  ): Promise<PromoteStorageObjectResult> {
+    const client = this.requireClient();
+    assertStoragePromotionLocations(input.source, input.destination);
+    assertExpectedStorageObjectSize(input.expectedSizeBytes);
+    assertSameS3Region(input.source, input.destination);
+
+    const cacheControl = input.cacheControl ?? IMMUTABLE_STORAGE_CACHE_CONTROL;
+    const existing = await this.headStoredObject(input.destination);
+    if (!existing.exists) {
+      const source = await this.headStoredObject(input.source);
+      assertStoredObjectSize(input.source, source, input.expectedSizeBytes);
+      await client.send(
+        new CopyObjectCommand({
+          Bucket: input.destination.bucket,
+          Key: input.destination.storageKey,
+          CopySource: encodeCopySource(
+            input.source.bucket,
+            input.source.storageKey,
+          ),
+          MetadataDirective: 'REPLACE',
+          ContentType: input.contentType,
+          CacheControl: cacheControl,
+        }),
+      );
+    } else {
+      assertStoredObjectSize(
+        input.destination,
+        existing,
+        input.expectedSizeBytes,
+      );
+      // Idempotent retry after copy: a self-copy re-asserts the final headers.
+      await client.send(
+        new CopyObjectCommand({
+          Bucket: input.destination.bucket,
+          Key: input.destination.storageKey,
+          CopySource: encodeCopySource(
+            input.destination.bucket,
+            input.destination.storageKey,
+          ),
+          MetadataDirective: 'REPLACE',
+          ContentType: input.contentType,
+          CacheControl: cacheControl,
+        }),
+      );
+    }
+
+    const finalHead = await this.headStoredObject(input.destination);
+    assertStoredObjectSize(
+      input.destination,
+      finalHead,
+      input.expectedSizeBytes,
+    );
+    await this.deleteAfterPromotion(input.source);
+    return {
+      bucket: input.destination.bucket,
+      storageKey: input.destination.storageKey,
+      region: input.destination.region ?? this.region,
+      provider: 's3_compatible',
+      sizeBytes: input.expectedSizeBytes,
+      contentType: input.contentType,
+      ...(finalHead.etag ? { etag: finalHead.etag } : {}),
+    };
+  }
+
+  override async deleteObject(ref: StorageObjectRef): Promise<void> {
+    await this.deleteObjectIfExists(this.requireClient(), ref);
   }
 
   // Presigned PUTs can't pin Cache-Control (only Content-Type is signed), so
@@ -387,6 +474,19 @@ export class S3CompatibleStorageService extends OutputStorageService {
     );
   }
 
+  private async deleteAfterPromotion(ref: StorageObjectRef): Promise<void> {
+    try {
+      await this.deleteObject(ref);
+    } catch (err) {
+      // Promotion is complete and the final key was never signed. The session
+      // reaper can safely retry staging cleanup later.
+      this.logger.warn(
+        `Promoted S3 staging object but could not delete ${ref.bucket}/${ref.storageKey}: ` +
+          errorMessage(err),
+      );
+    }
+  }
+
   private async ensureBucket(client: S3Client, bucket: string): Promise<void> {
     try {
       await client.send(new CreateBucketCommand({ Bucket: bucket }));
@@ -424,6 +524,19 @@ function isS3NotFound(err: unknown): boolean {
     if (e.name === 'NotFound' || e.name === 'NoSuchKey') return true;
   }
   return false;
+}
+
+function assertSameS3Region(
+  source: StorageObjectRef,
+  destination: StorageObjectRef,
+): void {
+  if (
+    source.region &&
+    destination.region &&
+    source.region !== destination.region
+  ) {
+    throw new Error('S3 server-side promotion requires one storage region');
+  }
 }
 
 function isBucketAlreadyOurs(err: unknown): boolean {

@@ -562,6 +562,7 @@ export function PromptTextarea({
           ...(ariaDescribedBy ? { "aria-describedby": ariaDescribedBy } : {}),
           "aria-label": ariaLabel ?? placeholder ?? "Prompt",
           "aria-multiline": "true",
+          "data-canvas-scroll-owner": "y",
           class: editorClassName,
           style: `min-height: ${Math.max(1, rows) * 24 + 8}px`,
         },

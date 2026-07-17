@@ -9,31 +9,24 @@ import {
   Param,
   Post,
   Put,
-  Query,
 } from '@nestjs/common';
 import { CurrentUser, type AuthUser } from '../auth';
 import { ZodValidationPipe } from '../common/zod.pipe';
 import {
-  ApproveFilmTakeSchema,
-  CancelFilmTakeSchema,
-  CreateFilmTrailerTakeReviewSchema,
-  CreateFilmTrailerTakeSchema,
-  FilmTakeListQuerySchema,
-  PutFilmTrailerMasterSchema,
+  CancelFilmGenerationSchema,
+  CreateFilmTrailerGenerationSchema,
+  PutFilmCurrentVideoSchema,
   PutFilmTrailerReferencesSchema,
-  RetryFilmTakeSchema,
-  StoryFilmTrailerTakeParamsSchema,
+  RetryFilmGenerationSchema,
+  StoryFilmTrailerGenerationParamsSchema,
   StoryRevisionParamsSchema,
   StoryUuidSchema,
-  type ApproveFilmTakeInput,
-  type CancelFilmTakeInput,
-  type CreateFilmTrailerTakeInput,
-  type CreateFilmTrailerTakeReviewInput,
-  type FilmTakeListQuery,
-  type PutFilmTrailerMasterInput,
+  type CancelFilmGenerationInput,
+  type CreateFilmTrailerGenerationInput,
+  type PutFilmCurrentVideoInput,
   type PutFilmTrailerReferencesInput,
-  type RetryFilmTakeInput,
-  type StoryFilmTrailerTakeParams,
+  type RetryFilmGenerationInput,
+  type StoryFilmTrailerGenerationParams,
   type StoryRevisionParams,
 } from './dto';
 import { StoryFilmTrailerProductionService } from './story-film-trailer-production.service';
@@ -83,9 +76,9 @@ export class StoryFilmTrailerProductionController {
     };
   }
 
-  @Post(':projectId/revisions/:revisionId/trailer/takes')
+  @Post(':projectId/revisions/:revisionId/trailer/generations')
   @HttpCode(HttpStatus.CREATED)
-  async createTake(
+  async createGeneration(
     @CurrentUser() user: AuthUser,
     @Headers('x-fizz-workspace-id')
     workspaceHeader: string | string[] | undefined,
@@ -93,12 +86,12 @@ export class StoryFilmTrailerProductionController {
     idempotencyHeader: string | string[] | undefined,
     @Param(new ZodValidationPipe(StoryRevisionParamsSchema))
     params: StoryRevisionParams,
-    @Body(new ZodValidationPipe(CreateFilmTrailerTakeSchema))
-    body: CreateFilmTrailerTakeInput,
+    @Body(new ZodValidationPipe(CreateFilmTrailerGenerationSchema))
+    body: CreateFilmTrailerGenerationInput,
   ) {
     return {
       code: 200,
-      data: await this.production.createTake(
+      data: await this.production.createGeneration(
         user,
         requiredWorkspaceId(workspaceHeader),
         params.projectId,
@@ -109,154 +102,86 @@ export class StoryFilmTrailerProductionController {
     };
   }
 
-  @Get(':projectId/revisions/:revisionId/trailer/takes')
-  async listTakes(
+  @Get(':projectId/trailer-generations/:generationId')
+  async getGeneration(
     @CurrentUser() user: AuthUser,
     @Headers('x-fizz-workspace-id')
     workspaceHeader: string | string[] | undefined,
-    @Param(new ZodValidationPipe(StoryRevisionParamsSchema))
-    params: StoryRevisionParams,
-    @Query(new ZodValidationPipe(FilmTakeListQuerySchema))
-    query: FilmTakeListQuery,
+    @Param(new ZodValidationPipe(StoryFilmTrailerGenerationParamsSchema))
+    params: StoryFilmTrailerGenerationParams,
   ) {
     return {
       code: 200,
-      data: await this.production.listTakes(
+      data: await this.production.getGeneration(
         user,
         requiredWorkspaceId(workspaceHeader),
         params.projectId,
-        params.revisionId,
-        query,
+        params.generationId,
       ),
     };
   }
 
-  @Get(':projectId/trailer-takes/:takeId')
-  async getTake(
+  @Post(':projectId/trailer-generations/:generationId/cancel')
+  async cancelGeneration(
     @CurrentUser() user: AuthUser,
     @Headers('x-fizz-workspace-id')
     workspaceHeader: string | string[] | undefined,
-    @Param(new ZodValidationPipe(StoryFilmTrailerTakeParamsSchema))
-    params: StoryFilmTrailerTakeParams,
+    @Param(new ZodValidationPipe(StoryFilmTrailerGenerationParamsSchema))
+    params: StoryFilmTrailerGenerationParams,
+    @Body(new ZodValidationPipe(CancelFilmGenerationSchema))
+    body: CancelFilmGenerationInput,
   ) {
     return {
       code: 200,
-      data: await this.production.getTake(
+      data: await this.production.cancelGeneration(
         user,
         requiredWorkspaceId(workspaceHeader),
         params.projectId,
-        params.takeId,
-      ),
-    };
-  }
-
-  @Post(':projectId/trailer-takes/:takeId/cancel')
-  async cancelTake(
-    @CurrentUser() user: AuthUser,
-    @Headers('x-fizz-workspace-id')
-    workspaceHeader: string | string[] | undefined,
-    @Param(new ZodValidationPipe(StoryFilmTrailerTakeParamsSchema))
-    params: StoryFilmTrailerTakeParams,
-    @Body(new ZodValidationPipe(CancelFilmTakeSchema))
-    body: CancelFilmTakeInput,
-  ) {
-    return {
-      code: 200,
-      data: await this.production.cancelTake(
-        user,
-        requiredWorkspaceId(workspaceHeader),
-        params.projectId,
-        params.takeId,
+        params.generationId,
         body,
       ),
     };
   }
 
-  @Post(':projectId/trailer-takes/:takeId/retry')
+  @Post(':projectId/trailer-generations/:generationId/retry')
   @HttpCode(HttpStatus.CREATED)
-  async retryTake(
+  async retryGeneration(
     @CurrentUser() user: AuthUser,
     @Headers('x-fizz-workspace-id')
     workspaceHeader: string | string[] | undefined,
     @Headers('idempotency-key')
     idempotencyHeader: string | string[] | undefined,
-    @Param(new ZodValidationPipe(StoryFilmTrailerTakeParamsSchema))
-    params: StoryFilmTrailerTakeParams,
-    @Body(new ZodValidationPipe(RetryFilmTakeSchema))
-    body: RetryFilmTakeInput,
+    @Param(new ZodValidationPipe(StoryFilmTrailerGenerationParamsSchema))
+    params: StoryFilmTrailerGenerationParams,
+    @Body(new ZodValidationPipe(RetryFilmGenerationSchema))
+    body: RetryFilmGenerationInput,
   ) {
     return {
       code: 200,
-      data: await this.production.retryTake(
+      data: await this.production.retryGeneration(
         user,
         requiredWorkspaceId(workspaceHeader),
         params.projectId,
-        params.takeId,
+        params.generationId,
         body,
         requiredIdempotencyKey(idempotencyHeader),
       ),
     };
   }
 
-  @Post(':projectId/trailer-takes/:takeId/reviews')
-  @HttpCode(HttpStatus.CREATED)
-  async reviewTake(
-    @CurrentUser() user: AuthUser,
-    @Headers('x-fizz-workspace-id')
-    workspaceHeader: string | string[] | undefined,
-    @Param(new ZodValidationPipe(StoryFilmTrailerTakeParamsSchema))
-    params: StoryFilmTrailerTakeParams,
-    @Body(new ZodValidationPipe(CreateFilmTrailerTakeReviewSchema))
-    body: CreateFilmTrailerTakeReviewInput,
-  ) {
-    return {
-      code: 200,
-      data: await this.production.reviewTake(
-        user,
-        requiredWorkspaceId(workspaceHeader),
-        params.projectId,
-        params.takeId,
-        body,
-      ),
-    };
-  }
-
-  @Post(':projectId/trailer-takes/:takeId/approval')
-  @HttpCode(HttpStatus.CREATED)
-  async approveTake(
-    @CurrentUser() user: AuthUser,
-    @Headers('x-fizz-workspace-id')
-    workspaceHeader: string | string[] | undefined,
-    @Param(new ZodValidationPipe(StoryFilmTrailerTakeParamsSchema))
-    params: StoryFilmTrailerTakeParams,
-    @Body(new ZodValidationPipe(ApproveFilmTakeSchema))
-    body: ApproveFilmTakeInput,
-  ) {
-    return {
-      code: 200,
-      data: await this.production.approveTake(
-        user,
-        requiredWorkspaceId(workspaceHeader),
-        params.projectId,
-        params.takeId,
-        body,
-      ),
-    };
-  }
-
-  @Put(':projectId/revisions/:revisionId/trailer/master')
-  async putMaster(
+  @Put(':projectId/revisions/:revisionId/trailer/current-video')
+  async putCurrentVideo(
     @CurrentUser() user: AuthUser,
     @Headers('x-fizz-workspace-id')
     workspaceHeader: string | string[] | undefined,
     @Param(new ZodValidationPipe(StoryRevisionParamsSchema))
     params: StoryRevisionParams,
-    @Body(new ZodValidationPipe(PutFilmTrailerMasterSchema))
-    body: PutFilmTrailerMasterInput,
+    @Body(new ZodValidationPipe(PutFilmCurrentVideoSchema))
+    body: PutFilmCurrentVideoInput,
   ) {
     return {
       code: 200,
-      data: await this.production.putMaster(
+      data: await this.production.putCurrentVideo(
         user,
         requiredWorkspaceId(workspaceHeader),
         params.projectId,

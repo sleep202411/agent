@@ -1,7 +1,12 @@
 /**
- * Direct-to-storage upload pipeline — server side (stateless + confirm).
+ * Direct-to-storage upload pipeline — server side.
  *
- * Two steps, both authenticated:
+ * Generic uploads use a stateless issue + confirm flow. Story clip videos use
+ * the same public endpoints but deliberately create a durable, project-scoped
+ * staging session before the signed URL is returned; a Story worker later
+ * promotes and probes those bytes before the asset becomes ready.
+ *
+ * Generic flow, both steps authenticated:
  *
  *   1. createUploadUrl — STATELESS. Decide the PERMANENT object key
  *      (server-chosen, user-scoped, collision-free) and mint a signed
@@ -66,6 +71,11 @@ import type {
   MediaProviderAssetStatusResponseDto,
 } from './dto';
 import type { UploadKind } from './dto';
+import {
+  STORY_CLIP_VIDEO_CONTENT_TYPE,
+  STORY_CLIP_VIDEO_MAX_BYTES,
+} from './media-upload.policy';
+import { StoryVideoUploadSessionService } from './story-video-upload-session.service';
 
 /**
  * Per-kind upload policy. The single source of truth for what a given
@@ -89,9 +99,17 @@ interface UploadKindPolicy {
 const MiB = 1024 * 1024;
 const GiB = 1024 * MiB;
 
-/** Video upload kinds that are generation INPUTS, never played through
- *  assetDto — excluded from ABR-HLS transcoding. */
-const HLS_SKIP_UPLOAD_KINDS = new Set<UploadKind>(['ai_reference_video']);
+/** Video upload kinds that generic confirm must not transcode. Reference
+ *  videos are generation-only inputs; story clips are enqueued later by the
+ *  story domain after checksum/ffprobe verification and workspace claim. */
+const HLS_SKIP_UPLOAD_KINDS = new Set<UploadKind>([
+  'ai_reference_video',
+  // Story clip uploads are not reusable until the project completion endpoint
+  // has streamed the object back through SHA-256 + ffprobe and claimed it into
+  // the workspace. Starting HLS here would race that verification and could
+  // transcode bytes that the story domain later rejects.
+  'story_clip_video',
+]);
 
 const IMAGE_CONTENT_TYPES: Record<string, string> = {
   'image/jpeg': 'jpg',
@@ -103,6 +121,10 @@ const VIDEO_CONTENT_TYPES: Record<string, string> = {
   'video/mp4': 'mp4',
   'video/quicktime': 'mov',
   'video/webm': 'webm',
+};
+
+const STORY_VIDEO_CONTENT_TYPES: Record<string, string> = {
+  [STORY_CLIP_VIDEO_CONTENT_TYPE]: 'mp4',
 };
 
 /** AI reference videos: MP4/MOV only (Seedance 全能参考 spec — no webm). */
@@ -125,6 +147,13 @@ const UPLOAD_KIND_POLICY: Record<UploadKind, UploadKindPolicy> = {
     assetKind: MediaAssetKind.video,
     ttlSeconds: 3600, // 60 min — large video can be slow on the PUT
     keySegment: 'episode-video',
+  },
+  story_clip_video: {
+    contentTypes: STORY_VIDEO_CONTENT_TYPES,
+    maxBytes: STORY_CLIP_VIDEO_MAX_BYTES,
+    assetKind: MediaAssetKind.video,
+    ttlSeconds: 3600,
+    keySegment: 'story-clip-video',
   },
   episode_cover: {
     contentTypes: IMAGE_CONTENT_TYPES,
@@ -192,6 +221,7 @@ export class MediaUploadService {
     private readonly assetUrls: MediaAssetUrlResolverService,
     private readonly mediaProcessing: MediaProcessingService,
     private readonly providerAssets: MediaAssetProviderSyncService,
+    private readonly storyVideoUploads: StoryVideoUploadSessionService,
   ) {}
 
   /**
@@ -234,18 +264,22 @@ export class MediaUploadService {
   }
 
   /**
-   * Issue a signed upload URL. STATELESS — no MediaAsset is created. The
-   * returned `storageKey` is the PERMANENT location the bytes will live
-   * at; the client echoes it back to `confirm` once the PUT lands.
+   * Issue a signed upload URL. Generic kinds are stateless and return their
+   * permanent key. Story clips delegate to the durable staging-session flow
+   * and return a staging key that is never made ready directly.
    *
-   * Calling twice is harmless: each call mints a distinct uuid'd key, and
-   * any key whose bytes never land (or are never confirmed) simply never
-   * becomes a DB row. There is nothing to orphan and nothing to GC.
+   * Calling twice is harmless: each call mints a distinct uuid'd key. Generic
+   * abandoned keys never become DB rows; Story abandoned sessions are expired
+   * and reclaimed by their worker.
    */
   async createUploadUrl(
     userId: string,
     input: CreateUploadUrlInputDto,
+    workspaceId?: string,
   ): Promise<CreateUploadUrlResponseDto> {
+    if (input.kind === 'story_clip_video') {
+      return this.storyVideoUploads.issue(userId, workspaceId, input);
+    }
     const policy = UPLOAD_KIND_POLICY[input.kind];
     // (kind is already validated by the Zod enum, so policy is defined.)
 
@@ -338,7 +372,11 @@ export class MediaUploadService {
   async confirmUpload(
     userId: string,
     input: ConfirmUploadInputDto,
+    workspaceId?: string,
   ): Promise<ConfirmUploadResponseDto> {
+    if (input.kind === 'story_clip_video') {
+      return this.storyVideoUploads.confirm(userId, workspaceId, input);
+    }
     const policy = UPLOAD_KIND_POLICY[input.kind];
     const storageKey = input.storageKey;
 

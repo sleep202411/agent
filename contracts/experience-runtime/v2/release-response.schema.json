@@ -1,0 +1,22 @@
+{
+  "$id": "https://contracts.fizzdragon.com/experience-runtime/v2/release-response.schema.json",
+  "title": "FizzDragon Experience Runtime v2 ReleaseResponse",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "gameId": { "$ref": "#/$defs/__schema0" },
+    "contentVersion": { "$ref": "#/$defs/__schema0" },
+    "status": { "type": "string", "enum": ["published", "draft"] },
+    "manifestUrl": { "type": "string", "format": "uri" }
+  },
+  "required": ["gameId", "contentVersion", "status", "manifestUrl"],
+  "additionalProperties": false,
+  "$defs": {
+    "__schema0": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 160,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]*$"
+    }
+  }
+}

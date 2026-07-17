@@ -1,24 +1,16 @@
 "use client";
 
-import {
-  IconBook2,
-  IconBox,
-  IconListCheck,
-  IconMapPin,
-  IconUsers,
-  IconVariable,
-} from "@tabler/icons-react";
+import { IconBook2, IconBox, IconMapPin, IconUsers } from "@tabler/icons-react";
 import { useTranslations } from "next-intl";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import type { InteractiveFilmDraftContent } from "@/lib/story-projects-api";
 import { StoryCharacterLibrary } from "./story-character-library";
-import { StoryStateVariablesLibrary, StoryTextCollectionEditor } from "./story-world-collections";
+import { StoryTextCollectionEditor } from "./story-world-collections";
 
 type FoundationField = "logline" | "synopsis" | "worldview";
-type WorldTextField = "locations" | "props" | "storyRules";
+type WorldTextField = "locations" | "props";
 type Character = InteractiveFilmDraftContent["storyBible"]["characters"][number];
-type StateVariable = InteractiveFilmDraftContent["storyBible"]["stateVariables"][number];
 
 interface StoryWorldLibraryProps {
   content: InteractiveFilmDraftContent;
@@ -31,9 +23,6 @@ interface StoryWorldLibraryProps {
   onAddTextItem: (field: WorldTextField) => void;
   onUpdateTextItem: (field: WorldTextField, index: number, value: string) => void;
   onRemoveTextItem: (field: WorldTextField, index: number) => void;
-  onCreateStateVariable: (type: StateVariable["type"]) => string | null;
-  onReplaceStateVariable: (key: string, next: StateVariable) => void;
-  onDeleteStateVariable: (key: string) => void;
 }
 
 export function StoryWorldLibrary({
@@ -47,9 +36,6 @@ export function StoryWorldLibrary({
   onAddTextItem,
   onUpdateTextItem,
   onRemoveTextItem,
-  onCreateStateVariable,
-  onReplaceStateVariable,
-  onDeleteStateVariable,
 }: StoryWorldLibraryProps) {
   const t = useTranslations("storyStudio.canvas");
   return (
@@ -67,21 +53,18 @@ export function StoryWorldLibrary({
         </span>
       </header>
 
-      <div className="mt-4 grid grid-cols-4 gap-1.5">
+      <div className="mt-4 grid grid-cols-3 gap-1.5">
         <WorldMetric label={t("metrics.characters")} value={content.storyBible.characters.length} />
         <WorldMetric label={t("metrics.locations")} value={content.storyBible.locations.length} />
         <WorldMetric label={t("metrics.props")} value={content.storyBible.props.length} />
-        <WorldMetric label={t("metrics.rules")} value={content.storyBible.storyRules.length} />
       </div>
 
       <Tabs defaultValue="foundation" className="mt-5 gap-4">
-        <TabsList className="grid h-auto! w-full grid-cols-3 gap-1 rounded-[16px] bg-white/[0.045] p-1">
+        <TabsList className="grid h-auto! w-full grid-cols-2 gap-1 rounded-[16px] bg-white/[0.045] p-1">
           <WorldTab value="foundation" label={t("world.tabs.foundation")} icon={<IconBook2 />} />
           <WorldTab value="characters" label={t("world.tabs.characters")} icon={<IconUsers />} />
           <WorldTab value="locations" label={t("world.tabs.locations")} icon={<IconMapPin />} />
           <WorldTab value="props" label={t("world.tabs.props")} icon={<IconBox />} />
-          <WorldTab value="rules" label={t("world.tabs.rules")} icon={<IconListCheck />} />
-          <WorldTab value="variables" label={t("world.tabs.variables")} icon={<IconVariable />} />
         </TabsList>
 
         <TabsContent value="foundation">
@@ -119,25 +102,6 @@ export function StoryWorldLibrary({
             onAdd={() => onAddTextItem("props")}
             onUpdate={(index, value) => onUpdateTextItem("props", index, value)}
             onRemove={(index) => onRemoveTextItem("props", index)}
-          />
-        </TabsContent>
-        <TabsContent value="rules">
-          <StoryTextCollectionEditor
-            kind="storyRules"
-            values={content.storyBible.storyRules}
-            canEdit={canEdit}
-            onAdd={() => onAddTextItem("storyRules")}
-            onUpdate={(index, value) => onUpdateTextItem("storyRules", index, value)}
-            onRemove={(index) => onRemoveTextItem("storyRules", index)}
-          />
-        </TabsContent>
-        <TabsContent value="variables">
-          <StoryStateVariablesLibrary
-            content={content}
-            canEdit={canEdit}
-            onCreate={onCreateStateVariable}
-            onReplace={onReplaceStateVariable}
-            onDelete={onDeleteStateVariable}
           />
         </TabsContent>
       </Tabs>

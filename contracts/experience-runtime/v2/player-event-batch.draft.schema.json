@@ -1,0 +1,91 @@
+{
+  "$id": "https://contracts.fizzdragon.com/experience-runtime/v2/player-event-batch.draft.schema.json",
+  "title": "FizzDragon Experience Runtime v2 PlayerEventBatchDraft",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "protocolVersion": { "$ref": "#/$defs/__schema0" },
+    "events": { "$ref": "#/$defs/__schema1" }
+  },
+  "required": ["protocolVersion", "events"],
+  "additionalProperties": false,
+  "$defs": {
+    "__schema0": { "type": "number", "const": 1 },
+    "__schema1": {
+      "minItems": 1,
+      "maxItems": 200,
+      "type": "array",
+      "items": { "$ref": "#/$defs/__schema2" }
+    },
+    "__schema2": {
+      "type": "object",
+      "properties": {
+        "protocolVersion": { "type": "number", "const": 1 },
+        "eventId": { "$ref": "#/$defs/__schema3" },
+        "sequence": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
+        "eventType": {
+          "type": "string",
+          "minLength": 3,
+          "maxLength": 160,
+          "pattern": "^[a-z][a-z0-9-]*(?:\\.[a-z][a-z0-9-]*)+$"
+        },
+        "occurredAt": {
+          "type": "string",
+          "format": "date-time",
+          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+        },
+        "gameId": { "$ref": "#/$defs/__schema3" },
+        "manifestHash": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+        "buildId": { "$ref": "#/$defs/__schema3" },
+        "contentVersion": { "$ref": "#/$defs/__schema3" },
+        "sessionId": { "$ref": "#/$defs/__schema3" },
+        "sceneId": { "$ref": "#/$defs/__schema3" },
+        "sourceId": { "$ref": "#/$defs/__schema3" },
+        "assetId": { "$ref": "#/$defs/__schema3" },
+        "mediaTimeMs": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
+        "platform": { "type": "string", "enum": ["web", "ios", "android", "desktop"] },
+        "payload": {
+          "default": {},
+          "type": "object",
+          "propertyNames": { "type": "string" },
+          "additionalProperties": { "$ref": "#/$defs/__schema4" }
+        }
+      },
+      "required": [
+        "protocolVersion",
+        "eventId",
+        "sequence",
+        "eventType",
+        "occurredAt",
+        "gameId",
+        "manifestHash",
+        "buildId",
+        "contentVersion",
+        "sessionId",
+        "platform",
+        "payload"
+      ],
+      "additionalProperties": false
+    },
+    "__schema3": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 160,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]*$"
+    },
+    "__schema4": {
+      "anyOf": [
+        { "type": "string" },
+        { "type": "number" },
+        { "type": "boolean" },
+        { "type": "null" },
+        { "type": "array", "items": { "$ref": "#/$defs/__schema4" } },
+        {
+          "type": "object",
+          "propertyNames": { "type": "string" },
+          "additionalProperties": { "$ref": "#/$defs/__schema4" }
+        }
+      ]
+    }
+  }
+}

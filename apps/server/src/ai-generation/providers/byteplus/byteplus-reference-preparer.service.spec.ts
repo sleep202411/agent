@@ -13,10 +13,13 @@ function makeService(opts: {
   grantedCharacterIds?: string[];
 }) {
   const prisma = {
+    aiProviderMediaAssetMirror: {
+      findMany: jest.fn(() => []),
+    },
     aiProviderExternalAsset: {
       // Route by query shape, not call order: the validate pass filters on
       // externalAssetId.in; the upgrade pass filters on assetGroup.groupType.
-      findMany: jest.fn(async (args: { where?: Record<string, unknown> }) => {
+      findMany: jest.fn((args: { where?: Record<string, unknown> }) => {
         const where = args?.where ?? {};
         const isUpgrade = Boolean(
           (where.assetGroup as { groupType?: unknown } | undefined)?.groupType,
@@ -25,7 +28,7 @@ function makeService(opts: {
       }),
     },
     characterProjectGrant: {
-      findMany: jest.fn(async () =>
+      findMany: jest.fn(() =>
         (opts.grantedCharacterIds ?? []).map((characterId) => ({
           characterId,
         })),

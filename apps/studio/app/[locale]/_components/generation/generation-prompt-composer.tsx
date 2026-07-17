@@ -35,7 +35,7 @@ export type GenerationPromptComposerPanel = "model" | "settings" | "mode" | null
  *
  * It owns presentation and model controls only. Callers retain their domain
  * semantics: the general Canvas submits an AiJob, while Story Studio submits a
- * immutable input-snapshot FilmTake or TrailerTake through its own adapter.
+ * immutable input-snapshot video generation through its own adapter.
  */
 export function GenerationPromptComposer({
   ariaLabel,
