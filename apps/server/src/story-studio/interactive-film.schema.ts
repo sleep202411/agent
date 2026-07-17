@@ -923,6 +923,23 @@ export function createLockableInteractiveFilmDraftContentSchema(
 export const LockableInteractiveFilmDraftContentSchema =
   createLockableInteractiveFilmDraftContentSchema();
 
+function isBlankClipPromptForReadiness(prompt: {
+  masterDirection: string;
+  emotionalArc: string;
+  beats: ReadonlyArray<{ visual: string; camera: string; action: string }>;
+}): boolean {
+  return (
+    prompt.masterDirection.trim() === '' &&
+    prompt.emotionalArc.trim() === '' &&
+    prompt.beats.every(
+      (beat) =>
+        beat.visual.trim() === '' &&
+        beat.camera.trim() === '' &&
+        beat.action.trim() === '',
+    )
+  );
+}
+
 function validateProductionReadyVideoPrompt(
   prompt: StoryClipPromptDraft | StoryTrailerPromptDraft,
   context: z.RefinementCtx,
@@ -1222,15 +1239,21 @@ function validateInteractiveFilmGameplayReadiness(
     }
   });
 
-  draft.clipPrompts.forEach((prompt, promptIndex) =>
+  // Video-first: a clip is playable from its bound video alone, so a complete
+  // director prompt is NOT required to lock/publish. Director prompts only
+  // drive AI video generation; the player never sees them. Only validate a
+  // prompt that the creator actually authored (non-blank), so partially
+  // written prompts still surface their gaps.
+  draft.clipPrompts.forEach((prompt, promptIndex) => {
+    if (isBlankClipPromptForReadiness(prompt)) return;
     validateProductionReadyVideoPrompt(
       prompt,
       context,
       ['clipPrompts', promptIndex],
       'clip',
       'Required before locking a revision.',
-    ),
-  );
+    );
+  });
 
   const nodeIds = unique(
     draft.graph.nodes,

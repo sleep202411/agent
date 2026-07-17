@@ -207,6 +207,9 @@ export function compileStoryFilmBuild(
   });
   includedClips.forEach((clip) => {
     if (!clip.asset) return;
+    // Video-first: a manually bound video IS the content — its length is not
+    // constrained by the generation contract. Only generated clips apply.
+    if (clip.sourceGenerationId === null) return;
     if (clip.asset.durationMs > input.filmSpec.duration.maxGeneratedClipMs) {
       diagnostics.push(
         diagnostic(
@@ -220,6 +223,12 @@ export function compileStoryFilmBuild(
     }
   });
 
+  // If any included clip is a manual (video-first) bind, the film's total and
+  // continuous durations are the creator's own footage — the generation
+  // duration contract does not apply to the assembled film.
+  const isVideoFirstFilm = includedClips.some(
+    (clip) => clip.asset !== null && clip.sourceGenerationId === null,
+  );
   const enumeration = enumeratePaths(
     entryNodeId,
     graphNodeById,
@@ -227,7 +236,9 @@ export function compileStoryFilmBuild(
     selection,
     initialRuntimeState(input.draft),
     input.draft.storyBible.stateVariables,
-    input.filmSpec.duration.maxContinuousMs,
+    isVideoFirstFilm
+      ? Number.POSITIVE_INFINITY
+      : input.filmSpec.duration.maxContinuousMs,
     diagnostics,
   );
   const pathDurations = enumeration.paths.map((path) => path.durationMs);
@@ -264,6 +275,7 @@ export function compileStoryFilmBuild(
     const maximumDurationMs =
       input.filmSpec.duration.targetMs + input.filmSpec.duration.toleranceMs;
     if (
+      !isVideoFirstFilm &&
       hasCompleteFrozenDurations &&
       pathDurations.some(
         (durationMs) =>
