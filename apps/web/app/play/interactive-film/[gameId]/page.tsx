@@ -54,7 +54,7 @@ export default async function InteractiveFilmPage({ params }: RouteProps) {
 
   if (published) {
     return (
-      <main className="flex min-h-[100dvh] items-center bg-black px-0 py-0 text-white sm:px-5 sm:py-5">
+      <main className="h-[100dvh] bg-black text-white">
         <ExperienceRuntimePlayer
           runtime={published.manifest}
           locale={locale}

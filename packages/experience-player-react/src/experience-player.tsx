@@ -811,6 +811,22 @@ function CoreCheckpointRenderer({
   );
 }
 
+const STAGE_ASPECT: Record<ExperienceOrientation, number> = {
+  landscape: 16 / 9,
+  portrait: 9 / 16,
+  square: 1,
+};
+
+/**
+ * Full-bleed player shell. The frame profile no longer draws a letterboxed
+ * canvas — it decides which way the content wants to face. The inner stage
+ * always keeps the content's exact aspect ratio (spatial-anchor coordinates
+ * stay valid) and is scaled to COVER the shell, which crops the overflow like
+ * an image in object-cover. When landscape content lands in a portrait shell
+ * (mobile web cannot force device rotation), the whole stage rotates 90° —
+ * pointer events are mapped through the transform by the browser, so spatial
+ * hotspots keep working untouched.
+ */
 function PlayerFrame({
   orientation,
   copy,
@@ -822,21 +838,63 @@ function PlayerFrame({
   style?: CSSProperties;
   children: React.ReactNode;
 }) {
+  const shellRef = useRef<HTMLDivElement | null>(null);
+  const shellSize = useShellSize(shellRef);
+  const aspect = STAGE_ASPECT[orientation];
+  const rotated =
+    orientation === "landscape" && shellSize !== null && shellSize.height > shellSize.width;
+  let stageStyle: CSSProperties = { width: "100%", height: "100%" };
+  if (shellSize) {
+    const availWidth = rotated ? shellSize.height : shellSize.width;
+    const availHeight = rotated ? shellSize.width : shellSize.height;
+    const width = Math.max(availWidth, availHeight * aspect);
+    stageStyle = { width: Math.round(width), height: Math.round(width / aspect) };
+  }
   return (
     <div
+      ref={shellRef}
       role="region"
       aria-label={copy.regionLabel}
       style={style}
-      className={classNames(
-        "relative mx-auto w-full overflow-hidden bg-[var(--experience-color-background,#000)] text-[var(--experience-color-text,#fff)]",
-        orientation === "portrait" && "aspect-[9/16] max-h-[calc(100dvh-88px)] max-w-[520px]",
-        orientation === "square" && "aspect-square max-h-[calc(100dvh-88px)] max-w-[900px]",
-        orientation === "landscape" && "aspect-video max-h-[calc(100dvh-88px)] max-w-[1600px]"
-      )}
+      className="relative h-full min-h-[inherit] w-full overflow-hidden bg-[var(--experience-color-background,#000)] text-[var(--experience-color-text,#fff)]"
     >
-      {children}
+      <div
+        className="absolute left-1/2 top-1/2"
+        style={{
+          ...stageStyle,
+          transform: rotated ? "translate(-50%, -50%) rotate(90deg)" : "translate(-50%, -50%)",
+        }}
+      >
+        {children}
+      </div>
     </div>
   );
+}
+
+function useShellSize(ref: React.RefObject<HTMLDivElement | null>): {
+  width: number;
+  height: number;
+} | null {
+  const [size, setSize] = useState<{ width: number; height: number } | null>(null);
+  useEffect(() => {
+    const element = ref.current;
+    if (!element) return;
+    const update = () => {
+      const rect = element.getBoundingClientRect();
+      if (rect.width > 0 && rect.height > 0) {
+        setSize((current) =>
+          current && current.width === rect.width && current.height === rect.height
+            ? current
+            : { width: rect.width, height: rect.height }
+        );
+      }
+    };
+    update();
+    const observer = new ResizeObserver(update);
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, [ref]);
+  return size;
 }
 
 function usePlaybackOrientation(
