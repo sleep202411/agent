@@ -940,11 +940,16 @@ export class StoryFilmBuildService {
         ),
       );
     }
+    // productionInputHash exists only once generation inputs were prepared
+    // for the clip (or an import stamped them). Uploaded/imported currents on
+    // a lazily materialized or freshly locked clip carry no generation
+    // contract — only the spec axis applies to them.
     if (
       hasCurrentAssetId &&
       hasCurrentVariantId &&
       (clip.currentVideoSpecHash !== clip.specHash ||
-        clip.currentVideoInputHash !== clip.productionInputHash)
+        (clip.productionInputHash !== null &&
+          clip.currentVideoInputHash !== clip.productionInputHash))
     ) {
       diagnostics.push(
         buildDiagnostic(

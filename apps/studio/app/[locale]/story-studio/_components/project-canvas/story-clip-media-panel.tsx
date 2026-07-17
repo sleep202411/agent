@@ -56,8 +56,11 @@ export function StoryClipMediaPanel({
   const currentVideo = clip?.currentVideo ?? null;
   const previewUrl = currentVideo?.asset.previewUrl ?? null;
   const busy = uploadState !== null;
-  const disabled = !canEdit || !clip || busy;
-  const uploadTitle = disabledReason ?? (!clip ? t("preparing") : undefined);
+  // Upload must not wait for a materialized clip: the server lazily creates
+  // the revision + clip on first current-video bind. Library reuse below
+  // still needs the clip (its output contract drives compatibility checks).
+  const disabled = !canEdit || busy;
+  const uploadTitle = disabledReason ?? undefined;
 
   useEffect(() => {
     mountedRef.current = true;

@@ -1327,10 +1327,10 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
   );
   const selectExistingClipVideo = useCallback(
     async (item: StoryVideoLibraryItem) => {
-      if (!workspaceId || !focusedGraphNodeId || !focusedFilmClip) {
+      if (!workspaceId || !focusedGraphNodeId) {
         throw new Error(t("production.errors.action"));
       }
-      await bindClipVideo(focusedGraphNodeId, focusedFilmClip.currentVideoRevision, item);
+      await bindClipVideo(focusedGraphNodeId, focusedFilmClip?.currentVideoRevision ?? 0, item);
     },
     [bindClipVideo, focusedFilmClip, focusedGraphNodeId, t, workspaceId]
   );
@@ -1340,13 +1340,16 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
       onState: (state: StoryClipMediaUploadState) => void,
       signal: AbortSignal
     ) => {
-      if (!workspaceId || !focusedGraphNodeId || !focusedFilmClip) {
+      if (!workspaceId || !focusedGraphNodeId) {
         throw new Error(t("production.errors.action"));
       }
       // Capture the target before the long upload starts. Selecting another
       // canvas node mid-upload must never bind the result to that later node.
+      // A node without a materialized clip is fine: putCurrentVideo lazily
+      // materializes the revision + clip from the current draft, and a fresh
+      // clip starts at currentVideoRevision 0.
       const graphNodeId = focusedGraphNodeId;
-      const expectedCurrentVideoRevision = focusedFilmClip.currentVideoRevision;
+      const expectedCurrentVideoRevision = focusedFilmClip?.currentVideoRevision ?? 0;
       let issuedMediaAssetId: string | null = null;
       let finalizationAccepted = false;
       try {
