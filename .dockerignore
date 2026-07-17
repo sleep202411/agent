@@ -20,6 +20,14 @@ apps/mobile
 **/.cxx
 **/android/build
 **/android/app/build
+# iOS build products (xcarchive/dSYMs/ipa, ~230MB) — mirror of the android
+# globs above; store-release artifacts live outside the repo.
+**/ios/build
+# Local production / scratch output: review audio, generated clips, one-off
+# exports (repo-root tmp/ alone was 1.2GB on 2026-07-17). Never in any image;
+# every tmp dir in the repo is generated junk.
+tmp
+**/tmp
 .git
 .github
 .claude
