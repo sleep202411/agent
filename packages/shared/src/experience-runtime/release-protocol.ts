@@ -41,8 +41,12 @@ export const ExperienceReleaseRequestSchema = z
     gameId: ExperienceStableIdSchema,
     contentVersion: ExperienceStableIdSchema,
     title: ExperienceDisplayTextSchema.optional(),
-    subtitle: ExperienceOptionalSubtitleSchema,
-    coverUrl: ExperienceOptionalCoverUrlSchema,
+    // The OUTBOUND publish request is fully under our control — no null
+    // tolerance needed. Keep these plain-optional so the publisher may omit
+    // them (the read schemas below use the null-tolerant transform, which is
+    // only safe on the consume side).
+    subtitle: ExperienceDisplayTextSchema.optional(),
+    coverUrl: ExperienceHttpUrlSchema.optional(),
     manifest: ExperienceJsonObjectSchema,
     status: ExperienceReleaseStatusSchema,
     setCurrent: z.boolean().optional(),
