@@ -1,10 +1,9 @@
 import type { Edge, Node } from "@xyflow/react";
 import { CANVAS_NODE_DRAG_HANDLE_SELECTOR } from "../../../../../components/canvas/canvas-interaction-policy";
 import type {
-  FilmClipSummary,
-  FilmTrailerSummary,
+  StoryClipVideoSummary,
+  StoryTrailerVideoSummary,
   InteractiveFilmDraftContent,
-  StoryClipPromptDraft,
   StoryFrameProfile,
   StoryGraphNode,
 } from "@/lib/story-projects-api";
@@ -39,10 +38,9 @@ export interface StoryCanvasNodeData extends Record<string, unknown> {
   checkpointTargetNodeId?: string;
   choices?: StoryCanvasChoiceData[];
   autoRoutes?: StoryCanvasAutoRouteData[];
-  filmClip?: FilmClipSummary;
-  filmTrailer?: FilmTrailerSummary;
+  clipVideo?: StoryClipVideoSummary;
+  trailerVideo?: StoryTrailerVideoSummary;
   frameAspectRatio?: "16:9" | "9:16";
-  directorPrompt?: StoryClipPromptDraft;
   summary?: string;
   rootStats?: {
     characters: number;
@@ -89,55 +87,6 @@ export interface StoryCanvasCopy {
   ending: string;
 }
 
-export function normalizeStoryClipPromptDrafts(
-  content: InteractiveFilmDraftContent
-): InteractiveFilmDraftContent {
-  const existing = content.clipPrompts;
-  const existingByNodeId = new Map(existing.map((prompt) => [prompt.graphNodeId, prompt]));
-  const clipPrompts = content.graph.nodes.flatMap((node) =>
-    node.kind === "clip"
-      ? [
-          existingByNodeId.get(node.nodeId) ?? {
-            graphNodeId: node.nodeId,
-            clipKey: node.clipKey,
-            title: node.clipKey,
-            description: "",
-            targetDurationMs: 15_000,
-            generationControl: { mode: "frame_lock" as const, frameMode: "first_frame" as const },
-            masterDirection: "",
-            referenceRoleNotes: [],
-            emotionalArc: "",
-            beats: [
-              {
-                id: "beat:1",
-                startMs: 0,
-                endMs: 15_000,
-                visual: "",
-                camera: "",
-                action: "",
-                performance: "",
-                emotion: "",
-                dialogue: "",
-                audio: "",
-                endState: "",
-                continuity: "",
-              },
-            ],
-            negativeConstraints: [],
-            continuityNotes: [],
-          },
-        ]
-      : []
-  );
-  if (
-    clipPrompts.length === existing.length &&
-    clipPrompts.every((prompt, index) => prompt === existing[index])
-  ) {
-    return content;
-  }
-  return { ...content, clipPrompts };
-}
-
 const DEFAULT_COPY: StoryCanvasCopy = {
   rootTitle: "Story World",
   rootEyebrow: "World Root",
@@ -155,18 +104,13 @@ const DEFAULT_COPY: StoryCanvasCopy = {
 export function buildStoryCanvasModel(
   content: InteractiveFilmDraftContent,
   locale: string,
-  clips: FilmClipSummary[] = [],
+  clips: StoryClipVideoSummary[] = [],
   copy: StoryCanvasCopy = DEFAULT_COPY,
   frameProfile: StoryFrameProfile = "landscape_16_9",
-  trailer: FilmTrailerSummary | null = null
+  trailer: StoryTrailerVideoSummary | null = null
 ): { nodes: StoryCanvasNode[]; edges: StoryCanvasEdge[] } {
-  content = normalizeStoryClipPromptDrafts(content);
   const graphNodesById = new Map(content.graph.nodes.map((node) => [node.nodeId, node]));
   const clipsByGraphNodeId = indexClips(clips, (clip) => clip.graphNodeId);
-  const clipsByKey = indexClips(clips, (clip) => clip.key);
-  const promptByGraphNodeId = new Map(
-    content.clipPrompts.map((prompt) => [prompt.graphNodeId, prompt])
-  );
   const endingCanvasIds = new Map(
     content.storyBible.endings.map((ending) => [ending.id, syntheticEndingNodeId(ending.id)])
   );
@@ -189,7 +133,7 @@ export function buildStoryCanvasModel(
           props: content.storyBible.props.length,
         },
         frameAspectRatio: frameProfile === "portrait_9_16" ? "9:16" : "16:9",
-        filmTrailer: trailer ?? undefined,
+        trailerVideo: trailer ?? undefined,
       },
     },
     ...content.graph.nodes.flatMap<CanvasProjection>((node, index) => {
@@ -212,7 +156,7 @@ export function buildStoryCanvasModel(
       }
 
       clipOrdinal += 1;
-      const clip = clipsByGraphNodeId.get(node.nodeId) ?? clipsByKey.get(node.clipKey);
+      const clip = clipsByGraphNodeId.get(node.nodeId);
       const choices =
         node.exit.kind === "choice"
           ? node.exit.choices.map((choice) => ({
@@ -227,7 +171,7 @@ export function buildStoryCanvasModel(
         order: index * 2,
         data: {
           kind: "clip",
-          title: clip?.title.trim() || node.clipKey,
+          title: node.clipKey,
           eyebrow: `${copy.clip} ${String(clipOrdinal).padStart(2, "0")}`,
           nodeId: node.nodeId,
           clipKey: node.clipKey,
@@ -236,11 +180,8 @@ export function buildStoryCanvasModel(
             node.exit.kind === "checkpoint" ? node.exit.nextNodeId : undefined,
           continuationTargetNodeId:
             node.exit.kind === "auto" ? (node.exit.nextNodeId ?? undefined) : undefined,
-          filmClip: clip,
-          frameAspectRatio:
-            clip?.outputContract.aspectRatio ??
-            (frameProfile === "portrait_9_16" ? "9:16" : "16:9"),
-          directorPrompt: promptByGraphNodeId.get(node.nodeId),
+          clipVideo: clip,
+          frameAspectRatio: frameProfile === "portrait_9_16" ? "9:16" : "16:9",
         },
       };
 
@@ -538,15 +479,11 @@ function buildLayeredPositions(
 }
 
 function indexClips(
-  clips: FilmClipSummary[],
-  keyOf: (clip: FilmClipSummary) => string
-): Map<string, FilmClipSummary> {
-  const ordered = [...clips].sort(
-    (left, right) =>
-      left.rank - right.rank || left.key.localeCompare(right.key) || left.id.localeCompare(right.id)
-  );
-  const index = new Map<string, FilmClipSummary>();
-  ordered.forEach((clip) => {
+  clips: StoryClipVideoSummary[],
+  keyOf: (clip: StoryClipVideoSummary) => string
+): Map<string, StoryClipVideoSummary> {
+  const index = new Map<string, StoryClipVideoSummary>();
+  clips.forEach((clip) => {
     const key = keyOf(clip);
     if (!index.has(key)) index.set(key, clip);
   });

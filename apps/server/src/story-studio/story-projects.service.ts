@@ -7,17 +7,13 @@ import {
   UnprocessableEntityException,
 } from '@nestjs/common';
 import {
-  AiControlPlaneStatus,
-  AiJobType,
   Prisma,
-  StoryFilmFrameMode,
-  StoryFilmGenerationAttemptStatus,
-  StoryFilmGenerationMode,
   StoryFormat,
   StoryProjectMemberRole,
   StoryProjectMemberStatus,
   StoryProjectStatus,
   StoryRevisionSource,
+  StoryVideoGenerationAttemptStatus,
   WorkspaceMemberRole,
 } from '@prisma/client';
 import type { AuthUser } from '../auth';
@@ -28,10 +24,7 @@ import { canonicalJsonHash } from './canonical-json';
 import {
   EMPTY_INTERACTIVE_FILM_DRAFT_CONTENT,
   createLockableInteractiveFilmDraftContentSchema,
-  FilmBuildScopeSchema,
-  FilmClipSpecSchema,
-  FilmSpecSchema,
-  FilmTrailerSpecSchema,
+  StoryBuildScopeSchema,
   INTERACTIVE_FILM_DRAFT_SCHEMA_VERSION,
   InteractiveFilmDraftContentSchema,
   STORY_CANVAS_LAYOUT_SCHEMA_VERSION,
@@ -40,15 +33,9 @@ import {
   type ArchiveStoryProjectInput,
   type CreateStoryProjectInput,
   type CursorPageDto,
-  type FilmBuildDiagnosticDto,
-  type FilmBuildSummaryDto,
-  type FilmClipSummaryDto,
-  type FilmCurrentVideoDto,
-  type FilmDefaultModelDto,
-  type FilmReferenceSlotDto,
-  type FilmSpecDto,
-  type FilmTrailerSummaryDto,
-  type FilmVideoGenerationDto,
+  type StoryBuildDiagnosticDto,
+  type StoryBuildSummaryDto,
+  type StoryVideoTechnicalCheckDto,
   type LockStoryRevisionInput,
   type MediaAssetSummaryDto,
   type PatchStoryProjectInput,
@@ -62,11 +49,17 @@ import {
   type StoryRevisionDto,
   type StoryRevisionListQuery,
   type StoryRevisionSummaryDto,
+  type StoryCurrentVideoDto,
+  type StoryReferenceSlotDto,
+  type StoryVideoGenerationDto,
   type StoryWorkbenchDto,
   type StoryWorkbenchQuery,
 } from './dto';
-import { projectStoryFilmRevision } from './story-film-revision-projector';
-import { storyFilmTechnicalCheckDtos } from './story-film-production.service';
+import {
+  StoryVideoRecipeSnapshotSchema,
+  storyVideoSnapshotHash,
+  type StoryVideoSnapshotEntry,
+} from './story-video-production.schema';
 import {
   StoryPermissionService,
   type StoryCapability as PermissionCapability,
@@ -93,25 +86,26 @@ const PROJECT_SUMMARY_INCLUDE = Prisma.validator<Prisma.StoryProjectInclude>()({
     },
     select: { userId: true, role: true },
   },
-  filmReferenceSlots: {
+  referenceSlots: {
     where: { archivedAt: null },
-    select: { revisionId: true, required: true, approvedVersionId: true },
+    select: { required: true, approvedVersionId: true },
   },
-  filmClipHeads: {
+  videoSelections: {
+    where: { targetKind: 'clip' },
     select: {
-      clip: {
-        select: {
-          graphNodeId: true,
-          currentVideoAssetId: true,
-          latestGenerationAttempt: { select: { status: true } },
-        },
+      targetKey: true,
+      currentAssetId: true,
+      generationAttempts: {
+        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+        take: 1,
+        select: { status: true },
       },
     },
   },
   builds: {
     orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
     take: 1,
-    select: { sourceRevisionId: true, status: true },
+    select: { sourceDraftRevision: true, status: true },
   },
 });
 
@@ -119,58 +113,17 @@ type ProjectSummaryRow = Prisma.StoryProjectGetPayload<{
   include: typeof PROJECT_SUMMARY_INCLUDE;
 }>;
 
-const FILM_CLIP_INCLUDE = Prisma.validator<Prisma.StoryFilmClipInclude>()({
-  references: {
-    select: {
-      id: true,
-      referenceSlotId: true,
-      role: true,
-      position: true,
-      required: true,
-      referenceSlot: { select: { approvedVersionId: true } },
-    },
-  },
-  currentVideoAsset: {
-    include: {
-      placements: true,
-      variants: { include: { placements: true } },
-    },
-  },
-  latestGenerationAttempt: {
-    include: {
-      outputAsset: {
-        include: {
-          placements: true,
-          variants: { include: { placements: true } },
-        },
-      },
-    },
-  },
-});
-
-type FilmClipRow = Prisma.StoryFilmClipGetPayload<{
-  include: typeof FILM_CLIP_INCLUDE;
-}>;
-
-const FILM_TRAILER_INCLUDE = Prisma.validator<Prisma.StoryFilmTrailerInclude>()(
-  {
-    references: {
-      select: {
-        id: true,
-        referenceSlotId: true,
-        role: true,
-        position: true,
-        required: true,
-        referenceSlot: { select: { approvedVersionId: true } },
-      },
-    },
-    currentVideoAsset: {
+const STORY_VIDEO_SELECTION_INCLUDE =
+  Prisma.validator<Prisma.StoryVideoSelectionInclude>()({
+    currentAsset: {
       include: {
         placements: true,
         variants: { include: { placements: true } },
       },
     },
-    latestGenerationAttempt: {
+    generationAttempts: {
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+      take: 1,
       include: {
         outputAsset: {
           include: {
@@ -180,15 +133,14 @@ const FILM_TRAILER_INCLUDE = Prisma.validator<Prisma.StoryFilmTrailerInclude>()(
         },
       },
     },
-  },
-);
+  });
 
-type FilmTrailerRow = Prisma.StoryFilmTrailerGetPayload<{
-  include: typeof FILM_TRAILER_INCLUDE;
+type StoryVideoSelectionRow = Prisma.StoryVideoSelectionGetPayload<{
+  include: typeof STORY_VIDEO_SELECTION_INCLUDE;
 }>;
 
-const FILM_REFERENCE_INCLUDE =
-  Prisma.validator<Prisma.StoryFilmReferenceSlotInclude>()({
+const STORY_REFERENCE_INCLUDE =
+  Prisma.validator<Prisma.StoryReferenceSlotInclude>()({
     versions: {
       orderBy: [{ versionNumber: 'desc' }, { id: 'desc' }],
       include: {
@@ -203,11 +155,11 @@ const FILM_REFERENCE_INCLUDE =
     },
   });
 
-type FilmReferenceRow = Prisma.StoryFilmReferenceSlotGetPayload<{
-  include: typeof FILM_REFERENCE_INCLUDE;
+type StoryReferenceRow = Prisma.StoryReferenceSlotGetPayload<{
+  include: typeof STORY_REFERENCE_INCLUDE;
 }>;
 
-type FilmMediaAssetRow = Prisma.MediaAssetGetPayload<{
+type StoryMediaAssetRow = Prisma.MediaAssetGetPayload<{
   include: {
     placements: true;
     variants: { include: { placements: true } };
@@ -222,18 +174,6 @@ interface ProjectCursor {
 interface RevisionCursor {
   id: string;
   number: number;
-}
-
-interface CurrentVideoCarrySource {
-  currentVideoAssetId: string | null;
-  currentVideoVariantId: string | null;
-  currentVideoSpecHash: string | null;
-  currentVideoInputHash: string | null;
-  currentVideoChecksumSha256: string | null;
-  currentVideoTechnicalChecks: Prisma.JsonValue | null;
-  currentVideoRevision: number;
-  currentVideoSetByUserId: string | null;
-  currentVideoSetAt: Date | null;
 }
 
 @Injectable()
@@ -309,8 +249,17 @@ export class StoryProjectsService {
     return {
       project: this.toProjectSummary(project, user.userId),
       draft: this.toDraft(project.draft, project),
-      selectedRevision: null,
-      film: null,
+      video: {
+        snapshotHash: storyVideoSnapshotHash([]),
+        clips: [],
+        trailer: {
+          selectionVersion: 0,
+          currentVideo: null,
+          generation: null,
+        },
+      },
+      references: [],
+      latestBuild: null,
     };
   }
 
@@ -722,6 +671,9 @@ export class StoryProjectsService {
             if (draft.revision !== input.expectedDraftRevision) {
               return { kind: 'conflict', draft } as const;
             }
+            if (draft.schemaVersion !== INTERACTIVE_FILM_DRAFT_SCHEMA_VERSION) {
+              throw unsupportedStorySchema('draft', draft.schemaVersion);
+            }
 
             const actualHash = canonicalJsonHash(draft.content);
             if (actualHash !== draft.contentHash) {
@@ -747,9 +699,8 @@ export class StoryProjectsService {
                 })),
               });
             }
-            // Clip-prompt normalization is part of the immutable Revision
-            // contract. Hash the exact canonical v2 JSON written to the
-            // revision; malformed or incomplete stored drafts fail above.
+            // Hash exactly the validated v3 story document written to the
+            // immutable revision. Video selection remains project-scoped.
             const revisionContentHash = canonicalJsonHash(lockable.data);
 
             const existing = await tx.storyRevision.findUnique({
@@ -768,12 +719,6 @@ export class StoryProjectsService {
                     'The existing immutable revision does not match its source draft.',
                 });
               }
-              await this.ensureRevisionFilmProjection(tx, {
-                project: access.project,
-                revision: existing,
-                draft: lockable.data,
-                userId: user.userId,
-              });
               return { kind: 'revision', revision: existing } as const;
             }
 
@@ -797,12 +742,6 @@ export class StoryProjectsService {
                 createdByUserId: user.userId,
               },
             });
-            await this.ensureRevisionFilmProjection(tx, {
-              project: access.project,
-              revision,
-              draft: lockable.data,
-              userId: user.userId,
-            });
             return { kind: 'revision', revision } as const;
           },
           { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
@@ -819,9 +758,8 @@ export class StoryProjectsService {
         return this.toRevision(result.revision);
       } catch (error) {
         if (!isUniqueConstraintError(error) || attempt > 0) throw error;
-        // A concurrent lock/projection won. Retry the whole serializable
-        // transaction so the immutable revision and its production plane are
-        // verified together instead of returning a partially-created row.
+        // A concurrent lock won. Retry the serializable transaction so the
+        // immutable revision number is allocated exactly once.
       }
     }
 
@@ -831,314 +769,13 @@ export class StoryProjectsService {
     });
   }
 
-  private async ensureRevisionFilmProjection(
-    tx: Prisma.TransactionClient,
-    input: {
-      project: {
-        id: string;
-        frameProfile: import('@prisma/client').StoryFrameProfile;
-        defaultLocale: string;
-      };
-      revision: { id: string };
-      draft: import('./interactive-film.schema').InteractiveFilmDraftContent;
-      userId: string;
-    },
-  ): Promise<void> {
-    const existingSpec = await tx.storyFilmSpec.findUnique({
-      where: { revisionId: input.revision.id },
-    });
-    const defaultModel = existingSpec
-      ? await tx.aiCanonicalModel.findUnique({
-          where: { id: existingSpec.defaultCanonicalModelId },
-          select: {
-            id: true,
-            slug: true,
-            modality: true,
-            status: true,
-            archivedAt: true,
-            generationModes: true,
-          },
-        })
-      : await this.resolveStoryDefaultVideoModel(tx);
-    if (!defaultModel) {
-      throw new ConflictException({
-        code: 'STORY_REVISION_PRODUCTION_PROJECTION_CONFLICT',
-        message:
-          'The immutable film specification references a missing canonical model.',
-      });
-    }
-
-    let projection: ReturnType<typeof projectStoryFilmRevision>;
-    try {
-      projection = projectStoryFilmRevision({
-        draft: input.draft,
-        frameProfile: input.project.frameProfile,
-        defaultLocale: input.project.defaultLocale,
-        defaultCanonicalModelId: defaultModel.id,
-      });
-    } catch (error) {
-      throw new UnprocessableEntityException({
-        code: 'STORY_REVISION_PROJECTION_INVALID',
-        message:
-          error instanceof Error
-            ? error.message
-            : 'The locked revision cannot be projected for film production.',
-      });
-    }
-    const filmSpecHash = canonicalJsonHash(projection.filmSpec);
-
-    if (existingSpec) {
-      if (
-        existingSpec.storyProjectId !== input.project.id ||
-        existingSpec.specHash !== filmSpecHash ||
-        canonicalJsonHash(existingSpec.specJson) !== filmSpecHash
-      ) {
-        throwProjectionConflict(
-          'The existing film specification does not match its immutable revision.',
-        );
-      }
-    } else {
-      const spec = projection.filmSpec;
-      await tx.storyFilmSpec.create({
-        data: {
-          revisionId: input.revision.id,
-          storyProjectId: input.project.id,
-          runtimeSchemaVersion: spec.runtimeSchemaVersion,
-          targetDurationMs: spec.duration.targetMs,
-          durationToleranceMs: spec.duration.toleranceMs,
-          maxContinuousDurationMs: spec.duration.maxContinuousMs,
-          maxGeneratedClipDurationMs: spec.duration.maxGeneratedClipMs,
-          targetClipCount: spec.targets.clipCount,
-          targetChoiceCount: spec.targets.choiceCount,
-          targetEndingCount: spec.targets.endingCount,
-          frameWidth: spec.frame.width,
-          frameHeight: spec.frame.height,
-          frameRateNumerator: spec.frame.framesPerSecond.numerator,
-          frameRateDenominator: spec.frame.framesPerSecond.denominator,
-          audioSampleRate: spec.audioSampleRateHz,
-          defaultLocale: spec.locales.defaultLocale,
-          enabledLocales: spec.locales.enabledLocales,
-          defaultCanonicalModelId: defaultModel.id,
-          specJson: spec as Prisma.InputJsonObject,
-          specHash: filmSpecHash,
-          createdByUserId: input.userId,
-          updatedByUserId: input.userId,
-        },
-      });
-    }
-
-    const existingClips = await tx.storyFilmClip.findMany({
-      where: { revisionId: input.revision.id },
-    });
-    const existingTrailer = await tx.storyFilmTrailer.findUnique({
-      where: { revisionId: input.revision.id },
-    });
-    // `trailerSpec: null` is an intentional production disposition: the
-    // Revision's full gameplay is valid, while its optional trailer is absent
-    // or still an authoring draft. Only a projector-validated trailer may
-    // create or inherit trailer-production state.
-    const productionReadyTrailer = projection.trailerSpec
-      ? {
-          spec: projection.trailerSpec,
-          specHash: canonicalJsonHash(projection.trailerSpec),
-        }
-      : null;
-    const priorTrailer =
-      existingTrailer || !productionReadyTrailer
-        ? null
-        : await tx.storyFilmTrailer.findFirst({
-            where: {
-              storyProjectId: input.project.id,
-              revisionId: { not: input.revision.id },
-              currentVideoAssetId: { not: null },
-            },
-            orderBy: [
-              { revision: { number: 'desc' } },
-              { updatedAt: 'desc' },
-              { id: 'desc' },
-            ],
-          });
-    if (existingTrailer) {
-      if (
-        !productionReadyTrailer ||
-        existingTrailer.storyProjectId !== input.project.id ||
-        existingTrailer.specHash !== productionReadyTrailer.specHash ||
-        canonicalJsonHash(existingTrailer.specJson) !==
-          productionReadyTrailer.specHash
-      ) {
-        throwProjectionConflict(
-          'The existing film trailer does not match its immutable revision.',
-        );
-      }
-    } else if (productionReadyTrailer) {
-      const trailer = productionReadyTrailer.spec;
-      await tx.storyFilmTrailer.create({
-        data: {
-          storyProjectId: input.project.id,
-          revisionId: input.revision.id,
-          title: trailer.title,
-          generationMode:
-            trailer.generationControl.mode === 'omni_reference'
-              ? StoryFilmGenerationMode.omni_reference
-              : StoryFilmGenerationMode.frame_lock,
-          frameMode:
-            trailer.generationControl.mode === 'frame_lock'
-              ? trailer.generationControl.frameMode === 'first_last_frame'
-                ? StoryFilmFrameMode.first_last_frame
-                : StoryFilmFrameMode.first_frame
-              : null,
-          targetDurationMs: trailer.targetDurationMs,
-          specJson: trailer as Prisma.InputJsonObject,
-          specHash: productionReadyTrailer.specHash,
-          ...carriedCurrentVideoData(priorTrailer),
-          createdByUserId: input.userId,
-          updatedByUserId: input.userId,
-        },
-      });
-    }
-    const expectedByKey = new Map(
-      projection.clipSpecs.map((clip) => [clip.key, clip]),
-    );
-    const existingByKey = new Map(
-      existingClips.map((clip) => [clip.key, clip]),
-    );
-    const missingClipKeys = projection.clipSpecs
-      .filter((clip) => !existingByKey.has(clip.key))
-      .map((clip) => clip.key);
-    const priorClips =
-      missingClipKeys.length === 0
-        ? []
-        : await tx.storyFilmClip.findMany({
-            where: {
-              storyProjectId: input.project.id,
-              revisionId: { not: input.revision.id },
-              key: { in: missingClipKeys },
-              archivedAt: null,
-              currentVideoAssetId: { not: null },
-            },
-            orderBy: [
-              { revision: { number: 'desc' } },
-              { updatedAt: 'desc' },
-              { id: 'desc' },
-            ],
-          });
-    const priorClipByKey = new Map<string, (typeof priorClips)[number]>();
-    priorClips.forEach((clip) => {
-      if (!priorClipByKey.has(clip.key)) priorClipByKey.set(clip.key, clip);
-    });
-    for (const existing of existingClips) {
-      const expected = expectedByKey.get(existing.key);
-      const expectedHash = expected ? canonicalJsonHash(expected) : null;
-      if (
-        !expected ||
-        existing.storyProjectId !== input.project.id ||
-        existing.graphNodeId !== expected.graphNodeId ||
-        existing.archivedAt !== null ||
-        existing.specHash !== expectedHash ||
-        canonicalJsonHash(existing.specJson) !== expectedHash
-      ) {
-        throwProjectionConflict(
-          `The existing film clip ${existing.key} does not match its immutable revision.`,
-        );
-      }
-    }
-
-    for (const clip of projection.clipSpecs) {
-      if (existingByKey.has(clip.key)) continue;
-      const specHash = canonicalJsonHash(clip);
-      await tx.storyFilmClip.create({
-        data: {
-          storyProjectId: input.project.id,
-          revisionId: input.revision.id,
-          key: clip.key,
-          graphNodeId: clip.graphNodeId,
-          title: clip.title,
-          generationMode:
-            clip.generationControl.mode === 'omni_reference'
-              ? StoryFilmGenerationMode.omni_reference
-              : StoryFilmGenerationMode.frame_lock,
-          frameMode:
-            clip.generationControl.mode === 'frame_lock'
-              ? clip.generationControl.frameMode === 'first_last_frame'
-                ? StoryFilmFrameMode.first_last_frame
-                : StoryFilmFrameMode.first_frame
-              : null,
-          targetDurationMs: clip.targetDurationMs,
-          specJson: clip as Prisma.InputJsonObject,
-          specHash,
-          rank: clip.rank,
-          ...carriedCurrentVideoData(priorClipByKey.get(clip.key) ?? null),
-          createdByUserId: input.userId,
-          updatedByUserId: input.userId,
-        },
-      });
-    }
-  }
-
-  private async resolveStoryDefaultVideoModel(tx: Prisma.TransactionClient) {
-    const modelSelect = {
-      id: true,
-      slug: true,
-      modality: true,
-      status: true,
-      archivedAt: true,
-      generationModes: true,
-    } as const;
-    const requiredModes = requiredStoryGenerationModes();
-    const supportsRequiredModes = (
-      generationModes: Prisma.JsonValue,
-    ): boolean => {
-      const available = stringArray(generationModes);
-      return requiredModes.every((mode) => available.includes(mode));
-    };
-
-    // The FilmSpec stamps a default video model, but a video-first project
-    // (uploaded/imported clips) never generates, so this is vestigial. Prefer
-    // the configured slug when it resolves, but NEVER hard-fail on a missing
-    // env var or an unknown slug: fall back to any active, capable video model
-    // in the catalogue. Only a cell with zero usable video models errors.
-    const slug = process.env.STORY_STUDIO_DEFAULT_VIDEO_MODEL_SLUG?.trim();
-    if (slug) {
-      const configured = await tx.aiCanonicalModel.findUnique({
-        where: { slug },
-        select: modelSelect,
-      });
-      if (
-        configured &&
-        configured.modality === AiJobType.video &&
-        configured.status === AiControlPlaneStatus.active &&
-        configured.archivedAt === null &&
-        supportsRequiredModes(configured.generationModes)
-      ) {
-        return configured;
-      }
-    }
-
-    const fallback = await tx.aiCanonicalModel.findFirst({
-      where: {
-        modality: AiJobType.video,
-        status: AiControlPlaneStatus.active,
-        archivedAt: null,
-      },
-      orderBy: { slug: 'asc' },
-      select: modelSelect,
-    });
-    if (fallback && supportsRequiredModes(fallback.generationModes)) {
-      return fallback;
-    }
-    throw new UnprocessableEntityException({
-      code: 'STORY_DEFAULT_VIDEO_MODEL_UNAVAILABLE',
-      message:
-        'No active video model is available in the catalogue for Story Studio.',
-    });
-  }
-
   async workbench(
     user: AuthUser,
     workspaceId: string,
     projectId: string,
-    query: StoryWorkbenchQuery,
+    _query: StoryWorkbenchQuery,
   ): Promise<StoryWorkbenchDto> {
+    void _query;
     const access = await this.requireScopedProject(
       user,
       workspaceId,
@@ -1148,126 +785,65 @@ export class StoryProjectsService {
     );
     this.requireInteractiveFilm(access.project.format);
 
-    const { project, draft, selectedRevision, film } =
+    const { project, draft, video, references, latestBuild } =
       await this.prisma.$transaction(
         async (tx) => {
-          const [project, draft, selectedRevision] = await Promise.all([
-            this.loadProjectSummary(projectId, tx),
-            tx.storyDraft.findUnique({
-              where: { storyProjectId: projectId },
-            }),
-            query.revisionId
-              ? tx.storyRevision.findFirst({
-                  where: { id: query.revisionId, storyProjectId: projectId },
-                })
-              : tx.storyRevision.findFirst({
-                  where: { storyProjectId: projectId },
-                  orderBy: [{ number: 'desc' }, { id: 'desc' }],
-                }),
-          ]);
+          const [project, draft, selections, references, latestBuild] =
+            await Promise.all([
+              this.loadProjectSummary(projectId, tx),
+              tx.storyDraft.findUnique({
+                where: { storyProjectId: projectId },
+              }),
+              tx.storyVideoSelection.findMany({
+                where: { storyProjectId: projectId },
+                include: STORY_VIDEO_SELECTION_INCLUDE,
+              }),
+              tx.storyReferenceSlot.findMany({
+                where: { storyProjectId: projectId, archivedAt: null },
+                orderBy: [{ rank: 'asc' }, { id: 'asc' }],
+                include: STORY_REFERENCE_INCLUDE,
+              }),
+              tx.storyBuild.findFirst({
+                where: { storyProjectId: projectId },
+                orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+                include: {
+                  experiencePublication: {
+                    select: {
+                      status: true,
+                      gameId: true,
+                      contentVersion: true,
+                      manifestUrl: true,
+                      publishedAt: true,
+                      mediaAuthorizedAt: true,
+                      mediaAuthorizationRevokedAt: true,
+                      authorityIsCurrent: true,
+                      authorityGameExists: true,
+                      authorityCurrentVersion: true,
+                      authorityCheckedAt: true,
+                      lastErrorCode: true,
+                      lastErrorDetail: true,
+                    },
+                  },
+                },
+              }),
+            ]);
           if (!draft) throwDraftNotFound();
-          if (query.revisionId && !selectedRevision) {
-            throwRevisionNotFound();
+          if (draft.schemaVersion !== INTERACTIVE_FILM_DRAFT_SCHEMA_VERSION) {
+            throw unsupportedStorySchema('draft', draft.schemaVersion);
           }
-          const parsedDraft = InteractiveFilmDraftContentSchema.safeParse(
+          const content = parseDraftContent(
             draft.content,
+            'STORY_DRAFT_CORRUPT',
           );
-          const currentGraphNodeIds = parsedDraft.success
-            ? new Set(parsedDraft.data.graph.nodes.map((node) => node.nodeId))
-            : null;
-
-          let film: StoryWorkbenchDto['film'] = null;
-          if (selectedRevision) {
-            const [spec, trailerHead, clipHeads, references, latestBuild] =
-              await Promise.all([
-                tx.storyFilmSpec.findUnique({
-                  where: { revisionId: selectedRevision.id },
-                  include: {
-                    defaultCanonicalModel: {
-                      select: {
-                        id: true,
-                        slug: true,
-                        displayName: true,
-                        generationModes: true,
-                      },
-                    },
-                  },
-                }),
-                tx.storyFilmTrailerHead.findUnique({
-                  where: { storyProjectId: projectId },
-                  include: {
-                    trailer: { include: FILM_TRAILER_INCLUDE },
-                  },
-                }),
-                tx.storyFilmClipHead.findMany({
-                  where: { storyProjectId: projectId },
-                  include: {
-                    clip: { include: FILM_CLIP_INCLUDE },
-                  },
-                }),
-                tx.storyFilmReferenceSlot.findMany({
-                  where: {
-                    storyProjectId: projectId,
-                    revisionId: selectedRevision.id,
-                    archivedAt: null,
-                  },
-                  orderBy: [{ rank: 'asc' }, { id: 'asc' }],
-                  include: FILM_REFERENCE_INCLUDE,
-                }),
-                tx.storyBuild.findFirst({
-                  where: {
-                    storyProjectId: projectId,
-                    sourceRevisionId: selectedRevision.id,
-                  },
-                  orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
-                  include: {
-                    experiencePublication: {
-                      select: {
-                        status: true,
-                        gameId: true,
-                        contentVersion: true,
-                        manifestUrl: true,
-                        publishedAt: true,
-                        mediaAuthorizedAt: true,
-                        mediaAuthorizationRevokedAt: true,
-                        authorityIsCurrent: true,
-                        authorityGameExists: true,
-                        authorityCurrentVersion: true,
-                        authorityCheckedAt: true,
-                        lastErrorCode: true,
-                        lastErrorDetail: true,
-                      },
-                    },
-                  },
-                }),
-              ]);
-            film = {
-              productionRevision: spec?.productionRevision ?? 0,
-              spec: spec ? this.toFilmSpec(spec) : null,
-              defaultModel: spec
-                ? this.toFilmDefaultModel(spec.defaultCanonicalModel)
-                : null,
-              trailer: trailerHead
-                ? this.toFilmTrailerSummary(trailerHead.trailer)
-                : null,
-              clips: clipHeads
-                .map((head) => head.clip)
-                .filter(
-                  (clip) => currentGraphNodeIds?.has(clip.graphNodeId) ?? true,
-                )
-                .sort(
-                  (left, right) =>
-                    left.rank - right.rank || left.id.localeCompare(right.id),
-                )
-                .map((clip) => this.toFilmClipSummary(clip)),
-              references: references.map((slot) => this.toFilmReference(slot)),
-              latestBuild: latestBuild
-                ? this.toFilmBuildSummary(latestBuild)
-                : null,
-            };
-          }
-
-          return { project, draft, selectedRevision, film };
+          return {
+            project,
+            draft,
+            video: projectStoryVideoWorkbench(content, selections),
+            references: references.map((slot) => this.toStoryReference(slot)),
+            latestBuild: latestBuild
+              ? this.toStoryBuildSummary(latestBuild)
+              : null,
+          };
         },
         { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead },
       );
@@ -1275,10 +851,9 @@ export class StoryProjectsService {
     return {
       project: this.toProjectSummary(project, user.userId),
       draft: this.toDraft(draft, project),
-      selectedRevision: selectedRevision
-        ? this.toRevision(selectedRevision)
-        : null,
-      film,
+      video,
+      references,
+      latestBuild,
     };
   }
 
@@ -1386,40 +961,31 @@ export class StoryProjectsService {
     const capabilities = membership
       ? (this.permissions.capabilities(membership.role) as StoryCapability[])
       : [];
-    const latestRevision = row.revisions[0] ?? null;
-    const currentProductionRevision =
-      latestRevision &&
-      row.draft &&
-      latestRevision.sourceDraftRevision === row.draft.revision &&
-      latestRevision.contentHash === row.draft.contentHash
-        ? latestRevision
-        : null;
-    const activeRevisionId = currentProductionRevision?.id ?? null;
     const parsedDraft = row.draft
       ? InteractiveFilmDraftContentSchema.safeParse(row.draft.content)
       : null;
     const draftClipCount = parsedDraft?.success
-      ? parsedDraft.data.clipPrompts.length
+      ? parsedDraft.data.graph.nodes.filter((node) => node.kind === 'clip')
+          .length
       : 0;
-    const references = activeRevisionId
-      ? row.filmReferenceSlots.filter(
-          (slot) => slot.revisionId === activeRevisionId,
-        )
-      : [];
-    const currentGraphNodeIds = parsedDraft?.success
-      ? new Set(parsedDraft.data.graph.nodes.map((node) => node.nodeId))
-      : null;
-    const clips = row.filmClipHeads
-      .map((head) => head.clip)
-      .filter((clip) => currentGraphNodeIds?.has(clip.graphNodeId) ?? true);
-    const approvedReferenceCount = references.filter(
+    const currentClipNodeIds = new Set(
+      parsedDraft?.success
+        ? parsedDraft.data.graph.nodes.flatMap((node) =>
+            node.kind === 'clip' ? [node.nodeId] : [],
+          )
+        : [],
+    );
+    const selections = row.videoSelections.filter((selection) =>
+      currentClipNodeIds.has(selection.targetKey),
+    );
+    const approvedReferenceCount = row.referenceSlots.filter(
       (slot) => slot.approvedVersionId !== null,
     ).length;
-    const currentVideoCount = clips.filter(
-      (clip) => clip.currentVideoAssetId !== null,
+    const currentVideoCount = selections.filter(
+      (selection) => selection.currentAssetId !== null,
     ).length;
-    const generatingClipCount = clips.filter((clip) =>
-      isGenerationActive(clip.latestGenerationAttempt?.status ?? null),
+    const generatingClipCount = selections.filter((selection) =>
+      isGenerationActive(selection.generationAttempts[0]?.status ?? null),
     ).length;
 
     return {
@@ -1441,14 +1007,14 @@ export class StoryProjectsService {
         ? this.toRevisionSummary(row.revisions[0])
         : null,
       production: {
-        referenceSlotCount: references.length,
+        referenceSlotCount: row.referenceSlots.length,
         approvedReferenceCount,
         clipCount: draftClipCount,
         currentVideoCount,
         generatingClipCount,
         latestBuildStatus:
           row.builds.find(
-            (build) => build.sourceRevisionId === activeRevisionId,
+            (build) => build.sourceDraftRevision === row.draft?.revision,
           )?.status ?? null,
       },
       capabilities,
@@ -1473,7 +1039,7 @@ export class StoryProjectsService {
   ): StoryDraftDto {
     this.requireInteractiveFilm(project.format);
     if (row.schemaVersion !== INTERACTIVE_FILM_DRAFT_SCHEMA_VERSION) {
-      throw corruptData('STORY_DRAFT_SCHEMA_UNSUPPORTED', 'draft schema');
+      throw unsupportedStorySchema('draft', row.schemaVersion);
     }
     const content = parseDraftContent(row.content, 'STORY_DRAFT_CORRUPT');
     return {
@@ -1562,7 +1128,7 @@ export class StoryProjectsService {
     createdAt: Date;
   }): StoryRevisionDto {
     if (row.schemaVersion !== INTERACTIVE_FILM_DRAFT_SCHEMA_VERSION) {
-      throw corruptData('STORY_REVISION_SCHEMA_UNSUPPORTED', 'revision schema');
+      throw unsupportedStorySchema('revision', row.schemaVersion);
     }
     return {
       ...this.toRevisionSummary(row),
@@ -1572,127 +1138,10 @@ export class StoryProjectsService {
     };
   }
 
-  private toFilmSpec(row: {
-    storyProjectId: string;
-    revisionId: string;
-    specJson: Prisma.JsonValue;
-    version: number;
-    productionRevision: number;
-    updatedByUserId: string;
-    createdAt: Date;
-    updatedAt: Date;
-  }): FilmSpecDto {
-    const parsed = FilmSpecSchema.safeParse(row.specJson);
-    if (!parsed.success) {
-      throw corruptData('STORY_FILM_SPEC_CORRUPT', 'film specification');
-    }
-    return {
-      ...parsed.data,
-      projectId: row.storyProjectId,
-      revisionId: row.revisionId,
-      version: row.version,
-      productionRevision: row.productionRevision,
-      updatedByUserId: row.updatedByUserId,
-      createdAt: row.createdAt.toISOString(),
-      updatedAt: row.updatedAt.toISOString(),
-    };
-  }
-
-  private toFilmDefaultModel(row: {
-    id: string;
-    slug: string;
-    displayName: string;
-    generationModes: Prisma.JsonValue;
-  }): FilmDefaultModelDto {
-    return {
-      id: row.id,
-      slug: row.slug,
-      displayName: row.displayName,
-      generationModes: stringArray(row.generationModes),
-    };
-  }
-
-  private toFilmTrailerSummary(row: FilmTrailerRow): FilmTrailerSummaryDto {
-    const parsed = FilmTrailerSpecSchema.safeParse(row.specJson);
-    if (!parsed.success) {
-      throw corruptData('STORY_FILM_TRAILER_CORRUPT', 'film trailer');
-    }
-    return {
-      ...parsed.data,
-      id: row.id,
-      projectId: row.storyProjectId,
-      revisionId: row.revisionId,
-      version: row.version,
-      currentVideoRevision: row.currentVideoRevision,
-      specHash: row.specHash,
-      productionInputHash: row.productionInputHash,
-      referenceBindings: row.references.map((binding) => ({
-        id: binding.id,
-        referenceSlotId: binding.referenceSlotId,
-        role: binding.role,
-        rank: binding.position,
-        required: binding.required,
-        approvedReferenceVersionId: binding.referenceSlot.approvedVersionId,
-      })),
-      currentVideo: toCurrentVideoDto(row),
-      generation: row.latestGenerationAttempt
-        ? toVideoGenerationDto(row.latestGenerationAttempt, {
-            kind: 'trailer',
-            trailerId: row.id,
-          })
-        : null,
-      createdAt: row.createdAt.toISOString(),
-      updatedAt: row.updatedAt.toISOString(),
-    };
-  }
-
-  private toFilmClipSummary(row: FilmClipRow): FilmClipSummaryDto {
-    const parsed = FilmClipSpecSchema.safeParse(row.specJson);
-    if (!parsed.success) {
-      throw corruptData('STORY_FILM_CLIP_CORRUPT', 'film clip');
-    }
-    return {
-      id: row.id,
-      revisionId: row.revisionId,
-      key: parsed.data.key,
-      graphNodeId: parsed.data.graphNodeId,
-      kind: parsed.data.kind,
-      title: parsed.data.title,
-      description: parsed.data.description,
-      rank: parsed.data.rank,
-      targetDurationMs: parsed.data.targetDurationMs,
-      generationControl: parsed.data.generationControl,
-      prompt: parsed.data.prompt,
-      dialogueWindows: parsed.data.dialogueWindows,
-      outputContract: parsed.data.outputContract,
-      continuityNotes: parsed.data.continuityNotes,
-      version: row.version,
-      currentVideoRevision: row.currentVideoRevision,
-      productionInputHash: row.productionInputHash,
-      referenceBindings: row.references.map((binding) => ({
-        id: binding.id,
-        referenceSlotId: binding.referenceSlotId,
-        role: binding.role,
-        rank: binding.position,
-        required: binding.required,
-        approvedReferenceVersionId: binding.referenceSlot.approvedVersionId,
-      })),
-      currentVideo: toCurrentVideoDto(row),
-      generation: row.latestGenerationAttempt
-        ? toVideoGenerationDto(row.latestGenerationAttempt, {
-            kind: 'clip',
-            clipId: row.id,
-          })
-        : null,
-      updatedAt: row.updatedAt.toISOString(),
-    };
-  }
-
-  private toFilmReference(row: FilmReferenceRow): FilmReferenceSlotDto {
+  private toStoryReference(row: StoryReferenceRow): StoryReferenceSlotDto {
     return {
       id: row.id,
       projectId: row.storyProjectId,
-      revisionId: row.revisionId,
       key: row.key,
       kind: row.kind,
       label: row.label,
@@ -1717,8 +1166,8 @@ export class StoryProjectsService {
         sourceFrameIndex: version.sourceFrameIndex,
         sourceOutputChecksumSha256: version.sourceOutputChecksumSha256,
         asset: toMediaAsset(version.asset),
-        promptSnapshot: jsonRecordOrNull(version.promptSnapshot),
-        configSnapshot: jsonRecordOrNull(version.generationConfig),
+        variantId: version.variantId,
+        sourceRecipeSnapshot: jsonRecordOrNull(version.sourceRecipeSnapshot),
         checksumSha256: version.checksumSha256,
         reviewRevision: version.reviewRevision,
         approved: version.approval !== null,
@@ -1730,13 +1179,14 @@ export class StoryProjectsService {
     };
   }
 
-  private toFilmBuildSummary(row: {
+  private toStoryBuildSummary(row: {
     id: string;
     buildNumber: number;
-    kind: 'preview' | 'production';
+    kind: StoryBuildSummaryDto['kind'];
     scope: Prisma.JsonValue;
-    status: FilmBuildSummaryDto['status'];
-    sourceProductionRevision: number;
+    status: StoryBuildSummaryDto['status'];
+    sourceDraftRevision: number;
+    videoSnapshotHash: string;
     diagnostics: Prisma.JsonValue;
     experiencePublication: {
       status: 'pending' | 'confirmed' | 'uncertain' | 'rejected';
@@ -1755,18 +1205,19 @@ export class StoryProjectsService {
     } | null;
     createdAt: Date;
     completedAt: Date | null;
-  }): FilmBuildSummaryDto {
-    const scope = FilmBuildScopeSchema.safeParse(row.scope);
+  }): StoryBuildSummaryDto {
+    const scope = StoryBuildScopeSchema.safeParse(row.scope);
     if (!scope.success) {
-      throw corruptData('STORY_FILM_BUILD_CORRUPT', 'film build scope');
+      throw corruptData('STORY_BUILD_CORRUPT', 'story build scope');
     }
     return {
       id: row.id,
       number: row.buildNumber,
-      profile: row.kind,
+      kind: row.kind,
       scope: scope.data,
       status: row.status,
-      sourceProductionRevision: row.sourceProductionRevision,
+      sourceDraftRevision: row.sourceDraftRevision,
+      videoSnapshotHash: row.videoSnapshotHash,
       diagnostics: buildDiagnostics(row.diagnostics),
       publication: row.experiencePublication
         ? {
@@ -1838,7 +1289,7 @@ function throwDraftConflict(
     project.format !== StoryFormat.interactive_film ||
     current.schemaVersion !== INTERACTIVE_FILM_DRAFT_SCHEMA_VERSION
   ) {
-    throw corruptData('STORY_DRAFT_SCHEMA_UNSUPPORTED', 'draft schema');
+    throw unsupportedStorySchema('draft', current.schemaVersion);
   }
   const content = parseDraftContent(current.content, 'STORY_DRAFT_CORRUPT');
   const dto: StoryDraftDto = {
@@ -1862,7 +1313,7 @@ function throwDraftConflict(
   });
 }
 
-function toMediaAsset(row: FilmMediaAssetRow): MediaAssetSummaryDto {
+function toMediaAsset(row: StoryMediaAssetRow): MediaAssetSummaryDto {
   return {
     id: row.id,
     kind: row.kind,
@@ -1877,127 +1328,173 @@ function toMediaAsset(row: FilmMediaAssetRow): MediaAssetSummaryDto {
   };
 }
 
-function carriedCurrentVideoData(source: CurrentVideoCarrySource | null) {
-  if (!source?.currentVideoAssetId) return {};
+function projectStoryVideoWorkbench(
+  draft: ReturnType<typeof parseDraftContent>,
+  selections: StoryVideoSelectionRow[],
+): StoryWorkbenchDto['video'] {
+  const selectionByTarget = new Map(
+    selections.map((selection) => [
+      `${selection.targetKind}:${selection.targetKey}`,
+      selection,
+    ]),
+  );
+  const clips = draft.graph.nodes.flatMap((node) => {
+    if (node.kind !== 'clip') return [];
+    const selection = selectionByTarget.get(`clip:${node.nodeId}`) ?? null;
+    return [
+      {
+        graphNodeId: node.nodeId,
+        selectionVersion: selection?.version ?? 0,
+        currentVideo: selectionCurrentVideo(selection),
+        generation: selectionGeneration(selection),
+      },
+    ];
+  });
+  const snapshot: StoryVideoSnapshotEntry[] = clips.map((clip) => {
+    const video = clip.currentVideo;
+    return {
+      graphNodeId: clip.graphNodeId,
+      selectionVersion: clip.selectionVersion,
+      sourceGenerationAttemptId: video?.sourceGenerationId ?? null,
+      assetId: video?.asset.id ?? null,
+      variantId: video?.variantId ?? null,
+      checksumSha256: video?.checksumSha256 ?? null,
+      contentType: video ? exactStoryVideoContentType(video.contentType) : null,
+      durationMs: video?.durationMs ?? null,
+      width: video?.width ?? null,
+      height: video?.height ?? null,
+      hasAudio: video?.hasAudio ?? null,
+      browserSafeMp4: video?.browserSafeMp4 ?? null,
+    };
+  });
+  const trailerSelection = selectionByTarget.get('trailer:trailer') ?? null;
+  return {
+    snapshotHash: storyVideoSnapshotHash(snapshot),
+    clips,
+    trailer: {
+      selectionVersion: trailerSelection?.version ?? 0,
+      currentVideo: selectionCurrentVideo(trailerSelection),
+      generation: selectionGeneration(trailerSelection),
+    },
+  };
+}
+
+function selectionCurrentVideo(
+  selection: StoryVideoSelectionRow | null,
+): StoryCurrentVideoDto | null {
+  if (!selection?.currentAssetId) return null;
   if (
-    !source.currentVideoVariantId ||
-    !source.currentVideoChecksumSha256 ||
-    !source.currentVideoSetAt
+    !selection.currentAsset ||
+    !selection.currentVariantId ||
+    !selection.currentChecksumSha256 ||
+    selection.currentDurationMs === null ||
+    selection.currentWidth === null ||
+    selection.currentHeight === null ||
+    !selection.currentContentType ||
+    selection.currentHasAudio === null ||
+    selection.currentBrowserSafeMp4 !== true ||
+    !selection.setAt
   ) {
-    throwProjectionConflict(
-      'A previous revision contains an incomplete current-video pointer.',
+    throw corruptData('STORY_VIDEO_SELECTION_CORRUPT', 'story video selection');
+  }
+  return {
+    asset: toMediaAsset(selection.currentAsset),
+    variantId: selection.currentVariantId,
+    sourceGenerationId: selection.currentSourceGenerationAttemptId,
+    checksumSha256: selection.currentChecksumSha256,
+    contentType: selection.currentContentType,
+    durationMs: selection.currentDurationMs,
+    width: selection.currentWidth,
+    height: selection.currentHeight,
+    hasAudio: selection.currentHasAudio,
+    browserSafeMp4: true,
+    selectionVersion: selection.version,
+    setByUserId: selection.setByUserId,
+    setAt: selection.setAt.toISOString(),
+  };
+}
+
+function exactStoryVideoContentType(value: string): 'video/mp4' {
+  if (value !== 'video/mp4') {
+    throw corruptData(
+      'STORY_VIDEO_SELECTION_CORRUPT',
+      'story video content type',
+    );
+  }
+  return value;
+}
+
+function selectionGeneration(
+  selection: StoryVideoSelectionRow | null,
+): StoryVideoGenerationDto | null {
+  const generation = selection?.generationAttempts[0];
+  if (!selection || !generation) return null;
+  const recipe = StoryVideoRecipeSnapshotSchema.safeParse(
+    generation.recipeSnapshot,
+  );
+  if (!recipe.success) {
+    throw corruptData(
+      'STORY_VIDEO_GENERATION_CORRUPT',
+      'story video generation recipe',
     );
   }
   return {
-    currentVideoAssetId: source.currentVideoAssetId,
-    currentVideoVariantId: source.currentVideoVariantId,
-    currentVideoSourceAttemptId: null,
-    currentVideoSpecHash: source.currentVideoSpecHash,
-    currentVideoInputHash: source.currentVideoInputHash,
-    currentVideoChecksumSha256: source.currentVideoChecksumSha256,
-    currentVideoTechnicalChecks:
-      source.currentVideoTechnicalChecks ?? Prisma.JsonNull,
-    currentVideoRevision: Math.max(source.currentVideoRevision, 1),
-    currentVideoSetByUserId: source.currentVideoSetByUserId,
-    currentVideoSetAt: source.currentVideoSetAt,
-    latestGenerationAttemptId: null,
+    id: generation.id,
+    projectId: generation.storyProjectId,
+    target:
+      selection.targetKind === 'clip'
+        ? { kind: 'clip', graphNodeId: selection.targetKey }
+        : { kind: 'trailer' },
+    number: generation.attemptNumber,
+    version: generation.version,
+    selectionVersionAtSubmit: generation.selectionVersionAtSubmit,
+    aiJobId: generation.aiJobId,
+    aiJobOutputId: generation.aiJobOutputId,
+    status: generation.status,
+    recipeSnapshot: recipe.data,
+    outputAsset: generation.outputAsset
+      ? toMediaAsset(generation.outputAsset)
+      : null,
+    outputVariantId: generation.outputVariantId,
+    outputChecksumSha256: generation.outputChecksumSha256,
+    technicalChecks: technicalCheckDtos(generation.technicalChecks),
+    error: jsonRecordOrNull(generation.error),
+    createdByUserId: generation.createdByUserId,
+    queuedAt: generation.queuedAt?.toISOString() ?? null,
+    startedAt: generation.startedAt?.toISOString() ?? null,
+    readyAt: generation.readyAt?.toISOString() ?? null,
+    cancelledAt: generation.cancelledAt?.toISOString() ?? null,
+    supersededAt: generation.supersededAt?.toISOString() ?? null,
+    completedAt: generation.completedAt?.toISOString() ?? null,
+    createdAt: generation.createdAt.toISOString(),
+    updatedAt: generation.updatedAt.toISOString(),
   };
 }
 
-function toCurrentVideoDto(
-  row: FilmClipRow | FilmTrailerRow,
-): FilmCurrentVideoDto | null {
-  if (row.currentVideoAssetId === null) {
+function technicalCheckDtos(
+  value: Prisma.JsonValue,
+): StoryVideoTechnicalCheckDto[] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((item) => {
+    if (!item || typeof item !== 'object' || Array.isArray(item)) return [];
+    const check = item as Record<string, unknown>;
     if (
-      row.currentVideoVariantId !== null ||
-      row.currentVideoSourceAttemptId !== null ||
-      row.currentVideoSpecHash !== null ||
-      row.currentVideoInputHash !== null ||
-      row.currentVideoChecksumSha256 !== null ||
-      row.currentVideoTechnicalChecks !== null ||
-      row.currentVideoSetByUserId !== null ||
-      row.currentVideoSetAt !== null ||
-      row.currentVideoAsset !== null
+      typeof check.key !== 'string' ||
+      (check.status !== 'pending' &&
+        check.status !== 'passed' &&
+        check.status !== 'failed') ||
+      (check.message !== null && typeof check.message !== 'string')
     ) {
-      throw corruptData(
-        'STORY_FILM_CURRENT_VIDEO_CORRUPT',
-        'film current video',
-      );
+      return [];
     }
-    return null;
-  }
-  if (
-    !row.currentVideoAsset ||
-    !row.currentVideoVariantId ||
-    !row.currentVideoChecksumSha256 ||
-    !row.currentVideoSetAt
-  ) {
-    throw corruptData('STORY_FILM_CURRENT_VIDEO_CORRUPT', 'film current video');
-  }
-  return {
-    asset: toMediaAsset(row.currentVideoAsset),
-    variantId: row.currentVideoVariantId,
-    sourceGenerationId: row.currentVideoSourceAttemptId,
-    specHash: row.currentVideoSpecHash,
-    inputHash: row.currentVideoInputHash,
-    checksumSha256: row.currentVideoChecksumSha256,
-    technicalChecks: storyFilmTechnicalCheckDtos(
-      row.currentVideoTechnicalChecks ?? [],
-    ),
-    revision: row.currentVideoRevision,
-    setByUserId: row.currentVideoSetByUserId,
-    setAt: row.currentVideoSetAt.toISOString(),
-    outdated:
-      row.currentVideoSpecHash !== row.specHash ||
-      row.currentVideoInputHash !== row.productionInputHash,
-  };
-}
-
-function toVideoGenerationDto(
-  row:
-    | NonNullable<FilmClipRow['latestGenerationAttempt']>
-    | NonNullable<FilmTrailerRow['latestGenerationAttempt']>,
-  target: FilmVideoGenerationDto['target'],
-): FilmVideoGenerationDto {
-  return {
-    id: row.id,
-    projectId: row.storyProjectId,
-    revisionId: row.revisionId,
-    target,
-    number: row.attemptNumber,
-    version: row.version,
-    aiJobId: row.aiJobId,
-    aiJobOutputId: row.aiJobOutputId,
-    status: row.status,
-    specHash: 'clipSpecHash' in row ? row.clipSpecHash : row.trailerSpecHash,
-    inputHash: row.productionInputHash,
-    promptSnapshot: requiredJsonRecord(
-      row.promptSnapshot,
-      'film generation prompt snapshot',
-    ),
-    generationConfig: requiredJsonRecord(
-      row.generationConfig,
-      'film generation configuration',
-    ),
-    modelSnapshot: requiredJsonRecord(
-      row.modelSnapshot,
-      'film generation model snapshot',
-    ),
-    outputAsset: row.outputAsset ? toMediaAsset(row.outputAsset) : null,
-    outputVariantId: row.outputVariantId,
-    outputChecksumSha256: row.outputChecksumSha256,
-    technicalChecks: storyFilmTechnicalCheckDtos(row.technicalChecks),
-    error: jsonRecordOrNull(row.error),
-    createdByUserId: row.createdByUserId,
-    queuedAt: row.queuedAt?.toISOString() ?? null,
-    startedAt: row.startedAt?.toISOString() ?? null,
-    readyAt: row.readyAt?.toISOString() ?? null,
-    cancelledAt: row.cancelledAt?.toISOString() ?? null,
-    supersededAt: row.supersededAt?.toISOString() ?? null,
-    createdAt: row.createdAt.toISOString(),
-    updatedAt: row.updatedAt.toISOString(),
-    completedAt: row.completedAt?.toISOString() ?? null,
-  };
+    return [
+      {
+        key: check.key,
+        status: check.status,
+        message: check.message,
+      },
+    ];
+  });
 }
 
 function parseDraftContent(
@@ -2019,25 +1516,25 @@ function corruptData(
   });
 }
 
+function unsupportedStorySchema(
+  resource: 'draft' | 'revision',
+  actualSchemaVersion: string,
+): ConflictException {
+  return new ConflictException({
+    code:
+      resource === 'draft'
+        ? 'STORY_DRAFT_SCHEMA_UNSUPPORTED'
+        : 'STORY_REVISION_SCHEMA_UNSUPPORTED',
+    message: `This ${resource} uses an unsupported schema and can no longer be opened.`,
+    actualSchemaVersion,
+    expectedSchemaVersion: INTERACTIVE_FILM_DRAFT_SCHEMA_VERSION,
+  });
+}
+
 function stringArray(value: Prisma.JsonValue): string[] {
   return Array.isArray(value)
     ? value.filter((item): item is string => typeof item === 'string')
     : [];
-}
-
-function requiredStoryGenerationModes(): string[] {
-  // Story Studio exposes a single full-capability default model. A revision
-  // may use only one lane today, but creators must be able to switch between
-  // First Frame, First + Last Frame and Omni Reference without changing the
-  // product-level model contract.
-  return ['first_last_frame_to_video', 'image_to_video', 'multimodal_to_video'];
-}
-
-function throwProjectionConflict(message: string): never {
-  throw new ConflictException({
-    code: 'STORY_REVISION_PRODUCTION_PROJECTION_CONFLICT',
-    message,
-  });
 }
 
 function jsonRecordOrNull(
@@ -2048,35 +1545,26 @@ function jsonRecordOrNull(
     : null;
 }
 
-function requiredJsonRecord(
-  value: Prisma.JsonValue,
-  resource: string,
-): Record<string, unknown> {
-  const record = jsonRecordOrNull(value);
-  if (!record) throw corruptData('STORY_FILM_GENERATION_CORRUPT', resource);
-  return record;
-}
-
-function buildDiagnostics(value: Prisma.JsonValue): FilmBuildDiagnosticDto[] {
+function buildDiagnostics(value: Prisma.JsonValue): StoryBuildDiagnosticDto[] {
   if (!Array.isArray(value)) return [];
   return value.filter(
-    isFilmBuildDiagnostic,
-  ) as unknown as FilmBuildDiagnosticDto[];
+    isStoryBuildDiagnostic,
+  ) as unknown as StoryBuildDiagnosticDto[];
 }
 
 function isGenerationActive(
-  status: StoryFilmGenerationAttemptStatus | null,
+  status: StoryVideoGenerationAttemptStatus | null,
 ): boolean {
   return (
-    status === StoryFilmGenerationAttemptStatus.queued ||
-    status === StoryFilmGenerationAttemptStatus.running ||
-    status === StoryFilmGenerationAttemptStatus.processing
+    status === StoryVideoGenerationAttemptStatus.queued ||
+    status === StoryVideoGenerationAttemptStatus.running ||
+    status === StoryVideoGenerationAttemptStatus.processing
   );
 }
 
-function isFilmBuildDiagnostic(
+function isStoryBuildDiagnostic(
   value: unknown,
-): value is FilmBuildDiagnosticDto {
+): value is StoryBuildDiagnosticDto {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
   const item = value as Record<string, unknown>;
   return (

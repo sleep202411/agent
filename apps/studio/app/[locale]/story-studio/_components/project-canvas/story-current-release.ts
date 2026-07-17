@@ -2,8 +2,7 @@ import type { StoryExperienceCurrentRelease } from "@/lib/story-projects-api";
 
 export interface StoryCurrentAuthoringIdentity {
   draftRevision: number;
-  revisionId: string | null;
-  productionRevision: number | null;
+  videoSnapshotHash: string;
 }
 
 /**
@@ -19,10 +18,7 @@ export function isExactCurrentStoryRelease(
   return Boolean(
     release?.published &&
     build &&
-    identity.revisionId &&
-    identity.productionRevision !== null &&
-    build.sourceRevisionId === identity.revisionId &&
     build.sourceDraftRevision === identity.draftRevision &&
-    build.sourceProductionRevision === identity.productionRevision
+    build.videoSnapshotHash === identity.videoSnapshotHash
   );
 }

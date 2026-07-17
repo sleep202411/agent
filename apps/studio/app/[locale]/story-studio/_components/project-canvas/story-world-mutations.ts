@@ -1,4 +1,4 @@
-import type { FilmCondition, InteractiveFilmDraftContent } from "@/lib/story-projects-api";
+import type { StoryCondition, InteractiveFilmDraftContent } from "@/lib/story-projects-api";
 
 type StoryCharacter = InteractiveFilmDraftContent["storyBible"]["characters"][number];
 type StoryStateVariable = InteractiveFilmDraftContent["storyBible"]["stateVariables"][number];
@@ -378,9 +378,9 @@ export function deleteStoryStateVariable(
 
 function visitGraphConditions(
   content: InteractiveFilmDraftContent,
-  visitor: (condition: FilmCondition) => void
+  visitor: (condition: StoryCondition) => void
 ): void {
-  const visit = (condition: FilmCondition) => {
+  const visit = (condition: StoryCondition) => {
     visitor(condition);
     if (condition.kind === "all" || condition.kind === "any") {
       condition.conditions.forEach(visit);

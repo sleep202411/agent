@@ -1,24 +1,31 @@
-import type { FilmClipSummary, FilmTrailerSummary, StoryWorkbench } from "@/lib/story-projects-api";
+import type {
+  StoryClipVideoSummary,
+  StoryTrailerVideoSummary,
+  StoryWorkbench,
+} from "@/lib/story-projects-api";
 
 const ACTIVE_GENERATION_STATUSES = new Set(["queued", "running", "processing"]);
 
 /**
  * Projects the server-confirmed Clip summary into the existing workbench cache.
- * Graph node identity is the stable authoring key: saving the draft can
- * materialize a new production Clip id immediately before the current-video
- * PUT returns.
+ * Graph node identity is the stable authoring key.
  */
 export function projectConfirmedClipCurrentVideo(
   workbench: StoryWorkbench | undefined,
-  confirmedClip: FilmClipSummary
+  confirmedClip: StoryClipVideoSummary
 ): StoryWorkbench | undefined {
-  if (!workbench?.film) return workbench;
-  const clipIndex = workbench.film.clips.findIndex(
-    (clip) => clip.graphNodeId === confirmedClip.graphNodeId || clip.id === confirmedClip.id
+  if (!workbench) return workbench;
+  const clipIndex = workbench.video.clips.findIndex(
+    (clip) => clip.graphNodeId === confirmedClip.graphNodeId
   );
-  if (clipIndex < 0) return workbench;
+  if (clipIndex < 0) {
+    return {
+      ...workbench,
+      video: { ...workbench.video, clips: [...workbench.video.clips, confirmedClip] },
+    };
+  }
 
-  const clips = [...workbench.film.clips];
+  const clips = [...workbench.video.clips];
   clips[clipIndex] = confirmedClip;
   const currentVideoCount = clips.filter((clip) => clip.currentVideo !== null).length;
   const generatingClipCount = clips.filter(
@@ -35,8 +42,8 @@ export function projectConfirmedClipCurrentVideo(
         generatingClipCount,
       },
     },
-    film: {
-      ...workbench.film,
+    video: {
+      ...workbench.video,
       clips,
     },
   };
@@ -45,13 +52,13 @@ export function projectConfirmedClipCurrentVideo(
 /** Projects the server-confirmed Trailer summary without disturbing Clips. */
 export function projectConfirmedTrailerCurrentVideo(
   workbench: StoryWorkbench | undefined,
-  confirmedTrailer: FilmTrailerSummary
+  confirmedTrailer: StoryTrailerVideoSummary
 ): StoryWorkbench | undefined {
-  if (!workbench?.film) return workbench;
+  if (!workbench) return workbench;
   return {
     ...workbench,
-    film: {
-      ...workbench.film,
+    video: {
+      ...workbench.video,
       trailer: confirmedTrailer,
     },
   };

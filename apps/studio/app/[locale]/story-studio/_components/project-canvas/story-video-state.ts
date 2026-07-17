@@ -1,24 +1,24 @@
 import type {
-  FilmClipSummary,
-  FilmTrailerSummary,
-  FilmVideoGeneration,
+  StoryClipVideoSummary,
+  StoryTrailerVideoSummary,
+  StoryVideoGeneration,
   StoryWorkbench,
 } from "@/lib/story-projects-api";
 
-const ACTIVE_VIDEO_GENERATION_STATUSES = new Set<FilmVideoGeneration["status"]>([
+const ACTIVE_VIDEO_GENERATION_STATUSES = new Set<StoryVideoGeneration["status"]>([
   "queued",
   "running",
   "processing",
 ]);
 
 export function isActiveVideoGeneration(
-  generation: FilmVideoGeneration | null | undefined
+  generation: StoryVideoGeneration | null | undefined
 ): boolean {
   return Boolean(generation && ACTIVE_VIDEO_GENERATION_STATUSES.has(generation.status));
 }
 
-export function filmGenerationError(
-  generation: FilmVideoGeneration | null | undefined
+export function storyGenerationError(
+  generation: StoryVideoGeneration | null | undefined
 ): string | null {
   if (generation?.status !== "failed" || !generation.error) return null;
   const message = generation.error.message;
@@ -26,7 +26,7 @@ export function filmGenerationError(
 }
 
 export function resolveStoryVideoState(
-  target: FilmClipSummary | FilmTrailerSummary | null | undefined
+  target: StoryClipVideoSummary | StoryTrailerVideoSummary | null | undefined
 ) {
   return {
     currentVideo: target?.currentVideo ?? null,
@@ -36,10 +36,10 @@ export function resolveStoryVideoState(
 }
 
 export function workbenchHasActiveGeneration(workbench: StoryWorkbench | undefined): boolean {
-  const film = workbench?.film;
-  if (!film) return false;
+  const video = workbench?.video;
+  if (!video) return false;
   return (
-    film.clips.some((clip) => isActiveVideoGeneration(clip.generation)) ||
-    isActiveVideoGeneration(film.trailer?.generation)
+    video.clips.some((clip) => isActiveVideoGeneration(clip.generation)) ||
+    isActiveVideoGeneration(video.trailer.generation)
   );
 }

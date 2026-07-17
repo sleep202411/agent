@@ -116,8 +116,15 @@ function createFinalizeHarness() {
       sizeBytes: 1024n,
       width: 1920,
       height: 1080,
+      durationMs: 12100,
       durationSeconds: 12,
       durationSecondsExact: 12.1,
+      hasAudio: true,
+      contentType: 'video/mp4',
+      fileExtension: 'mp4',
+      videoCodec: 'h264',
+      audioCodecs: ['aac'],
+      browserSafeMp4: true,
     }),
   };
   const mediaProcessing = { enqueueJob: jest.fn() };

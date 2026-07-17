@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type {
-  FilmTrailerSummary,
+  StoryTrailerVideoSummary,
   InteractiveFilmDraftContent,
   StoryGraphNode,
 } from "@/lib/story-projects-api";
@@ -24,14 +24,18 @@ describe("buildStoryCanvasModel", () => {
   });
 
   it("projects the independent trailer and immutable project aspect ratio onto the root", () => {
-    const trailer = { id: "trailer-1" } as FilmTrailerSummary;
+    const trailer: StoryTrailerVideoSummary = {
+      selectionVersion: 1,
+      currentVideo: null,
+      generation: null,
+    };
 
     const model = buildStoryCanvasModel(draft(), "en-US", [], undefined, "portrait_9_16", trailer);
 
     expect(model.nodes[0]?.data).toMatchObject({
       kind: "root",
       frameAspectRatio: "9:16",
-      filmTrailer: trailer,
+      trailerVideo: trailer,
     });
   });
 
@@ -112,35 +116,6 @@ describe("buildStoryCanvasModel", () => {
     ]);
     expect(first.nodes.find((node) => node.id === "opening")?.data).toMatchObject({
       continuationTargetNodeId: "arrival",
-    });
-  });
-
-  it("projects mutable director authoring onto its clip card without mutation", () => {
-    const prompt = clipPrompt("opening", "OPENING");
-    const content = draft({
-      nodes: [clip("opening", "OPENING", { kind: "auto", nextNodeId: null })],
-      clipPrompts: [prompt],
-    });
-
-    const model = buildStoryCanvasModel(content, "en-US");
-
-    expect(model.nodes.find((node) => node.id === "opening")?.data.directorPrompt).toBe(prompt);
-    expect(content.clipPrompts).toEqual([prompt]);
-  });
-
-  it("creates the director prompt shell for a newly added graph clip", () => {
-    const content = draft({
-      nodes: [clip("opening", "OPENING", { kind: "auto", nextNodeId: null })],
-      clipPrompts: [],
-    });
-
-    const model = buildStoryCanvasModel(content, "en-US");
-
-    expect(model.nodes.find((node) => node.id === "opening")?.data.directorPrompt).toMatchObject({
-      graphNodeId: "opening",
-      clipKey: "OPENING",
-      targetDurationMs: 15_000,
-      beats: [{ startMs: 0, endMs: 15_000 }],
     });
   });
 
@@ -286,7 +261,6 @@ function draft(
     entryNodeId?: string | null;
     nodes?: StoryGraphNode[];
     endings?: InteractiveFilmDraftContent["storyBible"]["endings"];
-    clipPrompts?: InteractiveFilmDraftContent["clipPrompts"];
   } = {}
 ): InteractiveFilmDraftContent {
   return {
@@ -305,29 +279,7 @@ function draft(
       entryNodeId: overrides.entryNodeId ?? null,
       nodes: overrides.nodes ?? [],
     },
-    clipPrompts: overrides.clipPrompts ?? [],
-    trailerPrompt: null,
     productionNotes: [],
-  };
-}
-
-function clipPrompt(
-  graphNodeId: string,
-  clipKey: string
-): InteractiveFilmDraftContent["clipPrompts"][number] {
-  return {
-    graphNodeId,
-    clipKey,
-    title: clipKey,
-    description: "",
-    targetDurationMs: 15_000,
-    generationControl: { mode: "frame_lock", frameMode: "first_frame" },
-    masterDirection: "A single controlled move.",
-    referenceRoleNotes: [],
-    emotionalArc: "Unease into resolve.",
-    beats: [],
-    negativeConstraints: [],
-    continuityNotes: [],
   };
 }
 

@@ -13,18 +13,18 @@ vi.mock("@/lib/api", () => ({
 
 import { api } from "@/lib/api";
 import {
-  cancelFilmVideoGeneration,
+  cancelStoryVideoGeneration,
   cancelStoryClipVideoUpload,
   completeStoryClipVideoUpload,
-  createFilmClipGeneration,
-  createFilmTrailerGeneration,
+  createStoryClipVideoGeneration,
+  createStoryTrailerVideoGeneration,
   getStoryExperienceCurrentRelease,
   getStoryClipVideoUploadFinalization,
   getStoryWorkingPreview,
   listStoryVideoLibrary,
-  putFilmClipCurrentVideo,
-  putFilmTrailerCurrentVideo,
-  retryFilmVideoGeneration,
+  putStoryClipCurrentVideo,
+  putStoryTrailerCurrentVideo,
+  retryStoryVideoGeneration,
   type StoryClipVideoFinalization,
   type StoryVideoLibraryItem,
   waitForStoryClipVideoUploadFinalization,
@@ -42,11 +42,19 @@ describe("current-draft Story production routes", () => {
   it("starts one generation from the exact saved draft revision", async () => {
     vi.mocked(api.post).mockResolvedValueOnce({ id: "generation-1" });
 
-    await createFilmClipGeneration(
+    await createStoryClipVideoGeneration(
       "workspace-1",
       "project-1",
       "clip-1",
-      { expectedDraftRevision: 18, modelId: "seedance-2", variationNote: "slower camera" },
+      {
+        expectedDraftRevision: 18,
+        expectedSelectionVersion: 3,
+        prompt: "Slower camera",
+        modelId: "seedance-2",
+        mode: "multimodal_to_video",
+        durationMs: 10_000,
+        references: [],
+      },
       "idempotency-1"
     );
 
@@ -55,8 +63,12 @@ describe("current-draft Story production routes", () => {
       expect.objectContaining({
         data: {
           expectedDraftRevision: 18,
+          expectedSelectionVersion: 3,
+          prompt: "Slower camera",
           modelId: "seedance-2",
-          variationNote: "slower camera",
+          mode: "multimodal_to_video",
+          durationMs: 10_000,
+          references: [],
         },
       })
     );
@@ -65,9 +77,9 @@ describe("current-draft Story production routes", () => {
   it("binds one current video with both authoring revisions", async () => {
     vi.mocked(api.put).mockResolvedValueOnce({ id: "clip-1" });
 
-    await putFilmClipCurrentVideo("workspace-1", "project / one", "clip / one", {
+    await putStoryClipCurrentVideo("workspace-1", "project / one", "clip / one", {
       expectedDraftRevision: 18,
-      expectedCurrentVideoRevision: 3,
+      expectedSelectionVersion: 3,
       assetId: "00000000-0000-4000-8000-000000000001",
       variantId: "00000000-0000-4000-8000-000000000002",
     });
@@ -77,7 +89,7 @@ describe("current-draft Story production routes", () => {
       {
         data: {
           expectedDraftRevision: 18,
-          expectedCurrentVideoRevision: 3,
+          expectedSelectionVersion: 3,
           assetId: "00000000-0000-4000-8000-000000000001",
           variantId: "00000000-0000-4000-8000-000000000002",
         },
@@ -293,14 +305,18 @@ describe("current-draft Story production routes", () => {
   it("cancels and retries a generation using its optimistic version", async () => {
     vi.mocked(api.post).mockResolvedValue({ id: "generation-1" });
 
-    await cancelFilmVideoGeneration("workspace-1", "project-1", "generation / one", {
+    await cancelStoryVideoGeneration("workspace-1", "project-1", "generation / one", {
       expectedGenerationVersion: 4,
     });
-    await retryFilmVideoGeneration(
+    await retryStoryVideoGeneration(
       "workspace-1",
       "project-1",
       "generation / one",
-      { expectedGenerationVersion: 5, variationNote: "steadier camera" },
+      {
+        expectedGenerationVersion: 5,
+        expectedSelectionVersion: 6,
+        target: { kind: "clip", graphNodeId: "clip-1", expectedDraftRevision: 18 },
+      },
       "idempotency-retry"
     );
 
@@ -313,7 +329,11 @@ describe("current-draft Story production routes", () => {
       2,
       "/aurora/story-projects/project-1/generations/generation%20%2F%20one/retry",
       expect.objectContaining({
-        data: { expectedGenerationVersion: 5, variationNote: "steadier camera" },
+        data: {
+          expectedGenerationVersion: 5,
+          expectedSelectionVersion: 6,
+          target: { kind: "clip", graphNodeId: "clip-1", expectedDraftRevision: 18 },
+        },
       })
     );
   });
@@ -322,28 +342,36 @@ describe("current-draft Story production routes", () => {
     vi.mocked(api.post).mockResolvedValueOnce({ id: "trailer-generation-1" });
     vi.mocked(api.put).mockResolvedValueOnce({ id: "trailer-1" });
 
-    await createFilmTrailerGeneration(
+    await createStoryTrailerVideoGeneration(
       "workspace-1",
       "project-1",
-      "revision / one",
-      { expectedTrailerVersion: 2, modelId: "seedance-2" },
+      {
+        expectedSelectionVersion: 2,
+        prompt: "Project trailer",
+        modelId: "seedance-2",
+        mode: "multimodal_to_video",
+        durationMs: 10_000,
+        references: [],
+      },
       "idempotency-trailer"
     );
-    await putFilmTrailerCurrentVideo("workspace-1", "project-1", "revision / one", {
-      expectedCurrentVideoRevision: 6,
+    await putStoryTrailerCurrentVideo("workspace-1", "project-1", {
+      expectedSelectionVersion: 6,
       assetId: null,
       variantId: null,
     });
 
     expect(api.post).toHaveBeenCalledWith(
-      "/aurora/story-projects/project-1/revisions/revision%20%2F%20one/trailer/generations",
-      expect.objectContaining({ data: { expectedTrailerVersion: 2, modelId: "seedance-2" } })
+      "/aurora/story-projects/project-1/trailer/generations",
+      expect.objectContaining({
+        data: expect.objectContaining({ expectedSelectionVersion: 2, modelId: "seedance-2" }),
+      })
     );
     expect(api.put).toHaveBeenCalledWith(
-      "/aurora/story-projects/project-1/revisions/revision%20%2F%20one/trailer/current-video",
+      "/aurora/story-projects/project-1/trailer/current-video",
       expect.objectContaining({
         data: {
-          expectedCurrentVideoRevision: 6,
+          expectedSelectionVersion: 6,
           assetId: null,
           variantId: null,
         },
@@ -354,9 +382,13 @@ describe("current-draft Story production routes", () => {
   it("loads the ephemeral working preview from the latest saved authoring head", async () => {
     vi.mocked(api.get).mockResolvedValueOnce({
       draftRevision: 18,
+      contentHash: "b".repeat(64),
+      videoSnapshotHash: "a".repeat(64),
+      runtimeSchemaVersion: 2,
       runtime: null,
       diagnostics: [],
       pathReport: null,
+      sources: [],
     });
 
     await getStoryWorkingPreview("workspace-1", "project-1");
@@ -375,9 +407,8 @@ describe("current-draft Story production routes", () => {
       manifestUrl: "https://media.example.test/manifest.json",
       currentBuild: {
         id: "build-1",
-        sourceRevisionId: "revision-1",
         sourceDraftRevision: 18,
-        sourceProductionRevision: 7,
+        videoSnapshotHash: "a".repeat(64),
       },
       checkedAt: "2026-07-16T12:00:00.000Z",
     });

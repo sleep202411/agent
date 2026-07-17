@@ -1,79 +1,75 @@
 import { describe, expect, it } from "vitest";
-import type { FilmTrailerSummary } from "@/lib/story-projects-api";
 import {
-  projectLockedTrailerPrompt,
   StorySubmissionKeyRegistry,
   type StorySubmissionStorage,
 } from "./story-trailer-production-model";
 
 describe("StorySubmissionKeyRegistry", () => {
-  it("reuses ambiguous submissions, rotates on input changes, and clears only confirmed input", () => {
+  it("reuses ambiguous submissions, rotates on input changes, and clears only confirmed input", async () => {
     const registry = new StorySubmissionKeyRegistry();
     let sequence = 0;
     const createKey = () => `key-${++sequence}`;
 
-    expect(registry.keyFor("trailer", "model-a", createKey)).toBe("key-1");
-    expect(registry.keyFor("trailer", "model-a", createKey)).toBe("key-1");
-    expect(registry.keyFor("trailer", "model-b", createKey)).toBe("key-2");
-    registry.confirm("trailer", "model-a");
-    expect(registry.keyFor("trailer", "model-b", createKey)).toBe("key-2");
-    registry.confirm("trailer", "model-b");
-    expect(registry.keyFor("trailer", "model-b", createKey)).toBe("key-3");
+    await expect(registry.keyFor("trailer", "model-a", createKey)).resolves.toBe("key-1");
+    await expect(registry.keyFor("trailer", "model-a", createKey)).resolves.toBe("key-1");
+    await expect(registry.keyFor("trailer", "model-b", createKey)).resolves.toBe("key-2");
+    await registry.confirm("trailer", "model-a");
+    await expect(registry.keyFor("trailer", "model-b", createKey)).resolves.toBe("key-2");
+    await registry.confirm("trailer", "model-b");
+    await expect(registry.keyFor("trailer", "model-b", createKey)).resolves.toBe("key-3");
   });
 
-  it("recovers an ambiguous key from storage after a same-tab page reload", () => {
+  it("persists only the SHA-256 fingerprint and recovers the key after a same-tab reload", async () => {
     const values = new Map<string, string>();
     const storage: StorySubmissionStorage = {
       getItem: (key) => values.get(key) ?? null,
       setItem: (key, value) => values.set(key, value),
       removeItem: (key) => void values.delete(key),
     };
+    const rawFingerprint = "model prompt that must remain private";
+    const storageKey = "project:trailer:create";
     const first = new StorySubmissionKeyRegistry("project:trailer", () => storage);
-    expect(first.keyFor("create", "fingerprint", () => "persisted-key")).toBe("persisted-key");
-
-    const afterReload = new StorySubmissionKeyRegistry("project:trailer", () => storage);
-    expect(afterReload.keyFor("create", "fingerprint", () => "duplicate-key")).toBe(
+    await expect(first.keyFor("create", rawFingerprint, () => "persisted-key")).resolves.toBe(
       "persisted-key"
     );
-    afterReload.confirm("create", "fingerprint");
+    expect(JSON.parse(values.get(storageKey) ?? "null")).toEqual({
+      fingerprintHash: "fc5b8b1b0f2da38fa0a90278a848e47742ebae032f7b247a806cc9815df19158",
+      key: "persisted-key",
+    });
+    expect(values.get(storageKey)).not.toContain(rawFingerprint);
+
+    const afterReload = new StorySubmissionKeyRegistry("project:trailer", () => storage);
+    await expect(
+      afterReload.keyFor("create", rawFingerprint, () => "duplicate-key")
+    ).resolves.toBe("persisted-key");
+    await afterReload.confirm("create", rawFingerprint);
 
     const afterConfirmation = new StorySubmissionKeyRegistry("project:trailer", () => storage);
-    expect(afterConfirmation.keyFor("create", "fingerprint", () => "rotated-key")).toBe(
-      "rotated-key"
-    );
+    await expect(
+      afterConfirmation.keyFor("create", rawFingerprint, () => "rotated-key")
+    ).resolves.toBe("rotated-key");
   });
-});
 
-describe("projectLockedTrailerPrompt", () => {
-  it("projects immutable direction when the mutable trailer draft is absent", () => {
-    const trailer = {
-      title: "Locked trailer",
-      description: "Production snapshot",
-      targetDurationMs: 6_000,
-      generationControl: { mode: "omni_reference" },
-      referenceRoleNotes: [],
-      prompt: {
-        masterPrompt: "Locked master prompt",
-        negativeConstraints: ["No identity drift"],
-        timeline: [
-          {
-            startMs: 0,
-            endMs: 6_000,
-            visual: "Villa at night",
-            camera: "Slow push",
-            action: "The gate opens",
-          },
-        ],
-      },
-      continuityNotes: ["Keep the red lantern lit"],
-    } as unknown as FilmTrailerSummary;
+  it("rejects and removes the former raw-fingerprint storage shape", async () => {
+    const values = new Map([
+      [
+        "project:clip:create",
+        JSON.stringify({ fingerprint: "raw private prompt", key: "legacy-key" }),
+      ],
+    ]);
+    const storage: StorySubmissionStorage = {
+      getItem: (key) => values.get(key) ?? null,
+      setItem: (key, value) => values.set(key, value),
+      removeItem: (key) => void values.delete(key),
+    };
+    const registry = new StorySubmissionKeyRegistry("project:clip", () => storage);
 
-    expect(projectLockedTrailerPrompt(trailer)).toMatchObject({
-      title: "Locked trailer",
-      masterDirection: "Locked master prompt",
-      beats: [{ id: "trailer:locked:1", startMs: 0, endMs: 6_000 }],
-      negativeConstraints: ["No identity drift"],
-      continuityNotes: ["Keep the red lantern lit"],
+    await expect(registry.keyFor("create", "raw private prompt", () => "new-key")).resolves.toBe(
+      "new-key"
+    );
+    expect(JSON.parse(values.get("project:clip:create") ?? "null")).toMatchObject({
+      fingerprintHash: expect.stringMatching(/^[a-f0-9]{64}$/),
+      key: "new-key",
     });
   });
 });

@@ -146,13 +146,10 @@ export function compileStoryExperienceManifest(
     channel: input.release.channel,
     gameId: input.release.gameId,
     buildId: input.release.releaseId,
-    // Java release idempotency is keyed by (gameId, contentVersion). A Story
-    // revision can legitimately produce several immutable Builds as current
-    // media is replaced, so revision identity is not a safe release version —
-    // the immutable build id is. Emit it dashless (32 chars) so it fits Java's
-    // length-bounded content_version column (the "build:"-prefixed dashed form
-    // was 42 chars and overflowed).
-    contentVersion: input.release.releaseId.replace(/-/g, ''),
+    // Build compilation owns the release identity. Preserve the exact raw
+    // UUID here so local persistence, Java authority queries, and the runtime
+    // manifest all compare the same value without hidden normalization.
+    contentVersion: input.release.contentVersion,
     completionPolicy: 'finite',
     metadata: {
       title: localizeScalar(input.metadata.title, input.release.locales),

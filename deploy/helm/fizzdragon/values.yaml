@@ -320,9 +320,6 @@ server:
     FAL_ENABLED: "true"
     BAILIAN_ENABLED: "true"
     BYTEPLUS_MODELARK_ENABLED: "true"
-    # story-studio: fallback video model stamped onto clips that don't pick
-    # one; revision lock refuses to proceed without it.
-    STORY_STUDIO_DEFAULT_VIDEO_MODEL_SLUG: "seedance-2-0"
     # BytePlus ModelArk ASSETS plane — register canvas MediaAssets as AIGC assets.
     # AK/SK come from KV (serverSecrets mapping). ACR = the paid capacity-reservation
     # subscription; its expiry is not queryable via API, so it's declared here and

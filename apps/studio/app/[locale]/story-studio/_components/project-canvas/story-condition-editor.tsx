@@ -12,14 +12,14 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import type {
-  FilmCondition,
+  StoryCondition,
   InteractiveFilmDraftContent,
   StoryScalarValue,
 } from "@/lib/story-projects-api";
 import { cn } from "@/lib/utils";
 
-type ConditionKind = FilmCondition["kind"];
-type VariableCondition = Extract<FilmCondition, { kind: "variable" }>;
+type ConditionKind = StoryCondition["kind"];
+type VariableCondition = Extract<StoryCondition, { kind: "variable" }>;
 type StateVariable = InteractiveFilmDraftContent["storyBible"]["stateVariables"][number];
 
 const CONDITION_KINDS: ConditionKind[] = [
@@ -46,10 +46,10 @@ const MAX_GROUP_CONDITIONS = 50;
 const MAX_EDITOR_DEPTH = 6;
 
 export interface StoryConditionEditorProps {
-  value: FilmCondition;
+  value: StoryCondition;
   content: InteractiveFilmDraftContent;
   canEdit: boolean;
-  onChange: (value: FilmCondition) => void;
+  onChange: (value: StoryCondition) => void;
   onRemove?: () => void;
   depth?: number;
 }
@@ -171,9 +171,9 @@ function FlagConditionFields({
   canEdit,
   onChange,
 }: {
-  value: Extract<FilmCondition, { kind: "flag" }>;
+  value: Extract<StoryCondition, { kind: "flag" }>;
   canEdit: boolean;
-  onChange: (value: FilmCondition) => void;
+  onChange: (value: StoryCondition) => void;
 }) {
   const t = useTranslations("storyStudio.canvas.condition");
   return (
@@ -210,7 +210,7 @@ function VariableConditionFields({
   value: VariableCondition;
   variables: StateVariable[];
   canEdit: boolean;
-  onChange: (value: FilmCondition) => void;
+  onChange: (value: StoryCondition) => void;
 }) {
   const t = useTranslations("storyStudio.canvas.condition");
   const variable = variables.find((candidate) => candidate.key === value.key);
@@ -299,10 +299,10 @@ function RelationshipConditionFields({
   canEdit,
   onChange,
 }: {
-  value: Extract<FilmCondition, { kind: "relationship-at-least" }>;
+  value: Extract<StoryCondition, { kind: "relationship-at-least" }>;
   content: InteractiveFilmDraftContent;
   canEdit: boolean;
-  onChange: (value: FilmCondition) => void;
+  onChange: (value: StoryCondition) => void;
 }) {
   const t = useTranslations("storyStudio.canvas.condition");
   const characters = content.storyBible.characters;
@@ -354,10 +354,10 @@ function ConditionGroupFields({
   onChange,
   depth,
 }: {
-  value: Extract<FilmCondition, { kind: "all" | "any" }>;
+  value: Extract<StoryCondition, { kind: "all" | "any" }>;
   content: InteractiveFilmDraftContent;
   canEdit: boolean;
-  onChange: (value: FilmCondition) => void;
+  onChange: (value: StoryCondition) => void;
   depth: number;
 }) {
   const t = useTranslations("storyStudio.canvas.condition");
@@ -566,7 +566,7 @@ function createCondition(
   kind: ConditionKind,
   content: InteractiveFilmDraftContent,
   depth: number
-): FilmCondition | null {
+): StoryCondition | null {
   if (kind === "flag") return { kind: "flag", flag: "flag:condition", equals: true };
   if (kind === "variable") {
     const variable = content.storyBible.stateVariables[0];
@@ -587,7 +587,7 @@ function createCondition(
   return { kind, conditions: [child] };
 }
 
-function createDefaultLeafCondition(content: InteractiveFilmDraftContent): FilmCondition | null {
+function createDefaultLeafCondition(content: InteractiveFilmDraftContent): StoryCondition | null {
   const variable = content.storyBible.stateVariables[0];
   if (variable) {
     return {

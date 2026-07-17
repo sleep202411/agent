@@ -1,24 +1,25 @@
 /**
  * Direct-to-storage upload pipeline — server side.
  *
- * Generic uploads use a stateless issue + confirm flow. Story clip videos use
- * the same public endpoints but deliberately create a durable, project-scoped
- * staging session before the signed URL is returned; a Story worker later
- * promotes and probes those bytes before the asset becomes ready.
+ * Most generic uploads use a stateless permanent-key issue + confirm flow.
+ * Reference images are stricter: the signed URL targets disposable staging,
+ * confirm promotes to an unsigned final object, then hashes and fully decodes
+ * those exact final bytes before creating a ready asset. Story clip videos use
+ * a durable, project-scoped staging session and asynchronous finalizer.
  *
  * Generic flow, both steps authenticated:
  *
- *   1. createUploadUrl — STATELESS. Decide the PERMANENT object key
- *      (server-chosen, user-scoped, collision-free) and mint a signed
- *      write URL via OutputStorageService. NO MediaAsset is created. An
- *      abandoned, cancelled, or re-picked upload therefore leaves ZERO DB
- *      residue — there is no `uploading` row to orphan and no GC to run.
+ *   1. createUploadUrl — STATELESS. Decide the storage key
+ *      (server-chosen, user + optional-workspace scoped, collision-free) and
+ *      mint a signed write URL via OutputStorageService. NO MediaAsset is
+ *      created. An abandoned, cancelled, or re-picked upload therefore leaves
+ *      ZERO DB residue — there is no `uploading` row to orphan and no GC to
+ *      run.
  *
- *   2. confirmUpload — after the browser PUTs the bytes, the server
- *      VERIFIES (never trusts the client): (a) the key prefix belongs to
- *      THIS user, (b) the blob ACTUALLY EXISTS via storage.headObject,
- *      reading its real sizeBytes + contentType from storage. Only then is
- *      an `active` MediaAsset written. Idempotent on objectKey.
+ *   2. confirmUpload — after the browser PUTs the bytes, the server verifies
+ *      ownership and existence. Reference images additionally move to the
+ *      unsigned final identity, stream/hash the final bytes, detect their real
+ *      format and dimensions, and fully decode them before DB commit.
  *
  * Storage is the source of truth; the DB only ever records real,
  * referenced assets. MediaAsset.sizeBytes (from HEAD) + createdByUserId
@@ -27,12 +28,13 @@
  * accurately — which only holds because there are no orphan rows.
  *
  * Security core: the storage KEY is server-decided and scoped to the
- * authenticated user. A user physically cannot write under another user's
- * prefix (their userId is baked into the key from `@CurrentUser()`, never
- * the request body), and confirm re-checks the prefix so a key can't be
- * confirmed across users either.
+ * authenticated user plus either an authorized workspace or the explicit
+ * personal scope. A user physically cannot write under another user's prefix
+ * (their userId is baked into the key from `@CurrentUser()`, never the request
+ * body), and confirm re-checks both scopes so a key cannot cross users or
+ * workspaces.
  *
- *   media/{cell}/{keySegment}/{userId}/{yyyy}/{mm}/{dd}/{uuid}.{ext}
+ *   media/{cell}/{keySegment}/{userId}/{scope}/{yyyy}/{mm}/{dd}/{uuid}.{ext}
  */
 import {
   BadRequestException,
@@ -42,6 +44,7 @@ import {
   NotFoundException,
   PayloadTooLargeException,
   ServiceUnavailableException,
+  UnprocessableEntityException,
 } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import {
@@ -51,6 +54,7 @@ import {
   MediaAssetVisibility,
   MediaProcessingJobType,
   MediaStorageProvider,
+  WorkspaceMemberRole,
 } from '@prisma/client';
 import { PrismaService } from '../infra/db/db.module';
 import { MediaAssetProviderSyncService } from '../ai-generation/providers/byteplus/assets/media-asset-provider-sync.service';
@@ -58,7 +62,10 @@ import { CURRENT_CELL } from '../common/region/current-cell';
 import { ensureOriginalMediaPlacement } from '../infra/storage/media-asset-placement';
 import { MediaProcessingService } from './media-processing.service';
 import {
+  IMMUTABLE_STORAGE_CACHE_CONTROL,
   OutputStorageService,
+  StorageObjectNotFoundError,
+  StorageObjectSizeMismatchError,
   type HeadObjectResult,
 } from '../infra/storage/storage.types';
 import { MediaAssetUrlResolverService } from '../infra/storage/media-asset-url-resolver.service';
@@ -76,6 +83,11 @@ import {
   STORY_CLIP_VIDEO_MAX_BYTES,
 } from './media-upload.policy';
 import { StoryVideoUploadSessionService } from './story-video-upload-session.service';
+import { WorkspacePermissionService } from '../workspaces';
+import {
+  UploadedImageProbeService,
+  type UploadedImageProbeResult,
+} from './uploaded-image-probe.service';
 
 /**
  * Per-kind upload policy. The single source of truth for what a given
@@ -183,7 +195,9 @@ const UPLOAD_KIND_POLICY: Record<UploadKind, UploadKindPolicy> = {
     maxBytes: 30 * MiB,
     assetKind: MediaAssetKind.image,
     ttlSeconds: 900,
-    keySegment: 'ai-reference-image',
+    // The signed URL can only ever overwrite disposable staging. Confirm
+    // promotes to an unsigned deterministic final key before probing.
+    keySegment: 'ai-reference-image-staging',
   },
   ai_reference_video: {
     contentTypes: REFERENCE_VIDEO_CONTENT_TYPES,
@@ -222,6 +236,8 @@ export class MediaUploadService {
     private readonly mediaProcessing: MediaProcessingService,
     private readonly providerAssets: MediaAssetProviderSyncService,
     private readonly storyVideoUploads: StoryVideoUploadSessionService,
+    private readonly workspacePermissions: WorkspacePermissionService,
+    private readonly uploadedImages: UploadedImageProbeService,
   ) {}
 
   /**
@@ -280,6 +296,10 @@ export class MediaUploadService {
     if (input.kind === 'story_clip_video') {
       return this.storyVideoUploads.issue(userId, workspaceId, input);
     }
+    const uploadWorkspaceId = await this.requireUploadWorkspace(
+      userId,
+      workspaceId,
+    );
     const policy = UPLOAD_KIND_POLICY[input.kind];
     // (kind is already validated by the Zod enum, so policy is defined.)
 
@@ -304,8 +324,14 @@ export class MediaUploadService {
       });
     }
 
-    // 3. server-decided, user-scoped, collision-free PERMANENT key.
-    const storageKey = this.buildStorageKey(policy.keySegment, userId, ext);
+    // 3. Server-decided, scoped, collision-free key. Reference images receive
+    //    staging; every other generic kind receives its permanent identity.
+    const storageKey = this.buildStorageKey(
+      policy.keySegment,
+      userId,
+      uploadWorkspaceId,
+      ext,
+    );
 
     // 4. Mint the signed URL. No DB write, so no transaction — if the
     //    provider is down this throws ServiceUnavailable and nothing was
@@ -377,6 +403,10 @@ export class MediaUploadService {
     if (input.kind === 'story_clip_video') {
       return this.storyVideoUploads.confirm(userId, workspaceId, input);
     }
+    const uploadWorkspaceId = await this.requireUploadWorkspace(
+      userId,
+      workspaceId,
+    );
     const policy = UPLOAD_KIND_POLICY[input.kind];
     const storageKey = input.storageKey;
 
@@ -384,13 +414,26 @@ export class MediaUploadService {
     //    Rebuild the exact prefix the issue step would have produced and
     //    require the key to start with it. A key minted for another user
     //    (or another kind) can't be confirmed onto this user's ledger.
-    const ownerPrefix = this.buildOwnerPrefix(policy.keySegment, userId);
-    if (!storageKey.startsWith(ownerPrefix)) {
+    const uploadScopePrefix = this.buildUploadScopePrefix(
+      policy.keySegment,
+      userId,
+      uploadWorkspaceId,
+    );
+    if (!storageKey.startsWith(uploadScopePrefix)) {
       throw new ForbiddenException({
-        code: 'MEDIA_KEY_NOT_OWNED',
-        message: 'storageKey is not within the caller scope',
+        code: 'MEDIA_KEY_SCOPE_MISMATCH',
+        message: 'storageKey is not within the caller and workspace scope',
       });
     }
+
+    // Reference images are the strict exception to generic permanent-key
+    // uploads. The browser only receives the staging key; the reusable object
+    // identity is deterministic but never signed, so validation can never race
+    // a later PUT that overwrites the bytes we just inspected.
+    const persistedStorageKey =
+      input.kind === 'ai_reference_image'
+        ? referenceImageFinalKey(storageKey)
+        : storageKey;
 
     // 2. Idempotency: if a live asset already exists for this exact key,
     //    return it. Confirm is safe to call twice (double-click, retry); we
@@ -398,7 +441,7 @@ export class MediaUploadService {
     //    to exactly one blob. Soft-deleted rows are ignored so a key isn't
     //    resurrected through a stale tombstone.
     const existing = await this.prisma.mediaAsset.findFirst({
-      where: { objectKey: storageKey, deletedAt: null },
+      where: { objectKey: persistedStorageKey, deletedAt: null },
       select: {
         id: true,
         storageProvider: true,
@@ -412,10 +455,21 @@ export class MediaUploadService {
         height: true,
         durationSeconds: true,
         checksumSha256: true,
+        workspaceId: true,
+        status: true,
       },
     });
     if (existing) {
-      await this.prisma.$transaction((tx) =>
+      if (existing.workspaceId !== uploadWorkspaceId) {
+        throw new ForbiddenException({
+          code: 'MEDIA_ASSET_SCOPE_MISMATCH',
+          message: 'the existing media asset belongs to a different scope',
+        });
+      }
+      if (input.kind === 'ai_reference_image') {
+        assertReadyReferenceImageLedger(existing);
+      }
+      const original = await this.prisma.$transaction((tx) =>
         ensureOriginalMediaPlacement(tx, {
           assetId: existing.id,
           storageProvider: existing.storageProvider,
@@ -429,7 +483,16 @@ export class MediaUploadService {
           height: existing.height,
           durationSeconds: existing.durationSeconds,
           checksumSha256: existing.checksumSha256,
-          metadata: { source: 'direct_upload', uploadKind: input.kind },
+          metadata: {
+            source: 'direct_upload',
+            uploadKind: input.kind,
+            ...(input.kind === 'ai_reference_image'
+              ? {
+                  storagePhase: 'immutable_final',
+                  inspectedBy: 'server_byte_probe',
+                }
+              : {}),
+          },
         }),
       );
       if (policy.assetKind === MediaAssetKind.image) {
@@ -437,108 +500,120 @@ export class MediaUploadService {
       }
       return {
         mediaAssetId: existing.id,
-        storageKey,
+        variantId: original.variantId,
+        storageKey: persistedStorageKey,
         provider: prismaProviderToId(existing.storageProvider),
         url: this.assetUrls.resolve(existing),
       };
     }
 
-    // 3. Existence + truth: HEAD the blob. Absent → 404 (no phantom row).
-    //    Present → read REAL size + content-type + placement straight from
-    //    the concrete storage impl (the region factory's selection).
-    let head: HeadObjectResult;
-    try {
-      head = await this.storage.headObject(storageKey);
-    } catch (err) {
-      // headObject throws ServiceUnavailable when the impl is unconfigured;
-      // pass it through. Anything else is an unexpected storage fault.
-      if (err instanceof ServiceUnavailableException) throw err;
-      this.logger.error(
-        `confirmUpload HEAD failed for user=${userId} key=${storageKey}: ${
-          err instanceof Error ? err.message : String(err)
-        }`,
-      );
-      throw new ServiceUnavailableException({
-        code: 'MEDIA_STORAGE_UNAVAILABLE',
-        message: 'media storage is temporarily unavailable',
-      });
-    }
-
-    if (!head.exists) {
-      throw new NotFoundException({
-        code: 'MEDIA_OBJECT_NOT_FOUND',
-        message: 'no uploaded object exists at storageKey',
-      });
-    }
-
-    // 3b. Set Cache-Control so Front Door + browsers cache this object (the SAS
-    //     direct-upload path doesn't set it on the blob). Keys are content-
-    //     addressed → immutable. Best-effort: never block confirm on it.
-    try {
-      await this.storage.setCacheControl(
-        storageKey,
-        'public, max-age=31536000, immutable',
-        head.contentType ?? input.contentType,
-      );
-    } catch (err) {
-      this.logger.warn(
-        `confirmUpload setCacheControl failed key=${storageKey}: ${
-          err instanceof Error ? err.message : String(err)
-        }`,
-      );
-    }
-
-    // 4. Resolve the durable provider enum from the impl's own placement.
-    const providerId = head.provider;
-    const provider = providerId ? PROVIDER_TO_PRISMA[providerId] : undefined;
-    if (!providerId || !provider) {
-      throw new ServiceUnavailableException({
-        code: 'MEDIA_PROVIDER_UNMAPPED',
-        message: `storage provider "${providerId ?? 'unknown'}" has no MediaAsset mapping`,
-      });
-    }
+    const truth =
+      input.kind === 'ai_reference_image'
+        ? await this.finalizeReferenceImage(
+            userId,
+            storageKey,
+            persistedStorageKey,
+            input.contentType,
+            policy,
+          )
+        : await this.genericUploadTruth(userId, storageKey, input.contentType);
 
     // 5. Write the ACTIVE asset. sizeBytes + contentType come from the HEAD
     //    (storage truth), never the client. createdByUserId + status power
     //    the future quota query and lifecycle.
-    const asset = await this.prisma.$transaction(async (tx) => {
-      const created = await tx.mediaAsset.create({
-        data: {
-          kind: policy.assetKind,
-          storageProvider: provider,
-          bucket: head.bucket ?? null,
-          region: head.region ?? null,
-          objectKey: storageKey,
-          contentType: head.contentType ?? input.contentType,
-          sizeBytes: head.sizeBytes != null ? BigInt(head.sizeBytes) : null,
-          // Direct-to-storage uploads are private until a save links them to
-          // a public feature row; the read-side resolves URLs from identity
-          // regardless of this flag, so this is just intent.
-          visibility: MediaAssetVisibility.private,
-          // `ready` is this schema's ACTIVE/usable state (what certificates +
-          // ip-commerce write and what the read side gates on). The asset is
-          // born active here — the old `uploading` pre-create state, the only
-          // thing that ever produced orphans, is no longer written at all.
-          status: MediaAssetStatus.ready,
-          source: MediaAssetSource.user_upload,
-          createdByUserId: userId,
-        },
-        select: {
-          id: true,
-          storageProvider: true,
-          bucket: true,
-          region: true,
-          objectKey: true,
-          externalUrl: true,
-          contentType: true,
-          sizeBytes: true,
-          width: true,
-          height: true,
-          durationSeconds: true,
-          checksumSha256: true,
-        },
-      });
-      await ensureOriginalMediaPlacement(tx, {
+    const { asset, variantId } = await this.prisma.$transaction(async (tx) => {
+      if (input.kind === 'ai_reference_image') {
+        // `media_assets.object_key` is indexed but intentionally not globally
+        // unique across all import paths. Serialize this exact final identity,
+        // then re-read under the lock so two confirm requests converge onto one
+        // asset without a check-then-create race.
+        await tx.$executeRaw`
+          SELECT pg_advisory_xact_lock(
+            hashtext(${`media-reference-image-confirm:${persistedStorageKey}`})::bigint
+          )
+        `;
+      }
+      const converged =
+        input.kind === 'ai_reference_image'
+          ? await tx.mediaAsset.findFirst({
+              where: { objectKey: persistedStorageKey, deletedAt: null },
+              select: {
+                id: true,
+                storageProvider: true,
+                bucket: true,
+                region: true,
+                objectKey: true,
+                externalUrl: true,
+                contentType: true,
+                sizeBytes: true,
+                width: true,
+                height: true,
+                durationSeconds: true,
+                checksumSha256: true,
+                workspaceId: true,
+                status: true,
+              },
+            })
+          : null;
+      if (converged && converged.workspaceId !== uploadWorkspaceId) {
+        throw new ForbiddenException({
+          code: 'MEDIA_ASSET_SCOPE_MISMATCH',
+          message: 'the existing media asset belongs to a different scope',
+        });
+      }
+      if (converged) assertReadyReferenceImageLedger(converged);
+      const created =
+        converged ??
+        (await tx.mediaAsset.create({
+          data: {
+            kind: policy.assetKind,
+            storageProvider: truth.storageProvider,
+            bucket: truth.bucket,
+            region: truth.region,
+            objectKey: truth.objectKey,
+            contentType: truth.contentType,
+            sizeBytes: truth.sizeBytes,
+            width: truth.width,
+            height: truth.height,
+            checksumSha256: truth.checksumSha256,
+            // Direct-to-storage uploads are private until a save links them to
+            // a public feature row; the read-side resolves URLs from identity
+            // regardless of this flag, so this is just intent.
+            visibility: MediaAssetVisibility.private,
+            // `ready` is this schema's ACTIVE/usable state (what certificates +
+            // ip-commerce write and what the read side gates on). The asset is
+            // born active here — the old `uploading` pre-create state, the only
+            // thing that ever produced orphans, is no longer written at all.
+            status: MediaAssetStatus.ready,
+            source: MediaAssetSource.user_upload,
+            createdByUserId: userId,
+            workspaceId: uploadWorkspaceId,
+            metadata:
+              input.kind === 'ai_reference_image'
+                ? {
+                    storagePhase: 'immutable_final',
+                    inspectedBy: 'server_byte_probe',
+                  }
+                : {},
+          },
+          select: {
+            id: true,
+            storageProvider: true,
+            bucket: true,
+            region: true,
+            objectKey: true,
+            externalUrl: true,
+            contentType: true,
+            sizeBytes: true,
+            width: true,
+            height: true,
+            durationSeconds: true,
+            checksumSha256: true,
+            workspaceId: true,
+            status: true,
+          },
+        }));
+      const original = await ensureOriginalMediaPlacement(tx, {
         assetId: created.id,
         storageProvider: created.storageProvider,
         bucket: created.bucket,
@@ -551,9 +626,18 @@ export class MediaUploadService {
         height: created.height,
         durationSeconds: created.durationSeconds,
         checksumSha256: created.checksumSha256,
-        metadata: { source: 'direct_upload', uploadKind: input.kind },
+        metadata: {
+          source: 'direct_upload',
+          uploadKind: input.kind,
+          ...(input.kind === 'ai_reference_image'
+            ? {
+                storagePhase: 'immutable_final',
+                inspectedBy: 'server_byte_probe',
+              }
+            : {}),
+        },
       });
-      return created;
+      return { asset: created, variantId: original.variantId };
     });
 
     // CN videos: kick off the ABR-HLS transcode now that the asset is active.
@@ -570,10 +654,169 @@ export class MediaUploadService {
 
     return {
       mediaAssetId: asset.id,
-      storageKey,
-      provider: providerId,
+      variantId,
+      storageKey: truth.objectKey,
+      provider: prismaProviderToId(truth.storageProvider),
       url: this.assetUrls.resolve(asset),
     };
+  }
+
+  private async genericUploadTruth(
+    userId: string,
+    storageKey: string,
+    requestedContentType: string,
+  ): Promise<ConfirmedUploadTruth> {
+    const head = await this.headUploadObject(userId, storageKey);
+    if (!head.exists) throw mediaObjectNotFound();
+
+    // Generic objects retain their signed permanent key. Their cache metadata
+    // is provider bookkeeping, not validation, and remains best-effort.
+    try {
+      await this.storage.setCacheControl(
+        storageKey,
+        IMMUTABLE_STORAGE_CACHE_CONTROL,
+        head.contentType ?? requestedContentType,
+      );
+    } catch (err) {
+      this.logger.warn(
+        `confirmUpload setCacheControl failed key=${storageKey}: ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+      );
+    }
+    const storageProvider = requirePrismaStorageProvider(head.provider);
+    return {
+      storageProvider,
+      bucket: head.bucket ?? null,
+      region: head.region ?? null,
+      objectKey: storageKey,
+      contentType: head.contentType ?? requestedContentType,
+      sizeBytes: head.sizeBytes == null ? null : BigInt(head.sizeBytes),
+      width: null,
+      height: null,
+      checksumSha256: null,
+    };
+  }
+
+  private async finalizeReferenceImage(
+    userId: string,
+    stagingKey: string,
+    finalKey: string,
+    requestedContentType: string,
+    policy: UploadKindPolicy,
+  ): Promise<ConfirmedUploadTruth> {
+    // A retry after a successful promotion may find staging already deleted.
+    // Prefer the unsigned final whenever it exists; unlike staging, it cannot
+    // be changed by the still-unexpired browser PUT signature.
+    const finalHead = await this.headUploadObject(userId, finalKey);
+    const sourceHead = finalHead.exists
+      ? finalHead
+      : await this.headUploadObject(userId, stagingKey);
+    if (!sourceHead.exists) throw mediaObjectNotFound();
+
+    const header = requireReferenceImageHead(
+      sourceHead,
+      requestedContentType,
+      policy,
+    );
+    let promoted: Awaited<ReturnType<OutputStorageService['promoteObject']>>;
+    try {
+      promoted = await this.storage.promoteObject({
+        source: {
+          bucket: header.bucket,
+          region: header.region,
+          storageKey: stagingKey,
+        },
+        destination: {
+          bucket: header.bucket,
+          region: header.region,
+          storageKey: finalKey,
+        },
+        expectedSizeBytes: header.sizeBytes,
+        contentType: header.contentType,
+        cacheControl: IMMUTABLE_STORAGE_CACHE_CONTROL,
+      });
+    } catch (error) {
+      if (error instanceof StorageObjectNotFoundError) {
+        throw mediaObjectNotFound();
+      }
+      if (error instanceof StorageObjectSizeMismatchError) {
+        throw new UnprocessableEntityException({
+          code: 'MEDIA_IMAGE_SIZE_MISMATCH',
+          message: `The stored image size changed (expected ${error.expectedSizeBytes} bytes, received ${error.actualSizeBytes ?? 'unknown'}).`,
+        });
+      }
+      if (error instanceof ServiceUnavailableException) throw error;
+      this.logger.error(
+        `reference image promotion failed user=${userId} key=${stagingKey}: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+      throw new ServiceUnavailableException({
+        code: 'MEDIA_STORAGE_UNAVAILABLE',
+        message: 'media storage is temporarily unavailable',
+      });
+    }
+    if (
+      promoted.provider !== header.providerId ||
+      promoted.bucket !== header.bucket ||
+      promoted.region !== header.region ||
+      promoted.storageKey !== finalKey ||
+      promoted.sizeBytes !== header.sizeBytes ||
+      normalizeImageMime(promoted.contentType) !== header.contentType
+    ) {
+      throw new ServiceUnavailableException({
+        code: 'MEDIA_IMAGE_STORAGE_IDENTITY_MISMATCH',
+        message: 'Media storage promoted a different image object identity.',
+      });
+    }
+
+    const technical: UploadedImageProbeResult = await this.uploadedImages.probe(
+      {
+        storageProvider: header.storageProvider,
+        bucket: promoted.bucket,
+        region: promoted.region,
+        objectKey: promoted.storageKey,
+        externalUrl: null,
+        contentType: promoted.contentType,
+        sizeBytes: BigInt(promoted.sizeBytes),
+      },
+      {
+        expectedContentType: header.contentType,
+        maxBytes: policy.maxBytes,
+      },
+    );
+    return {
+      storageProvider: header.storageProvider,
+      bucket: promoted.bucket,
+      region: promoted.region,
+      objectKey: promoted.storageKey,
+      contentType: technical.contentType,
+      sizeBytes: technical.sizeBytes,
+      width: technical.width,
+      height: technical.height,
+      checksumSha256: technical.checksumSha256,
+    };
+  }
+
+  private async headUploadObject(
+    userId: string,
+    storageKey: string,
+  ): Promise<HeadObjectResult> {
+    try {
+      return await this.storage.headObject(storageKey);
+    } catch (err) {
+      if (err instanceof ServiceUnavailableException) throw err;
+      this.logger.error(
+        `confirmUpload HEAD failed for user=${userId} key=${storageKey}: ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+      );
+      throw new ServiceUnavailableException({
+        code: 'MEDIA_STORAGE_UNAVAILABLE',
+        message: 'media storage is temporarily unavailable',
+      });
+    }
   }
 
   async providerAssetStatuses(
@@ -600,7 +843,7 @@ export class MediaUploadService {
   }
 
   /**
-   * media/{cell}/{keySegment}/{userId}/{yyyy}/{mm}/{dd}/{uuid}.{ext}
+   * media/{cell}/{keySegment}/{userId}/{scope}/{yyyy}/{mm}/{dd}/{uuid}.{ext}
    *
    * userId is sanitized to an ASCII-safe segment (it's an external Java
    * identity, normally numeric/uuid, but we never trust its shape). ext is
@@ -609,13 +852,50 @@ export class MediaUploadService {
   private buildStorageKey(
     keySegment: string,
     userId: string,
+    workspaceId: string | null,
     ext: string,
   ): string {
     const now = new Date();
     const yyyy = now.getUTCFullYear();
     const mm = String(now.getUTCMonth() + 1).padStart(2, '0');
     const dd = String(now.getUTCDate()).padStart(2, '0');
-    return `${this.buildOwnerPrefix(keySegment, userId)}${yyyy}/${mm}/${dd}/${randomUUID()}.${ext}`;
+    return `${this.buildUploadScopePrefix(keySegment, userId, workspaceId)}${yyyy}/${mm}/${dd}/${randomUUID()}.${ext}`;
+  }
+
+  /**
+   * Generic uploads are either explicitly workspace-owned or explicitly
+   * personal. Encoding that choice into the signed object key binds issue and
+   * confirm without a mutable upload-session row. A caller cannot issue under
+   * one workspace and confirm the same bytes under another.
+   */
+  private buildUploadScopePrefix(
+    keySegment: string,
+    userId: string,
+    workspaceId: string | null,
+  ): string {
+    const scope = workspaceId ? `workspace-${workspaceId}` : 'personal';
+    return `${this.buildOwnerPrefix(keySegment, userId)}${scope}/`;
+  }
+
+  /** Validate an optional workspace header and return its canonical scope. */
+  private async requireUploadWorkspace(
+    userId: string,
+    workspaceHeader?: string,
+  ): Promise<string | null> {
+    if (workspaceHeader === undefined) return null;
+    const workspaceId = workspaceHeader.trim();
+    if (!UUID_PATTERN.test(workspaceId)) {
+      throw new BadRequestException({
+        code: 'MEDIA_WORKSPACE_ID_INVALID',
+        message: 'x-fizz-workspace-id must be a valid UUID',
+      });
+    }
+    await this.workspacePermissions.requireWorkspaceRole(
+      userId,
+      workspaceId,
+      WorkspaceMemberRole.viewer,
+    );
+    return workspaceId;
   }
 
   /**
@@ -628,6 +908,182 @@ export class MediaUploadService {
     const safeUser = sanitizeKeySegment(userId) || 'unknown';
     return `media/${CURRENT_CELL}/${keySegment}/${safeUser}/`;
   }
+}
+
+const UUID_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+interface ConfirmedUploadTruth {
+  storageProvider: MediaStorageProvider;
+  bucket: string | null;
+  region: string | null;
+  objectKey: string;
+  contentType: string;
+  sizeBytes: bigint | null;
+  width: number | null;
+  height: number | null;
+  checksumSha256: string | null;
+}
+
+interface ReferenceImageHead {
+  providerId: 'azure_blob' | 'aliyun_oss' | 's3_compatible';
+  storageProvider: MediaStorageProvider;
+  bucket: string;
+  region: string | null;
+  contentType: 'image/jpeg' | 'image/png' | 'image/webp';
+  sizeBytes: number;
+}
+
+function assertReadyReferenceImageLedger(asset: {
+  status: MediaAssetStatus;
+  storageProvider: MediaStorageProvider;
+  bucket: string | null;
+  objectKey: string | null;
+  contentType: string;
+  sizeBytes: bigint | null;
+  width: number | null;
+  height: number | null;
+  checksumSha256: string | null;
+}): void {
+  if (
+    asset.status !== MediaAssetStatus.ready ||
+    asset.storageProvider === MediaStorageProvider.external_url ||
+    !asset.bucket ||
+    !asset.objectKey ||
+    !normalizeImageMime(asset.contentType) ||
+    asset.sizeBytes === null ||
+    asset.sizeBytes <= 0n ||
+    asset.width === null ||
+    asset.width <= 0 ||
+    asset.height === null ||
+    asset.height <= 0 ||
+    !asset.checksumSha256 ||
+    !/^[a-f0-9]{64}$/.test(asset.checksumSha256)
+  ) {
+    throw new ServiceUnavailableException({
+      code: 'MEDIA_REFERENCE_IMAGE_LEDGER_INCOMPLETE',
+      message:
+        'The finalized reference image is missing server-verified metadata.',
+    });
+  }
+}
+
+function requireReferenceImageHead(
+  head: HeadObjectResult,
+  requestedContentType: string,
+  policy: UploadKindPolicy,
+): ReferenceImageHead {
+  if (!head.exists) throw mediaObjectNotFound();
+  const contentType = normalizeImageMime(head.contentType);
+  const requested = normalizeImageMime(requestedContentType);
+  if (!contentType || !requested || contentType !== requested) {
+    throw new UnprocessableEntityException({
+      code: 'MEDIA_IMAGE_CONTENT_TYPE_MISMATCH',
+      message:
+        'The stored image content type does not match the issued upload.',
+    });
+  }
+  if (!Object.hasOwn(policy.contentTypes, contentType)) {
+    throw new UnprocessableEntityException({
+      code: 'MEDIA_IMAGE_CONTENT_TYPE_INVALID',
+      message:
+        'The stored object does not have a supported image content type.',
+    });
+  }
+  if (
+    head.sizeBytes == null ||
+    !Number.isSafeInteger(head.sizeBytes) ||
+    head.sizeBytes <= 0
+  ) {
+    throw new UnprocessableEntityException({
+      code: 'MEDIA_IMAGE_SIZE_INVALID',
+      message: 'Media storage did not return a valid image byte size.',
+    });
+  }
+  if (head.sizeBytes > policy.maxBytes) {
+    throw new PayloadTooLargeException({
+      code: 'MEDIA_FILE_TOO_LARGE',
+      message: `file too large for ai_reference_image (max ${policy.maxBytes} bytes)`,
+    });
+  }
+  if (!head.bucket) {
+    throw new ServiceUnavailableException({
+      code: 'MEDIA_STORAGE_IDENTITY_INCOMPLETE',
+      message: 'Media storage did not return an image bucket identity.',
+    });
+  }
+  const providerId = requireStorageProviderId(head.provider);
+  return {
+    providerId,
+    storageProvider: requirePrismaStorageProvider(providerId),
+    bucket: head.bucket,
+    region: head.region ?? null,
+    contentType,
+    sizeBytes: head.sizeBytes,
+  };
+}
+
+function requireStorageProviderId(
+  provider: HeadObjectResult['provider'],
+): 'azure_blob' | 'aliyun_oss' | 's3_compatible' {
+  if (
+    provider === 'azure_blob' ||
+    provider === 'aliyun_oss' ||
+    provider === 's3_compatible'
+  ) {
+    return provider;
+  }
+  throw new ServiceUnavailableException({
+    code: 'MEDIA_PROVIDER_UNMAPPED',
+    message: `storage provider "${provider ?? 'unknown'}" has no MediaAsset mapping`,
+  });
+}
+
+function requirePrismaStorageProvider(
+  provider: HeadObjectResult['provider'],
+): MediaStorageProvider {
+  const providerId = requireStorageProviderId(provider);
+  const mapped = PROVIDER_TO_PRISMA[providerId];
+  if (!mapped) {
+    throw new ServiceUnavailableException({
+      code: 'MEDIA_PROVIDER_UNMAPPED',
+      message: `storage provider "${providerId}" has no MediaAsset mapping`,
+    });
+  }
+  return mapped;
+}
+
+function normalizeImageMime(
+  value: string | undefined,
+): 'image/jpeg' | 'image/png' | 'image/webp' | null {
+  const normalized = value?.split(';', 1)[0]?.trim().toLowerCase();
+  if (
+    normalized === 'image/jpeg' ||
+    normalized === 'image/png' ||
+    normalized === 'image/webp'
+  ) {
+    return normalized;
+  }
+  return null;
+}
+
+function referenceImageFinalKey(stagingKey: string): string {
+  const marker = '/ai-reference-image-staging/';
+  const markerIndex = stagingKey.indexOf(marker);
+  if (markerIndex < 0 || stagingKey.indexOf(marker, markerIndex + 1) >= 0) {
+    throw new BadRequestException({
+      code: 'MEDIA_REFERENCE_IMAGE_STAGING_KEY_INVALID',
+      message: 'storageKey is not a valid reference-image staging key',
+    });
+  }
+  return `${stagingKey.slice(0, markerIndex)}/ai-reference-image-final/${stagingKey.slice(markerIndex + marker.length)}`;
+}
+
+function mediaObjectNotFound(): NotFoundException {
+  return new NotFoundException({
+    code: 'MEDIA_OBJECT_NOT_FOUND',
+    message: 'no uploaded object exists at storageKey',
+  });
 }
 
 /** Reverse of PROVIDER_TO_PRISMA for the idempotent-return path. */

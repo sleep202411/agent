@@ -1539,7 +1539,6 @@
     "projects": {
       "title": "Interactive films",
       "subtitle": "Real Story Projects in the active workspace.",
-      "revision": "Revision {number}",
       "draft": "Draft",
       "noSummary": "No project summary yet.",
       "videoProgress": "{current}/{total} current videos",
@@ -1633,10 +1632,6 @@
             "title": "Save latest changes",
             "description": "Saving the exact story currently on the canvas."
           },
-          "locking": {
-            "title": "Prepare release version",
-            "description": "Freezing the saved story into the version players will receive."
-          },
           "building": {
             "title": "Check playable content",
             "description": "Checking routes, videos, and player-facing content."
@@ -1669,10 +1664,8 @@
           "workspaceRequired": "Select a workspace before publishing.",
           "permissionDenied": "Your project role does not allow publishing.",
           "saveFailed": "The latest changes could not be saved.",
-          "lockFailed": "The saved story could not be prepared for publication.",
           "workbenchFailed": "The saved version could not be loaded for checking.",
           "revisionMismatch": "The prepared version did not match the saved story. Refresh the canvas and try again.",
-          "productionContractMissing": "This story does not yet have playable content to publish.",
           "buildFailed": "The playable version could not be prepared.",
           "buildNotReady": "This version is not ready to publish. Resolve the issues below and try again.",
           "runtimeUnavailable": "The playable content is unavailable. Try preparing this version again.",
@@ -1895,113 +1888,18 @@
         "nodes": "Graph nodes",
         "endings": "Endings"
       },
-      "director": {
-        "eyebrow": "Director prompt",
-        "title": "Video direction",
-        "description": "Author the structured direction for this clip. It stays editable; each video generation records the exact saved inputs it used.",
-        "compact": {
-          "title": "Prompt composer",
-          "beats": "{count, plural, one {# beat} other {# beats}}",
-          "emptyDirection": "Master direction is not authored yet.",
-          "manifest": "{count} chars",
-          "editInInspector": "Edit the complete timeline in the inspector →"
-        },
-        "fields": {
-          "title": "Clip title",
-          "description": "Visual intent",
-          "duration": "Target seconds",
-          "generationMode": "Generation control",
-          "frameMode": "Frame lock",
-          "masterDirection": "Master direction",
-          "emotionalArc": "Emotional arc"
-        },
-        "hints": {
-          "masterDirection": "The global cinematic instruction that governs every beat."
-        },
-        "generation": {
-          "frameLock": "Frame Lock",
-          "omni": "Omni Reference",
-          "firstFrame": "First frame",
-          "firstLast": "First + last frame"
-        },
-        "references": {
-          "title": "Reference responsibilities",
-          "description": "Describe what each subject, location, prop, style, or frame reference controls.",
-          "add": "Add reference responsibility",
-          "remove": "Remove reference responsibility",
-          "referencePlaceholder": "Reference ID or slot key",
-          "notePlaceholder": "Identity, wardrobe, placement, lighting, or usage instructions",
-          "roles": {
-            "subject": "Subject",
-            "location": "Location",
-            "prop": "Prop",
-            "style": "Style",
-            "first_frame": "First frame",
-            "last_frame": "Last frame",
-            "omni_reference": "Omni reference",
-            "other": "Other"
-          }
-        },
-        "beats": {
-          "title": "Time-coded beats",
-          "description": "Direct the shot over time. Beats must be ordered and non-overlapping for generation.",
-          "add": "Add beat",
-          "required": "At least one directed beat is required for generation.",
-          "beat": "Beat {number}",
-          "start": "Start · seconds",
-          "end": "End · seconds",
-          "moveUp": "Move beat earlier",
-          "moveDown": "Move beat later",
-          "remove": "Remove beat",
-          "fields": {
-            "visual": "Visual composition",
-            "camera": "Camera and lens",
-            "action": "Action and motion",
-            "performance": "Performance",
-            "emotion": "Emotion",
-            "dialogue": "Dialogue",
-            "audio": "Audio",
-            "endState": "End state",
-            "continuity": "Continuity detail"
-          }
-        },
-        "negative": {
-          "title": "Negative constraints",
-          "description": "Hard failures the generation must avoid.",
-          "add": "Add negative constraint",
-          "item": "Negative constraint"
-        },
-        "continuity": {
-          "title": "Continuity notes",
-          "description": "State that must survive from adjacent clips or into the next clip.",
-          "add": "Add continuity note",
-          "item": "Continuity note"
-        },
-        "preview": {
-          "title": "Director manifest preview",
-          "count": "{count} characters",
-          "description": "Read-only deterministic compilation. No generation is submitted from this editor.",
-          "withinBudget": "The manifest currently fits Seedance's 4,000-character provider budget.",
-          "requiresCompaction": "This manifest exceeds Seedance's 4,000-character budget. The production adapter must compile and compact it before submission."
-        }
-      },
       "trailer": {
         "eyebrow": "World trailer",
         "title": "Trailer direction",
-        "description": "Author and produce the project trailer independently from story clips and runtime paths.",
+        "description": "Produce the project trailer independently from story clips and runtime paths.",
         "close": "Close trailer inspector",
         "node": {
           "noVideo": "No trailer video yet",
           "videoPreview": "Trailer video preview"
         },
-        "authoring": {
-          "emptyTitle": "Author the trailer first",
-          "emptyDescription": "Create a dedicated director design for the project trailer.",
-          "create": "Create trailer direction",
-          "defaultTitle": "Project trailer"
-        },
         "production": {
           "title": "Trailer production",
+          "localRecipeDescription": "Recipes are local to this page and frozen only when you generate. They are not stored in the story draft.",
           "disabled": {
             "permission": "You do not have permission to generate video for this project."
           },
@@ -2011,98 +1909,44 @@
         }
       },
       "production": {
-        "eyebrow": "Clip production",
         "title": "Video production",
-        "description": "Generate the current video from the latest saved director design. The canvas stays editable and every generation preserves its own input snapshot.",
-        "refresh": "Refresh production status",
-        "masterPrompt": "Master Prompt",
-        "beats": "{count, plural, one {# timed beat} other {# timed beats}}",
-        "emptyPrompt": "Complete the director prompt before generating.",
-        "model": "Video model",
-        "projectDefaultModel": "Project default Omni model",
-        "duration": "Duration",
-        "seconds": "{seconds}s",
-        "output": "Project output",
-        "cost": "Estimated cost",
-        "costAtSubmit": "Quoted at submit",
-        "credits": "{count} credits",
-        "generationControl": "Generation control",
-        "modes": {
-          "omni_reference": "Omni Reference",
-          "first_frame": "First Frame",
-          "first_last_frame": "First + Last Frame"
-        },
-        "references": "Approved reference responsibilities",
-        "approvedCount": "{count, plural, one {# approved slot} other {# approved slots}}",
-        "noReferenceResponsibilities": "No reference responsibilities are authored for this clip.",
-        "referenceRoles": {
-          "subject": "Subject",
-          "location": "Location",
-          "prop": "Prop",
-          "style": "Style",
-          "first_frame": "First frame",
-          "last_frame": "Last frame",
-          "omni_reference": "Omni reference",
-          "other": "Other"
-        },
-        "variationNote": "Variation note",
-        "variationPlaceholder": "Optional direction for this generation only. It does not modify the saved director design.",
+        "localRecipeDescription": "Recipes are local to this page and frozen only when you generate. They are not stored in the story draft.",
+        "emptyPrompt": "Describe the video you want to generate.",
+        "masterPrompt": "Prompt",
+        "promptLocalHint": "This recipe stays on this page. Generate freezes the exact prompt, model, duration, mode, and references.",
         "generate": "Generate video",
+        "seconds": "{count}s",
         "disabled": {
-          "preparing": "Preparing the current shot inputs before generation.",
-          "promptRequired": "Complete the current clip's director prompt before generating.",
+          "promptRequired": "Enter a prompt before generating.",
+          "modelRequired": "Choose a video model.",
+          "referencesRequired": "Add exactly one first frame and one last frame.",
           "permission": "You do not have permission to generate video for this project.",
           "generating": "A video generation is already in progress for this node."
         },
-        "errors": {
-          "prepare": "The current shot inputs could not be prepared.",
-          "action": "The production action could not be completed."
-        },
         "statuses": {
-          "preparing": "Preparing shot inputs",
-          "ready": "Ready",
           "generating": "Generating",
           "queued": "Queued",
           "running": "Running",
           "processing": "Processing",
+          "ready": "Ready",
           "failed": "Failed",
-          "cancelled": "Cancelled"
+          "cancelled": "Cancelled",
+          "superseded": "Superseded"
         },
-        "node": {
-          "noVideo": "No video yet",
-          "videoPreview": "Current video preview",
-          "earlierDirection": "Earlier direction",
-          "generationFailed": "Generation failed"
-        },
-        "bindings": {
-          "title": "Clip reference responsibilities",
-          "trailerTitle": "Trailer reference responsibilities",
-          "omniDescription": "Select every approved input this Omni Reference clip may use.",
-          "frameDescription": "Bind approved frame slots to the selected first/last-frame mode.",
-          "omni": "Omni",
-          "frame": "Frame Lock",
-          "apiPending": "Reference binding is read-only until the versioned production API is connected.",
-          "firstFrame": "First frame",
-          "lastFrame": "Last frame",
-          "selectSlot": "Select approved slot",
-          "noApprovedSlots": "Approve a compatible Reference Slot before binding this clip.",
-          "save": "Save responsibilities"
-        },
-        "promptAutosaveHint": "Edits autosave to the director design. Generate captures the latest saved version.",
         "referenceRail": {
           "unapproved": "Unapproved",
           "remove": "Remove {label}",
           "add": "Add reference",
-          "addTitle": "Approved references"
+          "addTitle": "Approved project references"
         },
         "durationControl": {
-          "label": "Clip duration",
+          "label": "Duration",
           "seconds": "{count}s"
         },
         "videoLibrary": {
           "trigger": "Use existing video",
           "title": "Video history",
-          "description": "Choose a reusable video that matches this output: {width}×{height}, {duration} ± {tolerance}.",
+          "description": "Choose a reusable video matching {width}×{height}.",
           "loading": "Loading video history",
           "loadingMore": "Loading more videos",
           "loadMore": "Load more",
@@ -2124,14 +1968,20 @@
           "issues": {
             "preview_unavailable": "This asset has no playable preview.",
             "dimensions_unknown": "Its dimensions cannot be verified.",
-            "dimensions_mismatch": "Its dimensions do not match this shot.",
-            "duration_unknown": "Its duration cannot be verified.",
-            "duration_mismatch": "Its duration is outside this shot's tolerance."
+            "dimensions_mismatch": "Its dimensions do not match this shot."
           },
           "errors": {
             "load": "Video history could not be loaded.",
             "select": "The current video could not be changed."
           }
+        },
+        "errors": {
+          "action": "The production action could not be completed."
+        },
+        "node": {
+          "noVideo": "No video yet",
+          "videoPreview": "Current video preview",
+          "generationFailed": "Generation failed"
         }
       },
       "inspector": {
@@ -2145,7 +1995,6 @@
           "preview": "Current video for {title}",
           "empty": "No video selected",
           "emptyDescription": "Add the playable video for this story clip.",
-          "outdated": "Earlier version",
           "upload": "Upload local video",
           "replace": "Replace from device",
           "uploading": "Uploading · {progress}%",
@@ -2328,8 +2177,6 @@
     },
     "workbench": {
       "back": "Back to Story Studio",
-      "lockedRevision": "Locked story revision {number}",
-      "lockedRevisionWithDraftUpdates": "Locked story revision {number} · draft r{revision} has updates",
       "draftHead": "Mutable draft · revision {revision}",
       "formatInteractiveFilm": "Interactive film",
       "stageNav": "Project stages",
@@ -2343,17 +2190,14 @@
         "loadTitle": "This project could not be opened."
       },
       "noProductionDataTitle": "Production data is not available yet",
-      "noProductionDataDescription": "Return to the story canvas to complete director prompts and generate the first videos. The working draft remains editable throughout production."
+      "noProductionDataDescription": "Return to the story canvas to add clips, then generate or upload a video for each clip."
     },
     "overview": {
       "productionTitle": "Video production",
       "productionSubtitle": "Reference readiness, current video coverage, and active generations for this working draft.",
       "draftRevisionStatus": "Working draft r{revision}",
-      "productionRevision": "Production revision {revision}",
       "storyStructureTitle": "Story structure",
       "storyStructureSubtitle": "The authored graph is the single source for choices, state, and endings.",
-      "targetRuntime": "Target {seconds}s per path",
-      "maxContinuous": "Maximum continuous playback {seconds}s",
       "videoState": "Current video state",
       "videoStateGenerating": "{count} clips are generating replacement videos.",
       "videoStateReady": "{current} of {total} clips currently have a video.",
@@ -2377,7 +2221,7 @@
     },
     "references": {
       "title": "Reference pack",
-      "subtitle": "Characters, locations, props, and join frames required by this revision.",
+      "subtitle": "Characters, locations, props, styles, and frames available to video recipes.",
       "approvedCount": "{approved} of {total} approved",
       "required": "Required",
       "optional": "Optional",
@@ -2433,7 +2277,7 @@
         "kind": "Reference kind",
         "label": "Label",
         "descriptionLabel": "Production responsibility",
-        "required": "Required before this revision can generate"
+        "required": "Required before this project can generate"
       },
       "review": {
         "title": "Review reference version",
@@ -2459,37 +2303,20 @@
     },
     "production": {
       "title": "Clip production",
-      "subtitle": "Current draft direction, generation state, and the video currently bound to each clip.",
+      "subtitle": "Current video and generation state for every story clip.",
       "clipCount": "{count} clips",
       "seconds": "{seconds}s",
       "noBlocker": "Ready for the next action",
-      "currentDraftReady": "Current prompt can be generated from the canvas",
-      "currentDraftPromptRequired": "Complete the director prompt in the canvas",
+      "currentDraftPromptRequired": "Generate or upload a video from the story canvas.",
       "generationInProgress": "The replacement video is being generated.",
       "generationFailed": "The latest generation failed; the previous video remains current.",
       "currentVideoReady": "A current video is bound to this clip.",
-      "currentVideoOutdated": "The current video was generated from an earlier direction.",
-      "detail": {
-        "visualIntent": "Visual intent",
-        "masterPrompt": "Seedance master prompt",
-        "timeline": "Shot timeline",
-        "negativeConstraints": "Hard negative constraints",
-        "continuityAndDialogue": "Inputs, acceptance, continuity, and dialogue",
-        "audio": "Audio: {mode}",
-        "specVersion": "Clip specification v{version}"
-      },
       "columns": {
         "key": "Key",
         "clip": "Clip",
-        "mode": "Generation mode",
         "duration": "Duration",
         "status": "Status",
         "blocker": "Details"
-      },
-      "modes": {
-        "omni": "Omni Reference",
-        "first": "First Frame",
-        "firstLast": "First + Last Frame"
       },
       "status": {
         "draft": "Current draft",
@@ -2498,8 +2325,7 @@
         "running": "Running",
         "processing": "Processing",
         "failed": "Failed",
-        "cancelled": "Cancelled",
-        "outdated": "Earlier direction"
+        "cancelled": "Cancelled"
       }
     }
   },

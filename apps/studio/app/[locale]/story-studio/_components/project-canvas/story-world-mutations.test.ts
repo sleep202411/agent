@@ -402,8 +402,6 @@ function draft(overrides: DraftOverrides = {}): InteractiveFilmDraftContent {
       ...overrides.storyBible,
     },
     graph: { entryNodeId: null, nodes: overrides.nodes ?? [] },
-    clipPrompts: [],
-    trailerPrompt: null,
     productionNotes: [],
   };
 }

@@ -18,13 +18,14 @@ import type {
   PublishStoryBuildInput,
   StoryExperienceCurrentReleaseDto,
 } from './dto';
+import { canonicalJsonHash } from './canonical-json';
 import { createExperienceReleaseRequest } from './experience-release-request';
 import { storyExperiencePublicationClock } from './story-experience-publication-clock';
 import {
   isStoryExperienceReleaseOutcomeUnknown,
   StoryExperienceReleaseGateway,
 } from './story-experience-release.gateway';
-import { StoryFilmBuildService } from './story-film-build.service';
+import { StoryBuildService } from './story-build.service';
 import { StoryPermissionService } from './story-permission.service';
 
 const PUBLICATION_LEASE_TTL_MS = JAVA_REQUEST_TIMEOUT_MS + 20_000;
@@ -79,7 +80,7 @@ type PublicationClaim =
 export class StoryExperienceReleaseService {
   constructor(
     private readonly permissions: StoryPermissionService,
-    private readonly builds: StoryFilmBuildService,
+    private readonly builds: StoryBuildService,
     private readonly gateway: StoryExperienceReleaseGateway,
     private readonly prisma: PrismaService,
   ) {}
@@ -108,23 +109,45 @@ export class StoryExperienceReleaseService {
     );
     if (
       build.status !== 'ready' ||
-      build.profile !== 'production' ||
       build.scope.kind !== 'full' ||
       build.runtimeSchemaVersion !== 2 ||
-      !build.runtimeJson
+      !build.runtimeJson ||
+      !build.runtimeHash ||
+      !build.completedAt ||
+      build.assets.length === 0 ||
+      build.diagnostics.some((diagnostic) => diagnostic.severity === 'error') ||
+      !Number.isInteger(build.sourceDraftRevision) ||
+      build.sourceDraftRevision < 0 ||
+      !/^[a-f0-9]{64}$/.test(build.videoSnapshotHash)
     ) {
       throw new UnprocessableEntityException({
         code: 'STORY_BUILD_NOT_PUBLISHABLE',
         message:
-          'Only a ready production/full Runtime Manifest v2 Build with available frozen media can be published.',
+          'Only a completed ready/full Runtime Manifest v2 Build with available frozen assets can be published.',
       });
     }
-    const manifest = ExperienceRuntimeManifestSchema.parse(build.runtimeJson);
-    if (manifest.buildId !== build.id || manifest.channel !== 'production') {
+    const parsedManifest = ExperienceRuntimeManifestSchema.safeParse(
+      build.runtimeJson,
+    );
+    if (!parsedManifest.success) {
+      throw new ConflictException({
+        code: 'STORY_BUILD_MANIFEST_CORRUPT',
+        message:
+          'The immutable Build does not contain a valid Runtime Manifest v2.',
+      });
+    }
+    const manifest = parsedManifest.data;
+    if (
+      manifest.buildId !== build.id ||
+      manifest.channel !== 'production' ||
+      manifest.gameId !== projectId ||
+      manifest.contentVersion !== build.id ||
+      canonicalJsonHash(manifest) !== build.runtimeHash
+    ) {
       throw new ConflictException({
         code: 'STORY_BUILD_MANIFEST_IDENTITY_MISMATCH',
         message:
-          'The frozen Runtime Manifest identity does not match its Build.',
+          'The frozen Runtime Manifest identity or hash does not match its Build.',
       });
     }
     const title = localizedText(
@@ -247,8 +270,8 @@ export class StoryExperienceReleaseService {
       };
     }
 
-    // Runtime compilation deliberately uses the sovereign Story Project UUID
-    // as gameId. Once a lifecycle exists, Java is the current-version authority.
+    // Runtime compilation uses the sovereign Story Project UUID as gameId.
+    // Once a lifecycle exists, Java is the current-version authority.
     return this.reconcileProjectCurrent(projectId, projectId);
   }
 
@@ -644,9 +667,8 @@ export class StoryExperienceReleaseService {
         build: {
           select: {
             id: true,
-            sourceRevisionId: true,
-            sourceProductionRevision: true,
-            sourceRevision: { select: { sourceDraftRevision: true } },
+            sourceDraftRevision: true,
+            videoSnapshotHash: true,
           },
         },
       },
@@ -763,10 +785,8 @@ export class StoryExperienceReleaseService {
       currentBuild: matching
         ? {
             id: matching.build.id,
-            sourceRevisionId: matching.build.sourceRevisionId,
-            sourceDraftRevision:
-              matching.build.sourceRevision.sourceDraftRevision,
-            sourceProductionRevision: matching.build.sourceProductionRevision,
+            sourceDraftRevision: matching.build.sourceDraftRevision,
+            videoSnapshotHash: matching.build.videoSnapshotHash,
           }
         : null,
       checkedAt: observationCheckedAt,

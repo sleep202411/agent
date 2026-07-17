@@ -24,7 +24,9 @@ export interface EnsureOriginalMediaPlacementInput {
   sizeBytes?: bigint | number | null;
   width?: number | null;
   height?: number | null;
+  durationMs?: number | null;
   durationSeconds?: number | null;
+  hasAudio?: boolean | null;
   checksumSha256?: string | null;
   metadata?: Prisma.InputJsonValue;
 }
@@ -51,7 +53,9 @@ export async function ensureOriginalMediaPlacement(
       sizeBytes: normalizeBigInt(input.sizeBytes),
       width: input.width ?? null,
       height: input.height ?? null,
+      durationMs: input.durationMs ?? null,
       durationSeconds: input.durationSeconds ?? null,
+      hasAudio: input.hasAudio ?? null,
       checksumSha256: input.checksumSha256 ?? null,
       metadata: input.metadata ?? {},
     },
@@ -61,7 +65,11 @@ export async function ensureOriginalMediaPlacement(
       sizeBytes: normalizeBigInt(input.sizeBytes),
       width: input.width ?? null,
       height: input.height ?? null,
+      ...(input.durationMs !== undefined
+        ? { durationMs: input.durationMs }
+        : {}),
       durationSeconds: input.durationSeconds ?? null,
+      ...(input.hasAudio !== undefined ? { hasAudio: input.hasAudio } : {}),
       checksumSha256: input.checksumSha256 ?? null,
       deletedAt: null,
       metadata: input.metadata ?? {},

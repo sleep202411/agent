@@ -225,6 +225,7 @@ describe('StoryVideoUploadSessionService', () => {
       }),
     ).resolves.toMatchObject({
       mediaAssetId: ASSET_ID,
+      variantId: null,
       uploadSessionId: SESSION_ID,
       url: null,
     });

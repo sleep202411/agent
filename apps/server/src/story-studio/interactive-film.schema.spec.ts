@@ -1,10 +1,8 @@
 import {
   collectInteractiveFilmRuntimeLocales,
   createLockableInteractiveFilmDraftContentSchema,
-  createPlayableInteractiveFilmDraftContentSchema,
   InteractiveFilmDraftContentSchema,
   LockableInteractiveFilmDraftContentSchema,
-  ProductionReadyStoryTrailerPromptSchema,
   type FilmCondition,
   type FilmEffect,
   type InteractiveFilmDraftContent,
@@ -460,246 +458,41 @@ describe('interactive-film state-variable semantic contract', () => {
   });
 });
 
-describe('interactive-film mutable clip prompt authoring', () => {
-  it('requires the explicit v2 clip prompt collection', () => {
-    const incomplete = structuredClone(
-      buildInteractiveFilmTestBundle().draftContent,
-    );
-    delete (incomplete as { clipPrompts?: unknown }).clipPrompts;
-
-    const result = InteractiveFilmDraftContentSchema.safeParse(incomplete);
-
-    expect(result.success).toBe(false);
-    if (result.success) return;
-    expect(result.error.issues).toContainEqual(
-      expect.objectContaining({ path: ['clipPrompts'] }),
-    );
+describe('interactive-film v3 authoring boundary', () => {
+  it('contains only storyBible, graph, and productionNotes', () => {
+    const draft = buildInteractiveFilmTestBundle().draftContent;
+    expect(Object.keys(draft).sort()).toEqual([
+      'graph',
+      'productionNotes',
+      'storyBible',
+    ]);
   });
 
-  it('rejects orphan, mismatched, and duplicate nested prompt identities in mutable drafts', () => {
-    const orphan = structuredClone(
+  it('strictly rejects fields outside the v3 story document', () => {
+    const draft: Record<string, unknown> = structuredClone(
       buildInteractiveFilmTestBundle().draftContent,
     );
-    orphan.clipPrompts[0].graphNodeId = 'clip:missing';
-    const mismatched = structuredClone(
-      buildInteractiveFilmTestBundle().draftContent,
-    );
-    mismatched.clipPrompts[0].clipKey = 'MISSING';
-    const duplicateBeat = structuredClone(
-      buildInteractiveFilmTestBundle().draftContent,
-    );
-    duplicateBeat.clipPrompts[0].beats.push({
-      ...duplicateBeat.clipPrompts[0].beats[0],
-    });
-
-    for (const candidate of [orphan, mismatched, duplicateBeat]) {
-      expect(
-        InteractiveFilmDraftContentSchema.safeParse(candidate).success,
-      ).toBe(false);
-    }
-  });
-
-  it('keeps timing relationships mutable but enforces direction and timeline semantics at lock', () => {
-    const draft = structuredClone(
-      buildInteractiveFilmTestBundle().draftContent,
-    );
-    const prompt = draft.clipPrompts[0];
-    prompt.masterDirection = '';
-    prompt.emotionalArc = '';
-    prompt.beats[0].endMs = 0;
-
-    expect(InteractiveFilmDraftContentSchema.safeParse(draft).success).toBe(
-      true,
-    );
-    expect(
-      createPlayableInteractiveFilmDraftContentSchema('zh-CN').safeParse(draft)
-        .success,
-    ).toBe(false);
-    const locked = LockableInteractiveFilmDraftContentSchema.safeParse(draft);
-    expect(locked.success).toBe(false);
-    if (locked.success) return;
-    expect(locked.error.issues).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          path: ['clipPrompts', 0, 'masterDirection'],
-        }),
-        expect.objectContaining({ path: ['clipPrompts', 0, 'emotionalArc'] }),
-        expect.objectContaining({
-          path: ['clipPrompts', 0, 'beats', 0, 'endMs'],
-        }),
-      ]),
-    );
-  });
-
-  it('requires lockable beat timelines to cover the full target duration without gaps', () => {
-    const complete = structuredClone(
-      buildInteractiveFilmTestBundle().draftContent,
-    );
-    expect(
-      LockableInteractiveFilmDraftContentSchema.safeParse(complete).success,
-    ).toBe(true);
-
-    const leadingGap = structuredClone(complete);
-    leadingGap.clipPrompts[0].beats[0].startMs = 100;
-    expectLockIssue(leadingGap, {
-      path: ['clipPrompts', 0, 'beats', 0, 'startMs'],
-      message: 'The first clip prompt beat must start at 0ms.',
-    });
-
-    const internalGap = structuredClone(complete);
-    const secondBeat = internalGap.clipPrompts[0].beats[1];
-    const firstBeat = internalGap.clipPrompts[0].beats[0];
-    expect(secondBeat).toBeDefined();
-    expect(firstBeat).toBeDefined();
-    if (!secondBeat || !firstBeat) return;
-    secondBeat.startMs = firstBeat.endMs + 100;
-    expectLockIssue(internalGap, {
-      path: ['clipPrompts', 0, 'beats', 1, 'startMs'],
-      message: 'Clip prompt beats must be contiguous with no uncovered time.',
-    });
-
-    const trailingGap = structuredClone(complete);
-    const trailingPrompt = trailingGap.clipPrompts[0];
-    const finalBeat = trailingPrompt.beats.at(-1);
-    expect(finalBeat).toBeDefined();
-    if (!finalBeat) return;
-    finalBeat.endMs = trailingPrompt.targetDurationMs - 100;
-    expectLockIssue(trailingGap, {
-      path: [
-        'clipPrompts',
-        0,
-        'beats',
-        trailingPrompt.beats.length - 1,
-        'endMs',
-      ],
-      message:
-        'The final clip prompt beat must end exactly at targetDurationMs.',
-    });
-  });
-
-  it('reports an empty lockable timeline at the beats collection boundary', () => {
-    const emptyTimeline = structuredClone(
-      buildInteractiveFilmTestBundle().draftContent,
-    );
-    emptyTimeline.clipPrompts[0].beats = [];
-
-    const result =
-      LockableInteractiveFilmDraftContentSchema.safeParse(emptyTimeline);
-
-    expect(result.success).toBe(false);
-    if (result.success) return;
-    expect(result.error.issues).toContainEqual(
-      expect.objectContaining({
-        path: ['clipPrompts', 0, 'beats'],
-        message: 'A lockable clip prompt needs at least one time-coded beat.',
-      }),
-    );
-    expect(
-      result.error.issues.some(
-        (issue) => issue.path.join('.') === 'clipPrompts.0.beats.-1.endMs',
-      ),
-    ).toBe(false);
-  });
-});
-
-describe('interactive-film project-root trailer authoring', () => {
-  it('requires an explicit trailer state in every v2 draft', () => {
-    const draft = structuredClone(
-      buildInteractiveFilmTestBundle().draftContent,
-    );
-    delete (draft as { trailerPrompt?: unknown }).trailerPrompt;
+    draft.directorDesign = {};
 
     const result = InteractiveFilmDraftContentSchema.safeParse(draft);
 
     expect(result.success).toBe(false);
     if (result.success) return;
     expect(result.error.issues).toContainEqual(
-      expect.objectContaining({ path: ['trailerPrompt'] }),
-    );
-  });
-
-  it('keeps an unfinished trailer draft without blocking gameplay revision lock', () => {
-    const draft = structuredClone(
-      buildInteractiveFilmTestBundle().draftContent,
-    );
-    draft.trailerPrompt = trailerPrompt();
-    draft.trailerPrompt.masterDirection = '';
-
-    expect(InteractiveFilmDraftContentSchema.safeParse(draft).success).toBe(
-      true,
-    );
-    expect(
-      createPlayableInteractiveFilmDraftContentSchema('zh-CN').safeParse(draft)
-        .success,
-    ).toBe(true);
-    expect(
-      LockableInteractiveFilmDraftContentSchema.safeParse(draft).success,
-    ).toBe(true);
-    const productionReady = ProductionReadyStoryTrailerPromptSchema.safeParse(
-      draft.trailerPrompt,
-    );
-    expect(productionReady.success).toBe(false);
-    if (productionReady.success) return;
-    expect(productionReady.error.issues).toContainEqual(
       expect.objectContaining({
-        path: ['masterDirection'],
-        message: 'Required before trailer production.',
+        code: 'unrecognized_keys',
+        keys: ['directorDesign'],
       }),
     );
   });
 
-  it('locks a complete time-coded trailer without adding a graph clip', () => {
-    const draft = structuredClone(
-      buildInteractiveFilmTestBundle().draftContent,
-    );
-    const clipCount = draft.graph.nodes.filter(
-      (node) => node.kind === 'clip',
-    ).length;
-    draft.trailerPrompt = trailerPrompt();
-
-    const locked = LockableInteractiveFilmDraftContentSchema.parse(draft);
-    const productionReady = ProductionReadyStoryTrailerPromptSchema.parse(
-      locked.trailerPrompt,
-    );
-
-    expect(productionReady.targetDurationMs).toBe(15_000);
+  it('derives clip count solely from graph clip nodes', () => {
+    const draft = buildInteractiveFilmTestBundle().draftContent;
     expect(
-      locked.graph.nodes.filter((node) => node.kind === 'clip'),
-    ).toHaveLength(clipCount);
+      draft.graph.nodes.filter((node) => node.kind === 'clip'),
+    ).toHaveLength(21);
   });
 });
-
-function trailerPrompt(): NonNullable<
-  InteractiveFilmDraftContent['trailerPrompt']
-> {
-  return {
-    title: '分支影游测试｜15 秒宣传片',
-    description: '以巨龙入口与两位女主的抉择建立悬念。',
-    targetDurationMs: 15_000,
-    generationControl: { mode: 'omni_reference' },
-    masterDirection: '电影级夜景宣传片，克制地揭示威胁，不剧透结局。',
-    referenceRoleNotes: [],
-    emotionalArc: '好奇逐渐转为逼近真相的恐惧。',
-    beats: [
-      {
-        id: 'trailer:beat:1',
-        startMs: 0,
-        endMs: 15_000,
-        visual: '夜色中的龙口入口逐步显现。',
-        camera: '从远景稳定推进至人物近景。',
-        action: '两位女主停在入口前，录音机自行启动。',
-        performance: '呼吸克制，视线交换短促。',
-        emotion: '不安持续加深。',
-        dialogue: '',
-        audio: '潮湿环境声与磁带底噪。',
-        endState: '画面停在张开的龙口。',
-        continuity: '保持人物、服装和录音机视觉一致。',
-      },
-    ],
-    negativeConstraints: ['不展示任何结局答案。'],
-    continuityNotes: ['人物身份与正式参考位一致。'],
-  };
-}
 
 function expectLockIssue(
   draft: InteractiveFilmDraftContent,

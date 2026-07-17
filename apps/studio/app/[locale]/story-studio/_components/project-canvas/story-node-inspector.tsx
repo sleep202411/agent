@@ -34,10 +34,8 @@ import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 import type {
   InteractiveFilmDraftContent,
-  FilmTrailerSummary,
   StoryGraphChoice,
   StoryGraphNode,
-  StoryTrailerPromptDraft,
 } from "@/lib/story-projects-api";
 import type { StoryCanvasNode } from "./story-project-canvas-model";
 import {
@@ -47,9 +45,6 @@ import {
 } from "./story-auto-routes-editor";
 import { StoryChoiceAdvancedEditor } from "./story-choice-advanced-editor";
 import { StoryClipMediaPanel, type StoryClipMediaPanelProps } from "./story-clip-media-panel";
-import { StoryDirectorPromptEditor } from "./story-director-prompt-editor";
-import { StoryClipReferenceBindings } from "./story-clip-reference-bindings";
-import type { StoryVideoComposerProps } from "./story-shot-composer";
 import { StoryWorldLibrary } from "./story-world-library";
 
 type FoundationField = "logline" | "synopsis" | "worldview";
@@ -99,10 +94,6 @@ interface StoryNodeInspectorProps {
   onDuplicateNode: (nodeId: string) => void;
   onDeleteSelected: () => void;
   clipMedia?: StoryClipMediaPanelProps;
-  filmTrailer: FilmTrailerSummary | null;
-  trailerProduction?: StoryVideoComposerProps;
-  onCreateTrailerPrompt: () => void;
-  onReplaceTrailerPrompt: (prompt: StoryTrailerPromptDraft) => void;
 }
 
 const ENDING_KINDS: Ending["kind"][] = ["truth", "bond", "echo", "failure", "hidden", "custom"];
@@ -135,10 +126,6 @@ export function StoryNodeInspector({
   onDuplicateNode,
   onDeleteSelected,
   clipMedia,
-  filmTrailer,
-  trailerProduction,
-  onCreateTrailerPrompt,
-  onReplaceTrailerPrompt,
 }: StoryNodeInspectorProps) {
   const t = useTranslations("storyStudio.canvas");
   const [deleteOpen, setDeleteOpen] = useState(false);
@@ -168,15 +155,7 @@ export function StoryNodeInspector({
           onRemoveTextItem={onRemoveWorldTextItem}
         />
       ) : canvasData.kind === "root" ? (
-        <RootTrailerInspector
-          prompt={content.trailerPrompt}
-          trailer={filmTrailer}
-          production={trailerProduction}
-          canEdit={canEdit}
-          onCreate={onCreateTrailerPrompt}
-          onChange={onReplaceTrailerPrompt}
-          onClose={onCloseNode}
-        />
+        <RootTrailerInspector onClose={onCloseNode} />
       ) : (
         <>
           <div className="flex items-start justify-between gap-3">
@@ -302,23 +281,7 @@ export function StoryNodeInspector({
   );
 }
 
-function RootTrailerInspector({
-  prompt,
-  trailer,
-  production,
-  canEdit,
-  onCreate,
-  onChange,
-  onClose,
-}: {
-  prompt: StoryTrailerPromptDraft | null;
-  trailer: FilmTrailerSummary | null;
-  production?: StoryVideoComposerProps;
-  canEdit: boolean;
-  onCreate: () => void;
-  onChange: (prompt: StoryTrailerPromptDraft) => void;
-  onClose: () => void;
-}) {
+function RootTrailerInspector({ onClose }: { onClose: () => void }) {
   const t = useTranslations("storyStudio.canvas.trailer");
   return (
     <>
@@ -340,34 +303,9 @@ function RootTrailerInspector({
         </button>
       </div>
 
-      {!prompt ? (
-        <div className="mt-6 rounded-[20px] bg-white/[0.04] p-5 text-center">
-          <IconBook2 className="mx-auto size-5 text-white/28" />
-          <h3 className="mt-3 text-sm font-semibold text-white/72">{t("authoring.emptyTitle")}</h3>
-          <p className="mt-2 text-[10px] leading-5 text-white/38">
-            {t("authoring.emptyDescription")}
-          </p>
-          <Button className="mt-4 w-full" disabled={!canEdit} onClick={onCreate}>
-            <IconPlus className="size-4" />
-            {t("authoring.create")}
-          </Button>
-        </div>
-      ) : (
-        <StoryDirectorPromptEditor prompt={prompt} canEdit={canEdit} onChange={onChange} />
-      )}
-      {trailer && production ? (
-        <>
-          <StoryClipReferenceBindings
-            subject="trailer"
-            clip={trailer}
-            references={production.references}
-            canEdit={canEdit}
-            apiConnected
-            pending={Boolean(production.referenceBindingsPending)}
-            onSave={production.onUpdateReferenceBindings ?? (() => undefined)}
-          />
-        </>
-      ) : null}
+      <p className="mt-6 rounded-[18px] bg-white/[0.045] px-4 py-3 text-[11px] leading-5 text-white/44">
+        {t("production.localRecipeDescription")}
+      </p>
     </>
   );
 }
@@ -426,7 +364,7 @@ function GraphNodeEditor({
       </dl>
 
       {node.kind === "clip" && !decisionOnly && clipMedia ? (
-        <StoryClipMediaPanel key={clipMedia.clip?.id ?? node.nodeId} {...clipMedia} />
+        <StoryClipMediaPanel key={clipMedia.clip?.graphNodeId ?? node.nodeId} {...clipMedia} />
       ) : null}
 
       {node.kind === "router" ? (

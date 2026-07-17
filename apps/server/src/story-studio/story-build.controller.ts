@@ -15,29 +15,29 @@ import type { Response } from 'express';
 import { CurrentUser, Public, ViewerCookie, type AuthUser } from '../auth';
 import { ZodValidationPipe } from '../common/zod.pipe';
 import {
-  CancelFilmBuildSchema,
-  CreateFilmBuildSchema,
-  FilmBuildListQuerySchema,
+  CancelStoryBuildSchema,
+  CreateStoryBuildSchema,
   PublishStoryBuildSchema,
-  StoryFilmBuildAssetParamsSchema,
-  StoryFilmBuildParamsSchema,
+  StoryBuildAssetParamsSchema,
+  StoryBuildListQuerySchema,
+  StoryBuildParamsSchema,
   StoryProjectIdParamsSchema,
   StoryUuidSchema,
-  type CancelFilmBuildInput,
-  type CreateFilmBuildInput,
-  type FilmBuildListQuery,
+  type CancelStoryBuildInput,
+  type CreateStoryBuildInput,
   type PublishStoryBuildInput,
-  type StoryFilmBuildAssetParams,
-  type StoryFilmBuildParams,
+  type StoryBuildAssetParams,
+  type StoryBuildListQuery,
+  type StoryBuildParams,
   type StoryProjectIdParams,
 } from './dto';
-import { StoryFilmBuildService } from './story-film-build.service';
+import { StoryBuildService } from './story-build.service';
 import { StoryExperienceReleaseService } from './story-experience-release.service';
 
 @Controller('story-projects')
-export class StoryFilmBuildController {
+export class StoryBuildController {
   constructor(
-    private readonly builds: StoryFilmBuildService,
+    private readonly builds: StoryBuildService,
     private readonly releases: StoryExperienceReleaseService,
   ) {}
 
@@ -51,8 +51,8 @@ export class StoryFilmBuildController {
     idempotencyHeader: string | string[] | undefined,
     @Param(new ZodValidationPipe(StoryProjectIdParamsSchema))
     params: StoryProjectIdParams,
-    @Body(new ZodValidationPipe(CreateFilmBuildSchema))
-    body: CreateFilmBuildInput,
+    @Body(new ZodValidationPipe(CreateStoryBuildSchema))
+    body: CreateStoryBuildInput,
   ) {
     return {
       code: 200,
@@ -73,8 +73,8 @@ export class StoryFilmBuildController {
     workspaceHeader: string | string[] | undefined,
     @Param(new ZodValidationPipe(StoryProjectIdParamsSchema))
     params: StoryProjectIdParams,
-    @Query(new ZodValidationPipe(FilmBuildListQuerySchema))
-    query: FilmBuildListQuery,
+    @Query(new ZodValidationPipe(StoryBuildListQuerySchema))
+    query: StoryBuildListQuery,
   ) {
     return {
       code: 200,
@@ -92,8 +92,8 @@ export class StoryFilmBuildController {
     @CurrentUser() user: AuthUser,
     @Headers('x-fizz-workspace-id')
     workspaceHeader: string | string[] | undefined,
-    @Param(new ZodValidationPipe(StoryFilmBuildParamsSchema))
-    params: StoryFilmBuildParams,
+    @Param(new ZodValidationPipe(StoryBuildParamsSchema))
+    params: StoryBuildParams,
   ) {
     return {
       code: 200,
@@ -110,8 +110,8 @@ export class StoryFilmBuildController {
   @Public()
   async redirectToBuildAsset(
     @CurrentUser() user: AuthUser | undefined,
-    @Param(new ZodValidationPipe(StoryFilmBuildAssetParamsSchema))
-    params: StoryFilmBuildAssetParams,
+    @Param(new ZodValidationPipe(StoryBuildAssetParamsSchema))
+    params: StoryBuildAssetParams,
     @Res() response: Response,
   ) {
     // @Public keeps Java/CDN's immutable Manifest URI usable anonymously after
@@ -134,10 +134,10 @@ export class StoryFilmBuildController {
     @CurrentUser() user: AuthUser,
     @Headers('x-fizz-workspace-id')
     workspaceHeader: string | string[] | undefined,
-    @Param(new ZodValidationPipe(StoryFilmBuildParamsSchema))
-    params: StoryFilmBuildParams,
-    @Body(new ZodValidationPipe(CancelFilmBuildSchema))
-    body: CancelFilmBuildInput,
+    @Param(new ZodValidationPipe(StoryBuildParamsSchema))
+    params: StoryBuildParams,
+    @Body(new ZodValidationPipe(CancelStoryBuildSchema))
+    body: CancelStoryBuildInput,
   ) {
     return {
       code: 200,
@@ -176,8 +176,8 @@ export class StoryFilmBuildController {
     @Headers('x-fizz-workspace-id')
     workspaceHeader: string | string[] | undefined,
     @ViewerCookie() viewerCookie: string,
-    @Param(new ZodValidationPipe(StoryFilmBuildParamsSchema))
-    params: StoryFilmBuildParams,
+    @Param(new ZodValidationPipe(StoryBuildParamsSchema))
+    params: StoryBuildParams,
     @Body(new ZodValidationPipe(PublishStoryBuildSchema))
     body: PublishStoryBuildInput,
   ) {

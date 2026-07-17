@@ -26,14 +26,14 @@ import { cn } from "@/lib/utils";
 import {
   listStoryVideoLibrary,
   storyApiErrorMessage,
-  type FilmClipSummary,
-  type FilmCurrentVideo,
+  type StoryCurrentVideo,
   type StoryVideoLibraryItem,
 } from "@/lib/story-projects-api";
 import {
   mergeStoryVideoLibraryItems,
   resolveStoryVideoLibraryItemState,
   storyVideoLibraryItemKey,
+  type StoryVideoFrameContract,
 } from "./story-video-library-model";
 
 const VIDEO_LIBRARY_PAGE_SIZE = 30;
@@ -41,8 +41,8 @@ const VIDEO_LIBRARY_PAGE_SIZE = 30;
 export interface StoryVideoLibraryDialogProps {
   workspaceId: string;
   projectId: string;
-  outputContract: FilmClipSummary["outputContract"];
-  currentVideo: FilmCurrentVideo | null;
+  frameContract: StoryVideoFrameContract;
+  currentVideo: StoryCurrentVideo | null;
   disabled?: boolean;
   disabledReason?: string | null;
   onSelect: (item: StoryVideoLibraryItem) => Promise<void>;
@@ -56,7 +56,7 @@ export interface StoryVideoLibraryDialogProps {
 export function StoryVideoLibraryDialog({
   workspaceId,
   projectId,
-  outputContract,
+  frameContract,
   currentVideo,
   disabled = false,
   disabledReason,
@@ -117,7 +117,7 @@ export function StoryVideoLibraryDialog({
 
   const selectItem = async (item: StoryVideoLibraryItem) => {
     const itemKey = storyVideoLibraryItemKey(item);
-    const state = resolveStoryVideoLibraryItemState(item, outputContract, currentSelection);
+    const state = resolveStoryVideoLibraryItemState(item, frameContract, currentSelection);
     if (!state.selectable || state.current || selectingKey) return;
 
     setSelectingKey(itemKey);
@@ -176,10 +176,8 @@ export function StoryVideoLibraryDialog({
               </DialogTitle>
               <DialogDescription className="mt-1 max-w-2xl text-[11px] leading-5 text-white/42">
                 {t("description", {
-                  width: outputContract.width,
-                  height: outputContract.height,
-                  duration: formatDuration(outputContract.durationMs / 1_000),
-                  tolerance: formatDuration(outputContract.durationToleranceMs / 1_000),
+                  width: frameContract.width,
+                  height: frameContract.height,
                 })}
               </DialogDescription>
             </div>
@@ -222,7 +220,7 @@ export function StoryVideoLibraryDialog({
                   item={item}
                   index={index}
                   locale={locale}
-                  outputContract={outputContract}
+                  frameContract={frameContract}
                   currentSelection={currentSelection}
                   selecting={selectingKey === storyVideoLibraryItemKey(item)}
                   selectionLocked={selectingKey !== null}
@@ -292,7 +290,7 @@ function StoryVideoLibraryCard({
   item,
   index,
   locale,
-  outputContract,
+  frameContract,
   currentSelection,
   selecting,
   selectionLocked,
@@ -302,7 +300,7 @@ function StoryVideoLibraryCard({
   item: StoryVideoLibraryItem;
   index: number;
   locale: string;
-  outputContract: FilmClipSummary["outputContract"];
+  frameContract: StoryVideoFrameContract;
   currentSelection: { assetId: string; variantId: string } | null;
   selecting: boolean;
   selectionLocked: boolean;
@@ -310,7 +308,7 @@ function StoryVideoLibraryCard({
   onSelect: () => void;
 }) {
   const t = useTranslations("storyStudio.canvas.production.videoLibrary");
-  const state = resolveStoryVideoLibraryItemState(item, outputContract, currentSelection);
+  const state = resolveStoryVideoLibraryItemState(item, frameContract, currentSelection);
   const primaryIssue = state.issues[0];
   const width = item.width ?? item.asset.width;
   const height = item.height ?? item.asset.height;

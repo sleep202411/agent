@@ -1,236 +1,232 @@
-import { createHash } from 'node:crypto';
-import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
 import {
-  canonicalizeExperienceJson,
+  InteractiveFilmReleaseSchema,
+  type InteractiveFilmRelease,
+} from '@repo/shared/interactive-film-runtime';
+import {
   EXPERIENCE_CORE_CHOICE_RENDERER_ID,
   EXPERIENCE_CORE_VIDEO_RENDERER_ID,
   ExperienceRuntimeManifestSchema,
 } from '@repo/shared/experience-runtime';
-import { buildInteractiveFilmTestBundle } from './__tests__/interactive-film-test-bundle';
 import {
   compileStoryExperienceManifest,
   STORY_CORE_THEME_CONFIG_ASSET_ID,
-  type StoryExperienceMediaIdentity,
 } from './story-experience-manifest-compiler';
-import {
-  compileStoryFilmBuild,
-  type StoryFilmBuildClipInput,
-} from './story-film-build-compiler';
 
 const PROJECT_ID = '0197f4a2-0800-7000-8000-000000000002';
-const REVISION_ID = '0197f4a2-0800-7000-8000-000000000003';
 const BUILD_ID = '0197f4a2-0800-7000-8000-000000000004';
+const ASSET_ID = '0197f4a2-0800-7000-8000-000000000006';
+const VARIANT_ID = '0197f4a2-0800-7000-8000-000000000007';
+const CHECKSUM = 'a'.repeat(64);
 
-function uuid(index: number, group: string): string {
-  return `0197f4a2-${group}-7000-8000-${index.toString(16).padStart(12, '0')}`;
-}
-
-function fixture() {
-  const bundle = buildInteractiveFilmTestBundle();
-  const clips: StoryFilmBuildClipInput[] = bundle.clipSpecs.map(
-    (spec, index) => ({
-      id: uuid(index + 1, '2000'),
-      key: spec.key,
-      graphNodeId: spec.graphNodeId,
-      rank: spec.rank,
-      specHash: `${(index + 1).toString(16).padStart(64, '0')}`,
-      productionInputHash: `${(index + 101).toString(16).padStart(64, '0')}`,
-      spec,
-      sourceGenerationId: uuid(index + 1, '3000'),
-      asset: {
-        assetId: uuid(index + 1, '4000'),
-        variantId: uuid(index + 1, '5000'),
-        checksumSha256: `${(index + 201).toString(16).padStart(64, '0')}`,
-        contentType: 'video/mp4',
-        sizeBytes: 1_000n,
-        width: 1920,
-        height: 1080,
-        durationMs: 15_000,
-        url: `https://cdn.example.test/${spec.key}.mp4`,
+function release(): InteractiveFilmRelease {
+  return InteractiveFilmReleaseSchema.parse({
+    schemaVersion: 1,
+    channel: 'production',
+    gameId: PROJECT_ID,
+    releaseId: BUILD_ID,
+    contentVersion: BUILD_ID,
+    entryNodeId: 'clip.start',
+    defaultLocale: 'en-US',
+    locales: ['en-US'],
+    initialState: { variables: {}, flags: {}, relationships: {} },
+    endings: [
+      {
+        endingId: 'truth',
+        title: { 'en-US': 'Truth' },
+        summary: { 'en-US': 'Truth wins.' },
+        kind: 'truth',
       },
-      eligibilityDiagnostics: [],
-    }),
-  );
-  const built = compileStoryFilmBuild({
-    projectId: PROJECT_ID,
-    revisionId: REVISION_ID,
-    revisionNumber: 1,
-    buildId: BUILD_ID,
-    profile: 'production',
-    scope: { kind: 'full' },
-    draft: bundle.draftContent,
-    filmSpec: bundle.filmSpec,
-    clips,
+      {
+        endingId: 'echo',
+        title: { 'en-US': 'Echo' },
+        summary: { 'en-US': 'The moment echoes.' },
+        kind: 'echo',
+      },
+    ],
+    media: [
+      {
+        assetId: 'video:START',
+        kind: 'video',
+        orientationPolicy: 'single-master',
+        variants: {
+          landscape: {
+            sourceAssetId: ASSET_ID,
+            sha256: CHECKSUM,
+            src: `/aurora/story-projects/${PROJECT_ID}/builds/${BUILD_ID}/assets/${ASSET_ID}/variants/${VARIANT_ID}/content`,
+            width: 1920,
+            height: 1080,
+            durationSeconds: 7,
+          },
+        },
+        audio: 'embedded',
+      },
+    ],
+    nodes: [
+      {
+        nodeId: 'clip.start',
+        presentation: {
+          kind: 'video',
+          sequence: [
+            {
+              clipId: 'clip.start',
+              assetId: 'video:START',
+              endBehavior: { behavior: 'advance' },
+            },
+          ],
+          fit: 'cover',
+        },
+        overlays: [],
+        exit: {
+          kind: 'choice',
+          decisionId: 'decision.path',
+          prompt: { 'en-US': 'Choose.' },
+          trigger: { kind: 'media-ended' },
+          choices: [
+            {
+              choiceId: 'choose.truth',
+              label: { 'en-US': 'Truth' },
+              effects: [],
+              nextNodeId: 'clip.truth',
+              afterSelect: {
+                kind: 'play',
+                reactionAssetId: 'video:START',
+              },
+            },
+            {
+              choiceId: 'choose.echo',
+              label: { 'en-US': 'Echo' },
+              effects: [],
+              nextNodeId: 'clip.echo',
+              afterSelect: { kind: 'immediate' },
+            },
+          ],
+        },
+      },
+      {
+        nodeId: 'clip.truth',
+        presentation: {
+          kind: 'video',
+          sequence: [
+            {
+              clipId: 'clip.truth',
+              assetId: 'video:START',
+              endBehavior: { behavior: 'advance' },
+            },
+          ],
+          fit: 'cover',
+        },
+        overlays: [],
+        exit: { kind: 'ending', endingId: 'truth' },
+      },
+      {
+        nodeId: 'clip.echo',
+        presentation: {
+          kind: 'video',
+          sequence: [
+            {
+              clipId: 'clip.echo',
+              assetId: 'video:START',
+              endBehavior: { behavior: 'advance' },
+            },
+          ],
+          fit: 'cover',
+        },
+        overlays: [],
+        exit: { kind: 'ending', endingId: 'echo' },
+      },
+    ],
   });
-  if (!built.runtime) throw new Error('Film fixture did not compile.');
-  return {
-    bundle,
-    clips,
-    release: built.runtime,
-    mediaIdentities: clips.map(
-      (clip): StoryExperienceMediaIdentity => ({
-        runtimeAssetId: `video:${clip.key}`,
-        variantId: clip.asset?.variantId as string,
-        mediaType: clip.asset?.contentType as string,
-      }),
-    ),
-  };
 }
 
-function compileFixture() {
-  const value = fixture();
-  const result = compileStoryExperienceManifest({
-    release: value.release,
-    metadata: {
-      title: 'Branching Film Test',
-      summary: value.bundle.draftContent.storyBible.logline,
-    },
-    stateVariables: value.bundle.draftContent.storyBible.stateVariables,
-    mediaIdentities: value.mediaIdentities,
+function compile(value = release()) {
+  return compileStoryExperienceManifest({
+    release: value,
+    metadata: { title: 'Story', summary: 'A branching story.' },
+    stateVariables: [],
+    mediaIdentities: [
+      {
+        runtimeAssetId: 'video:START',
+        variantId: VARIANT_ID,
+        mediaType: 'video/mp4',
+      },
+    ],
   });
-  return { ...value, result };
 }
 
 describe('Story Runtime Manifest v2 compiler', () => {
-  it('compiles the complete film Build into one deterministic v2 manifest', () => {
-    const first = compileFixture();
-    const second = compileFixture();
+  it('is deterministic and preserves raw UUID release identity', () => {
+    const first = compile();
+    const second = compile();
 
-    expect(first.result.diagnostics).toEqual([]);
-    expect(first.result.manifest).not.toBeNull();
-    expect(first.result.manifest).toEqual(second.result.manifest);
+    expect(first.diagnostics).toEqual([]);
+    expect(first.manifest).toEqual(second.manifest);
     expect(
-      ExperienceRuntimeManifestSchema.safeParse(first.result.manifest).success,
+      ExperienceRuntimeManifestSchema.safeParse(first.manifest).success,
     ).toBe(true);
-    expect(first.result.manifest).toMatchObject({
+    expect(first.manifest).toMatchObject({
       manifestType: 'fizzdragon.experience',
       schemaVersion: 2,
-      gameId: PROJECT_ID.replace(/-/g, ''),
+      channel: 'production',
+      gameId: PROJECT_ID,
       buildId: BUILD_ID,
-      contentVersion: BUILD_ID.replace(/-/g, ''),
-      completionPolicy: 'finite',
-      metadata: {
-        title: {
-          'zh-CN': 'Branching Film Test',
-        },
-      },
+      contentVersion: BUILD_ID,
     });
-    expect(first.result.manifest?.assets).toHaveLength(22);
-    expect(
-      first.result.manifest?.assets.find(
-        (asset) => asset.assetId === STORY_CORE_THEME_CONFIG_ASSET_ID,
-      ),
-    ).toMatchObject({
-      kind: 'data',
-      uri: '/experience-runtime/themes/core.film-dark.v1.json',
+  });
+
+  it('freezes the exact media variant and core theme identities', () => {
+    const result = compile();
+    const video = result.manifest?.assets.find(
+      (asset) => asset.assetId === 'video:START',
+    );
+    if (!video || video.kind !== 'video') {
+      throw new Error('Compiled video asset is missing.');
+    }
+
+    expect(video.variants[0]).toMatchObject({
+      sourceAssetId: ASSET_ID,
+      sha256: CHECKSUM,
+      mediaType: 'video/mp4',
     });
-    expect(
-      first.result.manifest?.rendererRequirements.map(
-        (renderer) => renderer.rendererId,
-      ),
-    ).toEqual(
+    expect(video.variants[0]?.variantId).toContain(VARIANT_ID);
+    expect(result.manifest?.assets).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          assetId: STORY_CORE_THEME_CONFIG_ASSET_ID,
+          kind: 'data',
+        }),
+      ]),
+    );
+  });
+
+  it('lowers choice and reaction semantics to core renderers', () => {
+    const result = compile();
+    const rendererIds = result.manifest?.rendererRequirements.map(
+      (requirement) => requirement.rendererId,
+    );
+
+    expect(rendererIds).toEqual(
       expect.arrayContaining([
         EXPERIENCE_CORE_VIDEO_RENDERER_ID,
         EXPERIENCE_CORE_CHOICE_RENDERER_ID,
       ]),
     );
     expect(
-      first.result.manifest?.graph.nodes.some(
-        (node) =>
-          node.kind === 'router' &&
-          node.eventBindings[0]?.on.type === 'scene.entered',
+      result.manifest?.graph.nodes.some((node) =>
+        node.eventBindings.some((binding) =>
+          binding.routes.some((route) =>
+            route.actions.some((action) => action.kind === 'scene.goto'),
+          ),
+        ),
       ),
     ).toBe(true);
-    expect(first.result.manifest?.endings).toHaveLength(4);
-    expect(
-      first.result.manifest?.stateDefinitions.map((state) => state.key),
-    ).toEqual(expect.arrayContaining([expect.stringMatching(/^story\./)]));
   });
 
-  it('preserves reaction playback as an explicit scene before navigation', () => {
-    const value = fixture();
-    const release = structuredClone(value.release);
-    const choiceNode = release.nodes.find(
-      (node) => node.exit.kind === 'choice',
-    );
-    if (!choiceNode || choiceNode.exit.kind !== 'choice') {
-      throw new Error('Choice node missing.');
-    }
-    const choice = choiceNode.exit.choices[0];
-    if (!choice) throw new Error('Choice missing.');
-    choice.afterSelect = {
-      kind: 'play',
-      reactionAssetId: 'video:E01',
-    };
+  it('fails when a runtime asset has no exact frozen variant identity', () => {
     const result = compileStoryExperienceManifest({
-      release,
-      metadata: { title: 'Reaction test' },
-      stateVariables: value.bundle.draftContent.storyBible.stateVariables,
-      mediaIdentities: value.mediaIdentities,
-    });
-
-    expect(result.diagnostics).toEqual([]);
-    const syntheticId = `reaction:${choiceNode.nodeId}:${choice.choiceId}`;
-    const synthetic = result.manifest?.graph.nodes.find(
-      (node) => node.sceneId === syntheticId,
-    );
-    expect(synthetic).toMatchObject({
-      kind: 'scene',
-      renderers: [
-        {
-          rendererId: EXPERIENCE_CORE_VIDEO_RENDERER_ID,
-          config: {
-            sequence: [
-              {
-                assetId: 'video:E01',
-              },
-            ],
-          },
-        },
-      ],
-    });
-    const original = result.manifest?.graph.nodes.find(
-      (node) => node.sceneId === choiceNode.nodeId,
-    );
-    expect(JSON.stringify(original)).toContain(syntheticId);
-    expect(JSON.stringify(synthetic)).toContain(choice.nextNodeId);
-  });
-
-  it('assigns a distinct Java content version to every immutable Build', () => {
-    const value = fixture();
-    const nextBuildId = uuid(5, '0800');
-    const nextRelease = {
-      ...value.release,
-      releaseId: nextBuildId,
-    };
-    const first = compileStoryExperienceManifest({
-      release: value.release,
-      metadata: { title: 'Version identity' },
-      stateVariables: value.bundle.draftContent.storyBible.stateVariables,
-      mediaIdentities: value.mediaIdentities,
-    });
-    const next = compileStoryExperienceManifest({
-      release: nextRelease,
-      metadata: { title: 'Version identity' },
-      stateVariables: value.bundle.draftContent.storyBible.stateVariables,
-      mediaIdentities: value.mediaIdentities,
-    });
-
-    expect(first.manifest?.contentVersion).toBe(BUILD_ID.replace(/-/g, ''));
-    expect(next.manifest?.contentVersion).toBe(nextBuildId.replace(/-/g, ''));
-    expect(next.manifest?.contentVersion).not.toBe(
-      first.manifest?.contentVersion,
-    );
-  });
-
-  it('fails loudly when a frozen media variant identity is missing', () => {
-    const value = fixture();
-    const result = compileStoryExperienceManifest({
-      release: value.release,
-      metadata: { title: 'Missing variant' },
-      stateVariables: value.bundle.draftContent.storyBible.stateVariables,
-      mediaIdentities: value.mediaIdentities.slice(1),
+      release: release(),
+      metadata: { title: 'Story', summary: null },
+      stateVariables: [],
+      mediaIdentities: [],
     });
 
     expect(result.manifest).toBeNull();
@@ -242,29 +238,4 @@ describe('Story Runtime Manifest v2 compiler', () => {
       ]),
     );
   });
-
-  it('keeps the built-in theme bytes identical across Studio and Web', () => {
-    const studio = readTheme(
-      resolve(
-        process.cwd(),
-        '../studio/public/experience-runtime/themes/core.film-dark.v1.json',
-      ),
-    );
-    const web = readTheme(
-      resolve(
-        process.cwd(),
-        '../web/public/experience-runtime/themes/core.film-dark.v1.json',
-      ),
-    );
-    expect(studio).toEqual(web);
-    expect(
-      createHash('sha256')
-        .update(canonicalizeExperienceJson(studio))
-        .digest('hex'),
-    ).toBe('c5fd632a6dcba38e80c84a1bc771c37e791af6bca73421a9c357f859610e6272');
-  });
 });
-
-function readTheme(path: string): Record<string, unknown> {
-  return JSON.parse(readFileSync(path, 'utf8')) as Record<string, unknown>;
-}

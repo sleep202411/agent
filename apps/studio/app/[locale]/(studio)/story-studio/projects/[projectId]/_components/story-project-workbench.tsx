@@ -5,7 +5,6 @@ import {
   IconArrowLeft,
   IconBook2,
   IconCheck,
-  IconChevronDown,
   IconGitBranch,
   IconMovie,
   IconPhoto,
@@ -26,7 +25,7 @@ import {
   STORY_FRAME_PROFILE_CONTRACTS,
   getStoryWorkbench,
   storyApiErrorMessage,
-  type FilmEffect,
+  type StoryEffect,
   type InteractiveFilmDraftContent,
   type StoryProjectProductionSummary,
   type StoryWorkbench,
@@ -92,11 +91,7 @@ export function StoryProjectWorkbench({
     );
   }
 
-  const workbench = workbenchQuery.data;
-  const authoringWorkbench: StoryWorkbench =
-    workbench.selectedRevision?.sourceDraftRevision === workbench.draft.revision
-      ? workbench
-      : { ...workbench, selectedRevision: null, film: null };
+  const authoringWorkbench = workbenchQuery.data;
   return (
     <main className="min-h-[calc(100vh-64px)] w-full px-6 py-6 lg:px-8">
       <div className="mx-auto w-full max-w-[1680px]">
@@ -197,7 +192,6 @@ function StageNavigation({
 
 function OverviewStage({ workbench }: { workbench: StoryWorkbench }) {
   const t = useTranslations("storyStudio");
-  const film = workbench.film;
   const production = workbench.project.production;
   const choices = countChoices(workbench.draft.content);
   const endings = workbench.draft.content.storyBible.endings.length;
@@ -262,24 +256,10 @@ function OverviewStage({ workbench }: { workbench: StoryWorkbench }) {
               value={String(clipNodes)}
             />
           </div>
-          {film?.spec ? (
-            <div className="mt-4 flex flex-wrap gap-x-6 gap-y-2 rounded-xl bg-black/20 px-4 py-3 text-[11px] text-white/45">
-              <span>
-                {t("overview.targetRuntime", { seconds: film.spec.duration.targetMs / 1000 })}
-              </span>
-              <span>
-                {t("overview.maxContinuous", {
-                  seconds: film.spec.duration.maxContinuousMs / 1000,
-                })}
-              </span>
-              <span>
-                {film.spec.frame.width} × {film.spec.frame.height} ·{" "}
-                {film.spec.frame.framesPerSecond.numerator /
-                  film.spec.frame.framesPerSecond.denominator}{" "}
-                fps
-              </span>
-            </div>
-          ) : null}
+          <div className="mt-4 rounded-xl bg-black/20 px-4 py-3 text-[11px] text-white/45">
+            {STORY_FRAME_PROFILE_CONTRACTS[workbench.project.frameProfile].width} ×{" "}
+            {STORY_FRAME_PROFILE_CONTRACTS[workbench.project.frameProfile].height}
+          </div>
         </FrostedPanel>
       </div>
 
@@ -487,9 +467,6 @@ function ReferencesStage({
   workbench: StoryWorkbench;
   onRefresh: () => Promise<unknown>;
 }) {
-  if (!workbench.selectedRevision || !workbench.film) {
-    return <NoProductionData />;
-  }
   return (
     <StoryReferencePack
       projectId={projectId}
@@ -503,10 +480,8 @@ function ReferencesStage({
 
 function ProductionStage({ workbench }: { workbench: StoryWorkbench }) {
   const t = useTranslations("storyStudio");
-  const prompts = workbench.draft.content.clipPrompts;
-  const materializedClips = new Map(
-    (workbench.film?.clips ?? []).map((clip) => [clip.graphNodeId, clip])
-  );
+  const clipNodes = workbench.draft.content.graph.nodes.filter((node) => node.kind === "clip");
+  const videos = new Map(workbench.video.clips.map((clip) => [clip.graphNodeId, clip]));
   const frame = STORY_FRAME_PROFILE_CONTRACTS[workbench.project.frameProfile];
   return (
     <div>
@@ -516,23 +491,22 @@ function ProductionStage({ workbench }: { workbench: StoryWorkbench }) {
           <p className="mt-1 text-xs text-white/40">{t("production.subtitle")}</p>
         </div>
         <p className="text-xs tabular-nums text-white/40">
-          {t("production.clipCount", { count: prompts.length })}
+          {t("production.clipCount", { count: clipNodes.length })}
         </p>
       </div>
-      {prompts.length === 0 ? <NoProductionData /> : null}
-      {prompts.length > 0 ? (
+      {clipNodes.length === 0 ? <NoProductionData /> : null}
+      {clipNodes.length > 0 ? (
         <FrostedPanel className="mt-5 overflow-hidden">
-          <div className="hidden grid-cols-[80px_minmax(220px,1fr)_160px_100px_120px_minmax(180px,0.8fr)] gap-4 px-5 py-3 text-[10px] font-semibold tracking-wide text-white/28 uppercase lg:grid">
+          <div className="hidden grid-cols-[100px_minmax(220px,1fr)_140px_140px_minmax(180px,0.8fr)] gap-4 px-5 py-3 text-[10px] font-semibold tracking-wide text-white/28 uppercase lg:grid">
             <span>{t("production.columns.key")}</span>
             <span>{t("production.columns.clip")}</span>
-            <span>{t("production.columns.mode")}</span>
             <span>{t("production.columns.duration")}</span>
             <span>{t("production.columns.status")}</span>
             <span>{t("production.columns.blocker")}</span>
           </div>
           <div className="divide-y divide-white/[0.045]">
-            {prompts.map((prompt) => {
-              const clip = materializedClips.get(prompt.graphNodeId);
+            {clipNodes.map((node) => {
+              const clip = videos.get(node.nodeId);
               const generationStatus = clip?.generation?.status;
               const generationActive =
                 generationStatus === "queued" ||
@@ -543,154 +517,46 @@ function ProductionStage({ workbench }: { workbench: StoryWorkbench }) {
                 ? generationStatus
                 : generationStatus === "failed"
                   ? "failed"
-                  : clip?.currentVideo?.outdated
-                    ? "outdated"
-                    : clip?.currentVideo
-                      ? "ready"
-                      : "draft";
+                  : clip?.currentVideo
+                    ? "ready"
+                    : "draft";
               const statusDetail = generationActive
                 ? t("production.generationInProgress")
                 : generationStatus === "failed"
                   ? typeof generationError === "string" && generationError.trim()
                     ? generationError
                     : t("production.generationFailed")
-                  : clip?.currentVideo?.outdated
-                    ? t("production.currentVideoOutdated")
-                    : clip?.currentVideo
-                      ? t("production.currentVideoReady")
-                      : prompt.masterDirection.trim()
-                        ? t("production.currentDraftReady")
-                        : t("production.currentDraftPromptRequired");
+                  : clip?.currentVideo
+                    ? t("production.currentVideoReady")
+                    : t("production.currentDraftPromptRequired");
               return (
-                <details key={prompt.graphNodeId} className="group open:bg-white/[0.018]">
-                  <summary className="grid cursor-pointer list-none gap-3 px-5 py-4 transition hover:bg-white/[0.025] [&::-webkit-details-marker]:hidden lg:grid-cols-[80px_minmax(220px,1fr)_160px_100px_120px_minmax(180px,0.8fr)] lg:items-center lg:gap-4">
-                    <span className="flex items-center gap-2 font-mono text-[11px] text-white/34">
-                      <IconChevronDown className="size-3.5 transition-transform group-open:rotate-180" />
-                      {prompt.clipKey}
-                    </span>
-                    <div className="min-w-0">
-                      <p className="truncate text-sm font-semibold text-white/76">{prompt.title}</p>
-                      <p className="mt-1 truncate text-[10px] text-white/26">
-                        {prompt.graphNodeId}
-                      </p>
-                    </div>
-                    <span className="text-xs text-white/46">
-                      {prompt.generationControl.mode === "omni_reference"
-                        ? t("production.modes.omni")
-                        : prompt.generationControl.frameMode === "first_last_frame"
-                          ? t("production.modes.firstLast")
-                          : t("production.modes.first")}
-                    </span>
-                    <span className="text-xs tabular-nums text-white/46">
-                      {t("production.seconds", { seconds: prompt.targetDurationMs / 1000 })}
-                    </span>
-                    <StatusPill label={t(`production.status.${status}`)} status={status} />
-                    <p className="truncate text-[11px] text-white/36">{statusDetail}</p>
-                  </summary>
-                  <div className="border-t border-white/[0.04] px-5 pt-5 pb-6">
-                    <div className="grid gap-5 xl:grid-cols-2">
-                      <ProductionContractBlock title={t("production.detail.visualIntent")}>
-                        {prompt.description || "—"}
-                      </ProductionContractBlock>
-                      <ProductionContractBlock title={t("production.detail.masterPrompt")} mono>
-                        {prompt.masterDirection || "—"}
-                      </ProductionContractBlock>
-                    </div>
-
-                    <div className="mt-5">
-                      <p className="text-[10px] font-semibold tracking-[0.13em] text-white/32 uppercase">
-                        {t("production.detail.timeline")}
-                      </p>
-                      <div className="mt-3 grid gap-2 lg:grid-cols-2 2xl:grid-cols-3">
-                        {prompt.beats.map((entry) => (
-                          <div
-                            key={`${entry.startMs}:${entry.endMs}`}
-                            className="rounded-xl bg-black/20 p-3"
-                          >
-                            <p className="font-mono text-[10px] text-white/30">
-                              {formatTimecode(entry.startMs)}–{formatTimecode(entry.endMs)}
-                            </p>
-                            <p className="mt-2 text-[11px] leading-5 text-white/52">
-                              {entry.visual}
-                            </p>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-
-                    <div className="mt-5 grid gap-5 xl:grid-cols-2">
-                      <ProductionContractList
-                        title={t("production.detail.negativeConstraints")}
-                        items={prompt.negativeConstraints}
-                      />
-                      <ProductionContractList
-                        title={t("production.detail.continuityAndDialogue")}
-                        items={prompt.continuityNotes}
-                      />
-                    </div>
-
-                    <div className="mt-5 flex flex-wrap gap-2 text-[10px] text-white/34">
-                      <span className="rounded-full bg-white/[0.045] px-2.5 py-1.5">
-                        {frame.width} × {frame.height}
-                      </span>
-                      <span className="rounded-full bg-white/[0.045] px-2.5 py-1.5">
-                        {t("production.seconds", { seconds: prompt.targetDurationMs / 1000 })}
-                      </span>
-                      {clip ? (
-                        <span className="rounded-full bg-white/[0.045] px-2.5 py-1.5">
-                          {t("production.detail.specVersion", { version: clip.version })}
-                        </span>
-                      ) : null}
-                    </div>
+                <div
+                  key={node.nodeId}
+                  className="grid gap-3 px-5 py-4 lg:grid-cols-[100px_minmax(220px,1fr)_140px_140px_minmax(180px,0.8fr)] lg:items-center lg:gap-4"
+                >
+                  <span className="flex items-center gap-2 font-mono text-[11px] text-white/34">
+                    {node.clipKey}
+                  </span>
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-semibold text-white/76">{node.clipKey}</p>
+                    <p className="mt-1 truncate text-[10px] text-white/26">{node.nodeId}</p>
                   </div>
-                </details>
+                  <span className="text-xs tabular-nums text-white/46">
+                    {clip?.currentVideo
+                      ? t("production.seconds", { seconds: clip.currentVideo.durationMs / 1000 })
+                      : "—"}
+                  </span>
+                  <StatusPill label={t(`production.status.${status}`)} status={status} />
+                  <p className="truncate text-[11px] text-white/36">{statusDetail}</p>
+                </div>
               );
             })}
           </div>
+          <div className="px-5 py-3 text-[10px] text-white/28">
+            {frame.width} × {frame.height}
+          </div>
         </FrostedPanel>
       ) : null}
-    </div>
-  );
-}
-
-function ProductionContractBlock({
-  title,
-  children,
-  mono = false,
-}: {
-  title: string;
-  children: string;
-  mono?: boolean;
-}) {
-  return (
-    <div>
-      <p className="text-[10px] font-semibold tracking-[0.13em] text-white/32 uppercase">{title}</p>
-      <p
-        className={cn(
-          "mt-2 whitespace-pre-wrap text-xs leading-6 text-white/52",
-          mono && "font-mono text-[11px]"
-        )}
-      >
-        {children}
-      </p>
-    </div>
-  );
-}
-
-function ProductionContractList({ title, items }: { title: string; items: string[] }) {
-  return (
-    <div>
-      <p className="text-[10px] font-semibold tracking-[0.13em] text-white/32 uppercase">{title}</p>
-      <ul className="mt-2 space-y-1.5">
-        {items.map((item, index) => (
-          <li key={`${index}:${item}`} className="flex gap-2 text-[11px] leading-5 text-white/48">
-            <span className="shrink-0 font-mono text-white/20">
-              {String(index + 1).padStart(2, "0")}
-            </span>
-            <span>{item}</span>
-          </li>
-        ))}
-      </ul>
     </div>
   );
 }
@@ -792,7 +658,7 @@ interface AuthoredDecision {
     id: string;
     label: Record<string, string>;
     nextNodeId: string;
-    effects: FilmEffect[];
+    effects: StoryEffect[];
   }>;
 }
 
@@ -819,7 +685,7 @@ function collectDecisions(content: InteractiveFilmDraftContent): AuthoredDecisio
   return [...decisions.values()];
 }
 
-function formatEffect(effect: FilmEffect): string {
+function formatEffect(effect: StoryEffect): string {
   switch (effect.kind) {
     case "set_variable":
       return `${effect.key} = ${String(effect.value)}`;
@@ -832,10 +698,6 @@ function formatEffect(effect: FilmEffect): string {
     case "unlock_ending":
       return `unlock ${effect.endingId}`;
   }
-}
-
-function formatTimecode(milliseconds: number): string {
-  return `${(milliseconds / 1_000).toFixed(1)}s`;
 }
 
 function localizedText(values: Record<string, string>, locale: string): string {

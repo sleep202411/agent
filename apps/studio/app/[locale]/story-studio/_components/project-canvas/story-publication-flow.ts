@@ -1,46 +1,38 @@
 import type {
   ExperienceReleaseResult,
-  FilmBuild,
-  FilmBuildDiagnostic,
-  StoryRevision,
+  StoryBuild,
+  StoryBuildDiagnostic,
   StoryWorkbench,
 } from "@/lib/story-projects-api";
 
-export type StoryPublicationActivePhase = "saving" | "locking" | "building" | "publishing";
+export type StoryPublicationActivePhase = "saving" | "building" | "publishing";
 
 export type StoryPublicationErrorCode =
   | "SAVE_FAILED"
-  | "LOCK_FAILED"
   | "WORKBENCH_FAILED"
-  | "LOCKED_REVISION_MISMATCH"
-  | "PRODUCTION_CONTRACT_MISSING"
+  | "DRAFT_REVISION_MISMATCH"
   | "BUILD_FAILED"
   | "BUILD_NOT_READY"
   | "RUNTIME_UNAVAILABLE"
   | "PUBLISH_FAILED";
 
 export interface StoryPublicationBuildInput {
-  revisionId: string;
-  expectedProductionRevision: number;
-  profile: "production";
+  expectedDraftRevision: number;
+  expectedVideoSnapshotHash: string;
   scope: { kind: "full" };
 }
 
 export interface StoryPublicationFlowServices {
-  /**
-   * Save one exact mutable head, then call `onLockStart` immediately before
-   * locking that saved draft revision. The caller owns the autosave barrier.
-   */
-  saveAndLockRevision: (onLockStart: () => void) => Promise<StoryRevision>;
-  loadLockedWorkbench: (revisionId: string) => Promise<StoryWorkbench>;
+  saveDraftSnapshot: () => Promise<number>;
+  loadWorkbench: () => Promise<StoryWorkbench>;
   createProductionBuild: (
     input: StoryPublicationBuildInput,
     idempotencyKey: string
-  ) => Promise<FilmBuild>;
+  ) => Promise<StoryBuild>;
   publishProductionBuild: (buildId: string) => Promise<ExperienceReleaseResult>;
   buildSubmissionKeys: {
-    keyFor: (fingerprint: string) => string;
-    confirm: (fingerprint: string) => void;
+    keyFor: (fingerprint: string) => Promise<string>;
+    confirm: (fingerprint: string) => Promise<void>;
   };
 }
 
@@ -49,16 +41,16 @@ export interface RunStoryPublicationOptions extends StoryPublicationFlowServices
 }
 
 export interface StoryPublicationFlowResult {
-  lockedRevision: StoryRevision;
-  build: FilmBuild;
+  sourceDraftRevision: number;
+  build: StoryBuild;
   release: ExperienceReleaseResult;
 }
 
 export class StoryPublicationFlowError extends Error {
   readonly phase: StoryPublicationActivePhase;
   readonly code: StoryPublicationErrorCode;
-  readonly diagnostics: FilmBuildDiagnostic[];
-  readonly build: FilmBuild | null;
+  readonly diagnostics: StoryBuildDiagnostic[];
+  readonly build: StoryBuild | null;
   readonly upstreamError: unknown;
 
   constructor({
@@ -70,8 +62,8 @@ export class StoryPublicationFlowError extends Error {
   }: {
     phase: StoryPublicationActivePhase;
     code: StoryPublicationErrorCode;
-    diagnostics?: FilmBuildDiagnostic[];
-    build?: FilmBuild | null;
+    diagnostics?: StoryBuildDiagnostic[];
+    build?: StoryBuild | null;
     upstreamError?: unknown;
   }) {
     super(upstreamError instanceof Error ? upstreamError.message : "");
@@ -84,46 +76,37 @@ export class StoryPublicationFlowError extends Error {
   }
 }
 
-/** Identifies one immutable full-production input inside the key registry. */
 export function storyPublicationBuildFingerprint(
-  revisionId: string,
-  productionRevision: number
+  draftRevision: number,
+  videoSnapshotHash: string
 ): string {
-  if (!revisionId.trim()) throw new Error("A locked story revision is required.");
-  if (!Number.isSafeInteger(productionRevision) || productionRevision < 0) {
-    throw new Error("A valid production revision is required.");
+  if (!Number.isSafeInteger(draftRevision) || draftRevision < 0) {
+    throw new Error("A valid saved draft revision is required.");
   }
-  return `story-publish:${revisionId}:${productionRevision}:production:full`;
+  if (!/^[a-f0-9]{64}$/.test(videoSnapshotHash)) {
+    throw new Error("A valid video snapshot hash is required.");
+  }
+  return `story-publish:${draftRevision}:${videoSnapshotHash}:full`;
 }
 
-/**
- * Freeze the current saved story, compile its exact production projection,
- * then publish only a complete runtime. This function owns no React state and
- * is intentionally dependency-injected so every transition is deterministic
- * and independently testable.
- */
 export async function runStoryPublication({
-  saveAndLockRevision,
-  loadLockedWorkbench,
+  saveDraftSnapshot,
+  loadWorkbench,
   createProductionBuild,
   publishProductionBuild,
   buildSubmissionKeys,
   onPhaseChange,
 }: RunStoryPublicationOptions): Promise<StoryPublicationFlowResult> {
-  const progress: { phase: StoryPublicationActivePhase } = { phase: "saving" };
-  const moveTo = (next: StoryPublicationActivePhase) => {
-    progress.phase = next;
-    onPhaseChange?.(next);
-  };
+  const moveTo = (phase: StoryPublicationActivePhase) => onPhaseChange?.(phase);
 
   moveTo("saving");
-  let lockedRevision: StoryRevision;
+  let sourceDraftRevision: number;
   try {
-    lockedRevision = await saveAndLockRevision(() => moveTo("locking"));
+    sourceDraftRevision = await saveDraftSnapshot();
   } catch (error) {
     throw new StoryPublicationFlowError({
-      phase: progress.phase,
-      code: progress.phase === "locking" ? "LOCK_FAILED" : "SAVE_FAILED",
+      phase: "saving",
+      code: "SAVE_FAILED",
       upstreamError: error,
     });
   }
@@ -131,7 +114,7 @@ export async function runStoryPublication({
   moveTo("building");
   let workbench: StoryWorkbench;
   try {
-    workbench = await loadLockedWorkbench(lockedRevision.id);
+    workbench = await loadWorkbench();
   } catch (error) {
     throw new StoryPublicationFlowError({
       phase: "building",
@@ -139,33 +122,25 @@ export async function runStoryPublication({
       upstreamError: error,
     });
   }
-
-  if (workbench.selectedRevision?.id !== lockedRevision.id) {
+  if (workbench.draft.revision !== sourceDraftRevision) {
     throw new StoryPublicationFlowError({
       phase: "building",
-      code: "LOCKED_REVISION_MISMATCH",
-    });
-  }
-  if (!workbench.film) {
-    throw new StoryPublicationFlowError({
-      phase: "building",
-      code: "PRODUCTION_CONTRACT_MISSING",
+      code: "DRAFT_REVISION_MISMATCH",
     });
   }
 
   const buildInput: StoryPublicationBuildInput = {
-    revisionId: lockedRevision.id,
-    expectedProductionRevision: workbench.film.productionRevision,
-    profile: "production",
+    expectedDraftRevision: sourceDraftRevision,
+    expectedVideoSnapshotHash: workbench.video.snapshotHash,
     scope: { kind: "full" },
   };
-  const buildFingerprint = storyPublicationBuildFingerprint(
-    buildInput.revisionId,
-    buildInput.expectedProductionRevision
+  const fingerprint = storyPublicationBuildFingerprint(
+    sourceDraftRevision,
+    workbench.video.snapshotHash
   );
-  const idempotencyKey = buildSubmissionKeys.keyFor(buildFingerprint);
+  const idempotencyKey = await buildSubmissionKeys.keyFor(fingerprint);
 
-  let build: FilmBuild;
+  let build: StoryBuild;
   try {
     build = await createProductionBuild(buildInput, idempotencyKey);
   } catch (error) {
@@ -178,7 +153,7 @@ export async function runStoryPublication({
 
   if (build.status !== "ready") {
     if (build.status === "failed" || build.status === "cancelled") {
-      buildSubmissionKeys.confirm(buildFingerprint);
+      await buildSubmissionKeys.confirm(fingerprint);
     }
     throw new StoryPublicationFlowError({
       phase: "building",
@@ -188,9 +163,7 @@ export async function runStoryPublication({
     });
   }
   if (!build.runtimeJson) {
-    // A ready Build without a runtime is a confirmed, terminally unusable
-    // response. Rotate the key so an explicit retry can rebuild it.
-    buildSubmissionKeys.confirm(buildFingerprint);
+    await buildSubmissionKeys.confirm(fingerprint);
     throw new StoryPublicationFlowError({
       phase: "building",
       code: "RUNTIME_UNAVAILABLE",
@@ -200,14 +173,12 @@ export async function runStoryPublication({
   }
 
   moveTo("publishing");
-  let release: ExperienceReleaseResult;
   try {
-    release = await publishProductionBuild(build.id);
+    const release = await publishProductionBuild(build.id);
+    await buildSubmissionKeys.confirm(fingerprint);
+    return { sourceDraftRevision, build, release };
   } catch (error) {
-    // The Build endpoint also converges different submission keys by immutable
-    // input. Rotating here lets a definitively rejected publication rebuild,
-    // while an unknown/pending publication still resolves to the same Build.
-    buildSubmissionKeys.confirm(buildFingerprint);
+    await buildSubmissionKeys.confirm(fingerprint);
     throw new StoryPublicationFlowError({
       phase: "publishing",
       code: "PUBLISH_FAILED",
@@ -216,8 +187,4 @@ export async function runStoryPublication({
       upstreamError: error,
     });
   }
-
-  buildSubmissionKeys.confirm(buildFingerprint);
-
-  return { lockedRevision, build, release };
 }

@@ -130,8 +130,6 @@ function draft(): InteractiveFilmDraftContent {
       endings: [],
     },
     graph: { entryNodeId: null, nodes: [] },
-    clipPrompts: [],
-    trailerPrompt: null,
     productionNotes: [],
   };
 }

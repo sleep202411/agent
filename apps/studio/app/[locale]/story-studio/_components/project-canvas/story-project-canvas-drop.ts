@@ -27,7 +27,7 @@ export interface ConnectedClipDropResult {
 
 /**
  * Resolves only blank-canvas drops with one unambiguous compatible node kind.
- * Film-clip completion drops are resolved here only after the contextual
+ * Clip completion drops are resolved here only after the contextual
  * creator has chosen a new clip. Choice creation is handled separately.
  */
 export function resolveBlankDropConnectionPlan(

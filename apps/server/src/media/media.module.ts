@@ -17,7 +17,9 @@ import { MediaProcessingService } from './media-processing.service';
 import { MediaProcessingWorkerService } from './media-processing-worker.service';
 import { MediaUploadController } from './media-upload.controller';
 import { MediaUploadService } from './media-upload.service';
+import { PlayableVideoProbeService } from './playable-video-probe.service';
 import { StoryVideoUploadSessionService } from './story-video-upload-session.service';
+import { UploadedImageProbeService } from './uploaded-image-probe.service';
 
 /**
  * Media domain — direct-to-storage upload URL issuance.
@@ -48,6 +50,8 @@ import { StoryVideoUploadSessionService } from './story-video-upload-session.ser
   ],
   providers: [
     MediaUploadService,
+    PlayableVideoProbeService,
+    UploadedImageProbeService,
     StoryVideoUploadSessionService,
     MediaAccessService,
     AdminMediaService,
@@ -60,6 +64,7 @@ import { StoryVideoUploadSessionService } from './story-video-upload-session.ser
   ],
   exports: [
     MediaUploadService,
+    PlayableVideoProbeService,
     MediaAccessService,
     MediaModerationAdminService,
     MediaProcessingService,

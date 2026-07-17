@@ -9,7 +9,7 @@ import { api, ApiRequestError } from "@/lib/api";
  * records capture server-owned immutable input snapshots automatically.
  */
 
-export const INTERACTIVE_FILM_DRAFT_SCHEMA_VERSION = "interactive-film-draft-v2" as const;
+export const INTERACTIVE_FILM_DRAFT_SCHEMA_VERSION = "interactive-film-draft-v3" as const;
 export const STORY_CANVAS_LAYOUT_SCHEMA_VERSION = "story-canvas-layout-v1" as const;
 
 export type StoryFormat = "text_adventure" | "interactive_film" | "narrative_rpg";
@@ -96,18 +96,6 @@ export class StoryClipVideoFinalizationError extends Error {
   }
 }
 
-export interface StoryRevisionSummary {
-  id: string;
-  number: number;
-  sourceDraftRevision: number;
-  schemaVersion: string;
-  contentHash: string;
-  label: string | null;
-  source: "creator" | "import";
-  createdByUserId: string;
-  createdAt: string;
-}
-
 export interface StoryProjectProductionSummary {
   referenceSlotCount: number;
   approvedReferenceCount: number;
@@ -139,7 +127,6 @@ export interface StoryProjectSummary {
   sourceIpId: string | null;
   projectVersion: number;
   draftRevision: number;
-  activeRevision: StoryRevisionSummary | null;
   production: StoryProjectProductionSummary;
   capabilities: StoryCapability[];
   createdAt: string;
@@ -148,7 +135,7 @@ export interface StoryProjectSummary {
 
 export type StoryScalarValue = string | number | boolean | null;
 
-export type FilmCondition =
+export type StoryCondition =
   | { kind: "flag"; flag: string; equals: boolean }
   | {
       kind: "variable";
@@ -157,10 +144,10 @@ export type FilmCondition =
       value: StoryScalarValue;
     }
   | { kind: "relationship-at-least"; characterId: string; value: number }
-  | { kind: "all" | "any"; conditions: FilmCondition[] }
-  | { kind: "not"; condition: FilmCondition };
+  | { kind: "all" | "any"; conditions: StoryCondition[] }
+  | { kind: "not"; condition: StoryCondition };
 
-export type FilmEffect =
+export type StoryEffect =
   | { kind: "set_variable"; key: string; value: StoryScalarValue }
   | { kind: "increment_variable"; key: string; amount: number }
   | { kind: "set_flag"; flag: string; value: boolean }
@@ -171,15 +158,15 @@ export interface StoryGraphChoice {
   choiceId: string;
   label: Record<string, string>;
   accessibilityLabel?: Record<string, string>;
-  visibleWhen?: FilmCondition;
-  effects: FilmEffect[];
+  visibleWhen?: StoryCondition;
+  effects: StoryEffect[];
   nextNodeId: string;
   afterSelect: { kind: "immediate" } | { kind: "play"; reactionClipKey: string };
 }
 
 export interface StoryAutoRoute {
   nextNodeId: string;
-  when?: FilmCondition;
+  when?: StoryCondition;
   priority: number;
 }
 
@@ -201,57 +188,6 @@ export type StoryGraphNode =
         | { kind: "ending"; endingId: string };
     }
   | { kind: "router"; nodeId: string; exit: { kind: "auto"; routes: StoryAutoRoute[] } };
-
-export type StoryClipPromptGenerationControl =
-  | { mode: "omni_reference" }
-  | { mode: "frame_lock"; frameMode: "first_frame" | "first_last_frame" };
-
-export type StoryClipReferenceRole =
-  | "subject"
-  | "location"
-  | "prop"
-  | "style"
-  | "first_frame"
-  | "last_frame"
-  | "omni_reference"
-  | "other";
-
-export interface StoryClipPromptBeat {
-  id: string;
-  startMs: number;
-  endMs: number;
-  visual: string;
-  camera: string;
-  action: string;
-  performance: string;
-  emotion: string;
-  dialogue: string;
-  audio: string;
-  endState: string;
-  continuity: string;
-}
-
-export interface StoryClipPromptDraft {
-  graphNodeId: string;
-  clipKey: string;
-  title: string;
-  description: string;
-  targetDurationMs: number;
-  generationControl: StoryClipPromptGenerationControl;
-  masterDirection: string;
-  referenceRoleNotes: Array<{
-    id: string;
-    role: StoryClipReferenceRole;
-    referenceId: string;
-    note: string;
-  }>;
-  emotionalArc: string;
-  beats: StoryClipPromptBeat[];
-  negativeConstraints: string[];
-  continuityNotes: string[];
-}
-
-export type StoryTrailerPromptDraft = Omit<StoryClipPromptDraft, "graphNodeId" | "clipKey">;
 
 export interface InteractiveFilmDraftContent {
   storyBible: {
@@ -293,8 +229,6 @@ export interface InteractiveFilmDraftContent {
     }>;
   };
   graph: { entryNodeId: string | null; nodes: StoryGraphNode[] };
-  clipPrompts: StoryClipPromptDraft[];
-  trailerPrompt: StoryTrailerPromptDraft | null;
   productionNotes: string[];
 }
 
@@ -327,84 +261,87 @@ export interface StoryCanvasLayout {
   updatedAt: string;
 }
 
-export interface StoryRevision extends StoryRevisionSummary {
-  projectId: string;
-  format: "interactive_film";
-  content: InteractiveFilmDraftContent;
+export type StoryVideoGenerationMode = "multimodal_to_video" | "first_last_frame_to_video";
+
+export type StoryVideoGenerationReferenceRole = "reference" | "first_frame" | "last_frame";
+
+export interface StoryVideoGenerationReferenceInput {
+  referenceVersionId: string;
+  role: StoryVideoGenerationReferenceRole;
 }
 
-export type FilmGenerationControl =
-  | { mode: "omni_reference" }
-  | { mode: "frame_lock"; frameMode: "first_frame" | "first_last_frame" };
-
-export interface FilmSpec {
-  projectId: string;
-  revisionId: string;
-  runtimeSchemaVersion: 1;
-  frame: {
-    aspectRatio: "16:9" | "9:16";
-    width: number;
-    height: number;
-    framesPerSecond: { numerator: number; denominator: number };
-  };
-  audioSampleRateHz: 44100 | 48000;
-  duration: {
-    targetMs: number;
-    toleranceMs: number;
-    maxContinuousMs: number;
-    maxGeneratedClipMs: number;
-  };
-  targets: { clipCount: number; choiceCount: number; endingCount: number };
-  locales: { defaultLocale: string; enabledLocales: string[] };
-  generation: { defaultCanonicalModelId: string };
-  version: number;
-  productionRevision: number;
-  updatedByUserId: string;
-  createdAt: string;
-  updatedAt: string;
+export interface StoryVideoGenerationRecipeInput {
+  prompt: string;
+  modelId: string;
+  mode: StoryVideoGenerationMode;
+  durationMs: number;
+  references: StoryVideoGenerationReferenceInput[];
+  seed?: string;
 }
 
-export type FilmVideoGenerationStatus =
+export interface StoryVideoGenerationRecipeSnapshot {
+  schemaVersion: 1;
+  prompt: string;
+  mode: StoryVideoGenerationMode;
+  durationMs: number;
+  seed: string | null;
+  model: {
+    id: string;
+    slug: string;
+    displayName: string;
+    schemaVersion: string;
+    generationModes: string[];
+  };
+  references: Array<{
+    referenceVersionId: string;
+    role: StoryVideoGenerationReferenceRole;
+    position: number;
+    assetId: string;
+    variantId: string;
+    checksumSha256: string;
+  }>;
+}
+
+export type StoryVideoGenerationStatus =
   | "queued"
   | "running"
   | "processing"
   | "ready"
   | "failed"
-  | "cancelled";
+  | "cancelled"
+  | "superseded";
 
-export interface FilmCurrentVideo {
+export interface StoryCurrentVideo {
   asset: MediaAssetSummary;
   variantId: string;
   sourceGenerationId: string | null;
-  specHash: string | null;
-  inputHash: string | null;
   checksumSha256: string;
-  technicalChecks: FilmTechnicalCheck[];
-  revision: number;
+  contentType: string;
+  durationMs: number;
+  width: number;
+  height: number;
+  hasAudio: boolean;
+  browserSafeMp4: true;
+  selectionVersion: number;
   setByUserId: string | null;
   setAt: string;
-  outdated: boolean;
 }
 
-export interface FilmVideoGeneration {
+export interface StoryVideoGeneration {
   id: string;
   projectId: string;
-  revisionId: string;
-  target: { kind: "clip"; clipId: string } | { kind: "trailer"; trailerId: string };
+  target: { kind: "clip"; graphNodeId: string } | { kind: "trailer" };
   number: number;
   version: number;
+  selectionVersionAtSubmit: number;
   aiJobId: string;
   aiJobOutputId: string | null;
-  status: FilmVideoGenerationStatus;
-  specHash: string;
-  inputHash: string;
-  promptSnapshot: Record<string, unknown>;
-  generationConfig: Record<string, unknown>;
-  modelSnapshot: Record<string, unknown>;
+  status: StoryVideoGenerationStatus;
+  recipeSnapshot: StoryVideoGenerationRecipeSnapshot;
   outputAsset: MediaAssetSummary | null;
   outputVariantId: string | null;
   outputChecksumSha256: string | null;
-  technicalChecks: FilmTechnicalCheck[];
+  technicalChecks: StoryVideoTechnicalCheck[];
   error: Record<string, unknown> | null;
   createdByUserId: string;
   queuedAt: string | null;
@@ -417,98 +354,20 @@ export interface FilmVideoGeneration {
   completedAt: string | null;
 }
 
-export interface FilmClipSummary {
-  id: string;
-  revisionId: string;
-  key: string;
+export interface StoryClipVideoSummary {
   graphNodeId: string;
-  kind: "opening" | "scene" | "ending";
-  title: string;
-  description: string;
-  rank: number;
-  targetDurationMs: number;
-  generationControl: FilmGenerationControl;
-  prompt: {
-    masterPrompt: string;
-    negativeConstraints: string[];
-    timeline: Array<{
-      startMs: number;
-      endMs: number;
-      visual: string;
-      camera: string;
-      action: string;
-      performance?: string;
-      emotion?: string;
-      dialogue?: string;
-      audio?: string;
-      endState?: string;
-      continuity?: string;
-    }>;
-  };
-  dialogueWindows: Array<{
-    id: string;
-    speakerId?: string;
-    source: "on_screen" | "voice_over" | "off_screen";
-    startMs: number;
-    endMs: number;
-    text: Record<string, string>;
-    delivery?: string;
-  }>;
-  outputContract: {
-    aspectRatio: "16:9" | "9:16";
-    width: number;
-    height: number;
-    durationMs: number;
-    durationToleranceMs: number;
-    framesPerSecond: { numerator: number; denominator: number };
-    audio: "none" | "embedded" | "separate";
-  };
-  continuityNotes: string[];
-  version: number;
-  productionInputHash: string | null;
-  referenceBindings: FilmClipReferenceBinding[];
-  currentVideo: FilmCurrentVideo | null;
-  currentVideoRevision: number;
-  generation: FilmVideoGeneration | null;
-  updatedAt: string;
+  selectionVersion: number;
+  currentVideo: StoryCurrentVideo | null;
+  generation: StoryVideoGeneration | null;
 }
 
-export interface FilmTrailerSummary {
-  schemaVersion: 1;
-  id: string;
-  projectId: string;
-  revisionId: string;
-  title: string;
-  description: string;
-  targetDurationMs: number;
-  generationControl: FilmGenerationControl;
-  referenceRoleNotes: StoryClipPromptDraft["referenceRoleNotes"];
-  prompt: FilmClipSummary["prompt"];
-  outputContract: FilmClipSummary["outputContract"];
-  continuityNotes: string[];
-  version: number;
-  specHash: string;
-  productionInputHash: string | null;
-  referenceBindings: FilmClipReferenceBinding[];
-  currentVideo: FilmCurrentVideo | null;
-  currentVideoRevision: number;
-  generation: FilmVideoGeneration | null;
-  createdAt: string;
-  updatedAt: string;
+export interface StoryTrailerVideoSummary {
+  selectionVersion: number;
+  currentVideo: StoryCurrentVideo | null;
+  generation: StoryVideoGeneration | null;
 }
 
-export type FilmClipReferenceRole = "omni" | "first_frame" | "last_frame" | "continuity" | "style";
-
-export interface FilmClipReferenceBinding {
-  id: string;
-  referenceSlotId: string;
-  role: FilmClipReferenceRole;
-  rank: number;
-  required: boolean;
-  approvedReferenceVersionId: string | null;
-}
-
-export type FilmReferenceKind =
+export type StoryReferenceKind =
   | "character"
   | "location"
   | "prop"
@@ -518,21 +377,20 @@ export type FilmReferenceKind =
   | "first_frame"
   | "last_frame";
 
-export interface FilmReferenceSlotSpec {
+export interface StoryReferenceSlotSpec {
   key: string;
-  kind: FilmReferenceKind;
+  kind: StoryReferenceKind;
   label: string;
   description: string;
   required: boolean;
   rank: number;
 }
 
-export interface FilmReferenceSlot {
+export interface StoryReferenceSlot {
   id: string;
   projectId: string;
-  revisionId: string;
   key: string;
-  kind: FilmReferenceKind;
+  kind: StoryReferenceKind;
   label: string;
   description: string;
   required: boolean;
@@ -540,12 +398,12 @@ export interface FilmReferenceSlot {
   version: number;
   status: "empty" | "candidate" | "approved" | "invalidated";
   approvedVersionId: string | null;
-  versions: FilmReferenceVersion[];
+  versions: StoryReferenceVersion[];
   createdAt: string;
   updatedAt: string;
 }
 
-export interface FilmReferenceVersion {
+export interface StoryReferenceVersion {
   id: string;
   slotId: string;
   number: number;
@@ -556,6 +414,7 @@ export interface FilmReferenceVersion {
   sourceFrameIndex: number | null;
   sourceOutputChecksumSha256: string | null;
   asset: MediaAssetSummary;
+  variantId: string;
   promptSnapshot: Record<string, unknown> | null;
   configSnapshot: Record<string, unknown> | null;
   checksumSha256: string;
@@ -565,14 +424,14 @@ export interface FilmReferenceVersion {
   createdAt: string;
 }
 
-export interface FilmReferenceReviewChecklist {
-  technical: FilmReviewChecklistValue;
-  identityContinuity: FilmReviewChecklistValue;
-  rights: FilmReviewChecklistValue;
-  safety: FilmReviewChecklistValue;
+export interface StoryReferenceReviewChecklist {
+  technical: StoryReviewChecklistValue;
+  identityContinuity: StoryReviewChecklistValue;
+  rights: StoryReviewChecklistValue;
+  safety: StoryReviewChecklistValue;
 }
 
-export type FilmBuildStatus =
+export type StoryBuildStatus =
   | "queued"
   | "validating"
   | "compiling"
@@ -580,11 +439,11 @@ export type FilmBuildStatus =
   | "failed"
   | "cancelled";
 
-export type FilmBuildScope =
+export type StoryBuildScope =
   | { kind: "full" }
   | { kind: "subgraph"; entryClipId: string; maxDepth?: number };
 
-export interface FilmBuildDiagnostic {
+export interface StoryBuildDiagnostic {
   severity: "error" | "warning";
   code: string;
   message: string;
@@ -600,7 +459,7 @@ export interface FilmBuildDiagnostic {
   entityId: string | null;
 }
 
-export interface FilmBuildPathReport {
+export interface StoryBuildPathReport {
   enumeratedPathCount: number;
   reachableEndingIds: string[];
   unreachableNodeIds: string[];
@@ -618,17 +477,19 @@ export interface FrozenStoryAsset {
   width: number | null;
   height: number | null;
   durationMs: number | null;
+  hasAudio: boolean | null;
+  browserSafeMp4: boolean | null;
   sizeBytes: string | null;
 }
 
-export interface FilmBuildAsset extends FrozenStoryAsset {
+export interface StoryBuildAsset extends FrozenStoryAsset {
   id: string;
   buildId: string;
   clipId: string | null;
   role: string;
 }
 
-export interface FilmBuildPublication {
+export interface StoryBuildPublication {
   status: "pending" | "confirmed" | "uncertain" | "rejected";
   gameId: string;
   contentVersion: string;
@@ -644,38 +505,37 @@ export interface FilmBuildPublication {
   lastErrorDetail: string | null;
 }
 
-export interface FilmBuildSummary {
+export interface StoryBuildSummary {
   id: string;
   number: number;
-  profile: "preview" | "production";
-  scope: FilmBuildScope;
-  status: FilmBuildStatus;
-  sourceProductionRevision: number;
-  diagnostics: FilmBuildDiagnostic[];
-  publication: FilmBuildPublication | null;
+  scope: StoryBuildScope;
+  status: StoryBuildStatus;
+  sourceDraftRevision: number;
+  videoSnapshotHash: string;
+  diagnostics: StoryBuildDiagnostic[];
+  publication: StoryBuildPublication | null;
   createdAt: string;
   completedAt: string | null;
 }
 
-export interface FilmBuild {
+export interface StoryBuild {
   id: string;
   projectId: string;
-  revisionId: string;
   number: number;
   version: number;
-  profile: "preview" | "production";
-  scope: FilmBuildScope;
-  status: FilmBuildStatus;
-  sourceProductionRevision: number;
+  scope: StoryBuildScope;
+  status: StoryBuildStatus;
+  sourceDraftRevision: number;
+  videoSnapshotHash: string;
   inputHash: string;
   inputManifestHash: string;
   runtimeSchemaVersion: 1 | 2;
   runtimeJson: Record<string, unknown> | null;
   runtimeHash: string | null;
-  assets: FilmBuildAsset[];
-  diagnostics: FilmBuildDiagnostic[];
-  pathReport: FilmBuildPathReport | null;
-  publication: FilmBuildPublication | null;
+  assets: StoryBuildAsset[];
+  diagnostics: StoryBuildDiagnostic[];
+  pathReport: StoryBuildPathReport | null;
+  publication: StoryBuildPublication | null;
   createdByUserId: string;
   createdAt: string;
   completedAt: string | null;
@@ -696,9 +556,8 @@ export interface StoryExperienceCurrentRelease {
   manifestUrl: string | null;
   currentBuild: {
     id: string;
-    sourceRevisionId: string;
     sourceDraftRevision: number;
-    sourceProductionRevision: number;
+    videoSnapshotHash: string;
   } | null;
   checkedAt: string | null;
 }
@@ -706,38 +565,39 @@ export interface StoryExperienceCurrentRelease {
 /**
  * Ephemeral playtest compiled from the saved authoring head.
  *
- * Unlike FilmBuild this is not a release artifact and does not freeze the
+ * Unlike StoryBuild this is not a release artifact and does not freeze the
  * project. Every playable node resolves its single current video binding.
  */
 export interface StoryWorkingPreview {
   draftRevision: number;
   contentHash: string;
+  videoSnapshotHash: string | null;
   runtimeSchemaVersion: 2;
   runtime: Record<string, unknown> | null;
-  diagnostics: FilmBuildDiagnostic[];
-  pathReport: FilmBuildPathReport | null;
+  diagnostics: StoryBuildDiagnostic[];
+  pathReport: StoryBuildPathReport | null;
   sources: Array<{
     graphNodeId: string;
     assetId: string;
     variantId: string;
     sourceGenerationId: string | null;
-    currentVideoRevision: number;
+    selectionVersion: number;
     selection: "current";
   }>;
 }
-export type FilmReviewDecision = "approve" | "reject" | "request_changes";
-export type FilmReviewChecklistValue = "pass" | "fail" | "na";
+export type StoryReviewDecision = "approve" | "reject" | "request_changes";
+export type StoryReviewChecklistValue = "pass" | "fail" | "na";
 
-export interface FilmTechnicalCheck {
+export interface StoryVideoTechnicalCheck {
   key: string;
   status: "pending" | "passed" | "failed";
   message: string | null;
 }
 
-export interface FilmReview {
+export interface StoryReview {
   id: string;
-  decision: FilmReviewDecision;
-  checklist: Record<string, FilmReviewChecklistValue>;
+  decision: StoryReviewDecision;
+  checklist: Record<string, StoryReviewChecklistValue>;
   comment: string | null;
   reviewerUserId: string;
   createdAt: string;
@@ -746,21 +606,13 @@ export interface FilmReview {
 export interface StoryWorkbench {
   project: StoryProjectSummary;
   draft: StoryDraft;
-  selectedRevision: StoryRevision | null;
-  film: {
-    productionRevision: number;
-    spec: FilmSpec | null;
-    defaultModel?: {
-      id: string;
-      slug: string;
-      displayName: string;
-      generationModes: string[];
-    } | null;
-    trailer: FilmTrailerSummary | null;
-    clips: FilmClipSummary[];
-    references: FilmReferenceSlot[];
-    latestBuild: FilmBuildSummary | null;
-  } | null;
+  video: {
+    snapshotHash: string;
+    trailer: StoryTrailerVideoSummary;
+    clips: StoryClipVideoSummary[];
+  };
+  references: StoryReferenceSlot[];
+  latestBuild: StoryBuildSummary | null;
 }
 
 export interface CreateStoryProjectInput {
@@ -782,7 +634,7 @@ function storyWorkspaceHeaders(workspaceId: string): HeadersInit {
 
 function storyIdempotencyHeaders(workspaceId: string, idempotencyKey: string): HeadersInit {
   if (!workspaceId.trim()) throw new Error("Story Studio requires an active workspace.");
-  if (!idempotencyKey.trim()) throw new Error("Video generation requires an idempotency key.");
+  if (!idempotencyKey.trim()) throw new Error("This operation requires an idempotency key.");
   return {
     "x-fizz-workspace-id": workspaceId,
     "Idempotency-Key": idempotencyKey,
@@ -943,13 +795,11 @@ export async function waitForStoryClipVideoUploadFinalization(
 
 export async function getStoryWorkbench(
   workspaceId: string,
-  projectId: string,
-  revisionId?: string
+  projectId: string
 ): Promise<StoryWorkbench> {
   const workbench = await api.get<StoryWorkbench>(
     `/aurora/story-projects/${encodeURIComponent(projectId)}/workbench`,
     {
-      params: revisionId ? { revisionId } : undefined,
       headers: storyWorkspaceHeaders(workspaceId),
     }
   );
@@ -1041,52 +891,34 @@ export async function putStoryDraft(
   });
 }
 
-export async function lockStoryRevision(
+export async function createStoryBuild(
   workspaceId: string,
   projectId: string,
   input: {
     expectedDraftRevision: number;
-    label?: string;
-  }
-): Promise<StoryRevision> {
-  return api.post<StoryRevision>(
-    `/aurora/story-projects/${encodeURIComponent(projectId)}/revisions/lock`,
-    {
-      data: { ...input, source: "creator" },
-      headers: storyWorkspaceHeaders(workspaceId),
-    }
-  );
-}
-
-export async function createFilmBuild(
-  workspaceId: string,
-  projectId: string,
-  input: {
-    revisionId: string;
-    expectedProductionRevision: number;
-    profile: "preview" | "production";
-    scope: FilmBuildScope;
+    expectedVideoSnapshotHash: string;
+    scope: StoryBuildScope;
   },
   idempotencyKey: string
-): Promise<FilmBuild> {
-  return api.post<FilmBuild>(`/aurora/story-projects/${encodeURIComponent(projectId)}/builds`, {
+): Promise<StoryBuild> {
+  return api.post<StoryBuild>(`/aurora/story-projects/${encodeURIComponent(projectId)}/builds`, {
     data: input,
     headers: storyIdempotencyHeaders(workspaceId, idempotencyKey),
   });
 }
 
-export async function getFilmBuild(
+export async function getStoryBuild(
   workspaceId: string,
   projectId: string,
   buildId: string
-): Promise<FilmBuild> {
-  return api.get<FilmBuild>(
+): Promise<StoryBuild> {
+  return api.get<StoryBuild>(
     `/aurora/story-projects/${encodeURIComponent(projectId)}/builds/${encodeURIComponent(buildId)}`,
     { headers: storyWorkspaceHeaders(workspaceId) }
   );
 }
 
-export async function publishFilmBuild(
+export async function publishStoryBuild(
   workspaceId: string,
   projectId: string,
   buildId: string,
@@ -1108,39 +940,18 @@ export async function getStoryExperienceCurrentRelease(
   );
 }
 
-export async function createFilmClipGeneration(
+export async function createStoryClipVideoGeneration(
   workspaceId: string,
   projectId: string,
   graphNodeId: string,
   input: {
     expectedDraftRevision: number;
-    modelId?: string;
-    variationNote?: string;
-    seed?: string;
-  },
+    expectedSelectionVersion: number;
+  } & StoryVideoGenerationRecipeInput,
   idempotencyKey: string
-): Promise<FilmVideoGeneration> {
-  return api.post<FilmVideoGeneration>(
+): Promise<StoryVideoGeneration> {
+  return api.post<StoryVideoGeneration>(
     `/aurora/story-projects/${encodeURIComponent(projectId)}/clips/${encodeURIComponent(graphNodeId)}/generations`,
-    { data: input, headers: storyIdempotencyHeaders(workspaceId, idempotencyKey) }
-  );
-}
-
-export async function createFilmRevisionClipGeneration(
-  workspaceId: string,
-  projectId: string,
-  revisionId: string,
-  clipId: string,
-  input: {
-    expectedClipVersion: number;
-    modelId?: string;
-    variationNote?: string;
-    seed?: string;
-  },
-  idempotencyKey: string
-): Promise<FilmVideoGeneration> {
-  return api.post<FilmVideoGeneration>(
-    `/aurora/story-projects/${encodeURIComponent(projectId)}/revisions/${encodeURIComponent(revisionId)}/clips/${encodeURIComponent(clipId)}/generations`,
     { data: input, headers: storyIdempotencyHeaders(workspaceId, idempotencyKey) }
   );
 }
@@ -1157,307 +968,200 @@ export async function getStoryWorkingPreview(
   );
 }
 
-export async function getFilmVideoGeneration(
+export async function getStoryVideoGeneration(
   workspaceId: string,
   projectId: string,
   generationId: string
-): Promise<FilmVideoGeneration> {
-  return api.get<FilmVideoGeneration>(
+): Promise<StoryVideoGeneration> {
+  return api.get<StoryVideoGeneration>(
     `/aurora/story-projects/${encodeURIComponent(projectId)}/generations/${encodeURIComponent(generationId)}`,
     { headers: storyWorkspaceHeaders(workspaceId) }
   );
 }
 
-export async function cancelFilmVideoGeneration(
+export async function cancelStoryVideoGeneration(
   workspaceId: string,
   projectId: string,
   generationId: string,
   input: { expectedGenerationVersion: number }
-): Promise<FilmVideoGeneration> {
-  return api.post<FilmVideoGeneration>(
+): Promise<StoryVideoGeneration> {
+  return api.post<StoryVideoGeneration>(
     `/aurora/story-projects/${encodeURIComponent(projectId)}/generations/${encodeURIComponent(generationId)}/cancel`,
     { data: input, headers: storyWorkspaceHeaders(workspaceId) }
   );
 }
 
-export async function retryFilmVideoGeneration(
+export async function retryStoryVideoGeneration(
   workspaceId: string,
   projectId: string,
   generationId: string,
-  input: { expectedGenerationVersion: number; variationNote?: string },
+  input: {
+    expectedGenerationVersion: number;
+    expectedSelectionVersion: number;
+    target:
+      | { kind: "clip"; graphNodeId: string; expectedDraftRevision: number }
+      | { kind: "trailer" };
+  },
   idempotencyKey: string
-): Promise<FilmVideoGeneration> {
-  return api.post<FilmVideoGeneration>(
+): Promise<StoryVideoGeneration> {
+  return api.post<StoryVideoGeneration>(
     `/aurora/story-projects/${encodeURIComponent(projectId)}/generations/${encodeURIComponent(generationId)}/retry`,
     { data: input, headers: storyIdempotencyHeaders(workspaceId, idempotencyKey) }
   );
 }
 
-export async function putFilmClipCurrentVideo(
+export async function putStoryClipCurrentVideo(
   workspaceId: string,
   projectId: string,
   graphNodeId: string,
   input: {
     expectedDraftRevision: number;
-    expectedCurrentVideoRevision: number;
+    expectedSelectionVersion: number;
     assetId: string | null;
     variantId: string | null;
   }
-): Promise<FilmClipSummary> {
-  return api.put<FilmClipSummary>(
+): Promise<StoryClipVideoSummary> {
+  return api.put<StoryClipVideoSummary>(
     `/aurora/story-projects/${encodeURIComponent(projectId)}/clips/${encodeURIComponent(graphNodeId)}/current-video`,
     { data: input, headers: storyWorkspaceHeaders(workspaceId) }
   );
 }
 
-export async function listFilmReferenceSlots(
+export async function listStoryReferenceSlots(
   workspaceId: string,
-  projectId: string,
-  revisionId: string
-): Promise<FilmReferenceSlot[]> {
-  return api.get<FilmReferenceSlot[]>(
-    `/aurora/story-projects/${encodeURIComponent(projectId)}/revisions/${encodeURIComponent(revisionId)}/reference-slots`,
+  projectId: string
+): Promise<StoryReferenceSlot[]> {
+  return api.get<StoryReferenceSlot[]>(
+    `/aurora/story-projects/${encodeURIComponent(projectId)}/reference-slots`,
     { headers: storyWorkspaceHeaders(workspaceId) }
   );
 }
 
-export async function createFilmReferenceSlots(
+export async function createStoryReferenceSlots(
   workspaceId: string,
   projectId: string,
-  revisionId: string,
-  input: { expectedProductionRevision: number; slots: FilmReferenceSlotSpec[] }
-): Promise<FilmReferenceSlot[]> {
-  return api.post<FilmReferenceSlot[]>(
-    `/aurora/story-projects/${encodeURIComponent(projectId)}/revisions/${encodeURIComponent(revisionId)}/reference-slots`,
-    { data: input, headers: storyWorkspaceHeaders(workspaceId) }
+  input: { slots: StoryReferenceSlotSpec[] },
+  idempotencyKey: string
+): Promise<StoryReferenceSlot[]> {
+  return api.post<StoryReferenceSlot[]>(
+    `/aurora/story-projects/${encodeURIComponent(projectId)}/reference-slots`,
+    { data: input, headers: storyIdempotencyHeaders(workspaceId, idempotencyKey) }
   );
 }
 
-export async function listFilmReferenceVersions(
+export async function listStoryReferenceVersions(
   workspaceId: string,
   projectId: string,
-  revisionId: string,
   slotId: string
-): Promise<FilmReferenceVersion[]> {
-  return api.get<FilmReferenceVersion[]>(
-    `/aurora/story-projects/${encodeURIComponent(projectId)}/revisions/${encodeURIComponent(revisionId)}/reference-slots/${encodeURIComponent(slotId)}/versions`,
+): Promise<StoryReferenceVersion[]> {
+  return api.get<StoryReferenceVersion[]>(
+    `/aurora/story-projects/${encodeURIComponent(projectId)}/reference-slots/${encodeURIComponent(slotId)}/versions`,
     { headers: storyWorkspaceHeaders(workspaceId) }
   );
 }
 
-export async function updateFilmReferenceSlot(
+export async function updateStoryReferenceSlot(
   workspaceId: string,
   projectId: string,
-  revisionId: string,
   slotId: string,
   input: {
-    expectedVersion: number;
-    expectedProductionRevision: number;
-    slot: FilmReferenceSlotSpec;
+    expectedSlotVersion: number;
+    slot: StoryReferenceSlotSpec;
   }
-): Promise<FilmReferenceSlot> {
-  return api.put<FilmReferenceSlot>(
-    `/aurora/story-projects/${encodeURIComponent(projectId)}/revisions/${encodeURIComponent(revisionId)}/reference-slots/${encodeURIComponent(slotId)}`,
+): Promise<StoryReferenceSlot> {
+  return api.put<StoryReferenceSlot>(
+    `/aurora/story-projects/${encodeURIComponent(projectId)}/reference-slots/${encodeURIComponent(slotId)}`,
     { data: input, headers: storyWorkspaceHeaders(workspaceId) }
   );
 }
 
-export async function createFilmReferenceVersion(
+export async function createStoryReferenceVersion(
   workspaceId: string,
   projectId: string,
-  revisionId: string,
   slotId: string,
   input: {
     expectedSlotVersion: number;
     assetId: string;
+    variantId: string;
     source: "upload" | "import";
     promptSnapshot?: Record<string, unknown>;
     configSnapshot?: Record<string, unknown>;
   },
   idempotencyKey: string
-): Promise<FilmReferenceVersion> {
-  return api.post<FilmReferenceVersion>(
-    `/aurora/story-projects/${encodeURIComponent(projectId)}/revisions/${encodeURIComponent(revisionId)}/reference-slots/${encodeURIComponent(slotId)}/versions`,
+): Promise<StoryReferenceVersion> {
+  return api.post<StoryReferenceVersion>(
+    `/aurora/story-projects/${encodeURIComponent(projectId)}/reference-slots/${encodeURIComponent(slotId)}/versions`,
     { data: input, headers: storyIdempotencyHeaders(workspaceId, idempotencyKey) }
   );
 }
 
-export async function reviewFilmReferenceVersion(
+export async function reviewStoryReferenceVersion(
   workspaceId: string,
   projectId: string,
-  revisionId: string,
   slotId: string,
   referenceVersionId: string,
   input: {
     expectedReviewRevision: number;
-    decision: FilmReviewDecision;
-    checklist: FilmReferenceReviewChecklist;
+    decision: StoryReviewDecision;
+    checklist: StoryReferenceReviewChecklist;
     comment?: string;
   }
-): Promise<{ reference: FilmReferenceVersion; review: FilmReview }> {
-  return api.post<{ reference: FilmReferenceVersion; review: FilmReview }>(
-    `/aurora/story-projects/${encodeURIComponent(projectId)}/revisions/${encodeURIComponent(revisionId)}/reference-slots/${encodeURIComponent(slotId)}/versions/${encodeURIComponent(referenceVersionId)}/reviews`,
+): Promise<{ reference: StoryReferenceVersion; review: StoryReview }> {
+  return api.post<{ reference: StoryReferenceVersion; review: StoryReview }>(
+    `/aurora/story-projects/${encodeURIComponent(projectId)}/reference-slots/${encodeURIComponent(slotId)}/versions/${encodeURIComponent(referenceVersionId)}/reviews`,
     { data: input, headers: storyWorkspaceHeaders(workspaceId) }
   );
 }
 
-export async function approveFilmReferenceVersion(
+export async function approveStoryReferenceVersion(
   workspaceId: string,
   projectId: string,
-  revisionId: string,
   slotId: string,
   input: {
     expectedSlotVersion: number;
-    expectedProductionRevision: number;
     referenceVersionId: string;
     approveReviewId: string;
   }
-): Promise<FilmReferenceSlot> {
-  return api.post<FilmReferenceSlot>(
-    `/aurora/story-projects/${encodeURIComponent(projectId)}/revisions/${encodeURIComponent(revisionId)}/reference-slots/${encodeURIComponent(slotId)}/approval`,
+): Promise<StoryReferenceSlot> {
+  return api.post<StoryReferenceSlot>(
+    `/aurora/story-projects/${encodeURIComponent(projectId)}/reference-slots/${encodeURIComponent(slotId)}/approval`,
     { data: input, headers: storyWorkspaceHeaders(workspaceId) }
   );
 }
 
-export async function putFilmClipReferences(
+export async function getStoryTrailerVideo(
   workspaceId: string,
-  projectId: string,
-  revisionId: string,
-  clipId: string,
-  input: {
-    expectedClipVersion: number;
-    expectedProductionRevision: number;
-    bindings: Array<{
-      referenceSlotId: string;
-      role: FilmClipReferenceRole;
-      rank: number;
-      required: boolean;
-    }>;
-  }
-): Promise<{
-  clipId: string;
-  clipVersion: number;
-  productionRevision: number;
-  bindings: FilmClipReferenceBinding[];
-}> {
-  return api.put<{
-    clipId: string;
-    clipVersion: number;
-    productionRevision: number;
-    bindings: FilmClipReferenceBinding[];
-  }>(
-    `/aurora/story-projects/${encodeURIComponent(projectId)}/revisions/${encodeURIComponent(revisionId)}/clips/${encodeURIComponent(clipId)}/references`,
-    { data: input, headers: storyWorkspaceHeaders(workspaceId) }
-  );
-}
-
-export async function getFilmTrailer(
-  workspaceId: string,
-  projectId: string,
-  revisionId: string
-): Promise<FilmTrailerSummary> {
-  return api.get<FilmTrailerSummary>(
-    `/aurora/story-projects/${encodeURIComponent(projectId)}/revisions/${encodeURIComponent(revisionId)}/trailer`,
+  projectId: string
+): Promise<StoryTrailerVideoSummary> {
+  return api.get<StoryTrailerVideoSummary>(
+    `/aurora/story-projects/${encodeURIComponent(projectId)}/trailer`,
     { headers: storyWorkspaceHeaders(workspaceId) }
   );
 }
 
-export async function putFilmTrailerReferences(
+export async function createStoryTrailerVideoGeneration(
   workspaceId: string,
   projectId: string,
-  revisionId: string,
-  input: {
-    expectedTrailerVersion: number;
-    bindings: Array<{
-      referenceSlotId: string;
-      role: FilmClipReferenceRole;
-      rank: number;
-      required: boolean;
-    }>;
-  }
-): Promise<{
-  trailerId: string;
-  trailerVersion: number;
-  currentVideoRevision: number;
-  bindings: FilmClipReferenceBinding[];
-}> {
-  return api.put<{
-    trailerId: string;
-    trailerVersion: number;
-    currentVideoRevision: number;
-    bindings: FilmClipReferenceBinding[];
-  }>(
-    `/aurora/story-projects/${encodeURIComponent(projectId)}/revisions/${encodeURIComponent(revisionId)}/trailer/references`,
-    { data: input, headers: storyWorkspaceHeaders(workspaceId) }
-  );
-}
-
-export async function createFilmTrailerGeneration(
-  workspaceId: string,
-  projectId: string,
-  revisionId: string,
-  input: {
-    expectedTrailerVersion: number;
-    modelId?: string;
-    variationNote?: string;
-    seed?: string;
-  },
+  input: { expectedSelectionVersion: number } & StoryVideoGenerationRecipeInput,
   idempotencyKey: string
-): Promise<FilmVideoGeneration> {
-  return api.post<FilmVideoGeneration>(
-    `/aurora/story-projects/${encodeURIComponent(projectId)}/revisions/${encodeURIComponent(revisionId)}/trailer/generations`,
+): Promise<StoryVideoGeneration> {
+  return api.post<StoryVideoGeneration>(
+    `/aurora/story-projects/${encodeURIComponent(projectId)}/trailer/generations`,
     { data: input, headers: storyIdempotencyHeaders(workspaceId, idempotencyKey) }
   );
 }
 
-export async function getFilmTrailerGeneration(
+export async function putStoryTrailerCurrentVideo(
   workspaceId: string,
   projectId: string,
-  generationId: string
-): Promise<FilmVideoGeneration> {
-  return api.get<FilmVideoGeneration>(
-    `/aurora/story-projects/${encodeURIComponent(projectId)}/trailer-generations/${encodeURIComponent(generationId)}`,
-    { headers: storyWorkspaceHeaders(workspaceId) }
-  );
-}
-
-export async function retryFilmTrailerGeneration(
-  workspaceId: string,
-  projectId: string,
-  generationId: string,
-  input: { expectedGenerationVersion: number; variationNote?: string },
-  idempotencyKey: string
-): Promise<FilmVideoGeneration> {
-  return api.post<FilmVideoGeneration>(
-    `/aurora/story-projects/${encodeURIComponent(projectId)}/trailer-generations/${encodeURIComponent(generationId)}/retry`,
-    { data: input, headers: storyIdempotencyHeaders(workspaceId, idempotencyKey) }
-  );
-}
-
-export async function cancelFilmTrailerGeneration(
-  workspaceId: string,
-  projectId: string,
-  generationId: string,
-  input: { expectedGenerationVersion: number }
-): Promise<FilmVideoGeneration> {
-  return api.post<FilmVideoGeneration>(
-    `/aurora/story-projects/${encodeURIComponent(projectId)}/trailer-generations/${encodeURIComponent(generationId)}/cancel`,
-    { data: input, headers: storyWorkspaceHeaders(workspaceId) }
-  );
-}
-
-export async function putFilmTrailerCurrentVideo(
-  workspaceId: string,
-  projectId: string,
-  revisionId: string,
   input: {
-    expectedCurrentVideoRevision: number;
+    expectedSelectionVersion: number;
     assetId: string | null;
     variantId: string | null;
   }
-): Promise<FilmTrailerSummary> {
-  return api.put<FilmTrailerSummary>(
-    `/aurora/story-projects/${encodeURIComponent(projectId)}/revisions/${encodeURIComponent(revisionId)}/trailer/current-video`,
+): Promise<StoryTrailerVideoSummary> {
+  return api.put<StoryTrailerVideoSummary>(
+    `/aurora/story-projects/${encodeURIComponent(projectId)}/trailer/current-video`,
     { data: input, headers: storyWorkspaceHeaders(workspaceId) }
   );
 }

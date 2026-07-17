@@ -17,7 +17,7 @@ import { Input } from "@/components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
 import type {
-  FilmCondition,
+  StoryCondition,
   InteractiveFilmDraftContent,
   StoryAutoRoute,
   StoryGraphNode,
@@ -27,7 +27,7 @@ import { StoryConditionEditor } from "./story-condition-editor";
 export interface AutoRoutePatch {
   targetNodeId?: string;
   priority?: number;
-  when?: FilmCondition | null;
+  when?: StoryCondition | null;
 }
 
 interface StoryAutoRoutesEditorProps {
@@ -346,6 +346,6 @@ function graphNodeLabel(node: StoryGraphNode): string {
   return node.kind === "clip" ? node.clipKey : node.nodeId;
 }
 
-function defaultCondition(): FilmCondition {
+function defaultCondition(): StoryCondition {
   return { kind: "flag", flag: "story_flag", equals: true };
 }

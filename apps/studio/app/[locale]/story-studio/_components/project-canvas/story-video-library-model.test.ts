@@ -1,18 +1,13 @@
 import { describe, expect, it } from "vitest";
-import type { FilmClipSummary, StoryVideoLibraryItem } from "@/lib/story-projects-api";
+import type { StoryVideoLibraryItem } from "@/lib/story-projects-api";
 import {
   mergeStoryVideoLibraryItems,
   resolveStoryVideoLibraryItemState,
 } from "./story-video-library-model";
 
-const outputContract: FilmClipSummary["outputContract"] = {
-  aspectRatio: "16:9",
+const frameContract = {
   width: 1920,
   height: 1080,
-  durationMs: 12_000,
-  durationToleranceMs: 500,
-  framesPerSecond: { numerator: 24, denominator: 1 },
-  audio: "embedded",
 };
 
 function item(patch: Partial<StoryVideoLibraryItem> = {}): StoryVideoLibraryItem {
@@ -43,7 +38,7 @@ function item(patch: Partial<StoryVideoLibraryItem> = {}): StoryVideoLibraryItem
 
 describe("Story video library eligibility", () => {
   it("accepts the exact dimensions and duration at the tolerance boundary", () => {
-    expect(resolveStoryVideoLibraryItemState(item(), outputContract, null)).toEqual({
+    expect(resolveStoryVideoLibraryItemState(item(), frameContract, null)).toEqual({
       current: false,
       selectable: true,
       technicallyCompatible: true,
@@ -54,7 +49,7 @@ describe("Story video library eligibility", () => {
   it("mirrors server checks by falling back to canonical asset metadata", () => {
     const state = resolveStoryVideoLibraryItemState(
       item({ width: null, height: null, durationSeconds: null }),
-      outputContract,
+      frameContract,
       null
     );
 
@@ -64,12 +59,12 @@ describe("Story video library eligibility", () => {
   it("rejects incompatible dimensions and duration outside tolerance", () => {
     const state = resolveStoryVideoLibraryItemState(
       item({ width: 1280, height: 720, durationSeconds: 12.501 }),
-      outputContract,
+      frameContract,
       null
     );
 
     expect(state.selectable).toBe(false);
-    expect(state.issues).toEqual(["dimensions_mismatch", "duration_mismatch"]);
+    expect(state.issues).toEqual(["dimensions_mismatch"]);
   });
 
   it("keeps the current item identifiable even when it cannot be previewed or selected", () => {
@@ -78,7 +73,7 @@ describe("Story video library eligibility", () => {
     });
 
     expect(
-      resolveStoryVideoLibraryItemState(unavailable, outputContract, {
+      resolveStoryVideoLibraryItemState(unavailable, frameContract, {
         assetId: unavailable.asset.id,
         variantId: unavailable.variantId,
       })
@@ -101,12 +96,12 @@ describe("Story video library eligibility", () => {
         width: null,
         durationSeconds: null,
       }),
-      outputContract,
+      frameContract,
       null
     );
 
     expect(state.selectable).toBe(false);
-    expect(state.issues).toEqual(["dimensions_unknown", "duration_unknown"]);
+    expect(state.issues).toEqual(["dimensions_unknown"]);
   });
 
   it("deduplicates overlapping cursor pages by asset and variant", () => {

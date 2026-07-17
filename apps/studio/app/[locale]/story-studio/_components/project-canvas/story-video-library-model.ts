@@ -1,11 +1,9 @@
-import type { FilmClipSummary, StoryVideoLibraryItem } from "@/lib/story-projects-api";
+import type { StoryVideoLibraryItem } from "@/lib/story-projects-api";
 
 export type StoryVideoLibraryIssue =
   | "preview_unavailable"
   | "dimensions_unknown"
-  | "dimensions_mismatch"
-  | "duration_unknown"
-  | "duration_mismatch";
+  | "dimensions_mismatch";
 
 export interface StoryVideoLibraryItemState {
   current: boolean;
@@ -14,45 +12,34 @@ export interface StoryVideoLibraryItemState {
   issues: StoryVideoLibraryIssue[];
 }
 
-type StoryVideoOutputContract = FilmClipSummary["outputContract"];
+export interface StoryVideoFrameContract {
+  width: number;
+  height: number;
+}
 
 /**
- * Resolves selection eligibility from the exact variant metadata returned by
- * the library. The client mirrors the production contract so a creator cannot
- * deliberately bind a result that the build pipeline would reject.
+ * Existing videos keep their real duration. Selection only checks the fixed
+ * project frame, while the server remains authoritative for asset readiness,
+ * ownership, moderation, and exact variant metadata.
  */
 export function resolveStoryVideoLibraryItemState(
   item: StoryVideoLibraryItem,
-  outputContract: StoryVideoOutputContract,
+  frameContract: StoryVideoFrameContract,
   current: { assetId: string; variantId: string } | null
 ): StoryVideoLibraryItemState {
   const issues: StoryVideoLibraryIssue[] = [];
   const width = item.width ?? item.asset.width;
   const height = item.height ?? item.asset.height;
-  const durationSeconds = item.durationSeconds ?? item.asset.durationSeconds;
 
   if (!item.asset.previewUrl) issues.push("preview_unavailable");
   if (width === null || height === null) {
     issues.push("dimensions_unknown");
-  } else if (width !== outputContract.width || height !== outputContract.height) {
+  } else if (width !== frameContract.width || height !== frameContract.height) {
     issues.push("dimensions_mismatch");
   }
 
-  if (durationSeconds === null) {
-    issues.push("duration_unknown");
-  } else {
-    const durationDeltaMs = Math.abs(durationSeconds * 1_000 - outputContract.durationMs);
-    if (durationDeltaMs > Math.max(0, outputContract.durationToleranceMs)) {
-      issues.push("duration_mismatch");
-    }
-  }
-
   const technicallyCompatible = !issues.some(
-    (issue) =>
-      issue === "dimensions_unknown" ||
-      issue === "dimensions_mismatch" ||
-      issue === "duration_unknown" ||
-      issue === "duration_mismatch"
+    (issue) => issue === "dimensions_unknown" || issue === "dimensions_mismatch"
   );
   const selectionAvailable = !issues.includes("preview_unavailable");
 

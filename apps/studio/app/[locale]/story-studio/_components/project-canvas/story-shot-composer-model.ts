@@ -1,172 +1,223 @@
-import type { FizzAiCatalog } from "@/app/[locale]/canvas/_lib/generation-api";
-import type {
-  FilmClipSummary,
-  FilmGenerationControl,
-  FilmReferenceKind,
-  FilmReferenceSlot,
-  FilmTrailerSummary,
-} from "@/lib/story-projects-api";
 import {
-  roleMatchesSlotKind,
-  type StoryReferenceBindingInput,
-} from "./story-clip-reference-bindings-model";
+  isFizzAiModelUsable,
+  schemaFields,
+  type FizzAiCatalog,
+  type FizzAiModel,
+} from "@/app/[locale]/canvas/_lib/generation-api";
+import type {
+  StoryReferenceKind,
+  StoryReferenceSlot,
+  StoryVideoGenerationMode,
+  StoryVideoGenerationReferenceInput,
+  StoryVideoGenerationReferenceRole,
+} from "@/lib/story-projects-api";
 
-type StoryProductionTarget = FilmClipSummary | FilmTrailerSummary;
+export const STORY_VIDEO_GENERATION_MODES = [
+  "multimodal_to_video",
+  "first_last_frame_to_video",
+] as const satisfies readonly StoryVideoGenerationMode[];
 
-/** Story production supports omni reference and first+last frame lock. */
-const STORY_VIDEO_GENERATION_MODES = ["multimodal_to_video", "first_last_frame_to_video"] as const;
+const STORY_DURATION_FIELDS = new Set(["duration", "durationSeconds", "duration_seconds"]);
 
-export function filterStoryVideoCatalog(catalog: FizzAiCatalog | undefined) {
+export interface StoryVideoDurationContract {
+  defaultMs: number;
+  optionsMs: number[];
+  minMs: number;
+  maxMs: number;
+}
+
+function durationScalarMs(value: unknown): number | null {
+  if (typeof value !== "string" && typeof value !== "number") return null;
+  const seconds = typeof value === "number" ? value : Number.parseFloat(value.trim());
+  if (!Number.isFinite(seconds)) return null;
+  const milliseconds = Math.round(seconds * 1_000);
+  return Number.isInteger(milliseconds) && milliseconds >= 1_000 && milliseconds <= 600_000
+    ? milliseconds
+    : null;
+}
+
+export function storyVideoDurationContract(
+  model: FizzAiModel | undefined
+): StoryVideoDurationContract | null {
+  const field = schemaFields(model).find(
+    (candidate) => STORY_DURATION_FIELDS.has(candidate.name) && candidate.control !== "hidden"
+  );
+  if (!field) return null;
+
+  const optionsMs = [
+    ...new Set(
+      (field.enum ?? []).flatMap((value) => {
+        const durationMs = durationScalarMs(value);
+        return durationMs === null ? [] : [durationMs];
+      })
+    ),
+  ].sort((left, right) => left - right);
+  const minMs = durationScalarMs(field.min) ?? optionsMs[0] ?? 1_000;
+  const maxMs = durationScalarMs(field.max) ?? optionsMs.at(-1) ?? 600_000;
+  if (minMs > maxMs) return null;
+  const declaredDefaultMs = durationScalarMs(field.default);
+  const defaultMs = declaredDefaultMs ?? optionsMs[0] ?? minMs;
+  if (defaultMs < minMs || defaultMs > maxMs) return null;
+  if (optionsMs.length > 0 && !optionsMs.includes(defaultMs)) return null;
+  return { defaultMs, optionsMs, minMs, maxMs };
+}
+
+export function filterStoryVideoCatalog(
+  catalog: FizzAiCatalog | undefined,
+  mode: StoryVideoGenerationMode
+): FizzAiCatalog | undefined {
   if (!catalog) return undefined;
   return {
     ...catalog,
     models: catalog.models.filter(
       (model) =>
         model.type === "video" &&
-        STORY_VIDEO_GENERATION_MODES.every((mode) => model.generationModes?.includes(mode))
+        isFizzAiModelUsable(model) &&
+        model.generationModes?.includes(mode) &&
+        storyVideoDurationContract(model) !== null
     ),
-  } satisfies FizzAiCatalog;
+  };
 }
 
-export function countBillableBoundReferences(target: StoryProductionTarget | null): number {
-  if (!target) return 0;
-  const approvedVersions = new Set<string>();
-  target.referenceBindings.forEach((binding) => {
-    if (
-      binding.approvedReferenceVersionId &&
-      referenceRoleAllowed(target.generationControl, binding.role)
-    ) {
-      approvedVersions.add(binding.approvedReferenceVersionId);
-    }
-  });
-  return approvedVersions.size;
+export function selectedStoryVideoModel(
+  catalog: FizzAiCatalog | undefined,
+  modelId: string
+): FizzAiModel | undefined {
+  if (!modelId) return undefined;
+  return catalog?.models.find((model) => model.id === modelId);
 }
 
-function referenceRoleAllowed(
-  control: FilmGenerationControl,
-  role: StoryProductionTarget["referenceBindings"][number]["role"]
-): boolean {
-  if (control.mode === "omni_reference") {
-    return role !== "first_frame" && role !== "last_frame";
-  }
-  return (
-    role === "first_frame" || (control.frameMode === "first_last_frame" && role === "last_frame")
-  );
+export function countBillableRecipeReferences(
+  references: readonly StoryVideoGenerationReferenceInput[]
+): number {
+  return new Set(references.map((reference) => reference.referenceVersionId)).size;
 }
 
 export interface StoryComposerReferenceItem {
-  bindingId: string;
+  referenceVersionId: string;
   slotId: string;
   label: string;
-  kind: FilmReferenceKind;
-  required: boolean;
-  approved: boolean;
+  kind: StoryReferenceKind;
+  role: StoryVideoGenerationReferenceRole;
   previewUrl: string | null;
 }
 
 export interface StoryComposerAddableSlot {
   slotId: string;
+  referenceVersionId: string;
   label: string;
-  kind: FilmReferenceKind;
+  kind: StoryReferenceKind;
   previewUrl: string | null;
-  /** The binding role this slot would attach with under the current mode. */
-  role: StoryReferenceBindingInput["role"];
+  role: StoryVideoGenerationReferenceRole;
 }
 
-function slotPreviewUrl(slot: FilmReferenceSlot): string | null {
+function approvedVersion(slot: StoryReferenceSlot) {
   if (!slot.approvedVersionId) return null;
-  return (
-    slot.versions.find((version) => version.id === slot.approvedVersionId)?.asset.previewUrl ?? null
-  );
+  return slot.versions.find((version) => version.id === slot.approvedVersionId) ?? null;
 }
 
-/** The reference chips shown in the composer: the target's current bindings. */
 export function storyComposerReferenceItems(
-  target: StoryProductionTarget | null,
-  slots: readonly FilmReferenceSlot[]
+  references: readonly StoryVideoGenerationReferenceInput[],
+  slots: readonly StoryReferenceSlot[]
 ): StoryComposerReferenceItem[] {
-  if (!target) return [];
-  const slotsById = new Map(slots.map((slot) => [slot.id, slot]));
-  return [...target.referenceBindings]
-    .filter((binding) => referenceRoleAllowed(target.generationControl, binding.role))
-    .sort((left, right) => left.rank - right.rank)
-    .map((binding) => {
-      const slot = slotsById.get(binding.referenceSlotId);
-      return {
-        bindingId: binding.id,
-        slotId: binding.referenceSlotId,
-        label: slot?.label ?? binding.referenceSlotId,
-        kind: slot?.kind ?? "style",
-        required: binding.required,
-        approved: Boolean(binding.approvedReferenceVersionId),
-        previewUrl: slot ? slotPreviewUrl(slot) : null,
-      };
-    });
+  const versionIndex = new Map(
+    slots.flatMap((slot) =>
+      slot.versions.map((version) => [version.id, { slot, version }] as const)
+    )
+  );
+  return references.flatMap((reference) => {
+    const match = versionIndex.get(reference.referenceVersionId);
+    if (!match) return [];
+    return [
+      {
+        referenceVersionId: reference.referenceVersionId,
+        slotId: match.slot.id,
+        label: match.slot.label,
+        kind: match.slot.kind,
+        role: reference.role,
+        previewUrl: match.version.asset.previewUrl,
+      },
+    ];
+  });
 }
 
-/** Which role an unbound slot would attach with under the given control. */
-function addableRoleForSlot(
-  control: FilmGenerationControl,
-  kind: FilmReferenceKind
-): StoryReferenceBindingInput["role"] | null {
-  if (control.mode === "omni_reference") {
-    return roleMatchesSlotKind("omni", kind) ? "omni" : null;
+function referenceRoleForSlot(
+  mode: StoryVideoGenerationMode,
+  kind: StoryReferenceKind,
+  occupiedRoles: ReadonlySet<StoryVideoGenerationReferenceRole>
+): StoryVideoGenerationReferenceRole | null {
+  if (mode === "multimodal_to_video") {
+    return ["character", "location", "prop", "graphic", "style"].includes(kind)
+      ? "reference"
+      : null;
   }
-  if (kind === "last_frame") return "last_frame";
-  // Join frames chain clips together; when attached ad hoc they anchor the
-  // clip's opening, so they default to the first-frame role.
-  if (kind === "first_frame" || kind === "join_frame") return "first_frame";
-  return null;
+  if (kind === "first_frame") return occupiedRoles.has("first_frame") ? null : "first_frame";
+  if (kind === "last_frame") return occupiedRoles.has("last_frame") ? null : "last_frame";
+  if (kind !== "join_frame") return null;
+  if (!occupiedRoles.has("first_frame")) return "first_frame";
+  return occupiedRoles.has("last_frame") ? null : "last_frame";
 }
 
-/** Approved, mode-compatible slots that the target does not bind yet. */
 export function storyComposerAddableSlots(
-  target: StoryProductionTarget | null,
-  slots: readonly FilmReferenceSlot[]
+  mode: StoryVideoGenerationMode,
+  references: readonly StoryVideoGenerationReferenceInput[],
+  slots: readonly StoryReferenceSlot[]
 ): StoryComposerAddableSlot[] {
-  if (!target) return [];
-  const bound = new Set(target.referenceBindings.map((binding) => binding.referenceSlotId));
+  const selectedVersions = new Set(references.map((reference) => reference.referenceVersionId));
+  const occupiedRoles = new Set(references.map((reference) => reference.role));
   return [...slots]
-    .filter((slot) => !bound.has(slot.id) && Boolean(slot.approvedVersionId))
-    .sort((left, right) => left.rank - right.rank)
+    .sort((left, right) => left.rank - right.rank || left.id.localeCompare(right.id))
     .flatMap((slot) => {
-      const role = addableRoleForSlot(target.generationControl, slot.kind);
+      const version = approvedVersion(slot);
+      if (!version || selectedVersions.has(version.id)) return [];
+      const role = referenceRoleForSlot(mode, slot.kind, occupiedRoles);
       if (!role) return [];
+      if (mode === "multimodal_to_video" && references.length >= 12) return [];
       return [
         {
           slotId: slot.id,
+          referenceVersionId: version.id,
           label: slot.label,
           kind: slot.kind,
-          previewUrl: slotPreviewUrl(slot),
+          previewUrl: version.asset.previewUrl,
           role,
         },
       ];
     });
 }
 
-function bindingsAsInput(target: StoryProductionTarget): StoryReferenceBindingInput[] {
-  return target.referenceBindings.map(({ referenceSlotId, role, rank, required }) => ({
-    referenceSlotId,
-    role,
-    rank,
-    required,
-  }));
+export function addStoryRecipeReference(
+  references: readonly StoryVideoGenerationReferenceInput[],
+  referenceVersionId: string,
+  role: StoryVideoGenerationReferenceRole
+): StoryVideoGenerationReferenceInput[] {
+  if (references.some((reference) => reference.referenceVersionId === referenceVersionId)) {
+    return [...references];
+  }
+  return [...references, { referenceVersionId, role }];
 }
 
-export function storyReferenceBindingsWith(
-  target: StoryProductionTarget,
-  slotId: string,
-  role: StoryReferenceBindingInput["role"]
-): StoryReferenceBindingInput[] {
-  const current = bindingsAsInput(target);
-  if (current.some((binding) => binding.referenceSlotId === slotId)) return current;
-  const nextRank = current.reduce((max, binding) => Math.max(max, binding.rank), -1) + 1;
-  return [...current, { referenceSlotId: slotId, role, rank: nextRank, required: false }];
+export function removeStoryRecipeReference(
+  references: readonly StoryVideoGenerationReferenceInput[],
+  referenceVersionId: string
+): StoryVideoGenerationReferenceInput[] {
+  return references.filter((reference) => reference.referenceVersionId !== referenceVersionId);
 }
 
-export function storyReferenceBindingsWithout(
-  target: StoryProductionTarget,
-  slotId: string
-): StoryReferenceBindingInput[] {
-  return bindingsAsInput(target).filter((binding) => binding.referenceSlotId !== slotId);
+export function isStoryRecipeReferencePlanValid(
+  mode: StoryVideoGenerationMode,
+  references: readonly StoryVideoGenerationReferenceInput[]
+): boolean {
+  const versionIds = new Set(references.map((reference) => reference.referenceVersionId));
+  if (versionIds.size !== references.length) return false;
+  if (mode === "multimodal_to_video") {
+    return (
+      references.length <= 12 && references.every((reference) => reference.role === "reference")
+    );
+  }
+  return (
+    references.length === 2 &&
+    references.filter((reference) => reference.role === "first_frame").length === 1 &&
+    references.filter((reference) => reference.role === "last_frame").length === 1
+  );
 }

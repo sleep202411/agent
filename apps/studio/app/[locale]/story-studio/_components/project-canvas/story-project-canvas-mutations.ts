@@ -1,9 +1,6 @@
 import type {
-  FilmCondition,
+  StoryCondition,
   InteractiveFilmDraftContent,
-  StoryClipPromptBeat,
-  StoryClipPromptDraft,
-  StoryTrailerPromptDraft,
   StoryGraphChoice,
   StoryGraphNode,
 } from "@/lib/story-projects-api";
@@ -13,7 +10,6 @@ type RouterGraphNode = Extract<StoryGraphNode, { kind: "router" }>;
 type ChoiceExit = Extract<ClipGraphNode["exit"], { kind: "choice" }>;
 type CheckpointExit = Extract<ClipGraphNode["exit"], { kind: "checkpoint" }>;
 type StoryEnding = InteractiveFilmDraftContent["storyBible"]["endings"][number];
-type StoryDirectorPromptDraft = StoryClipPromptDraft | StoryTrailerPromptDraft;
 
 const STABLE_ID_PATTERN = /^[A-Za-z][A-Za-z0-9._:-]*$/;
 const CLIP_KEY_PATTERN = /^[A-Z][A-Z0-9_-]*$/;
@@ -34,10 +30,6 @@ export type StoryDraftMutationErrorCode =
   | "INVALID_BRANCH_SELECTOR"
   | "NODE_NOT_FOUND"
   | "CLIP_NOT_FOUND"
-  | "CLIP_PROMPT_NOT_FOUND"
-  | "CLIP_PROMPT_IDENTITY_MISMATCH"
-  | "CLIP_PROMPT_BEAT_TOO_SHORT"
-  | "INVALID_CLIP_PROMPT_DURATION"
   | "ENDING_NOT_FOUND"
   | "CHOICE_NOT_FOUND"
   | "TARGET_NODE_NOT_FOUND"
@@ -102,12 +94,8 @@ export function createClipNode(
     clipKey,
     exit: { kind: "auto", nextNodeId: null },
   };
-  const next = appendGraphNode(content, created);
   return {
-    content: {
-      ...next,
-      clipPrompts: [...next.clipPrompts, createDefaultClipPrompt(created)],
-    },
+    content: appendGraphNode(content, created),
     created,
   };
 }
@@ -179,7 +167,6 @@ export function duplicateClipNode(
   options: CreateClipNodeOptions = {}
 ): StoryNodeCreationResult<ClipGraphNode> {
   const source = requireClip(content, sourceNodeId);
-  const sourcePrompt = requireClipPrompt(content, sourceNodeId);
   const result = createClipNode(content, options);
   const created: ClipGraphNode = {
     ...source,
@@ -188,22 +175,7 @@ export function duplicateClipNode(
     exit: { kind: "auto", nextNodeId: null },
   };
   return {
-    content: {
-      ...replaceGraphNode(result.content, result.created.nodeId, created),
-      clipPrompts: result.content.clipPrompts.map((prompt) =>
-        prompt.graphNodeId === result.created.nodeId
-          ? {
-              ...sourcePrompt,
-              graphNodeId: created.nodeId,
-              clipKey: created.clipKey,
-              referenceRoleNotes: sourcePrompt.referenceRoleNotes.map((note) => ({ ...note })),
-              beats: sourcePrompt.beats.map((beat) => ({ ...beat })),
-              negativeConstraints: [...sourcePrompt.negativeConstraints],
-              continuityNotes: [...sourcePrompt.continuityNotes],
-            }
-          : prompt
-      ),
-    },
+    content: replaceGraphNode(result.content, result.created.nodeId, created),
     created,
   };
 }
@@ -245,207 +217,7 @@ export function deleteGraphNode(
   return {
     ...content,
     graph: { entryNodeId, nodes: remainingNodes },
-    clipPrompts:
-      deleted.kind === "clip"
-        ? content.clipPrompts.filter((prompt) => prompt.graphNodeId !== deleted.nodeId)
-        : content.clipPrompts,
   };
-}
-
-export function replaceClipPrompt(
-  content: InteractiveFilmDraftContent,
-  graphNodeId: string,
-  next: StoryClipPromptDraft
-): InteractiveFilmDraftContent {
-  const node = requireClip(content, graphNodeId);
-  const promptIndex = content.clipPrompts.findIndex((prompt) => prompt.graphNodeId === graphNodeId);
-  if (promptIndex < 0) {
-    throw mutationError("CLIP_PROMPT_NOT_FOUND", `Clip ${graphNodeId} has no director prompt.`);
-  }
-  if (next.graphNodeId !== node.nodeId || next.clipKey !== node.clipKey) {
-    throw mutationError(
-      "CLIP_PROMPT_IDENTITY_MISMATCH",
-      `Director prompt identity must remain ${node.nodeId}/${node.clipKey}.`
-    );
-  }
-  if (JSON.stringify(content.clipPrompts[promptIndex]) === JSON.stringify(next)) return content;
-  return {
-    ...content,
-    clipPrompts: content.clipPrompts.map((prompt, index) =>
-      index === promptIndex ? next : prompt
-    ),
-  };
-}
-
-export function createTrailerPrompt(
-  content: InteractiveFilmDraftContent,
-  title: string
-): InteractiveFilmDraftContent {
-  if (content.trailerPrompt) return content;
-  return {
-    ...content,
-    trailerPrompt: {
-      title: title.trim(),
-      description: "",
-      targetDurationMs: 15_000,
-      generationControl: { mode: "omni_reference" },
-      masterDirection: "",
-      referenceRoleNotes: [],
-      emotionalArc: "",
-      beats: [emptyClipPromptBeat("trailer:beat:1", 0, 15_000)],
-      negativeConstraints: [],
-      continuityNotes: [],
-    },
-  };
-}
-
-export function replaceTrailerPrompt(
-  content: InteractiveFilmDraftContent,
-  prompt: StoryTrailerPromptDraft
-): InteractiveFilmDraftContent {
-  if (content.trailerPrompt === prompt) return content;
-  return { ...content, trailerPrompt: prompt };
-}
-
-export function createDefaultClipPrompt(
-  node: Pick<ClipGraphNode, "nodeId" | "clipKey">
-): StoryClipPromptDraft {
-  return {
-    graphNodeId: node.nodeId,
-    clipKey: node.clipKey,
-    title: node.clipKey,
-    description: "",
-    targetDurationMs: 15_000,
-    generationControl: { mode: "frame_lock", frameMode: "first_frame" },
-    masterDirection: "",
-    referenceRoleNotes: [],
-    emotionalArc: "",
-    beats: [
-      {
-        id: "beat:1",
-        startMs: 0,
-        endMs: 15_000,
-        visual: "",
-        camera: "",
-        action: "",
-        performance: "",
-        emotion: "",
-        dialogue: "",
-        audio: "",
-        endState: "",
-        continuity: "",
-      },
-    ],
-    negativeConstraints: [],
-    continuityNotes: [],
-  };
-}
-
-export function appendClipPromptBeat<T extends StoryDirectorPromptDraft>(prompt: T): T {
-  const beats = prompt.beats.map((beat) => ({ ...beat }));
-  const last = beats.at(-1);
-  let startMs = 0;
-  let endMs = prompt.targetDurationMs;
-  if (last) {
-    if (last.endMs - last.startMs < 2) {
-      throw mutationError(
-        "CLIP_PROMPT_BEAT_TOO_SHORT",
-        "The final beat is too short to split into another positive-length beat."
-      );
-    }
-    const originalEnd = last.endMs;
-    const midpoint = Math.max(last.startMs + 1, Math.floor((last.startMs + originalEnd) / 2));
-    last.endMs = midpoint;
-    startMs = midpoint;
-    endMs = originalEnd;
-  }
-  beats.push(
-    emptyClipPromptBeat(
-      nextScopedStableId(
-        "beat",
-        beats.map((beat) => beat.id)
-      ),
-      startMs,
-      endMs
-    )
-  );
-  return { ...prompt, beats } as T;
-}
-
-export function moveClipPromptBeat<T extends StoryDirectorPromptDraft>(
-  prompt: T,
-  index: number,
-  direction: "up" | "down"
-): T {
-  const targetIndex = direction === "up" ? index - 1 : index + 1;
-  if (
-    index < 0 ||
-    index >= prompt.beats.length ||
-    targetIndex < 0 ||
-    targetIndex >= prompt.beats.length
-  ) {
-    return prompt;
-  }
-  const beats = [...prompt.beats];
-  const source = beats[index]!;
-  const target = beats[targetIndex]!;
-  beats[targetIndex] = { ...source, startMs: target.startMs, endMs: target.endMs };
-  beats[index] = { ...target, startMs: source.startMs, endMs: source.endMs };
-  return { ...prompt, beats } as T;
-}
-
-export function setClipPromptTargetDuration<T extends StoryDirectorPromptDraft>(
-  prompt: T,
-  requestedDurationMs: number
-): T {
-  if (
-    !Number.isInteger(requestedDurationMs) ||
-    requestedDurationMs <= 0 ||
-    requestedDurationMs > 600_000
-  ) {
-    throw mutationError(
-      "INVALID_CLIP_PROMPT_DURATION",
-      "Clip prompt duration must be an integer between 1 and 600000 milliseconds."
-    );
-  }
-  const lastIndex = prompt.beats.length - 1;
-  const alignedLast = prompt.beats[lastIndex]?.endMs === prompt.targetDurationMs;
-  const fixedBeatEndMs = Math.max(
-    1,
-    ...prompt.beats.flatMap((beat, index) =>
-      index === lastIndex && alignedLast ? [beat.startMs + 1] : [beat.endMs]
-    )
-  );
-  const targetDurationMs = Math.max(requestedDurationMs, fixedBeatEndMs);
-  if (targetDurationMs === prompt.targetDurationMs) return prompt;
-  const beats = prompt.beats.map((beat, index) =>
-    index === lastIndex && alignedLast ? { ...beat, endMs: targetDurationMs } : beat
-  );
-  return { ...prompt, targetDurationMs, beats } as T;
-}
-
-function emptyClipPromptBeat(id: string, startMs: number, endMs: number): StoryClipPromptBeat {
-  return {
-    id,
-    startMs,
-    endMs,
-    visual: "",
-    camera: "",
-    action: "",
-    performance: "",
-    emotion: "",
-    dialogue: "",
-    audio: "",
-    endState: "",
-    continuity: "",
-  };
-}
-
-function nextScopedStableId(prefix: string, existing: string[]): string {
-  const used = new Set(existing);
-  let ordinal = existing.length + 1;
-  while (used.has(`${prefix}:${ordinal}`)) ordinal += 1;
-  return `${prefix}:${ordinal}`;
 }
 
 /** Removes a story-bible ending plus ending exits/effects that reference it. */
@@ -586,7 +358,7 @@ export interface AddChoiceOptionOptions {
   choiceId?: string;
   label?: string;
   accessibilityLabel?: string;
-  visibleWhen?: FilmCondition;
+  visibleWhen?: StoryCondition;
   effects?: StoryGraphChoice["effects"];
   afterSelect?: StoryGraphChoice["afterSelect"];
 }
@@ -722,7 +494,7 @@ export function disconnectChoiceTarget(
   return removeChoiceOption(content, sourceNodeId, choiceId);
 }
 
-/** Sets the one completion target owned by a film clip. */
+/** Sets the one completion target owned by a clip. */
 export function connectClipContinuation(
   content: InteractiveFilmDraftContent,
   sourceNodeId: string,
@@ -769,7 +541,7 @@ export function connectAutoRoute(
   content: InteractiveFilmDraftContent,
   sourceNodeId: string,
   targetNodeId: string,
-  options: { priority?: number; when?: FilmCondition } = {}
+  options: { priority?: number; when?: StoryCondition } = {}
 ): InteractiveFilmDraftContent {
   const source = requireRouter(content, sourceNodeId);
   requireTargetNode(content, targetNodeId);
@@ -813,7 +585,7 @@ export interface AutoRoutePatch {
   targetNodeId?: string;
   priority?: number;
   /** `null` explicitly removes the route condition. */
-  when?: FilmCondition | null;
+  when?: StoryCondition | null;
 }
 
 /** Updates exactly one canonical auto route without changing its array position. */
@@ -1400,17 +1172,6 @@ function requireRouter(content: InteractiveFilmDraftContent, nodeId: string): Ro
   return node;
 }
 
-function requireClipPrompt(
-  content: InteractiveFilmDraftContent,
-  nodeId: string
-): StoryClipPromptDraft {
-  const prompt = content.clipPrompts.find((candidate) => candidate.graphNodeId === nodeId);
-  if (!prompt) {
-    throw mutationError("CLIP_PROMPT_NOT_FOUND", `Clip ${nodeId} has no director prompt.`);
-  }
-  return prompt;
-}
-
 function requireChoiceClip(
   content: InteractiveFilmDraftContent,
   nodeId: string
@@ -1587,12 +1348,15 @@ function hasBranches(exit: ClipGraphNode["exit"]): boolean {
   return exit.nextNodeId !== null;
 }
 
-function sameCondition(left: FilmCondition | undefined, right: FilmCondition | undefined): boolean {
+function sameCondition(
+  left: StoryCondition | undefined,
+  right: StoryCondition | undefined
+): boolean {
   return JSON.stringify(left) === JSON.stringify(right);
 }
 
 function validateConditionReferences(
-  condition: FilmCondition,
+  condition: StoryCondition,
   path: Array<string | number>,
   stateVariables: ReadonlyMap<
     string,

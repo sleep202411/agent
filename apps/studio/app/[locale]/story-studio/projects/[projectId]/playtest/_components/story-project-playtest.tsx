@@ -9,18 +9,18 @@ import { ExperienceRuntimePlayer } from "@/components/experience-runtime/experie
 import { Button } from "@/components/ui/button";
 import { Link } from "@/i18n/navigation";
 import {
-  getFilmBuild,
+  getStoryBuild,
   getStoryWorkingPreview,
   storyApiErrorMessage,
-  type FilmBuild,
-  type FilmBuildDiagnostic,
+  type StoryBuild,
+  type StoryBuildDiagnostic,
   type StoryWorkingPreview,
 } from "@/lib/story-projects-api";
 import type { StoryProjectPlaytestSource } from "../_lib/story-playtest-source";
 
 type LoadedPlaytestRuntime =
   | { kind: "draft"; preview: StoryWorkingPreview }
-  | { kind: "build"; build: FilmBuild };
+  | { kind: "build"; build: StoryBuild };
 
 export function StoryProjectPlaytest({
   projectId,
@@ -51,7 +51,7 @@ export function StoryProjectPlaytest({
           }
         : {
             kind: "build" as const,
-            build: await getFilmBuild(workspaceId, projectId, source.buildId),
+            build: await getStoryBuild(workspaceId, projectId, source.buildId),
           };
     },
     enabled: Boolean(workspaceId),
@@ -122,7 +122,11 @@ export function StoryProjectPlaytest({
   return (
     <main className="relative isolate min-h-dvh overflow-hidden bg-black text-white">
       <div className="absolute inset-0">
-        <ExperienceRuntimePlayer runtime={runtime} locale={locale} />
+        <ExperienceRuntimePlayer
+          key={parsedRuntime.success ? parsedRuntime.data.buildId : "invalid-runtime"}
+          runtime={runtime}
+          locale={locale}
+        />
       </div>
 
       <header className="pointer-events-none absolute inset-x-0 top-0 z-50 flex items-start justify-between gap-3 p-3 sm:p-4">
@@ -191,7 +195,7 @@ function PlaytestFailure({
 }: {
   projectId: string;
   message: string;
-  diagnostics?: FilmBuildDiagnostic[];
+  diagnostics?: StoryBuildDiagnostic[];
   onRetry?: () => void;
 }) {
   const t = useTranslations("storyStudio.canvas.workingPreview");
@@ -233,7 +237,7 @@ function PlaytestFailure({
   );
 }
 
-function PlaytestWarnings({ diagnostics }: { diagnostics: FilmBuildDiagnostic[] }) {
+function PlaytestWarnings({ diagnostics }: { diagnostics: StoryBuildDiagnostic[] }) {
   const t = useTranslations("storyStudio.canvas.workingPreview");
   return (
     <details className="group max-w-sm rounded-2xl bg-black/58 text-white shadow-[0_14px_50px_rgb(0_0_0/0.38)] backdrop-blur-2xl">

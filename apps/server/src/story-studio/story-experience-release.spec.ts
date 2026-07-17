@@ -19,6 +19,7 @@ import {
   StoryExperienceReleaseGateway,
   StoryExperienceReleaseOutcomeUnknownException,
 } from './story-experience-release.gateway';
+import { canonicalJsonHash } from './canonical-json';
 import { StoryExperienceReleaseService } from './story-experience-release.service';
 
 const BUILD_ID = '019f60f4-b101-70d4-8000-000000000001';
@@ -37,7 +38,7 @@ function manifestFixture(buildId = BUILD_ID) {
     channel: 'production',
     gameId: PROJECT_ID,
     buildId,
-    contentVersion: `build:${buildId}`,
+    contentVersion: buildId,
     completionPolicy: 'finite',
     metadata: {
       title: {
@@ -316,14 +317,14 @@ describe('StoryExperienceReleaseGateway', () => {
       javaResponse(200, {
         gameId: PROJECT_ID,
         title: 'Branching Film',
-        currentVersion: `build:${BUILD_ID}`,
+        currentVersion: BUILD_ID,
         manifestUrl: MANIFEST_URL,
       }),
     );
     const result = await new StoryExperienceReleaseGateway().getGame(
       PROJECT_ID,
     );
-    expect(result.currentVersion).toBe(`build:${BUILD_ID}`);
+    expect(result.currentVersion).toBe(BUILD_ID);
     expect(fetchMock).toHaveBeenCalledWith(
       `${JAVA_STUDIO_URL}${JAVA_EXPERIENCE_GAMES_PATH}/${PROJECT_ID}`,
       expect.objectContaining({
@@ -423,7 +424,7 @@ describe('StoryExperienceReleaseService publication lifecycle', () => {
     expect(createData.mediaAuthorizedAt).toBeInstanceOf(Date);
     expect(createData.createdAt).toEqual(createData.mediaAuthorizedAt);
     expect(gateway.publish).toHaveBeenCalledWith(
-      expect.objectContaining({ contentVersion: `build:${BUILD_ID}` }),
+      expect.objectContaining({ contentVersion: BUILD_ID }),
       'satoken=session',
     );
   });
@@ -549,7 +550,7 @@ describe('StoryExperienceReleaseService publication lifecycle', () => {
   it('serializes different Builds in one project across processes', async () => {
     const competing = publicationRow({
       buildId: OLD_BUILD_ID,
-      contentVersion: `build:${OLD_BUILD_ID}`,
+      contentVersion: OLD_BUILD_ID,
       status: 'uncertain',
       leaseOwner: 'other-process',
       leaseExpiresAt: new Date(Date.now() + 30_000),
@@ -575,10 +576,9 @@ describe('StoryExperienceReleaseService publication lifecycle', () => {
     const expired = authorityRow({
       id: 'publication-old-unknown',
       buildId: OLD_BUILD_ID,
-      contentVersion: `build:${OLD_BUILD_ID}`,
+      contentVersion: OLD_BUILD_ID,
       status: 'uncertain',
       sourceDraftRevision: 3,
-      sourceProductionRevision: 1,
     });
     Object.assign(expired, {
       leaseOwner: 'dead-process',
@@ -587,11 +587,11 @@ describe('StoryExperienceReleaseService publication lifecycle', () => {
     });
     const created = publicationRow({
       buildId: NEW_BUILD_ID,
-      contentVersion: `build:${NEW_BUILD_ID}`,
+      contentVersion: NEW_BUILD_ID,
     });
     const claimed = publicationRow({
       buildId: NEW_BUILD_ID,
-      contentVersion: `build:${NEW_BUILD_ID}`,
+      contentVersion: NEW_BUILD_ID,
       leaseOwner: 'new-lease',
       leaseExpiresAt: new Date(Date.now() + 30_000),
     });
@@ -612,7 +612,7 @@ describe('StoryExperienceReleaseService publication lifecycle', () => {
     };
     const prisma = prismaWithTransaction(tx);
     const gateway = {
-      getGame: jest.fn(() => gameDetail(`build:${BUILD_ID}`)),
+      getGame: jest.fn(() => gameDetail(BUILD_ID)),
       publish: jest.fn(() => releaseResponse(newManifest)),
     };
     const service = serviceWith({ manifest: newManifest, prisma, gateway });
@@ -653,12 +653,82 @@ describe('StoryExperienceReleaseService publication lifecycle', () => {
     expect(prisma.$transaction).not.toHaveBeenCalled();
   });
 
-  it('rejects a non-production Build before contacting Java', async () => {
+  it('rejects a Build without frozen assets before contacting Java', async () => {
     const gateway = { publish: jest.fn() };
-    const service = serviceWith({ gateway, buildProfile: 'preview' });
+    const service = serviceWith({ gateway, frozenAssetsAvailable: false });
     await expect(publish(service)).rejects.toBeInstanceOf(
       UnprocessableEntityException,
     );
+    expect(gateway.publish).not.toHaveBeenCalled();
+  });
+
+  it('rejects a Build whose browser-safe frozen media no longer matches before contacting Java', async () => {
+    const gateway = { publish: jest.fn() };
+    const service = serviceWith({
+      gateway,
+      buildOverrides: {
+        runtimeJson: null,
+        diagnostics: [
+          {
+            severity: 'error',
+            code: 'STORY_BUILD_ASSET_METADATA_CHANGED',
+            message: 'Frozen browser-safe playback metadata changed.',
+            entityType: 'asset',
+            entityId: 'asset-1',
+          },
+        ],
+      },
+    });
+
+    await expect(publish(service)).rejects.toMatchObject({
+      response: expect.objectContaining({
+        code: 'STORY_BUILD_NOT_PUBLISHABLE',
+      }),
+    });
+    expect(gateway.publish).not.toHaveBeenCalled();
+  });
+
+  it('rejects a corrupt immutable manifest with a controlled conflict', async () => {
+    const gateway = { publish: jest.fn() };
+    const service = serviceWith({
+      gateway,
+      buildOverrides: { runtimeJson: { schemaVersion: 2 } },
+    });
+
+    await expect(publish(service)).rejects.toMatchObject({
+      response: expect.objectContaining({
+        code: 'STORY_BUILD_MANIFEST_CORRUPT',
+      }),
+    });
+    expect(gateway.publish).not.toHaveBeenCalled();
+  });
+
+  it('rejects a frozen manifest whose canonical hash no longer matches its Build', async () => {
+    const gateway = { publish: jest.fn() };
+    const service = serviceWith({
+      gateway,
+      buildOverrides: { runtimeHash: 'b'.repeat(64) },
+    });
+
+    await expect(publish(service)).rejects.toMatchObject({
+      response: expect.objectContaining({
+        code: 'STORY_BUILD_MANIFEST_IDENTITY_MISMATCH',
+      }),
+    });
+    expect(gateway.publish).not.toHaveBeenCalled();
+  });
+
+  it('rejects a manifest whose raw Build contentVersion identity was changed', async () => {
+    const gateway = { publish: jest.fn() };
+    const manifest = manifestFixture();
+    manifest.contentVersion = OLD_BUILD_ID;
+    const service = serviceWith({ gateway, manifest });
+
+    await expect(publish(service)).rejects.toMatchObject({
+      response: expect.objectContaining({
+        code: 'STORY_BUILD_MANIFEST_IDENTITY_MISMATCH',
+      }),
+    });
     expect(gateway.publish).not.toHaveBeenCalled();
   });
 });
@@ -668,12 +738,11 @@ describe('StoryExperienceReleaseService authority reconciliation', () => {
     const row = authorityRow({
       id: 'publication-current',
       buildId: BUILD_ID,
-      contentVersion: `build:${BUILD_ID}`,
+      contentVersion: BUILD_ID,
       status: 'confirmed',
       manifestUrl: MANIFEST_URL,
       publishedAt: new Date('2026-07-16T11:00:00.000Z'),
       sourceDraftRevision: 7,
-      sourceProductionRevision: 3,
     });
     const tx = reconciliationTransaction([row]);
     const prisma = prismaWithTransaction(tx);
@@ -691,7 +760,7 @@ describe('StoryExperienceReleaseService authority reconciliation', () => {
     const gateway = {
       getGame: jest.fn(() => {
         expect(transactionDepth).toBe(0);
-        return gameDetail(`build:${BUILD_ID}`);
+        return gameDetail(BUILD_ID);
       }),
     };
     const service = serviceWith({ prisma, gateway });
@@ -706,12 +775,11 @@ describe('StoryExperienceReleaseService authority reconciliation', () => {
     const row = authorityRow({
       id: 'publication-v1',
       buildId: BUILD_ID,
-      contentVersion: `build:${BUILD_ID}`,
+      contentVersion: BUILD_ID,
       status: 'confirmed',
       manifestUrl: MANIFEST_URL,
       publishedAt: new Date('2026-07-16T11:00:00.000Z'),
       sourceDraftRevision: 7,
-      sourceProductionRevision: 3,
     });
     const tx = reconciliationTransaction([row]);
     let rowVersion = '101';
@@ -732,7 +800,7 @@ describe('StoryExperienceReleaseService authority reconciliation', () => {
     });
     const prisma = prismaWithTransaction(tx);
     const slowResponse = deferred<ReturnType<typeof gameDetail>>();
-    const newerAuthority = gameDetail(`build:${NEW_BUILD_ID}`);
+    const newerAuthority = gameDetail(NEW_BUILD_ID);
     const gateway = {
       getGame: jest
         .fn()
@@ -747,29 +815,25 @@ describe('StoryExperienceReleaseService authority reconciliation', () => {
       PROJECT_ID,
       PROJECT_ID,
     );
-    slowResponse.resolve(gameDetail(`build:${BUILD_ID}`));
+    slowResponse.resolve(gameDetail(BUILD_ID));
     const retriedRead = await slowerRead;
 
-    expect(newerRead.currentVersion).toBe(`build:${NEW_BUILD_ID}`);
-    expect(retriedRead.currentVersion).toBe(`build:${NEW_BUILD_ID}`);
+    expect(newerRead.currentVersion).toBe(NEW_BUILD_ID);
+    expect(retriedRead.currentVersion).toBe(NEW_BUILD_ID);
     expect(gateway.getGame).toHaveBeenCalledTimes(3);
-    expect(persistedVersions).toEqual([
-      `build:${NEW_BUILD_ID}`,
-      `build:${NEW_BUILD_ID}`,
-    ]);
-    expect(persistedVersions).not.toContain(`build:${BUILD_ID}`);
+    expect(persistedVersions).toEqual([NEW_BUILD_ID, NEW_BUILD_ID]);
+    expect(persistedVersions).not.toContain(BUILD_ID);
   });
 
   it('fails retryably instead of spinning when publication churn never settles', async () => {
     const row = authorityRow({
       id: 'publication-current',
       buildId: BUILD_ID,
-      contentVersion: `build:${BUILD_ID}`,
+      contentVersion: BUILD_ID,
       status: 'confirmed',
       manifestUrl: MANIFEST_URL,
       publishedAt: new Date('2026-07-16T11:00:00.000Z'),
       sourceDraftRevision: 7,
-      sourceProductionRevision: 3,
     });
     const tx = reconciliationTransaction([row]);
     let tokenRead = 0;
@@ -781,7 +845,7 @@ describe('StoryExperienceReleaseService authority reconciliation', () => {
       return [{ id: row.id, rowVersion: String(tokenRead) }];
     });
     const gateway = {
-      getGame: jest.fn(() => gameDetail(`build:${BUILD_ID}`)),
+      getGame: jest.fn(() => gameDetail(BUILD_ID)),
     };
     const service = serviceWith({
       prisma: prismaWithTransaction(tx),
@@ -804,10 +868,9 @@ describe('StoryExperienceReleaseService authority reconciliation', () => {
     const pending = authorityRow({
       id: 'publication-in-flight',
       buildId: BUILD_ID,
-      contentVersion: `build:${BUILD_ID}`,
+      contentVersion: BUILD_ID,
       status: 'pending',
       sourceDraftRevision: 7,
-      sourceProductionRevision: 3,
     });
     Object.assign(pending, {
       leaseOwner: 'active-publisher',
@@ -817,7 +880,7 @@ describe('StoryExperienceReleaseService authority reconciliation', () => {
     const tx = reconciliationTransaction([pending], checkedAt);
     const service = serviceWith({
       prisma: prismaWithTransaction(tx),
-      gateway: { getGame: jest.fn(() => gameDetail(`build:${BUILD_ID}`)) },
+      gateway: { getGame: jest.fn(() => gameDetail(BUILD_ID)) },
     });
 
     await expect(
@@ -843,15 +906,14 @@ describe('StoryExperienceReleaseService authority reconciliation', () => {
     const pending = authorityRow({
       id: 'publication-current',
       buildId: BUILD_ID,
-      contentVersion: `build:${BUILD_ID}`,
+      contentVersion: BUILD_ID,
       status: 'pending',
       sourceDraftRevision: 7,
-      sourceProductionRevision: 3,
     });
     const tx = reconciliationTransaction([pending]);
     const service = serviceWith({
       prisma: prismaWithTransaction(tx),
-      gateway: { getGame: jest.fn(() => gameDetail(`build:${BUILD_ID}`)) },
+      gateway: { getGame: jest.fn(() => gameDetail(BUILD_ID)) },
     });
 
     const current = await service.getCurrentRelease(
@@ -861,9 +923,8 @@ describe('StoryExperienceReleaseService authority reconciliation', () => {
     );
     expect(current.currentBuild).toEqual({
       id: BUILD_ID,
-      sourceRevisionId: pending.build.sourceRevisionId,
       sourceDraftRevision: 7,
-      sourceProductionRevision: 3,
+      videoSnapshotHash: HASH,
     });
     expect(tx.storyExperiencePublication.update).toHaveBeenCalledWith({
       where: { id: 'publication-current' },
@@ -880,26 +941,24 @@ describe('StoryExperienceReleaseService authority reconciliation', () => {
     const v1 = authorityRow({
       id: 'publication-v1',
       buildId: OLD_BUILD_ID,
-      contentVersion: `build:${OLD_BUILD_ID}`,
+      contentVersion: OLD_BUILD_ID,
       status: 'confirmed',
       manifestUrl: MANIFEST_URL,
       publishedAt: new Date('2026-01-01T00:00:00.000Z'),
       sourceDraftRevision: 4,
-      sourceProductionRevision: 1,
     });
     const v2 = authorityRow({
       id: 'publication-v2',
       buildId: NEW_BUILD_ID,
-      contentVersion: `build:${NEW_BUILD_ID}`,
+      contentVersion: NEW_BUILD_ID,
       status: 'uncertain',
       sourceDraftRevision: 8,
-      sourceProductionRevision: 2,
     });
     const tx = reconciliationTransaction([v1, v2]);
     const service = serviceWith({
       prisma: prismaWithTransaction(tx),
       gateway: {
-        getGame: jest.fn(() => gameDetail(`build:${OLD_BUILD_ID}`)),
+        getGame: jest.fn(() => gameDetail(OLD_BUILD_ID)),
       },
     });
 
@@ -914,7 +973,7 @@ describe('StoryExperienceReleaseService authority reconciliation', () => {
       where: { id: 'publication-v2' },
       data: expect.objectContaining({
         authorityIsCurrent: false,
-        authorityCurrentVersion: `build:${OLD_BUILD_ID}`,
+        authorityCurrentVersion: OLD_BUILD_ID,
       }),
     });
   });
@@ -923,17 +982,16 @@ describe('StoryExperienceReleaseService authority reconciliation', () => {
     const published = authorityRow({
       id: 'publication-v1',
       buildId: OLD_BUILD_ID,
-      contentVersion: `build:${OLD_BUILD_ID}`,
+      contentVersion: OLD_BUILD_ID,
       status: 'confirmed',
       manifestUrl: MANIFEST_URL,
       publishedAt: new Date(),
       sourceDraftRevision: 11,
-      sourceProductionRevision: 5,
     });
     const service = serviceWith({
       prisma: prismaWithTransaction(reconciliationTransaction([published])),
       gateway: {
-        getGame: jest.fn(() => gameDetail(`build:${OLD_BUILD_ID}`)),
+        getGame: jest.fn(() => gameDetail(OLD_BUILD_ID)),
       },
     });
     const current = await service.getCurrentRelease(
@@ -996,10 +1054,9 @@ describe('StoryExperienceReleaseService authority reconciliation', () => {
     const uncertain = authorityRow({
       id: 'publication-unknown',
       buildId: BUILD_ID,
-      contentVersion: `build:${BUILD_ID}`,
+      contentVersion: BUILD_ID,
       status: 'uncertain',
       sourceDraftRevision: 2,
-      sourceProductionRevision: 1,
     });
     Object.assign(uncertain, {
       leaseOwner: 'dead-process',
@@ -1099,7 +1156,7 @@ function publicationRow(overrides: Record<string, unknown> = {}) {
     buildId: BUILD_ID,
     storyProjectId: PROJECT_ID,
     gameId: PROJECT_ID,
-    contentVersion: `build:${BUILD_ID}`,
+    contentVersion: BUILD_ID,
     status: 'pending' as const,
     requestedSetCurrent: true,
     requestedByUserId: 'user-1',
@@ -1132,7 +1189,6 @@ function authorityRow(input: {
   manifestUrl?: string | null;
   publishedAt?: Date | null;
   sourceDraftRevision: number;
-  sourceProductionRevision: number;
 }) {
   return {
     ...publicationRow({
@@ -1145,9 +1201,8 @@ function authorityRow(input: {
     }),
     build: {
       id: input.buildId,
-      sourceRevisionId: `${input.buildId.slice(0, -1)}9`,
-      sourceProductionRevision: input.sourceProductionRevision,
-      sourceRevision: { sourceDraftRevision: input.sourceDraftRevision },
+      sourceDraftRevision: input.sourceDraftRevision,
+      videoSnapshotHash: HASH,
     },
   };
 }
@@ -1224,7 +1279,8 @@ function serviceWith(input: {
   manifest?: ReturnType<typeof manifestFixture>;
   gateway?: object;
   prisma?: object;
-  buildProfile?: 'preview' | 'production';
+  frozenAssetsAvailable?: boolean;
+  buildOverrides?: Record<string, unknown>;
 }) {
   const manifest = input.manifest ?? manifestFixture();
   return new StoryExperienceReleaseService(
@@ -1237,10 +1293,37 @@ function serviceWith(input: {
       getBuild: jest.fn(() => ({
         id: manifest.buildId,
         status: 'ready',
-        profile: input.buildProfile ?? 'production',
         scope: { kind: 'full' },
+        sourceDraftRevision: 7,
+        videoSnapshotHash: HASH,
         runtimeSchemaVersion: 2,
         runtimeJson: manifest,
+        runtimeHash: canonicalJsonHash(manifest),
+        completedAt: new Date().toISOString(),
+        assets:
+          input.frozenAssetsAvailable === false
+            ? []
+            : [
+                {
+                  id: 'frozen-theme',
+                  buildId: manifest.buildId,
+                  clipId: null,
+                  role: 'runtime',
+                  logicalKey: 'theme.config',
+                  assetId: 'theme.config.source',
+                  variantId: 'theme.config.variant',
+                  checksumSha256: HASH,
+                  contentType: 'application/json',
+                  width: null,
+                  height: null,
+                  durationMs: null,
+                  hasAudio: null,
+                  browserSafeMp4: null,
+                  sizeBytes: '128',
+                },
+              ],
+        diagnostics: [],
+        ...input.buildOverrides,
       })),
     } as never,
     (input.gateway ?? {

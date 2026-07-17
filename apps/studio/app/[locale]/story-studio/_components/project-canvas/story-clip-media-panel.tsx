@@ -11,7 +11,7 @@ import {
 import { useTranslations } from "next-intl";
 import { Button } from "@/components/ui/button";
 import { StudioVideoPlayer } from "@/components/media/studio-video-player";
-import { storyApiErrorMessage, type FilmClipSummary } from "@/lib/story-projects-api";
+import { storyApiErrorMessage, type StoryClipVideoSummary } from "@/lib/story-projects-api";
 import {
   StoryVideoLibraryDialog,
   type StoryVideoLibraryDialogProps,
@@ -24,7 +24,7 @@ export type StoryClipMediaUploadState =
   | { stage: "processing" };
 
 export interface StoryClipMediaPanelProps {
-  clip: FilmClipSummary | null;
+  clip: StoryClipVideoSummary | null;
   canEdit: boolean;
   disabledReason?: string | null;
   onUpload: (
@@ -32,7 +32,7 @@ export interface StoryClipMediaPanelProps {
     onState: (state: StoryClipMediaUploadState) => void,
     signal: AbortSignal
   ) => Promise<void>;
-  videoLibrary?: Omit<StoryVideoLibraryDialogProps, "outputContract" | "currentVideo">;
+  videoLibrary?: Omit<StoryVideoLibraryDialogProps, "currentVideo">;
 }
 
 /**
@@ -56,9 +56,7 @@ export function StoryClipMediaPanel({
   const currentVideo = clip?.currentVideo ?? null;
   const previewUrl = currentVideo?.asset.previewUrl ?? null;
   const busy = uploadState !== null;
-  // Upload must not wait for a materialized clip: the server lazily creates
-  // the revision + clip on first current-video bind. Library reuse below
-  // still needs the clip (its output contract drives compatibility checks).
+  // Upload is valid before this graph node has any video-plane state.
   const disabled = !canEdit || busy;
   const uploadTitle = disabledReason ?? undefined;
 
@@ -103,10 +101,9 @@ export function StoryClipMediaPanel({
     }
   };
 
-  const width = currentVideo?.asset.width ?? clip?.outputContract.width ?? null;
-  const height = currentVideo?.asset.height ?? clip?.outputContract.height ?? null;
-  const durationSeconds =
-    currentVideo?.asset.durationSeconds ?? (clip ? clip.outputContract.durationMs / 1_000 : null);
+  const width = currentVideo?.width ?? null;
+  const height = currentVideo?.height ?? null;
+  const durationSeconds = currentVideo ? currentVideo.durationMs / 1_000 : null;
 
   return (
     <section className="mt-6 rounded-[20px] bg-white/[0.04] p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.045)]">
@@ -115,19 +112,14 @@ export function StoryClipMediaPanel({
           <h3 className="text-xs font-semibold text-white/78">{t("title")}</h3>
           <p className="mt-1 text-[10px] leading-4 text-white/36">{t("description")}</p>
         </div>
-        {currentVideo?.outdated ? (
-          <span className="shrink-0 rounded-full bg-white/[0.07] px-2 py-1 text-[9px] font-semibold text-white/48">
-            {t("outdated")}
-          </span>
-        ) : null}
       </div>
 
       <div className="mt-3 overflow-hidden rounded-[16px] bg-black/28">
         <div className="relative aspect-video max-h-48 w-full">
           {previewUrl && currentVideo ? (
             <StudioVideoPlayer
-              source={{ src: previewUrl, type: currentVideo.asset.contentType }}
-              ariaLabel={t("preview", { title: clip?.title ?? "" })}
+              source={{ src: previewUrl, type: currentVideo.contentType }}
+              ariaLabel={t("preview", { title: clip?.graphNodeId ?? "" })}
               controlDensity="compact"
               fit="contain"
             />
@@ -209,7 +201,7 @@ export function StoryClipMediaPanel({
         </p>
       )}
 
-      {videoLibrary && clip ? (
+      {videoLibrary ? (
         <div className="mt-3 flex items-center gap-3 rounded-[14px] bg-white/[0.035] px-3 py-2">
           <span className="grid size-8 shrink-0 place-items-center rounded-[11px] bg-white/[0.055] text-white/46">
             <IconLibrary className="size-3.5" stroke={1.8} />
@@ -222,8 +214,7 @@ export function StoryClipMediaPanel({
             {...videoLibrary}
             disabled={disabled || videoLibrary.disabled}
             disabledReason={uploadTitle ?? videoLibrary.disabledReason}
-            outputContract={clip.outputContract}
-            currentVideo={clip.currentVideo}
+            currentVideo={currentVideo}
           />
         </div>
       ) : null}

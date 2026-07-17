@@ -32,24 +32,24 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 import { uploadFileViaSignedUrl } from "@/lib/media-upload";
 import {
-  approveFilmReferenceVersion,
-  createFilmReferenceSlots,
-  createFilmReferenceVersion,
-  reviewFilmReferenceVersion,
+  approveStoryReferenceVersion,
+  createStoryReferenceSlots,
+  createStoryReferenceVersion,
+  reviewStoryReferenceVersion,
   storyApiErrorMessage,
-  updateFilmReferenceSlot,
-  type FilmReferenceKind,
-  type FilmReferenceReviewChecklist,
-  type FilmReferenceSlot,
-  type FilmReferenceSlotSpec,
-  type FilmReviewChecklistValue,
-  type FilmReviewDecision,
+  updateStoryReferenceSlot,
+  type StoryReferenceKind,
+  type StoryReferenceReviewChecklist,
+  type StoryReferenceSlot,
+  type StoryReferenceSlotSpec,
+  type StoryReviewChecklistValue,
+  type StoryReviewDecision,
   type MediaAssetSummary,
   type StoryWorkbench,
 } from "@/lib/story-projects-api";
 import { cn } from "@/lib/utils";
 
-const REFERENCE_KINDS: FilmReferenceKind[] = [
+const REFERENCE_KINDS: StoryReferenceKind[] = [
   "character",
   "location",
   "prop",
@@ -61,7 +61,7 @@ const REFERENCE_KINDS: FilmReferenceKind[] = [
 ];
 
 const REVIEW_KEYS = ["technical", "identityContinuity", "rights", "safety"] as const;
-const PASSING_REVIEW: FilmReferenceReviewChecklist = {
+const PASSING_REVIEW: StoryReferenceReviewChecklist = {
   technical: "pass",
   identityContinuity: "pass",
   rights: "pass",
@@ -82,9 +82,7 @@ export function StoryReferencePack({
   apiConnected: boolean;
 }) {
   const t = useTranslations("storyStudio.references");
-  const revisionId = workbench.selectedRevision?.id ?? null;
-  const film = workbench.film;
-  const references = useMemo(() => film?.references ?? [], [film?.references]);
+  const references = workbench.references;
   const canProduce = workbench.project.capabilities.includes("story.generate");
   const canReview = workbench.project.capabilities.includes("story.review");
   const [selectedSlotId, setSelectedSlotId] = useState<string | null>(null);
@@ -97,6 +95,7 @@ export function StoryReferencePack({
   const [uploadProgress, setUploadProgress] = useState<number | null>(null);
   const [confirmedUpload, setConfirmedUpload] = useState<{
     id: string;
+    variantId: string;
     previewUrl: string;
   } | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -120,31 +119,40 @@ export function StoryReferencePack({
     }
   };
 
-  const attachAsset = (slot: FilmReferenceSlot, assetId: string, source: "upload" | "import") => {
-    if (!revisionId || !apiConnected) return Promise.resolve(false);
+  const attachAsset = (
+    slot: StoryReferenceSlot,
+    assetId: string,
+    variantId: string,
+    source: "upload" | "import"
+  ) => {
+    if (!apiConnected) return Promise.resolve(false);
     return run(`version:${slot.id}`, () =>
-      createFilmReferenceVersion(
+      createStoryReferenceVersion(
         workspaceId,
         projectId,
-        revisionId,
         slot.id,
-        { expectedSlotVersion: slot.version, assetId, source },
+        { expectedSlotVersion: slot.version, assetId, variantId, source },
         globalThis.crypto.randomUUID()
       )
     );
   };
 
-  const upload = async (slot: FilmReferenceSlot, file: File) => {
-    if (!revisionId || !apiConnected) return;
+  const upload = async (slot: StoryReferenceSlot, file: File) => {
+    if (!apiConnected) return;
     setUploadProgress(0);
     setError(null);
     try {
       const asset = await uploadFileViaSignedUrl(file, {
         kind: "ai_reference_image",
+        workspaceId,
         onProgress: setUploadProgress,
       });
-      setConfirmedUpload({ id: asset.mediaAssetId, previewUrl: asset.url });
-      const attached = await attachAsset(slot, asset.mediaAssetId, "upload");
+      setConfirmedUpload({
+        id: asset.mediaAssetId,
+        variantId: asset.variantId,
+        previewUrl: asset.url,
+      });
+      const attached = await attachAsset(slot, asset.mediaAssetId, asset.variantId, "upload");
       if (attached) setConfirmedUpload(null);
     } catch (cause) {
       setError(storyApiErrorMessage(cause, t("errors.upload")));
@@ -153,8 +161,6 @@ export function StoryReferencePack({
       if (fileInputRef.current) fileInputRef.current.value = "";
     }
   };
-
-  if (!revisionId || !film) return null;
 
   return (
     <div>
@@ -292,9 +298,12 @@ export function StoryReferencePack({
                       type="button"
                       disabled={!apiConnected || !canProduce || pendingKey !== null}
                       onClick={() =>
-                        void attachAsset(selectedSlot, confirmedUpload.id, "upload").then(
-                          (attached) => attached && setConfirmedUpload(null)
-                        )
+                        void attachAsset(
+                          selectedSlot,
+                          confirmedUpload.id,
+                          confirmedUpload.variantId,
+                          "upload"
+                        ).then((attached) => attached && setConfirmedUpload(null))
                       }
                       className="group w-28 shrink-0 overflow-hidden rounded-xl bg-white/[0.08] text-left transition hover:bg-white/[0.12] disabled:opacity-40"
                     >
@@ -311,13 +320,15 @@ export function StoryReferencePack({
                   ) : null}
                   {existingAssets.map((asset) => (
                     <button
-                      key={asset.id}
+                      key={`${asset.asset.id}:${asset.variantId}`}
                       type="button"
                       disabled={!apiConnected || !canProduce || pendingKey !== null}
-                      onClick={() => void attachAsset(selectedSlot, asset.id, "import")}
+                      onClick={() =>
+                        void attachAsset(selectedSlot, asset.asset.id, asset.variantId, "import")
+                      }
                       className="group w-28 shrink-0 overflow-hidden rounded-xl bg-white/[0.045] text-left transition hover:bg-white/[0.08] disabled:opacity-40"
                     >
-                      <AssetPreview asset={asset} className="aspect-square" />
+                      <AssetPreview asset={asset.asset} className="aspect-square" />
                       <span className="block truncate px-2 py-1.5 text-[9px] text-white/42">
                         {t("assets.existing")}
                       </span>
@@ -340,19 +351,20 @@ export function StoryReferencePack({
         busy={pendingKey === "slot"}
         onClose={() => setEditorSlotId(null)}
         onSubmit={(spec) => {
-          if (!apiConnected || !revisionId || !film) return;
+          if (!apiConnected) return;
           const current = references.find((slot) => slot.id === editorSlotId);
           void run("slot", () =>
             current
-              ? updateFilmReferenceSlot(workspaceId, projectId, revisionId, current.id, {
-                  expectedVersion: current.version,
-                  expectedProductionRevision: film.productionRevision,
+              ? updateStoryReferenceSlot(workspaceId, projectId, current.id, {
+                  expectedSlotVersion: current.version,
                   slot: spec,
                 })
-              : createFilmReferenceSlots(workspaceId, projectId, revisionId, {
-                  expectedProductionRevision: film.productionRevision,
-                  slots: [spec],
-                })
+              : createStoryReferenceSlots(
+                  workspaceId,
+                  projectId,
+                  { slots: [spec] },
+                  globalThis.crypto.randomUUID()
+                )
           ).then((saved) => {
             if (saved) setEditorSlotId(null);
           });
@@ -367,20 +379,18 @@ export function StoryReferencePack({
           const target = reviewTarget;
           const slot = references.find((candidate) => candidate.id === target?.slotId);
           const version = slot?.versions.find((candidate) => candidate.id === target?.versionId);
-          if (!target || !slot || !version || !revisionId || !film || !apiConnected) return;
+          if (!target || !slot || !version || !apiConnected) return;
           void run(`review:${version.id}`, async () => {
-            const result = await reviewFilmReferenceVersion(
+            const result = await reviewStoryReferenceVersion(
               workspaceId,
               projectId,
-              revisionId,
               slot.id,
               version.id,
               { expectedReviewRevision: version.reviewRevision, decision, checklist, comment }
             );
             if (decision === "approve") {
-              await approveFilmReferenceVersion(workspaceId, projectId, revisionId, slot.id, {
+              await approveStoryReferenceVersion(workspaceId, projectId, slot.id, {
                 expectedSlotVersion: slot.version,
-                expectedProductionRevision: film.productionRevision,
                 referenceVersionId: version.id,
                 approveReviewId: result.review.id,
               });
@@ -394,7 +404,7 @@ export function StoryReferencePack({
   );
 }
 
-function ReferenceSlotCard({ slot, onOpen }: { slot: FilmReferenceSlot; onOpen: () => void }) {
+function ReferenceSlotCard({ slot, onOpen }: { slot: StoryReferenceSlot; onOpen: () => void }) {
   const t = useTranslations("storyStudio.references");
   const approved = slot.versions.find((version) => version.id === slot.approvedVersionId);
   const preview = approved ?? slot.versions[0];
@@ -435,7 +445,7 @@ function VersionCard({
   pending,
   onReview,
 }: {
-  version: FilmReferenceSlot["versions"][number];
+  version: StoryReferenceSlot["versions"][number];
   approved: boolean;
   canReview: boolean;
   pending: boolean;
@@ -517,14 +527,14 @@ function SlotEditorDialog({
   onSubmit,
 }: {
   open: boolean;
-  slot: FilmReferenceSlot | null;
+  slot: StoryReferenceSlot | null;
   nextRank: number;
   busy: boolean;
   onClose: () => void;
-  onSubmit: (spec: FilmReferenceSlotSpec) => void;
+  onSubmit: (spec: StoryReferenceSlotSpec) => void;
 }) {
   const t = useTranslations("storyStudio.references");
-  const [draft, setDraft] = useState<FilmReferenceSlotSpec>(() => slotSpec(slot, nextRank));
+  const [draft, setDraft] = useState<StoryReferenceSlotSpec>(() => slotSpec(slot, nextRank));
   const valid = /^[A-Z][A-Z0-9_-]{0,39}$/.test(draft.key) && draft.label.trim().length > 0;
   return (
     <Dialog open={open} onOpenChange={(value) => !value && onClose()}>
@@ -547,7 +557,7 @@ function SlotEditorDialog({
             <span className="text-[10px] font-semibold text-white/42">{t("editor.kind")}</span>
             <Select
               value={draft.kind}
-              onValueChange={(kind) => setDraft({ ...draft, kind: kind as FilmReferenceKind })}
+              onValueChange={(kind) => setDraft({ ...draft, kind: kind as StoryReferenceKind })}
             >
               <SelectTrigger className="mt-2 w-full">
                 <SelectValue />
@@ -627,13 +637,13 @@ function ReferenceReviewDialog({
   busy: boolean;
   onClose: () => void;
   onSubmit: (
-    decision: FilmReviewDecision,
-    checklist: FilmReferenceReviewChecklist,
+    decision: StoryReviewDecision,
+    checklist: StoryReferenceReviewChecklist,
     comment?: string
   ) => void;
 }) {
   const t = useTranslations("storyStudio.references");
-  const [decision, setDecision] = useState<FilmReviewDecision>("approve");
+  const [decision, setDecision] = useState<StoryReviewDecision>("approve");
   const [checklist, setChecklist] = useState(PASSING_REVIEW);
   const [comment, setComment] = useState("");
   return (
@@ -645,7 +655,7 @@ function ReferenceReviewDialog({
         </DialogHeader>
         <Select
           value={decision}
-          onValueChange={(value) => setDecision(value as FilmReviewDecision)}
+          onValueChange={(value) => setDecision(value as StoryReviewDecision)}
         >
           <SelectTrigger className="w-full">
             <SelectValue />
@@ -663,7 +673,7 @@ function ReferenceReviewDialog({
               <Select
                 value={checklist[key]}
                 onValueChange={(value) =>
-                  setChecklist({ ...checklist, [key]: value as FilmReviewChecklistValue })
+                  setChecklist({ ...checklist, [key]: value as StoryReviewChecklistValue })
                 }
               >
                 <SelectTrigger className="mt-2 h-8! w-full">
@@ -706,7 +716,7 @@ function ReferenceReviewDialog({
   );
 }
 
-function slotSpec(slot: FilmReferenceSlot | null, rank: number): FilmReferenceSlotSpec {
+function slotSpec(slot: StoryReferenceSlot | null, rank: number): StoryReferenceSlotSpec {
   return slot
     ? {
         key: slot.key,
@@ -719,10 +729,17 @@ function slotSpec(slot: FilmReferenceSlot | null, rank: number): FilmReferenceSl
     : { key: "", kind: "character", label: "", description: "", required: true, rank };
 }
 
-function projectReferenceAssets(references: FilmReferenceSlot[]): MediaAssetSummary[] {
-  const assets = new Map<string, MediaAssetSummary>();
+function projectReferenceAssets(
+  references: StoryReferenceSlot[]
+): Array<{ asset: MediaAssetSummary; variantId: string }> {
+  const assets = new Map<string, { asset: MediaAssetSummary; variantId: string }>();
   references.forEach((slot) =>
-    slot.versions.forEach((version) => assets.set(version.asset.id, version.asset))
+    slot.versions.forEach((version) =>
+      assets.set(`${version.asset.id}:${version.variantId}`, {
+        asset: version.asset,
+        variantId: version.variantId,
+      })
+    )
   );
   return [...assets.values()];
 }

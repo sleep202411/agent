@@ -89,7 +89,7 @@ export interface ReserveQueuedJobOptions {
    * Product-plane rows that own an AI job may be inserted here after the
    * canonical AiJob row exists, but before the reservation transaction
    * commits. This is deliberately distinct from `beforeCreate`: foreign keys
-   * such as StoryFilmGenerationAttempt.aiJobId require the job row to exist first.
+   * such as StoryVideoGenerationAttempt.aiJobId require the job row to exist first.
    */
   afterCreate?: (tx: Prisma.TransactionClient, job: AiJob) => Promise<void>;
   buildJob: (queuePosition: number) => AiJob;
@@ -193,7 +193,14 @@ export interface CreateAiOutputAssetInput {
   sizeBytes: number;
   width?: number;
   height?: number;
+  durationMs?: number;
   durationSeconds?: number;
+  hasAudio?: boolean;
+  videoMetadata?: {
+    videoCodec: string;
+    audioCodecs: string[];
+    browserSafeMp4: boolean;
+  };
   checksumSha256: string;
   outputIndex: number;
   contentHash: string;
@@ -753,6 +760,7 @@ export class AiGenerationRepository {
       providerBindingId: job.providerBindingId,
       outputIndex: input.outputIndex,
       safetyFlags: (input.safetyFlags ?? null) as Prisma.InputJsonValue | null,
+      videoProbe: (input.videoMetadata ?? null) as Prisma.InputJsonValue | null,
     };
 
     const existing = await this.prisma.mediaAsset.findFirst({
@@ -790,7 +798,9 @@ export class AiGenerationRepository {
           sizeBytes: existing.sizeBytes,
           width: existing.width,
           height: existing.height,
+          durationMs: input.durationMs ?? null,
           durationSeconds: existing.durationSeconds,
+          hasAudio: input.hasAudio ?? null,
           checksumSha256: existing.checksumSha256,
           metadata,
         }),
@@ -838,7 +848,9 @@ export class AiGenerationRepository {
           sizeBytes: input.sizeBytes,
           width: input.width ?? null,
           height: input.height ?? null,
+          durationMs: input.durationMs ?? null,
           durationSeconds: input.durationSeconds ?? null,
+          hasAudio: input.hasAudio ?? null,
           checksumSha256: input.checksumSha256,
           metadata,
         });
@@ -882,7 +894,9 @@ export class AiGenerationRepository {
             sizeBytes: asset.sizeBytes,
             width: asset.width,
             height: asset.height,
+            durationMs: input.durationMs ?? null,
             durationSeconds: asset.durationSeconds,
+            hasAudio: input.hasAudio ?? null,
             checksumSha256: asset.checksumSha256,
             metadata,
           }),

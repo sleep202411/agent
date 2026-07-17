@@ -73,7 +73,6 @@ describe("StoryPublicationDialog", () => {
 
     expect(document.body.textContent).toContain("Publish current version?");
     expect(document.body.textContent).toContain("Future edits remain private");
-    expect(document.body.textContent).not.toContain("productionRevision");
     expect(document.body.textContent).not.toContain("manifest");
     await click(buttonByText("Publish current version"));
     expect(onConfirm).toHaveBeenCalledOnce();

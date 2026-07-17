@@ -1539,7 +1539,6 @@
     "projects": {
       "title": "互動影遊",
       "subtitle": "目前工作區中的真實 Story Project。",
-      "revision": "版本 {number}",
       "draft": "草稿",
       "noSummary": "尚未填寫專案簡介。",
       "videoProgress": "目前影片 {current}/{total}",
@@ -1633,10 +1632,6 @@
             "title": "儲存最新修改",
             "description": "正在儲存畫布上的目前故事。"
           },
-          "locking": {
-            "title": "準備發佈版本",
-            "description": "正在將已儲存的故事固定為玩家即將存取的版本。"
-          },
           "building": {
             "title": "檢查播放內容",
             "description": "正在檢查故事路線、影片和玩家可見內容。"
@@ -1669,10 +1664,8 @@
           "workspaceRequired": "請先選擇工作區再發佈。",
           "permissionDenied": "你在此專案中的角色沒有發佈權限。",
           "saveFailed": "無法儲存最新修改。",
-          "lockFailed": "無法準備已儲存的故事版本。",
           "workbenchFailed": "無法載入已儲存的版本進行檢查。",
           "revisionMismatch": "準備的版本與已儲存故事不一致，請重新整理畫布後重試。",
-          "productionContractMissing": "這個故事還沒有可發佈的播放內容。",
           "buildFailed": "無法準備可播放版本。",
           "buildNotReady": "目前版本還不能發佈，請處理下方問題後重試。",
           "runtimeUnavailable": "可播放內容暫不可用，請重新準備此版本。",
@@ -1895,214 +1888,65 @@
         "nodes": "圖節點",
         "endings": "結局"
       },
-      "director": {
-        "eyebrow": "導演提示詞",
-        "title": "影片導演設計",
-        "description": "為目前鏡頭編寫結構化導演設計。內容始終可編輯；每次影片生成都會記錄當時使用的準確輸入。",
-        "compact": {
-          "title": "提示詞編排",
-          "beats": "{count} 個節拍",
-          "emptyDirection": "尚未編寫總導演指令。",
-          "manifest": "{count} 字元",
-          "editInInspector": "在檢查器中編輯完整時間軸 →"
-        },
-        "fields": {
-          "title": "鏡頭標題",
-          "description": "畫面意圖",
-          "duration": "目標秒數",
-          "generationMode": "生成控制",
-          "frameMode": "幀鎖定方式",
-          "masterDirection": "總導演指令",
-          "emotionalArc": "情緒弧線"
-        },
-        "hints": {
-          "masterDirection": "統領全部時間節拍的全局電影化指令。"
-        },
-        "generation": {
-          "frameLock": "幀鎖定",
-          "omni": "Omni Reference",
-          "firstFrame": "僅首幀",
-          "firstLast": "首幀 + 尾幀"
-        },
-        "references": {
-          "title": "參考圖職責",
-          "description": "說明每個人物、地點、道具、風格或幀參考具體控制甚麼。",
-          "add": "新增參考圖職責",
-          "remove": "移除參考圖職責",
-          "referencePlaceholder": "參考 ID 或槽位鍵",
-          "notePlaceholder": "人物一致性、服裝、位置、光線或使用說明",
-          "roles": {
-            "subject": "主體",
-            "location": "地點",
-            "prop": "道具",
-            "style": "風格",
-            "first_frame": "首幀",
-            "last_frame": "尾幀",
-            "omni_reference": "Omni 參考",
-            "other": "其他"
-          }
-        },
-        "beats": {
-          "title": "逐秒導演節拍",
-          "description": "按時間設計鏡頭；生成前各節拍必須有序且互不重疊。",
-          "add": "新增節拍",
-          "required": "生成前至少需要一個已導演的時間節拍。",
-          "beat": "節拍 {number}",
-          "start": "開始 · 秒",
-          "end": "結束 · 秒",
-          "moveUp": "提前節拍",
-          "moveDown": "延後節拍",
-          "remove": "移除節拍",
-          "fields": {
-            "visual": "畫面構圖",
-            "camera": "攝影機與鏡頭",
-            "action": "動作與運動",
-            "performance": "表演",
-            "emotion": "情緒",
-            "dialogue": "對白",
-            "audio": "聲音",
-            "endState": "結束狀態",
-            "continuity": "連續性細節"
-          }
-        },
-        "negative": {
-          "title": "負面約束",
-          "description": "生成結果必須避免的硬性失敗項。",
-          "add": "新增負面約束",
-          "item": "負面約束"
-        },
-        "continuity": {
-          "title": "連續性備註",
-          "description": "必須從相鄰鏡頭繼承或傳遞到下一鏡頭的狀態。",
-          "add": "新增連續性備註",
-          "item": "連續性備註"
-        },
-        "preview": {
-          "title": "導演清單預覽",
-          "count": "{count} 個字元",
-          "description": "唯讀的確定性編譯結果；此編輯器不會提交生成工作。",
-          "withinBudget": "目前清單未超過 Seedance 的 4,000 字元供應商預算。",
-          "requiresCompaction": "目前清單已超過 Seedance 的 4,000 字元預算；生產適配器必須先編譯並壓縮，再提交給供應商。"
-        }
-      },
       "trailer": {
         "eyebrow": "世界觀宣傳片",
         "title": "宣傳片導演設計",
-        "description": "宣傳片獨立於劇情鏡頭和運行時分支，在這裡完成導演設計與生產。",
+        "description": "生成配方只保留在目前頁面，並僅在點擊生成時凍結；它不會寫入故事草稿。",
         "close": "關閉宣傳片檢查器",
         "node": {
           "noVideo": "尚無宣傳片影片",
           "videoPreview": "目前宣傳片影片預覽"
         },
-        "authoring": {
-          "emptyTitle": "先創作宣傳片",
-          "emptyDescription": "為專案宣傳片建立獨立的導演設計。",
-          "create": "建立宣傳片導演設計",
-          "defaultTitle": "項目宣傳片"
-        },
         "production": {
-          "title": "宣傳片生產",
+          "title": "影片製作",
+          "localRecipeDescription": "生成配方只保留在目前頁面，並僅在點擊生成時凍結；它不會寫入故事草稿。",
           "disabled": {
-            "permission": "你沒有此項目的影片生成權限。"
+            "permission": "請選擇影片模型。"
           },
           "errors": {
-            "action": "宣傳片生產操作未能完成。"
+            "action": "請先輸入提示詞。"
           }
         }
       },
       "production": {
-        "eyebrow": "鏡頭製作",
         "title": "影片製作",
-        "description": "根據最新儲存的導演設計生成目前影片。畫布始終可編輯，每次生成都會儲存自己的輸入快照。",
-        "refresh": "重新整理製作狀態",
-        "masterPrompt": "Master Prompt",
-        "beats": "{count} 個時間節拍",
-        "emptyPrompt": "請先完成目前鏡頭的導演提示詞。",
-        "model": "影片模型",
-        "projectDefaultModel": "專案預設全能模型",
-        "duration": "時長",
-        "seconds": "{seconds} 秒",
-        "output": "專案輸出",
-        "cost": "預計消耗",
-        "costAtSubmit": "提交時準確報價",
-        "credits": "{count} 算力點",
-        "generationControl": "生成控制",
-        "modes": {
-          "omni_reference": "Omni Reference",
-          "first_frame": "僅首幀",
-          "first_last_frame": "首幀 + 尾幀"
-        },
-        "references": "已批准的參考圖職責",
-        "approvedCount": "已批准 {count} 個槽位",
-        "noReferenceResponsibilities": "目前鏡頭尚未編寫參考圖職責。",
-        "referenceRoles": {
-          "subject": "主體",
-          "location": "地點",
-          "prop": "道具",
-          "style": "風格",
-          "first_frame": "首幀",
-          "last_frame": "尾幀",
-          "omni_reference": "Omni 參考",
-          "other": "其他"
-        },
-        "variationNote": "本次變化說明",
-        "variationPlaceholder": "僅影響本次生成的可選指令；不會修改已儲存的導演設計。",
+        "localRecipeDescription": "生成配方只保留在目前頁面，並僅在點擊生成時凍結；它不會寫入故事草稿。",
+        "emptyPrompt": "描述你想生成的影片。",
+        "masterPrompt": "提示詞",
+        "promptLocalHint": "配方保留在目前頁面。生成時會凍結準確的提示詞、模型、時長、模式與參考圖。",
         "generate": "生成影片",
+        "seconds": "{count}s",
         "disabled": {
-          "preparing": "正在準備目前鏡頭輸入，完成後即可生成。",
-          "promptRequired": "請先完成目前鏡頭的導演提示詞。",
-          "permission": "你沒有在該專案中生成影片的權限。",
-          "generating": "目前節點已有影片生成工作正在進行。"
-        },
-        "errors": {
-          "prepare": "無法準備目前鏡頭的製作輸入。",
-          "action": "製作操作未能完成。"
+          "promptRequired": "請先輸入提示詞。",
+          "modelRequired": "請選擇影片模型。",
+          "referencesRequired": "請準確加入一張首幀和一張尾幀。",
+          "permission": "你沒有為此項目生成影片的權限。",
+          "generating": "此節點已有影片正在生成。"
         },
         "statuses": {
-          "preparing": "正在準備鏡頭輸入",
-          "ready": "可生成",
           "generating": "生成中",
           "queued": "排隊中",
           "running": "生成中",
           "processing": "處理中",
+          "ready": "就緒",
           "failed": "失敗",
-          "cancelled": "已取消"
+          "cancelled": "已取消",
+          "superseded": "已被取代"
         },
-        "node": {
-          "noVideo": "尚無影片",
-          "videoPreview": "目前影片預覽",
-          "earlierDirection": "來自較早導演設計",
-          "generationFailed": "生成失敗"
-        },
-        "bindings": {
-          "title": "鏡頭參考圖職責",
-          "trailerTitle": "宣傳片參考圖職責",
-          "omniDescription": "選擇該 Omni Reference 鏡頭可以使用的全部已批准輸入。",
-          "frameDescription": "把已批准的幀槽位綁定到所選首幀/尾幀模式。",
-          "omni": "Omni",
-          "frame": "幀鎖定",
-          "apiPending": "版本化製作 API 接通前，參考職責僅供查看。",
-          "firstFrame": "首幀",
-          "lastFrame": "尾幀",
-          "selectSlot": "選擇已批准槽位",
-          "noApprovedSlots": "請先批准兼容的參考槽位，再綁定目前鏡頭。",
-          "save": "儲存參考職責"
-        },
-        "promptAutosaveHint": "編輯將自動儲存到導演設計；生成時採用最新儲存版本。",
         "referenceRail": {
-          "unapproved": "未審批",
+          "unapproved": "未批准",
           "remove": "移除 {label}",
-          "add": "新增參考",
-          "addTitle": "已審批參考素材"
+          "add": "加入參考圖",
+          "addTitle": "已批准的項目參考圖"
         },
         "durationControl": {
-          "label": "片段時長",
-          "seconds": "{count} 秒"
+          "label": "時長",
+          "seconds": "{count}s"
         },
         "videoLibrary": {
           "trigger": "使用已有影片",
           "title": "影片歷史",
-          "description": "選擇符合目前輸出要求的可重用影片：{width}×{height}，{duration} ± {tolerance}。",
+          "description": "選擇符合 {width}×{height} 的可重用影片。",
           "loading": "正在載入影片歷史",
           "loadingMore": "正在載入更多影片",
           "loadMore": "載入更多",
@@ -2124,14 +1968,20 @@
           "issues": {
             "preview_unavailable": "此資產沒有可播放的預覽。",
             "dimensions_unknown": "無法驗證此影片的尺寸。",
-            "dimensions_mismatch": "此影片的尺寸與目前鏡頭不符。",
-            "duration_unknown": "無法驗證此影片的時長。",
-            "duration_mismatch": "此影片的時長超出目前鏡頭的容差。"
+            "dimensions_mismatch": "此影片的尺寸與目前鏡頭不符。"
           },
           "errors": {
             "load": "無法載入影片歷史。",
             "select": "無法更改目前影片。"
           }
+        },
+        "errors": {
+          "action": "製作操作無法完成。"
+        },
+        "node": {
+          "noVideo": "尚無影片",
+          "videoPreview": "目前影片預覽",
+          "generationFailed": "生成失敗"
         }
       },
       "inspector": {
@@ -2145,7 +1995,6 @@
           "preview": "{title} 的目前影片",
           "empty": "尚未選擇影片",
           "emptyDescription": "為這個故事片段加入可播放的影片。",
-          "outdated": "較早版本",
           "upload": "上載本機影片",
           "replace": "從本機取代",
           "uploading": "正在上載 · {progress}%",
@@ -2328,8 +2177,6 @@
     },
     "workbench": {
       "back": "返回 Story Studio",
-      "lockedRevision": "已鎖定故事版本 {number}",
-      "lockedRevisionWithDraftUpdates": "已鎖定故事版本 {number} · 草稿 r{revision} 有更新",
       "draftHead": "可編輯草稿 · 修訂 {revision}",
       "formatInteractiveFilm": "互動影遊",
       "stageNav": "專案階段",
@@ -2343,17 +2190,14 @@
         "loadTitle": "無法開啟這個專案。"
       },
       "noProductionDataTitle": "目前還沒有可用的製作資料",
-      "noProductionDataDescription": "請返回故事畫布，完成導演提示詞並生成第一批影片。整個製作過程中，目前草稿都可以繼續修改。"
+      "noProductionDataDescription": "返回故事畫布加入片段，然後為每個片段生成或上載影片。"
     },
     "overview": {
       "productionTitle": "影片生產",
       "productionSubtitle": "目前工作草稿的參考就緒度、影片覆蓋與活躍生成工作。",
       "draftRevisionStatus": "工作草稿 r{revision}",
-      "productionRevision": "生產修訂 {revision}",
       "storyStructureTitle": "故事結構",
       "storyStructureSubtitle": "選擇、狀態與結局均以創作圖為唯一真源。",
-      "targetRuntime": "每條路徑目標 {seconds} 秒",
-      "maxContinuous": "最長連續播放 {seconds} 秒",
       "videoState": "目前影片狀態",
       "videoStateGenerating": "{count} 個鏡頭正在生成替換影片。",
       "videoStateReady": "{total} 個鏡頭中已有 {current} 個綁定目前影片。",
@@ -2377,7 +2221,7 @@
     },
     "references": {
       "title": "參考包",
-      "subtitle": "該版本需要的人物、場景、道具與合流幀。",
+      "subtitle": "可用於影片配方的角色、地點、道具、風格與幀參考。",
       "approvedCount": "已批准 {approved}/{total}",
       "required": "必需",
       "optional": "可選",
@@ -2433,7 +2277,7 @@
         "kind": "參考類型",
         "label": "名稱",
         "descriptionLabel": "製作職責",
-        "required": "該版本生成前必須提供"
+        "required": "項目生成前必需"
       },
       "review": {
         "title": "審核參考版本",
@@ -2459,37 +2303,20 @@
     },
     "production": {
       "title": "鏡頭生產",
-      "subtitle": "目前草稿導演設計、生成狀態，以及每個鏡頭正在使用的影片。",
+      "subtitle": "每個故事片段的目前影片與生成狀態。",
       "clipCount": "{count} 個鏡頭",
       "seconds": "{seconds} 秒",
       "noBlocker": "可以執行下一步",
-      "currentDraftReady": "可從故事畫布直接生成目前提示詞",
-      "currentDraftPromptRequired": "請在故事畫布中完成導演提示詞",
+      "currentDraftPromptRequired": "請在故事畫布中生成或上載影片。",
       "generationInProgress": "替換影片正在生成中。",
       "generationFailed": "最近一次生成失敗；此前的影片仍保持為目前影片。",
       "currentVideoReady": "目前鏡頭已綁定影片。",
-      "currentVideoOutdated": "目前影片來自較早的導演設計。",
-      "detail": {
-        "visualIntent": "畫面意圖",
-        "masterPrompt": "Seedance 主提示詞",
-        "timeline": "逐秒鏡頭時間軸",
-        "negativeConstraints": "硬性負面約束",
-        "continuityAndDialogue": "輸入、驗收、連續性與對白",
-        "audio": "音訊：{mode}",
-        "specVersion": "鏡頭規格 v{version}"
-      },
       "columns": {
         "key": "編號",
         "clip": "鏡頭",
-        "mode": "生成模式",
         "duration": "時長",
         "status": "狀態",
         "blocker": "詳情"
-      },
-      "modes": {
-        "omni": "Omni Reference",
-        "first": "首幀",
-        "firstLast": "首幀 + 尾幀"
       },
       "status": {
         "draft": "目前草稿",
@@ -2498,8 +2325,7 @@
         "running": "生成中",
         "processing": "處理中",
         "failed": "失敗",
-        "cancelled": "已取消",
-        "outdated": "較早導演設計"
+        "cancelled": "已取消"
       }
     }
   },

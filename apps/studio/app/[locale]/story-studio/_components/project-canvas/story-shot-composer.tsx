@@ -6,7 +6,6 @@ import {
   IconCheck,
   IconChevronDown,
   IconClock,
-  IconLoader2,
   IconPhoto,
   IconPlus,
   IconX,
@@ -23,64 +22,46 @@ import { useDismiss } from "@/lib/use-dismiss";
 import { cn } from "@/lib/utils";
 import { STORY_FRAME_PROFILE_CONTRACTS } from "@/lib/story-projects-api";
 import type {
-  FilmClipSummary,
-  FilmReferenceSlot,
-  FilmTrailerSummary,
+  StoryClipVideoSummary,
+  StoryReferenceSlot,
+  StoryTrailerVideoSummary,
   StoryFrameProfile,
-  StoryClipPromptDraft,
-  StoryTrailerPromptDraft,
+  StoryVideoGenerationRecipeInput,
 } from "@/lib/story-projects-api";
 import {
-  countBillableBoundReferences,
+  addStoryRecipeReference,
+  countBillableRecipeReferences,
   filterStoryVideoCatalog,
+  isStoryRecipeReferencePlanValid,
+  removeStoryRecipeReference,
+  selectedStoryVideoModel,
+  STORY_VIDEO_GENERATION_MODES,
+  storyVideoDurationContract,
   storyComposerAddableSlots,
   storyComposerReferenceItems,
-  storyReferenceBindingsWith,
-  storyReferenceBindingsWithout,
+  type StoryVideoDurationContract,
 } from "./story-shot-composer-model";
-import type { StoryReferenceBindingInput } from "./story-clip-reference-bindings-model";
 import {
   StoryVideoLibraryDialog,
   type StoryVideoLibraryDialogProps,
 } from "./story-video-library-dialog";
 
-export interface StoryDefaultVideoModel {
-  id: string;
-  slug: string;
-  displayName: string;
-  generationModes: string[];
-}
-
-export type StoryProductionTarget = FilmClipSummary | FilmTrailerSummary;
+export type StoryProductionTarget = StoryClipVideoSummary | StoryTrailerVideoSummary;
 
 export interface StoryVideoComposerProps {
   subject?: "clip" | "trailer";
-  clip: StoryProductionTarget | null;
-  prompt: StoryClipPromptDraft | StoryTrailerPromptDraft;
-  references: FilmReferenceSlot[];
-  defaultModel?: StoryDefaultVideoModel | null;
+  target: StoryProductionTarget | null;
+  recipe: StoryVideoGenerationRecipeInput;
+  references: StoryReferenceSlot[];
   frameProfile: StoryFrameProfile;
   canGenerate: boolean;
   disabledReason: string | null;
   pendingKey: string | null;
   error: string | null;
-  onGenerate: (variationNote?: string, modelId?: string) => void;
-  /** Commits master-direction edits into the draft (composer is editable). */
-  onPromptCommit?: (next: string) => void;
-  /** Switches the clip between the two supported generation modes. */
-  onModeChange?: (mode: "omni_reference" | "first_last_frame") => void;
-  /** Commits a new target duration (ms) into the draft prompt. */
-  onDurationCommit?: (durationMs: number) => void;
-  /** FilmSpec cap for a single generated clip, in milliseconds. */
-  maxDurationMs?: number;
-  referenceApiConnected?: boolean;
-  referenceBindingsPending?: boolean;
-  onUpdateReferenceBindings?: (bindings: StoryReferenceBindingInput[]) => void;
-  videoLibrary?: Omit<StoryVideoLibraryDialogProps, "outputContract" | "currentVideo">;
+  onRecipeChange: (next: StoryVideoGenerationRecipeInput) => void;
+  onGenerate: (recipe: StoryVideoGenerationRecipeInput) => void;
+  videoLibrary?: Omit<StoryVideoLibraryDialogProps, "frameContract" | "currentVideo">;
 }
-
-/** The two supported generation modes, labelled via the shared canvas vocabulary. */
-const STORY_COMPOSER_MODES = ["multimodal_to_video", "first_last_frame_to_video"];
 
 /**
  * The selected-node composer deliberately mirrors the creative canvas:
@@ -90,79 +71,63 @@ const STORY_COMPOSER_MODES = ["multimodal_to_video", "first_last_frame_to_video"
  */
 export function StoryShotComposer({
   subject = "clip",
-  clip,
-  prompt,
+  target,
+  recipe,
   references,
-  defaultModel,
   frameProfile,
   canGenerate,
   disabledReason,
   pendingKey,
   error,
+  onRecipeChange,
   onGenerate,
-  onPromptCommit,
-  onModeChange,
-  onDurationCommit,
-  maxDurationMs,
-  referenceApiConnected = false,
-  referenceBindingsPending = false,
-  onUpdateReferenceBindings,
   videoLibrary,
 }: StoryVideoComposerProps) {
   const t = useTranslations("storyStudio.canvas.production");
   const trailerT = useTranslations("storyStudio.canvas.trailer.production");
   const zoom = useStore((state) => state.transform[2]);
   const catalogQuery = useAiCatalog();
-  const [selectedModelId, setSelectedModelId] = useState<string | undefined>(defaultModel?.slug);
   const [panel, setPanel] = useState<GenerationPromptComposerPanel>(null);
 
   const storyCatalog = useMemo(
-    () => filterStoryVideoCatalog(catalogQuery.data),
-    [catalogQuery.data]
+    () => filterStoryVideoCatalog(catalogQuery.data, recipe.mode),
+    [catalogQuery.data, recipe.mode]
   );
   const catalogModel = useMemo(
-    () =>
-      storyCatalog?.models.find((model) => model.id === selectedModelId) ??
-      storyCatalog?.models.find((model) => model.id === defaultModel?.slug) ??
-      storyCatalog?.models.find((model) => model.ui_policy?.recommended) ??
-      storyCatalog?.models[0],
-    [defaultModel?.slug, selectedModelId, storyCatalog]
+    () => selectedStoryVideoModel(storyCatalog, recipe.modelId),
+    [recipe.modelId, storyCatalog]
   );
-  const approvedReferenceCount = countBillableBoundReferences(clip);
+  const durationContract = useMemo(() => storyVideoDurationContract(catalogModel), [catalogModel]);
+  const approvedReferenceCount = countBillableRecipeReferences(recipe.references);
   const frame = STORY_FRAME_PROFILE_CONTRACTS[frameProfile];
-  const outputContract = useMemo(
-    () =>
-      clip?.outputContract ?? {
-        aspectRatio: frame.aspectRatio,
-        width: frame.width,
-        height: frame.height,
-        durationMs: prompt.targetDurationMs,
-      },
-    [clip?.outputContract, frame.aspectRatio, frame.height, frame.width, prompt.targetDurationMs]
-  );
   const cost = useMemo(() => {
     if (!catalogModel) return null;
     return (
       estimateModelSellPoints(catalogModel, {
-        durationSeconds: outputContract.durationMs / 1000,
+        durationSeconds: recipe.durationMs / 1000,
         numOutputs: 1,
         referenceImageCount: approvedReferenceCount,
-        resolution: `${Math.min(outputContract.width, outputContract.height)}p`,
+        resolution: `${Math.min(frame.width, frame.height)}p`,
       })?.sellPoints ?? null
     );
-  }, [approvedReferenceCount, catalogModel, outputContract]);
+  }, [approvedReferenceCount, catalogModel, frame.height, frame.width, recipe.durationMs]);
   const generating = pendingKey === "generate";
   const referenceItems = useMemo(
-    () => storyComposerReferenceItems(clip, references),
-    [clip, references]
+    () => storyComposerReferenceItems(recipe.references, references),
+    [recipe.references, references]
   );
   const addableSlots = useMemo(
-    () => storyComposerAddableSlots(clip, references),
-    [clip, references]
+    () => storyComposerAddableSlots(recipe.mode, recipe.references, references),
+    [recipe.mode, recipe.references, references]
   );
-  const referencesEditable = Boolean(
-    clip && referenceApiConnected && onUpdateReferenceBindings && !referenceBindingsPending
-  );
+  const referencePlanValid = isStoryRecipeReferencePlanValid(recipe.mode, recipe.references);
+  const recipeDisabledReason = !recipe.prompt.trim()
+    ? t("disabled.promptRequired")
+    : !catalogModel
+      ? t("disabled.modelRequired")
+      : !referencePlanValid
+        ? t("disabled.referencesRequired")
+        : disabledReason;
 
   return (
     <div
@@ -178,62 +143,76 @@ export function StoryShotComposer({
           modality="video"
           catalog={storyCatalog}
           model={catalogModel}
-          modelFallbackLabel={defaultModel?.displayName}
-          onSelectModel={(model) => setSelectedModelId(model.id)}
-          prompt={prompt.masterDirection}
-          onPromptCommit={(next) => onPromptCommit?.(next)}
+          onSelectModel={(model) => {
+            const nextDuration = storyVideoDurationContract(model);
+            if (!nextDuration) return;
+            onRecipeChange({
+              ...recipe,
+              modelId: model.id,
+              durationMs: nextDuration.defaultMs,
+            });
+          }}
+          prompt={recipe.prompt}
+          onPromptCommit={(prompt) => onRecipeChange({ ...recipe, prompt })}
           promptPlaceholder={t("emptyPrompt")}
           promptAriaLabel={t("masterPrompt")}
-          promptHint={t("promptAutosaveHint")}
-          promptReadOnly={!onPromptCommit}
+          promptHint={t("promptLocalHint")}
           promptRows={3}
-          mode={
-            prompt.generationControl.mode === "omni_reference"
-              ? "multimodal_to_video"
-              : "first_last_frame_to_video"
-          }
-          modes={STORY_COMPOSER_MODES}
-          onSelectMode={
-            onModeChange
-              ? (nextMode) =>
-                  onModeChange(
-                    nextMode === "multimodal_to_video" ? "omni_reference" : "first_last_frame"
-                  )
-              : undefined
-          }
-          modePickerEnabled={Boolean(onModeChange)}
+          mode={recipe.mode}
+          modes={[...STORY_VIDEO_GENERATION_MODES]}
+          onSelectMode={(nextMode) => {
+            if (nextMode !== "multimodal_to_video" && nextMode !== "first_last_frame_to_video") {
+              return;
+            }
+            const selectedModelSupportsMode = catalogQuery.data?.models
+              .find((model) => model.id === recipe.modelId)
+              ?.generationModes?.includes(nextMode);
+            const selectedModel = selectedModelSupportsMode
+              ? catalogQuery.data?.models.find((model) => model.id === recipe.modelId)
+              : undefined;
+            const nextDuration = storyVideoDurationContract(selectedModel);
+            onRecipeChange({
+              ...recipe,
+              mode: nextMode,
+              modelId: nextDuration ? recipe.modelId : "",
+              durationMs: nextDuration?.defaultMs ?? recipe.durationMs,
+              references: [],
+            });
+          }}
           referenceContent={
-            clip ? (
-              <StoryComposerReferenceRail
-                items={referenceItems}
-                addable={addableSlots}
-                editable={referencesEditable}
-                pending={referenceBindingsPending}
-                onAdd={(slotId, role) =>
-                  onUpdateReferenceBindings?.(storyReferenceBindingsWith(clip, slotId, role))
-                }
-                onRemove={(slotId) =>
-                  onUpdateReferenceBindings?.(storyReferenceBindingsWithout(clip, slotId))
-                }
-              />
-            ) : undefined
+            <StoryComposerReferenceRail
+              items={referenceItems}
+              addable={addableSlots}
+              onAdd={(referenceVersionId, role) =>
+                onRecipeChange({
+                  ...recipe,
+                  references: addStoryRecipeReference(recipe.references, referenceVersionId, role),
+                })
+              }
+              onRemove={(referenceVersionId) =>
+                onRecipeChange({
+                  ...recipe,
+                  references: removeStoryRecipeReference(recipe.references, referenceVersionId),
+                })
+              }
+            />
           }
           trailingControls={
             <>
-              {videoLibrary && clip ? (
+              {videoLibrary ? (
                 <StoryVideoLibraryDialog
                   {...videoLibrary}
-                  outputContract={clip.outputContract}
-                  currentVideo={clip.currentVideo}
+                  frameContract={{ width: frame.width, height: frame.height }}
+                  currentVideo={target?.currentVideo ?? null}
                 />
               ) : null}
               <span className="flex h-10 items-center rounded-xl bg-white/[0.06] px-3 text-xs text-white/42">
-                {`${outputContract.aspectRatio} · ${outputContract.width}×${outputContract.height}`}
+                {`${frame.aspectRatio} · ${frame.width}×${frame.height}`}
               </span>
               <StoryDurationControl
-                durationMs={outputContract.durationMs}
-                maxDurationMs={maxDurationMs}
-                onCommit={onDurationCommit}
+                durationMs={recipe.durationMs}
+                contract={durationContract}
+                onCommit={(durationMs) => onRecipeChange({ ...recipe, durationMs })}
               />
             </>
           }
@@ -242,12 +221,12 @@ export function StoryShotComposer({
           panel={panel}
           onPanelChange={setPanel}
           cost={cost}
-          canSubmit={canGenerate}
+          canSubmit={canGenerate && recipeDisabledReason === null}
           submitting={generating}
-          onSubmit={() => onGenerate(undefined, catalogModel?.id)}
+          onSubmit={() => onGenerate(recipe)}
           submitLabel={t("generate")}
           submittingLabel={t("statuses.generating")}
-          disabledReason={disabledReason}
+          disabledReason={recipeDisabledReason}
           error={error}
           className="w-[680px]"
         />
@@ -256,46 +235,38 @@ export function StoryShotComposer({
   );
 }
 
-const DURATION_PRESETS_S = [5, 10, 15] as const;
-
 /**
- * The clip's target duration. The aspect/resolution half of the old contract
- * chip stays locked to the project frame profile, but duration is a draft field
- * (`setClipPromptTargetDuration`), so it opens a small preset popover mirroring
- * the canvas quick-settings look. Read-only when the composer is immutable.
+ * Duration belongs to the pending generation recipe. It is submitted together
+ * with the prompt and never mutates the story draft or selected video.
  */
 function StoryDurationControl({
   durationMs,
-  maxDurationMs,
+  contract,
   onCommit,
 }: {
   durationMs: number;
-  maxDurationMs?: number;
-  onCommit?: (durationMs: number) => void;
+  contract: StoryVideoDurationContract | null;
+  onCommit: (durationMs: number) => void;
 }) {
   const t = useTranslations("storyStudio.canvas.production.durationControl");
   const [open, setOpen] = useState(false);
   useDismiss(open, () => setOpen(false));
 
-  const seconds = (durationMs / 1000).toFixed(1);
+  const seconds = durationMs > 0 ? (durationMs / 1000).toFixed(1) : "—";
   const label = (
     <span className="flex items-center gap-1 whitespace-nowrap">
       <IconClock className="size-3.5 opacity-70" stroke={1.8} />
-      {`${seconds}s`}
+      {durationMs > 0 ? `${seconds}s` : seconds}
     </span>
   );
 
-  if (!onCommit) {
+  if (!contract) {
     return (
       <span className="flex h-10 items-center rounded-xl bg-white/[0.06] px-3 text-xs text-white/42">
         {label}
       </span>
     );
   }
-
-  const presets = DURATION_PRESETS_S.filter(
-    (value) => maxDurationMs == null || value * 1000 <= maxDurationMs
-  );
 
   return (
     <div className="relative" data-popover-zone>
@@ -315,26 +286,50 @@ function StoryDurationControl({
       </button>
       {open ? (
         <div className="absolute bottom-full left-0 z-50 mb-2 w-40 rounded-2xl bg-[oklch(0.22_0_0/0.98)] p-1.5 shadow-[0_24px_80px_rgba(0,0,0,0.6)] backdrop-blur-2xl">
-          {presets.map((value) => {
-            const active = Math.round(durationMs / 1000) === value;
-            return (
-              <button
-                key={value}
-                type="button"
-                onClick={() => {
-                  onCommit(value * 1000);
-                  setOpen(false);
+          {contract.optionsMs.length > 0 ? (
+            contract.optionsMs.map((value) => {
+              const active = durationMs === value;
+              return (
+                <button
+                  key={value}
+                  type="button"
+                  onClick={() => {
+                    onCommit(value);
+                    setOpen(false);
+                  }}
+                  className={cn(
+                    "flex w-full items-center justify-between rounded-xl px-3 py-2 text-sm transition",
+                    active ? "bg-white/[0.12] text-white" : "text-white/70 hover:bg-white/[0.08]"
+                  )}
+                >
+                  {t("seconds", { count: value / 1_000 })}
+                  {active ? <IconCheck className="size-3.5" stroke={2.2} /> : null}
+                </button>
+              );
+            })
+          ) : (
+            <label className="block px-2 py-1.5">
+              <span className="text-[10px] font-semibold text-white/42">{t("label")}</span>
+              <input
+                type="number"
+                min={contract.minMs / 1_000}
+                max={contract.maxMs / 1_000}
+                step={1}
+                value={durationMs / 1_000}
+                onChange={(event) => {
+                  const nextMs = Math.round(event.currentTarget.valueAsNumber * 1_000);
+                  if (
+                    Number.isInteger(nextMs) &&
+                    nextMs >= contract.minMs &&
+                    nextMs <= contract.maxMs
+                  ) {
+                    onCommit(nextMs);
+                  }
                 }}
-                className={cn(
-                  "flex w-full items-center justify-between rounded-xl px-3 py-2 text-sm transition",
-                  active ? "bg-white/[0.12] text-white" : "text-white/70 hover:bg-white/[0.08]"
-                )}
-              >
-                {t("seconds", { count: value })}
-                {active ? <IconCheck className="size-3.5" stroke={2.2} /> : null}
-              </button>
-            );
-          })}
+                className="mt-1.5 h-9 w-full rounded-xl bg-white/[0.08] px-3 text-sm text-white outline-none focus-visible:ring-2 focus-visible:ring-white/45"
+              />
+            </label>
+          )}
         </div>
       ) : null}
     </div>
@@ -342,37 +337,31 @@ function StoryDurationControl({
 }
 
 /**
- * Canvas-consistent reference chips: the clip's bound reference 母版 render as
- * thumbnails ahead of the prompt, and approved unbound slots can be attached
- * inline — mirroring the creative canvas ReferenceStack while staying on the
- * slot/approval model story production requires.
+ * Approved references selected for this one recipe. Changing the current video
+ * never changes this list; the exact version ids are frozen on submission.
  */
 function StoryComposerReferenceRail({
   items,
   addable,
-  editable,
-  pending,
   onAdd,
   onRemove,
 }: {
   items: ReturnType<typeof storyComposerReferenceItems>;
   addable: ReturnType<typeof storyComposerAddableSlots>;
-  editable: boolean;
-  pending: boolean;
-  onAdd: (slotId: string, role: (typeof addable)[number]["role"]) => void;
-  onRemove: (slotId: string) => void;
+  onAdd: (referenceVersionId: string, role: (typeof addable)[number]["role"]) => void;
+  onRemove: (referenceVersionId: string) => void;
 }) {
   const t = useTranslations("storyStudio.canvas.production.referenceRail");
   const [pickerOpen, setPickerOpen] = useState(false);
   useDismiss(pickerOpen, () => setPickerOpen(false));
 
-  if (items.length === 0 && (!editable || addable.length === 0)) return null;
+  if (items.length === 0 && addable.length === 0) return null;
 
   return (
-    <div className={cn("mb-3 flex flex-wrap items-center gap-2", pending && "opacity-55")}>
+    <div className="mb-3 flex flex-wrap items-center gap-2">
       {items.map((item) => (
         <div
-          key={item.slotId}
+          key={`${item.role}:${item.referenceVersionId}`}
           className="group relative size-14 shrink-0 overflow-hidden rounded-xl bg-white/[0.06]"
           title={item.label}
         >
@@ -384,24 +373,17 @@ function StoryComposerReferenceRail({
               <IconPhoto className="size-4" />
             </div>
           )}
-          {!item.approved ? (
-            <span className="absolute inset-x-0 bottom-0 bg-black/60 px-1 py-0.5 text-center text-[7px] font-semibold text-white/72">
-              {t("unapproved")}
-            </span>
-          ) : null}
-          {editable ? (
-            <button
-              type="button"
-              onClick={() => onRemove(item.slotId)}
-              aria-label={t("remove", { label: item.label })}
-              className="absolute top-0.5 right-0.5 grid size-4 place-items-center rounded-full bg-black/70 text-white/70 opacity-0 transition group-hover:opacity-100 hover:text-white"
-            >
-              <IconX className="size-2.5" stroke={2.4} />
-            </button>
-          ) : null}
+          <button
+            type="button"
+            onClick={() => onRemove(item.referenceVersionId)}
+            aria-label={t("remove", { label: item.label })}
+            className="absolute top-0.5 right-0.5 grid size-4 place-items-center rounded-full bg-black/70 text-white/70 opacity-0 transition group-hover:opacity-100 hover:text-white"
+          >
+            <IconX className="size-2.5" stroke={2.4} />
+          </button>
         </div>
       ))}
-      {editable && addable.length > 0 ? (
+      {addable.length > 0 ? (
         <div className="relative" data-popover-zone>
           <button
             type="button"
@@ -409,7 +391,7 @@ function StoryComposerReferenceRail({
             aria-haspopup="dialog"
             aria-expanded={pickerOpen}
             aria-label={t("add")}
-            className="grid size-14 place-items-center rounded-xl border border-dashed border-white/[0.14] text-white/34 transition hover:border-white/[0.28] hover:text-white/70"
+            className="grid size-14 place-items-center rounded-xl bg-white/[0.06] text-white/34 transition hover:bg-white/[0.11] hover:text-white/70"
           >
             <IconPlus className="size-4" stroke={2} />
           </button>
@@ -424,7 +406,7 @@ function StoryComposerReferenceRail({
                     key={slot.slotId}
                     type="button"
                     onClick={() => {
-                      onAdd(slot.slotId, slot.role);
+                      onAdd(slot.referenceVersionId, slot.role);
                       setPickerOpen(false);
                     }}
                     title={slot.label}
@@ -452,7 +434,6 @@ function StoryComposerReferenceRail({
           ) : null}
         </div>
       ) : null}
-      {pending ? <IconLoader2 className="size-3.5 animate-spin text-white/40" /> : null}
     </div>
   );
 }

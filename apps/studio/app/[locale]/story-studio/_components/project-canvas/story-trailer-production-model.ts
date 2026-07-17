@@ -1,9 +1,9 @@
-import type { FilmTrailerSummary, StoryTrailerPromptDraft } from "@/lib/story-projects-api";
-
 interface SubmissionKeyRecord {
-  fingerprint: string;
+  fingerprintHash: string;
   key: string;
 }
+
+const SHA_256_HEX_PATTERN = /^[a-f0-9]{64}$/;
 
 export interface StorySubmissionStorage {
   getItem(key: string): string | null;
@@ -25,7 +25,7 @@ export class StoryProductionActionGate {
   }
 }
 
-/** Retains an idempotency key until the exact request receives a confirmed response. */
+/** Retains an idempotency key with only the request's SHA-256 until confirmation. */
 export class StorySubmissionKeyRegistry {
   private readonly records = new Map<string, SubmissionKeyRecord>();
 
@@ -34,19 +34,21 @@ export class StorySubmissionKeyRegistry {
     private readonly storage: () => StorySubmissionStorage | null = () => null
   ) {}
 
-  keyFor(slot: string, fingerprint: string, createKey: () => string): string {
+  async keyFor(slot: string, fingerprint: string, createKey: () => string): Promise<string> {
+    const fingerprintHash = await sha256Hex(fingerprint);
     const current = this.records.get(slot) ?? this.read(slot);
-    if (current?.fingerprint === fingerprint) return current.key;
+    if (current?.fingerprintHash === fingerprintHash) return current.key;
     const key = createKey();
-    const next = { fingerprint, key };
+    const next = { fingerprintHash, key };
     this.records.set(slot, next);
     this.write(slot, next);
     return key;
   }
 
-  confirm(slot: string, fingerprint: string): void {
+  async confirm(slot: string, fingerprint: string): Promise<void> {
+    const fingerprintHash = await sha256Hex(fingerprint);
     const current = this.records.get(slot) ?? this.read(slot);
-    if (current?.fingerprint === fingerprint) {
+    if (current?.fingerprintHash === fingerprintHash) {
       this.records.delete(slot);
       this.remove(slot);
     }
@@ -57,14 +59,20 @@ export class StorySubmissionKeyRegistry {
       const raw = this.storage()?.getItem(this.storageKey(slot));
       if (!raw) return null;
       const parsed = JSON.parse(raw) as Partial<SubmissionKeyRecord>;
-      if (typeof parsed.fingerprint !== "string" || typeof parsed.key !== "string") {
+      if (
+        typeof parsed.fingerprintHash !== "string" ||
+        !SHA_256_HEX_PATTERN.test(parsed.fingerprintHash) ||
+        typeof parsed.key !== "string" ||
+        parsed.key.length === 0
+      ) {
         this.remove(slot);
         return null;
       }
-      const record = { fingerprint: parsed.fingerprint, key: parsed.key };
+      const record = { fingerprintHash: parsed.fingerprintHash, key: parsed.key };
       this.records.set(slot, record);
       return record;
     } catch {
+      this.remove(slot);
       return null;
     }
   }
@@ -90,30 +98,11 @@ export class StorySubmissionKeyRegistry {
   }
 }
 
-export function projectLockedTrailerPrompt(trailer: FilmTrailerSummary): StoryTrailerPromptDraft {
-  return {
-    title: trailer.title,
-    description: trailer.description,
-    targetDurationMs: trailer.targetDurationMs,
-    generationControl: trailer.generationControl,
-    masterDirection: trailer.prompt.masterPrompt,
-    referenceRoleNotes: trailer.referenceRoleNotes,
-    emotionalArc: "",
-    beats: trailer.prompt.timeline.map((beat, index) => ({
-      id: `trailer:locked:${index + 1}`,
-      startMs: beat.startMs,
-      endMs: beat.endMs,
-      visual: beat.visual,
-      camera: beat.camera,
-      action: beat.action,
-      performance: beat.performance ?? "",
-      emotion: beat.emotion ?? "",
-      dialogue: beat.dialogue ?? "",
-      audio: beat.audio ?? "",
-      endState: beat.endState ?? "",
-      continuity: beat.continuity ?? "",
-    })),
-    negativeConstraints: trailer.prompt.negativeConstraints,
-    continuityNotes: trailer.continuityNotes,
-  };
+async function sha256Hex(value: string): Promise<string> {
+  const subtle = globalThis.crypto?.subtle;
+  if (!subtle) {
+    throw new Error("Web Crypto SHA-256 is required for Story submission idempotency.");
+  }
+  const digest = await subtle.digest("SHA-256", new TextEncoder().encode(value));
+  return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
 }

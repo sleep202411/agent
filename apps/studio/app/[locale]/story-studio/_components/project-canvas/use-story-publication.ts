@@ -4,17 +4,15 @@ import { useCallback, useMemo, useRef, useState } from "react";
 import { useTranslations } from "next-intl";
 import { useQueryClient } from "@tanstack/react-query";
 import {
-  createFilmBuild,
+  createStoryBuild,
   getStoryWorkbench,
-  lockStoryRevision,
-  publishFilmBuild,
+  publishStoryBuild,
   storyApiErrorMessage,
   type ExperienceReleaseResult,
-  type FilmBuild,
-  type FilmBuildDiagnostic,
+  type StoryBuild,
+  type StoryBuildDiagnostic,
   type StoryCapability,
   type StoryExperienceCurrentRelease,
-  type StoryRevision,
 } from "@/lib/story-projects-api";
 import {
   runStoryPublication,
@@ -41,8 +39,8 @@ export type StoryPublicationState =
   | { status: StoryPublicationActivePhase }
   | {
       status: "succeeded";
-      lockedRevision: StoryRevision;
-      build: FilmBuild;
+      sourceDraftRevision: number;
+      build: StoryBuild;
       release: ExperienceReleaseResult;
     }
   | {
@@ -50,7 +48,7 @@ export type StoryPublicationState =
       phase: StoryPublicationActivePhase | "permission";
       code: StoryPublicationFailureCode;
       message: string;
-      diagnostics: FilmBuildDiagnostic[];
+      diagnostics: StoryBuildDiagnostic[];
     };
 
 export interface UseStoryPublicationOptions {
@@ -146,16 +144,13 @@ export function useStoryPublication({
     let result: StoryPublicationFlowResult;
     try {
       result = await runStoryPublication({
-        saveAndLockRevision: (onLockStart) =>
-          withSavedDraftSnapshot((expectedDraftRevision) => {
-            onLockStart();
-            return lockStoryRevision(workspaceId, projectId, { expectedDraftRevision });
-          }),
-        loadLockedWorkbench: (revisionId) => getStoryWorkbench(workspaceId, projectId, revisionId),
+        saveDraftSnapshot: () =>
+          withSavedDraftSnapshot(async (expectedDraftRevision) => expectedDraftRevision),
+        loadWorkbench: () => getStoryWorkbench(workspaceId, projectId),
         createProductionBuild: (input, idempotencyKey) =>
-          createFilmBuild(workspaceId, projectId, input, idempotencyKey),
+          createStoryBuild(workspaceId, projectId, input, idempotencyKey),
         publishProductionBuild: (buildId) =>
-          publishFilmBuild(workspaceId, projectId, buildId, {
+          publishStoryBuild(workspaceId, projectId, buildId, {
             status: "published",
             setCurrent: true,
           }),
@@ -191,9 +186,8 @@ export function useStoryPublication({
         result.release.status === "published"
           ? {
               id: result.build.id,
-              sourceRevisionId: result.lockedRevision.id,
-              sourceDraftRevision: result.lockedRevision.sourceDraftRevision,
-              sourceProductionRevision: result.build.sourceProductionRevision,
+              sourceDraftRevision: result.build.sourceDraftRevision,
+              videoSnapshotHash: result.build.videoSnapshotHash,
             }
           : null,
       checkedAt: new Date().toISOString(),
@@ -241,12 +235,7 @@ export function useStoryPublication({
 }
 
 export function isStoryPublicationPending(state: StoryPublicationState): boolean {
-  return (
-    state.status === "saving" ||
-    state.status === "locking" ||
-    state.status === "building" ||
-    state.status === "publishing"
-  );
+  return state.status === "saving" || state.status === "building" || state.status === "publishing";
 }
 
 function toPublicationFailure(
@@ -284,14 +273,10 @@ function publicationErrorFallback(
   switch (code) {
     case "SAVE_FAILED":
       return t("errors.saveFailed");
-    case "LOCK_FAILED":
-      return t("errors.lockFailed");
     case "WORKBENCH_FAILED":
       return t("errors.workbenchFailed");
-    case "LOCKED_REVISION_MISMATCH":
+    case "DRAFT_REVISION_MISMATCH":
       return t("errors.revisionMismatch");
-    case "PRODUCTION_CONTRACT_MISSING":
-      return t("errors.productionContractMissing");
     case "BUILD_FAILED":
       return t("errors.buildFailed");
     case "BUILD_NOT_READY":

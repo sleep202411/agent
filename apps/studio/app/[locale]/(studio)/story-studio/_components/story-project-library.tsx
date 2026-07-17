@@ -243,9 +243,7 @@ function StoryProjectCard({
           )}
 
           <span className="absolute top-2.5 left-2.5 rounded-full bg-black/48 px-2.5 py-1 text-[10px] font-bold tracking-[0.06em] text-white/70 uppercase backdrop-blur-md">
-            {project.activeRevision
-              ? t("projects.revision", { number: project.activeRevision.number })
-              : t("projects.draft")}
+            {t("projects.draft")}
           </span>
 
           <div className="absolute right-2.5 bottom-2.5 left-2.5 flex items-center gap-1.5">

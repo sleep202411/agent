@@ -1539,7 +1539,6 @@
     "projects": {
       "title": "互动影游",
       "subtitle": "当前工作区中的真实 Story Project。",
-      "revision": "版本 {number}",
       "draft": "草稿",
       "noSummary": "尚未填写项目简介。",
       "videoProgress": "当前视频 {current}/{total}",
@@ -1633,10 +1632,6 @@
             "title": "保存最新修改",
             "description": "正在保存画布上的当前故事。"
           },
-          "locking": {
-            "title": "准备发布版本",
-            "description": "正在将已保存的故事固定为玩家即将访问的版本。"
-          },
           "building": {
             "title": "检查播放内容",
             "description": "正在检查故事路线、视频和玩家可见内容。"
@@ -1669,10 +1664,8 @@
           "workspaceRequired": "请先选择工作区再发布。",
           "permissionDenied": "你在此项目中的角色没有发布权限。",
           "saveFailed": "无法保存最新修改。",
-          "lockFailed": "无法准备已保存的故事版本。",
           "workbenchFailed": "无法加载已保存的版本进行检查。",
           "revisionMismatch": "准备的版本与已保存故事不一致，请刷新画布后重试。",
-          "productionContractMissing": "这个故事还没有可发布的播放内容。",
           "buildFailed": "无法准备可播放版本。",
           "buildNotReady": "当前版本还不能发布，请处理下方问题后重试。",
           "runtimeUnavailable": "可播放内容暂不可用，请重新准备此版本。",
@@ -1895,214 +1888,65 @@
         "nodes": "图节点",
         "endings": "结局"
       },
-      "director": {
-        "eyebrow": "导演提示词",
-        "title": "视频导演设计",
-        "description": "为当前镜头编写结构化导演设计。内容始终可编辑；每次视频生成都会记录当时使用的准确输入。",
-        "compact": {
-          "title": "提示词编排",
-          "beats": "{count} 个节拍",
-          "emptyDirection": "尚未编写总导演指令。",
-          "manifest": "{count} 字符",
-          "editInInspector": "在检查器中编辑完整时间轴 →"
-        },
-        "fields": {
-          "title": "镜头标题",
-          "description": "画面意图",
-          "duration": "目标秒数",
-          "generationMode": "生成控制",
-          "frameMode": "帧锁定方式",
-          "masterDirection": "总导演指令",
-          "emotionalArc": "情绪弧线"
-        },
-        "hints": {
-          "masterDirection": "统领全部时间节拍的全局电影化指令。"
-        },
-        "generation": {
-          "frameLock": "帧锁定",
-          "omni": "Omni Reference",
-          "firstFrame": "仅首帧",
-          "firstLast": "首帧 + 尾帧"
-        },
-        "references": {
-          "title": "参考图职责",
-          "description": "说明每个人物、地点、道具、风格或帧参考具体控制什么。",
-          "add": "添加参考图职责",
-          "remove": "移除参考图职责",
-          "referencePlaceholder": "参考 ID 或槽位键",
-          "notePlaceholder": "人物一致性、服装、位置、光线或使用说明",
-          "roles": {
-            "subject": "主体",
-            "location": "地点",
-            "prop": "道具",
-            "style": "风格",
-            "first_frame": "首帧",
-            "last_frame": "尾帧",
-            "omni_reference": "Omni 参考",
-            "other": "其他"
-          }
-        },
-        "beats": {
-          "title": "逐秒导演节拍",
-          "description": "按时间设计镜头；生成前各节拍必须有序且互不重叠。",
-          "add": "添加节拍",
-          "required": "生成前至少需要一个已导演的时间节拍。",
-          "beat": "节拍 {number}",
-          "start": "开始 · 秒",
-          "end": "结束 · 秒",
-          "moveUp": "提前节拍",
-          "moveDown": "延后节拍",
-          "remove": "移除节拍",
-          "fields": {
-            "visual": "画面构图",
-            "camera": "摄影机与镜头",
-            "action": "动作与运动",
-            "performance": "表演",
-            "emotion": "情绪",
-            "dialogue": "对白",
-            "audio": "声音",
-            "endState": "结束状态",
-            "continuity": "连续性细节"
-          }
-        },
-        "negative": {
-          "title": "负面约束",
-          "description": "生成结果必须避免的硬性失败项。",
-          "add": "添加负面约束",
-          "item": "负面约束"
-        },
-        "continuity": {
-          "title": "连续性备注",
-          "description": "必须从相邻镜头继承或传递到下一镜头的状态。",
-          "add": "添加连续性备注",
-          "item": "连续性备注"
-        },
-        "preview": {
-          "title": "导演清单预览",
-          "count": "{count} 个字符",
-          "description": "只读的确定性编译结果；此编辑器不会提交生成任务。",
-          "withinBudget": "当前清单未超过 Seedance 的 4,000 字符供应商预算。",
-          "requiresCompaction": "当前清单已超过 Seedance 的 4,000 字符预算；生产适配器必须先编译并压缩，再提交给供应商。"
-        }
-      },
       "trailer": {
         "eyebrow": "世界观宣传片",
         "title": "宣传片导演设计",
-        "description": "宣传片独立于剧情镜头和运行时分支，在这里完成导演设计与生产。",
+        "description": "生成配方只保留在当前页面，并仅在点击生成时冻结；它不会写入故事草稿。",
         "close": "关闭宣传片检查器",
         "node": {
           "noVideo": "尚无宣传片视频",
           "videoPreview": "当前宣传片视频预览"
         },
-        "authoring": {
-          "emptyTitle": "先创作宣传片",
-          "emptyDescription": "为项目宣传片建立独立的导演设计。",
-          "create": "创建宣传片导演设计",
-          "defaultTitle": "项目宣传片"
-        },
         "production": {
-          "title": "宣传片生产",
+          "title": "视频制作",
+          "localRecipeDescription": "生成配方只保留在当前页面，并仅在点击生成时冻结；它不会写入故事草稿。",
           "disabled": {
-            "permission": "你没有此项目的视频生成权限。"
+            "permission": "请选择视频模型。"
           },
           "errors": {
-            "action": "宣传片生产操作未能完成。"
+            "action": "请先输入提示词。"
           }
         }
       },
       "production": {
-        "eyebrow": "镜头生产",
-        "title": "视频生产",
-        "description": "根据最新保存的导演设计生成当前视频。画布始终可编辑，每次生成都会保存自己的输入快照。",
-        "refresh": "刷新生产状态",
-        "masterPrompt": "Master Prompt",
-        "beats": "{count} 个时间节拍",
-        "emptyPrompt": "请先完成当前镜头的导演提示词。",
-        "model": "视频模型",
-        "projectDefaultModel": "项目默认全能模型",
-        "duration": "时长",
-        "seconds": "{seconds} 秒",
-        "output": "项目输出",
-        "cost": "预计消耗",
-        "costAtSubmit": "提交时准确报价",
-        "credits": "{count} 算力点",
-        "generationControl": "生成控制",
-        "modes": {
-          "omni_reference": "Omni Reference",
-          "first_frame": "仅首帧",
-          "first_last_frame": "首帧 + 尾帧"
-        },
-        "references": "已批准的参考图职责",
-        "approvedCount": "已批准 {count} 个槽位",
-        "noReferenceResponsibilities": "当前镜头尚未编写参考图职责。",
-        "referenceRoles": {
-          "subject": "主体",
-          "location": "地点",
-          "prop": "道具",
-          "style": "风格",
-          "first_frame": "首帧",
-          "last_frame": "尾帧",
-          "omni_reference": "Omni 参考",
-          "other": "其他"
-        },
-        "variationNote": "本次变化说明",
-        "variationPlaceholder": "仅影响本次生成的可选指令；不会修改已保存的导演设计。",
+        "title": "视频制作",
+        "localRecipeDescription": "生成配方只保留在当前页面，并仅在点击生成时冻结；它不会写入故事草稿。",
+        "emptyPrompt": "描述你想生成的视频。",
+        "masterPrompt": "提示词",
+        "promptLocalHint": "配方保留在当前页面。生成时会冻结准确的提示词、模型、时长、模式与参考图。",
         "generate": "生成视频",
+        "seconds": "{count}s",
         "disabled": {
-          "preparing": "正在准备当前镜头输入，完成后即可生成。",
-          "promptRequired": "请先完成当前镜头的导演提示词。",
-          "permission": "你没有在该项目中生成视频的权限。",
-          "generating": "当前节点已有视频生成任务正在进行。"
-        },
-        "errors": {
-          "prepare": "无法准备当前镜头的生产输入。",
-          "action": "生产操作未能完成。"
+          "promptRequired": "请先输入提示词。",
+          "modelRequired": "请选择视频模型。",
+          "referencesRequired": "请准确添加一张首帧和一张尾帧。",
+          "permission": "你没有为此项目生成视频的权限。",
+          "generating": "此节点已有视频正在生成。"
         },
         "statuses": {
-          "preparing": "正在准备镜头输入",
-          "ready": "可生成",
           "generating": "生成中",
           "queued": "排队中",
           "running": "生成中",
           "processing": "处理中",
+          "ready": "就绪",
           "failed": "失败",
-          "cancelled": "已取消"
+          "cancelled": "已取消",
+          "superseded": "已被取代"
         },
-        "node": {
-          "noVideo": "尚无视频",
-          "videoPreview": "当前视频预览",
-          "earlierDirection": "来自较早导演设计",
-          "generationFailed": "生成失败"
-        },
-        "bindings": {
-          "title": "镜头参考图职责",
-          "trailerTitle": "宣传片参考图职责",
-          "omniDescription": "选择该 Omni Reference 镜头可以使用的全部已批准输入。",
-          "frameDescription": "把已批准的帧槽位绑定到所选首帧/尾帧模式。",
-          "omni": "Omni",
-          "frame": "帧锁定",
-          "apiPending": "版本化生产 API 接通前，参考职责仅供查看。",
-          "firstFrame": "首帧",
-          "lastFrame": "尾帧",
-          "selectSlot": "选择已批准槽位",
-          "noApprovedSlots": "请先批准兼容的参考槽位，再绑定当前镜头。",
-          "save": "保存参考职责"
-        },
-        "promptAutosaveHint": "编辑将自动保存到导演设计；生成时采用最新保存版本。",
         "referenceRail": {
-          "unapproved": "未审批",
+          "unapproved": "未批准",
           "remove": "移除 {label}",
-          "add": "添加参考",
-          "addTitle": "已审批参考素材"
+          "add": "添加参考图",
+          "addTitle": "已批准的项目参考图"
         },
         "durationControl": {
-          "label": "片段时长",
-          "seconds": "{count} 秒"
+          "label": "时长",
+          "seconds": "{count}s"
         },
         "videoLibrary": {
           "trigger": "使用已有视频",
           "title": "视频历史",
-          "description": "选择符合当前输出要求的可复用视频：{width}×{height}，{duration} ± {tolerance}。",
+          "description": "选择符合 {width}×{height} 的可复用视频。",
           "loading": "正在加载视频历史",
           "loadingMore": "正在加载更多视频",
           "loadMore": "加载更多",
@@ -2124,14 +1968,20 @@
           "issues": {
             "preview_unavailable": "此资产没有可播放的预览。",
             "dimensions_unknown": "无法验证此视频的尺寸。",
-            "dimensions_mismatch": "此视频的尺寸与当前镜头不符。",
-            "duration_unknown": "无法验证此视频的时长。",
-            "duration_mismatch": "此视频的时长超出当前镜头的容差。"
+            "dimensions_mismatch": "此视频的尺寸与当前镜头不符。"
           },
           "errors": {
             "load": "无法加载视频历史。",
             "select": "无法更改当前视频。"
           }
+        },
+        "errors": {
+          "action": "制作操作无法完成。"
+        },
+        "node": {
+          "noVideo": "尚无视频",
+          "videoPreview": "当前视频预览",
+          "generationFailed": "生成失败"
         }
       },
       "inspector": {
@@ -2145,7 +1995,6 @@
           "preview": "{title} 的当前视频",
           "empty": "尚未选择视频",
           "emptyDescription": "为这个故事片段添加可播放的视频。",
-          "outdated": "较早版本",
           "upload": "上传本地视频",
           "replace": "从本地替换",
           "uploading": "正在上传 · {progress}%",
@@ -2328,8 +2177,6 @@
     },
     "workbench": {
       "back": "返回 Story Studio",
-      "lockedRevision": "已锁定故事版本 {number}",
-      "lockedRevisionWithDraftUpdates": "已锁定故事版本 {number} · 草稿 r{revision} 有更新",
       "draftHead": "可编辑草稿 · 修订 {revision}",
       "formatInteractiveFilm": "互动影游",
       "stageNav": "项目阶段",
@@ -2343,17 +2190,14 @@
         "loadTitle": "无法打开这个项目。"
       },
       "noProductionDataTitle": "当前还没有可用的生产数据",
-      "noProductionDataDescription": "请返回故事画布，完成导演提示词并生成第一批视频。整个生产过程中，当前草稿都可以继续修改。"
+      "noProductionDataDescription": "回到故事画布添加片段，然后为每个片段生成或上传视频。"
     },
     "overview": {
       "productionTitle": "视频生产",
       "productionSubtitle": "当前工作草稿的参考就绪度、视频覆盖与活跃生成任务。",
       "draftRevisionStatus": "工作草稿 r{revision}",
-      "productionRevision": "生产修订 {revision}",
       "storyStructureTitle": "故事结构",
       "storyStructureSubtitle": "选择、状态与结局均以创作图为唯一真源。",
-      "targetRuntime": "每条路径目标 {seconds} 秒",
-      "maxContinuous": "最长连续播放 {seconds} 秒",
       "videoState": "当前视频状态",
       "videoStateGenerating": "{count} 个镜头正在生成替换视频。",
       "videoStateReady": "{total} 个镜头中已有 {current} 个绑定当前视频。",
@@ -2377,7 +2221,7 @@
     },
     "references": {
       "title": "参考包",
-      "subtitle": "该版本需要的人物、场景、道具与合流帧。",
+      "subtitle": "可用于视频配方的角色、地点、道具、风格与帧参考。",
       "approvedCount": "已批准 {approved}/{total}",
       "required": "必需",
       "optional": "可选",
@@ -2433,7 +2277,7 @@
         "kind": "参考类型",
         "label": "名称",
         "descriptionLabel": "生产职责",
-        "required": "该版本生成前必须提供"
+        "required": "项目生成前必需"
       },
       "review": {
         "title": "审核参考版本",
@@ -2459,37 +2303,20 @@
     },
     "production": {
       "title": "镜头生产",
-      "subtitle": "当前草稿导演设计、生成状态，以及每个镜头正在使用的视频。",
+      "subtitle": "每个故事片段的当前视频与生成状态。",
       "clipCount": "{count} 个镜头",
       "seconds": "{seconds} 秒",
       "noBlocker": "可以执行下一步",
-      "currentDraftReady": "可从故事画布直接生成当前提示词",
-      "currentDraftPromptRequired": "请在故事画布中完成导演提示词",
+      "currentDraftPromptRequired": "请在故事画布中生成或上传视频。",
       "generationInProgress": "替换视频正在生成中。",
       "generationFailed": "最近一次生成失败；此前的视频仍保持为当前视频。",
       "currentVideoReady": "当前镜头已绑定视频。",
-      "currentVideoOutdated": "当前视频来自较早的导演设计。",
-      "detail": {
-        "visualIntent": "画面意图",
-        "masterPrompt": "Seedance 主提示词",
-        "timeline": "逐秒镜头时间轴",
-        "negativeConstraints": "硬性负面约束",
-        "continuityAndDialogue": "输入、验收、连续性与对白",
-        "audio": "音频：{mode}",
-        "specVersion": "镜头规格 v{version}"
-      },
       "columns": {
         "key": "编号",
         "clip": "镜头",
-        "mode": "生成模式",
         "duration": "时长",
         "status": "状态",
         "blocker": "详情"
-      },
-      "modes": {
-        "omni": "Omni Reference",
-        "first": "首帧",
-        "firstLast": "首帧 + 尾帧"
       },
       "status": {
         "draft": "当前草稿",
@@ -2498,8 +2325,7 @@
         "running": "生成中",
         "processing": "处理中",
         "failed": "失败",
-        "cancelled": "已取消",
-        "outdated": "较早导演设计"
+        "cancelled": "已取消"
       }
     }
   },

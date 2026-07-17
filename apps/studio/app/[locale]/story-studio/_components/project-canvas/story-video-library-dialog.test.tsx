@@ -204,15 +204,7 @@ describe("StoryVideoLibraryDialog", () => {
           <StoryVideoLibraryDialog
             workspaceId="workspace-1"
             projectId="project-1"
-            outputContract={{
-              aspectRatio: "16:9",
-              width: 1920,
-              height: 1080,
-              durationMs: 12_000,
-              durationToleranceMs: 500,
-              framesPerSecond: { numerator: 24, denominator: 1 },
-              audio: "embedded",
-            }}
+            frameContract={{ width: 1920, height: 1080 }}
             currentVideo={null}
             onSelect={onSelect}
           />

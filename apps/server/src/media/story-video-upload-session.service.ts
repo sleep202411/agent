@@ -474,6 +474,7 @@ export class StoryVideoUploadSessionService {
     }
     return {
       mediaAssetId: session.mediaAssetId,
+      variantId: null,
       uploadSessionId: session.id,
       storageKey: session.finalObjectKey ?? session.stagingObjectKey,
       provider: prismaProviderToId(session.storageProvider),
