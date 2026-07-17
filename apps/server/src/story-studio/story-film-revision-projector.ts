@@ -29,7 +29,8 @@ export interface StoryFilmDraftClipProjectionInput {
   graphNodeId: string;
   /**
    * Video-first clips: a creator may bind an existing video to a shot that
-   * has no authored director prompt. When set, a missing prompt projects a
+   * has no authored director prompt. When set, a missing **or empty shell**
+   * prompt (the default created with every new clip node) projects a
    * deterministic default spec instead of throwing. Generation paths MUST
    * leave this unset — a placeholder prompt must never reach a provider.
    */
@@ -39,6 +40,33 @@ export interface StoryFilmDraftClipProjectionInput {
 const VIDEO_FIRST_DEFAULT_DURATION_MS = 15_000;
 const VIDEO_FIRST_PROMPT_TEXT =
   'Video-first clip: playback uses the manually bound video; no authored direction.';
+
+/**
+ * True when the draft still carries only the empty authoring shell from
+ * {@link createDefaultStoryClipPromptDraft} (or equivalent blanks). New clip
+ * nodes always get that shell — so video-first must treat it like "no prompt",
+ * not attempt FilmClipSpec projection of empty strings.
+ */
+export function isUnauthoredClipPrompt(
+  prompt: StoryClipPromptDraft | null | undefined,
+): boolean {
+  if (!prompt) return true;
+  if (prompt.masterDirection.trim() || prompt.emotionalArc.trim()) {
+    return false;
+  }
+  return !prompt.beats.some(
+    (beat) =>
+      beat.visual.trim() ||
+      beat.camera.trim() ||
+      beat.action.trim() ||
+      beat.performance.trim() ||
+      beat.emotion.trim() ||
+      beat.dialogue.trim() ||
+      beat.audio.trim() ||
+      beat.endState.trim() ||
+      beat.continuity.trim(),
+  );
+}
 
 /**
  * Projects exactly one saved draft clip for generation. Unlike a Build
@@ -73,12 +101,9 @@ export function projectStoryFilmDraftClip(
     : node.exit.kind === 'ending'
       ? 'ending'
       : 'scene';
-  if (!prompt) {
-    if (!input.allowVideoFirst) {
-      throw new Error(
-        `Draft clip ${input.graphNodeId} has no director prompt.`,
-      );
-    }
+  const useVideoFirst =
+    input.allowVideoFirst === true && isUnauthoredClipPrompt(prompt);
+  if (useVideoFirst) {
     // Deterministic constants keep the synthesized spec hash stable across
     // relocks. The wide duration tolerance mirrors the manual-bind rule:
     // the video IS the content, the contract does not constrain it.
@@ -117,6 +142,9 @@ export function projectStoryFilmDraftClip(
       },
       continuityNotes: [],
     });
+  }
+  if (!prompt) {
+    throw new Error(`Draft clip ${input.graphNodeId} has no director prompt.`);
   }
   return FilmClipSpecSchema.parse({
     key: node.clipKey,

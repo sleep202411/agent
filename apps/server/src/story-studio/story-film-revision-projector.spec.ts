@@ -1,10 +1,12 @@
 import {
+  createDefaultStoryClipPromptDraft,
   LockableInteractiveFilmDraftContentSchema,
   type StoryTrailerPromptDraft,
 } from './interactive-film.schema';
 import { buildInteractiveFilmTestBundle } from './__tests__/interactive-film-test-bundle';
 import {
   compileStoryDirectorPrompt,
+  isUnauthoredClipPrompt,
   projectStoryFilmDraftClip,
   projectStoryFilmRevision,
 } from './story-film-revision-projector';
@@ -49,6 +51,45 @@ function completeTrailerPrompt(): StoryTrailerPromptDraft {
 }
 
 describe('Story film revision projector', () => {
+  it('treats the empty default clip prompt shell as video-first when allowed', () => {
+    const draft = structuredClone(
+      buildInteractiveFilmTestBundle({
+        defaultCanonicalModelId: MODEL_ID,
+      }).draftContent,
+    );
+    const selected = draft.graph.nodes.find((node) => node.kind === 'clip');
+    if (!selected || selected.kind !== 'clip') {
+      throw new Error('Fixture clip missing.');
+    }
+    draft.clipPrompts = [
+      createDefaultStoryClipPromptDraft({
+        graphNodeId: selected.nodeId,
+        clipKey: selected.clipKey,
+      }),
+      ...draft.clipPrompts.filter(
+        (prompt) => prompt.graphNodeId !== selected.nodeId,
+      ),
+    ];
+    expect(isUnauthoredClipPrompt(draft.clipPrompts[0])).toBe(true);
+
+    expect(() =>
+      projectStoryFilmDraftClip({
+        draft,
+        frameProfile: 'landscape_16_9',
+        graphNodeId: selected.nodeId,
+      }),
+    ).toThrow(/Too small|expected string/i);
+
+    const projected = projectStoryFilmDraftClip({
+      draft,
+      frameProfile: 'landscape_16_9',
+      graphNodeId: selected.nodeId,
+      allowVideoFirst: true,
+    });
+    expect(projected.prompt.masterPrompt).toContain('Video-first clip');
+    expect(projected.outputContract.durationToleranceMs).toBe(30_000);
+  });
+
   it('strictly projects one selected shot while neighbouring draft shots remain incomplete', () => {
     const draft = structuredClone(
       buildInteractiveFilmTestBundle({
