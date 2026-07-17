@@ -468,11 +468,15 @@ export class StoryFilmBuildService {
       });
     }
     if (source.storageProvider === MediaStorageProvider.external_url) {
-      throw new GoneException({
-        code: 'STORY_BUILD_ASSET_NOT_SIGNABLE',
-        message:
-          'Build media must use product storage that supports expiring signed access.',
-      });
+      // External media is delivered by its own URL — there is nothing to
+      // sign, so access neither expires nor can be revoked. The synthetic
+      // expiry only satisfies the delivery contract shape.
+      return {
+        url: source.externalUrl as string,
+        expiresAt: new Date(
+          Date.now() + BUILD_MEDIA_READ_URL_TTL_SECONDS * 1_000,
+        ).toISOString(),
+      };
     }
     const signed = await this.storageAccess.createReadUrl(source, {
       cacheControl: 'private, no-store',
@@ -1074,18 +1078,11 @@ export class StoryFilmBuildService {
           ),
         );
       }
-      if (
-        deliverySource?.storageProvider === MediaStorageProvider.external_url
-      ) {
-        diagnostics.push(
-          buildDiagnostic(
-            'STORY_BUILD_ASSET_NOT_SIGNABLE',
-            `Clip ${clip.key} uses external media that cannot be delivered through expiring signed access.`,
-            'asset',
-            asset.id,
-          ),
-        );
-      }
+      // external_url delivery sources are allowed: the delivery endpoint
+      // hands back the external URL as-is instead of a signed read URL.
+      // Trade-off accepted 2026-07-17: such media is immutable-by-promise
+      // only — no expiring access, no takedown lever, and the bytes served
+      // can drift from what moderation reviewed.
       const url = storyBuildAssetDeliveryPath(
         build.storyProjectId,
         build.id,

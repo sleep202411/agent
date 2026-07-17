@@ -1445,7 +1445,7 @@ describe('StoryFilmBuildService direct current-video compilation', () => {
     });
   });
 
-  it('strictly rejects a foreign Workspace and non-signable storage', () => {
+  it('strictly rejects a foreign Workspace while allowing external storage', () => {
     const row = currentVideoClip();
     row.currentVideoAsset.workspaceId = uuid(3, '7000');
     row.currentVideoAsset.storageProvider = 'external_url';
@@ -1454,9 +1454,15 @@ describe('StoryFilmBuildService direct current-video compilation', () => {
     row.currentVideoAsset.externalUrl =
       'https://cdn.example.test/current-video.mp4';
 
-    expect(prepareClip(row).eligibilityDiagnostics).toEqual(
+    const diagnostics = prepareClip(row).eligibilityDiagnostics;
+    expect(diagnostics).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ code: 'STORY_BUILD_ASSET_SCOPE_INVALID' }),
+      ]),
+    );
+    // external_url media is deliverable as-is — no signable-storage gate.
+    expect(diagnostics).not.toEqual(
+      expect.arrayContaining([
         expect.objectContaining({ code: 'STORY_BUILD_ASSET_NOT_SIGNABLE' }),
       ]),
     );
@@ -2075,7 +2081,7 @@ describe('StoryFilmBuildService media delivery policy', () => {
     );
   });
 
-  it('rejects external Build media because it cannot provide expiring signed access', async () => {
+  it('delivers external Build media by its own URL without signing', async () => {
     const row = readyBuildRow();
     const frozen = {
       ...row.assets[0],
@@ -2121,15 +2127,17 @@ describe('StoryFilmBuildService media delivery policy', () => {
       storage as never,
     );
 
-    await expect(
-      service.issueBuildAssetReadUrl(
-        undefined,
-        PROJECT_ID,
-        BUILD_ID,
-        ASSET_ID,
-        VARIANT_ID,
-      ),
-    ).rejects.toBeInstanceOf(GoneException);
+    const delivery = await service.issueBuildAssetReadUrl(
+      undefined,
+      PROJECT_ID,
+      BUILD_ID,
+      ASSET_ID,
+      VARIANT_ID,
+    );
+    expect(delivery.url).toBe(
+      'https://cdn.example.test/permanent-current-video.mp4',
+    );
+    expect(typeof delivery.expiresAt).toBe('string');
     expect(storage.createReadUrl).not.toHaveBeenCalled();
   });
 
