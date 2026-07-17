@@ -93,6 +93,12 @@ import {
   type UpsertAdminBillingProviderBindingInput,
   type UpsertAdminBillingPromotionProviderBindingInput,
   type GenerateVouchersInput,
+  GrantMembershipSchema,
+  type GrantMembershipInput,
+  ListMembershipGrantsQuerySchema,
+  type ListMembershipGrantsQuery,
+  MembershipGrantParamsSchema,
+  type MembershipGrantParams,
   type ListVouchersQuery,
   type CreateCreditCampaignInput,
   type ListCreditCampaignsQuery,
@@ -101,6 +107,7 @@ import {
   type UpdateCheckInConfigInput,
 } from './dto';
 import { VoucherService } from './voucher.service';
+import { MembershipGrantAdminService } from './membership-grant-admin.service';
 import { CampaignService } from './campaign.service';
 import { CheckInService } from './check-in.service';
 
@@ -115,6 +122,7 @@ export class BillingAdminController {
     private readonly vouchers: VoucherService,
     private readonly campaigns: CampaignService,
     private readonly checkIn: CheckInService,
+    private readonly membershipGrants: MembershipGrantAdminService,
   ) {}
 
   @RequireAdminPermissions(ADMIN_PERMISSION_KEYS.BillingRead)
@@ -450,6 +458,66 @@ export class BillingAdminController {
         grantType: body.grantType,
         computeCreditAmount: body.computeCreditAmount,
       },
+    );
+    return { code: 200, data };
+  }
+
+
+  // --- Membership grants (admin 手动开会员) --------------------------------
+
+  @RequireAdminPermissions(ADMIN_PERMISSION_KEYS.BillingRead)
+  @Get('membership-grants')
+  async listMembershipGrants(
+    @Query(new ZodValidationPipe(ListMembershipGrantsQuerySchema))
+    query: ListMembershipGrantsQuery,
+  ) {
+    return {
+      code: 200,
+      data: await this.membershipGrants.listForUser(query.userId),
+    };
+  }
+
+  @RequireAdminPermissions(ADMIN_PERMISSION_KEYS.BillingWrite)
+  @Post('membership-grants')
+  async grantMembership(
+    @CurrentAdmin() admin: AdminActor,
+    @Body(new ZodValidationPipe(GrantMembershipSchema))
+    body: GrantMembershipInput,
+    @Req() request: Request,
+  ) {
+    const data = await this.membershipGrants.grant(admin.id, body);
+    await this.audit(
+      admin,
+      request,
+      'admin.billing.membership_grant.create',
+      'entitlement_grant',
+      data.id,
+      {
+        userId: body.userId,
+        planKey: body.planKey,
+        durationDays: body.durationDays,
+        note: body.note,
+      },
+    );
+    return { code: 200, data };
+  }
+
+  @RequireAdminPermissions(ADMIN_PERMISSION_KEYS.BillingWrite)
+  @Post('membership-grants/:grantId/revoke')
+  async revokeMembershipGrant(
+    @CurrentAdmin() admin: AdminActor,
+    @Param(new ZodValidationPipe(MembershipGrantParamsSchema))
+    params: MembershipGrantParams,
+    @Req() request: Request,
+  ) {
+    const data = await this.membershipGrants.revoke(params.grantId);
+    await this.audit(
+      admin,
+      request,
+      'admin.billing.membership_grant.revoke',
+      'entitlement_grant',
+      params.grantId,
+      { planKey: data.planKey },
     );
     return { code: 200, data };
   }

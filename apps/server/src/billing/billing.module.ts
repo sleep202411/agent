@@ -12,6 +12,7 @@ import { PaymentProviderRegistry } from './payment-provider-registry.service';
 import { AirwallexProvider } from './providers/airwallex.provider';
 import { WechatPayProvider } from './providers/wechat-pay.provider';
 import { VoucherService } from './voucher.service';
+import { MembershipGrantAdminService } from './membership-grant-admin.service';
 import { CampaignService } from './campaign.service';
 import { CheckInService } from './check-in.service';
 
@@ -31,6 +32,7 @@ import { CheckInService } from './check-in.service';
     AirwallexProvider,
     WechatPayProvider,
     VoucherService,
+    MembershipGrantAdminService,
     CampaignService,
     CheckInService,
   ],
