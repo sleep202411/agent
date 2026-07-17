@@ -415,9 +415,13 @@ describe('StoryExperienceReleaseService publication lifecycle', () => {
         requestedByUserId: 'user-1',
       }),
     });
-    expect(
-      tx.storyExperiencePublication.create.mock.calls[0][0].data,
-    ).not.toHaveProperty('mediaAuthorizedAt');
+    // Authorization is stamped explicitly from the transaction clock (one
+    // clock read per operation — never mixed with column defaults, which the
+    // time_order_chk constraint would reject on skew).
+    const createData = tx.storyExperiencePublication.create.mock.calls[0][0]
+      .data as Record<string, unknown>;
+    expect(createData.mediaAuthorizedAt).toBeInstanceOf(Date);
+    expect(createData.createdAt).toEqual(createData.mediaAuthorizedAt);
     expect(gateway.publish).toHaveBeenCalledWith(
       expect.objectContaining({ contentVersion: `build:${BUILD_ID}` }),
       'satoken=session',

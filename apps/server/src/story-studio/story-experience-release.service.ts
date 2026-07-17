@@ -439,6 +439,15 @@ export class StoryExperienceReleaseService {
             contentVersion: input.contentVersion,
             requestedSetCurrent: input.requestedSetCurrent,
             requestedByUserId: input.userId,
+            // One clock read per operation. The column defaults evaluate
+            // CURRENT_TIMESTAMP at insert time, which can land AFTER the
+            // `now` this transaction already stamped onto the attempt/lease
+            // fields below — the time_order_chk constraint then rejects the
+            // row (first_attempt_at >= created_at, observed 11ms apart in
+            // prod 2026-07-17). Stamp every lifecycle field from `now`.
+            mediaAuthorizedAt: now,
+            createdAt: now,
+            updatedAt: now,
           },
         });
       }
