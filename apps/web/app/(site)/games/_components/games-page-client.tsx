@@ -58,7 +58,7 @@ export function GamesPageClient({
           </section>
         ) : null}
 
-        <section className="mt-10 grid gap-5 md:grid-cols-2">
+        <section className="mt-10 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {interactiveFilms.map((game) => (
             <article
               key={game.gameId}
@@ -66,7 +66,7 @@ export function GamesPageClient({
             >
               <div className="relative aspect-video overflow-hidden bg-[linear-gradient(145deg,#16181b,#08090a)]">
                 <div className="absolute inset-0 grid place-items-center text-white/12">
-                  <IconMovie className="size-16" stroke={1} />
+                  <IconMovie className="size-10" stroke={1} />
                 </div>
                 {game.coverUrl ? (
                   <Image
@@ -74,7 +74,7 @@ export function GamesPageClient({
                     alt={game.title}
                     fill
                     unoptimized
-                    sizes="(min-width: 768px) 50vw, 100vw"
+                    sizes="(min-width: 1024px) 33vw, (min-width: 640px) 50vw, 100vw"
                     className="object-cover opacity-86 transition-transform duration-500 group-hover:scale-[1.025]"
                     onError={(event) => {
                       event.currentTarget.style.display = "none";
@@ -82,14 +82,14 @@ export function GamesPageClient({
                   />
                 ) : null}
                 <div className="absolute inset-0 bg-linear-to-b from-black/5 via-transparent to-black/80" />
-                <div className="absolute top-4 left-4 rounded-full bg-black/55 px-3 py-1 text-xs font-semibold text-white/90">
+                <div className="absolute top-3 left-3 rounded-full bg-black/55 px-2.5 py-0.5 text-[11px] font-semibold text-white/90">
                   {t("status.published")}
                 </div>
-                <div className="absolute right-4 bottom-4 left-4">
-                  <p className="text-sm font-semibold text-white/58">
+                <div className="absolute right-3 bottom-3 left-3">
+                  <p className="text-xs font-semibold text-white/58">
                     {t("catalogue.interactiveFilm")}
                   </p>
-                  <h2 className="mt-1 text-2xl leading-tight font-semibold text-white">
+                  <h2 className="mt-0.5 text-lg leading-tight font-semibold text-white">
                     {game.title}
                   </h2>
                   {game.subtitle ? (
@@ -97,7 +97,7 @@ export function GamesPageClient({
                   ) : null}
                 </div>
               </div>
-              <div className="flex items-center justify-between gap-4 p-5">
+              <div className="flex items-center justify-between gap-3 p-4">
                 <div className="min-w-0">
                   <p className="text-xs font-semibold text-muted-foreground">
                     {t("catalogue.currentVersion")}
@@ -111,7 +111,7 @@ export function GamesPageClient({
                     `/play/interactive-film/${encodeURIComponent(game.gameId)}`,
                     locale
                   )}
-                  className="inline-flex h-11 shrink-0 items-center justify-center gap-2 rounded-full bg-primary px-5 text-sm font-semibold text-primary-foreground transition-transform hover:-translate-y-0.5 active:translate-y-0"
+                  className="inline-flex h-9 shrink-0 items-center justify-center gap-1.5 rounded-full bg-primary px-4 text-sm font-semibold text-primary-foreground transition-transform hover:-translate-y-0.5 active:translate-y-0"
                 >
                   <IconPlayerPlay className="size-4" />
                   {t("catalogue.open")}
@@ -140,25 +140,25 @@ export function GamesPageClient({
                     alt={t(`${itemKey}.coverAlt`)}
                     fill
                     unoptimized
-                    sizes="(min-width: 768px) 50vw, 100vw"
+                    sizes="(min-width: 1024px) 33vw, (min-width: 640px) 50vw, 100vw"
                     className="object-cover opacity-78 transition-transform duration-500 group-hover:scale-[1.03]"
                   />
                   <div className="absolute inset-0 bg-linear-to-b from-black/10 via-black/20 to-black/70" />
-                  <div className="absolute top-4 left-4 rounded-full bg-black/55 px-3 py-1 text-xs font-semibold text-white/90">
+                  <div className="absolute top-3 left-3 rounded-full bg-black/55 px-2.5 py-0.5 text-[11px] font-semibold text-white/90">
                     {t(`status.${playable.status}`)}
                   </div>
-                  <div className="absolute right-4 bottom-4 left-4">
-                    <p className="text-sm font-semibold text-white/60">{t(`${itemKey}.type`)}</p>
-                    <h2 className="mt-1 text-2xl leading-tight font-semibold text-white">
+                  <div className="absolute right-3 bottom-3 left-3">
+                    <p className="text-xs font-semibold text-white/60">{t(`${itemKey}.type`)}</p>
+                    <h2 className="mt-0.5 text-lg leading-tight font-semibold text-white">
                       {t(`${itemKey}.title`)}
                     </h2>
                   </div>
                 </div>
-                <div className="p-5">
-                  <p className="text-sm leading-6 text-muted-foreground">
+                <div className="p-4">
+                  <p className="line-clamp-2 text-[13px] leading-5 text-muted-foreground">
                     {t(`${itemKey}.summary`)}
                   </p>
-                  <div className="mt-4 flex flex-wrap gap-2">
+                  <div className="mt-3 flex flex-wrap gap-1.5">
                     {playable.tagKeys.map((tagKey) => (
                       <span
                         key={tagKey}
@@ -168,16 +168,16 @@ export function GamesPageClient({
                       </span>
                     ))}
                   </div>
-                  <div className="mt-5 grid grid-cols-2 gap-2">
+                  <div className="mt-3 grid grid-cols-2 gap-1.5">
                     {playable.statKeys.map((statKey) => (
-                      <div key={statKey} className="rounded-xl bg-background/55 px-3 py-2">
+                      <div key={statKey} className="rounded-lg bg-background/55 px-2.5 py-1.5">
                         <p className="text-xs font-semibold text-muted-foreground">
                           {t(`stats.${statKey}`)}
                         </p>
                       </div>
                     ))}
                   </div>
-                  <div className="mt-5 flex flex-wrap items-center justify-between gap-3">
+                  <div className="mt-4 flex flex-wrap items-center justify-between gap-2">
                     <Link
                       href={localizePath(`/ips/${playable.sourceIpId}`, locale)}
                       className="inline-flex items-center gap-1 text-sm font-semibold text-muted-foreground transition-colors hover:text-foreground"
@@ -188,7 +188,7 @@ export function GamesPageClient({
                     <Link
                       href={localizePath(playable.href, locale)}
                       className={cn(
-                        "inline-flex h-11 items-center justify-center gap-2 rounded-full bg-primary px-5 text-sm font-semibold text-primary-foreground",
+                        "inline-flex h-9 items-center justify-center gap-1.5 rounded-full bg-primary px-4 text-sm font-semibold text-primary-foreground",
                         "transition-transform hover:-translate-y-0.5 active:translate-y-0"
                       )}
                     >
