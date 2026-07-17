@@ -2503,6 +2503,17 @@
       }
     }
   },
+  "storyStudioLanding": {
+    "badge": "Featured interactive film",
+    "hero": {
+      "eyebrow": "Season One · The Unwritten Visitor",
+      "title": "Dream of Jinling",
+      "description": "Enter the Rongguo Mansion beside Daiyu as a visitor absent from the old story, then reshape Jinling through continuous cinema and consequential choices.",
+      "openCanvas": "Open creator project",
+      "browseProjects": "Browse creator projects",
+      "playFilm": "Play interactive film"
+    }
+  },
   "metadata": {
     "studioTitle": "FizzStudio",
     "studioDescription": "AI creative studio"

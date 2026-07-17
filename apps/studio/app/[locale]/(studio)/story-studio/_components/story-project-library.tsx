@@ -51,10 +51,13 @@ import {
   type StoryFrameProfile,
   type StoryProjectSummary,
 } from "@/lib/story-projects-api";
+import { StoryStudioHero } from "./story-studio-hero";
 
 const STORY_PROJECTS_QUERY = ["story-studio", "interactive-film-projects"] as const;
+const JINLING_SOURCE_TITLE = "金陵入梦";
+const JINLING_FEATURE_TAGS = ["interactive_film", "classical_literature", "mystery"] as const;
 
-export function StoryProjectLibrary() {
+export function StoryProjectLibrary({ featuredPlayerHref }: { featuredPlayerHref: string }) {
   const t = useTranslations("storyStudio");
   const locale = useLocale();
   const router = useRouter();
@@ -75,111 +78,126 @@ export function StoryProjectLibrary() {
 
   const projects = projectsQuery.data?.items ?? [];
   const isLoading = workspaceLoading || (Boolean(workspaceId) && projectsQuery.isLoading);
+  const featuredProject = projects.find(
+    (project) =>
+      project.title.trim() === JINLING_SOURCE_TITLE &&
+      project.defaultLocale === "zh-CN" &&
+      JINLING_FEATURE_TAGS.every((tag) => project.tags.includes(tag))
+  );
+  const featuredProjectHref = featuredProject
+    ? `/story-studio/projects/${encodeURIComponent(featuredProject.id)}/canvas`
+    : null;
 
   const refresh = useCallback(async () => {
     await queryClient.invalidateQueries({ queryKey: STORY_PROJECTS_QUERY });
   }, [queryClient]);
 
   return (
-    <section className="relative z-20 pr-6 pb-16 pl-20 pt-12 lg:pl-[120px]">
-      <div className="w-full">
-        <header className="flex flex-col gap-6 md:flex-row md:items-end md:justify-between">
-          <div>
-            <p className="text-[11px] font-semibold tracking-[0.16em] text-white/38 uppercase">
-              {t("eyebrow")}
-            </p>
-            <h2 className="mt-2 text-[22px] font-semibold tracking-[-0.015em] text-white">
-              {t("projects.title")}
-            </h2>
-            <p className="mt-1 max-w-2xl text-[13px] font-medium text-white/48">
-              {t("projects.subtitle")}
-            </p>
-          </div>
-          <Button
-            type="button"
-            onClick={() => setCreateOpen(true)}
-            disabled={!workspaceId}
-            className="h-10 rounded-xl bg-[#E52227] px-4 text-white hover:bg-[#f02b30]"
-          >
-            <IconPlus className="size-4" stroke={2} />
-            {t("newProject")}
-          </Button>
-        </header>
-
-        <section className="mt-8" aria-labelledby="story-projects-heading">
-          <div className="flex items-end justify-between gap-4">
-            <h3 id="story-projects-heading" className="sr-only">
-              {t("projects.title")}
-            </h3>
-            {projectsQuery.isError ? (
-              <Button variant="ghost" size="sm" onClick={() => void projectsQuery.refetch()}>
-                <IconRefresh className="size-4" />
-                {t("actions.retry")}
-              </Button>
-            ) : null}
-          </div>
-
-          {isLoading ? (
-            <ProjectSkeletons />
-          ) : projectsQuery.isError ? (
-            <FrostedPanel className="mt-5 flex min-h-48 flex-col items-center justify-center px-6 text-center">
-              <p className="text-sm font-medium text-white/72">{t("errors.loadProjects")}</p>
-              <p className="mt-2 max-w-lg text-xs leading-5 text-white/42">
-                {storyApiErrorMessage(projectsQuery.error, t("errors.generic"))}
+    <>
+      <StoryStudioHero featuredProjectHref={featuredProjectHref} playerHref={featuredPlayerHref} />
+      <section
+        id="interactive-films"
+        className="relative z-20 pr-6 pb-16 pl-6 pt-12 sm:pl-20 lg:pl-[120px]"
+      >
+        <div className="w-full">
+          <header className="flex flex-col gap-6 md:flex-row md:items-end md:justify-between">
+            <div>
+              <p className="text-[11px] font-semibold tracking-[0.16em] text-white/38 uppercase">
+                {t("eyebrow")}
               </p>
-            </FrostedPanel>
-          ) : projects.length === 0 ? (
-            <EmptyProjects onCreate={() => setCreateOpen(true)} />
-          ) : (
-            <div className="mt-5 grid grid-cols-[repeat(auto-fill,minmax(260px,1fr))] gap-4">
-              {projects.map((project) => (
-                <StoryProjectCard
-                  key={project.id}
-                  project={project}
-                  locale={locale}
-                  onEdit={() => setEditing(project)}
-                  onArchive={() => setArchiving(project)}
-                />
-              ))}
+              <h2 className="mt-2 text-[22px] font-semibold tracking-[-0.015em] text-white">
+                {t("projects.title")}
+              </h2>
+              <p className="mt-1 max-w-2xl text-[13px] font-medium text-white/48">
+                {t("projects.subtitle")}
+              </p>
             </div>
-          )}
-        </section>
-      </div>
+            <Button
+              type="button"
+              onClick={() => setCreateOpen(true)}
+              disabled={!workspaceId}
+              className="h-10 rounded-xl bg-[#E52227] px-4 text-white hover:bg-[#f02b30]"
+            >
+              <IconPlus className="size-4" stroke={2} />
+              {t("newProject")}
+            </Button>
+          </header>
 
-      <CreateProjectDialog
-        open={createOpen}
-        onOpenChange={setCreateOpen}
-        workspaceId={workspaceId}
-        defaultLocale={locale}
-        onCreated={(project) => {
-          void refresh();
-          router.push(`/story-studio/projects/${project.id}/canvas`);
-        }}
-      />
-      {editing ? (
-        <EditProjectDialog
-          key={`${editing.id}:${editing.projectVersion}`}
-          project={editing}
-          workspaceId={workspaceId as string}
-          onOpenChange={(open) => !open && setEditing(null)}
-          onSaved={() => {
-            setEditing(null);
+          <section className="mt-8" aria-labelledby="story-projects-heading">
+            <div className="flex items-end justify-between gap-4">
+              <h3 id="story-projects-heading" className="sr-only">
+                {t("projects.title")}
+              </h3>
+              {projectsQuery.isError ? (
+                <Button variant="ghost" size="sm" onClick={() => void projectsQuery.refetch()}>
+                  <IconRefresh className="size-4" />
+                  {t("actions.retry")}
+                </Button>
+              ) : null}
+            </div>
+
+            {isLoading ? (
+              <ProjectSkeletons />
+            ) : projectsQuery.isError ? (
+              <FrostedPanel className="mt-5 flex min-h-48 flex-col items-center justify-center px-6 text-center">
+                <p className="text-sm font-medium text-white/72">{t("errors.loadProjects")}</p>
+                <p className="mt-2 max-w-lg text-xs leading-5 text-white/42">
+                  {storyApiErrorMessage(projectsQuery.error, t("errors.generic"))}
+                </p>
+              </FrostedPanel>
+            ) : projects.length === 0 ? (
+              <EmptyProjects onCreate={() => setCreateOpen(true)} />
+            ) : (
+              <div className="mt-5 grid grid-cols-[repeat(auto-fill,minmax(260px,1fr))] gap-4">
+                {projects.map((project) => (
+                  <StoryProjectCard
+                    key={project.id}
+                    project={project}
+                    locale={locale}
+                    onEdit={() => setEditing(project)}
+                    onArchive={() => setArchiving(project)}
+                  />
+                ))}
+              </div>
+            )}
+          </section>
+        </div>
+
+        <CreateProjectDialog
+          open={createOpen}
+          onOpenChange={setCreateOpen}
+          workspaceId={workspaceId}
+          defaultLocale={locale}
+          onCreated={(project) => {
             void refresh();
+            router.push(`/story-studio/projects/${project.id}/canvas`);
           }}
         />
-      ) : null}
-      {archiving ? (
-        <ArchiveProjectDialog
-          project={archiving}
-          workspaceId={workspaceId as string}
-          onOpenChange={(open) => !open && setArchiving(null)}
-          onArchived={() => {
-            setArchiving(null);
-            void refresh();
-          }}
-        />
-      ) : null}
-    </section>
+        {editing ? (
+          <EditProjectDialog
+            key={`${editing.id}:${editing.projectVersion}`}
+            project={editing}
+            workspaceId={workspaceId as string}
+            onOpenChange={(open) => !open && setEditing(null)}
+            onSaved={() => {
+              setEditing(null);
+              void refresh();
+            }}
+          />
+        ) : null}
+        {archiving ? (
+          <ArchiveProjectDialog
+            project={archiving}
+            workspaceId={workspaceId as string}
+            onOpenChange={(open) => !open && setArchiving(null)}
+            onArchived={() => {
+              setArchiving(null);
+              void refresh();
+            }}
+          />
+        ) : null}
+      </section>
+    </>
   );
 }
 

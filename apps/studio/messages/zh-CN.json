@@ -2503,6 +2503,17 @@
       }
     }
   },
+  "storyStudioLanding": {
+    "badge": "精选互动影游",
+    "hero": {
+      "eyebrow": "第一季 · 无字来客",
+      "title": "金陵入梦",
+      "description": "以一位不属于旧命册的无字来客，随黛玉同日入府；在连续影像与关键选择中，亲手改写金陵命数。",
+      "openCanvas": "打开创作项目",
+      "browseProjects": "浏览创作项目",
+      "playFilm": "试玩影游"
+    }
+  },
   "metadata": {
     "studioTitle": "FizzStudio",
     "studioDescription": "AI 创意工作台"
