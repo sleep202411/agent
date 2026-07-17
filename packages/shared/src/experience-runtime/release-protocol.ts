@@ -16,6 +16,19 @@ const ExperienceHttpUrlSchema = z.url().superRefine((value, context) => {
   });
 });
 
+// Decorative catalogue fields must NEVER drop a game: Java sends explicit
+// null (no cover / no subtitle) and occasionally a malformed value. A valid
+// value is kept; anything else (null, missing, bad URL, blank) collapses to
+// undefined so the game still lists/plays — just without that decoration.
+const ExperienceOptionalCoverUrlSchema = z.any().transform((value) => {
+  const parsed = ExperienceHttpUrlSchema.safeParse(value);
+  return parsed.success ? parsed.data : undefined;
+});
+const ExperienceOptionalSubtitleSchema = z.any().transform((value) => {
+  const parsed = ExperienceDisplayTextSchema.safeParse(value);
+  return parsed.success ? parsed.data : undefined;
+});
+
 export const ExperienceReleaseStatusSchema = z.enum(["published", "draft"]);
 
 /**
@@ -28,8 +41,8 @@ export const ExperienceReleaseRequestSchema = z
     gameId: ExperienceStableIdSchema,
     contentVersion: ExperienceStableIdSchema,
     title: ExperienceDisplayTextSchema.optional(),
-    subtitle: ExperienceDisplayTextSchema.optional(),
-    coverUrl: ExperienceHttpUrlSchema.optional(),
+    subtitle: ExperienceOptionalSubtitleSchema,
+    coverUrl: ExperienceOptionalCoverUrlSchema,
     manifest: ExperienceJsonObjectSchema,
     status: ExperienceReleaseStatusSchema,
     setCurrent: z.boolean().optional(),
@@ -49,8 +62,8 @@ export const ExperienceGameSummarySchema = z
   .object({
     gameId: ExperienceStableIdSchema,
     title: ExperienceDisplayTextSchema,
-    subtitle: ExperienceDisplayTextSchema.optional(),
-    coverUrl: ExperienceHttpUrlSchema.optional(),
+    subtitle: ExperienceOptionalSubtitleSchema,
+    coverUrl: ExperienceOptionalCoverUrlSchema,
     currentVersion: ExperienceStableIdSchema,
     updatedAt: z.iso.datetime({ offset: true }),
   })
@@ -62,7 +75,7 @@ export const ExperienceGameDetailResponseSchema = z
   .object({
     gameId: ExperienceStableIdSchema,
     title: ExperienceDisplayTextSchema,
-    coverUrl: ExperienceHttpUrlSchema.optional(),
+    coverUrl: ExperienceOptionalCoverUrlSchema,
     currentVersion: ExperienceStableIdSchema,
     manifestUrl: ExperienceHttpUrlSchema,
   })
