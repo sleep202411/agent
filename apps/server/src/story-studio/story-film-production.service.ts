@@ -575,6 +575,7 @@ export class StoryFilmProductionService {
     },
     graphNodeId: string,
     input: CreateDraftFilmGenerationInput,
+    options: { videoFirst?: boolean } = {},
   ): Promise<MaterializedDraftClip> {
     return this.prisma.$transaction(
       async (tx) => {
@@ -623,6 +624,7 @@ export class StoryFilmProductionService {
             draft: parsedDraft.data,
             frameProfile: project.frameProfile,
             graphNodeId,
+            allowVideoFirst: options.videoFirst,
           });
         } catch (error) {
           throw new UnprocessableEntityException({
@@ -637,16 +639,17 @@ export class StoryFilmProductionService {
         const clipPrompt = parsedDraft.data.clipPrompts.find(
           (prompt) => prompt.graphNodeId === graphNodeId,
         );
-        if (!clipPrompt) {
+        if (!clipPrompt && !options.videoFirst) {
           throw new UnprocessableEntityException({
             code: 'STORY_FILM_CLIP_NOT_GENERATABLE',
             message: 'Complete this shot prompt before preparing video.',
           });
         }
-        const referencePlan = requiredDraftClipReferencePlan(
-          clipSpec,
-          clipPrompt,
-        );
+        // A video-first bind carries no generation, so it needs no
+        // reference plan; with an authored prompt the plan stays mandatory.
+        const referencePlan = clipPrompt
+          ? requiredDraftClipReferencePlan(clipSpec, clipPrompt)
+          : [];
 
         let revision = await tx.storyRevision.findUnique({
           where: {
@@ -1124,6 +1127,7 @@ export class StoryFilmProductionService {
       {
         expectedDraftRevision: input.expectedDraftRevision,
       },
+      { videoFirst: true },
     );
 
     const updated = await this.prisma.$transaction(async (tx) => {
@@ -1196,17 +1200,17 @@ export class StoryFilmProductionService {
               'Select a ready, non-blocked video and one of its ready variants from this Workspace.',
           });
         }
-        const clipSpec = FilmClipSpecSchema.parse(clip.specJson);
-        const technicalChecks = storyFilmTechnicalChecks(
-          {
-            kind: asset.kind,
-            width: variant.width ?? asset.width,
-            height: variant.height ?? asset.height,
-            durationSeconds: variant.durationSeconds ?? asset.durationSeconds,
-            checksumSha256: checksum,
-          },
-          clipSpec.outputContract,
-        );
+        // Manual binds: the video IS the shot's content, not a generation
+        // output — the player cover-crops any aspect, so the authored output
+        // contract does not constrain dimensions or duration here. Generated
+        // videos keep the strict contract checks on their own path.
+        const technicalChecks = storyFilmManualBindTechnicalChecks({
+          kind: asset.kind,
+          width: variant.width ?? asset.width,
+          height: variant.height ?? asset.height,
+          durationSeconds: variant.durationSeconds ?? asset.durationSeconds,
+          checksumSha256: checksum,
+        });
         if (storyFilmHasFailedTechnicalCheck(technicalChecks)) {
           throw new UnprocessableEntityException({
             code: 'STORY_CURRENT_VIDEO_TECHNICAL_CHECK_FAILED',
@@ -2228,6 +2232,21 @@ export function storyFilmTechnicalChecks(
           contract.durationToleranceMs,
       `Expected ${contract.durationMs}ms ± ${contract.durationToleranceMs}ms.`,
     ),
+    check(
+      'checksum',
+      Boolean(asset.checksumSha256),
+      'Output checksum is required.',
+    ),
+  ];
+}
+
+export function storyFilmManualBindTechnicalChecks(
+  asset: StoryFilmTechnicalAsset,
+): Prisma.InputJsonArray {
+  return [
+    check('kind', asset.kind === MediaAssetKind.video, 'Output must be video.'),
+    check('dimensions', true, 'unconstrained for manual binds'),
+    check('duration', true, 'unconstrained for manual binds'),
     check(
       'checksum',
       Boolean(asset.checksumSha256),

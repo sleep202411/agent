@@ -27,7 +27,18 @@ export interface StoryFilmDraftClipProjectionInput {
   draft: InteractiveFilmDraftContent;
   frameProfile: StoryFrameProfile;
   graphNodeId: string;
+  /**
+   * Video-first clips: a creator may bind an existing video to a shot that
+   * has no authored director prompt. When set, a missing prompt projects a
+   * deterministic default spec instead of throwing. Generation paths MUST
+   * leave this unset — a placeholder prompt must never reach a provider.
+   */
+  allowVideoFirst?: boolean;
 }
+
+const VIDEO_FIRST_DEFAULT_DURATION_MS = 15_000;
+const VIDEO_FIRST_PROMPT_TEXT =
+  'Video-first clip: playback uses the manually bound video; no authored direction.';
 
 /**
  * Projects exactly one saved draft clip for generation. Unlike a Build
@@ -53,21 +64,64 @@ export function projectStoryFilmDraftClip(
   const prompt = input.draft.clipPrompts.find(
     (candidate) => candidate.graphNodeId === node.nodeId,
   );
-  if (!prompt) {
-    throw new Error(`Draft clip ${input.graphNodeId} has no director prompt.`);
-  }
   const openingNodeIds = collectOpeningClipNodeIds(input.draft);
   const rank = clipNodes.findIndex(
     (candidate) => candidate.nodeId === node.nodeId,
   );
+  const kind = openingNodeIds.has(node.nodeId)
+    ? 'opening'
+    : node.exit.kind === 'ending'
+      ? 'ending'
+      : 'scene';
+  if (!prompt) {
+    if (!input.allowVideoFirst) {
+      throw new Error(
+        `Draft clip ${input.graphNodeId} has no director prompt.`,
+      );
+    }
+    // Deterministic constants keep the synthesized spec hash stable across
+    // relocks. The wide duration tolerance mirrors the manual-bind rule:
+    // the video IS the content, the contract does not constrain it.
+    return FilmClipSpecSchema.parse({
+      key: node.clipKey,
+      graphNodeId: node.nodeId,
+      kind,
+      title: node.clipKey,
+      description: '',
+      rank,
+      targetDurationMs: VIDEO_FIRST_DEFAULT_DURATION_MS,
+      generationControl: { mode: 'omni_reference' },
+      prompt: {
+        masterPrompt: VIDEO_FIRST_PROMPT_TEXT,
+        negativeConstraints: [],
+        timeline: [
+          {
+            startMs: 0,
+            endMs: VIDEO_FIRST_DEFAULT_DURATION_MS,
+            visual: VIDEO_FIRST_PROMPT_TEXT,
+            camera: 'unspecified',
+            action: 'unspecified',
+          },
+        ],
+      },
+      dialogueWindows: [],
+      outputContract: {
+        ...frame,
+        durationMs: VIDEO_FIRST_DEFAULT_DURATION_MS,
+        durationToleranceMs: 30_000,
+        framesPerSecond: {
+          numerator: DEFAULT_FRAMES_PER_SECOND,
+          denominator: 1,
+        },
+        audio: 'embedded',
+      },
+      continuityNotes: [],
+    });
+  }
   return FilmClipSpecSchema.parse({
     key: node.clipKey,
     graphNodeId: node.nodeId,
-    kind: openingNodeIds.has(node.nodeId)
-      ? 'opening'
-      : node.exit.kind === 'ending'
-        ? 'ending'
-        : 'scene',
+    kind,
     title: prompt.title,
     description: prompt.description,
     rank,
@@ -128,6 +182,7 @@ export function projectStoryFilmRevision(input: {
       draft: input.draft,
       frameProfile: input.frameProfile,
       graphNodeId: node.nodeId,
+      allowVideoFirst: true,
     }),
   );
 

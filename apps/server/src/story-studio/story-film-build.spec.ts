@@ -1414,9 +1414,30 @@ describe('StoryFilmBuildService direct current-video compilation', () => {
         currentVideoInputHash: null,
       },
     ],
-  ])('rejects an outdated current video by %s', (_label, changes) => {
-    const row = Object.assign(currentVideoClip(), changes);
+  ])('rejects an outdated GENERATED current video by %s', (_label, changes) => {
+    // The generation-contract freshness gate applies to generated currents
+    // only; manual binds (sourceAttemptId null) are exempt.
+    const row = Object.assign(currentVideoClip(), changes, {
+      currentVideoSourceAttemptId: GENERATION_ID,
+    });
     expect(prepareClip(row).eligibilityDiagnostics).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ code: 'STORY_BUILD_CURRENT_VIDEO_OUTDATED' }),
+      ]),
+    );
+  });
+
+  it.each([
+    ['spec hash', { currentVideoSpecHash: 'c'.repeat(64) }],
+    [
+      'input hash',
+      { productionInputHash: 'd'.repeat(64), currentVideoInputHash: null },
+    ],
+  ])('exempts a MANUAL current video from %s freshness', (_label, changes) => {
+    const row = Object.assign(currentVideoClip(), changes, {
+      currentVideoSourceAttemptId: null,
+    });
+    expect(prepareClip(row).eligibilityDiagnostics).not.toEqual(
       expect.arrayContaining([
         expect.objectContaining({ code: 'STORY_BUILD_CURRENT_VIDEO_OUTDATED' }),
       ]),

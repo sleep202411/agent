@@ -705,7 +705,7 @@ describe('StoryFilmProductionService single-current-video invariants', () => {
     });
   });
 
-  it('rejects an incompatible library video before changing the current pointer', async () => {
+  it('accepts an off-contract manual video (dimensions/duration unconstrained)', async () => {
     const asset = readyVideoAsset();
     asset.variants[0].width = 1280;
     asset.variants[0].height = 720;
@@ -713,19 +713,31 @@ describe('StoryFilmProductionService single-current-video invariants', () => {
       id: CLIP_ID,
       storyProjectId: PROJECT_ID,
       revisionId: REVISION_ID,
+      version: 3,
       specJson: clip(),
       specHash: SPEC_HASH,
       productionInputHash: INPUT_HASH,
       currentVideoRevision: 4,
-      currentVideoAssetId: 'existing-asset',
-      currentVideoVariantId: 'existing-variant',
+      references: [],
+      currentVideoAsset: null,
+      currentVideoVariantId: null,
+      currentVideoSourceAttemptId: null,
+      currentVideoSpecHash: null,
+      currentVideoInputHash: null,
+      currentVideoChecksumSha256: null,
+      currentVideoTechnicalChecks: null,
+      currentVideoSetByUserId: null,
+      currentVideoSetAt: null,
+      latestGenerationAttempt: null,
+      updatedAt: new Date(),
+      archivedAt: null,
     };
     const tx = {
       $executeRaw: jest.fn().mockResolvedValue(0),
       storyFilmClip: {
         findFirst: jest.fn().mockResolvedValue(clipRow),
         update: jest.fn().mockResolvedValue({}),
-        findUniqueOrThrow: jest.fn(),
+        findUniqueOrThrow: jest.fn().mockResolvedValue(clipRow),
       },
       mediaAsset: { findFirst: jest.fn().mockResolvedValue(asset) },
     };
@@ -754,39 +766,32 @@ describe('StoryFilmProductionService single-current-video invariants', () => {
       source: { revision: 7, contentHash: 'draft-hash' },
     });
 
-    await expect(
-      service.putCurrentVideo(
-        USER as never,
-        WORKSPACE_ID,
-        PROJECT_ID,
-        'clip:S00',
-        {
-          expectedDraftRevision: 7,
-          expectedCurrentVideoRevision: 4,
-          assetId: ASSET_ID,
-          variantId: VARIANT_ID,
-        },
-      ),
-    ).rejects.toMatchObject({
-      status: 422,
-      response: {
-        code: 'STORY_CURRENT_VIDEO_TECHNICAL_CHECK_FAILED',
-        message:
-          "The selected video does not satisfy this shot's output contract.",
-        technicalChecks: [
-          { key: 'kind', status: 'passed', message: null },
-          {
-            key: 'dimensions',
-            status: 'failed',
-            message: 'Expected 1920×1080.',
-          },
-          { key: 'duration', status: 'passed', message: null },
-          { key: 'checksum', status: 'passed', message: null },
-        ],
+    // Manual binds are content, not generation output — the player
+    // cover-crops any aspect, so a 1280×720 video is accepted onto a
+    // 1920×1080 shot. dimensions/duration checks are recorded as passed
+    // (unconstrained) and the pointer is updated.
+    await service.putCurrentVideo(
+      USER as never,
+      WORKSPACE_ID,
+      PROJECT_ID,
+      'clip:S00',
+      {
+        expectedDraftRevision: 7,
+        expectedCurrentVideoRevision: 4,
+        assetId: ASSET_ID,
+        variantId: VARIANT_ID,
       },
-    });
-    expect(tx.storyFilmClip.update).not.toHaveBeenCalled();
-    expect(tx.storyFilmClip.findUniqueOrThrow).not.toHaveBeenCalled();
+    );
+    expect(tx.storyFilmClip.update).toHaveBeenCalledTimes(1);
+    const updateArg = tx.storyFilmClip.update.mock.calls[0][0] as {
+      data: {
+        currentVideoTechnicalChecks: Array<{ key: string; status: string }>;
+      };
+    };
+    const dims = updateArg.data.currentVideoTechnicalChecks.find(
+      (c) => c.key === 'dimensions',
+    );
+    expect(dims?.status).toBe('passed');
   });
 
   it('submitting a generation preserves the previous current-video pointer', async () => {

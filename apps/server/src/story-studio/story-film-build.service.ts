@@ -940,13 +940,16 @@ export class StoryFilmBuildService {
         ),
       );
     }
-    // productionInputHash exists only once generation inputs were prepared
-    // for the clip (or an import stamped them). Uploaded/imported currents on
-    // a lazily materialized or freshly locked clip carry no generation
-    // contract — only the spec axis applies to them.
+    // Generation-contract freshness applies to GENERATED currents only: a
+    // manually bound (uploaded/imported) video IS the shot's content and is
+    // anchored by checksum + moderation, not by spec/prompt hashes. For
+    // generated currents the input-hash axis applies once generation inputs
+    // exist on the clip (relocks leave productionInputHash NULL until the
+    // next prepare).
     if (
       hasCurrentAssetId &&
       hasCurrentVariantId &&
+      clip.currentVideoSourceAttemptId !== null &&
       (clip.currentVideoSpecHash !== clip.specHash ||
         (clip.productionInputHash !== null &&
           clip.currentVideoInputHash !== clip.productionInputHash))
@@ -1055,13 +1058,14 @@ export class StoryFilmBuildService {
       const height = variant.height ?? asset.height;
       const durationSeconds = variant.durationSeconds ?? asset.durationSeconds;
       if (
-        !spec.success ||
-        width !== spec.data.outputContract.width ||
-        height !== spec.data.outputContract.height ||
-        durationSeconds === null ||
-        Math.abs(
-          durationSeconds * 1_000 - spec.data.outputContract.durationMs,
-        ) > spec.data.outputContract.durationToleranceMs
+        clip.currentVideoSourceAttemptId !== null &&
+        (!spec.success ||
+          width !== spec.data.outputContract.width ||
+          height !== spec.data.outputContract.height ||
+          durationSeconds === null ||
+          Math.abs(
+            durationSeconds * 1_000 - spec.data.outputContract.durationMs,
+          ) > spec.data.outputContract.durationToleranceMs)
       ) {
         diagnostics.push(
           buildDiagnostic(
