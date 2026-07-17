@@ -4,6 +4,7 @@ import { BytePlusAssetsModule } from '../ai-generation/providers/byteplus/assets
 import { AuthModule } from '../auth';
 import { StorageModule } from '../infra/storage/storage.module';
 import { WorkspacesModule } from '../workspaces';
+import { StoryAccessModule } from '../story-studio/story-access.module';
 import { AdminMediaController } from './admin-media.controller';
 import { AdminMediaService } from './admin-media.service';
 import { CdnPurgeProvider } from './cdn-purge.provider';
@@ -16,6 +17,7 @@ import { MediaProcessingService } from './media-processing.service';
 import { MediaProcessingWorkerService } from './media-processing-worker.service';
 import { MediaUploadController } from './media-upload.controller';
 import { MediaUploadService } from './media-upload.service';
+import { StoryVideoUploadSessionService } from './story-video-upload-session.service';
 
 /**
  * Media domain — direct-to-storage upload URL issuance.
@@ -36,6 +38,7 @@ import { MediaUploadService } from './media-upload.service';
     AuthModule,
     StorageModule,
     WorkspacesModule,
+    StoryAccessModule,
     BytePlusAssetsModule,
   ],
   controllers: [
@@ -45,6 +48,7 @@ import { MediaUploadService } from './media-upload.service';
   ],
   providers: [
     MediaUploadService,
+    StoryVideoUploadSessionService,
     MediaAccessService,
     AdminMediaService,
     MediaModerationAdminService,

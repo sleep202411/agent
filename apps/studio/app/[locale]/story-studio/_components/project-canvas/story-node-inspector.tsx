@@ -34,7 +34,6 @@ import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 import type {
   InteractiveFilmDraftContent,
-  StoryClipPromptDraft,
   FilmTrailerSummary,
   StoryGraphChoice,
   StoryGraphNode,
@@ -47,6 +46,7 @@ import {
   type AutoRoutePatch,
 } from "./story-auto-routes-editor";
 import { StoryChoiceAdvancedEditor } from "./story-choice-advanced-editor";
+import { StoryClipMediaPanel, type StoryClipMediaPanelProps } from "./story-clip-media-panel";
 import { StoryDirectorPromptEditor } from "./story-director-prompt-editor";
 import { StoryClipReferenceBindings } from "./story-clip-reference-bindings";
 import type { StoryVideoComposerProps } from "./story-shot-composer";
@@ -57,8 +57,7 @@ type ClipNode = Extract<StoryGraphNode, { kind: "clip" }>;
 type ChoiceExit = Extract<ClipNode["exit"], { kind: "choice" }>;
 type Ending = InteractiveFilmDraftContent["storyBible"]["endings"][number];
 type Character = InteractiveFilmDraftContent["storyBible"]["characters"][number];
-type StateVariable = InteractiveFilmDraftContent["storyBible"]["stateVariables"][number];
-type WorldTextField = "locations" | "props" | "storyRules";
+type WorldTextField = "locations" | "props";
 
 interface StoryNodeInspectorProps {
   content: InteractiveFilmDraftContent;
@@ -74,15 +73,8 @@ interface StoryNodeInspectorProps {
   onAddWorldTextItem: (field: WorldTextField) => void;
   onUpdateWorldTextItem: (field: WorldTextField, index: number, value: string) => void;
   onRemoveWorldTextItem: (field: WorldTextField, index: number) => void;
-  onCreateStateVariable: (type: StateVariable["type"]) => string | null;
-  onReplaceStateVariable: (key: string, next: StateVariable) => void;
-  onDeleteStateVariable: (key: string) => void;
-  onReplaceClipPrompt: (graphNodeId: string, next: StoryClipPromptDraft) => void;
   onCloseNode: () => void;
   onSetEntry: (nodeId: string) => void;
-  onChangeExitKind: (nodeId: string, kind: ClipNode["exit"]["kind"], targetId?: string) => void;
-  onUpdateClipContinuation: (nodeId: string, targetNodeId: string) => void;
-  onUpdateCheckpointTarget: (nodeId: string, targetNodeId: string) => void;
   onAddAutoRoute: (nodeId: string, targetNodeId: string) => void;
   onUpdateAutoRoute: (nodeId: string, routeIndex: number, patch: AutoRoutePatch) => void;
   onRemoveAutoRoute: (nodeId: string, routeIndex: number) => void;
@@ -106,7 +98,7 @@ interface StoryNodeInspectorProps {
   onUpdateEnding: (endingId: string, patch: Partial<Ending>) => void;
   onDuplicateNode: (nodeId: string) => void;
   onDeleteSelected: () => void;
-  production?: StoryVideoComposerProps;
+  clipMedia?: StoryClipMediaPanelProps;
   filmTrailer: FilmTrailerSummary | null;
   trailerProduction?: StoryVideoComposerProps;
   onCreateTrailerPrompt: () => void;
@@ -129,15 +121,8 @@ export function StoryNodeInspector({
   onAddWorldTextItem,
   onUpdateWorldTextItem,
   onRemoveWorldTextItem,
-  onCreateStateVariable,
-  onReplaceStateVariable,
-  onDeleteStateVariable,
-  onReplaceClipPrompt,
   onCloseNode,
   onSetEntry,
-  onChangeExitKind,
-  onUpdateClipContinuation,
-  onUpdateCheckpointTarget,
   onAddAutoRoute,
   onUpdateAutoRoute,
   onRemoveAutoRoute,
@@ -149,7 +134,7 @@ export function StoryNodeInspector({
   onUpdateEnding,
   onDuplicateNode,
   onDeleteSelected,
-  production,
+  clipMedia,
   filmTrailer,
   trailerProduction,
   onCreateTrailerPrompt,
@@ -181,9 +166,6 @@ export function StoryNodeInspector({
           onAddTextItem={onAddWorldTextItem}
           onUpdateTextItem={onUpdateWorldTextItem}
           onRemoveTextItem={onRemoveWorldTextItem}
-          onCreateStateVariable={onCreateStateVariable}
-          onReplaceStateVariable={onReplaceStateVariable}
-          onDeleteStateVariable={onDeleteStateVariable}
         />
       ) : canvasData.kind === "root" ? (
         <RootTrailerInspector
@@ -222,11 +204,8 @@ export function StoryNodeInspector({
               node={graphNode}
               decisionOnly={canvasData.kind === "decision"}
               canEdit={canEdit}
-              production={production}
+              clipMedia={clipMedia}
               onSetEntry={onSetEntry}
-              onChangeExitKind={onChangeExitKind}
-              onUpdateClipContinuation={onUpdateClipContinuation}
-              onUpdateCheckpointTarget={onUpdateCheckpointTarget}
               onAddAutoRoute={onAddAutoRoute}
               onUpdateAutoRoute={onUpdateAutoRoute}
               onRemoveAutoRoute={onRemoveAutoRoute}
@@ -235,7 +214,6 @@ export function StoryNodeInspector({
               onUpdateChoice={onUpdateChoice}
               onMoveChoice={onMoveChoice}
               onRemoveChoice={onRemoveChoice}
-              onReplaceClipPrompt={onReplaceClipPrompt}
             />
           ) : null}
 
@@ -400,11 +378,8 @@ function GraphNodeEditor({
   node,
   decisionOnly,
   canEdit,
-  production,
+  clipMedia,
   onSetEntry,
-  onChangeExitKind,
-  onUpdateClipContinuation,
-  onUpdateCheckpointTarget,
   onAddAutoRoute,
   onUpdateAutoRoute,
   onRemoveAutoRoute,
@@ -413,18 +388,14 @@ function GraphNodeEditor({
   onUpdateChoice,
   onMoveChoice,
   onRemoveChoice,
-  onReplaceClipPrompt,
 }: {
   content: InteractiveFilmDraftContent;
   locale: string;
   node: StoryGraphNode;
   decisionOnly: boolean;
   canEdit: boolean;
-  production?: StoryVideoComposerProps;
+  clipMedia?: StoryClipMediaPanelProps;
   onSetEntry: StoryNodeInspectorProps["onSetEntry"];
-  onChangeExitKind: StoryNodeInspectorProps["onChangeExitKind"];
-  onUpdateClipContinuation: StoryNodeInspectorProps["onUpdateClipContinuation"];
-  onUpdateCheckpointTarget: StoryNodeInspectorProps["onUpdateCheckpointTarget"];
   onAddAutoRoute: StoryNodeInspectorProps["onAddAutoRoute"];
   onUpdateAutoRoute: StoryNodeInspectorProps["onUpdateAutoRoute"];
   onRemoveAutoRoute: StoryNodeInspectorProps["onRemoveAutoRoute"];
@@ -433,40 +404,10 @@ function GraphNodeEditor({
   onUpdateChoice: StoryNodeInspectorProps["onUpdateChoice"];
   onMoveChoice: StoryNodeInspectorProps["onMoveChoice"];
   onRemoveChoice: StoryNodeInspectorProps["onRemoveChoice"];
-  onReplaceClipPrompt: StoryNodeInspectorProps["onReplaceClipPrompt"];
 }) {
   const t = useTranslations("storyStudio.canvas");
   const targetNodes = content.graph.nodes.filter((candidate) => candidate.nodeId !== node.nodeId);
   const isEntry = content.graph.entryNodeId === node.nodeId;
-  const [pendingExitKind, setPendingExitKind] = useState<ClipNode["exit"]["kind"] | null>(null);
-  const [pendingExitTargetId, setPendingExitTargetId] = useState<string | null>(null);
-  const clipPrompt =
-    node.kind === "clip"
-      ? (content.clipPrompts.find((prompt) => prompt.graphNodeId === node.nodeId) ?? null)
-      : null;
-  const exitBranchCount =
-    node.exit.kind === "auto"
-      ? node.kind === "clip"
-        ? Number(node.exit.nextNodeId !== null)
-        : node.exit.routes.length
-      : node.exit.kind === "choice"
-        ? node.exit.choices.length
-        : 1;
-  const requestExitKind = (kind: ClipNode["exit"]["kind"]) => {
-    if (node.kind !== "clip" || kind === node.exit.kind) return;
-    if (exitBranchCount === 0 && kind !== "ending" && kind !== "checkpoint") {
-      onChangeExitKind(node.nodeId, kind);
-      return;
-    }
-    setPendingExitTargetId(
-      kind === "ending"
-        ? (content.storyBible.endings[0]?.id ?? null)
-        : kind === "checkpoint"
-          ? (targetNodes[0]?.nodeId ?? null)
-          : null
-    );
-    setPendingExitKind(kind);
-  };
   return (
     <>
       <dl className="mt-6 space-y-3">
@@ -484,135 +425,26 @@ function GraphNodeEditor({
         ) : null}
       </dl>
 
-      {node.kind === "clip" && production?.clip && !decisionOnly ? (
-        <>
-          <StoryClipReferenceBindings
-            clip={production.clip}
-            references={production.references}
-            canEdit={canEdit}
-            apiConnected={production.referenceApiConnected ?? false}
-            pending={production.referenceBindingsPending ?? false}
-            onSave={production.onUpdateReferenceBindings ?? (() => undefined)}
-          />
-        </>
+      {node.kind === "clip" && !decisionOnly && clipMedia ? (
+        <StoryClipMediaPanel key={clipMedia.clip?.id ?? node.nodeId} {...clipMedia} />
       ) : null}
 
-      {node.kind === "clip" && clipPrompt && !decisionOnly ? (
-        <StoryDirectorPromptEditor
-          prompt={clipPrompt}
-          canEdit={canEdit}
-          onChange={(next) => onReplaceClipPrompt(node.nodeId, next)}
-        />
+      {node.kind === "router" ? (
+        <button
+          type="button"
+          disabled={!canEdit || isEntry}
+          onClick={() => onSetEntry(node.nodeId)}
+          className={cn(
+            "mt-5 flex h-10 w-full items-center justify-between rounded-xl bg-white/[0.055] px-3 text-xs font-semibold text-white/60 transition hover:bg-white/[0.09] hover:text-white disabled:cursor-default",
+            isEntry && "bg-white/[0.1] text-white/86"
+          )}
+        >
+          <span>{isEntry ? t("inspector.entryNode") : t("inspector.makeEntry")}</span>
+          <span className="size-2 rounded-full bg-white/45" />
+        </button>
       ) : null}
 
-      {!decisionOnly ? (
-        <div className="mt-5 grid gap-3">
-          <button
-            type="button"
-            disabled={!canEdit || isEntry}
-            onClick={() => onSetEntry(node.nodeId)}
-            className={cn(
-              "flex h-10 items-center justify-between rounded-xl bg-white/[0.055] px-3 text-xs font-semibold text-white/60 transition hover:bg-white/[0.09] hover:text-white disabled:cursor-default",
-              isEntry && "bg-white/[0.1] text-white/86"
-            )}
-          >
-            <span>
-              {isEntry
-                ? t(node.kind === "router" ? "inspector.entryNode" : "inspector.entry")
-                : t("inspector.makeEntry")}
-            </span>
-            <span className="size-2 rounded-full bg-white/45" />
-          </button>
-          {node.kind === "clip" ? (
-            <label>
-              <span className="text-[10px] font-semibold text-white/42">{t("inspector.exit")}</span>
-              <Select
-                value={node.exit.kind}
-                disabled={!canEdit}
-                onValueChange={(value) => requestExitKind(value as ClipNode["exit"]["kind"])}
-              >
-                <SelectTrigger className="mt-2 h-9! w-full rounded-xl bg-white/[0.055] px-3">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent position="popper" align="start">
-                  <SelectItem value="auto">{t("inspector.exitAuto")}</SelectItem>
-                  <SelectItem value="choice">{t("inspector.exitChoice")}</SelectItem>
-                  <SelectItem value="checkpoint" disabled={targetNodes.length === 0}>
-                    {t("inspector.exitCheckpoint")}
-                  </SelectItem>
-                  <SelectItem value="ending" disabled={content.storyBible.endings.length === 0}>
-                    {t("inspector.exitEnding")}
-                  </SelectItem>
-                </SelectContent>
-              </Select>
-            </label>
-          ) : null}
-
-          {node.kind === "clip" && node.exit.kind === "ending" ? (
-            <label>
-              <span className="text-[10px] font-semibold text-white/42">
-                {t("inspector.endingTarget")}
-              </span>
-              <Select
-                value={node.exit.endingId}
-                disabled={!canEdit}
-                onValueChange={(endingId) => onChangeExitKind(node.nodeId, "ending", endingId)}
-              >
-                <SelectTrigger className="mt-2 h-9! w-full rounded-xl bg-white/[0.055] px-3">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent position="popper" align="start">
-                  {content.storyBible.endings.map((ending) => (
-                    <SelectItem key={ending.id} value={ending.id}>
-                      {localizedValue(ending.title, locale) || ending.id}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </label>
-          ) : null}
-
-          {node.kind === "clip" && node.exit.kind === "auto" ? (
-            <label>
-              <span className="text-[10px] font-semibold text-white/42">
-                {t("inspector.continuationTarget")}
-              </span>
-              <TargetNodePicker
-                value={node.exit.nextNodeId}
-                nodes={targetNodes}
-                ariaLabel={t("inspector.continuationTarget")}
-                disabled={!canEdit}
-                onChange={(targetNodeId) => onUpdateClipContinuation(node.nodeId, targetNodeId)}
-                className="mt-2"
-              />
-              <p className="mt-2 text-[9px] leading-4 text-white/34">
-                {t("inspector.continuationDescription")}
-              </p>
-            </label>
-          ) : null}
-
-          {node.kind === "clip" && node.exit.kind === "checkpoint" ? (
-            <label>
-              <span className="text-[10px] font-semibold text-white/42">
-                {t("inspector.checkpointTarget")}
-              </span>
-              <TargetNodePicker
-                value={node.exit.nextNodeId}
-                nodes={targetNodes}
-                ariaLabel={t("inspector.checkpointTarget")}
-                disabled={!canEdit}
-                onChange={(targetNodeId) => onUpdateCheckpointTarget(node.nodeId, targetNodeId)}
-                className="mt-2"
-              />
-              <p className="mt-2 text-[9px] leading-4 text-white/34">
-                {t("inspector.checkpointDescription")}
-              </p>
-            </label>
-          ) : null}
-        </div>
-      ) : null}
-
-      {node.kind === "clip" && node.exit.kind === "choice" ? (
+      {decisionOnly && node.kind === "clip" && node.exit.kind === "choice" ? (
         <ChoiceExitEditor
           content={content}
           nodeId={node.nodeId}
@@ -638,81 +470,6 @@ function GraphNodeEditor({
           onRemove={(routeIndex) => onRemoveAutoRoute(node.nodeId, routeIndex)}
         />
       ) : null}
-
-      <Dialog
-        open={pendingExitKind !== null}
-        onOpenChange={(open) => {
-          if (!open) {
-            setPendingExitKind(null);
-            setPendingExitTargetId(null);
-          }
-        }}
-      >
-        <DialogContent className="rounded-[22px] bg-[oklch(0.22_0_0/0.96)] p-5 shadow-[0_28px_100px_rgba(0,0,0,0.58)] backdrop-blur-[40px]">
-          <DialogHeader>
-            <DialogTitle>{t("inspector.convertExitTitle")}</DialogTitle>
-            <DialogDescription>
-              {t("inspector.convertExitDescription", { count: exitBranchCount })}
-            </DialogDescription>
-          </DialogHeader>
-          {pendingExitKind === "ending" ? (
-            <label>
-              <span className="text-[10px] font-semibold text-white/42">
-                {t("inspector.endingTarget")}
-              </span>
-              <Select
-                value={pendingExitTargetId ?? undefined}
-                onValueChange={setPendingExitTargetId}
-              >
-                <SelectTrigger className="mt-2 h-9! w-full rounded-xl bg-white/[0.055] px-3">
-                  <SelectValue placeholder={t("inspector.endingTargetPlaceholder")} />
-                </SelectTrigger>
-                <SelectContent position="popper" align="start">
-                  {content.storyBible.endings.map((ending) => (
-                    <SelectItem key={ending.id} value={ending.id}>
-                      {localizedValue(ending.title, locale) || ending.id}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </label>
-          ) : null}
-          {pendingExitKind === "checkpoint" ? (
-            <label>
-              <span className="text-[10px] font-semibold text-white/42">
-                {t("inspector.checkpointTarget")}
-              </span>
-              <TargetNodePicker
-                value={pendingExitTargetId}
-                nodes={targetNodes}
-                ariaLabel={t("inspector.checkpointTarget")}
-                onChange={setPendingExitTargetId}
-                className="mt-2"
-              />
-            </label>
-          ) : null}
-          <DialogFooter>
-            <DialogClose asChild>
-              <Button variant="secondary">{t("inspector.cancel")}</Button>
-            </DialogClose>
-            <Button
-              variant="destructive"
-              disabled={
-                (pendingExitKind === "ending" || pendingExitKind === "checkpoint") &&
-                !pendingExitTargetId
-              }
-              onClick={() => {
-                if (!pendingExitKind) return;
-                onChangeExitKind(node.nodeId, pendingExitKind, pendingExitTargetId ?? undefined);
-                setPendingExitKind(null);
-                setPendingExitTargetId(null);
-              }}
-            >
-              {t("inspector.confirmConversion")}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
     </>
   );
 }

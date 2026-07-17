@@ -5,6 +5,7 @@ import {
   GoneException,
   Injectable,
   NotFoundException,
+  UnauthorizedException,
   UnprocessableEntityException,
 } from '@nestjs/common';
 import {
@@ -15,6 +16,7 @@ import {
   MediaObjectPlacementStatus,
   MediaStorageProvider,
   Prisma,
+  StoryBuildKind,
   StoryBuildStatus,
   StoryFilmContinuityDecision,
   StoryFilmDependencyKind,
@@ -59,6 +61,23 @@ import { StoryPermissionService } from './story-permission.service';
 
 const BUILD_INCLUDE = Prisma.validator<Prisma.StoryBuildInclude>()({
   project: { select: { workspaceId: true } },
+  experiencePublication: {
+    select: {
+      status: true,
+      gameId: true,
+      contentVersion: true,
+      manifestUrl: true,
+      publishedAt: true,
+      mediaAuthorizedAt: true,
+      mediaAuthorizationRevokedAt: true,
+      authorityIsCurrent: true,
+      authorityGameExists: true,
+      authorityCurrentVersion: true,
+      authorityCheckedAt: true,
+      lastErrorCode: true,
+      lastErrorDetail: true,
+    },
+  },
   assets: {
     orderBy: [{ rank: 'asc' }, { id: 'asc' }],
     include: {
@@ -87,7 +106,19 @@ type BuildRow = Prisma.StoryBuildGetPayload<{ include: typeof BUILD_INCLUDE }>;
 
 const BUILD_DELIVERY_ASSET_INCLUDE =
   Prisma.validator<Prisma.StoryBuildAssetInclude>()({
-    build: { select: { status: true } },
+    build: {
+      select: {
+        status: true,
+        kind: true,
+        scope: true,
+        experiencePublication: {
+          select: {
+            mediaAuthorizedAt: true,
+            mediaAuthorizationRevokedAt: true,
+          },
+        },
+      },
+    },
     asset: { include: { placements: true } },
     variant: { include: { placements: true } },
   });
@@ -99,6 +130,11 @@ const BUILD_MEDIA_READ_URL_TTL_SECONDS = positiveInt(
   process.env.MEDIA_USER_READ_URL_TTL_SECONDS,
   5 * 60,
 );
+// Bump this whenever identical authored inputs can compile to materially
+// different Build output without an Experience runtime schema version bump.
+// It is part of semantic Build identity, not transport idempotency: retries
+// with the same Idempotency-Key still replay their original submission.
+const STORY_FILM_BUILD_COMPILER_SEMANTIC_VERSION = 1;
 const REQUIRED_CURRENT_VIDEO_TECHNICAL_CHECK_KEYS = [
   'kind',
   'dimensions',
@@ -198,76 +234,110 @@ export class StoryFilmBuildService {
 
     let created: BuildRow;
     try {
-      created = await this.prisma.$transaction(async (tx) => {
-        await tx.$executeRaw`
+      created = await this.prisma.$transaction(
+        async (tx) => {
+          await tx.$executeRaw`
           SELECT pg_advisory_xact_lock(
             hashtext(${`story-film-build-submission:${submissionKey}`})::bigint
           )
         `;
-        const concurrent = await tx.storyBuild.findUnique({
-          where: { submissionKey },
-          include: BUILD_INCLUDE,
-        });
-        if (concurrent) {
-          assertBuildReplay(concurrent, requestFingerprint);
-          return concurrent;
-        }
-        await tx.$executeRaw`
+          const concurrent = await tx.storyBuild.findUnique({
+            where: { submissionKey },
+            include: BUILD_INCLUDE,
+          });
+          if (concurrent) {
+            assertBuildReplay(concurrent, requestFingerprint);
+            return concurrent;
+          }
+          const snapshot = await loadCompilationSnapshot(
+            tx,
+            projectId,
+            input.revisionId,
+          );
+          if (
+            snapshot.filmSpec.productionRevision !==
+            input.expectedProductionRevision
+          ) {
+            throw productionRevisionConflict(
+              input.expectedProductionRevision,
+              snapshot.filmSpec.productionRevision,
+            );
+          }
+          const inputManifest = storyFilmBuildInputManifest(input, snapshot);
+          const inputManifestHash = canonicalJsonHash(inputManifest);
+          const inputHash = storyFilmBuildSemanticInputHash(
+            input,
+            snapshot,
+            inputManifestHash,
+          );
+          // Idempotency-Key protects one transport submission. This second lock
+          // protects the immutable Build meaning itself, so independent tabs
+          // with different random keys converge on one exact artifact. The
+          // post-lock lookup is deliberately exhaustive: a hash collision may
+          // serialize unrelated work but can never cause an incorrect replay.
+          await tx.$executeRaw`
+          SELECT pg_advisory_xact_lock(
+            hashtext(${`story-film-build-input:${projectId}:${inputHash}`})::bigint
+          )
+        `;
+          const semanticReplay = await tx.storyBuild.findFirst({
+            where: {
+              storyProjectId: projectId,
+              sourceRevisionId: input.revisionId,
+              requestFingerprint,
+              kind: input.profile,
+              scope: { equals: input.scope },
+              sourceProductionRevision: input.expectedProductionRevision,
+              status: { in: semanticReplayBuildStatuses() },
+              inputHash,
+              inputManifestHash,
+              runtimeSchemaVersion: EXPERIENCE_RUNTIME_SCHEMA_VERSION,
+              NOT: {
+                experiencePublication: { is: { status: 'rejected' } },
+              },
+            },
+            orderBy: [{ buildNumber: 'asc' }, { id: 'asc' }],
+            include: BUILD_INCLUDE,
+          });
+          if (semanticReplay) return semanticReplay;
+
+          await tx.$executeRaw`
           SELECT pg_advisory_xact_lock(
             hashtext(${`story-film-build-number:${projectId}`})::bigint
           )
         `;
-        const project = await tx.storyProject.findFirst({
-          where: { id: projectId, workspaceId },
-          select: { nextBuildNumber: true },
-        });
-        if (!project) throw projectNotFound();
-        const snapshot = await loadCompilationSnapshot(
-          tx,
-          projectId,
-          input.revisionId,
-        );
-        if (
-          snapshot.filmSpec.productionRevision !==
-          input.expectedProductionRevision
-        ) {
-          throw productionRevisionConflict(
-            input.expectedProductionRevision,
-            snapshot.filmSpec.productionRevision,
-          );
-        }
-        const inputManifest = storyFilmBuildInputManifest(input, snapshot);
-        const inputManifestHash = canonicalJsonHash(inputManifest);
-        const inputHash = canonicalJsonHash({
-          request: input,
-          revisionContentHash: snapshot.revision.contentHash,
-          filmSpecHash: snapshot.filmSpec.specHash,
-          productionRevision: snapshot.filmSpec.productionRevision,
-          inputManifestHash,
-        });
-        await tx.storyProject.update({
-          where: { id: projectId },
-          data: { nextBuildNumber: { increment: 1 } },
-        });
-        return tx.storyBuild.create({
-          data: {
-            storyProjectId: projectId,
-            sourceRevisionId: input.revisionId,
-            buildNumber: project.nextBuildNumber,
-            submissionKey,
-            requestFingerprint,
-            kind: input.profile,
-            scope: input.scope,
-            sourceProductionRevision: input.expectedProductionRevision,
-            status: StoryBuildStatus.queued,
-            inputHash,
-            inputManifestHash,
-            runtimeSchemaVersion: EXPERIENCE_RUNTIME_SCHEMA_VERSION,
-            createdByUserId: user.userId,
-          },
-          include: BUILD_INCLUDE,
-        });
-      });
+          const project = await tx.storyProject.findFirst({
+            where: { id: projectId, workspaceId },
+            select: { nextBuildNumber: true },
+          });
+          if (!project) throw projectNotFound();
+          await tx.storyProject.update({
+            where: { id: projectId },
+            data: { nextBuildNumber: { increment: 1 } },
+          });
+          return tx.storyBuild.create({
+            data: {
+              storyProjectId: projectId,
+              sourceRevisionId: input.revisionId,
+              buildNumber: project.nextBuildNumber,
+              submissionKey,
+              requestFingerprint,
+              kind: input.profile,
+              scope: input.scope,
+              sourceProductionRevision: input.expectedProductionRevision,
+              status: StoryBuildStatus.queued,
+              inputHash,
+              inputManifestHash,
+              runtimeSchemaVersion: EXPERIENCE_RUNTIME_SCHEMA_VERSION,
+              createdByUserId: user.userId,
+            },
+            include: BUILD_INCLUDE,
+          });
+        },
+        {
+          isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted,
+        },
+      );
     } catch (error) {
       if (!isUniqueConstraintError(error)) throw error;
       const winner = await this.prisma.storyBuild.findUnique({
@@ -329,13 +399,16 @@ export class StoryFilmBuildService {
   }
 
   async issueBuildAssetReadUrl(
-    user: AuthUser,
+    user: AuthUser | undefined,
     projectId: string,
     buildId: string,
     assetId: string,
     variantId: string,
   ): Promise<{ url: string; expiresAt: string | null }> {
-    await this.permissions.requireProject(user.userId, projectId, 'story.read');
+    // The stable URI frozen into a Build is an identity, not an authorization
+    // capability. Java publication is the only event that makes its exact
+    // full-production Build anonymously deliverable. Every other Build is
+    // authorized against current story membership on every URL exchange.
     const frozen = await this.prisma.storyBuildAsset.findFirst({
       where: {
         storyProjectId: projectId,
@@ -350,6 +423,27 @@ export class StoryFilmBuildService {
         code: 'STORY_BUILD_ASSET_NOT_FOUND',
         message: 'Build media asset not found.',
       });
+    }
+    const scope = FilmBuildScopeSchema.safeParse(frozen.build.scope);
+    const isPubliclyPublished =
+      frozen.build.kind === StoryBuildKind.production &&
+      scope.success &&
+      scope.data.kind === 'full' &&
+      frozen.build.experiencePublication?.mediaAuthorizedAt != null &&
+      frozen.build.experiencePublication.mediaAuthorizationRevokedAt === null;
+    if (!isPubliclyPublished) {
+      if (!user) {
+        throw new UnauthorizedException({
+          code: 'STORY_BUILD_ASSET_AUTH_REQUIRED',
+          message:
+            'Authentication is required to access unpublished Build media.',
+        });
+      }
+      await this.permissions.requireProject(
+        user.userId,
+        projectId,
+        'story.read',
+      );
     }
     const currentDiagnostics = storyBuildCurrentMediaDiagnostics(
       [frozen],
@@ -484,6 +578,34 @@ export class StoryFilmBuildService {
           ],
           emptyPathReport(),
           'STORY_BUILD_SOURCE_CHANGED',
+        );
+      }
+      const currentInputHash = storyFilmBuildSemanticInputHash(
+        {
+          revisionId: build.sourceRevisionId,
+          expectedProductionRevision: build.sourceProductionRevision,
+          profile: build.kind,
+          scope: FilmBuildScopeSchema.parse(build.scope),
+        },
+        snapshot,
+        currentManifestHash,
+      );
+      if (
+        build.runtimeSchemaVersion !== EXPERIENCE_RUNTIME_SCHEMA_VERSION ||
+        currentInputHash !== build.inputHash
+      ) {
+        return this.failBuild(
+          build,
+          [
+            buildDiagnostic(
+              'STORY_BUILD_COMPILER_CHANGED',
+              'The Build compiler changed after this Build was submitted. Create a new Build.',
+              'revision',
+              build.sourceRevisionId,
+            ),
+          ],
+          emptyPathReport(),
+          'STORY_BUILD_COMPILER_CHANGED',
         );
       }
 
@@ -1133,6 +1255,30 @@ export class StoryFilmBuildService {
       assets: row.assets.map(toBuildAssetDto),
       diagnostics,
       pathReport: parsePathReport(row.pathReport),
+      publication: row.experiencePublication
+        ? {
+            status: row.experiencePublication.status,
+            gameId: row.experiencePublication.gameId,
+            contentVersion: row.experiencePublication.contentVersion,
+            manifestUrl: row.experiencePublication.manifestUrl,
+            publishedAt:
+              row.experiencePublication.publishedAt?.toISOString() ?? null,
+            mediaAuthorizedAt:
+              row.experiencePublication.mediaAuthorizedAt.toISOString(),
+            mediaAuthorizationRevokedAt:
+              row.experiencePublication.mediaAuthorizationRevokedAt?.toISOString() ??
+              null,
+            authorityIsCurrent: row.experiencePublication.authorityIsCurrent,
+            authorityGameExists: row.experiencePublication.authorityGameExists,
+            authorityCurrentVersion:
+              row.experiencePublication.authorityCurrentVersion,
+            authorityCheckedAt:
+              row.experiencePublication.authorityCheckedAt?.toISOString() ??
+              null,
+            lastErrorCode: row.experiencePublication.lastErrorCode,
+            lastErrorDetail: row.experiencePublication.lastErrorDetail,
+          }
+        : null,
       createdByUserId: row.createdByUserId,
       createdAt: row.createdAt.toISOString(),
       completedAt: row.completedAt?.toISOString() ?? null,
@@ -1149,6 +1295,7 @@ export class StoryFilmBuildService {
       status: dto.status,
       sourceProductionRevision: dto.sourceProductionRevision,
       diagnostics: dto.diagnostics,
+      publication: dto.publication,
       createdAt: dto.createdAt,
       completedAt: dto.completedAt,
     };
@@ -1361,6 +1508,22 @@ export function storyFilmBuildInputManifest(
       })),
     })),
   };
+}
+
+function storyFilmBuildSemanticInputHash(
+  input: CreateFilmBuildInput,
+  snapshot: CompilationSnapshot,
+  inputManifestHash: string,
+): string {
+  return canonicalJsonHash({
+    compilerSemanticVersion: STORY_FILM_BUILD_COMPILER_SEMANTIC_VERSION,
+    runtimeSchemaVersion: EXPERIENCE_RUNTIME_SCHEMA_VERSION,
+    request: input,
+    revisionContentHash: snapshot.revision.contentHash,
+    filmSpecHash: snapshot.filmSpec.specHash,
+    productionRevision: snapshot.filmSpec.productionRevision,
+    inputManifestHash,
+  });
 }
 
 function mediaAssetManifest(
@@ -1952,6 +2115,10 @@ function nonTerminalBuildStatuses(): StoryBuildStatus[] {
     StoryBuildStatus.validating,
     StoryBuildStatus.compiling,
   ];
+}
+
+function semanticReplayBuildStatuses(): StoryBuildStatus[] {
+  return [...nonTerminalBuildStatuses(), StoryBuildStatus.ready];
 }
 
 function projectNotFound(): NotFoundException {

@@ -27,8 +27,8 @@ import {
   IconVolumeOff,
 } from "@tabler/icons-react";
 import { useEffect, useMemo, useRef } from "react";
-import { cn } from "@/lib/utils";
-import { useTranslations } from "@/src/i18n/i18n";
+import { classNames } from "./class-names";
+import type { ExperiencePlayerVideoCopy } from "./experience-player-copy";
 
 const VIDEO_MIME_TYPES = new Set<VideoMimeType>([
   "video/mp4",
@@ -44,7 +44,9 @@ const CONTROL_BUTTON =
   "grid size-11 shrink-0 place-items-center rounded-full text-white/88 outline-none transition-colors hover:bg-white/[0.14] focus-visible:bg-white/[0.14] focus-visible:ring-2 focus-visible:ring-white/60 disabled:pointer-events-none disabled:opacity-35 motion-reduce:transition-none";
 
 export interface ExperienceMediaPlaybackHandle {
+  readonly playbackIdentity: string;
   play(): Promise<void>;
+  pause(): void;
 }
 
 export function ExperienceMediaPlayer({
@@ -61,6 +63,8 @@ export function ExperienceMediaPlayer({
   onTimeUpdate,
   onPlaybackError,
   onPlaybackHandle,
+  playbackIdentity,
+  copy,
 }: {
   source: { src: string; type?: string | null };
   title: string;
@@ -75,9 +79,12 @@ export function ExperienceMediaPlayer({
   onTimeUpdate: (seconds: number) => void;
   onPlaybackError: (message?: string) => void;
   onPlaybackHandle?: (handle: ExperienceMediaPlaybackHandle | null) => void;
+  playbackIdentity: string;
+  copy: ExperiencePlayerVideoCopy;
 }) {
   const playerRef = useRef<MediaPlayerInstance>(null);
-  const playerSource = useMemo(() => normalizeVideoSource(source), [source]);
+  const { src, type } = source;
+  const playerSource = useMemo(() => normalizeVideoSource({ src, type }), [src, type]);
   useEffect(() => {
     const player = playerRef.current;
     if (player) synchronizePlayerContract(player, durationSeconds, muted);
@@ -85,9 +92,13 @@ export function ExperienceMediaPlayer({
   useEffect(() => {
     const player = playerRef.current;
     if (!player || !onPlaybackHandle) return;
-    onPlaybackHandle({ play: () => playMediaPlayer(player) });
+    onPlaybackHandle({
+      playbackIdentity,
+      play: () => playMediaPlayer(player),
+      pause: () => pauseMediaPlayer(player),
+    });
     return () => onPlaybackHandle(null);
-  }, [onPlaybackHandle]);
+  }, [onPlaybackHandle, playbackIdentity]);
   return (
     <MediaPlayer
       ref={playerRef}
@@ -125,7 +136,7 @@ export function ExperienceMediaPlayer({
       <MediaProvider
         className="absolute inset-0 flex size-full items-center overflow-hidden bg-black"
         mediaProps={{
-          className: cn(
+          className: classNames(
             "block size-full select-none",
             fit === "cover" ? "object-cover" : "object-contain",
             "group-data-[fullscreen]/experience-video:object-contain"
@@ -138,7 +149,7 @@ export function ExperienceMediaPlayer({
             src={poster}
             alt={title}
             draggable={false}
-            className={cn(
+            className={classNames(
               "pointer-events-none absolute inset-0 size-full select-none",
               fit === "cover" ? "object-cover" : "object-contain",
               "group-data-[fullscreen]/experience-video:object-contain"
@@ -146,13 +157,12 @@ export function ExperienceMediaPlayer({
           />
         ) : null}
       </MediaProvider>
-      <ExperienceVideoSurface />
+      <ExperienceVideoSurface copy={copy} />
     </MediaPlayer>
   );
 }
 
-function ExperienceVideoSurface() {
-  const t = useTranslations("experiencePlayer.video");
+function ExperienceVideoSurface({ copy }: { copy: ExperiencePlayerVideoCopy }) {
   const paused = useMediaState("paused");
   const muted = useMediaState("muted");
   const fullscreen = useMediaState("fullscreen");
@@ -162,14 +172,14 @@ function ExperienceVideoSurface() {
       <MediaAnnouncer
         className="sr-only"
         translations={{
-          Play: t("play"),
-          Pause: t("pause"),
-          Mute: t("mute"),
-          Volume: t("volume"),
-          "Enter Fullscreen": t("enterFullscreen"),
-          "Exit Fullscreen": t("exitFullscreen"),
-          "Seek Forward": t("seekForward"),
-          "Seek Backward": t("seekBackward"),
+          Play: copy.play,
+          Pause: copy.pause,
+          Mute: copy.mute,
+          Volume: copy.volume,
+          "Enter Fullscreen": copy.enterFullscreen,
+          "Exit Fullscreen": copy.exitFullscreen,
+          "Seek Forward": copy.seekForward,
+          "Seek Backward": copy.seekBackward,
         }}
       />
       <Gesture
@@ -183,7 +193,7 @@ function ExperienceVideoSurface() {
         className="pointer-events-none invisible absolute inset-0 z-20 flex flex-col justify-end bg-linear-to-t from-black/76 via-black/10 to-black/10 opacity-0 transition-opacity duration-150 data-[visible]:visible data-[visible]:opacity-100 motion-reduce:transition-none"
       >
         <Controls.Group className="pointer-events-auto flex items-center gap-1 px-3 pb-1 sm:px-5">
-          <PlayButton className={CONTROL_BUTTON} aria-label={paused ? t("play") : t("pause")}>
+          <PlayButton className={CONTROL_BUTTON} aria-label={paused ? copy.play : copy.pause}>
             {paused ? (
               <IconPlayerPlay className="size-5 fill-current" />
             ) : (
@@ -196,7 +206,7 @@ function ExperienceVideoSurface() {
             <Time type="duration" />
           </div>
           <div className="ml-auto flex items-center gap-1">
-            <MuteButton className={CONTROL_BUTTON} aria-label={muted ? t("unmute") : t("mute")}>
+            <MuteButton className={CONTROL_BUTTON} aria-label={muted ? copy.unmute : copy.mute}>
               {muted ? <IconVolumeOff className="size-5" /> : <IconVolume className="size-5" />}
             </MuteButton>
             <VolumeSlider.Root className="group/volume relative hidden h-11 w-24 cursor-pointer touch-none select-none items-center sm:flex">
@@ -207,7 +217,7 @@ function ExperienceVideoSurface() {
             </VolumeSlider.Root>
             <FullscreenButton
               className={CONTROL_BUTTON}
-              aria-label={fullscreen ? t("exitFullscreen") : t("enterFullscreen")}
+              aria-label={fullscreen ? copy.exitFullscreen : copy.enterFullscreen}
             >
               {fullscreen ? (
                 <IconArrowsMinimize className="size-5" />
@@ -249,6 +259,20 @@ function playMediaPlayer(player: MediaPlayerInstance): Promise<void> {
     return provider.media.play();
   }
   return player.play();
+}
+
+function pauseMediaPlayer(player: MediaPlayerInstance): void {
+  const provider = player.provider;
+  if (
+    provider?.type === "video" ||
+    provider?.type === "audio" ||
+    provider?.type === "hls" ||
+    provider?.type === "dash"
+  ) {
+    provider.media.pause();
+    return;
+  }
+  void player.pause();
 }
 
 function emitValidTimeUpdate(onTimeUpdate: (seconds: number) => void, seconds: number): void {

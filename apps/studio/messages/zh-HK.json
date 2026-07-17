@@ -1612,36 +1612,89 @@
     "canvas": {
       "back": "返回 Story Studio",
       "mode": "故事畫布",
-      "workbench": "製作工作台",
+      "publish": {
+        "action": "發佈",
+        "actionPending": "正在發佈…",
+        "actionPublished": "已發佈",
+        "statusChecking": "正在確認目前線上版本…",
+        "title": "發佈目前版本？",
+        "description": "系統會準備最新儲存的故事，並將它設為玩家目前存取的線上版本。",
+        "confirmation": {
+          "title": "確認發佈",
+          "draftRevision": "最新已儲存內容 · 第 {revision} 次修訂",
+          "detail": "發佈後仍可繼續編輯畫布；後續修改在再次發佈前不會影響線上版本。"
+        },
+        "progress": {
+          "title": "正在發佈目前版本",
+          "description": "正在儲存、檢查並發佈故事，請保持此視窗開啟。"
+        },
+        "phases": {
+          "saving": {
+            "title": "儲存最新修改",
+            "description": "正在儲存畫布上的目前故事。"
+          },
+          "locking": {
+            "title": "準備發佈版本",
+            "description": "正在將已儲存的故事固定為玩家即將存取的版本。"
+          },
+          "building": {
+            "title": "檢查播放內容",
+            "description": "正在檢查故事路線、影片和玩家可見內容。"
+          },
+          "publishing": {
+            "title": "正在發佈",
+            "description": "正在將此版本設為玩家存取的線上版本。"
+          }
+        },
+        "actions": {
+          "cancel": "取消",
+          "confirm": "發佈目前版本",
+          "close": "關閉",
+          "retry": "重試"
+        },
+        "success": {
+          "title": "版本已發佈",
+          "description": "目前版本已經上線。",
+          "version": "目前版本已上線",
+          "detail": "玩家現在會進入此版本。你可以繼續編輯畫布，不會影響已上線內容。"
+        },
+        "failure": {
+          "title": "目前版本未發佈",
+          "description": "請處理下方問題，然後重新發佈。"
+        },
+        "diagnostics": {
+          "title": "{count} 個待處理問題"
+        },
+        "errors": {
+          "workspaceRequired": "請先選擇工作區再發佈。",
+          "permissionDenied": "你在此專案中的角色沒有發佈權限。",
+          "saveFailed": "無法儲存最新修改。",
+          "lockFailed": "無法準備已儲存的故事版本。",
+          "workbenchFailed": "無法載入已儲存的版本進行檢查。",
+          "revisionMismatch": "準備的版本與已儲存故事不一致，請重新整理畫布後重試。",
+          "productionContractMissing": "這個故事還沒有可發佈的播放內容。",
+          "buildFailed": "無法準備可播放版本。",
+          "buildNotReady": "目前版本還不能發佈，請處理下方問題後重試。",
+          "runtimeUnavailable": "可播放內容暫不可用，請重新準備此版本。",
+          "publishFailed": "無法發佈已準備的版本。",
+          "unexpected": "無法發佈目前版本。"
+        }
+      },
       "workingPreview": {
         "action": "預覽試玩",
-        "title": "目前草稿試玩",
-        "description": "試玩最新儲存的故事圖和目前可用的影片片段。預覽不會凍結專案，也不會阻止繼續修改。",
+        "pageTitle": "故事試玩 · Story Studio",
+        "pageDescription": "使用正式玩家執行環境試玩精確儲存的私人草稿或不可變構建。",
         "draftRevision": "草稿 r{revision}",
-        "loading": "正在準備最新儲存的草稿…",
-        "errorTitle": "無法準備目前草稿試玩",
-        "errorFallback": "無法載入目前草稿試玩。",
+        "loading": "正在準備試玩…",
+        "errorFallback": "無法載入試玩。",
+        "buildNumber": "構建 {number}",
         "retry": "重試",
         "refresh": "重新整理試玩",
         "editStory": "編輯故事",
         "previewWarnings": "目前試玩有 {count} 條提示",
         "unavailableTitle": "目前故事還不能試玩",
-        "unavailableDescription": "{errors} 個阻塞錯誤 · {warnings} 個警告。只需補齊下方列出的製作輸入，畫布仍可隨時修改。",
-        "noDiagnostics": "伺服器沒有傳回診斷詳情，請重試或檢查專案製作狀態。",
-        "severity": {
-          "error": "阻塞",
-          "warning": "警告"
-        },
-        "pathReport": {
-          "title": "目前路徑覆蓋",
-          "paths": "路徑",
-          "endings": "結局",
-          "ambiguous": "歧義路徑",
-          "unreachable": "不可達節點",
-          "unavailable": "故事圖可以編譯後會顯示路徑覆蓋。"
-        }
+        "unavailableDescription": "{errors} 個阻塞錯誤 · {warnings} 個警告。只需補齊下方列出的製作輸入，畫布仍可隨時修改。"
       },
-      "fit": "配合故事全圖",
       "autosave": "自動儲存",
       "readOnly": "唯讀",
       "addNode": "新增故事節點",
@@ -2086,6 +2139,28 @@
         "close": "關閉節點檢查器",
         "nodeId": "穩定節點 ID",
         "clipKey": "鏡頭鍵",
+        "media": {
+          "title": "目前影片",
+          "description": "上載本機檔案，或重用目前工作區中的影片。",
+          "preview": "{title} 的目前影片",
+          "empty": "尚未選擇影片",
+          "emptyDescription": "為這個故事片段加入可播放的影片。",
+          "outdated": "較早版本",
+          "upload": "上載本機影片",
+          "replace": "從本機取代",
+          "uploading": "正在上載 · {progress}%",
+          "processing": "正在處理影片…",
+          "processingDescription": "正在校驗影片並準備可播放版本。",
+          "accepted": "支援 MP4 · H.264 影片 · AAC 音訊",
+          "library": "影片素材庫",
+          "libraryDescription": "重用已上載或已生成的影片",
+          "preparing": "正在準備片段媒體資料。",
+          "unknownDimensions": "尺寸未知",
+          "unknownDuration": "時長未知",
+          "errors": {
+            "upload": "無法上載此影片。"
+          }
+        },
         "exit": "後續走向",
         "production": "製作狀態",
         "openProduction": "開啟鏡頭製作",
@@ -2262,8 +2337,7 @@
         "overview": "總覽",
         "story": "故事",
         "references": "參考包",
-        "production": "鏡頭生產",
-        "build": "預覽試玩"
+        "production": "鏡頭生產"
       },
       "errors": {
         "loadTitle": "無法開啟這個專案。"
@@ -2427,135 +2501,40 @@
         "cancelled": "已取消",
         "outdated": "較早導演設計"
       }
-    },
-    "build": {
-      "title": "構建與試玩",
-      "subtitle": "把已鎖定的故事版本和目前影片編譯為不可變生產清單；只有這一精確產物可以提交給 Java 發佈。",
-      "buildNumber": "構建 {number}",
-      "actions": {
-        "createProduction": "建立生產構建",
-        "creating": "正在建立構建…",
-        "editStory": "編輯故事",
-        "publish": "發佈",
-        "publishing": "正在發佈…",
-        "refresh": "重新整理構建"
-      },
-      "permissions": {
-        "build": "你在該專案中的角色沒有構建權限。",
-        "release": "你在該專案中的角色沒有發佈權限。"
-      },
-      "notifications": {
-        "created": "生產構建已建立。",
-        "validationFailed": "構建發現生產阻塞項，請查看診斷。",
-        "revisionLocked": "生產版本已鎖定。",
-        "published": "這個生產構建已成為目前發佈版本。"
-      },
-      "errors": {
-        "revisionRequired": "建立構建前請先鎖定生產版本。",
-        "create": "無法建立生產構建。",
-        "list": "無法載入構建歷史。",
-        "detail": "無法載入所選構建。",
-        "lockRevision": "無法鎖定生產版本。",
-        "publish": "無法發佈這個生產構建。",
-        "runtimeUnavailable": "這個凍結 Runtime 目前不可用。請查看構建診斷；所有資產符合目前生命週期與審核策略前，媒體會保持無法存取。"
-      },
-      "publication": {
-        "current": "已發佈版本 {version} · 開啟清單"
-      },
-      "publishDialog": {
-        "title": "發佈這個生產 Build？",
-        "description": "Java 將原樣保存這份不可變 Manifest，並把它設為玩家端目前版本。發佈後不會修改 Build 本身。",
-        "cancel": "取消",
-        "confirm": "發佈為目前版本"
-      },
-      "lockRevision": {
-        "title": "鎖定生產版本",
-        "description": "構建必須指向不可變的故事版本。鎖定已儲存草稿後，系統會物化鏡頭和 Runtime 生產規格。",
-        "action": "鎖定生產版本",
-        "locking": "正在鎖定…"
-      },
-      "revisionBasis": {
-        "currentTitle": "正在基於鎖定版本 {number} 構建",
-        "currentDescription": "新的生產構建會使用鎖定版本 {number}；它來自草稿 r{sourceRevision}，目前可編輯草稿沒有更新的改動。"
-      },
-      "missingFilm": {
-        "title": "生產規格不可用",
-        "description": "已鎖定版本沒有物化互動影遊生產規格。請重新整理專案，或在構建前檢查伺服器端診斷。"
-      },
-      "history": {
-        "title": "構建歷史",
-        "count": "{count} 個構建",
-        "empty": "尚未建立生產構建。",
-        "errors": "{count} 個錯誤"
-      },
-      "profile": {
-        "preview": "預覽",
-        "production": "生產"
-      },
-      "scope": {
-        "full": "完整故事圖"
-      },
-      "status": {
-        "queued": "已排隊",
-        "validating": "正在校驗",
-        "compiling": "正在編譯",
-        "ready": "已就緒",
-        "failed": "失敗",
-        "cancelled": "已取消"
-      },
-      "detail": {
-        "identity": "生產狀態 r{revision} · {profile} · {scope}"
-      },
-      "empty": {
-        "title": "編譯第一個可試玩構建",
-        "description": "生產構建會校驗所有可達路線、凍結精確媒體變體，並生成用於發佈的不可變 Runtime Manifest。"
-      },
-      "pathReport": {
-        "title": "路徑覆蓋",
-        "description": "構建編譯器從入口開始進行確定性故事圖遍歷。",
-        "paths": "已枚舉路徑",
-        "endings": "可達結局",
-        "ambiguous": "歧義路徑",
-        "unreachable": "不可達節點"
-      },
-      "diagnostics": {
-        "title": "構建診斷",
-        "summary": "{errors} 個錯誤 · {warnings} 個警告",
-        "cleanTitle": "構建校驗通過",
-        "cleanDescription": "編譯器未發現阻塞錯誤或警告。"
-      },
-      "playtest": {
-        "title": "互動試玩",
-        "description": "只運行這個精確凍結的生產清單，不會建立生成任務，也不會讀取可變草稿資料。"
-      },
-      "assets": {
-        "title": "凍結構建資產",
-        "description": "該構建捕獲的精確媒體變體與校驗和。"
-      },
-      "player": {
-        "invalidManifest": "Runtime 清單無效",
-        "manifestRoot": "清單根節點",
-        "restart": "重新開始",
-        "regionLabel": "互動影遊試玩",
-        "videoLabel": "畫面 {nodeId} 的故事影片",
-        "checkpoint": {
-          "prompt": "準備好進入下一幕了嗎？",
-          "description": "準備好後繼續。",
-          "continue": "繼續"
-        },
-        "noVisibleChoices": "目前故事狀態下沒有可用選擇。",
-        "endingEyebrow": "抵達結局",
-        "unknownEnding": "結局 {endingId}",
-        "playAgain": "再玩一次",
-        "errors": {
-          "runtimeTitle": "試玩無法繼續",
-          "media": "無法播放凍結媒體資產 {assetId}。"
-        }
-      }
     }
   },
   "metadata": {
     "studioTitle": "FizzStudio",
     "studioDescription": "AI 創意工作台"
+  },
+  "experiencePlayer": {
+    "invalidManifest": "Runtime 清單無效",
+    "manifestRoot": "清單根節點",
+    "interactiveFilm": "互動影遊",
+    "starting": "正在啟動…",
+    "start": "開始試玩",
+    "restart": "重新開始",
+    "regionLabel": "互動影遊試玩",
+    "videoLabel": "畫面 {nodeId} 的故事影片",
+    "checkpointPrompt": "準備好進入下一幕了嗎？",
+    "checkpointDescription": "準備好後繼續。",
+    "continue": "繼續",
+    "noVisibleChoices": "目前故事狀態下沒有可用選擇。",
+    "endingEyebrow": "抵達結局",
+    "unknownEnding": "結局 {endingId}",
+    "playAgain": "再玩一次",
+    "runtimeError": "試玩無法繼續",
+    "mediaError": "無法播放凍結媒體資產 {assetId}。",
+    "video": {
+      "play": "播放",
+      "pause": "暫停",
+      "mute": "靜音",
+      "unmute": "取消靜音",
+      "volume": "音量",
+      "enterFullscreen": "進入全屏",
+      "exitFullscreen": "退出全屏",
+      "seekForward": "快進",
+      "seekBackward": "快退"
+    }
   }
 }

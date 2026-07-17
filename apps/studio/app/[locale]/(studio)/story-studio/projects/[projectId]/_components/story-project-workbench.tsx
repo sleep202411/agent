@@ -6,7 +6,6 @@ import {
   IconBook2,
   IconCheck,
   IconChevronDown,
-  IconDeviceGamepad2,
   IconGitBranch,
   IconMovie,
   IconPhoto,
@@ -33,16 +32,14 @@ import {
   type StoryWorkbench,
 } from "@/lib/story-projects-api";
 import { StoryReferencePack } from "./story-reference-pack";
-import { StoryBuildStage } from "./story-build-stage";
 
-type WorkbenchStage = "overview" | "story" | "references" | "production" | "build";
+type WorkbenchStage = "overview" | "story" | "references" | "production";
 
 const STAGES: Array<{ id: WorkbenchStage; icon: typeof IconBook2 }> = [
   { id: "overview", icon: IconSparkles },
   { id: "story", icon: IconBook2 },
   { id: "references", icon: IconPhoto },
   { id: "production", icon: IconMovie },
-  { id: "build", icon: IconDeviceGamepad2 },
 ];
 const STORY_REFERENCE_API_CONNECTED = true;
 
@@ -117,14 +114,6 @@ export function StoryProjectWorkbench({
             />
           ) : null}
           {stage === "production" ? <ProductionStage workbench={authoringWorkbench} /> : null}
-          {stage === "build" ? (
-            <StoryBuildStage
-              projectId={projectId}
-              workspaceId={workspaceId as string}
-              workbench={authoringWorkbench}
-              onRefresh={() => workbenchQuery.refetch()}
-            />
-          ) : null}
         </div>
       </div>
     </main>

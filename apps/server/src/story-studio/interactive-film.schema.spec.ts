@@ -1,8 +1,10 @@
 import {
   collectInteractiveFilmRuntimeLocales,
   createLockableInteractiveFilmDraftContentSchema,
+  createPlayableInteractiveFilmDraftContentSchema,
   InteractiveFilmDraftContentSchema,
   LockableInteractiveFilmDraftContentSchema,
+  ProductionReadyStoryTrailerPromptSchema,
   type FilmCondition,
   type FilmEffect,
   type InteractiveFilmDraftContent,
@@ -16,7 +18,7 @@ type ChoiceExit = Extract<
 >;
 
 describe('interactive-film choice exit prompt contract', () => {
-  it('normalizes legacy mutable drafts without a graph-level prompt', () => {
+  it('rejects a choice exit without its explicit graph-level prompt', () => {
     const draft = structuredClone(
       buildInteractiveFilmTestBundle().draftContent,
     );
@@ -25,16 +27,10 @@ describe('interactive-film choice exit prompt contract', () => {
     delete mutableExit.prompt;
 
     const result = InteractiveFilmDraftContentSchema.safeParse(draft);
-    expect(result.success).toBe(true);
-    if (!result.success) return;
-    expect(firstChoiceExit(result.data).prompt).toEqual({});
-    const lockResult = LockableInteractiveFilmDraftContentSchema.safeParse(
-      result.data,
-    );
-    expect(lockResult.success).toBe(false);
-    if (lockResult.success) return;
+    expect(result.success).toBe(false);
+    if (result.success) return;
     expect(
-      lockResult.error.issues.some(
+      result.error.issues.some(
         (issue) => issue.path.includes('exit') && issue.path.includes('prompt'),
       ),
     ).toBe(true);
@@ -465,28 +461,19 @@ describe('interactive-film state-variable semantic contract', () => {
 });
 
 describe('interactive-film mutable clip prompt authoring', () => {
-  it('normalizes legacy drafts at the schema boundary without inventing production records', () => {
-    const legacy = structuredClone(
+  it('requires the explicit v2 clip prompt collection', () => {
+    const incomplete = structuredClone(
       buildInteractiveFilmTestBundle().draftContent,
     );
-    delete (legacy as { clipPrompts?: unknown }).clipPrompts;
+    delete (incomplete as { clipPrompts?: unknown }).clipPrompts;
 
-    const result = InteractiveFilmDraftContentSchema.safeParse(legacy);
+    const result = InteractiveFilmDraftContentSchema.safeParse(incomplete);
 
-    expect(result.success).toBe(true);
-    if (!result.success) return;
-    const clipNodes = result.data.graph.nodes.filter(
-      (node) => node.kind === 'clip',
+    expect(result.success).toBe(false);
+    if (result.success) return;
+    expect(result.error.issues).toContainEqual(
+      expect.objectContaining({ path: ['clipPrompts'] }),
     );
-    expect(result.data.clipPrompts).toHaveLength(clipNodes.length);
-    expect(result.data.clipPrompts[0]).toMatchObject({
-      graphNodeId: clipNodes[0]?.nodeId,
-      clipKey: clipNodes[0]?.kind === 'clip' ? clipNodes[0].clipKey : undefined,
-      targetDurationMs: 15_000,
-      generationControl: { mode: 'frame_lock', frameMode: 'first_frame' },
-      masterDirection: '',
-      beats: [{ id: 'beat:1', startMs: 0, endMs: 15_000 }],
-    });
   });
 
   it('rejects orphan, mismatched, and duplicate nested prompt identities in mutable drafts', () => {
@@ -524,6 +511,10 @@ describe('interactive-film mutable clip prompt authoring', () => {
     expect(InteractiveFilmDraftContentSchema.safeParse(draft).success).toBe(
       true,
     );
+    expect(
+      createPlayableInteractiveFilmDraftContentSchema('zh-CN').safeParse(draft)
+        .success,
+    ).toBe(false);
     const locked = LockableInteractiveFilmDraftContentSchema.safeParse(draft);
     expect(locked.success).toBe(false);
     if (locked.success) return;
@@ -612,7 +603,7 @@ describe('interactive-film mutable clip prompt authoring', () => {
 });
 
 describe('interactive-film project-root trailer authoring', () => {
-  it('normalizes an older v1 draft to an explicit absent trailer', () => {
+  it('requires an explicit trailer state in every v2 draft', () => {
     const draft = structuredClone(
       buildInteractiveFilmTestBundle().draftContent,
     );
@@ -620,15 +611,14 @@ describe('interactive-film project-root trailer authoring', () => {
 
     const result = InteractiveFilmDraftContentSchema.safeParse(draft);
 
-    expect(result.success).toBe(true);
-    if (!result.success) return;
-    expect(result.data.trailerPrompt).toBeNull();
-    expect(
-      LockableInteractiveFilmDraftContentSchema.safeParse(result.data).success,
-    ).toBe(true);
+    expect(result.success).toBe(false);
+    if (result.success) return;
+    expect(result.error.issues).toContainEqual(
+      expect.objectContaining({ path: ['trailerPrompt'] }),
+    );
   });
 
-  it('keeps an unfinished trailer mutable but rejects it at revision lock', () => {
+  it('keeps an unfinished trailer draft without blocking gameplay revision lock', () => {
     const draft = structuredClone(
       buildInteractiveFilmTestBundle().draftContent,
     );
@@ -638,13 +628,22 @@ describe('interactive-film project-root trailer authoring', () => {
     expect(InteractiveFilmDraftContentSchema.safeParse(draft).success).toBe(
       true,
     );
-    const locked = LockableInteractiveFilmDraftContentSchema.safeParse(draft);
-    expect(locked.success).toBe(false);
-    if (locked.success) return;
-    expect(locked.error.issues).toContainEqual(
+    expect(
+      createPlayableInteractiveFilmDraftContentSchema('zh-CN').safeParse(draft)
+        .success,
+    ).toBe(true);
+    expect(
+      LockableInteractiveFilmDraftContentSchema.safeParse(draft).success,
+    ).toBe(true);
+    const productionReady = ProductionReadyStoryTrailerPromptSchema.safeParse(
+      draft.trailerPrompt,
+    );
+    expect(productionReady.success).toBe(false);
+    if (productionReady.success) return;
+    expect(productionReady.error.issues).toContainEqual(
       expect.objectContaining({
-        path: ['trailerPrompt', 'masterDirection'],
-        message: 'Required before locking a revision.',
+        path: ['masterDirection'],
+        message: 'Required before trailer production.',
       }),
     );
   });
@@ -659,8 +658,11 @@ describe('interactive-film project-root trailer authoring', () => {
     draft.trailerPrompt = trailerPrompt();
 
     const locked = LockableInteractiveFilmDraftContentSchema.parse(draft);
+    const productionReady = ProductionReadyStoryTrailerPromptSchema.parse(
+      locked.trailerPrompt,
+    );
 
-    expect(locked.trailerPrompt?.targetDurationMs).toBe(15_000);
+    expect(productionReady.targetDurationMs).toBe(15_000);
     expect(
       locked.graph.nodes.filter((node) => node.kind === 'clip'),
     ).toHaveLength(clipCount);

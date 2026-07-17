@@ -33,9 +33,8 @@ import {
   IconArrowLeft,
   IconBook2,
   IconCheck,
-  IconFocusCentered,
+  IconCloudUpload,
   IconGitBranch,
-  IconLayoutDashboard,
   IconLoader2,
   IconMovie,
   IconPlayerPlay,
@@ -46,7 +45,8 @@ import {
   IconX,
 } from "@tabler/icons-react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useLocale, useTranslations } from "next-intl";
+import { useTranslations } from "next-intl";
+import { toast } from "sonner";
 import { useWorkspace } from "@/app/_components/workspace-context";
 import { Button } from "@/components/ui/button";
 import { CanvasControls } from "@/components/canvas/canvas-controls";
@@ -67,16 +67,20 @@ import { StudioVideoPlayer, type StudioVideoSource } from "@/components/media/st
 import { resolveCanvasVideoControlDensity } from "@/components/media/studio-video-player-model";
 import { FrostedPanel } from "@/components/ui/frosted-panel";
 import { GlassRim } from "@/components/ui/glass-rim";
-import { Link } from "@/i18n/navigation";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { Link, useRouter } from "@/i18n/navigation";
 import { canonicalJsonString } from "@/lib/canonical-json";
+import { uploadFileViaSignedUrl } from "@/lib/media-upload";
 import { cn } from "@/lib/utils";
 import {
   canvasLayoutRevisionConflict,
+  cancelStoryClipVideoUpload,
+  completeStoryClipVideoUpload,
   createFilmClipGeneration,
   createFilmTrailerGeneration,
   draftRevisionConflict,
   getStoryCanvasLayout,
-  getStoryWorkingPreview,
+  getStoryExperienceCurrentRelease,
   getStoryWorkbench,
   putFilmClipCurrentVideo,
   putStoryCanvasLayout,
@@ -85,13 +89,13 @@ import {
   putFilmTrailerCurrentVideo,
   putFilmTrailerReferences,
   storyApiErrorMessage,
+  waitForStoryClipVideoUploadFinalization,
   type CanvasLayoutRevisionConflict,
   type DraftRevisionConflict,
   type InteractiveFilmDraftContent,
   type FilmVideoGeneration,
   type StoryVideoLibraryItem,
   type StoryCanvasPosition,
-  type StoryWorkingPreview,
   type StoryWorkbench,
 } from "@/lib/story-projects-api";
 import {
@@ -114,12 +118,12 @@ import {
   selectLatestLayoutPayload,
 } from "./story-canvas-layout-retry";
 import { createConnectedClipForBlankDrop } from "./story-project-canvas-drop";
+import { isExactCurrentStoryRelease } from "./story-current-release";
 import {
   addChoiceOption,
   connectClipContinuation,
   connectAutoRoute,
   connectChoiceTarget,
-  convertClipExitToCheckpoint,
   convertClipExitToChoice,
   convertClipExitToEnding,
   convertExitToAuto,
@@ -141,7 +145,6 @@ import {
   setEntryNode,
   updateChoiceExit,
   updateChoiceOption,
-  updateCheckpointTarget,
   updateAutoRoute,
   updateAutoRouteTarget,
   updateEndingNode,
@@ -152,7 +155,9 @@ import {
 } from "./story-connection-creator";
 import { StoryNodeCreator, type StoryNodeCreationKind } from "./story-node-creator";
 import type { StoryReferenceBindingInput } from "./story-clip-reference-bindings-model";
+import type { StoryClipMediaUploadState } from "./story-clip-media-panel";
 import { StoryNodeInspector } from "./story-node-inspector";
+import { StoryPublicationDialog } from "./story-publication-dialog";
 import { StoryShotComposer, type StoryVideoComposerProps } from "./story-shot-composer";
 import {
   projectLockedTrailerPrompt,
@@ -162,17 +167,13 @@ import {
 import {
   addWorldTextItem,
   createStoryCharacter,
-  createStoryStateVariable,
   deleteStoryCharacter,
-  deleteStoryStateVariable,
   removeWorldTextItem,
-  replaceStoryStateVariable,
   updateStoryCharacter,
   updateWorldTextItem,
   type StoryWorldTextField,
 } from "./story-world-mutations";
 import { StoryDraftSnapshotCoordinator } from "./story-draft-snapshot-coordinator";
-import { StoryWorkingPreviewDialog } from "./story-working-preview-dialog";
 import {
   filmGenerationError,
   isActiveVideoGeneration,
@@ -183,6 +184,7 @@ import {
   projectConfirmedClipCurrentVideo,
   projectConfirmedTrailerCurrentVideo,
 } from "./story-workbench-current-video";
+import { useStoryPublication } from "./use-story-publication";
 
 type SaveState = "idle" | "dirty" | "saving" | "saved" | "error" | "conflict";
 type FoundationField = "logline" | "synopsis" | "worldview";
@@ -251,7 +253,7 @@ export function StoryProjectCanvas({ projectId }: { projectId: string }) {
 function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
   const t = useTranslations("storyStudio.canvas");
   const commonT = useTranslations("storyStudio");
-  const interfaceLocale = useLocale();
+  const router = useRouter();
   const { fitView, screenToFlowPosition } = useReactFlow<StoryCanvasNode, StoryCanvasEdge>();
   const queryClient = useQueryClient();
   const { activeWorkspace, loading: workspaceLoading } = useWorkspace();
@@ -274,10 +276,7 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
   const [productionError, setProductionError] = useState<string | null>(null);
   const [clipGenerationRequest, setClipGenerationRequest] =
     useState<StoryClipGenerationRequest | null>(null);
-  const [workingPreviewOpen, setWorkingPreviewOpen] = useState(false);
   const [workingPreviewPending, setWorkingPreviewPending] = useState(false);
-  const [workingPreviewError, setWorkingPreviewError] = useState<string | null>(null);
-  const [workingPreview, setWorkingPreview] = useState<StoryWorkingPreview | null>(null);
   const [productionActionGate] = useState(() => new StoryProductionActionGate());
   const [draftSnapshotCoordinator] = useState(() => new StoryDraftSnapshotCoordinator());
   const [productionSubmissionKeys] = useState(
@@ -430,6 +429,15 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
     queryFn: () => getStoryCanvasLayout(workspaceId as string, projectId),
     enabled: Boolean(workspaceId),
     retry: false,
+  });
+  const currentReleaseQuery = useQuery({
+    queryKey: ["story-studio", "current-release", workspaceId, projectId],
+    queryFn: () => getStoryExperienceCurrentRelease(workspaceId as string, projectId),
+    enabled: Boolean(workspaceId),
+    retry: 1,
+    staleTime: 15_000,
+    refetchInterval: 30_000,
+    refetchOnWindowFocus: true,
   });
   const project = workbenchQuery.data?.project ?? null;
   const film = workbenchQuery.data?.film ?? null;
@@ -697,24 +705,27 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
     [clearSaveRetry, commonT, draftSnapshotCoordinator, saveError, waitForSaveToSettle, workspaceId]
   );
 
-  const loadWorkingPreview = useCallback(async () => {
-    if (!workspaceId) return;
-    setWorkingPreviewOpen(true);
+  const openWorkingPreview = useCallback(async () => {
+    if (!workspaceId || workingPreviewPending) return;
     setWorkingPreviewPending(true);
-    setWorkingPreviewError(null);
     try {
-      const preview = await withSavedDraftSnapshot((expectedDraftRevision) =>
-        getStoryWorkingPreview(workspaceId, projectId, expectedDraftRevision)
-      );
-      if (!disposedRef.current) setWorkingPreview(preview);
+      await withSavedDraftSnapshot(async () => {
+        router.push(`/story-studio/projects/${encodeURIComponent(projectId)}/playtest`);
+      });
     } catch (error) {
-      if (!disposedRef.current) {
-        setWorkingPreviewError(storyApiErrorMessage(error, t("workingPreview.errorFallback")));
-      }
+      if (!disposedRef.current)
+        toast.error(storyApiErrorMessage(error, t("workingPreview.errorFallback")));
     } finally {
       if (!disposedRef.current) setWorkingPreviewPending(false);
     }
-  }, [projectId, t, withSavedDraftSnapshot, workspaceId]);
+  }, [projectId, router, t, withSavedDraftSnapshot, workingPreviewPending, workspaceId]);
+
+  const publication = useStoryPublication({
+    workspaceId,
+    projectId,
+    capabilities: project?.capabilities ?? [],
+    withSavedDraftSnapshot,
+  });
 
   useEffect(() => {
     latestContentRef.current = content;
@@ -961,6 +972,12 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
   const canEdit = Boolean(
     !conflict && project?.status === "active" && project.capabilities.includes("story.edit")
   );
+  const canManageClipMedia = Boolean(canEdit && project?.capabilities.includes("story.generate"));
+  const clipMediaDisabledReason = !canEdit
+    ? t("readOnly")
+    : !project?.capabilities.includes("story.generate")
+      ? t("production.disabled.permission")
+      : null;
 
   useEffect(() => {
     canvasNodesRef.current = canvasNodes;
@@ -1285,15 +1302,17 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
       : clipGenerationActive
         ? t("production.disabled.generating")
         : null;
-  const selectExistingClipVideo = useCallback(
-    async (item: StoryVideoLibraryItem) => {
-      if (!workspaceId || !focusedGraphNodeId || !focusedFilmClip) {
-        throw new Error(t("production.errors.action"));
-      }
+  const bindClipVideo = useCallback(
+    async (
+      graphNodeId: string,
+      expectedCurrentVideoRevision: number,
+      item: StoryVideoLibraryItem
+    ) => {
+      if (!workspaceId) throw new Error(t("production.errors.action"));
       const confirmedClip = await withSavedDraftSnapshot((expectedDraftRevision) =>
-        putFilmClipCurrentVideo(workspaceId, projectId, focusedGraphNodeId, {
+        putFilmClipCurrentVideo(workspaceId, projectId, graphNodeId, {
           expectedDraftRevision,
-          expectedCurrentVideoRevision: focusedFilmClip.currentVideoRevision,
+          expectedCurrentVideoRevision,
           assetId: item.asset.id,
           variantId: item.variantId,
         })
@@ -1304,16 +1323,77 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
       );
       void refetchWorkbench();
     },
-    [
-      focusedFilmClip,
-      focusedGraphNodeId,
-      projectId,
-      queryClient,
-      refetchWorkbench,
-      t,
-      withSavedDraftSnapshot,
-      workspaceId,
-    ]
+    [projectId, queryClient, refetchWorkbench, t, withSavedDraftSnapshot, workspaceId]
+  );
+  const selectExistingClipVideo = useCallback(
+    async (item: StoryVideoLibraryItem) => {
+      if (!workspaceId || !focusedGraphNodeId || !focusedFilmClip) {
+        throw new Error(t("production.errors.action"));
+      }
+      await bindClipVideo(focusedGraphNodeId, focusedFilmClip.currentVideoRevision, item);
+    },
+    [bindClipVideo, focusedFilmClip, focusedGraphNodeId, t, workspaceId]
+  );
+  const uploadSelectedClipVideo = useCallback(
+    async (
+      file: File,
+      onState: (state: StoryClipMediaUploadState) => void,
+      signal: AbortSignal
+    ) => {
+      if (!workspaceId || !focusedGraphNodeId || !focusedFilmClip) {
+        throw new Error(t("production.errors.action"));
+      }
+      // Capture the target before the long upload starts. Selecting another
+      // canvas node mid-upload must never bind the result to that later node.
+      const graphNodeId = focusedGraphNodeId;
+      const expectedCurrentVideoRevision = focusedFilmClip.currentVideoRevision;
+      let issuedMediaAssetId: string | null = null;
+      let finalizationAccepted = false;
+      try {
+        const uploaded = await uploadFileViaSignedUrl(file, {
+          kind: "story_clip_video",
+          workspaceId,
+          scope: { projectId },
+          onProgress: (progress) => onState({ stage: "uploading", progress }),
+          onSessionIssued: ({ mediaAssetId }) => {
+            issuedMediaAssetId = mediaAssetId;
+          },
+          signal,
+        });
+        if (signal.aborted) throw new DOMException("Upload aborted", "AbortError");
+        onState({ stage: "processing" });
+        const finalization = await completeStoryClipVideoUpload(
+          workspaceId,
+          projectId,
+          {
+            mediaAssetId: uploaded.mediaAssetId,
+          },
+          signal
+        );
+        // From this point the durable worker owns completion. If the user
+        // changes nodes during polling, keep the resulting asset in the
+        // workspace library instead of attempting to cancel active processing.
+        finalizationAccepted = true;
+        const item = await waitForStoryClipVideoUploadFinalization(
+          workspaceId,
+          projectId,
+          finalization,
+          { signal }
+        );
+        if (signal.aborted) throw new DOMException("Upload aborted", "AbortError");
+        await bindClipVideo(graphNodeId, expectedCurrentVideoRevision, item);
+      } catch (error) {
+        if (issuedMediaAssetId && !finalizationAccepted) {
+          // Use a fresh bounded request: the upload signal is already aborted.
+          // Cancellation is best-effort and must never hide the real failure.
+          await cancelStoryClipVideoUpload(workspaceId, projectId, issuedMediaAssetId).catch(
+            () => undefined
+          );
+        }
+        throw error;
+      }
+    },
+    [bindClipVideo, focusedFilmClip, focusedGraphNodeId, projectId, t, workspaceId]
   );
   const productionComposer: StoryVideoComposerProps | null =
     focusedNode?.data.kind === "clip" && focusedDirectorPrompt
@@ -1376,18 +1456,6 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
           referenceApiConnected: STORY_REFERENCE_API_CONNECTED,
           referenceBindingsPending: productionPendingKey === "reference-bindings",
           onUpdateReferenceBindings: updateSelectedReferenceBindings,
-          videoLibrary:
-            workspaceId && focusedFilmClip
-              ? {
-                  workspaceId,
-                  projectId,
-                  disabled: !project?.capabilities.includes("story.generate"),
-                  disabledReason: !project?.capabilities.includes("story.generate")
-                    ? t("production.disabled.permission")
-                    : null,
-                  onSelect: selectExistingClipVideo,
-                }
-              : undefined,
         }
       : null;
   /* eslint-disable react-hooks/refs -- the composer's commit closures reach
@@ -1397,7 +1465,6 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
     focusedGraphNodeId && productionComposer
       ? { graphNodeId: focusedGraphNodeId, composer: productionComposer }
       : null;
-  const inspectorProduction = productionComposer ?? undefined;
   /* eslint-enable react-hooks/refs */
   const focusedIsRoot = focusedNode?.data.kind === "root";
   const selectedTrailer =
@@ -1983,34 +2050,6 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
     setFocusedNodeId((current) => nextStoryCanvasFocusedNodeId(current, remainingSelectedNodeIds));
   };
 
-  const changeExitKind = (
-    nodeId: string,
-    kind: "auto" | "choice" | "checkpoint" | "ending",
-    targetId?: string
-  ) => {
-    applyGraphMutation((current) => {
-      const node = current.graph.nodes.find((candidate) => candidate.nodeId === nodeId);
-      if (!node || node.kind !== "clip") return current;
-      if (node.exit.kind === kind) {
-        if (node.exit.kind === "ending" && node.exit.endingId !== targetId) {
-          return targetId ? convertClipExitToEnding(current, nodeId, targetId) : current;
-        }
-        if (node.exit.kind === "checkpoint" && node.exit.nextNodeId !== targetId) {
-          return targetId ? updateCheckpointTarget(current, nodeId, targetId) : current;
-        }
-        return current;
-      }
-      if (kind === "auto") return convertExitToAuto(current, nodeId);
-      if (kind === "choice") {
-        return convertClipExitToChoice(current, nodeId, authoringLocale);
-      }
-      if (!targetId) return current;
-      return kind === "checkpoint"
-        ? convertClipExitToCheckpoint(current, nodeId, targetId)
-        : convertClipExitToEnding(current, nodeId, targetId);
-    });
-  };
-
   const addChoice = (nodeId: string, targetNodeId: string) => {
     applyGraphMutation(
       (current) => addChoiceOption(current, nodeId, targetNodeId, authoringLocale).content
@@ -2064,21 +2103,6 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
       commitContent(result.content);
       setGraphError(null);
       return result.created.id;
-    } catch {
-      setGraphError(t("graphError.generic"));
-      return null;
-    }
-  };
-
-  const createStateVariable = (
-    type: InteractiveFilmDraftContent["storyBible"]["stateVariables"][number]["type"]
-  ): string | null => {
-    if (!content || !canEdit) return null;
-    try {
-      const result = createStoryStateVariable(content, { type });
-      commitContent(result.content);
-      setGraphError(null);
-      return result.created.key;
     } catch {
       setGraphError(t("graphError.generic"));
       return null;
@@ -2169,30 +2193,48 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
   }
 
   const displaySaveState = mergeSaveStates(saveState, layoutSaveState);
+  const locallyConfirmedCurrentDraftPublished = Boolean(
+    (saveState === "idle" || saveState === "saved") &&
+    publication.lastSucceeded?.lockedRevision.sourceDraftRevision === draftRevision &&
+    publication.lastSucceeded.build.revisionId === publication.lastSucceeded.lockedRevision.id &&
+    publication.lastSucceeded.build.sourceProductionRevision === film?.productionRevision
+  );
+  const authorityConfirmedCurrentDraftPublished =
+    (saveState === "idle" || saveState === "saved") &&
+    isExactCurrentStoryRelease(currentReleaseQuery.data, {
+      draftRevision,
+      revisionId: currentDraftProductionRevisionId,
+      productionRevision: film?.productionRevision ?? null,
+    });
   return (
     <main className="relative h-screen min-w-[1120px] overflow-hidden bg-[oklch(0.18_0_0)] text-white">
       <CanvasHeader
-        projectId={projectId}
         title={project.title}
         revision={draftRevision}
         saveState={displaySaveState}
         saveError={saveError ?? layoutSaveError}
         canEdit={canEdit}
         previewPending={workingPreviewPending}
-        onPreview={() => void loadWorkingPreview()}
-        onFit={() => void fitView({ padding: 0.16, duration: 420, maxZoom: 0.78 })}
+        publishPending={publication.isPending}
+        published={
+          authorityConfirmedCurrentDraftPublished ||
+          (!currentReleaseQuery.data && locallyConfirmedCurrentDraftPublished)
+        }
+        canPublish={publication.canPublish && !currentReleaseQuery.isLoading}
+        publishDisabledReason={
+          currentReleaseQuery.isLoading ? t("publish.statusChecking") : publication.disabledReason
+        }
+        onPreview={() => void openWorkingPreview()}
+        onPublish={publication.open}
         onShowFoundation={() => selectCanvasNodeExclusively(null)}
       />
 
-      <StoryWorkingPreviewDialog
-        open={workingPreviewOpen}
-        onOpenChange={setWorkingPreviewOpen}
-        preview={workingPreview}
-        pending={workingPreviewPending}
-        error={workingPreviewError}
-        locale={interfaceLocale}
-        frameProfile={project.frameProfile}
-        onRetry={() => void loadWorkingPreview()}
+      <StoryPublicationDialog
+        state={publication.state}
+        draftRevision={draftRevision}
+        onClose={publication.close}
+        onConfirm={publication.confirm}
+        onRetry={publication.retry}
       />
 
       <section className="absolute inset-x-0 top-16 bottom-0 right-[380px]">
@@ -2313,7 +2355,26 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
         content={content}
         locale={authoringLocale}
         selectedNode={focusedNode}
-        production={inspectorProduction}
+        clipMedia={
+          focusedNode?.data.kind === "clip"
+            ? {
+                clip: focusedFilmClip ?? null,
+                canEdit: canManageClipMedia,
+                disabledReason: clipMediaDisabledReason,
+                onUpload: uploadSelectedClipVideo,
+                videoLibrary:
+                  workspaceId && focusedFilmClip
+                    ? {
+                        workspaceId,
+                        projectId,
+                        disabled: !canManageClipMedia,
+                        disabledReason: clipMediaDisabledReason,
+                        onSelect: selectExistingClipVideo,
+                      }
+                    : undefined,
+              }
+            : undefined
+        }
         filmTrailer={film?.trailer ?? null}
         trailerProduction={inspectorTrailerProduction}
         onCreateTrailerPrompt={() =>
@@ -2342,25 +2403,8 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
         onRemoveWorldTextItem={(field, index) =>
           applyGraphMutation((current) => removeWorldTextItem(current, field, index))
         }
-        onCreateStateVariable={createStateVariable}
-        onReplaceStateVariable={(key, next) =>
-          applyGraphMutation((current) => replaceStoryStateVariable(current, key, next))
-        }
-        onDeleteStateVariable={(key) =>
-          applyGraphMutation((current) => deleteStoryStateVariable(current, key))
-        }
-        onReplaceClipPrompt={(graphNodeId, next) =>
-          applyGraphMutation((current) => replaceClipPrompt(current, graphNodeId, next))
-        }
         onCloseNode={() => selectCanvasNodeExclusively(null)}
         onSetEntry={(nodeId) => applyGraphMutation((current) => setEntryNode(current, nodeId))}
-        onChangeExitKind={changeExitKind}
-        onUpdateClipContinuation={(nodeId, targetNodeId) =>
-          applyGraphMutation((current) => connectClipContinuation(current, nodeId, targetNodeId))
-        }
-        onUpdateCheckpointTarget={(nodeId, targetNodeId) =>
-          applyGraphMutation((current) => updateCheckpointTarget(current, nodeId, targetNodeId))
-        }
         onAddAutoRoute={(nodeId, targetNodeId) =>
           applyGraphMutation((current) => connectAutoRoute(current, nodeId, targetNodeId))
         }
@@ -2415,29 +2459,58 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
 }
 
 function CanvasHeader({
-  projectId,
   title,
   revision,
   saveState,
   saveError,
   canEdit,
   previewPending,
+  publishPending,
+  published,
+  canPublish,
+  publishDisabledReason,
   onPreview,
-  onFit,
+  onPublish,
   onShowFoundation,
 }: {
-  projectId: string;
   title: string;
   revision: number;
   saveState: SaveState;
   saveError: string | null;
   canEdit: boolean;
   previewPending: boolean;
+  publishPending: boolean;
+  published: boolean;
+  canPublish: boolean;
+  publishDisabledReason: string | null;
   onPreview: () => void;
-  onFit: () => void;
+  onPublish: () => void;
   onShowFoundation: () => void;
 }) {
   const t = useTranslations("storyStudio.canvas");
+  const publishButton = (
+    <Button
+      type="button"
+      variant="ghost"
+      size="lg"
+      onClick={onPublish}
+      disabled={!canPublish || publishPending || published}
+      className="h-9 gap-2 rounded-xl bg-white/[0.07] px-3 font-semibold text-white/66 hover:bg-white/[0.12] hover:text-white disabled:cursor-not-allowed"
+    >
+      {publishPending ? (
+        <IconLoader2 className="size-4 animate-spin" />
+      ) : published ? (
+        <IconCheck className="size-4" />
+      ) : (
+        <IconCloudUpload className="size-4" />
+      )}
+      {publishPending
+        ? t("publish.actionPending")
+        : published
+          ? t("publish.actionPublished")
+          : t("publish.action")}
+    </Button>
+  );
   return (
     <header className="pointer-events-none absolute inset-x-0 top-0 z-40 flex h-16 items-center justify-between gap-3 px-3 py-2">
       <FrostedPanel className="pointer-events-auto flex h-12 min-w-0 items-center gap-3 rounded-[20px] bg-[oklch(0.205_0_0/0.72)] px-2.5 pr-4 shadow-[0_14px_50px_rgba(0,0,0,0.3)] backdrop-blur-[60px]">
@@ -2481,13 +2554,6 @@ function CanvasHeader({
           <IconBook2 className="size-4" />
           {t("foundation.action")}
         </button>
-        <Link
-          href={`/story-studio/projects/${projectId}/overview`}
-          className="inline-flex h-9 items-center gap-2 rounded-xl bg-white/[0.07] px-3 text-xs font-semibold text-white/66 transition hover:bg-white/[0.12] hover:text-white"
-        >
-          <IconLayoutDashboard className="size-4" />
-          {t("workbench")}
-        </Link>
         <button
           type="button"
           onClick={onPreview}
@@ -2501,15 +2567,24 @@ function CanvasHeader({
           )}
           {t("workingPreview.action")}
         </button>
-        <button
-          type="button"
-          onClick={onFit}
-          className="grid size-9 place-items-center rounded-xl bg-white/[0.07] text-white/66 transition hover:bg-white/[0.12] hover:text-white"
-          aria-label={t("fit")}
-          title={t("fit")}
-        >
-          <IconFocusCentered className="size-4" />
-        </button>
+        {!canPublish && publishDisabledReason ? (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <span
+                tabIndex={0}
+                className="inline-flex rounded-xl outline-none focus-visible:ring-2 focus-visible:ring-white/55 [&>button]:pointer-events-none"
+                aria-label={`${t("publish.action")}: ${publishDisabledReason}`}
+              >
+                {publishButton}
+              </span>
+            </TooltipTrigger>
+            <TooltipContent side="bottom" sideOffset={8}>
+              {publishDisabledReason}
+            </TooltipContent>
+          </Tooltip>
+        ) : (
+          publishButton
+        )}
         <span className="inline-flex h-9 items-center gap-1.5 rounded-xl bg-white px-3 text-[11px] font-semibold text-black">
           {saveState === "saving" ? (
             <IconLoader2 className="size-3.5 animate-spin" />
@@ -2768,11 +2843,10 @@ function StoryGraphNodeCard({ id, data, selected, isConnectable }: NodeProps<Sto
             </p>
           ) : null}
           {data.rootStats ? (
-            <div className="mt-3 grid grid-cols-4 gap-1.5">
+            <div className="mt-3 grid grid-cols-3 gap-1.5">
               <NodeStat label={t("metrics.characters")} value={data.rootStats.characters} />
               <NodeStat label={t("metrics.locations")} value={data.rootStats.locations} />
               <NodeStat label={t("metrics.props")} value={data.rootStats.props} />
-              <NodeStat label={t("metrics.rules")} value={data.rootStats.rules} />
             </div>
           ) : null}
           {isDecision ? (

@@ -39,6 +39,9 @@ export function useExperienceAudioHost(
   const unlock = useCallback(async () => {
     await hostRef.current?.unlock();
   }, []);
+  const suspend = useCallback(async () => {
+    await hostRef.current?.suspend();
+  }, []);
   const applyEffects = useCallback((effects: readonly ExperienceRuntimeEffect[]) => {
     const audioEffects = effects.filter((effect): effect is AudioEffect =>
       effect.kind.startsWith("audio.")
@@ -46,7 +49,7 @@ export function useExperienceAudioHost(
     if (audioEffects.length > 0) hostRef.current?.enqueue(audioEffects);
   }, []);
 
-  return { unlock, applyEffects };
+  return { unlock, suspend, applyEffects };
 }
 
 class ExperienceAudioHost {
@@ -76,6 +79,11 @@ class ExperienceAudioHost {
   async unlock(): Promise<void> {
     if (this.#disposed || this.#context.state === "running") return;
     await this.#context.resume();
+  }
+
+  async suspend(): Promise<void> {
+    if (this.#disposed || this.#context.state !== "running") return;
+    await this.#context.suspend();
   }
 
   enqueue(effects: readonly AudioEffect[]): void {

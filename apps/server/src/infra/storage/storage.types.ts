@@ -62,6 +62,9 @@ export interface OutputStorageResult {
  */
 export type StorageProviderId = 'azure_blob' | 'aliyun_oss' | 's3_compatible';
 
+export const IMMUTABLE_STORAGE_CACHE_CONTROL =
+  'public, max-age=31536000, immutable';
+
 /**
  * Input to {@link OutputStorageService.createUploadUrl}.
  *
@@ -139,6 +142,12 @@ export interface HeadObjectResult {
   sizeBytes?: number;
   /** Real content-type the blob was stored with. */
   contentType?: string;
+  /**
+   * Provider ETag/version fingerprint when available. It is diagnostic for
+   * callers; finalization safety does not depend on it because staged bytes
+   * are promoted to an unsigned final key before they are probed.
+   */
+  etag?: string;
   /** Which impl owns this blob — drives MediaAsset.storageProvider. */
   provider?: StorageProviderId;
   /** Azure container / OSS bucket — persisted to MediaAsset.bucket. */
@@ -194,6 +203,96 @@ export interface StorageObjectRef {
    * carries the region).
    */
   region?: string | null;
+}
+
+/**
+ * Server-side staging -> final promotion. Only the staging object is ever
+ * exposed through a signed write URL; `destination` MUST be a server-chosen,
+ * never-signed key. Provider implementations copy the object wholly inside
+ * storage, validate the final byte length, apply immutable cache headers, and
+ * then make a best-effort idempotent deletion of the staging object.
+ */
+export interface PromoteStorageObjectInput {
+  source: StorageObjectRef;
+  destination: StorageObjectRef;
+  /** Authoritative size captured by confirm-time HEAD. */
+  expectedSizeBytes: number;
+  /** Content type to persist on the immutable final object. */
+  contentType: string;
+  /** Defaults to the platform's one-year immutable public cache policy. */
+  cacheControl?: string;
+}
+
+export interface PromoteStorageObjectResult extends StorageObjectRef {
+  provider: StorageProviderId;
+  region: string | null;
+  sizeBytes: number;
+  contentType: string;
+  etag?: string;
+}
+
+/** Stable error type for a missing source/destination during finalization. */
+export class StorageObjectNotFoundError extends Error {
+  readonly code = 'STORAGE_OBJECT_NOT_FOUND';
+
+  constructor(readonly ref: StorageObjectRef) {
+    super(`Storage object not found: ${ref.bucket}/${ref.storageKey}`);
+    this.name = 'StorageObjectNotFoundError';
+  }
+}
+
+/** Stable error type for a provider object whose bytes do not match the job. */
+export class StorageObjectSizeMismatchError extends Error {
+  readonly code = 'STORAGE_OBJECT_SIZE_MISMATCH';
+
+  constructor(
+    readonly ref: StorageObjectRef,
+    readonly expectedSizeBytes: number,
+    readonly actualSizeBytes: number | undefined,
+  ) {
+    super(
+      `Storage object size mismatch for ${ref.bucket}/${ref.storageKey}: ` +
+        `expected ${expectedSizeBytes}, got ${actualSizeBytes ?? 'unknown'}`,
+    );
+    this.name = 'StorageObjectSizeMismatchError';
+  }
+}
+
+export function assertStoragePromotionLocations(
+  source: StorageObjectRef,
+  destination: StorageObjectRef,
+): void {
+  if (
+    source.bucket === destination.bucket &&
+    source.storageKey === destination.storageKey
+  ) {
+    throw new Error('Storage promotion destination must differ from staging');
+  }
+}
+
+export function assertExpectedStorageObjectSize(
+  expectedSizeBytes: number,
+): void {
+  if (!Number.isSafeInteger(expectedSizeBytes) || expectedSizeBytes < 0) {
+    throw new RangeError(
+      'expectedSizeBytes must be a non-negative safe integer',
+    );
+  }
+}
+
+export function assertStoredObjectSize(
+  ref: StorageObjectRef,
+  head: HeadObjectResult,
+  expectedSizeBytes: number,
+): asserts head is HeadObjectResult & { exists: true; sizeBytes: number } {
+  if (!head.exists) throw new StorageObjectNotFoundError(ref);
+  if (head.sizeBytes !== expectedSizeBytes) {
+    throw new StorageObjectSizeMismatchError(
+      ref,
+      expectedSizeBytes,
+      head.sizeBytes,
+    );
+  }
 }
 
 /**
@@ -265,6 +364,27 @@ export abstract class OutputStorageService {
    */
   abstract headObject(key: string): Promise<HeadObjectResult>;
   /**
+   * HEAD an explicit persisted placement. The default preserves compatibility
+   * with test doubles and legacy single-bucket providers; production
+   * providers override it so bucket/container and region are honored.
+   */
+  async headStoredObject(ref: StorageObjectRef): Promise<HeadObjectResult> {
+    return this.headObject(ref.storageKey);
+  }
+  /**
+   * Promote staged bytes to a server-chosen final key. Implementations MUST be
+   * idempotent: a retry that finds a valid final object converges successfully.
+   * The final object is verified before staging deletion is attempted.
+   */
+  abstract promoteObject(
+    input: PromoteStorageObjectInput,
+  ): Promise<PromoteStorageObjectResult>;
+  /**
+   * Idempotently delete one explicit placement. Used by upload-session
+   * reclamation; deleting an absent object is success.
+   */
+  abstract deleteObject(ref: StorageObjectRef): Promise<void>;
+  /**
    * Best-effort: set the stored object's `Cache-Control` so Front Door + the
    * browser cache it. Object keys are content-addressed (uuid + hash) → the
    * bytes are immutable, so public media is cached aggressively. The SAS
@@ -276,12 +396,16 @@ export abstract class OutputStorageService {
    * already sets it on its own `upload()`). MUST NOT throw — a failure here
    * must never break confirmUpload; callers wrap it defensively too.
    */
-  async setCacheControl(
-    _key: string,
-    _cacheControl: string,
-    _contentType?: string | null,
+  setCacheControl(
+    key: string,
+    cacheControl: string,
+    contentType?: string | null,
   ): Promise<void> {
     // no-op default; impls override where the upload path doesn't set it.
+    void key;
+    void cacheControl;
+    void contentType;
+    return Promise.resolve();
   }
   /**
    * Make a single stored object unreachable via its public URL — the physical

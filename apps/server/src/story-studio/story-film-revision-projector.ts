@@ -4,6 +4,7 @@ import {
   FilmSpecSchema,
   FilmTrailerSpecSchema,
   findInteractiveFilmRuntimeLocaleCoverageIssues,
+  ProductionReadyStoryTrailerPromptSchema,
   type FilmClipSpec,
   type FilmSpec,
   type FilmTrailerSpec,
@@ -115,6 +116,8 @@ export function projectStoryFilmRevision(input: {
   frameProfile: StoryFrameProfile;
   defaultLocale: string;
   defaultCanonicalModelId: string;
+  /** Full-story playtests exclude the separately produced project trailer. */
+  includeTrailer?: boolean;
 }): StoryFilmRevisionProjection {
   const frame = STORY_FRAME_PROFILE_CONTRACTS[input.frameProfile];
   const clipNodes = input.draft.graph.nodes.filter(
@@ -155,18 +158,26 @@ export function projectStoryFilmRevision(input: {
       node.exit.kind === 'choice' ? [node.exit.decisionId] : [],
     ),
   ).size;
-  const trailerSpec = input.draft.trailerPrompt
+  const trailerPromptResult =
+    input.includeTrailer !== false && input.draft.trailerPrompt
+      ? ProductionReadyStoryTrailerPromptSchema.safeParse(
+          input.draft.trailerPrompt,
+        )
+      : null;
+  const trailerPrompt =
+    trailerPromptResult?.success === true ? trailerPromptResult.data : null;
+  const trailerSpec = trailerPrompt
     ? FilmTrailerSpecSchema.parse({
         schemaVersion: 1,
-        title: input.draft.trailerPrompt.title,
-        description: input.draft.trailerPrompt.description,
-        targetDurationMs: input.draft.trailerPrompt.targetDurationMs,
-        generationControl: input.draft.trailerPrompt.generationControl,
-        referenceRoleNotes: input.draft.trailerPrompt.referenceRoleNotes,
+        title: trailerPrompt.title,
+        description: trailerPrompt.description,
+        targetDurationMs: trailerPrompt.targetDurationMs,
+        generationControl: trailerPrompt.generationControl,
+        referenceRoleNotes: trailerPrompt.referenceRoleNotes,
         prompt: {
-          masterPrompt: compileStoryTrailerPrompt(input.draft.trailerPrompt),
-          negativeConstraints: input.draft.trailerPrompt.negativeConstraints,
-          timeline: input.draft.trailerPrompt.beats.map((beat) => ({
+          masterPrompt: compileStoryTrailerPrompt(trailerPrompt),
+          negativeConstraints: trailerPrompt.negativeConstraints,
+          timeline: trailerPrompt.beats.map((beat) => ({
             startMs: beat.startMs,
             endMs: beat.endMs,
             visual: beat.visual,
@@ -184,7 +195,7 @@ export function projectStoryFilmRevision(input: {
         },
         outputContract: {
           ...frame,
-          durationMs: input.draft.trailerPrompt.targetDurationMs,
+          durationMs: trailerPrompt.targetDurationMs,
           durationToleranceMs: 0,
           framesPerSecond: {
             numerator: DEFAULT_FRAMES_PER_SECOND,
@@ -192,7 +203,7 @@ export function projectStoryFilmRevision(input: {
           },
           audio: 'embedded',
         },
-        continuityNotes: input.draft.trailerPrompt.continuityNotes,
+        continuityNotes: trailerPrompt.continuityNotes,
       })
     : null;
 

@@ -1612,36 +1612,89 @@
     "canvas": {
       "back": "Back to Story Studio",
       "mode": "Story canvas",
-      "workbench": "Production workspace",
+      "publish": {
+        "action": "Publish",
+        "actionPending": "Publishing…",
+        "actionPublished": "Published",
+        "statusChecking": "Checking the current live version…",
+        "title": "Publish current version?",
+        "description": "This will prepare the latest saved story and set it as the live version players receive.",
+        "confirmation": {
+          "title": "Ready to publish",
+          "draftRevision": "Latest saved story · revision {revision}",
+          "detail": "The canvas stays editable after publication. Future edits remain private until you publish again."
+        },
+        "progress": {
+          "title": "Publishing current version",
+          "description": "Keep this window open while the story is saved, checked, and published."
+        },
+        "phases": {
+          "saving": {
+            "title": "Save latest changes",
+            "description": "Saving the exact story currently on the canvas."
+          },
+          "locking": {
+            "title": "Prepare release version",
+            "description": "Freezing the saved story into the version players will receive."
+          },
+          "building": {
+            "title": "Check playable content",
+            "description": "Checking routes, videos, and player-facing content."
+          },
+          "publishing": {
+            "title": "Publish",
+            "description": "Setting this as the live version for players."
+          }
+        },
+        "actions": {
+          "cancel": "Cancel",
+          "confirm": "Publish current version",
+          "close": "Close",
+          "retry": "Try again"
+        },
+        "success": {
+          "title": "Version published",
+          "description": "The current version is now live.",
+          "version": "Current version is live",
+          "detail": "Players now enter this version. You can keep editing the canvas without changing it."
+        },
+        "failure": {
+          "title": "This version was not published",
+          "description": "Resolve the issue below, then try publishing again."
+        },
+        "diagnostics": {
+          "title": "{count, plural, one {# issue to resolve} other {# issues to resolve}}"
+        },
+        "errors": {
+          "workspaceRequired": "Select a workspace before publishing.",
+          "permissionDenied": "Your project role does not allow publishing.",
+          "saveFailed": "The latest changes could not be saved.",
+          "lockFailed": "The saved story could not be prepared for publication.",
+          "workbenchFailed": "The saved version could not be loaded for checking.",
+          "revisionMismatch": "The prepared version did not match the saved story. Refresh the canvas and try again.",
+          "productionContractMissing": "This story does not yet have playable content to publish.",
+          "buildFailed": "The playable version could not be prepared.",
+          "buildNotReady": "This version is not ready to publish. Resolve the issues below and try again.",
+          "runtimeUnavailable": "The playable content is unavailable. Try preparing this version again.",
+          "publishFailed": "The prepared version could not be published.",
+          "unexpected": "The current version could not be published."
+        }
+      },
       "workingPreview": {
         "action": "Preview playtest",
-        "title": "Working preview",
-        "description": "Play the latest saved story graph with each node's current video. This preview never freezes the project or stops you from editing.",
+        "pageTitle": "Story Playtest · Story Studio",
+        "pageDescription": "Play an exact private draft or immutable build with the production experience runtime.",
         "draftRevision": "Draft r{revision}",
-        "loading": "Preparing the latest saved draft…",
-        "errorTitle": "Working preview could not be prepared",
-        "errorFallback": "The working preview could not be loaded.",
+        "loading": "Preparing the playtest…",
+        "errorFallback": "The playtest could not be loaded.",
+        "buildNumber": "Build {number}",
         "retry": "Retry",
         "refresh": "Refresh preview",
         "editStory": "Edit story",
-        "previewWarnings": "{count} working-preview warnings",
+        "previewWarnings": "{count} playtest warnings",
         "unavailableTitle": "The story is not playable yet",
-        "unavailableDescription": "{errors} blocking errors · {warnings} warnings. Complete only the missing production inputs listed below; the canvas remains editable.",
-        "noDiagnostics": "No diagnostic details were returned. Retry or inspect the project production state.",
-        "severity": {
-          "error": "Blocking",
-          "warning": "Warning"
-        },
-        "pathReport": {
-          "title": "Current path coverage",
-          "paths": "Paths",
-          "endings": "Endings",
-          "ambiguous": "Ambiguous",
-          "unreachable": "Unreachable",
-          "unavailable": "Path coverage becomes available after the graph can be compiled."
-        }
+        "unavailableDescription": "{errors} blocking errors · {warnings} warnings. Complete only the missing production inputs listed below; the canvas remains editable."
       },
-      "fit": "Fit story to view",
       "autosave": "Autosave",
       "readOnly": "Read only",
       "addNode": "Add story node",
@@ -2086,6 +2139,28 @@
         "close": "Close node inspector",
         "nodeId": "Stable node ID",
         "clipKey": "Clip key",
+        "media": {
+          "title": "Current video",
+          "description": "Upload a local file or reuse a video from this workspace.",
+          "preview": "Current video for {title}",
+          "empty": "No video selected",
+          "emptyDescription": "Add the playable video for this story clip.",
+          "outdated": "Earlier version",
+          "upload": "Upload local video",
+          "replace": "Replace from device",
+          "uploading": "Uploading · {progress}%",
+          "processing": "Processing video…",
+          "processingDescription": "Checking the video and preparing it for playback.",
+          "accepted": "MP4 · H.264 video · AAC audio",
+          "library": "Video library",
+          "libraryDescription": "Reuse an uploaded or generated video",
+          "preparing": "Clip media is still being prepared.",
+          "unknownDimensions": "Unknown size",
+          "unknownDuration": "Unknown duration",
+          "errors": {
+            "upload": "The video could not be uploaded."
+          }
+        },
         "exit": "Next step",
         "production": "Production status",
         "openProduction": "Open clip production",
@@ -2262,8 +2337,7 @@
         "overview": "Overview",
         "story": "Story",
         "references": "References",
-        "production": "Production",
-        "build": "Preview & Playtest"
+        "production": "Production"
       },
       "errors": {
         "loadTitle": "This project could not be opened."
@@ -2427,135 +2501,40 @@
         "cancelled": "Cancelled",
         "outdated": "Earlier direction"
       }
-    },
-    "build": {
-      "title": "Build & Playtest",
-      "subtitle": "Compile a locked story revision and its current videos into an immutable production manifest. This exact artifact is the only payload eligible for Java publication.",
-      "buildNumber": "Build {number}",
-      "actions": {
-        "createProduction": "Create production build",
-        "creating": "Creating build…",
-        "editStory": "Edit story",
-        "publish": "Publish",
-        "publishing": "Publishing…",
-        "refresh": "Refresh builds"
-      },
-      "permissions": {
-        "build": "Your project role does not include build permission.",
-        "release": "Your project role does not include release permission."
-      },
-      "notifications": {
-        "created": "Production build created.",
-        "validationFailed": "The build found production blockers. Review the diagnostics.",
-        "revisionLocked": "Production revision locked.",
-        "published": "This production Build is now the current published version."
-      },
-      "errors": {
-        "revisionRequired": "Lock a production revision before creating a build.",
-        "create": "The production build could not be created.",
-        "list": "Build history could not be loaded.",
-        "detail": "The selected build could not be loaded.",
-        "lockRevision": "The production revision could not be locked.",
-        "publish": "The production Build could not be published.",
-        "runtimeUnavailable": "This frozen runtime is currently unavailable. Review the build diagnostics; media stays inaccessible until every asset satisfies current lifecycle and moderation policy."
-      },
-      "publication": {
-        "current": "Published version {version} · open manifest"
-      },
-      "publishDialog": {
-        "title": "Publish this production Build?",
-        "description": "Java will store this immutable Manifest as the current player version. The Build itself will not change after publication.",
-        "cancel": "Cancel",
-        "confirm": "Publish current version"
-      },
-      "lockRevision": {
-        "title": "Lock a production revision",
-        "description": "A build must point to an immutable story version. Lock the saved draft to materialize its clip and runtime production contracts.",
-        "action": "Lock production version",
-        "locking": "Locking…"
-      },
-      "revisionBasis": {
-        "currentTitle": "Building locked version {number}",
-        "currentDescription": "New production builds use locked version {number}, captured from draft r{sourceRevision}. The mutable draft has no later changes."
-      },
-      "missingFilm": {
-        "title": "Production contracts are unavailable",
-        "description": "The locked revision did not materialize an interactive-film production contract. Refresh the project or inspect the server diagnostics before building."
-      },
-      "history": {
-        "title": "Build history",
-        "count": "{count, plural, one {# build} other {# builds}}",
-        "empty": "No production build has been created.",
-        "errors": "{count, plural, one {# error} other {# errors}}"
-      },
-      "profile": {
-        "preview": "Preview",
-        "production": "Production"
-      },
-      "scope": {
-        "full": "Full graph"
-      },
-      "status": {
-        "queued": "Queued",
-        "validating": "Validating",
-        "compiling": "Compiling",
-        "ready": "Ready",
-        "failed": "Failed",
-        "cancelled": "Cancelled"
-      },
-      "detail": {
-        "identity": "Production state r{revision} · {profile} · {scope}"
-      },
-      "empty": {
-        "title": "Compile the first playable build",
-        "description": "A production build validates every reachable route, freezes exact media variants and produces the immutable Runtime Manifest used for publication."
-      },
-      "pathReport": {
-        "title": "Path coverage",
-        "description": "Deterministic graph traversal from the build compiler.",
-        "paths": "Enumerated paths",
-        "endings": "Reachable endings",
-        "ambiguous": "Ambiguous paths",
-        "unreachable": "Unreachable nodes"
-      },
-      "diagnostics": {
-        "title": "Build diagnostics",
-        "summary": "{errors} errors · {warnings} warnings",
-        "cleanTitle": "Build validation passed",
-        "cleanDescription": "The compiler found no blocking errors or warnings."
-      },
-      "playtest": {
-        "title": "Interactive playtest",
-        "description": "Runs this exact frozen production manifest; no generation task or mutable draft data is used."
-      },
-      "assets": {
-        "title": "Frozen build assets",
-        "description": "Exact variants and checksums captured by this build."
-      },
-      "player": {
-        "invalidManifest": "The runtime manifest is invalid",
-        "manifestRoot": "Manifest root",
-        "restart": "Restart",
-        "regionLabel": "Interactive film playtest",
-        "videoLabel": "Story video for scene {nodeId}",
-        "checkpoint": {
-          "prompt": "Ready for the next scene?",
-          "description": "Continue when you are ready.",
-          "continue": "Continue"
-        },
-        "noVisibleChoices": "No choice is currently available for this story state.",
-        "endingEyebrow": "Ending reached",
-        "unknownEnding": "Ending {endingId}",
-        "playAgain": "Play again",
-        "errors": {
-          "runtimeTitle": "The playtest cannot continue",
-          "media": "Frozen media asset {assetId} could not be played."
-        }
-      }
     }
   },
   "metadata": {
     "studioTitle": "FizzStudio",
     "studioDescription": "AI creative studio"
+  },
+  "experiencePlayer": {
+    "invalidManifest": "The runtime manifest is invalid",
+    "manifestRoot": "Manifest root",
+    "interactiveFilm": "Interactive film",
+    "starting": "Starting…",
+    "start": "Start experience",
+    "restart": "Restart",
+    "regionLabel": "Interactive film playtest",
+    "videoLabel": "Story video for scene {nodeId}",
+    "checkpointPrompt": "Ready for the next scene?",
+    "checkpointDescription": "Continue when you are ready.",
+    "continue": "Continue",
+    "noVisibleChoices": "No choice is currently available for this story state.",
+    "endingEyebrow": "Ending reached",
+    "unknownEnding": "Ending {endingId}",
+    "playAgain": "Play again",
+    "runtimeError": "The playtest cannot continue",
+    "mediaError": "Frozen media asset {assetId} could not be played.",
+    "video": {
+      "play": "Play",
+      "pause": "Pause",
+      "mute": "Mute",
+      "unmute": "Unmute",
+      "volume": "Volume",
+      "enterFullscreen": "Enter fullscreen",
+      "exitFullscreen": "Exit fullscreen",
+      "seekForward": "Seek forward",
+      "seekBackward": "Seek backward"
+    }
   }
 }

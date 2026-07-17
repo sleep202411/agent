@@ -48,7 +48,6 @@ export interface StoryCanvasNodeData extends Record<string, unknown> {
     characters: number;
     locations: number;
     props: number;
-    rules: number;
   };
 }
 
@@ -93,8 +92,7 @@ export interface StoryCanvasCopy {
 export function normalizeStoryClipPromptDrafts(
   content: InteractiveFilmDraftContent
 ): InteractiveFilmDraftContent {
-  const legacyPrompts = (content as Partial<InteractiveFilmDraftContent>).clipPrompts;
-  const existing = Array.isArray(legacyPrompts) ? legacyPrompts : [];
+  const existing = content.clipPrompts;
   const existingByNodeId = new Map(existing.map((prompt) => [prompt.graphNodeId, prompt]));
   const clipPrompts = content.graph.nodes.flatMap((node) =>
     node.kind === "clip"
@@ -131,15 +129,13 @@ export function normalizeStoryClipPromptDrafts(
         ]
       : []
   );
-  const trailerPrompt = (content as Partial<InteractiveFilmDraftContent>).trailerPrompt ?? null;
   if (
     clipPrompts.length === existing.length &&
-    clipPrompts.every((prompt, index) => prompt === existing[index]) &&
-    content.trailerPrompt === trailerPrompt
+    clipPrompts.every((prompt, index) => prompt === existing[index])
   ) {
     return content;
   }
-  return { ...content, clipPrompts, trailerPrompt };
+  return { ...content, clipPrompts };
 }
 
 const DEFAULT_COPY: StoryCanvasCopy = {
@@ -191,7 +187,6 @@ export function buildStoryCanvasModel(
           characters: content.storyBible.characters.length,
           locations: content.storyBible.locations.length,
           props: content.storyBible.props.length,
-          rules: content.storyBible.storyRules.length,
         },
         frameAspectRatio: frameProfile === "portrait_9_16" ? "9:16" : "16:9",
         filmTrailer: trailer ?? undefined,

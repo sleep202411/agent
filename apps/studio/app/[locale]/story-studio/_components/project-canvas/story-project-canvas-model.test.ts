@@ -4,10 +4,7 @@ import type {
   InteractiveFilmDraftContent,
   StoryGraphNode,
 } from "@/lib/story-projects-api";
-import {
-  buildStoryCanvasModel,
-  normalizeStoryClipPromptDrafts,
-} from "./story-project-canvas-model";
+import { buildStoryCanvasModel } from "./story-project-canvas-model";
 
 describe("buildStoryCanvasModel", () => {
   it("projects the story bible root even when the executable graph is empty", () => {
@@ -36,13 +33,6 @@ describe("buildStoryCanvasModel", () => {
       frameAspectRatio: "9:16",
       filmTrailer: trailer,
     });
-  });
-
-  it("normalizes a legacy payload with no trailerPrompt to an explicit null", () => {
-    const legacy = draft();
-    delete (legacy as Partial<InteractiveFilmDraftContent>).trailerPrompt;
-
-    expect(normalizeStoryClipPromptDrafts(legacy)).toHaveProperty("trailerPrompt", null);
   });
 
   it("projects a linear auto route into deterministic BFS layers", () => {
@@ -138,13 +128,13 @@ describe("buildStoryCanvasModel", () => {
     expect(content.clipPrompts).toEqual([prompt]);
   });
 
-  it("normalizes a legacy payload with no clipPrompts before projection", () => {
-    const legacy = draft({
+  it("creates the director prompt shell for a newly added graph clip", () => {
+    const content = draft({
       nodes: [clip("opening", "OPENING", { kind: "auto", nextNodeId: null })],
+      clipPrompts: [],
     });
-    delete (legacy as Partial<InteractiveFilmDraftContent>).clipPrompts;
 
-    const model = buildStoryCanvasModel(legacy, "en-US");
+    const model = buildStoryCanvasModel(content, "en-US");
 
     expect(model.nodes.find((node) => node.id === "opening")?.data.directorPrompt).toMatchObject({
       graphNodeId: "opening",

@@ -12,7 +12,7 @@ import {
   Res,
 } from '@nestjs/common';
 import type { Response } from 'express';
-import { CurrentUser, type AuthUser } from '../auth';
+import { CurrentUser, Public, ViewerCookie, type AuthUser } from '../auth';
 import { ZodValidationPipe } from '../common/zod.pipe';
 import {
   CancelFilmBuildSchema,
@@ -107,12 +107,16 @@ export class StoryFilmBuildController {
   }
 
   @Get(':projectId/builds/:buildId/assets/:assetId/variants/:variantId/content')
+  @Public()
   async redirectToBuildAsset(
-    @CurrentUser() user: AuthUser,
+    @CurrentUser() user: AuthUser | undefined,
     @Param(new ZodValidationPipe(StoryFilmBuildAssetParamsSchema))
     params: StoryFilmBuildAssetParams,
     @Res() response: Response,
   ) {
+    // @Public keeps Java/CDN's immutable Manifest URI usable anonymously after
+    // publication. AuthGuard still attaches a valid optional viewer, allowing
+    // the service to enforce live story.read access for every private Build.
     const access = await this.builds.issueBuildAssetReadUrl(
       user,
       params.projectId,
@@ -147,14 +151,31 @@ export class StoryFilmBuildController {
     };
   }
 
+  @Get(':projectId/releases/current')
+  async getCurrentRelease(
+    @CurrentUser() user: AuthUser,
+    @Headers('x-fizz-workspace-id')
+    workspaceHeader: string | string[] | undefined,
+    @Param(new ZodValidationPipe(StoryProjectIdParamsSchema))
+    params: StoryProjectIdParams,
+  ) {
+    return {
+      code: 200,
+      data: await this.releases.getCurrentRelease(
+        user,
+        requiredWorkspaceId(workspaceHeader),
+        params.projectId,
+      ),
+    };
+  }
+
   @Post(':projectId/builds/:buildId/publish')
   @HttpCode(HttpStatus.OK)
   async publishBuild(
     @CurrentUser() user: AuthUser,
     @Headers('x-fizz-workspace-id')
     workspaceHeader: string | string[] | undefined,
-    @Headers('cookie') cookie: string | undefined,
-    @Headers('authorization') authorization: string | undefined,
+    @ViewerCookie() viewerCookie: string,
     @Param(new ZodValidationPipe(StoryFilmBuildParamsSchema))
     params: StoryFilmBuildParams,
     @Body(new ZodValidationPipe(PublishStoryBuildSchema))
@@ -168,7 +189,7 @@ export class StoryFilmBuildController {
         params.projectId,
         params.buildId,
         body,
-        { cookie, authorization },
+        viewerCookie,
       ),
     };
   }

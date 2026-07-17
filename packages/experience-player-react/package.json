@@ -1,0 +1,30 @@
+{
+  "name": "@repo/experience-player-react",
+  "version": "0.0.0",
+  "private": true,
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "check-types": "tsc --noEmit",
+    "lint": "eslint . --max-warnings 0",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@repo/experience-engine": "*",
+    "@repo/shared": "*",
+    "@tabler/icons-react": "^3.44.0",
+    "@vidstack/react": "1.15.6",
+    "react": "19.2.4",
+    "react-dom": "19.2.4"
+  },
+  "devDependencies": {
+    "@repo/eslint-config": "*",
+    "@repo/typescript-config": "*",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "eslint": "^9",
+    "typescript": "5.9.2",
+    "vitest": "^4.1.4"
+  }
+}

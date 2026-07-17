@@ -15,7 +15,7 @@ import { PrismaService } from '../infra/db/db.module';
 import { resolveMediaPublicUrl } from '../infra/storage/media-asset-url-resolver.service';
 import { canonicalJsonHash } from './canonical-json';
 import {
-  createLockableInteractiveFilmDraftContentSchema,
+  createPlayableInteractiveFilmDraftContentSchema,
   type FilmBuildDiagnosticDto,
   type StoryWorkingPreviewDto,
 } from './dto';
@@ -35,6 +35,7 @@ import { StoryPermissionService } from './story-permission.service';
 
 const WORKING_PREVIEW_CLIP_INCLUDE =
   Prisma.validator<Prisma.StoryFilmClipInclude>()({
+    revision: { select: { number: true } },
     currentVideoAsset: {
       include: {
         placements: true,
@@ -59,7 +60,6 @@ export class StoryWorkingPreviewService {
     user: AuthUser,
     workspaceId: string,
     projectId: string,
-    expectedDraftRevision: number,
   ): Promise<StoryWorkingPreviewDto> {
     const access = await this.permissions.requireProject(
       user.userId,
@@ -74,18 +74,12 @@ export class StoryWorkingPreviewService {
     }
 
     return this.prisma.$transaction(
-      (tx) =>
-        this.compileSavedDraft(
-          tx,
-          access.project,
-          projectId,
-          expectedDraftRevision,
-        ),
+      (tx) => this.compileLatestSavedDraft(tx, access.project, projectId),
       { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead },
     );
   }
 
-  private async compileSavedDraft(
+  private async compileLatestSavedDraft(
     tx: Prisma.TransactionClient,
     project: {
       id: string;
@@ -96,7 +90,6 @@ export class StoryWorkingPreviewService {
       summary: string | null;
     },
     projectId: string,
-    expectedDraftRevision: number,
   ): Promise<StoryWorkingPreviewDto> {
     const draft = await tx.storyDraft.findUnique({
       where: { storyProjectId: projectId },
@@ -105,14 +98,6 @@ export class StoryWorkingPreviewService {
       throw new NotFoundException({
         code: 'STORY_DRAFT_NOT_FOUND',
         message: 'Story draft not found.',
-      });
-    }
-    if (draft.revision !== expectedDraftRevision) {
-      throw new ConflictException({
-        code: 'DRAFT_REVISION_CONFLICT',
-        message: 'The saved draft changed before the working preview compiled.',
-        expectedRevision: expectedDraftRevision,
-        actualRevision: draft.revision,
       });
     }
     const actualHash = canonicalJsonHash(draft.content);
@@ -125,7 +110,7 @@ export class StoryWorkingPreviewService {
       });
     }
 
-    const playableDraft = createLockableInteractiveFilmDraftContentSchema(
+    const playableDraft = createPlayableInteractiveFilmDraftContentSchema(
       project.defaultLocale,
     ).safeParse(draft.content);
     if (!playableDraft.success) {
@@ -179,6 +164,7 @@ export class StoryWorkingPreviewService {
         frameProfile: project.frameProfile,
         defaultLocale: project.defaultLocale,
         defaultCanonicalModelId,
+        includeTrailer: false,
       });
     } catch (error) {
       return {
@@ -202,32 +188,45 @@ export class StoryWorkingPreviewService {
       };
     }
 
+    const projectedClips = projection.clipSpecs.map((spec) => ({
+      spec,
+      specHash: canonicalJsonHash(spec),
+    }));
+    const expectedSpecHashByNodeId = new Map(
+      projectedClips.map(({ spec, specHash }) => [spec.graphNodeId, specHash]),
+    );
     const currentClips = await tx.storyFilmClip.findMany({
       where: {
         storyProjectId: projectId,
         archivedAt: null,
-        revision: {
-          sourceDraftRevision: draft.revision,
-        },
         graphNodeId: {
-          in: projection.clipSpecs.map((clip) => clip.graphNodeId),
+          in: projectedClips.map(({ spec }) => spec.graphNodeId),
         },
+        specHash: {
+          in: [...new Set(projectedClips.map(({ specHash }) => specHash))],
+        },
+        currentVideoAssetId: { not: null },
+        currentVideoVariantId: { not: null },
       },
+      orderBy: [
+        { revision: { number: 'desc' } },
+        { currentVideoRevision: 'desc' },
+        { currentVideoSetAt: 'desc' },
+        { updatedAt: 'desc' },
+        { id: 'desc' },
+      ],
       include: WORKING_PREVIEW_CLIP_INCLUDE,
     });
-    const currentClipByNodeId = new Map(
-      currentClips.map((clip) => [clip.graphNodeId, clip]),
+    const currentClipByNodeId = selectNewestWorkingPreviewVideos(
+      currentClips,
+      expectedSpecHashByNodeId,
     );
-    const selections = projection.clipSpecs.map((clip) => {
-      const specHash = canonicalJsonHash(clip);
-      const currentVideo = selectWorkingPreviewVideo(
-        currentClipByNodeId.get(clip.graphNodeId) ?? null,
-        specHash,
-      );
+    const selections = projectedClips.map(({ spec, specHash }) => {
+      const currentVideo = currentClipByNodeId.get(spec.graphNodeId) ?? null;
       return {
         input: prepareWorkingPreviewClip(
           project.workspaceId,
-          clip,
+          spec,
           specHash,
           currentVideo,
         ),
@@ -235,7 +234,7 @@ export class StoryWorkingPreviewService {
           currentVideo?.currentVideoAssetId &&
           currentVideo.currentVideoVariantId
             ? {
-                graphNodeId: clip.graphNodeId,
+                graphNodeId: spec.graphNodeId,
                 assetId: currentVideo.currentVideoAssetId,
                 variantId: currentVideo.currentVideoVariantId,
                 sourceGenerationId: currentVideo.currentVideoSourceAttemptId,
@@ -484,6 +483,26 @@ export function selectWorkingPreviewVideo(
     clip.currentVideoVariantId !== null
     ? clip
     : null;
+}
+
+/**
+ * The database query is newest-first. Keep the first exact (node, spec)
+ * current pointer and never let a newer incompatible production projection
+ * hide an older reusable video whose immutable ClipSpec is still current.
+ */
+function selectNewestWorkingPreviewVideos(
+  clips: readonly WorkingPreviewClip[],
+  expectedSpecHashByNodeId: ReadonlyMap<string, string>,
+): Map<string, WorkingPreviewClip> {
+  const selected = new Map<string, WorkingPreviewClip>();
+  clips.forEach((clip) => {
+    if (selected.has(clip.graphNodeId)) return;
+    const expectedSpecHash = expectedSpecHashByNodeId.get(clip.graphNodeId);
+    if (!expectedSpecHash) return;
+    const current = selectWorkingPreviewVideo(clip, expectedSpecHash);
+    if (current) selected.set(clip.graphNodeId, current);
+  });
+  return selected;
 }
 
 function previewDiagnostic(

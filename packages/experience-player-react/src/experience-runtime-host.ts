@@ -9,17 +9,17 @@ import {
   type ExperienceRuntimeRestoreInput,
 } from "@repo/experience-engine";
 
-export interface WebExperienceRuntimeOptions {
+export interface ExperienceRuntimeOptions {
   rendererAdapters: readonly ExperienceRendererAdapter[];
   additionalCapabilities?: ReadonlySet<string>;
   randomSeed?: string;
   restore?: ExperienceRuntimeRestoreInput;
 }
 
-/** Web player adapter around the same headless controller used by Studio. */
-export function createWebExperienceRuntime(
+/** React host adapter around the shared headless experience controller. */
+export function createExperienceRuntime(
   manifest: ExperienceRuntimeManifest,
-  options: WebExperienceRuntimeOptions
+  options: ExperienceRuntimeOptions
 ): ExperienceRuntimeController {
   const rendererRegistry = new ExperienceRendererRegistry();
   options.rendererAdapters.forEach((adapter) => rendererRegistry.register(adapter));

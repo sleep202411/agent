@@ -70,6 +70,32 @@ export interface StoryVideoLibraryItem {
   createdAt: string;
 }
 
+export type StoryClipVideoFinalizationStatus =
+  | "queued"
+  | "processing"
+  | "ready"
+  | "failed"
+  | "expired"
+  | "cancelled";
+
+export interface StoryClipVideoFinalization {
+  mediaAssetId: string;
+  status: StoryClipVideoFinalizationStatus;
+  pollAfterMs: number | null;
+  item: StoryVideoLibraryItem | null;
+  error: { code: string; message: string } | null;
+}
+
+export class StoryClipVideoFinalizationError extends Error {
+  readonly code: string;
+
+  constructor(code: string, message: string) {
+    super(message);
+    this.name = "StoryClipVideoFinalizationError";
+    this.code = code;
+  }
+}
+
 export interface StoryRevisionSummary {
   id: string;
   number: number;
@@ -602,6 +628,22 @@ export interface FilmBuildAsset extends FrozenStoryAsset {
   role: string;
 }
 
+export interface FilmBuildPublication {
+  status: "pending" | "confirmed" | "uncertain" | "rejected";
+  gameId: string;
+  contentVersion: string;
+  manifestUrl: string | null;
+  publishedAt: string | null;
+  mediaAuthorizedAt: string;
+  mediaAuthorizationRevokedAt: string | null;
+  authorityIsCurrent: boolean | null;
+  authorityGameExists: boolean | null;
+  authorityCurrentVersion: string | null;
+  authorityCheckedAt: string | null;
+  lastErrorCode: string | null;
+  lastErrorDetail: string | null;
+}
+
 export interface FilmBuildSummary {
   id: string;
   number: number;
@@ -610,6 +652,7 @@ export interface FilmBuildSummary {
   status: FilmBuildStatus;
   sourceProductionRevision: number;
   diagnostics: FilmBuildDiagnostic[];
+  publication: FilmBuildPublication | null;
   createdAt: string;
   completedAt: string | null;
 }
@@ -632,6 +675,7 @@ export interface FilmBuild {
   assets: FilmBuildAsset[];
   diagnostics: FilmBuildDiagnostic[];
   pathReport: FilmBuildPathReport | null;
+  publication: FilmBuildPublication | null;
   createdByUserId: string;
   createdAt: string;
   completedAt: string | null;
@@ -642,6 +686,21 @@ export interface ExperienceReleaseResult {
   contentVersion: string;
   status: "published" | "draft";
   manifestUrl: string;
+}
+
+export interface StoryExperienceCurrentRelease {
+  projectId: string;
+  gameId: string;
+  published: boolean;
+  currentVersion: string | null;
+  manifestUrl: string | null;
+  currentBuild: {
+    id: string;
+    sourceRevisionId: string;
+    sourceDraftRevision: number;
+    sourceProductionRevision: number;
+  } | null;
+  checkedAt: string | null;
 }
 
 /**
@@ -784,6 +843,104 @@ export async function listStoryVideoLibrary(
   return page;
 }
 
+/**
+ * Finalizes a direct Story Studio clip-video upload into one reusable,
+ * workspace-owned original variant. The returned item can be passed directly
+ * to the existing current-video CAS mutation.
+ */
+export async function completeStoryClipVideoUpload(
+  workspaceId: string,
+  projectId: string,
+  input: { mediaAssetId: string },
+  signal?: AbortSignal
+): Promise<StoryClipVideoFinalization> {
+  const finalization = await api.post<StoryClipVideoFinalization>(
+    `/aurora/story-projects/${encodeURIComponent(projectId)}/video-library/uploads/complete`,
+    {
+      data: input,
+      headers: storyWorkspaceHeaders(workspaceId),
+      signal,
+    }
+  );
+  assertStoryClipVideoFinalization(finalization, input.mediaAssetId);
+  return finalization;
+}
+
+export async function getStoryClipVideoUploadFinalization(
+  workspaceId: string,
+  projectId: string,
+  mediaAssetId: string,
+  signal?: AbortSignal
+): Promise<StoryClipVideoFinalization> {
+  const finalization = await api.get<StoryClipVideoFinalization>(
+    `/aurora/story-projects/${encodeURIComponent(projectId)}/video-library/uploads/${encodeURIComponent(mediaAssetId)}`,
+    {
+      headers: storyWorkspaceHeaders(workspaceId),
+      signal,
+    }
+  );
+  assertStoryClipVideoFinalization(finalization, mediaAssetId);
+  return finalization;
+}
+
+/**
+ * Releases a Story clip upload that the browser abandoned before the server
+ * accepted asynchronous finalization. This request deliberately owns its own
+ * short timeout instead of reusing the already-aborted upload signal.
+ */
+export async function cancelStoryClipVideoUpload(
+  workspaceId: string,
+  projectId: string,
+  mediaAssetId: string
+): Promise<StoryClipVideoFinalization> {
+  const finalization = await api.delete<StoryClipVideoFinalization>(
+    `/aurora/story-projects/${encodeURIComponent(projectId)}/video-library/uploads/${encodeURIComponent(mediaAssetId)}`,
+    {
+      headers: storyWorkspaceHeaders(workspaceId),
+      timeout: 5_000,
+    }
+  );
+  assertStoryClipVideoFinalization(finalization, mediaAssetId);
+  return finalization;
+}
+
+export async function waitForStoryClipVideoUploadFinalization(
+  workspaceId: string,
+  projectId: string,
+  initial: StoryClipVideoFinalization,
+  options: {
+    signal?: AbortSignal;
+    onStatus?: (finalization: StoryClipVideoFinalization) => void;
+  } = {}
+): Promise<StoryVideoLibraryItem> {
+  let current = initial;
+  let fallbackDelayMs = 1_500;
+  throwIfStoryClipVideoPollAborted(options.signal);
+  options.onStatus?.(current);
+
+  while (current.status === "queued" || current.status === "processing") {
+    const delayMs = Math.min(5_000, Math.max(250, current.pollAfterMs ?? fallbackDelayMs));
+    await waitForStoryClipVideoPoll(delayMs, options.signal);
+    fallbackDelayMs = Math.min(5_000, Math.ceil(delayMs * 1.5));
+    current = await getStoryClipVideoUploadFinalization(
+      workspaceId,
+      projectId,
+      current.mediaAssetId,
+      options.signal
+    );
+    options.onStatus?.(current);
+  }
+
+  if (current.status === "ready" && current.item) {
+    throwIfStoryClipVideoPollAborted(options.signal);
+    return current.item;
+  }
+  throw new StoryClipVideoFinalizationError(
+    current.error?.code ?? "STORY_VIDEO_FINALIZE_FAILED",
+    current.error?.message ?? "The uploaded video could not be processed."
+  );
+}
+
 export async function getStoryWorkbench(
   workspaceId: string,
   projectId: string,
@@ -901,21 +1058,6 @@ export async function lockStoryRevision(
   );
 }
 
-export async function listFilmBuilds(
-  workspaceId: string,
-  projectId: string,
-  query: {
-    profile?: "preview" | "production";
-    cursor?: string;
-    limit?: number;
-  } = {}
-): Promise<CursorPage<FilmBuildSummary>> {
-  return api.get<CursorPage<FilmBuildSummary>>(
-    `/aurora/story-projects/${encodeURIComponent(projectId)}/builds`,
-    { params: query, headers: storyWorkspaceHeaders(workspaceId) }
-  );
-}
-
 export async function createFilmBuild(
   workspaceId: string,
   projectId: string,
@@ -944,18 +1086,6 @@ export async function getFilmBuild(
   );
 }
 
-export async function cancelFilmBuild(
-  workspaceId: string,
-  projectId: string,
-  buildId: string,
-  input: { expectedBuildVersion: number }
-): Promise<FilmBuild> {
-  return api.post<FilmBuild>(
-    `/aurora/story-projects/${encodeURIComponent(projectId)}/builds/${encodeURIComponent(buildId)}/cancel`,
-    { data: input, headers: storyWorkspaceHeaders(workspaceId) }
-  );
-}
-
 export async function publishFilmBuild(
   workspaceId: string,
   projectId: string,
@@ -965,6 +1095,16 @@ export async function publishFilmBuild(
   return api.post<ExperienceReleaseResult>(
     `/aurora/story-projects/${encodeURIComponent(projectId)}/builds/${encodeURIComponent(buildId)}/publish`,
     { data: input, headers: storyWorkspaceHeaders(workspaceId) }
+  );
+}
+
+export async function getStoryExperienceCurrentRelease(
+  workspaceId: string,
+  projectId: string
+): Promise<StoryExperienceCurrentRelease> {
+  return api.get<StoryExperienceCurrentRelease>(
+    `/aurora/story-projects/${encodeURIComponent(projectId)}/releases/current`,
+    { headers: storyWorkspaceHeaders(workspaceId) }
   );
 }
 
@@ -1007,13 +1147,11 @@ export async function createFilmRevisionClipGeneration(
 
 export async function getStoryWorkingPreview(
   workspaceId: string,
-  projectId: string,
-  expectedDraftRevision: number
+  projectId: string
 ): Promise<StoryWorkingPreview> {
   return api.get<StoryWorkingPreview>(
     `/aurora/story-projects/${encodeURIComponent(projectId)}/working-preview`,
     {
-      params: { expectedDraftRevision },
       headers: storyWorkspaceHeaders(workspaceId),
     }
   );
@@ -1447,6 +1585,82 @@ function assertStoryVideoLibraryItem(value: unknown): asserts value is StoryVide
   ) {
     throw new Error("Story Studio API returned an invalid video library item.");
   }
+}
+
+function assertStoryClipVideoFinalization(
+  value: unknown,
+  expectedMediaAssetId: string
+): asserts value is StoryClipVideoFinalization {
+  if (!value || typeof value !== "object") {
+    throw new Error("Story Studio API returned an invalid video finalization state.");
+  }
+  const finalization = value as Partial<StoryClipVideoFinalization>;
+  const pending = finalization.status === "queued" || finalization.status === "processing";
+  const terminalFailure =
+    finalization.status === "failed" ||
+    finalization.status === "expired" ||
+    finalization.status === "cancelled";
+  if (
+    finalization.mediaAssetId !== expectedMediaAssetId ||
+    (!pending && finalization.status !== "ready" && !terminalFailure) ||
+    (pending &&
+      (!Number.isFinite(finalization.pollAfterMs) ||
+        (finalization.pollAfterMs ?? 0) <= 0 ||
+        finalization.item !== null ||
+        finalization.error !== null)) ||
+    (!pending && finalization.pollAfterMs !== null)
+  ) {
+    throw new Error("Story Studio API returned an invalid video finalization state.");
+  }
+
+  if (finalization.status === "ready") {
+    if (finalization.error !== null) {
+      throw new Error("Story Studio API returned an invalid video finalization state.");
+    }
+    assertStoryVideoLibraryItem(finalization.item);
+    return;
+  }
+
+  if (
+    terminalFailure &&
+    (finalization.item !== null ||
+      !finalization.error ||
+      !nonEmptyString(finalization.error.code) ||
+      !nonEmptyString(finalization.error.message))
+  ) {
+    throw new Error("Story Studio API returned an invalid video finalization state.");
+  }
+}
+
+function waitForStoryClipVideoPoll(delayMs: number, signal?: AbortSignal): Promise<void> {
+  return new Promise((resolve, reject) => {
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const abort = () => {
+      if (timer !== null) clearTimeout(timer);
+      signal?.removeEventListener("abort", abort);
+      reject(
+        signal?.reason instanceof Error
+          ? signal.reason
+          : new DOMException("Request aborted", "AbortError")
+      );
+    };
+    if (signal?.aborted) {
+      abort();
+      return;
+    }
+    timer = setTimeout(() => {
+      signal?.removeEventListener("abort", abort);
+      resolve();
+    }, delayMs);
+    signal?.addEventListener("abort", abort, { once: true });
+  });
+}
+
+function throwIfStoryClipVideoPollAborted(signal?: AbortSignal): void {
+  if (!signal?.aborted) return;
+  throw signal.reason instanceof Error
+    ? signal.reason
+    : new DOMException("Request aborted", "AbortError");
 }
 
 function nonEmptyString(value: unknown): value is string {

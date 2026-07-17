@@ -6,6 +6,11 @@ import {
   type ExperienceThemeConfig,
 } from "@repo/shared/experience-runtime";
 
+export type ExperienceThemeLoader = (
+  manifest: ExperienceRuntimeManifest,
+  signal?: AbortSignal
+) => Promise<ExperienceThemeConfig>;
+
 /** Client-side theme boundary; immutable config assets are hash-verified before use. */
 export async function loadExperienceTheme(
   manifest: ExperienceRuntimeManifest,

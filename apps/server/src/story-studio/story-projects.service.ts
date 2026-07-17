@@ -508,6 +508,30 @@ export class StoryProjectsService {
     const contentHash = canonicalJsonHash(input.content);
 
     const saved = await this.prisma.$transaction(async (tx) => {
+      const current = await tx.storyDraft.findUnique({
+        where: { storyProjectId: projectId },
+      });
+      if (!current || current.revision !== input.expectedRevision) return null;
+
+      const currentActualHash = canonicalJsonHash(current.content);
+      if (currentActualHash !== current.contentHash) {
+        throw new ConflictException({
+          code: 'DRAFT_INTEGRITY_ERROR',
+          message: 'The stored draft content does not match its hash.',
+          expectedHash: current.contentHash,
+          actualHash: currentActualHash,
+        });
+      }
+      // Autosave, navigation flush and retry may legitimately converge on the
+      // same canonical payload. Treat that as an idempotent read of the saved
+      // head: revisions represent content changes, not transport attempts.
+      if (
+        current.schemaVersion === input.schemaVersion &&
+        current.contentHash === contentHash
+      ) {
+        return current;
+      }
+
       const claimed = await tx.storyDraft.updateMany({
         where: {
           storyProjectId: projectId,
@@ -723,9 +747,9 @@ export class StoryProjectsService {
                 })),
               });
             }
-            // Draft normalisation is part of the immutable Revision contract.
-            // Legacy v1 heads may omit fields with explicit schema defaults;
-            // hash the exact normalized JSON that is written to StoryRevision.
+            // Clip-prompt normalization is part of the immutable Revision
+            // contract. Hash the exact canonical v2 JSON written to the
+            // revision; malformed or incomplete stored drafts fail above.
             const revisionContentHash = canonicalJsonHash(lockable.data);
 
             const existing = await tx.storyRevision.findUnique({
@@ -909,8 +933,18 @@ export class StoryProjectsService {
     const existingTrailer = await tx.storyFilmTrailer.findUnique({
       where: { revisionId: input.revision.id },
     });
+    // `trailerSpec: null` is an intentional production disposition: the
+    // Revision's full gameplay is valid, while its optional trailer is absent
+    // or still an authoring draft. Only a projector-validated trailer may
+    // create or inherit trailer-production state.
+    const productionReadyTrailer = projection.trailerSpec
+      ? {
+          spec: projection.trailerSpec,
+          specHash: canonicalJsonHash(projection.trailerSpec),
+        }
+      : null;
     const priorTrailer =
-      existingTrailer || !projection.trailerSpec
+      existingTrailer || !productionReadyTrailer
         ? null
         : await tx.storyFilmTrailer.findFirst({
             where: {
@@ -924,22 +958,20 @@ export class StoryProjectsService {
               { id: 'desc' },
             ],
           });
-    const expectedTrailerHash = projection.trailerSpec
-      ? canonicalJsonHash(projection.trailerSpec)
-      : null;
     if (existingTrailer) {
       if (
-        !projection.trailerSpec ||
+        !productionReadyTrailer ||
         existingTrailer.storyProjectId !== input.project.id ||
-        existingTrailer.specHash !== expectedTrailerHash ||
-        canonicalJsonHash(existingTrailer.specJson) !== expectedTrailerHash
+        existingTrailer.specHash !== productionReadyTrailer.specHash ||
+        canonicalJsonHash(existingTrailer.specJson) !==
+          productionReadyTrailer.specHash
       ) {
         throwProjectionConflict(
           'The existing film trailer does not match its immutable revision.',
         );
       }
-    } else if (projection.trailerSpec) {
-      const trailer = projection.trailerSpec;
+    } else if (productionReadyTrailer) {
+      const trailer = productionReadyTrailer.spec;
       await tx.storyFilmTrailer.create({
         data: {
           storyProjectId: input.project.id,
@@ -957,7 +989,7 @@ export class StoryProjectsService {
               : null,
           targetDurationMs: trailer.targetDurationMs,
           specJson: trailer as Prisma.InputJsonObject,
-          specHash: expectedTrailerHash!,
+          specHash: productionReadyTrailer.specHash,
           ...carriedCurrentVideoData(priorTrailer),
           createdByUserId: input.userId,
           updatedByUserId: input.userId,
@@ -1178,6 +1210,25 @@ export class StoryProjectsService {
                     sourceRevisionId: selectedRevision.id,
                   },
                   orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+                  include: {
+                    experiencePublication: {
+                      select: {
+                        status: true,
+                        gameId: true,
+                        contentVersion: true,
+                        manifestUrl: true,
+                        publishedAt: true,
+                        mediaAuthorizedAt: true,
+                        mediaAuthorizationRevokedAt: true,
+                        authorityIsCurrent: true,
+                        authorityGameExists: true,
+                        authorityCurrentVersion: true,
+                        authorityCheckedAt: true,
+                        lastErrorCode: true,
+                        lastErrorDetail: true,
+                      },
+                    },
+                  },
                 }),
               ]);
             film = {
@@ -1677,6 +1728,21 @@ export class StoryProjectsService {
     status: FilmBuildSummaryDto['status'];
     sourceProductionRevision: number;
     diagnostics: Prisma.JsonValue;
+    experiencePublication: {
+      status: 'pending' | 'confirmed' | 'uncertain' | 'rejected';
+      gameId: string;
+      contentVersion: string;
+      manifestUrl: string | null;
+      publishedAt: Date | null;
+      mediaAuthorizedAt: Date;
+      mediaAuthorizationRevokedAt: Date | null;
+      authorityIsCurrent: boolean | null;
+      authorityGameExists: boolean | null;
+      authorityCurrentVersion: string | null;
+      authorityCheckedAt: Date | null;
+      lastErrorCode: string | null;
+      lastErrorDetail: string | null;
+    } | null;
     createdAt: Date;
     completedAt: Date | null;
   }): FilmBuildSummaryDto {
@@ -1692,6 +1758,30 @@ export class StoryProjectsService {
       status: row.status,
       sourceProductionRevision: row.sourceProductionRevision,
       diagnostics: buildDiagnostics(row.diagnostics),
+      publication: row.experiencePublication
+        ? {
+            status: row.experiencePublication.status,
+            gameId: row.experiencePublication.gameId,
+            contentVersion: row.experiencePublication.contentVersion,
+            manifestUrl: row.experiencePublication.manifestUrl,
+            publishedAt:
+              row.experiencePublication.publishedAt?.toISOString() ?? null,
+            mediaAuthorizedAt:
+              row.experiencePublication.mediaAuthorizedAt.toISOString(),
+            mediaAuthorizationRevokedAt:
+              row.experiencePublication.mediaAuthorizationRevokedAt?.toISOString() ??
+              null,
+            authorityIsCurrent: row.experiencePublication.authorityIsCurrent,
+            authorityGameExists: row.experiencePublication.authorityGameExists,
+            authorityCurrentVersion:
+              row.experiencePublication.authorityCurrentVersion,
+            authorityCheckedAt:
+              row.experiencePublication.authorityCheckedAt?.toISOString() ??
+              null,
+            lastErrorCode: row.experiencePublication.lastErrorCode,
+            lastErrorDetail: row.experiencePublication.lastErrorDetail,
+          }
+        : null,
       createdAt: row.createdAt.toISOString(),
       completedAt: row.completedAt?.toISOString() ?? null,
     };

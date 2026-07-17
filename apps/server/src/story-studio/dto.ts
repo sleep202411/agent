@@ -265,13 +265,23 @@ export type StoryProjectVideoLibraryQuery = z.infer<
   typeof StoryProjectVideoLibraryQuerySchema
 >;
 
-export const StoryWorkingPreviewQuerySchema = z
+export const CompleteStoryProjectVideoUploadSchema = z
   .object({
-    expectedDraftRevision: z.coerce.number().int().nonnegative(),
+    mediaAssetId: StoryUuidSchema,
   })
   .strict();
-export type StoryWorkingPreviewQuery = z.infer<
-  typeof StoryWorkingPreviewQuerySchema
+export type CompleteStoryProjectVideoUpload = z.infer<
+  typeof CompleteStoryProjectVideoUploadSchema
+>;
+
+export const StoryProjectVideoUploadParamsSchema = z
+  .object({
+    projectId: StoryUuidSchema,
+    mediaAssetId: StoryUuidSchema,
+  })
+  .strict();
+export type StoryProjectVideoUploadParams = z.infer<
+  typeof StoryProjectVideoUploadParamsSchema
 >;
 
 export const StoryRevisionListQuerySchema = z
@@ -770,6 +780,22 @@ export interface StoryProjectVideoLibraryItemDto {
   createdAt: string;
 }
 
+export type StoryProjectVideoUploadFinalizeStatus =
+  | 'queued'
+  | 'processing'
+  | 'ready'
+  | 'failed'
+  | 'expired'
+  | 'cancelled';
+
+export interface StoryProjectVideoUploadFinalizeDto {
+  mediaAssetId: string;
+  status: StoryProjectVideoUploadFinalizeStatus;
+  pollAfterMs: number | null;
+  item: StoryProjectVideoLibraryItemDto | null;
+  error: { code: string; message: string } | null;
+}
+
 export interface StoryRevisionSummaryDto {
   id: string;
   number: number;
@@ -1091,6 +1117,44 @@ export interface FilmBuildAssetDto extends FrozenStoryAssetDto {
   role: string;
 }
 
+export interface FilmBuildPublicationDto {
+  status: FilmBuildPublicationLifecycleStatus;
+  gameId: string;
+  contentVersion: string;
+  manifestUrl: string | null;
+  publishedAt: string | null;
+  mediaAuthorizedAt: string;
+  mediaAuthorizationRevokedAt: string | null;
+  authorityIsCurrent: boolean | null;
+  authorityGameExists: boolean | null;
+  authorityCurrentVersion: string | null;
+  authorityCheckedAt: string | null;
+  lastErrorCode: string | null;
+  lastErrorDetail: string | null;
+}
+
+export type FilmBuildPublicationLifecycleStatus =
+  | 'pending'
+  | 'confirmed'
+  | 'uncertain'
+  | 'rejected';
+
+/** Fresh projection of Java's player-visible current version. */
+export interface StoryExperienceCurrentReleaseDto {
+  projectId: string;
+  gameId: string;
+  published: boolean;
+  currentVersion: string | null;
+  manifestUrl: string | null;
+  currentBuild: {
+    id: string;
+    sourceRevisionId: string;
+    sourceDraftRevision: number;
+    sourceProductionRevision: number;
+  } | null;
+  checkedAt: string | null;
+}
+
 export interface FilmBuildDto {
   id: string;
   projectId: string;
@@ -1109,6 +1173,7 @@ export interface FilmBuildDto {
   assets: FilmBuildAssetDto[];
   diagnostics: FilmBuildDiagnosticDto[];
   pathReport: FilmBuildPathReportDto | null;
+  publication: FilmBuildPublicationDto | null;
   createdByUserId: string;
   createdAt: string;
   completedAt: string | null;
@@ -1141,6 +1206,7 @@ export type FilmBuildSummaryDto = Pick<
   | 'status'
   | 'sourceProductionRevision'
   | 'diagnostics'
+  | 'publication'
   | 'createdAt'
   | 'completedAt'
 >;

@@ -17,6 +17,7 @@ import {
   ExperienceCoreChargeFeedbackRendererConfigSchema,
   ExperienceCoreVideoRendererConfigSchema,
   type ExperienceLocalizedText,
+  type ExperienceOrientation,
   type ExperienceRuntimeManifest,
   type ExperienceScene,
   type ExperienceSpatialAnchor,
@@ -38,19 +39,7 @@ import {
   type ExperienceRuntimeState,
   type ExperienceSize,
 } from "@repo/experience-engine";
-import { cn } from "@/lib/utils";
-import type { StoryFrameProfile } from "@/lib/story-projects-api";
-
-interface SpatialInteractionLayerProps {
-  manifest: ExperienceRuntimeManifest;
-  scene: ExperienceScene;
-  runtimeState: ExperienceRuntimeState;
-  sceneTimeMs: number;
-  locale: string;
-  frameProfile: StoryFrameProfile;
-  onEvents: (events: readonly ExperienceRuntimeEvent[]) => void;
-  onRuntimeError: (message: string) => void;
-}
+import { classNames } from "./class-names";
 
 type PressHoldPresentation = {
   anchor: ExperienceSpatialAnchor;
@@ -64,25 +53,33 @@ type PressHoldPresentation = {
   available: boolean;
 };
 
-export function ExperienceSpatialInteractionLayer({
+export function ExperienceSpatialLayer({
   manifest,
   scene,
   runtimeState,
   sceneTimeMs,
   locale,
-  frameProfile,
+  orientation,
   onEvents,
   onRuntimeError,
-}: SpatialInteractionLayerProps) {
+}: {
+  manifest: ExperienceRuntimeManifest;
+  scene: ExperienceScene;
+  runtimeState: ExperienceRuntimeState;
+  sceneTimeMs: number;
+  locale: string;
+  orientation: ExperienceOrientation;
+  onEvents: (events: readonly ExperienceRuntimeEvent[]) => void;
+  onRuntimeError: (message: string) => void;
+}) {
   const layerRef = useRef<HTMLDivElement>(null);
   const viewportSize = useElementSize(layerRef);
-  const orientation = frameProfile === "portrait_9_16" ? "portrait" : "landscape";
   const rendererTransforms = useMemo(
     () =>
       viewportSize
-        ? createRendererContentTransforms(manifest, scene, frameProfile, sceneTimeMs, viewportSize)
+        ? createRendererContentTransforms(manifest, scene, orientation, sceneTimeMs, viewportSize)
         : new Map<string, ExperienceMediaContentTransform>(),
-    [frameProfile, manifest, scene, sceneTimeMs, viewportSize]
+    [manifest, orientation, scene, sceneTimeMs, viewportSize]
   );
 
   const presentations = useMemo(() => {
@@ -229,10 +226,7 @@ function PressHoldControl({
             pointerInside: pointerInsideRef.current,
             deltaMs,
           },
-          {
-            state: current.runtimeState,
-            sceneTimeMs: current.sceneTimeMs,
-          }
+          { state: current.runtimeState, sceneTimeMs: current.sceneTimeMs }
         );
         stateRef.current = result.state;
         setState(result.state);
@@ -288,8 +282,7 @@ function PressHoldControl({
   );
 
   const startPress = () => {
-    if (!presentation.available) return;
-    if (stateRef.current.status === "completed") return;
+    if (!presentation.available || stateRef.current.status === "completed") return;
     pressedRef.current = true;
     pointerInsideRef.current = true;
     step(0);
@@ -335,13 +328,13 @@ function PressHoldControl({
     zIndex: presentation.layer,
   } satisfies CSSProperties;
   const indicatorStyle = {
-    background: `conic-gradient(var(--experience-color-accent,#ef233c) ${progressDegrees}deg,rgba(255,255,255,.18) ${progressDegrees}deg)`,
+    background: `conic-gradient(var(--experience-color-accent,#ea2804) ${progressDegrees}deg,rgba(255,255,255,.18) ${progressDegrees}deg)`,
   } satisfies CSSProperties;
 
   return (
     <button
       type="button"
-      className={cn(
+      className={classNames(
         "pointer-events-auto absolute touch-none select-none outline-none transition-opacity",
         !presentation.available && "pointer-events-none opacity-0"
       )}
@@ -363,9 +356,8 @@ function PressHoldControl({
       onClick={(event) => event.preventDefault()}
     >
       <span
-        className={cn(
+        className={classNames(
           "absolute top-1/2 left-1/2 grid size-12 -translate-x-1/2 -translate-y-1/2 place-items-center rounded-full p-[3px] shadow-[0_8px_32px_rgba(0,0,0,0.38)] transition-transform",
-          "focus-within:scale-105",
           state.status === "pressing" && "scale-105",
           state.status === "completed" && "scale-110"
         )}
@@ -373,7 +365,7 @@ function PressHoldControl({
         aria-hidden="true"
       >
         <span
-          className={cn(
+          className={classNames(
             "size-full rounded-full border border-white/20 bg-black/60 backdrop-blur-md",
             presentation.appearance === "target" &&
               "before:absolute before:inset-3 before:rounded-full before:border before:border-white/55"
@@ -388,7 +380,7 @@ function PressHoldControl({
 function createRendererContentTransforms(
   manifest: ExperienceRuntimeManifest,
   scene: ExperienceScene,
-  frameProfile: StoryFrameProfile,
+  orientation: ExperienceOrientation,
   sceneTimeMs: number,
   viewportSize: ExperienceSize
 ): ReadonlyMap<string, ExperienceMediaContentTransform> {
@@ -396,13 +388,12 @@ function createRendererContentTransforms(
   scene.renderers.forEach((renderer) => {
     if (renderer.rendererId !== EXPERIENCE_CORE_VIDEO_RENDERER_ID) return;
     const config = ExperienceCoreVideoRendererConfigSchema.parse(renderer.config);
-    const clip = videoSequenceClipAtTime(manifest, config.sequence, sceneTimeMs, frameProfile);
+    const clip = videoSequenceClipAtTime(manifest, config.sequence, sceneTimeMs, orientation);
     if (!clip) return;
     const media = manifest.assets.find(
       (asset) => asset.assetId === clip.assetId && asset.kind === "video"
     );
     if (!media || media.kind !== "video") return;
-    const orientation = frameProfile === "portrait_9_16" ? "portrait" : "landscape";
     const variant =
       media.variants.find((candidate) => candidate.orientation === orientation) ??
       media.variants[0];
@@ -423,7 +414,7 @@ function videoSequenceClipAtTime(
   manifest: ExperienceRuntimeManifest,
   sequence: readonly { assetId: string }[],
   sceneTimeMs: number,
-  frameProfile: StoryFrameProfile
+  orientation: ExperienceOrientation
 ): { assetId: string } | undefined {
   let offset = 0;
   for (const clip of sequence) {
@@ -431,7 +422,6 @@ function videoSequenceClipAtTime(
       (candidate) => candidate.assetId === clip.assetId && candidate.kind === "video"
     );
     if (!asset || asset.kind !== "video") continue;
-    const orientation = frameProfile === "portrait_9_16" ? "portrait" : "landscape";
     const variant =
       asset.variants.find((candidate) => candidate.orientation === orientation) ??
       asset.variants[0];
@@ -463,9 +453,7 @@ function useElementSize(ref: RefObject<HTMLElement | null>): ExperienceSize | nu
     if (!element) return;
     const update = () => {
       const rect = element.getBoundingClientRect();
-      if (rect.width > 0 && rect.height > 0) {
-        setSize({ width: rect.width, height: rect.height });
-      }
+      if (rect.width > 0 && rect.height > 0) setSize({ width: rect.width, height: rect.height });
     };
     update();
     const observer = new ResizeObserver(update);

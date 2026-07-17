@@ -868,19 +868,20 @@ model Workspace {
   updatedAt        DateTime        @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
   deletedAt        DateTime?       @map("deleted_at") @db.Timestamptz(6)
 
-  members          WorkspaceMember[]
-  invites          WorkspaceInvite[]
-  projects         PlatformProject[]
-  auditLogs        PlatformAuditLog[]
-  projectAssets    ProjectAsset[]
-  aiJobs           AiJob[]
-  mediaAssets      MediaAsset[]
-  storyProjects    StoryProject[]
-  studioCharacters StudioCharacter[]
-  mediaAssetUsages MediaAssetUsage[]
-  documents        PlatformDocument[]
-  billingOrders    BillingOrder[]
-  subscriptions    BillingSubscription[]
+  members                  WorkspaceMember[]
+  invites                  WorkspaceInvite[]
+  projects                 PlatformProject[]
+  auditLogs                PlatformAuditLog[]
+  projectAssets            ProjectAsset[]
+  aiJobs                   AiJob[]
+  mediaAssets              MediaAsset[]
+  storyVideoUploadSessions StoryVideoUploadSession[]
+  storyProjects            StoryProject[]
+  studioCharacters         StudioCharacter[]
+  mediaAssetUsages         MediaAssetUsage[]
+  documents                PlatformDocument[]
+  billingOrders            BillingOrder[]
+  subscriptions            BillingSubscription[]
 
   /// Active personal uniqueness is enforced by partial unique SQL:
   /// (owner_user_id) WHERE type='personal' AND deleted_at IS NULL.
@@ -5741,6 +5742,7 @@ model MediaAsset {
   moderationCases                             MediaModerationCase[]
   moderationActions                           MediaModerationAction[]
   processingJobs                              MediaProcessingJob[]
+  storyVideoUploadSession                     StoryVideoUploadSession?
 
   @@index([storageProvider, bucket, objectKey], map: "media_assets_storage_lookup_idx")
   @@index([workspaceId, source, createdAt(sort: Desc)], map: "media_assets_workspace_source_recent_idx")
@@ -6331,6 +6333,30 @@ enum StoryBuildKind {
   production
 }
 
+/// Durable state of a publication request sent to the Java player authority.
+/// `uncertain` means the request may have been accepted and therefore must not
+/// be treated as a rejection until authority reconciliation proves identity.
+enum StoryExperiencePublicationStatus {
+  pending
+  confirmed
+  uncertain
+  rejected
+}
+
+/// Durable lifecycle for a creator-uploaded Story clip. The browser may write
+/// only to `stagingObjectKey`; a server worker verifies the bytes and promotes
+/// them to a server-chosen immutable final key before the MediaAsset is ready.
+enum StoryVideoUploadStatus {
+  issued
+  confirmed
+  queued
+  processing
+  ready
+  failed
+  expired
+  cancelled
+}
+
 enum StoryAssetRole {
   video
   audio
@@ -6445,6 +6471,7 @@ model StoryProject {
   canvasLayout                           StoryCanvasLayout?
   revisions                              StoryRevision[]
   builds                                 StoryBuild[]
+  experiencePublications                 StoryExperiencePublication[]
   filmSpecs                              StoryFilmSpec[]
   filmTrailerHead                        StoryFilmTrailerHead?
   filmClipHeads                          StoryFilmClipHead[]
@@ -6462,11 +6489,64 @@ model StoryProject {
   filmContinuityChecks                   StoryFilmContinuityCheck[]
   filmBuildClips                         StoryFilmBuildClip[]
   storyBuildAssets                       StoryBuildAsset[]
+  videoUploadSessions                    StoryVideoUploadSession[]
 
   @@unique([id, workspaceId], map: "story_projects_id_workspace_unique")
   @@index([workspaceId, format, status, updatedAt(sort: Desc)], map: "story_projects_workspace_format_recent_idx")
   @@index([createdByUserId, status, updatedAt(sort: Desc)], map: "story_projects_creator_recent_idx")
   @@map("story_projects")
+}
+
+model StoryVideoUploadSession {
+  id              String                 @id @default(uuid(7)) @db.Uuid
+  storyProjectId  String                 @map("story_project_id") @db.Uuid
+  workspaceId     String                 @map("workspace_id") @db.Uuid
+  mediaAssetId    String                 @unique @map("media_asset_id") @db.Uuid
+  createdByUserId String                 @map("created_by_user_id") @db.VarChar(64)
+  status          StoryVideoUploadStatus @default(issued)
+
+  storageProvider   MediaStorageProvider @map("storage_provider")
+  bucket            String?              @db.VarChar(128)
+  region            String?              @db.VarChar(64)
+  stagingObjectKey  String               @unique @map("staging_object_key") @db.VarChar(1024)
+  finalObjectKey    String?              @map("final_object_key") @db.VarChar(1024)
+  contentType       String               @map("content_type") @db.VarChar(128)
+  declaredSizeBytes BigInt               @map("declared_size_bytes")
+  actualSizeBytes   BigInt?              @map("actual_size_bytes")
+
+  expiresAt       DateTime  @map("expires_at") @db.Timestamptz(6)
+  reclaimAfter    DateTime? @map("reclaim_after") @db.Timestamptz(6)
+  attemptCount    Int       @default(0) @map("attempt_count")
+  maxAttempts     Int       @default(10) @map("max_attempts")
+  nextAttemptAt   DateTime? @map("next_attempt_at") @db.Timestamptz(6)
+  leaseOwner      String?   @map("lease_owner") @db.VarChar(160)
+  leaseAcquiredAt DateTime? @map("lease_acquired_at") @db.Timestamptz(6)
+  leaseExpiresAt  DateTime? @map("lease_expires_at") @db.Timestamptz(6)
+
+  errorCode          String?   @map("error_code") @db.VarChar(128)
+  errorDetail        String?   @map("error_detail") @db.Text
+  confirmedAt        DateTime? @map("confirmed_at") @db.Timestamptz(6)
+  queuedAt           DateTime? @map("queued_at") @db.Timestamptz(6)
+  processingAt       DateTime? @map("processing_at") @db.Timestamptz(6)
+  completedAt        DateTime? @map("completed_at") @db.Timestamptz(6)
+  failedAt           DateTime? @map("failed_at") @db.Timestamptz(6)
+  cancelledAt        DateTime? @map("cancelled_at") @db.Timestamptz(6)
+  stagingReclaimedAt DateTime? @map("staging_reclaimed_at") @db.Timestamptz(6)
+  finalReclaimedAt   DateTime? @map("final_reclaimed_at") @db.Timestamptz(6)
+  finalReclaimAfter  DateTime? @map("final_reclaim_after") @db.Timestamptz(6)
+  createdAt          DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt          DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  project    StoryProject @relation(fields: [storyProjectId, workspaceId], references: [id, workspaceId], onDelete: Restrict)
+  workspace  Workspace    @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+  mediaAsset MediaAsset   @relation(fields: [mediaAssetId], references: [id], onDelete: Restrict)
+
+  @@index([createdByUserId, workspaceId, status, expiresAt], map: "story_video_upload_sessions_user_active_idx")
+  @@index([status, nextAttemptAt, leaseExpiresAt], map: "story_video_upload_sessions_claim_idx")
+  @@index([status, reclaimAfter], map: "story_video_upload_sessions_reclaim_idx")
+  @@index([status, finalReclaimAfter], map: "story_video_upload_sessions_final_reclaim_idx")
+  @@index([storyProjectId, createdAt(sort: Desc)], map: "story_video_upload_sessions_project_recent_idx")
+  @@map("story_video_upload_sessions")
 }
 
 model StoryCanvasLayout {
@@ -6591,15 +6671,89 @@ model StoryBuild {
   createdAt                DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt                DateTime         @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  project        StoryProject         @relation(fields: [storyProjectId], references: [id], onDelete: Restrict)
-  sourceRevision StoryRevision        @relation(fields: [sourceRevisionId], references: [id], onDelete: Restrict)
-  assets         StoryBuildAsset[]
-  filmClips      StoryFilmBuildClip[]
+  project               StoryProject                @relation(fields: [storyProjectId], references: [id], onDelete: Restrict)
+  sourceRevision        StoryRevision               @relation(fields: [sourceRevisionId], references: [id], onDelete: Restrict)
+  assets                StoryBuildAsset[]
+  filmClips             StoryFilmBuildClip[]
+  experiencePublication StoryExperiencePublication?
 
   @@unique([storyProjectId, buildNumber], map: "story_builds_project_number_unique")
   @@unique([id, storyProjectId], map: "story_builds_id_project_unique")
   @@index([storyProjectId, status, createdAt(sort: Desc)], map: "story_builds_project_status_recent_idx")
   @@map("story_builds")
+}
+
+/// Durable publication lifecycle for one exact immutable Build. The row and
+/// its media authorization are persisted before contacting Java. Java remains
+/// the current-version authority and owns the CDN Manifest; reconciliation
+/// records what Java most recently reported without rewriting release identity.
+model StoryExperiencePublication {
+  id                  String                           @id @default(uuid(7)) @db.Uuid
+  buildId             String                           @unique @map("build_id") @db.Uuid
+  storyProjectId      String                           @map("story_project_id") @db.Uuid
+  gameId              String                           @map("game_id") @db.VarChar(160)
+  contentVersion      String                           @map("content_version") @db.VarChar(160)
+  status              StoryExperiencePublicationStatus @default(pending)
+  requestedSetCurrent Boolean                          @default(true) @map("requested_set_current")
+  requestedByUserId   String                           @map("requested_by_user_id") @db.VarChar(64)
+
+  /// An explicit grant for anonymous exchange of this Build's frozen stable
+  /// media URIs. The grant timestamp is immutable and created before Java can
+  /// fetch the Manifest. Only a definitive `rejected` result may append a
+  /// revocation; pending, uncertain, and confirmed rows remain authorized.
+  mediaAuthorizedAt           DateTime  @default(now()) @map("media_authorized_at") @db.Timestamptz(6)
+  mediaAuthorizationRevokedAt DateTime? @map("media_authorization_revoked_at") @db.Timestamptz(6)
+
+  /// Java response fields are unknown while pending/uncertain and become
+  /// immutable once a matching acknowledgement has been confirmed.
+  manifestUrl String?   @map("manifest_url") @db.Text
+  publishedAt DateTime? @map("published_at") @db.Timestamptz(6)
+  rejectedAt  DateTime? @map("rejected_at") @db.Timestamptz(6)
+
+  attemptCount          Int       @default(0) @map("attempt_count")
+  firstAttemptAt        DateTime? @map("first_attempt_at") @db.Timestamptz(6)
+  lastAttemptAt         DateTime? @map("last_attempt_at") @db.Timestamptz(6)
+  nextAttemptAt         DateTime? @map("next_attempt_at") @db.Timestamptz(6)
+  lastAttemptedByUserId String?   @map("last_attempted_by_user_id") @db.VarChar(64)
+  leaseOwner            String?   @map("lease_owner") @db.VarChar(160)
+  leaseAcquiredAt       DateTime? @map("lease_acquired_at") @db.Timestamptz(6)
+  leaseExpiresAt        DateTime? @map("lease_expires_at") @db.Timestamptz(6)
+  lastErrorCode         String?   @map("last_error_code") @db.VarChar(128)
+  lastErrorDetail       String?   @map("last_error_detail") @db.Text
+  lastErrorAt           DateTime? @map("last_error_at") @db.Timestamptz(6)
+
+  /// Snapshot from Java's current-version query. A confirmed publication may
+  /// later become non-current without losing its media authorization.
+  authorityIsCurrent      Boolean?  @map("authority_is_current")
+  authorityGameExists     Boolean?  @map("authority_game_exists")
+  authorityCurrentVersion String?   @map("authority_current_version") @db.VarChar(160)
+  authorityManifestUrl    String?   @map("authority_manifest_url") @db.Text
+  authorityCheckedAt      DateTime? @map("authority_checked_at") @db.Timestamptz(6)
+
+  reconciliationAttemptCount    Int       @default(0) @map("reconciliation_attempt_count")
+  lastReconciliationAttemptAt   DateTime? @map("last_reconciliation_attempt_at") @db.Timestamptz(6)
+  nextReconciliationAt          DateTime? @map("next_reconciliation_at") @db.Timestamptz(6)
+  reconciliationLeaseOwner      String?   @map("reconciliation_lease_owner") @db.VarChar(160)
+  reconciliationLeaseAcquiredAt DateTime? @map("reconciliation_lease_acquired_at") @db.Timestamptz(6)
+  reconciliationLeaseExpiresAt  DateTime? @map("reconciliation_lease_expires_at") @db.Timestamptz(6)
+  lastReconciliationErrorCode   String?   @map("last_reconciliation_error_code") @db.VarChar(128)
+  lastReconciliationErrorDetail String?   @map("last_reconciliation_error_detail") @db.Text
+  lastReconciliationErrorAt     DateTime? @map("last_reconciliation_error_at") @db.Timestamptz(6)
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  build   StoryBuild   @relation(fields: [buildId, storyProjectId], references: [id, storyProjectId], onDelete: Restrict)
+  project StoryProject @relation(fields: [storyProjectId], references: [id], onDelete: Restrict)
+
+  @@unique([buildId, storyProjectId], map: "story_experience_publications_build_scope_unique")
+  @@unique([gameId, contentVersion], map: "story_experience_publications_game_version_unique")
+  @@index([storyProjectId, status, createdAt(sort: Desc)], map: "story_experience_publications_project_recent_idx")
+  @@index([storyProjectId, status, leaseExpiresAt], map: "story_experience_publications_project_lease_idx")
+  @@index([status, nextAttemptAt, leaseExpiresAt], map: "story_experience_publications_publish_retry_idx")
+  @@index([status, nextReconciliationAt, reconciliationLeaseExpiresAt], map: "story_experience_publications_reconcile_retry_idx")
+  @@index([gameId, authorityIsCurrent, authorityCheckedAt(sort: Desc)], map: "story_experience_publications_authority_current_idx")
+  @@map("story_experience_publications")
 }
 
 model StoryBuildAsset {
