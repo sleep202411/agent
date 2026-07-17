@@ -108,7 +108,8 @@ echo "==> [3/6] in-region build + push (cn-remote-build 先 prune 磁盘)"
 $SCP ~/.fizzdragon-cn/acr-username.txt root@$ECS_IP:/root/.acr_user
 $SCP ~/.fizzdragon-cn/acr-password.txt root@$ECS_IP:/root/.acr_token
 $SCP "$ROOT/deploy/cn-remote-build.sh" root@$ECS_IP:/root/cn-remote-build.sh
-$SSH root@$ECS_IP "TAG=$TAG bash /root/cn-remote-build.sh" | tee /tmp/cn-build.log
+# Windows checkouts often ship CRLF; bash on the ECS rejects `set -o pipefail\r`.
+$SSH root@$ECS_IP "sed -i 's/\r$//' /root/cn-remote-build.sh && TAG=$TAG bash /root/cn-remote-build.sh" | tee /tmp/cn-build.log
 grep -q "BUILDFAIL\|PUSHFAIL" /tmp/cn-build.log && { echo "FATAL: a service failed to build/push"; exit 1; }
 
 echo "==> [4/6] helm upgrade fizzdragon -> $TAG"
