@@ -1076,51 +1076,61 @@ export class StoryProjectsService {
   }
 
   private async resolveStoryDefaultVideoModel(tx: Prisma.TransactionClient) {
+    const modelSelect = {
+      id: true,
+      slug: true,
+      modality: true,
+      status: true,
+      archivedAt: true,
+      generationModes: true,
+    } as const;
+    const requiredModes = requiredStoryGenerationModes();
+    const supportsRequiredModes = (
+      generationModes: Prisma.JsonValue,
+    ): boolean => {
+      const available = stringArray(generationModes);
+      return requiredModes.every((mode) => available.includes(mode));
+    };
+
+    // The FilmSpec stamps a default video model, but a video-first project
+    // (uploaded/imported clips) never generates, so this is vestigial. Prefer
+    // the configured slug when it resolves, but NEVER hard-fail on a missing
+    // env var or an unknown slug: fall back to any active, capable video model
+    // in the catalogue. Only a cell with zero usable video models errors.
     const slug = process.env.STORY_STUDIO_DEFAULT_VIDEO_MODEL_SLUG?.trim();
-    if (!slug) {
-      throw new UnprocessableEntityException({
-        code: 'STORY_DEFAULT_VIDEO_MODEL_NOT_CONFIGURED',
-        message:
-          'Configure STORY_STUDIO_DEFAULT_VIDEO_MODEL_SLUG before locking the revision.',
+    if (slug) {
+      const configured = await tx.aiCanonicalModel.findUnique({
+        where: { slug },
+        select: modelSelect,
       });
+      if (
+        configured &&
+        configured.modality === AiJobType.video &&
+        configured.status === AiControlPlaneStatus.active &&
+        configured.archivedAt === null &&
+        supportsRequiredModes(configured.generationModes)
+      ) {
+        return configured;
+      }
     }
-    const model = await tx.aiCanonicalModel.findUnique({
-      where: { slug },
-      select: {
-        id: true,
-        slug: true,
-        modality: true,
-        status: true,
-        archivedAt: true,
-        generationModes: true,
+
+    const fallback = await tx.aiCanonicalModel.findFirst({
+      where: {
+        modality: AiJobType.video,
+        status: AiControlPlaneStatus.active,
+        archivedAt: null,
       },
+      orderBy: { slug: 'asc' },
+      select: modelSelect,
     });
-    if (
-      !model ||
-      model.modality !== AiJobType.video ||
-      model.status !== AiControlPlaneStatus.active ||
-      model.archivedAt !== null
-    ) {
-      throw new UnprocessableEntityException({
-        code: 'STORY_DEFAULT_VIDEO_MODEL_UNAVAILABLE',
-        message: `The configured Story Studio video model "${slug}" is missing or inactive.`,
-        modelSlug: slug,
-      });
+    if (fallback && supportsRequiredModes(fallback.generationModes)) {
+      return fallback;
     }
-    const availableModes = stringArray(model.generationModes);
-    const missingModes = requiredStoryGenerationModes().filter(
-      (mode) => !availableModes.includes(mode),
-    );
-    if (missingModes.length > 0) {
-      throw new UnprocessableEntityException({
-        code: 'STORY_DEFAULT_VIDEO_MODEL_CAPABILITY_MISMATCH',
-        message: `The configured Story Studio video model does not support: ${missingModes.join(', ')}.`,
-        modelSlug: slug,
-        requiredModes: missingModes,
-        availableModes,
-      });
-    }
-    return model;
+    throw new UnprocessableEntityException({
+      code: 'STORY_DEFAULT_VIDEO_MODEL_UNAVAILABLE',
+      message:
+        'No active video model is available in the catalogue for Story Studio.',
+    });
   }
 
   async workbench(

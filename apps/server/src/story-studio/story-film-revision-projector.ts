@@ -48,6 +48,24 @@ const VIDEO_FIRST_PROMPT_TEXT =
  * for the selected shot, so no placeholder prompt or output contract can
  * reach a provider.
  */
+function isBlankStoryClipPrompt(prompt: StoryClipPromptDraft): boolean {
+  // A newly-created clip node carries a default clipPrompt with empty
+  // masterDirection/emotionalArc and one all-empty beat. "Blank" = the creator
+  // never authored direction, so the compiled director prompt would be empty
+  // and the strict FilmClipSpecSchema (min-1 fields) would reject it. Route
+  // these to the video-first default spec instead.
+  return (
+    prompt.masterDirection.trim() === '' &&
+    prompt.emotionalArc.trim() === '' &&
+    prompt.beats.every(
+      (beat) =>
+        beat.visual.trim() === '' &&
+        beat.camera.trim() === '' &&
+        beat.action.trim() === '',
+    )
+  );
+}
+
 export function projectStoryFilmDraftClip(
   input: StoryFilmDraftClipProjectionInput,
 ): FilmClipSpec {
@@ -73,7 +91,7 @@ export function projectStoryFilmDraftClip(
     : node.exit.kind === 'ending'
       ? 'ending'
       : 'scene';
-  if (!prompt) {
+  if (!prompt || (input.allowVideoFirst && isBlankStoryClipPrompt(prompt))) {
     if (!input.allowVideoFirst) {
       throw new Error(
         `Draft clip ${input.graphNodeId} has no director prompt.`,

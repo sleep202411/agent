@@ -689,29 +689,34 @@ export class StoryFilmProductionService {
           where: { revisionId: revision.id },
         });
         if (!filmSpec) {
-          const modelSlug =
+          // The FilmSpec stamps a default video model, but a video-first
+          // bind never generates. Prefer an explicit modelId, then the
+          // configured default slug, but fall back to any active video model
+          // so an unset/unknown env never blocks a manual-video project.
+          const preferredSlug =
             input.modelId ??
             process.env.STORY_STUDIO_DEFAULT_VIDEO_MODEL_SLUG?.trim();
-          if (!modelSlug) {
-            throw new UnprocessableEntityException({
-              code: 'STORY_DEFAULT_VIDEO_MODEL_NOT_CONFIGURED',
-              message:
-                'Select a video model or configure the Story Studio default video model.',
-            });
-          }
-          const canonicalModel = await tx.aiCanonicalModel.findFirst({
-            where: {
-              slug: modelSlug,
-              modality: 'video',
-              status: 'active',
-              archivedAt: null,
-            },
-            select: { id: true },
-          });
+          const activeVideoModel = {
+            modality: 'video',
+            status: 'active',
+            archivedAt: null,
+          } as const;
+          const canonicalModel =
+            (preferredSlug
+              ? await tx.aiCanonicalModel.findFirst({
+                  where: { slug: preferredSlug, ...activeVideoModel },
+                  select: { id: true },
+                })
+              : null) ??
+            (await tx.aiCanonicalModel.findFirst({
+              where: activeVideoModel,
+              orderBy: { slug: 'asc' },
+              select: { id: true },
+            }));
           if (!canonicalModel) {
             throw new UnprocessableEntityException({
               code: 'STORY_FILM_MODEL_NOT_AVAILABLE',
-              message: 'The selected canonical video model is not active.',
+              message: 'No active video model is available in the catalogue.',
             });
           }
           const snapshotSpec = draftFilmSpecSnapshot({

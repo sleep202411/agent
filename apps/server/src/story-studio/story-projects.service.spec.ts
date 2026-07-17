@@ -357,18 +357,39 @@ function makeHarness(
       findFirst: jest.fn(() => options.workbenchBuild ?? null),
     },
     aiCanonicalModel: {
-      findUnique: jest.fn(() => ({
-        id: MODEL_ID,
-        slug: MODEL_SLUG,
-        modality: 'video',
-        status: 'active',
-        archivedAt: null,
-        generationModes: options.modelGenerationModes ?? [
-          'image_to_video',
-          'first_last_frame_to_video',
-          'multimodal_to_video',
-        ],
-      })),
+      findUnique: jest.fn(() =>
+        options.noVideoModel
+          ? null
+          : {
+              id: MODEL_ID,
+              slug: MODEL_SLUG,
+              modality: 'video',
+              status: 'active',
+              archivedAt: null,
+              generationModes: options.modelGenerationModes ?? [
+                'image_to_video',
+                'first_last_frame_to_video',
+                'multimodal_to_video',
+              ],
+            },
+      ),
+      findFirst: jest.fn(() =>
+        options.noVideoModel
+          ? null
+          : {
+              id: MODEL_ID,
+              slug: MODEL_SLUG,
+              modality: 'video',
+              status: 'active',
+              archivedAt: null,
+              generationModes: options.fallbackGenerationModes ??
+                options.modelGenerationModes ?? [
+                  'image_to_video',
+                  'first_last_frame_to_video',
+                  'multimodal_to_video',
+                ],
+            },
+      ),
     },
     storyCanvasLayout: {
       updateMany: jest.fn(() => ({
@@ -1116,23 +1137,20 @@ describe('StoryProjectsService revision locking', () => {
     expect(response.code).toBe('STORY_REVISION_NOT_LOCKABLE');
   });
 
-  it('fails loudly when no system or project video model is selected', async () => {
+  it('locks without an env default by falling back to any active video model', async () => {
     const configured = process.env.STORY_STUDIO_DEFAULT_VIDEO_MODEL_SLUG;
     delete process.env.STORY_STUDIO_DEFAULT_VIDEO_MODEL_SLUG;
     try {
       const { service } = makeHarness({
         transactionDraft: draftRow({ content: lockableDraft() }),
       });
-
-      const response = await expectApiError(
+      // The unset env no longer blocks: the catalogue fallback supplies a model.
+      await expect(
         service.lockRevision(USER as never, WORKSPACE_ID, PROJECT_ID, {
           expectedDraftRevision: 3,
           source: 'creator',
         }),
-      );
-      expect(response).toMatchObject({
-        code: 'STORY_DEFAULT_VIDEO_MODEL_NOT_CONFIGURED',
-      });
+      ).resolves.toBeDefined();
     } finally {
       if (configured) {
         process.env.STORY_STUDIO_DEFAULT_VIDEO_MODEL_SLUG = configured;
@@ -1140,12 +1158,11 @@ describe('StoryProjectsService revision locking', () => {
     }
   });
 
-  it('rejects a default model that cannot run the authored generation mode', async () => {
+  it('fails only when the catalogue has no active video model', async () => {
     const { service } = makeHarness({
       transactionDraft: draftRow({ content: lockableDraft() }),
-      modelGenerationModes: ['text_to_video'],
+      noVideoModel: true,
     });
-
     const response = await expectApiError(
       service.lockRevision(USER as never, WORKSPACE_ID, PROJECT_ID, {
         expectedDraftRevision: 3,
@@ -1153,14 +1170,27 @@ describe('StoryProjectsService revision locking', () => {
       }),
     );
     expect(response).toMatchObject({
-      code: 'STORY_DEFAULT_VIDEO_MODEL_CAPABILITY_MISMATCH',
-      requiredModes: [
-        'first_last_frame_to_video',
+      code: 'STORY_DEFAULT_VIDEO_MODEL_UNAVAILABLE',
+    });
+  });
+
+  it('skips an incapable configured model and uses a capable fallback', async () => {
+    const { service } = makeHarness({
+      transactionDraft: draftRow({ content: lockableDraft() }),
+      // Configured slug can't run the modes; fallback can.
+      modelGenerationModes: ['text_to_video'],
+      fallbackGenerationModes: [
         'image_to_video',
+        'first_last_frame_to_video',
         'multimodal_to_video',
       ],
-      availableModes: ['text_to_video'],
     });
+    await expect(
+      service.lockRevision(USER as never, WORKSPACE_ID, PROJECT_ID, {
+        expectedDraftRevision: 3,
+        source: 'creator',
+      }),
+    ).resolves.toBeDefined();
   });
 
   it('verifies a complete existing production projection without rewriting it', async () => {
