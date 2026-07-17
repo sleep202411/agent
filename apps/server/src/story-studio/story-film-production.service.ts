@@ -645,11 +645,13 @@ export class StoryFilmProductionService {
             message: 'Complete this shot prompt before preparing video.',
           });
         }
-        // A video-first bind carries no generation, so it needs no
-        // reference plan; with an authored prompt the plan stays mandatory.
-        const referencePlan = clipPrompt
-          ? requiredDraftClipReferencePlan(clipSpec, clipPrompt)
-          : [];
+        // Manual video bind needs no generation references. Also skip when
+        // the draft only has the empty prompt shell — otherwise omni slots
+        // would be synthesized from the video-first placeholder control mode.
+        const referencePlan =
+          options.videoFirst || !clipPrompt
+            ? []
+            : requiredDraftClipReferencePlan(clipSpec, clipPrompt);
 
         let revision = await tx.storyRevision.findUnique({
           where: {

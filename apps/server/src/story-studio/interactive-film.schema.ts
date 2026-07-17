@@ -926,17 +926,33 @@ export const LockableInteractiveFilmDraftContentSchema =
 function isBlankClipPromptForReadiness(prompt: {
   masterDirection: string;
   emotionalArc: string;
-  beats: ReadonlyArray<{ visual: string; camera: string; action: string }>;
+  beats: ReadonlyArray<{
+    visual: string;
+    camera: string;
+    action: string;
+    performance: string;
+    emotion: string;
+    dialogue: string;
+    audio: string;
+    endState: string;
+    continuity: string;
+  }>;
 }): boolean {
-  return (
-    prompt.masterDirection.trim() === '' &&
-    prompt.emotionalArc.trim() === '' &&
-    prompt.beats.every(
-      (beat) =>
-        beat.visual.trim() === '' &&
-        beat.camera.trim() === '' &&
-        beat.action.trim() === '',
-    )
+  // Must agree with the projector's isUnauthoredClipPrompt: a prompt is blank
+  // only when NO field carries authored content, so lock and projection never
+  // disagree (lock skipping a prompt the projector would then reject).
+  if (prompt.masterDirection.trim() || prompt.emotionalArc.trim()) return false;
+  return !prompt.beats.some(
+    (beat) =>
+      beat.visual.trim() ||
+      beat.camera.trim() ||
+      beat.action.trim() ||
+      beat.performance.trim() ||
+      beat.emotion.trim() ||
+      beat.dialogue.trim() ||
+      beat.audio.trim() ||
+      beat.endState.trim() ||
+      beat.continuity.trim(),
   );
 }
 
