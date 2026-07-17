@@ -7532,7 +7532,10 @@
       "exitFullscreen": "退出全螢幕",
       "seekForward": "快進",
       "seekBackward": "快退"
-    }
+    },
+    "share": "分享",
+    "shareCopied": "連結已複製",
+    "shareFailed": "複製失敗"
   },
   "games": {
     "back": "返回 IP 廣場",

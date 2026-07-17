@@ -7,6 +7,7 @@ import zhHK from "@/messages/zh-HK.json";
 import { defaultLocale, isValidLocale, type Locale } from "@/src/i18n/config";
 import { ExperienceLoadError } from "../../_components/experience-load-error";
 import { ExperienceRuntimePlayer } from "../../_components/experience-runtime-player";
+import { PlayShareButton } from "./_components/play-share-button";
 import {
   getPublishedInteractiveFilm,
   loadPublishedInteractiveFilm,
@@ -18,7 +19,16 @@ const PLAYER_COPY = {
   "en-US": enUS.experiencePlayer,
   "zh-CN": zhCN.experiencePlayer,
   "zh-HK": zhHK.experiencePlayer,
-} satisfies Record<Locale, { metadataFallbackTitle: string; metadataDescription: string }>;
+} satisfies Record<
+  Locale,
+  {
+    metadataFallbackTitle: string;
+    metadataDescription: string;
+    share: string;
+    shareCopied: string;
+    shareFailed: string;
+  }
+>;
 
 export async function generateMetadata({ params }: RouteProps): Promise<Metadata> {
   const [{ gameId }, headerBag] = await Promise.all([params, headers()]);
@@ -43,6 +53,7 @@ export default async function InteractiveFilmPage({ params }: RouteProps) {
   const [{ gameId }, headerBag] = await Promise.all([params, headers()]);
   const localeHeader = headerBag.get("x-locale") ?? defaultLocale;
   const locale: Locale = isValidLocale(localeHeader) ? localeHeader : defaultLocale;
+  const playerCopy = PLAYER_COPY[locale];
 
   let published: Awaited<ReturnType<typeof loadPublishedInteractiveFilm>> | null = null;
   let loadError: string | null = null;
@@ -54,11 +65,20 @@ export default async function InteractiveFilmPage({ params }: RouteProps) {
 
   if (published) {
     return (
-      <main className="h-[100dvh] bg-black text-white">
+      <main className="relative h-[100dvh] bg-black text-white">
         <ExperienceRuntimePlayer
           runtime={published.manifest}
           locale={locale}
           randomSeed={randomUUID()}
+        />
+        <PlayShareButton
+          gameId={gameId}
+          locale={locale}
+          copy={{
+            share: playerCopy.share,
+            shareCopied: playerCopy.shareCopied,
+            shareFailed: playerCopy.shareFailed,
+          }}
         />
       </main>
     );

@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 import { IconLoader2 } from "@tabler/icons-react";
 import { Button } from "@/components/ui/button";
@@ -22,6 +23,15 @@ import { handleAuthSuccess } from "../_components/post-auth";
 export default function LoginPage() {
   const t = useTranslations("auth");
   const locale = useLocale() as Locale;
+  // Carry the current query (?redirect=…&recommendationCode=…) onto the
+  // register link so a gated visitor who chooses to register keeps their
+  // post-login destination AND the referrer's code. Login-success already
+  // honors ?redirect= via post-auth; this just stops the link from dropping it.
+  const searchParams = useSearchParams();
+  const registerQuery = searchParams?.toString() ?? "";
+  const registerHref = registerQuery
+    ? `${localizePath("/register", locale)}?${registerQuery}`
+    : localizePath("/register", locale);
   const [identifier, setIdentifier] = useState("");
   const [password, setPassword] = useState("");
   const [agreed, setAgreed] = useState(false);
@@ -114,10 +124,7 @@ export default function LoginPage() {
         </div>
         <div className="text-muted-foreground">
           {t("noAccount")}{" "}
-          <Link
-            href={localizePath("/register", locale)}
-            className="font-semibold text-foreground hover:text-primary"
-          >
+          <Link href={registerHref} className="font-semibold text-foreground hover:text-primary">
             {t("goRegister")}
           </Link>
         </div>

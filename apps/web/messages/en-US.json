@@ -7533,7 +7533,10 @@
       "exitFullscreen": "Exit fullscreen",
       "seekForward": "Seek forward",
       "seekBackward": "Seek backward"
-    }
+    },
+    "share": "Share",
+    "shareCopied": "Link copied",
+    "shareFailed": "Copy failed"
   },
   "games": {
     "back": "Back to IP plaza",
