@@ -202,7 +202,7 @@ describe('StoryWorkingPreviewService', () => {
     expect(preview.runtime).toMatchObject({
       manifestType: 'fizzdragon.experience',
       schemaVersion: 2,
-      gameId: PROJECT_ID,
+      gameId: PROJECT_ID.replace(/-/g, ''),
     });
     expect(preview.diagnostics).toEqual([]);
     expect(preview.pathReport).toMatchObject({
@@ -231,9 +231,9 @@ describe('StoryWorkingPreviewService', () => {
     expect(preview.runtime).toMatchObject({
       manifestType: 'fizzdragon.experience',
       schemaVersion: 2,
-      gameId: PROJECT_ID,
+      gameId: PROJECT_ID.replace(/-/g, ''),
       buildId: `preview:${PROJECT_ID}:draft:9`,
-      contentVersion: `build:preview:${PROJECT_ID}:draft:9`,
+      contentVersion: `preview:${PROJECT_ID}:draft:9`.replace(/-/g, ''),
     });
     expect(preview.pathReport).toMatchObject({
       reachableEndingIds: ['E01', 'E02', 'E03', 'E04'],

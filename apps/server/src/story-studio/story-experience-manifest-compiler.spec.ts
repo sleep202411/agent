@@ -106,9 +106,9 @@ describe('Story Runtime Manifest v2 compiler', () => {
     expect(first.result.manifest).toMatchObject({
       manifestType: 'fizzdragon.experience',
       schemaVersion: 2,
-      gameId: PROJECT_ID,
+      gameId: PROJECT_ID.replace(/-/g, ''),
       buildId: BUILD_ID,
-      contentVersion: `build:${BUILD_ID}`,
+      contentVersion: BUILD_ID.replace(/-/g, ''),
       completionPolicy: 'finite',
       metadata: {
         title: {
@@ -217,8 +217,8 @@ describe('Story Runtime Manifest v2 compiler', () => {
       mediaIdentities: value.mediaIdentities,
     });
 
-    expect(first.manifest?.contentVersion).toBe(`build:${BUILD_ID}`);
-    expect(next.manifest?.contentVersion).toBe(`build:${nextBuildId}`);
+    expect(first.manifest?.contentVersion).toBe(BUILD_ID.replace(/-/g, ''));
+    expect(next.manifest?.contentVersion).toBe(nextBuildId.replace(/-/g, ''));
     expect(next.manifest?.contentVersion).not.toBe(
       first.manifest?.contentVersion,
     );

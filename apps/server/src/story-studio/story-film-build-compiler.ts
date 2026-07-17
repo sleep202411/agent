@@ -988,7 +988,11 @@ function compileRuntime(
   return {
     schemaVersion: INTERACTIVE_FILM_RELEASE_SCHEMA_VERSION,
     channel: input.profile,
-    gameId: input.projectId,
+    // Java persists gameId/contentVersion in length-bounded columns (a
+    // 36-char dashed UUID + a "build:"-prefixed version overflowed them). Emit
+    // dashless UUIDs (32 chars) — stable, unique, and comfortably within Java's
+    // limit — for the release identity. The manifest is otherwise unchanged.
+    gameId: input.projectId.replace(/-/g, ''),
     releaseId: input.buildId,
     contentVersion: `revision:${input.revisionNumber}`,
     entryNodeId,

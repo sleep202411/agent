@@ -156,6 +156,13 @@ export class StoryExperienceReleaseWorkerService
           reconciliationLeaseExpiresAt: leaseExpiresAt,
           reconciliationAttemptCount: { increment: 1 },
           lastReconciliationAttemptAt: now,
+          // A new reconciliation attempt has not yet observed Java. Clearing
+          // the prior attempt's authority_checked_at keeps the time-order
+          // constraint (authority_checked_at >= last_reconciliation_attempt_at)
+          // satisfied — otherwise a stale earlier check time is now < the
+          // just-advanced attempt time and every drain aborts. persistAuthority*
+          // sets the real observation time moments later.
+          authorityCheckedAt: null,
         },
       });
     }
