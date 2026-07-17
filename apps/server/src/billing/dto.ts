@@ -1087,3 +1087,36 @@ export const BillingSubscriptionParamsSchema = z.object({
 export type BillingSubscriptionParams = z.infer<
   typeof BillingSubscriptionParamsSchema
 >;
+
+// --- Membership grants (admin 手动开会员) ----------------------------------
+
+/** User-subject paid tiers an admin may hand out. Team/enterprise plans are
+ *  workspace-subject and follow the workspace billing flow instead. */
+export const ADMIN_GRANTABLE_PLAN_KEYS = [
+  'basic',
+  'creator',
+  'standard',
+  'pro',
+  'studio',
+] as const;
+
+export const GrantMembershipSchema = z.object({
+  userId: z.string().trim().min(1).max(64),
+  planKey: z.enum(ADMIN_GRANTABLE_PLAN_KEYS),
+  durationDays: z.coerce.number().int().min(1).max(366),
+  /** Required — lands in grant metadata and the audit log. */
+  note: z.string().trim().min(1).max(500),
+});
+export type GrantMembershipInput = z.infer<typeof GrantMembershipSchema>;
+
+export const ListMembershipGrantsQuerySchema = z.object({
+  userId: z.string().trim().min(1).max(64),
+});
+export type ListMembershipGrantsQuery = z.infer<
+  typeof ListMembershipGrantsQuerySchema
+>;
+
+export const MembershipGrantParamsSchema = z.object({
+  grantId: z.string().uuid(),
+});
+export type MembershipGrantParams = z.infer<typeof MembershipGrantParamsSchema>;

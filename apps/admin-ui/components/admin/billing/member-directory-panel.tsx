@@ -5,7 +5,7 @@
 // 行内预填该用户)。数据经 LegacyMysql 桥(/admin/legacy-points/users),不经 Prisma。
 
 import { useCallback, useEffect, useState } from "react";
-import { IconSearch, IconCoins } from "@tabler/icons-react";
+import { IconSearch, IconCoins, IconCrown } from "@tabler/icons-react";
 import { Button } from "@/components/ui/button";
 import {
   ErrorBanner,
@@ -16,6 +16,7 @@ import {
   toErrorMessage,
 } from "./shared";
 import { GrantPointsDialog } from "./grant-points-dialog";
+import { GrantMembershipDialog } from "./grant-membership-dialog";
 
 interface MemberSummary {
   userId: string;
@@ -54,6 +55,8 @@ export function MemberDirectoryPanel() {
 
   const [grantOpen, setGrantOpen] = useState(false);
   const [grantIdentifier, setGrantIdentifier] = useState<string | undefined>(undefined);
+  const [membershipOpen, setMembershipOpen] = useState(false);
+  const [membershipIdentifier, setMembershipIdentifier] = useState<string | undefined>(undefined);
 
   const load = useCallback(async (query: string, pageNum: number) => {
     setLoading(true);
@@ -90,6 +93,11 @@ export function MemberDirectoryPanel() {
     setGrantOpen(true);
   }
 
+  function openMembership(identifier?: string) {
+    setMembershipIdentifier(identifier);
+    setMembershipOpen(true);
+  }
+
   const total = result?.total ?? 0;
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
@@ -99,10 +107,21 @@ export function MemberDirectoryPanel() {
         title="用户列表"
         description="检索 Java 老系统的终端用户(client_user),查看资料与积分余额。仅读取。"
         actions={
-          <Button type="button" size="sm" onClick={() => openGrant(undefined)}>
-            <IconCoins className="size-4" />
-            加积分
-          </Button>
+          <div className="flex gap-2">
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              onClick={() => openMembership(undefined)}
+            >
+              <IconCrown className="size-4" />
+              开通会员
+            </Button>
+            <Button type="button" size="sm" onClick={() => openGrant(undefined)}>
+              <IconCoins className="size-4" />
+              加积分
+            </Button>
+          </div>
         }
       />
 
@@ -166,15 +185,26 @@ export function MemberDirectoryPanel() {
                       {m.createTime ? formatDate(m.createTime) : "—"}
                     </td>
                     <td className="px-4 py-2 text-right">
-                      <Button
-                        type="button"
-                        size="xs"
-                        variant="outline"
-                        onClick={() => openGrant(m.phone || m.email || undefined)}
-                      >
-                        <IconCoins className="size-3.5" />
-                        加积分
-                      </Button>
+                      <div className="flex justify-end gap-1.5">
+                        <Button
+                          type="button"
+                          size="xs"
+                          variant="outline"
+                          onClick={() => openMembership(m.phone || m.email || undefined)}
+                        >
+                          <IconCrown className="size-3.5" />
+                          开通会员
+                        </Button>
+                        <Button
+                          type="button"
+                          size="xs"
+                          variant="outline"
+                          onClick={() => openGrant(m.phone || m.email || undefined)}
+                        >
+                          <IconCoins className="size-3.5" />
+                          加积分
+                        </Button>
+                      </div>
                     </td>
                   </tr>
                 ))
@@ -227,6 +257,12 @@ export function MemberDirectoryPanel() {
           // list behind it so the granted user's balance updates.
           void load(activeQuery, page);
         }}
+      />
+
+      <GrantMembershipDialog
+        open={membershipOpen}
+        initialIdentifier={membershipIdentifier}
+        onClose={() => setMembershipOpen(false)}
       />
     </div>
   );
