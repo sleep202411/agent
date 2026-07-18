@@ -1,44 +1,46 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { useStore } from "@xyflow/react";
 import {
   IconCheck,
   IconChevronDown,
   IconClock,
+  IconLoader2,
   IconPhoto,
   IconPlus,
+  IconSparkles,
   IconX,
 } from "@tabler/icons-react";
 import { useTranslations } from "next-intl";
+import { Button } from "@/components/ui/button";
 import {
-  GenerationPromptComposer,
-  type GenerationPromptComposerPanel,
-} from "@/app/[locale]/_components/generation/generation-prompt-composer";
-import { estimateModelSellPoints } from "@/app/[locale]/canvas/_lib/generation-api";
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Textarea } from "@/components/ui/textarea";
 import { useAiCatalog } from "@/app/[locale]/canvas/_lib/use-ai-catalog";
-import { CanvasNativePointerOwner } from "@/components/canvas/canvas-native-pointer-owner";
 import { useDismiss } from "@/lib/use-dismiss";
 import { cn } from "@/lib/utils";
 import { STORY_FRAME_PROFILE_CONTRACTS } from "@/lib/story-projects-api";
 import type {
   StoryClipVideoSummary,
+  StoryFrameProfile,
   StoryReferenceSlot,
   StoryTrailerVideoSummary,
-  StoryFrameProfile,
   StoryVideoGenerationRecipeInput,
 } from "@/lib/story-projects-api";
 import {
   addStoryRecipeReference,
-  countBillableRecipeReferences,
   filterStoryVideoCatalog,
   isStoryRecipeReferencePlanValid,
   removeStoryRecipeReference,
   selectedStoryVideoModel,
-  STORY_VIDEO_GENERATION_MODES,
-  storyVideoDurationContract,
   storyComposerAddableSlots,
   storyComposerReferenceItems,
+  storyVideoDurationContract,
   type StoryVideoDurationContract,
 } from "./story-shot-composer-model";
 import {
@@ -46,11 +48,16 @@ import {
   type StoryVideoLibraryDialogProps,
 } from "./story-video-library-dialog";
 
-export type StoryProductionTarget = StoryClipVideoSummary | StoryTrailerVideoSummary;
+// The inspector generation form is deliberately single-mode. Reference-driven
+// multimodal generation covers the authoring need; the first/last-frame mode
+// (and its extra controls) was removed to keep this a plain form.
+const GENERATION_MODE = "multimodal_to_video" as const;
 
-export interface StoryVideoComposerProps {
+export type StoryGenerationTarget = StoryClipVideoSummary | StoryTrailerVideoSummary;
+
+export interface StoryClipGenerationFormProps {
   subject?: "clip" | "trailer";
-  target: StoryProductionTarget | null;
+  target: StoryGenerationTarget | null;
   recipe: StoryVideoGenerationRecipeInput;
   references: StoryReferenceSlot[];
   frameProfile: StoryFrameProfile;
@@ -64,12 +71,11 @@ export interface StoryVideoComposerProps {
 }
 
 /**
- * The selected-node composer deliberately mirrors the creative canvas:
- * prompt is the hero, production controls remain a single compact row, and
- * the inverse viewport scale keeps it readable without turning it into a
- * second inspector.
+ * AI generation as an inspector form. The prompt, model, duration and
+ * approved references are edited in place and submitted only on Generate; the
+ * recipe stays local to this page and is never written to the story draft.
  */
-export function StoryShotComposer({
+export function StoryClipGenerationForm({
   subject = "clip",
   target,
   recipe,
@@ -82,45 +88,30 @@ export function StoryShotComposer({
   onRecipeChange,
   onGenerate,
   videoLibrary,
-}: StoryVideoComposerProps) {
+}: StoryClipGenerationFormProps) {
   const t = useTranslations("storyStudio.canvas.production");
-  const trailerT = useTranslations("storyStudio.canvas.trailer.production");
-  const zoom = useStore((state) => state.transform[2]);
   const catalogQuery = useAiCatalog();
-  const [panel, setPanel] = useState<GenerationPromptComposerPanel>(null);
 
   const storyCatalog = useMemo(
-    () => filterStoryVideoCatalog(catalogQuery.data, recipe.mode),
-    [catalogQuery.data, recipe.mode]
+    () => filterStoryVideoCatalog(catalogQuery.data, GENERATION_MODE),
+    [catalogQuery.data]
   );
   const catalogModel = useMemo(
     () => selectedStoryVideoModel(storyCatalog, recipe.modelId),
     [recipe.modelId, storyCatalog]
   );
   const durationContract = useMemo(() => storyVideoDurationContract(catalogModel), [catalogModel]);
-  const approvedReferenceCount = countBillableRecipeReferences(recipe.references);
   const frame = STORY_FRAME_PROFILE_CONTRACTS[frameProfile];
-  const cost = useMemo(() => {
-    if (!catalogModel) return null;
-    return (
-      estimateModelSellPoints(catalogModel, {
-        durationSeconds: recipe.durationMs / 1000,
-        numOutputs: 1,
-        referenceImageCount: approvedReferenceCount,
-        resolution: `${Math.min(frame.width, frame.height)}p`,
-      })?.sellPoints ?? null
-    );
-  }, [approvedReferenceCount, catalogModel, frame.height, frame.width, recipe.durationMs]);
   const generating = pendingKey === "generate";
   const referenceItems = useMemo(
     () => storyComposerReferenceItems(recipe.references, references),
     [recipe.references, references]
   );
   const addableSlots = useMemo(
-    () => storyComposerAddableSlots(recipe.mode, recipe.references, references),
-    [recipe.mode, recipe.references, references]
+    () => storyComposerAddableSlots(GENERATION_MODE, recipe.references, references),
+    [recipe.references, references]
   );
-  const referencePlanValid = isStoryRecipeReferencePlanValid(recipe.mode, recipe.references);
+  const referencePlanValid = isStoryRecipeReferencePlanValid(GENERATION_MODE, recipe.references);
   const recipeDisabledReason = !recipe.prompt.trim()
     ? t("disabled.promptRequired")
     : !catalogModel
@@ -128,110 +119,123 @@ export function StoryShotComposer({
       : !referencePlanValid
         ? t("disabled.referencesRequired")
         : disabledReason;
+  const models = storyCatalog?.models ?? [];
 
   return (
-    <div
-      className="absolute top-full left-1/2 z-40 flex w-0 justify-center duration-200 animate-in fade-in-0 zoom-in-95"
-      style={{ marginTop: 12 / zoom }}
-    >
-      <CanvasNativePointerOwner
-        className="relative shrink-0 origin-top"
-        style={{ transform: `scale(${1 / zoom})` }}
-      >
-        <GenerationPromptComposer
-          ariaLabel={subject === "trailer" ? trailerT("title") : t("title")}
-          modality="video"
-          catalog={storyCatalog}
-          model={catalogModel}
-          onSelectModel={(model) => {
-            const nextDuration = storyVideoDurationContract(model);
-            if (!nextDuration) return;
-            onRecipeChange({
-              ...recipe,
-              modelId: model.id,
-              durationMs: nextDuration.defaultMs,
-            });
-          }}
-          prompt={recipe.prompt}
-          onPromptCommit={(prompt) => onRecipeChange({ ...recipe, prompt })}
-          promptPlaceholder={t("emptyPrompt")}
-          promptAriaLabel={t("masterPrompt")}
-          promptHint={t("promptLocalHint")}
-          promptRows={3}
-          mode={recipe.mode}
-          modes={[...STORY_VIDEO_GENERATION_MODES]}
-          onSelectMode={(nextMode) => {
-            if (nextMode !== "multimodal_to_video" && nextMode !== "first_last_frame_to_video") {
-              return;
-            }
-            const selectedModelSupportsMode = catalogQuery.data?.models
-              .find((model) => model.id === recipe.modelId)
-              ?.generationModes?.includes(nextMode);
-            const selectedModel = selectedModelSupportsMode
-              ? catalogQuery.data?.models.find((model) => model.id === recipe.modelId)
-              : undefined;
-            const nextDuration = storyVideoDurationContract(selectedModel);
-            onRecipeChange({
-              ...recipe,
-              mode: nextMode,
-              modelId: nextDuration ? recipe.modelId : "",
-              durationMs: nextDuration?.defaultMs ?? recipe.durationMs,
-              references: [],
-            });
-          }}
-          referenceContent={
-            <StoryComposerReferenceRail
-              items={referenceItems}
-              addable={addableSlots}
-              onAdd={(referenceVersionId, role) =>
-                onRecipeChange({
-                  ...recipe,
-                  references: addStoryRecipeReference(recipe.references, referenceVersionId, role),
-                })
-              }
-              onRemove={(referenceVersionId) =>
-                onRecipeChange({
-                  ...recipe,
-                  references: removeStoryRecipeReference(recipe.references, referenceVersionId),
-                })
-              }
-            />
-          }
-          trailingControls={
-            <>
-              {videoLibrary ? (
-                <StoryVideoLibraryDialog
-                  {...videoLibrary}
-                  frameContract={{ width: frame.width, height: frame.height }}
-                  currentVideo={target?.currentVideo ?? null}
-                />
-              ) : null}
-              <span className="flex h-10 items-center rounded-xl bg-white/[0.06] px-3 text-xs text-white/42">
-                {`${frame.aspectRatio} · ${frame.width}×${frame.height}`}
-              </span>
-              <StoryDurationControl
-                durationMs={recipe.durationMs}
-                contract={durationContract}
-                onCommit={(durationMs) => onRecipeChange({ ...recipe, durationMs })}
-              />
-            </>
-          }
-          settings={{}}
-          settingsEnabled={false}
-          panel={panel}
-          onPanelChange={setPanel}
-          cost={cost}
-          canSubmit={canGenerate && recipeDisabledReason === null}
-          submitting={generating}
-          onSubmit={() => onGenerate(recipe)}
-          submitLabel={t("generate")}
-          submittingLabel={t("statuses.generating")}
-          disabledReason={recipeDisabledReason}
-          error={error}
-          className="w-[680px]"
+    <section className="mt-6 space-y-4">
+      <div>
+        <label className="text-xs font-semibold text-white/78" htmlFor="story-generation-prompt">
+          {t("masterPrompt")}
+        </label>
+        <Textarea
+          id="story-generation-prompt"
+          value={recipe.prompt}
+          onChange={(event) => onRecipeChange({ ...recipe, prompt: event.target.value })}
+          placeholder={t("emptyPrompt")}
+          rows={4}
+          className="mt-2 resize-none rounded-xl bg-white/[0.05] text-sm"
         />
-      </CanvasNativePointerOwner>
-    </div>
+      </div>
+
+      {(referenceItems.length > 0 || addableSlots.length > 0) && (
+        <div>
+          <p className="text-xs font-semibold text-white/78">{t("references")}</p>
+          <StoryReferenceRail
+            items={referenceItems}
+            addable={addableSlots}
+            onAdd={(referenceVersionId, role) =>
+              onRecipeChange({
+                ...recipe,
+                references: addStoryRecipeReference(recipe.references, referenceVersionId, role),
+              })
+            }
+            onRemove={(referenceVersionId) =>
+              onRecipeChange({
+                ...recipe,
+                references: removeStoryRecipeReference(recipe.references, referenceVersionId),
+              })
+            }
+          />
+        </div>
+      )}
+
+      <div className="flex items-center gap-2">
+        <div className="min-w-0 flex-1">
+          <label className="text-[10px] font-semibold text-white/54" htmlFor="story-generation-model">
+            {t("model")}
+          </label>
+          <Select
+            value={recipe.modelId || undefined}
+            onValueChange={(modelId) => {
+              const nextModel = models.find((model) => model.id === modelId);
+              const nextDuration = storyVideoDurationContract(nextModel);
+              onRecipeChange({
+                ...recipe,
+                modelId,
+                durationMs: nextDuration?.defaultMs ?? recipe.durationMs,
+              });
+            }}
+          >
+            <SelectTrigger
+              id="story-generation-model"
+              className="mt-1.5 h-10! w-full rounded-xl bg-white/[0.055] px-3"
+            >
+              <SelectValue placeholder={t("disabled.modelRequired")} />
+            </SelectTrigger>
+            <SelectContent position="popper" align="start">
+              {models.map((model) => (
+                <SelectItem key={model.id} value={model.id}>
+                  {model.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+        <div>
+          <p className="text-[10px] font-semibold text-white/54">{t("durationControl.label")}</p>
+          <StoryDurationControl
+            durationMs={recipe.durationMs}
+            contract={durationContract}
+            onCommit={(durationMs) => onRecipeChange({ ...recipe, durationMs })}
+          />
+        </div>
+      </div>
+
+      {videoLibrary ? (
+        <StoryVideoLibraryDialog
+          {...videoLibrary}
+          frameContract={{ width: frame.width, height: frame.height }}
+          currentVideo={target?.currentVideo ?? null}
+        />
+      ) : null}
+
+      <Button
+        type="button"
+        size="lg"
+        disabled={!canGenerate || recipeDisabledReason !== null || generating}
+        title={recipeDisabledReason ?? undefined}
+        className="w-full rounded-xl"
+        onClick={() => onGenerate(recipe)}
+      >
+        {generating ? (
+          <IconLoader2 className="size-4 animate-spin" />
+        ) : (
+          <IconSparkles className="size-4" />
+        )}
+        {generating ? t("statuses.generating") : t("generate")}
+      </Button>
+
+      {error ? (
+        <p
+          className="rounded-xl bg-[rgba(229,34,39,0.1)] px-3 py-2 text-[11px] leading-4 text-[#ffb2b4]"
+          role="alert"
+        >
+          {error}
+        </p>
+      ) : recipeDisabledReason && subject === "clip" ? (
+        <p className="text-center text-[10px] text-white/32">{recipeDisabledReason}</p>
+      ) : null}
+    </section>
   );
 }
 
@@ -262,14 +266,14 @@ function StoryDurationControl({
 
   if (!contract) {
     return (
-      <span className="flex h-10 items-center rounded-xl bg-white/[0.06] px-3 text-xs text-white/42">
+      <span className="mt-1.5 flex h-10 items-center rounded-xl bg-white/[0.06] px-3 text-sm text-white/42">
         {label}
       </span>
     );
   }
 
   return (
-    <div className="relative" data-popover-zone>
+    <div className="relative mt-1.5" data-popover-zone>
       <button
         type="button"
         onClick={() => setOpen((value) => !value)}
@@ -285,7 +289,7 @@ function StoryDurationControl({
         <IconChevronDown className="size-3.5 text-white/40" stroke={1.8} />
       </button>
       {open ? (
-        <div className="absolute bottom-full left-0 z-50 mb-2 w-40 rounded-2xl bg-[oklch(0.22_0_0/0.98)] p-1.5 shadow-[0_24px_80px_rgba(0,0,0,0.6)] backdrop-blur-2xl">
+        <div className="absolute top-full right-0 z-50 mt-2 w-40 rounded-2xl bg-[oklch(0.22_0_0/0.98)] p-1.5 shadow-[0_24px_80px_rgba(0,0,0,0.6)] backdrop-blur-2xl">
           {contract.optionsMs.length > 0 ? (
             contract.optionsMs.map((value) => {
               const active = durationMs === value;
@@ -318,11 +322,7 @@ function StoryDurationControl({
                 value={durationMs / 1_000}
                 onChange={(event) => {
                   const nextMs = Math.round(event.currentTarget.valueAsNumber * 1_000);
-                  if (
-                    Number.isInteger(nextMs) &&
-                    nextMs >= contract.minMs &&
-                    nextMs <= contract.maxMs
-                  ) {
+                  if (Number.isInteger(nextMs) && nextMs >= contract.minMs && nextMs <= contract.maxMs) {
                     onCommit(nextMs);
                   }
                 }}
@@ -340,7 +340,7 @@ function StoryDurationControl({
  * Approved references selected for this one recipe. Changing the current video
  * never changes this list; the exact version ids are frozen on submission.
  */
-function StoryComposerReferenceRail({
+function StoryReferenceRail({
   items,
   addable,
   onAdd,
@@ -355,10 +355,8 @@ function StoryComposerReferenceRail({
   const [pickerOpen, setPickerOpen] = useState(false);
   useDismiss(pickerOpen, () => setPickerOpen(false));
 
-  if (items.length === 0 && addable.length === 0) return null;
-
   return (
-    <div className="mb-3 flex flex-wrap items-center gap-2">
+    <div className="mt-2 flex flex-wrap items-center gap-2">
       {items.map((item) => (
         <div
           key={`${item.role}:${item.referenceVersionId}`}
@@ -397,9 +395,7 @@ function StoryComposerReferenceRail({
           </button>
           {pickerOpen ? (
             <div className="absolute bottom-full left-0 z-50 mb-2 w-72 rounded-2xl bg-[oklch(0.22_0_0/0.98)] p-2 shadow-[0_24px_80px_rgba(0,0,0,0.6)] backdrop-blur-2xl">
-              <p className="px-2 pt-1 pb-2 text-[10px] font-semibold text-white/46">
-                {t("addTitle")}
-              </p>
+              <p className="px-2 pt-1 pb-2 text-[10px] font-semibold text-white/46">{t("addTitle")}</p>
               <div className="grid max-h-56 grid-cols-4 gap-2 overflow-y-auto overscroll-contain p-1">
                 {addable.map((slot) => (
                   <button

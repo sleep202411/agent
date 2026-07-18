@@ -43,7 +43,8 @@ export type StoryWorldMutationErrorCode =
   | "STATE_VARIABLE_NOT_FOUND"
   | "STATE_VARIABLE_REFERENCED"
   | "STATE_VARIABLE_KEY_IMMUTABLE"
-  | "INVALID_STATE_VARIABLE";
+  | "INVALID_STATE_VARIABLE"
+  | "CLIP_NODE_NOT_FOUND";
 
 export class StoryWorldMutationError extends Error {
   constructor(
@@ -374,6 +375,27 @@ export function deleteStoryStateVariable(
       stateVariables: content.storyBible.stateVariables.filter((variable) => variable.key !== key),
     },
   };
+}
+
+/**
+ * Update a clip node's authoring display metadata (human name + description).
+ * clipKey is the stable machine key and is never touched here.
+ */
+export function updateStoryClipMeta(
+  content: InteractiveFilmDraftContent,
+  nodeId: string,
+  patch: { name?: string; description?: string }
+): InteractiveFilmDraftContent {
+  let found = false;
+  const nodes = content.graph.nodes.map((node) => {
+    if (node.kind !== "clip" || node.nodeId !== nodeId) return node;
+    found = true;
+    return { ...node, ...patch };
+  });
+  if (!found) {
+    throw mutationError("CLIP_NODE_NOT_FOUND", `Unknown clip node ${nodeId}.`);
+  }
+  return { ...content, graph: { ...content.graph, nodes } };
 }
 
 function visitGraphConditions(

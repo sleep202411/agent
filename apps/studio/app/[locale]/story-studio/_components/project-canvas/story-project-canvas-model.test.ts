@@ -7,6 +7,29 @@ import type {
 import { buildStoryCanvasModel } from "./story-project-canvas-model";
 
 describe("buildStoryCanvasModel", () => {
+  it("allows every projected story element except the root to be deleted", () => {
+    const content = draft({
+      entryNodeId: "decision",
+      nodes: [
+        clip("decision", "DECISION", {
+          kind: "choice",
+          decisionId: "gate",
+          prompt: { "en-US": "Choose" },
+          trigger: { kind: "media-ended" },
+          choices: [choice("continue", "Continue", "继续", "router")],
+        }),
+        { kind: "router", nodeId: "router", exit: { kind: "auto", routes: [] } },
+      ],
+      endings: [ending("truth", "Truth", "真相")],
+    });
+
+    const model = buildStoryCanvasModel(content, "en-US");
+
+    expect(Object.fromEntries(model.nodes.map((node) => [node.data.kind, node.deletable]))).toEqual(
+      { root: false, clip: true, decision: true, router: true, ending: true }
+    );
+  });
+
   it("projects the story bible root even when the executable graph is empty", () => {
     const content = draft();
 

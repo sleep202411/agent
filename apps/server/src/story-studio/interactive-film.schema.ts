@@ -287,6 +287,11 @@ const StoryClipGraphNodeSchema = z
     kind: z.literal('clip'),
     nodeId: StoryStableIdSchema,
     clipKey: StoryClipKeySchema,
+    // Authoring-only display metadata. clipKey stays the uppercase stable key;
+    // these are the human-facing name and description edited in the inspector.
+    // Optional so drafts authored before the field parse unchanged.
+    name: z.string().trim().max(120).optional(),
+    description: z.string().trim().max(4_000).optional(),
     exit: z.discriminatedUnion('kind', [
       StoryClipAutoExitSchema,
       StoryChoiceExitSchema,

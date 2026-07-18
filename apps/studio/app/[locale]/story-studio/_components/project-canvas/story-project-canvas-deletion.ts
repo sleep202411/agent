@@ -1,0 +1,115 @@
+import type { InteractiveFilmDraftContent } from "@/lib/story-projects-api";
+import type { StoryCanvasEdge, StoryCanvasNode } from "./story-project-canvas-model";
+import {
+  convertExitToAuto,
+  deleteEndingNode,
+  deleteGraphNode,
+  disconnectStoryBranch,
+  setEntryNode,
+} from "./story-project-canvas-mutations";
+
+export function deleteStoryCanvasElements(
+  content: InteractiveFilmDraftContent,
+  {
+    nodes,
+    edges,
+  }: {
+    nodes: readonly StoryCanvasNode[];
+    edges: readonly StoryCanvasEdge[];
+  }
+): InteractiveFilmDraftContent {
+  const deletableNodes = uniqueById(nodes.filter((node) => node.data.kind !== "root"));
+  const deletedCanvasNodeIds = new Set(deletableNodes.map((node) => node.id));
+  const deletedGraphNodeIds = new Set(
+    deletableNodes.flatMap((node) =>
+      node.data.kind === "clip" || node.data.kind === "router" ? [node.data.nodeId] : []
+    )
+  );
+  const standaloneEdges = edges.filter(
+    (edge) => !deletedCanvasNodeIds.has(edge.source) && !deletedCanvasNodeIds.has(edge.target)
+  );
+
+  let next = deleteStandaloneEdges(content, standaloneEdges);
+  for (const node of deletableNodes) {
+    if (node.data.kind === "decision" && node.data.sourceNodeId) {
+      if (!deletedGraphNodeIds.has(node.data.sourceNodeId)) {
+        next = convertExitToAuto(next, node.data.sourceNodeId);
+      }
+      continue;
+    }
+    if (node.data.kind === "ending" && node.data.endingId) {
+      next = deleteEndingNode(next, node.data.endingId);
+      continue;
+    }
+    next = deleteGraphNode(next, node.data.nodeId);
+  }
+  return next;
+}
+
+function deleteStandaloneEdges(
+  content: InteractiveFilmDraftContent,
+  edges: readonly StoryCanvasEdge[]
+): InteractiveFilmDraftContent {
+  const deletedDecisionSources = new Set(
+    edges.flatMap((edge) => (edge.data.kind === "decision" ? [edge.data.sourceNodeId] : []))
+  );
+  const orderedEdges = edges
+    .filter(
+      (edge) => edge.data.kind !== "choice" || !deletedDecisionSources.has(edge.data.sourceNodeId)
+    )
+    .sort((left, right) => {
+      if (left.source === right.source && left.data.kind === "auto" && right.data.kind === "auto") {
+        return right.data.routeIndex - left.data.routeIndex;
+      }
+      return left.id.localeCompare(right.id);
+    });
+
+  return orderedEdges.reduce((next, edge) => {
+    if (edge.data.kind === "root") return setEntryNode(next, null);
+    if (edge.data.kind === "continuation") {
+      return disconnectStoryBranch(next, {
+        kind: "continuation",
+        sourceNodeId: edge.source,
+        targetNodeId: edge.target,
+      });
+    }
+    if (edge.data.kind === "auto") {
+      return disconnectStoryBranch(next, {
+        kind: "auto",
+        sourceNodeId: edge.source,
+        routeIndex: edge.data.routeIndex,
+        targetNodeId: edge.target,
+        priority: edge.data.priority,
+      });
+    }
+    if (edge.data.kind === "decision") {
+      return disconnectStoryBranch(next, {
+        kind: "decision",
+        sourceNodeId: edge.data.sourceNodeId,
+      });
+    }
+    if (edge.data.kind === "choice") {
+      return disconnectStoryBranch(next, {
+        kind: "choice",
+        sourceNodeId: edge.data.sourceNodeId,
+        choiceId: edge.data.choiceId,
+      });
+    }
+    if (edge.data.kind === "checkpoint") {
+      return disconnectStoryBranch(next, {
+        kind: "checkpoint",
+        sourceNodeId: edge.source,
+        targetNodeId: edge.target,
+      });
+    }
+    return disconnectStoryBranch(next, {
+      kind: "ending",
+      sourceNodeId: edge.source,
+      endingId: edge.data.endingId,
+    });
+  }, content);
+}
+
+function uniqueById<T extends { id: string }>(items: readonly T[]): T[] {
+  return [...new Map(items.map((item) => [item.id, item])).values()];
+}

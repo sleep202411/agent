@@ -50,9 +50,14 @@ import { toast } from "sonner";
 import { useWorkspace } from "@/app/_components/workspace-context";
 import { Button } from "@/components/ui/button";
 import { CanvasControls } from "@/components/canvas/canvas-controls";
+import { CanvasHistoryControls } from "@/components/canvas/canvas-history-controls";
+import { useCanvasHistoryShortcuts } from "@/components/canvas/canvas-history";
 import { CanvasNativePointerOwner } from "@/components/canvas/canvas-native-pointer-owner";
 import { CanvasReactFlow, type CanvasReactFlowProps } from "@/components/canvas/canvas-react-flow";
-import { CANVAS_NODE_DRAG_HANDLE_CLASS } from "@/components/canvas/canvas-interaction-policy";
+import {
+  CANVAS_DELETE_KEY_CODES,
+  CANVAS_NODE_DRAG_HANDLE_CLASS,
+} from "@/components/canvas/canvas-interaction-policy";
 import {
   canActivateCanvasMediaPreview,
   canClaimCanvasManualPlayback,
@@ -112,11 +117,12 @@ import {
 } from "./story-project-canvas-selection";
 import {
   coalesceQueuedLayout,
+  confirmsOwnCanvasLayoutWrite,
   layoutPositionSignature,
   layoutRetryDelay,
-  selectLatestLayoutPayload,
 } from "./story-canvas-layout-retry";
 import { createConnectedClipForBlankDrop } from "./story-project-canvas-drop";
+import { deleteStoryCanvasElements } from "./story-project-canvas-deletion";
 import { isExactCurrentStoryRelease } from "./story-current-release";
 import {
   addChoiceOption,
@@ -125,14 +131,10 @@ import {
   connectChoiceTarget,
   convertClipExitToChoice,
   convertClipExitToEnding,
-  convertExitToAuto,
   createClipNode,
   createEndingNode,
   createRouterNode,
-  deleteEndingNode,
-  deleteGraphNode,
   disconnectAutoRoute,
-  disconnectStoryBranch,
   duplicateClipNode,
   duplicateRouterNode,
   moveChoiceOption,
@@ -144,15 +146,21 @@ import {
   updateAutoRouteTarget,
   updateEndingNode,
 } from "./story-project-canvas-mutations";
+import { StoryCanvasHistory, type StoryCanvasHistorySnapshot } from "./story-canvas-history";
 import {
   StoryConnectionCreator,
   type StoryConnectionCreationKind,
 } from "./story-connection-creator";
-import { StoryNodeCreator, type StoryNodeCreationKind } from "./story-node-creator";
+import { StoryNodeCreator, StoryNodeDock, type StoryNodeCreationKind } from "./story-node-creator";
+import {
+  offsetStoryNodeDockCreationPosition,
+  resolveStoryNodeCreationMenuPlacement,
+  type StoryNodeCreationMenuPlacement,
+} from "./story-node-creator-model";
 import type { StoryClipMediaUploadState } from "./story-clip-media-panel";
 import { StoryNodeInspector } from "./story-node-inspector";
 import { StoryPublicationDialog } from "./story-publication-dialog";
-import { StoryShotComposer, type StoryVideoComposerProps } from "./story-shot-composer";
+import { type StoryClipGenerationFormProps } from "./story-clip-generation-form";
 import {
   StoryProductionActionGate,
   StorySubmissionKeyRegistry,
@@ -163,6 +171,7 @@ import {
   deleteStoryCharacter,
   removeWorldTextItem,
   updateStoryCharacter,
+  updateStoryClipMeta,
   updateWorldTextItem,
   type StoryWorldTextField,
 } from "./story-world-mutations";
@@ -184,6 +193,9 @@ type FoundationField = "logline" | "synopsis" | "worldview";
 type PersistDraftOptions = {
   bypassSnapshotBarrier?: boolean;
   propagateError?: boolean;
+};
+type CommitContentOptions = {
+  mergeKey?: string;
 };
 type StoryClipGenerationRequest = {
   requestId: string;
@@ -229,22 +241,19 @@ function emptyStoryGenerationRecipe(): StoryVideoGenerationRecipeInput {
   };
 }
 
-type StoryProductionUiContextValue = {
-  graphNodeId: string;
-  composer: StoryVideoComposerProps;
-};
-
-type StoryTrailerUiContextValue = {
-  composer: StoryVideoComposerProps | null;
-};
-
-const StoryProductionUiContext = createContext<StoryProductionUiContextValue | null>(null);
-const StoryTrailerUiContext = createContext<StoryTrailerUiContextValue | null>(null);
 const StoryCanvasFocusContext = createContext<string | null>(null);
 
-function StoryCanvasReactFlow(props: CanvasReactFlowProps<StoryCanvasNode, StoryCanvasEdge>) {
+function StoryCanvasReactFlow({
+  onInteractionStart,
+  ...props
+}: CanvasReactFlowProps<StoryCanvasNode, StoryCanvasEdge>) {
   const interruptHoverPreview = useMediaHoverPreviewInterruption();
-  return <CanvasReactFlow {...props} onInteractionStart={interruptHoverPreview} />;
+  const handleInteractionStart = useCallback(() => {
+    interruptHoverPreview();
+    onInteractionStart?.();
+  }, [interruptHoverPreview, onInteractionStart]);
+
+  return <CanvasReactFlow {...props} onInteractionStart={handleInteractionStart} />;
 }
 
 export function StoryProjectCanvas({ projectId }: { projectId: string }) {
@@ -261,14 +270,18 @@ export function StoryProjectCanvas({ projectId }: { projectId: string }) {
 function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
   const t = useTranslations("storyStudio.canvas");
   const commonT = useTranslations("storyStudio");
+  const canvasT = useTranslations("canvas");
   const router = useRouter();
-  const { fitView, screenToFlowPosition } = useReactFlow<StoryCanvasNode, StoryCanvasEdge>();
+  const { deleteElements, fitView, screenToFlowPosition } = useReactFlow<
+    StoryCanvasNode,
+    StoryCanvasEdge
+  >();
   const queryClient = useQueryClient();
   const { activeWorkspace, loading: workspaceLoading } = useWorkspace();
   const workspaceId = activeWorkspace?.id ?? null;
   const [content, setContent] = useState<InteractiveFilmDraftContent | null>(null);
   const [focusedNodeId, setFocusedNodeId] = useState<string | null>(null);
-  const [creatorOpen, setCreatorOpen] = useState(false);
+  const [creatorMenu, setCreatorMenu] = useState<StoryNodeCreationMenuPlacement | null>(null);
   const [pendingCompletionDrop, setPendingCompletionDrop] = useState<PendingCompletionDrop | null>(
     null
   );
@@ -322,6 +335,8 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
   const [canvasNodes, setCanvasNodes] = useNodesState<StoryCanvasNode>([]);
   const [canvasEdges, setCanvasEdges, onCanvasEdgesChange] = useEdgesState<StoryCanvasEdge>([]);
   const [sessionId] = useState(() => globalThis.crypto.randomUUID());
+  const [history] = useState(() => new StoryCanvasHistory());
+  const [, setHistoryVersion] = useState(0);
   const hydratedRef = useRef(false);
   const revisionRef = useRef(0);
   const savedSignatureRef = useRef("");
@@ -357,11 +372,14 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
     async () => {}
   );
   const canvasNodesRef = useRef<StoryCanvasNode[]>([]);
+  const canvasSectionRef = useRef<HTMLElement>(null);
+  const hasFittedInitialCanvasRef = useRef(false);
   const pendingCanvasSelectionRef = useRef<string | null>(null);
   const requestedCanvasFocusRef = useRef<string | null>(null);
   const marqueeSelectionActiveRef = useRef(false);
   const latestCanvasSelectionRef = useRef<string[]>([]);
   const pendingNodePositionsRef = useRef(new Map<string, StoryCanvasPosition>());
+  const dragStartHistorySnapshotRef = useRef<StoryCanvasHistorySnapshot | null>(null);
   const hasDirtyGenerationRecipeRef = useRef(false);
 
   useEffect(() => {
@@ -373,7 +391,13 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
   const onCanvasNodesChange = useCallback(
     (changes: NodeChange<StoryCanvasNode>[]) => {
       setCanvasNodes((current) => {
-        const next = applyNodeChanges(changes, current);
+        // Canonical Story content owns structural deletion. Applying XYFlow's
+        // transient remove change first would hide a node when the domain
+        // mutation fails and leave the projection out of sync.
+        const next = applyNodeChanges(
+          changes.filter((change) => change.type !== "remove"),
+          current
+        );
         canvasNodesRef.current = next;
         return next;
       });
@@ -493,9 +517,11 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
     setDraftRevision(workbench.draft.revision);
     savedSignatureRef.current = canonicalJsonString(workbench.draft.content);
     latestContentRef.current = workbench.draft.content;
+    history.clear();
+    setHistoryVersion((current) => current + 1);
     setContent(workbench.draft.content);
     setSaveState("idle");
-  }, [workbenchQuery.data]);
+  }, [history, workbenchQuery.data]);
 
   const clearSaveRetry = useCallback((resetAttempts = false) => {
     if (saveRetryTimerRef.current !== null) {
@@ -1089,7 +1115,12 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
       const signature = layoutPositionSignature(next);
       if (layoutSaveInFlightRef.current) {
         queuedLayoutRef.current = coalesceQueuedLayout(layoutInFlightSignatureRef.current, next);
-        recoveryLayoutRef.current = next;
+        return;
+      }
+      const recovery = recoveryLayoutRef.current;
+      if (recovery && signature !== layoutPositionSignature(recovery)) {
+        queuedLayoutRef.current = next;
+        scheduleLayoutSaveRetry();
         return;
       }
       if (signature === layoutSavedSignatureRef.current) {
@@ -1121,7 +1152,17 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
         setLayoutSaveState("saved");
       } catch (error) {
         const nextConflict = canvasLayoutRevisionConflict(error);
-        if (nextConflict) {
+        const confirmsOwnWrite = Boolean(
+          nextConflict && confirmsOwnCanvasLayoutWrite(nextConflict.current, sessionId, signature)
+        );
+        if (nextConflict && confirmsOwnWrite) {
+          layoutRevisionRef.current = nextConflict.current.revision;
+          layoutSavedSignatureRef.current = signature;
+          recoveryLayoutRef.current = null;
+          clearLayoutSaveRetry(true);
+          setLayoutSaveError(null);
+          setLayoutSaveState("saved");
+        } else if (nextConflict) {
           requestConflicted = true;
           layoutConflictRef.current = nextConflict;
           queuedLayoutRef.current = null;
@@ -1141,11 +1182,11 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
         const queued = queuedLayoutRef.current;
         queuedLayoutRef.current = null;
         if (!requestConflicted) {
-          if (queued) {
-            recoveryLayoutRef.current = selectLatestLayoutPayload(next, queued);
-            void persistLayoutRef.current(queued);
-          } else if (requestFailed) {
+          if (requestFailed) {
+            if (queued) queuedLayoutRef.current = queued;
             scheduleLayoutSaveRetry();
+          } else if (queued) {
+            void persistLayoutRef.current(queued);
           }
         }
       }
@@ -1383,7 +1424,10 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
     },
     [bindClipVideo, focusedClipVideo, focusedGraphNodeId, projectId, t, workspaceId]
   );
-  const productionComposer: StoryVideoComposerProps | null =
+  // AI generation lives in the node inspector's "generate" tab. The clip's
+  // library reuse stays on the upload tab (clipMedia), so the generation form
+  // intentionally omits videoLibrary here.
+  const clipGeneration: StoryClipGenerationFormProps | null =
     focusedNode?.data.kind === "clip" && focusedGraphNodeId && focusedRecipe
       ? {
           target: focusedClipVideo,
@@ -1396,26 +1440,8 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
           error: productionError ?? storyGenerationError(focusedClipVideo?.generation),
           onRecipeChange: (next) => updateGenerationRecipe(focusedRecipeKey!, next),
           onGenerate: generateSelectedClip,
-          videoLibrary:
-            workspaceId && focusedGraphNodeId
-              ? {
-                  workspaceId,
-                  projectId,
-                  disabled: !canManageClipMedia,
-                  disabledReason: clipMediaDisabledReason,
-                  onSelect: selectExistingClipVideo,
-                }
-              : undefined,
         }
       : null;
-  /* eslint-disable react-hooks/refs -- the composer's commit closures reach
-     latestContentRef only inside event handlers; these objects carry no ref
-     reads at render time. */
-  const productionUi: StoryProductionUiContextValue | null =
-    focusedGraphNodeId && productionComposer
-      ? { graphNodeId: focusedGraphNodeId, composer: productionComposer }
-      : null;
-  /* eslint-enable react-hooks/refs */
   const focusedIsRoot = focusedNode?.data.kind === "root";
   const selectedTrailer = focusedIsRoot ? (video?.trailer ?? null) : null;
 
@@ -1514,33 +1540,31 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
     },
     [projectId, queryClient, refetchWorkbench, selectedTrailer, t, workspaceId]
   );
-  const trailerUi: StoryTrailerUiContextValue | null =
+  const trailerGeneration: StoryClipGenerationFormProps | null =
     focusedIsRoot && selectedTrailer
       ? {
-          composer: {
-            subject: "trailer",
-            target: selectedTrailer,
-            recipe: trailerRecipe,
-            references,
-            frameProfile: project?.frameProfile ?? "landscape_16_9",
-            canGenerate: trailerDisabledReason === null,
-            disabledReason: trailerDisabledReason,
-            pendingKey: trailerPendingKey ?? (trailerGenerationActive ? "generate" : null),
-            error: trailerError ?? storyGenerationError(selectedTrailer.generation),
-            onRecipeChange: (next) => updateGenerationRecipe(TRAILER_RECIPE_KEY, next),
-            onGenerate: generateTrailer,
-            videoLibrary: workspaceId
-              ? {
-                  workspaceId,
-                  projectId,
-                  disabled: !canGenerateTrailer,
-                  disabledReason: !canGenerateTrailer
-                    ? t("trailer.production.disabled.permission")
-                    : null,
-                  onSelect: selectExistingTrailerVideo,
-                }
-              : undefined,
-          },
+          subject: "trailer",
+          target: selectedTrailer,
+          recipe: trailerRecipe,
+          references,
+          frameProfile: project?.frameProfile ?? "landscape_16_9",
+          canGenerate: trailerDisabledReason === null,
+          disabledReason: trailerDisabledReason,
+          pendingKey: trailerPendingKey ?? (trailerGenerationActive ? "generate" : null),
+          error: trailerError ?? storyGenerationError(selectedTrailer.generation),
+          onRecipeChange: (next) => updateGenerationRecipe(TRAILER_RECIPE_KEY, next),
+          onGenerate: generateTrailer,
+          videoLibrary: workspaceId
+            ? {
+                workspaceId,
+                projectId,
+                disabled: !canGenerateTrailer,
+                disabledReason: !canGenerateTrailer
+                  ? t("trailer.production.disabled.permission")
+                  : null,
+                onSelect: selectExistingTrailerVideo,
+              }
+            : undefined,
         }
       : null;
   const authoringLocale = project?.defaultLocale ?? "en-US";
@@ -1599,61 +1623,197 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
   }, [displayEdges, setCanvasEdges]);
 
   useEffect(() => {
-    if (!canvasNodes.length) return;
+    if (!canvasNodes.length || hasFittedInitialCanvasRef.current) return;
     const timer = window.setTimeout(() => {
+      if (hasFittedInitialCanvasRef.current) return;
+      hasFittedInitialCanvasRef.current = true;
       void fitView({ padding: 0.16, duration: 420, maxZoom: 0.78 });
     }, 80);
     return () => window.clearTimeout(timer);
   }, [canvasNodes.length, fitView]);
 
-  const commitContent = (next: InteractiveFilmDraftContent) => {
+  const closeCreatorMenu = useCallback(() => setCreatorMenu(null), []);
+
+  const refreshHistoryState = useCallback(() => {
+    setHistoryVersion((current) => current + 1);
+  }, []);
+
+  const readHistorySnapshot = useCallback(
+    (snapshotContent = latestContentRef.current): StoryCanvasHistorySnapshot | null => {
+      if (!snapshotContent) return null;
+      return {
+        content: snapshotContent,
+        nodePositions: historyNodePositions(
+          snapshotContent,
+          canvasNodesRef.current,
+          pendingNodePositionsRef.current
+        ),
+      };
+    },
+    []
+  );
+
+  const restoreHistorySnapshot = useCallback(
+    (snapshot: StoryCanvasHistorySnapshot) => {
+      const currentPositions = readHistorySnapshot()?.nodePositions ?? {};
+      const layoutChanged =
+        layoutPositionSignature(currentPositions) !==
+        layoutPositionSignature(snapshot.nodePositions);
+
+      latestContentRef.current = snapshot.content;
+      setPendingCompletionDrop(null);
+      closeCreatorMenu();
+      setGraphError(null);
+      setContent(snapshot.content);
+
+      if (!layoutChanged) return;
+      pendingNodePositionsRef.current.clear();
+      Object.entries(snapshot.nodePositions).forEach(([nodeId, position]) => {
+        pendingNodePositionsRef.current.set(nodeId, { ...position });
+      });
+      setCanvasNodes((current) => {
+        const next = current.map((node) => ({
+          ...node,
+          position: snapshot.nodePositions[node.id] ?? node.position,
+        }));
+        current.forEach((node) => pendingNodePositionsRef.current.delete(node.id));
+        canvasNodesRef.current = next;
+        return next;
+      });
+      setLayoutSaveState("dirty");
+      void persistLayoutRef.current(snapshot.nodePositions);
+    },
+    [closeCreatorMenu, readHistorySnapshot, setCanvasNodes]
+  );
+
+  const undoStoryCanvas = useCallback(() => {
+    if (!canEdit) return;
+    const current = readHistorySnapshot();
+    if (!current) return;
+    const previous = history.undo(current);
+    if (!previous) return;
+    refreshHistoryState();
+    restoreHistorySnapshot(previous);
+  }, [canEdit, history, readHistorySnapshot, refreshHistoryState, restoreHistorySnapshot]);
+
+  const redoStoryCanvas = useCallback(() => {
+    if (!canEdit) return;
+    const current = readHistorySnapshot();
+    if (!current) return;
+    const next = history.redo(current);
+    if (!next) return;
+    refreshHistoryState();
+    restoreHistorySnapshot(next);
+  }, [canEdit, history, readHistorySnapshot, refreshHistoryState, restoreHistorySnapshot]);
+
+  useCanvasHistoryShortcuts({
+    enabled: canEdit,
+    undo: undoStoryCanvas,
+    redo: redoStoryCanvas,
+  });
+
+  const commitContent = (
+    next: InteractiveFilmDraftContent,
+    options: CommitContentOptions = {}
+  ): boolean => {
+    const current = latestContentRef.current;
+    if (!current || next === current) return false;
+    const snapshot = readHistorySnapshot(current);
+    if (!snapshot) return false;
+    history.capture(snapshot, { mergeKey: options.mergeKey });
+    refreshHistoryState();
     latestContentRef.current = next;
     setContent(next);
+    return true;
   };
 
   const updateFoundation = (field: FoundationField, value: string) => {
-    if (!content || !canEdit) return;
-    commitContent({
-      ...content,
-      storyBible: { ...content.storyBible, [field]: value },
-    });
+    const current = latestContentRef.current;
+    if (!current || !canEdit) return;
+    commitContent(
+      {
+        ...current,
+        storyBible: { ...current.storyBible, [field]: value },
+      },
+      { mergeKey: `foundation:${field}` }
+    );
   };
 
   const applyGraphMutation = (
-    mutation: (current: InteractiveFilmDraftContent) => InteractiveFilmDraftContent
+    mutation: (current: InteractiveFilmDraftContent) => InteractiveFilmDraftContent,
+    options: CommitContentOptions = {}
   ): boolean => {
-    if (!content || !canEdit) return false;
+    const current = latestContentRef.current;
+    if (!current || !canEdit) return false;
     try {
-      const next = mutation(content);
+      const next = mutation(current);
       setGraphError(null);
-      commitContent(next);
-      return true;
+      return commitContent(next, options);
     } catch {
       setGraphError(t("graphError.generic"));
       return false;
     }
   };
 
-  const createStoryElement = (kind: StoryNodeCreationKind) => {
+  const createStoryElement = (kind: StoryNodeCreationKind, position: StoryCanvasPosition) => {
     if (!content || !canEdit) return;
     try {
+      let nextContent: InteractiveFilmDraftContent;
+      let createdCanvasNodeId: string;
+
       if (kind === "clip") {
         const result = createClipNode(content);
-        commitContent(result.content);
-        selectCanvasNodeExclusively(result.created.nodeId);
+        nextContent = result.content;
+        createdCanvasNodeId = result.created.nodeId;
       } else if (kind === "router") {
         const result = createRouterNode(content);
-        commitContent(result.content);
-        selectCanvasNodeExclusively(result.created.nodeId);
+        nextContent = result.content;
+        createdCanvasNodeId = result.created.nodeId;
       } else if (kind === "ending") {
         const result = createEndingNode(content, { locale: authoringLocale });
-        commitContent(result.content);
-        selectCanvasNodeExclusively(syntheticEndingNodeId(result.created.id));
+        nextContent = result.content;
+        createdCanvasNodeId = syntheticEndingNodeId(result.created.id);
+      } else {
+        return;
       }
+
+      pendingNodePositionsRef.current.set(createdCanvasNodeId, { ...position });
+      commitContent(nextContent);
+      selectCanvasNodeExclusively(createdCanvasNodeId);
       setGraphError(null);
     } catch {
       setGraphError(t("graphError.generic"));
+    } finally {
+      closeCreatorMenu();
     }
+  };
+
+  const openCreatorMenuAtClientPosition = (clientPosition: StoryCanvasPosition) => {
+    if (!canEdit) return;
+    const container = canvasSectionRef.current?.getBoundingClientRect();
+    if (!container) return;
+
+    setPendingCompletionDrop(null);
+    setCreatorMenu(
+      resolveStoryNodeCreationMenuPlacement({
+        clientPosition,
+        container,
+        flowPosition: screenToFlowPosition(clientPosition),
+      })
+    );
+  };
+
+  const createStoryElementFromDock = (kind: StoryNodeCreationKind) => {
+    const container = canvasSectionRef.current?.getBoundingClientRect();
+    if (!container) return;
+    const flowCenter = screenToFlowPosition({
+      x: container.left + container.width / 2,
+      y: container.top + container.height / 2,
+    });
+    createStoryElement(
+      kind,
+      offsetStoryNodeDockCreationPosition(flowCenter, canvasNodesRef.current.length)
+    );
   };
 
   const connectStoryNodes = (connection: Connection) => {
@@ -1729,7 +1889,7 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
       source.data.exitKind === "auto" &&
       sourceHandleId === "completion"
     ) {
-      setCreatorOpen(false);
+      closeCreatorMenu();
       setPendingCompletionDrop({
         sourceCanvasNodeId: source.id,
         sourceHandleId,
@@ -1757,7 +1917,7 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
       setGraphError(null);
       commitContent(created.content);
       selectCanvasNodeExclusively(created.createdNodeId);
-      setCreatorOpen(false);
+      closeCreatorMenu();
     } catch {
       setGraphError(t("graphError.generic"));
     }
@@ -1859,92 +2019,39 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
     );
   };
 
-  const deleteStoryEdges = (edges: StoryCanvasEdge[]) => {
-    const deletedDecisionSources = new Set(
-      edges.flatMap((edge) => (edge.data.kind === "decision" ? [edge.data.sourceNodeId] : []))
-    );
-    const normalizedEdges = edges.filter((edge) => {
-      if (edge.data.kind !== "choice") return true;
-      const sourceProjection = model?.nodes.find((node) => node.id === edge.source);
-      return (
-        !sourceProjection?.data.sourceNodeId ||
-        !deletedDecisionSources.has(sourceProjection.data.sourceNodeId)
+  const deleteStoryElements = ({
+    nodes,
+    edges,
+  }: {
+    nodes: StoryCanvasNode[];
+    edges: StoryCanvasEdge[];
+  }) => {
+    const currentSnapshot = readHistorySnapshot();
+    if (!currentSnapshot) return;
+    let deletedNodeIds = new Set<string>();
+    const deleted = applyGraphMutation((current) => {
+      const next = deleteStoryCanvasElements(current, { nodes, edges });
+      const nextNodeIds = storyCanvasContentNodeIds(next);
+      deletedNodeIds = new Set(
+        [...storyCanvasContentNodeIds(current)].filter((nodeId) => !nextNodeIds.has(nodeId))
       );
+      return next;
     });
-    const orderedEdges = [...normalizedEdges].sort((left, right) => {
-      if (left.source === right.source && left.data.kind === "auto" && right.data.kind === "auto") {
-        return right.data.routeIndex - left.data.routeIndex;
-      }
-      return left.id.localeCompare(right.id);
-    });
-    applyGraphMutation((current) =>
-      orderedEdges.reduce((next, edge) => {
-        if (edge.data.kind === "root") return setEntryNode(next, null);
-        if (edge.data.kind === "continuation") {
-          return disconnectStoryBranch(next, {
-            kind: "continuation",
-            sourceNodeId: edge.source,
-            targetNodeId: edge.target,
-          });
-        }
-        if (edge.data.kind === "auto") {
-          return disconnectStoryBranch(next, {
-            kind: "auto",
-            sourceNodeId: edge.source,
-            routeIndex: edge.data.routeIndex,
-            targetNodeId: edge.target,
-            priority: edge.data.priority,
-          });
-        }
-        if (edge.data.kind === "decision") {
-          return disconnectStoryBranch(next, {
-            kind: "decision",
-            sourceNodeId: edge.data.sourceNodeId,
-          });
-        }
-        if (edge.data.kind === "choice") {
-          const sourceProjection = model?.nodes.find((node) => node.id === edge.source);
-          if (!sourceProjection?.data.sourceNodeId) return next;
-          return disconnectStoryBranch(next, {
-            kind: "choice",
-            sourceNodeId: sourceProjection.data.sourceNodeId,
-            choiceId: edge.data.choiceId,
-          });
-        }
-        if (edge.data.kind === "checkpoint") {
-          return disconnectStoryBranch(next, {
-            kind: "checkpoint",
-            sourceNodeId: edge.source,
-            targetNodeId: edge.target,
-          });
-        }
-        return disconnectStoryBranch(next, {
-          kind: "ending",
-          sourceNodeId: edge.source,
-          endingId: edge.data.endingId,
-        });
-      }, current)
-    );
-  };
+    if (!deleted) return;
 
-  const deleteStoryNodes = (nodes: StoryCanvasNode[]) => {
-    const deletedNodeIds = new Set(nodes.map((node) => node.id));
+    if (deletedNodeIds.size > 0) {
+      const remainingPositions = Object.fromEntries(
+        Object.entries(currentSnapshot.nodePositions).filter(
+          ([nodeId]) => !deletedNodeIds.has(nodeId)
+        )
+      );
+      deletedNodeIds.forEach((nodeId) => pendingNodePositionsRef.current.delete(nodeId));
+      setLayoutSaveState("dirty");
+      void persistLayoutRef.current(remainingPositions);
+    }
     const remainingSelectedNodeIds = latestCanvasSelectionRef.current.filter(
       (nodeId) => !deletedNodeIds.has(nodeId)
     );
-    const deleted = applyGraphMutation((current) =>
-      nodes.reduce((next, node) => {
-        if (node.data.kind === "root") return next;
-        if (node.data.kind === "decision" && node.data.sourceNodeId) {
-          return convertExitToAuto(next, node.data.sourceNodeId);
-        }
-        if (node.data.kind === "ending" && node.data.endingId) {
-          return deleteEndingNode(next, node.data.endingId);
-        }
-        return deleteGraphNode(next, node.data.nodeId);
-      }, current)
-    );
-    if (!deleted) return;
     pendingCanvasSelectionRef.current = null;
     requestedCanvasFocusRef.current = null;
     latestCanvasSelectionRef.current = remainingSelectedNodeIds;
@@ -1962,38 +2069,43 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
     choiceId: string,
     patch: Parameters<typeof updateChoiceOption>[3] & { nextNodeId?: string }
   ) => {
-    applyGraphMutation((current) => {
-      let next = current;
-      const { nextNodeId, ...optionPatch } = patch;
-      if (Object.keys(optionPatch).length > 0) {
-        next = updateChoiceOption(next, nodeId, choiceId, optionPatch);
-      }
-      if (nextNodeId !== undefined) {
-        next = connectChoiceTarget(next, nodeId, choiceId, nextNodeId);
-      }
-      return next;
-    });
+    applyGraphMutation(
+      (current) => {
+        let next = current;
+        const { nextNodeId, ...optionPatch } = patch;
+        if (Object.keys(optionPatch).length > 0) {
+          next = updateChoiceOption(next, nodeId, choiceId, optionPatch);
+        }
+        if (nextNodeId !== undefined) {
+          next = connectChoiceTarget(next, nodeId, choiceId, nextNodeId);
+        }
+        return next;
+      },
+      { mergeKey: `choice:${nodeId}:${choiceId}:${Object.keys(patch).sort().join(",")}` }
+    );
   };
 
   const updateEnding = (
     endingId: string,
     patch: Partial<InteractiveFilmDraftContent["storyBible"]["endings"][number]>
   ) => {
-    applyGraphMutation((current) =>
-      updateEndingNode(current, endingId, {
-        ...(patch.summary
-          ? {
-              summary: {
-                locale: authoringLocale,
-                value: patch.summary[authoringLocale] ?? "",
-              },
-            }
-          : {}),
-        ...(patch.kind !== undefined ? { kind: patch.kind } : {}),
-        ...(patch.title
-          ? { title: { locale: authoringLocale, value: patch.title[authoringLocale] ?? "" } }
-          : {}),
-      })
+    applyGraphMutation(
+      (current) =>
+        updateEndingNode(current, endingId, {
+          ...(patch.summary
+            ? {
+                summary: {
+                  locale: authoringLocale,
+                  value: patch.summary[authoringLocale] ?? "",
+                },
+              }
+            : {}),
+          ...(patch.kind !== undefined ? { kind: patch.kind } : {}),
+          ...(patch.title
+            ? { title: { locale: authoringLocale, value: patch.title[authoringLocale] ?? "" } }
+            : {}),
+        }),
+      { mergeKey: `ending:${endingId}:${Object.keys(patch).sort().join(",")}` }
     );
   };
 
@@ -2041,6 +2153,8 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
     latestContentRef.current = conflict.current.content;
     queuedContentRef.current = null;
     recoveryContentRef.current = null;
+    history.clear();
+    refreshHistoryState();
     setContent(conflict.current.content);
     setConflict(null);
     setSaveError(null);
@@ -2061,6 +2175,8 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
     clearLayoutSaveRetry(true);
     layoutRevisionRef.current = layoutConflict.current.revision;
     layoutSavedSignatureRef.current = layoutPositionSignature(nodePositions(latestNodes));
+    history.clear();
+    refreshHistoryState();
     canvasNodesRef.current = latestNodes;
     const selectedNodeIds = latestNodes.filter((node) => node.selected).map((node) => node.id);
     latestCanvasSelectionRef.current = selectedNodeIds;
@@ -2135,7 +2251,15 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
         onRetry={publication.retry}
       />
 
-      <section className="absolute inset-x-0 top-16 bottom-0 right-[380px]">
+      <section
+        ref={canvasSectionRef}
+        className="absolute top-16 right-0 bottom-0 left-[380px]"
+        onDoubleClick={(event) => {
+          if (!canEdit || !isCanvasPaneTarget(event.target)) return;
+          event.preventDefault();
+          openCreatorMenuAtClientPosition({ x: event.clientX, y: event.clientY });
+        }}
+      >
         <div
           aria-hidden="true"
           className="pointer-events-none absolute inset-0"
@@ -2147,96 +2271,125 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
           }}
         />
         <MediaHoverPreviewProvider>
-          <StoryTrailerUiContext.Provider value={trailerUi}>
-            <StoryProductionUiContext.Provider value={productionUi}>
-              <StoryCanvasFocusContext.Provider value={focusedNodeId}>
-                <StoryCanvasReactFlow
-                  nodes={layeredCanvasNodes}
-                  edges={canvasEdges}
-                  onNodesChange={onCanvasNodesChange}
-                  onEdgesChange={(changes) =>
-                    onCanvasEdgesChange(changes.filter((change) => change.type === "select"))
-                  }
-                  onConnect={connectStoryNodes}
-                  onConnectEnd={finishConnectionOnBlankCanvas}
-                  isValidConnection={isValidStoryConnection}
-                  onEdgesDelete={deleteStoryEdges}
-                  onNodesDelete={deleteStoryNodes}
-                  onSelectionChange={onCanvasSelectionChange}
-                  onSelectionStart={onCanvasSelectionStart}
-                  onSelectionEnd={onCanvasSelectionEnd}
-                  onNodeDragStop={(_event, draggedNode, draggedNodes) => {
-                    const movedNodes = new Map(
-                      [...draggedNodes, draggedNode].map((node) => [node.id, node])
-                    );
-                    const positions = nodePositions(
-                      canvasNodes.map((node) => movedNodes.get(node.id) ?? node)
-                    );
-                    if (layoutPositionSignature(positions) === layoutSavedSignatureRef.current)
-                      return;
-                    setLayoutSaveState("dirty");
-                    void persistLayoutRef.current(positions);
-                  }}
-                  onNodeClick={(event, node) => {
-                    if (event.shiftKey && node.selected) {
-                      requestedCanvasFocusRef.current = null;
-                      const remainingNodeIds = latestCanvasSelectionRef.current.filter(
-                        (nodeId) => nodeId !== node.id
-                      );
-                      latestCanvasSelectionRef.current = remainingNodeIds;
-                      reconcileCanvasFocus(remainingNodeIds);
-                      return;
-                    }
-                    requestedCanvasFocusRef.current = node.id;
-                    setFocusedNodeId(node.id);
-                  }}
-                  onPaneClick={() => {
-                    selectCanvasNodeExclusively(null);
-                    setCreatorOpen(false);
-                  }}
-                  nodeTypes={NODE_TYPES}
-                  defaultEdgeOptions={DEFAULT_EDGE_OPTIONS}
-                  colorMode="dark"
-                  proOptions={{ hideAttribution: true }}
-                  minZoom={0.16}
-                  maxZoom={1.4}
-                  defaultViewport={{ x: 80, y: 160, zoom: 0.48 }}
-                  nodesDraggable={canEdit}
-                  nodesConnectable={canEdit}
-                  edgesReconnectable={false}
-                  edgesFocusable={canEdit}
-                  deleteKeyCode={canEdit ? ["Backspace", "Delete"] : null}
-                  selectNodesOnDrag
-                  zoomOnDoubleClick={false}
-                  fitView={canvasNodes.length > 0}
-                  fitViewOptions={{ padding: 0.16, maxZoom: 0.78 }}
-                  className="relative z-10"
-                  style={{ backgroundColor: "transparent" }}
-                >
-                  <MiniMap
-                    pannable
-                    position="bottom-left"
-                    className="canvas-wheel-zoom bottom-5! left-20! m-0! overflow-hidden rounded-[18px] bg-[oklch(0.24_0_0/0.82)]! shadow-[0_18px_60px_rgba(0,0,0,0.4)] backdrop-blur-[30px]! backdrop-saturate-150!"
-                    bgColor="oklch(0.24 0 0 / 0.82)"
-                    maskColor="rgba(0,0,0,0.46)"
-                    nodeColor="rgba(255,255,255,0.42)"
-                    nodeStrokeWidth={0}
-                  />
-                  <CanvasControls
-                    position="bottom-left"
-                    className="bottom-5! left-5! overflow-hidden rounded-full bg-[oklch(0.24_0_0/0.82)]! p-1! shadow-[0_18px_60px_rgba(0,0,0,0.35)] backdrop-blur-[30px]! backdrop-saturate-150! [&_button]:size-9!"
-                  />
-                </StoryCanvasReactFlow>
-              </StoryCanvasFocusContext.Provider>
-            </StoryProductionUiContext.Provider>
-          </StoryTrailerUiContext.Provider>
+          <StoryCanvasFocusContext.Provider value={focusedNodeId}>
+            <StoryCanvasReactFlow
+              nodes={layeredCanvasNodes}
+              edges={canvasEdges}
+              onNodesChange={onCanvasNodesChange}
+              onEdgesChange={(changes) =>
+                onCanvasEdgesChange(changes.filter((change) => change.type === "select"))
+              }
+              onConnect={connectStoryNodes}
+              onConnectEnd={finishConnectionOnBlankCanvas}
+              onInteractionStart={closeCreatorMenu}
+              isValidConnection={isValidStoryConnection}
+              onDelete={deleteStoryElements}
+              onSelectionChange={onCanvasSelectionChange}
+              onSelectionStart={onCanvasSelectionStart}
+              onSelectionEnd={onCanvasSelectionEnd}
+              onNodeDragStart={() => {
+                dragStartHistorySnapshotRef.current = readHistorySnapshot();
+              }}
+              onNodeDragStop={(_event, draggedNode, draggedNodes) => {
+                const movedNodes = new Map(
+                  [...draggedNodes, draggedNode].map((node) => [node.id, node])
+                );
+                const positions = nodePositions(
+                  canvasNodes.map((node) => movedNodes.get(node.id) ?? node)
+                );
+                const beforeDrag = dragStartHistorySnapshotRef.current;
+                dragStartHistorySnapshotRef.current = null;
+                if (
+                  beforeDrag &&
+                  layoutPositionSignature(beforeDrag.nodePositions) !==
+                    layoutPositionSignature(positions)
+                ) {
+                  history.capture(beforeDrag);
+                  refreshHistoryState();
+                }
+                if (layoutPositionSignature(positions) === layoutSavedSignatureRef.current) return;
+                setLayoutSaveState("dirty");
+                void persistLayoutRef.current(positions);
+              }}
+              onNodeClick={(event, node) => {
+                closeCreatorMenu();
+                if (event.shiftKey && node.selected) {
+                  requestedCanvasFocusRef.current = null;
+                  const remainingNodeIds = latestCanvasSelectionRef.current.filter(
+                    (nodeId) => nodeId !== node.id
+                  );
+                  latestCanvasSelectionRef.current = remainingNodeIds;
+                  reconcileCanvasFocus(remainingNodeIds);
+                  return;
+                }
+                requestedCanvasFocusRef.current = node.id;
+                setFocusedNodeId(node.id);
+              }}
+              onPaneClick={() => {
+                selectCanvasNodeExclusively(null);
+                closeCreatorMenu();
+              }}
+              onPaneContextMenu={(event) => {
+                if (!canEdit) return;
+                event.preventDefault();
+                openCreatorMenuAtClientPosition({ x: event.clientX, y: event.clientY });
+              }}
+              onMoveStart={closeCreatorMenu}
+              nodeTypes={NODE_TYPES}
+              defaultEdgeOptions={DEFAULT_EDGE_OPTIONS}
+              colorMode="dark"
+              proOptions={{ hideAttribution: true }}
+              minZoom={0.16}
+              maxZoom={1.4}
+              defaultViewport={{ x: 80, y: 160, zoom: 0.48 }}
+              nodesDraggable={canEdit}
+              nodesConnectable={canEdit}
+              edgesReconnectable={false}
+              edgesFocusable={canEdit}
+              deleteKeyCode={canEdit ? CANVAS_DELETE_KEY_CODES : null}
+              selectNodesOnDrag
+              zoomOnDoubleClick={false}
+              fitView={canvasNodes.length > 0}
+              fitViewOptions={{ padding: 0.16, maxZoom: 0.78 }}
+              className="relative z-10"
+              style={{ backgroundColor: "transparent" }}
+            >
+              <MiniMap
+                pannable
+                position="bottom-left"
+                className="canvas-wheel-zoom bottom-5! left-20! m-0! overflow-hidden rounded-[18px] bg-[oklch(0.24_0_0/0.82)]! shadow-[0_18px_60px_rgba(0,0,0,0.4)] backdrop-blur-[30px]! backdrop-saturate-150!"
+                bgColor="oklch(0.24 0 0 / 0.82)"
+                maskColor="rgba(0,0,0,0.46)"
+                nodeColor="rgba(255,255,255,0.42)"
+                nodeStrokeWidth={0}
+              />
+              <CanvasControls
+                position="bottom-left"
+                className="bottom-5! left-5! overflow-hidden rounded-full bg-[oklch(0.24_0_0/0.82)]! p-1! shadow-[0_18px_60px_rgba(0,0,0,0.35)] backdrop-blur-[30px]! backdrop-saturate-150! [&_button]:size-9!"
+              />
+            </StoryCanvasReactFlow>
+          </StoryCanvasFocusContext.Provider>
         </MediaHoverPreviewProvider>
 
+        {canEdit ? <StoryNodeDock onCreate={createStoryElementFromDock} /> : null}
+
         {canEdit ? (
+          <CanvasHistoryControls
+            canUndo={history.canUndo}
+            canRedo={history.canRedo}
+            undo={undoStoryCanvas}
+            redo={redoStoryCanvas}
+            undoLabel={canvasT("undo")}
+            redoLabel={canvasT("redo")}
+            className="absolute right-5 bottom-5 z-20 bg-[oklch(0.24_0_0/0.82)] shadow-[0_18px_60px_rgba(0,0,0,0.35)] backdrop-blur-[30px] backdrop-saturate-150"
+          />
+        ) : null}
+
+        {canEdit && creatorMenu ? (
           <StoryNodeCreator
-            open={creatorOpen}
-            onOpenChange={setCreatorOpen}
-            onCreate={createStoryElement}
+            position={{ left: creatorMenu.left, top: creatorMenu.top }}
+            onCreate={(kind) => createStoryElement(kind, creatorMenu.flowPosition)}
+            onCancel={closeCreatorMenu}
           />
         ) : null}
       </section>
@@ -2274,20 +2427,31 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
               }
             : undefined
         }
+        clipGeneration={clipGeneration ?? undefined}
+        trailerGeneration={trailerGeneration ?? undefined}
+        onUpdateClipMeta={(nodeId, patch) =>
+          applyGraphMutation((current) => updateStoryClipMeta(current, nodeId, patch), {
+            mergeKey: `clip-meta:${nodeId}:${Object.keys(patch).sort().join(",")}`,
+          })
+        }
         showFoundation={focusedNodeId === null}
         canEdit={canEdit}
         onShowFoundation={() => selectCanvasNodeExclusively(null)}
         onUpdateFoundation={updateFoundation}
         onCreateCharacter={createCharacter}
         onUpdateCharacter={(characterId, patch) =>
-          applyGraphMutation((current) => updateStoryCharacter(current, characterId, patch))
+          applyGraphMutation((current) => updateStoryCharacter(current, characterId, patch), {
+            mergeKey: `character:${characterId}:${Object.keys(patch).sort().join(",")}`,
+          })
         }
         onDeleteCharacter={(characterId) =>
           applyGraphMutation((current) => deleteStoryCharacter(current, characterId))
         }
         onAddWorldTextItem={addWorldItem}
         onUpdateWorldTextItem={(field, index, value) =>
-          applyGraphMutation((current) => updateWorldTextItem(current, field, index, value))
+          applyGraphMutation((current) => updateWorldTextItem(current, field, index, value), {
+            mergeKey: `world:${field}:${index}`,
+          })
         }
         onRemoveWorldTextItem={(field, index) =>
           applyGraphMutation((current) => removeWorldTextItem(current, field, index))
@@ -2298,13 +2462,17 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
           applyGraphMutation((current) => connectAutoRoute(current, nodeId, targetNodeId))
         }
         onUpdateAutoRoute={(nodeId, routeIndex, patch) =>
-          applyGraphMutation((current) => updateAutoRoute(current, nodeId, routeIndex, patch))
+          applyGraphMutation((current) => updateAutoRoute(current, nodeId, routeIndex, patch), {
+            mergeKey: `auto-route:${nodeId}:${routeIndex}:${Object.keys(patch).sort().join(",")}`,
+          })
         }
         onRemoveAutoRoute={(nodeId, routeIndex) =>
           applyGraphMutation((current) => disconnectAutoRoute(current, nodeId, { routeIndex }))
         }
         onUpdateChoiceExit={(nodeId, patch) =>
-          applyGraphMutation((current) => updateChoiceExit(current, nodeId, patch))
+          applyGraphMutation((current) => updateChoiceExit(current, nodeId, patch), {
+            mergeKey: `choice-exit:${nodeId}:${Object.keys(patch).sort().join(",")}`,
+          })
         }
         onAddChoice={addChoice}
         onUpdateChoice={updateChoice}
@@ -2317,12 +2485,12 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
         onUpdateEnding={updateEnding}
         onDuplicateNode={duplicateNode}
         onDeleteSelected={() => {
-          if (focusedNode) deleteStoryNodes([focusedNode]);
+          if (focusedNode) void deleteElements({ nodes: [focusedNode] });
         }}
       />
 
       {graphError ? (
-        <FrostedPanel className="absolute right-[396px] bottom-5 z-50 flex max-w-[520px] items-center gap-3 rounded-[16px] bg-[oklch(0.24_0_0/0.9)] px-4 py-3 shadow-[0_20px_70px_rgba(0,0,0,0.48)] backdrop-blur-[30px]">
+        <FrostedPanel className="absolute right-5 bottom-20 z-50 flex max-w-[520px] items-center gap-3 rounded-[16px] bg-[oklch(0.24_0_0/0.9)] px-4 py-3 shadow-[0_20px_70px_rgba(0,0,0,0.48)] backdrop-blur-[30px]">
           <IconAlertTriangle className="size-4 shrink-0 text-[#ff9b9e]" />
           <p className="min-w-0 flex-1 text-xs leading-5 text-white/68">{graphError}</p>
           <button
@@ -2529,8 +2697,6 @@ function StoryPortHandle({
 
 function StoryGraphNodeCard({ id, data, selected, isConnectable }: NodeProps<StoryCanvasNode>) {
   const t = useTranslations("storyStudio.canvas");
-  const productionUi = useContext(StoryProductionUiContext);
-  const trailerUi = useContext(StoryTrailerUiContext);
   const focusedNodeId = useContext(StoryCanvasFocusContext);
   const isRoot = data.kind === "root";
   const isEnding = data.kind === "ending";
@@ -2812,12 +2978,6 @@ function StoryGraphNodeCard({ id, data, selected, isConnectable }: NodeProps<Sto
           ) : null}
         </div>
       </article>
-      {selected && data.kind === "clip" && productionUi?.graphNodeId === data.nodeId ? (
-        <StoryShotComposer {...productionUi.composer} />
-      ) : null}
-      {selected && data.kind === "root" && trailerUi?.composer ? (
-        <StoryShotComposer {...trailerUi.composer} />
-      ) : null}
     </div>
   );
 }
@@ -3008,7 +3168,7 @@ function ConflictBanner({
 }) {
   const t = useTranslations("storyStudio.canvas");
   return (
-    <FrostedPanel className="absolute top-20 left-1/2 z-50 flex -translate-x-1/2 items-center gap-4 bg-[oklch(0.24_0_0/0.82)] px-4 py-3 shadow-[0_20px_70px_rgba(0,0,0,0.52)] backdrop-blur-[30px]">
+    <FrostedPanel className="absolute top-20 left-[calc(50%+190px)] z-50 flex -translate-x-1/2 items-center gap-4 bg-[oklch(0.24_0_0/0.82)] px-4 py-3 shadow-[0_20px_70px_rgba(0,0,0,0.52)] backdrop-blur-[30px]">
       <IconAlertTriangle className="size-4 shrink-0 text-[#ff9b9e]" />
       <p className="text-xs text-white/72">{description ?? t("conflict.description")}</p>
       <Button size="sm" variant="secondary" onClick={onLoadLatest}>
@@ -3062,6 +3222,39 @@ function nodePositions(nodes: StoryCanvasNode[]): Record<string, StoryCanvasPosi
       .sort((left, right) => left.id.localeCompare(right.id))
       .map((node) => [node.id, { x: node.position.x, y: node.position.y }])
   );
+}
+
+function historyNodePositions(
+  content: InteractiveFilmDraftContent,
+  nodes: readonly StoryCanvasNode[],
+  pending: ReadonlyMap<string, StoryCanvasPosition>
+): Record<string, StoryCanvasPosition> {
+  const contentNodeIds = storyCanvasContentNodeIds(content);
+
+  const positions = Object.fromEntries(
+    nodes
+      .filter((node) => contentNodeIds.has(node.id))
+      .sort((left, right) => left.id.localeCompare(right.id))
+      .map((node) => [node.id, { x: node.position.x, y: node.position.y }])
+  );
+  pending.forEach((position, nodeId) => {
+    if (contentNodeIds.has(nodeId)) positions[nodeId] = { ...position };
+  });
+  return positions;
+}
+
+function storyCanvasContentNodeIds(content: InteractiveFilmDraftContent): Set<string> {
+  const nodeIds = new Set<string>([STORY_ROOT_NODE_ID]);
+  content.graph.nodes.forEach((node) => {
+    nodeIds.add(node.nodeId);
+    if (node.kind === "clip" && node.exit.kind === "choice") {
+      nodeIds.add(syntheticDecisionNodeId(node.nodeId));
+    }
+  });
+  content.storyBible.endings.forEach((ending) => {
+    nodeIds.add(syntheticEndingNodeId(ending.id));
+  });
+  return nodeIds;
 }
 
 function isCanvasPaneTarget(target: EventTarget | null): boolean {

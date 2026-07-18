@@ -19,8 +19,6 @@ import "@xyflow/react/dist/style.css";
 import { useTranslations } from "next-intl";
 import {
   IconApps,
-  IconArrowBackUp,
-  IconArrowForwardUp,
   IconCloudUpload,
   IconHistory,
   IconSparkles,
@@ -59,6 +57,9 @@ import { cn } from "@/lib/utils";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { CanvasReactFlow } from "@/components/canvas/canvas-react-flow";
 import { CanvasToolButtons } from "@/components/canvas/canvas-controls";
+import { CanvasHistoryControls } from "@/components/canvas/canvas-history-controls";
+import { useCanvasHistoryShortcuts } from "@/components/canvas/canvas-history";
+import { CANVAS_DELETE_KEY_CODES } from "@/components/canvas/canvas-interaction-policy";
 import { CopilotPanel } from "./copilot/copilot-panel";
 import { CreditsBadge } from "@/app/_components/credits-badge";
 import { useProjectContext } from "@/app/[locale]/project/_components/project-context";
@@ -516,6 +517,8 @@ function CanvasInner({ projectId, canEdit }: { projectId: string; canEdit: boole
   const fittedRef = useRef(false);
   const lastCursorAt = useRef(0);
   const clipboard = useRef<CanvasClipboard | null>(null);
+
+  useCanvasHistoryShortcuts({ enabled: canEdit, undo, redo });
 
   // Fit the view once, after the first sync brings the graph in.
   useEffect(() => {
@@ -1033,17 +1036,6 @@ function CanvasInner({ projectId, canEdit }: { projectId: string; canEdit: boole
       // Don't act behind an open modal (e.g. the beta notice).
       if (document.querySelector('[role="dialog"]')) return;
       const mod = event.metaKey || event.ctrlKey;
-      if (mod && event.key.toLowerCase() === "z") {
-        event.preventDefault();
-        if (event.shiftKey) redo();
-        else undo();
-        return;
-      }
-      if (mod && event.key.toLowerCase() === "y") {
-        event.preventDefault();
-        redo();
-        return;
-      }
       if (mod && event.key.toLowerCase() === "c") {
         event.preventDefault();
         copySelection();
@@ -1077,7 +1069,7 @@ function CanvasInner({ projectId, canEdit }: { projectId: string; canEdit: boole
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [undo, redo, addNodeFromDock, copySelection, pasteClipboard, duplicateSelection]);
+  }, [addNodeFromDock, copySelection, pasteClipboard, duplicateSelection]);
 
   // Place a library asset on the canvas as a typed source node — at `position`
   // when dragged-and-dropped, else the viewport center (click-to-add).
@@ -1360,7 +1352,7 @@ function CanvasInner({ projectId, canEdit }: { projectId: string; canEdit: boole
                 snapToGrid={snapToGrid}
                 snapGrid={[GRID_SIZE, GRID_SIZE]}
                 zoomOnDoubleClick={false}
-                deleteKeyCode={canEdit ? ["Backspace", "Delete"] : null}
+                deleteKeyCode={canEdit ? CANVAS_DELETE_KEY_CODES : null}
                 onPaneClick={() => {
                   if (Date.now() - lastConnectEndAt.current < 250) return;
                   setAddMenu(null);
@@ -1472,26 +1464,15 @@ function CanvasInner({ projectId, canEdit }: { projectId: string; canEdit: boole
 
               {/* Undo / redo (Ctrl+Z / Ctrl+Shift+Z). */}
               {canEdit && (
-                <div className="absolute right-4 bottom-4 z-20 flex items-center gap-0.5 rounded-full bg-popover/90 p-1 shadow-md backdrop-blur-xl">
-                  <button
-                    type="button"
-                    aria-label={t("undo")}
-                    disabled={!canUndo}
-                    onClick={() => undo()}
-                    className="flex size-8 items-center justify-center rounded-full text-white/70 transition-colors hover:bg-white/[0.08] hover:text-white disabled:opacity-30 disabled:hover:bg-transparent"
-                  >
-                    <IconArrowBackUp className="size-4" stroke={1.8} />
-                  </button>
-                  <button
-                    type="button"
-                    aria-label={t("redo")}
-                    disabled={!canRedo}
-                    onClick={() => redo()}
-                    className="flex size-8 items-center justify-center rounded-full text-white/70 transition-colors hover:bg-white/[0.08] hover:text-white disabled:opacity-30 disabled:hover:bg-transparent"
-                  >
-                    <IconArrowForwardUp className="size-4" stroke={1.8} />
-                  </button>
-                </div>
+                <CanvasHistoryControls
+                  canUndo={canUndo}
+                  canRedo={canRedo}
+                  undo={undo}
+                  redo={redo}
+                  undoLabel={t("undo")}
+                  redoLabel={t("redo")}
+                  className="absolute right-4 bottom-4 z-20"
+                />
               )}
 
               {/* Left rail (root-sidebar style) — opens the project's asset library. */}

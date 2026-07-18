@@ -1982,13 +1982,14 @@
           "noVideo": "No video yet",
           "videoPreview": "Current video preview",
           "generationFailed": "Generation failed"
-        }
+        },
+        "model": "Model",
+        "references": "References"
       },
       "inspector": {
         "eyebrow": "Node inspector",
         "close": "Close node inspector",
         "nodeId": "Stable node ID",
-        "clipKey": "Clip key",
         "media": {
           "title": "Current video",
           "description": "Upload a local file or reuse a video from this workspace.",
@@ -2008,7 +2009,9 @@
           "unknownDuration": "Unknown duration",
           "errors": {
             "upload": "The video could not be uploaded."
-          }
+          },
+          "tabUpload": "Upload",
+          "tabGenerate": "AI generate"
         },
         "exit": "Next step",
         "production": "Production status",
@@ -2056,12 +2059,10 @@
         "delete": "Delete node",
         "deleteEnding": "Delete ending",
         "removeDecision": "Remove choice step",
-        "removeDecisionTitle": "Remove this choice step?",
-        "removeDecisionDescription": "The decision prompt and every option, condition, effect, and target will be removed. The source clip will return to an empty automatic route.",
-        "deleteTitle": "Delete this graph element?",
-        "deleteDescription": "Incoming and outgoing routes will be removed. Existing production media is not deleted.",
         "cancel": "Cancel",
-        "confirmDelete": "Delete"
+        "nodeName": "Name",
+        "nodeDescription": "Description",
+        "nodeDescriptionPlaceholder": "What happens in this scene?"
       },
       "routes": {
         "title": "Automatic routes",

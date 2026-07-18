@@ -1,4 +1,4 @@
-import type { StoryCanvasPosition } from "@/lib/story-projects-api";
+import type { StoryCanvasLayout, StoryCanvasPosition } from "@/lib/story-projects-api";
 
 export type StoryCanvasLayoutPositions = Record<string, StoryCanvasPosition>;
 
@@ -18,12 +18,15 @@ export function coalesceQueuedLayout(
   return layoutPositionSignature(next) === inFlightSignature ? null : next;
 }
 
-/** A user edit queued during a failed request always supersedes that failure. */
-export function selectLatestLayoutPayload(
-  failed: StoryCanvasLayoutPositions,
-  queued: StoryCanvasLayoutPositions | null
-): StoryCanvasLayoutPositions {
-  return queued ?? failed;
+export function confirmsOwnCanvasLayoutWrite(
+  current: StoryCanvasLayout,
+  sessionId: string,
+  expectedSignature: string
+): boolean {
+  return (
+    current.updatedBySessionId === sessionId &&
+    layoutPositionSignature(current.nodePositions) === expectedSignature
+  );
 }
 
 export function layoutRetryDelay(attempt: number): number {

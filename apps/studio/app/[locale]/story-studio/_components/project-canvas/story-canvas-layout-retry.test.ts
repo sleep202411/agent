@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
   coalesceQueuedLayout,
+  confirmsOwnCanvasLayoutWrite,
   layoutPositionSignature,
   layoutRetryDelay,
-  selectLatestLayoutPayload,
   type StoryCanvasLayoutPositions,
 } from "./story-canvas-layout-retry";
 
@@ -23,12 +23,28 @@ describe("story canvas layout retry state", () => {
     expect(coalesceQueuedLayout(signature, newer)).toBe(newer);
   });
 
-  it("lets the latest queued layout supersede an older failed payload", () => {
-    const failed = layout("node", 10);
-    const newer = layout("node", 30);
+  it("recognizes a lost response only when the server head matches this session and payload", () => {
+    const positions = layout("node", 10);
+    const current = {
+      projectId: "project",
+      schemaVersion: "story-canvas-layout-v1" as const,
+      nodePositions: positions,
+      revision: 4,
+      updatedByUserId: "user",
+      updatedBySessionId: "session",
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z",
+    };
 
-    expect(selectLatestLayoutPayload(failed, newer)).toBe(newer);
-    expect(selectLatestLayoutPayload(failed, null)).toBe(failed);
+    expect(
+      confirmsOwnCanvasLayoutWrite(current, "session", layoutPositionSignature(positions))
+    ).toBe(true);
+    expect(
+      confirmsOwnCanvasLayoutWrite(current, "other-session", layoutPositionSignature(positions))
+    ).toBe(false);
+    expect(
+      confirmsOwnCanvasLayoutWrite(current, "session", layoutPositionSignature(layout("node", 20)))
+    ).toBe(false);
   });
 
   it("backs off exponentially and caps retries at thirty seconds", () => {

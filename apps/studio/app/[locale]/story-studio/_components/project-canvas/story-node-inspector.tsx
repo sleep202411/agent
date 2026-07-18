@@ -30,6 +30,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 import type {
@@ -45,6 +46,10 @@ import {
 } from "./story-auto-routes-editor";
 import { StoryChoiceAdvancedEditor } from "./story-choice-advanced-editor";
 import { StoryClipMediaPanel, type StoryClipMediaPanelProps } from "./story-clip-media-panel";
+import {
+  StoryClipGenerationForm,
+  type StoryClipGenerationFormProps,
+} from "./story-clip-generation-form";
 import { StoryWorldLibrary } from "./story-world-library";
 
 type FoundationField = "logline" | "synopsis" | "worldview";
@@ -94,6 +99,9 @@ interface StoryNodeInspectorProps {
   onDuplicateNode: (nodeId: string) => void;
   onDeleteSelected: () => void;
   clipMedia?: StoryClipMediaPanelProps;
+  clipGeneration?: StoryClipGenerationFormProps;
+  trailerGeneration?: StoryClipGenerationFormProps;
+  onUpdateClipMeta: (nodeId: string, patch: { name?: string; description?: string }) => void;
 }
 
 const ENDING_KINDS: Ending["kind"][] = ["truth", "bond", "echo", "failure", "hidden", "custom"];
@@ -126,9 +134,11 @@ export function StoryNodeInspector({
   onDuplicateNode,
   onDeleteSelected,
   clipMedia,
+  clipGeneration,
+  trailerGeneration,
+  onUpdateClipMeta,
 }: StoryNodeInspectorProps) {
   const t = useTranslations("storyStudio.canvas");
-  const [deleteOpen, setDeleteOpen] = useState(false);
   const canvasData = selectedNode?.data;
   const canonicalNodeId =
     canvasData?.kind === "decision" ? canvasData.sourceNodeId : canvasData?.nodeId;
@@ -139,7 +149,7 @@ export function StoryNodeInspector({
     : null;
 
   return (
-    <aside className="absolute top-16 right-3 bottom-3 z-30 w-[368px] overflow-y-auto rounded-[24px] bg-[oklch(0.205_0_0/0.72)] px-5 py-5 shadow-[-18px_0_60px_rgba(0,0,0,0.32)] backdrop-blur-[60px] backdrop-saturate-150">
+    <aside className="absolute top-16 bottom-3 left-3 z-30 w-[368px] overflow-y-auto rounded-[24px] bg-[oklch(0.205_0_0/0.72)] px-5 py-5 shadow-[18px_0_60px_rgba(0,0,0,0.32)] backdrop-blur-[60px] backdrop-saturate-150">
       <div className="pointer-events-none absolute inset-0 rounded-[inherit] shadow-[inset_0_1px_0_rgba(255,255,255,0.07)]" />
       {showFoundation || !canvasData ? (
         <StoryWorldLibrary
@@ -155,7 +165,7 @@ export function StoryNodeInspector({
           onRemoveTextItem={onRemoveWorldTextItem}
         />
       ) : canvasData.kind === "root" ? (
-        <RootTrailerInspector onClose={onCloseNode} />
+        <RootTrailerInspector onClose={onCloseNode} trailerGeneration={trailerGeneration} />
       ) : (
         <>
           <div className="flex items-start justify-between gap-3">
@@ -184,6 +194,8 @@ export function StoryNodeInspector({
               decisionOnly={canvasData.kind === "decision"}
               canEdit={canEdit}
               clipMedia={clipMedia}
+              clipGeneration={clipGeneration}
+              onUpdateClipMeta={onUpdateClipMeta}
               onSetEntry={onSetEntry}
               onAddAutoRoute={onAddAutoRoute}
               onUpdateAutoRoute={onUpdateAutoRoute}
@@ -222,7 +234,7 @@ export function StoryNodeInspector({
               type="button"
               variant="destructive"
               disabled={!canEdit}
-              onClick={() => setDeleteOpen(true)}
+              onClick={onDeleteSelected}
               className="w-full"
             >
               <IconTrash className="size-4" />
@@ -239,49 +251,19 @@ export function StoryNodeInspector({
               {t("foundation.action")}
             </Button>
           </div>
-
-          <Dialog open={deleteOpen} onOpenChange={setDeleteOpen}>
-            <DialogContent className="rounded-[22px] bg-[oklch(0.22_0_0/0.96)] p-5 shadow-[0_28px_100px_rgba(0,0,0,0.58)] backdrop-blur-[40px]">
-              <DialogHeader>
-                <DialogTitle>
-                  {t(
-                    canvasData.kind === "decision"
-                      ? "inspector.removeDecisionTitle"
-                      : "inspector.deleteTitle"
-                  )}
-                </DialogTitle>
-                <DialogDescription>
-                  {t(
-                    canvasData.kind === "decision"
-                      ? "inspector.removeDecisionDescription"
-                      : "inspector.deleteDescription"
-                  )}
-                </DialogDescription>
-              </DialogHeader>
-              <DialogFooter>
-                <DialogClose asChild>
-                  <Button variant="secondary">{t("inspector.cancel")}</Button>
-                </DialogClose>
-                <Button
-                  variant="destructive"
-                  onClick={() => {
-                    onDeleteSelected();
-                    setDeleteOpen(false);
-                  }}
-                >
-                  <IconTrash className="size-4" />
-                  {t("inspector.confirmDelete")}
-                </Button>
-              </DialogFooter>
-            </DialogContent>
-          </Dialog>
         </>
       )}
     </aside>
   );
 }
 
-function RootTrailerInspector({ onClose }: { onClose: () => void }) {
+function RootTrailerInspector({
+  onClose,
+  trailerGeneration,
+}: {
+  onClose: () => void;
+  trailerGeneration?: StoryClipGenerationFormProps;
+}) {
   const t = useTranslations("storyStudio.canvas.trailer");
   return (
     <>
@@ -303,9 +285,9 @@ function RootTrailerInspector({ onClose }: { onClose: () => void }) {
         </button>
       </div>
 
-      <p className="mt-6 rounded-[18px] bg-white/[0.045] px-4 py-3 text-[11px] leading-5 text-white/44">
-        {t("production.localRecipeDescription")}
-      </p>
+      {trailerGeneration ? (
+        <StoryClipGenerationForm {...trailerGeneration} subject="trailer" />
+      ) : null}
     </>
   );
 }
@@ -317,6 +299,8 @@ function GraphNodeEditor({
   decisionOnly,
   canEdit,
   clipMedia,
+  clipGeneration,
+  onUpdateClipMeta,
   onSetEntry,
   onAddAutoRoute,
   onUpdateAutoRoute,
@@ -333,6 +317,8 @@ function GraphNodeEditor({
   decisionOnly: boolean;
   canEdit: boolean;
   clipMedia?: StoryClipMediaPanelProps;
+  clipGeneration?: StoryClipGenerationFormProps;
+  onUpdateClipMeta: StoryNodeInspectorProps["onUpdateClipMeta"];
   onSetEntry: StoryNodeInspectorProps["onSetEntry"];
   onAddAutoRoute: StoryNodeInspectorProps["onAddAutoRoute"];
   onUpdateAutoRoute: StoryNodeInspectorProps["onUpdateAutoRoute"];
@@ -358,13 +344,72 @@ function GraphNodeEditor({
           }
           mono
         />
-        {node.kind === "clip" && !decisionOnly ? (
-          <InspectorRow label={t("inspector.clipKey")} value={node.clipKey} mono />
-        ) : null}
       </dl>
 
+      {node.kind === "clip" && !decisionOnly ? (
+        <div className="mt-3 space-y-3">
+          <div className="rounded-xl bg-white/[0.045] px-3 py-3">
+            <label htmlFor="story-clip-name" className="text-[9px] font-semibold text-white/32">
+              {t("inspector.nodeName")}
+            </label>
+            <Input
+              id="story-clip-name"
+              value={node.name ?? ""}
+              disabled={!canEdit}
+              maxLength={120}
+              placeholder={node.clipKey}
+              onChange={(event) => onUpdateClipMeta(node.nodeId, { name: event.target.value })}
+              className="mt-1.5 h-9! rounded-lg bg-white/[0.05] px-3 text-xs"
+            />
+          </div>
+          <div className="rounded-xl bg-white/[0.045] px-3 py-3">
+            <label
+              htmlFor="story-clip-description"
+              className="text-[9px] font-semibold text-white/32"
+            >
+              {t("inspector.nodeDescription")}
+            </label>
+            <Textarea
+              id="story-clip-description"
+              value={node.description ?? ""}
+              disabled={!canEdit}
+              maxLength={4000}
+              rows={3}
+              placeholder={t("inspector.nodeDescriptionPlaceholder")}
+              onChange={(event) =>
+                onUpdateClipMeta(node.nodeId, { description: event.target.value })
+              }
+              className="mt-1.5 resize-none rounded-lg bg-white/[0.05] px-3 text-xs"
+            />
+          </div>
+        </div>
+      ) : null}
+
       {node.kind === "clip" && !decisionOnly && clipMedia ? (
-        <StoryClipMediaPanel key={clipMedia.clip?.graphNodeId ?? node.nodeId} {...clipMedia} />
+        clipGeneration ? (
+          <Tabs
+            key={clipMedia.clip?.graphNodeId ?? node.nodeId}
+            defaultValue="upload"
+            className="mt-6 gap-0"
+          >
+            <TabsList className="w-full">
+              <TabsTrigger value="upload" className="flex-1">
+                {t("inspector.media.tabUpload")}
+              </TabsTrigger>
+              <TabsTrigger value="generate" className="flex-1">
+                {t("inspector.media.tabGenerate")}
+              </TabsTrigger>
+            </TabsList>
+            <TabsContent value="upload">
+              <StoryClipMediaPanel {...clipMedia} />
+            </TabsContent>
+            <TabsContent value="generate">
+              <StoryClipGenerationForm {...clipGeneration} />
+            </TabsContent>
+          </Tabs>
+        ) : (
+          <StoryClipMediaPanel key={clipMedia.clip?.graphNodeId ?? node.nodeId} {...clipMedia} />
+        )
       ) : null}
 
       {node.kind === "router" ? (

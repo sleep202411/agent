@@ -56,7 +56,7 @@ type StoryCanvasEdgeData =
   | { kind: "continuation" }
   | { kind: "auto"; priority: number; routeIndex: number }
   | { kind: "decision"; decisionId: string; sourceNodeId: string }
-  | { kind: "choice"; choiceId: string }
+  | { kind: "choice"; sourceNodeId: string; choiceId: string }
   | { kind: "checkpoint" }
   | { kind: "ending"; endingId: string };
 
@@ -171,7 +171,7 @@ export function buildStoryCanvasModel(
         order: index * 2,
         data: {
           kind: "clip",
-          title: node.clipKey,
+          title: node.name?.trim() || node.clipKey,
           eyebrow: `${copy.clip} ${String(clipOrdinal).padStart(2, "0")}`,
           nodeId: node.nodeId,
           clipKey: node.clipKey,
@@ -252,9 +252,7 @@ export function buildStoryCanvasModel(
       id: projection.id,
       type: "storyCanvas",
       position: positions.get(projection.id) ?? { x: 0, y: 0 },
-      // Node deletion is confirmed in the inspector. Keeping XYFlow keyboard
-      // deletion disabled prevents bypassing that domain-level confirmation.
-      deletable: false,
+      deletable: projection.data.kind !== "root",
       dragHandle: CANVAS_NODE_DRAG_HANDLE_SELECTOR,
       data: projection.data,
     }));
@@ -343,7 +341,11 @@ function buildConnections(
             sourceHandle: `choice:${choice.choiceId}`,
             targetHandle: "in",
             label: localizedText(choice.label, locale, choice.choiceId),
-            data: { kind: "choice", choiceId: choice.choiceId },
+            data: {
+              kind: "choice",
+              sourceNodeId: node.nodeId,
+              choiceId: choice.choiceId,
+            },
           },
         });
       }

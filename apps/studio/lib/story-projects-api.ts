@@ -175,6 +175,8 @@ export type StoryGraphNode =
       kind: "clip";
       nodeId: string;
       clipKey: string;
+      name?: string;
+      description?: string;
       exit:
         | { kind: "auto"; nextNodeId: string | null }
         | {

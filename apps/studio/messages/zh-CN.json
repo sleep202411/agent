@@ -1982,13 +1982,14 @@
           "noVideo": "尚无视频",
           "videoPreview": "当前视频预览",
           "generationFailed": "生成失败"
-        }
+        },
+        "model": "模型",
+        "references": "参考图"
       },
       "inspector": {
         "eyebrow": "节点检查器",
         "close": "关闭节点检查器",
         "nodeId": "稳定节点 ID",
-        "clipKey": "镜头键",
         "media": {
           "title": "当前视频",
           "description": "上传本地文件，或复用当前工作区中的视频。",
@@ -2008,7 +2009,9 @@
           "unknownDuration": "时长未知",
           "errors": {
             "upload": "无法上传此视频。"
-          }
+          },
+          "tabUpload": "视频上传",
+          "tabGenerate": "AI 生成"
         },
         "exit": "后续走向",
         "production": "生产状态",
@@ -2056,12 +2059,10 @@
         "delete": "删除节点",
         "deleteEnding": "删除结局",
         "removeDecision": "移除选择环节",
-        "removeDecisionTitle": "移除这个选择环节？",
-        "removeDecisionDescription": "选择问题以及所有选项、条件、效果和目标都会被删除；来源镜头将恢复为空的自动路由。",
-        "deleteTitle": "删除这个故事图元素？",
-        "deleteDescription": "与它相连的入口和出口路由会一起移除；已有生产媒体不会被删除。",
         "cancel": "取消",
-        "confirmDelete": "确认删除"
+        "nodeName": "名称",
+        "nodeDescription": "描述",
+        "nodeDescriptionPlaceholder": "这个片段讲什么？"
       },
       "routes": {
         "title": "自动路由",

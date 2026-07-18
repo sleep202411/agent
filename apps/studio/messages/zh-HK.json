@@ -1982,13 +1982,14 @@
           "noVideo": "尚無影片",
           "videoPreview": "目前影片預覽",
           "generationFailed": "生成失敗"
-        }
+        },
+        "model": "模型",
+        "references": "參考圖"
       },
       "inspector": {
         "eyebrow": "節點檢查器",
         "close": "關閉節點檢查器",
         "nodeId": "穩定節點 ID",
-        "clipKey": "鏡頭鍵",
         "media": {
           "title": "目前影片",
           "description": "上載本機檔案，或重用目前工作區中的影片。",
@@ -2008,7 +2009,9 @@
           "unknownDuration": "時長未知",
           "errors": {
             "upload": "無法上載此影片。"
-          }
+          },
+          "tabUpload": "影片上載",
+          "tabGenerate": "AI 生成"
         },
         "exit": "後續走向",
         "production": "製作狀態",
@@ -2056,12 +2059,10 @@
         "delete": "刪除節點",
         "deleteEnding": "刪除結局",
         "removeDecision": "移除選擇環節",
-        "removeDecisionTitle": "移除這個選擇環節？",
-        "removeDecisionDescription": "選擇問題以及所有選項、條件、效果和目標都會被刪除；來源鏡頭將恢復為空的自動路由。",
-        "deleteTitle": "刪除這個故事圖元素？",
-        "deleteDescription": "與它相連的入口和出口路由會一併移除；已有製作媒體不會被刪除。",
         "cancel": "取消",
-        "confirmDelete": "確認刪除"
+        "nodeName": "名稱",
+        "nodeDescription": "描述",
+        "nodeDescriptionPlaceholder": "這個片段講甚麼？"
       },
       "routes": {
         "title": "自動路由",
