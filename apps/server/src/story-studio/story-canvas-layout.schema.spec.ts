@@ -14,6 +14,7 @@ describe('PutStoryCanvasLayoutSchema', () => {
         'clip:scene-1': { x: 0, y: 120.25 },
         '__ending__:truth': { x: 720, y: 120 },
       },
+      storyWorldNodePresent: true,
       sessionId: 'canvas-session',
     });
 
@@ -22,6 +23,43 @@ describe('PutStoryCanvasLayoutSchema', () => {
       'clip:scene-1',
       '__ending__:truth',
     ]);
+    expect(parsed.storyWorldNodePresent).toBe(true);
+  });
+
+  it('persists story-world deletion after its coordinate is removed', () => {
+    const parsed = PutStoryCanvasLayoutSchema.parse({
+      expectedRevision: 3,
+      schemaVersion: STORY_CANVAS_LAYOUT_SCHEMA_VERSION,
+      nodePositions: { 'clip:scene-1': { x: 0, y: 120.25 } },
+      storyWorldNodePresent: false,
+      sessionId: 'canvas-session',
+    });
+
+    expect(parsed.storyWorldNodePresent).toBe(false);
+    expect(parsed.nodePositions).not.toHaveProperty('__story_root__');
+  });
+
+  it('rejects a deleted story-world node with a stale coordinate', () => {
+    const parsed = PutStoryCanvasLayoutSchema.safeParse({
+      expectedRevision: 3,
+      schemaVersion: STORY_CANVAS_LAYOUT_SCHEMA_VERSION,
+      nodePositions: { __story_root__: { x: -640.5, y: 120 } },
+      storyWorldNodePresent: false,
+      sessionId: 'canvas-session',
+    });
+
+    expect(parsed.success).toBe(false);
+  });
+
+  it('requires an explicit story-world projection state', () => {
+    const parsed = PutStoryCanvasLayoutSchema.safeParse({
+      expectedRevision: 0,
+      schemaVersion: STORY_CANVAS_LAYOUT_SCHEMA_VERSION,
+      nodePositions: {},
+      sessionId: 'canvas-session',
+    });
+
+    expect(parsed.success).toBe(false);
   });
 
   it.each([
@@ -33,6 +71,7 @@ describe('PutStoryCanvasLayoutSchema', () => {
       expectedRevision: 0,
       schemaVersion: STORY_CANVAS_LAYOUT_SCHEMA_VERSION,
       nodePositions,
+      storyWorldNodePresent: true,
       sessionId: 'canvas-session',
     });
 
@@ -51,6 +90,7 @@ describe('PutStoryCanvasLayoutSchema', () => {
       expectedRevision: 0,
       schemaVersion: STORY_CANVAS_LAYOUT_SCHEMA_VERSION,
       nodePositions,
+      storyWorldNodePresent: true,
       sessionId: 'canvas-session',
     });
 

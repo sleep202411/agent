@@ -1726,6 +1726,8 @@
       "creator": {
         "title": "添加到故事图",
         "description": "创建互动影游故事结构中的图元素。",
+        "root": "故事世界",
+        "rootDescription": "将世界观与宣传片节点重新添加到画布。",
         "clip": "影像镜头",
         "clipDescription": "一段带有明确后续走向的生成视频。",
         "choice": "分支选择",

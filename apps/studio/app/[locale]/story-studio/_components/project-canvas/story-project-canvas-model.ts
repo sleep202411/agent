@@ -107,7 +107,8 @@ export function buildStoryCanvasModel(
   clips: StoryClipVideoSummary[] = [],
   copy: StoryCanvasCopy = DEFAULT_COPY,
   frameProfile: StoryFrameProfile = "landscape_16_9",
-  trailer: StoryTrailerVideoSummary | null = null
+  trailer: StoryTrailerVideoSummary | null = null,
+  storyWorldNodePresent = true
 ): { nodes: StoryCanvasNode[]; edges: StoryCanvasEdge[] } {
   const graphNodesById = new Map(content.graph.nodes.map((node) => [node.nodeId, node]));
   const clipsByGraphNodeId = indexClips(clips, (clip) => clip.graphNodeId);
@@ -117,25 +118,30 @@ export function buildStoryCanvasModel(
   let clipOrdinal = 0;
   let routerOrdinal = 0;
 
-  const projections: CanvasProjection[] = [
-    {
-      id: STORY_ROOT_NODE_ID,
-      order: -1,
-      data: {
-        kind: "root",
-        title: copy.rootTitle,
-        eyebrow: copy.rootEyebrow,
-        nodeId: STORY_ROOT_NODE_ID,
-        summary: content.storyBible.logline.trim() || copy.rootSummary,
-        rootStats: {
-          characters: content.storyBible.characters.length,
-          locations: content.storyBible.locations.length,
-          props: content.storyBible.props.length,
+  const storyWorldProjection: CanvasProjection[] = storyWorldNodePresent
+    ? [
+        {
+          id: STORY_ROOT_NODE_ID,
+          order: -1,
+          data: {
+            kind: "root",
+            title: copy.rootTitle,
+            eyebrow: copy.rootEyebrow,
+            nodeId: STORY_ROOT_NODE_ID,
+            summary: content.storyBible.logline.trim() || copy.rootSummary,
+            rootStats: {
+              characters: content.storyBible.characters.length,
+              locations: content.storyBible.locations.length,
+              props: content.storyBible.props.length,
+            },
+            frameAspectRatio: frameProfile === "portrait_9_16" ? "9:16" : "16:9",
+            trailerVideo: trailer ?? undefined,
+          },
         },
-        frameAspectRatio: frameProfile === "portrait_9_16" ? "9:16" : "16:9",
-        trailerVideo: trailer ?? undefined,
-      },
-    },
+      ]
+    : [];
+  const projections: CanvasProjection[] = [
+    ...storyWorldProjection,
     ...content.graph.nodes.flatMap<CanvasProjection>((node, index) => {
       if (node.kind === "router") {
         routerOrdinal += 1;
@@ -229,7 +235,11 @@ export function buildStoryCanvasModel(
     endingCanvasIds,
     locale
   );
-  if (content.graph.entryNodeId && graphNodesById.has(content.graph.entryNodeId)) {
+  if (
+    storyWorldNodePresent &&
+    content.graph.entryNodeId &&
+    graphNodesById.has(content.graph.entryNodeId)
+  ) {
     connections.unshift({
       order: -1,
       edge: {
@@ -245,14 +255,15 @@ export function buildStoryCanvasModel(
   const edges = connections
     .sort((left, right) => left.order - right.order || left.edge.id.localeCompare(right.edge.id))
     .map(({ edge }) => edge);
-  const positions = buildLayeredPositions(projections, edges, STORY_ROOT_NODE_ID);
+  const layoutSeedNodeId = storyWorldNodePresent ? STORY_ROOT_NODE_ID : content.graph.entryNodeId;
+  const positions = buildLayeredPositions(projections, edges, layoutSeedNodeId);
   const nodes = projections
     .sort((left, right) => left.order - right.order || left.id.localeCompare(right.id))
     .map<StoryCanvasNode>((projection) => ({
       id: projection.id,
       type: "storyCanvas",
       position: positions.get(projection.id) ?? { x: 0, y: 0 },
-      deletable: projection.data.kind !== "root",
+      deletable: true,
       dragHandle: CANVAS_NODE_DRAG_HANDLE_SELECTOR,
       data: projection.data,
     }));

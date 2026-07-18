@@ -11,6 +11,7 @@ import { canonicalJsonHash } from './canonical-json';
 import {
   EMPTY_INTERACTIVE_FILM_DRAFT_CONTENT,
   INTERACTIVE_FILM_DRAFT_SCHEMA_VERSION,
+  STORY_CANVAS_LAYOUT_SCHEMA_VERSION,
   type InteractiveFilmDraftContent,
 } from './dto';
 import { StoryProjectsService } from './story-projects.service';
@@ -110,6 +111,22 @@ function draftRow(overrides: Record<string, unknown> = {}) {
   };
 }
 
+function canvasLayoutRow(overrides: Record<string, unknown> = {}) {
+  return {
+    storyProjectId: PROJECT_ID,
+    workspaceId: WORKSPACE_ID,
+    schemaVersion: STORY_CANVAS_LAYOUT_SCHEMA_VERSION,
+    nodePositions: { __story_root__: { x: -500, y: 120 } },
+    storyWorldNodePresent: true,
+    revision: 2,
+    updatedByUserId: USER.userId,
+    updatedBySessionId: 'canvas-session',
+    createdAt: NOW,
+    updatedAt: NOW,
+    ...overrides,
+  };
+}
+
 function summaryProject(overrides: Record<string, unknown> = {}) {
   const content = lockableDraft();
   return projectRow({
@@ -202,11 +219,23 @@ describe('StoryProjectsService v3 authoring boundary', () => {
       (input: {
         data: {
           draft: { create: { schemaVersion: string; content: unknown } };
+          canvasLayout: {
+            create: {
+              schemaVersion: string;
+              nodePositions: unknown;
+              storyWorldNodePresent: boolean;
+            };
+          };
         };
       }) => {
         expect(input.data.draft.create).toMatchObject({
           schemaVersion: 'interactive-film-draft-v3',
           content: EMPTY_INTERACTIVE_FILM_DRAFT_CONTENT,
+        });
+        expect(input.data.canvasLayout.create).toMatchObject({
+          schemaVersion: STORY_CANVAS_LAYOUT_SCHEMA_VERSION,
+          nodePositions: {},
+          storyWorldNodePresent: true,
         });
         return Promise.resolve(project);
       },
@@ -248,6 +277,81 @@ describe('StoryProjectsService v3 authoring boundary', () => {
       'references',
       'video',
     ]);
+  });
+
+  it('returns the persisted story-world projection state with the canvas layout', async () => {
+    const row = canvasLayoutRow({
+      nodePositions: {},
+      storyWorldNodePresent: false,
+    });
+    const findUnique = jest.fn().mockResolvedValue(row);
+    const prisma = { storyCanvasLayout: { findUnique } };
+    const { service } = serviceWith(prisma);
+
+    await expect(
+      service.getCanvasLayout(USER as never, WORKSPACE_ID, PROJECT_ID),
+    ).resolves.toMatchObject({
+      projectId: PROJECT_ID,
+      schemaVersion: STORY_CANVAS_LAYOUT_SCHEMA_VERSION,
+      nodePositions: row.nodePositions,
+      storyWorldNodePresent: false,
+      revision: 2,
+    });
+    expect(findUnique).toHaveBeenCalledWith({
+      where: {
+        storyProjectId_workspaceId: {
+          storyProjectId: PROJECT_ID,
+          workspaceId: WORKSPACE_ID,
+        },
+      },
+    });
+  });
+
+  it('persists story-world projection deletion in the same canvas-layout CAS write', async () => {
+    const saved = canvasLayoutRow({
+      nodePositions: {},
+      storyWorldNodePresent: false,
+      revision: 3,
+    });
+    const tx = {
+      storyCanvasLayout: {
+        updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+        findUnique: jest.fn().mockResolvedValue(saved),
+      },
+    };
+    const prisma = { $transaction: transactionMock(tx) };
+    const { service } = serviceWith(prisma);
+
+    const result = await service.putCanvasLayout(
+      USER as never,
+      WORKSPACE_ID,
+      PROJECT_ID,
+      {
+        expectedRevision: 2,
+        schemaVersion: STORY_CANVAS_LAYOUT_SCHEMA_VERSION,
+        nodePositions: {},
+        storyWorldNodePresent: false,
+        sessionId: 'canvas-session',
+      },
+    );
+
+    expect(tx.storyCanvasLayout.updateMany).toHaveBeenCalledWith({
+      where: {
+        storyProjectId: PROJECT_ID,
+        workspaceId: WORKSPACE_ID,
+        revision: 2,
+      },
+      data: {
+        schemaVersion: STORY_CANVAS_LAYOUT_SCHEMA_VERSION,
+        nodePositions: {},
+        storyWorldNodePresent: false,
+        revision: { increment: 1 },
+        updatedByUserId: USER.userId,
+        updatedBySessionId: 'canvas-session',
+      },
+    });
+    expect(result.storyWorldNodePresent).toBe(false);
+    expect(result.revision).toBe(3);
   });
 
   it('returns a controlled conflict for a stored pre-v3 draft', async () => {

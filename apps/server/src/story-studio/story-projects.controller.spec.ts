@@ -11,6 +11,7 @@ describe('StoryProjectsController canvas layout', () => {
     projectId: PROJECT_ID,
     schemaVersion: STORY_CANVAS_LAYOUT_SCHEMA_VERSION,
     nodePositions: { __story_root__: { x: -500, y: 120 } },
+    storyWorldNodePresent: true,
     revision: 2,
     updatedByUserId: USER.userId,
     updatedBySessionId: 'canvas-session',
@@ -44,7 +45,8 @@ describe('StoryProjectsController canvas layout', () => {
     const body = {
       expectedRevision: 1,
       schemaVersion: STORY_CANVAS_LAYOUT_SCHEMA_VERSION,
-      nodePositions: layout.nodePositions,
+      nodePositions: {},
+      storyWorldNodePresent: false,
       sessionId: 'canvas-session',
     };
 

@@ -87,7 +87,39 @@ describe("deleteStoryCanvasElements", () => {
     });
   });
 
-  it("protects the root while deleting an ending and its incident route", () => {
+  it("treats root deletion as layout-only and consumes its incident entry edge", () => {
+    const content = draft({
+      entryNodeId: "source",
+      nodes: [clip("source", { kind: "auto", nextNodeId: null })],
+    });
+    const model = buildStoryCanvasModel(content, "en-US");
+    const root = requiredNode(model.nodes, STORY_ROOT_NODE_ID);
+
+    const next = deleteStoryCanvasElements(content, {
+      nodes: [root],
+      edges: model.edges.filter((edge) => edge.source === root.id || edge.target === root.id),
+    });
+
+    expect(next).toBe(content);
+    expect(next.graph.entryNodeId).toBe("source");
+  });
+
+  it("still clears the executable entry when only the root edge is deleted", () => {
+    const content = draft({
+      entryNodeId: "source",
+      nodes: [clip("source", { kind: "auto", nextNodeId: null })],
+    });
+    const model = buildStoryCanvasModel(content, "en-US");
+    const rootEdge = model.edges.find((edge) => edge.data.kind === "root");
+    if (!rootEdge) throw new Error("Expected the root entry edge.");
+
+    const next = deleteStoryCanvasElements(content, { nodes: [], edges: [rootEdge] });
+
+    expect(next.graph.entryNodeId).toBeNull();
+    expect(next.graph.nodes.map((node) => node.nodeId)).toEqual(["source"]);
+  });
+
+  it("deletes canonical nodes alongside the layout-only root in one request", () => {
     const content = draft({
       entryNodeId: "source",
       nodes: [clip("source", { kind: "ending", endingId: "truth" })],
@@ -106,7 +138,13 @@ describe("deleteStoryCanvasElements", () => {
 
     const next = deleteStoryCanvasElements(content, {
       nodes: [root, ending],
-      edges: model.edges.filter((edge) => edge.source === ending.id || edge.target === ending.id),
+      edges: model.edges.filter(
+        (edge) =>
+          edge.source === root.id ||
+          edge.target === root.id ||
+          edge.source === ending.id ||
+          edge.target === ending.id
+      ),
     });
 
     expect(next.storyBible.endings).toEqual([]);

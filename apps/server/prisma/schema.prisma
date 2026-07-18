@@ -6506,15 +6506,16 @@ model StoryVideoUploadSession {
 }
 
 model StoryCanvasLayout {
-  storyProjectId     String   @map("story_project_id") @db.Uuid
-  workspaceId        String   @map("workspace_id") @db.Uuid
-  schemaVersion      String   @default("story-canvas-layout-v1") @map("schema_version") @db.VarChar(64)
-  nodePositions      Json     @default("{}") @map("node_positions") @db.JsonB
-  revision           Int      @default(0)
-  updatedByUserId    String   @map("updated_by_user_id") @db.VarChar(64)
-  updatedBySessionId String?  @map("updated_by_session_id") @db.VarChar(64)
-  createdAt          DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt          DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  storyProjectId        String   @map("story_project_id") @db.Uuid
+  workspaceId           String   @map("workspace_id") @db.Uuid
+  schemaVersion         String   @default("story-canvas-layout-v2") @map("schema_version") @db.VarChar(64)
+  nodePositions         Json     @default("{}") @map("node_positions") @db.JsonB
+  storyWorldNodePresent Boolean  @default(true) @map("story_world_node_present")
+  revision              Int      @default(0)
+  updatedByUserId       String   @map("updated_by_user_id") @db.VarChar(64)
+  updatedBySessionId    String?  @map("updated_by_session_id") @db.VarChar(64)
+  createdAt             DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt             DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   project StoryProject @relation(fields: [storyProjectId, workspaceId], references: [id, workspaceId], onDelete: Cascade)
 

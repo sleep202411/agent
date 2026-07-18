@@ -1726,6 +1726,8 @@
       "creator": {
         "title": "Add to story graph",
         "description": "Create an element in the interactive-film story structure.",
+        "root": "Story world",
+        "rootDescription": "Restore the world overview and trailer node to the canvas.",
         "clip": "Film clip",
         "clipDescription": "A generated video segment with a defined next step.",
         "choice": "Branch choice",

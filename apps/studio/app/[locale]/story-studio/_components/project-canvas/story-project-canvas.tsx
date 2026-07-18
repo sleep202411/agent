@@ -116,10 +116,12 @@ import {
   reconcileStoryCanvasSelectedIds,
 } from "./story-project-canvas-selection";
 import {
-  coalesceQueuedLayout,
   confirmsOwnCanvasLayoutWrite,
+  layoutPayloadSignature,
   layoutPositionSignature,
   layoutRetryDelay,
+  unsavedDesiredLayout,
+  type StoryCanvasLayoutPayload,
 } from "./story-canvas-layout-retry";
 import { createConnectedClipForBlankDrop } from "./story-project-canvas-drop";
 import { deleteStoryCanvasElements } from "./story-project-canvas-deletion";
@@ -193,6 +195,9 @@ type FoundationField = "logline" | "synopsis" | "worldview";
 type PersistDraftOptions = {
   bypassSnapshotBarrier?: boolean;
   propagateError?: boolean;
+};
+type PersistLayoutOptions = {
+  preserveDesired?: boolean;
 };
 type CommitContentOptions = {
   mergeKey?: string;
@@ -293,6 +298,9 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
   const [draftRevision, setDraftRevision] = useState(0);
   const [layoutSaveState, setLayoutSaveState] = useState<SaveState>("idle");
   const [layoutSaveError, setLayoutSaveError] = useState<string | null>(null);
+  const [storyWorldNodePresentOverride, setStoryWorldNodePresentOverride] = useState<
+    boolean | null
+  >(null);
   const [productionPendingKey, setProductionPendingKey] = useState<string | null>(null);
   const [productionError, setProductionError] = useState<string | null>(null);
   const [clipGenerationRequest, setClipGenerationRequest] =
@@ -363,14 +371,13 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
   const layoutSavedSignatureRef = useRef("");
   const layoutConflictRef = useRef<CanvasLayoutRevisionConflict | null>(null);
   const layoutSaveInFlightRef = useRef(false);
-  const layoutInFlightSignatureRef = useRef<string | null>(null);
-  const queuedLayoutRef = useRef<Record<string, StoryCanvasPosition> | null>(null);
-  const recoveryLayoutRef = useRef<Record<string, StoryCanvasPosition> | null>(null);
+  const latestDesiredLayoutRef = useRef<StoryCanvasLayoutPayload | null>(null);
+  const recoveryLayoutRef = useRef<StoryCanvasLayoutPayload | null>(null);
   const layoutRetryTimerRef = useRef<number | null>(null);
   const layoutRetryAttemptRef = useRef(0);
-  const persistLayoutRef = useRef<(next: Record<string, StoryCanvasPosition>) => Promise<void>>(
-    async () => {}
-  );
+  const persistLayoutRef = useRef<
+    (next: StoryCanvasLayoutPayload, options?: PersistLayoutOptions) => Promise<void>
+  >(async () => {});
   const canvasNodesRef = useRef<StoryCanvasNode[]>([]);
   const canvasSectionRef = useRef<HTMLElement>(null);
   const hasFittedInitialCanvasRef = useRef(false);
@@ -472,6 +479,8 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
     enabled: Boolean(workspaceId),
     retry: false,
   });
+  const storyWorldNodePresent =
+    storyWorldNodePresentOverride ?? layoutQuery.data?.storyWorldNodePresent ?? true;
   const currentReleaseQuery = useQuery({
     queryKey: ["story-studio", "current-release", workspaceId, projectId],
     queryFn: () => getStoryExperienceCurrentRelease(workspaceId as string, projectId),
@@ -986,7 +995,8 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
             video?.clips ?? [],
             projectionCopy,
             project?.frameProfile,
-            video?.trailer ?? null
+            video?.trailer ?? null,
+            storyWorldNodePresent
           )
         : null,
     // Translation values are primitives. Depending on them keeps the model
@@ -998,6 +1008,7 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
       video?.trailer,
       project?.defaultLocale,
       project?.frameProfile,
+      storyWorldNodePresent,
       projectionCopy.rootTitle,
       projectionCopy.rootEyebrow,
       projectionCopy.rootSummary,
@@ -1010,8 +1021,11 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
   const canEdit = Boolean(
     !conflict && project?.status === "active" && project.capabilities.includes("story.edit")
   );
-  const canManageClipMedia = Boolean(canEdit && project?.capabilities.includes("story.generate"));
-  const clipMediaDisabledReason = !canEdit
+  const canMutateCanvasLayout = Boolean(canEdit && !layoutConflict);
+  const canManageClipMedia = Boolean(
+    canMutateCanvasLayout && project?.capabilities.includes("story.generate")
+  );
+  const clipMediaDisabledReason = !canMutateCanvasLayout
     ? t("readOnly")
     : !project?.capabilities.includes("story.generate")
       ? t("production.disabled.permission")
@@ -1047,9 +1061,11 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
         position: layoutQuery.data.nodePositions[node.id] ?? node.position,
         selected: selectedNodeIds.has(node.id),
       }));
+      const initialLayout = canvasLayoutPayload(initialNodes, storyWorldNodePresent);
       layoutHydratedRef.current = true;
       layoutRevisionRef.current = layoutQuery.data.revision;
-      layoutSavedSignatureRef.current = layoutPositionSignature(nodePositions(initialNodes));
+      latestDesiredLayoutRef.current = initialLayout;
+      layoutSavedSignatureRef.current = layoutPayloadSignature(initialLayout);
       setLayoutSaveState("idle");
       canvasNodesRef.current = initialNodes;
       setCanvasNodes(initialNodes);
@@ -1075,11 +1091,11 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
     setCanvasNodes(nextNodes);
     reconcileFocusAfterModel(nextNodes);
     if (placedNodeIds.length > 0) {
-      const positions = nodePositions(nextNodes);
+      const nextLayout = canvasLayoutPayload(nextNodes, storyWorldNodePresent);
       setLayoutSaveState("dirty");
-      void persistLayoutRef.current(positions);
+      void persistLayoutRef.current(nextLayout);
     }
-  }, [layoutQuery.data, model, setCanvasNodes]);
+  }, [layoutQuery.data, model, setCanvasNodes, storyWorldNodePresent]);
 
   const clearLayoutSaveRetry = useCallback((resetAttempts = false) => {
     if (layoutRetryTimerRef.current !== null) {
@@ -1104,22 +1120,21 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
       layoutRetryTimerRef.current = null;
       const recovery = recoveryLayoutRef.current;
       if (recovery && !disposedRef.current && !layoutConflictRef.current) {
-        void persistLayoutRef.current(recovery);
+        void persistLayoutRef.current(recovery, { preserveDesired: true });
       }
     }, delay);
   }, []);
 
   const persistLayout = useCallback(
-    async (next: Record<string, StoryCanvasPosition>) => {
+    async (next: StoryCanvasLayoutPayload, options: PersistLayoutOptions = {}) => {
       if (!workspaceId || layoutConflictRef.current) return;
-      const signature = layoutPositionSignature(next);
+      const signature = layoutPayloadSignature(next);
+      if (!options.preserveDesired) latestDesiredLayoutRef.current = next;
       if (layoutSaveInFlightRef.current) {
-        queuedLayoutRef.current = coalesceQueuedLayout(layoutInFlightSignatureRef.current, next);
         return;
       }
       const recovery = recoveryLayoutRef.current;
-      if (recovery && signature !== layoutPositionSignature(recovery)) {
-        queuedLayoutRef.current = next;
+      if (recovery && signature !== layoutPayloadSignature(recovery)) {
         scheduleLayoutSaveRetry();
         return;
       }
@@ -1134,7 +1149,6 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
       clearLayoutSaveRetry();
       recoveryLayoutRef.current = next;
       layoutSaveInFlightRef.current = true;
-      layoutInFlightSignatureRef.current = signature;
       setLayoutSaveState("saving");
       setLayoutSaveError(null);
       let requestFailed = false;
@@ -1142,7 +1156,8 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
       try {
         const saved = await putStoryCanvasLayout(workspaceId, projectId, {
           expectedRevision: layoutRevisionRef.current,
-          nodePositions: next,
+          nodePositions: next.nodePositions,
+          storyWorldNodePresent: next.storyWorldNodePresent,
           sessionId,
         });
         layoutRevisionRef.current = saved.revision;
@@ -1165,9 +1180,10 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
         } else if (nextConflict) {
           requestConflicted = true;
           layoutConflictRef.current = nextConflict;
-          queuedLayoutRef.current = null;
           recoveryLayoutRef.current = null;
           clearLayoutSaveRetry(true);
+          setCreatorMenu(null);
+          setPendingCompletionDrop(null);
           setLayoutConflict(nextConflict);
           setLayoutSaveState("conflict");
         } else {
@@ -1178,15 +1194,17 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
         }
       } finally {
         layoutSaveInFlightRef.current = false;
-        layoutInFlightSignatureRef.current = null;
-        const queued = queuedLayoutRef.current;
-        queuedLayoutRef.current = null;
         if (!requestConflicted) {
           if (requestFailed) {
-            if (queued) queuedLayoutRef.current = queued;
             scheduleLayoutSaveRetry();
-          } else if (queued) {
-            void persistLayoutRef.current(queued);
+          } else {
+            const desired = unsavedDesiredLayout(
+              latestDesiredLayoutRef.current,
+              layoutSavedSignatureRef.current
+            );
+            if (desired) {
+              void persistLayoutRef.current(desired, { preserveDesired: true });
+            }
           }
         }
       }
@@ -1646,19 +1664,28 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
         nodePositions: historyNodePositions(
           snapshotContent,
           canvasNodesRef.current,
-          pendingNodePositionsRef.current
+          pendingNodePositionsRef.current,
+          storyWorldNodePresent
         ),
+        storyWorldNodePresent,
       };
     },
-    []
+    [storyWorldNodePresent]
   );
 
   const restoreHistorySnapshot = useCallback(
     (snapshot: StoryCanvasHistorySnapshot) => {
-      const currentPositions = readHistorySnapshot()?.nodePositions ?? {};
+      const currentSnapshot = readHistorySnapshot();
+      const nextLayout: StoryCanvasLayoutPayload = {
+        nodePositions: snapshot.nodePositions,
+        storyWorldNodePresent: snapshot.storyWorldNodePresent,
+      };
       const layoutChanged =
-        layoutPositionSignature(currentPositions) !==
-        layoutPositionSignature(snapshot.nodePositions);
+        !currentSnapshot ||
+        layoutPayloadSignature({
+          nodePositions: currentSnapshot.nodePositions,
+          storyWorldNodePresent: currentSnapshot.storyWorldNodePresent,
+        }) !== layoutPayloadSignature(nextLayout);
 
       latestContentRef.current = snapshot.content;
       setPendingCompletionDrop(null);
@@ -1667,6 +1694,7 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
       setContent(snapshot.content);
 
       if (!layoutChanged) return;
+      setStoryWorldNodePresentOverride(snapshot.storyWorldNodePresent);
       pendingNodePositionsRef.current.clear();
       Object.entries(snapshot.nodePositions).forEach(([nodeId, position]) => {
         pendingNodePositionsRef.current.set(nodeId, { ...position });
@@ -1681,33 +1709,33 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
         return next;
       });
       setLayoutSaveState("dirty");
-      void persistLayoutRef.current(snapshot.nodePositions);
+      void persistLayoutRef.current(nextLayout);
     },
     [closeCreatorMenu, readHistorySnapshot, setCanvasNodes]
   );
 
   const undoStoryCanvas = useCallback(() => {
-    if (!canEdit) return;
+    if (!canMutateCanvasLayout) return;
     const current = readHistorySnapshot();
     if (!current) return;
     const previous = history.undo(current);
     if (!previous) return;
     refreshHistoryState();
     restoreHistorySnapshot(previous);
-  }, [canEdit, history, readHistorySnapshot, refreshHistoryState, restoreHistorySnapshot]);
+  }, [canMutateCanvasLayout, history, readHistorySnapshot, refreshHistoryState, restoreHistorySnapshot]);
 
   const redoStoryCanvas = useCallback(() => {
-    if (!canEdit) return;
+    if (!canMutateCanvasLayout) return;
     const current = readHistorySnapshot();
     if (!current) return;
     const next = history.redo(current);
     if (!next) return;
     refreshHistoryState();
     restoreHistorySnapshot(next);
-  }, [canEdit, history, readHistorySnapshot, refreshHistoryState, restoreHistorySnapshot]);
+  }, [canMutateCanvasLayout, history, readHistorySnapshot, refreshHistoryState, restoreHistorySnapshot]);
 
   useCanvasHistoryShortcuts({
-    enabled: canEdit,
+    enabled: canMutateCanvasLayout,
     undo: undoStoryCanvas,
     redo: redoStoryCanvas,
   });
@@ -1756,8 +1784,30 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
   };
 
   const createStoryElement = (kind: StoryNodeCreationKind, position: StoryCanvasPosition) => {
-    if (!content || !canEdit) return;
+    if (!content || !canMutateCanvasLayout) return;
     try {
+      if (kind === "root") {
+        if (storyWorldNodePresent) return;
+        const snapshot = readHistorySnapshot();
+        if (!snapshot) return;
+        history.capture(snapshot);
+        refreshHistoryState();
+        pendingNodePositionsRef.current.set(STORY_ROOT_NODE_ID, { ...position });
+        const nextLayout: StoryCanvasLayoutPayload = {
+          nodePositions: {
+            ...snapshot.nodePositions,
+            [STORY_ROOT_NODE_ID]: { ...position },
+          },
+          storyWorldNodePresent: true,
+        };
+        setStoryWorldNodePresentOverride(true);
+        setLayoutSaveState("dirty");
+        void persistLayoutRef.current(nextLayout);
+        selectCanvasNodeExclusively(STORY_ROOT_NODE_ID);
+        setGraphError(null);
+        return;
+      }
+
       let nextContent: InteractiveFilmDraftContent;
       let createdCanvasNodeId: string;
 
@@ -1773,9 +1823,7 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
         const result = createEndingNode(content, { locale: authoringLocale });
         nextContent = result.content;
         createdCanvasNodeId = syntheticEndingNodeId(result.created.id);
-      } else {
-        return;
-      }
+      } else return;
 
       pendingNodePositionsRef.current.set(createdCanvasNodeId, { ...position });
       commitContent(nextContent);
@@ -1789,7 +1837,7 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
   };
 
   const openCreatorMenuAtClientPosition = (clientPosition: StoryCanvasPosition) => {
-    if (!canEdit) return;
+    if (!canMutateCanvasLayout) return;
     const container = canvasSectionRef.current?.getBoundingClientRect();
     if (!container) return;
 
@@ -1799,6 +1847,7 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
         clientPosition,
         container,
         flowPosition: screenToFlowPosition(clientPosition),
+        showStoryWorld: !storyWorldNodePresent,
       })
     );
   };
@@ -2026,36 +2075,61 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
     nodes: StoryCanvasNode[];
     edges: StoryCanvasEdge[];
   }) => {
+    if (!canMutateCanvasLayout) return;
     const currentSnapshot = readHistorySnapshot();
-    if (!currentSnapshot) return;
-    let deletedNodeIds = new Set<string>();
-    const deleted = applyGraphMutation((current) => {
-      const next = deleteStoryCanvasElements(current, { nodes, edges });
-      const nextNodeIds = storyCanvasContentNodeIds(next);
-      deletedNodeIds = new Set(
-        [...storyCanvasContentNodeIds(current)].filter((nodeId) => !nextNodeIds.has(nodeId))
-      );
-      return next;
-    });
-    if (!deleted) return;
+    const current = latestContentRef.current;
+    if (!currentSnapshot || !current) return;
+    const deletesStoryWorld =
+      storyWorldNodePresent && nodes.some((node) => node.id === STORY_ROOT_NODE_ID);
 
-    if (deletedNodeIds.size > 0) {
-      const remainingPositions = Object.fromEntries(
-        Object.entries(currentSnapshot.nodePositions).filter(
-          ([nodeId]) => !deletedNodeIds.has(nodeId)
+    try {
+      const next = deleteStoryCanvasElements(current, { nodes, edges });
+      const contentChanged = next !== current;
+      if (!contentChanged && !deletesStoryWorld) return;
+
+      history.capture(currentSnapshot);
+      refreshHistoryState();
+      if (contentChanged) {
+        latestContentRef.current = next;
+        setContent(next);
+      }
+      if (deletesStoryWorld) setStoryWorldNodePresentOverride(false);
+
+      const nextStoryWorldNodePresent = deletesStoryWorld ? false : storyWorldNodePresent;
+      const nextNodeIds = storyCanvasContentNodeIds(next, nextStoryWorldNodePresent);
+      const deletedNodeIds = new Set(
+        [...storyCanvasContentNodeIds(current, storyWorldNodePresent)].filter(
+          (nodeId) => !nextNodeIds.has(nodeId)
         )
       );
-      deletedNodeIds.forEach((nodeId) => pendingNodePositionsRef.current.delete(nodeId));
-      setLayoutSaveState("dirty");
-      void persistLayoutRef.current(remainingPositions);
+
+      if (deletedNodeIds.size > 0) {
+        const remainingPositions = Object.fromEntries(
+          Object.entries(currentSnapshot.nodePositions).filter(
+            ([nodeId]) => !deletedNodeIds.has(nodeId)
+          )
+        );
+        deletedNodeIds.forEach((nodeId) => pendingNodePositionsRef.current.delete(nodeId));
+        const nextLayout: StoryCanvasLayoutPayload = {
+          nodePositions: remainingPositions,
+          storyWorldNodePresent: nextStoryWorldNodePresent,
+        };
+        setLayoutSaveState("dirty");
+        void persistLayoutRef.current(nextLayout);
+      }
+      const remainingSelectedNodeIds = latestCanvasSelectionRef.current.filter(
+        (nodeId) => !deletedNodeIds.has(nodeId)
+      );
+      pendingCanvasSelectionRef.current = null;
+      requestedCanvasFocusRef.current = null;
+      latestCanvasSelectionRef.current = remainingSelectedNodeIds;
+      setFocusedNodeId((focused) =>
+        nextStoryCanvasFocusedNodeId(focused, remainingSelectedNodeIds)
+      );
+      setGraphError(null);
+    } catch {
+      setGraphError(t("graphError.generic"));
     }
-    const remainingSelectedNodeIds = latestCanvasSelectionRef.current.filter(
-      (nodeId) => !deletedNodeIds.has(nodeId)
-    );
-    pendingCanvasSelectionRef.current = null;
-    requestedCanvasFocusRef.current = null;
-    latestCanvasSelectionRef.current = remainingSelectedNodeIds;
-    setFocusedNodeId((current) => nextStoryCanvasFocusedNodeId(current, remainingSelectedNodeIds));
   };
 
   const addChoice = (nodeId: string, targetNodeId: string) => {
@@ -2163,20 +2237,35 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
 
   const loadLatestLayoutAfterConflict = () => {
     if (!layoutConflict || !model) return;
-    const currentById = new Map(canvasNodesRef.current.map((node) => [node.id, node]));
-    const latestNodes = model.nodes.map((node) => ({
-      ...node,
-      selected: Boolean(currentById.get(node.id)?.selected),
-      position: layoutConflict.current.nodePositions[node.id] ?? node.position,
-    }));
+    const latestLayout: StoryCanvasLayoutPayload = {
+      nodePositions: layoutConflict.current.nodePositions,
+      storyWorldNodePresent: layoutConflict.current.storyWorldNodePresent,
+    };
     layoutConflictRef.current = null;
     recoveryLayoutRef.current = null;
-    queuedLayoutRef.current = null;
+    latestDesiredLayoutRef.current = latestLayout;
     clearLayoutSaveRetry(true);
     layoutRevisionRef.current = layoutConflict.current.revision;
-    layoutSavedSignatureRef.current = layoutPositionSignature(nodePositions(latestNodes));
+    layoutSavedSignatureRef.current = layoutPayloadSignature(latestLayout);
+    queryClient.setQueryData(
+      ["story-studio", "canvas-layout", workspaceId, projectId],
+      layoutConflict.current
+    );
+    setStoryWorldNodePresentOverride(layoutConflict.current.storyWorldNodePresent);
+    pendingNodePositionsRef.current.clear();
+    Object.entries(layoutConflict.current.nodePositions).forEach(([nodeId, position]) => {
+      pendingNodePositionsRef.current.set(nodeId, { ...position });
+    });
     history.clear();
     refreshHistoryState();
+    const latestNodes = canvasNodesRef.current
+      .filter(
+        (node) => layoutConflict.current.storyWorldNodePresent || node.id !== STORY_ROOT_NODE_ID
+      )
+      .map((node) => ({
+        ...node,
+        position: layoutConflict.current.nodePositions[node.id] ?? node.position,
+      }));
     canvasNodesRef.current = latestNodes;
     const selectedNodeIds = latestNodes.filter((node) => node.selected).map((node) => node.id);
     latestCanvasSelectionRef.current = selectedNodeIds;
@@ -2294,9 +2383,11 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
                 const movedNodes = new Map(
                   [...draggedNodes, draggedNode].map((node) => [node.id, node])
                 );
-                const positions = nodePositions(
-                  canvasNodes.map((node) => movedNodes.get(node.id) ?? node)
+                const nextLayout = canvasLayoutPayload(
+                  canvasNodes.map((node) => movedNodes.get(node.id) ?? node),
+                  storyWorldNodePresent
                 );
+                const positions = nextLayout.nodePositions;
                 const beforeDrag = dragStartHistorySnapshotRef.current;
                 dragStartHistorySnapshotRef.current = null;
                 if (
@@ -2307,9 +2398,9 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
                   history.capture(beforeDrag);
                   refreshHistoryState();
                 }
-                if (layoutPositionSignature(positions) === layoutSavedSignatureRef.current) return;
+                if (layoutPayloadSignature(nextLayout) === layoutSavedSignatureRef.current) return;
                 setLayoutSaveState("dirty");
-                void persistLayoutRef.current(positions);
+                void persistLayoutRef.current(nextLayout);
               }}
               onNodeClick={(event, node) => {
                 closeCreatorMenu();
@@ -2330,7 +2421,7 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
                 closeCreatorMenu();
               }}
               onPaneContextMenu={(event) => {
-                if (!canEdit) return;
+                if (!canMutateCanvasLayout) return;
                 event.preventDefault();
                 openCreatorMenuAtClientPosition({ x: event.clientX, y: event.clientY });
               }}
@@ -2342,11 +2433,11 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
               minZoom={0.16}
               maxZoom={1.4}
               defaultViewport={{ x: 80, y: 160, zoom: 0.48 }}
-              nodesDraggable={canEdit}
-              nodesConnectable={canEdit}
+              nodesDraggable={canMutateCanvasLayout}
+              nodesConnectable={canMutateCanvasLayout}
               edgesReconnectable={false}
-              edgesFocusable={canEdit}
-              deleteKeyCode={canEdit ? CANVAS_DELETE_KEY_CODES : null}
+              edgesFocusable={canMutateCanvasLayout}
+              deleteKeyCode={canMutateCanvasLayout ? CANVAS_DELETE_KEY_CODES : null}
               selectNodesOnDrag
               zoomOnDoubleClick={false}
               fitView={canvasNodes.length > 0}
@@ -2371,9 +2462,14 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
           </StoryCanvasFocusContext.Provider>
         </MediaHoverPreviewProvider>
 
-        {canEdit ? <StoryNodeDock onCreate={createStoryElementFromDock} /> : null}
+        {canMutateCanvasLayout ? (
+          <StoryNodeDock
+            showStoryWorld={!storyWorldNodePresent}
+            onCreate={createStoryElementFromDock}
+          />
+        ) : null}
 
-        {canEdit ? (
+        {canMutateCanvasLayout ? (
           <CanvasHistoryControls
             canUndo={history.canUndo}
             canRedo={history.canRedo}
@@ -2385,16 +2481,17 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
           />
         ) : null}
 
-        {canEdit && creatorMenu ? (
+        {canMutateCanvasLayout && creatorMenu ? (
           <StoryNodeCreator
             position={{ left: creatorMenu.left, top: creatorMenu.top }}
+            showStoryWorld={!storyWorldNodePresent}
             onCreate={(kind) => createStoryElement(kind, creatorMenu.flowPosition)}
             onCancel={closeCreatorMenu}
           />
         ) : null}
       </section>
 
-      {pendingCompletionDrop ? (
+      {canMutateCanvasLayout && pendingCompletionDrop ? (
         <StoryConnectionCreator
           position={pendingCompletionDrop.clientPosition}
           onCreate={createCompletionStep}
@@ -2435,7 +2532,7 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
           })
         }
         showFoundation={focusedNodeId === null}
-        canEdit={canEdit}
+        canEdit={canMutateCanvasLayout}
         onShowFoundation={() => selectCanvasNodeExclusively(null)}
         onUpdateFoundation={updateFoundation}
         onCreateCharacter={createCharacter}
@@ -3224,12 +3321,27 @@ function nodePositions(nodes: StoryCanvasNode[]): Record<string, StoryCanvasPosi
   );
 }
 
+function canvasLayoutPayload(
+  nodes: readonly StoryCanvasNode[],
+  storyWorldNodePresent: boolean
+): StoryCanvasLayoutPayload {
+  return {
+    nodePositions: nodePositions(
+      storyWorldNodePresent
+        ? [...nodes]
+        : nodes.filter((node) => node.id !== STORY_ROOT_NODE_ID)
+    ),
+    storyWorldNodePresent,
+  };
+}
+
 function historyNodePositions(
   content: InteractiveFilmDraftContent,
   nodes: readonly StoryCanvasNode[],
-  pending: ReadonlyMap<string, StoryCanvasPosition>
+  pending: ReadonlyMap<string, StoryCanvasPosition>,
+  storyWorldNodePresent: boolean
 ): Record<string, StoryCanvasPosition> {
-  const contentNodeIds = storyCanvasContentNodeIds(content);
+  const contentNodeIds = storyCanvasContentNodeIds(content, storyWorldNodePresent);
 
   const positions = Object.fromEntries(
     nodes
@@ -3243,8 +3355,12 @@ function historyNodePositions(
   return positions;
 }
 
-function storyCanvasContentNodeIds(content: InteractiveFilmDraftContent): Set<string> {
-  const nodeIds = new Set<string>([STORY_ROOT_NODE_ID]);
+function storyCanvasContentNodeIds(
+  content: InteractiveFilmDraftContent,
+  storyWorldNodePresent: boolean
+): Set<string> {
+  const nodeIds = new Set<string>();
+  if (storyWorldNodePresent) nodeIds.add(STORY_ROOT_NODE_ID);
   content.graph.nodes.forEach((node) => {
     nodeIds.add(node.nodeId);
     if (node.kind === "clip" && node.exit.kind === "choice") {

@@ -1,16 +1,18 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import { IconMovie, IconRoute, IconSparkles, type Icon } from "@tabler/icons-react";
+import { IconMovie, IconRoute, IconSparkles, IconWorld, type Icon } from "@tabler/icons-react";
 import { useTranslations } from "next-intl";
 import { FrostedPanel } from "@/components/ui/frosted-panel";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useDismiss } from "@/lib/use-dismiss";
+import type { StoryNodeCreationKind } from "./story-node-creator-model";
 
-export type StoryNodeCreationKind = "clip" | "router" | "ending";
+export type { StoryNodeCreationKind } from "./story-node-creator-model";
 
 interface StoryNodeCreatorProps {
   position: { left: number; top: number };
+  showStoryWorld: boolean;
   onCreate: (kind: StoryNodeCreationKind) => void;
   onCancel: () => void;
 }
@@ -23,6 +25,12 @@ interface CreatorItem {
 }
 
 const CREATOR_ITEMS: CreatorItem[] = [
+  {
+    kind: "root",
+    icon: IconWorld,
+    color: "rgba(255,255,255,0.10)",
+    iconBackground: "rgba(255,255,255,0.18)",
+  },
   {
     kind: "clip",
     icon: IconMovie,
@@ -43,8 +51,19 @@ const CREATOR_ITEMS: CreatorItem[] = [
   },
 ];
 
-export function StoryNodeDock({ onCreate }: { onCreate: (kind: StoryNodeCreationKind) => void }) {
+function visibleCreatorItems(showStoryWorld: boolean): CreatorItem[] {
+  return showStoryWorld ? CREATOR_ITEMS : CREATOR_ITEMS.filter((item) => item.kind !== "root");
+}
+
+export function StoryNodeDock({
+  showStoryWorld,
+  onCreate,
+}: {
+  showStoryWorld: boolean;
+  onCreate: (kind: StoryNodeCreationKind) => void;
+}) {
   const t = useTranslations("storyStudio.canvas");
+  const creatorItems = visibleCreatorItems(showStoryWorld);
 
   return (
     <FrostedPanel
@@ -52,7 +71,7 @@ export function StoryNodeDock({ onCreate }: { onCreate: (kind: StoryNodeCreation
       aria-label={t("addNode")}
       className="absolute bottom-5 left-1/2 z-40 flex h-12 -translate-x-1/2 items-center gap-1 rounded-[18px] bg-[oklch(0.24_0_0/0.86)] px-2 shadow-[0_18px_60px_rgba(0,0,0,0.4)] backdrop-blur-[30px] backdrop-saturate-150"
     >
-      {CREATOR_ITEMS.map((item) => {
+      {creatorItems.map((item) => {
         const ItemIcon = item.icon;
         const label = t(`creator.${item.kind}`);
         return (
@@ -77,9 +96,15 @@ export function StoryNodeDock({ onCreate }: { onCreate: (kind: StoryNodeCreation
   );
 }
 
-export function StoryNodeCreator({ position, onCreate, onCancel }: StoryNodeCreatorProps) {
+export function StoryNodeCreator({
+  position,
+  showStoryWorld,
+  onCreate,
+  onCancel,
+}: StoryNodeCreatorProps) {
   const t = useTranslations("storyStudio.canvas");
   const firstActionRef = useRef<HTMLButtonElement>(null);
+  const creatorItems = visibleCreatorItems(showStoryWorld);
 
   useDismiss(true, onCancel);
   useEffect(() => firstActionRef.current?.focus(), []);
@@ -103,7 +128,7 @@ export function StoryNodeCreator({ position, onCreate, onCancel }: StoryNodeCrea
         <p className="mt-1 text-[10px] leading-4 text-white/38">{t("creator.description")}</p>
       </div>
       <div className="grid gap-1">
-        {CREATOR_ITEMS.map((item, index) => {
+        {creatorItems.map((item, index) => {
           const ItemIcon = item.icon;
           return (
             <button

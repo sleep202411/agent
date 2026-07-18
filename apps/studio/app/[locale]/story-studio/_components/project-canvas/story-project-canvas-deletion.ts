@@ -18,8 +18,12 @@ export function deleteStoryCanvasElements(
     edges: readonly StoryCanvasEdge[];
   }
 ): InteractiveFilmDraftContent {
-  const deletableNodes = uniqueById(nodes.filter((node) => node.data.kind !== "root"));
-  const deletedCanvasNodeIds = new Set(deletableNodes.map((node) => node.id));
+  const selectedNodes = uniqueById(nodes);
+  const deletableNodes = selectedNodes.filter((node) => node.data.kind !== "root");
+  // The Story World root is a layout-only projection. Its incident edge must
+  // be consumed by the node deletion request instead of being interpreted as
+  // a standalone request to clear the executable graph entry.
+  const deletedCanvasNodeIds = new Set(selectedNodes.map((node) => node.id));
   const deletedGraphNodeIds = new Set(
     deletableNodes.flatMap((node) =>
       node.data.kind === "clip" || node.data.kind === "router" ? [node.data.nodeId] : []

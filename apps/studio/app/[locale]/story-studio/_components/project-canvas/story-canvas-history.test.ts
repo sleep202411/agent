@@ -22,12 +22,13 @@ describe("StoryCanvasHistory", () => {
     expect(history.canUndo).toBe(false);
   });
 
-  it("restores layout and clears redo after a new change", () => {
+  it("restores the complete layout state and clears redo after a new change", () => {
     const history = new StoryCanvasHistory();
-    history.capture(snapshot("before", { scene: { x: 10, y: 20 } }));
-    const previous = history.undo(snapshot("after", { scene: { x: 80, y: 90 } }));
+    history.capture(snapshot("before", { scene: { x: 10, y: 20 } }, true));
+    const previous = history.undo(snapshot("after", { scene: { x: 80, y: 90 } }, false));
 
     expect(previous?.nodePositions.scene).toEqual({ x: 10, y: 20 });
+    expect(previous?.storyWorldNodePresent).toBe(true);
     expect(history.canRedo).toBe(true);
 
     history.capture(snapshot("new branch"));
@@ -37,9 +38,10 @@ describe("StoryCanvasHistory", () => {
 
 function snapshot(
   logline: string,
-  nodePositions: StoryCanvasHistorySnapshot["nodePositions"] = {}
+  nodePositions: StoryCanvasHistorySnapshot["nodePositions"] = {},
+  storyWorldNodePresent = true
 ): StoryCanvasHistorySnapshot {
-  return { content: draft(logline), nodePositions };
+  return { content: draft(logline), nodePositions, storyWorldNodePresent };
 }
 
 function draft(logline: string): InteractiveFilmDraftContent {

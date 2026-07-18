@@ -28,6 +28,7 @@ import {
   INTERACTIVE_FILM_DRAFT_SCHEMA_VERSION,
   InteractiveFilmDraftContentSchema,
   STORY_CANVAS_LAYOUT_SCHEMA_VERSION,
+  STORY_WORLD_CANVAS_NODE_ID,
   StoryCanvasNodePositionsSchema,
   StoryUuidSchema,
   type ArchiveStoryProjectInput,
@@ -229,6 +230,7 @@ export class StoryProjectsService {
           create: {
             schemaVersion: STORY_CANVAS_LAYOUT_SCHEMA_VERSION,
             nodePositions: {},
+            storyWorldNodePresent: true,
             updatedByUserId: user.userId,
           },
         },
@@ -553,6 +555,7 @@ export class StoryProjectsService {
         data: {
           schemaVersion: input.schemaVersion,
           nodePositions: input.nodePositions as Prisma.InputJsonObject,
+          storyWorldNodePresent: input.storyWorldNodePresent,
           revision: { increment: 1 },
           updatedByUserId: user.userId,
           updatedBySessionId: input.sessionId,
@@ -1060,6 +1063,7 @@ export class StoryProjectsService {
     storyProjectId: string;
     schemaVersion: string;
     nodePositions: Prisma.JsonValue;
+    storyWorldNodePresent: boolean;
     revision: number;
     updatedByUserId: string;
     updatedBySessionId: string | null;
@@ -1078,10 +1082,20 @@ export class StoryProjectsService {
     if (!nodePositions.success) {
       throw corruptData('STORY_CANVAS_LAYOUT_CORRUPT', 'canvas layout');
     }
+    if (
+      !row.storyWorldNodePresent &&
+      Object.prototype.hasOwnProperty.call(
+        nodePositions.data,
+        STORY_WORLD_CANVAS_NODE_ID,
+      )
+    ) {
+      throw corruptData('STORY_CANVAS_LAYOUT_CORRUPT', 'canvas layout');
+    }
     return {
       projectId: row.storyProjectId,
       schemaVersion: STORY_CANVAS_LAYOUT_SCHEMA_VERSION,
       nodePositions: nodePositions.data,
+      storyWorldNodePresent: row.storyWorldNodePresent,
       revision: row.revision,
       updatedByUserId: row.updatedByUserId,
       updatedBySessionId: row.updatedBySessionId,

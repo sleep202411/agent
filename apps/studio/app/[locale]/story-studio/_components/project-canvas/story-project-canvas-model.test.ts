@@ -4,10 +4,10 @@ import type {
   InteractiveFilmDraftContent,
   StoryGraphNode,
 } from "@/lib/story-projects-api";
-import { buildStoryCanvasModel } from "./story-project-canvas-model";
+import { buildStoryCanvasModel, STORY_ROOT_NODE_ID } from "./story-project-canvas-model";
 
 describe("buildStoryCanvasModel", () => {
-  it("allows every projected story element except the root to be deleted", () => {
+  it("allows every projected story element to be deleted", () => {
     const content = draft({
       entryNodeId: "decision",
       nodes: [
@@ -26,8 +26,36 @@ describe("buildStoryCanvasModel", () => {
     const model = buildStoryCanvasModel(content, "en-US");
 
     expect(Object.fromEntries(model.nodes.map((node) => [node.data.kind, node.deletable]))).toEqual(
-      { root: false, clip: true, decision: true, router: true, ending: true }
+      { root: true, clip: true, decision: true, router: true, ending: true }
     );
+  });
+
+  it("omits the Story World projection and its entry edge when the layout hides it", () => {
+    const content = draft({
+      entryNodeId: "opening",
+      nodes: [
+        clip("opening", "OPENING", { kind: "auto", nextNodeId: "arrival" }),
+        clip("arrival", "ARRIVAL", { kind: "auto", nextNodeId: null }),
+      ],
+    });
+
+    const model = buildStoryCanvasModel(
+      content,
+      "en-US",
+      [],
+      undefined,
+      "landscape_16_9",
+      null,
+      false
+    );
+
+    expect(model.nodes.some((node) => node.id === STORY_ROOT_NODE_ID)).toBe(false);
+    expect(model.edges.some((edge) => edge.data.kind === "root")).toBe(false);
+    expect(model.nodes.map(({ id, position }) => ({ id, position }))).toEqual([
+      { id: "opening", position: { x: 0, y: 0 } },
+      { id: "arrival", position: { x: 420, y: 0 } },
+    ]);
+    expect(content.graph.entryNodeId).toBe("opening");
   });
 
   it("projects the story bible root even when the executable graph is empty", () => {

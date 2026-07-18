@@ -165,7 +165,12 @@ export function StoryNodeInspector({
           onRemoveTextItem={onRemoveWorldTextItem}
         />
       ) : canvasData.kind === "root" ? (
-        <RootTrailerInspector onClose={onCloseNode} trailerGeneration={trailerGeneration} />
+        <RootTrailerInspector
+          canEdit={canEdit}
+          onClose={onCloseNode}
+          onDelete={onDeleteSelected}
+          trailerGeneration={trailerGeneration}
+        />
       ) : (
         <>
           <div className="flex items-start justify-between gap-3">
@@ -258,28 +263,32 @@ export function StoryNodeInspector({
 }
 
 function RootTrailerInspector({
+  canEdit,
   onClose,
+  onDelete,
   trailerGeneration,
 }: {
+  canEdit: boolean;
   onClose: () => void;
+  onDelete: () => void;
   trailerGeneration?: StoryClipGenerationFormProps;
 }) {
-  const t = useTranslations("storyStudio.canvas.trailer");
+  const t = useTranslations("storyStudio.canvas");
   return (
     <>
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <p className="text-[10px] font-semibold tracking-[0.12em] text-white/34 uppercase">
-            {t("eyebrow")}
+            {t("trailer.eyebrow")}
           </p>
-          <h2 className="mt-1 text-base font-semibold">{t("title")}</h2>
-          <p className="mt-1 text-[10px] leading-4 text-white/34">{t("description")}</p>
+          <h2 className="mt-1 text-base font-semibold">{t("trailer.title")}</h2>
+          <p className="mt-1 text-[10px] leading-4 text-white/34">{t("trailer.description")}</p>
         </div>
         <button
           type="button"
           onClick={onClose}
           className="grid size-9 shrink-0 place-items-center rounded-xl bg-white/[0.06] text-white/48 transition hover:bg-white/[0.1] hover:text-white"
-          aria-label={t("close")}
+          aria-label={t("trailer.close")}
         >
           <IconX className="size-4" />
         </button>
@@ -288,6 +297,17 @@ function RootTrailerInspector({
       {trailerGeneration ? (
         <StoryClipGenerationForm {...trailerGeneration} subject="trailer" />
       ) : null}
+
+      <Button
+        type="button"
+        variant="destructive"
+        disabled={!canEdit}
+        onClick={onDelete}
+        className="mt-6 w-full"
+      >
+        <IconTrash className="size-4" />
+        {t("inspector.delete")}
+      </Button>
     </>
   );
 }

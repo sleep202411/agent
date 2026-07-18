@@ -2,20 +2,27 @@ import type { StoryCanvasLayout, StoryCanvasPosition } from "@/lib/story-project
 
 export type StoryCanvasLayoutPositions = Record<string, StoryCanvasPosition>;
 
-export function layoutPositionSignature(positions: StoryCanvasLayoutPositions): string {
-  return JSON.stringify(
-    Object.fromEntries(
-      Object.entries(positions).sort(([left], [right]) => left.localeCompare(right))
-    )
-  );
+export interface StoryCanvasLayoutPayload {
+  nodePositions: StoryCanvasLayoutPositions;
+  storyWorldNodePresent: boolean;
 }
 
-/** Keeps only a payload that is newer than the request already in flight. */
-export function coalesceQueuedLayout(
-  inFlightSignature: string | null,
-  next: StoryCanvasLayoutPositions
-): StoryCanvasLayoutPositions | null {
-  return layoutPositionSignature(next) === inFlightSignature ? null : next;
+export function layoutPositionSignature(positions: StoryCanvasLayoutPositions): string {
+  return JSON.stringify(canonicalNodePositions(positions));
+}
+
+export function layoutPayloadSignature(payload: StoryCanvasLayoutPayload): string {
+  return JSON.stringify({
+    nodePositions: canonicalNodePositions(payload.nodePositions),
+    storyWorldNodePresent: payload.storyWorldNodePresent,
+  });
+}
+
+export function unsavedDesiredLayout(
+  desired: StoryCanvasLayoutPayload | null,
+  savedSignature: string
+): StoryCanvasLayoutPayload | null {
+  return desired && layoutPayloadSignature(desired) !== savedSignature ? desired : null;
 }
 
 export function confirmsOwnCanvasLayoutWrite(
@@ -25,10 +32,19 @@ export function confirmsOwnCanvasLayoutWrite(
 ): boolean {
   return (
     current.updatedBySessionId === sessionId &&
-    layoutPositionSignature(current.nodePositions) === expectedSignature
+    layoutPayloadSignature({
+      nodePositions: current.nodePositions,
+      storyWorldNodePresent: current.storyWorldNodePresent,
+    }) === expectedSignature
   );
 }
 
 export function layoutRetryDelay(attempt: number): number {
   return Math.min(1_000 * 2 ** Math.max(0, attempt), 30_000);
+}
+
+function canonicalNodePositions(positions: StoryCanvasLayoutPositions): StoryCanvasLayoutPositions {
+  return Object.fromEntries(
+    Object.entries(positions).sort(([left], [right]) => left.localeCompare(right))
+  );
 }

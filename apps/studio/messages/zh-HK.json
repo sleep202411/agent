@@ -1726,6 +1726,8 @@
       "creator": {
         "title": "新增至故事圖",
         "description": "建立互動影遊故事結構中的圖元素。",
+        "root": "故事世界",
+        "rootDescription": "將世界觀與宣傳片節點重新加入畫布。",
         "clip": "影像鏡頭",
         "clipDescription": "一段帶有明確後續走向的生成影片。",
         "choice": "分支選擇",

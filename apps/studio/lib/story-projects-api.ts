@@ -10,7 +10,7 @@ import { api, ApiRequestError } from "@/lib/api";
  */
 
 export const INTERACTIVE_FILM_DRAFT_SCHEMA_VERSION = "interactive-film-draft-v3" as const;
-export const STORY_CANVAS_LAYOUT_SCHEMA_VERSION = "story-canvas-layout-v1" as const;
+export const STORY_CANVAS_LAYOUT_SCHEMA_VERSION = "story-canvas-layout-v2" as const;
 
 export type StoryFormat = "text_adventure" | "interactive_film" | "narrative_rpg";
 export type StoryProjectStatus = "active" | "archived";
@@ -256,6 +256,7 @@ export interface StoryCanvasLayout {
   projectId: string;
   schemaVersion: typeof STORY_CANVAS_LAYOUT_SCHEMA_VERSION;
   nodePositions: Record<string, StoryCanvasPosition>;
+  storyWorldNodePresent: boolean;
   revision: number;
   updatedByUserId: string;
   updatedBySessionId: string | null;
@@ -834,6 +835,7 @@ export async function putStoryCanvasLayout(
   input: {
     expectedRevision: number;
     nodePositions: Record<string, StoryCanvasPosition>;
+    storyWorldNodePresent: boolean;
     sessionId: string;
   }
 ): Promise<StoryCanvasLayout> {
