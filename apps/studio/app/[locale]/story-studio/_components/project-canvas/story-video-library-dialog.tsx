@@ -82,6 +82,18 @@ export function StoryVideoLibraryDialog({
     []
   );
 
+  useEffect(() => {
+    if (!disabled || !open || selectingKey !== null) return;
+    requestEpochRef.current += 1;
+    let cancelled = false;
+    queueMicrotask(() => {
+      if (!cancelled) setOpen(false);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [disabled, open, selectingKey]);
+
   const loadPage = useCallback(
     async (cursor: string | undefined, replace: boolean) => {
       const epoch = ++requestEpochRef.current;
@@ -116,6 +128,7 @@ export function StoryVideoLibraryDialog({
     : null;
 
   const selectItem = async (item: StoryVideoLibraryItem) => {
+    if (disabled) return;
     const itemKey = storyVideoLibraryItemKey(item);
     const state = resolveStoryVideoLibraryItemState(item, frameContract, currentSelection);
     if (!state.selectable || state.current || selectingKey) return;
@@ -139,6 +152,7 @@ export function StoryVideoLibraryDialog({
       onOpenChange={(nextOpen) => {
         if (selectingKey) return;
         if (nextOpen) {
+          if (disabled) return;
           setItems([]);
           setNextCursor(null);
           setSelectionError(null);
@@ -223,9 +237,11 @@ export function StoryVideoLibraryDialog({
                   frameContract={frameContract}
                   currentSelection={currentSelection}
                   selecting={selectingKey === storyVideoLibraryItemKey(item)}
-                  selectionLocked={selectingKey !== null}
+                  selectionLocked={disabled || selectingKey !== null}
                   reducedMotion={reducedMotion}
-                  onSelect={() => void selectItem(item)}
+                  onSelect={() => {
+                    if (!disabled) void selectItem(item);
+                  }}
                 />
               ))}
             </div>
@@ -238,7 +254,10 @@ export function StoryVideoLibraryDialog({
                   variant="secondary"
                   size="lg"
                   className="mt-4 rounded-xl"
-                  onClick={() => void loadPage(undefined, true)}
+                  disabled={disabled}
+                  onClick={() => {
+                    if (!disabled) void loadPage(undefined, true);
+                  }}
                 >
                   <IconRefresh className="size-4" />
                   {t("retry")}
@@ -272,9 +291,11 @@ export function StoryVideoLibraryDialog({
               type="button"
               variant="secondary"
               size="xl"
-              disabled={loadingMore || selectingKey !== null}
+              disabled={disabled || loadingMore || selectingKey !== null}
               className="w-full rounded-xl bg-white/[0.07]"
-              onClick={() => void loadPage(nextCursor, false)}
+              onClick={() => {
+                if (!disabled) void loadPage(nextCursor, false);
+              }}
             >
               {loadingMore ? <IconLoader2 className="size-4 animate-spin" /> : null}
               {loadingMore ? t("loadingMore") : t("loadMore")}

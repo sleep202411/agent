@@ -24,6 +24,7 @@ export interface AssetsRealtimeClient {
 
 export interface AssetsRealtimeOptions {
   workspaceId?: string;
+  storyProjectId?: string;
 }
 
 interface NegotiateData {
@@ -38,9 +39,10 @@ interface NegotiateResponse {
   message?: string;
 }
 
-async function negotiate(workspaceId?: string): Promise<NegotiateData> {
+async function negotiate(options: AssetsRealtimeOptions): Promise<NegotiateData> {
   const headers: Record<string, string> = {};
-  if (workspaceId) headers["X-Fizz-Workspace-Id"] = workspaceId;
+  if (options.workspaceId) headers["X-Fizz-Workspace-Id"] = options.workspaceId;
+  if (options.storyProjectId) headers["X-Fizz-Story-Project-Id"] = options.storyProjectId;
   const res = await fetch("/aurora/realtime/negotiate/realtime", {
     credentials: "include",
     headers,
@@ -110,7 +112,7 @@ export function openAssetsRealtime(
     // a synchronized reconnect (and negotiate) herd.
     const delay = Math.random() * ceiling;
     reconnectTimer = setTimeout(() => {
-      void negotiate(options.workspaceId)
+      void negotiate(options)
         .then((access) => {
           if (!stopped) connect(access);
         })
@@ -163,7 +165,7 @@ export function openAssetsRealtime(
   // transient negotiate failure at mount must not kill the client for good —
   // that would leave the consumer on its HTTP fallback poll for the rest of
   // the tab's life even though the realtime plane is healthy.
-  void negotiate(options.workspaceId)
+  void negotiate(options)
     .then((access) => {
       if (!stopped) connect(access);
     })

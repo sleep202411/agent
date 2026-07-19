@@ -1492,7 +1492,6 @@ function CanvasInner({ projectId, canEdit }: { projectId: string; canEdit: boole
 
               <CopilotPanel
                 projectId={projectId}
-                mode="canvas"
                 open={copilotOpen}
                 onClose={() => setCopilotOpen(false)}
               />

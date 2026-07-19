@@ -1513,6 +1513,9 @@
     "title": "Copilot",
     "open": "Open copilot",
     "close": "Close",
+    "inputLabel": "Message the copilot",
+    "transcriptLabel": "Copilot conversation",
+    "scrollToLatest": "Scroll to the latest message",
     "send": "Send",
     "stop": "Stop",
     "placeholder": "Ask anything about your project…",
@@ -1520,6 +1523,24 @@
     "thinking": "Thinking…",
     "error": "Something went wrong.",
     "retry": "Retry",
+    "historyLoading": "Loading this project's conversation…",
+    "historyError": "The existing conversation could not be loaded. Sending stays disabled to protect its history.",
+    "retryHistory": "Load again",
+    "recoveryStorageError": "This message could not be protected for safe retry. Your draft is unchanged; check browser storage and try again.",
+    "messagePreserved": "Your message is preserved. We’ll check the conversation before retrying so it is not sent twice.",
+    "retryPreservedMessage": "Retry safely",
+    "responseStopped": "This response was stopped before completion.",
+    "responseFailed": "This response did not complete.",
+    "rateLimited": "You're sending messages too quickly ({limit}/min). Try again at {time}.",
+    "quotaExceeded": "Message limit reached ({limit}/day). Resets at {time}.",
+    "continuationRecoveryRequired": "A canvas action was interrupted before its result reached the director. Continue safely to mark it as skipped, or start a new conversation.",
+    "continueInterrupted": "Continue safely",
+    "historyLimitReached": "This conversation reached its safe history limit. Start a new conversation to continue.",
+    "newConversation": "New conversation",
+    "newConversationTitle": "Start a new conversation?",
+    "newConversationDescription": "This permanently clears your private Copilot chat for this canvas. It does not change the canvas or other collaborators' chats.",
+    "cancelNewConversation": "Keep conversation",
+    "confirmNewConversation": "Clear and start new",
     "you": "You",
     "acting": "Working on the canvas…",
     "acted": "Updated the canvas",
@@ -1688,10 +1709,143 @@
         "unavailableTitle": "The story is not playable yet",
         "unavailableDescription": "{errors} blocking errors · {warnings} warnings. Complete only the missing production inputs listed below; the canvas remains editable."
       },
-      "autosave": "Autosave",
       "readOnly": "Read only",
       "addNode": "Add story node",
       "loading": "Opening the story canvas…",
+      "assistant": {
+        "action": "Director Agent"
+      },
+      "emptyAgent": {
+        "title": "Every choice rewrites the story",
+        "description": "Tell the Director Agent about your story, or choose a directing skill to shape the first conversation.",
+        "assistantTitle": "Director Agent",
+        "close": "Close Director Agent",
+        "inputLabel": "Message the Director Agent",
+        "placeholder": "Describe the story, feeling, or player experience you want to create…",
+        "panelPlaceholder": "Continue developing the story…",
+        "panelEmpty": "Describe the story or player experience you want to develop.",
+        "transcriptLabel": "Director Agent conversation",
+        "scrollToLatest": "Scroll to the latest message",
+        "send": "Send message",
+        "stop": "Stop response",
+        "thinking": "Director Agent is thinking…",
+        "error": "The Director Agent could not respond.",
+        "retry": "Retry",
+        "historyLoading": "Loading this project's conversation…",
+        "historyError": "The existing conversation could not be loaded. Sending stays disabled to protect its history.",
+        "retryHistory": "Load again",
+        "recoveryStorageError": "This message could not be protected for safe retry. Your draft and reference images are unchanged; check browser storage and try again.",
+        "messagePreserved": "Your message is preserved. We’ll check the conversation before retrying so it is not sent twice.",
+        "retryPreservedMessage": "Retry safely",
+        "discardPreservedMessage": "Discard message",
+        "responseStopped": "This response was stopped before completion.",
+        "responseFailed": "This response did not complete.",
+        "rateLimited": "You're sending messages too quickly ({limit}/min). Try again at {time}.",
+        "quotaExceeded": "Message limit reached ({limit}/day). Resets at {time}.",
+        "historyLimitReached": "This conversation reached its safe history limit. Start a new conversation to continue.",
+        "newConversation": "New conversation",
+        "newConversationTitle": "Start a new conversation?",
+        "newConversationDescription": "This permanently clears your private Director Agent chat for this project. It does not change the story canvas or other collaborators' chats.",
+        "cancelNewConversation": "Keep conversation",
+        "confirmNewConversation": "Clear and start new",
+        "you": "You",
+        "skillsTitle": "Choose a directing skill",
+        "activeSkill": "Skill · {name}",
+        "removeSkill": "Remove {name}",
+        "attachDocument": "Attach a script or outline (.docx, .txt, .md)",
+        "removeAttachment": "Remove attached document",
+        "attachedDocument": "Attached document",
+        "attachmentUnsupported": "Only .docx, .txt, or .md files are supported.",
+        "attachmentTooLarge": "Documents must be 10MB or smaller.",
+        "attachmentUploadFailed": "The document failed to upload. Try sending again.",
+        "agentRun": {
+          "proposalLabel": "Story Agent change proposal",
+          "proposal": "Proposed story change",
+          "undoProposal": "Undo change",
+          "preparing": "Preparing a reviewable change",
+          "preparingDetail": "The Agent is validating a structured proposal against the current project.",
+          "proposalFailed": "The proposal could not be prepared",
+          "proposalFailedDetail": "No project data was changed.",
+          "invalid": "Invalid Agent response",
+          "invalidDetail": "The server returned a proposal that does not match the Story Agent contract.",
+          "rejected": "Change request not filed",
+          "rejectedDetail": "The change request was rejected before drafting began. No project data was changed.",
+          "dismissRejected": "Dismiss",
+          "rejections": {
+            "COPILOT_STORY_PATCH_ALREADY_PROPOSED": "This reply already filed a change request, so the extra one was ignored.",
+            "STORY_AGENT_PROJECT_PROPOSAL_LIMIT_REACHED": "This project is at its open-proposal limit. Apply or discard an existing proposal first.",
+            "STORY_AGENT_APPLYING": "The Agent is applying another change right now. Send the request again after it finishes."
+          },
+          "drafting": "Drafting story change",
+          "authoring": "The Agent is drafting this change. The canvas stays editable.",
+          "retryAuthoring": "Retry drafting",
+          "authoringErrors": {
+            "STORY_AGENT_AUTHORING_FAILED": "The Agent could not draft this change. Retry drafting or discard the request.",
+            "STORY_AGENT_AUTHORING_BASE_UNSTABLE": "The story kept changing while the Agent was drafting. Retry when editing pauses.",
+            "STORY_AGENT_PROPOSAL_NO_CHANGES": "The Agent found nothing to change for this request. Discard it, or retry after the story changes.",
+            "STORY_AGENT_CONTEXT_TOO_LARGE": "This story is too large for the Agent to draft against right now.",
+            "generic": "Drafting failed before a proposal could be prepared."
+          },
+          "discard": "Discard",
+          "apply": "Apply changes",
+          "applying": "Agent is updating the project. Editing is locked for everyone.",
+          "takingOver": "Saving current edits and securing the Agent write lock…",
+          "reconciling": "Agent changes are committed. Syncing the canvas…",
+          "applied": "Changes applied",
+          "undone": "Changes undone",
+          "undo": "Undo all",
+          "stale": "The project changed before this proposal could be applied.",
+          "failed": "The Agent could not apply this proposal.",
+          "cancelled": "Proposal discarded",
+          "actionFailed": "The Agent action failed.",
+          "actionErrors": {
+            "projectScopeChanged": "This project changed while the action was starting. Review the current canvas and try again.",
+            "canonicalHeadChanged": "A newer Agent proposal is now current. Review it before taking action.",
+            "runNotProposed": "This proposal is no longer awaiting a decision. Refresh to see its current state.",
+            "runNotRetryable": "This change is not waiting for a drafting retry. Refresh to see its current state.",
+            "undoBlockedByActiveRun": "Finish or discard the current Agent proposal before undoing an earlier change.",
+            "undoHeadChanged": "A newer project change replaced this undo point. Refresh to review the current state.",
+            "authorityUnavailable": "The current project state could not be verified. Refresh and try Undo again."
+          },
+          "showMore": "Show {count} more",
+          "showLess": "Show less",
+          "checkingCurrent": "Checking the current proposal…",
+          "currentUnavailable": "Current proposal unavailable",
+          "retry": "Retry",
+          "historicalReadOnly": "This is an earlier proposal and is read-only.",
+          "reviewOnly": "You can review this proposal, but only editors can apply or discard it.",
+          "viewOnly": "View only",
+          "historical": "Earlier proposal",
+          "checking": "Checking…",
+          "unavailable": "Unavailable"
+        },
+        "skills": {
+          "symmetricalStorybook": {
+            "title": "Symmetrical storybook cinema",
+            "description": "Symmetrical framing, chapter narration, and vintage color create a restrained, absurd fairy-tale tone."
+          },
+          "intimateRealism": {
+            "title": "Intimate relationship drama",
+            "description": "Let emotion accumulate through everyday details, with choices that genuinely reshape relationships."
+          },
+          "easternDreamscape": {
+            "title": "Eastern classical dreamscape",
+            "description": "Use gardens, objects, and negative space to compose a subtle, flowing sense of fate."
+          },
+          "psychologicalMystery": {
+            "title": "Psychological mystery",
+            "description": "Restricted viewpoints, misleading clues, and earned reversals make choices reshape the truth players believe."
+          },
+          "retroFutureNoir": {
+            "title": "Retro-future noir",
+            "description": "Neon, smoke, and hard light frame a branching mystery about identity and its cost."
+          },
+          "handcraftedFable": {
+            "title": "Handcrafted stop-motion fable",
+            "description": "Felt, paper craft, and frame-by-frame texture make emotion and choice feel physically present."
+          }
+        }
+      },
       "saveState": {
         "idle": "Mutable draft · revision {revision}",
         "dirty": "Unsaved changes · revision {revision}",
@@ -2163,11 +2317,34 @@
         "addOpening": "Add opening clip"
       },
       "conflict": {
-        "description": "Someone saved a newer version of this draft. Load it before continuing.",
-        "loadLatest": "Load latest"
+        "description": "Someone saved a newer version. Your local draft is preserved; export it before discarding if needed.",
+        "exportLocal": "Export local copy",
+        "loadLatest": "Discard local and load latest"
       },
       "layoutConflict": {
-        "description": "Someone rearranged this canvas. Load the latest layout before continuing."
+        "description": "Someone rearranged this canvas. Your local layout is preserved; export it before discarding if needed."
+      },
+      "leaveGuard": {
+        "title": "Leave with local recovery work?",
+        "description": "Some work exists only in this browser and cannot be saved safely right now. Export a recovery file before leaving, or explicitly discard it.",
+        "planes": {
+          "draft": {
+            "title": "Story draft",
+            "description": "Unsaved or conflicted story content will be lost."
+          },
+          "layout": {
+            "title": "Canvas layout",
+            "description": "Unsaved node positions or Story World visibility will be lost."
+          },
+          "generation": {
+            "title": "Generation settings",
+            "description": "Unsubmitted video generation settings will be lost."
+          }
+        },
+        "stay": "Stay on canvas",
+        "export": "Export recovery",
+        "discardAndLeave": "Discard and leave",
+        "exported": "Recovery file exported. Keep it until your work is restored."
       },
       "graphError": {
         "generic": "That graph change conflicts with the current next step. Remove the existing route or choose a compatible target first.",

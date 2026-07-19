@@ -4,7 +4,45 @@ import type {
   InteractiveFilmDraftContent,
   StoryGraphNode,
 } from "@/lib/story-projects-api";
-import { buildStoryCanvasModel, STORY_ROOT_NODE_ID } from "./story-project-canvas-model";
+import {
+  buildStoryCanvasModel,
+  projectStoryDomainIdsToCanvasNodeIds,
+  STORY_ROOT_NODE_ID,
+  storyDomainIdForCanvasProjection,
+} from "./story-project-canvas-model";
+
+describe("Story domain id canvas projection", () => {
+  it("resolves graph, choice-decision, and ending projections without exposing synthetic ids", () => {
+    expect(storyDomainIdForCanvasProjection("opening")).toBe("opening");
+    expect(storyDomainIdForCanvasProjection("__decision__:opening")).toBe("opening");
+    expect(storyDomainIdForCanvasProjection("__ending__:truth")).toBe("truth");
+    expect(storyDomainIdForCanvasProjection(STORY_ROOT_NODE_ID)).toBeNull();
+    expect(storyDomainIdForCanvasProjection("__decision__:")).toBeNull();
+    expect(storyDomainIdForCanvasProjection("__ending__:")).toBeNull();
+  });
+
+  it("maps domain ids to every rendered projection in canvas order and deduplicates ids", () => {
+    expect(
+      projectStoryDomainIdsToCanvasNodeIds(
+        ["opening", "truth"],
+        [
+          STORY_ROOT_NODE_ID,
+          "opening",
+          "__decision__:opening",
+          "unrelated",
+          "__ending__:truth",
+          "__decision__:opening",
+        ]
+      )
+    ).toEqual(["opening", "__decision__:opening", "__ending__:truth"]);
+  });
+
+  it("projects an ambiguous domain id to all rendered graph and ending views", () => {
+    expect(
+      projectStoryDomainIdsToCanvasNodeIds(["shared"], ["shared", "__ending__:shared"])
+    ).toEqual(["shared", "__ending__:shared"]);
+  });
+});
 
 describe("buildStoryCanvasModel", () => {
   it("allows every projected story element to be deleted", () => {

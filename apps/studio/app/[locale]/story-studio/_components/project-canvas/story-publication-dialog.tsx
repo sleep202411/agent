@@ -21,12 +21,16 @@ const PUBLICATION_PHASES = ["saving", "building", "publishing"] as const;
 export function StoryPublicationDialog({
   state,
   draftRevision,
+  canMutate,
+  disabledReason,
   onClose,
   onConfirm,
   onRetry,
 }: {
   state: StoryPublicationState;
   draftRevision: number;
+  canMutate: boolean;
+  disabledReason: string | null;
   onClose: () => void;
   onConfirm: () => void | Promise<void>;
   onRetry: () => void | Promise<void>;
@@ -114,7 +118,16 @@ export function StoryPublicationDialog({
             <Button type="button" variant="secondary" size="xl" onClick={onClose}>
               {t("actions.cancel")}
             </Button>
-            <Button type="button" variant="primary-cta" size="xl" onClick={() => void onConfirm()}>
+            <Button
+              type="button"
+              variant="primary-cta"
+              size="xl"
+              disabled={!canMutate}
+              title={disabledReason ?? undefined}
+              onClick={() => {
+                if (canMutate) void onConfirm();
+              }}
+            >
               <IconCloudUpload className="size-4" />
               {t("actions.confirm")}
             </Button>
@@ -127,7 +140,15 @@ export function StoryPublicationDialog({
               {t("actions.close")}
             </Button>
             {state.phase !== "permission" ? (
-              <Button type="button" size="xl" onClick={() => void onRetry()}>
+              <Button
+                type="button"
+                size="xl"
+                disabled={!canMutate}
+                title={disabledReason ?? undefined}
+                onClick={() => {
+                  if (canMutate) void onRetry();
+                }}
+              >
                 {t("actions.retry")}
               </Button>
             ) : null}

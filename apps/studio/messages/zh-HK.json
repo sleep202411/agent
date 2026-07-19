@@ -1513,6 +1513,9 @@
     "title": "AI 助手",
     "open": "開啟 AI 助手",
     "close": "關閉",
+    "inputLabel": "向 AI 助手傳送訊息",
+    "transcriptLabel": "AI 助手對話",
+    "scrollToLatest": "捲動到最新訊息",
     "send": "傳送",
     "stop": "停止",
     "placeholder": "問我任何關於這個專案的問題…",
@@ -1520,6 +1523,24 @@
     "thinking": "思考中…",
     "error": "出錯了。",
     "retry": "重試",
+    "historyLoading": "正在載入這個專案的對話……",
+    "historyError": "無法載入已有對話。為保護歷史記錄，重新載入成功前不能傳送。",
+    "retryHistory": "重新載入",
+    "recoveryStorageError": "無法為這則訊息建立安全重試記錄。草稿沒有改變，請檢查瀏覽器儲存空間後重試。",
+    "messagePreserved": "你的訊息已保留。重試前會先核對對話，避免重複傳送。",
+    "retryPreservedMessage": "安全重試",
+    "responseStopped": "這次回覆已停止，尚未完成。",
+    "responseFailed": "這次回覆未能完成。",
+    "rateLimited": "訊息傳送過快（每分鐘上限 {limit} 條），請於 {time} 後再試。",
+    "quotaExceeded": "已達到訊息上限（每天 {limit} 條），將於 {time} 重置。",
+    "continuationRecoveryRequired": "畫布操作在結果送達導演前被中斷。你可以安全繼續並將它標記為已略過，或新增對話。",
+    "continueInterrupted": "安全繼續",
+    "historyLimitReached": "這段對話已達到安全歷史上限，請新增對話後繼續。",
+    "newConversation": "新增對話",
+    "newConversationTitle": "開始新對話？",
+    "newConversationDescription": "這會永久清除你在此畫布中的私人 AI 助手對話，但不會修改畫布或其他協作者的對話。",
+    "cancelNewConversation": "保留目前對話",
+    "confirmNewConversation": "清除並新增",
     "you": "你",
     "acting": "正在操作畫布…",
     "acted": "已更新畫布",
@@ -1688,10 +1709,143 @@
         "unavailableTitle": "目前故事還不能試玩",
         "unavailableDescription": "{errors} 個阻塞錯誤 · {warnings} 個警告。只需補齊下方列出的製作輸入，畫布仍可隨時修改。"
       },
-      "autosave": "自動儲存",
       "readOnly": "唯讀",
       "addNode": "新增故事節點",
       "loading": "正在開啟故事畫布…",
+      "assistant": {
+        "action": "導演 Agent"
+      },
+      "emptyAgent": {
+        "title": "讓每個選擇，改寫故事",
+        "description": "和導演 Agent 說說你的故事，或選擇一種創作 Skill 來確定第一次對話的方向。",
+        "assistantTitle": "導演 Agent",
+        "close": "關閉導演 Agent",
+        "inputLabel": "向導演 Agent 傳送訊息",
+        "placeholder": "描述你想創作的故事、情緒或玩家體驗……",
+        "panelPlaceholder": "繼續完善這個故事……",
+        "panelEmpty": "描述你想要創作的故事或玩家體驗。",
+        "transcriptLabel": "導演 Agent 對話",
+        "scrollToLatest": "捲動到最新訊息",
+        "send": "傳送訊息",
+        "stop": "停止回覆",
+        "thinking": "導演 Agent 正在思考……",
+        "error": "導演 Agent 暫時無法回覆。",
+        "retry": "重試",
+        "historyLoading": "正在載入這個專案的對話……",
+        "historyError": "無法載入已有對話。為保護歷史記錄，重新載入成功前不能傳送。",
+        "retryHistory": "重新載入",
+        "recoveryStorageError": "無法為這則訊息建立安全重試記錄。草稿和參考圖均沒有改變，請檢查瀏覽器儲存空間後重試。",
+        "messagePreserved": "你的訊息已保留。重試前會先核對對話，避免重複傳送。",
+        "retryPreservedMessage": "安全重試",
+        "discardPreservedMessage": "捨棄此訊息",
+        "responseStopped": "這次回覆已停止，尚未完成。",
+        "responseFailed": "這次回覆未能完成。",
+        "rateLimited": "訊息傳送過快（每分鐘上限 {limit} 條），請於 {time} 後再試。",
+        "quotaExceeded": "已達到訊息上限（每天 {limit} 條），將於 {time} 重置。",
+        "historyLimitReached": "這段對話已達到安全歷史上限，請新增對話後繼續。",
+        "newConversation": "新增對話",
+        "newConversationTitle": "開始新對話？",
+        "newConversationDescription": "這會永久清除你在此專案中的私人導演 Agent 對話，但不會修改故事畫布或其他協作者的對話。",
+        "cancelNewConversation": "保留目前對話",
+        "confirmNewConversation": "清除並新增",
+        "you": "你",
+        "skillsTitle": "選擇一種導演 Skill",
+        "activeSkill": "Skill · {name}",
+        "removeSkill": "移除{name}",
+        "attachDocument": "上載劇本或大綱（.docx、.txt、.md）",
+        "removeAttachment": "移除已附加的文件",
+        "attachedDocument": "已附加文件",
+        "attachmentUnsupported": "只支援 .docx、.txt 或 .md 檔案。",
+        "attachmentTooLarge": "文件大小不能超過 10MB。",
+        "attachmentUploadFailed": "文件上載失敗，請重新傳送。",
+        "agentRun": {
+          "proposalLabel": "故事 Agent 變更提案",
+          "proposal": "故事變更提案",
+          "undoProposal": "復原變更",
+          "preparing": "正在準備可審核的變更",
+          "preparingDetail": "Agent 正在根據目前專案驗證結構化提案。",
+          "proposalFailed": "無法產生變更提案",
+          "proposalFailedDetail": "專案資料沒有任何改變。",
+          "invalid": "Agent 回應無效",
+          "invalidDetail": "伺服器傳回的提案不符合 Story Agent 契約。",
+          "rejected": "變更請求未提交",
+          "rejectedDetail": "該變更請求在草擬開始前被拒絕，專案資料沒有任何改變。",
+          "dismissRejected": "關閉",
+          "rejections": {
+            "COPILOT_STORY_PATCH_ALREADY_PROPOSED": "本輪回覆已提交過變更請求，多餘的請求已被忽略。",
+            "STORY_AGENT_PROJECT_PROPOSAL_LIMIT_REACHED": "該專案的待處理提案已達上限，請先套用或放棄現有提案。",
+            "STORY_AGENT_APPLYING": "Agent 正在套用其他變更，請在完成後重新傳送請求。"
+          },
+          "drafting": "正在草擬故事變更",
+          "authoring": "Agent 正在草擬此變更，畫布仍可繼續編輯。",
+          "retryAuthoring": "重試草擬",
+          "authoringErrors": {
+            "STORY_AGENT_AUTHORING_FAILED": "Agent 未能完成此變更的草擬，可重試草擬或放棄該請求。",
+            "STORY_AGENT_AUTHORING_BASE_UNSTABLE": "草擬期間故事持續發生變更，請在編輯暫停後重試。",
+            "STORY_AGENT_PROPOSAL_NO_CHANGES": "Agent 沒有發現需要修改的內容，可放棄該請求，或待故事變更後重試。",
+            "STORY_AGENT_CONTEXT_TOO_LARGE": "目前故事過大，Agent 暫時無法據此草擬變更。",
+            "generic": "草擬在產生提案前失敗了。"
+          },
+          "discard": "放棄",
+          "apply": "套用變更",
+          "applying": "Agent 正在更新專案，所有成員的編輯已鎖定。",
+          "takingOver": "正在儲存目前編輯並取得 Agent 寫入鎖……",
+          "reconciling": "Agent 變更已提交，正在同步畫布……",
+          "applied": "變更已套用",
+          "undone": "變更已復原",
+          "undo": "整體復原",
+          "stale": "套用前專案已發生變更，此提案已失效。",
+          "failed": "Agent 無法套用此提案。",
+          "cancelled": "提案已放棄",
+          "actionFailed": "Agent 操作失敗。",
+          "actionErrors": {
+            "projectScopeChanged": "操作開始時專案已切換，請檢查目前畫布後重試。",
+            "canonicalHeadChanged": "已有更新的 Agent 提案，請先審核目前提案。",
+            "runNotProposed": "此提案已不再等待處理，請重新整理查看目前狀態。",
+            "runNotRetryable": "此變更並非等待重試草擬，請重新整理查看目前狀態。",
+            "undoBlockedByActiveRun": "請先完成或放棄目前 Agent 提案，再復原之前的變更。",
+            "undoHeadChanged": "更新的專案變更已取代此復原點，請重新整理查看目前狀態。",
+            "authorityUnavailable": "暫時無法驗證目前專案狀態，請重新整理後再次復原。"
+          },
+          "showMore": "展開其餘 {count} 項",
+          "showLess": "收起",
+          "checkingCurrent": "正在確認目前提案……",
+          "currentUnavailable": "暫時無法確認目前提案",
+          "retry": "重試",
+          "historicalReadOnly": "這是較早的提案，僅供查看。",
+          "reviewOnly": "你可以審核此提案，但只有具備編輯權限的成員才能套用或放棄。",
+          "viewOnly": "僅查看",
+          "historical": "較早的提案",
+          "checking": "正在確認……",
+          "unavailable": "暫不可用"
+        },
+        "skills": {
+          "symmetricalStorybook": {
+            "title": "對稱童話電影",
+            "description": "對稱構圖、章節旁白與復古色彩，營造克制又荒誕的童話感。"
+          },
+          "intimateRealism": {
+            "title": "生活流關係電影",
+            "description": "用日常細節累積情緒，讓玩家的選擇真正改變人物關係。"
+          },
+          "easternDreamscape": {
+            "title": "東方古典夢境",
+            "description": "以園林、器物和留白組織鏡頭，呈現含蓄流動的命運感。"
+          },
+          "psychologicalMystery": {
+            "title": "心理懸疑電影",
+            "description": "限制視角、誤導線索與回收反轉，讓選擇改變玩家相信的真相。"
+          },
+          "retroFutureNoir": {
+            "title": "復古未來黑色電影",
+            "description": "霓虹、煙霧與硬光構圖，圍繞身份和代價建構分支謎局。"
+          },
+          "handcraftedFable": {
+            "title": "手作定格寓言",
+            "description": "毛氈、紙藝與逐格質感，把情緒和選擇變成可觸摸的世界。"
+          }
+        }
+      },
       "saveState": {
         "idle": "可編輯草稿 · 修訂 {revision}",
         "dirty": "有未儲存修改 · 修訂 {revision}",
@@ -2163,11 +2317,34 @@
         "addOpening": "新增開場鏡頭"
       },
       "conflict": {
-        "description": "其他工作階段儲存了更新的草稿，請先載入最新版本再繼續。",
-        "loadLatest": "載入最新版本"
+        "description": "其他工作階段儲存了更新版本。你的本機草稿已保留；如需留存，請先匯出再捨棄。",
+        "exportLocal": "匯出本機副本",
+        "loadLatest": "捨棄本機並載入最新版本"
       },
       "layoutConflict": {
-        "description": "其他工作階段重新排列了畫布，請先載入最新佈局再繼續。"
+        "description": "其他工作階段重新排列了畫布。你的本機佈局已保留；如需留存，請先匯出再捨棄。"
+      },
+      "leaveGuard": {
+        "title": "仍有本機恢復內容，確定離開嗎？",
+        "description": "部分內容目前只儲存在這個瀏覽器中，無法安全寫入。請先匯出恢復檔案，或明確捨棄後離開。",
+        "planes": {
+          "draft": {
+            "title": "故事草稿",
+            "description": "未儲存或發生衝突的故事內容將會遺失。"
+          },
+          "layout": {
+            "title": "畫布佈局",
+            "description": "未儲存的節點位置或故事世界顯示狀態將會遺失。"
+          },
+          "generation": {
+            "title": "生成設定",
+            "description": "尚未提交的影片生成設定將會遺失。"
+          }
+        },
+        "stay": "留在畫布",
+        "export": "匯出恢復檔案",
+        "discardAndLeave": "捨棄並離開",
+        "exported": "恢復檔案已匯出。請保留該檔案，直到內容恢復完成。"
       },
       "graphError": {
         "generic": "這次圖修改與目前後續走向衝突。請先移除已有路由，或選擇相容的目標節點。",

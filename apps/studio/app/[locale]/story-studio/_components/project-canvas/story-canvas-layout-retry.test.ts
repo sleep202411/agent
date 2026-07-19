@@ -4,6 +4,7 @@ import {
   layoutPayloadSignature,
   layoutPositionSignature,
   layoutRetryDelay,
+  shouldAdoptAuthoritativeCanvasLayout,
   unsavedDesiredLayout,
   type StoryCanvasLayoutPayload,
   type StoryCanvasLayoutPositions,
@@ -80,6 +81,24 @@ describe("story canvas layout retry state", () => {
 
   it("backs off exponentially and caps retries at thirty seconds", () => {
     expect([0, 1, 2, 5, 20].map(layoutRetryDelay)).toEqual([1_000, 2_000, 4_000, 30_000, 30_000]);
+  });
+
+  it("adopts a newer authoritative layout only when the local canvas is clean", () => {
+    const clean = {
+      authoritativeRevision: 9,
+      currentRevision: 8,
+      hasConflict: false,
+      hasLocalChanges: false,
+      hydrated: true,
+    };
+
+    expect(shouldAdoptAuthoritativeCanvasLayout(clean)).toBe(true);
+    expect(shouldAdoptAuthoritativeCanvasLayout({ ...clean, hasLocalChanges: true })).toBe(false);
+    expect(shouldAdoptAuthoritativeCanvasLayout({ ...clean, hasConflict: true })).toBe(false);
+    expect(shouldAdoptAuthoritativeCanvasLayout({ ...clean, hydrated: false })).toBe(false);
+    expect(shouldAdoptAuthoritativeCanvasLayout({ ...clean, authoritativeRevision: 8 })).toBe(
+      false
+    );
   });
 });
 

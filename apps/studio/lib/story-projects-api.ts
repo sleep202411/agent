@@ -1,4 +1,5 @@
 import { api, ApiRequestError } from "@/lib/api";
+import { StoryAgentRunDtoSchema, type StoryAgentRunDto } from "@repo/shared/story-agent";
 
 /**
  * Product Story Studio client.
@@ -618,6 +619,8 @@ export interface StoryWorkbench {
   latestBuild: StoryBuildSummary | null;
 }
 
+export type StoryAgentRun = StoryAgentRunDto;
+
 export interface CreateStoryProjectInput {
   format: "interactive_film";
   frameProfile: StoryFrameProfile;
@@ -829,6 +832,104 @@ export async function getStoryCanvasLayout(
   );
 }
 
+export async function getLatestStoryAgentRun(
+  workspaceId: string,
+  projectId: string,
+  signal?: AbortSignal
+): Promise<StoryAgentRun | null> {
+  const value = await api.get<unknown>(
+    `/aurora/story-projects/${encodeURIComponent(projectId)}/agent-runs/active`,
+    { headers: storyWorkspaceHeaders(workspaceId), signal }
+  );
+  return value === null ? null : StoryAgentRunDtoSchema.parse(value);
+}
+
+export async function getUndoableStoryAgentRun(
+  workspaceId: string,
+  projectId: string,
+  signal?: AbortSignal
+): Promise<StoryAgentRun | null> {
+  const value = await api.get<unknown>(
+    `/aurora/story-projects/${encodeURIComponent(projectId)}/agent-runs/undoable`,
+    { headers: storyWorkspaceHeaders(workspaceId), signal }
+  );
+  return value === null ? null : StoryAgentRunDtoSchema.parse(value);
+}
+
+export async function getStoryAgentRun(
+  workspaceId: string,
+  projectId: string,
+  runId: string
+): Promise<StoryAgentRun> {
+  const value = await api.get<unknown>(
+    `/aurora/story-projects/${encodeURIComponent(projectId)}/agent-runs/${encodeURIComponent(runId)}`,
+    { headers: storyWorkspaceHeaders(workspaceId) }
+  );
+  return StoryAgentRunDtoSchema.parse(value);
+}
+
+export async function confirmStoryAgentRun(
+  workspaceId: string,
+  projectId: string,
+  runId: string,
+  idempotencyKey: string
+): Promise<StoryAgentRun> {
+  const value = await api.post<unknown>(
+    `/aurora/story-projects/${encodeURIComponent(projectId)}/agent-runs/${encodeURIComponent(runId)}/confirm`,
+    {
+      data: {},
+      headers: storyIdempotencyHeaders(workspaceId, idempotencyKey),
+    }
+  );
+  return StoryAgentRunDtoSchema.parse(value);
+}
+
+export async function cancelStoryAgentRun(
+  workspaceId: string,
+  projectId: string,
+  runId: string
+): Promise<StoryAgentRun> {
+  const value = await api.post<unknown>(
+    `/aurora/story-projects/${encodeURIComponent(projectId)}/agent-runs/${encodeURIComponent(runId)}/cancel`,
+    {
+      data: {},
+      headers: storyWorkspaceHeaders(workspaceId),
+    }
+  );
+  return StoryAgentRunDtoSchema.parse(value);
+}
+
+export async function retryStoryAgentRunAuthoring(
+  workspaceId: string,
+  projectId: string,
+  runId: string
+): Promise<StoryAgentRun> {
+  const value = await api.post<unknown>(
+    `/aurora/story-projects/${encodeURIComponent(projectId)}/agent-runs/${encodeURIComponent(runId)}/retry-authoring`,
+    {
+      data: {},
+      headers: storyWorkspaceHeaders(workspaceId),
+    }
+  );
+  return StoryAgentRunDtoSchema.parse(value);
+}
+
+export async function undoStoryAgentRun(
+  workspaceId: string,
+  projectId: string,
+  runId: string,
+  idempotencyKey: string
+): Promise<StoryAgentRun> {
+  const value = await api.post<unknown>(
+    `/aurora/story-projects/${encodeURIComponent(projectId)}/agent-runs/${encodeURIComponent(runId)}/undo`,
+    {
+      data: {},
+      headers: storyIdempotencyHeaders(workspaceId, idempotencyKey),
+    }
+  );
+  return StoryAgentRunDtoSchema.parse(value);
+}
+
 export async function putStoryCanvasLayout(
   workspaceId: string,
   projectId: string,
@@ -837,13 +938,15 @@ export async function putStoryCanvasLayout(
     nodePositions: Record<string, StoryCanvasPosition>;
     storyWorldNodePresent: boolean;
     sessionId: string;
-  }
+  },
+  request?: Pick<RequestInit, "keepalive">
 ): Promise<StoryCanvasLayout> {
   return api.put<StoryCanvasLayout>(
     `/aurora/story-projects/${encodeURIComponent(projectId)}/canvas-layout`,
     {
       data: { schemaVersion: STORY_CANVAS_LAYOUT_SCHEMA_VERSION, ...input },
       headers: storyWorkspaceHeaders(workspaceId),
+      ...request,
     }
   );
 }

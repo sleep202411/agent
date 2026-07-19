@@ -1,6 +1,6 @@
 "use client";
 
-import { IconBook2, IconBox, IconMapPin, IconUsers } from "@tabler/icons-react";
+import { IconBook2, IconBox, IconMapPin, IconUsers, IconX } from "@tabler/icons-react";
 import { useTranslations } from "next-intl";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
@@ -23,6 +23,7 @@ interface StoryWorldLibraryProps {
   onAddTextItem: (field: WorldTextField) => void;
   onUpdateTextItem: (field: WorldTextField, index: number, value: string) => void;
   onRemoveTextItem: (field: WorldTextField, index: number) => void;
+  onClose: () => void;
 }
 
 export function StoryWorldLibrary({
@@ -36,6 +37,7 @@ export function StoryWorldLibrary({
   onAddTextItem,
   onUpdateTextItem,
   onRemoveTextItem,
+  onClose,
 }: StoryWorldLibraryProps) {
   const t = useTranslations("storyStudio.canvas");
   return (
@@ -48,9 +50,14 @@ export function StoryWorldLibrary({
           <h2 className="mt-1 text-base font-semibold">{t("world.title")}</h2>
           <p className="mt-1 text-[11px] leading-5 text-white/38">{t("world.description")}</p>
         </div>
-        <span className="grid size-9 shrink-0 place-items-center rounded-xl bg-white/[0.06] text-white/48">
-          <IconBook2 className="size-4" />
-        </span>
+        <button
+          type="button"
+          onClick={onClose}
+          className="grid size-9 shrink-0 place-items-center rounded-xl bg-white/[0.06] text-white/48 transition hover:bg-white/[0.1] hover:text-white"
+          aria-label={t("inspector.close")}
+        >
+          <IconX className="size-4" />
+        </button>
       </header>
 
       <div className="mt-4 grid grid-cols-3 gap-1.5">

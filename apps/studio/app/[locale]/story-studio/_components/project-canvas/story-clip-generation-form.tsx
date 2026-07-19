@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   IconCheck,
   IconChevronDown,
@@ -61,6 +61,7 @@ export interface StoryClipGenerationFormProps {
   recipe: StoryVideoGenerationRecipeInput;
   references: StoryReferenceSlot[];
   frameProfile: StoryFrameProfile;
+  readOnly: boolean;
   canGenerate: boolean;
   disabledReason: string | null;
   pendingKey: string | null;
@@ -81,6 +82,7 @@ export function StoryClipGenerationForm({
   recipe,
   references,
   frameProfile,
+  readOnly,
   canGenerate,
   disabledReason,
   pendingKey,
@@ -130,7 +132,10 @@ export function StoryClipGenerationForm({
         <Textarea
           id="story-generation-prompt"
           value={recipe.prompt}
-          onChange={(event) => onRecipeChange({ ...recipe, prompt: event.target.value })}
+          disabled={readOnly}
+          onChange={(event) => {
+            if (!readOnly) onRecipeChange({ ...recipe, prompt: event.target.value });
+          }}
           placeholder={t("emptyPrompt")}
           rows={4}
           className="mt-2 resize-none rounded-xl bg-white/[0.05] text-sm"
@@ -143,6 +148,7 @@ export function StoryClipGenerationForm({
           <StoryReferenceRail
             items={referenceItems}
             addable={addableSlots}
+            disabled={readOnly}
             onAdd={(referenceVersionId, role) =>
               onRecipeChange({
                 ...recipe,
@@ -161,12 +167,17 @@ export function StoryClipGenerationForm({
 
       <div className="flex items-center gap-2">
         <div className="min-w-0 flex-1">
-          <label className="text-[10px] font-semibold text-white/54" htmlFor="story-generation-model">
+          <label
+            className="text-[10px] font-semibold text-white/54"
+            htmlFor="story-generation-model"
+          >
             {t("model")}
           </label>
           <Select
+            disabled={readOnly}
             value={recipe.modelId || undefined}
             onValueChange={(modelId) => {
+              if (readOnly) return;
               const nextModel = models.find((model) => model.id === modelId);
               const nextDuration = storyVideoDurationContract(nextModel);
               onRecipeChange({
@@ -196,6 +207,7 @@ export function StoryClipGenerationForm({
           <StoryDurationControl
             durationMs={recipe.durationMs}
             contract={durationContract}
+            disabled={readOnly}
             onCommit={(durationMs) => onRecipeChange({ ...recipe, durationMs })}
           />
         </div>
@@ -204,6 +216,7 @@ export function StoryClipGenerationForm({
       {videoLibrary ? (
         <StoryVideoLibraryDialog
           {...videoLibrary}
+          disabled={readOnly || videoLibrary.disabled}
           frameContract={{ width: frame.width, height: frame.height }}
           currentVideo={target?.currentVideo ?? null}
         />
@@ -212,10 +225,12 @@ export function StoryClipGenerationForm({
       <Button
         type="button"
         size="lg"
-        disabled={!canGenerate || recipeDisabledReason !== null || generating}
+        disabled={readOnly || !canGenerate || recipeDisabledReason !== null || generating}
         title={recipeDisabledReason ?? undefined}
         className="w-full rounded-xl"
-        onClick={() => onGenerate(recipe)}
+        onClick={() => {
+          if (!readOnly) onGenerate(recipe);
+        }}
       >
         {generating ? (
           <IconLoader2 className="size-4 animate-spin" />
@@ -246,15 +261,28 @@ export function StoryClipGenerationForm({
 function StoryDurationControl({
   durationMs,
   contract,
+  disabled,
   onCommit,
 }: {
   durationMs: number;
   contract: StoryVideoDurationContract | null;
+  disabled: boolean;
   onCommit: (durationMs: number) => void;
 }) {
   const t = useTranslations("storyStudio.canvas.production.durationControl");
   const [open, setOpen] = useState(false);
   useDismiss(open, () => setOpen(false));
+
+  useEffect(() => {
+    if (!disabled || !open) return;
+    let cancelled = false;
+    queueMicrotask(() => {
+      if (!cancelled) setOpen(false);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [disabled, open]);
 
   const seconds = durationMs > 0 ? (durationMs / 1000).toFixed(1) : "—";
   const label = (
@@ -276,13 +304,17 @@ function StoryDurationControl({
     <div className="relative mt-1.5" data-popover-zone>
       <button
         type="button"
-        onClick={() => setOpen((value) => !value)}
+        disabled={disabled}
+        onClick={() => {
+          if (!disabled) setOpen((value) => !value);
+        }}
         aria-haspopup="dialog"
         aria-expanded={open}
         aria-label={t("label")}
         className={cn(
           "flex h-10 items-center gap-1 rounded-xl px-3 text-sm font-medium text-white/70 transition-colors",
-          open ? "bg-white/[0.14]" : "bg-white/[0.08] hover:bg-white/[0.12]"
+          open ? "bg-white/[0.14]" : "bg-white/[0.08] hover:bg-white/[0.12]",
+          disabled && "cursor-not-allowed opacity-45 hover:bg-white/[0.08]"
         )}
       >
         {label}
@@ -298,6 +330,7 @@ function StoryDurationControl({
                   key={value}
                   type="button"
                   onClick={() => {
+                    if (disabled) return;
                     onCommit(value);
                     setOpen(false);
                   }}
@@ -316,13 +349,19 @@ function StoryDurationControl({
               <span className="text-[10px] font-semibold text-white/42">{t("label")}</span>
               <input
                 type="number"
+                disabled={disabled}
                 min={contract.minMs / 1_000}
                 max={contract.maxMs / 1_000}
                 step={1}
                 value={durationMs / 1_000}
                 onChange={(event) => {
+                  if (disabled) return;
                   const nextMs = Math.round(event.currentTarget.valueAsNumber * 1_000);
-                  if (Number.isInteger(nextMs) && nextMs >= contract.minMs && nextMs <= contract.maxMs) {
+                  if (
+                    Number.isInteger(nextMs) &&
+                    nextMs >= contract.minMs &&
+                    nextMs <= contract.maxMs
+                  ) {
                     onCommit(nextMs);
                   }
                 }}
@@ -343,17 +382,30 @@ function StoryDurationControl({
 function StoryReferenceRail({
   items,
   addable,
+  disabled,
   onAdd,
   onRemove,
 }: {
   items: ReturnType<typeof storyComposerReferenceItems>;
   addable: ReturnType<typeof storyComposerAddableSlots>;
+  disabled: boolean;
   onAdd: (referenceVersionId: string, role: (typeof addable)[number]["role"]) => void;
   onRemove: (referenceVersionId: string) => void;
 }) {
   const t = useTranslations("storyStudio.canvas.production.referenceRail");
   const [pickerOpen, setPickerOpen] = useState(false);
   useDismiss(pickerOpen, () => setPickerOpen(false));
+
+  useEffect(() => {
+    if (!disabled || !pickerOpen) return;
+    let cancelled = false;
+    queueMicrotask(() => {
+      if (!cancelled) setPickerOpen(false);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [disabled, pickerOpen]);
 
   return (
     <div className="mt-2 flex flex-wrap items-center gap-2">
@@ -373,9 +425,12 @@ function StoryReferenceRail({
           )}
           <button
             type="button"
-            onClick={() => onRemove(item.referenceVersionId)}
+            disabled={disabled}
+            onClick={() => {
+              if (!disabled) onRemove(item.referenceVersionId);
+            }}
             aria-label={t("remove", { label: item.label })}
-            className="absolute top-0.5 right-0.5 grid size-4 place-items-center rounded-full bg-black/70 text-white/70 opacity-0 transition group-hover:opacity-100 hover:text-white"
+            className="absolute top-0.5 right-0.5 grid size-4 place-items-center rounded-full bg-black/70 text-white/70 opacity-0 transition group-hover:opacity-100 hover:text-white disabled:hidden"
           >
             <IconX className="size-2.5" stroke={2.4} />
           </button>
@@ -385,23 +440,29 @@ function StoryReferenceRail({
         <div className="relative" data-popover-zone>
           <button
             type="button"
-            onClick={() => setPickerOpen((open) => !open)}
+            disabled={disabled}
+            onClick={() => {
+              if (!disabled) setPickerOpen((open) => !open);
+            }}
             aria-haspopup="dialog"
             aria-expanded={pickerOpen}
             aria-label={t("add")}
-            className="grid size-14 place-items-center rounded-xl bg-white/[0.06] text-white/34 transition hover:bg-white/[0.11] hover:text-white/70"
+            className="grid size-14 place-items-center rounded-xl bg-white/[0.06] text-white/34 transition hover:bg-white/[0.11] hover:text-white/70 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-white/[0.06] disabled:hover:text-white/34"
           >
             <IconPlus className="size-4" stroke={2} />
           </button>
           {pickerOpen ? (
             <div className="absolute bottom-full left-0 z-50 mb-2 w-72 rounded-2xl bg-[oklch(0.22_0_0/0.98)] p-2 shadow-[0_24px_80px_rgba(0,0,0,0.6)] backdrop-blur-2xl">
-              <p className="px-2 pt-1 pb-2 text-[10px] font-semibold text-white/46">{t("addTitle")}</p>
+              <p className="px-2 pt-1 pb-2 text-[10px] font-semibold text-white/46">
+                {t("addTitle")}
+              </p>
               <div className="grid max-h-56 grid-cols-4 gap-2 overflow-y-auto overscroll-contain p-1">
                 {addable.map((slot) => (
                   <button
                     key={slot.slotId}
                     type="button"
                     onClick={() => {
+                      if (disabled) return;
                       onAdd(slot.referenceVersionId, slot.role);
                       setPickerOpen(false);
                     }}

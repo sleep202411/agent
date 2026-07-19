@@ -195,7 +195,7 @@ const kernels = new Map<string, AssetsRealtimeKernel>();
  * All consumers in the same scope share one socket.
  */
 export function getAssetsRealtimeKernel(options: AssetsRealtimeOptions = {}): AssetsRealtimeKernel {
-  const key = options.workspaceId ?? "__user__";
+  const key = `${options.workspaceId ?? "__user__"}::${options.storyProjectId ?? "__no_story__"}`;
   let kernel = kernels.get(key);
   if (!kernel) {
     kernel = new AssetsRealtimeKernel(key, options);

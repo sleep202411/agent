@@ -148,10 +148,12 @@ export function StoryNodeInspector({
     ? (content.storyBible.endings.find((candidate) => candidate.id === canvasData.endingId) ?? null)
     : null;
 
+  if (!showFoundation && !canvasData) return null;
+
   return (
     <aside className="absolute top-16 bottom-3 left-3 z-30 w-[368px] overflow-y-auto rounded-[24px] bg-[oklch(0.205_0_0/0.72)] px-5 py-5 shadow-[18px_0_60px_rgba(0,0,0,0.32)] backdrop-blur-[60px] backdrop-saturate-150">
       <div className="pointer-events-none absolute inset-0 rounded-[inherit] shadow-[inset_0_1px_0_rgba(255,255,255,0.07)]" />
-      {showFoundation || !canvasData ? (
+      {showFoundation ? (
         <StoryWorldLibrary
           content={content}
           locale={locale}
@@ -163,15 +165,16 @@ export function StoryNodeInspector({
           onAddTextItem={onAddWorldTextItem}
           onUpdateTextItem={onUpdateWorldTextItem}
           onRemoveTextItem={onRemoveWorldTextItem}
+          onClose={onCloseNode}
         />
-      ) : canvasData.kind === "root" ? (
+      ) : canvasData?.kind === "root" ? (
         <RootTrailerInspector
           canEdit={canEdit}
           onClose={onCloseNode}
           onDelete={onDeleteSelected}
           trailerGeneration={trailerGeneration}
         />
-      ) : (
+      ) : canvasData ? (
         <>
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0">
@@ -257,7 +260,7 @@ export function StoryNodeInspector({
             </Button>
           </div>
         </>
-      )}
+      ) : null}
     </aside>
   );
 }

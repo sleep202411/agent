@@ -144,6 +144,22 @@ describe("StoryVideoLibraryDialog", () => {
     expect(document.body.textContent).toContain("Video history");
   });
 
+  it("closes an open library and removes selection actions when authoring becomes locked", async () => {
+    const onSelect = vi.fn().mockResolvedValue(undefined);
+    await renderDialog(onSelect);
+    await click(buttonByText("Use existing video"));
+    expect(document.body.textContent).toContain("Video history");
+
+    await renderDialog(onSelect, true);
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(document.body.textContent).not.toContain("Video history");
+    expect(onSelect).not.toHaveBeenCalled();
+    expect(buttonByText("Use existing video").disabled).toBe(true);
+  });
+
   it("does not preload cards and supports focus and explicit click preview separately from selection", async () => {
     const onSelect = vi.fn().mockResolvedValue(undefined);
     await renderDialog(onSelect);
@@ -197,7 +213,10 @@ describe("StoryVideoLibraryDialog", () => {
     expect(onSelect).not.toHaveBeenCalled();
   });
 
-  async function renderDialog(onSelect: (item: StoryVideoLibraryItem) => Promise<void>) {
+  async function renderDialog(
+    onSelect: (item: StoryVideoLibraryItem) => Promise<void>,
+    disabled = false
+  ) {
     await act(async () => {
       root.render(
         <NextIntlClientProvider locale="en-US" messages={messages}>
@@ -206,6 +225,7 @@ describe("StoryVideoLibraryDialog", () => {
             projectId="project-1"
             frameContract={{ width: 1920, height: 1080 }}
             currentVideo={null}
+            disabled={disabled}
             onSelect={onSelect}
           />
         </NextIntlClientProvider>

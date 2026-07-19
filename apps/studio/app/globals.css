@@ -352,3 +352,114 @@ button:disabled,
     animation: none;
   }
 }
+
+/* React Bits GlitchText, adapted for Studio's restrained monochrome canvas.
+   The base text never moves; only clipped decorative copies animate. */
+@keyframes glitch-text-slice {
+  0% {
+    clip-path: inset(20% 0 50% 0);
+  }
+  5% {
+    clip-path: inset(10% 0 60% 0);
+  }
+  10% {
+    clip-path: inset(15% 0 55% 0);
+  }
+  15% {
+    clip-path: inset(25% 0 35% 0);
+  }
+  20% {
+    clip-path: inset(30% 0 40% 0);
+  }
+  25% {
+    clip-path: inset(40% 0 20% 0);
+  }
+  30% {
+    clip-path: inset(10% 0 60% 0);
+  }
+  35% {
+    clip-path: inset(15% 0 55% 0);
+  }
+  40% {
+    clip-path: inset(25% 0 35% 0);
+  }
+  45% {
+    clip-path: inset(30% 0 40% 0);
+  }
+  50% {
+    clip-path: inset(20% 0 50% 0);
+  }
+  55% {
+    clip-path: inset(10% 0 60% 0);
+  }
+  60% {
+    clip-path: inset(15% 0 55% 0);
+  }
+  65% {
+    clip-path: inset(25% 0 35% 0);
+  }
+  70% {
+    clip-path: inset(30% 0 40% 0);
+  }
+  75% {
+    clip-path: inset(40% 0 20% 0);
+  }
+  80% {
+    clip-path: inset(20% 0 50% 0);
+  }
+  85% {
+    clip-path: inset(10% 0 60% 0);
+  }
+  90% {
+    clip-path: inset(15% 0 55% 0);
+  }
+  95% {
+    clip-path: inset(25% 0 35% 0);
+  }
+  100% {
+    clip-path: inset(30% 0 40% 0);
+  }
+}
+
+.react-bits-glitch-layer {
+  position: absolute;
+  inset-block: 0;
+  color: inherit;
+  background: var(--glitch-background, oklch(0.105 0 0));
+  overflow: hidden;
+  pointer-events: none;
+  white-space: nowrap;
+  opacity: 0;
+}
+.react-bits-glitch-layer[data-glitch-layer="after"] {
+  inset-inline-start: 0.12em;
+  text-shadow: var(--glitch-after-shadow);
+  animation-direction: alternate-reverse;
+  animation-duration: var(--glitch-after-duration);
+}
+.react-bits-glitch-layer[data-glitch-layer="before"] {
+  inset-inline-start: -0.12em;
+  text-shadow: var(--glitch-before-shadow);
+  animation-direction: alternate;
+  animation-duration: var(--glitch-before-duration);
+}
+.react-bits-glitch-text[data-glitch-trigger="always"] > .react-bits-glitch-layer {
+  opacity: 1;
+  animation-name: glitch-text-slice;
+  animation-timing-function: linear;
+  animation-iteration-count: infinite;
+}
+@media (hover: hover) {
+  .react-bits-glitch-text[data-glitch-trigger="hover"]:hover > .react-bits-glitch-layer {
+    opacity: 1;
+    animation-name: glitch-text-slice;
+    animation-timing-function: linear;
+    animation-iteration-count: infinite;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .react-bits-glitch-layer {
+    display: none !important;
+    animation: none !important;
+  }
+}

@@ -5,6 +5,7 @@ import {
   useCallback,
   useContext,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -34,6 +35,7 @@ import {
   IconBook2,
   IconCheck,
   IconCloudUpload,
+  IconDownload,
   IconGitBranch,
   IconLoader2,
   IconMovie,
@@ -45,6 +47,7 @@ import {
   IconX,
 } from "@tabler/icons-react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import type { StoryAgentRunStatus } from "@repo/shared/story-agent";
 import { useTranslations } from "next-intl";
 import { toast } from "sonner";
 import { useWorkspace } from "@/app/_components/workspace-context";
@@ -100,6 +103,7 @@ import {
   type StoryVideoGeneration,
   type StoryVideoLibraryItem,
   type StoryCanvasPosition,
+  type StoryCanvasLayout,
   type StoryVideoGenerationRecipeInput,
   type StoryWorkbench,
 } from "@/lib/story-projects-api";
@@ -111,20 +115,48 @@ import {
   type StoryCanvasEdge,
   type StoryCanvasNode,
 } from "./story-project-canvas-model";
+import { reconcileStoryCanvasSelectedIds } from "./story-project-canvas-selection";
 import {
-  nextStoryCanvasFocusedNodeId,
-  reconcileStoryCanvasSelectedIds,
-} from "./story-project-canvas-selection";
+  CLOSED_STORY_CANVAS_INSPECTOR,
+  STORY_WORLD_INSPECTOR,
+  reconcileStoryCanvasInspectorTarget,
+  storyCanvasInspectorNodeId,
+  storyNodeInspectorTarget,
+  type StoryCanvasInspectorTarget,
+} from "./story-canvas-inspector-target";
 import {
   confirmsOwnCanvasLayoutWrite,
   layoutPayloadSignature,
   layoutPositionSignature,
   layoutRetryDelay,
+  shouldAdoptAuthoritativeCanvasLayout,
   unsavedDesiredLayout,
   type StoryCanvasLayoutPayload,
 } from "./story-canvas-layout-retry";
 import { createConnectedClipForBlankDrop } from "./story-project-canvas-drop";
 import { deleteStoryCanvasElements } from "./story-project-canvas-deletion";
+import { StoryAgentRunAura } from "./story-agent-run-aura";
+import { StoryCanvasAssistantLayer } from "./story-canvas-assistant-layer";
+import { StoryCanvasLeaveDialog } from "./story-canvas-leave-dialog";
+import {
+  coordinateStoryCanvasNavigation,
+  guardStoryCanvasHistoryTraversal,
+  resolveStoryCanvasLeaveRisk,
+  type StoryCanvasHistoryEntry,
+  type StoryCanvasLeaveRisk,
+  type StoryCanvasNavigationEvent,
+} from "./story-canvas-leave-guard";
+import {
+  createStoryCanvasMutationBarrier,
+  resolveStoryAgentAuthoringPhase,
+  resolveStoryCanvasEditPolicy,
+  resolveStoryCanvasProjectionSurface,
+  resolveStoryCanvasWriteAuthority,
+  resolveStoryProjectionAuthority,
+  storyProjectionQueryKey,
+  storyProjectionQueryOptions,
+} from "./story-canvas-edit-policy";
+import { useLastDefinedData } from "./use-last-defined-data";
 import { isExactCurrentStoryRelease } from "./story-current-release";
 import {
   addChoiceOption,
@@ -189,6 +221,8 @@ import {
   projectConfirmedTrailerCurrentVideo,
 } from "./story-workbench-current-video";
 import { useStoryPublication } from "./use-story-publication";
+import { useStoryAgentRun } from "./use-story-agent-run";
+import { useStoryAgentNodeReveal } from "./use-story-agent-node-reveal";
 
 type SaveState = "idle" | "dirty" | "saving" | "saved" | "error" | "conflict";
 type FoundationField = "logline" | "synopsis" | "worldview";
@@ -198,6 +232,7 @@ type PersistDraftOptions = {
 };
 type PersistLayoutOptions = {
   preserveDesired?: boolean;
+  propagateError?: boolean;
 };
 type CommitContentOptions = {
   mergeKey?: string;
@@ -284,8 +319,18 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
   const queryClient = useQueryClient();
   const { activeWorkspace, loading: workspaceLoading } = useWorkspace();
   const workspaceId = activeWorkspace?.id ?? null;
+  const agentRunController = useStoryAgentRun({ workspaceId, projectId });
+  const agentApplying = agentRunController.applying;
+  const agentAuthorityReady = agentRunController.authorityState === "ready";
   const [content, setContent] = useState<InteractiveFilmDraftContent | null>(null);
-  const [focusedNodeId, setFocusedNodeId] = useState<string | null>(null);
+  const [inspectorTarget, setInspectorTarget] = useState<StoryCanvasInspectorTarget>(
+    CLOSED_STORY_CANVAS_INSPECTOR
+  );
+  const [assistantOpen, setAssistantOpen] = useState(false);
+  const [agentTakeoverAction, setAgentTakeoverAction] = useState<"confirm" | "undo" | null>(null);
+  const [mutationBarrier] = useState(() => createStoryCanvasMutationBarrier());
+  const focusedNodeId = storyCanvasInspectorNodeId(inspectorTarget);
+  const inspectorOpen = inspectorTarget.kind !== "closed";
   const [creatorMenu, setCreatorMenu] = useState<StoryNodeCreationMenuPlacement | null>(null);
   const [pendingCompletionDrop, setPendingCompletionDrop] = useState<PendingCompletionDrop | null>(
     null
@@ -296,6 +341,7 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
   const [conflict, setConflict] = useState<DraftRevisionConflict | null>(null);
   const [layoutConflict, setLayoutConflict] = useState<CanvasLayoutRevisionConflict | null>(null);
   const [draftRevision, setDraftRevision] = useState(0);
+  const [appliedLayoutRevision, setAppliedLayoutRevision] = useState<number | null>(null);
   const [layoutSaveState, setLayoutSaveState] = useState<SaveState>("idle");
   const [layoutSaveError, setLayoutSaveError] = useState<string | null>(null);
   const [storyWorldNodePresentOverride, setStoryWorldNodePresentOverride] = useState<
@@ -309,6 +355,8 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
     Record<string, StoryGenerationRecipeRecord>
   >({});
   const [workingPreviewPending, setWorkingPreviewPending] = useState(false);
+  const [pendingLeaveRisk, setPendingLeaveRisk] = useState<StoryCanvasLeaveRisk | null>(null);
+  const [recoveryExported, setRecoveryExported] = useState(false);
   const [productionActionGate] = useState(() => new StoryProductionActionGate());
   const [draftSnapshotCoordinator] = useState(() => new StoryDraftSnapshotCoordinator());
   const [productionSubmissionKeys] = useState(
@@ -361,6 +409,11 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
   const saveRetryAttemptRef = useRef(0);
   const finalFlushActiveRef = useRef(false);
   const finalFlushGenerationRef = useRef(0);
+  const finalLayoutFlushActiveRef = useRef(false);
+  const finalLayoutFlushGenerationRef = useRef(0);
+  const explicitDiscardAndLeaveRef = useRef(false);
+  const currentHistoryEntryRef = useRef<StoryCanvasHistoryEntry | null>(null);
+  const pendingLeaveActionRef = useRef<(() => void) | null>(null);
   const persistRef = useRef<
     (next: InteractiveFilmDraftContent, options?: PersistDraftOptions) => Promise<void>
   >(async () => {});
@@ -371,6 +424,7 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
   const layoutSavedSignatureRef = useRef("");
   const layoutConflictRef = useRef<CanvasLayoutRevisionConflict | null>(null);
   const layoutSaveInFlightRef = useRef(false);
+  const layoutSaveSettledWaitersRef = useRef(new Set<() => void>());
   const latestDesiredLayoutRef = useRef<StoryCanvasLayoutPayload | null>(null);
   const recoveryLayoutRef = useRef<StoryCanvasLayoutPayload | null>(null);
   const layoutRetryTimerRef = useRef<number | null>(null);
@@ -388,12 +442,20 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
   const pendingNodePositionsRef = useRef(new Map<string, StoryCanvasPosition>());
   const dragStartHistorySnapshotRef = useRef<StoryCanvasHistorySnapshot | null>(null);
   const hasDirtyGenerationRecipeRef = useRef(false);
+  const agentTakeoverPendingRef = useRef(false);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     hasDirtyGenerationRecipeRef.current = Object.values(generationRecipes).some(
       (record) => record.dirty
     );
   }, [generationRecipes]);
+
+  useLayoutEffect(() => {
+    currentHistoryEntryRef.current = {
+      href: window.location.href,
+      state: window.history.state,
+    };
+  });
 
   const onCanvasNodesChange = useCallback(
     (changes: NodeChange<StoryCanvasNode>[]) => {
@@ -402,21 +464,25 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
         // transient remove change first would hide a node when the domain
         // mutation fails and leave the projection out of sync.
         const next = applyNodeChanges(
-          changes.filter((change) => change.type !== "remove"),
+          changes.filter(
+            (change) =>
+              change.type !== "remove" &&
+              !(change.type === "position" && !mutationBarrier.permits("layout"))
+          ),
           current
         );
         canvasNodesRef.current = next;
         return next;
       });
     },
-    [setCanvasNodes]
+    [mutationBarrier, setCanvasNodes]
   );
 
   const selectCanvasNodeExclusively = useCallback(
     (nodeId: string | null) => {
       pendingCanvasSelectionRef.current = nodeId;
       requestedCanvasFocusRef.current = null;
-      setFocusedNodeId(nodeId);
+      setInspectorTarget(nodeId ? storyNodeInspectorTarget(nodeId) : CLOSED_STORY_CANVAS_INSPECTOR);
       setCanvasNodes((current) => {
         const nodeExists = nodeId !== null && current.some((node) => node.id === nodeId);
         if (nodeId !== null && !nodeExists) return current;
@@ -435,11 +501,17 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
     [setCanvasNodes]
   );
 
+  const showStoryWorldInspector = useCallback(() => {
+    selectCanvasNodeExclusively(null);
+    setInspectorTarget(STORY_WORLD_INSPECTOR);
+    setCreatorMenu(null);
+  }, [selectCanvasNodeExclusively]);
+
   const reconcileCanvasFocus = useCallback((selectedNodeIds: readonly string[]) => {
     const preferredNodeId = requestedCanvasFocusRef.current;
     requestedCanvasFocusRef.current = null;
-    setFocusedNodeId((current) =>
-      nextStoryCanvasFocusedNodeId(current, selectedNodeIds, preferredNodeId)
+    setInspectorTarget((current) =>
+      reconcileStoryCanvasInspectorTarget(current, selectedNodeIds, preferredNodeId)
     );
   }, []);
 
@@ -465,22 +537,71 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
     reconcileCanvasFocus(latestCanvasSelectionRef.current);
   }, [reconcileCanvasFocus]);
 
+  const workbenchQueryKey = useMemo(
+    () =>
+      storyProjectionQueryKey(
+        "workbench",
+        workspaceId,
+        projectId,
+        agentRunController.authoritySnapshotKey
+      ),
+    [agentRunController.authoritySnapshotKey, projectId, workspaceId]
+  );
+  const layoutQueryKey = useMemo(
+    () =>
+      storyProjectionQueryKey(
+        "canvas-layout",
+        workspaceId,
+        projectId,
+        agentRunController.authoritySnapshotKey
+      ),
+    [agentRunController.authoritySnapshotKey, projectId, workspaceId]
+  );
   const workbenchQuery = useQuery({
-    queryKey: ["story-studio", "workbench", workspaceId, projectId],
-    queryFn: () => getStoryWorkbench(workspaceId as string, projectId),
-    enabled: Boolean(workspaceId),
-    retry: false,
+    ...storyProjectionQueryOptions({
+      kind: "workbench",
+      workspaceId,
+      projectId,
+      authoritySnapshotKey: agentRunController.authoritySnapshotKey,
+      agentAuthorityState: agentRunController.authorityState,
+      queryFn: () => getStoryWorkbench(workspaceId as string, projectId),
+    }),
     refetchInterval: (query) => (workbenchHasActiveGeneration(query.state.data) ? 2_000 : false),
   });
   const refetchWorkbench = workbenchQuery.refetch;
-  const layoutQuery = useQuery({
-    queryKey: ["story-studio", "canvas-layout", workspaceId, projectId],
-    queryFn: () => getStoryCanvasLayout(workspaceId as string, projectId),
-    enabled: Boolean(workspaceId),
-    retry: false,
+  const layoutQuery = useQuery(
+    storyProjectionQueryOptions({
+      kind: "canvas-layout",
+      workspaceId,
+      projectId,
+      authoritySnapshotKey: agentRunController.authoritySnapshotKey,
+      agentAuthorityState: agentRunController.authorityState,
+      queryFn: () => getStoryCanvasLayout(workspaceId as string, projectId),
+    })
+  );
+  /**
+   * "checking" here means a fresh authoritative read is in flight (or has not
+   * started). It latches every write through the edit policy below, but it no
+   * longer unmounts the canvas: `placeholderData: keepPreviousData` keeps the
+   * previous projection snapshot rendering across authority-key rotations.
+   */
+  const projectionAuthority = resolveStoryProjectionAuthority({
+    hasWorkspace: Boolean(workspaceId),
+    agentAuthorityState: agentRunController.authorityState,
+    workbenchFetchedAfterMount: workbenchQuery.isFetchedAfterMount,
+    workbenchError: workbenchQuery.isError,
+    layoutFetchedAfterMount: layoutQuery.isFetchedAfterMount,
+    layoutError: layoutQuery.isError,
   });
+  // `keepPreviousData` carries the previous snapshot through the PENDING window
+  // of a rotated key, but a failed fresh read drops `data` to undefined. The
+  // canvas must keep rendering its last snapshot through that failure too
+  // (writes stay latched via `projectionAuthority` "unavailable"), so retain
+  // the last defined projections for every render-side consumer.
+  const workbenchProjection = useLastDefinedData(workbenchQuery.data);
+  const layoutProjection = useLastDefinedData(layoutQuery.data);
   const storyWorldNodePresent =
-    storyWorldNodePresentOverride ?? layoutQuery.data?.storyWorldNodePresent ?? true;
+    storyWorldNodePresentOverride ?? layoutProjection?.storyWorldNodePresent ?? true;
   const currentReleaseQuery = useQuery({
     queryKey: ["story-studio", "current-release", workspaceId, projectId],
     queryFn: () => getStoryExperienceCurrentRelease(workspaceId as string, projectId),
@@ -490,27 +611,23 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
     refetchInterval: 30_000,
     refetchOnWindowFocus: true,
   });
-  const project = workbenchQuery.data?.project ?? null;
-  const video = workbenchQuery.data?.video ?? null;
-  const references = workbenchQuery.data?.references ?? [];
+  const project = workbenchProjection?.project ?? null;
+  const video = workbenchProjection?.video ?? null;
+  const references = workbenchProjection?.references ?? [];
 
   const cacheSavedDraft = useCallback(
     (saved: StoryWorkbench["draft"]) => {
       if (!workspaceId) return;
-      queryClient.setQueryData<StoryWorkbench>(
-        ["story-studio", "workbench", workspaceId, projectId],
-        (current) =>
-          current && saved.revision >= current.draft.revision
-            ? { ...current, draft: saved }
-            : current
+      queryClient.setQueryData<StoryWorkbench>(workbenchQueryKey, (current) =>
+        current && saved.revision >= current.draft.revision ? { ...current, draft: saved } : current
       );
     },
-    [projectId, queryClient, workspaceId]
+    [queryClient, workbenchQueryKey, workspaceId]
   );
 
   useEffect(() => {
-    if (!workbenchQuery.data) return;
-    const workbench = workbenchQuery.data;
+    if (!workbenchProjection) return;
+    const workbench = workbenchProjection;
     if (hydratedRef.current) {
       if (workbench.draft.revision <= revisionRef.current || conflictRef.current) return;
       const latest = latestContentRef.current;
@@ -530,7 +647,7 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
     setHistoryVersion((current) => current + 1);
     setContent(workbench.draft.content);
     setSaveState("idle");
-  }, [history, workbenchQuery.data]);
+  }, [history, workbenchProjection]);
 
   const clearSaveRetry = useCallback((resetAttempts = false) => {
     if (saveRetryTimerRef.current !== null) {
@@ -554,6 +671,8 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
   const scheduleSaveRetry = useCallback(() => {
     if (
       disposedRef.current ||
+      agentApplying ||
+      !agentAuthorityReady ||
       saveRetryTimerRef.current !== null ||
       conflictRef.current ||
       !recoveryContentRef.current
@@ -569,11 +688,16 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
         void persistRef.current(recovery);
       }
     }, delay);
-  }, []);
+  }, [agentApplying, agentAuthorityReady]);
 
   const persist = useCallback(
     async (next: InteractiveFilmDraftContent, options: PersistDraftOptions = {}) => {
       if (!workspaceId || conflictRef.current || disposedRef.current) return;
+      if (agentApplying || !agentAuthorityReady) {
+        recoveryContentRef.current = next;
+        if (!disposedRef.current) setSaveState("dirty");
+        return;
+      }
       const signature = canonicalJsonString(next);
       if (draftSnapshotBarrierRef.current && !options.bypassSnapshotBarrier) {
         queuedContentRef.current = next;
@@ -641,7 +765,7 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
           }
         } else if (nextConflict) {
           failure = error;
-          recoveryContentRef.current = null;
+          recoveryContentRef.current = next;
           conflictRef.current = nextConflict;
           queuedContentRef.current = null;
           clearSaveRetry(true);
@@ -686,6 +810,8 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
       scheduleSaveRetry,
       sessionId,
       workspaceId,
+      agentApplying,
+      agentAuthorityReady,
     ]
   );
 
@@ -751,21 +877,6 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
     [clearSaveRetry, commonT, draftSnapshotCoordinator, saveError, waitForSaveToSettle, workspaceId]
   );
 
-  const openWorkingPreview = useCallback(async () => {
-    if (!workspaceId || workingPreviewPending) return;
-    setWorkingPreviewPending(true);
-    try {
-      await withSavedDraftSnapshot(async () => {
-        router.push(`/story-studio/projects/${encodeURIComponent(projectId)}/playtest`);
-      });
-    } catch (error) {
-      if (!disposedRef.current)
-        toast.error(storyApiErrorMessage(error, t("workingPreview.errorFallback")));
-    } finally {
-      if (!disposedRef.current) setWorkingPreviewPending(false);
-    }
-  }, [projectId, router, t, withSavedDraftSnapshot, workingPreviewPending, workspaceId]);
-
   const publication = useStoryPublication({
     workspaceId,
     projectId,
@@ -777,6 +888,14 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
     latestContentRef.current = content;
     if (!content || !hydratedRef.current || conflict) return;
     const signature = canonicalJsonString(content);
+    if (agentApplying || !agentAuthorityReady) {
+      if (signature !== savedSignatureRef.current) {
+        recoveryContentRef.current = content;
+        queuedContentRef.current = null;
+        setSaveState("dirty");
+      }
+      return;
+    }
     if (saveInFlightRef.current) {
       const matchesInFlight = signature === inFlightSignatureRef.current;
       setSaveState(matchesInFlight ? "saving" : "dirty");
@@ -787,6 +906,7 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
       const matchesRecovery = signature === canonicalJsonString(recoveryContentRef.current);
       queuedContentRef.current = matchesRecovery ? null : content;
       if (!matchesRecovery) setSaveState("dirty");
+      scheduleSaveRetry();
       return;
     }
     if (signature === savedSignatureRef.current) {
@@ -806,12 +926,14 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
         saveDebounceTimerRef.current = null;
       }
     };
-  }, [clearSaveRetry, conflict, content]);
+  }, [agentApplying, agentAuthorityReady, clearSaveRetry, conflict, content, scheduleSaveRetry]);
 
   const flushDraftBeforeLeaving = useCallback(
     (keepalive: boolean) => {
       if (
         !workspaceId ||
+        agentApplying ||
+        !agentAuthorityReady ||
         conflictRef.current ||
         finalFlushActiveRef.current ||
         !latestContentRef.current
@@ -895,7 +1017,7 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
           if (disposedRef.current) return;
           const nextConflict = draftRevisionConflict(error);
           if (nextConflict) {
-            recoveryContentRef.current = null;
+            recoveryContentRef.current = pending;
             conflictRef.current = nextConflict;
             queuedContentRef.current = null;
             clearSaveRetry(true);
@@ -916,66 +1038,18 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
         }
       })();
     },
-    [cacheSavedDraft, clearSaveRetry, commonT, projectId, scheduleSaveRetry, sessionId, workspaceId]
+    [
+      agentApplying,
+      agentAuthorityReady,
+      cacheSavedDraft,
+      clearSaveRetry,
+      commonT,
+      projectId,
+      scheduleSaveRetry,
+      sessionId,
+      workspaceId,
+    ]
   );
-
-  useEffect(() => {
-    disposedRef.current = false;
-    let pageHiding = false;
-    const flushBeforeLeaving = (keepalive: boolean) => {
-      if (saveDebounceTimerRef.current !== null) {
-        window.clearTimeout(saveDebounceTimerRef.current);
-        saveDebounceTimerRef.current = null;
-      }
-      clearSaveRetry();
-      flushDraftBeforeLeaving(keepalive);
-    };
-    const hasUnsavedContent = () => {
-      const latest = latestContentRef.current;
-      return Boolean(
-        recoveryContentRef.current ||
-        saveInFlightRef.current ||
-        (latest && canonicalJsonString(latest) !== savedSignatureRef.current) ||
-        hasDirtyGenerationRecipeRef.current
-      );
-    };
-    const warnBeforeUnload = (event: BeforeUnloadEvent) => {
-      if (!hasUnsavedContent()) return;
-      event.preventDefault();
-      event.returnValue = "";
-    };
-    const flushOnPageHide = () => {
-      pageHiding = true;
-      flushBeforeLeaving(true);
-    };
-    const restoreAfterPageShow = () => {
-      pageHiding = false;
-      disposedRef.current = false;
-      finalFlushGenerationRef.current += 1;
-      finalFlushActiveRef.current = false;
-      clearSaveRetry();
-      const recovery = recoveryContentRef.current;
-      const latest = latestContentRef.current;
-      if (recovery) {
-        queuedContentRef.current =
-          latest && canonicalJsonString(latest) !== canonicalJsonString(recovery) ? latest : null;
-        if (!saveInFlightRef.current) void persistRef.current(recovery);
-      } else if (latest && canonicalJsonString(latest) !== savedSignatureRef.current) {
-        void persistRef.current(latest);
-      }
-    };
-
-    window.addEventListener("beforeunload", warnBeforeUnload);
-    window.addEventListener("pagehide", flushOnPageHide);
-    window.addEventListener("pageshow", restoreAfterPageShow);
-    return () => {
-      window.removeEventListener("beforeunload", warnBeforeUnload);
-      window.removeEventListener("pagehide", flushOnPageHide);
-      window.removeEventListener("pageshow", restoreAfterPageShow);
-      disposedRef.current = true;
-      flushBeforeLeaving(pageHiding);
-    };
-  }, [clearSaveRetry, flushDraftBeforeLeaving]);
 
   const projectionCopy = {
     rootTitle: t("projection.rootTitle"),
@@ -1018,25 +1092,101 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
       projectionCopy.ending,
     ]
   );
-  const canEdit = Boolean(
-    !conflict && project?.status === "active" && project.capabilities.includes("story.edit")
+  const projectionTarget = agentRunController.projectionTarget;
+  const acknowledgeProjectionTarget = agentRunController.acknowledgeProjectionTarget;
+  const projectionTargetReconciled = Boolean(
+    projectionTarget?.resultDraftRevision !== null &&
+    projectionTarget?.resultLayoutRevision !== null &&
+    projectionTarget?.resultDraftRevision !== undefined &&
+    projectionTarget?.resultLayoutRevision !== undefined &&
+    draftRevision >= projectionTarget.resultDraftRevision &&
+    appliedLayoutRevision !== null &&
+    appliedLayoutRevision >= projectionTarget.resultLayoutRevision
   );
-  const canMutateCanvasLayout = Boolean(canEdit && !layoutConflict);
-  const canManageClipMedia = Boolean(
-    canMutateCanvasLayout && project?.capabilities.includes("story.generate")
-  );
-  const clipMediaDisabledReason = !canMutateCanvasLayout
-    ? t("readOnly")
-    : !project?.capabilities.includes("story.generate")
+  const agentPhase = resolveStoryAgentAuthoringPhase({
+    // Write authority spans the run head AND both projection reads: while a
+    // rotated authority key refetches, the canvas keeps rendering its previous
+    // snapshot, so this phase — not an unmount — is what holds writes closed.
+    authorityState: resolveStoryCanvasWriteAuthority(projectionAuthority),
+    takeoverPending: agentTakeoverAction !== null,
+    applying: agentApplying,
+    runStatus: projectionTarget ? "succeeded" : null,
+    resultDraftRevision: projectionTarget?.resultDraftRevision ?? null,
+    resultLayoutRevision: projectionTarget?.resultLayoutRevision ?? null,
+    draftRevision,
+    layoutRevision: appliedLayoutRevision,
+    hasConflict: Boolean(conflict || layoutConflict),
+  });
+  useEffect(() => {
+    if (!projectionTarget || !projectionTargetReconciled) return;
+    let cancelled = false;
+    queueMicrotask(() => {
+      if (!cancelled) acknowledgeProjectionTarget(projectionTarget.id);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [acknowledgeProjectionTarget, projectionTarget, projectionTargetReconciled]);
+  const editPolicy = resolveStoryCanvasEditPolicy({
+    basePermissions: {
+      canEditContent: Boolean(
+        project?.status === "active" && project.capabilities.includes("story.edit")
+      ),
+      canEditLayout: Boolean(
+        project?.status === "active" && project.capabilities.includes("story.edit")
+      ),
+      canManageProduction: Boolean(
+        project?.status === "active" && project.capabilities.includes("story.generate")
+      ),
+      canPreview: true,
+      canPublish: true,
+    },
+    hasDraftConflict: Boolean(conflict),
+    hasLayoutConflict: Boolean(layoutConflict),
+    agentPhase,
+  });
+  const canEdit = editPolicy.canEditContent;
+  const canMutateCanvasLayout = editPolicy.canEditLayout;
+  useLayoutEffect(() => {
+    mutationBarrier.update({
+      canEditContent: canEdit,
+      canEditLayout: canMutateCanvasLayout,
+      canManageProduction: editPolicy.canManageProduction,
+      takeoverPending: agentTakeoverPendingRef.current,
+    });
+  }, [canEdit, canMutateCanvasLayout, editPolicy.canManageProduction, mutationBarrier]);
+  const canManageClipMedia = editPolicy.canManageProduction;
+  const clipMediaDisabledReason = !canManageClipMedia
+    ? !project?.capabilities.includes("story.generate")
       ? t("production.disabled.permission")
-      : null;
+      : t("readOnly")
+    : null;
 
   useEffect(() => {
     canvasNodesRef.current = canvasNodes;
   }, [canvasNodes]);
 
   useEffect(() => {
-    if (!model || !layoutQuery.data) return;
+    if (!model || !layoutProjection) return;
+    const authoritativeLayout: StoryCanvasLayoutPayload = {
+      nodePositions: layoutProjection.nodePositions,
+      storyWorldNodePresent: layoutProjection.storyWorldNodePresent,
+    };
+    const latestDesiredLayout = latestDesiredLayoutRef.current;
+    const hasLocalLayoutChanges = Boolean(
+      recoveryLayoutRef.current ||
+      layoutSaveInFlightRef.current ||
+      pendingNodePositionsRef.current.size > 0 ||
+      (latestDesiredLayout &&
+        layoutPayloadSignature(latestDesiredLayout) !== layoutSavedSignatureRef.current)
+    );
+    const shouldAdoptAuthoritativeLayout = shouldAdoptAuthoritativeCanvasLayout({
+      authoritativeRevision: layoutProjection.revision,
+      currentRevision: layoutRevisionRef.current,
+      hasConflict: Boolean(layoutConflictRef.current),
+      hasLocalChanges: hasLocalLayoutChanges,
+      hydrated: layoutHydratedRef.current,
+    });
     const currentById = new Map(canvasNodesRef.current.map((node) => [node.id, node]));
     const pendingSelection = pendingCanvasSelectionRef.current;
     const selectedNodeIds = reconcileStoryCanvasSelectedIds(
@@ -1052,18 +1202,21 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
       const nextSelectedNodeIds = nodes.filter((node) => node.selected).map((node) => node.id);
       latestCanvasSelectionRef.current = nextSelectedNodeIds;
       if (pendingSelection && !selectedNodeIds.has(pendingSelection)) return;
-      setFocusedNodeId((current) => nextStoryCanvasFocusedNodeId(current, nextSelectedNodeIds));
+      setInspectorTarget((current) =>
+        reconcileStoryCanvasInspectorTarget(current, nextSelectedNodeIds)
+      );
     };
 
     if (!layoutHydratedRef.current) {
       const initialNodes = model.nodes.map((node) => ({
         ...node,
-        position: layoutQuery.data.nodePositions[node.id] ?? node.position,
+        position: layoutProjection.nodePositions[node.id] ?? node.position,
         selected: selectedNodeIds.has(node.id),
       }));
       const initialLayout = canvasLayoutPayload(initialNodes, storyWorldNodePresent);
       layoutHydratedRef.current = true;
-      layoutRevisionRef.current = layoutQuery.data.revision;
+      layoutRevisionRef.current = layoutProjection.revision;
+      setAppliedLayoutRevision(layoutProjection.revision);
       latestDesiredLayoutRef.current = initialLayout;
       layoutSavedSignatureRef.current = layoutPayloadSignature(initialLayout);
       setLayoutSaveState("idle");
@@ -1071,6 +1224,15 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
       setCanvasNodes(initialNodes);
       reconcileFocusAfterModel(initialNodes);
       return;
+    }
+    if (shouldAdoptAuthoritativeLayout) {
+      layoutRevisionRef.current = layoutProjection.revision;
+      setAppliedLayoutRevision(layoutProjection.revision);
+      setStoryWorldNodePresentOverride(layoutProjection.storyWorldNodePresent);
+      setLayoutSaveError(null);
+      setLayoutSaveState("idle");
+      history.clear();
+      setHistoryVersion((current) => current + 1);
     }
     const placedNodeIds: string[] = [];
     const nextNodes = model.nodes.map((node) => {
@@ -1081,8 +1243,9 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
         selected: selectedNodeIds.has(node.id),
         position:
           pendingPosition ??
-          currentById.get(node.id)?.position ??
-          layoutQuery.data.nodePositions[node.id] ??
+          (shouldAdoptAuthoritativeLayout
+            ? layoutProjection.nodePositions[node.id]
+            : (currentById.get(node.id)?.position ?? layoutProjection.nodePositions[node.id])) ??
           node.position,
       };
     });
@@ -1090,12 +1253,20 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
     canvasNodesRef.current = nextNodes;
     setCanvasNodes(nextNodes);
     reconcileFocusAfterModel(nextNodes);
+    if (shouldAdoptAuthoritativeLayout) {
+      const adoptedLayout = canvasLayoutPayload(
+        nextNodes,
+        authoritativeLayout.storyWorldNodePresent
+      );
+      latestDesiredLayoutRef.current = adoptedLayout;
+      layoutSavedSignatureRef.current = layoutPayloadSignature(adoptedLayout);
+    }
     if (placedNodeIds.length > 0) {
       const nextLayout = canvasLayoutPayload(nextNodes, storyWorldNodePresent);
       setLayoutSaveState("dirty");
       void persistLayoutRef.current(nextLayout);
     }
-  }, [layoutQuery.data, model, setCanvasNodes, storyWorldNodePresent]);
+  }, [history, layoutProjection, model, setCanvasNodes, storyWorldNodePresent]);
 
   const clearLayoutSaveRetry = useCallback((resetAttempts = false) => {
     if (layoutRetryTimerRef.current !== null) {
@@ -1105,9 +1276,22 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
     if (resetAttempts) layoutRetryAttemptRef.current = 0;
   }, []);
 
+  const notifyLayoutSaveSettled = useCallback(() => {
+    const waiters = [...layoutSaveSettledWaitersRef.current];
+    layoutSaveSettledWaitersRef.current.clear();
+    waiters.forEach((resolve) => resolve());
+  }, []);
+
+  const waitForLayoutSaveToSettle = useCallback(() => {
+    if (!layoutSaveInFlightRef.current) return Promise.resolve();
+    return new Promise<void>((resolve) => layoutSaveSettledWaitersRef.current.add(resolve));
+  }, []);
+
   const scheduleLayoutSaveRetry = useCallback(() => {
     if (
       disposedRef.current ||
+      agentApplying ||
+      !agentAuthorityReady ||
       layoutRetryTimerRef.current !== null ||
       layoutConflictRef.current ||
       !recoveryLayoutRef.current
@@ -1123,13 +1307,18 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
         void persistLayoutRef.current(recovery, { preserveDesired: true });
       }
     }, delay);
-  }, []);
+  }, [agentApplying, agentAuthorityReady]);
 
   const persistLayout = useCallback(
     async (next: StoryCanvasLayoutPayload, options: PersistLayoutOptions = {}) => {
       if (!workspaceId || layoutConflictRef.current) return;
       const signature = layoutPayloadSignature(next);
       if (!options.preserveDesired) latestDesiredLayoutRef.current = next;
+      if (agentApplying || !agentAuthorityReady) {
+        recoveryLayoutRef.current = next;
+        setLayoutSaveState("dirty");
+        return;
+      }
       if (layoutSaveInFlightRef.current) {
         return;
       }
@@ -1153,6 +1342,7 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
       setLayoutSaveError(null);
       let requestFailed = false;
       let requestConflicted = false;
+      let failure: unknown = null;
       try {
         const saved = await putStoryCanvasLayout(workspaceId, projectId, {
           expectedRevision: layoutRevisionRef.current,
@@ -1161,6 +1351,7 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
           sessionId,
         });
         layoutRevisionRef.current = saved.revision;
+        setAppliedLayoutRevision(saved.revision);
         layoutSavedSignatureRef.current = signature;
         recoveryLayoutRef.current = null;
         clearLayoutSaveRetry(true);
@@ -1172,21 +1363,24 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
         );
         if (nextConflict && confirmsOwnWrite) {
           layoutRevisionRef.current = nextConflict.current.revision;
+          setAppliedLayoutRevision(nextConflict.current.revision);
           layoutSavedSignatureRef.current = signature;
           recoveryLayoutRef.current = null;
           clearLayoutSaveRetry(true);
           setLayoutSaveError(null);
           setLayoutSaveState("saved");
         } else if (nextConflict) {
+          failure = error;
           requestConflicted = true;
           layoutConflictRef.current = nextConflict;
-          recoveryLayoutRef.current = null;
+          recoveryLayoutRef.current = next;
           clearLayoutSaveRetry(true);
           setCreatorMenu(null);
           setPendingCompletionDrop(null);
           setLayoutConflict(nextConflict);
           setLayoutSaveState("conflict");
         } else {
+          failure = error;
           requestFailed = true;
           recoveryLayoutRef.current = next;
           setLayoutSaveState("error");
@@ -1207,16 +1401,424 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
             }
           }
         }
+        notifyLayoutSaveSettled();
       }
+
+      if (failure && options.propagateError) throw failure;
     },
-    [clearLayoutSaveRetry, commonT, projectId, scheduleLayoutSaveRetry, sessionId, workspaceId]
+    [
+      agentApplying,
+      agentAuthorityReady,
+      clearLayoutSaveRetry,
+      commonT,
+      notifyLayoutSaveSettled,
+      projectId,
+      scheduleLayoutSaveRetry,
+      sessionId,
+      workspaceId,
+    ]
   );
 
   useEffect(() => {
     persistLayoutRef.current = persistLayout;
   }, [persistLayout]);
 
+  useEffect(() => {
+    if (agentApplying || !agentAuthorityReady || layoutConflictRef.current) return;
+    const desired = unsavedDesiredLayout(
+      latestDesiredLayoutRef.current,
+      layoutSavedSignatureRef.current
+    );
+    if (!desired) return;
+    recoveryLayoutRef.current = desired;
+    scheduleLayoutSaveRetry();
+  }, [agentApplying, agentAuthorityReady, scheduleLayoutSaveRetry]);
+
   useEffect(() => () => clearLayoutSaveRetry(), [clearLayoutSaveRetry]);
+
+  const readLeaveRisk = useCallback((): StoryCanvasLeaveRisk => {
+    const latestDraft = latestContentRef.current;
+    const latestLayout = latestDesiredLayoutRef.current;
+    return resolveStoryCanvasLeaveRisk({
+      draftDirty: Boolean(
+        recoveryContentRef.current ||
+        inFlightContentRef.current ||
+        (latestDraft && canonicalJsonString(latestDraft) !== savedSignatureRef.current)
+      ),
+      draftSaveInFlight: saveInFlightRef.current,
+      draftConflict: conflictRef.current !== null,
+      layoutDirty: Boolean(
+        recoveryLayoutRef.current ||
+        (latestLayout && layoutPayloadSignature(latestLayout) !== layoutSavedSignatureRef.current)
+      ),
+      layoutSaveInFlight: layoutSaveInFlightRef.current,
+      layoutConflict: layoutConflictRef.current !== null,
+      generationRecipeDirty: hasDirtyGenerationRecipeRef.current,
+    });
+  }, []);
+
+  const queueBlockedNavigation = useCallback((risk: StoryCanvasLeaveRisk, resume: () => void) => {
+    pendingLeaveActionRef.current = resume;
+    setRecoveryExported(false);
+    setPendingLeaveRisk(risk);
+  }, []);
+
+  const requestStoryCanvasNavigation = useCallback(
+    (event: StoryCanvasNavigationEvent | null, resume: () => void) => {
+      if (explicitDiscardAndLeaveRef.current) {
+        if (!event) resume();
+        return false;
+      }
+      return coordinateStoryCanvasNavigation({
+        event,
+        risk: readLeaveRisk(),
+        resume,
+        onBlocked: queueBlockedNavigation,
+      });
+    },
+    [queueBlockedNavigation, readLeaveRisk]
+  );
+
+  useEffect(() => {
+    const guardHistoryTraversal = (event: PopStateEvent) => {
+      if (explicitDiscardAndLeaveRef.current) return;
+      const currentEntry = currentHistoryEntryRef.current;
+      if (!currentEntry) return;
+      guardStoryCanvasHistoryTraversal({
+        event,
+        risk: readLeaveRisk(),
+        currentEntry,
+        history: window.history,
+        onBlocked: queueBlockedNavigation,
+      });
+    };
+
+    // Next installs a bubble listener. Capturing lets the canvas restore the
+    // active entry before App Router consumes a dirty back/forward traversal.
+    window.addEventListener("popstate", guardHistoryTraversal, { capture: true });
+    return () => {
+      window.removeEventListener("popstate", guardHistoryTraversal, { capture: true });
+    };
+  }, [queueBlockedNavigation, readLeaveRisk]);
+
+  const openWorkingPreview = useCallback(async () => {
+    if (!workspaceId || workingPreviewPending) return;
+    setWorkingPreviewPending(true);
+    try {
+      await withSavedDraftSnapshot(async () => {
+        requestStoryCanvasNavigation(null, () => {
+          router.push(`/story-studio/projects/${encodeURIComponent(projectId)}/playtest`);
+        });
+      });
+    } catch (error) {
+      if (!disposedRef.current)
+        toast.error(storyApiErrorMessage(error, t("workingPreview.errorFallback")));
+    } finally {
+      if (!disposedRef.current) setWorkingPreviewPending(false);
+    }
+  }, [
+    projectId,
+    requestStoryCanvasNavigation,
+    router,
+    t,
+    withSavedDraftSnapshot,
+    workingPreviewPending,
+    workspaceId,
+  ]);
+
+  const flushLayoutBeforeLeaving = useCallback(
+    (keepalive: boolean) => {
+      if (
+        !workspaceId ||
+        agentApplying ||
+        !agentAuthorityReady ||
+        layoutConflictRef.current ||
+        layoutSaveInFlightRef.current ||
+        finalLayoutFlushActiveRef.current
+      ) {
+        return;
+      }
+
+      const next = unsavedDesiredLayout(
+        recoveryLayoutRef.current ?? latestDesiredLayoutRef.current,
+        layoutSavedSignatureRef.current
+      );
+      if (!next) return;
+
+      recoveryLayoutRef.current = next;
+      finalLayoutFlushActiveRef.current = true;
+      const generation = finalLayoutFlushGenerationRef.current + 1;
+      finalLayoutFlushGenerationRef.current = generation;
+      const expectedRevision = layoutRevisionRef.current;
+
+      const acceptSavedLayout = (saved: StoryCanvasLayout): boolean => {
+        if (generation !== finalLayoutFlushGenerationRef.current) return false;
+        if (saved.revision < layoutRevisionRef.current) return false;
+        layoutRevisionRef.current = saved.revision;
+        layoutSavedSignatureRef.current = layoutPayloadSignature({
+          nodePositions: saved.nodePositions,
+          storyWorldNodePresent: saved.storyWorldNodePresent,
+        });
+        recoveryLayoutRef.current = null;
+        clearLayoutSaveRetry(true);
+        queryClient.setQueryData(layoutQueryKey, saved);
+        if (!disposedRef.current) {
+          setAppliedLayoutRevision(saved.revision);
+          setLayoutSaveError(null);
+          setLayoutSaveState("saved");
+        }
+        return true;
+      };
+
+      void putStoryCanvasLayout(
+        workspaceId,
+        projectId,
+        {
+          expectedRevision,
+          nodePositions: next.nodePositions,
+          storyWorldNodePresent: next.storyWorldNodePresent,
+          sessionId,
+        },
+        keepalive ? { keepalive: true } : undefined
+      )
+        .then(acceptSavedLayout)
+        .catch((error: unknown) => {
+          if (generation !== finalLayoutFlushGenerationRef.current) return;
+          const nextConflict = canvasLayoutRevisionConflict(error);
+          if (
+            nextConflict &&
+            confirmsOwnCanvasLayoutWrite(
+              nextConflict.current,
+              sessionId,
+              layoutPayloadSignature(next)
+            )
+          ) {
+            acceptSavedLayout(nextConflict.current);
+            return;
+          }
+          recoveryLayoutRef.current = next;
+          if (nextConflict) layoutConflictRef.current = nextConflict;
+          if (disposedRef.current) return;
+          if (nextConflict) {
+            setLayoutConflict(nextConflict);
+            setLayoutSaveState("conflict");
+            return;
+          }
+          setLayoutSaveState("error");
+          setLayoutSaveError(storyApiErrorMessage(error, commonT("errors.generic")));
+          scheduleLayoutSaveRetry();
+        })
+        .finally(() => {
+          if (generation === finalLayoutFlushGenerationRef.current) {
+            finalLayoutFlushActiveRef.current = false;
+          }
+        });
+    },
+    [
+      agentApplying,
+      agentAuthorityReady,
+      clearLayoutSaveRetry,
+      commonT,
+      layoutQueryKey,
+      projectId,
+      queryClient,
+      scheduleLayoutSaveRetry,
+      sessionId,
+      workspaceId,
+    ]
+  );
+
+  useEffect(() => {
+    disposedRef.current = false;
+    let pageHiding = false;
+    const flushBeforeLeaving = (keepalive: boolean) => {
+      if (explicitDiscardAndLeaveRef.current) return;
+      if (saveDebounceTimerRef.current !== null) {
+        window.clearTimeout(saveDebounceTimerRef.current);
+        saveDebounceTimerRef.current = null;
+      }
+      clearSaveRetry();
+      clearLayoutSaveRetry();
+      flushDraftBeforeLeaving(keepalive);
+      flushLayoutBeforeLeaving(keepalive);
+    };
+    const warnBeforeUnload = (event: BeforeUnloadEvent) => {
+      if (explicitDiscardAndLeaveRef.current || !readLeaveRisk().blocked) return;
+      event.preventDefault();
+      event.returnValue = "";
+    };
+    const flushOnPageHide = () => {
+      pageHiding = true;
+      flushBeforeLeaving(true);
+    };
+    const restoreAfterPageShow = () => {
+      pageHiding = false;
+      disposedRef.current = false;
+      explicitDiscardAndLeaveRef.current = false;
+      finalFlushGenerationRef.current += 1;
+      finalFlushActiveRef.current = false;
+      finalLayoutFlushGenerationRef.current += 1;
+      finalLayoutFlushActiveRef.current = false;
+      clearSaveRetry();
+      clearLayoutSaveRetry();
+
+      const draftRecovery = recoveryContentRef.current;
+      const latestDraft = latestContentRef.current;
+      if (draftRecovery) {
+        queuedContentRef.current =
+          latestDraft && canonicalJsonString(latestDraft) !== canonicalJsonString(draftRecovery)
+            ? latestDraft
+            : null;
+        if (!saveInFlightRef.current) void persistRef.current(draftRecovery);
+      } else if (latestDraft && canonicalJsonString(latestDraft) !== savedSignatureRef.current) {
+        void persistRef.current(latestDraft);
+      }
+
+      const layoutRecovery = unsavedDesiredLayout(
+        recoveryLayoutRef.current ?? latestDesiredLayoutRef.current,
+        layoutSavedSignatureRef.current
+      );
+      if (layoutRecovery && !layoutSaveInFlightRef.current) {
+        recoveryLayoutRef.current = layoutRecovery;
+        void persistLayoutRef.current(layoutRecovery, { preserveDesired: true });
+      }
+    };
+
+    window.addEventListener("beforeunload", warnBeforeUnload);
+    window.addEventListener("pagehide", flushOnPageHide);
+    window.addEventListener("pageshow", restoreAfterPageShow);
+    return () => {
+      window.removeEventListener("beforeunload", warnBeforeUnload);
+      window.removeEventListener("pagehide", flushOnPageHide);
+      window.removeEventListener("pageshow", restoreAfterPageShow);
+      disposedRef.current = true;
+      flushBeforeLeaving(pageHiding);
+    };
+  }, [
+    clearLayoutSaveRetry,
+    clearSaveRetry,
+    flushDraftBeforeLeaving,
+    flushLayoutBeforeLeaving,
+    readLeaveRisk,
+  ]);
+
+  const flushAuthoringBeforeAgentRun = useCallback(async () => {
+    if (!workspaceId || conflictRef.current || layoutConflictRef.current) {
+      throw new Error(saveError ?? layoutSaveError ?? commonT("errors.generic"));
+    }
+
+    if (saveDebounceTimerRef.current !== null) {
+      window.clearTimeout(saveDebounceTimerRef.current);
+      saveDebounceTimerRef.current = null;
+    }
+    clearSaveRetry();
+    clearLayoutSaveRetry();
+
+    while (saveInFlightRef.current) await waitForSaveToSettle();
+    const draft = latestContentRef.current;
+    if (!draft) throw new Error(commonT("errors.generic"));
+    await persistRef.current(draft, { propagateError: true });
+    if (conflictRef.current || savedSignatureRef.current !== canonicalJsonString(draft)) {
+      throw new Error(saveError ?? commonT("errors.generic"));
+    }
+
+    while (layoutSaveInFlightRef.current) await waitForLayoutSaveToSettle();
+    const layout = latestDesiredLayoutRef.current;
+    if (layout) {
+      await persistLayoutRef.current(layout, {
+        preserveDesired: true,
+        propagateError: true,
+      });
+      if (
+        layoutConflictRef.current ||
+        layoutSavedSignatureRef.current !== layoutPayloadSignature(layout)
+      ) {
+        throw new Error(layoutSaveError ?? commonT("errors.generic"));
+      }
+    }
+  }, [
+    clearLayoutSaveRetry,
+    clearSaveRetry,
+    commonT,
+    layoutSaveError,
+    saveError,
+    waitForLayoutSaveToSettle,
+    waitForSaveToSettle,
+    workspaceId,
+  ]);
+
+  const canvasAgentRunController = {
+    ...agentRunController,
+    applying:
+      agentPhase === "takeover-pending" ||
+      agentPhase === "applying" ||
+      agentPhase === "reconciling",
+    actionPending: agentTakeoverAction !== null || agentRunController.actionPending,
+    pendingAction: agentTakeoverAction ?? agentRunController.pendingAction,
+    cancel: async (runId: string) => {
+      if (agentTakeoverPendingRef.current) {
+        throw new Error("A Story Agent takeover is already in progress.");
+      }
+      return agentRunController.cancel(runId);
+    },
+    confirm: async (runId: string) => {
+      if (agentTakeoverPendingRef.current) {
+        throw new Error("A Story Agent takeover is already in progress.");
+      }
+      agentTakeoverPendingRef.current = true;
+      mutationBarrier.setTakeoverPending(true);
+      setAgentTakeoverAction("confirm");
+      try {
+        await flushAuthoringBeforeAgentRun();
+        return await agentRunController.confirm(runId);
+      } catch (error) {
+        await agentRunController.refresh().catch(() => undefined);
+        throw error;
+      } finally {
+        agentTakeoverPendingRef.current = false;
+        mutationBarrier.setTakeoverPending(false);
+        setAgentTakeoverAction(null);
+      }
+    },
+    undo: async (runId: string) => {
+      if (agentTakeoverPendingRef.current) {
+        throw new Error("A Story Agent takeover is already in progress.");
+      }
+      agentTakeoverPendingRef.current = true;
+      mutationBarrier.setTakeoverPending(true);
+      setAgentTakeoverAction("undo");
+      try {
+        await flushAuthoringBeforeAgentRun();
+        return await agentRunController.undo(runId);
+      } catch (error) {
+        await agentRunController.refresh().catch(() => undefined);
+        throw error;
+      } finally {
+        agentTakeoverPendingRef.current = false;
+        mutationBarrier.setTakeoverPending(false);
+        setAgentTakeoverAction(null);
+      }
+    },
+  };
+
+  useEffect(() => {
+    if (!agentApplying && agentAuthorityReady) return;
+    if (saveDebounceTimerRef.current !== null) {
+      window.clearTimeout(saveDebounceTimerRef.current);
+      saveDebounceTimerRef.current = null;
+    }
+    clearSaveRetry();
+    clearLayoutSaveRetry();
+    let cancelled = false;
+    queueMicrotask(() => {
+      if (cancelled) return;
+      setCreatorMenu(null);
+      setPendingCompletionDrop(null);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [agentApplying, agentAuthorityReady, clearLayoutSaveRetry, clearSaveRetry]);
 
   const focusedNode = useMemo(
     () => model?.nodes.find((node) => node.id === focusedNodeId) ?? null,
@@ -1232,12 +1834,13 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
 
   const updateGenerationRecipe = useCallback(
     (key: string, recipe: StoryVideoGenerationRecipeInput) => {
+      if (!mutationBarrier.permits("production")) return;
       setGenerationRecipes((current) => ({
         ...current,
         [key]: { recipe, dirty: true },
       }));
     },
-    []
+    [mutationBarrier]
   );
 
   const confirmSubmittedRecipe = useCallback((key: string, fingerprint: string) => {
@@ -1254,6 +1857,7 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
 
   const runProductionAction = useCallback(
     async (key: string, action: () => Promise<unknown>): Promise<boolean> => {
+      if (!mutationBarrier.permits("production")) return false;
       if (!productionActionGate.tryAcquire()) return false;
       setProductionPendingKey(key);
       setProductionError(null);
@@ -1276,12 +1880,14 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
         setProductionPendingKey(null);
       }
     },
-    [productionActionGate, refreshProduction, t]
+    [mutationBarrier, productionActionGate, refreshProduction, t]
   );
 
   const generateSelectedClip = useCallback(
     (recipe: StoryVideoGenerationRecipeInput) => {
-      if (!focusedGraphNodeId || !focusedRecipeKey) return;
+      if (!mutationBarrier.permits("production") || !focusedGraphNodeId || !focusedRecipeKey) {
+        return;
+      }
       setClipGenerationRequest({
         requestId: globalThis.crypto.randomUUID(),
         graphNodeId: focusedGraphNodeId,
@@ -1290,14 +1896,27 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
         recipeFingerprint: canonicalJsonString(recipe),
       });
     },
-    [focusedClipVideo?.selectionVersion, focusedGraphNodeId, focusedRecipeKey]
+    [focusedClipVideo?.selectionVersion, focusedGraphNodeId, focusedRecipeKey, mutationBarrier]
   );
 
   useEffect(() => {
-    if (!workspaceId || !clipGenerationRequest) return;
+    if (!clipGenerationRequest) return;
     const request = clipGenerationRequest;
-    const slot = `clip:create:${request.graphNodeId}`;
     let active = true;
+
+    if (!canManageClipMedia || !workspaceId) {
+      queueMicrotask(() => {
+        if (!active) return;
+        setClipGenerationRequest((current) =>
+          current?.requestId === request.requestId ? null : current
+        );
+      });
+      return () => {
+        active = false;
+      };
+    }
+
+    const slot = `clip:create:${request.graphNodeId}`;
     queueMicrotask(() => {
       if (!active) return;
       void runProductionAction("generate", () =>
@@ -1333,10 +1952,12 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
         );
       });
     });
+
     return () => {
       active = false;
     };
   }, [
+    canManageClipMedia,
     clipGenerationRequest,
     confirmSubmittedRecipe,
     productionSubmissionKeys,
@@ -1349,12 +1970,16 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
   const clipGenerationActive = isActiveVideoGeneration(focusedClipVideo?.generation);
   const productionDisabledReason = !project?.capabilities.includes("story.generate")
     ? t("production.disabled.permission")
-    : clipGenerationActive
-      ? t("production.disabled.generating")
-      : null;
+    : !canManageClipMedia
+      ? t("readOnly")
+      : clipGenerationActive
+        ? t("production.disabled.generating")
+        : null;
   const bindClipVideo = useCallback(
     async (graphNodeId: string, expectedSelectionVersion: number, item: StoryVideoLibraryItem) => {
-      if (!workspaceId) throw new Error(t("production.errors.action"));
+      if (!workspaceId || !mutationBarrier.permits("production")) {
+        throw new Error(t("production.errors.action"));
+      }
       const confirmedClip = await withSavedDraftSnapshot((expectedDraftRevision) =>
         putStoryClipCurrentVideo(workspaceId, projectId, graphNodeId, {
           expectedDraftRevision,
@@ -1363,22 +1988,30 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
           variantId: item.variantId,
         })
       );
-      queryClient.setQueryData<StoryWorkbench>(
-        ["story-studio", "workbench", workspaceId, projectId],
-        (current) => projectConfirmedClipCurrentVideo(current, confirmedClip)
+      queryClient.setQueryData<StoryWorkbench>(workbenchQueryKey, (current) =>
+        projectConfirmedClipCurrentVideo(current, confirmedClip)
       );
       void refetchWorkbench();
     },
-    [projectId, queryClient, refetchWorkbench, t, withSavedDraftSnapshot, workspaceId]
+    [
+      mutationBarrier,
+      projectId,
+      queryClient,
+      refetchWorkbench,
+      t,
+      withSavedDraftSnapshot,
+      workbenchQueryKey,
+      workspaceId,
+    ]
   );
   const selectExistingClipVideo = useCallback(
     async (item: StoryVideoLibraryItem) => {
-      if (!workspaceId || !focusedGraphNodeId) {
+      if (!workspaceId || !focusedGraphNodeId || !mutationBarrier.permits("production")) {
         throw new Error(t("production.errors.action"));
       }
       await bindClipVideo(focusedGraphNodeId, focusedClipVideo?.selectionVersion ?? 0, item);
     },
-    [bindClipVideo, focusedClipVideo, focusedGraphNodeId, t, workspaceId]
+    [bindClipVideo, focusedClipVideo, focusedGraphNodeId, mutationBarrier, t, workspaceId]
   );
   const uploadSelectedClipVideo = useCallback(
     async (
@@ -1386,7 +2019,7 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
       onState: (state: StoryClipMediaUploadState) => void,
       signal: AbortSignal
     ) => {
-      if (!workspaceId || !focusedGraphNodeId) {
+      if (!workspaceId || !focusedGraphNodeId || !mutationBarrier.permits("production")) {
         throw new Error(t("production.errors.action"));
       }
       // Capture the target before the long upload starts. Selecting another
@@ -1440,7 +2073,15 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
         throw error;
       }
     },
-    [bindClipVideo, focusedClipVideo, focusedGraphNodeId, projectId, t, workspaceId]
+    [
+      bindClipVideo,
+      mutationBarrier,
+      focusedClipVideo,
+      focusedGraphNodeId,
+      projectId,
+      t,
+      workspaceId,
+    ]
   );
   // AI generation lives in the node inspector's "generate" tab. The clip's
   // library reuse stays on the upload tab (clipMedia), so the generation form
@@ -1452,6 +2093,7 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
           recipe: focusedRecipe,
           references,
           frameProfile: project?.frameProfile ?? "landscape_16_9",
+          readOnly: !canManageClipMedia,
           canGenerate: productionDisabledReason === null,
           disabledReason: productionDisabledReason,
           pendingKey: productionPendingKey ?? (clipGenerationActive ? "generate" : null),
@@ -1469,6 +2111,7 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
 
   const runTrailerAction = useCallback(
     async (key: string, action: () => Promise<unknown>): Promise<boolean> => {
+      if (!mutationBarrier.permits("production")) return false;
       if (!trailerActionGate.tryAcquire()) return false;
       setTrailerPendingKey(key);
       setTrailerError(null);
@@ -1489,16 +2132,18 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
         setTrailerPendingKey(null);
       }
     },
-    [refreshTrailerProduction, t, trailerActionGate]
+    [mutationBarrier, refreshTrailerProduction, t, trailerActionGate]
   );
 
-  const canGenerateTrailer = Boolean(project?.capabilities.includes("story.generate"));
+  const canGenerateTrailer = canManageClipMedia;
   const trailerRecipe =
     generationRecipes[TRAILER_RECIPE_KEY]?.recipe ?? emptyStoryGenerationRecipe();
 
   const generateTrailer = useCallback(
     (recipe: StoryVideoGenerationRecipeInput) => {
-      if (!workspaceId || !selectedTrailer || !canGenerateTrailer) return;
+      if (!workspaceId || !selectedTrailer || !mutationBarrier.permits("production")) {
+        return;
+      }
       const slot = "trailer:create";
       const recipeFingerprint = canonicalJsonString(recipe);
       const fingerprint = canonicalJsonString({
@@ -1524,8 +2169,8 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
       });
     },
     [
-      canGenerateTrailer,
       confirmSubmittedRecipe,
+      mutationBarrier,
       projectId,
       runTrailerAction,
       selectedTrailer,
@@ -1535,14 +2180,16 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
   );
 
   const trailerGenerationActive = isActiveVideoGeneration(selectedTrailer?.generation);
-  const trailerDisabledReason = !canGenerateTrailer
+  const trailerDisabledReason = !project?.capabilities.includes("story.generate")
     ? t("trailer.production.disabled.permission")
-    : trailerGenerationActive
-      ? t("production.disabled.generating")
-      : null;
+    : !canGenerateTrailer
+      ? t("readOnly")
+      : trailerGenerationActive
+        ? t("production.disabled.generating")
+        : null;
   const selectExistingTrailerVideo = useCallback(
     async (item: StoryVideoLibraryItem) => {
-      if (!workspaceId || !selectedTrailer) {
+      if (!workspaceId || !selectedTrailer || !mutationBarrier.permits("production")) {
         throw new Error(t("trailer.production.errors.action"));
       }
       const confirmedTrailer = await putStoryTrailerCurrentVideo(workspaceId, projectId, {
@@ -1550,13 +2197,21 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
         assetId: item.asset.id,
         variantId: item.variantId,
       });
-      queryClient.setQueryData<StoryWorkbench>(
-        ["story-studio", "workbench", workspaceId, projectId],
-        (current) => projectConfirmedTrailerCurrentVideo(current, confirmedTrailer)
+      queryClient.setQueryData<StoryWorkbench>(workbenchQueryKey, (current) =>
+        projectConfirmedTrailerCurrentVideo(current, confirmedTrailer)
       );
       void refetchWorkbench();
     },
-    [projectId, queryClient, refetchWorkbench, selectedTrailer, t, workspaceId]
+    [
+      mutationBarrier,
+      projectId,
+      queryClient,
+      refetchWorkbench,
+      selectedTrailer,
+      t,
+      workbenchQueryKey,
+      workspaceId,
+    ]
   );
   const trailerGeneration: StoryClipGenerationFormProps | null =
     focusedIsRoot && selectedTrailer
@@ -1566,6 +2221,7 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
           recipe: trailerRecipe,
           references,
           frameProfile: project?.frameProfile ?? "landscape_16_9",
+          readOnly: !canGenerateTrailer,
           canGenerate: trailerDisabledReason === null,
           disabledReason: trailerDisabledReason,
           pendingKey: trailerPendingKey ?? (trailerGenerationActive ? "generate" : null),
@@ -1577,9 +2233,7 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
                 workspaceId,
                 projectId,
                 disabled: !canGenerateTrailer,
-                disabledReason: !canGenerateTrailer
-                  ? t("trailer.production.disabled.permission")
-                  : null,
+                disabledReason: trailerDisabledReason,
                 onSelect: selectExistingTrailerVideo,
               }
             : undefined,
@@ -1594,6 +2248,19 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
       }),
     [canvasNodes, focusedNodeId]
   );
+  const canvasProjectionReconciled = useMemo(() => {
+    if (!model || model.nodes.length !== canvasNodes.length) return false;
+    const canvasNodeIds = new Set(canvasNodes.map((node) => node.id));
+    return model.nodes.every((node) => canvasNodeIds.has(node.id));
+  }, [canvasNodes, model]);
+  useStoryAgentNodeReveal({
+    run: projectionTarget ?? agentRunController.run,
+    draftRevision,
+    layoutRevision: appliedLayoutRevision,
+    projectionReconciled: canvasProjectionReconciled,
+    renderedNodeCount: canvasNodes.length,
+    scopeRef: canvasSectionRef,
+  });
   const displayEdges = useMemo(
     () =>
       model?.edges.map((edge) => {
@@ -1675,6 +2342,7 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
 
   const restoreHistorySnapshot = useCallback(
     (snapshot: StoryCanvasHistorySnapshot) => {
+      if (!mutationBarrier.permits("layout")) return;
       const currentSnapshot = readHistorySnapshot();
       const nextLayout: StoryCanvasLayoutPayload = {
         nodePositions: snapshot.nodePositions,
@@ -1711,28 +2379,28 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
       setLayoutSaveState("dirty");
       void persistLayoutRef.current(nextLayout);
     },
-    [closeCreatorMenu, readHistorySnapshot, setCanvasNodes]
+    [closeCreatorMenu, mutationBarrier, readHistorySnapshot, setCanvasNodes]
   );
 
   const undoStoryCanvas = useCallback(() => {
-    if (!canMutateCanvasLayout) return;
+    if (!mutationBarrier.permits("layout")) return;
     const current = readHistorySnapshot();
     if (!current) return;
     const previous = history.undo(current);
     if (!previous) return;
     refreshHistoryState();
     restoreHistorySnapshot(previous);
-  }, [canMutateCanvasLayout, history, readHistorySnapshot, refreshHistoryState, restoreHistorySnapshot]);
+  }, [history, mutationBarrier, readHistorySnapshot, refreshHistoryState, restoreHistorySnapshot]);
 
   const redoStoryCanvas = useCallback(() => {
-    if (!canMutateCanvasLayout) return;
+    if (!mutationBarrier.permits("layout")) return;
     const current = readHistorySnapshot();
     if (!current) return;
     const next = history.redo(current);
     if (!next) return;
     refreshHistoryState();
     restoreHistorySnapshot(next);
-  }, [canMutateCanvasLayout, history, readHistorySnapshot, refreshHistoryState, restoreHistorySnapshot]);
+  }, [history, mutationBarrier, readHistorySnapshot, refreshHistoryState, restoreHistorySnapshot]);
 
   useCanvasHistoryShortcuts({
     enabled: canMutateCanvasLayout,
@@ -1744,6 +2412,10 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
     next: InteractiveFilmDraftContent,
     options: CommitContentOptions = {}
   ): boolean => {
+    // This is the final write barrier. Event handlers also gate eagerly for
+    // UX, but a stale callback must never bypass a newly acquired Agent lock,
+    // conflict, or permission change.
+    if (!mutationBarrier.permits("content")) return false;
     const current = latestContentRef.current;
     if (!current || next === current) return false;
     const snapshot = readHistorySnapshot(current);
@@ -1757,7 +2429,7 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
 
   const updateFoundation = (field: FoundationField, value: string) => {
     const current = latestContentRef.current;
-    if (!current || !canEdit) return;
+    if (!current || !mutationBarrier.permits("content")) return;
     commitContent(
       {
         ...current,
@@ -1772,7 +2444,9 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
     options: CommitContentOptions = {}
   ): boolean => {
     const current = latestContentRef.current;
-    if (!current || !canEdit) return false;
+    if (!current || !mutationBarrier.permits("content")) {
+      return false;
+    }
     try {
       const next = mutation(current);
       setGraphError(null);
@@ -1784,7 +2458,7 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
   };
 
   const createStoryElement = (kind: StoryNodeCreationKind, position: StoryCanvasPosition) => {
-    if (!content || !canMutateCanvasLayout) return;
+    if (!content || !mutationBarrier.permits("layout")) return;
     try {
       if (kind === "root") {
         if (storyWorldNodePresent) return;
@@ -1837,7 +2511,7 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
   };
 
   const openCreatorMenuAtClientPosition = (clientPosition: StoryCanvasPosition) => {
-    if (!canMutateCanvasLayout) return;
+    if (!mutationBarrier.permits("layout")) return;
     const container = canvasSectionRef.current?.getBoundingClientRect();
     if (!container) return;
 
@@ -1866,7 +2540,15 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
   };
 
   const connectStoryNodes = (connection: Connection) => {
-    if (!connection.source || !connection.target || !content || !model) return;
+    if (
+      !mutationBarrier.permits("content") ||
+      !connection.source ||
+      !connection.target ||
+      !content ||
+      !model
+    ) {
+      return;
+    }
     const source = model.nodes.find((node) => node.id === connection.source);
     const target = model.nodes.find((node) => node.id === connection.target);
     if (!source || !target) return;
@@ -1922,7 +2604,7 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
       !isCanvasPaneTarget(event.target) ||
       !content ||
       !model ||
-      !canEdit
+      !mutationBarrier.permits("layout")
     ) {
       return;
     }
@@ -1974,7 +2656,9 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
 
   const createCompletionStep = (kind: StoryConnectionCreationKind) => {
     const pending = pendingCompletionDrop;
-    if (!pending || !content || !model || !canEdit) return;
+    if (!mutationBarrier.permits("layout") || !pending || !content || !model) {
+      return;
+    }
     const source = model.nodes.find((node) => node.id === pending.sourceCanvasNodeId);
     if (!source || source.data.kind !== "clip" || source.data.exitKind !== "auto") {
       setPendingCompletionDrop(null);
@@ -2014,6 +2698,7 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
   };
 
   const isValidStoryConnection = (connection: Connection | Edge): boolean => {
+    if (!mutationBarrier.permits("content")) return false;
     if (!connection.source || !connection.target || connection.source === connection.target) {
       return false;
     }
@@ -2075,7 +2760,7 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
     nodes: StoryCanvasNode[];
     edges: StoryCanvasEdge[];
   }) => {
-    if (!canMutateCanvasLayout) return;
+    if (!mutationBarrier.permits("layout")) return;
     const currentSnapshot = readHistorySnapshot();
     const current = latestContentRef.current;
     if (!currentSnapshot || !current) return;
@@ -2123,8 +2808,8 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
       pendingCanvasSelectionRef.current = null;
       requestedCanvasFocusRef.current = null;
       latestCanvasSelectionRef.current = remainingSelectedNodeIds;
-      setFocusedNodeId((focused) =>
-        nextStoryCanvasFocusedNodeId(focused, remainingSelectedNodeIds)
+      setInspectorTarget((current) =>
+        reconcileStoryCanvasInspectorTarget(current, remainingSelectedNodeIds)
       );
       setGraphError(null);
     } catch {
@@ -2184,7 +2869,7 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
   };
 
   const createCharacter = (): string | null => {
-    if (!content || !canEdit) return null;
+    if (!content || !mutationBarrier.permits("content")) return null;
     try {
       const result = createStoryCharacter(content, { locale: authoringLocale });
       commitContent(result.content);
@@ -2201,7 +2886,7 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
   };
 
   const duplicateNode = (nodeId: string) => {
-    if (!content) return;
+    if (!content || !mutationBarrier.permits("layout")) return;
     const source = content.graph.nodes.find((candidate) => candidate.nodeId === nodeId);
     if (!source) return;
     try {
@@ -2235,6 +2920,22 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
     setSaveState("idle");
   };
 
+  const exportLocalDraftAfterConflict = () => {
+    if (!conflict) return;
+    const localContent = recoveryContentRef.current ?? latestContentRef.current;
+    if (!localContent) return;
+    downloadJsonArtifact(`fizzdragon-story-draft-recovery-${projectId}.json`, {
+      artifactType: "fizzdragon.story-draft-recovery",
+      schemaVersion: 1,
+      exportedAt: new Date().toISOString(),
+      workspaceId,
+      projectId,
+      localBaseRevision: revisionRef.current,
+      canonicalRevision: conflict.current.revision,
+      content: localContent,
+    });
+  };
+
   const loadLatestLayoutAfterConflict = () => {
     if (!layoutConflict || !model) return;
     const latestLayout: StoryCanvasLayoutPayload = {
@@ -2246,11 +2947,9 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
     latestDesiredLayoutRef.current = latestLayout;
     clearLayoutSaveRetry(true);
     layoutRevisionRef.current = layoutConflict.current.revision;
+    setAppliedLayoutRevision(layoutConflict.current.revision);
     layoutSavedSignatureRef.current = layoutPayloadSignature(latestLayout);
-    queryClient.setQueryData(
-      ["story-studio", "canvas-layout", workspaceId, projectId],
-      layoutConflict.current
-    );
+    queryClient.setQueryData(layoutQueryKey, layoutConflict.current);
     setStoryWorldNodePresentOverride(layoutConflict.current.storyWorldNodePresent);
     pendingNodePositionsRef.current.clear();
     Object.entries(layoutConflict.current.nodePositions).forEach(([nodeId, position]) => {
@@ -2269,31 +2968,143 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
     canvasNodesRef.current = latestNodes;
     const selectedNodeIds = latestNodes.filter((node) => node.selected).map((node) => node.id);
     latestCanvasSelectionRef.current = selectedNodeIds;
-    setFocusedNodeId((current) => nextStoryCanvasFocusedNodeId(current, selectedNodeIds));
+    setInspectorTarget((current) => reconcileStoryCanvasInspectorTarget(current, selectedNodeIds));
     setCanvasNodes(latestNodes);
     setLayoutConflict(null);
     setLayoutSaveError(null);
     setLayoutSaveState("idle");
   };
 
-  const isLoading =
-    workspaceLoading ||
-    (Boolean(workspaceId) && (workbenchQuery.isLoading || layoutQuery.isLoading));
-  if (isLoading) return <CanvasLoading />;
-  const workbenchUnavailable = workbenchQuery.isError && !workbenchQuery.data;
-  const layoutUnavailable = layoutQuery.isError && !layoutQuery.data;
-  if (workbenchUnavailable || layoutUnavailable || !project || !content || !model) {
+  const exportLocalLayoutAfterConflict = () => {
+    if (!layoutConflict) return;
+    const localLayout = recoveryLayoutRef.current ?? latestDesiredLayoutRef.current;
+    if (!localLayout) return;
+    downloadJsonArtifact(`fizzdragon-story-layout-recovery-${projectId}.json`, {
+      artifactType: "fizzdragon.story-layout-recovery",
+      schemaVersion: 1,
+      exportedAt: new Date().toISOString(),
+      workspaceId,
+      projectId,
+      localBaseRevision: layoutRevisionRef.current,
+      canonicalRevision: layoutConflict.current.revision,
+      layout: localLayout,
+    });
+  };
+
+  const guardBackNavigation = useCallback(
+    (event: StoryCanvasNavigationEvent) => {
+      requestStoryCanvasNavigation(event, () => router.push("/story-studio"));
+    },
+    [requestStoryCanvasNavigation, router]
+  );
+
+  const exportFullCanvasRecovery = useCallback(() => {
+    const risk = readLeaveRisk();
+    if (!risk.blocked) {
+      pendingLeaveActionRef.current = null;
+      setPendingLeaveRisk(null);
+      return;
+    }
+
+    const draftContent = risk.planes.includes("draft")
+      ? (recoveryContentRef.current ?? inFlightContentRef.current ?? latestContentRef.current)
+      : null;
+    const layout = risk.planes.includes("layout")
+      ? (recoveryLayoutRef.current ?? latestDesiredLayoutRef.current)
+      : null;
+    const dirtyGenerationRecipes = risk.planes.includes("generation")
+      ? Object.fromEntries(
+          Object.entries(generationRecipes)
+            .filter(([, record]) => record.dirty)
+            .map(([key, record]) => [key, record.recipe])
+        )
+      : null;
+
+    downloadJsonArtifact(`fizzdragon-story-canvas-recovery-${projectId}.json`, {
+      artifactType: "fizzdragon.story-canvas-recovery",
+      schemaVersion: 1,
+      exportedAt: new Date().toISOString(),
+      workspaceId,
+      projectId,
+      recoveryPlanes: risk.planes,
+      draft: draftContent
+        ? {
+            localBaseRevision: revisionRef.current,
+            canonicalRevision: conflictRef.current?.current.revision ?? null,
+            content: draftContent,
+          }
+        : null,
+      layout: layout
+        ? {
+            localBaseRevision: layoutRevisionRef.current,
+            canonicalRevision: layoutConflictRef.current?.current.revision ?? null,
+            value: layout,
+          }
+        : null,
+      generationRecipes: dirtyGenerationRecipes,
+    });
+    setPendingLeaveRisk(risk);
+    setRecoveryExported(true);
+  }, [generationRecipes, projectId, readLeaveRisk, workspaceId]);
+
+  const discardRecoveryAndLeave = useCallback(() => {
+    const resume = pendingLeaveActionRef.current;
+    pendingLeaveActionRef.current = null;
+    explicitDiscardAndLeaveRef.current = true;
+    setPendingLeaveRisk(null);
+    setRecoveryExported(false);
+    resume?.();
+  }, []);
+
+  const leaveDialog = (
+    <StoryCanvasLeaveDialog
+      open={pendingLeaveRisk !== null}
+      planes={pendingLeaveRisk?.planes ?? []}
+      recoveryExported={recoveryExported}
+      onStay={() => {
+        pendingLeaveActionRef.current = null;
+        setPendingLeaveRisk(null);
+        setRecoveryExported(false);
+      }}
+      onExport={exportFullCanvasRecovery}
+      onDiscardAndLeave={discardRecoveryAndLeave}
+    />
+  );
+
+  // Full-screen surfaces are reserved for a true cold start. Authority-key
+  // rotations (run head transitions, realtime reconnects, refetch cycles) keep
+  // the previous snapshot mounted — the XYFlow viewport, the assistant layer
+  // with any in-flight chat stream, and composer drafts all survive — while
+  // `projectionAuthority` "checking"/"unavailable" latches writes via the edit
+  // policy above.
+  const projectionSurface = resolveStoryCanvasProjectionSurface(
+    projectionAuthority,
+    workbenchProjection !== undefined && layoutProjection !== undefined
+  );
+  if (workspaceLoading || projectionSurface === "loading") return <CanvasLoading />;
+  if (projectionSurface === "error" || !workspaceId || !project || !content || !model) {
     return (
-      <CanvasError
-        message={storyApiErrorMessage(
-          workbenchQuery.error ?? layoutQuery.error,
-          commonT("errors.generic")
-        )}
-        onRetry={() => {
-          void workbenchQuery.refetch();
-          void layoutQuery.refetch();
-        }}
-      />
+      <>
+        <CanvasError
+          message={storyApiErrorMessage(
+            workbenchQuery.error ?? layoutQuery.error ?? agentRunController.authorityError,
+            commonT("errors.generic")
+          )}
+          onBackNavigate={guardBackNavigation}
+          onRetry={() => {
+            if (agentRunController.authorityState === "ready") {
+              void workbenchQuery.refetch();
+              void layoutQuery.refetch();
+              return;
+            }
+            // Projection queries are enabled only after the active-run head is
+            // fresh. Retrying them concurrently would reopen the mount race this
+            // boundary intentionally closes.
+            void agentRunController.refresh().catch(() => undefined);
+          }}
+        />
+        {leaveDialog}
+      </>
     );
   }
 
@@ -2309,305 +3120,424 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
       draftRevision,
       videoSnapshotHash: video?.snapshotHash ?? "",
     });
+  const agentStatusMessage =
+    agentPhase === "checking"
+      ? t("emptyAgent.agentRun.checkingCurrent")
+      : agentPhase === "takeover-pending"
+        ? t("emptyAgent.agentRun.takingOver")
+        : agentPhase === "applying"
+          ? t("emptyAgent.agentRun.applying")
+          : agentPhase === "reconciling"
+            ? t("emptyAgent.agentRun.reconciling")
+            : agentPhase === "unavailable"
+              ? t("emptyAgent.agentRun.currentUnavailable")
+              : null;
+  const agentStatusCanRetry =
+    agentRunController.authorityState === "error" ||
+    agentPhase === "unavailable" ||
+    (agentPhase === "reconciling" && (workbenchQuery.isError || layoutQuery.isError));
   return (
     <main className="relative h-screen min-w-[1120px] overflow-hidden bg-[oklch(0.18_0_0)] text-white">
-      <CanvasHeader
-        title={project.title}
-        revision={draftRevision}
-        saveState={displaySaveState}
-        saveError={saveError ?? layoutSaveError}
-        canEdit={canEdit}
-        previewPending={workingPreviewPending}
-        publishPending={publication.isPending}
-        published={
-          authorityConfirmedCurrentDraftPublished ||
-          (!currentReleaseQuery.data && locallyConfirmedCurrentDraftPublished)
+      <StoryAgentRunAura
+        active={
+          agentPhase === "takeover-pending" ||
+          agentPhase === "applying" ||
+          agentPhase === "reconciling"
         }
-        canPublish={publication.canPublish && !currentReleaseQuery.isLoading}
-        publishDisabledReason={
-          currentReleaseQuery.isLoading ? t("publish.statusChecking") : publication.disabledReason
-        }
-        onPreview={() => void openWorkingPreview()}
-        onPublish={publication.open}
-        onShowFoundation={() => selectCanvasNodeExclusively(null)}
       />
-
-      <StoryPublicationDialog
-        state={publication.state}
-        draftRevision={draftRevision}
-        onClose={publication.close}
-        onConfirm={publication.confirm}
-        onRetry={publication.retry}
-      />
-
-      <section
-        ref={canvasSectionRef}
-        className="absolute top-16 right-0 bottom-0 left-[380px]"
-        onDoubleClick={(event) => {
-          if (!canEdit || !isCanvasPaneTarget(event.target)) return;
-          event.preventDefault();
-          openCreatorMenuAtClientPosition({ x: event.clientX, y: event.clientY });
-        }}
+      <StoryCanvasAssistantLayer
+        key={`${workspaceId}:${projectId}`}
+        projectId={projectId}
+        workspaceId={workspaceId}
+        hasNodes={model.nodes.length > 0}
+        inspectorOpen={inspectorOpen}
+        open={assistantOpen}
+        onOpenChange={setAssistantOpen}
+        agentRunController={canvasAgentRunController}
+        canManageAgentRuns={Boolean(
+          project.status === "active" && project.capabilities.includes("story.edit")
+        )}
       >
-        <div
-          aria-hidden="true"
-          className="pointer-events-none absolute inset-0"
-          style={{
-            backgroundColor: "oklch(0.18 0 0)",
-            backgroundImage:
-              "radial-gradient(circle, rgb(255 255 255 / 0.13) 1px, transparent 1.2px)",
-            backgroundSize: "20px 20px",
+        {agentStatusMessage ? (
+          <div
+            role="status"
+            aria-live="polite"
+            className={cn(
+              "absolute top-[4.75rem] left-1/2 z-[100] flex -translate-x-1/2 items-center gap-2 rounded-full bg-[oklch(0.18_0_0/0.94)] px-3.5 py-2 text-[11px] font-medium text-white/76 shadow-[0_14px_42px_rgba(0,0,0,0.42)] backdrop-blur-2xl",
+              agentStatusCanRetry ? "pointer-events-auto" : "pointer-events-none"
+            )}
+          >
+            {agentRunController.authorityState === "error" || agentPhase === "unavailable" ? (
+              <IconAlertTriangle className="size-3.5 text-[#ff9b9e]" stroke={1.8} />
+            ) : agentPhase === "applying" ? (
+              <IconSparkles className="size-3.5 text-[#9d8cff]" stroke={1.8} />
+            ) : (
+              <IconLoader2 className="size-3.5 animate-spin text-[#9d8cff]" stroke={1.8} />
+            )}
+            {agentStatusMessage}
+            {agentStatusCanRetry ? (
+              <button
+                type="button"
+                className="ml-1 rounded-full bg-white/[0.09] px-2 py-1 text-[10px] font-semibold text-white/72 transition hover:bg-white/[0.15] hover:text-white focus-visible:ring-2 focus-visible:ring-white/35 focus-visible:outline-none"
+                onClick={() => {
+                  void agentRunController.refresh().catch(() => undefined);
+                  // A failed projection read now surfaces here (the canvas keeps
+                  // rendering its previous snapshot instead of unmounting into
+                  // the full-screen error), so retry must also re-issue it.
+                  if (
+                    workbenchQuery.isError ||
+                    layoutQuery.isError ||
+                    agentPhase === "reconciling" ||
+                    projectionTarget
+                  ) {
+                    void workbenchQuery.refetch();
+                    void layoutQuery.refetch();
+                  }
+                }}
+              >
+                {t("emptyAgent.agentRun.retry")}
+              </button>
+            ) : null}
+          </div>
+        ) : null}
+        <CanvasHeader
+          title={project.title}
+          revision={draftRevision}
+          saveState={displaySaveState}
+          saveError={saveError ?? layoutSaveError}
+          canEdit={canEdit}
+          previewPending={workingPreviewPending}
+          publishPending={publication.isPending}
+          published={
+            authorityConfirmedCurrentDraftPublished ||
+            (!currentReleaseQuery.data && locallyConfirmedCurrentDraftPublished)
+          }
+          canPublish={
+            editPolicy.canPublish && publication.canPublish && !currentReleaseQuery.isLoading
+          }
+          publishDisabledReason={
+            currentReleaseQuery.isLoading
+              ? t("publish.statusChecking")
+              : (agentStatusMessage ?? publication.disabledReason)
+          }
+          onPreview={() => void openWorkingPreview()}
+          onPublish={publication.open}
+          onShowFoundation={showStoryWorldInspector}
+          assistantOpen={assistantOpen}
+          agentRunStatus={agentRunController.run?.status ?? null}
+          onToggleAssistant={() => setAssistantOpen((current) => !current)}
+          onBackNavigate={guardBackNavigation}
+        />
+
+        {leaveDialog}
+
+        <StoryPublicationDialog
+          state={publication.state}
+          draftRevision={draftRevision}
+          canMutate={editPolicy.canPublish}
+          disabledReason={agentStatusMessage ?? publication.disabledReason}
+          onClose={publication.close}
+          onConfirm={() => {
+            if (editPolicy.canPublish) void publication.confirm();
+          }}
+          onRetry={() => {
+            if (editPolicy.canPublish) void publication.retry();
           }}
         />
-        <MediaHoverPreviewProvider>
-          <StoryCanvasFocusContext.Provider value={focusedNodeId}>
-            <StoryCanvasReactFlow
-              nodes={layeredCanvasNodes}
-              edges={canvasEdges}
-              onNodesChange={onCanvasNodesChange}
-              onEdgesChange={(changes) =>
-                onCanvasEdgesChange(changes.filter((change) => change.type === "select"))
-              }
-              onConnect={connectStoryNodes}
-              onConnectEnd={finishConnectionOnBlankCanvas}
-              onInteractionStart={closeCreatorMenu}
-              isValidConnection={isValidStoryConnection}
-              onDelete={deleteStoryElements}
-              onSelectionChange={onCanvasSelectionChange}
-              onSelectionStart={onCanvasSelectionStart}
-              onSelectionEnd={onCanvasSelectionEnd}
-              onNodeDragStart={() => {
-                dragStartHistorySnapshotRef.current = readHistorySnapshot();
-              }}
-              onNodeDragStop={(_event, draggedNode, draggedNodes) => {
-                const movedNodes = new Map(
-                  [...draggedNodes, draggedNode].map((node) => [node.id, node])
-                );
-                const nextLayout = canvasLayoutPayload(
-                  canvasNodes.map((node) => movedNodes.get(node.id) ?? node),
-                  storyWorldNodePresent
-                );
-                const positions = nextLayout.nodePositions;
-                const beforeDrag = dragStartHistorySnapshotRef.current;
-                dragStartHistorySnapshotRef.current = null;
-                if (
-                  beforeDrag &&
-                  layoutPositionSignature(beforeDrag.nodePositions) !==
-                    layoutPositionSignature(positions)
-                ) {
-                  history.capture(beforeDrag);
-                  refreshHistoryState();
+
+        <section
+          ref={canvasSectionRef}
+          className={cn(
+            "absolute top-16 right-0 bottom-0",
+            inspectorOpen ? "left-[380px]" : "left-0"
+          )}
+          onDoubleClick={(event) => {
+            if (!mutationBarrier.permits("layout") || !isCanvasPaneTarget(event.target)) {
+              return;
+            }
+            event.preventDefault();
+            openCreatorMenuAtClientPosition({ x: event.clientX, y: event.clientY });
+          }}
+        >
+          <div
+            aria-hidden="true"
+            className="pointer-events-none absolute inset-0"
+            style={{
+              backgroundColor: "oklch(0.18 0 0)",
+              backgroundImage:
+                "radial-gradient(circle, rgb(255 255 255 / 0.13) 1px, transparent 1.2px)",
+              backgroundSize: "20px 20px",
+            }}
+          />
+          <MediaHoverPreviewProvider>
+            <StoryCanvasFocusContext.Provider value={focusedNodeId}>
+              <StoryCanvasReactFlow
+                nodes={layeredCanvasNodes}
+                edges={canvasEdges}
+                onNodesChange={onCanvasNodesChange}
+                onEdgesChange={(changes) =>
+                  onCanvasEdgesChange(changes.filter((change) => change.type === "select"))
                 }
-                if (layoutPayloadSignature(nextLayout) === layoutSavedSignatureRef.current) return;
-                setLayoutSaveState("dirty");
-                void persistLayoutRef.current(nextLayout);
-              }}
-              onNodeClick={(event, node) => {
-                closeCreatorMenu();
-                if (event.shiftKey && node.selected) {
-                  requestedCanvasFocusRef.current = null;
-                  const remainingNodeIds = latestCanvasSelectionRef.current.filter(
-                    (nodeId) => nodeId !== node.id
+                onConnect={connectStoryNodes}
+                onConnectEnd={finishConnectionOnBlankCanvas}
+                onInteractionStart={closeCreatorMenu}
+                isValidConnection={isValidStoryConnection}
+                onDelete={deleteStoryElements}
+                onSelectionChange={onCanvasSelectionChange}
+                onSelectionStart={onCanvasSelectionStart}
+                onSelectionEnd={onCanvasSelectionEnd}
+                onNodeDragStart={() => {
+                  dragStartHistorySnapshotRef.current = mutationBarrier.permits("layout")
+                    ? readHistorySnapshot()
+                    : null;
+                }}
+                onNodeDragStop={(_event, draggedNode, draggedNodes) => {
+                  if (!mutationBarrier.permits("layout")) {
+                    dragStartHistorySnapshotRef.current = null;
+                    return;
+                  }
+                  const movedNodes = new Map(
+                    [...draggedNodes, draggedNode].map((node) => [node.id, node])
                   );
-                  latestCanvasSelectionRef.current = remainingNodeIds;
-                  reconcileCanvasFocus(remainingNodeIds);
-                  return;
-                }
-                requestedCanvasFocusRef.current = node.id;
-                setFocusedNodeId(node.id);
-              }}
-              onPaneClick={() => {
-                selectCanvasNodeExclusively(null);
-                closeCreatorMenu();
-              }}
-              onPaneContextMenu={(event) => {
-                if (!canMutateCanvasLayout) return;
-                event.preventDefault();
-                openCreatorMenuAtClientPosition({ x: event.clientX, y: event.clientY });
-              }}
-              onMoveStart={closeCreatorMenu}
-              nodeTypes={NODE_TYPES}
-              defaultEdgeOptions={DEFAULT_EDGE_OPTIONS}
-              colorMode="dark"
-              proOptions={{ hideAttribution: true }}
-              minZoom={0.16}
-              maxZoom={1.4}
-              defaultViewport={{ x: 80, y: 160, zoom: 0.48 }}
-              nodesDraggable={canMutateCanvasLayout}
-              nodesConnectable={canMutateCanvasLayout}
-              edgesReconnectable={false}
-              edgesFocusable={canMutateCanvasLayout}
-              deleteKeyCode={canMutateCanvasLayout ? CANVAS_DELETE_KEY_CODES : null}
-              selectNodesOnDrag
-              zoomOnDoubleClick={false}
-              fitView={canvasNodes.length > 0}
-              fitViewOptions={{ padding: 0.16, maxZoom: 0.78 }}
-              className="relative z-10"
-              style={{ backgroundColor: "transparent" }}
+                  const nextLayout = canvasLayoutPayload(
+                    canvasNodes.map((node) => movedNodes.get(node.id) ?? node),
+                    storyWorldNodePresent
+                  );
+                  const positions = nextLayout.nodePositions;
+                  const beforeDrag = dragStartHistorySnapshotRef.current;
+                  dragStartHistorySnapshotRef.current = null;
+                  if (
+                    beforeDrag &&
+                    layoutPositionSignature(beforeDrag.nodePositions) !==
+                      layoutPositionSignature(positions)
+                  ) {
+                    history.capture(beforeDrag);
+                    refreshHistoryState();
+                  }
+                  if (layoutPayloadSignature(nextLayout) === layoutSavedSignatureRef.current)
+                    return;
+                  setLayoutSaveState("dirty");
+                  void persistLayoutRef.current(nextLayout);
+                }}
+                onNodeClick={(event, node) => {
+                  closeCreatorMenu();
+                  if (event.shiftKey && node.selected) {
+                    requestedCanvasFocusRef.current = null;
+                    const remainingNodeIds = latestCanvasSelectionRef.current.filter(
+                      (nodeId) => nodeId !== node.id
+                    );
+                    latestCanvasSelectionRef.current = remainingNodeIds;
+                    reconcileCanvasFocus(remainingNodeIds);
+                    return;
+                  }
+                  requestedCanvasFocusRef.current = node.id;
+                  setInspectorTarget(storyNodeInspectorTarget(node.id));
+                }}
+                onPaneClick={() => {
+                  selectCanvasNodeExclusively(null);
+                  closeCreatorMenu();
+                }}
+                onPaneContextMenu={(event) => {
+                  if (!mutationBarrier.permits("layout")) return;
+                  event.preventDefault();
+                  openCreatorMenuAtClientPosition({ x: event.clientX, y: event.clientY });
+                }}
+                onMoveStart={closeCreatorMenu}
+                nodeTypes={NODE_TYPES}
+                defaultEdgeOptions={DEFAULT_EDGE_OPTIONS}
+                colorMode="dark"
+                proOptions={{ hideAttribution: true }}
+                minZoom={0.16}
+                maxZoom={1.4}
+                defaultViewport={{ x: 80, y: 160, zoom: 0.48 }}
+                nodesDraggable={canMutateCanvasLayout}
+                nodesConnectable={canMutateCanvasLayout}
+                edgesReconnectable={false}
+                edgesFocusable={canMutateCanvasLayout}
+                deleteKeyCode={canMutateCanvasLayout ? CANVAS_DELETE_KEY_CODES : null}
+                selectNodesOnDrag
+                zoomOnDoubleClick={false}
+                fitView={canvasNodes.length > 0}
+                fitViewOptions={{ padding: 0.16, maxZoom: 0.78 }}
+                className="relative z-10"
+                style={{ backgroundColor: "transparent" }}
+              >
+                {model.nodes.length > 0 ? (
+                  <MiniMap
+                    pannable
+                    position="bottom-left"
+                    className="canvas-wheel-zoom bottom-5! left-20! m-0! overflow-hidden rounded-[18px] bg-[oklch(0.24_0_0/0.82)]! shadow-[0_18px_60px_rgba(0,0,0,0.4)] backdrop-blur-[30px]! backdrop-saturate-150!"
+                    bgColor="oklch(0.24 0 0 / 0.82)"
+                    maskColor="rgba(0,0,0,0.46)"
+                    nodeColor="rgba(255,255,255,0.42)"
+                    nodeStrokeWidth={0}
+                  />
+                ) : null}
+                <CanvasControls
+                  position="bottom-left"
+                  className="bottom-5! left-5! overflow-hidden rounded-full bg-[oklch(0.24_0_0/0.82)]! p-1! shadow-[0_18px_60px_rgba(0,0,0,0.35)] backdrop-blur-[30px]! backdrop-saturate-150! [&_button]:size-9!"
+                />
+              </StoryCanvasReactFlow>
+            </StoryCanvasFocusContext.Provider>
+          </MediaHoverPreviewProvider>
+
+          {canMutateCanvasLayout ? (
+            <StoryNodeDock
+              showStoryWorld={!storyWorldNodePresent}
+              onCreate={createStoryElementFromDock}
+            />
+          ) : null}
+
+          {canMutateCanvasLayout ? (
+            <CanvasHistoryControls
+              canUndo={history.canUndo}
+              canRedo={history.canRedo}
+              undo={undoStoryCanvas}
+              redo={redoStoryCanvas}
+              undoLabel={canvasT("undo")}
+              redoLabel={canvasT("redo")}
+              className="absolute right-5 bottom-5 z-20 bg-[oklch(0.24_0_0/0.82)] shadow-[0_18px_60px_rgba(0,0,0,0.35)] backdrop-blur-[30px] backdrop-saturate-150"
+            />
+          ) : null}
+
+          {canMutateCanvasLayout && creatorMenu ? (
+            <StoryNodeCreator
+              position={{ left: creatorMenu.left, top: creatorMenu.top }}
+              showStoryWorld={!storyWorldNodePresent}
+              onCreate={(kind) => createStoryElement(kind, creatorMenu.flowPosition)}
+              onCancel={closeCreatorMenu}
+            />
+          ) : null}
+        </section>
+
+        {canMutateCanvasLayout && pendingCompletionDrop ? (
+          <StoryConnectionCreator
+            position={pendingCompletionDrop.clientPosition}
+            onCreate={createCompletionStep}
+            onCancel={() => setPendingCompletionDrop(null)}
+          />
+        ) : null}
+
+        {inspectorOpen ? (
+          <StoryNodeInspector
+            content={content}
+            locale={authoringLocale}
+            selectedNode={focusedNode}
+            clipMedia={
+              focusedNode?.data.kind === "clip"
+                ? {
+                    clip: focusedClipVideo ?? null,
+                    canEdit: canManageClipMedia,
+                    disabledReason: clipMediaDisabledReason,
+                    onUpload: uploadSelectedClipVideo,
+                    videoLibrary:
+                      workspaceId && focusedGraphNodeId
+                        ? {
+                            workspaceId,
+                            projectId,
+                            disabled: !canManageClipMedia,
+                            disabledReason: clipMediaDisabledReason,
+                            frameContract: STORY_FRAME_PROFILE_CONTRACTS[project.frameProfile],
+                            onSelect: selectExistingClipVideo,
+                          }
+                        : undefined,
+                  }
+                : undefined
+            }
+            clipGeneration={clipGeneration ?? undefined}
+            trailerGeneration={trailerGeneration ?? undefined}
+            onUpdateClipMeta={(nodeId, patch) =>
+              applyGraphMutation((current) => updateStoryClipMeta(current, nodeId, patch), {
+                mergeKey: `clip-meta:${nodeId}:${Object.keys(patch).sort().join(",")}`,
+              })
+            }
+            showFoundation={inspectorTarget.kind === "world"}
+            canEdit={canMutateCanvasLayout}
+            onShowFoundation={showStoryWorldInspector}
+            onUpdateFoundation={updateFoundation}
+            onCreateCharacter={createCharacter}
+            onUpdateCharacter={(characterId, patch) =>
+              applyGraphMutation((current) => updateStoryCharacter(current, characterId, patch), {
+                mergeKey: `character:${characterId}:${Object.keys(patch).sort().join(",")}`,
+              })
+            }
+            onDeleteCharacter={(characterId) =>
+              applyGraphMutation((current) => deleteStoryCharacter(current, characterId))
+            }
+            onAddWorldTextItem={addWorldItem}
+            onUpdateWorldTextItem={(field, index, value) =>
+              applyGraphMutation((current) => updateWorldTextItem(current, field, index, value), {
+                mergeKey: `world:${field}:${index}`,
+              })
+            }
+            onRemoveWorldTextItem={(field, index) =>
+              applyGraphMutation((current) => removeWorldTextItem(current, field, index))
+            }
+            onCloseNode={() => selectCanvasNodeExclusively(null)}
+            onSetEntry={(nodeId) => applyGraphMutation((current) => setEntryNode(current, nodeId))}
+            onAddAutoRoute={(nodeId, targetNodeId) =>
+              applyGraphMutation((current) => connectAutoRoute(current, nodeId, targetNodeId))
+            }
+            onUpdateAutoRoute={(nodeId, routeIndex, patch) =>
+              applyGraphMutation((current) => updateAutoRoute(current, nodeId, routeIndex, patch), {
+                mergeKey: `auto-route:${nodeId}:${routeIndex}:${Object.keys(patch).sort().join(",")}`,
+              })
+            }
+            onRemoveAutoRoute={(nodeId, routeIndex) =>
+              applyGraphMutation((current) => disconnectAutoRoute(current, nodeId, { routeIndex }))
+            }
+            onUpdateChoiceExit={(nodeId, patch) =>
+              applyGraphMutation((current) => updateChoiceExit(current, nodeId, patch), {
+                mergeKey: `choice-exit:${nodeId}:${Object.keys(patch).sort().join(",")}`,
+              })
+            }
+            onAddChoice={addChoice}
+            onUpdateChoice={updateChoice}
+            onMoveChoice={(nodeId, choiceId, direction) =>
+              applyGraphMutation((current) =>
+                moveChoiceOption(current, nodeId, choiceId, direction)
+              )
+            }
+            onRemoveChoice={(nodeId, choiceId) =>
+              applyGraphMutation((current) => removeChoiceOption(current, nodeId, choiceId))
+            }
+            onUpdateEnding={updateEnding}
+            onDuplicateNode={duplicateNode}
+            onDeleteSelected={() => {
+              if (focusedNode) void deleteElements({ nodes: [focusedNode] });
+            }}
+          />
+        ) : null}
+
+        {graphError ? (
+          <FrostedPanel className="absolute right-5 bottom-20 z-50 flex max-w-[520px] items-center gap-3 rounded-[16px] bg-[oklch(0.24_0_0/0.9)] px-4 py-3 shadow-[0_20px_70px_rgba(0,0,0,0.48)] backdrop-blur-[30px]">
+            <IconAlertTriangle className="size-4 shrink-0 text-[#ff9b9e]" />
+            <p className="min-w-0 flex-1 text-xs leading-5 text-white/68">{graphError}</p>
+            <button
+              type="button"
+              onClick={() => setGraphError(null)}
+              className="grid size-7 shrink-0 place-items-center rounded-lg bg-white/[0.06] text-white/42 transition hover:bg-white/[0.1] hover:text-white"
+              aria-label={t("graphError.dismiss")}
             >
-              <MiniMap
-                pannable
-                position="bottom-left"
-                className="canvas-wheel-zoom bottom-5! left-20! m-0! overflow-hidden rounded-[18px] bg-[oklch(0.24_0_0/0.82)]! shadow-[0_18px_60px_rgba(0,0,0,0.4)] backdrop-blur-[30px]! backdrop-saturate-150!"
-                bgColor="oklch(0.24 0 0 / 0.82)"
-                maskColor="rgba(0,0,0,0.46)"
-                nodeColor="rgba(255,255,255,0.42)"
-                nodeStrokeWidth={0}
-              />
-              <CanvasControls
-                position="bottom-left"
-                className="bottom-5! left-5! overflow-hidden rounded-full bg-[oklch(0.24_0_0/0.82)]! p-1! shadow-[0_18px_60px_rgba(0,0,0,0.35)] backdrop-blur-[30px]! backdrop-saturate-150! [&_button]:size-9!"
-              />
-            </StoryCanvasReactFlow>
-          </StoryCanvasFocusContext.Provider>
-        </MediaHoverPreviewProvider>
-
-        {canMutateCanvasLayout ? (
-          <StoryNodeDock
-            showStoryWorld={!storyWorldNodePresent}
-            onCreate={createStoryElementFromDock}
-          />
+              <IconX className="size-3.5" />
+            </button>
+          </FrostedPanel>
         ) : null}
 
-        {canMutateCanvasLayout ? (
-          <CanvasHistoryControls
-            canUndo={history.canUndo}
-            canRedo={history.canRedo}
-            undo={undoStoryCanvas}
-            redo={redoStoryCanvas}
-            undoLabel={canvasT("undo")}
-            redoLabel={canvasT("redo")}
-            className="absolute right-5 bottom-5 z-20 bg-[oklch(0.24_0_0/0.82)] shadow-[0_18px_60px_rgba(0,0,0,0.35)] backdrop-blur-[30px] backdrop-saturate-150"
+        {conflict ? (
+          <ConflictBanner
+            onExportLocal={exportLocalDraftAfterConflict}
+            onLoadLatest={loadLatestAfterConflict}
           />
         ) : null}
-
-        {canMutateCanvasLayout && creatorMenu ? (
-          <StoryNodeCreator
-            position={{ left: creatorMenu.left, top: creatorMenu.top }}
-            showStoryWorld={!storyWorldNodePresent}
-            onCreate={(kind) => createStoryElement(kind, creatorMenu.flowPosition)}
-            onCancel={closeCreatorMenu}
+        {!conflict && layoutConflict ? (
+          <ConflictBanner
+            description={t("layoutConflict.description")}
+            onExportLocal={exportLocalLayoutAfterConflict}
+            onLoadLatest={loadLatestLayoutAfterConflict}
           />
         ) : null}
-      </section>
-
-      {canMutateCanvasLayout && pendingCompletionDrop ? (
-        <StoryConnectionCreator
-          position={pendingCompletionDrop.clientPosition}
-          onCreate={createCompletionStep}
-          onCancel={() => setPendingCompletionDrop(null)}
-        />
-      ) : null}
-
-      <StoryNodeInspector
-        content={content}
-        locale={authoringLocale}
-        selectedNode={focusedNode}
-        clipMedia={
-          focusedNode?.data.kind === "clip"
-            ? {
-                clip: focusedClipVideo ?? null,
-                canEdit: canManageClipMedia,
-                disabledReason: clipMediaDisabledReason,
-                onUpload: uploadSelectedClipVideo,
-                videoLibrary:
-                  workspaceId && focusedGraphNodeId
-                    ? {
-                        workspaceId,
-                        projectId,
-                        disabled: !canManageClipMedia,
-                        disabledReason: clipMediaDisabledReason,
-                        frameContract: STORY_FRAME_PROFILE_CONTRACTS[project.frameProfile],
-                        onSelect: selectExistingClipVideo,
-                      }
-                    : undefined,
-              }
-            : undefined
-        }
-        clipGeneration={clipGeneration ?? undefined}
-        trailerGeneration={trailerGeneration ?? undefined}
-        onUpdateClipMeta={(nodeId, patch) =>
-          applyGraphMutation((current) => updateStoryClipMeta(current, nodeId, patch), {
-            mergeKey: `clip-meta:${nodeId}:${Object.keys(patch).sort().join(",")}`,
-          })
-        }
-        showFoundation={focusedNodeId === null}
-        canEdit={canMutateCanvasLayout}
-        onShowFoundation={() => selectCanvasNodeExclusively(null)}
-        onUpdateFoundation={updateFoundation}
-        onCreateCharacter={createCharacter}
-        onUpdateCharacter={(characterId, patch) =>
-          applyGraphMutation((current) => updateStoryCharacter(current, characterId, patch), {
-            mergeKey: `character:${characterId}:${Object.keys(patch).sort().join(",")}`,
-          })
-        }
-        onDeleteCharacter={(characterId) =>
-          applyGraphMutation((current) => deleteStoryCharacter(current, characterId))
-        }
-        onAddWorldTextItem={addWorldItem}
-        onUpdateWorldTextItem={(field, index, value) =>
-          applyGraphMutation((current) => updateWorldTextItem(current, field, index, value), {
-            mergeKey: `world:${field}:${index}`,
-          })
-        }
-        onRemoveWorldTextItem={(field, index) =>
-          applyGraphMutation((current) => removeWorldTextItem(current, field, index))
-        }
-        onCloseNode={() => selectCanvasNodeExclusively(null)}
-        onSetEntry={(nodeId) => applyGraphMutation((current) => setEntryNode(current, nodeId))}
-        onAddAutoRoute={(nodeId, targetNodeId) =>
-          applyGraphMutation((current) => connectAutoRoute(current, nodeId, targetNodeId))
-        }
-        onUpdateAutoRoute={(nodeId, routeIndex, patch) =>
-          applyGraphMutation((current) => updateAutoRoute(current, nodeId, routeIndex, patch), {
-            mergeKey: `auto-route:${nodeId}:${routeIndex}:${Object.keys(patch).sort().join(",")}`,
-          })
-        }
-        onRemoveAutoRoute={(nodeId, routeIndex) =>
-          applyGraphMutation((current) => disconnectAutoRoute(current, nodeId, { routeIndex }))
-        }
-        onUpdateChoiceExit={(nodeId, patch) =>
-          applyGraphMutation((current) => updateChoiceExit(current, nodeId, patch), {
-            mergeKey: `choice-exit:${nodeId}:${Object.keys(patch).sort().join(",")}`,
-          })
-        }
-        onAddChoice={addChoice}
-        onUpdateChoice={updateChoice}
-        onMoveChoice={(nodeId, choiceId, direction) =>
-          applyGraphMutation((current) => moveChoiceOption(current, nodeId, choiceId, direction))
-        }
-        onRemoveChoice={(nodeId, choiceId) =>
-          applyGraphMutation((current) => removeChoiceOption(current, nodeId, choiceId))
-        }
-        onUpdateEnding={updateEnding}
-        onDuplicateNode={duplicateNode}
-        onDeleteSelected={() => {
-          if (focusedNode) void deleteElements({ nodes: [focusedNode] });
-        }}
-      />
-
-      {graphError ? (
-        <FrostedPanel className="absolute right-5 bottom-20 z-50 flex max-w-[520px] items-center gap-3 rounded-[16px] bg-[oklch(0.24_0_0/0.9)] px-4 py-3 shadow-[0_20px_70px_rgba(0,0,0,0.48)] backdrop-blur-[30px]">
-          <IconAlertTriangle className="size-4 shrink-0 text-[#ff9b9e]" />
-          <p className="min-w-0 flex-1 text-xs leading-5 text-white/68">{graphError}</p>
-          <button
-            type="button"
-            onClick={() => setGraphError(null)}
-            className="grid size-7 shrink-0 place-items-center rounded-lg bg-white/[0.06] text-white/42 transition hover:bg-white/[0.1] hover:text-white"
-            aria-label={t("graphError.dismiss")}
-          >
-            <IconX className="size-3.5" />
-          </button>
-        </FrostedPanel>
-      ) : null}
-
-      {conflict ? <ConflictBanner onLoadLatest={loadLatestAfterConflict} /> : null}
-      {!conflict && layoutConflict ? (
-        <ConflictBanner
-          description={t("layoutConflict.description")}
-          onLoadLatest={loadLatestLayoutAfterConflict}
-        />
-      ) : null}
+      </StoryCanvasAssistantLayer>
     </main>
   );
 }
@@ -2626,6 +3556,10 @@ function CanvasHeader({
   onPreview,
   onPublish,
   onShowFoundation,
+  assistantOpen,
+  agentRunStatus,
+  onToggleAssistant,
+  onBackNavigate,
 }: {
   title: string;
   revision: number;
@@ -2640,6 +3574,10 @@ function CanvasHeader({
   onPreview: () => void;
   onPublish: () => void;
   onShowFoundation: () => void;
+  assistantOpen: boolean;
+  agentRunStatus: StoryAgentRunStatus | null;
+  onToggleAssistant: () => void;
+  onBackNavigate: (event: StoryCanvasNavigationEvent) => void;
 }) {
   const t = useTranslations("storyStudio.canvas");
   const publishButton = (
@@ -2670,14 +3608,12 @@ function CanvasHeader({
       <FrostedPanel className="pointer-events-auto flex h-12 min-w-0 items-center gap-3 rounded-[20px] bg-[oklch(0.205_0_0/0.72)] px-2.5 pr-4 shadow-[0_14px_50px_rgba(0,0,0,0.3)] backdrop-blur-[60px]">
         <Link
           href="/story-studio"
+          onNavigate={onBackNavigate}
           aria-label={t("back")}
           className="grid size-10 shrink-0 place-items-center rounded-2xl bg-white/[0.07] text-white/68 transition hover:bg-white/[0.12] hover:text-white"
         >
           <IconArrowLeft className="size-5" />
         </Link>
-        <div className="grid size-10 shrink-0 place-items-center rounded-2xl bg-white/[0.08] text-white/78">
-          <IconGitBranch className="size-5" stroke={1.7} />
-        </div>
         <div className="min-w-0">
           <div className="flex items-center gap-2">
             <h1 className="max-w-[420px] truncate text-[15px] font-semibold tracking-[-0.01em]">
@@ -2700,6 +3636,31 @@ function CanvasHeader({
       </FrostedPanel>
 
       <FrostedPanel className="pointer-events-auto flex h-12 shrink-0 items-center gap-1.5 rounded-[20px] bg-[oklch(0.205_0_0/0.72)] p-1.5 shadow-[0_14px_50px_rgba(0,0,0,0.3)] backdrop-blur-[60px]">
+        <button
+          type="button"
+          aria-pressed={assistantOpen}
+          aria-label={
+            agentRunStatus === "proposed"
+              ? `${t("assistant.action")}: ${t("emptyAgent.agentRun.proposal")}`
+              : undefined
+          }
+          onClick={onToggleAssistant}
+          className={cn(
+            "inline-flex h-9 items-center gap-2 rounded-xl px-3 text-xs font-semibold transition focus-visible:ring-2 focus-visible:ring-white/35 focus-visible:outline-none",
+            assistantOpen
+              ? "bg-white/[0.14] text-white"
+              : "bg-white/[0.07] text-white/66 hover:bg-white/[0.12] hover:text-white"
+          )}
+        >
+          <IconSparkles className="size-4" />
+          {t("assistant.action")}
+          {agentRunStatus === "proposed" ? (
+            <span
+              aria-hidden="true"
+              className="size-1.5 rounded-full bg-[#9d8cff] shadow-[0_0_10px_rgba(157,140,255,0.88)]"
+            />
+          ) : null}
+        </button>
         <button
           type="button"
           onClick={onShowFoundation}
@@ -2739,14 +3700,11 @@ function CanvasHeader({
         ) : (
           publishButton
         )}
-        <span className="inline-flex h-9 items-center gap-1.5 rounded-xl bg-white px-3 text-[11px] font-semibold text-black">
-          {saveState === "saving" ? (
-            <IconLoader2 className="size-3.5 animate-spin" />
-          ) : (
-            <IconCheck className="size-3.5" />
-          )}
-          {canEdit ? t("autosave") : t("readOnly")}
-        </span>
+        {!canEdit ? (
+          <span className="inline-flex h-9 items-center gap-1.5 rounded-xl bg-white px-3 text-[11px] font-semibold text-black">
+            {t("readOnly")}
+          </span>
+        ) : null}
       </FrostedPanel>
     </header>
   );
@@ -2826,7 +3784,7 @@ function StoryGraphNodeCard({ id, data, selected, isConnectable }: NodeProps<Sto
             ? { background: "rgba(229,34,39,0.36)", iconBackground: "rgba(229,34,39,0.60)" }
             : { background: "rgba(255,255,255,0.14)", iconBackground: "rgba(255,255,255,0.22)" };
   return (
-    <div className="relative pt-10">
+    <div className="relative pt-10" data-story-node-id={id}>
       <FrostedPanel
         rim={false}
         className={cn(
@@ -3258,9 +4216,11 @@ function NodeStat({ label, value }: { label: string; value: number }) {
 
 function ConflictBanner({
   description,
+  onExportLocal,
   onLoadLatest,
 }: {
   description?: string;
+  onExportLocal: () => void;
   onLoadLatest: () => void;
 }) {
   const t = useTranslations("storyStudio.canvas");
@@ -3268,12 +4228,29 @@ function ConflictBanner({
     <FrostedPanel className="absolute top-20 left-[calc(50%+190px)] z-50 flex -translate-x-1/2 items-center gap-4 bg-[oklch(0.24_0_0/0.82)] px-4 py-3 shadow-[0_20px_70px_rgba(0,0,0,0.52)] backdrop-blur-[30px]">
       <IconAlertTriangle className="size-4 shrink-0 text-[#ff9b9e]" />
       <p className="text-xs text-white/72">{description ?? t("conflict.description")}</p>
+      <Button size="sm" variant="ghost" onClick={onExportLocal}>
+        <IconDownload className="size-3.5" />
+        {t("conflict.exportLocal")}
+      </Button>
       <Button size="sm" variant="secondary" onClick={onLoadLatest}>
         <IconRefresh className="size-3.5" />
         {t("conflict.loadLatest")}
       </Button>
     </FrostedPanel>
   );
+}
+
+function downloadJsonArtifact(fileName: string, payload: unknown) {
+  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = fileName;
+  anchor.style.display = "none";
+  document.body.append(anchor);
+  anchor.click();
+  anchor.remove();
+  queueMicrotask(() => URL.revokeObjectURL(url));
 }
 
 function CanvasLoading() {
@@ -3288,7 +4265,15 @@ function CanvasLoading() {
   );
 }
 
-function CanvasError({ message, onRetry }: { message: string; onRetry: () => void }) {
+function CanvasError({
+  message,
+  onBackNavigate,
+  onRetry,
+}: {
+  message: string;
+  onBackNavigate: (event: StoryCanvasNavigationEvent) => void;
+  onRetry: () => void;
+}) {
   const t = useTranslations("storyStudio.canvas");
   return (
     <main className="grid h-screen place-items-center bg-[oklch(0.105_0_0)] px-6 text-white">
@@ -3298,7 +4283,7 @@ function CanvasError({ message, onRetry }: { message: string; onRetry: () => voi
         <p className="mt-2 text-xs leading-5 text-white/44">{message}</p>
         <div className="mt-5 flex justify-center gap-2">
           <Button variant="ghost" asChild>
-            <Link href="/story-studio">
+            <Link href="/story-studio" onNavigate={onBackNavigate}>
               <IconArrowLeft className="size-4" />
               {t("back")}
             </Link>
@@ -3327,9 +4312,7 @@ function canvasLayoutPayload(
 ): StoryCanvasLayoutPayload {
   return {
     nodePositions: nodePositions(
-      storyWorldNodePresent
-        ? [...nodes]
-        : nodes.filter((node) => node.id !== STORY_ROOT_NODE_ID)
+      storyWorldNodePresent ? [...nodes] : nodes.filter((node) => node.id !== STORY_ROOT_NODE_ID)
     ),
     storyWorldNodePresent,
   };

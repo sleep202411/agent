@@ -12,6 +12,7 @@ vi.mock("@/lib/api", () => ({
 }));
 
 import { api } from "@/lib/api";
+import { storyAgentRunFixture } from "@/app/[locale]/story-studio/_components/project-canvas/story-agent-run.test-fixtures";
 import {
   cancelStoryVideoGeneration,
   cancelStoryClipVideoUpload,
@@ -19,11 +20,14 @@ import {
   createStoryClipVideoGeneration,
   createStoryTrailerVideoGeneration,
   getStoryExperienceCurrentRelease,
+  getUndoableStoryAgentRun,
   getStoryClipVideoUploadFinalization,
   getStoryWorkingPreview,
   listStoryVideoLibrary,
+  putStoryCanvasLayout,
   putStoryClipCurrentVideo,
   putStoryTrailerCurrentVideo,
+  retryStoryAgentRunAuthoring,
   retryStoryVideoGeneration,
   type StoryClipVideoFinalization,
   type StoryVideoLibraryItem,
@@ -33,6 +37,90 @@ import {
 describe("current-draft Story production routes", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+  });
+
+  it("reads the independent Story Agent Undo data head without replacing /active", async () => {
+    vi.mocked(api.get).mockResolvedValueOnce(null);
+    const controller = new AbortController();
+
+    await expect(
+      getUndoableStoryAgentRun("workspace-1", "project / one", controller.signal)
+    ).resolves.toBeNull();
+    expect(api.get).toHaveBeenCalledWith(
+      "/aurora/story-projects/project%20%2F%20one/agent-runs/undoable",
+      {
+        headers: { "x-fizz-workspace-id": "workspace-1" },
+        signal: controller.signal,
+      }
+    );
+  });
+
+  it("re-arms drafting through the retry-authoring lifecycle route", async () => {
+    const authoring = storyAgentRunFixture("authoring");
+    vi.mocked(api.post).mockResolvedValueOnce(authoring);
+
+    await expect(
+      retryStoryAgentRunAuthoring("workspace-1", "project / one", "run / one")
+    ).resolves.toMatchObject({ id: authoring.id, status: "authoring" });
+    expect(api.post).toHaveBeenCalledWith(
+      "/aurora/story-projects/project%20%2F%20one/agent-runs/run%20%2F%20one/retry-authoring",
+      {
+        data: {},
+        headers: { "x-fizz-workspace-id": "workspace-1" },
+      }
+    );
+  });
+
+  it("propagates a non-retryable retry-authoring conflict verbatim", async () => {
+    vi.mocked(api.post).mockRejectedValueOnce(
+      Object.assign(new Error("The run is not retryable."), {
+        status: 409,
+        code: "STORY_AGENT_RUN_NOT_RETRYABLE",
+      })
+    );
+
+    await expect(
+      retryStoryAgentRunAuthoring("workspace-1", "project-1", "run-1")
+    ).rejects.toMatchObject({
+      status: 409,
+      code: "STORY_AGENT_RUN_NOT_RETRYABLE",
+    });
+  });
+
+  it("rejects a retry-authoring response that violates the run contract", async () => {
+    vi.mocked(api.post).mockResolvedValueOnce({ ok: true });
+
+    await expect(
+      retryStoryAgentRunAuthoring("workspace-1", "project-1", "run-1")
+    ).rejects.toThrow();
+  });
+
+  it("forwards keepalive for the final canvas-layout pagehide flush", async () => {
+    vi.mocked(api.put).mockResolvedValueOnce({ revision: 8 });
+
+    await putStoryCanvasLayout(
+      "workspace-1",
+      "project-1",
+      {
+        expectedRevision: 7,
+        nodePositions: { "clip:opening": { x: 120, y: 240 } },
+        storyWorldNodePresent: false,
+        sessionId: "session-1",
+      },
+      { keepalive: true }
+    );
+
+    expect(api.put).toHaveBeenCalledWith(
+      "/aurora/story-projects/project-1/canvas-layout",
+      expect.objectContaining({
+        keepalive: true,
+        data: expect.objectContaining({
+          expectedRevision: 7,
+          storyWorldNodePresent: false,
+          sessionId: "session-1",
+        }),
+      })
+    );
   });
 
   afterEach(() => {

@@ -23,6 +23,19 @@ describe("studio API request cancellation", () => {
     await expect(api.post("/aurora/async-operation")).resolves.toEqual({ status: "queued" });
   });
 
+  it("preserves an explicit null envelope payload", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: vi.fn().mockResolvedValue({ code: 200, data: null }),
+      } as unknown as Response)
+    );
+
+    await expect(api.get("/aurora/empty-resource")).resolves.toBeNull();
+  });
+
   it("preserves nested Nest error codes and messages", async () => {
     vi.stubGlobal(
       "fetch",
