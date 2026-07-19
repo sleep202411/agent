@@ -73,6 +73,18 @@
     "./experience-runtime": {
       "types": "./dist/experience-runtime.d.ts",
       "default": "./dist/experience-runtime.js"
+    },
+    "./story-directing-skills": {
+      "types": "./dist/story-directing-skills.d.ts",
+      "default": "./dist/story-directing-skills.js"
+    },
+    "./story-agent": {
+      "types": "./dist/story-agent.d.ts",
+      "default": "./dist/story-agent.js"
+    },
+    "./copilot-documents": {
+      "types": "./dist/copilot-documents.d.ts",
+      "default": "./dist/copilot-documents.js"
     }
   },
   "scripts": {

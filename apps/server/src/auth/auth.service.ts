@@ -203,8 +203,6 @@ export class AuthService {
         email: scalarString(data.email),
         phone: scalarString(data.phone),
         headImg: scalarString(data.headImg),
-        userLevel: scalarString(data.userLevel)?.toUpperCase(),
-        expireTime: scalarString(data.expireTime),
       };
 
       if (!user.userId) {

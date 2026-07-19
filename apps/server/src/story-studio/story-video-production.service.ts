@@ -18,6 +18,7 @@ import {
 import type { AuthUser } from '../auth';
 import {
   AiGenerationService,
+  type AiJobCancellationHooks,
   type AiJobSubmissionHooks,
 } from '../ai-generation/ai-generation.service';
 import type { AiSubmitReferenceBinding } from '../ai-generation/prompt-document.types';
@@ -38,6 +39,7 @@ import {
   type StoryVideoGenerationDto,
 } from './dto';
 import { StoryPermissionService } from './story-permission.service';
+import { StoryProjectWriteGuardService } from './story-project-write-guard.service';
 import {
   StoryVideoRecipeSnapshotSchema,
   type CancelStoryVideoGenerationInput,
@@ -143,6 +145,7 @@ export class StoryVideoProductionService {
     private readonly permissions: StoryPermissionService,
     private readonly aiGeneration: AiGenerationService,
     private readonly assetUrls: MediaAssetUrlResolverService,
+    private readonly writeGuard: StoryProjectWriteGuardService,
   ) {}
 
   async createClipGeneration(
@@ -214,7 +217,80 @@ export class StoryVideoProductionService {
       );
     }
     if (!isTerminalGeneration(generation.status)) {
-      await this.aiGeneration.cancelJob(user, generation.aiJobId);
+      const hooks: AiJobCancellationHooks = {
+        beforeCancel: async (tx, job) => {
+          // This callback and the AiJob `cancelled` transition share one DB
+          // transaction. Locking the permanent project write-state first
+          // closes the permission-boundary TOCTOU without holding a database
+          // lock across provider/capacity/billing network lifecycle work.
+          await this.writeGuard.assertHumanWriteAllowed(tx, projectId);
+          const rows = await tx.$queryRaw<
+            Array<{ id: string; version: number; aiJobId: string }>
+          >`
+            SELECT
+              "id",
+              "version",
+              "ai_job_id" AS "aiJobId"
+            FROM "story_video_generation_attempts"
+            WHERE "id" = ${generationId}::uuid
+              AND "story_project_id" = ${projectId}::uuid
+            FOR UPDATE
+          `;
+          const locked = rows[0];
+          if (!locked || locked.aiJobId !== job.id) {
+            throw new NotFoundException({
+              code: 'STORY_GENERATION_NOT_FOUND',
+              message: 'Story video generation not found.',
+            });
+          }
+          if (locked.version !== input.expectedGenerationVersion) {
+            throw generationVersionConflict(
+              input.expectedGenerationVersion,
+              locked.version,
+            );
+          }
+        },
+        afterCancel: async (tx, job) => {
+          // The Story attempt is project-visible state, so it must become
+          // terminal in the very same transaction as the canonical AiJob.
+          // Provider/capacity/billing cleanup may continue after commit, but
+          // it can no longer cause a Story row write after Agent acquires the
+          // project fence.
+          const completedAt = job.completedAt
+            ? new Date(job.completedAt)
+            : new Date();
+          const updated = await tx.storyVideoGenerationAttempt.updateMany({
+            where: {
+              id: generationId,
+              storyProjectId: projectId,
+              version: input.expectedGenerationVersion,
+              status: {
+                in: [
+                  StoryVideoGenerationAttemptStatus.queued,
+                  StoryVideoGenerationAttemptStatus.running,
+                  StoryVideoGenerationAttemptStatus.processing,
+                ],
+              },
+            },
+            data: {
+              status: StoryVideoGenerationAttemptStatus.cancelled,
+              error: job.error == null ? Prisma.DbNull : asInputJson(job.error),
+              completedAt,
+              cancelledAt: completedAt,
+              version: { increment: 1 },
+            },
+          });
+          if (updated.count !== 1) {
+            throw new ConflictException({
+              code: 'STORY_GENERATION_CANCEL_CLAIM_LOST',
+              message:
+                'The Story generation changed before its cancellation could be committed.',
+              generationId,
+            });
+          }
+        },
+      };
+      await this.aiGeneration.cancelJob(user, generation.aiJobId, hooks);
     }
     return this.toGenerationDto(
       await this.reconcileGeneration(
@@ -435,6 +511,10 @@ export class StoryVideoProductionService {
     let createdGenerationId: string | null = null;
     const hooks: AiJobSubmissionHooks = {
       afterJobCreate: async (tx, job) => {
+        // The AI job and Story binding share this transaction. Taking the
+        // project write-state row first makes Agent apply and human submission
+        // totally ordered; a rejected guard rolls the newly created job back.
+        await this.writeGuard.assertHumanWriteAllowed(tx, projectId);
         const replay = await tx.storyVideoGenerationAttempt.findUnique({
           where: { submissionKey },
           select: { id: true, requestFingerprint: true },
@@ -809,6 +889,7 @@ export class StoryVideoProductionService {
   ): Promise<void> {
     const identity = targetIdentityOf(args.target);
     await this.prisma.$transaction(async (tx) => {
+      await this.writeGuard.assertHumanWriteAllowed(tx, projectId);
       if (args.target.kind === 'clip') {
         await this.assertCurrentDraftClip(
           tx,
@@ -1021,6 +1102,16 @@ export class StoryVideoProductionService {
     }
 
     await this.prisma.$transaction(async (tx) => {
+      const canReconcile = await this.writeGuard.tryAcquireDeferredWriteFence(
+        tx,
+        generation.storyProjectId,
+      );
+      if (!canReconcile) {
+        // Generation polling remains a read operation while Agent apply owns
+        // the project. Do not mutate either the selected video or its attempt;
+        // a later poll will retry completion after the shared fence is free.
+        return;
+      }
       await lockSelection(
         tx,
         generation.storyProjectId,

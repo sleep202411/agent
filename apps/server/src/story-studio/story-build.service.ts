@@ -58,6 +58,7 @@ import {
   type StoryBuildVideoInput,
 } from './story-build-compiler';
 import { StoryPermissionService } from './story-permission.service';
+import { StoryProjectWriteGuardService } from './story-project-write-guard.service';
 import {
   StoryVideoSnapshotEntrySchema,
   storyVideoSnapshotHash,
@@ -186,6 +187,7 @@ export class StoryBuildService {
     private readonly prisma: PrismaService,
     private readonly permissions: StoryPermissionService,
     private readonly storageAccess: MediaStorageAccessService,
+    private readonly writeGuard: StoryProjectWriteGuardService,
   ) {}
 
   async createBuild(
@@ -216,6 +218,7 @@ export class StoryBuildService {
       try {
         const row = await this.prisma.$transaction(
           async (tx) => {
+            await this.writeGuard.assertHumanWriteAllowed(tx, projectId);
             const concurrent = await tx.storyBuild.findUnique({
               where: { submissionKey },
               include: BUILD_INCLUDE,
@@ -576,19 +579,22 @@ export class StoryBuildService {
         message: 'A terminal Build cannot be cancelled.',
       });
     }
-    const changed = await this.prisma.storyBuild.updateMany({
-      where: {
-        id: buildId,
-        storyProjectId: projectId,
-        version: input.expectedBuildVersion,
-        runtimeSchemaVersion: EXPERIENCE_RUNTIME_SCHEMA_VERSION,
-        status: { in: nonTerminalBuildStatuses() },
-      },
-      data: {
-        status: StoryBuildStatus.cancelled,
-        completedAt: new Date(),
-        version: { increment: 1 },
-      },
+    const changed = await this.prisma.$transaction(async (tx) => {
+      await this.writeGuard.assertHumanWriteAllowed(tx, projectId);
+      return tx.storyBuild.updateMany({
+        where: {
+          id: buildId,
+          storyProjectId: projectId,
+          version: input.expectedBuildVersion,
+          runtimeSchemaVersion: EXPERIENCE_RUNTIME_SCHEMA_VERSION,
+          status: { in: nonTerminalBuildStatuses() },
+        },
+        data: {
+          status: StoryBuildStatus.cancelled,
+          completedAt: new Date(),
+          version: { increment: 1 },
+        },
+      });
     });
     if (changed.count !== 1) {
       const refreshed = await this.loadBuild(projectId, buildId);

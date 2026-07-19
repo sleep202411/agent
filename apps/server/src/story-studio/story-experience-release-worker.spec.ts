@@ -131,7 +131,12 @@ function workerPrisma(input: {
         .fn()
         .mockReturnValueOnce([candidate])
         .mockReturnValueOnce([claimed]),
-      updateMany: jest.fn(() => ({ count: 1 })),
+      updateMany: jest.fn(
+        (_args: {
+          where?: Record<string, unknown>;
+          data: Record<string, unknown>;
+        }) => ({ count: 1 }),
+      ),
     },
   };
 }

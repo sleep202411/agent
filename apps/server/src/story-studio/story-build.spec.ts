@@ -294,6 +294,40 @@ describe('StoryBuildService concurrency boundaries', () => {
 
   beforeEach(() => jest.clearAllMocks());
 
+  it('takes the project write fence before materializing a Build snapshot', async () => {
+    const tx = { storyBuild: { findUnique: jest.fn() } };
+    const prisma = {
+      storyBuild: { findUnique: jest.fn().mockResolvedValue(null) },
+      $transaction: jest.fn((work: (client: typeof tx) => unknown) => work(tx)),
+    };
+    const locked = new Error('agent applying');
+    const guard = {
+      assertHumanWriteAllowed: jest.fn().mockRejectedValue(locked),
+    };
+    const service = new StoryBuildService(
+      prisma as never,
+      permissions as never,
+      storage as never,
+      guard as never,
+    );
+
+    await expect(
+      service.createBuild(
+        user,
+        WORKSPACE_ID,
+        PROJECT_ID,
+        {
+          expectedDraftRevision: 1,
+          expectedVideoSnapshotHash: 'a'.repeat(64),
+          scope: { kind: 'full' },
+        },
+        'locked-build',
+      ),
+    ).rejects.toBe(locked);
+    expect(guard.assertHumanWriteAllowed).toHaveBeenCalledWith(tx, PROJECT_ID);
+    expect(tx.storyBuild.findUnique).not.toHaveBeenCalled();
+  });
+
   it('rejects reuse of an Idempotency-Key with another body', async () => {
     const existingFingerprint = storyBuildRequestFingerprint({
       expectedDraftRevision: 1,
@@ -311,6 +345,7 @@ describe('StoryBuildService concurrency boundaries', () => {
       prisma as never,
       permissions as never,
       storage as never,
+      { assertHumanWriteAllowed: jest.fn() } as never,
     );
 
     await expect(
@@ -367,6 +402,7 @@ describe('StoryBuildService concurrency boundaries', () => {
       prisma as never,
       permissions as never,
       storage as never,
+      { assertHumanWriteAllowed: jest.fn() } as never,
     );
 
     await expect(
@@ -414,6 +450,7 @@ describe('StoryBuildService concurrency boundaries', () => {
       prisma as never,
       permissions as never,
       storage as never,
+      { assertHumanWriteAllowed: jest.fn() } as never,
     );
 
     await expect(
@@ -613,6 +650,7 @@ describe('StoryBuildService concurrency boundaries', () => {
       prisma as never,
       permissions as never,
       storage as never,
+      { assertHumanWriteAllowed: jest.fn() } as never,
     );
 
     const result = await service.createBuild(

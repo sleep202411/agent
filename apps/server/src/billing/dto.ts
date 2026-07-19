@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { MembershipBenefitsSchema } from '../entitlements/membership-benefits';
 
 export const CheckoutPaymentProviderSchema = z.enum([
   'airwallex',
@@ -441,6 +442,12 @@ const MembershipPlanShape = {
   billingIntervalDefault: BillingPriceIntervalSchema.optional(),
   featureFlags: MetadataSchema.optional(),
   limits: MetadataSchema.optional(),
+  /**
+   * Validated membership benefits — omitted on create, the plan starts
+   * from DEFAULT_FREE_BENEFITS until configured. Edits go EXCLUSIVELY
+   * through PUT membership-plans/:planId/benefits (cache-busting).
+   */
+  benefits: MembershipBenefitsSchema.optional(),
   marketing: MetadataSchema.optional(),
   metadata: MetadataSchema.optional(),
 } satisfies z.ZodRawShape;
@@ -486,7 +493,7 @@ export type CreateAdminMembershipPlanInput = z.infer<
 
 export const UpdateAdminMembershipPlanSchema =
   MembershipPlanObjectSchema.partial()
-    .omit({ planKey: true })
+    .omit({ planKey: true, benefits: true })
     .superRefine((value, ctx) => {
       if (
         value.productType === 'membership_plan' &&
@@ -531,6 +538,14 @@ export const BillingMembershipPlanParamsSchema = z.object({
 });
 export type BillingMembershipPlanParams = z.infer<
   typeof BillingMembershipPlanParamsSchema
+>;
+
+/** Full-replace write of a plan's validated benefits. */
+export const UpdateAdminMembershipPlanBenefitsSchema = z.object({
+  benefits: MembershipBenefitsSchema,
+});
+export type UpdateAdminMembershipPlanBenefitsInput = z.infer<
+  typeof UpdateAdminMembershipPlanBenefitsSchema
 >;
 
 const ProviderBindingInputSchema = z.object({

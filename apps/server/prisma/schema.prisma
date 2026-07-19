@@ -1660,6 +1660,10 @@ model BillingMembershipPlan {
   billingIntervalDefault BillingPriceInterval?       @map("billing_interval_default")
   featureFlags           Json                        @default("{}") @map("feature_flags") @db.JsonB
   limits                 Json                        @default("{}") @db.JsonB
+  /// Validated membership benefits (MembershipBenefitsSchema) — the single
+  /// source of truth for quota limits / features / queue priority. NO column
+  /// default on purpose: every new plan row must state its benefits.
+  benefits               Json                        @db.JsonB
   marketing              Json                        @default("{}") @db.JsonB
   metadata               Json                        @default("{}") @db.JsonB
   createdById            String?                     @map("created_by_id") @db.VarChar(64)
@@ -4481,6 +4485,9 @@ enum AiOutboxEventType {
   /// Plain MediaAsset provider-mirror state changed. Payload is a
   /// `media_provider_asset_updated` asset event.
   media_provider_asset_updated
+  /// A Story Canvas Agent run changed lifecycle state. Payload is a
+  /// `story_agent_run_changed` project-scoped realtime event.
+  story_agent_run_changed
 }
 
 enum AiControlPlaneStatus {
@@ -6310,6 +6317,22 @@ enum StoryRevisionSource {
   import
 }
 
+enum StoryAgentRunKind {
+  apply
+  undo
+}
+
+enum StoryAgentRunStatus {
+  authoring
+  authoring_failed
+  proposed
+  applying
+  succeeded
+  failed
+  cancelled
+  stale
+}
+
 enum StoryBuildStatus {
   queued
   validating
@@ -6435,9 +6458,12 @@ model StoryProject {
   members                          StoryProjectMember[]
   draft                            StoryDraft?
   canvasLayout                     StoryCanvasLayout?
+  writeState                       StoryProjectWriteState?
+  agentRuns                        StoryAgentRun[]
   revisions                        StoryRevision[]
   builds                           StoryBuild[]
   experiencePublications           StoryExperiencePublication[]
+  experienceDraftReleases          StoryExperienceDraftRelease[]
   referenceSlots                   StoryReferenceSlot[]
   referenceVersions                StoryReferenceVersion[]
   videoSelections                  StoryVideoSelection[]
@@ -6451,6 +6477,96 @@ model StoryProject {
   @@index([workspaceId, format, status, updatedAt(sort: Desc)], map: "story_projects_workspace_format_recent_idx")
   @@index([createdByUserId, status, updatedAt(sort: Desc)], map: "story_projects_creator_recent_idx")
   @@map("story_projects")
+}
+
+/// The single, durable serialization point for every human-authored project
+/// write. The row is created with the project and never removed independently.
+/// Agent execution claims it with a fencing token; human writes lock and inspect
+/// this row inside the same transaction as their mutation.
+model StoryProjectWriteState {
+  storyProjectId   String    @id @map("story_project_id") @db.Uuid
+  activeAgentRunId String?   @unique @map("active_agent_run_id") @db.Uuid
+  fencingToken     BigInt    @default(0) @map("fencing_token")
+  lockedAt         DateTime? @map("locked_at") @db.Timestamptz(6)
+  lockExpiresAt    DateTime? @map("lock_expires_at") @db.Timestamptz(6)
+  createdAt        DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt        DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  project        StoryProject   @relation(fields: [storyProjectId], references: [id], onDelete: Cascade)
+  activeAgentRun StoryAgentRun? @relation("StoryProjectActiveAgentRun", fields: [activeAgentRunId, storyProjectId], references: [id, storyProjectId], onDelete: Restrict)
+
+  @@unique([activeAgentRunId, storyProjectId], map: "story_project_write_states_active_run_project_unique")
+  @@index([lockExpiresAt], map: "story_project_write_states_expiry_idx")
+  @@map("story_project_write_states")
+}
+
+/// Durable, project-shared record of one proposed or executed Story Agent
+/// change. Conversation messages remain user-private; the validated proposal,
+/// lifecycle, exact base/result revisions and undo material live here.
+model StoryAgentRun {
+  id                   String              @id @default(uuid(7)) @db.Uuid
+  storyProjectId       String              @map("story_project_id") @db.Uuid
+  workspaceId          String              @map("workspace_id") @db.Uuid
+  kind                 StoryAgentRunKind   @default(apply)
+  status               StoryAgentRunStatus @default(proposed)
+  initiatedByUserId    String              @map("initiated_by_user_id") @db.VarChar(64)
+  initiatedBySessionId String?             @map("initiated_by_session_id") @db.VarChar(64)
+  conversationId       String?             @map("conversation_id") @db.VarChar(180)
+  confirmedByUserId    String?             @map("confirmed_by_user_id") @db.VarChar(64)
+  cancelledByUserId    String?             @map("cancelled_by_user_id") @db.VarChar(64)
+
+  baseDraftRevision    Int  @map("base_draft_revision")
+  baseLayoutRevision   Int  @map("base_layout_revision")
+  resultDraftRevision  Int? @map("result_draft_revision")
+  resultLayoutRevision Int? @map("result_layout_revision")
+
+  proposal             Json    @db.JsonB
+  beforeDraftSnapshot  Json?   @map("before_draft_snapshot") @db.JsonB
+  beforeDraftHash      String? @map("before_draft_hash") @db.VarChar(64)
+  afterDraftSnapshot   Json?   @map("after_draft_snapshot") @db.JsonB
+  afterDraftHash       String? @map("after_draft_hash") @db.VarChar(64)
+  beforeLayoutSnapshot Json?   @map("before_layout_snapshot") @db.JsonB
+  beforeLayoutHash     String? @map("before_layout_hash") @db.VarChar(64)
+  afterLayoutSnapshot  Json?   @map("after_layout_snapshot") @db.JsonB
+  afterLayoutHash      String? @map("after_layout_hash") @db.VarChar(64)
+  affectedNodeIds      Json    @default("[]") @map("affected_node_ids") @db.JsonB
+  createdNodeIds       Json    @default("[]") @map("created_node_ids") @db.JsonB
+
+  summary            String? @db.Text
+  authoringAttempts  Int     @default(0) @map("authoring_attempts")
+  errorCode          String? @map("error_code") @db.VarChar(96)
+  errorDetail        String? @map("error_detail") @db.Text
+  idempotencyKey     String  @unique @map("idempotency_key") @db.VarChar(240)
+  requestFingerprint String  @map("request_fingerprint") @db.VarChar(64)
+  revertsRunId       String? @map("reverts_run_id") @db.Uuid
+
+  fencingToken    BigInt?   @map("fencing_token")
+  leaseOwner      String?   @map("lease_owner") @db.VarChar(160)
+  leaseAcquiredAt DateTime? @map("lease_acquired_at") @db.Timestamptz(6)
+  leaseExpiresAt  DateTime? @map("lease_expires_at") @db.Timestamptz(6)
+
+  proposedAt      DateTime  @default(now()) @map("proposed_at") @db.Timestamptz(6)
+  expiresAt       DateTime  @map("expires_at") @db.Timestamptz(6)
+  confirmedAt     DateTime? @map("confirmed_at") @db.Timestamptz(6)
+  applyingAt      DateTime? @map("applying_at") @db.Timestamptz(6)
+  revealStartedAt DateTime? @map("reveal_started_at") @db.Timestamptz(6)
+  cancelledAt     DateTime? @map("cancelled_at") @db.Timestamptz(6)
+  completedAt     DateTime? @map("completed_at") @db.Timestamptz(6)
+  createdAt       DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt       DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  project          StoryProject            @relation(fields: [storyProjectId, workspaceId], references: [id, workspaceId], onDelete: Restrict)
+  activeWriteState StoryProjectWriteState? @relation("StoryProjectActiveAgentRun")
+  revertsRun       StoryAgentRun?          @relation("StoryAgentRunUndo", fields: [revertsRunId], references: [id], onDelete: Restrict)
+  undoRuns         StoryAgentRun[]         @relation("StoryAgentRunUndo")
+
+  @@unique([id, storyProjectId], map: "story_agent_runs_id_project_unique")
+  @@index([storyProjectId, status, createdAt(sort: Desc)], map: "story_agent_runs_project_status_recent_idx")
+  @@index([storyProjectId, kind, status, resultDraftRevision, resultLayoutRevision, completedAt(sort: Desc), id(sort: Desc)], map: "story_agent_runs_undo_head_idx")
+  @@index([status, expiresAt, id], map: "story_agent_runs_proposal_expiry_idx")
+  @@index([initiatedByUserId, createdAt(sort: Desc)], map: "story_agent_runs_initiator_recent_idx")
+  @@index([revertsRunId], map: "story_agent_runs_reverts_idx")
+  @@map("story_agent_runs")
 }
 
 model StoryVideoUploadSession {
@@ -6615,11 +6731,12 @@ model StoryBuild {
   createdAt            DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt            DateTime         @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  project               StoryProject                @relation(fields: [storyProjectId], references: [id], onDelete: Restrict)
-  sourceRevision        StoryRevision               @relation(fields: [sourceRevisionId, storyProjectId], references: [id, storyProjectId], onDelete: Restrict)
-  assets                StoryBuildAsset[]
-  videoClips            StoryVideoBuildClip[]
-  experiencePublication StoryExperiencePublication?
+  project                StoryProject                 @relation(fields: [storyProjectId], references: [id], onDelete: Restrict)
+  sourceRevision         StoryRevision                @relation(fields: [sourceRevisionId, storyProjectId], references: [id, storyProjectId], onDelete: Restrict)
+  assets                 StoryBuildAsset[]
+  videoClips             StoryVideoBuildClip[]
+  experiencePublication  StoryExperiencePublication?
+  experienceDraftRelease StoryExperienceDraftRelease?
 
   @@unique([storyProjectId, buildNumber], map: "story_builds_project_number_unique")
   @@unique([id, storyProjectId], map: "story_builds_id_project_unique")
@@ -6698,6 +6815,52 @@ model StoryExperiencePublication {
   @@index([status, nextReconciliationAt, reconciliationLeaseExpiresAt], map: "story_experience_publications_reconcile_retry_idx")
   @@index([gameId, authorityIsCurrent, authorityCheckedAt(sort: Desc)], map: "story_experience_publications_authority_current_idx")
   @@map("story_experience_publications")
+}
+
+/// Durable exact-request receipt for a creator-only Java draft release.
+/// Drafts deliberately do not grant anonymous media access and never enter the
+/// public current-version reconciliation plane. An uncertain request is
+/// reconciled only by replaying the same immutable request under a fresh
+/// creator credential; `(gameId, contentVersion, draft)` is the Java
+/// idempotency identity.
+model StoryExperienceDraftRelease {
+  id                String                           @id @default(uuid(7)) @db.Uuid
+  buildId           String                           @unique @map("build_id") @db.Uuid
+  storyProjectId    String                           @map("story_project_id") @db.Uuid
+  gameId            String                           @map("game_id") @db.VarChar(160)
+  contentVersion    String                           @map("content_version") @db.VarChar(160)
+  requestHash       String                           @map("request_hash") @db.VarChar(64)
+  status            StoryExperiencePublicationStatus @default(pending)
+  requestedByUserId String                           @map("requested_by_user_id") @db.VarChar(64)
+
+  manifestUrl String?   @map("manifest_url") @db.Text
+  confirmedAt DateTime? @map("confirmed_at") @db.Timestamptz(6)
+  rejectedAt  DateTime? @map("rejected_at") @db.Timestamptz(6)
+
+  attemptCount          Int       @default(0) @map("attempt_count")
+  firstAttemptAt        DateTime? @map("first_attempt_at") @db.Timestamptz(6)
+  lastAttemptAt         DateTime? @map("last_attempt_at") @db.Timestamptz(6)
+  nextAttemptAt         DateTime? @map("next_attempt_at") @db.Timestamptz(6)
+  lastAttemptedByUserId String?   @map("last_attempted_by_user_id") @db.VarChar(64)
+  leaseOwner            String?   @map("lease_owner") @db.VarChar(160)
+  leaseAcquiredAt       DateTime? @map("lease_acquired_at") @db.Timestamptz(6)
+  leaseExpiresAt        DateTime? @map("lease_expires_at") @db.Timestamptz(6)
+  lastErrorCode         String?   @map("last_error_code") @db.VarChar(128)
+  lastErrorDetail       String?   @map("last_error_detail") @db.Text
+  lastErrorAt           DateTime? @map("last_error_at") @db.Timestamptz(6)
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  build   StoryBuild   @relation(fields: [buildId, storyProjectId], references: [id, storyProjectId], onDelete: Restrict)
+  project StoryProject @relation(fields: [storyProjectId], references: [id], onDelete: Restrict)
+
+  @@unique([buildId, storyProjectId], map: "story_experience_draft_releases_build_scope_unique")
+  @@unique([gameId, contentVersion], map: "story_experience_draft_releases_game_version_unique")
+  @@index([storyProjectId, status, createdAt(sort: Desc)], map: "story_experience_draft_releases_project_recent_idx")
+  @@index([storyProjectId, status, leaseExpiresAt], map: "story_experience_draft_releases_project_lease_idx")
+  @@index([status, nextAttemptAt, leaseExpiresAt], map: "story_experience_draft_releases_retry_idx")
+  @@map("story_experience_draft_releases")
 }
 
 model StoryBuildAsset {
@@ -7005,4 +7168,165 @@ model AppRelease {
   @@unique([platform, versionCode], map: "app_releases_platform_version_uq")
   @@index([platform, active, versionCode], map: "app_releases_platform_latest_idx")
   @@map("app_releases")
+}
+
+// ─────────────────────────────────────────────────────────────
+// Copilot canonical conversation store (src/copilot/)
+// ─────────────────────────────────────────────────────────────
+
+enum CopilotConversationStatus {
+  ready
+  streaming
+  failed
+  aborted
+  limit_exceeded
+}
+
+enum CopilotConversationMode {
+  canvas
+  story_canvas @map("story-canvas")
+}
+
+enum CopilotMessageRole {
+  user
+  assistant
+}
+
+enum CopilotTurnKind {
+  user
+  tool_continuation
+}
+
+enum CopilotQuotaChargeStatus {
+  consume_pending
+  charged
+  refund_pending
+  refunded
+  settle_pending
+  settled
+}
+
+/// Durable, server-authoritative metadata for one user's fixed project
+/// conversation. PostgreSQL is the sole authority for both the transcript and
+/// the short-lived fenced cross-pod admission lease.
+model CopilotConversation {
+  id                        String                    @id @default(uuid(7)) @db.Uuid
+  userId                    String                    @map("user_id") @db.VarChar(64)
+  conversationId            String                    @map("conversation_id") @db.VarChar(180)
+  projectId                 String                    @map("project_id") @db.Uuid
+  mode                      CopilotConversationMode
+  selectedSkillKeys         Json                      @default("[]") @map("selected_skill_keys") @db.JsonB
+  sessionId                 String                    @default(uuid(7)) @map("session_id") @db.Uuid
+  billingOperationId        String                    @map("billing_operation_id") @db.Uuid
+  billingChargeAttemptId    String                    @map("billing_charge_attempt_id") @db.Uuid
+  revision                  Int                       @default(0)
+  status                    CopilotConversationStatus @default(ready)
+  messageCount              Int                       @default(0) @map("message_count")
+  messageBytes              Int                       @default(0) @map("message_bytes")
+  activeTurnId              String?                   @map("active_turn_id") @db.Uuid
+  activeTurnKind            CopilotTurnKind?          @map("active_turn_kind")
+  activeClaimToken          String?                   @map("active_claim_token") @db.Uuid
+  activeRevision            Int?                      @map("active_revision")
+  activeUserMessageId       String?                   @map("active_user_message_id") @db.VarChar(128)
+  activeAdmissionToken      String?                   @map("active_admission_token") @db.Uuid
+  activeAdmissionRevision   Int?                      @map("active_admission_revision")
+  activeStartedAt           DateTime?                 @map("active_started_at") @db.Timestamptz(6)
+  activeExpiresAt           DateTime?                 @map("active_expires_at") @db.Timestamptz(6)
+  turnProposalUserMessageId String?                   @map("turn_proposal_user_message_id") @db.VarChar(128)
+  turnProposal              Json?                     @map("turn_proposal") @db.JsonB
+  createdAt                 DateTime                  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt                 DateTime                  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  messages             CopilotMessage[]
+  billingChargeAttempt CopilotQuotaChargeAttempt @relation(fields: [billingChargeAttemptId, billingOperationId, userId, conversationId, sessionId], references: [id, billingOperationId, userId, conversationId, sessionId], onDelete: Restrict)
+
+  @@unique([userId, conversationId], map: "copilot_conversations_user_conversation_unique")
+  @@unique([sessionId], map: "copilot_conversations_session_unique")
+  @@unique([billingChargeAttemptId, billingOperationId, userId, conversationId, sessionId], map: "copilot_conversations_charge_attempt_scope_unique")
+  @@index([userId, updatedAt(sort: Desc), id(sort: Desc)], map: "copilot_conversations_user_updated_idx")
+  @@map("copilot_conversations")
+}
+
+/// Durable quota transaction coordinator for one physical charge attempt.
+/// A logical billing operation may have several generations after explicit
+/// failed-attempt refunds. Redis idempotency is scoped to this row id, so a
+/// late refund can never reverse a newer retry's charge.
+model CopilotQuotaChargeAttempt {
+  id                  String                   @id @db.Uuid
+  billingOperationId  String                   @map("billing_operation_id") @db.Uuid
+  generation          Int
+  userId              String                   @map("user_id") @db.VarChar(64)
+  conversationId      String                   @map("conversation_id") @db.VarChar(180)
+  sessionId           String                   @map("session_id") @db.Uuid
+  ownerTurnId         String                   @map("owner_turn_id") @db.Uuid
+  /// Exact UTC counter windows used by the Redis debit. Refunds must target
+  /// these persisted buckets instead of whatever day/month the worker runs in.
+  dayBucket           String                   @map("day_bucket") @db.VarChar(10)
+  monthBucket         String                   @map("month_bucket") @db.VarChar(7)
+  tier                String?                  @db.VarChar(16)
+  status              CopilotQuotaChargeStatus @default(consume_pending)
+  refundReason        String?                  @map("refund_reason") @db.VarChar(16)
+  clientToolExpiresAt DateTime?                @map("client_tool_expires_at") @db.Timestamptz(6)
+  redisFinalizedAt    DateTime?                @map("redis_finalized_at") @db.Timestamptz(6)
+  createdAt           DateTime                 @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt           DateTime                 @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  currentConversation CopilotConversation?
+
+  @@unique([billingOperationId, generation], map: "copilot_quota_charge_attempts_operation_generation_unique")
+  @@unique([id, billingOperationId, userId, conversationId, sessionId], map: "copilot_quota_charge_attempts_canonical_identity_unique")
+  @@index([status, updatedAt, id], map: "copilot_quota_charge_attempts_reconcile_idx")
+  @@index([status, clientToolExpiresAt, id], map: "copilot_quota_charge_attempts_client_tool_expiry_idx")
+  @@map("copilot_quota_charge_attempts")
+}
+
+/// Canonical UI messages. User rows are immutable; only the current assistant
+/// tail may be monotonically completed/replaced by a fenced client-tool
+/// continuation. Ordinal and message identity stay stable, and reset cascades.
+model CopilotMessage {
+  id             String             @id @default(uuid(7)) @db.Uuid
+  conversationId String             @map("conversation_id") @db.Uuid
+  ordinal        Int
+  messageId      String             @map("message_id") @db.VarChar(128)
+  role           CopilotMessageRole
+  payload        Json               @db.JsonB
+  byteSize       Int                @map("byte_size")
+  createdAt      DateTime           @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  conversation CopilotConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  @@unique([conversationId, ordinal], map: "copilot_messages_conversation_ordinal_unique")
+  @@unique([conversationId, messageId], map: "copilot_messages_conversation_message_unique")
+  @@map("copilot_messages")
+}
+
+/// One extracted document (script/outline) uploaded into a Copilot
+/// conversation. Append-only: the text is extracted exactly once at upload and
+/// referenced by message parts and authoring runs; rows are never mutated.
+model CopilotDocument {
+  id             String   @id @default(uuid(7)) @db.Uuid
+  userId         String   @map("user_id") @db.VarChar(64)
+  conversationId String   @map("conversation_id") @db.VarChar(180)
+  name           String   @db.VarChar(255)
+  mediaType      String   @map("media_type") @db.VarChar(128)
+  sizeBytes      Int      @map("size_bytes")
+  charCount      Int      @map("char_count")
+  text           String   @db.Text
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@index([userId, conversationId, createdAt(sort: Desc), id(sort: Desc)], map: "copilot_documents_user_conversation_idx")
+  @@map("copilot_documents")
+}
+
+/// PostgreSQL-authoritative one-paid-stream-per-user lease. A released row is
+/// retained so fencingRevision never moves backwards for that user.
+model CopilotUserStreamState {
+  userId          String    @id @map("user_id") @db.VarChar(64)
+  claimToken      String?   @map("claim_token") @db.Uuid
+  conversationId  String?   @map("conversation_id") @db.VarChar(180)
+  leaseExpiresAt  DateTime? @map("lease_expires_at") @db.Timestamptz(6)
+  fencingRevision Int       @default(0) @map("fencing_revision")
+  updatedAt       DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@map("copilot_user_stream_states")
 }

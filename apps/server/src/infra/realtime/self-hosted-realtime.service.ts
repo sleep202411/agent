@@ -27,6 +27,7 @@ import {
   entitlementWorkspaceChannel,
   entityUserGroup,
   projectWorkspaceChannel,
+  storyProjectChannel,
   teamWorkspaceChannel,
   walletWorkspaceChannel,
 } from './realtime-groups';
@@ -64,6 +65,7 @@ export class SelfHostedRealtimeService implements RealtimeProvider {
   async issueRealtimeClientAccess(
     userId: string,
     workspaceId?: string,
+    storyProjectId?: string,
   ): Promise<RealtimeClientAccess | null> {
     // Always the user's own asset stream (jobs + media — the superset); plus the
     // active workspace's channels (wallet, …) when a workspace is in context.
@@ -76,6 +78,7 @@ export class SelfHostedRealtimeService implements RealtimeProvider {
         projectWorkspaceChannel(workspaceId),
       );
     }
+    if (storyProjectId) groups.push(storyProjectChannel(storyProjectId));
     return this.issue(userId, groups);
   }
 

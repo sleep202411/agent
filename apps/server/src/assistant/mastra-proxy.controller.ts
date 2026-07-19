@@ -32,6 +32,7 @@ import { mastraFetch } from './mastra-fetch';
 import { AgentStateService } from './chat/agent-state.service';
 import { EntityEventsService } from './chat/entity-events.service';
 import { describeUnknown, scalarString } from '../common/values';
+import { EntitlementService } from '../entitlements';
 
 type MastraChatBody = {
   projectId?: string;
@@ -74,6 +75,7 @@ export class MastraProxyController {
     private readonly agentStream: AgentStreamService,
     private readonly agentState: AgentStateService,
     private readonly entityEvents: EntityEventsService,
+    private readonly entitlements: EntitlementService,
   ) {}
 
   private get mastraUrl() {
@@ -171,7 +173,7 @@ export class MastraProxyController {
         body.workspaceContext.targetEpisodeCount > 0
           ? body.workspaceContext.targetEpisodeCount
           : undefined,
-      userTier: user.userLevel ?? 'free',
+      userTier: await this.entitlements.quotaTierForUser(user),
     };
 
     // Extract attachment text server-side, strip file parts. See
@@ -710,7 +712,7 @@ export class MastraProxyController {
       stylePainting: confirmProjectParams.stylePainting,
       shotsPerEpisode: confirmProjectParams.shotsPerEpisode,
       targetEpisodeCount: confirmProjectParams.targetEpisodeCount,
-      userTier: user.userLevel ?? 'free',
+      userTier: await this.entitlements.quotaTierForUser(user),
     };
     const agentHeaders: Record<string, string> = {
       'Content-Type': 'application/json',

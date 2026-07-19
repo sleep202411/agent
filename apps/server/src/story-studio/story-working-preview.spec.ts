@@ -86,7 +86,8 @@ function currentPreviewSelections(draft: Draft) {
         height: 1080,
         durationSeconds: 15,
         durationMs: 15_000,
-        hasAudio: true,
+        // Nullable on the real variant row; tests null it to model unprobed.
+        hasAudio: true as boolean | null,
         sizeBytes: BigInt(1_000 + index),
         metadata: { browserSafeMp4: true },
         createdAt: new Date(),
@@ -107,7 +108,8 @@ function currentPreviewSelections(draft: Draft) {
         currentWidth: 1920,
         currentHeight: 1080,
         currentHasAudio: true,
-        currentBrowserSafeMp4: true,
+        // Boolean? in the schema; tests null it for pre-cutover selections.
+        currentBrowserSafeMp4: true as boolean | null,
         version: index + 3,
         setByUserId: USER.userId,
         setAt: new Date(),

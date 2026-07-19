@@ -65,6 +65,7 @@ import {
   StoryPermissionService,
   type StoryCapability as PermissionCapability,
 } from './story-permission.service';
+import { StoryProjectWriteGuardService } from './story-project-write-guard.service';
 
 const PROJECT_NOT_FOUND = {
   code: 'STORY_PROJECT_NOT_FOUND',
@@ -183,6 +184,7 @@ export class StoryProjectsService {
     private readonly prisma: PrismaService,
     private readonly permissions: StoryPermissionService,
     private readonly workspacePermissions: WorkspacePermissionService,
+    private readonly writeGuard: StoryProjectWriteGuardService,
   ) {}
 
   async create(
@@ -234,6 +236,7 @@ export class StoryProjectsService {
             updatedByUserId: user.userId,
           },
         },
+        writeState: { create: {} },
       },
       include: {
         ...PROJECT_SUMMARY_INCLUDE,
@@ -349,30 +352,33 @@ export class StoryProjectsService {
   ): Promise<StoryProjectSummaryDto> {
     await this.requireScopedProject(user, workspaceId, projectId, 'story.edit');
 
-    const updated = await this.prisma.storyProject.updateMany({
-      where: {
-        id: projectId,
-        workspaceId,
-        status: StoryProjectStatus.active,
-        version: input.expectedProjectVersion,
-      },
-      data: {
-        ...(input.title !== undefined ? { title: input.title } : {}),
-        ...(input.summary !== undefined ? { summary: input.summary } : {}),
-        ...(input.coverAssetId !== undefined
-          ? { coverAssetId: input.coverAssetId }
-          : {}),
-        ...(input.defaultLocale !== undefined
-          ? { defaultLocale: input.defaultLocale }
-          : {}),
-        ...(input.visibility !== undefined
-          ? { visibility: input.visibility }
-          : {}),
-        ...(input.tags !== undefined
-          ? { tags: input.tags as Prisma.InputJsonArray }
-          : {}),
-        version: { increment: 1 },
-      },
+    const updated = await this.prisma.$transaction(async (tx) => {
+      await this.writeGuard.assertHumanWriteAllowed(tx, projectId);
+      return tx.storyProject.updateMany({
+        where: {
+          id: projectId,
+          workspaceId,
+          status: StoryProjectStatus.active,
+          version: input.expectedProjectVersion,
+        },
+        data: {
+          ...(input.title !== undefined ? { title: input.title } : {}),
+          ...(input.summary !== undefined ? { summary: input.summary } : {}),
+          ...(input.coverAssetId !== undefined
+            ? { coverAssetId: input.coverAssetId }
+            : {}),
+          ...(input.defaultLocale !== undefined
+            ? { defaultLocale: input.defaultLocale }
+            : {}),
+          ...(input.visibility !== undefined
+            ? { visibility: input.visibility }
+            : {}),
+          ...(input.tags !== undefined
+            ? { tags: input.tags as Prisma.InputJsonArray }
+            : {}),
+          version: { increment: 1 },
+        },
+      });
     });
     if (updated.count !== 1) {
       await this.throwProjectVersionConflict(
@@ -398,18 +404,21 @@ export class StoryProjectsService {
       projectId,
       'story.admin',
     );
-    const updated = await this.prisma.storyProject.updateMany({
-      where: {
-        id: projectId,
-        workspaceId,
-        status: StoryProjectStatus.active,
-        version: input.expectedProjectVersion,
-      },
-      data: {
-        status: StoryProjectStatus.archived,
-        archivedAt: new Date(),
-        version: { increment: 1 },
-      },
+    const updated = await this.prisma.$transaction(async (tx) => {
+      await this.writeGuard.assertHumanWriteAllowed(tx, projectId);
+      return tx.storyProject.updateMany({
+        where: {
+          id: projectId,
+          workspaceId,
+          status: StoryProjectStatus.active,
+          version: input.expectedProjectVersion,
+        },
+        data: {
+          status: StoryProjectStatus.archived,
+          archivedAt: new Date(),
+          version: { increment: 1 },
+        },
+      });
     });
     if (updated.count !== 1) {
       await this.throwProjectVersionConflict(
@@ -459,6 +468,7 @@ export class StoryProjectsService {
     const contentHash = canonicalJsonHash(input.content);
 
     const saved = await this.prisma.$transaction(async (tx) => {
+      await this.writeGuard.assertHumanWriteAllowed(tx, projectId);
       const current = await tx.storyDraft.findUnique({
         where: { storyProjectId: projectId },
       });
@@ -546,6 +556,7 @@ export class StoryProjectsService {
     await this.requireScopedProject(user, workspaceId, projectId, 'story.edit');
 
     const layout = await this.prisma.$transaction(async (tx) => {
+      await this.writeGuard.assertHumanWriteAllowed(tx, projectId);
       const claimed = await tx.storyCanvasLayout.updateMany({
         where: {
           storyProjectId: projectId,
@@ -667,6 +678,7 @@ export class StoryProjectsService {
       try {
         const result = await this.prisma.$transaction(
           async (tx) => {
+            await this.writeGuard.assertHumanWriteAllowed(tx, projectId);
             const draft = await tx.storyDraft.findUnique({
               where: { storyProjectId: projectId },
             });

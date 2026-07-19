@@ -279,7 +279,6 @@ export class ChatEventsGateway
         userId: 'dev',
         userName: 'dev',
         nickName: 'Developer',
-        userLevel: 'VIP3' as const,
       };
     }
     if (!cookie) return null;

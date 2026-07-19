@@ -6,25 +6,25 @@
  * and both INCR to 6. The consume.lua script collapses the whole
  * sequence into one atomic Redis op (single round-trip via EVALSHA).
  *
- * Fail-open on Redis outage: a missed quota for 30 seconds is much
- * better than every paid feature going dark. Errors here are logged
- * + the call returns `ok:true` with a sentinel `used=NaN`, and the
- * audit log (QuotaUsageLogService) still records the event so reality
- * can be reconciled from PG later. The cost ceiling is still bounded
- * by BullMQ concurrency (per IMAGE_WORKER_CONCURRENCY), not Redis.
+ * Failure policy is explicit at the domain boundary. General callers default
+ * to fail-open and preserve the durable audit trail; paid state machines pass
+ * `failureMode: 'closed'` and never admit work Redis could not account for.
+ * Both policies use the same bounded strict Redis client, so fail-open changes
+ * the business decision after an error without introducing an offline queue or
+ * a second quota implementation.
  *
  * Dual write: every successful consume / refund mirrors to
  * QuotaUsageLogService for the durable audit ledger. Redis is the
  * hot path; PG is the source of truth for reconciliation, analytics,
  * and admin compensations.
  */
+import { createHash } from 'crypto';
 import { Inject, Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { readFileSync } from 'fs';
 import { join } from 'path';
 import type Redis from 'ioredis';
 import type { QuotaDimension } from '@prisma/client';
 import type { QuotaSnapshotWire, WireLimit } from '@repo/shared';
-import { REDIS } from '../infra/redis/redis.module';
 import { QuotaEventsService } from './quota-events.service';
 import { QuotaUsageLogService } from './quota-usage-log.service';
 import {
@@ -38,14 +38,21 @@ import {
   monthKey,
   nextUtcMidnight,
   nextUtcMinute,
+  utcDayKey,
+  utcMonthKey,
 } from './quota-keys';
-import { TIERS, type Tier, nextTier as nextTierAbove } from './tiers.config';
-import type {
-  ConsumeArgs,
-  ConsumeResult,
-  QuotaPeek,
-  QuotaSnapshot,
-  RefundArgs,
+import { QUOTA_STRICT_REDIS } from './quota-strict-redis';
+import {
+  quotaLimitFor,
+  type ConsumeArgs,
+  type ConsumeResult,
+  type QuotaLimits,
+  type QuotaPeek,
+  type QuotaFailurePolicy,
+  type QuotaPlanProfile,
+  type QuotaSnapshot,
+  type QuotaWindow,
+  type RefundArgs,
 } from './quota.types';
 
 const CONSUME_SCRIPT = readFileSync(
@@ -56,15 +63,20 @@ const REFUND_SCRIPT = readFileSync(
   join(__dirname, 'lua', 'refund.lua'),
   'utf8',
 );
+const RATE_LIMIT_SCRIPT = readFileSync(
+  join(__dirname, 'lua', 'rate-limit.lua'),
+  'utf8',
+);
+const CONSUME_SHA = scriptSha(CONSUME_SCRIPT);
+const REFUND_SHA = scriptSha(REFUND_SCRIPT);
+const RATE_LIMIT_SHA = scriptSha(RATE_LIMIT_SCRIPT);
+const MAX_OPERATION_KEY_BYTES = 512;
 
 @Injectable()
 export class QuotaService implements OnModuleInit {
   private readonly logger = new Logger(QuotaService.name);
-  private consumeSha: string | null = null;
-  private refundSha: string | null = null;
-
   constructor(
-    @Inject(REDIS) private readonly redis: Redis,
+    @Inject(QUOTA_STRICT_REDIS) private readonly strictRedis: Redis,
     private readonly auditLog: QuotaUsageLogService,
     private readonly events: QuotaEventsService,
   ) {}
@@ -94,22 +106,20 @@ export class QuotaService implements OnModuleInit {
 
   async onModuleInit() {
     // SCRIPT LOAD up front so the hot path can EVALSHA without
-    // ever paying the script-upload latency. NOSCRIPT mid-flight is
-    // handled by ioredis transparently (it re-uploads on demand).
+    // paying the script-upload latency. This is only an optimization:
+    // executeScript performs a content-addressed EVAL on NOSCRIPT, so a
+    // Redis restart cannot leave quota admission permanently degraded.
     try {
-      this.consumeSha = (await this.redis.script(
-        'LOAD',
-        CONSUME_SCRIPT,
-      )) as string;
-      this.refundSha = (await this.redis.script(
-        'LOAD',
-        REFUND_SCRIPT,
-      )) as string;
+      await Promise.all([
+        this.strictRedis.script('LOAD', CONSUME_SCRIPT),
+        this.strictRedis.script('LOAD', REFUND_SCRIPT),
+        this.strictRedis.script('LOAD', RATE_LIMIT_SCRIPT),
+      ]);
       this.logger.log('quota Lua scripts loaded');
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       this.logger.warn(
-        `quota Lua SCRIPT LOAD failed: ${msg} — fail-open path will run`,
+        `quota Lua SCRIPT LOAD failed: ${msg} — requests will lazy-load after Redis recovers`,
       );
     }
   }
@@ -117,26 +127,35 @@ export class QuotaService implements OnModuleInit {
   // ─── consume ────────────────────────────────────────────────────
 
   async consume(args: ConsumeArgs): Promise<ConsumeResult> {
-    const { userId, tier, dimension, reason, metadata } = args;
+    const { userId, profile, dimension, reason, metadata } = args;
+    assertOperationKey(args.idempotencyKey);
+    const scopedIdempotencyKey = args.idempotencyKey
+      ? idemKey(userId, dimension, args.idempotencyKey)
+      : undefined;
     const cost = Math.max(1, Math.floor(args.cost ?? 1));
-    const limits = TIERS[tier];
-    const rawLimit = limits[dimension === 'upload' ? 'uploadMB' : dimension];
+    const rawLimit = quotaLimitFor(profile.limits, dimension);
     const isUnlimited = !Number.isFinite(rawLimit);
     const dayLimit = isUnlimited ? -1 : rawLimit;
+    const idempotencyTtl = resolveIdempotencyTtl(args);
+    const window = resolveQuotaWindow(args.window);
 
-    // Hot path — Redis Lua. Falls back to fail-open on any error.
+    // Hot path — Redis Lua. The caller's declared policy owns failures.
     try {
-      const result = (await this.redis.evalsha(
-        this.consumeSha as string,
+      const command = [
         3,
-        dayKey(userId, dimension),
-        monthKey(userId, dimension),
-        args.idempotencyKey ? idemKey(args.idempotencyKey) : '',
+        dayKey(userId, dimension, window.dayBucket),
+        monthKey(userId, dimension, window.monthBucket),
+        scopedIdempotencyKey ?? '',
         String(cost),
         String(dayLimit),
         String(DAY_TTL_SEC),
         String(MONTH_TTL_SEC),
-        String(args.idempotencyKey ? IDEM_TTL_SEC : 0),
+        String(idempotencyTtl),
+      ] as const;
+      const result = (await this.executeScript(
+        CONSUME_SHA,
+        CONSUME_SCRIPT,
+        command,
       )) as [string, string, string, string];
 
       const [status, usedStr, limitStr, dedupedStr] = result;
@@ -146,6 +165,10 @@ export class QuotaService implements OnModuleInit {
       const deduped = dedupedStr === '1';
 
       if (status === 'exceeded') {
+        const upgrade = profile.upgrade;
+        const upgradeLimit = upgrade
+          ? quotaLimitFor(upgrade.limits, dimension)
+          : null;
         return {
           ok: false,
           reason: 'quota_exceeded',
@@ -153,8 +176,16 @@ export class QuotaService implements OnModuleInit {
           used,
           limit: reportedLimit,
           resetAt: nextUtcMidnight(),
-          nextTier: nextTierAbove(tier),
-          nextTierLimit: this.peekNextTierLimit(tier, dimension),
+          // Upgrade suggestion derives from plan-row rank ordering
+          // (EntitlementService.quotaProfileFor), not a tier ladder.
+          nextTier: upgrade?.tier ?? null,
+          nextPlanKey: upgrade?.planKey ?? null,
+          nextTierLimit:
+            upgradeLimit === null
+              ? null
+              : Number.isFinite(upgradeLimit)
+                ? upgradeLimit
+                : -1,
         };
       }
 
@@ -165,7 +196,7 @@ export class QuotaService implements OnModuleInit {
           dimension,
           cost,
           reason,
-          idempotencyKey: args.idempotencyKey,
+          idempotencyKey: scopedIdempotencyKey,
           // Cast: Prisma's InputJsonValue is structurally narrower
           // than Record<string, unknown> but works for the keys we
           // pass (string-keyed primitives). Worst case JSON-stringify
@@ -176,10 +207,12 @@ export class QuotaService implements OnModuleInit {
         // without waiting for the next GET /aurora/quota. Same
         // fire-and-forget pattern: a Redis hiccup degrades to
         // "badge stale until next manual fetch", not a 500.
-        void this.events.publishUpdate(
-          userId,
-          this.buildSnapshot(dimension, used, rawLimit),
-        );
+        if (window.dayBucket === utcDayKey()) {
+          void this.events.publishUpdate(
+            userId,
+            this.buildSnapshot(dimension, used, rawLimit),
+          );
+        }
       }
 
       return {
@@ -194,6 +227,14 @@ export class QuotaService implements OnModuleInit {
       };
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
+      if (args.failureMode === 'closed') {
+        this.logger.error(
+          `consume(${userId}/${dimension}) Redis Lua failed closed: ${msg}`,
+        );
+        throw err instanceof Error
+          ? err
+          : new Error('Quota Redis consume failed.');
+      }
       this.logger.warn(
         `consume(${userId}/${dimension}) Redis Lua failed → fail-open: ${msg}`,
       );
@@ -203,7 +244,7 @@ export class QuotaService implements OnModuleInit {
         dimension,
         cost,
         reason: `${reason}_failopen`,
-        idempotencyKey: args.idempotencyKey,
+        idempotencyKey: scopedIdempotencyKey,
         metadata: metadata as never,
       });
       return {
@@ -221,18 +262,25 @@ export class QuotaService implements OnModuleInit {
 
   async checkChatRate(
     userId: string,
-    tier: Tier,
+    profile: QuotaPlanProfile,
+    policy: QuotaFailurePolicy = { failureMode: 'open' },
   ): Promise<
     | { ok: true; remaining: number }
     | { ok: false; resetAt: string; limit: number }
   > {
-    const limit = TIERS[tier].chatPerMinute;
+    const limit = profile.limits.chatPerMinute;
     if (limit <= 0) return { ok: true, remaining: 0 };
     try {
       const key = minuteKey(userId);
-      const used = await this.redis.incr(key);
-      if (used === 1) {
-        await this.redis.expire(key, MINUTE_TTL_SEC);
+      const used = Number(
+        await this.executeScript(RATE_LIMIT_SHA, RATE_LIMIT_SCRIPT, [
+          1,
+          key,
+          String(MINUTE_TTL_SEC),
+        ]),
+      );
+      if (!Number.isSafeInteger(used) || used < 1) {
+        throw new Error('Invalid quota rate-limit result.');
       }
       if (used > limit) {
         return { ok: false, resetAt: nextUtcMinute(), limit };
@@ -240,6 +288,12 @@ export class QuotaService implements OnModuleInit {
       return { ok: true, remaining: Math.max(0, limit - used) };
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
+      if (policy.failureMode === 'closed') {
+        this.logger.error(`checkChatRate Redis failed closed: ${msg}`);
+        throw err instanceof Error
+          ? err
+          : new Error('Quota Redis rate admission failed.');
+      }
       this.logger.warn(`checkChatRate Redis failed → fail-open: ${msg}`);
       return { ok: true, remaining: 0 };
     }
@@ -276,57 +330,77 @@ export class QuotaService implements OnModuleInit {
 
   /**
    * Typed refund — caller passes dimension + cost it originally
-   * consumed, plus the user's tier so the WS snapshot pushed to the
-   * client carries the correct limit (not a sentinel).
+   * consumed, plus the subject's resolved limits so the WS snapshot
+   * pushed to the client carries the correct limit (not a sentinel).
    *
    * Idempotent via the Lua refund script: same idempotencyKey can be
    * called multiple times safely (worker terminal-fail + downstream
    * controller throw can both run for the same job and only the first
    * actually decrements the counter).
    *
-   * `tier` is required because the worker / controller knows the
-   * user's tier at the time of the original consume (stored on the
-   * AiJob row, or derived from req.user). Without it, the WS
+   * `limits` comes from the debit receipt (or a fresh entitlement
+   * resolution for background reconcilers). Without it, the WS
    * snapshot would have to ship `"Infinity"` and the client provider
    * would clobber its cached real limit — Free users would see ∞
-   * until the next manual refresh.
+   * until the next manual refresh; the refund itself never depends on it.
    */
   async refundFor(args: {
     userId: string;
-    tier: Tier;
+    limits?: QuotaLimits;
     dimension: QuotaDimension;
     cost: number;
     idempotencyKey: string;
     reason?: string;
+    /** Exact persisted windows used by the original debit. */
+    window?: QuotaWindow;
+    /** Permanent attempt fence: even a missing debit writes FINAL_REFUNDED. */
+    terminalFence?: boolean;
   }): Promise<{ ok: true; status: 'ok' | 'no_idem' | 'already' | 'failed' }> {
+    assertOperationKey(args.idempotencyKey);
+    const scopedIdempotencyKey = idemKey(
+      args.userId,
+      args.dimension,
+      args.idempotencyKey,
+    );
     const cost = Math.max(1, Math.floor(args.cost));
+    const window = resolveQuotaWindow(args.window);
     try {
-      const result = (await this.redis.evalsha(
-        this.refundSha as string,
+      const command = [
         3,
-        dayKey(args.userId, args.dimension),
-        monthKey(args.userId, args.dimension),
-        idemKey(args.idempotencyKey),
+        dayKey(args.userId, args.dimension, window.dayBucket),
+        monthKey(args.userId, args.dimension, window.monthBucket),
+        scopedIdempotencyKey,
         String(cost),
-      )) as [string, string];
-      const [status, dayUsedStr] = result;
+        args.terminalFence ? '1' : '0',
+      ] as const;
+      const result = (await this.executeScript(
+        REFUND_SHA,
+        REFUND_SCRIPT,
+        command,
+      )) as [string, string, string];
+      const [status, dayUsedStr, dayExistedStr] = result;
       if (status === 'ok') {
         this.auditLog.log({
           userId: args.userId,
           dimension: args.dimension,
           cost: -cost,
           reason: args.reason ?? 'refund',
-          idempotencyKey: args.idempotencyKey,
+          idempotencyKey: scopedIdempotencyKey,
         });
-        const used = Number.parseInt(dayUsedStr, 10);
-        const rawLimit =
-          TIERS[args.tier][
-            args.dimension === 'upload' ? 'uploadMB' : args.dimension
-          ];
-        void this.events.publishUpdate(
-          args.userId,
-          this.buildSnapshot(args.dimension, used, rawLimit),
-        );
+        // Never publish an old-window counter as today's snapshot. An expired
+        // day key is intentionally skipped by Lua and likewise emits nothing.
+        if (
+          args.limits &&
+          window.dayBucket === utcDayKey() &&
+          dayExistedStr === '1'
+        ) {
+          const used = Number.parseInt(dayUsedStr, 10);
+          const rawLimit = quotaLimitFor(args.limits, args.dimension);
+          void this.events.publishUpdate(
+            args.userId,
+            this.buildSnapshot(args.dimension, used, rawLimit),
+          );
+        }
       }
       return { ok: true, status: status as 'ok' | 'no_idem' | 'already' };
     } catch (err) {
@@ -336,9 +410,43 @@ export class QuotaService implements OnModuleInit {
     }
   }
 
+  /**
+   * A durable domain keeps its in-flight idempotency key persistent. Once PG
+   * has made success/refund terminal, bound the Redis record again so the hot
+   * ledger cannot grow forever. Missing keys are already finalized.
+   */
+  async finalizeIdempotencyFor(args: {
+    userId: string;
+    dimension: QuotaDimension;
+    idempotencyKey: string;
+    ttlSeconds?: number;
+  }): Promise<{ ok: true; status: 'ok' | 'missing' | 'failed' }> {
+    assertOperationKey(args.idempotencyKey);
+    const ttlSeconds = args.ttlSeconds ?? IDEM_TTL_SEC;
+    if (!Number.isSafeInteger(ttlSeconds) || ttlSeconds < 1) {
+      throw new Error('Invalid quota idempotency finalization TTL.');
+    }
+    const scopedIdempotencyKey = idemKey(
+      args.userId,
+      args.dimension,
+      args.idempotencyKey,
+    );
+    try {
+      const changed = await this.strictRedis.expire(
+        scopedIdempotencyKey,
+        ttlSeconds,
+      );
+      return { ok: true, status: changed === 1 ? 'ok' : 'missing' };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.logger.warn(`quota idempotency finalization failed: ${message}`);
+      return { ok: true, status: 'failed' };
+    }
+  }
+
   // ─── peek ───────────────────────────────────────────────────────
 
-  async peek(userId: string, tier: Tier): Promise<QuotaPeek> {
+  async peek(userId: string, profile: QuotaPlanProfile): Promise<QuotaPeek> {
     const dimensions: QuotaDimension[] = [
       'image',
       'chat',
@@ -349,11 +457,15 @@ export class QuotaService implements OnModuleInit {
     const minuteResetAt = nextUtcMinute();
 
     const used = await this.batchGet(dimensions.map((d) => dayKey(userId, d)));
-    const minuteUsed = await this.batchGet([minuteKey(userId)]);
+    // Direct GET on the exact minute key. batchGet buckets by the
+    // dimension segment ('chat' for the minute key too), which used to
+    // make peek read a nonexistent '_' bucket and always report the
+    // full per-minute limit as remaining.
+    const minuteUsed = await this.getCounter(minuteKey(userId));
 
     const snapshot: Record<QuotaDimension, QuotaSnapshot> = {} as never;
     for (const dim of dimensions) {
-      const rawLimit = TIERS[tier][dim === 'upload' ? 'uploadMB' : dim];
+      const rawLimit = quotaLimitFor(profile.limits, dim);
       const isUnlimited = !Number.isFinite(rawLimit);
       const usedVal = used[dim] ?? 0;
       snapshot[dim] = {
@@ -370,13 +482,13 @@ export class QuotaService implements OnModuleInit {
       };
     }
 
-    const chatMinuteLimit = TIERS[tier].chatPerMinute;
+    const chatMinuteLimit = profile.limits.chatPerMinute;
     return {
-      tier,
+      tier: profile.tier,
       dimensions: snapshot,
       chatPerMinute: {
         limit: chatMinuteLimit,
-        remaining: Math.max(0, chatMinuteLimit - (minuteUsed['_'] ?? 0)),
+        remaining: Math.max(0, chatMinuteLimit - minuteUsed),
         resetAt: minuteResetAt,
       },
     };
@@ -387,7 +499,7 @@ export class QuotaService implements OnModuleInit {
   private async batchGet(keys: string[]): Promise<Record<string, number>> {
     if (keys.length === 0) return {};
     try {
-      const vals = await this.redis.mget(...keys);
+      const vals = await this.strictRedis.mget(...keys);
       const out: Record<string, number> = {};
       for (let i = 0; i < keys.length; i += 1) {
         const k = keys[i];
@@ -401,10 +513,86 @@ export class QuotaService implements OnModuleInit {
     }
   }
 
-  private peekNextTierLimit(current: Tier, dim: QuotaDimension): number | null {
-    const next = nextTierAbove(current);
-    if (!next) return null;
-    const lim = TIERS[next][dim === 'upload' ? 'uploadMB' : dim];
-    return Number.isFinite(lim) ? lim : -1;
+  /** Read a single counter key — observational, degrades to 0 on error. */
+  private async getCounter(key: string): Promise<number> {
+    try {
+      const value = await this.strictRedis.get(key);
+      const parsed = Number.parseInt(value ?? '0', 10);
+      return Number.isFinite(parsed) ? parsed : 0;
+    } catch {
+      return 0;
+    }
   }
+
+  private async executeScript(
+    sha: string,
+    script: string,
+    command: readonly [number, ...Array<string | number>],
+  ): Promise<unknown> {
+    try {
+      return await this.strictRedis.evalsha(sha, ...command);
+    } catch (error) {
+      if (!isNoScriptError(error)) throw error;
+      // EVAL both executes and repopulates Redis' script cache. The SHA is
+      // content-derived, so subsequent calls return to EVALSHA automatically.
+      return this.strictRedis.eval(script, ...command);
+    }
+  }
+}
+
+function assertOperationKey(value: string | undefined): void {
+  if (value === undefined) return;
+  if (
+    value.length === 0 ||
+    Buffer.byteLength(value, 'utf8') > MAX_OPERATION_KEY_BYTES ||
+    containsControlCharacter(value)
+  ) {
+    throw new Error('Invalid quota idempotency operation key.');
+  }
+}
+
+function resolveIdempotencyTtl(args: ConsumeArgs): number {
+  if (!args.idempotencyKey) return 0;
+  if (args.idempotencyTtlSeconds === 'persistent') return -1;
+  const ttl = args.idempotencyTtlSeconds ?? IDEM_TTL_SEC;
+  if (!Number.isSafeInteger(ttl) || ttl < 1) {
+    throw new Error('Invalid quota idempotency TTL.');
+  }
+  return ttl;
+}
+
+function containsControlCharacter(value: string): boolean {
+  for (const character of value) {
+    const codePoint = character.codePointAt(0);
+    if (codePoint !== undefined && (codePoint <= 0x1f || codePoint === 0x7f)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function scriptSha(script: string): string {
+  return createHash('sha1').update(script, 'utf8').digest('hex');
+}
+
+function isNoScriptError(error: unknown): boolean {
+  return (
+    error instanceof Error && /(?:^|\s)NOSCRIPT(?:\s|$)/i.test(error.message)
+  );
+}
+
+function resolveQuotaWindow(window: QuotaWindow | undefined): QuotaWindow {
+  if (!window) {
+    return { dayBucket: utcDayKey(), monthBucket: utcMonthKey() };
+  }
+  if (
+    !/^\d{4}-\d{2}-\d{2}$/.test(window.dayBucket) ||
+    !/^\d{4}-\d{2}$/.test(window.monthBucket) ||
+    window.dayBucket.slice(0, 7) !== window.monthBucket ||
+    new Date(`${window.dayBucket}T00:00:00.000Z`).toISOString().slice(0, 10) !==
+      window.dayBucket
+  ) {
+    throw new Error('Invalid quota UTC window.');
+  }
+  return window;
 }

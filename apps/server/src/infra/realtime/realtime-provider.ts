@@ -35,6 +35,7 @@ export interface RealtimeProvider {
   issueRealtimeClientAccess(
     userId: string,
     workspaceId?: string,
+    storyProjectId?: string,
   ): Promise<RealtimeClientAccess | null>;
   publishEntityToUser(userId: string, payload: unknown): Promise<void>;
   publishAssetEvent(userId: string, event: AssetEvent): Promise<void>;

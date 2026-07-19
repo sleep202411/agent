@@ -10,6 +10,7 @@ import {
   MediaProcessingJobStatus,
   MediaProcessingJobType,
   MediaStorageProvider,
+  type MediaAsset,
 } from '@prisma/client';
 import { MediaProcessingWorkerService } from './media-processing-worker.service';
 
@@ -42,7 +43,9 @@ describe('MediaProcessingWorkerService', () => {
     };
   }
 
-  function mediaAsset() {
+  // Typed against the real Prisma model so kind/provider stay the enum unions
+  // (a bare literal would pin them to the image/azure defaults).
+  function mediaAsset(): MediaAsset {
     return {
       id: '01900000-0000-7000-8000-000000000011',
       kind: MediaAssetKind.image,

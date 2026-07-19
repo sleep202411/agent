@@ -50,6 +50,15 @@ export function projectWorkspaceChannel(workspaceId: string): string {
 }
 
 /**
+ * Story Studio project channel. Story membership can be narrower than the
+ * owning workspace, so Agent proposals and execution state must never ride a
+ * workspace-wide channel.
+ */
+export function storyProjectChannel(storyProjectId: string): string {
+  return `story:project:${storyProjectId}`;
+}
+
+/**
  * Redis channel for cross-pod access revocation. A producer publishes
  * `{channels, userId?}`; every gateway pod closes the live sockets in those
  * channels (filtered to `userId` when present) immediately — so a removed member

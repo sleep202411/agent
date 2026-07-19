@@ -22,6 +22,12 @@ import { QuotaEventsService } from './quota-events.service';
 import { QuotaGuard } from './quota.guard';
 import { QuotaInterceptor } from './quota.interceptor';
 import { QuotaService } from './quota.service';
+import {
+  createStrictQuotaRedis,
+  QUOTA_STRICT_REDIS,
+  requireQuotaRedisUrl,
+  StrictQuotaRedisLifecycle,
+} from './quota-strict-redis';
 import { QuotaUsageLogService } from './quota-usage-log.service';
 
 /**
@@ -47,6 +53,17 @@ import { QuotaUsageLogService } from './quota-usage-log.service';
 @Module({
   imports: [AuthModule],
   providers: [
+    {
+      provide: QUOTA_STRICT_REDIS,
+      useFactory: () =>
+        createStrictQuotaRedis(requireQuotaRedisUrl(process.env)),
+    },
+    {
+      provide: 'QUOTA_STRICT_REDIS_LIFECYCLE',
+      useFactory: (client: import('ioredis').default) =>
+        new StrictQuotaRedisLifecycle(client),
+      inject: [QUOTA_STRICT_REDIS],
+    },
     QuotaUsageLogService,
     QuotaEventsService,
     QuotaEventsGateway,

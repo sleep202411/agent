@@ -121,6 +121,109 @@ describe('canonical Story video snapshot', () => {
 });
 
 describe('Story video selection concurrency', () => {
+  it('rejects cancellation at the permission boundary before the AI side effect', async () => {
+    const locked = new Error('agent applying');
+    const permissions = { requireProject: jest.fn().mockRejectedValue(locked) };
+    const aiGeneration = { cancelJob: jest.fn() };
+    const service = new StoryVideoProductionService(
+      {} as never,
+      permissions as never,
+      aiGeneration as never,
+      {} as never,
+      {} as never,
+    );
+
+    await expect(
+      service.cancelGeneration(
+        USER as never,
+        WORKSPACE_ID,
+        PROJECT_ID,
+        GENERATION_A_ID,
+        { expectedGenerationVersion: 0 },
+      ),
+    ).rejects.toBe(locked);
+    expect(aiGeneration.cancelJob).not.toHaveBeenCalled();
+  });
+
+  it('rejects cancellation when Agent claims the project after the early permission check', async () => {
+    const agentClaimed = new Error('agent claimed project write state');
+    const tx = { $queryRaw: jest.fn() };
+    const writeGuard = {
+      assertHumanWriteAllowed: jest.fn().mockRejectedValue(agentClaimed),
+    };
+    let canonicalCancellationClaimed = false;
+    const aiGeneration = {
+      cancelJob: jest.fn(
+        async (
+          _user: unknown,
+          aiJobId: string,
+          hooks: {
+            beforeCancel: (
+              transaction: typeof tx,
+              job: { id: string },
+            ) => Promise<void>;
+          },
+        ) => {
+          await hooks.beforeCancel(tx, { id: aiJobId });
+          canonicalCancellationClaimed = true;
+        },
+      ),
+    };
+    const prisma = {
+      storyVideoGenerationAttempt: {
+        findFirst: jest.fn(() => ({
+          id: GENERATION_A_ID,
+          storyProjectId: PROJECT_ID,
+          aiJobId: uuid('71'),
+          version: 3,
+          status: StoryVideoGenerationAttemptStatus.queued,
+        })),
+      },
+    };
+    const service = new StoryVideoProductionService(
+      prisma as never,
+      {
+        requireProject: jest.fn(() => ({
+          project: { workspaceId: WORKSPACE_ID },
+        })),
+      } as never,
+      aiGeneration as never,
+      {} as never,
+      writeGuard as never,
+    );
+
+    await expect(
+      service.cancelGeneration(
+        USER as never,
+        WORKSPACE_ID,
+        PROJECT_ID,
+        GENERATION_A_ID,
+        { expectedGenerationVersion: 3 },
+      ),
+    ).rejects.toBe(agentClaimed);
+
+    expect(writeGuard.assertHumanWriteAllowed).toHaveBeenCalledWith(
+      tx,
+      PROJECT_ID,
+    );
+    expect(tx.$queryRaw).not.toHaveBeenCalled();
+    expect(canonicalCancellationClaimed).toBe(false);
+  });
+
+  it('takes the project write fence before changing a manual selection', async () => {
+    const video = readyVideo('10', '11', 'a');
+    const harness = productionHarness([], [video]);
+    const locked = new Error('agent applying');
+    harness.writeGuard.assertHumanWriteAllowed.mockRejectedValueOnce(locked);
+
+    await expect(harness.putManual(video)).rejects.toBe(locked);
+    expect(harness.writeGuard.assertHumanWriteAllowed).toHaveBeenCalledWith(
+      harness.transaction,
+      PROJECT_ID,
+    );
+    expect(harness.selection.version).toBe(0);
+  });
+
   it('lets the latest generation intent win and supersedes stale completion', async () => {
     const videoA = readyVideo('20', '21', 'a');
     const videoB = readyVideo('30', '31', 'b');
@@ -147,6 +250,64 @@ describe('Story video selection concurrency', () => {
     );
     expect(harness.attempt(GENERATION_A_ID).status).toBe(
       StoryVideoGenerationAttemptStatus.superseded,
+    );
+  });
+
+  it('defers when Agent claims the project after a completed generation was read', async () => {
+    const video = readyVideo('22', '23', 'b');
+    const generation = completedGeneration(GENERATION_A_ID, 1, video, 1);
+    const harness = productionHarness([generation], [video], 1);
+    harness.writeGuard.tryAcquireDeferredWriteFence.mockResolvedValueOnce(
+      false,
+    );
+
+    await expect(harness.finalize(generation)).resolves.toMatchObject({
+      status: StoryVideoGenerationAttemptStatus.processing,
+    });
+    expect(
+      harness.writeGuard.tryAcquireDeferredWriteFence,
+    ).toHaveBeenCalledWith(harness.transaction, PROJECT_ID);
+    expect(harness.transaction.$executeRaw).not.toHaveBeenCalled();
+    expect(
+      harness.transaction.storyVideoSelection.updateMany,
+    ).not.toHaveBeenCalled();
+    expect(
+      harness.transaction.storyVideoGenerationAttempt.update,
+    ).not.toHaveBeenCalled();
+    expect(harness.selection).toMatchObject({
+      currentAssetId: null,
+      currentVariantId: null,
+      currentSourceGenerationAttemptId: null,
+      version: 1,
+    });
+    expect(harness.attempt(GENERATION_A_ID)).toMatchObject({
+      status: StoryVideoGenerationAttemptStatus.processing,
+      version: 0,
+    });
+  });
+
+  it('holds the project write fence before normal completion mutates the selection', async () => {
+    const video = readyVideo('24', '25', 'c');
+    const generation = completedGeneration(GENERATION_A_ID, 1, video, 1);
+    const harness = productionHarness([generation], [video], 1);
+
+    await expect(harness.finalize(generation)).resolves.toMatchObject({
+      status: StoryVideoGenerationAttemptStatus.ready,
+    });
+
+    const fenceOrder =
+      harness.writeGuard.tryAcquireDeferredWriteFence.mock
+        .invocationCallOrder[0];
+    const selectionLockOrder =
+      harness.transaction.$executeRaw.mock.invocationCallOrder[0];
+    const selectionWriteOrder =
+      harness.transaction.storyVideoSelection.updateMany.mock
+        .invocationCallOrder[0];
+    expect(fenceOrder).toBeLessThan(selectionLockOrder);
+    expect(selectionLockOrder).toBeLessThan(selectionWriteOrder);
+    expect(harness.selection.currentAssetId).toBe(video.id);
+    expect(harness.attempt(GENERATION_A_ID).status).toBe(
+      StoryVideoGenerationAttemptStatus.ready,
     );
   });
 
@@ -195,6 +356,11 @@ type Generation = ReturnType<typeof completedGeneration>;
 
 function readyVideo(assetSuffix: string, variantSuffix: string, hash: string) {
   const assetId = uuid(assetSuffix);
+  // Probe metadata is an optional JSON field on the real variant row; keep it
+  // wide so tests can model unprobed ({}) and unsafe variants.
+  const probedMetadata: { videoProbe?: { browserSafeMp4: boolean } } = {
+    videoProbe: { browserSafeMp4: true },
+  };
   return {
     id: assetId,
     workspaceId: WORKSPACE_ID,
@@ -228,7 +394,7 @@ function readyVideo(assetSuffix: string, variantSuffix: string, hash: string) {
         durationMs: 10_375,
         hasAudio: true,
         checksumSha256: hash.repeat(64),
-        metadata: { videoProbe: { browserSafeMp4: true } },
+        metadata: probedMetadata,
         deletedAt: null,
         placements: [],
       },
@@ -389,11 +555,16 @@ function productionHarness(
         callback(transaction),
     ),
   };
+  const writeGuard = {
+    assertHumanWriteAllowed: jest.fn().mockResolvedValue(undefined),
+    tryAcquireDeferredWriteFence: jest.fn().mockResolvedValue(true),
+  };
   const service = new StoryVideoProductionService(
     prisma as never,
     {} as never,
     {} as never,
     {} as never,
+    writeGuard as never,
   );
   const internals = service as unknown as {
     finalizeCompletedGeneration(
@@ -414,6 +585,8 @@ function productionHarness(
   };
 
   return {
+    transaction,
+    writeGuard,
     selection,
     attempt: (id: string) => {
       const row = attempts.get(id);

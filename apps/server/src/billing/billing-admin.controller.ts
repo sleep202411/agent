@@ -5,6 +5,7 @@ import {
   Param,
   Patch,
   Post,
+  Put,
   Query,
   Req,
   UseGuards,
@@ -53,6 +54,7 @@ import {
   UpdateAdminMembershipPlanSchema,
   UpdateAdminBillingPriceSchema,
   UpdateAdminBillingPromotionSchema,
+  UpdateAdminMembershipPlanBenefitsSchema,
   UpsertAdminBillingProviderBindingSchema,
   UpsertAdminBillingPromotionProviderBindingSchema,
   GenerateVouchersSchema,
@@ -87,6 +89,7 @@ import {
   type ListAdminBillingReconciliationRunsQuery,
   type ListAdminBillingSettlementsQuery,
   type QuoteAdminBillingRefundInput,
+  type UpdateAdminMembershipPlanBenefitsInput,
   type UpdateAdminMembershipPlanInput,
   type UpdateAdminBillingPriceInput,
   type UpdateAdminBillingPromotionInput,
@@ -308,6 +311,44 @@ export class BillingAdminController {
     return { code: 200, data };
   }
 
+  @RequireAdminPermissions(ADMIN_PERMISSION_KEYS.BillingRead)
+  @Get('membership-plans/:planId/benefits')
+  async getMembershipPlanBenefits(
+    @Param(new ZodValidationPipe(BillingMembershipPlanParamsSchema))
+    params: BillingMembershipPlanParams,
+  ) {
+    return {
+      code: 200,
+      data: await this.billing.getAdminMembershipPlanBenefits(params.planId),
+    };
+  }
+
+  @RequireAdminPermissions(ADMIN_PERMISSION_KEYS.BillingWrite)
+  @Put('membership-plans/:planId/benefits')
+  async updateMembershipPlanBenefits(
+    @CurrentAdmin() admin: AdminActor,
+    @Param(new ZodValidationPipe(BillingMembershipPlanParamsSchema))
+    params: BillingMembershipPlanParams,
+    @Body(new ZodValidationPipe(UpdateAdminMembershipPlanBenefitsSchema))
+    body: UpdateAdminMembershipPlanBenefitsInput,
+    @Req() request: Request,
+  ) {
+    const data = await this.billing.updateAdminMembershipPlanBenefits(
+      params.planId,
+      admin.id,
+      body.benefits,
+    );
+    await this.audit(
+      admin,
+      request,
+      'admin.billing.membership_plan.benefits.update',
+      'billing_membership_plan',
+      params.planId,
+      { planKey: data.planKey, benefits: body.benefits },
+    );
+    return { code: 200, data };
+  }
+
   @RequireAdminPermissions(ADMIN_PERMISSION_KEYS.BillingWrite)
   @Post('prices')
   async createPrice(
@@ -461,7 +502,6 @@ export class BillingAdminController {
     );
     return { code: 200, data };
   }
-
 
   // --- Membership grants (admin 手动开会员) --------------------------------
 

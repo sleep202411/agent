@@ -1,7 +1,13 @@
-import type { Tier } from '../quota/tiers.config';
+import type { Tier } from '../quota/quota.types';
 
-export const ENTITLEMENT_POLICY_VERSION = '2026-05-27' as const;
+export const ENTITLEMENT_POLICY_VERSION = '2026-07-19' as const;
 
+/**
+ * Plan ORDERING for gating (`hasPlan`) and as the rank fallback when a
+ * grant references a plan without an active row. Benefits/limits live
+ * exclusively on `billing_membership_plans.benefits` — this table
+ * carries no numbers besides ordering.
+ */
 export const ENTITLEMENT_PLAN_RANK = {
   free: 0,
   basic: 10,
@@ -36,6 +42,8 @@ export interface EntitlementSnapshot {
   };
   planKey: EntitlementPlanKey;
   rank: number;
+  /** Coarse quota-tier label from the plan's benefits. */
+  quotaTier: Tier;
   source: EntitlementSource;
   status: 'active' | 'expired' | 'suspended';
   effectiveAt: string;
@@ -66,12 +74,4 @@ export interface EntitlementSnapshot {
      */
     queuedJobs: number | null;
   };
-}
-
-export interface EntitlementPlanConfig {
-  planKey: EntitlementPlanKey;
-  queuePriority: number;
-  quotaTier: Tier;
-  features: EntitlementSnapshot['features'];
-  limits: Omit<EntitlementSnapshot['limits'], 'queuePriority'>;
 }

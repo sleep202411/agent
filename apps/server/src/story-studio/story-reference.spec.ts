@@ -37,6 +37,10 @@ function permissions() {
   };
 }
 
+function writeGuard() {
+  return { assertHumanWriteAllowed: jest.fn().mockResolvedValue(undefined) };
+}
+
 function referenceAsset() {
   return {
     id: ASSET_ID,
@@ -192,6 +196,40 @@ describe('StoryReferenceController', () => {
 });
 
 describe('StoryReferenceService', () => {
+  it('takes the project write fence before mutating reference slots', async () => {
+    const createMany = jest.fn();
+    const tx = {
+      storyReferenceSlot: { createMany },
+    };
+    const prisma = { $transaction: transactionMock(tx) };
+    const locked = new Error('agent applying');
+    const guard = {
+      assertHumanWriteAllowed: jest.fn().mockRejectedValue(locked),
+    };
+    const service = new StoryReferenceService(
+      prisma as never,
+      permissions() as never,
+      guard as never,
+    );
+
+    await expect(
+      service.createSlots(USER as never, WORKSPACE_ID, PROJECT_ID, {
+        slots: [
+          {
+            key: 'CHARACTER_HERO',
+            kind: 'character',
+            label: 'Hero',
+            description: '',
+            required: true,
+            rank: 0,
+          },
+        ],
+      }),
+    ).rejects.toBe(locked);
+    expect(guard.assertHumanWriteAllowed).toHaveBeenCalledWith(tx, PROJECT_ID);
+    expect(createMany).not.toHaveBeenCalled();
+  });
+
   it('creates a candidate only from the exact ready checksummed Workspace variant', async () => {
     const candidate = referenceVersion();
     const createVersion = jest.fn(
@@ -245,6 +283,7 @@ describe('StoryReferenceService', () => {
     const service = new StoryReferenceService(
       prisma as never,
       permissions() as never,
+      writeGuard() as never,
     );
     const input = {
       expectedSlotVersion: 0,
@@ -329,6 +368,7 @@ describe('StoryReferenceService', () => {
     const service = new StoryReferenceService(
       prisma as never,
       permissions() as never,
+      writeGuard() as never,
     );
 
     await expect(
@@ -360,6 +400,7 @@ describe('StoryReferenceService', () => {
     const service = new StoryReferenceService(
       prisma as never,
       permissions() as never,
+      writeGuard() as never,
     );
     const exact = {
       expectedSlotVersion: 0,
@@ -433,6 +474,7 @@ describe('StoryReferenceService', () => {
     const service = new StoryReferenceService(
       prisma as never,
       permissions() as never,
+      writeGuard() as never,
     );
 
     await expect(
@@ -520,6 +562,7 @@ describe('StoryReferenceService', () => {
     const service = new StoryReferenceService(
       prisma as never,
       permissions() as never,
+      writeGuard() as never,
     );
 
     await expect(

@@ -65,6 +65,11 @@ import type { AuthUser } from '../auth';
 import { CURRENT_CELL } from '../common/region';
 import { PrismaService } from '../infra/db/db.module';
 import { EntitlementService } from '../entitlements/entitlement.service';
+import {
+  DEFAULT_FREE_BENEFITS,
+  MembershipBenefitsSchema,
+  type MembershipBenefits,
+} from '../entitlements/membership-benefits';
 import { ReferralsService } from '../referrals/referrals.service';
 import { WalletLedgerService, isGrantBackedCurrencyKind } from '../workspaces';
 import { WorkspacePermissionService } from '../workspaces/workspace-permission.service';
@@ -938,12 +943,78 @@ export class BillingService {
           null,
         featureFlags: (input.featureFlags ?? {}) as Prisma.InputJsonValue,
         limits: (input.limits ?? {}) as Prisma.InputJsonValue,
+        // New plans start from the free baseline until the admin configures
+        // benefits (dedicated benefits endpoint) — never an implicit grant.
+        benefits: (input.benefits ??
+          DEFAULT_FREE_BENEFITS) as Prisma.InputJsonValue,
         marketing: (input.marketing ?? {}) as Prisma.InputJsonValue,
         metadata: (input.metadata ?? {}) as Prisma.InputJsonValue,
         createdById: adminId,
       },
     });
+    this.entitlements.invalidatePlanCache();
     return this.adminMembershipPlanDto(plan, []);
+  }
+
+  async getAdminMembershipPlanBenefits(planId: string) {
+    const plan = await this.prisma.billingMembershipPlan.findUnique({
+      where: { id: planId },
+    });
+    if (!plan) {
+      throw new NotFoundException({
+        code: 'BILLING_MEMBERSHIP_PLAN_NOT_FOUND',
+        msg: 'Membership plan not found.',
+      });
+    }
+    // Return the STORED benefits plus validation issues (if any) so the
+    // admin can repair an invalid row instead of being locked out of it.
+    const parsed = MembershipBenefitsSchema.safeParse(plan.benefits);
+    return {
+      id: plan.id,
+      planKey: plan.planKey,
+      name: plan.name,
+      status: plan.status,
+      benefits: plan.benefits,
+      issues: parsed.success
+        ? null
+        : parsed.error.issues.map(
+            (issue) => `${issue.path.join('.') || '(root)'}: ${issue.message}`,
+          ),
+    };
+  }
+
+  async updateAdminMembershipPlanBenefits(
+    planId: string,
+    adminId: string,
+    benefits: MembershipBenefits,
+  ) {
+    const existing = await this.prisma.billingMembershipPlan.findUnique({
+      where: { id: planId },
+    });
+    if (!existing) {
+      throw new NotFoundException({
+        code: 'BILLING_MEMBERSHIP_PLAN_NOT_FOUND',
+        msg: 'Membership plan not found.',
+      });
+    }
+    const plan = await this.prisma.billingMembershipPlan.update({
+      where: { id: planId },
+      data: {
+        benefits: benefits as Prisma.InputJsonValue,
+        updatedById: adminId,
+      },
+    });
+    // Bust the entitlement plan cache so this pod serves the new numbers
+    // immediately (other pods converge within the 20s cache TTL).
+    this.entitlements.invalidatePlanCache();
+    return {
+      id: plan.id,
+      planKey: plan.planKey,
+      name: plan.name,
+      status: plan.status,
+      benefits: plan.benefits,
+      updatedAt: plan.updatedAt.toISOString(),
+    };
   }
 
   async updateAdminMembershipPlan(
@@ -1029,6 +1100,8 @@ export class BillingService {
         _count: { select: { orders: true, subscriptions: true } },
       },
     });
+    // Status/rank edits change entitlement resolution + upgrade ordering.
+    this.entitlements.invalidatePlanCache();
     return this.adminMembershipPlanDto(plan, prices);
   }
 
@@ -7398,6 +7471,7 @@ export class BillingService {
       billingIntervalDefault: plan.billingIntervalDefault,
       featureFlags: plan.featureFlags,
       limits: plan.limits,
+      benefits: plan.benefits,
       marketing: plan.marketing,
       metadata: plan.metadata,
       createdById: plan.createdById,

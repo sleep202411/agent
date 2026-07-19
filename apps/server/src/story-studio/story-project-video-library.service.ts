@@ -28,6 +28,7 @@ import {
   type StoryProjectVideoUploadFinalizeDto,
 } from './dto';
 import { StoryPermissionService } from './story-permission.service';
+import { StoryProjectWriteGuardService } from './story-project-write-guard.service';
 
 const ORIGINAL_VARIANT_BASE_WHERE = {
   variantKey: 'original',
@@ -75,6 +76,7 @@ export class StoryProjectVideoLibraryService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly permissions: StoryPermissionService,
+    private readonly writeGuard: StoryProjectWriteGuardService,
   ) {}
 
   async list(
@@ -150,7 +152,7 @@ export class StoryProjectVideoLibraryService {
       projectId,
       input.mediaAssetId,
     );
-    session = await this.expireIfNeeded(session);
+    session = await this.expireIfNeeded(session, projectId);
     if (session.status === StoryVideoUploadStatus.issued) {
       throw new ConflictException({
         code: 'STORY_VIDEO_UPLOAD_NOT_CONFIRMED',
@@ -158,22 +160,26 @@ export class StoryProjectVideoLibraryService {
       });
     }
     if (session.status === StoryVideoUploadStatus.confirmed) {
-      await this.prisma.storyVideoUploadSession.updateMany({
-        where: {
-          id: session.id,
-          status: StoryVideoUploadStatus.confirmed,
-        },
-        data: {
-          status: StoryVideoUploadStatus.queued,
-          queuedAt: new Date(),
-          nextAttemptAt: new Date(),
-          reclaimAfter: null,
-          errorCode: null,
-          errorDetail: null,
-        },
-      });
-      session = await this.prisma.storyVideoUploadSession.findUniqueOrThrow({
-        where: { id: session.id },
+      session = await this.prisma.$transaction(async (tx) => {
+        await this.writeGuard.assertHumanWriteAllowed(tx, projectId);
+        await tx.storyVideoUploadSession.updateMany({
+          where: {
+            id: session.id,
+            storyProjectId: projectId,
+            status: StoryVideoUploadStatus.confirmed,
+          },
+          data: {
+            status: StoryVideoUploadStatus.queued,
+            queuedAt: new Date(),
+            nextAttemptAt: new Date(),
+            reclaimAfter: null,
+            errorCode: null,
+            errorDetail: null,
+          },
+        });
+        return tx.storyVideoUploadSession.findUniqueOrThrow({
+          where: { id: session.id },
+        });
       });
     }
     return this.toFinalizeDto(session);
@@ -185,12 +191,13 @@ export class StoryProjectVideoLibraryService {
     projectId: string,
     mediaAssetId: string,
   ): Promise<StoryProjectVideoUploadFinalizeDto> {
-    const session = await this.expireIfNeeded(
+    const session = effectiveUploadSessionForRead(
       await this.requireUploadSession(
         user,
         workspaceId,
         projectId,
         mediaAssetId,
+        'story.read',
       ),
     );
     if (
@@ -231,6 +238,7 @@ export class StoryProjectVideoLibraryService {
     ) {
       const now = new Date();
       session = await this.prisma.$transaction(async (tx) => {
+        await this.writeGuard.assertHumanWriteAllowed(tx, projectId);
         const changed = await tx.storyVideoUploadSession.updateMany({
           where: {
             id: session.id,
@@ -284,11 +292,12 @@ export class StoryProjectVideoLibraryService {
     workspaceId: string,
     projectId: string,
     mediaAssetId: string,
+    capability: 'story.read' | 'story.generate' = 'story.generate',
   ) {
     const access = await this.permissions.requireProject(
       user.userId,
       projectId,
-      'story.generate',
+      capability,
     );
     if (access.project.workspaceId !== workspaceId) throw projectNotFound();
     const session = await this.prisma.storyVideoUploadSession.findUnique({
@@ -307,6 +316,7 @@ export class StoryProjectVideoLibraryService {
 
   private async expireIfNeeded(
     session: StoryVideoUploadSession,
+    projectId: string,
   ): Promise<StoryVideoUploadSession> {
     if (
       session.expiresAt > new Date() ||
@@ -317,6 +327,7 @@ export class StoryProjectVideoLibraryService {
     }
     const now = new Date();
     return this.prisma.$transaction(async (tx) => {
+      await this.writeGuard.assertHumanWriteAllowed(tx, projectId);
       const changed = await tx.storyVideoUploadSession.updateMany({
         where: {
           id: session.id,
@@ -413,6 +424,25 @@ export class StoryProjectVideoLibraryService {
       message: 'Video finalization has not started.',
     });
   }
+}
+
+/** Keep polling read-only; lifecycle persistence belongs to write commands/workers. */
+function effectiveUploadSessionForRead(
+  session: StoryVideoUploadSession,
+): StoryVideoUploadSession {
+  if (
+    session.expiresAt > new Date() ||
+    (session.status !== StoryVideoUploadStatus.issued &&
+      session.status !== StoryVideoUploadStatus.confirmed)
+  ) {
+    return session;
+  }
+  return {
+    ...session,
+    status: StoryVideoUploadStatus.expired,
+    errorCode: 'STORY_VIDEO_UPLOAD_EXPIRED',
+    errorDetail: 'The upload URL expired before finalization.',
+  };
 }
 
 function projectNotFound(): NotFoundException {

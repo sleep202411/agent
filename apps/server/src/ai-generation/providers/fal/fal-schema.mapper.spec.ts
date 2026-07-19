@@ -15,6 +15,15 @@ import {
   TOPAZ_UPSCALE_PRODUCT_PRICING,
 } from '../../../../prisma/seed/ai-catalog/defaults';
 
+// Seed catalog policies are deep-readonly (`as const`) fixtures, while
+// createFalModelConfig accepts mutable AiJsonValue. structuredClone yields a
+// fresh fully-mutable copy at runtime; the mapped type only drops the
+// compile-time readonly markers to match.
+type DeepWritable<T> = { -readonly [K in keyof T]: DeepWritable<T[K]> };
+function writablePolicy<T>(value: T): DeepWritable<T> {
+  return structuredClone(value) as DeepWritable<T>;
+}
+
 // Shared queue/billing scaffolding so each case only states what it varies.
 const baseArgs = {
   requiredPlan: null as string | null,
@@ -33,7 +42,7 @@ const upscaleConfig = () =>
     endpointId: 'fal-ai/topaz/upscale/image',
     type: 'image',
     generationModes: ['upscale'],
-    parameterPolicy: TOPAZ_UPSCALE_PARAMETER_POLICY,
+    parameterPolicy: writablePolicy(TOPAZ_UPSCALE_PARAMETER_POLICY),
   });
 
 const textConfig = () =>
@@ -50,7 +59,7 @@ const removeBgConfig = () =>
     endpointId: 'fal-ai/bria/background/remove',
     type: 'image',
     generationModes: ['remove_background'],
-    parameterPolicy: BRIA_RMBG_PARAMETER_POLICY,
+    parameterPolicy: writablePolicy(BRIA_RMBG_PARAMETER_POLICY),
     billing: { productPricing: BRIA_RMBG_PRODUCT_PRICING },
   });
 
@@ -60,7 +69,7 @@ const relightConfig = () =>
     endpointId: 'fal-ai/iclight-v2',
     type: 'image',
     generationModes: ['relight'],
-    parameterPolicy: ICLIGHT_RELIGHT_PARAMETER_POLICY,
+    parameterPolicy: writablePolicy(ICLIGHT_RELIGHT_PARAMETER_POLICY),
     billing: { productPricing: ICLIGHT_RELIGHT_PRODUCT_PRICING },
   });
 
@@ -70,7 +79,7 @@ const multiAngleConfig = () =>
     endpointId: 'fal-ai/qwen-image-edit-2511-multiple-angles',
     type: 'image',
     generationModes: ['multi_angle'],
-    parameterPolicy: QWEN_MULTI_ANGLE_PARAMETER_POLICY,
+    parameterPolicy: writablePolicy(QWEN_MULTI_ANGLE_PARAMETER_POLICY),
     billing: { productPricing: QWEN_MULTI_ANGLE_PRODUCT_PRICING },
   });
 
@@ -80,7 +89,7 @@ const expandConfig = () =>
     endpointId: 'fal-ai/bria/expand',
     type: 'image',
     generationModes: ['outpainting'],
-    parameterPolicy: BRIA_EXPAND_PARAMETER_POLICY,
+    parameterPolicy: writablePolicy(BRIA_EXPAND_PARAMETER_POLICY),
     billing: { productPricing: BRIA_EXPAND_PRODUCT_PRICING },
   });
 
@@ -91,7 +100,7 @@ const klingMotionConfig = () =>
     type: 'video',
     queueName: 'ai-video-generation',
     generationModes: ['image_to_video'],
-    parameterPolicy: KLING_MOTION_PARAMETER_POLICY,
+    parameterPolicy: writablePolicy(KLING_MOTION_PARAMETER_POLICY),
     billing: { productPricing: KLING_MOTION_PRODUCT_PRICING },
   });
 

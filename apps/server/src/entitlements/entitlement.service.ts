@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import {
   BillingMembershipPlanStatus,
   BillingSubjectType,
@@ -13,218 +13,58 @@ import { PrismaService } from '../infra/db/db.module';
 import {
   ENTITLEMENT_PLAN_RANK,
   ENTITLEMENT_POLICY_VERSION,
-  type EntitlementPlanConfig,
   type EntitlementPlanKey,
   type EntitlementSnapshot,
+  type EntitlementSource,
   type KnownEntitlementPlanKey,
 } from './entitlement.types';
+import {
+  DEFAULT_FREE_BENEFITS,
+  benefitsToQuotaLimits,
+  benefitsToSnapshotLimits,
+  parseMembershipBenefits,
+  type MembershipBenefits,
+} from './membership-benefits';
+import type {
+  QuotaPlanProfile,
+  QuotaProfile,
+  Tier,
+} from '../quota/quota.types';
 import { DEFAULT_TEAM_SEAT_POLICY, type SeatPolicy } from './seat-policy';
 
 /**
  * Plan key for the community membership (社区会员) — a SEPARATE access axis from
  * the studio/VIP compute tiers. Gate community/IP features on this plan key,
  * never on the compute-tier `rank` (avoids cross-contaminating studio gates).
+ * Community grants are therefore EXCLUDED from compute entitlement resolution:
+ * they must never outrank (or downgrade) a compute plan.
  */
 export const COMMUNITY_MEMBERSHIP_PLAN_KEY = 'community_membership';
 
-const PLAN_CONFIG = {
-  free: {
-    planKey: 'free',
-    queuePriority: 10,
-    quotaTier: 'Free',
-    features: {
-      aiGeneration: true,
-      advancedModelAccess: false,
-      advancedParameters: false,
-      teamSharedCredits: false,
-    },
-    limits: {
-      imageDaily: 5,
-      videoDaily: 0,
-      chatDaily: 30,
-      workflowDaily: 3,
-      uploadMB: 100,
-      chatPerMinute: 20,
-      concurrentJobs: 1,
-      queuedJobs: 2,
-    },
-  },
-  basic: {
-    planKey: 'basic',
-    queuePriority: 5,
-    quotaTier: 'VIP1',
-    features: {
-      aiGeneration: true,
-      advancedModelAccess: true,
-      advancedParameters: false,
-      teamSharedCredits: false,
-    },
-    limits: {
-      imageDaily: 30,
-      videoDaily: 4,
-      chatDaily: 200,
-      workflowDaily: 10,
-      uploadMB: 1024,
-      chatPerMinute: 40,
-      concurrentJobs: 1,
-      queuedJobs: 4,
-    },
-  },
-  creator: {
-    planKey: 'creator',
-    queuePriority: 5,
-    quotaTier: 'VIP1',
-    features: {
-      aiGeneration: true,
-      advancedModelAccess: true,
-      advancedParameters: false,
-      teamSharedCredits: false,
-    },
-    limits: {
-      imageDaily: 30,
-      videoDaily: 4,
-      chatDaily: 200,
-      workflowDaily: 10,
-      uploadMB: 1024,
-      chatPerMinute: 40,
-      concurrentJobs: 1,
-      queuedJobs: 4,
-    },
-  },
-  standard: {
-    planKey: 'standard',
-    queuePriority: 4,
-    quotaTier: 'VIP2',
-    features: {
-      aiGeneration: true,
-      advancedModelAccess: true,
-      advancedParameters: true,
-      teamSharedCredits: false,
-    },
-    limits: {
-      imageDaily: 60,
-      videoDaily: 10,
-      chatDaily: 350,
-      workflowDaily: 20,
-      uploadMB: 3072,
-      chatPerMinute: 50,
-      concurrentJobs: 2,
-      queuedJobs: 6,
-    },
-  },
-  pro: {
-    planKey: 'pro',
-    queuePriority: 3,
-    quotaTier: 'VIP3',
-    features: {
-      aiGeneration: true,
-      advancedModelAccess: true,
-      advancedParameters: true,
-      teamSharedCredits: false,
-    },
-    limits: {
-      imageDaily: 100,
-      videoDaily: 20,
-      chatDaily: 500,
-      workflowDaily: 30,
-      uploadMB: 5120,
-      chatPerMinute: 60,
-      concurrentJobs: 3,
-      queuedJobs: 10,
-    },
-  },
-  studio: {
-    planKey: 'studio',
-    queuePriority: 2,
-    quotaTier: 'VIP3',
-    features: {
-      aiGeneration: true,
-      advancedModelAccess: true,
-      advancedParameters: true,
-      teamSharedCredits: false,
-    },
-    limits: {
-      imageDaily: Number.POSITIVE_INFINITY,
-      videoDaily: Number.POSITIVE_INFINITY,
-      chatDaily: Number.POSITIVE_INFINITY,
-      workflowDaily: Number.POSITIVE_INFINITY,
-      uploadMB: 30_720,
-      chatPerMinute: 80,
-      concurrentJobs: 5,
-      queuedJobs: 16,
-    },
-  },
-  enterprise: {
-    planKey: 'enterprise',
-    queuePriority: 1,
-    quotaTier: 'VIP3',
-    features: {
-      aiGeneration: true,
-      advancedModelAccess: true,
-      advancedParameters: true,
-      teamSharedCredits: true,
-    },
-    limits: {
-      imageDaily: Number.POSITIVE_INFINITY,
-      videoDaily: Number.POSITIVE_INFINITY,
-      chatDaily: Number.POSITIVE_INFINITY,
-      workflowDaily: Number.POSITIVE_INFINITY,
-      uploadMB: 102_400,
-      chatPerMinute: 120,
-      concurrentJobs: null,
-      queuedJobs: null,
-    },
-  },
-  team: {
-    planKey: 'team',
-    queuePriority: 2,
-    quotaTier: 'VIP3',
-    features: {
-      aiGeneration: true,
-      advancedModelAccess: true,
-      advancedParameters: true,
-      teamSharedCredits: true,
-    },
-    limits: {
-      imageDaily: Number.POSITIVE_INFINITY,
-      videoDaily: Number.POSITIVE_INFINITY,
-      chatDaily: Number.POSITIVE_INFINITY,
-      workflowDaily: Number.POSITIVE_INFINITY,
-      uploadMB: 51_200,
-      chatPerMinute: 100,
-      concurrentJobs: 8,
-      queuedJobs: 32,
-    },
-  },
-  team_enterprise: {
-    planKey: 'team_enterprise',
-    queuePriority: 1,
-    quotaTier: 'VIP3',
-    features: {
-      aiGeneration: true,
-      advancedModelAccess: true,
-      advancedParameters: true,
-      teamSharedCredits: true,
-    },
-    limits: {
-      imageDaily: Number.POSITIVE_INFINITY,
-      videoDaily: Number.POSITIVE_INFINITY,
-      chatDaily: Number.POSITIVE_INFINITY,
-      workflowDaily: Number.POSITIVE_INFINITY,
-      uploadMB: 204_800,
-      chatPerMinute: 180,
-      concurrentJobs: null,
-      queuedJobs: null,
-    },
-  },
-} satisfies Record<KnownEntitlementPlanKey, EntitlementPlanConfig>;
-
-const AUTH_CLAIM_TO_PLAN: Record<string, KnownEntitlementPlanKey> = {
-  FREE: 'free',
+/**
+ * Legacy tier aliases still present in ai_service catalog rows'
+ * `requiredPlan` values. This is catalog-value normalization ONLY — the
+ * retired Java `userLevel` claim must never re-enter through here.
+ */
+const CATALOG_TIER_ALIAS_TO_PLAN: Record<string, KnownEntitlementPlanKey> = {
   VIP1: 'basic',
   VIP2: 'standard',
   VIP3: 'pro',
 };
+
+/**
+ * Same spirit as the ai_service catalog cache: benefits edits made in the
+ * billing admin propagate within this window on every pod without a
+ * broadcast channel. The editing pod busts its own cache immediately.
+ */
+const PLAN_CACHE_TTL_MS = 20_000;
+
+interface PlanCache {
+  expiresAt: number;
+  byKey: Map<string, BillingMembershipPlan>;
+  /** Lazy per-plan parse results so one bad row only breaks its own plan. */
+  benefitsByKey: Map<string, MembershipBenefits>;
+}
 
 type ActiveGrant = EntitlementGrant & {
   membershipPlan: BillingMembershipPlan | null;
@@ -232,10 +72,19 @@ type ActiveGrant = EntitlementGrant & {
 
 @Injectable()
 export class EntitlementService {
+  private readonly logger = new Logger(EntitlementService.name);
+  private planCache: PlanCache | null = null;
+  private readonly warnedMissingPlanRows = new Set<string>();
+
   constructor(private readonly prisma: PrismaService) {}
 
+  /** Drop the in-process plan cache — call after any admin plan mutation. */
+  invalidatePlanCache(): void {
+    this.planCache = null;
+  }
+
   async resolveForUser(
-    user: AuthUser,
+    user: Pick<AuthUser, 'userId'>,
     options?: {
       workspaceId?: string | null;
       now?: string;
@@ -248,10 +97,7 @@ export class EntitlementService {
       now: nowDate,
     });
     if (activeGrant) {
-      return this.snapshotFromGrant(activeGrant, {
-        workspaceId: options?.workspaceId ?? null,
-        now: nowDate,
-      });
+      return this.snapshotFromGrant(activeGrant, { now: nowDate });
     }
 
     // Grace: a paid studio subscription whose current period hasn't ended yet,
@@ -265,32 +111,25 @@ export class EntitlementService {
     });
     if (grace) return grace;
 
-    const sourcePlan = this.planFromAuthClaim(user.userLevel);
-    const status = this.isExpired(user.expireTime) ? 'expired' : 'active';
-    const planKey =
-      status === 'expired'
-        ? 'free'
-        : (sourcePlan ?? this.defaultPlanForRuntime());
-    const config = configForKnownPlan(planKey);
-
-    return {
-      version: ENTITLEMENT_POLICY_VERSION,
+    // No PG grant and no grace window: the runtime default plan applies.
+    // There is deliberately NO auth-claim fallback — the Java `userLevel`
+    // claim is fully retired; PostgreSQL entitlements are the only
+    // membership truth.
+    const planKey = this.defaultPlanForRuntime();
+    const plan =
+      planKey === 'free' ? null : await this.activePlanByKey(planKey);
+    return this.buildSnapshot({
       subject: {
         type: options?.workspaceId ? 'workspace' : 'user',
         id: options?.workspaceId ?? user.userId,
       },
       planKey,
-      rank: rankForPlanKey(planKey),
-      source: sourcePlan ? 'auth_claim' : 'system_default',
-      status,
+      rank: plan?.rank ?? rankForPlanKey(planKey),
+      source: 'system_default',
+      benefits: this.benefitsForPlanKey(planKey, plan),
       effectiveAt: nowDate.toISOString(),
-      expiresAt: user.expireTime ?? null,
-      features: config.features,
-      limits: {
-        queuePriority: config.queuePriority,
-        ...config.limits,
-      },
-    };
+      expiresAt: null,
+    });
   }
 
   /**
@@ -347,8 +186,8 @@ export class EntitlementService {
     if (!normalized || normalized === 'none' || normalized === 'free') {
       return null;
     }
-    const claimPlan = AUTH_CLAIM_TO_PLAN[raw.toUpperCase()];
-    if (claimPlan) return claimPlan;
+    const catalogPlan = CATALOG_TIER_ALIAS_TO_PLAN[raw.toUpperCase()];
+    if (catalogPlan) return catalogPlan;
     return isKnownPlanKey(normalized) ? normalized : null;
   }
 
@@ -360,13 +199,61 @@ export class EntitlementService {
     return entitlement.rank >= rankForPlanKey(required);
   }
 
-  quotaTierFor(entitlement: EntitlementSnapshot) {
-    return configForKnownPlan(entitlement.planKey).quotaTier;
+  quotaTierFor(entitlement: EntitlementSnapshot): Tier {
+    return entitlement.quotaTier;
   }
 
-  queuePriorityFor(entitlement: EntitlementSnapshot | null | undefined) {
-    if (!entitlement) return PLAN_CONFIG.free.queuePriority;
-    return configForKnownPlan(entitlement.planKey).queuePriority;
+  /** One-call quota-tier resolution: PG grants → plan → benefits.quotaTier. */
+  async quotaTierForUser(
+    user: Pick<AuthUser, 'userId'>,
+    options?: { workspaceId?: string | null },
+  ): Promise<Tier> {
+    return this.quotaTierFor(
+      await this.resolveForUser(user, {
+        workspaceId: options?.workspaceId ?? null,
+      }),
+    );
+  }
+
+  queuePriorityFor(
+    entitlement: EntitlementSnapshot | null | undefined,
+  ): number {
+    return (
+      entitlement?.limits?.queuePriority ?? DEFAULT_FREE_BENEFITS.queuePriority
+    );
+  }
+
+  /**
+   * Quota admission context for QuotaService: this snapshot's per-dimension
+   * caps plus the next purchasable plan (by plan-row rank ordering on the
+   * same subject axis) for the 429 upgrade suggestion.
+   */
+  async quotaProfileFor(snapshot: EntitlementSnapshot): Promise<QuotaProfile> {
+    return {
+      planKey: snapshot.planKey,
+      tier: snapshot.quotaTier,
+      limits: {
+        imageDaily: snapshot.limits.imageDaily,
+        videoDaily: snapshot.limits.videoDaily,
+        chatDaily: snapshot.limits.chatDaily,
+        workflowDaily: snapshot.limits.workflowDaily,
+        uploadMB: snapshot.limits.uploadMB,
+        chatPerMinute: snapshot.limits.chatPerMinute,
+      },
+      upgrade: await this.nextPlanUpgradeFor(snapshot),
+    };
+  }
+
+  /** One-call quota profile resolution: PG grants → plan → benefits. */
+  async quotaProfileForUser(
+    user: Pick<AuthUser, 'userId'>,
+    options?: { workspaceId?: string | null },
+  ): Promise<QuotaProfile> {
+    return this.quotaProfileFor(
+      await this.resolveForUser(user, {
+        workspaceId: options?.workspaceId ?? null,
+      }),
+    );
   }
 
   /**
@@ -472,6 +359,122 @@ export class EntitlementService {
     });
   }
 
+  // ─── plan-row cache (benefits source of truth) ─────────────────────────
+
+  private async loadPlanCache(): Promise<PlanCache> {
+    if (this.planCache && this.planCache.expiresAt > Date.now()) {
+      return this.planCache;
+    }
+    const plans = await this.prisma.billingMembershipPlan.findMany({
+      where: {
+        status: BillingMembershipPlanStatus.active,
+        archivedAt: null,
+      },
+    });
+    const cache: PlanCache = {
+      expiresAt: Date.now() + PLAN_CACHE_TTL_MS,
+      byKey: new Map(plans.map((plan) => [plan.planKey, plan])),
+      benefitsByKey: new Map(),
+    };
+    this.planCache = cache;
+    return cache;
+  }
+
+  private async activePlanByKey(
+    planKey: string,
+  ): Promise<BillingMembershipPlan | null> {
+    const cache = await this.loadPlanCache();
+    return cache.byKey.get(planKey) ?? null;
+  }
+
+  /**
+   * Benefits of an ACTIVE plan row. Fails loud (throws) when the stored
+   * benefits JSON does not satisfy MembershipBenefitsSchema — a misconfigured
+   * sold plan must surface immediately, never silently degrade.
+   */
+  private planBenefits(plan: BillingMembershipPlan): MembershipBenefits {
+    const cache = this.planCache;
+    const cached = cache?.benefitsByKey.get(plan.planKey);
+    if (cached) return cached;
+    const benefits = parseMembershipBenefits(plan.planKey, plan.benefits);
+    cache?.benefitsByKey.set(plan.planKey, benefits);
+    return benefits;
+  }
+
+  /**
+   * Benefits for a plan key that may have no active row. `free` is the only
+   * plan legitimately without a row (DEFAULT_FREE_BENEFITS). Any other key
+   * without an active row resolves to free benefits with a loud warning —
+   * PG plan rows are the single benefits source of truth.
+   */
+  private benefitsForPlanKey(
+    planKey: string,
+    plan: BillingMembershipPlan | null,
+  ): MembershipBenefits {
+    if (plan) return this.planBenefits(plan);
+    if (planKey !== 'free' && !this.warnedMissingPlanRows.has(planKey)) {
+      this.warnedMissingPlanRows.add(planKey);
+      this.logger.warn(
+        `entitlement.plan_row_missing planKey=${planKey} — no active billing_membership_plans row; resolving free benefits`,
+      );
+    }
+    return DEFAULT_FREE_BENEFITS;
+  }
+
+  /**
+   * Next purchasable plan strictly above this snapshot by plan-row rank,
+   * on the same subject axis (user plans for users, team plans for
+   * workspaces). Returns null at the top of the sold ladder.
+   */
+  private async nextPlanUpgradeFor(
+    snapshot: EntitlementSnapshot,
+  ): Promise<QuotaPlanProfile | null> {
+    const cache = await this.loadPlanCache();
+    const wantedProductType =
+      snapshot.subject.type === 'workspace'
+        ? 'team_membership_plan'
+        : 'membership_plan';
+    let next: BillingMembershipPlan | null = null;
+    for (const plan of cache.byKey.values()) {
+      if (plan.productType !== wantedProductType) continue;
+      if (plan.rank <= snapshot.rank) continue;
+      if (!next || plan.rank < next.rank) next = plan;
+    }
+    if (!next) return null;
+    const benefits = this.planBenefits(next);
+    return {
+      planKey: next.planKey,
+      tier: benefits.quotaTier,
+      limits: benefitsToQuotaLimits(benefits),
+    };
+  }
+
+  // ─── snapshot assembly ────────────────────────────────────────────────
+
+  private buildSnapshot(input: {
+    subject: EntitlementSnapshot['subject'];
+    planKey: EntitlementPlanKey;
+    rank: number;
+    source: EntitlementSource;
+    benefits: MembershipBenefits;
+    effectiveAt: string;
+    expiresAt: string | null;
+  }): EntitlementSnapshot {
+    return {
+      version: ENTITLEMENT_POLICY_VERSION,
+      subject: input.subject,
+      planKey: input.planKey,
+      rank: input.rank,
+      quotaTier: input.benefits.quotaTier,
+      source: input.source,
+      status: 'active',
+      effectiveAt: input.effectiveAt,
+      expiresAt: input.expiresAt,
+      features: input.benefits.features,
+      limits: benefitsToSnapshotLimits(input.benefits),
+    };
+  }
+
   private async findBestActiveGrant(input: {
     userId: string;
     workspaceId: string | null;
@@ -499,6 +502,9 @@ export class EntitlementService {
           subjectType: candidate.subjectType,
           subjectId: candidate.subjectId,
           status: EntitlementGrantStatus.active,
+          // Community membership is a separate access axis and must never
+          // enter (or win) compute plan resolution.
+          planKey: { not: COMMUNITY_MEMBERSHIP_PLAN_KEY },
           startsAt: { lte: input.now },
           OR: [{ endsAt: null }, { endsAt: { gt: input.now } }],
         },
@@ -506,19 +512,12 @@ export class EntitlementService {
         take: 5,
       });
       if (rows.length === 0) continue;
-      const planKeys = rows.map((row) => row.planKey);
-      const plans = await this.prisma.billingMembershipPlan.findMany({
-        where: {
-          planKey: { in: planKeys },
-          status: BillingMembershipPlanStatus.active,
-          archivedAt: null,
-        },
-      });
-      const planByKey = new Map(plans.map((plan) => [plan.planKey, plan]));
+      const cache = await this.loadPlanCache();
       grants.push(
         ...rows.map((row) => ({
           ...row,
-          membershipPlan: planByKey.get(row.planKey) ?? null,
+          membershipPlan:
+            cache.byKey.get(this.normalizePlanKey(row.planKey)) ?? null,
         })),
       );
     }
@@ -568,41 +567,25 @@ export class EntitlementService {
     });
     if (!sub?.planKey) return null;
 
-    const plan = await this.prisma.billingMembershipPlan.findFirst({
-      where: {
-        planKey: sub.planKey,
-        status: BillingMembershipPlanStatus.active,
-        archivedAt: null,
-      },
-    });
     const planKey = this.normalizePlanKey(sub.planKey) || 'free';
-    const config = this.configForPlan(planKey, plan ?? null);
-    return {
-      version: ENTITLEMENT_POLICY_VERSION,
+    const plan = await this.activePlanByKey(planKey);
+    return this.buildSnapshot({
       subject: { type: sub.subjectType, id: sub.subjectId },
       planKey,
       rank: plan?.rank ?? rankForPlanKey(planKey),
       source: 'subscription_grace',
-      status: 'active',
+      benefits: this.benefitsForPlanKey(planKey, plan),
       effectiveAt: input.now.toISOString(),
       expiresAt: sub.currentPeriodEnd?.toISOString() ?? null,
-      features: config.features,
-      limits: {
-        queuePriority: config.queuePriority,
-        ...config.limits,
-      },
-    };
+    });
   }
 
   private snapshotFromGrant(
     grant: ActiveGrant,
-    input: { workspaceId: string | null; now: Date },
+    input: { now: Date },
   ): EntitlementSnapshot {
-    const rawPlanKey = this.normalizePlanKey(grant.planKey);
-    const planKey = rawPlanKey || 'free';
-    const config = this.configForPlan(planKey, grant.membershipPlan);
-    return {
-      version: ENTITLEMENT_POLICY_VERSION,
+    const planKey = this.normalizePlanKey(grant.planKey) || 'free';
+    return this.buildSnapshot({
       subject: {
         type: grant.subjectType,
         id: grant.subjectId,
@@ -613,86 +596,18 @@ export class EntitlementService {
         grant.subjectType === BillingSubjectType.workspace
           ? 'workspace_subscription'
           : 'billing_membership_plan',
-      status: 'active',
+      benefits: this.benefitsForPlanKey(planKey, grant.membershipPlan),
       effectiveAt: input.now.toISOString(),
       expiresAt: grant.endsAt?.toISOString() ?? null,
-      features: config.features,
-      limits: {
-        queuePriority: config.queuePriority,
-        ...config.limits,
-      },
-    };
-  }
-
-  private configForPlan(
-    planKey: EntitlementPlanKey,
-    plan: BillingMembershipPlan | null,
-  ): EntitlementPlanConfig {
-    const baseline = configForPlan(planKey, plan);
-    if (!plan) return baseline;
-    const featureFlags = recordOrEmpty(plan.featureFlags);
-    const limits = recordOrEmpty(plan.limits);
-    const rank = plan.rank;
-    return {
-      planKey,
-      queuePriority: numberOr(limits.queuePriority, baseline.queuePriority),
-      quotaTier: baseline.quotaTier,
-      features: {
-        aiGeneration: booleanOr(featureFlags.aiGeneration, true),
-        advancedModelAccess: booleanOr(
-          featureFlags.advancedModelAccess,
-          rank >= ENTITLEMENT_PLAN_RANK.basic,
-        ),
-        advancedParameters: booleanOr(
-          featureFlags.advancedParameters,
-          rank >= ENTITLEMENT_PLAN_RANK.standard,
-        ),
-        teamSharedCredits: booleanOr(
-          featureFlags.teamSharedCredits ?? featureFlags.sharedCredits,
-          plan.subjectType === BillingSubjectType.workspace,
-        ),
-      },
-      limits: {
-        imageDaily: numberOr(limits.imageDaily, baseline.limits.imageDaily),
-        videoDaily: numberOr(limits.videoDaily, baseline.limits.videoDaily),
-        chatDaily: numberOr(limits.chatDaily, baseline.limits.chatDaily),
-        workflowDaily: numberOr(
-          limits.workflowDaily,
-          baseline.limits.workflowDaily,
-        ),
-        uploadMB: numberOr(limits.uploadMB, baseline.limits.uploadMB),
-        chatPerMinute: numberOr(
-          limits.chatPerMinute,
-          baseline.limits.chatPerMinute,
-        ),
-        concurrentJobs: limitOr(
-          limits.concurrentJobs,
-          baseline.limits.concurrentJobs,
-        ),
-        queuedJobs: limitOr(limits.queuedJobs, baseline.limits.queuedJobs),
-      },
-    };
+    });
   }
 
   private defaultPlanForRuntime(): EntitlementPlanKey {
     return process.env.AUTH_DISABLED === 'true' ? 'studio' : 'free';
   }
 
-  private planFromAuthClaim(value: string | null | undefined) {
-    const normalized = String(value ?? '')
-      .trim()
-      .toUpperCase();
-    return AUTH_CLAIM_TO_PLAN[normalized];
-  }
-
   private normalizePlanKey(value: string): string {
     return value.trim().toLowerCase();
-  }
-  private isExpired(expireTime?: string | null): boolean {
-    if (!expireTime) return false;
-    const timestamp = Date.parse(expireTime);
-    if (!Number.isFinite(timestamp)) return false;
-    return timestamp <= Date.now();
   }
 }
 
@@ -714,67 +629,6 @@ function rankForPlanKey(planKey: string): number {
   );
 }
 
-function configForKnownPlan(planKey: string): EntitlementPlanConfig {
-  return PLAN_CONFIG[planKey as KnownEntitlementPlanKey] ?? PLAN_CONFIG.free;
-}
-
-function configForPlan(
-  planKey: string,
-  plan: BillingMembershipPlan | null,
-): EntitlementPlanConfig {
-  if (isKnownPlanKey(planKey)) return PLAN_CONFIG[planKey];
-  if (!plan) return PLAN_CONFIG.free;
-  return nearestBaselineForRank(plan.rank, plan.subjectType);
-}
-
-function nearestBaselineForRank(
-  rank: number,
-  subjectType: BillingSubjectType,
-): EntitlementPlanConfig {
-  const knownKeys = Object.keys(
-    ENTITLEMENT_PLAN_RANK,
-  ) as KnownEntitlementPlanKey[];
-  const candidates = knownKeys.filter((key) => {
-    if (key === 'free') return true;
-    const isTeamPlan = key.startsWith('team_');
-    return subjectType === BillingSubjectType.workspace
-      ? isTeamPlan
-      : !isTeamPlan;
-  });
-  let bestKey: KnownEntitlementPlanKey = 'free';
-  for (const key of candidates) {
-    const candidateRank = ENTITLEMENT_PLAN_RANK[key];
-    const bestRank = ENTITLEMENT_PLAN_RANK[bestKey];
-    if (candidateRank <= rank && candidateRank >= bestRank) {
-      bestKey = key;
-    }
-  }
-  return PLAN_CONFIG[bestKey];
-}
-
 function isKnownPlanKey(value: string): value is KnownEntitlementPlanKey {
   return value in ENTITLEMENT_PLAN_RANK;
-}
-
-function recordOrEmpty(value: unknown): Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : {};
-}
-
-function booleanOr(value: unknown, fallback: boolean): boolean {
-  return typeof value === 'boolean' ? value : fallback;
-}
-
-function numberOr(value: unknown, fallback: number): number {
-  if (typeof value === 'number' && Number.isFinite(value)) return value;
-  return fallback;
-}
-
-function limitOr(value: unknown, fallback: number | null): number | null {
-  if (value === null) return null;
-  if (typeof value === 'number' && Number.isFinite(value)) {
-    return Math.max(0, Math.floor(value));
-  }
-  return fallback;
 }

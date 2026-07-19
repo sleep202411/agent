@@ -23,6 +23,7 @@ import { StoryWorkingPreviewController } from './story-working-preview.controlle
 import { StoryWorkingPreviewService } from './story-working-preview.service';
 import { StoryVideoUploadFinalizeWorkerService } from './story-video-upload-finalize-worker.service';
 import { StoryUploadedVideoProbeService } from './story-uploaded-video-probe.service';
+import { StoryAgentRunModule } from './story-agent-run.module';
 
 @Module({
   imports: [
@@ -31,6 +32,7 @@ import { StoryUploadedVideoProbeService } from './story-uploaded-video-probe.ser
     AiGenerationModule,
     StorageModule,
     MediaModule,
+    StoryAgentRunModule,
   ],
   controllers: [
     StoryProjectsController,
@@ -55,6 +57,6 @@ import { StoryUploadedVideoProbeService } from './story-uploaded-video-probe.ser
     StoryExperienceReleaseWorkerService,
     StoryWorkingPreviewService,
   ],
-  exports: [StoryProjectsService, StoryAccessModule],
+  exports: [StoryProjectsService, StoryAccessModule, StoryAgentRunModule],
 })
 export class StoryStudioModule {}

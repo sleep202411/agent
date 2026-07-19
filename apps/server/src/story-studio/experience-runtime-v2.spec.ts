@@ -7,6 +7,9 @@ import {
   ExperienceReleaseResponseSchema,
   ExperienceRuntimeManifestSchema,
   parseExperienceRuntimeManifest,
+  type ExperienceEventBinding,
+  type ExperienceRuntimeAction,
+  type ExperienceSpatialAnchor,
   type ExperienceStateDefinition,
 } from '@repo/shared/experience-runtime';
 import {
@@ -495,7 +498,10 @@ describe('Experience Runtime Manifest v2', () => {
   it('rejects overlapping wildcard and concrete event selectors', () => {
     const fixture = textExperienceFixture();
     const node = fixture.graph.nodes[0];
-    node.eventBindings.push({
+    // Widen from the fixture's literal shape to the real schema type: a
+    // selector with a sourceId is valid manifest structure (the overlap is
+    // what the semantic validation must reject).
+    (node.eventBindings as ExperienceEventBinding[]).push({
       bindingId: 'complete.specific',
       on: { type: 'scene.entered', sourceId: 'scene.page-one' },
       routes: [
@@ -563,7 +569,11 @@ describe('Experience Runtime Manifest v2', () => {
       initialValue: {},
       sensitive: false,
     });
-    const action = fixture.graph.nodes[0].eventBindings[0].routes[0].actions[0];
+    // Widen to the schema's action union: a literal array value is valid
+    // expression structure; only the object-root assignment semantics are
+    // under test.
+    const action = fixture.graph.nodes[0].eventBindings[0].routes[0]
+      .actions[0] as ExperienceRuntimeAction;
     if (action.kind !== 'state.set') throw new Error('Expected state.set');
     action.path = 'world.profile';
     action.value = { kind: 'literal', value: [] };
@@ -573,7 +583,9 @@ describe('Experience Runtime Manifest v2', () => {
 
   it('rejects keyframes whose orientation fallback changes geometry kind', () => {
     const fixture = holdToLightFixture();
-    const anchor = fixture.graph.nodes[0].anchors[0];
+    // Widen to the schema anchor type: keyframe motion is valid structure;
+    // the orientation-fallback kind change is what safeParse must reject.
+    const anchor = fixture.graph.nodes[0].anchors[0] as ExperienceSpatialAnchor;
     anchor.motion = {
       kind: 'keyframes',
       keyframes: [

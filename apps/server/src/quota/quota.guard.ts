@@ -7,12 +7,10 @@
  * + `@RequireQuota({...})` per route. Endpoints without metadata
  * pass through (the guard is a no-op).
  *
- * Refund semantics: this guard only consumes. If the downstream worker
- * permanently fails the job, the worker is responsible for calling
- * QuotaService.refundFor() with the same idempotencyKey it knows
- * about. Phase 5 keeps the worker-side refund wiring as a follow-up
- * — the existing observation ledger already lets us reconcile any
- * unrefunded failures via SUM() over quota_usage_log.
+ * Refund semantics: this guard issues a request-local debit receipt after a
+ * successful consume. QuotaInterceptor may refund only when that receipt says
+ * this request actually incremented Redis; a dedup retry never owns the prior
+ * request's debit.
  */
 import {
   CanActivate,
@@ -25,16 +23,19 @@ import {
 import { Reflector } from '@nestjs/core';
 import type { Request } from 'express';
 import { QuotaService } from './quota.service';
-import { normalizeTier } from './tiers.config';
+import { EntitlementService } from '../entitlements';
 import { QUOTA_METADATA_KEY, type QuotaRequirement } from './quota.decorator';
 import { randomUUID } from 'crypto';
 import type { AuthUser } from '../auth';
+import type { QuotaDebitReceipt } from './quota.types';
+
+const MAX_IDEMPOTENCY_KEY_BYTES = 200;
+const SAFE_IDEMPOTENCY_KEY_PATTERN = /^[A-Za-z0-9:_./-]+$/;
 
 interface AuthedRequest extends Request {
   user?: AuthUser;
-  /** Set by this guard so QuotaInterceptor can refund-on-error
-   *  without re-resolving the idempotency source. */
-  __quotaConsumeKey?: string;
+  /** A receipt exists only after QuotaService accepted this request. */
+  __quotaConsumeReceipt?: QuotaDebitReceipt;
 }
 
 @Injectable()
@@ -57,6 +58,7 @@ export class QuotaGuard implements CanActivate {
   constructor(
     private readonly reflector: Reflector,
     private readonly quota: QuotaService,
+    private readonly entitlements: EntitlementService,
   ) {}
 
   async canActivate(ctx: ExecutionContext): Promise<boolean> {
@@ -72,16 +74,18 @@ export class QuotaGuard implements CanActivate {
       // Should never happen — AuthGuard runs first. Defensive.
       return true;
     }
-    const tier = normalizeTier(user.userLevel);
+    const profile = await this.entitlements.quotaProfileForUser(user);
 
-    // Per-minute rate limit pre-check — applies even to VIP3. A
-    // failure here is a different shape from quota_exceeded: it's a
-    // "you're going too fast" signal, not "buy a bigger plan".
+    const idem = resolveIdempotencyKey(req, requirement);
+
+    // Per-minute rate limit pre-check — applies even to unlimited-cap
+    // plans. A failure here is a different shape from quota_exceeded:
+    // it's a "you're going too fast" signal, not "buy a bigger plan".
     if (requirement.rateLimitPerMinute) {
-      const rl = await this.quota.checkChatRate(user.userId, tier);
+      const rl = await this.quota.checkChatRate(user.userId, profile);
       if (!rl.ok) {
         this.logger.warn(
-          `quota.reject userId=${user.userId} tier=${tier} dim=${requirement.dimension} reason=rate_limited limit=${rl.limit}/min resetAt=${rl.resetAt}`,
+          `quota.reject userId=${user.userId} tier=${profile.tier} dim=${requirement.dimension} reason=rate_limited limit=${rl.limit}/min resetAt=${rl.resetAt}`,
         );
         throw new HttpException(
           {
@@ -104,26 +108,10 @@ export class QuotaGuard implements CanActivate {
     // downstream failure. The cost of the synthesised key is that
     // double-clicks count twice — acceptable since the frontend
     // QuotaBlocker disables the button after the first click.
-    const idemSource =
-      requirement.idempotencyFrom ?? 'header:x-idempotency-key';
-    let idem: string | undefined;
-    if (idemSource.startsWith('header:')) {
-      const headerName = idemSource.slice('header:'.length);
-      const raw = req.header(headerName);
-      idem = typeof raw === 'string' && raw.length > 0 ? raw : undefined;
-    } else if (idemSource.startsWith('body:')) {
-      const fieldName = idemSource.slice('body:'.length);
-      const body = req.body as Record<string, unknown> | undefined;
-      const raw = body ? body[fieldName] : undefined;
-      idem = typeof raw === 'string' && raw.length > 0 ? raw : undefined;
-    }
-    if (!idem) idem = `synth_${randomUUID()}`;
-    // Stash on req so QuotaInterceptor can find it on error.
-    req.__quotaConsumeKey = idem;
-
+    const cost = Math.max(1, Math.floor(requirement.cost ?? 1));
     const result = await this.quota.consume({
       userId: user.userId,
-      tier,
+      profile,
       dimension: requirement.dimension,
       cost: requirement.cost,
       idempotencyKey: idem,
@@ -131,15 +119,31 @@ export class QuotaGuard implements CanActivate {
         requirement.reason ?? `${ctx.getClass().name}.${ctx.getHandler().name}`,
     });
 
-    if (result.ok) return true;
+    if (result.ok) {
+      req.__quotaConsumeReceipt = {
+        userId: user.userId,
+        profile: {
+          planKey: profile.planKey,
+          tier: profile.tier,
+          limits: profile.limits,
+        },
+        dimension: requirement.dimension,
+        cost,
+        idempotencyKey: idem,
+        // QuotaService reports NaN only on its explicit Redis fail-open path;
+        // no Redis debit exists to refund in that case.
+        debited: !result.deduped && Number.isFinite(result.used),
+      };
+      return true;
+    }
 
     this.logger.warn(
-      `quota.reject userId=${user.userId} tier=${tier} dim=${result.dimension} reason=quota_exceeded used=${result.used} limit=${result.limit} nextTier=${result.nextTier ?? 'none'}`,
+      `quota.reject userId=${user.userId} tier=${profile.tier} dim=${result.dimension} reason=quota_exceeded used=${result.used} limit=${result.limit} nextPlan=${result.nextPlanKey ?? 'none'}`,
     );
 
     // 429 with structured payload. The UI catches this in its API
     // client interceptor and opens the UpgradeDialog with the next
-    // tier's numbers — see apps/web/src/lib/quota/.
+    // plan's numbers — see apps/web/src/lib/quota/.
     throw new HttpException(
       {
         code: 429,
@@ -149,9 +153,49 @@ export class QuotaGuard implements CanActivate {
         limit: result.limit,
         resetAt: result.resetAt,
         nextTier: result.nextTier,
+        nextPlanKey: result.nextPlanKey,
         nextTierLimit: result.nextTierLimit,
       },
       HttpStatus.TOO_MANY_REQUESTS,
     );
   }
+}
+
+function resolveIdempotencyKey(
+  req: AuthedRequest,
+  requirement: QuotaRequirement,
+): string {
+  const source = requirement.idempotencyFrom ?? 'header:x-idempotency-key';
+  let raw: unknown;
+  if (source.startsWith('header:')) {
+    raw = req.header(source.slice('header:'.length));
+  } else {
+    const body = req.body as Record<string, unknown> | undefined;
+    raw = body?.[source.slice('body:'.length)];
+  }
+  if (raw === undefined || raw === null || raw === '') {
+    return `synth_${randomUUID()}`;
+  }
+  if (typeof raw !== 'string') {
+    throw invalidIdempotencyKey();
+  }
+  const normalized = raw.trim();
+  if (
+    normalized.length === 0 ||
+    Buffer.byteLength(normalized, 'utf8') > MAX_IDEMPOTENCY_KEY_BYTES ||
+    !SAFE_IDEMPOTENCY_KEY_PATTERN.test(normalized)
+  ) {
+    throw invalidIdempotencyKey();
+  }
+  return normalized;
+}
+
+function invalidIdempotencyKey(): HttpException {
+  return new HttpException(
+    {
+      code: 400,
+      error: 'invalid_idempotency_key',
+    },
+    HttpStatus.BAD_REQUEST,
+  );
 }

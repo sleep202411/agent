@@ -324,7 +324,7 @@ describe('StoryExperienceReleaseGateway', () => {
     const result = await new StoryExperienceReleaseGateway().getGame(
       PROJECT_ID,
     );
-    expect(result.currentVersion).toBe(BUILD_ID);
+    expect(result?.currentVersion).toBe(BUILD_ID);
     expect(fetchMock).toHaveBeenCalledWith(
       `${JAVA_STUDIO_URL}${JAVA_EXPERIENCE_GAMES_PATH}/${PROJECT_ID}`,
       expect.objectContaining({
@@ -371,6 +371,71 @@ describe('StoryExperienceReleaseGateway', () => {
 });
 
 describe('StoryExperienceReleaseService publication lifecycle', () => {
+  it('rejects a draft Java release before the external side effect when Agent apply owns the lock', async () => {
+    const locked = new Error('agent applying');
+    const gateway = { publish: jest.fn() };
+    const service = serviceWith({
+      gateway,
+      permissions: { requireProject: jest.fn().mockRejectedValue(locked) },
+    });
+
+    await expect(
+      service.publishBuild(
+        { userId: 'user-1' } as never,
+        WORKSPACE_ID,
+        PROJECT_ID,
+        BUILD_ID,
+        { status: 'draft', setCurrent: false },
+        'satoken=session',
+      ),
+    ).rejects.toBe(locked);
+    expect(gateway.publish).not.toHaveBeenCalled();
+  });
+
+  it('takes the project write fence before claiming a publication or calling Java', async () => {
+    const locked = new Error('agent applying');
+    const writeGuard = {
+      assertHumanWriteAllowed: jest.fn().mockRejectedValue(locked),
+    };
+    const gateway = { publish: jest.fn() };
+    const tx = claimTransaction({ existing: null });
+    const service = serviceWith({
+      gateway,
+      prisma: prismaWithTransaction(tx),
+      writeGuard,
+    });
+
+    await expect(publish(service)).rejects.toBe(locked);
+    expect(writeGuard.assertHumanWriteAllowed).toHaveBeenCalledWith(
+      tx,
+      PROJECT_ID,
+    );
+    expect(tx.storyExperiencePublication.create).not.toHaveBeenCalled();
+    expect(gateway.publish).not.toHaveBeenCalled();
+  });
+
+  it('does not accept a draft release when Agent claims after the early permission check', async () => {
+    const locked = new Error('agent applying');
+    const writeGuard = {
+      assertHumanWriteAllowed: jest.fn().mockRejectedValue(locked),
+    };
+    const gateway = { publish: jest.fn() };
+    const tx = draftClaimTransaction({ existing: null });
+    const service = serviceWith({
+      gateway,
+      prisma: prismaWithDraftTransaction(tx),
+      writeGuard,
+    });
+
+    await expect(publishDraft(service)).rejects.toBe(locked);
+    expect(writeGuard.assertHumanWriteAllowed).toHaveBeenCalledWith(
+      tx,
+      PROJECT_ID,
+    );
+    expect(tx.storyExperienceDraftRelease.create).not.toHaveBeenCalled();
+    expect(gateway.publish).not.toHaveBeenCalled();
+  });
+
   it('durably authorizes media before Java POST and confirms afterward', async () => {
     const events: string[] = [];
     const manifest = manifestFixture();
@@ -633,24 +698,231 @@ describe('StoryExperienceReleaseService publication lifecycle', () => {
     expect(gateway.publish).toHaveBeenCalledTimes(1);
   });
 
-  it('does not create an anonymous authorization for a Java draft', async () => {
-    const prisma = prismaWithTransaction(claimTransaction({ existing: null }));
+  it('durably claims a Java draft without creating public media authorization', async () => {
+    const events: string[] = [];
+    const claimed = draftReleaseRow({
+      attemptCount: 1,
+      firstAttemptAt: new Date(),
+      lastAttemptAt: new Date(),
+      lastAttemptedByUserId: 'user-1',
+      leaseOwner: 'draft-lease-1',
+      leaseAcquiredAt: new Date(),
+      leaseExpiresAt: new Date(Date.now() + 30_000),
+    });
+    const tx = draftClaimTransaction({
+      existing: null,
+      claimed,
+      onCreate: () => events.push('draft-receipt'),
+    });
+    const prisma = prismaWithDraftTransaction(tx);
+    prisma.storyExperienceDraftRelease.updateMany.mockImplementation(() => {
+      events.push('confirmed');
+      return { count: 1 };
+    });
     const gateway = {
-      publish: jest.fn(() => ({
-        ...releaseResponse(manifestFixture()),
-        status: 'draft' as const,
-      })),
+      publish: jest.fn(() => {
+        events.push('java-post');
+        return draftReleaseResponse(manifestFixture());
+      }),
     };
     const service = serviceWith({ gateway, prisma });
-    await service.publishBuild(
-      { userId: 'user-1' } as never,
-      WORKSPACE_ID,
-      PROJECT_ID,
-      BUILD_ID,
-      { status: 'draft', setCurrent: false },
-      'satoken=session',
+    await expect(publishDraft(service)).resolves.toEqual(
+      draftReleaseResponse(manifestFixture()),
     );
-    expect(prisma.$transaction).not.toHaveBeenCalled();
+    expect(events).toEqual(['draft-receipt', 'java-post', 'confirmed']);
+    expect(tx.storyExperienceDraftRelease.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        buildId: BUILD_ID,
+        storyProjectId: PROJECT_ID,
+        requestHash: expect.stringMatching(/^[a-f0-9]{64}$/),
+      }),
+    });
+    expect(prisma.storyExperiencePublication.updateMany).not.toHaveBeenCalled();
+  });
+
+  it('records an ambiguous draft response and only permits exact-request replay after backoff', async () => {
+    const claimed = draftReleaseRow({
+      status: 'pending',
+      attemptCount: 1,
+      firstAttemptAt: new Date(),
+      lastAttemptAt: new Date(),
+      lastAttemptedByUserId: 'user-1',
+      leaseOwner: 'draft-lease-unknown',
+      leaseAcquiredAt: new Date(),
+      leaseExpiresAt: new Date(Date.now() + 30_000),
+    });
+    const prisma = prismaWithDraftTransaction(
+      draftClaimTransaction({ existing: draftReleaseRow(), claimed }),
+    );
+    const unknown = new StoryExperienceReleaseOutcomeUnknownException({
+      code: 'JAVA_EXPERIENCE_RELEASE_UNAVAILABLE',
+      message: 'timeout',
+    });
+    const service = serviceWith({
+      prisma,
+      gateway: { publish: jest.fn(() => Promise.reject(unknown)) },
+    });
+
+    await expect(publishDraft(service)).rejects.toBe(unknown);
+    expect(prisma.storyExperienceDraftRelease.updateMany).toHaveBeenCalledWith({
+      where: expect.objectContaining({ leaseOwner: expect.any(String) }),
+      data: {
+        status: 'uncertain',
+        nextAttemptAt: expect.any(Date),
+        lastErrorCode: expect.any(String),
+        lastErrorDetail: 'timeout',
+        lastErrorAt: expect.any(Date),
+      },
+    });
+  });
+
+  it('terminalizes an uncertain draft receipt when the exact replay is definitively rejected', async () => {
+    // A receipt left 'uncertain' by an ambiguous POST replays the exact
+    // immutable request after backoff. Java deterministically rejecting that
+    // replay proves the original never committed, so the receipt must
+    // terminate as 'rejected' instead of rescheduling forever (it cannot be
+    // deleted and its build_id is unique).
+    const existing = draftReleaseRow({
+      status: 'uncertain',
+      attemptCount: 1,
+      firstAttemptAt: new Date(Date.now() - 120_000),
+      lastAttemptAt: new Date(Date.now() - 120_000),
+      lastAttemptedByUserId: 'user-1',
+      nextAttemptAt: new Date(Date.now() - 10_000),
+      leaseOwner: 'dead-process',
+      leaseAcquiredAt: new Date(Date.now() - 120_000),
+      leaseExpiresAt: new Date(Date.now() - 60_000),
+      lastErrorCode: 'JAVA_EXPERIENCE_RELEASE_UNAVAILABLE',
+      lastErrorDetail: 'timeout',
+      lastErrorAt: new Date(Date.now() - 120_000),
+    });
+    const claimed = draftReleaseRow({
+      ...existing,
+      attemptCount: 2,
+      lastAttemptAt: new Date(),
+      nextAttemptAt: null,
+      leaseOwner: 'draft-lease-replay',
+      leaseAcquiredAt: new Date(),
+      leaseExpiresAt: new Date(Date.now() + 30_000),
+    });
+    const prisma = prismaWithDraftTransaction(
+      draftClaimTransaction({ existing, claimed }),
+    );
+    const rejected = new BadGatewayException({
+      code: 'JAVA_EXPERIENCE_RELEASE_REJECTED',
+      message: 'invalid release',
+    });
+    const service = serviceWith({
+      prisma,
+      gateway: { publish: jest.fn(() => Promise.reject(rejected)) },
+    });
+
+    await expect(publishDraft(service)).rejects.toBe(rejected);
+    expect(prisma.storyExperienceDraftRelease.updateMany).toHaveBeenCalledWith({
+      where: expect.objectContaining({
+        status: { in: ['pending', 'uncertain'] },
+      }),
+      data: expect.objectContaining({
+        status: 'rejected',
+        rejectedAt: expect.any(Date),
+        leaseOwner: null,
+        nextAttemptAt: null,
+        lastErrorCode: expect.any(String),
+        lastErrorDetail: 'invalid release',
+      }),
+    });
+  });
+
+  it('replays a confirmed draft receipt without a second Java POST', async () => {
+    const confirmed = draftReleaseRow({
+      status: 'confirmed',
+      manifestUrl: MANIFEST_URL,
+      confirmedAt: new Date(),
+      attemptCount: 1,
+      firstAttemptAt: new Date(),
+      lastAttemptAt: new Date(),
+      lastAttemptedByUserId: 'user-1',
+    });
+    const gateway = { publish: jest.fn() };
+    const service = serviceWith({
+      gateway,
+      prisma: prismaWithDraftTransaction(
+        draftClaimTransaction({ existing: confirmed }),
+      ),
+    });
+
+    await expect(publishDraft(service)).resolves.toEqual(
+      draftReleaseResponse(manifestFixture()),
+    );
+    expect(gateway.publish).not.toHaveBeenCalled();
+  });
+
+  it('rejects a mismatched draft receipt instead of changing idempotency identity', async () => {
+    const gateway = { publish: jest.fn() };
+    const service = serviceWith({
+      gateway,
+      prisma: prismaWithDraftTransaction(
+        draftClaimTransaction({
+          existing: draftReleaseRow({ requestHash: 'b'.repeat(64) }),
+        }),
+      ),
+    });
+
+    await expect(publishDraft(service)).rejects.toMatchObject({
+      response: expect.objectContaining({
+        code: 'STORY_EXPERIENCE_DRAFT_RELEASE_RECEIPT_CONFLICT',
+      }),
+    });
+    expect(gateway.publish).not.toHaveBeenCalled();
+  });
+
+  it('recovers an expired draft lease by marking the prior outcome uncertain before exact replay', async () => {
+    const expired = draftReleaseRow({
+      status: 'pending',
+      attemptCount: 1,
+      firstAttemptAt: new Date(Date.now() - 60_000),
+      lastAttemptAt: new Date(Date.now() - 60_000),
+      lastAttemptedByUserId: 'user-1',
+      leaseOwner: 'dead-process',
+      leaseAcquiredAt: new Date(Date.now() - 60_000),
+      leaseExpiresAt: new Date(Date.now() - 30_000),
+    });
+    const tx = draftClaimTransaction({
+      existing: expired,
+      claimed: draftReleaseRow({
+        status: 'uncertain',
+        attemptCount: 2,
+        firstAttemptAt: expired.firstAttemptAt,
+        lastAttemptAt: new Date(),
+        lastAttemptedByUserId: 'user-1',
+        leaseOwner: 'fresh-process',
+        leaseAcquiredAt: new Date(),
+        leaseExpiresAt: new Date(Date.now() + 30_000),
+        lastErrorCode: 'STORY_EXPERIENCE_DRAFT_RELEASE_CRASH_RECOVERY',
+        lastErrorDetail: 'crash recovery',
+        lastErrorAt: new Date(),
+      }),
+    });
+    const gateway = {
+      publish: jest.fn(() => draftReleaseResponse(manifestFixture())),
+    };
+    const service = serviceWith({
+      gateway,
+      prisma: prismaWithDraftTransaction(tx),
+    });
+
+    await expect(publishDraft(service)).resolves.toEqual(
+      draftReleaseResponse(manifestFixture()),
+    );
+    expect(tx.storyExperienceDraftRelease.update).toHaveBeenCalledWith({
+      where: { buildId: BUILD_ID },
+      data: expect.objectContaining({
+        status: 'uncertain',
+        attemptCount: { increment: 1 },
+        lastErrorCode: 'STORY_EXPERIENCE_DRAFT_RELEASE_CRASH_RECOVERY',
+      }),
+    });
+    expect(gateway.publish).toHaveBeenCalledTimes(1);
   });
 
   it('rejects a Build without frozen assets before contacting Java', async () => {
@@ -790,7 +1062,7 @@ describe('StoryExperienceReleaseService authority reconciliation', () => {
     );
     const persistedVersions: string[] = [];
     tx.storyExperiencePublication.update.mockImplementation((args) => {
-      const data = (args as { data: Record<string, unknown> }).data;
+      const data = args.data;
       const currentVersion = data.authorityCurrentVersion;
       if (typeof currentVersion === 'string') {
         persistedVersions.push(currentVersion);
@@ -1031,7 +1303,7 @@ describe('StoryExperienceReleaseService authority reconciliation', () => {
 
   it('returns unpublished when the only local lifecycles were rejected', async () => {
     const prisma = prismaWithTransaction(reconciliationTransaction([]));
-    prisma.storyExperiencePublication.findFirst.mockReturnValue(null);
+    prisma.storyExperiencePublication.findFirst.mockResolvedValue(null);
     const gateway = { getGame: jest.fn() };
     const service = serviceWith({ prisma, gateway });
     const current = await service.getCurrentRelease(
@@ -1110,6 +1382,30 @@ describe('StoryExperiencePublication migration', () => {
     );
     expect(sql).toContain('"story_experience_publications_no_delete_trg"');
   });
+
+  it('keeps creator-only draft receipts immutable and separate from public authorization', () => {
+    const sql = readFileSync(
+      resolve(
+        __dirname,
+        '../../prisma/migrations/20260718140000_story_external_command_intents/migration.sql',
+      ),
+      'utf8',
+    );
+    expect(sql).toContain('"story_experience_draft_releases"');
+    expect(sql).toContain('"request_hash"');
+    expect(sql).toContain(
+      'Experience draft release receipts cannot be deleted',
+    );
+    expect(sql).toContain('Experience draft release identity is immutable');
+    // A deterministic Java rejection of the idempotent replay must be able to
+    // terminate a receipt wedged 'uncertain' — the lifecycle whitelist allows
+    // uncertain -> rejected alongside uncertain -> confirmed.
+    expect(sql).toContain(
+      "OLD.\"status\" = 'uncertain' AND\n      NEW.\"status\" IN ('confirmed', 'rejected')",
+    );
+    expect(sql).not.toContain('media_authorized_at');
+    expect(sql).not.toContain('authority_is_current');
+  });
 });
 
 function releaseRequest(
@@ -1130,6 +1426,15 @@ function releaseResponse(manifest: ReturnType<typeof manifestFixture>) {
     gameId: manifest.gameId,
     contentVersion: manifest.contentVersion,
     status: 'published' as const,
+    manifestUrl: MANIFEST_URL,
+  };
+}
+
+function draftReleaseResponse(manifest: ReturnType<typeof manifestFixture>) {
+  return {
+    gameId: manifest.gameId,
+    contentVersion: manifest.contentVersion,
+    status: 'draft' as const,
     manifestUrl: MANIFEST_URL,
   };
 }
@@ -1181,6 +1486,45 @@ function publicationRow(overrides: Record<string, unknown> = {}) {
   };
 }
 
+function draftReleaseRow(overrides: Record<string, unknown> = {}) {
+  const manifest = manifestFixture();
+  return {
+    id: 'draft-release-1',
+    buildId: BUILD_ID,
+    storyProjectId: PROJECT_ID,
+    gameId: PROJECT_ID,
+    contentVersion: BUILD_ID,
+    requestHash: canonicalJsonHash({
+      gameId: manifest.gameId,
+      contentVersion: manifest.contentVersion,
+      title: 'Branching Film Test',
+      subtitle: '第一季 · 无字来客',
+      manifest,
+      status: 'draft',
+      setCurrent: false,
+    }),
+    status: 'pending' as const,
+    requestedByUserId: 'user-1',
+    manifestUrl: null,
+    confirmedAt: null,
+    rejectedAt: null,
+    attemptCount: 0,
+    firstAttemptAt: null,
+    lastAttemptAt: null,
+    nextAttemptAt: null,
+    lastAttemptedByUserId: null,
+    leaseOwner: null,
+    leaseAcquiredAt: null,
+    leaseExpiresAt: null,
+    lastErrorCode: null,
+    lastErrorDetail: null,
+    lastErrorAt: null,
+    createdAt: new Date(),
+    updatedAt: new Date(),
+    ...overrides,
+  };
+}
+
 function authorityRow(input: {
   id: string;
   buildId: string;
@@ -1221,7 +1565,7 @@ function claimTransaction(input: {
     storyExperiencePublication: {
       findUnique: jest.fn(() => input.existing),
       findMany: jest.fn(() => (input.competing ? [input.competing] : [])),
-      create: jest.fn(() => {
+      create: jest.fn((_args: { data: Record<string, unknown> }) => {
         input.onCreate?.();
         return input.created ?? publicationRow();
       }),
@@ -1231,6 +1575,36 @@ function claimTransaction(input: {
           publicationRow({
             status: input.existing?.status ?? 'pending',
             leaseOwner: 'lease-1',
+            leaseExpiresAt: new Date(Date.now() + 30_000),
+          }),
+      ),
+    },
+  };
+}
+
+function draftClaimTransaction(input: {
+  existing: ReturnType<typeof draftReleaseRow> | null;
+  created?: ReturnType<typeof draftReleaseRow>;
+  claimed?: ReturnType<typeof draftReleaseRow>;
+  onCreate?: () => void;
+  clock?: Date;
+}) {
+  return {
+    $executeRaw: jest.fn(() => 1),
+    $queryRaw: jest.fn(() => [{ now: input.clock ?? new Date() }]),
+    storyExperienceDraftRelease: {
+      findUnique: jest.fn(() => input.existing),
+      create: jest.fn(() => {
+        input.onCreate?.();
+        return input.created ?? draftReleaseRow();
+      }),
+      update: jest.fn(
+        () =>
+          input.claimed ??
+          draftReleaseRow({
+            status: input.existing?.status ?? 'pending',
+            attemptCount: (input.existing?.attemptCount ?? 0) + 1,
+            leaseOwner: 'draft-lease-1',
             leaseExpiresAt: new Date(Date.now() + 30_000),
           }),
       ),
@@ -1256,7 +1630,12 @@ function reconciliationTransaction(
     ),
     storyExperiencePublication: {
       findMany: jest.fn(() => rows),
-      update: jest.fn(() => ({})),
+      update: jest.fn(
+        (_args: {
+          where?: Record<string, unknown>;
+          data: Record<string, unknown>;
+        }) => ({}),
+      ),
     },
   };
 }
@@ -1268,9 +1647,34 @@ function prismaWithTransaction(tx: object) {
     ),
     $queryRaw: jest.fn(() => [{ now: new Date() }]),
     storyExperiencePublication: {
+      updateMany: jest.fn(
+        (_args: {
+          where?: Record<string, unknown>;
+          data: Record<string, unknown>;
+        }) => ({ count: 1 }),
+      ),
+      findUnique: jest.fn(() => null),
+      findFirst: jest.fn(
+        async (): Promise<{ id: string } | null> => ({ id: 'publication-1' }),
+      ),
+    },
+  };
+}
+
+function prismaWithDraftTransaction(tx: object) {
+  return {
+    $transaction: jest.fn((operation: (value: object) => unknown) =>
+      operation(tx),
+    ),
+    $queryRaw: jest.fn(() => [{ now: new Date() }]),
+    storyExperiencePublication: {
       updateMany: jest.fn(() => ({ count: 1 })),
       findUnique: jest.fn(() => null),
-      findFirst: jest.fn(() => ({ id: 'publication-1' })),
+      findFirst: jest.fn(() => null),
+    },
+    storyExperienceDraftRelease: {
+      updateMany: jest.fn(() => ({ count: 1 })),
+      findUnique: jest.fn(() => null),
     },
   };
 }
@@ -1281,14 +1685,16 @@ function serviceWith(input: {
   prisma?: object;
   frozenAssetsAvailable?: boolean;
   buildOverrides?: Record<string, unknown>;
+  writeGuard?: object;
+  permissions?: object;
 }) {
   const manifest = input.manifest ?? manifestFixture();
   return new StoryExperienceReleaseService(
-    {
+    (input.permissions ?? {
       requireProject: jest.fn(() => ({
         project: { workspaceId: WORKSPACE_ID },
       })),
-    } as never,
+    }) as never,
     {
       getBuild: jest.fn(() => ({
         id: manifest.buildId,
@@ -1332,6 +1738,9 @@ function serviceWith(input: {
     }) as never,
     (input.prisma ??
       prismaWithTransaction(claimTransaction({ existing: null }))) as never,
+    (input.writeGuard ?? {
+      assertHumanWriteAllowed: jest.fn(),
+    }) as never,
   );
 }
 
@@ -1342,6 +1751,17 @@ function publish(service: StoryExperienceReleaseService) {
     PROJECT_ID,
     BUILD_ID,
     { status: 'published', setCurrent: true },
+    'satoken=session',
+  );
+}
+
+function publishDraft(service: StoryExperienceReleaseService) {
+  return service.publishBuild(
+    { userId: 'user-1' } as never,
+    WORKSPACE_ID,
+    PROJECT_ID,
+    BUILD_ID,
+    { status: 'draft', setCurrent: false },
     'satoken=session',
   );
 }

@@ -32,6 +32,7 @@ import {
   type StoryReferenceVersionDto,
 } from './dto';
 import { StoryPermissionService } from './story-permission.service';
+import { StoryProjectWriteGuardService } from './story-project-write-guard.service';
 
 const REFERENCE_ASSET_INCLUDE = Prisma.validator<Prisma.MediaAssetInclude>()({
   placements: true,
@@ -65,6 +66,7 @@ export class StoryReferenceService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly permissions: StoryPermissionService,
+    private readonly writeGuard: StoryProjectWriteGuardService,
   ) {}
 
   async listSlots(
@@ -90,6 +92,7 @@ export class StoryReferenceService {
     await this.requireScope(user, workspaceId, projectId, 'story.edit');
     const rows = await this.prisma.$transaction(
       async (tx) => {
+        await this.writeGuard.assertHumanWriteAllowed(tx, projectId);
         await lockReferenceProject(tx, projectId);
         const keys = input.slots.map((slot) => slot.key);
         const existing = await tx.storyReferenceSlot.findMany({
@@ -147,6 +150,7 @@ export class StoryReferenceService {
   ): Promise<StoryReferenceSlotDto> {
     await this.requireScope(user, workspaceId, projectId, 'story.edit');
     const row = await this.prisma.$transaction(async (tx) => {
+      await this.writeGuard.assertHumanWriteAllowed(tx, projectId);
       await lockReferenceProject(tx, projectId);
       await lockReferenceSlot(tx, slotId);
       const current = await tx.storyReferenceSlot.findFirst({
@@ -242,6 +246,7 @@ export class StoryReferenceService {
 
     const row = await this.prisma.$transaction(
       async (tx) => {
+        await this.writeGuard.assertHumanWriteAllowed(tx, projectId);
         await lockReferenceSlot(tx, slotId);
         const duplicate = await tx.storyReferenceVersion.findUnique({
           where: { submissionKey },
@@ -375,6 +380,7 @@ export class StoryReferenceService {
   }> {
     await this.requireScope(user, workspaceId, projectId, 'story.review');
     const result = await this.prisma.$transaction(async (tx) => {
+      await this.writeGuard.assertHumanWriteAllowed(tx, projectId);
       await lockReferenceVersion(tx, referenceVersionId);
       const current = await tx.storyReferenceVersion.findFirst({
         where: {
@@ -464,6 +470,7 @@ export class StoryReferenceService {
   ): Promise<StoryReferenceSlotDto> {
     await this.requireScope(user, workspaceId, projectId, 'story.review');
     const row = await this.prisma.$transaction(async (tx) => {
+      await this.writeGuard.assertHumanWriteAllowed(tx, projectId);
       await lockReferenceSlot(tx, slotId);
       await lockReferenceVersion(tx, input.referenceVersionId);
       const slot = await tx.storyReferenceSlot.findFirst({

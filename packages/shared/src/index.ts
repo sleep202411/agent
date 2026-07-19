@@ -22,3 +22,6 @@ export * from "./user-id-codec.js";
 export * from "./regions.js";
 export * from "./interactive-film-runtime.js";
 export * from "./experience-runtime.js";
+export * from "./story-directing-skills.js";
+export * from "./story-agent.js";
+export * from "./copilot-documents.js";

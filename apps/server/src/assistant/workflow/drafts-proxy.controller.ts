@@ -17,9 +17,12 @@ import {
 import type { Request } from 'express';
 import { CurrentUser, type AuthUser } from '../../auth';
 import { mastraFetch } from '../mastra-fetch';
+import { EntitlementService } from '../../entitlements';
 
 @Controller('drafts')
 export class DraftsProxyController {
+  constructor(private readonly entitlements: EntitlementService) {}
+
   private readonly logger = new Logger(DraftsProxyController.name);
 
   private get mastraUrl(): string {
@@ -29,15 +32,15 @@ export class DraftsProxyController {
     );
   }
 
-  private buildContextHeaders(
+  private async buildContextHeaders(
     user: AuthUser,
     projectId: string,
     req: Request,
-  ): Record<string, string> {
+  ): Promise<Record<string, string>> {
     const context = {
       userId: user.userId,
       projectId,
-      userTier: user.userLevel ?? 'free',
+      userTier: await this.entitlements.quotaTierForUser(user),
     };
     const headers: Record<string, string> = {
       Accept: 'application/json',
@@ -66,7 +69,7 @@ export class DraftsProxyController {
       : '';
     const url = `${this.mastraUrl}/drafts/${encodeURIComponent(runId)}${qs}`;
 
-    const headers = this.buildContextHeaders(user, projectId, req);
+    const headers = await this.buildContextHeaders(user, projectId, req);
 
     let upstream: globalThis.Response;
     try {
@@ -118,7 +121,7 @@ export class DraftsProxyController {
       runId,
     )}/${encodeURIComponent(clientRefId)}`;
     const headers = {
-      ...this.buildContextHeaders(user, projectId, req),
+      ...(await this.buildContextHeaders(user, projectId, req)),
       'Content-Type': 'application/json',
     };
 

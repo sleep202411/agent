@@ -1,5 +1,6 @@
 import { Logger, Module } from '@nestjs/common';
 import { WorkspacesModule } from '../../workspaces';
+import { StoryAccessModule } from '../../story-studio/story-access.module';
 import { NoOpRealtimeService } from './no-op-realtime.service';
 import { RealtimeController } from './realtime.controller';
 import { RealtimeGateway } from './realtime.gateway';
@@ -38,7 +39,7 @@ function selectRealtimeProvider(
 }
 
 @Module({
-  imports: [WorkspacesModule],
+  imports: [WorkspacesModule, StoryAccessModule],
   controllers: [RealtimeController],
   providers: [
     NoOpRealtimeService,

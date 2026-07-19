@@ -10,6 +10,7 @@ import {
   MediaStorageProvider,
   Prisma,
 } from '@prisma/client';
+import type { ResolvableMediaObjectPlacement } from '../infra/storage/media-asset-url-resolver.service';
 import { StoryProjectVideoLibraryService } from './story-project-video-library.service';
 
 const USER = { userId: 'user-1' };
@@ -42,6 +43,7 @@ function createHarness(workspaceId = WORKSPACE_ID) {
     service: new StoryProjectVideoLibraryService(
       { mediaAsset: { findMany } } as never,
       permissions as never,
+      { assertHumanWriteAllowed: jest.fn() } as never,
     ),
   };
 }
@@ -74,7 +76,7 @@ function videoAsset(id: string, createdAt: string) {
     createdAt: new Date(createdAt),
     updatedAt: new Date(createdAt),
     deletedAt: null,
-    placements: [],
+    placements: [] as ResolvableMediaObjectPlacement[],
     variants: [
       {
         id: `variant-${id}`,
@@ -92,7 +94,7 @@ function videoAsset(id: string, createdAt: string) {
         createdAt: new Date(createdAt),
         updatedAt: new Date(createdAt),
         deletedAt: null,
-        placements: [],
+        placements: [] as ResolvableMediaObjectPlacement[],
       },
     ],
   };

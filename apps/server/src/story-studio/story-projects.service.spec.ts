@@ -1,4 +1,4 @@
-import { ConflictException } from '@nestjs/common';
+import { ConflictException, HttpException } from '@nestjs/common';
 import {
   StoryFormat,
   StoryFrameProfile,
@@ -178,14 +178,19 @@ function serviceWith(prisma: Record<string, unknown>) {
       .fn()
       .mockResolvedValue({ role: WorkspaceMemberRole.owner }),
   };
+  const writeGuard = {
+    assertHumanWriteAllowed: jest.fn().mockResolvedValue(undefined),
+  };
   return {
     service: new StoryProjectsService(
       prisma as never,
       permissions as never,
       workspacePermissions as never,
+      writeGuard as never,
     ),
     permissions,
     workspacePermissions,
+    writeGuard,
   };
 }
 
@@ -226,6 +231,7 @@ describe('StoryProjectsService v3 authoring boundary', () => {
               storyWorldNodePresent: boolean;
             };
           };
+          writeState: { create: Record<string, never> };
         };
       }) => {
         expect(input.data.draft.create).toMatchObject({
@@ -237,6 +243,7 @@ describe('StoryProjectsService v3 authoring boundary', () => {
           nodePositions: {},
           storyWorldNodePresent: true,
         });
+        expect(input.data.writeState).toEqual({ create: {} });
         return Promise.resolve(project);
       },
     );
@@ -352,6 +359,42 @@ describe('StoryProjectsService v3 authoring boundary', () => {
     });
     expect(result.storyWorldNodePresent).toBe(false);
     expect(result.revision).toBe(3);
+  });
+
+  it('rejects inside the write transaction before mutating canvas layout', async () => {
+    const tx = {
+      storyCanvasLayout: {
+        updateMany: jest.fn(),
+        findUnique: jest.fn(),
+      },
+    };
+    const prisma = { $transaction: transactionMock(tx) };
+    const { service, writeGuard } = serviceWith(prisma);
+    writeGuard.assertHumanWriteAllowed.mockRejectedValueOnce(
+      new HttpException(
+        {
+          code: 'STORY_AGENT_APPLYING',
+          message: 'The Story Agent is applying a project change.',
+        },
+        423,
+      ),
+    );
+
+    await expect(
+      service.putCanvasLayout(USER as never, WORKSPACE_ID, PROJECT_ID, {
+        expectedRevision: 2,
+        schemaVersion: STORY_CANVAS_LAYOUT_SCHEMA_VERSION,
+        nodePositions: {},
+        storyWorldNodePresent: false,
+        sessionId: 'canvas-session',
+      }),
+    ).rejects.toMatchObject({ status: 423 });
+
+    expect(writeGuard.assertHumanWriteAllowed).toHaveBeenCalledWith(
+      tx,
+      PROJECT_ID,
+    );
+    expect(tx.storyCanvasLayout.updateMany).not.toHaveBeenCalled();
   });
 
   it('returns a controlled conflict for a stored pre-v3 draft', async () => {

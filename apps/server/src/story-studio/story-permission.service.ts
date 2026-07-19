@@ -12,6 +12,7 @@ import {
 } from '@prisma/client';
 import { PrismaService } from '../infra/db/db.module';
 import { WorkspacePermissionService } from '../workspaces/workspace-permission.service';
+import { StoryProjectWriteGuardService } from './story-project-write-guard.service';
 
 export type StoryCapability =
   | 'story.read'
@@ -52,11 +53,21 @@ const ROLE_CAPABILITIES: Record<
   [StoryProjectMemberRole.viewer]: ['story.read'],
 };
 
+const WRITE_CAPABILITIES = new Set<StoryCapability>([
+  'story.edit',
+  'story.generate',
+  'story.review',
+  'story.build',
+  'story.release',
+  'story.admin',
+]);
+
 @Injectable()
 export class StoryPermissionService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly workspacePermissions: WorkspacePermissionService,
+    private readonly writeGuard: StoryProjectWriteGuardService,
   ) {}
 
   capabilities(role: StoryProjectMemberRole): StoryCapability[] {
@@ -125,6 +136,14 @@ export class StoryPermissionService {
         code: 'STORY_PERMISSION_DENIED',
         message: 'You do not have permission to perform this story action.',
       });
+    }
+
+    // Give every write-capable command an early, consistent 423 before it does
+    // expensive preparation. This is advisory only: the short transaction ends
+    // here, so the mutation service must repeat the guard inside its write
+    // transaction to be authoritative.
+    if (WRITE_CAPABILITIES.has(capability)) {
+      await this.writeGuard.assertHumanWriteAllowedEarly(storyProjectId);
     }
 
     return { project: projectRow, role, capabilities };

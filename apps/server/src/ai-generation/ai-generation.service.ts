@@ -73,6 +73,16 @@ export interface AiJobSubmissionHooks {
   afterJobCreate?: (tx: Prisma.TransactionClient, job: AiJob) => Promise<void>;
 }
 
+/**
+ * Internal product-plane seam for atomically ordering a domain cancellation
+ * intent with the canonical AiJob terminal transition. The hook executes in
+ * the repository transaction and must not perform network I/O.
+ */
+export interface AiJobCancellationHooks {
+  beforeCancel?: (tx: Prisma.TransactionClient, job: AiJob) => Promise<void>;
+  afterCancel?: (tx: Prisma.TransactionClient, job: AiJob) => Promise<void>;
+}
+
 @Injectable()
 export class AiGenerationService {
   private readonly logger = new Logger(AiGenerationService.name);
@@ -535,18 +545,49 @@ export class AiGenerationService {
     return this.toStatusResponse(job);
   }
 
-  async cancelJob(user: AuthUser, id: string) {
+  async cancelJob(
+    user: AuthUser,
+    id: string,
+    hooks: AiJobCancellationHooks = {},
+  ) {
     const job = await this.getEditableJob(user, id);
-    if (TERMINAL_STATUSES.has(job.status))
+    if (job.status === 'cancelled') {
+      if (hooks.beforeCancel || hooks.afterCancel) {
+        const synchronized = await this.cancelJobRow(
+          job,
+          {
+            code: 'CANCELLED_BY_USER',
+            message: 'Cancelled by user.',
+            userMessage: 'This generation was cancelled.',
+            retryable: true,
+            releaseReason: 'ai_job_cancelled',
+          },
+          hooks,
+        );
+        return this.publicJob(synchronized, { detail: true });
+      }
+      // The DB transition is the durable acceptance point. Provider, Redis
+      // capacity and wallet cleanup are idempotent post-commit lifecycle work;
+      // replaying a cancelled request heals a process crash between the claim
+      // and cleanup without ever reopening the cancellation decision.
+      await this.completeCancellationLifecycle(job, 'ai_job_cancelled');
       return this.publicJob(job, { detail: true });
+    }
+    if (TERMINAL_STATUSES.has(job.status)) {
+      return this.publicJob(job, { detail: true });
+    }
 
-    const updated = await this.cancelJobRow(job, {
-      code: 'CANCELLED_BY_USER',
-      message: 'Cancelled by user.',
-      userMessage: 'This generation was cancelled.',
-      retryable: true,
-      releaseReason: 'ai_job_cancelled',
-    });
+    const updated = await this.cancelJobRow(
+      job,
+      {
+        code: 'CANCELLED_BY_USER',
+        message: 'Cancelled by user.',
+        userMessage: 'This generation was cancelled.',
+        retryable: true,
+        releaseReason: 'ai_job_cancelled',
+      },
+      hooks,
+    );
     return this.publicJob(updated, { detail: true });
   }
 
@@ -564,6 +605,7 @@ export class AiGenerationService {
       retryable: boolean;
       releaseReason: string;
     },
+    hooks: AiJobCancellationHooks = {},
   ): Promise<AiJob> {
     const now = new Date().toISOString();
     // Claim the cancellation atomically FIRST. A worker completing this job runs
@@ -572,38 +614,56 @@ export class AiGenerationService {
     // returns null and we must NOT release the hold or cancel the provider run —
     // otherwise a delivered job would also be refunded (free generation).
     const cancelled = await this.store.cancelIfActive(job.id, {
-      status: 'cancelled',
-      stage: 'cancelled',
-      completedAt: now,
-      queuePosition: null,
-      logs: [
-        ...job.logs,
-        { time: now, stage: 'cancelled', message: opts.message },
-      ],
-      error: {
-        code: opts.code,
-        message: opts.message,
-        userMessage: opts.userMessage,
-        retryable: opts.retryable,
-        createdAt: now,
+      observedJob: job,
+      beforeCancel: hooks.beforeCancel,
+      afterCancel: hooks.afterCancel,
+      patch: {
+        status: 'cancelled',
+        stage: 'cancelled',
+        completedAt: now,
+        queuePosition: null,
+        logs: [
+          ...job.logs,
+          { time: now, stage: 'cancelled', message: opts.message },
+        ],
+        error: {
+          code: opts.code,
+          message: opts.message,
+          userMessage: opts.userMessage,
+          retryable: opts.retryable,
+          createdAt: now,
+        },
       },
     });
     if (!cancelled) {
-      // Lost the race: the job reached a terminal state first. The winner
-      // (completion / failure) already owns the hold + outputs; leave them be.
-      return (await this.store.findById(job.id)) ?? job;
+      // Lost the race: the job reached a terminal state first. A completion or
+      // failure owns its hold + outputs; a cancellation owns cleanup below.
+      const winner = (await this.store.findById(job.id)) ?? job;
+      if (winner.status === 'cancelled') {
+        // A concurrent cancellation may have committed and crashed before its
+        // post-commit cleanup. Every cleanup operation is idempotent, so the
+        // losing request may safely finish that durable lifecycle.
+        await this.completeCancellationLifecycle(winner, opts.releaseReason);
+      }
+      return winner;
     }
 
+    await this.completeCancellationLifecycle(cancelled, opts.releaseReason);
+    return cancelled;
+  }
+
+  private async completeCancellationLifecycle(
+    job: AiJob,
+    releaseReason: string,
+  ): Promise<void> {
     await this.cancelProviderJobIfNeeded(job);
     await this.providerCapacity.release(job);
-    await this.billingWallet.releaseForJob(cancelled, opts.releaseReason);
-
+    await this.billingWallet.releaseForJob(job, releaseReason);
     const repositioned = await this.store.recomputeQueuePositions(
       job.queueName,
     );
-    this.emitJobUpdate(cancelled);
-    this.emitRepositioned(repositioned, cancelled.id);
-    return cancelled;
+    this.emitJobUpdate(job);
+    this.emitRepositioned(repositioned, job.id);
   }
 
   /**

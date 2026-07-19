@@ -79,8 +79,13 @@ function serviceFixture() {
     workspaceId: WORKSPACE_ID,
     status: MediaAssetStatus.ready,
   };
-  const createAsset = jest.fn(({ data }: { data: Record<string, unknown> }) =>
-    Promise.resolve({ ...asset, objectKey: data.objectKey as string }),
+  const createAsset = jest.fn(
+    ({
+      data,
+    }: {
+      data: Record<string, unknown>;
+      select?: Record<string, unknown>;
+    }) => Promise.resolve({ ...asset, objectKey: data.objectKey as string }),
   );
   const tx = {
     $executeRaw: jest.fn().mockResolvedValue(1),
