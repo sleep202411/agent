@@ -1,7 +1,7 @@
 "use client";
 
-import { useMemo, useState } from "react";
-import { IconEdit, IconPlus, IconRefresh } from "@tabler/icons-react";
+import { useEffect, useMemo, useState } from "react";
+import { IconAdjustments, IconEdit, IconPlus, IconRefresh } from "@tabler/icons-react";
 import { Button } from "@/components/ui/button";
 import { DataTable, type ColumnDef } from "@/components/ui/data-table";
 import { Textarea } from "@/components/ui/textarea";
@@ -33,6 +33,8 @@ import type {
   AdminBillingMembershipPlansData,
   BillingMembershipPlanRow,
   BillingMembershipPlanStatus,
+  MembershipPlanBenefits,
+  MembershipPlanBenefitsData,
 } from "./types";
 import { emptyMembershipPlans } from "./types";
 
@@ -62,6 +64,7 @@ export function BillingMembershipsPanel({
   const [status, setStatus] = useState("");
   const [createOpen, setCreateOpen] = useState(false);
   const [editingPlan, setEditingPlan] = useState<BillingMembershipPlanRow | null>(null);
+  const [benefitsPlan, setBenefitsPlan] = useState<BillingMembershipPlanRow | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(initialError ?? null);
 
@@ -186,6 +189,7 @@ export function BillingMembershipsPanel({
           plans={plans.items.filter((plan) => productFamily(plan.productType) === family)}
           loading={loading}
           onEditPlan={setEditingPlan}
+          onEditBenefits={setBenefitsPlan}
         />
       </section>
 
@@ -213,6 +217,24 @@ export function BillingMembershipsPanel({
           />
         ) : null}
       </AdminDialog>
+
+      <AdminDialog
+        open={Boolean(benefitsPlan)}
+        title="配置会员权益"
+        description="权益 (benefits) 是配额与功能判定的唯一事实来源；保存后本节点立即生效，其余节点最多 20 秒内生效。"
+        onClose={() => setBenefitsPlan(null)}
+      >
+        {benefitsPlan ? (
+          <MembershipPlanBenefitsForm
+            key={benefitsPlan.id}
+            plan={benefitsPlan}
+            onSaved={async () => {
+              setBenefitsPlan(null);
+              await refreshPlans();
+            }}
+          />
+        ) : null}
+      </AdminDialog>
     </div>
   );
 }
@@ -221,10 +243,12 @@ function MembershipPlansTable({
   plans,
   loading,
   onEditPlan,
+  onEditBenefits,
 }: {
   plans: BillingMembershipPlanRow[];
   loading: boolean;
   onEditPlan: (plan: BillingMembershipPlanRow) => void;
+  onEditBenefits: (plan: BillingMembershipPlanRow) => void;
 }) {
   const columns = useMemo<ColumnDef<BillingMembershipPlanRow, unknown>[]>(
     () => [
@@ -288,9 +312,14 @@ function MembershipPlansTable({
                 充值折扣 {formatBpsPercent(plan.topupDiscountBps)}
               </p>
               <p className="text-[12px] text-slate-500">
-                并发 {limitText(plan.limits.concurrentJobs)} · 队列{" "}
-                {limitText(plan.limits.queuedJobs)} · 优先级{" "}
-                {priorityText(plan.limits.queuePriority)}
+                {String(plan.benefits?.quotaTier ?? "?")} · 图/日{" "}
+                {dailyText(plan.benefits?.imageDaily)} · 聊/日 {dailyText(plan.benefits?.chatDaily)}{" "}
+                · {priorityText(plan.benefits?.chatPerMinute)}/分钟
+              </p>
+              <p className="text-[12px] text-slate-500">
+                并发 {limitText(plan.benefits?.concurrentJobs)} · 队列{" "}
+                {limitText(plan.benefits?.queuedJobs)} · 优先级{" "}
+                {priorityText(plan.benefits?.queuePriority)}
               </p>
             </>
           );
@@ -334,16 +363,22 @@ function MembershipPlansTable({
         id: "actions",
         header: "操作",
         enableSorting: false,
-        meta: { pin: "right", cellClassName: "w-[96px]" },
+        meta: { pin: "right", cellClassName: "w-[176px]" },
         cell: ({ row }) => (
-          <Button variant="outline" size="sm" onClick={() => onEditPlan(row.original)}>
-            <IconEdit className="size-4" />
-            编辑
-          </Button>
+          <div className="flex items-center gap-1.5">
+            <Button variant="outline" size="sm" onClick={() => onEditBenefits(row.original)}>
+              <IconAdjustments className="size-4" />
+              权益
+            </Button>
+            <Button variant="outline" size="sm" onClick={() => onEditPlan(row.original)}>
+              <IconEdit className="size-4" />
+              编辑
+            </Button>
+          </div>
         ),
       },
     ],
-    [onEditPlan]
+    [onEditPlan, onEditBenefits]
   );
 
   return (
@@ -488,7 +523,7 @@ function MembershipPlanForm({
           name="limits"
           label="Limits JSON"
           defaultValue={jsonDefaults.limits}
-          help="queuePriority 数字越小越先执行；concurrentJobs 是同一 user/workspace 同时 running 的生成数；queuedJobs 是等待队列 backlog；null 表示合同管理/不限制。"
+          help="遗留展示字段（如 chatHistoryDays 等营销数字）。配额、并发与队列优先级的判定以「权益」按钮里的 benefits 为准。"
         />
         <JsonFormField
           name="marketing"
@@ -599,5 +634,346 @@ function limitText(value: unknown) {
 }
 
 function priorityText(value: unknown) {
-  return typeof value === "number" && Number.isFinite(value) ? String(value) : "默认";
+  return typeof value === "number" && Number.isFinite(value) ? String(value) : "?";
+}
+
+function dailyText(value: unknown) {
+  if (value === "Infinity") return "不限";
+  return typeof value === "number" && Number.isFinite(value) ? formatInteger(String(value)) : "?";
+}
+
+// ─── 权益 (benefits) editor ──────────────────────────────────────────────
+
+type CapDraft = { value: string; unlimited: boolean };
+
+type BenefitsDraft = {
+  quotaTier: MembershipPlanBenefits["quotaTier"];
+  queuePriority: string;
+  imageDaily: CapDraft;
+  videoDaily: CapDraft;
+  chatDaily: CapDraft;
+  workflowDaily: CapDraft;
+  uploadMB: string;
+  chatPerMinute: string;
+  concurrentJobs: CapDraft;
+  queuedJobs: CapDraft;
+  features: MembershipPlanBenefits["features"];
+};
+
+const DAILY_CAP_FIELDS: Array<{
+  key: "imageDaily" | "videoDaily" | "chatDaily" | "workflowDaily";
+  label: string;
+}> = [
+  { key: "imageDaily", label: "图片 / 日" },
+  { key: "videoDaily", label: "视频 / 日" },
+  { key: "chatDaily", label: "对话 / 日" },
+  { key: "workflowDaily", label: "工作流 / 日" },
+];
+
+const FEATURE_FIELDS: Array<{
+  key: keyof MembershipPlanBenefits["features"];
+  label: string;
+}> = [
+  { key: "aiGeneration", label: "AI 生成" },
+  { key: "advancedModelAccess", label: "高级模型" },
+  { key: "advancedParameters", label: "高级参数" },
+  { key: "teamSharedCredits", label: "团队共享算力" },
+];
+
+function capDraft(value: unknown, fallback: number): CapDraft {
+  if (value === "Infinity" || value === null) {
+    return { value: String(fallback), unlimited: true };
+  }
+  return {
+    value: typeof value === "number" && Number.isFinite(value) ? String(value) : String(fallback),
+    unlimited: false,
+  };
+}
+
+function numberDraft(value: unknown, fallback: number): string {
+  return typeof value === "number" && Number.isFinite(value) ? String(value) : String(fallback);
+}
+
+function benefitsDraft(raw: Record<string, unknown>): BenefitsDraft {
+  const tier = raw.quotaTier;
+  const features = (raw.features ?? {}) as Record<string, unknown>;
+  return {
+    quotaTier:
+      tier === "Free" || tier === "VIP1" || tier === "VIP2" || tier === "VIP3" ? tier : "Free",
+    queuePriority: numberDraft(raw.queuePriority, 10),
+    imageDaily: capDraft(raw.imageDaily, 5),
+    videoDaily: capDraft(raw.videoDaily, 0),
+    chatDaily: capDraft(raw.chatDaily, 30),
+    workflowDaily: capDraft(raw.workflowDaily, 3),
+    uploadMB: numberDraft(raw.uploadMB, 100),
+    chatPerMinute: numberDraft(raw.chatPerMinute, 20),
+    concurrentJobs: capDraft(raw.concurrentJobs, 1),
+    queuedJobs: capDraft(raw.queuedJobs, 2),
+    features: {
+      aiGeneration: features.aiGeneration !== false,
+      advancedModelAccess: features.advancedModelAccess === true,
+      advancedParameters: features.advancedParameters === true,
+      teamSharedCredits: features.teamSharedCredits === true,
+    },
+  };
+}
+
+function capNumber(draft: CapDraft, label: string): number {
+  const parsed = Number(draft.value);
+  if (!Number.isInteger(parsed) || parsed < 0) {
+    throw new Error(`${label} 必须是非负整数。`);
+  }
+  return parsed;
+}
+
+function benefitsPayload(draft: BenefitsDraft): MembershipPlanBenefits {
+  return {
+    quotaTier: draft.quotaTier,
+    queuePriority: capNumber({ value: draft.queuePriority, unlimited: false }, "队列优先级"),
+    imageDaily: draft.imageDaily.unlimited ? "Infinity" : capNumber(draft.imageDaily, "图片 / 日"),
+    videoDaily: draft.videoDaily.unlimited ? "Infinity" : capNumber(draft.videoDaily, "视频 / 日"),
+    chatDaily: draft.chatDaily.unlimited ? "Infinity" : capNumber(draft.chatDaily, "对话 / 日"),
+    workflowDaily: draft.workflowDaily.unlimited
+      ? "Infinity"
+      : capNumber(draft.workflowDaily, "工作流 / 日"),
+    uploadMB: capNumber({ value: draft.uploadMB, unlimited: false }, "上传 (MB)"),
+    chatPerMinute: capNumber({ value: draft.chatPerMinute, unlimited: false }, "对话 / 分钟"),
+    concurrentJobs: draft.concurrentJobs.unlimited
+      ? null
+      : capNumber(draft.concurrentJobs, "并发任务"),
+    queuedJobs: draft.queuedJobs.unlimited ? null : capNumber(draft.queuedJobs, "排队任务"),
+    features: draft.features,
+  };
+}
+
+function MembershipPlanBenefitsForm({
+  plan,
+  onSaved,
+}: {
+  plan: BillingMembershipPlanRow;
+  onSaved: () => Promise<void>;
+}) {
+  const [draft, setDraft] = useState<BenefitsDraft | null>(null);
+  const [issues, setIssues] = useState<string[] | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  // The form is mounted per plan (key={plan.id}), so initial state is
+  // always the pristine loading state here — the effect only fetches.
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        // Always re-fetch: another admin may have edited benefits since the
+        // table snapshot was loaded.
+        const data = await requestEnvelope<MembershipPlanBenefitsData>(
+          `/api/admin/billing/membership-plans/${plan.id}/benefits`
+        );
+        if (cancelled) return;
+        setDraft(benefitsDraft((data.benefits ?? {}) as Record<string, unknown>));
+        setIssues(data.issues);
+      } catch (err) {
+        if (!cancelled) setError(toErrorMessage(err));
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [plan.id]);
+
+  async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!draft) return;
+    setSaving(true);
+    setError(null);
+    try {
+      await mutateEnvelope(
+        `/api/admin/billing/membership-plans/${plan.id}/benefits`,
+        { benefits: benefitsPayload(draft) },
+        "PUT"
+      );
+      await onSaved();
+    } catch (err) {
+      setError(toErrorMessage(err));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  if (!draft) {
+    return error ? (
+      <ErrorBanner message={error} />
+    ) : (
+      <p className="py-6 text-sm text-slate-500">加载权益中…</p>
+    );
+  }
+
+  function setCap(
+    key:
+      | "imageDaily"
+      | "videoDaily"
+      | "chatDaily"
+      | "workflowDaily"
+      | "concurrentJobs"
+      | "queuedJobs",
+    next: Partial<CapDraft>
+  ) {
+    setDraft((prev) => (prev ? { ...prev, [key]: { ...prev[key], ...next } } : prev));
+  }
+
+  return (
+    <form className="space-y-5" onSubmit={handleSubmit}>
+      {error ? <ErrorBanner message={error} /> : null}
+      {issues?.length ? (
+        <ErrorBanner message={`当前存储的权益不合法，保存将整体覆盖修复：${issues.join("；")}`} />
+      ) : null}
+
+      <p className="font-mono text-[12px] text-slate-500">
+        {plan.planKey} · {plan.name}
+      </p>
+
+      <div className="grid gap-3 md:grid-cols-2">
+        <FormLabel
+          label="配额档位标签"
+          help="仅作为展示 / 日志的粗粒度标签；实际限额以下方数值为准。"
+        >
+          <Select
+            value={draft.quotaTier}
+            onChange={(value) =>
+              setDraft((prev) =>
+                prev ? { ...prev, quotaTier: value as BenefitsDraft["quotaTier"] } : prev
+              )
+            }
+          >
+            <option value="Free">Free</option>
+            <option value="VIP1">VIP1</option>
+            <option value="VIP2">VIP2</option>
+            <option value="VIP3">VIP3</option>
+          </Select>
+        </FormLabel>
+        <FormLabel label="队列优先级" help="BullMQ priority，数字越小越先执行。">
+          <TextInput
+            type="number"
+            min={0}
+            max={100}
+            value={draft.queuePriority}
+            onChange={(event) =>
+              setDraft((prev) => (prev ? { ...prev, queuePriority: event.target.value } : prev))
+            }
+          />
+        </FormLabel>
+      </div>
+
+      <div className="grid gap-3 md:grid-cols-2">
+        {DAILY_CAP_FIELDS.map(({ key, label }) => (
+          <CapField
+            key={key}
+            label={label}
+            draft={draft[key]}
+            unlimitedLabel="不限"
+            onChange={(next) => setCap(key, next)}
+          />
+        ))}
+        <FormLabel label="上传 (MB / 日)" help="所有档位都是硬上限——上传会变成永久存储成本。">
+          <TextInput
+            type="number"
+            min={0}
+            value={draft.uploadMB}
+            onChange={(event) =>
+              setDraft((prev) => (prev ? { ...prev, uploadMB: event.target.value } : prev))
+            }
+          />
+        </FormLabel>
+        <FormLabel label="对话 / 分钟" help="脚本滥用防线，对所有档位生效。">
+          <TextInput
+            type="number"
+            min={0}
+            value={draft.chatPerMinute}
+            onChange={(event) =>
+              setDraft((prev) => (prev ? { ...prev, chatPerMinute: event.target.value } : prev))
+            }
+          />
+        </FormLabel>
+        <CapField
+          label="并发任务"
+          draft={draft.concurrentJobs}
+          unlimitedLabel="不限 (合同管理)"
+          onChange={(next) => setCap("concurrentJobs", next)}
+        />
+        <CapField
+          label="排队任务"
+          draft={draft.queuedJobs}
+          unlimitedLabel="不限 (合同管理)"
+          onChange={(next) => setCap("queuedJobs", next)}
+        />
+      </div>
+
+      <div className="grid gap-2 md:grid-cols-2">
+        {FEATURE_FIELDS.map(({ key, label }) => (
+          <label
+            key={key}
+            className="flex items-center gap-2 rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-700"
+          >
+            <input
+              type="checkbox"
+              checked={draft.features[key]}
+              onChange={(event) =>
+                setDraft((prev) =>
+                  prev
+                    ? {
+                        ...prev,
+                        features: { ...prev.features, [key]: event.target.checked },
+                      }
+                    : prev
+                )
+              }
+              className="size-4 rounded border-slate-300"
+            />
+            {label}
+          </label>
+        ))}
+      </div>
+
+      <div className="flex justify-end gap-2 border-t border-slate-200 pt-4">
+        <Button type="submit" disabled={saving}>
+          保存权益
+        </Button>
+      </div>
+    </form>
+  );
+}
+
+function CapField({
+  label,
+  draft,
+  unlimitedLabel,
+  onChange,
+}: {
+  label: string;
+  draft: CapDraft;
+  unlimitedLabel: string;
+  onChange: (next: Partial<CapDraft>) => void;
+}) {
+  return (
+    <FormLabel label={label}>
+      <div className="flex items-center gap-2">
+        <TextInput
+          type="number"
+          min={0}
+          value={draft.value}
+          disabled={draft.unlimited}
+          onChange={(event) => onChange({ value: event.target.value })}
+        />
+        <label className="flex shrink-0 items-center gap-1.5 text-[12px] text-slate-600">
+          <input
+            type="checkbox"
+            checked={draft.unlimited}
+            onChange={(event) => onChange({ unlimited: event.target.checked })}
+            className="size-3.5 rounded border-slate-300"
+          />
+          {unlimitedLabel}
+        </label>
+      </div>
+    </FormLabel>
+  );
 }
