@@ -97,6 +97,18 @@ export function executeStoryPatch(input: {
   }
   assertAgentDraftIntegrity(parsedDraft.data);
 
+  // Establishing the story world summons its canvas card: once the patch
+  // leaves any bible overview text behind, the Story World card joins the
+  // canvas (fresh projects start without it; deleting it again is layout-only).
+  const bible = parsedDraft.data.storyBible;
+  const hasWorldFoundation =
+    bible.logline.trim() !== '' ||
+    bible.synopsis.trim() !== '' ||
+    bible.worldview.trim() !== '';
+  if (hasWorldFoundation && !layout.storyWorldNodePresent) {
+    layout.storyWorldNodePresent = true;
+  }
+
   layout.nodePositions = removeOrphanedCanvasPositions(
     layout.nodePositions,
     parsedDraft.data,
