@@ -388,7 +388,7 @@ agent:
   replicaCount: 1
   image:
     repository: fizzdragon-agent
-    tag: ba7dae7afd8292607df1dc3d95fd9894b8a3fe6e
+    tag: local-fix-20260522-stuck-lock
   containerPort: 4111
   env:
     PORT: "4111"
@@ -425,7 +425,7 @@ agentWorker:
   replicaCount: 1
   image:
     repository: fizzdragon-agent
-    tag: ba7dae7afd8292607df1dc3d95fd9894b8a3fe6e
+    tag: local-fix-20260522-stuck-lock
   command: ["npx", "tsx", "src/worker.ts"]
   env:
     # DATABASE_URL + REDIS_URL come from KV via projected `fizzdragon-secrets`
