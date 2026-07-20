@@ -3,11 +3,13 @@ import {
   Body,
   Controller,
   Headers,
+  Ip,
   Param,
   Post,
 } from '@nestjs/common';
 import { z } from 'zod';
 import { CurrentUser, Public, type AuthUser } from '../auth';
+import { RateLimitService } from '../common/throttle/rate-limit.service';
 import { ZodValidationPipe } from '../common/zod.pipe';
 import {
   StoryProjectIdParamsSchema,
@@ -110,20 +112,43 @@ export class StoryTextPlayController {
  * frozen manifest playback an interactive film uses — the film path is
  * untouched. A confirmed publication is the anonymous read grant; the client
  * carries the play state, so the runtime stays stateless.
+ *
+ * Every route here spends model tokens on an ANONYMOUS request, so each one is
+ * rate limited per client address. Directions are the expensive, most abusable
+ * call (a full pitch set per press of "reroll"), so they get the tighter bucket.
  */
 @Controller('story-experiences')
 export class StoryTextExperienceController {
-  constructor(private readonly textPlay: StoryTextPlayService) {}
+  constructor(
+    private readonly textPlay: StoryTextPlayService,
+    private readonly rateLimit: RateLimitService,
+  ) {}
+
+  private async guard(
+    bucket: string,
+    ip: string,
+    max: number,
+    windowSec: number,
+  ): Promise<void> {
+    await this.rateLimit.guard({
+      bucket: `text-play:${bucket}`,
+      actorId: ip || 'unknown',
+      max,
+      windowSec,
+    });
+  }
 
   /** Entry directions the player picks between before the first beat. */
   @Post(':gameId/text-play/directions')
   @Public()
   async directions(
+    @Ip() ip: string,
     @Param(new ZodValidationPipe(StoryTextExperienceParamsSchema))
     params: StoryTextExperienceParams,
     @Body(new ZodValidationPipe(StoryTextExperienceDirectionsSchema))
     body: StoryTextExperienceDirections,
   ) {
+    await this.guard('directions', ip, 10, 300);
     return {
       code: 200,
       data: {
@@ -139,11 +164,13 @@ export class StoryTextExperienceController {
   @Post(':gameId/text-play/start')
   @Public()
   async start(
+    @Ip() ip: string,
     @Param(new ZodValidationPipe(StoryTextExperienceParamsSchema))
     params: StoryTextExperienceParams,
     @Body(new ZodValidationPipe(StoryTextExperienceStartSchema))
     body: StoryTextExperienceStart,
   ) {
+    await this.guard('start', ip, 30, 300);
     return {
       code: 200,
       data: await this.textPlay.startPublished(
@@ -157,11 +184,13 @@ export class StoryTextExperienceController {
   @Post(':gameId/text-play/turn')
   @Public()
   async turn(
+    @Ip() ip: string,
     @Param(new ZodValidationPipe(StoryTextExperienceParamsSchema))
     params: StoryTextExperienceParams,
     @Body(new ZodValidationPipe(StoryTextExperienceTurnSchema))
     body: StoryTextExperienceTurn,
   ) {
+    await this.guard('turn', ip, 60, 300);
     const { contentVersion, ...request } = body;
     return {
       code: 200,
