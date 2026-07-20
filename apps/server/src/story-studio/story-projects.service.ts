@@ -234,7 +234,10 @@ export class StoryProjectsService {
           create: {
             schemaVersion: STORY_CANVAS_LAYOUT_SCHEMA_VERSION,
             nodePositions: {},
-            storyWorldNodePresent: true,
+            // A fresh project opens on the empty-canvas agent launcher (idea +
+            // director skills); the Story World card is summoned later, not
+            // pre-seeded.
+            storyWorldNodePresent: false,
             updatedByUserId: user.userId,
           },
         },

@@ -338,6 +338,11 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
   const [appliedLayoutRevision, setAppliedLayoutRevision] = useState<number | null>(null);
   const [layoutSaveState, setLayoutSaveState] = useState<SaveState>("idle");
   const [layoutSaveError, setLayoutSaveError] = useState<string | null>(null);
+  // Optimistic Story World presence while a layout write is in flight; the
+  // authoritative layout projection re-syncs it on adoption.
+  const [storyWorldNodePresentOverride, setStoryWorldNodePresentOverride] = useState<
+    boolean | null
+  >(null);
   const [productionPendingKey, setProductionPendingKey] = useState<string | null>(null);
   const [productionError, setProductionError] = useState<string | null>(null);
   const [clipGenerationRequest, setClipGenerationRequest] =
@@ -594,8 +599,13 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
   // the last defined projections for every render-side consumer.
   const workbenchProjection = useLastDefinedData(workbenchQuery.data);
   const layoutProjection = useLastDefinedData(layoutQuery.data);
-  // The Story World root is mandatory and always present on the canvas.
-  const storyWorldNodePresent = true;
+  // The Story World card presence is layout-owned (layout v2): legacy projects
+  // (and any layout that predates the flag) keep the card; fresh projects start
+  // without it so the empty-canvas agent launcher (idea + director skills) can
+  // own the first-open experience. The card is summoned from the creator
+  // menu/dock and deletable like any canvas projection.
+  const storyWorldNodePresent =
+    storyWorldNodePresentOverride ?? layoutProjection?.storyWorldNodePresent ?? true;
   const currentReleaseQuery = useQuery({
     queryKey: ["story-studio", "current-release", workspaceId, projectId],
     queryFn: () => getStoryExperienceCurrentRelease(workspaceId as string, projectId),
@@ -1222,6 +1232,7 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
     if (shouldAdoptAuthoritativeLayout) {
       layoutRevisionRef.current = layoutProjection.revision;
       setAppliedLayoutRevision(layoutProjection.revision);
+      setStoryWorldNodePresentOverride(layoutProjection.storyWorldNodePresent);
       setLayoutSaveError(null);
       setLayoutSaveState("idle");
       history.clear();
@@ -2315,6 +2326,7 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
       closeCreatorMenu();
       setGraphError(null);
       setContent(snapshot.content);
+      setStoryWorldNodePresentOverride(snapshot.storyWorldNodePresent);
 
       if (!layoutChanged) return;
       pendingNodePositionsRef.current.clear();
@@ -2468,6 +2480,30 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
   ) => {
     if (!content || !mutationBarrier.permits("layout")) return;
     try {
+      // Summoning the Story World card is a pure layout mutation: the draft
+      // and entry semantics are untouched, presence flips in the canvas layout.
+      if (kind === "root") {
+        if (storyWorldNodePresent) return;
+        const snapshot = readHistorySnapshot();
+        if (!snapshot) return;
+        history.capture(snapshot);
+        refreshHistoryState();
+        pendingNodePositionsRef.current.set(STORY_ROOT_NODE_ID, { ...position });
+        const nextLayout: StoryCanvasLayoutPayload = {
+          nodePositions: {
+            ...snapshot.nodePositions,
+            [STORY_ROOT_NODE_ID]: { ...position },
+          },
+          storyWorldNodePresent: true,
+        };
+        setStoryWorldNodePresentOverride(true);
+        setLayoutSaveState("dirty");
+        void persistLayoutRef.current(nextLayout);
+        selectCanvasNodeExclusively(STORY_ROOT_NODE_ID);
+        setGraphError(null);
+        return;
+      }
+
       let nextContent: InteractiveStoryDraftContent;
       let createdCanvasNodeId: string;
       // Characters are never wired into the story-flow graph; a fresh cast card
@@ -2518,6 +2554,7 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
         clientPosition,
         container,
         flowPosition: screenToFlowPosition(clientPosition),
+        showStoryWorld: !storyWorldNodePresent,
       })
     );
   };
@@ -2794,18 +2831,26 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
     const currentSnapshot = readHistorySnapshot();
     const current = latestContentRef.current;
     if (!currentSnapshot || !current) return;
+    // Deleting the Story World card is a layout-only mutation (presence flips
+    // off); draft content and entry semantics are untouched.
+    const deletesStoryWorld =
+      storyWorldNodePresent && nodes.some((node) => node.id === STORY_ROOT_NODE_ID);
 
     try {
       const next = deleteStoryCanvasElements(current, { nodes, edges });
-      // The Story World root is non-deletable, so only content deletions matter.
-      if (next === current) return;
+      const contentChanged = next !== current;
+      if (!contentChanged && !deletesStoryWorld) return;
 
       history.capture(currentSnapshot);
       refreshHistoryState();
-      latestContentRef.current = next;
-      setContent(next);
+      if (contentChanged) {
+        latestContentRef.current = next;
+        setContent(next);
+      }
+      if (deletesStoryWorld) setStoryWorldNodePresentOverride(false);
 
-      const nextNodeIds = storyCanvasContentNodeIds(next, storyWorldNodePresent);
+      const nextStoryWorldNodePresent = deletesStoryWorld ? false : storyWorldNodePresent;
+      const nextNodeIds = storyCanvasContentNodeIds(next, nextStoryWorldNodePresent);
       const deletedNodeIds = new Set(
         [...storyCanvasContentNodeIds(current, storyWorldNodePresent)].filter(
           (nodeId) => !nextNodeIds.has(nodeId)
@@ -2821,7 +2866,7 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
         deletedNodeIds.forEach((nodeId) => pendingNodePositionsRef.current.delete(nodeId));
         const nextLayout: StoryCanvasLayoutPayload = {
           nodePositions: remainingPositions,
-          storyWorldNodePresent,
+          storyWorldNodePresent: nextStoryWorldNodePresent,
         };
         setLayoutSaveState("dirty");
         void persistLayoutRef.current(nextLayout);
@@ -2955,6 +3000,7 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
     setAppliedLayoutRevision(layoutConflict.current.revision);
     layoutSavedSignatureRef.current = layoutPayloadSignature(latestLayout);
     queryClient.setQueryData(layoutQueryKey, layoutConflict.current);
+    setStoryWorldNodePresentOverride(layoutConflict.current.storyWorldNodePresent);
     pendingNodePositionsRef.current.clear();
     Object.entries(layoutConflict.current.nodePositions).forEach(([nodeId, position]) => {
       pendingNodePositionsRef.current.set(nodeId, { ...position });
@@ -3405,7 +3451,12 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
             </StoryCanvasFocusContext.Provider>
           </MediaHoverPreviewProvider>
 
-          {canMutateCanvasLayout ? <StoryNodeDock onCreate={createStoryElementFromDock} /> : null}
+          {canMutateCanvasLayout ? (
+            <StoryNodeDock
+              showStoryWorld={!storyWorldNodePresent}
+              onCreate={createStoryElementFromDock}
+            />
+          ) : null}
 
           {canMutateCanvasLayout ? (
             <CanvasHistoryControls
@@ -3422,6 +3473,7 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
           {canMutateCanvasLayout && creatorMenu ? (
             <StoryNodeCreator
               position={{ left: creatorMenu.left, top: creatorMenu.top }}
+              showStoryWorld={!storyWorldNodePresent}
               onCreate={(kind) => createStoryElement(kind, creatorMenu.flowPosition)}
               onCancel={closeCreatorMenu}
             />
@@ -4093,9 +4145,11 @@ function StoryVideoPreview({
             <IconMovie className="size-4" />
           </span>
           <span className="text-[9px] font-semibold">{emptyLabel}</span>
-          <span className="text-[8px] tabular-nums text-white/18">
-            {frameAspectRatio ?? "16:9"}
-          </span>
+          {/* Null-profile (text-first) projects have no frame contract — never
+              advertise the film default on them. */}
+          {frameAspectRatio ? (
+            <span className="text-[8px] tabular-nums text-white/18">{frameAspectRatio}</span>
+          ) : null}
         </div>
       )}
       {isActiveVideoGeneration(generation) ? (

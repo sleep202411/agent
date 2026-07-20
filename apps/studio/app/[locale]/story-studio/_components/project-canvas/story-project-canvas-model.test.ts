@@ -50,7 +50,7 @@ describe("Story domain id canvas projection", () => {
 });
 
 describe("buildStoryCanvasModel", () => {
-  it("keeps the mandatory Story World root non-deletable while every other element can be deleted", () => {
+  it("marks every projected element deletable, the summonable Story World root included", () => {
     const content = draft({
       entryNodeId: "decision",
       nodes: [
@@ -71,7 +71,7 @@ describe("buildStoryCanvasModel", () => {
     const model = buildStoryCanvasModel(content, "en-US");
 
     expect(Object.fromEntries(model.nodes.map((node) => [node.data.kind, node.deletable]))).toEqual(
-      { root: false, clip: true, decision: true, ending: true }
+      { root: true, clip: true, decision: true, ending: true }
     );
   });
 

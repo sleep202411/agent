@@ -308,7 +308,9 @@ describe('StoryProjectsService unified-story authoring boundary', () => {
         expect(input.data.canvasLayout.create).toMatchObject({
           schemaVersion: STORY_CANVAS_LAYOUT_SCHEMA_VERSION,
           nodePositions: {},
-          storyWorldNodePresent: true,
+          // Fresh projects open on the empty-canvas agent launcher; the Story
+          // World card is summoned later, not pre-seeded.
+          storyWorldNodePresent: false,
         });
         expect(input.data.writeState).toEqual({ create: {} });
         return Promise.resolve(project);

@@ -109,12 +109,16 @@ export function buildStoryCanvasModel(
   locale: string,
   clips: StoryClipVideoSummary[] = [],
   copy: StoryCanvasCopy = DEFAULT_COPY,
-  // A text-first project carries no frame profile; the canvas falls back to a
-  // 16:9 layout hint, which never affects the authored story.
+  // A text-first project carries no frame profile: its cards keep a neutral
+  // media box and never advertise a frame contract the project doesn't have.
   frameProfile: StoryFrameProfile | null = "landscape_16_9",
   trailer: StoryTrailerVideoSummary | null = null,
   storyWorldNodePresent = true
 ): { nodes: StoryCanvasNode[]; edges: StoryCanvasEdge[] } {
+  // Null-profile (text-first) projects yield undefined so no card ever shows a
+  // frame tag for a contract that doesn't exist.
+  const frameAspectRatioOf = (profile: StoryFrameProfile | null): "16:9" | "9:16" | undefined =>
+    profile === null ? undefined : profile === "portrait_9_16" ? "9:16" : "16:9";
   const graphNodesById = new Map(content.graph.nodes.map((node) => [node.nodeId, node]));
   const clipsByGraphNodeId = indexClips(clips, (clip) => clip.graphNodeId);
   const endingCanvasIds = new Map(
@@ -137,7 +141,7 @@ export function buildStoryCanvasModel(
             rootStats: {
               characters: content.storyBible.characters.length,
             },
-            frameAspectRatio: frameProfile === "portrait_9_16" ? "9:16" : "16:9",
+            frameAspectRatio: frameAspectRatioOf(frameProfile),
             trailerVideo: trailer ?? undefined,
           },
         },
@@ -211,7 +215,7 @@ export function buildStoryCanvasModel(
           continuationTargetNodeId:
             node.exit.kind === "auto" ? (node.exit.nextNodeId ?? undefined) : undefined,
           clipVideo: clip,
-          frameAspectRatio: frameProfile === "portrait_9_16" ? "9:16" : "16:9",
+          frameAspectRatio: frameAspectRatioOf(frameProfile),
         },
       };
 
@@ -329,10 +333,11 @@ export function buildStoryCanvasModel(
       id: projection.id,
       type: "storyCanvas",
       position: positions.get(projection.id) ?? { x: 0, y: 0 },
-      // The Story World root is mandatory and always present; character cards
-      // are removed through their inspector's guarded delete, never the canvas
-      // delete key. Every other projected element can be deleted from the canvas.
-      deletable: projection.data.kind !== "root",
+      // Every projected element can be deleted from the canvas. Deleting the
+      // Story World root is a layout-only presence flip (it can be summoned
+      // back from the creator menu); characters may also use their inspector's
+      // guarded delete.
+      deletable: true,
       dragHandle: CANVAS_NODE_DRAG_HANDLE_SELECTOR,
       data: projection.data,
     }));

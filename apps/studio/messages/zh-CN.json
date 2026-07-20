@@ -1914,7 +1914,9 @@
         "choiceDescription": "把当前镜头的结尾转换为玩家选择。",
         "choiceUnavailable": "请先选中一个影像镜头。",
         "ending": "故事结局",
-        "endingDescription": "保存于故事圣经中的命名结局。"
+        "endingDescription": "保存于故事圣经中的命名结局。",
+        "root": "故事世界",
+        "rootDescription": "将世界观与宣传片节点重新添加到画布。"
       },
       "connectionCreator": {
         "title": "创建下一步",

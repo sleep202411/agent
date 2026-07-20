@@ -1914,7 +1914,9 @@
         "choiceDescription": "Turn the selected clip ending into a player decision.",
         "choiceUnavailable": "Select a film clip first.",
         "ending": "Story ending",
-        "endingDescription": "A named outcome stored in the story bible."
+        "endingDescription": "A named outcome stored in the story bible.",
+        "root": "Story world",
+        "rootDescription": "Restore the world overview and trailer node to the canvas."
       },
       "connectionCreator": {
         "title": "Create next step",
