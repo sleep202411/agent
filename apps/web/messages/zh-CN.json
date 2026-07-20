@@ -8027,5 +8027,28 @@
     "valueMembershipCompute": "{days} 天 Studio 会员",
     "valueMembershipCommunity": "{days} 天社区会员",
     "valueMembershipBoth": "{days} 天 Studio+社区会员"
+  },
+  "textExperiencePlayer": {
+    "start": "开始这个故事",
+    "pace": "叙事节奏",
+    "paceBrisk": "紧凑",
+    "paceSteady": "适中",
+    "paceLeisurely": "从容",
+    "continue": "继续",
+    "send": "执行这个行动",
+    "inputPlaceholder": "说点什么，或做点什么……",
+    "ended": "你抵达了一个结局",
+    "replay": "再玩一次",
+    "loading": "正在书写……",
+    "directionsEyebrow": "故事方向",
+    "directionsTitle": "你想进入哪一个故事？",
+    "directionsSubtitle": "选择一种可能，气泡龙会以它为核心构建这一局。",
+    "directionsCount": "{count} 个故事方向",
+    "directionsLoading": "气泡龙正在构思几种不同的入场方式。",
+    "reroll": "换一批",
+    "conflict": "核心冲突",
+    "hook": "视觉钩子",
+    "twist": "反差与颠覆",
+    "retry": "重试"
   }
 }

@@ -8027,5 +8027,28 @@
     "valueMembershipCompute": "{days} 天 Studio 會員",
     "valueMembershipCommunity": "{days} 天社區會員",
     "valueMembershipBoth": "{days} 天 Studio+社區會員"
+  },
+  "textExperiencePlayer": {
+    "start": "開始這個故事",
+    "pace": "敘事節奏",
+    "paceBrisk": "緊湊",
+    "paceSteady": "適中",
+    "paceLeisurely": "從容",
+    "continue": "繼續",
+    "send": "執行這個行動",
+    "inputPlaceholder": "說點什麼，或做點什麼……",
+    "ended": "你抵達了一個結局",
+    "replay": "再玩一次",
+    "loading": "正在書寫……",
+    "directionsEyebrow": "故事方向",
+    "directionsTitle": "你想進入哪一個故事？",
+    "directionsSubtitle": "選擇一種可能，氣泡龍會以它為核心構建這一局。",
+    "directionsCount": "{count} 個故事方向",
+    "directionsLoading": "氣泡龍正在構思幾種不同的入場方式。",
+    "reroll": "換一批",
+    "conflict": "核心衝突",
+    "hook": "視覺鉤子",
+    "twist": "反差與顛覆",
+    "retry": "重試"
   }
 }

@@ -8028,5 +8028,28 @@
     "valueMembershipCompute": "{days}d Studio membership",
     "valueMembershipCommunity": "{days}d community membership",
     "valueMembershipBoth": "{days}d Studio + community membership"
+  },
+  "textExperiencePlayer": {
+    "start": "Begin the story",
+    "pace": "Pace",
+    "paceBrisk": "Brisk",
+    "paceSteady": "Steady",
+    "paceLeisurely": "Leisurely",
+    "continue": "Continue",
+    "send": "Take this action",
+    "inputPlaceholder": "Say or do something…",
+    "ended": "You reached an ending",
+    "replay": "Play again",
+    "loading": "Writing…",
+    "directionsEyebrow": "Story direction",
+    "directionsTitle": "Which story will you enter?",
+    "directionsSubtitle": "Pick an angle — the narrator will build this run around it.",
+    "directionsCount": "{count} directions",
+    "directionsLoading": "Imagining ways in…",
+    "reroll": "Reroll",
+    "conflict": "Conflict",
+    "hook": "Hook",
+    "twist": "Subversion",
+    "retry": "Try again"
   }
 }
