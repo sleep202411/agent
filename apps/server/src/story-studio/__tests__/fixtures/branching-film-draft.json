@@ -555,7 +555,6 @@
     "endings": [
       {
         "id": "E01",
-        "kind": "truth",
         "title": {
           "en-US": "The Name Returned",
           "zh-CN": "名字归还",
@@ -569,7 +568,6 @@
       },
       {
         "id": "E02",
-        "kind": "echo",
         "title": {
           "en-US": "The Last Opening",
           "zh-CN": "最后开园",
@@ -583,7 +581,6 @@
       },
       {
         "id": "E03",
-        "kind": "bond",
         "title": {
           "en-US": "Leaving Together",
           "zh-CN": "两人出园",
@@ -597,7 +594,6 @@
       },
       {
         "id": "E04",
-        "kind": "failure",
         "title": {
           "en-US": "The Seventh Gong",
           "zh-CN": "第七声锣",

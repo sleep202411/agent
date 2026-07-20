@@ -63,7 +63,7 @@ export async function listPublishedInteractiveFilms(
   if (!Array.isArray(data)) {
     throw new InteractiveFilmLoadError(
       "JAVA_RESPONSE_INVALID",
-      "Java returned an invalid interactive-film catalogue.",
+      "Java returned an invalid playable-story catalogue.",
       undefined,
       ExperienceGameListResponseSchema.safeParse(data).error?.issues
     );
@@ -111,7 +111,7 @@ export async function getPublishedInteractiveFilm(
   if (!parsed.success) {
     throw new InteractiveFilmLoadError(
       "JAVA_RESPONSE_INVALID",
-      "Java returned invalid interactive-film metadata.",
+      "Java returned invalid playable-story metadata.",
       undefined,
       parsed.error.issues
     );
@@ -201,7 +201,7 @@ async function getJavaData(url: string, fetcher: Fetcher): Promise<unknown> {
   } catch (error) {
     throw new InteractiveFilmLoadError(
       "JAVA_REQUEST_FAILED",
-      error instanceof Error ? error.message : "Java interactive-film service is unavailable."
+      error instanceof Error ? error.message : "Java playable-story service is unavailable."
     );
   }
   const envelopeInput = await readJson(
@@ -218,7 +218,7 @@ async function getJavaData(url: string, fetcher: Fetcher): Promise<unknown> {
       "JAVA_REQUEST_FAILED",
       typeof envelope.msg === "string" && envelope.msg.trim()
         ? envelope.msg
-        : `Java interactive-film request failed (HTTP ${response.status}).`,
+        : `Java playable-story request failed (HTTP ${response.status}).`,
       response.status
     );
   }

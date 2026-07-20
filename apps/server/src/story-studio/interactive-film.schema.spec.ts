@@ -118,7 +118,6 @@ describe('unified-story text node contract', () => {
           {
             id: 'ending.truth',
             title: { 'zh-CN': '真相' },
-            kind: 'truth',
           },
         ],
       },

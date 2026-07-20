@@ -736,7 +736,6 @@ function compileIntermediateRelease(
       ...(hasNonEmptyLocalizedText(ending.summary)
         ? { summary: ending.summary }
         : {}),
-      kind: ending.kind,
     })),
     media,
     nodes: runtimeNodes,

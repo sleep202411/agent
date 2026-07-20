@@ -29,12 +29,10 @@ import { isUploadAbort, uploadFileViaSignedUrl } from "@/lib/media-upload";
 import {
   createStoryReferenceSlots,
   createStoryReferenceVersion,
-  STORY_FRAME_PROFILE_CONTRACTS,
   storyApiErrorMessage,
 } from "@/lib/story-projects-api";
 import type {
   StoryClipVideoSummary,
-  StoryFrameProfile,
   StoryReferenceSlot,
   StoryTrailerVideoSummary,
   StoryVideoGenerationMode,
@@ -54,10 +52,6 @@ import {
   supportedStoryVideoModes,
   type StoryVideoDurationContract,
 } from "./story-shot-composer-model";
-import {
-  StoryVideoLibraryDialog,
-  type StoryVideoLibraryDialogProps,
-} from "./story-video-library-dialog";
 
 export type StoryGenerationTarget = StoryClipVideoSummary | StoryTrailerVideoSummary;
 
@@ -74,12 +68,8 @@ export interface StoryReferenceUploadContext {
 
 export interface StoryClipGenerationFormProps {
   subject?: "clip" | "trailer";
-  target: StoryGenerationTarget | null;
   recipe: StoryVideoGenerationRecipeInput;
   references: StoryReferenceSlot[];
-  // Null for a text-first project: generated video is inline at native size and
-  // is not constrained to a fixed picture frame.
-  frameProfile: StoryFrameProfile | null;
   readOnly: boolean;
   canGenerate: boolean;
   disabledReason: string | null;
@@ -87,7 +77,6 @@ export interface StoryClipGenerationFormProps {
   error: string | null;
   onRecipeChange: (next: StoryVideoGenerationRecipeInput) => void;
   onGenerate: (recipe: StoryVideoGenerationRecipeInput) => void;
-  videoLibrary?: Omit<StoryVideoLibraryDialogProps, "frameContract" | "currentVideo">;
   // Present when a free-form image upload can be created as a project reference
   // slot for this recipe. Absent (e.g. no active workspace) hides that control.
   referenceUpload?: StoryReferenceUploadContext | null;
@@ -100,10 +89,8 @@ export interface StoryClipGenerationFormProps {
  */
 export function StoryClipGenerationForm({
   subject = "clip",
-  target,
   recipe,
   references,
-  frameProfile,
   readOnly,
   canGenerate,
   disabledReason,
@@ -111,7 +98,6 @@ export function StoryClipGenerationForm({
   error,
   onRecipeChange,
   onGenerate,
-  videoLibrary,
   referenceUpload,
 }: StoryClipGenerationFormProps) {
   const t = useTranslations("storyStudio.canvas.production");
@@ -133,7 +119,6 @@ export function StoryClipGenerationForm({
     supportedModes.length > 0 && !supportedModes.includes(recipe.mode)
       ? supportedModes[0]
       : recipe.mode;
-  const frame = frameProfile ? STORY_FRAME_PROFILE_CONTRACTS[frameProfile] : null;
   const generating = pendingKey === "generate";
   const referenceItems = useMemo(
     () => storyComposerReferenceItems(recipe.references, references),
@@ -292,15 +277,6 @@ export function StoryClipGenerationForm({
           />
         </div>
       </div>
-
-      {videoLibrary ? (
-        <StoryVideoLibraryDialog
-          {...videoLibrary}
-          disabled={readOnly || videoLibrary.disabled}
-          frameContract={frame ? { width: frame.width, height: frame.height } : null}
-          currentVideo={target?.currentVideo ?? null}
-        />
-      ) : null}
 
       <Button
         type="button"

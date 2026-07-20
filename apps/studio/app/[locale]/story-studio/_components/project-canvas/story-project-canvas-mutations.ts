@@ -67,7 +67,6 @@ export interface CreateEndingNodeOptions {
   locale?: string;
   title?: string;
   summary?: string;
-  kind?: StoryEnding["kind"];
 }
 
 export interface StoryNodeCreationResult<T> {
@@ -142,7 +141,6 @@ export function createEndingNode(
     id: endingId,
     title: { [locale]: options.title ?? "" },
     summary: { [locale]: options.summary ?? "" },
-    kind: options.kind ?? "custom",
   };
   return {
     content: {
@@ -632,7 +630,7 @@ export function disconnectStoryBranch(
   return disconnectEnding(content, selector.sourceNodeId, selector.endingId);
 }
 
-export type EndingNodePatch = Partial<Pick<StoryEnding, "kind">> & {
+export type EndingNodePatch = {
   title?: { locale: string; value: string };
   summary?: { locale: string; value: string };
 };
@@ -653,7 +651,6 @@ export function updateEndingNode(
           },
         }
       : {}),
-    ...(patch.kind !== undefined ? { kind: patch.kind } : {}),
     ...(patch.title
       ? {
           title: {

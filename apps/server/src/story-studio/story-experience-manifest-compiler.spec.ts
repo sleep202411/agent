@@ -34,13 +34,11 @@ function release(): InteractiveFilmRelease {
         endingId: 'truth',
         title: { 'en-US': 'Truth' },
         summary: { 'en-US': 'Truth wins.' },
-        kind: 'truth',
       },
       {
         endingId: 'echo',
         title: { 'en-US': 'Echo' },
         summary: { 'en-US': 'The moment echoes.' },
-        kind: 'echo',
       },
     ],
     media: [
@@ -145,13 +143,11 @@ function textChoiceRelease(): InteractiveFilmRelease {
         endingId: 'truth',
         title: { 'en-US': 'Truth' },
         summary: { 'en-US': 'Truth wins.' },
-        kind: 'truth',
       },
       {
         endingId: 'echo',
         title: { 'en-US': 'Echo' },
         summary: { 'en-US': 'The moment echoes.' },
-        kind: 'echo',
       },
     ],
     media: [],

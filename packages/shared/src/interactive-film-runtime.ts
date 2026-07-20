@@ -227,7 +227,6 @@ export const RuntimeEndingSchema = z
     endingId: stableId,
     title: localizedText,
     summary: localizedText.optional(),
-    kind: z.enum(["truth", "bond", "echo", "failure", "hidden", "custom"]),
   })
   .strict();
 export type RuntimeEnding = z.infer<typeof RuntimeEndingSchema>;

@@ -30,12 +30,10 @@ function draft(): InteractiveStoryDraftContent {
           id: 'ending.truth',
           title: { 'zh-CN': '真相' },
           summary: { 'zh-CN': '门开了。' },
-          kind: 'truth',
         },
         {
           id: 'ending.retreat',
           title: { 'zh-CN': '退却' },
-          kind: 'failure',
         },
       ],
     },

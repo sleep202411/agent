@@ -45,7 +45,6 @@ function lockableDraft(): InteractiveStoryDraftContent {
           id: 'ending.truth',
           title: { 'zh-CN': '真相' },
           summary: { 'zh-CN': '门打开了。' },
-          kind: 'truth',
         },
       ],
     },

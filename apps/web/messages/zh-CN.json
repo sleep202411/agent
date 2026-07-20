@@ -7499,11 +7499,11 @@
     }
   },
   "experiencePlayer": {
-    "metadataFallbackTitle": "互动影游",
-    "metadataDescription": "游玩气泡龙互动影游《{title}》。",
+    "metadataFallbackTitle": "互动故事",
+    "metadataDescription": "游玩气泡龙互动故事《{title}》。",
     "invalidManifest": "内容清单无效，当前体验无法启动。",
     "manifestRoot": "内容清单",
-    "interactiveFilm": "互动影游",
+    "interactiveFilm": "互动故事",
     "starting": "正在启动…",
     "start": "开始体验",
     "endingEyebrow": "已抵达结局",
@@ -7512,12 +7512,12 @@
     "runtimeError": "播放已停止",
     "restart": "重新开始",
     "mediaError": "媒体资产 {assetId} 无法播放。",
-    "videoLabel": "互动影游视频",
+    "videoLabel": "故事视频",
     "noVisibleChoices": "当前故事状态下没有可用选项。",
     "checkpointPrompt": "继续这段体验？",
     "checkpointDescription": "当前故事状态已就绪，可以进入下一段内容。",
     "continue": "继续",
-    "regionLabel": "互动影游播放器",
+    "regionLabel": "互动故事播放器",
     "loadErrorTitle": "当前体验不可用",
     "loadErrorDescription": "已发布版本未通过播放器完整性校验，服务返回的信息如下。",
     "loadErrorUnknown": "无法加载已发布的互动体验。",
@@ -7545,11 +7545,11 @@
     "sourceIp": "来源 IP",
     "start": "开始",
     "catalogue": {
-      "interactiveFilm": "互动影游",
+      "playableStory": "可玩故事",
       "currentVersion": "当前版本",
       "open": "开始游玩",
-      "empty": "暂时还没有已发布的互动影游。",
-      "unavailable": "互动影游目录暂时不可用"
+      "empty": "暂时还没有已发布的可玩故事。",
+      "unavailable": "可玩故事目录暂时不可用"
     },
     "status": {
       "draft": "Draft 草稿",

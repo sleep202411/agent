@@ -122,7 +122,6 @@ export const StoryEndingSchema = z
     id: StoryStableIdSchema,
     title: DraftLocalizedTextSchema,
     summary: DraftLocalizedTextSchema.optional(),
-    kind: z.enum(['truth', 'bond', 'echo', 'failure', 'hidden', 'custom']),
   })
   .strict();
 

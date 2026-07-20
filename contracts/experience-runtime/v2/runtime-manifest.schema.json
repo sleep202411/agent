@@ -61,7 +61,8 @@
       "properties": {
         "title": { "$ref": "#/$defs/__schema6" },
         "summary": { "$ref": "#/$defs/__schema6" },
-        "coverAssetId": { "$ref": "#/$defs/__schema3" }
+        "coverAssetId": { "$ref": "#/$defs/__schema3" },
+        "experienceProfile": { "type": "string", "enum": ["cinematic", "narrative"] }
       },
       "required": ["title"],
       "additionalProperties": false

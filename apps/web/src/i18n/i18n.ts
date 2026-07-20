@@ -1,18 +1,34 @@
 import { useCallback } from "react";
 import i18n from "i18next";
 import { initReactI18next, useTranslation } from "react-i18next";
-import { defaultLocale, detectBrowserLocale, isValidLocale } from "./config";
+import { defaultLocale, detectBrowserLocale, isValidLocale, type Locale } from "./config";
 
 import enUS from "@/messages/en-US.json";
 import zhCN from "@/messages/zh-CN.json";
 import zhHK from "@/messages/zh-HK.json";
 
+type LocalizedMessageShape<T> = T extends string
+  ? string
+  : { [Key in keyof T]: LocalizedMessageShape<T[Key]> };
+
+type UnifiedStoryMessageNamespaces = {
+  experiencePlayer: LocalizedMessageShape<typeof enUS.experiencePlayer>;
+  games: LocalizedMessageShape<typeof enUS.games>;
+};
+
+const resources = {
+  "en-US": { translation: enUS },
+  "zh-CN": { translation: zhCN },
+  "zh-HK": { translation: zhHK },
+} satisfies Record<
+  Locale,
+  {
+    translation: Record<string, unknown> & UnifiedStoryMessageNamespaces;
+  }
+>;
+
 void i18n.use(initReactI18next).init({
-  resources: {
-    "en-US": { translation: enUS },
-    "zh-CN": { translation: zhCN },
-    "zh-HK": { translation: zhHK },
-  },
+  resources,
   lng: detectBrowserLocale(),
   fallbackLng: defaultLocale,
   interpolation: {

@@ -118,7 +118,6 @@ describe("deleteStoryCanvasElements", () => {
           id: "truth",
           title: { "en-US": "Truth" },
           summary: { "en-US": "" },
-          kind: "truth",
         },
       ],
     });

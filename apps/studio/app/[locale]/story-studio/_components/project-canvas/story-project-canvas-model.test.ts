@@ -367,7 +367,6 @@ describe("buildStoryCanvasModel", () => {
         {
           id: "finish",
           title: { "en-US": "Finish" },
-          kind: "custom",
         },
       ],
     });
@@ -644,6 +643,5 @@ function ending(
     id,
     title: { "en-US": englishTitle, "zh-CN": chineseTitle },
     summary: { "en-US": "", "zh-CN": "" },
-    kind: "custom",
   };
 }

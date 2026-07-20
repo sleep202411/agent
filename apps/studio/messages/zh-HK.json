@@ -1925,14 +1925,6 @@
         "choiceDescription": "暫停播放，讓玩家選擇後續分支。",
         "cancel": "取消"
       },
-      "endingKinds": {
-        "truth": "真相",
-        "bond": "羈絆",
-        "echo": "回聲",
-        "failure": "失敗",
-        "hidden": "隱藏",
-        "custom": "自訂"
-      },
       "projection": {
         "rootTitle": "故事世界",
         "rootEyebrow": "世界觀 Root",
@@ -2089,39 +2081,6 @@
           "label": "時長",
           "seconds": "{count}s"
         },
-        "videoLibrary": {
-          "trigger": "使用已有影片",
-          "title": "影片歷史",
-          "description": "選擇符合 {width}×{height} 的可重用影片。",
-          "descriptionNative": "選擇任何已就緒的影片，將以原始尺寸內嵌播放。",
-          "loading": "正在載入影片歷史",
-          "loadingMore": "正在載入更多影片",
-          "loadMore": "載入更多",
-          "retry": "重試",
-          "playPreview": "播放影片預覽 {number}",
-          "pausePreview": "暫停影片預覽 {number}",
-          "previewUnavailable": "無法預覽",
-          "current": "目前影片",
-          "incompatible": "不相容",
-          "select": "使用此影片",
-          "selecting": "正在設為目前影片",
-          "unavailable": "無法使用",
-          "unknownDimensions": "尺寸未知",
-          "unknownDuration": "時長未知",
-          "empty": {
-            "title": "暫無可重用影片",
-            "description": "此工作區生成過的影片會作為可重用歷史保留在這裡。"
-          },
-          "issues": {
-            "preview_unavailable": "此資產沒有可播放的預覽。",
-            "dimensions_unknown": "無法驗證此影片的尺寸。",
-            "dimensions_mismatch": "此影片的尺寸與目前鏡頭不符。"
-          },
-          "errors": {
-            "load": "無法載入影片歷史。",
-            "select": "無法更改目前影片。"
-          }
-        },
         "errors": {
           "action": "製作操作無法完成。"
         },
@@ -2159,8 +2118,6 @@
           "processing": "正在處理影片…",
           "processingDescription": "正在校驗影片並準備可播放版本。",
           "accepted": "MP4 影片",
-          "library": "影片素材庫",
-          "libraryDescription": "重用已上載或已生成的影片",
           "preparing": "正在準備片段媒體資料。",
           "unknownDimensions": "尺寸未知",
           "unknownDuration": "時長未知",
@@ -2175,8 +2132,6 @@
         "openProduction": "開啟鏡頭製作",
         "choices": "分支選擇",
         "entry": "入口場景",
-        "entryNode": "故事入口",
-        "makeEntry": "設為入口",
         "exitAuto": "繼續到場景",
         "exitChoice": "玩家選擇",
         "exitCheckpoint": "繼續確認點",
@@ -2204,8 +2159,6 @@
         "confirmConversion": "取代後續走向",
         "endingTitle": "結局標題",
         "endingSummary": "結局摘要",
-        "endingKind": "結局類型",
-        "duplicate": "複製節點",
         "delete": "刪除節點",
         "deleteEnding": "刪除結局",
         "removeDecision": "移除選擇環節",

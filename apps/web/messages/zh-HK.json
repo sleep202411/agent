@@ -7499,11 +7499,11 @@
     }
   },
   "experiencePlayer": {
-    "metadataFallbackTitle": "互動影遊",
-    "metadataDescription": "遊玩氣泡龍互動影遊《{title}》。",
+    "metadataFallbackTitle": "互動故事",
+    "metadataDescription": "遊玩氣泡龍互動故事《{title}》。",
     "invalidManifest": "內容清單無效，目前體驗無法啟動。",
     "manifestRoot": "內容清單",
-    "interactiveFilm": "互動影遊",
+    "interactiveFilm": "互動故事",
     "starting": "正在啟動…",
     "start": "開始體驗",
     "endingEyebrow": "已抵達結局",
@@ -7512,12 +7512,12 @@
     "runtimeError": "播放已停止",
     "restart": "重新開始",
     "mediaError": "媒體資產 {assetId} 無法播放。",
-    "videoLabel": "互動影遊影片",
+    "videoLabel": "故事影片",
     "noVisibleChoices": "目前故事狀態下沒有可用選項。",
     "checkpointPrompt": "繼續這段體驗？",
     "checkpointDescription": "目前故事狀態已就緒，可以進入下一段內容。",
     "continue": "繼續",
-    "regionLabel": "互動影遊播放器",
+    "regionLabel": "互動故事播放器",
     "loadErrorTitle": "目前體驗不可用",
     "loadErrorDescription": "已發佈版本未通過播放器完整性校驗，服務回傳的資訊如下。",
     "loadErrorUnknown": "無法載入已發佈的互動體驗。",
@@ -7545,11 +7545,11 @@
     "sourceIp": "來源 IP",
     "start": "開始",
     "catalogue": {
-      "interactiveFilm": "互動影遊",
+      "playableStory": "可玩故事",
       "currentVersion": "目前版本",
       "open": "開始遊玩",
-      "empty": "暫時還沒有已發佈的互動影遊。",
-      "unavailable": "互動影遊目錄暫時不可用"
+      "empty": "暫時還沒有已發佈的可玩故事。",
+      "unavailable": "可玩故事目錄暫時不可用"
     },
     "status": {
       "draft": "Draft 草稿",

@@ -176,7 +176,9 @@ export function compileStoryExperienceManifest(
       ...(hasNonEmptyLocalizedText(ending.summary)
         ? { summary: ending.summary }
         : {}),
-      kind: compileEndingKind(ending.kind),
+      // Story endings are no longer typed; the generic manifest still carries a
+      // scene kind, so every story ending compiles to the neutral 'custom' kind.
+      kind: 'custom' as const,
     })),
     graph: {
       entrySceneId: input.release.entryNodeId,
@@ -696,14 +698,4 @@ function hasNonEmptyLocalizedText(
   value: Record<string, string> | undefined,
 ): value is Record<string, string> {
   return Boolean(value && Object.values(value).some((text) => text.trim()));
-}
-
-function compileEndingKind(
-  kind: InteractiveFilmRelease['endings'][number]['kind'],
-): ExperienceRuntimeManifest['endings'][number]['kind'] {
-  if (kind === 'failure') return 'failure';
-  if (kind === 'hidden') return 'hidden';
-  if (kind === 'truth' || kind === 'bond') return 'success';
-  if (kind === 'echo') return 'neutral';
-  return 'custom';
 }

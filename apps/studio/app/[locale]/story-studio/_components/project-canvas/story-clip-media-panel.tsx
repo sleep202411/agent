@@ -1,21 +1,11 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import {
-  IconAlertTriangle,
-  IconLibrary,
-  IconLoader2,
-  IconMovie,
-  IconUpload,
-} from "@tabler/icons-react";
+import { IconAlertTriangle, IconLoader2, IconMovie, IconUpload } from "@tabler/icons-react";
 import { useTranslations } from "next-intl";
 import { Button } from "@/components/ui/button";
 import { StudioVideoPlayer } from "@/components/media/studio-video-player";
 import { storyApiErrorMessage, type StoryClipVideoSummary } from "@/lib/story-projects-api";
-import {
-  StoryVideoLibraryDialog,
-  type StoryVideoLibraryDialogProps,
-} from "./story-video-library-dialog";
 
 const CLIP_VIDEO_ACCEPT = "video/mp4,.mp4";
 
@@ -32,7 +22,6 @@ export interface StoryClipMediaPanelProps {
     onState: (state: StoryClipMediaUploadState) => void,
     signal: AbortSignal
   ) => Promise<void>;
-  videoLibrary?: Omit<StoryVideoLibraryDialogProps, "currentVideo">;
 }
 
 /**
@@ -45,7 +34,6 @@ export function StoryClipMediaPanel({
   canEdit,
   disabledReason,
   onUpload,
-  videoLibrary,
 }: StoryClipMediaPanelProps) {
   const t = useTranslations("storyStudio.canvas.inspector.media");
   const inputRef = useRef<HTMLInputElement>(null);
@@ -200,24 +188,6 @@ export function StoryClipMediaPanel({
           {uploadState?.stage === "processing" ? t("processingDescription") : t("accepted")}
         </p>
       )}
-
-      {videoLibrary ? (
-        <div className="mt-3 flex items-center gap-3 rounded-[14px] bg-white/[0.035] px-3 py-2">
-          <span className="grid size-8 shrink-0 place-items-center rounded-[11px] bg-white/[0.055] text-white/46">
-            <IconLibrary className="size-3.5" stroke={1.8} />
-          </span>
-          <div className="min-w-0 flex-1">
-            <p className="text-[10px] font-semibold text-white/60">{t("library")}</p>
-            <p className="mt-0.5 truncate text-[9px] text-white/28">{t("libraryDescription")}</p>
-          </div>
-          <StoryVideoLibraryDialog
-            {...videoLibrary}
-            disabled={disabled || videoLibrary.disabled}
-            disabledReason={uploadTitle ?? videoLibrary.disabledReason}
-            currentVideo={currentVideo}
-          />
-        </div>
-      ) : null}
 
       {error ? (
         <p

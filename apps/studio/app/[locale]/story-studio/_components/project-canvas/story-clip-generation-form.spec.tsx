@@ -50,10 +50,8 @@ function baseProps(
   overrides: Partial<ComponentProps<typeof StoryClipGenerationForm>> = {}
 ): ComponentProps<typeof StoryClipGenerationForm> {
   return {
-    target: null,
     recipe: recipe(),
     references: [],
-    frameProfile: null,
     readOnly: false,
     canGenerate: true,
     disabledReason: null,

@@ -6,18 +6,44 @@ export const EXPERIENCE_CORE_RENDERER_API_VERSION = "1.0.0" as const;
 export const EXPERIENCE_CORE_RENDERER_CONFIG_VERSION = "1.0.0" as const;
 
 export const EXPERIENCE_CORE_VIDEO_RENDERER_ID = "core.video" as const;
+export const EXPERIENCE_CORE_TEXT_RENDERER_ID = "core.text" as const;
 export const EXPERIENCE_CORE_CHOICE_RENDERER_ID = "core.choice" as const;
 export const EXPERIENCE_CORE_CHECKPOINT_RENDERER_ID = "core.checkpoint" as const;
 export const EXPERIENCE_CORE_CHARGE_FEEDBACK_RENDERER_ID = "core.charge-feedback" as const;
 
 export const EXPERIENCE_CORE_RENDERER_IDS = [
   EXPERIENCE_CORE_VIDEO_RENDERER_ID,
+  EXPERIENCE_CORE_TEXT_RENDERER_ID,
   EXPERIENCE_CORE_CHOICE_RENDERER_ID,
   EXPERIENCE_CORE_CHECKPOINT_RENDERER_ID,
   EXPERIENCE_CORE_CHARGE_FEEDBACK_RENDERER_ID,
 ] as const;
 
 export type ExperienceCoreRendererId = (typeof EXPERIENCE_CORE_RENDERER_IDS)[number];
+
+export const ExperienceCoreTextRendererConfigSchema = z
+  .object({
+    title: ExperienceLocalizedTextSchema.optional(),
+    body: ExperienceLocalizedTextSchema,
+    completion: z.enum(["continue", "passive"]),
+  })
+  .strict()
+  .superRefine((config, context) => {
+    if (Object.keys(config.body).length === 0) {
+      context.addIssue({
+        code: "custom",
+        path: ["body"],
+        message: "Text body must provide at least one locale",
+      });
+    }
+    if (config.title && Object.keys(config.title).length === 0) {
+      context.addIssue({
+        code: "custom",
+        path: ["title"],
+        message: "Text title must provide at least one locale when present",
+      });
+    }
+  });
 
 const ExperienceCoreVideoEndBehaviorSchema = z.discriminatedUnion("behavior", [
   z.object({ behavior: z.literal("advance") }).strict(),
@@ -47,7 +73,10 @@ const ExperienceCoreVideoSequenceClipSchema = z
 
 export const ExperienceCoreVideoRendererConfigSchema = z
   .object({
-    fit: z.enum(["cover", "contain"]),
+    // "cover"/"contain" fill a fixed full-bleed stage; "native" renders the clip
+    // inline at its intrinsic aspect ratio inside a responsive reading stage,
+    // for narrative experiences that carry no project-wide frame contract.
+    fit: z.enum(["cover", "contain", "native"]),
     sequence: z.array(ExperienceCoreVideoSequenceClipSchema).min(1),
     posterAssetId: ExperienceStableIdSchema.optional(),
     autoplay: z.boolean(),
@@ -146,6 +175,7 @@ export const ExperienceCoreChargeFeedbackRendererConfigSchema = z
 
 export const ExperienceCoreRendererOpenCommandPayloadSchema = z.object({}).strict();
 export const ExperienceCoreMediaEndedOutcomePayloadSchema = z.object({}).strict();
+export const ExperienceCoreTextCompletedOutcomePayloadSchema = z.object({}).strict();
 export const ExperienceCoreChoiceSelectedOutcomePayloadSchema = z
   .object({ choiceId: ExperienceStableIdSchema })
   .strict();
@@ -153,6 +183,9 @@ export const ExperienceCoreCheckpointOutcomePayloadSchema = z.object({}).strict(
 
 export type ExperienceCoreVideoRendererConfig = z.infer<
   typeof ExperienceCoreVideoRendererConfigSchema
+>;
+export type ExperienceCoreTextRendererConfig = z.infer<
+  typeof ExperienceCoreTextRendererConfigSchema
 >;
 export type ExperienceCoreChoiceRendererConfig = z.infer<
   typeof ExperienceCoreChoiceRendererConfigSchema

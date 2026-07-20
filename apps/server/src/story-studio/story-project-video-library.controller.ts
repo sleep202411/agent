@@ -8,7 +8,6 @@ import {
   HttpCode,
   Param,
   Post,
-  Query,
   Res,
 } from '@nestjs/common';
 import type { Response } from 'express';
@@ -17,12 +16,10 @@ import { ZodValidationPipe } from '../common/zod.pipe';
 import {
   CompleteStoryProjectVideoUploadSchema,
   StoryProjectIdParamsSchema,
-  StoryProjectVideoLibraryQuerySchema,
   StoryProjectVideoUploadParamsSchema,
   StoryUuidSchema,
   type CompleteStoryProjectVideoUpload,
   type StoryProjectIdParams,
-  type StoryProjectVideoLibraryQuery,
   type StoryProjectVideoUploadParams,
 } from './dto';
 import { StoryProjectVideoLibraryService } from './story-project-video-library.service';
@@ -30,27 +27,6 @@ import { StoryProjectVideoLibraryService } from './story-project-video-library.s
 @Controller('story-projects')
 export class StoryProjectVideoLibraryController {
   constructor(private readonly videoLibrary: StoryProjectVideoLibraryService) {}
-
-  @Get(':projectId/video-library')
-  async list(
-    @CurrentUser() user: AuthUser,
-    @Headers('x-fizz-workspace-id')
-    workspaceHeader: string | string[] | undefined,
-    @Param(new ZodValidationPipe(StoryProjectIdParamsSchema))
-    params: StoryProjectIdParams,
-    @Query(new ZodValidationPipe(StoryProjectVideoLibraryQuerySchema))
-    query: StoryProjectVideoLibraryQuery,
-  ) {
-    return {
-      code: 200,
-      data: await this.videoLibrary.list(
-        user,
-        requiredWorkspaceId(workspaceHeader),
-        params.projectId,
-        query,
-      ),
-    };
-  }
 
   @Post(':projectId/video-library/uploads/complete')
   @HttpCode(202)

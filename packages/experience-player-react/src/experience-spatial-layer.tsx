@@ -403,7 +403,8 @@ function createRendererContentTransforms(
       createMediaContentTransform(
         viewportSize,
         { width: variant.width, height: variant.height },
-        config.fit
+        // Native inline video is never cropped, so its content maps like contain.
+        config.fit === "native" ? "contain" : config.fit
       )
     );
   });

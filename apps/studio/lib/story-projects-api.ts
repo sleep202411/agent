@@ -192,7 +192,6 @@ export interface InteractiveStoryDraftContent {
       id: string;
       title: Record<string, string>;
       summary?: Record<string, string>;
-      kind: "truth" | "bond" | "echo" | "failure" | "hidden" | "custom";
     }>;
   };
   graph: { entryNodeId: string | null; nodes: StoryGraphNode[] };
@@ -641,28 +640,6 @@ export async function listStoryProjects(
     throw new Error("Story Studio API returned an invalid project page.");
   }
   page.items.forEach(assertProjectSummary);
-  return page;
-}
-
-export async function listStoryVideoLibrary(
-  workspaceId: string,
-  projectId: string,
-  query: { cursor?: string; limit?: number } = {}
-): Promise<CursorPage<StoryVideoLibraryItem>> {
-  const page = await api.get<CursorPage<StoryVideoLibraryItem>>(
-    `/aurora/story-projects/${encodeURIComponent(projectId)}/video-library`,
-    {
-      params: query,
-      headers: storyWorkspaceHeaders(workspaceId),
-    }
-  );
-  if (!page || !Array.isArray(page.items)) {
-    throw new Error("Story Studio API returned an invalid video library page.");
-  }
-  page.items.forEach(assertStoryVideoLibraryItem);
-  if (page.nextCursor !== null && typeof page.nextCursor !== "string") {
-    throw new Error("Story Studio API returned an invalid video library cursor.");
-  }
   return page;
 }
 

@@ -82,7 +82,6 @@ function pureTextDraft(): Draft {
         {
           id: 'ending.truth',
           title: { 'zh-CN': '真相' },
-          kind: 'truth',
         },
       ],
     },

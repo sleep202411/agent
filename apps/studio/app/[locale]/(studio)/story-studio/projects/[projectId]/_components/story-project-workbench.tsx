@@ -419,14 +419,9 @@ function StoryStage({ content }: { content: InteractiveStoryDraftContent }) {
               const summary = localizedText(ending.summary, locale);
               return (
                 <div key={ending.id} className="rounded-xl bg-white/[0.035] p-3">
-                  <div className="flex items-center justify-between gap-3">
-                    <p className="text-xs font-semibold text-white/76">
-                      {localizedText(ending.title, locale)}
-                    </p>
-                    <span className="text-[10px] font-semibold text-white/28 uppercase">
-                      {ending.kind}
-                    </span>
-                  </div>
+                  <p className="text-xs font-semibold text-white/76">
+                    {localizedText(ending.title, locale)}
+                  </p>
                   {summary !== "—" ? (
                     <p className="mt-2 text-[11px] leading-5 text-white/40">{summary}</p>
                   ) : null}

@@ -20,14 +20,20 @@ const ExperienceHttpUrlSchema = z.url().superRefine((value, context) => {
 // null (no cover / no subtitle) and occasionally a malformed value. A valid
 // value is kept; anything else (null, missing, bad URL, blank) collapses to
 // undefined so the game still lists/plays — just without that decoration.
-const ExperienceOptionalCoverUrlSchema = z.any().transform((value) => {
-  const parsed = ExperienceHttpUrlSchema.safeParse(value);
-  return parsed.success ? parsed.data : undefined;
-});
-const ExperienceOptionalSubtitleSchema = z.any().transform((value) => {
-  const parsed = ExperienceDisplayTextSchema.safeParse(value);
-  return parsed.success ? parsed.data : undefined;
-});
+const ExperienceOptionalCoverUrlSchema = z
+  .any()
+  .transform((value) => {
+    const parsed = ExperienceHttpUrlSchema.safeParse(value);
+    return parsed.success ? parsed.data : undefined;
+  })
+  .optional();
+const ExperienceOptionalSubtitleSchema = z
+  .any()
+  .transform((value) => {
+    const parsed = ExperienceDisplayTextSchema.safeParse(value);
+    return parsed.success ? parsed.data : undefined;
+  })
+  .optional();
 
 export const ExperienceReleaseStatusSchema = z.enum(["published", "draft"]);
 

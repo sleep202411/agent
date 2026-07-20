@@ -1,11 +1,9 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import {
   IconArrowDown,
   IconArrowUp,
-  IconBook2,
-  IconCopy,
   IconGitBranch,
   IconPlayerPlay,
   IconUpload,
@@ -26,13 +24,6 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
@@ -64,7 +55,6 @@ interface StoryNodeInspectorProps {
   selectedNode: StoryCanvasNode | null;
   showFoundation: boolean;
   canEdit: boolean;
-  onShowFoundation: () => void;
   onUpdateFoundation: (field: FoundationField, value: string) => void;
   onUpdateCharacter: (characterId: string, patch: Partial<Omit<Character, "id">>) => void;
   onDeleteCharacter: (characterId: string) => void;
@@ -79,7 +69,6 @@ interface StoryNodeInspectorProps {
   onMoveChoice: (nodeId: string, choiceId: string, direction: "up" | "down") => void;
   onRemoveChoice: (nodeId: string, choiceId: string) => void;
   onUpdateEnding: (endingId: string, patch: Partial<Ending>) => void;
-  onDuplicateNode: (nodeId: string) => void;
   onDeleteSelected: () => void;
   clipMedia?: StoryClipMediaPanelProps;
   clipGeneration?: StoryClipGenerationFormProps;
@@ -88,15 +77,12 @@ interface StoryNodeInspectorProps {
   onUpdateText: (nodeId: string, patch: { title?: string; body?: string }) => void;
 }
 
-const ENDING_KINDS: Ending["kind"][] = ["truth", "bond", "echo", "failure", "hidden", "custom"];
-
 export function StoryNodeInspector({
   content,
   locale,
   selectedNode,
   showFoundation,
   canEdit,
-  onShowFoundation,
   onUpdateFoundation,
   onUpdateCharacter,
   onDeleteCharacter,
@@ -107,7 +93,6 @@ export function StoryNodeInspector({
   onMoveChoice,
   onRemoveChoice,
   onUpdateEnding,
-  onDuplicateNode,
   onDeleteSelected,
   clipMedia,
   clipGeneration,
@@ -638,25 +623,6 @@ function EndingEditor({
           }
           className="mt-2 resize-none bg-white/[0.055] text-xs leading-5"
         />
-      </label>
-      <label>
-        <span className="text-[10px] font-semibold text-white/42">{t("inspector.endingKind")}</span>
-        <Select
-          value={ending.kind}
-          disabled={!canEdit}
-          onValueChange={(kind) => onUpdate({ kind: kind as Ending["kind"] })}
-        >
-          <SelectTrigger className="mt-2 h-9! w-full rounded-xl bg-white/[0.055] px-3">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent position="popper" align="start">
-            {ENDING_KINDS.map((kind) => (
-              <SelectItem key={kind} value={kind}>
-                {t(`endingKinds.${kind}`)}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
       </label>
     </div>
   );

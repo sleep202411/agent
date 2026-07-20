@@ -254,7 +254,6 @@ export const StoryAgentEndingSchema = z
     id: StoryAgentStableIdSchema,
     title: StoryAgentLocalizedTextSchema,
     summary: StoryAgentLocalizedTextSchema.optional(),
-    kind: z.enum(["truth", "bond", "echo", "failure", "hidden", "custom"]),
   })
   .strict();
 export type StoryAgentEnding = z.infer<typeof StoryAgentEndingSchema>;

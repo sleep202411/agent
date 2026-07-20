@@ -82,6 +82,10 @@
       "types": "./dist/story-agent.d.ts",
       "default": "./dist/story-agent.js"
     },
+    "./story-authoring-pipeline": {
+      "types": "./dist/story-authoring-pipeline.d.ts",
+      "default": "./dist/story-authoring-pipeline.js"
+    },
     "./copilot-documents": {
       "types": "./dist/copilot-documents.d.ts",
       "default": "./dist/copilot-documents.js"

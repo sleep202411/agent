@@ -6,7 +6,6 @@ import {
   IconArrowLeft,
   IconArrowRight,
   IconDeviceGamepad2,
-  IconMovie,
   IconPlayerPlay,
   IconSparkles,
 } from "@tabler/icons-react";
@@ -66,7 +65,7 @@ export function GamesPageClient({
             >
               <div className="relative aspect-video overflow-hidden bg-[linear-gradient(145deg,#16181b,#08090a)]">
                 <div className="absolute inset-0 grid place-items-center text-white/12">
-                  <IconMovie className="size-10" stroke={1} />
+                  <IconDeviceGamepad2 className="size-10" stroke={1} />
                 </div>
                 {game.coverUrl ? (
                   <Image
@@ -87,7 +86,7 @@ export function GamesPageClient({
                 </div>
                 <div className="absolute right-3 bottom-3 left-3">
                   <p className="text-xs font-semibold text-white/58">
-                    {t("catalogue.interactiveFilm")}
+                    {t("catalogue.playableStory")}
                   </p>
                   <h2 className="mt-0.5 text-lg leading-tight font-semibold text-white">
                     {game.title}

@@ -25,7 +25,6 @@ import {
   getStoryClipVideoUploadFinalization,
   getStoryWorkingPreview,
   listStoryProjects,
-  listStoryVideoLibrary,
   putStoryCanvasLayout,
   putStoryClipCurrentVideo,
   putStoryTrailerCurrentVideo,
@@ -258,28 +257,6 @@ describe("current-draft Story production routes", () => {
     );
   });
 
-  it("lists reusable workspace videos through the project-scoped library", async () => {
-    vi.mocked(api.get).mockResolvedValueOnce({
-      items: [videoLibraryItem()],
-      nextCursor: "next-page",
-    });
-
-    const page = await listStoryVideoLibrary("workspace-1", "project / one", {
-      cursor: "cursor / one",
-      limit: 24,
-    });
-
-    expect(page.nextCursor).toBe("next-page");
-    expect(page.items).toHaveLength(1);
-    expect(api.get).toHaveBeenCalledWith(
-      "/aurora/story-projects/project%20%2F%20one/video-library",
-      {
-        params: { cursor: "cursor / one", limit: 24 },
-        headers: { "x-fizz-workspace-id": "workspace-1" },
-      }
-    );
-  });
-
   it("starts abortable asynchronous clip-video finalization", async () => {
     vi.mocked(api.post).mockResolvedValueOnce(videoFinalization("queued"));
     const controller = new AbortController();
@@ -429,37 +406,6 @@ describe("current-draft Story production routes", () => {
         { signal: controller.signal }
       )
     ).rejects.toMatchObject({ name: "AbortError" });
-  });
-
-  it("fails loud when the video library violates its ready-original contract", async () => {
-    vi.mocked(api.get).mockResolvedValueOnce({
-      items: [
-        {
-          ...videoLibraryItem(),
-          checksumSha256: null,
-        },
-      ],
-      nextCursor: null,
-    });
-
-    await expect(listStoryVideoLibrary("workspace-1", "project-1")).rejects.toThrow(
-      "invalid video library item"
-    );
-  });
-
-  it.each([
-    { createdAt: "not-a-date" },
-    { asset: { ...videoLibraryItem().asset, previewUrl: 42 } },
-    { variantKey: "proxy" },
-  ])("rejects malformed video library fields: %o", async (patch) => {
-    vi.mocked(api.get).mockResolvedValueOnce({
-      items: [{ ...videoLibraryItem(), ...patch }],
-      nextCursor: null,
-    });
-
-    await expect(listStoryVideoLibrary("workspace-1", "project-1")).rejects.toThrow(
-      "invalid video library item"
-    );
   });
 
   it("cancels and retries a generation using its optimistic version", async () => {

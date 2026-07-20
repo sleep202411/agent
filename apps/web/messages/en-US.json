@@ -7500,11 +7500,11 @@
     }
   },
   "experiencePlayer": {
-    "metadataFallbackTitle": "Interactive film",
-    "metadataDescription": "Play {title}, a FizzDragon interactive film.",
+    "metadataFallbackTitle": "Interactive story",
+    "metadataDescription": "Play {title}, an interactive story by FizzDragon.",
     "invalidManifest": "This experience cannot start because its manifest is invalid.",
     "manifestRoot": "manifest",
-    "interactiveFilm": "Interactive film",
+    "interactiveFilm": "Interactive story",
     "starting": "Starting…",
     "start": "Start experience",
     "endingEyebrow": "Ending reached",
@@ -7513,12 +7513,12 @@
     "runtimeError": "Playback stopped",
     "restart": "Restart experience",
     "mediaError": "Media asset {assetId} could not be played.",
-    "videoLabel": "Interactive film video",
+    "videoLabel": "Story video",
     "noVisibleChoices": "No available choices match the current story state.",
     "checkpointPrompt": "Continue this experience?",
     "checkpointDescription": "Your current story state is ready for the next section.",
     "continue": "Continue",
-    "regionLabel": "Interactive film player",
+    "regionLabel": "Interactive story player",
     "loadErrorTitle": "This experience is not available",
     "loadErrorDescription": "The published release could not pass the player’s integrity checks. The service response is shown below.",
     "loadErrorUnknown": "The published experience could not be loaded.",
@@ -7546,11 +7546,11 @@
     "sourceIp": "Source IP",
     "start": "Start",
     "catalogue": {
-      "interactiveFilm": "Interactive film",
+      "playableStory": "Playable story",
       "currentVersion": "Current release",
       "open": "Play",
-      "empty": "No interactive films have been published yet.",
-      "unavailable": "The interactive-film catalogue is unavailable"
+      "empty": "No playable stories have been published yet.",
+      "unavailable": "The playable-story catalogue is unavailable"
     },
     "status": {
       "draft": "Draft",

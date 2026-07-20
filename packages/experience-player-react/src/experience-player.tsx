@@ -13,9 +13,11 @@ import {
   EXPERIENCE_CORE_CHARGE_FEEDBACK_RENDERER_ID,
   EXPERIENCE_CORE_CHECKPOINT_RENDERER_ID,
   EXPERIENCE_CORE_CHOICE_RENDERER_ID,
+  EXPERIENCE_CORE_TEXT_RENDERER_ID,
   EXPERIENCE_CORE_VIDEO_RENDERER_ID,
   ExperienceCoreCheckpointRendererConfigSchema,
   ExperienceCoreChoiceRendererConfigSchema,
+  ExperienceCoreTextRendererConfigSchema,
   ExperienceCoreVideoRendererConfigSchema,
   ExperienceRuntimeManifestSchema,
   type ExperienceCoreVideoRendererConfig,
@@ -23,6 +25,7 @@ import {
   type ExperienceImageAsset,
   type ExperienceLocalizedText,
   type ExperienceOrientation,
+  type ExperienceProfile,
   type ExperienceRendererInstance,
   type ExperienceRuntimeAsset,
   type ExperienceRuntimeManifest,
@@ -184,6 +187,7 @@ function ActiveExperienceRuntimePlayer({
   const playbackHandlesRef = useRef(new Map<string, ExperienceMediaPlaybackHandle>());
   const playbackEnabledRef = useRef(false);
   const orientation = usePlaybackOrientation(manifest, frameProfile);
+  const experienceProfile = manifest.metadata.experienceProfile ?? "cinematic";
   const playbackLocale = resolvePlaybackLocale(manifest, locale);
   const {
     unlock: unlockAudio,
@@ -266,6 +270,10 @@ function ActiveExperienceRuntimePlayer({
               : `${scene.sceneId}:${sceneEpoch}:${renderer.instanceId}`,
         }))
     : [];
+  const stageProfile = resolveRendererStageProfile(
+    rendererSlots.map(({ renderer }) => renderer),
+    experienceProfile
+  );
 
   const emitOutcome = useCallback(
     (
@@ -345,6 +353,8 @@ function ActiveExperienceRuntimePlayer({
   return (
     <PlayerFrame
       orientation={orientation}
+      experienceProfile={experienceProfile}
+      stageProfile={stageProfile}
       copy={copy}
       style={theme ? themeStyle(theme) : undefined}
     >
@@ -355,6 +365,7 @@ function ActiveExperienceRuntimePlayer({
             manifest={manifest}
             renderer={renderer}
             runtimeState={runtimeState}
+            active={started}
             open={openRendererIds.has(renderer.instanceId)}
             locale={playbackLocale}
             orientation={orientation}
@@ -383,11 +394,20 @@ function ActiveExperienceRuntimePlayer({
       ) : null}
 
       {!started && !runtimeError ? (
-        <div className="absolute inset-0 z-40 grid place-items-center bg-black/68 p-6 text-center backdrop-blur-sm">
+        <div
+          className={classNames(
+            "absolute inset-0 z-40 grid place-items-center p-6 text-center",
+            experienceProfile === "cinematic"
+              ? "bg-black/68 backdrop-blur-sm"
+              : "bg-[var(--experience-color-background,#111)]"
+          )}
+        >
           <div className="max-w-lg">
-            <p className="text-[11px] font-semibold tracking-[0.18em] text-white/48 uppercase">
-              {copy.interactiveFilm}
-            </p>
+            {experienceProfile === "cinematic" ? (
+              <p className="text-[11px] font-semibold tracking-[0.18em] text-white/48 uppercase">
+                {copy.interactiveFilm}
+              </p>
+            ) : null}
             <h1 className="mt-3 text-2xl font-semibold tracking-[-0.025em] text-white sm:text-3xl">
               {localize(
                 manifest.metadata.title,
@@ -470,6 +490,7 @@ function CoreRenderer({
   manifest,
   renderer,
   runtimeState,
+  active,
   open,
   locale,
   orientation,
@@ -482,6 +503,7 @@ function CoreRenderer({
   manifest: ExperienceRuntimeManifest;
   renderer: ExperienceRendererInstance;
   runtimeState: ExperienceRuntimeState;
+  active: boolean;
   open: boolean;
   locale: string;
   orientation: ExperienceOrientation;
@@ -509,12 +531,25 @@ function CoreRenderer({
       />
     );
   }
+  if (renderer.rendererId === EXPERIENCE_CORE_TEXT_RENDERER_ID) {
+    return (
+      <CoreTextRenderer
+        manifest={manifest}
+        renderer={renderer}
+        locale={locale}
+        active={active}
+        copy={copy}
+        onCompleted={() => onOutcome(renderer.instanceId, "text-completed", {})}
+      />
+    );
+  }
   if (renderer.rendererId === EXPERIENCE_CORE_CHOICE_RENDERER_ID) {
     return (
       <CoreChoiceRenderer
         manifest={manifest}
         renderer={renderer}
         runtimeState={runtimeState}
+        active={active}
         open={open}
         locale={locale}
         copy={copy}
@@ -526,6 +561,7 @@ function CoreRenderer({
     return (
       <CoreCheckpointRenderer
         renderer={renderer}
+        active={active}
         open={open}
         copy={copy}
         onSelect={(actionId) => onOutcome(renderer.instanceId, actionId, {})}
@@ -534,6 +570,97 @@ function CoreRenderer({
   }
   if (renderer.rendererId === EXPERIENCE_CORE_CHARGE_FEEDBACK_RENDERER_ID) return null;
   return null;
+}
+
+function CoreTextRenderer({
+  manifest,
+  renderer,
+  locale,
+  active,
+  copy,
+  onCompleted,
+}: {
+  manifest: ExperienceRuntimeManifest;
+  renderer: ExperienceRendererInstance;
+  locale: string;
+  active: boolean;
+  copy: ExperiencePlayerCopy;
+  onCompleted: () => void;
+}) {
+  const titleId = useId();
+  const bodyId = useId();
+  const scrollRef = useRef<HTMLElement | null>(null);
+  const [completed, setCompleted] = useState(false);
+  const config = ExperienceCoreTextRendererConfigSchema.parse(renderer.config);
+  const title = config.title
+    ? localize(config.title, locale, manifest.localization.defaultLocale)
+    : null;
+  const body = localize(config.body, locale, manifest.localization.defaultLocale);
+
+  useEffect(() => {
+    if (!active) return;
+    const scrollRegion = scrollRef.current;
+    if (!scrollRegion) return;
+    scrollRegion.scrollTop = 0;
+    scrollRegion.focus({ preventScroll: true });
+  }, [active, renderer.instanceId]);
+
+  const complete = () => {
+    if (!active || completed) return;
+    setCompleted(true);
+    onCompleted();
+  };
+
+  return (
+    <article
+      ref={scrollRef}
+      tabIndex={active ? 0 : -1}
+      aria-hidden={active ? undefined : true}
+      aria-labelledby={title ? titleId : undefined}
+      aria-label={
+        title
+          ? undefined
+          : localize(manifest.metadata.title, locale, manifest.localization.defaultLocale)
+      }
+      aria-describedby={bodyId}
+      className="absolute inset-0 overflow-y-auto overscroll-contain bg-[var(--experience-color-background,#111)] px-6 py-12 text-[var(--experience-color-text,#fff)] outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-white/40 sm:px-10 sm:py-16"
+      style={{ zIndex: renderer.layer }}
+      data-experience-renderer="core.text"
+    >
+      <div className="mx-auto flex min-h-full max-w-3xl flex-col justify-center">
+        {title ? (
+          <h2
+            id={titleId}
+            className="text-balance text-2xl font-semibold tracking-[-0.025em] sm:text-4xl"
+          >
+            {title}
+          </h2>
+        ) : null}
+        <p
+          id={bodyId}
+          className={classNames(
+            "whitespace-pre-wrap text-pretty text-base leading-8 text-current/82 sm:text-lg sm:leading-9",
+            title && "mt-6"
+          )}
+        >
+          {body}
+        </p>
+        {config.completion === "continue" ? (
+          <div className="mt-10 flex justify-end pb-[max(0px,env(safe-area-inset-bottom))]">
+            <button
+              type="button"
+              className={PRIMARY_BUTTON}
+              disabled={!active || completed}
+              onClick={complete}
+            >
+              {copy.continue}
+              <IconArrowRight className="size-4" aria-hidden="true" />
+            </button>
+          </div>
+        ) : null}
+      </div>
+    </article>
+  );
 }
 
 type CoreVideoTerminalMode =
@@ -679,25 +806,56 @@ function CoreVideoRenderer({
   };
 
   if (!clip || !assetId || !media) return null;
+  // A "native" clip is inline reading media: it keeps its intrinsic aspect
+  // ratio, is centered in the responsive stage, and scales down to fit without
+  // ever cropping. Everything else fills a fixed full-bleed frame.
+  const native = config.fit === "native";
+  const player = (
+    <ExperienceMediaPlayer
+      source={{ src: media.variant.uri, type: media.variant.mediaType }}
+      title={copy.videoLabel(renderer.instanceId)}
+      autoPlay={false}
+      muted={media.asset.audioMode === "none"}
+      loop={terminalMode?.kind === "loop"}
+      durationSeconds={media.variant.durationMs / 1_000}
+      clipStartTime={terminalMode?.kind === "loop" ? terminalMode.clipStartTime : undefined}
+      poster={poster}
+      fit={config.fit === "native" ? "contain" : config.fit}
+      onEnd={handleEnd}
+      onTimeUpdate={(seconds) => onTimelineTimeMs(timelineOffsetMs + Math.round(seconds * 1_000))}
+      onPlaybackError={(message) => onRuntimeError(message?.trim() || copy.mediaError(assetId))}
+      onPlaybackHandle={registerPlaybackHandle}
+      playbackIdentity={playbackIdentity}
+      copy={copy.video}
+    />
+  );
+  if (native) {
+    return (
+      <div
+        className="absolute inset-0 grid place-items-center p-4 sm:p-6"
+        style={{ zIndex: renderer.layer }}
+        data-experience-video-fit="native"
+      >
+        <div
+          className="relative overflow-hidden rounded-lg bg-black"
+          style={{
+            // Percentage width (not a fixed px) so an aspect-ratio box also
+            // shrinks when the viewport height is the binding constraint; the
+            // native width is only an upper cap so the clip never upscales.
+            width: "100%",
+            maxWidth: media.variant.width,
+            maxHeight: "100%",
+            aspectRatio: `${media.variant.width} / ${media.variant.height}`,
+          }}
+        >
+          {player}
+        </div>
+      </div>
+    );
+  }
   return (
     <div className="absolute inset-0" style={{ zIndex: renderer.layer }}>
-      <ExperienceMediaPlayer
-        source={{ src: media.variant.uri, type: media.variant.mediaType }}
-        title={copy.videoLabel(renderer.instanceId)}
-        autoPlay={false}
-        muted={media.asset.audioMode === "none"}
-        loop={terminalMode?.kind === "loop"}
-        durationSeconds={media.variant.durationMs / 1_000}
-        clipStartTime={terminalMode?.kind === "loop" ? terminalMode.clipStartTime : undefined}
-        poster={poster}
-        fit={config.fit}
-        onEnd={handleEnd}
-        onTimeUpdate={(seconds) => onTimelineTimeMs(timelineOffsetMs + Math.round(seconds * 1_000))}
-        onPlaybackError={(message) => onRuntimeError(message?.trim() || copy.mediaError(assetId))}
-        onPlaybackHandle={registerPlaybackHandle}
-        playbackIdentity={playbackIdentity}
-        copy={copy.video}
-      />
+      {player}
     </div>
   );
 }
@@ -706,6 +864,7 @@ function CoreChoiceRenderer({
   manifest,
   renderer,
   runtimeState,
+  active,
   open,
   locale,
   copy,
@@ -714,6 +873,7 @@ function CoreChoiceRenderer({
   manifest: ExperienceRuntimeManifest;
   renderer: ExperienceRendererInstance;
   runtimeState: ExperienceRuntimeState;
+  active: boolean;
   open: boolean;
   locale: string;
   copy: ExperiencePlayerCopy;
@@ -721,7 +881,7 @@ function CoreChoiceRenderer({
 }) {
   const promptId = useId();
   const config = ExperienceCoreChoiceRendererConfigSchema.parse(renderer.config);
-  if (!config.initiallyOpen && !open) return null;
+  if (!active || (!config.initiallyOpen && !open)) return null;
   const choices = config.choices.filter(
     (choice) =>
       !choice.visibleWhen ||
@@ -768,18 +928,20 @@ function CoreChoiceRenderer({
 
 function CoreCheckpointRenderer({
   renderer,
+  active,
   open,
   copy,
   onSelect,
 }: {
   renderer: ExperienceRendererInstance;
+  active: boolean;
   open: boolean;
   copy: ExperiencePlayerCopy;
   onSelect: (actionId: string) => void;
 }) {
   const titleId = useId();
   const config = ExperienceCoreCheckpointRendererConfigSchema.parse(renderer.config);
-  if (!config.initiallyOpen && !open) return null;
+  if (!active || (!config.initiallyOpen && !open)) return null;
   return (
     <div
       role="dialog"
@@ -818,22 +980,23 @@ const STAGE_ASPECT: Record<ExperienceOrientation, number> = {
 };
 
 /**
- * Full-bleed player shell. The frame profile no longer draws a letterboxed
- * canvas — it decides which way the content wants to face. The inner stage
- * always keeps the content's exact aspect ratio (spatial-anchor coordinates
- * stay valid) and is scaled to COVER the shell, which crops the overflow like
- * an image in object-cover. When landscape content lands in a portrait shell
- * (mobile web cannot force device rotation), the whole stage rotates 90° —
- * pointer events are mapped through the transform by the browser, so spatial
- * hotspots keep working untouched.
+ * The cinematic shell preserves the authored aspect ratio and covers the
+ * viewport, rotating landscape work on portrait screens when necessary. The
+ * narrative shell is responsive instead, so long-form text owns the available
+ * reading viewport without being cropped. Renderer selection remains entirely
+ * manifest-driven in both profiles.
  */
 function PlayerFrame({
   orientation,
+  experienceProfile,
+  stageProfile,
   copy,
   style,
   children,
 }: {
   orientation: ExperienceOrientation;
+  experienceProfile: ExperienceProfile;
+  stageProfile: ExperienceProfile;
   copy: ExperiencePlayerCopy;
   style?: CSSProperties;
   children: React.ReactNode;
@@ -842,9 +1005,12 @@ function PlayerFrame({
   const shellSize = useShellSize(shellRef);
   const aspect = STAGE_ASPECT[orientation];
   const rotated =
-    orientation === "landscape" && shellSize !== null && shellSize.height > shellSize.width;
+    stageProfile === "cinematic" &&
+    orientation === "landscape" &&
+    shellSize !== null &&
+    shellSize.height > shellSize.width;
   let stageStyle: CSSProperties = { width: "100%", height: "100%" };
-  if (shellSize) {
+  if (stageProfile === "cinematic" && shellSize) {
     const availWidth = rotated ? shellSize.height : shellSize.width;
     const availHeight = rotated ? shellSize.width : shellSize.height;
     const width = Math.max(availWidth, availHeight * aspect);
@@ -856,6 +1022,8 @@ function PlayerFrame({
       role="region"
       aria-label={copy.regionLabel}
       style={style}
+      data-experience-profile={experienceProfile}
+      data-experience-stage-profile={stageProfile}
       className="relative h-full min-h-[inherit] w-full overflow-hidden bg-[var(--experience-color-background,#000)] text-[var(--experience-color-text,#fff)]"
     >
       <div
@@ -869,6 +1037,25 @@ function PlayerFrame({
       </div>
     </div>
   );
+}
+
+/**
+ * Project profile controls the overall product presentation, while the active
+ * scene controls the safe stage geometry. Text must never inherit cinematic
+ * cover/rotation behavior: a mixed cinematic story can therefore move into a
+ * full-viewport reading scene and return to its authored cinematic frame for
+ * the next video scene.
+ */
+function resolveRendererStageProfile(
+  visibleRenderers: readonly ExperienceRendererInstance[],
+  experienceProfile: ExperienceProfile
+): ExperienceProfile {
+  if (
+    visibleRenderers.some((renderer) => renderer.rendererId === EXPERIENCE_CORE_TEXT_RENDERER_ID)
+  ) {
+    return "narrative";
+  }
+  return experienceProfile;
 }
 
 function useShellSize(ref: React.RefObject<HTMLDivElement | null>): {

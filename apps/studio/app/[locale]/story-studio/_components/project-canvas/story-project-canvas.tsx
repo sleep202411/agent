@@ -95,9 +95,7 @@ import {
   putStoryClipCurrentVideo,
   putStoryCanvasLayout,
   putStoryDraft,
-  putStoryTrailerCurrentVideo,
   storyApiErrorMessage,
-  STORY_FRAME_PROFILE_CONTRACTS,
   waitForStoryClipVideoUploadFinalization,
   type CanvasLayoutRevisionConflict,
   type DraftRevisionConflict,
@@ -174,8 +172,6 @@ import {
   createClipNode,
   createEndingNode,
   createTextNode,
-  duplicateClipNode,
-  duplicateTextNode,
   moveChoiceOption,
   removeChoiceOption,
   setEntryNode,
@@ -216,10 +212,7 @@ import {
   resolveStoryVideoState,
   workbenchHasActiveGeneration,
 } from "./story-video-state";
-import {
-  projectConfirmedClipCurrentVideo,
-  projectConfirmedTrailerCurrentVideo,
-} from "./story-workbench-current-video";
+import { projectConfirmedClipCurrentVideo } from "./story-workbench-current-video";
 import { useStoryPublication } from "./use-story-publication";
 import { useStoryAgentRun } from "./use-story-agent-run";
 import { useStoryAgentNodeReveal } from "./use-story-agent-node-reveal";
@@ -2004,15 +1997,6 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
       workspaceId,
     ]
   );
-  const selectExistingClipVideo = useCallback(
-    async (item: StoryVideoLibraryItem) => {
-      if (!workspaceId || !focusedGraphNodeId || !mutationBarrier.permits("production")) {
-        throw new Error(t("production.errors.action"));
-      }
-      await bindClipVideo(focusedGraphNodeId, focusedClipVideo?.selectionVersion ?? 0, item);
-    },
-    [bindClipVideo, focusedClipVideo, focusedGraphNodeId, mutationBarrier, t, workspaceId]
-  );
   const uploadSelectedClipVideo = useCallback(
     async (
       file: File,
@@ -2089,10 +2073,8 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
   const clipGeneration: StoryClipGenerationFormProps | null =
     focusedNode?.data.kind === "clip" && focusedGraphNodeId && focusedRecipe
       ? {
-          target: focusedClipVideo,
           recipe: focusedRecipe,
           references,
-          frameProfile: project?.frameProfile ?? null,
           readOnly: !canManageClipMedia,
           canGenerate: productionDisabledReason === null,
           disabledReason: productionDisabledReason,
@@ -2192,40 +2174,12 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
       : trailerGenerationActive
         ? t("production.disabled.generating")
         : null;
-  const selectExistingTrailerVideo = useCallback(
-    async (item: StoryVideoLibraryItem) => {
-      if (!workspaceId || !selectedTrailer || !mutationBarrier.permits("production")) {
-        throw new Error(t("trailer.production.errors.action"));
-      }
-      const confirmedTrailer = await putStoryTrailerCurrentVideo(workspaceId, projectId, {
-        expectedSelectionVersion: selectedTrailer.selectionVersion,
-        assetId: item.asset.id,
-        variantId: item.variantId,
-      });
-      queryClient.setQueryData<StoryWorkbench>(workbenchQueryKey, (current) =>
-        projectConfirmedTrailerCurrentVideo(current, confirmedTrailer)
-      );
-      void refetchWorkbench();
-    },
-    [
-      mutationBarrier,
-      projectId,
-      queryClient,
-      refetchWorkbench,
-      selectedTrailer,
-      t,
-      workbenchQueryKey,
-      workspaceId,
-    ]
-  );
   const trailerGeneration: StoryClipGenerationFormProps | null =
     worldInspectorOpen && selectedTrailer
       ? {
           subject: "trailer",
-          target: selectedTrailer,
           recipe: trailerRecipe,
           references,
-          frameProfile: project?.frameProfile ?? null,
           readOnly: !canGenerateTrailer,
           canGenerate: trailerDisabledReason === null,
           disabledReason: trailerDisabledReason,
@@ -2236,15 +2190,6 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
           referenceUpload: workspaceId
             ? { workspaceId, projectId, refresh: refetchWorkbench }
             : null,
-          videoLibrary: workspaceId
-            ? {
-                workspaceId,
-                projectId,
-                disabled: !canGenerateTrailer,
-                disabledReason: trailerDisabledReason,
-                onSelect: selectExistingTrailerVideo,
-              }
-            : undefined,
         }
       : null;
   const authoringLocale = project?.defaultLocale ?? "en-US";
@@ -2927,7 +2872,6 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
                 },
               }
             : {}),
-          ...(patch.kind !== undefined ? { kind: patch.kind } : {}),
           ...(patch.title
             ? { title: { locale: authoringLocale, value: patch.title[authoringLocale] ?? "" } }
             : {}),
@@ -2958,23 +2902,6 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
         });
       }
       selectCanvasNodeExclusively(null);
-    } catch {
-      setGraphError(t("graphError.generic"));
-    }
-  };
-
-  const duplicateNode = (nodeId: string) => {
-    if (!content || !mutationBarrier.permits("layout")) return;
-    const source = content.graph.nodes.find((candidate) => candidate.nodeId === nodeId);
-    if (!source) return;
-    try {
-      const result =
-        source.kind === "clip"
-          ? duplicateClipNode(content, nodeId)
-          : duplicateTextNode(content, nodeId, { locale: authoringLocale });
-      commitContent(result.content);
-      selectCanvasNodeExclusively(result.created.nodeId);
-      setGraphError(null);
     } catch {
       setGraphError(t("graphError.generic"));
     }
@@ -3521,19 +3448,6 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
                     canEdit: canManageClipMedia,
                     disabledReason: clipMediaDisabledReason,
                     onUpload: uploadSelectedClipVideo,
-                    videoLibrary:
-                      workspaceId && focusedGraphNodeId
-                        ? {
-                            workspaceId,
-                            projectId,
-                            disabled: !canManageClipMedia,
-                            disabledReason: clipMediaDisabledReason,
-                            frameContract: project.frameProfile
-                              ? STORY_FRAME_PROFILE_CONTRACTS[project.frameProfile]
-                              : null,
-                            onSelect: selectExistingClipVideo,
-                          }
-                        : undefined,
                   }
                 : undefined
             }
@@ -3552,7 +3466,6 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
             }
             showFoundation={inspectorTarget.kind === "world"}
             canEdit={canMutateCanvasLayout}
-            onShowFoundation={showStoryWorldInspector}
             onUpdateFoundation={updateFoundation}
             onUpdateCharacter={(characterId, patch) =>
               applyGraphMutation((current) => updateStoryCharacter(current, characterId, patch), {
@@ -3577,7 +3490,6 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
               applyGraphMutation((current) => removeChoiceOption(current, nodeId, choiceId))
             }
             onUpdateEnding={updateEnding}
-            onDuplicateNode={duplicateNode}
             onDeleteSelected={() => {
               if (focusedNode) void deleteElements({ nodes: [focusedNode] });
             }}

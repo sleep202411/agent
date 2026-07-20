@@ -1925,14 +1925,6 @@
         "choiceDescription": "Pause playback and let the player choose a branch.",
         "cancel": "Cancel"
       },
-      "endingKinds": {
-        "truth": "Truth",
-        "bond": "Bond",
-        "echo": "Echo",
-        "failure": "Failure",
-        "hidden": "Hidden",
-        "custom": "Custom"
-      },
       "projection": {
         "rootTitle": "Story World",
         "rootEyebrow": "World Root",
@@ -2089,39 +2081,6 @@
           "label": "Duration",
           "seconds": "{count}s"
         },
-        "videoLibrary": {
-          "trigger": "Use existing video",
-          "title": "Video history",
-          "description": "Choose a reusable video matching {width}×{height}.",
-          "descriptionNative": "Choose any ready video. It plays inline at its native size.",
-          "loading": "Loading video history",
-          "loadingMore": "Loading more videos",
-          "loadMore": "Load more",
-          "retry": "Try again",
-          "playPreview": "Play video preview {number}",
-          "pausePreview": "Pause video preview {number}",
-          "previewUnavailable": "Preview unavailable",
-          "current": "Current video",
-          "incompatible": "Incompatible",
-          "select": "Use this video",
-          "selecting": "Setting current video",
-          "unavailable": "Cannot use",
-          "unknownDimensions": "Unknown size",
-          "unknownDuration": "Unknown duration",
-          "empty": {
-            "title": "No reusable videos yet",
-            "description": "Videos generated in this workspace will remain here as reusable history."
-          },
-          "issues": {
-            "preview_unavailable": "This asset has no playable preview.",
-            "dimensions_unknown": "Its dimensions cannot be verified.",
-            "dimensions_mismatch": "Its dimensions do not match this shot."
-          },
-          "errors": {
-            "load": "Video history could not be loaded.",
-            "select": "The current video could not be changed."
-          }
-        },
         "errors": {
           "action": "The production action could not be completed."
         },
@@ -2159,8 +2118,6 @@
           "processing": "Processing video…",
           "processingDescription": "Checking the video and preparing it for playback.",
           "accepted": "MP4 video",
-          "library": "Video library",
-          "libraryDescription": "Reuse an uploaded or generated video",
           "preparing": "Clip media is still being prepared.",
           "unknownDimensions": "Unknown size",
           "unknownDuration": "Unknown duration",
@@ -2175,8 +2132,6 @@
         "openProduction": "Open clip production",
         "choices": "Branch choices",
         "entry": "Entry scene",
-        "entryNode": "Story entry",
-        "makeEntry": "Set as entry",
         "exitAuto": "Continue to scene",
         "exitChoice": "Player choice",
         "exitCheckpoint": "Continue checkpoint",
@@ -2204,8 +2159,6 @@
         "confirmConversion": "Replace next step",
         "endingTitle": "Ending title",
         "endingSummary": "Ending summary",
-        "endingKind": "Ending type",
-        "duplicate": "Duplicate node",
         "delete": "Delete node",
         "deleteEnding": "Delete ending",
         "removeDecision": "Remove choice step",

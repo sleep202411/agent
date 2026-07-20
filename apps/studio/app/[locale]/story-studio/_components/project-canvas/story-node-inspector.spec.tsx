@@ -184,7 +184,6 @@ function draftWithoutOptionalCopy(): InteractiveStoryDraftContent {
         {
           id: "finish",
           title: { "en-US": "Finish" },
-          kind: "custom",
         },
       ],
     },
@@ -244,7 +243,6 @@ function inspectorProps(
     locale: "en-US",
     showFoundation: false,
     canEdit: true,
-    onShowFoundation: vi.fn(),
     onUpdateFoundation: vi.fn(),
     onUpdateCharacter: vi.fn(),
     onDeleteCharacter: vi.fn(),
@@ -255,7 +253,6 @@ function inspectorProps(
     onMoveChoice: vi.fn(),
     onRemoveChoice: vi.fn(),
     onUpdateEnding,
-    onDuplicateNode: vi.fn(),
     onDeleteSelected: vi.fn(),
     onUpdateClipMeta: vi.fn(),
     onUpdateText: vi.fn(),

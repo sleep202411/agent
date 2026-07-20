@@ -95,7 +95,7 @@ describe("stage product schemas", () => {
     expect(
       StoryBibleDraftSchema.safeParse({
         ...base,
-        endings: [{ id: "truth", title: { "zh-CN": "真相" }, kind: "truth" }],
+        endings: [{ id: "truth", title: { "zh-CN": "真相" } }],
       }).success
     ).toBe(true);
   });
