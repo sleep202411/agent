@@ -264,9 +264,14 @@ module.exports = ({ config }) => {
     },
     plugins: [
       "expo-router",
+      "expo-asset",
+      "expo-font",
       "expo-image",
       "expo-localization",
+      "expo-secure-store",
       "expo-sharing",
+      "expo-video",
+      "expo-web-browser",
       [
         "expo-media-library",
         {
