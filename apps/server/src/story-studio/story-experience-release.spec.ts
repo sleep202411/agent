@@ -1,8 +1,5 @@
 /* eslint-disable @typescript-eslint/no-unsafe-assignment -- Jest asymmetric matchers and mock.calls payloads are intentionally untyped in lifecycle assertions. */
-import {
-  BadGatewayException,
-  UnprocessableEntityException,
-} from '@nestjs/common';
+import { BadGatewayException } from '@nestjs/common';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import {
@@ -484,8 +481,8 @@ describe('StoryExperienceReleaseService publication lifecycle', () => {
     // Authorization is stamped explicitly from the transaction clock (one
     // clock read per operation — never mixed with column defaults, which the
     // time_order_chk constraint would reject on skew).
-    const createData = tx.storyExperiencePublication.create.mock.calls[0][0]
-      .data as Record<string, unknown>;
+    const createData =
+      tx.storyExperiencePublication.create.mock.calls[0][0].data;
     expect(createData.mediaAuthorizedAt).toBeInstanceOf(Date);
     expect(createData.createdAt).toEqual(createData.mediaAuthorizedAt);
     expect(gateway.publish).toHaveBeenCalledWith(
@@ -925,13 +922,11 @@ describe('StoryExperienceReleaseService publication lifecycle', () => {
     expect(gateway.publish).toHaveBeenCalledTimes(1);
   });
 
-  it('rejects a Build without frozen assets before contacting Java', async () => {
-    const gateway = { publish: jest.fn() };
-    const service = serviceWith({ gateway, frozenAssetsAvailable: false });
-    await expect(publish(service)).rejects.toBeInstanceOf(
-      UnprocessableEntityException,
+  it('publishes a valid Build with no frozen media assets', async () => {
+    const service = serviceWith({ frozenAssetsAvailable: false });
+    await expect(publish(service)).resolves.toEqual(
+      releaseResponse(manifestFixture()),
     );
-    expect(gateway.publish).not.toHaveBeenCalled();
   });
 
   it('rejects a Build whose browser-safe frozen media no longer matches before contacting Java', async () => {
@@ -1565,18 +1560,26 @@ function claimTransaction(input: {
     storyExperiencePublication: {
       findUnique: jest.fn(() => input.existing),
       findMany: jest.fn(() => (input.competing ? [input.competing] : [])),
-      create: jest.fn((_args: { data: Record<string, unknown> }) => {
+      create: jest.fn((args: { data: Record<string, unknown> }) => {
+        void args;
         input.onCreate?.();
         return input.created ?? publicationRow();
       }),
       update: jest.fn(
-        () =>
-          input.claimed ??
-          publicationRow({
-            status: input.existing?.status ?? 'pending',
-            leaseOwner: 'lease-1',
-            leaseExpiresAt: new Date(Date.now() + 30_000),
-          }),
+        (args: {
+          where?: Record<string, unknown>;
+          data: Record<string, unknown>;
+        }) => {
+          void args;
+          return (
+            input.claimed ??
+            publicationRow({
+              status: input.existing?.status ?? 'pending',
+              leaseOwner: 'lease-1',
+              leaseExpiresAt: new Date(Date.now() + 30_000),
+            })
+          );
+        },
       ),
     },
   };
@@ -1631,10 +1634,13 @@ function reconciliationTransaction(
     storyExperiencePublication: {
       findMany: jest.fn(() => rows),
       update: jest.fn(
-        (_args: {
+        (args: {
           where?: Record<string, unknown>;
           data: Record<string, unknown>;
-        }) => ({}),
+        }) => {
+          void args;
+          return {};
+        },
       ),
     },
   };
@@ -1648,14 +1654,18 @@ function prismaWithTransaction(tx: object) {
     $queryRaw: jest.fn(() => [{ now: new Date() }]),
     storyExperiencePublication: {
       updateMany: jest.fn(
-        (_args: {
+        (args: {
           where?: Record<string, unknown>;
           data: Record<string, unknown>;
-        }) => ({ count: 1 }),
+        }) => {
+          void args;
+          return { count: 1 };
+        },
       ),
       findUnique: jest.fn(() => null),
       findFirst: jest.fn(
-        async (): Promise<{ id: string } | null> => ({ id: 'publication-1' }),
+        (): Promise<{ id: string } | null> =>
+          Promise.resolve({ id: 'publication-1' }),
       ),
     },
   };

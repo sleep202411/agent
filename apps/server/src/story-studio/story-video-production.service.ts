@@ -30,7 +30,7 @@ import {
 } from '../infra/storage/media-asset-url-resolver.service';
 import { canonicalJsonHash } from './canonical-json';
 import {
-  InteractiveFilmDraftContentSchema,
+  InteractiveStoryDraftContentSchema,
   type StoryVideoTechnicalCheckDto,
   type MediaAssetSummaryDto,
   type StoryClipVideoSummaryDto,
@@ -131,7 +131,7 @@ interface ExactVideoVariant {
   width: number;
   height: number;
   hasAudio: boolean;
-  browserSafeMp4: true;
+  browserSafeMp4: boolean;
 }
 
 const TRAILER_TARGET_KEY = 'trailer';
@@ -974,7 +974,7 @@ export class StoryVideoProductionService {
         message: 'The saved draft content does not match its hash.',
       });
     }
-    const parsed = InteractiveFilmDraftContentSchema.safeParse(draft.content);
+    const parsed = InteractiveStoryDraftContentSchema.safeParse(draft.content);
     if (!parsed.success) {
       throw new UnprocessableEntityException({
         code: 'STORY_DRAFT_INVALID',
@@ -1347,7 +1347,7 @@ async function requireExactVideoVariant(
     throw new UnprocessableEntityException({
       code: 'STORY_VIDEO_VARIANT_NOT_USABLE',
       message:
-        'The selected video variant is not a browser-safe MP4 with exact probed technical metadata.',
+        'The selected video variant is missing exact probed technical metadata (checksum, dimensions, duration, or audio).',
     });
   }
   return exact;
@@ -1386,8 +1386,7 @@ function exactVideoVariant(
     variant.assetId !== asset.id ||
     variant.status !== MediaAssetVariantStatus.ready ||
     variant.deletedAt ||
-    variant.contentType !== 'video/mp4' ||
-    !isBrowserSafeMp4Metadata(variant.metadata) ||
+    !variant.contentType?.toLowerCase().startsWith('video/') ||
     !variant.checksumSha256 ||
     !SHA256_PATTERN.test(variant.checksumSha256) ||
     !variant.durationMs ||
@@ -1409,7 +1408,7 @@ function exactVideoVariant(
     width: variant.width,
     height: variant.height,
     hasAudio: variant.hasAudio,
-    browserSafeMp4: true,
+    browserSafeMp4: isBrowserSafeMp4Metadata(variant.metadata),
   };
 }
 
@@ -1575,7 +1574,7 @@ function currentVideoDto(
     selection.currentWidth == null ||
     selection.currentHeight == null ||
     selection.currentHasAudio == null ||
-    selection.currentBrowserSafeMp4 !== true ||
+    selection.currentBrowserSafeMp4 === null ||
     !selection.setAt ||
     selection.currentAssetId !== exact.asset.id ||
     selection.currentVariantId !== exact.variantId ||
@@ -1598,7 +1597,7 @@ function currentVideoDto(
     width: selection.currentWidth,
     height: selection.currentHeight,
     hasAudio: selection.currentHasAudio,
-    browserSafeMp4: true,
+    browserSafeMp4: selection.currentBrowserSafeMp4,
     selectionVersion: selection.version,
     setByUserId: selection.setByUserId,
     setAt: selection.setAt.toISOString(),

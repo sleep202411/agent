@@ -22,11 +22,11 @@ import { resolveMediaPublicUrl } from '../infra/storage/media-asset-url-resolver
 import { WorkspacePermissionService } from '../workspaces/workspace-permission.service';
 import { canonicalJsonHash } from './canonical-json';
 import {
-  EMPTY_INTERACTIVE_FILM_DRAFT_CONTENT,
-  createLockableInteractiveFilmDraftContentSchema,
+  EMPTY_INTERACTIVE_STORY_DRAFT_CONTENT,
+  createLockableInteractiveStoryDraftContentSchema,
   StoryBuildScopeSchema,
-  INTERACTIVE_FILM_DRAFT_SCHEMA_VERSION,
-  InteractiveFilmDraftContentSchema,
+  INTERACTIVE_STORY_DRAFT_SCHEMA_VERSION,
+  InteractiveStoryDraftContentSchema,
   STORY_CANVAS_LAYOUT_SCHEMA_VERSION,
   STORY_WORLD_CANVAS_NODE_ID,
   StoryCanvasNodePositionsSchema,
@@ -198,12 +198,14 @@ export class StoryProjectsService {
       WorkspaceMemberRole.editor,
     );
 
-    const contentHash = canonicalJsonHash(EMPTY_INTERACTIVE_FILM_DRAFT_CONTENT);
+    const contentHash = canonicalJsonHash(
+      EMPTY_INTERACTIVE_STORY_DRAFT_CONTENT,
+    );
     const project = await this.prisma.storyProject.create({
       data: {
         workspaceId,
-        format: StoryFormat.interactive_film,
-        frameProfile: input.frameProfile,
+        format: input.format,
+        frameProfile: input.frameProfile ?? null,
         status: StoryProjectStatus.active,
         visibility: input.visibility,
         title: input.title,
@@ -221,9 +223,9 @@ export class StoryProjectsService {
         },
         draft: {
           create: {
-            schemaVersion: INTERACTIVE_FILM_DRAFT_SCHEMA_VERSION,
+            schemaVersion: INTERACTIVE_STORY_DRAFT_SCHEMA_VERSION,
             content:
-              EMPTY_INTERACTIVE_FILM_DRAFT_CONTENT as Prisma.InputJsonObject,
+              EMPTY_INTERACTIVE_STORY_DRAFT_CONTENT as Prisma.InputJsonObject,
             contentHash,
             updatedByUserId: user.userId,
           },
@@ -286,7 +288,11 @@ export class StoryProjectsService {
       where: {
         workspaceId,
         status: query.status,
-        ...(query.format ? { format: query.format } : {}),
+        format: query.format
+          ? query.format
+          : {
+              in: [StoryFormat.interactive_film, StoryFormat.text_adventure],
+            },
         members: {
           some: {
             userId: user.userId,
@@ -331,7 +337,7 @@ export class StoryProjectsService {
     workspaceId: string,
     projectId: string,
   ): Promise<StoryProjectSummaryDto> {
-    await this.requireScopedProject(
+    const access = await this.requireScopedProject(
       user,
       workspaceId,
       projectId,
@@ -340,6 +346,7 @@ export class StoryProjectsService {
         allowArchived: true,
       },
     );
+    this.requireSupportedStoryFormat(access.project.format);
     const row = await this.loadProjectSummary(projectId);
     return this.toProjectSummary(row, user.userId);
   }
@@ -350,7 +357,13 @@ export class StoryProjectsService {
     projectId: string,
     input: PatchStoryProjectInput,
   ): Promise<StoryProjectSummaryDto> {
-    await this.requireScopedProject(user, workspaceId, projectId, 'story.edit');
+    const access = await this.requireScopedProject(
+      user,
+      workspaceId,
+      projectId,
+      'story.edit',
+    );
+    this.requireSupportedStoryFormat(access.project.format);
 
     const updated = await this.prisma.$transaction(async (tx) => {
       await this.writeGuard.assertHumanWriteAllowed(tx, projectId);
@@ -398,12 +411,13 @@ export class StoryProjectsService {
     projectId: string,
     input: ArchiveStoryProjectInput,
   ): Promise<StoryProjectSummaryDto> {
-    await this.requireScopedProject(
+    const access = await this.requireScopedProject(
       user,
       workspaceId,
       projectId,
       'story.admin',
     );
+    this.requireSupportedStoryFormat(access.project.format);
     const updated = await this.prisma.$transaction(async (tx) => {
       await this.writeGuard.assertHumanWriteAllowed(tx, projectId);
       return tx.storyProject.updateMany({
@@ -444,7 +458,7 @@ export class StoryProjectsService {
       'story.read',
       { allowArchived: true },
     );
-    this.requireInteractiveFilm(access.project.format);
+    this.requireSupportedStoryFormat(access.project.format);
     const draft = await this.prisma.storyDraft.findUnique({
       where: { storyProjectId: projectId },
     });
@@ -464,7 +478,7 @@ export class StoryProjectsService {
       projectId,
       'story.edit',
     );
-    this.requireInteractiveFilm(access.project.format);
+    this.requireSupportedStoryFormat(access.project.format);
     const contentHash = canonicalJsonHash(input.content);
 
     const saved = await this.prisma.$transaction(async (tx) => {
@@ -644,7 +658,7 @@ export class StoryProjectsService {
     projectId: string,
     revisionId: string,
   ): Promise<StoryRevisionDto> {
-    await this.requireScopedProject(
+    const access = await this.requireScopedProject(
       user,
       workspaceId,
       projectId,
@@ -657,7 +671,7 @@ export class StoryProjectsService {
       where: { id: revisionId, storyProjectId: projectId },
     });
     if (!revision) throwRevisionNotFound();
-    return this.toRevision(revision);
+    return this.toRevision(revision, access.project.format);
   }
 
   async lockRevision(
@@ -672,7 +686,7 @@ export class StoryProjectsService {
       projectId,
       'story.edit',
     );
-    this.requireInteractiveFilm(access.project.format);
+    this.requireSupportedStoryFormat(access.project.format);
 
     for (let attempt = 0; attempt < 2; attempt += 1) {
       try {
@@ -686,7 +700,9 @@ export class StoryProjectsService {
             if (draft.revision !== input.expectedDraftRevision) {
               return { kind: 'conflict', draft } as const;
             }
-            if (draft.schemaVersion !== INTERACTIVE_FILM_DRAFT_SCHEMA_VERSION) {
+            if (
+              draft.schemaVersion !== INTERACTIVE_STORY_DRAFT_SCHEMA_VERSION
+            ) {
               throw unsupportedStorySchema('draft', draft.schemaVersion);
             }
 
@@ -700,7 +716,7 @@ export class StoryProjectsService {
               });
             }
 
-            const lockable = createLockableInteractiveFilmDraftContentSchema(
+            const lockable = createLockableInteractiveStoryDraftContentSchema(
               access.project.defaultLocale,
             ).safeParse(draft.content);
             if (!lockable.success) {
@@ -714,7 +730,7 @@ export class StoryProjectsService {
                 })),
               });
             }
-            // Hash exactly the validated v3 story document written to the
+            // Hash exactly the validated interactive-story document written to the
             // immutable revision. Video selection remains project-scoped.
             const revisionContentHash = canonicalJsonHash(lockable.data);
 
@@ -770,7 +786,7 @@ export class StoryProjectsService {
             access.project,
           );
         }
-        return this.toRevision(result.revision);
+        return this.toRevision(result.revision, access.project.format);
       } catch (error) {
         if (!isUniqueConstraintError(error) || attempt > 0) throw error;
         // A concurrent lock won. Retry the serializable transaction so the
@@ -798,7 +814,7 @@ export class StoryProjectsService {
       'story.read',
       { allowArchived: true },
     );
-    this.requireInteractiveFilm(access.project.format);
+    this.requireSupportedStoryFormat(access.project.format);
 
     const { project, draft, video, references, latestBuild } =
       await this.prisma.$transaction(
@@ -843,7 +859,7 @@ export class StoryProjectsService {
               }),
             ]);
           if (!draft) throwDraftNotFound();
-          if (draft.schemaVersion !== INTERACTIVE_FILM_DRAFT_SCHEMA_VERSION) {
+          if (draft.schemaVersion !== INTERACTIVE_STORY_DRAFT_SCHEMA_VERSION) {
             throw unsupportedStorySchema('draft', draft.schemaVersion);
           }
           const content = parseDraftContent(
@@ -891,11 +907,17 @@ export class StoryProjectsService {
     return access;
   }
 
-  private requireInteractiveFilm(format: StoryFormat): void {
-    if (format !== StoryFormat.interactive_film) {
+  private requireSupportedStoryFormat(
+    format: StoryFormat,
+  ): asserts format is 'interactive_film' | 'text_adventure' {
+    if (
+      format !== StoryFormat.interactive_film &&
+      format !== StoryFormat.text_adventure
+    ) {
       throw new UnprocessableEntityException({
         code: 'STORY_FORMAT_UNSUPPORTED',
-        message: 'This endpoint currently supports interactive-film stories.',
+        message:
+          'This endpoint supports interactive-film and text-adventure story profiles.',
       });
     }
   }
@@ -972,12 +994,13 @@ export class StoryProjectsService {
     row: ProjectSummaryRow,
     userId: string,
   ): StoryProjectSummaryDto {
+    this.requireSupportedStoryFormat(row.format);
     const membership = row.members.find((member) => member.userId === userId);
     const capabilities = membership
       ? (this.permissions.capabilities(membership.role) as StoryCapability[])
       : [];
     const parsedDraft = row.draft
-      ? InteractiveFilmDraftContentSchema.safeParse(row.draft.content)
+      ? InteractiveStoryDraftContentSchema.safeParse(row.draft.content)
       : null;
     const draftClipCount = parsedDraft?.success
       ? parsedDraft.data.graph.nodes.filter((node) => node.kind === 'clip')
@@ -1052,15 +1075,15 @@ export class StoryProjectsService {
     },
     project: { id: string; format: StoryFormat },
   ): StoryDraftDto {
-    this.requireInteractiveFilm(project.format);
-    if (row.schemaVersion !== INTERACTIVE_FILM_DRAFT_SCHEMA_VERSION) {
+    this.requireSupportedStoryFormat(project.format);
+    if (row.schemaVersion !== INTERACTIVE_STORY_DRAFT_SCHEMA_VERSION) {
       throw unsupportedStorySchema('draft', row.schemaVersion);
     }
     const content = parseDraftContent(row.content, 'STORY_DRAFT_CORRUPT');
     return {
       projectId: row.storyProjectId,
-      format: 'interactive_film',
-      schemaVersion: INTERACTIVE_FILM_DRAFT_SCHEMA_VERSION,
+      format: project.format,
+      schemaVersion: INTERACTIVE_STORY_DRAFT_SCHEMA_VERSION,
       content,
       contentHash: row.contentHash,
       revision: row.revision,
@@ -1140,26 +1163,30 @@ export class StoryProjectsService {
     };
   }
 
-  private toRevision(row: {
-    id: string;
-    storyProjectId: string;
-    number: number;
-    sourceDraftRevision: number;
-    schemaVersion: string;
-    content: Prisma.JsonValue;
-    contentHash: string;
-    label: string | null;
-    source: StoryRevisionSource;
-    createdByUserId: string;
-    createdAt: Date;
-  }): StoryRevisionDto {
-    if (row.schemaVersion !== INTERACTIVE_FILM_DRAFT_SCHEMA_VERSION) {
+  private toRevision(
+    row: {
+      id: string;
+      storyProjectId: string;
+      number: number;
+      sourceDraftRevision: number;
+      schemaVersion: string;
+      content: Prisma.JsonValue;
+      contentHash: string;
+      label: string | null;
+      source: StoryRevisionSource;
+      createdByUserId: string;
+      createdAt: Date;
+    },
+    format: StoryFormat,
+  ): StoryRevisionDto {
+    this.requireSupportedStoryFormat(format);
+    if (row.schemaVersion !== INTERACTIVE_STORY_DRAFT_SCHEMA_VERSION) {
       throw unsupportedStorySchema('revision', row.schemaVersion);
     }
     return {
       ...this.toRevisionSummary(row),
       projectId: row.storyProjectId,
-      format: 'interactive_film',
+      format,
       content: parseDraftContent(row.content, 'STORY_REVISION_CORRUPT'),
     };
   }
@@ -1312,16 +1339,17 @@ function throwDraftConflict(
   project: { format: StoryFormat },
 ): never {
   if (
-    project.format !== StoryFormat.interactive_film ||
-    current.schemaVersion !== INTERACTIVE_FILM_DRAFT_SCHEMA_VERSION
+    (project.format !== StoryFormat.interactive_film &&
+      project.format !== StoryFormat.text_adventure) ||
+    current.schemaVersion !== INTERACTIVE_STORY_DRAFT_SCHEMA_VERSION
   ) {
     throw unsupportedStorySchema('draft', current.schemaVersion);
   }
   const content = parseDraftContent(current.content, 'STORY_DRAFT_CORRUPT');
   const dto: StoryDraftDto = {
     projectId: current.storyProjectId,
-    format: 'interactive_film',
-    schemaVersion: INTERACTIVE_FILM_DRAFT_SCHEMA_VERSION,
+    format: project.format,
+    schemaVersion: INTERACTIVE_STORY_DRAFT_SCHEMA_VERSION,
     content,
     contentHash: current.contentHash,
     revision: current.revision,
@@ -1418,7 +1446,7 @@ function selectionCurrentVideo(
     selection.currentHeight === null ||
     !selection.currentContentType ||
     selection.currentHasAudio === null ||
-    selection.currentBrowserSafeMp4 !== true ||
+    selection.currentBrowserSafeMp4 === null ||
     !selection.setAt
   ) {
     throw corruptData('STORY_VIDEO_SELECTION_CORRUPT', 'story video selection');
@@ -1433,15 +1461,15 @@ function selectionCurrentVideo(
     width: selection.currentWidth,
     height: selection.currentHeight,
     hasAudio: selection.currentHasAudio,
-    browserSafeMp4: true,
+    browserSafeMp4: selection.currentBrowserSafeMp4,
     selectionVersion: selection.version,
     setByUserId: selection.setByUserId,
     setAt: selection.setAt.toISOString(),
   };
 }
 
-function exactStoryVideoContentType(value: string): 'video/mp4' {
-  if (value !== 'video/mp4') {
+function exactStoryVideoContentType(value: string): string {
+  if (!value.toLowerCase().startsWith('video/')) {
     throw corruptData(
       'STORY_VIDEO_SELECTION_CORRUPT',
       'story video content type',
@@ -1527,8 +1555,8 @@ function parseDraftContent(
   value: unknown,
   code: 'STORY_DRAFT_CORRUPT' | 'STORY_REVISION_CORRUPT',
 ) {
-  const parsed = InteractiveFilmDraftContentSchema.safeParse(value);
-  if (!parsed.success) throw corruptData(code, 'interactive-film story');
+  const parsed = InteractiveStoryDraftContentSchema.safeParse(value);
+  if (!parsed.success) throw corruptData(code, 'interactive story');
   return parsed.data;
 }
 
@@ -1553,7 +1581,7 @@ function unsupportedStorySchema(
         : 'STORY_REVISION_SCHEMA_UNSUPPORTED',
     message: `This ${resource} uses an unsupported schema and can no longer be opened.`,
     actualSchemaVersion,
-    expectedSchemaVersion: INTERACTIVE_FILM_DRAFT_SCHEMA_VERSION,
+    expectedSchemaVersion: INTERACTIVE_STORY_DRAFT_SCHEMA_VERSION,
   });
 }
 

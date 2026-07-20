@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
-import { LockableInteractiveFilmDraftContentSchema } from '../interactive-film.schema';
+import { LockableInteractiveStoryDraftContentSchema } from '../interactive-film.schema';
 
 const FIXTURE_PATH = resolve(__dirname, 'fixtures/branching-film-draft.json');
 
@@ -10,7 +10,7 @@ const FIXTURE_PATH = resolve(__dirname, 'fixtures/branching-film-draft.json');
  * fixture and no database seed or runtime route depends on it.
  */
 export function buildInteractiveFilmTestBundle() {
-  const draftContent = LockableInteractiveFilmDraftContentSchema.parse(
+  const draftContent = LockableInteractiveStoryDraftContentSchema.parse(
     JSON.parse(readFileSync(FIXTURE_PATH, 'utf8')),
   );
   return { draftContent };

@@ -23,9 +23,9 @@ import type { AuthUser } from '../auth';
 import { buildPrisma, type PrismaService } from '../infra/db/db.module';
 import { canonicalJsonHash } from './canonical-json';
 import {
-  EMPTY_INTERACTIVE_FILM_DRAFT_CONTENT,
-  INTERACTIVE_FILM_DRAFT_SCHEMA_VERSION,
-  InteractiveFilmDraftContentSchema,
+  EMPTY_INTERACTIVE_STORY_DRAFT_CONTENT,
+  INTERACTIVE_STORY_DRAFT_SCHEMA_VERSION,
+  InteractiveStoryDraftContentSchema,
   STORY_CANVAS_LAYOUT_SCHEMA_VERSION,
 } from './dto';
 import type { StoryAgentRunRealtimeService } from './story-agent-run-realtime.service';
@@ -117,7 +117,7 @@ describePostgres('StoryAgentRunService PostgreSQL integration', () => {
       const current = await tx.storyDraft.findUniqueOrThrow({
         where: { storyProjectId: fixture.projectId },
       });
-      const content = InteractiveFilmDraftContentSchema.parse(current.content);
+      const content = InteractiveStoryDraftContentSchema.parse(current.content);
       const changedContent = {
         ...content,
         storyBible: {
@@ -273,7 +273,8 @@ describePostgres('StoryAgentRunService PostgreSQL integration', () => {
     ]);
     expect(draft.revision).toBe(1);
     expect(
-      InteractiveFilmDraftContentSchema.parse(draft.content).storyBible.logline,
+      InteractiveStoryDraftContentSchema.parse(draft.content).storyBible
+        .logline,
     ).toMatch(/^The (first|second) premise\.$/);
     expect(
       runs.filter((run) => run.status === StoryAgentRunStatus.succeeded),
@@ -837,7 +838,7 @@ describePostgres('StoryAgentRunService PostgreSQL integration', () => {
       const current = await tx.storyDraft.findUniqueOrThrow({
         where: { storyProjectId: fixture.projectId },
       });
-      const content = InteractiveFilmDraftContentSchema.parse(current.content);
+      const content = InteractiveStoryDraftContentSchema.parse(current.content);
       const humanContent = {
         ...content,
         storyBible: {
@@ -917,10 +918,10 @@ async function createFixture(
       },
       draft: {
         create: {
-          schemaVersion: INTERACTIVE_FILM_DRAFT_SCHEMA_VERSION,
+          schemaVersion: INTERACTIVE_STORY_DRAFT_SCHEMA_VERSION,
           content:
-            EMPTY_INTERACTIVE_FILM_DRAFT_CONTENT as Prisma.InputJsonObject,
-          contentHash: canonicalJsonHash(EMPTY_INTERACTIVE_FILM_DRAFT_CONTENT),
+            EMPTY_INTERACTIVE_STORY_DRAFT_CONTENT as Prisma.InputJsonObject,
+          contentHash: canonicalJsonHash(EMPTY_INTERACTIVE_STORY_DRAFT_CONTENT),
           updatedByUserId: user.userId,
         },
       },
@@ -1035,9 +1036,9 @@ async function createActiveDraftReleaseReceipt(
       storyProjectId: fixture.projectId,
       number: 1,
       sourceDraftRevision: 0,
-      schemaVersion: INTERACTIVE_FILM_DRAFT_SCHEMA_VERSION,
-      content: EMPTY_INTERACTIVE_FILM_DRAFT_CONTENT as Prisma.InputJsonObject,
-      contentHash: canonicalJsonHash(EMPTY_INTERACTIVE_FILM_DRAFT_CONTENT),
+      schemaVersion: INTERACTIVE_STORY_DRAFT_SCHEMA_VERSION,
+      content: EMPTY_INTERACTIVE_STORY_DRAFT_CONTENT as Prisma.InputJsonObject,
+      contentHash: canonicalJsonHash(EMPTY_INTERACTIVE_STORY_DRAFT_CONTENT),
       source: StoryRevisionSource.creator,
       createdByUserId: fixture.user.userId,
     },

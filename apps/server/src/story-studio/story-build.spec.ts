@@ -12,6 +12,10 @@ import {
 } from '@prisma/client';
 import { canonicalJsonHash } from './canonical-json';
 import {
+  EXPERIENCE_CORE_TEXT_RENDERER_ID,
+  EXPERIENCE_CORE_VIDEO_RENDERER_ID,
+} from '@repo/shared/experience-runtime';
+import {
   compileStoryBuild,
   type FrozenStoryVideoAsset,
   type StoryBuildCompilerInput,
@@ -21,7 +25,7 @@ import {
   StoryBuildService,
   storyBuildRequestFingerprint,
 } from './story-build.service';
-import { LockableInteractiveFilmDraftContentSchema } from './interactive-film.schema';
+import { LockableInteractiveStoryDraftContentSchema } from './interactive-film.schema';
 import {
   storyVideoSnapshotHash,
   type StoryVideoSnapshotEntry,
@@ -36,12 +40,11 @@ const VARIANT_ID = '0197f4a2-0800-7000-8000-000000000007';
 const CHECKSUM = 'a'.repeat(64);
 
 function simpleDraft() {
-  return LockableInteractiveFilmDraftContentSchema.parse({
+  return LockableInteractiveStoryDraftContentSchema.parse({
     storyBible: {
       logline: 'A single consequential moment.',
       synopsis: 'The protagonist reaches the truth.',
       worldview: 'Choices leave visible traces.',
-      storyRules: [],
       characters: [
         {
           id: 'hero',
@@ -52,9 +55,6 @@ function simpleDraft() {
           continuityRules: [],
         },
       ],
-      locations: [],
-      props: [],
-      stateVariables: [],
       endings: [
         {
           id: 'truth',
@@ -79,9 +79,59 @@ function simpleDraft() {
   });
 }
 
-function choiceDraft(triggerAtMs: number) {
+function textDraft() {
+  return LockableInteractiveStoryDraftContentSchema.parse({
+    storyBible: {
+      logline: '',
+      synopsis: '',
+      worldview: '',
+      characters: [],
+      endings: [
+        {
+          id: 'truth',
+          title: { 'en-US': 'Truth' },
+          kind: 'truth',
+        },
+      ],
+    },
+    graph: {
+      entryNodeId: 'text.start',
+      nodes: [
+        {
+          kind: 'text',
+          nodeId: 'text.start',
+          body: { 'en-US': 'At dawn, a sealed letter waits on the table.' },
+          exit: { kind: 'ending', endingId: 'truth' },
+        },
+      ],
+    },
+    productionNotes: [],
+  });
+}
+
+function mixedDraft() {
   const base = simpleDraft();
-  return LockableInteractiveFilmDraftContentSchema.parse({
+  return LockableInteractiveStoryDraftContentSchema.parse({
+    ...base,
+    graph: {
+      entryNodeId: 'text.prologue',
+      nodes: [
+        {
+          kind: 'text',
+          nodeId: 'text.prologue',
+          title: { 'en-US': 'Prologue' },
+          body: { 'en-US': 'The story begins in words.' },
+          exit: { kind: 'auto', nextNodeId: 'clip.start' },
+        },
+        ...base.graph.nodes,
+      ],
+    },
+  });
+}
+
+function choiceDraft() {
+  const base = simpleDraft();
+  return LockableInteractiveStoryDraftContentSchema.parse({
     ...base,
     storyBible: {
       ...base.storyBible,
@@ -111,21 +161,16 @@ function choiceDraft(triggerAtMs: number) {
             kind: 'choice',
             decisionId: 'decision.path',
             prompt: { 'en-US': 'Which path?' },
-            trigger: { kind: 'timecode', atMs: triggerAtMs },
             choices: [
               {
                 choiceId: 'choose.truth',
                 label: { 'en-US': 'Truth' },
-                effects: [],
                 nextNodeId: 'clip.truth',
-                afterSelect: { kind: 'immediate' },
               },
               {
                 choiceId: 'choose.echo',
                 label: { 'en-US': 'Echo' },
-                effects: [],
                 nextNodeId: 'clip.echo',
-                afterSelect: { kind: 'immediate' },
               },
             ],
           },
@@ -183,6 +228,7 @@ function compilerInput(
   );
   return {
     projectId: PROJECT_ID,
+    format: 'interactive_film',
     buildId: BUILD_ID,
     sourceDraftRevision: 7,
     channel: 'production',
@@ -197,6 +243,113 @@ function compilerInput(
 }
 
 describe('compileStoryBuild', () => {
+  it('compiles a pure-text narrative with no frozen video assets', () => {
+    const result = compileStoryBuild(
+      compilerInput(textDraft(), {
+        format: 'text_adventure',
+        videos: [],
+      }),
+    );
+
+    expect(result.diagnostics).toEqual([]);
+    expect(result.includedGraphNodeIds).toEqual([]);
+    expect(result.runtime).toMatchObject({
+      metadata: { experienceProfile: 'narrative' },
+      rendererRequirements: [
+        expect.objectContaining({
+          rendererId: EXPERIENCE_CORE_TEXT_RENDERER_ID,
+          outcomes: [{ outcomeType: 'text-completed' }],
+        }),
+      ],
+    });
+    const entry = result.runtime?.graph.nodes.find(
+      (node) => node.kind === 'scene' && node.sceneId === 'text.start',
+    );
+    const textRenderer =
+      entry?.kind === 'scene'
+        ? entry.renderers.find(
+            (renderer) =>
+              renderer.rendererId === EXPERIENCE_CORE_TEXT_RENDERER_ID,
+          )
+        : undefined;
+    expect(entry).toMatchObject({
+      kind: 'scene',
+      clock: { kind: 'none' },
+    });
+    expect(textRenderer?.config).toMatchObject({ completion: 'continue' });
+    expect(textRenderer?.config).not.toHaveProperty('title');
+    expect(result.runtime?.endings[0]).not.toHaveProperty('summary');
+  });
+
+  it('compiles text and video nodes in one graph regardless of the preferred profile', () => {
+    const result = compileStoryBuild(
+      compilerInput(mixedDraft(), { format: 'text_adventure' }),
+    );
+
+    expect(result.diagnostics).toEqual([]);
+    expect(result.includedGraphNodeIds).toEqual(['clip.start']);
+    expect(
+      result.runtime?.rendererRequirements.map(
+        (requirement) => requirement.rendererId,
+      ),
+    ).toEqual(
+      expect.arrayContaining([
+        EXPERIENCE_CORE_TEXT_RENDERER_ID,
+        EXPERIENCE_CORE_VIDEO_RENDERER_ID,
+      ]),
+    );
+  });
+
+  it('accepts native video dimensions and presents inline without a frame profile', () => {
+    const input = compilerInput(mixedDraft(), {
+      format: 'text_adventure',
+      frameProfile: null,
+    });
+    // A narrative clip keeps its intrinsic, non-1920x1080 dimensions.
+    input.videos = input.videos.map((video) =>
+      video.asset
+        ? { ...video, asset: { ...video.asset, width: 1280, height: 720 } }
+        : video,
+    );
+
+    const result = compileStoryBuild(input);
+
+    expect(result.diagnostics).toEqual([]);
+    expect(
+      result.diagnostics.some(
+        (item) => item.code === 'STORY_BUILD_VIDEO_FRAME_MISMATCH',
+      ),
+    ).toBe(false);
+
+    // The media asset keeps its native size and derives orientation from it.
+    const videoAsset = result.runtime?.assets.find(
+      (asset) => asset.kind === 'video',
+    );
+    expect(videoAsset).toMatchObject({
+      kind: 'video',
+      variants: [
+        expect.objectContaining({
+          orientation: 'landscape',
+          width: 1280,
+          height: 720,
+        }),
+      ],
+    });
+
+    // The video renderer presents inline at native size, not aspect-cover.
+    const clipScene = result.runtime?.graph.nodes.find(
+      (node) => node.kind === 'scene' && node.sceneId === 'clip.start',
+    );
+    const videoRenderer =
+      clipScene?.kind === 'scene'
+        ? clipScene.renderers.find(
+            (renderer) =>
+              renderer.rendererId === EXPERIENCE_CORE_VIDEO_RENDERER_ID,
+          )
+        : undefined;
+    expect(videoRenderer?.config).toMatchObject({ fit: 'native' });
+  });
+
   it('keeps channel explicit even for a full-graph preview', () => {
     const result = compileStoryBuild(
       compilerInput(simpleDraft(), { channel: 'preview' }),
@@ -252,8 +405,8 @@ describe('compileStoryBuild', () => {
     );
   });
 
-  it('validates choice timecodes and path totals from actual frozen durations', () => {
-    const draft = choiceDraft(4_999);
+  it('reports path totals from actual frozen durations across a choice branch', () => {
+    const draft = choiceDraft();
     const input = compilerInput(draft);
     const durations = new Map([
       ['clip.start', 5_000],
@@ -271,15 +424,6 @@ describe('compileStoryBuild', () => {
       durationMinMs: 12_000,
       durationMaxMs: 14_000,
     });
-
-    const outOfRange = compileStoryBuild({
-      ...input,
-      draft: choiceDraft(5_000),
-    });
-    expect(outOfRange.runtime).toBeNull();
-    expect(outOfRange.diagnostics.map((item) => item.code)).toContain(
-      'STORY_BUILD_CHOICE_TIMECODE_OUT_OF_RANGE',
-    );
   });
 });
 
@@ -375,6 +519,7 @@ describe('StoryBuildService concurrency boundaries', () => {
           workspaceId: WORKSPACE_ID,
           title: 'Story',
           summary: null,
+          format: 'interactive_film',
           defaultLocale: 'en-US',
           frameProfile: 'landscape_16_9',
         }),
@@ -382,7 +527,7 @@ describe('StoryBuildService concurrency boundaries', () => {
       storyDraft: {
         findUnique: jest.fn().mockResolvedValue({
           revision: 3,
-          schemaVersion: 'interactive-film-draft-v3',
+          schemaVersion: 'interactive-story-draft-v1',
           content: draft,
           contentHash: canonicalJsonHash(draft),
         }),
@@ -460,6 +605,115 @@ describe('StoryBuildService concurrency boundaries', () => {
     });
   });
 
+  it('materializes a pure-text Build without querying or freezing video assets', async () => {
+    const draft = textDraft();
+    const revision = {
+      id: REVISION_ID,
+      storyProjectId: PROJECT_ID,
+      number: 1,
+      sourceDraftRevision: 3,
+      schemaVersion: 'interactive-story-draft-v1',
+      content: draft,
+      contentHash: canonicalJsonHash(draft),
+      label: null,
+      source: StoryRevisionSource.creator,
+      createdByUserId: 'user-1',
+      createdAt: new Date(),
+    };
+    let buildData: Record<string, unknown> | null = null;
+    const findSelections = jest.fn();
+    const freezeAsset = jest.fn();
+    const freezeClip = jest.fn();
+    const tx = {
+      storyBuild: {
+        findUnique: jest.fn(({ where }: { where: { id?: string } }) => {
+          if (!where.id) return null;
+          const data = buildData as Record<string, unknown>;
+          return {
+            ...data,
+            id: where.id,
+            createdAt: new Date(),
+            updatedAt: new Date(),
+            experiencePublication: null,
+            assets: [],
+          };
+        }),
+        create: jest.fn(({ data }: { data: Record<string, unknown> }) => {
+          buildData = { ...data, version: 0 };
+          return buildData;
+        }),
+        update: jest.fn(({ data }: { data: Record<string, unknown> }) => {
+          buildData = {
+            ...(buildData as Record<string, unknown>),
+            ...data,
+            version: 1,
+          };
+          return buildData;
+        }),
+      },
+      storyProject: {
+        findFirst: jest.fn().mockResolvedValue({
+          id: PROJECT_ID,
+          workspaceId: WORKSPACE_ID,
+          title: 'A Text Story',
+          summary: null,
+          format: 'text_adventure',
+          defaultLocale: 'en-US',
+          frameProfile: 'landscape_16_9',
+        }),
+        update: jest.fn().mockResolvedValue({ nextBuildNumber: 2 }),
+      },
+      storyDraft: {
+        findUnique: jest.fn().mockResolvedValue({
+          revision: 3,
+          schemaVersion: 'interactive-story-draft-v1',
+          content: draft,
+          contentHash: canonicalJsonHash(draft),
+        }),
+      },
+      storyVideoSelection: { findMany: findSelections },
+      storyRevision: { findUnique: jest.fn().mockResolvedValue(revision) },
+      storyBuildAsset: { create: freezeAsset },
+      storyVideoBuildClip: { create: freezeClip },
+    };
+    const prisma = {
+      storyBuild: { findUnique: jest.fn().mockResolvedValue(null) },
+      $transaction: jest.fn((work: (client: typeof tx) => unknown) => work(tx)),
+    };
+    const guard = { assertHumanWriteAllowed: jest.fn() };
+    const service = new StoryBuildService(
+      prisma as never,
+      permissions as never,
+      storage as never,
+      guard as never,
+    );
+
+    const result = await service.createBuild(
+      user,
+      WORKSPACE_ID,
+      PROJECT_ID,
+      {
+        expectedDraftRevision: 3,
+        expectedVideoSnapshotHash: storyVideoSnapshotHash([]),
+        scope: { kind: 'full' },
+      },
+      'pure-text',
+    );
+
+    expect(result).toMatchObject({
+      status: StoryBuildStatus.ready,
+      assets: [],
+      videoSnapshotHash: storyVideoSnapshotHash([]),
+      runtimeJson: {
+        metadata: { experienceProfile: 'narrative' },
+      },
+    });
+    expect(guard.assertHumanWriteAllowed).toHaveBeenCalledWith(tx, PROJECT_ID);
+    expect(findSelections).not.toHaveBeenCalled();
+    expect(freezeAsset).not.toHaveBeenCalled();
+    expect(freezeClip).not.toHaveBeenCalled();
+  });
+
   it('freezes exact asset and video-clip rows with no mutable recipe fields', async () => {
     const draft = simpleDraft();
     const entry: StoryVideoSnapshotEntry = {
@@ -534,7 +788,7 @@ describe('StoryBuildService concurrency boundaries', () => {
       storyProjectId: PROJECT_ID,
       number: 1,
       sourceDraftRevision: 3,
-      schemaVersion: 'interactive-film-draft-v3',
+      schemaVersion: 'interactive-story-draft-v1',
       content: draft,
       contentHash: canonicalJsonHash(draft),
       label: null,
@@ -600,6 +854,7 @@ describe('StoryBuildService concurrency boundaries', () => {
           workspaceId: WORKSPACE_ID,
           title: 'Story',
           summary: null,
+          format: 'interactive_film',
           defaultLocale: 'en-US',
           frameProfile: 'landscape_16_9',
         }),
@@ -608,7 +863,7 @@ describe('StoryBuildService concurrency boundaries', () => {
       storyDraft: {
         findUnique: jest.fn().mockResolvedValue({
           revision: 3,
-          schemaVersion: 'interactive-film-draft-v3',
+          schemaVersion: 'interactive-story-draft-v1',
           content: draft,
           contentHash: canonicalJsonHash(draft),
         }),
@@ -701,7 +956,23 @@ describe('StoryBuildService concurrency boundaries', () => {
       'build:ready',
     ]);
 
+    // browserSafeMp4 is now purely informational: a frozen asset that becomes a
+    // browser-unsafe MP4 but is otherwise technically identical is NOT drift.
     variant.metadata = { browserSafeMp4: false };
+    const stillValid = await service.getBuild(
+      user,
+      WORKSPACE_ID,
+      PROJECT_ID,
+      BUILD_ID,
+    );
+    expect(stillValid.diagnostics).not.toContainEqual(
+      expect.objectContaining({
+        code: 'STORY_BUILD_ASSET_METADATA_CHANGED',
+      }),
+    );
+
+    // A genuine technical change (duration) is still detected as frozen drift.
+    variant.durationMs = 8_000;
     const drifted = await service.getBuild(
       user,
       WORKSPACE_ID,

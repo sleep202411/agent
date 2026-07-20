@@ -5,7 +5,7 @@ import { StoryAgentRunController } from './story-agent-run.controller';
 import { StoryAgentRunRealtimeService } from './story-agent-run-realtime.service';
 import { StoryAgentRunService } from './story-agent-run.service';
 import { StoryAgentRunWorkerService } from './story-agent-run-worker.service';
-import { StoryPatchAuthorService } from './story-patch-author.service';
+import { StoryAuthoringPipelineService } from './story-authoring-pipeline.service';
 
 /** Leaf module shared by HTTP Story Studio and server-side Copilot tooling. */
 @Module({
@@ -14,7 +14,7 @@ import { StoryPatchAuthorService } from './story-patch-author.service';
   providers: [
     StoryAgentRunRealtimeService,
     StoryAgentRunService,
-    StoryPatchAuthorService,
+    StoryAuthoringPipelineService,
     StoryAgentRunWorkerService,
   ],
   exports: [StoryAgentRunService],

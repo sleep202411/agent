@@ -41,30 +41,6 @@ describe('Story patch iterative complexity preflight', () => {
     });
   });
 
-  it('bounds recursive condition depth independently of Zod', () => {
-    let condition: Record<string, unknown> = {
-      kind: 'flag',
-      flag: 'truth',
-      equals: true,
-    };
-    for (
-      let depth = 0;
-      depth < STORY_PATCH_COMPLEXITY_LIMITS.conditionDepth;
-      depth += 1
-    ) {
-      condition = { kind: 'not', condition };
-    }
-
-    const error = capturePreflightError(() =>
-      assertStoryPatchComplexity(condition),
-    );
-    expect(error).toMatchObject({
-      code: 'STORY_PATCH_INPUT_TOO_COMPLEX',
-      metric: 'conditionDepth',
-      maximum: STORY_PATCH_COMPLEXITY_LIMITS.conditionDepth,
-    });
-  });
-
   it('rejects circular and non-JSON input with a structured code', () => {
     const circular: Record<string, unknown> = {};
     circular.self = circular;
@@ -75,35 +51,18 @@ describe('Story patch iterative complexity preflight', () => {
   });
 
   it('guards the exported Zod operation-list schema before recursive parsing', () => {
-    let condition: Record<string, unknown> = {
-      kind: 'flag',
-      flag: 'truth',
-      equals: true,
-    };
+    let deep: Record<string, unknown> = { leaf: true };
     for (let depth = 0; depth < 5_000; depth += 1) {
-      condition = { kind: 'not', condition };
+      deep = { nested: deep };
     }
     const result = StoryPatchOperationsSchema.safeParse([
       {
         operationId: '0197f4a2-0800-7000-8000-000000000123',
-        summary: 'Deep route.',
+        summary: 'Deeply nested payload.',
         kind: 'story_graph.put_node',
         payload: {
           intent: 'create',
-          node: {
-            kind: 'router',
-            nodeId: 'router:deep',
-            exit: {
-              kind: 'auto',
-              routes: [
-                {
-                  nextNodeId: 'clip:next',
-                  when: condition,
-                  priority: 0,
-                },
-              ],
-            },
-          },
+          node: deep,
         },
       },
     ]);

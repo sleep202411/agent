@@ -11,13 +11,22 @@
  * Required env (fail loud — never silently fall back to another provider):
  *   ALIBABA_API_KEY      DashScope key
  *   ALIBABA_BASE_URL     optional OpenAI-compatible base override
- *   COPILOT_MODEL        optional model id override (default qwen3.6-plus)
+ *   COPILOT_MODEL        optional model id override (default qwen3-max)
  */
 import { createAlibaba } from '@ai-sdk/alibaba';
 import type { LanguageModel } from 'ai';
+import { alibabaProviderHeaders } from '../common/alibaba-data-inspection';
 
-/** Team-standard Alibaba model id (matches apps/agent ALIBABA_DEFAULT_MODEL). */
-const DEFAULT_COPILOT_MODEL = 'qwen3.6-plus';
+/**
+ * Non-reasoning Qwen: the copilot streams tool calls under tight per-chunk /
+ * per-step timeouts (COPILOT_PROVIDER_TIMEOUT). Reasoning models like
+ * qwen3.6-plus spend a long SILENT thinking phase before the first token —
+ * on a full uploaded screenplay that phase alone runs ~60s and trips the 30s
+ * chunk timeout, so the stream fails. qwen3-max emits within ~7s on the same
+ * input. This matches the Story Patch author, which already avoids reasoning
+ * models for the same reason.
+ */
+const DEFAULT_COPILOT_MODEL = 'qwen3-max';
 
 export function copilotModelId(): string {
   return process.env.COPILOT_MODEL?.trim() || DEFAULT_COPILOT_MODEL;
@@ -31,6 +40,10 @@ export function createCopilotModel(): LanguageModel {
     );
   }
   const baseURL = process.env.ALIBABA_BASE_URL?.trim();
-  const provider = createAlibaba({ apiKey, ...(baseURL ? { baseURL } : {}) });
+  const provider = createAlibaba({
+    apiKey,
+    ...(baseURL ? { baseURL } : {}),
+    headers: alibabaProviderHeaders(),
+  });
   return provider(copilotModelId()) as unknown as LanguageModel;
 }

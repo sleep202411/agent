@@ -20,6 +20,8 @@ import { StoryProjectVideoLibraryService } from './story-project-video-library.s
 import { StoryProjectsController } from './story-projects.controller';
 import { StoryProjectsService } from './story-projects.service';
 import { StoryWorkingPreviewController } from './story-working-preview.controller';
+import { StoryTextPlayController } from './story-text-play.controller';
+import { StoryTextPlayService } from './story-text-play.service';
 import { StoryWorkingPreviewService } from './story-working-preview.service';
 import { StoryVideoUploadFinalizeWorkerService } from './story-video-upload-finalize-worker.service';
 import { StoryUploadedVideoProbeService } from './story-uploaded-video-probe.service';
@@ -42,6 +44,7 @@ import { StoryAgentRunModule } from './story-agent-run.module';
     StoryTrailerProductionController,
     StoryBuildController,
     StoryWorkingPreviewController,
+    StoryTextPlayController,
   ],
   providers: [
     StoryProjectsService,
@@ -56,6 +59,7 @@ import { StoryAgentRunModule } from './story-agent-run.module';
     StoryExperienceReleaseService,
     StoryExperienceReleaseWorkerService,
     StoryWorkingPreviewService,
+    StoryTextPlayService,
   ],
   exports: [StoryProjectsService, StoryAccessModule, StoryAgentRunModule],
 })

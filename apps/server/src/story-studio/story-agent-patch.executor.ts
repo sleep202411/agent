@@ -2,12 +2,10 @@ import {
   assertStoryPatchComplexity,
   StoryPatchOperationsSchema,
   StoryPatchPreflightError,
-  type StoryAgentCondition,
-  type StoryAgentEffect,
   type StoryPatchOperation,
 } from '@repo/shared/story-agent';
-import { InteractiveFilmDraftContentSchema } from './interactive-film.schema';
-import type { InteractiveFilmDraftContent } from './interactive-film.schema';
+import { InteractiveStoryDraftContentSchema } from './interactive-film.schema';
+import type { InteractiveStoryDraftContent } from './interactive-film.schema';
 
 export interface StoryAgentCanvasLayoutSnapshot {
   nodePositions: Record<string, { x: number; y: number }>;
@@ -15,7 +13,7 @@ export interface StoryAgentCanvasLayoutSnapshot {
 }
 
 export interface StoryPatchExecutionResult {
-  draft: InteractiveFilmDraftContent;
+  draft: InteractiveStoryDraftContent;
   layout: StoryAgentCanvasLayoutSnapshot;
   affectedNodeIds: string[];
   createdNodeIds: string[];
@@ -42,12 +40,11 @@ export class StoryPatchExecutionError extends Error {
   }
 }
 
-type StoryGraphNode = InteractiveFilmDraftContent['graph']['nodes'][number];
+type StoryGraphNode = InteractiveStoryDraftContent['graph']['nodes'][number];
 type StoryCharacter =
-  InteractiveFilmDraftContent['storyBible']['characters'][number];
-type StoryStateVariable =
-  InteractiveFilmDraftContent['storyBible']['stateVariables'][number];
-type StoryEnding = InteractiveFilmDraftContent['storyBible']['endings'][number];
+  InteractiveStoryDraftContent['storyBible']['characters'][number];
+type StoryEnding =
+  InteractiveStoryDraftContent['storyBible']['endings'][number];
 
 /**
  * Apply a typed Story patch as a pure, deterministic operation. It never mutates
@@ -55,7 +52,7 @@ type StoryEnding = InteractiveFilmDraftContent['storyBible']['endings'][number];
  * fencing and transactionality; this function owns domain semantics.
  */
 export function executeStoryPatch(input: {
-  draft: InteractiveFilmDraftContent;
+  draft: InteractiveStoryDraftContent;
   layout: StoryAgentCanvasLayoutSnapshot;
   operations: readonly StoryPatchOperation[];
 }): StoryPatchExecutionResult {
@@ -89,7 +86,7 @@ export function executeStoryPatch(input: {
     });
   }
 
-  const parsedDraft = InteractiveFilmDraftContentSchema.safeParse(draft);
+  const parsedDraft = InteractiveStoryDraftContentSchema.safeParse(draft);
   if (!parsedDraft.success) {
     const issue = parsedDraft.error.issues[0];
     throw new StoryPatchExecutionError({
@@ -117,7 +114,7 @@ export function executeStoryPatch(input: {
 }
 
 function applyOperation(input: {
-  draft: InteractiveFilmDraftContent;
+  draft: InteractiveStoryDraftContent;
   operation: StoryPatchOperation;
   affectedNodeIds: Set<string>;
   createdNodeIds: Set<string>;
@@ -127,11 +124,18 @@ function applyOperation(input: {
     case 'story_bible.update_overview':
       Object.assign(draft.storyBible, operation.payload);
       return;
-    case 'story_bible.replace_story_rules':
-      draft.storyBible.storyRules = [...operation.payload.storyRules];
-      return;
     case 'story_bible.put_character': {
-      const character = operation.payload.character as StoryCharacter;
+      // The agent authors narrative fields only; appearance images and the
+      // voice sample are uploaded by humans and survive an agent replace.
+      const incoming = operation.payload.character;
+      const existing = draft.storyBible.characters.find(
+        (value) => value.id === incoming.id,
+      );
+      const character: StoryCharacter = {
+        ...incoming,
+        images: existing?.images ?? [],
+        voice: existing?.voice ?? null,
+      };
       draft.storyBible.characters = putEntity({
         values: draft.storyBible.characters,
         keyOf: (value) => value.id,
@@ -151,54 +155,8 @@ function applyOperation(input: {
         'character',
         characterId,
       );
-      if (draftReferencesCharacter(draft, characterId)) {
-        throw operationError(
-          operation,
-          'STORY_PATCH_ENTITY_REFERENCED',
-          `Character ${characterId} is still referenced by a condition or effect. Update those references before removing it.`,
-        );
-      }
       draft.storyBible.characters = draft.storyBible.characters.filter(
         (value) => value.id !== characterId,
-      );
-      return;
-    }
-    case 'story_bible.replace_locations':
-      draft.storyBible.locations = [...operation.payload.locations];
-      return;
-    case 'story_bible.replace_props':
-      draft.storyBible.props = [...operation.payload.props];
-      return;
-    case 'story_bible.put_state_variable': {
-      const variable = operation.payload.stateVariable as StoryStateVariable;
-      draft.storyBible.stateVariables = putEntity({
-        values: draft.storyBible.stateVariables,
-        keyOf: (value) => value.key,
-        key: variable.key,
-        value: variable,
-        intent: operation.payload.intent,
-        operation,
-        entityLabel: 'state variable',
-      });
-      return;
-    }
-    case 'story_bible.remove_state_variable': {
-      const key = operation.payload.key;
-      requireExistingEntity(
-        draft.storyBible.stateVariables.some((value) => value.key === key),
-        operation,
-        'state variable',
-        key,
-      );
-      if (draftReferencesStateVariable(draft, key)) {
-        throw operationError(
-          operation,
-          'STORY_PATCH_ENTITY_REFERENCED',
-          `State variable ${key} is still referenced by a condition or effect. Update those references before removing it.`,
-        );
-      }
-      draft.storyBible.stateVariables = draft.storyBible.stateVariables.filter(
-        (value) => value.key !== key,
       );
       return;
     }
@@ -352,7 +310,7 @@ function requireExistingEntity(
 }
 
 function removeGraphNode(
-  draft: InteractiveFilmDraftContent,
+  draft: InteractiveStoryDraftContent,
   operation: Extract<StoryPatchOperation, { kind: 'story_graph.remove_node' }>,
   affectedNodeIds: Set<string>,
 ): void {
@@ -372,40 +330,18 @@ function removeGraphNode(
   if (draft.graph.entryNodeId === nodeId) draft.graph.entryNodeId = null;
 
   draft.graph.nodes = draft.graph.nodes.map((node) => {
-    if (node.kind === 'router') {
-      const routes = node.exit.routes.filter(
-        (route) => route.nextNodeId !== nodeId,
-      );
-      if (routes.length === node.exit.routes.length) return node;
-      affectedNodeIds.add(node.nodeId);
-      return { ...node, exit: { ...node.exit, routes } };
-    }
     if (node.exit.kind === 'auto') {
       if (node.exit.nextNodeId !== nodeId) return node;
       affectedNodeIds.add(node.nodeId);
       return { ...node, exit: { kind: 'auto', nextNodeId: null } };
     }
     if (node.exit.kind === 'choice') {
-      const removesTarget = node.exit.choices.some(
-        (choice) => choice.nextNodeId === nodeId,
+      if (!node.exit.choices.some((choice) => choice.nextNodeId === nodeId)) {
+        return node;
+      }
+      const choices = node.exit.choices.filter(
+        (choice) => choice.nextNodeId !== nodeId,
       );
-      const resetsReaction =
-        deletedNode.kind === 'clip' &&
-        node.exit.choices.some(
-          (choice) =>
-            choice.afterSelect.kind === 'play' &&
-            choice.afterSelect.reactionClipKey === deletedNode.clipKey,
-        );
-      if (!removesTarget && !resetsReaction) return node;
-      const choices = node.exit.choices
-        .filter((choice) => choice.nextNodeId !== nodeId)
-        .map((choice) =>
-          deletedNode.kind === 'clip' &&
-          choice.afterSelect.kind === 'play' &&
-          choice.afterSelect.reactionClipKey === deletedNode.clipKey
-            ? { ...choice, afterSelect: { kind: 'immediate' as const } }
-            : choice,
-        );
       affectedNodeIds.add(node.nodeId);
       return { ...node, exit: { ...node.exit, choices } };
     }
@@ -417,7 +353,7 @@ function removeGraphNode(
   });
 }
 
-function assertAgentDraftIntegrity(draft: InteractiveFilmDraftContent): void {
+function assertAgentDraftIntegrity(draft: InteractiveStoryDraftContent): void {
   const nodeIds = uniqueIdentitySet(
     draft.graph.nodes.map((node) => node.nodeId),
     'STORY_PATCH_DUPLICATE_NODE_ID',
@@ -428,18 +364,14 @@ function assertAgentDraftIntegrity(draft: InteractiveFilmDraftContent): void {
     'STORY_PATCH_DUPLICATE_ENDING_ID',
     'Ending ids must be unique.',
   );
-  const clipKeys = uniqueIdentitySet(
+  // Enforced for its throw-on-duplicate side effect; clip keys are no longer
+  // referenced elsewhere now that choices carry no reaction clip.
+  uniqueIdentitySet(
     draft.graph.nodes.flatMap((node) =>
       node.kind === 'clip' ? [node.clipKey] : [],
     ),
     'STORY_PATCH_DUPLICATE_CLIP_KEY',
     'Clip keys must be unique.',
-  );
-  const characterIds = new Set(
-    draft.storyBible.characters.map((character) => character.id),
-  );
-  const variableKeys = new Set(
-    draft.storyBible.stateVariables.map((variable) => variable.key),
   );
 
   if (draft.graph.entryNodeId && !nodeIds.has(draft.graph.entryNodeId)) {
@@ -459,77 +391,11 @@ function assertAgentDraftIntegrity(draft: InteractiveFilmDraftContent): void {
         );
       }
     }
-    if (
-      node.kind === 'clip' &&
-      node.exit.kind === 'ending' &&
-      !endingIds.has(node.exit.endingId)
-    ) {
+    if (node.exit.kind === 'ending' && !endingIds.has(node.exit.endingId)) {
       throw integrityError(
         'STORY_PATCH_DANGLING_ENDING_REFERENCE',
         `Node ${node.nodeId} references missing ending ${node.exit.endingId}.`,
       );
-    }
-    visitNodeConditionsAndEffects(node, {
-      condition: (condition) => {
-        if (condition.kind === 'variable' && !variableKeys.has(condition.key)) {
-          throw integrityError(
-            'STORY_PATCH_DANGLING_VARIABLE_REFERENCE',
-            `A condition references missing state variable ${condition.key}.`,
-          );
-        }
-        if (
-          condition.kind === 'relationship-at-least' &&
-          !characterIds.has(condition.characterId)
-        ) {
-          throw integrityError(
-            'STORY_PATCH_DANGLING_CHARACTER_REFERENCE',
-            `A condition references missing character ${condition.characterId}.`,
-          );
-        }
-      },
-      effect: (effect) => {
-        if (
-          (effect.kind === 'set_variable' ||
-            effect.kind === 'increment_variable') &&
-          !variableKeys.has(effect.key)
-        ) {
-          throw integrityError(
-            'STORY_PATCH_DANGLING_VARIABLE_REFERENCE',
-            `An effect references missing state variable ${effect.key}.`,
-          );
-        }
-        if (
-          effect.kind === 'adjust_relationship' &&
-          !characterIds.has(effect.characterId)
-        ) {
-          throw integrityError(
-            'STORY_PATCH_DANGLING_CHARACTER_REFERENCE',
-            `An effect references missing character ${effect.characterId}.`,
-          );
-        }
-        if (
-          effect.kind === 'unlock_ending' &&
-          !endingIds.has(effect.endingId)
-        ) {
-          throw integrityError(
-            'STORY_PATCH_DANGLING_ENDING_REFERENCE',
-            `An effect references missing ending ${effect.endingId}.`,
-          );
-        }
-      },
-    });
-    if (node.kind === 'clip' && node.exit.kind === 'choice') {
-      for (const choice of node.exit.choices) {
-        if (
-          choice.afterSelect.kind === 'play' &&
-          !clipKeys.has(choice.afterSelect.reactionClipKey)
-        ) {
-          throw integrityError(
-            'STORY_PATCH_DANGLING_CLIP_REFERENCE',
-            `Choice ${choice.choiceId} references missing reaction clip ${choice.afterSelect.reactionClipKey}.`,
-          );
-        }
-      }
     }
   }
 }
@@ -545,9 +411,6 @@ function uniqueIdentitySet(
 }
 
 function graphNodeTargets(node: StoryGraphNode): string[] {
-  if (node.kind === 'router') {
-    return node.exit.routes.map((route) => route.nextNodeId);
-  }
   if (node.exit.kind === 'auto') {
     return node.exit.nextNodeId ? [node.exit.nextNodeId] : [];
   }
@@ -558,131 +421,25 @@ function graphNodeTargets(node: StoryGraphNode): string[] {
   return [];
 }
 
-function draftReferencesCharacter(
-  draft: InteractiveFilmDraftContent,
-  characterId: string,
-): boolean {
-  return draft.graph.nodes.some((node) => {
-    let referenced = false;
-    visitNodeConditionsAndEffects(node, {
-      condition: (condition) => {
-        if (
-          condition.kind === 'relationship-at-least' &&
-          condition.characterId === characterId
-        ) {
-          referenced = true;
-        }
-      },
-      effect: (effect) => {
-        if (
-          effect.kind === 'adjust_relationship' &&
-          effect.characterId === characterId
-        ) {
-          referenced = true;
-        }
-      },
-    });
-    return referenced;
-  });
-}
-
-function draftReferencesStateVariable(
-  draft: InteractiveFilmDraftContent,
-  key: string,
-): boolean {
-  return draft.graph.nodes.some((node) => {
-    let referenced = false;
-    visitNodeConditionsAndEffects(node, {
-      condition: (condition) => {
-        if (condition.kind === 'variable' && condition.key === key) {
-          referenced = true;
-        }
-      },
-      effect: (effect) => {
-        if (
-          (effect.kind === 'set_variable' ||
-            effect.kind === 'increment_variable') &&
-          effect.key === key
-        ) {
-          referenced = true;
-        }
-      },
-    });
-    return referenced;
-  });
-}
-
 function draftReferencesEnding(
-  draft: InteractiveFilmDraftContent,
+  draft: InteractiveStoryDraftContent,
   endingId: string,
 ): boolean {
-  return draft.graph.nodes.some((node) => {
-    if (
-      node.kind === 'clip' &&
-      node.exit.kind === 'ending' &&
-      node.exit.endingId === endingId
-    ) {
-      return true;
-    }
-    let referenced = false;
-    visitNodeConditionsAndEffects(node, {
-      condition: () => undefined,
-      effect: (effect) => {
-        if (effect.kind === 'unlock_ending' && effect.endingId === endingId) {
-          referenced = true;
-        }
-      },
-    });
-    return referenced;
-  });
-}
-
-function visitNodeConditionsAndEffects(
-  node: StoryGraphNode,
-  visitor: {
-    condition: (condition: StoryAgentCondition) => void;
-    effect: (effect: StoryAgentEffect) => void;
-  },
-): void {
-  if (node.kind === 'router') {
-    node.exit.routes.forEach((route) => {
-      if (route.when) visitCondition(route.when, visitor.condition);
-    });
-    return;
-  }
-  if (node.exit.kind !== 'choice') return;
-  node.exit.choices.forEach((choice) => {
-    if (choice.visibleWhen) {
-      visitCondition(choice.visibleWhen, visitor.condition);
-    }
-    choice.effects.forEach((effect) =>
-      visitor.effect(effect as StoryAgentEffect),
-    );
-  });
-}
-
-function visitCondition(
-  condition: StoryAgentCondition,
-  visitor: (condition: StoryAgentCondition) => void,
-): void {
-  visitor(condition);
-  if (condition.kind === 'all' || condition.kind === 'any') {
-    condition.conditions.forEach((child) => visitCondition(child, visitor));
-  } else if (condition.kind === 'not') {
-    visitCondition(condition.condition, visitor);
-  }
+  return draft.graph.nodes.some(
+    (node) => node.exit.kind === 'ending' && node.exit.endingId === endingId,
+  );
 }
 
 function removeOrphanedCanvasPositions(
   positions: Record<string, { x: number; y: number }>,
-  draft: InteractiveFilmDraftContent,
+  draft: InteractiveStoryDraftContent,
   storyWorldNodePresent: boolean,
 ): Record<string, { x: number; y: number }> {
   const validIds = new Set<string>();
   if (storyWorldNodePresent) validIds.add('__story_root__');
   draft.graph.nodes.forEach((node) => {
     validIds.add(node.nodeId);
-    if (node.kind === 'clip' && node.exit.kind === 'choice') {
+    if (node.exit.kind === 'choice') {
       validIds.add(`__decision__:${node.nodeId}`);
     }
   });

@@ -36,9 +36,9 @@ import {
 import { requireModerationApproval } from '../media/media-moderation-policy';
 import { canonicalJsonHash } from './canonical-json';
 import {
-  INTERACTIVE_FILM_DRAFT_SCHEMA_VERSION,
+  INTERACTIVE_STORY_DRAFT_SCHEMA_VERSION,
   StoryBuildScopeSchema,
-  createLockableInteractiveFilmDraftContentSchema,
+  createLockableInteractiveStoryDraftContentSchema,
   type CancelStoryBuildInput,
   type CreateStoryBuildInput,
   type CursorPageDto,
@@ -48,8 +48,9 @@ import {
   type StoryBuildListQuery,
   type StoryBuildPathReportDto,
   type StoryBuildSummaryDto,
+  type CreatableStoryFormat,
   type StoryFrameProfile,
-  type InteractiveFilmDraftContent,
+  type InteractiveStoryDraftContent,
 } from './dto';
 import {
   compileStoryBuild,
@@ -151,11 +152,17 @@ type BuildSelectionRow = Prisma.StoryVideoSelectionGetPayload<{
   include: typeof BUILD_SELECTION_INCLUDE;
 }>;
 
+function isCreatableStoryFormat(
+  format: string,
+): format is CreatableStoryFormat {
+  return format === 'interactive_film' || format === 'text_adventure';
+}
+
 const BUILD_MEDIA_READ_URL_TTL_SECONDS = positiveInt(
   process.env.MEDIA_USER_READ_URL_TTL_SECONDS,
   5 * 60,
 );
-const STORY_BUILD_COMPILER_SEMANTIC_VERSION = 3;
+const STORY_BUILD_COMPILER_SEMANTIC_VERSION = 4;
 
 interface BuildCursor {
   number: number;
@@ -168,13 +175,14 @@ interface ValidatedBuildSnapshot {
     workspaceId: string;
     title: string;
     summary: string | null;
+    format: CreatableStoryFormat;
     defaultLocale: string;
-    frameProfile: StoryFrameProfile;
+    frameProfile: StoryFrameProfile | null;
   };
   draft: {
     revision: number;
     contentHash: string;
-    content: InteractiveFilmDraftContent;
+    content: InteractiveStoryDraftContent;
   };
   videoSnapshotHash: string;
   entries: StoryVideoSnapshotEntry[];
@@ -263,6 +271,7 @@ export class StoryBuildService {
             });
             const compilation = compileStoryBuild({
               projectId,
+              format: snapshot.project.format,
               buildId,
               sourceDraftRevision: snapshot.draft.revision,
               channel:
@@ -745,11 +754,19 @@ async function loadValidatedBuildSnapshot(
       workspaceId: true,
       title: true,
       summary: true,
+      format: true,
       defaultLocale: true,
       frameProfile: true,
     },
   });
   if (!project) throw projectNotFound();
+  const format = project.format;
+  if (!isCreatableStoryFormat(format)) {
+    throw new GoneException({
+      code: 'STORY_BUILD_PROJECT_FORMAT_UNSUPPORTED',
+      message: `Story format ${project.format} is not supported by the unified story compiler.`,
+    });
+  }
   const draft = await tx.storyDraft.findUnique({
     where: { storyProjectId: projectId },
   });
@@ -767,13 +784,13 @@ async function loadValidatedBuildSnapshot(
       actualRevision: draft.revision,
     });
   }
-  if (draft.schemaVersion !== INTERACTIVE_FILM_DRAFT_SCHEMA_VERSION) {
+  if (draft.schemaVersion !== INTERACTIVE_STORY_DRAFT_SCHEMA_VERSION) {
     throw new GoneException({
       code: 'STORY_BUILD_DRAFT_SCHEMA_UNSUPPORTED',
       message:
         'This saved draft uses a retired schema and cannot be built. Save the story again in the current creator.',
       actualSchemaVersion: draft.schemaVersion,
-      requiredSchemaVersion: INTERACTIVE_FILM_DRAFT_SCHEMA_VERSION,
+      requiredSchemaVersion: INTERACTIVE_STORY_DRAFT_SCHEMA_VERSION,
     });
   }
   const actualDraftHash = canonicalJsonHash(draft.content);
@@ -785,13 +802,13 @@ async function loadValidatedBuildSnapshot(
       actualHash: actualDraftHash,
     });
   }
-  const lockable = createLockableInteractiveFilmDraftContentSchema(
+  const lockable = createLockableInteractiveStoryDraftContentSchema(
     project.defaultLocale,
   ).safeParse(draft.content);
   if (!lockable.success) {
     throw new UnprocessableEntityException({
       code: 'STORY_BUILD_DRAFT_NOT_BUILDABLE',
-      message: 'Complete and connect the saved v3 story before building it.',
+      message: 'Complete and connect the saved story before building it.',
       issues: lockable.error.issues.map((issue) => ({
         code: issue.code,
         path: issue.path,
@@ -803,14 +820,17 @@ async function loadValidatedBuildSnapshot(
     (node): node is Extract<typeof node, { kind: 'clip' }> =>
       node.kind === 'clip',
   );
-  const selections = await tx.storyVideoSelection.findMany({
-    where: {
-      storyProjectId: projectId,
-      targetKind: StoryVideoTargetKind.clip,
-      targetKey: { in: clipNodes.map((node) => node.nodeId) },
-    },
-    include: BUILD_SELECTION_INCLUDE,
-  });
+  const selections =
+    clipNodes.length === 0
+      ? []
+      : await tx.storyVideoSelection.findMany({
+          where: {
+            storyProjectId: projectId,
+            targetKind: StoryVideoTargetKind.clip,
+            targetKey: { in: clipNodes.map((node) => node.nodeId) },
+          },
+          include: BUILD_SELECTION_INCLUDE,
+        });
   const selectionByNodeId = new Map(
     selections.map((selection) => [selection.targetKey, selection]),
   );
@@ -838,6 +858,7 @@ async function loadValidatedBuildSnapshot(
   return {
     project: {
       ...project,
+      format,
       frameProfile: project.frameProfile,
     },
     draft: {
@@ -918,7 +939,7 @@ function prepareBuildVideo(
   project: {
     id: string;
     workspaceId: string;
-    frameProfile: StoryFrameProfile;
+    frameProfile: StoryFrameProfile | null;
   },
   buildId: string,
   graphNodeId: string,
@@ -986,8 +1007,7 @@ function prepareBuildVideo(
     const durationMs = variant.durationMs;
     if (
       !variant.checksumSha256 ||
-      variant.contentType !== 'video/mp4' ||
-      !isBrowserSafeMp4Metadata(variant.metadata) ||
+      !variant.contentType.toLowerCase().startsWith('video/') ||
       variant.width === null ||
       variant.height === null ||
       durationMs === null ||
@@ -997,7 +1017,7 @@ function prepareBuildVideo(
       diagnostics.push(
         buildDiagnostic(
           'STORY_BUILD_VIDEO_METADATA_REQUIRED',
-          `Current video ${graphNodeId} is missing a browser-safe MP4 flag, checksum, content type, dimensions, exact millisecond duration, or audio metadata.`,
+          `Current video ${graphNodeId} is missing a checksum, video content type, dimensions, exact millisecond duration, or audio metadata.`,
           'asset',
           asset.id,
         ),
@@ -1008,8 +1028,7 @@ function prepareBuildVideo(
       entry.width !== variant.width ||
       entry.height !== variant.height ||
       entry.durationMs !== durationMs ||
-      entry.hasAudio !== variant.hasAudio ||
-      entry.browserSafeMp4 !== true
+      entry.hasAudio !== variant.hasAudio
     ) {
       diagnostics.push(
         buildDiagnostic(
@@ -1020,11 +1039,18 @@ function prepareBuildVideo(
         ),
       );
     }
+    // A text-first (null-profile) project accepts the video's native
+    // dimensions; only a film project pins clips to a fixed picture contract.
     const expected =
-      project.frameProfile === 'landscape_16_9'
-        ? { width: 1920, height: 1080 }
-        : { width: 1080, height: 1920 };
-    if (entry.width !== expected.width || entry.height !== expected.height) {
+      project.frameProfile === null
+        ? null
+        : project.frameProfile === 'landscape_16_9'
+          ? { width: 1920, height: 1080 }
+          : { width: 1080, height: 1920 };
+    if (
+      expected !== null &&
+      (entry.width !== expected.width || entry.height !== expected.height)
+    ) {
       diagnostics.push(
         buildDiagnostic(
           'STORY_BUILD_VIDEO_FRAME_MISMATCH',
@@ -1059,7 +1085,7 @@ function prepareBuildVideo(
           height: entry.height as number,
           durationMs: entry.durationMs as number,
           hasAudio: entry.hasAudio as boolean,
-          browserSafeMp4: true,
+          browserSafeMp4: isBrowserSafeMp4Metadata(variant.metadata),
           url: storyBuildAssetDeliveryPath(
             project.id,
             buildId,
@@ -1092,14 +1118,14 @@ async function materializeStoryRevision(
   });
   if (existing) {
     if (
-      existing.schemaVersion !== INTERACTIVE_FILM_DRAFT_SCHEMA_VERSION ||
+      existing.schemaVersion !== INTERACTIVE_STORY_DRAFT_SCHEMA_VERSION ||
       existing.contentHash !== snapshot.draft.contentHash ||
       canonicalJsonHash(existing.content) !== existing.contentHash
     ) {
       throw new ConflictException({
         code: 'STORY_BUILD_REVISION_INTEGRITY_ERROR',
         message:
-          'The immutable story revision does not match its source v3 draft.',
+          'The immutable story revision does not match its source draft.',
       });
     }
     return existing;
@@ -1113,7 +1139,7 @@ async function materializeStoryRevision(
       storyProjectId: snapshot.project.id,
       number: (latest._max.number ?? 0) + 1,
       sourceDraftRevision: snapshot.draft.revision,
-      schemaVersion: INTERACTIVE_FILM_DRAFT_SCHEMA_VERSION,
+      schemaVersion: INTERACTIVE_STORY_DRAFT_SCHEMA_VERSION,
       content: snapshot.draft.content as Prisma.InputJsonObject,
       contentHash: snapshot.draft.contentHash,
       label: null,
@@ -1129,12 +1155,13 @@ export function storyBuildInputManifest(
   sourceRevisionId: string,
 ): Record<string, unknown> {
   return {
-    schemaVersion: 3,
+    schemaVersion: 4,
     compilerSemanticVersion: STORY_BUILD_COMPILER_SEMANTIC_VERSION,
     runtimeSchemaVersion: EXPERIENCE_RUNTIME_SCHEMA_VERSION,
     scope: input.scope,
     project: {
       id: snapshot.project.id,
+      format: snapshot.project.format,
       frameProfile: snapshot.project.frameProfile,
       defaultLocale: snapshot.project.defaultLocale,
       title: snapshot.project.title,
@@ -1446,7 +1473,7 @@ function currentMediaDiagnostics(
         ? frozen.asset.sizeBytes
         : null);
     if (
-      frozen.contentType !== 'video/mp4' ||
+      !frozen.contentType.toLowerCase().startsWith('video/') ||
       frozen.durationMs === null ||
       frozen.durationMs <= 0 ||
       frozen.width === null ||
@@ -1459,8 +1486,6 @@ function currentMediaDiagnostics(
       frozen.variant.width !== frozen.width ||
       frozen.variant.height !== frozen.height ||
       frozen.variant.hasAudio !== frozen.hasAudio ||
-      frozen.browserSafeMp4 !== true ||
-      !isBrowserSafeMp4Metadata(frozen.variant.metadata) ||
       (frozen.sizeBytes !== null && currentSizeBytes !== frozen.sizeBytes)
     ) {
       return [

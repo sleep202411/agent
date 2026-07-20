@@ -1,15 +1,17 @@
 import { z } from 'zod';
 
 /**
- * Interactive-film authoring contracts.
+ * Interactive-story authoring contracts.
  *
- * These schemas describe creator-owned inputs, not the compiled player
- * manifest. Builds must emit the shared InteractiveFilmReleaseSchema v1;
- * authoring DTOs deliberately do not duplicate runtime media records.
+ * A project's format is its preferred creation profile, not a graph
+ * restriction. The same strict document is a pure branching tree of cinematic
+ * clips and narrative text scenes: each node either continues to one next node,
+ * fans into labelled choices, or resolves to an ending, before it is compiled
+ * to the shared Runtime Manifest.
  */
 
-export const INTERACTIVE_FILM_DRAFT_SCHEMA_VERSION =
-  'interactive-film-draft-v3' as const;
+export const INTERACTIVE_STORY_DRAFT_SCHEMA_VERSION =
+  'interactive-story-draft-v1' as const;
 
 export const StoryUuidSchema = z.string().uuid();
 export const StoryStableIdSchema = z
@@ -36,165 +38,90 @@ export const DraftLocalizedTextSchema = z.record(
   StoryLocaleSchema,
   z.string().max(4_000),
 );
-
-export const StoryScalarValueSchema = z.union([
-  z.string().max(2_000),
-  z.number().finite(),
-  z.boolean(),
-  z.null(),
-]);
-export type StoryScalarValue = z.infer<typeof StoryScalarValueSchema>;
-
-export const StoryStateVariableSchema = z.discriminatedUnion('type', [
-  z
-    .object({
-      key: StoryStableIdSchema,
-      type: z.literal('boolean'),
-      initialValue: z.boolean(),
-    })
-    .strict(),
-  z
-    .object({
-      key: StoryStableIdSchema,
-      type: z.literal('number'),
-      initialValue: z.number().finite(),
-      minimum: z.number().finite().optional(),
-      maximum: z.number().finite().optional(),
-    })
-    .strict(),
-  z
-    .object({
-      key: StoryStableIdSchema,
-      type: z.literal('string'),
-      initialValue: z.string().max(2_000),
-      allowedValues: z.array(z.string().max(2_000)).min(1).max(100).optional(),
-    })
-    .strict(),
-]);
-export type StoryStateVariable = z.infer<typeof StoryStateVariableSchema>;
-
-export type FilmCondition =
-  | { kind: 'flag'; flag: string; equals: boolean }
-  | {
-      kind: 'variable';
-      key: string;
-      operator:
-        | 'equals'
-        | 'not_equals'
-        | 'greater_than'
-        | 'at_least'
-        | 'less_than'
-        | 'at_most';
-      value: StoryScalarValue;
-    }
-  | { kind: 'relationship-at-least'; characterId: string; value: number }
-  | { kind: 'all'; conditions: FilmCondition[] }
-  | { kind: 'any'; conditions: FilmCondition[] }
-  | { kind: 'not'; condition: FilmCondition };
-
-export const FilmConditionSchema: z.ZodType<FilmCondition> = z.lazy(() =>
-  z.discriminatedUnion('kind', [
-    z
-      .object({
-        kind: z.literal('flag'),
-        flag: StoryStableIdSchema,
-        equals: z.boolean(),
-      })
-      .strict(),
-    z
-      .object({
-        kind: z.literal('variable'),
-        key: StoryStableIdSchema,
-        operator: z.enum([
-          'equals',
-          'not_equals',
-          'greater_than',
-          'at_least',
-          'less_than',
-          'at_most',
-        ]),
-        value: StoryScalarValueSchema,
-      })
-      .strict(),
-    z
-      .object({
-        kind: z.literal('relationship-at-least'),
-        characterId: StoryStableIdSchema,
-        value: z.number().finite(),
-      })
-      .strict(),
-    z
-      .object({
-        kind: z.literal('all'),
-        conditions: z.array(FilmConditionSchema).min(1).max(50),
-      })
-      .strict(),
-    z
-      .object({
-        kind: z.literal('any'),
-        conditions: z.array(FilmConditionSchema).min(1).max(50),
-      })
-      .strict(),
-    z
-      .object({ kind: z.literal('not'), condition: FilmConditionSchema })
-      .strict(),
-  ]),
+export const StoryTextBodyLocalizedTextSchema = z.record(
+  StoryLocaleSchema,
+  z.string().max(20_000),
 );
 
-export const FilmEffectSchema = z.discriminatedUnion('kind', [
-  z
-    .object({
-      kind: z.literal('set_variable'),
-      key: StoryStableIdSchema,
-      value: StoryScalarValueSchema,
-    })
-    .strict(),
-  z
-    .object({
-      kind: z.literal('increment_variable'),
-      key: StoryStableIdSchema,
-      amount: z.number().finite(),
-    })
-    .strict(),
-  z
-    .object({
-      kind: z.literal('set_flag'),
-      flag: StoryStableIdSchema,
-      value: z.boolean(),
-    })
-    .strict(),
-  z
-    .object({
-      kind: z.literal('adjust_relationship'),
-      characterId: StoryStableIdSchema,
-      amount: z.number().finite(),
-    })
-    .strict(),
-  z
-    .object({
-      kind: z.literal('unlock_ending'),
-      endingId: StoryStableIdSchema,
-    })
-    .strict(),
-]);
-export type FilmEffect = z.infer<typeof FilmEffectSchema>;
+export const MAX_CHARACTER_IMAGES = 6;
+export const MAX_CHARACTER_VOICE_DURATION_MS = 5_000;
 
-export const StoryCharacterSchema = z
+export const MAX_CHARACTER_IMAGE_LABEL_LENGTH = 60;
+
+/**
+ * One uploaded appearance-reference image (形象图) backing generation. The
+ * label names the look (常服 / 夜行 / 盛装 …) so prompts can address it.
+ */
+export const StoryCharacterImageSchema = z
+  .object({
+    mediaAssetId: z.string().uuid(),
+    url: z.string().trim().min(1).max(2_048),
+    label: z.string().trim().min(1).max(MAX_CHARACTER_IMAGE_LABEL_LENGTH),
+  })
+  .strict();
+export type StoryCharacterImage = z.infer<typeof StoryCharacterImageSchema>;
+
+/** Voice-clone reference sample (音色); hard-capped at 5 seconds. */
+export const StoryCharacterVoiceSchema = z
+  .object({
+    mediaAssetId: z.string().uuid(),
+    url: z.string().trim().min(1).max(2_048),
+    durationMs: z
+      .number()
+      .int()
+      .positive()
+      .max(MAX_CHARACTER_VOICE_DURATION_MS),
+  })
+  .strict();
+export type StoryCharacterVoice = z.infer<typeof StoryCharacterVoiceSchema>;
+
+const StoryCharacterObjectSchema = z
   .object({
     id: StoryStableIdSchema,
     name: DraftLocalizedTextSchema,
-    role: z.string().max(160),
     summary: z.string().max(4_000),
-    playable: z.boolean().default(false),
-    continuityRules: z.array(z.string().trim().min(1).max(1_000)).max(50),
+    images: z
+      .array(StoryCharacterImageSchema)
+      .max(MAX_CHARACTER_IMAGES)
+      .default([]),
+    voice: StoryCharacterVoiceSchema.nullable().default(null),
   })
   .strict();
+
+// Drafts written before 2026-07 carried `playable`/`continuityRules`/`role`,
+// and briefly stored unlabeled images; normalize them so `.strict()` keeps
+// rejecting genuinely unknown keys.
+export const StoryCharacterSchema = z.preprocess((value) => {
+  if (value !== null && typeof value === 'object' && !Array.isArray(value)) {
+    const {
+      playable: _playable,
+      continuityRules: _rules,
+      role: _role,
+      ...rest
+    } = value as Record<string, unknown>;
+    if (Array.isArray(rest.images)) {
+      rest.images = rest.images.map((image, index) =>
+        image !== null &&
+        typeof image === 'object' &&
+        !Array.isArray(image) &&
+        !(
+          typeof (image as Record<string, unknown>).label === 'string' &&
+          ((image as Record<string, unknown>).label as string).trim()
+        )
+          ? { ...(image as Record<string, unknown>), label: `Ref ${index + 1}` }
+          : image,
+      );
+    }
+    return rest;
+  }
+  return value;
+}, StoryCharacterObjectSchema);
 
 export const StoryEndingSchema = z
   .object({
     id: StoryStableIdSchema,
     title: DraftLocalizedTextSchema,
-    summary: DraftLocalizedTextSchema,
+    summary: DraftLocalizedTextSchema.optional(),
     kind: z.enum(['truth', 'bond', 'echo', 'failure', 'hidden', 'custom']),
   })
   .strict();
@@ -203,29 +130,7 @@ export const StoryGraphChoiceSchema = z
   .object({
     choiceId: StoryStableIdSchema,
     label: DraftLocalizedTextSchema,
-    accessibilityLabel: DraftLocalizedTextSchema.optional(),
-    visibleWhen: FilmConditionSchema.optional(),
-    effects: z.array(FilmEffectSchema).max(30).default([]),
     nextNodeId: StoryStableIdSchema,
-    afterSelect: z
-      .discriminatedUnion('kind', [
-        z.object({ kind: z.literal('immediate') }).strict(),
-        z
-          .object({
-            kind: z.literal('play'),
-            reactionClipKey: StoryClipKeySchema,
-          })
-          .strict(),
-      ])
-      .default({ kind: 'immediate' }),
-  })
-  .strict();
-
-const StoryAutoRouteSchema = z
-  .object({
-    nextNodeId: StoryStableIdSchema,
-    when: FilmConditionSchema.optional(),
-    priority: z.number().int().min(0).max(10_000).default(0),
   })
   .strict();
 
@@ -236,27 +141,14 @@ const StoryClipAutoExitSchema = z
   })
   .strict();
 
-const StoryRouterAutoExitSchema = z
-  .object({
-    kind: z.literal('auto'),
-    routes: z.array(StoryAutoRouteSchema).max(20),
-  })
-  .strict();
-
+// One choice exit for both clip and text nodes: a decision is just its prompt
+// and its labelled choices. When the choice is presented (clip end, text read)
+// is derived from the node kind at compile time, not authored per node.
 const StoryChoiceExitSchema = z
   .object({
     kind: z.literal('choice'),
     decisionId: StoryStableIdSchema,
     prompt: DraftLocalizedTextSchema,
-    trigger: z.discriminatedUnion('kind', [
-      z.object({ kind: z.literal('media-ended') }).strict(),
-      z
-        .object({
-          kind: z.literal('timecode'),
-          atMs: z.number().int().nonnegative(),
-        })
-        .strict(),
-    ]),
     choices: z.array(StoryGraphChoiceSchema).max(6),
   })
   .strict();
@@ -301,57 +193,75 @@ const StoryClipGraphNodeSchema = z
   })
   .strict();
 
-/**
- * A graph-only routing node. It owns no generated video and can only choose
- * an automatic conditional route. The compiler materializes its runtime
- * representation without inventing another clip record or video asset.
- */
-const StoryRouterGraphNodeSchema = z
+const StoryTextGraphNodeSchema = z
   .object({
-    kind: z.literal('router'),
+    kind: z.literal('text'),
     nodeId: StoryStableIdSchema,
-    exit: StoryRouterAutoExitSchema,
+    title: DraftLocalizedTextSchema.optional(),
+    body: StoryTextBodyLocalizedTextSchema,
+    exit: z.discriminatedUnion('kind', [
+      StoryClipAutoExitSchema,
+      StoryChoiceExitSchema,
+      StoryCheckpointExitSchema,
+      StoryEndingExitSchema,
+    ]),
   })
   .strict();
 
 export const StoryGraphNodeSchema = z.discriminatedUnion('kind', [
   StoryClipGraphNodeSchema,
-  StoryRouterGraphNodeSchema,
+  StoryTextGraphNodeSchema,
 ]);
 
 /** Mutable graph shape. Referential and completeness checks run on lock. */
-export const InteractiveFilmStoryGraphSchema = z
+export const InteractiveStoryGraphSchema = z
   .object({
     entryNodeId: StoryStableIdSchema.nullable(),
     nodes: z.array(StoryGraphNodeSchema).max(500),
   })
   .strict();
 
-const InteractiveFilmDraftContentBaseSchema = z
+const InteractiveStoryDraftContentBaseSchema = z
   .object({
-    storyBible: z
-      .object({
-        logline: z.string().max(1_000),
-        synopsis: z.string().max(20_000),
-        worldview: z.string().max(20_000),
-        storyRules: z.array(z.string().max(2_000)).max(100),
-        characters: z.array(StoryCharacterSchema).max(100),
-        locations: z.array(z.string().max(500)).max(200),
-        props: z.array(z.string().max(500)).max(200),
-        stateVariables: z.array(StoryStateVariableSchema).max(200),
-        endings: z.array(StoryEndingSchema).max(100),
-      })
-      .strict(),
-    graph: InteractiveFilmStoryGraphSchema,
+    // Drafts written before 2026-07 carried storyRules/locations/props lists;
+    // strip them so `.strict()` keeps rejecting genuinely unknown keys.
+    storyBible: z.preprocess(
+      (value) => {
+        if (
+          value !== null &&
+          typeof value === 'object' &&
+          !Array.isArray(value)
+        ) {
+          const {
+            storyRules: _rules,
+            locations: _locations,
+            props: _props,
+            ...rest
+          } = value as Record<string, unknown>;
+          return rest;
+        }
+        return value;
+      },
+      z
+        .object({
+          logline: z.string().max(1_000),
+          synopsis: z.string().max(20_000),
+          worldview: z.string().max(20_000),
+          characters: z.array(StoryCharacterSchema).max(100),
+          endings: z.array(StoryEndingSchema).max(100),
+        })
+        .strict(),
+    ),
+    graph: InteractiveStoryGraphSchema,
     productionNotes: z.array(z.string().max(2_000)).max(200),
   })
   .strict();
-type InteractiveFilmDraftContentBase = z.infer<
-  typeof InteractiveFilmDraftContentBaseSchema
+type InteractiveStoryDraftContentBase = z.infer<
+  typeof InteractiveStoryDraftContentBaseSchema
 >;
 
-export const InteractiveFilmDraftContentSchema =
-  InteractiveFilmDraftContentBaseSchema.superRefine((draft, context) => {
+export const InteractiveStoryDraftContentSchema =
+  InteractiveStoryDraftContentBaseSchema.superRefine((draft, context) => {
     addDuplicateStableIdentifierIssues(
       draft.storyBible.characters,
       (character) => character.id,
@@ -359,17 +269,10 @@ export const InteractiveFilmDraftContentSchema =
       'id',
       context,
     );
-    addDuplicateStableIdentifierIssues(
-      draft.storyBible.stateVariables,
-      (variable) => variable.key,
-      ['storyBible', 'stateVariables'],
-      'key',
-      context,
-    );
     validateCanonicalDecisionDefinitions(draft, context);
   });
-export type InteractiveFilmDraftContent = z.infer<
-  typeof InteractiveFilmDraftContentSchema
+export type InteractiveStoryDraftContent = z.infer<
+  typeof InteractiveStoryDraftContentSchema
 >;
 
 interface RuntimeLocalizedCopy {
@@ -377,7 +280,7 @@ interface RuntimeLocalizedCopy {
   path: PropertyKey[];
 }
 
-export interface InteractiveFilmRuntimeLocaleCoverageIssue {
+export interface InteractiveStoryRuntimeLocaleCoverageIssue {
   locale: string;
   path: PropertyKey[];
 }
@@ -387,8 +290,8 @@ export interface InteractiveFilmRuntimeLocaleCoverageIssue {
  * bible metadata (for example a translated character name) must never silently
  * widen the release locale contract.
  */
-export function collectInteractiveFilmRuntimeLocales(
-  draft: InteractiveFilmDraftContent,
+export function collectInteractiveStoryRuntimeLocales(
+  draft: InteractiveStoryDraftContent,
   defaultLocale?: string,
 ): string[] {
   const locales = new Set<string>(defaultLocale ? [defaultLocale] : []);
@@ -403,10 +306,10 @@ export function collectInteractiveFilmRuntimeLocales(
   ];
 }
 
-export function findInteractiveFilmRuntimeLocaleCoverageIssues(
-  draft: InteractiveFilmDraftContent,
+export function findInteractiveStoryRuntimeLocaleCoverageIssues(
+  draft: InteractiveStoryDraftContent,
   enabledLocales: readonly string[],
-): InteractiveFilmRuntimeLocaleCoverageIssue[] {
+): InteractiveStoryRuntimeLocaleCoverageIssue[] {
   return runtimeLocalizedCopies(draft).flatMap((copy) =>
     enabledLocales.flatMap((locale) =>
       copy.value[locale]?.trim()
@@ -417,7 +320,7 @@ export function findInteractiveFilmRuntimeLocaleCoverageIssues(
 }
 
 function runtimeLocalizedCopies(
-  draft: InteractiveFilmDraftContent,
+  draft: InteractiveStoryDraftContent,
 ): RuntimeLocalizedCopy[] {
   return [
     ...draft.storyBible.endings.flatMap((ending, endingIndex) => [
@@ -425,64 +328,70 @@ function runtimeLocalizedCopies(
         value: ending.title,
         path: ['storyBible', 'endings', endingIndex, 'title'],
       },
-      {
-        value: ending.summary,
-        path: ['storyBible', 'endings', endingIndex, 'summary'],
-      },
+      ...(hasNonEmptyLocalizedText(ending.summary)
+        ? [
+            {
+              value: ending.summary,
+              path: ['storyBible', 'endings', endingIndex, 'summary'],
+            },
+          ]
+        : []),
     ]),
     ...draft.graph.nodes.flatMap((node, nodeIndex) => {
-      if (node.exit.kind !== 'choice') return [];
+      const textCopies =
+        node.kind === 'text'
+          ? [
+              ...(hasNonEmptyLocalizedText(node.title)
+                ? [
+                    {
+                      value: node.title,
+                      path: ['graph', 'nodes', nodeIndex, 'title'],
+                    },
+                  ]
+                : []),
+              {
+                value: node.body,
+                path: ['graph', 'nodes', nodeIndex, 'body'],
+              },
+            ]
+          : [];
+      if (node.exit.kind !== 'choice') return textCopies;
       return [
+        ...textCopies,
         {
           value: node.exit.prompt,
           path: ['graph', 'nodes', nodeIndex, 'exit', 'prompt'],
         },
-        ...node.exit.choices.flatMap((choice, choiceIndex) => [
-          {
-            value: choice.label,
-            path: [
-              'graph',
-              'nodes',
-              nodeIndex,
-              'exit',
-              'choices',
-              choiceIndex,
-              'label',
-            ],
-          },
-          ...(choice.accessibilityLabel
-            ? [
-                {
-                  value: choice.accessibilityLabel,
-                  path: [
-                    'graph',
-                    'nodes',
-                    nodeIndex,
-                    'exit',
-                    'choices',
-                    choiceIndex,
-                    'accessibilityLabel',
-                  ],
-                },
-              ]
-            : []),
-        ]),
+        ...node.exit.choices.map((choice, choiceIndex) => ({
+          value: choice.label,
+          path: [
+            'graph',
+            'nodes',
+            nodeIndex,
+            'exit',
+            'choices',
+            choiceIndex,
+            'label',
+          ],
+        })),
       ];
     }),
   ];
 }
 
-export const EMPTY_INTERACTIVE_FILM_DRAFT_CONTENT: InteractiveFilmDraftContent =
+function hasNonEmptyLocalizedText(
+  value: Record<string, string> | undefined,
+): value is Record<string, string> {
+  return Boolean(value && Object.values(value).some((text) => text.trim()));
+}
+
+export const EMPTY_INTERACTIVE_STORY_DRAFT_CONTENT: InteractiveStoryDraftContent =
   {
     storyBible: {
       logline: '',
       synopsis: '',
       worldview: '',
-      storyRules: [],
       characters: [],
-      locations: [],
-      props: [],
-      stateVariables: [],
       endings: [],
     },
     graph: { entryNodeId: null, nodes: [] },
@@ -496,7 +405,7 @@ export const EMPTY_INTERACTIVE_FILM_DRAFT_CONTENT: InteractiveFilmDraftContent =
  * free to route the same option to its own continuation node.
  */
 function validateCanonicalDecisionDefinitions(
-  draft: InteractiveFilmDraftContentBase,
+  draft: InteractiveStoryDraftContentBase,
   context: z.RefinementCtx,
 ): void {
   type ChoiceExit = z.infer<typeof StoryChoiceExitSchema>;
@@ -506,7 +415,7 @@ function validateCanonicalDecisionDefinitions(
   >();
 
   draft.graph.nodes.forEach((node, nodeIndex) => {
-    if (node.kind !== 'clip' || node.exit.kind !== 'choice') return;
+    if (node.exit.kind !== 'choice') return;
     const canonical = decisions.get(node.exit.decisionId);
     if (!canonical) {
       decisions.set(node.exit.decisionId, {
@@ -535,9 +444,6 @@ function findDecisionSemanticConflict(
   candidate: z.infer<typeof StoryChoiceExitSchema>,
 ): string | null {
   if (!semanticValuesEqual(canonical.prompt, candidate.prompt)) return 'prompt';
-  if (!semanticValuesEqual(canonical.trigger, candidate.trigger)) {
-    return 'trigger';
-  }
 
   const canonicalChoices = new Map(
     canonical.choices.map((choice) => [choice.choiceId, choice]),
@@ -557,13 +463,7 @@ function findDecisionSemanticConflict(
   for (const [choiceId, canonicalChoice] of canonicalChoices) {
     const candidateChoice = candidateChoices.get(choiceId);
     if (!candidateChoice) return 'choiceId set';
-    for (const field of [
-      'label',
-      'accessibilityLabel',
-      'visibleWhen',
-      'effects',
-      'afterSelect',
-    ] as const) {
+    for (const field of ['label'] as const) {
       if (
         !semanticValuesEqual(canonicalChoice[field], candidateChoice[field])
       ) {
@@ -610,22 +510,15 @@ function semanticValuesEqual(left: unknown, right: unknown): boolean {
   );
 }
 
-function scalarMatchesVariableType(
-  value: StoryScalarValue,
-  type: StoryStateVariable['type'],
-): boolean {
-  return typeof value === type;
-}
-
 /** Full-story playtest gate for story structure and runtime copy. */
-export function createPlayableInteractiveFilmDraftContentSchema(
+export function createPlayableInteractiveStoryDraftContentSchema(
   defaultLocale?: string,
 ) {
   const normalizedDefaultLocale = defaultLocale
     ? StoryLocaleSchema.parse(defaultLocale)
     : undefined;
-  return InteractiveFilmDraftContentSchema.superRefine((draft, context) => {
-    validateInteractiveFilmGameplayReadiness(
+  return InteractiveStoryDraftContentSchema.superRefine((draft, context) => {
+    validateInteractiveStoryGameplayReadiness(
       draft,
       context,
       normalizedDefaultLocale,
@@ -633,8 +526,8 @@ export function createPlayableInteractiveFilmDraftContentSchema(
   });
 }
 
-export const PlayableInteractiveFilmDraftContentSchema =
-  createPlayableInteractiveFilmDraftContentSchema();
+export const PlayableInteractiveStoryDraftContentSchema =
+  createPlayableInteractiveStoryDraftContentSchema();
 
 /**
  * Revision-lock gate. PUT /draft intentionally uses the permissive mutable
@@ -642,14 +535,14 @@ export const PlayableInteractiveFilmDraftContentSchema =
  * This is the immutable full-gameplay boundary for story graph and runtime
  * copy. Video selection and generation are independent from the story draft.
  */
-export function createLockableInteractiveFilmDraftContentSchema(
+export function createLockableInteractiveStoryDraftContentSchema(
   defaultLocale?: string,
 ) {
   const normalizedDefaultLocale = defaultLocale
     ? StoryLocaleSchema.parse(defaultLocale)
     : undefined;
-  return InteractiveFilmDraftContentSchema.superRefine((draft, context) => {
-    validateInteractiveFilmGameplayReadiness(
+  return InteractiveStoryDraftContentSchema.superRefine((draft, context) => {
+    validateInteractiveStoryGameplayReadiness(
       draft,
       context,
       normalizedDefaultLocale,
@@ -657,11 +550,11 @@ export function createLockableInteractiveFilmDraftContentSchema(
   });
 }
 
-export const LockableInteractiveFilmDraftContentSchema =
-  createLockableInteractiveFilmDraftContentSchema();
+export const LockableInteractiveStoryDraftContentSchema =
+  createLockableInteractiveStoryDraftContentSchema();
 
-function validateInteractiveFilmGameplayReadiness(
-  draft: InteractiveFilmDraftContent,
+function validateInteractiveStoryGameplayReadiness(
+  draft: InteractiveStoryDraftContent,
   context: z.RefinementCtx,
   defaultLocale?: string,
 ): void {
@@ -707,23 +600,10 @@ function validateInteractiveFilmGameplayReadiness(
     });
     return seen;
   };
-  requireText(draft.storyBible.logline, ['storyBible', 'logline']);
-  requireText(draft.storyBible.synopsis, ['storyBible', 'synopsis']);
-  requireText(draft.storyBible.worldview, ['storyBible', 'worldview']);
-  draft.storyBible.storyRules.forEach((rule, index) =>
-    requireText(rule, ['storyBible', 'storyRules', index]),
-  );
   draft.productionNotes.forEach((note, index) =>
     requireText(note, ['productionNotes', index]),
   );
 
-  if (draft.storyBible.characters.length === 0) {
-    context.addIssue({
-      code: 'custom',
-      path: ['storyBible', 'characters'],
-      message: 'A lockable story needs at least one character.',
-    });
-  }
   if (draft.storyBible.endings.length === 0) {
     context.addIssue({
       code: 'custom',
@@ -746,9 +626,6 @@ function validateInteractiveFilmGameplayReadiness(
     });
   }
 
-  const characterIds = new Set(
-    draft.storyBible.characters.map((character) => character.id),
-  );
   draft.storyBible.characters.forEach((character, index) => {
     requireLocalizedText(character.name, [
       'storyBible',
@@ -756,22 +633,12 @@ function validateInteractiveFilmGameplayReadiness(
       index,
       'name',
     ]);
-    requireText(character.role, ['storyBible', 'characters', index, 'role']);
     requireText(character.summary, [
       'storyBible',
       'characters',
       index,
       'summary',
     ]);
-    character.continuityRules.forEach((rule, ruleIndex) =>
-      requireText(rule, [
-        'storyBible',
-        'characters',
-        index,
-        'continuityRules',
-        ruleIndex,
-      ]),
-    );
   });
 
   const endingIds = unique(
@@ -787,76 +654,29 @@ function validateInteractiveFilmGameplayReadiness(
       index,
       'title',
     ]);
-    requireLocalizedText(ending.summary, [
-      'storyBible',
-      'endings',
-      index,
-      'summary',
-    ]);
+    if (hasNonEmptyLocalizedText(ending.summary)) {
+      requireLocalizedText(ending.summary, [
+        'storyBible',
+        'endings',
+        index,
+        'summary',
+      ]);
+    }
   });
 
-  const enabledLocales = collectInteractiveFilmRuntimeLocales(
+  const enabledLocales = collectInteractiveStoryRuntimeLocales(
     draft,
     defaultLocale,
   );
-  findInteractiveFilmRuntimeLocaleCoverageIssues(draft, enabledLocales).forEach(
-    (issue) => {
-      context.addIssue({
-        code: 'custom',
-        path: issue.path,
-        message: `Provide non-empty ${issue.locale} runtime copy.`,
-      });
-    },
-  );
-
-  const variables = new Map(
-    draft.storyBible.stateVariables.map((variable) => [variable.key, variable]),
-  );
-  draft.storyBible.stateVariables.forEach((variable, index) => {
-    if (variable.type === 'number') {
-      if (
-        variable.minimum !== undefined &&
-        variable.maximum !== undefined &&
-        variable.minimum > variable.maximum
-      ) {
-        context.addIssue({
-          code: 'custom',
-          path: ['storyBible', 'stateVariables', index, 'minimum'],
-          message: 'minimum must not exceed maximum.',
-        });
-      }
-      if (
-        variable.minimum !== undefined &&
-        variable.initialValue < variable.minimum
-      ) {
-        context.addIssue({
-          code: 'custom',
-          path: ['storyBible', 'stateVariables', index, 'initialValue'],
-          message: 'initialValue is below minimum.',
-        });
-      }
-      if (
-        variable.maximum !== undefined &&
-        variable.initialValue > variable.maximum
-      ) {
-        context.addIssue({
-          code: 'custom',
-          path: ['storyBible', 'stateVariables', index, 'initialValue'],
-          message: 'initialValue is above maximum.',
-        });
-      }
-    }
-    if (
-      variable.type === 'string' &&
-      variable.allowedValues &&
-      !variable.allowedValues.includes(variable.initialValue)
-    ) {
-      context.addIssue({
-        code: 'custom',
-        path: ['storyBible', 'stateVariables', index, 'initialValue'],
-        message: 'initialValue must be one of allowedValues.',
-      });
-    }
+  findInteractiveStoryRuntimeLocaleCoverageIssues(
+    draft,
+    enabledLocales,
+  ).forEach((issue) => {
+    context.addIssue({
+      code: 'custom',
+      path: issue.path,
+      message: `Provide non-empty ${issue.locale} runtime copy.`,
+    });
   });
 
   const nodeIds = unique(
@@ -879,151 +699,25 @@ function validateInteractiveFilmGameplayReadiness(
     });
   }
 
-  const validateCondition = (condition: FilmCondition, path: PropertyKey[]) => {
-    if (condition.kind === 'variable') {
-      const variable = variables.get(condition.key);
-      if (!variable) {
-        context.addIssue({
-          code: 'custom',
-          path: [...path, 'key'],
-          message: `Unknown state variable ${condition.key}.`,
-        });
-      } else {
-        const numericOperator =
-          condition.operator === 'greater_than' ||
-          condition.operator === 'at_least' ||
-          condition.operator === 'less_than' ||
-          condition.operator === 'at_most';
-        if (numericOperator && variable.type !== 'number') {
-          context.addIssue({
-            code: 'custom',
-            path: [...path, 'operator'],
-            message: `${condition.operator} requires a numeric state variable.`,
-          });
-        }
-        if (numericOperator && typeof condition.value !== 'number') {
-          context.addIssue({
-            code: 'custom',
-            path: [...path, 'value'],
-            message: `${condition.operator} requires a numeric comparison value.`,
-          });
-        }
-        if (
-          (condition.operator === 'equals' ||
-            condition.operator === 'not_equals') &&
-          !scalarMatchesVariableType(condition.value, variable.type)
-        ) {
-          context.addIssue({
-            code: 'custom',
-            path: [...path, 'value'],
-            message: `${condition.operator} value must match the ${variable.type} type of state variable ${variable.key}.`,
-          });
-        }
-      }
-    }
-    if (
-      condition.kind === 'relationship-at-least' &&
-      !characterIds.has(condition.characterId)
-    ) {
-      context.addIssue({
-        code: 'custom',
-        path: [...path, 'characterId'],
-        message: `Unknown character ${condition.characterId}.`,
-      });
-    }
-    if (condition.kind === 'all' || condition.kind === 'any') {
-      condition.conditions.forEach((child, index) =>
-        validateCondition(child, [...path, 'conditions', index]),
-      );
-    }
-    if (condition.kind === 'not') {
-      validateCondition(condition.condition, [...path, 'condition']);
-    }
-  };
-  const validateEffect = (effect: FilmEffect, path: PropertyKey[]) => {
-    if (
-      effect.kind === 'set_variable' ||
-      effect.kind === 'increment_variable'
-    ) {
-      const variable = variables.get(effect.key);
-      if (!variable) {
-        context.addIssue({
-          code: 'custom',
-          path: [...path, 'key'],
-          message: `Unknown state variable ${effect.key}.`,
-        });
-      } else if (effect.kind === 'increment_variable') {
-        if (variable.type !== 'number') {
-          context.addIssue({
-            code: 'custom',
-            path: [...path, 'key'],
-            message: 'increment_variable requires a numeric state variable.',
-          });
-        }
-      } else if (!scalarMatchesVariableType(effect.value, variable.type)) {
-        context.addIssue({
-          code: 'custom',
-          path: [...path, 'value'],
-          message: `set_variable value must match the ${variable.type} type of state variable ${variable.key}.`,
-        });
-      } else if (
-        variable.type === 'number' &&
-        typeof effect.value === 'number'
-      ) {
-        if (variable.minimum !== undefined && effect.value < variable.minimum) {
-          context.addIssue({
-            code: 'custom',
-            path: [...path, 'value'],
-            message: `set_variable value is below the minimum for ${variable.key}.`,
-          });
-        }
-        if (variable.maximum !== undefined && effect.value > variable.maximum) {
-          context.addIssue({
-            code: 'custom',
-            path: [...path, 'value'],
-            message: `set_variable value is above the maximum for ${variable.key}.`,
-          });
-        }
-      } else if (
-        variable.type === 'string' &&
-        typeof effect.value === 'string' &&
-        variable.allowedValues &&
-        !variable.allowedValues.includes(effect.value)
-      ) {
-        context.addIssue({
-          code: 'custom',
-          path: [...path, 'value'],
-          message: `set_variable value must be one of the allowedValues for ${variable.key}.`,
-        });
-      }
-    }
-    if (
-      effect.kind === 'adjust_relationship' &&
-      !characterIds.has(effect.characterId)
-    ) {
-      context.addIssue({
-        code: 'custom',
-        path: [...path, 'characterId'],
-        message: `Unknown character ${effect.characterId}.`,
-      });
-    }
-    if (effect.kind === 'unlock_ending' && !endingIds.has(effect.endingId)) {
-      context.addIssue({
-        code: 'custom',
-        path: [...path, 'endingId'],
-        message: `Unknown ending ${effect.endingId}.`,
-      });
-    }
-  };
-
   draft.graph.nodes.forEach((node, nodeIndex) => {
     const exitPath: PropertyKey[] = ['graph', 'nodes', nodeIndex, 'exit'];
-    if (node.kind === 'clip' && node.exit.kind === 'auto') {
+    if (node.kind === 'text') {
+      if (hasNonEmptyLocalizedText(node.title)) {
+        requireLocalizedText(node.title, [
+          'graph',
+          'nodes',
+          nodeIndex,
+          'title',
+        ]);
+      }
+      requireLocalizedText(node.body, ['graph', 'nodes', nodeIndex, 'body']);
+    }
+    if (node.exit.kind === 'auto') {
       if (node.exit.nextNodeId === null) {
         context.addIssue({
           code: 'custom',
           path: [...exitPath, 'nextNodeId'],
-          message: 'A clip continuation needs a target node.',
+          message: 'A scene continuation needs a target node.',
         });
       } else if (!nodeIds.has(node.exit.nextNodeId)) {
         context.addIssue({
@@ -1032,32 +726,6 @@ function validateInteractiveFilmGameplayReadiness(
           message: `Unknown target node ${node.exit.nextNodeId}.`,
         });
       }
-    }
-    if (node.kind === 'router') {
-      if (node.exit.routes.length === 0) {
-        context.addIssue({
-          code: 'custom',
-          path: [...exitPath, 'routes'],
-          message: 'An automatic exit needs at least one route.',
-        });
-      }
-      node.exit.routes.forEach((route, routeIndex) => {
-        if (!nodeIds.has(route.nextNodeId)) {
-          context.addIssue({
-            code: 'custom',
-            path: [...exitPath, 'routes', routeIndex, 'nextNodeId'],
-            message: `Unknown target node ${route.nextNodeId}.`,
-          });
-        }
-        if (route.when) {
-          validateCondition(route.when, [
-            ...exitPath,
-            'routes',
-            routeIndex,
-            'when',
-          ]);
-        }
-      });
     }
     if (node.exit.kind === 'choice') {
       requireLocalizedText(node.exit.prompt, [...exitPath, 'prompt']);
@@ -1077,12 +745,6 @@ function validateInteractiveFilmGameplayReadiness(
       node.exit.choices.forEach((choice, choiceIndex) => {
         const choicePath = [...exitPath, 'choices', choiceIndex];
         requireLocalizedText(choice.label, [...choicePath, 'label']);
-        if (choice.accessibilityLabel) {
-          requireLocalizedText(choice.accessibilityLabel, [
-            ...choicePath,
-            'accessibilityLabel',
-          ]);
-        }
         if (!nodeIds.has(choice.nextNodeId)) {
           context.addIssue({
             code: 'custom',
@@ -1090,40 +752,16 @@ function validateInteractiveFilmGameplayReadiness(
             message: `Unknown target node ${choice.nextNodeId}.`,
           });
         }
-        if (
-          choice.afterSelect.kind === 'play' &&
-          !clipKeys.has(choice.afterSelect.reactionClipKey)
-        ) {
-          context.addIssue({
-            code: 'custom',
-            path: [...choicePath, 'afterSelect', 'reactionClipKey'],
-            message: `Unknown reaction clip ${choice.afterSelect.reactionClipKey}.`,
-          });
-        }
-        if (choice.visibleWhen) {
-          validateCondition(choice.visibleWhen, [...choicePath, 'visibleWhen']);
-        }
-        choice.effects.forEach((effect, effectIndex) =>
-          validateEffect(effect, [...choicePath, 'effects', effectIndex]),
-        );
       });
     }
-    if (
-      node.kind === 'clip' &&
-      node.exit.kind === 'checkpoint' &&
-      !nodeIds.has(node.exit.nextNodeId)
-    ) {
+    if (node.exit.kind === 'checkpoint' && !nodeIds.has(node.exit.nextNodeId)) {
       context.addIssue({
         code: 'custom',
         path: [...exitPath, 'nextNodeId'],
         message: `Unknown target node ${node.exit.nextNodeId}.`,
       });
     }
-    if (
-      node.kind === 'clip' &&
-      node.exit.kind === 'ending' &&
-      !endingIds.has(node.exit.endingId)
-    ) {
+    if (node.exit.kind === 'ending' && !endingIds.has(node.exit.endingId)) {
       context.addIssue({
         code: 'custom',
         path: [...exitPath, 'endingId'],

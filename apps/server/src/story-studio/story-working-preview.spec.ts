@@ -1,7 +1,10 @@
 import { Prisma } from '@prisma/client';
 import { canonicalJsonHash } from './canonical-json';
 import { buildInteractiveFilmTestBundle } from './__tests__/interactive-film-test-bundle';
-import { INTERACTIVE_FILM_DRAFT_SCHEMA_VERSION } from './interactive-film.schema';
+import {
+  INTERACTIVE_STORY_DRAFT_SCHEMA_VERSION,
+  LockableInteractiveStoryDraftContentSchema,
+} from './interactive-film.schema';
 import { StoryWorkingPreviewController } from './story-working-preview.controller';
 import { StoryWorkingPreviewService } from './story-working-preview.service';
 import { storyVideoSnapshotHash } from './story-video-production.schema';
@@ -15,7 +18,8 @@ type Draft = ReturnType<typeof buildInteractiveFilmTestBundle>['draftContent'];
 function scopedService(
   draftContent: Draft,
   selections: unknown[] = currentPreviewSelections(draftContent),
-  schemaVersion: string = INTERACTIVE_FILM_DRAFT_SCHEMA_VERSION,
+  schemaVersion: string = INTERACTIVE_STORY_DRAFT_SCHEMA_VERSION,
+  format: 'interactive_film' | 'text_adventure' = 'interactive_film',
 ) {
   const contentHash = canonicalJsonHash(draftContent);
   const tx = {
@@ -41,6 +45,7 @@ function scopedService(
       project: {
         id: PROJECT_ID,
         workspaceId: WORKSPACE_ID,
+        format,
         frameProfile: 'landscape_16_9',
         defaultLocale: 'zh-CN',
         title: 'Branching Film Test',
@@ -64,6 +69,39 @@ function scopedService(
       assetUrls as never,
     ),
   };
+}
+
+function pureTextDraft(): Draft {
+  return LockableInteractiveStoryDraftContentSchema.parse({
+    storyBible: {
+      logline: '',
+      synopsis: '',
+      worldview: '',
+      characters: [],
+      endings: [
+        {
+          id: 'ending.truth',
+          title: { 'zh-CN': '真相' },
+          kind: 'truth',
+        },
+      ],
+    },
+    graph: {
+      entryNodeId: 'text.entry',
+      nodes: [
+        {
+          kind: 'text',
+          nodeId: 'text.entry',
+          body: { 'zh-CN': '你在一封未署名的信旁醒来。' },
+          exit: {
+            kind: 'ending',
+            endingId: 'ending.truth',
+          },
+        },
+      ],
+    },
+    productionNotes: [],
+  });
 }
 
 function currentPreviewSelections(draft: Draft) {
@@ -142,9 +180,30 @@ function currentPreviewSelections(draft: Draft) {
 }
 
 describe('StoryWorkingPreviewService', () => {
-  it('returns actionable diagnostics for an incomplete v3 draft before loading videos', async () => {
+  it('previews a pure-text project without loading or inventing video selections', async () => {
+    const { service, tx } = scopedService(
+      pureTextDraft(),
+      [],
+      INTERACTIVE_STORY_DRAFT_SCHEMA_VERSION,
+      'text_adventure',
+    );
+
+    await expect(
+      service.getWorkingPreview(USER as never, WORKSPACE_ID, PROJECT_ID),
+    ).resolves.toMatchObject({
+      videoSnapshotHash: storyVideoSnapshotHash([]),
+      diagnostics: [],
+      sources: [],
+      runtime: {
+        metadata: { experienceProfile: 'narrative' },
+      },
+    });
+    expect(tx.storyVideoSelection.findMany).not.toHaveBeenCalled();
+  });
+
+  it('returns actionable diagnostics for an incomplete draft before loading videos', async () => {
     const draft = buildInteractiveFilmTestBundle().draftContent;
-    draft.storyBible.logline = '';
+    draft.graph.entryNodeId = null;
     const { service, tx } = scopedService(draft);
 
     await expect(
@@ -164,7 +223,7 @@ describe('StoryWorkingPreviewService', () => {
     expect(tx.storyVideoSelection.findMany).not.toHaveBeenCalled();
   });
 
-  it('compiles the current v3 draft and exact video selections to a Preview manifest', async () => {
+  it('compiles the current draft and exact video selections to a Preview manifest', async () => {
     const draft = buildInteractiveFilmTestBundle().draftContent;
     const { service, contentHash, prisma, tx } = scopedService(draft);
 
@@ -320,7 +379,7 @@ describe('StoryWorkingPreviewService', () => {
     );
   });
 
-  it('invalidates Preview playback when the exact variant loses its browser-safe MP4 fact', async () => {
+  it('keeps Preview playback for a browser-unsafe MP4 variant (browserSafeMp4 is informational)', async () => {
     const draft = buildInteractiveFilmTestBundle().draftContent;
     const selections = currentPreviewSelections(draft);
     const unsafe = selections[0];
@@ -335,8 +394,10 @@ describe('StoryWorkingPreviewService', () => {
     );
 
     expect(preview.videoSnapshotHash).toMatch(/^[a-f0-9]{64}$/);
-    expect(preview.runtime).toBeNull();
-    expect(preview.diagnostics).toContainEqual(
+    // A browser-unsafe MP4 that is otherwise technically complete must not
+    // block the Preview manifest or raise an eligibility diagnostic.
+    expect(preview.runtime).not.toBeNull();
+    expect(preview.diagnostics).not.toContainEqual(
       expect.objectContaining({
         code: 'STORY_WORKING_PREVIEW_OUTPUT_METADATA_MISSING',
         entityId: unsafe.currentAssetId,

@@ -331,7 +331,7 @@ describe('Story video selection concurrency', () => {
     );
   });
 
-  it('rejects non-MP4, unprobed, and browser-unsafe variants', async () => {
+  it('accepts non-MP4 and browser-unsafe variants that carry exact technical metadata', async () => {
     const unsafe = readyVideo('60', '61', 'e');
     unsafe.variants[0].metadata = {
       videoProbe: { browserSafeMp4: false },
@@ -341,7 +341,38 @@ describe('Story video selection concurrency', () => {
     const webm = readyVideo('64', '65', '0');
     webm.variants[0].contentType = 'video/webm';
 
-    for (const video of [unsafe, unprobed, webm]) {
+    // browserSafeMp4 is now purely informational: a browser-unsafe MP4, an
+    // MP4 with no probe flag, and a non-MP4 container are all selectable, and
+    // the actual probed value flows through to the selection.
+    const cases: Array<[VideoAsset, boolean]> = [
+      [unsafe, false],
+      [unprobed, false],
+      [webm, true],
+    ];
+    for (const [video, expectedBrowserSafeMp4] of cases) {
+      const harness = productionHarness([], [video]);
+      await harness.putManual(video);
+      expect(harness.selection.version).toBe(1);
+      expect(harness.selection.currentAssetId).toBe(video.id);
+      expect(harness.selection.currentVariantId).toBe(video.variants[0].id);
+      expect(harness.selection.currentContentType).toBe(
+        video.variants[0].contentType,
+      );
+      expect(harness.selection.currentBrowserSafeMp4).toBe(
+        expectedBrowserSafeMp4,
+      );
+    }
+  });
+
+  it('rejects variants missing exact probed technical metadata', async () => {
+    const badChecksum = readyVideo('66', '67', '1');
+    badChecksum.variants[0].checksumSha256 = 'not-a-valid-sha256';
+    const zeroDuration = readyVideo('68', '69', '2');
+    zeroDuration.variants[0].durationMs = 0;
+    const notVideo = readyVideo('6a', '6b', '3');
+    notVideo.variants[0].contentType = 'image/png';
+
+    for (const video of [badChecksum, zeroDuration, notVideo]) {
       const harness = productionHarness([], [video]);
       await expect(harness.putManual(video)).rejects.toMatchObject({
         response: { code: 'STORY_VIDEO_VARIANT_NOT_USABLE' },

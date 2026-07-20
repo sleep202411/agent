@@ -4,22 +4,18 @@ import {
   STORY_CHECKPOINT_CONTINUE_ACTION_ID,
   STORY_CHECKPOINT_RENDERER_ID,
   type InteractiveFilmRelease,
-  type RuntimeSessionEffect,
 } from '@repo/shared/interactive-film-runtime';
 import type { ExperienceRuntimeManifest } from '@repo/shared/experience-runtime';
 import type {
+  CreatableStoryFormat,
   StoryBuildDiagnosticDto,
   StoryBuildPathReportDto,
   StoryFrameProfile,
 } from './dto';
 import {
-  collectInteractiveFilmRuntimeLocales,
-  type FilmCondition,
-  type FilmEffect,
-  type InteractiveFilmDraftContent,
+  collectInteractiveStoryRuntimeLocales,
+  type InteractiveStoryDraftContent,
   type StoryBuildScope,
-  type StoryScalarValue,
-  type StoryStateVariable,
 } from './interactive-film.schema';
 import {
   compileStoryExperienceManifest,
@@ -40,7 +36,7 @@ export interface FrozenStoryVideoAsset {
   height: number;
   durationMs: number;
   hasAudio: boolean;
-  browserSafeMp4: true;
+  browserSafeMp4: boolean;
   url: string;
 }
 
@@ -58,14 +54,17 @@ type FrozenStoryBuildVideoInput = StoryBuildVideoInput & {
 
 export interface StoryBuildCompilerInput {
   projectId: string;
+  format: CreatableStoryFormat;
   buildId: string;
   sourceDraftRevision: number;
   channel: 'preview' | 'production';
   scope: StoryBuildScope;
-  frameProfile: StoryFrameProfile;
+  // Null for a text-first (narrative) project: video is inline media at its
+  // native size, not a full-frame clip bound to a fixed picture contract.
+  frameProfile: StoryFrameProfile | null;
   defaultLocale: string;
   metadata: { title: string; summary: string | null };
-  draft: InteractiveFilmDraftContent;
+  draft: InteractiveStoryDraftContent;
   videos: StoryBuildVideoInput[];
   diagnostics?: StoryBuildDiagnosticDto[];
 }
@@ -77,22 +76,16 @@ export interface StoryBuildCompilerResult {
   includedGraphNodeIds: string[];
 }
 
-interface RuntimeState {
-  variables: Record<string, StoryScalarValue>;
-  flags: Record<string, boolean>;
-  relationships: Record<string, number>;
-  unlockedEndings: Set<string>;
-}
-
 interface EnumeratedPath {
   endingId: string;
   durationMs: number;
 }
 
 /**
- * Deterministically compiles one v3 story snapshot and its exact frozen video
- * selections to Runtime Manifest v2. The compiler has no production-plan
- * inputs and never invents media metadata or duration defaults.
+ * Deterministically compiles one strict unified-story snapshot and its exact
+ * frozen video selections to Runtime Manifest v2. The compiler has no
+ * production-plan inputs and never invents media metadata or duration
+ * defaults.
  */
 export function compileStoryBuild(
   input: StoryBuildCompilerInput,
@@ -175,33 +168,12 @@ export function compileStoryBuild(
     validateFrozenVideo(video, input.frameProfile, diagnostics),
   );
 
-  [...selection].forEach((nodeId) => {
-    const node = nodes.get(nodeId);
-    if (node?.kind !== 'clip' || node.exit.kind !== 'choice') return;
-    if (node.exit.trigger.kind !== 'timecode') return;
-    const durationMs = videos.get(node.nodeId)?.asset?.durationMs;
-    if (durationMs === undefined) return;
-    if (node.exit.trigger.atMs >= durationMs) {
-      diagnostics.push(
-        diagnostic(
-          'error',
-          'STORY_BUILD_CHOICE_TIMECODE_OUT_OF_RANGE',
-          `Decision ${node.exit.decisionId} triggers at ${node.exit.trigger.atMs}ms, but current video ${node.clipKey} is only ${durationMs}ms long.`,
-          'choice',
-          node.exit.decisionId,
-        ),
-      );
-    }
-  });
-
   const enumeration = enumeratePaths(
     entryNodeId,
     nodes,
     videos,
     clipNodeByKey,
     selection,
-    initialRuntimeState(input.draft),
-    input.draft.storyBible.stateVariables,
     diagnostics,
   );
   const durations = enumeration.paths.map((path) => path.durationMs);
@@ -277,8 +249,9 @@ export function compileStoryBuild(
         }));
       const compiled = compileStoryExperienceManifest({
         release: release.data,
+        experienceProfile:
+          input.format === 'interactive_film' ? 'cinematic' : 'narrative',
         metadata: input.metadata,
-        stateVariables: input.draft.storyBible.stateVariables,
         mediaIdentities,
       });
       compiled.diagnostics.forEach((item) =>
@@ -308,7 +281,7 @@ function resolveEntryNodeId(
   input: StoryBuildCompilerInput,
   nodes: ReadonlyMap<
     string,
-    InteractiveFilmDraftContent['graph']['nodes'][number]
+    InteractiveStoryDraftContent['graph']['nodes'][number]
   >,
   diagnostics: StoryBuildDiagnosticDto[],
 ): string | null {
@@ -321,7 +294,7 @@ function resolveEntryNodeId(
       diagnostic(
         'error',
         'STORY_BUILD_ENTRY_NODE_MISSING',
-        'The saved v3 story has no Build entry node.',
+        'The saved story has no Build entry node.',
         'revision',
         String(input.sourceDraftRevision),
       ),
@@ -333,7 +306,7 @@ function resolveEntryNodeId(
       diagnostic(
         'error',
         'STORY_BUILD_SCOPE_ENTRY_NODE_NOT_FOUND',
-        `Build entry node ${entryNodeId} does not exist in the saved v3 story.`,
+        `Build entry node ${entryNodeId} does not exist in the saved story.`,
         'revision',
         entryNodeId,
       ),
@@ -347,7 +320,7 @@ function selectGraphNodes(
   entryNodeId: string | null,
   nodes: ReadonlyMap<
     string,
-    InteractiveFilmDraftContent['graph']['nodes'][number]
+    InteractiveStoryDraftContent['graph']['nodes'][number]
   >,
   scope: StoryBuildScope,
   diagnostics: StoryBuildDiagnosticDto[],
@@ -392,12 +365,12 @@ function requiredVideoNodeIds(
   selection: ReadonlySet<string>,
   nodes: ReadonlyMap<
     string,
-    InteractiveFilmDraftContent['graph']['nodes'][number]
+    InteractiveStoryDraftContent['graph']['nodes'][number]
   >,
   clipNodeByKey: ReadonlyMap<
     string,
     Extract<
-      InteractiveFilmDraftContent['graph']['nodes'][number],
+      InteractiveStoryDraftContent['graph']['nodes'][number],
       { kind: 'clip' }
     >
   >,
@@ -406,42 +379,26 @@ function requiredVideoNodeIds(
   const required = new Set<string>();
   [...selection].forEach((nodeId) => {
     const node = nodes.get(nodeId);
-    if (node?.kind !== 'clip') return;
-    required.add(node.nodeId);
-    if (node.exit.kind !== 'choice') return;
-    node.exit.choices.forEach((choice) => {
-      if (choice.afterSelect.kind !== 'play') return;
-      const reactionNode = clipNodeByKey.get(
-        choice.afterSelect.reactionClipKey,
-      );
-      if (reactionNode) {
-        required.add(reactionNode.nodeId);
-        return;
-      }
-      diagnostics.push(
-        diagnostic(
-          'error',
-          'STORY_BUILD_REACTION_CLIP_MISSING',
-          `Reaction clip ${choice.afterSelect.reactionClipKey} is not defined in the saved v3 story.`,
-          'choice',
-          choice.choiceId,
-        ),
-      );
-    });
+    if (node?.kind === 'clip') required.add(node.nodeId);
   });
   return required;
 }
 
 function validateFrozenVideo(
   video: FrozenStoryBuildVideoInput,
-  frameProfile: StoryFrameProfile,
+  frameProfile: StoryFrameProfile | null,
   diagnostics: StoryBuildDiagnosticDto[],
 ): void {
   const asset = video.asset;
+  // A film project pins every clip to its exact picture contract. A narrative
+  // (null-profile) project accepts the asset's native dimensions, since inline
+  // video is not a full-frame clip.
   const expected =
-    frameProfile === 'landscape_16_9'
-      ? { width: 1920, height: 1080 }
-      : { width: 1080, height: 1920 };
+    frameProfile === null
+      ? null
+      : frameProfile === 'landscape_16_9'
+        ? { width: 1920, height: 1080 }
+        : { width: 1080, height: 1920 };
   if (!/^[a-f0-9]{64}$/.test(asset.checksumSha256)) {
     diagnostics.push(
       diagnostic(
@@ -475,7 +432,10 @@ function validateFrozenVideo(
       ),
     );
   }
-  if (asset.width !== expected.width || asset.height !== expected.height) {
+  if (
+    expected !== null &&
+    (asset.width !== expected.width || asset.height !== expected.height)
+  ) {
     diagnostics.push(
       diagnostic(
         'error',
@@ -492,7 +452,7 @@ function structuralReachability(
   entryNodeId: string | null,
   nodes: ReadonlyMap<
     string,
-    InteractiveFilmDraftContent['graph']['nodes'][number]
+    InteractiveStoryDraftContent['graph']['nodes'][number]
   >,
   selection: ReadonlySet<string>,
 ): Set<string> {
@@ -512,7 +472,7 @@ function detectStructuralCycles(
   entryNodeId: string | null,
   nodes: ReadonlyMap<
     string,
-    InteractiveFilmDraftContent['graph']['nodes'][number]
+    InteractiveStoryDraftContent['graph']['nodes'][number]
   >,
   selection: ReadonlySet<string>,
   diagnostics: StoryBuildDiagnosticDto[],
@@ -556,26 +516,23 @@ function enumeratePaths(
   entryNodeId: string | null,
   nodes: ReadonlyMap<
     string,
-    InteractiveFilmDraftContent['graph']['nodes'][number]
+    InteractiveStoryDraftContent['graph']['nodes'][number]
   >,
   videos: ReadonlyMap<string, StoryBuildVideoInput>,
   clipNodeByKey: ReadonlyMap<
     string,
     Extract<
-      InteractiveFilmDraftContent['graph']['nodes'][number],
+      InteractiveStoryDraftContent['graph']['nodes'][number],
       { kind: 'clip' }
     >
   >,
   selection: ReadonlySet<string>,
-  initialState: RuntimeState,
-  stateVariables: StoryStateVariable[],
   diagnostics: StoryBuildDiagnosticDto[],
 ): { paths: EnumeratedPath[]; ambiguousPathCount: number } {
   if (!entryNodeId || !selection.has(entryNodeId)) {
     return { paths: [], ambiguousPathCount: 0 };
   }
   const paths: EnumeratedPath[] = [];
-  let ambiguousPathCount = 0;
   let explored = 0;
   let aborted = false;
   const reported = new Set<string>();
@@ -587,7 +544,6 @@ function enumeratePaths(
   };
   const walk = (
     nodeId: string,
-    state: RuntimeState,
     durationMs: number,
     active: ReadonlySet<string>,
     steps: number,
@@ -647,130 +603,31 @@ function enumeratePaths(
       return;
     }
     if (node.exit.kind === 'choice') {
-      const visible = node.exit.choices.filter(
-        (choice) =>
-          !choice.visibleWhen ||
-          evaluateStoryCondition(choice.visibleWhen, state),
-      );
-      if (visible.length === 0) {
-        reportOnce(
-          diagnostic(
-            'error',
-            'STORY_BUILD_CHOICE_DEAD_END',
-            `Decision ${node.exit.decisionId} has no visible choice for a reachable state.`,
-            'choice',
-            node.exit.decisionId,
-          ),
-        );
-        return;
-      }
-      visible.forEach((choice) => {
-        const nextState = cloneState(state);
-        choice.effects.forEach((effect) => applyStoryEffect(effect, nextState));
-        const violation = validateRuntimeStateVariables(
-          nextState,
-          stateVariables,
-          choice.choiceId,
-        );
-        if (violation) {
-          reportOnce(violation);
-          return;
-        }
-        const reactionDuration =
-          choice.afterSelect.kind === 'play'
-            ? (videos.get(
-                clipNodeByKey.get(choice.afterSelect.reactionClipKey)?.nodeId ??
-                  '',
-              )?.asset?.durationMs ?? 0)
-            : 0;
-        walk(
-          choice.nextNodeId,
-          nextState,
-          nextDuration + reactionDuration,
-          nextActive,
-          steps + 1,
-        );
+      node.exit.choices.forEach((choice) => {
+        walk(choice.nextNodeId, nextDuration, nextActive, steps + 1);
       });
       return;
     }
     if (node.exit.kind === 'checkpoint') {
-      walk(
-        node.exit.nextNodeId,
-        cloneState(state),
-        nextDuration,
-        nextActive,
-        steps + 1,
-      );
+      walk(node.exit.nextNodeId, nextDuration, nextActive, steps + 1);
       return;
     }
-    if (node.kind === 'clip') {
-      if (!node.exit.nextNodeId) {
-        reportOnce(
-          diagnostic(
-            'error',
-            'STORY_BUILD_CLIP_CONTINUATION_MISSING',
-            `Clip ${node.nodeId} has no next step.`,
-            'clip',
-            node.nodeId,
-          ),
-        );
-        return;
-      }
-      walk(
-        node.exit.nextNodeId,
-        cloneState(state),
-        nextDuration,
-        nextActive,
-        steps + 1,
-      );
-      return;
-    }
-    const matching = node.exit.routes
-      .map((route, index) => ({ route, index }))
-      .filter(
-        ({ route }) => !route.when || evaluateStoryCondition(route.when, state),
-      )
-      .sort(
-        (left, right) =>
-          left.route.priority - right.route.priority ||
-          left.index - right.index,
-      );
-    if (matching.length === 0) {
+    if (!node.exit.nextNodeId) {
       reportOnce(
         diagnostic(
           'error',
-          'STORY_BUILD_AUTO_ROUTE_DEAD_END',
-          `Router ${node.nodeId} has no matching route for a reachable state.`,
+          'STORY_BUILD_SCENE_CONTINUATION_MISSING',
+          `Scene ${node.nodeId} has no next step.`,
           'revision',
           node.nodeId,
         ),
       );
       return;
     }
-    if (matching.length > 1) {
-      ambiguousPathCount += 1;
-      reportOnce(
-        diagnostic(
-          'error',
-          'STORY_BUILD_AUTO_ROUTE_AMBIGUOUS_STATE',
-          `Router ${node.nodeId} matches ${matching.length} routes for a reachable state.`,
-          'revision',
-          node.nodeId,
-        ),
-      );
-    }
-    matching.forEach(({ route }) =>
-      walk(
-        route.nextNodeId,
-        cloneState(state),
-        nextDuration,
-        nextActive,
-        steps + 1,
-      ),
-    );
+    walk(node.exit.nextNodeId, nextDuration, nextActive, steps + 1);
   };
-  walk(entryNodeId, initialState, 0, new Set(), 0);
-  return { paths, ambiguousPathCount };
+  walk(entryNodeId, 0, new Set(), 0);
+  return { paths, ambiguousPathCount: 0 };
 }
 
 function compileIntermediateRelease(
@@ -779,19 +636,21 @@ function compileIntermediateRelease(
   selection: ReadonlySet<string>,
   nodes: ReadonlyMap<
     string,
-    InteractiveFilmDraftContent['graph']['nodes'][number]
+    InteractiveStoryDraftContent['graph']['nodes'][number]
   >,
   videos: ReadonlyMap<string, StoryBuildVideoInput>,
   clipNodeByKey: ReadonlyMap<
     string,
     Extract<
-      InteractiveFilmDraftContent['graph']['nodes'][number],
+      InteractiveStoryDraftContent['graph']['nodes'][number],
       { kind: 'clip' }
     >
   >,
   includedVideos: FrozenStoryBuildVideoInput[],
 ): InteractiveFilmRelease {
-  const landscape = input.frameProfile === 'landscape_16_9';
+  // A film project pins every clip to its project-wide orientation. A narrative
+  // (null-profile) project derives each clip's orientation from its own native
+  // dimensions, so inline video keeps its intrinsic frame.
   const media = includedVideos.map((video) => {
     const node = clipNodeById(nodes, video.graphNodeId);
     const variant = {
@@ -802,6 +661,10 @@ function compileIntermediateRelease(
       height: video.asset.height,
       durationSeconds: video.asset.durationMs / 1_000,
     };
+    const landscape =
+      input.frameProfile === null
+        ? video.asset.width >= video.asset.height
+        : input.frameProfile === 'landscape_16_9';
     return {
       assetId: storyRuntimeAssetId(node.clipKey),
       kind: 'video' as const,
@@ -814,18 +677,22 @@ function compileIntermediateRelease(
   [...selection].sort().forEach((nodeId) => {
     const node = nodes.get(nodeId);
     if (!node) return;
-    if (node.kind === 'router') {
+    if (node.kind === 'text') {
       runtimeNodes.push({
-        kind: 'router',
         nodeId: node.nodeId,
-        exit: {
-          kind: 'auto',
-          routes: node.exit.routes.map((route) => ({
-            nextNodeId: route.nextNodeId,
-            ...(route.when ? { when: route.when } : {}),
-            priority: route.priority,
-          })),
+        presentation: {
+          kind: 'text',
+          ...(hasNonEmptyLocalizedText(node.title)
+            ? { title: node.title }
+            : {}),
+          body: node.body,
+          completion:
+            node.exit.kind === 'auto' || node.exit.kind === 'ending'
+              ? 'continue'
+              : 'passive',
         },
+        overlays: [],
+        exit: compileExit(node, clipNodeByKey),
       });
       return;
     }
@@ -842,13 +709,15 @@ function compileIntermediateRelease(
             endBehavior: { behavior: 'advance' },
           },
         ],
-        fit: 'cover',
+        // Narrative (null-profile) stories present inline video at native size;
+        // film stories cover their fixed frame.
+        fit: input.frameProfile === null ? 'native' : 'cover',
       },
       overlays: [],
       exit: compileExit(node, clipNodeByKey),
     });
   });
-  const locales = collectInteractiveFilmRuntimeLocales(
+  const locales = collectInteractiveStoryRuntimeLocales(
     input.draft,
     input.defaultLocale,
   );
@@ -861,20 +730,12 @@ function compileIntermediateRelease(
     entryNodeId,
     defaultLocale: input.defaultLocale,
     locales,
-    initialState: {
-      variables: Object.fromEntries(
-        input.draft.storyBible.stateVariables.map((variable) => [
-          variable.key,
-          variable.initialValue,
-        ]),
-      ),
-      flags: {},
-      relationships: {},
-    },
     endings: input.draft.storyBible.endings.map((ending) => ({
       endingId: ending.id,
       title: ending.title,
-      summary: ending.summary,
+      ...(hasNonEmptyLocalizedText(ending.summary)
+        ? { summary: ending.summary }
+        : {}),
       kind: ending.kind,
     })),
     media,
@@ -882,12 +743,18 @@ function compileIntermediateRelease(
   };
 }
 
+function hasNonEmptyLocalizedText(
+  value: Record<string, string> | undefined,
+): value is Record<string, string> {
+  return Boolean(value && Object.values(value).some((text) => text.trim()));
+}
+
 function compileExit(
-  node: InteractiveFilmDraftContent['graph']['nodes'][number],
+  node: InteractiveStoryDraftContent['graph']['nodes'][number],
   clipNodeByKey: ReadonlyMap<
     string,
     Extract<
-      InteractiveFilmDraftContent['graph']['nodes'][number],
+      InteractiveStoryDraftContent['graph']['nodes'][number],
       { kind: 'clip' }
     >
   >,
@@ -895,26 +762,12 @@ function compileExit(
   const exit = node.exit;
   if (exit.kind === 'ending') return exit;
   if (exit.kind === 'auto') {
-    if (node.kind === 'clip') {
-      const clipExit = node.exit;
-      if (clipExit.kind !== 'auto') {
-        throw new Error(`Clip ${node.nodeId} exit changed while compiling.`);
-      }
-      return {
-        kind: 'auto',
-        routes: clipExit.nextNodeId
-          ? [{ nextNodeId: clipExit.nextNodeId, priority: 0 }]
-          : [],
-      };
+    if (exit.nextNodeId === null) {
+      // A dead-end scene fails Build before compilation; every auto exit that
+      // reaches here has a validated target.
+      throw new Error(`Scene ${node.nodeId} auto exit has no target.`);
     }
-    return {
-      kind: 'auto',
-      routes: node.exit.routes.map((route) => ({
-        nextNodeId: route.nextNodeId,
-        ...(route.when ? { when: route.when } : {}),
-        priority: route.priority,
-      })),
-    };
+    return { kind: 'auto', nextNodeId: exit.nextNodeId };
   }
   if (exit.kind === 'checkpoint') {
     return {
@@ -923,7 +776,6 @@ function compileExit(
       routes: [
         {
           actionId: STORY_CHECKPOINT_CONTINUE_ACTION_ID,
-          effects: [],
           nextNodeId: exit.nextNodeId,
         },
       ],
@@ -933,58 +785,22 @@ function compileExit(
     kind: 'choice',
     decisionId: exit.decisionId,
     prompt: exit.prompt,
-    trigger:
-      exit.trigger.kind === 'timecode'
-        ? { kind: 'timecode', atSeconds: exit.trigger.atMs / 1_000 }
-        : exit.trigger,
     choices: exit.choices.map((choice) => ({
       choiceId: choice.choiceId,
       label: choice.label,
-      ...(choice.accessibilityLabel
-        ? { accessibilityLabel: choice.accessibilityLabel }
-        : {}),
-      ...(choice.visibleWhen ? { visibleWhen: choice.visibleWhen } : {}),
-      effects: choice.effects as RuntimeSessionEffect[],
       nextNodeId: choice.nextNodeId,
-      afterSelect:
-        choice.afterSelect.kind === 'play'
-          ? {
-              kind: 'play',
-              reactionAssetId: storyRuntimeAssetId(
-                requiredReactionNode(
-                  clipNodeByKey,
-                  choice.afterSelect.reactionClipKey,
-                ).clipKey,
-              ),
-            }
-          : choice.afterSelect,
     })),
   };
-}
-
-function requiredReactionNode(
-  nodes: ReadonlyMap<
-    string,
-    Extract<
-      InteractiveFilmDraftContent['graph']['nodes'][number],
-      { kind: 'clip' }
-    >
-  >,
-  clipKey: string,
-) {
-  const node = nodes.get(clipKey);
-  if (!node) throw new Error(`Missing validated reaction clip ${clipKey}.`);
-  return node;
 }
 
 function clipNodeById(
   nodes: ReadonlyMap<
     string,
-    InteractiveFilmDraftContent['graph']['nodes'][number]
+    InteractiveStoryDraftContent['graph']['nodes'][number]
   >,
   graphNodeId: string,
 ): Extract<
-  InteractiveFilmDraftContent['graph']['nodes'][number],
+  InteractiveStoryDraftContent['graph']['nodes'][number],
   { kind: 'clip' }
 > {
   const node = nodes.get(graphNodeId);
@@ -1001,177 +817,14 @@ export function storyRuntimeAssetId(clipKey: string): string {
 }
 
 function nextNodeIds(
-  node: InteractiveFilmDraftContent['graph']['nodes'][number],
+  node: InteractiveStoryDraftContent['graph']['nodes'][number],
 ): string[] {
   if (node.exit.kind === 'ending') return [];
   if (node.exit.kind === 'checkpoint') return [node.exit.nextNodeId];
   if (node.exit.kind === 'choice') {
     return node.exit.choices.map((choice) => choice.nextNodeId);
   }
-  return node.kind === 'clip'
-    ? node.exit.nextNodeId
-      ? [node.exit.nextNodeId]
-      : []
-    : node.exit.routes.map((route) => route.nextNodeId);
-}
-
-function initialRuntimeState(draft: InteractiveFilmDraftContent): RuntimeState {
-  return {
-    variables: Object.fromEntries(
-      draft.storyBible.stateVariables.map((variable) => [
-        variable.key,
-        variable.initialValue,
-      ]),
-    ),
-    flags: {},
-    relationships: {},
-    unlockedEndings: new Set(),
-  };
-}
-
-function cloneState(state: RuntimeState): RuntimeState {
-  return {
-    variables: { ...state.variables },
-    flags: { ...state.flags },
-    relationships: { ...state.relationships },
-    unlockedEndings: new Set(state.unlockedEndings),
-  };
-}
-
-export function evaluateStoryCondition(
-  condition: FilmCondition,
-  state: Pick<RuntimeState, 'variables' | 'flags' | 'relationships'>,
-): boolean {
-  switch (condition.kind) {
-    case 'flag':
-      return (state.flags[condition.flag] ?? false) === condition.equals;
-    case 'relationship-at-least':
-      return (
-        (state.relationships[condition.characterId] ?? 0) >= condition.value
-      );
-    case 'all':
-      return condition.conditions.every((child) =>
-        evaluateStoryCondition(child, state),
-      );
-    case 'any':
-      return condition.conditions.some((child) =>
-        evaluateStoryCondition(child, state),
-      );
-    case 'not':
-      return !evaluateStoryCondition(condition.condition, state);
-    case 'variable': {
-      const actual = state.variables[condition.key];
-      if (condition.operator === 'equals') return actual === condition.value;
-      if (condition.operator === 'not_equals')
-        return actual !== condition.value;
-      if (typeof actual !== 'number' || typeof condition.value !== 'number')
-        return false;
-      if (condition.operator === 'greater_than')
-        return actual > condition.value;
-      if (condition.operator === 'at_least') return actual >= condition.value;
-      if (condition.operator === 'less_than') return actual < condition.value;
-      return actual <= condition.value;
-    }
-  }
-}
-
-export function applyStoryEffect(
-  effect: FilmEffect,
-  state: RuntimeState,
-): void {
-  switch (effect.kind) {
-    case 'set_variable':
-      state.variables[effect.key] = effect.value;
-      return;
-    case 'increment_variable': {
-      const current = state.variables[effect.key];
-      if (typeof current === 'number')
-        state.variables[effect.key] = current + effect.amount;
-      return;
-    }
-    case 'set_flag':
-      state.flags[effect.flag] = effect.value;
-      return;
-    case 'adjust_relationship':
-      state.relationships[effect.characterId] =
-        (state.relationships[effect.characterId] ?? 0) + effect.amount;
-      return;
-    case 'unlock_ending':
-      state.unlockedEndings.add(effect.endingId);
-  }
-}
-
-function validateRuntimeStateVariables(
-  state: RuntimeState,
-  contracts: StoryStateVariable[],
-  choiceId: string,
-): StoryBuildDiagnosticDto | null {
-  for (const contract of contracts) {
-    const value = state.variables[contract.key];
-    if (contract.type === 'number') {
-      if (typeof value !== 'number' || !Number.isFinite(value)) {
-        return stateContractDiagnostic(
-          choiceId,
-          contract.key,
-          'must remain a finite number',
-        );
-      }
-      if (contract.minimum !== undefined && value < contract.minimum) {
-        return stateContractDiagnostic(
-          choiceId,
-          contract.key,
-          `became ${value}, below its minimum of ${contract.minimum}`,
-        );
-      }
-      if (contract.maximum !== undefined && value > contract.maximum) {
-        return stateContractDiagnostic(
-          choiceId,
-          contract.key,
-          `became ${value}, above its maximum of ${contract.maximum}`,
-        );
-      }
-      continue;
-    }
-    if (contract.type === 'string') {
-      if (typeof value !== 'string') {
-        return stateContractDiagnostic(
-          choiceId,
-          contract.key,
-          'must remain a string',
-        );
-      }
-      if (contract.allowedValues && !contract.allowedValues.includes(value)) {
-        return stateContractDiagnostic(
-          choiceId,
-          contract.key,
-          `became ${JSON.stringify(value)}, outside its allowed values`,
-        );
-      }
-      continue;
-    }
-    if (typeof value !== 'boolean') {
-      return stateContractDiagnostic(
-        choiceId,
-        contract.key,
-        'must remain a boolean',
-      );
-    }
-  }
-  return null;
-}
-
-function stateContractDiagnostic(
-  choiceId: string,
-  variableKey: string,
-  reason: string,
-): StoryBuildDiagnosticDto {
-  return diagnostic(
-    'error',
-    'STORY_BUILD_STATE_VARIABLE_CONTRACT_VIOLATION',
-    `Choice ${choiceId} makes state variable ${variableKey} invalid: it ${reason}.`,
-    'choice',
-    choiceId,
-  );
+  return node.exit.nextNodeId ? [node.exit.nextNodeId] : [];
 }
 
 function diagnostic(

@@ -7,10 +7,8 @@ import {
 import { randomUUID } from 'node:crypto';
 import { hostname } from 'node:os';
 import { StoryAgentRunService } from './story-agent-run.service';
-import {
-  StoryPatchAuthorService,
-  StoryPatchAuthoringError,
-} from './story-patch-author.service';
+import { StoryAuthoringPipelineService } from './story-authoring-pipeline.service';
+import { StoryAuthoringStageError } from './story-authoring-model';
 
 const DEFAULT_INTERVAL_MS = 750;
 const DEFAULT_BATCH_SIZE = 5;
@@ -43,7 +41,7 @@ export class StoryAgentRunWorkerService
 
   constructor(
     private readonly runs: StoryAgentRunService,
-    private readonly author: StoryPatchAuthorService,
+    private readonly pipeline: StoryAuthoringPipelineService,
   ) {}
 
   onApplicationBootstrap(): void {
@@ -145,15 +143,13 @@ export class StoryAgentRunWorkerService
   }
 
   /**
-   * Drive one claimed authoring run to a durable outcome. Bounded loop:
-   * at most one stale-base re-author (humans edited while drafting) and one
-   * semantic repair (the document failed dry-run application).
+   * Drive one claimed authoring run through the deterministic pipeline. The
+   * pipeline owns per-baton bounded retry AND referential integrity (dangling
+   * edges are structurally impossible), so the only whole-run retry left here
+   * is one stale-base re-draft when a human edits the story mid-pipeline.
    */
   private async executeAuthoringRun(runId: string): Promise<void> {
     let staleRetried = false;
-    let semanticRepair:
-      | { code: string; detail: string; previousOperations?: unknown }
-      | undefined;
     for (;;) {
       const load = await this.runs.loadAuthoringJob(runId, this.workerId);
       if (load.kind !== 'job') return;
@@ -172,10 +168,11 @@ export class StoryAgentRunWorkerService
 
       let authored;
       try {
-        authored = await this.author.author({
+        authored = await this.pipeline.author({
           job: load.job,
-          repairContext: semanticRepair,
           signal: controller.signal,
+          onStage: (stage) =>
+            this.runs.advanceAuthoringStage(runId, this.workerId, stage),
         });
       } catch (error) {
         // Lease lost (cancel/supersede/reclaim) or shutdown: another actor
@@ -183,7 +180,7 @@ export class StoryAgentRunWorkerService
         if (controller.signal.aborted || this.stopping) return;
         await this.runs.failAuthoring(runId, this.workerId, {
           code:
-            error instanceof StoryPatchAuthoringError
+            error instanceof StoryAuthoringStageError
               ? error.code
               : 'STORY_AGENT_AUTHORING_FAILED',
           detail: errorText(error),
@@ -219,19 +216,10 @@ export class StoryAgentRunWorkerService
           continue;
         }
         case 'invalid': {
-          if (semanticRepair) {
-            await this.runs.failAuthoring(
-              runId,
-              this.workerId,
-              completion.error,
-            );
-            return;
-          }
-          semanticRepair = {
-            ...completion.error,
-            previousOperations: authored.operations,
-          };
-          continue;
+          // Skeleton validation makes danglers impossible, so a dry-run reject
+          // here is a genuine bug in assembly, not a model miss — fail honestly.
+          await this.runs.failAuthoring(runId, this.workerId, completion.error);
+          return;
         }
       }
     }

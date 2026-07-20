@@ -1,9 +1,14 @@
 {
   "graph": {
+    "entryNodeId": "clip:S00",
     "nodes": [
       {
+        "kind": "clip",
+        "nodeId": "clip:S00",
+        "clipKey": "S00",
         "exit": {
           "kind": "choice",
+          "decisionId": "C1",
           "prompt": {
             "en-US": "Which track should play first?",
             "zh-CN": "先播放哪一轨？",
@@ -11,113 +16,33 @@
           },
           "choices": [
             {
+              "choiceId": "C1:A",
               "label": {
                 "en-US": "Grandpa's marked opening song",
                 "zh-CN": "外公标记的开园曲",
                 "zh-HK": "外公標記的開園曲"
               },
-              "effects": [
-                {
-                  "key": "echo",
-                  "kind": "increment_variable",
-                  "amount": 1
-                }
-              ],
-              "choiceId": "C1:A",
-              "nextNodeId": "clip:S01A",
-              "afterSelect": {
-                "kind": "immediate"
-              }
+              "nextNodeId": "clip:S01A"
             },
             {
+              "choiceId": "C1:B",
               "label": {
                 "en-US": "The unlabelled B-side",
                 "zh-CN": "没有标签的 B 面",
                 "zh-HK": "沒有標籤的 B 面"
               },
-              "effects": [
-                {
-                  "key": "truth",
-                  "kind": "increment_variable",
-                  "amount": 1
-                }
-              ],
-              "choiceId": "C1:B",
-              "nextNodeId": "clip:S01B",
-              "afterSelect": {
-                "kind": "immediate"
-              }
+              "nextNodeId": "clip:S01B"
             }
-          ],
-          "trigger": {
-            "kind": "media-ended"
-          },
-          "decisionId": "C1"
-        },
-        "kind": "clip",
-        "nodeId": "clip:S00",
-        "clipKey": "S00"
+          ]
+        }
       },
       {
-        "exit": {
-          "kind": "choice",
-          "prompt": {
-            "en-US": "The broadcast calls your childhood name. Who do you answer?",
-            "zh-CN": "广播叫出乳名，回应谁？",
-            "zh-HK": "廣播叫出乳名，回應誰？"
-          },
-          "choices": [
-            {
-              "label": {
-                "en-US": "Answer Grandpa",
-                "zh-CN": "回应外公",
-                "zh-HK": "回應外公"
-              },
-              "effects": [
-                {
-                  "key": "echo",
-                  "kind": "increment_variable",
-                  "amount": 1
-                }
-              ],
-              "choiceId": "C2:A",
-              "nextNodeId": "clip:S02A",
-              "afterSelect": {
-                "kind": "immediate"
-              }
-            },
-            {
-              "label": {
-                "en-US": "Tell Maya the truth first",
-                "zh-CN": "先告诉 Maya 真相",
-                "zh-HK": "先告訴 Maya 真相"
-              },
-              "effects": [
-                {
-                  "key": "bond",
-                  "kind": "increment_variable",
-                  "amount": 1
-                }
-              ],
-              "choiceId": "C2:B",
-              "nextNodeId": "clip:S02B",
-              "afterSelect": {
-                "kind": "immediate"
-              }
-            }
-          ],
-          "trigger": {
-            "kind": "media-ended"
-          },
-          "decisionId": "C2"
-        },
         "kind": "clip",
         "nodeId": "clip:S01A",
-        "clipKey": "S01A"
-      },
-      {
+        "clipKey": "S01A",
         "exit": {
           "kind": "choice",
+          "decisionId": "C2",
           "prompt": {
             "en-US": "The broadcast calls your childhood name. Who do you answer?",
             "zh-CN": "广播叫出乳名，回应谁？",
@@ -125,113 +50,67 @@
           },
           "choices": [
             {
+              "choiceId": "C2:A",
               "label": {
                 "en-US": "Answer Grandpa",
                 "zh-CN": "回应外公",
                 "zh-HK": "回應外公"
               },
-              "effects": [
-                {
-                  "key": "echo",
-                  "kind": "increment_variable",
-                  "amount": 1
-                }
-              ],
-              "choiceId": "C2:A",
-              "nextNodeId": "clip:S02A",
-              "afterSelect": {
-                "kind": "immediate"
-              }
+              "nextNodeId": "clip:S02A"
             },
             {
+              "choiceId": "C2:B",
               "label": {
                 "en-US": "Tell Maya the truth first",
                 "zh-CN": "先告诉 Maya 真相",
                 "zh-HK": "先告訴 Maya 真相"
               },
-              "effects": [
-                {
-                  "key": "bond",
-                  "kind": "increment_variable",
-                  "amount": 1
-                }
-              ],
-              "choiceId": "C2:B",
-              "nextNodeId": "clip:S02B",
-              "afterSelect": {
-                "kind": "immediate"
-              }
+              "nextNodeId": "clip:S02B"
             }
-          ],
-          "trigger": {
-            "kind": "media-ended"
-          },
-          "decisionId": "C2"
-        },
+          ]
+        }
+      },
+      {
         "kind": "clip",
         "nodeId": "clip:S01B",
-        "clipKey": "S01B"
-      },
-      {
+        "clipKey": "S01B",
         "exit": {
           "kind": "choice",
+          "decisionId": "C2",
           "prompt": {
-            "en-US": "The ride is flooding. What do you save first?",
-            "zh-CN": "船道进水，先抢什么？",
-            "zh-HK": "船道進水，先搶救甚麼？"
+            "en-US": "The broadcast calls your childhood name. Who do you answer?",
+            "zh-CN": "广播叫出乳名，回应谁？",
+            "zh-HK": "廣播叫出乳名，回應誰？"
           },
           "choices": [
             {
+              "choiceId": "C2:A",
               "label": {
-                "en-US": "Grab Maya",
-                "zh-CN": "拉住 Maya",
-                "zh-HK": "拉住 Maya"
+                "en-US": "Answer Grandpa",
+                "zh-CN": "回应外公",
+                "zh-HK": "回應外公"
               },
-              "effects": [
-                {
-                  "key": "bond",
-                  "kind": "increment_variable",
-                  "amount": 1
-                }
-              ],
-              "choiceId": "C3:A",
-              "nextNodeId": "clip:S03A",
-              "afterSelect": {
-                "kind": "immediate"
-              }
+              "nextNodeId": "clip:S02A"
             },
             {
+              "choiceId": "C2:B",
               "label": {
-                "en-US": "Recover the master tape",
-                "zh-CN": "抢回母带",
-                "zh-HK": "搶回母帶"
+                "en-US": "Tell Maya the truth first",
+                "zh-CN": "先告诉 Maya 真相",
+                "zh-HK": "先告訴 Maya 真相"
               },
-              "effects": [
-                {
-                  "key": "truth",
-                  "kind": "increment_variable",
-                  "amount": 1
-                }
-              ],
-              "choiceId": "C3:B",
-              "nextNodeId": "clip:S03B",
-              "afterSelect": {
-                "kind": "immediate"
-              }
+              "nextNodeId": "clip:S02B"
             }
-          ],
-          "trigger": {
-            "kind": "media-ended"
-          },
-          "decisionId": "C3"
-        },
+          ]
+        }
+      },
+      {
         "kind": "clip",
         "nodeId": "clip:S02A",
-        "clipKey": "S02A"
-      },
-      {
+        "clipKey": "S02A",
         "exit": {
           "kind": "choice",
+          "decisionId": "C3",
           "prompt": {
             "en-US": "The ride is flooding. What do you save first?",
             "zh-CN": "船道进水，先抢什么？",
@@ -239,123 +118,67 @@
           },
           "choices": [
             {
+              "choiceId": "C3:A",
               "label": {
                 "en-US": "Grab Maya",
                 "zh-CN": "拉住 Maya",
                 "zh-HK": "拉住 Maya"
               },
-              "effects": [
-                {
-                  "key": "bond",
-                  "kind": "increment_variable",
-                  "amount": 1
-                }
-              ],
-              "choiceId": "C3:A",
-              "nextNodeId": "clip:S03A",
-              "afterSelect": {
-                "kind": "immediate"
-              }
+              "nextNodeId": "clip:S03A"
             },
             {
+              "choiceId": "C3:B",
               "label": {
                 "en-US": "Recover the master tape",
                 "zh-CN": "抢回母带",
                 "zh-HK": "搶回母帶"
               },
-              "effects": [
-                {
-                  "key": "truth",
-                  "kind": "increment_variable",
-                  "amount": 1
-                }
-              ],
-              "choiceId": "C3:B",
-              "nextNodeId": "clip:S03B",
-              "afterSelect": {
-                "kind": "immediate"
-              }
+              "nextNodeId": "clip:S03B"
             }
-          ],
-          "trigger": {
-            "kind": "media-ended"
-          },
-          "decisionId": "C3"
-        },
+          ]
+        }
+      },
+      {
         "kind": "clip",
         "nodeId": "clip:S02B",
-        "clipKey": "S02B"
-      },
-      {
+        "clipKey": "S02B",
         "exit": {
           "kind": "choice",
+          "decisionId": "C3",
           "prompt": {
-            "en-US": "Who should answer for the accident?",
-            "zh-CN": "谁该为事故负责？",
-            "zh-HK": "誰該為事故負責？"
+            "en-US": "The ride is flooding. What do you save first?",
+            "zh-CN": "船道进水，先抢什么？",
+            "zh-HK": "船道進水，先搶救甚麼？"
           },
           "choices": [
             {
+              "choiceId": "C3:A",
               "label": {
-                "en-US": "Admit Grandpa hid the fault",
-                "zh-CN": "承认外公隐瞒故障",
-                "zh-HK": "承認外公隱瞞故障"
+                "en-US": "Grab Maya",
+                "zh-CN": "拉住 Maya",
+                "zh-HK": "拉住 Maya"
               },
-              "effects": [
-                {
-                  "key": "truth",
-                  "kind": "increment_variable",
-                  "amount": 1
-                },
-                {
-                  "key": "c4Choice",
-                  "kind": "set_variable",
-                  "value": "A"
-                }
-              ],
-              "choiceId": "C4:A",
-              "nextNodeId": "router:S04",
-              "afterSelect": {
-                "kind": "immediate"
-              }
+              "nextNodeId": "clip:S03A"
             },
             {
+              "choiceId": "C3:B",
               "label": {
-                "en-US": "Say no one had a choice",
-                "zh-CN": "说当年没人有选择",
-                "zh-HK": "說當年沒有人有選擇"
+                "en-US": "Recover the master tape",
+                "zh-CN": "抢回母带",
+                "zh-HK": "搶回母帶"
               },
-              "effects": [
-                {
-                  "key": "echo",
-                  "kind": "increment_variable",
-                  "amount": 1
-                },
-                {
-                  "key": "c4Choice",
-                  "kind": "set_variable",
-                  "value": "B"
-                }
-              ],
-              "choiceId": "C4:B",
-              "nextNodeId": "router:S04",
-              "afterSelect": {
-                "kind": "immediate"
-              }
+              "nextNodeId": "clip:S03B"
             }
-          ],
-          "trigger": {
-            "kind": "media-ended"
-          },
-          "decisionId": "C4"
-        },
+          ]
+        }
+      },
+      {
         "kind": "clip",
         "nodeId": "clip:S03A",
-        "clipKey": "S03A"
-      },
-      {
+        "clipKey": "S03A",
         "exit": {
           "kind": "choice",
+          "decisionId": "C4",
           "prompt": {
             "en-US": "Who should answer for the accident?",
             "zh-CN": "谁该为事故负责？",
@@ -363,687 +186,371 @@
           },
           "choices": [
             {
+              "choiceId": "C4:A",
               "label": {
                 "en-US": "Admit Grandpa hid the fault",
                 "zh-CN": "承认外公隐瞒故障",
                 "zh-HK": "承認外公隱瞞故障"
               },
-              "effects": [
-                {
-                  "key": "truth",
-                  "kind": "increment_variable",
-                  "amount": 1
-                },
-                {
-                  "key": "c4Choice",
-                  "kind": "set_variable",
-                  "value": "A"
-                }
-              ],
-              "choiceId": "C4:A",
-              "nextNodeId": "router:S04",
-              "afterSelect": {
-                "kind": "immediate"
-              }
-            },
-            {
-              "label": {
-                "en-US": "Say no one had a choice",
-                "zh-CN": "说当年没人有选择",
-                "zh-HK": "說當年沒有人有選擇"
-              },
-              "effects": [
-                {
-                  "key": "echo",
-                  "kind": "increment_variable",
-                  "amount": 1
-                },
-                {
-                  "key": "c4Choice",
-                  "kind": "set_variable",
-                  "value": "B"
-                }
-              ],
-              "choiceId": "C4:B",
-              "nextNodeId": "router:S04",
-              "afterSelect": {
-                "kind": "immediate"
-              }
-            }
-          ],
-          "trigger": {
-            "kind": "media-ended"
-          },
-          "decisionId": "C4"
-        },
-        "kind": "clip",
-        "nodeId": "clip:S03B",
-        "clipKey": "S03B"
-      },
-      {
-        "exit": {
-          "kind": "choice",
-          "prompt": {
-            "en-US": "Only one track can survive. Whose voice stays?",
-            "zh-CN": "只够保留一条声轨，留下谁？",
-            "zh-HK": "只夠保留一條聲軌，留下誰？"
-          },
-          "choices": [
-            {
-              "label": {
-                "en-US": "Keep Salmah's original voice",
-                "zh-CN": "留下 Salmah 的原声",
-                "zh-HK": "留下 Salmah 的原聲"
-              },
-              "effects": [
-                {
-                  "key": "truth",
-                  "kind": "increment_variable",
-                  "amount": 1
-                }
-              ],
-              "choiceId": "C5:A",
-              "nextNodeId": "router:S05",
-              "afterSelect": {
-                "kind": "immediate"
-              }
-            },
-            {
-              "label": {
-                "en-US": "Keep Grandpa's opening song",
-                "zh-CN": "留下外公的开园曲",
-                "zh-HK": "留下外公的開園曲"
-              },
-              "effects": [
-                {
-                  "key": "echo",
-                  "kind": "increment_variable",
-                  "amount": 1
-                }
-              ],
-              "choiceId": "C5:B",
-              "nextNodeId": "router:S05",
-              "afterSelect": {
-                "kind": "immediate"
-              }
-            }
-          ],
-          "trigger": {
-            "kind": "media-ended"
-          },
-          "decisionId": "C5"
-        },
-        "kind": "clip",
-        "nodeId": "clip:S04A",
-        "clipKey": "S04A"
-      },
-      {
-        "exit": {
-          "kind": "choice",
-          "prompt": {
-            "en-US": "Only one track can survive. Whose voice stays?",
-            "zh-CN": "只够保留一条声轨，留下谁？",
-            "zh-HK": "只夠保留一條聲軌，留下誰？"
-          },
-          "choices": [
-            {
-              "label": {
-                "en-US": "Keep Salmah's original voice",
-                "zh-CN": "留下 Salmah 的原声",
-                "zh-HK": "留下 Salmah 的原聲"
-              },
-              "effects": [
-                {
-                  "key": "truth",
-                  "kind": "increment_variable",
-                  "amount": 1
-                }
-              ],
-              "choiceId": "C5:A",
-              "nextNodeId": "router:S05",
-              "afterSelect": {
-                "kind": "immediate"
-              }
-            },
-            {
-              "label": {
-                "en-US": "Keep Grandpa's opening song",
-                "zh-CN": "留下外公的开园曲",
-                "zh-HK": "留下外公的開園曲"
-              },
-              "effects": [
-                {
-                  "key": "echo",
-                  "kind": "increment_variable",
-                  "amount": 1
-                }
-              ],
-              "choiceId": "C5:B",
-              "nextNodeId": "router:S05",
-              "afterSelect": {
-                "kind": "immediate"
-              }
-            }
-          ],
-          "trigger": {
-            "kind": "media-ended"
-          },
-          "decisionId": "C5"
-        },
-        "kind": "clip",
-        "nodeId": "clip:S04B",
-        "clipKey": "S04B"
-      },
-      {
-        "exit": {
-          "kind": "choice",
-          "prompt": {
-            "en-US": "Only one track can survive. Whose voice stays?",
-            "zh-CN": "只够保留一条声轨，留下谁？",
-            "zh-HK": "只夠保留一條聲軌，留下誰？"
-          },
-          "choices": [
-            {
-              "label": {
-                "en-US": "Keep Salmah's original voice",
-                "zh-CN": "留下 Salmah 的原声",
-                "zh-HK": "留下 Salmah 的原聲"
-              },
-              "effects": [
-                {
-                  "key": "truth",
-                  "kind": "increment_variable",
-                  "amount": 1
-                }
-              ],
-              "choiceId": "C5:A",
-              "nextNodeId": "router:S05",
-              "afterSelect": {
-                "kind": "immediate"
-              }
-            },
-            {
-              "label": {
-                "en-US": "Keep Grandpa's opening song",
-                "zh-CN": "留下外公的开园曲",
-                "zh-HK": "留下外公的開園曲"
-              },
-              "effects": [
-                {
-                  "key": "echo",
-                  "kind": "increment_variable",
-                  "amount": 1
-                }
-              ],
-              "choiceId": "C5:B",
-              "nextNodeId": "router:S05",
-              "afterSelect": {
-                "kind": "immediate"
-              }
-            }
-          ],
-          "trigger": {
-            "kind": "media-ended"
-          },
-          "decisionId": "C5"
-        },
-        "kind": "clip",
-        "nodeId": "clip:S04C",
-        "clipKey": "S04C"
-      },
-      {
-        "exit": {
-          "kind": "choice",
-          "prompt": {
-            "en-US": "Before the sixth gong, how do you end the playback?",
-            "zh-CN": "第六声锣前，怎么结束回放？",
-            "zh-HK": "第六聲鑼前，怎樣結束回放？"
-          },
-          "choices": [
-            {
-              "label": {
-                "en-US": "Release the complete tape",
-                "zh-CN": "公开完整母带",
-                "zh-HK": "公開完整母帶"
-              },
-              "effects": [
-                {
-                  "key": "finalAction",
-                  "kind": "set_variable",
-                  "value": "release"
-                }
-              ],
-              "choiceId": "C6:A",
-              "nextNodeId": "router:S06",
-              "afterSelect": {
-                "kind": "immediate"
-              }
-            },
-            {
-              "label": {
-                "en-US": "Eject it and leave with Maya",
-                "zh-CN": "拔带，带 Maya 离开",
-                "zh-HK": "拔帶，帶 Maya 離開"
-              },
-              "effects": [
-                {
-                  "key": "finalAction",
-                  "kind": "set_variable",
-                  "value": "leave"
-                }
-              ],
-              "choiceId": "C6:B",
-              "nextNodeId": "router:S06",
-              "afterSelect": {
-                "kind": "immediate"
-              }
-            }
-          ],
-          "trigger": {
-            "kind": "media-ended"
-          },
-          "decisionId": "C6"
-        },
-        "kind": "clip",
-        "nodeId": "clip:S05A",
-        "clipKey": "S05A"
-      },
-      {
-        "exit": {
-          "kind": "choice",
-          "prompt": {
-            "en-US": "Before the sixth gong, how do you end the playback?",
-            "zh-CN": "第六声锣前，怎么结束回放？",
-            "zh-HK": "第六聲鑼前，怎樣結束回放？"
-          },
-          "choices": [
-            {
-              "label": {
-                "en-US": "Release the complete tape",
-                "zh-CN": "公开完整母带",
-                "zh-HK": "公開完整母帶"
-              },
-              "effects": [
-                {
-                  "key": "finalAction",
-                  "kind": "set_variable",
-                  "value": "release"
-                }
-              ],
-              "choiceId": "C6:A",
-              "nextNodeId": "router:S06",
-              "afterSelect": {
-                "kind": "immediate"
-              }
-            },
-            {
-              "label": {
-                "en-US": "Eject it and leave with Maya",
-                "zh-CN": "拔带，带 Maya 离开",
-                "zh-HK": "拔帶，帶 Maya 離開"
-              },
-              "effects": [
-                {
-                  "key": "finalAction",
-                  "kind": "set_variable",
-                  "value": "leave"
-                }
-              ],
-              "choiceId": "C6:B",
-              "nextNodeId": "router:S06",
-              "afterSelect": {
-                "kind": "immediate"
-              }
-            }
-          ],
-          "trigger": {
-            "kind": "media-ended"
-          },
-          "decisionId": "C6"
-        },
-        "kind": "clip",
-        "nodeId": "clip:S05B",
-        "clipKey": "S05B"
-      },
-      {
-        "exit": {
-          "kind": "choice",
-          "prompt": {
-            "en-US": "Before the sixth gong, how do you end the playback?",
-            "zh-CN": "第六声锣前，怎么结束回放？",
-            "zh-HK": "第六聲鑼前，怎樣結束回放？"
-          },
-          "choices": [
-            {
-              "label": {
-                "en-US": "Release the complete tape",
-                "zh-CN": "公开完整母带",
-                "zh-HK": "公開完整母帶"
-              },
-              "effects": [
-                {
-                  "key": "finalAction",
-                  "kind": "set_variable",
-                  "value": "release"
-                }
-              ],
-              "choiceId": "C6:A",
-              "nextNodeId": "router:S06",
-              "afterSelect": {
-                "kind": "immediate"
-              }
-            },
-            {
-              "label": {
-                "en-US": "Eject it and leave with Maya",
-                "zh-CN": "拔带，带 Maya 离开",
-                "zh-HK": "拔帶，帶 Maya 離開"
-              },
-              "effects": [
-                {
-                  "key": "finalAction",
-                  "kind": "set_variable",
-                  "value": "leave"
-                }
-              ],
-              "choiceId": "C6:B",
-              "nextNodeId": "router:S06",
-              "afterSelect": {
-                "kind": "immediate"
-              }
-            }
-          ],
-          "trigger": {
-            "kind": "media-ended"
-          },
-          "decisionId": "C6"
-        },
-        "kind": "clip",
-        "nodeId": "clip:S05C",
-        "clipKey": "S05C"
-      },
-      {
-        "exit": {
-          "kind": "checkpoint",
-          "nextNodeId": "clip:E01"
-        },
-        "kind": "clip",
-        "nodeId": "clip:S06A",
-        "clipKey": "S06A"
-      },
-      {
-        "exit": {
-          "kind": "checkpoint",
-          "nextNodeId": "clip:E02"
-        },
-        "kind": "clip",
-        "nodeId": "clip:S06B",
-        "clipKey": "S06B"
-      },
-      {
-        "exit": {
-          "kind": "checkpoint",
-          "nextNodeId": "clip:E03"
-        },
-        "kind": "clip",
-        "nodeId": "clip:S06C",
-        "clipKey": "S06C"
-      },
-      {
-        "exit": {
-          "kind": "checkpoint",
-          "nextNodeId": "clip:E04"
-        },
-        "kind": "clip",
-        "nodeId": "clip:S06D",
-        "clipKey": "S06D"
-      },
-      {
-        "exit": {
-          "kind": "ending",
-          "endingId": "E01"
-        },
-        "kind": "clip",
-        "nodeId": "clip:E01",
-        "clipKey": "E01"
-      },
-      {
-        "exit": {
-          "kind": "ending",
-          "endingId": "E02"
-        },
-        "kind": "clip",
-        "nodeId": "clip:E02",
-        "clipKey": "E02"
-      },
-      {
-        "exit": {
-          "kind": "ending",
-          "endingId": "E03"
-        },
-        "kind": "clip",
-        "nodeId": "clip:E03",
-        "clipKey": "E03"
-      },
-      {
-        "exit": {
-          "kind": "ending",
-          "endingId": "E04"
-        },
-        "kind": "clip",
-        "nodeId": "clip:E04",
-        "clipKey": "E04"
-      },
-      {
-        "exit": {
-          "kind": "auto",
-          "routes": [
-            {
-              "when": {
-                "key": "bond",
-                "kind": "variable",
-                "value": 2,
-                "operator": "at_least"
-              },
-              "priority": 1,
               "nextNodeId": "clip:S04A"
             },
             {
-              "when": {
-                "kind": "all",
-                "conditions": [
-                  {
-                    "key": "bond",
-                    "kind": "variable",
-                    "value": 2,
-                    "operator": "less_than"
-                  },
-                  {
-                    "key": "c4Choice",
-                    "kind": "variable",
-                    "value": "A",
-                    "operator": "equals"
-                  }
-                ]
+              "choiceId": "C4:B",
+              "label": {
+                "en-US": "Say no one had a choice",
+                "zh-CN": "说当年没人有选择",
+                "zh-HK": "說當年沒有人有選擇"
               },
-              "priority": 2,
               "nextNodeId": "clip:S04B"
-            },
-            {
-              "when": {
-                "kind": "all",
-                "conditions": [
-                  {
-                    "key": "bond",
-                    "kind": "variable",
-                    "value": 2,
-                    "operator": "less_than"
-                  },
-                  {
-                    "key": "c4Choice",
-                    "kind": "variable",
-                    "value": "B",
-                    "operator": "equals"
-                  }
-                ]
-              },
-              "priority": 3,
-              "nextNodeId": "clip:S04C"
             }
           ]
-        },
-        "kind": "router",
-        "nodeId": "router:S04"
+        }
       },
       {
+        "kind": "clip",
+        "nodeId": "clip:S03B",
+        "clipKey": "S03B",
         "exit": {
-          "kind": "auto",
-          "routes": [
+          "kind": "choice",
+          "decisionId": "C4",
+          "prompt": {
+            "en-US": "Who should answer for the accident?",
+            "zh-CN": "谁该为事故负责？",
+            "zh-HK": "誰該為事故負責？"
+          },
+          "choices": [
             {
-              "when": {
-                "key": "truth",
-                "kind": "variable",
-                "value": 3,
-                "operator": "at_least"
+              "choiceId": "C4:A",
+              "label": {
+                "en-US": "Admit Grandpa hid the fault",
+                "zh-CN": "承认外公隐瞒故障",
+                "zh-HK": "承認外公隱瞞故障"
               },
-              "priority": 1,
+              "nextNodeId": "clip:S04C"
+            },
+            {
+              "choiceId": "C4:B",
+              "label": {
+                "en-US": "Say no one had a choice",
+                "zh-CN": "说当年没人有选择",
+                "zh-HK": "說當年沒有人有選擇"
+              },
+              "nextNodeId": "clip:S04B"
+            }
+          ]
+        }
+      },
+      {
+        "kind": "clip",
+        "nodeId": "clip:S04A",
+        "clipKey": "S04A",
+        "exit": {
+          "kind": "choice",
+          "decisionId": "C5",
+          "prompt": {
+            "en-US": "Only one track can survive. Whose voice stays?",
+            "zh-CN": "只够保留一条声轨，留下谁？",
+            "zh-HK": "只夠保留一條聲軌，留下誰？"
+          },
+          "choices": [
+            {
+              "choiceId": "C5:A",
+              "label": {
+                "en-US": "Keep Salmah's original voice",
+                "zh-CN": "留下 Salmah 的原声",
+                "zh-HK": "留下 Salmah 的原聲"
+              },
               "nextNodeId": "clip:S05A"
             },
             {
-              "when": {
-                "key": "echo",
-                "kind": "variable",
-                "value": 3,
-                "operator": "at_least"
+              "choiceId": "C5:B",
+              "label": {
+                "en-US": "Keep Grandpa's opening song",
+                "zh-CN": "留下外公的开园曲",
+                "zh-HK": "留下外公的開園曲"
               },
-              "priority": 2,
               "nextNodeId": "clip:S05B"
-            },
-            {
-              "when": {
-                "kind": "all",
-                "conditions": [
-                  {
-                    "key": "truth",
-                    "kind": "variable",
-                    "value": 3,
-                    "operator": "less_than"
-                  },
-                  {
-                    "key": "echo",
-                    "kind": "variable",
-                    "value": 3,
-                    "operator": "less_than"
-                  }
-                ]
-              },
-              "priority": 3,
-              "nextNodeId": "clip:S05C"
             }
           ]
-        },
-        "kind": "router",
-        "nodeId": "router:S05"
+        }
       },
       {
+        "kind": "clip",
+        "nodeId": "clip:S04B",
+        "clipKey": "S04B",
         "exit": {
-          "kind": "auto",
-          "routes": [
+          "kind": "choice",
+          "decisionId": "C5",
+          "prompt": {
+            "en-US": "Only one track can survive. Whose voice stays?",
+            "zh-CN": "只够保留一条声轨，留下谁？",
+            "zh-HK": "只夠保留一條聲軌，留下誰？"
+          },
+          "choices": [
             {
-              "when": {
-                "kind": "all",
-                "conditions": [
-                  {
-                    "key": "finalAction",
-                    "kind": "variable",
-                    "value": "release",
-                    "operator": "equals"
-                  },
-                  {
-                    "key": "truth",
-                    "kind": "variable",
-                    "value": 3,
-                    "operator": "at_least"
-                  }
-                ]
+              "choiceId": "C5:A",
+              "label": {
+                "en-US": "Keep Salmah's original voice",
+                "zh-CN": "留下 Salmah 的原声",
+                "zh-HK": "留下 Salmah 的原聲"
               },
-              "priority": 1,
+              "nextNodeId": "clip:S05A"
+            },
+            {
+              "choiceId": "C5:B",
+              "label": {
+                "en-US": "Keep Grandpa's opening song",
+                "zh-CN": "留下外公的开园曲",
+                "zh-HK": "留下外公的開園曲"
+              },
+              "nextNodeId": "clip:S05B"
+            }
+          ]
+        }
+      },
+      {
+        "kind": "clip",
+        "nodeId": "clip:S04C",
+        "clipKey": "S04C",
+        "exit": {
+          "kind": "choice",
+          "decisionId": "C5",
+          "prompt": {
+            "en-US": "Only one track can survive. Whose voice stays?",
+            "zh-CN": "只够保留一条声轨，留下谁？",
+            "zh-HK": "只夠保留一條聲軌，留下誰？"
+          },
+          "choices": [
+            {
+              "choiceId": "C5:A",
+              "label": {
+                "en-US": "Keep Salmah's original voice",
+                "zh-CN": "留下 Salmah 的原声",
+                "zh-HK": "留下 Salmah 的原聲"
+              },
+              "nextNodeId": "clip:S05C"
+            },
+            {
+              "choiceId": "C5:B",
+              "label": {
+                "en-US": "Keep Grandpa's opening song",
+                "zh-CN": "留下外公的开园曲",
+                "zh-HK": "留下外公的開園曲"
+              },
+              "nextNodeId": "clip:S05B"
+            }
+          ]
+        }
+      },
+      {
+        "kind": "clip",
+        "nodeId": "clip:S05A",
+        "clipKey": "S05A",
+        "exit": {
+          "kind": "choice",
+          "decisionId": "C6",
+          "prompt": {
+            "en-US": "Before the sixth gong, how do you end the playback?",
+            "zh-CN": "第六声锣前，怎么结束回放？",
+            "zh-HK": "第六聲鑼前，怎樣結束回放？"
+          },
+          "choices": [
+            {
+              "choiceId": "C6:A",
+              "label": {
+                "en-US": "Release the complete tape",
+                "zh-CN": "公开完整母带",
+                "zh-HK": "公開完整母帶"
+              },
               "nextNodeId": "clip:S06A"
             },
             {
-              "when": {
-                "kind": "all",
-                "conditions": [
-                  {
-                    "key": "finalAction",
-                    "kind": "variable",
-                    "value": "release",
-                    "operator": "equals"
-                  },
-                  {
-                    "key": "truth",
-                    "kind": "variable",
-                    "value": 3,
-                    "operator": "less_than"
-                  }
-                ]
+              "choiceId": "C6:B",
+              "label": {
+                "en-US": "Eject it and leave with Maya",
+                "zh-CN": "拔带，带 Maya 离开",
+                "zh-HK": "拔帶，帶 Maya 離開"
               },
-              "priority": 2,
               "nextNodeId": "clip:S06B"
+            }
+          ]
+        }
+      },
+      {
+        "kind": "clip",
+        "nodeId": "clip:S05B",
+        "clipKey": "S05B",
+        "exit": {
+          "kind": "choice",
+          "decisionId": "C6",
+          "prompt": {
+            "en-US": "Before the sixth gong, how do you end the playback?",
+            "zh-CN": "第六声锣前，怎么结束回放？",
+            "zh-HK": "第六聲鑼前，怎樣結束回放？"
+          },
+          "choices": [
+            {
+              "choiceId": "C6:A",
+              "label": {
+                "en-US": "Release the complete tape",
+                "zh-CN": "公开完整母带",
+                "zh-HK": "公開完整母帶"
+              },
+              "nextNodeId": "clip:S06A"
             },
             {
-              "when": {
-                "kind": "all",
-                "conditions": [
-                  {
-                    "key": "finalAction",
-                    "kind": "variable",
-                    "value": "leave",
-                    "operator": "equals"
-                  },
-                  {
-                    "key": "bond",
-                    "kind": "variable",
-                    "value": 2,
-                    "operator": "at_least"
-                  }
-                ]
+              "choiceId": "C6:B",
+              "label": {
+                "en-US": "Eject it and leave with Maya",
+                "zh-CN": "拔带，带 Maya 离开",
+                "zh-HK": "拔帶，帶 Maya 離開"
               },
-              "priority": 3,
+              "nextNodeId": "clip:S06B"
+            }
+          ]
+        }
+      },
+      {
+        "kind": "clip",
+        "nodeId": "clip:S05C",
+        "clipKey": "S05C",
+        "exit": {
+          "kind": "choice",
+          "decisionId": "C6",
+          "prompt": {
+            "en-US": "Before the sixth gong, how do you end the playback?",
+            "zh-CN": "第六声锣前，怎么结束回放？",
+            "zh-HK": "第六聲鑼前，怎樣結束回放？"
+          },
+          "choices": [
+            {
+              "choiceId": "C6:A",
+              "label": {
+                "en-US": "Release the complete tape",
+                "zh-CN": "公开完整母带",
+                "zh-HK": "公開完整母帶"
+              },
               "nextNodeId": "clip:S06C"
             },
             {
-              "when": {
-                "kind": "all",
-                "conditions": [
-                  {
-                    "key": "finalAction",
-                    "kind": "variable",
-                    "value": "leave",
-                    "operator": "equals"
-                  },
-                  {
-                    "key": "bond",
-                    "kind": "variable",
-                    "value": 2,
-                    "operator": "less_than"
-                  }
-                ]
+              "choiceId": "C6:B",
+              "label": {
+                "en-US": "Eject it and leave with Maya",
+                "zh-CN": "拔带，带 Maya 离开",
+                "zh-HK": "拔帶，帶 Maya 離開"
               },
-              "priority": 4,
               "nextNodeId": "clip:S06D"
             }
           ]
-        },
-        "kind": "router",
-        "nodeId": "router:S06"
+        }
+      },
+      {
+        "kind": "clip",
+        "nodeId": "clip:S06A",
+        "clipKey": "S06A",
+        "exit": {
+          "kind": "checkpoint",
+          "nextNodeId": "clip:E01"
+        }
+      },
+      {
+        "kind": "clip",
+        "nodeId": "clip:S06B",
+        "clipKey": "S06B",
+        "exit": {
+          "kind": "checkpoint",
+          "nextNodeId": "clip:E02"
+        }
+      },
+      {
+        "kind": "clip",
+        "nodeId": "clip:S06C",
+        "clipKey": "S06C",
+        "exit": {
+          "kind": "checkpoint",
+          "nextNodeId": "clip:E03"
+        }
+      },
+      {
+        "kind": "clip",
+        "nodeId": "clip:S06D",
+        "clipKey": "S06D",
+        "exit": {
+          "kind": "checkpoint",
+          "nextNodeId": "clip:E04"
+        }
+      },
+      {
+        "kind": "clip",
+        "nodeId": "clip:E01",
+        "clipKey": "E01",
+        "exit": {
+          "kind": "ending",
+          "endingId": "E01"
+        }
+      },
+      {
+        "kind": "clip",
+        "nodeId": "clip:E02",
+        "clipKey": "E02",
+        "exit": {
+          "kind": "ending",
+          "endingId": "E02"
+        }
+      },
+      {
+        "kind": "clip",
+        "nodeId": "clip:E03",
+        "clipKey": "E03",
+        "exit": {
+          "kind": "ending",
+          "endingId": "E03"
+        }
+      },
+      {
+        "kind": "clip",
+        "nodeId": "clip:E04",
+        "clipKey": "E04",
+        "exit": {
+          "kind": "ending",
+          "endingId": "E04"
+        }
       }
-    ],
-    "entryNodeId": "clip:S00"
+    ]
   },
   "storyBible": {
-    "props": [
-      "核心道具板"
+    "logline": "闭园后的测试园区里，一盘失真的旧磁带唤醒早已消失的巨龙入口；少女必须在六声开园锣结束前，决定应当保存一段不光彩的真实，还是留下一个更动听的传说。",
+    "synopsis": "S00 龙口重现：手持 DV 的红色 REC 点亮，陈澄按下卡带机。第一声锣，巨龙入口显影。\n随后六个选择依次展开——开园曲或原声、回应外公或告诉 Maya、抢救同伴或母带、承担或洗白、保留谁的声轨、以及如何结束回放——每个选择推进一声开园锣。\n第六声锣后，四段结局分别落在“名字归还 / 最后开园 / 两人出园 / 第七声锣”。",
+    "worldview": "1994 年最后一场闭园广播母带在园内播放时，已拆除的 Dragon World 与当下重叠 120 秒。\n每完成一次选择，远处响一声开园锣；第六声后，龙口吞下被舍弃的版本。\n林国声是母带、广播系统与陈澄记忆共同拼出的回声人格。",
+    "characters": [
+      {
+        "id": "cheng",
+        "name": {
+          "zh-CN": "陈澄"
+        },
+        "summary": "数字化外公遗留母带，把最后开园曲交给口述史展。\n从替外公证明无错，走向决定真实应由谁承担、如何被听见。"
+      },
+      {
+        "id": "maya",
+        "name": {
+          "zh-CN": "Maya Rahman"
+        },
+        "summary": "拍下毕业短片并确保两人安全离园。\n已经听过未剪母带，知道林国声漏报设备故障。"
+      },
+      {
+        "id": "lin",
+        "name": {
+          "zh-CN": "林国声"
+        },
+        "summary": "让外孙女记住自己让乐园活过，而不是差点害了人。\n好听的故事，才有人肯记。"
+      },
+      {
+        "id": "salmah",
+        "name": {
+          "zh-CN": "Salmah Binte Yusof"
+        },
+        "summary": "通过原始录音和事故日志取回被剪掉的名字。\n国声，音乐可以停，人要先出去。"
+      }
     ],
     "endings": [
       {
@@ -1101,115 +608,6 @@
           "zh-CN": "时间跳回 S00 的机位。入口空无一人，陈澄独自按下播放；DV 屏幕里 Maya 成了 1994 年的游客残影。 第七声锣落下。",
           "zh-HK": "時間跳回 S00 的機位。入口空無一人，陳澄獨自按下播放；DV 屏幕裡 Maya 成了 1994 年的遊客殘影。第七聲鑼落下。"
         }
-      }
-    ],
-    "logline": "闭园后的测试园区里，一盘失真的旧磁带唤醒早已消失的巨龙入口；少女必须在六声开园锣结束前，决定应当保存一段不光彩的真实，还是留下一个更动听的传说。",
-    "synopsis": "S00｜龙口重现：手持 DV 的红色 REC 点亮。空无一人的入口，陈澄按下卡带机。第一声锣。钠灯闪灭，巨龙入口在台阶尽头“显影”，嘴里垂下一张湿门票。\nS01A｜开园曲：陈澄按 A。褪色的庆典音乐炸响，龙眼亮起。两人被游客残影推入龙口；玻璃里的年轻林国声向她伸手。第二声锣。\nS01B｜B 面原声：反转卡带。黑暗中先响电火花，再响女人急促的声音；船道灯逐盏亮起，玻璃里的林国声猛地拍窗。第二声锣。\nS02A｜回应外公：陈澄对着喇叭喊“外公”。游客残影齐刷刷回头，复述“外公”。林国声指向船道深处；地面开始漫水。第三声锣。\nS02B｜告诉 Maya：陈澄把一只耳机塞给 Maya。Maya 听见录音，脸色沉下；她举起 DV，屏幕显示一扇现实中不存在的检修门。水从门缝涌入。第三声锣。\nS03A｜拉住 Maya：栈道塌陷，陈澄丢开卡带机、抓住 Maya。机器在水面旋转，游客残影却把它托回；Maya 回到平台时右掌留下轻微擦伤。控制室玻璃显现事故日志。第四声锣。\nS03B｜抢回母带：陈澄扑向卡带机，Maya 独自抓住栏杆，右掌轻微擦伤；浅水同时溅湿卡带机。她的 DV 落地，镜头拍到日志：“G.S. Lim — fault report withheld”。第四声锣。\nS04A｜并肩：无论刚才如何回答，Maya 都把 DV 与卡带机接在一起，两人共同监听。龙腹两边分别亮起 Salmah 与林国声的声纹。第五声锣。\nS04B｜认错：陈澄读出日志，林国声的玻璃倒影出现裂纹；裂缝中露出 Salmah 的工牌。第五声锣。\nS04C｜辩护：陈澄合上日志，玻璃里的林国声恢复完整，Salmah 的工牌却开始褪色。第五声锣。\nS05A｜原声占优：Salmah 的声轨灌满船道，游客残影沿她的指令撤离；巨龙从腹内裂开一道通往现实的门。第六声锣将落未落。\nS05B｜开园曲占优：庆典灯光全亮，游客残影鼓掌；林国声站在控制台前，Salmah 的声音只剩磁噪。龙口在身后缓慢合拢。第六声锣将落未落。\nS05C｜混轨：开园曲与疏散指令互相覆盖，所有雕塑同时捂耳；控制台出现两个推子：“LEGEND / RECORD”。第六声锣将落未落。\nS06A｜公开：名字归还：陈澄把 DV 接上控制台，完整波形投到龙腹。她按下上传；第六声锣落下，林国声主动推下音乐推子。\nS06B｜公开：最后开园：陈澄按下上传，但波形里 Salmah 的声音太弱；系统自动标记“噪声已清除”。第六声锣落下，游客残影爆发掌声。\nS06C｜离开：两人出园：陈澄拔出卡带，抓住 Maya 冲向检修门。两人一起拉下总闸；第六声锣闷在半声，龙口退回普通台阶。\nS06D｜离开：第七声锣：陈澄拔带转身，却发现 Maya 被隔在玻璃另一侧。她伸手时第六声锣完整落下，卡带机自行开始倒转。\nE01｜名字归还：清晨入口。口述史展的音频页面标题为“Salmah Binte Yusof 与 1994 夜班员工原声记录”；林国声列为受访者而非英雄。陈澄和 Maya 并肩听完。\nE02｜最后开园：展览播放修复后的华丽开园曲，观众微笑拍照。屏幕角落的原始波形里，一小段女声被标红为“不可修复噪声”。陈澄独自站在人群后。\nE03｜两人出园：两人坐在清晨地铁站，未剪母带封在透明证物袋中。Maya 关掉 DV，陈澄在袋上写下两个人名。\nE04｜第七声锣：时间跳回 S00 的机位。入口空无一人，陈澄独自按下播放；DV 屏幕里 Maya 成了 1994 年的游客残影。 第七声锣落下。",
-    "locations": [
-      "现实入口母版",
-      "龙口回声母版",
-      "龙腹船道／控制室母版",
-      "展览与清晨母版"
-    ],
-    "worldview": "1994 年最后一场闭园广播母带在园内播放时，已拆除的 Dragon World 与当下重叠 120 秒。\n每完成一次选择，远处响一声开园锣；第六声后，龙口吞下被舍弃的版本。\n雕塑只能复述磁带中的旧台词或玩家刚说过的话，不能说新话。\n林国声是母带、广播系统与陈澄记忆共同拼出的回声人格，不知道 1994 年之后的事。\n保全完整母带必须同时公开林国声的失误；替他洗清则会剪掉 Salmah 救人的证据。\n最坏后果是记忆被改写、关系破裂或角色困在循环中，不使用写实死亡惩罚。",
-    "characters": [
-      {
-        "id": "cheng",
-        "name": {
-          "zh-CN": "陈澄"
-        },
-        "role": "player_protagonist",
-        "summary": "数字化外公遗留母带，把最后开园曲交给口述史展。\n从替外公证明无错，走向决定真实应由谁承担、如何被听见。",
-        "playable": true,
-        "continuityRules": [
-          "深灰短袖衬衫、旧牛仔裤、红色有线耳机挂在颈间、银色便携卡带机。",
-          "不尖叫失控；恐惧通过屏息、吞咽和握紧机器表现。"
-        ]
-      },
-      {
-        "id": "maya",
-        "name": {
-          "zh-CN": "Maya Rahman"
-        },
-        "role": "companion_and_reality_anchor",
-        "summary": "拍下毕业短片并确保两人安全离园。\n已经听过未剪母带，知道林国声漏报设备故障。",
-        "playable": false,
-        "continuityRules": [
-          "橄榄绿防雨外套、黑色相机背带、小型手持 DV。",
-          "不是只会劝退的工具人；会主动救人，也会为保存证据冒险。"
-        ]
-      },
-      {
-        "id": "lin",
-        "name": {
-          "zh-CN": "林国声"
-        },
-        "role": "echo_personality",
-        "summary": "让外孙女记住自己让乐园活过，而不是差点害了人。\n好听的故事，才有人肯记。",
-        "playable": false,
-        "continuityRules": [
-          "只通过控制室玻璃反影、CRT 或远处剪影出现，永不拍清正脸。"
-        ]
-      },
-      {
-        "id": "salmah",
-        "name": {
-          "zh-CN": "Salmah Binte Yusof"
-        },
-        "role": "absent_truth_witness",
-        "summary": "通过原始录音和事故日志取回被剪掉的名字。\n国声，音乐可以停，人要先出去。",
-        "playable": false,
-        "continuityRules": [
-          "不以鬼魂实体出现，只通过母带原声、工牌和检修日志存在。"
-        ]
-      }
-    ],
-    "storyRules": [
-      "1994 年最后一场闭园广播母带在园内播放时，已拆除的 Dragon World 与当下重叠 120 秒。",
-      "每完成一次选择，远处响一声开园锣；第六声后，龙口吞下被舍弃的版本。",
-      "雕塑只能复述磁带中的旧台词或玩家刚说过的话，不能说新话。",
-      "林国声是母带、广播系统与陈澄记忆共同拼出的回声人格，不知道 1994 年之后的事。",
-      "保全完整母带必须同时公开林国声的失误；替他洗清则会剪掉 Salmah 救人的证据。",
-      "最坏后果是记忆被改写、关系破裂或角色困在循环中，不使用写实死亡惩罚。"
-    ],
-    "stateVariables": [
-      {
-        "key": "truth",
-        "type": "number",
-        "minimum": 0,
-        "initialValue": 0
-      },
-      {
-        "key": "bond",
-        "type": "number",
-        "minimum": 0,
-        "initialValue": 0
-      },
-      {
-        "key": "echo",
-        "type": "number",
-        "minimum": 0,
-        "initialValue": 0
-      },
-      {
-        "key": "c4Choice",
-        "type": "string",
-        "initialValue": "unset",
-        "allowedValues": [
-          "unset",
-          "A",
-          "B"
-        ]
-      },
-      {
-        "key": "finalAction",
-        "type": "string",
-        "initialValue": "unset",
-        "allowedValues": [
-          "unset",
-          "release",
-          "leave"
-        ]
       }
     ]
   },

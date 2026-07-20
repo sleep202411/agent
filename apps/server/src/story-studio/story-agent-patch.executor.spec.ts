@@ -9,43 +9,26 @@ import {
   type StoryAgentCanvasLayoutSnapshot,
 } from './story-agent-patch.executor';
 import {
-  InteractiveFilmDraftContentSchema,
-  type InteractiveFilmDraftContent,
+  InteractiveStoryDraftContentSchema,
+  type InteractiveStoryDraftContent,
 } from './interactive-film.schema';
 
 const ROOT_NODE_ID = '__story_root__';
 
 describe('executeStoryPatch', () => {
   it('rejects hostile recursive operations with a structured error before Zod recursion', () => {
-    let condition: Record<string, unknown> = {
-      kind: 'flag',
-      flag: 'seen_truth',
-      equals: true,
-    };
+    let deep: Record<string, unknown> = { leaf: true };
     for (let depth = 0; depth < 5_000; depth += 1) {
-      condition = { kind: 'not', condition };
+      deep = { nested: deep };
     }
     const maliciousOperations = [
       {
         operationId: '0197f4a2-0800-7000-8000-000000009999',
-        summary: 'Deep route.',
+        summary: 'Deeply nested payload.',
         kind: 'story_graph.put_node',
         payload: {
           intent: 'create',
-          node: {
-            kind: 'router',
-            nodeId: 'router:deep',
-            exit: {
-              kind: 'auto',
-              routes: [
-                {
-                  nextNodeId: 'clip:start',
-                  when: condition,
-                  priority: 0,
-                },
-              ],
-            },
-          },
+          node: deep,
         },
       },
     ] as unknown as StoryPatchOperation[];
@@ -71,17 +54,6 @@ describe('executeStoryPatch', () => {
     const originalDraft = structuredClone(draft);
     const originalLayout = structuredClone(layout);
     const operations = [
-      operation(1, {
-        kind: 'story_bible.put_state_variable',
-        payload: {
-          intent: 'create',
-          stateVariable: {
-            key: 'secret',
-            type: 'boolean',
-            initialValue: false,
-          },
-        },
-      }),
       operation(2, {
         kind: 'story_bible.put_ending',
         payload: {
@@ -113,7 +85,7 @@ describe('executeStoryPatch', () => {
       operation(5, {
         kind: 'story_graph.reorder_nodes',
         payload: {
-          nodeIds: ['clip:bonus', 'clip:start', 'router:gate', 'clip:ending'],
+          nodeIds: ['clip:bonus', 'clip:start', 'clip:gate', 'clip:ending'],
         },
       }),
       operation(6, {
@@ -128,14 +100,9 @@ describe('executeStoryPatch', () => {
     expect(result.draft.graph.nodes.map((node) => node.nodeId)).toEqual([
       'clip:bonus',
       'clip:start',
-      'router:gate',
+      'clip:gate',
       'clip:ending',
     ]);
-    expect(result.draft.storyBible.stateVariables).toContainEqual({
-      key: 'secret',
-      type: 'boolean',
-      initialValue: false,
-    });
     expect(result.draft.storyBible.endings).toContainEqual(
       expect.objectContaining({ id: 'ending:hidden' }),
     );
@@ -145,9 +112,9 @@ describe('executeStoryPatch', () => {
     expect(result.affectedNodeIds).toEqual([
       'clip:bonus',
       'clip:ending',
+      'clip:gate',
       'clip:start',
       'ending:hidden',
-      'router:gate',
     ]);
     expect(result.createdNodeIds).toEqual(['clip:bonus', 'ending:hidden']);
     expect(result.draftChanged).toBe(true);
@@ -158,42 +125,42 @@ describe('executeStoryPatch', () => {
     expect(layout).toEqual(originalLayout);
   });
 
-  it.each([
-    {
-      label: 'character',
-      operation: operation(10, {
-        kind: 'story_bible.remove_character',
-        payload: { characterId: 'hero' },
-      }),
-    },
-    {
-      label: 'state variable',
-      operation: operation(11, {
-        kind: 'story_bible.remove_state_variable',
-        payload: { key: 'courage' },
-      }),
-    },
-    {
-      label: 'ending',
-      operation: operation(12, {
-        kind: 'story_bible.remove_ending',
-        payload: { endingId: 'ending:truth' },
-      }),
-    },
-  ])('rejects removal of a referenced $label', ({ operation }) => {
+  it('rejects removal of a referenced ending', () => {
     const draft = buildDraft();
+    const removeEnding = operation(12, {
+      kind: 'story_bible.remove_ending',
+      payload: { endingId: 'ending:truth' },
+    });
 
     const error = captureExecutionError(() =>
       executeStoryPatch({
         draft,
         layout: buildLayout(draft),
-        operations: [operation],
+        operations: [removeEnding],
       }),
     );
 
     expect(error.code).toBe('STORY_PATCH_ENTITY_REFERENCED');
-    expect(error.operationId).toBe(operation.operationId);
+    expect(error.operationId).toBe(removeEnding.operationId);
     expect(draft).toEqual(buildDraft());
+  });
+
+  it('removes a character unconditionally now that the state system is gone', () => {
+    const draft = buildDraft();
+
+    const result = executeStoryPatch({
+      draft,
+      layout: buildLayout(draft),
+      operations: [
+        operation(10, {
+          kind: 'story_bible.remove_character',
+          payload: { characterId: 'hero' },
+        }),
+      ],
+    });
+
+    expect(result.draft.storyBible.characters).toEqual([]);
+    expect(result.draftChanged).toBe(true);
   });
 
   it('rejects a newly-created node with dangling domain references', () => {
@@ -252,13 +219,9 @@ describe('executeStoryPatch', () => {
           expect.objectContaining({
             choiceId: 'choice:reaction',
             nextNodeId: 'clip:survivor',
-            afterSelect: { kind: 'immediate' },
           }),
         ],
       }),
-    );
-    expect(requiredRouter(result.draft, 'router:source').exit.routes).toEqual(
-      [],
     );
     expect(requiredClip(result.draft, 'clip:auto').exit).toEqual({
       kind: 'auto',
@@ -273,13 +236,119 @@ describe('executeStoryPatch', () => {
       'clip:checkpoint',
       'clip:choice',
       'clip:target',
-      'router:source',
     ]);
     expect(result.layout.nodePositions).not.toHaveProperty('clip:target');
     expect(result.layout.nodePositions).not.toHaveProperty(
       '__decision__:clip:target',
     );
     expect(result.layout.nodePositions).not.toHaveProperty('ghost');
+  });
+
+  it('puts text choice and ending nodes while preserving their canvas layout projection', () => {
+    const draft = buildDraft();
+    const layout = buildLayout(draft, {
+      'text:choice': { x: 900, y: 240 },
+      '__decision__:text:choice': { x: 1_200, y: 240 },
+      'text:ending': { x: 1_500, y: 240 },
+      ghost: { x: 9_999, y: 9_999 },
+    });
+    const operations = [
+      operation(31, {
+        kind: 'story_graph.put_node',
+        payload: {
+          intent: 'create',
+          node: {
+            kind: 'text',
+            nodeId: 'text:choice',
+            title: { 'en-US': 'The written gate' },
+            body: { 'en-US': 'The page asks which path to take.' },
+            exit: {
+              kind: 'choice',
+              decisionId: 'decision:text-gate',
+              prompt: { 'en-US': 'Which path?' },
+              choices: [
+                {
+                  choiceId: 'choice:text-start',
+                  label: { 'en-US': 'Return to the gate' },
+                  nextNodeId: 'clip:start',
+                },
+                {
+                  choiceId: 'choice:text-ending',
+                  label: { 'en-US': 'Read the final line' },
+                  nextNodeId: 'text:ending',
+                },
+              ],
+            },
+          },
+        },
+      }),
+      operation(32, {
+        kind: 'story_graph.put_node',
+        payload: {
+          intent: 'create',
+          node: {
+            kind: 'text',
+            nodeId: 'text:ending',
+            title: { 'en-US': 'The final line' },
+            body: { 'en-US': 'The truth remains after the page closes.' },
+            exit: { kind: 'ending', endingId: 'ending:truth' },
+          },
+        },
+      }),
+      operation(33, {
+        kind: 'story_graph.set_entry_node',
+        payload: { nodeId: 'text:choice' },
+      }),
+    ];
+
+    const result = executeStoryPatch({ draft, layout, operations });
+
+    expect(result.draft.graph.entryNodeId).toBe('text:choice');
+    expect(requiredText(result.draft, 'text:choice').exit).toEqual(
+      expect.objectContaining({
+        kind: 'choice',
+        decisionId: 'decision:text-gate',
+      }),
+    );
+    expect(requiredText(result.draft, 'text:ending').exit).toEqual({
+      kind: 'ending',
+      endingId: 'ending:truth',
+    });
+    expect(result.createdNodeIds).toEqual(['text:choice', 'text:ending']);
+    expect(result.layout.nodePositions).toMatchObject({
+      'text:choice': { x: 900, y: 240 },
+      '__decision__:text:choice': { x: 1_200, y: 240 },
+      'text:ending': { x: 1_500, y: 240 },
+    });
+    expect(result.layout.nodePositions).not.toHaveProperty('ghost');
+  });
+
+  it('enforces ending integrity for a text node', () => {
+    const draft = buildDraft();
+    const putTextEnding = operation(35, {
+      kind: 'story_graph.put_node',
+      payload: {
+        intent: 'create',
+        node: {
+          kind: 'text',
+          nodeId: 'text:broken-ending',
+          title: { 'en-US': 'Unknown ending' },
+          body: { 'en-US': 'This ending was never authored.' },
+          exit: { kind: 'ending', endingId: 'ending:missing' },
+        },
+      },
+    });
+
+    const error = captureExecutionError(() =>
+      executeStoryPatch({
+        draft,
+        layout: buildLayout(draft),
+        operations: [putTextEnding],
+      }),
+    );
+
+    expect(error.code).toBe('STORY_PATCH_DANGLING_ENDING_REFERENCE');
+    expect(error.message).toContain('ending:missing');
   });
 
   it.each([
@@ -320,11 +389,11 @@ describe('executeStoryPatch', () => {
   });
 
   it.each([
-    ['missing one node', ['clip:start', 'router:gate']],
-    ['containing a duplicate', ['clip:start', 'router:gate', 'router:gate']],
+    ['missing one node', ['clip:start', 'clip:gate']],
+    ['containing a duplicate', ['clip:start', 'clip:gate', 'clip:gate']],
     [
       'containing an unknown node',
-      ['clip:start', 'router:gate', 'clip:ending', 'clip:unknown'],
+      ['clip:start', 'clip:gate', 'clip:ending', 'clip:unknown'],
     ],
   ])('rejects a reorder %s', (_label, nodeIds) => {
     const draft = buildDraft();
@@ -357,24 +426,13 @@ function operation(
   });
 }
 
-function buildDraft(): InteractiveFilmDraftContent {
-  return InteractiveFilmDraftContentSchema.parse({
+function buildDraft(): InteractiveStoryDraftContent {
+  return InteractiveStoryDraftContentSchema.parse({
     storyBible: {
       logline: 'A hero chooses whether to enter the gate.',
       synopsis: 'The hero reaches a gate and makes a consequential choice.',
       worldview: 'Choices are binding.',
-      storyRules: ['Every choice changes the world.'],
       characters: [buildCharacter('hero')],
-      locations: ['The gate'],
-      props: ['A key'],
-      stateVariables: [
-        {
-          key: 'courage',
-          type: 'number',
-          initialValue: 0,
-          minimum: 0,
-        },
-      ],
       endings: [
         {
           id: 'ending:truth',
@@ -395,63 +453,20 @@ function buildDraft(): InteractiveFilmDraftContent {
             kind: 'choice',
             decisionId: 'decision:gate',
             prompt: { 'en-US': 'Enter the gate?' },
-            trigger: { kind: 'media-ended' },
             choices: [
               {
                 choiceId: 'choice:enter',
                 label: { 'en-US': 'Enter' },
-                visibleWhen: {
-                  kind: 'all',
-                  conditions: [
-                    {
-                      kind: 'relationship-at-least',
-                      characterId: 'hero',
-                      value: 0,
-                    },
-                    {
-                      kind: 'variable',
-                      key: 'courage',
-                      operator: 'at_least',
-                      value: 0,
-                    },
-                  ],
-                },
-                effects: [
-                  {
-                    kind: 'adjust_relationship',
-                    characterId: 'hero',
-                    amount: 1,
-                  },
-                  {
-                    kind: 'increment_variable',
-                    key: 'courage',
-                    amount: 1,
-                  },
-                ],
-                nextNodeId: 'router:gate',
-                afterSelect: { kind: 'immediate' },
+                nextNodeId: 'clip:gate',
               },
             ],
           },
         },
         {
-          kind: 'router',
-          nodeId: 'router:gate',
-          exit: {
-            kind: 'auto',
-            routes: [
-              {
-                nextNodeId: 'clip:ending',
-                when: {
-                  kind: 'variable',
-                  key: 'courage',
-                  operator: 'at_least',
-                  value: 1,
-                },
-                priority: 0,
-              },
-            ],
-          },
+          kind: 'clip',
+          nodeId: 'clip:gate',
+          clipKey: 'GATE',
+          exit: { kind: 'auto', nextNodeId: 'clip:ending' },
         },
         {
           kind: 'clip',
@@ -465,9 +480,9 @@ function buildDraft(): InteractiveFilmDraftContent {
   });
 }
 
-function buildCascadeDraft(): InteractiveFilmDraftContent {
+function buildCascadeDraft(): InteractiveStoryDraftContent {
   const base = buildDraft();
-  return InteractiveFilmDraftContentSchema.parse({
+  return InteractiveStoryDraftContentSchema.parse({
     ...base,
     graph: {
       entryNodeId: 'clip:target',
@@ -480,34 +495,18 @@ function buildCascadeDraft(): InteractiveFilmDraftContent {
             kind: 'choice',
             decisionId: 'decision:source',
             prompt: { 'en-US': 'Continue?' },
-            trigger: { kind: 'media-ended' },
             choices: [
               {
                 choiceId: 'choice:target',
                 label: { 'en-US': 'Continue' },
                 nextNodeId: 'clip:target',
-                afterSelect: { kind: 'immediate' },
-                effects: [],
               },
               {
                 choiceId: 'choice:reaction',
                 label: { 'en-US': 'Play the reaction' },
                 nextNodeId: 'clip:survivor',
-                afterSelect: {
-                  kind: 'play',
-                  reactionClipKey: 'TARGET',
-                },
-                effects: [],
               },
             ],
-          },
-        },
-        {
-          kind: 'router',
-          nodeId: 'router:source',
-          exit: {
-            kind: 'auto',
-            routes: [{ nextNodeId: 'clip:target', priority: 0 }],
           },
         },
         {
@@ -530,14 +529,11 @@ function buildCascadeDraft(): InteractiveFilmDraftContent {
             kind: 'choice',
             decisionId: 'decision:target',
             prompt: { 'en-US': 'Finish?' },
-            trigger: { kind: 'media-ended' },
             choices: [
               {
                 choiceId: 'choice:finish',
                 label: { 'en-US': 'Finish' },
                 nextNodeId: 'clip:survivor',
-                afterSelect: { kind: 'immediate' },
-                effects: [],
               },
             ],
           },
@@ -557,15 +553,12 @@ function buildCharacter(id: string) {
   return {
     id,
     name: { 'en-US': id === 'hero' ? 'Hero' : 'Missing' },
-    role: 'protagonist',
     summary: 'Must make a choice.',
-    playable: true,
-    continuityRules: [],
   };
 }
 
 function buildLayout(
-  draft: InteractiveFilmDraftContent,
+  draft: InteractiveStoryDraftContent,
   extraPositions: Record<string, { x: number; y: number }> = {},
 ): StoryAgentCanvasLayoutSnapshot {
   return {
@@ -589,7 +582,7 @@ function buildLayout(
   };
 }
 
-function requiredClip(draft: InteractiveFilmDraftContent, nodeId: string) {
+function requiredClip(draft: InteractiveStoryDraftContent, nodeId: string) {
   const node = draft.graph.nodes.find(
     (candidate) => candidate.kind === 'clip' && candidate.nodeId === nodeId,
   );
@@ -597,11 +590,11 @@ function requiredClip(draft: InteractiveFilmDraftContent, nodeId: string) {
   return node;
 }
 
-function requiredRouter(draft: InteractiveFilmDraftContent, nodeId: string) {
+function requiredText(draft: InteractiveStoryDraftContent, nodeId: string) {
   const node = draft.graph.nodes.find(
-    (candidate) => candidate.kind === 'router' && candidate.nodeId === nodeId,
+    (candidate) => candidate.kind === 'text' && candidate.nodeId === nodeId,
   );
-  if (!node || node.kind !== 'router') throw new Error(`Missing ${nodeId}.`);
+  if (!node || node.kind !== 'text') throw new Error(`Missing ${nodeId}.`);
   return node;
 }
 

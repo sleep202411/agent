@@ -90,8 +90,11 @@ export class StoryUploadedVideoProbeService {
         tempFile,
         expectedSize,
       );
+      // Record technical metadata (codec, dimensions, browserSafeMp4 flag) but
+      // do NOT reject on codec: an uploaded video that parses is usable. The
+      // browserSafeMp4 flag stays available downstream for anything that cares.
       const technical = await this.videoProbe.probeFile(tempFile, {
-        requireBrowserSafeMp4: true,
+        requireBrowserSafeMp4: false,
       });
       return {
         checksumSha256: downloaded.checksumSha256,

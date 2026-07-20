@@ -1,15 +1,13 @@
 import {
-  collectInteractiveFilmRuntimeLocales,
-  createLockableInteractiveFilmDraftContentSchema,
-  InteractiveFilmDraftContentSchema,
-  LockableInteractiveFilmDraftContentSchema,
-  type FilmCondition,
-  type FilmEffect,
-  type InteractiveFilmDraftContent,
+  collectInteractiveStoryRuntimeLocales,
+  createLockableInteractiveStoryDraftContentSchema,
+  InteractiveStoryDraftContentSchema,
+  LockableInteractiveStoryDraftContentSchema,
+  type InteractiveStoryDraftContent,
 } from './interactive-film.schema';
 import { buildInteractiveFilmTestBundle } from './__tests__/interactive-film-test-bundle';
 
-type GraphNode = InteractiveFilmDraftContent['graph']['nodes'][number];
+type GraphNode = InteractiveStoryDraftContent['graph']['nodes'][number];
 type ChoiceExit = Extract<
   Extract<GraphNode, { kind: 'clip' }>['exit'],
   { kind: 'choice' }
@@ -24,7 +22,7 @@ describe('interactive-film choice exit prompt contract', () => {
     const mutableExit: { prompt?: Record<string, string> } = exit;
     delete mutableExit.prompt;
 
-    const result = InteractiveFilmDraftContentSchema.safeParse(draft);
+    const result = InteractiveStoryDraftContentSchema.safeParse(draft);
     expect(result.success).toBe(false);
     if (result.success) return;
     expect(
@@ -40,10 +38,10 @@ describe('interactive-film choice exit prompt contract', () => {
     );
     firstChoiceExit(draft).prompt = { 'zh-CN': '   ' };
 
-    expect(InteractiveFilmDraftContentSchema.safeParse(draft).success).toBe(
+    expect(InteractiveStoryDraftContentSchema.safeParse(draft).success).toBe(
       true,
     );
-    const result = LockableInteractiveFilmDraftContentSchema.safeParse(draft);
+    const result = LockableInteractiveStoryDraftContentSchema.safeParse(draft);
     expect(result.success).toBe(false);
     if (result.success) return;
     expect(
@@ -64,9 +62,188 @@ describe('interactive-film choice exit prompt contract', () => {
       'zh-HK': '先播放哪一軌？',
     });
     expect(
-      LockableInteractiveFilmDraftContentSchema.safeParse(draft).success,
+      LockableInteractiveStoryDraftContentSchema.safeParse(draft).success,
     ).toBe(true);
   });
+});
+
+describe('unified-story text node contract', () => {
+  it('allows 20,000-character text bodies while keeping titles at 4,000', () => {
+    const draft = structuredClone(
+      buildInteractiveFilmTestBundle().draftContent,
+    );
+    const endingId = draft.storyBible.endings[0]?.id;
+    if (!endingId) throw new Error('Fixture ending missing.');
+    draft.graph.nodes.push({
+      kind: 'text',
+      nodeId: 'text:long-body',
+      title: { 'zh-CN': 'T'.repeat(4_000) },
+      body: { 'zh-CN': 'B'.repeat(20_000) },
+      exit: { kind: 'ending', endingId },
+    });
+
+    expect(InteractiveStoryDraftContentSchema.safeParse(draft).success).toBe(
+      true,
+    );
+
+    const oversizedBody = structuredClone(draft);
+    const textNode = oversizedBody.graph.nodes.at(-1);
+    if (textNode?.kind !== 'text') throw new Error('Text fixture missing.');
+    textNode.body['zh-CN'] = 'B'.repeat(20_001);
+    expect(
+      InteractiveStoryDraftContentSchema.safeParse(oversizedBody).success,
+    ).toBe(false);
+
+    const oversizedTitle = structuredClone(draft);
+    const titledNode = oversizedTitle.graph.nodes.at(-1);
+    if (titledNode?.kind !== 'text' || !titledNode.title) {
+      throw new Error('Titled text fixture missing.');
+    }
+    titledNode.title['zh-CN'] = 'T'.repeat(4_001);
+    expect(
+      InteractiveStoryDraftContentSchema.safeParse(oversizedTitle).success,
+    ).toBe(false);
+  });
+
+  it('locks a minimal body-only text story without world metadata or characters', () => {
+    const result = createLockableInteractiveStoryDraftContentSchema(
+      'zh-CN',
+    ).safeParse({
+      storyBible: {
+        logline: '',
+        synopsis: '',
+        worldview: '',
+        characters: [],
+        endings: [
+          {
+            id: 'ending.truth',
+            title: { 'zh-CN': '真相' },
+            kind: 'truth',
+          },
+        ],
+      },
+      graph: {
+        entryNodeId: 'text.entry',
+        nodes: [
+          {
+            kind: 'text',
+            nodeId: 'text.entry',
+            body: { 'zh-CN': '你在一封未署名的信旁醒来。' },
+            exit: { kind: 'ending', endingId: 'ending.truth' },
+          },
+        ],
+      },
+      productionNotes: [],
+    });
+
+    expect(result.success).toBe(true);
+  });
+
+  it('accepts strict text nodes for auto, choice, checkpoint, and ending exits', () => {
+    const draft = structuredClone(
+      buildInteractiveFilmTestBundle().draftContent,
+    );
+    const targetNodeId = draft.graph.nodes[0]?.nodeId;
+    const endingId = draft.storyBible.endings[0]?.id;
+    if (!targetNodeId || !endingId) {
+      throw new Error('Fixture target node or ending missing.');
+    }
+
+    draft.graph.nodes.push(
+      {
+        kind: 'text',
+        nodeId: 'text:auto',
+        title: localized('A quiet threshold'),
+        body: localized('The traveller pauses before the door.'),
+        exit: { kind: 'auto', nextNodeId: targetNodeId },
+      },
+      {
+        kind: 'text',
+        nodeId: 'text:choice',
+        title: localized('A written choice'),
+        body: localized('Two possibilities remain on the page.'),
+        exit: {
+          kind: 'choice',
+          decisionId: 'decision:text-path',
+          prompt: localized('Which path should the traveller take?'),
+          choices: [
+            {
+              choiceId: 'choice:text-left',
+              label: localized('Take the left path'),
+              nextNodeId: targetNodeId,
+            },
+            {
+              choiceId: 'choice:text-right',
+              label: localized('Take the right path'),
+              nextNodeId: targetNodeId,
+            },
+          ],
+        },
+      },
+      {
+        kind: 'text',
+        nodeId: 'text:checkpoint',
+        title: localized('Turn the page'),
+        body: localized('The next chapter waits for the reader.'),
+        exit: { kind: 'checkpoint', nextNodeId: targetNodeId },
+      },
+      {
+        kind: 'text',
+        nodeId: 'text:ending',
+        title: localized('The final line'),
+        body: localized('The story closes where it began.'),
+        exit: { kind: 'ending', endingId },
+      },
+    );
+
+    expect(InteractiveStoryDraftContentSchema.safeParse(draft).success).toBe(
+      true,
+    );
+    expect(
+      LockableInteractiveStoryDraftContentSchema.safeParse(draft).success,
+    ).toBe(true);
+  });
+
+  it.each(['title', 'body'] as const)(
+    'requires complete localized %s copy when locking',
+    (field) => {
+      const draft = structuredClone(
+        buildInteractiveFilmTestBundle().draftContent,
+      );
+      const targetNodeId = draft.graph.nodes[0]?.nodeId;
+      if (!targetNodeId) throw new Error('Fixture target node missing.');
+      const textNode = {
+        kind: 'text' as const,
+        nodeId: `text:missing-${field}`,
+        title: localized('Localized title'),
+        body: localized('Localized body'),
+        exit: { kind: 'auto' as const, nextNodeId: targetNodeId },
+      };
+      textNode[field]['zh-HK'] = '   ';
+      draft.graph.nodes.push(textNode);
+
+      expect(InteractiveStoryDraftContentSchema.safeParse(draft).success).toBe(
+        true,
+      );
+      const result =
+        LockableInteractiveStoryDraftContentSchema.safeParse(draft);
+
+      expect(result.success).toBe(false);
+      if (result.success) return;
+      expect(result.error.issues).toContainEqual(
+        expect.objectContaining({
+          path: [
+            'graph',
+            'nodes',
+            draft.graph.nodes.length - 1,
+            field,
+            'zh-HK',
+          ],
+          message: 'Provide non-empty zh-HK runtime copy.',
+        }),
+      );
+    },
+  );
 });
 
 describe('interactive-film runtime locale coverage', () => {
@@ -76,13 +253,13 @@ describe('interactive-film runtime locale coverage', () => {
     );
     draft.storyBible.characters[0].name['fr-FR'] = 'Visiteuse';
 
-    expect(collectInteractiveFilmRuntimeLocales(draft, 'zh-CN')).toEqual([
+    expect(collectInteractiveStoryRuntimeLocales(draft, 'zh-CN')).toEqual([
       'zh-CN',
       'en-US',
       'zh-HK',
     ]);
     expect(
-      createLockableInteractiveFilmDraftContentSchema('zh-CN').safeParse(draft)
+      createLockableInteractiveStoryDraftContentSchema('zh-CN').safeParse(draft)
         .success,
     ).toBe(true);
   });
@@ -91,8 +268,11 @@ describe('interactive-film runtime locale coverage', () => {
     const missingAuthoredLocale = structuredClone(
       buildInteractiveFilmTestBundle().draftContent,
     );
+    if (!missingAuthoredLocale.storyBible.endings[0].summary) {
+      throw new Error('Fixture ending summary missing.');
+    }
     delete missingAuthoredLocale.storyBible.endings[0].summary['en-US'];
-    const authoredResult = createLockableInteractiveFilmDraftContentSchema(
+    const authoredResult = createLockableInteractiveStoryDraftContentSchema(
       'zh-CN',
     ).safeParse(missingAuthoredLocale);
     expect(authoredResult.success).toBe(false);
@@ -109,7 +289,7 @@ describe('interactive-film runtime locale coverage', () => {
       buildInteractiveFilmTestBundle().draftContent,
     );
     const defaultResult =
-      createLockableInteractiveFilmDraftContentSchema('ja-JP').safeParse(
+      createLockableInteractiveStoryDraftContentSchema('ja-JP').safeParse(
         missingDefaultLocale,
       );
     expect(defaultResult.success).toBe(false);
@@ -133,7 +313,7 @@ describe('interactive-film mutable draft structural identity', () => {
     const duplicate = structuredClone(draft.storyBible.characters[0]);
     draft.storyBible.characters.push(duplicate);
 
-    const result = InteractiveFilmDraftContentSchema.safeParse(draft);
+    const result = InteractiveStoryDraftContentSchema.safeParse(draft);
 
     expect(result.success).toBe(false);
     if (result.success) return;
@@ -147,31 +327,6 @@ describe('interactive-film mutable draft structural identity', () => {
           'id',
         ],
         message: `Duplicate stable identifier ${duplicate.id}.`,
-      }),
-    );
-  });
-
-  it('rejects duplicate state-variable keys before revision lock', () => {
-    const draft = structuredClone(
-      buildInteractiveFilmTestBundle().draftContent,
-    );
-    const duplicate = structuredClone(draft.storyBible.stateVariables[0]);
-    draft.storyBible.stateVariables.push(duplicate);
-
-    const result = InteractiveFilmDraftContentSchema.safeParse(draft);
-
-    expect(result.success).toBe(false);
-    if (result.success) return;
-    expect(result.error.issues).toContainEqual(
-      expect.objectContaining({
-        code: 'custom',
-        path: [
-          'storyBible',
-          'stateVariables',
-          draft.storyBible.stateVariables.length - 1,
-          'key',
-        ],
-        message: `Duplicate stable identifier ${duplicate.key}.`,
       }),
     );
   });
@@ -201,7 +356,7 @@ describe('interactive-film checkpoint exit contract', () => {
       ).size,
     ).toBe(6);
     expect(
-      LockableInteractiveFilmDraftContentSchema.safeParse(draft).success,
+      LockableInteractiveStoryDraftContentSchema.safeParse(draft).success,
     ).toBe(true);
   });
 
@@ -242,11 +397,11 @@ describe('interactive-film canonical decision identity', () => {
     expect(repeated.choices.map((choice) => choice.nextNodeId)).not.toEqual(
       canonical.choices.map((choice) => choice.nextNodeId),
     );
-    expect(InteractiveFilmDraftContentSchema.safeParse(draft).success).toBe(
+    expect(InteractiveStoryDraftContentSchema.safeParse(draft).success).toBe(
       true,
     );
     expect(
-      LockableInteractiveFilmDraftContentSchema.safeParse(draft).success,
+      LockableInteractiveStoryDraftContentSchema.safeParse(draft).success,
     ).toBe(true);
   });
 
@@ -261,12 +416,6 @@ describe('interactive-film canonical decision identity', () => {
       },
     },
     {
-      field: 'trigger',
-      mutate: (exit) => {
-        exit.trigger = { kind: 'timecode', atMs: 1_000 };
-      },
-    },
-    {
       field: 'choiceId set',
       mutate: (exit) => {
         exit.choices[0].choiceId = 'C1:CONFLICT';
@@ -278,42 +427,6 @@ describe('interactive-film canonical decision identity', () => {
         exit.choices[0].label = { 'zh-CN': '冲突的选项' };
       },
     },
-    {
-      field: 'accessibilityLabel',
-      mutate: (exit) => {
-        exit.choices[0].accessibilityLabel = { 'zh-CN': '冲突的辅助标签' };
-      },
-    },
-    {
-      field: 'visibleWhen',
-      mutate: (exit) => {
-        exit.choices[0].visibleWhen = {
-          kind: 'variable',
-          key: 'truth',
-          operator: 'equals',
-          value: 0,
-        };
-      },
-    },
-    {
-      field: 'effects',
-      mutate: (exit) => {
-        exit.choices[0].effects.push({
-          kind: 'increment_variable',
-          key: 'truth',
-          amount: 1,
-        });
-      },
-    },
-    {
-      field: 'afterSelect',
-      mutate: (exit) => {
-        exit.choices[0].afterSelect = {
-          kind: 'play',
-          reactionClipKey: 'S00',
-        };
-      },
-    },
   ])(
     'rejects conflicting repeated-decision $field in the mutable draft',
     ({ field, mutate }) => {
@@ -323,7 +436,7 @@ describe('interactive-film canonical decision identity', () => {
       const { repeated } = repeatFirstDecisionAtSecondPredecessor(draft);
       mutate(repeated);
 
-      const result = InteractiveFilmDraftContentSchema.safeParse(draft);
+      const result = InteractiveStoryDraftContentSchema.safeParse(draft);
 
       expect(result.success).toBe(false);
       if (result.success) return;
@@ -341,124 +454,7 @@ describe('interactive-film canonical decision identity', () => {
   );
 });
 
-describe('interactive-film state-variable semantic contract', () => {
-  it.each<{
-    name: string;
-    condition: FilmCondition;
-    message: string;
-  }>([
-    {
-      name: 'equals with a mismatched value type',
-      condition: {
-        kind: 'variable',
-        key: 'truth',
-        operator: 'equals',
-        value: '0',
-      },
-      message:
-        'equals value must match the number type of state variable truth.',
-    },
-    {
-      name: 'a numeric operator on a string variable',
-      condition: {
-        kind: 'variable',
-        key: 'finalAction',
-        operator: 'greater_than',
-        value: 0,
-      },
-      message: 'greater_than requires a numeric state variable.',
-    },
-    {
-      name: 'a non-numeric comparison value',
-      condition: {
-        kind: 'variable',
-        key: 'truth',
-        operator: 'at_least',
-        value: '0',
-      },
-      message: 'at_least requires a numeric comparison value.',
-    },
-    {
-      name: 'null for a non-nullable declaration',
-      condition: {
-        kind: 'variable',
-        key: 'finalAction',
-        operator: 'not_equals',
-        value: null,
-      },
-      message:
-        'not_equals value must match the string type of state variable finalAction.',
-    },
-  ])('rejects $name at revision lock', ({ condition, message }) => {
-    const draft = structuredClone(
-      buildInteractiveFilmTestBundle().draftContent,
-    );
-    firstChoiceExit(draft).choices[0].visibleWhen = condition;
-
-    expectLockIssue(draft, {
-      path: expect.arrayContaining(['visibleWhen']) as unknown as PropertyKey[],
-      message,
-    });
-  });
-
-  it.each<{
-    name: string;
-    prepare?: (draft: InteractiveFilmDraftContent) => void;
-    effect: FilmEffect;
-    message: string;
-  }>([
-    {
-      name: 'set_variable with a mismatched value type',
-      effect: { kind: 'set_variable', key: 'truth', value: '1' },
-      message:
-        'set_variable value must match the number type of state variable truth.',
-    },
-    {
-      name: 'set_variable below a numeric minimum',
-      effect: { kind: 'set_variable', key: 'truth', value: -1 },
-      message: 'set_variable value is below the minimum for truth.',
-    },
-    {
-      name: 'set_variable above a numeric maximum',
-      prepare: (draft) => {
-        const truth = draft.storyBible.stateVariables.find(
-          (variable) => variable.key === 'truth',
-        );
-        if (truth?.type === 'number') truth.maximum = 2;
-      },
-      effect: { kind: 'set_variable', key: 'truth', value: 3 },
-      message: 'set_variable value is above the maximum for truth.',
-    },
-    {
-      name: 'set_variable outside string allowedValues',
-      effect: { kind: 'set_variable', key: 'finalAction', value: 'burn' },
-      message:
-        'set_variable value must be one of the allowedValues for finalAction.',
-    },
-    {
-      name: 'increment_variable on a non-number declaration',
-      effect: {
-        kind: 'increment_variable',
-        key: 'finalAction',
-        amount: 1,
-      },
-      message: 'increment_variable requires a numeric state variable.',
-    },
-  ])('rejects $name at revision lock', ({ prepare, effect, message }) => {
-    const draft = structuredClone(
-      buildInteractiveFilmTestBundle().draftContent,
-    );
-    prepare?.(draft);
-    firstChoiceExit(draft).choices[0].effects = [effect];
-
-    expectLockIssue(draft, {
-      path: expect.arrayContaining(['effects']) as unknown as PropertyKey[],
-      message,
-    });
-  });
-});
-
-describe('interactive-film v3 authoring boundary', () => {
+describe('unified-story authoring boundary', () => {
   it('contains only storyBible, graph, and productionNotes', () => {
     const draft = buildInteractiveFilmTestBundle().draftContent;
     expect(Object.keys(draft).sort()).toEqual([
@@ -468,13 +464,13 @@ describe('interactive-film v3 authoring boundary', () => {
     ]);
   });
 
-  it('strictly rejects fields outside the v3 story document', () => {
+  it('strictly rejects fields outside the unified story document', () => {
     const draft: Record<string, unknown> = structuredClone(
       buildInteractiveFilmTestBundle().draftContent,
     );
     draft.directorDesign = {};
 
-    const result = InteractiveFilmDraftContentSchema.safeParse(draft);
+    const result = InteractiveStoryDraftContentSchema.safeParse(draft);
 
     expect(result.success).toBe(false);
     if (result.success) return;
@@ -495,30 +491,30 @@ describe('interactive-film v3 authoring boundary', () => {
 });
 
 function expectLockIssue(
-  draft: InteractiveFilmDraftContent,
+  draft: InteractiveStoryDraftContent,
   issue: { path: PropertyKey[]; message: string },
 ): void {
-  const result = LockableInteractiveFilmDraftContentSchema.safeParse(draft);
+  const result = LockableInteractiveStoryDraftContentSchema.safeParse(draft);
   expect(result.success).toBe(false);
   if (result.success) return;
   expect(result.error.issues).toContainEqual(expect.objectContaining(issue));
 }
 
-function firstChoiceExit(draft: InteractiveFilmDraftContent): ChoiceExit {
+function firstChoiceExit(draft: InteractiveStoryDraftContent): ChoiceExit {
   for (const node of draft.graph.nodes) {
     if (node.kind === 'clip' && node.exit.kind === 'choice') return node.exit;
   }
   throw new Error('Expected at least one choice exit.');
 }
 
-function allChoiceExits(draft: InteractiveFilmDraftContent): ChoiceExit[] {
+function allChoiceExits(draft: InteractiveStoryDraftContent): ChoiceExit[] {
   return draft.graph.nodes.flatMap((node) =>
     node.kind === 'clip' && node.exit.kind === 'choice' ? [node.exit] : [],
   );
 }
 
 function repeatFirstDecisionAtSecondPredecessor(
-  draft: InteractiveFilmDraftContent,
+  draft: InteractiveStoryDraftContent,
 ): { canonical: ChoiceExit; repeated: ChoiceExit } {
   const [canonical, repeated] = allChoiceExits(draft);
   if (!canonical || !repeated) {
@@ -530,7 +526,6 @@ function repeatFirstDecisionAtSecondPredecessor(
   const canonicalCopy = structuredClone(canonical);
   repeated.decisionId = canonicalCopy.decisionId;
   repeated.prompt = canonicalCopy.prompt;
-  repeated.trigger = canonicalCopy.trigger;
   repeated.choices = canonicalCopy.choices
     .map((choice, index) => ({
       ...choice,
@@ -538,4 +533,12 @@ function repeatFirstDecisionAtSecondPredecessor(
     }))
     .reverse();
   return { canonical, repeated };
+}
+
+function localized(value: string): Record<string, string> {
+  return {
+    'en-US': value,
+    'zh-CN': value,
+    'zh-HK': value,
+  };
 }

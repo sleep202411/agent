@@ -143,7 +143,6 @@ export class StoryExperienceReleaseService {
       !build.runtimeJson ||
       !build.runtimeHash ||
       !build.completedAt ||
-      build.assets.length === 0 ||
       build.diagnostics.some((diagnostic) => diagnostic.severity === 'error') ||
       !Number.isInteger(build.sourceDraftRevision) ||
       build.sourceDraftRevision < 0 ||
@@ -152,7 +151,7 @@ export class StoryExperienceReleaseService {
       throw new UnprocessableEntityException({
         code: 'STORY_BUILD_NOT_PUBLISHABLE',
         message:
-          'Only a completed ready/full Runtime Manifest v2 Build with available frozen assets can be published.',
+          'Only a completed ready/full Runtime Manifest v2 Build can be published.',
       });
     }
     const parsedManifest = ExperienceRuntimeManifestSchema.safeParse(

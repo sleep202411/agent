@@ -5,7 +5,7 @@ import {
 } from './dto';
 
 describe('StoryProject frame profile contract', () => {
-  it('requires one of the two production profiles at project creation', () => {
+  it('requires one of the two production profiles for interactive film', () => {
     const base = {
       format: 'interactive_film',
       title: 'Portrait mystery',
@@ -24,11 +24,32 @@ describe('StoryProject frame profile contract', () => {
         frameProfile: 'portrait_9_16',
       }).frameProfile,
     ).toBe('portrait_9_16');
+    // A film project fails loud when the frame contract is missing.
     expect(CreateStoryProjectSchema.safeParse(base).success).toBe(false);
     expect(
       CreateStoryProjectSchema.safeParse({
         ...base,
         frameProfile: 'square_1_1',
+      }).success,
+    ).toBe(false);
+  });
+
+  it('forbids any frame profile for a text-adventure project', () => {
+    const base = {
+      format: 'text_adventure',
+      title: 'The Archive',
+      defaultLocale: 'en-US',
+    } as const;
+
+    // A text-first project carries no frame contract at all.
+    const parsed = CreateStoryProjectSchema.parse(base);
+    expect(parsed.frameProfile).toBeUndefined();
+
+    // Declaring one is a fail-loud mismatch, never silently dropped.
+    expect(
+      CreateStoryProjectSchema.safeParse({
+        ...base,
+        frameProfile: 'landscape_16_9',
       }).success,
     ).toBe(false);
   });

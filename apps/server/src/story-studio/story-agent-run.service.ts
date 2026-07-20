@@ -19,18 +19,21 @@ import { COPILOT_DOCUMENT_MAX_TEXT_CHARS } from '@repo/shared';
 import {
   STORY_AGENT_BRIEF_MAX_CHARS,
   STORY_AGENT_TARGET_DRAFT_SCHEMA_VERSION,
+  STORY_AUTHORING_STAGE_KEYS,
   STORY_PATCH_BRIEF_SCHEMA_VERSION,
   STORY_PATCH_SCHEMA_VERSION,
+  StoryAuthoringStageProgressSchema,
   assertStoryPatchComplexity,
   isStoryPatchBrief,
   StoryAgentRunDtoSchema,
   StoryAgentRunProposalSchema,
   StoryPatchBriefSchema,
-  StoryPatchOperationsSchema,
   StoryPatchPreflightError,
   StoryPatchProposalSchema,
   type StoryAgentRunDto,
   type StoryAgentRunProposal,
+  type StoryAuthoringStageKey,
+  type StoryAuthoringStageProgress,
   type StoryPatchBrief,
   type StoryPatchOperation,
   type StoryPatchProposal,
@@ -40,11 +43,12 @@ import type { AuthUser } from '../auth';
 import { PrismaService } from '../infra/db/db.module';
 import { canonicalJsonHash, canonicalJsonString } from './canonical-json';
 import {
-  INTERACTIVE_FILM_DRAFT_SCHEMA_VERSION,
-  InteractiveFilmDraftContentSchema,
+  INTERACTIVE_STORY_DRAFT_SCHEMA_VERSION,
+  InteractiveStoryDraftContentSchema,
   STORY_CANVAS_LAYOUT_SCHEMA_VERSION,
   StoryCanvasNodePositionsSchema,
-  type InteractiveFilmDraftContent,
+  type CreatableStoryFormat,
+  type InteractiveStoryDraftContent,
 } from './dto';
 import {
   executeStoryPatch,
@@ -176,6 +180,12 @@ export interface StoryAgentAuthoringJob {
   runId: string;
   projectId: string;
   workspaceId: string;
+  /**
+   * The project's creation profile. text_adventure stories are pure written
+   * beats, so the pipeline must skeleton them as all-text nodes; interactive_film
+   * stories may compose filmed clip nodes.
+   */
+  format: CreatableStoryFormat;
   brief: StoryPatchBrief;
   /** Canonical project + draft JSON the author must work from. */
   contextJson: string;
@@ -205,14 +215,15 @@ interface CanonicalAuthoringState {
     id: string;
     workspaceId: string;
     title: string;
-    frameProfile: string;
+    format: CreatableStoryFormat;
+    frameProfile: string | null;
     defaultLocale: string;
   };
   draftRow: {
     revision: number;
     schemaVersion: string;
     contentHash: string;
-    content: InteractiveFilmDraftContent;
+    content: InteractiveStoryDraftContent;
   };
   layoutRow: {
     revision: number;
@@ -454,6 +465,7 @@ export class StoryAgentRunService {
             baseDraftRevision: state.draftRow.revision,
             baseLayoutRevision: state.layoutRow.revision,
             proposal: brief as unknown as Prisma.InputJsonObject,
+            authoringStages: initialAuthoringStages() as Prisma.InputJsonValue,
             summary: brief.summary,
             idempotencyKey,
             requestFingerprint: fingerprint,
@@ -1085,7 +1097,7 @@ export class StoryAgentRunService {
         });
       }
 
-      let nextDraft: InteractiveFilmDraftContent;
+      let nextDraft: InteractiveStoryDraftContent;
       let nextLayout: StoryAgentCanvasLayoutSnapshot;
       let affectedNodeIds: string[];
       let createdNodeIds: string[];
@@ -1166,7 +1178,7 @@ export class StoryAgentRunService {
             contentHash: state.draftRow.contentHash,
           },
           data: {
-            schemaVersion: INTERACTIVE_FILM_DRAFT_SCHEMA_VERSION,
+            schemaVersion: INTERACTIVE_STORY_DRAFT_SCHEMA_VERSION,
             content: nextDraft as unknown as Prisma.InputJsonObject,
             contentHash: afterDraftHash,
             revision: { increment: 1 },
@@ -1317,6 +1329,57 @@ export class StoryAgentRunService {
     return updated === 1;
   }
 
+  /**
+   * Durably record which pipeline baton is running and fan a realtime event so
+   * the run-card checklist flips in place. CAS-guarded exactly like the lease
+   * (status=authoring AND this worker still owns it); unlike the lease heartbeat
+   * this IS a domain change, so it bumps updated_at and enqueues realtime.
+   */
+  async advanceAuthoringStage(
+    runId: string,
+    workerId: string,
+    stage: StoryAuthoringStageKey,
+  ): Promise<void> {
+    const transition = await this.prisma.$transaction(async (tx) => {
+      const row = await tx.storyAgentRun.findUnique({
+        where: { id: runId },
+        select: { status: true, leaseOwner: true, leaseExpiresAt: true },
+      });
+      const now = await databaseNow(tx);
+      if (
+        !row ||
+        row.status !== StoryAgentRunStatus.authoring ||
+        row.leaseOwner !== workerId ||
+        row.leaseExpiresAt === null ||
+        row.leaseExpiresAt <= now
+      ) {
+        return emptyTransition();
+      }
+      const updated = await tx.storyAgentRun.updateMany({
+        where: {
+          id: runId,
+          status: StoryAgentRunStatus.authoring,
+          leaseOwner: workerId,
+        },
+        data: {
+          authoringStages: advanceAuthoringStages(
+            stage,
+          ) as Prisma.InputJsonValue,
+        },
+      });
+      if (updated.count !== 1) return emptyTransition();
+      const fresh = await tx.storyAgentRun.findUniqueOrThrow({
+        where: { id: runId },
+        include: RUN_INCLUDE,
+      });
+      return {
+        value: undefined,
+        dispatches: [await this.realtime.enqueue(tx, this.toDto(fresh))],
+      };
+    });
+    await this.publishAll(transition.dispatches);
+  }
+
   /** Read everything the patch author needs for one claimed authoring run. */
   async loadAuthoringJob(
     runId: string,
@@ -1362,7 +1425,7 @@ export class StoryAgentRunService {
       project: state.project,
       draft: {
         schemaVersion: state.draftRow.schemaVersion,
-        content: state.draftRow.content,
+        content: draftContentForAuthoring(state.draftRow.content),
       },
     });
     if (contextJson.length > AUTHORING_CONTEXT_MAX_CHARS) {
@@ -1413,6 +1476,7 @@ export class StoryAgentRunService {
         runId: run.id,
         projectId: run.storyProjectId,
         workspaceId: run.workspaceId,
+        format: state.project.format,
         brief: briefResult.data,
         contextJson,
         document,
@@ -1555,6 +1619,7 @@ export class StoryAgentRunService {
           data: {
             status: StoryAgentRunStatus.proposed,
             proposal: proposal as unknown as Prisma.InputJsonObject,
+            authoringStages: Prisma.DbNull,
             baseDraftRevision: proposal.baseDraftRevision,
             baseLayoutRevision: proposal.baseLayoutRevision,
             summary: proposal.summary,
@@ -1664,6 +1729,7 @@ export class StoryAgentRunService {
           status: StoryAgentRunStatus.authoring,
           errorCode: null,
           errorDetail: null,
+          authoringStages: initialAuthoringStages() as Prisma.InputJsonValue,
           authoringAttempts: { increment: 1 },
           leaseOwner: PENDING_WORKER_OWNER,
           leaseAcquiredAt: now,
@@ -1953,7 +2019,7 @@ export class StoryAgentRunService {
   }
 
   private executeApplyProposal(
-    draft: InteractiveFilmDraftContent,
+    draft: InteractiveStoryDraftContent,
     layout: StoryAgentCanvasLayoutSnapshot,
     operations: readonly StoryPatchOperation[],
   ) {
@@ -2094,6 +2160,7 @@ export class StoryAgentRunService {
         id: true,
         workspaceId: true,
         title: true,
+        format: true,
         frameProfile: true,
         defaultLocale: true,
         draft: true,
@@ -2108,17 +2175,26 @@ export class StoryAgentRunService {
       });
     }
     if (
-      project.draft.schemaVersion !== INTERACTIVE_FILM_DRAFT_SCHEMA_VERSION ||
+      project.format !== 'interactive_film' &&
+      project.format !== 'text_adventure'
+    ) {
+      throw new ConflictException({
+        code: 'STORY_AGENT_PROJECT_FORMAT_UNSUPPORTED',
+        message: `The Story Agent does not support story format ${project.format}.`,
+      });
+    }
+    if (
+      project.draft.schemaVersion !== INTERACTIVE_STORY_DRAFT_SCHEMA_VERSION ||
       project.draft.schemaVersion !== STORY_AGENT_TARGET_DRAFT_SCHEMA_VERSION
     ) {
       throw new ConflictException({
         code: 'STORY_AGENT_DRAFT_SCHEMA_UNSUPPORTED',
         message:
-          'The Story Agent only edits the current interactive-film draft schema.',
+          'The Story Agent only edits the current unified story draft schema.',
         schemaVersion: project.draft.schemaVersion,
       });
     }
-    const draft = InteractiveFilmDraftContentSchema.safeParse(
+    const draft = InteractiveStoryDraftContentSchema.safeParse(
       project.draft.content,
     );
     if (!draft.success) {
@@ -2156,6 +2232,7 @@ export class StoryAgentRunService {
         id: project.id,
         workspaceId: project.workspaceId,
         title: project.title,
+        format: project.format,
         frameProfile: project.frameProfile,
         defaultLocale: project.defaultLocale,
       },
@@ -2427,6 +2504,11 @@ export class StoryAgentRunService {
       confirmedByUserId: row.confirmedByUserId,
       cancelledByUserId: row.cancelledByUserId,
       proposal,
+      authoringStages:
+        row.status === StoryAgentRunStatus.authoring ||
+        row.status === StoryAgentRunStatus.authoring_failed
+          ? authoringStagesForDto(row.authoringStages, row.status)
+          : null,
       undoOfRunId: row.revertsRunId,
       baseDraftRevision: row.baseDraftRevision,
       baseLayoutRevision: row.baseLayoutRevision,
@@ -2594,7 +2676,7 @@ function parseUndoSnapshots(source: {
 }):
   | {
       ok: true;
-      draft: InteractiveFilmDraftContent;
+      draft: InteractiveStoryDraftContent;
       layout: StoryAgentCanvasLayoutSnapshot;
     }
   | { ok: false; code: string; detail: string } {
@@ -2612,7 +2694,7 @@ function parseUndoSnapshots(source: {
       detail: 'The exact source snapshots required for undo are missing.',
     };
   }
-  const draft = InteractiveFilmDraftContentSchema.safeParse(
+  const draft = InteractiveStoryDraftContentSchema.safeParse(
     source.beforeDraftSnapshot,
   );
   const layout = parseLayoutSnapshot(source.beforeLayoutSnapshot);
@@ -2633,7 +2715,7 @@ function parseUndoSnapshots(source: {
   return { ok: true, draft: draft.data, layout };
 }
 
-function restoredGraphNodeIds(draft: InteractiveFilmDraftContent): string[] {
+function restoredGraphNodeIds(draft: InteractiveStoryDraftContent): string[] {
   return draft.graph.nodes.map((node) => node.nodeId);
 }
 
@@ -2675,6 +2757,53 @@ function iso(value: Date | null): string | null {
   return value?.toISOString() ?? null;
 }
 
+// ── Authoring-pipeline stage progress ──────────────────────────────────────
+
+/** The stored progress at run start: first baton running, the rest pending. */
+function initialAuthoringStages(): StoryAuthoringStageProgress[] {
+  return STORY_AUTHORING_STAGE_KEYS.map((key, index) => ({
+    key,
+    status: index === 0 ? 'running' : 'pending',
+  }));
+}
+
+/** Progress after `stage` began: everything before it done, it running, rest pending. */
+function advanceAuthoringStages(
+  stage: StoryAuthoringStageKey,
+): StoryAuthoringStageProgress[] {
+  const active = STORY_AUTHORING_STAGE_KEYS.indexOf(stage);
+  return STORY_AUTHORING_STAGE_KEYS.map((key, index) => ({
+    key,
+    status: index < active ? 'done' : index === active ? 'running' : 'pending',
+  }));
+}
+
+/**
+ * Canonicalizes the stored progress for the DTO. Tolerates a null/corrupt
+ * column and, once the run has failed, renders the baton that was still
+ * running as `failed` (that is where drafting stopped).
+ */
+function authoringStagesForDto(
+  value: Prisma.JsonValue,
+  status: StoryAgentRunStatus,
+): StoryAuthoringStageProgress[] {
+  const parsed = z.array(StoryAuthoringStageProgressSchema).safeParse(value);
+  const stored = new Map(
+    (parsed.success ? parsed.data : initialAuthoringStages()).map((s) => [
+      s.key,
+      s.status,
+    ]),
+  );
+  return STORY_AUTHORING_STAGE_KEYS.map((key) => {
+    const state = stored.get(key) ?? 'pending';
+    const resolved =
+      status === StoryAgentRunStatus.authoring_failed && state === 'running'
+        ? 'failed'
+        : state;
+    return { key, status: resolved };
+  });
+}
+
 function isUniqueConstraintError(error: unknown): boolean {
   return (
     error instanceof Prisma.PrismaClientKnownRequestError &&
@@ -2706,4 +2835,25 @@ function errorCode(error: unknown, fallback: string): string {
   }
   if (error instanceof StoryPatchExecutionError) return error.code.slice(0, 96);
   return fallback;
+}
+
+/**
+ * The authoring agent neither reads nor writes character reference images or
+ * voice samples — humans manage those uploads and the executor preserves them
+ * across replaces. Strip the URLs so they never bloat the prompt context.
+ */
+function draftContentForAuthoring(
+  content: InteractiveStoryDraftContent,
+): InteractiveStoryDraftContent {
+  return {
+    ...content,
+    storyBible: {
+      ...content.storyBible,
+      characters: content.storyBible.characters.map((character) => ({
+        ...character,
+        images: [],
+        voice: null,
+      })),
+    },
+  };
 }

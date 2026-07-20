@@ -6287,7 +6287,11 @@ enum StoryProjectStatus {
 }
 
 /// Immutable project-wide picture contract for interactive-film production.
-/// Every selected or generated video must match the project's profile.
+/// Film-only: an `interactive_film` project owns exactly one profile for its
+/// whole lifecycle and every selected or generated video must match it. A
+/// text-first (`text_adventure`) project sets no profile at all — its
+/// `frame_profile` is null and any video it contains plays inline at native
+/// size rather than being forced to a fixed frame.
 enum StoryFrameProfile {
   landscape_16_9
   portrait_9_16
@@ -6437,7 +6441,7 @@ model StoryProject {
   id              String             @id @default(uuid(7)) @db.Uuid
   workspaceId     String             @map("workspace_id") @db.Uuid
   format          StoryFormat
-  frameProfile    StoryFrameProfile  @map("frame_profile")
+  frameProfile    StoryFrameProfile? @map("frame_profile")
   status          StoryProjectStatus @default(active)
   visibility      StoryVisibility    @default(private)
   title           String             @db.VarChar(160)
@@ -6534,6 +6538,11 @@ model StoryAgentRun {
 
   summary            String? @db.Text
   authoringAttempts  Int     @default(0) @map("authoring_attempts")
+  // Per-baton pipeline progress while status=authoring: an ordered array of
+  // {key,status} the run-card renders as a stage checklist. Null outside the
+  // authoring window. Intermediate stage products are NOT persisted — a lease
+  // reclaim reruns the whole (bounded) pipeline.
+  authoringStages    Json?   @map("authoring_stages") @db.JsonB
   errorCode          String? @map("error_code") @db.VarChar(96)
   errorDetail        String? @map("error_detail") @db.Text
   idempotencyKey     String  @unique @map("idempotency_key") @db.VarChar(240)

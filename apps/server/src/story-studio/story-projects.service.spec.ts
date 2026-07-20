@@ -9,10 +9,11 @@ import {
 } from '@prisma/client';
 import { canonicalJsonHash } from './canonical-json';
 import {
-  EMPTY_INTERACTIVE_FILM_DRAFT_CONTENT,
-  INTERACTIVE_FILM_DRAFT_SCHEMA_VERSION,
+  EMPTY_INTERACTIVE_STORY_DRAFT_CONTENT,
+  INTERACTIVE_STORY_DRAFT_SCHEMA_VERSION,
   STORY_CANVAS_LAYOUT_SCHEMA_VERSION,
-  type InteractiveFilmDraftContent,
+  StoryProjectListQuerySchema,
+  type InteractiveStoryDraftContent,
 } from './dto';
 import { StoryProjectsService } from './story-projects.service';
 import { storyVideoSnapshotHash } from './story-video-production.schema';
@@ -24,26 +25,21 @@ const DRAFT_ID = '0197f4a2-0800-7000-8000-000000000003';
 const REVISION_ID = '0197f4a2-0800-7000-8000-000000000004';
 const NOW = new Date('2026-07-12T12:00:00.000Z');
 
-function lockableDraft(): InteractiveFilmDraftContent {
+function lockableDraft(): InteractiveStoryDraftContent {
   return {
     storyBible: {
       logline: 'At night, a sealed gate asks who owns the truth.',
       synopsis: "A visitor must choose whether to reveal the villa's secret.",
       worldview: 'One night inside a mythic villa.',
-      storyRules: [],
       characters: [
         {
           id: 'hero',
           name: { 'zh-CN': '来客' },
-          role: 'protagonist',
           summary: 'A visitor searching for the truth.',
-          playable: true,
-          continuityRules: [],
+          images: [],
+          voice: null,
         },
       ],
-      locations: [],
-      props: [],
-      stateVariables: [],
       endings: [
         {
           id: 'ending.truth',
@@ -94,12 +90,12 @@ function projectRow(overrides: Record<string, unknown> = {}) {
 
 function draftRow(overrides: Record<string, unknown> = {}) {
   const content =
-    (overrides.content as InteractiveFilmDraftContent | undefined) ??
+    (overrides.content as InteractiveStoryDraftContent | undefined) ??
     lockableDraft();
   return {
     id: DRAFT_ID,
     storyProjectId: PROJECT_ID,
-    schemaVersion: INTERACTIVE_FILM_DRAFT_SCHEMA_VERSION,
+    schemaVersion: INTERACTIVE_STORY_DRAFT_SCHEMA_VERSION,
     content,
     contentHash: canonicalJsonHash(content),
     revision: 3,
@@ -152,7 +148,7 @@ function revisionRow(overrides: Record<string, unknown> = {}) {
     storyProjectId: PROJECT_ID,
     number: 1,
     sourceDraftRevision: 3,
-    schemaVersion: INTERACTIVE_FILM_DRAFT_SCHEMA_VERSION,
+    schemaVersion: INTERACTIVE_STORY_DRAFT_SCHEMA_VERSION,
     content,
     contentHash: canonicalJsonHash(content),
     label: null,
@@ -212,12 +208,84 @@ async function apiError(operation: Promise<unknown>) {
   throw new Error('Expected operation to reject.');
 }
 
-describe('StoryProjectsService v3 authoring boundary', () => {
-  it('creates a v3 story-only draft and a non-null empty video workbench', async () => {
+describe('StoryProjectsService unified-story authoring boundary', () => {
+  it('keeps retired project formats out of the target project-list contract', async () => {
+    expect(
+      StoryProjectListQuerySchema.safeParse({
+        format: 'narrative_rpg',
+      }).success,
+    ).toBe(false);
+
+    const findMany = jest.fn((input: { where: { format: unknown } }) => {
+      void input;
+      return Promise.resolve([]);
+    });
+    const { service } = serviceWith({ storyProject: { findMany } });
+
+    await expect(
+      service.list(USER as never, WORKSPACE_ID, {
+        status: 'active',
+        limit: 20,
+      }),
+    ).resolves.toEqual({ items: [], nextCursor: null });
+
+    expect(findMany).toHaveBeenCalledTimes(1);
+    expect(findMany.mock.calls[0]?.[0].where.format).toEqual({
+      in: [StoryFormat.interactive_film, StoryFormat.text_adventure],
+    });
+  });
+
+  it('creates a text-adventure profile with no frame profile on the unified schema', async () => {
+    const project = summaryProject({
+      format: StoryFormat.text_adventure,
+      frameProfile: null,
+      draft: draftRow({
+        revision: 0,
+        content: EMPTY_INTERACTIVE_STORY_DRAFT_CONTENT,
+      }),
+    });
+    const create = jest.fn(
+      (input: {
+        data: {
+          format: StoryFormat;
+          frameProfile: unknown;
+          draft: { create: { schemaVersion: string; content: unknown } };
+        };
+      }) => {
+        expect(input.data).toMatchObject({
+          format: StoryFormat.text_adventure,
+          draft: {
+            create: {
+              schemaVersion: 'interactive-story-draft-v1',
+              content: EMPTY_INTERACTIVE_STORY_DRAFT_CONTENT,
+            },
+          },
+        });
+        // A text-first project persists no frame contract.
+        expect(input.data.frameProfile).toBeNull();
+        return Promise.resolve(project);
+      },
+    );
+    const { service } = serviceWith({ storyProject: { create } });
+
+    await expect(
+      service.create(USER as never, WORKSPACE_ID, {
+        format: 'text_adventure',
+        title: 'A Text Story',
+        defaultLocale: 'en-US',
+        visibility: 'private',
+      }),
+    ).resolves.toMatchObject({
+      project: { format: 'text_adventure', frameProfile: null },
+      draft: { format: 'text_adventure' },
+    });
+  });
+
+  it('creates a unified story draft and a non-null empty video workbench', async () => {
     const project = summaryProject({
       draft: draftRow({
         revision: 0,
-        content: EMPTY_INTERACTIVE_FILM_DRAFT_CONTENT,
+        content: EMPTY_INTERACTIVE_STORY_DRAFT_CONTENT,
       }),
     });
     const create = jest.fn(
@@ -235,8 +303,8 @@ describe('StoryProjectsService v3 authoring boundary', () => {
         };
       }) => {
         expect(input.data.draft.create).toMatchObject({
-          schemaVersion: 'interactive-film-draft-v3',
-          content: EMPTY_INTERACTIVE_FILM_DRAFT_CONTENT,
+          schemaVersion: 'interactive-story-draft-v1',
+          content: EMPTY_INTERACTIVE_STORY_DRAFT_CONTENT,
         });
         expect(input.data.canvasLayout.create).toMatchObject({
           schemaVersion: STORY_CANVAS_LAYOUT_SCHEMA_VERSION,
@@ -397,7 +465,7 @@ describe('StoryProjectsService v3 authoring boundary', () => {
     expect(tx.storyCanvasLayout.updateMany).not.toHaveBeenCalled();
   });
 
-  it('returns a controlled conflict for a stored pre-v3 draft', async () => {
+  it('returns a controlled conflict for a stored retired draft', async () => {
     const prisma = {
       storyDraft: {
         findUnique: jest.fn().mockResolvedValue(
@@ -415,11 +483,11 @@ describe('StoryProjectsService v3 authoring boundary', () => {
     ).resolves.toMatchObject({
       code: 'STORY_DRAFT_SCHEMA_UNSUPPORTED',
       actualSchemaVersion: 'interactive-film-draft-v2',
-      expectedSchemaVersion: INTERACTIVE_FILM_DRAFT_SCHEMA_VERSION,
+      expectedSchemaVersion: INTERACTIVE_STORY_DRAFT_SCHEMA_VERSION,
     });
   });
 
-  it('rejects a pre-v3 workbench before parsing its removed fields', async () => {
+  it('rejects a retired workbench before parsing its removed fields', async () => {
     const draft = draftRow({
       schemaVersion: 'interactive-film-draft-v2',
       content: lockableDraft(),
@@ -441,7 +509,7 @@ describe('StoryProjectsService v3 authoring boundary', () => {
     ).resolves.toMatchObject({
       code: 'STORY_DRAFT_SCHEMA_UNSUPPORTED',
       actualSchemaVersion: 'interactive-film-draft-v2',
-      expectedSchemaVersion: INTERACTIVE_FILM_DRAFT_SCHEMA_VERSION,
+      expectedSchemaVersion: INTERACTIVE_STORY_DRAFT_SCHEMA_VERSION,
     });
   });
 

@@ -13,8 +13,8 @@ import type {
 } from '@repo/shared/story-agent';
 import { canonicalJsonHash } from './canonical-json';
 import {
-  EMPTY_INTERACTIVE_FILM_DRAFT_CONTENT,
-  INTERACTIVE_FILM_DRAFT_SCHEMA_VERSION,
+  EMPTY_INTERACTIVE_STORY_DRAFT_CONTENT,
+  INTERACTIVE_STORY_DRAFT_SCHEMA_VERSION,
   STORY_CANVAS_LAYOUT_SCHEMA_VERSION,
 } from './dto';
 import {
@@ -41,7 +41,7 @@ const PRE_CONFIRM_STATUSES = [
 ];
 const AUTHORING_SNAPSHOT = {
   draftRevision: 7,
-  draftContentHash: canonicalJsonHash(EMPTY_INTERACTIVE_FILM_DRAFT_CONTENT),
+  draftContentHash: canonicalJsonHash(EMPTY_INTERACTIVE_STORY_DRAFT_CONTENT),
   layoutRevision: 3,
 } as const;
 const BRIEF_TEXT =
@@ -641,7 +641,7 @@ describe('StoryAgentRunService', () => {
             schemaVersion: 'story-patch-v1',
             baseDraftRevision: 7,
             baseContentHash: canonicalJsonHash(
-              EMPTY_INTERACTIVE_FILM_DRAFT_CONTENT,
+              EMPTY_INTERACTIVE_STORY_DRAFT_CONTENT,
             ),
             baseLayoutRevision: 3,
             title: 'A remembered dream',
@@ -737,14 +737,10 @@ describe('StoryAgentRunService', () => {
     expect(realtime.enqueue).not.toHaveBeenCalled();
   });
 
-  it('rejects a 5,000-level hostile condition before recursive Zod parsing', async () => {
-    let condition: Record<string, unknown> = {
-      kind: 'flag',
-      flag: 'seen_truth',
-      equals: true,
-    };
+  it('rejects a 5,000-level hostile payload before recursive Zod parsing', async () => {
+    let deep: Record<string, unknown> = { leaf: true };
     for (let depth = 0; depth < 5_000; depth += 1) {
-      condition = { kind: 'not', condition };
+      deep = { nested: deep };
     }
     const tx = completeTransaction(authoringRunRow());
     const { service } = serviceWith(tx);
@@ -754,24 +750,11 @@ describe('StoryAgentRunService', () => {
         operations: [
           {
             operationId: OPERATION_ID,
-            summary: 'Deep route.',
+            summary: 'Deeply nested payload.',
             kind: 'story_graph.put_node',
             payload: {
               intent: 'create',
-              node: {
-                kind: 'router',
-                nodeId: 'router:deep',
-                exit: {
-                  kind: 'auto',
-                  routes: [
-                    {
-                      nextNodeId: 'clip:next',
-                      when: condition,
-                      priority: 0,
-                    },
-                  ],
-                },
-              },
+              node: deep,
             },
           },
         ],
@@ -1428,12 +1411,12 @@ describe('StoryAgentRunService', () => {
       status: StoryAgentRunStatus.succeeded,
       resultDraftRevision: 8,
       resultLayoutRevision: 4,
-      beforeDraftSnapshot: EMPTY_INTERACTIVE_FILM_DRAFT_CONTENT,
+      beforeDraftSnapshot: EMPTY_INTERACTIVE_STORY_DRAFT_CONTENT,
       beforeLayoutSnapshot: {
         nodePositions: {},
         storyWorldNodePresent: true,
       },
-      afterDraftHash: canonicalJsonHash(EMPTY_INTERACTIVE_FILM_DRAFT_CONTENT),
+      afterDraftHash: canonicalJsonHash(EMPTY_INTERACTIVE_STORY_DRAFT_CONTENT),
       afterLayoutHash: canonicalJsonHash({
         nodePositions: {},
         storyWorldNodePresent: true,
@@ -1724,13 +1707,14 @@ function canonicalProjectRow() {
     id: PROJECT_ID,
     workspaceId: WORKSPACE_ID,
     title: 'Dream',
+    format: 'interactive_film',
     frameProfile: StoryFrameProfile.landscape_16_9,
     defaultLocale: 'en-US',
     draft: {
       revision: 7,
-      schemaVersion: INTERACTIVE_FILM_DRAFT_SCHEMA_VERSION,
-      content: EMPTY_INTERACTIVE_FILM_DRAFT_CONTENT,
-      contentHash: canonicalJsonHash(EMPTY_INTERACTIVE_FILM_DRAFT_CONTENT),
+      schemaVersion: INTERACTIVE_STORY_DRAFT_SCHEMA_VERSION,
+      content: EMPTY_INTERACTIVE_STORY_DRAFT_CONTENT,
+      contentHash: canonicalJsonHash(EMPTY_INTERACTIVE_STORY_DRAFT_CONTENT),
     },
     canvasLayout: {
       revision: 3,
@@ -1778,9 +1762,9 @@ function briefFingerprint(overrides: Record<string, unknown> = {}): string {
 function proposal(): StoryPatchProposal {
   return {
     schemaVersion: 'story-patch-v1',
-    draftSchemaVersion: 'interactive-film-draft-v3',
+    draftSchemaVersion: 'interactive-story-draft-v1',
     baseDraftRevision: 7,
-    baseContentHash: canonicalJsonHash(EMPTY_INTERACTIVE_FILM_DRAFT_CONTENT),
+    baseContentHash: canonicalJsonHash(EMPTY_INTERACTIVE_STORY_DRAFT_CONTENT),
     baseLayoutRevision: 3,
     title: 'A remembered dream',
     summary: 'Establish the premise.',

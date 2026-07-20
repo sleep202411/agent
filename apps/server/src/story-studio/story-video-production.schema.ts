@@ -242,7 +242,12 @@ const StoryVideoSnapshotNullableMediaFields = {
     .string()
     .regex(/^[a-f0-9]{64}$/)
     .nullable(),
-  contentType: z.literal('video/mp4').nullable(),
+  contentType: z
+    .string()
+    .refine((value) => value.toLowerCase().startsWith('video/'), {
+      message: 'contentType must be a video/* MIME type',
+    })
+    .nullable(),
   durationMs: z.number().int().positive().nullable(),
   width: z.number().int().positive().nullable(),
   height: z.number().int().positive().nullable(),

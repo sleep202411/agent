@@ -2,8 +2,8 @@ import { z } from 'zod';
 import type { StoryVideoRecipeSnapshot } from './story-video-production.schema';
 import {
   StoryBuildScopeSchema,
-  INTERACTIVE_FILM_DRAFT_SCHEMA_VERSION,
-  InteractiveFilmDraftContentSchema,
+  INTERACTIVE_STORY_DRAFT_SCHEMA_VERSION,
+  InteractiveStoryDraftContentSchema,
   ReviewChecklistValueSchema,
   StoryReferenceReviewDecisionSchema,
   StoryReferenceSlotSpecSchema,
@@ -11,14 +11,14 @@ import {
   StoryUuidSchema,
   type StoryBuildScope,
   type StoryBuildStatus,
-  type InteractiveFilmDraftContent,
+  type InteractiveStoryDraftContent,
   type StoryReferenceReviewDecision,
   type StoryReferenceSlotSpec,
 } from './interactive-film.schema';
 
 export * from './interactive-film.schema';
 
-/** Product-level Story Studio core and interactive-film API contracts. */
+/** Product-level Story Studio contracts shared by cinematic and narrative profiles. */
 
 export const STORY_TITLE_MAX = 160;
 export const STORY_SUMMARY_MAX = 2_000;
@@ -30,15 +30,11 @@ export const STORY_WORLD_CANVAS_NODE_ID = '__story_root__' as const;
 export const STORY_CANVAS_LAYOUT_NODE_COUNT_MAX = 1_000;
 export const STORY_CANVAS_LAYOUT_COORDINATE_ABS_MAX = 1_000_000;
 
-export const StoryFormatSchema = z.enum([
-  'text_adventure',
-  'interactive_film',
-  'narrative_rpg',
-]);
+export const StoryFormatSchema = z.enum(['text_adventure', 'interactive_film']);
 export type StoryFormat = z.infer<typeof StoryFormatSchema>;
 
-/** First product slice. The wider StoryFormat type remains future-ready. */
-export const CreatableStoryFormatSchema = z.literal('interactive_film');
+/** Supported creation profiles. A format sets defaults; it never restricts graph node kinds. */
+export const CreatableStoryFormatSchema = StoryFormatSchema;
 export type CreatableStoryFormat = z.infer<typeof CreatableStoryFormatSchema>;
 
 export const StoryProjectStatusSchema = z.enum(['active', 'archived']);
@@ -276,7 +272,10 @@ export type StoryBuildListQuery = z.infer<typeof StoryBuildListQuerySchema>;
 export const CreateStoryProjectSchema = z
   .object({
     format: CreatableStoryFormatSchema,
-    frameProfile: StoryFrameProfileSchema,
+    // Optional: the project-wide frame contract is film-only. A cinematic
+    // (`interactive_film`) project must declare one; a text-first
+    // (`text_adventure`) project must not carry one at all.
+    frameProfile: StoryFrameProfileSchema.optional(),
     title: StoryTitleSchema,
     summary: StorySummarySchema.optional(),
     defaultLocale: z.string().trim().min(2).max(16),
@@ -285,7 +284,26 @@ export const CreateStoryProjectSchema = z
     ),
     sourceIpId: StoryUuidSchema.nullable().optional(),
   })
-  .strict();
+  .strict()
+  .superRefine((input, context) => {
+    if (
+      input.format === 'interactive_film' &&
+      input.frameProfile === undefined
+    ) {
+      context.addIssue({
+        code: 'custom',
+        path: ['frameProfile'],
+        message: 'An interactive-film project requires a frame profile.',
+      });
+    }
+    if (input.format === 'text_adventure' && input.frameProfile !== undefined) {
+      context.addIssue({
+        code: 'custom',
+        path: ['frameProfile'],
+        message: 'A text-adventure project must not declare a frame profile.',
+      });
+    }
+  });
 export type CreateStoryProjectInput = z.infer<typeof CreateStoryProjectSchema>;
 
 export const PatchStoryProjectSchema = z
@@ -316,8 +334,8 @@ export type ArchiveStoryProjectInput = z.infer<
 export const PutStoryDraftSchema = z
   .object({
     expectedRevision: NonNegativeVersionSchema,
-    schemaVersion: z.literal(INTERACTIVE_FILM_DRAFT_SCHEMA_VERSION),
-    content: InteractiveFilmDraftContentSchema,
+    schemaVersion: z.literal(INTERACTIVE_STORY_DRAFT_SCHEMA_VERSION),
+    content: InteractiveStoryDraftContentSchema,
     sessionId: SessionIdSchema,
   })
   .strict();
@@ -598,7 +616,7 @@ export interface StoryProjectSummaryDto {
   id: string;
   workspaceId: string;
   format: StoryFormat;
-  frameProfile: StoryFrameProfile;
+  frameProfile: StoryFrameProfile | null;
   status: StoryProjectStatus;
   visibility: StoryVisibility;
   title: string;
@@ -618,9 +636,9 @@ export interface StoryProjectSummaryDto {
 
 export interface StoryDraftDto {
   projectId: string;
-  format: 'interactive_film';
-  schemaVersion: typeof INTERACTIVE_FILM_DRAFT_SCHEMA_VERSION;
-  content: InteractiveFilmDraftContent;
+  format: CreatableStoryFormat;
+  schemaVersion: typeof INTERACTIVE_STORY_DRAFT_SCHEMA_VERSION;
+  content: InteractiveStoryDraftContent;
   contentHash: string;
   revision: number;
   updatedByUserId: string;
@@ -643,8 +661,8 @@ export interface StoryCanvasLayoutDto {
 
 export interface StoryRevisionDto extends StoryRevisionSummaryDto {
   projectId: string;
-  format: 'interactive_film';
-  content: InteractiveFilmDraftContent;
+  format: CreatableStoryFormat;
+  content: InteractiveStoryDraftContent;
 }
 
 export interface StoryVideoTechnicalCheckDto {
@@ -663,7 +681,7 @@ export interface StoryCurrentVideoDto {
   width: number;
   height: number;
   hasAudio: boolean;
-  browserSafeMp4: true;
+  browserSafeMp4: boolean;
   selectionVersion: number;
   setByUserId: string | null;
   setAt: string;

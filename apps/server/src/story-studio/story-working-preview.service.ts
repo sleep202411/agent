@@ -1,5 +1,6 @@
 import {
   ConflictException,
+  GoneException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
@@ -15,10 +16,11 @@ import { PrismaService } from '../infra/db/db.module';
 import { MediaAssetUrlResolverService } from '../infra/storage/media-asset-url-resolver.service';
 import { canonicalJsonHash } from './canonical-json';
 import {
-  createPlayableInteractiveFilmDraftContentSchema,
-  InteractiveFilmDraftContentSchema,
-  INTERACTIVE_FILM_DRAFT_SCHEMA_VERSION,
+  createPlayableInteractiveStoryDraftContentSchema,
+  InteractiveStoryDraftContentSchema,
+  INTERACTIVE_STORY_DRAFT_SCHEMA_VERSION,
   type StoryBuildDiagnosticDto,
+  type CreatableStoryFormat,
   type StoryWorkingPreviewDto,
 } from './dto';
 import {
@@ -78,9 +80,21 @@ export class StoryWorkingPreviewService {
         message: 'Story project not found.',
       });
     }
+    const format = access.project.format;
+    if (format !== 'interactive_film' && format !== 'text_adventure') {
+      throw new GoneException({
+        code: 'STORY_WORKING_PREVIEW_PROJECT_FORMAT_UNSUPPORTED',
+        message: `Story format ${format} is not supported by Working Preview.`,
+      });
+    }
 
     return this.prisma.$transaction(
-      (tx) => this.compileLatestSavedDraft(tx, access.project, projectId),
+      (tx) =>
+        this.compileLatestSavedDraft(
+          tx,
+          { ...access.project, format },
+          projectId,
+        ),
       { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead },
     );
   }
@@ -90,7 +104,8 @@ export class StoryWorkingPreviewService {
     project: {
       id: string;
       workspaceId: string;
-      frameProfile: 'landscape_16_9' | 'portrait_9_16';
+      format: CreatableStoryFormat;
+      frameProfile: 'landscape_16_9' | 'portrait_9_16' | null;
       defaultLocale: string;
       title: string;
       summary: string | null;
@@ -117,7 +132,7 @@ export class StoryWorkingPreviewService {
       });
     }
 
-    if (draft.schemaVersion !== INTERACTIVE_FILM_DRAFT_SCHEMA_VERSION) {
+    if (draft.schemaVersion !== INTERACTIVE_STORY_DRAFT_SCHEMA_VERSION) {
       return emptyWorkingPreview(
         draft.revision,
         draft.contentHash,
@@ -125,17 +140,17 @@ export class StoryWorkingPreviewService {
         previewDiagnostic(
           'error',
           'STORY_WORKING_PREVIEW_DRAFT_SCHEMA_UNSUPPORTED',
-          `This saved draft uses unsupported schema ${draft.schemaVersion}; Working Preview requires ${INTERACTIVE_FILM_DRAFT_SCHEMA_VERSION}.`,
+          `This saved draft uses unsupported schema ${draft.schemaVersion}; Working Preview requires ${INTERACTIVE_STORY_DRAFT_SCHEMA_VERSION}.`,
           'revision',
           projectId,
         ),
       );
     }
 
-    const draftShape = InteractiveFilmDraftContentSchema.safeParse(
+    const draftShape = InteractiveStoryDraftContentSchema.safeParse(
       draft.content,
     );
-    const playableDraft = createPlayableInteractiveFilmDraftContentSchema(
+    const playableDraft = createPlayableInteractiveStoryDraftContentSchema(
       project.defaultLocale,
     ).safeParse(draft.content);
     if (!playableDraft.success) {
@@ -222,6 +237,7 @@ export class StoryWorkingPreviewService {
 
     const compiled = compileStoryBuild({
       projectId,
+      format: project.format,
       buildId: previewBuildId,
       sourceDraftRevision: draft.revision,
       channel: 'preview',
@@ -334,8 +350,7 @@ function prepareWorkingPreviewVideo(
       variant.durationMs === null ||
       variant.width === null ||
       variant.height === null ||
-      variant.hasAudio === null ||
-      !isBrowserSafeMp4Metadata(variant.metadata)
+      variant.hasAudio === null
     ) {
       diagnostics.push(
         previewDiagnostic(
@@ -355,7 +370,7 @@ function prepareWorkingPreviewVideo(
         variant.width !== selection.currentWidth ||
         variant.height !== selection.currentHeight ||
         variant.hasAudio !== selection.currentHasAudio ||
-        selection.currentBrowserSafeMp4 !== true
+        selection.currentBrowserSafeMp4 === null
       ) {
         diagnostics.push(
           previewDiagnostic(
@@ -406,7 +421,7 @@ function prepareWorkingPreviewVideo(
             height: variant.height,
             durationMs,
             hasAudio: variant.hasAudio,
-            browserSafeMp4: true,
+            browserSafeMp4: isBrowserSafeMp4Metadata(variant.metadata),
             url,
           };
         }
