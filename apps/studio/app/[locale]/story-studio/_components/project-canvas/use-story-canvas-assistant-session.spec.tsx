@@ -124,7 +124,7 @@ describe("Story Canvas assistant session", () => {
           JSON.stringify({
             conversationId: "story-canvas:project-a",
             messages: persistedMessages,
-            selectedSkillKeys: [STORY_DIRECTING_SKILL_KEY.PSYCHOLOGICAL_MYSTERY],
+            selectedSkillKeys: [STORY_DIRECTING_SKILL_KEY.HALFTONE_COLLAGE],
             revision: 2,
             sessionId: "019f7243-20c1-7054-a6fa-0a33da6efef5",
             status: "ready",
@@ -138,7 +138,7 @@ describe("Story Canvas assistant session", () => {
     });
 
     expect(setMessages).toHaveBeenCalledWith(persistedMessages);
-    expect(session!.selectedSkillKey).toBe(STORY_DIRECTING_SKILL_KEY.PSYCHOLOGICAL_MYSTERY);
+    expect(session!.selectedSkillKey).toBe(STORY_DIRECTING_SKILL_KEY.HALFTONE_COLLAGE);
     await act(async () => {
       expect(await session!.submit()).toBe(true);
     });
@@ -250,7 +250,7 @@ describe("Story Canvas assistant session", () => {
       await Promise.resolve();
     });
     act(() => {
-      session!.setSelectedSkillKey(STORY_DIRECTING_SKILL_KEY.EASTERN_DREAMSCAPE);
+      session!.setSelectedSkillKey(STORY_DIRECTING_SKILL_KEY.SYMMETRICAL_STORYBOOK);
       session!.setDraft("A dream in a moonlit garden");
     });
     await act(async () => {
@@ -263,7 +263,7 @@ describe("Story Canvas assistant session", () => {
       .find(Boolean);
     expect(JSON.parse(stored!).turn).toEqual({
       message: submitted,
-      metadata: { selectedSkillKey: STORY_DIRECTING_SKILL_KEY.EASTERN_DREAMSCAPE },
+      metadata: { selectedSkillKey: STORY_DIRECTING_SKILL_KEY.SYMMETRICAL_STORYBOOK },
     });
 
     await act(async () => root.unmount());
@@ -619,7 +619,7 @@ describe("Story Canvas assistant session", () => {
       await Promise.resolve();
     });
     act(() => {
-      session!.setSelectedSkillKey(STORY_DIRECTING_SKILL_KEY.EASTERN_DREAMSCAPE);
+      session!.setSelectedSkillKey(STORY_DIRECTING_SKILL_KEY.SYMMETRICAL_STORYBOOK);
       session!.setDraft("An ambiguous request");
     });
     await act(async () => {
@@ -870,7 +870,7 @@ describe("Story Canvas assistant session", () => {
       await Promise.resolve();
     });
     act(() => {
-      session!.setSelectedSkillKey(STORY_DIRECTING_SKILL_KEY.EASTERN_DREAMSCAPE);
+      session!.setSelectedSkillKey(STORY_DIRECTING_SKILL_KEY.SYMMETRICAL_STORYBOOK);
       session!.setDraft("Keep this local idea");
     });
 
@@ -880,7 +880,7 @@ describe("Story Canvas assistant session", () => {
 
     expect(fetchMock).toHaveBeenCalledTimes(4);
     expect(session!.draft).toBe("Keep this local idea");
-    expect(session!.selectedSkillKey).toBe(STORY_DIRECTING_SKILL_KEY.EASTERN_DREAMSCAPE);
+    expect(session!.selectedSkillKey).toBe(STORY_DIRECTING_SKILL_KEY.SYMMETRICAL_STORYBOOK);
     expect(clearError).not.toHaveBeenCalled();
   });
 });

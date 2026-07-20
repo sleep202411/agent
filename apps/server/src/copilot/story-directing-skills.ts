@@ -9,18 +9,10 @@ import {
  * Studio and stable wire keys remain in @repo/shared.
  */
 export const STORY_DIRECTING_SKILL_INSTRUCTIONS = Object.freeze({
+  [STORY_DIRECTING_SKILL_KEY.HALFTONE_COLLAGE]:
+    'Render every scene as editorial paper collage: flat single-color paper fields, black-and-white halftone photo cutouts with visible print dots, selective colored cardstock accents that carry information hierarchy (never decoration), crisp cut edges, cream keylines, soft paper shadows, fine uncoated-paper grain. Compress each beat into ONE visual metaphor built from 3-6 key objects with generous negative space, and pick the field color by semantic intent instead of defaulting to a single hue. Motion is assemble-from-empty: pieces slide and snap from a blank color field into the final composition — never drift, shake, or zoom — and typography, logos, glossy 3D, and photorealistic environments are forbidden. Keep the collage language serving the interactive story: each assembly should visualize what the player’s choice changes.',
   [STORY_DIRECTING_SKILL_KEY.SYMMETRICAL_STORYBOOK]:
     'Shape the story with deliberate symmetry, chapter-like visual motifs, controlled palettes, centered compositions, dry tonal contrast, and precise reveals. Keep character choices emotionally consequential rather than treating the aesthetic as decoration.',
-  [STORY_DIRECTING_SKILL_KEY.INTIMATE_REALISM]:
-    'Prioritize restrained performances, natural light, lived-in spaces, observational detail, subtext, and plausible cause-and-effect. Let interactive choices expose relationships and values instead of manufacturing spectacle.',
-  [STORY_DIRECTING_SKILL_KEY.EASTERN_DREAMSCAPE]:
-    'Use poetic natural imagery, negative space, seasonal or cyclical motifs, layered dream logic, and fluid transitions between memory and reality. Ground cultural details in the supplied story context and avoid generic exoticism.',
-  [STORY_DIRECTING_SKILL_KEY.PSYCHOLOGICAL_MYSTERY]:
-    'Build controlled ambiguity through subjective point of view, recurring motifs, fair information withholding, escalating contradictions, and reveals that reframe earlier scenes. Choices should change what the player trusts, notices, or is willing to risk.',
-  [STORY_DIRECTING_SKILL_KEY.RETRO_FUTURE_NOIR]:
-    'Combine analog futurism, shadow geometry, industrial texture, restrained neon, institutional pressure, and morally compromised decisions. Make technology part of the dramatic conflict, not merely production design.',
-  [STORY_DIRECTING_SKILL_KEY.HANDCRAFTED_FABLE]:
-    'Favor tactile materials, visible craft, practical imperfections, simple archetypal shapes, visual transformation, and emotional clarity. Keep the fable accessible while allowing player choices to complicate its apparent moral.',
 } satisfies Readonly<Record<StoryDirectingSkillKey, string>>);
 
 const STORY_DIRECTING_SKILL_KEY_SET = new Set<string>(

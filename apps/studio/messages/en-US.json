@@ -1850,25 +1850,9 @@
             "title": "Symmetrical storybook cinema",
             "description": "Symmetrical framing, chapter narration, and vintage color create a restrained, absurd fairy-tale tone."
           },
-          "intimateRealism": {
-            "title": "Intimate relationship drama",
-            "description": "Let emotion accumulate through everyday details, with choices that genuinely reshape relationships."
-          },
-          "easternDreamscape": {
-            "title": "Eastern classical dreamscape",
-            "description": "Use gardens, objects, and negative space to compose a subtle, flowing sense of fate."
-          },
-          "psychologicalMystery": {
-            "title": "Psychological mystery",
-            "description": "Restricted viewpoints, misleading clues, and earned reversals make choices reshape the truth players believe."
-          },
-          "retroFutureNoir": {
-            "title": "Retro-future noir",
-            "description": "Neon, smoke, and hard light frame a branching mystery about identity and its cost."
-          },
-          "handcraftedFable": {
-            "title": "Handcrafted stop-motion fable",
-            "description": "Felt, paper craft, and frame-by-frame texture make emotion and choice feel physically present."
+          "halftoneCollage": {
+            "title": "Halftone collage",
+            "description": "Flat paper fields, halftone cutouts and cardstock accents — each choice assembles into one visual metaphor."
           }
         }
       },

@@ -53,7 +53,7 @@ describe("Story Canvas agent launcher", () => {
     });
 
     expect(container.querySelector('[role="log"]')).toBeNull();
-    expect(container.querySelectorAll("button[aria-pressed]")).toHaveLength(6);
+    expect(container.querySelectorAll("button[aria-pressed]")).toHaveLength(2);
     await act(async () => {
       container
         .querySelector("form")!

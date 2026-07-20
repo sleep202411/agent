@@ -15,7 +15,7 @@ import {
 
 describe('Story Canvas directing skills', () => {
   it('pins one server instruction to each of the six shared wire keys', () => {
-    expect(STORY_DIRECTING_SKILL_KEYS).toHaveLength(6);
+    expect(STORY_DIRECTING_SKILL_KEYS).toHaveLength(2);
     expect(Object.keys(STORY_DIRECTING_SKILL_INSTRUCTIONS).sort()).toEqual(
       [...STORY_DIRECTING_SKILL_KEYS].sort(),
     );
@@ -24,10 +24,10 @@ describe('Story Canvas directing skills', () => {
   it('accepts one known directing skill', () => {
     expect(
       parseStoryCanvasCopilotInput({
-        selectedSkillKeys: [STORY_DIRECTING_SKILL_KEY.PSYCHOLOGICAL_MYSTERY],
+        selectedSkillKeys: [STORY_DIRECTING_SKILL_KEY.HALFTONE_COLLAGE],
       }),
     ).toEqual({
-      selectedSkillKeys: [STORY_DIRECTING_SKILL_KEY.PSYCHOLOGICAL_MYSTERY],
+      selectedSkillKeys: [STORY_DIRECTING_SKILL_KEY.HALFTONE_COLLAGE],
     });
   });
 
@@ -40,8 +40,8 @@ describe('Story Canvas directing skills', () => {
       name: 'more than one otherwise valid skill',
       input: {
         selectedSkillKeys: [
-          STORY_DIRECTING_SKILL_KEY.PSYCHOLOGICAL_MYSTERY,
-          STORY_DIRECTING_SKILL_KEY.INTIMATE_REALISM,
+          STORY_DIRECTING_SKILL_KEY.HALFTONE_COLLAGE,
+          STORY_DIRECTING_SKILL_KEY.SYMMETRICAL_STORYBOOK,
         ],
       },
     },
@@ -53,8 +53,8 @@ describe('Story Canvas directing skills', () => {
       name: 'a duplicate wire key',
       input: {
         selectedSkillKeys: [
-          STORY_DIRECTING_SKILL_KEY.INTIMATE_REALISM,
-          STORY_DIRECTING_SKILL_KEY.INTIMATE_REALISM,
+          STORY_DIRECTING_SKILL_KEY.SYMMETRICAL_STORYBOOK,
+          STORY_DIRECTING_SKILL_KEY.SYMMETRICAL_STORYBOOK,
         ],
       },
     },
@@ -67,8 +67,8 @@ describe('Story Canvas directing skills', () => {
 
 describe('buildStoryCanvasSystemPrompt', () => {
   it('injects only the selected directing instructions and marks context as data', () => {
-    const selected = STORY_DIRECTING_SKILL_KEY.HANDCRAFTED_FABLE;
-    const unselected = STORY_DIRECTING_SKILL_KEY.RETRO_FUTURE_NOIR;
+    const selected = STORY_DIRECTING_SKILL_KEY.HALFTONE_COLLAGE;
+    const unselected = STORY_DIRECTING_SKILL_KEY.SYMMETRICAL_STORYBOOK;
     const prompt = buildStoryCanvasSystemPrompt({
       selectedSkillKeys: [selected],
       storyContext: '{"title":"Paper Moon"}',

@@ -1850,25 +1850,9 @@
             "title": "對稱童話電影",
             "description": "對稱構圖、章節旁白與復古色彩，營造克制又荒誕的童話感。"
           },
-          "intimateRealism": {
-            "title": "生活流關係電影",
-            "description": "用日常細節累積情緒，讓玩家的選擇真正改變人物關係。"
-          },
-          "easternDreamscape": {
-            "title": "東方古典夢境",
-            "description": "以園林、器物和留白組織鏡頭，呈現含蓄流動的命運感。"
-          },
-          "psychologicalMystery": {
-            "title": "心理懸疑電影",
-            "description": "限制視角、誤導線索與回收反轉，讓選擇改變玩家相信的真相。"
-          },
-          "retroFutureNoir": {
-            "title": "復古未來黑色電影",
-            "description": "霓虹、煙霧與硬光構圖，圍繞身份和代價建構分支謎局。"
-          },
-          "handcraftedFable": {
-            "title": "手作定格寓言",
-            "description": "毛氈、紙藝與逐格質感，把情緒和選擇變成可觸摸的世界。"
+          "halftoneCollage": {
+            "title": "半調紙拼貼",
+            "description": "純色紙底、半調剪貼與卡紙點綴,每個選擇拼裝成一個視覺隱喻。"
           }
         }
       },

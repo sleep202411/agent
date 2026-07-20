@@ -6,7 +6,15 @@ export interface GlitchTextProps {
   speed?: number;
   enableShadows?: boolean;
   enableOnHover?: boolean;
+  /** Chromatic layer colors when shadows are enabled (defaults: red / blue). */
+  shadowColors?: { after?: string; before?: string };
   className?: string;
+  /**
+   * Styles the accessible base copy only (e.g. a gradient text fill) — the
+   * animated layers keep inheriting the surrounding solid color so their
+   * opaque slice backgrounds stay legible.
+   */
+  baseClassName?: string;
 }
 
 interface GlitchTextProperties extends CSSProperties {
@@ -29,14 +37,20 @@ export function GlitchText({
   speed = 0.5,
   enableShadows = false,
   enableOnHover = false,
+  shadowColors,
   className,
+  baseClassName,
 }: GlitchTextProps) {
   const safeSpeed = Number.isFinite(speed) && speed > 0 ? speed : 0.5;
   const style: GlitchTextProperties = {
     "--glitch-after-duration": `${Number((safeSpeed * 3).toFixed(3))}s`,
     "--glitch-before-duration": `${Number((safeSpeed * 2).toFixed(3))}s`,
-    "--glitch-after-shadow": enableShadows ? "-0.08em 0 #e52227" : "none",
-    "--glitch-before-shadow": enableShadows ? "0.08em 0 #5b9dff" : "none",
+    "--glitch-after-shadow": enableShadows
+      ? `-0.08em 0 ${shadowColors?.after ?? "#e52227"}`
+      : "none",
+    "--glitch-before-shadow": enableShadows
+      ? `0.08em 0 ${shadowColors?.before ?? "#5b9dff"}`
+      : "none",
   };
 
   return (
@@ -45,7 +59,9 @@ export function GlitchText({
       style={style}
       className={cn("react-bits-glitch-text relative inline-block select-none", className)}
     >
-      <span data-glitch-base>{children}</span>
+      <span data-glitch-base className={baseClassName}>
+        {children}
+      </span>
       <span aria-hidden="true" data-glitch-layer="after" className="react-bits-glitch-layer">
         {children}
       </span>

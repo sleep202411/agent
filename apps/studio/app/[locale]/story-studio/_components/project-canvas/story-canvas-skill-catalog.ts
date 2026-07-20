@@ -4,56 +4,32 @@ import {
   type StoryDirectingSkillKey,
 } from "@repo/shared/story-directing-skills";
 
-export type StoryCanvasSkillCopyKey =
-  | "symmetricalStorybook"
-  | "intimateRealism"
-  | "easternDreamscape"
-  | "psychologicalMystery"
-  | "retroFutureNoir"
-  | "handcraftedFable";
+export type StoryCanvasSkillCopyKey = "halftoneCollage" | "symmetricalStorybook";
 
-export type StoryCanvasSkillIcon =
-  | "symmetry"
-  | "relationship"
-  | "dreamscape"
-  | "mystery"
-  | "noir"
-  | "handcrafted";
+export type StoryCanvasSkillIcon = "collage" | "symmetry";
 
 export const STORY_CANVAS_DIRECTING_SKILLS: readonly {
   key: StoryDirectingSkillKey;
   copyKey: StoryCanvasSkillCopyKey;
   icon: StoryCanvasSkillIcon;
+  /**
+   * Optional card artwork under /public, shown uncovered in the card's image
+   * zone (text left, art right). Left-anchored compositions crop best; alpha
+   * PNGs let the card surface show through.
+   */
+  illustration?: string;
 }[] = [
+  {
+    key: STORY_DIRECTING_SKILL_KEY.HALFTONE_COLLAGE,
+    copyKey: "halftoneCollage",
+    icon: "collage",
+    illustration: "/story-skills/halftone-collage.png",
+  },
   {
     key: STORY_DIRECTING_SKILL_KEY.SYMMETRICAL_STORYBOOK,
     copyKey: "symmetricalStorybook",
     icon: "symmetry",
-  },
-  {
-    key: STORY_DIRECTING_SKILL_KEY.INTIMATE_REALISM,
-    copyKey: "intimateRealism",
-    icon: "relationship",
-  },
-  {
-    key: STORY_DIRECTING_SKILL_KEY.EASTERN_DREAMSCAPE,
-    copyKey: "easternDreamscape",
-    icon: "dreamscape",
-  },
-  {
-    key: STORY_DIRECTING_SKILL_KEY.PSYCHOLOGICAL_MYSTERY,
-    copyKey: "psychologicalMystery",
-    icon: "mystery",
-  },
-  {
-    key: STORY_DIRECTING_SKILL_KEY.RETRO_FUTURE_NOIR,
-    copyKey: "retroFutureNoir",
-    icon: "noir",
-  },
-  {
-    key: STORY_DIRECTING_SKILL_KEY.HANDCRAFTED_FABLE,
-    copyKey: "handcraftedFable",
-    icon: "handcrafted",
+    illustration: "/story-skills/symmetrical-storybook.png",
   },
 ];
 

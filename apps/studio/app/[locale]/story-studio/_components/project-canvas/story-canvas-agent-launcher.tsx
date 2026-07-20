@@ -1,17 +1,10 @@
 "use client";
 
 import { useCallback } from "react";
-import {
-  IconBuildingSkyscraper,
-  IconEye,
-  IconHeartHandshake,
-  IconLayoutGrid,
-  IconMoonStars,
-  IconScissors,
-  type Icon,
-} from "@tabler/icons-react";
+import { IconLayoutGrid, IconScissors, type Icon } from "@tabler/icons-react";
 import { useTranslations } from "next-intl";
 import { CopilotStatusNotice } from "@/components/copilot/copilot-status-notice";
+import { GlassRim } from "@/components/ui/glass-rim";
 import { GlitchText } from "@/components/ui/glitch-text";
 import { cn } from "@/lib/utils";
 import {
@@ -24,13 +17,13 @@ import { StoryCanvasAssistantComposer } from "./story-canvas-assistant-composer"
 import type { StoryCanvasAssistantSession } from "./use-story-canvas-assistant-session";
 
 const SKILL_ICONS: Record<StoryCanvasSkillIcon, Icon> = {
+  collage: IconScissors,
   symmetry: IconLayoutGrid,
-  relationship: IconHeartHandshake,
-  dreamscape: IconMoonStars,
-  mystery: IconEye,
-  noir: IconBuildingSkyscraper,
-  handcrafted: IconScissors,
 };
+
+// Selected option cards carry the brand-red rim-light (DESIGN.md rule 3).
+const redRgba = (alpha: number) => `rgba(229, 34, 39, ${alpha})`;
+const SELECTED_SKILL_RIM = `conic-gradient(from 288deg, ${redRgba(0.55)} 0%, ${redRgba(0.28)} 30%, ${redRgba(0.22)} 55%, ${redRgba(0.22)} 80%, ${redRgba(0.55)} 100%)`;
 
 export function StoryCanvasAgentLauncher({
   session,
@@ -69,28 +62,37 @@ export function StoryCanvasAgentLauncher({
         onContextMenu={(event) => event.stopPropagation()}
         onKeyDown={(event) => event.stopPropagation()}
       >
-        <div className="mb-4 text-center">
-          <h2 id="story-canvas-agent-title" className="text-base font-semibold text-white/92">
+        <div className="mb-7 text-center">
+          <h2
+            id="story-canvas-agent-title"
+            className="text-4xl font-bold tracking-[-0.02em] text-white/92"
+          >
             <GlitchText
               speed={1.2}
-              enableShadows={false}
-              enableOnHover
+              enableShadows
+              shadowColors={{ after: "rgba(229,34,39,0.55)", before: "#9d8cff" }}
+              baseClassName="bg-gradient-to-r from-[#d67578] via-[#b482e8] to-[#9d8cff] bg-clip-text text-transparent"
               className="[--glitch-background:oklch(0.105_0_0)]"
             >
               {t("title")}
             </GlitchText>
           </h2>
-          <p className="mt-1 text-xs leading-5 text-white/44">{t("description")}</p>
+          <p className="mt-3 text-sm leading-6 text-white/50">{t("description")}</p>
         </div>
 
-        <StoryCanvasAssistantComposer
-          session={session}
-          onSubmit={submit}
-          placeholder={t("placeholder")}
-          autoFocus
-          className="bg-[oklch(0.205_0_0)]"
-          disabled={disabled}
-        />
+        {/* The composer is this surface's hero control: elevated glass with the
+            signature rim-light so it reads above the canvas, not part of it. */}
+        <div className="relative rounded-[20px] shadow-[0_22px_70px_rgba(0,0,0,0.45)]">
+          <StoryCanvasAssistantComposer
+            session={session}
+            onSubmit={submit}
+            placeholder={t("placeholder")}
+            autoFocus
+            className="bg-[oklch(0.24_0_0/0.96)] backdrop-blur-[30px] backdrop-saturate-150"
+            disabled={disabled}
+          />
+          <GlassRim />
+        </div>
 
         {session.recoveryStorageError ? (
           <div className="mt-3">
@@ -125,7 +127,7 @@ export function StoryCanvasAgentLauncher({
           <p className="mb-2.5 px-1 text-[10px] font-semibold tracking-[0.12em] text-white/36 uppercase">
             {t("skillsTitle")}
           </p>
-          <div className="grid grid-cols-3 gap-2.5">
+          <div className="grid grid-cols-2 gap-2.5">
             {STORY_CANVAS_DIRECTING_SKILLS.map((skill) => {
               const SkillIcon = SKILL_ICONS[skill.icon];
               const selected = session.selectedSkillKey === skill.key;
@@ -137,20 +139,33 @@ export function StoryCanvasAgentLauncher({
                   disabled={disabled || !historyReady || session.busy}
                   onClick={() => session.setSelectedSkillKey(selected ? null : skill.key)}
                   className={cn(
-                    "min-h-24 rounded-[20px] bg-[oklch(0.205_0_0/0.88)] p-3.5 text-left shadow-[0_14px_48px_rgba(0,0,0,0.24)] backdrop-blur-[30px] transition focus-visible:ring-2 focus-visible:ring-white/35 focus-visible:outline-none",
+                    "relative flex min-h-24 items-stretch overflow-hidden rounded-[20px] bg-[oklch(0.205_0_0/0.88)] text-left shadow-[0_14px_48px_rgba(0,0,0,0.24)] backdrop-blur-[30px] transition focus-visible:ring-2 focus-visible:ring-white/35 focus-visible:outline-none",
                     selected ? "bg-[oklch(0.27_0_0/0.95)]" : "hover:bg-[oklch(0.24_0_0/0.92)]",
                     (disabled || !historyReady || session.busy) && "opacity-50"
                   )}
                 >
-                  <span className="flex items-center gap-2 text-white/82">
-                    <SkillIcon className="size-4" stroke={1.7} />
-                    <span className="text-xs font-semibold">
-                      {skillCopy(skill.copyKey, "title")}
+                  {skill.illustration ? (
+                    <span aria-hidden className="relative w-[30%] shrink-0 self-stretch opacity-90">
+                      {/* eslint-disable-next-line @next/next/no-img-element -- bundled skill artwork */}
+                      <img
+                        src={skill.illustration}
+                        alt=""
+                        className="absolute inset-0 size-full object-contain object-left-bottom p-2.5"
+                      />
+                    </span>
+                  ) : null}
+                  <span className="min-w-0 flex-1 p-3.5 text-right">
+                    <span className="flex items-center justify-end gap-2 text-white/95">
+                      <SkillIcon className="size-4 shrink-0" stroke={1.7} />
+                      <span className="text-sm font-semibold tracking-[-0.01em]">
+                        {skillCopy(skill.copyKey, "title")}
+                      </span>
+                    </span>
+                    <span className="mt-1.5 block text-[11px] leading-[1.55] text-white/42">
+                      {skillCopy(skill.copyKey, "description")}
                     </span>
                   </span>
-                  <span className="mt-2 block text-[11px] leading-[1.55] text-white/40">
-                    {skillCopy(skill.copyKey, "description")}
-                  </span>
+                  {selected ? <GlassRim gradient={SELECTED_SKILL_RIM} width="1.5px" /> : null}
                 </button>
               );
             })}

@@ -1850,25 +1850,9 @@
             "title": "对称童话电影",
             "description": "对称构图、章节旁白与复古色彩，营造克制又荒诞的童话感。"
           },
-          "intimateRealism": {
-            "title": "生活流关系电影",
-            "description": "用日常细节积累情绪，让玩家的选择真正改变人物关系。"
-          },
-          "easternDreamscape": {
-            "title": "东方古典梦境",
-            "description": "以园林、器物和留白组织镜头，呈现含蓄流动的命运感。"
-          },
-          "psychologicalMystery": {
-            "title": "心理悬疑电影",
-            "description": "限制视角、误导线索与回收反转，让选择改变玩家相信的真相。"
-          },
-          "retroFutureNoir": {
-            "title": "复古未来黑色电影",
-            "description": "霓虹、烟雾与硬光构图，围绕身份和代价构建分支谜局。"
-          },
-          "handcraftedFable": {
-            "title": "手作定格寓言",
-            "description": "毛毡、纸艺与逐格质感，把情绪和选择变成可触摸的世界。"
+          "halftoneCollage": {
+            "title": "半调纸拼贴",
+            "description": "纯色纸底、半调剪贴与卡纸点缀,每个选择拼装成一个视觉隐喻。"
           }
         }
       },

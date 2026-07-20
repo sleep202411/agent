@@ -36,7 +36,7 @@ describe("Story Canvas chat transport", () => {
     context = {
       ...context,
       workspaceId: "workspace-b",
-      selectedSkillKey: STORY_DIRECTING_SKILL_KEY.PSYCHOLOGICAL_MYSTERY,
+      selectedSkillKey: STORY_DIRECTING_SKILL_KEY.HALFTONE_COLLAGE,
     };
     controller.updateContext(context);
     await controller.transport.sendMessages({
@@ -59,7 +59,7 @@ describe("Story Canvas chat transport", () => {
         role: "user",
         parts: [{ type: "text", text: "Hello" }],
       },
-      selectedSkillKeys: [STORY_DIRECTING_SKILL_KEY.PSYCHOLOGICAL_MYSTERY],
+      selectedSkillKeys: [STORY_DIRECTING_SKILL_KEY.HALFTONE_COLLAGE],
     });
     expect(body).not.toHaveProperty("storyContext");
     expect(body).not.toHaveProperty("messages");
